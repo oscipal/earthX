@@ -25,9 +25,10 @@
 > Erreichbarkeit, gemessene Zahlen und aufgelöste Beleg-Markierungen. Was unten
 > steht, bleibt als Protokoll des Standes vor der Freigabe stehen.
 >
-> **Die Lizenzprüfung ist weiterhin nicht erfolgt** — die Primärdokumente liegen
-> auf Hosts, die die Policy weiterhin sperrt (§10.2). Die Lizenzzeilen der
-> Matrix in §4 sind deshalb unverändert **unbelegt**.
+> **Für die Lizenzen ist §11 maßgeblich.** Option **D** ist dort am
+> Primärdokument geprüft; die Optionen **A** und **B** sind es weiterhin nicht,
+> weil das Sentinel Data Legal Notice auf gesperrten Hosts liegt (§11.3). Die
+> Lizenzzeilen der Matrix in §4 bleiben für A und B **unbelegt**.
 
 **Der geforderte Erreichbarkeitstest aus der Cloud-Umgebung war nicht möglich.**
 Die Netzwerk-Policy dieser Sitzung sperrt jeden ausgehenden Zugriff auf die
@@ -154,8 +155,8 @@ Beleg-Spalte: `S` = Suchtreffer mit Link, Primärdokument ungelesen; `P` = Pland
 | Kriterium | A — EOPF Zarr Samples | B — Earth Search S2 L2A | C — Planetary Computer | D — Copernicus DEM | Beleg |
 |---|---|---|---|---|---|
 | Token / Registrierung | keine; „public, read-only HTTPS access" | keine nach Doku-Beispielen | STAC frei; Pixel nur über SAS-Signatur, anonym aber gedrosselt | keine; „no subscription is required" | S |
-| Lizenz | Copernicus Sentinel Legal Notice: „free, full and open", Bearbeitung und Weitergabe erlaubt, Namensnennung „Contains modified Copernicus Sentinel data [Jahr]" | dieselbe (Sentinel-Daten) | je Collection unterschiedlich, nicht einheitlich | Copernicus-DEM-Lizenz, eigenes Dokument, **unbelegt** ob Bearbeitung ausdrücklich erlaubt | S |
-| Einstufung nach B11 | **Processing** | **Processing** | Processing nur je Collection prüfbar | mindestens Katalogeintrag; Anzeige/Processing **unbelegt** | P + S |
+| Lizenz | Copernicus Sentinel Legal Notice: „free, full and open", Bearbeitung und Weitergabe erlaubt, Namensnennung „Contains modified Copernicus Sentinel data [Jahr]" | dieselbe (Sentinel-Daten) | je Collection unterschiedlich, nicht einheitlich | COP-DEM-GLO-30-F: Bearbeitung, Weitergabe und kommerzielle Nutzung erlaubt, Attribution Pflicht (§11.1) ✓ | S |
+| Einstufung nach B11 | **Processing** | **Processing** | Processing nur je Collection prüfbar | **Processing** — am Primärdokument geprüft (§11.1) ✓ | P + S |
 | Format | **Zarr (EOPF/GeoZarr)** — Rang 1 | COG — Rang 2 | COG — Rang 2 | COG — Rang 2 | P + S |
 | STAC-API | ja, STAC 1.1.0, 12 Collections | ja, STAC-API v1 | ja | ja, STAC 1.0.0 | S |
 | Dauerhaftigkeit | **Sample-Dienst**; operative Zarr-Produkte „Ende 2026/Anfang 2027" erwartet, Archiv rollierend ein Jahr, Ausweitung „in Diskussion mit ESA" | Open-Data-Sponsorship, laufender Betrieb, Collection-1-Umstellung angekündigt | Betreiberabhängig, kommerzieller Anbieter | Open-Data-Sponsorship, statisches Produkt | S |
@@ -163,8 +164,9 @@ Beleg-Spalte: `S` = Suchtreffer mit Link, Primärdokument ungelesen; `P` = Pland
 | Eignung Coverage-Heatmap | **schwach** — dünne, ungleiche Stichprobe; die Heatmap zeigte eher den Sample-Zuschnitt als die Aufnahmedichte | **stark** — hohe Dichte, echte Zeitfilterung | stark | **untauglich als Heatmap**; §2 sieht dafür „Ausdehnung allein" vor (Einmal-Produkt) | P + S |
 | Erreichbarkeit aus dieser Umgebung | **STAC-API erreichbar** (`stac.core.eopf.eodc.eu`, HTTP 200); Objektspeicher `objects.eodc.eu` erreichbar | **erreichbar**, STAC-API und Asset-Bucket; partieller COG-Read bestätigt (§10.1) | **gesperrt**, Host nicht freigegeben | **erreichbar** (`copernicus-dem-30m.s3.amazonaws.com`, HTTP 200) | ✓ (§10.1) |
 
-> **Zur Matrix:** Die Zeilen *Lizenz* und *Einstufung nach B11* sind durch §10
-> **nicht** bestätigt — die Primärdokumente sind gesperrt. Die Zeilen *Format*,
+> **Zur Matrix:** Die Zeilen *Lizenz* und *Einstufung nach B11* sind für **D**
+> durch §11.1 am Primärdokument bestätigt, für **A** und **B** weiterhin
+> **nicht** — deren Lizenzdokument ist gesperrt (§11.3). Die Zeilen *Format*,
 > *STAC-API*, *Dauerhaftigkeit* und *Abdeckung* korrigiert und belegt §10.3;
 > wo §10 abweicht, gilt §10.
 
@@ -401,11 +403,16 @@ B11 werden deshalb zusätzlich gebraucht:
 |---|---|---|
 | 1 | `sentinel.esa.int` | Sentinel Data Legal Notice — **Option A und B**, der eigentliche Lizenztext |
 | 2 | `sentinels.copernicus.eu` | dasselbe Dokument an seinem zweiten Ort (Ausweichpfad zu 1) |
-| 3 | `spacedata.copernicus.eu` | Copernicus-DEM-Lizenz — **Option D** |
+| 3 | ~~`spacedata.copernicus.eu`~~ | Copernicus-DEM-Lizenz — **entfällt**, Option D ist über `dataspace.copernicus.eu` geprüft (§11.1) |
 | 4 | `planetarycomputer.microsoft.com` | SAS-Zugang und Drosselung — **Option C** |
 
 Hosts 1 und 3 sind zwingend; 2 ist nur ein Ausweichpfad für 1; 4 wird nur
 gebraucht, wenn C überhaupt weiterverfolgt werden soll (§6 rät davon ab).
+
+> **Überholt durch §11.** Host 3 entfällt: Die DEM-Lizenz liegt erreichbar auf
+> `dataspace.copernicus.eu`. Host 4 entfällt ebenfalls — Otto lässt den
+> Planetary Computer bewusst gesperrt, Option C wird nicht weiterverfolgt.
+> **Offen bleibt allein Host 1 bzw. 2.**
 
 #### Zweiter Versuch am 18.09.2026 — Hosts freigegeben, Sitzung sperrt weiter
 
@@ -419,6 +426,10 @@ festgelegt, nicht zur Laufzeit nachgeladen. Die erste Freigabe (Earth Search,
 EOPF, AWS) wirkte, weil sie **vor** dem Start dieser Sitzung eingetragen war.
 Die Prüfung sollte deshalb in einer **neu gestarteten Sitzung** gelingen,
 ohne dass an der Allowlist noch etwas zu ändern wäre. Bestätigt ist das nicht.
+
+> **Widerlegt am 18.09.2026 (§11.3).** In einer neu gestarteten Sitzung
+> antworten dieselben drei Hosts weiterhin mit 403. Die Vermutung war falsch;
+> die Ursache liegt nicht an der Sitzung.
 
 Geprüft wurde zusätzlich, ob das Legal Notice an einem **offiziellen,
 erreichbaren** Ort vorliegt — als Primärquelle, nicht als Ersatz:
@@ -487,10 +498,146 @@ Lizenzprüfung aus §10.2.
 
 ### 10.4 Was danach offen bleibt
 
-- **Lizenzprüfung nach B11 für A, B und D** — blockiert, Hosts in §10.2.
+- **Lizenzprüfung nach B11:** für **D** erledigt (§11.1); für **A** und **B**
+  weiterhin blockiert, fehlender Host in §11.3.
 - **Ratengrenzen der Anbieter** (offener Punkt aus §6): in den erreichbaren
   Dokumenten nicht angegeben; **unbelegt**.
 - **Kosten/Latenz der Region `us-west-2`** (offener Punkt aus §6): nicht
   geprüft, eine Betriebsentscheidung ohne Beleg in `docs/`.
 - **Quad-Pol-Quellen (§7):** nicht erneut geprüft. Die dort genannten Hosts
   (ASF, JPL, figshare) standen nicht auf der Freigabeliste.
+
+---
+
+## 11. Lizenzprüfung nach B11 — Stand 18.09.2026 (dritter Anlauf)
+
+Otto hat `sentinel.esa.int`, `sentinels.copernicus.eu` und
+`spacedata.copernicus.eu` freigegeben, `zarr.eodc.eu` aus der Liste gestrichen
+(in §10.1 als nicht existent aufgelöst) und den Planetary Computer bewusst
+gesperrt gelassen. Option C wird deshalb hier **nicht** geprüft — §6 rät ohnehin
+von ihr ab.
+
+Geprüft werden **A, B und D** nach je vier Punkten: Bearbeitung, Weitergabe,
+kommerzielle Nutzung, Attributionspflicht. Die Einstufung nach `KLAERUNGEN.md`
+B11 ist ein **Vorschlag**; die Lizenz-Einstufung eines Datensatzes entscheidet
+Otto (`CLAUDE.md`).
+
+### 11.0 Ergebnis in einem Satz
+
+**Option D ist am Primärdokument vollständig geprüft. A und B sind es weiterhin
+nicht** — die drei freigegebenen Hosts antworten in dieser Sitzung wie zuvor mit
+HTTP 403 (§11.3).
+
+### 11.1 Option D — Copernicus DEM GLO-30 Public — **geprüft ✓**
+
+Der Lizenzpfad hat sich geändert und endet **nicht mehr** auf
+`spacedata.copernicus.eu`: Der AWS-Registry-Eintrag verweist heute auf die
+CDSE-Seite zu COP-DEM, und diese verlinkt die Lizenz als PDF auf
+`dataspace.copernicus.eu` — einem erreichbaren Host. Maßgeblich ist darin die
+**„Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free &
+Open"** (Seiten 22–24).
+
+Quelle: [copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf](https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf),
+verlinkt von [CDSE COP-DEM](https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM),
+verlinkt von [Registry of Open Data](https://registry.opendata.aws/copernicus-dem/).
+
+| Punkt | Ergebnis | Zitat (Art. 4 bzw. 6) |
+|---|---|---|
+| Bearbeitung | **erlaubt** | „adaptation, modification and combination with other data and information" |
+| Weitergabe | **erlaubt** | „(b) distribution; (c) communication to the General Public" |
+| Kommerzielle Nutzung | **nicht eingeschränkt** — die Lizenz nennt keinen Zweckvorbehalt | „The rights granted under this Licence are worldwide and without limitation in time" |
+| Attribution | **Pflicht**, Wortlaut vorgeschrieben | „the User shall inform the General Public of the source" |
+
+**Vorgeschriebener Quellenhinweis** (Art. 6 a; bei bearbeiteten Daten Art. 6 b
+mit dem Zusatz „produced using Copernicus WorldDEM-30"):
+
+> © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided
+> under COPERNICUS by the European Union and ESA; all rights reserved.
+
+**Drei Punkte, die in die Umsetzung gehören:**
+
+1. **Haftungssatz weitergeben** (Art. 6 c): Wer die Daten weitergibt, muss den
+   Satz „The organisations in charge of the Copernicus programme … do not incur
+   any liability" mitliefern.
+2. **Pflichtenkette** (Art. 6 e): Nachgelagerte Nutzer sind an dieselben
+   Pflichten zu binden. Für die Plattform heißt das: Der Hinweis gehört an den
+   Datei-Download des AOI-Zuschnitts, nicht nur in eine Fußzeile.
+3. **Zustimmung** (Art. 1): „The user must accept the terms and conditions of
+   this licence". Ob eine sichtbare Lizenzangabe dafür genügt, steht nicht in
+   `docs/` und ist hier nicht entschieden.
+
+**Vorschlag B11 für D: Processing.** Bearbeitung und Weitergabe sind
+ausdrücklich erlaubt, `commercial_use` bleibt `true`. Praktisch bleibt D
+trotzdem der dritte Datensatz (§6): die Lizenz ändert daran nichts.
+
+> **Eine Einschränkung, ausdrücklich:** Dass die AWS-Instanz „GLO-30 Public"
+> genau `COP-DEM-GLO-30-F` ist, steht in keinem der Dokumente wörtlich; es folgt
+> aus der Verweiskette Registry → CDSE → PDF. Die Lizenz für **GLO-90** schließt
+> die Weitergabe höher aufgelöster DEMs an die Allgemeinheit ausdrücklich aus —
+> die hier zitierte GLO-30-F-Lizenz schließt entsprechend nur **WorldDEM-10**
+> aus, nicht GLO-30 selbst.
+
+### 11.2 Optionen A und B — **nicht geprüft, blockiert**
+
+Beide hängen am selben Dokument: Das STAC-Feld `license` ist bei
+`sentinel-2-c1-l2a` (B) und bei den EOPF-Sentinel-Collections (A) `proprietary`
+mit `rel: license` auf das **Sentinel Data Legal Notice** (§10.2). Dieses
+Dokument ist in dieser Sitzung nicht erreichbar.
+
+| Punkt | A (EOPF) | B (Earth Search) |
+|---|---|---|
+| Bearbeitung | **unbelegt** | **unbelegt** |
+| Weitergabe | **unbelegt** | **unbelegt** |
+| Kommerzielle Nutzung | **unbelegt** | **unbelegt** |
+| Attribution | **unbelegt** | **unbelegt** |
+
+**Vorschlag B11 für A und B: bedingt Processing — und zwar ausdrücklich
+ungeprüft.** Die Suchtreffer aus §3 deuten auf Rechte, die dem Wortlaut der
+DEM-Lizenz ähneln (Reproduktion, Verbreitung, Bearbeitung; Attribution
+„Copernicus Sentinel data [Jahr]"). Belegt ist davon **nichts**. Die Einstufung
+gilt deshalb erst, wenn das Legal Notice gelesen ist; bis dahin ist sie keine
+Entscheidungsgrundlage, sondern eine Erwartung.
+
+### 11.3 Was dafür fehlt — genau benannt
+
+In dieser Sitzung geprüft, jeweils mit HTTP-Antwort:
+
+| Host | curl (Proxy) | WebFetch | gebraucht für |
+|---|---|---|---|
+| `sentinel.esa.int` | 403 `connect_rejected` | DNS-Fehler, Host löst nicht auf | Legal Notice, **A und B** |
+| `sentinels.copernicus.eu` | 403 `connect_rejected` | `EGRESS_BLOCKED` | dasselbe Dokument, Ausweichpfad |
+| `spacedata.copernicus.eu` | 403 `connect_rejected` | `EGRESS_BLOCKED` | für D **nicht mehr nötig** (§11.1) |
+
+Zusätzlich wurde gesucht, ob das Legal Notice an einem **anderen offiziellen,
+erreichbaren** Ort liegt — so, wie es bei D gelungen ist. Alle vier Kandidaten
+sind gesperrt:
+
+| Kandidat | Was es ist | Antwort |
+|---|---|---|
+| `cds.climate.copernicus.eu/licences/ec-sentinel` | Copernicus Climate Data Store (ECMWF) | gesperrt |
+| `ecds.ecmwf.int/licences/ec-sentinel` | ECMWF, zweite Ablage | gesperrt |
+| `user.eumetsat.int` (Copernicus Data Usage T&C) | EUMETSAT, Copernicus-Betreiber | gesperrt |
+| `www.copernicus.eu/en/access-data/copyright-and-licences` | Programmseite | gesperrt |
+| `eur-lex.europa.eu` (Del. VO (EU) Nr. 1159/2013) | Rechtsgrundlage | gesperrt |
+
+`dataspace.copernicus.eu` ist erreichbar, führt für Sentinel aber nachweislich
+nur weiter (§10.2) und hat kein eigenes Lizenz-PDF für Sentinel-Daten.
+
+**Damit fehlt genau eines:** ein erreichbarer Zugang zum Sentinel Data Legal
+Notice. Ein einziger der oben genannten Hosts genügt; `sentinels.copernicus.eu`
+ist der wahrscheinlichste, weil die CDSE-Seite selbst dorthin verweist.
+
+**Warum die Freigabe nicht griff:** unklar. Die Vermutung aus §10.2 — die
+Allowlist wirke erst in einer neu gestarteten Sitzung — hat sich **nicht**
+bestätigt: Diese Sitzung ist neu, und die drei Hosts antworten weiterhin mit
+403. Die Ursache liegt damit nicht an der Sitzung, sondern an der Policy selbst.
+Das ist ein Befund, keine Diagnose.
+
+### 11.4 Folgen für §6
+
+Die Reihenfolge **bleibt vorläufig**. §6 knüpft sie an die Lizenzprüfung, und
+die ist für die beiden ersten Datensätze weiterhin offen. Geändert hat sich nur:
+Für **D** ist die Prüfung erledigt, und sie stützt die Einstufung *Processing* —
+D war aber ohnehin nie als erster Datensatz vorgeschlagen.
+
+Der Status dieses ADR bleibt **Vorschlag**.
