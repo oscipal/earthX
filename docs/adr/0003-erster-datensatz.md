@@ -11,9 +11,10 @@
 - **Betroffen:** `architekturplan.md` 6.2, 6.3, 13; `projektuebersicht.md` §5
   (Onboarding-Checkliste); Entscheidungslog.
 
-> **ADR 0002 ist nicht vergeben.** Die Nummer bleibt für das angekündigte
-> Coverage-Map-ADR reserviert (Entscheidungslog, Zeile „Technische Umsetzung der
-> Coverage Map"). Dieses Dokument ist deshalb 0003.
+> **Zur Nummer.** Dieses Dokument entstand parallel zu `0002-testaufteilung.md`
+> und trägt deshalb die 0003. Das angekündigte Coverage-Map-ADR
+> (Entscheidungslog, Zeile „Technische Umsetzung der Coverage Map") bekommt die
+> nächste freie Nummer, nicht die 0002.
 
 ---
 
