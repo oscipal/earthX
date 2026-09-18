@@ -25,10 +25,10 @@
 > Erreichbarkeit, gemessene Zahlen und aufgelöste Beleg-Markierungen. Was unten
 > steht, bleibt als Protokoll des Standes vor der Freigabe stehen.
 >
-> **Für die Lizenzen ist §11 maßgeblich.** Option **D** ist dort am
-> Primärdokument geprüft; die Optionen **A** und **B** sind es weiterhin nicht,
-> weil das Sentinel Data Legal Notice auf gesperrten Hosts liegt (§11.3). Die
-> Lizenzzeilen der Matrix in §4 bleiben für A und B **unbelegt**.
+> **Für die Lizenzen ist §11 maßgeblich.** Alle drei geprüften Optionen (**A**,
+> **B**, **D**) liegen inzwischen am Primärdokument vor und werden als B11-Stufe
+> *Processing* vorgeschlagen. Die Lizenzzeilen der Matrix in §4 sind damit
+> aufgelöst; das „unbelegt" weiter unten ist überholt.
 
 **Der geforderte Erreichbarkeitstest aus der Cloud-Umgebung war nicht möglich.**
 Die Netzwerk-Policy dieser Sitzung sperrt jeden ausgehenden Zugriff auf die
@@ -155,8 +155,8 @@ Beleg-Spalte: `S` = Suchtreffer mit Link, Primärdokument ungelesen; `P` = Pland
 | Kriterium | A — EOPF Zarr Samples | B — Earth Search S2 L2A | C — Planetary Computer | D — Copernicus DEM | Beleg |
 |---|---|---|---|---|---|
 | Token / Registrierung | keine; „public, read-only HTTPS access" | keine nach Doku-Beispielen | STAC frei; Pixel nur über SAS-Signatur, anonym aber gedrosselt | keine; „no subscription is required" | S |
-| Lizenz | Copernicus Sentinel Legal Notice: „free, full and open", Bearbeitung und Weitergabe erlaubt, Namensnennung „Contains modified Copernicus Sentinel data [Jahr]" | dieselbe (Sentinel-Daten) | je Collection unterschiedlich, nicht einheitlich | COP-DEM-GLO-30-F: Bearbeitung, Weitergabe und kommerzielle Nutzung erlaubt, Attribution Pflicht (§11.1) ✓ | S |
-| Einstufung nach B11 | **Processing** | **Processing** | Processing nur je Collection prüfbar | **Processing** — am Primärdokument geprüft (§11.1) ✓ | P + S |
+| Lizenz | Sentinel Data Legal Notice: Bearbeitung, Weitergabe und kommerzielle Nutzung erlaubt, Namensnennung „Contains modified Copernicus Sentinel data [Jahr]" Pflicht (§11.2) ✓ | dieselbe (Sentinel-Daten) | je Collection unterschiedlich, nicht einheitlich | COP-DEM-GLO-30-F: Bearbeitung, Weitergabe und kommerzielle Nutzung erlaubt, Attribution Pflicht (§11.1) ✓ | S |
+| Einstufung nach B11 | **Processing** ✓ (§11.2) | **Processing** ✓ (§11.2) | nicht geprüft, Option C wird nicht weiterverfolgt | **Processing** — am Primärdokument geprüft (§11.1) ✓ | P + S |
 | Format | **Zarr (EOPF/GeoZarr)** — Rang 1 | COG — Rang 2 | COG — Rang 2 | COG — Rang 2 | P + S |
 | STAC-API | ja, STAC 1.1.0, 12 Collections | ja, STAC-API v1 | ja | ja, STAC 1.0.0 | S |
 | Dauerhaftigkeit | **Sample-Dienst**; operative Zarr-Produkte „Ende 2026/Anfang 2027" erwartet, Archiv rollierend ein Jahr, Ausweitung „in Diskussion mit ESA" | Open-Data-Sponsorship, laufender Betrieb, Collection-1-Umstellung angekündigt | Betreiberabhängig, kommerzieller Anbieter | Open-Data-Sponsorship, statisches Produkt | S |
@@ -165,8 +165,8 @@ Beleg-Spalte: `S` = Suchtreffer mit Link, Primärdokument ungelesen; `P` = Pland
 | Erreichbarkeit aus dieser Umgebung | **STAC-API erreichbar** (`stac.core.eopf.eodc.eu`, HTTP 200); Objektspeicher `objects.eodc.eu` erreichbar | **erreichbar**, STAC-API und Asset-Bucket; partieller COG-Read bestätigt (§10.1) | **gesperrt**, Host nicht freigegeben | **erreichbar** (`copernicus-dem-30m.s3.amazonaws.com`, HTTP 200) | ✓ (§10.1) |
 
 > **Zur Matrix:** Die Zeilen *Lizenz* und *Einstufung nach B11* sind für **D**
-> durch §11.1 am Primärdokument bestätigt, für **A** und **B** weiterhin
-> **nicht** — deren Lizenzdokument ist gesperrt (§11.3). Die Zeilen *Format*,
+> durch §11.1 und für **A** und **B** durch §11.2 am Primärdokument bestätigt.
+> Nur **C** bleibt ungeprüft und wird nicht weiterverfolgt. Die Zeilen *Format*,
 > *STAC-API*, *Dauerhaftigkeit* und *Abdeckung* korrigiert und belegt §10.3;
 > wo §10 abweicht, gilt §10.
 
@@ -201,10 +201,11 @@ gesamte Lesepfad wechselt.
 
 ## 6. Empfehlung
 
-> **Stand 18.09.2026: von Otto vorläufig bestätigt.** COG zuerst, Zarr als
-> zweiter. Endgültig erst nach der Prüfung der Lizenzen an den
-> Primärdokumenten (Frage 1, Abschnitt 9). Ergibt diese Prüfung eine andere
-> Lizenzeinstufung nach B11, ist die Reihenfolge neu aufzurufen.
+> **Stand 18.09.2026: von Otto bestätigt, Vorbehalt eingelöst.** COG zuerst,
+> Zarr als zweiter. Der Vorbehalt lautete: „Ergibt die Lizenzprüfung eine andere
+> Lizenzeinstufung nach B11, ist die Reihenfolge neu aufzurufen." Die Prüfung
+> liegt vor (§11) und ergibt für **A und B dieselbe** Einstufung — die
+> Reihenfolge ist deshalb **nicht** neu aufzurufen (§11.4).
 
 **Zwei Schritte, in dieser Reihenfolge:**
 
@@ -313,16 +314,16 @@ Solange das aussteht, bleibt der Abschnitt „Methode und Grenzen" gültig: **ke
 
 | Schritt | Stand |
 |---|---|
-| 1. Primärquellen zu Lizenz, Zugang, Laufzeit lesen | **teilweise.** Zugang und Laufzeit geprüft. **Lizenz nicht** — die Primärdokumente liegen auf gesperrten Hosts (§10.2) |
+| 1. Primärquellen zu Lizenz, Zugang, Laufzeit lesen | **erledigt.** Zugang und Laufzeit aus der Sitzung geprüft; Lizenz nachgezogen in §11 — D aus der Sitzung, A und B von Otto |
 | 2. Erreichbarkeit der Endpunkte testen | **erledigt** (§10.1) |
-| 3. Beleg-Markierungen auflösen | **erledigt, soweit Schritt 1 reichte** (§10.3); die Lizenzzeilen bleiben ausdrücklich unbelegt |
+| 3. Beleg-Markierungen auflösen | **erledigt** (§10.3); die Lizenzzeilen sind mit §11 aufgelöst |
 
 **Frage 2 — Reihenfolge.** Welcher Datensatz ist der erste?
 
-**Antwort: Option B zuerst, Option A als zweiter — vorläufig bestätigt.**
-Endgültig nach der Lizenzprüfung aus Frage 1. Bis dahin gilt die Reihenfolge als
-Arbeitsgrundlage, nicht als abgeschlossene Entscheidung; der Status dieses ADR
-bleibt deshalb „Vorschlag".
+**Antwort: Option B zuerst, Option A als zweiter.** Der Vorbehalt aus Frage 1
+ist mit §11 eingelöst; die Lizenz trennt die beiden nicht. Der Status dieses ADR
+bleibt „Vorschlag", weil die Entscheidung bei Otto liegt — nicht mehr, weil ein
+Beleg fehlt.
 
 ---
 
@@ -427,9 +428,10 @@ EOPF, AWS) wirkte, weil sie **vor** dem Start dieser Sitzung eingetragen war.
 Die Prüfung sollte deshalb in einer **neu gestarteten Sitzung** gelingen,
 ohne dass an der Allowlist noch etwas zu ändern wäre. Bestätigt ist das nicht.
 
-> **Widerlegt am 18.09.2026 (§11.3).** In einer neu gestarteten Sitzung
-> antworten dieselben drei Hosts weiterhin mit 403. Die Vermutung war falsch;
-> die Ursache liegt nicht an der Sitzung.
+> **Bestätigt am 18.09.2026 (§11.3).** Die Vermutung stimmt:
+> Allowlist-Änderungen gelten erst für **neu gestartete** Sitzungen. Die drei
+> Hosts waren beim Start der Sitzung vom 18.09. noch nicht eingetragen, sie
+> kamen erst danach dazu — deren 403 sagt deshalb nichts über die Freigabe.
 
 Geprüft wurde zusätzlich, ob das Legal Notice an einem **offiziellen,
 erreichbaren** Ort vorliegt — als Primärquelle, nicht als Ersatz:
@@ -455,11 +457,14 @@ STAC-Sinn lediglich „keine SPDX-Kennung". Es sagt nichts darüber, ob
 Bearbeitung und Weitergabe erlaubt sind — und genau diese beiden Punkte
 entscheiden nach `KLAERUNGEN.md` B11 zwischen *Katalogeintrag*, *Anzeige* und
 *Processing*. Die Einstufung **Processing** für A und B in der Matrix §4 stützt
-sich weiterhin allein auf Suchtreffer und bleibt damit **unbelegt**.
+sich an dieser Stelle noch allein auf Suchtreffer. **Aufgelöst in §11.2:** Otto
+hat das Legal Notice an der Primärquelle geprüft, Bearbeitung und Weitergabe
+sind ausdrücklich erlaubt.
 
 Die Lizenz-Einstufung eines Datensatzes liegt ohnehin bei Otto (`CLAUDE.md`).
 Dieser Nachtrag trifft sie nicht und verschiebt die Empfehlung in §6 nicht:
-Der Status des ADR bleibt **Vorschlag**, die Reihenfolge bleibt **vorläufig**.
+Der Status des ADR bleibt **Vorschlag**; die Reihenfolge ist seit §11.4 nicht
+mehr unter Lizenzvorbehalt.
 
 ### 10.3 Aufgelöste Beleg-Markierungen (Schritt 3)
 
@@ -498,8 +503,7 @@ Lizenzprüfung aus §10.2.
 
 ### 10.4 Was danach offen bleibt
 
-- **Lizenzprüfung nach B11:** für **D** erledigt (§11.1); für **A** und **B**
-  weiterhin blockiert, fehlender Host in §11.3.
+- **Lizenzprüfung nach B11:** erledigt für **D** (§11.1) sowie **A** und **B** (§11.2).
 - **Ratengrenzen der Anbieter** (offener Punkt aus §6): in den erreichbaren
   Dokumenten nicht angegeben; **unbelegt**.
 - **Kosten/Latenz der Region `us-west-2`** (offener Punkt aus §6): nicht
@@ -524,9 +528,10 @@ Otto (`CLAUDE.md`).
 
 ### 11.0 Ergebnis in einem Satz
 
-**Option D ist am Primärdokument vollständig geprüft. A und B sind es weiterhin
-nicht** — die drei freigegebenen Hosts antworten in dieser Sitzung wie zuvor mit
-HTTP 403 (§11.3).
+**Alle drei Optionen sind am Primärdokument geprüft und werden übereinstimmend
+als B11-Stufe *Processing* vorgeschlagen** — D aus der Cloud-Umgebung heraus
+(§11.1), A und B von Otto an der Primärquelle (§11.2), weil die dafür nötigen
+Hosts hier gesperrt bleiben (§11.3).
 
 ### 11.1 Option D — Copernicus DEM GLO-30 Public — **geprüft ✓**
 
@@ -577,28 +582,62 @@ trotzdem der dritte Datensatz (§6): die Lizenz ändert daran nichts.
 > die hier zitierte GLO-30-F-Lizenz schließt entsprechend nur **WorldDEM-10**
 > aus, nicht GLO-30 selbst.
 
-### 11.2 Optionen A und B — **nicht geprüft, blockiert**
+### 11.2 Optionen A und B — **geprüft ✓ (von Otto an der Primärquelle)**
 
 Beide hängen am selben Dokument: Das STAC-Feld `license` ist bei
 `sentinel-2-c1-l2a` (B) und bei den EOPF-Sentinel-Collections (A) `proprietary`
-mit `rel: license` auf das **Sentinel Data Legal Notice** (§10.2). Dieses
-Dokument ist in dieser Sitzung nicht erreichbar.
+mit `rel: license` auf das **Sentinel Data Legal Notice** (§10.2). Dieselbe
+Lizenz gilt damit für beide Optionen.
 
-| Punkt | A (EOPF) | B (Earth Search) |
+> **Beleg-Art:** Dieser Abschnitt ist **von Otto an der Primärquelle geprüft**
+> und in die Sitzung übernommen, nicht aus der Cloud-Umgebung abgerufen — die
+> Hosts sind hier weiterhin gesperrt (§11.3). Er trägt deshalb `✓` als Beleg;
+> die Zitate stammen aus dem Legal Notice.
+
+Quellen: [Sentinel Data Legal Notice, offizielle Fassung](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice) ·
+[ECMWF-Spiegel](https://ecds.ecmwf.int/licences/ec-sentinel) ·
+[CDSE-Nutzungsbedingungen, verweisen auf die Legal Notice](https://dataspace.copernicus.eu/terms-and-conditions)
+
+| Punkt | Ergebnis (A **und** B) | Zitat |
 |---|---|---|
-| Bearbeitung | **unbelegt** | **unbelegt** |
-| Weitergabe | **unbelegt** | **unbelegt** |
-| Kommerzielle Nutzung | **unbelegt** | **unbelegt** |
-| Attribution | **unbelegt** | **unbelegt** |
+| Bearbeitung | **erlaubt** | „(d) adaptation, modification and combination with other data and information" |
+| Weitergabe | **erlaubt** | „b. distribution; c. communication to the public" |
+| Kommerzielle Nutzung | **nicht eingeschränkt** — der Text kennt keinen Zweckvorbehalt | Ausnahmen nur Sicherheit, Rechte Dritter, Dienststörung |
+| Attribution | **Pflicht** | „Contains modified Copernicus Sentinel data [Year]" (bei veränderten Daten) |
 
-**Vorschlag B11 für A und B: bedingt Processing — und zwar ausdrücklich
-ungeprüft.** Die Suchtreffer aus §3 deuten auf Rechte, die dem Wortlaut der
-DEM-Lizenz ähneln (Reproduktion, Verbreitung, Bearbeitung; Attribution
-„Copernicus Sentinel data [Jahr]"). Belegt ist davon **nichts**. Die Einstufung
-gilt deshalb erst, wenn das Legal Notice gelesen ist; bis dahin ist sie keine
-Entscheidungsgrundlage, sondern eine Erwartung.
+**Zwei weitere Punkte aus dem Dokument:**
 
-### 11.3 Was dafür fehlt — genau benannt
+1. **Haftungsverzicht** gegenüber der EU und den Datenanbietern — wie bei D
+   (§11.1) ein Satz, der bei Weitergabe mitzuliefern ist.
+2. **Fallstrick CDSE, bestätigt:** Die Portalinhalte von
+   `dataspace.copernicus.eu` sind nur nichtkommerziell nutzbar — die
+   **Sentinel-Daten selbst nicht**. Die in §10.2 festgehaltene Warnung gilt
+   also unverändert: Diese Klausel darf für die B11-Einstufung der Daten nicht
+   herangezogen werden.
+
+**Vorschlag B11 für A und B: Processing.** Bearbeitung und Weitergabe sind
+ausdrücklich erlaubt, `commercial_use` bleibt `true`. Damit stehen alle drei
+geprüften Optionen auf derselben Stufe wie D.
+
+**Pflichtenkette wie bei D:** Der Quellenhinweis „Contains modified Copernicus
+Sentinel data [Jahr]" gehört an den **Datei-Download des AOI-Zuschnitts**, nicht
+nur in eine Fußzeile der Oberfläche — sobald die Plattform bearbeitete Daten
+herausgibt, ist sie selbst weitergebende Stelle. Für unveränderte Daten lautet
+der Hinweis „Copernicus Sentinel data [Jahr]".
+
+**Damit ist die Bedingung aus §6 erfüllt:** Die Lizenzprüfung, an der die
+Reihenfolge hing, liegt für A und B vor, und sie ergibt für beide dieselbe
+Einstufung. Die Reihenfolge ist deshalb **nicht neu aufzurufen** — sie stand nur
+unter dem Vorbehalt, dass die Einstufung auseinanderfällt. Die Entscheidung
+selbst bleibt bei Otto.
+
+### 11.3 Was aus der Cloud-Umgebung heraus nicht ging
+
+Der Vollständigkeit halber, und weil es für spätere Aufgaben zählt: Die
+Lizenzprüfung für A und B war **aus dieser Sitzung heraus** nicht möglich.
+Erledigt ist sie trotzdem — Otto hat sie an der Primärquelle vorgenommen
+(§11.2). Offen bleibt nur, diese Hosts künftig auch der Automatik zugänglich zu
+machen.
 
 In dieser Sitzung geprüft, jeweils mit HTTP-Antwort:
 
@@ -627,17 +666,25 @@ nur weiter (§10.2) und hat kein eigenes Lizenz-PDF für Sentinel-Daten.
 Notice. Ein einziger der oben genannten Hosts genügt; `sentinels.copernicus.eu`
 ist der wahrscheinlichste, weil die CDSE-Seite selbst dorthin verweist.
 
-**Warum die Freigabe nicht griff:** unklar. Die Vermutung aus §10.2 — die
-Allowlist wirke erst in einer neu gestarteten Sitzung — hat sich **nicht**
-bestätigt: Diese Sitzung ist neu, und die drei Hosts antworten weiterhin mit
-403. Die Ursache liegt damit nicht an der Sitzung, sondern an der Policy selbst.
-Das ist ein Befund, keine Diagnose.
+**Warum die Freigabe nicht griff — geklärt.** Die Vermutung aus §10.2 gilt:
+**Allowlist-Änderungen wirken erst für neu gestartete Sitzungen.** Otto hat die
+drei Hosts erst *nach* dem Start dieser Sitzung eingetragen; die hier gemessenen
+403 sagen deshalb nichts über die Freigabe aus. Eine frühere Fassung dieses
+Abschnitts schloss daraus auf eine Policy-Ursache — das war falsch und ist
+hiermit berichtigt.
+
+**Für die Zukunft:** Eine Egress-Freigabe braucht eine neue Sitzung. Wird
+mitten in einer Sitzung freigegeben, ist die Prüfung dort nicht nachholbar.
 
 ### 11.4 Folgen für §6
 
-Die Reihenfolge **bleibt vorläufig**. §6 knüpft sie an die Lizenzprüfung, und
-die ist für die beiden ersten Datensätze weiterhin offen. Geändert hat sich nur:
-Für **D** ist die Prüfung erledigt, und sie stützt die Einstufung *Processing* —
-D war aber ohnehin nie als erster Datensatz vorgeschlagen.
+§6 stellte die Reihenfolge unter einen Vorbehalt: „Ergibt diese Prüfung eine
+andere Lizenzeinstufung nach B11, ist die Reihenfolge neu aufzurufen." Die
+Prüfung liegt jetzt vor, und sie ergibt für **A und B dieselbe Einstufung**
+(*Processing*). Der Vorbehalt ist damit **eingelöst, ohne die Empfehlung zu
+verändern**: Sentinel-2 L2A COG zuerst, EOPF Zarr als zweiter — jetzt nicht mehr
+vorläufig wegen der Lizenz, sondern getragen von den Argumenten aus §5, §6 und
+§10.3.
 
-Der Status dieses ADR bleibt **Vorschlag**.
+Der Status dieses ADR bleibt **Vorschlag**: Die Entscheidung über Reihenfolge
+und Lizenz-Einstufung liegt bei Otto (`CLAUDE.md`), nicht bei diesem Dokument.
