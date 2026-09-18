@@ -8,7 +8,7 @@ import Toolbar from './Toolbar';
 function AoiExtras() {
   const setAoi = useAppStore((s) => s.setAoi);
   const flyTo = useAppStore((s) => s.flyTo);
-  const useLastAoi = useAppStore((s) => s.useLastAoi);
+  const applyLastAoi = useAppStore((s) => s.useLastAoi);
   const lastAoi = useAppStore((s) => s.lastAoi);
   const config = useAppStore((s) => s.config);
   const setError = useAppStore((s) => s.setError);
@@ -51,7 +51,7 @@ function AoiExtras() {
         className="tool-btn ghost"
         disabled={!lastAoi}
         title="Reuse the previous area of interest"
-        onClick={() => useLastAoi()}
+        onClick={() => applyLastAoi()}
       >
         <span>↺ Last AOI</span>
       </button>
