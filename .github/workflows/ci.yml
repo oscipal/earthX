@@ -1,0 +1,87 @@
+# EarthX CI skeleton (M0 step 2, ENTSCHEIDUNGEN_2026-09-18.md §6).
+# What runs where is decided in docs/adr/0002-testaufteilung.md.
+# No job reaches an external data source; no job needs a token.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+
+jobs:
+  backend:
+    name: Backend — lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check backend
+
+      - name: Tests (pytest)
+        run: pytest
+
+  frontend:
+    name: Frontend — lint and types
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Type check (tsc)
+        run: npx tsc -b --pretty false
+
+  import-boundaries:
+    name: Module boundaries (prepared, manual only)
+    # Not a gate yet: the target modules from architekturplan.md 3.1 do not
+    # exist. `.importlinter` already holds the contracts, and
+    # backend/tests/test_module_boundaries.py checks them against the plan on
+    # every pull request. Remove the `if` once the first modules exist (M1).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install -r backend/requirements-dev.txt
+      - name: Check import contracts (lint-imports)
+        run: lint-imports --config .importlinter
