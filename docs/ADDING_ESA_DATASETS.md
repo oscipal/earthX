@@ -1,11 +1,25 @@
-# ADDING_ESA_DATASETS — Hard Constraints und Anleitung für neue Datensätze
+# ADDING_ESA_DATASETS — historische Anleitung, Stand 13.08.2026
+
+> ## ⚠️ Status: nicht mehr verbindlich
+>
+> Die **sieben Hard Constraints in Abschnitt 0 sind am 18.09.2026 als verbindliche Regeln aufgehoben**
+> (`ENTSCHEIDUNGEN_2026-09-18.md` §1). Bestehender Code darf umgebaut, verschoben und umbenannt werden.
+> Auch die Anleitungen in den Abschnitten 2 bis 4 gelten nicht mehr: Sie beschreiben, wie ein Datensatz
+> *neben BIOMASS* eingehängt wird, und BIOMASS ist nicht Teil der Zielplattform.
+>
+> Diese Datei bleibt nur als **Beschreibung des Code-Stands vom 13.08.2026** (Abschnitt 1) nützlich.
+> Maßgeblich sind stattdessen: die Onboarding-Checkliste in `projektuebersicht.md` §5 und
+> die Auflösungen in `KLAERUNGEN.md`.
+>
+> Einzige Regel, die inhaltlich weitergilt (jetzt aus `ENTSCHEIDUNGEN_2026-09-18.md` §3):
+> `decomp.py` wird nie generalisiert, sondern als Operator mit Quad-Pol-Capability geführt.
 
 > **Herkunft:** Diese Datei entstand am 13.08.2026 in einem Planungs-Chat, nachdem das Repo `oscipal/biomass-viewer` geklont und inspiziert wurde. Sie wurde damals nur als Download geliefert und nie ins Repo gelegt. Diese Fassung ist am 18.09.2026 aus dem Chatverlauf rekonstruiert.
 >
 > **Wortgetreu übernommen:** Regeln 1 bis 6, Abschnitt 1, Abschnitt 2 (Grundfassung), Backend-Schritte 1 bis 6 und 8 bis 10, Frontend-Schritte, Definition of Done.
 > **Sinngemäß rekonstruiert** (spätere Überarbeitungsrunden, Wortlaut nicht vollständig verfügbar): Regel 7, das Feld `format` und der Abschnitt zu Zarr.
 >
-> **Überholt durch die neueren Pläne:** Der damalige Geltungsbereich "nur ESA-Datensätze" ist eine offene Entscheidung (Projektplan Abschnitt 10). Regel 5 erlaubte token-pflichtigen Pixelzugriff nach BIOMASS-Muster; nach aktuellem Prinzip werden vorerst **nur token-freie Quellen** angebunden. Die sieben Hard Constraints selbst gelten unverändert.
+> **Überholt durch die neueren Pläne:** Der damalige Geltungsbereich "nur ESA-Datensätze" ist eine offene Entscheidung (Projektplan Abschnitt 10). Regel 5 erlaubte token-pflichtigen Pixelzugriff nach BIOMASS-Muster; nach aktuellem Prinzip werden **nur token-freie Quellen** angebunden.
 >
 > **Abschnitt 1 beschreibt den Code-Stand vom 13.08.2026.** Vor der Arbeit am Repo gegen den aktuellen Stand prüfen.
 

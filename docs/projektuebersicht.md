@@ -1,5 +1,7 @@
 # EarthX — Projektübersicht (überarbeitet)
 
+> **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Angepasst am 18.09.2026.
+
 2026-09-18 · Überarbeitung der unbewerteten Gedankensammlung
 
 Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversion angepasst. Alles ohne Markierung ist inhaltlich unverändert übernommen. Der bisherige Sechs-Phasen-Plan ist bewusst nicht enthalten; an seiner Stelle steht eine phasenunabhängige Priorisierung (Abschnitt 15).
@@ -22,7 +24,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 ## 2. Produktprinzipien
 
 1. **Keine dauerhafte Rohdatenhaltung.** Metadaten-Katalog + Live-Zugriff auf Originalquellen. Abgeleitete Produkte (Quicklooks, Tile-Caches, Processing-Ergebnisse, Datacubes) werden nur flüchtig mit Ablaufdatum gespeichert. Auch durchgeleitete Tiles und Ableitungen gelten lizenzrechtlich als Weitergabe bzw. Bearbeitung. *(geändert)*
-2. **Nur token-freie Datenquellen (vorerst).** Datenquellen, die selbst einen externen Token/Account voraussetzen, werden vorerst nicht angebunden. Betrifft die Datenquelle, nicht den Login auf der eigenen Plattform. BIOMASS bleibt Einzel-/Lokal-Setup.
+2. **Nur token-freie Datenquellen.** Datenquellen, die selbst einen externen Token/Account voraussetzen, werden nicht angebunden. Betrifft die Datenquelle, nicht den Login auf der eigenen Plattform. Die fertige Plattform enthält nichts, was einen Token braucht; BIOMASS kommt darin nicht vor (ENTSCHEIDUNGEN §1).
 3. **Breite vor Tiefe bei den Quellen.** Mehrere unterschiedlich strukturierte Quellen anbinden, bevor generalisiert wird. Es gibt zwei Variationsachsen: Katalogprotokoll (STAC vs. Nicht-STAC) und Datenformat (COG vs. Zarr). Beide müssen gestresst werden. *(geändert)*
 4. **Das `DataSourceAdapter`-Interface entsteht organisch** aus dem Stresstest realer Quellen und wird nicht vorab designt. Voraussetzung: mindestens eine Nicht-STAC-Quelle ist angebunden, bevor vereinheitlicht wird. *(geändert)*
 5. **Standards rein.** Standard-Adapter statt Einzellösungen, wo möglich (STAC, CKAN, DCAT-AP, OAI-PMH).
@@ -82,7 +84,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 
 **Lizenz** *(geändert)*
 - Lizenz ist ein maschinenlesbares Pflichtfeld (SPDX-Kennung, sonst Freitext + manuelle Einstufung).
-- Aufnahmekriterium: Weitergabe und Bearbeitung müssen erlaubt sein. NC (nicht-kommerziell) ist in Ordnung, ND (keine Bearbeitung) ist ein Ausschlusskriterium für Processing.
+- Aufnahmekriterium gestuft nach KLAERUNGEN B11: Katalogeintrag immer, Anzeige nur bei erlaubter Weitergabe und Bearbeitung, Processing zusätzlich mit Tier-Regel. NC ist in Ordnung, ND-Datensätze bleiben Katalogeintrag mit Link.
 - Lizenz-Flags steuern das Verhalten der Plattform: `commercial_use`, `derivatives`, `share_alike`, `attribution_required`.
 - NC-Datensätze bleiben bis zur rechtlichen Klärung vollständig im Gratis-Tier.
 - Bei Kombination mehrerer Datensätze (Datacube) gilt die restriktivste Lizenz aller Bestandteile; inkompatible Kombinationen (z. B. ShareAlike-Konflikte) werden blockiert oder mit Warnung versehen.
@@ -98,6 +100,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 7. Datentyp-Klasse und Capability-Flags gesetzt.
 8. Standard-Visualisierung definiert (Bänder, Stretch, Colormap).
 9. Mindestens ein Processing-Schritt End-to-End getestet (Suche → Verarbeitung → Download).
+10. "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar (KLAERUNGEN B12).
 
 ---
 
@@ -106,7 +109,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 Zwei Themen, die getrennt behandelt werden:
 
 - **Plattform-Login:** nötig, sobald Compute Geld kostet (Jobs, Quotas, API-Keys, Pro-Funktionen). Kommt deshalb früher als die Token-Verwaltung.
-- **Token-Verwaltung pro Connector:** Nutzer hinterlegen optional eigene Keys für token-pflichtige Quellen. Bleibt ein spätes Thema; erst dann wird BIOMASS ggf. multi-user-fähig.
+- **Token-Verwaltung pro Connector:** Nutzer hinterlegen optional eigene Keys für token-pflichtige Quellen. Bleibt ein fernes Zukunftsthema; die bestehende MAAP-Token-Logik wird dafür nicht als Vorlage übernommen.
 
 Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): anonymes Suchen und Ansehen, Login erst für Jobs, größere Downloads, API-Keys und Chatbot. Senkt die Einstiegshürde und reduziert die Menge personenbezogener Daten.
 
@@ -226,15 +229,15 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 
 - Bestehender Prototyp `biomass-viewer` (github.com/oscipal/biomass-viewer): FastAPI-Backend + React/Vite/TypeScript-Frontend.
 - Prototyp integriert den ESA-MAAP-STAC-Katalog, nutzt Bearer-Token-Auth via `.env`, liefert COG-Tiles über rio-tiler, rendert eine MapLibre-Karte.
-- Prototyp bleibt Lokal-/Einzelnutzer-Setup, bis die Token-Verwaltung pro Connector steht. *(geändert: ohne Phasenbezug)*
+- Der Prototyp bleibt als lokale Referenz erhalten. Behalten werden seine **Funktionen und Designentscheidungen**, nicht der Datensatz; sie werden auf token-freie Datensätze übertragen (ENTSCHEIDUNGEN §2). Entfernt wird er, sobald das gelungen ist (Entscheidung Otto, Stufe B).
 - Format-Präferenz-Hierarchie: Zarr > COG > Legacy-Formate.
 - Zarr-Quellen brauchen ein neues `zarr_reader.py`-Modul, getrennt von `cog.py`.
 - `DatasetConfig`-Dataclass-Registry in neuem `datasets.py` mit `format`-Feld für das Reader-Dispatching. Kandidaten für weitere Felder: Datentyp-Klasse, Capability-Flags, Lizenz-Flags, Zitierangabe. *(geändert)*
-- Backend-Routen sowie `stac.py`, `store.py`, `auth.py` werden mit einem `dataset`-Argument parametrisiert, Default `"biomass"`.
+- Backend-Routen sowie `stac.py` und `store.py` werden mit einem `dataset`-Argument parametrisiert. `auth.py` wird nicht übernommen.
 - Frontend `ControlPanel.tsx` und `store.ts` werden von hardcodierten BIOMASS-Labels generalisiert.
-- Coverage Map ist Pflicht für jeden neuen Datensatz; existiert für BIOMASS via `/api/coverage`.
-- Bestehendes BIOMASS-Verhalten ist durch sieben Hard Constraints geschützt (`ADDING_ESA_DATASETS.md`).
-- `decomp.py` (BIOMASS-SCS-spezifische polarimetrische Dekomposition) darf nie generalisiert werden.
+- Coverage Map ist Pflicht für jeden neuen Datensatz (Punkt 2 der Onboarding-Checkliste, §5); Vorlage ist `/api/coverage` im Prototyp.
+- Die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben; bestehender Code darf umgebaut, verschoben und umbenannt werden.
+- `decomp.py` (polarimetrische Dekomposition für komplexe Quad-Pol-Daten) wird Operator mit Quad-Pol-Capability und nie generalisiert.
 
 **Skalierbarkeit & Cloud-Portabilität** *(neu, konkretisiert Prinzip 2.16)*
 - Zustandsloses Backend: kein Nutzer- oder Sitzungszustand im Prozessspeicher oder auf der lokalen Platte. Jede Anfrage kann von jeder Instanz beantwortet werden, damit horizontal skaliert werden kann.
@@ -247,7 +250,7 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 - Rücksicht auf die Quellen: gleichzeitige Zugriffe auf externe Datenquellen bündeln und begrenzen (Connection-Pooling, Backoff), damit viele Nutzer nicht zu einer Sperre durch die Quelle führen.
 - Async-I/O im Backend für alle Zugriffe auf externe Quellen; CPU-lastiges (rasterio/GDAL) gehört in Worker, nicht in den Event-Loop.
 - Beobachtbarkeit von Anfang an: strukturierte Logs, Metriken (Latenz, Queue-Länge, Fehlerquote pro Quelle), damit Engpässe sichtbar werden, bevor skaliert wird.
-- Im bestehenden Prototyp zu prüfen: wo liegt Zustand im Speicher oder Dateisystem (`store.py`, Token aus `.env`, lokale Caches)? Das sind die Stellen, die eine Mehrnutzer-Skalierung zuerst blockieren.
+- Im bestehenden Prototyp zu prüfen: wo liegt Zustand im Speicher oder Dateisystem (`store.py`, lokale Caches)? Das sind die Stellen, die eine Mehrnutzer-Skalierung zuerst blockieren.
 
 ---
 
@@ -258,7 +261,7 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 - Datenzugriff: ESA-MAAP-STAC-Katalog, EOPF Sentinel Zarr Samples Service (Kandidat), Copernicus Data Space Ecosystem.
 - Formate: COG (aktuell), Zarr (Priorität für neue Quellen).
 - Zu evaluieren: titiler / titiler-xarray, openEO. *(neu)*
-- Repo: github.com/oscipal/biomass-viewer.
+- Repo: github.com/oscipal/earthX (aus `biomass-viewer` umbenannt).
 
 ---
 
@@ -293,7 +296,7 @@ Maßstab für "Jetzt": Was beweist den Kern Suche → Verarbeitung → Download 
 - Zeitliche Interpolation.
 - Externe Processing-Engines (GAMMA), openEO-Anbindung.
 - Discovery-Agent für Quellen ohne Standard-API.
-- Token-Verwaltung pro Connector, BIOMASS multi-user.
+- Token-Verwaltung pro Connector.
 - QGIS-Plugin (falls Standards nicht reichen), Client-Side Computing.
 - Bezahl-Tiers, Benachrichtigungen, Reselling, weitere Domänen/Datentypen.
 
