@@ -406,6 +406,38 @@ B11 werden deshalb zusätzlich gebraucht:
 Hosts 1 und 3 sind zwingend; 2 ist nur ein Ausweichpfad für 1; 4 wird nur
 gebraucht, wenn C überhaupt weiterverfolgt werden soll (§6 rät davon ab).
 
+#### Zweiter Versuch am 18.09.2026 — Hosts freigegeben, Sitzung sperrt weiter
+
+Otto hat `sentinel.esa.int`, `sentinels.copernicus.eu` und
+`spacedata.copernicus.eu` freigegeben. **In dieser Sitzung greift die Freigabe
+nicht:** alle drei antworten weiterhin mit `CONNECT` → HTTP 403, laut
+Proxy-Status `connect_rejected (policy denial)`. Nicht weiter wiederholt.
+
+Naheliegende Ursache: Die Egress-Policy wird beim Start der Sitzungsumgebung
+festgelegt, nicht zur Laufzeit nachgeladen. Die erste Freigabe (Earth Search,
+EOPF, AWS) wirkte, weil sie **vor** dem Start dieser Sitzung eingetragen war.
+Die Prüfung sollte deshalb in einer **neu gestarteten Sitzung** gelingen,
+ohne dass an der Allowlist noch etwas zu ändern wäre. Bestätigt ist das nicht.
+
+Geprüft wurde zusätzlich, ob das Legal Notice an einem **offiziellen,
+erreichbaren** Ort vorliegt — als Primärquelle, nicht als Ersatz:
+
+- `dataspace.copernicus.eu/terms-and-conditions` (CDSE, erreichbar) nennt den
+  Zugang „free, full and open", verweist für die Bedingungen aber ausdrücklich
+  weiter: die Nutzung „shall be governed by the Legal Notice … published here"
+  → `sentinels.copernicus.eu`. Die operativen Klauseln zu Bearbeitung,
+  Weitergabe und Attribution stehen dort **nicht**. ✓
+- **Fallstrick, ausdrücklich festgehalten:** Dieselbe CDSE-Seite verbietet
+  Weiterverkauf, Weitergabe und abgeleitete Werke — aber erklärtermaßen nur für
+  „any **other** contents of the … portal", also die Portalinhalte, **nicht**
+  für die Sentinel-Daten. Diese Sätze dürfen für die B11-Einstufung der
+  Satellitendaten nicht herangezogen werden. ✓
+- Der AWS-Registry-Eintrag zum Copernicus DEM (Option D, erreichbar) verweist
+  ebenso nur weiter auf `spacedata.copernicus.eu`. ✓
+
+Damit ist belegt, dass es keinen erreichbaren Ersatzpfad gibt: Die Prüfung
+hängt an den drei genannten Hosts und an sonst nichts.
+
 **Warum das Feld `license` die Prüfung nicht ersetzt:** `proprietary` heißt im
 STAC-Sinn lediglich „keine SPDX-Kennung". Es sagt nichts darüber, ob
 Bearbeitung und Weitergabe erlaubt sind — und genau diese beiden Punkte
