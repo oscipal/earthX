@@ -1,6 +1,7 @@
 # ADR 0003 — Erster token-freier Datensatz
 
-- **Status:** Vorschlag. Entscheidung liegt bei Otto.
+- **Status:** **Angenommen** von Otto am 2026-09-18. Die B11-Einstufung *Processing*
+  für A, B und D und die Reihenfolge B vor A sind damit entschieden.
 - **Datum:** 2026-09-18
 - **Aufgabe:** M0 Schritt 6 laut `ENTSCHEIDUNGEN_2026-09-18.md` §6.
 - **Autonomiestufe:** C — nur recherchiert und berichtet. Kein Produktivcode
@@ -201,7 +202,7 @@ gesamte Lesepfad wechselt.
 
 ## 6. Empfehlung
 
-> **Stand 18.09.2026: von Otto bestätigt, Vorbehalt eingelöst.** COG zuerst,
+> **Angenommen von Otto am 18.09.2026.** COG zuerst,
 > Zarr als zweiter. Der Vorbehalt lautete: „Ergibt die Lizenzprüfung eine andere
 > Lizenzeinstufung nach B11, ist die Reihenfolge neu aufzurufen." Die Prüfung
 > liegt vor (§11) und ergibt für **A und B dieselbe** Einstufung — die
@@ -322,8 +323,7 @@ Solange das aussteht, bleibt der Abschnitt „Methode und Grenzen" gültig: **ke
 
 **Antwort: Option B zuerst, Option A als zweiter.** Der Vorbehalt aus Frage 1
 ist mit §11 eingelöst; die Lizenz trennt die beiden nicht. Der Status dieses ADR
-bleibt „Vorschlag", weil die Entscheidung bei Otto liegt — nicht mehr, weil ein
-Beleg fehlt.
+ist seit dem 2026-09-18 **angenommen**.
 
 ---
 
@@ -463,7 +463,7 @@ sind ausdrücklich erlaubt.
 
 Die Lizenz-Einstufung eines Datensatzes liegt ohnehin bei Otto (`CLAUDE.md`).
 Dieser Nachtrag trifft sie nicht und verschiebt die Empfehlung in §6 nicht:
-Der Status des ADR bleibt **Vorschlag**; die Reihenfolge ist seit §11.4 nicht
+Der Status des ADR ist seit §11 **angenommen**; die Reihenfolge steht nicht
 mehr unter Lizenzvorbehalt.
 
 ### 10.3 Aufgelöste Beleg-Markierungen (Schritt 3)
@@ -523,8 +523,8 @@ von ihr ab.
 
 Geprüft werden **A, B und D** nach je vier Punkten: Bearbeitung, Weitergabe,
 kommerzielle Nutzung, Attributionspflicht. Die Einstufung nach `KLAERUNGEN.md`
-B11 ist ein **Vorschlag**; die Lizenz-Einstufung eines Datensatzes entscheidet
-Otto (`CLAUDE.md`).
+B11 war ein Vorschlag; Otto hat sie am 2026-09-18 **angenommen**. Die Lizenz-Einstufung
+eines Datensatzes entscheidet er (`CLAUDE.md`) — hier ist das geschehen.
 
 ### 11.0 Ergebnis in einem Satz
 
@@ -571,7 +571,7 @@ mit dem Zusatz „produced using Copernicus WorldDEM-30"):
    this licence". Ob eine sichtbare Lizenzangabe dafür genügt, steht nicht in
    `docs/` und ist hier nicht entschieden.
 
-**Vorschlag B11 für D: Processing.** Bearbeitung und Weitergabe sind
+**B11 für D: Processing — angenommen (2026-09-18).** Bearbeitung und Weitergabe sind
 ausdrücklich erlaubt, `commercial_use` bleibt `true`. Praktisch bleibt D
 trotzdem der dritte Datensatz (§6): die Lizenz ändert daran nichts.
 
@@ -615,8 +615,8 @@ Quellen: [Sentinel Data Legal Notice, offizielle Fassung](https://sentinels.cope
    also unverändert: Diese Klausel darf für die B11-Einstufung der Daten nicht
    herangezogen werden.
 
-**Vorschlag B11 für A und B: Processing.** Bearbeitung und Weitergabe sind
-ausdrücklich erlaubt, `commercial_use` bleibt `true`. Damit stehen alle drei
+**B11 für A und B: Processing — angenommen (2026-09-18).** Bearbeitung und Weitergabe
+sind ausdrücklich erlaubt, `commercial_use` bleibt `true`. Damit stehen alle drei
 geprüften Optionen auf derselben Stufe wie D.
 
 **Pflichtenkette wie bei D:** Der Quellenhinweis „Contains modified Copernicus
@@ -628,8 +628,7 @@ der Hinweis „Copernicus Sentinel data [Jahr]".
 **Damit ist die Bedingung aus §6 erfüllt:** Die Lizenzprüfung, an der die
 Reihenfolge hing, liegt für A und B vor, und sie ergibt für beide dieselbe
 Einstufung. Die Reihenfolge ist deshalb **nicht neu aufzurufen** — sie stand nur
-unter dem Vorbehalt, dass die Einstufung auseinanderfällt. Die Entscheidung
-selbst bleibt bei Otto.
+unter dem Vorbehalt, dass die Einstufung auseinanderfällt.
 
 ### 11.3 Was aus der Cloud-Umgebung heraus nicht ging
 
@@ -683,8 +682,8 @@ andere Lizenzeinstufung nach B11, ist die Reihenfolge neu aufzurufen." Die
 Prüfung liegt jetzt vor, und sie ergibt für **A und B dieselbe Einstufung**
 (*Processing*). Der Vorbehalt ist damit **eingelöst, ohne die Empfehlung zu
 verändern**: Sentinel-2 L2A COG zuerst, EOPF Zarr als zweiter — jetzt nicht mehr
-vorläufig wegen der Lizenz, sondern getragen von den Argumenten aus §5, §6 und
-§10.3.
+unter Lizenzvorbehalt, sondern getragen von den Argumenten aus §5, §6 und §10.3.
 
-Der Status dieses ADR bleibt **Vorschlag**: Die Entscheidung über Reihenfolge
-und Lizenz-Einstufung liegt bei Otto (`CLAUDE.md`), nicht bei diesem Dokument.
+**Angenommen am 2026-09-18.** Otto hat die B11-Einstufung *Processing* für A, B und D
+und die Reihenfolge B vor A bestätigt. Damit ist dieses ADR entschieden; die
+offenen Punkte aus §10.4 laufen davon unberührt weiter.
