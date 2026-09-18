@@ -1,0 +1,27 @@
+# Tooling configuration for the EarthX backend.
+# Packaging is not set up yet (M0); this file only configures ruff and pytest.
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["backend"]
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# Deliberately narrow for now: real errors, unused names, import order, bugbear.
+# Widening (UP, ANN, D) is a separate step once the prototype code is restructured
+# into the target modules of architekturplan.md 3.1.
+select = ["E4", "E7", "E9", "F", "I", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "local_only: needs resources that exist neither in CI nor in a cloud session",
+]
+filterwarnings = ["error::DeprecationWarning:app.*"]
