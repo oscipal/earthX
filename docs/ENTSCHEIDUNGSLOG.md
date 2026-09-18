@@ -1,0 +1,42 @@
+# EarthX — Entscheidungslog
+
+Chronologisches Verzeichnis aller Entscheidungen. Eine Zeile pro Entscheidung. Architekturentscheidungen verweisen auf ihr ADR unter `docs/adr/`, sobald es eines gibt.
+
+Status:
+- **fest**: von Otto entschieden.
+- **Vorschlag**: gilt, bis Otto widerspricht.
+- **offen**: noch nicht entschieden.
+- **aufgehoben**: gilt nicht mehr; die Zeile bleibt als Historie stehen und nennt, was sie ersetzt.
+
+Bei Widerspruch geht `ENTSCHEIDUNGEN_2026-09-18.md` allen anderen Dokumenten vor.
+
+| Datum | Entscheidung | Status | Betroffene Dokumente |
+|---|---|---|---|
+| 2026-08-13 | Sieben Hard Constraints schützen das BIOMASS-Verhalten; `decomp.py` wird nie generalisiert | aufgehoben am 2026-09-18 | ADDING_ESA_DATASETS |
+| 2026-08-13 | Format-Hierarchie Zarr > COG > Altformate; eigenes `zarr_reader.py`; `DatasetConfig`-Registry mit `format` | fest | ADDING_ESA_DATASETS, architekturplan |
+| 2026-08 | Vorerst nur token-freie Datenquellen; Adapter-Interface entsteht aus realen Quellen | fest | projektuebersicht |
+| 2026-09-18 | Alter Sechs-Phasen-Plan entfällt; es gelten Projektübersicht, Architekturplan, Projektplan | fest | alle |
+| 2026-09-18 | Grundprinzip Skalierbarkeit und Cloud-Portabilität | fest | projektuebersicht 2.16, architekturplan 13 |
+| 2026-09-18 | Nutzer wählt zwischen Cloud- und lokalem Processing; lokaler Runner als Container | fest | architekturplan 7.7 |
+| 2026-09-18 | Umsetzung autonom mit Claude Code in der Cloud; Modellzuordnung nach Aufgabentyp | fest | projektplan 2, 3 |
+| 2026-09-18 | Bug-Report-Pipeline von Anfang an: erst Triage (Bug oder Bedienfehler), Fix nur mit reproduzierendem Test und nur als PR | fest | projektplan 6.1 |
+| 2026-09-18 | DOI wo vorhanden, sonst persistente Zitierangabe; Swipe-Vergleich statt freiem Skalieren; schlanker Export statt Plot-Editor | Vorschlag | projektuebersicht 15 |
+| 2026-09-18 | Auflösungen B1 bis B14 in KLAERUNGEN | teilweise aufgehoben, siehe die folgenden Zeilen | KLAERUNGEN |
+| 2026-09-18 | Die fertige Plattform enthält nichts, was einen Token braucht; BIOMASS kommt dort nicht vor; kein Aufwand, das BIOMASS-Verhalten zu erhalten | fest | ENTSCHEIDUNGEN_2026-09-18 §1; projektuebersicht, architekturplan, projektplan, UEBERGABE anzupassen |
+| 2026-09-18 | Die sieben Hard Constraints sind als verbindliche Regeln aufgehoben; `ADDING_ESA_DATASETS.md` gilt nur noch als Beschreibung des Code-Stands vom 13.08.2026 (Abschnitt 1) | fest | ENTSCHEIDUNGEN §1; ADDING_ESA_DATASETS, KLAERUNGEN (Rangsatz) |
+| 2026-09-18 | Aufgehoben: Hard-Constraint-Tests in M0, Golden-Test mit Token, CODEOWNERS für BIOMASS-Pfade, B2, B6 (nicht verschieben), B7 (BIOMASS in pgstac), A1, A4, KLAERUNGEN Abschnitt C. Bestehender Code darf umgebaut, verschoben und umbenannt werden | fest | ENTSCHEIDUNGEN §1; KLAERUNGEN |
+| 2026-09-18 | Gelten weiter: B1, B3, B4, B5, B8, B9, B11, B12, B13, B14. Die BIOMASS-bezogenen Sätze darin (Token über GDAL-Umgebung in B8, BIOMASS-Eintrag behält seine Werte in B13) entfallen | fest | ENTSCHEIDUNGEN §5; KLAERUNGEN |
+| 2026-09-18 | B10: Capability-Flags werden im Eintrag des jeweiligen Datensatzes gesetzt; jeder Datensatz schaltet jede Fähigkeit ausdrücklich frei. Die Begründung über Hard Constraint 6 und die Sonderregel für das `coverage`-Flag des BIOMASS-Eintrags entfallen | Vorschlag | KLAERUNGEN B10 |
+| 2026-09-18 | Coverage Map bleibt Pflicht für jeden Datensatz, als Punkt der Onboarding-Checkliste statt als Hard Constraint | fest | ENTSCHEIDUNGEN §5; projektuebersicht §5 |
+| 2026-09-18 | Der Prototyp bleibt wegen seiner Funktionen und Designentscheidungen erhalten, nicht wegen des Datensatzes; sie werden auf token-freie Datensätze übertragen | fest | ENTSCHEIDUNGEN §2 |
+| 2026-09-18 | Der BIOMASS-Code bleibt als Referenz im Repo, bis seine Funktionen mit einem token-freien Datensatz laufen; das Entfernen entscheidet Otto (Stufe B). BIOMASS nur lokal bei Otto als Testdaten; nie in CI, Cloud-Sitzungen oder Fixtures | fest | ENTSCHEIDUNGEN §3 |
+| 2026-09-18 | Token-Logik (`auth.py`, MAAP-OIDC, Token in der GDAL-Umgebung) wird nicht in die Zielarchitektur übernommen und nicht generalisiert; Token pro Connector ist fernes Zukunftsthema | fest | ENTSCHEIDUNGEN §3; architekturplan |
+| 2026-09-18 | `decomp.py` wird als Operator mit Quad-Pol-Capability übernommen, nicht als allgemeine Funktion; bis eine token-freie Quelle existiert, ruht er mit synthetischen Tests | fest | ENTSCHEIDUNGEN §3; architekturplan 7.2 |
+| 2026-09-18 | Repo ist öffentlich und bleibt es vorerst (entscheidet A2) | fest | ENTSCHEIDUNGEN §4; KLAERUNGEN A2 |
+| 2026-09-18 | Bestehendes Repo wird in `earthX` umbenannt; kein neues Monorepo (entscheidet A3) | fest | ENTSCHEIDUNGEN §4; KLAERUNGEN A3, projektplan 2.1 |
+| 2026-09-18 | Folgen der Öffentlichkeit: keine Secrets, Tokens, echten `.env`-Werte oder internen URLs in Repo, Issues, PRs und Logs; Git-History vor dem ersten autonomen Lauf auf Secrets prüfen; Fixtures nur synthetisch oder mit eindeutig offener Lizenz; Bug-Report-Issues nur bereinigt, Sicherheitsmeldungen nie öffentlich; Cloud-Sitzungen nur nach Prüfung teilen | fest | ENTSCHEIDUNGEN §4; projektplan 6.1 |
+| 2026-09-18 | M0 neu: (1) Repo-Grundgerüst, CODEOWNERS für `.claude/`, `.github/`, `CLAUDE.md` und Sicherheitsmodule, Secret-Prüfung der History; (2) Cloud-VM klären, Testaufteilung; (3) Funktions- und Design-Inventar des Prototyps; (4) Zustands-Audit als ADR-Entwurf; (5) Bug-Report-Pipeline Stufe 1; (6) Vorschlag für den ersten token-freien Datensatz | fest | ENTSCHEIDUNGEN §6; projektplan M0 |
+| — | Code-Lizenz für das öffentliche Repo | offen (Otto) | ENTSCHEIDUNGEN §4 |
+| — | Erster token-freier Datensatz (Kandidat: EOPF Sentinel Zarr Samples) | offen, Entscheidungsvorlage in M0 | ENTSCHEIDUNGEN §6 |
+| — | Token-freie Quelle für komplexe Quad-Pol-Daten (für den Dekompositions-Operator) | offen | ENTSCHEIDUNGEN §3 |
+| — | ESA-only oder Quellenbreite; Registrierungspflicht; NC hinter Bezahlschranke; Job-Queue; Cloud-Anbieter | offen | projektplan 10 |
