@@ -1,0 +1,79 @@
+name: "Bug melden"
+description: "Ein technisches Problem in EarthX melden."
+title: "[Bug] "
+labels: ["bug-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für die Meldung. Dieses Repo ist **öffentlich** — trage hier nur
+        bereinigte technische Angaben ein.
+
+        **Nicht eintragen:** Name, E-Mail oder andere persönliche Daten,
+        exakte Koordinaten/AOIs, Tokens oder API-Keys, interne URLs, Links zu
+        privaten Inhalten (private Screenshots, interne Dashboards o. Ä.).
+
+        **Sicherheitslücke gefunden?** Bitte **kein öffentliches Issue**.
+        Nutze stattdessen "Report a vulnerability" im Security-Tab dieses
+        Repos (Private Vulnerability Reporting), siehe `SECURITY.md`.
+
+        Eine automatische Triage (Claude) ordnet diese Meldung ein und
+        versucht sie zu reproduzieren. Antworten der Triage sind als
+        KI-generiert gekennzeichnet.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Was wolltest du tun?
+      description: Kurz beschreiben, welchen Schritt du ausführen wolltest.
+    validations:
+      required: true
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: Was ist passiert?
+      description: Beobachtetes Verhalten, Fehlermeldung (Text, kein Screenshot mit persönlichen Daten).
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Was hast du erwartet?
+    validations:
+      required: true
+
+  - type: input
+    id: dataset
+    attributes:
+      label: Betroffener Datensatz/Layer (falls zutreffend)
+      placeholder: "z. B. Sentinel-2 L2A"
+    validations:
+      required: false
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser/Umgebung (falls relevant)
+      placeholder: "z. B. Firefox 130, Desktop"
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Schritte zur Reproduktion
+      description: Nummerierte Schritte, keine exakten AOIs — grobe Region/Zoomstufe reicht.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Bestätigung
+      options:
+        - label: Ich habe geprüft, dass keine persönlichen Daten, Tokens oder internen URLs in dieser Meldung stehen.
+          required: true
+        - label: Diese Meldung betrifft keine Sicherheitslücke (sonst über Private Vulnerability Reporting melden).
+          required: true
