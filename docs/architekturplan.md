@@ -1,5 +1,7 @@
 # EarthX — Architekturplan
 
+> **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Angepasst am 18.09.2026: Die sieben Hard Constraints sind aufgehoben, BIOMASS ist nicht Teil der Zielplattform.
+
 Stand: 2026-09-18 · Version 1.1 (Entwurf zur Iteration; ergänzt um lokale Ausführung, Abschnitt 7.7)
 
 Grundlage: überarbeitete Projektübersicht (Prinzipien 2.1 bis 2.16), bestehender Prototyp `biomass-viewer`, Recherche zum Stand der Technik (Quellen in Abschnitt 17). Der bisherige Phasenplan ist nicht berücksichtigt.
@@ -42,8 +44,9 @@ Die Plattform besteht aus fünf Ebenen mit klaren Nahtstellen: **Discovery** (Qu
 
 - Keine dauerhafte Rohdatenhaltung; abgeleitete Produkte nur mit Ablaufdatum.
 - Vorerst nur token-freie Datenquellen.
-- BIOMASS-Verhalten ist durch sieben Hard Constraints geschützt (`ADDING_ESA_DATASETS.md`); `decomp.py` wird nie generalisiert.
-- Zarr-Quellen bekommen `zarr_reader.py`, getrennt von `cog.py`; `DatasetConfig`-Registry in `datasets.py` mit `format`-Feld; Routen mit `dataset`-Argument, Default `"biomass"`.
+- Die fertige Plattform enthält nichts, was einen Token braucht; BIOMASS kommt darin nicht vor. Token-Logik (`auth.py`, MAAP-OIDC) wird nicht übernommen und nicht generalisiert.
+- `decomp.py` wird als Operator mit Quad-Pol-Capability übernommen, nie als allgemeine Funktion.
+- Zarr-Quellen bekommen `zarr_reader.py`, getrennt von `cog.py`; `DatasetConfig`-Registry in `datasets.py` mit `format`-Feld; Routen mit `dataset`-Argument.
 - Das `DataSourceAdapter`-Interface wird nicht vorab designt. Dieser Plan legt deshalb nur **Nahtstellen und Zuständigkeiten** fest, keine Methodensignaturen.
 - Stack bleibt: FastAPI/Python, React/Vite/TypeScript, MapLibre.
 
@@ -139,7 +142,7 @@ flowchart TB
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
 | `identity` | Konten, API-Keys, Quotas, Audit | — |
 | `api` | HTTP-Routen, setzt alles zusammen | alle |
-| `datasets/biomass` | BIOMASS-Spezifika inkl. `decomp.py` | bleibt isoliert, wird von nichts Generischem importiert |
+| `datasets/<id>` | Datensatzspezifika, die kein generischer Operator abdeckt | bleibt isoliert, wird von nichts Generischem importiert |
 
 Die Importregeln werden automatisch geprüft (z. B. import-linter in der CI). So bleibt der Monolith teilbar: Jedes Modul kann später ein eigener Dienst werden, ohne dass Code entflochten werden muss.
 
@@ -297,7 +300,7 @@ Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt bis zu drei **getre
 | Suche | Welche Szenen gibt es für AOI und Zeitraum? | `catalog` (Föderation) |
 | Zugriffsauflösung | Welche lesbare Adresse und welcher Reader gehören zu diesem Asset? | `access`, `processing` |
 
-Auth ist bewusst eine vierte, spätere Fähigkeit (Token pro Connector) und heute nur für BIOMASS lokal vorhanden. Die konkreten Signaturen entstehen, wie beschlossen, aus den ersten zwei bis drei realen Quellen. Damit das Interface nicht STAC-förmig wird, muss darunter eine Nicht-STAC-Quelle sein.
+Auth ist bewusst eine vierte, spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden. Die konkreten Signaturen entstehen, wie beschlossen, aus den ersten zwei bis drei realen Quellen. Damit das Interface nicht STAC-förmig wird, muss darunter eine Nicht-STAC-Quelle sein.
 
 ### 6.2 Reader und erweiterte Format-Hierarchie
 
@@ -315,7 +318,7 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 ### 6.3 Tiler
 
 - Der `tiler`-Prozess liefert Tiles, Quicklooks, Punktabfragen, Zeitreihen am Punkt und Statistik pro Polygon.
-- Empfehlung: neue Endpunkte auf den **TiTiler-Fabriken** aufbauen (gleiche Basis wie das vorhandene rio-tiler, ebenfalls FastAPI). Das bringt Ausdrücke/Band-Math, Colormaps, Rescaling, Algorithmen und OGC-konforme Tile-Endpunkte mit, statt sie einzeln nachzubauen. Die bestehenden BIOMASS-Routen bleiben unverändert daneben bestehen.
+- Empfehlung: neue Endpunkte auf den **TiTiler-Fabriken** aufbauen (gleiche Basis wie das vorhandene rio-tiler, ebenfalls FastAPI). Das bringt Ausdrücke/Band-Math, Colormaps, Rescaling, Algorithmen und OGC-konforme Tile-Endpunkte mit, statt sie einzeln nachzubauen.
 - Mosaike über mehrere Szenen: eigenes Mosaik-Backend, das eine (föderierte) Item-Suche als Eingabe nimmt; Suchergebnis wird unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind.
 - Tile-URLs enthalten alle Parameter (oder eine Rezept-ID) und sind damit vollständig per HTTP cachebar.
 - GDAL-Konfiguration für Fernzugriff zentral setzen (kein Directory-Listing beim Öffnen, Zusammenfassen benachbarter Ranges, HTTP/2-Multiplexing, Header-Cache).
@@ -391,7 +394,7 @@ Jeder Operator ist eine registrierte Einheit mit:
 - Kostenmodell (Processing Units pro Megapixel o. ä.).
 - Metadaten-Transformation: wie der Operator STAC-Felder des Ergebnisses verändert (CRS, Auflösung, Bänder, `processing:`-Felder). So stimmen die Metadaten nach jedem Schritt automatisch.
 
-Eine neue Methode hinzuzufügen heißt: einen Operator registrieren. Kein Frontend-Code, keine neue Route. Modelle aus der Modell-Registry sind Operatoren der Stufe T3 mit Pflichtfeld Paper-Referenz und deklarierter Trainingsdomäne (Grundlage der Domain-Shift-Warnung). BIOMASS-Dekompositionen bleiben datensatz-spezifische Operatoren im isolierten Modul.
+Eine neue Methode hinzuzufügen heißt: einen Operator registrieren. Kein Frontend-Code, keine neue Route. Modelle aus der Modell-Registry sind Operatoren der Stufe T3 mit Pflichtfeld Paper-Referenz und deklarierter Trainingsdomäne (Grundlage der Domain-Shift-Warnung). Polarimetrische Dekompositionen bleiben Operatoren mit Quad-Pol-Capability im isolierten Datensatz-Modul.
 
 ### 7.3 Ausführungsstufen
 
@@ -580,27 +583,27 @@ OpenTelemetry-Traces über `api → tiler/worker → gateway → Quelle`; Metrik
 
 | Bestehend / entschieden | Rolle in der Zielarchitektur |
 |---|---|
-| `biomass-viewer` gesamt | Datensatz Nr. 1 und lokales Einzelnutzer-Setup; bleibt funktionsfähig, während drumherum gebaut wird |
+| Prototyp gesamt | Referenz für Funktionen und Designentscheidungen; bleibt im Repo, bis seine Funktionen mit einem token-freien Datensatz laufen (Entscheidung Otto, Stufe B) |
 | `cog.py` | erster Reader in `readers` |
 | `zarr_reader.py` (neu) | zweiter Reader; später auch für virtuelle Stores |
 | `datasets.py` / `DatasetConfig` mit `format` | Keim des Katalogs: wird zu kuratierten YAML-Definitionen, die nach pgstac geladen werden; `format` bleibt der Reader-Dispatch |
-| `stac.py` | erster Adapter (Fähigkeiten Suche + Zugriffsauflösung für MAAP-STAC) |
-| `auth.py` (Bearer aus `.env`) | Sonderfall "Auth-Fähigkeit" nur für BIOMASS lokal; nicht Teil des Plattform-Logins |
+| `stac.py` | Vorlage für den ersten Adapter (Fähigkeiten Suche + Zugriffsauflösung), neu gegen eine token-freie STAC-Quelle |
+| `auth.py` (Bearer aus `.env`) | wird **nicht** übernommen: kein Token in der Zielarchitektur, nicht generalisieren |
 | `store.py` | auf Zustand im Prozessspeicher prüfen; Kandidat für Ersatz durch Cache/DB |
 | `/api/coverage` | Vorlage für die Pflicht-Footprints aller Datensätze |
-| `decomp.py` | datensatz-spezifischer Operator im isolierten Modul `datasets/biomass`; nie generalisiert |
+| `decomp.py` | Operator mit Quad-Pol-Capability im isolierten Datensatz-Modul; nie generalisiert. Ruht mit synthetischen Tests, bis eine token-freie Quelle für komplexe Quad-Pol-Daten gefunden ist |
 | `ControlPanel.tsx`, `store.ts` | Generalisierung wie entschieden; Processing-Teil später aus Operator-Schemas generiert |
-| Sieben Hard Constraints | werden als automatisierte Regressionstests formuliert, bevor umgebaut wird |
+| Funktionen und Designentscheidungen des Prototyps | AOI-Auswahl, Quicklook-Overlays mit Zeitleiste, Auswahl-/Bestätigungsablauf, AOI-Zuschnitt über partielle COG-Reads, zweistufige Anzeige, Stitching, Coverage Map, LRU-Disk-Cache, dunkles Kartendesign mit Theme-Umschalter, polarimetrische Auswertung — werden auf token-freie Datensätze übertragen (ENTSCHEIDUNGEN §2) |
 
-Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter denselben Routen-Präfixen; BIOMASS wird erst dann auf generische Pfade umgehängt, wenn diese die Hard Constraints nachweislich erfüllen, und `decomp.py` nie.
+Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter denselben Routen-Präfixen. Bestehender Code darf dabei umgebaut, verschoben und umbenannt werden; der Prototyp bleibt so lange als lokale Referenz lauffähig, bis seine Funktionen mit einem token-freien Datensatz laufen.
 
 ---
 
 ## 14. Vor der Umsetzung am Code zu prüfen
 
 1. Wo hält der Prototyp Zustand im Speicher oder Dateisystem?
-2. Sind die sieben Hard Constraints testbar formuliert?
-3. Wie stark sind die rio-tiler-Aufrufe mit BIOMASS-Logik verwoben; lässt sich TiTiler daneben einhängen, ohne sie anzufassen?
+2. Funktions- und Design-Inventar: Welche Funktionen und Designentscheidungen gibt es, wie sind sie gelöst, was ist BIOMASS-spezifisch, was ist übertragbar? (M0 Schritt 3)
+3. Wie stark sind die rio-tiler-Aufrufe mit datensatzspezifischer Logik verwoben; lässt sich TiTiler daneben einhängen?
 4. Gehen ausgehende Requests heute durch eine gemeinsame Stelle (Ansatzpunkt für das Fetch-Gateway)?
 5. Sendet der EOPF-Zarr-Dienst CORS-Header (Voraussetzung für T0 später)?
 
@@ -612,7 +615,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 
 | # | Inkrement | Beweist |
 |---|---|---|
-| 1 | Gerüst: compose-Topologie, Modulgrenzen mit Importprüfung, Fetch-Gateway, pgstac mit BIOMASS als erstem Datensatz, STAC-API nach außen, Hard Constraints als Tests | Fundament trägt, BIOMASS unverändert |
+| 1 | Gerüst: compose-Topologie, Modulgrenzen mit Importprüfung, Fetch-Gateway, pgstac mit dem ersten token-freien Datensatz, STAC-API nach außen | Fundament trägt |
 | 2 | Zweites Format: Zarr-Reader mit EOPF-Beispieldaten, Tiler-Endpunkte auf TiTiler-Basis | Quelle ≠ Format |
 | 3 | Erste Nicht-STAC-Quelle (statischer Bucket oder Zenodo) mit materialisierten Items | Adapter-Nahtstellen; danach Interface-Reflexion |
 | 4 | Rezept + Operator-Registry + zwei bis drei Operatoren auf T1 und T2, Worker-Kern als reine Funktion, Job-Queue, Cache per Hash, Provenienz, Kostenschätzung; lokaler Runner als Einmalbefehl (fällt fast nebenbei ab) | Processing-Kern; Cloud und lokal liefern dasselbe Ergebnis |
@@ -624,7 +627,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 
 | Spike | Frage |
 |---|---|
-| TiTiler neben BIOMASS | Lässt sich die TiTiler-Basis einhängen, ohne bestehende Routen zu berühren? |
+| TiTiler-Basis | Lässt sich die TiTiler-Basis für die generischen Tile-Endpunkte einhängen? |
 | Föderierte Item-Suche | Latenz und Limits realer Upstream-STAC-APIs; welcher Cache-TTL ist vertretbar? |
 | Job-Queue | Erfüllt eine Postgres-Queue die Anforderungen aus 7.5, inklusive Fairness und Fortschritts-Events? |
 | VirtualiZarr + Icechunk | Funktioniert ein virtueller Store über ein reales NetCDF- oder TIFF-Archiv einer Kandidatenquelle, anonym und performant? |

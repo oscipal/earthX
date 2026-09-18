@@ -1,5 +1,7 @@
 # EarthX — Gesamtprojektplan
 
+> **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
+
 Stand: 2026-09-18 · Version 1.1 (Entwurf zur Iteration; ergänzt um die Bug-Report-Pipeline, Abschnitt 6.1)
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
@@ -32,7 +34,7 @@ Angaben zu Claude Code, Cloud-Sitzungen und Modellen stammen aus der offiziellen
 | Du entscheidest | Claude arbeitet autonom | Nie ohne dich |
 |---|---|---|
 | Prioritäten und Meilenstein-Abnahme | Umsetzung klar beschriebener Issues | Merge in `main` |
-| Architekturentscheidungen (ADRs freigeben) | Tests schreiben und ausführen | Änderungen an BIOMASS-Verhalten und `decomp.py` |
+| Architekturentscheidungen (ADRs freigeben) | Tests schreiben und ausführen | Entfernen des BIOMASS-Prototyp-Codes aus dem Repo |
 | Auswahl der Datenquellen | Recherche zum Stand der Technik mit Quellen | Lizenz-Einstufung eines Datensatzes |
 | Lizenz- und Rechtsfragen | Refactoring innerhalb der Modulgrenzen | Deployment, Secrets, kostenpflichtige Dienste |
 | Geschäftsmodell, Registrierungspflicht | PR-Beschreibungen, Doku, Changelog | Lockerung von Sicherheitsregeln oder Importgrenzen |
@@ -54,7 +56,7 @@ Jedes Issue trägt seine Stufe als Label. Im Zweifel gilt die höhere Stufe.
 flowchart LR
   I[Issue selbsterklaerend mit Stufe und Abnahmekriterien] --> S[Cloud-Sitzung auf eigenem Branch]
   S --> P[Pull Request mit Plan Tests Notizen]
-  P --> CI[CI Unit Contract Integration Importregeln Hard Constraints]
+  P --> CI[CI Unit Contract Integration Importregeln Lint Typen]
   CI -->|rot| AF[Auto-fix durch Claude]
   AF --> CI
   CI -->|gruen| R[Review Subagent Opus]
@@ -73,10 +75,10 @@ Bewährtes Muster aus der Dokumentation: lokal oder in einer Sitzung im Plan-Mod
 
 ### 2.1 Repository
 
-Empfehlung: neues Repo `earthx` als Monorepo; `biomass-viewer` wird als Ausgangsstand übernommen (History behalten), damit der Prototyp lauffähig bleibt, während drumherum gebaut wird (Strangler-Muster aus dem Architekturplan).
+Entschieden (ENTSCHEIDUNGEN §4): Das bestehende Repo wird weitergeführt und in **`earthX`** umbenannt; es gibt kein neues Monorepo. Die History bleibt erhalten, der Prototyp bleibt zunächst lauffähig, während drumherum gebaut wird (Strangler-Muster aus dem Architekturplan).
 
 ```
-earthx/
+earthX/
   CLAUDE.md                     Projektgedächtnis für jede Sitzung
   docs/
     projektuebersicht.md        die überarbeitete Sammlung
@@ -84,7 +86,7 @@ earthx/
     projektplan.md              dieses Dokument
     adr/                        Entscheidungen, eine Datei pro Entscheidung
     plans/                      Umsetzungspläne für Stufe-B-Aufgaben
-    ADDING_ESA_DATASETS.md
+    ADDING_ESA_DATASETS.md    nur noch Beschreibung des Code-Stands vom 13.08.2026
   .claude/
     agents/                     Subagenten mit Modell und Effort (Abschnitt 3.3)
     skills/                     atomic-commits, code-cleanup, readme-updater
@@ -100,8 +102,8 @@ Deine drei bestehenden Skills liegen bisher persönlich vor. Cloud-Sitzungen arb
 
 - Claude GitHub App auf dem Repo installieren (ermöglicht auch Auto-fix für PRs).
 - Branch-Schutz für `main`: PR-Pflicht, CI muss grün sein, kein Force-Push. Claude arbeitet auf `claude/…`-Branches.
-- `CODEOWNERS`: `backend/datasets/biomass/`, `decomp.py`, `.claude/`, `.github/`, `CLAUDE.md` und Sicherheitsmodule verlangen dein Review.
-- Pflicht-Checks in der CI: Unit-Tests, Contract-Tests, Importregeln (Modulgrenzen), Hard-Constraint-Tests für BIOMASS, Lint/Typen, Abhängigkeits-Scan.
+- `CODEOWNERS`: `.claude/`, `.github/`, `CLAUDE.md` und Sicherheitsmodule verlangen dein Review. BIOMASS-Pfade sind nicht mehr geschützt (ENTSCHEIDUNGEN §1).
+- Pflicht-Checks in der CI: Unit-Tests, Contract-Tests, Importregeln (Modulgrenzen), Lint/Typen, Abhängigkeits-Scan, Secret-Scan.
 
 ### 2.3 Cloud-Umgebung
 
@@ -109,7 +111,7 @@ Deine drei bestehenden Skills liegen bisher persönlich vor. Cloud-Sitzungen arb
 |---|---|
 | Netzwerkzugriff | Standardstufe "Trusted" beibehalten. EO-Datenquellen sind darin voraussichtlich nicht freigegeben; genau deshalb arbeiten Tests mit aufgezeichneten Antworten. Nur bei Bedarf einzelne Hosts ergänzen. |
 | Setup-Skript | installiert Python-Umgebung, Node, GDAL-abhängige Pakete; das Ergebnis wird zwischengespeichert |
-| Umgebungsvariablen | **keine Secrets**: Werte sind laut Dokumentation für jeden sichtbar, der die Umgebung nutzt. Für nötige Schlüssel die Funktion für API-Zugangsdaten nutzen (auf Pro/Max bleiben sie außerhalb der Sandbox). Der MAAP-Token für BIOMASS gehört nicht in die Cloud-Umgebung. |
+| Umgebungsvariablen | **keine Secrets**: Werte sind laut Dokumentation für jeden sichtbar, der die Umgebung nutzt. Für nötige Schlüssel die Funktion für API-Zugangsdaten nutzen (auf Pro/Max bleiben sie außerhalb der Sandbox). Der MAAP-Token für BIOMASS gehört nicht in die Cloud-Umgebung; BIOMASS kommt in Cloud-Sitzungen überhaupt nicht vor. |
 | Berechtigungsmodus | pro Sitzung wählbar; für Stufe A großzügig, für B/C Plan-Modus zuerst |
 
 **Vor dem Start zu klären (M0):** ob in der Cloud-VM Docker bzw. ein lokales Postgres verfügbar ist. Die Architektur braucht für Integrationstests Postgres mit pgstac und einen S3-kompatiblen Speicher. Rückfallebene, die in jedem Fall funktioniert: Integrationstests laufen in GitHub Actions mit Service-Containern; die Cloud-Sitzung fährt Unit- und Contract-Tests und reagiert über Auto-fix auf das CI-Ergebnis.
@@ -118,34 +120,11 @@ Deine drei bestehenden Skills liegen bisher persönlich vor. Cloud-Sitzungen arb
 
 Das ohnehin beschlossene Prinzip (Contract-Tests mit aufgezeichneten Antworten plus regelmäßige Live-Smoke-Tests) ist hier doppelt wertvoll: Cloud-Sitzungen brauchen keinen Zugriff auf externe Datenquellen, Tests sind schnell und deterministisch, und es fließen weniger Tokens in Fehlersuche an wackeligen Netzen. Live-Smoke-Tests laufen zeitgesteuert in GitHub Actions, nicht in Claude-Sitzungen. Für Pixelarbeit liegen winzige Beispiel-COGs und ein Mini-Zarr als Fixtures im Repo.
 
-### 2.5 CLAUDE.md (Gerüst)
+### 2.5 CLAUDE.md
 
-```markdown
-# EarthX
-Lies zuerst: docs/architekturplan.md (Abschnitte 0, 3.1, 7.3), docs/projektuebersicht.md (Prinzipien).
+`CLAUDE.md` liegt im Repo-Wurzelverzeichnis und wird in jeder Sitzung geladen. Der Inhalt steht dort und wird nicht hier doppelt gepflegt; er umfasst: Rangfolge der Dokumente, unverrückbare Regeln (Modulgrenzen, Gateway, Worker-Kern, keine Secrets), Arbeitsweise (ein Branch, ein Draft-PR, nie mergen, nie force-pushen), Autonomiestufen, Umgang mit Fragen und offenen Punkten, Sprachregelung und Verweis auf die Subagenten.
 
-## Unverrückbar
-- BIOMASS-Verhalten: sieben Hard Constraints (docs/ADDING_ESA_DATASETS.md). decomp.py nie generalisieren.
-- Modulgrenzen laut Architekturplan 3.1; Importregeln nie lockern.
-- Alle ausgehenden Requests nur über `gateway`.
-- Worker-Kern ist eine reine Funktion: kein DB-, Queue- oder Speicherzugriff.
-- Keine Secrets im Repo oder in Logs. Keine exakten AOIs in Logs.
-
-## Arbeitsweise
-- Ein Issue = ein Branch = ein PR. Stufe A/B/C laut Label beachten.
-- Tests: Fehlerfälle, fehlerhafte Eingaben, zweckfremde Nutzung. Externe Quellen nur über tests/fixtures.
-- Vor Entscheidungen mit Compute-Relevanz: Recherche mit Quellen, Ergebnis als ADR-Entwurf.
-- Commits mit Skill atomic-commits; vor PR code-cleanup auf geänderte Dateien.
-- Unklar oder außerhalb des Issues? Im PR fragen, nicht raten.
-
-## Befehle
-(Test-, Lint-, Start-Befehle)
-
-## Delegation
-Nutze die Subagenten in .claude/agents/ wie dort beschrieben.
-```
-
-Kurz halten: CLAUDE.md wird in jeder Sitzung geladen. Details gehören in `docs/` und werden bei Bedarf gelesen.
+Kurz halten: Details gehören in `docs/` und werden bei Bedarf gelesen.
 
 ---
 
@@ -165,7 +144,7 @@ Kurz halten: CLAUDE.md wird in jeder Sitzung geladen. Details gehören in `docs/
 | Code durchsuchen, Dateien zusammenfassen, Logs sichten, Fixtures aktualisieren, Changelog | Haiku | low bis medium | Subagent `explorer`, `docs-writer` |
 | Umsetzung klar beschriebener Issues, Tests, Refactoring innerhalb eines Moduls, Frontend-Komponenten | Sonnet | high (Standard) | Hauptsitzung bzw. Subagent `implementer`, `test-writer` |
 | Feature mit Planungsanteil (neuer Adapter, neuer Reader, Datenmodell) | `opusplan`: Opus plant, Sonnet setzt um | Standard | Hauptsitzung mit `/model opusplan` |
-| Review gegen Architekturregeln, Hard Constraints, Sicherheits-Checkliste | Opus | high | Subagent `reviewer` mit eigenem Kontext |
+| Review gegen Architekturregeln und Sicherheits-Checkliste | Opus | high | Subagent `reviewer` mit eigenem Kontext |
 | Architekturentscheidungen, ADR-Entwürfe, Spike-Auswertung, Interface-Reflexion | Opus | xhigh | Subagent `architect` oder eigene Sitzung |
 | Recherche zum Stand der Technik mit Quellen | Sonnet | high | Subagent `researcher` |
 | Festgefahrene Fehlersuche über Modulgrenzen, große mehrdeutige Aufgaben, Meilenstein-Auftakt mit unklarem Zuschnitt, bereichsübergreifende Umbauten | Fable | Standard | eigene Sitzung mit `/model fable`, bewusst und selten |
@@ -183,7 +162,7 @@ Alternative zum Wechsel an der Plangrenze ist die Advisor-Funktion: Ein günstig
 | `explorer` | haiku | low | nur lesen, suchen | Fundstellen und Zusammenfassungen liefern, hält den Hauptkontext klein |
 | `implementer` | sonnet | high | lesen, schreiben, Shell | abgegrenzte Teilaufgabe umsetzen |
 | `test-writer` | sonnet | high | lesen, schreiben, Shell | Fehlerfälle, fehlerhafte Eingaben, zweckfremde Nutzung; Fixtures |
-| `reviewer` | opus | high | nur lesen, Shell für Tests | prüft Diff gegen Architekturplan 3.1, Hard Constraints, Sicherheits-Checkliste, Worker-Kern-Regel; schreibt Befund in den PR |
+| `reviewer` | opus | high | nur lesen, Shell für Tests | prüft Diff gegen Architekturplan 3.1, Sicherheits-Checkliste, Gateway- und Worker-Kern-Regel; schreibt Befund in den PR |
 | `architect` | opus | xhigh | lesen, Web | ADR-Entwürfe mit Optionen, Kriterien, Empfehlung |
 | `researcher` | sonnet | high | Web, lesen | Stand der Technik mit Quellen, keine Codeänderung |
 | `docs-writer` | haiku | medium | lesen, schreiben | README, Docstrings, Changelog |
@@ -202,11 +181,11 @@ effort: high
 ---
 Prüfe den aktuellen Diff gegen:
 1. Modulgrenzen und Importregeln (docs/architekturplan.md, 3.1)
-2. Hard Constraints für BIOMASS; decomp.py unangetastet
-3. Ausgehende Requests nur über gateway
-4. Worker-Kern ohne DB-, Queue-, Speicherzugriff
+2. Ausgehende Requests nur über gateway
+3. Worker-Kern zustandslos, ohne DB-, Queue-, Speicherzugriff
+4. decomp.py bleibt Operator mit Quad-Pol-Capability, wird nicht generalisiert
 5. Tests decken Fehlerfälle, fehlerhafte Eingaben, zweckfremde Nutzung
-6. Keine Secrets, keine exakten AOIs in Logs
+6. Keine Secrets, keine internen URLs, keine exakten AOIs in Logs, Code, Commits oder PR-Texten
 Antworte mit: Blocker / Sollte / Hinweis, jeweils mit Datei und Zeile. Ändere keinen Code.
 ```
 
@@ -259,19 +238,19 @@ Parallel ab M2 läuft ein **Viewer-Strang** (V1, V2) mit reinen Frontend-Aufgabe
 | | |
 |---|---|
 | Ziel | Claude kann sicher und reproduzierbar autonom arbeiten |
-| Inhalt | Repo-Struktur (2.1), drei Dokumente nach `docs/`, CLAUDE.md, Subagenten, Skills ins Repo, Branch-Schutz, CODEOWNERS, CI-Grundgerüst, Cloud-Umgebung mit Setup-Skript, Fixture-Infrastruktur, Klärung Docker/Postgres in der Cloud-VM (2.3), Bug-Report-Pipeline Stufe 1 (6.1) |
-| Wichtigster Einzelschritt | Die sieben Hard Constraints als automatisierte Tests, **bevor** irgendetwas umgebaut wird |
+| Inhalt | Verbindlich ist `ENTSCHEIDUNGEN_2026-09-18.md` §6: (1) Repo umbenennen, Dokumente nach `docs/`, CLAUDE.md, Skills nach `.claude/skills/`, Branch-Schutz, CODEOWNERS (`.claude/`, `.github/`, `CLAUDE.md`, Sicherheitsmodule), History auf Secrets prüfen; (2) klären, was die Cloud-VM bereitstellt, Testaufteilung festlegen (2.3); (3) Funktions- und Design-Inventar des Prototyps; (4) Zustands-Audit als ADR-Entwurf; (5) Bug-Report-Pipeline Stufe 1 (6.1); (6) Vorschlag für den ersten token-freien Datensatz |
+| Wichtigster Einzelschritt | Das **Funktions- und Design-Inventar des Prototyps** (Stufe C). Es ersetzt die früheren Hard-Constraint-Tests als Ausgangspunkt: Was gibt es, wie ist es gelöst, was ist BIOMASS-spezifisch, was ist übertragbar? |
 | Abnahme | Eine Test-Aufgabe der Stufe A läuft von Issue bis Merge ohne dein Eingreifen außer dem Review; CI ist Pflicht-Check |
-| Deine Entscheidungen | neues Repo oder bestehendes; Berechtigungsmodus; welche Hosts freigegeben werden |
+| Deine Entscheidungen | Berechtigungsmodus; welche Hosts freigegeben werden; Code-Lizenz; erster token-freier Datensatz |
 | Modelle | `opusplan` für das Gerüst, `reviewer` ab dem ersten PR |
 
 ### M1 — Fundament (Inkrement 1)
 
 | | |
 |---|---|
-| Ziel | Zieltopologie steht, BIOMASS läuft unverändert darin |
-| Inhalt | compose-Topologie (`api`, `tiler`, `worker`, `harvester`, Postgres mit pgstac, MinIO); Modulgrenzen mit Importprüfung; Fetch-Gateway mit Allowlist, SSRF-Schutz, Limits; BIOMASS als erster Datensatz in pgstac; STAC-API nach außen; Zustands-Audit des Prototyps (`store.py`, `.env`-Token, lokale Caches); strukturierte Logs |
-| Abnahme | Hard-Constraint-Tests grün; STAC-Browser kann den eigenen Katalog lesen; kein ausgehender Request außerhalb des Gateways (Test) |
+| Ziel | Zieltopologie steht und trägt einen token-freien Datensatz |
+| Inhalt | compose-Topologie (`api`, `tiler`, `worker`, `harvester`, Postgres mit pgstac, MinIO); Modulgrenzen mit Importprüfung; Fetch-Gateway mit Allowlist, SSRF-Schutz, Limits; erster token-freier Datensatz in pgstac; STAC-API nach außen; Umsetzung der Konsequenzen aus dem Zustands-Audit (`store.py`, lokale Caches); strukturierte Logs |
+| Abnahme | STAC-Browser kann den eigenen Katalog lesen; kein ausgehender Request außerhalb des Gateways (Test); Importregeln grün |
 | Deine Entscheidungen | ADR "Zustand im Prototyp": was ersetzt wird, was bleibt |
 | Modelle | Audit: `explorer` + Opus-Auswertung; Umsetzung: Sonnet |
 
@@ -280,9 +259,9 @@ Parallel ab M2 läuft ein **Viewer-Strang** (V1, V2) mit reinen Frontend-Aufgabe
 | | |
 |---|---|
 | Ziel | Beweis "Quelle ≠ Format": Zarr neben COG |
-| Inhalt | `zarr_reader.py` mit EOPF-Beispieldaten; Tiler-Endpunkte auf TiTiler-Basis neben den BIOMASS-Routen (vorher Spike); `datasets.py` mit `format`-Dispatch; `dataset`-Argument in Routen; Generalisierung `ControlPanel.tsx`/`store.ts`; Onboarding-Checkliste v1 als Test pro Datensatz |
+| Inhalt | `zarr_reader.py` mit EOPF-Beispieldaten; Tiler-Endpunkte auf TiTiler-Basis (vorher Spike); `datasets.py` mit `format`-Dispatch; `dataset`-Argument in Routen; Generalisierung `ControlPanel.tsx`/`store.ts`; Onboarding-Checkliste v1 als Test pro Datensatz |
 | Funktionen | ROI (Punkt, Box, Polygon) und Zeitraum; Fallback auf nächstgelegenes Datum mit Hinweis; Quicklooks; Stretch und Colormap; Layer Manager Basis (ausblenden, Transparenz, Einzel-Download); Coverage Map für den neuen Datensatz |
-| Abnahme | Zwei Datensätze in zwei Formaten im selben Viewer; BIOMASS-Tests weiter grün |
+| Abnahme | Zwei Datensätze in zwei Formaten im selben Viewer |
 | Deine Entscheidungen | Spike-Ergebnis TiTiler annehmen oder eigene Endpunkte |
 | Modelle | Spike-Auswertung `architect`; Reader `opusplan`; Frontend Sonnet |
 
@@ -458,7 +437,7 @@ Ein PR ist fertig, wenn:
 
 1. Abnahmekriterien des Issues erfüllt und im PR belegt sind.
 2. Tests Fehlerfälle, fehlerhafte Eingaben und zweckfremde Nutzung abdecken; externe Quellen nur über Fixtures.
-3. CI grün ist, inklusive Importregeln und Hard-Constraint-Tests.
+3. CI grün ist, inklusive Importregeln, Lint/Typen und Secret-Scan.
 4. `reviewer` keinen Blocker meldet.
 5. Doku und ggf. ADR aktualisiert sind; bei Datensätzen die Onboarding-Checkliste vollständig ist.
 6. Keine neuen ausgehenden Verbindungen außerhalb des Gateways, keine Secrets, keine exakten AOIs in Logs.
@@ -476,7 +455,7 @@ Ein PR ist fertig, wenn:
 | Erfundene oder veraltete APIs junger Bibliotheken (zarr, TiTiler-Varianten, Icechunk) | Spikes vor Festlegung, Versionen pinnen, `researcher` mit Quellenpflicht, Tests gegen echte Mini-Fixtures |
 | Review-Stau bei dir | kleine PRs, Stufen-Labels, `reviewer` filtert vor, feste Review-Zeiten |
 | Kontextverlust zwischen Sitzungen | Repo als Gedächtnis: CLAUDE.md, ADRs, Pläne in `docs/plans/`, aussagekräftige PR-Beschreibungen |
-| Secrets in der Cloud-Umgebung | keine Secrets in Umgebungsvariablen; BIOMASS-Token bleibt lokal; Tests mit Fixtures |
+| Secrets in der Cloud-Umgebung | keine Secrets in Umgebungsvariablen; BIOMASS-Token bleibt lokal bei Otto; Tests mit Fixtures; Secret-Scan in der CI |
 | Sicherheits-Klassifikatoren: Fable und Opus 5 können sicherheitsnahe Inhalte markieren und die Anfrage auf ein anderes Modell umleiten | bei Arbeit am Gateway/SSRF-Schutz einkalkulieren; defensive Arbeit ist normalerweise unkritisch; Modellwechsel wird im Verlauf angezeigt |
 | Bug-Reports als Einfallstor: Prompt Injection über den Meldungstext, Kostenmissbrauch durch Massenmeldungen, personenbezogene Daten in Issues | getrennte Rechte für Triage und Fix, nie Auto-Merge, CODEOWNERS, Rate Limits und Tagesobergrenze, bereinigte Issues (6.1) |
 | Claude "behebt" einen Bedienfehler als vermeintlichen Bug und verändert korrektes Verhalten | Fix nur mit reproduzierendem Test, der ein dokumentiertes Soll verletzt; im Zweifel Rückfrage statt Änderung |
@@ -487,13 +466,13 @@ Ein PR ist fertig, wenn:
 
 ## 9. Erste Schritte
 
-1. Repo-Entscheidung treffen (Empfehlung: neues Monorepo `earthx`, Prototyp mit History übernehmen).
+1. Repo in `earthX` umbenennen (entschieden, ENTSCHEIDUNGEN §4).
 2. Claude GitHub App installieren, Cloud-Umgebung anlegen (Netzwerk "Trusted", Setup-Skript, keine Secrets).
-3. Die drei Dokumente nach `docs/` legen, CLAUDE.md nach Gerüst 2.5, Subagenten nach 3.3, deine drei Skills nach `.claude/skills/` committen.
-4. Branch-Schutz und CODEOWNERS setzen.
+3. Dokumente nach `docs/` legen, CLAUDE.md schreiben, Subagenten nach 3.3 unter `.claude/agents/`, `.claude/settings.json` mit Standardmodell Sonnet, Ottos drei Skills nach `.claude/skills/` committen.
+4. Branch-Schutz und CODEOWNERS setzen; Git-History einmal auf Secrets prüfen.
 5. Erste drei Issues anlegen:
    - **Stufe C:** "Prüfe, welche Werkzeuge die Cloud-VM bereitstellt (Docker, Postgres, GDAL). Schlage vor, wie Unit-, Contract- und Integrationstests aufgeteilt werden." (Opus)
-   - **Stufe B:** "Formuliere die sieben Hard Constraints aus `docs/ADDING_ESA_DATASETS.md` als automatisierte Tests mit Fixtures. Ändere keinen Produktivcode." (`opusplan`)
+   - **Stufe C:** "Funktions- und Design-Inventar des Prototyps: Was gibt es, wie ist es gelöst, was ist BIOMASS-spezifisch, was ist auf token-freie Datensätze übertragbar? Kein Produktivcode ändern." (`explorer` + Opus)
    - **Stufe C:** "Zustands-Audit des Prototyps: Wo liegt Zustand im Speicher oder Dateisystem? Wo verlassen Requests den Prozess? Bericht als `docs/adr/0001-…`." (`explorer` + Opus)
 6. Nach den ersten drei PRs: Arbeitsweise kurz auswerten (Issue-Qualität, Modellzuordnung, Review-Aufwand) und diesen Plan anpassen.
 
@@ -503,7 +482,8 @@ Ein PR ist fertig, wenn:
 
 | Thema | Wann nötig | Empfehlung |
 |---|---|---|
-| Neues Repo oder `biomass-viewer` weiterführen | M0 | neues Monorepo, History übernehmen |
+| Code-Lizenz für das öffentliche Repo | M0 | entschieden werden muss sie; ohne `LICENSE` ist der Code rechtlich nicht freigegeben |
+| Erster token-freier Datensatz | M0 | Entscheidungsvorlage aus M0 Schritt 6; Kandidat EOPF Sentinel Zarr Samples |
 | Claude-Plan: reicht das Kontingent? | nach M0/M1 beobachten | Laut Dokumentation ist das Standardmodell auf Pro Sonnet 5, auf Max Opus 5. Erst messen, dann entscheiden |
 | TiTiler-Basis ja/nein | M2 | nach Spike |
 | ESA-only oder Quellenbreite; welche Nicht-STAC-Quelle | M3 | Breite; statischer Bucket oder Zenodo |
