@@ -25,3 +25,4 @@ Thumbs.db
 .claude/settings.local.json
 claude-code-prompt-biomass-viewer.md
 data/
+.env.test
