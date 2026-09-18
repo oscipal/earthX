@@ -22,6 +22,6 @@ frontend/node_modules/
 .idea/
 .DS_Store
 Thumbs.db
-.claude/
+.claude/settings.local.json
 claude-code-prompt-biomass-viewer.md
 data/
