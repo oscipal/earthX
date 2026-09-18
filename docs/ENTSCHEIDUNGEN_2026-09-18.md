@@ -13,19 +13,33 @@
 
 ## 2. Was vom Prototyp erhalten bleiben soll
 
-Der Prototyp wird wegen seiner **Funktionen und Designentscheidungen** behalten, nicht wegen des Datensatzes. Sie sollen auf token-freie Datensätze übertragen werden. Nach den früheren Planungs-Chats gehören dazu (am Code zu prüfen und zu vervollständigen):
+Der Prototyp wird wegen seiner **Funktionen und Designentscheidungen** behalten, nicht wegen des Datensatzes. Sie sollen auf token-freie Datensätze übertragen werden. Maßgeblich für den Bestand ist `docs/prototyp-inventar.md` (F1–F21). Zu übertragen sind insbesondere:
 
-- AOI-Auswahl: Punkt, Rechteck, Polygon, Ortssuche per Geocoding
-- Quicklook-Overlays mit Zeitleiste am unteren Bildschirmrand
-- Ablauf "anklicken, auswählen, bestätigen" für den Download
-- AOI-Zuschnitt über partielle COG-Reads statt Download ganzer Szenen; zweistufige Anzeige (georeferenziertes PNG-Overlay, dann dynamische XYZ-Tiles aus den COG-Overviews)
+- AOI-Auswahl: Punkt, Rechteck, Polygon, Ortssuche per Geocoding, Upload (KML/GeoJSON), letzte AOI
+- Quicklook-Overlays mit Zeitleiste; Gruppierung zu Mosaik-/Zeitschritten
+- Ablauf "anklicken, auswählen, bestätigen"
+- AOI-Zuschnitt über partielle COG-Reads; zweistufige Anzeige (georeferenziertes PNG-Overlay, dann dynamische XYZ-Tiles aus den COG-Overviews). Heute nur zur Anzeige, keine Datei für den Nutzer
 - Stitching mehrerer Szenen über eine AOI
-- Coverage Map (Footprints) pro Datensatz
-- Disk-Cache mit LRU-Verdrängung
-- Dunkles, technisches Kartendesign mit Umschalter auf ein normales Thema
+- Coverage Map pro Datensatz (siehe unten)
+- Layer-Manager mit gespeichertem Arbeitszustand; Darstellungssteuerung mit ausdrücklichem "Apply"
+- Asset-Proxy mit Host-Allowlist als Vorläufer von `gateway`, ohne Token-Injektion
+- Disk-Cache mit LRU-Verdrängung: nur als Konzept; die Umsetzung wird ersetzt, weil das Backend zustandslos sein soll
+- HUD-Oberflächendesign: dunkle Tafeln über dem Satellitenbild, Farbtoken und Bedienmuster laut Inventar
 - Polarimetrische Auswertung (Pauli RGB und weitere Dekompositionen) als Beispiel für "häufigste Analysemethoden pro Datensatz"
 
-**Erste Aufgabe in M0 ist deshalb ein Funktions- und Design-Inventar des Prototyps** (Stufe C): Was gibt es, wie ist es gelöst, was davon ist BIOMASS-spezifisch und was übertragbar? Das Inventar ersetzt die Hard-Constraint-Tests als Ausgangspunkt.
+**Coverage Map:** Standard ist eine Heatmap der Abdeckungsdichte (Anzahl Aufnahmen pro Rasterzelle, logarithmische Farbskala mit Legende). Ergänzt wird sie je nach Lage:
+- ab einer bestimmten Zoomstufe oder bei wenigen Aufnahmen durch die Footprints der einzelnen Szenen
+- bei Einmal-Produkten (eine Abdeckung, z. B. globale Karten) durch die Ausdehnung allein
+- für die zeitliche Verteilung durch ein Histogramm der Aufnahmen an der Zeitleiste
+
+Das Dichtegitter des Prototyps ist die Grundlage. Es beruht heute auf einer nicht ausgewiesenen Stichprobe; künftig wird es aus allen Footprints berechnet oder in der Oberfläche als Stichprobe gekennzeichnet. Die Heatmap reagiert auf Filter (Zeitraum, Suchkriterien), nicht nur auf den Datensatz. Wie das technisch umgesetzt wird (Aggregation pro Anfrage, vorberechnete Zeitscheiben, Vektorkacheln oder anderes), klärt ein ADR mit Recherche zum Stand der Technik, bevor die Coverage Map gebaut wird.
+
+
+**Neu zu bauen, im Prototyp nicht vorhanden:**
+- Theme-Umschalter (die zweite Farbpalette ist in `index.css` vorbereitet) samt passender heller Basiskarte
+- Datei-Download des AOI-Zuschnitts für den Nutzer
+
+Das Funktions- und Design-Inventar (M0 Schritt 3) liegt vor und ersetzt die Hard-Constraint-Tests als Ausgangspunkt.
 
 ## 3. Umgang mit dem BIOMASS-Code bis dahin
 
