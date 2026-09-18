@@ -266,6 +266,13 @@ Suggested data citation (adapt to the products you use):
 
 ## 9. License
 
-Application source code: **MIT** — see [`LICENSE`](./LICENSE). The MIT license
-covers this app's code only, **not** the satellite data, basemap imagery, or
-geocoding results, which remain under their providers' terms (see section 8).
+Application source code: **AGPL-3.0-or-later** — see [`LICENSE`](./LICENSE).
+Releases published before 2026-09-18 remain available under the MIT license they
+were published under.
+
+The AGPL covers this app's code only, **not** the satellite data, basemap imagery,
+or geocoding results, which remain under their providers' terms (see section 8).
+
+Note on AGPL section 13: if you run a modified version of this software and let
+users interact with it over a network, you must offer those users access to the
+corresponding source code.

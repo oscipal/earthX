@@ -43,7 +43,7 @@ Der Prototyp wird wegen seiner **Funktionen und Designentscheidungen** behalten,
   - Fixtures nur synthetisch oder aus Daten mit eindeutig offener Lizenz.
   - Bug-Report-Issues enthalten ausschließlich bereinigte technische Angaben; die vollständige Meldung bleibt außerhalb von GitHub (Projektplan 6.1). Sicherheitsmeldungen nie als öffentliches Issue.
   - Cloud-Sitzungen nicht öffentlich teilen, ohne sie auf sensible Inhalte zu prüfen.
-- Offen: Es gibt noch keine Entscheidung über eine Code-Lizenz. Ohne `LICENSE`-Datei ist öffentlich sichtbarer Code rechtlich nicht zur Nutzung freigegeben. Otto entscheidet, ob und welche Lizenz gesetzt wird.
+- Code-Lizenz: **AGPL-3.0-or-later** (entschieden am 18.09.2026). Die ursprüngliche Annahme dieses Abschnitts, es gebe keine `LICENSE`-Datei, war falsch: Seit dem ersten Commit lag eine MIT-Lizenz im Repo. Sie ist durch die AGPL ersetzt; bereits veröffentlichte Versionen bleiben unter MIT verfügbar. Aus der AGPL folgt eine offene Pflicht: Die Plattform muss ihren Nutzern einen Link zum Quellcode anbieten (AGPL §13), umzusetzen mit dem ersten öffentlichen Deployment.
 
 ## 5. Was weiter gilt
 
