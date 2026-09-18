@@ -73,6 +73,14 @@ und CI geht denselben Weg — damit prüft CI, was die Sitzung benutzt.
   (`production.cloudfront.docker.com`, `pkg-containers.githubusercontent.com`)
   antworten mit **403**. Schon `hello-world` lässt sich nicht laden.
 
+> **Regel zur Allowlist (bestätigt am 18.09.2026):** Eine Egress-Freigabe wirkt
+> erst in einer **neu gestarteten** Sitzung. Wird ein Host mitten in einer
+> Sitzung eingetragen, antwortet er dort weiter mit 403 — das sagt dann nichts
+> über die Freigabe aus. Prüfungen, die einen neu freigegebenen Host brauchen,
+> gehören deshalb in die nächste Sitzung. Belegt an
+> `sentinel.esa.int`, `sentinels.copernicus.eu` und `spacedata.copernicus.eu`
+> (`adr/0003` §10.2, §11.3).
+
 Damit sind Testcontainer, `docker compose` und der lokale Runner als Container
 in der Cloud-Sitzung nicht verfügbar. Selbst gebaute Images aus einem
 `Dockerfile` scheitern am Basis-Image aus derselben Quelle. Das ist eine
