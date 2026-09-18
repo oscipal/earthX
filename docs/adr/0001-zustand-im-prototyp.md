@@ -1,6 +1,6 @@
 # ADR 0001 — Zustand im Prototyp und seine Verortung in der Zielarchitektur
 
-- **Status:** Entwurf (Vorschlag). Entscheidung in M1 (`KLAERUNGEN.md` B1).
+- **Status:** Vorschlag, Entscheidung in M1 (`KLAERUNGEN.md` B1).
 - **Datum:** 2026-09-18
 - **Aufgabe:** M0 Schritt 4 laut `ENTSCHEIDUNGEN_2026-09-18.md` §6.
 - **Autonomiestufe:** C — nur gelesen und berichtet, kein Produktivcode geändert.
