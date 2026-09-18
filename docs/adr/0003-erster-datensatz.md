@@ -183,6 +183,11 @@ gesamte Lesepfad wechselt.
 
 ## 6. Empfehlung
 
+> **Stand 18.09.2026: von Otto vorläufig bestätigt.** COG zuerst, Zarr als
+> zweiter. Endgültig erst nach der Prüfung der Lizenzen an den
+> Primärdokumenten (Frage 1, Abschnitt 9). Ergibt diese Prüfung eine andere
+> Lizenzeinstufung nach B11, ist die Reihenfolge neu aufzurufen.
+
 **Zwei Schritte, in dieser Reihenfolge:**
 
 1. **Erster Datensatz: Option B**, Collection `sentinel-2-c1-l2a` über Earth
@@ -267,21 +272,28 @@ und ist keine Auslegung, die dieses ADR treffen darf.
   Entscheidung darüber bleibt bei Otto (Stufe B). Damit endet auch die befristete
   Ausnahme für das OIDC-Client-Secret.
 
-## 9. Offene Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 18.09.2026
 
-**Frage 1 — Egress.** Die Erreichbarkeitsprüfung ist ohne Freigabe nicht
+**Frage 1 — Egress.** Die Erreichbarkeitsprüfung war ohne Freigabe nicht
 nachholbar, und keine Lizenz- oder Laufzeitangabe dieses Dokuments ist am
 Primärdokument geprüft.
 
-1. Egress für die in „Methode und Grenzen" genannten Hosts freigeben; dann wird
-   dieses ADR in einer Folgesitzung mit geprüften Primärquellen und einem echten
-   Erreichbarkeitstest nachgezogen. *(Empfehlung)*
-2. Otto prüft die Links selbst und bestätigt die Angaben im Chat.
-3. Entscheidung ohne weitere Prüfung auf Basis der Suchtreffer.
+**Antwort: Egress wird freigegeben.** Otto trägt die in „Methode und Grenzen"
+genannten Hosts in die Umgebungs-Allowlist ein. Danach ist in diesem PR
+nachzuziehen:
+
+1. Primärquellen lesen und jede Aussage zu Lizenz, Zugang und Laufzeit gegen
+   das Primärdokument prüfen.
+2. Erreichbarkeit der Endpunkte tatsächlich testen (nur Metadaten).
+3. Die Beleg-Markierungen auflösen — oder ausdrücklich als „unbelegt" stehen
+   lassen, wo die Primärquelle nichts hergibt.
+
+Solange das aussteht, bleibt der Abschnitt „Methode und Grenzen" gültig: **kein
+`✓` in der Beleg-Spalte.**
 
 **Frage 2 — Reihenfolge.** Welcher Datensatz ist der erste?
 
-1. Option B (Sentinel-2 L2A COG) zuerst, Option A (EOPF Zarr) unmittelbar als
-   zweiter. *(Empfehlung, siehe Abschnitt 6)*
-2. Option A zuerst, damit die Format-Hierarchie auch im ersten Schritt gilt.
-3. Beide parallel von Anfang an.
+**Antwort: Option B zuerst, Option A als zweiter — vorläufig bestätigt.**
+Endgültig nach der Lizenzprüfung aus Frage 1. Bis dahin gilt die Reihenfolge als
+Arbeitsgrundlage, nicht als abgeschlossene Entscheidung; der Status dieses ADR
+bleibt deshalb „Vorschlag".

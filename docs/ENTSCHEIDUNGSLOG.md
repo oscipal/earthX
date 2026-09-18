@@ -52,3 +52,5 @@ Bei Widerspruch geht `ENTSCHEIDUNGEN_2026-09-18.md` allen anderen Dokumenten vor
 | — | ESA-only oder Quellenbreite; Registrierungspflicht; NC hinter Bezahlschranke; Job-Queue; Cloud-Anbieter | offen | projektplan 10 |
 | — | **AGPL §13:** Die Plattform muss ihren Nutzern einen Link zum Quellcode anbieten. Umzusetzen mit dem ersten öffentlichen Deployment | offene Pflicht | LICENSE; architekturplan (Deployment), projektuebersicht |
 | — | Nutzungsbedingungen Esri World Imagery und Nominatim vor dem ersten öffentlichen Deployment klären | offen | prototyp-inventar F2; architekturplan (Deployment) |
+| 2026-09-18 | Reihenfolge der ersten beiden Datensätze **vorläufig bestätigt**: Sentinel-2 L2A COG zuerst, EOPF Sentinel Zarr Samples als zweiter. Endgültig erst nach Prüfung der Lizenzen an den Primärdokumenten | vorläufig fest | adr/0003 §6, §9; ENTSCHEIDUNGEN §6 |
+| — | Lizenz-, Zugangs- und Laufzeitangaben in adr/0003 an den Primärquellen prüfen und die Endpunkte auf Erreichbarkeit testen, sobald die Egress-Allowlist die Hosts freigibt; Beleg-Markierungen im ADR danach auflösen oder bestätigt stehen lassen | offen | adr/0003 (Methode und Grenzen, §9) |
