@@ -14,7 +14,7 @@ extend-exclude = ["frontend"]
 select = ["E4", "E7", "E9", "F", "I", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "tests"]
+known-first-party = ["app", "earthx", "tests"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
