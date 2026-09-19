@@ -184,6 +184,13 @@ bleiben synthetisch).
 
 ### M1-07 — STAC-API nach außen
 
+**Umgesetzt am 19.09.2026:** Plan und Ergebnis in
+`docs/plans/m1-07-stac-api.md` (F1–F6 von Otto wie empfohlen entschieden,
+dazu eine Zusatzauflage zur STAC-Version/Lizenz-Kopplung, dort begründet
+gelöst). Nimmt zwei offene Nachträge aus M1-06 mit: den festen `sortby` in
+`earthx/adapters/earth_search.py` und den `catalog-load`-Dienst in
+`docker-compose.yml`.
+
 **Ziel:** Der eigene Katalog ist als STAC-API lesbar: Collections aus pgstac, Items föderiert.
 **Stufe B.** Aufbau laut Spike M1-05.
 **Umfang:** Einbindung im `api`-Prozess unter einem eigenen Präfix, das mit keiner Route des Prototyps kollidiert; Konformitätsklassen korrekt ausweisen. Laut `adr/0005`:

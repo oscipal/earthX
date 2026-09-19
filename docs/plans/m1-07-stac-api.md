@@ -1,9 +1,10 @@
 # M1-07 — STAC-API nach außen: Umsetzungsplan
 
-**Status:** Plan, offen für Ottos OK. **Stufe B** laut `docs/plans/m1-fundament.md`
-§3: Plan zuerst als Draft-PR, Umsetzung erst nach Ottos OK
-(`projektplan.md` 1.2). Dieser PR ändert **keinen Produktivcode** — auch nicht
-die zwei unten behandelten Nachträge aus M1-06.
+**Status:** **Umgesetzt am 19.09.2026.** Von Otto angenommen, **F1–F6 alle wie
+empfohlen** (§15), dazu die Zusatzauflage zu F6/§10: ein Test statt eines
+zweiten Pins auf `stac-pydantic` (§10 unten, begründet). **Stufe B** laut
+`docs/plans/m1-fundament.md` §3: Plan zuerst als Draft-PR, Umsetzung nach
+Ottos OK (`projektplan.md` 1.2) — die Umsetzung folgt in §16.
 **Aufgabe:** M1-07 aus `docs/plans/m1-fundament.md` §4, zusätzlich zwei
 Nachträge aus M1-06 (siehe §7 und §8).
 **Grundlage:** `architekturplan.md` 0 (STAC als Modell, zweistufiger Katalog,
@@ -278,6 +279,25 @@ laut der bestehenden Ableitungsregel herauskommt. Das ist eine
 Prüfpflicht in der Umsetzung, keine Entscheidung, die dieser Plan schon
 trifft.
 
+**Ottos Zusatzauflage bei der Freigabe:** entweder einen Test, der die
+ausgegebene `stac_version` gegen die Version prüft, aus der `catalog` den
+Lizenzwert ableitet, oder `stac-pydantic` so pinnen, dass beides
+zusammenbleibt — Wahl im PR begründen.
+
+**Entscheidung: ein Test, kein zweiter Pin.** Geprüft an den echten
+Paketmetadaten aller `stac-pydantic`-Releases in der von
+`stac-fastapi.pgstac` erlaubten Spanne (`<4.0,>=3.3.0`, das sind 3.3.0 bis
+zur aktuellen 3.6.0): `STAC_VERSION` steht in **jeder** dieser Versionen auf
+`"1.0.0"`. Ein zweiter Pin auf `stac-pydantic` würde also kein Risiko
+abstellen, das die Spanne nicht schon von selbst ausschließt — er wäre eine
+zweite Versionsstelle zum Pflegen, ohne dass ihr etwas gegenüberstünde. Ein
+Test dagegen prüft bei jedem Lauf die tatsächliche Kopplung nach, statt eine
+Annahme über sie festzuschreiben, und bricht laut, sollte `stac-fastapi`
+seine eigene erlaubte Spanne einmal so weit öffnen, dass eine `2.x` oder
+`4.x`-Version hineinfiele. Das ist derselbe Grundsatz wie bei `sortby` in §7:
+messen statt vermuten. Umgesetzt als
+`tests/integration/test_api_federating.py::TestConformance::test_stac_version_matches_what_catalog_derives_the_licence_from`.
+
 ## 11. `requirements.txt` (**F6**)
 
 Neu: `stac-fastapi.pgstac` (bringt `stac-fastapi.api`, `stac-fastapi.types`,
@@ -349,3 +369,57 @@ Patch-Level in der Umsetzung verifiziert; nicht das frische `7.0.0` ungeprüft.
 Die Umsetzung beginnt erst mit Ottos Antwort (Stufe B). Jede Abweichung, die
 sich beim Bauen ergibt, kommt wie bei M1-03 und M1-06 als eigener Abschnitt
 in dieses Dokument und als Zeile ins Entscheidungslog.
+
+## 16. Was bei der Umsetzung anders kam
+
+Umgesetzt: `earthx/api/main.py`, `earthx/api/federating_client.py`,
+`earthx/api/dependencies.py`, `earthx/gateway/policy.py` (`host_of`),
+`earthx/adapters/earth_search.py` (fester `sortby`), `docker-compose.yml` und
+`.github/workflows/ci.yml` (`catalog-load`), dazu die Tests in
+`backend/tests/integration/test_api_federating.py` (T-C, echtes pgstac,
+Earth Search gemockt) und `backend/tests/earthx/api/` (T-A, reine Funktionen).
+
+Drei Befunde, die der Plan nicht vorhersah:
+
+1. **`Extensions()` ohne `settings=` baut sich eine eigene, zweite
+   `Settings()`.** `instantiate_api(settings=settings, ...)` allein reicht
+   nicht — die `Extensions`-Instanz, die die Routen tatsächlich mit
+   Konformitätsklassen bestückt, konstruiert sich sonst ihre eigene
+   `Settings()` per `default_factory`, die die hier hart gesetzte
+   `enabled_extensions`-Liste nie sieht. Ohne `Extensions(settings=settings)`
+   ausdrücklich an `instantiate_api` übergeben, wären `filter` **und** `sort`
+   trotz §6 auf der Landing Page erschienen — der eigene Konformitätstest hat
+   das beim ersten Lauf sofort gezeigt, nicht erst beim Review.
+2. **Der Such-Cache übersteht einen Testlauf.** Sein Pool läuft mit
+   `autocommit=True` (nötig, damit ein Cache-Fehlschlag nie die
+   Anfrage-Transaktion mitreißt — derselbe Grund wie beim Savepoint-Befund
+   aus M1-06). Ohne eine eigene Aufräumzeile in der Testvorbereitung las ein
+   zweiter Testlauf einen Treffer aus dem ersten, statt den frisch gemockten
+   Transport zu befragen — sichtbar an einer leeren `seen`-Liste im Test,
+   nicht an einem falschen Ergebnis.
+3. **Mehr als eine Quelle gleichzeitig ist gebaut, aber nicht scharf
+   getestet.** Eine Suche ohne `collections` oder über mehrere wird laut
+   Regel I je Collection aufgeteilt und zusammengeführt — mit der heutigen
+   Registry (ein Datensatz, föderiert) hat dieser Zweig aber nie mehr als
+   eine aktive Quelle. Der Code deckt den Fall ab (Ergebnisse mehrerer
+   Quellen werden zusammengeführt), verzichtet aber bewusst auf eine
+   vereinheitlichte Seitenmarke über mehrere Quellen hinweg: `next` bleibt in
+   diesem Fall leer, statt eine Quelle stillschweigend zu verlieren oder eine
+   Marke zu bauen, die niemand heute prüfen kann. Ein Log-Eintrag markiert
+   den Fall, falls er doch einmal auftritt. Kommt ein zweiter Datensatz
+   dazu, ist das der Punkt, an dem dieser Zweig einen echten Test braucht.
+
+4. **`item_collection`s eigene `**kwargs` enthalten ein abgeschaltetes Feld gar
+   nicht erst.** Der erste Entwurf prüfte dort `kwargs.keys()` auf `filter`/
+   `sortby`, genau wie es zunächst naheliegend aussah — aber wenn eine
+   Extension aus ist, fehlt ihr Feld im geparsten Anfragemodell vollständig,
+   es kommt also nie als benanntes Schlüsselwortargument an, das eine Prüfung
+   dort überhaupt sehen könnte. Ein `?filter=true` an
+   `/collections/{id}/items` wurde deshalb bis zu einem gezielten Test
+   klaglos bis zum Adapter durchgereicht. Behoben wie bei `get_search`
+   bereits richtig gemacht: die Prüfung liest `request.query_params` selbst,
+   nicht die schon gefilterten Methodenargumente.
+
+Bestätigt, nicht nur vermutet: `stac-fastapi.pgstac==6.4.1` läuft gegen das
+gepinnte `pypgstac==0.9.12`-Schema — geprüft mit einer echten lokalen
+Postgres, nicht nur am Changelog abgelesen.
