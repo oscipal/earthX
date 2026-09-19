@@ -132,9 +132,30 @@ verifiziert, und eine Policy kann ihn jederzeit schließen.
 
 ## 7. Was daraus folgt
 
-1. **Setup-Skript:** `scripts/setup-cloud-session.sh` (Vorschlag, Otto trägt es
-   selbst ein). Es legt das venv an, installiert Frontend-Pakete, startet
-   Postgres und richtet PostGIS ein. Ohne Secrets, idempotent.
+1. **Setup als SessionStart-Hook (Stand 2026-09-19):** Der ursprüngliche
+   Vorschlag, `scripts/setup-cloud-session.sh` ins Umgebungsfeld der
+   Cloud-Umgebung einzutragen, ist dort gescheitert: Pfadauflösung über
+   `BASH_SOURCE` griff nicht, `sudo` lief als root ins Leere, und der
+   Postgres-Start ging über den Cache-Snapshot der Sitzung verloren. Das
+   Umgebungsfeld installiert seither nur noch PostGIS per `apt`; den Rest
+   erledigt `scripts/setup-cloud-session.sh` jetzt als SessionStart-Hook
+   (`.claude/settings.json`, Matcher `startup|resume`), wie in
+   [Claude Code on the web](https://code.claude.com/docs/en/cloud-environments)
+   beschrieben ("Install dependencies with a SessionStart hook"). Das Skript
+   legt das venv an, installiert Frontend-Pakete (jeweils nur, wenn noch
+   nicht vorhanden), startet Postgres per `service postgresql start` und
+   richtet Rolle, Datenbank und PostGIS-Extension idempotent ein. Es läuft
+   nur bei `CLAUDE_CODE_REMOTE=true`, verwendet `sudo` nicht, wenn die
+   Sitzung schon als root läuft, und endet immer mit Exit 0 — ein
+   fehlgeschlagener Schritt wird gemeldet, blockiert aber nie den
+   Sitzungsstart. Am 2026-09-19 zweimal hintereinander in derselben Sitzung
+   getestet: erster Lauf legt venv, Frontend-Abhängigkeiten, Postgres-Rolle
+   und -Datenbank an; zweiter Lauf überspringt venv und Frontend-Pakete
+   (bereits vorhanden) und meldet Rolle/Datenbank als bereits vorhanden.
+   Die PostGIS-Extension schlug in dieser Sitzung fehl, weil das Paket hier
+   noch nicht installiert war — erwartungsgemäß, da die apt-Installation
+   erst mit der nächsten neu gestarteten Sitzung wirkt (siehe die
+   Allowlist-Regel oben).
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und
