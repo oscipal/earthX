@@ -89,6 +89,17 @@ services:
     command: ["uvicorn", "earthx.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
+    environment:
+      # M1-07: api now connects to Postgres itself (stac-fastapi-pgstac's own
+      # asyncpg pool, and earthx.api.dependencies' psycopg pool for the search
+      # cache) — both read these same libpq-style names, like pgstac-migrate
+      # and catalog-load already do above. The prototype's stub never needed
+      # them; the STAC API does.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
     depends_on:
       postgres:
         condition: service_healthy

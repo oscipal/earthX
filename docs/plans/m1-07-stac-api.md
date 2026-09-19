@@ -424,3 +424,18 @@ Drei Befunde, die der Plan nicht vorhersah:
 Bestätigt, nicht nur vermutet: `stac-fastapi.pgstac==6.4.1` läuft gegen das
 gepinnte `pypgstac==0.9.12`-Schema — geprüft mit einer echten lokalen
 Postgres, nicht nur am Changelog abgelesen.
+
+5. **`docker-compose.yml`s `api`-Dienst hatte nie einen `environment`-Block**
+   — gefunden durch den fehlgeschlagenen CI-Job `compose-topology`, nicht
+   durch eigenes Testen (die Cloud-Sitzung startet keine Container, `adr/0002`
+   §1). `PostgresSettings` (der `asyncpg`-Pool von `stac-fastapi-pgstac`)
+   verlangt `pguser`/`pgpassword`/`pghost`/`pgport`/`pgdatabase`, aber der
+   Prototyp-Stub, den `api` bis M1-07 startete, sprach nie mit Postgres — der
+   Dienst hatte deshalb nie Grund für diese Variablen. `catalog-load` lief im
+   selben CI-Lauf fehlerfrei durch; die Lücke betraf nur `api` selbst.
+   Behoben mit denselben `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/
+   `PGDATABASE`-Werten, die `pgstac-migrate` und `catalog-load` schon setzen.
+   Das Dockerfile brauchte keine Änderung: Es installiert generisch aus
+   `requirements.txt`, und der Fehler war ein `pydantic`-Validierungsfehler
+   (fehlende Felder), kein Importfehler — das Image hatte `stac-fastapi.pgstac`
+   und `asyncpg` bereits richtig an Bord.
