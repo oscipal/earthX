@@ -67,6 +67,8 @@ Das Gateway ist **zwei Dinge in zwei Ausbaustufen**, weil GDAL und `pystac_clien
 
 Der M1-Test "kein Request außerhalb des Gateways" besteht deshalb aus: (a) statischer Regel, dass HTTP-Bibliotheken nur in `gateway` importiert werden; (b) Tests, dass jede an rasterio oder `pystac_client` übergebene URL vorher `gateway` passiert hat. Die netzwerkseitige Prüfung kommt mit M6.
 
+**Nachtrag 19.09.2026:** Im Zielpfad kommt `pystac_client` nicht mehr vor — `adr/0005` Regel IV schließt es aus (es folgt Redirects ungeprüft und verstößt damit gegen diese Auflösung) und setzt einen eigenen schmalen `httpx`-Client in `gateway`. Von den beiden Fremdbibliotheken oben bleibt damit GDAL/rasterio. Die Importregel nennt `pystac_client` weiterhin, damit es nicht durch die Hintertür zurückkommt.
+
 ### B9. "Reine Funktion" trotz I/O; lokaler Runner — *Festgelegt (Begriff präzisiert)*
 
 Gemeint ist: Der Worker-Kern ist **plattformunabhängig und zustandslos**. Er hat keinen Zugriff auf Plattformdienste (Datenbank, Queue, Objektspeicher, interne APIs) und hält keinen Zustand zwischen Aufrufen. Lesender Zugriff auf die **Datenquellen** ist erlaubt und nötig, und zwar über die Bibliothek `gateway`, die deshalb auch im lokalen Runner mitläuft. Die Allowlist ergibt sich dort aus den aufgelösten Asset-Adressen des Rezepts. "Umgeht das Fetch-Gateway" im Architekturplan 7.7 meint nur: Die Zugriffe kommen von der IP des Nutzers statt von der Plattform.
