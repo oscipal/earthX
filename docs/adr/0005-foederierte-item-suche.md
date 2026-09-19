@@ -441,6 +441,9 @@ eigenen Items gibt. Mit M3 neu zu prüfen. Das ist Regel VI.
    `m1-fundament.md` §4 (M1-06) ausdrücklich Otto vorbehalten. Dieser Spike hat
    sie **nicht** geprüft und schlägt sie nicht ein. Solange sie offen ist,
    bleiben Fixtures synthetisch.
+   **Nachtrag 19.09.2026 (erledigt):** Otto hat entschieden, dass **dauerhaft nicht
+   aufgezeichnet wird**. Die Lizenzfrage stellt sich für Fixtures damit nicht mehr;
+   sie bleiben synthetisch, und dass die Quelle sich bewegt, merkt der T-D-Test.
 2. **Ratengrenzen der übrigen Anbieter.** Für Earth Search ist die Frage mit
    §3.6 beantwortet, soweit sie sich ohne mutwillige Last beantworten lässt. Die
    Log-Zeile bleibt für EOPF und Copernicus DEM offen.

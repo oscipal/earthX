@@ -17,7 +17,7 @@ each other's collections and the developer's database is left as it was found.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from pathlib import Path
 
 import psycopg
@@ -85,6 +85,31 @@ def require_postgres_env(_postgres_env: None) -> None:
     host = os.environ["PGHOST"]
     if not is_local_host(host):
         pytest.fail(_REMOTE_DB.format(host=host, allowed=", ".join(sorted(_LOCAL_HOSTS))), pytrace=False)
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    """The async T-C tests run on asyncio, through the plugin `anyio` ships."""
+    return "asyncio"
+
+
+@pytest.fixture
+async def aconn(require_postgres_env: None) -> AsyncIterator[psycopg.AsyncConnection]:
+    """The same throwaway database, for the code that talks to it asynchronously.
+
+    The application cache is read and written from the async API process, so its tests
+    use the async driver rather than proving something about a connection nobody uses.
+    Rolled back like its synchronous sibling.
+    """
+    try:
+        connection = await psycopg.AsyncConnection.connect(autocommit=False)
+    except psycopg.OperationalError as error:
+        pytest.fail(f"Postgres is configured but not reachable: {error}", pytrace=False)
+    try:
+        yield connection
+    finally:
+        await connection.rollback()
+        await connection.close()
 
 
 @pytest.fixture

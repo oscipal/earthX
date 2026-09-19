@@ -1,0 +1,48 @@
+# T-D live smoke test (docs/adr/0002-testaufteilung.md §2, M1-06).
+#
+# The one run that touches the real source. It is scheduled, never part of a pull
+# request: a PR must not turn red because a foreign service is having a bad day.
+# Cloud sessions do not run it either — `pytest` alone collects only backend/tests,
+# and this directory lies outside it.
+#
+# Small on purpose (adr/0005 §3.6): two metadata requests, no assets, no token.
+
+name: Live smoke
+
+on:
+  schedule:
+    # Daily, 05:17 UTC. Off the hour so the run does not join everyone else's.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: false
+
+jobs:
+  earth-search:
+    name: Earth Search v1 still answers as recorded
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
+
+      # Named explicitly: `pytest` on its own would collect backend/tests instead,
+      # which is the offline suite.
+      - name: Live smoke (pytest backend/tests_live)
+        run: pytest backend/tests_live

@@ -22,15 +22,22 @@ from earthx.catalog.schema import (
 from tests.integration.conftest import is_local_host, missing_postgres_env
 
 
-def _drop_bookkeeping(conn) -> None:
-    """Start from a database that has never seen these migrations."""
+def _forget_migrations(conn) -> None:
+    """Start from a database that has never seen these migrations.
+
+    Both tables, because ``earthx.catalog.load`` commits: after a full run the
+    database really has the bookkeeping row of the shipped migration and the table it
+    created, and a test that reuses version 002 for a file of its own would otherwise
+    read that row as "the same migration, edited".
+    """
     conn.execute("DROP TABLE IF EXISTS earthx_migrations")
+    conn.execute("DROP TABLE IF EXISTS public.earthx_search_cache")
 
 
 class TestDiscovery:
-    def test_nothing_is_shipped_yet_and_that_is_the_point(self) -> None:
-        """pgstac holds the collections; the first own migration is M1-06's cache."""
-        assert discover_migrations() == ()
+    def test_the_only_shipped_migration_is_the_search_cache(self) -> None:
+        """pgstac holds the collections; our own first table is M1-06's cache (E4)."""
+        assert [(m.version, m.name) for m in discover_migrations()] == [("002", "search_cache")]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
         """A typo in a path must not read as "nothing to apply"."""
@@ -52,7 +59,7 @@ class TestDiscovery:
 
 class TestApplying:
     def test_a_fresh_database_gets_every_migration(self, conn, tmp_path) -> None:
-        _drop_bookkeeping(conn)
+        _forget_migrations(conn)
         (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
         (tmp_path / "002_second.sql").write_text("CREATE TEMP TABLE second_step (id int);")
 
@@ -60,14 +67,14 @@ class TestApplying:
         assert set(applied_migrations(conn)) == {"001", "002"}
 
     def test_a_second_run_applies_nothing(self, conn, tmp_path) -> None:
-        _drop_bookkeeping(conn)
+        _forget_migrations(conn)
         (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
         apply_migrations(conn, tmp_path)
         assert apply_migrations(conn, tmp_path) == ()
 
     def test_the_runner_brings_its_own_bookkeeping_table(self, conn) -> None:
         """It is the runner's, not a migration — otherwise every directory needs a copy."""
-        _drop_bookkeeping(conn)
+        _forget_migrations(conn)
         assert applied_migrations(conn) == {}
 
         apply_migrations(conn)
@@ -76,7 +83,7 @@ class TestApplying:
             assert cur.fetchone()[0] is not None
 
     def test_ensure_bookkeeping_runs_twice_without_complaint(self, conn) -> None:
-        _drop_bookkeeping(conn)
+        _forget_migrations(conn)
         ensure_bookkeeping(conn)
         ensure_bookkeeping(conn)
         assert applied_migrations(conn) == {}
@@ -107,6 +114,7 @@ class TestApplying:
 
     def test_a_failure_leaves_the_migrations_before_it_applied(self, conn, tmp_path) -> None:
         """Each migration is its own savepoint, so the run stops where it broke."""
+        _forget_migrations(conn)
         (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
         (tmp_path / "002_broken.sql").write_text("SELECT no_such_function();")
 
@@ -118,6 +126,7 @@ class TestApplying:
         assert "002" not in applied
 
     def test_a_later_migration_is_applied_on_top(self, conn, tmp_path) -> None:
+        _forget_migrations(conn)
         (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
         assert apply_migrations(conn, tmp_path) == ("001",)
 
@@ -125,9 +134,10 @@ class TestApplying:
         assert apply_migrations(conn, tmp_path) == ("002",)
 
 
-def test_the_migrations_directory_explains_why_it_is_empty() -> None:
-    """An empty directory with no word on it reads as an oversight."""
+def test_the_migrations_directory_says_what_lies_in_it_and_why() -> None:
+    """A numbering that starts at 002 reads as a lost file unless it is explained."""
     readme = (MIGRATIONS_DIR / "README.md").read_text(encoding="utf-8")
+    assert "002_search_cache.sql" in readme
     assert "M1-06" in readme
 
 

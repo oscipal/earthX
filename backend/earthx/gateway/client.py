@@ -164,8 +164,13 @@ class Gateway:
             if redirects > self._policy.max_redirects:
                 raise TooManyRedirects(self._policy.max_redirects)
             target = str(httpx.URL(checked.url).join(location))
-            if response.status_code in {301, 302, 303} and method != "GET":
-                method, content = "GET", None
+            if response.status_code in {301, 302, 303} and content is not None:
+                # Following this would drop the body and ask a different question:
+                # `POST /search` reduced to `GET /search` comes back as an unfiltered
+                # default page, which the caller cannot tell from its own results
+                # (found reviewing M1-06). 307 and 308 keep method and body, so they
+                # are followed as before.
+                raise UpstreamError(response.status_code, "redirect would drop the request body")
 
     async def _attempt(
         self,

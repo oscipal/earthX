@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator, Callable
 
@@ -209,12 +210,48 @@ async def test_a_redirect_chain_past_the_limit_is_refused() -> None:
             await gateway.get(URL)
 
 
-async def test_a_post_turns_into_a_get_when_the_source_says_see_other() -> None:
-    handler, seen = redirecting(f"https://{OTHER}/v1/items", status=303)
+@pytest.mark.parametrize("status", [301, 302, 303])
+async def test_a_redirect_that_would_drop_the_body_is_refused(status: int) -> None:
+    """Changed while reviewing M1-06, where the consequence became visible.
+
+    Turning `POST /search` into a GET drops the search body, and the source answers
+    with an unfiltered default page. The caller cannot tell that from its own
+    results, so it gets an error instead of a plausible wrong answer.
+    """
+    handler, seen = redirecting(f"https://{OTHER}/v1/items", status=status)
     gateway, _ = build(handler)
     async with gateway:
-        await gateway.post_json(URL, json={"limit": 10})
-    assert [request.method for request in seen] == ["POST", "GET"]
+        with pytest.raises(UpstreamError) as error:
+            await gateway.post_json(URL, json={"limit": 10})
+    assert error.value.status_code == status
+    assert [request.method for request in seen] == ["POST"]
+
+
+@pytest.mark.parametrize("status", [301, 302, 303])
+async def test_a_get_still_follows_these(status: int) -> None:
+    """The refusal above is about a body, not about the status code.
+
+    Assets on S3 and CDNs routinely answer a GET with a 302, and a GET has nothing
+    that following could drop — so nothing changes for the reader path (M2).
+    """
+    handler, seen = redirecting(f"https://{OTHER}/v1/items", status=status)
+    gateway, _ = build(handler)
+    async with gateway:
+        response = await gateway.get(URL)
+    assert response.json() == {"hop": "/v1/items"}
+    assert [request.method for request in seen] == ["GET", "GET"]
+
+
+@pytest.mark.parametrize("status", [307, 308])
+async def test_a_redirect_that_keeps_the_body_is_followed(status: int) -> None:
+    """307 and 308 carry method and body over, so nothing is lost by following."""
+    handler, seen = redirecting(f"https://{OTHER}/v1/items", status=status)
+    gateway, _ = build(handler)
+    async with gateway:
+        response = await gateway.post_json(URL, json={"limit": 10})
+    assert response.json() == {"hop": "/v1/items"}
+    assert [request.method for request in seen] == ["POST", "POST"]
+    assert json.loads(seen[1].content) == {"limit": 10}
 
 
 async def test_only_six_requests_reach_one_host_at_a_time() -> None:

@@ -4,9 +4,10 @@ Hier liegen die SQL-Migrationen, die EarthX **neben** pgstac braucht. pgstac bri
 sein eigenes Schema und seine eigene Migration mit (`pypgstac migrate`, in compose der
 Dienst `pgstac-migrate`); was hier liegt, gehört uns.
 
-**Das Verzeichnis ist zurzeit leer, und das ist beabsichtigt.** In M1-04 gibt es keine
-eigene Tabelle: Collections liegen in pgstac. Die erste eigene Migration kommt mit
-**M1-06**, für den Anwendungs-Cache aus E4.
+**Was hier liegt:** `002_search_cache.sql` — der Anwendungs-Cache aus E4, angelegt in
+**M1-06** für die föderierte Item-Suche. In M1-04 war das Verzeichnis leer, weil
+Collections in pgstac liegen; die Nummerierung beginnt deshalb bei `002` (die `001`
+war die Buchführungstabelle, bevor sie zum Läufer wanderte, siehe unten).
 
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
