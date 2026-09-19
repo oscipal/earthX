@@ -292,15 +292,18 @@ Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern d
 
 ### 6.1 Adapter-Nahtstellen (ohne Signaturen)
 
-Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt bis zu drei **getrennte** Fähigkeiten ab; nicht jede Quelle braucht alle:
+Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt mehrere **getrennte** Fähigkeiten ab; nicht jede Quelle braucht alle, und die Liste ist **nicht abschließend** — sie wächst mit den realen Quellen:
 
 | Fähigkeit | Frage, die sie beantwortet | Genutzt von |
 |---|---|---|
 | Discovery | Welche Datensätze gibt es bei dieser Quelle, mit welchen Metadaten? | `discovery` |
 | Suche | Welche Szenen gibt es für AOI und Zeitraum? | `catalog` (Föderation) |
 | Zugriffsauflösung | Welche lesbare Adresse und welcher Reader gehören zu diesem Asset? | `access`, `processing` |
+| Aggregation (optional) | Wie viele Aufnahmen liegen je Rasterzelle und je Zeitschritt unter Filter F? | `catalog` (Coverage Map) |
 
-Auth ist bewusst eine vierte, spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden. Die konkreten Signaturen entstehen, wie beschlossen, aus den ersten zwei bis drei realen Quellen. Damit das Interface nicht STAC-förmig wird, muss darunter eine Nicht-STAC-Quelle sein.
+Aggregation ist die vierte Fähigkeit, entschieden am 19.09.2026 mit `adr/0004`. Sie ist **optional**: Bringt eine Quelle sie nicht mit (Earth Search tut es über die STAC-Aggregation-Extension, andere nicht), ist die Rückfallebene eine **ausgewiesene Stichprobe** — die Antwort trägt dann sichtbar den Wert `stichprobe`, statt Vollständigkeit vorzutäuschen (`adr/0004` §5, Regel V). Das quellenspezifische Protokollwissen liegt in `adapters`, die Nahtstelle und das SQL für eigene Items in `catalog`.
+
+Auth ist bewusst eine spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden. Die konkreten Signaturen entstehen, wie beschlossen, aus den ersten zwei bis drei realen Quellen. Damit das Interface nicht STAC-förmig wird, muss darunter eine Nicht-STAC-Quelle sein.
 
 ### 6.2 Reader und erweiterte Format-Hierarchie
 
