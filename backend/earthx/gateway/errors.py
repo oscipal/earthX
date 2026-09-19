@@ -42,3 +42,41 @@ class UrlTooLong(GatewayError):
         super().__init__(f"URL is {length} bytes, the limit is {limit}")
         self.length = length
         self.limit = limit
+
+
+class ResponseTooLarge(GatewayError):
+    """The body exceeds the limit, either as announced or as counted while reading."""
+
+    def __init__(self, size: int, limit: int) -> None:
+        super().__init__(f"response body is at least {size} bytes, the limit is {limit}")
+        self.size = size
+        self.limit = limit
+
+
+class TooManyRedirects(GatewayError):
+    """The source kept redirecting past the limit."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"more than {limit} redirects")
+        self.limit = limit
+
+
+class UpstreamError(GatewayError):
+    """The source answered, and the answer is not one we pass on.
+
+    The status code survives unchanged: an adapter has to tell ``400``, ``404``
+    and ``429`` apart (adr/0005 §3.5, §3.8).
+    """
+
+    def __init__(self, status_code: int, excerpt: str = "") -> None:
+        super().__init__(f"upstream answered {status_code}" + (f": {excerpt}" if excerpt else ""))
+        self.status_code = status_code
+        self.excerpt = excerpt
+
+
+class UpstreamUnreachable(GatewayError):
+    """The source did not answer at all."""
+
+
+class UpstreamTimeout(UpstreamUnreachable):
+    """The source did not answer in time."""
