@@ -46,8 +46,10 @@ pgstac, erzeugt aus genau einem Registry-Eintrag.
 **Alle fünf wie empfohlen: 1a, 2a, 3a, 4a, 5a.** Mit zwei Zusätzen von Otto:
 
 - **Zu 3a:** M1-08 (PR #24) bringt `pypgstac` und einen `pgstac-migrate`-Dienst in
-  die compose-Topologie. **M1-04b baut nach dessen Merge darauf auf** und benutzt
-  dieselbe gepinnte Version aus `requirements.txt` — es gibt keine zweite Pin-Stelle.
+  die compose-Topologie. **M1-04b baut darauf auf** und benutzt dieselbe gepinnte
+  Version aus `requirements.txt` — es gibt keine zweite Pin-Stelle.
+  **Erledigt: #24 ist am 19.09.2026 gemergt**, `requirements.txt` führt
+  `pypgstac[psycopg]==0.9.12`. Damit ist 04b nicht mehr blockiert.
 - **Zu 4a:** Zu prüfen, welche STAC-Version wir ausgeben. `proprietary` ist ab
   STAC 1.1 durch `other` ersetzt. **Geprüft, siehe §3.3** — der Hinweis trifft zu.
 
@@ -287,10 +289,10 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 
 ### 3.6 Abhängigkeiten und Umgebung
 
-- `backend/requirements.txt`: `psycopg` — `catalog` braucht es zur Laufzeit.
-- `backend/requirements-dev.txt`: `pypgstac[psycopg]` **nicht** hier pinnen — M1-08
-  (PR #24) bringt den Pin in `requirements.txt` und einen `pgstac-migrate`-Dienst in
-  compose. 04b baut nach dessen Merge darauf auf; zwei Pin-Stellen gäbe es nie.
+- Keine neue Abhängigkeit für 04b: `pypgstac[psycopg]==0.9.12` steht seit M1-08 in
+  `requirements.txt` und bringt `psycopg` mit, das `catalog` zur Laufzeit braucht.
+  Der Pin wird **nicht** wiederholt, und 04b prüft ihn beim Laden gegen die
+  vorgefundene pgstac-Version (§3.4).
 - `scripts/setup-cloud-session.sh` und `.github/workflows/ci.yml` laut Frage 3.
 - `docs/ENTSCHEIDUNGSLOG.md`: je eine Zeile für die Antworten auf die Fragen oben.
 
@@ -301,8 +303,8 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 1. `DatasetConfig`, Enums, Prüfungen in `__post_init__` — mit den T-A-Tests im selben Commit.
 2. Eintrag Sentinel-2 L2A.
 3. `to_stac_collection` und sein Test.
-4. *(04b, erst nach dem Merge von M1-08 / PR #24)* Setup-Skript, CI-Job; `pypgstac`
-   kommt aus dem Pin, den M1-08 in `requirements.txt` setzt.
+4. *(04b)* Setup-Skript, CI-Job; `pypgstac` kommt aus dem Pin, den M1-08 in
+   `requirements.txt` gesetzt hat.
 5. *(04b)* Laden nach pgstac, Versionsprüfung, T-C-Tests.
 6. Entscheidungslog, Aufräumen, `ruff check backend`, `pytest`,
    `lint-imports --config .importlinter`.
@@ -323,5 +325,5 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 | PR über 400 Zeilen | Teilung laut Frage 2 |
 | B13 und 3.1 widersprechen sich beim Ort der Registry | Frage 1; die Umsetzung beginnt nicht ohne Antwort |
 | Setup-Skript wird langsamer | `pypgstac migrate` ist idempotent und läuft nur beim ersten Start; das Ergebnis wird zwischengespeichert |
-| 04b hängt an M1-08 | 04a ist davon unberührt und schon vollständig prüfbar; 04b wartet auf den Merge von PR #24 |
+| 04b hing an M1-08 | erledigt: PR #24 ist gemergt, der Pin steht in `requirements.txt` |
 | Sentinel-2-Eintrag bleibt in drei Feldern offen (`default_render`, `liability_notice`, `citation`) | jeweils als `None` gesetzt und im PR benannt, statt einen Wert zu erfinden; `m1-fundament.md` §2 sieht die Standard-Visualisierung ohnehin erst in M2 |
