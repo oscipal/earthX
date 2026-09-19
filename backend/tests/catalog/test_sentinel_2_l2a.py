@@ -42,13 +42,22 @@ def test_license_is_processing_with_the_flags_from_adr_0003() -> None:
     assert lic.attribution_required is True
 
 
-def test_attribution_and_liability_texts_are_present() -> None:
+def test_attribution_texts_are_present() -> None:
     """They travel with the download, so they cannot be missing (adr/0003 §11.2)."""
     lic = SENTINEL_2_L2A.license
     assert lic.attribution_modified == "Contains modified Copernicus Sentinel data {year}"
     assert lic.attribution_unmodified == "Copernicus Sentinel data {year}"
-    assert lic.liability_notice
     assert "{year}" in lic.attribution_modified
+
+
+def test_the_liability_notice_is_open_rather_than_borrowed() -> None:
+    """adr/0003 §11.2 records that there is one, not how it reads.
+
+    The sentence quoted in §11.1 belongs to the Copernicus DEM licence. Taking it
+    would put another licence's wording on every download of this dataset, so the
+    field stays empty until the Legal Notice itself can be read (§11.3).
+    """
+    assert SENTINEL_2_L2A.license.liability_notice is None
 
 
 def test_license_has_no_spdx_id_but_names_its_source() -> None:
@@ -56,7 +65,6 @@ def test_license_has_no_spdx_id_but_names_its_source() -> None:
     lic = SENTINEL_2_L2A.license
     assert lic.spdx_id is None
     assert lic.name and lic.url.startswith("https://")
-    assert lic.stac_license == "proprietary"
 
 
 def test_quad_pol_is_off() -> None:
@@ -70,6 +78,23 @@ def test_coverage_is_upstream_aggregation_capped_at_z8() -> None:
     assert coverage.provider is CoverageProvider.UPSTREAM_AGGREGATION
     assert coverage.max_geotile_level == 8
     assert SENTINEL_2_L2A.capabilities.single_coverage_product is False
+
+
+def test_the_standard_visualisation_is_open() -> None:
+    """Checklist point 8 is not answered by docs/; m1-fundament.md §2 puts it in M2."""
+    assert SENTINEL_2_L2A.default_render is None
+
+
+def test_the_citation_is_open() -> None:
+    """Checklist point 3: adr/0003 names neither a DOI nor a persistent citation."""
+    assert SENTINEL_2_L2A.doi is None
+    assert SENTINEL_2_L2A.citation is None
+
+
+def test_distribution_and_modification_are_both_allowed() -> None:
+    """KLAERUNGEN B11 needs both for tier Processing, not modification alone."""
+    assert SENTINEL_2_L2A.license.distribution is True
+    assert SENTINEL_2_L2A.license.derivatives is True
 
 
 def test_access_and_health_are_dated() -> None:

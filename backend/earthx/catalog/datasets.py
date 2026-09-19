@@ -22,7 +22,6 @@ from earthx.catalog.registry import (
     DataFormat,
     DatasetConfig,
     DatasetRegistry,
-    DefaultRender,
     HealthInfo,
     HealthStatus,
     LicenseInfo,
@@ -36,17 +35,24 @@ from earthx.catalog.registry import (
 _REACHABILITY_CHECKED = date(2026, 9, 18)
 
 SENTINEL_2_L2A = DatasetConfig(
+    # Our own catalogue id, deliberately not the upstream collection id: the same
+    # dataset arrives as Zarr later (adr/0003 §6) and keeps this entry.
     dataset_id="sentinel-2-l2a",
     title="Sentinel-2 L2A",
     description=(
-        "Bottom-of-atmosphere reflectance from Sentinel-2 MSI, Collection 1, as "
-        "cloud-optimized GeoTIFF. Served by Earth Search v1 (Element 84) from the "
-        "Registry of Open Data on AWS."
+        "Sentinel-2 Level-2A, Collection 1, as cloud-optimized GeoTIFF from baseline "
+        "5.0 on. Served by Earth Search v1 (Element 84) from the Registry of Open "
+        "Data on AWS (adr/0003 §3, Option B)."
     ),
+    # Onboarding checklist point 3 is open: adr/0003 names no DOI and no persistent
+    # citation for this collection, and M1 reads nothing from the source.
+    doi=None,
+    citation=None,
     data_class=DataClass.RASTER_TIME_SERIES,
     format=DataFormat.COG,
-    # Global and open at both ends: M1 reads nothing from the source, so the real
-    # extent of the upstream collection is not known here yet. M2 fills it in.
+    # Placeholder, not a measurement: STAC needs an extent, and M1 reads nothing
+    # from the source. Sentinel-2 does not in fact reach the poles; M2 replaces
+    # both extents with the ones the upstream collection reports.
     spatial_extent=SpatialExtent(bbox=(-180.0, -90.0, 180.0, 90.0)),
     temporal_extent=TemporalExtent(start=None, end=None),
     # Every flag set deliberately (KLAERUNGEN B10). These say what the dataset is
@@ -69,8 +75,8 @@ SENTINEL_2_L2A = DatasetConfig(
         spdx_id=None,
         name="Sentinel Data Legal Notice",
         url="https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice",
-        stac_license="proprietary",
         commercial_use=True,
+        distribution=True,
         derivatives=True,
         share_alike=False,
         attribution_required=True,
@@ -79,11 +85,12 @@ SENTINEL_2_L2A = DatasetConfig(
         # the notice belongs on the download, not only in a footer).
         attribution_modified="Contains modified Copernicus Sentinel data {year}",
         attribution_unmodified="Copernicus Sentinel data {year}",
-        # Shortened to the part adr/0003 §11.1 quotes; the hosts carrying the full
-        # wording are blocked from a session (§11.3), so it is not transcribed here.
-        liability_notice=(
-            "The organisations in charge of the Copernicus programme do not incur any liability."
-        ),
+        # Open. adr/0003 §11.2 records that the Legal Notice carries a liability
+        # disclaimer and that it travels with redistributed data, but not its
+        # wording — the hosts holding it are blocked from a session (§11.3). The
+        # sentence quoted in §11.1 belongs to the Copernicus DEM licence, not to
+        # this one, and must not be substituted for it.
+        liability_notice=None,
     ),
     access=AccessInfo(
         token_free_checked_at=_REACHABILITY_CHECKED,
@@ -103,16 +110,19 @@ SENTINEL_2_L2A = DatasetConfig(
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.UPSTREAM_AGGREGATION,
-        # A Sentinel-2 tile covers roughly 110 km by 110 km, which puts the cap at
-        # geotile z8 — the level adr/0004 §5 names for this dataset.
+        # z8 is Otto's setting for this dataset (adr/0004 §5, decision log 19.09.2026).
+        # The footprint width is the granule size of Sentinel-2, which docs/ does not
+        # record — see the PR. The two are checked against each other, but the level
+        # is the decision and the width is not derived from it.
         typical_footprint_km=110.0,
         max_geotile_level=8,
     ),
-    default_render=DefaultRender(
-        bands=("red", "green", "blue"),
-        stretch=(0.0, 3000.0),
-        colormap=None,
-    ),
+    # Open. The onboarding checklist asks for band names, stretch and colormap, but
+    # docs/ fixes none of them and M1 cannot read the assets of the upstream
+    # collection. m1-fundament.md §2 puts the standard visualisation in M2.
+    default_render=None,
+    # Reachability, not health in the sense M5 will measure it: adr/0003 §10.1 got
+    # HTTP 200 on /v1/collections/sentinel-2-c1-l2a, nothing beyond that.
     health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_REACHABILITY_CHECKED),
 )
 
