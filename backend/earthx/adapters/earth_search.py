@@ -18,6 +18,9 @@ exists rather than a few lines inside the API route:
   Elasticsearch error text that comes with a broken one) never leaves this module.
 * **Rule V** — ``limit`` is capped here, because upstream does not cap it at all
   (§3.2): a single request could otherwise pull hundreds of megabytes.
+* **Rule III, continued (M1-07)** — every search carries our own fixed ``sortby``
+  instead of the source's undocumented default order, measured to keep the page
+  marker working (docs/plans/m1-07-stac-api.md §7).
 
 Input checks are ours too, not the source's: a bbox outside ±90 is *silently accepted*
 upstream (§3.5), which is the worst of the three possible answers.
@@ -57,6 +60,21 @@ TTL_ITEM_S = 24 * 60 * 60
 # The shape of our own page marker. It is versioned so a marker minted by an older
 # release is refused rather than misread.
 TOKEN_VERSION = 1
+
+# M1-06 sent no ``sortby`` and rode on Earth Search's undocumented default order
+# (adr/0005 §8 point 5). Measured for M1-07 against the live source: the page marker's
+# field count follows whatever ``sortby`` is sent (one field in, one-value marker out),
+# and a page fetched with the same ``sortby`` continues correctly. ``datetime`` alone
+# is not a unique key — tiles of one swath can share it — so ``id`` breaks the tie,
+# the same way Earth Search's own undocumented default does. This is a constant, not
+# a caller choice (the STAC API's ``sort`` extension stays off in M1, docs/plans/
+# m1-07-stac-api.md §6), so it is not part of ``_search_fingerprint``. Changing it
+# later would silently reinterpret a page marker minted under the old order — bump
+# ``TOKEN_VERSION`` alongside any change here.
+SORTBY: tuple[dict[str, str], ...] = (
+    {"field": "properties.datetime", "direction": "desc"},
+    {"field": "id", "direction": "asc"},
+)
 
 # An item id goes into a URL path. Rather than escaping it — `urllib` is off limits
 # outside `gateway`, and escaping hides odd input instead of naming it — the ids we
@@ -284,6 +302,7 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     body: dict[str, Any] = {
         "collections": [config.source.source_collection_id],
         "limit": params.limit,
+        "sortby": list(SORTBY),
     }
     if params.bbox is not None:
         body["bbox"] = [float(value) for value in params.bbox]

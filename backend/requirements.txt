@@ -19,3 +19,14 @@ pydantic-settings>=2.2
 # on it, so it must not drift on its own. Matches the version measured
 # working in docs/cloud-umgebung.md §5.
 pypgstac[psycopg]==0.9.12
+# The STAC API this repo serves outward (M1-07; docs/plans/m1-07-stac-api.md).
+# Pinned exact, like pypgstac above: it brings its own DB driver (asyncpg +
+# buildpg, plan §5) and its extension set decides which STAC conformance
+# classes we advertise (§6) — not something to let drift on its own. 6.4.1 is
+# verified against the pypgstac 0.9.12 schema pinned above, against a real
+# Postgres, not just read off a changelog.
+stac-fastapi.pgstac==6.4.1
+# FederatingCoreCrudClient's own registry check and search cache (M1-07) need
+# a pool, not a single connection; pypgstac[psycopg] above pulls in psycopg
+# itself already, this only adds the pooling extra.
+psycopg[pool]>=3.1

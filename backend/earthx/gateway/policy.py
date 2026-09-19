@@ -82,6 +82,17 @@ class Policy:
         return any(host == allowed or host.endswith("." + allowed) for allowed in self.allowed_hosts)
 
 
+def host_of(url: str) -> str:
+    """The normalized host of a URL that is already trusted (M1-07).
+
+    Not one of the request-time checks: those trust nothing until ``inspect_url``
+    has looked at it. This is how ``api`` turns the registry's own, already-known
+    source endpoints into the gateway's allowlist without importing ``urllib``
+    itself (KLAERUNGEN B8) — the parsing stays in the one module allowed to do it.
+    """
+    return normalize_host(urlsplit(url).hostname or "")
+
+
 def policy_from_env(environ: dict[str, str] | None = None, **limits: object) -> Policy:
     """Build a policy from ``EARTHX_ALLOWED_HOSTS`` (comma separated).
 

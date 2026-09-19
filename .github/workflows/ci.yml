@@ -162,14 +162,16 @@ jobs:
           docker compose logs
           exit 1
 
-      - name: pgstac-migrate ran successfully
+      - name: pgstac-migrate and catalog-load ran successfully
         run: |
-          code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq pgstac-migrate)")"
-          if [ "$code" != "0" ]; then
-            echo "pgstac-migrate exited with $code"
-            docker compose logs pgstac-migrate
-            exit 1
-          fi
+          for s in pgstac-migrate catalog-load; do
+            code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq "$s")")"
+            if [ "$code" != "0" ]; then
+              echo "$s exited with $code"
+              docker compose logs "$s"
+              exit 1
+            fi
+          done
 
       - name: Restart one service, all stay (or become) healthy
         run: |

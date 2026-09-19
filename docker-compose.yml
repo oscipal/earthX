@@ -1,9 +1,11 @@
-# EarthX compose topology (architekturplan.md 3.2, 12.1; docs/plans/m1-08-compose-topologie.md).
+# EarthX compose topology (architekturplan.md 3.2, 12.1; docs/plans/m1-08-compose-topologie.md,
+# docs/plans/m1-07-stac-api.md §8).
 #
 # One image (backend/Dockerfile), four start commands: api, tiler, worker,
 # harvester. tiler/worker/harvester are M1 shells: they start, report
-# healthy on /health, and do nothing else. api gets the same stub for now;
-# the real STAC-API content lands here with M1-07.
+# healthy on /health, and do nothing else. api serves the outward STAC API
+# (M1-07) and is the only process that needs the collection catalog-load
+# writes.
 #
 # Configuration only via environment variables (.env, see .env.example).
 # No secrets in this file itself.
@@ -42,6 +44,26 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # One-shot: applies our own migrations (e.g. the search cache table from M1-06)
+  # and loads the registry's collections into pgstac, then exits. Runs after
+  # pgstac-migrate, because it writes into the schema that installs (M1-07;
+  # earthx/catalog/load.py). Without this, a fresh compose start has neither
+  # the Sentinel-2 collection nor the search cache table.
+  catalog-load:
+    build:
+      context: ./backend
+    command: ["python", "-m", "earthx.catalog.load"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      pgstac-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   minio:
     # MinIO no longer publishes to Docker Hub (minio/minio); quay.io/minio/minio
     # is the current official location for the same release tags.
@@ -67,11 +89,24 @@ services:
     command: ["uvicorn", "earthx.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
+    environment:
+      # M1-07: api now connects to Postgres itself (stac-fastapi-pgstac's own
+      # asyncpg pool, and earthx.api.dependencies' psycopg pool for the search
+      # cache) — both read these same libpq-style names, like pgstac-migrate
+      # and catalog-load already do above. The prototype's stub never needed
+      # them; the STAC API does.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      catalog-load:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s

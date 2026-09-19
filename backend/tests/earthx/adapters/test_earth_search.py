@@ -76,6 +76,16 @@ class TestSearch:
         assert page.matched == 0
         assert page.next_page_token is None
 
+    async def test_every_search_carries_our_own_fixed_sortby(self, dataset_id: str) -> None:
+        """M1-07: a deterministic order of our own, not the source's undocumented default."""
+        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
+        async with gateway:
+            await search_items(dataset_id, gateway=gateway)
+        assert body_of(seen[0])["sortby"] == [
+            {"field": "properties.datetime", "direction": "desc"},
+            {"field": "id", "direction": "asc"},
+        ]
+
 
 class TestCollectionIsOurs:
     async def test_an_unknown_collection_never_reaches_the_source(self) -> None:
