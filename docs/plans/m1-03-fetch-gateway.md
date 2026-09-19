@@ -1,7 +1,8 @@
 # M1-03 — Fetch-Gateway: Umsetzungsplan
 
-**Status:** Plan, wartet auf Ottos OK. Stufe B laut `docs/plans/m1-fundament.md` §3:
-zuerst dieser Plan als Draft-PR, Umsetzung erst danach.
+**Status:** **Von Otto angenommen am 19.09.2026** — F1 bis F4 alle wie empfohlen.
+Stufe B laut `docs/plans/m1-fundament.md` §3: Plan zuerst, Umsetzung danach.
+Die Umsetzung läuft in den drei PRs aus §8 F1.
 **Aufgabe:** M1-03 aus `docs/plans/m1-fundament.md` §4.
 **Grundlage:** `architekturplan.md` 3.1, 6.5; `KLAERUNGEN.md` B8, B9;
 `adr/0001` §7 (Z8), §9.3; `adr/0004` §3.1, §3.4; `adr/0005` §3.2, §3.4, §3.5, §3.8, Regel IV.
@@ -174,7 +175,10 @@ wenn der erste Leser existiert. Das gehört so in den Abnahmebericht von M1-10.
 | `s3://` für bekannte Buckets | In M1 liest nichts aus dem Objektspeicher (E6), `boto3` ist außerhalb von `gateway` ohnehin gesperrt. Frage F4 in §8. |
 | Token, Zugangsdaten jeder Art | `ENTSCHEIDUNGEN` §3: Token-Logik ist nicht Teil des Gateways. |
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto — beantwortet am 19.09.2026
+
+**Alle vier wie empfohlen entschieden:** drei PRs, die geprüfte Adresse verbinden,
+Circuit Breaker auf ein Issue nach M1-04 vertagen, in M1 nur `https`.
 
 **F1 — Schnitt.** Umsetzung und Tests liegen zusammen bei rund 900 Zeilen, der
 Richtwert sind 400 je PR. Vorschlag: **drei PRs nacheinander**, jeder für sich
