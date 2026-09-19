@@ -1,6 +1,7 @@
 # ADR 0004 — Technische Umsetzung der Coverage Map
 
-- **Status:** Vorschlag. Entscheidung liegt bei Otto.
+- **Status:** Angenommen. Von Otto am 19.09.2026 entschieden; die fünf Fragen
+  aus §7 sind dort beantwortet.
 - **Datum:** 2026-09-19
 - **Aufgabe:** M1-09 laut `docs/plans/m1-fundament.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
@@ -75,22 +76,20 @@ die Möglichkeit, das Ergebnis einfach einmal vorzuberechnen.
 ## 2. Kriterien
 
 > **Zu den Kürzeln E1–E8.** Sie stehen in `docs/plans/m1-fundament.md` §1 und
-> sind **Empfehlungen an Otto, noch keine Entscheidungen** — der Kopf jener
-> Datei stellt sie ausdrücklich unter Ottos Antwort, und im Entscheidungslog
-> gibt es zu ihnen bislang keine Zeile (M1-00 ist nicht gelaufen). Dieses ADR
-> benutzt zwei davon: **E4** (Anwendungs-Cache in Postgres) und **E5** (ein
-> fehlgeschlagener Zwischenspeicher macht nur langsamer, nie 404). Entscheidet
-> Otto dort anders, ändert sich in §5 der Zwischenspeicher, nicht die
-> Empfehlung.
+> sind seit **M1-00 entschieden** — Otto hat E1 bis E8 am 19.09.2026 wie
+> empfohlen bestätigt, jede mit einer eigenen Zeile im Entscheidungslog. Dieses
+> ADR benutzt zwei davon, beide also festen Stands: **E4** (Anwendungs-Cache in
+> Postgres) und **E5** (ein fehlgeschlagener Zwischenspeicher macht nur
+> langsamer, nie 404).
 
 | # | Kriterium | Herkunft |
 |---|---|---|
 | K1 | Reagiert auf Filter (Zeitraum, Wolken, weitere Suchkriterien) | `ENTSCHEIDUNGEN` §2 |
 | K2 | Vollständigkeit ist entweder gegeben oder **sichtbar ausgewiesen** | `ENTSCHEIDUNGEN` §2; F12/N3 |
 | K3 | Funktioniert für föderierte **und** für eigene Items, mit demselben Ergebnisformat | `architekturplan.md` 5.2 |
-| K4 | Dienste bleiben zustandslos; ein leerer Zwischenspeicher macht nur langsamer, nie 404 | `adr/0001` §8, §9.3; E5 (noch Vorschlag, s. o.) |
+| K4 | Dienste bleiben zustandslos; ein leerer Zwischenspeicher macht nur langsamer, nie 404 | `adr/0001` §8, §9.3; E5 (fest seit M1-00) |
 | K5 | Alles Ausgehende über `gateway`, konservative Last auf der Quelle | `KLAERUNGEN` B8; `m1-fundament.md` §6 |
-| K6 | Interaktiv bedienbar: Antwortzeit im Bereich weniger hundert Millisekunden | **eigene Setzung** — in `docs/` steht kein Latenzziel; siehe §7 Frage 5 |
+| K6 | Interaktiv bedienbar: gefilterte Coverage-Antwort **unter 1 s, typisch unter 0,5 s** | Ottos Setzung vom 19.09.2026 (§7 Frage 4); in `docs/` stand zuvor kein Latenzziel |
 | K7 | Läuft auf dem Stack, den die Cloud-Umgebung und CI hergeben — ohne eigenes Image nur für eine Extension | `docs/cloud-umgebung.md`; `adr/0002` §1 |
 | K8 | Kosten wachsen nicht linear mit der Katalogsgröße; grobe Kostenabschätzung pro Request | `projektuebersicht.md` Prinzip 10 (Kostenbewusstsein) |
 
@@ -342,11 +341,11 @@ Quelle aggregiert — dass Earth Search `/aggregate` nur per GET annimmt, wie di
 Parameter heißen, wo gekappt wird —, gehört nach `adapters` („Protokolle der
 Quellen"). Sonst wandert quellenspezifisches Protokollwissen nach `catalog` und
 verschiebt die Modulgrenze inhaltlich, auch wenn der Import erlaubt bliebe.
-Praktisch heißt das: **Aggregation wird eine vierte Adapter-Fähigkeit** neben
-Discovery, Suche und Zugriffsauflösung. `architekturplan.md` 6.1 nennt heute
-drei („bis zu drei **getrennte** Fähigkeiten"); die Tabelle dort wäre zu
-ergänzen. Nicht jede Quelle bringt die Fähigkeit mit — genau dafür steht die
-Rückfallebene Option 6.
+Praktisch heißt das: **Aggregation wird eine vierte, optionale
+Adapter-Fähigkeit** neben Discovery, Suche und Zugriffsauflösung. Otto hat das
+am 19.09.2026 angenommen; `architekturplan.md` 6.1 ist entsprechend gefasst —
+die Liste der Fähigkeiten ist nicht mehr abschließend, und die Rückfallebene für
+Quellen ohne Aggregation ist die ausgewiesene Stichprobe (Option 6).
 
 | Fall | Weg |
 |---|---|
@@ -358,14 +357,23 @@ Dazu **Option 2 nur für den einen ungefilterten Weltüberblick** — die Ansich
 ohne jeden Filter, die jeder Nutzer als erstes sieht und die nach §3.6 mit 2,0
 bis 7,8 s die einzige wirklich teure ist. Sie hat definitionsgemäß keine Filter
 und ist damit gefahrlos vorberechenbar. Fällt die Vorberechnung aus, antwortet
-Option 1 langsamer statt gar nicht — das ist Regel E5 (`m1-fundament.md` §1)
-und `adr/0001` §9.3 (K4), und sie gehört als Test hinterlegt.
+Option 1 langsamer statt gar nicht — das ist Regel E5 (`m1-fundament.md` §1,
+fest seit M1-00) und `adr/0001` §9.3 (K4), und sie gehört als Test hinterlegt.
 
 **Gitter: Geotile.** Als einziges Gitter auf beiden Seiten verfügbar, seine
 Präzision *ist* die Zoomstufe der Karte, und in PostGIS ohne Extension
 nachbaubar (§3.7). H3 wäre fachlich besser, scheitert an K7. Die gewählte
 Stufe leitet sich aus dem sichtbaren Kartenausschnitt ab, gedeckelt so, dass die
 erwartete Zellenzahl deutlich unter der Kappungsgrenze aus §3.3 bleibt.
+
+Dazu kommt ein **zweiter Deckel je Datensatz**, den Otto am 19.09.2026
+festgelegt hat: Die feinste zulässige Gitterstufe ergibt sich aus der typischen
+Footprint-Größe des Datensatzes, die dafür als Feld im Registry-Eintrag steht
+(M1-04). Für Sentinel-2 L2A ist das **höchstens Geotile z8**. Grund ist die
+Zählweise: Wird die Zelle kleiner als ein Footprint, zählt die Zentroid-Regel
+eine Szene weiterhin in genau eine Zelle, und die Karte zeigt ein Punktmuster
+statt einer Abdeckung (§3.3). Unterhalb des Deckels greift stattdessen der
+Umschaltpunkt auf Footprints.
 
 **Zählweise: eine Aufnahme, eine Zelle (Zentroid).** Nicht, weil sie besser
 wäre — die Überlappungszählung des Prototyps beschreibt „Abdeckung" ehrlicher —,
@@ -399,8 +407,8 @@ liefert `/search` **22 619** Aufnahmen; mit `eo:cloud_cover < 20` sind es
 demselben Filter meldet (§3.3). Beide Endpunkte zählen also dasselbe, was die
 Vollständigkeitsprobe zusätzlich absichert. Der Sprung von 22 619 auf 3848
 zeigt zugleich, warum die Schwelle am Filter hängen muss und nicht am Zoom.
-Unterhalb einer Schwelle (Vorschlag: 500) werden die echten Footprints
-gezeichnet, darüber die Dichte. Das ist filterabhängig und damit richtiger als
+Unterhalb einer Schwelle — von Otto am 19.09.2026 auf **`numberMatched < 500`**
+festgelegt — werden die echten Footprints gezeichnet, darüber die Dichte. Das ist filterabhängig und damit richtiger als
 eine feste Zoomstufe: Ein enger Zeitraum lässt auch weit herausgezoomt nur
 wenige Szenen übrig. Der Zoom bleibt als zusätzliche Bremse, damit bei weitem
 Ausschnitt nicht doch 500 Polygone im Browser landen.
@@ -438,10 +446,13 @@ schlechtesten gemessenen Fall (520 kB, Geohash p3 über die ganze Welt, §3.2),
 nicht aus einer Quelle. Siehe §7 Frage 2.
 
 **Zwischenspeicher: Postgres, kurz, schlüsselbasiert.** Anwendungs-Cache laut
-E4 (`m1-fundament.md` §1, noch Vorschlag), Schlüssel ist der normalisierte
-Filter samt Gitterstufe. Die TTL gehört zum
-Spike M1-05, der dieselbe Frage für die Item-Suche stellt — eine Antwort für
-beide. Der Upstream setzt kein `Cache-Control` und CloudFront liefert
+E4 (`m1-fundament.md` §1, fest seit M1-00), Schlüssel ist der normalisierte
+Filter samt Gitterstufe. Die Fristen sind dieselben wie für die Item-Suche —
+Otto hat sie am 19.09.2026 für die Coverage-Aggregation ausdrücklich aus
+`adr/0005` F1 übernommen: **24 h**, wenn das Zeitfenster geschlossen ist, also
+sein Ende mehr als **7 Tage** zurückliegt, und **5 min** am offenen Rand
+(Zeitfenster offen oder bis „jetzt"). Damit gilt für Suche und Coverage
+dieselbe Regel, was der Spike M1-05 ohnehin angestrebt hatte. Der Upstream setzt kein `Cache-Control` und CloudFront liefert
 durchgehend `Miss` (§3.2); unser Zwischenspeicher ist also der einzige, der
 überhaupt wirkt. Und er darf ausfallen, ohne dass etwas fehlschlägt (K4, Regel E5).
 
@@ -456,22 +467,29 @@ URL-Länge, die den `414` vermeidet, bevor die Anfrage das Haus verlässt (§3.4
   (B12) bekommt als Pflichtpunkt nicht „Coverage Map existiert", sondern
   „Coverage-Anbieter ist zugeordnet und die Vollständigkeitsprobe greift".
 - **M1-03** (Fetch-Gateway) erhält zwei zusätzliche Anforderungen (§5, Gateway).
-- **M1-05** (Spike föderierte Item-Suche) sollte die TTL-Frage für Suche und
-  Coverage gemeinsam beantworten; die Latenzzahlen aus §3.2 sind dort
-  wiederverwendbar.
-- **M1-04**: Der Registry-Eintrag braucht ein Feld für den Coverage-Weg und ein
-  Capability-Flag für Einmal-Produkte. Das ist kein neues Konzept, sondern ein
-  Eintrag mehr in der ohnehin vorgesehenen Flag-Liste (B10).
-- Die offene Log-Zeile „Technische Umsetzung der Coverage Map" wird durch dieses
-  ADR beantwortet, sobald Otto entscheidet.
-- `adr/0003` §10.4 („Ratengrenzen offen") bleibt offen — §3.2 konnte sie nicht
-  ermitteln, weil der Dienst keine entsprechenden Kopfzeilen sendet.
-- Ein Nebenbefund für `docs/cloud-umgebung.md` §6: `earth-search.aws.element84.com`
-  ist in dieser Sitzung erreichbar; die Tabelle dort führt ihn noch als gesperrt.
-  Nicht in diesem PR geändert, weil es außerhalb des Auftragsumfangs von M1-09
-  liegt — dieser Commit fasst nur das ADR und die zugehörige Log-Zeile an.
+- **M1-05** (Spike föderierte Item-Suche) ist inzwischen als `adr/0005`
+  angenommen. Die TTL-Frage ist dort mit F1 beantwortet, und die Coverage
+  übernimmt dieselben Fristen (§5, Zwischenspeicher); die Latenzzahlen aus §3.2
+  sind dort wiederverwendet.
+- **M1-04**: Der Registry-Eintrag braucht ein Feld für den Coverage-Weg, ein
+  Capability-Flag für Einmal-Produkte und die **typische Footprint-Größe**, aus
+  der sich der Deckel der Gitterstufe ergibt (§5, Gitter). Die ersten beiden
+  sind kein neues Konzept, sondern je ein Eintrag mehr in der ohnehin
+  vorgesehenen Flag-Liste (B10).
+- **`architekturplan.md` 6.1** führt Aggregation als vierte, optionale
+  Adapter-Fähigkeit; die Liste dort ist nicht mehr abschließend und nennt die
+  ausgewiesene Stichprobe als Rückfallebene.
+- Die offene Log-Zeile „Technische Umsetzung der Coverage Map" ist mit diesem
+  ADR beantwortet und im Entscheidungslog auf „entschieden" gesetzt.
+- `adr/0003` §10.4 („Ratengrenzen offen") ist für Earth Search inzwischen
+  nachgemessen — nicht hier, sondern in `adr/0005` §3.6: keine Drosselung bei 30
+  parallelen Anfragen, konservativ vorgeschlagen sind 6 Verbindungen je Host.
+  Für EOPF und Copernicus DEM bleibt die Zeile offen.
+- Der Nebenbefund zu `docs/cloud-umgebung.md` §6 ist nachgezogen:
+  `earth-search.aws.element84.com` steht dort jetzt als freigegeben und
+  erreichbar, nicht mehr als gesperrt.
 
-## 7. Fragen an Otto
+## 7. Fragen an Otto — beantwortet am 2026-09-19
 
 1. **Zählweise.** Eine Aufnahme zählt in **eine** Zelle (Zentroid) — nicht in
    jede berührte, wie im Prototyp. Grund: Der föderierte Weg kann es nicht
@@ -479,24 +497,42 @@ URL-Länge, die den `414` vermeidet, bevor die Anfrage das Haus verlässt (§3.4
    (a) *Empfehlung:* so übernehmen, Legende sagt „Mittelpunkt in der Zelle".
    (b) Überlappungszählung erzwingen — dann müssen alle Footprints geerntet
    werden (Option 5, 30 Mio. Items für einen Datensatz).
+   → **(a) angenommen, mit einer Ergänzung:** Zusätzlich deckelt jeder Datensatz
+   seine feinste Gitterstufe anhand der typischen Footprint-Größe aus seinem
+   Registry-Eintrag; für Sentinel-2 L2A ist das höchstens Geotile z8. Damit
+   bleibt die Zentroid-Zählung dort, wo sie trägt (§5, Gitter).
 2. **Vektorkacheln.** (a) *Empfehlung:* in M2 nicht, GeoJSON reicht laut
    Messung; Umkehrschwelle ~500 kB je Antwort. (b) gleich mit Kachelserver
    bauen — ein fünfter Prozess gegen M1-08.
+   → **(a) angenommen:** keine Vektorkacheln in M2.
 3. **Umschaltpunkt Dichte → Footprints** bei `numberMatched < 500`.
    (a) *Empfehlung:* 500. (b) anderer Wert. (c) feste Zoomstufe statt
    Trefferzahl.
+   → **(a) angenommen:** Schwelle `numberMatched < 500`, der Zoom bleibt als
+   zusätzliche Bremse.
 4. **Latenzziel (K6).** In `docs/` steht keines; „wenige hundert Millisekunden"
    ist meine Setzung. (a) *Empfehlung:* so übernehmen und als Zeile ins
    Entscheidungslog. (b) anderer Wert. (c) kein Ziel festlegen — dann entfällt
    K6 als Kriterium.
+   → **(b):** Das Ziel für die gefilterte Coverage ist **unter 1 s, typisch
+   unter 0,5 s**. K6 ist entsprechend gefasst und steht als Zeile im
+   Entscheidungslog.
 5. **Status dieses ADR.** (a) *Empfehlung:* auf „angenommen" setzen, M2 baut
    darauf. (b) als Vorschlag stehen lassen, bis M2 ansteht.
+   → **(a) angenommen:** Status „angenommen" (Kopf dieses Dokuments).
+
+Zwei Festlegungen kamen mit derselben Antwort dazu, ohne eigene Frage gewesen zu
+sein: **Aggregation als vierte, optionale Adapter-Fähigkeit** (§5, §6;
+`architekturplan.md` 6.1) und die **Cache-Fristen** der Coverage-Aggregation, die
+denen aus `adr/0005` F1 folgen (§5, Zwischenspeicher).
 
 ## 8. Was offen blieb
 
 1. **Ratengrenzen von Earth Search** — keine `X-RateLimit-*`- oder
    `Retry-After`-Kopfzeilen, rund 40 Anfragen ohne Drosselung (§3.2). Nicht
-   geschätzt; die Gateway-Grenzen bleiben deshalb konservativ.
+   geschätzt; die Gateway-Grenzen bleiben deshalb konservativ. **Nachgetragen:**
+   `adr/0005` §3.6 hat den Befund mit rund 110 Anfragen und zwei Bursts (20 und
+   30 parallel) bestätigt und schlägt 6 parallele Verbindungen je Host vor.
 2. **Verhalten bei 30 Mio. Items im eigenen pgstac.** Der Messaufbau hatte
    2 Mio. (§3.6). Für den föderierten Sentinel-2-Fall ist das ohne Belang —
    dort aggregiert der Upstream —, für einen künftig materialisierten Katalog
