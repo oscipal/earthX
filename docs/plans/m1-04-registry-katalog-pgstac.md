@@ -41,12 +41,17 @@ pgstac, erzeugt aus genau einem Registry-Eintrag.
 
 ---
 
-## 2. Offene Punkte — Fragen an Otto
+## 2. Offene Punkte — von Otto beantwortet am 19.09.2026
 
-Ohne Antwort auf **Frage 1** beginnt die Umsetzung nicht; sie entscheidet, wo der
-Code liegt. Die übrigen sind mit der Empfehlung umsetzbar, falls Otto nichts sagt.
+**Alle fünf wie empfohlen: 1a, 2a, 3a, 4a, 5a.** Damit ist dieser Plan freigegeben;
+die Antworten stehen als eine Zeile in `docs/ENTSCHEIDUNGSLOG.md`, und `KLAERUNGEN.md`
+B13 nennt jetzt das Modul, in dem die Registry liegt. Die Fragen bleiben unten
+stehen, weil die Begründungen erklären, warum die Umsetzung so aussieht, wie sie
+aussieht.
 
 ### Frage 1 — Wo liegt die Registry?
+
+**Antwort: (a) `catalog`.**
 
 Zwei Dokumente widersprechen sich. B13 sagt „`DatasetConfig` als Python-Dataclass
 in `datasets.py`". `architekturplan.md` 3.1 sagt, `datasets/<id>` sei
@@ -71,6 +76,8 @@ der Widerspruch nicht stehen bleibt.
 
 ### Frage 2 — Ein PR oder zwei?
 
+**Antwort: (a) zwei PRs.**
+
 M1-04 liegt als Ganzes deutlich über dem Richtwert von 400 Zeilen; `m1-fundament.md`
 §6 sieht das Teilen ausdrücklich vor.
 
@@ -81,6 +88,8 @@ M1-04 liegt als Ganzes deutlich über dem Richtwert von 400 Zeilen; `m1-fundamen
 2. Ein PR über dem Richtwert, mit Begründung im PR.
 
 ### Frage 3 — Postgres in CI und im Setup-Skript
+
+**Antwort: (a) beide Dateien dürfen geändert werden.**
 
 T-C verlangt Tests gegen Postgres in Sitzung **und** CI (`adr/0002` §2). Dafür sind
 zwei Dateien zu ändern, die sonst tabu wären:
@@ -100,6 +109,8 @@ dahin CI-seitig ungeprüft, was im PR zu benennen wäre.
 
 ### Frage 4 — Lizenzfeld ohne SPDX-Kennung
 
+**Antwort: (a) `spdx_id = None` plus Name und URL.**
+
 Die Onboarding-Checkliste verlangt ein maschinenlesbares Lizenzfeld, „SPDX-Kennung,
 sonst Freitext + manuelle Einstufung". Für das Sentinel Data Legal Notice gibt es
 keine SPDX-Kennung; Earth Search selbst trägt `proprietary`.
@@ -110,6 +121,8 @@ keine SPDX-Kennung; Earth Search selbst trägt `proprietary`.
 2. Eine eigene Kennung erfinden. Nicht empfohlen — SPDX ist ein geschlossener Raum.
 
 ### Frage 5 — Eigene Migrationen neben pgstac
+
+**Antwort: (a) beides.**
 
 pgstac bringt sein eigenes Schema und seine eigene Migration mit (`pypgstac migrate`).
 „Migrationen versioniert" aus der Aufgabe kann zweierlei heißen:
