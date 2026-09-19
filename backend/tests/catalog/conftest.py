@@ -70,7 +70,7 @@ def valid_config() -> DatasetConfig:
             attribution_unmodified="Test data {year}",
             terms=TermsOfUse(
                 url="https://example.invalid/terms",
-                notice={"de": "Testdaten {year}, Bedingungen: {terms_url}"},
+                notice={"de": "Bedingungen: {terms_url}"},
             ),
         ),
         access=AccessInfo(

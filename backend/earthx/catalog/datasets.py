@@ -94,24 +94,24 @@ SENTINEL_2_L2A = DatasetConfig(
         # Read from the Legal Notice itself on 19.09.2026 (the host is released).
         # The document carries no disclaimer by the provider; it carries a waiver by
         # the user, plus "without any express or implied warranty". Otto settled the
-        # wording on the same day: we pass on the source's terms, not our own.
+        # wording on the same day: we pass on the source's terms, not our own, and the
+        # text stays free of the attribution above, which goes in front of it.
         terms=TermsOfUse(
             url=_LEGAL_NOTICE_URL,
             notice={
                 "de": (
-                    "Enthält veränderte Copernicus-Sentinel-Daten {year}. Die Nutzung unterliegt "
-                    "dem Sentinel Data Legal Notice: {terms_url}. Die Daten werden ohne Gewähr "
-                    "bereitgestellt; mit ihrer Nutzung verzichtet der Nutzer auf "
-                    "Schadensersatzansprüche gegenüber der EU und den Datenanbietern."
+                    "Die Nutzung unterliegt dem Sentinel Data Legal Notice: {terms_url}. "
+                    "Die Daten werden ohne Gewähr bereitgestellt; mit ihrer Nutzung verzichtet "
+                    "der Nutzer auf Schadensersatzansprüche gegenüber der EU und den "
+                    "Datenanbietern."
                 ),
                 # Kept close to the Legal Notice's own words ("without any express or
                 # implied warranty", "renounces to any claims for damages against the
                 # European Union and the providers of the said Data and Information").
                 "en": (
-                    "Contains modified Copernicus Sentinel data {year}. Use is subject to the "
-                    "Sentinel Data Legal Notice: {terms_url}. The data are provided without "
-                    "warranty; by using them the user renounces any claims for damages against "
-                    "the European Union and the providers of the data."
+                    "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
+                    "are provided without warranty; by using them the user renounces any claims "
+                    "for damages against the European Union and the providers of the data."
                 ),
             },
         ),

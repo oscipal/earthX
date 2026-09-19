@@ -82,12 +82,25 @@ def test_both_terms_texts_name_the_waiver_and_the_missing_warranty() -> None:
 
 
 def test_the_terms_text_can_be_filled_in_at_a_download() -> None:
-    """Both placeholders resolve, and nothing else is left over."""
+    """The one placeholder resolves, and nothing else is left over."""
     terms = SENTINEL_2_L2A.license.terms
     for text in terms.notice.values():
-        filled = text.format(year=2024, terms_url=terms.url)
+        filled = text.format(terms_url=terms.url)
         assert "{" not in filled and "}" not in filled
-        assert "2024" in filled and terms.url in filled
+        assert terms.url in filled
+
+
+def test_the_terms_text_carries_no_attribution() -> None:
+    """Otto, 19.09.2026: attribution stays separate and goes in front of the terms.
+
+    Repeating it here would either duplicate it, or claim modified data where we pass
+    on unmodified ones — the two attribution texts differ in exactly that.
+    """
+    lic = SENTINEL_2_L2A.license
+    for text in lic.terms.notice.values():
+        assert "{year}" not in text
+        assert "Copernicus Sentinel data" not in text
+        assert "Copernicus-Sentinel-Daten" not in text
 
 
 def test_license_has_no_spdx_id_but_names_its_source() -> None:

@@ -105,9 +105,11 @@ class TermsOfUse:
     of the source, not a disclaimer of its own. The platform's own terms of use are
     a separate, open question (decision log, same date).
 
-    ``notice`` holds one text per language code and must carry ``de``. Both
-    placeholders are filled where data leaves the platform: ``{year}`` with the year
-    of acquisition, ``{terms_url}`` with ``url``.
+    ``notice`` holds one text per language code and must carry ``de``. It states the
+    terms only: the attribution stays a separate text and is put in front of it where
+    data leaves the platform (Otto, 19.09.2026), so that neither is repeated and a
+    notice for unmodified data cannot end up claiming the data were modified.
+    ``{terms_url}`` is filled with ``url``.
     """
 
     url: str
@@ -119,9 +121,8 @@ class TermsOfUse:
         if "de" not in self.notice:
             raise ConfigError("terms notice without a German text (docs and UI are German)")
         for language, text in self.notice.items():
-            missing = [name for name in ("{year}", "{terms_url}") if name not in text]
-            if missing:
-                raise ConfigError(f"terms notice [{language}] is missing {' and '.join(missing)}")
+            if "{terms_url}" not in text:
+                raise ConfigError(f"terms notice [{language}] does not link the terms ({{terms_url}})")
 
 
 @dataclass(frozen=True, slots=True)
