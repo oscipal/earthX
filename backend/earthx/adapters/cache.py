@@ -14,15 +14,21 @@ cache is handed in by whoever assembles the two — the tests in M1-06, the
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 # One cached entry: a JSON object, because that is what both ends already speak —
 # the source answers JSON and the cache column is jsonb.
 CacheValue = dict[str, Any]
 
 
+@runtime_checkable
 class SearchCache(Protocol):
-    """A key-value store with an expiry. Missing is normal; failing is survivable."""
+    """A key-value store with an expiry. Missing is normal; failing is survivable.
+
+    Runtime-checkable so that the implementation in ``catalog``, which cannot inherit
+    from this (the import may only go the other way), is still checked against it by a
+    test rather than by hope. That check sees the method names, not the signatures.
+    """
 
     async def get(self, key: str) -> CacheValue | None:
         """The stored value, or None if it is absent or expired."""
