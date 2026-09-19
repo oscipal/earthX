@@ -20,7 +20,7 @@ from earthx.gateway.errors import (
     UrlRejected,
     UrlTooLong,
 )
-from earthx.gateway.policy import ALLOWED_HOSTS_ENV, Policy, normalize_host, policy_from_env
+from earthx.gateway.policy import ALLOWED_HOSTS_ENV, Policy, host_of, normalize_host, policy_from_env
 
 __all__ = [
     "ALLOWED_HOSTS_ENV",
@@ -38,6 +38,7 @@ __all__ = [
     "UrlRejected",
     "UrlTooLong",
     "check_url",
+    "host_of",
     "normalize_host",
     "policy_from_env",
 ]
