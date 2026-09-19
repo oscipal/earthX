@@ -1,6 +1,6 @@
 # M1 — Fundament: Aufgabenschnitt
 
-**Status:** Vorschlag vom 19.09.2026. Gilt nach Ottos Entscheidung über Abschnitt 1.
+**Status:** Abschnitt 1 von Otto entschieden am 19.09.2026: E1–E8 alle wie empfohlen.
 **Ort im Repo:** `docs/plans/m1-fundament.md`
 **Grundlagen:** `projektplan.md` 4 (M1), `architekturplan.md` 3.1, 5, 6.5, 12, 13, 15.1;
 `adr/0001` (Zustand), `adr/0002` (Tests), `adr/0003` (erster Datensatz); `ENTSCHEIDUNGSLOG.md`.
@@ -19,6 +19,10 @@ Adapter, alles Ausgehende über `gateway`, nach außen eine STAC-API.
 ---
 
 ## 1. Vor dem Start: Entscheidungen von Otto
+
+**Ottos Antworten (Stand 19.09.2026): E1–E8 alle wie empfohlen.** Siehe
+`docs/ENTSCHEIDUNGSLOG.md`, Zeilen E1–E8 vom 19.09.2026, sowie den nun
+„angenommen"-Status von `adr/0001` und `adr/0002` (E8).
 
 | # | Frage | Empfehlung | Warum |
 |---|---|---|---|
