@@ -12,8 +12,9 @@ later on.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
@@ -107,8 +108,8 @@ class LicenseInfo:
     spdx_id: str | None
     name: str
     url: str
-    stac_license: str
     commercial_use: bool
+    distribution: bool
     derivatives: bool
     share_alike: bool
     attribution_required: bool
@@ -158,6 +159,13 @@ class DefaultRender:
     stretch: tuple[float, float]
     colormap: str | None
 
+    def __post_init__(self) -> None:
+        if not self.bands:
+            raise ConfigError("default_render needs at least one band")
+        low, high = self.stretch
+        if low >= high:
+            raise ConfigError(f"default_render stretch {self.stretch} is empty or inverted")
+
 
 @dataclass(frozen=True, slots=True)
 class HealthInfo:
@@ -166,6 +174,10 @@ class HealthInfo:
     status: HealthStatus
     last_checked_ok: date | None
 
+    def __post_init__(self) -> None:
+        if self.status is HealthStatus.OK and self.last_checked_ok is None:
+            raise ConfigError("health status ok without a date of the last successful check (KLAERUNGEN B12)")
+
 
 @dataclass(frozen=True, slots=True)
 class SpatialExtent:
@@ -173,22 +185,41 @@ class SpatialExtent:
 
     bbox: tuple[float, float, float, float]
 
+    def __post_init__(self) -> None:
+        west, south, east, north = self.bbox
+        if not (-180.0 <= west <= 180.0 and -180.0 <= east <= 180.0):
+            raise ConfigError(f"bbox longitudes out of range: {self.bbox}")
+        if not (-90.0 <= south <= 90.0 and -90.0 <= north <= 90.0):
+            raise ConfigError(f"bbox latitudes out of range: {self.bbox}")
+        if south >= north:
+            raise ConfigError(f"bbox is empty or upside down: {self.bbox}")
+        if west >= east:
+            raise ConfigError(f"bbox is empty or inverted: {self.bbox} (a dateline crossing is not supported yet)")
+
 
 @dataclass(frozen=True, slots=True)
 class TemporalExtent:
     """Start and end of the dataset. ``None`` is open, as STAC allows.
 
-    Both open means not yet read from the source — M1 does not fetch anything.
+    Instants, not dates: an end written as midnight would silently cut the last
+    day off the extent. Both open means not yet read from the source — M1 does
+    not fetch anything.
     """
 
-    start: date | None
-    end: date | None
+    start: datetime | None
+    end: datetime | None
+
+    def __post_init__(self) -> None:
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ConfigError(f"temporal extent ends before it starts: {self.start} to {self.end}")
 
 
 def max_geotile_level_for(typical_footprint_km: float) -> int:
     """Finest geotile level whose cell is still at least one footprint wide (adr/0004 §5)."""
     if typical_footprint_km <= 0:
         raise ConfigError("typical_footprint_km must be greater than zero")
+    if typical_footprint_km > EARTH_CIRCUMFERENCE_KM:
+        raise ConfigError(f"typical_footprint_km {typical_footprint_km} is wider than the planet")
     return math.floor(math.log2(EARTH_CIRCUMFERENCE_KM / typical_footprint_km))
 
 
@@ -199,6 +230,10 @@ class DatasetConfig:
     dataset_id: str
     title: str
     description: str
+    # Onboarding checklist, point 3: a DOI where one exists, otherwise a persistent
+    # citation. Both None means the point is still open for this dataset.
+    doi: str | None
+    citation: str | None
     data_class: DataClass
     format: DataFormat
     spatial_extent: SpatialExtent
@@ -208,22 +243,41 @@ class DatasetConfig:
     access: AccessInfo
     source: SourceInfo
     coverage: CoverageInfo
-    default_render: DefaultRender
+    # None where the standard visualisation is not defined yet. For Sentinel-2 L2A
+    # that is deliberate: m1-fundament.md §2 puts it in M2.
+    default_render: DefaultRender | None
     health: HealthInfo
 
     def __post_init__(self) -> None:
+        self._check_license_is_identifiable()
         self._check_license_tier()
         self._check_attribution()
         self._check_coverage()
+        self._check_source()
+
+    def _check_license_is_identifiable(self) -> None:
+        """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
+        if self.license.spdx_id:
+            return
+        if not (self.license.name and self.license.url):
+            raise ConfigError(
+                f"{self.dataset_id}: a licence without an SPDX identifier needs a name and a URL"
+            )
 
     def _check_license_tier(self) -> None:
         """KLAERUNGEN B11: display and processing need distribution and modification."""
         if self.license.tier is LicenseTier.CATALOG:
             return
-        if not self.license.derivatives:
+        missing = [
+            name
+            for name, allowed in (("distribution", self.license.distribution), ("derivatives", self.license.derivatives))
+            if not allowed
+        ]
+        if missing:
             raise ConfigError(
-                f"{self.dataset_id}: tier {self.license.tier.value} needs derivatives=True "
-                "(KLAERUNGEN B11 — a no-derivatives dataset stays a catalogue entry with a link)"
+                f"{self.dataset_id}: tier {self.license.tier.value} needs {' and '.join(missing)}=True "
+                "(KLAERUNGEN B11 — without distribution and modification a dataset stays a "
+                "catalogue entry with a link)"
             )
 
     def _check_attribution(self) -> None:
@@ -237,6 +291,8 @@ class DatasetConfig:
 
     def _check_coverage(self) -> None:
         """The grid cap follows from the footprint; a one-off product has no density."""
+        if self.coverage.max_geotile_level < 0:
+            raise ConfigError(f"{self.dataset_id}: max_geotile_level must not be negative")
         allowed = max_geotile_level_for(self.coverage.typical_footprint_km)
         if self.coverage.max_geotile_level > allowed:
             raise ConfigError(
@@ -251,6 +307,13 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: a one-off product has an extent, not a density — "
                 "upstream aggregation does not apply (adr/0004 §5)"
+            )
+
+    def _check_source(self) -> None:
+        """Only https leaves the house (KLAERUNGEN B8); gateway enforces the rest."""
+        if not self.source.endpoint.startswith("https://"):
+            raise ConfigError(
+                f"{self.dataset_id}: endpoint {self.source.endpoint!r} is not https (KLAERUNGEN B8)"
             )
 
 
@@ -272,7 +335,7 @@ class DatasetRegistry:
     def __contains__(self, dataset_id: object) -> bool:
         return dataset_id in self._by_id
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[DatasetConfig]:
         return iter(self._by_id.values())
 
     def __len__(self) -> int:

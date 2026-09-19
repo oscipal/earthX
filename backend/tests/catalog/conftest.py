@@ -7,7 +7,7 @@ that was broken rather than the entry that was malformed.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -37,10 +37,15 @@ def valid_config() -> DatasetConfig:
         dataset_id="test-dataset",
         title="Test dataset",
         description="Synthetic entry, used only by the tests.",
+        doi="10.5555/test",
+        citation="Test publisher (2026): Test dataset, version 1.",
         data_class=DataClass.RASTER_TIME_SERIES,
         format=DataFormat.COG,
         spatial_extent=SpatialExtent(bbox=(-10.0, -10.0, 10.0, 10.0)),
-        temporal_extent=TemporalExtent(start=date(2020, 1, 1), end=None),
+        temporal_extent=TemporalExtent(
+            start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2024, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
+        ),
         capabilities=Capabilities(
             roi=True,
             time_range=True,
@@ -54,8 +59,8 @@ def valid_config() -> DatasetConfig:
             spdx_id="CC-BY-4.0",
             name="Creative Commons Attribution 4.0",
             url="https://example.invalid/license",
-            stac_license="CC-BY-4.0",
             commercial_use=True,
+            distribution=True,
             derivatives=True,
             share_alike=False,
             attribution_required=True,
@@ -80,7 +85,7 @@ def valid_config() -> DatasetConfig:
             typical_footprint_km=110.0,
             max_geotile_level=8,
         ),
-        default_render=DefaultRender(bands=("red", "green", "blue"), stretch=(0.0, 3000.0), colormap=None),
+        default_render=DefaultRender(bands=("red", "green", "blue"), stretch=(0.0, 3000.0), colormap="viridis"),
         health=HealthInfo(status=HealthStatus.OK, last_checked_ok=date(2026, 1, 1)),
     )
 
