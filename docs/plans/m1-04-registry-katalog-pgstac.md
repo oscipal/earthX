@@ -163,7 +163,7 @@ einem Test.
 | Identität | `dataset_id`, `title`, `description`, `data_class` (Enum: Raster-Zeitreihe, statisches Raster) |
 | Format | `format` (Enum `ZARR > COG > LEGACY`, Reihenfolge laut Checkliste Punkt 5) |
 | `capabilities` | `roi`, `time_range`, `band_math`, `interpolation`, `ml_processing`, `quad_pol`, `single_coverage_product` — alle ohne Vorgabewert |
-| `license` | `spdx_id`, `name`, `url`, Flags `commercial_use`, **`distribution`**, `derivatives`, `share_alike`, `attribution_required`, `tier` (Enum `CATALOG/DISPLAY/PROCESSING`), `attribution_modified`, `attribution_unmodified`, `liability_notice` |
+| `license` | `spdx_id`, `name`, `url`, Flags `commercial_use`, **`distribution`**, `derivatives`, `share_alike`, `attribution_required`, `tier` (Enum `CATALOG/DISPLAY/PROCESSING`), `attribution_modified`, `attribution_unmodified`, `terms` (`terms_url` + `terms_notice` je Sprache) |
 | Zitierung | `doi`, `citation` — Checklistenpunkt 3 (`scientific`-Extension) |
 | `access` | `token_free_checked_at`, `method`, `cors` |
 | `source` | `adapter` (Enum, hier `EARTH_SEARCH_V1`), `source_collection_id`, `endpoint`, `harvest_run` (in M1 `None`) |
@@ -199,9 +199,10 @@ Genau ein Eintrag, alle Werte belegt aus `adr/0003`:
 - B11-Stufe **Processing**; `commercial_use=True`, `derivatives=True`,
   `share_alike=False`, `attribution_required=True` (§11.2).
 - Attribution „Contains modified Copernicus Sentinel data [Jahr]" für bearbeitete,
-  „Copernicus Sentinel data [Jahr]" für unveränderte Daten; dazu der Haftungssatz
-  aus dem Legal Notice (§11.2). Das Jahr ist ein Platzhalter im Text, den der
-  Download später füllt — M1-04 hält nur die Vorlage.
+  „Copernicus Sentinel data [Jahr]" für unveränderte Daten. Dazu die **Bedingungen
+  der Quelle** statt eines eigenen Haftungsausschlusses (Ottos Entscheidung vom
+  19.09.2026): `terms_url` auf das Legal Notice und `terms_notice` je Sprache. Die
+  Platzhalter `{year}` und `{terms_url}` füllt der Download — M1-04 hält die Vorlage.
 - `format = COG`, `data_class = Raster-Zeitreihe`, `quad_pol = False`,
   `single_coverage_product = False`.
 - `coverage.provider = UPSTREAM_AGGREGATION`, `max_geotile_level = 8`.
@@ -250,8 +251,24 @@ braucht: Adapter-Kennung und Quell-Collection, damit M1-07 daran verzweigen kann
   eine Abweichung ist ein Fehler mit beiden Versionen im Text, kein stilles Weiter.
 - Laden über `pgstac.upsert_collection` — dieselbe Wahrheit wie die Registry (B13
   Punkt 3), und **idempotent**: zweimaliges Laden ergibt eine Zeile mit gleichem Inhalt.
-- Eigener Migrationsläufer nur, falls Otto Frage 5 Option 1 wählt.
+- Eigener Migrationsläufer (Frage 5, Option 1) in `catalog/schema.py`: nummerierte
+  `.sql`-Dateien unter `catalog/migrations/`, Datei und Buchungszeile in einer
+  Transaktion, Prüfsumme gegen nachträglich geänderte Migrationen.
+  **Abweichung vom Plan:** Die Buchführungstabelle `earthx_migrations` gehört dem
+  Läufer und wird von ihm angelegt, nicht als Datei `001` ausgeliefert. Sonst müsste
+  jedes Migrationsverzeichnis sie mitbringen — die Tests haben das sofort gezeigt.
+  `migrations/` ist damit in M1-04 leer; ein README sagt, warum, und die erste echte
+  Migration ist der Anwendungs-Cache aus E4 in **M1-06**.
 - Kein Import aus `gateway`: hier geht nichts nach draußen.
+- **Suchpfad:** Vor pgstac-Aufrufen wird `search_path` auf `pgstac, public` gesetzt.
+  pgstac's eigene Trigger sprechen ihre Tabellen unqualifiziert an (ein Löschvorgang
+  läuft in `DELETE FROM partition_stats`); ohne das scheitert er an einer Relation,
+  die weder im Befehl noch in der Collection vorkommt. Unsere Buchführung ist deshalb
+  ausdrücklich `public.earthx_migrations` — sonst landete sie im pgstac-Schema und
+  wäre bei dessen Neuaufbau still weg.
+- **Einstiegspunkt** `python -m earthx.catalog.load`: migriert, prüft die Version,
+  schreibt alle Einträge und **committet**. Ohne ihn wäre das Abnahmekriterium nur in
+  einer zurückgerollten Testtransaktion erfüllt.
 
 ### 3.5 Tests
 
@@ -276,8 +293,11 @@ braucht: Adapter-Kennung und Quell-Collection, damit M1-07 daran verzweigen kann
 | Laden, dann lesen | Collection liegt in pgstac, `earthx:`-Felder unverändert im JSON |
 | zweimal laden | eine Zeile, gleicher Inhalt — idempotent |
 | Eintrag ändern, erneut laden | Änderung ist drin, immer noch eine Zeile |
-| pgstac-Version weicht vom Pin ab | Fehler mit beiden Versionen im Text |
 | `PG*` nicht gesetzt | klarer Fehler, der sagt, was fehlt — kein stilles Überspringen, kein Double |
+| Postgres erreichbar, aber pgstac fehlt | Fehler, der `pypgstac migrate` nennt |
+| pgstac-Version weicht ab | Fehler mit beiden Versionen (Test setzt die Version in der Datenbank um) |
+| Migration nach dem Anwenden geändert | Fehler mit beiden Prüfsummen |
+| Migration schlägt mitten im SQL fehl | nichts gebucht, Transaktion zurückgerollt |
 
 Die letzte Zeile ist bewusst so: `adr/0002` §6 verlangt, dass jeder Test an
 mindestens zwei Orten läuft. Ein T-C-Test, der sich mangels Datenbank selbst

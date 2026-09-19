@@ -59,14 +59,60 @@ def test_attribution_texts_are_present() -> None:
     assert "{year}" in lic.attribution_modified
 
 
-def test_the_liability_notice_is_open_rather_than_borrowed() -> None:
-    """adr/0003 §11.2 records that there is one, not how it reads.
+def test_the_terms_come_from_the_source_not_from_us() -> None:
+    """Otto, 19.09.2026: at a download we pass on the source's terms.
 
-    The sentence quoted in §11.1 belongs to the Copernicus DEM licence. Taking it
-    would put another licence's wording on every download of this dataset, so the
-    field stays empty until the Legal Notice itself can be read (§11.3).
+    The Legal Notice carries no disclaimer by the provider — it carries a waiver by
+    the user and "without any express or implied warranty". An earlier draft of this
+    entry borrowed a disclaimer from the Copernicus DEM licence (adr/0003 §11.1),
+    which inverted the direction; the text now follows the document that applies.
     """
-    assert SENTINEL_2_L2A.license.liability_notice is None
+    terms = SENTINEL_2_L2A.license.terms
+    assert terms is not None
+    assert terms.url.endswith("Sentinel_Data_Legal_Notice")
+    assert set(terms.notice) == {"de", "en"}
+
+
+def test_both_terms_texts_carry_all_three_parts_of_the_clause() -> None:
+    """The Legal Notice states the waiver in three parts; passing on two of them
+    would narrow it on the reader's behalf. Wording checked against the document
+    itself on 19.09.2026.
+    """
+    de = SENTINEL_2_L2A.license.terms.notice["de"]
+    assert "ohne ausdrückliche oder stillschweigende Gewährleistung" in de
+    assert "Qualität und Eignung für einen bestimmten Zweck" in de
+    assert "Schadensersatzansprüche gegenüber der EU und den Datenanbietern" in de
+    assert "vertraglicher und deliktischer Ansprüche" in de
+    assert "Schiedsverfahren" in de
+
+    en = SENTINEL_2_L2A.license.terms.notice["en"]
+    assert "without any express or implied warranty" in en
+    assert "as regards quality and suitability for any purpose" in en
+    assert "renounces any claims for damages against the European Union" in en
+    assert "contracts and torts claims" in en
+    assert "in arbitration or in any other form of dispute settlement" in en
+
+
+def test_the_terms_text_can_be_filled_in_at_a_download() -> None:
+    """The one placeholder resolves, and nothing else is left over."""
+    terms = SENTINEL_2_L2A.license.terms
+    for text in terms.notice.values():
+        filled = text.format(terms_url=terms.url)
+        assert "{" not in filled and "}" not in filled
+        assert terms.url in filled
+
+
+def test_the_terms_text_carries_no_attribution() -> None:
+    """Otto, 19.09.2026: attribution stays separate and goes in front of the terms.
+
+    Repeating it here would either duplicate it, or claim modified data where we pass
+    on unmodified ones — the two attribution texts differ in exactly that.
+    """
+    lic = SENTINEL_2_L2A.license
+    for text in lic.terms.notice.values():
+        assert "{year}" not in text
+        assert "Copernicus Sentinel data" not in text
+        assert "Copernicus-Sentinel-Daten" not in text
 
 
 def test_license_has_no_spdx_id_but_names_its_source() -> None:

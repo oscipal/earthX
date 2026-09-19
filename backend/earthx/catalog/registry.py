@@ -12,10 +12,11 @@ later on.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
+from types import MappingProxyType
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
 # 2**z columns, so a cell is EARTH_CIRCUMFERENCE_KM / 2**z wide (adr/0004 §5).
@@ -98,6 +99,43 @@ class Capabilities:
 
 
 @dataclass(frozen=True, slots=True)
+class TermsOfUse:
+    """The source's own terms, passed on to whoever receives data from us.
+
+    Otto's decision of 19.09.2026: at a download the platform passes on the terms
+    of the source, not a disclaimer of its own. The platform's own terms of use are
+    a separate, open question (decision log, same date).
+
+    ``notice`` holds one text per language code and must carry ``de``. It states the
+    terms only: the attribution stays a separate text and is put in front of it where
+    data leaves the platform (Otto, 19.09.2026), so that neither is repeated and a
+    notice for unmodified data cannot end up claiming the data were modified.
+    ``{terms_url}`` is filled with ``url``.
+    """
+
+    url: str
+    notice: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        if not self.url.startswith("https://"):
+            raise ConfigError(f"terms url {self.url!r} is not https")
+        if "de" not in self.notice:
+            raise ConfigError("terms notice without a German text (docs and UI are German)")
+        for language, text in self.notice.items():
+            if "{terms_url}" not in text:
+                raise ConfigError(f"terms notice [{language}] does not link the terms ({{terms_url}})")
+            # Filling it in is the only thing ever done with this text, so a
+            # placeholder we do not supply has to fail here, not at a download.
+            try:
+                text.format(terms_url=self.url)
+            except (KeyError, IndexError) as error:
+                raise ConfigError(
+                    f"terms notice [{language}] uses a placeholder we do not fill: {error}"
+                ) from None
+        object.__setattr__(self, "notice", MappingProxyType(dict(self.notice)))
+
+
+@dataclass(frozen=True, slots=True)
 class LicenseInfo:
     """Licence as a machine-readable field plus the texts the platform has to pass on.
 
@@ -116,7 +154,7 @@ class LicenseInfo:
     tier: LicenseTier
     attribution_modified: str | None
     attribution_unmodified: str | None
-    liability_notice: str | None
+    terms: TermsOfUse | None
 
 
 @dataclass(frozen=True, slots=True)

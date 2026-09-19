@@ -87,6 +87,18 @@ def test_check_dates_are_written_as_plain_dates(collection: dict) -> None:
     assert collection["earthx:health"]["last_checked_ok"] == "2026-09-18"
 
 
+def test_the_terms_travel_with_the_collection(collection: dict) -> None:
+    """Whoever reads our catalogue gets the source's terms with it, not just a flag."""
+    flags = collection["earthx:license_flags"]
+    assert flags["terms_url"] == SENTINEL_2_L2A.license.terms.url
+    assert set(flags["terms_notice"]) == {"de", "en"}
+
+
+def test_the_terms_notice_is_copied_not_shared(collection: dict) -> None:
+    collection["earthx:license_flags"]["terms_notice"]["de"] = "überschrieben"
+    assert SENTINEL_2_L2A.license.terms.notice["de"] != "überschrieben"
+
+
 def test_an_open_standard_visualisation_stays_null(collection: dict) -> None:
     """Not omitted: the field is part of 5.1, and "not defined yet" is a value."""
     assert "earthx:default_render" in collection

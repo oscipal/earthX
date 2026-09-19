@@ -8,6 +8,7 @@ empty result).
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -26,6 +27,7 @@ from earthx.catalog.registry import (
     LicenseTier,
     SpatialExtent,
     TemporalExtent,
+    TermsOfUse,
     UnknownDatasetError,
     max_geotile_level_for,
 )
@@ -205,6 +207,25 @@ class TestMalformedInput:
     def test_a_visualisation_without_bands_is_rejected(self) -> None:
         with pytest.raises(ConfigError, match="band"):
             DefaultRender(bands=(), stretch=(0.0, 1.0), colormap=None)
+
+    def test_terms_without_a_german_text_are_rejected(self) -> None:
+        """Docs and UI are German (CLAUDE.md); an English-only notice cannot be shown."""
+        with pytest.raises(ConfigError, match="German"):
+            TermsOfUse(url="https://example.invalid/t", notice={"en": "Terms: {terms_url}"})
+
+    def test_terms_with_an_empty_notice_are_rejected(self) -> None:
+        with pytest.raises(ConfigError, match="German"):
+            TermsOfUse(url="https://example.invalid/t", notice={})
+
+    @pytest.mark.parametrize("text", ["Bedingungen gelten.", "Siehe {year}."])
+    def test_a_terms_text_that_does_not_link_the_terms_is_rejected(self, text: str) -> None:
+        """Terms the reader cannot open are not terms passed on."""
+        with pytest.raises(ConfigError, match=re.escape("{terms_url}")):
+            TermsOfUse(url="https://example.invalid/t", notice={"de": text})
+
+    def test_a_non_https_terms_url_is_rejected(self) -> None:
+        with pytest.raises(ConfigError, match="https"):
+            TermsOfUse(url="http://example.invalid/t", notice={"de": "Bedingungen: {terms_url}"})
 
     def test_health_ok_without_a_date_is_rejected(self) -> None:
         """KLAERUNGEN B12: "last checked successfully" has to be set to mean anything."""

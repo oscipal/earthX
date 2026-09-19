@@ -93,6 +93,17 @@ def test_http_clients_are_confined_to_gateway(config: configparser.ConfigParser)
         assert client in forbidden
 
 
+def test_the_worker_core_reaches_no_database(config: configparser.ConfigParser) -> None:
+    """KLAERUNGEN B9: no database, queue, object store or internal API in the core.
+
+    Guarded rather than only stated since M1-04b, which is when psycopg became a real
+    dependency. Reading the data sources through `gateway` stays allowed.
+    """
+    section = "importlinter:contract:no-database-in-worker-core"
+    assert _modules(config, section, "source_modules") == {"jobs", "processing"}
+    assert "psycopg" in _modules(config, section, "forbidden_modules")
+
+
 def test_every_module_exists_as_a_package() -> None:
     """architekturplan.md 3.1: all eleven modules exist, today as empty packages."""
     earthx_root = CONFIG.parent / "backend" / "earthx"

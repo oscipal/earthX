@@ -29,10 +29,15 @@ from earthx.catalog.registry import (
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
+    TermsOfUse,
 )
 
 # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
 _REACHABILITY_CHECKED = date(2026, 9, 18)
+
+# The licence of the data and, since Otto's decision of 19.09.2026, also the terms
+# we pass on at a download. Read from the primary source on 19.09.2026.
+_LEGAL_NOTICE_URL = "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice"
 
 SENTINEL_2_L2A = DatasetConfig(
     # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
@@ -75,7 +80,7 @@ SENTINEL_2_L2A = DatasetConfig(
     license=LicenseInfo(
         spdx_id=None,
         name="Sentinel Data Legal Notice",
-        url="https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice",
+        url=_LEGAL_NOTICE_URL,
         commercial_use=True,
         distribution=True,
         derivatives=True,
@@ -86,12 +91,42 @@ SENTINEL_2_L2A = DatasetConfig(
         # the notice belongs on the download, not only in a footer).
         attribution_modified="Contains modified Copernicus Sentinel data {year}",
         attribution_unmodified="Copernicus Sentinel data {year}",
-        # Open. adr/0003 §11.2 records that the Legal Notice carries a liability
-        # disclaimer and that it travels with redistributed data, but not its
-        # wording — the hosts holding it are blocked from a session (§11.3). The
-        # sentence quoted in §11.1 belongs to the Copernicus DEM licence, not to
-        # this one, and must not be substituted for it.
-        liability_notice=None,
+        # Read from the Legal Notice itself on 19.09.2026 (the host is released).
+        # The document carries no disclaimer by the provider; it carries a waiver by
+        # the user, plus "without any express or implied warranty". Otto settled the
+        # wording on the same day: we pass on the source's terms, not our own, and the
+        # text stays free of the attribution above, which goes in front of it.
+        terms=TermsOfUse(
+            url=_LEGAL_NOTICE_URL,
+            notice={
+                "de": (
+                    "Die Nutzung unterliegt dem Sentinel Data Legal Notice: {terms_url}. "
+                    "Die Daten werden ohne ausdrückliche oder stillschweigende Gewährleistung "
+                    "bereitgestellt, auch nicht hinsichtlich Qualität und Eignung für einen "
+                    "bestimmten Zweck; mit ihrer Nutzung verzichtet der Nutzer auf "
+                    "Schadensersatzansprüche gegenüber der EU und den Datenanbietern. Der "
+                    "Verzicht erfasst jede Streitigkeit, einschließlich vertraglicher und "
+                    "deliktischer Ansprüche, vor Gericht, im Schiedsverfahren oder in jeder "
+                    "anderen Form der Streitbeilegung."
+                ),
+                # The Legal Notice's own words, shortened only where it names itself:
+                # "without any express or implied warranty, including as regards quality
+                # and suitability for any purpose", "renounces to any claims for damages
+                # against the European Union and the providers of the said Data and
+                # Information", "any dispute, including contracts and torts claims, that
+                # might be filed in court, in arbitration or in any other form of dispute
+                # settlement".
+                "en": (
+                    "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
+                    "are provided without any express or implied warranty, including as regards "
+                    "quality and suitability for any purpose; by using them the user renounces "
+                    "any claims for damages against the European Union and the providers of the "
+                    "data. The waiver encompasses any dispute, including contracts and torts "
+                    "claims, that might be filed in court, in arbitration or in any other form "
+                    "of dispute settlement."
+                ),
+            },
+        ),
     ),
     access=AccessInfo(
         token_free_checked_at=_REACHABILITY_CHECKED,

@@ -60,6 +60,15 @@ else
 fi
 
 # --- Postgres + PostGIS -----------------------------------------------------
+# Local development credentials only — this database never leaves the sandbox and
+# holds no real data. Not a secret in the sense of CLAUDE.md. Set once here; the
+# migration below and .env.test further down both use these.
+PG_HOST=127.0.0.1
+PG_PORT=5432
+PG_USER=earthx
+PG_PASSWORD=earthx
+PG_DATABASE=earthx
+
 log "Postgres starten"
 as_root service postgresql start || warn "Postgres-Start fehlgeschlagen"
 
@@ -80,14 +89,27 @@ fi
 as_postgres psql -q -d earthx -c "CREATE EXTENSION IF NOT EXISTS postgis;" \
   || warn "Anlegen der PostGIS-Extension fehlgeschlagen (Paket installiert?)"
 
-# Local development credentials only — this database never leaves the sandbox
-# and holds no real data. Not a secret in the sense of CLAUDE.md.
-cat > "${REPO_ROOT}/.env.test" <<'ENVEOF'
-PGHOST=127.0.0.1
-PGPORT=5432
-PGUSER=earthx
-PGPASSWORD=earthx
-PGDATABASE=earthx
+# pgstac-Schema. Die Version steckt im Pin in backend/requirements.txt, nicht hier
+# (M1-08 setzt ihn; compose fährt denselben Befehl im Dienst `pgstac-migrate`).
+# `migrate` ist idempotent: beim zweiten Lauf passiert nichts.
+log "pgstac-Schema migrieren"
+if [ -x "${VENV}/bin/pypgstac" ]; then
+  PGHOST="${PG_HOST}" PGPORT="${PG_PORT}" PGUSER="${PG_USER}" \
+  PGPASSWORD="${PG_PASSWORD}" PGDATABASE="${PG_DATABASE}" \
+    "${VENV}/bin/pypgstac" migrate >/dev/null \
+    || warn "pypgstac migrate fehlgeschlagen"
+else
+  warn "pypgstac fehlt im venv (steht in backend/requirements.txt)"
+fi
+
+# Read by backend/tests/integration/conftest.py, so that a bare `pytest` finds the
+# database in a session the same way CI finds it from the job environment.
+cat > "${REPO_ROOT}/.env.test" <<ENVEOF
+PGHOST=${PG_HOST}
+PGPORT=${PG_PORT}
+PGUSER=${PG_USER}
+PGPASSWORD=${PG_PASSWORD}
+PGDATABASE=${PG_DATABASE}
 ENVEOF
 
 # --- Zusammenfassung --------------------------------------------------------
@@ -103,6 +125,11 @@ have_postgres() { as_postgres psql -d earthx -tAc 'SELECT 1'; }
 have_postgis() {
   as_postgres psql -d earthx -tAc \
     "SELECT 1 FROM pg_extension WHERE extname = 'postgis'" | grep -q 1
+}
+# Ohne pgstac scheitern die T-C-Tests aus M1-04 (adr/0002 §2), und zwar laut.
+have_pgstac() {
+  as_postgres psql -d earthx -tAc \
+    "SELECT 1 FROM pg_namespace WHERE nspname = 'pgstac'" | grep -q 1
 }
 
 missing=""
@@ -120,6 +147,7 @@ report venv have_venv
 report Frontend have_frontend
 report Postgres have_postgres
 report PostGIS have_postgis
+report pgstac have_pgstac
 
 if [ -n "${missing}" ]; then
   printf '\nNicht einsatzbereit: %s\n' "${missing}"
@@ -127,6 +155,13 @@ if [ -n "${missing}" ]; then
     *PostGIS*)
       printf 'PostGIS installiert das setup-Feld der Cloud-Umgebung per apt,\n'
       printf 'nicht dieser Hook. Protokoll: /var/log/earthx-setup.log\n'
+      ;;
+  esac
+  case "${missing}" in
+    *pgstac*)
+      printf 'Ohne pgstac schlagen die T-C-Tests fehl (backend/tests/integration).\n'
+      printf 'Nachholen: PGHOST=127.0.0.1 PGUSER=earthx PGPASSWORD=earthx \\\n'
+      printf '  PGDATABASE=earthx .venv/bin/pypgstac migrate\n'
       ;;
   esac
 else
