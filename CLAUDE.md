@@ -77,9 +77,15 @@ Branch-Namen und PR-Titel auf **Englisch**.
 
 ## Befehle
 
-Noch nicht eingerichtet (M0). Bis dahin: Umgebung nach `environment.yml`;
-Frontend über `frontend/package.json`. Sobald Test-, Lint- und Start-Befehle
-stehen, gehören sie hierher.
+Backend (aus `backend/`, laut `adr/0002` §6 und `.github/workflows/ci.yml`):
+- Lint: `ruff check backend`
+- Tests: `pytest`
+- Importregeln: `lint-imports --config .importlinter`
+
+Frontend (aus `frontend/`, laut `frontend/package.json`):
+- Lint: `npm run lint` (oxlint)
+- Typprüfung: `npx tsc -b --pretty false`
+- Entwicklungsserver: `npm run dev`
 
 ## Delegation
 
