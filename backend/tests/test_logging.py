@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 
 import pytest
 from starlette.applications import Starlette
@@ -152,6 +154,62 @@ class TestRequestIdMiddleware:
         response = client.get("/echo", headers={REQUEST_ID_HEADER: "caller-supplied-id"})
         assert response.headers[REQUEST_ID_HEADER] == "caller-supplied-id"
         assert response.json()["request_id_seen_by_handler"] == "caller-supplied-id"
+
+    @pytest.mark.parametrize(
+        "bad_incoming_id",
+        [
+            "",
+            "a" * 65,  # one over the limit
+            "has spaces",
+            "has/slash",
+            "has\nnewline",
+            "has\"quote",
+            "<script>alert(1)</script>",
+            "req;drop table x",
+        ],
+    )
+    def test_an_incoming_request_id_that_does_not_match_the_allowed_shape_is_replaced(
+        self, bad_incoming_id: str
+    ) -> None:
+        client = TestClient(RequestIdMiddleware(_echo_app()))
+        response = client.get("/echo", headers={REQUEST_ID_HEADER: bad_incoming_id})
+        request_id = response.headers[REQUEST_ID_HEADER]
+        assert request_id != bad_incoming_id
+        assert re.fullmatch(r"[A-Za-z0-9-]{1,64}", request_id)
+        assert response.json()["request_id_seen_by_handler"] == request_id
+
+    def test_a_non_ascii_incoming_request_id_is_replaced(self) -> None:
+        # httpx (used by TestClient) refuses to even send a non-ASCII header
+        # value, so this drives the ASGI app directly with a raw byte header
+        # the way a non-conforming client could send one.
+        seen: dict[str, object] = {}
+
+        async def app(scope, receive, send):
+            seen["request_id"] = get_request_id()
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+
+        middleware = RequestIdMiddleware(app)
+        scope = {
+            "type": "http",
+            "path": "/echo",
+            "headers": [(REQUEST_ID_HEADER.encode(), "hat-ümlaut".encode("utf-8"))],
+        }
+        sent: list[dict] = []
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(message):
+            sent.append(message)
+
+        asyncio.run(middleware(scope, receive, send))
+
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        header_value = next(v for k, v in start["headers"] if k == REQUEST_ID_HEADER.encode()).decode()
+        assert header_value != "hat-ümlaut"
+        assert re.fullmatch(r"[A-Za-z0-9-]{1,64}", header_value)
+        assert seen["request_id"] == header_value
 
     def test_two_requests_without_a_supplied_id_get_different_ids(self) -> None:
         client = TestClient(RequestIdMiddleware(_echo_app()))

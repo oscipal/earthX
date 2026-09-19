@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import sys
 import uuid
 from contextvars import ContextVar, Token
@@ -23,9 +24,14 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "x-request-id"
 
+# An incoming request ID is only trusted if it looks like one of ours or a
+# reasonable caller's — short and free of characters that could break a log
+# line or a downstream header. Anything else is replaced, not rejected.
+_VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+
 # Coarse on purpose: a populated grid cell this size hides where inside it a
 # point, polygon vertex, or bbox edge actually was.
-_COORDINATE_PRECISION = 1
+_COORDINATE_PRECISION = 0
 
 _REQUEST_ID: ContextVar[str | None] = ContextVar("earthx_request_id", default=None)
 _RESERVED_LOG_RECORD_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {"message"}
@@ -99,7 +105,8 @@ class RequestIdMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = Headers(scope=scope).get(REQUEST_ID_HEADER) or new_request_id()
+        incoming = Headers(scope=scope).get(REQUEST_ID_HEADER)
+        request_id = incoming if incoming and _VALID_REQUEST_ID.match(incoming) else new_request_id()
         token = bind_request_id(request_id)
 
         async def send_with_request_id(message: Message) -> None:
