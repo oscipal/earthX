@@ -163,7 +163,7 @@ einem Test.
 | Identität | `dataset_id`, `title`, `description`, `data_class` (Enum: Raster-Zeitreihe, statisches Raster) |
 | Format | `format` (Enum `ZARR > COG > LEGACY`, Reihenfolge laut Checkliste Punkt 5) |
 | `capabilities` | `roi`, `time_range`, `band_math`, `interpolation`, `ml_processing`, `quad_pol`, `single_coverage_product` — alle ohne Vorgabewert |
-| `license` | `spdx_id`, `name`, `url`, Flags `commercial_use`, **`distribution`**, `derivatives`, `share_alike`, `attribution_required`, `tier` (Enum `CATALOG/DISPLAY/PROCESSING`), `attribution_modified`, `attribution_unmodified`, `liability_notice` |
+| `license` | `spdx_id`, `name`, `url`, Flags `commercial_use`, **`distribution`**, `derivatives`, `share_alike`, `attribution_required`, `tier` (Enum `CATALOG/DISPLAY/PROCESSING`), `attribution_modified`, `attribution_unmodified`, `terms` (`terms_url` + `terms_notice` je Sprache) |
 | Zitierung | `doi`, `citation` — Checklistenpunkt 3 (`scientific`-Extension) |
 | `access` | `token_free_checked_at`, `method`, `cors` |
 | `source` | `adapter` (Enum, hier `EARTH_SEARCH_V1`), `source_collection_id`, `endpoint`, `harvest_run` (in M1 `None`) |
@@ -199,9 +199,10 @@ Genau ein Eintrag, alle Werte belegt aus `adr/0003`:
 - B11-Stufe **Processing**; `commercial_use=True`, `derivatives=True`,
   `share_alike=False`, `attribution_required=True` (§11.2).
 - Attribution „Contains modified Copernicus Sentinel data [Jahr]" für bearbeitete,
-  „Copernicus Sentinel data [Jahr]" für unveränderte Daten; dazu der Haftungssatz
-  aus dem Legal Notice (§11.2). Das Jahr ist ein Platzhalter im Text, den der
-  Download später füllt — M1-04 hält nur die Vorlage.
+  „Copernicus Sentinel data [Jahr]" für unveränderte Daten. Dazu die **Bedingungen
+  der Quelle** statt eines eigenen Haftungsausschlusses (Ottos Entscheidung vom
+  19.09.2026): `terms_url` auf das Legal Notice und `terms_notice` je Sprache. Die
+  Platzhalter `{year}` und `{terms_url}` füllt der Download — M1-04 hält die Vorlage.
 - `format = COG`, `data_class = Raster-Zeitreihe`, `quad_pol = False`,
   `single_coverage_product = False`.
 - `coverage.provider = UPSTREAM_AGGREGATION`, `max_geotile_level = 8`.

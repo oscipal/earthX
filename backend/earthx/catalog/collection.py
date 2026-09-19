@@ -75,7 +75,8 @@ def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
         "tier": lic.tier.value,
         "attribution_modified": lic.attribution_modified,
         "attribution_unmodified": lic.attribution_unmodified,
-        "liability_notice": lic.liability_notice,
+        "terms_url": None if lic.terms is None else lic.terms.url,
+        "terms_notice": None if lic.terms is None else dict(lic.terms.notice),
     }
 
 

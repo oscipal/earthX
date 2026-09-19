@@ -28,6 +28,7 @@ from earthx.catalog.registry import (
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
+    TermsOfUse,
 )
 
 
@@ -67,7 +68,10 @@ def valid_config() -> DatasetConfig:
             tier=LicenseTier.PROCESSING,
             attribution_modified="Contains modified test data {year}",
             attribution_unmodified="Test data {year}",
-            liability_notice=None,
+            terms=TermsOfUse(
+                url="https://example.invalid/terms",
+                notice={"de": "Testdaten {year}, Bedingungen: {terms_url}"},
+            ),
         ),
         access=AccessInfo(
             token_free_checked_at=date(2026, 1, 1),

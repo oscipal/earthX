@@ -12,7 +12,7 @@ later on.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -98,6 +98,33 @@ class Capabilities:
 
 
 @dataclass(frozen=True, slots=True)
+class TermsOfUse:
+    """The source's own terms, passed on to whoever receives data from us.
+
+    Otto's decision of 19.09.2026: at a download the platform passes on the terms
+    of the source, not a disclaimer of its own. The platform's own terms of use are
+    a separate, open question (decision log, same date).
+
+    ``notice`` holds one text per language code and must carry ``de``. Both
+    placeholders are filled where data leaves the platform: ``{year}`` with the year
+    of acquisition, ``{terms_url}`` with ``url``.
+    """
+
+    url: str
+    notice: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        if not self.url.startswith("https://"):
+            raise ConfigError(f"terms url {self.url!r} is not https")
+        if "de" not in self.notice:
+            raise ConfigError("terms notice without a German text (docs and UI are German)")
+        for language, text in self.notice.items():
+            missing = [name for name in ("{year}", "{terms_url}") if name not in text]
+            if missing:
+                raise ConfigError(f"terms notice [{language}] is missing {' and '.join(missing)}")
+
+
+@dataclass(frozen=True, slots=True)
 class LicenseInfo:
     """Licence as a machine-readable field plus the texts the platform has to pass on.
 
@@ -116,7 +143,7 @@ class LicenseInfo:
     tier: LicenseTier
     attribution_modified: str | None
     attribution_unmodified: str | None
-    liability_notice: str | None
+    terms: TermsOfUse | None
 
 
 @dataclass(frozen=True, slots=True)
