@@ -67,6 +67,8 @@ Das Gateway ist **zwei Dinge in zwei Ausbaustufen**, weil GDAL und `pystac_clien
 
 Der M1-Test "kein Request außerhalb des Gateways" besteht deshalb aus: (a) statischer Regel, dass HTTP-Bibliotheken nur in `gateway` importiert werden; (b) Tests, dass jede an rasterio oder `pystac_client` übergebene URL vorher `gateway` passiert hat. Die netzwerkseitige Prüfung kommt mit M6.
 
+**Nachtrag 19.09.2026:** Im Zielpfad kommt `pystac_client` nicht mehr vor — `adr/0005` Regel IV schließt es aus (es folgt Redirects ungeprüft und verstößt damit gegen diese Auflösung) und setzt einen eigenen schmalen `httpx`-Client in `gateway`. Von den beiden Fremdbibliotheken oben bleibt damit GDAL/rasterio. Die Importregel nennt `pystac_client` weiterhin, damit es nicht durch die Hintertür zurückkommt.
+
 ### B9. "Reine Funktion" trotz I/O; lokaler Runner — *Festgelegt (Begriff präzisiert)*
 
 Gemeint ist: Der Worker-Kern ist **plattformunabhängig und zustandslos**. Er hat keinen Zugriff auf Plattformdienste (Datenbank, Queue, Objektspeicher, interne APIs) und hält keinen Zustand zwischen Aufrufen. Lesender Zugriff auf die **Datenquellen** ist erlaubt und nötig, und zwar über die Bibliothek `gateway`, die deshalb auch im lokalen Runner mitläuft. Die Allowlist ergibt sich dort aus den aufgelösten Asset-Adressen des Rezepts. "Umgeht das Fetch-Gateway" im Architekturplan 7.7 meint nur: Die Zugriffe kommen von der IP des Nutzers statt von der Plattform.
@@ -99,9 +101,11 @@ Gestuft, mit gleichbleibender Schnittstelle:
 2. **Ab M5 (Harvester, Git-Review):** Kuratierte Definitionen liegen als YAML unter `catalog/`; `datasets.py` wird zum Lader, der daraus dieselben `DatasetConfig`-Objekte erzeugt. Aufrufer merken nichts.
 3. pgstac wird aus derselben Quelle befüllt; es gibt nie zwei gepflegte Wahrheiten.
 
-### B14. Skills — *Später*
+### B14. Skills — *Vorerst nicht im Repo* (Stand 19.09.2026)
 
-Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen derzeit nur in Ottos persönlicher Claude-Code-Umgebung. Otto kopiert sie in M0 nach `.claude/skills/` im Repo. Der Chat braucht ihren Inhalt nicht; er verweist nur auf sie.
+Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen weiterhin nur in Ottos persönlicher Claude-Code-Umgebung. Sie werden **vorerst nicht** ins Repo kopiert.
+
+Folge: `CLAUDE.md` verweist nicht mehr auf sie, sondern sagt die Regel selbst — kleine, thematisch getrennte Commits mit aussagekräftiger Nachricht; vor dem PR die geänderten Dateien aufräumen. Eine Cloud-Sitzung darf sich auf keinen Skill verlassen, der nicht im Repo liegt. Kommen die Skills später doch dazu, ersetzt der Verweis die Regel wieder; bis dahin gilt der Text in `CLAUDE.md`.
 
 ---
 

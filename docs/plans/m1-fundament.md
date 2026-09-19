@@ -126,8 +126,12 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 **Stufe B:** zuerst Plan im PR, Umsetzung nach Ottos OK.
 **Umfang:**
 - HTTP-Client-Kapsel; Allowlist aus der Datensatz-Registry (bis M1-04 steht: aus Konfiguration); nur `https`.
+- **Eigener `httpx`-Client** in `gateway` (`adr/0005` Regel IV). `pystac_client` ist ausgeschlossen: synchron, eigene Session, folgt Redirects ungeprüft (B8-Verstoß) und verliert die Fehlerformen. Die Importregel aus M1-02 erlaubt diese Pakete ohnehin nur hier.
+- **GET mit langer Abfragezeichenfolge** muss die Route können (`adr/0004` §3.1): `/aggregate` bei Earth Search nimmt kein POST.
+- **Obergrenze der URL-Länge, geprüft vor dem Absenden:** rund **8 kB**, damit ein AOI-Polygon nicht erst upstream in einen `414` läuft (`adr/0004` §3.4). Die gemessene Grenze liegt zwischen 5,4 und 8,1 kB; 8 kB ist die sichere Annahme. Wird sie überschritten, vereinfacht der Aufrufer die AOI und die Antwort weist das aus, statt zu scheitern.
 - SSRF-Schutz: DNS-Auflösung prüfen, private, Loopback- und Link-Local-Adressen sperren, Redirects nur innerhalb der Allowlist, Größen- und Zeitlimits.
-- Pro Host: Obergrenze paralleler Verbindungen, Backoff; Circuit Breaker darf ein späteres Issue sein, dann im PR begründen.
+- Pro Host: Obergrenze paralleler Verbindungen — **höchstens 6** (`adr/0005` §6; Earth Search drosselt zwar bis 30 nicht, 6 ist die konservative Setzung) —, Backoff; Circuit Breaker darf ein späteres Issue sein, dann im PR begründen.
+- Größenbegrenzung der Antwort: **8 MB** je Rumpf (`adr/0005` §6) — großzügig genug für eine Seite mit 100 Items (rund 1,8 MB), eng genug für die gemessene 4,8-MB-Antwort.
 - Zentrale GDAL-Konfiguration für Fernzugriff (Z8 aus `adr/0001`) und eine Prüffunktion, die jede URL freigibt, bevor sie an GDAL oder rasterio geht (B8).
 - Exakte Host-Prüfung: Der `endswith`-Fehler aus dem Prototyp (`xfail` in `backend/tests/test_config.py`) darf im Gateway nicht wiederkehren; Test mit `evil`-Präfix und Subdomain-Varianten.
 - Test „kein ausgehender Request außerhalb des Gateways“, der M1-Abnahme ist.
@@ -142,6 +146,7 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 **Stufe B.**
 **Umfang:**
 - `DatasetConfig` als Dataclass (B13, Stufe M1–M4) mit `format`, allen Capability-Flags ausdrücklich gesetzt (B10), Quad-Pol `false`.
+- Drei Felder für die Coverage Map (`adr/0004` §6): der **Coverage-Weg** (Upstream-Aggregation, eigenes SQL oder ausgewiesene Stichprobe), ein **Capability-Flag für Einmal-Produkte** (eine Abdeckung, Ausdehnung statt Dichte) und die **typische Footprint-Größe**, aus der sich der Deckel der Gitterstufe ergibt (Sentinel-2 L2A: höchstens Geotile z8). Die Coverage selbst wird erst in M2 gebaut; die Felder entstehen hier, damit der Eintrag vollständig ist.
 - Eintrag Sentinel-2 L2A laut `adr/0003`: Quelle Earth Search v1, Collection `sentinel-2-c1-l2a`, B11-Stufe Processing, Attributionstext und Haftungssatz aus `adr/0003` §11.2.
 - `catalog`: Modelle für die Felder aus `architekturplan.md` 5.1; Laden der Collection nach pgstac; Migrationen versioniert.
 - Integrationstests T-C gegen Postgres (Cloud-Sitzung und CI).
@@ -150,6 +155,8 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 **Abnahme:** Collection im pgstac mit korrekten Flags; Test, dass ein Eintrag ohne ausdrücklich gesetzte Capability abgelehnt wird; Laden ist idempotent.
 
 ### M1-05 — Spike: föderierte Item-Suche
+
+**Erledigt am 19.09.2026:** `adr/0005-foederierte-item-suche.md`, von Otto angenommen (F1–F3 beantwortet). Die Vorgaben stehen in M1-03, M1-06 und M1-07.
 
 **Ziel:** Entscheidungsvorlage, wie Items von Earth Search durch die eigene STAC-API gereicht werden (`architekturplan.md` 5.2, 15.2).
 **Stufe C:** Bericht als ADR-Entwurf unter `docs/adr/`, keine Produktivcode-Änderung.
@@ -160,17 +167,24 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 
 **Ziel:** Suche und Zugriffsauflösung für Sentinel-2 L2A, Vorlage `stac.py` (`architekturplan.md` 13).
 **Stufe B.** Vorgehen laut angenommenem Spike M1-05.
-**Umfang:** Adapter in `adapters`, alle Aufrufe über `gateway`; Such-Cache im Anwendungs-Cache (E4) mit Ablauf; kein Endpunkt setzt eine vorherige Suche voraus (Z1).
+**Umfang:** Adapter in `adapters`, alle Aufrufe über `gateway`; kein Endpunkt setzt eine vorherige Suche voraus (Z1). Dazu laut `adr/0005`:
+- **Collection zuerst gegen den eigenen pgstac prüfen**, bevor föderiert wird: eine unbekannte Collection ergibt **`404`**, nicht die leere, gültig aussehende Trefferliste, die Earth Search darauf liefert (`adr/0005` §3.5, Regel I).
+- **Eigene, undurchsichtige Seitenmarke** nach außen (Regel III); die Marke des Upstreams wird nie durchgereicht.
+- Seitengröße: **`limit ≤ 100`, Vorgabe 10** (Regel V, F3).
+- Such-Cache im Anwendungs-Cache (E4) mit den Fristen aus `adr/0005` Regel II: **24 h** für ein geschlossenes Zeitfenster — geschlossen heißt, sein Ende liegt mehr als **7 Tage** zurück —, **5 min** am offenen Rand, **24 h** für ein Einzel-Item per ID.
+- `bbox` außerhalb ±90 und verdrehte `bbox` werden bei uns abgewiesen, nicht erst upstream.
 **Fixtures:** synthetisch, nach dem Muster echter Antworten. Aufgezeichnete Antworten nur, wenn die Lizenz der Earth-Search-Metadaten geklärt ist; das im PR benennen und nicht selbst entscheiden.
 **Live-Smoke:** ein zeitgesteuerter T-D-Test in GitHub Actions (`adr/0002`), nie in PR-Läufen.
-**Abnahme:** Tests für leere Treffer, Upstream-Fehler, Zeitüberschreitung, fehlerhafte AOI, Paging; ein Test, dass ein geleerter Cache nur langsamer macht (E5); ein Test, dass ein Neustart zwischen Suche und Item-Abruf nichts ändert (`adr/0001` §8).
+**Abnahme:** Tests für leere Treffer, Upstream-Fehler, Zeitüberschreitung, fehlerhafte AOI, Paging; ein Test, dass eine unbekannte Collection `404` ergibt; ein Test, dass `limit > 100` abgewiesen oder gedeckelt wird; ein Test, dass ein geleerter Cache nur langsamer macht (E5); ein Test, dass ein Neustart zwischen Suche und Item-Abruf nichts ändert (`adr/0001` §8).
 
 ### M1-07 — STAC-API nach außen
 
 **Ziel:** Der eigene Katalog ist als STAC-API lesbar: Collections aus pgstac, Items föderiert.
 **Stufe B.** Aufbau laut Spike M1-05.
-**Umfang:** Einbindung im `api`-Prozess unter einem eigenen Präfix, das mit keiner Route des Prototyps kollidiert; Konformitätsklassen korrekt ausweisen.
-**Abnahme:** automatischer Konformitätstest gegen die laufende API in CI (Werkzeug im PR begründen); Anleitung im PR, wie Otto lokal einen STAC-Browser auf die API richtet (M1-Abnahme).
+**Umfang:** Einbindung im `api`-Prozess unter einem eigenen Präfix, das mit keiner Route des Prototyps kollidiert; Konformitätsklassen korrekt ausweisen. Laut `adr/0005`:
+- Aufbau als **Unterklasse von `CoreCrudClient`** (`FederatingCoreCrudClient`, `adr/0005` §4 Option 2), die nur die vier öffentlichen Methoden überschreibt und je Collection an `earthx:source` verzweigt. `stac-fastapi-pgstac` hat keinen Delegationspunkt; eine eigene Route davor scheidet damit aus.
+- **`filter`/CQL2 wird in M1 gar nicht ausgewiesen** (Regel VI, F2): keine `filter`-Konformitätsklasse auf der Landing Page, und ein `filter`-Parameter wird nicht stillschweigend verworfen. Mit M3 neu zu prüfen.
+**Abnahme:** automatischer Konformitätstest gegen die laufende API in CI (Werkzeug im PR begründen); ein Test, dass die Landing Page keine `filter`-Konformitätsklasse führt; Anleitung im PR, wie Otto lokal einen STAC-Browser auf die API richtet (M1-Abnahme).
 
 ### M1-08 — compose-Topologie
 
@@ -182,6 +196,8 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 **Abnahme:** CI-Job grün; Neustart eines einzelnen Dienstes lässt die anderen gesund.
 
 ### M1-09 — Coverage-ADR
+
+**Erledigt am 19.09.2026:** `adr/0004-coverage-map.md`, von Otto angenommen (die fünf Fragen in §7 beantwortet). Die Folgen für M1-03 und M1-04 sind dort eingearbeitet, der Bau der Coverage Map selbst gehört zu M2.
 
 **Ziel:** Entscheidungsvorlage, wie die gefilterte Coverage-Heatmap technisch umgesetzt wird (`ENTSCHEIDUNGEN` §2, offene Log-Zeile).
 **Stufe C**, Subagent `architect` mit `researcher`; Stand der Technik mit Quellen.

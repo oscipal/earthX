@@ -89,14 +89,14 @@ earthX/
     ADDING_ESA_DATASETS.md    nur noch Beschreibung des Code-Stands vom 13.08.2026
   .claude/
     agents/                     Subagenten mit Modell und Effort (Abschnitt 3.3)
-    skills/                     atomic-commits, code-cleanup, readme-updater
+    skills/                     vorerst leer (B14); die Commit- und Aufräumregel steht in CLAUDE.md
     settings.json               Standardmodell, erlaubte Befehle
   backend/  frontend/  runner/  catalog/   (kuratierte Datensatz-YAMLs)
   tests/fixtures/               aufgezeichnete Antworten externer Quellen
   .github/workflows/            CI, Live-Smoke-Tests, Image-Build
 ```
 
-Deine drei bestehenden Skills liegen bisher persönlich vor. Cloud-Sitzungen arbeiten mit dem, was im Repo liegt; deshalb gehören sie nach `.claude/skills/` ins Repo. Laut Dokumentation werden Subagenten aus `.claude/agents/` im Repo automatisch übernommen.
+Deine drei bestehenden Skills liegen weiterhin persönlich vor und kommen **vorerst nicht** ins Repo (B14, Stand 19.09.2026). Weil Cloud-Sitzungen nur mit dem arbeiten, was im Repo liegt, sagt `CLAUDE.md` die Regel stattdessen selbst, statt auf sie zu verweisen. Laut Dokumentation werden Subagenten aus `.claude/agents/` im Repo automatisch übernommen.
 
 ### 2.2 GitHub und Schutzregeln
 
@@ -238,7 +238,7 @@ Parallel ab M2 läuft ein **Viewer-Strang** (V1, V2) mit reinen Frontend-Aufgabe
 | | |
 |---|---|
 | Ziel | Claude kann sicher und reproduzierbar autonom arbeiten |
-| Inhalt | Verbindlich ist `ENTSCHEIDUNGEN_2026-09-18.md` §6: (1) Repo umbenennen, Dokumente nach `docs/`, CLAUDE.md, Skills nach `.claude/skills/`, Branch-Schutz, CODEOWNERS (`.claude/`, `.github/`, `CLAUDE.md`, Sicherheitsmodule), History auf Secrets prüfen; (2) klären, was die Cloud-VM bereitstellt, Testaufteilung festlegen (2.3); (3) Funktions- und Design-Inventar des Prototyps; (4) Zustands-Audit als ADR-Entwurf; (5) Bug-Report-Pipeline Stufe 1 (6.1); (6) Vorschlag für den ersten token-freien Datensatz |
+| Inhalt | Verbindlich ist `ENTSCHEIDUNGEN_2026-09-18.md` §6: (1) Repo umbenennen, Dokumente nach `docs/`, CLAUDE.md, Skills nach `.claude/skills/` — davon nachträglich ausgenommen, Otto lässt die Skills am 19.09.2026 vorerst außerhalb des Repos (B14) —, Branch-Schutz, CODEOWNERS (`.claude/`, `.github/`, `CLAUDE.md`, Sicherheitsmodule), History auf Secrets prüfen; (2) klären, was die Cloud-VM bereitstellt, Testaufteilung festlegen (2.3); (3) Funktions- und Design-Inventar des Prototyps; (4) Zustands-Audit als ADR-Entwurf; (5) Bug-Report-Pipeline Stufe 1 (6.1); (6) Vorschlag für den ersten token-freien Datensatz |
 | Wichtigster Einzelschritt | Das **Funktions- und Design-Inventar des Prototyps** (Stufe C). Es ersetzt die früheren Hard-Constraint-Tests als Ausgangspunkt: Was gibt es, wie ist es gelöst, was ist BIOMASS-spezifisch, was ist übertragbar? |
 | Abnahme | Eine Test-Aufgabe der Stufe A läuft von Issue bis Merge ohne dein Eingreifen außer dem Review; CI ist Pflicht-Check |
 | Deine Entscheidungen | Berechtigungsmodus; welche Hosts freigegeben werden; Code-Lizenz; erster token-freier Datensatz |
@@ -468,7 +468,7 @@ Ein PR ist fertig, wenn:
 
 1. Repo in `earthX` umbenennen (entschieden, ENTSCHEIDUNGEN §4).
 2. Claude GitHub App installieren, Cloud-Umgebung anlegen (Netzwerk "Trusted", Setup-Skript, keine Secrets).
-3. Dokumente nach `docs/` legen, CLAUDE.md schreiben, Subagenten nach 3.3 unter `.claude/agents/`, `.claude/settings.json` mit Standardmodell Sonnet, Ottos drei Skills nach `.claude/skills/` committen.
+3. Dokumente nach `docs/` legen, CLAUDE.md schreiben, Subagenten nach 3.3 unter `.claude/agents/`, `.claude/settings.json` mit Standardmodell Sonnet. Ottos drei Skills bleiben vorerst außerhalb des Repos (B14).
 4. Branch-Schutz und CODEOWNERS setzen; Git-History einmal auf Secrets prüfen.
 5. Erste drei Issues anlegen:
    - **Stufe C:** "Prüfe, welche Werkzeuge die Cloud-VM bereitstellt (Docker, Postgres, GDAL). Schlage vor, wie Unit-, Contract- und Integrationstests aufgeteilt werden." (Opus)

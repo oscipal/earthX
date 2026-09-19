@@ -92,7 +92,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 
 **Onboarding-Checkliste pro Datensatz** *(geändert, formalisiert)*
 1. Beschreibung vorhanden.
-2. Coverage Map / Footprint-Layer vorhanden (Pflicht).
+2. Coverage Map / Footprint-Layer vorhanden (Pflicht). Seit `adr/0004` (angenommen 19.09.2026) heißt der Punkt genauer: **ein Coverage-Anbieter ist zugeordnet** (Upstream-Aggregation, eigenes SQL oder ausgewiesene Stichprobe) **und die Vollständigkeitsprobe greift** — die Antwort trägt `vollstaendig`, `gekappt` oder `stichprobe`.
 3. DOI verlinkt, wo vorhanden; sonst persistente Zitierangabe (Landing Page, Version, Herausgeber). *(geändert: DOI ist kein Ausschlusskriterium)*
 4. Lizenz geprüft und als Feld mit Flags erfasst.
 5. Cloud-natives Format bevorzugt (Zarr > COG > Legacy).
@@ -235,7 +235,7 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 - `DatasetConfig`-Dataclass-Registry in neuem `datasets.py` mit `format`-Feld für das Reader-Dispatching. Kandidaten für weitere Felder: Datentyp-Klasse, Capability-Flags, Lizenz-Flags, Zitierangabe. *(geändert)*
 - Backend-Routen sowie `stac.py` und `store.py` werden mit einem `dataset`-Argument parametrisiert. `auth.py` wird nicht übernommen.
 - Frontend `ControlPanel.tsx` und `store.ts` werden von hardcodierten BIOMASS-Labels generalisiert.
-- Coverage Map ist Pflicht für jeden neuen Datensatz (Punkt 2 der Onboarding-Checkliste, §5); Vorlage ist `/api/coverage` im Prototyp.
+- Coverage Map ist Pflicht für jeden neuen Datensatz (Punkt 2 der Onboarding-Checkliste, §5); Vorlage ist `/api/coverage` im Prototyp, die technische Umsetzung steht in `adr/0004`.
 - Die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben; bestehender Code darf umgebaut, verschoben und umbenannt werden.
 - `decomp.py` (polarimetrische Dekomposition für komplexe Quad-Pol-Daten) wird Operator mit Quad-Pol-Capability und nie generalisiert.
 

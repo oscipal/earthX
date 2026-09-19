@@ -19,9 +19,16 @@ Drei Orte führen Tests aus, mit unterschiedlichen Fähigkeiten:
 
 | Ort | Kann | Kann nicht |
 |---|---|---|
-| Cloud-Sitzung | Python- und Node-Stack, GDAL aus Wheels, Postgres + PostGIS + pgstac | keine EO-Quelle, kein Geocoder, **kein Docker-Image** |
+| Cloud-Sitzung | Python- und Node-Stack, GDAL aus Wheels, Postgres + PostGIS + pgstac | kein Geocoder, **kein Docker-Image**; EO-Quellen siehe Hinweis unten |
 | GitHub Actions | dasselbe, zusätzlich Service-Container und geplante Läufe | in PR-Läufen ebenfalls keine Live-Quelle (weil wir es so wollen, nicht weil es nicht ginge) |
 | Ottos Rechner | alles, inklusive MAAP-Token und echten Daten | nichts davon ist automatisierbar oder öffentlich |
+
+> **Nachtrag 19.09.2026.** „Keine EO-Quelle" galt zum Zeitpunkt der Messung vom
+> 18.09.2026. Seit der Egress-Freigabe aus `adr/0003` §11 ist Earth Search v1
+> aus einer Cloud-Sitzung erreichbar (`cloud-umgebung.md` §6). An dieser
+> Aufteilung ändert das nichts: Live-Zugriffe bleiben auf T-D beschränkt, und
+> PR-Läufe testen weiter ohne Live-Quelle — weil wir es so wollen, nicht weil es
+> nicht ginge.
 
 Zwei Regeln stehen bereits fest und sind hier nicht zur Disposition:
 Live-Zugriffe auf externe Quellen gibt es in CI nicht (`projektplan.md` 2.4), und
