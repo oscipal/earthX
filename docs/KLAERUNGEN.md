@@ -97,7 +97,7 @@ Maßgeblich ist die Onboarding-Checkliste in `projektuebersicht.md` §5, ergänz
 
 Gestuft, mit gleichbleibender Schnittstelle:
 
-1. **M1 bis M4:** `DatasetConfig` als Python-Dataclass in `datasets.py`.
+1. **M1 bis M4:** `DatasetConfig` als Python-Dataclass in `datasets.py`. Diese Datei liegt im Modul **`catalog`**, nicht unter `earthx/datasets/` (Otto am 19.09.2026, M1-04): `architekturplan.md` 3.1 hält `datasets/<id>` von allem Generischen isoliert, `catalog` könnte die Einträge dort nicht lesen. `earthx/datasets/<id>/` bleibt datensatzspezifischem **Code** vorbehalten, nicht den Metadaten.
 2. **Ab M5 (Harvester, Git-Review):** Kuratierte Definitionen liegen als YAML unter `catalog/`; `datasets.py` wird zum Lader, der daraus dieselben `DatasetConfig`-Objekte erzeugt. Aufrufer merken nichts.
 3. pgstac wird aus derselben Quelle befüllt; es gibt nie zwei gepflegte Wahrheiten.
 
