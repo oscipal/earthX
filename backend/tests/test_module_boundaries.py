@@ -1,9 +1,9 @@
-"""The prepared import-linter contracts still match architekturplan.md 3.1.
+"""The enforced import-linter contracts still match architekturplan.md 3.1.
 
-The contracts in `.importlinter` are not enforced yet — the target modules do
-not exist (docs/adr/0002-testaufteilung.md). This test keeps the file honest in
-the meantime: it parses `.importlinter` and compares the allowed imports it
-implies against the table in the architecture plan, which is restated here.
+`.importlinter` gates every pull request since M1-02 (docs/adr/0002-testaufteilung.md).
+This test keeps the file honest: it parses `.importlinter` and compares the
+allowed imports it implies against the table in the architecture plan, which
+is restated here.
 """
 
 from __future__ import annotations
@@ -40,14 +40,17 @@ def config() -> configparser.ConfigParser:
 
 def _modules(parser: configparser.ConfigParser, section: str, option: str) -> set[str]:
     raw = parser.get(section, option, fallback="")
-    return {line.strip().removeprefix("app.") for line in raw.splitlines() if line.strip()}
+    return {line.strip().removeprefix("earthx.") for line in raw.splitlines() if line.strip()}
 
 
-def test_contracts_are_dormant_in_pull_requests() -> None:
-    """CI must not gate on the contracts yet — the target modules do not exist."""
+def test_contracts_are_enforced_in_pull_requests(config: configparser.ConfigParser) -> None:
+    """CI must gate on the contracts now that backend/earthx/ exists (M1-02)."""
+    assert config.get("importlinter", "root_package") == "earthx"
     workflow = (CONFIG.parent / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "lint-imports" in workflow, "the manual job should still exist"
-    assert "workflow_dispatch" in workflow
+    assert "lint-imports" in workflow
+    # workflow_dispatch is still the trigger that lets it be run manually too,
+    # but it must no longer be the *only* way the job runs.
+    assert workflow.count("workflow_dispatch") == 1
 
 
 @pytest.mark.parametrize("module", sorted(ALLOWED_IMPORTS))
@@ -73,4 +76,13 @@ def test_datasets_stay_isolated(config: configparser.ConfigParser) -> None:
 def test_http_clients_are_confined_to_gateway(config: configparser.ConfigParser) -> None:
     section = "importlinter:contract:http-only-in-gateway"
     assert _modules(config, section, "source_modules") == ALL_MODULES - {"gateway"}
-    assert "httpx" in _modules(config, section, "forbidden_modules")
+    forbidden = _modules(config, section, "forbidden_modules")
+    for client in {"httpx", "requests", "urllib", "pystac_client", "aiohttp"}:
+        assert client in forbidden
+
+
+def test_every_module_exists_as_a_package() -> None:
+    """architekturplan.md 3.1: all eleven modules exist, today as empty packages."""
+    earthx_root = CONFIG.parent / "backend" / "earthx"
+    for module in ALL_MODULES:
+        assert (earthx_root / module / "__init__.py").is_file(), module

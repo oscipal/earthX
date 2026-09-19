@@ -1,194 +1,194 @@
 ; Module boundaries from architekturplan.md 3.1, as import-linter contracts.
 ;
-; STATUS: PREPARED, NOT ENFORCED. The target modules below do not exist yet —
-; today there is only the prototype package `app`. CI therefore does not run
-; `lint-imports` on pull requests; the `import-boundaries` job in
-; .github/workflows/ci.yml is manual-only (workflow_dispatch).
-;
-; Switch it on with M1, once the first modules exist. Open question for Otto:
-; the root package name (`app` here, as the prototype uses it).
+; STATUS: ENFORCED (M1-02). The target modules under `backend/earthx/` exist
+; as empty packages; the `import-boundaries` job in .github/workflows/ci.yml
+; runs `lint-imports` on every pull request.
 ;
 ; Each contract names what a module may NOT import. The allowed imports are the
 ; complement, i.e. exactly column 3 of the table in architekturplan.md 3.1.
 ; `backend/tests/test_module_boundaries.py` checks that this file stays in sync
-; with that table even while the contracts are dormant.
+; with that table.
+;
+; Run locally from the repo root: PYTHONPATH=backend lint-imports --config .importlinter
 
 [importlinter]
-root_package = app
+root_package = earthx
 include_external_packages = True
 
 [importlinter:contract:gateway]
 name = gateway imports nothing domain-specific
 type = forbidden
 source_modules =
-    app.gateway
+    earthx.gateway
 forbidden_modules =
-    app.catalog
-    app.adapters
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:catalog]
 name = catalog imports only gateway
 type = forbidden
 source_modules =
-    app.catalog
+    earthx.catalog
 forbidden_modules =
-    app.adapters
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:adapters]
 name = adapters import only gateway and catalog
 type = forbidden
 source_modules =
-    app.adapters
+    earthx.adapters
 forbidden_modules =
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:readers]
 name = readers import only gateway
 type = forbidden
 source_modules =
-    app.readers
+    earthx.readers
 forbidden_modules =
-    app.catalog
-    app.adapters
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.catalog
+    earthx.adapters
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:access]
 name = access imports only readers and catalog
 type = forbidden
 source_modules =
-    app.access
+    earthx.access
 forbidden_modules =
-    app.gateway
-    app.adapters
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.gateway
+    earthx.adapters
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:processing]
 name = processing imports only access, readers and catalog
 type = forbidden
 source_modules =
-    app.processing
+    earthx.processing
 forbidden_modules =
-    app.gateway
-    app.adapters
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.gateway
+    earthx.adapters
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:jobs]
 name = jobs import only processing
 type = forbidden
 source_modules =
-    app.jobs
+    earthx.jobs
 forbidden_modules =
-    app.gateway
-    app.catalog
-    app.adapters
-    app.readers
-    app.access
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.gateway
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:discovery]
 name = discovery imports only adapters, catalog and gateway
 type = forbidden
 source_modules =
-    app.discovery
+    earthx.discovery
 forbidden_modules =
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.identity
-    app.api
-    app.datasets
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:identity]
 name = identity imports nothing else
 type = forbidden
 source_modules =
-    app.identity
+    earthx.identity
 forbidden_modules =
-    app.gateway
-    app.catalog
-    app.adapters
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.api
-    app.datasets
+    earthx.gateway
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:datasets-isolated]
 name = nothing generic imports a dataset module
 type = forbidden
 source_modules =
-    app.gateway
-    app.catalog
-    app.adapters
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
+    earthx.gateway
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
 forbidden_modules =
-    app.datasets
+    earthx.datasets
 
 [importlinter:contract:http-only-in-gateway]
 name = HTTP and S3 clients live only in gateway (KLAERUNGEN B8)
 type = forbidden
 source_modules =
-    app.catalog
-    app.adapters
-    app.readers
-    app.access
-    app.processing
-    app.jobs
-    app.discovery
-    app.identity
-    app.api
-    app.datasets
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 forbidden_modules =
     httpx
     requests
-    urllib.request
+    urllib
+    pystac_client
+    aiohttp
     boto3
