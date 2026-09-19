@@ -13,6 +13,12 @@ Two properties worth stating, because both are what makes a cache harmless:
 * **A failure here is the caller's to ignore.** Errors are not swallowed at this end;
   the adapter catches them and asks the source instead (E5, adr/0001 §9.3). Silence
   in this module would hide a broken cache forever.
+* **Each statement runs in its own savepoint.** A failed statement aborts the whole
+  transaction it runs in, and from M1-07 that is the transaction serving the request:
+  the search would answer from the source, and everything after it would die with
+  ``InFailedSqlTransaction``. The savepoint keeps the failure inside the cache — which
+  is the only reason "a broken cache is merely slower" holds for the process and not
+  just for the adapter.
 
 Expiry is measured with ``now()``, the transaction's own clock. Inside one
 transaction, writing with a lifetime of zero seconds therefore reads back as expired
@@ -49,12 +55,12 @@ class PostgresSearchCache:
 
     async def get(self, key: str) -> dict[str, Any] | None:
         """The stored value, or None when it is absent or past its expiry."""
-        async with self._conn.cursor() as cur:
+        async with self._conn.transaction(), self._conn.cursor() as cur:
             await cur.execute(_SELECT, (key,))
             row = await cur.fetchone()
         return None if row is None else row[0]
 
     async def set(self, key: str, value: dict[str, Any], *, ttl_s: float, dataset_id: str) -> None:
         """Store a value for ``ttl_s`` seconds, replacing whatever was under that key."""
-        async with self._conn.cursor() as cur:
+        async with self._conn.transaction(), self._conn.cursor() as cur:
             await cur.execute(_UPSERT, (key, dataset_id, Jsonb(value), float(ttl_s)))

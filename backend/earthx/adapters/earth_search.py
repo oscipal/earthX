@@ -62,7 +62,9 @@ TOKEN_VERSION = 1
 # outside `gateway`, and escaping hides odd input instead of naming it — the ids we
 # accept are restricted to what a STAC id normally is. That rules out `../` along
 # with everything else that would leave the path segment.
-_ITEM_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
+# ``\Z``, not ``$``: ``$`` also matches in front of a trailing newline, so "id\n"
+# would pass and then appear both in a URL path and as a second cache key.
+_ITEM_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._:-]{0,254}\Z")
 
 
 class InvalidQuery(ValueError):
@@ -112,13 +114,16 @@ class SearchParams:
         if len(self.bbox) != 4:
             raise InvalidQuery("bbox needs four values: west, south, east, north")
         west, south, east, north = self.bbox
+        # None of these messages names a coordinate: an exception text becomes a log
+        # line and an error body, and the AOI belongs in neither (projektplan.md 7,
+        # point 6). They name the rule that was broken, which is what a caller needs.
         if not all(-90.0 <= value <= 90.0 for value in (south, north)):
             # Upstream takes this without a word (adr/0005 §3.5), which is why we do not.
-            raise InvalidQuery(f"bbox latitudes are outside ±90: {south}, {north}")
+            raise InvalidQuery("bbox latitudes are outside ±90")
         if not all(-180.0 <= value <= 180.0 for value in (west, east)):
-            raise InvalidQuery(f"bbox longitudes are outside ±180: {west}, {east}")
+            raise InvalidQuery("bbox longitudes are outside ±180")
         if south >= north:
-            raise InvalidQuery(f"bbox is upside down: south {south} is not below north {north}")
+            raise InvalidQuery("bbox is upside down: south is not below north")
         # west > east is deliberately allowed: that is how GeoJSON and STAC write a box
         # that crosses the antimeridian, and Earth Search reads it that way too. Only
         # the latitudes have an order that can be wrong.
@@ -158,7 +163,7 @@ async def search_items(
     fingerprint = _search_fingerprint(dataset_id, params)
     marker = None if params.page_token is None else _decode_page_token(params.page_token, dataset_id, fingerprint)
 
-    key = _search_cache_key(fingerprint, params.page_token)
+    key = _search_cache_key(fingerprint, marker)
     cached = await _cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
         return _page(dataset_id, fingerprint, cached, from_cache=True)
@@ -250,8 +255,13 @@ def _search_fingerprint(dataset_id: str, params: SearchParams) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _search_cache_key(fingerprint: str, page_token: str | None) -> str:
-    return hashlib.sha256(f"search:{fingerprint}:{page_token or ''}".encode()).hexdigest()
+def _search_cache_key(fingerprint: str, marker: str | None) -> str:
+    """The search plus the page it is on.
+
+    Keyed on the decoded marker rather than on the token text: the same page, asked
+    for with a token that lost or regained its base64 padding, is one entry.
+    """
+    return hashlib.sha256(f"search:{fingerprint}:{marker or ''}".encode()).hexdigest()
 
 
 def _item_cache_key(dataset_id: str, item_id: str) -> str:
@@ -345,7 +355,10 @@ def _next_marker(payload: dict[str, Any]) -> str | None:
         body = link.get("body")
         if isinstance(body, dict) and isinstance(body.get("next"), str):
             return body["next"]
-        LOGGER.warning("upstream next link carries no marker we can follow; paging stops here")
+        # There are more items and we cannot reach them. Returning None here would
+        # hand the caller a page that looks like the last one — the same silent
+        # truncation adr/0005 rule I refuses for an unknown collection.
+        raise UpstreamShapeError("the next link carries no marker we can follow")
     return None
 
 

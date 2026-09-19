@@ -222,3 +222,46 @@ class TestACacheThatAnswersNonsense:
             item = await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
         assert len(seen) == 2
         assert item["id"] == "SYNTH_T00AAA_20240601T100000_L2A"
+
+
+class TestPagingAndCacheTogether:
+    """The page marker is part of the cache key — the only thing keeping page two
+    from being served the contents of page one."""
+
+    async def test_the_second_page_is_its_own_entry(self, dataset_id: str) -> None:
+        cache = FakeCache()
+        gateway, seen = answering(
+            httpx.Response(200, json=load("search_page_1")), httpx.Response(200, json=load("search_page_2"))
+        )
+        async with gateway:
+            first = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            second = await search_items(
+                dataset_id, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway, cache=cache
+            )
+            again = await search_items(
+                dataset_id, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway, cache=cache
+            )
+        assert len(cache.entries) == 2
+        assert [item["id"] for item in second.items] == ["SYNTH_T00AAA_20240603T100000_L2A"]
+        assert again.from_cache is True
+        assert [item["id"] for item in again.items] == [item["id"] for item in second.items]
+        assert len(seen) == 2
+
+    async def test_a_token_that_lost_its_padding_is_the_same_entry(self, dataset_id: str) -> None:
+        """The key is built from the decoded marker, so the two spellings meet."""
+        cache = FakeCache()
+        gateway, seen = answering(
+            httpx.Response(200, json=load("search_page_1")), httpx.Response(200, json=load("search_page_2"))
+        )
+        async with gateway:
+            first = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            token = first.next_page_token
+            assert token is not None
+            await search_items(
+                dataset_id, SearchParams(limit=2, page_token=token), gateway=gateway, cache=cache
+            )
+            padded = await search_items(
+                dataset_id, SearchParams(limit=2, page_token=token + "=="), gateway=gateway, cache=cache
+            )
+        assert padded.from_cache is True
+        assert len(seen) == 2

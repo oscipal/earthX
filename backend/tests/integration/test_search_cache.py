@@ -144,3 +144,24 @@ class TestTheAdapterOnTheRealCache:
         assert len(seen) == 2
         assert len(page.items) == 2
         assert page.from_cache is False
+
+    async def test_a_broken_cache_leaves_the_connection_usable(
+        self, cache: PostgresSearchCache, aconn: psycopg.AsyncConnection
+    ) -> None:
+        """The half of E5 that the test above cannot see.
+
+        A failed statement aborts the whole transaction it runs in, and from M1-07 that
+        is the transaction serving the request: the search would answer and everything
+        after it would die with InFailedSqlTransaction. Each cache statement therefore
+        runs in its own savepoint. Checked on the read *and* on the write, because a
+        poisoned connection would also stop the cache from ever storing anything again.
+        """
+        gateway, _ = gateway_answering(httpx.Response(200, json=load("search_page_1")))
+        await aconn.execute("DROP TABLE public.earthx_search_cache")
+
+        async with gateway:
+            await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
+
+        async with aconn.cursor() as cur:
+            await cur.execute("SELECT 1")
+            assert await cur.fetchone() == (1,)
