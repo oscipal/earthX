@@ -166,8 +166,9 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 ### M1-06 — Earth-Search-Adapter
 
 **Umgesetzt am 19.09.2026:** Plan und Ergebnis in
-`docs/plans/m1-06-earth-search-adapter.md` (F1–F5 von Otto wie empfohlen entschieden,
-F6 — Lizenz für aufgezeichnete Fixtures — bleibt offen, Fixtures sind synthetisch).
+`docs/plans/m1-06-earth-search-adapter.md` (F1–F5 von Otto wie empfohlen entschieden;
+F6 ebenfalls entschieden: es wird **dauerhaft nicht aufgezeichnet**, die Fixtures
+bleiben synthetisch).
 
 **Ziel:** Suche und Zugriffsauflösung für Sentinel-2 L2A, Vorlage `stac.py` (`architekturplan.md` 13).
 **Stufe B.** Vorgehen laut angenommenem Spike M1-05.
