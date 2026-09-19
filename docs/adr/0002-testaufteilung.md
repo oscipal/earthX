@@ -1,6 +1,8 @@
 # ADR 0002 — Testaufteilung: Cloud-Sitzung, CI, nur lokal
 
-- **Status:** Vorschlag, gilt bis Otto widerspricht.
+- **Status:** **Angenommen** von Otto am 2026-09-19 (E8, `docs/plans/m1-fundament.md`
+  Abschnitt 1), mit der Festlegung E7 aus demselben Abschnitt (`moto` für
+  Unit-Tests, MinIO nur als Service-Container in CI).
 - **Datum:** 2026-09-18
 - **Aufgabe:** M0 Schritt 2 laut `ENTSCHEIDUNGEN_2026-09-18.md` §6, auf Grundlage
   von `projektplan.md` 2.4.
