@@ -12,3 +12,7 @@ httpx>=0.27
 requests>=2.31
 python-dotenv>=1.0
 pydantic-settings>=2.2
+# pgstac schema migration for the compose `pgstac-migrate` service
+# (docs/plans/m1-08-compose-topologie.md); pinned to the version measured
+# working in docs/cloud-umgebung.md §5.
+pypgstac[psycopg]>=0.9,<0.10

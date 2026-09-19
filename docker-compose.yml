@@ -1,0 +1,132 @@
+# EarthX compose topology (architekturplan.md 3.2, 12.1; docs/plans/m1-08-compose-topologie.md).
+#
+# One image (backend/Dockerfile), four start commands: api, tiler, worker,
+# harvester. tiler/worker/harvester are M1 shells: they start, report
+# healthy on /health, and do nothing else. api gets the same stub for now;
+# the real STAC-API content lands here with M1-07.
+#
+# Configuration only via environment variables (.env, see .env.example).
+# No secrets in this file itself.
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: installs the pgstac schema, then exits. Not part of the
+  # "four processes" — it only prepares postgres for them.
+  pgstac-migrate:
+    build:
+      context: ./backend
+    command: ["pypgstac", "migrate"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    command: ["uvicorn", "earthx.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  tiler:
+    build:
+      context: ./backend
+    command: ["uvicorn", "earthx.access.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: ./backend
+    command: ["uvicorn", "earthx.jobs.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  harvester:
+    build:
+      context: ./backend
+    command: ["uvicorn", "earthx.discovery.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  minio-data:
