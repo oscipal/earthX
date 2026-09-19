@@ -1,8 +1,8 @@
 # M1-06 — Earth-Search-Adapter: Umsetzungsplan
 
 **Status:** **Umgesetzt am 19.09.2026.** Von Otto angenommen, **F1 bis F5 wie
-empfohlen**; **F6 (Lizenz für aufgezeichnete Fixtures) bleibt offen**, die Fixtures
-sind deshalb synthetisch. Die drei Schritte aus F1 liegen als drei Commits in **einem**
+empfohlen**; **F6 entschieden**: Es wird nie aufgezeichnet, die Fixtures bleiben
+dauerhaft synthetisch. Die drei Schritte aus F1 liegen als drei Commits in **einem**
 PR statt in drei — die Sitzung ist an einen Branch gebunden; der Schnitt bleibt am
 Commit ablesbar. **Stufe B** laut `docs/plans/m1-fundament.md` §3: Plan zuerst als
 Draft-PR, Umsetzung nach Ottos OK (`projektplan.md` 1.2).
@@ -265,12 +265,14 @@ direkt durchreichen, oder in einen eigenen `adapters.UnknownCollection` packen
 *Empfehlung: 1* — täglich, aber mit einer einzigen kleinen Anfrage, nicht mit
 einem vollen Testlauf.
 
-**F6 — Lizenz der Earth-Search-Metadaten für aufgezeichnete Fixtures.** `adr/0005`
-§8 Punkt 1 lässt das ausdrücklich offen und der Aufgabentext verbietet, das hier
-selbst zu entscheiden: **Diese Frage stellt der PR, er beantwortet sie nicht.**
-Bis zur Klärung bleiben alle Fixtures synthetisch, nach dem Muster der in
-`adr/0005` §3 gemessenen Formen (Antwortrumpf mit `context`/`numberMatched`,
-`next`-Link als POST-Link mit Rumpf, die acht Fehlerformen aus §3.5).
+**F6 — Lizenz der Earth-Search-Metadaten für aufgezeichnete Fixtures.**
+**Entschieden am 19.09.2026: Es wird nicht aufgezeichnet — dauerhaft.** Die
+Fixtures bleiben synthetisch, nach dem Muster der in `adr/0005` §3 gemessenen Formen
+(Antwortrumpf mit `context`/`numberMatched`, `next`-Link als POST-Link mit Rumpf, die
+acht Fehlerformen aus §3.5). Damit stellt sich die Lizenzfrage für Fixtures nicht
+mehr; `adr/0005` §8 Punkt 1 ist insoweit geschlossen. Was aufgezeichnete Antworten
+geleistet hätten — zu merken, dass die Quelle sich bewegt hat —, leistet der
+T-D-Test.
 
 ## 10. Bewusst nicht in M1-06
 
@@ -301,7 +303,7 @@ Bis zur Klärung bleiben alle Fixtures synthetisch, nach dem Muster der in
 | Cache-Schlüssel hasht `bbox`/`datetime` uneindeutig (z. B. `47.0` vs `47`) | Normalisierung über die STAC-Textform vor dem Hash (§7), mit Test belegt |
 | Drei PRs verlängern den Review-Stau | Jeder PR ist für sich klein und abnehmbar, wie bei M1-03 |
 | T-D-Workflow wird zu einer zweiten, ungeprüften Fehlerquelle in `.github/` | Nur eine kleine, seltene Anfrage (F5); Fehlschlag ist sichtbar, aber blockiert kein PR |
-| Die Lizenzfrage (F6) bleibt offen und synthetische Fixtures veralten gegen die echte Quelle unbemerkt | genau dafür existiert T-D (§1) |
+| Synthetische Fixtures veralten gegen die echte Quelle, ohne dass es auffällt — und aufgezeichnete gibt es dauerhaft nicht (F6) | genau dafür existiert T-D (§1) |
 
 ## 13. Was bei der Umsetzung anders kam
 
