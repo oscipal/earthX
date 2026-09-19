@@ -1,0 +1,14 @@
+; Minimal fixture for test_import_linter_catches_violations.py.
+; `badpkg.readers` deliberately imports `badpkg.catalog`, which the single
+; contract below forbids (mirrors the real `readers` contract in .importlinter).
+
+[importlinter]
+root_package = badpkg
+
+[importlinter:contract:readers]
+name = readers import only gateway
+type = forbidden
+source_modules =
+    badpkg.readers
+forbidden_modules =
+    badpkg.catalog
