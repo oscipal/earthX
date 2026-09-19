@@ -326,6 +326,21 @@ Entscheidungslog:
    und `end` einzeln statt als Tupel, und `SearchCache.set` nimmt die `dataset_id`
    mit — ohne sie ließe sich die gleichnamige Spalte der Tabelle nicht füllen.
 
+Das Review des Branches fand zwei Dinge, die still falsch statt laut kaputt gewesen
+wären, beide inzwischen behoben und im Log vermerkt:
+
+- **Der Cache lief ohne Savepoint** auf der Verbindung des Aufrufers. Eine
+  fehlgeschlagene Anweisung hätte die ganze Transaktion abgebrochen — ab M1-07 die des
+  Requests. E5 galt damit nur im Adapter, nicht im Prozess.
+- **Ein Redirect mit 301/302/303 verwarf den Request-Rumpf** (Verhalten aus M1-03).
+  Aus `POST /search` wäre ein `GET /search` geworden und die ungefilterte Vorgabeseite
+  der Quelle die Antwort auf eine AOI-Suche.
+
+Offen geblieben und im Log als solches vermerkt: **`sortby` wird bewusst nicht
+mitgeschickt** — ein ausdrückliches Sortierfeld bräche vermutlich die Seitenmarke
+(deren Feldzahl dazu passen muss), und das lässt sich nur an der Quelle messen. Vor
+einer Sortierzusage nach außen in M1-07 zu klären.
+
 Dazu kam ein Befund **außerhalb** von M1-06, den Otto am 19.09.2026 entschieden hat:
 Der Importvertrag `http-only-in-gateway` zählte auch indirekte Ketten und verbot
 damit jeden Import von `gateway` — `gateway.policy` zerlegt URLs mit `urllib.parse`.
