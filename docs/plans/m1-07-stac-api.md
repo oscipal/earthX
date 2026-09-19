@@ -36,7 +36,7 @@ ohne dass ein Client den Unterschied merkt außer an `earthx:source`.
   `earthx.catalog.search_cache.PostgresSearchCache` stehen fertig bereit;
   `adapters/cache.py:12` verweist ausdrücklich auf den künftigen Aufrufer
   „the `FederatingCoreCrudClient` in `api` from M1-07 on."
-- `earthx.catalog.registry.REGISTRY` kennt `sentinel-2-c1-l2a` mit
+- `earthx.catalog.datasets.REGISTRY` kennt `sentinel-2-c1-l2a` mit
   `SourceInfo(adapter=AdapterKind.EARTH_SEARCH_V1, endpoint=..., source_collection_id=...)`;
   `catalog.collection.to_stac_collection` schreibt das als `earthx:source` in
   die Collection, die `catalog.pgstac.load_registry` nach pgstac schreibt.
@@ -252,8 +252,10 @@ erst nach erfolgreichem `catalog-load` gesund werden kann.
 
 Der Prototyp belegt `/api` (`backend/app/main.py:33`) und `/` (Startseite).
 Vorschlag: eigenes Präfix **`/stac`** über `Settings(prefix_path="/stac")`
-(existiert als Konfigurationsfeld in `stac_fastapi.pgstac.config.Settings`,
-über `STAC_FASTAPI_PREFIX_PATH` o. ä. setzbar) — kollidiert mit keiner
+(existiert als Konfigurationsfeld in `stac_fastapi.pgstac.config.Settings`;
+`ApiSettings` setzt kein `env_prefix`, die Umgebungsvariable heißt demnach
+schlicht `PREFIX_PATH` — in der Umsetzung am laufenden Prozess zu
+bestätigen) — kollidiert mit keiner
 bestehenden Route, macht in einem STAC-Browser sofort erkennbar, was er vor
 sich hat.
 
@@ -262,12 +264,15 @@ sich hat.
 `docs/ENTSCHEIDUNGSLOG.md` (2026-09-19) hält bereits fest: STAC 1.0.0 →
 `license: "proprietary"`, STAC 1.1 → `license: "other"`, abgeleitet aus der
 ausgelieferten Version, „entscheidet die `stac-fastapi-pgstac`-Version in
-M1-07". Am Changelog von `stac-fastapi-pgstac` 6.4.0 gesehen: „Sort
+M1-07". Im Changelog von `stac-fastapi-pgstac` 6.4.0 steht: „Sort
 conformance class version to v1.1.0 instead of v1.0.0" — das betrifft
-zunächst nur die Konformitätsklasse der Sort-Extension, nicht zwingend das
-Feld `stac_version` der Landing Page/Collections selbst. **Keine Vermutung
-an dieser Stelle:** Die Umsetzung muss die tatsächlich ausgegebene
-`stac_version` gegen die gewählte `stac-fastapi-pgstac`-Version messen und
+zunächst nur die Konformitätsklasse der Sort-Extension, nicht das Feld
+`stac_version` der Landing Page/Collections selbst. Dieses kommt aus
+`stac_pydantic.version.STAC_VERSION`, also aus einer **transitiven**
+Abhängigkeit mit Versionsspanne (`stac-pydantic<4.0,>=3.3.0`), nicht direkt
+aus dem `stac-fastapi-pgstac`-Pin — der Wert kann sich damit auch ohne
+Änderung unseres Pins verschieben. **Keine Vermutung an dieser Stelle:**
+Die Umsetzung muss die tatsächlich ausgegebene `stac_version` messen und
 mit einem Test festnageln, welcher Lizenzwert (`proprietary`/`other`) dabei
 laut der bestehenden Ableitungsregel herauskommt. Das ist eine
 Prüfpflicht in der Umsetzung, keine Entscheidung, die dieser Plan schon
@@ -303,7 +308,7 @@ eingeschleust — keines der oben genannten Pakete zieht es mit.
 
 | Gruppe | Fälle |
 |---|---|
-| Konformität (T-B, gegen die laufende API in CI) | automatischer Konformitätstest; Landing Page führt keine `filter`-Konformitätsklasse; `sort` ebenso, falls F2 wie vorgeschlagen entschieden wird |
+| Konformität (T-C: die laufende API braucht Postgres/pgstac, `adr/0002` §2 — nicht T-B, das ohne Datenbank auskommt) | automatischer Konformitätstest; Landing Page führt keine `filter`-Konformitätsklasse; `sort` ebenso, falls F2 wie vorgeschlagen entschieden wird |
 | `filter` nicht still verworfen | ein `filter`-Parameter (GET **und** POST) ergibt `400`, nicht `200` mit ignoriertem Feld |
 | Verzweigung (T-B, `MockTransport` hinter `gateway`) | `sentinel-2-c1-l2a`-Suche geht über den Adapter (Cache-Treffer erspart den Aufruf, prüfbar wie in M1-06); eine unbekannte Collection ergibt `404` aus dem eigenen pgstac, nie eine leere Earth-Search-Antwort |
 | Item-Übersetzung | `ItemPage` → STAC-`ItemCollection` mit korrekten `next`-Links (eigene Marke aus M1-06, nie die durchgereichte) |
