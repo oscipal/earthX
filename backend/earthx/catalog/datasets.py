@@ -101,17 +101,29 @@ SENTINEL_2_L2A = DatasetConfig(
             notice={
                 "de": (
                     "Die Nutzung unterliegt dem Sentinel Data Legal Notice: {terms_url}. "
-                    "Die Daten werden ohne Gewähr bereitgestellt; mit ihrer Nutzung verzichtet "
-                    "der Nutzer auf Schadensersatzansprüche gegenüber der EU und den "
-                    "Datenanbietern."
+                    "Die Daten werden ohne ausdrückliche oder stillschweigende Gewährleistung "
+                    "bereitgestellt, auch nicht hinsichtlich Qualität und Eignung für einen "
+                    "bestimmten Zweck; mit ihrer Nutzung verzichtet der Nutzer auf "
+                    "Schadensersatzansprüche gegenüber der EU und den Datenanbietern. Der "
+                    "Verzicht erfasst jede Streitigkeit, einschließlich vertraglicher und "
+                    "deliktischer Ansprüche, vor Gericht, im Schiedsverfahren oder in jeder "
+                    "anderen Form der Streitbeilegung."
                 ),
-                # Kept close to the Legal Notice's own words ("without any express or
-                # implied warranty", "renounces to any claims for damages against the
-                # European Union and the providers of the said Data and Information").
+                # The Legal Notice's own words, shortened only where it names itself:
+                # "without any express or implied warranty, including as regards quality
+                # and suitability for any purpose", "renounces to any claims for damages
+                # against the European Union and the providers of the said Data and
+                # Information", "any dispute, including contracts and torts claims, that
+                # might be filed in court, in arbitration or in any other form of dispute
+                # settlement".
                 "en": (
                     "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
-                    "are provided without warranty; by using them the user renounces any claims "
-                    "for damages against the European Union and the providers of the data."
+                    "are provided without any express or implied warranty, including as regards "
+                    "quality and suitability for any purpose; by using them the user renounces "
+                    "any claims for damages against the European Union and the providers of the "
+                    "data. The waiver encompasses any dispute, including contracts and torts "
+                    "claims, that might be filed in court, in arbitration or in any other form "
+                    "of dispute settlement."
                 ),
             },
         ),

@@ -73,12 +73,24 @@ def test_the_terms_come_from_the_source_not_from_us() -> None:
     assert set(terms.notice) == {"de", "en"}
 
 
-def test_both_terms_texts_name_the_waiver_and_the_missing_warranty() -> None:
-    terms = SENTINEL_2_L2A.license.terms
-    assert "ohne Gewähr" in terms.notice["de"]
-    assert "Schadensersatzansprüche" in terms.notice["de"]
-    assert "without" in terms.notice["en"] and "warranty" in terms.notice["en"]
-    assert "renounces any claims for damages" in terms.notice["en"]
+def test_both_terms_texts_carry_all_three_parts_of_the_clause() -> None:
+    """The Legal Notice states the waiver in three parts; passing on two of them
+    would narrow it on the reader's behalf. Wording checked against the document
+    itself on 19.09.2026.
+    """
+    de = SENTINEL_2_L2A.license.terms.notice["de"]
+    assert "ohne ausdrückliche oder stillschweigende Gewährleistung" in de
+    assert "Qualität und Eignung für einen bestimmten Zweck" in de
+    assert "Schadensersatzansprüche gegenüber der EU und den Datenanbietern" in de
+    assert "vertraglicher und deliktischer Ansprüche" in de
+    assert "Schiedsverfahren" in de
+
+    en = SENTINEL_2_L2A.license.terms.notice["en"]
+    assert "without any express or implied warranty" in en
+    assert "as regards quality and suitability for any purpose" in en
+    assert "renounces any claims for damages against the European Union" in en
+    assert "contracts and torts claims" in en
+    assert "in arbitration or in any other form of dispute settlement" in en
 
 
 def test_the_terms_text_can_be_filled_in_at_a_download() -> None:
