@@ -1,7 +1,11 @@
 # M1-06 — Earth-Search-Adapter: Umsetzungsplan
 
-**Status:** Plan, Otto-OK ausstehend. **Stufe B** laut `docs/plans/m1-fundament.md`
-§3: Plan zuerst als Draft-PR, Umsetzung erst nach Ottos OK (`projektplan.md` 1.2).
+**Status:** **Umgesetzt am 19.09.2026.** Von Otto angenommen, **F1 bis F5 wie
+empfohlen**; **F6 (Lizenz für aufgezeichnete Fixtures) bleibt offen**, die Fixtures
+sind deshalb synthetisch. Die drei Schritte aus F1 liegen als drei Commits in **einem**
+PR statt in drei — die Sitzung ist an einen Branch gebunden; der Schnitt bleibt am
+Commit ablesbar. **Stufe B** laut `docs/plans/m1-fundament.md` §3: Plan zuerst als
+Draft-PR, Umsetzung nach Ottos OK (`projektplan.md` 1.2).
 **Aufgabe:** M1-06 aus `docs/plans/m1-fundament.md` §4.
 **Grundlage:** `architekturplan.md` 3.1, 5.1, 5.2, 6.1; `KLAERUNGEN.md` B8, B9, B13;
 `adr/0001` §7 (Z1), §8, §9.3; `adr/0003` §11.2 (Sentinel-2 L2A, Legal Notice);
@@ -298,3 +302,33 @@ Bis zur Klärung bleiben alle Fixtures synthetisch, nach dem Muster der in
 | Drei PRs verlängern den Review-Stau | Jeder PR ist für sich klein und abnehmbar, wie bei M1-03 |
 | T-D-Workflow wird zu einer zweiten, ungeprüften Fehlerquelle in `.github/` | Nur eine kleine, seltene Anfrage (F5); Fehlschlag ist sichtbar, aber blockiert kein PR |
 | Die Lizenzfrage (F6) bleibt offen und synthetische Fixtures veralten gegen die echte Quelle unbemerkt | genau dafür existiert T-D (§1) |
+
+## 13. Was bei der Umsetzung anders kam
+
+Vier Punkte, an denen der Code vom Plan abweicht. Sie stehen so auch im
+Entscheidungslog:
+
+1. **Eine `bbox` mit `west > east` wird zugelassen.** §6 wollte sie als „verdreht"
+   abweisen. So schreiben GeoJSON und STAC aber eine Box über die Datumsgrenze, und
+   Earth Search liest sie so. Abgewiesen wird deshalb nur, was die Quelle selbst
+   abweist (`south >= north`) und was sie still duldet (Breiten außerhalb ±90) —
+   letzteres ist der Fall, um den es `adr/0005` §3.5 geht.
+2. **Die Item-ID wird geprüft, nicht maskiert.** Zum Maskieren bräuchte es
+   `urllib.parse`, und `urllib` ist außerhalb von `gateway` gesperrt. Ein Muster für
+   STAC-IDs ist ohnehin die schärfere Prüfung: Es sperrt `../` mit, statt es
+   unauffällig umzuschreiben.
+3. **Drei Migrationstests brauchten einen sauberen Stand.** `earthx.catalog.load`
+   committet, also trägt die Datenbank nach einem vollen Lauf wirklich die Version
+   `002` — ein Test, der dieselbe Nummer für eine eigene Datei benutzt, las das als
+   nachträglich geänderte Migration. Die Tests setzen jetzt beide Tabellen zurück und
+   laufen auf einer gebrauchten wie auf einer frischen Datenbank.
+4. **Zwei Kleinigkeiten an der Schnittstelle aus §4:** `SearchParams` trägt `start`
+   und `end` einzeln statt als Tupel, und `SearchCache.set` nimmt die `dataset_id`
+   mit — ohne sie ließe sich die gleichnamige Spalte der Tabelle nicht füllen.
+
+Dazu kam ein Befund **außerhalb** von M1-06, den Otto am 19.09.2026 entschieden hat:
+Der Importvertrag `http-only-in-gateway` zählte auch indirekte Ketten und verbot
+damit jeden Import von `gateway` — `gateway.policy` zerlegt URLs mit `urllib.parse`.
+Der Vertrag zählt jetzt direkte Importe; die Syntaxbaum-Prüfung bleibt als zweite
+Sperre daneben. Für `access` und `processing` steht derselbe Fall noch offen
+(Entscheidungslog).
