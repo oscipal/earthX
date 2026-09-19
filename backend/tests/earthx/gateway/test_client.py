@@ -227,6 +227,21 @@ async def test_a_redirect_that_would_drop_the_body_is_refused(status: int) -> No
     assert [request.method for request in seen] == ["POST"]
 
 
+@pytest.mark.parametrize("status", [301, 302, 303])
+async def test_a_get_still_follows_these(status: int) -> None:
+    """The refusal above is about a body, not about the status code.
+
+    Assets on S3 and CDNs routinely answer a GET with a 302, and a GET has nothing
+    that following could drop — so nothing changes for the reader path (M2).
+    """
+    handler, seen = redirecting(f"https://{OTHER}/v1/items", status=status)
+    gateway, _ = build(handler)
+    async with gateway:
+        response = await gateway.get(URL)
+    assert response.json() == {"hop": "/v1/items"}
+    assert [request.method for request in seen] == ["GET", "GET"]
+
+
 @pytest.mark.parametrize("status", [307, 308])
 async def test_a_redirect_that_keeps_the_body_is_followed(status: int) -> None:
     """307 and 308 carry method and body over, so nothing is lost by following."""
