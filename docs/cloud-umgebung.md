@@ -112,23 +112,34 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 
 | Erreichbar | Gesperrt (403 auf CONNECT) |
 |---|---|
-| `pypi.org`, `files.pythonhosted.org` | `earth-search.aws.element84.com` |
-| `registry.npmjs.org` | `planetarycomputer.microsoft.com` |
-| `api.github.com`, `github.com` | `catalogue.dataspace.copernicus.eu` |
-| Ubuntu-Archiv (`apt`) | `stac.eopf.copernicus.eu` |
-| `mcr.microsoft.com` | `nominatim.openstreetmap.org`, `tile.openstreetmap.org` |
-| `sentinel-cogs.s3.us-west-2.amazonaws.com` (antwortet; nicht als Datenquelle geprüft) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
+| `pypi.org`, `files.pythonhosted.org` | `planetarycomputer.microsoft.com` |
+| `registry.npmjs.org` | `catalogue.dataspace.copernicus.eu` |
+| `earth-search.aws.element84.com` (seit dem 18.09.2026 freigegeben, in Sitzungen vom 19.09.2026 erreichbar und gemessen) | `stac.eopf.copernicus.eu` |
+| `api.github.com`, `github.com` | `nominatim.openstreetmap.org`, `tile.openstreetmap.org` |
+| Ubuntu-Archiv (`apt`) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
+| `mcr.microsoft.com` | |
+| `sentinel-cogs.s3.us-west-2.amazonaws.com` (Assets des ersten Datensatzes) | |
 
-**Keine EO-Datenquelle und kein Geocoder ist erreichbar** — genau die Annahme,
-auf der `projektplan.md` 2.4 und `docs/adr/0002-testaufteilung.md` aufbauen. Das
-ist kein Mangel, sondern die Rechtfertigung dafür, ohne Live-Quellen zu testen.
-Für den Kandidaten EOPF Sentinel Zarr Samples (M0 Schritt 6) heißt es: Eine
-Quelle lässt sich in einer Cloud-Sitzung nicht ausprobieren, sondern nur über
-aufgezeichnete Antworten oder lokal bei Otto.
+**Stand 19.09.2026: Earth Search v1 ist erreichbar.** Die Tabelle oben führte
+`earth-search.aws.element84.com` bis dahin als gesperrt; das war der Stand der
+Messung vom 18.09.2026, **vor** der Egress-Freigabe aus `adr/0003` §11. Seit dem
+19.09.2026 ist der Host in mehreren Sitzungen gemessen — `adr/0004` §3 und
+`adr/0005` §3 beruhen auf über 100 Metadaten-Anfragen dorthin. Zusammen mit
+`sentinel-cogs...amazonaws.com` ist damit der Weg des ersten Datensatzes in der
+Cloud-Sitzung vollständig offen: Metadaten und Assets.
 
-`sentinel-cogs...amazonaws.com` antwortet als einziger EO-naher Host. Darauf ist
-nichts gebaut: Der Host war nicht angefragt, wurde nicht als Datenquelle
-verifiziert, und eine Policy kann ihn jederzeit schließen.
+Das ändert nichts an der Testaufteilung. **Kein Geocoder ist erreichbar**, und
+für EOPF (`stac.eopf.copernicus.eu`) und CDSE gilt die Sperre unverändert. Die
+Annahme, auf der `projektplan.md` 2.4 und `docs/adr/0002-testaufteilung.md`
+aufbauen — Tests laufen ohne Live-Quellen —, bleibt bestehen: Erreichbarkeit ist
+die Grundlage für Spikes und Messungen, nicht für Tests in CI oder PR-Läufen.
+Live-Zugriffe bleiben auf zeitgesteuerte T-D-Smoke-Tests beschränkt
+(`adr/0002`). Für den Kandidaten EOPF Sentinel Zarr Samples (M0 Schritt 6) gilt
+weiterhin: Die Quelle lässt sich in einer Cloud-Sitzung nicht ausprobieren,
+sondern nur über synthetische Fixtures oder lokal bei Otto.
+
+Eine Freigabe wirkt erst in **neu gestarteten** Sitzungen; eine mitten in der
+Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
 
 ## 7. Was daraus folgt
 
