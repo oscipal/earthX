@@ -7,21 +7,24 @@
   Produktivcode geändert, keine Daten heruntergeladen, keine Datei außerhalb von
   `docs/` angefasst.
 - **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §2 (Coverage Map), §5;
-  `KLAERUNGEN.md` B8, B12; `architekturplan.md` 5.1, 5.2, 5.3, 15.3;
+  `KLAERUNGEN.md` B8, B12; `architekturplan.md` 5.1, 5.2, 5.3, 6.1, 15.3;
+  `projektuebersicht.md` Prinzip 10;
   `docs/prototyp-inventar.md` F12, N3; `adr/0001` §9.1, §9.3; `adr/0003`;
   Entscheidungslog-Zeile „Technische Umsetzung der Coverage Map".
-- **Betroffen:** `architekturplan.md` 5.2, 6.3; `projektuebersicht.md` §5
+- **Betroffen:** `architekturplan.md` 5.2, **6.1**, 6.3; `projektuebersicht.md` §5
   (Onboarding-Checkliste); Entscheidungslog; Planung M2.
 
 ---
 
 ## Methode und Belegstufen
 
-Gearbeitet wurde in einer Cloud-Sitzung vom 19.09.2026. Anders als bei `adr/0003`
-zum Zeitpunkt seiner Entstehung war **`earth-search.aws.element84.com` diesmal
-erreichbar** (Egress-Freigabe wirkt laut Entscheidungslog erst in neu gestarteten
-Sitzungen — diese ist eine solche). Die Messungen in §3 sind deshalb echte
-Messungen gegen die reale Quelle, keine Schätzungen.
+Gearbeitet wurde in einer Cloud-Sitzung vom 19.09.2026.
+**`earth-search.aws.element84.com` war erreichbar.** Das ist keine Neuigkeit:
+`adr/0003` §10.1 führt den Host seit dem 18.09.2026 als erreichbar (HTTP 200),
+nachdem Otto Egress freigegeben hatte — nur der ursprüngliche Teil von
+`adr/0003` beschreibt noch den Stand davor. Neu ist allein, dass hier zum
+ersten Mal die **Aggregations-Endpunkte** abgefragt wurden. Die Zahlen in §3
+sind echte Messungen gegen die reale Quelle, keine Schätzungen.
 
 Jede Aussage trägt eine Belegstufe:
 
@@ -71,16 +74,25 @@ die Möglichkeit, das Ergebnis einfach einmal vorzuberechnen.
 
 ## 2. Kriterien
 
+> **Zu den Kürzeln E1–E8.** Sie stehen in `docs/plans/m1-fundament.md` §1 und
+> sind **Empfehlungen an Otto, noch keine Entscheidungen** — der Kopf jener
+> Datei stellt sie ausdrücklich unter Ottos Antwort, und im Entscheidungslog
+> gibt es zu ihnen bislang keine Zeile (M1-00 ist nicht gelaufen). Dieses ADR
+> benutzt zwei davon: **E4** (Anwendungs-Cache in Postgres) und **E5** (ein
+> fehlgeschlagener Zwischenspeicher macht nur langsamer, nie 404). Entscheidet
+> Otto dort anders, ändert sich in §5 der Zwischenspeicher, nicht die
+> Empfehlung.
+
 | # | Kriterium | Herkunft |
 |---|---|---|
 | K1 | Reagiert auf Filter (Zeitraum, Wolken, weitere Suchkriterien) | `ENTSCHEIDUNGEN` §2 |
 | K2 | Vollständigkeit ist entweder gegeben oder **sichtbar ausgewiesen** | `ENTSCHEIDUNGEN` §2; F12/N3 |
 | K3 | Funktioniert für föderierte **und** für eigene Items, mit demselben Ergebnisformat | `architekturplan.md` 5.2 |
-| K4 | Dienste bleiben zustandslos; ein leerer Zwischenspeicher macht nur langsamer, nie 404 | `adr/0001` §8, §9.3; E5 |
+| K4 | Dienste bleiben zustandslos; ein leerer Zwischenspeicher macht nur langsamer, nie 404 | `adr/0001` §8, §9.3; E5 (noch Vorschlag, s. o.) |
 | K5 | Alles Ausgehende über `gateway`, konservative Last auf der Quelle | `KLAERUNGEN` B8; `m1-fundament.md` §6 |
-| K6 | Interaktiv bedienbar: Antwortzeit im Bereich weniger hundert Millisekunden | `projektuebersicht.md` Prinzipien |
+| K6 | Interaktiv bedienbar: Antwortzeit im Bereich weniger hundert Millisekunden | **eigene Setzung** — in `docs/` steht kein Latenzziel; siehe §7 Frage 5 |
 | K7 | Läuft auf dem Stack, den die Cloud-Umgebung und CI hergeben — ohne eigenes Image nur für eine Extension | `docs/cloud-umgebung.md`; `adr/0002` §1 |
-| K8 | Kosten wachsen nicht linear mit der Katalogsgröße | `architekturplan.md` 15.3 |
+| K8 | Kosten wachsen nicht linear mit der Katalogsgröße; grobe Kostenabschätzung pro Request | `projektuebersicht.md` Prinzip 10 (Kostenbewusstsein) |
 
 ## 3. Was gemessen wurde
 
@@ -95,6 +107,12 @@ Dienst selbst geprüft:
 curl -s https://earth-search.aws.element84.com/v1 | jq -r '.conformsTo[]'
   ... https://api.stacspec.org/v0.3.0/aggregation
 ```
+
+**Zu den `total_count`-Werten unten:** Sie schwanken zwischen den Messungen um
+einige Dutzend (30 356 426 bis 30 356 454). Das ist kein Messfehler, sondern der
+laufende Zugang neuer Szenen während der rund 20 Minuten Messdauer. Für die
+Vollständigkeitsprobe in §5 ist das unschädlich, weil dort `total_count` und
+Zellsumme aus **derselben** Antwort stammen.
 
 Für `sentinel-2-c1-l2a` bietet der Dienst elf Aggregationen an — darunter
 `total_count`, `datetime_frequency`, `cloud_cover_frequency` und die drei
@@ -122,8 +140,8 @@ Läufen wo angegeben. Die Collection enthielt beim Abruf **30 356 426 Items**
 | dieselbe Filterung, `grid_geohash_frequency` p5 | 536 | 0,63 s | 28 kB |
 | dieselbe Filterung, `grid_geotile_frequency` z8 | 117 | 0,32 s | 6,7 kB |
 
-Der gefilterte Fall — der häufige — liegt durchweg **unter einer halben Sekunde
-bei wenigen Kilobyte**. Das erfüllt K6 mit Abstand und macht Vektorkacheln für
+Der gefilterte Fall — der häufige — liegt bei **0,28 bis 0,63 s und 5 bis 28 kB**,
+je nach verlangter Gitterfeinheit. Das erfüllt K6 mit Abstand und macht Vektorkacheln für
 diesen Zweck vorerst entbehrlich (§4, Option 4).
 
 Ratengrenzen ließen sich nicht ermitteln: Der Dienst liefert weder
@@ -191,7 +209,7 @@ Für den eigenen Katalog gibt es die Gegenprobe nicht als fertiges Feature:
 - `stac_fastapi/pgstac/extensions/__init__.py` auf `main` exportiert
   `QueryExtension`, `FiltersClient`, `FreeTextExtension` — **keine Aggregation**
   **[P]** (`raw.githubusercontent.com/stac-utils/stac-fastapi-pgstac/main/...`).
-- `pgstac/sql/004_search.sql` (28 kB, 567 Zeilen) enthält **keinen einzigen
+- `src/pgstac/sql/004_search.sql` (28 kB, 567 Zeilen) enthält **keinen einzigen
   Treffer** für `aggregat`, `geohash`, `geohex` oder `geotile` **[P]**.
 - Der Feature-Request `stac-utils/pgstac#257` „Aggregation Extension" ist seit
   dem 17.04.2024 offen und kommentarlos; der Antragsteller selbst zweifelt dort
@@ -207,6 +225,8 @@ synthetische Footprints** (1°-Kacheln, Zeitraum 2015–2026, Wolkenanteil
 gleichverteilt; rein synthetisch, keine echten Szenen — `ENTSCHEIDUNGEN` §4),
 GiST-Index auf der Geometrie, B-Tree auf `datetime` und `cloud_cover`.
 Tabellengröße 468 MB. Zahlen sind `EXPLAIN ANALYZE`-Ausführungszeiten.
+**Erzeugung und Abfragen stehen vollständig in §10**, damit die Zahlen
+nachvollziehbar sind und nicht geglaubt werden müssen.
 
 | Verfahren | Umfang | Zeit |
 |---|---|---|
@@ -227,11 +247,11 @@ Drei Dinge fallen auf:
 2. **Der teure Fall ist der ungefilterte Weltüberblick** (2,0–7,8 s) — und
    genau der hat keine Filter und ist deshalb **vorberechenbar**. Die
    materialisierte Sicht drückt ihn auf 154 ms und ist in 6,2 s neu gebaut.
-3. **Die Footprint-Überlappung kostet rund das Vierfache** des
-   Zentroid-Binnings (A1 gegen B1, A2 gegen B2), weil jedes Item mit mehreren
-   Zellen verknüpft wird. Das ist der Preis der Semantik aus §3.3, Falle 2.
+3. **Die Footprint-Überlappung kostet ein Mehrfaches** des Zentroid-Binnings:
+   Faktor 3,9 ungefiltert (A1 gegen B1), Faktor 5,9 gefiltert (A2 gegen B2),
+   weil jedes Item mit mehreren Zellen verknüpft wird. Das ist der Preis der Semantik aus §3.3, Falle 2.
 
-Der Messaufbau ist mit 2 Mio. Items zwei Größenordnungen kleiner als die 30 Mio.
+Der Messaufbau ist mit 2 Mio. Items rund fünfzehnmal kleiner als die 30,4 Mio.
 Items von Sentinel-2 L2A. Er beweist **nicht**, dass der eigene pgstac einen
 Katalog dieser Größe ungefiltert in Echtzeit aggregiert — er zeigt, dass der
 gefilterte Fall auch bei einem Vielfachen davon im Rahmen bleibt, weil die Kosten
@@ -316,6 +336,18 @@ Trennung, die `architekturplan.md` 5.2 für die Item-Suche zieht, und sie hält 
 Unterschied zwischen eigenem und föderiertem Katalog aus der Oberfläche heraus
 (K3).
 
+**Wo welcher Teil liegt.** Die Nahtstelle und das SQL gehören nach `catalog`
+(„STAC-Modell, pgstac, Suche", 3.1). Das Wissen darüber, *wie* eine konkrete
+Quelle aggregiert — dass Earth Search `/aggregate` nur per GET annimmt, wie die
+Parameter heißen, wo gekappt wird —, gehört nach `adapters` („Protokolle der
+Quellen"). Sonst wandert quellenspezifisches Protokollwissen nach `catalog` und
+verschiebt die Modulgrenze inhaltlich, auch wenn der Import erlaubt bliebe.
+Praktisch heißt das: **Aggregation wird eine vierte Adapter-Fähigkeit** neben
+Discovery, Suche und Zugriffsauflösung. `architekturplan.md` 6.1 nennt heute
+drei („bis zu drei **getrennte** Fähigkeiten"); die Tabelle dort wäre zu
+ergänzen. Nicht jede Quelle bringt die Fähigkeit mit — genau dafür steht die
+Rückfallebene Option 6.
+
 | Fall | Weg |
 |---|---|
 | Quelle mit Aggregation-Extension (Sentinel-2 L2A über Earth Search) | **Option 1 oben:** `GET /aggregate` über `gateway` |
@@ -326,8 +358,8 @@ Dazu **Option 2 nur für den einen ungefilterten Weltüberblick** — die Ansich
 ohne jeden Filter, die jeder Nutzer als erstes sieht und die nach §3.6 mit 2,0
 bis 7,8 s die einzige wirklich teure ist. Sie hat definitionsgemäß keine Filter
 und ist damit gefahrlos vorberechenbar. Fällt die Vorberechnung aus, antwortet
-Option 1 langsamer statt gar nicht — das ist die Regel E5 / `adr/0001` §9.3 (K4),
-und sie gehört als Test hinterlegt.
+Option 1 langsamer statt gar nicht — das ist Regel E5 (`m1-fundament.md` §1)
+und `adr/0001` §9.3 (K4), und sie gehört als Test hinterlegt.
 
 **Gitter: Geotile.** Als einziges Gitter auf beiden Seiten verfügbar, seine
 Präzision *ist* die Zoomstufe der Karte, und in PostGIS ohne Extension
@@ -360,9 +392,14 @@ derselben Upstream-Antwort mit, und lokal ist es dieselbe `WHERE`-Klausel.
 **Umschaltpunkt Dichte → Footprints: an der Trefferzahl, nicht am Zoom.**
 `ENTSCHEIDUNGEN` §2 nennt „ab einer bestimmten Zoomstufe **oder** bei wenigen
 Aufnahmen". Beides ist dieselbe Frage, und die Trefferzahl beantwortet sie
-direkt: `numberMatched` steht in jeder STAC-Suchantwort — für den gemessenen
-Filter lieferte `/search` mit `limit=1` in 0,35 s `numberMatched: 22619`
-**[M]**. Unterhalb einer Schwelle (Vorschlag: 500) werden die echten Footprints
+direkt: `numberMatched` steht in jeder STAC-Suchantwort und kostet mit `limit=1`
+rund 0,6 s **[M]**. Für den Beispielausschnitt (bbox Mitteleuropa, Jahr 2024)
+liefert `/search` **22 619** Aufnahmen; mit `eo:cloud_cover < 20` sind es
+**3848** — und das ist exakt der `total_count`, den `/aggregate` unter
+demselben Filter meldet (§3.3). Beide Endpunkte zählen also dasselbe, was die
+Vollständigkeitsprobe zusätzlich absichert. Der Sprung von 22 619 auf 3848
+zeigt zugleich, warum die Schwelle am Filter hängen muss und nicht am Zoom.
+Unterhalb einer Schwelle (Vorschlag: 500) werden die echten Footprints
 gezeichnet, darüber die Dichte. Das ist filterabhängig und damit richtiger als
 eine feste Zoomstufe: Ein enger Zeitraum lässt auch weit herausgezoomt nur
 wenige Szenen übrig. Der Zoom bleibt als zusätzliche Bremse, damit bei weitem
@@ -396,14 +433,17 @@ nicht rechtfertigt: 5–46 kB je Antwort (§3.2) und 50 901 Weltzellen in 614 ms
 Coverage-Anbieters liefert Zellen mit Zählwert, und ob die als GeoJSON oder als
 MVT über die Leitung gehen, ist eine Frage der Darstellung, keine der
 Architektur. Ausgelöst würde die Umkehr, wenn eine Antwort regelmäßig über etwa
-500 kB geht.
+500 kB geht — eine **eigene Setzung** ohne Beleg, hergeleitet aus dem
+schlechtesten gemessenen Fall (520 kB, Geohash p3 über die ganze Welt, §3.2),
+nicht aus einer Quelle. Siehe §7 Frage 2.
 
 **Zwischenspeicher: Postgres, kurz, schlüsselbasiert.** Anwendungs-Cache laut
-E4, Schlüssel ist der normalisierte Filter samt Gitterstufe. Die TTL gehört zum
+E4 (`m1-fundament.md` §1, noch Vorschlag), Schlüssel ist der normalisierte
+Filter samt Gitterstufe. Die TTL gehört zum
 Spike M1-05, der dieselbe Frage für die Item-Suche stellt — eine Antwort für
 beide. Der Upstream setzt kein `Cache-Control` und CloudFront liefert
 durchgehend `Miss` (§3.2); unser Zwischenspeicher ist also der einzige, der
-überhaupt wirkt. Und er darf ausfallen, ohne dass etwas fehlschlägt (K4).
+überhaupt wirkt. Und er darf ausfallen, ohne dass etwas fehlschlägt (K4, Regel E5).
 
 **Gateway.** Jeder `/aggregate`-Aufruf läuft über `gateway` (B8, K5). Zwei
 Anforderungen fallen für M1-03 ab: Die Route muss **GET mit langer
@@ -428,7 +468,8 @@ URL-Länge, die den `414` vermeidet, bevor die Anfrage das Haus verlässt (§3.4
   ermitteln, weil der Dienst keine entsprechenden Kopfzeilen sendet.
 - Ein Nebenbefund für `docs/cloud-umgebung.md` §6: `earth-search.aws.element84.com`
   ist in dieser Sitzung erreichbar; die Tabelle dort führt ihn noch als gesperrt.
-  Nicht in diesem PR geändert, weil M1-09 nur `docs/adr/` betrifft.
+  Nicht in diesem PR geändert, weil es außerhalb des Auftragsumfangs von M1-09
+  liegt — dieser Commit fasst nur das ADR und die zugehörige Log-Zeile an.
 
 ## 7. Fragen an Otto
 
@@ -444,7 +485,11 @@ URL-Länge, die den `414` vermeidet, bevor die Anfrage das Haus verlässt (§3.4
 3. **Umschaltpunkt Dichte → Footprints** bei `numberMatched < 500`.
    (a) *Empfehlung:* 500. (b) anderer Wert. (c) feste Zoomstufe statt
    Trefferzahl.
-4. **Status dieses ADR.** (a) *Empfehlung:* auf „angenommen" setzen, M2 baut
+4. **Latenzziel (K6).** In `docs/` steht keines; „wenige hundert Millisekunden"
+   ist meine Setzung. (a) *Empfehlung:* so übernehmen und als Zeile ins
+   Entscheidungslog. (b) anderer Wert. (c) kein Ziel festlegen — dann entfällt
+   K6 als Kriterium.
+5. **Status dieses ADR.** (a) *Empfehlung:* auf „angenommen" setzen, M2 baut
    darauf. (b) als Vorschlag stehen lassen, bis M2 ansteht.
 
 ## 8. Was offen blieb
@@ -467,7 +512,26 @@ URL-Länge, die den `414` vermeidet, bevor die Anfrage das Haus verlässt (§3.4
    man sich auf `overflow` nicht verlassen kann.
 5. **Exakte URL-Längengrenze** — eingegrenzt auf 5,4 bis 8,1 kB (§3.4), nicht
    weiter bisektiert, weil 8 kB als Annahme ohnehin die sichere Seite ist.
-6. **`h3-pg` aus anderer Quelle.** Im Ubuntu-Archiv dieser Umgebung nicht
+6. **Kosten als Geld, nicht als Laufzeit.** K8 und §3.6 messen Antwortzeit und
+   Speicherplatz. `projektuebersicht.md` Prinzip 10 verlangt zusätzlich „eine
+   grobe Kostenabschätzung pro Request". Die fehlt hier, und sie lässt sich
+   nicht seriös nachtragen: Für den föderierten Weg hängt sie an den
+   Ratengrenzen von Earth Search (Punkt 1), für den eigenen an einer
+   Cloud-Entscheidung, die laut `architekturplan.md` 15.3 erst nach Inkrement 4
+   fällt. Was benannt werden kann: Jede Kartenbewegung mit geändertem Filter ist
+   **eine** `/aggregate`-Anfrage an eine fremde Infrastruktur. Bei vielen
+   gleichzeitigen Nutzern ist der Zwischenspeicher aus §5 deshalb nicht nur eine
+   Beschleunigung, sondern die einzige Rücksichtnahme auf die Quelle, die wir
+   haben (K5). Vor dem Bau in M2 gehört eine Obergrenze pro Nutzer und Minute
+   dazu.
+7. **Der Auftragsrahmen wurde gedehnt.** M1-09 verlangt „Stand der Technik mit
+   Quellen"; Latenzmessungen gegen Earth Search sind laut `m1-fundament.md` §4
+   Gegenstand des Spikes **M1-05**. Hier wurde live gemessen, weil die zentrale
+   Frage — kann der Upstream überhaupt aggregieren — ohne Messung unbeantwortbar
+   blieb und die Vorrecherche sie ausdrücklich offen ließ. Umfang: rund 40
+   Metadaten-Anfragen, keine Pixel, keine Downloads. Otto sollte das wissen; die
+   Zahlen sind in M1-05 wiederverwendbar (§6).
+8. **`h3-pg` aus anderer Quelle.** Im Ubuntu-Archiv dieser Umgebung nicht
    vorhanden **[M]**; das Projekt liefert eigene Binärpakete für Ubuntu 22.04+
    **[P]**. Ob die in CI und Cloud-Umgebung einsetzbar wären, wurde nicht
    geprüft — erst relevant, wenn Geotile sich als zu grob erweist.
@@ -516,3 +580,105 @@ Parameter) · `/v1/search?limit=1` · Postgres 16.13 / PostGIS 3.4.2 mit
   https://github.com/radiantearth/stac-spec/blob/master/collection-spec/collection-spec.md
 - MapLibre Style Spec, `heatmap`-Layer und `interpolate`-Ausdrücke:
   https://maplibre.org/maplibre-style-spec/expressions/
+
+---
+
+## 10. Messanhang
+
+Damit die Zahlen in §3.4 und §3.6 nachvollziehbar sind. Alles lief in dieser
+Sitzung; nichts davon gehört ins Repo, es ist Messwerkzeug.
+
+### 10.1 URL-Längengrenze (§3.4)
+
+Polygone mit wachsender Stützpunktzahl gegen `/aggregate`, jeweils als
+`intersects`-Parameter:
+
+```bash
+for n in 100 150 200 300 500; do
+  python3 -c "
+import json, urllib.parse
+n=$n
+ring=[[5+(i%50)*0.01, 45+(i//50)*0.01] for i in range(n)]; ring.append(ring[0])
+print(urllib.parse.quote(json.dumps({'type':'Polygon','coordinates':[ring]})))" > p.txt
+  echo -n "n=$n urllen=$(wc -c < p.txt): "
+  curl -sS -G https://earth-search.aws.element84.com/v1/aggregate \
+    --data "intersects=$(cat p.txt)" \
+    --data 'collections=sentinel-2-c1-l2a&aggregations=total_count' \
+    -o /dev/null -w 'http=%{http_code}\n'
+done
+```
+
+### 10.2 Aufbau der Messtabelle (§3.6)
+
+Rein synthetisch, keine echten Szenen (`ENTSCHEIDUNGEN` §4). Die Footprints sind
+1°-Kacheln in Anlehnung an die Größenordnung einer MGRS-Kachel, gleichverteilt
+über Längengrad und über das Breitenband −56° bis 84°:
+
+```sql
+CREATE EXTENSION postgis;
+CREATE TABLE items (
+  id bigserial PRIMARY KEY,
+  datetime timestamptz NOT NULL,
+  cloud_cover smallint NOT NULL,
+  geom geometry(Polygon,4326) NOT NULL
+);
+INSERT INTO items (datetime, cloud_cover, geom)
+SELECT timestamptz '2015-07-01' + (random()*4000)::int * interval '1 day',
+       (random()*100)::int,
+       ST_MakeEnvelope(lon, lat, lon+1.0, lat+1.0, 4326)
+FROM (SELECT -180 + random()*360 AS lon, -56 + random()*140 AS lat
+      FROM generate_series(1, 2000000)) s;
+CREATE INDEX items_geom_gix ON items USING GIST (geom);
+CREATE INDEX items_dt_idx   ON items (datetime);
+CREATE INDEX items_cc_idx   ON items (cloud_cover);
+ANALYZE items;
+```
+
+Der Filter, der in allen „gefiltert"-Zeilen steht:
+
+```sql
+WHERE geom && ST_MakeEnvelope(-10,35,30,60,4326)
+  AND datetime >= '2024-01-01' AND datetime < '2025-01-01'
+  AND cloud_cover < 20
+```
+
+### 10.3 Die gemessenen Abfragen (§3.6)
+
+```sql
+-- A  Footprint-Überlappung auf 1°-Gitter (A1 ohne, A2 mit dem Filter oben)
+SELECT g.i, g.j, count(*) FROM items i
+JOIN LATERAL ST_SquareGrid(1.0, i.geom) g ON ST_Intersects(i.geom, g.geom)
+GROUP BY g.i, g.j;
+
+-- B  Zentroid-Binning (B1 ohne, B2 mit dem Filter oben)
+SELECT floor(ST_X(ST_Centroid(geom))), floor(ST_Y(ST_Centroid(geom))), count(*)
+FROM items GROUP BY 1,2;
+
+-- C  Zeit-Histogramm
+SELECT date_trunc('month', datetime) m, count(*) FROM items
+WHERE geom && ST_MakeEnvelope(-10,35,30,60,4326) AND cloud_cover < 20
+GROUP BY 1 ORDER BY 1;
+
+-- D  Vorberechnung: Zelle x Monat x Wolkenklasse
+CREATE MATERIALIZED VIEW cov_cell_month AS
+SELECT floor(ST_X(ST_Centroid(geom)))::int AS x,
+       floor(ST_Y(ST_Centroid(geom)))::int AS y,
+       date_trunc('month', datetime)::date AS month,
+       (cloud_cover/20)::smallint          AS cc_class,
+       count(*)::int                       AS n
+FROM items GROUP BY 1,2,3,4;
+CREATE INDEX ON cov_cell_month (month, cc_class);
+CREATE INDEX ON cov_cell_month (x,y);
+-- D1 gefiltert, D2 ohne Zeitfilter, D3 REFRESH MATERIALIZED VIEW
+
+-- E  MVT-Kodierung der Weltzellen
+SELECT ST_AsMVT(t,'coverage') FROM (
+  SELECT sum(n) AS n,
+         ST_AsMVTGeom(ST_Transform(ST_MakeEnvelope(x,y,x+1,y+1,4326),3857),
+                      ST_TileEnvelope(0,0,0)) AS geom
+  FROM cov_cell_month GROUP BY x,y) t;
+```
+
+Gemessen wurde jeweils die `Execution Time` aus `EXPLAIN (ANALYZE, BUFFERS,
+TIMING OFF)`, bei `REFRESH` die Laufzeit der Anweisung. Die Testdatenbank wurde
+nach der Messung verworfen.
