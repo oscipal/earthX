@@ -1,6 +1,7 @@
 # M1-03 — Fetch-Gateway: Umsetzungsplan
 
-**Status:** **Von Otto angenommen am 19.09.2026** — F1 bis F4 alle wie empfohlen.
+**Status:** **Umgesetzt am 19.09.2026.** Von Otto angenommen, F1 bis F4 alle wie empfohlen.
+M1-03a und M1-03b sind mit PR #23 in `main`; M1-03c ist dieser PR.
 Stufe B laut `docs/plans/m1-fundament.md` §3: Plan zuerst, Umsetzung danach.
 Die Umsetzung läuft in den drei PRs aus §8 F1.
 **Aufgabe:** M1-03 aus `docs/plans/m1-fundament.md` §4.
