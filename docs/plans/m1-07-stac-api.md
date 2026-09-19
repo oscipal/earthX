@@ -397,17 +397,18 @@ Drei Befunde, die der Plan nicht vorhersah:
    zweiter Testlauf einen Treffer aus dem ersten, statt den frisch gemockten
    Transport zu befragen — sichtbar an einer leeren `seen`-Liste im Test,
    nicht an einem falschen Ergebnis.
-3. **Mehr als eine Quelle gleichzeitig ist gebaut, aber nicht scharf
-   getestet.** Eine Suche ohne `collections` oder über mehrere wird laut
-   Regel I je Collection aufgeteilt und zusammengeführt — mit der heutigen
-   Registry (ein Datensatz, föderiert) hat dieser Zweig aber nie mehr als
-   eine aktive Quelle. Der Code deckt den Fall ab (Ergebnisse mehrerer
-   Quellen werden zusammengeführt), verzichtet aber bewusst auf eine
-   vereinheitlichte Seitenmarke über mehrere Quellen hinweg: `next` bleibt in
-   diesem Fall leer, statt eine Quelle stillschweigend zu verlieren oder eine
-   Marke zu bauen, die niemand heute prüfen kann. Ein Log-Eintrag markiert
-   den Fall, falls er doch einmal auftritt. Kommt ein zweiter Datensatz
-   dazu, ist das der Punkt, an dem dieser Zweig einen echten Test braucht.
+3. **Mehr als eine Quelle gleichzeitig: abgelehnt, nicht zusammengeführt
+   (Otto, vor dem Merge).** Ein erster Entwurf hatte hier eine
+   Best-Effort-Zusammenführung gebaut (Ergebnisse mehrerer Quellen
+   aneinandergehängt, ohne vereinheitlichte Seitenmarke) — aber mit der
+   heutigen Registry (ein Datensatz, föderiert) ist dieser Zweig nie
+   erreichbar, also auch nie scharf testbar. Otto hat vor dem Merge
+   entschieden: eine Suche, die Collections aus verschiedenen Quellen
+   mischt, bekommt jetzt eine klare `400`, mit Test (Duplikat derselben
+   Collection löst den Zweig aus, ohne einen zweiten, nicht existierenden
+   Datensatz zu brauchen). Regel I bleibt als Zielbild stehen — „aufgeteilt
+   und zusammengeführt“ —, wird aber erst gebaut, sobald ein zweiter
+   Datensatz da ist, an dem sich das wirklich prüfen lässt (M2).
 
 4. **`item_collection`s eigene `**kwargs` enthalten ein abgeschaltetes Feld gar
    nicht erst.** Der erste Entwurf prüfte dort `kwargs.keys()` auf `filter`/

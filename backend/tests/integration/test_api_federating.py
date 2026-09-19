@@ -196,6 +196,21 @@ class TestFederatedSearch:
         assert response.status_code == 200
         assert seen[0].headers["host"] == HOST
 
+    async def test_a_search_spanning_more_than_one_source_is_rejected(
+        self, require_catalog_loaded: None
+    ) -> None:
+        """adr/0005 rule I says such a search is split per collection and merged, but
+        a merge across sources needs a real second dataset to build and test against
+        (M2) — otherwise it is not reachable at all in M1, and a best-effort
+        concatenation nobody could verify stayed correct would only look tested.
+        The one collection twice over is enough to trigger "more than one source",
+        without needing a second dataset that does not exist yet."""
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
+        async with _client(handler) as client:
+            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{DATASET_ID}"})
+        assert response.status_code == 400
+        assert seen == []
+
     async def test_the_next_link_carries_our_own_marker_not_the_sources(
         self, require_catalog_loaded: None
     ) -> None:

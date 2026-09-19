@@ -270,34 +270,16 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 federated_ids[0], request, bbox=bbox, datetime_value=datetime_value, limit=limit, token=token
             )
 
-        # More than one source active at once: not reachable today (the registry
-        # holds exactly one dataset), and a unified keyset page across heterogeneous
-        # sources is real work this PR does not build (docs/plans/m1-07-stac-api.md
-        # §12). Concatenated, first page of each source only; no `next` at all,
-        # rather than a `next` that would silently drop whichever source it does not
-        # cover.
-        LOGGER.warning("search spans more than one source at once (%s); answering page one only", target_ids)
-        items: list[dict[str, Any]] = []
-        if native_ids:
-            native_result = await super().post_search(
-                self.pgstac_search_model(collections=native_ids, bbox=bbox, datetime=datetime_value, limit=limit),
-                request,
-            )
-            items.extend(native_result["features"])
-        for collection_id in federated_ids:
-            page = await self._federated_page(
-                collection_id, request, bbox=bbox, datetime_value=datetime_value, limit=limit, token=None
-            )
-            items.extend(page["features"])
-        return cast(
-            ItemCollection,
-            {
-                "type": "FeatureCollection",
-                "features": items,
-                "links": [],
-                "numberMatched": len(items),
-                "numberReturned": len(items),
-            },
+        # More than one source active at once (several federated collections, or a
+        # mix of federated and native): rejected rather than merged. A merge across
+        # heterogeneous sources needs a real second dataset to build and test
+        # against (M2) - not reachable at all with today's registry (one dataset),
+        # so a best-effort concatenation nobody could verify stayed correct would
+        # only look tested. Otto, before merge (docs/ENTSCHEIDUNGSLOG.md).
+        LOGGER.warning("rejected a search spanning more than one source at once: %s", target_ids)
+        raise HTTPException(
+            status_code=400,
+            detail="a search spanning more than one source is not supported yet; name exactly one collection",
         )
 
     async def _federated_page(
