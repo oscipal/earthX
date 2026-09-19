@@ -89,6 +89,7 @@ Query-Parameter durchgehen können.
 | Antwortgröße je Rumpf | 8 MB | `ResponseTooLarge` | adr/0005 §6 |
 | Parallele Verbindungen je Host | 6 | wartet, kein Fehler | adr/0005 §6 |
 | Zeitgrenzen | 5 s verbinden, 15 s lesen | `UpstreamTimeout` | adr/0005 §3.2 (0,4–2,5 s gemessen) |
+| Verbindung kommt gar nicht zustande | — | `UpstreamUnreachable` (Oberklasse von `UpstreamTimeout`) | in 03b ergänzt |
 | Nicht-2xx nach den Wiederholungen | — | `UpstreamError` mit `status_code` und kurzem Auszug | adr/0005 §3.5 |
 
 Alle Fehler erben von `GatewayError`. `UpstreamError` trägt den Statuscode
