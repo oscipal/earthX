@@ -160,14 +160,14 @@ class TestLookup:
             REGISTRY.get("does-not-exist")
 
     def test_known_dataset_is_returned(self) -> None:
-        assert REGISTRY.get("sentinel-2-l2a") is SENTINEL_2_L2A
+        assert REGISTRY.get("sentinel-2-c1-l2a") is SENTINEL_2_L2A
 
     def test_a_duplicate_id_is_rejected(self) -> None:
         with pytest.raises(ConfigError, match="duplicate"):
             DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A))
 
     def test_membership_and_length(self) -> None:
-        assert "sentinel-2-l2a" in REGISTRY
+        assert "sentinel-2-c1-l2a" in REGISTRY
         assert "does-not-exist" not in REGISTRY
         assert len(REGISTRY) == len(list(REGISTRY))
 

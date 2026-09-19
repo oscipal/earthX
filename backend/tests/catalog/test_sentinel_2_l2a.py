@@ -27,6 +27,15 @@ def test_source_is_earth_search_collection_one() -> None:
     assert SENTINEL_2_L2A.data_class is DataClass.RASTER_TIME_SERIES
 
 
+def test_our_id_is_the_upstream_one_not_the_collection_it_replaces() -> None:
+    """Otto, 19.09.2026: the short "sentinel-2-l2a" is the older Earth Search
+    collection that Collection 1 replaces (adr/0003 §3). Using it for our entry
+    would read as that one.
+    """
+    assert SENTINEL_2_L2A.dataset_id == "sentinel-2-c1-l2a"
+    assert SENTINEL_2_L2A.dataset_id == SENTINEL_2_L2A.source.source_collection_id
+
+
 def test_items_are_federated_not_harvested() -> None:
     """architekturplan.md 5.2: Earth Search has a search API, so nothing is copied."""
     assert SENTINEL_2_L2A.source.harvest_run is None

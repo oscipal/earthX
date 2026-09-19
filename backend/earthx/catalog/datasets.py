@@ -35,9 +35,10 @@ from earthx.catalog.registry import (
 _REACHABILITY_CHECKED = date(2026, 9, 18)
 
 SENTINEL_2_L2A = DatasetConfig(
-    # Our own catalogue id, deliberately not the upstream collection id: the same
-    # dataset arrives as Zarr later (adr/0003 §6) and keeps this entry.
-    dataset_id="sentinel-2-l2a",
+    # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
+    # shorter "sentinel-2-l2a" is the name of the older Earth Search collection that
+    # Collection 1 replaces (adr/0003 §3, Option B), so it would be read as that one.
+    dataset_id="sentinel-2-c1-l2a",
     title="Sentinel-2 L2A",
     description=(
         "Sentinel-2 Level-2A, Collection 1, as cloud-optimized GeoTIFF from baseline "

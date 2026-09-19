@@ -55,7 +55,7 @@ def test_the_coverage_fields_stay_out_of_the_collection(collection: dict) -> Non
 def test_the_result_is_a_valid_stac_collection(collection: dict) -> None:
     """Read back by pystac, so the shape is checked against the spec, not against us."""
     parsed = pystac.Collection.from_dict(collection)
-    assert parsed.id == "sentinel-2-l2a"
+    assert parsed.id == "sentinel-2-c1-l2a"
     assert parsed.extent.spatial.bboxes == [list(SENTINEL_2_L2A.spatial_extent.bbox)]
 
 
