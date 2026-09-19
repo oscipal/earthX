@@ -50,10 +50,13 @@ def database_pgstac_version(conn: psycopg.Connection) -> str:
                 "no pgstac schema in this database — run `pypgstac migrate` "
                 "(compose does it in the pgstac-migrate service)"
             )
-        cur.execute("SELECT version FROM pgstac.migrations ORDER BY datetime DESC LIMIT 1")
+        # pgstac's own accessor, for the same reason the tests read a collection back
+        # through get_collection: ordering pgstac.migrations by datetime is ambiguous
+        # when several rows are written in one transaction.
+        cur.execute("SELECT pgstac.get_version()")
         row = cur.fetchone()
-    if row is None:
-        raise PgstacError("pgstac.migrations is empty — the schema was never migrated")
+    if row is None or row[0] is None:
+        raise PgstacError("pgstac reports no version — the schema was never migrated")
     return str(row[0])
 
 
@@ -75,6 +78,20 @@ def check_pgstac_version(conn: psycopg.Connection) -> str:
     return found
 
 
+def use_pgstac_search_path(conn: psycopg.Connection) -> None:
+    """Put ``pgstac`` on the connection's search_path, as pgstac's own roles have it.
+
+    pgstac's functions and triggers reference their tables unqualified — deleting a
+    collection, for instance, runs ``DELETE FROM partition_stats`` from a trigger. A
+    connection that does not carry the schema on its search_path fails there with a
+    missing relation that has nothing to do with the statement that was sent.
+
+    Our own bookkeeping table is schema-qualified (``public.earthx_migrations``), so
+    this cannot pull it into the pgstac schema.
+    """
+    conn.execute("SET search_path TO pgstac, public")
+
+
 def load_collection(conn: psycopg.Connection, config: DatasetConfig) -> None:
     """Write one registry entry as a STAC collection. Idempotent."""
     collection = to_stac_collection(config)
@@ -88,6 +105,7 @@ def load_registry(conn: psycopg.Connection, registry: DatasetRegistry) -> tuple[
     Returns the ids written, in registry order.
     """
     check_pgstac_version(conn)
+    use_pgstac_search_path(conn)
     written = []
     for config in registry:
         load_collection(conn, config)
@@ -100,4 +118,4 @@ def read_collection(conn: psycopg.Connection, dataset_id: str) -> dict[str, obje
     with conn.cursor() as cur:
         cur.execute("SELECT content FROM pgstac.collections WHERE id = %s", (dataset_id,))
         row = cur.fetchone()
-    return None if row is None else dict(row[0])
+    return None if row is None else row[0]

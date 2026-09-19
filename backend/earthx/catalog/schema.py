@@ -32,8 +32,12 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _FILENAME = re.compile(r"^(?P<version>\d{3})_(?P<name>[a-z0-9_]+)\.sql$")
 
 
+# Schema-qualified on purpose. pgstac sets `search_path = pgstac, public` on its own
+# roles (pgstac_admin, pgstac_read, pgstac_ingest), so an unqualified CREATE would put
+# our bookkeeping inside the pgstac schema — where a `pypgstac` schema rebuild would
+# take it with it, and every migration would silently count as never applied.
 _BOOKKEEPING_TABLE = """
-CREATE TABLE IF NOT EXISTS earthx_migrations (
+CREATE TABLE IF NOT EXISTS public.earthx_migrations (
     version     text        PRIMARY KEY,
     checksum    text        NOT NULL,
     applied_at  timestamptz NOT NULL DEFAULT now()
@@ -53,14 +57,19 @@ class Migration:
 
     @property
     def checksum(self) -> str:
-        return hashlib.sha256(self.sql.encode("utf-8")).hexdigest()
+        """Over the file with newlines normalised, so a CRLF checkout is not a change."""
+        normalised = self.sql.replace("\r\n", "\n").replace("\r", "\n")
+        return hashlib.sha256(normalised.encode("utf-8")).hexdigest()
 
 
 def discover_migrations(directory: Path = MIGRATIONS_DIR) -> tuple[Migration, ...]:
     """Every ``.sql`` file in order. A file that does not fit the pattern is an error.
 
-    Not skipped: a migration nobody notices is the failure mode this guards against.
+    Not skipped: a migration nobody notices is the failure mode this guards against —
+    which is why a directory that is not there is an error rather than "no migrations".
     """
+    if not directory.is_dir():
+        raise MigrationError(f"{directory} is not a directory")
     migrations: list[Migration] = []
     for path in sorted(directory.glob("*.sql")):
         match = _FILENAME.match(path.name)
@@ -78,11 +87,11 @@ def discover_migrations(directory: Path = MIGRATIONS_DIR) -> tuple[Migration, ..
 def applied_migrations(conn: psycopg.Connection) -> dict[str, str]:
     """Version to checksum, empty while the bookkeeping table does not exist yet."""
     with conn.cursor() as cur:
-        cur.execute("SELECT to_regclass('earthx_migrations')")
+        cur.execute("SELECT to_regclass('public.earthx_migrations')")
         row = cur.fetchone()
         if row is None or row[0] is None:
             return {}
-        cur.execute("SELECT version, checksum FROM earthx_migrations")
+        cur.execute("SELECT version, checksum FROM public.earthx_migrations")
         return {version: checksum for version, checksum in cur.fetchall()}
 
 
@@ -95,6 +104,13 @@ def apply_migrations(conn: psycopg.Connection, directory: Path = MIGRATIONS_DIR)
     """Apply what is not applied yet. Returns the versions applied by this call.
 
     Idempotent: a second call over an unchanged directory applies nothing.
+
+    **The caller owns the transaction and the commit.** Each migration runs in its own
+    ``conn.transaction()`` block, which is a savepoint inside whatever the caller has
+    open: a migration that fails rolls back alone, leaving the ones before it applied
+    and the connection usable. Nothing is durable until the caller commits, so on a
+    connection with ``autocommit=False`` a rollback discards the whole run — which is
+    what the tests rely on, and what ``earthx.catalog.load`` avoids by committing.
     """
     migrations = discover_migrations(directory)
     ensure_bookkeeping(conn)
@@ -114,7 +130,7 @@ def apply_migrations(conn: psycopg.Connection, directory: Path = MIGRATIONS_DIR)
         with conn.transaction():
             conn.execute(migration.sql)
             conn.execute(
-                "INSERT INTO earthx_migrations (version, checksum) VALUES (%s, %s)",
+                "INSERT INTO public.earthx_migrations (version, checksum) VALUES (%s, %s)",
                 (migration.version, migration.checksum),
             )
     return tuple(migration.version for migration in pending)

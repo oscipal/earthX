@@ -8,6 +8,7 @@ nothing on a second run.
 
 from __future__ import annotations
 
+import psycopg
 import pytest
 
 from earthx.catalog.schema import (
@@ -18,6 +19,7 @@ from earthx.catalog.schema import (
     discover_migrations,
     ensure_bookkeeping,
 )
+from tests.integration.conftest import is_local_host, missing_postgres_env
 
 
 def _drop_bookkeeping(conn) -> None:
@@ -26,13 +28,14 @@ def _drop_bookkeeping(conn) -> None:
 
 
 class TestDiscovery:
-    def test_the_shipped_migrations_are_readable(self) -> None:
-        """Empty in M1-04, and that is the point: pgstac holds the collections.
+    def test_nothing_is_shipped_yet_and_that_is_the_point(self) -> None:
+        """pgstac holds the collections; the first own migration is M1-06's cache."""
+        assert discover_migrations() == ()
 
-        The first own migration is the application cache of E4, in M1-06.
-        """
-        migrations = discover_migrations()
-        assert [m.version for m in migrations] == sorted(m.version for m in migrations)
+    def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
+        """A typo in a path must not read as "nothing to apply"."""
+        with pytest.raises(MigrationError, match="not a directory"):
+            discover_migrations(tmp_path / "typo")
 
     def test_a_badly_named_file_is_an_error_not_a_skip(self, tmp_path) -> None:
         """A migration nobody notices is exactly what this guards against."""
@@ -88,12 +91,31 @@ class TestApplying:
             apply_migrations(conn, tmp_path)
 
     def test_a_failing_migration_records_nothing(self, conn, tmp_path) -> None:
-        """File and bookkeeping row go in one transaction, or neither does."""
+        """File and bookkeeping row go in one transaction, or neither does.
+
+        No rollback here on purpose: rolling back would also undo the bookkeeping
+        table and make ``applied_migrations`` return {} whatever the runner did — the
+        assertion would then hold even without a transaction around the migration.
+        The savepoint is what leaves the connection usable after the failure, so
+        reading the bookkeeping straight afterwards is the actual test.
+        """
         (tmp_path / "001_broken.sql").write_text("CREATE TEMP TABLE ok (id int); SELECT no_such_function();")
-        with pytest.raises(Exception, match="no_such_function"):
+        with pytest.raises(psycopg.errors.UndefinedFunction):
             apply_migrations(conn, tmp_path)
-        conn.rollback()
+
         assert "001" not in applied_migrations(conn)
+
+    def test_a_failure_leaves_the_migrations_before_it_applied(self, conn, tmp_path) -> None:
+        """Each migration is its own savepoint, so the run stops where it broke."""
+        (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
+        (tmp_path / "002_broken.sql").write_text("SELECT no_such_function();")
+
+        with pytest.raises(psycopg.errors.UndefinedFunction):
+            apply_migrations(conn, tmp_path)
+
+        applied = applied_migrations(conn)
+        assert "001" in applied
+        assert "002" not in applied
 
     def test_a_later_migration_is_applied_on_top(self, conn, tmp_path) -> None:
         (tmp_path / "001_first.sql").write_text("CREATE TEMP TABLE first_step (id int);")
@@ -107,3 +129,27 @@ def test_the_migrations_directory_explains_why_it_is_empty() -> None:
     """An empty directory with no word on it reads as an oversight."""
     readme = (MIGRATIONS_DIR / "README.md").read_text(encoding="utf-8")
     assert "M1-06" in readme
+
+
+class TestTheGuardsOnTheFixtures:
+    """The path that may break without anyone noticing, because it hides the others."""
+
+    def test_every_required_variable_is_reported(self) -> None:
+        assert missing_postgres_env({}) == ("PGHOST", "PGUSER", "PGDATABASE")
+
+    def test_an_empty_value_counts_as_missing(self) -> None:
+        env = {"PGHOST": "", "PGUSER": "earthx", "PGDATABASE": "earthx"}
+        assert missing_postgres_env(env) == ("PGHOST",)
+
+    def test_a_complete_environment_reports_nothing(self) -> None:
+        env = {"PGHOST": "127.0.0.1", "PGUSER": "earthx", "PGDATABASE": "earthx"}
+        assert missing_postgres_env(env) == ()
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "postgres"])
+    def test_local_hosts_are_allowed(self, host: str) -> None:
+        assert is_local_host(host)
+
+    @pytest.mark.parametrize("host", ["db.example.com", "10.0.0.5", "127.0.0.1.example.com"])
+    def test_anything_else_is_not(self, host: str) -> None:
+        """These tests drop schemas; a shared database must not be reachable by accident."""
+        assert not is_local_host(host)

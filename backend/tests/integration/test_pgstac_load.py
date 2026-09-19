@@ -7,9 +7,14 @@ tests/catalog), and loading is idempotent.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from dataclasses import replace
+
+import psycopg
 import pytest
 
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.load import main
 from earthx.catalog.pgstac import (
     PgstacError,
     check_pgstac_version,
@@ -18,6 +23,7 @@ from earthx.catalog.pgstac import (
     load_collection,
     load_registry,
     read_collection,
+    use_pgstac_search_path,
 )
 
 
@@ -76,8 +82,6 @@ class TestLoading:
         assert first == second
 
     def test_a_changed_entry_replaces_the_stored_one(self, conn) -> None:
-        from dataclasses import replace
-
         load_collection(conn, SENTINEL_2_L2A)
         load_collection(conn, replace(SENTINEL_2_L2A, title="Sentinel-2 L2A (Collection 1)"))
         stored = read_collection(conn, SENTINEL_2_L2A.dataset_id)
@@ -98,6 +102,23 @@ class TestLoading:
         load_collection(conn, SENTINEL_2_L2A)
         assert read_collection(conn, "does-not-exist") is None
 
+    def test_deleting_needs_pgstac_on_the_search_path(self, conn) -> None:
+        """pgstac's delete trigger says `DELETE FROM partition_stats`, unqualified.
+
+        Without the schema on the search_path it fails with a missing relation that
+        names neither the collection nor the statement that was sent.
+        """
+        load_collection(conn, SENTINEL_2_L2A)
+        conn.execute('SET search_path TO "$user", public')
+        with pytest.raises(psycopg.errors.UndefinedTable, match="partition_stats"):
+            conn.execute("DELETE FROM pgstac.collections WHERE id = %s", (SENTINEL_2_L2A.dataset_id,))
+
+    def test_with_the_search_path_set_deleting_works(self, conn) -> None:
+        load_collection(conn, SENTINEL_2_L2A)
+        use_pgstac_search_path(conn)
+        conn.execute("DELETE FROM pgstac.collections WHERE id = %s", (SENTINEL_2_L2A.dataset_id,))
+        assert read_collection(conn, SENTINEL_2_L2A.dataset_id) is None
+
     def test_pgstac_reads_it_back_as_a_collection(self, conn) -> None:
         """Not our own SELECT: pgstac's own accessor has to accept what we wrote."""
         load_collection(conn, SENTINEL_2_L2A)
@@ -105,3 +126,36 @@ class TestLoading:
             cur.execute("SELECT pgstac.get_collection(%s)", (SENTINEL_2_L2A.dataset_id,))
             content = cur.fetchone()[0]
         assert content["id"] == SENTINEL_2_L2A.dataset_id
+
+
+class TestTheEntryPoint:
+    """`python -m earthx.catalog.load` is what makes the acceptance criterion true
+    outside a test: it commits, so the collection is still there afterwards."""
+
+    @pytest.fixture
+    def cleanup(self) -> Iterator[None]:
+        """This one really writes, so it really has to tidy up after itself."""
+        yield
+        with psycopg.connect(autocommit=True) as conn:
+            use_pgstac_search_path(conn)
+            conn.execute("DELETE FROM pgstac.collections WHERE id = %s", (SENTINEL_2_L2A.dataset_id,))
+
+    def test_it_commits_the_collection(self, require_postgres_env, cleanup) -> None:
+        assert main() == 0
+        with psycopg.connect(autocommit=True) as conn:
+            stored = read_collection(conn, SENTINEL_2_L2A.dataset_id)
+        assert stored is not None
+        assert stored["earthx:source"]["source_collection_id"] == "sentinel-2-c1-l2a"
+
+    def test_running_it_twice_changes_nothing(self, require_postgres_env, cleanup) -> None:
+        assert main() == 0
+        with psycopg.connect(autocommit=True) as conn:
+            first = read_collection(conn, SENTINEL_2_L2A.dataset_id)
+
+        assert main() == 0
+        with psycopg.connect(autocommit=True) as conn:
+            second = read_collection(conn, SENTINEL_2_L2A.dataset_id)
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM pgstac.collections WHERE id = %s", (SENTINEL_2_L2A.dataset_id,))
+                assert cur.fetchone()[0] == 1
+        assert first == second
