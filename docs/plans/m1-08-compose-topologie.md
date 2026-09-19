@@ -82,7 +82,7 @@ Bibliothek nötig.
 |---|---|---|---|
 | `postgres` | `postgis/postgis:16-3.4` | Postgres 16 + PostGIS 3.4, wie in `cloud-umgebung.md` §5 gemessen | `pg_isready` |
 | `pgstac-migrate` | `build: backend/Dockerfile`, `command: pypgstac migrate` | einmalig, `depends_on: postgres (healthy)`, `restart: "no"` | keiner (Job endet) |
-| `minio` | `minio/minio:RELEASE.2025-04-08T15-41-24Z` (Vorschlag, gepinnt statt `latest`) | S3-kompatibler Objektspeicher | `curl -f http://localhost:9000/minio/health/live` |
+| `minio` | `quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z` (gepinnt statt `latest`; Docker Hub führt `minio/minio` nicht mehr, siehe Umsetzungsnotiz unten) | S3-kompatibler Objektspeicher | `curl -f http://localhost:9000/minio/health/live` |
 | `api` | `build: backend/Dockerfile`, `command: uvicorn earthx.api.main:app --host 0.0.0.0 --port 8000` | Hülle mit `/health` | `curl -f http://localhost:8000/health` |
 | `tiler` | dieselbe Basis, `command: uvicorn earthx.access.main:app ...` | Hülle | dito |
 | `worker` | dieselbe Basis, `command: uvicorn earthx.jobs.main:app ...` | Hülle | dito |
@@ -187,3 +187,12 @@ anpassbar, falls ein anderes Schema gewünscht ist.
 Nach Ottos OK zu Abschnitt 4 (oder Bestätigung der Empfehlungen): Umsetzung in
 diesem PR nachreichen, dann Testlauf über den neuen CI-Job — nicht lokal, aus
 den in Abschnitt 1 genannten Gründen.
+
+## 7. Umsetzung: Abweichung vom Plan
+
+Der erste CI-Lauf ist am Image-Pull gescheitert: `minio/minio` gibt es auf
+Docker Hub nicht mehr (`pull access denied ... repository does not exist`).
+MinIO veröffentlicht seine Images inzwischen nur noch unter
+`quay.io/minio/minio`, mit denselben Release-Tags. `docker-compose.yml` ist
+entsprechend korrigiert; das ist der einzige Unterschied zum oben
+beschriebenen Plan.
