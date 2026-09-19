@@ -131,6 +131,18 @@ class TestPaging:
         )
         assert [item["id"] for item in second.items] == ["SYNTH_T00AAA_20240603T100000_L2A"]
 
+    async def test_a_next_link_we_cannot_follow_is_an_error_not_a_last_page(self, dataset_id: str) -> None:
+        """There are more items and we cannot reach them. Answering with a page that
+        looks complete is the same silent truncation rule I refuses elsewhere."""
+        answer = load("search_page_1")
+        for link in answer["links"]:
+            if link["rel"] == "next":
+                del link["body"]
+        gateway, _ = answering(httpx.Response(200, json=answer))
+        async with gateway:
+            with pytest.raises(UpstreamShapeError, match="marker"):
+                await search_items(dataset_id, SearchParams(limit=2), gateway=gateway)
+
     async def test_the_last_page_has_no_token(self, dataset_id: str) -> None:
         gateway, _ = answering(httpx.Response(200, json=load("search_page_2")))
         async with gateway:
@@ -210,7 +222,13 @@ class TestSingleItem:
                 await get_item(dataset_id, "SYNTH_T00AAA_19700101T000000_L2A", gateway=gateway)
         assert error.value.status_code == 404
 
-    @pytest.mark.parametrize("item_id", ["../../collections", "a b", "item?fields=id", ""])
+    async def test_an_answer_that_is_not_an_item_is_named_as_such(self, dataset_id: str) -> None:
+        gateway, _ = answering(httpx.Response(200, json=["not", "an", "item"]))
+        async with gateway:
+            with pytest.raises(UpstreamShapeError):
+                await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway)
+
+    @pytest.mark.parametrize("item_id", ["../../collections", "a b", "item?fields=id", "", "S2A_OK\n"])
     async def test_an_item_id_that_would_leave_its_path_segment_is_refused(
         self, dataset_id: str, item_id: str
     ) -> None:

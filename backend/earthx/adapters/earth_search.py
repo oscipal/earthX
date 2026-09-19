@@ -204,6 +204,10 @@ async def get_item(
 
     url = f"{_endpoint(config)}/collections/{config.source.source_collection_id}/items/{item_id}"
     item = (await gateway.get(url)).json()
+    if not isinstance(item, dict):
+        # Same reason as for a search answer: what is not an item must not become one
+        # by being passed on, and must not be cached as one either.
+        raise UpstreamShapeError("item answer is not a JSON object")
     await _cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
 
