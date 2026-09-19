@@ -84,3 +84,83 @@ jobs:
         env:
           PYTHONPATH: backend
         run: lint-imports --config .importlinter
+
+  compose-topology:
+    name: Compose topology (api, tiler, worker, harvester, postgres, minio)
+    # M1-08 (docs/plans/m1-08-compose-topologie.md): one image, four start
+    # commands (architekturplan.md 3.2, 12.1). Docker never runs in the cloud
+    # session (adr/0002 §1, cloud-umgebung.md §4) — this job is the only place
+    # that actually exercises `docker compose`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write throwaway .env (CI only, never a real secret)
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_USER=ci
+          POSTGRES_PASSWORD=ci-throwaway
+          POSTGRES_DB=earthx
+          MINIO_ROOT_USER=ci-minio
+          MINIO_ROOT_PASSWORD=ci-throwaway-minio
+          EOF
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Start topology
+        run: docker compose up -d
+
+      - name: Wait for all services to report healthy
+        run: |
+          services="postgres minio api tiler worker harvester"
+          for i in $(seq 1 30); do
+            unhealthy=""
+            for s in $services; do
+              cid="$(docker compose ps -q "$s")"
+              status="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo missing)"
+              [ "$status" = "healthy" ] || unhealthy="$unhealthy $s($status)"
+            done
+            [ -z "$unhealthy" ] && { echo "All services healthy."; exit 0; }
+            echo "Waiting on:$unhealthy"
+            sleep 5
+          done
+          echo "Timed out waiting for healthy services."
+          docker compose logs
+          exit 1
+
+      - name: pgstac-migrate ran successfully
+        run: |
+          code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq pgstac-migrate)")"
+          if [ "$code" != "0" ]; then
+            echo "pgstac-migrate exited with $code"
+            docker compose logs pgstac-migrate
+            exit 1
+          fi
+
+      - name: Restart one service, all stay (or become) healthy
+        run: |
+          docker compose restart worker
+          services="postgres minio api tiler worker harvester"
+          for i in $(seq 1 30); do
+            unhealthy=""
+            for s in $services; do
+              cid="$(docker compose ps -q "$s")"
+              status="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo missing)"
+              [ "$status" = "healthy" ] || unhealthy="$unhealthy $s($status)"
+            done
+            [ -z "$unhealthy" ] && { echo "All services healthy after the restart."; exit 0; }
+            echo "Waiting on:$unhealthy"
+            sleep 5
+          done
+          echo "Timed out: restarting one service left another unhealthy."
+          docker compose logs
+          exit 1
+
+      - name: Logs (always, for diagnosis)
+        if: always()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
