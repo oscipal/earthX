@@ -140,13 +140,18 @@ Läufen wo angegeben. Die Collection enthielt beim Abruf **30 356 426 Items**
 | dieselbe Filterung, `grid_geotile_frequency` z8 | 117 | 0,32 s | 6,7 kB |
 
 Der gefilterte Fall — der häufige — liegt bei **0,28 bis 0,63 s und 5 bis 28 kB**,
-je nach verlangter Gitterfeinheit. Das erfüllt K6 mit Abstand und macht Vektorkacheln für
-diesen Zweck vorerst entbehrlich (§4, Option 4).
+je nach verlangter Gitterfeinheit. Damit ist K6 in der Fassung vom 19.09.2026
+eingehalten: durchweg unter 1 s, und die groben Gitter — die im Kartenalltag
+häufigen — auch unter 0,5 s. Nur die feinste gemessene Stufe liegt mit 0,63 s
+darüber, bleibt aber innerhalb der harten Grenze. Vektorkacheln sind für diesen
+Zweck damit vorerst entbehrlich (§4, Option 4).
 
 Ratengrenzen ließen sich nicht ermitteln: Der Dienst liefert weder
 `X-RateLimit-*` noch `Retry-After`, und keine der rund 40 Anfragen wurde
-gedrosselt **[M]**. Die offene Log-Zeile „Ratengrenzen der Anbieter" bleibt also
-offen. Er antwortet hinter CloudFront, setzt aber **kein `Cache-Control`**;
+gedrosselt **[M]**. Die offene Log-Zeile „Ratengrenzen der Anbieter" blieb damit
+hier offen; `adr/0005` §3.6 hat sie für Earth Search inzwischen mit rund 110
+Anfragen und zwei Bursts nachgemessen (keine Drosselung; vorgeschlagen sind 6
+parallele Verbindungen je Host). Er antwortet hinter CloudFront, setzt aber **kein `Cache-Control`**;
 drei identische Anfragen ergaben dreimal `x-cache: Miss from cloudfront` **[M]**.
 Ein Zwischenspeicher auf unserer Seite ist damit der einzige, der wirkt.
 
