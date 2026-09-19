@@ -160,7 +160,7 @@ async def search_items(
 
     key = _search_cache_key(fingerprint, params.page_token)
     cached = await _cache_get(cache, key)
-    if cached is not None:
+    if cached is not None and isinstance(cached.get("features"), list):
         return _page(dataset_id, fingerprint, cached, from_cache=True)
 
     response = await gateway.post_json(
@@ -194,7 +194,7 @@ async def get_item(
 
     key = _item_cache_key(dataset_id, item_id)
     cached = await _cache_get(cache, key)
-    if cached is not None:
+    if isinstance(cached, dict) and isinstance(cached.get("item"), dict):
         return cached["item"]
 
     url = f"{_endpoint(config)}/collections/{config.source.source_collection_id}/items/{item_id}"
@@ -360,6 +360,8 @@ def _page(dataset_id: str, fingerprint: str, stored: CacheValue, *, from_cache: 
 
 
 async def _cache_get(cache: SearchCache | None, key: str) -> CacheValue | None:
+    """A cached value, or None. Callers check its shape: a row written by an older
+    release, or damaged, counts as a miss rather than as an answer (E5)."""
     if cache is None:
         return None
     try:

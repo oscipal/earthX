@@ -196,3 +196,29 @@ class TestACacheThatIsNotThere:
         assert len(seen) == 2
         assert [item["id"] for item in after.items] == [item["id"] for item in before.items]
         assert after.next_page_token == before.next_page_token
+
+
+class TestACacheThatAnswersNonsense:
+    """A row from an older release, or a damaged one, is a miss — not an answer."""
+
+    async def test_a_page_without_features_is_fetched_again(self, dataset_id: str) -> None:
+        cache = FakeCache()
+        gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
+        async with gateway:
+            await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            for key in cache.entries:
+                cache.entries[key] = {"something": "from another release"}
+            page = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+        assert len(seen) == 2
+        assert len(page.items) == 2
+
+    async def test_an_item_row_without_an_item_is_fetched_again(self, dataset_id: str) -> None:
+        cache = FakeCache()
+        gateway, seen = answering(httpx.Response(200, json=load("item")))
+        async with gateway:
+            await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            for key in cache.entries:
+                cache.entries[key] = {"item": None}
+            item = await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+        assert len(seen) == 2
+        assert item["id"] == "SYNTH_T00AAA_20240601T100000_L2A"
