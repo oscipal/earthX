@@ -94,15 +94,20 @@ grafisch anzeigt — er läuft selbst **nicht** in diesem Repo, sondern separat
 (z. B. als eigener Docker-Container):
 
 1. In einem **neuen, zweiten Terminal** (die Topologie aus Schritt 2 muss
-   weiterlaufen) den offiziellen STAC-Browser starten:
+   weiterlaufen) den offiziellen STAC-Browser starten. Die Katalog-Adresse
+   wird über die Umgebungsvariable `SB_catalogUrl` gesetzt (kein CLI-Flag):
+
+   **Unter Docker Desktop (Windows/macOS)** sieht der Browser-Container den
+   Host nicht als `localhost`, sondern als `host.docker.internal`:
    ```bash
-   docker run --rm -p 8080:8080 ghcr.io/radiantearth/stac-browser \
-     --api http://localhost:8000/stac
+   docker run --rm -p 8080:8080 -e SB_catalogUrl="http://host.docker.internal:8000/stac" ghcr.io/radiantearth/stac-browser:latest
    ```
-   Läuft der Browser-Container selbst nicht auf demselben Rechner wie
-   Docker Desktop unter macOS/Windows, `localhost` durch die tatsächlich
-   erreichbare Adresse des `api`-Dienstes ersetzen; unter Linux
-   funktioniert `localhost` direkt.
+
+   **Unter Linux** (Docker Engine ohne Docker Desktop) funktioniert
+   `localhost` direkt:
+   ```bash
+   docker run --rm -p 8080:8080 -e SB_catalogUrl="http://localhost:8000/stac" ghcr.io/radiantearth/stac-browser:latest
+   ```
 2. Im Browser **`http://localhost:8080`** öffnen.
 3. Es erscheint die Landing Page des Katalogs mit der Collection
    **Sentinel-2 L2A** (`sentinel-2-c1-l2a`). Auf die Collection klicken zeigt
