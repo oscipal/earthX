@@ -5,7 +5,8 @@ ruff>=0.6
 # Module boundary contracts (architekturplan.md 3.1), enforced via .importlinter
 # on every PR since M1-02 — see docs/adr/0002-testaufteilung.md.
 import-linter>=2.0
-# Used by the catalog tests to read a built collection back against the STAC spec,
-# rather than against our own idea of it. Comes in with pystac-client anyway; named
-# here because the tests import it directly.
+# Reads a built collection back against the STAC spec in the catalog tests, so the
+# shape is checked against the specification rather than against our own idea of it.
+# A direct test dependency: pystac-client happens to pull it in today, but that
+# package is excluded from the target path (KLAERUNGEN B8, adr/0005 rule IV).
 pystac>=1.10

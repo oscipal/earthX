@@ -1,23 +1,51 @@
 """Mapping a registry entry onto a STAC Collection.
 
 A mapping, not an interpretation: every ``earthx:`` field of architekturplan.md 5.1
-appears, including the two that stay empty in M1 (``distributions``, and ``health``
-where nothing has been measured). The shape is complete from the start so that M2
-fills values in rather than adding fields.
+appears, including ``distributions``, which stays empty until the harvester fills it
+from M5. The shape is complete from the start so that M2 fills values in rather than
+adding fields.
+
+The coverage fields of adr/0004 §6 are deliberately *not* here. They belong to the
+registry entry, which is what decides the coverage path (adr/0004 §5); putting them
+in the collection as well would add a ninth ``earthx:`` field to 5.1 — a change to
+the architecture, not a consequence of this task.
 """
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime, timezone
 
-from earthx.catalog.registry import DatasetConfig
+from earthx.catalog.registry import DatasetConfig, LicenseInfo
 
+# STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
+# value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
+# so the two must move together. Which version we serve follows from the
+# stac-fastapi-pgstac release M1-07 pins — see _stac_license.
 STAC_VERSION = "1.0.0"
 
+# DOI and citation are not an earthx: field but the scientific extension, which
+# architekturplan.md 5.1 lists among the extensions we use.
+SCIENTIFIC_EXTENSION = "https://stac-extensions.github.io/scientific/v1.0.0/schema.json"
 
-def _isoformat(value: date | None) -> str | None:
-    """A date as STAC writes an instant: UTC, no local offset."""
-    return None if value is None else f"{value.isoformat()}T00:00:00Z"
+
+def _stac_license(license_info: LicenseInfo, stac_version: str = STAC_VERSION) -> str:
+    """The licence value in the spelling the given STAC version uses.
+
+    An SPDX identifier is written as it stands in both versions. Without one, STAC
+    1.0 says ``proprietary`` and STAC 1.1 says ``other``; emitting 1.0's word under
+    1.1 is what a reader would silently correct, and then our stored value and the
+    served one disagree.
+    """
+    if license_info.spdx_id:
+        return license_info.spdx_id
+    return "proprietary" if stac_version.startswith("1.0") else "other"
+
+
+def _isoformat(value: datetime | None) -> str | None:
+    """An instant as STAC writes it: UTC, with a trailing Z rather than +00:00."""
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
@@ -40,6 +68,7 @@ def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
         "name": lic.name,
         "url": lic.url,
         "commercial_use": lic.commercial_use,
+        "distribution": lic.distribution,
         "derivatives": lic.derivatives,
         "share_alike": lic.share_alike,
         "attribution_required": lic.attribution_required,
@@ -50,14 +79,14 @@ def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
     }
 
 
-def _earthx_coverage(config: DatasetConfig) -> dict[str, object]:
-    """Not one of the eight fields of 5.1 — added by adr/0004 §6, and read in M2."""
-    cov = config.coverage
-    return {
-        "provider": cov.provider.value,
-        "typical_footprint_km": cov.typical_footprint_km,
-        "max_geotile_level": cov.max_geotile_level,
-    }
+def _scientific(config: DatasetConfig) -> dict[str, object]:
+    """DOI and citation, left out entirely where the dataset has neither."""
+    fields: dict[str, object] = {}
+    if config.doi:
+        fields["sci:doi"] = config.doi
+    if config.citation:
+        fields["sci:citation"] = config.citation
+    return fields
 
 
 def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
@@ -66,13 +95,15 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
     Returns a plain dictionary, freshly built on every call: no caller can reach
     back into the frozen entry through a shared list.
     """
-    return {
+    scientific = _scientific(config)
+    collection: dict[str, object] = {
         "type": "Collection",
         "stac_version": STAC_VERSION,
+        "stac_extensions": [SCIENTIFIC_EXTENSION] if scientific else [],
         "id": config.dataset_id,
         "title": config.title,
         "description": config.description,
-        "license": config.license.stac_license,
+        "license": _stac_license(config.license),
         "extent": {
             "spatial": {"bbox": [list(config.spatial_extent.bbox)]},
             "temporal": {
@@ -102,16 +133,21 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 None if config.health.last_checked_ok is None else config.health.last_checked_ok.isoformat()
             ),
         },
-        "earthx:default_render": {
-            "bands": list(config.default_render.bands),
-            "stretch": list(config.default_render.stretch),
-            "colormap": config.default_render.colormap,
-        },
+        "earthx:default_render": (
+            None
+            if config.default_render is None
+            else {
+                "bands": list(config.default_render.bands),
+                "stretch": list(config.default_render.stretch),
+                "colormap": config.default_render.colormap,
+            }
+        ),
         "earthx:source": {
             "adapter": config.source.adapter.value,
             "endpoint": config.source.endpoint,
             "source_collection_id": config.source.source_collection_id,
             "harvest_run": config.source.harvest_run,
         },
-        "earthx:coverage": _earthx_coverage(config),
     }
+    collection.update(scientific)
+    return collection
