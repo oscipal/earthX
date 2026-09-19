@@ -38,6 +38,18 @@ def config() -> configparser.ConfigParser:
     return parser
 
 
+def _root_modules() -> set[str]:
+    """Modules living directly in `backend/earthx/`, outside the eleven of 3.1.
+
+    They carry no contract of their own — there is no column for them in the
+    table — but they are code that must not open a connection, so the client
+    contract has to cover them. Read from disk rather than listed, so a new one
+    fails this suite until `.importlinter` names it.
+    """
+    root = CONFIG.parent / "backend" / "earthx"
+    return {path.stem for path in root.glob("*.py") if path.stem != "__init__"}
+
+
 def _modules(parser: configparser.ConfigParser, section: str, option: str) -> set[str]:
     raw = parser.get(section, option, fallback="")
     return {line.strip().removeprefix("earthx.") for line in raw.splitlines() if line.strip()}
@@ -75,7 +87,7 @@ def test_datasets_stay_isolated(config: configparser.ConfigParser) -> None:
 
 def test_http_clients_are_confined_to_gateway(config: configparser.ConfigParser) -> None:
     section = "importlinter:contract:http-only-in-gateway"
-    assert _modules(config, section, "source_modules") == ALL_MODULES - {"gateway"}
+    assert _modules(config, section, "source_modules") == (ALL_MODULES - {"gateway"}) | _root_modules()
     forbidden = _modules(config, section, "forbidden_modules")
     for client in {"httpx", "requests", "urllib", "pystac_client", "aiohttp"}:
         assert client in forbidden

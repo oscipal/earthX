@@ -174,7 +174,13 @@ forbidden_modules =
 [importlinter:contract:http-only-in-gateway]
 name = HTTP and S3 clients live only in gateway (KLAERUNGEN B8)
 type = forbidden
+; Source modules are the ten of 3.1 that are not `gateway`, PLUS every module
+; that lives directly in the package root. A root module is not one of the
+; eleven, but it is still code that must not fetch — `test_module_boundaries.py`
+; reads the root modules from disk, so a new one fails the suite until it is
+; listed here.
 source_modules =
+    earthx.logging
     earthx.catalog
     earthx.adapters
     earthx.readers
