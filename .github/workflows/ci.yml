@@ -25,6 +25,34 @@ jobs:
   backend:
     name: Backend — lint and tests
     runs-on: ubuntu-latest
+
+    # The T-C tests of M1-04 run against a real Postgres, in CI and in the cloud
+    # session alike (docs/adr/0002-testaufteilung.md §2). They are part of the same
+    # `pytest` both places run (§6), so the service belongs on this job rather than
+    # on one of its own. Same image as docker-compose.yml.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-throwaway
+          POSTGRES_DB: earthx
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d earthx"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Throwaway values for a container that lives for the length of this job.
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: ci
+      PGPASSWORD: ci-throwaway
+      PGDATABASE: earthx
+
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +69,11 @@ jobs:
 
       - name: Lint (ruff)
         run: ruff check backend
+
+      # Installs the pgstac schema the T-C tests read. The version comes from the
+      # pin in backend/requirements.txt — there is no second place that sets it.
+      - name: Migrate pgstac
+        run: pypgstac migrate
 
       - name: Tests (pytest)
         run: pytest
