@@ -1,51 +1,84 @@
 #!/usr/bin/env bash
-# EarthX — proposed setup script for the Claude Code cloud environment.
+# EarthX — SessionStart hook for Claude Code cloud sessions.
 #
-# Vorschlag zu M0 Schritt 2. Otto trägt das Skript selbst in den Einstellungen
-# der Cloud-Umgebung ein; siehe docs/cloud-umgebung.md für die Messwerte, auf
-# denen es beruht, und docs/adr/0002-testaufteilung.md für die Testaufteilung.
+# Registered in .claude/settings.json (matcher "startup|resume") per
+# https://code.claude.com/docs/en/cloud-environments, "Install dependencies
+# with a SessionStart hook". PostGIS itself is installed by the cloud
+# environment's own setup field (apt); this script only starts Postgres and
+# creates the role/database/extension, plus the venv and frontend deps.
 #
-# Ohne Secrets, ohne Netzzugriff auf EO-Quellen, ohne BIOMASS. Idempotent.
+# Ohne Secrets, ohne Netzzugriff auf EO-Quellen, ohne BIOMASS. Idempotent und
+# meldet Fehler nur, statt die Sitzung damit zu blockieren (deshalb kein
+# `set -e`, und das Skript endet immer mit Exit 0).
 
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV="${REPO_ROOT}/.venv"
+set -uo pipefail
 
 log() { printf '\n== %s\n' "$*"; }
+warn() { printf '\n!! %s\n' "$*" >&2; }
 
-# --- Python -----------------------------------------------------------------
-# No conda in the image, so environment.yml is not usable here. The pip wheels
-# of rasterio/rio-tiler ship their own GDAL (3.10.x), which is enough for
-# everything CI and a cloud session run.
-log "Python environment (${VENV})"
-python3 -m venv "${VENV}"
-"${VENV}/bin/pip" install --upgrade --quiet pip
-"${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt"
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  exit 0
+fi
 
-# --- Node -------------------------------------------------------------------
-log "Frontend dependencies"
-(cd "${REPO_ROOT}/frontend" && npm ci --no-audit --no-fund)
+if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
+  warn "CLAUDE_PROJECT_DIR ist nicht gesetzt, breche ab"
+  exit 0
+fi
+REPO_ROOT="${CLAUDE_PROJECT_DIR}"
+VENV="${REPO_ROOT}/.venv"
+
+# Running as root in the sandbox is normal; sudo is neither present nor
+# needed there. as_postgres/as_root abstract the two cases identically.
+if [ "$(id -u)" -eq 0 ]; then
+  as_root() { "$@"; }
+  as_postgres() { runuser -u postgres -- "$@"; }
+else
+  as_root() { sudo "$@"; }
+  as_postgres() { sudo -u postgres "$@"; }
+fi
+
+# --- Python -------------------------------------------------------------
+if [ -x "${VENV}/bin/python" ]; then
+  log "Python-venv existiert bereits (${VENV})"
+else
+  log "Python-venv anlegen (${VENV})"
+  if python3 -m venv "${VENV}"; then
+    "${VENV}/bin/pip" install --upgrade --quiet pip \
+      && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
+      || warn "pip-Installation fehlgeschlagen"
+  else
+    warn "Anlegen des venv fehlgeschlagen"
+  fi
+fi
+
+# --- Node -----------------------------------------------------------------
+if [ -d "${REPO_ROOT}/frontend/node_modules" ]; then
+  log "Frontend-Abhängigkeiten existieren bereits"
+else
+  log "Frontend-Abhängigkeiten installieren"
+  (cd "${REPO_ROOT}/frontend" && npm ci --no-audit --no-fund) || warn "npm ci fehlgeschlagen"
+fi
 
 # --- Postgres + PostGIS -----------------------------------------------------
-# Postgres 16 is installed but not running; PostGIS has to be added. Both come
-# from the Ubuntu archive, which is reachable. Only needed for integration
-# tests; comment the block out if a session does not run them.
-log "Postgres and PostGIS"
-if ! dpkg -s postgresql-16-postgis-3 >/dev/null 2>&1; then
-  sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-16-postgis-3
-fi
-sudo pg_ctlcluster 16 main start || true   # already running is fine
-sudo -u postgres psql -qc \
+log "Postgres starten"
+as_root service postgresql start || warn "Postgres-Start fehlgeschlagen"
+
+log "Rolle, Datenbank und PostGIS-Extension einrichten"
+as_postgres psql -qc \
   "DO \$\$ BEGIN
      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'earthx') THEN
        CREATE ROLE earthx LOGIN PASSWORD 'earthx' SUPERUSER;
      END IF;
-   END \$\$;"
-sudo -u postgres psql -qtc "SELECT 1 FROM pg_database WHERE datname = 'earthx'" | grep -q 1 \
-  || sudo -u postgres createdb -O earthx earthx
-sudo -u postgres psql -q -d earthx -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+   END \$\$;" || warn "Anlegen der Rolle 'earthx' fehlgeschlagen"
+
+if as_postgres psql -qtc "SELECT 1 FROM pg_database WHERE datname = 'earthx'" | grep -q 1; then
+  :
+else
+  as_postgres createdb -O earthx earthx || warn "Anlegen der Datenbank 'earthx' fehlgeschlagen"
+fi
+
+as_postgres psql -q -d earthx -c "CREATE EXTENSION IF NOT EXISTS postgis;" \
+  || warn "Anlegen der PostGIS-Extension fehlgeschlagen (Paket installiert?)"
 
 # Local development credentials only — this database never leaves the sandbox
 # and holds no real data. Not a secret in the sense of CLAUDE.md.
@@ -57,4 +90,5 @@ PGPASSWORD=earthx
 PGDATABASE=earthx
 ENVEOF
 
-log "Done. Activate with: source .venv/bin/activate"
+log "Setup abgeschlossen"
+exit 0
