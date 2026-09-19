@@ -17,7 +17,7 @@ each other's collections and the developer's database is left as it was found.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 import psycopg
@@ -32,6 +32,19 @@ _ENV_FILE = Path(__file__).resolve().parents[3] / ".env.test"
 # libpq reads these itself; PGHOST is the one that decides whether anything was set up
 # at all. scripts/setup-cloud-session.sh writes them, CI sets them on the job.
 _REQUIRED_ENV = ("PGHOST", "PGUSER", "PGDATABASE")
+
+# These tests drop and recreate schemas. libpq is C code, so the no_network guard in
+# backend/tests/conftest.py never sees psycopg's connections and cannot stop them —
+# the check that the database is a local throwaway has to happen here.
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "postgres"})
+
+_REMOTE_DB = """\
+PGHOST is {host}, which is not a local database.
+
+These tests drop schemas and write collections; they are meant for the throwaway
+Postgres of a cloud session or a CI service container, never for anything shared.
+Point PGHOST at one of: {allowed}.
+"""
 
 _MISSING_DB = """\
 No Postgres for the T-C tests. They run in the cloud session and in CI
@@ -53,19 +66,33 @@ def _postgres_env() -> None:
         load_dotenv(_ENV_FILE, override=False)
 
 
+def missing_postgres_env(environ: Mapping[str, str]) -> tuple[str, ...]:
+    """Which of the required variables are unset or empty. Its own function so the
+    message it drives can be tested without taking the database away."""
+    return tuple(name for name in _REQUIRED_ENV if not environ.get(name))
+
+
+def is_local_host(host: str) -> bool:
+    return host in _LOCAL_HOSTS
+
+
 @pytest.fixture(scope="session")
-def postgres_dsn(_postgres_env: None) -> str:
-    missing = [name for name in _REQUIRED_ENV if not os.environ.get(name)]
+def require_postgres_env(_postgres_env: None) -> None:
+    """Stop with a usable message rather than a connection error or a silent skip."""
+    missing = missing_postgres_env(os.environ)
     if missing:
         pytest.fail(_MISSING_DB.format(missing=", ".join(missing)), pytrace=False)
-    return ""  # libpq takes the rest from the environment
+    host = os.environ["PGHOST"]
+    if not is_local_host(host):
+        pytest.fail(_REMOTE_DB.format(host=host, allowed=", ".join(sorted(_LOCAL_HOSTS))), pytrace=False)
 
 
 @pytest.fixture
-def conn(postgres_dsn: str) -> Iterator[psycopg.Connection]:
+def conn(require_postgres_env: None) -> Iterator[psycopg.Connection]:
     """A connection whose work is rolled back when the test ends."""
     try:
-        connection = psycopg.connect(postgres_dsn, autocommit=False)
+        # libpq takes host, user, password and database from the environment.
+        connection = psycopg.connect(autocommit=False)
     except psycopg.OperationalError as error:
         pytest.fail(
             f"Postgres is configured but not reachable: {error}\n"
