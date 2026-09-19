@@ -70,12 +70,9 @@ jobs:
         run: npx tsc -b --pretty false
 
   import-boundaries:
-    name: Module boundaries (prepared, manual only)
-    # Not a gate yet: the target modules from architekturplan.md 3.1 do not
-    # exist. `.importlinter` already holds the contracts, and
-    # backend/tests/test_module_boundaries.py checks them against the plan on
-    # every pull request. Remove the `if` once the first modules exist (M1).
-    if: github.event_name == 'workflow_dispatch'
+    name: Module boundaries (import-linter)
+    # Gates every PR (M1-02): the target package backend/earthx/ exists now,
+    # so a violation of architekturplan.md 3.1 has something to be caught in.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,4 +81,6 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -r backend/requirements-dev.txt
       - name: Check import contracts (lint-imports)
+        env:
+          PYTHONPATH: backend
         run: lint-imports --config .importlinter
