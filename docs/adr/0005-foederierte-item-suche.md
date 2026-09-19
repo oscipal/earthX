@@ -1,6 +1,9 @@
 # ADR 0005 — Föderierte Item-Suche für Sentinel-2 L2A
 
-- **Status:** Vorschlag. Entscheidung liegt bei Otto.
+- **Status:** **Angenommen** von Otto am 2026-09-19. Die drei Fragen aus §7
+  sind beantwortet: F1 mit der Präzisierung „7 Tage statt 24 h", F2 mit der
+  Verschärfung „in M1 gar keine Filter-Extension", F3 wie empfohlen. Die
+  Empfehlung in §5 gibt den entschiedenen Stand wieder.
 - **Datum:** 2026-09-19
 - **Aufgabe:** M1-05 laut `docs/plans/m1-fundament.md` §4 (Spike aus
   `architekturplan.md` 15.2, „Föderierte Item-Suche").
@@ -313,7 +316,7 @@ Katalogkern und zugleich öffentliche STAC-API").
 
 ## 5. Empfehlung
 
-**Option 2**, mit fünf Regeln.
+**Option 2**, mit sechs Regeln.
 
 **Regel I — Verzweigen an der Collection, nicht an der Route.** Der
 `FederatingCoreCrudClient` überschreibt nur die **vier öffentlichen** Methoden.
@@ -332,9 +335,15 @@ normalisierten Suche einschließlich Seitenmarke (das ist zugleich Z9 aus
 
 | Fall | TTL | Begründung aus §3.4 |
 |---|---|---|
-| Zeitfenster endet in der Vergangenheit (mehr als 24 h zurück) | **24 h** | seit 15 Monaten unverändert |
+| Zeitfenster endet in der Vergangenheit (mehr als **7 Tage** zurück) | **24 h** | seit 15 Monaten unverändert |
 | Zeitfenster offen oder bis „jetzt" | **5 min** | rund 820 neue Items je Stunde weltweit, ~2 h Verzug bis in den Katalog |
 | Einzelnes Item per ID | **24 h** | `updated` bewegt sich nur in den ersten Stunden nach der Aufnahme |
+
+Die Grenze von sieben Tagen ist Ottos Präzisierung zur Empfehlung von 24 h: Sie
+deckt **Nachlieferungen** ab — Szenen, die verspätet oder neu verarbeitet in den
+Katalog kommen. Die Messung in §3.4 belegt nur, dass ein 15 Monate altes Fenster
+stillsteht; wie lange der Rand tatsächlich nachzittert, ist damit **nicht**
+gemessen (§8). Sieben Tage sind die vorsichtige Seite dieser Unkenntnis.
 
 Der Cache ist reiner Beschleuniger: Fällt er aus, wird live gefragt (K4, E5).
 Ein Test hierfür ist Abnahme von M1-06.
@@ -361,6 +370,17 @@ Trefferübersicht), wird upstream mit `fields` gefragt — Faktor 89 weniger Byt
 bei gleicher Trefferzahl. Die vollständigen Items werden nur für die Seite
 geholt, die der Nutzer tatsächlich sieht.
 
+**Regel VI — In M1 keine Filter-Extension ausweisen.** Die Landing Page der
+eigenen API führt `filter`/CQL2 gar nicht auf, und die Extension wird in
+`stac-fastapi-pgstac` nicht eingeschaltet. Das ist schärfer als „für föderierte
+Collections nicht ausweisen" und in M1 die einfachere Wahrheit: Es gibt in M1
+**keine** eigenen Items (`adr/0003`: Sentinel-2 L2A ist föderiert), also keine
+Collection, auf der CQL2 funktionieren würde. Eine Unterscheidung je Collection
+hätte nichts zu unterscheiden. **Mit M3 neu zu prüfen** — dort kommt mit der
+ersten Nicht-STAC-Quelle die erste Collection mit materialisierten Items
+(`architekturplan.md` 15.1, Inkrement 3), und damit erstmals ein Fall, in dem
+CQL2 etwas leisten könnte.
+
 ---
 
 ## 6. Folgen
@@ -380,11 +400,12 @@ geholt, die der Nutzer tatsächlich sieht.
   Lizenzlage der Earth-Search-Metadaten nicht — die bleibt offen (§8).
 
 **Für M1-07 (STAC-API nach außen):** Die Konformitätsklassen der eigenen Landing
-Page müssen zur **schwächsten** beteiligten Quelle passen (K8). Konkret: Earth
-Search kann kein CQL2 (§3.1). Entweder weist unsere API `filter` für föderierte
-Collections nicht aus, oder wir übersetzen CQL2 in die Query-Extension, oder ein
-CQL2-Filter auf einer föderierten Collection ergibt einen ausdrücklichen Fehler.
-Stillschweigend verwerfen ist keine Option. Das ist die Frage F2 in §7.
+Page müssen zur **schwächsten** beteiligten Quelle passen (K8). Earth Search kann
+kein CQL2 (§3.1); in M1 gibt es keine andere Quelle. Nach Regel VI weist die
+eigene API `filter`/CQL2 in M1 deshalb **gar nicht** aus. Abnahmefall: Die
+Landing Page führt keine `filter`-Konformitätsklasse, und ein `filter`-Parameter
+wird nicht stillschweigend verworfen. Der Punkt ist mit M3 erneut aufzurufen,
+sobald es eigene Items gibt.
 
 **Für M1-03 (Gateway):** Die Größenbegrenzung muss großzügig genug für eine
 Seite mit 100 Items sein (§3.2: rund 1,8 MB) und eng genug, um eine
@@ -397,23 +418,20 @@ den „alt"-Zweig seines Ablaufdiagramms mit Messwerten aus.
 
 ---
 
-## 7. Fragen an Otto
+## 7. Fragen an Otto — beantwortet am 2026-09-19
 
-**F1 — Cache-Fristen (Regel II).** (a) *Empfehlung:* 24 h für geschlossene
-Fenster, 5 min für den offenen Rand, 24 h für Einzel-Items; (b) einheitlich
-5 min, einfacher zu erklären, mehr Last bei der Quelle; (c) einheitlich 1 h,
-Kompromiss, zeigt aber am offenen Rand bis zu einer Stunde alte Treffer.
+**F1 — Cache-Fristen (Regel II).** **Empfehlung angenommen, mit einer
+Präzisierung:** Ein Zeitfenster gilt erst als geschlossen, wenn sein Ende **mehr
+als 7 Tage** zurückliegt (statt 24 h), wegen möglicher Nachlieferungen. Die
+Fristen selbst bleiben: 24 h für geschlossene Fenster, 5 min für den offenen
+Rand, 24 h für Einzel-Items. Regel II ist entsprechend gefasst.
 
-**F2 — CQL2 auf föderierten Collections (§6).** (a) *Empfehlung:* `filter` für
-föderierte Collections nicht ausweisen und einen CQL2-Filter dort mit `400`
-ablehnen — ehrlich und billig; (b) eine Teilmenge von CQL2 in die
-Query-Extension übersetzen — bequemer, aber die Grenze der Teilmenge ist schwer
-zu erklären; (c) erst in M2 entscheiden, in M1 gar keine Filter-Extension
-ausweisen.
+**F2 — CQL2 auf föderierten Collections (§6).** **Angenommen, und schärfer
+gefasst:** In M1 wird `filter`/CQL2 **gar nicht** ausgewiesen, weil es noch keine
+eigenen Items gibt. Mit M3 neu zu prüfen. Das ist Regel VI.
 
-**F3 — Obergrenze der Seitengröße (Regel V).** (a) *Empfehlung:* `limit ≤ 100`,
-Vorgabe 10; (b) `limit ≤ 500` — eine Antwort wäre dann bis zu 9 MB groß;
-(c) niedriger, `limit ≤ 50`.
+**F3 — Obergrenze der Seitengröße (Regel V).** **Empfehlung angenommen:**
+`limit ≤ 100`, Vorgabe 10.
 
 ---
 
@@ -438,6 +456,13 @@ Vorgabe 10; (b) `limit ≤ 500` — eine Antwort wäre dann bis zu 9 MB groß;
    sortiert, ist aus der Seitenmarke abgelesen, nicht dokumentiert gefunden
    **[A]**. Wenn unsere API eine Sortierung zusichert, muss sie sie ausdrücklich
    mitschicken.
+6. **Wie lange der Rand nachzittert.** Gemessen ist nur, dass ein 15 Monate altes
+   Fenster stillsteht (§3.4), und dass das jüngste `updated` im Fenster Juni 2024
+   rund vier Stunden nach der Aufnahme liegt. Wie häufig Szenen **später** neu
+   verarbeitet oder nachgeliefert werden, ist damit **nicht** gemessen. Die
+   Sieben-Tage-Grenze aus F1 ist die vorsichtige Antwort darauf, keine Messung.
+   Nachzuholen wäre sie mit einer Stichprobe über `updated` gegen `datetime` über
+   mehrere Monate — lohnend erst, wenn der Cache tatsächlich Last trägt.
 
 ---
 
