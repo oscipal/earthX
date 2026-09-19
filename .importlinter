@@ -183,6 +183,16 @@ forbidden_modules =
 [importlinter:contract:http-only-in-gateway]
 name = HTTP and S3 clients live only in gateway (KLAERUNGEN B8)
 type = forbidden
+; Direct imports only (Otto, 19.09.2026, M1-06). The rule is that no module
+; outside `gateway` opens a connection itself; reaching a source *through*
+; `gateway` is the architecture, not a breach of it. Counting indirect chains
+; forbade exactly that: `gateway.policy` parses URLs with `urllib.parse`, so
+; `adapters -> gateway -> urllib` was a violation, and with it every import of
+; `gateway` by the modules 3.1 allows it for (catalog, adapters, readers,
+; discovery). The direct rule stays checked twice: here, and over the syntax
+; tree of every module in backend/tests/earthx/test_no_outbound_outside_gateway.py,
+; which also sees an import hidden inside a function.
+allow_indirect_imports = True
 ; Source modules are the ten of 3.1 that are not `gateway`, PLUS every module
 ; that lives directly in the package root. A root module is not one of the
 ; eleven, but it is still code that must not fetch — `test_module_boundaries.py`
