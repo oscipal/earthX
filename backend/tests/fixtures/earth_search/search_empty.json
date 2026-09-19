@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "stac_version": "1.0.0",
+  "numberMatched": 0,
+  "numberReturned": 0,
+  "context": {"limit": 10, "matched": 0, "returned": 0},
+  "features": [],
+  "links": [
+    {"rel": "self", "href": "https://earth-search.invalid/v1/search", "type": "application/json"}
+  ]
+}
