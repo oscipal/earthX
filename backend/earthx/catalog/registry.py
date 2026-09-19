@@ -16,6 +16,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
+from types import MappingProxyType
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
 # 2**z columns, so a cell is EARTH_CIRCUMFERENCE_KM / 2**z wide (adr/0004 §5).
@@ -123,6 +124,15 @@ class TermsOfUse:
         for language, text in self.notice.items():
             if "{terms_url}" not in text:
                 raise ConfigError(f"terms notice [{language}] does not link the terms ({{terms_url}})")
+            # Filling it in is the only thing ever done with this text, so a
+            # placeholder we do not supply has to fail here, not at a download.
+            try:
+                text.format(terms_url=self.url)
+            except (KeyError, IndexError) as error:
+                raise ConfigError(
+                    f"terms notice [{language}] uses a placeholder we do not fill: {error}"
+                ) from None
+        object.__setattr__(self, "notice", MappingProxyType(dict(self.notice)))
 
 
 @dataclass(frozen=True, slots=True)

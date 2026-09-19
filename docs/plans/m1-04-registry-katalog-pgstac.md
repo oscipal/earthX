@@ -260,6 +260,15 @@ braucht: Adapter-Kennung und Quell-Collection, damit M1-07 daran verzweigen kann
   `migrations/` ist damit in M1-04 leer; ein README sagt, warum, und die erste echte
   Migration ist der Anwendungs-Cache aus E4 in **M1-06**.
 - Kein Import aus `gateway`: hier geht nichts nach draußen.
+- **Suchpfad:** Vor pgstac-Aufrufen wird `search_path` auf `pgstac, public` gesetzt.
+  pgstac's eigene Trigger sprechen ihre Tabellen unqualifiziert an (ein Löschvorgang
+  läuft in `DELETE FROM partition_stats`); ohne das scheitert er an einer Relation,
+  die weder im Befehl noch in der Collection vorkommt. Unsere Buchführung ist deshalb
+  ausdrücklich `public.earthx_migrations` — sonst landete sie im pgstac-Schema und
+  wäre bei dessen Neuaufbau still weg.
+- **Einstiegspunkt** `python -m earthx.catalog.load`: migriert, prüft die Version,
+  schreibt alle Einträge und **committet**. Ohne ihn wäre das Abnahmekriterium nur in
+  einer zurückgerollten Testtransaktion erfüllt.
 
 ### 3.5 Tests
 
@@ -284,7 +293,6 @@ braucht: Adapter-Kennung und Quell-Collection, damit M1-07 daran verzweigen kann
 | Laden, dann lesen | Collection liegt in pgstac, `earthx:`-Felder unverändert im JSON |
 | zweimal laden | eine Zeile, gleicher Inhalt — idempotent |
 | Eintrag ändern, erneut laden | Änderung ist drin, immer noch eine Zeile |
-| pgstac-Version weicht vom Pin ab | Fehler mit beiden Versionen im Text |
 | `PG*` nicht gesetzt | klarer Fehler, der sagt, was fehlt — kein stilles Überspringen, kein Double |
 | Postgres erreichbar, aber pgstac fehlt | Fehler, der `pypgstac migrate` nennt |
 | pgstac-Version weicht ab | Fehler mit beiden Versionen (Test setzt die Version in der Datenbank um) |
