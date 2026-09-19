@@ -99,9 +99,11 @@ Gestuft, mit gleichbleibender Schnittstelle:
 2. **Ab M5 (Harvester, Git-Review):** Kuratierte Definitionen liegen als YAML unter `catalog/`; `datasets.py` wird zum Lader, der daraus dieselben `DatasetConfig`-Objekte erzeugt. Aufrufer merken nichts.
 3. pgstac wird aus derselben Quelle befüllt; es gibt nie zwei gepflegte Wahrheiten.
 
-### B14. Skills — *Später*
+### B14. Skills — *Vorerst nicht im Repo* (Stand 19.09.2026)
 
-Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen derzeit nur in Ottos persönlicher Claude-Code-Umgebung. Otto kopiert sie in M0 nach `.claude/skills/` im Repo. Der Chat braucht ihren Inhalt nicht; er verweist nur auf sie.
+Die drei Skills (`atomic-commits`, `code-cleanup`, `readme-updater`) liegen weiterhin nur in Ottos persönlicher Claude-Code-Umgebung. Sie werden **vorerst nicht** ins Repo kopiert.
+
+Folge: `CLAUDE.md` verweist nicht mehr auf sie, sondern sagt die Regel selbst — kleine, thematisch getrennte Commits mit aussagekräftiger Nachricht; vor dem PR die geänderten Dateien aufräumen. Eine Cloud-Sitzung darf sich auf keinen Skill verlassen, der nicht im Repo liegt. Kommen die Skills später doch dazu, ersetzt der Verweis die Regel wieder; bis dahin gilt der Text in `CLAUDE.md`.
 
 ---
 

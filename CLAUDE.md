@@ -42,8 +42,10 @@ Die Datei ist nur noch Beschreibung des Code-Stands vom 13.08.2026.
   zusammenfassen.
 - Tests decken Fehlerfälle, fehlerhafte Eingaben und zweckfremde Nutzung ab.
   Externe Quellen nur über `tests/fixtures`.
-- Commits mit Skill `atomic-commits`; vor dem PR `code-cleanup` auf die
-  geänderten Dateien.
+- Kleine, thematisch getrennte Commits: ein Commit fasst eine Sache an, die
+  Nachricht sagt, was sich ändert und warum. Vor dem PR die geänderten Dateien
+  aufräumen — tote Reste, Debug-Ausgaben, auskommentierter Code und überflüssige
+  Kommentare raus, Benennung und Format an die Umgebung angleichen.
 - Richtwert für PRs: unter etwa 400 geänderten Zeilen ohne generierte Dateien.
 
 ## Ohne Rückfrage nicht ändern
