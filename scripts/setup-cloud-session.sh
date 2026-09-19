@@ -90,5 +90,47 @@ PGPASSWORD=earthx
 PGDATABASE=earthx
 ENVEOF
 
-log "Setup abgeschlossen"
+# --- Zusammenfassung --------------------------------------------------------
+# Der Endzustand wird noch einmal unabhängig von den Schritten oben geprüft.
+# Genau hier fehlte die Sichtbarkeit: schlug ein Schritt fehl, stand das nur als
+# stderr-Warnung im Protokoll, waehrend der Hook mit Exit 0 endete und die
+# Sitzung scheinbar sauber startete. Die Zusammenfassung geht deshalb auf
+# stdout, und der Hook endet weiterhin mit Exit 0.
+
+have_venv() { [ -x "${VENV}/bin/python" ] && "${VENV}/bin/python" -c ''; }
+have_frontend() { [ -d "${REPO_ROOT}/frontend/node_modules" ]; }
+have_postgres() { as_postgres psql -d earthx -tAc 'SELECT 1'; }
+have_postgis() {
+  as_postgres psql -d earthx -tAc \
+    "SELECT 1 FROM pg_extension WHERE extname = 'postgis'" | grep -q 1
+}
+
+missing=""
+report() { # report <Label> <Prüffunktion>
+  if "$2" >/dev/null 2>&1; then
+    printf '  %-9s ok\n' "$1"
+  else
+    printf '  %-9s FEHLT\n' "$1"
+    missing="${missing}${missing:+, }$1"
+  fi
+}
+
+log "Zusammenfassung"
+report venv have_venv
+report Frontend have_frontend
+report Postgres have_postgres
+report PostGIS have_postgis
+
+if [ -n "${missing}" ]; then
+  printf '\nNicht einsatzbereit: %s\n' "${missing}"
+  case "${missing}" in
+    *PostGIS*)
+      printf 'PostGIS installiert das setup-Feld der Cloud-Umgebung per apt,\n'
+      printf 'nicht dieser Hook. Protokoll: /var/log/earthx-setup.log\n'
+      ;;
+  esac
+else
+  log "Setup abgeschlossen"
+fi
+
 exit 0
