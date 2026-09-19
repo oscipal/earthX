@@ -251,7 +251,14 @@ braucht: Adapter-Kennung und Quell-Collection, damit M1-07 daran verzweigen kann
   eine Abweichung ist ein Fehler mit beiden Versionen im Text, kein stilles Weiter.
 - Laden über `pgstac.upsert_collection` — dieselbe Wahrheit wie die Registry (B13
   Punkt 3), und **idempotent**: zweimaliges Laden ergibt eine Zeile mit gleichem Inhalt.
-- Eigener Migrationsläufer nur, falls Otto Frage 5 Option 1 wählt.
+- Eigener Migrationsläufer (Frage 5, Option 1) in `catalog/schema.py`: nummerierte
+  `.sql`-Dateien unter `catalog/migrations/`, Datei und Buchungszeile in einer
+  Transaktion, Prüfsumme gegen nachträglich geänderte Migrationen.
+  **Abweichung vom Plan:** Die Buchführungstabelle `earthx_migrations` gehört dem
+  Läufer und wird von ihm angelegt, nicht als Datei `001` ausgeliefert. Sonst müsste
+  jedes Migrationsverzeichnis sie mitbringen — die Tests haben das sofort gezeigt.
+  `migrations/` ist damit in M1-04 leer; ein README sagt, warum, und die erste echte
+  Migration ist der Anwendungs-Cache aus E4 in **M1-06**.
 - Kein Import aus `gateway`: hier geht nichts nach draußen.
 
 ### 3.5 Tests
@@ -279,6 +286,10 @@ braucht: Adapter-Kennung und Quell-Collection, damit M1-07 daran verzweigen kann
 | Eintrag ändern, erneut laden | Änderung ist drin, immer noch eine Zeile |
 | pgstac-Version weicht vom Pin ab | Fehler mit beiden Versionen im Text |
 | `PG*` nicht gesetzt | klarer Fehler, der sagt, was fehlt — kein stilles Überspringen, kein Double |
+| Postgres erreichbar, aber pgstac fehlt | Fehler, der `pypgstac migrate` nennt |
+| pgstac-Version weicht ab | Fehler mit beiden Versionen (Test setzt die Version in der Datenbank um) |
+| Migration nach dem Anwenden geändert | Fehler mit beiden Prüfsummen |
+| Migration schlägt mitten im SQL fehl | nichts gebucht, Transaktion zurückgerollt |
 
 Die letzte Zeile ist bewusst so: `adr/0002` §6 verlangt, dass jeder Test an
 mindestens zwei Orten läuft. Ein T-C-Test, der sich mangels Datenbank selbst
