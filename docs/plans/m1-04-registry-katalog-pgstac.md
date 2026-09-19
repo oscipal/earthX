@@ -43,7 +43,15 @@ pgstac, erzeugt aus genau einem Registry-Eintrag.
 
 ## 2. Offene Punkte — von Otto beantwortet am 19.09.2026
 
-**Alle fünf wie empfohlen: 1a, 2a, 3a, 4a, 5a.** Damit ist dieser Plan freigegeben;
+**Alle fünf wie empfohlen: 1a, 2a, 3a, 4a, 5a.** Mit zwei Zusätzen von Otto:
+
+- **Zu 3a:** M1-08 (PR #24) bringt `pypgstac` und einen `pgstac-migrate`-Dienst in
+  die compose-Topologie. **M1-04b baut nach dessen Merge darauf auf** und benutzt
+  dieselbe gepinnte Version aus `requirements.txt` — es gibt keine zweite Pin-Stelle.
+- **Zu 4a:** Zu prüfen, welche STAC-Version wir ausgeben. `proprietary` ist ab
+  STAC 1.1 durch `other` ersetzt. **Geprüft, siehe §3.3** — der Hinweis trifft zu.
+
+Damit ist dieser Plan freigegeben;
 die Antworten stehen als eine Zeile in `docs/ENTSCHEIDUNGSLOG.md`, und `KLAERUNGEN.md`
 B13 nennt jetzt das Modul, in dem die Registry liegt. Die Fragen bleiben unten
 stehen, weil die Begründungen erklären, warum die Umsetzung so aussieht, wie sie
@@ -153,7 +161,8 @@ einem Test.
 | Identität | `dataset_id`, `title`, `description`, `data_class` (Enum: Raster-Zeitreihe, statisches Raster) |
 | Format | `format` (Enum `ZARR > COG > LEGACY`, Reihenfolge laut Checkliste Punkt 5) |
 | `capabilities` | `roi`, `time_range`, `band_math`, `interpolation`, `ml_processing`, `quad_pol`, `single_coverage_product` — alle ohne Vorgabewert |
-| `license` | `spdx_id`, `license_name`, `license_url`, Flags `commercial_use`, `derivatives`, `share_alike`, `attribution_required`, `tier` (Enum `CATALOG/DISPLAY/PROCESSING`), `attribution_modified`, `attribution_unmodified`, `liability_notice` |
+| `license` | `spdx_id`, `name`, `url`, Flags `commercial_use`, **`distribution`**, `derivatives`, `share_alike`, `attribution_required`, `tier` (Enum `CATALOG/DISPLAY/PROCESSING`), `attribution_modified`, `attribution_unmodified`, `liability_notice` |
+| Zitierung | `doi`, `citation` — Checklistenpunkt 3 (`scientific`-Extension) |
 | `access` | `token_free_checked_at`, `method`, `cors` |
 | `source` | `adapter` (Enum, hier `EARTH_SEARCH_V1`), `source_collection_id`, `endpoint`, `harvest_run` (in M1 `None`) |
 | `coverage` | `provider` (Enum `UPSTREAM_AGGREGATION/LOCAL_SQL/SAMPLE`), `typical_footprint_km`, `max_geotile_level` |
@@ -162,10 +171,16 @@ einem Test.
 
 Drei Prüfungen in `__post_init__`, jede mit eigener Fehlermeldung:
 
-1. **B11-Stufe gegen Flags:** `DISPLAY` und `PROCESSING` verlangen `derivatives=True`
-   und erlaubte Weitergabe; ein ND-Datensatz auf Stufe `PROCESSING` wird abgelehnt.
+1. **B11-Stufe gegen Flags:** `DISPLAY` und `PROCESSING` verlangen `distribution=True`
+   **und** `derivatives=True`; ein ND-Datensatz auf Stufe `PROCESSING` wird abgelehnt.
+   `distribution` ist beim Review als eigenes Flag hinzugekommen — B11 nennt beide
+   Bedingungen, und ohne das Flag hätte die Prüfung nur die halbe Regel abgebildet.
 2. **Attribution:** `attribution_required=True` ohne Attributionstext wird abgelehnt.
-3. **Coverage-Deckel:** `max_geotile_level` muss zur typischen Footprint-Größe passen
+3. **Lizenz identifizierbar:** SPDX-Kennung, sonst Name und URL.
+4. **Fehlerhafte Eingaben:** verdrehte oder leere `bbox`, Zeitraum der vor seinem
+   Beginn endet, leerer oder umgekehrter Stretch, `health = ok` ohne Prüfdatum,
+   Endpunkt ohne `https` (B8), negative Gitterstufe.
+5. **Coverage-Deckel:** `max_geotile_level` muss zur typischen Footprint-Größe passen
    und darf sie nicht unterschreiten (`adr/0004` §5: für Sentinel-2 L2A höchstens z8).
    `single_coverage_product=True` schließt `provider=UPSTREAM_AGGREGATION` aus — ein
    Einmal-Produkt hat keine Dichte, sondern seine Ausdehnung.
@@ -199,8 +214,25 @@ der PR benennt es.
 
 Eine Funktion `to_stac_collection(config) -> dict`. Sie erzeugt die Pflichtfelder einer
 STAC Collection und darunter alle acht `earthx:`-Felder aus 5.1 — auch die, die in M1
-leer bleiben (`earthx:distributions`, `earthx:health`), damit die Form vollständig ist
-und M2 nichts nachzurüsten hat.
+leer bleiben (`earthx:distributions`, `earthx:default_render`), damit die Form
+vollständig ist und M2 nichts nachzurüsten hat.
+
+**Die drei Coverage-Felder bleiben aus der Collection heraus.** `adr/0004` §5 sagt,
+der **Registry-Eintrag** entscheide den Coverage-Weg; ein neuntes `earthx:`-Feld wäre
+eine Erweiterung von 5.1 und damit eine Architekturentscheidung, die diese Aufgabe
+nicht trifft. DOI und Zitierung liegen nicht unter `earthx:`, sondern in der
+`scientific`-Extension, die 5.1 ohnehin nennt.
+
+**STAC-Version und Lizenzwert hängen zusammen (Ottos Zusatz zu 4a, geprüft).** Der
+Hinweis trifft zu: STAC 1.1 hat `proprietary` durch `other` ersetzt. Sichtbar wurde
+das beim Rücklesen mit `pystac` 1.15, das `proprietary` beim Einlesen stillschweigend
+zu `other` normalisiert. Wir geben **STAC 1.0.0 mit `proprietary`** aus, weil pgstac
+und Earth Search das sprechen. Damit die beiden nicht auseinanderlaufen, ist der
+Lizenzwert **aus der Version abgeleitet** statt fest eingetragen: eine SPDX-Kennung
+wird in beiden Versionen unverändert geschrieben, ohne Kennung sagt 1.0 `proprietary`
+und 1.1 `other`. Welche Version wir tatsächlich ausliefern, entscheidet die
+`stac-fastapi-pgstac`-Version, die **M1-07** pinnt — dann ist eine Zeile zu ändern,
+nicht eine Suche nach Fundstellen.
 
 Keine neue Abhängigkeit: Das Ergebnis ist ein Dictionary. `pystac` liegt als
 Abhängigkeit bereits vor und wird **nur im Test** benutzt, um das Ergebnis gegen die
@@ -256,7 +288,9 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 ### 3.6 Abhängigkeiten und Umgebung
 
 - `backend/requirements.txt`: `psycopg` — `catalog` braucht es zur Laufzeit.
-- `backend/requirements-dev.txt`: `pypgstac[psycopg]` gepinnt.
+- `backend/requirements-dev.txt`: `pypgstac[psycopg]` **nicht** hier pinnen — M1-08
+  (PR #24) bringt den Pin in `requirements.txt` und einen `pgstac-migrate`-Dienst in
+  compose. 04b baut nach dessen Merge darauf auf; zwei Pin-Stellen gäbe es nie.
 - `scripts/setup-cloud-session.sh` und `.github/workflows/ci.yml` laut Frage 3.
 - `docs/ENTSCHEIDUNGSLOG.md`: je eine Zeile für die Antworten auf die Fragen oben.
 
@@ -267,7 +301,8 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 1. `DatasetConfig`, Enums, Prüfungen in `__post_init__` — mit den T-A-Tests im selben Commit.
 2. Eintrag Sentinel-2 L2A.
 3. `to_stac_collection` und sein Test.
-4. *(04b)* Abhängigkeiten, Setup-Skript, CI-Job.
+4. *(04b, erst nach dem Merge von M1-08 / PR #24)* Setup-Skript, CI-Job; `pypgstac`
+   kommt aus dem Pin, den M1-08 in `requirements.txt` setzt.
 5. *(04b)* Laden nach pgstac, Versionsprüfung, T-C-Tests.
 6. Entscheidungslog, Aufräumen, `ruff check backend`, `pytest`,
    `lint-imports --config .importlinter`.
@@ -288,3 +323,5 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 | PR über 400 Zeilen | Teilung laut Frage 2 |
 | B13 und 3.1 widersprechen sich beim Ort der Registry | Frage 1; die Umsetzung beginnt nicht ohne Antwort |
 | Setup-Skript wird langsamer | `pypgstac migrate` ist idempotent und läuft nur beim ersten Start; das Ergebnis wird zwischengespeichert |
+| 04b hängt an M1-08 | 04a ist davon unberührt und schon vollständig prüfbar; 04b wartet auf den Merge von PR #24 |
+| Sentinel-2-Eintrag bleibt in drei Feldern offen (`default_render`, `liability_notice`, `citation`) | jeweils als `None` gesetzt und im PR benannt, statt einen Wert zu erfinden; `m1-fundament.md` §2 sieht die Standard-Visualisierung ohnehin erst in M2 |
