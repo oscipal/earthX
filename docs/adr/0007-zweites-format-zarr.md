@@ -397,6 +397,33 @@ CI und Live-Smoke pinnen `PYTHON_VERSION: "3.11"`; die Cloud-Sitzung liefert
   aber der Spike „Rendering im Browser" aus `architekturplan.md` 15.1
   Inkrement 7 ist gegen diese Quelle nicht durchführbar.
 
+### 3.10 `https` reicht — `gateway` braucht kein `s3` — **[M]**
+
+M1-03 F4 hat entschieden: „In M1 nur `https`; `s3` erst, wenn der erste Leser
+es braucht (M2)." Der erste Leser ist dieser hier, und er braucht es **nicht**:
+
+- **Lesen:** Alle Zugriffe in §3.6 und §3.7 waren gewöhnliche anonyme
+  `GET`-Anfragen über `https`, ohne Signatur und ohne einen einzigen
+  Kopfzeilen-Zusatz; `Range` beantwortet der Speicher mit `206` (§3.1). Ein
+  Zarr-Chunk ist ein Objekt unter einer Adresse — mehr braucht der Reader nicht.
+- **Auflisten:** Auch das geht anonym über `https`. `objects.eodc.eu` beantwortet
+  `?list-type=2&prefix=…` mit einem `ListBucketResult` (200), **ohne Signatur**.
+  Ein `s3`-Client wäre selbst dafür nicht nötig.
+- **Und gebraucht wird Auflisten ohnehin kaum:** Die gemessenen Stores führen
+  konsolidierte Metadaten (`.zmetadata` bzw. `zarr.json`), und die STAC-Items
+  benennen Gruppe und Variablen (`bands`, `cube:variables`). Der Store in §3.7
+  läuft deshalb mit `supports_listing = False` und öffnet über
+  `zarr.open_array(path=…)`. Ein Produkt **ohne** konsolidierte Metadaten
+  (gemessen: die `product`-Gruppe der S1-SLC-Collection trägt
+  `zarr:consolidated: false`) bliebe damit trotzdem lesbar, weil die Namen aus
+  dem Katalog kommen statt aus dem Speicher.
+
+**Folge:** `gateway` bleibt `https`-only. Das hält die Allowlist, den
+SSRF-Schutz und die Redirect-Kontrolle aus M1-03 unverändert gültig und erspart
+einen zweiten Client-Typ. Für die anderen Kandidaten aus §4.2 gilt dasselbe:
+`storage.googleapis.com` und die AWS-Open-Data-Buckets antworten in dieser
+Sitzung ebenfalls anonym über `https` **[M]**.
+
 ---
 
 ## 4. Kandidatenfeld
@@ -421,18 +448,26 @@ Dual-Pol, wie dort angenommen. `decomp.py` bleibt ruhender Operator; diese Quell
 
 ### 4.2 Weitere token-freie Zarr-Quellen
 
-Gesucht wurde ausdrücklich breiter als EOPF. Was sich belegen ließ:
+Gesucht wurde ausdrücklich breiter als EOPF. Die Spalten sind die Punkte, die
+der Aufgabentext je Kandidat verlangt; `Dauer.` ist die Dauerhaftigkeit nach K9.
 
-| Kandidat | Daten-Host | erreichbar | Lizenz | STAC | Zeitachse | Belegstufe |
-|---|---|---|---|---|---|---|
-| **ARCO-ERA5** (Google Research / ECMWF) | `storage.googleapis.com/gcp-public-data-arco-era5` | **ja [M]** | Code Apache-2.0 **[P]**; Daten CC-BY seit 07/2025 **[S]**, für diese Kopie nicht bestätigt | **nein** | 1940-01-01 bis 2026-06-30, `last_updated` **heute** **[M]** | [P]/[S]/[M] |
-| **CMIP6-PDS** (ESGF/Pangeo, AWS ODR) | `cmip6-pds.s3.us-west-2.amazonaws.com` | **ja [M]** | Lizenzseite nicht abrufbar, **unbelegt** | nein (Intake-ESM) | lang | [P]/unbelegt |
-| **MUR SST** (PO.DAAC / Farallon, AWS ODR) | `mur-sst.s3.us-west-2.amazonaws.com` | **ja [M]** | „no restrictions" **[P]** | nein | 2002–2020 **[P]** | [P]/[M] |
-| **NOAA NWM Retrospective** | `noaa-nwm-retrospective-2-1-zarr-pds` | nicht geprüft | „no restrictions" **[S]** | nein | lang, stündlich | [S] |
-| **Earthmover ERA5** | `earthmover-icechunk-era5` | nicht geprüft | CC-BY 4.0 **[P]** | nein | 1940–2025 | [P] |
-| **VEDA (NASA)** | `openveda.cloud` | **nein**, gesperrt | unbelegt | ja, STAC 1.0.0 **[S]** | je Collection | [S] |
-| **Planetary Computer** | — | gesperrt | — | ja | ja | **scheidet aus:** SAS-Signatur je Zugriff **[S]**, `adr/0003` §6 |
-| **NEX-GDDP-CMIP6** | `nex-gddp-cmip6.s3…` | ja [M] | — | — | — | **scheidet aus:** nativ NetCDF/COG, Zarr nur virtuell **[S]** |
+| Kandidat | Metadaten-Host | Daten-Host | Token | Lizenz | STAC | Zeitachse | Dauer. | Quicklook | Zugang | Ratengrenze | CORS | Beleg |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **EOPF Zarr Samples** (EODC) | `stac.core.eopf.eodc.eu` | `objects.eodc.eu` / **`data.eodc.eu` gesperrt** | nein **[M]** | Sentinel Data Legal Notice, wie Datensatz 1 **[P]** `adr/0003` §11.2 | **ja**, Items 1.1.0 an 1.0.0-API **[M]** | ja, aber ~2 Monate **[M]** | Betreiber nennt die Buckets „unofficial", Zukunft „unknown" **[P]** §10.3 | **nein**, das ausgewiesene löst 404 auf **[M]** | `https`, anonym **[M]** | keine dokumentiert, keine beobachtet **[M]** | API `*`, Speicher **keine** **[M]** | [M]/[P] |
+| **ARCO-ERA5** (Google Research / ECMWF) | `github.com/google-research/arco-era5` | `storage.googleapis.com/gcp-public-data-arco-era5` | nein **[M]** | Code Apache-2.0 **[P]**; Daten CC-BY seit 07/2025 **[S]**, für diese Kopie nicht bestätigt | **nein** | 1940-01-01 bis 2026-06-30, `last_updated` **heute** **[M]** | Google Public Dataset, keine Selbsteinschränkung gefunden | entfällt (Klimagitter) | `https`, anonym **[M]** | unbelegt | unbelegt | [P]/[S]/[M] |
+| **CMIP6-PDS** (ESGF/Pangeo, AWS ODR) | `registry.opendata.aws` | `cmip6-pds.s3.us-west-2.amazonaws.com` | nein **[P]** | Lizenzseite nicht abrufbar, **unbelegt** | nein (Intake-ESM) | lang | AWS-Sponsorship, laufend | entfällt | `https`, anonym **[M]** | unbelegt | unbelegt | [P]/unbelegt |
+| **MUR SST** (PO.DAAC / Farallon, AWS ODR) | `registry.opendata.aws` | `mur-sst.s3.us-west-2.amazonaws.com` | nein **[P]** | „no restrictions" **[P]** | nein | 2002–2020, Fortführung unbelegt **[P]** | AWS-Sponsorship | entfällt | `https`, anonym **[M]** | unbelegt | unbelegt | [P]/[M] |
+| **NOAA NWM Retrospective** | `registry.opendata.aws` | `noaa-nwm-retrospective-2-1-zarr-pds` | nein **[S]** | „no restrictions" **[S]** | nein | lang, stündlich | NODD-Programm | entfällt | unbelegt | unbelegt | unbelegt | [S] |
+| **Earthmover ERA5** | `registry.opendata.aws` | `earthmover-icechunk-era5` | nein **[P]** | CC-BY 4.0 **[P]** | nein | 1940–2025 | kostenlose Variante neben kostenpflichtiger **[P]** | entfällt | Icechunk-Client nötig, **kein reines Zarr** **[P]** | unbelegt | unbelegt | [P] |
+| **VEDA (NASA)** | `openveda.cloud` — **gesperrt** | S3 us-west-2, Host unbelegt | **gemischt**, geschützte Buckets verlangen IAM **[S]** | unbelegt | ja, STAC 1.0.0 **[S]** | je Collection unbelegt | unbelegt | unbelegt | unbelegt | unbelegt | unbelegt | [S] |
+| **Planetary Computer** | gesperrt | — | **ja**, SAS-Signatur je Zugriff **[S]** | je Collection verschieden | ja | ja | — | — | — | — | — | **scheidet aus** (`adr/0003` §6) |
+| **NEX-GDDP-CMIP6** | `registry.opendata.aws` | `nex-gddp-cmip6.s3…` | nein **[M]** | — | — | — | — | — | — | — | — | **scheidet aus:** nativ NetCDF/COG, Zarr nur virtuell **[S]** |
+
+Zwei Spalten fallen auf. **Ratengrenze und CORS sind bei praktisch jedem
+Kandidaten unbelegt** — nicht, weil niemand nachgesehen hätte, sondern weil kein
+Anbieter sie dokumentiert. Und **Quicklook** ist außerhalb von EOPF gar keine
+sinnvolle Frage: Klimagitter haben keine Szenen, für die sich eine Vorschau
+lohnte.
 
 Der gemeinsame Bruch aller Alternativen: **Keine davon hat eine STAC-API**
 (K5 verletzt), und keine ist optische Erdbeobachtung. Sie sind Klima-,
@@ -571,6 +606,9 @@ davon vollständig unberührt und ist eigenständig abnehmbar.
    schon.
 8. Die offene Log-Zeile „Ratengrenzen der Anbieter" bleibt für EOPF offen: keine
    Drosselung beobachtet, keine Grenze dokumentiert (§3.9).
+9. **M1-03 F4 ist beantwortet:** Der erste Zarr-Leser braucht kein `s3`;
+   `gateway` bleibt `https`-only (§3.10). Die Log-Zeile „`s3` erst, wenn der
+   erste Leser es braucht (M2)" kann damit geschlossen werden.
 
 ---
 
@@ -658,7 +696,7 @@ Format in M2 verzichten.
   `/aggregations`, `/aggregate`
 - `https://objects.eodc.eu` — `.zmetadata` und `zarr.json` zweier Stores,
   einzelne Chunks von `b04` in `r10m` und `r60m`, `HEAD`/`Range`-Verhalten,
-  CORS mit `Origin` und `OPTIONS`
+  CORS mit `Origin` und `OPTIONS`, anonymes `?list-type=2`-Listing (§3.10)
 - Erreichbarkeitsproben: `data.eodc.eu`, `download.user.eopf.eodc.eu`,
   `stac.eopf.copernicus.eu`, `stac.browser.user.eopf.eodc.eu`,
   `storage.googleapis.com`, `cmip6-pds.s3…`, `mur-sst.s3…`,
@@ -734,7 +772,19 @@ curl -sS -o /dev/null -w "%{size_download} %{time_total}" \
 0,47–0,57 s. `r60m/b04/2.{0,1,2}`: 132 849 / 133 297 / 103 149 Bytes bei
 0,78–0,81 s.
 
-### 11.4 Lesepfad (§3.7)
+### 11.4 Zugangsschema (§3.10)
+
+```
+curl -sS -H "Authorization;" "<store>/.zmetadata"                      # 200
+curl -sS "https://objects.eodc.eu/<tenant>:notebook-data\
+?list-type=2&max-keys=3"                                               # 200, ListBucketResult
+curl -sS "https://objects.eodc.eu/<tenant>:notebook-data/\
+?list-type=2&max-keys=3&prefix=tutorial_data/"                         # 200, ListBucketResult
+```
+
+Beide Listings ohne Signatur, über gewöhnliches `https`.
+
+### 11.5 Lesepfad (§3.7)
 
 Wegwerf-venv im Kratzverzeichnis, `probe_store.py` und `probe_tile.py`. Der
 `Store` implementiert `zarr.abc.store.Store` mit `get`, `get_partial_values`,
