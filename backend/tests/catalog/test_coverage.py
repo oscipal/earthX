@@ -16,6 +16,7 @@ import pytest
 
 from earthx.catalog.coverage import (
     FOOTPRINT_THRESHOLD,
+    HISTOGRAM_INTERVAL,
     MAX_GEOTILE_LEVEL,
     WORLD_LEVEL_CAP,
     Completeness,
@@ -35,14 +36,12 @@ UTC = timezone.utc
 
 
 def result(cells: tuple[CoverageCell, ...] = (), total: int | None = 0, **kwargs) -> CoverageResult:
-    counted = sum(cell.count for cell in cells)
     return CoverageResult(
         dataset_id="d",
         level=6,
         cells=cells,
-        counted=counted,
         total_count=total,
-        completeness=check_completeness(counted, total),
+        completeness=check_completeness(sum(cell.count for cell in cells), total),
         histogram=(),
         from_cache=False,
         **kwargs,
@@ -200,6 +199,11 @@ class TestQueryChecks:
             {"type": "Point", "coordinates": [1, 2]},
             {"type": "Polygon"},
             {"type": "Polygon", "coordinates": []},
+            {"type": "Polygon", "coordinates": [[]]},  # a ring with nothing in it
+            {"type": "Polygon", "coordinates": ["abc"]},  # a "ring" that is a string
+            {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 0]]]},  # three positions
+            {"type": "Polygon", "coordinates": [[["a", "b"], [1, 0], [1, 1], ["a", "b"]]]},
+            {"type": "MultiPolygon", "coordinates": [[[]]]},
             "not a geometry at all",
         ],
     )
@@ -224,12 +228,6 @@ class TestQueryChecks:
     def test_a_cloud_cover_outside_the_percentage_range_is_refused(self, value: float) -> None:
         with pytest.raises(InvalidCoverageQuery, match="percentage"):
             CoverageQuery(dataset_id="d", level=6, max_cloud_cover=value)
-
-    @pytest.mark.parametrize("interval", ["drop table", "week", ""])
-    def test_only_the_three_intervals_we_ask_for_are_accepted(self, interval: str) -> None:
-        """The value goes into a query string; a free one would be an open door."""
-        with pytest.raises(InvalidCoverageQuery, match="interval"):
-            CoverageQuery(dataset_id="d", level=6, interval=interval)
 
     @pytest.mark.parametrize("level", [-1, MAX_GEOTILE_LEVEL + 1])
     def test_a_level_outside_the_grid_is_refused(self, level: int) -> None:
@@ -261,6 +259,33 @@ class TestUnfilteredFlag:
     )
     def test_any_filter_at_all_takes_it_out_of_the_world_overview(self, kwargs) -> None:
         assert CoverageQuery(dataset_id="d", level=3, **kwargs).is_unfiltered is False
+
+
+def test_the_histogram_interval_is_fixed_because_the_source_ignores_it() -> None:
+    """Measured 20.09.2026: ``datetime_frequency_interval`` changes nothing upstream.
+
+    Day, month, year and a nonsense value all return the same monthly buckets, so no
+    caller is offered a choice that would not be kept — there is no such parameter.
+    """
+    assert HISTOGRAM_INTERVAL == "month"
+    assert not hasattr(CoverageQuery(dataset_id="d", level=6), "interval")
+
+
+def test_counted_is_the_cells_own_sum_and_cannot_be_set() -> None:
+    """Rule V compares against this number, so it may not come from anywhere else."""
+    cells = (CoverageCell("6/1/1", 3), CoverageCell("6/1/2", 4))
+    assert result(cells, total=7).counted == 7
+    with pytest.raises(TypeError):
+        CoverageResult(
+            dataset_id="d",
+            level=6,
+            cells=cells,
+            total_count=7,
+            completeness=Completeness.COMPLETE,
+            histogram=(),
+            from_cache=False,
+            counted=99,
+        )
 
 
 def test_max_count_anchors_the_log_scale() -> None:

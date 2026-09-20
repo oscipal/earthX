@@ -30,6 +30,7 @@ import json
 import logging
 import math
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -51,6 +52,7 @@ from earthx.catalog.coverage import (
     InvalidCoverageQuery,
     UpstreamCoverageShapeError,
     check_completeness,
+    level_for_viewport,
     parse_cell_key,
 )
 from earthx.catalog.datasets import REGISTRY
@@ -67,6 +69,10 @@ AGGREGATIONS = ("total_count", "grid_geotile_frequency", "datetime_frequency")
 # that limit we thin a polygon to this many points first, which measured at 5.4 kB for
 # 200 points, and fall back to the bounding box if even that does not fit.
 MAX_AOI_POINTS = 200
+
+# Fewer positions than this is no longer a closed outline, so a ring is never thinned
+# below it — see ``_thin_ring``.
+MIN_RING_POINTS = 4
 
 # Otto, F3 of 20.09.2026: the completely unfiltered world overview keeps its answer for
 # a day. At thirty million items a day of new scenes changes nothing visible on it, and
@@ -101,6 +107,13 @@ async def aggregate_coverage(
             f"{config.dataset_id} is answered by {config.coverage.provider.value}, not by upstream aggregation"
         )
 
+    # Both caps of adr/0004 §5 are applied here, not left to the caller: a level asked
+    # for without a spatial filter is what the note of 20.09.2026 measured at 572 kB
+    # and truncated, and the long lifetime below would then keep it for a day. The
+    # route of M2-05b clamps the viewport zoom too, but the guarantee must not depend
+    # on it — if it fell away there, it would fall away silently.
+    query = _clamped(query, config)
+
     key = _cache_key(query)
     cached = await cache_get(cache, key)
     if _is_usable(cached):
@@ -109,6 +122,12 @@ async def aggregate_coverage(
     stored = await _ask_source(query, config, gateway=gateway)
     await cache_set(cache, key, stored, ttl_s=_ttl(query), dataset_id=query.dataset_id)
     return _result(query, stored, from_cache=False)
+
+
+def _clamped(query: CoverageQuery, config: DatasetConfig) -> CoverageQuery:
+    """The query with its level under both caps, so the answer reports what it used."""
+    level = level_for_viewport(query.level, config, has_spatial_filter=query.has_spatial_filter)
+    return query if level == query.level else replace(query, level=level)
 
 
 async def _ask_source(query: CoverageQuery, config: DatasetConfig, *, gateway: Gateway) -> CacheValue:
@@ -125,7 +144,10 @@ async def _ask_source(query: CoverageQuery, config: DatasetConfig, *, gateway: G
         except UrlTooLong as error:
             # Refused before anything left the house, which is the point of the check
             # (adr/0004 §5, Gateway). Try the next, smaller shape of the same question.
-            LOGGER.info("coverage query too long for the source, reducing the area", extra={"dataset": query.dataset_id})
+            LOGGER.info(
+                "coverage query too long for the source, reducing the area",
+                extra={"dataset": query.dataset_id},
+            )
             refused = error
             continue
         return _storable(response.json(), simplified_aoi=simplified)
@@ -157,14 +179,24 @@ def _thin(geometry: Mapping[str, Any], limit: int) -> Mapping[str, Any]:
     total = sum(len(ring) for ring in rings)
     if total <= limit or not rings:
         return geometry
-    stride = math.ceil(total / limit)
-    thinned = [_thin_ring(ring, stride) for ring in rings]
-    return _with_rings(geometry, thinned)
+    # Each ring gets a share of the budget in proportion to its own length. One stride
+    # for every ring would thin a small hole at the rate the big outline needs and
+    # leave two points behind — which is not a ring at all, and the source answers a
+    # 400 to it rather than the 414 the bounding-box fallback below waits for.
+    return _with_rings(geometry, [_thin_ring(ring, max(1, round(len(ring) * limit / total))) for ring in rings])
 
 
-def _thin_ring(ring: list[Any], stride: int) -> list[Any]:
-    """Keep every ``stride``-th point of the ring and close it again."""
-    kept = ring[:-1:stride] or list(ring[:1])
+def _thin_ring(ring: list[Any], budget: int) -> list[Any]:
+    """Keep about ``budget`` points of the ring and close it again.
+
+    A ring that is already at or below the floor is handed back untouched: fewer than
+    four positions is no longer an outline, and a saving of two points is not worth
+    sending something the source will refuse.
+    """
+    if len(ring) <= max(budget, MIN_RING_POINTS):
+        return list(ring)
+    stride = math.ceil((len(ring) - 1) / max(budget - 1, MIN_RING_POINTS - 1))
+    kept = ring[:-1:stride]
     return [*kept, kept[0]]
 
 
@@ -188,7 +220,12 @@ def _with_rings(geometry: Mapping[str, Any], rings: list[list[Any]]) -> Mapping[
 
 
 def _bounds_of(geometry: Mapping[str, Any]) -> tuple[float, float, float, float]:
-    points = [point for ring in _rings(geometry) for point in ring if isinstance(point, (list, tuple)) and len(point) >= 2]
+    points = [
+        point
+        for ring in _rings(geometry)
+        for point in ring
+        if isinstance(point, (list, tuple)) and len(point) >= 2
+    ]
     if not points:
         raise InvalidCoverageQuery("the area carries no usable coordinates")
     longitudes = [float(point[0]) for point in points]
@@ -204,7 +241,6 @@ def _params(
         "collections": config.source.source_collection_id,
         "aggregations": ",".join(AGGREGATIONS),
         "grid_geotile_frequency_precision": str(query.level),
-        "datetime_frequency_interval": query.interval,
     }
     if isinstance(area, Mapping):
         params["intersects"] = json.dumps(area, separators=(",", ":"))
@@ -240,7 +276,8 @@ def _storable(payload: Any, *, simplified_aoi: bool) -> CacheValue:
     for cell in cells:
         parse_cell_key(cell["k"])
     histogram = [
-        {"t": key, "n": frequency} for key, frequency in _buckets(by_name.get("datetime_frequency"), "datetime_frequency")
+        {"t": key, "n": frequency}
+        for key, frequency in _buckets(by_name.get("datetime_frequency"), "datetime_frequency")
     ]
     return {
         "v": CACHE_VERSION,
@@ -289,12 +326,29 @@ def _total_count(aggregation: Any) -> int | None:
 
 
 def _is_usable(cached: CacheValue | None) -> bool:
-    """A stored row of the shape this release writes — anything else counts as a miss."""
+    """A stored row of the shape this release writes — anything else counts as a miss.
+
+    The version alone is not enough. ``earth_search`` promises that a row "written by
+    an older release, **or damaged**, counts as a miss rather than as an answer", and a
+    half-written row of the *current* version would otherwise reach ``_result`` and
+    fail there — turning a bad cache row into a broken request instead of a slow one
+    (E5).
+    """
+    if not (isinstance(cached, dict) and cached.get("v") == CACHE_VERSION):
+        return False
+    cells, histogram = cached.get("cells"), cached.get("histogram")
+    if not isinstance(cells, list) or not isinstance(histogram, list):
+        return False
+    return all(_has(cell, "k") for cell in cells) and all(_has(bucket, "t") for bucket in histogram)
+
+
+def _has(entry: Any, key: str) -> bool:
+    """One stored cell or bucket, with its key as text and its count as a whole number."""
     return (
-        isinstance(cached, dict)
-        and cached.get("v") == CACHE_VERSION
-        and isinstance(cached.get("cells"), list)
-        and isinstance(cached.get("histogram"), list)
+        isinstance(entry, dict)
+        and isinstance(entry.get(key), str)
+        and isinstance(entry.get("n"), int)
+        and not isinstance(entry.get("n"), bool)
     )
 
 
@@ -306,7 +360,6 @@ def _result(query: CoverageQuery, stored: CacheValue, *, from_cache: bool) -> Co
         dataset_id=query.dataset_id,
         level=query.level,
         cells=cells,
-        counted=counted,
         total_count=total,
         completeness=check_completeness(counted, total, simplified_aoi=bool(stored.get("simplified_aoi"))),
         histogram=tuple(
@@ -344,9 +397,11 @@ def _cache_key(query: CoverageQuery) -> str:
             "intersects": None if query.intersects is None else json.dumps(query.intersects, sort_keys=True),
             "datetime": stac_interval(query.start, query.end),
             "cloud": None if query.max_cloud_cover is None else float(query.max_cloud_cover),
-            "interval": query.interval,
         },
         separators=(",", ":"),
         sort_keys=True,
     )
-    return hashlib.sha256(f"coverage:{payload}".encode()).hexdigest()
+    # The prefix stays readable in front of the hash, not folded into it: Otto answered
+    # F6 with "key prefix ``coverage:``", and a prefix inside a digest is none — rows of
+    # this kind could not be found or dropped without decoding every key.
+    return f"coverage:{hashlib.sha256(payload.encode()).hexdigest()}"

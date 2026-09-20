@@ -49,11 +49,18 @@ FOOTPRINT_THRESHOLD = 500
 WORLD_LEVEL_CAP = 6
 
 # Geotile is the XYZ scheme of the map itself (adr/0004 §3.7), so a level is a zoom.
-# Measured on 20.09.2026 (plans/m2-05-coverage.md §3.4): Earth Search refuses a
-# precision outside 0..29 with a 400. Nothing sensible asks for anything near it.
+# Geotile itself runs out here — below a metre a cell is past any imagery — and Earth
+# Search happens to draw the same line: a precision outside 0..29 comes back as a 400
+# (measured 20.09.2026, plans/m2-05-coverage.md §3.4). The bound is the grid's, the
+# measurement only confirms it, so it stays in `catalog` with the rest of the grid.
 MAX_GEOTILE_LEVEL = 29
 
-_INTERVALS = frozenset({"day", "month", "year"})
+# Measured on 20.09.2026 (plans/m2-05-coverage.md §3.1): Earth Search ignores
+# ``datetime_frequency_interval`` — day, month, year and even a nonsense value all
+# return the same monthly buckets. So the histogram is monthly, and no caller is
+# offered a choice that would not be kept. A finer histogram is a new measurement and
+# a decision of its own, not a parameter.
+HISTOGRAM_INTERVAL = "month"
 
 
 class CoverageError(Exception):
@@ -126,14 +133,12 @@ class CoverageQuery:
     start: datetime | None = None
     end: datetime | None = None
     max_cloud_cover: float | None = None
-    interval: str = "month"
 
     def __post_init__(self) -> None:
         self._check_level()
         self._check_area()
         self._check_time()
         self._check_cloud_cover()
-        self._check_interval()
 
     @property
     def has_spatial_filter(self) -> bool:
@@ -184,8 +189,18 @@ class CoverageQuery:
         kind = geometry.get("type")
         if kind not in {"Polygon", "MultiPolygon"}:
             raise InvalidCoverageQuery("intersects needs a Polygon or MultiPolygon")
-        if not isinstance(geometry.get("coordinates"), list) or not geometry["coordinates"]:
+        coordinates = geometry.get("coordinates")
+        if not isinstance(coordinates, list) or not coordinates:
             raise InvalidCoverageQuery("intersects carries no coordinates")
+        if kind == "Polygon":
+            rings = coordinates
+        else:
+            rings = [ring for shape in coordinates if isinstance(shape, list) for ring in shape]
+        if not any(_is_ring(ring) for ring in rings):
+            # Without this, ``{"coordinates": [[]]}`` passes and is serialised into a
+            # query string, and the refusal arrives from the source as a 400 instead of
+            # from us before anything is sent.
+            raise InvalidCoverageQuery("intersects has no ring with at least four positions")
 
     def _check_time(self) -> None:
         for name, value in (("start", self.start), ("end", self.end)):
@@ -203,10 +218,6 @@ class CoverageQuery:
         if not 0.0 <= self.max_cloud_cover <= 100.0:
             raise InvalidCoverageQuery("max_cloud_cover is a percentage, so it lies between 0 and 100")
 
-    def _check_interval(self) -> None:
-        if self.interval not in _INTERVALS:
-            raise InvalidCoverageQuery(f"interval must be one of {', '.join(sorted(_INTERVALS))}")
-
 
 @dataclass(frozen=True, slots=True)
 class CoverageResult:
@@ -215,7 +226,6 @@ class CoverageResult:
     dataset_id: str
     level: int
     cells: tuple[CoverageCell, ...]
-    counted: int
     total_count: int | None
     completeness: Completeness
     histogram: tuple[HistogramBucket, ...]
@@ -225,6 +235,16 @@ class CoverageResult:
     # in der Zelle"). A second grid or a second counting rule would have to say so here.
     grid: str = "geotile"
     counting: str = "centroid"
+
+    @property
+    def counted(self) -> int:
+        """What the cells add up to — derived, never passed in.
+
+        Rule V lives on this number being the cells' own sum. As a field it could be
+        set to something the cells do not say, and the check would then compare the
+        total against a number with no relation to the map.
+        """
+        return sum(cell.count for cell in self.cells)
 
     @property
     def max_count(self) -> int:
@@ -242,7 +262,6 @@ class CoverageResult:
         return self.total_count is not None and self.total_count < FOOTPRINT_THRESHOLD
 
 
-@runtime_checkable
 class CoverageSource(Protocol):
     """Whoever answers the question, answers exactly this.
 
@@ -360,6 +379,21 @@ def cell_bbox(key: str) -> tuple[float, float, float, float]:
     north = _mercator_latitude(row / side)
     south = _mercator_latitude((row + 1) / side)
     return (west, south, east, north)
+
+
+def _is_ring(ring: Any) -> bool:
+    """A closed outline needs four positions of two numbers, three of them distinct."""
+    return (
+        isinstance(ring, list)
+        and len(ring) >= 4
+        and all(isinstance(point, (list, tuple)) and len(point) >= 2 for point in ring)
+        and all(_is_number(value) for point in ring for value in point[:2])
+    )
+
+
+def _is_number(value: Any) -> bool:
+    """A coordinate, and not a bool — ``True`` is an ``int`` and would pass otherwise."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _mercator_latitude(fraction: float) -> float:

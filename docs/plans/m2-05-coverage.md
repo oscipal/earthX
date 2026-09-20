@@ -3,7 +3,7 @@
 **Status:** **Von Otto am 20.09.2026 angenommen, F1–F7 alle wie empfohlen (§10).**
 Stufe B laut `projektplan.md` 1.2: zuerst dieser Plan als Draft-PR, Umsetzung
 nach Ottos OK. **M2-05a** — Nahtstelle in `catalog`, Aggregation in `adapters`,
-Einheitstests — ist umgesetzt (§9, Schritte 1 bis 4). **M2-05b** — Route in
+Einheitstests — ist umgesetzt (§9, Schritte 1 bis 3). **M2-05b** — Route in
 `api`, Einmal-Produkt-Weg, Integrationstest, Latenzbeleg — folgt als eigener PR.
 Drei Nachträge kamen mit der Annahme dazu und sind in diesem PR erledigt: die
 beiden Ergänzungen in `adr/0004` (§3.3 und §5) und die Log-Zeile zu §7.1.
@@ -63,11 +63,30 @@ keine Pixel, keine Dateien. Belegstufen wie in `adr/0004`: **[M]** gemessen.
 
 **3.1 Die Parameterform ist bestätigt [M].** `GET /v1/aggregate` mit
 `collections`, `bbox` oder `intersects`, `datetime`, `query`,
-`aggregations=total_count,grid_geotile_frequency,datetime_frequency`,
-`grid_geotile_frequency_precision=<z>` und
-`datetime_frequency_interval=month`. Die Antwort ist
-`{"aggregations":[{"name":…,"value":…}|{"name":…,"buckets":[{"key":"8/133/84","frequency":399}]}]}`.
-Der Gitterschlüssel ist wörtlich `z/x/y` — er muss nicht übersetzt werden.
+`aggregations=total_count,grid_geotile_frequency,datetime_frequency` und
+`grid_geotile_frequency_precision=<z>`. Die Antwort trägt eine Liste
+`aggregations`; `total_count` führt ein `value`, die beiden
+`frequency_distribution`-Aggregationen führen `buckets`:
+
+```json
+{"name": "total_count", "data_type": "integer", "value": 22619}
+{"name": "grid_geotile_frequency", "overflow": 0,
+ "buckets": [{"key": "8/133/84", "data_type": "string", "frequency": 399}]}
+{"name": "datetime_frequency", "overflow": 0,
+ "buckets": [{"key": "2024-01-01T00:00:00.000Z", "data_type": "datetime", "frequency": 1759}]}
+```
+
+Der Gitterschlüssel ist wörtlich `z/x/y` — er muss nicht übersetzt werden. Die
+Histogramm-Schlüssel sind Instants mit `Z` und drei Nachkommastellen.
+
+**Nachgetragen am 20.09.2026 nach dem Review [M]: `datetime_frequency_interval`
+wirkt nicht.** Über ein Fenster von zwei Jahren liefert die Quelle **24
+Monatsstufen — bei `day`, bei `month`, bei `year` und selbst bei `week`**. Der
+Parameter wird angenommen und ignoriert; die Aggregation bint immer monatlich.
+Der Umsetzungsstand sendet ihn deshalb nicht und bietet dem Aufrufer auch keine
+Wahl an, die nicht eingehalten würde (`HISTOGRAM_INTERVAL = "month"`). Ein
+feineres Histogramm ist damit keine Parameterfrage, sondern eine eigene Messung
+und eine eigene Entscheidung.
 
 **3.2 Die Zahlen aus `adr/0004` §3.3 reproduzieren sich exakt [M].**
 bbox `5,45,15,55`, Jahr 2024: `total_count` = 22 619, Summe der Geotile-Zellen
@@ -365,6 +384,14 @@ verbindet sich absichtlich zu der Adresse, die `check_url` freigegeben hat,
 arbeitet dagegen namensbasiert — deshalb kommt `curl` (Name) durch und
 `gateway` (Adresse) nicht. Dieselben Anfragen, die §3 mit `curl` misst, sind
 über `gateway` in dieser Sitzung nicht wiederholbar.
+
+**Offen für M2-05b, aus demselben Gedanken:** Ausgehend ist der Weg dicht —
+die Abfragezeichenfolge wird nur als Hash geloggt, keine Fehlermeldung nennt
+eine Koordinate, der Cache-Schlüssel ist ein Hash hinter dem Präfix. Nicht
+gemessen ist, ob Earth Search bei einem `400` den `intersects`-Wert in seiner
+`description` **zurückgibt**; `UpstreamError` trägt 500 Zeichen des
+Antwortkörpers. Die Route in M2-05b bekommt dafür einen Test — ein
+Upstream-`400` bringt keine Koordinate in die Logzeile.
 
 Das ist **kein Fehler in `gateway`** und wird hier auch nicht geändert: Die
 Adress-Pinnung ist eine Sicherheitseigenschaft aus M1-03 (nichts darf sich

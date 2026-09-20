@@ -26,6 +26,7 @@ from earthx.adapters.earth_search_coverage import (
     aggregate_coverage,
 )
 from earthx.catalog.coverage import (
+    WORLD_LEVEL_CAP,
     Completeness,
     CoverageProviderMismatch,
     CoverageQuery,
@@ -118,8 +119,9 @@ async def test_the_query_string_is_the_one_that_was_measured(dataset_id: str) ->
     params = params_of(seen[0])
     assert params["collections"] == SENTINEL_2_L2A.source.source_collection_id
     assert params["grid_geotile_frequency_precision"] == "8"
-    assert params["datetime_frequency_interval"] == "month"
     assert params["bbox"] == "5.0,45.0,15.0,55.0"
+    # Measured 20.09.2026: the source ignores this parameter, so it is not sent.
+    assert "datetime_frequency_interval" not in params
     assert params["datetime"] == "2024-01-01T00:00:00Z/2024-12-31T00:00:00Z"
     assert json.loads(params["query"]) == {"eo:cloud_cover": {"lt": 20.0}}
 
@@ -182,6 +184,45 @@ class TestTheAoiAndTheUrlLimit:
         assert len(sent["coordinates"][0]) <= MAX_AOI_POINTS + 1
         assert result.completeness is Completeness.TRUNCATED
 
+    async def test_a_polygon_that_does_not_fit_even_thinned_falls_back_to_the_box(self, dataset_id: str) -> None:
+        """Plan §7 test 2: the AOI becomes a box, one request goes out, and it says so.
+
+        The coordinates are deliberately long ones — thinning alone still leaves a
+        query string over the limit, which is the case the bounding box exists for.
+        """
+        gateway, seen = answering(ok("aggregate_complete"))
+        ring = [[5.000000000000001 + index * 1e-9, 45.000000000000001 + index * 1e-9] for index in range(6000)]
+        area = {"type": "Polygon", "coordinates": [[*ring, ring[0]]]}
+
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), gateway=gateway
+        )
+
+        assert len(seen) == 1
+        params = params_of(seen[0])
+        assert "bbox" in params
+        assert "intersects" not in params
+        assert result.completeness is Completeness.TRUNCATED
+
+    async def test_a_small_ring_beside_a_large_one_survives_the_thinning(self, dataset_id: str) -> None:
+        """A shared stride would cut a small hole down to two points, which is no ring.
+
+        The source answers a 400 to that, and because only ``UrlTooLong`` makes the
+        adapter try the next shape, the bounding-box fallback would never be reached.
+        """
+        gateway, seen = answering(ok("aggregate_complete"))
+        small = [[10.0, 50.0], [10.1, 50.0], [10.1, 50.1], [10.0, 50.0]]
+        area = {"type": "MultiPolygon", "coordinates": [[ring(5000)], [small]]}
+
+        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), gateway=gateway)
+
+        sent = json.loads(params_of(seen[0])["intersects"])
+        assert sent["type"] == "MultiPolygon"
+        for shape in sent["coordinates"]:
+            for outline in shape:
+                assert len(outline) >= 4
+                assert outline[0] == outline[-1]
+
     async def test_the_reduced_outline_is_still_a_closed_ring(self, dataset_id: str) -> None:
         gateway, seen = answering(ok("aggregate_complete"))
 
@@ -212,6 +253,27 @@ class TestUpstreamMisbehaving:
 
         with pytest.raises(UpstreamTimeout):
             await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway_for(handler))
+
+    async def test_a_503_is_retried_and_then_reaches_the_caller(self, dataset_id: str) -> None:
+        """A read is safe to repeat, so the gateway tries three times before giving up."""
+        gateway, seen = answering(httpx.Response(503, text="busy"))
+        cache = FakeCache()
+
+        with pytest.raises(UpstreamError) as raised:
+            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway, cache=cache)
+
+        assert raised.value.status_code == 503
+        assert len(seen) == 3
+        assert cache.entries == {}
+
+    async def test_a_malformed_answer_is_not_kept_either(self, dataset_id: str) -> None:
+        gateway, _ = answering(httpx.Response(200, json={"aggregations": "nope"}))
+        cache = FakeCache()
+
+        with pytest.raises(UpstreamCoverageShapeError):
+            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway, cache=cache)
+
+        assert cache.entries == {}
 
     @pytest.mark.parametrize(
         "payload",
@@ -298,12 +360,37 @@ class TestTheCache:
         assert len(seen) == 2
         assert again.from_cache is False
 
+    @pytest.mark.parametrize(
+        "row",
+        [
+            {"v": 1, "cells": [{"k": "8/1/1"}], "histogram": []},  # a cell without a count
+            {"v": 1, "cells": [{"n": 3}], "histogram": []},  # a count without a cell
+            {"v": 1, "cells": [], "histogram": [{"n": 3}]},  # a bucket without an instant
+            {"v": 1, "cells": ["8/1/1"], "histogram": []},  # not even a dict
+        ],
+    )
+    async def test_a_damaged_row_of_this_very_version_counts_as_a_miss(self, dataset_id: str, row: Any) -> None:
+        """E5: a bad cache row makes the request slower, it does not break it."""
+        gateway, seen = answering(ok("aggregate_complete"), ok("aggregate_complete"))
+        cache = FakeCache()
+        query = CoverageQuery(dataset_id=dataset_id, level=8)
+
+        await aggregate_coverage(query, gateway=gateway, cache=cache)
+        for key in cache.entries:
+            cache.entries[key] = row
+        again = await aggregate_coverage(query, gateway=gateway, cache=cache)
+
+        assert len(seen) == 2
+        assert again.from_cache is False
+        assert again.counted == 42
+
     async def test_two_levels_of_the_same_filter_are_two_entries(self, dataset_id: str) -> None:
         gateway, seen = answering(ok("aggregate_complete"), ok("aggregate_complete"))
         cache = FakeCache()
+        area = (5.0, 45.0, 15.0, 55.0)
 
-        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=6), gateway=gateway, cache=cache)
-        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway, cache=cache)
+        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=6, bbox=area), gateway=gateway, cache=cache)
+        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8, bbox=area), gateway=gateway, cache=cache)
 
         assert len(seen) == 2
         assert len(cache.entries) == 2
@@ -320,7 +407,10 @@ class TestTheCache:
         )
 
         key = next(iter(cache.entries))
-        assert len(key) == 64
+        # Otto's answer to F6: a readable prefix in front of an opaque digest, so rows
+        # of this kind can be found without decoding anything.
+        assert key.startswith("coverage:")
+        assert len(key) == len("coverage:") + 64
         for coordinate in ("5.25", "45.75", "15.25", "55.75"):
             assert coordinate not in key
 
@@ -347,6 +437,32 @@ class TestTheCache:
 
         assert list(cache.ttls.values()) == [expected]
         assert list(cache.datasets.values()) == [dataset_id]
+
+
+class TestTheCapsHoldAtTheSeam:
+    """adr/0004 §5: the level the answer reports is the level it was allowed to use.
+
+    The route of M2-05b clamps the viewport zoom as well, but the guarantee may not
+    depend on it — if it fell away there, it would fall away without a sound.
+    """
+
+    async def test_a_world_query_is_clamped_to_the_world_cap(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+
+        result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+
+        assert params_of(seen[0])["grid_geotile_frequency_precision"] == str(WORLD_LEVEL_CAP)
+        assert result.level == WORLD_LEVEL_CAP
+
+    async def test_with_a_bbox_the_dataset_cap_is_what_applies(self, dataset_id: str) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=14, bbox=(5.0, 45.0, 15.0, 55.0)), gateway=gateway
+        )
+
+        assert params_of(seen[0])["grid_geotile_frequency_precision"] == "8"
+        assert result.level == 8
 
 
 class TestDispatchMistakes:

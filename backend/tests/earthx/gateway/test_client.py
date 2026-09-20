@@ -328,8 +328,23 @@ class TestTheQueryStringStaysOurRefusal:
         """projektplan.md 7, point 6: the AOI belongs in neither a log nor a traceback."""
         handler, _ = replies(httpx.Response(200, json={}))
         gateway, _delays = build(handler)
-        secret = "5.25,45.75,15.25,55.75" + "x" * 100_000
+        area = "5.25,45.75,15.25,55.75" + "x" * 100_000
         async with gateway:
             with pytest.raises(UrlTooLong) as raised:
-                await gateway.get(URL, params={"intersects": secret})
+                await gateway.get(URL, params={"intersects": area})
         assert "45.75" not in str(raised.value)
+
+    async def test_a_malformed_url_is_not_called_too_long(self) -> None:
+        """httpx raises the same error for a bad host as for a long URL.
+
+        Calling both "too long" would send the coverage adapter of adr/0004 §3.4 off
+        shrinking an AOI that was never the problem, so the two are told apart.
+        """
+        handler, seen = replies(httpx.Response(200, json={}))
+        gateway, _delays = build(handler)
+        async with gateway:
+            with pytest.raises(UrlRejected) as raised:
+                await gateway.get("https://earth-search.aws.element84.com:notanumber/v1", params={"a": "b"})
+        assert seen == []
+        # Pins the refusal to the assembly step: check_url would word it differently.
+        assert "cannot be assembled" in str(raised.value)

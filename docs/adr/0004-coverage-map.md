@@ -430,7 +430,7 @@ genau drei möglichen Werten, und der Wert wird geprüft, nicht behauptet:
 | Wert | Bedingung | Anzeige |
 |---|---|---|
 | `vollstaendig` | `sum(Zellen) == total_count` | Legende ohne Zusatz |
-| `gekappt` | `sum(Zellen) < total_count` (Kappung, §3.3) oder AOI vereinfacht (§3.4) | „zeigt N von M Aufnahmen" |
+| `gekappt` | `sum(Zellen) ≠ total_count` (Kappung, §3.3) oder AOI vereinfacht (§3.4) | „zeigt N von M Aufnahmen" |
 | `stichprobe` | Weg über Option 6 | „Stichprobe: n von N Aufnahmen" |
 
 > **Nachtrag vom 2026-09-20 (M2-05, F2).** Die drei Werte heißen **im Code und
@@ -440,6 +440,10 @@ genau drei möglichen Werten, und der Wert wird geprüft, nicht behauptet:
 > `gekappt`, `sample` = `stichprobe`. Die deutschen Begriffe bleiben die
 > Sprache dieses ADR und der Oberfläche; übersetzt wird einmal, an der Stelle,
 > wo die Legende gebaut wird.
+>
+> Die Bedingung steht oben als `≠`, nicht als `<`: eine Zellsumme *über* der
+> Gesamtzahl erwartet niemand, und gerade deshalb darf sie nicht als
+> „vollständig" durchgehen.
 >
 > Dazu eine vierte Bedingung, die in der Tabelle nicht stand und in der
 > Umsetzung unvermeidlich ist: **fehlt `total_count`, ist das Ergebnis
