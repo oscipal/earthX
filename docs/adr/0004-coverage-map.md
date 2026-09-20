@@ -565,6 +565,11 @@ denen aus `adr/0005` F1 folgen (§5, Zwischenspeicher).
    Beschleunigung, sondern die einzige Rücksichtnahme auf die Quelle, die wir
    haben (K5). Vor dem Bau in M2 gehört eine Obergrenze pro Nutzer und Minute
    dazu.
+   **Nachtrag 2026-09-20 (D6):** Die Obergrenze wird für M2 bewusst vertagt.
+   Bis dahin tragen der Postgres-Cache aus §5 und der Deckel paralleler
+   Verbindungen je Host im Gateway die Rücksicht auf die Quelle. Eine
+   Begrenzung pro IP kommt mit dem ersten öffentlichen oder Vorschau-Deployment,
+   pro Nutzer mit M6.
 7. **Der Auftragsrahmen wurde gedehnt.** M1-09 verlangt „Stand der Technik mit
    Quellen"; Latenzmessungen gegen Earth Search sind laut `m1-fundament.md` §4
    Gegenstand des Spikes **M1-05**. Hier wurde live gemessen, weil die zentrale

@@ -332,6 +332,14 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 - Verarbeitete Ergebnisse: Objektspeicher mit Ablaufdatum, Auslieferung über signierte URLs.
 - Jeder Download bekommt Attribution, Lizenztext-Verweis, Zitierangabe (BibTeX) und das Rezept als Begleitdatei.
 
+**Nachtrag 2026-09-20 (D3):** Der AOI-Zuschnitt in M2 nimmt diesen Weg noch
+nicht. Er wird synchron aus den Quell-Assets gestreamt und nirgends
+gespeichert — kein Objektspeicher, keine signierte URL, kein Rezept als
+Begleitdatei. Ausgeliefert wird ein ZIP aus COG und Textdatei mit Attribution,
+`terms_notice`, `terms_url` und Zitierangabe; ein Größendeckel greift vor dem
+Lesen. Objektspeicher mit Ablauf, signierte URLs und das Rezept als
+Begleitdatei für Downloads bleiben M4.
+
 ### 6.5 Fetch-Gateway
 
 Einziger Weg nach außen für `adapters`, `readers`, `discovery` und Health-Checks:
