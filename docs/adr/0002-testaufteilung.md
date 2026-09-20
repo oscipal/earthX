@@ -88,6 +88,22 @@ PR-Workflow — ein PR darf nie rot werden, weil ein fremder Dienst gerade huste
 Er existiert noch nicht: Ohne entschiedenen Datensatz gibt es nichts zu
 beproben. Er kommt mit M1.
 
+**Nachtrag 2026-09-20 (M2-13).** Ein Live-Smoke lässt sich aus einer
+Cloud-Sitzung nicht von Hand nachfahren: `gateway` verbindet absichtlich die
+von `check_url` geprüfte **Adresse**, damit sich zwischen Prüfung und
+Verbindung nichts bewegt (M1-03, Adress-Pinnung als Sicherheitseigenschaft,
+hier **nicht** anzufassen). Die Egress-Freigabe der Sitzungsumgebung
+arbeitet dagegen **namensbasiert** und weist `CONNECT` auf eine Adresse mit
+`403` ab. Deshalb kommt `curl` (Name) durch, ein Aufruf von `tests_live`
+oder des Produktivpfads aus der Sitzung dagegen nicht. In der CI läuft der
+Live-Smoke wie vorgesehen, weil dort kein Proxy dazwischensteht. Latenzen
+für einen PR werden deshalb **über `curl`** belegt, nicht über einen
+Sitzungslauf des eigenen Codes. Dieser Befund wurde bereits dreimal einzeln
+entdeckt (`adr/0003` §10.1, `adr/0007` §3.9/§12, `plans/m2-05-coverage.md`
+§7.1); diese Zeile hält ihn an der Stelle fest, an der ihn eine künftige
+Live-Smoke-Aufgabe zuerst nachschlägt, damit er nicht ein viertes Mal
+entdeckt wird.
+
 ### Nur lokal bei Otto
 
 Was sich weder in CI noch in einer Sitzung ausführen lässt, ist als solches zu

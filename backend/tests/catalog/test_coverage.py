@@ -27,6 +27,7 @@ from earthx.catalog.coverage import (
     UpstreamCoverageShapeError,
     cell_bbox,
     check_completeness,
+    extent_result,
     level_for_viewport,
     parse_cell_key,
 )
@@ -211,6 +212,38 @@ class TestQueryChecks:
         with pytest.raises(InvalidCoverageQuery):
             CoverageQuery(dataset_id="d", level=6, intersects=geometry)
 
+    @pytest.mark.parametrize(
+        "coordinates",
+        [
+            [[[0.0, 0.0], [999.0, 0.0], [999.0, 1.0], [0.0, 0.0]]],  # longitude outside ±180
+            [[[0.0, 0.0], [1.0, 888.0], [1.0, 1.0], [0.0, 0.0]]],  # latitude outside ±90
+        ],
+    )
+    def test_a_ring_outside_the_globe_is_refused(self, coordinates) -> None:
+        """The bbox lesson of adr/0005 §3.5, applied to intersects (M2-05b scope).
+
+        Unchecked, the source answers such a polygon with a plausible-looking ``200``
+        instead of refusing it — the same silent acceptance measured for a bbox.
+        """
+        with pytest.raises(InvalidCoverageQuery, match="±"):
+            CoverageQuery(
+                dataset_id="d", level=6, intersects={"type": "Polygon", "coordinates": coordinates}
+            )
+
+    def test_a_ring_inside_the_globe_is_accepted(self) -> None:
+        area = {"type": "Polygon", "coordinates": [[[5.0, 45.0], [6.0, 45.0], [6.0, 46.0], [5.0, 45.0]]]}
+        assert CoverageQuery(dataset_id="d", level=6, intersects=area).intersects == area
+
+    def test_no_out_of_bounds_message_names_the_coordinate(self) -> None:
+        """projektplan.md 7, point 6: an exception text becomes a log line."""
+        with pytest.raises(InvalidCoverageQuery) as raised:
+            CoverageQuery(
+                dataset_id="d",
+                level=6,
+                intersects={"type": "Polygon", "coordinates": [[[0.0, 0.0], [999.0, 0.0], [999.0, 1.0], [0.0, 0.0]]]},
+            )
+        assert "999" not in str(raised.value)
+
     def test_a_naive_instant_is_refused(self) -> None:
         with pytest.raises(InvalidCoverageQuery, match="timezone"):
             CoverageQuery(dataset_id="d", level=6, start=datetime(2024, 1, 1))
@@ -296,3 +329,23 @@ def test_max_count_anchors_the_log_scale() -> None:
 def test_max_count_of_an_empty_answer_is_zero() -> None:
     """An empty window is a legitimate answer, and a log scale still needs an anchor."""
     assert result((), total=0).max_count == 0
+
+
+class TestExtentResult:
+    """adr/0004 §5, "Einmal-Produkte": extent instead of density."""
+
+    def test_the_extent_is_carried_through(self) -> None:
+        bbox = (5.0, 45.0, 15.0, 55.0)
+        answer = extent_result("one-off", bbox)
+        assert answer.extent == bbox
+        assert answer.completeness is Completeness.COMPLETE
+
+    def test_there_is_nothing_to_count(self) -> None:
+        answer = extent_result("one-off", (5.0, 45.0, 15.0, 55.0))
+        assert answer.cells == ()
+        assert answer.counted == 0
+        assert answer.histogram == ()
+        assert answer.total_count is None
+
+    def test_a_regular_result_carries_no_extent(self) -> None:
+        assert result().extent is None
