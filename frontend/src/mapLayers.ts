@@ -4,12 +4,11 @@
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 
-import { assetUrl } from './api';
+import { quicklookAsset } from './datasets';
 import { asFeatureCollection, bboxToPolygon, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import type { MapLayer } from './layers';
-import type { AppliedRender } from './products';
-import type { BiomassItem, DownloadedInfo } from './types';
+import type { AppliedRender, DownloadedInfo, StacItem } from './types';
 
 const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
@@ -60,7 +59,7 @@ function keyBlackToTransparent(img: HTMLImageElement): string {
 }
 
 // Load a quicklook, key its black nodata transparent, and hand back the data
-// URL (cached). Same-origin image → canvas isn't tainted.
+// URL (cached).
 function loadTransparent(url: string, cb: (dataUrl: string) => void): void {
   const cached = qlDataUrlCache.get(url);
   if (cached) {
@@ -68,6 +67,13 @@ function loadTransparent(url: string, cb: (dataUrl: string) => void): void {
     return;
   }
   const img = new Image();
+  // Load-bearing: the quicklook comes straight from the asset host now (D14),
+  // not a same-origin proxy. Without this the browser taints the canvas the
+  // moment the image isn't same-origin, and getImageData below throws — the
+  // nodata keying would fail silently. The host sends
+  // `Access-Control-Allow-Origin: *` (adr/0006 §3.6, gemessen); no test can
+  // show that a CORS header actually arrived, so it is checked in the demo
+  // instead (plan §9).
   img.crossOrigin = 'anonymous';
   img.onload = () => {
     const dataUrl = keyBlackToTransparent(img);
@@ -210,12 +216,12 @@ function clearDynamicMosaic(map: MapLibreMap): void {
 const beforeAoi = (map: MapLibreMap): string | undefined =>
   map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-function footprintOf(item: BiomassItem): GeoJSON.Geometry | null {
+function footprintOf(item: StacItem): GeoJSON.Geometry | null {
   if (item.geometry) return item.geometry;
   return item.bbox ? bboxToPolygon(item.bbox) : null;
 }
 
-function footprintsFC(items: BiomassItem[]): GeoJSON.FeatureCollection {
+function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
   for (const it of items) {
     const g = footprintOf(it);
@@ -224,12 +230,13 @@ function footprintsFC(items: BiomassItem[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features };
 }
 
-function addQuicklook(map: MapLibreMap, item: BiomassItem, i: number, gen: number): void {
-  const coords = quicklookCoords(item.id, item.geometry, item.bbox);
-  if (!coords) return;
+function addQuicklook(map: MapLibreMap, item: StacItem, i: number, gen: number): void {
+  const coords = quicklookCoords(item.geometry, item.bbox);
+  const asset = quicklookAsset(item);
+  if (!coords || !asset) return;
   const srcId = `m-img-src-${i}`;
   const lyrId = `m-img-lyr-${i}`;
-  loadTransparent(assetUrl(item), (dataUrl) => {
+  loadTransparent(asset.href, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this group
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
@@ -286,7 +293,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
 }
 
 export interface MosaicState {
-  items: BiomassItem[]; // items of the active mosaic group
+  items: StacItem[]; // items of the active time step
   downloaded: Record<string, DownloadedInfo>;
   selectedIds: string[];
   render: AppliedRender;
@@ -311,10 +318,8 @@ export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
     setData(map, SEL_SRC, EMPTY_FC);
     return;
   }
-  // Browsing: quicklooks for the active group; highlight selected footprints.
+  // Browsing: quicklooks for the active time step; highlight selected footprints.
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
-  items.forEach((it, i) => {
-    if (it.quicklook_key) addQuicklook(map, it, i, gen);
-  });
+  items.forEach((it, i) => addQuicklook(map, it, i, gen));
   setData(map, SEL_SRC, footprintsFC(items.filter((it) => s.selectedIds.includes(it.id))));
 }

@@ -1,100 +1,86 @@
-// Group STAC items into "mosaic groups": adjacent frames from the same
-// acquisition (same product type + same date) that tile together spatially.
+// Group STAC items into time steps, using the grouping key the registry
+// names for the dataset (`earthx:viewer.group_by`, architekturplan.md 5.1)
+// instead of BIOMASS-specific knowledge.
 //
-// BIOMASS frames along one orbit pass have timestamps a few seconds apart and
-// increasing frame numbers (…_F156_, _F157_…). Grouping by (product type, date)
-// collects exactly the adjacent frames that cover an AOI so they can be
-// mosaicked, while keeping different product types (FD/FH/GN…) separate.
+// `groupKey` mirrors `earthx.catalog.registry.group_key` part for part
+// (docs/plans/m2-07a-frontend-api-suche-quicklooks-zeitleiste.md §5): the
+// two must not drift apart, which is why the 12 cases of
+// `backend/tests/catalog/test_group_key.py` are repeated in `grouping.test.ts`.
 
-import type { BiomassItem, MosaicGroup } from './types';
+import type { StacItem, TimeStepGroup } from './types';
 
-export function productTypeOf(item: BiomassItem): string {
-  const pt = item.properties?.['product:type'];
-  if (typeof pt === 'string' && pt.length > 0) return pt;
-  // Fall back to the id prefix before the first start-datetime token.
-  const m = item.id.match(/^(.*?)_\d{8}T\d{6}/);
-  return m ? m[1] : item.id;
-}
-
-export function dateOf(item: BiomassItem): string {
-  return item.datetime ? item.datetime.slice(0, 10) : 'unknown';
-}
-
-// True for the L2A "GN" product (the only quicklook we display).
-export function isGnItem(item: BiomassItem): boolean {
-  return productTypeOf(item).toUpperCase().includes('GN');
-}
-
-export function orbitOf(item: BiomassItem): string {
-  const o = item.properties?.['sat:orbit_state'];
-  return typeof o === 'string' ? o.toLowerCase() : '';
-}
-
-// Relative-orbit / track number from the id (…_T011_F156_…). Frames of one
-// acquisition pass share a track; different passes have different tracks.
-function trackOf(item: BiomassItem): string {
-  const m = item.id.match(/_T(\d{3})_F\d{3}_/);
-  return m ? m[1] : '';
-}
-
-function orbitLabel(orbit: string): string {
-  if (orbit === 'ascending') return 'ASC ↑';
-  if (orbit === 'descending') return 'DESC ↓';
-  return '';
-}
-
-function shortType(pt: string): string {
-  // "BIO_FP_FD__L2A" -> "FP FD L2A"; "S1_SCS__1S" -> "S1 SCS 1S"
-  return pt.replace(/^BIO_/, '').replace(/__/g, ' ').replace(/_/g, ' ').trim();
-}
-
-// Display priority for L2A product types. ESA publishes Forest Disturbance (FD)
-// quicklooks as near-empty black images (disturbance events are sparse), so we
-// rank it last — that keeps the default/active group on a product that actually
-// has visible imagery (Forest Height, biomass, …) instead of a black frame.
-function typeRank(productType: string): number {
-  const s = productType.toUpperCase();
-  if (s.includes('_FD')) return 9; // Forest Disturbance — black quicklooks
-  if (s.includes('_FH')) return 0; // Forest Height
-  if (s.includes('AGB')) return 1; // Above-Ground Biomass
-  if (s.includes('_GN')) return 2;
-  return 5;
-}
-
-export function buildGroups(items: BiomassItem[]): MosaicGroup[] {
-  const map = new Map<string, MosaicGroup>();
-  for (const it of items) {
-    const productType = productTypeOf(it);
-    const date = dateOf(it);
-    const orbit = orbitOf(it);
-    const track = trackOf(it);
-    // One acquisition pass = same product, date, orbit direction and track.
-    // Ascending (morning) and descending (evening) passes over the same region
-    // are separate acquisitions and must not be mosaicked together.
-    const key = `${productType}|${date}|${orbit}|${track}`;
-    let g = map.get(key);
-    if (!g) {
-      const dir = orbitLabel(orbit);
-      const label =
-        `${date} · ${shortType(productType)}` +
-        `${dir ? ` · ${dir}` : ''}${track ? ` T${track}` : ''}`;
-      g = { key, label, productType, date, items: [] };
-      map.set(key, g);
-    }
-    g.items.push(it);
+// An item does not carry a property the grouping key is built from. Its own
+// type, and never silently skipped: a key that quietly loses one of its
+// parts would merge two groups that do not belong together.
+export class MissingProperty extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MissingProperty';
   }
-  // Newest date first; within a date, products with real imagery before the
-  // black-quicklook FD product, then split by pass (orbit/track).
-  return [...map.values()].sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-    const ra = typeRank(a.productType);
-    const rb = typeRank(b.productType);
-    if (ra !== rb) return ra - rb;
-    if (a.productType !== b.productType) return a.productType < b.productType ? -1 : 1;
-    return a.key < b.key ? -1 : 1;
+}
+
+// An ISO 8601 instant with a time part. A bare date (`2026-07-24`) does not
+// match, and goes through the text path instead — with the same result,
+// because the backend resolves it to the same date (registry.py `_key_part`).
+const INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+function utcDate(instant: Date): string {
+  return instant.toISOString().slice(0, 10);
+}
+
+// A STAC instant as its UTC date, everything else as its own text — the
+// same rule as `registry._key_part`, in the same order: only strings are
+// even considered for an instant, so a number never gets read as one.
+function keyPart(value: unknown): string {
+  if (value instanceof Date) return utcDate(value);
+  if (typeof value === 'string') {
+    if (INSTANT_PATTERN.test(value)) {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return utcDate(parsed);
+    }
+    return value;
+  }
+  return String(value);
+}
+
+export function groupKey(item: StacItem, groupBy: readonly string[]): string[] {
+  const properties = item.properties;
+  if (!properties || typeof properties !== 'object') {
+    throw new MissingProperty(`item ${item.id ?? '?'} carries no properties`);
+  }
+  const key: string[] = [];
+  for (const name of groupBy) {
+    if (!(name in properties)) {
+      throw new MissingProperty(`item ${item.id ?? '?'} is missing property "${name}"`);
+    }
+    key.push(keyPart(properties[name]));
+  }
+  return key;
+}
+
+// Groups by key, newest first (the key's UTC-date-first convention sorts
+// correctly as text), then stable by the rest of the key. Throws
+// `MissingProperty` straight through rather than dropping the offending item
+// — a key that quietly loses a part would merge two groups into one.
+export function buildGroups(items: StacItem[], groupBy: readonly string[]): TimeStepGroup[] {
+  const byKey = new Map<string, TimeStepGroup>();
+  for (const item of items) {
+    const key = groupKey(item, groupBy);
+    const keyId = key.join('\u0000');
+    let group = byKey.get(keyId);
+    if (!group) {
+      group = { key, label: key.join(' · '), items: [] };
+      byKey.set(keyId, group);
+    }
+    group.items.push(item);
+  }
+  return [...byKey.values()].sort((a, b) => {
+    const ka = a.key.join('\u0000');
+    const kb = b.key.join('\u0000');
+    return ka < kb ? 1 : ka > kb ? -1 : 0;
   });
 }
 
-export function groupIndexOfItem(groups: MosaicGroup[], itemId: string): number {
+export function groupIndexOfItem(groups: TimeStepGroup[], itemId: string): number {
   return groups.findIndex((g) => g.items.some((it) => it.id === itemId));
 }

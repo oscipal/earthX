@@ -1,125 +1,100 @@
-// Thin client for the backend API. Uses same-origin relative URLs by default
-// (the Vite dev server proxies /api to the backend). Override with VITE_API_BASE.
+// Thin client for earthx's own STAC API (`/stac`). Same-origin relative URLs
+// by default (the Vite dev server proxies /stac to the backend). Override
+// with VITE_API_BASE. Never talks to the prototype's `/api/…` routes.
 
-import type {
-  AppConfig,
-  BiomassItem,
-  DownloadResponse,
-  DownloadResult,
-  GeocodeResult,
-  SearchResponse,
-} from './types';
+import type { Bbox, Collection, StacItem } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
+interface StacLink {
+  rel: string;
+  href: string;
+}
+
+interface StacErrorBody {
+  detail?: unknown;
+  code?: string;
+  description?: string;
+}
+
+// The STAC error body carries either FastAPI's `{detail}` or the OGC API
+// `{code, description}` shape — both are read, neither is assumed.
+export function errorDetail(body: unknown, status: number, statusText: string): string {
+  const fallback = `${status} ${statusText}`;
+  if (!body || typeof body !== 'object') return fallback;
+  const b = body as StacErrorBody;
+  if (typeof b.detail === 'string') return b.detail;
+  if (b.detail !== undefined) return JSON.stringify(b.detail);
+  if (typeof b.description === 'string') return b.description;
+  return fallback;
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
+    let body: unknown;
     try {
-      const body = await res.json();
-      if (body?.detail) {
-        detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
-      }
+      body = await res.json();
     } catch {
-      /* non-JSON error body — keep status text */
+      /* non-JSON error body — errorDetail falls back to the status line */
     }
-    throw new Error(detail);
+    throw new Error(errorDetail(body, res.status, res.statusText));
   }
   return (await res.json()) as T;
 }
 
-export async function fetchConfig(): Promise<AppConfig> {
-  return jsonOrThrow<AppConfig>(await fetch(`${BASE}/api/config`));
+export async function fetchCollections(): Promise<Collection[]> {
+  const data = await jsonOrThrow<{ collections: Collection[] }>(
+    await fetch(`${BASE}/stac/collections`),
+  );
+  return data.collections;
 }
 
-export interface SearchBody {
-  aoi: GeoJSON.Geometry;
+export interface SearchQuery {
+  collection: string;
+  bbox?: Bbox;
   datetime?: string;
-  collections?: string[];
   limit?: number;
+  token?: string;
 }
 
-export async function searchItems(body: SearchBody): Promise<SearchResponse> {
-  return jsonOrThrow<SearchResponse>(
-    await fetch(`${BASE}/api/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  );
+export interface ItemPage {
+  features: StacItem[];
+  numberMatched: number | null;
+  numberReturned: number;
+  nextToken: string | null;
 }
 
-export async function downloadItems(
-  itemIds: string[],
-  aoi: GeoJSON.Geometry,
-  asset?: string,
-): Promise<DownloadResponse> {
-  return jsonOrThrow<DownloadResponse>(
-    await fetch(`${BASE}/api/download`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_ids: itemIds, aoi, asset }),
-    }),
-  );
+// The `token` query parameter carried by the response's `rel=next` link, not
+// a guessed format — `PagingLinks` on the backend is free to change its shape.
+// The base is a placeholder only, for parsing a relative `href`; it is never
+// used to reach a server (no DOM/`window` in the test environment, F2 = a).
+export function nextTokenFrom(links: StacLink[] | undefined): string | null {
+  const next = links?.find((l) => l.rel === 'next');
+  if (!next) return null;
+  const url = new URL(next.href, 'http://localhost');
+  return url.searchParams.get('token');
 }
 
-export async function decompose(
-  itemIds: string[],
-  aoi: GeoJSON.Geometry,
-  method: string,
-): Promise<DownloadResponse> {
-  return jsonOrThrow<DownloadResponse>(
-    await fetch(`${BASE}/api/decompose`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_ids: itemIds, aoi, method }),
-    }),
-  );
+export function buildSearchUrl(q: SearchQuery): string {
+  const params = new URLSearchParams({ collections: q.collection });
+  if (q.bbox) params.set('bbox', q.bbox.join(','));
+  if (q.datetime) params.set('datetime', q.datetime);
+  if (q.limit) params.set('limit', String(q.limit));
+  if (q.token) params.set('token', q.token);
+  return `${BASE}/stac/search?${params.toString()}`;
 }
 
-export interface StitchResponse {
-  aoi_hash: string;
-  ok_count: number;
-  count: number;
-  result: DownloadResult;
-}
-
-export async function stitchItems(
-  itemIds: string[],
-  aoi: GeoJSON.Geometry,
-): Promise<StitchResponse> {
-  return jsonOrThrow<StitchResponse>(
-    await fetch(`${BASE}/api/stitch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_ids: itemIds, aoi }),
-    }),
-  );
-}
-
-export async function fetchCoverage(collection: string): Promise<GeoJSON.FeatureCollection> {
-  return jsonOrThrow<GeoJSON.FeatureCollection>(
-    await fetch(`${BASE}/api/coverage?collection=${encodeURIComponent(collection)}`),
-  );
-}
-
-export async function geocode(q: string): Promise<GeocodeResult[]> {
-  const data = await jsonOrThrow<{ results: GeocodeResult[] }>(
-    await fetch(`${BASE}/api/geocode?q=${encodeURIComponent(q)}`),
-  );
-  return data.results;
-}
-
-// URL for the token-injecting asset proxy (quicklooks / thumbnails).
-export function assetUrl(item: BiomassItem, key?: string | null): string {
-  const k = key ?? item.quicklook_key ?? undefined;
-  const params = new URLSearchParams({ item: item.id, role: 'quicklook' });
-  if (k) params.set('key', k);
-  return `${BASE}/api/asset?${params.toString()}`;
-}
-
-// MapLibre raster tile template. {z}/{x}/{y} must stay unescaped.
-export function tileTemplate(itemId: string, aoiHash?: string): string {
-  const q = aoiHash ? `?aoi=${encodeURIComponent(aoiHash)}` : '';
-  return `${BASE}/api/tiles/${encodeURIComponent(itemId)}/{z}/{x}/{y}.png${q}`;
+export async function searchItems(q: SearchQuery): Promise<ItemPage> {
+  const body = await jsonOrThrow<{
+    features: StacItem[];
+    numberMatched?: number;
+    numberReturned: number;
+    links?: StacLink[];
+  }>(await fetch(buildSearchUrl(q)));
+  return {
+    features: body.features,
+    numberMatched: body.numberMatched ?? null,
+    numberReturned: body.numberReturned,
+    nextToken: nextTokenFrom(body.links),
+  };
 }

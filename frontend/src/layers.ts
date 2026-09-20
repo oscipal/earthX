@@ -3,8 +3,7 @@
 // state needed to re-select it and keep working.
 
 import type { Coords4 } from './geoUtils';
-import type { AppliedRender } from './products';
-import type { Bbox, DownloadedInfo } from './types';
+import type { AppliedRender, Bbox, DownloadedInfo } from './types';
 
 export type LayerOverlay =
   | { kind: 'image'; url: string; coords: Coords4 } // a (transparent-nodata) quicklook

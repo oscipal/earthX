@@ -29,6 +29,7 @@ from stac_fastapi.pgstac.config import Settings
 from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
+from earthx.api.coverage_route import router as coverage_router
 from earthx.api.dependencies import build_gateway, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.catalog.datasets import REGISTRY
@@ -68,6 +69,10 @@ def _build_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "service": "api"}
+
+    # Outside `/stac` on purpose (M2-05b, plan §6.6 F1 a): the answer is not a STAC
+    # object, and `/stac` stays the namespace of the standard.
+    app.include_router(coverage_router)
 
     return app
 

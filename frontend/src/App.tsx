@@ -2,32 +2,26 @@ import { useEffect } from 'react';
 
 import ControlPanel from './components/ControlPanel';
 import Draggable from './components/Draggable';
-import DownloadBar from './components/DownloadBar';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
-import ViewerControls from './components/ViewerControls';
 import { useAppStore } from './store';
 
 export default function App() {
-  const loadConfig = useAppStore((s) => s.loadConfig);
+  const loadDatasets = useAppStore((s) => s.loadDatasets);
   const panelCollapsed = useAppStore((s) => s.panelCollapsed);
   const togglePanel = useAppStore((s) => s.togglePanel);
-  const focusMode = useAppStore((s) => s.focusMode);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
-  const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
-  const canZoom = useAppStore(
-    (s) => !!s.aoi || s.groups.length > 0 || Object.keys(s.downloaded).length > 0,
-  );
+  const canZoom = useAppStore((s) => !!s.aoi || s.groups.length > 0);
   const toggleLayerManager = useAppStore((s) => s.toggleLayerManager);
   const layerCount = useAppStore((s) => s.layers.length);
 
   useEffect(() => {
-    loadConfig();
-  }, [loadConfig]);
+    loadDatasets();
+  }, [loadDatasets]);
 
   return (
     <div className="app" data-theme="tech">
@@ -53,7 +47,7 @@ export default function App() {
           className="panel zoom-btn"
           onClick={() => zoomToView()}
           disabled={!canZoom}
-          title="Zoom the map to fit the selection (or the active mosaic / downloaded image)"
+          title="Zoom the map to fit the selection (or the active time step)"
         >
           ⤢ Zoom to selection
         </button>
@@ -71,7 +65,7 @@ export default function App() {
         <LayerManager />
       </div>
 
-      {!focusMode && hasGroups && (
+      {hasGroups && (
         <div className="overlay right">
           <Draggable className="dock-results">
             <ResultsPanel />
@@ -80,23 +74,10 @@ export default function App() {
       )}
 
       <div className="overlay bottom">
-        {focusMode ? (
+        {hasGroups && (
           <Draggable>
-            <ViewerControls />
+            <TimeSlider />
           </Draggable>
-        ) : (
-          <>
-            {hasSelection && (
-              <Draggable>
-                <DownloadBar />
-              </Draggable>
-            )}
-            {hasGroups && (
-              <Draggable>
-                <TimeSlider />
-              </Draggable>
-            )}
-          </>
         )}
       </div>
 
