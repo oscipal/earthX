@@ -115,6 +115,7 @@ Ottos Entscheidung zu M2-11).
 | M2-11 | Vorlage: Prototyp entfernen | C | Opus | M2-08 |
 | M2-12 | M2-Abnahme und README | A | Sonnet (mittel) | alle |
 | M2-13 | Kleinkram: SessionStart-Hook, Live-Smoke-Nachtrag | A | Sonnet (mittel) | — |
+| M2-14 | Auflösung des Asset-Hosts zwischenspeichern | B | Sonnet (mittel) | M2-04, #47 |
 | V-1 | Theme-Umschalter (Viewer-Strang) | A | Sonnet (mittel) | M2-07b |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
@@ -124,7 +125,7 @@ stauen (`m1-fundament.md` §6).
 2. ~~M2-03b, M2-04, M2-05a~~ — erledigt
 3. M2-05b, M2-07a; dazu M2-13 (Stufe A)
 4. M2-06, M2-09a
-5. M2-07b, M2-07c
+5. M2-07b, M2-07c; dazu M2-14 (klein, aus dem Befund von #47)
 6. M2-07d, M2-09b, V-1
 7. M2-08, M2-10
 8. M2-11, M2-12
@@ -365,6 +366,86 @@ der Kandidatenmatrix.
 
 **Nicht anfassen:** `gateway` — die Adress-Bindung ist eine Sicherheitseigenschaft aus M1-03.
 **Abnahme:** Eine frisch gestartete Session kann `pytest` aus der Repo-Wurzel ohne Nachinstallation laufen lassen.
+
+### M2-14 — Auflösung des Asset-Hosts zwischenspeichern
+
+**Ziel:** Der Asset-Host eines Items wird nicht mehr für jede einzelne Kachel neu
+aufgelöst. Die Adress-Bindung aus M1-03 bleibt unverändert: `gateway` prüft
+weiterhin den Namen und verbindet die geprüfte Adresse; weg fällt allein die
+wiederholte Auflösung **desselben** Namens.
+**Stufe B**, bewusst **klein**.
+**Grundlage:** `plans/m2-format-und-viewer.md` M2-04; Abschnitt „Ladeverhalten" in
+#47, Befund 3: `dataset_asset_path` löst bei jeder Kachel- und Statistik-Anfrage
+über `gateway/resolver.py::resolve_host` neu auf — synchron, ungecacht und in einer
+`async def`-Abhängigkeit, also blockierend auf der Event-Loop statt im Thread-Pool.
+Gemessen **17–40 ms je Aufruf**, mit wechselnder Antwort (Round-Robin).
+
+**Umfang:**
+- Zwischenspeicher an der Auflösung, nicht am Ergebnis der Prüfung.
+- Messung vorher und nachher mit denselben Gleichzeitigkeiten wie in #47
+  (1, 12, 40, 80), im PR belegt.
+- Tests: Treffer löst nicht erneut auf; abgelaufener Eintrag löst erneut auf; eine
+  nicht global routbare Adresse weist den Host auch beim Treffer ab; Fehlschläge
+  werden nicht zwischengespeichert; der Speicher wächst nicht unbegrenzt.
+
+**Nicht anfassen:** die Zahl der Uvicorn-Worker (Befund 2 in #47). Das ist eine
+Betriebsfrage und gehört nach M5; sie steht als offene Zeile im Entscheidungslog.
+Ebenso wenig die Adress-Bindung selbst und `check_url` als Pflichtweg.
+
+#### Plan-Schritt: Vorschlag zu den drei offenen Punkten
+
+**1. Wo der Zwischenspeicher liegt.**
+
+1. **`CachingResolver` in `gateway/resolver.py`**, durch die schon vorhandene
+   `resolve`-Naht von `check_url` hereingereicht (deren Docstring sie seit M1-03
+   genau dafür nennt: „so tests, and later a caching resolver, can take the place of
+   the system resolver"). Eine Instanz je Prozess, im `tiler` an `app.state`, von
+   dort in `asset_path` und in den `Gateway`-Client. **Empfehlung.**
+2. Memoisierung direkt in `resolve_host`, als Modulglobal. Kürzester Diff, aber
+   verborgener Prozesszustand in `gateway` — gegen die Bauart des Moduls, in das
+   Policy und Resolver bisher ausnahmslos hereingereicht werden, und schlecht
+   prüfbar, weil kein Aufruf ihn sehen oder ersetzen kann.
+3. Den fertigen `AssetPath` je (Item, Asset) zwischenspeichern. Am schnellsten und
+   **abzulehnen**: das überspränge `check_url` ganz, also Allowlist, Schema- und
+   Adressprüfung für jeden Treffer. Genau das soll die Aufgabe nicht tun.
+
+**2. Wie lange er gilt.** Gemessen am echten Asset-Host
+(`e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`) trägt der A-Eintrag
+selbst eine **TTL von 5 s** — die Quelle sagt also selbst, wie lange ihre Adressen
+gelten. Eine zu lange Frist hebelt nicht die Namensprüfung aus (die läuft bei jedem
+Treffer weiter), sondern die **Aktualität der Bindung**: Cloud-Adressen werden
+zügig neu vergeben, und eine lange gehaltene Adresse kann einem anderen gehören,
+während der Name längst woanders hinzeigt.
+
+1. **5 s, am gemessenen Satz-TTL.** Deckt einen Kachelstapel (ein Vollbild sind
+   20–30 Kacheln, die in ein bis drei Sekunden eintreffen) mit einer einzigen
+   Auflösung ab und hält keine Adresse länger, als die Quelle sie für gültig
+   erklärt. **Empfehlung.**
+2. 30 s. Deckt auch mehrere Stapel beim Schwenken, hält die Adresse aber sechsmal
+   länger, als die Quelle sagt.
+3. 60 s oder mehr. Eine Auflösung je Ansicht — und zwölffach über der Gültigkeit.
+
+Dazu: nur **erfolgreiche** Auflösungen werden gespeichert (ein vorübergehender
+Resolver-Fehler darf nicht kleben bleiben) und höchstens 256 Hosts, ältester
+zuerst verdrängt, damit der Speicher nicht mit den Namen wächst.
+
+**3. Was er bei wechselnden Adressen tut.** Der Host antwortet Round-Robin, jeder
+Aufruf liefert andere Adressen.
+
+1. **Die Antwort als Ganzes halten und bei jedem Treffer erneut durch
+   `check_addresses` schicken.** Eine nicht global routbare Adresse weist den Host
+   damit auch beim Treffer ab — die Prüfung hängt nicht am Cache, nur die Auflösung
+   tut es. Nach Ablauf ersetzt die frische Antwort die alte vollständig; alte und
+   neue Adressen werden **nicht** vereinigt, sonst bliebe eine Adresse am Leben, die
+   der Name nicht mehr nennt. Das Round-Robin geht innerhalb der Frist verloren, und
+   das ist folgenlos: der Client verbindet ohnehin `addresses[0]`, und GDAL bekommt
+   die Adressen gar nicht zu sehen (`vsicurl_path` behält den Namen). **Empfehlung.**
+2. Innerhalb des Eintrags reihum durchreichen, um die Last zu verteilen. Zusätzlicher
+   Zustand für einen Gewinn, den bei 5 s Frist niemand messen kann.
+
+**Abnahme:** Messung vorher/nachher bei 1, 12, 40, 80 gleichzeitigen Kachelanfragen
+liegt im PR; ein Kachelstapel löst den Host einmal statt einmal je Kachel auf; die
+Tests oben sind grün; `ruff check backend`, `pytest`, `lint-imports` grün.
 
 ### V-1 — Theme-Umschalter (Viewer-Strang)
 
