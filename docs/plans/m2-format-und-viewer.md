@@ -51,6 +51,8 @@ aufgenommen, und das Frontend spricht nur noch mit der Zielarchitektur `earthx`.
 | D16 | **M2-09 wird geteilt:** 09a Reader gegen synthetisches Mini-Zarr (quellenunabhängig), 09b realer Datensatz | M2-09a, M2-09b, M2-10 |
 | D17 | **Python bleibt 3.11**, `zarr` auf 3.1.x; `titiler-eopf` ist ausgeschieden. Der gemessene Pfad ist eigener `zarr.abc.store.Store` → `zarr` → `xarray` → `rio_tiler.io.xarray.XarrayReader` | M2-09a |
 | D18 | **STAC 1.1 → 1.0** wird im Adapter normalisiert; Lizenz des zweiten Datensatzes wie beim ersten | M2-09b |
+| D19 | **`earthx:viewer`** als neuntes `earthx:`-Feld (`architekturplan.md` 5.1): Gruppierungsschlüssel und Quicklook-Angaben des Viewers. **Angelegt in M2-04**, gelesen von M2-07a; Form wörtlich in `plans/m2-07a-…` §5. Für Sentinel-2 ist der Zeitschritt **Datum + `grid:code`** (eine Gruppe führt nach D11 auf genau eine Kachel-URL), `s2:datatake_id` wird nur angezeigt | M2-04, M2-07a, M2-10 |
+| D20 | Der **TypeScript-Client** bleibt in M2 handgeschrieben; die Generierung aus dem OpenAPI-Schema (`architekturplan.md` 8.1) wird eine eigene Aufgabe nach M2-06 | M2-07a–d |
 ### 1.2 Fragen an Otto — beantwortet am 20.09.2026
 
 | # | Frage | Optionen | Antwort | betrifft |
@@ -97,7 +99,7 @@ Ottos Entscheidung zu M2-11).
 | M2-04 | Kachel-Pfad für Sentinel-2 | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
 | M2-05 | Coverage-Anbieter und Route | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
 | M2-06 | Download des AOI-Zuschnitts | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-04 |
-| M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | Plan Opus, Umsetzung Sonnet (mittel) | Tag |
+| M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | Plan Opus, Umsetzung Sonnet (mittel) | Tag, M2-04 (D19) |
 | M2-07b | Frontend: Kacheln, Darstellungssteuerung, Layer-Manager | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-04, M2-07a |
 | M2-07c | Frontend: Coverage-Heatmap | B | Sonnet (mittel) | M2-05, M2-07a |
 | M2-07d | Frontend: Download | B | Sonnet (mittel) | M2-06, M2-07b |
@@ -114,7 +116,7 @@ stauen (`m1-fundament.md` §6).
 
 1. ~~M2-00, M2-01, M2-02, M2-03~~ — erledigt
 2. M2-04, M2-05; dazu M2-03b (Stufe C, zählt nicht gegen die zwei)
-3. M2-06, M2-07a
+3. M2-06, M2-07a (07a erst nach dem Merge von M2-04, D19)
 4. M2-07b, M2-07c, M2-09a
 5. M2-07d, M2-09b, V-1
 6. M2-08, M2-10
@@ -230,6 +232,7 @@ der Kandidatenmatrix.
 - **Kein Quicklook-Proxy** (D14): Quicklooks lädt das Frontend direkt vom Asset-Host.
 - Statistik-Cache als eigene Tabelle per Migration in `catalog`, 30 Tage (D13, E4); Ausfall macht nur langsamer (E5).
 - **Standard-Visualisierung** (Checkliste Punkt 8, `adr/0001` FZ7): Bandzuordnung, Stretch und Colormap als Feld im Registry-Eintrag; Feldform im Plan-Schritt vorschlagen.
+- **`earthx:viewer`** als neuntes `earthx:`-Feld anlegen (D19): `ViewerInfo` in `catalog/registry.py`, Wert für Sentinel-2 in `catalog/datasets.py`, Abbildung in `catalog/collection.py`, neunte Zeile in `architekturplan.md` 5.1, Tests auf Abbildung und vollständig gesetzte Felder. **Die Form steht wörtlich in `plans/m2-07a-frontend-api-suche-quicklooks-zeitleiste.md` §5** und ist von Otto am 20.09.2026 freigegeben — nicht neu entwerfen. M2-07a liest das Feld.
 - **Einstieg des `tiler`-Prozesses** nach `api` verlegen; `httpx2` und `obstore` auf die Verbotsliste in `.importlinter`; Test, dass kein Modul `rio_tiler.io.stac` importiert (D15).
 - `docker-compose.yml`: `tiler` bekommt die Postgres-Umgebungsvariablen und den neuen Einstiegspunkt. Aus M1-07 bekannt: `api` startete ohne sie nicht.
 

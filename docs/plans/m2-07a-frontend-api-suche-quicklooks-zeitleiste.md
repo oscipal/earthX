@@ -1,8 +1,10 @@
 # M2-07a — Frontend: API-Client, Suche, Quicklooks, Zeitleiste: Umsetzungsplan
 
-**Status:** **Plan, wartet auf Ottos OK.** **Stufe B** laut `projektplan.md` 1.2:
-Plan zuerst als Draft-PR, Umsetzung erst nach dem OK. Die sechs Fragen in §12
-hängen an; §12 F1–F3 ändern den Zuschnitt, F4–F6 nur Details.
+**Status:** **Plan von Otto angenommen am 20.09.2026, alle sechs Fragen beantwortet**
+(§12). **Stufe B** laut `projektplan.md` 1.2: Plan zuerst als Draft-PR, Umsetzung
+nach dem OK. Aus Antwort 2 folgt eine **neue Abhängigkeit: M2-07a hängt jetzt an
+M2-04**, weil das Feld `earthx:viewer` dort angelegt wird (§5). M2-04 ist noch
+nicht umgesetzt; der Stand der Umsetzung steht in §13.
 **Aufgabe:** M2-07a aus `docs/plans/m2-format-und-viewer.md` §4 („M2-07 — Frontend
 auf `earthx`", Abschnitt „Gemeinsam für 07a–07d" und „M2-07a").
 **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §1–§3 (BIOMASS bleibt nicht, was vom
@@ -13,9 +15,10 @@ B13 (Registry gestuft); `architekturplan.md` 3.1 (Modulgrenzen), 5.1 (`earthx:`-
 `prototyp-inventar.md` F1, F3–F8, F15, Teil 3 (HUD); `adr/0003` §10.3, §11.2;
 `adr/0005` (föderierte Suche, Seitenmarke); `adr/0006` §3.6 (Quicklook ohne Proxy),
 §3.7 (Asset-Host); Log-Zeilen vom 20.09.2026 (D7, D8, D14, F1 = a, F2 = a).
-**Voraussetzung — erledigt:** Der Tag `prototype-biomass` steht auf `main`
-(`48d573c`, am 20.09.2026 von Otto gesetzt). Der Stand des Prototyp-Frontends
-ist damit dauerhaft erreichbar; dieser Plan darf im Arbeitsbaum löschen.
+**Voraussetzungen:** Der Tag `prototype-biomass` steht auf `main` (`48d573c`, am
+20.09.2026 von Otto gesetzt) — der Stand des Prototyp-Frontends ist damit dauerhaft
+erreichbar, dieser Plan darf im Arbeitsbaum löschen. **Offen: M2-04**, das
+`earthx:viewer` anlegt (§5, §12 Antwort 2).
 
 ---
 
@@ -57,9 +60,9 @@ auch nicht geben (F1 = a).
 **Registry → Frontend.** Eine eigene Datensatz-Route gibt es nicht und braucht es
 nicht: `catalog/collection.py:93–154` bildet jeden Registry-Eintrag auf eine STAC
 Collection mit den acht `earthx:`-Feldern aus `architekturplan.md` 5.1 ab.
-`GET /stac/collections` ist damit die Datensatzliste des Viewers. Zwei Felder, die
-07a braucht, fehlen dort heute: der Gruppierungsschlüssel und die Quicklook-Angaben
-(§5, §12 F1/F2).
+`GET /stac/collections` ist damit die Datensatzliste des Viewers. Was 07a dort
+zusätzlich braucht — Gruppierungsschlüssel und Quicklook-Angaben — kommt als
+neuntes Feld `earthx:viewer` hinzu, angelegt von M2-04 (§5).
 
 ### 2.1 Eigene Messung an der Quelle (20.09.2026)
 
@@ -95,7 +98,7 @@ CI-Job `frontend`; Umbenennung des Viewers.
 
 **Nicht in 07a:** Kacheln, Darstellungssteuerung, Layer-Manager-Ausbau (07b);
 Coverage-Heatmap und Zeit-Histogramm (07c); Download (07d); Theme-Umschalter (V-1);
-zweiter Datensatz (M2-10); alles im Backend außer dem einen Registry-Feld aus §5;
+zweiter Datensatz (M2-10); das gesamte Backend, `earthx:viewer` eingeschlossen (§5);
 `backend/app/` (der Prototyp bleibt bis M2-11 lauffähig); Oberflächentests (F2 = a:
 nur reine Logik).
 
@@ -145,10 +148,16 @@ key = <Datum aus item.datetime> | <Wert von properties[k] für jedes k aus group
 `typeRank`, `trackOf`, `productTypeOf`, `isGnItem` und die BIOMASS-Etiketten
 entfallen. Die Sortierung bleibt „neuestes Datum zuerst", danach stabil nach
 Schlüssel. Das Etikett einer Gruppe wird aus Datum und den Schlüsselwerten
-gebaut, die Mitglieder tragen ihr `grid:code` als Beschriftung. Empfehlung für
-Sentinel-2: `keys = ["s2:datatake_id"]` — eine Gruppe ist damit **ein Überflug**,
-und die benachbarten MGRS-Kacheln einer AOI liegen zusammen in einer Gruppe, so
-wie beim Prototyp die Frames eines Tracks. Siehe §12 F1.
+gebaut.
+
+**Für Sentinel-2 entschieden (§12 Antwort 1): `grouping_keys = ["grid:code"]`.**
+Ein Zeitschritt ist damit **eine MGRS-Kachel an einem Datum** und führt auf genau
+ein Item — nach D11 gibt es in M2 kein Mosaik im Kachel-Pfad, eine Gruppe muss
+also auf genau eine Kachel-URL führen, und ein Datatake umfasst viele Kacheln.
+`s2:datatake_id` bleibt erhalten, aber als **angezeigte Eigenschaft** der Gruppe
+(`display_properties`, §5), nicht als Teil des Schlüssels. Dass eine Gruppe damit
+in der Regel genau ein Item hat, ist kein Sonderfall: Die Gruppe bleibt eine
+Menge, und der zweite Datensatz darf mehr als eines hineinlegen.
 
 ### 4.4 `src/mapLayers.ts` — Quicklooks ohne Proxy
 
@@ -156,13 +165,16 @@ Nur der Beschaffungsweg ändert sich; `keyBlackToTransparent`, `loadTransparent`
 `placeImage`, der Generationszähler `syncGen` und die Obergrenze von 40 Overlays
 bleiben wie sie sind. Die URL ist künftig `item.assets[<quicklook>].href`,
 gewählt generisch: Asset mit Rolle `thumbnail`, sonst `overview`, sonst das erste
-Asset mit `image/*`-Typ. `img.crossOrigin = 'anonymous'` steht bereits
-(`mapLayers.ts:71`) und ist jetzt die tragende Zeile: Der Asset-Host sendet
-`Access-Control-Allow-Origin: *` (`adr/0006` §3.6, gemessen), das Canvas bleibt
-damit unverwehrt. Der BIOMASS-Sonderfall `rotate180` für `S[123]_SCS|DGM` in
-`geoUtils.ts:104` entfällt; die Ecken kommen weiter aus `footprintCorners`.
-Der Schwellwert für „schwarz ist Nodata" kommt aus dem Datensatzeintrag statt
-als Konstante im Code (Inventar F6, §12 F2/F6).
+Asset mit `image/*`-Typ. **`img.crossOrigin = 'anonymous'` ist ab jetzt die tragende Zeile** und darf beim
+Umbau nicht verlorengehen: Ohne sie sperrt der Browser das Canvas, sobald das Bild
+nicht mehr same-origin über den Proxy kommt, und `getImageData` wirft — das Keying
+fiele still aus. Die Zeile steht bereits (`mapLayers.ts:71`), der Asset-Host sendet
+`Access-Control-Allow-Origin: *` (`adr/0006` §3.6, gemessen), damit trägt der Weg.
+Ein Test kann das nicht zeigen (F2 = a: keine Oberflächentests), deshalb steht es
+als Punkt in der Vorführung (§9) und als Kommentar an der Zeile. Der
+BIOMASS-Sonderfall `rotate180` für `S[123]_SCS|DGM` in `geoUtils.ts:104` entfällt;
+die Ecken kommen weiter aus `footprintCorners`. Der Schwellwert für „schwarz ist
+Nodata" kommt aus `earthx:viewer` statt als Konstante im Code (Inventar F6, §5).
 
 ### 4.5 `src/store.ts` — Datensatz statt Produkt
 
@@ -175,19 +187,48 @@ als Konstante im Code (Inventar F6, §12 F2/F6).
   `limit=100` je Seite (die Obergrenze der API).
 - Der Nachfilter über `ProductDef.match` entfällt: Die Collection **ist** der
   Filter.
-- **Datums-Fallback:** Bleibt die Suche im gewählten Zeitraum leer, sucht der
-  Store in bis zu drei Stufen mit erweitertem Fenster (±7, ±30, ±90 Tage um den
-  Zeitraum) weiter und nimmt das Item mit dem kleinsten zeitlichen Abstand zum
-  gewählten Zeitraum. Gefunden wird dann dessen Zeitschritt, und `notice` sagt
-  sichtbar: „Kein Treffer im gewählten Zeitraum — nächstgelegene Aufnahme: TT.MM.JJJJ".
-  Bewusst ohne Verlass auf die Sortierung der Quelle: `sort` ist in `earthx`
-  abgeschaltet (`api/main.py:36`), die Reihenfolge der Quelle ist nirgends
-  zugesichert. Prinzip 9 („Ehrlichkeit in der Anzeige") verlangt den Hinweis.
+- **Datums-Fallback** (§12 Antwort 5): Bleibt die Suche im gewählten Zeitraum leer,
+  sucht der Store in bis zu drei Stufen mit erweitertem Fenster (±7, ±30, ±90 Tage
+  um den Zeitraum) und nimmt aus der ersten Stufe mit Treffern das Item mit dem
+  kleinsten zeitlichen Abstand zum gewählten Zeitraum. Details in §4.5.1.
 - `runDownload`, `runDecompose`, `loadCoverage`, `applyRender`, `setPolMode`,
   `setPolBand`, `setDecompMethod`, `focusMode` und die Felder für Streckbereich
-  und Colormap entfallen hier und kommen mit 07b/07c/07d zurück (§12 F3).
+  und Colormap entfallen hier und kommen mit 07b/07c/07d zurück (§12 Antwort 3).
 - `addCurrentToLayers` bleibt, aber nur mit Quicklook-Overlays; der
   `restore`-Block verliert `downloaded` und `appliedRender`.
+
+#### 4.5.1 Datums-Fallback: `limit` und Seitenmarke im Fenster
+
+Weil `sort` in `earthx` abgeschaltet ist (`api/main.py:36`) und die Reihenfolge
+der Quelle nirgends zugesichert ist, darf „das nächstgelegene Item" nicht aus der
+Position in der Antwort abgeleitet werden — es muss aus dem Zeitstempel jedes
+zurückgegebenen Items berechnet werden. Damit das mit einem Fenster funktioniert,
+das mehr als eine Seite trifft, ist der Fallback in **zwei Schritte** geteilt:
+
+1. **Sonde je Stufe — genau eine Seite, `limit=100`, ohne Seitenmarke.** Die Sonde
+   sucht nicht den vollständigen Bestand des Fensters, sondern nur ein Datum. Aus
+   den zurückgegebenen Items wird das mit dem kleinsten Abstand zum gewählten
+   Zeitraum genommen; bei Gleichstand das ältere (deterministisch, im Test
+   festgehalten). Leer ⇒ nächste Stufe. Alle drei Stufen leer ⇒ kein Fallback,
+   Meldung „Kein Treffer im gewählten Zeitraum und auch nicht ±90 Tage daneben".
+2. **Vollständige Suche für das gefundene Datum.** Mit dem Datum als Zeitraum
+   (`T00:00:00Z/T23:59:59Z`) läuft die **normale** Suche aus §4.5, mit Blättern
+   über die Seitenmarke bis 300 Items. Was der Viewer am Ende anzeigt, ist also
+   vollständig, nicht das Stichprobenergebnis der Sonde.
+
+**Ehrlich bleibt es dadurch:** Trifft eine Sonde mehr, als eine Seite fasst
+(`numberMatched > numberReturned`), dann ist „das nächstgelegene Datum" nicht
+bewiesen, sondern das nächstgelegene **gefundene**. Genau so steht es dann auch
+im Hinweis (Prinzip 9, „Ehrlichkeit in der Anzeige"):
+
+| Fall | Hinweis |
+|---|---|
+| Sonde vollständig gesehen | „Kein Treffer im gewählten Zeitraum — nächstgelegene Aufnahme: TT.MM.JJJJ" |
+| Sonde gekappt | „Kein Treffer im gewählten Zeitraum — nächstgelegene **gefundene** Aufnahme: TT.MM.JJJJ (Stichprobe aus n von m Treffern ±k Tagen)" |
+
+Der gekappte Fall ist bei der kleinsten Stufe (±7 Tage, AOI-Bounding-Box) selten,
+aber er ist möglich und wird deshalb nicht weggerundet. Höchstens drei zusätzliche
+Anfragen für die Sonden, dann die normale Suche.
 
 ### 4.6 Oberfläche
 
@@ -208,33 +249,65 @@ Das HUD-Design bleibt unangetastet: `index.css`, `App.css`, `Draggable`,
 `Toolbar`, `StatusBar`, `MapView`, die Farbtoken und die Bedienmuster aus
 Inventar Teil 3 werden nicht angefasst.
 
-## 5. Die eine Backend-Änderung: der Gruppierungs- und Quicklook-Schlüssel
+## 5. `earthx:viewer` — die Form, die M2-04 anlegt
 
-M2-07a soll „F5 Gruppierung mit Schlüssel **aus der Registry**" umsetzen, und
-das Inventar verlangt dasselbe für die Nodata-Schwelle und den Quicklook (F6:
-„gehören als Felder an den Datensatz statt in den Code"). Beides braucht ein
-Feld, das es heute nicht gibt. Vorschlag: **ein** neues Feld statt zweier —
+M2-07a soll „F5 Gruppierung mit Schlüssel **aus der Registry**" umsetzen, und das
+Inventar verlangt dasselbe für die Nodata-Schwelle und den Quicklook (F6: „gehören
+als Felder an den Datensatz statt in den Code"). Otto hat das Feld am 20.09.2026
+freigegeben (§12 Antwort 2) und zugleich festgelegt: **angelegt wird es in M2-04**,
+das die Registry ohnehin um `asset_hosts` und die Standard-Visualisierung erweitert.
+**M2-07a liest es nur.** Dieser Abschnitt ist deshalb die Bestellung an M2-04.
+
+**Dataclass in `backend/earthx/catalog/registry.py`:**
 
 ```python
 @dataclass(frozen=True)
 class ViewerInfo:
-    grouping_keys: tuple[str, ...]      # STAC-Property-Schlüssel, zusätzlich zum Datum
-    member_label_property: str | None   # Beschriftung der Gruppenmitglieder
-    quicklook_asset: str | None         # None ⇒ über die Rolle suchen
-    quicklook_nodata_threshold: int | None   # None ⇒ kein Keying
+    """Datensatzabhängige Angaben, die nur der Viewer braucht (Inventar F5, F6)."""
+
+    # STAC-Property-Schlüssel, die zusätzlich zum Datum den Zeitschritt bilden.
+    grouping_keys: tuple[str, ...]
+    # Properties, die am Zeitschritt angezeigt, aber nicht gruppiert werden.
+    display_properties: tuple[str, ...]
+    # Asset-Schlüssel des Quicklooks; None ⇒ der Client sucht über die Rolle.
+    quicklook_asset: str | None
+    # Schwelle, unter der ein Kanal als Nodata gilt; None ⇒ kein Canvas-Keying.
+    quicklook_nodata_threshold: int | None
 ```
 
-für Sentinel-2: `("s2:datatake_id",)`, `"grid:code"`, `"thumbnail"`, `16`.
-Abgebildet in `catalog/collection.py` als **`earthx:viewer`** — das wäre die
-**neunte** Zeile in `architekturplan.md` 5.1, also eine Architekturänderung, die
-Otto entscheidet (§12 F2). Der Umfang im Backend ist klein: Dataclass in
-`catalog/registry.py`, Wert in `catalog/datasets.py`, Abbildung in
-`catalog/collection.py`, je ein Test dazu, eine Zeile in 5.1 und eine im
-Entscheidungslog. Modulgrenzen bleiben unberührt.
+**Wert für `sentinel-2-c1-l2a` in `catalog/datasets.py`:**
 
-Das Frontend behandelt ein fehlendes `earthx:viewer` nicht als Fehler, sondern
-fällt auf „nur Datum, Quicklook über die Rolle, kein Keying" zurück — so bleibt
-der zweite Datensatz aus M2-10 ohne Sonderfall bedienbar.
+```python
+viewer=ViewerInfo(
+    grouping_keys=("grid:code",),          # Otto, 20.09.2026: ein Zeitschritt = eine MGRS-Kachel (D11)
+    display_properties=("s2:datatake_id",),  # der Überflug, angezeigt statt gruppiert
+    quicklook_asset="thumbnail",           # L2A_PVI.jpg, gemessen (§2.1)
+    quicklook_nodata_threshold=16,         # Schwelle des Prototyps (mapLayers.ts)
+)
+```
+
+**Abbildung in `catalog/collection.py`,** als neunte `earthx:`-Zeile:
+
+```python
+"earthx:viewer": {
+    "grouping_keys": list(config.viewer.grouping_keys),
+    "display_properties": list(config.viewer.display_properties),
+    "quicklook_asset": config.viewer.quicklook_asset,
+    "quicklook_nodata_threshold": config.viewer.quicklook_nodata_threshold,
+},
+```
+
+Dazu gehören in M2-04: die neunte Zeile in der Tabelle `architekturplan.md` 5.1
+(`earthx:viewer` | Gruppierung und Quicklook-Angaben des Viewers), ein Test auf
+die Abbildung und einer auf vollständig gesetzte Felder je Eintrag (B10).
+Modulgrenzen bleiben unberührt; `viewer` ist ein Feld an `DatasetConfig` neben
+`coverage` und `default_render`, kein neues Modul.
+
+**Das Frontend kommt auch ohne aus.** Fehlt `earthx:viewer` — etwa weil 07a vor
+M2-04 gemergt wird oder ein künftiger Eintrag es nicht setzt —, gelten dokumentierte
+Vorgabewerte: nur Datum als Schlüssel, keine angezeigten Properties, Quicklook über
+die Rolle (`thumbnail`, dann `overview`, dann `image/*`), **kein** Keying. Kein
+Sonderfall im Code, keine Fehlermeldung.
 
 ## 6. Tests (Vitest, F2 = a)
 
@@ -247,9 +320,9 @@ Skript `"test": "vitest run"`, Import der Prüf-Funktionen aus `vitest` statt
 | Datei | Fälle |
 |---|---|
 | `api.test.ts` | URL-Bau der Suche (bbox-Reihenfolge, `datetime`-Bereich, `limit`, `token`); Seitenmarke aus dem `next`-Link gezogen; **kein** `next`-Link ⇒ `nextToken === null`; Fehlerkörper in beiden Formen (`detail`, `{code, description}`); `400` der Mehrquellensuche kommt als lesbare Meldung an |
-| `grouping.test.ts` | Schlüssel aus Datum + `grouping_keys`; fehlende Property ⇒ eigene Gruppe statt Absturz; fehlendes `datetime` ⇒ Gruppe „ohne Datum"; Sortierung neuestes zuerst; leere Eingabe ⇒ leere Liste |
-| `dateFallback.test.ts` | Fensterfolge ±7/±30/±90; Auswahl des zeitlich nächsten Items bei Treffern auf beiden Seiten; Gleichstand deterministisch; alle drei Stufen leer ⇒ kein Fallback, klare Meldung; kaputtes `datetime` wird übersprungen |
-| `datasets.test.ts` | `earthx:viewer` fehlt ⇒ dokumentierte Vorgabewerte; Collection ohne `earthx:`-Felder bricht die Auswahl nicht; Quicklook-Asset: Rolle vor Typ, keines vorhanden ⇒ `null` |
+| `grouping.test.ts` | Schlüssel aus Datum + `grouping_keys` (`grid:code`); zwei MGRS-Kacheln am selben Tag ⇒ zwei Zeitschritte, derselbe Datatake trennt sie nicht; `display_properties` landen am Etikett, **nicht** im Schlüssel; fehlende Property ⇒ eigene Gruppe statt Absturz; fehlendes `datetime` ⇒ Gruppe „ohne Datum"; Sortierung neuestes zuerst; leere Eingabe ⇒ leere Liste |
+| `dateFallback.test.ts` | Fensterfolge ±7/±30/±90; Auswahl des zeitlich nächsten Items bei Treffern auf beiden Seiten; Gleichstand ⇒ das ältere; alle drei Stufen leer ⇒ kein Fallback, klare Meldung; kaputtes `datetime` wird übersprungen; **gekappte Sonde** (`numberMatched > numberReturned`) ⇒ der Hinweis sagt „gefundene" und nennt die Zahlen (§4.5.1) |
+| `datasets.test.ts` | `earthx:viewer` fehlt ⇒ dokumentierte Vorgabewerte (nur Datum, Rolle, kein Keying); Collection ohne `earthx:`-Felder bricht die Auswahl nicht; Quicklook-Asset: `quicklook_asset` vor Rolle vor Typ, keines vorhanden ⇒ `null`; `quicklook_nodata_threshold = null` ⇒ kein Keying |
 
 Damit sind die Fälle aus `CLAUDE.md` abgedeckt: Fehlerfälle (Upstream-Fehler,
 `400`), fehlerhafte Eingaben (kaputtes `datetime`, fehlende Properties) und
@@ -264,32 +337,38 @@ Typprüfung: `- name: Tests (vitest)` / `run: npm test`. Der Jobname wird zu
 ## 7. Reihenfolge der Commits
 
 1. `chore(frontend): set up vitest and add it to the CI frontend job`
-2. `feat(catalog): add the viewer hints (grouping, quicklook) to the registry` — nur, wenn §12 F2 = a
-3. `feat(frontend): talk to the earthx STAC API instead of the prototype` (api.ts, vite.config.ts, types.ts)
-4. `feat(frontend): pick the dataset from /stac/collections` (datasets.ts, ControlPanel, store)
-5. `feat(frontend): group items into time steps from the registry key` (grouping.ts + Test)
-6. `feat(frontend): load quicklooks straight from the asset host` (mapLayers.ts, geoUtils.ts, ResultsPanel)
-7. `feat(frontend): fall back to the nearest date and say so` (store + Test)
-8. `refactor(frontend): drop the BIOMASS-only paths until 07b–07d rebuild them` (Löschungen)
-9. `docs: record M2-07a in the decision log`
+2. `feat(frontend): talk to the earthx STAC API instead of the prototype` (api.ts, vite.config.ts, types.ts)
+3. `feat(frontend): pick the dataset from /stac/collections` (datasets.ts, ControlPanel, store)
+4. `feat(frontend): group items into time steps from the registry key` (grouping.ts + Test)
+5. `feat(frontend): load quicklooks straight from the asset host` (mapLayers.ts, geoUtils.ts, ResultsPanel)
+6. `feat(frontend): fall back to the nearest date and say so` (store + Test)
+7. `refactor(frontend): drop the BIOMASS-only paths until 07b–07d rebuild them` (Löschungen)
+8. `docs: record M2-07a in the decision log`
+
+Das Backend kommt in keinem Commit vor: `earthx:viewer` legt M2-04 an (§5).
 
 ## 8. Umfang
 
 Geschätzt rund 300 neue und geänderte Zeilen plus rund 400 gelöschte
 (`products.ts` 121, `ViewerControls.tsx` 189, `DownloadBar.tsx` 66,
 `SearchBox.tsx` 92, dazu Teile von `store.ts`). Der Richtwert von 400 Zeilen
-(`CLAUDE.md`) ist damit überschritten, überwiegend durch Löschungen. §12 F3
-stellt die Teilung zur Wahl.
+(`CLAUDE.md`) ist damit überschritten, überwiegend durch Löschungen — von Otto
+am 20.09.2026 so entschieden (§12 Antwort 3).
 
 ## 9. Abnahme
 
-- `npm run lint`, `npx tsc -b --pretty false` und `npm test` grün; `ruff check backend`
-  und `pytest` grün, falls §5 umgesetzt wird.
+- `npm run lint`, `npx tsc -b --pretty false` und `npm test` grün. Das Backend wird
+  nicht angefasst, `ruff` und `pytest` laufen trotzdem einmal als Gegenprobe.
 - `grep -rn "/api/" frontend/src` findet nichts mehr (M2-Abnahmekriterium 7).
 - Lokal vorführbar mit `docker compose up` und `npm run dev`: Datensatz wählen,
   AOI zeichnen oder hochladen, suchen, Quicklooks auf der Karte, Zeitleiste
   abspielen, Szene anklicken und auswählen; ein Zeitraum ohne Treffer zeigt den
   Datums-Hinweis. Die Anleitung steht im PR.
+- **Ausdrücklich vorgeführt, weil kein Test es abdeckt:** Ein Quicklook auf der
+  Karte zeigt den Nodata-Rand durchsichtig, nicht schwarz — das ist der Beleg,
+  dass das Canvas-Keying über die Herkunftsgrenze hinweg trägt (§4.4).
+- Der Viewer zeigt zwischen 07a und 07b keine vollaufgelösten Bilder mehr, nur
+  Quicklooks; das steht so im PR (§13).
 - Eine Suche, die zwei Datensätze umfasst, ist in der Oberfläche gar nicht
   erst auslösbar; der `400` der API ist trotzdem als Meldung geprüft.
 
@@ -297,8 +376,8 @@ stellt die Teilung zur Wahl.
 
 `backend/app/` (Prototyp bis M2-11), `docker-compose.yml`, `.importlinter`,
 `index.css`/`App.css` und das HUD-Design, `MapView.tsx`, die Zeichenwerkzeuge,
-`aoiFile.ts`, alle Backend-Module außer den drei Dateien aus §5, `CODEOWNERS`,
-`.claude/`. An `.github/workflows/ci.yml` nur der Vitest-Schritt.
+`aoiFile.ts`, **das gesamte Backend** (`earthx:viewer` legt M2-04 an, §5),
+`CODEOWNERS`, `.claude/`. An `.github/workflows/ci.yml` nur der Vitest-Schritt.
 
 ## 11. Risiken
 
@@ -307,58 +386,41 @@ stellt die Teilung zur Wahl.
 | Form des `next`-Links weicht von der Erwartung ab | Der Client liest den Parameter aus der `href` statt ein Format anzunehmen; Test deckt „kein Link" ab; im Umsetzungsschritt einmal gegen die laufende API geprüft |
 | 300 Items in bis zu drei Seiten sind für eine große AOI zu wenig | `numberMatched` wird angezeigt, der Hinweis rät zur Eingrenzung; echtes Nachladen gehört zu 07c (Coverage entscheidet über die Last) |
 | Nodata-Keying entfernt dunkles Wasser | Schwelle am Datensatz statt im Code (§5); für Sentinel-2 bleibt es bei 16 wie im Prototyp, nachjustierbar ohne Codeänderung |
-| Der Viewer kann nach 07a vorübergehend weniger als der Prototyp | Beabsichtigt (Strangler); der Stand des Prototyps hängt am Tag `prototype-biomass`; 07b–07d bauen Kacheln, Coverage und Download neu |
+| Der Viewer kann nach 07a vorübergehend weniger als der Prototyp | Beabsichtigt (Strangler); der Stand des Prototyps hängt am Tag `prototype-biomass`; 07b–07d bauen Kacheln, Coverage und Download neu. Im PR ausdrücklich vermerkt (§13) |
 | `earthx:viewer` wird in M2-09b/M2-10 zu eng | Frontend hat dokumentierte Vorgabewerte und kommt ohne das Feld aus |
+| M2-04 legt `earthx:viewer` anders an als §5 bestellt | §5 nennt Dataclass, Werte und JSON-Abbildung wörtlich; weicht M2-04 ab, ändert sich im Frontend nur `datasets.ts` |
+| Ein Zeitschritt mit genau einem Item wirkt wie eine überflüssige Ebene | Die Gruppe bleibt eine Menge und trägt `display_properties`; der zweite Datensatz (M2-10) darf mehrere Items hineinlegen, ohne dass sich etwas ändert |
 
-## 12. Fragen an Otto
+## 12. Antworten von Otto (20.09.2026)
 
-**F1 — Gruppierungsschlüssel für Sentinel-2.** Ein Zeitschritt ist beim Prototyp
-„ein Überflug", also die Menge benachbarter Szenen, die eine AOI gemeinsam
-abdecken. `adr/0003` §10.3 nennt als naheliegend „Datum + MGRS-Kachel"; gemessen
-(§2.1) gibt es dafür `grid:code`, für den Überflug `s2:datatake_id`, einen
-relativen Orbit als Feld jedoch nicht.
+| # | Frage | Antwort | Folge im Plan |
+|---|---|---|---|
+| 1 | Gruppierungsschlüssel für Sentinel-2 | **(b) Datum + `grid:code`.** Begründung: Nach D11 gibt es in M2 kein Mosaik im Kachel-Pfad, eine Gruppe muss also auf genau ein Item und damit eine Kachel-URL führen; ein Datatake umfasst viele Kacheln. `s2:datatake_id` bleibt als angezeigte Eigenschaft der Gruppe | §4.3, §5 (`grouping_keys` / `display_properties`), §6 |
+| 2 | Wo steht der Schlüssel | **(a) Neues Feld `earthx:viewer`** in Registry und Collection, neunte Zeile in `architekturplan.md` 5.1 — **freigegeben**. Angelegt wird es aber **in M2-04**, das die Registry ohnehin erweitert. M2-07a liest das Feld nur und **hängt damit an M2-04** | §5 ist die Bestellung an M2-04; §7 ohne Backend-Commit; §13 |
+| 3 | Zuschnitt des PR | **(a) Ein PR mit dem Abbau.** Im PR ausdrücklich vermerken, dass der Viewer auf `main` zwischen 07a und 07b keine Bilder zeigt | §8, §9, §13 |
+| 4 | TypeScript-Client | **(a) Handgeschrieben in M2;** die Generierung aus dem OpenAPI-Schema wird eine eigene Aufgabe nach M2-06 | §4.1 unverändert; eigene Log-Zeile |
+| 5 | Datums-Fallback | **(a) ±7/±30/±90 Tage, zeitlich nächstes Item, sichtbarer Hinweis.** Da die Quelle nicht sortiert, muss das Fenster innerhalb einer Suche auswertbar bleiben; `limit` und Seitenmarke sind im Plan zu benennen | **§4.5.1** neu |
+| 6 | Serverzustand | **(a) Bei `zustand` bleiben** | §4.5 unverändert, keine neue Abhängigkeit |
 
-- **(a) Datum + `s2:datatake_id`** — eine Gruppe ist ein Überflug, die benachbarten
-  MGRS-Kacheln liegen darin zusammen und sind später mosaikfähig. **Empfehlung.**
-- (b) Datum + `grid:code` — jede MGRS-Kachel wird ein eigener Zeitschritt; die
-  Zeitleiste läuft dann über Kacheln statt über Aufnahmen.
-- (c) Nur Datum — am einfachsten, verliert aber die Trennung zweier Überflüge
-  am selben Tag.
+Dazu ein Hinweis für die Umsetzung, der in §4.4 eingearbeitet ist: Die Quicklooks
+kommen direkt vom Asset-Host (D14); für das Canvas-Keying aus Inventar F6 muss das
+Bild mit `crossOrigin="anonymous"` geladen werden, sonst ist das Canvas gesperrt.
+Der Host sendet laut `adr/0006` `Access-Control-Allow-Origin: *`.
 
-**F2 — Wo steht dieser Schlüssel?** Heute nirgends.
+## 13. Stand der Umsetzung
 
-- **(a) Neues Feld `earthx:viewer`** in Registry und Collection (§5). Das ist eine
-  **neunte** Zeile in `architekturplan.md` 5.1, also eine Architekturänderung:
-  Log-Zeile und Tabellenzeile, aus meiner Sicht ohne eigenes ADR. **Empfehlung.**
-- (b) Das bestehende `earthx:default_render` erweitern — kein neues Feld, aber es
-  vermischt Darstellung mit Gruppierung.
-- (c) Vorerst fest im Frontend, Registry-Feld erst mit M2-09b — spart die
-  Architekturänderung jetzt, widerspricht aber „Schlüssel aus der Registry".
+Aus Antwort 2 folgt die Reihenfolge **M2-04 vor M2-07a**: Das Feld `earthx:viewer`
+entsteht dort, und M2-07a liest es. M2-04 ist zum Zeitpunkt dieses Plans **nicht
+umgesetzt** (Welle 2 laut `m2-format-und-viewer.md` §3, M2-07a ist Welle 3). Die
+Umsetzung von M2-07a beginnt deshalb, sobald M2-04 gemergt ist.
 
-**F3 — Zuschnitt des PR.** Die Pfade ohne `earthx`-Backend (Kacheln, Download,
-Dekomposition, Stitching, Coverage, `/api/config`) hängen am selben Code wie die
-Suche.
+Technisch ginge 07a auch vorher: Das Frontend hat für ein fehlendes `earthx:viewer`
+dokumentierte Vorgabewerte (§5), und die Gruppierung liefe dann bis zum Merge von
+M2-04 auf „nur Datum" statt auf `grid:code`. Ob 07a so vorgezogen wird, entscheidet
+Otto; der Plan setzt es nicht voraus.
 
-- **(a) In 07a mit abbauen**, rund 700 geänderte Zeilen, davon etwa 400
-  Löschungen; danach ruft das Frontend nachweislich keine Prototyp-Route mehr auf.
-  **Empfehlung.**
-- (b) 07a in zwei PRs teilen: erst Abbau und API-Client, dann Suche, Quicklooks,
-  Zeitleiste.
-- (c) Die Prototyp-Aufrufe bis 07d stehen lassen — dann bleibt der `/api`-Proxy
-  und das M2-Abnahmekriterium 7 offen.
-
-**F4 — TypeScript-Client aus dem OpenAPI-Schema.** `architekturplan.md` 8.1 sagt,
-der Client werde generiert. Empfehlung: in M2 **handgeschrieben** (er hat zwei
-Funktionen), Generierung als eigene Aufgabe nach M2-06, wenn Kachel-, Coverage-
-und Download-Routen stehen. Einverstanden?
-
-**F5 — Datums-Fallback.** Empfehlung: Fenster in drei Stufen erweitern
-(±7/±30/±90 Tage) und das zeitlich nächste Item nehmen — höchstens drei
-zusätzliche Anfragen, unabhängig von der Sortierung der Quelle, die in `earthx`
-abgeschaltet ist. Alternative: eine einzige Sonde ohne Zeitraum, die sich auf die
-Reihenfolge der Quelle verlässt (weniger Last, nicht zugesichert). Einverstanden?
-
-**F6 — Serverzustand.** `architekturplan.md` 8.2 nennt eine Trennung von Server-
-und UI-Zustand (z. B. TanStack Query). Empfehlung: in M2 **bei `zustand` bleiben**,
-keine neue Abhängigkeit; die Trennung lohnt sich, wenn mit 07b/07c mehrere
-parallele Abfragen dazukommen. Einverstanden?
+**Was der PR beim Fertigmelden ausdrücklich sagen muss** (Antwort 3): Zwischen dem
+Merge von 07a und dem von 07b zeigt der Viewer auf `main` **keine vollaufgelösten
+Bilder** — Kacheln, Darstellungssteuerung, Coverage und Download sind ausgebaut und
+kommen mit 07b bis 07d zurück. Sichtbar bleiben in dieser Zeit die Quicklook-Overlays
+und die Footprints.
