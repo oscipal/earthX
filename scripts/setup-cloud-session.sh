@@ -38,17 +38,23 @@ else
 fi
 
 # --- Python -------------------------------------------------------------
+# Das venv wird nur einmal angelegt, aber `pip install` läuft bei jedem Start:
+# ein bestehendes venv kann aus einer Zeit stammen, in der
+# backend/requirements.txt weniger Pakete listete (z. B. vor `titiler.core`
+# in M2-04), und pip überspringt bereits erfüllte Anforderungen ohnehin
+# schnell (M2-13, mehrere Sessions mussten sonst von Hand nachinstallieren).
 if [ -x "${VENV}/bin/python" ]; then
   log "Python-venv existiert bereits (${VENV})"
 else
   log "Python-venv anlegen (${VENV})"
-  if python3 -m venv "${VENV}"; then
-    "${VENV}/bin/pip" install --upgrade --quiet pip \
-      && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
-      || warn "pip-Installation fehlgeschlagen"
-  else
-    warn "Anlegen des venv fehlgeschlagen"
-  fi
+  python3 -m venv "${VENV}" || warn "Anlegen des venv fehlgeschlagen"
+fi
+
+if [ -x "${VENV}/bin/python" ]; then
+  log "Backend-Abhängigkeiten installieren (backend/requirements-dev.txt)"
+  "${VENV}/bin/pip" install --upgrade --quiet pip \
+    && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
+    || warn "pip-Installation fehlgeschlagen"
 fi
 
 # --- Node -----------------------------------------------------------------
@@ -119,7 +125,7 @@ ENVEOF
 # Sitzung scheinbar sauber startete. Die Zusammenfassung geht deshalb auf
 # stdout, und der Hook endet weiterhin mit Exit 0.
 
-have_venv() { [ -x "${VENV}/bin/python" ] && "${VENV}/bin/python" -c ''; }
+have_venv() { [ -x "${VENV}/bin/python" ] && "${VENV}/bin/python" -c 'import psycopg, stac_fastapi.pgstac, titiler.core'; }
 have_frontend() { [ -d "${REPO_ROOT}/frontend/node_modules" ]; }
 have_postgres() { as_postgres psql -d earthx -tAc 'SELECT 1'; }
 have_postgis() {
