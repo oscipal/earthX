@@ -78,7 +78,9 @@ def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # runs for real before that point.
     monkeypatch.setattr(
         "earthx.readers.cog.check_url",
-        lambda url, policy: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
+        # `**_` swallows the resolver `asset_path` hands on (M2-14): these tests
+        # answer from memory whatever the caller would have resolved with.
+        lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
     )
     monkeypatch.setattr("earthx.api.tiler.CogReader", FakeReader)
     app = build_app(REGISTRY, lifespan=lifespan)
@@ -146,7 +148,9 @@ class TestAcceptanceCriteria:
 
         monkeypatch.setattr(
             "earthx.readers.cog.check_url",
-            lambda url, policy: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
+            # `**_` swallows the resolver `asset_path` hands on (M2-14): these tests
+        # answer from memory whatever the caller would have resolved with.
+        lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
         )
         monkeypatch.setattr("earthx.api.tiler.CogReader", FakeReader)
         app = build_app(registry, lifespan=lifespan)

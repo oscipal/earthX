@@ -29,7 +29,9 @@ def without_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     tests that get as far as an address would otherwise need one."""
     monkeypatch.setattr(
         "earthx.readers.cog.check_url",
-        lambda url, policy: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
+        # `**_` swallows the resolver `asset_path` hands on (M2-14): these tests
+        # answer from memory whatever the caller would have resolved with.
+        lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
     )
 
 
@@ -93,3 +95,17 @@ def test_a_plain_string_is_not_a_dataset() -> None:
 def test_a_looks_like_a_path_string_is_not_one_either() -> None:
     with pytest.raises(TypeError, match="AssetPath"):
         CogReader("https://attacker.example.invalid/x.tif")
+
+
+def test_the_caller_s_resolver_is_the_one_that_is_asked(policy: Policy) -> None:
+    """``asset_path`` hands ``resolve`` on to ``check_url`` rather than resolving
+    itself — that argument is how the tiler gets its cached resolver in (M2-14)."""
+    asked: list[str] = []
+
+    def resolve(host: str, port: int) -> tuple[str, ...]:
+        asked.append(host)
+        return ("93.184.216.34",)
+
+    path = asset_path(HREF, policy, dataset_id="d", item_id="i", asset="visual", resolve=resolve)
+    assert path == f"/vsicurl/{HREF}"
+    assert asked == [HOST]

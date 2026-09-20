@@ -21,15 +21,18 @@ from earthx.gateway.errors import (
     UrlTooLong,
 )
 from earthx.gateway.policy import ALLOWED_HOSTS_ENV, Policy, host_of, normalize_host, policy_from_env
+from earthx.gateway.resolver import CachingResolver, Resolver, resolve_host
 
 __all__ = [
     "ALLOWED_HOSTS_ENV",
     "AddressRejected",
+    "CachingResolver",
     "CheckedUrl",
     "Gateway",
     "GatewayError",
     "GatewayResponse",
     "Policy",
+    "Resolver",
     "ResponseTooLarge",
     "TooManyRedirects",
     "UpstreamError",
@@ -41,4 +44,5 @@ __all__ = [
     "host_of",
     "normalize_host",
     "policy_from_env",
+    "resolve_host",
 ]

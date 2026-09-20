@@ -28,7 +28,14 @@ from earthx.adapters.earth_search import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.tiler import DOWNLOAD_ROUTE, ROUTER_PREFIX, build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable, UrlRejected, check_url
+from earthx.gateway import (
+    CachingResolver,
+    UpstreamError,
+    UpstreamTimeout,
+    UpstreamUnreachable,
+    UrlRejected,
+    check_url,
+)
 from earthx.gateway.policy import inspect_url
 
 FIXTURE = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search" / "item_asset_hosts.json"
@@ -64,7 +71,9 @@ def client(item: dict[str, Any], opened: list[str], monkeypatch: pytest.MonkeyPa
     """
     monkeypatch.setattr(
         "earthx.readers.cog.check_url",
-        lambda url, policy: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
+        # `**_` swallows the resolver `asset_path` hands on (M2-14): these tests
+        # answer from memory whatever the caller would have resolved with.
+        lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
     )
 
     def fake_read(reader, src_path, **kwargs) -> dict[str, Any]:
@@ -265,6 +274,49 @@ class TestTheAllowlist:
                     inspect_url(asset["href"], policy)
             else:
                 assert inspect_url(asset["href"], policy).url == asset["href"]
+
+
+class TestTheAssetHostIsResolvedOnce:
+    """M2-14: a batch of tiles resolves the asset host once, not once per tile.
+
+    Unlike the fixture above these tests leave ``check_url`` alone and put a
+    counting resolver in the process's own slot, because what is under test is
+    exactly the argument the path dependency hands on.
+    """
+
+    @pytest.fixture
+    def counting(self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, list[str]]:
+        resolved: list[str] = []
+
+        def resolve(host: str, port: int) -> tuple[str, ...]:
+            resolved.append(host)
+            return ("93.184.216.34",)
+
+        def fake_read(reader, src_path, **kwargs) -> dict[str, Any]:
+            return {}
+
+        monkeypatch.setattr("earthx.access.tiles._read_statistics", fake_read)
+
+        async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
+            return item
+
+        app = build_app()
+        app.state.earthx_item_source = item_source
+        app.state.earthx_cache_pool = None
+        app.state.earthx_resolver = CachingResolver(resolve=resolve)
+        return TestClient(app), resolved
+
+    def test_twenty_requests_for_one_item_resolve_the_host_once(
+        self, counting: tuple[TestClient, list[str]]
+    ) -> None:
+        client, resolved = counting
+        for _ in range(20):
+            assert client.get(f"{BASE}/statistics", params={"asset": "visual"}).status_code == 200
+        assert len(resolved) == 1
+
+    def test_the_process_carries_a_resolver_of_its_own(self) -> None:
+        """The app builds one; nothing has to remember to pass it in."""
+        assert isinstance(build_app().state.earthx_resolver, CachingResolver)
 
 
 def test_health_still_answers_the_way_compose_asks_it_to(client: TestClient) -> None:
