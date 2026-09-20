@@ -25,6 +25,7 @@ from earthx.catalog.registry import (
     HealthInfo,
     HealthStatus,
     LicenseTier,
+    SourceInfo,
     SpatialExtent,
     TemporalExtent,
     TermsOfUse,
@@ -174,6 +175,19 @@ class TestLookup:
         assert len(REGISTRY) == len(list(REGISTRY))
 
 
+def render(**overrides) -> DefaultRender:
+    """A valid standard visualisation with one field replaced."""
+    fields = {
+        "title": "True colour",
+        "assets": ("visual",),
+        "rescale": ((0.0, 255.0),),
+        "colormap_name": None,
+        "expression": None,
+        "resampling": "nearest",
+    }
+    return DefaultRender(**{**fields, **overrides})
+
+
 class TestMalformedInput:
     """Wrong values, not just missing ones — the entry is written by hand."""
 
@@ -199,14 +213,25 @@ class TestMalformedInput:
                 end=datetime(2020, 1, 1, tzinfo=timezone.utc),
             )
 
-    @pytest.mark.parametrize("stretch", [(1.0, 1.0), (3000.0, 0.0)])
-    def test_an_empty_or_inverted_stretch_is_rejected(self, stretch) -> None:
-        with pytest.raises(ConfigError, match="stretch"):
-            DefaultRender(bands=("red",), stretch=stretch, colormap=None)
+    @pytest.mark.parametrize("rescale", [((1.0, 1.0),), ((3000.0, 0.0),), ((0.0, 1.0), (2.0, 2.0))])
+    def test_an_empty_or_inverted_rescale_is_rejected(self, rescale) -> None:
+        """Every pair, not only the first: a stretch that renders nothing is the one
+        value the display controls cannot recover from on their own."""
+        with pytest.raises(ConfigError, match="rescale"):
+            render(rescale=rescale)
 
-    def test_a_visualisation_without_bands_is_rejected(self) -> None:
-        with pytest.raises(ConfigError, match="band"):
-            DefaultRender(bands=(), stretch=(0.0, 1.0), colormap=None)
+    def test_a_visualisation_without_an_asset_or_an_expression_is_rejected(self) -> None:
+        with pytest.raises(ConfigError, match="asset or an expression"):
+            render(assets=())
+
+    def test_a_colormap_on_several_assets_is_rejected(self) -> None:
+        """A colormap paints one band; with three assets it would silently paint one."""
+        with pytest.raises(ConfigError, match="colormap"):
+            render(assets=("red", "green", "blue"), colormap_name="viridis")
+
+    def test_an_expression_alone_is_enough(self) -> None:
+        """Band math has no asset list, and adr/0006 §5 keeps the render-extension field."""
+        assert render(assets=(), expression="(nir-red)/(nir+red)").expression
 
     def test_terms_without_a_german_text_are_rejected(self) -> None:
         """Docs and UI are German (CLAUDE.md); an English-only notice cannot be shown."""
@@ -241,6 +266,33 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="https"):
             vary(source=replace(valid_config.source, endpoint=endpoint))
 
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "https://assets.example.invalid",  # a URL, not a host
+            "assets.example.invalid/bucket",  # a path
+            "assets.example.invalid:443",  # a port
+            "Assets.Example.Invalid",  # not the spelling an href is compared against
+            "localhost",  # no dot: not a name the allowlist can match
+            "",
+        ],
+    )
+    def test_an_asset_host_that_is_not_a_bare_name_is_rejected(self, vary, valid_config, host) -> None:
+        """It would never match the host of an href, so it would quietly close the read
+        path instead of opening it (adr/0006 §3.3)."""
+        with pytest.raises(ConfigError, match="asset_hosts"):
+            vary(source=replace(valid_config.source, asset_hosts=(host,)))
+
+    def test_an_asset_host_is_not_optional(self, valid_config) -> None:
+        """KLAERUNGEN B10: a field with a default is a field nobody decided about."""
+        with pytest.raises(TypeError):
+            SourceInfo(
+                adapter=valid_config.source.adapter,
+                endpoint=valid_config.source.endpoint,
+                source_collection_id=valid_config.source.source_collection_id,
+                harvest_run=None,
+            )
+
 
 class TestEveryEntry:
     """KLAERUNGEN B10 asks for a check per entry, not per entry we happened to write."""
@@ -251,6 +303,10 @@ class TestEveryEntry:
 
     def test_the_endpoint_is_https(self, entry: DatasetConfig) -> None:
         assert entry.source.endpoint.startswith("https://")
+
+    def test_the_assets_have_a_host(self, entry: DatasetConfig) -> None:
+        """Without one, the search answers and every read of an asset is refused (D12)."""
+        assert entry.source.asset_hosts
 
     def test_the_licence_is_identifiable(self, entry: DatasetConfig) -> None:
         assert entry.license.spdx_id or (entry.license.name and entry.license.url)

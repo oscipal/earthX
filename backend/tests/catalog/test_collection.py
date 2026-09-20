@@ -99,10 +99,13 @@ def test_the_terms_notice_is_copied_not_shared(collection: dict) -> None:
     assert SENTINEL_2_L2A.license.terms.notice["de"] != "überschrieben"
 
 
-def test_an_open_standard_visualisation_stays_null(collection: dict) -> None:
-    """Not omitted: the field is part of 5.1, and "not defined yet" is a value."""
-    assert "earthx:default_render" in collection
-    assert collection["earthx:default_render"] is None
+def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_extension(
+    collection: dict,
+) -> None:
+    """adr/0006 §5: the values must be publishable as `renders` without a translation."""
+    render = collection["earthx:default_render"]
+    assert set(render) == {"title", "assets", "rescale", "colormap_name", "expression", "resampling"}
+    assert render["assets"] == ["visual"]
 
 
 def test_a_dataset_without_a_doi_declares_no_scientific_extension(collection: dict) -> None:
@@ -127,8 +130,8 @@ class TestNoSharedState:
 
     def test_changing_the_result_does_not_reach_the_entry(self, valid_config) -> None:
         collection = to_stac_collection(valid_config)
-        collection["earthx:default_render"]["bands"].append("nir")
-        assert "nir" not in valid_config.default_render.bands
+        collection["earthx:default_render"]["assets"].append("nir")
+        assert "nir" not in valid_config.default_render.assets
 
     def test_changing_the_bbox_does_not_reach_the_entry(self, valid_config) -> None:
         collection = to_stac_collection(valid_config)
@@ -160,9 +163,10 @@ class TestAnEntryWithEverythingSet:
 
     def test_the_standard_visualisation_is_carried_over(self, full: dict) -> None:
         render = full["earthx:default_render"]
-        assert render["bands"] == ["red", "green", "blue"]
-        assert render["stretch"] == [0.0, 3000.0]
-        assert render["colormap"] == "viridis"
+        assert render["assets"] == ["red", "green", "blue"]
+        assert render["rescale"] == [[0.0, 3000.0]] * 3
+        assert render["colormap_name"] is None
+        assert render["resampling"] == "nearest"
 
     def test_the_result_survives_a_round_trip_through_json(self, full: dict) -> None:
         """04b hands this to pgstac, where a stray date or Enum would only show up late."""

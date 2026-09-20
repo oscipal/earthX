@@ -134,19 +134,30 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 None if config.health.last_checked_ok is None else config.health.last_checked_ok.isoformat()
             ),
         },
+        # The field names of the STAC `render` extension (adr/0006 §5): what stands
+        # here is what a tile URL carries, so it can be published as `renders` later
+        # without a translation.
         "earthx:default_render": (
             None
             if config.default_render is None
             else {
-                "bands": list(config.default_render.bands),
-                "stretch": list(config.default_render.stretch),
-                "colormap": config.default_render.colormap,
+                "title": config.default_render.title,
+                "assets": list(config.default_render.assets),
+                "rescale": (
+                    None
+                    if config.default_render.rescale is None
+                    else [list(pair) for pair in config.default_render.rescale]
+                ),
+                "colormap_name": config.default_render.colormap_name,
+                "expression": config.default_render.expression,
+                "resampling": config.default_render.resampling,
             }
         ),
         "earthx:source": {
             "adapter": config.source.adapter.value,
             "endpoint": config.source.endpoint,
             "source_collection_id": config.source.source_collection_id,
+            "asset_hosts": list(config.source.asset_hosts),
             "harvest_run": config.source.harvest_run,
         },
     }

@@ -168,11 +168,19 @@ class AccessInfo:
 
 @dataclass(frozen=True, slots=True)
 class SourceInfo:
-    """Where the items come from. adr/0005 rule I branches on this per collection."""
+    """Where the items come from. adr/0005 rule I branches on this per collection.
+
+    ``asset_hosts`` names the hosts the *assets* of this dataset lie on, which is a
+    different question from where the catalogue answers (adr/0006 §3.3): the gateway
+    builds its allowlist from both, and without the asset hosts every read of a COG
+    is refused while the search still works. Hosts, not URLs — one entry per name,
+    exactly as it appears in an asset href.
+    """
 
     adapter: AdapterKind
     endpoint: str
     source_collection_id: str
+    asset_hosts: tuple[str, ...]
     harvest_run: str | None
 
 
@@ -191,18 +199,35 @@ class CoverageInfo:
 
 @dataclass(frozen=True, slots=True)
 class DefaultRender:
-    """Standard visualisation (onboarding checklist, point 8)."""
+    """Standard visualisation (onboarding checklist, point 8; adr/0001 FZ7).
 
-    bands: tuple[str, ...]
-    stretch: tuple[float, float]
-    colormap: str | None
+    The field names follow the STAC ``render`` extension, on adr/0006 §5's
+    recommendation: the same values can later be published as ``renders`` on our own
+    collection without a translation step, and they are the parameters the tile URL
+    carries anyway (``assets``, ``rescale``, ``colormap_name``, ``expression``,
+    ``resampling`` — adr/0006 §5 "Zu Frage 3").
+
+    ``rescale`` is the *starting point* of the display controls, not a fixed stretch:
+    the viewer asks ``/statistics`` for the item it shows and overwrites it (F18).
+    """
+
+    title: str
+    assets: tuple[str, ...]
+    rescale: tuple[tuple[float, float], ...] | None
+    colormap_name: str | None
+    expression: str | None
+    resampling: str
 
     def __post_init__(self) -> None:
-        if not self.bands:
-            raise ConfigError("default_render needs at least one band")
-        low, high = self.stretch
-        if low >= high:
-            raise ConfigError(f"default_render stretch {self.stretch} is empty or inverted")
+        if not self.assets and not self.expression:
+            raise ConfigError("default_render needs an asset or an expression")
+        for low, high in self.rescale or ():
+            if low >= high:
+                raise ConfigError(f"default_render rescale ({low}, {high}) is empty or inverted")
+        if self.colormap_name is not None and len(self.assets) > 1:
+            raise ConfigError(
+                "default_render: a colormap paints one band, so it cannot go with several assets"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +378,17 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: endpoint {self.source.endpoint!r} is not https (KLAERUNGEN B8)"
             )
+        for host in self.source.asset_hosts:
+            # A host, not a URL: what goes into the allowlist is compared against the
+            # host of an href, so a scheme, a path or a port here would never match and
+            # would quietly close the read path instead of opening it (adr/0006 §3.3).
+            # https itself is not a choice per dataset — `gateway.inspect_url` refuses
+            # every other scheme for everyone.
+            if not host or host != host.strip().lower() or any(c in host for c in ":/?#@ ") or "." not in host:
+                raise ConfigError(
+                    f"{self.dataset_id}: asset_hosts entry {host!r} is not a bare host name "
+                    "(no scheme, no path, no port, lower case)"
+                )
 
 
 class DatasetRegistry:

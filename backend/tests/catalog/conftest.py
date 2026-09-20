@@ -82,6 +82,7 @@ def valid_config() -> DatasetConfig:
             adapter=AdapterKind.EARTH_SEARCH_V1,
             endpoint="https://example.invalid/v1",
             source_collection_id="test-collection",
+            asset_hosts=("assets.example.invalid",),
             harvest_run=None,
         ),
         coverage=CoverageInfo(
@@ -89,7 +90,14 @@ def valid_config() -> DatasetConfig:
             typical_footprint_km=110.0,
             max_geotile_level=8,
         ),
-        default_render=DefaultRender(bands=("red", "green", "blue"), stretch=(0.0, 3000.0), colormap="viridis"),
+        default_render=DefaultRender(
+            title="True colour",
+            assets=("red", "green", "blue"),
+            rescale=((0.0, 3000.0), (0.0, 3000.0), (0.0, 3000.0)),
+            colormap_name=None,
+            expression=None,
+            resampling="nearest",
+        ),
         health=HealthInfo(status=HealthStatus.OK, last_checked_ok=date(2026, 1, 1)),
     )
 

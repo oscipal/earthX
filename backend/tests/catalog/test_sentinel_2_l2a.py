@@ -135,9 +135,35 @@ def test_coverage_is_upstream_aggregation_capped_at_z8() -> None:
     assert SENTINEL_2_L2A.capabilities.single_coverage_product is False
 
 
-def test_the_standard_visualisation_is_open() -> None:
-    """Checklist point 8 is not answered by docs/; m1-fundament.md §2 puts it in M2."""
-    assert SENTINEL_2_L2A.default_render is None
+def test_the_standard_visualisation_shows_the_scene_the_source_already_rendered() -> None:
+    """Checklist point 8, filled in M2-04: `visual` is the 8-bit TCI of the source.
+
+    The identity stretch is the measured answer, not a placeholder: `p2` of the TCI
+    runs from 9 over vegetation to 202 over desert (five scenes, M2-04), so a fixed
+    stretch would clip a climate zone. The scene's own stretch comes from
+    `/statistics` (adr/0006 §5, F18).
+    """
+    render = SENTINEL_2_L2A.default_render
+    assert render is not None
+    assert render.assets == ("visual",)
+    assert render.rescale == ((0.0, 255.0),) * 3
+    assert render.colormap_name is None and render.expression is None
+
+
+def test_the_asset_host_is_the_one_measured_at_real_items() -> None:
+    """adr/0006 §3.7: without it the search runs and every read of a COG is refused.
+
+    `sentinel-cogs…` belongs to the older collection and must stay out: it is
+    reachable, which is exactly why naming the wrong one would go unnoticed.
+    """
+    assert SENTINEL_2_L2A.source.asset_hosts == (
+        "e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",
+    )
+
+
+def test_the_source_sends_cors_so_the_quicklook_needs_no_proxy() -> None:
+    """adr/0006 §3.6 and D14: the browser loads the thumbnail straight from the source."""
+    assert SENTINEL_2_L2A.access.cors is True
 
 
 def test_the_citation_is_open() -> None:
