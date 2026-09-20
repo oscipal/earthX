@@ -1,9 +1,9 @@
 # M2 — Zweites Format und generalisierter Viewer: Aufgabenschnitt
 
-**Status:** Fassung 2 vom 20.09.2026, nach dem Merge von #32–#35 und der Annahme
-von `adr/0006` (Kachel-Pfad) und `adr/0007` (Zarr). Alle Entscheidungen stehen im
-`docs/ENTSCHEIDUNGSLOG.md`; die Fragen aus Abschnitt 1.2 sind beantwortet
-(F1 = a, F2 = a). Erledigt: M2-00, M2-01, M2-02, M2-03.
+**Status:** Fassung 3 vom 20.09.2026, nach dem Merge von #37–#40. `adr/0006` und
+`adr/0007` sind angenommen, `adr/0007` um die Nachmessung §12 ergänzt. Alle
+Entscheidungen stehen im `docs/ENTSCHEIDUNGSLOG.md`. Erledigt: M2-00 bis M2-04,
+M2-03b und M2-05a; die Pläne für M2-05 und M2-07a liegen im Repo.
 **Ort im Repo:** `docs/plans/m2-format-und-viewer.md`
 **Grundlagen:** `projektplan.md` 4 (M2, Viewer-Strang); `architekturplan.md` 3.1,
 3.2, 6, 12.3, 13, 15.2; `adr/0001` (Zustand, Z4), `adr/0002` (Tests), `adr/0003`
@@ -51,8 +51,12 @@ aufgenommen, und das Frontend spricht nur noch mit der Zielarchitektur `earthx`.
 | D16 | **M2-09 wird geteilt:** 09a Reader gegen synthetisches Mini-Zarr (quellenunabhängig), 09b realer Datensatz | M2-09a, M2-09b, M2-10 |
 | D17 | **Python bleibt 3.11**, `zarr` auf 3.1.x; `titiler-eopf` ist ausgeschieden. Der gemessene Pfad ist eigener `zarr.abc.store.Store` → `zarr` → `xarray` → `rio_tiler.io.xarray.XarrayReader` | M2-09a |
 | D18 | **STAC 1.1 → 1.0** wird im Adapter normalisiert; Lizenz des zweiten Datensatzes wie beim ersten | M2-09b |
-| D19 | **`earthx:viewer`** als neuntes `earthx:`-Feld (`architekturplan.md` 5.1), **gebaut in M2-04** (#39), gelesen von M2-07a. Es trägt in M2 genau einen Schlüssel: `group_by`, Item-Eigenschaften in Schlüsselreihenfolge, `properties.` impliziert, ohne Vorgabewert; eine Eigenschaft mit STAC-Zeitpunkt geht als ihr **UTC-Datum** ein. Für Sentinel-2 `["datetime", "grid:code"]` — Aufnahmetag je MGRS-Kachel, eine Gruppe führt nach D11 auf genau eine Kachel-URL. `group_key` in `catalog/registry.py` ist die Referenzumsetzung, `tests/catalog/test_group_key.py` hält sie mit 12 Fällen fest; M2-07a spiegelt beide | M2-04, M2-07a, M2-10 |
-| D20 | Der **TypeScript-Client** bleibt in M2 handgeschrieben; die Generierung aus dem OpenAPI-Schema (`architekturplan.md` 8.1) wird eine eigene Aufgabe nach M2-06 | M2-07a–d |
+| D19 | **`earthx:viewer`** ist die neunte Zeile in `architekturplan.md` 5.1 und trägt in M2 nur `group_by`: Item-Eigenschaften in Schlüsselreihenfolge, `properties.` implizit, ohne Vorgabewert. Eine Eigenschaft mit STAC-Zeitpunkt geht als ihr **UTC-Datum** in den Schlüssel ein. Sentinel-2: `["datetime", "grid:code"]`. Referenzumsetzung `catalog/registry.py::group_key`, Fälle in `tests/catalog/test_group_key.py`. Verworfen: ein zweites Feld `group_by_date` | M2-07a, M2-09b |
+| D20 | **`DefaultRender`** trägt die Feldnamen der STAC-`render`-Extension; die **Kachel-URL** verlangt `asset` als Pflichtparameter, damit eine Registry-Änderung nicht dasselbe URL-Bild ändert (Z4). `AccessInfo.cors` gilt je Datensatz und steht für Sentinel-2 auf `True`. `pyproject.toml` nennt `fastapi.Depends`/`Path`/`Query` als unveränderliche Aufrufe (B008) | M2-04 (erledigt), M2-07b |
+| D21 | **`gateway`:** `httpx` wirft `InvalidURL` vor `check_url`; die Länge wird deshalb vorher selbst gemessen, und nur sie gilt als `UrlTooLong`. Darauf baut die AOI-Verdünnung aus `adr/0004` §3.4 auf | M2-05b, M2-09b |
+| D22 | **Histogramm ist monatlich.** Earth Search ignoriert `datetime_frequency_interval`; die Naht gibt keine Auflösung vor, sondern weist die gelieferte aus. Eine feinere Zeitleiste wäre eine eigene Messung und Entscheidung | M2-05b, M2-07c |
+| D23 | **Zweiter Datensatz: `sentinel-2-l2a-zarr3`** trotz „staging“ (F8), Zoomstufen **z8–z14** (F9), Auflösungsstufen aus dem **Store**, nicht aus dem Item (F10). Auflagen: Status „staging“ sichtbar in Registry und Viewer; Byte-Ranges im Store zwingend; nie `to_dataarray`/`to_array`; `zipped_product` (1,2 GB) fernhalten | M2-09b, M2-10 |
+| D24 | **Die Abnahme von M2 hängt nicht am Fortbestand der Quelle.** Fällt `sentinel-2-l2a-zarr3` weg, fällt die Aufnahme des zweiten Datensatzes, nicht M2; der Lesepfad gegen das synthetische Zarr aus M2-09a genügt | §5, M2-09a, M2-12 |
 ### 1.2 Fragen an Otto — beantwortet am 20.09.2026
 
 | # | Frage | Optionen | Antwort | betrifft |
@@ -95,32 +99,35 @@ Ottos Entscheidung zu M2-11).
 | M2-01 | Importverträge nach D2 | A | — | **erledigt** (#33) |
 | M2-02 | Spike Kachel-Pfad → `adr/0006` | C | — | **erledigt** (#34) |
 | M2-03 | Zarr-ADR → `adr/0007` | C | — | **erledigt** (#35) |
-| M2-03b | Nachmessung EOPF nach der Freigabe | C | Opus (hoch) | Freigabe `data.eodc.eu` |
+| M2-03b | Nachmessung EOPF nach der Freigabe | C | — | **erledigt** (#40) |
 | M2-04 | Kachel-Pfad für Sentinel-2 | B | — | **erledigt** (#39) |
-| M2-05 | Coverage-Anbieter und Route | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
+| M2-05a | Coverage-Anbieter (Naht und Adapter) | B | — | **erledigt** (#38) |
+| M2-05b | Coverage-Route | B | Sonnet (mittel) | M2-05a |
 | M2-06 | Download des AOI-Zuschnitts | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-04 |
-| M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | Plan Opus, Umsetzung Sonnet (mittel) | Tag, M2-04 (D19) |
+| M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | Sonnet (hoch) | Plan #37, M2-04 |
 | M2-07b | Frontend: Kacheln, Darstellungssteuerung, Layer-Manager | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-04, M2-07a |
-| M2-07c | Frontend: Coverage-Heatmap | B | Sonnet (mittel) | M2-05, M2-07a |
+| M2-07c | Frontend: Coverage-Heatmap | B | Sonnet (mittel) | M2-05b, M2-07a |
 | M2-07d | Frontend: Download | B | Sonnet (mittel) | M2-06, M2-07b |
-| M2-08 | Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-05, M2-06, M2-07d |
+| M2-08 | Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-05b, M2-06, M2-07d |
 | M2-09a | Zarr-Lesepfad gegen synthetisches Mini-Zarr | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
 | M2-09b | Zweiter Datensatz im Katalog | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-03b, M2-04, M2-09a |
 | M2-10 | Zweiter Datensatz im Viewer | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-09b, M2-07c |
 | M2-11 | Vorlage: Prototyp entfernen | C | Opus | M2-08 |
 | M2-12 | M2-Abnahme und README | A | Sonnet (mittel) | alle |
+| M2-13 | Kleinkram: SessionStart-Hook, Live-Smoke-Nachtrag | A | Sonnet (mittel) | — |
 | V-1 | Theme-Umschalter (Viewer-Strang) | A | Sonnet (mittel) | M2-07b |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
 
-1. ~~M2-00, M2-01, M2-02, M2-03~~ — erledigt
-2. ~~M2-04~~ — erledigt (#39); M2-05; dazu M2-03b (Stufe C, zählt nicht gegen die zwei)
-3. M2-06, M2-07a (07a erst nach dem Merge von M2-04, D19)
-4. M2-07b, M2-07c, M2-09a
-5. M2-07d, M2-09b, V-1
-6. M2-08, M2-10
-7. M2-11, M2-12
+1. ~~M2-00 bis M2-03~~ — erledigt
+2. ~~M2-03b, M2-04, M2-05a~~ — erledigt
+3. M2-05b, M2-07a; dazu M2-13 (Stufe A)
+4. M2-06, M2-09a
+5. M2-07b, M2-07c
+6. M2-07d, M2-09b, V-1
+7. M2-08, M2-10
+8. M2-11, M2-12
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -221,7 +228,7 @@ der Kandidatenmatrix.
 
 **Abnahme:** `adr/0007` mit Kandidatenmatrix, Empfehlung, Quellen und nummerierten Fragen an Otto.
 
-### M2-04 — Kachel-Pfad für Sentinel-2 (erledigt, #39)
+### M2-04 — Kachel-Pfad für Sentinel-2
 
 **Ziel:** Der `tiler`-Prozess liefert Kacheln und Statistik für Sentinel-2; die Kachel-URL bestimmt das Bild vollständig (Z4).
 **Stufe B.** Aufbau laut angenommenem `adr/0006`; die Messwerte und die Begründungen stehen dort, dieser Text nennt nur den Umfang.
@@ -232,14 +239,25 @@ der Kandidatenmatrix.
 - **Kein Quicklook-Proxy** (D14): Quicklooks lädt das Frontend direkt vom Asset-Host.
 - Statistik-Cache als eigene Tabelle per Migration in `catalog`, 30 Tage (D13, E4); Ausfall macht nur langsamer (E5).
 - **Standard-Visualisierung** (Checkliste Punkt 8, `adr/0001` FZ7): Bandzuordnung, Stretch und Colormap als Feld im Registry-Eintrag; Feldform im Plan-Schritt vorschlagen.
-- **`earthx:viewer`** als neuntes `earthx:`-Feld angelegt (D19): `ViewerInfo.group_by` und `group_key` in `catalog/registry.py`, Wert für Sentinel-2 in `catalog/datasets.py`, Abbildung in `catalog/collection.py`, neunte Zeile in `architekturplan.md` 5.1, `tests/catalog/test_group_key.py` mit 12 Fällen. M2-07a liest das Feld und spiegelt `group_key`.
 - **Einstieg des `tiler`-Prozesses** nach `api` verlegen; `httpx2` und `obstore` auf die Verbotsliste in `.importlinter`; Test, dass kein Modul `rio_tiler.io.stac` importiert (D15).
 - `docker-compose.yml`: `tiler` bekommt die Postgres-Umgebungsvariablen und den neuen Einstiegspunkt. Aus M1-07 bekannt: `api` startete ohne sie nicht.
 
 **Nicht anfassen:** `backend/app/`; Suche und STAC-API außer für die Asset-Auflösung; Mosaik (D11).
 **Abnahme:** dieselbe Kachel-URL liefert gegen zwei Instanzen dieselben Bytes; ein geleerter Statistik-Cache macht nur langsamer; kein Endpunkt nimmt eine freie URL an (Test mit Umgehungsversuchen, dazu Prüfung am OpenAPI-Schema); ein Asset-Host, der nicht in der Registry steht, wird abgewiesen; fehlerhafte `z/x/y`, unbekanntes Item, unbekanntes Band ergeben definierte Fehler; `lint-imports` und `compose-topology` grün.
 
-### M2-05 — Coverage-Anbieter und Route
+### M2-05b — Coverage-Route
+
+**Ziel:** Die Coverage aus M2-05a ist über `GET /coverage/{dataset_id}` erreichbar.
+**Stufe B**, bewusst **klein**: Route, Fehlerabbildung, Tests. M2-05a lag weit über dem Richtwert, hier gilt er wieder.
+**Umfang:**
+- Route an der Basis-App von `api`, außerhalb von `/stac`; Pflichtfeld mit den Werten `complete`/`truncated`/`sample`.
+- Die Antwort führt die Auflösung des Histogramms mit, weil die Quelle sie vorgibt (monatlich, D22).
+- **Der Antwortkörper der Quelle gelangt weder in die Antwort der Route noch ins Log.** Gemessen wurde, dass Earth Search bei `400` keine Koordinaten zurückspiegelt; das ist eine Stichprobe, keine Zusage. Ausgeliefert und geloggt werden Statuscode und eigener Text. Kein Eingriff in `gateway`.
+- Prüfung der `intersects`-Stützpunkte auf ±90/±180; die Quelle nimmt Unsinn heute still an (dasselbe Muster wie bei der bbox in `adr/0005` §3.5).
+
+**Abnahme:** Tests für Upstream-Fehler, geleerten Cache, unbekannten Datensatz, ungültige Geometrie; kein Test findet Koordinaten aus der Anfrage in Antwort oder Log.
+
+### M2-05a — Coverage-Anbieter (erledigt, #38)
 
 **Ziel:** Die gefilterte Coverage für Sentinel-2 nach `adr/0004`.
 **Stufe B.**
@@ -274,9 +292,9 @@ der Kandidatenmatrix.
 - Das Frontend spricht nur mit `earthx` (`/stac`, `tiler`-Routen, Coverage-, Download-Route), nie mit `/api` des Prototyps. Die Vite-Proxy-Konfiguration wird entsprechend umgestellt.
 - Datensatz ist überall Parameter, kein fester Wert (`ControlPanel.tsx`, `store.ts` generalisieren). Gesucht wird je Datensatz (D8).
 - HUD-Design und Bedienmuster laut Inventar Teil 3 bleiben.
-- Tests mit Vitest für reine Logik (URL-Bau für Kacheln und Statistik, Gruppierung, Umschaltpunkt der Coverage, Datums-Fallback), keine Oberflächentests. M2-07a richtet Vitest ein und nimmt es als Schritt in den CI-Job `frontend` auf; diese Änderung an `.github/workflows/ci.yml` ist ausdrücklich erlaubt (F2).
+- Tests mit Vitest für reine Logik (URL-Bau für Kacheln und Statistik, Gruppierung, Umschaltpunkt der Coverage, Datums-Fallback), keine Oberflächentests. Die Gruppierung übernimmt die Fälle aus `backend/tests/catalog/test_group_key.py`, damit Frontend und `group_key` nicht auseinanderlaufen; der Schlüssel kommt aus `earthx:viewer` (D19), das Frontend hat dafür keine Vorgabewerte. M2-07a richtet Vitest ein und nimmt es als Schritt in den CI-Job `frontend` auf; diese Änderung an `.github/workflows/ci.yml` ist ausdrücklich erlaubt (F2).
 
-**M2-07a — API-Client, Suche, Quicklooks, Zeitleiste.** F1 AOI-Auswahl, F3 Upload und letzte AOI (im Client, wie bisher), F4 Suche gegen `/stac` mit eigener Seitenmarke, F5 Gruppierung mit dem Schlüssel aus der Registry: `earthx:viewer.group_by` an der Collection, für Sentinel-2 `["datetime", "grid:code"]` (M2-04). Die Liste nennt Item-Eigenschaften in Schlüsselreihenfolge, `properties.` ist impliziert, und eine Eigenschaft mit einem STAC-Zeitpunkt geht als ihr UTC-Datum in den Schlüssel ein — M2-07a liest das Feld und legt nichts eigenes fest, F6 Quicklooks direkt vom Asset-Host, ohne Proxy (D14), mit Canvas-Keying wie im Prototyp, F7 Zeitleiste, F8 Ablauf. **Datums-Fallback:** liegt im gewählten Zeitraum nichts, das nächstgelegene Datum mit sichtbarem Hinweis. **Ortssuche** wird ausgeblendet (Eingabefeld und Aufruf entfernt), sie kommt mit M3 (F1).
+**M2-07a — API-Client, Suche, Quicklooks, Zeitleiste.** F1 AOI-Auswahl, F3 Upload und letzte AOI (im Client, wie bisher), F4 Suche gegen `/stac` mit eigener Seitenmarke, F5 Gruppierung mit Schlüssel aus der Registry (bei Sentinel-2 naheliegend Datum und MGRS-Kachel; im Plan-Schritt bestätigen), F6 Quicklooks direkt vom Asset-Host, ohne Proxy (D14), mit Canvas-Keying wie im Prototyp, F7 Zeitleiste, F8 Ablauf. **Datums-Fallback:** liegt im gewählten Zeitraum nichts, das nächstgelegene Datum mit sichtbarem Hinweis. **Ortssuche** wird ausgeblendet (Eingabefeld und Aufruf entfernt), sie kommt mit M3 (F1).
 **M2-07b — Kacheln, Darstellung, Layer-Manager.** F10 zweistufige Anzeige mit Kacheln aus M2-04; Statistik einmal abfragen, Streckbereich in die Kachelvorlage (Z4), Stretch und Colormap mit „Apply“ (F18); Vorgabe aus der Standard-Visualisierung der Registry; F19 Layer-Manager Basis (ausblenden, Transparenz, Reihenfolge).
 **M2-07c — Coverage-Heatmap.** `fill`-Layer mit logarithmischer Skala, Stützstellen aus dem Maximum der Antwort, Legende „Aufnahmen mit Mittelpunkt in der Zelle“; Anzeige von `gekappt`/`stichprobe`; Zeit-Histogramm an der Zeitleiste; reagiert auf Zeitraum und Filter. **Ersatzregel für den Umschaltpunkt:** `numberMatched < 500` greift nur, wenn die Antwort eine geprüfte Gesamtzahl führt. Fehlt sie — bei einer Stichprobe, siehe `adr/0007` — bleibt die Dichteanzeige, und der Hinweis „Stichprobe“ ist sichtbar; Footprints kommen dort nicht automatisch.
 **M2-07d — Download.** Einzel-Download aus dem Layer-Manager; vor dem Download Attribution und `terms_notice` sichtbar; Meldung bei Überschreiten des Größendeckels.
@@ -307,13 +325,15 @@ der Kandidatenmatrix.
 
 ### M2-09b — Zweiter Datensatz im Katalog
 
-**Ziel:** Der zweite Datensatz laut ergänztem `adr/0007` steht in Registry und Katalog und ist über die föderierte Suche erreichbar.
-**Stufe B.** Setzt M2-03b voraus; der Datensatz wird erst dort festgelegt.
+**Ziel:** `sentinel-2-l2a-zarr3` (D23) steht in Registry und Katalog und ist über die föderierte Suche erreichbar.
+**Stufe B.** Grundlage ist `adr/0007` §12, besonders die dreizehn Umsetzungspunkte in §12.11.
 **Umfang:**
-- Registry-Eintrag mit allen Capability-Flags (B10), Lizenzfeldern wie beim ersten Datensatz (D18), `asset_hosts` (D12), Coverage-Feldern, Standard-Visualisierung und den freigegebenen Zoomstufen aus M2-03b.
+- Registry-Eintrag mit allen Capability-Flags (B10), Lizenzfeldern wie beim ersten Datensatz (D18), `asset_hosts` (D12), Coverage-Feldern, Standard-Visualisierung, `earthx:viewer`, `AccessInfo.cors = True`, Zoomstufen z8–z14 und sichtbarem Hinweis auf den Status „staging“.
+- **Drei harte Auflagen (D23):** der Store beherrscht Byte-Ranges, sonst holt `zarr` je Kachel den 158-MB-Shard; Bänder werden nie über `to_dataarray`/`to_array` gestapelt; das Asset `zipped_product` (1,2 GB) wird ferngehalten, die Hostsperre tut das nicht mehr.
+- Auflösungsstufen aus dem Store lesen, nicht aus dem Item (F10).
 - Adapter für die Quelle über `gateway`, mit Normalisierung von STAC 1.1.0 auf 1.0.0 (D18).
 - **Ausgewiesene Stichprobe** als Coverage-Anbieter (`adr/0004` Option 6), weil die Quelle weder `numberMatched` noch eine Aggregation liefert; Pflichtfeld `stichprobe` und Probe entsprechend.
-- Quicklook: löst keiner auf, wird keiner ausgewiesen. Ein Proxy kommt nur, wenn `adr/0006` D14 es wegen fehlender CORS verlangt; dann im Plan-Schritt vorschlagen.
+- Quicklook: Die Quelle führt keinen. Ersatz kommt aus dem Kachelpfad (gemessen 38 kB, 0,6 s).
 
 **Abnahme:** Suche, Kachel, Statistik und Zuschnitt gegen die echte Quelle vorgeführt; Fixtures im Test synthetisch; kein Request außerhalb von `gateway`.
 
@@ -335,6 +355,17 @@ der Kandidatenmatrix.
 **Ziel:** Otto kann M2 anhand des PR abnehmen, ohne Code zu lesen.
 **Umfang:** Abnahme-Bericht mit Belegen je Kriterium aus Abschnitt 5; README um beide Datensätze, Attribution und Start des Viewers ergänzt; Anleitung zur lokalen Vorführung.
 
+### M2-13 — Kleinkram: SessionStart-Hook und Live-Smoke-Nachtrag
+
+**Ziel:** Zwei Dinge, die in jeder Session neu auffallen, sind einmal festgehalten.
+**Stufe A.**
+**Umfang:**
+- Der SessionStart-Hook installiert `backend/requirements.txt` vollständig (`psycopg`, `stac-fastapi`, seit M2-04 auch `titiler.core`) und migriert pgstac. Mehrere Sessions mussten das nachholen.
+- Nachtrag in `adr/0002`: Ein Live-Smoke ist aus einer Cloud-Sitzung nicht von Hand nachfahrbar, weil `gateway` zur geprüften Adresse verbindet und der Sitzungs-Proxy `CONNECT` auf eine IP abweist. In der CI läuft er, dort gibt es keinen Proxy. Latenzen werden im PR deshalb über `curl` belegt. Dazu eine Log-Zeile, damit der Befund nicht ein viertes Mal entdeckt wird.
+
+**Nicht anfassen:** `gateway` — die Adress-Bindung ist eine Sicherheitseigenschaft aus M1-03.
+**Abnahme:** Eine frisch gestartete Session kann `pytest` aus der Repo-Wurzel ohne Nachinstallation laufen lassen.
+
 ### V-1 — Theme-Umschalter (Viewer-Strang)
 
 **Ziel:** Umschalten zwischen dunkler und heller HUD-Palette (Inventar N1; zweite Palette in `index.css` vorbereitet).
@@ -346,11 +377,11 @@ der Kandidatenmatrix.
 
 ## 5. Abnahme von M2
 
-1. Zwei Datensätze in zwei Formaten (COG und Zarr) im selben Viewer: suchen, Quicklooks, Kacheln, Coverage, Download. Otto prüft lokal.
+1. Der Viewer trägt zwei Formate (COG und Zarr): suchen, Quicklooks, Kacheln, Coverage, Download. Otto prüft lokal. Für Zarr genügt der Lesepfad gegen das synthetische Zarr aus M2-09a, falls die Quelle des zweiten Datensatzes wegfällt (D24).
 2. Dieselbe Kachel-URL liefert gegen zwei Instanzen dasselbe Bild; kein Endpunkt nimmt eine freie URL an.
-3. Coverage weist `vollstaendig`/`gekappt`/`stichprobe` geprüft aus, für beide Datensätze; Latenz gefiltert unter 1 s, typisch unter 0,5 s (gemessen im PR).
+3. Coverage weist `complete`/`truncated`/`sample` geprüft aus; Latenz gefiltert unter 1 s, typisch unter 0,5 s. Belegt über `curl`-Messungen im PR, weil ein Live-Test aus einer Cloud-Sitzung nicht durchkommt (M2-13).
 4. Download liefert ZIP mit COG und Hinweisdatei; nichts wird gespeichert (Test).
-5. Onboarding-Checkliste v1 als Test grün für beide Datensätze.
+5. Onboarding-Checkliste v1 als Test grün für jeden aufgenommenen Datensatz.
 6. Importregeln grün mit den Verträgen nach D2; kein ausgehender Request außerhalb von `gateway`.
 7. Das Frontend ruft keine Route des Prototyps mehr auf.
 8. Pflicht-CI grün (Backend, Frontend, Modulgrenzen, `compose-topology`).
@@ -368,6 +399,6 @@ der Kandidatenmatrix.
 | Junge Bausteine (GeoZarr, titiler-eopf, zarr v3) | Versionen pinnen, Spikes vor Festlegung, synthetische Mini-Fixtures |
 | EOPF und Earth Search ändern sich unbemerkt | T-D-Smoke je Quelle; Fixtures bleiben synthetisch |
 | Review-Stau bei Otto | höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A zuerst sichten |
-| EOPF-Bestand reicht nur gut zwei Monate zurück und die Quelle führt keinen auflösenden Quicklook | M2-03b misst nach; Fixtures bleiben synthetisch; Alternative steht in der Kandidatenmatrix |
-| Native Zarr-Kacheln kosten 3–16 MB | freigegebene Zoomstufen je Datensatz aus der Registry, festgelegt in M2-03b |
+| Die Collection nennt sich selbst „Zarr3 staging“, Bestand gut zwei Monate, nur 34°–72° N, kein Quicklook | Status sichtbar in Registry und Viewer; Ersatz-Quicklook aus dem Kachelpfad; die Abnahme hängt nicht an der Quelle (D24) |
+| Zarr-Kacheln kosten 0,9–6,3 MB je Band (gemessen, §12) | Zoomstufen z8–z14 aus der Registry; Byte-Ranges und kein `to_dataarray` als harte Auflagen (D23) |
 | Mehrere PRs ändern `ENTSCHEIDUNGSLOG.md` am Ende | vor dem Fertigmelden `main` in den Branch holen, alle Zeilen erhalten, eigene ans Ende |
