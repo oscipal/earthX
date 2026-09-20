@@ -118,14 +118,15 @@ function placeRaster(
   );
 }
 
-// Full /tiles URL for a downloaded overlay (bakes in the source override + the
-// polarization/render params). Also used by the store to snapshot a layer.
+// Full tile URL for a full-res overlay: `info.tileUrl` already carries the
+// mandatory `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
+// stretch/colormap/band params committed via "Apply". Also used by the store
+// to snapshot a layer.
 export function buildTileUrl(info: DownloadedInfo, render: AppliedRender): string {
   const params = new URLSearchParams();
-  if (info.asset) params.set('asset', info.asset);
-  if (render.indexes) params.set('indexes', render.indexes);
+  if (render.bidx) params.set('bidx', render.bidx);
   if (render.expression) params.set('expression', render.expression);
-  if (render.colormap) params.set('colormap', render.colormap);
+  if (render.colormapName) params.set('colormap_name', render.colormapName);
   if (render.rescale) params.set('rescale', render.rescale);
   const q = params.toString();
   return q ? `${info.tileUrl}&${q}` : info.tileUrl;

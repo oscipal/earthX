@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { datasetsFrom, groupByOf, quicklookAsset } from './datasets';
+import { datasetsFrom, defaultRenderOf, groupByOf, quicklookAsset } from './datasets';
 import type { Collection, StacItem } from './types';
 
 function collection(overrides: Partial<Collection> = {}): Collection {
@@ -43,6 +43,24 @@ describe('datasetsFrom', () => {
     const [option] = datasetsFrom([collection({ 'earthx:viewer': { group_by: ['datetime', 'grid:code'] } })]);
     expect(option.viewable).toBe(true);
     if (option.viewable) expect(option.groupBy).toEqual(['datetime', 'grid:code']);
+  });
+});
+
+describe('defaultRenderOf', () => {
+  it('reads earthx:default_render', () => {
+    const render = {
+      title: 'True colour (TCI)',
+      assets: ['visual'],
+      rescale: [[0, 255]] as [number, number][],
+      colormap_name: null,
+      expression: null,
+      resampling: 'nearest',
+    };
+    expect(defaultRenderOf(collection({ 'earthx:default_render': render }))).toEqual(render);
+  });
+
+  it('is null when the registry has not set one yet', () => {
+    expect(defaultRenderOf(collection())).toBeNull();
   });
 });
 

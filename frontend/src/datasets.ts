@@ -7,7 +7,7 @@
 // together. Such a dataset stays listed, marked as not viewable, so the
 // viewer says what is missing instead of silently leaving it out.
 
-import type { Collection, StacAsset, StacItem } from './types';
+import type { Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
 
 export type DatasetOption =
   | { id: string; title: string; collection: Collection; viewable: true; groupBy: string[] }
@@ -16,6 +16,13 @@ export type DatasetOption =
 export function groupByOf(collection: Collection): string[] | null {
   const groupBy = collection['earthx:viewer']?.group_by;
   return groupBy && groupBy.length > 0 ? groupBy : null;
+}
+
+// The registry's standard visualisation (M2-04/D20) — what full-resolution
+// viewing (M2-07b) defaults to before the user touches the stretch/colormap
+// controls. `null` when the dataset has not set one yet.
+export function defaultRenderOf(collection: Collection): EarthxDefaultRender | null {
+  return collection['earthx:default_render'] ?? null;
 }
 
 export function datasetsFrom(collections: Collection[]): DatasetOption[] {
