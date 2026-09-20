@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vitest/config'
 
 // The dev server proxies /api to the FastAPI backend so the frontend can use
 // same-origin relative URLs (no CORS, and the MAAP token never touches the
@@ -13,5 +13,8 @@ export default defineConfig({
     proxy: {
       '/api': { target: apiTarget, changeOrigin: true },
     },
+  },
+  test: {
+    include: ['src/**/*.test.ts'],
   },
 })
