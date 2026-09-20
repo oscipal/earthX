@@ -1,4 +1,4 @@
-// Shared types for the biomass-viewer frontend.
+// Shared types for the EarthX viewer.
 
 // Mutually-exclusive AOI selection tools.
 export type ToolMode = 'none' | 'point' | 'rectangle' | 'polygon';
@@ -12,76 +12,58 @@ export interface StacAsset {
   roles?: string[];
 }
 
-export interface BiomassItem {
+// A STAC Item as `/stac` returns it. `properties` is where a real STAC item
+// carries `datetime`, `grid:code` and everything else the registry's
+// `earthx:viewer.group_by` can name.
+export interface StacItem {
   id: string;
   collection?: string | null;
-  datetime?: string | null;
   bbox?: Bbox | null;
   geometry?: GeoJSON.Geometry | null;
+  properties: Record<string, unknown>;
   assets: Record<string, StacAsset>;
-  quicklook_key?: string | null;
-  cog_key?: string | null;
-  properties?: Record<string, unknown>;
 }
 
-export interface SearchResponse {
-  count: number;
-  items: BiomassItem[];
-  aoi: GeoJSON.Geometry;
-  aoi_hash: string;
+// The `earthx:` fields of a STAC Collection that the viewer reads
+// (architekturplan.md 5.1). Only what 07a uses; the rest of the shape comes
+// with the tasks that need it.
+export interface CollectionAccess {
+  token_free_checked_at?: string | null;
+  method?: string | null;
+  cors: boolean | null;
 }
 
-export interface DownloadResult {
-  item_id: string;
-  status: 'ok' | 'error';
-  aoi_hash?: string;
-  asset?: string;
-  bounds?: Bbox;
-  tile_url?: string;
-  cached?: boolean;
-  error?: string;
-  code?: number;
+export interface EarthxViewer {
+  group_by: string[];
 }
 
-export interface DownloadResponse {
-  aoi_hash: string;
-  ok_count: number;
-  results: DownloadResult[];
+export interface Collection {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  license?: string | null;
+  'earthx:access'?: CollectionAccess;
+  'earthx:viewer'?: EarthxViewer | null;
 }
 
-export interface GeocodeResult {
-  display_name: string;
-  lat: number;
-  lon: number;
-  bbox: Bbox | null;
-  type?: string;
-}
-
-export interface TokenStatus {
-  configured: boolean;
-  kind: 'offline' | 'access' | null;
-}
-
-export interface AppConfig {
-  catalog: string;
-  collections: string[];
-  token: TokenStatus;
-  point_buffer_deg: number;
-  default_colormap: string;
-  max_search_items: number;
-}
-
-// A set of adjacent frames from one acquisition (same product type + date)
-// that are displayed together as a single mosaicked timestep.
-export interface MosaicGroup {
-  key: string;
+// A time step: the items that share one grouping key (registry.ViewerInfo).
+export interface TimeStepGroup {
+  key: string[];
   label: string;
-  productType: string;
-  date: string;
-  items: BiomassItem[];
+  items: StacItem[];
 }
 
-// Info stored per item once its AOI-crop has been downloaded.
+// Tile-render params for a downloaded/rendered raster (rebuilt properly with
+// 07b; mapLayers.ts's full-res path needs the shape today even though nothing
+// in 07a ever fills it in).
+export interface AppliedRender {
+  indexes?: string;
+  expression?: string;
+  colormap?: string;
+  rescale?: string;
+}
+
+// Info stored per item once its AOI-crop has been rendered (07b).
 export interface DownloadedInfo {
   tileUrl: string; // MapLibre tile template ({z}/{x}/{y})
   aoiHash: string;
