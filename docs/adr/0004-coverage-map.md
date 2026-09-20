@@ -177,6 +177,42 @@ Daraus folgt eine prüfbare Regel, die zugleich K2 erfüllt (§5, Regel V):
 `sum(buckets) == total_count` ist die **Vollständigkeitsprobe**. Sie kostet
 nichts, weil `total_count` in derselben Antwort mitgeliefert wird.
 
+> **Nachtrag vom 2026-09-20 (M2-05, Plan-Schritt).** Die Messung oben ist an
+> Geohash gemacht. Für **Geotile** — das in §5 gewählte Gitter — liegt die
+> Kappung anders, und das ist für die Umsetzung der Unterschied zwischen
+> „greift nie" und „greift täglich". Ungefiltert über die ganze Collection
+> gemessen **[M]**:
+>
+> | z | Zellen | Zeit | Nutzlast | Summe == `total_count` |
+> |---|---|---|---|---|
+> | 0 | 1 | 0,77 s | 0,4 kB | ja |
+> | 2 | 16 | 1,11 s | 1,3 kB | ja |
+> | 3 | 64 | 0,60 s | 3,9 kB | ja |
+> | 4 | 242 | 0,75 s | 13,9 kB | ja |
+> | 5 | 821 | 0,83 s | 46,3 kB | ja |
+> | 6 | 2863 | 0,88 s | 160,4 kB | ja |
+> | **7** | **10 000** | 1,38 s | 559,8 kB | **nein** (30 373 709 von 30 375 554) |
+> | **8** | **10 000** | 2,13 s | 571,9 kB | **nein** (21 091 846 von 30 375 556) |
+>
+> Die 10 000-Zellen-Kappung greift bei Geotile also **erst ab z7**, viel später
+> als bei Geohash p4 — Sentinel-2 deckt nur Land ab, und ein Geotile-Gitter
+> legt über Wasser keine Zellen an, die niemand füllt. Bis z6 ist selbst der
+> ungefilterte Weltüberblick vollständig und unter 1,1 s.
+>
+> **`overflow` ist damit endgültig kein Signal.** Der Dienst meldet in allen
+> acht Zeilen `overflow: 0`, auch auf z8, wo ein Drittel aller Aufnahmen fehlt.
+> Nicht die Kopfzahl des Dienstes entscheidet über die Vollständigkeit, sondern
+> allein Regel V aus §5.
+>
+> **Folge für §5, Gitter: ein zweiter Stufendeckel.** Neben dem Deckel je
+> Datensatz (Sentinel-2: z8) gilt **ohne räumlichen Filter höchstens z6**. Zwei
+> Gründe, beide aus der Tabelle: ab z7 wäre die Antwort ohnehin `gekappt`, und
+> mit 560 bis 572 kB läge sie über der Umkehrschwelle von rund 500 kB, ab der
+> §5 Vektorkacheln neu erwägen will. Eine Weltansicht fragt in der Praxis z0
+> bis z3; der Deckel verhindert nur, dass jemand z8 ohne Bounding-Box verlangt.
+> Beide Deckel werden **geklemmt, nicht abgelehnt**: eine zu feine Stufe
+> liefert die gröbere Karte mit ausgewiesener Stufe, keinen Fehler.
+
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei
 Geohash p12, wo die Zellen zentimetergroß sind und 3848 Aufnahmen auf 2568
@@ -394,8 +430,26 @@ genau drei möglichen Werten, und der Wert wird geprüft, nicht behauptet:
 | Wert | Bedingung | Anzeige |
 |---|---|---|
 | `vollstaendig` | `sum(Zellen) == total_count` | Legende ohne Zusatz |
-| `gekappt` | `sum(Zellen) < total_count` (Kappung, §3.3) oder AOI vereinfacht (§3.4) | „zeigt N von M Aufnahmen" |
+| `gekappt` | `sum(Zellen) ≠ total_count` (Kappung, §3.3) oder AOI vereinfacht (§3.4) | „zeigt N von M Aufnahmen" |
 | `stichprobe` | Weg über Option 6 | „Stichprobe: n von N Aufnahmen" |
+
+> **Nachtrag vom 2026-09-20 (M2-05, F2).** Die drei Werte heißen **im Code und
+> auf der Leitung** `complete`, `truncated` und `sample` — `CLAUDE.md` verlangt
+> englische Bezeichner, und das Pflichtfeld ist eines. Die Zuordnung ist genau
+> die Reihenfolge der Tabelle: `complete` = `vollstaendig`, `truncated` =
+> `gekappt`, `sample` = `stichprobe`. Die deutschen Begriffe bleiben die
+> Sprache dieses ADR und der Oberfläche; übersetzt wird einmal, an der Stelle,
+> wo die Legende gebaut wird.
+>
+> Die Bedingung steht oben als `≠`, nicht als `<`: eine Zellsumme *über* der
+> Gesamtzahl erwartet niemand, und gerade deshalb darf sie nicht als
+> „vollständig" durchgehen.
+>
+> Dazu eine vierte Bedingung, die in der Tabelle nicht stand und in der
+> Umsetzung unvermeidlich ist: **fehlt `total_count`, ist das Ergebnis
+> `truncated`, nicht `complete`.** Eine Quelle, die keine Gesamtzahl führt,
+> kann Vollständigkeit nicht belegen — und Regel V behauptet nichts, was sie
+> nicht geprüft hat.
 
 Damit ist K2 nicht eine Frage der Sorgfalt beim Programmieren, sondern eine
 Zusicherung, die sich testen lässt — und die Falle aus §3.3 kann nicht
