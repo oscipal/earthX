@@ -201,6 +201,9 @@ class CoverageQuery:
             # query string, and the refusal arrives from the source as a 400 instead of
             # from us before anything is sent.
             raise InvalidCoverageQuery("intersects has no ring with at least four positions")
+        for ring in rings:
+            if _is_ring(ring):
+                _check_ring_bounds(ring)
 
     def _check_time(self) -> None:
         for name, value in (("start", self.start), ("end", self.end)):
@@ -235,6 +238,10 @@ class CoverageResult:
     # in der Zelle"). A second grid or a second counting rule would have to say so here.
     grid: str = "geotile"
     counting: str = "centroid"
+    # Set only by :func:`extent_result`: a one-off product has nothing to count, so
+    # it answers with the ground it covers instead of a density (adr/0004 §5, "Wo
+    # welcher Teil liegt" / "Einmal-Produkte").
+    extent: tuple[float, float, float, float] | None = None
 
     @property
     def counted(self) -> int:
@@ -325,6 +332,27 @@ def check_completeness(
     return Completeness.COMPLETE
 
 
+def extent_result(dataset_id: str, bbox: tuple[float, float, float, float]) -> CoverageResult:
+    """The answer for a one-off product: its extent, not a density (adr/0004 §5).
+
+    Checked *before* a provider is even asked (``registry.py`` already forbids the
+    combination of ``single_coverage_product`` with upstream aggregation) — a single
+    coverage has nothing to count, so there is no cell, no histogram, and its
+    completeness is trivially whole: the extent is what the collection states,
+    nothing is being compared against a total that does not apply here.
+    """
+    return CoverageResult(
+        dataset_id=dataset_id,
+        level=0,
+        cells=(),
+        total_count=None,
+        completeness=Completeness.COMPLETE,
+        histogram=(),
+        from_cache=False,
+        extent=bbox,
+    )
+
+
 def level_for_viewport(zoom: int, config: DatasetConfig, *, has_spatial_filter: bool) -> int:
     """The grid level to ask for: the map's zoom under both caps of adr/0004 §5.
 
@@ -379,6 +407,21 @@ def cell_bbox(key: str) -> tuple[float, float, float, float]:
     north = _mercator_latitude(row / side)
     south = _mercator_latitude((row + 1) / side)
     return (west, south, east, north)
+
+
+def _check_ring_bounds(ring: list[Any]) -> None:
+    """Every corner of a ring lies on the globe.
+
+    Otherwise a polygon with a longitude of 999 and a latitude of 888 is accepted
+    (the source answers ``200`` and a plausible-looking number instead of refusing
+    it — adr/0005 §3.5 describes the same silent acceptance for a bbox). None of the
+    values enters the message (projektplan.md 7, point 6).
+    """
+    for longitude, latitude, *_rest in ring:
+        if not -180.0 <= float(longitude) <= 180.0:
+            raise InvalidCoverageQuery("intersects longitude is outside ±180")
+        if not -90.0 <= float(latitude) <= 90.0:
+            raise InvalidCoverageQuery("intersects latitude is outside ±90")
 
 
 def _is_ring(ring: Any) -> bool:
