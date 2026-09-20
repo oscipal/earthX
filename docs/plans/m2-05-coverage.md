@@ -5,6 +5,13 @@ Stufe B laut `projektplan.md` 1.2: zuerst dieser Plan als Draft-PR, Umsetzung
 nach Ottos OK. **M2-05a** — Nahtstelle in `catalog`, Aggregation in `adapters`,
 Einheitstests — ist umgesetzt (§9, Schritte 1 bis 3). **M2-05b** — Route in
 `api`, Einmal-Produkt-Weg, Integrationstest, Latenzbeleg — folgt als eigener PR.
+
+**Umfang von M2-05b, von Otto am 20.09.2026 gesetzt:** klein halten — nur die
+Route, ihre Fehlerabbildung und die Tests. Dazu drei benannte Punkte:
+der Antwortkörper der Quelle erreicht weder Antwort noch Log (§3.5, ohne
+Eingriff in `gateway`); die Stützpunkte von `intersects` werden gegen ±90/±180
+geprüft (§3.6); und die Antwort führt die Auflösung des Histogramms mit, weil
+die Quelle sie vorgibt (§3.1, monatlich).
 Drei Nachträge kamen mit der Annahme dazu und sind in diesem PR erledigt: die
 beiden Ergänzungen in `adr/0004` (§3.3 und §5) und die Log-Zeile zu §7.1.
 **Aufgabe:** M2-05 aus `docs/plans/m2-format-und-viewer.md` §4.
@@ -131,6 +138,40 @@ Zwei Befunde daraus:
 eine Präzision außerhalb 0–29 ergeben je `400 BadRequest` mit einer klaren
 Beschreibung. Beides wird abgefangen, bevor es hinausgeht (§6.3), und der
 Upstream-`400` wird zusätzlich als definierter Fehler behandelt (§6.6).
+
+**3.5 Ein Fehler der Quelle zitiert die AOI nicht — in sechs Stichproben [M].**
+Gemessen am 20.09.2026, weil `UpstreamError` 500 Zeichen des Antwortkörpers
+trägt und damit exakte AOI-Koordinaten in unsere Logs tragen könnte, was
+`projektplan.md` 7 Punkt 6 ausschließt:
+
+| Anfrage | Antwort |
+|---|---|
+| Ring mit drei Punkten | `500` „invalid number of points in LinearRing (found [3] - must be >= [4])" |
+| Präzision 40 | `400` „Invalid precision value for grid_geotile_frequency_precision, must be a number between 0 and 29 inclusive" |
+| `intersects` kein JSON | `400` „Invalid GeoJSON geometry" |
+| unbekannter Geometrietyp | `500` „x_content_parse_exception … [1:177] [bool] failed to parse field [filter]" |
+| bbox verkehrt herum | `400` „Invalid bbox, SW latitude must be less than NE latitude" |
+
+**In keinem Fall steht ein Koordinatenwert aus der Anfrage in der
+Beschreibung.** Die Meldungen sind allgemein oder zitieren
+Elasticsearch-Interna mit einem Zeichen-Offset (`[1:177]`) — also eine
+*Position* in der Anfrage, nicht ihren Inhalt.
+
+Sechs Stichproben sind kein Beweis, und der Offset zeigt, dass der Parser den
+Wert in der Hand hat. **Otto hat am 20.09.2026 entschieden:** der Auszug bleibt
+am `UpstreamError` — im Test und im Traceback ist „Invalid GeoJSON geometry"
+genau das, was gebraucht wird —, aber **die Route schreibt ihn weder in ihre
+Antwort noch in eine Logzeile**; ausgeliefert und geloggt werden der Statuscode
+und unser eigener Text. **`gateway` wird dafür nicht angefasst**, die Lösung
+bleibt damit auf die Coverage begrenzt. Ein Test in M2-05b hält es fest.
+
+**3.6 Eine Geometrie außerhalb des Gültigen wird stillschweigend angenommen
+[M].** Ein Polygon mit Länge 999 und Breite 888 beantwortet die Quelle mit
+`200` und einer plausibel aussehenden Zahl (256 183) — dasselbe Muster, das
+`adr/0005` §3.5 für die bbox beschreibt und das M1-06 zum Anlass genommen hat,
+die bbox selbst zu prüfen. `CoverageQuery` prüft heute nur die bbox gegen
+±90/±180, nicht die Stützpunkte von `intersects`. **Otto hat die Prüfung am
+20.09.2026 in den Umfang von M2-05b aufgenommen.**
 
 ## 4. Aufbau und Modulgrenzen
 
@@ -385,13 +426,11 @@ arbeitet dagegen namensbasiert — deshalb kommt `curl` (Name) durch und
 `gateway` (Adresse) nicht. Dieselben Anfragen, die §3 mit `curl` misst, sind
 über `gateway` in dieser Sitzung nicht wiederholbar.
 
-**Offen für M2-05b, aus demselben Gedanken:** Ausgehend ist der Weg dicht —
-die Abfragezeichenfolge wird nur als Hash geloggt, keine Fehlermeldung nennt
-eine Koordinate, der Cache-Schlüssel ist ein Hash hinter dem Präfix. Nicht
-gemessen ist, ob Earth Search bei einem `400` den `intersects`-Wert in seiner
-`description` **zurückgibt**; `UpstreamError` trägt 500 Zeichen des
-Antwortkörpers. Die Route in M2-05b bekommt dafür einen Test — ein
-Upstream-`400` bringt keine Koordinate in die Logzeile.
+**Erledigt für M2-05b:** Ausgehend ist der Weg dicht — die Abfragezeichenfolge
+wird nur als Hash geloggt, keine Fehlermeldung nennt eine Koordinate, der
+Cache-Schlüssel ist ein Hash hinter dem Präfix. Offen war die Gegenrichtung:
+`UpstreamError` trägt 500 Zeichen des Antwortkörpers, und ob Earth Search den
+`intersects`-Wert darin **zurückgibt**, war nicht gemessen. Siehe §3.5.
 
 Das ist **kein Fehler in `gateway`** und wird hier auch nicht geändert: Die
 Adress-Pinnung ist eine Sicherheitseigenschaft aus M1-03 (nichts darf sich
