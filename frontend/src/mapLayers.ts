@@ -102,6 +102,17 @@ function placeImage(
   );
 }
 
+// No registry field names a dataset's ground sample distance yet (only the
+// Zarr candidate's D23 gives zoom bounds, and only for that one dataset), so
+// this is a generic ceiling rather than something derived per source. z19 is
+// several times past Sentinel-2's ~10 m/px (≈z14 near the equator, coarser
+// towards the poles) — enough headroom to zoom into real detail without
+// MapLibre requesting tiles the source cannot add anything to. Without a cap
+// here, nothing stops ordinary scroll-zoom from reaching MapLibre's own
+// default ceiling of z22 (256x as many requests over a session as z14, for
+// pixels no sharper than the source already has).
+const MAX_RASTER_ZOOM = 19;
+
 function placeRaster(
   map: MapLibreMap,
   srcId: string,
@@ -111,7 +122,7 @@ function placeRaster(
   opacity: number,
 ): void {
   if (map.getSource(srcId)) return;
-  map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds });
+  map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds, maxzoom: MAX_RASTER_ZOOM });
   map.addLayer(
     { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
     beforeAoi(map),
