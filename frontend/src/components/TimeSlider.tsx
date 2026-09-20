@@ -27,7 +27,6 @@ export default function TimeSlider() {
   // groups are newest-first; show oldest→newest left→right.
   const sliderValue = groups.length - 1 - activeGroupIndex;
   const frameCount = active?.items.length ?? 0;
-  const downloadable = active?.items.some((it) => it.cog_key) ?? false;
 
   return (
     <div className="panel time-slider">
@@ -42,9 +41,9 @@ export default function TimeSlider() {
       </button>
       <div className="time-track">
         <div className="time-labels">
-          <span>{groups[groups.length - 1]?.date}</span>
+          <span>{groups[groups.length - 1]?.label}</span>
           <strong>{active?.label}</strong>
-          <span>{groups[0]?.date}</span>
+          <span>{groups[0]?.label}</span>
         </div>
         <input
           type="range"
@@ -60,7 +59,7 @@ export default function TimeSlider() {
             {frameCount} image{frameCount === 1 ? '' : 's'}
             {frameCount > 1 && ' covering ROI'}
           </span>
-          {downloadable && (
+          {frameCount > 0 && (
             <button type="button" className="link-btn" onClick={() => selectAllInActiveGroup()}>
               + select all frames
             </button>
