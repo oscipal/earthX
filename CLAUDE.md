@@ -47,6 +47,7 @@ Die Datei ist nur noch Beschreibung des Code-Stands vom 13.08.2026.
   aufräumen — tote Reste, Debug-Ausgaben, auskommentierter Code und überflüssige
   Kommentare raus, Benennung und Format an die Umgebung angleichen.
 - Richtwert für PRs: unter etwa 400 geänderten Zeilen ohne generierte Dateien.
+- PRs nicht selbst beobachten und keine Check-ins planen; Otto meldet sich.
 
 ## Ohne Rückfrage nicht ändern
 
