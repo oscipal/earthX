@@ -1,8 +1,12 @@
 # M2-05 — Coverage-Anbieter und Route: Umsetzungsplan
 
-**Status:** **Plan, noch nicht umgesetzt.** Stufe B laut `projektplan.md` 1.2:
-zuerst dieser Plan als Draft-PR, Umsetzung erst nach Ottos OK. Die sieben Fragen
-in §10 halten die Umsetzung an, bis sie beantwortet sind.
+**Status:** **Von Otto am 20.09.2026 angenommen, F1–F7 alle wie empfohlen (§10).**
+Stufe B laut `projektplan.md` 1.2: zuerst dieser Plan als Draft-PR, Umsetzung
+nach Ottos OK. **M2-05a** — Nahtstelle in `catalog`, Aggregation in `adapters`,
+Einheitstests — ist umgesetzt (§9, Schritte 1 bis 4). **M2-05b** — Route in
+`api`, Einmal-Produkt-Weg, Integrationstest, Latenzbeleg — folgt als eigener PR.
+Drei Nachträge kamen mit der Annahme dazu und sind in diesem PR erledigt: die
+beiden Ergänzungen in `adr/0004` (§3.3 und §5) und die Log-Zeile zu §7.1.
 **Aufgabe:** M2-05 aus `docs/plans/m2-format-und-viewer.md` §4.
 **Grundlage:** `adr/0004` (Coverage Map, alle Abschnitte, besonders §3.2, §3.3,
 §3.4, §5 Regel V); `adr/0005` Regel I, II, V (Katalog entscheidet, zwei Fristen,
@@ -402,6 +406,7 @@ Nach Frage 5 in §10 endet Schritt 3 oder 4 den ersten PR.
 ## 10. Fragen an Otto
 
 Jede mit Empfehlung; (a) ist jeweils die Empfehlung.
+**Alle sieben am 20.09.2026 von Otto mit (a) beantwortet.**
 
 **F1 — Pfad der Route.**
 (a) `GET /coverage/{dataset_id}` an der Basis-App von `api`, außerhalb von
@@ -462,6 +467,7 @@ eine Sicherheitseigenschaft aus M1-03 auf.
 ## 11. Nachtrag, der aus §3.3 folgt
 
 `adr/0004` §3.3 belegt die Kappung an Geohash p4/p5. Für **Geotile** — das
-gewählte Gitter — liegt sie nach dieser Messung bei z7. Das gehört als
-Nachtrag in `adr/0004` §3.3, ist aber ein eigener, kleiner Doku-Commit und
-nicht Teil dieses PR; er wird vorgeschlagen, sobald F1–F6 beantwortet sind.
+gewählte Gitter — liegt sie nach dieser Messung bei z7. **Erledigt:** Otto hat
+den Nachtrag mit der Annahme beauftragt; er steht in `adr/0004` §3.3, zusammen
+mit dem zweiten Stufendeckel z6. Der Wortlaut des Pflichtfelds (F2) ist als
+zweiter Nachtrag bei Regel V in §5 vermerkt.
