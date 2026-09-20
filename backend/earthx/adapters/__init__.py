@@ -1,8 +1,8 @@
-"""Source protocols: discovery, search, access resolution.
+"""Source protocols: discovery, search, access resolution, aggregation.
 
 One adapter per source protocol (architekturplan.md 6.1). The first one speaks Earth
-Search v1 and answers search and access resolution for Sentinel-2 L2A; discovery and
-aggregation follow with the harvester (M5) and the coverage map (M2).
+Search v1 and answers search, access resolution and — since M2-05 — the coverage
+aggregation of adr/0004 for Sentinel-2 L2A; discovery follows with the harvester (M5).
 
 Everything an adapter sends goes through ``gateway``; what it needs to know about a
 dataset it reads from ``catalog``. Which adapter serves which collection is decided
@@ -23,6 +23,7 @@ from earthx.adapters.earth_search import (
     get_item,
     search_items,
 )
+from earthx.adapters.earth_search_coverage import aggregate_coverage
 
 __all__ = [
     "DEFAULT_LIMIT",
@@ -35,6 +36,7 @@ __all__ = [
     "UnknownCollection",
     "UnsupportedSource",
     "UpstreamShapeError",
+    "aggregate_coverage",
     "get_item",
     "search_items",
 ]
