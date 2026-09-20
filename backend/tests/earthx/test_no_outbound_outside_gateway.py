@@ -26,8 +26,19 @@ PACKAGE = REPO / "backend" / "earthx"
 CONTRACT = "importlinter:contract:http-only-in-gateway"
 
 # The contract may grow, but never below this: these are the packages that can
-# open a connection of their own.
-CORE = frozenset({"httpx", "requests", "urllib", "aiohttp", "pystac_client", "boto3"})
+# open a connection of their own. `httpx2` and `obstore` joined in M2-04 (adr/0006
+# §3.2, Otto's answer 6): `rio-tiler` fetches STAC items over `httpx2`, and
+# `titiler.xarray` would bring `obstore` with M2-09.
+CORE = frozenset(
+    {"httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore"}
+)
+
+# `rio_tiler.io.stac` is the way rio-tiler fetches by itself, and the list above
+# cannot name it: import-linter refuses a subpackage of an external package as a
+# forbidden module ("subpackages of external packages are not valid", adr/0006 §5).
+# Both spellings, because `rio_tiler/io/__init__.py` exports the class, so
+# `from rio_tiler.io import STACReader` is the more likely way in than the submodule.
+STAC_READER = ("rio_tiler.io.stac", "STACReader")
 
 
 def forbidden_modules() -> frozenset[str]:
@@ -64,6 +75,24 @@ def test_no_module_outside_the_gateway_imports_a_client(path: Path) -> None:
 def test_the_gateway_itself_does_import_one() -> None:
     """Otherwise the rule above would be satisfied by a package that fetches nothing."""
     assert "httpx" in imported_roots((PACKAGE / "gateway" / "client.py").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("path", modules_outside_gateway(), ids=lambda path: str(path.relative_to(PACKAGE)))
+def test_no_module_imports_the_stac_reader_of_rio_tiler(path: Path) -> None:
+    """Items come from `adapters`, through `gateway`, and from nowhere else.
+
+    A plain name comparison rather than the syntax tree above: it catches both
+    spellings and an import inside a function, and it is the only place this rule can
+    be checked at all (import-linter rejects the contract that would express it).
+    """
+    source = path.read_text(encoding="utf-8")
+    assert not [name for name in STAC_READER if name in source]
+
+
+def test_the_stac_reader_check_would_notice_the_import_it_forbids() -> None:
+    """Otherwise it would pass by looking for something nobody writes that way."""
+    for spelling in ("from rio_tiler.io.stac import STACReader", "from rio_tiler.io import STACReader"):
+        assert [name for name in STAC_READER if name in spelling]
 
 
 def test_the_walk_sees_an_import_hidden_inside_a_function() -> None:

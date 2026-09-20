@@ -9,10 +9,24 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# curl only for the compose healthchecks (docker-compose.yml); nothing in the
-# application itself uses it.
+# Two system packages, and each for one stated reason:
+#
+# * `curl` only for the compose healthchecks (docker-compose.yml); nothing in
+#   the application itself uses it.
+# * `libexpat1` because the bundled GDAL is not as self-contained as the note
+#   above suggests. A manylinux wheel bundles its dependencies *except* the
+#   libraries on the manylinux whitelist, which the system is expected to
+#   provide — and `libgdal…so` in the rasterio wheel declares exactly one of
+#   them that a slim Debian does not carry: `NEEDED libexpat.so.1` (every other
+#   entry is either bundled with a hash in its name or part of the base
+#   runtime). `python:3.11-slim` builds CPython with its own expat and installs
+#   no shared one, so the library is simply absent.
+#
+# Until M2-04 no process in this image imported rasterio — `tiler` was a stub —
+# so the gap never showed. It is a property of the image, not of the new
+# entrypoint: any service that reads a COG would have hit it.
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y curl \
+    && apt-get install --no-install-recommends -y curl libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

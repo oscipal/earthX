@@ -30,3 +30,14 @@ der Fall, auf den es ankommt: In `aggregate_truncated.json` ist die Summe der Ze
 kleiner als `total_count`, und `overflow` meldet trotzdem `0` — genau so, wie die
 echte Quelle auf z8 antwortet. Die Vollständigkeitsprobe (Regel V, `adr/0004` §5) muss
 das erkennen, ohne `overflow` anzusehen.
+## `item_asset_hosts.json`
+
+Ebenfalls von Hand geschrieben, für den Lesepfad aus M2-04. Echt ist daran genau
+**ein** Wert: der Asset-Host `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`,
+den `docs/adr/0006-kachel-pfad.md` §3.7 an der Quelle gemessen und im Dokument
+festgehalten hat. Item-ID, Pfad, Zeit und Ausdehnung sind erfunden.
+
+Der Asset `elsewhere` zeigt bewusst auf `sentinel-cogs…amazonaws.com` — den Host der
+**älteren** Collection (§3.7). Er steht nicht in der Registry und muss deshalb an
+`gateway` scheitern; ohne ihn ließe sich nicht zeigen, dass die Allowlist aus der
+Registry wirklich zählt und nicht bloß jeden AWS-Bucket durchlässt.
