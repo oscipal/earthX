@@ -126,10 +126,8 @@ export default function MapView() {
       const group = st.groups[st.activeGroupIndex];
       if (!group) return;
       const { lng, lat } = e.lngLat;
-      // Toggle the frame under the cursor (skip preview-only, non-downloadable).
-      const hit = group.items.find(
-        (it) => Boolean(it.cog_key) && pointInFootprint(lng, lat, it.geometry, it.bbox),
-      );
+      // Toggle the frame under the cursor.
+      const hit = group.items.find((it) => pointInFootprint(lng, lat, it.geometry, it.bbox));
       if (hit) st.toggleSelected(hit.id);
     });
 
