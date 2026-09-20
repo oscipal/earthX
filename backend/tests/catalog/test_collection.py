@@ -28,6 +28,7 @@ EARTHX_FIELDS = (
     "earthx:distributions",
     "earthx:health",
     "earthx:default_render",
+    "earthx:viewer",
     "earthx:source",
 )
 

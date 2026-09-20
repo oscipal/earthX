@@ -153,6 +153,12 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 "resampling": config.default_render.resampling,
             }
         ),
+        # architekturplan.md 5.1, ninth row: what the viewer decides from the
+        # catalogue. `group_by` names item properties in key order; a property
+        # holding an instant enters the key as its UTC date (registry.ViewerInfo).
+        "earthx:viewer": (
+            None if config.viewer is None else {"group_by": list(config.viewer.group_by)}
+        ),
         "earthx:source": {
             "adapter": config.source.adapter.value,
             "endpoint": config.source.endpoint,

@@ -29,6 +29,7 @@ from earthx.catalog.registry import (
     SpatialExtent,
     TemporalExtent,
     TermsOfUse,
+    ViewerInfo,
 )
 
 
@@ -98,6 +99,7 @@ def valid_config() -> DatasetConfig:
             expression=None,
             resampling="nearest",
         ),
+        viewer=ViewerInfo(group_by=("datetime",)),
         health=HealthInfo(status=HealthStatus.OK, last_checked_ok=date(2026, 1, 1)),
     )
 

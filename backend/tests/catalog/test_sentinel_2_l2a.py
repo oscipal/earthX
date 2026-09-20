@@ -166,6 +166,14 @@ def test_the_source_sends_cors_so_the_quicklook_needs_no_proxy() -> None:
     assert SENTINEL_2_L2A.access.cors is True
 
 
+def test_the_viewer_groups_one_acquisition_day_per_mgrs_tile() -> None:
+    """Otto, 20.09.2026. `datetime` enters the key as its UTC date, so the key is the
+    acquisition day plus the tile — not the second the scene was taken (Inventar F5)."""
+    viewer = SENTINEL_2_L2A.viewer
+    assert viewer is not None
+    assert viewer.group_by == ("datetime", "grid:code")
+
+
 def test_the_citation_is_open() -> None:
     """Checklist point 3: adr/0003 names neither a DOI nor a persistent citation."""
     assert SENTINEL_2_L2A.doi is None

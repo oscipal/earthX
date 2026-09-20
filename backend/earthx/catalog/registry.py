@@ -231,6 +231,41 @@ class DefaultRender:
 
 
 @dataclass(frozen=True, slots=True)
+class ViewerInfo:
+    """What the viewer takes from the catalogue instead of from its own code.
+
+    M2 fills one thing, and the field stays that narrow until something else is
+    actually needed: ``group_by``, the key that turns a list of items into the steps
+    of the time line and into the scenes of one mosaic (Inventar F5, F11).
+
+    Entries are **item property names**, in the order in which they make the key —
+    ``properties.`` is implied and must not be written. One rule goes with it, and it
+    is the only one a reader has to know: a property that holds a STAC instant enters
+    the key as its **UTC date**, because a time line groups an acquisition day and not
+    a second. For Sentinel-2 the key is therefore the acquisition day plus the MGRS
+    tile: ``("datetime", "grid:code")``.
+
+    No default (KLAERUNGEN B10): a dataset whose items nobody has looked at has no
+    grouping, and guessing one would group scenes that do not belong together.
+    """
+
+    group_by: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.group_by:
+            raise ConfigError("viewer.group_by needs at least one property (KLAERUNGEN B10)")
+        if len(set(self.group_by)) != len(self.group_by):
+            raise ConfigError(f"viewer.group_by repeats a property: {self.group_by}")
+        for name in self.group_by:
+            if not name or name != name.strip():
+                raise ConfigError(f"viewer.group_by entry {name!r} is not a property name")
+            if name.startswith("properties."):
+                raise ConfigError(
+                    f"viewer.group_by entry {name!r} carries the `properties.` prefix, which is implied"
+                )
+
+
+@dataclass(frozen=True, slots=True)
 class HealthInfo:
     """Status and "last checked successfully" (KLAERUNGEN B12)."""
 
@@ -309,6 +344,8 @@ class DatasetConfig:
     # None where the standard visualisation is not defined yet. For Sentinel-2 L2A
     # that is deliberate: m1-fundament.md §2 puts it in M2.
     default_render: DefaultRender | None
+    # None where nobody has decided how the viewer groups the items of this dataset.
+    viewer: ViewerInfo | None
     health: HealthInfo
 
     def __post_init__(self) -> None:

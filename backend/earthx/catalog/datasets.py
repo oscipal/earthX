@@ -31,6 +31,7 @@ from earthx.catalog.registry import (
     SpatialExtent,
     TemporalExtent,
     TermsOfUse,
+    ViewerInfo,
 )
 
 # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
@@ -178,6 +179,11 @@ SENTINEL_2_L2A = DatasetConfig(
         # rio-tiler's own default, named rather than implied (KLAERUNGEN B10).
         resampling="nearest",
     ),
+    # The viewer groups the items of one acquisition day per MGRS tile into one step
+    # of the time line (Otto, 20.09.2026). `datetime` enters the key as its UTC date,
+    # `grid:code` is the MGRS tile Earth Search carries on every item of this
+    # collection. M2-07a reads this field and implements nothing of its own.
+    viewer=ViewerInfo(group_by=("datetime", "grid:code")),
     # Reachability, not health in the sense M5 will measure it: adr/0003 §10.1 got
     # HTTP 200 on /v1/collections/sentinel-2-c1-l2a, nothing beyond that.
     health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_REACHABILITY_CHECKED),

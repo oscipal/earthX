@@ -30,6 +30,7 @@ from earthx.catalog.registry import (
     TemporalExtent,
     TermsOfUse,
     UnknownDatasetError,
+    ViewerInfo,
     max_geotile_level_for,
 )
 
@@ -282,6 +283,22 @@ class TestMalformedInput:
         path instead of opening it (adr/0006 §3.3)."""
         with pytest.raises(ConfigError, match="asset_hosts"):
             vary(source=replace(valid_config.source, asset_hosts=(host,)))
+
+    @pytest.mark.parametrize(
+        "group_by",
+        [
+            (),  # no key at all
+            ("datetime", "datetime"),  # the same property twice
+            ("properties.datetime",),  # the prefix is implied
+            ("",),
+            (" datetime",),
+        ],
+    )
+    def test_a_grouping_key_that_cannot_be_read_is_rejected(self, group_by) -> None:
+        """M2-07a reads this field and implements nothing of its own, so a key that
+        needs interpreting is a bug in the viewer nobody would trace back to here."""
+        with pytest.raises(ConfigError, match="group_by"):
+            ViewerInfo(group_by=group_by)
 
     def test_an_asset_host_is_not_optional(self, valid_config) -> None:
         """KLAERUNGEN B10: a field with a default is a field nobody decided about."""
