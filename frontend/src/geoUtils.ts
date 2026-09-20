@@ -78,11 +78,7 @@ export function bboxToImageCoords(
 export type Coords4 = [[number, number], [number, number], [number, number], [number, number]];
 
 // Corner-quad transforms for image sources whose pixels are stored in a
-// different orientation than north-up (e.g. L1 SAR quicklooks in radar
-// geometry). Quad order is [TL, TR, BR, BL].
-export function rotate180(c: Coords4): Coords4 {
-  return [c[2], c[3], c[0], c[1]];
-}
+// different orientation than north-up. Quad order is [TL, TR, BR, BL].
 export function mirrorX(c: Coords4): Coords4 {
   // left↔right (flip the range/east–west axis)
   return [c[1], c[0], c[3], c[2]];
@@ -92,19 +88,15 @@ export function mirrorY(c: Coords4): Coords4 {
   return [c[3], c[2], c[1], c[0]];
 }
 
-// Image-source corner quad for a scene's quicklook — L2A on its bbox, L1 SAR
-// (DGM/SCS) on the rotated footprint (radar geometry). Shared by the mosaic and
-// the layer renderer so a pinned quicklook lands exactly where it was shown.
+// Image-source corner quad for a scene's quicklook, from its true footprint.
+// Shared by the mosaic and the layer renderer so a pinned quicklook lands
+// exactly where it was shown.
 export function quicklookCoords(
-  id: string,
   geometry: GeoJSON.Geometry | null | undefined,
   bbox: Bbox | null | undefined,
 ): Coords4 | null {
   if (!bbox) return null;
-  if (/S[123]_SCS|DGM/.test(id)) {
-    return rotate180(footprintCorners(geometry, bbox) ?? bboxToImageCoords(bbox));
-  }
-  return bboxToImageCoords(bbox);
+  return footprintCorners(geometry, bbox) ?? bboxToImageCoords(bbox);
 }
 
 function exteriorRing(geom: GeoJSON.Geometry | null | undefined): number[][] | null {
