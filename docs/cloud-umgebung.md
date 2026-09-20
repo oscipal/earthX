@@ -128,6 +128,14 @@ Messung vom 18.09.2026, **vor** der Egress-Freigabe aus `adr/0003` §11. Seit de
 `sentinel-cogs...amazonaws.com` ist damit der Weg des ersten Datensatzes in der
 Cloud-Sitzung vollständig offen: Metadaten und Assets.
 
+**Widerspruch beim Asset-Host von `sentinel-2-c1-l2a` (unaufgelöst, Klärung in
+M2-03):** Die Tabelle oben führt `sentinel-cogs.s3.us-west-2.amazonaws.com` als
+erreichbar. `adr/0003` §10.1 misst dagegen
+`e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` als den Host, der
+die Assets tatsächlich liefert. Dieser Widerspruch wird hier nur benannt, nicht
+aufgelöst — der Prüfpunkt Asset-Host im TiTiler-Spike (M2-02/`adr/0006`) klärt,
+welcher Host für `sentinel-2-c1-l2a` gilt und in der Allowlist steht.
+
 Das ändert nichts an der Testaufteilung. **Kein Geocoder ist erreichbar**, und
 für EOPF (`stac.eopf.copernicus.eu`) und CDSE gilt die Sperre unverändert. Die
 Annahme, auf der `projektplan.md` 2.4 und `docs/adr/0002-testaufteilung.md`
