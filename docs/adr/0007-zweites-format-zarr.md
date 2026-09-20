@@ -7,11 +7,15 @@
   Adapter normalisieren; **F5** Python bleibt 3.11, `zarr` auf 3.1.x; **F6**
   Mini-Zarr per Skript im Test; **F7** mit F1 gegenstandslos, bleibt als
   Rückfallweg stehen. §6 gibt den entschiedenen Stand wieder.
-  **Nachgemessen am 2026-09-20 (M2-03b):** Die in §9.1 offen gebliebenen
-  Aussagen über die bisher gesperrten Collections stehen jetzt in **§12**. Wo §12
-  einer Aussage aus §3 bis §7 widerspricht, gilt §12 — §3 misst das
-  Zarr-**v2**-Tutorial-Produkt, §12 den **v3**-Bestand. Drei Fragen an Otto
-  (F8–F10) stehen in §12.13.
+  **Nachgemessen am 2026-09-20 (M2-03b), und damit vollständig angenommen:**
+  Die in §9.1 offen gebliebenen Aussagen über die bisher gesperrten Collections
+  stehen jetzt in **§12**. Wo §12 einer Aussage aus §3 bis §7 widerspricht, gilt
+  §12 — §3 misst das Zarr-**v2**-Tutorial-Produkt, §12 den **v3**-Bestand. Die
+  drei Fragen aus §12.13 sind am 2026-09-20 beantwortet: **F8** ja,
+  `sentinel-2-l2a-zarr3` wird der zweite Datensatz, **mit zwei Auflagen**
+  (Status „staging" sichtbar ausweisen; die M2-Abnahme hängt nicht am Fortbestand
+  der Quelle); **F9** Zoomstufen **z8–z14**; **F10** Auflösungsstufen aus dem
+  **Store**, Item als Rückfall. Damit ist dieser ADR **ohne offene Fragen**.
 - **Datum:** 2026-09-20
 - **Aufgabe:** M2-03 laut `docs/plans/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
@@ -687,6 +691,14 @@ Abnahmekriterium 1 erreichbar. Sollte die Nachmessung (§9.1) A dennoch
 verwerfen, bliebe der Rückfallweg aus §8 F7; er ist beschrieben, aber nicht
 beschlossen. M2a ist davon in jedem Fall unberührt und eigenständig abnehmbar.
 
+**Nachtrag 2026-09-20 (F8, Auflage 2 — §12.11 Punkt 15):** Otto hat die
+Abhängigkeit aufgelöst. Die Abnahme von M2 hängt **nicht** am Fortbestand von
+`sentinel-2-l2a-zarr3`: Für das Format-Kriterium genügt der Lesepfad gegen das
+synthetische Mini-Zarr aus **M2-09a**. Fällt die Quelle weg, fällt damit die
+Aufnahme des zweiten Datensatzes, nicht die Abnahme von M2. Das ist der
+Rückfallweg aus §8 F7, jetzt nicht mehr als Möglichkeit, sondern als stehende
+Regel.
+
 ---
 
 ## 7. Folgen
@@ -1276,7 +1288,7 @@ den Faktor 2,7 gröbere Bodenauflösung als bei 72° N. Gemessen:
 | native 360 m | z9 | z7 |
 
 **Empfehlung: z8 bis z14 freigeben**, mit `r10m` als feinster Stufe und Überzoom
-darüber.
+darüber. **Von Otto am 2026-09-20 so entschieden (F9 a).**
 
 - **Untere Grenze z8, weil dort eine Kachel etwa eine Szene ist.** Bei 46° N
   deckt eine z8-Kachel 108 km, eine Szene ist 110 km breit; bei 34° N sind es
@@ -1297,6 +1309,11 @@ darüber.
 
 ### 12.11 Empfehlung und was für M2-09b daraus folgt
 
+> **Entschieden am 2026-09-20 (F8 a).** Otto hat die Empfehlung angenommen und
+> zwei Auflagen daran gebunden; sie stehen als **Punkt 14 und 15** unten und
+> sind nicht verhandelbarer Teil der Zusage. Die Punkte 1 bis 13 waren schon
+> vorher Umsetzungsauflagen für M2-09b und sind es unverändert.
+
 **Zum Datensatz: Ja — `sentinel-2-l2a-zarr3` trägt als zweiter Datensatz.**
 Option A ist gemessen und besteht die Kriterien aus §2 bis auf eines. K4
 (erreichbar) ist mit der Freigabe erfüllt; K7 (kachelbar) und K8 (Lesekosten) sind
@@ -1314,7 +1331,8 @@ Nicht-STAC-Kandidaten ersetzt ihn in M2, und es bliebe der Rückfallweg aus §8 
    `OffsetByteRequest`, `SuffixByteRequest` und `get_partial_values`. Ohne das
    holt `zarr` je Kachel den ganzen 158-MB-Shard. Das ist die eine Zeile, an der
    der Datensatz steht und fällt.
-2. **Die Auflösungsstufen kommen aus dem Store, nicht aus dem Item.** Das Item
+2. **Die Auflösungsstufen kommen aus dem Store, nicht aus dem Item**
+   (**entschieden, F10 a**: Store, Item als Rückfall). Das Item
    weist nur `r10m`/`r20m`/`r60m` aus; `r120m`, `r360m` und `r720m` stehen im
    `multiscales`-Attribut von `measurements/reflectance` (§12.3). §6 Punkt 2
    („Stufenwahl aus `gsd`/`raster:spatial_resolution`") ist insoweit zu
@@ -1365,6 +1383,29 @@ Nicht-STAC-Kandidaten ersetzt ihn in M2, und es bliebe der Rückfallweg aus §8 
     die Größenordnung, gegen die die Stichprobe anzutreten hat: rund 1 300 Items
     je Tag, 1 802 MGRS-Kacheln in drei Tagen (§12.6).
 
+**Die beiden Auflagen aus F8 (2026-09-20, Otto):**
+
+14. **Der Status „staging" wird sichtbar ausgewiesen — im Registry-Eintrag und
+    im Viewer.** Die Collection nennt sich selbst „Sentinel-2 Level-2A (Zarr3
+    staging)" (§12.6), und K9 bleibt damit verletzt. Das darf der Nutzer nicht
+    erst merken, wenn die Quelle verschwindet: Der Registry-Eintrag führt den
+    Status als eigenes Feld, und der Viewer zeigt ihn an der Stelle, an der der
+    Datensatz gewählt wird. Ein Feld dafür gibt es heute nicht — seine Form
+    schlägt M2-09b im Plan-Schritt vor, die Anzeige ist Sache von M2-10. Der
+    Status gehört zur Wahrheit über den Datensatz, wie Lizenz und Attribution;
+    er ist kein Hinweis, den man später nachrüstet.
+15. **Die Abnahme von M2 hängt nicht am Fortbestand der Quelle.** Für das
+    Kriterium „zweites Format" genügt der Lesepfad gegen das synthetische
+    Mini-Zarr aus **M2-09a**, das ohne jede externe Quelle läuft. Fällt
+    `sentinel-2-l2a-zarr3` weg — und „staging" heißt, dass das jederzeit
+    passieren kann —, fällt die **Aufnahme des zweiten Datensatzes** (M2-09b,
+    M2-10), nicht die Abnahme von M2. Das nimmt dem Risiko aus §5 Option A
+    seine Schärfe: Die Arbeit an M2b ist in keinem Fall verloren.
+    **Folge, die noch niemand nachgezogen hat:** `plans/m2-format-und-viewer.md`
+    §5 verlangt in den Kriterien 1, 3 und 5 weiterhin „beide Datensätze". Diese
+    Stellen sind gegen Punkt 15 zu prüfen; die Änderung am Abnahmetext ist eine
+    Planänderung und gehört zu M2-12, nicht in diesen ADR.
+
 ### 12.12 Die sechs offenen Punkte aus §9.1, beantwortet
 
 | Punkt aus §9.1 | Antwort |
@@ -1376,27 +1417,32 @@ Nicht-STAC-Kandidaten ersetzt ihn in M2, und es bliebe der Rückfallweg aus §8 
 | Existenz der Objekte | **Ja**, für `…-zarr3` durchgehend gelesen (§12.3–12.5) |
 | Ob die 2017er Items von `sentinel-2-l2a` auf Objekte zeigen | **Ja.** `product/.zgroup` → 200, `.zmetadata` → 292 804 B auf `objects.eodc.eu`. `TCI_10m` löst auch dort nicht auf (§12.7) |
 
-### 12.13 Fragen an Otto
+### 12.13 Fragen an Otto — beantwortet am 2026-09-20
 
 **F8 — Bleibt es bei `sentinel-2-l2a-zarr3`, obwohl die Collection sich selbst
-„staging" nennt?**
-(a) **Ja, wie in §5 Option A entschieden** *(Empfehlung: der Preis war bekannt,
-er ist jetzt nur genauer benannt; alles Technische trägt)*.
-(b) Nein — dann greift der Rückfallweg aus §8 F7: M2 wird auf „Sentinel-2 plus
-belegter Zarr-Lesepfad" abgenommen, der zweite Datensatz geht nach M3.
+„staging" nennt?** **Angenommen (a), mit zwei Auflagen.** Der Datensatz wird der
+zweite; die Empfehlung trägt, weil alles Technische gemessen ist und der Preis
+seit §5 Option A bekannt war. Die beiden Auflagen stehen ausformuliert als
+§12.11 Punkt 14 und 15:
 
-**F9 — Welche Zoomstufen gibt der Viewer frei?**
-(a) **z8 bis z14, Überzoom darüber erlaubt** *(Empfehlung, §12.10)*.
-(b) Enger: z8 bis z12, feinste Stufe `r20m` — höchstens rund 1,5 MB je Kachel,
-dafür nie die native Auflösung.
-(c) Weiter: z8 bis z16 — kostet nichts zusätzlich, zeigt aber Pixel, die es nicht
-gibt.
+1. **Der Status „staging" wird sichtbar ausgewiesen**, im Registry-Eintrag und
+   im Viewer.
+2. **Die M2-Abnahme hängt nicht am Fortbestand der Quelle** — für das
+   Format-Kriterium genügt der Lesepfad gegen das synthetische Zarr aus M2-09a.
 
-**F10 — Woher nimmt der Reader die Auflösungsstufen?**
-(a) **Aus `multiscales` im Store, Item als Rückfall** *(Empfehlung: nur so
-kommen `r120m`, `r360m` und `r720m` überhaupt vor, §12.11 Punkt 2)*.
-(b) Fest im Registry-Eintrag — unabhängig von der Pilotkonvention, aber je
-Datensatz von Hand gepflegt.
+Damit ist der Rückfallweg aus §8 F7 keine Möglichkeit mehr, sondern die stehende
+Regel für den Fall, dass die Quelle verschwindet.
+
+**F9 — Welche Zoomstufen gibt der Viewer frei?** **Angenommen (a): z8 bis z14,
+Überzoom darüber erlaubt.** Die Stufe wird dabei aus der Bodenauflösung der
+angefragten Kachel gerechnet, nicht aus einer festen Zuordnung Zoom → Gruppe
+(§12.10) — sonst wird am Nordrand des Bestands zwei Stufen zu fein gelesen.
+
+**F10 — Woher nimmt der Reader die Auflösungsstufen?** **Angenommen (a): aus
+`multiscales` im Store, das Item als Rückfall.** Nur so kommen `r120m`, `r360m`
+und `r720m` überhaupt vor; das Item weist nur drei der sechs Stufen aus
+(§12.11 Punkt 2). Dass `multiscales` hier einer v0.1-Pilotkonvention folgt, ist
+hinzunehmen und im Registry-Eintrag zu vermerken.
 
 ### 12.14 Messanhang
 
