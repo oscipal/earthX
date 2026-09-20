@@ -7,15 +7,21 @@ import MapView from './components/MapView';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
+import ViewBar from './components/ViewBar';
+import ViewerControls from './components/ViewerControls';
 import { useAppStore } from './store';
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
   const panelCollapsed = useAppStore((s) => s.panelCollapsed);
   const togglePanel = useAppStore((s) => s.togglePanel);
+  const focusMode = useAppStore((s) => s.focusMode);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
-  const canZoom = useAppStore((s) => !!s.aoi || s.groups.length > 0);
+  const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
+  const canZoom = useAppStore(
+    (s) => !!s.aoi || s.groups.length > 0 || Object.keys(s.downloaded).length > 0,
+  );
   const toggleLayerManager = useAppStore((s) => s.toggleLayerManager);
   const layerCount = useAppStore((s) => s.layers.length);
 
@@ -65,7 +71,7 @@ export default function App() {
         <LayerManager />
       </div>
 
-      {hasGroups && (
+      {!focusMode && hasGroups && (
         <div className="overlay right">
           <Draggable className="dock-results">
             <ResultsPanel />
@@ -74,10 +80,23 @@ export default function App() {
       )}
 
       <div className="overlay bottom">
-        {hasGroups && (
+        {focusMode ? (
           <Draggable>
-            <TimeSlider />
+            <ViewerControls />
           </Draggable>
+        ) : (
+          <>
+            {hasSelection && (
+              <Draggable>
+                <ViewBar />
+              </Draggable>
+            )}
+            {hasGroups && (
+              <Draggable>
+                <TimeSlider />
+              </Draggable>
+            )}
+          </>
         )}
       </div>
 

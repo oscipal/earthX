@@ -102,6 +102,17 @@ function placeImage(
   );
 }
 
+// No registry field names a dataset's ground sample distance yet (only the
+// Zarr candidate's D23 gives zoom bounds, and only for that one dataset), so
+// this is a generic ceiling rather than something derived per source. z19 is
+// several times past Sentinel-2's ~10 m/px (≈z14 near the equator, coarser
+// towards the poles) — enough headroom to zoom into real detail without
+// MapLibre requesting tiles the source cannot add anything to. Without a cap
+// here, nothing stops ordinary scroll-zoom from reaching MapLibre's own
+// default ceiling of z22 (256x as many requests over a session as z14, for
+// pixels no sharper than the source already has).
+const MAX_RASTER_ZOOM = 19;
+
 function placeRaster(
   map: MapLibreMap,
   srcId: string,
@@ -111,21 +122,22 @@ function placeRaster(
   opacity: number,
 ): void {
   if (map.getSource(srcId)) return;
-  map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds });
+  map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds, maxzoom: MAX_RASTER_ZOOM });
   map.addLayer(
     { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
     beforeAoi(map),
   );
 }
 
-// Full /tiles URL for a downloaded overlay (bakes in the source override + the
-// polarization/render params). Also used by the store to snapshot a layer.
+// Full tile URL for a full-res overlay: `info.tileUrl` already carries the
+// mandatory `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
+// stretch/colormap/band params committed via "Apply". Also used by the store
+// to snapshot a layer.
 export function buildTileUrl(info: DownloadedInfo, render: AppliedRender): string {
   const params = new URLSearchParams();
-  if (info.asset) params.set('asset', info.asset);
-  if (render.indexes) params.set('indexes', render.indexes);
+  if (render.bidx) params.set('bidx', render.bidx);
   if (render.expression) params.set('expression', render.expression);
-  if (render.colormap) params.set('colormap', render.colormap);
+  if (render.colormapName) params.set('colormap_name', render.colormapName);
   if (render.rescale) params.set('rescale', render.rescale);
   const q = params.toString();
   return q ? `${info.tileUrl}&${q}` : info.tileUrl;

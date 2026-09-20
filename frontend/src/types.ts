@@ -37,6 +37,18 @@ export interface EarthxViewer {
   group_by: string[];
 }
 
+// The registry's standard visualisation (`DefaultRender`, M2-04/D20), field names
+// mirroring the STAC `render` extension so they map onto tile-URL query params
+// 1:1 (`assets[0]` → `asset`, `colormap_name` → `colormap_name`, …).
+export interface EarthxDefaultRender {
+  title: string;
+  assets: string[];
+  rescale: [number, number][] | null;
+  colormap_name: string | null;
+  expression: string | null;
+  resampling: string;
+}
+
 export interface Collection {
   id: string;
   title?: string | null;
@@ -44,6 +56,7 @@ export interface Collection {
   license?: string | null;
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
+  'earthx:default_render'?: EarthxDefaultRender | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
@@ -53,20 +66,22 @@ export interface TimeStepGroup {
   items: StacItem[];
 }
 
-// Tile-render params for a downloaded/rendered raster (rebuilt properly with
-// 07b; mapLayers.ts's full-res path needs the shape today even though nothing
-// in 07a ever fills it in).
+// Tile-render params committed via "Apply" (F18) — everything a tile URL needs
+// beyond the asset itself, which `DownloadedInfo.tileUrl` already carries. Field
+// names follow TiTiler's own query parameters (`bidx`, `colormap_name`, …) so
+// `buildTileUrl` (mapLayers.ts) can pass them straight through.
 export interface AppliedRender {
-  indexes?: string;
+  bidx?: string;
   expression?: string;
-  colormap?: string;
-  rescale?: string;
+  colormapName?: string;
+  rescale?: string; // "min,max" (adr/0006 §3.4 Z4)
 }
 
-// Info stored per item once its AOI-crop has been rendered (07b).
+// Full-resolution tile info for one item, keyed by item id in the store's
+// `downloaded` map (M2-07b). The tiler renders straight from the source asset —
+// there is no crop or download step here, that is M2-06/M2-07d.
 export interface DownloadedInfo {
-  tileUrl: string; // MapLibre tile template ({z}/{x}/{y})
-  aoiHash: string;
+  tileUrl: string; // MapLibre tile template ({z}/{x}/{y}), asset already baked in
   bounds: Bbox;
   asset: string;
 }
