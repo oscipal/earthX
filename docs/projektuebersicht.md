@@ -99,8 +99,8 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 6. Anonymer Zugriffs-Check bestanden (HTTP 200 statt 401/403).
 7. Datentyp-Klasse und Capability-Flags gesetzt.
 8. Standard-Visualisierung definiert (Bänder, Stretch, Colormap).
-9. Mindestens ein Processing-Schritt End-to-End getestet (Suche → Verarbeitung → Download).
-10. "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar (KLAERUNGEN B12).
+9. Mindestens ein Processing-Schritt End-to-End getestet (Suche → Verarbeitung → Download). **Fassung v1 (D4, 2026-09-20):** Solange es in M2 noch keinen Processing-Schritt gibt, gilt als End-to-End-Test die Kette **Suche → Anzeige → Zuschnitt-Download** gegen Fixtures; der echte Processing-Schritt löst diese Fassung mit M4 ab.
+10. "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar (KLAERUNGEN B12). **Fassung v1 (D4, 2026-09-20):** Bis eigene Health-Checks kommen (M5), ist das der Zeitpunkt des letzten grünen T-D-Smoke-Laufs.
 
 ---
 

@@ -256,13 +256,20 @@ Parallel ab M2 läuft ein **Viewer-Strang** (V1, V2) mit reinen Frontend-Aufgabe
 
 ### M2 — Zweites Format und generalisierter Viewer (Inkrement 2)
 
+Der Aufgabenschnitt liegt in `docs/plans/m2-format-und-viewer.md` und ist
+maßgeblich; diese Tabelle ist nur die Kurzfassung. M2 zerfällt seit dem
+2026-09-20 (M2-Schnitt) in zwei Stränge: **M2a** trägt Sentinel-2 durchgehend
+durch Kachel-Pfad, Coverage-Heatmap, Zuschnitt-Download und Frontend; **M2b**
+bringt Zarr als zweites Format, mit offenem Kandidatenfeld (`adr/0007`, nicht
+mehr fest EOPF).
+
 | | |
 |---|---|
 | Ziel | Beweis "Quelle ≠ Format": Zarr neben COG |
-| Inhalt | `zarr_reader.py` mit EOPF-Beispieldaten; Tiler-Endpunkte auf TiTiler-Basis (vorher Spike); `datasets.py` mit `format`-Dispatch; `dataset`-Argument in Routen; Generalisierung `ControlPanel.tsx`/`store.ts`; Onboarding-Checkliste v1 als Test pro Datensatz |
-| Funktionen | ROI (Punkt, Box, Polygon) und Zeitraum; Fallback auf nächstgelegenes Datum mit Hinweis; Quicklooks; Stretch und Colormap; Layer Manager Basis (ausblenden, Transparenz, Einzel-Download); Coverage Map für den neuen Datensatz |
+| Inhalt | `zarr_reader.py` gegen den in `adr/0007` entschiedenen Kandidaten; Tiler-Endpunkte auf TiTiler-Basis (vorher Spike, `adr/0006`); `datasets.py` mit `format`-Dispatch; `dataset`-Argument in Routen; Generalisierung `ControlPanel.tsx`/`store.ts`; Onboarding-Checkliste v1 als Test pro Datensatz |
+| Funktionen | ROI (Punkt, Box, Polygon) und Zeitraum; Fallback auf nächstgelegenes Datum mit Hinweis; Quicklooks; Stretch und Colormap; Layer Manager Basis (ausblenden, Transparenz, Einzel-Download); Coverage Map für den neuen Datensatz; Download des AOI-Zuschnitts (synchron gestreamt, D3) |
 | Abnahme | Zwei Datensätze in zwei Formaten im selben Viewer |
-| Deine Entscheidungen | Spike-Ergebnis TiTiler annehmen oder eigene Endpunkte |
+| Deine Entscheidungen | Spike-Ergebnis TiTiler annehmen oder eigene Endpunkte; Zarr-Kandidat aus `adr/0007` |
 | Modelle | Spike-Auswertung `architect`; Reader `opusplan`; Frontend Sonnet |
 
 ### M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion (Inkrement 3)
@@ -330,6 +337,7 @@ Reihenfolge nach Nutzen und Abhängigkeit; jedes Paket ist ein eigener kleiner M
 
 | Paket | Inhalt |
 |---|---|
+| V-1 | Theme-Umschalter zwischen dunkler und heller HUD-Palette; die Basiskarte bleibt Esri World Imagery, **ohne** helle Basiskarte (D10, 2026-09-20) — die folgt erst, wenn Esri-Bedingungen und Alternativen geklärt sind |
 | V1 | Swipe-/Split-Vergleich mit synchronisierten Karten; "Layer auf Ansicht zuschneiden"; Pixel-Inspektor; Zeitreihe am Punkt mit CSV-Export |
 | V2 | Schlanker Kartenexport (PNG/SVG, Titel, Colorbar, Maßstab, Attribution, optional ohne Hintergrundkarte) + generiertes matplotlib-Snippet; Wolkenfilter; Feinschliff Bedienbarkeit |
 
@@ -352,7 +360,7 @@ Reihenfolge nach Nutzen und Abhängigkeit; jedes Paket ist ein eigener kleiner M
 | Chatbot, Discovery-Agent, Modell-Registry, externe Engines, Client-Side Computing | Sammlung | M7 |
 | Komposit, Vorher/Nachher, Stapelverarbeitung, Qualitäts-Overlay, Trainingsdatensatz-Baukasten | Vorschläge | M7 |
 | Arbeitsbereiche, DOI für Rezepte, Benachrichtigungen, eigene Daten per URL, Anbieter-Statistik, Ähnlichkeitssuche | Vorschläge | M7 |
-| Bug-Report mit automatischer Triage und Behebung durch Claude | Gespräch | M0 (Stufe 1), M2, M4, M6 |
+| Bug-Report mit automatischer Triage und Behebung durch Claude | Gespräch | M0 (Stufe 1), Stufe 2 vertagt bis zur Deployment-Frage (D9), M4, M6 |
 | Verworfen/ersetzt: Layer frei skalieren, voller Plot-Editor, 3D, DOI als Ausschlusskriterium | Bewertung | — |
 
 ---
@@ -423,7 +431,7 @@ flowchart TD
 | Stufe | Inhalt | Ab |
 |---|---|---|
 | 1 | GitHub-Issue-Vorlage "Bug" mit den strukturierten Feldern; Triage-Routine auf neue Issues mit Label `bug-report`; Fix als PR. Reicht, solange du und wenige Tester die einzigen Nutzer seid. | M0 |
-| 2 | Knopf "Fehler melden" im Viewer, Backend erzeugt das bereinigte Issue; automatischer Kontext (Version, Datensätze, Frontend-Fehler) | M2 |
+| 2 | Knopf "Fehler melden" im Viewer, Backend erzeugt das bereinigte Issue; automatischer Kontext (Version, Datensätze, Frontend-Fehler) | vertagt bis zur Frage nach dem Deployment (D9, 2026-09-20): braucht ein GitHub-Schreibrecht und damit ein Secret |
 | 3 | Rezept/Permalink und Trace-ID als Kontext; Reproduktion über das Rezept | M4 |
 | 4 | Status für den Melder (eingegangen, in Prüfung, bestätigt, behoben in Version X), Missbrauchsschutz über Login und Quotas, `ux-friction`-Auswertung | M6 |
 

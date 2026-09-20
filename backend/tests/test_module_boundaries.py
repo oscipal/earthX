@@ -85,6 +85,33 @@ def test_datasets_stay_isolated(config: configparser.ConfigParser) -> None:
     assert _modules(config, section, "source_modules") == ALL_MODULES - {"datasets", "api"}
 
 
+@pytest.mark.parametrize("module", sorted(ALLOWED_IMPORTS))
+def test_module_boundary_contracts_only_count_direct_imports(
+    config: configparser.ConfigParser, module: str
+) -> None:
+    """M2-01 (ENTSCHEIDUNGSLOG 2026-09-20, "Importverträge zählen direkte Importe").
+
+    Column 3 of architekturplan.md 3.1 allows chains such as
+    `access -> readers -> gateway` and `processing -> catalog -> gateway`. With
+    import-linter's default chain-counting behaviour those chains were
+    indistinguishable from a direct `access -> gateway` import, so each of the
+    nine module-boundary contracts sets `allow_indirect_imports = True`.
+    """
+    assert config.getboolean(f"importlinter:contract:{module}", "allow_indirect_imports") is True
+
+
+@pytest.mark.parametrize("contract", ["datasets-isolated", "no-database-in-worker-core"])
+def test_the_two_chain_sensitive_contracts_keep_counting_chains(
+    config: configparser.ConfigParser, contract: str
+) -> None:
+    """KLAERUNGEN B9: for the worker-core and dataset-isolation rules the chain
+
+    itself is the violation (e.g. `processing -> catalog -> psycopg`), so
+    these two contracts must NOT set `allow_indirect_imports`.
+    """
+    assert not config.has_option(f"importlinter:contract:{contract}", "allow_indirect_imports")
+
+
 def test_http_clients_are_confined_to_gateway(config: configparser.ConfigParser) -> None:
     section = "importlinter:contract:http-only-in-gateway"
     assert _modules(config, section, "source_modules") == (ALL_MODULES - {"gateway"}) | _root_modules()

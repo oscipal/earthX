@@ -42,6 +42,8 @@ Was bleibt, gilt jetzt allgemein für jeden token-freien Datensatz:
 
 Es gibt genau einen Satz Namen, im Repo unter `docs/` und identisch im Projektwissen des Chats: `UEBERGABE.md` bzw. `UEBERGABE_CHAT.md`, `projektplan.md`, `architekturplan.md`, `projektuebersicht.md`, `ADDING_ESA_DATASETS.md`, `KLAERUNGEN.md`, `ENTSCHEIDUNGSLOG.md`, `ENTSCHEIDUNGEN_2026-09-18.md`. Die Dateien mit Präfix `EarthX_` sind dieselben Dokumente unter ihrem Download-Namen und werden nicht mehr verwendet. `UEBERGABE_CHAT.md` gehört nur ins Projektwissen, nicht ins Repo.
 
+**Nachtrag 2026-09-20:** `UEBERGABE_CHAT.md` ist als überholt gelöscht. Der Chat startet stattdessen mit `CLAUDE.md`, `ENTSCHEIDUNGEN_2026-09-18.md`, `ENTSCHEIDUNGSLOG.md`, dieser Datei und den Plandokumenten.
+
 ### B4. ENTSCHEIDUNGSLOG und ADRs — *Festgelegt*
 
 ADRs unter `docs/adr/` sind die maßgebliche Begründung für Architekturentscheidungen. `docs/ENTSCHEIDUNGSLOG.md` ist das chronologische Verzeichnis **aller** Entscheidungen (auch Scope, Geschäft, Recht): eine Zeile pro Entscheidung mit Datum, Kurzfassung, betroffenen Dokumenten und Verweis auf das ADR, falls es eines gibt. Es ersetzt keine ADRs.
