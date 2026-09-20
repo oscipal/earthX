@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSearchUrl, errorDetail, nextTokenFrom } from './api';
+import { buildSearchUrl, buildStatisticsUrl, buildTileTemplate, errorDetail, nextTokenFrom } from './api';
 
 describe('buildSearchUrl', () => {
   it('carries the collection, bbox, datetime range, limit and token', () => {
@@ -42,6 +42,27 @@ describe('nextTokenFrom', () => {
   it('is null when there is no next link', () => {
     expect(nextTokenFrom([{ rel: 'self', href: 'https://example.test/stac/search' }])).toBeNull();
     expect(nextTokenFrom(undefined)).toBeNull();
+  });
+});
+
+describe('buildTileTemplate', () => {
+  it('carries the mandatory asset and leaves {z}/{x}/{y} literal (adr/0001 Z4)', () => {
+    const url = buildTileTemplate('sentinel-2-c1-l2a', 'S2A_1', 'visual');
+    expect(url).toContain('/collections/sentinel-2-c1-l2a/items/S2A_1/tiles/WebMercatorQuad/{z}/{x}/{y}');
+    const params = new URL(url, 'http://localhost').searchParams;
+    expect(params.get('asset')).toBe('visual');
+  });
+
+  it('encodes dataset and item ids used as path segments', () => {
+    const url = buildTileTemplate('a b', 'c/d', 'visual');
+    expect(url).toContain('/collections/a%20b/items/c%2Fd/tiles/');
+  });
+});
+
+describe('buildStatisticsUrl', () => {
+  it('names the asset it asks statistics for', () => {
+    const url = buildStatisticsUrl('sentinel-2-c1-l2a', 'S2A_1', 'visual');
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/items/S2A_1/statistics?asset=visual');
   });
 });
 

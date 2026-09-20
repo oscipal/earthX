@@ -98,3 +98,44 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     nextToken: nextTokenFrom(body.links),
   };
 }
+
+// The tiler process (adr/0006), a separate service from `/stac` — same-origin
+// relative URLs here too, dev-proxied under `/collections` (vite.config.ts).
+const TILE_MATRIX_SET = 'WebMercatorQuad';
+
+function itemBase(datasetId: string, itemId: string): string {
+  return `${BASE}/collections/${encodeURIComponent(datasetId)}/items/${encodeURIComponent(itemId)}`;
+}
+
+// A MapLibre-ready tile template: literal `{z}/{x}/{y}` placeholders, `asset`
+// already baked in (adr/0001 Z4 — the URL alone determines the image). Stretch
+// and colormap are added on top of this by `buildTileUrl` (mapLayers.ts) once
+// they are known/applied.
+export function buildTileTemplate(datasetId: string, itemId: string, asset: string): string {
+  const params = new URLSearchParams({ asset });
+  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
+}
+
+export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {
+  const params = new URLSearchParams({ asset });
+  return `${itemBase(datasetId, itemId)}/statistics?${params.toString()}`;
+}
+
+// rio-tiler's `BandStatistics`, plain JSON (backend/earthx/access/tiles.py) —
+// only the fields the stretch calculation reads are named, the rest passes
+// through untyped.
+export interface BandStatistics {
+  min: number;
+  max: number;
+  percentile_2: number;
+  percentile_98: number;
+  [key: string]: unknown;
+}
+
+export async function fetchStatistics(
+  datasetId: string,
+  itemId: string,
+  asset: string,
+): Promise<Record<string, BandStatistics>> {
+  return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset)));
+}
