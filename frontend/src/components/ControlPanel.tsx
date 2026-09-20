@@ -1,8 +1,6 @@
 import { parseAoiFile } from '../aoiFile';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
-import { PRODUCTS } from '../products';
 import { useAppStore } from '../store';
-import SearchBox from './SearchBox';
 import Toolbar from './Toolbar';
 
 function AoiExtras() {
@@ -59,42 +57,27 @@ function AoiExtras() {
   );
 }
 
-function ProductSelector() {
-  const product = useAppStore((s) => s.product);
-  const setProduct = useAppStore((s) => s.setProduct);
+function DatasetSelector() {
+  const datasets = useAppStore((s) => s.datasets);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const setDatasetId = useAppStore((s) => s.setDatasetId);
+  if (datasets.length === 0) return null;
   return (
-    <div className="level-select" role="group" aria-label="Product">
-      {PRODUCTS.map((p) => (
+    <div className="level-select" role="group" aria-label="Dataset">
+      {datasets.map((d) => (
         <button
-          key={p.id}
+          key={d.id}
           type="button"
-          className={`level-btn${product === p.id ? ' active' : ''}`}
-          title={p.hint}
-          aria-pressed={product === p.id}
-          onClick={() => setProduct(p.id)}
+          className={`level-btn${datasetId === d.id ? ' active' : ''}`}
+          title={d.viewable ? d.title : `${d.title} — not viewable: ${d.reason}`}
+          aria-pressed={datasetId === d.id}
+          disabled={!d.viewable}
+          onClick={() => setDatasetId(d.id)}
         >
-          {p.label}
+          {d.title}
         </button>
       ))}
     </div>
-  );
-}
-
-function CoverageToggle() {
-  const showCoverage = useAppStore((s) => s.showCoverage);
-  const coverageLoading = useAppStore((s) => s.coverageLoading);
-  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
-  return (
-    <button
-      type="button"
-      className={`tool-btn ghost coverage-toggle${showCoverage ? ' active' : ''}`}
-      title="Show where BIOMASS has data (global scene footprints for this product)"
-      aria-pressed={showCoverage}
-      onClick={() => toggleCoverage()}
-    >
-      {coverageLoading && <span className="spinner" aria-hidden="true" />}
-      <span>▦ {showCoverage ? 'Hide' : 'Show'} BIOMASS coverage</span>
-    </button>
   );
 }
 
@@ -107,25 +90,24 @@ export default function ControlPanel() {
   const searching = useAppStore((s) => s.searching);
   const runSearch = useAppStore((s) => s.runSearch);
   const count = useAppStore((s) => s.items.length);
+  const datasetId = useAppStore((s) => s.datasetId);
 
   return (
     <div className="panel control-panel">
       <div className="brand">
         <span className="brand-mark" />
         <div>
-          <h1>BIOMASS VIEWER</h1>
-          <p>ESA BIOMASS · P-band SAR · AGB</p>
+          <h1>EarthX</h1>
+          <p>Geo- und Satellitendaten-Viewer</p>
         </div>
       </div>
 
       <label className="field-label">Area of interest</label>
-      <SearchBox />
       <Toolbar />
       <AoiExtras />
 
-      <label className="field-label">Product</label>
-      <ProductSelector />
-      <CoverageToggle />
+      <label className="field-label">Dataset</label>
+      <DatasetSelector />
 
       <label className="field-label">Acquisition date</label>
       <div className="date-row">
@@ -147,14 +129,14 @@ export default function ControlPanel() {
       <button
         type="button"
         className="primary-btn"
-        disabled={!aoi || searching}
+        disabled={!aoi || !datasetId || searching}
         onClick={() => runSearch()}
       >
         {searching ? 'Searching…' : 'Search scenes'}
       </button>
 
       {count > 0 && <p className="result-count">{count} scene(s) found</p>}
-      {!aoi && <p className="hint-text">Pick a tool or search a place to define an AOI.</p>}
+      {!aoi && <p className="hint-text">Pick a tool to define an area of interest.</p>}
     </div>
   );
 }

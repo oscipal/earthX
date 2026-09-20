@@ -1,37 +1,20 @@
 import { create } from 'zustand';
 
 import * as api from './api';
+import type { ItemPage, SearchQuery } from './api';
+import type { DatasetOption } from './datasets';
+import { datasetsFrom, quicklookAsset } from './datasets';
+import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import { polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
-import { buildGroups, groupIndexOfItem } from './grouping';
+import { buildGroups, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
-import { buildTileUrl } from './mapLayers';
-import { computeRender, productById } from './products';
-import type { AppliedRender, DecompMethod, PolMode, Product } from './products';
-import type {
-  AppConfig,
-  Bbox,
-  BiomassItem,
-  DownloadedInfo,
-  MosaicGroup,
-  ToolMode,
-} from './types';
+import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
-function describeView(
-  product: Product,
-  focusMode: boolean,
-  downloaded: Record<string, DownloadedInfo>,
-  polBand: string,
-  applied: AppliedRender,
-): string {
-  if (!focusMode) return `${product} · quicklook`;
-  const assets = Object.values(downloaded).map((d) => d.asset);
-  if (assets.some((a) => a === 'stitch')) return `${product} · stitched`;
-  const dec = assets.find((a) => a && a.startsWith('decomp_'));
-  if (dec) return `${product} · ${dec.replace('decomp_', '')} decomp`;
-  if (applied.expression) return `${product} · pseudo-Pauli`;
-  if (applied.indexes && applied.indexes.includes(',')) return `${product} · intensity RGB`;
-  return `${product} · ${polBand}`;
-}
+const PAGE_LIMIT = 100;
+// The prototype's own richtwert (`max_search_items`); there is no server config
+// endpoint to read it from any more (M2-07a scope — the prototype's `/api/config`
+// is gone), so it stays a constant here until a task actually needs it tunable.
+const MAX_SEARCH_ITEMS = 300;
 
 function buildDatetime(from: string, to: string): string | undefined {
   const start = from ? `${from}T00:00:00Z` : '..';
@@ -40,71 +23,92 @@ function buildDatetime(from: string, to: string): string | undefined {
   return `${start}/${end}`;
 }
 
+// Pages through `nextToken` until the result is complete or `MAX_SEARCH_ITEMS`
+// is reached — the API never sorts (D8, `earthx.api.main`), so "the nearest
+// date" and "the full set for a date" both have to walk every page rather
+// than trust the first one.
+async function searchAllPages(
+  q: Omit<SearchQuery, 'limit' | 'token'>,
+): Promise<{ features: StacItem[]; numberMatched: number | null }> {
+  let token: string | undefined;
+  const features: StacItem[] = [];
+  let numberMatched: number | null = null;
+  do {
+    const page: ItemPage = await api.searchItems({ ...q, limit: PAGE_LIMIT, token });
+    features.push(...page.features);
+    if (numberMatched === null) numberMatched = page.numberMatched;
+    token = page.nextToken ?? undefined;
+  } while (token && features.length < MAX_SEARCH_ITEMS);
+  return { features, numberMatched };
+}
+
+function foundNotice(features: StacItem[], groups: TimeStepGroup[], numberMatched: number | null): string {
+  const base = `${features.length} scene(s) in ${groups.length} time step(s).`;
+  if (numberMatched !== null && numberMatched > features.length) {
+    return `${base} ${numberMatched} matched in total — narrow the area or date range to see the rest.`;
+  }
+  return base;
+}
+
 interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
   aoi: GeoJSON.Geometry | null;
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
-  aoiHash: string | null;
   flyToBbox: Bbox | null;
-  // Global BIOMASS coverage (all scene footprints for the current product) —
-  // viewable before choosing an ROI.
+  // Global coverage footprints — rebuilt properly with 07c (M2-05b); these
+  // stay permanently off/empty in 07a so MapView's existing rendering has
+  // something well-typed to read.
   showCoverage: boolean;
   coverageFC: GeoJSON.FeatureCollection | null;
-  coverageProduct: Product | null;
-  coverageLoading: boolean;
 
   // --- ui layout ---
   panelCollapsed: boolean; // left control panel slid off to the left
-  focusMode: boolean; // viewing a downloaded full-res image (mosaics/timeline hidden)
-  showDownloaded: boolean; // toggle visibility of the downloaded full-res overlay(s)
+  // Full-resolution viewing is 07b's job (tiles, render controls). Until then
+  // this stays false and `downloaded` stays empty, so the viewer only ever
+  // shows quicklooks — MapView's rendering branch for it is simply never hit.
+  focusMode: boolean;
+  showDownloaded: boolean;
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
   layerManagerOpen: boolean;
 
-  // --- render params for downloaded COG tiles (pending UI selection) ---
-  colormap: string;
-  vmin: string; // empty string = auto (backend 2–98 percentile)
-  vmax: string;
-  polMode: PolMode; // single | rgb | pauli | decomp
-  polBand: string; // active single-pol (HH/HV/VH/VV)
-  decompMethod: DecompMethod; // SCS decomposition (pauli | freeman)
-  appliedRender: AppliedRender; // committed on "Apply" — what the tiles actually use
+  // --- render params for a full-res raster (07b builds the controls for it) ---
+  appliedRender: AppliedRender;
 
   // --- data ---
-  config: AppConfig | null;
-  items: BiomassItem[];
-  groups: MosaicGroup[];
+  config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
+  datasets: DatasetOption[];
+  datasetId: string | null;
+  items: StacItem[];
+  groups: TimeStepGroup[];
   activeGroupIndex: number;
   selectedIds: string[];
   downloaded: Record<string, DownloadedInfo>;
 
   // --- filters ---
-  product: Product;
   dateFrom: string;
   dateTo: string;
 
   // --- ui ---
   searching: boolean;
-  downloading: boolean;
+  downloading: boolean; // no operation in 07a sets this; 07d's download will
   playing: boolean;
   error: string | null;
   notice: string | null;
 
   // --- actions ---
-  loadConfig: () => Promise<void>;
+  loadDatasets: () => Promise<void>;
+  setDatasetId: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
   setAoi: (g: GeoJSON.Geometry | null) => void;
   clearAoi: () => void;
   useLastAoi: () => void;
-  toggleCoverage: () => void;
-  loadCoverage: () => Promise<void>;
   flyTo: (b: Bbox) => void;
   clearFly: () => void;
   togglePanel: () => void;
   setPanelCollapsed: (v: boolean) => void;
-  exitFocus: () => void;
   clearAll: () => void;
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
@@ -113,17 +117,7 @@ interface AppState {
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
-  toggleDownloaded: () => void;
   zoomToView: () => void;
-  setColormap: (v: string) => void;
-  setVmin: (v: string) => void;
-  setVmax: (v: string) => void;
-  setProduct: (p: Product) => void;
-  setPolMode: (m: PolMode) => void;
-  setPolBand: (b: string) => void;
-  setDecompMethod: (m: DecompMethod) => void;
-  applyRender: () => void;
-  runDecompose: (method: DecompMethod) => Promise<void>;
   setActiveGroupIndex: (i: number) => void;
   focusItem: (id: string) => void;
   toggleSelected: (id: string) => void;
@@ -135,19 +129,15 @@ interface AppState {
   setError: (v: string | null) => void;
   setNotice: (v: string | null) => void;
   runSearch: () => Promise<void>;
-  runDownload: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   toolMode: 'none',
   aoi: null,
   lastAoi: null,
-  aoiHash: null,
   flyToBbox: null,
   showCoverage: false,
   coverageFC: null,
-  coverageProduct: null,
-  coverageLoading: false,
 
   panelCollapsed: false,
   focusMode: false,
@@ -156,22 +146,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   layers: [],
   layerManagerOpen: false,
 
-  colormap: 'viridis',
-  vmin: '',
-  vmax: '',
-  polMode: 'single',
-  polBand: 'HH',
-  decompMethod: 'pauli',
-  appliedRender: { indexes: '1', colormap: 'viridis' },
+  appliedRender: {},
 
   config: null,
+  datasets: [],
+  datasetId: null,
   items: [],
   groups: [],
   activeGroupIndex: 0,
   selectedIds: [],
   downloaded: {},
 
-  product: 'GN', // default product
   dateFrom: '',
   dateTo: '',
 
@@ -181,67 +166,50 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   notice: null,
 
-  loadConfig: async () => {
+  loadDatasets: async () => {
     try {
-      const config = await api.fetchConfig();
-      set({ config });
-      if (!config.token.configured) {
-        set({
-          notice:
-            'No MAAP token configured — scene search works, but previews and downloads need a token in backend/.env.',
-        });
-      }
+      const collections = await api.fetchCollections();
+      const datasets = datasetsFrom(collections);
+      const firstViewable = datasets.find((d) => d.viewable);
+      set({ datasets, datasetId: (firstViewable ?? datasets[0])?.id ?? null });
     } catch (e) {
       set({ error: `Backend not reachable: ${(e as Error).message}` });
     }
   },
+  setDatasetId: (datasetId) =>
+    set({
+      datasetId,
+      items: [],
+      groups: [],
+      activeGroupIndex: 0,
+      selectedIds: [],
+      error: null,
+      notice: null,
+    }),
 
   // Activating a draw tool slides the control panel away so it can't block the
   // map while you draw; finishing a draw re-opens it (see MapView).
   setToolMode: (toolMode) =>
     set(toolMode === 'none' ? { toolMode } : { toolMode, panelCollapsed: true }),
   setAoi: (aoi) => set((s) => ({ aoi, lastAoi: aoi ?? s.lastAoi })),
-  clearAoi: () => set({ aoi: null, aoiHash: null }),
+  clearAoi: () => set({ aoi: null }),
   useLastAoi: () => {
     const g = get().lastAoi;
     if (!g) return;
     const bb = polygonBbox(g);
     set({ aoi: g, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
   },
-  toggleCoverage: () => {
-    const show = !get().showCoverage;
-    set({ showCoverage: show });
-    if (show) get().loadCoverage();
-  },
-  loadCoverage: async () => {
-    const product = get().product;
-    if (get().coverageProduct === product && get().coverageFC) return; // cached
-    set({ coverageLoading: true });
-    try {
-      const fc = await api.fetchCoverage(productById(product).collection);
-      set({ coverageFC: fc, coverageProduct: product });
-    } catch (e) {
-      set({ error: `Coverage load failed: ${(e as Error).message}`, showCoverage: false });
-    } finally {
-      set({ coverageLoading: false });
-    }
-  },
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
   togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
   setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
-  exitFocus: () => set({ focusMode: false }),
   clearAll: () =>
     set({
       aoi: null,
-      aoiHash: null,
       items: [],
       groups: [],
       activeGroupIndex: 0,
       selectedIds: [],
-      downloaded: {},
-      focusMode: false,
-      showDownloaded: true,
       panelCollapsed: false,
       playing: false,
       error: null,
@@ -251,26 +219,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleLayerManager: () => set((s) => ({ layerManagerOpen: !s.layerManagerOpen })),
   addCurrentToLayers: () => {
     const s = get();
+    const group = s.groups[s.activeGroupIndex];
+    const items = s.selectedIds.length
+      ? s.items.filter((it) => s.selectedIds.includes(it.id))
+      : (group?.items ?? []);
     const overlays: LayerOverlay[] = [];
-    if (s.focusMode && Object.keys(s.downloaded).length > 0) {
-      for (const info of Object.values(s.downloaded)) {
-        overlays.push({ kind: 'raster', tileUrl: buildTileUrl(info, s.appliedRender), bounds: info.bounds });
-      }
-    } else {
-      const group = s.groups[s.activeGroupIndex];
-      const items = s.selectedIds.length
-        ? s.items.filter((it) => s.selectedIds.includes(it.id))
-        : group?.items ?? [];
-      for (const it of items) {
-        const coords = quicklookCoords(it.id, it.geometry, it.bbox);
-        if (coords && it.quicklook_key) overlays.push({ kind: 'image', url: api.assetUrl(it), coords });
-      }
+    for (const it of items) {
+      const coords = quicklookCoords(it.geometry, it.bbox);
+      const asset = quicklookAsset(it);
+      if (coords && asset) overlays.push({ kind: 'image', url: asset.href, coords });
     }
     if (overlays.length === 0) {
-      set({ error: 'Nothing to add — search a scene or download an image first.' });
+      set({ error: 'Nothing to add — search and pick a time step first.' });
       return;
     }
-    const name = describeView(s.product, s.focusMode, s.downloaded, s.polBand, s.appliedRender);
+    const dataset = s.datasets.find((d) => d.id === s.datasetId);
+    const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${group?.label ?? ''}`;
     const layer: MapLayer = {
       id: `L${Date.now().toString(36)}`,
       name,
@@ -317,25 +281,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         showDownloaded: true,
       };
     }),
-  toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
-  // Smart zoom: to the downloaded image(s) when focused, else the selected
-  // scenes, else the active mosaic group, else the whole AOI.
+  // Zoom to the selected scenes, else the active time step, else the whole AOI.
   zoomToView: () => {
-    const { items, selectedIds, groups, activeGroupIndex, aoi, focusMode, downloaded } = get();
-    let boxes: (Bbox | null | undefined)[] = [];
-    if (focusMode) {
-      boxes = Object.values(downloaded).map((d) => d.bounds);
-    } else {
-      boxes = items.filter((it) => selectedIds.includes(it.id)).map((it) => it.bbox);
-      if (boxes.length === 0) boxes = groups[activeGroupIndex]?.items.map((it) => it.bbox) ?? [];
-    }
+    const { items, selectedIds, groups, activeGroupIndex, aoi } = get();
+    let boxes = items.filter((it) => selectedIds.includes(it.id)).map((it) => it.bbox);
+    if (boxes.length === 0) boxes = groups[activeGroupIndex]?.items.map((it) => it.bbox) ?? [];
     let bb = unionBbox(boxes);
     if (!bb && aoi) bb = polygonBbox(aoi);
     if (bb) set({ flyToBbox: bb });
   },
-  setColormap: (colormap) => set({ colormap }),
-  setVmin: (vmin) => set({ vmin }),
-  setVmax: (vmax) => set({ vmax }),
   setActiveGroupIndex: (activeGroupIndex) => set({ activeGroupIndex }),
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);
@@ -351,28 +305,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const group = s.groups[s.activeGroupIndex];
       if (!group) return {};
-      const ids = group.items.filter((it) => it.cog_key).map((it) => it.id);
-      const merged = new Set([...s.selectedIds, ...ids]);
+      const merged = new Set([...s.selectedIds, ...group.items.map((it) => it.id)]);
       return { selectedIds: [...merged] };
     }),
   clearSelection: () => set({ selectedIds: [] }),
-  setProduct: (product) => {
-    const def = productById(product);
-    set({ product, polMode: 'single', polBand: def.pols[0] ?? 'HH', coverageFC: null, coverageProduct: null });
-    if (get().showCoverage) get().loadCoverage();
-  },
-  setPolMode: (polMode) => set({ polMode }),
-  setPolBand: (polBand) => set({ polBand }),
-  setDecompMethod: (decompMethod) => set({ decompMethod }),
-  applyRender: () => {
-    const { product, polMode, polBand, colormap, vmin, vmax } = get();
-    const r = computeRender(product, polMode, polBand, colormap, vmin, vmax);
-    if (!r) {
-      set({ notice: 'True decompositions need the complex SCS product — that path is coming next.' });
-      return;
-    }
-    set({ appliedRender: r });
-  },
   setDateFrom: (dateFrom) => set({ dateFrom }),
   setDateTo: (dateTo) => set({ dateTo }),
   setPlaying: (playing) => set({ playing }),
@@ -380,166 +316,86 @@ export const useAppStore = create<AppState>((set, get) => ({
   setNotice: (notice) => set({ notice }),
 
   runSearch: async () => {
-    const { aoi, dateFrom, dateTo, product } = get();
+    const { aoi, dateFrom, dateTo, datasetId, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });
       return;
     }
-    const def = productById(product);
-    // Collapse the control panel to the left as soon as a search starts.
-    set({ searching: true, error: null, notice: null, playing: false, panelCollapsed: true, focusMode: false });
+    const dataset = datasets.find((d) => d.id === datasetId);
+    if (!dataset) {
+      set({ error: 'Pick a dataset first.' });
+      return;
+    }
+    if (!dataset.viewable) {
+      set({ error: `This dataset cannot be shown yet: ${dataset.reason}` });
+      return;
+    }
+    const bbox = polygonBbox(aoi);
+    if (!bbox) {
+      set({ error: 'Could not compute a bounding box for the area of interest.' });
+      return;
+    }
+    const groupBy = dataset.groupBy;
+    const applyResults = (
+      features: StacItem[],
+      notice: string | ((groups: TimeStepGroup[]) => string),
+    ) => {
+      try {
+        const groups = buildGroups(features, groupBy);
+        const text = typeof notice === 'function' ? notice(groups) : notice;
+        set({ items: features, groups, activeGroupIndex: 0, selectedIds: [], error: null, notice: text });
+      } catch (e) {
+        if (e instanceof MissingProperty) {
+          set({
+            items: [],
+            groups: [],
+            activeGroupIndex: 0,
+            selectedIds: [],
+            error: `Grouping failed: ${e.message}`,
+            notice: null,
+          });
+          return;
+        }
+        throw e;
+      }
+    };
+
+    set({ searching: true, error: null, notice: null, playing: false, panelCollapsed: true });
     try {
-      const res = await api.searchItems({
-        aoi,
-        datetime: buildDatetime(dateFrom, dateTo),
-        collections: [def.collection],
-      });
-      // Show only the chosen product; SCS additionally needs the complex
-      // (abs + phase) TIFFs to be decomposable.
-      const filtered = res.items.filter(
-        (it) =>
-          def.match.test(it.id) &&
-          (!def.complex ||
-            (it.assets['enclosure_i_abs_tiff'] && it.assets['enclosure_i_phase_tiff'])),
+      const datetimeRange = buildDatetime(dateFrom, dateTo);
+      const page = await searchAllPages({ collection: dataset.id, bbox, datetime: datetimeRange });
+      if (page.features.length > 0) {
+        applyResults(page.features, (groups) => foundNotice(page.features, groups, page.numberMatched));
+        return;
+      }
+      if (!dateFrom && !dateTo) {
+        applyResults([], 'No scenes found for this area.');
+        return;
+      }
+      const fallback = await findFallback(
+        (w) =>
+          api.searchItems({
+            collection: dataset.id,
+            bbox,
+            datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`,
+            limit: PAGE_LIMIT,
+          }),
+        dateFrom,
+        dateTo,
       );
-      const groups = buildGroups(filtered);
-      set({
-        items: filtered,
-        groups,
-        aoiHash: res.aoi_hash,
-        activeGroupIndex: 0,
-        selectedIds: [],
-        downloaded: {},
-        notice:
-          filtered.length === 0
-            ? `No ${def.label} scenes found for this area / date range.`
-            : `${filtered.length} ${def.label} scene(s) in ${groups.length} group(s).`,
-      });
+      if (!fallback) {
+        applyResults([], NO_FALLBACK_MESSAGE);
+        return;
+      }
+      const range = fullDayRange(fallback.item);
+      const full = range
+        ? await searchAllPages({ collection: dataset.id, bbox, datetime: range })
+        : { features: [fallback.item], numberMatched: 1 };
+      applyResults(full.features, fallbackNotice(fallback));
     } catch (e) {
-      // Re-open the panel on failure so the user can adjust inputs and retry.
       set({ error: `Search failed: ${(e as Error).message}`, items: [], groups: [], panelCollapsed: false });
     } finally {
       set({ searching: false });
-    }
-  },
-
-  runDownload: async () => {
-    const { selectedIds, aoi } = get();
-    if (!aoi || selectedIds.length === 0) return;
-    set({ downloading: true, error: null, notice: null });
-    // The render to apply to the fresh download (current polarization view).
-    const renderNow = () => {
-      const s = get();
-      return computeRender(s.product, s.polMode, s.polBand, s.colormap, s.vmin, s.vmax) ?? s.appliedRender;
-    };
-    try {
-      // Two or more adjacent scenes → stitch into a single mosaicked image.
-      if (selectedIds.length > 1) {
-        const res = await api.stitchItems(selectedIds, aoi);
-        const r = res.result;
-        if (r.status === 'ok' && r.aoi_hash && r.bounds) {
-          set({
-            downloaded: {
-              [r.item_id]: {
-                tileUrl: api.tileTemplate(r.item_id, r.aoi_hash),
-                aoiHash: r.aoi_hash,
-                bounds: r.bounds,
-                asset: 'stitch',
-              },
-            },
-            selectedIds: [],
-            focusMode: true,
-            showDownloaded: true,
-            appliedRender: renderNow(),
-            notice: `Stitched ${selectedIds.length} scenes into one image.`,
-          });
-        } else {
-          set({ error: `Stitch failed: ${r.error ?? 'unknown error'}` });
-        }
-        return;
-      }
-
-      // Single scene → normal AOI crop.
-      const res = await api.downloadItems(selectedIds, aoi);
-      const downloaded = { ...get().downloaded };
-      const errors: string[] = [];
-      for (const r of res.results) {
-        if (r.status === 'ok' && r.tile_url && r.bounds && r.aoi_hash) {
-          downloaded[r.item_id] = {
-            tileUrl: api.tileTemplate(r.item_id, r.aoi_hash),
-            aoiHash: r.aoi_hash,
-            bounds: r.bounds,
-            asset: '',
-          };
-        } else if (r.error) {
-          errors.push(`${r.item_id.slice(0, 24)}…: ${r.error}`);
-        }
-      }
-      const firstOk = res.results.find((r) => r.status === 'ok');
-      const activeGroupIndex = firstOk
-        ? Math.max(0, groupIndexOfItem(get().groups, firstOk.item_id))
-        : get().activeGroupIndex;
-      const ok = res.ok_count > 0;
-      set({
-        downloaded,
-        activeGroupIndex,
-        selectedIds: ok ? [] : get().selectedIds,
-        focusMode: ok ? true : get().focusMode,
-        showDownloaded: ok ? true : get().showDownloaded,
-        appliedRender: ok ? renderNow() : get().appliedRender,
-        error: errors.length ? `Some downloads failed — ${errors.join(' | ')}` : null,
-        notice: ok ? `Downloaded ${res.ok_count} full-resolution crop(s).` : null,
-      });
-    } catch (e) {
-      set({ error: `Download failed: ${(e as Error).message}` });
-    } finally {
-      set({ downloading: false });
-    }
-  },
-
-  runDecompose: async (method) => {
-    const { selectedIds, aoi, downloaded, vmin, vmax } = get();
-    // Selected scenes, or (re-compute) the ones already in view.
-    const ids = selectedIds.length ? selectedIds : Object.keys(downloaded);
-    if (!aoi || ids.length === 0) return;
-    set({ downloading: true, error: null, notice: null });
-    try {
-      const res = await api.decompose(ids, aoi, method);
-      const dl = { ...get().downloaded };
-      const errors: string[] = [];
-      for (const r of res.results) {
-        if (r.status === 'ok' && r.aoi_hash && r.bounds) {
-          dl[r.item_id] = {
-            tileUrl: api.tileTemplate(r.item_id, r.aoi_hash),
-            aoiHash: r.aoi_hash,
-            bounds: r.bounds,
-            asset: `decomp_${method}`,
-          };
-        } else if (r.error) {
-          errors.push(`${r.item_id.slice(0, 22)}…: ${r.error}`);
-        }
-      }
-      const ok = res.ok_count > 0;
-      const firstOk = res.results.find((r) => r.status === 'ok');
-      const activeGroupIndex = firstOk
-        ? Math.max(0, groupIndexOfItem(get().groups, firstOk.item_id))
-        : get().activeGroupIndex;
-      const rescale = vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined;
-      set({
-        downloaded: dl,
-        activeGroupIndex,
-        selectedIds: ok ? [] : get().selectedIds,
-        focusMode: ok ? true : get().focusMode,
-        showDownloaded: ok ? true : get().showDownloaded,
-        decompMethod: method,
-        appliedRender: ok ? { indexes: '1,2,3', rescale } : get().appliedRender,
-        error: errors.length ? `Some decompositions failed — ${errors.join(' | ')}` : null,
-        notice: ok ? `Computed ${method} decomposition for ${res.ok_count} scene(s).` : null,
-      });
-    } catch (e) {
-      set({ error: `Decomposition failed: ${(e as Error).message}` });
-    } finally {
-      set({ downloading: false });
     }
   },
 }));

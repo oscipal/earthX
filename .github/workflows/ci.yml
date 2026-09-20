@@ -79,7 +79,7 @@ jobs:
         run: pytest
 
   frontend:
-    name: Frontend — lint and types
+    name: Frontend — lint, types and tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -101,6 +101,9 @@ jobs:
 
       - name: Type check (tsc)
         run: npx tsc -b --pretty false
+
+      - name: Tests (vitest)
+        run: npm test
 
   import-boundaries:
     name: Module boundaries (import-linter)
