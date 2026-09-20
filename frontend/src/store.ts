@@ -47,22 +47,32 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
   coverageDebounceHandle = window.setTimeout(() => void refreshCoverage(set, get), COVERAGE_DEBOUNCE_MS);
 }
 
-// Fetches the density grid for the current dataset/viewport/date filter
-// (M2-07c), and — only once the backend's `footprints_advised` and the
-// frontend's own zoom brake (coverage.ts) both agree — the real scene
-// footprints to replace it with. A failed density fetch clears the layer
-// (nothing to fall back to); a failed *footprints* fetch instead leaves
-// `coverage` in place and `coverageFootprints` at `null`, so `MapView`'s
-// `coverageDisplayFor` falls back to the density it already has rather than
-// losing the whole layer over a second, optional request.
+// Fetches the density grid for the current dataset/AOI/date filter (M2-07c),
+// and — only once the backend's `footprints_advised` and the frontend's own
+// zoom brake (coverage.ts) both agree — the real scene footprints to replace
+// it with. `bbox` is the search AOI (`aoi`, drawn/uploaded), never the map's
+// pan/zoom viewport: `adr/0004` §6.3 ties the geotile *level* to the map's
+// zoom, but its "räumlicher Filter" (has_spatial_filter) means an actual
+// narrowing criterion. Sending the viewport as `bbox` on every pan would
+// silently turn every browse into a "filtered" query and permanently disable
+// the coverage route's own world-view cap (`WORLD_LEVEL_CAP`) — the bug
+// behind the too-coarse cells reported after M2-07c's first local run; see
+// the PR for the measured levels and the (backend, Otto's-call) proposal.
+//
+// A failed density fetch clears the layer (nothing to fall back to); a
+// failed *footprints* fetch instead leaves `coverage` in place and
+// `coverageFootprints` at `null`, so `MapView`'s `coverageDisplayFor` falls
+// back to the density it already has rather than losing the whole layer over
+// a second, optional request.
 async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const s = get();
-  if (!s.showCoverage || !s.datasetId || !s.mapBbox) {
+  if (!s.showCoverage || !s.datasetId) {
     set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
     return;
   }
   const gen = ++coverageGen;
-  const { datasetId, mapBbox: bbox } = s;
+  const { datasetId } = s;
+  const bbox = s.aoi ? (polygonBbox(s.aoi) ?? undefined) : undefined;
   const zoom = Math.floor(s.mapZoom);
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
   set({ coverageLoading: true, coverageError: null });
@@ -116,7 +126,8 @@ interface AppState {
   // away from the density cells — `null` while density is showing or nothing
   // has loaded yet.
   coverageFootprints: GeoJSON.FeatureCollection | null;
-  mapBbox: Bbox | null;
+  // The map's zoom only — never its pan/viewport bbox, which is not the
+  // "räumlicher Filter" `adr/0004` §6.3 means (see `refreshCoverage`).
   mapZoom: number;
 
   // --- ui layout ---
@@ -199,7 +210,7 @@ interface AppState {
   setNotice: (v: string | null) => void;
   runSearch: () => Promise<void>;
   toggleCoverage: () => void;
-  setMapView: (bbox: Bbox, zoom: number) => void;
+  setMapZoom: (zoom: number) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -212,7 +223,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   coverageLoading: false,
   coverageError: null,
   coverageFootprints: null,
-  mapBbox: null,
   mapZoom: 1.6,
 
   panelCollapsed: false,
@@ -279,19 +289,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   // map while you draw; finishing a draw re-opens it (see MapView).
   setToolMode: (toolMode) =>
     set(toolMode === 'none' ? { toolMode } : { toolMode, panelCollapsed: true }),
-  setAoi: (aoi) => set((s) => ({ aoi, lastAoi: aoi ?? s.lastAoi })),
-  clearAoi: () => set({ aoi: null }),
+  // The AOI is also the coverage route's spatial filter (`refreshCoverage`),
+  // so every way it can change reschedules a refresh.
+  setAoi: (aoi) => {
+    set((s) => ({ aoi, lastAoi: aoi ?? s.lastAoi }));
+    scheduleCoverageRefresh(set, get);
+  },
+  clearAoi: () => {
+    set({ aoi: null });
+    scheduleCoverageRefresh(set, get);
+  },
   useLastAoi: () => {
     const g = get().lastAoi;
     if (!g) return;
     const bb = polygonBbox(g);
     set({ aoi: g, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
+    scheduleCoverageRefresh(set, get);
   },
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
   togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
   setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
-  clearAll: () =>
+  clearAll: () => {
     set({
       aoi: null,
       items: [],
@@ -308,7 +327,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingColormapName: '',
       pendingVmin: '',
       pendingVmax: '',
-    }),
+    });
+    scheduleCoverageRefresh(set, get);
+  },
 
   toggleLayerManager: () => set((s) => ({ layerManagerOpen: !s.layerManagerOpen })),
   addCurrentToLayers: () => {
@@ -529,8 +550,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (showCoverage) void refreshCoverage(set, get);
     else set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
   },
-  setMapView: (mapBbox, mapZoom) => {
-    set({ mapBbox, mapZoom });
+  setMapZoom: (mapZoom) => {
+    set({ mapZoom });
     scheduleCoverageRefresh(set, get);
   },
   setPlaying: (playing) => set({ playing }),

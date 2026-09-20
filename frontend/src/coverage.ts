@@ -123,17 +123,17 @@ export function showFootprints(result: CoverageResponse | null, zoom: number): b
 }
 
 // The legend's completeness line (`plans/m2-05-coverage.md` §3.5 table).
-// `null` means the legend needs no addition. German wording is deliberate,
-// not a slip of the "code stays English" rule: `adr/0004` §5.3's note on
-// Otto's answer of 20.09.2026 says the German terms for `complete` /
-// `truncated` / `sample` "bleiben die Sprache dieses ADR und der
-// Oberfläche" — they are the UI's own vocabulary, translated once, here.
+// `null` means the legend needs no addition. English here, like the rest of
+// the interface (CLAUDE.md: Code auf Englisch) — `adr/0004` §5.3 still asks
+// for the German terms ("bleiben die Sprache ... der Oberfläche"), which is
+// now stale against the app's own English UI and needs Otto's decision plus
+// an ADR update, not a silent override in one component (see the PR note).
 export function completenessNote(result: CoverageResponse): string | null {
   const { counted, total_count: total } = result;
   const table: Record<CoverageCompleteness, () => string | null> = {
     complete: () => null,
-    truncated: () => (total === null ? 'gekappt' : `zeigt ${counted} von ${total} Aufnahmen`),
-    sample: () => (total === null ? 'Stichprobe' : `Stichprobe: ${counted} von ${total} Aufnahmen`),
+    truncated: () => (total === null ? 'truncated' : `showing ${counted} of ${total} scenes`),
+    sample: () => (total === null ? 'sample' : `sample: ${counted} of ${total} scenes`),
   };
   return table[result.completeness]();
 }

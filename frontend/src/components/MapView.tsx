@@ -15,12 +15,7 @@ import type { CoverageDisplay } from '../mapLayers';
 import { ensureBaseLayers, setAoiData, setCoverageDisplay, syncLayers, syncMosaic } from '../mapLayers';
 import { baseMapStyle } from '../mapStyles';
 import { useAppStore } from '../store';
-import type { Bbox, ToolMode } from '../types';
-
-function viewportBbox(map: MapLibreMap): Bbox {
-  const b = map.getBounds();
-  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-}
+import type { ToolMode } from '../types';
 
 // Only one of density/footprints is ever drawn (mapLayers.ts): footprints
 // once the backend advises it *and* the zoom brake agrees (coverage.ts), a
@@ -141,18 +136,19 @@ export default function MapView() {
       });
       initDraw();
       readyRef.current = true;
-      // The store needs an initial viewport before the first `moveend` (which
-      // only fires once the user pans/zooms) so a coverage fetch can start
-      // immediately after a dataset is picked.
-      useAppStore.getState().setMapView(viewportBbox(map), map.getZoom());
+      // The store needs an initial zoom before the first `moveend` (which
+      // only fires once the user pans/zooms) so a coverage fetch can pick a
+      // sensible geotile level from the very first render.
+      useAppStore.getState().setMapZoom(map.getZoom());
     };
     map.on('style.load', onStyleLoad);
 
-    // Coverage (M2-07c) reacts to the viewport, not just the dataset/filter —
-    // registered once on the map itself (unlike the custom layers, listeners
-    // survive a style reload).
+    // Coverage (M2-07c) reacts to the map's zoom — its geotile *level*, per
+    // adr/0004 §6.3 — never to the pan viewport as a spatial filter (see the
+    // long comment on `refreshCoverage` in store.ts). Registered once on the
+    // map itself (unlike the custom layers, listeners survive a style reload).
     map.on('moveend', () => {
-      useAppStore.getState().setMapView(viewportBbox(map), map.getZoom());
+      useAppStore.getState().setMapZoom(map.getZoom());
     });
 
     // Clicking the displayed imagery toggles that scene's download selection

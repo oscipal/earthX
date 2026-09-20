@@ -151,19 +151,19 @@ describe('completenessNote', () => {
     const note = completenessNote(
       response({ completeness: 'truncated', counted: 480, total_count: 512 }),
     );
-    expect(note).toBe('zeigt 480 von 512 Aufnahmen');
+    expect(note).toBe('showing 480 of 512 scenes');
   });
 
   it('falls back to a bare label when a truncated answer has no total', () => {
-    expect(completenessNote(response({ completeness: 'truncated', total_count: null }))).toBe('gekappt');
+    expect(completenessNote(response({ completeness: 'truncated', total_count: null }))).toBe('truncated');
   });
 
   it('names both counts for a sample that knows its total', () => {
     const note = completenessNote(response({ completeness: 'sample', counted: 40, total_count: 4000 }));
-    expect(note).toBe('Stichprobe: 40 von 4000 Aufnahmen');
+    expect(note).toBe('sample: 40 of 4000 scenes');
   });
 
-  it('is a bare "Stichprobe" for a sample with no checked total', () => {
-    expect(completenessNote(response({ completeness: 'sample', total_count: null }))).toBe('Stichprobe');
+  it('is a bare "sample" for a sample with no checked total', () => {
+    expect(completenessNote(response({ completeness: 'sample', total_count: null }))).toBe('sample');
   });
 });

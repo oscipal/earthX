@@ -147,7 +147,10 @@ function CoverageControls() {
               <span>{coverage.max_count}</span>
             </span>
           </div>
-          <p className="hint-text">Aufnahmen mit Mittelpunkt in der Zelle</p>
+          {/* English, matching the rest of the UI (CLAUDE.md). adr/0004 §5.3
+              still asks for the German wording here — stale against the
+              app's own English interface; flagged for Otto in the PR. */}
+          <p className="hint-text">Scenes counted by their center point in the cell</p>
           {note && <p className="hint-text coverage-note">{note}</p>}
           {coverage.histogram.length > 0 && (
             <CoverageHistogram histogram={coverage.histogram} dateFrom={dateFrom} dateTo={dateTo} />
