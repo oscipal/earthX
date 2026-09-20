@@ -1,6 +1,7 @@
 # ADR 0006 — Kachel-Pfad: Kacheln, Statistik und Quicklooks
 
-- **Status:** Entwurf. Die Fragen in §7 sind offen und liegen bei Otto.
+- **Status:** **Angenommen.** Von Otto am 20.09.2026 entschieden; die sieben
+  Fragen aus §7 sind dort beantwortet. Die Umsetzung liegt bei M2-04 und M2-06.
 - **Datum:** 2026-09-20
 - **Aufgabe:** M2-02 laut `docs/plans/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
@@ -441,9 +442,51 @@ prüft das OpenAPI-Schema darauf, dass **kein** Endpunkt einen Parameter namens
 Dazu die Regel nachziehen, die den eigentlichen Fund von §3.2 festhält:
 `httpx2` und `obstore` gehören in die `forbidden_modules` von
 `http-only-in-gateway` und in das `CORE`-Set von
-`test_no_outbound_outside_gateway.py`. `rio_tiler.io.stac.STACReader` wird
-nirgends verwendet — Items kommen aus `adapters`, nicht aus rio-tiler.
+`test_no_outbound_outside_gateway.py`.
 *Das ist eine Änderung an den Importregeln und liegt deshalb bei Otto (Frage 6).*
+
+**Was diese Liste nicht leistet, und was sie deshalb braucht.** Der Vertrag
+`http-only-in-gateway` trägt seit jeher `allow_indirect_imports = True` (seit
+M2-01 tun das auch die neun Modulverträge, Log vom 2026-09-20), zählt also nur
+**direkte** Importe — und genau das ist hier richtig: `earthx.readers` *wird*
+`rio_tiler` importieren, und `rio_tiler` zieht `httpx2` nach. Zählte der Vertrag
+Ketten, wäre jeder Reader ein Verstoß und die Regel damit unbrauchbar. Die Liste
+fängt also den Fall „ein Modul von uns importiert selbst einen Client" — und nur
+den. Was sie nicht sieht, ist der eigentliche Weg, auf dem `rio-tiler`
+tatsächlich selbst holt: `rio_tiler.io.stac.STACReader`.
+
+Dafür gehört ein zweiter, schmaler Test dazu, der auf derselben Ebene arbeitet
+wie der vorhandene Syntaxbaum-Lauf, aber auf das **Untermodul** statt auf das
+Wurzelpaket schaut:
+
+```python
+def test_no_module_imports_the_stac_reader_of_rio_tiler(path: Path) -> None:
+    """rio_tiler.io.stac fetches items over httpx2 (adr/0006 §3.2).
+    Items come from `adapters`, through `gateway`, and from nowhere else."""
+    source = path.read_text(encoding="utf-8")
+    assert "rio_tiler.io.stac" not in source
+    assert "STACReader" not in source
+```
+
+Der Namensvergleich genügt hier, weil `STACReader` nur über einen dieser beiden
+Namen in den Code kommt — `rio_tiler/io/__init__.py` exportiert ihn ausdrücklich
+**[P]**, `from rio_tiler.io import STACReader` ist also der wahrscheinlichere
+Weg als der Import des Untermoduls. Der Vergleich ist bewusst gröber als der
+AST-Lauf, weil er beide Schreibweisen und auch einen Import im Funktionsrumpf
+erwischt.
+
+`import-linter` kann diesen Fall **nicht** übernehmen, und zwar nicht aus
+Nachlässigkeit, sondern grundsätzlich. Gemessen an einem Wegwerf-Vertrag mit
+`forbidden_modules = rio_tiler.io.stac`: **[M]**
+
+```
+Invalid forbidden module rio_tiler.io.stac: subpackages of external packages are
+not valid.
+```
+
+Das Werkzeug lehnt den Vertrag ab, statt ihn stillschweigend leerlaufen zu
+lassen — gut so, aber es heißt, dass der Test oben kein Komfort ist, sondern die
+einzige Stelle, an der diese Regel geprüft werden kann.
 
 **Zu Frage 2 — der Weg über `gateway`.** Die ersetzte `path_dependency` ist der
 einzige Ort, an dem eine Adresse entsteht, und sie gibt
@@ -487,6 +530,14 @@ Anders als eine Suche ändert sich die Statistik einer unveränderlichen Datei
 nie; die Frist ist reine Platzpflege, kein Frischeproblem. Ein Fehlschlag kostet
 die gemessenen 0,9–1,0 s und sonst nichts (E5).
 
+**Der COG-Header bekommt in M2 keinen Cache** (Otto, 20.09.2026). §3.4 zeigt
+ihn als teuersten Einzelposten einer kalten Ansicht — 32 kB und der Löwenanteil
+der ersten Sekunde —, und `architekturplan.md` 12.3 führt „Header-Infos von
+COGs" bereits als Inhalt des Anwendungs-Caches. Gebaut wird er trotzdem nicht in
+M2: Der Statistik-Cache ist der Posten, der die erste Kachel spürbar macht, und
+zwei Caches auf einmal einzuführen wäre mehr Fläche, als M2 braucht. Der Punkt
+steht als **offene** Zeile im Entscheidungslog, mit Verweis auf 12.3.
+
 Die Standard-Visualisierung (Checklistenpunkt 8, FZ7) gehört als Feld in die
 Registry — `DefaultRender` existiert bereits mit `bands`, `stretch`, `colormap`.
 Empfehlung: die Feldnamen an der STAC-`render`-Extension ausrichten
@@ -522,6 +573,33 @@ ersatzlos. Fehlt einer Quelle das Thumbnail oder die CORS-Freigabe, rendert
 `…/preview` aus einem COG-Asset den Ersatz (767 ms, 25 kB, §3.6) — derselbe
 Pfad, dieselbe Fabrik, keine neue Naht. Ein Byte-Reader in `readers` wird nicht
 gebraucht, eine Proxy-Route in `api` widerspricht 6.4.
+
+Zwei Einschränkungen gehören ausdrücklich dazu, weil der Satz „es gibt keinen
+Proxy" sonst weiter trägt, als er darf:
+
+**Das weicht von `ENTSCHEIDUNGEN` §2 ab.** Dort steht der „Asset-Proxy mit
+Host-Allowlist als Vorläufer von `gateway`" unter dem, was vom Prototyp
+**erhalten** bleiben soll. Otto hebt diesen Punkt am 20.09.2026 ausdrücklich
+auf: Der Allowlist-Gedanke ist längst gerettet — er ist `gateway` geworden
+(6.5, B8) —, und der Proxy selbst hatte nur einen Grund, nämlich den Token
+(F15). Mit einer token-freien Quelle, die CORS sendet, bliebe von ihm eine
+Umleitung ohne Zweck, die 6.4 („kein Byte läuft durch das eigene Backend")
+zuwiderläuft. Die Entscheidungslog-Zeile hält das als Aufhebung fest, nicht als
+stillschweigende Auslegung.
+
+**Und es gilt nur, wo der Asset-Host CORS sendet.** Gemessen habe ich das für
+den Asset-Bucket von Sentinel-2 (§3.6) — und für sonst nichts. Der
+EOPF-Objektspeicher sendet laut `adr/0007` (M2-03, parallel; nicht meine
+Messung) **keinen** CORS-Header und beantwortet die Vorabanfrage mit `403`.
+Für eine solche Quelle käme ein Proxy zurück, und dann als Route in `api` über
+`gateway` oder als Byte-Reader in `readers` — die Optionen, die dieser Spike
+untersucht und für Sentinel-2 verworfen hat. Die Bedingung gehört deshalb an
+den **Datensatz**, nicht in eine allgemeine Regel: Das CORS-Feld steht schon
+heute in der Registry (`AccessInfo.cors`, für Sentinel-2 bisher `None` —
+§3.6 füllt es mit `True`), und der Viewer entscheidet daran, ob er direkt lädt
+oder den Ersatz anfordert. Der Ersatz `…/preview` bleibt ohnehin der Weg für
+jede Quelle ohne Thumbnail; ob er für eine Quelle ohne CORS ausreicht oder ob
+es doch einen Proxy braucht, entscheidet `adr/0007` für Zarr, nicht dieses ADR.
 
 **Zu Frage 6 — nur `https`, kein `s3`.** **Bestätigt.** Drei Gründe, jeder für
 sich ausreichend: `inspect_url` lässt nur `https` durch, und das ist eine
@@ -574,28 +652,43 @@ Cache ist kein Zustand — sein Ausfall macht langsamer, nie falsch (E5, K5).
    Item-Liste in der URL, nicht über eine Such-ID — der Satz „Suchergebnis wird
    unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind"
    kehrt seine eigene Begründung um und ist zu ersetzen.
-2. **Die Registry wächst um drei Felder:** Asset-Hosts (Allowlist),
-   Quicklook-Asset samt Nodata-Schwelle, und `DefaultRender` wird gefüllt.
-   Alle drei ohne Vorgabewert, wie B10 es verlangt.
-3. **`.importlinter` und der AST-Test** nennen `httpx2` und `obstore`.
-   Lockerung ist das keine — es ist eine Verschärfung —, aber es ist eine
-   Änderung an den Importregeln und gehört damit zu Otto.
+2. **Die Registry wächst um drei Felder:** `asset_hosts` an `SourceInfo`
+   (Allowlist), Quicklook-Asset samt Nodata-Schwelle, und `DefaultRender` wird
+   gefüllt. Alle drei ohne Vorgabewert, wie B10 es verlangt. Dazu wird
+   `AccessInfo.cors` für Sentinel-2 von `None` auf `True` gesetzt (§3.6) — der
+   Viewer entscheidet daran, ob er den Quicklook direkt lädt.
+3. **`.importlinter` und der AST-Test** nennen `httpx2` und `obstore`, und ein
+   zusätzlicher Test verbietet `rio_tiler.io.stac` bzw. `STACReader` beim
+   Namen, weil `import-linter` Unterpakete externer Pakete gar nicht annimmt
+   (§5, „Zu Frage 1"). Lockerung ist das keine — es ist eine Verschärfung.
 4. **`backend/requirements.txt`** bekommt `titiler.core==2.3.0` und einen exakten
    Pin für `rio-tiler`.
 5. **`docker-compose.yml`:** `tiler` startet `earthx.api.tiler:app` und bekommt
    die `PG*`-Variablen; `compose-topology` prüft es.
-6. **`cloud-umgebung.md` §6** wird berichtigt (§3.7). Eine Freigabe ist dafür
-   nicht nötig: Beide Hosts antworten heute.
+6. **`cloud-umgebung.md` §6 ist berichtigt** (§3.7) — nachgezogen auf `main`,
+   noch während dieser Entwurf offen war. Eine Freigabe war dafür nicht nötig:
+   Beide Hosts antworten heute.
 7. **M2-06 bekommt vom Spike die Empfehlung, zu mosaiken** (ein Mosaik je
    Anfrage), und den Hinweis, den Größendeckel an der **Zielpixelzahl**
    festzumachen, nicht an der AOI-Fläche (§3.4).
 8. **M2-09 erbt eine Warnung:** `titiler.xarray` bringt `obstore` mit, also
    einen eigenen HTTP-Client. `adr/0007` muss dafür denselben Nachweis führen
    wie §3.1 hier, oder den Zarr-Lesepfad ohne dieses Paket bauen.
+9. **`ENTSCHEIDUNGEN` §2 verliert einen Punkt:** Der „Asset-Proxy mit
+   Host-Allowlist" steht dort unter dem, was erhalten bleiben soll; Otto hebt
+   ihn am 20.09.2026 auf (§5, „Zu Frage 5"). Der Allowlist-Gedanke lebt in
+   `gateway` weiter, der Proxy selbst nicht.
+10. **Der COG-Header-Cache bleibt offen.** Nicht in M2 (§5, „Zu Frage 3"); als
+    offene Zeile im Entscheidungslog geführt, mit Verweis auf
+    `architekturplan.md` 12.3.
 
 ---
 
-## 7. Fragen an Otto
+## 7. Fragen an Otto — beantwortet am 2026-09-20
+
+Otto hat alle sieben Fragen entschieden; jede Antwort folgt der Empfehlung.
+Die Optionen bleiben stehen, damit nachvollziehbar ist, wogegen entschieden
+wurde.
 
 **1. Mosaik in M2.** §3.5 zeigt: zustandslos machbar, aber je Kachel teuer.
 
@@ -603,16 +696,25 @@ Cache ist kein Zustand — sein Ausfall macht langsamer, nie falsch (E5, K5).
 2. Auch der Kachel-Pfad mosaikt (M2-04 wird größer und teurer).
 3. Gar kein Mosaik in M2; F11 kommt mit M3.
 
+> **Antwort: 1.** Mosaik in M2 nur im Zuschnitt, nicht im Kachel-Pfad.
+
 **2. Asset-Hosts in der Registry.** Ohne sie steht der Lesepfad still (§3.3).
 
 1. **Neues Feld `asset_hosts` an `SourceInfo`, ohne Vorgabewert, fließt in die
    Allowlist** — *Empfehlung*.
 2. Eine Umgebungsvariable neben der Registry (wie vor M1-04).
 
+> **Antwort: 1.** Feld `asset_hosts` an `SourceInfo`, ohne Vorgabewert (B10),
+> fließt in die Allowlist ein. **Die Umsetzung macht M2-04**, nicht dieses ADR.
+
 **3. Statistik-Cache.**
 
 1. **Eigene Tabelle `earthx_stats_cache`, Frist 30 Tage** — *Empfehlung*.
 2. `earthx_search_cache` mitbenutzen, keine Migration.
+
+> **Antwort: 1.** Eigene Tabelle, 30 Tage. Ergänzend: **Ein Cache für den
+> COG-Header kommt nicht in M2**; er wird als offene Zeile im Entscheidungslog
+> geführt, mit Verweis auf `architekturplan.md` 12.3.
 
 **4. Quicklook.** CORS am Asset-Bucket ist offen (§3.6).
 
@@ -620,6 +722,14 @@ Cache ist kein Zustand — sein Ausfall macht langsamer, nie falsch (E5, K5).
    ohne Thumbnail** — *Empfehlung*.
 2. Immer über `…/preview` rendern, auch wenn ein Thumbnail da ist (gleiches Bild
    für alle Datensätze, aber Kosten und Latenz bei jedem Quicklook).
+
+> **Antwort: 1.** Der Proxy entfällt, der Browser lädt das Thumbnail direkt.
+> Mit zwei Festlegungen, die §5 („Zu Frage 5") ausführt: Das **hebt den
+> Asset-Proxy aus `ENTSCHEIDUNGEN` §2 ausdrücklich auf** — die
+> Entscheidungslog-Zeile sagt das —, und es **gilt nur für Quellen, deren
+> Asset-Host CORS sendet**. Für den EOPF-Objektspeicher (kein Header, Preflight
+> `403`, `adr/0007`) käme ein Proxy zurück; das ist eine Bedingung am Datensatz,
+> keine allgemeine Regel.
 
 **5. Einstieg des `tiler`-Prozesses.** `access` darf `gateway` nicht
 importieren, startet aber heute den Prozess (§5.1).
@@ -629,6 +739,8 @@ importieren, startet aber heute den Prozess (§5.1).
 2. Den Vertrag `access` so lockern, dass `access` `gateway` importieren darf
    (*davon rate ich ab*: es hebt genau die Grenze auf, die 3.1 zieht).
 
+> **Antwort: 1.** Der Einstieg wandert nach `api`.
+
 **6. Importregeln verschärfen.** `httpx2` und `obstore` in die
 `forbidden_modules` von `http-only-in-gateway` und in `CORE` des AST-Tests
 aufnehmen (§3.2)?
@@ -636,7 +748,16 @@ aufnehmen (§3.2)?
 1. **Ja** — *Empfehlung*.
 2. Nein, beim heutigen Stand bleiben.
 
-**7. Status dieses ADR.** Angenommen mit den Antworten 1–6, oder Überarbeitung?
+> **Antwort: 1.** Beide aufnehmen. Ergänzend festgehalten: **Die Liste erfasst
+> nur direkte Importe**, und das ist richtig so, weil `readers` `rio_tiler`
+> importieren wird. Dazu kommt ein eigener Test, der sicherstellt, dass kein
+> Modul `rio_tiler.io.stac` bzw. `STACReader` importiert — §5 („Zu Frage 1")
+> nennt ihn samt dem Grund, warum `import-linter` das nicht kann.
+
+**7. Status dieses ADR.**
+
+> **Antwort: angenommen**, mit den Antworten 1–6. Die Zeile im
+> Entscheidungslog steht damit auf **fest**.
 
 ---
 
@@ -666,6 +787,18 @@ aufnehmen (§3.2)?
 7. **Nur eine Szene.** Alle Pixelmessungen stammen aus einer einzigen Szene
    (37/S/GB, Ende September). Wolkenanteil und Kompressionsgrad anderer Szenen
    verschieben die Byte-Zahlen; die Größenordnungen sollten bleiben (**[A]**).
+8. **Der COG-Header-Cache ist vertagt, nicht verworfen.** §3.4 belegt, dass er
+   der größte Hebel für die erste Kachel einer Ansicht wäre; `architekturplan.md`
+   12.3 sieht ihn vor. Otto nimmt ihn am 20.09.2026 aus M2 heraus (§7 Frage 3);
+   er steht als **offene** Zeile im Entscheidungslog. Ungemessen bleibt, wie viel
+   er im Betrieb tatsächlich spart — 629 ms in einem kalten Prozess sind eine
+   Obergrenze, keine Ersparnis pro Anfrage.
+9. **CORS nur für eine Quelle gemessen.** §3.6 gilt dem Asset-Bucket von
+   Sentinel-2. Dass der EOPF-Objektspeicher keinen CORS-Header sendet und die
+   Vorabanfrage mit `403` beantwortet, stammt aus `adr/0007` (M2-03) und ist
+   **nicht** meine Messung. Für jede weitere Quelle ist CORS neu zu prüfen,
+   bevor der Viewer direkt lädt; das Feld dafür (`AccessInfo.cors`) gibt es
+   bereits.
 
 ---
 
@@ -699,6 +832,15 @@ aufnehmen (§3.2)?
   Range-Reads, CORS, `HEAD`.
 - `https://sentinel-cogs.s3.us-west-2.amazonaws.com` — Range-Read zur
   Abgrenzung (§3.7).
+- `import-linter` 2.x selbst: ein Wegwerf-Vertrag über `rio_tiler.io.stac`,
+  der mit „subpackages of external packages are not valid" abgelehnt wird
+  (§5, „Zu Frage 1").
+
+**Übernommen, nicht selbst gemessen**
+
+- `adr/0007` (M2-03, parallel): CORS-Verhalten des EOPF-Objektspeichers — kein
+  Header, Vorabanfrage `403`. Grundlage der Einschränkung in §5 („Zu Frage 5")
+  und in §8 Punkt 9.
 
 **Dokumente des Projekts**
 
