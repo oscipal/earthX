@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from types import MappingProxyType
 
@@ -238,15 +238,24 @@ class ViewerInfo:
     actually needed: ``group_by``, the key that turns a list of items into the steps
     of the time line and into the scenes of one mosaic (Inventar F5, F11).
 
-    Entries are **item property names**, in the order in which they make the key —
-    ``properties.`` is implied and must not be written. One rule goes with it, and it
-    is the only one a reader has to know: a property that holds a STAC instant enters
-    the key as its **UTC date**, because a time line groups an acquisition day and not
-    a second. For Sentinel-2 the key is therefore the acquisition day plus the MGRS
-    tile: ``("datetime", "grid:code")``.
-
     No default (KLAERUNGEN B10): a dataset whose items nobody has looked at has no
     grouping, and guessing one would group scenes that do not belong together.
+
+    **``group_by`` — item property names, in the order in which they make the key.**
+    ``properties.`` is implied and must not be written. One rule goes with the field,
+    and it is the only one a reader has to know:
+
+        A property that holds a STAC instant enters the key as its **UTC date**.
+
+    Because a time line groups an acquisition day, not a second — and because the
+    date is the one in UTC, an instant written in another offset is grouped by the
+    day it falls on in UTC, not by its local day. :func:`group_key` is the reference
+    implementation of exactly this rule, and the test beside it is what keeps the
+    sentence above and the behaviour from drifting apart; M2-07a reads the field,
+    mirrors that function and decides nothing of its own.
+
+    For Sentinel-2 the key is the acquisition day plus the MGRS tile:
+    ``("datetime", "grid:code")``.
     """
 
     group_by: tuple[str, ...]
@@ -263,6 +272,55 @@ class ViewerInfo:
                 raise ConfigError(
                     f"viewer.group_by entry {name!r} carries the `properties.` prefix, which is implied"
                 )
+
+
+class MissingProperty(LookupError):
+    """An item does not carry a property the grouping key is built from.
+
+    Its own type, and never silently skipped: a key that quietly loses one of its
+    parts would merge two groups that do not belong together, and the time line
+    would show one step where there are two.
+    """
+
+
+def group_key(item: Mapping[str, object], viewer: ViewerInfo) -> tuple[str, ...]:
+    """The grouping key of one item, following the rule of :class:`ViewerInfo`.
+
+    Each entry of ``group_by`` becomes one part of the key: a STAC instant as its
+    UTC date (``YYYY-MM-DD``), anything else as its own text. The parts stay in the
+    order the registry names them, because the key is read by people too.
+    """
+    properties = item.get("properties")
+    if not isinstance(properties, Mapping):
+        raise MissingProperty("the item carries no properties")
+    key: list[str] = []
+    for name in viewer.group_by:
+        if name not in properties:
+            raise MissingProperty(name)
+        key.append(_key_part(properties[name]))
+    return tuple(key)
+
+
+def _key_part(value: object) -> str:
+    """A STAC instant as its UTC date, everything else as its own text."""
+    if isinstance(value, datetime):
+        return _utc_date(value)
+    if isinstance(value, str):
+        try:
+            return _utc_date(datetime.fromisoformat(value))
+        except ValueError:
+            # Not an instant — a grid code, a platform name, a bare date. It is the
+            # key part as it stands; guessing a format for it is how a key starts
+            # meaning two things.
+            return value
+    return str(value)
+
+
+def _utc_date(instant: datetime) -> str:
+    """The date in UTC. An instant without an offset is read as UTC, as STAC writes them."""
+    if instant.tzinfo is not None:
+        instant = instant.astimezone(timezone.utc)
+    return instant.date().isoformat()
 
 
 @dataclass(frozen=True, slots=True)
