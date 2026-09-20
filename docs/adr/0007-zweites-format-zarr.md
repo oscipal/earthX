@@ -1,7 +1,14 @@
 # ADR 0007 — Zweites Format: Zarr
 
-- **Status:** **Entwurf.** Die sieben Fragen in §8 sind offen; ohne Antwort auf
-  F1 steht der zweite Datensatz nicht fest.
+- **Status:** **Angenommen** von Otto am 2026-09-20. Die sieben Fragen aus §8
+  sind dort beantwortet: **F1** `data.eodc.eu` wird freigegeben,
+  `download.user.eopf.eodc.eu` nicht; **F2** M2-09 wird geteilt; **F3**
+  Lizenzeinstufung wie beim ersten Datensatz, förmlich bestätigt; **F4** im
+  Adapter normalisieren; **F5** Python bleibt 3.11, `zarr` auf 3.1.x; **F6**
+  Mini-Zarr per Skript im Test; **F7** mit F1 gegenstandslos, bleibt als
+  Rückfallweg stehen. §6 gibt den entschiedenen Stand wieder.
+  **Die Aussagen über die bisher gesperrten Collections bleiben offen** — sie
+  kommen aus einer eigenen, neu gestarteten Sitzung nach der Freigabe (§9.1).
 - **Datum:** 2026-09-20
 - **Aufgabe:** M2-03 laut `docs/plans/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
@@ -64,9 +71,11 @@ Zu entscheiden ist zweierlei, und beides hängt weniger zusammen, als es aussieh
    Gateway-Pflicht (B8) zu brechen.
 
 Frage 2 ließ sich in dieser Sitzung **abschließend messen** (§3.7). Frage 1
-nicht: Der Objektspeicher, auf dem die aktuellen EOPF-Produkte liegen, ist aus
-dieser Umgebung gesperrt (§3.1). Dieser Teil ist deshalb, wie der Aufgabentext
-verlangt, **angehalten**; §8 F1 legt ihn Otto vor.
+nicht: Der Objektspeicher, auf dem die aktuellen EOPF-Produkte liegen, war aus
+dieser Umgebung gesperrt (§3.1). Dieser Teil wurde deshalb, wie der Aufgabentext
+verlangt, **angehalten** und Otto als F1 vorgelegt. Er hat freigegeben — die
+Messungen dazu holt aber eine neue Sitzung nach, weil eine Freigabe hier nicht
+mehr wirkt (§9.1).
 
 ---
 
@@ -120,8 +129,14 @@ Erreichbar aus dieser Sitzung, HTTP 200:
 > Sentinel-3-Collections ihre Daten führen. Solange der Host gesperrt ist, sind
 > für diese Collections **keine** Aussagen über Chunk-Aufbau, Georeferenzierung,
 > Übersichtsstufen, Lesekosten oder auch nur die Existenz der Objekte möglich.
-> Dieser ADR behauptet dazu nichts. §8 F1 legt die Freigabe vor; sie wirkt erst
-> in einer **neu gestarteten** Sitzung (`adr/0003` §11.3).
+> Dieser ADR behauptet dazu nichts.
+>
+> **Nachtrag 2026-09-20 (F1):** Otto hat `data.eodc.eu` freigegeben;
+> `download.user.eopf.eodc.eu` bleibt bewusst gesperrt, weil ganze gezippte
+> Produkte nie gebraucht werden. Die Freigabe wirkt erst in einer **neu
+> gestarteten** Sitzung (`adr/0003` §11.3) — die Tabelle oben bleibt damit der
+> gemessene Stand dieser Sitzung, und §9.1 sagt, was die Nachmess-Sitzung zu
+> klären hat.
 
 **Nebenbefund, klärt `cloud-umgebung.md` §6.** Der dort als Widerspruch notierte
 Befund ist keiner: `stac.eopf.copernicus.eu` (gesperrt, heute erneut bestätigt)
@@ -492,10 +507,12 @@ ist sie ein starker Kandidat. Für M2 ist sie der falsche.
 geprüft, DOI vorhanden, MGRS-Gruppierungsschlüssel wie bei Sentinel-2, Zarr v3
 mit echten Bändern. Der Viewer bekommt dieselbe Bedienung über zwei Formate —
 genau die Probe, für die M2b da ist.
-*Gegen:* Heute **nicht messbar**. Bestand gut zwei Monate. Kein Quicklook. Keine
-Aggregation und kein `numberMatched`. Der Betreiber bezeichnet die Buckets
-selbst als „unofficial" mit „unknown" Zukunft (`adr/0003` §10.3) — K9 ist
-verletzt, und daran ändert eine Freigabe nichts.
+*Gegen:* In dieser Sitzung **nicht messbar** (die Freigabe aus F1 wirkt erst in
+der nächsten, §9.1). Bestand gut zwei Monate. Kein Quicklook. Keine Aggregation
+und kein `numberMatched`. Der Betreiber bezeichnet die Buckets selbst als
+„unofficial" mit „unknown" Zukunft (`adr/0003` §10.3) — **K9 bleibt verletzt,
+und daran ändert die Freigabe nichts.** Das ist der Preis dieser Option, und er
+ist mit ihrer Wahl bewusst in Kauf genommen.
 
 **Option B — EOPF `sentinel-2-l2a` (Zarr v2), ohne Freigabe.**
 *Für:* Ein Teil der Items ist heute vollständig lesbar, und an genau diesen
@@ -532,12 +549,14 @@ bleibt ungeprüft. D wäre als **dritter** Datensatz gedacht, für den Fall
 
 ## 6. Empfehlung
 
-**D sofort, A danach — und A nur, wenn F1 mit „freigeben" beantwortet wird.**
+**D sofort, A danach.** Otto hat F1 mit „freigeben" beantwortet; A ist damit der
+Weg, und D ist der Teil davon, der sofort gehen kann.
 
-1. **M2-09 in zwei Teile schneiden.** **M2-09a** baut den Lesepfad gegen ein
-   synthetisches Mini-Zarr und ist von der Quellenwahl unabhängig; es kann
-   sofort starten. **M2-09b** nimmt den realen Datensatz auf und wartet auf F1.
-   Entsprechend hängt **M2-10** an 09b, nicht an 09a.
+1. **M2-09 in zwei Teile schneiden** (F2 angenommen). **M2-09a** baut den
+   Lesepfad gegen ein synthetisches Mini-Zarr und ist von der Quellenwahl
+   unabhängig; es kann sofort starten. **M2-09b** nimmt den realen Datensatz auf
+   und setzt die Nachmessung aus §9.1 voraus. Entsprechend hängt **M2-10** an
+   09b, nicht an 09a.
 
 2. **Der Lesepfad steht fest, unabhängig von F1** (gemessen in §3.7):
 
@@ -550,12 +569,21 @@ bleibt ungeprüft. D wäre als **dritter** Datensatz gedacht, für den Fall
      Kachel, Statistik und Zuschnitt. `rio-tiler` ist schon da und macht kein
      eigenes I/O.
    - **`titiler-eopf` nicht** (§3.8: Python 3.12, `zarr>=3.2`, `obstore`, kein
-     Release).
+     Release). `adr/0006` §7 Punkt 6 hat `obstore` unabhängig davon auf die
+     Verbotsliste von `http-only-in-gateway` gesetzt — damit ist der Ausschluss
+     nicht mehr nur eine Empfehlung dieses ADR, sondern eine Importregel.
+   - **Python bleibt 3.11, `zarr` wird auf `3.1.x` gepinnt** (F5). Der Pfad in
+     §3.7 ist genau darauf gemessen. Ein Wechsel auf 3.12 ist eine eigene
+     Aufgabe (CI-Matrix, Images) und steht als offene Log-Zeile.
    - **CRS aus dem STAC-Item** (`proj:code`), nicht aus dem Store; `proj:bbox`
      nur benutzen, wenn es zur CRS passt (§3.4).
    - **Stufenwahl aus `gsd`/`raster:spatial_resolution`** der Assets, nicht aus
      `multiscales` — die Konvention ist Pilot v0.1 und in den gemessenen
      Produkten nicht vorhanden.
+   - **Einbauort wie bei COG:** `adr/0006` §7 Punkt 5 legt den Prozess-Einstieg
+     des `tiler` nach `earthx/api/tiler.py` und lässt Fabrik und Renderlogik in
+     `access`, weil `access` `gateway` nach 3.1 nicht importieren darf. Der
+     Zarr-Reader fügt sich dort ein, ohne eine zweite Anordnung zu erfinden.
 
 3. **Coverage dieses Datensatzes ist `CoverageProvider.SAMPLE`.** Ohne
    Aggregation und ohne `numberMatched` bleibt nur die ausgewiesene Stichprobe
@@ -565,26 +593,67 @@ bleibt ungeprüft. D wäre als **dritter** Datensatz gedacht, für den Fall
    `numberMatched < 500` hier nicht auswertbar ist (Vorschlag: die Stichprobe
    selbst meldet, ob sie unter ihrem Deckel geblieben ist).
 
-4. **STAC 1.1 an unserer 1.0-API: im Adapter normalisieren.** Unsere API liefert
-   `stac_version: "1.0.0"`, und der Lizenzwert wird daraus abgeleitet (Log vom
-   2026-09-19). `federating_client.py` reicht Items heute bis auf die Links
-   unverändert durch — ein EOPF-Item ginge also mit `stac_version: "1.1.0"` und
-   1.1-Erweiterungen aus einer 1.0-API heraus. Der Adapter soll das
-   **geradeziehen**, und zwar minimal und benannt: `stac_version` auf `1.0.0`,
-   `license` nach unserer Ableitungsregel, `bands` → `eo:bands`,
-   `proj:code` → `proj:epsg` (nur bei `EPSG:`-Präfix), 1.1er
-   Erweiterungs-URLs auf die 1.0er Fassungen. Was nicht abbildbar ist, bleibt
-   stehen, statt still verfälscht zu werden.
+4. **STAC 1.1 an unserer 1.0-API: im Adapter normalisieren** (F4 angenommen).
+   Unsere API weist `stac_version: "1.0.0"` aus, und der Lizenzwert wird daraus
+   abgeleitet (Log vom 2026-09-19). `federating_client.py` reicht Items heute
+   bis auf die Links unverändert durch — ein EOPF-Item ginge also mit
+   `stac_version: "1.1.0"` aus einer 1.0-API heraus. Die **Collection** ist
+   davon nicht betroffen: Sie kommt aus unserer Registry über pgstac, trägt
+   also ohnehin unseren Lizenzwert. Zu normalisieren sind nur die **Items**,
+   und zwar diese Felder — alles [M] am echten Item gemessen:
 
-5. **Quicklook-Ersatz** (F6): eine gerenderte Vorschau aus der gröbsten
-   Auflösungsstufe über denselben Kachelpfad, im Anwendungs-Cache (E4)
-   abgelegt. Ein fertiges Bild gibt es nicht, auch nicht dort, wo der Katalog
-   eines ausweist (§3.5).
+   | Feld | EOPF liefert (1.1) | wir geben aus (1.0) |
+   |---|---|---|
+   | `stac_version` | `"1.1.0"` | `"1.0.0"` |
+   | `stac_extensions` | `eo` v2.0.0, `projection` v2.0.0, `raster` v2.0.0 | die 1.0-tauglichen Fassungen (`eo` v1.1.0, `projection` v1.1.0, `raster` v1.1.0) |
+   | Asset-`bands` | `bands: [{name, description, eo:common_name, eo:center_wavelength, eo:full_width_half_max}]` | `eo:bands: [{name, description, common_name, center_wavelength, full_width_half_max}]` — die `eo:`-Präfixe **innerhalb** der Bandobjekte fallen weg |
+   | `proj:code` | `"EPSG:32626"` | `proj:epsg: 32626` — nur bei `EPSG:`-Präfix; ein anderer Code bleibt stehen, statt still zu verschwinden |
+   | Asset-`nodata`, `data_type`, `raster:spatial_resolution` | direkt am Asset (raster v2.0.0) | als `raster:bands`-Eintrag (raster v1.1.0) |
 
-**Was das für die Abnahme von M2 bedeutet.** Wird F1 abschlägig beantwortet oder
-trägt A nach der Nachmessung nicht, ist Abnahmekriterium 1 in M2 nicht
-erreichbar; Kriterium 1 wäre dann neu zu fassen (Vorschlag in §8 F7). M2a bleibt
-davon vollständig unberührt und ist eigenständig abnehmbar.
+   Nicht umbenannt, sondern **geprüft** gehört `proj:bbox`: Im älteren Bestand
+   steht dort eine Box in **Grad**, obwohl `proj:code` UTM sagt (§3.4). Der
+   Adapter soll sie verwerfen, wenn sie nicht zur CRS passt — umbenennen würde
+   den Fehler nur weiterreichen.
+
+   Grundsatz für alles Übrige: Was nicht abbildbar ist, bleibt stehen, statt
+   still verfälscht zu werden. Die `zarr`-Extension v1.1.0 hat keine
+   1.0-Entsprechung und bleibt deshalb unverändert.
+
+5. **Quicklook-Ersatz: serverseitig gerendert.** Eine Vorschau aus der gröbsten
+   Auflösungsstufe über denselben Kachelpfad, im Statistik- bzw.
+   Anwendungs-Cache abgelegt. Ein fertiges Bild gibt es nicht, auch nicht dort,
+   wo der Katalog eines ausweist (§3.5).
+   **Das ist der erste Datensatz, für den `adr/0006` §7 Punkt 4 nicht greift.**
+   Dort ist der Quicklook-Proxy ersatzlos entfallen, weil der Browser das
+   Thumbnail direkt lädt — ausdrücklich unter der Bedingung, dass der Asset-Host
+   CORS sendet (`AccessInfo.cors`). Der EOPF-Objektspeicher sendet keinen
+   CORS-Header und beantwortet den Preflight mit 403 (§3.9). Für diesen
+   Datensatz steht `AccessInfo.cors = False`, und die Vorschau muss über unseren
+   eigenen Prozess laufen.
+
+6. **Das synthetische Mini-Zarr** (F6) wird **im Test per Skript erzeugt**,
+   keine Binärdatei im Repo. Es bildet nach, woran der Reader sich bewähren
+   muss, und zwar genau an den Stellen, an denen die echte Quelle vom Lehrbuch
+   abweicht:
+
+   - **Auflösungsgruppen statt `multiscales`** — mehrere Stufen desselben
+     Ausschnitts als Geschwistergruppen, wie `r10m`/`r20m`/`r60m` (§3.4).
+   - **Keine CRS im Store** — die Georeferenzierung kommt aus `proj:code` des
+     Items; `x`- und `y`-Koordinatenarrays liegen bei, ohne Bezugssystem.
+   - **Mehrere Variablen** in einer Gruppe, damit die Bandwahl etwas zu wählen
+     hat.
+   - **Eine Zeitachse**, damit der Fall „Dimension statt Item-Eigenschaft"
+     einmal vorkommt.
+   - **Kleine Chunks**, damit ein Fenster mehrere davon schneidet, ohne dass der
+     Test Megabyte bewegt.
+   - **Ein Fehlerfall: eine fehlende Gruppe**, die das Item ausweist und der
+     Store nicht hat — genau der Fall, an dem `TCI_10m` in der echten Quelle
+     scheitert (§3.5). M2-09 verlangt dafür einen definierten Fehler.
+
+**Was das für die Abnahme von M2 bedeutet.** Mit der Freigabe aus F1 ist
+Abnahmekriterium 1 erreichbar. Sollte die Nachmessung (§9.1) A dennoch
+verwerfen, bliebe der Rückfallweg aus §8 F7; er ist beschrieben, aber nicht
+beschlossen. M2a ist davon in jedem Fall unberührt und eigenständig abnehmbar.
 
 ---
 
@@ -595,15 +664,24 @@ davon vollständig unberührt und ist eigenständig abnehmbar.
    nachzuziehen.
 2. `architekturplan.md` 14 Punkt 5 („Sendet der EOPF-Zarr-Dienst CORS-Header?")
    ist beantwortet: STAC-API ja, Objektspeicher nein (§3.9).
-3. `cloud-umgebung.md` §6 ist um die drei EODC-Hosts zu ergänzen, mit der
-   Auflösung aus §3.1. M2-00 nennt den Widerspruch; die Auflösung steht hier.
-4. M2-05 bekommt die ausgewiesene Stichprobe zurück in den Umfang (§6 Punkt 3).
-5. M2-07c braucht eine Ersatzregel für den Umschaltpunkt.
+3. `cloud-umgebung.md` §6 ist mit der Freigabe aus F1 erneut nachzuziehen: PR #34
+   hat `objects.eodc.eu` als erreichbar und `data.eodc.eu` als gesperrt
+   eingetragen; nach der Freigabe stimmt der zweite Eintrag nicht mehr. Es fehlt
+   dort außerdem `stac.core.eopf.eodc.eu` (erreichbar, §3.1). Beides gehört in
+   die Nachmess-Sitzung aus §9.1, weil erst sie die Freigabe belegen kann.
+4. Die **ausgewiesene Stichprobe** gehört zu **M2-09b**, nicht zu M2-05: Sie
+   wird erst gebraucht, wenn der Datensatz da ist, dessen Quelle keine
+   Aggregation hat (§6 Punkt 3).
+5. **M2-07c braucht eine Ersatzregel für den Umschaltpunkt**, weil
+   `numberMatched` bei dieser Quelle fehlt und `numberMatched < 500` damit nicht
+   auswertbar ist (§3.2).
 6. M2-09 wird in 09a und 09b geteilt; M2-10 hängt an 09b.
 7. Der Registry-Eintrag des zweiten Datensatzes braucht ein Feld, aus dem der
    Reader die CRS-Herkunft liest, und eines für die Auflösungsstufen. Beides
    gibt es heute nicht; `DataFormat.ZARR` und `CoverageProvider.SAMPLE` gibt es
-   schon.
+   schon. Für die Asset-Hosts gibt es seit `adr/0006` §7 Punkt 2 bereits
+   `SourceInfo.asset_hosts` — dort stünde für diesen Datensatz `data.eodc.eu`
+   (und, solange die älteren Items mitlaufen, `objects.eodc.eu`).
 8. Die offene Log-Zeile „Ratengrenzen der Anbieter" bleibt für EOPF offen: keine
    Drosselung beobachtet, keine Grenze dokumentiert (§3.9).
 9. **M1-03 F4 ist beantwortet:** Der erste Zarr-Leser braucht kein `s3`;
@@ -612,77 +690,101 @@ davon vollständig unberührt und ist eigenständig abnehmbar.
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto — beantwortet am 2026-09-20
 
-**F1 — `data.eodc.eu` freigeben?** Ohne diesen Host ist der fachlich
-naheliegende zweite Datensatz (`sentinel-2-l2a-zarr3`) weder messbar noch
-benutzbar (§3.1, §3.3). Mit der Freigabe kämen sinnvollerweise auch
-`download.user.eopf.eodc.eu` (`zipped_product`) dazu.
-(a) **Beide freigeben**, dann in einer **neuen** Sitzung nachmessen (Chunk-Aufbau,
-Georeferenzierung, Lesekosten) und erst danach über A entscheiden. *Empfehlung.*
-(b) Nur `data.eodc.eu`.
-(c) Nicht freigeben — dann ist A vom Tisch und F7 greift.
+**F1 — `data.eodc.eu` freigeben?** **Beantwortet, abweichend von der
+Empfehlung:** `data.eodc.eu` **wird freigegeben**,
+`download.user.eopf.eodc.eu` **bleibt gesperrt** — ganze gezippte Produkte
+braucht die Plattform nie, der Lesepfad holt Chunks. Damit entfällt das Asset
+`zipped_product` für uns ersatzlos; der Registry-Eintrag führt es nicht.
 
-**F2 — M2-09 teilen?** (a) **Ja**, 09a (Reader + synthetisches Zarr, sofort) und
-09b (realer Datensatz, nach F1). *Empfehlung.* (b) Nein, M2-09 wartet
-vollständig auf F1.
+Die Freigabe wirkt erst in einer **neu gestarteten** Sitzung. Die Nachmessung
+gegen `sentinel-2-l2a-zarr3` macht deshalb eine eigene Sitzung, nicht diese;
+was sie zu klären hat, steht in §9.1.
 
-**F3 — Lizenzeinstufung des EOPF-Bestands nach B11.** Die Quelle verweist auf
-**dasselbe** Sentinel Data Legal Notice wie Sentinel-2 L2A bei Earth Search, das
-`adr/0003` §11.2 am Primärdokument geprüft hat und das im bestehenden
-Registry-Eintrag samt `terms_notice` liegt. Vorschlag, keine Entscheidung:
-(a) **Stufe Processing**, identisch zum ersten Datensatz, Texte wiederverwenden.
-*Empfehlung.* (b) Erneut am Primärdokument prüfen. Die Einstufung bleibt
-ausdrücklich Otto vorbehalten.
+**F2 — M2-09 teilen?** **Angenommen (a):** **M2-09a** baut den Reader gegen ein
+synthetisches Mini-Zarr und ist quellenunabhängig; **M2-09b** nimmt den realen
+Datensatz auf. **M2-10** hängt an 09b.
 
-**F4 — Normalisierung von STAC 1.1 nach 1.0 (§6 Punkt 4).**
-(a) **Im Adapter normalisieren**, mit der benannten Feldliste. *Empfehlung.*
-(b) Unverändert durchreichen und die Uneinheitlichkeit in Kauf nehmen.
-(c) Unsere API auf STAC 1.1 heben — eigene Aufgabe, nicht M2.
+**F3 — Lizenzeinstufung des EOPF-Bestands nach B11.** **Angenommen (a), und von
+Otto förmlich bestätigt:** Einstufung wie beim ersten Datensatz, auf Grundlage
+**desselben** Sentinel Data Legal Notice, das `adr/0003` §11.2 am Primärdokument
+geprüft hat. Lizenzfelder und `terms_notice` des bestehenden
+Sentinel-2-Eintrags werden wiederverwendet. Der ADR trägt das damit als
+bestätigten Vorschlag, nicht als eigene Einstufung.
 
-**F5 — Python 3.11 oder 3.12?** Unter 3.11 ist `zarr` auf `3.1.x` festgenagelt
-(§3.8).
-(a) **Bei 3.11 bleiben**, `zarr` auf `3.1.x` pinnen, Wechsel als eigene Aufgabe
-nach M2 vormerken. *Empfehlung* — ein Interpreterwechsel mitten in M2 riskiert
-den ganzen gepinnten Stapel.
-(b) Jetzt auf 3.12 heben, als eigener PR vor M2-09a.
+**F4 — Normalisierung von STAC 1.1 nach 1.0.** **Angenommen (a):** Im Adapter
+normalisieren. Begründung von Otto: Unsere API weist 1.0.0 aus, Items
+unverändert durchzureichen widerspricht dem. Die betroffenen Felder stehen
+einzeln in §6 Punkt 4, damit M2-09b sie umsetzen kann.
 
-**F6 — Größe des synthetischen Mini-Zarr.** Damit es echte Fälle trifft, sollte
-es beide Formatversionen und mehrere Auflösungsstufen abdecken.
-(a) **Zarr v2 und v3, je drei Stufen, wenige hundert Pixel je Kante, per Skript
-erzeugt.** *Empfehlung.* (b) Nur v3. (c) Nur eine Stufe.
+**F5 — Python 3.11 oder 3.12?** **Angenommen (a):** Python bleibt **3.11**,
+`zarr` wird auf **3.1.x** gepinnt. `titiler-eopf` ist ohnehin ausgeschieden, und
+der in §3.7 gemessene Pfad läuft auf genau dieser Kombination. Ein Wechsel auf
+3.12 wäre eine eigene Aufgabe (CI-Matrix, Images) und steht als **offene
+Log-Zeile**.
 
-**F7 — Was, wenn kein Kandidat trägt?** Falls F1 (c) oder die Nachmessung A
-verwirft:
-(a) **M2 liefert den Zarr-Lesepfad mit synthetischen Daten**, Abnahmekriterium 1
-wird auf „ein Datensatz im Viewer, zweites Format am Reader nachgewiesen"
-gefasst; der reale Zweitdatensatz wird ein Punkt für M3. *Empfehlung.*
-(b) Eine Nicht-STAC-Quelle (ARCO-ERA5) aufnehmen und damit Inkrement 3 in M2
-vorziehen.
-(c) Copernicus DEM GLO-30 als zweiten Datensatz nehmen und auf das zweite
-Format in M2 verzichten.
+**F6 — Zuschnitt des synthetischen Mini-Zarr.** **Beantwortet, konkreter als die
+Vorlage:** Es wird **im Test per Skript erzeugt**, keine Binärdatei im Repo, und
+bildet nach, was der Reader können muss — Auflösungsgruppen statt
+`multiscales`, keine CRS im Store (Georeferenzierung aus `proj:code`), mehrere
+Variablen, eine Zeitachse, kleine Chunks, dazu ein Fehlerfall mit fehlender
+Gruppe. Ausformuliert in §6 Punkt 6.
+
+**F7 — Was, wenn kein Kandidat trägt?** **Mit F1 gegenstandslos.** Der Weg
+bleibt als **Rückfallweg** beschrieben, nicht als Beschluss: Trüge am Ende kein
+Kandidat, würde die Abnahme von M2 auf „Sentinel-2 plus belegter
+Zarr-Lesepfad" zurückgenommen und der zweite Datensatz nach M3 geschoben. Die
+beiden anderen Wege aus der Vorlage — eine Nicht-STAC-Quelle vorziehen oder
+Copernicus DEM statt eines zweiten Formats — sind damit nicht gewählt.
 
 ---
 
 ## 9. Was offen blieb
 
-1. **Alles zu `sentinel-2-l2a-zarr3` jenseits der Metadaten** — Host gesperrt
-   (§3.1). Chunk-Zuschnitt, Georeferenzierung, Lesekosten, Existenz der Objekte:
-   **unbelegt**, und dieser ADR behauptet dazu nichts.
-2. **Ob die 2017er Item-Metadaten von `sentinel-2-l2a` auf existierende Objekte
-   zeigen** — außer bei den Tutorial-Produkten nicht prüfbar.
-3. **Ratengrenzen von EODC** — keine dokumentierte Grenze gefunden, keine
+### 9.1 Die gesperrten Collections — und woher die Antworten kommen
+
+Dieser ADR ist **angenommen, ohne dass der empfohlene Datensatz gemessen wäre.**
+Das ist kein Versehen, sondern die Lage: `data.eodc.eu` war während der Messung
+gesperrt (§3.1), und die Freigabe aus F1 wirkt erst in einer **neu gestarteten**
+Sitzung. Alles Folgende ist deshalb **unbelegt**, und der ADR behauptet dazu
+nichts:
+
+- **Chunk-Zuschnitt** der `…-zarr3`-Collections — ob die Zarr-v3-Produkte
+  ähnlich grob geschnitten sind wie die v2-Tutorial-Produkte (1830²,
+  §3.6) oder feiner.
+- **Georeferenzierung** — ob im Store eine CRS liegt oder auch dort nur
+  `proj:code` aus dem Item trägt (§3.4).
+- **Übersichtsstufen** — ob `sentinel-2-l2a-zarr3` dieselben drei
+  Auflösungsgruppen führt wie die v2-Produkte, oder `multiscales`.
+- **Lesekosten je Kachel** — die Zahlen in §3.6 stammen vom v2-Tutorial-Produkt
+  und sind auf die v3-Produkte **nicht** übertragbar.
+- **Existenz der Objekte** überhaupt, auch für die älteren Items von
+  `sentinel-2-l2a`, deren Assets auf `data.eodc.eu` zeigen (§3.3).
+- **Ob die 2017er Item-Metadaten** von `sentinel-2-l2a` auf existierende Objekte
+  zeigen — außerhalb der Tutorial-Produkte nicht prüfbar.
+
+**Woher die Antworten kommen sollen:** aus einer eigenen, nach der Freigabe neu
+gestarteten Cloud-Sitzung, vor oder zu Beginn von **M2-09b**. Sie misst dieselben
+Punkte wie §3.4 und §3.6, an einem Item aus `sentinel-2-l2a-zarr3`, und trägt
+das Ergebnis als Nachtrag in diesen ADR ein. Zum selben Anlass gehört die
+Korrektur von `cloud-umgebung.md` §6 (§7 Punkt 3) — erst diese Sitzung kann die
+Freigabe belegen. **M2-09a** braucht davon nichts und kann vorher laufen.
+
+### 9.2 Das Übrige
+
+1. **Ratengrenzen von EODC** — keine dokumentierte Grenze gefunden, keine
    Drosselung bei 10 parallelen Anfragen beobachtet. Das ist kein Beleg für
    „keine Grenze".
-4. **Lizenz der CMIP6-PDS-Kopie** — Lizenzseite nicht abrufbar.
-5. **Ob ARCO-ERA5 für die konkrete Google-Kopie CC-BY ausweist** — nur die
+2. **Lizenz der CMIP6-PDS-Kopie** — Lizenzseite nicht abrufbar.
+3. **Ob ARCO-ERA5 für die konkrete Google-Kopie CC-BY ausweist** — nur die
    Code-Lizenz (Apache-2.0) ist am Primärdokument belegt.
-6. **Ob `titiler.xarray` einen eigenen Store annimmt** statt ihn intern zu
+4. **Ob `titiler.xarray` einen eigenen Store annimmt** statt ihn intern zu
    bauen — Quelltext über den Proxy nicht lesbar. Für die Empfehlung ohne
    Belang, weil §3.7 den Weg ohne titiler misst.
-7. **VEDA (NASA)** als STAC-Quelle mit Zarr-Assets — Host gesperrt, deshalb
+5. **VEDA (NASA)** als STAC-Quelle mit Zarr-Assets — Host gesperrt, deshalb
    weder aufgenommen noch verworfen.
-8. **Der Latenzsockel von ~0,5 s je Objekt** ist durch den Sitzungs-Proxy
+6. **Der Latenzsockel von ~0,5 s je Objekt** ist durch den Sitzungs-Proxy
    gemessen und damit eine Obergrenze; der Betriebswert ist unbekannt.
 
 ---
