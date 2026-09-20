@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 import pytest
 
-from earthx.gateway import AddressRejected, Policy, UrlRejected
+from earthx.gateway import AddressRejected, Policy, UrlRejected, UrlTooLong
 from earthx.gateway.client import Gateway, GatewayResponse
 from earthx.gateway.errors import ResponseTooLarge, TooManyRedirects, UpstreamError, UpstreamTimeout
 
@@ -293,3 +293,43 @@ async def test_the_aoi_never_reaches_the_log(caplog: pytest.LogCaptureFixture) -
     assert "7.1234" not in written
     assert caplog.records[0].gateway_host == HOST
     assert caplog.records[0].gateway_query_sha
+
+
+class TestTheQueryStringStaysOurRefusal:
+    """A long query string is refused in our words, not in httpx's (M2-05).
+
+    The coverage aggregation puts an AOI into the query string, because
+    ``/aggregate`` takes no POST (adr/0004 §3.1). adr/0004 §3.4 tells the caller to
+    simplify and say so when the URL gets too long — which only works if the refusal
+    it catches is ``UrlTooLong`` in every case, including the ones ``httpx`` would
+    refuse on its own before ``check_url`` ever runs.
+    """
+
+    async def test_a_query_string_over_the_policy_limit_is_refused(self) -> None:
+        handler, seen = replies(httpx.Response(200, json={}))
+        gateway, _delays = build(handler)
+        async with gateway:
+            with pytest.raises(UrlTooLong):
+                await gateway.get(URL, params={"intersects": "x" * (POLICY.max_url_bytes + 100)})
+        assert seen == []
+
+    async def test_a_query_string_over_the_httpx_limit_is_refused_the_same_way(self) -> None:
+        """Without the conversion this raises ``httpx.InvalidURL`` through the seam."""
+        handler, seen = replies(httpx.Response(200, json={}))
+        gateway, _delays = build(handler)
+        async with gateway:
+            with pytest.raises(UrlTooLong) as raised:
+                await gateway.get(URL, params={"intersects": "x" * 100_000})
+        assert seen == []
+        assert raised.value.limit == POLICY.max_url_bytes
+        assert raised.value.length > raised.value.limit
+
+    async def test_no_refusal_repeats_the_query_string(self) -> None:
+        """projektplan.md 7, point 6: the AOI belongs in neither a log nor a traceback."""
+        handler, _ = replies(httpx.Response(200, json={}))
+        gateway, _delays = build(handler)
+        secret = "5.25,45.75,15.25,55.75" + "x" * 100_000
+        async with gateway:
+            with pytest.raises(UrlTooLong) as raised:
+                await gateway.get(URL, params={"intersects": secret})
+        assert "45.75" not in str(raised.value)

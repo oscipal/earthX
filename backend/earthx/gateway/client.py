@@ -33,6 +33,7 @@ from earthx.gateway.errors import (
     UpstreamError,
     UpstreamTimeout,
     UpstreamUnreachable,
+    UrlTooLong,
 )
 from earthx.gateway.policy import Policy
 from earthx.gateway.resolver import resolve_host
@@ -145,7 +146,7 @@ class Gateway:
         content: bytes | None = None,
         retry: bool = True,
     ) -> GatewayResponse:
-        target = str(httpx.URL(url, params=params)) if params else url
+        target = self._assemble(url, params)
         redirects = 0
         while True:
             checked = check_url(target, self._policy, resolve=self._resolve)
@@ -171,6 +172,27 @@ class Gateway:
                 # (found reviewing M1-06). 307 and 308 keep method and body, so they
                 # are followed as before.
                 raise UpstreamError(response.status_code, "redirect would drop the request body")
+
+    def _assemble(self, url: str, params: Mapping[str, Any] | None) -> str:
+        """Put the query string on, and keep an over-long one a refusal of ours.
+
+        ``httpx`` has a URL limit of its own and raises ``InvalidURL`` for anything
+        past it — before ``check_url`` ever sees the address. Without this, a caller
+        that hands in a large AOI (adr/0004 §3.4 allows for exactly that) would get an
+        ``httpx`` exception through the seam instead of the ``UrlTooLong`` it is
+        written to catch, and the promise that nothing leaves the house unrefused
+        would hold by accident rather than by rule.
+        """
+        if not params:
+            return url
+        try:
+            return str(httpx.URL(url, params=params))
+        except httpx.InvalidURL as error:
+            # The exact length is unknown here — httpx refused before assembling. The
+            # lower bound is what the pieces already take up, and it is above the limit
+            # in every case that gets here.
+            length = len(url.encode("utf-8")) + sum(len(str(key)) + len(str(value)) + 2 for key, value in params.items())
+            raise UrlTooLong(length, self._policy.max_url_bytes) from error
 
     async def _attempt(
         self,
