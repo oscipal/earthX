@@ -7,8 +7,11 @@
   Adapter normalisieren; **F5** Python bleibt 3.11, `zarr` auf 3.1.x; **F6**
   Mini-Zarr per Skript im Test; **F7** mit F1 gegenstandslos, bleibt als
   Rückfallweg stehen. §6 gibt den entschiedenen Stand wieder.
-  **Die Aussagen über die bisher gesperrten Collections bleiben offen** — sie
-  kommen aus einer eigenen, neu gestarteten Sitzung nach der Freigabe (§9.1).
+  **Nachgemessen am 2026-09-20 (M2-03b):** Die in §9.1 offen gebliebenen
+  Aussagen über die bisher gesperrten Collections stehen jetzt in **§12**. Wo §12
+  einer Aussage aus §3 bis §7 widerspricht, gilt §12 — §3 misst das
+  Zarr-**v2**-Tutorial-Produkt, §12 den **v3**-Bestand. Drei Fragen an Otto
+  (F8–F10) stehen in §12.13.
 - **Datum:** 2026-09-20
 - **Aufgabe:** M2-03 laut `docs/plans/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
@@ -137,6 +140,11 @@ Erreichbar aus dieser Sitzung, HTTP 200:
 > gestarteten** Sitzung (`adr/0003` §11.3) — die Tabelle oben bleibt damit der
 > gemessene Stand dieser Sitzung, und §9.1 sagt, was die Nachmess-Sitzung zu
 > klären hat.
+>
+> **Nachtrag 2026-09-20 (M2-03b):** Die Freigabe wirkt, `data.eodc.eu` ist
+> gemessen erreichbar — **§12.1**. Dort steht auch, dass `zipped_product`
+> inzwischen auf diesem Host liegt und die Sperre des anderen es nicht mehr
+> fernhält.
 
 **Nebenbefund, klärt `cloud-umgebung.md` §6.** Der dort als Widerspruch notierte
 Befund ist keiner: `stac.eopf.copernicus.eu` (gesperrt, heute erneut bestätigt)
@@ -242,6 +250,11 @@ Zwei Dinge folgen daraus:
 Schönheitsfehler, sondern eine Naht: Der Reader hängt damit am Katalog, und die
 Registry muss sagen, aus welchem Feld sie kommt.
 
+> **Überholt für den v3-Bestand (M2-03b, §12.3):** Die `…-zarr3`-Produkte
+> führen sehr wohl `multiscales` (Pilotkonvention v0.1) **und** eine CRS im
+> Store, dazu sechs Auflösungsstufen und 1024er Innenchunks über Sharding. Der
+> folgende Absatz beschreibt weiterhin richtig das Zarr-**v2**-Tutorial-Produkt.
+
 **Es gibt keine Bildpyramide — aber einen Ersatz.** Statt GeoZarr-`multiscales`
 führt das EOPF-Produkt die Bänder in **drei Auflösungsgruppen** (`r10m`, `r20m`,
 `r60m`) mit gleichem Ausschnitt. Das ist faktisch eine dreistufige Pyramide, nur
@@ -280,6 +293,11 @@ etwas anders und im Ergebnis schlechter:
   enthalten **keine Gruppe `l2a_quicklook`**, und ein direkter Abruf von
   `…/l2a_quicklook/r10m/tci/.zarray` antwortet **404**.
 
+**Nachtrag M2-03b (§12.7):** In `sentinel-2-l2a-zarr3` gibt es nicht einmal ein
+`TCI_10m` — über 20 geprüfte Items führt die Collection kein Asset mit einer
+Vorschau-Rolle. Dass `TCI_10m` der Collection `sentinel-2-l2a` nicht auflöst, ist
+auf beiden Hosts und in altem wie neuem Bestand bestätigt.
+
 Für F6 heißt das: Es gibt keinen Quicklook, auch dort nicht, wo der Katalog
 einen verspricht. Der Ersatz muss aus dem Kachelpfad kommen — eine kleine
 Vorschau aus der gröbsten Auflösungsstufe, gerendert wie eine Kachel (§3.7 zeigt,
@@ -307,6 +325,11 @@ Und derselbe 256×256-Ausschnitt über beide Stufen gelesen:
 
 Zum Vergleich: Ein COG-Overview-Read für dieselbe Kachel liegt bei Zehnern von
 Kilobyte (`adr/0003` §10.1 hat den Header-Read mit 32 KiB gemessen).
+
+> **Für den v3-Bestand korrigiert (M2-03b, §12.4):** Dort kostet dieselbe
+> Kachel **0,9–6,3 MB je Band (Median rund 1,5–2,2 MB), Echtfarbe rund 3,7 MB**,
+> weil Sharding 1024er Innenchunks statt 1830er Chunks liest. Die folgende Zahl
+> gilt für das v2-Tutorial-Produkt.
 
 **Die Zahl, die hängen bleibt: eine einzige Web-Mercator-Kachel in nativer
 Auflösung kostet hier 3–16 MB von der Quelle und mehrere Sekunden.** Der Grund
@@ -408,7 +431,8 @@ CI und Live-Smoke pinnen `PYTHON_VERSION: "3.11"`; die Cloud-Sitzung liefert
   sendet `access-control-allow-origin: *`. Der **Objektspeicher** sendet
   **keinen** CORS-Header, auch nicht mit `Origin`-Kopfzeile, und beantwortet
   einen `OPTIONS`-Preflight mit **403**. Ein Browser kann die Zarr-Chunks also
-  nicht selbst lesen. Für uns ändert das nichts — wir kacheln serverseitig —,
+  nicht selbst lesen. **Das gilt für `objects.eodc.eu`; `data.eodc.eu` sendet
+  CORS vollständig, einschließlich `Range` — M2-03b, §12.8.** Für uns ändert das nichts — wir kacheln serverseitig —,
   aber der Spike „Rendering im Browser" aus `architekturplan.md` 15.1
   Inkrement 7 ist gegen diese Quelle nicht durchführbar.
 
@@ -576,10 +600,14 @@ Weg, und D ist der Teil davon, der sofort gehen kann.
      §3.7 ist genau darauf gemessen. Ein Wechsel auf 3.12 ist eine eigene
      Aufgabe (CI-Matrix, Images) und steht als offene Log-Zeile.
    - **CRS aus dem STAC-Item** (`proj:code`), nicht aus dem Store; `proj:bbox`
-     nur benutzen, wenn es zur CRS passt (§3.4).
+     nur benutzen, wenn es zur CRS passt (§3.4). *Nachtrag M2-03b: Im
+     v3-Bestand liegt die CRS im Store und stimmt mit `proj:code` überein; das
+     Item bleibt der Rückfall (§12.11 Punkt 3).*
    - **Stufenwahl aus `gsd`/`raster:spatial_resolution`** der Assets, nicht aus
      `multiscales` — die Konvention ist Pilot v0.1 und in den gemessenen
-     Produkten nicht vorhanden.
+     Produkten nicht vorhanden. *Nachtrag M2-03b: Für `sentinel-2-l2a-zarr3`
+     umgekehrt — nur `multiscales` im Store kennt die drei gröbsten Stufen, das
+     Item weist sie nicht aus (§12.11 Punkt 2).*
    - **Einbauort wie bei COG:** `adr/0006` §7 Punkt 5 legt den Prozess-Einstieg
      des `tiler` nach `earthx/api/tiler.py` und lässt Fabrik und Renderlogik in
      `access`, weil `access` `gateway` nach 3.1 nicht importieren darf. Der
@@ -630,6 +658,10 @@ Weg, und D ist der Teil davon, der sofort gehen kann.
    CORS-Header und beantwortet den Preflight mit 403 (§3.9). Für diesen
    Datensatz steht `AccessInfo.cors = False`, und die Vorschau muss über unseren
    eigenen Prozess laufen.
+   **Nachtrag M2-03b (§12.8, §12.11 Punkt 4):** Für `data.eodc.eu` stimmt die
+   Begründung nicht — der Host sendet CORS vollständig, `AccessInfo.cors` ist
+   **`True`**. Die serverseitig gerenderte Vorschau bleibt trotzdem, aber aus
+   dem anderen Grund: Es gibt überhaupt kein Vorschaubild (§12.7).
 
 6. **Das synthetische Mini-Zarr** (F6) wird **im Test per Skript erzeugt**,
    keine Binärdatei im Repo. Es bildet nach, woran der Reader sich bewähren
@@ -664,7 +696,7 @@ beschlossen. M2a ist davon in jedem Fall unberührt und eigenständig abnehmbar.
    nachzuziehen.
 2. `architekturplan.md` 14 Punkt 5 („Sendet der EOPF-Zarr-Dienst CORS-Header?")
    ist beantwortet: STAC-API ja, Objektspeicher nein (§3.9).
-3. `cloud-umgebung.md` §6 ist mit der Freigabe aus F1 erneut nachzuziehen: PR #34
+3. **Erledigt mit M2-03b.** `cloud-umgebung.md` §6 ist mit der Freigabe aus F1 erneut nachzuziehen: PR #34
    hat `objects.eodc.eu` als erreichbar und `data.eodc.eu` als gesperrt
    eingetragen; nach der Freigabe stimmt der zweite Eintrag nicht mehr. Es fehlt
    dort außerdem `stac.core.eopf.eodc.eu` (erreichbar, §3.1). Beides gehört in
@@ -744,6 +776,11 @@ Copernicus DEM statt eines zweiten Formats — sind damit nicht gewählt.
 
 ### 9.1 Die gesperrten Collections — und woher die Antworten kommen
 
+> **Erledigt.** Die Nachmessung hat am 2026-09-20 als Aufgabe M2-03b
+> stattgefunden; alle sechs Punkte sind in **§12** beantwortet, einzeln
+> gegenübergestellt in §12.12. Der Abschnitt bleibt als Beleg dafür stehen, was
+> zum Zeitpunkt der Annahme offen war.
+
 Dieser ADR ist **angenommen, ohne dass der empfohlene Datensatz gemessen wäre.**
 Das ist kein Versehen, sondern die Lage: `data.eodc.eu` war während der Messung
 gesperrt (§3.1), und die Freigabe aus F1 wirkt erst in einer **neu gestarteten**
@@ -790,6 +827,22 @@ Freigabe belegen. **M2-09a** braucht davon nichts und kann vorher laufen.
 ---
 
 ## 10. Quellen
+
+**Gemessen (M), Nachmess-Sitzung M2-03b vom 20.09.2026, rund 450 Anfragen** —
+Einzelheiten und Befehle in §12.14:
+
+- `https://data.eodc.eu` — Wurzel, `zarr.json` der konsolidierten Metadaten,
+  Knoten-`zarr.json`, Shard-`HEAD`s und Sharding-Indizes, Innenchunk-Reads über
+  `Range`, `OPTIONS`-Preflight und `GET` mit `Origin`, `HEAD` auf
+  `zipped_product`
+- `https://stac.core.eopf.eodc.eu` — `/collections/sentinel-2-l2a-zarr3`,
+  `/search` mit Zeitfenstern, `bbox` und Paging über 40 Seiten, 20 parallele
+  Suchen
+- Erreichbarkeitsproben: `data.eodc.eu`, `stac.core.eopf.eodc.eu`,
+  `objects.eodc.eu`, `download.user.eopf.eodc.eu`, `stac.eopf.copernicus.eu`,
+  `stac.browser.user.eopf.eodc.eu`
+- Lesepfad-Messung §12.9 im Wegwerf-venv: `zarr` 3.1.6, `xarray` 2026.7.0,
+  `rioxarray` 0.19.0, `rio-tiler` 9.4.6, `numpy` 2.4.6, `morecantile` 7.1.0
 
 **Gemessen (M), Sitzung vom 20.09.2026, rund 270 Anfragen:**
 
@@ -895,3 +948,493 @@ Wegwerf-venv im Kratzverzeichnis, `probe_store.py` und `probe_tile.py`. Der
 geöffnet statt über `open_group().arrays()`. Die Kachel ist
 `WebMercatorQuad` z11/1087/686, ermittelt über `morecantile.tms.tile(11.2, 50.9, 11)`.
 Beide Skripte sind nicht Teil des Repos.
+
+---
+
+## 12. Nachmessung nach der Freigabe (M2-03b, 2026-09-20)
+
+**Was das ist.** Die in §9.1 angekündigte Nachmessung aus einer eigenen, neu
+gestarteten Cloud-Sitzung. Sie beantwortet die sechs dort offen gebliebenen
+Punkte an der Collection `sentinel-2-l2a-zarr3` und zieht die Stellen nach, an
+denen §3 vom v2-Tutorial-Produkt auf die v3-Produkte geschlossen hatte. **Stufe C:
+nur gemessen; kein Produktivcode, keine Datei außerhalb von `docs/`, keine
+Abhängigkeit des Projekts verändert.** Belegstufen wie oben.
+
+> **Vorrang.** Wo §12 einer Aussage aus §3 bis §7 widerspricht, gilt §12: §3
+> misst das Zarr-**v2**-Tutorial-Produkt, §12 den **v3**-Bestand, um den es
+> geht. Die Unterschiede sind groß und fallen überwiegend zugunsten der Quelle
+> aus.
+
+**Umfang der Abrufe — und ein Ausreißer, der zugleich ein Befund ist.** Rund 450
+Anfragen über etwa 75 Minuten. Metadaten: rund 4 000 Items über 40 Suchseiten
+(§12.6, rund 50 MB JSON). Pixel: die Kachel-, Statistik- und Zuschnittmessungen
+der §§12.4/12.5 zusammen rund 130 MB. **Dazu rund 1,5 GB, die nicht geplant
+waren:** Zwei Sondenläufe stapelten drei Bänder mit
+`Dataset.to_dataarray()`, und das materialisiert die Arrays vollständig — je
+Lauf drei volle `r10m`-Shards zu je 158 MB statt drei Fenstern (§12.9). Das ist
+offen auszuweisen, weil es gegen „Umfang klein halten" verstößt, und es ist
+zugleich die wichtigste Warnung für die Umsetzung (§12.11 Punkt 7). Kein Produkt
+wurde heruntergeladen. Für §12.9 lief `zarr`, `xarray` und `rio-tiler[xarray]`
+wieder in einem **Wegwerf-venv im Kratzverzeichnis**; `backend/requirements.txt`
+und das Projekt-venv blieben unberührt.
+
+### 12.1 Die Freigabe wirkt — **[M]**
+
+| Host | Ergebnis | gegen §3.1 |
+|---|---|---|
+| `data.eodc.eu` | **200**, Server `APISIX/3.13.0` | **war gesperrt, jetzt offen** |
+| `stac.core.eopf.eodc.eu` | 200 | unverändert offen |
+| `objects.eodc.eu` | 200 | unverändert offen |
+| `download.user.eopf.eodc.eu` | `CONNECT` 403 | **bleibt gesperrt, wie F1 es wollte** |
+| `stac.eopf.copernicus.eu` | `CONNECT` 403 | unverändert gesperrt |
+| `stac.browser.user.eopf.eodc.eu` | `CONNECT` 403 | unverändert gesperrt |
+
+`data.eodc.eu` ist kein blanker Objektspeicher, sondern der „EODC Data Access
+Service" hinter APISIX; die Wurzel liefert eine Liste von 65 Collections, die
+EOPF-Produkte liegen unter `/collections/EOPF_ZARR/products/`.
+
+**Ein Nebenbefund, der F1 teilweise unterläuft:** Das Asset `zipped_product`
+liegt bei diesen Items **nicht mehr** auf dem gesperrten
+`download.user.eopf.eodc.eu`, sondern auf `data.eodc.eu` selbst — `HEAD` 200 mit
+**1 200 781 250 B (1,2 GB)**. Die Sperre des anderen Hosts hält gezippte
+Produkte also nicht mehr fern; das muss der Registry-Eintrag tun (§12.11
+Punkt 10).
+
+### 12.2 Die Messszenen
+
+| | Szene A | Szene B |
+|---|---|---|
+| Item | `S2C_MSIL2A_20260919T141841_N0512_R096_T26WME_20260919T161612` | `S2A_MSIL2A_20260919T102041_N0512_R065_T32TPS_20260919T170225` |
+| Kachel / CRS | MGRS-26WME, `EPSG:32626` | MGRS-32TPS, `EPSG:32632` |
+| Mitte | 28,3° W / **71,6° N** | 11,0° O / **46,4° N** |
+
+Zwei Breiten, weil der Bestand von 34° N bis 72° N reicht und die Bodenauflösung
+einer Web-Mercator-Kachel mit `cos(Breite)` skaliert — zwischen beiden Enden um
+den Faktor 2,7. Eine feste Tabelle „Zoomstufe → Auflösungsgruppe" kann es
+deshalb nicht geben (§12.10).
+
+### 12.3 Der v3-Store ist anders gebaut als das v2-Produkt — **[M]**
+
+Gemessen an der konsolidierten Wurzel von Szene A (`zarr.json`, 500 563 B,
+221 Knoten, 1,35 s — gegen 4,55 MB beim S1-SLC-Store aus §3.4):
+
+| | §3.4 sagte (v2-Tutorial) | §12 misst (v3, `…-zarr3`) |
+|---|---|---|
+| `multiscales` | 0 Treffer | **vorhanden**, an `measurements/reflectance` |
+| Übersichtsstufen | drei Auflösungsgruppen, ohne Konvention | **sechs**: `r10m`, `r20m`, `r60m`, `r120m`, `r360m`, `r720m` |
+| CRS im Store | keine — weder `grid_mapping` noch `crs_wkt` | **vorhanden**: `spatial_ref`-Array je Stufe mit `crs_wkt`, `grid_mapping` an jedem Band |
+| Chunks | 1830 × 1830, roh 6,70 MB | Shard 11264², **Innenchunk 1024 × 1024** (`sharding_indexed`, blosc/zstd) |
+
+**Die Pyramide ist erklärt, aber nach einer Pilot-Konvention.** Der Knoten
+`measurements/reflectance` trägt `multiscales` mit einer `layout`-Liste über die
+sechs Stufen, je mit `spatial:shape` und `spatial:transform`, dazu
+`resampling_method: average`. Der Store deklariert dafür ausdrücklich
+`zarr-conventions/multiscales` in **v0.1** — genau die Fassung, die §3.4 als
+„Pilot mit angekündigten Breaking Changes bis v1" eingestuft hat. Die Einstufung
+bleibt richtig; sie trifft jetzt nur nicht mehr ins Leere. Daneben deklariert der
+Store `zarr-conventions/spatial` und `zarr-conventions/proj`, beide an einen
+Commit-Stand gepinnt, nicht an eine Version.
+
+**Das Item weist weniger aus als der Store hat.** Die zehn Assets sind `SR_10m`,
+`SR_20m`, `SR_60m`, `ATM_10m/20m/60m`, `SCL_20m/60m`, `product`,
+`zipped_product`. **`r120m`, `r360m` und `r720m` kommen im STAC-Item nicht vor** —
+sie stehen nur im Store. Wer die Stufenwahl aus `gsd` /
+`raster:spatial_resolution` der Assets trifft, wie §6 Punkt 2 es vorsah, verliert
+die drei billigsten Stufen (§12.11 Punkt 2).
+
+**Sharding ist der Grund, warum das trotzdem bezahlbar ist.** Ein Shard ist das
+ganze Band einer Stufe, ein einziges Objekt:
+
+| Stufe | Form | Shard (ein Objekt) | Innenchunk komprimiert: min / Median / max | belegt |
+|---|---|---|---|---|
+| `r10m` | 10980² | **158 253 910 B** | 62 638 / 1 356 805 / 1 861 780 | 118 von 121 |
+| `r20m` | 5490² | 41 502 672 B | 17 999 / 1 400 599 / 1 802 357 | 35 von 36 |
+| `r60m` | 1830² | 4 850 898 B | 759 280 / 1 225 011 / 1 663 919 | 4 von 4 |
+| `r120m` | 915² | 1 250 462 B | ein Chunk | 1 von 1 |
+| `r360m` | 305² | 146 594 B | ein Chunk | 1 von 1 |
+| `r720m` | 152² | 38 333 B | ein Chunk | 1 von 1 |
+
+Der Shard-Index liegt am Ende (`index_location: end`, 1 940 B bei `r10m`) und
+kostet einen Range-Read von rund 0,5 s. `data.eodc.eu` beantwortet `Range` mit
+`206` **[M]**. **Ohne Byte-Ranges im Store holt ein Kachelabruf den ganzen
+158-MB-Shard** — das ist die schärfste Bedingung an die Umsetzung (§12.11
+Punkt 1).
+
+### 12.4 Was eine Kachel wirklich kostet — **[M]**
+
+Ein Band (`b04`), 256 × 256, `XarrayReader.tile()`, je sechs bzw. fünf Kacheln
+quer über die Szene; Zeiten durch den Sitzungs-Proxy, also Obergrenzen.
+
+**Szene A (71,6° N):**
+
+| z | Stufe | Requests | MB min–max (Median) | s |
+|---|---|---|---|---|
+| 6 | `r720m` | 1 | 0,038 | 0,6 |
+| 7 | `r360m` | 1 | 0,147 | 0,8–1,6 |
+| 8 | `r360m` | 1 | 0,147 | 0,8 |
+| 9 | `r120m` | 1 | 1,250 | 1,2 |
+| 10 | `r60m` | 2–3 | 0,76–1,98 (1,66) | 1,6–2,8 |
+| 11 | `r20m` | 2 | 0,99–1,80 (1,45) | 1,7–1,9 |
+| 12 | `r10m` | 2–5 | 1,23–**6,26** (2,17) | 1,8–5,3 |
+| 13 | `r10m` | 2–3 | 1,11–2,62 (1,49) | 1,7–3,1 |
+
+**Szene B (46,4° N):**
+
+| z | Stufe | Requests | MB min–max (Median) | s |
+|---|---|---|---|---|
+| 8 | `r720m` | 1 | 0,031 | 0,6 |
+| 9 | `r360m` | 1 | 0,121 | 0,8 |
+| 10 | `r120m` | 1 | 1,040 | 1,2 |
+| 11 | `r60m` | 2–3 | 0,52–2,61 (1,45) | 1,6–2,8 |
+| 13 | `r20m` | 2–3 | 1,12–1,37 (1,34) | 1,7–2,6 |
+| 14 | `r10m` | 2 | 0,91–1,32 (1,31) | 1,6–1,9 |
+
+**Echtfarbe** (`b04`/`b03`/`b02`, jedes Band einzeln gefenstert, danach
+gestapelt), Szene B:
+
+| z | Stufe | Requests | MB | s |
+|---|---|---|---|---|
+| 9 | `r360m` | 3 | 0,361 | 2,6 |
+| 11 | `r60m` | 6 | 4,294 | 5,3 |
+| 12 | `r20m` | 6 | 4,104 | 5,3 |
+| 13 | `r10m` | 6 | 3,746 | 5,1 |
+| 14 | `r10m` | 6 | 3,746 | 5,1 |
+
+**Die Zahl aus §3.6 ist zu korrigieren.** Dort stand: „eine einzige
+Web-Mercator-Kachel in nativer Auflösung kostet hier 3–16 MB von der Quelle".
+Gemessen am v3-Bestand kostet sie **ein Band 0,9–6,3 MB (Median rund 1,5–2,2 MB),
+Echtfarbe rund 3,7 MB**. Der Grund ist das Sharding: Gelesen werden 1024er
+Innenchunks statt 1830er Chunks, also ein bis vier Stück je Kachel statt des
+Fünfzigfachen einer Kachelfläche. Teurer als COG (`adr/0003` §10.1: 32 KiB
+Header-Read) bleibt es deutlich, aber es ist kein Ausschlussgrund mehr.
+
+**Die groben Stufen sind Einzelchunk-Stufen.** `r120m`, `r360m` und `r720m`
+bestehen aus genau einem Chunk; jede Kachel daraus zieht die ganze Stufe. Das
+ist bei `r360m` (147 kB) und `r720m` (38 kB) billig und bei `r120m` (1,25 MB)
+spürbar — dafür deckt ein einziger Abruf dann alle Kacheln dieser Stufe ab, wenn
+der Item-Cache greift.
+
+**Öffnen kostet mehr, als es müsste** — Szene A, `r60m`:
+
+| | Requests | Zeit |
+|---|---|---|
+| ohne Formatangabe | **11** | 5,6 s |
+| mit `zarr_format=3` | **5** | 2,5 s |
+
+Ohne Angabe probiert `zarr` je Knoten `zarr.json`, `.zarray` und `.zattrs` durch;
+sechs dieser elf Anfragen laufen ins Leere. Ein dritter Weg: die Gruppe über die
+konsolidierte Wurzel öffnen (`xr.open_zarr(…, consolidated=True,
+decode_coords="all")`) — **3 Requests, 512 718 B, 2,1 s**, und liefert dafür alle
+zwölf Bänder **samt CRS**.
+
+### 12.5 Statistik und AOI-Zuschnitt — **[M]**
+
+`XarrayReader.statistics()` auf `b04`, Szene A:
+
+| Stufe | s | Requests | MB | p2 | p98 |
+|---|---|---|---|---|---|
+| `r720m` | 0,62 | 1 | 0,038 | 0 | 11 770 |
+| `r360m` | 0,84 | 1 | 0,147 | 0 | 11 955 |
+| `r120m` | 1,46 | 1 | 1,250 | 0 | 12 192 |
+| `r60m` | 2,82 | 1 | 4,851 | 0 | 12 407 |
+
+Die Statistik auf der gröbsten Stufe weicht im `p98` um rund 5 % von der auf
+`r60m` ab. Für den Streckbereich nach Z4 ist das unerheblich — **die Statistik
+gehört auf `r720m` oder `r360m`**, nicht auf eine feine Stufe (§12.11 Punkt 8).
+
+`XarrayReader.feature()` auf `r10m`, Szene A:
+
+| AOI | Requests | MB | s | Ergebnis |
+|---|---|---|---|---|
+| rund 16 × 8 km | 7 | 9,178 | 7,7 | 1593 × 1514 px |
+| rund 3 × 4 km | 2 | 1,241 | 1,6 | 452 × 319 px |
+
+Der Zuschnitt skaliert also mit der Zahl geschnittener Innenchunks, nicht mit der
+Produktgröße — genau das, was M2-06 braucht.
+
+### 12.6 Bestand, Aktualität, Ausdehnung — **[M]**
+
+| Befund | Messung |
+|---|---|
+| Titel der Collection | **„Sentinel-2 Level-2A (Zarr3 **staging**)"** |
+| `extent.temporal` | 2026-07-16T10:06:01Z bis 2026-09-19T14:18:41Z — gut zwei Monate |
+| `extent.spatial` | Länge −33,00 … 179,58; **Breite 34,21 … 72,10** |
+| `license` | `proprietary` bei `stac_version: 1.1.0` — die Inkonsistenz aus §3.2 besteht fort |
+| Lizenz-Link | dasselbe Sentinel Data Legal Notice wie beim ersten Datensatz (§3.9, F3) |
+| `numberMatched` | **fehlt weiterhin** in jeder Antwort |
+| Monatsfenster | Mai, Juni, 1.–15. Juli leer; ab 16. Juli belegt |
+| Stichprobe 4 000 Items (40 Seiten, `limit=100`, 92 s) | **nur drei Tage** (17.–19.09.), **1 150 / 1 431 / 1 419** Items je Tag, **1 802** verschiedene MGRS-Kacheln, alle drei Plattformen (2A/2B/2C); Paging nach 40 Seiten noch nicht am Ende |
+
+Daraus folgt zweierlei. **Der Bestand ist groß genug**: rund 1 300 Items je Tag
+über gut zwei Monate sind grob 80 000 Items — die Zeitleiste und die Gruppierung
+haben etwas zu tun. **Und er ist nicht global**: keine Südhalbkugel, keine
+Tropen, Schwerpunkt Europa und Nordatlantik. Für den Viewer heißt das, dass die
+Coverage-Heatmap dieses Datensatzes außerhalb 34°–72° N leer ist — kein Fehler,
+aber erklärungsbedürftig.
+
+**„staging" ist die eigentliche Nachricht dieses Abschnitts.** §5 Option A hatte
+K9 schon als verletzt geführt, weil der Betreiber die Buckets „unofficial" nennt.
+Die Collection sagt es jetzt in ihrem eigenen Titel. Das ändert die Sachlage
+nicht, aber es schärft sie: Wer diesen Datensatz nimmt, nimmt einen ausdrücklich
+vorläufigen.
+
+### 12.7 Quicklook: schlechter als §3.5, dafür eindeutig — **[M]**
+
+Über 20 geprüfte Items führt `sentinel-2-l2a-zarr3` **kein einziges Asset** mit
+einer Rolle `thumbnail`, `preview`, `overview` oder `visual`; die vorkommenden
+Rollen sind nur `data`, `metadata`, `archive`, `atmosphere`, `mask`,
+`reflectance`. **Ein `TCI_10m` gibt es hier gar nicht.**
+
+Der Sonderfall aus §3.5 ließ sich zusätzlich abschließen: In der Collection
+`sentinel-2-l2a` existiert `TCI_10m` als Asset, löst aber **auf beiden Hosts und
+in altem wie neuem Bestand** nicht auf (404 auf `zarr.json`, `.zgroup`,
+`.zarray` und `.zmetadata`). §3.5 gilt damit unverändert, und für
+`sentinel-2-l2a-zarr3` stellt sich die Frage nicht einmal: Der Ersatz muss aus
+dem Kachelpfad kommen. Er ist billig — eine Vorschau aus `r720m` kostet 38 kB und
+0,6 s (§12.4).
+
+### 12.8 CORS, Zwischenspeicher, Ratengrenzen — **[M]**
+
+**Die CORS-Aussage aus §3.9 gilt für `data.eodc.eu` nicht.** Gemessen sendet der
+Host auf `GET`, `HEAD` und im `OPTIONS`-Preflight (204):
+
+```
+access-control-allow-origin: *
+access-control-allow-methods: GET, HEAD, OPTIONS
+access-control-allow-headers: Range, Content-Type
+access-control-expose-headers: Content-Length, Content-Range, Accept-Ranges
+```
+
+Das ist genau der Satz, den ein Zarr-Leser im Browser braucht — einschließlich
+`Range` und der freigegebenen `Content-Range`. §3.9 hatte für `objects.eodc.eu`
+gemessen: kein Header, Preflight 403. Beide Messungen stehen; sie betreffen
+verschiedene Hosts. **Folge:** `AccessInfo.cors` ist für diesen Datensatz
+**`True`**, und der Spike „Rendering im Browser" (`architekturplan.md` 15.1
+Inkrement 7) ist gegen diese Quelle doch durchführbar (§12.11 Punkt 4).
+
+**Kein `ETag`, kein `Cache-Control`, kein `Last-Modified`** auf den Objekten.
+Unser Cache kann also nicht revalidieren, sondern nur nach Frist arbeiten — wie
+der Statistik-Cache aus D13 es ohnehin tut.
+
+**Ratengrenzen:** 12 parallele Chunk-Abrufe (alle 200, 0,98–1,11 s) und 20
+parallele STAC-Suchen (alle 200). Kein `429`, kein `Retry-After`, kein
+`X-RateLimit-*`. Die offene Log-Zeile „Ratengrenzen der Anbieter" bleibt für EOPF
+**sachlich unbeantwortet**; der Deckel von sechs parallelen Verbindungen je Host
+aus `gateway` trägt weiter.
+
+### 12.9 Der Lesepfad, end-to-end gegen die echte Quelle — **[M]**
+
+Der Aufbau aus §6 Punkt 2, unverändert, gegen Szene B: eigener
+`zarr.abc.store.Store` mit `get`, `get_partial_values` und `exists` → `zarr`
+3.1.6 → `xarray` 2026.7.0 → `rioxarray` 0.19.0 → `rio_tiler.io.xarray.XarrayReader`
+9.4.6, auf Python 3.11.15. Der Store prüft Schema und Host an genau einer Stelle;
+im Produktivcode stünde dort `gateway`.
+
+```
+Stufe r720m oeffnen (Statistik)          2,52 s    5 Req    0,004 MB
+statistics() fuer den Streckbereich      0,57 s    1 Req    0,031 MB   p2 0, p98 6470
+Stufe r10m oeffnen (Kachel)              2,72 s    5 Req    0,091 MB
+tile z14/8693/5799                       1,66 s    2 Req    1,241 MB   PNG 60 816 B
+feature() AOI rund 3 x 4 km bei 10 m     1,62 s    2 Req    1,241 MB   452 x 319 px
+GESAMT                                   9,1  s   15 Req    2,609 MB
+```
+
+Kachel, Statistik und Zuschnitt — die drei Aufgaben aus M2-09 — laufen damit
+gegen die echte Quelle, mit **15 Anfragen und 2,6 MB**, und jeder Byte-Read ging
+durch die eine geprüfte Stelle. Die Prüfung greift auch: ein fremder Host und
+ein `http`-Schema werden abgewiesen.
+
+**Die Fehlerfälle sind sauber unterscheidbar** und taugen als Vorlage für die
+definierten Fehler aus M2-09a:
+
+| Fall | Ausnahme aus `zarr` 3.1.6 |
+|---|---|
+| unbekanntes Band (`…/r10m/b99`) | `ArrayNotFoundError` |
+| fehlende Gruppe (`quality/l2a_quicklook/r10m/tci`) | `ArrayNotFoundError` |
+| Gruppe statt Array (`…/r10m`) | `NodeTypeValidationError` |
+
+**Und eine Falle, die 1,5 GB gekostet hat.** Drei Bänder über
+`Dataset.to_dataarray(dim="band")` zu stapeln sieht aus wie die naheliegende Art,
+eine Echtfarb-Kachel zu bauen. Gemessen materialisiert dieser Aufruf die Arrays
+**vollständig**: drei Abrufe ohne Byte-Range, je ein ganzer 158-MB-Shard, bevor
+überhaupt ein Fenster gewählt ist. Danach kostet die Kachel scheinbar null
+Requests — ein Messergebnis, das auf den ersten Blick zu schön aussah und
+deshalb nachgeprüft wurde. Richtig ist, **jedes Band einzeln zu fenstern und erst
+die Fenster zu stapeln**; so kostet dieselbe Kachel 6 Requests und 3,75 MB
+(§12.4).
+
+### 12.10 Welche Zoomstufen der Viewer freigeben sollte
+
+Die Pyramide deckt sechs Stufen von 720 m bis 10 m. Welcher Zoomstufe eine Stufe
+entspricht, hängt an der Breite: eine Web-Mercator-Kachel hat bei 34° N eine um
+den Faktor 2,7 gröbere Bodenauflösung als bei 72° N. Gemessen:
+
+| | 46,4° N (Szene B) | 71,6° N (Szene A) |
+|---|---|---|
+| native 10 m | z13–z14 | z12 |
+| native 60 m | z11 | z10 |
+| native 360 m | z9 | z7 |
+
+**Empfehlung: z8 bis z14 freigeben**, mit `r10m` als feinster Stufe und Überzoom
+darüber.
+
+- **Untere Grenze z8, weil dort eine Kachel etwa eine Szene ist.** Bei 46° N
+  deckt eine z8-Kachel 108 km, eine Szene ist 110 km breit; bei 34° N sind es
+  130 km. Unterhalb von z8 zeigt eine Kachel mehrere Szenen — das ist die
+  Aufgabe der Coverage-Heatmap (`adr/0004`), nicht des Kachelpfads.
+- **Obere Grenze z14, weil darüber keine Daten mehr kommen.** Überzoom auf
+  `r10m` ist dabei ausdrücklich erlaubt und **kostet weniger**, nicht mehr: das
+  gelesene Fenster wird kleiner.
+- **Die Stufe wird gerechnet, nicht nachgeschlagen.** Aus der Bodenauflösung der
+  angefragten Kachel und der Auflösung der Stufen, nicht aus einer festen
+  Zuordnung Zoom → Gruppe. Sonst wird am Nordrand des Bestands zwei Stufen zu
+  fein gelesen.
+- **Kostenband dieser Wahl:** z8–z10 unter 1,3 MB je Band und unter 0,4 MB für
+  eine Echtfarb-Kachel; ab z11 rund 1–4,3 MB je Kachel, Echtfarbe rund 3,7–4,3 MB
+  und rund 5 s kalt. Ohne HTTP-Cache ist das zu viel für flüssiges Schwenken —
+  der Cache ist bei diesem Datensatz keine Feinarbeit, sondern Voraussetzung
+  (§3.6 sagte das schon, und es gilt unverändert).
+
+### 12.11 Empfehlung und was für M2-09b daraus folgt
+
+**Zum Datensatz: Ja — `sentinel-2-l2a-zarr3` trägt als zweiter Datensatz.**
+Option A ist gemessen und besteht die Kriterien aus §2 bis auf eines. K4
+(erreichbar) ist mit der Freigabe erfüllt; K7 (kachelbar) und K8 (Lesekosten) sind
+**besser** als §3 befürchtet hat, weil Sharding, sechs Stufen und CRS im Store
+dazukommen; K10 (Quicklook) bleibt verletzt, hat aber einen billigen, belegten
+Ersatz (§12.7). **K9 (Dauerhaftigkeit) bleibt verletzt und ist schärfer
+geworden** — die Collection heißt selbst „staging" (§12.6). Das ist der bewusst
+in Kauf genommene Preis aus §5 Option A; er ist jetzt nur genauer beziffert.
+Sollte Otto ihn doch nicht zahlen wollen, ändert sich an §4.2 nichts: Keiner der
+Nicht-STAC-Kandidaten ersetzt ihn in M2, und es bliebe der Rückfallweg aus §8 F7.
+
+**Für M2-09b, der Reihe nach:**
+
+1. **Der Store muss Byte-Ranges können** — `get` mit `RangeByteRequest`,
+   `OffsetByteRequest`, `SuffixByteRequest` und `get_partial_values`. Ohne das
+   holt `zarr` je Kachel den ganzen 158-MB-Shard. Das ist die eine Zeile, an der
+   der Datensatz steht und fällt.
+2. **Die Auflösungsstufen kommen aus dem Store, nicht aus dem Item.** Das Item
+   weist nur `r10m`/`r20m`/`r60m` aus; `r120m`, `r360m` und `r720m` stehen im
+   `multiscales`-Attribut von `measurements/reflectance` (§12.3). §6 Punkt 2
+   („Stufenwahl aus `gsd`/`raster:spatial_resolution`") ist insoweit zu
+   korrigieren — richtig ist: `multiscales` aus dem Store lesen, das Item als
+   Rückfall. Dass dieses `multiscales` einer **v0.1-Pilotkonvention** folgt, ist
+   dabei hinzunehmen und im Registry-Eintrag zu vermerken; bricht sie, bricht
+   nur die Stufenwahl, nicht der Lesepfad.
+3. **Die CRS liegt im Store** und stimmt mit `proj:code` überein (gemessen
+   `EPSG:32632` beiderseits). §6 Punkt 2 verlangte sie „aus dem STAC-Item, nicht
+   aus dem Store" — das bleibt als **Rückfall** richtig, ist aber nicht mehr der
+   Normalfall. Das Registry-Feld aus §7 Punkt 7 wird trotzdem gebraucht, weil der
+   Reader beide Fälle können muss: Das synthetische Mini-Zarr aus M2-09a hat
+   bewusst keine CRS im Store.
+4. **`AccessInfo.cors = True`** für diesen Datensatz (§12.8). Der serverseitig
+   gerenderte Quicklook aus §6 Punkt 5 bleibt trotzdem — aber aus dem anderen
+   Grund: nicht weil CORS fehlt, sondern weil es überhaupt kein Vorschaubild
+   gibt. Die Bedingung aus `adr/0006` §7 Punkt 4 ist damit erfüllt, der Anlass
+   entfällt.
+5. **`asset_hosts` des Registry-Eintrags: `data.eodc.eu`.** Nur dieser Host; die
+   älteren Tutorial-Produkte auf `objects.eodc.eu` gehören zur Collection
+   `sentinel-2-l2a`, die nicht aufgenommen wird.
+6. **Beim Öffnen `zarr_format=3` setzen** — halbiert die Anfragen (11 → 5,
+   §12.4). Für mehrere Bänder lohnt stattdessen die Gruppe über die
+   konsolidierte Wurzel (3 Anfragen, 0,5 MB, CRS inbegriffen).
+7. **Bänder nie über `to_dataarray`/`to_array` stapeln** (§12.9). Einzeln
+   fenstern, dann die Fenster stapeln.
+8. **Statistik auf `r720m` oder `r360m`** rechnen, einmal je Item, in den
+   Statistik-Cache (D13, 30 Tage). Auf `r60m` kostet dieselbe Statistik 4,85 MB
+   statt 0,04 MB, bei rund 5 % Unterschied im `p98`.
+9. **Der Cache arbeitet nach Frist, nicht nach Revalidierung** — die Quelle
+   sendet weder `ETag` noch `Cache-Control` (§12.8).
+10. **`zipped_product` nicht in den Registry-Eintrag.** Es liegt mit 1,2 GB auf
+    dem jetzt offenen `data.eodc.eu` (§12.1); die Sperre, auf die F1 sich
+    verlassen hat, greift dafür nicht mehr.
+11. **Die STAC-1.1-Normalisierung aus §6 Punkt 4 bleibt Wort für Wort gültig.**
+    Ergänzung: `proj:bbox` ist in dieser Collection korrekt in Metern; die Prüfung
+    „verwerfen, wenn sie nicht zur CRS passt" bleibt trotzdem nötig, weil sie im
+    Bestand von `sentinel-2-l2a` in Grad steht (§3.4).
+12. **`sentinel-2-l2a` und `sentinel-2-l2a-zarr3` führen für aktuelle Tage
+    dieselben Item-IDs** — zwei Sichten auf dasselbe Produkt, v2-Gruppenlayout
+    gegen v3-Shard-Store (gemessen an
+    `S2C_MSIL2A_20260919T141841_N0512_R096_T26WME_20260919T161612`). Die Registry
+    führt nur `…-zarr3`; dann kollidiert nichts. Aufnehmen ließen sich die beiden
+    nicht nebeneinander, ohne die ID-Eindeutigkeit der föderierten Suche zu
+    verletzen.
+13. **Coverage bleibt `CoverageProvider.SAMPLE`** (§6 Punkt 3, unverändert):
+    `numberMatched` fehlt weiterhin, `/aggregations` gibt es nicht. Neu ist nur
+    die Größenordnung, gegen die die Stichprobe anzutreten hat: rund 1 300 Items
+    je Tag, 1 802 MGRS-Kacheln in drei Tagen (§12.6).
+
+### 12.12 Die sechs offenen Punkte aus §9.1, beantwortet
+
+| Punkt aus §9.1 | Antwort |
+|---|---|
+| Chunk-Zuschnitt der `…-zarr3`-Collections | **Feiner als befürchtet:** Shard 11264², aber Innenchunk 1024² mit Sharding-Index (§12.3) |
+| Georeferenzierung | **CRS liegt im Store** (`spatial_ref`, `crs_wkt`) und stimmt mit `proj:code` überein (§12.3) |
+| Übersichtsstufen | **Sechs statt drei**, mit `multiscales` v0.1; das Item weist nur drei davon aus (§12.3) |
+| Lesekosten je Kachel | **Gemessen** (§12.4); die Zahlen aus §3.6 sind erwartungsgemäß nicht übertragbar — die echten sind niedriger |
+| Existenz der Objekte | **Ja**, für `…-zarr3` durchgehend gelesen (§12.3–12.5) |
+| Ob die 2017er Items von `sentinel-2-l2a` auf Objekte zeigen | **Ja.** `product/.zgroup` → 200, `.zmetadata` → 292 804 B auf `objects.eodc.eu`. `TCI_10m` löst auch dort nicht auf (§12.7) |
+
+### 12.13 Fragen an Otto
+
+**F8 — Bleibt es bei `sentinel-2-l2a-zarr3`, obwohl die Collection sich selbst
+„staging" nennt?**
+(a) **Ja, wie in §5 Option A entschieden** *(Empfehlung: der Preis war bekannt,
+er ist jetzt nur genauer benannt; alles Technische trägt)*.
+(b) Nein — dann greift der Rückfallweg aus §8 F7: M2 wird auf „Sentinel-2 plus
+belegter Zarr-Lesepfad" abgenommen, der zweite Datensatz geht nach M3.
+
+**F9 — Welche Zoomstufen gibt der Viewer frei?**
+(a) **z8 bis z14, Überzoom darüber erlaubt** *(Empfehlung, §12.10)*.
+(b) Enger: z8 bis z12, feinste Stufe `r20m` — höchstens rund 1,5 MB je Kachel,
+dafür nie die native Auflösung.
+(c) Weiter: z8 bis z16 — kostet nichts zusätzlich, zeigt aber Pixel, die es nicht
+gibt.
+
+**F10 — Woher nimmt der Reader die Auflösungsstufen?**
+(a) **Aus `multiscales` im Store, Item als Rückfall** *(Empfehlung: nur so
+kommen `r120m`, `r360m` und `r720m` überhaupt vor, §12.11 Punkt 2)*.
+(b) Fest im Registry-Eintrag — unabhängig von der Pilotkonvention, aber je
+Datensatz von Hand gepflegt.
+
+### 12.14 Messanhang
+
+**Erreichbarkeit (§12.1), Bestand (§12.6), Quicklook (§12.7):**
+
+```
+curl -sS -o /dev/null -w "%{http_code}" --max-time 25 https://<host>/
+curl -sS "https://stac.core.eopf.eodc.eu/search?collections=sentinel-2-l2a-zarr3\
+&limit=1&datetime=<start>%2F<ende>"
+curl -sS "https://stac.core.eopf.eodc.eu/collections/sentinel-2-l2a-zarr3"
+```
+
+Das Durchblättern in §12.6 folgt der `next`-Marke (`token=next:<collection>:<id>`)
+über 40 Seiten zu je 100 Items.
+
+**Store, Shards, CORS (§12.3, §12.8).** `<store>` ist der `product`-Asset-Href
+des Items, also
+`https://data.eodc.eu/collections/EOPF_ZARR/products/cpm_v300/S02MSIL2A/<jjjj>/<mm>/<tt>/<produkt>.zarr`:
+
+```
+curl -sS "<store>/zarr.json"                                    # 500 563 B, 221 Knoten
+curl -sS -I "<store>/measurements/reflectance/<stufe>/b04/c/0/0"  # Shard-Groesse
+curl -sS -r 0-99 "<store>/measurements/reflectance/r10m/b04/c/0/0"  # 206, Range traegt
+curl -sS -X OPTIONS -H "Origin: https://example.org" \
+     -H "Access-Control-Request-Method: GET" "<store>/zarr.json"    # 204 + CORS-Kopfzeilen
+```
+
+Die Innenchunk-Größen in §12.3 stammen aus dem Sharding-Index: die letzten
+`n * 16 + 4` Bytes des Shards, gelesen per `Range`, als `uint64`-Paare
+(Offset, Länge) in C-Ordnung über das Innenchunk-Gitter, mit `crc32c` am Ende.
+
+**Lesepfad (§12.4, §12.5, §12.9).** Wegwerf-venv im Kratzverzeichnis, `zarr`
+3.1.6, `xarray` 2026.7.0, `rioxarray` 0.19.0, `rio-tiler` 9.4.6, `numpy` 2.4.6,
+`morecantile` 7.1.0 auf Python 3.11.15 — dieselbe Zusammenstellung wie in §3.7.
+Der Store implementiert `get`, `get_partial_values` und `exists`, prüft Schema
+und Host und zählt Anfragen und Bytes; `list*` bleibt unimplementiert
+(`supports_listing = False`), geöffnet wird mit `zarr.open_array(path=…,
+zarr_format=3)`. Die Zähler liegen bewusst im Modul, nicht in der Instanz: Beim
+Kopieren der `DataArray` (`rio.write_crs`) wird auch der Store kopiert, und eine
+erste Messung zählte deshalb null Anfragen bei echten Bilddaten. Kacheln über
+`morecantile` `WebMercatorQuad`. Die Skripte sind nicht Teil des Repos.
