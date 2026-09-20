@@ -22,6 +22,7 @@ from earthx.catalog.registry import (
     DataFormat,
     DatasetConfig,
     DatasetRegistry,
+    DefaultRender,
     HealthInfo,
     HealthStatus,
     LicenseInfo,
@@ -30,6 +31,7 @@ from earthx.catalog.registry import (
     SpatialExtent,
     TemporalExtent,
     TermsOfUse,
+    ViewerInfo,
 )
 
 # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
@@ -131,8 +133,11 @@ SENTINEL_2_L2A = DatasetConfig(
     access=AccessInfo(
         token_free_checked_at=_REACHABILITY_CHECKED,
         method="anonymous HTTPS, no authentication header (adr/0003 §10.1)",
-        # Not measured: §10.1 checked status codes, not CORS headers.
-        cors=None,
+        # Measured in adr/0006 §3.6, at the asset bucket and at Earth Search itself:
+        # `Access-Control-Allow-Origin: *`. The viewer decides on this field whether it
+        # loads a quicklook straight from the source — for Sentinel-2 it may, and that
+        # is why there is no asset proxy (D14).
+        cors=True,
     ),
     # adr/0005 rule I branches on this per collection: an unknown one is a 404,
     # not the empty, valid-looking result Earth Search returns for it.
@@ -141,6 +146,10 @@ SENTINEL_2_L2A = DatasetConfig(
         endpoint="https://earth-search.aws.element84.com/v1",
         # Collection 1 (adr/0003 §6): COGs only, from baseline 5.0 on.
         source_collection_id="sentinel-2-c1-l2a",
+        # Measured at real items in adr/0006 §3.7: all 22 assets of this collection lie
+        # on this one host. `sentinel-cogs…amazonaws.com` belongs to the older
+        # collection and deliberately stays out of the allowlist.
+        asset_hosts=("e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",),
         # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
         harvest_run=None,
     ),
@@ -153,10 +162,28 @@ SENTINEL_2_L2A = DatasetConfig(
         typical_footprint_km=110.0,
         max_geotile_level=8,
     ),
-    # Open. The onboarding checklist asks for band names, stretch and colormap, but
-    # docs/ fixes none of them and M1 cannot read the assets of the upstream
-    # collection. m1-fundament.md §2 puts the standard visualisation in M2.
-    default_render=None,
+    # Onboarding checklist point 8, filled in M2-04 from a measurement at real assets
+    # (see the PR): `visual` is the TCI the source already renders as 8-bit RGB, which
+    # is why the stretch is the identity. Measured `p2/p98` over five scenes on four
+    # continents (July 2026, cloud cover below 10 %): the second percentile runs from 9
+    # over vegetation to 202 over desert, so any fixed stretch other than the identity
+    # would clip a whole climate zone. The scene-specific stretch is what `/statistics`
+    # is for — the viewer asks once per item and overwrites `rescale` (adr/0006 §5,
+    # F18); this value is only the picture before anyone touches a control.
+    default_render=DefaultRender(
+        title="True colour (TCI)",
+        assets=("visual",),
+        rescale=((0.0, 255.0), (0.0, 255.0), (0.0, 255.0)),
+        colormap_name=None,
+        expression=None,
+        # rio-tiler's own default, named rather than implied (KLAERUNGEN B10).
+        resampling="nearest",
+    ),
+    # The viewer groups the items of one acquisition day per MGRS tile into one step
+    # of the time line (Otto, 20.09.2026). `datetime` enters the key as its UTC date,
+    # `grid:code` is the MGRS tile Earth Search carries on every item of this
+    # collection. M2-07a reads this field and implements nothing of its own.
+    viewer=ViewerInfo(group_by=("datetime", "grid:code")),
     # Reachability, not health in the sense M5 will measure it: adr/0003 §10.1 got
     # HTTP 200 on /v1/collections/sentinel-2-c1-l2a, nothing beyond that.
     health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_REACHABILITY_CHECKED),

@@ -19,25 +19,30 @@ from earthx.catalog.schema import (
     discover_migrations,
     ensure_bookkeeping,
 )
-from tests.integration.conftest import is_local_host, missing_postgres_env
+from tests.integration.conftest import SHIPPED_TABLES, is_local_host, missing_postgres_env
 
 
 def _forget_migrations(conn) -> None:
     """Start from a database that has never seen these migrations.
 
-    Both tables, because ``earthx.catalog.load`` commits: after a full run the
-    database really has the bookkeeping row of the shipped migration and the table it
-    created, and a test that reuses version 002 for a file of its own would otherwise
-    read that row as "the same migration, edited".
+    Every table, because ``earthx.catalog.load`` commits: after a full run the
+    database really has the bookkeeping rows of the shipped migrations and the tables
+    they created, and a test that reuses version 002 for a file of its own would
+    otherwise read that row as "the same migration, edited".
     """
     conn.execute("DROP TABLE IF EXISTS earthx_migrations")
-    conn.execute("DROP TABLE IF EXISTS public.earthx_search_cache")
+    for table in SHIPPED_TABLES:
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
 
 
 class TestDiscovery:
-    def test_the_only_shipped_migration_is_the_search_cache(self) -> None:
-        """pgstac holds the collections; our own first table is M1-06's cache (E4)."""
-        assert [(m.version, m.name) for m in discover_migrations()] == [("002", "search_cache")]
+    def test_the_shipped_migrations_are_the_two_caches(self) -> None:
+        """pgstac holds the collections; our own tables are the two application caches:
+        the search cache of M1-06 (E4) and the statistics cache of M2-04 (adr/0006 §5)."""
+        assert [(m.version, m.name) for m in discover_migrations()] == [
+            ("002", "search_cache"),
+            ("003", "stats_cache"),
+        ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
         """A typo in a path must not read as "nothing to apply"."""
