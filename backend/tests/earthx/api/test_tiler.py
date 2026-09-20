@@ -26,7 +26,7 @@ from rio_tiler.errors import InvalidBandName, TileOutsideBounds
 
 from earthx.adapters.earth_search import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
-from earthx.api.tiler import ROUTER_PREFIX, build_app
+from earthx.api.tiler import DOWNLOAD_ROUTE, ROUTER_PREFIX, build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable, UrlRejected, check_url
 from earthx.gateway.policy import inspect_url
@@ -105,8 +105,17 @@ class TestNoFreeAddress:
         assert not [name for where, name in parameters if where == "query" and "url" in name.lower()]
 
     def test_every_path_names_a_dataset_and_an_item(self, client: TestClient) -> None:
-        """There is no route that could render without going through the catalogue."""
-        rendering = [path for path in client.app.openapi()["paths"] if path != "/health"]
+        """There is no route that could render without going through the catalogue.
+
+        The download route (M2-06) is the one exception to ``ROUTER_PREFIX``: it
+        names only the dataset in its path because the item(s) travel in the body
+        (a mosaic can list several), not because it skips the catalogue — every
+        item it touches still resolves through ``earthx_item_source`` like any
+        other route here.
+        """
+        rendering = [
+            path for path in client.app.openapi()["paths"] if path not in ("/health", DOWNLOAD_ROUTE)
+        ]
         assert rendering
         assert all(path.startswith(ROUTER_PREFIX) for path in rendering)
 

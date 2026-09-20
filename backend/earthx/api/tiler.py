@@ -28,15 +28,29 @@ bytes, which is what makes the answers cacheable in front of the process.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from rasterio.errors import RasterioError
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
+from starlette.concurrency import run_in_threadpool
 
+from earthx.access.download import (
+    AoiOutsideItems,
+    AoiTooLarge,
+    AssetCrop,
+    InvalidAoi,
+    build_download_zip,
+    check_size_cap,
+    filter_items_intersecting_aoi,
+    parse_aoi_geometry,
+)
 from earthx.access.tiles import EarthxTilerFactory
 from earthx.adapters.earth_search import (
     InvalidQuery,
@@ -46,17 +60,24 @@ from earthx.adapters.earth_search import (
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
 from earthx.gateway.gdal import gdal_options
-from earthx.readers.cog import AssetPath, asset_path
+from earthx.readers.cog import AssetPath, CogReader, asset_path
+
+LOGGER = logging.getLogger("earthx.api.tiler")
 
 # One item of one collection, the same shape the STAC API of `api` uses for the
 # metadata of that very item. The tiler answers under its own port (docker-compose),
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
+
+# The download route (M2-06) names only the dataset in its path — the item(s) and
+# the asset(s) travel in the body (a mosaic can name several of each, and an AOI
+# polygon does not belong in a query string) — so it cannot share ROUTER_PREFIX.
+DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 
 
 def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
@@ -69,23 +90,16 @@ def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
     return href
 
 
-async def dataset_asset_path(
-    request: Request,
-    dataset: Annotated[str, Path(description="dataset id of the registry")],
-    item: Annotated[str, Path(description="item id at the source")],
-    asset: Annotated[str, Query(description="asset key of the item, e.g. `visual`")],
-) -> AssetPath:
-    """Turn dataset, item and asset into a path GDAL may open — and nothing else.
+async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
+    """The item, or the ``HTTPException`` its absence or the source's failure maps to.
 
-    ``asset`` is required rather than defaulted from the registry's standard
-    visualisation: a tile URL is supposed to say what it shows (adr/0001 Z4), and a
-    default that lives in the registry would make two releases of the platform answer
-    the same URL with two pictures. The standard visualisation travels to the client
-    on the collection (``earthx:default_render``), which is where it can be a default.
+    Shared by :func:`dataset_asset_path` and the download route of M2-06 — both
+    turn a ``dataset``/``item`` pair into a STAC item through the same cached
+    ``earthx_item_source``, and a source failure means the same thing to a tile
+    request and a crop request.
     """
-    state = request.app.state
     try:
-        stac_item = await state.earthx_item_source(dataset, item)
+        return await state.earthx_item_source(dataset, item)
     except UnknownCollection:
         raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
     except UnsupportedSource as error:
@@ -106,6 +120,11 @@ async def dataset_asset_path(
         # answer about the source, and a 500 would call it our mistake.
         raise HTTPException(status_code=502, detail="the item could not be fetched") from None
 
+
+def _resolve_asset_path(
+    state: Any, stac_item: dict[str, Any], *, dataset: str, item: str, asset: str
+) -> AssetPath:
+    """The href of ``asset`` on ``stac_item``, cleared through the gateway policy."""
     href = _resolve_asset_href(stac_item, asset)
     try:
         return asset_path(href, state.earthx_policy, dataset_id=dataset, item_id=item, asset=asset)
@@ -116,6 +135,130 @@ async def dataset_asset_path(
             status_code=502,
             detail="the item points at a host this dataset does not declare (asset_hosts)",
         ) from None
+
+
+async def dataset_asset_path(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    item: Annotated[str, Path(description="item id at the source")],
+    asset: Annotated[str, Query(description="asset key of the item, e.g. `visual`")],
+) -> AssetPath:
+    """Turn dataset, item and asset into a path GDAL may open — and nothing else.
+
+    ``asset`` is required rather than defaulted from the registry's standard
+    visualisation: a tile URL is supposed to say what it shows (adr/0001 Z4), and a
+    default that lives in the registry would make two releases of the platform answer
+    the same URL with two pictures. The standard visualisation travels to the client
+    on the collection (``earthx:default_render``), which is where it can be a default.
+    """
+    state = request.app.state
+    stac_item = await _fetch_item(state, dataset, item)
+    return _resolve_asset_path(state, stac_item, dataset=dataset, item=item, asset=asset)
+
+
+class DownloadRequest(BaseModel):
+    """Body of ``POST /collections/{dataset}/download`` (M2-06, architekturplan 6.4 D3).
+
+    A POST body rather than URL parameters, unlike the tile path's Z4 rule: the
+    tile URL has to be cache-stable and CDN-able, but a crop answers once and is
+    never cached (D11), and an AOI polygon can be far larger than fits comfortably
+    in a query string. ``items`` carries more than one id only for a mosaic
+    (adr/0006 §4.2 Option M1) — a single item is simply a list of one.
+    """
+
+    items: list[str] = Field(min_length=1, max_length=64, description="item ids, one scene each")
+    assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
+    aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
+    language: str = Field(default="de", description="language of the notice file, ISO 639-1")
+
+
+async def download_crop(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    body: DownloadRequest,
+) -> StreamingResponse:
+    """The AOI crop as a ZIP of COGs plus :data:`~earthx.access.download.NOTICE_FILENAME`.
+
+    Every check that can run before an asset is opened runs first, in the order
+    M2-06's acceptance criteria list the failures: unknown dataset, licence tier,
+    a malformed AOI, an unknown item, an AOI that touches none of the given items,
+    then the size cap — only after all of that does anything reach `gateway`.
+    """
+    state = request.app.state
+    registry: DatasetRegistry = state.earthx_registry
+    try:
+        config = registry.get(dataset)
+    except UnknownDatasetError:
+        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+
+    if config.license.tier is not LicenseTier.PROCESSING:
+        # A download hands out the source's pixels, cropped but otherwise
+        # unmodified — the same tier the onboarding checklist (KLAERUNGEN B11)
+        # already requires for operators, jobs and the datacube.
+        raise HTTPException(
+            status_code=403,
+            detail=f"{dataset!r}'s licence does not permit a data export (KLAERUNGEN B11)",
+        )
+
+    try:
+        aoi = parse_aoi_geometry(body.aoi)
+    except InvalidAoi as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+    items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
+    matched = filter_items_intersecting_aoi(items, aoi)
+    if not matched:
+        raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
+
+    try:
+        check_size_cap(item_count=len(matched), asset_count=len(body.assets))
+    except AoiTooLarge as error:
+        raise HTTPException(status_code=413, detail=str(error)) from None
+
+    crops = [
+        AssetCrop(
+            asset=asset,
+            paths=tuple(
+                _resolve_asset_path(state, matched_item, dataset=dataset, item=matched_item["id"], asset=asset)
+                for matched_item in matched
+            ),
+        )
+        for asset in body.assets
+    ]
+
+    try:
+        zip_bytes = await run_in_threadpool(
+            build_download_zip,
+            config=config,
+            reader_cls=CogReader,
+            crops=crops,
+            aoi_geometry=body.aoi,
+            item_ids=[matched_item["id"] for matched_item in matched],
+            language=body.language,
+        )
+    except AoiOutsideItems as error:
+        # The bbox prefilter passed but the geometry itself misses every item's
+        # actual footprint (a bbox is not the data — MGRS tiles are rotated).
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except RioTilerError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except (RasterioError, GatewayError):
+        raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
+
+    LOGGER.info(
+        "download answered",
+        extra={
+            "dataset": dataset,
+            "items": len(matched),
+            "assets": len(body.assets),
+            "bytes": len(zip_bytes),
+        },
+    )
+    return StreamingResponse(
+        iter([zip_bytes]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{dataset}-crop.zip"'},
+    )
 
 
 def gdal_environment(request: Request) -> dict[str, str]:
@@ -177,6 +320,9 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     app.state.earthx_policy = policy
     app.state.earthx_gdal_options = gdal_options(policy)
     app.state.earthx_item_source = None
+    # The download route (M2-06) needs the dataset's licence, title and terms —
+    # nothing the path dependency above already carries.
+    app.state.earthx_registry = registry
 
     factory = EarthxTilerFactory(
         path_dependency=dataset_asset_path,
@@ -186,6 +332,12 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
         name="tiles",
     )
     app.include_router(factory.router, prefix=ROUTER_PREFIX, tags=["Tiles"])
+    app.add_api_route(
+        DOWNLOAD_ROUTE,
+        download_crop,
+        methods=["POST"],
+        tags=["Download"],
+    )
 
     @app.exception_handler(TileOutsideBounds)
     async def _tile_outside(request: Request, error: TileOutsideBounds):
@@ -215,4 +367,12 @@ def _problem(status_code: int, detail: str) -> JSONResponse:
 app = build_app()
 
 
-__all__ = ["ROUTER_PREFIX", "app", "build_app", "dataset_asset_path"]
+__all__ = [
+    "DOWNLOAD_ROUTE",
+    "ROUTER_PREFIX",
+    "DownloadRequest",
+    "app",
+    "build_app",
+    "dataset_asset_path",
+    "download_crop",
+]
