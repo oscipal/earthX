@@ -1,4 +1,6 @@
+import type { CoverageHistogramPoint } from '../api';
 import { parseAoiFile } from '../aoiFile';
+import { completenessNote } from '../coverage';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
@@ -81,6 +83,81 @@ function DatasetSelector() {
   );
 }
 
+// A bare bar row, one bar per monthly bucket (D22 — Earth Search ignores a
+// finer interval). `dateFrom`/`dateTo` are `YYYY-MM-DD` or empty; a bucket
+// counts as "in range" by comparing year-month, since that is exactly the
+// bucket's own resolution.
+function CoverageHistogram({
+  histogram,
+  dateFrom,
+  dateTo,
+}: {
+  histogram: CoverageHistogramPoint[];
+  dateFrom: string;
+  dateTo: string;
+}) {
+  const max = Math.max(1, ...histogram.map((b) => b.n));
+  const fromMonth = dateFrom.slice(0, 7);
+  const toMonth = dateTo.slice(0, 7);
+  return (
+    <div className="coverage-histogram" role="img" aria-label="Acquisitions per month">
+      {histogram.map((bucket) => {
+        const month = bucket.t.slice(0, 7);
+        const inRange = (!fromMonth || month >= fromMonth) && (!toMonth || month <= toMonth);
+        return (
+          <span
+            key={bucket.t}
+            className={`histogram-bar${inRange ? ' in-range' : ''}`}
+            style={{ height: `${Math.max(2, (bucket.n / max) * 100)}%` }}
+            title={`${month}: ${bucket.n}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function CoverageControls() {
+  const showCoverage = useAppStore((s) => s.showCoverage);
+  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
+  const coverage = useAppStore((s) => s.coverage);
+  const coverageLoading = useAppStore((s) => s.coverageLoading);
+  const coverageError = useAppStore((s) => s.coverageError);
+  const dateFrom = useAppStore((s) => s.dateFrom);
+  const dateTo = useAppStore((s) => s.dateTo);
+  const datasetId = useAppStore((s) => s.datasetId);
+  if (!datasetId) return null;
+
+  const note = coverage ? completenessNote(coverage) : null;
+
+  return (
+    <div className="coverage-controls">
+      <label className="coverage-toggle">
+        <input type="checkbox" checked={showCoverage} onChange={() => toggleCoverage()} />
+        Coverage heatmap
+      </label>
+      {showCoverage && coverageLoading && <p className="hint-text">Loading coverage…</p>}
+      {showCoverage && coverageError && <p className="hint-text error">{coverageError}</p>}
+      {showCoverage && coverage && (
+        <div className="coverage-legend">
+          <div className="legend-scale">
+            <span className="legend-gradient" />
+            <span className="legend-scale-labels">
+              <span>1</span>
+              <span>{coverage.max_count}</span>
+            </span>
+          </div>
+          <p className="hint-text">Aufnahmen mit Mittelpunkt in der Zelle</p>
+          {note && <p className="hint-text coverage-note">{note}</p>}
+          {coverage.histogram.length > 0 && (
+            <CoverageHistogram histogram={coverage.histogram} dateFrom={dateFrom} dateTo={dateTo} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ControlPanel() {
   const aoi = useAppStore((s) => s.aoi);
   const dateFrom = useAppStore((s) => s.dateFrom);
@@ -108,6 +185,8 @@ export default function ControlPanel() {
 
       <label className="field-label">Dataset</label>
       <DatasetSelector />
+
+      <CoverageControls />
 
       <label className="field-label">Acquisition date</label>
       <div className="date-row">
