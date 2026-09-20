@@ -5,7 +5,11 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 pystac-client>=0.8
 rasterio>=1.3
-rio-tiler>=6.4
+# Exact pin, not a range (adr/0006 §5 "Zu Frage 1"): rio-tiler is the one package in
+# the tile path that brings an HTTP client of its own (`httpx2`, through
+# `rio_tiler.io.stac`, measured in §3.2), and the reader interface titiler builds on
+# is its public surface. A minor bump there moves both at once.
+rio-tiler==9.4.6
 rio-cogeo>=5.2
 shapely>=2.0
 httpx>=0.27
@@ -26,6 +30,13 @@ pypgstac[psycopg]==0.9.12
 # verified against the pypgstac 0.9.12 schema pinned above, against a real
 # Postgres, not just read off a changelog.
 stac-fastapi.pgstac==6.4.1
+# The tile path of M2-04 (docs/adr/0006-kachel-pfad.md, Option B). Exact pin, and
+# deliberately only `titiler.core`: `titiler.application` and
+# `titiler.mosaic[mosaicjson]` bring `httpx2`/`boto3`, `titiler.xarray` brings
+# `obstore` — each an HTTP client that would reach past `gateway` (§3.2). `titiler.core`
+# itself imports none. The version was five days old when it was measured, which is
+# why the pin is necessary rather than tidy (§8 point 6).
+titiler.core==2.3.0
 # FederatingCoreCrudClient's own registry check and search cache (M1-07) need
 # a pool, not a single connection; pypgstac[psycopg] above pulls in psycopg
 # itself already, this only adds the pooling extra.

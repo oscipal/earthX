@@ -230,10 +230,20 @@ source_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+; `httpx2` and `obstore` joined the list in M2-04 (adr/0006 §5 "Zu Frage 6",
+; Otto 20.09.2026): `rio-tiler` fetches STAC items over `httpx2`, and
+; `titiler.xarray` would bring `obstore` with M2-09. Both are clients, so both
+; belong here — a tightening, not a loosening. What this list cannot catch is
+; `rio_tiler.io.stac` itself: import-linter refuses a subpackage of an external
+; package as a forbidden module ("subpackages of external packages are not valid"),
+; so that one is checked over the syntax tree in
+; backend/tests/earthx/test_no_outbound_outside_gateway.py.
 forbidden_modules =
     httpx
+    httpx2
     requests
     urllib
     pystac_client
     aiohttp
     boto3
+    obstore

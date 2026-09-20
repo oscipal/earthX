@@ -116,14 +116,32 @@ services:
   tiler:
     build:
       context: ./backend
-    command: ["uvicorn", "earthx.access.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # M2-04: the entrypoint moved from `earthx.access.main` to `earthx.api.tiler`.
+    # `access` may not import `gateway` (architekturplan.md 3.1), but the tile path
+    # needs the allowlist, check_url and the GDAL configuration — so `api` composes
+    # them (adr/0006 §5.1).
+    command: ["uvicorn", "earthx.api.tiler:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8001:8000"
+    environment:
+      # Like `api` above: the tiler reads the item cache and the statistics cache of
+      # adr/0006 from the same Postgres. Both caches are optional (a miss is slower,
+      # never wrong), but the process opens the pool at startup — M1-07 showed that a
+      # service without these variables does not come up at all.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      # The statistics cache table comes from our own migration 003, which
+      # catalog-load applies.
+      catalog-load:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s

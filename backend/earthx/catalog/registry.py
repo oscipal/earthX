@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from types import MappingProxyType
 
@@ -168,11 +168,19 @@ class AccessInfo:
 
 @dataclass(frozen=True, slots=True)
 class SourceInfo:
-    """Where the items come from. adr/0005 rule I branches on this per collection."""
+    """Where the items come from. adr/0005 rule I branches on this per collection.
+
+    ``asset_hosts`` names the hosts the *assets* of this dataset lie on, which is a
+    different question from where the catalogue answers (adr/0006 §3.3): the gateway
+    builds its allowlist from both, and without the asset hosts every read of a COG
+    is refused while the search still works. Hosts, not URLs — one entry per name,
+    exactly as it appears in an asset href.
+    """
 
     adapter: AdapterKind
     endpoint: str
     source_collection_id: str
+    asset_hosts: tuple[str, ...]
     harvest_run: str | None
 
 
@@ -191,18 +199,128 @@ class CoverageInfo:
 
 @dataclass(frozen=True, slots=True)
 class DefaultRender:
-    """Standard visualisation (onboarding checklist, point 8)."""
+    """Standard visualisation (onboarding checklist, point 8; adr/0001 FZ7).
 
-    bands: tuple[str, ...]
-    stretch: tuple[float, float]
-    colormap: str | None
+    The field names follow the STAC ``render`` extension, on adr/0006 §5's
+    recommendation: the same values can later be published as ``renders`` on our own
+    collection without a translation step, and they are the parameters the tile URL
+    carries anyway (``assets``, ``rescale``, ``colormap_name``, ``expression``,
+    ``resampling`` — adr/0006 §5 "Zu Frage 3").
+
+    ``rescale`` is the *starting point* of the display controls, not a fixed stretch:
+    the viewer asks ``/statistics`` for the item it shows and overwrites it (F18).
+    """
+
+    title: str
+    assets: tuple[str, ...]
+    rescale: tuple[tuple[float, float], ...] | None
+    colormap_name: str | None
+    expression: str | None
+    resampling: str
 
     def __post_init__(self) -> None:
-        if not self.bands:
-            raise ConfigError("default_render needs at least one band")
-        low, high = self.stretch
-        if low >= high:
-            raise ConfigError(f"default_render stretch {self.stretch} is empty or inverted")
+        if not self.assets and not self.expression:
+            raise ConfigError("default_render needs an asset or an expression")
+        for low, high in self.rescale or ():
+            if low >= high:
+                raise ConfigError(f"default_render rescale ({low}, {high}) is empty or inverted")
+        if self.colormap_name is not None and len(self.assets) > 1:
+            raise ConfigError(
+                "default_render: a colormap paints one band, so it cannot go with several assets"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ViewerInfo:
+    """What the viewer takes from the catalogue instead of from its own code.
+
+    M2 fills one thing, and the field stays that narrow until something else is
+    actually needed: ``group_by``, the key that turns a list of items into the steps
+    of the time line and into the scenes of one mosaic (Inventar F5, F11).
+
+    No default (KLAERUNGEN B10): a dataset whose items nobody has looked at has no
+    grouping, and guessing one would group scenes that do not belong together.
+
+    **``group_by`` — item property names, in the order in which they make the key.**
+    ``properties.`` is implied and must not be written. One rule goes with the field,
+    and it is the only one a reader has to know:
+
+        A property that holds a STAC instant enters the key as its **UTC date**.
+
+    Because a time line groups an acquisition day, not a second — and because the
+    date is the one in UTC, an instant written in another offset is grouped by the
+    day it falls on in UTC, not by its local day. :func:`group_key` is the reference
+    implementation of exactly this rule, and the test beside it is what keeps the
+    sentence above and the behaviour from drifting apart; M2-07a reads the field,
+    mirrors that function and decides nothing of its own.
+
+    For Sentinel-2 the key is the acquisition day plus the MGRS tile:
+    ``("datetime", "grid:code")``.
+    """
+
+    group_by: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.group_by:
+            raise ConfigError("viewer.group_by needs at least one property (KLAERUNGEN B10)")
+        if len(set(self.group_by)) != len(self.group_by):
+            raise ConfigError(f"viewer.group_by repeats a property: {self.group_by}")
+        for name in self.group_by:
+            if not name or name != name.strip():
+                raise ConfigError(f"viewer.group_by entry {name!r} is not a property name")
+            if name.startswith("properties."):
+                raise ConfigError(
+                    f"viewer.group_by entry {name!r} carries the `properties.` prefix, which is implied"
+                )
+
+
+class MissingProperty(LookupError):
+    """An item does not carry a property the grouping key is built from.
+
+    Its own type, and never silently skipped: a key that quietly loses one of its
+    parts would merge two groups that do not belong together, and the time line
+    would show one step where there are two.
+    """
+
+
+def group_key(item: Mapping[str, object], viewer: ViewerInfo) -> tuple[str, ...]:
+    """The grouping key of one item, following the rule of :class:`ViewerInfo`.
+
+    Each entry of ``group_by`` becomes one part of the key: a STAC instant as its
+    UTC date (``YYYY-MM-DD``), anything else as its own text. The parts stay in the
+    order the registry names them, because the key is read by people too.
+    """
+    properties = item.get("properties")
+    if not isinstance(properties, Mapping):
+        raise MissingProperty("the item carries no properties")
+    key: list[str] = []
+    for name in viewer.group_by:
+        if name not in properties:
+            raise MissingProperty(name)
+        key.append(_key_part(properties[name]))
+    return tuple(key)
+
+
+def _key_part(value: object) -> str:
+    """A STAC instant as its UTC date, everything else as its own text."""
+    if isinstance(value, datetime):
+        return _utc_date(value)
+    if isinstance(value, str):
+        try:
+            return _utc_date(datetime.fromisoformat(value))
+        except ValueError:
+            # Not an instant — a grid code, a platform name, a bare date. It is the
+            # key part as it stands; guessing a format for it is how a key starts
+            # meaning two things.
+            return value
+    return str(value)
+
+
+def _utc_date(instant: datetime) -> str:
+    """The date in UTC. An instant without an offset is read as UTC, as STAC writes them."""
+    if instant.tzinfo is not None:
+        instant = instant.astimezone(timezone.utc)
+    return instant.date().isoformat()
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +402,8 @@ class DatasetConfig:
     # None where the standard visualisation is not defined yet. For Sentinel-2 L2A
     # that is deliberate: m1-fundament.md §2 puts it in M2.
     default_render: DefaultRender | None
+    # None where nobody has decided how the viewer groups the items of this dataset.
+    viewer: ViewerInfo | None
     health: HealthInfo
 
     def __post_init__(self) -> None:
@@ -353,6 +473,17 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: endpoint {self.source.endpoint!r} is not https (KLAERUNGEN B8)"
             )
+        for host in self.source.asset_hosts:
+            # A host, not a URL: what goes into the allowlist is compared against the
+            # host of an href, so a scheme, a path or a port here would never match and
+            # would quietly close the read path instead of opening it (adr/0006 §3.3).
+            # https itself is not a choice per dataset — `gateway.inspect_url` refuses
+            # every other scheme for everyone.
+            if not host or host != host.strip().lower() or any(c in host for c in ":/?#@ ") or "." not in host:
+                raise ConfigError(
+                    f"{self.dataset_id}: asset_hosts entry {host!r} is not a bare host name "
+                    "(no scheme, no path, no port, lower case)"
+                )
 
 
 class DatasetRegistry:

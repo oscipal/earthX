@@ -32,6 +32,11 @@ def policy_from_registry(registry: DatasetRegistry) -> Policy:
     automatically one the gateway may reach, and nothing else is.
     """
     hosts = {host_of(config.source.endpoint) for config in registry}
+    # The assets lie on a different host from the catalogue, and without this line the
+    # search works while every read of a COG is refused (adr/0006 §3.3, D12). The field
+    # has no default: a dataset that names no asset host opens nothing, which is the
+    # safe end of the range.
+    hosts |= {host for config in registry for host in config.source.asset_hosts}
     return Policy(allowed_hosts=frozenset(hosts))
 
 
