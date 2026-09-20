@@ -1,0 +1,24 @@
+{
+  "aggregations": [
+    {"name": "total_count", "data_type": "integer", "value": 42},
+    {
+      "name": "grid_geotile_frequency",
+      "data_type": "frequency_distribution",
+      "overflow": 0,
+      "buckets": [
+        {"key": "8/133/84", "data_type": "string", "frequency": 25},
+        {"key": "8/137/84", "data_type": "string", "frequency": 17}
+      ]
+    },
+    {
+      "name": "datetime_frequency",
+      "data_type": "frequency_distribution",
+      "overflow": 0,
+      "buckets": [
+        {"key": "2024-01-01T00:00:00.000Z", "data_type": "datetime", "frequency": 20},
+        {"key": "2024-02-01T00:00:00.000Z", "data_type": "datetime", "frequency": 22}
+      ]
+    }
+  ],
+  "links": [{"rel": "self", "type": "application/json", "href": "https://earth-search.aws.element84.com/v1/aggregate"}]
+}

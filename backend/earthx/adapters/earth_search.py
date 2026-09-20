@@ -177,24 +177,24 @@ async def search_items(
     ``cache=None`` is a valid call: without a cache this is slower, never wrong (E5).
     """
     params = params or SearchParams()
-    config = _resolve(dataset_id, registry)
+    config = resolve_dataset(dataset_id, registry)
     fingerprint = _search_fingerprint(dataset_id, params)
     marker = None if params.page_token is None else _decode_page_token(params.page_token, dataset_id, fingerprint)
 
     key = _search_cache_key(fingerprint, marker)
-    cached = await _cache_get(cache, key)
+    cached = await cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
         return _page(dataset_id, fingerprint, cached, from_cache=True)
 
     response = await gateway.post_json(
-        f"{_endpoint(config)}/search",
+        f"{endpoint_of(config)}/search",
         json=_search_body(config, params, marker),
         # A search is a read; repeating it after a 503 is safe. The gateway leaves that
         # judgement to the caller, because only the caller knows what the POST means.
         retry=True,
     )
     stored = _storable(response.json())
-    await _cache_set(cache, key, stored, ttl_s=_search_ttl(params), dataset_id=dataset_id)
+    await cache_set(cache, key, stored, ttl_s=ttl_for_window(params.end), dataset_id=dataset_id)
     return _page(dataset_id, fingerprint, stored, from_cache=False)
 
 
@@ -211,26 +211,26 @@ async def get_item(
     A missing item stays the source's ``404``: the gateway carries the status code
     through unchanged, which is exactly what ``pystac_client`` would have lost.
     """
-    config = _resolve(dataset_id, registry)
+    config = resolve_dataset(dataset_id, registry)
     if not _ITEM_ID.match(item_id):
         raise InvalidQuery("item id contains characters we do not put into a URL path")
 
     key = _item_cache_key(dataset_id, item_id)
-    cached = await _cache_get(cache, key)
+    cached = await cache_get(cache, key)
     if isinstance(cached, dict) and isinstance(cached.get("item"), dict):
         return cached["item"]
 
-    url = f"{_endpoint(config)}/collections/{config.source.source_collection_id}/items/{item_id}"
+    url = f"{endpoint_of(config)}/collections/{config.source.source_collection_id}/items/{item_id}"
     item = (await gateway.get(url)).json()
     if not isinstance(item, dict):
         # Same reason as for a search answer: what is not an item must not become one
         # by being passed on, and must not be cached as one either.
         raise UpstreamShapeError("item answer is not a JSON object")
-    await _cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
+    await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
 
 
-def _resolve(dataset_id: str, registry: DatasetRegistry) -> DatasetConfig:
+def resolve_dataset(dataset_id: str, registry: DatasetRegistry) -> DatasetConfig:
     """Our own catalogue decides whether a collection exists (adr/0005 rule I)."""
     try:
         config = registry.get(dataset_id)
@@ -241,7 +241,7 @@ def _resolve(dataset_id: str, registry: DatasetRegistry) -> DatasetConfig:
     return config
 
 
-def _endpoint(config: DatasetConfig) -> str:
+def endpoint_of(config: DatasetConfig) -> str:
     return config.source.endpoint.rstrip("/")
 
 
@@ -249,13 +249,18 @@ def _stac_instant(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _datetime_query(params: SearchParams) -> str | None:
-    """The time window as STAC writes it, with ``..`` for an open end."""
-    if params.start is None and params.end is None:
+def stac_interval(start: datetime | None, end: datetime | None) -> str | None:
+    """The time window as STAC writes it, with ``..`` for an open end.
+
+    Takes the two instants rather than a ``SearchParams``, because the coverage
+    aggregation of M2-05 asks the same source the same question with a query object
+    of its own (``earthx/adapters/earth_search_coverage.py``).
+    """
+    if start is None and end is None:
         return None
-    start = ".." if params.start is None else _stac_instant(params.start)
-    end = ".." if params.end is None else _stac_instant(params.end)
-    return f"{start}/{end}"
+    low = ".." if start is None else _stac_instant(start)
+    high = ".." if end is None else _stac_instant(end)
+    return f"{low}/{high}"
 
 
 def _search_fingerprint(dataset_id: str, params: SearchParams) -> str:
@@ -268,7 +273,7 @@ def _search_fingerprint(dataset_id: str, params: SearchParams) -> str:
         {
             "dataset": dataset_id,
             "bbox": None if params.bbox is None else [float(value) for value in params.bbox],
-            "datetime": _datetime_query(params),
+            "datetime": stac_interval(params.start, params.end),
             "limit": params.limit,
         },
         separators=(",", ":"),
@@ -290,12 +295,16 @@ def _item_cache_key(dataset_id: str, item_id: str) -> str:
     return hashlib.sha256(f"item:{dataset_id}:{item_id}".encode()).hexdigest()
 
 
-def _search_ttl(params: SearchParams, now: datetime | None = None) -> float:
-    """adr/0005 rule II: only a window whose end is well behind us has stopped moving."""
+def ttl_for_window(end: datetime | None, now: datetime | None = None) -> float:
+    """adr/0005 rule II: only a window whose end is well behind us has stopped moving.
+
+    Otto took the same two lifetimes over for the coverage aggregation on 19.09.2026
+    (adr/0004 §5), so this takes the end of the window rather than a search object.
+    """
     now = now or datetime.now(timezone.utc)
-    if params.end is None:
+    if end is None:
         return TTL_OPEN_EDGE_S
-    return TTL_CLOSED_S if params.end < now - CLOSED_WINDOW else TTL_OPEN_EDGE_S
+    return TTL_CLOSED_S if end < now - CLOSED_WINDOW else TTL_OPEN_EDGE_S
 
 
 def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None) -> dict[str, Any]:
@@ -306,7 +315,7 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     }
     if params.bbox is not None:
         body["bbox"] = [float(value) for value in params.bbox]
-    window = _datetime_query(params)
+    window = stac_interval(params.start, params.end)
     if window is not None:
         body["datetime"] = window
     if marker is not None:
@@ -395,7 +404,7 @@ def _page(dataset_id: str, fingerprint: str, stored: CacheValue, *, from_cache: 
     )
 
 
-async def _cache_get(cache: SearchCache | None, key: str) -> CacheValue | None:
+async def cache_get(cache: SearchCache | None, key: str) -> CacheValue | None:
     """A cached value, or None. Callers check its shape: a row written by an older
     release, or damaged, counts as a miss rather than as an answer (E5)."""
     if cache is None:
@@ -409,7 +418,7 @@ async def _cache_get(cache: SearchCache | None, key: str) -> CacheValue | None:
         return None
 
 
-async def _cache_set(
+async def cache_set(
     cache: SearchCache | None, key: str, value: CacheValue, *, ttl_s: float, dataset_id: str
 ) -> None:
     if cache is None:

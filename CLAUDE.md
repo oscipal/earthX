@@ -80,7 +80,7 @@ Branch-Namen und PR-Titel auf **Englisch**.
 
 ## Befehle
 
-Backend (aus `backend/`, laut `adr/0002` §6 und `.github/workflows/ci.yml`):
+Backend (aus dem Repo-Wurzelverzeichnis, laut `adr/0002` §6 und `.github/workflows/ci.yml`; aus `backend/` sammelt `pytest` auch `tests_live` ein und geht ins Netz):
 - Lint: `ruff check backend`
 - Tests: `pytest`
 - Importregeln: `lint-imports --config .importlinter`

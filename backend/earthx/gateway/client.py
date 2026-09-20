@@ -23,6 +23,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -33,6 +34,8 @@ from earthx.gateway.errors import (
     UpstreamError,
     UpstreamTimeout,
     UpstreamUnreachable,
+    UrlRejected,
+    UrlTooLong,
 )
 from earthx.gateway.policy import Policy
 from earthx.gateway.resolver import resolve_host
@@ -145,7 +148,7 @@ class Gateway:
         content: bytes | None = None,
         retry: bool = True,
     ) -> GatewayResponse:
-        target = str(httpx.URL(url, params=params)) if params else url
+        target = self._assemble(url, params)
         redirects = 0
         while True:
             checked = check_url(target, self._policy, resolve=self._resolve)
@@ -171,6 +174,36 @@ class Gateway:
                 # (found reviewing M1-06). 307 and 308 keep method and body, so they
                 # are followed as before.
                 raise UpstreamError(response.status_code, "redirect would drop the request body")
+
+    def _assemble(self, url: str, params: Mapping[str, Any] | None) -> str:
+        """Put the query string on, and name what is wrong with the result ourselves.
+
+        ``httpx`` has a URL limit of its own and raises ``InvalidURL`` past it —
+        before ``check_url`` ever sees the address. It raises the *same* error for a
+        bad host, a bad port and a malformed path, so catching it and calling every
+        case "too long" would answer a caller's question wrongly: ``adr/0004`` §3.4
+        has the coverage adapter simplify its AOI on ``UrlTooLong``, and it would then
+        keep shrinking an area that was never the problem.
+
+        So the length is measured here, before ``httpx`` is asked, and only that is
+        ``UrlTooLong``. Whatever ``httpx`` still objects to afterwards is a malformed
+        URL and says so.
+        """
+        if not params:
+            return url
+        query = urlencode({str(key): str(value) for key, value in params.items()})
+        length = len(url.encode("utf-8")) + len("?") + len(query.encode("utf-8"))
+        if length > self._policy.max_url_bytes:
+            # Refused on our own limit, which is below the one httpx and the source
+            # enforce — so the caller always gets the error it is written to handle.
+            raise UrlTooLong(length, self._policy.max_url_bytes)
+        try:
+            return str(httpx.URL(url, params=params))
+        except httpx.InvalidURL as error:
+            # Not a length: httpx says the same for a bad host, port or path. Its text
+            # can quote the offending component, and no error here repeats a URL
+            # (errors.py) — so the reason is named, not the value.
+            raise UrlRejected("URL cannot be assembled from these parameters") from error
 
     async def _attempt(
         self,

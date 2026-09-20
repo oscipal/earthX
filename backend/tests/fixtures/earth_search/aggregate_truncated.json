@@ -1,0 +1,16 @@
+{
+  "aggregations": [
+    {"name": "total_count", "data_type": "integer", "value": 90},
+    {
+      "name": "grid_geotile_frequency",
+      "data_type": "frequency_distribution",
+      "overflow": 0,
+      "buckets": [
+        {"key": "8/133/84", "data_type": "string", "frequency": 25},
+        {"key": "8/137/84", "data_type": "string", "frequency": 17}
+      ]
+    },
+    {"name": "datetime_frequency", "data_type": "frequency_distribution", "overflow": 0, "buckets": []}
+  ],
+  "links": [{"rel": "self", "type": "application/json", "href": "https://earth-search.aws.element84.com/v1/aggregate"}]
+}
