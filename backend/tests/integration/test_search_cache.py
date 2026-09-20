@@ -21,6 +21,7 @@ from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
 from ..earthx.adapters.conftest import load
+from .conftest import SHIPPED_TABLES
 
 pytestmark = pytest.mark.anyio
 
@@ -36,7 +37,8 @@ async def cache(aconn: psycopg.AsyncConnection) -> PostgresSearchCache:
     suite runs the SQL M1-06 ships. It starts from a database that has never seen it,
     because ``earthx.catalog.load`` commits — so a full run leaves the table behind.
     """
-    await aconn.execute("DROP TABLE IF EXISTS public.earthx_search_cache")
+    for table in SHIPPED_TABLES:
+        await aconn.execute(f"DROP TABLE IF EXISTS {table}")
     for migration in discover_migrations():
         await aconn.execute(migration.sql)
     return PostgresSearchCache(aconn)

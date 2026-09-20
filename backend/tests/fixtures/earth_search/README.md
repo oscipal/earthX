@@ -15,3 +15,15 @@ eingehalten. Wer hier eine Datei ergänzt, schreibt sie also von Hand.
 **Was sie deshalb nicht können:** belegen, dass die Quelle noch so antwortet. Genau
 dafür gibt es den zeitgesteuerten Live-Smoke-Test (`backend/tests_live/`, T-D laut
 `adr/0002` §2).
+
+## `item_asset_hosts.json`
+
+Ebenfalls von Hand geschrieben, für den Lesepfad aus M2-04. Echt ist daran genau
+**ein** Wert: der Asset-Host `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`,
+den `docs/adr/0006-kachel-pfad.md` §3.7 an der Quelle gemessen und im Dokument
+festgehalten hat. Item-ID, Pfad, Zeit und Ausdehnung sind erfunden.
+
+Der Asset `elsewhere` zeigt bewusst auf `sentinel-cogs…amazonaws.com` — den Host der
+**älteren** Collection (§3.7). Er steht nicht in der Registry und muss deshalb an
+`gateway` scheitern; ohne ihn ließe sich nicht zeigen, dass die Allowlist aus der
+Registry wirklich zählt und nicht bloß jeden AWS-Bucket durchlässt.
