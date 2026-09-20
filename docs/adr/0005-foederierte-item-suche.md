@@ -455,6 +455,9 @@ eigenen Items gibt. Mit M3 neu zu prüfen. Das ist Regel VI.
    vorgesehen, in M1 aber nicht auf die Probe zu stellen: Es gibt vorerst nur
    eine Collection, und die ist föderiert. Der Fall wird erst mit dem dritten
    Inkrement (`architekturplan.md` 15.1) real.
+   **Nachtrag 2026-09-20 (D8):** Mit dem zweiten Datensatz in M2 bleibt die
+   gemischte Suche weiterhin abgelehnt (`400`); der Viewer sucht je Datensatz.
+   Umgesetzt wird sie erst mit eigenen Items in M3, wie Regel I es vorsieht.
 5. **Sortierung.** Dass Earth Search ohne `sortby` nach `datetime` absteigend
    sortiert, ist aus der Seitenmarke abgelesen, nicht dokumentiert gefunden
    **[A]**. Wenn unsere API eine Sortierung zusichert, muss sie sie ausdrücklich

@@ -118,15 +118,30 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 | `api.github.com`, `github.com` | `nominatim.openstreetmap.org`, `tile.openstreetmap.org` |
 | Ubuntu-Archiv (`apt`) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
 | `mcr.microsoft.com` | |
-| `sentinel-cogs.s3.us-west-2.amazonaws.com` (Assets des ersten Datensatzes) | |
+| `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` (tatsächlicher Asset-Host von `sentinel-2-c1-l2a`, Beleg `adr/0006`) | |
+| `objects.eodc.eu` (Beleg `adr/0007`) | `data.eodc.eu`, `download.user.eopf.eodc.eu` (Beleg `adr/0007`) |
 
 **Stand 19.09.2026: Earth Search v1 ist erreichbar.** Die Tabelle oben führte
 `earth-search.aws.element84.com` bis dahin als gesperrt; das war der Stand der
 Messung vom 18.09.2026, **vor** der Egress-Freigabe aus `adr/0003` §11. Seit dem
 19.09.2026 ist der Host in mehreren Sitzungen gemessen — `adr/0004` §3 und
-`adr/0005` §3 beruhen auf über 100 Metadaten-Anfragen dorthin. Zusammen mit
-`sentinel-cogs...amazonaws.com` ist damit der Weg des ersten Datensatzes in der
+`adr/0005` §3 beruhen auf über 100 Metadaten-Anfragen dorthin. Zusammen mit dem
+tatsächlichen Asset-Host ist damit der Weg des ersten Datensatzes in der
 Cloud-Sitzung vollständig offen: Metadaten und Assets.
+
+**Widerspruch beim Asset-Host von `sentinel-2-c1-l2a` — aufgelöst (2026-09-20,
+`adr/0006`, PR #34):** Frühere Fassungen dieser Tabelle führten
+`sentinel-cogs.s3.us-west-2.amazonaws.com` als den Asset-Host des ersten
+Datensatzes. Gemessen und am Code geklärt: Die Assets von `sentinel-2-c1-l2a`
+liegen auf `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`.
+`sentinel-cogs...amazonaws.com` gehört zur **älteren** Earth-Search-Collection
+`sentinel-2-l2a`, die Collection 1 ablöst (adr/0003 §3, Option B) — nicht zum
+Datensatz, den `earthx` führt. Die Tabelle oben ist entsprechend korrigiert.
+
+**EOPF-Hosts (2026-09-20, `adr/0007`, PR #35):** `objects.eodc.eu` ist
+erreichbar. `data.eodc.eu` und `download.user.eopf.eodc.eu` sind gesperrt.
+`stac.eopf.copernicus.eu` bleibt wie oben gesperrt; Details und die Folgen für
+den Zarr-Kandidaten stehen in `adr/0007`.
 
 Das ändert nichts an der Testaufteilung. **Kein Geocoder ist erreichbar**, und
 für EOPF (`stac.eopf.copernicus.eu`) und CDSE gilt die Sperre unverändert. Die

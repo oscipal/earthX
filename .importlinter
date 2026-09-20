@@ -10,6 +10,17 @@
 ; with that table.
 ;
 ; Run locally from the repo root: PYTHONPATH=backend lint-imports --config .importlinter
+;
+; M2-01 (ENTSCHEIDUNGSLOG 2026-09-20, "Importverträge zählen direkte Importe"):
+; the nine module-boundary contracts below (gateway through identity) now set
+; `allow_indirect_imports = True`, so only a *direct* import of a forbidden
+; module is a violation. Column 3 of 3.1 allows chains such as
+; `access -> readers -> gateway` and `processing -> catalog -> gateway`; with
+; the default chain-counting behaviour those were indistinguishable from a
+; direct `access -> gateway` import and could never be satisfied once
+; `readers`/`catalog` gained content. `datasets-isolated` and
+; `no-database-in-worker-core` keep counting chains: for KLAERUNGEN B9 the
+; chain itself (e.g. `processing -> catalog -> psycopg`) is the violation.
 
 [importlinter]
 root_package = earthx
@@ -18,6 +29,7 @@ include_external_packages = True
 [importlinter:contract:gateway]
 name = gateway imports nothing domain-specific
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.gateway
 forbidden_modules =
@@ -35,6 +47,7 @@ forbidden_modules =
 [importlinter:contract:catalog]
 name = catalog imports only gateway
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.catalog
 forbidden_modules =
@@ -51,6 +64,7 @@ forbidden_modules =
 [importlinter:contract:adapters]
 name = adapters import only gateway and catalog
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.adapters
 forbidden_modules =
@@ -66,6 +80,7 @@ forbidden_modules =
 [importlinter:contract:readers]
 name = readers import only gateway
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.readers
 forbidden_modules =
@@ -82,6 +97,7 @@ forbidden_modules =
 [importlinter:contract:access]
 name = access imports only readers and catalog
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.access
 forbidden_modules =
@@ -97,6 +113,7 @@ forbidden_modules =
 [importlinter:contract:processing]
 name = processing imports only access, readers and catalog
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.processing
 forbidden_modules =
@@ -111,6 +128,7 @@ forbidden_modules =
 [importlinter:contract:jobs]
 name = jobs import only processing
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.jobs
 forbidden_modules =
@@ -127,6 +145,7 @@ forbidden_modules =
 [importlinter:contract:discovery]
 name = discovery imports only adapters, catalog and gateway
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.discovery
 forbidden_modules =
@@ -141,6 +160,7 @@ forbidden_modules =
 [importlinter:contract:identity]
 name = identity imports nothing else
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     earthx.identity
 forbidden_modules =
