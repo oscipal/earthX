@@ -3,11 +3,13 @@ import { create } from 'zustand';
 import * as api from './api';
 import type { ItemPage, SearchQuery } from './api';
 import type { DatasetOption } from './datasets';
-import { datasetsFrom, quicklookAsset } from './datasets';
+import { datasetsFrom, defaultRenderOf, quicklookAsset } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import { polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
+import { buildTileUrl } from './mapLayers';
+import { autoRescale } from './render';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -64,18 +66,22 @@ interface AppState {
 
   // --- ui layout ---
   panelCollapsed: boolean; // left control panel slid off to the left
-  // Full-resolution viewing is 07b's job (tiles, render controls). Until then
-  // this stays false and `downloaded` stays empty, so the viewer only ever
-  // shows quicklooks — MapView's rendering branch for it is simply never hit.
+  // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
+  // swaps ResultsPanel/ViewBar for ViewerControls (App.tsx).
   focusMode: boolean;
   showDownloaded: boolean;
+  focusLoading: boolean; // fetching statistics while entering focus / "auto"
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
   layerManagerOpen: boolean;
 
-  // --- render params for a full-res raster (07b builds the controls for it) ---
+  // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
+  // Pending stretch/colormap edits, not yet committed to `appliedRender`.
+  pendingColormapName: string; // '' = none
+  pendingVmin: string;
+  pendingVmax: string;
 
   // --- data ---
   config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
@@ -117,6 +123,14 @@ interface AppState {
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
+  enterFocus: () => Promise<void>;
+  exitFocus: () => void;
+  toggleDownloaded: () => void;
+  setPendingColormapName: (v: string) => void;
+  setPendingVmin: (v: string) => void;
+  setPendingVmax: (v: string) => void;
+  applyRender: () => void;
+  autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
   focusItem: (id: string) => void;
@@ -142,11 +156,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   panelCollapsed: false,
   focusMode: false,
   showDownloaded: true,
+  focusLoading: false,
 
   layers: [],
   layerManagerOpen: false,
 
   appliedRender: {},
+  pendingColormapName: '',
+  pendingVmin: '',
+  pendingVmax: '',
 
   config: null,
   datasets: [],
@@ -185,6 +203,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedIds: [],
       error: null,
       notice: null,
+      focusMode: false,
+      downloaded: {},
+      appliedRender: {},
     }),
 
   // Activating a draw tool slides the control panel away so it can't block the
@@ -214,20 +235,35 @@ export const useAppStore = create<AppState>((set, get) => ({
       playing: false,
       error: null,
       notice: null,
+      focusMode: false,
+      downloaded: {},
+      appliedRender: {},
+      pendingColormapName: '',
+      pendingVmin: '',
+      pendingVmax: '',
     }),
 
   toggleLayerManager: () => set((s) => ({ layerManagerOpen: !s.layerManagerOpen })),
   addCurrentToLayers: () => {
     const s = get();
     const group = s.groups[s.activeGroupIndex];
-    const items = s.selectedIds.length
-      ? s.items.filter((it) => s.selectedIds.includes(it.id))
-      : (group?.items ?? []);
     const overlays: LayerOverlay[] = [];
-    for (const it of items) {
-      const coords = quicklookCoords(it.geometry, it.bbox);
-      const asset = quicklookAsset(it);
-      if (coords && asset) overlays.push({ kind: 'image', url: asset.href, coords });
+    if (s.focusMode) {
+      const entries = s.selectedIds.length
+        ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
+        : Object.entries(s.downloaded);
+      for (const [, info] of entries) {
+        overlays.push({ kind: 'raster', tileUrl: buildTileUrl(info, s.appliedRender), bounds: info.bounds });
+      }
+    } else {
+      const items = s.selectedIds.length
+        ? s.items.filter((it) => s.selectedIds.includes(it.id))
+        : (group?.items ?? []);
+      for (const it of items) {
+        const coords = quicklookCoords(it.geometry, it.bbox);
+        const asset = quicklookAsset(it);
+        if (coords && asset) overlays.push({ kind: 'image', url: asset.href, coords });
+      }
     }
     if (overlays.length === 0) {
       set({ error: 'Nothing to add — search and pick a time step first.' });
@@ -281,9 +317,112 @@ export const useAppStore = create<AppState>((set, get) => ({
         showDownloaded: true,
       };
     }),
+
+  // Enter full-resolution viewing (F10, M2-07b): build a tile URL per selected
+  // item (or the whole active time step) from the registry's standard
+  // visualisation, then measure a stretch once (adr/0006 §3.4) so the fields
+  // are not left empty. Statistics are an optimisation (E5) — a failure keeps
+  // the registry's static default in place instead of failing the view.
+  enterFocus: async () => {
+    const s = get();
+    const group = s.groups[s.activeGroupIndex];
+    const items = s.selectedIds.length
+      ? s.items.filter((it) => s.selectedIds.includes(it.id))
+      : (group?.items ?? []);
+    if (items.length === 0) {
+      set({ error: 'Nothing to view — pick a time step or select scenes first.' });
+      return;
+    }
+    const dataset = s.datasets.find((d) => d.id === s.datasetId);
+    if (!dataset || !dataset.viewable) {
+      set({ error: 'Pick a dataset first.' });
+      return;
+    }
+    const render = defaultRenderOf(dataset.collection);
+    if (!render || render.assets.length === 0) {
+      set({ error: `${dataset.title} has no default visualisation yet (earthx:default_render).` });
+      return;
+    }
+    const asset = render.assets[0];
+    const downloaded: Record<string, DownloadedInfo> = {};
+    for (const it of items) {
+      if (!it.bbox) continue;
+      downloaded[it.id] = { tileUrl: api.buildTileTemplate(dataset.id, it.id, asset), bounds: it.bbox, asset };
+    }
+    if (Object.keys(downloaded).length === 0) {
+      set({ error: 'None of the selected scenes carry a bounding box to render.' });
+      return;
+    }
+    const rescale = render.rescale?.[0];
+    set({
+      error: null,
+      focusMode: true,
+      showDownloaded: true,
+      downloaded,
+      appliedRender: {
+        expression: render.expression ?? undefined,
+        colormapName: render.colormap_name ?? undefined,
+        rescale: rescale ? `${rescale[0]},${rescale[1]}` : undefined,
+      },
+      pendingColormapName: render.colormap_name ?? '',
+      pendingVmin: rescale ? String(rescale[0]) : '',
+      pendingVmax: rescale ? String(rescale[1]) : '',
+    });
+    await get().autoStretch();
+  },
+  exitFocus: () =>
+    set({
+      focusMode: false,
+      downloaded: {},
+      appliedRender: {},
+      pendingColormapName: '',
+      pendingVmin: '',
+      pendingVmax: '',
+    }),
+  toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
+  setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
+  setPendingVmin: (pendingVmin) => set({ pendingVmin }),
+  setPendingVmax: (pendingVmax) => set({ pendingVmax }),
+  // Commits the pending fields (F18) — nothing renders differently until this
+  // runs, which is the point of an explicit "Apply".
+  applyRender: () => {
+    const s = get();
+    const vmin = s.pendingVmin.trim();
+    const vmax = s.pendingVmax.trim();
+    set({
+      appliedRender: {
+        ...s.appliedRender,
+        colormapName: s.pendingColormapName || undefined,
+        rescale: vmin !== '' && vmax !== '' ? `${vmin},${vmax}` : undefined,
+      },
+    });
+  },
+  // Re-measures the stretch from `/statistics` (adr/0006 §3.4) and writes it into
+  // the pending fields only — still needs "Apply" to take effect on the map.
+  autoStretch: async () => {
+    const s = get();
+    const first = Object.entries(s.downloaded)[0];
+    if (!s.datasetId || !first) return;
+    const [itemId, info] = first;
+    set({ focusLoading: true });
+    try {
+      const stats = await api.fetchStatistics(s.datasetId, itemId, info.asset);
+      const range = autoRescale(stats);
+      if (range) set({ pendingVmin: String(range[0]), pendingVmax: String(range[1]) });
+    } catch (e) {
+      set({ notice: `Could not measure a stretch automatically: ${(e as Error).message}` });
+    } finally {
+      set({ focusLoading: false });
+    }
+  },
   // Zoom to the selected scenes, else the active time step, else the whole AOI.
   zoomToView: () => {
-    const { items, selectedIds, groups, activeGroupIndex, aoi } = get();
+    const { items, selectedIds, groups, activeGroupIndex, aoi, focusMode, downloaded } = get();
+    if (focusMode) {
+      const bb = unionBbox(Object.values(downloaded).map((info) => info.bounds));
+      if (bb) set({ flyToBbox: bb });
+      return;
+    }
     let boxes = items.filter((it) => selectedIds.includes(it.id)).map((it) => it.bbox);
     if (boxes.length === 0) boxes = groups[activeGroupIndex]?.items.map((it) => it.bbox) ?? [];
     let bb = unionBbox(boxes);
@@ -360,7 +499,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     };
 
-    set({ searching: true, error: null, notice: null, playing: false, panelCollapsed: true });
+    set({
+      searching: true,
+      error: null,
+      notice: null,
+      playing: false,
+      panelCollapsed: true,
+      focusMode: false,
+      downloaded: {},
+      appliedRender: {},
+    });
     try {
       const datetimeRange = buildDatetime(dateFrom, dateTo);
       const page = await searchAllPages({ collection: dataset.id, bbox, datetime: datetimeRange });
