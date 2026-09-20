@@ -119,7 +119,7 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 | Ubuntu-Archiv (`apt`) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
 | `mcr.microsoft.com` | |
 | `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` (tatsächlicher Asset-Host von `sentinel-2-c1-l2a`, Beleg `adr/0006`) | |
-| `objects.eodc.eu` (Beleg `adr/0007`) | `data.eodc.eu`, `download.user.eopf.eodc.eu` (Beleg `adr/0007`) |
+| `objects.eodc.eu`, **`data.eodc.eu`**, `stac.core.eopf.eodc.eu` (Beleg `adr/0007` §3.1, §12.1) | `download.user.eopf.eodc.eu`, `stac.browser.user.eopf.eodc.eu` (Beleg `adr/0007` §12.1) |
 
 **Stand 19.09.2026: Earth Search v1 ist erreichbar.** Die Tabelle oben führte
 `earth-search.aws.element84.com` bis dahin als gesperrt; das war der Stand der
@@ -138,20 +138,37 @@ liegen auf `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`.
 `sentinel-2-l2a`, die Collection 1 ablöst (adr/0003 §3, Option B) — nicht zum
 Datensatz, den `earthx` führt. Die Tabelle oben ist entsprechend korrigiert.
 
-**EOPF-Hosts (2026-09-20, `adr/0007`, PR #35):** `objects.eodc.eu` ist
-erreichbar. `data.eodc.eu` und `download.user.eopf.eodc.eu` sind gesperrt.
-`stac.eopf.copernicus.eu` bleibt wie oben gesperrt; Details und die Folgen für
-den Zarr-Kandidaten stehen in `adr/0007`.
+**EOPF-Hosts — Stand nach der Freigabe (2026-09-20, M2-03b, `adr/0007` §12.1):**
+`data.eodc.eu` ist **freigegeben und gemessen erreichbar**; darauf liegen die
+Zarr-v3-Produkte der Collection `sentinel-2-l2a-zarr3`, die in `adr/0007` §12
+durchgemessen sind. `objects.eodc.eu` (ältere Tutorial-Produkte, S1-SLC) und
+`stac.core.eopf.eodc.eu` (die STAC-API) sind unverändert erreichbar; die Tabelle
+oben führte die STAC-API bisher gar nicht.
+
+**Gesperrt bleiben** `download.user.eopf.eodc.eu` und
+`stac.browser.user.eopf.eodc.eu`, beides so gewollt: ganze gezippte Produkte
+braucht die Plattform nie, und die Browser-Oberfläche ist keine Schnittstelle.
+`stac.eopf.copernicus.eu` bleibt gesperrt — es ist nach `adr/0007` §3.1 nur die
+zweite Adresse derselben STAC-API, die über EODC offen ist. **Achtung:** Die
+Sperre von `download.user.eopf.eodc.eu` hält gezippte Produkte nicht mehr fern —
+bei den aktuellen Items liegt das Asset `zipped_product` mit 1,2 GB auf dem jetzt
+offenen `data.eodc.eu` (`adr/0007` §12.1). Fernhalten muss es der
+Registry-Eintrag.
+
+**Die Fassung von PR #35 ist damit überholt.** Sie führte `data.eodc.eu` als
+gesperrt; das war der Stand **vor** der Freigabe aus `adr/0007` F1.
 
 Das ändert nichts an der Testaufteilung. **Kein Geocoder ist erreichbar**, und
-für EOPF (`stac.eopf.copernicus.eu`) und CDSE gilt die Sperre unverändert. Die
-Annahme, auf der `projektplan.md` 2.4 und `docs/adr/0002-testaufteilung.md`
-aufbauen — Tests laufen ohne Live-Quellen —, bleibt bestehen: Erreichbarkeit ist
-die Grundlage für Spikes und Messungen, nicht für Tests in CI oder PR-Läufen.
-Live-Zugriffe bleiben auf zeitgesteuerte T-D-Smoke-Tests beschränkt
-(`adr/0002`). Für den Kandidaten EOPF Sentinel Zarr Samples (M0 Schritt 6) gilt
-weiterhin: Die Quelle lässt sich in einer Cloud-Sitzung nicht ausprobieren,
-sondern nur über synthetische Fixtures oder lokal bei Otto.
+für CDSE gilt die Sperre unverändert. Die Annahme, auf der `projektplan.md` 2.4
+und `docs/adr/0002-testaufteilung.md` aufbauen — Tests laufen ohne Live-Quellen —,
+bleibt bestehen: Erreichbarkeit ist die Grundlage für Spikes und Messungen, nicht
+für Tests in CI oder PR-Läufen. Live-Zugriffe bleiben auf zeitgesteuerte
+T-D-Smoke-Tests beschränkt (`adr/0002`), Fixtures bleiben synthetisch.
+
+**Überholt ist dagegen der frühere Satz, die EOPF-Quelle lasse sich in einer
+Cloud-Sitzung nicht ausprobieren, sondern nur lokal bei Otto.** Seit der
+Freigabe geht es: `adr/0007` §12 hat Kachel, Statistik und AOI-Zuschnitt in
+einer Cloud-Sitzung gegen die echte Quelle gemessen.
 
 Eine Freigabe wirkt erst in **neu gestarteten** Sitzungen; eine mitten in der
 Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
