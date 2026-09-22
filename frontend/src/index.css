@@ -968,6 +968,7 @@ input[type='date']:focus {
 .dialog-body {
   padding: 4px 14px 12px;
   overflow-y: auto;
+  overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.5;
 }

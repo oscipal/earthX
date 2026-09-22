@@ -53,7 +53,7 @@ export default function DownloadDialog() {
 
           {attribution && <p className="dialog-attribution">{attribution}</p>}
           {terms && <p className="dialog-terms">{terms}</p>}
-          {flags?.terms_url && (
+          {flags?.terms_url && !terms?.includes(flags.terms_url) && (
             <p>
               <a href={flags.terms_url} target="_blank" rel="noreferrer">
                 {flags.terms_url}
