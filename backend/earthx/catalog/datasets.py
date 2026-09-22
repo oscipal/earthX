@@ -300,10 +300,28 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         typical_footprint_km=110.0,
         max_geotile_level=8,
     ),
-    # Filled in M2-09b-2 together with the resolution and band selection it
-    # depends on (adr/0007 §12.11 points 2 and 8); the field allows None for
-    # exactly this reason (m1-fundament.md §2 did the same for the first dataset).
-    default_render=None,
+    # True colour from the `r10m`/`SR_10m` group, which carries b02/b03/b04/b08 on
+    # every level (plan §3.3) — the band selection this depends on. `(0.0, 0.30)`
+    # per band is a deliberate starting point, not a measurement (plan §4.5, §10
+    # F6): `mask_and_scale` hands this reader reflectance as a float, not the 8-bit
+    # RGB `visual` already is for the first dataset, and `/statistics` overwrites
+    # it with the scene's own range before anyone looks at a pixel (Z4, F18).
+    #
+    # One asset, not three: a Zarr band is never pre-stacked into one RGB file the
+    # way `visual` is (adr/0007 §12.7), and the tile route resolves exactly one
+    # asset per request (`api.tiler.dataset_asset_path`) — three separate asset
+    # keys here would each render one band alone, grayscale, one at a time (the
+    # M2-09b-2 bug this comment is the fix for). `readers.zarr_reader.ZarrReader`
+    # reads several comma-separated variables of one group and composites them,
+    # in the order named — this is that one asset key.
+    default_render=DefaultRender(
+        title="True colour",
+        assets=("SR_10m:b04,b03,b02",),
+        rescale=((0.0, 0.30), (0.0, 0.30), (0.0, 0.30)),
+        colormap_name=None,
+        expression=None,
+        resampling="nearest",
+    ),
     # Same grouping key as the first dataset: one acquisition day per MGRS tile.
     # Measured at a real item (22.09.2026): both `datetime` and `grid:code` are
     # present on every item of this collection.

@@ -34,6 +34,8 @@ from earthx.readers.zarr_reader import (
     UnknownVariable,
     ZarrAsset,
     ZarrReader,
+    split_asset_href,
+    split_asset_key,
     zarr_asset,
 )
 from tests.earthx.readers import mini_zarr
@@ -347,6 +349,62 @@ class TestTheDefinedErrors:
     def test_an_href_that_does_not_name_a_store_and_a_variable_is_refused(self, href: str) -> None:
         with pytest.raises(UrlRejected):
             zarr_asset(href, POLICY, dataset_id=DATASET, item_id=ITEM, asset="b04", resolve=from_memory)
+
+
+class TestGroupAddressing:
+    """M2-09b-2, plan §10 F2: a Zarr asset whose href names a *group*, not a
+    variable — the sentinel-2-l2a-zarr3 shape (§3.2), where the tile URL's asset
+    key carries the variable after the registry's ``ZarrInfo.variable_separator``.
+    """
+
+    def test_split_asset_href_with_a_variable_keeps_the_whole_tail_as_the_group(self) -> None:
+        store_url, group, variable = split_asset_href(f"{BASE_URL}/r20m", variable="b04")
+        assert store_url == BASE_URL
+        assert group == "r20m"
+        assert variable == "b04"
+
+    def test_split_asset_href_with_a_variable_and_no_store_segment_is_refused(self) -> None:
+        with pytest.raises(UrlRejected):
+            split_asset_href("https://store.example.invalid/products/mini/r20m", variable="b04")
+
+    def test_zarr_asset_reads_the_group_the_href_names_and_the_variable_given_separately(self) -> None:
+        built = zarr_asset(
+            f"{BASE_URL}/r20m", POLICY, dataset_id=DATASET, item_id=ITEM, asset="SR_20m:b04",
+            resolve=from_memory, variable="b04",
+        )
+        assert built.group == "r20m"
+        assert built.variable == "b04"
+
+    @pytest.mark.parametrize(
+        ("asset_key", "separator", "expected"),
+        [
+            ("SR_10m:b04", ":", ("SR_10m", "b04")),
+            ("visual", None, ("visual", None)),
+        ],
+    )
+    def test_split_asset_key(self, asset_key: str, separator: str | None, expected: tuple[str, str | None]) -> None:
+        assert split_asset_key(asset_key, separator) == expected
+
+    @pytest.mark.parametrize(
+        ("asset_key", "separator"),
+        [
+            ("SR_10m", ":"),  # no separator in the key at all
+            ("SR_10m:", ":"),  # nothing after the separator
+            (":b04", ":"),  # nothing before it
+        ],
+    )
+    def test_split_asset_key_refuses_a_key_it_cannot_split(self, asset_key: str, separator: str | None) -> None:
+        with pytest.raises(UrlRejected):
+            split_asset_key(asset_key, separator)
+
+    def test_zipped_product_still_fails_the_same_way_with_group_addressing(self) -> None:
+        """§3.2: `zipped_product`'s href ends `.zarr.zip`, not `.zarr` — no store
+        segment for either addressing convention to find (plan §6, point 3)."""
+        with pytest.raises(UrlRejected):
+            zarr_asset(
+                f"{BASE_URL}.zip", POLICY, dataset_id=DATASET, item_id=ITEM, asset="zipped_product",
+                resolve=from_memory, variable="b04",
+            )
 
 
 def test_the_reader_never_stacks_the_bands_of_a_group() -> None:
