@@ -6,8 +6,10 @@ that replacing its ``path_dependency`` takes the free ``url`` parameter out of t
 OpenAPI schema altogether. What is left to do here is small and is exactly the
 three things TiTiler leaves open:
 
-* **which reader opens the data** — :class:`earthx.readers.cog.CogReader`, which
-  refuses anything the gateway has not cleared;
+* **which reader opens the data** — :func:`open_asset`, which hands a COG path to
+  :class:`earthx.readers.cog.CogReader` and a Zarr asset to
+  :class:`earthx.readers.zarr_reader.ZarrReader` (M2-09a); both refuse anything the
+  gateway has not cleared;
 * **which routes exist** — no viewer (it would need a free URL to be useful), no
   ``/bbox`` and no ``/feature`` (the AOI download is M2-06), no OGC Maps;
 * **statistics with a cache**, because a cold read costs the ~1 s adr/0006 §3.4
@@ -37,8 +39,25 @@ from titiler.core.models.responses import Statistics
 from titiler.core.resources.responses import JSONResponse
 
 from earthx.readers.cog import AssetPath, CogReader
+from earthx.readers.zarr_reader import ZarrAsset, ZarrReader
 
 LOGGER = logging.getLogger("earthx.access.tiles")
+
+
+def open_asset(src_path: Any, **reader_params: Any) -> BaseReader:
+    """Open what the path dependency built — a COG path or a Zarr asset (M2-09a).
+
+    The format is decided in the registry and applied in ``earthx.api.tiler``, which
+    is the only place that sees the entry; by the time a path gets here it already
+    *is* one of the two, so the dispatch reads it off the type rather than asking a
+    catalogue `access` may not reach at render time.
+
+    A function, not a class, because that is all TiTiler's factory needs of
+    ``reader``: it calls it and enters the result (``with self.reader(src_path, …)``).
+    """
+    if isinstance(src_path, ZarrAsset):
+        return ZarrReader(src_path, **reader_params)
+    return CogReader(src_path, **reader_params)
 
 
 class StatsCache(Protocol):
@@ -55,8 +74,11 @@ class StatsCache(Protocol):
     async def set(self, key: str, value: dict[str, Any], *, dataset_id: str) -> None: ...
 
 
-def statistics_cache_key(path: AssetPath, parameters: dict[str, Any]) -> str:
+def statistics_cache_key(path: AssetPath | ZarrAsset, parameters: dict[str, Any]) -> str:
     """One key for one question: which asset, and everything that shapes the numbers.
+
+    Both readers' paths answer to the same three names, so a Zarr statistic is cached
+    the same way a COG's is — the format does not change what the numbers are of.
 
     A hash rather than the values themselves, so that no address and no parameter
     text ends up in a database column (projektplan.md 7, point 6).
@@ -79,7 +101,7 @@ def statistics_cache_key(path: AssetPath, parameters: dict[str, Any]) -> str:
 class EarthxTilerFactory(TilerFactory):
     """TiTiler's tiler factory with our reader, our route set and a cached statistic."""
 
-    reader: type[BaseReader] = CogReader
+    reader: Callable[..., BaseReader] = open_asset
 
     # A cache is optional everywhere it appears: without one this is slower, never
     # wrong (E5, adr/0001 §9.3). The default is "no cache", so a factory built in a
@@ -128,7 +150,7 @@ class EarthxTilerFactory(TilerFactory):
                 "histogram": histogram_params.as_dict(),
             }
             key = None
-            if cache is not None and isinstance(src_path, AssetPath):
+            if cache is not None and isinstance(src_path, (AssetPath, ZarrAsset)):
                 key = statistics_cache_key(src_path, parameters)
                 cached = await _cache_get(cache, key)
                 if cached is not None:
@@ -155,8 +177,8 @@ class EarthxTilerFactory(TilerFactory):
 
 
 def _read_statistics(
-    reader: type[BaseReader],
-    src_path: str,
+    reader: Callable[..., BaseReader],
+    src_path: AssetPath | ZarrAsset,
     *,
     env: dict[str, str],
     reader_params: dict[str, Any],

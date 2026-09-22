@@ -4,7 +4,8 @@ architekturplan.md 6.4's addendum (D3) draws the line for M2: the crop is read
 from the source assets and streamed straight to the client, nothing lands on
 disk or in the object store. What is built here is the part `access` is
 allowed to own — cropping, mosaicking, packing — using the reader and the
-already-cleared :class:`~earthx.readers.cog.AssetPath` the caller hands in.
+already-cleared :class:`~earthx.readers.cog.AssetPath` — or, since M2-09a, the
+:class:`~earthx.readers.zarr_reader.ZarrAsset` — the caller hands in.
 Resolving items and hosts through `gateway` stays in `api` (architekturplan.md
 3.1: `access` may import `readers` and `catalog`, not `gateway`), the same
 split `access.tiles` already draws for the tile path.
@@ -31,7 +32,7 @@ rule the client already knows from the time line grouping (F5, F11).
 from __future__ import annotations
 
 import zipfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
@@ -51,6 +52,7 @@ from shapely.geometry.base import BaseGeometry
 
 from earthx.catalog.registry import DatasetConfig
 from earthx.readers.cog import AssetPath
+from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
     "MAX_OUTPUT_SIDE_PX",
@@ -169,8 +171,8 @@ def check_size_cap(
 
 
 def crop_asset(
-    reader_cls: type[BaseReader],
-    asset_paths: Sequence[AssetPath],
+    open_reader: Callable[..., BaseReader],
+    asset_paths: Sequence[AssetPath | ZarrAsset],
     aoi_geometry: Mapping[str, Any],
     *,
     max_size: int = MAX_OUTPUT_SIDE_PX,
@@ -183,8 +185,8 @@ def crop_asset(
     when it groups a mosaic's scenes into one step of the time line.
     """
 
-    def _read(path: AssetPath) -> ImageData:
-        with reader_cls(path) as reader:
+    def _read(path: AssetPath | ZarrAsset) -> ImageData:
+        with open_reader(path) as reader:
             return reader.feature(dict(aoi_geometry), max_size=max_size)
 
     if len(asset_paths) == 1:
@@ -263,13 +265,13 @@ class AssetCrop:
     """One asset's already-resolved read candidates — one path per surviving item."""
 
     asset: str
-    paths: tuple[AssetPath, ...]
+    paths: tuple[AssetPath | ZarrAsset, ...]
 
 
 def build_download_zip(
     *,
     config: DatasetConfig,
-    reader_cls: type[BaseReader],
+    open_reader: Callable[..., BaseReader],
     crops: Sequence[AssetCrop],
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
@@ -284,7 +286,7 @@ def build_download_zip(
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         for crop in crops:
-            image = crop_asset(reader_cls, crop.paths, aoi_geometry, max_size=max_size)
+            image = crop_asset(open_reader, crop.paths, aoi_geometry, max_size=max_size)
             archive.writestr(f"{crop.asset}.tif", _image_to_cog_bytes(image))
         archive.writestr(
             NOTICE_FILENAME, build_notice_text(config, item_ids=item_ids, language=language)
