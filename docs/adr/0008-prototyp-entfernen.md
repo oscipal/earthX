@@ -1,10 +1,17 @@
 # ADR 0008 — Den Prototyp entfernen
 
-- **Status:** **Entwurf — Entscheidungsvorlage.** Die Entscheidung liegt bei Otto
-  (`ENTSCHEIDUNGEN_2026-09-18.md` §3: „Er wird entfernt, sobald seine Funktionen
-  mit einem token-freien Datensatz laufen — eigene Entscheidung von Otto,
-  Stufe B"). §9 stellt sechs Fragen, jede mit nummerierten Optionen und einer
-  Empfehlung. Dieses Dokument ändert nichts am Code.
+- **Status:** **Angenommen** von Otto am 2026-09-22. Die sechs Fragen aus §9
+  sind dort beantwortet: **1** entfernen, vor M2-12 (Option C); **2** Umfang wie
+  §4.2, ausdrücklich einschließlich `pystac-client`; **3** Rechenkern und
+  Warp-Regel ziehen **unverändert** um, ohne jede Verallgemeinerung, nach
+  `backend/earthx/datasets/quad_pol_reference/`, **ohne** Registry-Eintrag;
+  **4** die Ausnahme-Absätze in `SECURITY.md` und `CLAUDE.md` werden entfernt —
+  die Änderung beider Dateien ist dafür ausdrücklich erlaubt —, dazu eine
+  Log-Zeile zum Ende der Ausnahme, der Wert nirgends wiedergegeben; **5** F2 und
+  F11 blockieren nicht; **6** ein PR mit getrennten Commits, erst Umzug, dann
+  Entfernen. §8 gibt die Empfehlung wieder, der Otto gefolgt ist.
+  Dieses Dokument selbst ändert nichts am Code; die Umsetzung ist eine eigene
+  Sitzung (Stufe B).
 - **Datum:** 2026-09-22
 - **Aufgabe:** M2-11 laut `docs/plans/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur gelesen und berichtet. Kein Produktivcode geändert,
@@ -225,11 +232,11 @@ Frontend vollständig auf `earthx`).
 Was im Repo liegt, ist also kein „lauffähiger Prototyp" mehr, sondern ein
 Backend ohne Oberfläche, bedienbar nur noch über `/docs`. Die Referenz, die §3
 erhalten wollte, hängt seither ohnehin am Tag, nicht am Arbeitsbaum. Der
-Arbeitsbaum trägt nur noch die Kosten: 1703 Zeilen Code in jedem Image, von denen
-zwei Testdateien nur Start und Konfiguration berühren, drei `httpx`-Aufrufe außerhalb von `gateway`, ein Paket auf der
-Verbotsliste in `requirements.txt`, ein Import des Prototyps in der
-suite-weiten `conftest.py` und eine README, die einen Zustand beschreibt, den es
-nicht mehr gibt.
+Arbeitsbaum trägt nur noch die Kosten: 1703 Zeilen Code in jedem Image, von
+denen zwei Testdateien nur Start und Konfiguration berühren, drei
+`httpx`-Aufrufe außerhalb von `gateway`, ein Paket auf der Verbotsliste in
+`requirements.txt`, ein Import des Prototyps in der suite-weiten `conftest.py`
+und eine README, die einen Zustand beschreibt, den es nicht mehr gibt.
 
 ---
 
@@ -267,12 +274,16 @@ steht seit M1-04 in `catalog/registry.py:113` und ist für beide Datensätze
 (M4). Bis dahin ist der Operator schlicht ein isoliertes Modul mit Tests und
 ohne Aufrufer.
 
-Offen ist allein der **Verzeichnisname**: `datasets/<id>` verlangt eine
+Offen war allein der **Verzeichnisname**: `datasets/<id>` verlangt eine
 Datensatz-Kennung, und es gibt keinen Datensatz — es ist nach ENTSCHEIDUNGEN §3
 nicht einmal klar, ob es eine token-freie Quelle für komplexe Quad-Pol-Daten
 gibt (Sentinel-1 ist Dual-Pol). Ein Verzeichnis `datasets/biomass…` würde
 außerdem den Namen BIOMASS in CI-Pfade tragen, was `ENTSCHEIDUNGEN` §3 und
-`CLAUDE.md` gerade ausschließen. Siehe §9 Frage 3.
+`CLAUDE.md` gerade ausschließen. **Entschieden am 22.09.2026** (§9 Frage 3):
+`backend/earthx/datasets/quad_pol_reference/` — benannt nach der Fähigkeit, nicht
+nach einem Datensatz —, **ohne** Eintrag in der Registry. Der Operator ist damit
+genau das, was er ist: eine ruhende Referenzrechnung mit Tests, kein angebotener
+Datensatz und keine angebotene Fähigkeit.
 
 ---
 
@@ -304,8 +315,8 @@ niemand mehr traut.
 ### Option C — `decomp.py` retten, dann den Rest entfernen *(empfohlen)*
 
 Zwei Commits in einem PR: zuerst zieht der Rechenkern samt Warp-Regel als
-ruhender Operator nach `earthx/datasets/<id>/` um und bekommt synthetische
-Tests; danach fällt `backend/app/` mit allem aus §4.2.
+ruhender Operator nach `earthx/datasets/quad_pol_reference/` um und bekommt
+synthetische Tests; danach fällt `backend/app/` mit allem aus §4.2.
 
 *Dafür:* erfüllt K1 bis K6; der Diff bleibt lesbar, weil Umzug und Löschung
 getrennte Commits sind. *Dagegen:* der Operator hat vorerst keinen Aufrufer und
@@ -349,16 +360,18 @@ kaum belasten.
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 22.09.2026
 
-Sechs Fragen, jede mit Empfehlung. Kurz beantwortbar mit „1a, 2a, 3a, 4a, 5a,
-6a" oder den Abweichungen.
+Sechs Fragen, jede mit Empfehlung. Otto ist allen sechs Empfehlungen gefolgt,
+mit einer Präzisierung bei Frage 3 (Verzeichnisname, kein Registry-Eintrag).
 
 **Frage 1 — Wird der Prototyp entfernt, und wann?**
 
 1. **Ja, jetzt, vor M2-12**, in einem eigenen Stufe-B-PR. *(Empfehlung, §8)*
 2. Ja, aber erst nach der M2-Abnahme (M2-12).
 3. Nein, erst mit M4, wenn die Operator-Registry steht (Option A).
+
+> **Antwort: 1.** Entfernen ja, vor M2-12 (Option C).
 
 **Frage 2 — Was fällt mit weg?**
 
@@ -370,9 +383,13 @@ Sechs Fragen, jede mit Empfehlung. Kurz beantwortbar mit „1a, 2a, 3a, 4a, 5a,
 2. Nur `backend/app/` und was sonst die CI rot machen würde; `environment.yml`,
    README-Abschnitt 3 und die Paketliste bleiben vorerst.
 
+> **Antwort: 1.** Umfang wie in §4, zusätzlich `pystac-client` aus
+> `requirements.txt`. Das ungenutzte `requests` aus derselben Zeile von §4.2 ist
+> nicht ausdrücklich genannt und bleibt der Umsetzung überlassen (§11 Punkt 6).
+
 **Frage 3 — Wohin geht `decomp.py`, und wie viel davon?**
 
-1. **Rechenkern und Warp-Regel nach `backend/earthx/datasets/quadpol_slc/`**,
+1. **Rechenkern und Warp-Regel nach `backend/earthx/datasets/<neutraler Name>/`**,
    ohne `decompose_crop` (hängt an `auth` und `store`, beide im Zielpfad
    ausgeschlossen), mit synthetischen T-A-Tests für Pauli und Freeman–Durden.
    Der Verzeichnisname ist ein neutraler Platzhalter nach der Capability, nicht
@@ -384,6 +401,16 @@ Sechs Fragen, jede mit Empfehlung. Kurz beantwortbar mit „1a, 2a, 3a, 4a, 5a,
 3. Die ganze Datei 1:1 umziehen, `decompose_crop` eingeschlossen und
    stillgelegt. Zieht `store.py` und `auth.py` faktisch mit — nicht empfohlen.
 4. Gar nicht umziehen; bei Bedarf aus dem Tag holen (Option B).
+
+> **Antwort: 1, präzisiert.** Rechenkern und Warp-Regel ziehen **unverändert**
+> um, **ohne jede Verallgemeinerung**. Verzeichnis
+> `backend/earthx/datasets/quad_pol_reference/` — neutral nach der Fähigkeit
+> benannt, nicht nach BIOMASS. **Kein Registry-Eintrag.** Damit bleibt der
+> Operator, was ENTSCHEIDUNGEN §3 „ruht" nennt: Rechnung und Tests, kein
+> angebotener Datensatz, kein `quad_pol = True`. Wo „unverändert" an der
+> Modulgrenze nicht wörtlich gelten kann — `_warp_complex` bezieht die
+> GDAL-Umgebung über `app/cog.py::_gdal_env` —, steht die Auflösung in §11
+> Punkt 5.
 
 **Frage 4 — Die befristete Secret-Ausnahme endet. Was wird dazu geschrieben?**
 
@@ -399,6 +426,12 @@ History bleibt unberührt, der Wert wird nicht widerrufen.
    bleiben. *(Empfehlung)*
 2. Nur die Entscheidungslog-Zeile; die beiden Dateien ändert Otto selbst.
 
+> **Antwort: 1.** Die Ausnahme-Absätze in `SECURITY.md` und `CLAUDE.md` werden
+> entfernt; **die Änderung beider Dateien ist dafür ausdrücklich erlaubt**
+> (`CLAUDE.md`, „Ohne Rückfrage nicht ändern": Ausnahme ist, was die Aufgabe
+> ausdrücklich verlangt). Dazu eine Log-Zeile zum Ende der Ausnahme. Den Wert
+> nirgends wiedergeben — auch nicht in Commit-Nachricht, PR oder Log-Zeile.
+
 **Frage 5 — F2 und F11 laufen noch nicht token-frei. Blockiert das?**
 
 1. **Nein.** Beide sind durch eigene Entscheidungen verschoben (Ortssuche nach
@@ -406,15 +439,19 @@ History bleibt unberührt, der Wert wird nicht widerrufen.
    die Vorlage. *(Empfehlung)*
 2. Ja — erst entfernen, wenn M3 die Ortssuche gebaut hat.
 
+> **Antwort: 1.** F2 und F11 blockieren nicht.
+
 **Frage 6 — Schnitt in PRs.**
 
 1. **Ein PR, zwei Commits** (erst Operator-Umzug, dann Entfernen).
    *(Empfehlung)*
 2. Zwei PRs (Option D), falls der Operator-Umzug getrennt geprüft werden soll.
 
+> **Antwort: 1.** Ein PR, getrennte Commits: erst Umzug, dann Entfernen.
+
 ---
 
-## 10. Folgen, wenn wie empfohlen entschieden wird
+## 10. Folgen der Entscheidung
 
 - Das Repo enthält genau eine Topologie. `README.md` beschreibt nur noch den
   Zielpfad; `architekturplan.md` 13 („Prototyp gesamt … bleibt im Repo, bis …")
@@ -425,9 +462,12 @@ History bleibt unberührt, der Wert wird nicht widerrufen.
   es als verbotenen Import führen, bleiben als Schutz gegen die Rückkehr.
 - Die suite-weite `clean_settings`-Fixture entfällt; kein Test zieht mehr den
   Prototyp mit.
-- Der Quad-Pol-Operator liegt isoliert unter `earthx/datasets/` und ruht mit
-  synthetischen Tests, bis eine Quelle für komplexe Quad-Pol-Daten gefunden ist.
-  Die offene Log-Zeile dazu bleibt offen.
+- Der Quad-Pol-Operator liegt isoliert unter
+  `earthx/datasets/quad_pol_reference/` und ruht mit synthetischen Tests, bis
+  eine Quelle für komplexe Quad-Pol-Daten gefunden ist. Ohne Registry-Eintrag
+  bietet die Plattform dadurch nichts Neues an: `quad_pol` bleibt für beide
+  Datensätze `False`, und der Vertrag `datasets-isolated` hält das Modul von
+  allem Generischen fern. Die offene Log-Zeile zur Quelle bleibt offen.
 - Die befristete Secret-Ausnahme endet; SECURITY.md und CLAUDE.md verlieren
   ihren Absatz dazu. Git-History und Wert bleiben unverändert, wie festgelegt.
 - Verloren geht die Möglichkeit, den Prototyp ohne Tag-Checkout zu starten —
@@ -439,12 +479,27 @@ History bleibt unberührt, der Wert wird nicht widerrufen.
    18.09.2026 als offene Zeile im Entscheidungslog und wird von dieser Vorlage
    nicht beantwortet. Solange sie fehlt, hat der Operator keinen Datensatz, kein
    `quad_pol = True` und keinen Aufrufer.
-2. **Der endgültige Ort des Operators.** Mit der Operator-Registry aus M4
-   (`architekturplan.md` 7.2) bekommt er Schema, Kostenmodell und
-   Ausführungsstufen. Der Umzug jetzt ist die Ablage, nicht die Registrierung.
+2. **Der endgültige Ort und Name des Operators.** Mit der Operator-Registry aus
+   M4 (`architekturplan.md` 7.2) bekommt er Schema, Kostenmodell und
+   Ausführungsstufen; `quad_pol_reference` wird umbenannt, sobald eine echte
+   Quelle eine Datensatz-Kennung liefert. Der Umzug jetzt ist die Ablage, nicht
+   die Registrierung.
 3. **F2 Ortssuche** bleibt für M3 offen, samt der Frage nach den
    Nutzungsbedingungen von Nominatim (`prototyp-inventar.md` Teil 5, Punkt 4).
 4. **`_warp_complex` gegen eine echte Quelle.** Die Annahme über die
    Bandreihenfolge HH/HV/VH/VV ist aus dem Code allein nicht überprüfbar
    (Inventar F17) und bleibt es auch mit synthetischen Tests. Das gehört in die
    Onboarding-Prüfung des ersten Quad-Pol-Datensatzes.
+5. **Zwei Stellen, an denen „unverändert umziehen" nicht wörtlich gehen kann**,
+   weil die Umgebung des Moduls verschwindet — von der Umsetzung zu lösen, ohne
+   dabei zu verallgemeinern: `_warp_complex` holt die GDAL-Umgebung über
+   `app/cog.py::_gdal_env(token)` und nimmt dafür einen `token`-Parameter. Beide
+   Enden fallen weg. Naheliegend: Der Parameter entfällt ersatzlos (es gibt
+   keinen Token mehr), und die GDAL-Konfiguration kommt aus
+   `earthx/gateway/gdal.py::gdal_options`, das genau dafür da ist (B8). Zweitens
+   hängt `DecompError` heute an nichts, kann also mitziehen. Alles andere bleibt
+   Zeile für Zeile, wie entschieden.
+6. **Das ungenutzte `requests` in `requirements.txt`.** In §4.2 als tot vermerkt,
+   in Frage 2 nicht ausdrücklich genannt. Kein Modul im Repo importiert es;
+   Vorschlag der Umsetzung: mit entfernen, sonst bleibt ein HTTP-Client im Image,
+   den die Importverträge eigens verbieten. Otto kann im Review widersprechen.
