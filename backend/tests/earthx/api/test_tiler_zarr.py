@@ -15,6 +15,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -182,7 +183,11 @@ class TestWhatTheSourceGetsWrong:
 
 
 class _RequestWithApp:
-    """Just enough of a request for the path dependency: the app state hangs off it."""
+    """Just enough of a request for the path dependency: the app state hangs off it,
+    plus what ``_target_gsd`` reads off a real one (no tile route here, so neither
+    ever names a level to pick — the fallback of ``target_gsd=None`` applies)."""
 
     def __init__(self, app: Any) -> None:
         self.app = app
+        self.url = SimpleNamespace(path="")
+        self.path_params: dict[str, Any] = {}

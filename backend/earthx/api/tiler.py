@@ -39,10 +39,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
+import morecantile
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from rasterio.errors import RasterioError
+from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from starlette.concurrency import run_in_threadpool
 
@@ -68,10 +70,10 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DataFormat, DatasetRegistry, LicenseTier, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout
+from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout, UrlRejected
 from earthx.gateway.gdal import gdal_options
 from earthx.readers.cog import AssetPath, asset_path
-from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, zarr_asset
+from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, split_asset_key, zarr_asset
 
 LOGGER = logging.getLogger("earthx.api.tiler")
 
@@ -149,8 +151,57 @@ def _proj_code(stac_item: dict[str, Any]) -> str | None:
     return f"EPSG:{epsg}" if isinstance(epsg, int) else None
 
 
+# Forced onto the coarsest `multiscales` level there is: adr/0007 §12.11 point 8
+# measured the difference against a fine level at ~5% in `p98`, and the read stays
+# cheap regardless of where on the extent the item sits.
+_COARSEST_LEVEL = float("inf")
+
+
+def _target_gsd(request: Request, stac_item: dict[str, Any]) -> float | None:
+    """The ground sample distance a Zarr read should aim for, or ``None`` to leave
+    the level exactly as the asset names it.
+
+    Three cases, and only three — everything else reads the level the item's asset
+    already points at, unchanged since M2-09a:
+
+    * **``/statistics``** is answered on the coarsest level there is (§12.11 point 8).
+    * **a tile request** names ``z``/``x``/``y``/``tileMatrixSetId`` in its own route
+      (TiTiler's own path, matched here through ``request.path_params`` rather than
+      a parameter of this function, so nothing here has to repeat TiTiler's route
+      shape). The real ground resolution of that tile is computed from its own
+      bounds, reprojected into the item's CRS — not read off a fixed zoom table,
+      because a Web Mercator tile's real resolution scales with ``cos(latitude)``
+      (adr/0007 §12.10) and a table would pick the wrong level near either end of
+      this dataset's 34°–72° N extent.
+    * **anything else** (a preview, the AOI crop) computes nothing and returns
+      ``None`` — a crop wants the resolution its asset names, not the coarsest
+      level statistics settles for.
+    """
+    if request.url.path.endswith("/statistics"):
+        return _COARSEST_LEVEL
+    path_params = request.path_params
+    if not {"z", "x", "y", "tileMatrixSetId"} <= path_params.keys():
+        return None
+    crs = _proj_code(stac_item)
+    if crs is None:
+        return None
+    try:
+        tms = morecantile.tms.get(str(path_params["tileMatrixSetId"]))
+        z = int(path_params["z"])
+        west, south, east, north = tms.bounds(int(path_params["x"]), int(path_params["y"]), z)
+        item_west, _, item_east, _ = transform_bounds("EPSG:4326", crs, west, south, east, north)
+        tile_size = tms.matrix(z).tileWidth
+    except Exception:
+        # A resolution this cannot compute (an unknown TMS id, a CRS transform
+        # that fails) is not worth failing the tile over — it reads the level the
+        # asset names instead, the same as before this feature existed.
+        LOGGER.warning("could not compute a target resolution for the tile", exc_info=True)
+        return None
+    return abs(item_east - item_west) / tile_size
+
+
 def _resolve_asset_path(
-    state: Any, stac_item: dict[str, Any], *, dataset: str, item: str, asset: str
+    state: Any, stac_item: dict[str, Any], *, dataset: str, item: str, asset: str, target_gsd: float | None = None
 ) -> AssetPath | ZarrAsset:
     """The href of ``asset`` on ``stac_item``, cleared through the gateway policy.
 
@@ -158,8 +209,12 @@ def _resolve_asset_path(
     renders whatever it is handed and the client sends the same tile URL either way
     (M2-09a). A format without a reader is refused rather than read as a COG — a
     silent fallback would turn a registry mistake into a wrong picture.
+
+    For a Zarr dataset, ``asset`` may carry a variable after the registry's
+    ``ZarrInfo.variable_separator`` (adr/0007 §12.11, plan §10 F2) — split off
+    *before* the href is looked up, because the item only ever advertises the
+    group side of that key.
     """
-    href = _resolve_asset_href(stac_item, asset)
     registry: DatasetRegistry = state.earthx_registry
     try:
         config = registry.get(dataset)
@@ -170,8 +225,17 @@ def _resolve_asset_path(
             status_code=501,
             detail=f"{dataset!r} is stored as {config.format.value}, which no reader opens",
         )
+    if config.format is DataFormat.ZARR:
+        separator = config.zarr.variable_separator if config.zarr is not None else None
+        try:
+            item_asset, variable = split_asset_key(asset, separator)
+        except UrlRejected as error:
+            # The caller's own query parameter is shaped wrong — a 400, not the 502
+            # below, which is about what the *item* points at.
+            raise HTTPException(status_code=400, detail=str(error)) from None
     try:
         if config.format is DataFormat.ZARR:
+            href = _resolve_asset_href(stac_item, item_asset)
             return zarr_asset(
                 href,
                 state.earthx_policy,
@@ -180,7 +244,10 @@ def _resolve_asset_path(
                 asset=asset,
                 crs=_proj_code(stac_item),
                 resolve=state.earthx_resolver,
+                variable=variable,
+                target_gsd=target_gsd,
             )
+        href = _resolve_asset_href(stac_item, asset)
         return asset_path(
             href,
             state.earthx_policy,
@@ -214,7 +281,8 @@ async def dataset_asset_path(
     """
     state = request.app.state
     stac_item = await _fetch_item(state, dataset, item)
-    return _resolve_asset_path(state, stac_item, dataset=dataset, item=item, asset=asset)
+    target_gsd = _target_gsd(request, stac_item)
+    return _resolve_asset_path(state, stac_item, dataset=dataset, item=item, asset=asset, target_gsd=target_gsd)
 
 
 class DownloadRequest(BaseModel):
