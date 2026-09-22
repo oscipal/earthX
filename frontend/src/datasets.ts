@@ -108,6 +108,26 @@ export function maturityNote(collection: Collection): string | null {
   return maturity;
 }
 
+// Why the map shows no imagery for this dataset at this zoom, or `null` when
+// that is not the reason (M2-10).
+//
+// Below `min_zoom` MapLibre requests no tiles at all — a raster source has no
+// underzoom — so the scenes simply are not drawn, and the map looks empty rather
+// than out of range. Above the floor this says nothing: an empty map then has
+// some other cause, and a hint that is always on is a hint nobody reads.
+//
+// It belongs wherever the app talks to the user and not in a panel that can be
+// slid away: the first version of this sat in the control panel, which
+// `runSearch` collapses, so it was never once visible in the situation it is
+// for (found locally by Otto, 22.09.2026).
+export function zoomFloorHint(dataset: DatasetOption | undefined, mapZoom: number): string | null {
+  if (!dataset?.viewable || mapZoom >= dataset.zoom.min) return null;
+  return (
+    `Zoom in to level ${dataset.zoom.min} to see imagery for ${dataset.title} — ` +
+    'below it one tile covers several scenes, which is what the coverage layer is for.'
+  );
+}
+
 // The quicklook asset, chosen generically: role `thumbnail`, then `overview`,
 // then the first `image/*` asset. `null` when the item carries none.
 export function quicklookAsset(item: StacItem): StacAsset | null {

@@ -7,6 +7,7 @@ import {
   maturityNote,
   quicklookAsset,
   quicklookPlan,
+  zoomFloorHint,
   zoomRangeOf,
 } from './datasets';
 import type { Collection, EarthxViewer, StacItem } from './types';
@@ -258,5 +259,53 @@ describe('quicklookPlan', () => {
     });
     const scene = item({ data: { href: 'https://example.test/x.tif', roles: ['data'] } });
     expect(quicklookPlan(scene, option(empty))).toBeNull();
+  });
+});
+
+
+describe('zoomFloorHint', () => {
+  function option(overrides: Partial<{ min: number; max: number }> = {}) {
+    const { min = 8, max = 14 } = overrides;
+    return datasetsFrom([
+      collection({
+        id: 'sentinel-2-l2a-zarr3',
+        title: 'Sentinel-2 L2A (Zarr3)',
+        'earthx:viewer': viewer({ min_zoom: min, max_zoom: max }),
+      }),
+    ])[0];
+  }
+
+  it('names the level to reach and the dataset it is about', () => {
+    const text = zoomFloorHint(option(), 5);
+    expect(text).toContain('level 8');
+    expect(text).toContain('Sentinel-2 L2A (Zarr3)');
+  });
+
+  it('points at the coverage layer as what answers this zoom', () => {
+    expect(zoomFloorHint(option(), 5)).toContain('coverage layer');
+  });
+
+  it('is null at the floor itself — the floor is released', () => {
+    expect(zoomFloorHint(option(), 8)).toBeNull();
+  });
+
+  it('is null above the floor', () => {
+    expect(zoomFloorHint(option(), 14)).toBeNull();
+  });
+
+  it('is null for a dataset released from z0, whatever the zoom', () => {
+    expect(zoomFloorHint(option({ min: 0 }), 0)).toBeNull();
+  });
+
+  it('is null when no dataset is selected or it is not viewable', () => {
+    expect(zoomFloorHint(undefined, 0)).toBeNull();
+    expect(zoomFloorHint(datasetsFrom([collection()])[0], 0)).toBeNull();
+  });
+
+  it('a fractional map zoom counts as the level it has not reached yet', () => {
+    // MapLibre reports a continuous zoom; 7.9 is still below the z8 the source
+    // starts at, and the tiles are still not requested.
+    expect(zoomFloorHint(option(), 7.9)).toContain('level 8');
+    expect(zoomFloorHint(option(), 8.1)).toBeNull();
   });
 });

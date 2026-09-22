@@ -1034,6 +1034,12 @@ input[type='date']:focus {
 .toast.busy {
   color: var(--accent);
 }
+/* A standing state rather than an event: quieter than a notice, no dismiss
+   button, no fade (M2-10 — the hint below a dataset's lowest released level). */
+.toast.hint {
+  border-color: var(--panel-border);
+  color: var(--muted);
+}
 
 /* --- spinners --- */
 .spinner {

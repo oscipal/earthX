@@ -22,6 +22,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    // `.tsx` as well since M2-10: the hint below a dataset's lowest released
+    // level was invisible not because its rule was wrong but because it was
+    // mounted inside a panel that slides away, and only rendering a component
+    // catches that.
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

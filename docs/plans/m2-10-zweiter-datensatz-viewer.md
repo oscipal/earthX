@@ -244,10 +244,21 @@ nachzubauen. Das ist eine eigene kleine Aufgabe und keine Zeile in diesem PR.
    die Plattform nicht weiß. Ein echtes Prüfdatum kommt mit den Health-Checks in
    M5; Punkt 10 der Checkliste bleibt bis dahin offen, statt scheinbar erfüllt
    zu sein.
-3. **Unterhalb der Untergrenze.** Steht die Karte unter `zoom.min`, sagt eine Zeile
-   „zoom in to level 8 to see imagery for this dataset" statt eine leere Karte zu
-   zeigen. Dieselbe Stelle nennt die Coverage-Karte als das, was auf dieser
-   Zoomstufe zuständig ist (`adr/0007` §12.10).
+3. **Unterhalb der Untergrenze.** Steht die Karte unter `zoom.min`, sagt eine Zeile,
+   auf welche Stufe zu zoomen ist, statt eine leere Karte zu zeigen. Dieselbe Stelle
+   nennt die Coverage-Karte als das, was auf dieser Zoomstufe zuständig ist
+   (`adr/0007` §12.10).
+
+   **Nachtrag 22.09.2026, von Otto lokal gefunden:** Der Hinweis erschien nie. Er
+   hing im `ControlPanel`, und `runSearch` setzt `panelCollapsed: true` — die Tafel
+   ist also genau dann weggeschoben, wenn es Szenen gibt, die verschwinden könnten.
+   Verdeckt hat ihn kein React-Zustand, sondern ein `transform: translateX(-100%)`
+   im CSS, weshalb weder Typprüfung noch eine Prüfung der Regel ihn fangen konnte.
+   Er steht jetzt in der `StatusBar`, der einzigen Auflage, die immer sichtbar ist,
+   und erscheint erst, wenn eine Suche etwas gefunden hat. Die Regel selbst liegt
+   als `datasets.ts::zoomFloorHint` rein daneben. Belegt durch einen Render-Test
+   (`components/StatusBar.test.tsx`), der die Tafel ausdrücklich eingeklappt setzt;
+   er schlägt fehl, sobald der Hinweis wieder aus der `StatusBar` verschwindet.
 
 `ResultsPanel` behält den Platzhalter, bekommt aber einen `title`, der sagt warum
 („this source publishes no preview image") — siehe F4.
@@ -283,6 +294,7 @@ Zarr-Pixel kommen aus dem Mini-Zarr von M2-09a.
 | ZIP-Eintragsname | `tests/earthx/access/test_download.py` | Asset mit `:` und `,`; Asset, das nur aus Sonderzeichen besteht; zwei Assets, die auf denselben bereinigten Namen fielen |
 | Zuschnitt über einen Zarr-Pfad | `tests/earthx/access/test_download.py` | AOI außerhalb des Mini-Zarr → `AoiOutsideItems`; unbekannte Variable → definierter Fehler |
 | `zoomRangeOf` | `frontend/src/datasets.test.ts` | Feld fehlt → `null`; `min > max` → `null`; Stufe keine Zahl → `null` |
+| `zoomFloorHint` (Regel) und die `StatusBar` (Anzeige) | `frontend/src/datasets.test.ts`, `frontend/src/components/StatusBar.test.tsx` | an der Untergrenze selbst kein Hinweis; über ihr keiner; Datensatz ab z0 nie; kein Datensatz gewählt; vor der ersten Suche keiner; gebrochene Kartenzoomstufe zählt zur noch nicht erreichten Stufe |
 | `quicklookPlan` | `frontend/src/datasets.test.ts` | Thumbnail vorhanden → `image`; keins, aber `default_render` → `tiles`; weder noch → `null`; `default_render.assets` leer → `null` |
 | Kachel-URL der Vorschau | `frontend/src/mapLayers.test.ts` | der Asset-Schlüssel mit `:` und `,` wird genau einmal enkodiert (Z4: dieselbe URL, dasselbe Bild) |
 | Reifegrad-Text | `frontend/src/datasets.test.ts` | `stable` erzeugt keinen Chip; unbekannter Wert wird angezeigt, nicht verschluckt |

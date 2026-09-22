@@ -82,23 +82,6 @@ function DatasetNotes() {
   );
 }
 
-// Below the lowest released level the map requests no tiles at all, so the
-// dataset simply is not there (adr/0007 §12.10: one tile would show several
-// scenes, which is the coverage map's job). Saying so beats an empty map.
-function ZoomFloorHint() {
-  const datasets = useAppStore((s) => s.datasets);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const mapZoom = useAppStore((s) => s.mapZoom);
-  const dataset = datasets.find((d) => d.id === datasetId);
-  if (!dataset?.viewable || mapZoom >= dataset.zoom.min) return null;
-  return (
-    <p className="hint-text">
-      Zoom in to level {dataset.zoom.min} to see imagery for this dataset — below it, one tile
-      covers several scenes, which is what the coverage layer is for.
-    </p>
-  );
-}
-
 function DatasetSelector() {
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
@@ -230,7 +213,6 @@ export default function ControlPanel() {
       <label className="field-label">Dataset</label>
       <DatasetSelector />
       <DatasetNotes />
-      <ZoomFloorHint />
 
       <CoverageControls />
 
