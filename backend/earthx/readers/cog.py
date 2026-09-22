@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from rio_tiler.io.rasterio import Reader
 
-from earthx.gateway import Policy, check_url
+from earthx.gateway import Policy, Resolver, check_url, resolve_host
 from earthx.gateway.gdal import vsicurl_path
 
 __all__ = ["AssetPath", "CogReader", "asset_path"]
@@ -47,15 +47,28 @@ class AssetPath(str):
         return self
 
 
-def asset_path(href: str, policy: Policy, *, dataset_id: str, item_id: str, asset: str) -> AssetPath:
+def asset_path(
+    href: str,
+    policy: Policy,
+    *,
+    dataset_id: str,
+    item_id: str,
+    asset: str,
+    resolve: Resolver = resolve_host,
+) -> AssetPath:
     """Clear an asset address and return the path GDAL reads, or raise the reason why not.
 
     Raises whatever :func:`earthx.gateway.check_url` raises — an address on a host
     the registry does not name is a ``UrlRejected``, and that is the intended end
     of the road, not an accident (adr/0006 §3.3).
+
+    ``resolve`` is handed on to ``check_url`` unchanged. The tiler passes its
+    :class:`~earthx.gateway.CachingResolver` here, because every tile of one item
+    otherwise resolves the same asset host again (M2-14); every check around the
+    resolution stays exactly where it was.
     """
     return AssetPath(
-        vsicurl_path(check_url(href, policy)),
+        vsicurl_path(check_url(href, policy, resolve=resolve)),
         dataset_id=dataset_id,
         item_id=item_id,
         asset=asset,
