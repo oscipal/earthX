@@ -368,7 +368,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? s.items.filter((it) => s.selectedIds.includes(it.id))
         : (group?.items ?? []);
       for (const it of items) {
-        const coords = quicklookCoords(it.geometry, it.bbox);
+        const coords = quicklookCoords(it);
         const asset = quicklookAsset(it);
         if (coords && asset) overlays.push({ kind: 'image', url: asset.href, coords });
       }

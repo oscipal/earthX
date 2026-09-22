@@ -123,6 +123,7 @@ Ottos Entscheidung zu M2-11).
 | M2-14 | Auflösung des Asset-Hosts zwischenspeichern | B | — | **erledigt** (#48), Frist 5 s |
 | M2-15 | Oberfläche durchgehend englisch | A | Sonnet (mittel) | M2-07d |
 | V-1 | Kartenbedienung, Globus, Theme (Viewer-Strang) | A | Sonnet (mittel) | M2-15 |
+| M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | Sonnet (klein) | M2-07a |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
@@ -135,6 +136,7 @@ stauen (`m1-fundament.md` §6).
 6. V-1, M2-10
 7. M2-08
 8. M2-11, M2-12
+9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -479,6 +481,28 @@ Tests oben sind grün; `ruff check backend`, `pytest`, `lint-imports` grün.
 
 **Nicht anfassen:** Basiskarte, Backend.
 **Abnahme:** Drehen und Kippen sind mit Maus und Touch nicht möglich; der Globus zeigt Quicklooks, Kacheln und AOI lagerichtig; beide Paletten erfüllen die Kontraste laut Inventar Teil 3; Lint, Typprüfung und Vitest grün.
+
+### M2-16 — Bug: Quicklook-Platzierung an Kachelrändern
+
+**Befund:** Bei manchen Sentinel-2-Szenen liegt der Quicklook an der falschen
+Stelle, auf der flachen Karte wie auf dem Globus; der heruntergeladene Zuschnitt
+derselben Szene liegt richtig. Beispiel: `S2C_T32TNT_20260920T103025_L2A`
+(2026-09-20, MGRS 32TNT, Aufnahme 10:37:40Z).
+
+**Ursache:** Das Thumbnail von Earth Search bildet die ganze MGRS-Kachel ab,
+einschließlich Nodata-Rand. `quicklookCoords` (M2-07a) leitete die vier
+Eckpunkte bislang aus der Datengeometrie des Items ab, die bei Randszenen
+kleiner und unregelmäßig ist als die Kachel.
+
+**Stufe A.** Hängt an M2-07a (gemergt), sonst an nichts.
+**Umfang:**
+- Eckpunkte kommen jetzt aus der Kachel, nicht aus der Datengeometrie. Earth Search setzt für `sentinel-2-c1-l2a` aber kein `proj:bbox` (STAC-Projection-Extension v1.1 lässt es optional; geprüft an der Beispielszene) — die Aufgabe wurde deshalb mit Otto nachgeschärft: die Eckpunkte kommen aus `proj:transform`/`proj:shape` des `visual`-Assets (derselbe Pixelraster, den die Kachel-URL auch sonst als Standard-Rendering nutzt), nicht aus einem wörtlichen `proj:bbox`-Feld. Das CRS kommt aus `proj:code`, ersatzweise `proj:epsg` (dieselbe Reihenfolge wie in `tiler.py::_proj_code`).
+- UTM → WGS84 über `proj4` (neue Frontend-Abhängigkeit); auf die UTM-Zonen beschränkt, die Sentinel-2 tatsächlich liefert (`EPSG:326xx`/`327xx`).
+- Fehlt CRS oder eine georeferenzierte Asset-Extent, wird kein Quicklook gezeigt statt eines falsch platzierten.
+- Toter Code weg, der nur noch von der alten Geometrie-Herleitung gebraucht wurde (`footprintCorners`, `bboxToImageCoords`).
+
+**Nicht anfassen:** Footprint-Anzeige (Coverage/M2-07c) und `pointInFootprint` — die nutzen weiter die Datengeometrie, das ist ein anderes Feature und nicht Teil dieses Befunds.
+**Abnahme:** ein Vitest-Fall mit einer Randszene, deren Geometrie deutlich kleiner als die Kachel ist; die Eckpunkte stammen aus der Kachel. Fehlen `proj:bbox`/`proj:code` (in der Praxis: fehlt CRS oder Asset-Extent), wird kein Quicklook gezeigt statt eines falsch platzierten. Lint, Typprüfung, Vitest grün.
 
 ---
 

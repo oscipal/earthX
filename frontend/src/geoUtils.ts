@@ -1,6 +1,8 @@
 // Small GeoJSON helpers used by the map + store.
 
-import type { Bbox } from './types';
+import proj4 from 'proj4';
+
+import type { Bbox, StacAsset, StacItem } from './types';
 
 export function bboxToPolygon(bbox: Bbox): GeoJSON.Polygon {
   const [minx, miny, maxx, maxy] = bbox;
@@ -62,19 +64,6 @@ export function polygonBbox(geom: GeoJSON.Geometry): Bbox | null {
   return [minx, miny, maxx, maxy];
 }
 
-// Corner order MapLibre image sources expect: top-left, top-right, bottom-right, bottom-left.
-export function bboxToImageCoords(
-  bbox: Bbox,
-): [[number, number], [number, number], [number, number], [number, number]] {
-  const [minx, miny, maxx, maxy] = bbox;
-  return [
-    [minx, maxy],
-    [maxx, maxy],
-    [maxx, miny],
-    [minx, miny],
-  ];
-}
-
 export type Coords4 = [[number, number], [number, number], [number, number], [number, number]];
 
 // Corner-quad transforms for image sources whose pixels are stored in a
@@ -88,15 +77,89 @@ export function mirrorY(c: Coords4): Coords4 {
   return [c[3], c[2], c[1], c[0]];
 }
 
-// Image-source corner quad for a scene's quicklook, from its true footprint.
-// Shared by the mosaic and the layer renderer so a pinned quicklook lands
-// exactly where it was shown.
-export function quicklookCoords(
-  geometry: GeoJSON.Geometry | null | undefined,
-  bbox: Bbox | null | undefined,
-): Coords4 | null {
-  if (!bbox) return null;
-  return footprintCorners(geometry, bbox) ?? bboxToImageCoords(bbox);
+// EPSG code → proj4 definition, restricted to the UTM zones a Sentinel-2
+// `proj:code` names (EPSG:326xx northern hemisphere, EPSG:327xx southern).
+// Any other code is unsupported here — callers treat that like a missing
+// `proj:code` rather than guess at a definition.
+function utmProj4Def(code: string): string | null {
+  const match = /^EPSG:(\d{4,5})$/i.exec(code.trim());
+  if (!match) return null;
+  const epsg = Number(match[1]);
+  const north = epsg >= 32601 && epsg <= 32660;
+  const south = epsg >= 32701 && epsg <= 32760;
+  if (!north && !south) return null;
+  const zone = epsg - (north ? 32600 : 32700);
+  return `+proj=utm +zone=${zone} +${north ? 'north' : 'south'} +datum=WGS84 +units=m +no_defs`;
+}
+
+// The item's own CRS, in either spelling STAC has for it — mirrors the
+// tiler's `_proj_code` (backend/earthx/api/tiler.py): `proj:code` is the
+// projection extension v2 field, `proj:epsg` (an int) the v1 one Earth
+// Search still sends.
+function projCode(properties: Record<string, unknown>): string | null {
+  const code = properties['proj:code'];
+  if (typeof code === 'string' && code) return code;
+  const epsg = properties['proj:epsg'];
+  return typeof epsg === 'number' && Number.isInteger(epsg) ? `EPSG:${epsg}` : null;
+}
+
+function isFiniteNumberArray(v: unknown, length: number): v is number[] {
+  return Array.isArray(v) && v.length >= length && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+}
+
+// An asset's pixel-grid extent, in its own projected CRS — the STAC
+// projection extension's `proj:transform` (an affine `[a, b, c, d, e, f, …]`
+// mapping pixel column/row to projected x/y) and `proj:shape` (`[rows,
+// cols]`). Corner order [TL, TR, BR, BL].
+function assetExtent(asset: StacAsset): Coords4 | null {
+  const transform = asset['proj:transform'];
+  const shape = asset['proj:shape'];
+  if (!isFiniteNumberArray(transform, 6)) return null;
+  if (!isFiniteNumberArray(shape, 2) || shape[0] <= 0 || shape[1] <= 0) return null;
+  const [a, b, c, d, e, f] = transform;
+  const [rows, cols] = shape;
+  const at = (col: number, row: number): [number, number] => [a * col + b * row + c, d * col + e * row + f];
+  return [at(0, 0), at(cols, 0), at(cols, rows), at(0, rows)];
+}
+
+// The georeferenced asset whose pixel grid stands in for the item's own
+// `proj:bbox`: Earth Search's Sentinel-2 items carry no `proj:bbox` at all
+// (STAC projection extension v1.1 leaves it optional and unset here), so the
+// tile's true extent — nodata border included — has to come from an asset's
+// `proj:transform`/`proj:shape` instead. `visual` first, the RGB asset the
+// quicklook approximates and the dataset's own default-render asset;
+// otherwise the first asset that carries both fields.
+function georeferencedExtent(assets: Record<string, StacAsset>): Coords4 | null {
+  const visual = assets.visual && assetExtent(assets.visual);
+  if (visual) return visual;
+  for (const asset of Object.values(assets)) {
+    const extent = assetExtent(asset);
+    if (extent) return extent;
+  }
+  return null;
+}
+
+// Image-source corner quad for a scene's quicklook, from the *tile's* extent,
+// not the item's data geometry: Earth Search's thumbnail for Sentinel-2
+// renders the whole MGRS tile including its nodata border, while a
+// partial/edge scene's geometry only covers the actual data and is smaller
+// and irregular. Anchoring the quicklook to the geometry then misplaces it.
+// `null` (no quicklook) rather than a guess when the item's CRS or a
+// georeferenced asset's extent is missing, or the CRS isn't a UTM zone we
+// can convert.
+export function quicklookCoords(item: Pick<StacItem, 'properties' | 'assets'> | null | undefined): Coords4 | null {
+  if (!item) return null;
+  const code = projCode(item.properties ?? {});
+  if (!code) return null;
+  const def = utmProj4Def(code);
+  if (!def) return null;
+  const extent = georeferencedExtent(item.assets ?? {});
+  if (!extent) return null;
+  const toWgs84 = ([x, y]: [number, number]): [number, number] => {
+    const [lon, lat] = proj4(def, 'EPSG:4326', [x, y]);
+    return [lon, lat];
+  };
+  return [toWgs84(extent[0]), toWgs84(extent[1]), toWgs84(extent[2]), toWgs84(extent[3])];
 }
 
 function exteriorRing(geom: GeoJSON.Geometry | null | undefined): number[][] | null {
@@ -104,36 +167,6 @@ function exteriorRing(geom: GeoJSON.Geometry | null | undefined): number[][] | n
   if (geom.type === 'Polygon') return geom.coordinates[0] as number[][];
   if (geom.type === 'MultiPolygon') return geom.coordinates[0]?.[0] as number[][];
   return null;
-}
-
-// Order a frame's 4 footprint corners into image-source order [TL,TR,BR,BL]
-// using a north-up heuristic, so a rectangular quicklook warps onto the true
-// (possibly rotated) footprint quad and adjacent frames tile edge-to-edge.
-export function footprintCorners(
-  geom: GeoJSON.Geometry | null | undefined,
-  bbox: Bbox | null | undefined,
-): Coords4 | null {
-  const ring = exteriorRing(geom);
-  if (ring && ring.length >= 4) {
-    let pts = ring.slice();
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    if (first[0] === last[0] && first[1] === last[1]) pts = pts.slice(0, -1);
-    if (pts.length === 4) {
-      const byLat = [...pts].sort((p, q) => q[1] - p[1]); // north first
-      const top = byLat.slice(0, 2).sort((p, q) => p[0] - q[0]); // west first
-      const bot = byLat.slice(2, 4).sort((p, q) => p[0] - q[0]);
-      const [tl, tr] = top;
-      const [bl, br] = bot;
-      return [
-        [tl[0], tl[1]],
-        [tr[0], tr[1]],
-        [br[0], br[1]],
-        [bl[0], bl[1]],
-      ];
-    }
-  }
-  return bbox ? bboxToImageCoords(bbox) : null;
 }
 
 // Ray-casting point-in-polygon (falls back to bbox containment).
