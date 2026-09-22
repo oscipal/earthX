@@ -57,7 +57,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
 )
 from earthx.access.tiles import EarthxTilerFactory, open_asset
-from earthx.adapters.earth_search import (
+from earthx.adapters import (
     InvalidQuery,
     UnknownCollection,
     UnsupportedSource,
