@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import ControlPanel from './components/ControlPanel';
 import Draggable from './components/Draggable';
+import DownloadDialog from './components/DownloadDialog';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import ResultsPanel from './components/ResultsPanel';
@@ -103,6 +104,8 @@ export default function App() {
       <div className="overlay status">
         <StatusBar />
       </div>
+
+      <DownloadDialog />
     </div>
   );
 }
