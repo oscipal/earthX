@@ -4,6 +4,8 @@
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 
+import type { CoverageCell } from './api';
+import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
 import { quicklookAsset } from './datasets';
 import { asFeatureCollection, bboxToPolygon, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
@@ -12,7 +14,8 @@ import type { AppliedRender, DownloadedInfo, StacItem } from './types';
 
 const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
-const COVERAGE_SRC = 'coverage-src'; // footprints of all matching scenes
+const COVERAGE_SRC = 'coverage-src'; // the density grid (M2-07c)
+const COVERAGE_FOOTPRINTS_SRC = 'coverage-footprints-src'; // real footprints once footprints_advised
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const MAX_MOSAIC_LAYERS = 40;
@@ -161,25 +164,38 @@ export function ensureBaseLayers(map: MapLibreMap): void {
   }
   if (!map.getSource(COVERAGE_SRC)) {
     map.addSource(COVERAGE_SRC, { type: 'geojson', data: EMPTY_FC });
-    // Acquisition-density heatmap (choropleth over a grid): blue → red by count.
+    // Acquisition-density heatmap: a `fill` choropleth over the geotile grid,
+    // not MapLibre's own `heatmap` type (adr/0004 §5 — that type is
+    // point-based and mixes intensity with radius and zoom, so a cell's exact
+    // count would not be readable from it, and the legend has nothing to
+    // anchor to). The color stops are set per response in `setCoverageDisplay`
+    // (log-scaled, anchored on that response's own maximum).
     map.addLayer({
       id: 'coverage-heat',
       type: 'fill',
       source: COVERAGE_SRC,
+      layout: { visibility: 'none' },
       paint: {
-        'fill-color': [
-          'interpolate',
-          ['linear'],
-          ['get', 'count'],
-          1, '#2c7bb6',
-          4, '#00a6ca',
-          8, '#a6d96a',
-          13, '#fdae61',
-          20, '#d7191c',
-        ],
+        // maplibre-gl doesn't export the expression-spec type this needs, so
+        // `coverage.ts` returns a plain array and the cast happens once,
+        // here — `setPaintProperty` below takes `value: any` and needs none.
+        'fill-color': coverageFillColorExpression(1) as never,
         'fill-opacity': 0.5,
         'fill-outline-color': 'rgba(0,0,0,0)',
       },
+    });
+  }
+  if (!map.getSource(COVERAGE_FOOTPRINTS_SRC)) {
+    map.addSource(COVERAGE_FOOTPRINTS_SRC, { type: 'geojson', data: EMPTY_FC });
+    // Below the switch point (`footprints_advised`), real scene footprints
+    // replace the density cells — outlines only, so the imagery underneath
+    // stays visible.
+    map.addLayer({
+      id: 'coverage-footprints-line',
+      type: 'line',
+      source: COVERAGE_FOOTPRINTS_SRC,
+      layout: { visibility: 'none' },
+      paint: { 'line-color': '#a6d96a', 'line-width': 1.4, 'line-opacity': 0.85 },
     });
   }
   if (!map.getSource(SEL_SRC)) {
@@ -193,11 +209,33 @@ export function ensureBaseLayers(map: MapLibreMap): void {
   }
 }
 
-export function setCoverageData(
-  map: MapLibreMap,
-  fc: GeoJSON.FeatureCollection | null,
-): void {
-  setData(map, COVERAGE_SRC, fc ?? EMPTY_FC);
+export type CoverageDisplayMode = 'off' | 'density' | 'footprints';
+
+export interface CoverageDisplay {
+  mode: CoverageDisplayMode;
+  cells: CoverageCell[];
+  maxCount: number;
+  footprints: GeoJSON.FeatureCollection | null;
+}
+
+// Reconciles both coverage layers with the current mode — only one of the
+// two ever carries data, so a stray re-render can't show density and
+// footprints at once (`store.ts` picks the mode via `coverage.ts::showFootprints`).
+export function setCoverageDisplay(map: MapLibreMap, display: CoverageDisplay): void {
+  const density = display.mode === 'density';
+  const footprints = display.mode === 'footprints';
+  setData(map, COVERAGE_SRC, density ? cellsToFeatureCollection(display.cells) : EMPTY_FC);
+  if (density && map.getLayer('coverage-heat')) {
+    map.setPaintProperty('coverage-heat', 'fill-color', coverageFillColorExpression(display.maxCount));
+  }
+  setVisibility(map, 'coverage-heat', density);
+  setData(map, COVERAGE_FOOTPRINTS_SRC, footprints ? (display.footprints ?? EMPTY_FC) : EMPTY_FC);
+  setVisibility(map, 'coverage-footprints-line', footprints);
+}
+
+function setVisibility(map: MapLibreMap, layerId: string, visible: boolean): void {
+  if (!map.getLayer(layerId)) return;
+  map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
 }
 
 function setData(map: MapLibreMap, srcId: string, data: GeoJSON.GeoJSON): void {
@@ -233,7 +271,10 @@ function footprintOf(item: StacItem): GeoJSON.Geometry | null {
   return item.bbox ? bboxToPolygon(item.bbox) : null;
 }
 
-function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
+// Exported for M2-07c: the same footprint-or-bbox fallback the mosaic
+// selection highlight uses, reused to draw real scene footprints once the
+// coverage answer's `footprints_advised` switches the map away from density.
+export function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
   for (const it of items) {
     const g = footprintOf(it);

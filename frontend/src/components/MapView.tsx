@@ -9,11 +9,30 @@ import {
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
+import { showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { ensureBaseLayers, setAoiData, setCoverageData, syncLayers, syncMosaic } from '../mapLayers';
+import type { CoverageDisplay } from '../mapLayers';
+import { ensureBaseLayers, setAoiData, setCoverageDisplay, syncLayers, syncMosaic } from '../mapLayers';
 import { baseMapStyle } from '../mapStyles';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
+
+// Only one of density/footprints is ever drawn (mapLayers.ts): footprints
+// once the backend advises it *and* the zoom brake agrees (coverage.ts), a
+// density fill otherwise. Turned off in focus mode so a full-resolution
+// raster is never obscured by a leftover coverage layer underneath it.
+function coverageDisplayFor(st: ReturnType<typeof useAppStore.getState>, zoom: number): CoverageDisplay {
+  if (!st.showCoverage || st.focusMode || !st.coverage) {
+    return { mode: 'off', cells: [], maxCount: 0, footprints: null };
+  }
+  // Falls back to the density it already has rather than an empty layer
+  // while the footprints request is still in flight or failed
+  // (store.ts::refreshCoverage leaves `coverageFootprints` at `null` then).
+  if (showFootprints(st.coverage, zoom) && st.coverageFootprints) {
+    return { mode: 'footprints', cells: [], maxCount: 0, footprints: st.coverageFootprints };
+  }
+  return { mode: 'density', cells: st.coverage.cells, maxCount: st.coverage.max_count, footprints: null };
+}
 
 function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
   draw.setMode(mode === 'none' ? 'static' : mode);
@@ -37,7 +56,9 @@ export default function MapView() {
   const focusMode = useAppStore((s) => s.focusMode);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const showCoverage = useAppStore((s) => s.showCoverage);
-  const coverageFC = useAppStore((s) => s.coverageFC);
+  const coverage = useAppStore((s) => s.coverage);
+  const coverageFootprints = useAppStore((s) => s.coverageFootprints);
+  const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
 
   // --- create the map once ---
@@ -103,7 +124,7 @@ export default function MapView() {
       ensureBaseLayers(map);
       const st = useAppStore.getState();
       setAoiData(map, st.aoi);
-      setCoverageData(map, st.showCoverage ? st.coverageFC : null);
+      setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       syncLayers(map, st.layers);
       syncMosaic(map, {
         items: st.groups[st.activeGroupIndex]?.items ?? [],
@@ -115,8 +136,20 @@ export default function MapView() {
       });
       initDraw();
       readyRef.current = true;
+      // The store needs an initial zoom before the first `moveend` (which
+      // only fires once the user pans/zooms) so a coverage fetch can pick a
+      // sensible geotile level from the very first render.
+      useAppStore.getState().setMapZoom(map.getZoom());
     };
     map.on('style.load', onStyleLoad);
+
+    // Coverage (M2-07c) reacts to the map's zoom — its geotile *level*, per
+    // adr/0004 §6.3 — never to the pan viewport as a spatial filter (see the
+    // long comment on `refreshCoverage` in store.ts). Registered once on the
+    // map itself (unlike the custom layers, listeners survive a style reload).
+    map.on('moveend', () => {
+      useAppStore.getState().setMapZoom(map.getZoom());
+    });
 
     // Clicking the displayed imagery toggles that scene's download selection
     // (only when no drawing tool is active, so it never eats draw clicks).
@@ -157,11 +190,13 @@ export default function MapView() {
     if (map && readyRef.current) setAoiData(map, aoi);
   }, [aoi]);
 
-  // --- global BIOMASS coverage footprints ---
+  // --- coverage heatmap / footprints (M2-07c) ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) setCoverageData(map, showCoverage ? coverageFC : null);
-  }, [coverageFC, showCoverage]);
+    if (map && readyRef.current) {
+      setCoverageDisplay(map, coverageDisplayFor(useAppStore.getState(), mapZoom));
+    }
+  }, [showCoverage, coverage, coverageFootprints, mapZoom, focusMode]);
 
   // --- pinned layers (layer manager) ---
   useEffect(() => {

@@ -139,3 +139,76 @@ export async function fetchStatistics(
 ): Promise<Record<string, BandStatistics>> {
   return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset)));
 }
+
+// Pages through `nextToken` until the result is complete or `maxItems` is
+// reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
+// date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
+// walk every page rather than trust the first one.
+export async function searchAllPages(
+  q: Omit<SearchQuery, 'limit' | 'token'>,
+  maxItems: number,
+): Promise<{ features: StacItem[]; numberMatched: number | null }> {
+  let token: string | undefined;
+  const features: StacItem[] = [];
+  let numberMatched: number | null = null;
+  do {
+    const page: ItemPage = await searchItems({ ...q, limit: 100, token });
+    features.push(...page.features);
+    if (numberMatched === null) numberMatched = page.numberMatched;
+    token = page.nextToken ?? undefined;
+  } while (token && features.length < maxItems);
+  return { features, numberMatched };
+}
+
+// The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the
+// `api` process's base app, outside `/stac` — a different namespace, same
+// same-origin dev-proxy pattern (vite.config.ts).
+export type CoverageCompleteness = 'complete' | 'truncated' | 'sample';
+
+export interface CoverageCell {
+  k: string; // geotile key "z/x/y"
+  n: number;
+}
+
+export interface CoverageHistogramPoint {
+  t: string; // ISO instant, start of the bucket
+  n: number;
+}
+
+// Mirrors `earthx.api.coverage_route._serialise` field for field.
+export interface CoverageResponse {
+  dataset_id: string;
+  grid: string;
+  level: number;
+  counting: string;
+  cells: CoverageCell[];
+  counted: number;
+  total_count: number | null;
+  completeness: CoverageCompleteness;
+  max_count: number;
+  histogram: CoverageHistogramPoint[];
+  histogram_interval: string;
+  footprints_advised: boolean;
+  from_cache: boolean;
+  extent: Bbox | null;
+}
+
+export interface CoverageParams {
+  datasetId: string;
+  zoom: number;
+  bbox?: Bbox;
+  datetime?: string;
+  maxCloudCover?: number;
+}
+
+export function buildCoverageUrl(p: CoverageParams): string {
+  const params = new URLSearchParams({ zoom: String(p.zoom) });
+  if (p.bbox) params.set('bbox', p.bbox.join(','));
+  if (p.datetime) params.set('datetime', p.datetime);
+  if (p.maxCloudCover !== undefined) params.set('max_cloud_cover', String(p.maxCloudCover));
+  return `${BASE}/coverage/${encodeURIComponent(p.datasetId)}?${params.toString()}`;
+}
+
+export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse> {
+  return jsonOrThrow(await fetch(buildCoverageUrl(p)));
+}

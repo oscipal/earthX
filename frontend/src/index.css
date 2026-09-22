@@ -544,6 +544,56 @@ input[type='date']:focus {
   font-size: 10px;
   color: var(--muted);
 }
+.hint-text.error {
+  color: #ff6b6b;
+}
+
+/* --- coverage heatmap (M2-07c) --- */
+.coverage-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coverage-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.legend-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.legend-gradient {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #2c7bb6, #00a6ca, #a6d96a, #fdae61, #d7191c);
+}
+.legend-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+}
+.coverage-note {
+  color: var(--accent);
+}
+.coverage-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 32px;
+}
+.histogram-bar {
+  flex: 1 1 auto;
+  min-width: 1px;
+  background: var(--panel-border);
+  border-radius: 1px;
+}
+.histogram-bar.in-range {
+  background: var(--accent);
+}
 
 /* --- results panel --- */
 .results-panel {
@@ -883,6 +933,13 @@ input[type='date']:focus {
 .lm-name:hover {
   background: var(--row-hover);
   color: var(--accent);
+}
+.coverage-row .lm-name {
+  cursor: default;
+}
+.coverage-row .lm-name:hover {
+  background: none;
+  color: var(--text);
 }
 .lm-opacity {
   width: 56px;
