@@ -265,7 +265,6 @@ class FederatingCoreCrudClient(CoreCrudClient):
             return None
 
         if len(federated_ids) == 1 and not native_ids:
-            # The one path M1's registry (one dataset) ever reaches.
             return await self._federated_page(
                 federated_ids[0], request, bbox=bbox, datetime_value=datetime_value, limit=limit, token=token
             )
@@ -273,13 +272,19 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # More than one source active at once (several federated collections, or a
         # mix of federated and native): rejected rather than merged. A merge across
         # heterogeneous sources needs a real second dataset to build and test
-        # against (M2) - not reachable at all with today's registry (one dataset),
-        # so a best-effort concatenation nobody could verify stayed correct would
-        # only look tested. Otto, before merge (docs/ENTSCHEIDUNGSLOG.md).
+        # against — with M2-09b's second federated dataset this branch is reachable
+        # by *any* search that does not name a collection, not only the deliberate
+        # multi-collection case M2's own tests still cover. A best-effort
+        # concatenation nobody could verify stayed correct would only look tested.
+        # Otto, before merge (docs/ENTSCHEIDUNGSLOG.md); M2-09b plan §10 F3 kept the
+        # rejection and only sharpened the message below.
         LOGGER.warning("rejected a search spanning more than one source at once: %s", target_ids)
         raise HTTPException(
             status_code=400,
-            detail="a search spanning more than one source is not supported yet; name exactly one collection",
+            detail=(
+                "a search spanning more than one source is not supported yet; "
+                f"name exactly one collection ({', '.join(sorted(federated_ids))})"
+            ),
         )
 
     async def _federated_page(
