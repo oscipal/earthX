@@ -56,9 +56,13 @@ SENTINEL_2_L2A = DatasetConfig(
         "5.0 on. Served by Earth Search v1 (Element 84) from the Registry of Open "
         "Data on AWS (adr/0003 §3, Option B)."
     ),
-    # Onboarding checklist point 3 is open: adr/0003 names no DOI and no persistent
-    # citation for this collection, and M1 reads nothing from the source.
-    doi=None,
+    # The collection's own `cite-as` link (read from the source on 22.09.2026, M2-08
+    # plan §3), the same seam the second entry takes its DOI from. adr/0003 left
+    # onboarding checklist point 3 open because M1 read nothing from the source; the
+    # link was there all along. It names the ESA product, not Element 84's COG
+    # distribution — which is why it differs from the Zarr entry's DOI rather than
+    # repeating it. No separate persistent citation beyond it.
+    doi="https://doi.org/10.5270/S2_-742ikth",
     citation=None,
     data_class=DataClass.RASTER_TIME_SERIES,
     format=DataFormat.COG,

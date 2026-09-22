@@ -167,9 +167,14 @@ def test_the_viewer_groups_one_acquisition_day_per_mgrs_tile() -> None:
     assert viewer.group_by == ("datetime", "grid:code")
 
 
-def test_the_citation_is_open() -> None:
-    """Checklist point 3: adr/0003 names neither a DOI nor a persistent citation."""
-    assert SENTINEL_2_L2A.doi is None
+def test_the_doi_is_the_one_the_collection_cites() -> None:
+    """Checklist point 3, closed in M2-08 from the collection's own `cite-as` link.
+
+    adr/0003 left the point open because M1 read nothing from the source. The link
+    was there; it names the ESA product rather than Element 84's COG distribution,
+    which is why it differs from the Zarr entry's DOI (M2-08 plan §3, 22.09.2026).
+    """
+    assert SENTINEL_2_L2A.doi == "https://doi.org/10.5270/S2_-742ikth"
     assert SENTINEL_2_L2A.citation is None
 
 

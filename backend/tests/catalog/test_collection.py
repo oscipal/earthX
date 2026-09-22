@@ -116,9 +116,16 @@ def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_ext
     assert render["assets"] == ["visual"]
 
 
-def test_a_dataset_without_a_doi_declares_no_scientific_extension(collection: dict) -> None:
-    assert collection["stac_extensions"] == []
-    assert "sci:doi" not in collection
+def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict) -> None:
+    assert collection["stac_extensions"] == [SCIENTIFIC_EXTENSION]
+    assert collection["sci:doi"] == SENTINEL_2_L2A.doi
+
+
+def test_a_dataset_without_a_doi_declares_no_scientific_extension(valid_config) -> None:
+    """Both fields empty means the extension has nothing to say, so it stays away."""
+    bare = to_stac_collection(replace(valid_config, doi=None, citation=None))
+    assert bare["stac_extensions"] == []
+    assert "sci:doi" not in bare
 
 
 def test_the_licence_link_points_at_the_primary_source(collection: dict) -> None:
