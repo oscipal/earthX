@@ -1,11 +1,35 @@
-"""Polarimetric decompositions for the L1A SCS product.
+"""Pauli and Freeman-Durden decompositions for complex quad-pol SCS data.
+
+A resting operator (ENTSCHEIDUNGEN_2026-09-18.md §3): the compute core and the
+warp rule moved here unchanged from the BIOMASS prototype's `app/decomp.py`
+when the prototype was removed (adr/0008 §6, §9 Frage 3). What did **not**
+move is `decompose_crop`, the platform-facing half that read the item
+registry and the token-secured MAAP asset store (`app.store`, `app.auth`) —
+both excluded from the target architecture (KLAERUNGEN B9, ENTSCHEIDUNGEN §3).
+
+So this module has, on purpose, no caller and no registry entry: `quad_pol`
+stays `False` for every dataset (`catalog/registry.py`), and the
+`datasets-isolated` contract in `.importlinter` keeps it that way. It stays
+isolated under `earthx/datasets/quad_pol_reference/` — named after the
+capability, not a dataset, because it is open whether a token-free source for
+*complex* quad-pol data exists at all (Sentinel-1 is dual-pol; ENTSCHEIDUNGEN
+§3, open point in `docs/ENTSCHEIDUNGSLOG.md`). It is a placeholder for the day
+a real dataset supplies that capability, at which point this directory is
+renamed to that dataset's id and gets a registry entry.
+
+Only two things changed against the prototype (adr/0008 §11 point 5): the
+`token` parameter of `_warp_complex` is gone (no token in the target
+architecture), and its GDAL environment now comes from
+`earthx.gateway.gdal.gdal_options`, the one place that owns that
+configuration (KLAERUNGEN B8). Everything else — the math, the warp rule, the
+line order — is unchanged on purpose (CLAUDE.md: "`decomp.py` nie
+generalisieren").
 
 SCS ships the *complex* quad-pol data as two 4-band GeoTIFFs (amplitude
 ``i_abs`` + ``i_phase``) in **slant-range** geometry, geolocated only by GCPs.
 So we warp both to a geographic grid with nearest-neighbour resampling (which
 keeps each amplitude/phase pair co-located = a valid single-look complex
-sample), reconstruct the complex scattering vector, run the decomposition, and
-write a 3-band RGB-encoded COG that the normal /tiles path can serve.
+sample), reconstruct the complex scattering vector, and run the decomposition.
 
 Implemented:
   - pauli            R=|HH-VV|, G=|HV|, B=|HH+VV|   (coherent, uses phase)
@@ -14,19 +38,14 @@ Implemented:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 import rasterio
 from affine import Affine
-from rasterio.io import MemoryFile
 from rasterio.transform import array_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
-from rio_cogeo.cogeo import cog_translate
-from rio_cogeo.profiles import cog_profiles
 
-from . import auth, store
-from .cog import _gdal_env
+from earthx.gateway import Policy
+from earthx.gateway.gdal import gdal_options
 
 METHODS = ("pauli", "freeman")
 
@@ -58,11 +77,11 @@ def _warp_complex(
     abs_href: str,
     phase_href: str,
     bbox: tuple[float, float, float, float],
-    token: Optional[str],
+    policy: Policy,
     max_size: int = 2048,
 ):
     dst = "EPSG:4326"
-    with _gdal_env(token):
+    with rasterio.Env(**gdal_options(policy)):
         with rasterio.open(abs_href) as asrc, rasterio.open(phase_href) as psrc:
             gcps, gcp_crs = asrc.get_gcps()
             if not gcps:
@@ -162,63 +181,3 @@ def _freeman(s, valid, w=5):
 
 
 _DECOMP = {"pauli": _pauli, "freeman": _freeman}
-
-
-def decompose_crop(
-    item_id: str,
-    geometry: dict,
-    bbox: tuple[float, float, float, float],
-    method: str,
-) -> dict:
-    if method not in _DECOMP:
-        raise DecompError(f"Unknown decomposition '{method}'.")
-    item = store.get_item(item_id)
-    if not item:
-        raise FileNotFoundError(f"Item '{item_id}' is unknown — search first.")
-    assets = item.get("assets", {})
-    abs_a = assets.get("enclosure_i_abs_tiff")
-    pha_a = assets.get("enclosure_i_phase_tiff")
-    if not abs_a or not pha_a:
-        raise DecompError("This scene has no SCS complex (abs+phase) TIFFs to decompose.")
-
-    aoi_h = store.aoi_hash(geometry)
-    key = f"decomp_{method}"
-    out_path = store.crop_path(item_id, aoi_h, key)
-    if out_path.exists():
-        store.touch(out_path)
-        with rasterio.open(out_path) as ds:
-            b = ds.bounds
-        return {
-            "item_id": item_id, "aoi_hash": aoi_h, "asset": key, "cached": True,
-            "bounds": [b.left, b.bottom, b.right, b.top], "path": str(out_path),
-        }
-
-    token = auth.get_access_token()
-    s, dtr, valid = _warp_complex(abs_a["href"], pha_a["href"], bbox, token)
-    r, g, b = _DECOMP[method](s, valid)
-    data = np.stack([r, g, b]).astype("float32")
-    data[:, ~valid] = np.nan  # transparent nodata outside the swath
-    h2, w2 = valid.shape
-
-    src_profile = {
-        "driver": "GTiff", "dtype": "float32", "count": 3,
-        "height": h2, "width": w2, "crs": "EPSG:4326",
-        "transform": dtr, "nodata": float("nan"),
-    }
-    dst_profile = cog_profiles.get("deflate")
-    dst_profile.update({"blockxsize": 256, "blockysize": 256})
-
-    store.evict_if_needed()
-    with MemoryFile() as memfile:
-        with memfile.open(**src_profile) as mem_ds:
-            mem_ds.write(data)
-        cog_translate(memfile.name, str(out_path), dst_profile, in_memory=False, quiet=True)
-    store.touch(out_path)
-    store.evict_if_needed()
-
-    with rasterio.open(out_path) as ds:
-        bb = ds.bounds
-    return {
-        "item_id": item_id, "aoi_hash": aoi_h, "asset": key, "cached": False,
-        "bounds": [bb.left, bb.bottom, bb.right, bb.top], "path": str(out_path),
-    }

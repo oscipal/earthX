@@ -1,9 +1,9 @@
 """The allowlist, the limits, and every check that needs no network.
 
-The host rules here answer the weakness the prototype still carries as an
-``xfail`` (``backend/tests/test_config.py``): a plain ``endswith`` lets
-``evilmaap.eo.esa.int`` through. A match is exact or ends at a dot, and the
-host is normalized before it is compared at all.
+The host rules here answer a weakness the BIOMASS prototype's allowlist once
+carried as an ``xfail``, removed with the prototype (adr/0008): a plain
+``endswith`` let ``evilmaap.eo.esa.int`` through. A match is exact or ends at
+a dot, and the host is normalized before it is compared at all.
 """
 
 from __future__ import annotations

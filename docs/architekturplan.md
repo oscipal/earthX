@@ -596,7 +596,7 @@ OpenTelemetry-Traces über `api → tiler/worker → gateway → Quelle`; Metrik
 
 | Bestehend / entschieden | Rolle in der Zielarchitektur |
 |---|---|
-| Prototyp gesamt | Referenz für Funktionen und Designentscheidungen; bleibt im Repo, bis seine Funktionen mit einem token-freien Datensatz laufen (Entscheidung Otto, Stufe B) |
+| Prototyp gesamt (historisch) | Entfernt (`adr/0008-prototyp-entfernen.md`, 2026-09-22): 17 von 21 Funktionen liefen bereits token-frei in `earthx`, die restlichen vier sind durch eigene Entscheidungen verschoben oder ersatzlos gelöst. Referenz bleibt der Tag `prototype-biomass`, nicht mehr der Arbeitsbaum |
 | `cog.py` | erster Reader in `readers` |
 | `zarr_reader.py` (neu) | zweiter Reader; später auch für virtuelle Stores |
 | `datasets.py` / `DatasetConfig` mit `format` | Keim des Katalogs: wird zu kuratierten YAML-Definitionen, die nach pgstac geladen werden; `format` bleibt der Reader-Dispatch |
@@ -608,7 +608,7 @@ OpenTelemetry-Traces über `api → tiler/worker → gateway → Quelle`; Metrik
 | `ControlPanel.tsx`, `store.ts` | Generalisierung wie entschieden; Processing-Teil später aus Operator-Schemas generiert |
 | Funktionen und Designentscheidungen des Prototyps | AOI-Auswahl, Quicklook-Overlays mit Zeitleiste, Auswahl-/Bestätigungsablauf, AOI-Zuschnitt über partielle COG-Reads, zweistufige Anzeige, Stitching, Coverage Map, LRU-Disk-Cache, dunkles Kartendesign mit Theme-Umschalter, polarimetrische Auswertung — werden auf token-freie Datensätze übertragen (ENTSCHEIDUNGEN §2) |
 
-Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter denselben Routen-Präfixen. Bestehender Code darf dabei umgebaut, verschoben und umbenannt werden; der Prototyp bleibt so lange als lokale Referenz lauffähig, bis seine Funktionen mit einem token-freien Datensatz laufen.
+Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter denselben Routen-Präfixen. Bestehender Code darf dabei umgebaut, verschoben und umbenannt werden. Der Prototyp selbst ist entfernt, sobald seine Funktionen token-frei liefen (`adr/0008-prototyp-entfernen.md`); als Referenz bleibt der Tag `prototype-biomass`.
 
 ---
 
