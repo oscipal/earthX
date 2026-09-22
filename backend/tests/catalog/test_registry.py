@@ -236,12 +236,20 @@ class TestMalformedInput:
 
     def test_terms_without_an_english_text_are_rejected(self) -> None:
         """The UI is English (D25); a German-only notice cannot be shown."""
-        with pytest.raises(ConfigError, match="English"):
+        with pytest.raises(ConfigError, match="no language choice"):
             TermsOfUse(url="https://example.invalid/t", notice={"de": "Bedingungen: {terms_url}"})
 
     def test_terms_with_an_empty_notice_are_rejected(self) -> None:
-        with pytest.raises(ConfigError, match="English"):
+        with pytest.raises(ConfigError, match="no language choice"):
             TermsOfUse(url="https://example.invalid/t", notice={})
+
+    def test_terms_with_a_second_language_besides_english_are_rejected(self) -> None:
+        """Otto, 22.09.2026: the platform offers no language choice at all."""
+        with pytest.raises(ConfigError, match="no language choice"):
+            TermsOfUse(
+                url="https://example.invalid/t",
+                notice={"en": "Terms: {terms_url}", "de": "Bedingungen: {terms_url}"},
+            )
 
     @pytest.mark.parametrize("text", ["Terms apply.", "See {year}."])
     def test_a_terms_text_that_does_not_link_the_terms_is_rejected(self, text: str) -> None:

@@ -227,9 +227,7 @@ def _image_to_cog_bytes(image: ImageData) -> bytes:
             return cog_mem.read()
 
 
-def build_notice_text(
-    config: DatasetConfig, *, item_ids: Sequence[str], language: str = "en"
-) -> str:
+def build_notice_text(config: DatasetConfig, *, item_ids: Sequence[str]) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
     Registry.py's own rule stays intact: attribution and the terms notice are
@@ -238,6 +236,8 @@ def build_notice_text(
     as modified data throughout — cropping changes what bytes reach the user
     even where it resamples nothing, and the conservative attribution text is
     the one that cannot under-claim what happened to the pixels.
+
+    Always English (Otto, 22.09.2026): the platform offers no language choice.
     """
     license_ = config.license
     year = datetime.now(timezone.utc).year
@@ -248,7 +248,7 @@ def build_notice_text(
         lines.append(attribution.format(year=year))
 
     if license_.terms is not None:
-        text = license_.terms.notice.get(language) or license_.terms.notice["en"]
+        text = license_.terms.notice["en"]
         lines.append(text.format(terms_url=license_.terms.url))
         lines.append(license_.terms.url)
 
@@ -275,7 +275,6 @@ def build_download_zip(
     crops: Sequence[AssetCrop],
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
-    language: str = "en",
     max_size: int = MAX_OUTPUT_SIDE_PX,
 ) -> bytes:
     """The finished ZIP: one COG per requested asset, plus :data:`NOTICE_FILENAME`.
@@ -288,7 +287,5 @@ def build_download_zip(
         for crop in crops:
             image = crop_asset(open_reader, crop.paths, aoi_geometry, max_size=max_size)
             archive.writestr(f"{crop.asset}.tif", _image_to_cog_bytes(image))
-        archive.writestr(
-            NOTICE_FILENAME, build_notice_text(config, item_ids=item_ids, language=language)
-        )
+        archive.writestr(NOTICE_FILENAME, build_notice_text(config, item_ids=item_ids))
     return buffer.getvalue()

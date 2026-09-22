@@ -152,8 +152,8 @@ class TestCropAsset:
 
 
 class TestBuildNoticeText:
-    def test_carries_attribution_and_the_full_terms_notice_by_default(self) -> None:
-        """D25: the UI is English, so the notice defaults to English too."""
+    def test_carries_attribution_and_the_full_terms_notice(self) -> None:
+        """Otto, 22.09.2026: the platform offers no language choice, only English."""
         text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
         assert "Contains modified Copernicus Sentinel data" in text
         notice_en = SENTINEL_2_L2A.license.terms.notice["en"].format(
@@ -162,22 +162,6 @@ class TestBuildNoticeText:
         assert notice_en in text
         assert SENTINEL_2_L2A.license.terms.url in text
         assert "ITEM1" in text
-
-    def test_the_german_notice_is_used_when_asked_for(self) -> None:
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], language="de")
-        notice_de = SENTINEL_2_L2A.license.terms.notice["de"].format(
-            terms_url=SENTINEL_2_L2A.license.terms.url
-        )
-        assert notice_de in text
-        assert SENTINEL_2_L2A.license.terms.notice["en"] not in text
-
-    def test_an_unknown_language_falls_back_to_english(self) -> None:
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], language="fr")
-        assert SENTINEL_2_L2A.license.terms.url in text
-        notice_en = SENTINEL_2_L2A.license.terms.notice["en"].format(
-            terms_url=SENTINEL_2_L2A.license.terms.url
-        )
-        assert notice_en in text
 
     def test_a_dataset_without_terms_still_gets_a_notice_with_its_attribution(self) -> None:
         config = _dataset_without_terms()
