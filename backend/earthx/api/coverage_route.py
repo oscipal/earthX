@@ -49,7 +49,11 @@ LOGGER = logging.getLogger("earthx.api.coverage")
 
 # local-sql (adr/0004 §5) has no caller yet — no dataset in M2 has its own items
 # in pgstac (plan §8). Both other ways do, and share the `CoverageSource` seam.
-_IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION, CoverageProvider.SAMPLE})
+#
+# Public because onboarding checklist point 2 reads it: "a coverage provider is
+# assigned" is only worth anything if something answers for that provider
+# (projektuebersicht.md §5, D4).
+IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION, CoverageProvider.SAMPLE})
 
 
 def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
@@ -82,7 +86,7 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
         if config.capabilities.single_coverage_product:
             return _serialise(extent_result(config.dataset_id, config.spatial_extent.bbox))
 
-        if config.coverage.provider not in _IMPLEMENTED_PROVIDERS:
+        if config.coverage.provider not in IMPLEMENTED_PROVIDERS:
             # local-sql has no caller yet (plan §8: "kein Datensatz in M2 hat
             # eigene Items im pgstac"); upstream-aggregation and sample both do
             # (M2-05b, M2-09b-3).

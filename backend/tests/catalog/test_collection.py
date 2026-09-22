@@ -85,9 +85,13 @@ def test_maturity_is_the_registry_entrys_own_value(collection: dict) -> None:
     assert collection["earthx:maturity"] == "stable"
 
 
-def test_an_open_temporal_extent_stays_open(collection: dict) -> None:
-    """M1 reads nothing from the source, so both ends are null rather than guessed."""
-    assert collection["extent"]["temporal"]["interval"] == [[None, None]]
+def test_the_temporal_extent_is_the_one_the_source_reports(collection: dict) -> None:
+    """M2-08 replaced the M1 placeholder with the collection's own interval.
+
+    The end stays null because the archive still grows — an open end is a fact
+    here, not a gap.
+    """
+    assert collection["extent"]["temporal"]["interval"] == [["2015-06-27T10:25:31.456000Z", None]]
 
 
 def test_check_dates_are_written_as_plain_dates(collection: dict) -> None:
@@ -116,9 +120,16 @@ def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_ext
     assert render["assets"] == ["visual"]
 
 
-def test_a_dataset_without_a_doi_declares_no_scientific_extension(collection: dict) -> None:
-    assert collection["stac_extensions"] == []
-    assert "sci:doi" not in collection
+def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict) -> None:
+    assert collection["stac_extensions"] == [SCIENTIFIC_EXTENSION]
+    assert collection["sci:doi"] == SENTINEL_2_L2A.doi
+
+
+def test_a_dataset_without_a_doi_declares_no_scientific_extension(valid_config) -> None:
+    """Both fields empty means the extension has nothing to say, so it stays away."""
+    bare = to_stac_collection(replace(valid_config, doi=None, citation=None))
+    assert bare["stac_extensions"] == []
+    assert "sci:doi" not in bare
 
 
 def test_the_licence_link_points_at_the_primary_source(collection: dict) -> None:
