@@ -313,7 +313,7 @@ der Kandidatenmatrix.
 ### M2-08 — Onboarding-Checkliste v1, Sentinel-2 vollständig
 
 **Ziel:** Die Checkliste aus `projektuebersicht.md` §5 ist ein Test je Registry-Eintrag, und Sentinel-2 besteht ihn.
-**Stufe B.**
+**Stufe B.** Umsetzungsplan: `plans/m2-08-onboarding-checkliste.md` (22.09.2026, wartet auf Freigabe).
 **Umfang:**
 - Test über alle Registry-Einträge: Punkte 1–8 aus Registry und Collection prüfbar; Punkt 2 heißt „Coverage-Anbieter zugeordnet und Vollständigkeitsprobe greift“; Punkt 9 als End-to-End-Test Suche → Anzeige → Zuschnitt-Download gegen Fixtures (D4).
 - Punkt 10: Zeitpunkt des letzten grünen T-D-Smoke-Laufs, gesetzt und im Viewer sichtbar.
