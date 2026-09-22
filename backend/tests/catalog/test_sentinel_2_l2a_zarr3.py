@@ -95,10 +95,14 @@ def test_the_viewer_groups_one_acquisition_day_per_mgrs_tile() -> None:
     assert viewer.group_by == ("datetime", "grid:code")
 
 
-def test_default_render_is_left_open_for_m2_09b_2() -> None:
-    """adr/0007 §12.11 points 2 and 8: the standard visualisation depends on the
-    resolution and band selection M2-09b-2 builds — not yet decided here."""
-    assert SENTINEL_2_L2A_ZARR3.default_render is None
+def test_default_render_is_true_colour_on_the_10m_group() -> None:
+    """M2-09b-2 plan §4.5, §10 F6: real-colour rescale starts at (0.0, 0.30) per
+    band on the scaled reflectance this reader hands back, not on raw counters."""
+    render = SENTINEL_2_L2A_ZARR3.default_render
+    assert render is not None
+    assert render.assets == ("SR_10m:b04", "SR_10m:b03", "SR_10m:b02")
+    assert render.rescale == ((0.0, 0.30), (0.0, 0.30), (0.0, 0.30))
+    assert render.colormap_name is None
 
 
 def test_maturity_is_staging() -> None:
