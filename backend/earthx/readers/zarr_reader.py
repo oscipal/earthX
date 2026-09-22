@@ -44,6 +44,7 @@ from typing import Any
 import attr
 import rioxarray  # noqa: F401  — registers the `.rio` accessor this module writes the CRS through
 import xarray
+import zarr
 from rasterio.errors import CRSError
 from rio_tiler.io.xarray import XarrayReader
 from zarr.abc.store import (
@@ -69,6 +70,7 @@ LOGGER = logging.getLogger("earthx.readers.zarr")
 
 __all__ = [
     "GatewayStore",
+    "MalformedMultiscales",
     "MissingCrs",
     "StoreNotReadable",
     "UnknownGroup",
@@ -78,6 +80,7 @@ __all__ = [
     "ZarrReader",
     "open_gateway",
     "split_asset_href",
+    "split_asset_key",
     "zarr_asset",
 ]
 
@@ -120,6 +123,15 @@ class StoreNotReadable(ZarrAssetError):
 
 class MissingCrs(ZarrAssetError):
     """Neither the item nor the store says which coordinate reference system this is."""
+
+
+class MalformedMultiscales(ZarrAssetError):
+    """`multiscales` is there, but its `layout` is not the shape §12.3 measured.
+
+    A broken pilot convention (adr/0007 §12.11 point 2 — v0.1, breaking changes
+    announced) must not turn into a guess at which level is meant: this is a
+    defined failure of the *level choice*, not of the read path underneath it.
+    """
 
 
 def open_gateway(policy: Policy, resolve: Resolver) -> Gateway:
@@ -313,6 +325,13 @@ class ZarrAsset:
     ``crs`` is the CRS the *catalogue* read off the item (``proj:code``). ``None``
     means the store is expected to carry its own; if neither does, opening raises
     :class:`MissingCrs` instead of guessing (adr/0007 §3.4).
+
+    ``target_gsd`` is the ground sample distance, in the units of the store's own
+    CRS, a read would like to see — ``None`` leaves ``group`` exactly as given
+    (M2-09a, and every caller that does not compute one); a number picks the
+    coarsest ``multiscales`` level whose resolution is still at least that fine,
+    or the finest level there is if none is (adr/0007 §12.10, §12.11 point 2).
+    Read by the reader, not by this module — see ``readers.zarr_reader._open_group``.
     """
 
     store_url: str
@@ -324,18 +343,29 @@ class ZarrAsset:
     dataset_id: str
     item_id: str
     asset: str
+    target_gsd: float | None = None
 
 
-def split_asset_href(href: str) -> tuple[str, str, str]:
+def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, str, str]:
     """An asset address as store, group and variable — the three things opening needs.
 
-    **The store is the path segment that ends in ``.zarr``, the last segment is the
-    variable, and what lies between them is the group.** That is how the measured
-    items point at their data: the EOPF asset
-    ``…/S2A_….zarr/quality/l2a_quicklook/r10m/tci`` names the array ``tci`` in the
-    group ``quality/l2a_quicklook/r10m`` of that store.
+    **The store is the path segment that ends in ``.zarr``.** What comes after it is
+    the group; which part of that is the group and which the variable depends on
+    ``variable``:
 
-    All three parts are needed separately, and none can be guessed from another:
+    * **without one** (the default), the **last segment is the variable** and
+      everything between the store and it is the group — how the M2-09a synthetic
+      store and the EOPF v2 tutorial product point at their data: the asset
+      ``…/S2A_….zarr/quality/l2a_quicklook/r10m/tci`` names the array ``tci`` in the
+      group ``quality/l2a_quicklook/r10m``.
+    * **given one**, the whole path after the store is the group and ``variable`` is
+      used as it stands — the ``sentinel-2-l2a-zarr3`` shape (§3.2 of the M2-09b
+      plan): the asset ``SR_10m`` points at the *group*
+      ``measurements/reflectance/r10m``, not at one variable inside it, and the
+      catalogue's ``ZarrInfo.variable_separator`` is what splits a tile URL's asset
+      key into this asset and this variable (:func:`split_asset_key`).
+
+    None of the three parts can be guessed from another:
 
     * the **store** is what consolidated metadata belongs to — it sits at the store's
       root, not at each group, so a reader that took the group for the store would
@@ -343,19 +373,48 @@ def split_asset_href(href: str) -> tuple[str, str, str]:
     * the **group** is what carries the ``x``/``y`` coordinate arrays that
       georeference the variable; they are its siblings, not its children;
     * the **variable** is the one band that gets read, never all of them.
-
-    A registry field that says this per dataset belongs to M2-09b (adr/0007 §7
-    point 7); until there is one the rule lives here, in one place, and is tested.
     """
-    head, _, variable = href.rstrip("/").rpartition("/")
+    if variable is not None:
+        segments = href.rstrip("/").split("/")
+        for index in range(len(segments) - 1, -1, -1):
+            if segments[index].endswith(STORE_SUFFIX):
+                return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), variable
+        raise UrlRejected(
+            f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}"
+        )
+    head, _, tail_variable = href.rstrip("/").rpartition("/")
     segments = head.split("/")
     for index in range(len(segments) - 1, -1, -1):
         if segments[index].endswith(STORE_SUFFIX):
-            return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), variable
+            return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), tail_variable
     raise UrlRejected(
         f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}, "
         "and its variable as the last segment"
     )
+
+
+def split_asset_key(asset_key: str, separator: str | None) -> tuple[str, str | None]:
+    """The item's own asset key, and the variable inside it, from a tile URL's asset key.
+
+    **Without a separator** (``ZarrInfo.variable_separator`` is ``None``), ``asset_key``
+    is the item's own asset key, unchanged, and there is nothing to read separately —
+    the href's own last path segment names the variable, exactly as
+    :func:`split_asset_href` reads it without one (M2-09a).
+
+    **With one**, ``asset_key`` is ``"<item asset key><separator><variable>"`` —
+    measured for ``sentinel-2-l2a-zarr3`` (plan §10 F2): a key ``"SR_10m:b04"`` with
+    separator ``":"`` names the item asset ``SR_10m`` and, inside the group its href
+    points at, the variable ``b04``.
+    """
+    if separator is None:
+        return asset_key, None
+    item_asset, sep, variable = asset_key.partition(separator)
+    if not sep or not item_asset or not variable:
+        raise UrlRejected(
+            f"asset {asset_key!r} does not name a variable; this dataset addresses a group "
+            f"asset as '<asset>{separator}<variable>'"
+        )
+    return item_asset, variable
 
 
 def zarr_asset(
@@ -367,6 +426,8 @@ def zarr_asset(
     asset: str,
     crs: str | None = None,
     resolve: Resolver = resolve_host,
+    variable: str | None = None,
+    target_gsd: float | None = None,
 ) -> ZarrAsset:
     """Clear an asset address and return what the reader opens, or raise the reason why not.
 
@@ -375,21 +436,25 @@ def zarr_asset(
     :func:`split_asset_href` cannot read. The refusal happens here and not at the
     first chunk, so an address on a host the registry does not name costs no request
     at all.
+
+    ``variable`` and ``target_gsd`` pass straight through to :func:`split_asset_href`
+    and :class:`ZarrAsset` — see there for what each one changes.
     """
-    store_url, group, variable = split_asset_href(href)
-    if not variable:
+    store_url, group, resolved_variable = split_asset_href(href, variable=variable)
+    if not resolved_variable:
         raise UrlRejected("a Zarr asset address ends in the name of the variable to read")
     check_url(store_url, policy, resolve=resolve)
     return ZarrAsset(
         store_url=store_url,
         group=group,
-        variable=variable,
+        variable=resolved_variable,
         crs=crs,
         policy=policy,
         resolve=resolve,
         dataset_id=dataset_id,
         item_id=item_id,
         asset=asset,
+        target_gsd=target_gsd,
     )
 
 
@@ -448,16 +513,17 @@ class ZarrReader(XarrayReader):
 
 
 def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
-    """The group the asset names, or the defined reason it cannot be opened.
+    """The group ``_resolved_group`` picks, or the defined reason it cannot be opened.
 
     ``chunks=None`` keeps xarray's own lazy indexing rather than bringing dask in:
     a window then reads the chunks it overlaps and nothing else, which is the whole
     point of a partial read.
     """
+    group = _resolved_group(store, asset)
     try:
         return xarray.open_zarr(
             store,
-            group=asset.group or None,
+            group=group or None,
             consolidated=True,
             zarr_format=ZARR_FORMAT,
             decode_coords="all",
@@ -473,6 +539,84 @@ def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
             f"{asset.dataset_id}/{asset.item_id}: the store behind asset {asset.asset!r} "
             f"cannot be opened without listing it ({error})"
         ) from None
+
+
+def _resolved_group(store: GatewayStore, asset: ZarrAsset) -> str:
+    """The group to open: a level ``multiscales`` picks for ``asset.target_gsd``,
+    or the group the item's asset names when there is nothing to pick from.
+
+    ``multiscales`` sits on the *parent* of the resolution groups, not on a group
+    itself (measured at ``measurements/reflectance``, adr/0007 §12.3) — read there,
+    against ``asset.group``'s own parent. Its absence is not a failure: the store
+    the item names (§6 point 2) or the M2-09a synthetic Mini-Zarr have none, and
+    the group the asset already names is exactly what a v3 layout without a level
+    to pick would read anyway (adr/0007 §12.11 point 2's fallback).
+    """
+    if asset.target_gsd is None:
+        return asset.group
+    layout = _multiscales_layout(store, asset.group)
+    if layout is None:
+        return asset.group
+    level = _select_level(
+        layout, asset.target_gsd, dataset_id=asset.dataset_id, item_id=asset.item_id, asset=asset.asset
+    )
+    parent, _, _ = asset.group.rpartition("/")
+    return f"{parent}/{level}" if parent else level
+
+
+def _multiscales_layout(store: GatewayStore, group: str) -> list[Any] | None:
+    """The ``layout`` of the parent's ``multiscales`` attribute, or ``None`` for none.
+
+    A group that cannot even be opened is read the same as one without the
+    attribute: both mean there is nothing here to pick a level from, and the
+    caller falls back to the group the asset names either way.
+    """
+    parent, _, _ = group.rpartition("/")
+    try:
+        node = zarr.open_group(store=store, mode="r", path=parent or None, zarr_format=ZARR_FORMAT)
+    except (KeyError, FileNotFoundError, ValueError):
+        return None
+    multiscales = node.attrs.get("multiscales")
+    if not isinstance(multiscales, dict):
+        return None
+    layout = multiscales.get("layout")
+    return layout if isinstance(layout, list) else None
+
+
+def _select_level(
+    layout: list[Any], target_gsd: float, *, dataset_id: str, item_id: str, asset: str
+) -> str:
+    """The coarsest ``multiscales`` level whose resolution is still at least
+    ``target_gsd``-fine, or the finest level there is if none is that fine
+    (adr/0007 §12.10: computed from the requested resolution, never looked up in a
+    fixed zoom table — a Web Mercator tile's real ground resolution depends on
+    latitude, so a table would read the wrong level near either end of the extent).
+
+    The resolution of a level is the first element of its ``spatial:transform``
+    (§12.3, measured: the affine's pixel width, in the store's own CRS units).
+    """
+    levels: list[tuple[float, str]] = []
+    for entry in layout:
+        name = entry.get("asset") if isinstance(entry, dict) else None
+        transform = entry.get("spatial:transform") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name or not isinstance(transform, list) or not transform:
+            raise MalformedMultiscales(
+                f"{dataset_id}/{item_id}: asset {asset!r}'s multiscales layout has an entry "
+                "without both 'asset' and a non-empty 'spatial:transform'"
+            )
+        try:
+            gsd = abs(float(transform[0]))
+        except (TypeError, ValueError):
+            raise MalformedMultiscales(
+                f"{dataset_id}/{item_id}: asset {asset!r} names a multiscales level "
+                f"{name!r} whose 'spatial:transform' does not start with a number"
+            ) from None
+        levels.append((gsd, name))
+    if not levels:
+        raise MalformedMultiscales(f"{dataset_id}/{item_id}: asset {asset!r} has an empty multiscales layout")
+    levels.sort(key=lambda pair: pair[0])
+    fine_enough = [name for gsd, name in levels if gsd <= target_gsd]
+    return fine_enough[-1] if fine_enough else levels[0][1]
 
 
 def _select_variable(dataset: xarray.Dataset, asset: ZarrAsset) -> xarray.DataArray:
