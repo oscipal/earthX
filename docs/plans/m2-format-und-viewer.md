@@ -1,6 +1,8 @@
 # M2 — Zweites Format und generalisierter Viewer: Aufgabenschnitt
 
-**Status:** Fassung 3 vom 20.09.2026, nach dem Merge von #37–#40. `adr/0006` und
+**Status:** Fassung 4 vom 20.09.2026, nach dem Merge von #42–#49. Neu: englische
+Oberfläche (D25), Heatmap zurückgestellt (D26), V-1 um Kartenbedienung und Globus
+erweitert (D27), Aufgabe M2-15. Vorher Fassung 3 nach dem Merge von #37–#40. `adr/0006` und
 `adr/0007` sind angenommen, `adr/0007` um die Nachmessung §12 ergänzt. Alle
 Entscheidungen stehen im `docs/ENTSCHEIDUNGSLOG.md`. Erledigt: M2-00 bis M2-04,
 M2-03b und M2-05a; die Pläne für M2-05 und M2-07a liegen im Repo.
@@ -56,6 +58,9 @@ aufgenommen, und das Frontend spricht nur noch mit der Zielarchitektur `earthx`.
 | D21 | **`gateway`:** `httpx` wirft `InvalidURL` vor `check_url`; die Länge wird deshalb vorher selbst gemessen, und nur sie gilt als `UrlTooLong`. Darauf baut die AOI-Verdünnung aus `adr/0004` §3.4 auf | M2-05b, M2-09b |
 | D22 | **Histogramm ist monatlich.** Earth Search ignoriert `datetime_frequency_interval`; die Naht gibt keine Auflösung vor, sondern weist die gelieferte aus. Eine feinere Zeitleiste wäre eine eigene Messung und Entscheidung | M2-05b, M2-07c |
 | D23 | **Zweiter Datensatz: `sentinel-2-l2a-zarr3`** trotz „staging“ (F8), Zoomstufen **z8–z14** (F9), Auflösungsstufen aus dem **Store**, nicht aus dem Item (F10). Auflagen: Status „staging“ sichtbar in Registry und Viewer; Byte-Ranges im Store zwingend; nie `to_dataarray`/`to_array`; `zipped_product` (1,2 GB) fernhalten | M2-09b, M2-10 |
+| D25 | **Die Oberfläche ist durchgehend englisch:** alle sichtbaren Texte, Legenden, Hinweise, Fehlermeldungen; Vorgabesprache des `terms_notice` ist Englisch. Hebt `adr/0004` §5.3 auf. Planungsdokumente bleiben deutsch | M2-06, M2-07c, M2-07d, M2-15, V-1 |
+| D26 | **Coverage-Heatmap im Viewer zurückgestellt.** M2-07c ist mit Minimalumfang gemergt (Ausschnitt auf ±180° begrenzt, standardmäßig aus). Die Verbesserung kommt nach M2; Kandidat ist ein täglich aktualisierter Zählwürfel je Datensatz (Zelle z9 × Monat × Wolkenklasse), der M2-05 F3 aufheben würde und vorher gemessen werden muss | M2-07c, §5 |
+| D27 | **Karte ohne Drehen und Kippen, Globus umschaltbar.** Maus und Touch verschieben und zoomen nur; die Globusprojektion von MapLibre (ab 5.0) ist reine Darstellung, Backend und Kachel-URLs bleiben unverändert | V-1 |
 | D24 | **Die Abnahme von M2 hängt nicht am Fortbestand der Quelle.** Fällt `sentinel-2-l2a-zarr3` weg, fällt die Aufnahme des zweiten Datensatzes, nicht M2; der Lesepfad gegen das synthetische Zarr aus M2-09a genügt | §5, M2-09a, M2-12 |
 ### 1.2 Fragen an Otto — beantwortet am 20.09.2026
 
@@ -102,32 +107,33 @@ Ottos Entscheidung zu M2-11).
 | M2-03b | Nachmessung EOPF nach der Freigabe | C | — | **erledigt** (#40) |
 | M2-04 | Kachel-Pfad für Sentinel-2 | B | — | **erledigt** (#39) |
 | M2-05a | Coverage-Anbieter (Naht und Adapter) | B | — | **erledigt** (#38) |
-| M2-05b | Coverage-Route | B | Sonnet (mittel) | M2-05a |
-| M2-06 | Download des AOI-Zuschnitts | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-04 |
-| M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | Sonnet (hoch) | Plan #37, M2-04 |
-| M2-07b | Frontend: Kacheln, Darstellungssteuerung, Layer-Manager | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-04, M2-07a |
-| M2-07c | Frontend: Coverage-Heatmap | B | Sonnet (mittel) | M2-05b, M2-07a |
-| M2-07d | Frontend: Download | B | Sonnet (mittel) | M2-06, M2-07b |
+| M2-05b | Coverage-Route | B | — | **erledigt** (#43) |
+| M2-06 | Download des AOI-Zuschnitts | B | — | **erledigt** (#46) |
+| M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | — | **erledigt** (#44) |
+| M2-07b | Frontend: Kacheln, Darstellungssteuerung, Layer-Manager | B | — | **erledigt** (#47) |
+| M2-07c | Frontend: Coverage-Heatmap | B | — | **erledigt**, Minimalumfang (#49, D26) |
+| M2-07d | Frontend: Download | B | Sonnet (mittel) | — |
 | M2-08 | Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-05b, M2-06, M2-07d |
 | M2-09a | Zarr-Lesepfad gegen synthetisches Mini-Zarr | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
 | M2-09b | Zweiter Datensatz im Katalog | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-03b, M2-04, M2-09a |
 | M2-10 | Zweiter Datensatz im Viewer | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-09b, M2-07c |
 | M2-11 | Vorlage: Prototyp entfernen | C | Opus | M2-08 |
 | M2-12 | M2-Abnahme und README | A | Sonnet (mittel) | alle |
-| M2-13 | Kleinkram: SessionStart-Hook, Live-Smoke-Nachtrag | A | Sonnet (mittel) | — |
-| M2-14 | Auflösung des Asset-Hosts zwischenspeichern | B | Sonnet (mittel) | M2-04, #47 |
-| V-1 | Theme-Umschalter (Viewer-Strang) | A | Sonnet (mittel) | M2-07b |
+| M2-13 | Kleinkram: SessionStart-Hook, Live-Smoke-Nachtrag | A | — | **erledigt** (#42) |
+| M2-14 | Auflösung des Asset-Hosts zwischenspeichern | B | — | **erledigt** (#48), Frist 5 s |
+| M2-15 | Oberfläche durchgehend englisch | A | Sonnet (mittel) | M2-07d |
+| V-1 | Kartenbedienung, Globus, Theme (Viewer-Strang) | A | Sonnet (mittel) | M2-15 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
 
 1. ~~M2-00 bis M2-03~~ — erledigt
 2. ~~M2-03b, M2-04, M2-05a~~ — erledigt
-3. M2-05b, M2-07a; dazu M2-13 (Stufe A)
-4. M2-06, M2-09a
-5. M2-07b, M2-07c; dazu M2-14 (klein, aus dem Befund von #47)
-6. M2-07d, M2-09b, V-1
-7. M2-08, M2-10
+3. ~~M2-05b, M2-06, M2-07a, M2-07b, M2-07c, M2-13, M2-14~~ — erledigt
+4. M2-07d, M2-09a
+5. M2-15, M2-09b
+6. V-1, M2-10
+7. M2-08
 8. M2-11, M2-12
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
@@ -279,7 +285,7 @@ der Kandidatenmatrix.
 **Ziel:** Der Nutzer erhält den Zuschnitt als Datei (ENTSCHEIDUNGEN §2 „neu zu bauen“; D3).
 **Stufe B.**
 **Umfang:**
-- Route in `access`, die für Item(s) und AOI den Zuschnitt über `readers` liest und als ZIP streamt: COG plus Textdatei mit Attribution, `terms_notice` (Sprache wählbar, Deutsch Vorgabe), `terms_url` und Zitierangabe aus der Registry.
+- Route in `access`, die für Item(s) und AOI den Zuschnitt über `readers` liest und als ZIP streamt: COG plus Textdatei mit Attribution, `terms_notice` (Vorgabe Englisch, D25), `terms_url` und Zitierangabe aus der Registry.
 - Nichts wird auf Platte oder in den Objektspeicher geschrieben; Größendeckel (Pixel und Bytes) vor dem Lesen geprüft.
 - **Mosaik** aus mehreren Szenen zustandslos über die Item-Liste in der Anfrage; laut `adr/0006` trägt das im Zuschnitt, im Kachel-Pfad nicht (D11).
 
@@ -297,8 +303,8 @@ der Kandidatenmatrix.
 
 **M2-07a — API-Client, Suche, Quicklooks, Zeitleiste.** F1 AOI-Auswahl, F3 Upload und letzte AOI (im Client, wie bisher), F4 Suche gegen `/stac` mit eigener Seitenmarke, F5 Gruppierung mit Schlüssel aus der Registry (bei Sentinel-2 naheliegend Datum und MGRS-Kachel; im Plan-Schritt bestätigen), F6 Quicklooks direkt vom Asset-Host, ohne Proxy (D14), mit Canvas-Keying wie im Prototyp, F7 Zeitleiste, F8 Ablauf. **Datums-Fallback:** liegt im gewählten Zeitraum nichts, das nächstgelegene Datum mit sichtbarem Hinweis. **Ortssuche** wird ausgeblendet (Eingabefeld und Aufruf entfernt), sie kommt mit M3 (F1).
 **M2-07b — Kacheln, Darstellung, Layer-Manager.** F10 zweistufige Anzeige mit Kacheln aus M2-04; Statistik einmal abfragen, Streckbereich in die Kachelvorlage (Z4), Stretch und Colormap mit „Apply“ (F18); Vorgabe aus der Standard-Visualisierung der Registry; F19 Layer-Manager Basis (ausblenden, Transparenz, Reihenfolge).
-**M2-07c — Coverage-Heatmap.** `fill`-Layer mit logarithmischer Skala, Stützstellen aus dem Maximum der Antwort, Legende „Aufnahmen mit Mittelpunkt in der Zelle“; Anzeige von `gekappt`/`stichprobe`; Zeit-Histogramm an der Zeitleiste; reagiert auf Zeitraum und Filter. **Ersatzregel für den Umschaltpunkt:** `numberMatched < 500` greift nur, wenn die Antwort eine geprüfte Gesamtzahl führt. Fehlt sie — bei einer Stichprobe, siehe `adr/0007` — bleibt die Dichteanzeige, und der Hinweis „Stichprobe“ ist sichtbar; Footprints kommen dort nicht automatisch.
-**M2-07d — Download.** Einzel-Download aus dem Layer-Manager; vor dem Download Attribution und `terms_notice` sichtbar; Meldung bei Überschreiten des Größendeckels.
+**M2-07c — Coverage-Heatmap** (erledigt mit Minimalumfang, #49; Verbesserung zurückgestellt, D26). `fill`-Layer mit logarithmischer Skala, Stützstellen aus dem Maximum der Antwort, Legende „Aufnahmen mit Mittelpunkt in der Zelle“; Anzeige von `gekappt`/`stichprobe`; Zeit-Histogramm an der Zeitleiste; reagiert auf Zeitraum und Filter. **Ersatzregel für den Umschaltpunkt:** `numberMatched < 500` greift nur, wenn die Antwort eine geprüfte Gesamtzahl führt. Fehlt sie — bei einer Stichprobe, siehe `adr/0007` — bleibt die Dichteanzeige, und der Hinweis „Stichprobe“ ist sichtbar; Footprints kommen dort nicht automatisch.
+**M2-07d — Download.** Alle Texte englisch (D25). Einzel-Download aus dem Layer-Manager; vor dem Download Attribution und `terms_notice` sichtbar; Meldung bei Überschreiten des Größendeckels.
 
 **Abnahme je PR:** Lint, Typprüfung und Vitest grün; die jeweilige Funktion lokal mit `docker compose up` und `npm run dev` bedienbar, Anleitung im PR; kein Aufruf von `/api/…` des Prototyps mehr in den geänderten Dateien.
 
@@ -447,18 +453,38 @@ Aufruf liefert andere Adressen.
 liegt im PR; ein Kachelstapel löst den Host einmal statt einmal je Kachel auf; die
 Tests oben sind grün; `ruff check backend`, `pytest`, `lint-imports` grün.
 
-### V-1 — Theme-Umschalter (Viewer-Strang)
+### M2-15 — Oberfläche durchgehend englisch
 
-**Ziel:** Umschalten zwischen dunkler und heller HUD-Palette (Inventar N1; zweite Palette in `index.css` vorbereitet).
-**Umfang:** nur Oberfläche; die Basiskarte bleibt Esri World Imagery (D10). Wahl im Client gespeichert.
-**Nicht anfassen:** Basiskarte, Kartenstil.
-**Abnahme:** beide Paletten erfüllen die Kontraste laut Inventar Teil 3; Lint und Typprüfung grün.
+**Ziel:** Kein sichtbarer Text in der Oberfläche ist deutsch (D25).
+**Stufe A.** Startet nach M2-07d, weil beide dieselben Dateien berühren.
+**Umfang:**
+- Alle sichtbaren Texte im Frontend: Bedienelemente, Hinweise (Datums-Fallback, Stichprobe), Legenden, Fehlermeldungen, die Meldung zu fehlendem `earthx:viewer`.
+- Die Hinweisdatei des Zuschnitt-Downloads aus M2-06; Vorgabesprache des `terms_notice` ist Englisch.
+- Alle Fehlertexte, die die API an den Nutzer ausliefert.
+- Nachtrag in `adr/0004` §5.3, dass die Vorgabe deutscher Begriffe aufgehoben ist.
+
+**Nicht anfassen:** Planungs- und Entscheidungsdokumente bleiben deutsch; Bezeichner und Feldwerte der API sind bereits englisch.
+**Abnahme:** Eine Suche im Frontend-Quelltext nach deutschen Oberflächentexten findet nichts mehr; Lint, Typprüfung, Vitest und `pytest` grün.
+
+### V-1 — Kartenbedienung, Globus und Theme (Viewer-Strang)
+
+**Ziel:** Die Karte ist ruhig zu bedienen, und der Nutzer kann zwischen flacher Karte und Globus sowie zwischen dunkler und heller Oberfläche wählen (D27, D10).
+**Stufe A.** Startet nach M2-15, weil beide dieselben Dateien berühren.
+**Umfang:**
+- **Keine Drehung, kein Kippen:** Maus und Touch verschieben und zoomen nur; Nordausrichtung und Neigung gesperrt.
+- **Globus** über die Globusprojektion von MapLibre, umschaltbar gegen die flache Karte. Voraussetzung MapLibre GL JS ab 5.0; ist die Version im Frontend älter, gehört das Update in diese Aufgabe und in den PR-Text. Backend und Kachel-URLs bleiben unverändert.
+- Auf dem Globus ansehen und belegen: Quicklooks mit vier Eckpunkten, Kacheln in voller Auflösung, AOI-Werkzeuge, die Begrenzung des Ausschnitts auf ±180° aus M2-07c.
+- **Theme-Umschalter** zwischen dunkler und heller HUD-Palette (Inventar N1); die Basiskarte bleibt Esri World Imagery (D10).
+- Beide Wahlen im Client gespeichert. Alle Texte englisch (D25).
+
+**Nicht anfassen:** Basiskarte, Backend.
+**Abnahme:** Drehen und Kippen sind mit Maus und Touch nicht möglich; der Globus zeigt Quicklooks, Kacheln und AOI lagerichtig; beide Paletten erfüllen die Kontraste laut Inventar Teil 3; Lint, Typprüfung und Vitest grün.
 
 ---
 
 ## 5. Abnahme von M2
 
-1. Der Viewer trägt zwei Formate (COG und Zarr): suchen, Quicklooks, Kacheln, Coverage, Download. Otto prüft lokal. Für Zarr genügt der Lesepfad gegen das synthetische Zarr aus M2-09a, falls die Quelle des zweiten Datensatzes wegfällt (D24).
+1. Der Viewer trägt zwei Formate (COG und Zarr): suchen, Quicklooks, Kacheln, Download. Die Coverage-Heatmap ist vorhanden und einschaltbar; ihre Qualität ist nicht Teil der Abnahme (D26). Otto prüft lokal. Für Zarr genügt der Lesepfad gegen das synthetische Zarr aus M2-09a, falls die Quelle des zweiten Datensatzes wegfällt (D24).
 2. Dieselbe Kachel-URL liefert gegen zwei Instanzen dasselbe Bild; kein Endpunkt nimmt eine freie URL an.
 3. Coverage weist `complete`/`truncated`/`sample` geprüft aus; Latenz gefiltert unter 1 s, typisch unter 0,5 s. Belegt über `curl`-Messungen im PR, weil ein Live-Test aus einer Cloud-Sitzung nicht durchkommt (M2-13).
 4. Download liefert ZIP mit COG und Hinweisdatei; nichts wird gespeichert (Test).
