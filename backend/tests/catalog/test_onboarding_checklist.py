@@ -4,15 +4,20 @@ The checklist is an *admission rule of the project*, not a runtime property of t
 platform: no route serves it and no ``earthx:`` field carries it. It therefore lives
 here rather than in ``earthx/catalog/`` — architekturplan.md 5.1 stays as it is.
 
-Version v1 (D4, 20.09.2026) of points 9 and 10 is what applies:
+The wordings that apply to the last two points:
 
-* point 9 is the chain search → display → clipped download against fixtures,
-* point 10 is the time of the last green T-D smoke run.
+* point 9, version v1 (D4, 20.09.2026): the chain search → display → clipped
+  download, against fixtures;
+* point 10, version v1.1 (Otto, 22.09.2026, narrowing D4): the dataset is
+  covered by the T-D smoke. A visible check date waits for M5's own health
+  checks, because none of the ways to carry the last green run's timestamp into
+  the running platform worked without a secret or recurring manual work.
 
-Both need machinery this module does not have yet and arrive with M2-08-2 and
-M2-08-3 (plans/m2-08-onboarding-checkliste.md §7). :data:`NOT_YET_CHECKED` names
-them so the gap is visible rather than merely absent, and ``test_the_open_points_
-are_named`` fails once a follow-up forgets to close one.
+Point 9 needs a running chain rather than a look at the entry, so it lives in
+``test_onboarding_endtoend.py``; :data:`CHECKED_ELSEWHERE` says where. Point 10
+is still open and :data:`NOT_YET_CHECKED` names the PR that closes it. Between
+them, ``test_every_point_is_accounted_for`` makes a forgotten point a failure
+rather than a silent gap.
 
 Two kinds of failure, and the difference is deliberate:
 
@@ -56,13 +61,20 @@ CHECKLIST = {
     7: "Datentyp-Klasse und Capability-Flags gesetzt.",
     8: "Standard-Visualisierung definiert (Baender, Stretch, Colormap).",
     9: "Mindestens ein Processing-Schritt End-to-End getestet; Fassung v1: Suche -> Anzeige -> Zuschnitt-Download.",
-    10: "'Zuletzt erfolgreich geprueft' ist gesetzt und sichtbar; Fassung v1: letzter gruener T-D-Smoke-Lauf.",
+    10: "'Zuletzt erfolgreich geprueft' ist gesetzt und sichtbar; Fassung v1.1: vom T-D-Smoke abgedeckt.",
 }
 
-# Points :func:`evaluate` does not answer yet, with the PR that closes them.
+# Points that are checked, but not by looking at the entry.
+CHECKED_ELSEWHERE = {
+    9: "tests.catalog.test_onboarding_endtoend",
+}
+
+# Points nothing answers yet, with the PR that closes them. Point 10 is the
+# narrowed version of D4 (Otto, 22.09.2026): "the dataset is covered by the T-D
+# smoke", read off the marker in tests_live/ — not a date, which the platform
+# does not show until M5.
 NOT_YET_CHECKED = {
-    9: "M2-08-2 — the chain against synthetic data",
-    10: "M2-08-3 — the timestamp of the last green live smoke run",
+    10: "M2-08-3 — covered by the T-D smoke, via the live_dataset marker",
 }
 
 
@@ -220,15 +232,18 @@ def test_the_two_datasets_cite_different_products() -> None:
     assert cog.doi != zarr.doi
 
 
-def test_the_open_points_are_named() -> None:
-    """Points 9 and 10 are open, and this says so until they are not.
+def test_every_point_is_accounted_for() -> None:
+    """Each of the ten points is answered here, answered elsewhere, or named open.
 
-    Deleting an entry from ``NOT_YET_CHECKED`` without wiring the point into
-    ``evaluate`` fails here, and wiring it in without deleting the entry does too.
+    Deleting an entry from ``NOT_YET_CHECKED`` without wiring the point in fails
+    here, and wiring one in without deleting its entry does too.
     """
-    answered = {1, 2, 3, 4, 5, 6, 7, 8}
-    assert answered | set(NOT_YET_CHECKED) == set(CHECKLIST)
-    assert answered.isdisjoint(NOT_YET_CHECKED)
+    answered_here = {1, 2, 3, 4, 5, 6, 7, 8}
+    elsewhere = set(CHECKED_ELSEWHERE)
+    open_points = set(NOT_YET_CHECKED)
+
+    assert answered_here | elsewhere | open_points == set(CHECKLIST)
+    assert len(answered_here) + len(elsewhere) + len(open_points) == len(CHECKLIST)
 
 
 # --------------------------------------------------------------------------------
