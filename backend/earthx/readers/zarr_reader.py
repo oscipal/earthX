@@ -47,6 +47,7 @@ import xarray
 import zarr
 from rasterio.errors import CRSError
 from rio_tiler.io.xarray import XarrayReader
+from rio_tiler.models import ImageData
 from zarr.abc.store import (
     ByteRequest,
     OffsetByteRequest,
@@ -92,6 +93,12 @@ ZARR_FORMAT = 3
 # How an asset address is read: the store is the path segment that ends in this,
 # everything after it is the group, the last segment is the variable.
 STORE_SUFFIX = ".zarr"
+
+# How several variables of the *same* group are named in one asset key's variable
+# part — "b04,b03,b02" reads three bands out of one already-open group instead of
+# three separate tile requests, which is what a true-colour composite needs
+# (M2-09b-2's bug fix: a tile URL naming one variable can only ever be grayscale).
+VARIABLE_LIST_SEPARATOR = ","
 
 # How long `close` waits for the gateway of a store to shut down on the loop it was
 # built on. Generous: it only has to outlast connections that are already idle.
@@ -463,10 +470,32 @@ class ZarrReader(XarrayReader):
     """rio-tiler's Xarray reader, over a Zarr asset it opens through the gateway.
 
     Takes a :class:`ZarrAsset` where ``XarrayReader`` takes a ``DataArray``: it
-    opens the group, selects the one variable and hands the parent what it expects.
-    Everything the reader can then do — ``tile``, ``part``, ``feature``,
-    ``preview``, ``statistics`` — is rio-tiler's, over windows that pull only the
-    chunks they touch.
+    opens the group, selects the variable (or variables — see below) and hands the
+    parent what it expects. Everything the reader can then do — ``tile``, ``part``,
+    ``feature``, ``preview``, ``statistics`` — is rio-tiler's, over windows that
+    pull only the chunks they touch.
+
+    **Several variables, one composite image.** ``asset.variable`` may name more
+    than one variable, separated by :data:`VARIABLE_LIST_SEPARATOR` — the shape a
+    true-colour render needs, because a Zarr band is never pre-stacked into one RGB
+    file the way a COG's ``visual`` asset is (adr/0007 §12.7): each of ``b04``,
+    ``b03``, ``b02`` is its own single-band array in the same group. This reader
+    keeps ``self.input`` as the *first* variable, exactly like the single-variable
+    case, and holds one extra :class:`~rio_tiler.io.xarray.XarrayReader` per
+    additional variable — sharing this reader's already-open group and gateway, not
+    opening it again. ``tile``, ``preview`` and ``feature`` are overridden to read
+    every band and merge the results with :meth:`~rio_tiler.models.ImageData.create_from_list`,
+    in the order the variables were named, so band 1 is always the first one asked
+    for. Nothing else is overridden: an ``/info`` or ``/point`` request against a
+    several-variable asset answers for the first variable alone, which is the
+    georeferencing every variable of the group shares — never a wrong composite,
+    just not everything this reader can do.
+
+    Concatenating the ``DataArray``\\ s instead (``xarray.concat``) was tried and
+    rejected: measured, it forces every one of them to load in full immediately,
+    the same "1.5 GB" trap ``to_dataarray``/``to_array`` set (adr/0007 §12.9) —
+    reading each band through its own windowed ``tile()``/``preview()``/``feature()``
+    call is what keeps a read to the chunks it actually touches.
 
     Refuses a plain string for the same reason :class:`~earthx.readers.cog.CogReader`
     does: a reader that can be handed an address is a reader that can be pointed
@@ -475,6 +504,11 @@ class ZarrReader(XarrayReader):
 
     _store: GatewayStore | None = attr.ib(init=False, default=None)
     _dataset: xarray.Dataset | None = attr.ib(init=False, default=None)
+    _extra_bands: tuple[XarrayReader, ...] = attr.ib(init=False, factory=tuple)
+    #: Kept for the one log line at `close()` — never the address itself
+    #: (projektplan.md 7): what a tile cost the source, without saying where the
+    #: source is.
+    _log_context: dict[str, str] = attr.ib(init=False, factory=dict)
 
     def __attrs_post_init__(self) -> None:
         asset = self.input
@@ -483,6 +517,8 @@ class ZarrReader(XarrayReader):
                 "a Zarr asset is opened from a ZarrAsset built by "
                 "earthx.readers.zarr_reader.zarr_asset, not from a plain string (KLAERUNGEN B8)"
             )
+        self._log_context = {"dataset": asset.dataset_id, "item": asset.item_id, "asset": asset.asset}
+        names = _variable_names(asset)
         store = GatewayStore(asset.store_url, asset.policy, resolve=asset.resolve)
         try:
             dataset = _open_group(store, asset)
@@ -490,20 +526,57 @@ class ZarrReader(XarrayReader):
             store.close()
             raise
         try:
-            self.input = _select_variable(dataset, asset)
+            arrays = [_select_variable(dataset, asset, name) for name in names]
         except BaseException:
             dataset.close()
             store.close()
             raise
+        self.input = arrays[0]
         self._store = store
         self._dataset = dataset
         super().__attrs_post_init__()
+        self._extra_bands = tuple(XarrayReader(array, tms=self.tms, options=self.options) for array in arrays[1:])
+
+    def tile(self, *args: Any, **kwargs: Any) -> ImageData:
+        return self._merged(XarrayReader.tile, *args, **kwargs)
+
+    def preview(self, *args: Any, **kwargs: Any) -> ImageData:
+        return self._merged(XarrayReader.preview, *args, **kwargs)
+
+    def feature(self, *args: Any, **kwargs: Any) -> ImageData:
+        return self._merged(XarrayReader.feature, *args, **kwargs)
+
+    def _merged(self, method: Any, *args: Any, expression: str | None = None, **kwargs: Any) -> ImageData:
+        """One band from ``self`` (the first variable) plus one from each of
+        ``self._extra_bands`` — same as the single-variable case when there are
+        none. ``expression`` is rio-tiler's own band-math syntax over the *merged*
+        bands (``b1/b2``, …), so it runs once, after the merge, never per variable —
+        the same order :class:`~titiler.core.factory.MultiBaseReader` applies it in.
+        """
+        images = [method(self, *args, **kwargs)]
+        images.extend(method(reader, *args, **kwargs) for reader in self._extra_bands)
+        image = images[0] if len(images) == 1 else ImageData.create_from_list(images)
+        return image.apply_expression(expression) if expression else image
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         self.close()
 
     def close(self) -> None:
-        """Let the dataset and the HTTP client go. Safe to call twice."""
+        """Let the dataset and the HTTP client go. Safe to call twice.
+
+        The extra band readers hold no resource of their own to close — every one
+        of them is a view into the same ``self._dataset``, opened through the same
+        ``self._store``, which is also why ``self._store.request_count`` at this
+        point is the true cost of everything this reader read, composite included —
+        logged here so a request count for a real tile (this backend's own share of
+        adr/0007 §12.4's measurement) can be read off a log line instead of counted
+        by hand.
+        """
+        if self._store is not None:
+            LOGGER.info(
+                "zarr asset closed",
+                extra={**self._log_context, "requests": self._store.request_count},
+            )
         if self._dataset is not None:
             self._dataset.close()
             self._dataset = None
@@ -619,18 +692,26 @@ def _select_level(
     return fine_enough[-1] if fine_enough else levels[0][1]
 
 
-def _select_variable(dataset: xarray.Dataset, asset: ZarrAsset) -> xarray.DataArray:
+def _variable_names(asset: ZarrAsset) -> list[str]:
+    """``asset.variable`` split on :data:`VARIABLE_LIST_SEPARATOR` — one name for
+    the ordinary case, several for a composite (band 1 is the first one named)."""
+    return asset.variable.split(VARIABLE_LIST_SEPARATOR)
+
+
+def _select_variable(dataset: xarray.Dataset, asset: ZarrAsset, name: str) -> xarray.DataArray:
     """One variable, georeferenced — never every variable of the group stacked.
 
     ``to_dataarray``/``to_array`` would read all of them (1.5 GB in the measurement
-    of adr/0007 §12.11); the tile path wants one band at a time and says so.
+    of adr/0007 §12.11); the tile path wants one band at a time and says so. A
+    several-variable asset calls this once per variable (:data:`VARIABLE_LIST_SEPARATOR`,
+    ``ZarrReader``) — still one at a time, never stacked before it is windowed.
     """
-    if asset.variable not in dataset.data_vars:
+    if name not in dataset.data_vars:
         raise UnknownVariable(
             f"{asset.dataset_id}/{asset.item_id}: asset {asset.asset!r} names the variable "
-            f"{asset.variable!r}, which this group does not carry"
+            f"{name!r}, which this group does not carry"
         )
-    array = dataset[asset.variable]
+    array = dataset[name]
     # The store wins where it carries one, the item is the fallback: adr/0007 §12.11
     # point 3 measured the two agreeing in the v3 products, and §3.4 measured a store
     # with no CRS at all. Writing the item's over a store's would make the catalogue
