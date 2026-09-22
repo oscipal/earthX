@@ -1,7 +1,10 @@
 # M2-08 — Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig: Umsetzungsplan
 
-**Status:** Plan, Stufe B laut `projektplan.md` 1.2. **Wartet auf Ottos Freigabe**
-(§11). Es ist noch nichts umgesetzt.
+**Status:** **F1, F3, F4, F5, F6 von Otto am 22.09.2026 wie empfohlen
+freigegeben. F2 ist offen und der erste Vorschlag ist gefallen** — §4.4 ist nach
+Ottos Prüfauftrag neu geschrieben, F2 stellt drei neue Wege nebeneinander. Die
+Umsetzung läuft als drei PRs (§7); dies ist der erste, **M2-08-1 — Punkte 1 bis
+8**, der F2 nicht braucht.
 **Ort im Repo:** `docs/plans/m2-08-onboarding-checkliste.md`
 **Aufgabe:** M2-08 aus `docs/plans/m2-format-und-viewer.md`.
 **Grundlage:** `projektuebersicht.md` §5 (die zehn Punkte, Fassung v1 nach D4);
@@ -195,51 +198,61 @@ anderen Routen nicht.
 
 ### 4.4 Punkt 10: wie der Zeitpunkt in die Plattform kommt
 
-Die Aufgabe verlangt ausdrücklich einen Vorschlag: **ohne Secret** und **ohne
-dass die Cloud-Sitzung live zugreift**. Gemessen an der Lage:
+**Der erste Vorschlag (Dauer-PR mit `GITHUB_TOKEN`) ist gefallen.** Otto hat ihn
+prüfen lassen; er trägt aus zwei voneinander unabhängigen Gründen nicht.
 
-- `main` ist geschützt (über die GitHub-API geprüft, `protected: true`). Ein
-  Direkt-Push aus einem Workflow scheitert daran, und Branch-Schutz zu lockern
-  ist ohne Otto ausgeschlossen (`CLAUDE.md`).
-- `GITHUB_TOKEN` ist kein selbstverwaltetes Secret; es entsteht je Lauf. Eine
-  `permissions:`-Zeile im Live-Smoke-Workflow genügt.
-- Die Sitzung selbst muss nichts abrufen: der Test liest eine Datei.
+**Erstens, die Checks laufen nicht von selbst.** Die Sperre steht in GitHubs
+eigener Dokumentation. Wörtlich, aus dem Textbaustein
+`data/reusables/actions/actions-do-not-trigger-workflows.md` des Repos
+`github/docs` (Zweig `main`, gelesen am 22.09.2026 — `docs.github.com` ist aus
+dieser Umgebung gesperrt, die Quelldatei nicht):
 
-**Vorgeschlagener Weg (F2 a).** Der Live-Smoke schreibt sein Ergebnis in eine
-kleine Datei und hält damit **einen einzigen, dauerhaften Chore-PR** gegen `main`
-aktuell.
+> „When you use the repository's `GITHUB_TOKEN` to perform tasks, events
+> triggered by the `GITHUB_TOKEN` will not create a new workflow run, with the
+> following exceptions: […] `pull_request` events with the `opened`,
+> `synchronize`, or `reopened` activity types: when a workflow using
+> `GITHUB_TOKEN` creates or updates a pull request, the resulting `pull_request`
+> event creates workflow runs in an **approval-required** state. The pull request
+> displays a banner in the merge box, and a user with write access to the
+> repository can start the runs by selecting **Approve workflows to run**."
 
-- **Wer weiß, welcher Datensatz beprobt wurde?** Die Live-Tests selbst. Jedes
-  Modul in `tests_live/` bekommt `@pytest.mark.live_dataset("<id>")` (in
-  `pyproject.toml` registriert, `--strict-markers` ist an). Ein Hook in
-  `tests_live/conftest.py` sammelt die Datensätze der **bestandenen** Tests und
-  schreibt am Sitzungsende **nur bei fehlerfreiem Lauf** die Datei.
-- **Was steht drin?** `backend/earthx/catalog/live_smoke_status.json`, ein
-  Eintrag je `dataset_id`: `checked_at` (UTC, ISO 8601), `run_url`. Nichts
-  weiter — keine Messwerte, keine Hostnamen, keine AOIs.
-- **Wie kommt sie ins Repo?** Ein Schritt nach `pytest` (ohne `if: always()`,
-  also nur bei Grün) committet die Datei auf den festen Zweig
-  `chore/live-smoke-status` und öffnet dort einen PR, falls keiner offen ist.
-  `permissions: contents: write, pull-requests: write` nur in diesem Workflow;
-  `ci.yml` bleibt bei `contents: read`.
-- **Wie liest die Plattform sie?** Neues Modul `catalog/live_smoke.py`:
-  `load_live_smoke_status(path=None) -> Mapping[str, LiveSmokeRun]`, Vorgabepfad
-  neben dem Modul, fehlende Datei ergibt eine leere Zuordnung (kein Absturz),
-  kaputtes JSON einen definierten Fehler. `to_stac_collection` nimmt die
-  Zuordnung als zweites, vorgabefreies Argument und **überschreibt** damit
-  `earthx:health.last_checked_ok`. Kein neues `earthx:`-Feld, 5.1 bleibt wie es
-  ist. `catalog` liest eine lokale Datei — keine neue Importkante.
+Und für den reinen Push auf denselben Zweig, ohne Ausnahme:
 
-Der Eintrag behält sein eigenes `HealthInfo` als das, was es ist: der Befund des
-Onboardings. Die Kommentare an beiden Einträgen werden entsprechend
-richtiggestellt, damit nicht länger dort steht, das sei Punkt 10.
+> „For example, if a workflow run pushes code using the repository's
+> `GITHUB_TOKEN`, a new workflow will not run even when the repository contains a
+> workflow configured to run when `push` events occur."
 
-**Ehrlich benannter Preis:** angezeigt wird der letzte grüne Lauf, den ein
-gemergter Stand kennt — nicht der letzte grüne Lauf überhaupt. Der offene PR
-zeigt den jeweils aktuellen Wert. Eine Alterungsregel („älter als N Tage heißt
-`degraded`") wird **nicht** erfunden; das ist eine Messung und gehört zu den
-eigenen Health-Checks in M5, die diesen ganzen Behelf ablösen (D4: „Fassung v1").
-F2 stellt die beiden teureren Wege daneben.
+Die Pflicht-Checks des geschützten `main` liefen auf so einem PR also nur, wenn
+Otto sie **bei jeder Aktualisierung** von Hand freigibt — täglich. Die
+Dokumentation nennt als Ausweg ausdrücklich ein GitHub-App- oder
+Personal-Access-Token statt `GITHUB_TOKEN`; beides ist ein Secret und damit
+ausgeschlossen.
+
+**Zweitens, und unabhängig davon:** Otto müsste den PR laufend mergen, sonst
+zeigt die Plattform ein altes Datum, das wie „geprüft" aussieht. Dieser Einwand
+allein hätte gereicht.
+
+**Was die Prüfung außerdem zutage gefördert hat.** Die Kette hat drei Glieder,
+und jeder Weg entscheidet sich, welches er anfasst:
+
+1. Actions → Repo: der Workflow hält fest, dass er grün war.
+2. Repo → laufende Plattform: über einen Build, ein Deployment oder einen Abruf.
+3. Plattform → Collection: die Collections liegen in **pgstac**, befüllt einmalig
+   vom Dienst `catalog-load`. Ein Wert, der sich täglich ändert, wird also nicht
+   schon dadurch aktuell, dass er im Repo aktuell ist — irgendwer muss ihn
+   nachziehen.
+
+Daraus folgt eine Abwägung, die keiner der Wege auflöst: **automatisch aktuell**
+und **im Test überprüfbar** sind nicht dasselbe. Liegt die Datei im Repo, kann
+der Checklisten-Test ihren Inhalt wirklich prüfen; wird sie zur Laufzeit geholt,
+prüft der Test nur noch, dass der Mechanismus trägt.
+
+**Der Teil, der so oder so im Repo prüfbar bleibt.** Jedes Modul in `tests_live/`
+trägt `@pytest.mark.live_dataset("<id>")`. Damit kann der Checklisten-Test ohne
+Netz feststellen, ob ein Registry-Eintrag vom T-D-Smoke überhaupt **abgedeckt**
+ist — die Hälfte von Punkt 10, die eine Aufnahmeregel ist. Das Datum selbst ist
+eine Messung und kommt von dort, wofür F2 sich entscheidet. Mit F3 (zweiter Job)
+gilt die Abdeckung für beide Datensätze.
 
 ### 4.5 Sichtbar im Viewer
 
@@ -292,7 +305,7 @@ Sitzung nicht und wird nicht angefasst außer um den Marker.
 
 Empfohlener Schnitt in drei PRs (F1), jeder für sich grün und abnehmbar:
 
-**M2-08-1 — Checkliste, Punkte 1–8.** `test_onboarding_checklist.py` mit
+**M2-08-1 — Checkliste, Punkte 1–8.** *(umgesetzt, dieser PR.)* `test_onboarding_checklist.py` mit
 `evaluate`, Positiv- und Negativfällen; Punkt 3 im Eintrag geschlossen; Extents
 gesetzt (je nach F5). Punkt 9 und 10 sind darin als noch nicht geprüft benannt.
 *Rund 300 Zeilen.*
@@ -347,30 +360,56 @@ wird kein Produktivcode angefasst.
 
 ## 11. Fragen an Otto
 
-**F1 — Schnitt.** M2-08 in einem PR liegt bei rund 970 Zeilen.
+**Beantwortet am 22.09.2026:** F1, F3, F4, F5 und F6 wie empfohlen. **Offen: F2**,
+nach dem Befund in §4.4 neu gestellt.
+
+**F1 — Schnitt.** ✅ *(a)* M2-08 in einem PR liegt bei rund 970 Zeilen.
 
 a) **Drei PRs wie in §7** (Punkte 1–8 / Punkt 9 / Punkt 10). *(Empfehlung)*
 b) Zwei PRs: Punkte 1–8 und 9 zusammen, Punkt 10 getrennt.
 c) Einer, Richtwert deutlich überschritten.
 
 **F2 — Wie kommt der Zeitpunkt des letzten grünen T-D-Laufs in die Plattform?**
-(§4.4). `main` ist geschützt, ein Direkt-Push aus dem Workflow scheidet damit aus.
+Neu gestellt, nachdem der erste Vorschlag gefallen ist (§4.4). Alle drei Wege
+kommen **ohne Secret** und **ohne laufende Handarbeit** aus; der Unterschied
+liegt darin, wie aktuell der angezeigte Wert ist und wie viel davon ein Test
+prüfen kann.
 
-a) **Statusdatei im Repo, vom Live-Smoke über einen dauerhaften Chore-PR
-   aktuell gehalten.** Kein Secret, kein Laufzeit-Zugriff nach außen, keine neue
-   Importkante, keine Änderung am Branch-Schutz. Preis: angezeigt wird der letzte
-   **gemergte** grüne Lauf. *(Empfehlung — M5 löst den Behelf ohnehin ab, D4
-   nennt ihn „Fassung v1")*
-b) Die Plattform liest den Wert zur Laufzeit über `gateway` von einer
-   öffentlichen URL (Statuszweig oder Actions-API). Der ehrlichste Wert, aber:
-   ein plattformeigener Host in der Allowlist, die `policy_from_registry` heute
-   nicht kennt (D12), plus Cache und Rückfall — eine Architekturänderung für ein
-   Anzeigefeld.
-c) Der Workflow committet auf einen ungeschützten Statuszweig, das Deployment
-   holt die Datei (M6). Kein Merge-Zwang, aber in M2 ist kein Deployment da, das
-   sie holen könnte — der angezeigte Wert bliebe bis M6 der eingecheckte.
+a) **Statuszweig, und `catalog-load` holt die Datei.** Der Live-Smoke pusht bei
+   Grün mit `GITHUB_TOKEN` (`contents: write`) auf den ungeschützten Zweig
+   `live-smoke-status` — kein PR, kein Merge, keine Freigabe, und dass ein
+   solcher Push keine Workflows auslöst, ist hier erwünscht. Der Dienst
+   `catalog-load` liest die Datei beim Befüllen von pgstac über `gateway`, mit
+   einer **eigenen, schmalen Policy** nur für `raw.githubusercontent.com`,
+   getrennt von der Registry-Allowlist — die Regel „was in der Registry steht und
+   sonst nichts" bleibt für den Datenpfad unangetastet. Fehlt die Datei oder ist
+   sie unlesbar, zeigt der Viewer „never" statt eines falschen Datums.
+   Aktualität: so frisch wie der letzte `catalog-load`-Lauf, in Compose also
+   jeder Stack-Start, ab M6 ein Zeitplan. Der Test prüft die Abdeckung im Repo
+   und die Verdrahtung gegen eine Fixture, nicht den Wert selbst.
+   *(Empfehlung)*
 
-**F3 — Bekommt `sentinel-2-l2a-zarr3` einen Live-Smoke?** Ohne einen fällt Punkt
+b) **Statuszweig, aber kein Netz zur Laufzeit.** Derselbe Push; die Datei kommt
+   nur über einen Build oder ein Deployment in die Plattform. Nichts Neues im
+   `gateway`, und der Checklisten-Test prüft den eingecheckten Wert wirklich.
+   Preis: in M2 gibt es kein Deployment, das sie holt — angezeigt würde bis M6
+   der Stand des Checkouts, also genau das veraltete Datum, das du bei a) des
+   ersten Vorschlags nicht wolltest.
+
+c) **Der Actions-Bot darf auf `main` schreiben** (Ausnahme in der
+   Branch-Schutz-Regel). Dann committet der Workflow direkt, der Wert ist im Repo
+   und aktuell, und der Test prüft ihn wirklich. Preis: Rulesets können eine
+   solche Ausnahme nicht auf einen Pfad begrenzen — der Bot dürfte dann alles auf
+   `main` schreiben. Das ist eine Lockerung des Branch-Schutzes und deine
+   Entscheidung, nicht meine.
+
+Wenn dir keiner der drei den Aufwand wert ist, gibt es noch den Weg, die Frage zu
+ändern statt sie zu beantworten: Punkt 10 zeigt weiterhin das Erreichbarkeitsdatum
+des Onboardings, im Viewer als das benannt, was es ist, und der letzte grüne
+T-D-Lauf kommt erst mit den eigenen Health-Checks in M5. Das wäre eine Änderung
+an D4 und deshalb keine Option, die ich ohne dich wähle.
+
+**F3 — Bekommt `sentinel-2-l2a-zarr3` einen Live-Smoke?** ✅ *(a)* Ohne einen fällt Punkt
 10 für ihn, und M2-10 verlangt die Checkliste grün für beide. Du hattest zu
 M2-09b F7 entschieden, die Quelle **nicht** zur Abnahmegrundlage zu machen; hier
 geht es um die laufende Überwachung, nicht um die Abnahme.
@@ -384,7 +423,7 @@ b) Kein Live-Smoke; Punkt 10 für diesen Eintrag bis M2-10 als `xfail` mit
 c) Punkt 10 gilt nur für Einträge mit `maturity = stable`. Sauber begründbar,
    verschiebt aber eine Aufnahmeregel wegen eines Werkzeugproblems.
 
-**F4 — Wie tief geht Punkt 9?** (§4.3). Kachel- und Download-Route laufen ohne
+**F4 — Wie tief geht Punkt 9?** ✅ *(a)* (§4.3). Kachel- und Download-Route laufen ohne
 Postgres; `/stac/search` nicht, die hängt an pgstac.
 
 a) **Suche über den Adapter, Kachel und Download über die Routen** (`TestClient`).
@@ -395,18 +434,21 @@ b) Ganz durch `/stac/search` mit pgstac, also als T-C-Integrationstest. Näher a
    „End-to-End", bindet den Punkt aber an eine laufende Datenbank.
 c) Nur auf Funktionsebene, ohne Routen. Am schnellsten, am wenigsten wert.
 
-**F5 — Extents des ersten Eintrags** (§3). Der Eintrag trägt M1-Platzhalter; die
+**F5 — Extents des ersten Eintrags** ✅ *(a)* (§3). Der Eintrag trägt M1-Platzhalter; die
 Quelle meldet `2015-06-27T10:25:31.456000Z` als Beginn, die Fläche ist gleich.
 
 a) **Jetzt mitnehmen**, mit der Messung als Beleg im Kommentar. Ein Feld, zwei
    Zeilen, und die Zeitleiste kennt ihre Untergrenze. *(Empfehlung)*
 b) Nicht mitnehmen — kein Punkt der Checkliste verlangt es; eigene kleine Aufgabe.
 
-**F6 — Braucht F2 einen ADR-Entwurf?** `CLAUDE.md` verlangt ihn für
+**F6 — Braucht F2 einen ADR-Entwurf?** ✅ *(a)* `CLAUDE.md` verlangt ihn für
 Architekturentscheidungen.
 
 a) **Nein, eine Zeile im `ENTSCHEIDUNGSLOG.md` genügt** — der Weg ist
    ausdrücklich ein Behelf bis M5 und berührt kein Modul und kein `earthx:`-Feld.
-   *(Empfehlung, gilt für F2 a und c)*
-b) Ja, `adr/0008`. Angemessen, falls du F2 b wählst: dort kommt ein
-   plattformeigener Host in die Allowlist, und das ist eine Architekturentscheidung.
+   *(Empfehlung; trägt für die neuen F2 b und c. Bei F2 a siehe unten.)*
+b) Ja, `adr/0008`. Angemessen, falls du das neue **F2 a** wählst: dort bekommt
+   `gateway` eine zweite, plattformeigene Policy neben der aus der Registry. Das
+   hebt die Regel „was in der Registry steht und sonst nichts“ für einen zweiten
+   Zweck auf, und das ist eine Architekturentscheidung. Ich lege den Entwurf dann
+   vor dem dritten PR vor.
