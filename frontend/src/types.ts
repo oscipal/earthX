@@ -40,6 +40,27 @@ export interface CollectionAccess {
 
 export interface EarthxViewer {
   group_by: string[];
+  // The tile levels this dataset is released for (M2-10, registry `ViewerInfo`).
+  // Below `min_zoom` one tile shows several scenes, which is the coverage map's
+  // job; above `max_zoom` the source has nothing finer, so the last level is
+  // overzoomed. The tile route enforces both — asking outside the range is a 400,
+  // not a slow tile.
+  min_zoom: number;
+  max_zoom: number;
+}
+
+// How settled the *source* is, not a measurement (`earthx:maturity`,
+// architekturplan.md 5.1). The union is what the registry can emit today; the
+// field is read as a plain string so a fourth value shows up in the interface
+// instead of being silently dropped.
+export type Maturity = 'stable' | 'staging' | 'experimental';
+
+// Result of the last check of the source (`earthx:health`). Checklist point 10
+// asks for `last_checked_ok` to be set *and visible*, which is why the viewer
+// reads it at all.
+export interface CollectionHealth {
+  status: string;
+  last_checked_ok: string | null;
 }
 
 // The registry's standard visualisation (`DefaultRender`, M2-04/D20), field names
@@ -80,6 +101,8 @@ export interface Collection {
   license?: string | null;
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
+  'earthx:maturity'?: Maturity | string | null;
+  'earthx:health'?: CollectionHealth | null;
   'earthx:default_render'?: EarthxDefaultRender | null;
   'earthx:license_flags'?: LicenseFlags | null;
 }
