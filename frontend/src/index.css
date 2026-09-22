@@ -947,6 +947,56 @@ input[type='date']:focus {
   flex: 0 0 auto;
 }
 
+/* --- download dialog (M2-07d) --- */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.dialog-panel {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dialog-body {
+  padding: 4px 14px 12px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dialog-body p {
+  margin: 0 0 10px;
+}
+.dialog-attribution {
+  color: var(--accent-2);
+}
+.dialog-terms {
+  color: var(--muted);
+  font-size: 11px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--panel-border);
+}
+.lm-btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.lm-btn.primary:disabled {
+  border-color: var(--panel-border);
+  color: var(--muted);
+}
+
 /* --- status toasts --- */
 .status-stack {
   display: flex;
