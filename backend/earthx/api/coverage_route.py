@@ -28,6 +28,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from stac_fastapi.types.rfc3339 import str_to_interval
 
 from earthx.adapters.earth_search_coverage import aggregate_coverage
+from earthx.adapters.eopf_sample_coverage import sample_coverage
+from earthx.adapters.federated_search import UpstreamShapeError
 from earthx.catalog.coverage import (
     HISTOGRAM_INTERVAL,
     CoverageProviderMismatch,
@@ -44,6 +46,10 @@ from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import GatewayError, UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
 LOGGER = logging.getLogger("earthx.api.coverage")
+
+# local-sql (adr/0004 §5) has no caller yet — no dataset in M2 has its own items
+# in pgstac (plan §8). Both other ways do, and share the `CoverageSource` seam.
+_IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION, CoverageProvider.SAMPLE})
 
 
 def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
@@ -76,12 +82,13 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
         if config.capabilities.single_coverage_product:
             return _serialise(extent_result(config.dataset_id, config.spatial_extent.bbox))
 
-        if config.coverage.provider is not CoverageProvider.UPSTREAM_AGGREGATION:
-            # local-sql and sample have no caller yet (plan §8: "kein Datensatz in
-            # M2 hat eigene Items im pgstac"; the sample way is M2-09b).
+        if config.coverage.provider not in _IMPLEMENTED_PROVIDERS:
+            # local-sql has no caller yet (plan §8: "kein Datensatz in M2 hat
+            # eigene Items im pgstac"); upstream-aggregation and sample both do
+            # (M2-05b, M2-09b-3).
             raise HTTPException(
                 status_code=501,
-                detail=f"{dataset_id!r} has no coverage answer yet ({config.coverage.provider.value}, see M2-09b)",
+                detail=f"{dataset_id!r} has no coverage answer yet ({config.coverage.provider.value})",
             )
 
         has_spatial_filter = bbox is not None or intersects is not None
@@ -99,14 +106,19 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
         except InvalidCoverageQuery as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
+        # Same seam either way (`CoverageSource`, adr/0004 §5): both answer
+        # `(query, config, *, gateway, registry, cache=None)`, so the registry
+        # entry alone decides which one is asked.
+        is_upstream = config.coverage.provider is CoverageProvider.UPSTREAM_AGGREGATION
+        source = aggregate_coverage if is_upstream else sample_coverage
         gateway = request.app.state.earthx_gateway
         pool = getattr(request.app.state, "earthx_cache_pool", None)
         try:
             if pool is None:
-                result = await aggregate_coverage(query, config, gateway=gateway, registry=registry)
+                result = await source(query, config, gateway=gateway, registry=registry)
             else:
                 async with pool.connection() as conn:
-                    result = await aggregate_coverage(
+                    result = await source(
                         query, config, gateway=gateway, registry=registry, cache=PostgresSearchCache(conn)
                     )
         except CoverageProviderMismatch as error:
@@ -122,8 +134,14 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
             # plan): the body can carry the AOI back, and only our own text is kept.
             LOGGER.warning("coverage upstream failed", extra={"dataset": dataset_id})
             raise HTTPException(status_code=502, detail="the source did not deliver a coverage answer") from None
-        except UpstreamCoverageShapeError:
-            raise HTTPException(status_code=502, detail="the source answered something coverage could not read") from None
+        except (UpstreamCoverageShapeError, UpstreamShapeError):
+            # `UpstreamShapeError` is `sample_coverage`'s own search path
+            # misbehaving (`federated_search.require_feature_list` and friends);
+            # `UpstreamCoverageShapeError` is either way's own reading of the
+            # answer. Both mean the same thing to a caller: unreadable, not ours.
+            raise HTTPException(
+                status_code=502, detail="the source answered something coverage could not read"
+            ) from None
 
         LOGGER.info(
             "coverage answered",
