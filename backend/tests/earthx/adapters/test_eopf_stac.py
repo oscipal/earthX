@@ -173,6 +173,14 @@ class TestGetItem:
         assert item["properties"]["proj:epsg"] == 32626
         assert seen[0].url.path == f"/collections/{SENTINEL_2_L2A_ZARR3.source.source_collection_id}/items/SYNTH_S2A_MSIL2A_20260921T141821_T26WME"
 
+    async def test_zipped_product_never_reaches_the_caller(self) -> None:
+        """adr/0007 §12.11 point 10 / D23, end to end through the adapter's own
+        get_item — not just the pure normalize_item function."""
+        gateway, _ = answering(httpx.Response(200, json=load("item")))
+        async with gateway:
+            item = await get_item(DATASET_ID, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", gateway=gateway)
+        assert "zipped_product" not in item["assets"]
+
     async def test_a_missing_item_stays_the_sources_404(self) -> None:
         from earthx.gateway.errors import UpstreamError
 

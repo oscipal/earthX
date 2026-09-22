@@ -18,7 +18,9 @@ in adr/0007 §12 and rechecked in the M2-09b plan step (plan §3):
   STAC 1.1, our own API speaks 1.0 (``earthx.catalog.collection.STAC_VERSION``).
   :func:`normalize_item` does exactly the fields adr/0007 §6 point 4 named, and
   nothing else — what is not mapped stays as it stands rather than being dropped
-  or guessed at.
+  or guessed at. The one deliberate exception is the ``zipped_product`` asset
+  (adr/0007 §12.11 point 10, D23): dropped here, not mapped, so it is never an
+  asset key a caller could resolve.
 
 Everything this module sends goes through ``gateway`` (KLAERUNGEN B8) — there is no
 HTTP client here.
@@ -201,6 +203,13 @@ _EPSG_PREFIX = "EPSG:"
 _UTM_PREFIXES = ("EPSG:326", "EPSG:327")
 _DEGREE_LIKE_MAGNITUDE = 1000.0
 
+# adr/0007 §12.11 point 10 / D23: `zipped_product` (1.2 GB) lies on the now-open
+# data.eodc.eu, so the host allowlist alone no longer keeps it out (§12.1) — the
+# asset key itself must not reach a caller that could resolve it. Dropped here,
+# not filtered later, so nothing downstream (the tile route, a search result) ever
+# sees it as an option.
+_EXCLUDED_ASSETS = frozenset({"zipped_product"})
+
 
 def normalize_item(item: Mapping[str, Any]) -> dict[str, Any]:
     """The item as our STAC 1.0 API would have emitted it, had it harvested this
@@ -215,7 +224,9 @@ def normalize_item(item: Mapping[str, Any]) -> dict[str, Any]:
         normalized["properties"] = _normalize_properties(properties)
     assets = item.get("assets")
     if isinstance(assets, Mapping):
-        normalized["assets"] = {key: _normalize_asset(asset) for key, asset in assets.items()}
+        normalized["assets"] = {
+            key: _normalize_asset(asset) for key, asset in assets.items() if key not in _EXCLUDED_ASSETS
+        }
     return normalized
 
 

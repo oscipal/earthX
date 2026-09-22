@@ -13,3 +13,7 @@ erfunden und klein gehalten.
 Belegt keine Quellenantwort von heute — dafür gibt es keinen Live-Smoke für
 diesen Adapter (`adr/0002` T-D: `gateway` erreicht die Quelle aus einer
 Cloud-Sitzung nicht, siehe `plans/m2-09b-zweiter-datensatz-katalog.md` §10 F7).
+
+`item.json` führt zusätzlich das Asset `zipped_product`, wie ein echtes Item es
+tut (`adr/0007` §12.1) — der Beleg dafür, dass `eopf_stac.normalize_item` es
+fernhält (D23, §12.11 Punkt 10), nicht nur eine Annahme über den Adapter.

@@ -26,6 +26,11 @@
       "bands": [
         {"name": "b04", "description": "Red (band 4)", "eo:common_name": "red", "eo:center_wavelength": 0.665, "eo:full_width_half_max": 0.038}
       ]
+    },
+    "zipped_product": {
+      "href": "https://data.eodc.eu/synth/1.zarr.zip",
+      "description": "the zipped product archive",
+      "roles": ["data", "metadata", "archive"]
     }
   },
   "links": []

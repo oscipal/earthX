@@ -129,6 +129,19 @@ def test_an_asset_field_with_no_1_0_mapping_passes_through() -> None:
     assert normalized["zarr:node_type"] == "group"
 
 
+def test_zipped_product_is_dropped_not_normalised() -> None:
+    """adr/0007 §12.11 point 10 / D23: the 1.2 GB archive now sits on the open
+    data.eodc.eu, so the host allowlist alone no longer keeps it out — the asset
+    key itself must not survive normalisation."""
+    assets = {
+        "SR_10m": {"href": "https://data.eodc.eu/synth/1.zarr/measurements/reflectance/r10m"},
+        "zipped_product": {"href": "https://data.eodc.eu/synth/1.zarr.zip", "description": "the zipped product"},
+    }
+    normalized = normalize_item(item(assets=assets))["assets"]
+    assert "zipped_product" not in normalized
+    assert "SR_10m" in normalized
+
+
 def test_the_input_is_not_mutated() -> None:
     """Same rule as the collection mapping (test_collection.py): a caller must not
     reach back into its own item through what this function handed out."""
