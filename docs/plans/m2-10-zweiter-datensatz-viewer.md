@@ -134,9 +134,11 @@ class ViewerInfo:
     max_zoom: int   # darüber: Überzoom auf der feinsten Stufe, keine neuen Reads
 ```
 
-Prüfungen in `__post_init__`: beide in `0..24`, `min_zoom <= max_zoom`. Der obere
-Riegel ist derselbe Gedanke wie `MAX_GEOTILE_LEVEL` in `catalog/coverage.py` — eine
-Stufe jenseits jeder Bildauflösung ist ein Eintragsfehler, kein gültiger Wunsch.
+Prüfungen in `__post_init__`: beide ganzzahlig und in `0..MAX_TILE_ZOOM`,
+`min_zoom <= max_zoom`. Der obere Riegel steht bei **22**, MapLibres eigener
+Obergrenze — dort ist eine Kachel am Äquator rund 4 cm breit. Derselbe Gedanke wie
+`MAX_GEOTILE_LEVEL` in `catalog/coverage.py`: eine Stufe jenseits jeder
+Bildauflösung ist ein Eintragsfehler, kein gültiger Wunsch.
 
 Werte:
 
@@ -171,7 +173,10 @@ Der Kachelpfad prüft die Stufe deshalb selbst.
   gehört der Kachel, die den Datenbestand verfehlt (`TileOutsideBounds`), und
   beides auseinanderzuhalten ist der Punkt eines definierten Fehlers.
 - Ein Datensatz ohne `viewer` wird nicht stillschweigend durchgelassen, sondern
-  abgewiesen — dasselbe Nichtraten wie im Frontend (§4.2).
+  mit **501** abgewiesen — dasselbe Nichtraten wie im Frontend (§4.2), und
+  derselbe Code, mit dem ein Format ohne Reader abgewiesen wird: die Plattform
+  ist für diesen Datensatz nicht eingerichtet, der Aufrufer hat nichts falsch
+  gemacht.
 
 Damit ist das Feld nicht nur eine Empfehlung an den Client, sondern die Grenze
 des Kachelpfads.
@@ -225,13 +230,20 @@ des Kachelpfads.
 `ResultsPanel` behält den Platzhalter, bekommt aber einen `title`, der sagt warum
 („this source publishes no preview image") — siehe F4.
 
-### 4.5 `access/download.py` — der Dateiname im ZIP
+### 4.5 `access/download.py` — der Dateiname im ZIP, und ein zweiter Befund
 
 Der ZIP-Eintrag heißt künftig nicht mehr roh nach dem Asset-Schlüssel: alles
 außerhalb von `[A-Za-z0-9._-]` wird zu `_`, mehrfaches `_` zusammengezogen.
 `visual.tif` bleibt `visual.tif`; `SR_10m:b04,b03,b02` wird
 `SR_10m_b04_b03_b02.tif`. Die Hinweisdatei im ZIP nennt zusätzlich den
 ursprünglichen Asset-Schlüssel, damit die Zuordnung nicht verloren geht.
+
+**Beim Schreiben des ersten Zuschnitt-Tests über das zweite Format gefunden:**
+`crop_asset` fing nur `TileOutsideBounds`/`PointOutsideBounds` ab, die rio-tiler
+für ein COG wirft. Über `XarrayReader.feature` wirft rioxarray stattdessen
+`NoDataInBounds` — dieselbe Tatsache, anderer Typ. Eine AOI neben der Szene
+ergab bei Zarr also `500`, wo dieselbe AOI bei COG `400` ergibt. Alle drei
+zählen jetzt gleich, im Mosaik ebenso (dort heißt es: diese Szene überspringen).
 
 ---
 

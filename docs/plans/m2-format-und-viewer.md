@@ -116,7 +116,7 @@ Ottos Entscheidung zu M2-11).
 | M2-08 | Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-05b, M2-06, M2-07d |
 | M2-09a | Zarr-Lesepfad gegen synthetisches Mini-Zarr | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
 | M2-09b | Zweiter Datensatz im Katalog | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-03b, M2-04, M2-09a |
-| M2-10 | Zweiter Datensatz im Viewer | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-09b, M2-07c |
+| M2-10 | Zweiter Datensatz im Viewer | B | — | **erledigt** (#61) |
 | M2-11 | Vorlage: Prototyp entfernen | C | Opus | M2-08 |
 | M2-12 | M2-Abnahme und README | A | Sonnet (mittel) | alle |
 | M2-13 | Kleinkram: SessionStart-Hook, Live-Smoke-Nachtrag | A | — | **erledigt** (#42) |
@@ -133,7 +133,7 @@ stauen (`m1-fundament.md` §6).
 3. ~~M2-05b, M2-06, M2-07a, M2-07b, M2-07c, M2-13, M2-14~~ — erledigt
 4. M2-07d, M2-09a
 5. M2-15, M2-09b
-6. V-1, M2-10
+6. ~~V-1, M2-10~~ — erledigt
 7. M2-08
 8. M2-11, M2-12
 9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
@@ -346,11 +346,21 @@ der Kandidatenmatrix.
 
 **Abnahme:** Suche, Kachel, Statistik und Zuschnitt gegen die echte Quelle vorgeführt; Fixtures im Test synthetisch; kein Request außerhalb von `gateway`.
 
-### M2-10 — Zweiter Datensatz im Viewer
+### M2-10 — Zweiter Datensatz im Viewer — **erledigt** (#61)
 
 **Ziel:** Der zweite Datensatz ist im selben Viewer wählbar, mit Kacheln, Coverage, Zuschnitt und Ersatz für den fehlenden Quicklook, und besteht die Checkliste v1.
 **Stufe B.** Frontend ohne datensatzspezifische Verzweigung; Unterschiede kommen aus der Registry, auch die freigegebenen Zoomstufen und das Fehlen des Quicklooks.
 **Abnahme:** Checkliste v1 grün für beide Datensätze; Abnahmekriterium 1 aus Abschnitt 5 lokal vorführbar.
+
+**Umgesetzt** nach `plans/m2-10-zweiter-datensatz-viewer.md`, freigegeben am
+22.09.2026 (F1–F6 je (a), dazu zwei Zusätze): `earthx:viewer` trägt jetzt
+`min_zoom`/`max_zoom` (COG `0..19`, zarr3 `8..14`), und die Kachelroute weist
+eine Stufe außerhalb mit `400` ab, bevor sie das Item holt. Der fehlende
+Quicklook wird im Browse-Modus durch Kacheln auf der gröbsten freigegebenen
+Stufe ersetzt. Reifegrad und „zuletzt geprüft" stehen in der Oberfläche.
+Nebenbefunde aus dem ersten Zuschnitt über das zweite Format: der ZIP-Eintrag
+hieß roh nach dem Asset-Schlüssel, und eine AOI neben der Szene ergab bei Zarr
+`500` statt `400`. Die Checkliste v1 **als Test** bleibt M2-08 (F5 a).
 
 ### M2-11 — Vorlage: Prototyp entfernen
 
