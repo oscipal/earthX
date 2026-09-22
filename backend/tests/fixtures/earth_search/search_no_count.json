@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "stac_version": "1.0.0",
+  "numberReturned": 1,
+  "features": [
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "id": "SYNTH_T00AAA_20240601T100000_L2A",
+      "collection": "sentinel-2-c1-l2a",
+      "geometry": {"type": "Polygon", "coordinates": [[[9.0, 48.0], [10.0, 48.0], [10.0, 49.0], [9.0, 49.0], [9.0, 48.0]]]},
+      "bbox": [9.0, 48.0, 10.0, 49.0],
+      "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 12.3, "platform": "synthetic-2a"},
+      "assets": {
+        "thumbnail": {"href": "https://example.invalid/synth/1/thumb.jpg", "type": "image/jpeg"}
+      },
+      "links": [
+        {"rel": "self", "href": "https://earth-search.invalid/v1/collections/sentinel-2-c1-l2a/items/SYNTH_T00AAA_20240601T100000_L2A"},
+        {"rel": "parent", "href": "https://earth-search.invalid/v1/collections/sentinel-2-c1-l2a"},
+        {"rel": "root", "href": "https://earth-search.invalid/v1"},
+        {"rel": "collection", "href": "https://earth-search.invalid/v1/collections/sentinel-2-c1-l2a"}
+      ]
+    }
+  ],
+  "links": [
+    {"rel": "self", "href": "https://earth-search.invalid/v1/search", "type": "application/json"}
+  ]
+}

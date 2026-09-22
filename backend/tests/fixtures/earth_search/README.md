@@ -41,3 +41,13 @@ Der Asset `elsewhere` zeigt bewusst auf `sentinel-cogs…amazonaws.com` — den 
 **älteren** Collection (§3.7). Er steht nicht in der Registry und muss deshalb an
 `gateway` scheitern; ohne ihn ließe sich nicht zeigen, dass die Allowlist aus der
 Registry wirklich zählt und nicht bloß jeden AWS-Bucket durchlässt.
+
+## `search_no_count.json`
+
+Für M2-09b: eine Suchantwort ohne `numberMatched`/`context` — die Form, die eine
+Quelle ohne geprüfte Gesamtzahl liefert (bei EOPF immer, adr/0007 §12.6) —, und mit
+Item-Links (`self`, `parent`, `root`, `collection`), die auf die Quelle selbst
+zeigen, statt leer zu sein wie in den übrigen Dateien hier. Beweist zwei Dinge auf
+einmal: dass `numberMatched` in der Antwort fehlt, statt aus der Seitengröße
+geraten zu werden, und dass jedes Item seine eigenen `self`/`parent`/`root`-Links
+bekommt, statt die der Quelle zu behalten.

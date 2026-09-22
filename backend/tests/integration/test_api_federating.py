@@ -265,6 +265,32 @@ class TestFederatedSearch:
         assert body["numberMatched"] == 3
         assert seen[0].headers["host"] == HOST
 
+    async def test_numbermatched_is_left_out_when_the_source_has_no_count(self, require_catalog_loaded: None) -> None:
+        """adr/0007 §12.6: EOPF never sends one. Left out, not guessed from the page
+        size — `numberMatched` must not look like a checked total that happens to
+        equal how many items came back."""
+        handler, _ = _answering(httpx.Response(200, json=load_fixture("search_no_count")))
+        async with _client(handler) as client:
+            response = await client.get(f"/stac/collections/{DATASET_ID}/items")
+        assert response.status_code == 200
+        assert "numberMatched" not in response.json()
+
+    async def test_each_item_carries_its_own_links_not_the_sources(self, require_catalog_loaded: None) -> None:
+        """The source's own self/parent/root/collection links must not survive
+        inside a search or item_collection answer — the same rewrite `get_item`
+        already does for a single item (M2-09b, found against the real EOPF
+        source; the gap is the same for Earth Search, its synthetic search
+        fixtures just never carried per-item links before)."""
+        handler, _ = _answering(httpx.Response(200, json=load_fixture("search_no_count")))
+        async with _client(handler) as client:
+            response = await client.get(f"/stac/collections/{DATASET_ID}/items")
+        feature = response.json()["features"][0]
+        by_rel = {link["rel"]: link["href"] for link in feature["links"]}
+        for rel in ("self", "parent", "root", "collection"):
+            assert rel in by_rel
+            assert "earth-search.invalid" not in by_rel[rel]
+            assert by_rel[rel].startswith("http://test/")
+
     async def test_get_item_of_the_federated_collection(self, require_catalog_loaded: None) -> None:
         handler, seen = _answering(httpx.Response(200, json=load_fixture("item")))
         async with _client(handler) as client:

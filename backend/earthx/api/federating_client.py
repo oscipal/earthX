@@ -312,17 +312,39 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 )
         except (InvalidQuery, UnknownCollection, UpstreamError, UpstreamTimeout, UpstreamUnreachable) as error:
             raise _adapter_error_to_http(error) from error
-        return await self._to_item_collection(page, request)
+        return await self._to_item_collection(page, request, collection_id=collection_id)
 
-    async def _to_item_collection(self, page: ItemPage, request: Request) -> ItemCollection:
+    async def _to_item_collection(
+        self, page: ItemPage, request: Request, *, collection_id: str
+    ) -> ItemCollection:
         links = await PagingLinks(request=request, next=page.next_page_token, prev=None).get_links()
-        return cast(
+        features = []
+        for raw_item in page.items:
+            item = dict(raw_item)
+            # The same rewrite `get_item` does for a single item: our own self/
+            # parent/root/collection links replace whatever the source's own item
+            # carried (`ItemLinks.get_links` drops INFERRED_LINK_RELS from
+            # `extra_links`) — without this, a search or item_collection answer
+            # leaks the source's own address in every feature (M2-09b, Otto's
+            # local check against the real EOPF source; the same gap exists for
+            # Earth Search, whose synthetic search fixtures happened not to carry
+            # per-item links and so never showed it).
+            item["links"] = await ItemLinks(
+                collection_id=collection_id, item_id=item["id"], request=request
+            ).get_links(extra_links=item.get("links"))
+            features.append(item)
+        result: ItemCollection = cast(
             ItemCollection,
             {
                 "type": "FeatureCollection",
-                "features": [dict(item) for item in page.items],
+                "features": features,
                 "links": links,
-                "numberMatched": page.matched if page.matched is not None else len(page.items),
                 "numberReturned": len(page.items),
             },
         )
+        if page.matched is not None:
+            # Left out entirely rather than guessed at from the page size: a source
+            # without a checked total (adr/0007 §12.6) must not look like one that
+            # answered "10 of 10" (`numberMatched` is NotRequired on this type).
+            result["numberMatched"] = page.matched
+        return result
