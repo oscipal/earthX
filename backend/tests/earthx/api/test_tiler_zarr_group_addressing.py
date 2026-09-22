@@ -25,11 +25,12 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from earthx.api.tiler import _resolve_asset_path, _target_gsd
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy
 from earthx.readers.zarr_reader import ZarrReader
-from tests.earthx.readers import mini_zarr_multiscales
+from tests.earthx.readers import mini_zarr_composite, mini_zarr_multiscales
+from tests.earthx.readers.mini_zarr_composite import GROUP as COMPOSITE_GROUP
 from tests.earthx.readers.mini_zarr_multiscales import BASE_URL, GROUPS, HOST, ITEM_CRS, PARENT_GROUP, group_size
 
 DATASET = "synthetic-zarr-groups"
@@ -49,6 +50,35 @@ STAC_ITEM: dict[str, Any] = {
     "properties": {"proj:code": ITEM_CRS},
     "assets": {ITEM_ASSET: {"href": f"{BASE_URL}/{PARENT_GROUP}/r10m"}},
 }
+
+# A second, distinct dataset id/config sharing the same host — for the one test
+# that needs three real, distinguishable bands rather than the multiscales store's
+# single "b04" (`mini_zarr_composite.py`).
+COMPOSITE_DATASET = "synthetic-zarr-composite-render"
+COMPOSITE_CONFIG = replace(CONFIG, dataset_id=COMPOSITE_DATASET)
+COMPOSITE_STAC_ITEM: dict[str, Any] = {
+    "id": ITEM,
+    "properties": {"proj:code": ITEM_CRS},
+    "assets": {ITEM_ASSET: {"href": f"{BASE_URL}/{COMPOSITE_GROUP}"}},
+}
+
+
+@pytest.fixture(scope="module")
+def composite_store_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return mini_zarr_composite.build_mini_zarr_composite(tmp_path_factory.mktemp("zarr-composite-render") / "mini.zarr")
+
+
+@pytest.fixture
+def composite_requests(composite_store_root: Path, monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
+    return mini_zarr_composite.serve_store(composite_store_root, monkeypatch)
+
+
+def composite_state() -> Any:
+    return SimpleNamespace(
+        earthx_registry=SimpleNamespace(get=lambda dataset_id: COMPOSITE_CONFIG),
+        earthx_policy=Policy(allowed_hosts=frozenset({HOST})),
+        earthx_resolver=mini_zarr_composite.from_memory,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -169,3 +199,21 @@ class TestTargetGsdFromTheRequest:
             {"z": 10, "x": 551, "y": 351, "tileMatrixSetId": "WebMercatorQuad"},
         )
         assert _target_gsd(request, {**STAC_ITEM, "properties": {}}) is None
+
+
+class TestTheDefaultRenderAssetKeyRoundTrips:
+    """`SENTINEL_2_L2A_ZARR3.default_render.assets` is exactly
+    ``("SR_10m:b04,b03,b02",)`` (M2-09b-2's post-release fix) — proven here through
+    the same `_resolve_asset_path` a live tile request calls, not assumed."""
+
+    def test_the_exact_default_render_asset_key_builds_a_three_band_asset(
+        self, composite_requests: list[httpx.Request]
+    ) -> None:
+        (asset_key,) = SENTINEL_2_L2A_ZARR3.default_render.assets
+        built = _resolve_asset_path(
+            composite_state(), COMPOSITE_STAC_ITEM, dataset=COMPOSITE_DATASET, item=ITEM, asset=asset_key
+        )
+        assert built.variable == "b04,b03,b02"
+        with ZarrReader(built) as reader:
+            image = reader.preview()
+        assert image.count == 3

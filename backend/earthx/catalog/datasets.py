@@ -306,9 +306,17 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
     # F6): `mask_and_scale` hands this reader reflectance as a float, not the 8-bit
     # RGB `visual` already is for the first dataset, and `/statistics` overwrites
     # it with the scene's own range before anyone looks at a pixel (Z4, F18).
+    #
+    # One asset, not three: a Zarr band is never pre-stacked into one RGB file the
+    # way `visual` is (adr/0007 §12.7), and the tile route resolves exactly one
+    # asset per request (`api.tiler.dataset_asset_path`) — three separate asset
+    # keys here would each render one band alone, grayscale, one at a time (the
+    # M2-09b-2 bug this comment is the fix for). `readers.zarr_reader.ZarrReader`
+    # reads several comma-separated variables of one group and composites them,
+    # in the order named — this is that one asset key.
     default_render=DefaultRender(
         title="True colour",
-        assets=("SR_10m:b04", "SR_10m:b03", "SR_10m:b02"),
+        assets=("SR_10m:b04,b03,b02",),
         rescale=((0.0, 0.30), (0.0, 0.30), (0.0, 0.30)),
         colormap_name=None,
         expression=None,
