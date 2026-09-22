@@ -16,6 +16,7 @@ reaches Earth Search or an asset bucket.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from earthx.adapters.earth_search import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.tiler import DOWNLOAD_ROUTE, ROUTER_PREFIX, build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.registry import DatasetRegistry, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -56,7 +58,15 @@ def opened() -> list[str]:
 
 
 @pytest.fixture
-def client(item: dict[str, Any], opened: list[str], monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def fetched() -> list[str]:
+    """Every item the route asked the source for, in order."""
+    return []
+
+
+@pytest.fixture
+def client(
+    item: dict[str, Any], opened: list[str], fetched: list[str], monkeypatch: pytest.MonkeyPatch
+) -> TestClient:
     """The real app, with the item source answering from the fixture.
 
     Two things stand in for the outside world, and nothing else does: the name is
@@ -83,6 +93,7 @@ def client(item: dict[str, Any], opened: list[str], monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("earthx.access.tiles._read_statistics", fake_read)
 
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
+        fetched.append(item_id)
         if dataset_id not in REGISTRY:
             raise UnknownCollection(dataset_id)
         if item_id != ITEM:
@@ -322,3 +333,101 @@ class TestTheAssetHostIsResolvedOnce:
 def test_health_still_answers_the_way_compose_asks_it_to(client: TestClient) -> None:
     """docker-compose's healthcheck is unchanged; only the entrypoint moved."""
     assert client.get("/health").json() == {"status": "ok", "service": "tiler"}
+
+
+class TestOnlyReleasedZoomLevels:
+    """M2-10, Otto's first addition to F1: the tile path enforces the zoom range of
+    ``earthx:viewer`` itself.
+
+    The registry field alone only tells the viewer which levels to ask for. Another
+    client can ask for z20 regardless, and for a Zarr dataset that is a read off the
+    native 10 m level — far more bytes for pixels no sharper than z14 already gives.
+    The range therefore has to hold at the route, and a refusal has to be cheap:
+    nothing is fetched from the source for a level nobody serves.
+    """
+
+    @pytest.fixture
+    def narrow_client(
+        self, item: dict[str, Any], fetched: list[str], client: TestClient
+    ) -> TestClient:
+        """The same app against an entry released for z8..z14 only — the second
+        dataset's range (D23), without needing its store."""
+        return self._client_for(
+            replace(SENTINEL_2_L2A.viewer, min_zoom=8, max_zoom=14), client, fetched
+        )
+
+    @staticmethod
+    def _client_for(viewer: ViewerInfo | None, client: TestClient, fetched: list[str]) -> TestClient:
+        registry = DatasetRegistry((replace(SENTINEL_2_L2A, viewer=viewer),))
+        app = build_app(registry)
+        app.state.earthx_item_source = client.app.state.earthx_item_source
+        app.state.earthx_cache_pool = None
+        return TestClient(app)
+
+    @pytest.mark.parametrize("zoom", [7, 15, 20])
+    def test_a_level_outside_the_range_is_refused(
+        self, narrow_client: TestClient, fetched: list[str], zoom: int
+    ) -> None:
+        response = narrow_client.get(
+            f"{BASE}/tiles/WebMercatorQuad/{zoom}/1/1", params={"asset": "visual"}
+        )
+
+        assert response.status_code == 400, response.text
+        assert "z8 to z14" in response.json()["detail"]
+
+    def test_the_refusal_costs_no_request_to_the_source(
+        self, narrow_client: TestClient, fetched: list[str], opened: list[str]
+    ) -> None:
+        """Checked before the item is fetched — otherwise a client could still make
+        us pay for a level we do not serve, just not in pixels."""
+        narrow_client.get(f"{BASE}/tiles/WebMercatorQuad/20/1/1", params={"asset": "visual"})
+
+        assert fetched == []
+        assert opened == []
+
+    @pytest.mark.parametrize("zoom", [8, 14])
+    def test_the_boundaries_themselves_are_released(
+        self, narrow_client: TestClient, fetched: list[str], zoom: int
+    ) -> None:
+        """An inclusive range: z8 and z14 are the levels adr/0007 §12.10 released,
+        not the first two it refuses."""
+        narrow_client.get(f"{BASE}/tiles/WebMercatorQuad/{zoom}/1/1", params={"asset": "visual"})
+
+        assert fetched == [ITEM]
+
+    def test_the_first_dataset_keeps_the_levels_it_always_had(
+        self, client: TestClient, fetched: list[str]
+    ) -> None:
+        """Otto's second addition to F2: writing `0..19` into the entry must not
+        change what the viewer could already ask for."""
+        client.get(f"{BASE}/tiles/WebMercatorQuad/19/1/1", params={"asset": "visual"})
+        assert fetched == [ITEM]
+
+        response = client.get(f"{BASE}/tiles/WebMercatorQuad/20/1/1", params={"asset": "visual"})
+        assert response.status_code == 400
+
+    @pytest.mark.parametrize("route", ["statistics", "preview"])
+    def test_what_carries_no_level_is_untouched(
+        self, narrow_client: TestClient, fetched: list[str], route: str
+    ) -> None:
+        """Statistics are answered on the coarsest level there is and a crop at the
+        asset's own resolution (adr/0007 §12.11 point 8) — neither names a zoom, so
+        neither is a tile this check has anything to say about."""
+        response = narrow_client.get(f"{BASE}/{route}", params={"asset": "visual"})
+
+        # Past the check and into the read, which has no source to read from here.
+        assert response.status_code != 400, response.text
+        assert fetched == [ITEM]
+
+    def test_a_dataset_that_names_no_range_serves_no_tiles(
+        self, client: TestClient, fetched: list[str], opened: list[str]
+    ) -> None:
+        """Not a caller's mistake but an entry that was never set up for tiling, so
+        501 like a format without a reader — and never a guessed range (B10)."""
+        blind = self._client_for(None, client, fetched)
+
+        response = blind.get(f"{BASE}/tiles/WebMercatorQuad/10/1/1", params={"asset": "visual"})
+
+        assert response.status_code == 501, response.text
+        assert fetched == []
+        assert opened == []
