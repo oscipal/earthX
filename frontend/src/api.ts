@@ -212,3 +212,38 @@ export function buildCoverageUrl(p: CoverageParams): string {
 export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse> {
   return jsonOrThrow(await fetch(buildCoverageUrl(p)));
 }
+
+// POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed
+// synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
+// in `api/tiler.py`; `language` picks the notice file's text (M2-07d requests
+// `en`, matching the rest of the — English since 2026-09-20 — interface).
+export interface DownloadCropRequest {
+  datasetId: string;
+  items: string[];
+  assets: string[];
+  aoi: GeoJSON.Geometry;
+  language?: string;
+}
+
+export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
+  const res = await fetch(`${BASE}/collections/${encodeURIComponent(req.datasetId)}/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: req.items,
+      assets: req.assets,
+      aoi: req.aoi,
+      language: req.language ?? 'en',
+    }),
+  });
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON error body — errorDetail falls back to the status line */
+    }
+    throw new Error(errorDetail(body, res.status, res.statusText));
+  }
+  return await res.blob();
+}

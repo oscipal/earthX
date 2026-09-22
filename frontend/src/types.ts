@@ -49,6 +49,25 @@ export interface EarthxDefaultRender {
   resampling: string;
 }
 
+// The registry's licence flags (`earthx.catalog.collection._earthx_license_flags`),
+// mirrored field for field. `terms_notice` carries one text per language code
+// (always `de`, M2-07d also reads `en`); `null` where the licence names no terms.
+export interface LicenseFlags {
+  spdx_id: string | null;
+  name: string;
+  url: string;
+  commercial_use: boolean;
+  distribution: boolean;
+  derivatives: boolean;
+  share_alike: boolean;
+  attribution_required: boolean;
+  tier: 'catalog' | 'display' | 'processing';
+  attribution_modified: string | null;
+  attribution_unmodified: string | null;
+  terms_url: string | null;
+  terms_notice: Record<string, string> | null;
+}
+
 export interface Collection {
   id: string;
   title?: string | null;
@@ -57,6 +76,7 @@ export interface Collection {
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
   'earthx:default_render'?: EarthxDefaultRender | null;
+  'earthx:license_flags'?: LicenseFlags | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).
