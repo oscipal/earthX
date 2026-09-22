@@ -6,162 +6,60 @@ back STAC items plus a page marker of our own. Everything it sends goes through
 ``gateway`` (KLAERUNGEN B8) — there is no HTTP client here and no ``pystac_client``
 (adr/0005 rule IV).
 
-Four rules of adr/0005 are implemented here, and they are the reason this module
-exists rather than a few lines inside the API route:
+What is specific to Earth Search lives here; what is not is
+``earthx.adapters.federated_search`` (split out for M2-09b's second source, plan
+§4.2), starting with the shape of our own page marker (rule III) and the input
+checks of ``SearchParams`` (rule V). What stays here:
 
-* **Rule I** — the collection is looked up in our own catalogue *first*. Earth Search
-  answers an unknown collection with ``200`` and an empty result (§3.5), which would
-  turn "there is no such dataset" into "there is nothing in it".
-* **Rule II** — two cache lifetimes, decided by whether the time window still touches
-  the moving edge of the archive.
-* **Rule III** — the page marker we hand out is our own. The upstream marker (and the
-  Elasticsearch error text that comes with a broken one) never leaves this module.
-* **Rule V** — ``limit`` is capped here, because upstream does not cap it at all
-  (§3.2): a single request could otherwise pull hundreds of megabytes.
-* **Rule III, continued (M1-07)** — every search carries our own fixed ``sortby``
-  instead of the source's undocumented default order, measured to keep the page
-  marker working (docs/plans/m1-07-stac-api.md §7).
+* **Rule I** — ``resolve_dataset`` looks the collection up in our own catalogue
+  *first*. Earth Search answers an unknown collection with ``200`` and an empty
+  result (§3.5), which would turn "there is no such dataset" into "there is
+  nothing in it".
+* **Rule III, continued** — reading the ``next`` link out of Earth Search's own
+  answer shape (``_next_marker``) and building the search body it expects
+  (``_search_body``) — both source-specific, per M1-07 (docs/plans/
+  m1-07-stac-api.md §7).
 
-Input checks are ours too, not the source's: a bbox outside ±90 is *silently accepted*
-upstream (§3.5), which is the worst of the three possible answers.
+Input checks that are not source-specific (bbox, limit, the time window) already
+ran inside ``SearchParams.__post_init__`` before anything reaches this module. A
+bbox outside ±90 is *silently accepted* upstream (§3.5), which is the worst of the
+three possible answers — checking it ourselves is why ``SearchParams`` exists at all.
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
-import hashlib
-import json
 import logging
-import re
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from earthx.adapters.cache import CacheValue, SearchCache
+from earthx.adapters.federated_search import (
+    ITEM_ID,
+    SORTBY,
+    TTL_ITEM_S,
+    InvalidQuery,
+    ItemPage,
+    SearchParams,
+    UnknownCollection,
+    UnsupportedSource,
+    UpstreamShapeError,
+    cache_get,
+    cache_set,
+    decode_page_token,
+    endpoint_of,
+    item_cache_key,
+    matched_count,
+    page_from_stored,
+    require_feature_list,
+    search_cache_key,
+    search_fingerprint,
+    stac_interval,
+    ttl_for_window,
+)
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import AdapterKind, DatasetConfig, DatasetRegistry, UnknownDatasetError
 from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search")
-
-# adr/0005 rule V, Otto's answer F3: a page holds at most 100 items, ten by default.
-DEFAULT_LIMIT = 10
-MAX_LIMIT = 100
-
-# adr/0005 rule II with Otto's precision from F1: a time window counts as closed only
-# once its end is more than seven days back, because scenes are still delivered late
-# into the days right behind the edge.
-CLOSED_WINDOW = timedelta(days=7)
-TTL_CLOSED_S = 24 * 60 * 60
-TTL_OPEN_EDGE_S = 5 * 60
-TTL_ITEM_S = 24 * 60 * 60
-
-# The shape of our own page marker. It is versioned so a marker minted by an older
-# release is refused rather than misread.
-TOKEN_VERSION = 1
-
-# M1-06 sent no ``sortby`` and rode on Earth Search's undocumented default order
-# (adr/0005 §8 point 5). Measured for M1-07 against the live source: the page marker's
-# field count follows whatever ``sortby`` is sent (one field in, one-value marker out),
-# and a page fetched with the same ``sortby`` continues correctly. ``datetime`` alone
-# is not a unique key — tiles of one swath can share it — so ``id`` breaks the tie,
-# the same way Earth Search's own undocumented default does. This is a constant, not
-# a caller choice (the STAC API's ``sort`` extension stays off in M1, docs/plans/
-# m1-07-stac-api.md §6), so it is not part of ``_search_fingerprint``. Changing it
-# later would silently reinterpret a page marker minted under the old order — bump
-# ``TOKEN_VERSION`` alongside any change here.
-SORTBY: tuple[dict[str, str], ...] = (
-    {"field": "properties.datetime", "direction": "desc"},
-    {"field": "id", "direction": "asc"},
-)
-
-# An item id goes into a URL path. Rather than escaping it — `urllib` is off limits
-# outside `gateway`, and escaping hides odd input instead of naming it — the ids we
-# accept are restricted to what a STAC id normally is. That rules out `../` along
-# with everything else that would leave the path segment.
-# ``\Z``, not ``$``: ``$`` also matches in front of a trailing newline, so "id\n"
-# would pass and then appear both in a URL path and as a second cache key.
-_ITEM_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._:-]{0,254}\Z")
-
-
-class InvalidQuery(ValueError):
-    """The request breaks one of our own rules, before anything is sent upstream."""
-
-
-class UnknownCollection(LookupError):
-    """No such collection in our catalogue (adr/0005 rule I) — the caller's 404."""
-
-
-class UnsupportedSource(LookupError):
-    """The collection exists, but another adapter serves it. A dispatch mistake."""
-
-
-class UpstreamShapeError(RuntimeError):
-    """The source answered something that is not a STAC item collection."""
-
-
-@dataclass(frozen=True, slots=True)
-class SearchParams:
-    """One page of a search, as the platform accepts it.
-
-    Checks run in ``__post_init__`` so that no caller can hold a set of parameters
-    that was never checked — the acceptance cases of M1-06 are all right here.
-    """
-
-    bbox: tuple[float, float, float, float] | None = None
-    start: datetime | None = None
-    end: datetime | None = None
-    limit: int = DEFAULT_LIMIT
-    page_token: str | None = None
-
-    def __post_init__(self) -> None:
-        self._check_limit()
-        self._check_bbox()
-        self._check_time()
-
-    def _check_limit(self) -> None:
-        if self.limit < 1 or self.limit > MAX_LIMIT:
-            raise InvalidQuery(
-                f"limit {self.limit} is outside 1..{MAX_LIMIT} (adr/0005 rule V — upstream does not cap it)"
-            )
-
-    def _check_bbox(self) -> None:
-        if self.bbox is None:
-            return
-        if len(self.bbox) != 4:
-            raise InvalidQuery("bbox needs four values: west, south, east, north")
-        west, south, east, north = self.bbox
-        # None of these messages names a coordinate: an exception text becomes a log
-        # line and an error body, and the AOI belongs in neither (projektplan.md 7,
-        # point 6). They name the rule that was broken, which is what a caller needs.
-        if not all(-90.0 <= value <= 90.0 for value in (south, north)):
-            # Upstream takes this without a word (adr/0005 §3.5), which is why we do not.
-            raise InvalidQuery("bbox latitudes are outside ±90")
-        if not all(-180.0 <= value <= 180.0 for value in (west, east)):
-            raise InvalidQuery("bbox longitudes are outside ±180")
-        if south >= north:
-            raise InvalidQuery("bbox is upside down: south is not below north")
-        # west > east is deliberately allowed: that is how GeoJSON and STAC write a box
-        # that crosses the antimeridian, and Earth Search reads it that way too. Only
-        # the latitudes have an order that can be wrong.
-
-    def _check_time(self) -> None:
-        for name, value in (("start", self.start), ("end", self.end)):
-            if value is not None and value.tzinfo is None:
-                raise InvalidQuery(f"{name} has no timezone; STAC instants carry one")
-        if self.start is not None and self.end is not None and self.start > self.end:
-            raise InvalidQuery("time window ends before it starts")
-
-
-@dataclass(frozen=True, slots=True)
-class ItemPage:
-    """One page of items, the same shape whether it came from the source or the cache."""
-
-    items: tuple[dict[str, Any], ...]
-    matched: int | None
-    next_page_token: str | None
-    from_cache: bool
 
 
 async def search_items(
@@ -178,13 +76,13 @@ async def search_items(
     """
     params = params or SearchParams()
     config = resolve_dataset(dataset_id, registry)
-    fingerprint = _search_fingerprint(dataset_id, params)
-    marker = None if params.page_token is None else _decode_page_token(params.page_token, dataset_id, fingerprint)
+    fingerprint = search_fingerprint(dataset_id, params)
+    marker = None if params.page_token is None else decode_page_token(params.page_token, dataset_id, fingerprint)
 
-    key = _search_cache_key(fingerprint, marker)
+    key = search_cache_key(fingerprint, marker)
     cached = await cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
-        return _page(dataset_id, fingerprint, cached, from_cache=True)
+        return page_from_stored(dataset_id, fingerprint, cached, from_cache=True)
 
     response = await gateway.post_json(
         f"{endpoint_of(config)}/search",
@@ -195,7 +93,7 @@ async def search_items(
     )
     stored = _storable(response.json())
     await cache_set(cache, key, stored, ttl_s=ttl_for_window(params.end), dataset_id=dataset_id)
-    return _page(dataset_id, fingerprint, stored, from_cache=False)
+    return page_from_stored(dataset_id, fingerprint, stored, from_cache=False)
 
 
 async def get_item(
@@ -212,10 +110,10 @@ async def get_item(
     through unchanged, which is exactly what ``pystac_client`` would have lost.
     """
     config = resolve_dataset(dataset_id, registry)
-    if not _ITEM_ID.match(item_id):
+    if not ITEM_ID.match(item_id):
         raise InvalidQuery("item id contains characters we do not put into a URL path")
 
-    key = _item_cache_key(dataset_id, item_id)
+    key = item_cache_key(dataset_id, item_id)
     cached = await cache_get(cache, key)
     if isinstance(cached, dict) and isinstance(cached.get("item"), dict):
         return cached["item"]
@@ -241,72 +139,6 @@ def resolve_dataset(dataset_id: str, registry: DatasetRegistry) -> DatasetConfig
     return config
 
 
-def endpoint_of(config: DatasetConfig) -> str:
-    return config.source.endpoint.rstrip("/")
-
-
-def _stac_instant(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def stac_interval(start: datetime | None, end: datetime | None) -> str | None:
-    """The time window as STAC writes it, with ``..`` for an open end.
-
-    Takes the two instants rather than a ``SearchParams``, because the coverage
-    aggregation of M2-05 asks the same source the same question with a query object
-    of its own (``earthx/adapters/earth_search_coverage.py``).
-    """
-    if start is None and end is None:
-        return None
-    low = ".." if start is None else _stac_instant(start)
-    high = ".." if end is None else _stac_instant(end)
-    return f"{low}/{high}"
-
-
-def _search_fingerprint(dataset_id: str, params: SearchParams) -> str:
-    """A hash of the search itself — without the page marker, which points into it.
-
-    Numbers go in as floats and instants as their UTC text, so that ``47`` and ``47.0``,
-    or the same moment written in two offsets, are one search and not two.
-    """
-    payload = json.dumps(
-        {
-            "dataset": dataset_id,
-            "bbox": None if params.bbox is None else [float(value) for value in params.bbox],
-            "datetime": stac_interval(params.start, params.end),
-            "limit": params.limit,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _search_cache_key(fingerprint: str, marker: str | None) -> str:
-    """The search plus the page it is on.
-
-    Keyed on the decoded marker rather than on the token text: the same page, asked
-    for with a token that lost or regained its base64 padding, is one entry.
-    """
-    return hashlib.sha256(f"search:{fingerprint}:{marker or ''}".encode()).hexdigest()
-
-
-def _item_cache_key(dataset_id: str, item_id: str) -> str:
-    return hashlib.sha256(f"item:{dataset_id}:{item_id}".encode()).hexdigest()
-
-
-def ttl_for_window(end: datetime | None, now: datetime | None = None) -> float:
-    """adr/0005 rule II: only a window whose end is well behind us has stopped moving.
-
-    Otto took the same two lifetimes over for the coverage aggregation on 19.09.2026
-    (adr/0004 §5), so this takes the end of the window rather than a search object.
-    """
-    now = now or datetime.now(timezone.utc)
-    if end is None:
-        return TTL_OPEN_EDGE_S
-    return TTL_CLOSED_S if end < now - CLOSED_WINDOW else TTL_OPEN_EDGE_S
-
-
 def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None) -> dict[str, Any]:
     body: dict[str, Any] = {
         "collections": [config.source.source_collection_id],
@@ -325,58 +157,14 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     return body
 
 
-def _encode_page_token(dataset_id: str, fingerprint: str, marker: str) -> str:
-    payload = json.dumps(
-        {"v": TOKEN_VERSION, "d": dataset_id, "h": fingerprint, "m": marker},
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
-
-
-def _decode_page_token(token: str, dataset_id: str, fingerprint: str) -> str:
-    """Read back a marker we minted, or refuse it in our own words.
-
-    Refusing in our own words is the point of rule III: a broken upstream marker is
-    answered with an Elasticsearch internals message (§3.3), and that must not become
-    our error text.
-    """
-    padded = token + "=" * (-len(token) % 4)
-    try:
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
-    except (ValueError, binascii.Error) as error:
-        raise InvalidQuery("page token is not readable") from error
-    if not isinstance(payload, dict) or payload.get("v") != TOKEN_VERSION:
-        raise InvalidQuery("page token has a shape this version does not read")
-    if payload.get("d") != dataset_id or payload.get("h") != fingerprint:
-        raise InvalidQuery("page token belongs to a different search")
-    marker = payload.get("m")
-    if not isinstance(marker, str):
-        raise InvalidQuery("page token carries no marker")
-    return marker
-
-
 def _storable(payload: Any) -> CacheValue:
     """What we keep of an upstream answer: the items, the count, the marker.
 
     Reduced here rather than at the cache, so that a cache hit and a live answer go
     through exactly the same translation afterwards.
     """
-    if not isinstance(payload, dict):
-        raise UpstreamShapeError("search answer is not a JSON object")
-    features = payload.get("features")
-    if not isinstance(features, list):
-        raise UpstreamShapeError("search answer carries no feature list")
-    return {"features": features, "matched": _matched(payload), "marker": _next_marker(payload)}
-
-
-def _matched(payload: dict[str, Any]) -> int | None:
-    """``numberMatched`` (OGC) or ``context.matched`` (the older STAC extension)."""
-    value = payload.get("numberMatched")
-    if value is None:
-        context = payload.get("context")
-        value = context.get("matched") if isinstance(context, dict) else None
-    return value if isinstance(value, int) else None
+    features = require_feature_list(payload)
+    return {"features": features, "matched": matched_count(payload), "marker": _next_marker(payload)}
 
 
 def _next_marker(payload: dict[str, Any]) -> str | None:
@@ -392,40 +180,3 @@ def _next_marker(payload: dict[str, Any]) -> str | None:
         # truncation adr/0005 rule I refuses for an unknown collection.
         raise UpstreamShapeError("the next link carries no marker we can follow")
     return None
-
-
-def _page(dataset_id: str, fingerprint: str, stored: CacheValue, *, from_cache: bool) -> ItemPage:
-    marker = stored.get("marker")
-    return ItemPage(
-        items=tuple(stored["features"]),
-        matched=stored.get("matched"),
-        next_page_token=None if marker is None else _encode_page_token(dataset_id, fingerprint, marker),
-        from_cache=from_cache,
-    )
-
-
-async def cache_get(cache: SearchCache | None, key: str) -> CacheValue | None:
-    """A cached value, or None. Callers check its shape: a row written by an older
-    release, or damaged, counts as a miss rather than as an answer (E5)."""
-    if cache is None:
-        return None
-    try:
-        return await cache.get(key)
-    except Exception:
-        # E5 and adr/0001 §9.3: a cache that fails makes the platform slower, never
-        # wrong. Broad on purpose — whatever the store does, the answer is fetched.
-        LOGGER.warning("search cache unreadable, asking the source instead", exc_info=True)
-        return None
-
-
-async def cache_set(
-    cache: SearchCache | None, key: str, value: CacheValue, *, ttl_s: float, dataset_id: str
-) -> None:
-    if cache is None:
-        return
-    try:
-        await cache.set(key, value, ttl_s=ttl_s, dataset_id=dataset_id)
-    except Exception:
-        # Same rule as reading, and it matters more here: the answer is already in
-        # hand, so failing now would throw away a good response over bookkeeping.
-        LOGGER.warning("search cache not writable, answer is not stored", exc_info=True)
