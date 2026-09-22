@@ -28,6 +28,7 @@ from earthx.catalog.coverage import (
     cell_bbox,
     check_completeness,
     extent_result,
+    geotile_key,
     level_for_viewport,
     parse_cell_key,
 )
@@ -164,6 +165,27 @@ class TestGridArithmetic:
         """These arrive from outside and end up in a map layer, so none may pass."""
         with pytest.raises(UpstreamCoverageShapeError):
             parse_cell_key(key)
+
+
+class TestGeotileKey:
+    """The inverse of ``cell_bbox`` — for a way that rasterizes footprints itself
+    (adr/0004 §5 Option 6, M2-09b-3)."""
+
+    def test_the_centre_of_a_cell_maps_back_into_it(self) -> None:
+        west, south, east, north = cell_bbox("8/133/84")
+        assert geotile_key((west + east) / 2, (south + north) / 2, 8) == "8/133/84"
+
+    def test_the_whole_world_is_one_cell_at_level_zero(self) -> None:
+        assert geotile_key(5.0, 45.0, 0) == "0/0/0"
+        assert geotile_key(-170.0, -80.0, 0) == "0/0/0"
+
+    def test_longitude_past_the_antimeridian_clamps_into_the_last_column(self) -> None:
+        _, column, _ = parse_cell_key(geotile_key(190.0, 0.0, 4))
+        assert column == 15
+
+    def test_latitude_past_the_mercator_limit_clamps_into_the_edge_row(self) -> None:
+        assert parse_cell_key(geotile_key(0.0, 90.0, 4))[2] == 0
+        assert parse_cell_key(geotile_key(0.0, -90.0, 4))[2] == 15
 
 
 class TestQueryChecks:
