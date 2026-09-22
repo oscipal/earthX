@@ -1,9 +1,15 @@
 # M2-09b — Zweiter Datensatz im Katalog: Umsetzungsplan
 
-**Status:** **Entwurf, wartet auf Ottos Freigabe.** Stufe B laut `projektplan.md`
-1.2: zuerst dieser Plan als Draft-PR, Umsetzung erst nach dem OK. Die Fragen
-stehen gesammelt in §10; ohne ihre Antworten wird kein Produktivcode
-geschrieben.
+**Status:** **Von Otto am 22.09.2026 angenommen, F1–F7 alle wie empfohlen (§10).**
+Stufe B laut `projektplan.md` 1.2. Zwei Zusätze zur Freigabe: **zu F3** — die
+geschärfte Meldung nennt die verfügbaren Collections, nicht nur „nenne genau
+eine". **zu F6** — der bestehende `/statistics`-Ablauf aus M2-07b
+(`store.ts::autoStretch`, `render.ts::autoRescale`) ist asset- und
+bandzahlunabhängig; geprüft, er braucht keinen Sonderfall für den zweiten
+Datensatz. **F4** ist zusätzlich als eigene Architekturentscheidung
+festgehalten: `earthx:maturity` ist die zehnte Zeile in `architekturplan.md`
+5.1 (nachgezogen). Die Umsetzung läuft als drei PRs (§7); dies ist der erste,
+**M2-09b-1 — Katalog und Suche**.
 **Aufgabe:** M2-09b aus `docs/plans/m2-format-und-viewer.md`.
 **Grundlage:** `adr/0007` §6, §7 und besonders §12 (Nachmessung), mit den
 fünfzehn Umsetzungspunkten in §12.11; `adr/0004` §5 (Anbieter-Begriff, Regel V,

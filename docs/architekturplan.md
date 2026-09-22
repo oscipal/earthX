@@ -242,6 +242,7 @@ Jeder Datensatz ist eine STAC Collection, jede Szene ein STAC Item. Genutzte Ext
 | `earthx:default_render` | Standard-Visualisierung in den Feldnamen der STAC-`render`-Extension (`title`, `assets`, `rescale`, `colormap_name`, `expression`, `resampling`) |
 | `earthx:viewer` | Was der Viewer aus dem Katalog nimmt statt aus eigenem Code. In M2 genau ein Feld: `group_by`, der Gruppierungsschlüssel der Zeitleiste — Item-Eigenschaften in Schlüsselreihenfolge, `properties.` ist impliziert; eine Eigenschaft mit einem STAC-Zeitpunkt geht als ihr **UTC-Datum** in den Schlüssel ein. Für Sentinel-2: `["datetime", "grid:code"]` |
 | `earthx:source` | Adapter-Typ, Quell-ID, Harvest-Lauf |
+| `earthx:maturity` | Wie vorläufig die Quelle selbst ist (`stable`, `staging`, `experimental`), ohne Vorgabewert — Teil der Wahrheit über den Datensatz wie Lizenz und Attribution, keine Messung wie `earthx:health` |
 
 Nicht-STAC-Quellen (CKAN, Zenodo/OAI-PMH, DCAT, Buckets) werden beim Einlesen übersetzt. Für reine Forschungsdaten-Records ohne Szenenstruktur gilt: eine Collection mit wenigen Items (die Dateien).
 
