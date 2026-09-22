@@ -252,20 +252,12 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         attribution_unmodified="Copernicus Sentinel data {year}",
         # Identical text to the first dataset (D18) — one Sentinel Data Legal
         # Notice, passed on the same way regardless of which source served the
-        # pixels.
+        # pixels. Otto, 22.09.2026 (M2-15): the platform offers no language
+        # choice at all, so the key set is exactly {"en"} — TermsOfUse checks
+        # this now (catalog/registry.py).
         terms=TermsOfUse(
             url=_LEGAL_NOTICE_URL,
             notice={
-                "de": (
-                    "Die Nutzung unterliegt dem Sentinel Data Legal Notice: {terms_url}. "
-                    "Die Daten werden ohne ausdrückliche oder stillschweigende Gewährleistung "
-                    "bereitgestellt, auch nicht hinsichtlich Qualität und Eignung für einen "
-                    "bestimmten Zweck; mit ihrer Nutzung verzichtet der Nutzer auf "
-                    "Schadensersatzansprüche gegenüber der EU und den Datenanbietern. Der "
-                    "Verzicht erfasst jede Streitigkeit, einschließlich vertraglicher und "
-                    "deliktischer Ansprüche, vor Gericht, im Schiedsverfahren oder in jeder "
-                    "anderen Form der Streitbeilegung."
-                ),
                 "en": (
                     "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
                     "are provided without any express or implied warranty, including as regards "
