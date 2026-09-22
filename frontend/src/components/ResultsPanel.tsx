@@ -35,7 +35,13 @@ function Row({ item }: { item: StacItem }) {
           onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
         />
       ) : (
-        <span className="result-thumb placeholder" />
+        // No preview image in this source (adr/0007 §12.7), and the substitute
+        // is a map tile rather than a picture per row (M2-10, F4 a) — so the
+        // row says why it is empty instead of looking broken.
+        <span
+          className="result-thumb placeholder"
+          title="This source publishes no preview image — the scene is drawn on the map instead"
+        />
       )}
       <div className="result-meta">
         <span className="result-date">{timeOf(item.properties)}</span>

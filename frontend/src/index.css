@@ -1058,3 +1058,24 @@ input[type='date']:focus {
 .app[data-theme='tech'] .maplibregl-ctrl-attrib a {
   color: var(--muted);
 }
+
+/* --- what the catalogue says about the source (M2-10) --- */
+.dataset-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.hint-text.warn {
+  color: #ffd166;
+}
+/* The maturity chip sits inside the dataset button, so it has to stay small
+   enough not to push the title out of a three-across row. */
+.maturity-chip {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffd166;
+}

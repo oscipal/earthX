@@ -1,6 +1,7 @@
 import type { CoverageHistogramPoint } from '../api';
 import { parseAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
+import { lastCheckedNote, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
@@ -59,6 +60,44 @@ function AoiExtras() {
   );
 }
 
+// What the catalogue says about the *source* of the selected dataset, shown
+// because both halves are required to be visible and neither was: the maturity
+// (D23 — "staging" must not be something a user finds out only once the source
+// disappears) and the date of the last successful check (onboarding checklist
+// point 10, projektuebersicht.md §7).
+function DatasetNotes() {
+  const datasets = useAppStore((s) => s.datasets);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const dataset = datasets.find((d) => d.id === datasetId);
+  if (!dataset) return null;
+  const maturity = maturityNote(dataset.collection);
+  const checked = lastCheckedNote(dataset.collection);
+  if (!maturity && !checked) return null;
+  return (
+    <div className="dataset-notes">
+      {maturity && <p className="hint-text warn">{maturity}</p>}
+      {checked && <p className="hint-text">{checked}</p>}
+    </div>
+  );
+}
+
+// Below the lowest released level the map requests no tiles at all, so the
+// dataset simply is not there (adr/0007 §12.10: one tile would show several
+// scenes, which is the coverage map's job). Saying so beats an empty map.
+function ZoomFloorHint() {
+  const datasets = useAppStore((s) => s.datasets);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const mapZoom = useAppStore((s) => s.mapZoom);
+  const dataset = datasets.find((d) => d.id === datasetId);
+  if (!dataset?.viewable || mapZoom >= dataset.zoom.min) return null;
+  return (
+    <p className="hint-text">
+      Zoom in to level {dataset.zoom.min} to see imagery for this dataset — below it, one tile
+      covers several scenes, which is what the coverage layer is for.
+    </p>
+  );
+}
+
 function DatasetSelector() {
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
@@ -66,19 +105,23 @@ function DatasetSelector() {
   if (datasets.length === 0) return null;
   return (
     <div className="level-select" role="group" aria-label="Dataset">
-      {datasets.map((d) => (
-        <button
-          key={d.id}
-          type="button"
-          className={`level-btn${datasetId === d.id ? ' active' : ''}`}
-          title={d.viewable ? d.title : `${d.title} — not viewable: ${d.reason}`}
-          aria-pressed={datasetId === d.id}
-          disabled={!d.viewable}
-          onClick={() => setDatasetId(d.id)}
-        >
-          {d.title}
-        </button>
-      ))}
+      {datasets.map((d) => {
+        const maturity = d.viewable ? maturityNote(d.collection) : null;
+        return (
+          <button
+            key={d.id}
+            type="button"
+            className={`level-btn${datasetId === d.id ? ' active' : ''}`}
+            title={d.viewable ? (maturity ? `${d.title} — ${maturity}` : d.title) : `${d.title} — not viewable: ${d.reason}`}
+            aria-pressed={datasetId === d.id}
+            disabled={!d.viewable}
+            onClick={() => setDatasetId(d.id)}
+          >
+            {d.title}
+            {maturity && <span className="maturity-chip">{maturity.split(':')[0]}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -184,6 +227,8 @@ export default function ControlPanel() {
 
       <label className="field-label">Dataset</label>
       <DatasetSelector />
+      <DatasetNotes />
+      <ZoomFloorHint />
 
       <CoverageControls />
 
