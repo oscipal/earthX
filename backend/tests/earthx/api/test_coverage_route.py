@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,15 +22,52 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from earthx.api.coverage_route import build_router
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry
+from earthx.gateway import Policy
+from earthx.gateway.client import Gateway
 from tests.earthx.adapters.conftest import answering, gateway_for, load
 
 DATASET = SENTINEL_2_L2A.dataset_id
+ZARR3_DATASET = SENTINEL_2_L2A_ZARR3.dataset_id
+ZARR3_REGISTRY = DatasetRegistry((SENTINEL_2_L2A_ZARR3,))
+ZARR3_HOST = "stac.core.eopf.eodc.eu"
+ZARR3_FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "eopf_stac"
 
 
 def ok(name: str) -> httpx.Response:
     return httpx.Response(200, json=load(name))
+
+
+def ok_zarr3(name: str) -> httpx.Response:
+    return httpx.Response(200, json=json.loads((ZARR3_FIXTURES / f"{name}.json").read_text(encoding="utf-8")))
+
+
+def _public(host: str, port: int) -> tuple[str, ...]:
+    return ("93.184.216.34",)
+
+
+def zarr3_gateway_for(handler: Callable[[httpx.Request], httpx.Response]) -> Gateway:
+    """A gateway allowed against the EOPF STAC API's own host — `conftest`'s
+    `gateway_for` is scoped to Earth Search's (M2-09b-3 is the second source this
+    route talks to)."""
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    policy = Policy(allowed_hosts=frozenset({ZARR3_HOST}))
+    return Gateway(policy, transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep)
+
+
+def zarr3_answering(*responses: httpx.Response) -> tuple[Gateway, list[httpx.Request]]:
+    seen: list[httpx.Request] = []
+    queue = list(responses)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return zarr3_gateway_for(handler), seen
 
 
 def client_for(gateway, *, registry: DatasetRegistry | None = None) -> TestClient:
@@ -145,13 +184,43 @@ class TestUpstreamErrors:
 
 
 class TestUnavailableProvider:
-    @pytest.mark.parametrize("provider", [CoverageProvider.LOCAL_SQL, CoverageProvider.SAMPLE])
-    def test_a_dataset_without_upstream_aggregation_is_501(self, provider: CoverageProvider) -> None:
-        config = replace(SENTINEL_2_L2A, coverage=replace(SENTINEL_2_L2A.coverage, provider=provider))
+    def test_a_dataset_without_a_way_to_answer_is_501(self) -> None:
+        """local-sql is the one way of adr/0004 §5 with no caller yet (plan §8):
+        no dataset in M2 has its own items in pgstac."""
+        config = replace(SENTINEL_2_L2A, coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL))
         gateway, seen = answering(ok("aggregate_complete"))
         response = get(client_for(gateway, registry=DatasetRegistry((config,))))
         assert response.status_code == 501
         assert not seen
+
+
+class TestSampleProvider:
+    """M2-09b-3: the second way of adr/0004 §5 that this route now dispatches to,
+    over ``sentinel-2-l2a-zarr3``'s real registry entry and the EOPF STAC API."""
+
+    def test_the_answer_is_a_declared_sample(self) -> None:
+        gateway, seen = zarr3_answering(ok_zarr3("search_page_1"), ok_zarr3("search_empty"))
+        # A bbox both to give a spatial filter (so the dataset's own z8 cap applies
+        # rather than the coarser world one) and to cover the fixture's two items,
+        # which otherwise land in the same z5 cell and defeat this test's point.
+        response = get(
+            client_for(gateway, registry=ZARR3_REGISTRY), dataset_id=ZARR3_DATASET, zoom=8, bbox="-30,71,-27,72"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["dataset_id"] == ZARR3_DATASET
+        assert body["level"] == 8
+        assert body["completeness"] == "sample"
+        assert body["total_count"] is None
+        assert body["footprints_advised"] is False
+        assert len(body["cells"]) == 2
+        assert len(seen) == 2
+
+    def test_an_unreadable_search_answer_is_502_not_a_crash(self) -> None:
+        gateway = zarr3_gateway_for(lambda request: httpx.Response(200, json={"not": "a feature collection"}))
+        response = get(client_for(gateway, registry=ZARR3_REGISTRY), dataset_id=ZARR3_DATASET)
+        assert response.status_code == 502
 
 
 class TestSingleCoverageProduct:

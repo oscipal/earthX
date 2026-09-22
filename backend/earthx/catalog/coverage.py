@@ -409,6 +409,50 @@ def cell_bbox(key: str) -> tuple[float, float, float, float]:
     return (west, south, east, north)
 
 
+def geotile_key(longitude: float, latitude: float, level: int) -> str:
+    """The geotile cell whose area contains a WGS84 point — the inverse of
+    :func:`cell_bbox`.
+
+    For a coverage way that rasterizes itself instead of asking a source to
+    (adr/0004 §5, Option 6, the declared-sample way of M2-09b-3): a footprint is
+    counted into the one cell its centroid falls in, by the same grid and the
+    same centroid rule every other way uses — this is that arithmetic, kept here
+    rather than in `adapters` because it is the grid's own definition, not
+    anything about a particular source (module docstring above).
+
+    A point at the edge of the grid — past ±180° longitude, or past the Mercator
+    limit near a pole — is clamped into the nearest cell rather than refused: a
+    measured centroid is never truly outside the world it came from, only
+    outside the numeric range this projection can draw, and refusing it would
+    turn one odd footprint into a failed request instead of one cell that is a
+    little off.
+    """
+    side = 1 << level
+    column = min(side - 1, max(0, int((_clamped_longitude(longitude) + 180.0) / 360.0 * side)))
+    row = min(side - 1, max(0, int(_mercator_row(latitude) * side)))
+    return f"{level}/{column}/{row}"
+
+
+# atan(sinh(pi)) in degrees — where `_mercator_latitude`'s row 0 already lands, so the
+# forward mapping below clamps to exactly the range the grid can already draw.
+_MAX_MERCATOR_LATITUDE = 85.05112877980659
+
+
+def _clamped_longitude(longitude: float) -> float:
+    return max(-180.0, min(180.0, longitude))
+
+
+def _clamped_latitude(latitude: float) -> float:
+    return max(-_MAX_MERCATOR_LATITUDE, min(_MAX_MERCATOR_LATITUDE, latitude))
+
+
+def _mercator_row(latitude: float) -> float:
+    """Fraction of the way down the Web-Mercator square — the inverse of
+    `_mercator_latitude`, by solving its formula for `fraction`."""
+    radians = math.radians(_clamped_latitude(latitude))
+    return (1.0 - math.asinh(math.tan(radians)) / math.pi) / 2.0
+
+
 def _check_ring_bounds(ring: list[Any]) -> None:
     """Every corner of a ring lies on the globe.
 
