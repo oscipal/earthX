@@ -11,6 +11,8 @@ import { polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
+import type { Projection, Theme } from './preferences';
+import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
 import { autoRescale } from './render';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -121,6 +123,9 @@ interface AppState {
   aoi: GeoJSON.Geometry | null;
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
   flyToBbox: Bbox | null;
+  // --- view preferences (V-1), saved per browser (preferences.ts) ---
+  theme: Theme;
+  projection: Projection;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
   coverage: CoverageResponse | null;
@@ -221,6 +226,8 @@ interface AppState {
   runSearch: () => Promise<void>;
   toggleCoverage: () => void;
   setMapZoom: (zoom: number) => void;
+  toggleTheme: () => void;
+  toggleProjection: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -228,6 +235,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   aoi: null,
   lastAoi: null,
   flyToBbox: null,
+  theme: loadTheme(),
+  projection: loadProjection(),
   showCoverage: false,
   coverage: null,
   coverageLoading: false,
@@ -608,6 +617,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
   setError: (error) => set({ error }),
   setNotice: (notice) => set({ notice }),
+  toggleTheme: () => {
+    const theme: Theme = get().theme === 'tech' ? 'normal' : 'tech';
+    saveTheme(theme);
+    set({ theme });
+  },
+  toggleProjection: () => {
+    const projection: Projection = get().projection === 'mercator' ? 'globe' : 'mercator';
+    saveProjection(projection);
+    set({ projection });
+  },
 
   runSearch: async () => {
     const { aoi, dateFrom, dateTo, datasetId, datasets } = get();

@@ -70,21 +70,14 @@ def test_the_terms_come_from_the_source_not_from_us() -> None:
     terms = SENTINEL_2_L2A.license.terms
     assert terms is not None
     assert terms.url.endswith("Sentinel_Data_Legal_Notice")
-    assert set(terms.notice) == {"de", "en"}
+    assert set(terms.notice) == {"en"}
 
 
-def test_both_terms_texts_carry_all_three_parts_of_the_clause() -> None:
+def test_the_terms_text_carries_all_three_parts_of_the_clause() -> None:
     """The Legal Notice states the waiver in three parts; passing on two of them
     would narrow it on the reader's behalf. Wording checked against the document
-    itself on 19.09.2026.
+    itself on 19.09.2026. English only (Otto, 22.09.2026): no language choice.
     """
-    de = SENTINEL_2_L2A.license.terms.notice["de"]
-    assert "ohne ausdrückliche oder stillschweigende Gewährleistung" in de
-    assert "Qualität und Eignung für einen bestimmten Zweck" in de
-    assert "Schadensersatzansprüche gegenüber der EU und den Datenanbietern" in de
-    assert "vertraglicher und deliktischer Ansprüche" in de
-    assert "Schiedsverfahren" in de
-
     en = SENTINEL_2_L2A.license.terms.notice["en"]
     assert "without any express or implied warranty" in en
     assert "as regards quality and suitability for any purpose" in en
