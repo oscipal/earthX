@@ -117,11 +117,11 @@ describe('fallbackNotice', () => {
       matched: 1,
     };
     expect(fallbackNotice(result)).toBe(
-      'Kein Treffer im gewählten Zeitraum — nächstgelegene Aufnahme: 24.07.2026',
+      'No results in the chosen time range — nearest scene: 2026-07-24',
     );
   });
 
-  it('the capped case says "gefundene" and names the sample size', () => {
+  it('the capped case says "found" and names the sample size', () => {
     const result = {
       stageDays: 7,
       item: item('x', '2026-07-24T10:00:00Z'),
@@ -130,8 +130,8 @@ describe('fallbackNotice', () => {
       matched: 250,
     };
     expect(fallbackNotice(result)).toBe(
-      'Kein Treffer im gewählten Zeitraum — nächstgelegene gefundene Aufnahme: 24.07.2026 ' +
-        '(Stichprobe aus 100 von 250 Treffern ±7 Tagen)',
+      'No results in the chosen time range — nearest scene found: 2026-07-24 ' +
+        '(sample of 100 of 250 results within ±7 days)',
     );
   });
 });

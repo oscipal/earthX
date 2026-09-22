@@ -451,6 +451,23 @@ genau drei möglichen Werten, und der Wert wird geprüft, nicht behauptet:
 > kann Vollständigkeit nicht belegen — und Regel V behauptet nichts, was sie
 > nicht geprüft hat.
 
+> **Nachtrag vom 22.09.2026 (M2-15, D25).** Der Satz „Die deutschen Begriffe
+> bleiben die Sprache dieses ADR und der Oberfläche" oben ist überholt: Die
+> Oberfläche ist jetzt durchgehend englisch (`ENTSCHEIDUNGSLOG.md`, D25). Die
+> Legende übersetzt weiterhin an der einen Stelle, an der sie gebaut wird —
+> nur eben nach Englisch statt nach Deutsch. Dieses ADR bleibt selbst
+> deutschsprachig (Planungsdokument, CLAUDE.md §Sprache).
+>
+> **Nachtrag vom 22.09.2026, zweiter Teil.** Otto hat am selben Tag präzisiert:
+> nur Englisch, keine Sprachwahl. Es geht nicht um einen austauschbaren
+> Standardwert, den eine spätere Anfrage auf Deutsch umschalten könnte —
+> die Plattform bietet gar keine Sprachauswahl an. Die gleiche Regel gilt
+> für den `terms_notice`-Text des AOI-Zuschnitt-Downloads aus M2-06/M2-15:
+> `TermsOfUse.notice` in `catalog/registry.py` lässt jetzt nur noch genau
+> den Schlüssel `en` zu, die Download-Route (`api/tiler.py`) nennt keinen
+> `language`-Parameter mehr, und die deutsche Fassung des Sentinel-2-Textes
+> ist aus `catalog/datasets.py` entfernt.
+
 Damit ist K2 nicht eine Frage der Sorgfalt beim Programmieren, sondern eine
 Zusicherung, die sich testen lässt — und die Falle aus §3.3 kann nicht
 unbemerkt durchrutschen. `total_count` kostet nichts extra: Es kommt in

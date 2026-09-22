@@ -144,9 +144,8 @@ function CoverageControls() {
               <span>{coverage.max_count}</span>
             </span>
           </div>
-          {/* English, matching the rest of the UI (CLAUDE.md). adr/0004 §5.3
-              still asks for the German wording here — stale against the
-              app's own English interface; flagged for Otto in the PR. */}
+          {/* English, matching the rest of the UI (D25; adr/0004 §5.3 nachtrag
+              22.09.2026 lifts the earlier German-terms default). */}
           <p className="hint-text">Scenes counted by their center point in the cell</p>
           {note && <p className="hint-text coverage-note">{note}</p>}
           {coverage.histogram.length > 0 && (
@@ -175,7 +174,7 @@ export default function ControlPanel() {
         <span className="brand-mark" />
         <div>
           <h1>EarthX</h1>
-          <p>Geo- und Satellitendaten-Viewer</p>
+          <p>Geo and satellite data viewer</p>
         </div>
       </div>
 

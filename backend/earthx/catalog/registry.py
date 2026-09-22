@@ -106,9 +106,12 @@ class TermsOfUse:
     of the source, not a disclaimer of its own. The platform's own terms of use are
     a separate, open question (decision log, same date).
 
-    ``notice`` holds one text per language code and must carry ``de``. It states the
-    terms only: the attribution stays a separate text and is put in front of it where
-    data leaves the platform (Otto, 19.09.2026), so that neither is repeated and a
+    ``notice`` holds one text, keyed ``en``. The platform offers no language
+    choice (Otto, 22.09.2026): the key stays only so the text lines up with the
+    same placeholder handling as ``attribution_modified``/``_unmodified``, not
+    to invite a second language back in. It states the terms only: the
+    attribution stays a separate text and is put in front of it where data
+    leaves the platform (Otto, 19.09.2026), so that neither is repeated and a
     notice for unmodified data cannot end up claiming the data were modified.
     ``{terms_url}`` is filled with ``url``.
     """
@@ -119,8 +122,11 @@ class TermsOfUse:
     def __post_init__(self) -> None:
         if not self.url.startswith("https://"):
             raise ConfigError(f"terms url {self.url!r} is not https")
-        if "de" not in self.notice:
-            raise ConfigError("terms notice without a German text (docs and UI are German)")
+        if set(self.notice) != {"en"}:
+            raise ConfigError(
+                "terms notice must carry exactly one text, keyed 'en' "
+                "(the platform offers no language choice, Otto 22.09.2026)"
+            )
         for language, text in self.notice.items():
             if "{terms_url}" not in text:
                 raise ConfigError(f"terms notice [{language}] does not link the terms ({{terms_url}})")

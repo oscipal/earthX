@@ -116,25 +116,24 @@ export async function findFallback(
   return null;
 }
 
-export const NO_FALLBACK_MESSAGE =
-  'Kein Treffer im gewählten Zeitraum und auch nicht ±90 Tage daneben.';
+export const NO_FALLBACK_MESSAGE = 'No results in the chosen time range, nor within ±90 days.';
 
-function germanDate(ms: number): string {
+function isoDate(ms: number): string {
   const d = new Date(ms);
   const dd = String(d.getUTCDate()).padStart(2, '0');
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getUTCFullYear()}`;
+  return `${d.getUTCFullYear()}-${mm}-${dd}`;
 }
 
 export function fallbackNotice(result: FallbackResult): string {
   const ms = itemDateMs(result.item);
-  const dateLabel = ms === null ? '?' : germanDate(ms);
+  const dateLabel = ms === null ? '?' : isoDate(ms);
   if (!result.capped) {
-    return `Kein Treffer im gewählten Zeitraum — nächstgelegene Aufnahme: ${dateLabel}`;
+    return `No results in the chosen time range — nearest scene: ${dateLabel}`;
   }
   return (
-    `Kein Treffer im gewählten Zeitraum — nächstgelegene gefundene Aufnahme: ${dateLabel} ` +
-    `(Stichprobe aus ${result.seen} von ${result.matched} Treffern ±${result.stageDays} Tagen)`
+    `No results in the chosen time range — nearest scene found: ${dateLabel} ` +
+    `(sample of ${result.seen} of ${result.matched} results within ±${result.stageDays} days)`
   );
 }
 

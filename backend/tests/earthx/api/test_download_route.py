@@ -170,8 +170,12 @@ class TestAcceptanceCriteria:
             assert "Contains modified Copernicus Sentinel data" in notice
             assert SENTINEL_2_L2A.license.terms.url in notice
 
-    def test_the_language_of_the_notice_follows_the_request(self, client: TestClient) -> None:
-        response = _download(client, language="en")
+    def test_a_language_field_in_the_body_is_ignored_the_notice_stays_english(
+        self, client: TestClient
+    ) -> None:
+        """Otto, 22.09.2026: the route offers no language choice at all."""
+        response = _download(client, language="de")
+        assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         notice_en = SENTINEL_2_L2A.license.terms.notice["en"].format(
