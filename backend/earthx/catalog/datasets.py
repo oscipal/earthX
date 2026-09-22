@@ -56,17 +56,26 @@ SENTINEL_2_L2A = DatasetConfig(
         "5.0 on. Served by Earth Search v1 (Element 84) from the Registry of Open "
         "Data on AWS (adr/0003 §3, Option B)."
     ),
-    # Onboarding checklist point 3 is open: adr/0003 names no DOI and no persistent
-    # citation for this collection, and M1 reads nothing from the source.
-    doi=None,
+    # The collection's own `cite-as` link (read from the source on 22.09.2026, M2-08
+    # plan §3), the same seam the second entry takes its DOI from. adr/0003 left
+    # onboarding checklist point 3 open because M1 read nothing from the source; the
+    # link was there all along. It names the ESA product, not Element 84's COG
+    # distribution — which is why it differs from the Zarr entry's DOI rather than
+    # repeating it. No separate persistent citation beyond it.
+    doi="https://doi.org/10.5270/S2_-742ikth",
     citation=None,
     data_class=DataClass.RASTER_TIME_SERIES,
     format=DataFormat.COG,
-    # Placeholder, not a measurement: STAC needs an extent, and M1 reads nothing
-    # from the source. Sentinel-2 does not in fact reach the poles; M2 replaces
-    # both extents with the ones the upstream collection reports.
+    # Both extents as the upstream collection reports them, read on 22.09.2026 (M2-08
+    # plan §3), replacing the M1 placeholders. The source states the whole globe for
+    # the spatial extent — wider than Sentinel-2 actually flies, but it is the
+    # source's own claim and not ours to narrow. The start is the first acquisition
+    # the collection carries; the end stays open because the archive still grows.
     spatial_extent=SpatialExtent(bbox=(-180.0, -90.0, 180.0, 90.0)),
-    temporal_extent=TemporalExtent(start=None, end=None),
+    temporal_extent=TemporalExtent(
+        start=datetime(2015, 6, 27, 10, 25, 31, 456000, tzinfo=timezone.utc),
+        end=None,
+    ),
     # Every flag set deliberately (KLAERUNGEN B10). These say what the dataset is
     # suited for under its licence, not what the platform has already built.
     capabilities=Capabilities(

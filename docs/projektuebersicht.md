@@ -100,7 +100,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 7. Datentyp-Klasse und Capability-Flags gesetzt.
 8. Standard-Visualisierung definiert (Bänder, Stretch, Colormap).
 9. Mindestens ein Processing-Schritt End-to-End getestet (Suche → Verarbeitung → Download). **Fassung v1 (D4, 2026-09-20):** Solange es in M2 noch keinen Processing-Schritt gibt, gilt als End-to-End-Test die Kette **Suche → Anzeige → Zuschnitt-Download** gegen Fixtures; der echte Processing-Schritt löst diese Fassung mit M4 ab.
-10. "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar (KLAERUNGEN B12). **Fassung v1 (D4, 2026-09-20):** Bis eigene Health-Checks kommen (M5), ist das der Zeitpunkt des letzten grünen T-D-Smoke-Laufs.
+10. "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar (KLAERUNGEN B12). ~~**Fassung v1 (D4, 2026-09-20):** Bis eigene Health-Checks kommen (M5), ist das der Zeitpunkt des letzten grünen T-D-Smoke-Laufs.~~ **Fassung v1.1 (Otto, 2026-09-22, ersetzt die Fassung v1):** In M2 heißt der Punkt **„der Datensatz ist vom T-D-Smoke abgedeckt"**, geprüft über den Marker in `backend/tests_live/`. Ein sichtbares Prüfdatum zeigt die Plattform in M2 **nicht**; es kommt mit den eigenen Health-Checks in M5. Grund: den Zeitpunkt des letzten grünen Laufs aus GitHub Actions in die laufende Plattform zu bringen, geht weder ohne Secret noch ohne laufende Handarbeit (M2-08 Plan §4.4). Das heutige `earthx:health.last_checked_ok` ist das Datum des Onboarding-Checks und darf nirgends als „zuletzt geprüft" erscheinen.
 
 ---
 
