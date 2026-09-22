@@ -105,16 +105,6 @@ SENTINEL_2_L2A = DatasetConfig(
         terms=TermsOfUse(
             url=_LEGAL_NOTICE_URL,
             notice={
-                "de": (
-                    "Die Nutzung unterliegt dem Sentinel Data Legal Notice: {terms_url}. "
-                    "Die Daten werden ohne ausdrückliche oder stillschweigende Gewährleistung "
-                    "bereitgestellt, auch nicht hinsichtlich Qualität und Eignung für einen "
-                    "bestimmten Zweck; mit ihrer Nutzung verzichtet der Nutzer auf "
-                    "Schadensersatzansprüche gegenüber der EU und den Datenanbietern. Der "
-                    "Verzicht erfasst jede Streitigkeit, einschließlich vertraglicher und "
-                    "deliktischer Ansprüche, vor Gericht, im Schiedsverfahren oder in jeder "
-                    "anderen Form der Streitbeilegung."
-                ),
                 # The Legal Notice's own words, shortened only where it names itself:
                 # "without any express or implied warranty, including as regards quality
                 # and suitability for any purpose", "renounces to any claims for damages

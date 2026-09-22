@@ -99,12 +99,12 @@ def test_the_terms_travel_with_the_collection(collection: dict) -> None:
     """Whoever reads our catalogue gets the source's terms with it, not just a flag."""
     flags = collection["earthx:license_flags"]
     assert flags["terms_url"] == SENTINEL_2_L2A.license.terms.url
-    assert set(flags["terms_notice"]) == {"de", "en"}
+    assert set(flags["terms_notice"]) == {"en"}
 
 
 def test_the_terms_notice_is_copied_not_shared(collection: dict) -> None:
-    collection["earthx:license_flags"]["terms_notice"]["de"] = "überschrieben"
-    assert SENTINEL_2_L2A.license.terms.notice["de"] != "überschrieben"
+    collection["earthx:license_flags"]["terms_notice"]["en"] = "overwritten"
+    assert SENTINEL_2_L2A.license.terms.notice["en"] != "overwritten"
 
 
 def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_extension(
