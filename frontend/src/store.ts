@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import * as api from './api';
 import type { CoverageResponse } from './api';
-import { FOOTPRINT_FETCH_LIMIT, showFootprints } from './coverage';
+import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './coverage';
 import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookAsset } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
@@ -72,7 +72,11 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   }
   const gen = ++coverageGen;
   const { datasetId } = s;
-  const bbox = s.aoi ? (polygonBbox(s.aoi) ?? undefined) : undefined;
+  const rawBbox = s.aoi ? polygonBbox(s.aoi) : null;
+  // Clamped to ±180° longitude — a wide AOI drawn across a wrapped world
+  // copy (MapLibre repeats the map at low zoom) can otherwise carry corners
+  // past ±180, which the coverage route refuses outright (coverage.ts).
+  const bbox = rawBbox ? clampBboxLongitude(rawBbox) : undefined;
   const zoom = Math.floor(s.mapZoom);
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
   set({ coverageLoading: true, coverageError: null });

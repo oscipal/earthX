@@ -103,6 +103,17 @@ export function coverageFillColorExpression(maxCount: number): unknown[] {
   return ['interpolate', ['linear'], ['log10', ['get', 'n']], ...stops];
 }
 
+// A drawn/uploaded AOI can carry longitudes outside ±180: MapLibre pans
+// across repeated world copies at low zoom, so a rectangle dragged over a
+// wrapped copy ends up with corners like -200 or 210. The coverage route
+// checks ±180 and refuses anything past it (`InvalidCoverageQuery` → `400`),
+// which made the heatmap vanish rather than just clamp to the same area a
+// non-wrapped view would show. A hard clamp, not an antimeridian split —
+// the smallest fix for the reported bug, not a general AOI-longitude fix.
+export function clampBboxLongitude([west, south, east, north]: Bbox): Bbox {
+  return [Math.max(-180, Math.min(180, west)), south, Math.max(-180, Math.min(180, east)), north];
+}
+
 // The zoom brake of `plans/m2-05-coverage.md` §6.8: `footprints_advised`
 // alone answers "is the checked total small enough", but a strict filter
 // (e.g. a narrow date range) can keep a *world* view under 500 hits, and

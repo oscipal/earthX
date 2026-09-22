@@ -117,28 +117,25 @@ function CoverageHistogram({
   );
 }
 
+// Off by default, switched on from the layer manager ("Layers" button) —
+// the legend/histogram here only ever appear once that toggle is on.
 function CoverageControls() {
   const showCoverage = useAppStore((s) => s.showCoverage);
-  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
   const coverage = useAppStore((s) => s.coverage);
   const coverageLoading = useAppStore((s) => s.coverageLoading);
   const coverageError = useAppStore((s) => s.coverageError);
   const dateFrom = useAppStore((s) => s.dateFrom);
   const dateTo = useAppStore((s) => s.dateTo);
   const datasetId = useAppStore((s) => s.datasetId);
-  if (!datasetId) return null;
+  if (!datasetId || !showCoverage) return null;
 
   const note = coverage ? completenessNote(coverage) : null;
 
   return (
     <div className="coverage-controls">
-      <label className="coverage-toggle">
-        <input type="checkbox" checked={showCoverage} onChange={() => toggleCoverage()} />
-        Coverage heatmap
-      </label>
-      {showCoverage && coverageLoading && <p className="hint-text">Loading coverage…</p>}
-      {showCoverage && coverageError && <p className="hint-text error">{coverageError}</p>}
-      {showCoverage && coverage && (
+      {coverageLoading && <p className="hint-text">Loading coverage…</p>}
+      {coverageError && <p className="hint-text error">{coverageError}</p>}
+      {coverage && (
         <div className="coverage-legend">
           <div className="legend-scale">
             <span className="legend-gradient" />

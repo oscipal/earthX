@@ -10,6 +10,9 @@ export default function LayerManager() {
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const move = useAppStore((s) => s.moveLayer);
   const select = useAppStore((s) => s.selectLayer);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const showCoverage = useAppStore((s) => s.showCoverage);
+  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
 
   if (!open) return null;
 
@@ -25,6 +28,22 @@ export default function LayerManager() {
             </button>
           </div>
         </div>
+
+        {/* Off by default (M2-07c); a plain toggle row rather than a list
+            entry, since it isn't a pinned layer and has no opacity/order. */}
+        {datasetId && (
+          <div className="layer-row coverage-row">
+            <button
+              type="button"
+              className={`lm-eye${showCoverage ? '' : ' off'}`}
+              title={showCoverage ? 'Hide' : 'Show'}
+              onClick={() => toggleCoverage()}
+            >
+              {showCoverage ? '●' : '○'}
+            </button>
+            <span className="lm-name">Coverage heatmap</span>
+          </div>
+        )}
 
         {layers.length === 0 ? (
           <p className="hint-text lm-empty">

@@ -554,14 +554,6 @@ input[type='date']:focus {
   flex-direction: column;
   gap: 8px;
 }
-.coverage-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text);
-  cursor: pointer;
-}
 .coverage-legend {
   display: flex;
   flex-direction: column;
@@ -941,6 +933,13 @@ input[type='date']:focus {
 .lm-name:hover {
   background: var(--row-hover);
   color: var(--accent);
+}
+.coverage-row .lm-name {
+  cursor: default;
+}
+.coverage-row .lm-name:hover {
+  background: none;
+  color: var(--text);
 }
 .lm-opacity {
   width: 56px;

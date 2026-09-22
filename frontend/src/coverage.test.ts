@@ -4,6 +4,7 @@ import type { CoverageCell, CoverageResponse } from './api';
 import {
   cellBbox,
   cellsToFeatureCollection,
+  clampBboxLongitude,
   completenessNote,
   coverageFillColorExpression,
   FOOTPRINT_MIN_ZOOM,
@@ -49,6 +50,21 @@ describe('cellBbox', () => {
     ['', 'empty'],
   ])('refuses %s (%s)', (key) => {
     expect(() => cellBbox(key)).toThrow(InvalidCellKey);
+  });
+});
+
+describe('clampBboxLongitude', () => {
+  it('leaves an ordinary bbox unchanged', () => {
+    expect(clampBboxLongitude([5, 45, 15, 55])).toEqual([5, 45, 15, 55]);
+  });
+
+  it('clamps a west/east pair from a wrapped world copy', () => {
+    expect(clampBboxLongitude([-200, 10, -170, 20])).toEqual([-180, 10, -170, 20]);
+    expect(clampBboxLongitude([170, 10, 210, 20])).toEqual([170, 10, 180, 20]);
+  });
+
+  it('never touches latitude', () => {
+    expect(clampBboxLongitude([-190, -95, 190, 95])).toEqual([-180, -95, 180, 95]);
   });
 });
 
