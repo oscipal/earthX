@@ -66,11 +66,16 @@ SENTINEL_2_L2A = DatasetConfig(
     citation=None,
     data_class=DataClass.RASTER_TIME_SERIES,
     format=DataFormat.COG,
-    # Placeholder, not a measurement: STAC needs an extent, and M1 reads nothing
-    # from the source. Sentinel-2 does not in fact reach the poles; M2 replaces
-    # both extents with the ones the upstream collection reports.
+    # Both extents as the upstream collection reports them, read on 22.09.2026 (M2-08
+    # plan §3), replacing the M1 placeholders. The source states the whole globe for
+    # the spatial extent — wider than Sentinel-2 actually flies, but it is the
+    # source's own claim and not ours to narrow. The start is the first acquisition
+    # the collection carries; the end stays open because the archive still grows.
     spatial_extent=SpatialExtent(bbox=(-180.0, -90.0, 180.0, 90.0)),
-    temporal_extent=TemporalExtent(start=None, end=None),
+    temporal_extent=TemporalExtent(
+        start=datetime(2015, 6, 27, 10, 25, 31, 456000, tzinfo=timezone.utc),
+        end=None,
+    ),
     # Every flag set deliberately (KLAERUNGEN B10). These say what the dataset is
     # suited for under its licence, not what the platform has already built.
     capabilities=Capabilities(
