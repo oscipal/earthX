@@ -10,6 +10,11 @@ export interface StacAsset {
   type?: string | null;
   title?: string | null;
   roles?: string[];
+  // STAC projection extension (v1.1): the asset's own pixel grid, read for
+  // quicklook placement (geoUtils.quicklookCoords) when the item sets no
+  // `proj:bbox` of its own.
+  'proj:transform'?: number[];
+  'proj:shape'?: number[];
 }
 
 // A STAC Item as `/stac` returns it. `properties` is where a real STAC item

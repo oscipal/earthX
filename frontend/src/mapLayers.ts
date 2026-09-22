@@ -284,7 +284,7 @@ export function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
 }
 
 function addQuicklook(map: MapLibreMap, item: StacItem, i: number, gen: number): void {
-  const coords = quicklookCoords(item.geometry, item.bbox);
+  const coords = quicklookCoords(item);
   const asset = quicklookAsset(item);
   if (!coords || !asset) return;
   const srcId = `m-img-src-${i}`;
