@@ -230,7 +230,7 @@ class DownloadRequest(BaseModel):
     items: list[str] = Field(min_length=1, max_length=64, description="item ids, one scene each")
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
-    language: str = Field(default="de", description="language of the notice file, ISO 639-1")
+    language: str = Field(default="en", description="language of the notice file, ISO 639-1")
 
 
 async def download_crop(

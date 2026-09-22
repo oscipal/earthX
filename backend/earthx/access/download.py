@@ -228,7 +228,7 @@ def _image_to_cog_bytes(image: ImageData) -> bytes:
 
 
 def build_notice_text(
-    config: DatasetConfig, *, item_ids: Sequence[str], language: str = "de"
+    config: DatasetConfig, *, item_ids: Sequence[str], language: str = "en"
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -248,7 +248,7 @@ def build_notice_text(
         lines.append(attribution.format(year=year))
 
     if license_.terms is not None:
-        text = license_.terms.notice.get(language) or license_.terms.notice["de"]
+        text = license_.terms.notice.get(language) or license_.terms.notice["en"]
         lines.append(text.format(terms_url=license_.terms.url))
         lines.append(license_.terms.url)
 
@@ -256,7 +256,7 @@ def build_notice_text(
         lines.append(config.citation)
 
     lines.append("Items: " + ", ".join(item_ids))
-    lines.append("Erzeugt: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+    lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
 
 
@@ -275,7 +275,7 @@ def build_download_zip(
     crops: Sequence[AssetCrop],
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
-    language: str = "de",
+    language: str = "en",
     max_size: int = MAX_OUTPUT_SIDE_PX,
 ) -> bytes:
     """The finished ZIP: one COG per requested asset, plus :data:`NOTICE_FILENAME`.

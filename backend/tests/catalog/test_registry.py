@@ -234,24 +234,24 @@ class TestMalformedInput:
         """Band math has no asset list, and adr/0006 §5 keeps the render-extension field."""
         assert render(assets=(), expression="(nir-red)/(nir+red)").expression
 
-    def test_terms_without_a_german_text_are_rejected(self) -> None:
-        """Docs and UI are German (CLAUDE.md); an English-only notice cannot be shown."""
-        with pytest.raises(ConfigError, match="German"):
-            TermsOfUse(url="https://example.invalid/t", notice={"en": "Terms: {terms_url}"})
+    def test_terms_without_an_english_text_are_rejected(self) -> None:
+        """The UI is English (D25); a German-only notice cannot be shown."""
+        with pytest.raises(ConfigError, match="English"):
+            TermsOfUse(url="https://example.invalid/t", notice={"de": "Bedingungen: {terms_url}"})
 
     def test_terms_with_an_empty_notice_are_rejected(self) -> None:
-        with pytest.raises(ConfigError, match="German"):
+        with pytest.raises(ConfigError, match="English"):
             TermsOfUse(url="https://example.invalid/t", notice={})
 
-    @pytest.mark.parametrize("text", ["Bedingungen gelten.", "Siehe {year}."])
+    @pytest.mark.parametrize("text", ["Terms apply.", "See {year}."])
     def test_a_terms_text_that_does_not_link_the_terms_is_rejected(self, text: str) -> None:
         """Terms the reader cannot open are not terms passed on."""
         with pytest.raises(ConfigError, match=re.escape("{terms_url}")):
-            TermsOfUse(url="https://example.invalid/t", notice={"de": text})
+            TermsOfUse(url="https://example.invalid/t", notice={"en": text})
 
     def test_a_non_https_terms_url_is_rejected(self) -> None:
         with pytest.raises(ConfigError, match="https"):
-            TermsOfUse(url="http://example.invalid/t", notice={"de": "Bedingungen: {terms_url}"})
+            TermsOfUse(url="http://example.invalid/t", notice={"en": "Terms: {terms_url}"})
 
     def test_health_ok_without_a_date_is_rejected(self) -> None:
         """KLAERUNGEN B12: "last checked successfully" has to be set to mean anything."""
