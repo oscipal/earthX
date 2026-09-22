@@ -357,7 +357,9 @@ der Kandidatenmatrix.
 `min_zoom`/`max_zoom` (COG `0..19`, zarr3 `8..14`), und die Kachelroute weist
 eine Stufe außerhalb mit `400` ab, bevor sie das Item holt. Der fehlende
 Quicklook wird im Browse-Modus durch Kacheln auf der gröbsten freigegebenen
-Stufe ersetzt. Reifegrad und „zuletzt geprüft" stehen in der Oberfläche.
+Stufe ersetzt. Der Reifegrad steht in der Oberfläche; ein Prüfdatum
+bewusst nicht, weil `earthx:health` heute das Aufnahmedatum trägt (Otto,
+22.09.2026, nach dem Befund von M2-08 in #62) — es kommt mit M5.
 Nebenbefunde aus dem ersten Zuschnitt über das zweite Format: der ZIP-Eintrag
 hieß roh nach dem Asset-Schlüssel, und eine AOI neben der Szene ergab bei Zarr
 `500` statt `400`. Die Checkliste v1 **als Test** bleibt M2-08 (F5 a).

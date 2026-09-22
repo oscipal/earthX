@@ -55,14 +55,6 @@ export interface EarthxViewer {
 // instead of being silently dropped.
 export type Maturity = 'stable' | 'staging' | 'experimental';
 
-// Result of the last check of the source (`earthx:health`). Checklist point 10
-// asks for `last_checked_ok` to be set *and visible*, which is why the viewer
-// reads it at all.
-export interface CollectionHealth {
-  status: string;
-  last_checked_ok: string | null;
-}
-
 // The registry's standard visualisation (`DefaultRender`, M2-04/D20), field names
 // mirroring the STAC `render` extension so they map onto tile-URL query params
 // 1:1 (`assets[0]` → `asset`, `colormap_name` → `colormap_name`, …).
@@ -102,7 +94,6 @@ export interface Collection {
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
   'earthx:maturity'?: Maturity | string | null;
-  'earthx:health'?: CollectionHealth | null;
   'earthx:default_render'?: EarthxDefaultRender | null;
   'earthx:license_flags'?: LicenseFlags | null;
 }

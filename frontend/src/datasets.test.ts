@@ -4,7 +4,6 @@ import {
   datasetsFrom,
   defaultRenderOf,
   groupByOf,
-  lastCheckedNote,
   maturityNote,
   quicklookAsset,
   quicklookPlan,
@@ -187,20 +186,6 @@ describe('maturityNote', () => {
 
   it('passes an unknown value through rather than swallowing it', () => {
     expect(maturityNote(collection({ 'earthx:maturity': 'deprecated' }))).toBe('deprecated');
-  });
-});
-
-describe('lastCheckedNote', () => {
-  it('shows the date of the last successful check (checklist point 10)', () => {
-    const health = { status: 'ok', last_checked_ok: '2026-09-22' };
-    expect(lastCheckedNote(collection({ 'earthx:health': health }))).toBe(
-      'source checked OK on 2026-09-22',
-    );
-  });
-
-  it('says nothing where the entry never recorded one', () => {
-    expect(lastCheckedNote(collection({ 'earthx:health': { status: 'unknown', last_checked_ok: null } }))).toBeNull();
-    expect(lastCheckedNote(collection())).toBeNull();
   });
 });
 

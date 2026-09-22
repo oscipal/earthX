@@ -1,7 +1,7 @@
 import type { CoverageHistogramPoint } from '../api';
 import { parseAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { lastCheckedNote, maturityNote } from '../datasets';
+import { maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
@@ -60,23 +60,24 @@ function AoiExtras() {
   );
 }
 
-// What the catalogue says about the *source* of the selected dataset, shown
-// because both halves are required to be visible and neither was: the maturity
-// (D23 — "staging" must not be something a user finds out only once the source
-// disappears) and the date of the last successful check (onboarding checklist
-// point 10, projektuebersicht.md §7).
+// How settled the source of the selected dataset is (D23: "staging" must not be
+// something a user finds out only once the source disappears).
+//
+// `earthx:health.last_checked_ok` is deliberately *not* shown next to it (Otto,
+// 22.09.2026, on M2-08's finding in #62): the field carries the date the dataset
+// was onboarded, not the date anything was checked, so displaying it would state
+// something the platform does not know. A real check date comes with the health
+// checks in M5.
 function DatasetNotes() {
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
   const dataset = datasets.find((d) => d.id === datasetId);
   if (!dataset) return null;
   const maturity = maturityNote(dataset.collection);
-  const checked = lastCheckedNote(dataset.collection);
-  if (!maturity && !checked) return null;
+  if (!maturity) return null;
   return (
     <div className="dataset-notes">
-      {maturity && <p className="hint-text warn">{maturity}</p>}
-      {checked && <p className="hint-text">{checked}</p>}
+      <p className="hint-text warn">{maturity}</p>
     </div>
   );
 }

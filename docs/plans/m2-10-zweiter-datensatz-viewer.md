@@ -93,10 +93,13 @@ für eine Echtfarb-Kachel, ab z11 rund 3,7–4,3 MB und rund 5 s kalt.
 nicht, und keine Komponente zeigt es. D23 macht die Sichtbarkeit zur Auflage
 („Status ‚staging' sichtbar in Registry **und Viewer**", `adr/0007` §12.11 Punkt 14).
 
-Dasselbe gilt für `earthx:health`: Punkt 10 der Onboarding-Checkliste verlangt
-„zuletzt erfolgreich geprüft ist gesetzt **und sichtbar**", `projektuebersicht.md`
-§7 nennt „Health-Status der Quelle sichtbar" unter den Viewer-Grundsätzen. Beide
-Felder kommen über dieselbe Antwort und kosten zusammen eine Zeile im Panel.
+Für `earthx:health` galt derselbe Befund, und die Folgerung daraus ist
+**zurückgezogen** (Otto, 22.09.2026, nach dem Befund von M2-08 in #62): Punkt 10
+der Onboarding-Checkliste verlangt zwar „zuletzt erfolgreich geprüft ist gesetzt
+**und sichtbar**", aber das Feld trägt heute das Datum der *Aufnahme* des
+Datensatzes, nicht das einer Prüfung. Eine Zeile daraus hätte behauptet, was die
+Plattform nicht weiß. Sie bleibt weg, bis die Health-Checks in M5 ein echtes
+Prüfdatum liefern — Punkt 10 ist dann offen statt scheinbar erfüllt.
 
 ### 3.4 Der ZIP-Eintrag des Zuschnitts trägt bei Zarr einen unzulässigen Dateinamen
 
@@ -216,12 +219,16 @@ des Kachelpfads.
   Browse-Modus `false`.
 - `enterFocus` reicht den Zoombereich des Datensatzes in `DownloadedInfo` durch.
 
-### 4.4 Oberfläche — drei Hinweise, alle englisch (D25)
+### 4.4 Oberfläche — zwei Hinweise, beide englisch (D25)
 
 1. **Reifegrad am Datensatzknopf.** Ein Chip „staging" neben dem Titel, Titeltext
    „provider marks this collection staging — it may disappear without notice".
-2. **Zuletzt geprüft.** Eine Zeile unter der Auswahl: „source checked OK on
-   2026-09-22" aus `earthx:health.last_checked_ok` (Checkliste Punkt 10).
+2. ~~**Zuletzt geprüft.**~~ **Zurückgezogen am 22.09.2026 (Otto).** Der Befund
+   aus M2-08 (#62): `earthx:health.last_checked_ok` trägt heute das Datum der
+   Aufnahme, nicht das einer Prüfung. Die Zeile hätte also etwas behauptet, was
+   die Plattform nicht weiß. Ein echtes Prüfdatum kommt mit den Health-Checks in
+   M5; Punkt 10 der Checkliste bleibt bis dahin offen, statt scheinbar erfüllt
+   zu sein.
 3. **Unterhalb der Untergrenze.** Steht die Karte unter `zoom.min`, sagt eine Zeile
    „zoom in to level 8 to see imagery for this dataset" statt eine leere Karte zu
    zeigen. Dieselbe Stelle nennt die Coverage-Karte als das, was auf dieser

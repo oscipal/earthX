@@ -1,7 +1,7 @@
 // What the viewer needs from `/stac/collections`: the pick list, each entry's
 // grouping key and released zoom levels (`earthx:viewer`), how settled the
-// source is (`earthx:maturity`, `earthx:health`), and what to show for one
-// scene before anyone asks for full resolution.
+// source is (`earthx:maturity`), and what to show for one scene before anyone
+// asks for full resolution.
 //
 // Nothing here has a default (KLAERUNGEN B10, Otto 20.09.2026 and 22.09.2026):
 // a collection without `earthx:viewer.group_by` is a gap in the dataset's
@@ -92,13 +92,6 @@ export function maturityNote(collection: Collection): string | null {
     return 'experimental: the provider offers no stability for this collection';
   }
   return maturity;
-}
-
-// "Last checked OK" of the source (`earthx:health`), point 10 of the onboarding
-// checklist, which asks for it to be set *and visible*.
-export function lastCheckedNote(collection: Collection): string | null {
-  const checked = collection['earthx:health']?.last_checked_ok;
-  return checked ? `source checked OK on ${checked}` : null;
 }
 
 // The quicklook asset, chosen generically: role `thumbnail`, then `overview`,
