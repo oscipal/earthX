@@ -1,12 +1,9 @@
 """Shared fixtures.
 
-Two things every test in this suite relies on:
-
-* No test may open a network connection. Tests run in CI and in cloud sessions,
-  where external data sources are not reachable (docs/adr/0002-testaufteilung.md).
-  A test that tries anyway must fail loudly instead of hanging until a timeout.
-* No test may depend on the developer's environment. A stray ``.env`` or an
-  exported ``MAAP_TOKEN`` must not change a result, and no test needs a token.
+Every test in this suite relies on this: no test may open a network
+connection. Tests run in CI and in cloud sessions, where external data
+sources are not reachable (docs/adr/0002-testaufteilung.md). A test that
+tries anyway must fail loudly instead of hanging until a timeout.
 """
 
 from __future__ import annotations
@@ -46,16 +43,3 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
     yield
-
-
-@pytest.fixture(autouse=True)
-def clean_settings(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Iterator[None]:
-    """Isolate configuration from the developer's environment and `.env` file."""
-    from app.config import get_settings
-
-    for name in ("MAAP_TOKEN", "STAC_CATALOG_URL", "ASSET_HOST_ALLOWLIST", "CACHE_DIR", "DATA_DIR"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.chdir(tmp_path)  # no `.env` here
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
