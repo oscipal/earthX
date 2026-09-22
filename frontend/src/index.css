@@ -999,10 +999,23 @@ input[type='date']:focus {
 }
 
 /* --- status toasts --- */
+/* The stack spans the full 560px of `.status` and sits at the top centre, where
+   it crosses the buttons of `.top-right` on any window below roughly 1500px.
+   While every toast was transient that cost nothing; the standing zoom hint
+   (M2-10) would have swallowed the clicks in that strip permanently, "Zoom to
+   selection" first of all. So the stack itself takes no pointer events and each
+   toast takes them back — except the hint, which has nothing to click. */
 .status-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  pointer-events: none;
+}
+.status-stack > .toast {
+  pointer-events: auto;
+}
+.status-stack > .toast.hint {
+  pointer-events: none;
 }
 .toast {
   display: flex;

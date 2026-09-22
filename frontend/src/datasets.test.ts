@@ -262,7 +262,6 @@ describe('quicklookPlan', () => {
   });
 });
 
-
 describe('zoomFloorHint', () => {
   function option(overrides: Partial<{ min: number; max: number }> = {}) {
     const { min = 8, max = 14 } = overrides;
@@ -300,6 +299,16 @@ describe('zoomFloorHint', () => {
   it('is null when no dataset is selected or it is not viewable', () => {
     expect(zoomFloorHint(undefined, 0)).toBeNull();
     expect(zoomFloorHint(datasetsFrom([collection()])[0], 0)).toBeNull();
+  });
+
+  it.each([
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['negative infinite', Number.NEGATIVE_INFINITY],
+  ])('is null for a map zoom that is %s', (_case, zoom) => {
+    // NaN compares false against everything, so without a guard a broken reading
+    // would become a standing hint rather than no hint.
+    expect(zoomFloorHint(option(), zoom)).toBeNull();
   });
 
   it('a fractional map zoom counts as the level it has not reached yet', () => {

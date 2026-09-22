@@ -255,10 +255,22 @@ nachzubauen. Das ist eine eigene kleine Aufgabe und keine Zeile in diesem PR.
    Verdeckt hat ihn kein React-Zustand, sondern ein `transform: translateX(-100%)`
    im CSS, weshalb weder Typprüfung noch eine Prüfung der Regel ihn fangen konnte.
    Er steht jetzt in der `StatusBar`, der einzigen Auflage, die immer sichtbar ist,
-   und erscheint erst, wenn eine Suche etwas gefunden hat. Die Regel selbst liegt
-   als `datasets.ts::zoomFloorHint` rein daneben. Belegt durch einen Render-Test
-   (`components/StatusBar.test.tsx`), der die Tafel ausdrücklich eingeklappt setzt;
-   er schlägt fehl, sobald der Hinweis wieder aus der `StatusBar` verschwindet.
+   und hängt an nichts als am gewählten Datensatz und am Zoom. Die Regel selbst
+   liegt als `datasets.ts::zoomFloorHint` rein daneben.
+
+   Belegt durch `components/StatusBar.test.tsx`: der Test mountet **`App`** (nur
+   `MapView` ist ersetzt, das einzige Stück, das WebGL will), setzt die Tafel
+   ausdrücklich eingeklappt und prüft, dass der Hinweis **nicht innerhalb von
+   `.panel-dock.collapsed` liegt**. Ein Test, der die Komponente allein mountet,
+   hätte hier nichts gezeigt — er wäre mit dem Hinweis in der weggeschobenen Tafel
+   genauso grün gewesen. Gegenprobe gemacht: Hinweis zurück ins `ControlPanel`,
+   und genau dieser Fall schlägt fehl.
+
+   **Eine erste Fassung war zusätzlich an Suchtreffer gebunden**; das schaltete ihn
+   in den beiden Lagen ab, die er am ehesten erklärt (Review): direkt nach dem
+   Wechsel auf einen Datensatz mit höherer Untergrenze, weil `setDatasetId` die
+   Treffer leert, und bei angehefteten Ebenen, die `clearAll` überleben und unter
+   ihrer eigenen Untergrenze ebenso verschwinden. Die Bindung ist wieder raus.
 
 `ResultsPanel` behält den Platzhalter, bekommt aber einen `title`, der sagt warum
 („this source publishes no preview image") — siehe F4.

@@ -116,11 +116,21 @@ export function maturityNote(collection: Collection): string | null {
 // than out of range. Above the floor this says nothing: an empty map then has
 // some other cause, and a hint that is always on is a hint nobody reads.
 //
+// Two limits worth knowing. It speaks for the *tile* paths, which is what a
+// released range bounds: a published quicklook is placed as an image and has no
+// floor, so for a dataset with `min_zoom > 0` whose items carry thumbnails this
+// would be wrong — no entry is in that position today (the COG one releases from
+// z0). And it follows the map's `moveend`, so during a long zoom gesture the map
+// is already empty while this still says nothing.
+//
 // It belongs wherever the app talks to the user and not in a panel that can be
 // slid away: the first version of this sat in the control panel, which
 // `runSearch` collapses, so it was never once visible in the situation it is
 // for (found locally by Otto, 22.09.2026).
 export function zoomFloorHint(dataset: DatasetOption | undefined, mapZoom: number): string | null {
+  // A zoom that is not a number compares false against everything, which would
+  // otherwise turn a broken reading into a standing hint.
+  if (!Number.isFinite(mapZoom)) return null;
   if (!dataset?.viewable || mapZoom >= dataset.zoom.min) return null;
   return (
     `Zoom in to level ${dataset.zoom.min} to see imagery for ${dataset.title} — ` +
