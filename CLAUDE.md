@@ -24,11 +24,6 @@ Die Datei ist nur noch Beschreibung des Code-Stands vom 13.08.2026.
 - `decomp.py` nie generalisieren: nur als Operator mit Quad-Pol-Capability.
 - Keine Secrets, Tokens, `.env`-Werte, internen URLs oder exakten AOIs in Code,
   Commits, Logs, Issues oder PRs.
-  **Eine bewusste, befristete Ausnahme:** das fest eingetragene OIDC-Client-Secret
-  in `backend/app/config.py`. Es bleibt unverändert, wird nicht widerrufen und die
-  History wird nicht bereinigt. Die Ausnahme endet, wenn der BIOMASS-Code entfernt
-  wird. Nicht erneut ansprechen, nicht „aufräumen“ — für jedes **andere** Secret
-  gilt die Regel unverändert.
 - BIOMASS und MAAP kommen in CI, Cloud-Sitzungen und Fixtures nicht vor.
   Fixtures nur synthetisch oder mit eindeutig offener Lizenz.
 

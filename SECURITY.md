@@ -19,13 +19,6 @@ Falls Private Vulnerability Reporting für dieses Repo nicht verfügbar ist,
 wende dich stattdessen direkt und nicht-öffentlich an die Maintainer (z. B.
 über einen privaten Kanal außerhalb von GitHub) — nicht über ein Issue.
 
-## Bekannte, bewusst befristete Ausnahme
-
-Das im Code fest eingetragene OIDC-Client-Secret für die BIOMASS/MAAP-Anbindung
-(`backend/app/config.py`) ist eine bekannte, bewusst in Kauf genommene Ausnahme
-(siehe `CLAUDE.md`) und muss nicht erneut gemeldet werden. Die Ausnahme endet,
-wenn der BIOMASS-Code entfernt wird.
-
 ## Umfang
 
 Diese Policy gilt für den Code in diesem Repository. Für die Datenquellen, die
