@@ -99,9 +99,9 @@ NOTICE_FILENAME = "ATTRIBUTION.txt"
 # rioxarray raises under `XarrayReader.feature` when the AOI misses the array,
 # and without it here an AOI beside a Zarr scene would be a 500 instead of the
 # 400 the same AOI gets on a COG (found by M2-10's first crop over the second
-# format). In a mosaic all three mean the same thing as well: skip this scene
-# and take the next one.
-_ALLOWED_MOSAIC_EXCEPTIONS = (TileOutsideBounds, PointOutsideBounds, NoDataInBounds)
+# format). Used on both paths below: alone it is the whole refusal, in a mosaic
+# it means skip this scene and take the next one.
+_AOI_MISSES_THE_DATA = (TileOutsideBounds, PointOutsideBounds, NoDataInBounds)
 
 
 class InvalidAoi(ValueError):
@@ -202,12 +202,12 @@ def crop_asset(
     if len(asset_paths) == 1:
         try:
             return _read(asset_paths[0])
-        except _ALLOWED_MOSAIC_EXCEPTIONS as error:
+        except _AOI_MISSES_THE_DATA as error:
             raise AoiOutsideItems(str(error)) from None
 
     try:
         image, _used = mosaic_reader(
-            list(asset_paths), _read, allowed_exceptions=_ALLOWED_MOSAIC_EXCEPTIONS
+            list(asset_paths), _read, allowed_exceptions=_AOI_MISSES_THE_DATA
         )
     except EmptyMosaicError as error:
         raise AoiOutsideItems(str(error)) from None
@@ -254,9 +254,9 @@ def crop_filename(asset: str) -> str:
     becomes a single ``_``. ``visual`` stays ``visual``; the original key is
     named in the notice file, so nothing about the archive becomes a guess.
     """
-    # Leading dots go too: `..` survives the allowlist on its own (a dot is a legal
-    # filename character) and a member called `..` or `.._x` is a name no archive
-    # should carry, whatever the extractor makes of it.
+    # Stripped at both ends, dots included: `..` survives the allowlist on its own
+    # (a dot is a legal filename character) and a member called `..` or `.._x` is a
+    # name no archive should carry, whatever the extractor makes of it.
     cleaned = _SAFE_IN_FILENAME.sub("_", asset).strip("._")
     # A key made only of separators would otherwise leave an empty name, and a
     # ZIP entry called ".tif" is not something a user can tell apart from another.

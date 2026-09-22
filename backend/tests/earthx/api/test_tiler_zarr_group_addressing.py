@@ -103,7 +103,7 @@ class TestTheAssetKeySplitsIntoGroupAndVariable:
     def test_the_variable_after_the_separator_is_read_out_of_the_group_the_asset_names(
         self, requests: list[httpx.Request]
     ) -> None:
-        built = _resolve_asset_path(state(), STAC_ITEM, dataset=DATASET, item=ITEM, asset="SR_10m:b04")
+        built = _resolve_asset_path(state(), STAC_ITEM, config=CONFIG, item=ITEM, asset="SR_10m:b04")
         assert built.group == f"{PARENT_GROUP}/r10m"
         assert built.variable == "b04"
 
@@ -113,7 +113,7 @@ class TestTheAssetKeySplitsIntoGroupAndVariable:
         """The caller's own query parameter is malformed — 400, not a 502 about the
         item's own addresses."""
         with pytest.raises(HTTPException) as raised:
-            _resolve_asset_path(state(), STAC_ITEM, dataset=DATASET, item=ITEM, asset="SR_10m")
+            _resolve_asset_path(state(), STAC_ITEM, config=CONFIG, item=ITEM, asset="SR_10m")
         assert raised.value.status_code == 400
         assert "variable" in raised.value.detail
 
@@ -121,7 +121,7 @@ class TestTheAssetKeySplitsIntoGroupAndVariable:
         self, requests: list[httpx.Request]
     ) -> None:
         with pytest.raises(HTTPException) as raised:
-            _resolve_asset_path(state(), STAC_ITEM, dataset=DATASET, item=ITEM, asset="nope:b04")
+            _resolve_asset_path(state(), STAC_ITEM, config=CONFIG, item=ITEM, asset="nope:b04")
         assert raised.value.status_code == 404
 
 
@@ -133,7 +133,7 @@ class TestTargetGsdPicksTheLevel:
 
     def test_a_target_gsd_swaps_the_group_for_a_coarser_level(self, requests: list[httpx.Request]) -> None:
         built = _resolve_asset_path(
-            state(), STAC_ITEM, dataset=DATASET, item=ITEM, asset="SR_10m:b04", target_gsd=GROUPS["r60m"]
+            state(), STAC_ITEM, config=CONFIG, item=ITEM, asset="SR_10m:b04", target_gsd=GROUPS["r60m"]
         )
         assert built.group == f"{PARENT_GROUP}/r10m"
         assert built.target_gsd == GROUPS["r60m"]
@@ -141,7 +141,7 @@ class TestTargetGsdPicksTheLevel:
             assert reader.input.sizes["x"] == group_size(GROUPS["r60m"])
 
     def test_without_a_target_gsd_the_items_own_group_is_kept(self, requests: list[httpx.Request]) -> None:
-        built = _resolve_asset_path(state(), STAC_ITEM, dataset=DATASET, item=ITEM, asset="SR_10m:b04")
+        built = _resolve_asset_path(state(), STAC_ITEM, config=CONFIG, item=ITEM, asset="SR_10m:b04")
         assert built.target_gsd is None
         with ZarrReader(built) as reader:
             assert reader.input.sizes["x"] == group_size(GROUPS["r10m"])
@@ -211,7 +211,7 @@ class TestTheDefaultRenderAssetKeyRoundTrips:
     ) -> None:
         (asset_key,) = SENTINEL_2_L2A_ZARR3.default_render.assets
         built = _resolve_asset_path(
-            composite_state(), COMPOSITE_STAC_ITEM, dataset=COMPOSITE_DATASET, item=ITEM, asset=asset_key
+            composite_state(), COMPOSITE_STAC_ITEM, config=COMPOSITE_CONFIG, item=ITEM, asset=asset_key
         )
         assert built.variable == "b04,b03,b02"
         with ZarrReader(built) as reader:

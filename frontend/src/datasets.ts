@@ -12,13 +12,21 @@
 // out — and every difference between two datasets comes from here, never from
 // a branch on a dataset id somewhere in a component (M2-10).
 
-import type { Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
+import { appliedRenderFrom } from './render';
+import type { AppliedRender, Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
 
 // The tile levels a dataset is released for (registry `ViewerInfo`, M2-10).
 export interface ZoomRange {
   min: number;
   max: number;
 }
+
+// The same ceiling the registry enforces (`catalog.registry.MAX_TILE_ZOOM`), so a
+// range the backend would never accept is not treated as viewable here either. It
+// is also below MapLibre's own style limit of 24 — a source built with a larger
+// `maxzoom` throws inside `addSource`, in the middle of a map sync, which is not
+// where anyone would look for a registry mistake.
+const MAX_TILE_ZOOM = 22;
 
 export type DatasetOption =
   | {
@@ -54,7 +62,7 @@ export function zoomRangeOf(collection: Collection): ZoomRange | null {
   if (!viewer) return null;
   const { min_zoom: min, max_zoom: max } = viewer;
   if (!Number.isInteger(min) || !Number.isInteger(max)) return null;
-  if (min < 0 || min > max) return null;
+  if (min < 0 || max > MAX_TILE_ZOOM || min > max) return null;
   return { min, max };
 }
 
@@ -82,9 +90,15 @@ export function datasetsFrom(collections: Collection[]): DatasetOption[] {
 // shows for it — `null` for a settled source, which needs no warning. An unknown
 // value is passed through rather than swallowed: a provider label nobody has
 // taught the viewer about still belongs in front of the user.
-export function maturityNote(collection: Collection): string | null {
+export function maturityLabel(collection: Collection): string | null {
   const maturity = collection['earthx:maturity'];
   if (typeof maturity !== 'string' || maturity === '' || maturity === 'stable') return null;
+  return maturity;
+}
+
+export function maturityNote(collection: Collection): string | null {
+  const maturity = maturityLabel(collection);
+  if (maturity === null) return null;
   if (maturity === 'staging') {
     return 'staging: the provider may withdraw this collection without notice';
   }
@@ -117,12 +131,22 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 // registry field defines "the preview level" — the coarsest released level *is*
 // the preview, and everything above it is overzoomed, which is what a quicklook is.
 //
+// That equation holds while `min_zoom` is in the order of a scene, which is why
+// `sentinel-2-l2a-zarr3` sets z8 ("one tile is about one scene", adr/0007 §12.10).
+// For a dataset released from z0 the preview would be a world tile clipped to one
+// item — nearly nothing. No dataset reaches that case today (the COG one publishes
+// quicklooks, so it never takes this branch), and the day one does, the preview
+// level is the thing to name in the registry, not a rule to bend here.
+//
 // The decision hangs on the item and the registry entry, never on a dataset id:
 // a source that starts publishing thumbnails tomorrow gets them without a change
 // here, and one that stops falls back to the tiles the same way.
 export type QuicklookPlan =
   | { kind: 'image'; href: string }
-  | { kind: 'tiles'; asset: string; zoom: number };
+  // `render` is the registry's standard visualisation, carried because a preview
+  // tile needs the same stretch the full-resolution view uses — without it the
+  // two views of one scene do not look like the same data (M2-10 review).
+  | { kind: 'tiles'; asset: string; zoom: number; render: AppliedRender };
 
 export function quicklookPlan(item: StacItem, dataset: DatasetOption): QuicklookPlan | null {
   const asset = quicklookAsset(item);
@@ -130,6 +154,11 @@ export function quicklookPlan(item: StacItem, dataset: DatasetOption): Quicklook
   if (!dataset.viewable) return null;
   const render = defaultRenderOf(dataset.collection);
   const rendered = render?.assets?.[0];
-  if (!rendered) return null;
-  return { kind: 'tiles', asset: rendered, zoom: dataset.zoom.min };
+  if (!render || !rendered) return null;
+  return {
+    kind: 'tiles',
+    asset: rendered,
+    zoom: dataset.zoom.min,
+    render: appliedRenderFrom(render),
+  };
 }

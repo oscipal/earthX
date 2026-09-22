@@ -13,7 +13,7 @@ import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
-import { autoRescale } from './render';
+import { appliedRenderFrom, autoRescale } from './render';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -363,7 +363,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       for (const [, info] of entries) {
         overlays.push({
           kind: 'raster',
-          tileUrl: buildTileUrl(info, s.appliedRender),
+          tileUrl: buildTileUrl(info.tileUrl, s.appliedRender),
           bounds: info.bounds,
           minZoom: info.minZoom,
           maxZoom: info.maxZoom,
@@ -385,10 +385,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         // The preview substitute (M2-10): pinned at the one level it is read on,
         // so a pinned preview stays a preview and never turns into a full-
         // resolution read when the map zooms in on it.
+        // `browsed` is already non-null here (a plan needs one), named again so
+        // TypeScript can narrow it for the call below.
         if (!it.bbox || !browsed) continue;
         overlays.push({
           kind: 'raster',
-          tileUrl: api.buildTileTemplate(browsed.id, it.id, plan.asset),
+          tileUrl: buildTileUrl(api.buildTileTemplate(browsed.id, it.id, plan.asset), plan.render),
           bounds: it.bbox,
           minZoom: plan.zoom,
           maxZoom: plan.zoom,
@@ -535,11 +537,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       focusMode: true,
       showDownloaded: true,
       downloaded,
-      appliedRender: {
-        expression: render.expression ?? undefined,
-        colormapName: render.colormap_name ?? undefined,
-        rescale: rescale ? `${rescale[0]},${rescale[1]}` : undefined,
-      },
+      appliedRender: appliedRenderFrom(render),
       pendingColormapName: render.colormap_name ?? '',
       pendingVmin: rescale ? String(rescale[0]) : '',
       pendingVmax: rescale ? String(rescale[1]) : '',

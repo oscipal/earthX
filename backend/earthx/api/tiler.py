@@ -230,9 +230,22 @@ def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
     therefore lives here as well, not only in the client.
 
     Checked before the item is fetched, so a refused level costs no request to the
-    source. Only a *tile* carries a level: ``/statistics`` (answered on the coarsest
-    level there is) and the AOI crop (answered at the asset's own resolution) have no
-    ``z`` and are deliberately untouched.
+    source.
+
+    Only a *tile* carries a level. The other routes on this dependency —
+    ``/statistics`` (answered on the coarsest level there is), ``/info``,
+    ``/point`` and ``/tilejson.json`` — have no ``z`` to check and pass through.
+    ``/preview`` used to be among them and is gone (`access.tiles`): it carried no
+    level *and* computed no target resolution, so for a Zarr dataset it read the
+    native one. The AOI crop is not on this dependency at all; it resolves its own
+    paths and is answered at the asset's own resolution by design (M2-06).
+
+    **Known gap, deliberately left:** ``/tilejson.json`` still advertises the zoom
+    range its *reader* reports rather than the one the registry releases, so a
+    client that follows the TileJSON rather than building URLs itself can be sent
+    to levels this refuses. Closing it means reimplementing TiTiler's route (the
+    reader's ``minzoom``/``maxzoom`` are computed properties, not settable), which
+    is its own task — see the M2-10 plan.
     """
     level = request.path_params.get("z")
     if level is None:
@@ -264,7 +277,13 @@ def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
 
 
 def _resolve_asset_path(
-    state: Any, stac_item: dict[str, Any], *, dataset: str, item: str, asset: str, target_gsd: float | None = None
+    state: Any,
+    stac_item: dict[str, Any],
+    *,
+    config: DatasetConfig,
+    item: str,
+    asset: str,
+    target_gsd: float | None = None,
 ) -> AssetPath | ZarrAsset:
     """The href of ``asset`` on ``stac_item``, cleared through the gateway policy.
 
@@ -278,7 +297,7 @@ def _resolve_asset_path(
     *before* the href is looked up, because the item only ever advertises the
     group side of that key.
     """
-    config = _dataset_config(state, dataset)
+    dataset = config.dataset_id
     if config.format not in _READABLE_FORMATS:
         raise HTTPException(
             status_code=501,
@@ -343,10 +362,11 @@ async def dataset_asset_path(
     on the collection (``earthx:default_render``), which is where it can be a default.
     """
     state = request.app.state
-    _check_zoom_released(request, _dataset_config(state, dataset))
+    config = _dataset_config(state, dataset)
+    _check_zoom_released(request, config)
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = _target_gsd(request, stac_item)
-    return _resolve_asset_path(state, stac_item, dataset=dataset, item=item, asset=asset, target_gsd=target_gsd)
+    return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset, target_gsd=target_gsd)
 
 
 class DownloadRequest(BaseModel):
@@ -399,19 +419,25 @@ async def download_crop(
         raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
     try:
-        check_size_cap(item_count=len(matched), asset_count=len(body.assets))
+        check_size_cap(item_count=len(matched), asset_count=len(set(body.assets)))
     except AoiTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from None
 
+    # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
+    # and two identical keys would otherwise write the same file name into the
+    # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
+    wanted = list(dict.fromkeys(body.assets))
     crops = [
         AssetCrop(
             asset=asset,
             paths=tuple(
-                _resolve_asset_path(state, matched_item, dataset=dataset, item=matched_item["id"], asset=asset)
+                _resolve_asset_path(
+                    state, matched_item, config=config, item=matched_item["id"], asset=asset
+                )
                 for matched_item in matched
             ),
         )
-        for asset in body.assets
+        for asset in wanted
     ]
 
     try:
@@ -437,7 +463,7 @@ async def download_crop(
         extra={
             "dataset": dataset,
             "items": len(matched),
-            "assets": len(body.assets),
+            "assets": len(wanted),
             "bytes": len(zip_bytes),
         },
     )

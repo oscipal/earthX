@@ -131,12 +131,18 @@ describe('quicklookAsset', () => {
   });
 });
 
-
 describe('zoomRangeOf', () => {
   it('reads the released levels of earthx:viewer', () => {
     expect(zoomRangeOf(collection({ 'earthx:viewer': viewer({ min_zoom: 8, max_zoom: 14 }) }))).toEqual({
       min: 8,
       max: 14,
+    });
+  });
+
+  it('the ceiling itself is allowed', () => {
+    expect(zoomRangeOf(collection({ 'earthx:viewer': viewer({ min_zoom: 0, max_zoom: 22 }) }))).toEqual({
+      min: 0,
+      max: 22,
     });
   });
 
@@ -159,6 +165,10 @@ describe('zoomRangeOf', () => {
     ['a level is fractional', { min_zoom: 8.5, max_zoom: 14 }],
     ['a level is not a number', { min_zoom: 'eight' }],
     ['a level is null', { min_zoom: null }],
+    // The registry's own ceiling (catalog.registry.MAX_TILE_ZOOM = 22), mirrored
+    // so a range the backend would refuse is not treated as viewable here — and
+    // so `addSource` never gets a maxzoom past MapLibre's own limit of 24.
+    ['a level is past the registry ceiling', { max_zoom: 23 }],
   ])('is null when %s — no guessed range', (_case, broken) => {
     const block = { group_by: ['datetime'], ...broken } as unknown as EarthxViewer;
     expect(zoomRangeOf(collection({ 'earthx:viewer': block }))).toBeNull();
@@ -193,7 +203,7 @@ describe('quicklookPlan', () => {
   const render = {
     title: 'True colour',
     assets: ['SR_10m:b04,b03,b02'],
-    rescale: null,
+    rescale: [[0, 0.3]] as [number, number][],
     colormap_name: null,
     expression: null,
     resampling: 'nearest',
@@ -224,6 +234,9 @@ describe('quicklookPlan', () => {
       kind: 'tiles',
       asset: 'SR_10m:b04,b03,b02',
       zoom: 8,
+      // The registry's stretch travels with it: a preview rendered without it
+      // does not look like the full-resolution view of the same scene.
+      render: { rescale: '0,0.3', colormapName: undefined, expression: undefined },
     });
   });
 

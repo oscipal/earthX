@@ -183,6 +183,16 @@ class TestAcceptanceCriteria:
         )
         assert notice_en in notice
 
+    def test_the_same_asset_asked_for_twice_is_one_file(self, client: TestClient) -> None:
+        """`assets` is a caller's list and may repeat a key. Without deduplication the
+        archive got two entries of the same name — legal in a ZIP, and untangleable by
+        nobody (M2-10 review)."""
+        response = _download(client, assets=["visual", "visual"])
+
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            assert archive.namelist().count("visual.tif") == 1
+
     def test_an_empty_item_or_asset_list_is_a_validation_error(self, client: TestClient) -> None:
         assert _download(client, items=[]).status_code == 422
         assert _download(client, assets=[]).status_code == 422

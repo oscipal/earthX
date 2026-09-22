@@ -1,7 +1,7 @@
 import type { CoverageHistogramPoint } from '../api';
 import { parseAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { maturityNote } from '../datasets';
+import { maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
@@ -108,6 +108,7 @@ function DatasetSelector() {
     <div className="level-select" role="group" aria-label="Dataset">
       {datasets.map((d) => {
         const maturity = d.viewable ? maturityNote(d.collection) : null;
+        const label = d.viewable ? maturityLabel(d.collection) : null;
         return (
           <button
             key={d.id}
@@ -119,7 +120,7 @@ function DatasetSelector() {
             onClick={() => setDatasetId(d.id)}
           >
             {d.title}
-            {maturity && <span className="maturity-chip">{maturity.split(':')[0]}</span>}
+            {label && <span className="maturity-chip">{label}</span>}
           </button>
         );
       })}

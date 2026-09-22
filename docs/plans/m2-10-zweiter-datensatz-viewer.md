@@ -181,8 +181,23 @@ Der Kachelpfad prüft die Stufe deshalb selbst.
   ist für diesen Datensatz nicht eingerichtet, der Aufrufer hat nichts falsch
   gemacht.
 
-Damit ist das Feld nicht nur eine Empfehlung an den Client, sondern die Grenze
-des Kachelpfads.
+Damit das trägt, gehören zwei Dinge dazu, die der Review gefunden hat:
+
+- **Nur ein Kachelraster.** Die freigegebene Spanne ist eine Spanne von
+  *WebMercatorQuad*-Stufen (`adr/0007` §12.10). `z14` in `WorldCRS84Quad` ist rund
+  eine WebMercator-Stufe feiner — mit mehreren Rastern bedeutet dieselbe Zahl zwei
+  Auflösungen, und die teure Anfrage geht durch. `supported_tms` steht deshalb auf
+  `WebMercatorQuad`, dem einzigen Raster, das der Client anfragt.
+- **`/preview` entfällt.** Die Route trägt keine Stufe *und* rechnet keine
+  Zielauflösung, liest bei Zarr also die native Stufe — genau der Lesevorgang, den
+  die Spanne verhindern soll. Sie wird nicht mehr registriert; niemand fragt sie an.
+
+**Offen geblieben, bewusst:** `/tilejson.json` weist weiterhin die Zoomstufen
+seines *Readers* aus statt der freigegebenen. Ein Client, der dem TileJSON folgt
+statt URLs selbst zu bauen, wird damit auf Stufen geschickt, die der Riegel
+abweist. Der billige Weg ist zu — `minzoom`/`maxzoom` der rio-tiler-Reader sind
+berechnete Eigenschaften, nicht setzbar —, es bliebe also, TiTilers Route
+nachzubauen. Das ist eine eigene kleine Aufgabe und keine Zeile in diesem PR.
 
 ### 4.2 `frontend/src/types.ts`, `datasets.ts` — drei Felder und zwei reine Funktionen
 

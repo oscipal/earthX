@@ -406,18 +406,46 @@ class TestOnlyReleasedZoomLevels:
         response = client.get(f"{BASE}/tiles/WebMercatorQuad/20/1/1", params={"asset": "visual"})
         assert response.status_code == 400
 
-    @pytest.mark.parametrize("route", ["statistics", "preview"])
-    def test_what_carries_no_level_is_untouched(
-        self, narrow_client: TestClient, fetched: list[str], route: str
+    def test_statistics_carries_no_level_and_is_untouched(
+        self, narrow_client: TestClient, fetched: list[str]
     ) -> None:
-        """Statistics are answered on the coarsest level there is and a crop at the
-        asset's own resolution (adr/0007 §12.11 point 8) — neither names a zoom, so
-        neither is a tile this check has anything to say about."""
-        response = narrow_client.get(f"{BASE}/{route}", params={"asset": "visual"})
+        """Statistics are answered on the coarsest level there is (adr/0007 §12.11
+        point 8) — no zoom is named, so this check has nothing to say about them."""
+        response = narrow_client.get(f"{BASE}/statistics", params={"asset": "visual"})
 
         # Past the check and into the read, which has no source to read from here.
         assert response.status_code != 400, response.text
         assert fetched == [ITEM]
+
+    def test_there_is_no_preview_route_to_slip_past_the_check(
+        self, narrow_client: TestClient, fetched: list[str]
+    ) -> None:
+        """`/preview` carried no level *and* computed no target resolution, so for a
+        Zarr dataset it read the native one — the read the released range exists to
+        prevent. It is not registered any more (`access.tiles`), and nothing asks
+        for it (M2-10 review, finding 3)."""
+        assert narrow_client.get(f"{BASE}/preview", params={"asset": "visual"}).status_code == 404
+        assert fetched == []
+
+    def test_only_one_tile_matrix_set_is_served(
+        self, narrow_client: TestClient, opened: list[str]
+    ) -> None:
+        """The released range is a range of WebMercatorQuad levels (adr/0007 §12.10).
+        A second grid would let the same number mean two resolutions — z14 in
+        WorldCRS84Quad is about one WebMercator level finer — and walk straight
+        through this check (M2-10 review, finding 2).
+
+        Refused by the route's own parameter type, which is why this is a 422 and
+        not the 400 above, and why it is `opened` rather than `fetched` that stays
+        empty: FastAPI resolves the path dependency alongside validating the path
+        parameters, the same as for any other malformed tile address here.
+        """
+        response = narrow_client.get(
+            f"{BASE}/tiles/WorldCRS84Quad/14/1/1", params={"asset": "visual"}
+        )
+
+        assert response.status_code == 422, response.text
+        assert opened == []
 
     def test_a_dataset_that_names_no_range_serves_no_tiles(
         self, client: TestClient, fetched: list[str], opened: list[str]

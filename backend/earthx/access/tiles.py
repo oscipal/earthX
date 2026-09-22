@@ -29,9 +29,11 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
+import morecantile
 import rasterio
 from attrs import define, field
 from fastapi import Depends
+from morecantile.defaults import TileMatrixSets
 from rio_tiler.io import BaseReader
 from starlette.concurrency import run_in_threadpool
 from titiler.core.factory import TilerFactory
@@ -114,6 +116,22 @@ class EarthxTilerFactory(TilerFactory):
     add_viewer: bool = False
     add_part: bool = False
     add_ogc_maps: bool = False
+    # `/preview` is off for two reasons that point the same way (M2-10). It carries
+    # no zoom, so the released-levels check of `api.tiler` has nothing to check it
+    # against; and it computes no target resolution, so for a Zarr dataset it reads
+    # the level the asset names — the native 10 m of sentinel-2-l2a-zarr3, the very
+    # read the released range exists to prevent. Nothing asks for it: the viewer
+    # builds tile URLs, and the browse preview is a tile on the coarsest released
+    # level. A preview worth having would have to pick its own resolution, which is
+    # a task of its own rather than a route left standing.
+    add_preview: bool = False
+
+    # One tile matrix set, because the released range is a range of *its* levels
+    # (`earthx:viewer`, measured in WebMercatorQuad — adr/0007 §12.10). z14 in
+    # WorldCRS84Quad is roughly one WebMercator level finer, so a second grid would
+    # let the same number mean two resolutions and walk straight through the check.
+    # It is also the only grid the client asks for (`frontend/src/api.ts`).
+    supported_tms: TileMatrixSets = TileMatrixSets({"WebMercatorQuad": morecantile.tms.get("WebMercatorQuad")})
 
     def statistics(self) -> None:
         """Register ``GET /statistics`` — the same answer as TiTiler's, with a cache.

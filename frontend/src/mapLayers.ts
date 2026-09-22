@@ -143,18 +143,19 @@ function placeRaster(
   );
 }
 
-// Full tile URL for a full-res overlay: `info.tileUrl` already carries the
-// mandatory `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
-// stretch/colormap/band params committed via "Apply". Also used by the store
-// to snapshot a layer.
-export function buildTileUrl(info: DownloadedInfo, render: AppliedRender): string {
+// Full tile URL from a template: the template already carries the mandatory
+// `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
+// stretch/colormap/band params — committed via "Apply" for a full-resolution
+// overlay, taken straight from the registry for a browse preview. Also used by
+// the store to snapshot a layer.
+export function buildTileUrl(template: string, render: AppliedRender): string {
   const params = new URLSearchParams();
   if (render.bidx) params.set('bidx', render.bidx);
   if (render.expression) params.set('expression', render.expression);
   if (render.colormapName) params.set('colormap_name', render.colormapName);
   if (render.rescale) params.set('rescale', render.rescale);
   const q = params.toString();
-  return q ? `${info.tileUrl}&${q}` : info.tileUrl;
+  return q ? `${template}&${q}` : template;
 }
 
 export function ensureBaseLayers(map: MapLibreMap): void {
@@ -317,7 +318,7 @@ function addPreview(
       map,
       `m-tiles-src-${i}`,
       `m-tiles-lyr-${i}`,
-      buildTileTemplate(dataset.id, item.id, plan.asset),
+      buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render),
       item.bbox,
       1,
       { minZoom: plan.zoom, maxZoom: plan.zoom },
@@ -345,7 +346,7 @@ function addPreview(
 function addTiles(map: MapLibreMap, info: DownloadedInfo, i: number, render: AppliedRender): void {
   const srcId = `m-tiles-src-${i}`;
   const lyrId = `m-tiles-lyr-${i}`;
-  placeRaster(map, srcId, lyrId, buildTileUrl(info, render), info.bounds, 1, info);
+  placeRaster(map, srcId, lyrId, buildTileUrl(info.tileUrl, render), info.bounds, 1, info);
   dynSourceIds.push(srcId);
   dynLayerIds.push(lyrId);
 }

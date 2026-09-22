@@ -269,11 +269,16 @@ class TestTheNameACropGetsInsideTheZip:
     def test_nothing_outside_a_plain_name_survives(self, asset: str, expected: str) -> None:
         assert dl.crop_filename(asset) == expected
 
-    def test_two_keys_that_clean_to_the_same_name_are_not_silently_merged(self) -> None:
-        """Both land on one entry, which a ZIP allows and no user could untangle.
-        Nothing in M2 can produce it — the tile route resolves one asset per request
-        and the download's asset list is deduplicated — so this pins the behaviour
-        rather than blessing it: whoever hits it sees it here first."""
+    def test_two_different_keys_can_clean_to_the_same_name(self) -> None:
+        """A known, unresolved collision, pinned so that whoever hits it sees it here
+        first: `b04:b03` and `b04,b03` are different asset keys and become the same
+        file, which a ZIP allows and no user could untangle.
+
+        Deduplicating the request (`api.tiler.download_crop`) removes the case that
+        can actually happen — the same key asked for twice — but not this one. It
+        needs two keys that differ only in a character the cleaning removes, and no
+        registry entry in M2 carries such a pair.
+        """
         assert dl.crop_filename("b04:b03") == dl.crop_filename("b04,b03")
 
     def test_the_notice_names_the_key_the_cleaned_file_came_from(self) -> None:
