@@ -215,7 +215,7 @@ class TestBuildDownloadZip:
         ]
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
-            reader_cls=FakeReader,
+            open_reader=FakeReader,
             crops=crops,
             aoi_geometry=GOOD_AOI,
             item_ids=["ITEM1"],
@@ -250,7 +250,7 @@ class TestBuildDownloadZip:
         crops = [dl.AssetCrop(asset="visual", paths=(path(),))]
         dl.build_download_zip(
             config=SENTINEL_2_L2A,
-            reader_cls=FakeReader,
+            open_reader=FakeReader,
             crops=crops,
             aoi_geometry=GOOD_AOI,
             item_ids=["ITEM1"],

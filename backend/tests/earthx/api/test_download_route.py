@@ -82,7 +82,7 @@ def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
         # answer from memory whatever the caller would have resolved with.
         lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
     )
-    monkeypatch.setattr("earthx.api.tiler.CogReader", FakeReader)
+    monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: FakeReader(src_path))
     app = build_app(REGISTRY, lifespan=lifespan)
     with TestClient(app) as test_client:
         yield test_client
@@ -152,7 +152,7 @@ class TestAcceptanceCriteria:
         # answer from memory whatever the caller would have resolved with.
         lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
         )
-        monkeypatch.setattr("earthx.api.tiler.CogReader", FakeReader)
+        monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: FakeReader(src_path))
         app = build_app(registry, lifespan=lifespan)
         with TestClient(app) as test_client:
             response = _download(test_client)

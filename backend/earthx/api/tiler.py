@@ -10,9 +10,11 @@ What is composed:
 
 * **the path dependency** — ``dataset`` and ``item`` from the path, ``asset``
   from the query, resolved through the registry and the adapter into an
-  :class:`~earthx.readers.cog.AssetPath`. This is the only place in the process
-  where an address is built, and it cannot build one without ``check_url``. There
-  is no free ``url`` parameter anywhere in the schema; a test proves it.
+  :class:`~earthx.readers.cog.AssetPath` or, where the registry says the dataset is
+  Zarr, a :class:`~earthx.readers.zarr_reader.ZarrAsset` (M2-09a). This is the only
+  place in the process where an address is built, the only place the format is
+  decided, and it cannot build either without ``check_url``. There is no free
+  ``url`` parameter anywhere in the schema; a test proves it.
 * **the environment dependency** — ``gdal_options(policy)``, so the central GDAL
   configuration of M1-03 applies at every endpoint rather than wherever someone
   remembered it.
@@ -54,7 +56,7 @@ from earthx.access.download import (
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
 )
-from earthx.access.tiles import EarthxTilerFactory
+from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters.earth_search import (
     InvalidQuery,
     UnknownCollection,
@@ -63,12 +65,13 @@ from earthx.adapters.earth_search import (
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DatasetRegistry, LicenseTier, UnknownDatasetError
+from earthx.catalog.registry import DataFormat, DatasetRegistry, LicenseTier, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout
 from earthx.gateway.gdal import gdal_options
-from earthx.readers.cog import AssetPath, CogReader, asset_path
+from earthx.readers.cog import AssetPath, asset_path
+from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, zarr_asset
 
 LOGGER = logging.getLogger("earthx.api.tiler")
 
@@ -76,6 +79,10 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # metadata of that very item. The tiler answers under its own port (docker-compose),
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
+
+# The formats a reader exists for. `LEGACY` is the prototype's shape and has none
+# in the target path, so it is a 501 rather than an attempt (adr/0007 §6 point 2).
+_READABLE_FORMATS = frozenset({DataFormat.COG, DataFormat.ZARR})
 
 # The download route (M2-06) names only the dataset in its path — the item(s) and
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
@@ -124,12 +131,56 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail="the item could not be fetched") from None
 
 
+def _proj_code(stac_item: dict[str, Any]) -> str | None:
+    """The item's own CRS, in either spelling STAC has for it.
+
+    ``proj:code`` is the projection extension v2, ``proj:epsg`` the v1 field our own
+    API still emits (adr/0007 §6 point 4). A Zarr store may carry no CRS at all
+    (§3.4), and then this is the only place it can come from; where the store does
+    carry one, this stays the fallback.
+    """
+    properties = stac_item.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    code = properties.get("proj:code")
+    if isinstance(code, str) and code:
+        return code
+    epsg = properties.get("proj:epsg")
+    return f"EPSG:{epsg}" if isinstance(epsg, int) else None
+
+
 def _resolve_asset_path(
     state: Any, stac_item: dict[str, Any], *, dataset: str, item: str, asset: str
-) -> AssetPath:
-    """The href of ``asset`` on ``stac_item``, cleared through the gateway policy."""
+) -> AssetPath | ZarrAsset:
+    """The href of ``asset`` on ``stac_item``, cleared through the gateway policy.
+
+    **The registry's ``format`` picks the reader**, here and nowhere else: `access`
+    renders whatever it is handed and the client sends the same tile URL either way
+    (M2-09a). A format without a reader is refused rather than read as a COG — a
+    silent fallback would turn a registry mistake into a wrong picture.
+    """
     href = _resolve_asset_href(stac_item, asset)
+    registry: DatasetRegistry = state.earthx_registry
     try:
+        config = registry.get(dataset)
+    except UnknownDatasetError:
+        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+    if config.format not in _READABLE_FORMATS:
+        raise HTTPException(
+            status_code=501,
+            detail=f"{dataset!r} is stored as {config.format.value}, which no reader opens",
+        )
+    try:
+        if config.format is DataFormat.ZARR:
+            return zarr_asset(
+                href,
+                state.earthx_policy,
+                dataset_id=dataset,
+                item_id=item,
+                asset=asset,
+                crs=_proj_code(stac_item),
+                resolve=state.earthx_resolver,
+            )
         return asset_path(
             href,
             state.earthx_policy,
@@ -152,8 +203,8 @@ async def dataset_asset_path(
     dataset: Annotated[str, Path(description="dataset id of the registry")],
     item: Annotated[str, Path(description="item id at the source")],
     asset: Annotated[str, Query(description="asset key of the item, e.g. `visual`")],
-) -> AssetPath:
-    """Turn dataset, item and asset into a path GDAL may open — and nothing else.
+) -> AssetPath | ZarrAsset:
+    """Turn dataset, item and asset into something a reader may open — and nothing else.
 
     ``asset`` is required rather than defaulted from the registry's standard
     visualisation: a tile URL is supposed to say what it shows (adr/0001 Z4), and a
@@ -240,7 +291,7 @@ async def download_crop(
         zip_bytes = await run_in_threadpool(
             build_download_zip,
             config=config,
-            reader_cls=CogReader,
+            open_reader=open_asset,
             crops=crops,
             aoi_geometry=body.aoi,
             item_ids=[matched_item["id"] for matched_item in matched],
@@ -370,6 +421,15 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     @app.exception_handler(RasterioError)
     async def _rasterio_error(request: Request, error: RasterioError):
         return _problem(502, "the asset could not be read from the source")
+
+    @app.exception_handler(ZarrAssetError)
+    async def _zarr_asset_error(request: Request, error: ZarrAssetError):
+        # The item and the store disagree — a missing group, a missing variable, no
+        # consolidated metadata, no CRS anywhere (adr/0007 §3.4, §3.5). The caller
+        # asked for an asset the item advertises, so this is the source's side of the
+        # line, like every other 502 here. The message names dataset, item and asset,
+        # never an address.
+        return _problem(502, str(error))
 
     @app.get("/health")
     def health() -> dict:
