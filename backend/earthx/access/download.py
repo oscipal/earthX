@@ -31,6 +31,7 @@ rule the client already knows from the time line grouping (F5, F11).
 
 from __future__ import annotations
 
+import re
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -45,6 +46,7 @@ from rio_tiler.errors import EmptyMosaicError, PointOutsideBounds, TileOutsideBo
 from rio_tiler.io import BaseReader
 from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
+from rioxarray.exceptions import NoDataInBounds
 from shapely.errors import ShapelyError
 from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
@@ -65,6 +67,7 @@ __all__ = [
     "build_notice_text",
     "check_size_cap",
     "crop_asset",
+    "crop_filename",
     "filter_items_intersecting_aoi",
     "parse_aoi_geometry",
 ]
@@ -91,7 +94,14 @@ _BYTES_PER_PIXEL_WORST_CASE = 4
 
 NOTICE_FILENAME = "ATTRIBUTION.txt"
 
-_ALLOWED_MOSAIC_EXCEPTIONS = (TileOutsideBounds, PointOutsideBounds)
+# "This read does not touch the data" — one exception per reader for the same
+# fact. rio-tiler raises the first two for a COG; `NoDataInBounds` is what
+# rioxarray raises under `XarrayReader.feature` when the AOI misses the array,
+# and without it here an AOI beside a Zarr scene would be a 500 instead of the
+# 400 the same AOI gets on a COG (found by M2-10's first crop over the second
+# format). In a mosaic all three mean the same thing as well: skip this scene
+# and take the next one.
+_ALLOWED_MOSAIC_EXCEPTIONS = (TileOutsideBounds, PointOutsideBounds, NoDataInBounds)
 
 
 class InvalidAoi(ValueError):
@@ -227,7 +237,33 @@ def _image_to_cog_bytes(image: ImageData) -> bytes:
             return cog_mem.read()
 
 
-def build_notice_text(config: DatasetConfig, *, item_ids: Sequence[str]) -> str:
+# Everything a ZIP member name may keep. Deliberately narrow rather than a list
+# of what Windows forbids: an allowlist cannot be out of date the next time an
+# asset key picks up a new character.
+_SAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def crop_filename(asset: str) -> str:
+    """The name the crop of ``asset`` gets inside the ZIP.
+
+    The asset key travels into the archive, and for a Zarr dataset it is not a
+    plain word: ``SR_10m:b04,b03,b02`` names the group the item advertises plus
+    the variables to composite (adr/0007 §12.11). A ``:`` is not a legal
+    filename on Windows — depending on the extractor the entry fails or is
+    silently renamed — so every run of anything outside ``[A-Za-z0-9._-]``
+    becomes a single ``_``. ``visual`` stays ``visual``; the original key is
+    named in the notice file, so nothing about the archive becomes a guess.
+    """
+    # Leading dots go too: `..` survives the allowlist on its own (a dot is a legal
+    # filename character) and a member called `..` or `.._x` is a name no archive
+    # should carry, whatever the extractor makes of it.
+    cleaned = _SAFE_IN_FILENAME.sub("_", asset).strip("._")
+    # A key made only of separators would otherwise leave an empty name, and a
+    # ZIP entry called ".tif" is not something a user can tell apart from another.
+    return f"{cleaned or 'asset'}.tif"
+
+
+def build_notice_text(config: DatasetConfig, *, item_ids: Sequence[str], assets: Sequence[str] = ()) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
     Registry.py's own rule stays intact: attribution and the terms notice are
@@ -256,6 +292,13 @@ def build_notice_text(config: DatasetConfig, *, item_ids: Sequence[str]) -> str:
         lines.append(config.citation)
 
     lines.append("Items: " + ", ".join(item_ids))
+    if assets:
+        # The file names in the archive are cleaned (`crop_filename`), so the keys
+        # they came from are written out here — otherwise a Zarr crop's bands
+        # could not be traced back to what was asked for.
+        lines.append(
+            "Assets: " + ", ".join(f"{asset} ({crop_filename(asset)})" for asset in assets)
+        )
     lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
 
@@ -286,6 +329,9 @@ def build_download_zip(
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         for crop in crops:
             image = crop_asset(open_reader, crop.paths, aoi_geometry, max_size=max_size)
-            archive.writestr(f"{crop.asset}.tif", _image_to_cog_bytes(image))
-        archive.writestr(NOTICE_FILENAME, build_notice_text(config, item_ids=item_ids))
+            archive.writestr(crop_filename(crop.asset), _image_to_cog_bytes(image))
+        archive.writestr(
+            NOTICE_FILENAME,
+            build_notice_text(config, item_ids=item_ids, assets=[crop.asset for crop in crops]),
+        )
     return buffer.getvalue()

@@ -241,3 +241,47 @@ class TestBuildDownloadZip:
             item_ids=["ITEM1"],
         )
         assert write_paths, "the test did not actually exercise a write path"
+
+
+class TestTheNameACropGetsInsideTheZip:
+    """M2-10: the asset key travels into the archive, and for a Zarr dataset it is
+    not a plain word — ``SR_10m:b04,b03,b02`` names the group the item advertises
+    plus the variables to composite (adr/0007 §12.11). A ``:`` is not a legal
+    filename on Windows, so the archive would fail to extract or be silently
+    renamed where it matters least: on the user's disk."""
+
+    def test_a_plain_asset_key_is_left_alone(self) -> None:
+        assert dl.crop_filename("visual") == "visual.tif"
+
+    def test_a_zarr_group_key_loses_its_separators(self) -> None:
+        assert dl.crop_filename("SR_10m:b04,b03,b02") == "SR_10m_b04_b03_b02.tif"
+
+    @pytest.mark.parametrize(
+        ("asset", "expected"),
+        [
+            ("a/b", "a_b.tif"),  # a path separator would open a directory in the ZIP
+            ("../escape", "escape.tif"),  # ... and this one would leave it entirely
+            ("b04  b03", "b04_b03.tif"),  # a run collapses, it does not repeat
+            ("::::", "asset.tif"),  # nothing left over is still a nameable file
+            ("", "asset.tif"),
+        ],
+    )
+    def test_nothing_outside_a_plain_name_survives(self, asset: str, expected: str) -> None:
+        assert dl.crop_filename(asset) == expected
+
+    def test_two_keys_that_clean_to_the_same_name_are_not_silently_merged(self) -> None:
+        """Both land on one entry, which a ZIP allows and no user could untangle.
+        Nothing in M2 can produce it — the tile route resolves one asset per request
+        and the download's asset list is deduplicated — so this pins the behaviour
+        rather than blessing it: whoever hits it sees it here first."""
+        assert dl.crop_filename("b04:b03") == dl.crop_filename("b04,b03")
+
+    def test_the_notice_names_the_key_the_cleaned_file_came_from(self) -> None:
+        notice = dl.build_notice_text(
+            SENTINEL_2_L2A, item_ids=["ITEM1"], assets=["SR_10m:b04,b03,b02"]
+        )
+        assert "SR_10m:b04,b03,b02" in notice
+        assert "SR_10m_b04_b03_b02.tif" in notice
+
+    def test_a_crop_without_named_assets_keeps_the_notice_as_it_was(self) -> None:
+        assert "Assets:" not in dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
