@@ -1,10 +1,11 @@
 # M2-08 — Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig: Umsetzungsplan
 
-**Status:** **F1, F3, F4, F5, F6 von Otto am 22.09.2026 wie empfohlen
-freigegeben. F2 ist offen und der erste Vorschlag ist gefallen** — §4.4 ist nach
-Ottos Prüfauftrag neu geschrieben, F2 stellt drei neue Wege nebeneinander. Die
-Umsetzung läuft als drei PRs (§7); dies ist der erste, **M2-08-1 — Punkte 1 bis
-8**, der F2 nicht braucht.
+**Status:** **Von Otto am 22.09.2026 vollständig freigegeben.** F1, F3, F4, F5
+und F6 wie empfohlen. **F2 gegen alle Vorschläge:** Punkt 10 heißt in M2 „der
+Datensatz ist vom T-D-Smoke abgedeckt", das sichtbare Prüfdatum kommt mit M5
+(§4.4, Fassung v1.1 von D4 im `ENTSCHEIDUNGSLOG.md`). Die Umsetzung läuft als
+drei PRs (§7): **M2-08-1** (Punkte 1–8) ist umgesetzt, **M2-08-2** (Punkt 9) ist
+dieser PR, **M2-08-3** (Punkt 10) folgt.
 **Ort im Repo:** `docs/plans/m2-08-onboarding-checkliste.md`
 **Aufgabe:** M2-08 aus `docs/plans/m2-format-und-viewer.md`.
 **Grundlage:** `projektuebersicht.md` §5 (die zehn Punkte, Fassung v1 nach D4);
@@ -247,21 +248,39 @@ und **im Test überprüfbar** sind nicht dasselbe. Liegt die Datei im Repo, kann
 der Checklisten-Test ihren Inhalt wirklich prüfen; wird sie zur Laufzeit geholt,
 prüft der Test nur noch, dass der Mechanismus trägt.
 
-**Der Teil, der so oder so im Repo prüfbar bleibt.** Jedes Modul in `tests_live/`
-trägt `@pytest.mark.live_dataset("<id>")`. Damit kann der Checklisten-Test ohne
-Netz feststellen, ob ein Registry-Eintrag vom T-D-Smoke überhaupt **abgedeckt**
-ist — die Hälfte von Punkt 10, die eine Aufnahmeregel ist. Das Datum selbst ist
-eine Messung und kommt von dort, wofür F2 sich entscheidet. Mit F3 (zweiter Job)
-gilt die Abdeckung für beide Datensätze.
+**Ottos Entscheidung (22.09.2026): keiner der drei Wege, D4 wird enger gefasst.**
+Punkt 10 heißt in M2 **„der Datensatz ist vom T-D-Smoke abgedeckt"** — die
+Hälfte, die eine Aufnahmeregel ist und im Repo ohne Netz prüfbar bleibt. Jedes
+Modul in `tests_live/` trägt `@pytest.mark.live_dataset("<id>")`; der
+Checklisten-Test hält die Marker gegen die Registry. Mit F3 (zweiter Job) gilt
+die Abdeckung für beide Datensätze.
 
-### 4.5 Sichtbar im Viewer
+Das **sichtbare Prüfdatum** kommt erst mit den eigenen Health-Checks in M5. Bis
+dahin zeigt die Plattform gar keines — lieber keine Angabe als eine, die
+altert und dabei wie eine Messung aussieht. Festgehalten als Fassung v1.1 von
+Punkt 10 in `projektuebersicht.md` §5 und als Zeile im `ENTSCHEIDUNGSLOG.md`.
 
-`types.ts` bekommt `EarthxHealth { status; last_checked_ok }` und das Feld
-`'earthx:health'` an `Collection`. Unter der Datensatzauswahl im `ControlPanel`
-steht eine Zeile „Last checked <Datum>", bei fehlendem Wert „Last checked —
-never". Die Formatierung liegt in `frontend/src/lastChecked.ts` als reine
-Funktion mit Vitest-Fällen (Datum, `null`, unlesbarer Wert) — Oberflächentests
-gibt es weiterhin nicht (F2 aus dem M2-Plan). Alle Texte englisch (D25).
+Daraus folgt eine Aufräumarbeit, die zu M2-08-3 gehört: `HealthInfo.last_checked_ok`
+trägt heute das Datum des Onboarding-Checks und heißt trotzdem „zuletzt
+erfolgreich geprüft". Das darf so nicht stehen bleiben. Zwei Wege, beide klein:
+
+- **den Namen richtigstellen** (`onboarding_checked_at` o. ä.), oder
+- **das Feld streichen** und `earthx:health` auf `status` zurücknehmen — die
+  Angabe steckt bereits in `AccessInfo.token_free_checked_at` (Punkt 6), und ein
+  zweites Feld mit demselben Inhalt und einem irreführenden Namen ist genau die
+  Verwechslung, die Otto ausgeschlossen hat. Berührt die Gestalt von
+  `earthx:health` in `architekturplan.md` 5.1, deshalb mit Nachtrag dort.
+
+Der Vorschlag wird mit M2-08-3 vorgelegt; bis dahin ändert sich am Feld nichts.
+
+### 4.5 Was der Viewer zeigt — und was nicht
+
+**Nichts Neues.** Das Frontend kennt `earthx:health` heute nicht (`types.ts` führt
+`earthx:access`, aber kein `health`), und nach der Entscheidung zu F2 bleibt das
+in M2 so: kein „Last checked" im `ControlPanel`, keine `lastChecked.ts`, keine
+Vitest-Fälle dafür. Ein Prüfdatum anzuzeigen, das keine Prüfung belegt, wäre ein
+Verstoß gegen Prinzip 9 der Projektübersicht („Ehrlichkeit in der Anzeige").
+Die Anzeige kommt mit M5, zusammen mit dem Wert, den sie zeigen soll.
 
 ---
 
@@ -313,11 +332,14 @@ gesetzt (je nach F5). Punkt 9 und 10 sind darin als noch nicht geprüft benannt.
 **M2-08-2 — Punkt 9.** `mini_cog.py`, `synthetic_asset.py`,
 `test_onboarding_endtoend.py`. *Rund 320 Zeilen.*
 
-**M2-08-3 — Punkt 10.** Marker und Hook in `tests_live`, Workflow-Schritt,
-`catalog/live_smoke.py`, `to_stac_collection`, Frontend-Zeile, Punkt 10 in
-`evaluate` scharf gestellt, Zeile im `ENTSCHEIDUNGSLOG.md`. *Rund 350 Zeilen.*
+**M2-08-3 — Punkt 10 in der Fassung v1.1.** Marker `live_dataset` in
+`tests_live`, zweiter Live-Smoke-Job für die EOPF-Quelle (F3), Punkt 10 in
+`evaluate` scharf gestellt als Abdeckungsprüfung, und die Aufräumarbeit an
+`HealthInfo.last_checked_ok` aus §4.4. Kein Statuszweig, kein Abruf zur
+Laufzeit, keine Frontend-Zeile. *Rund 200 Zeilen statt der ursprünglich
+geschätzten 350.*
 
-In einem PR wären das rund 970 Zeilen — weit über dem Richtwert von 400.
+In einem PR wären das rund 820 Zeilen — weit über dem Richtwert von 400.
 
 ---
 
@@ -360,8 +382,8 @@ wird kein Produktivcode angefasst.
 
 ## 11. Fragen an Otto
 
-**Beantwortet am 22.09.2026:** F1, F3, F4, F5 und F6 wie empfohlen. **Offen: F2**,
-nach dem Befund in §4.4 neu gestellt.
+**Alle beantwortet am 22.09.2026.** F1, F3, F4, F5 und F6 wie empfohlen; **F2
+gegen alle drei Vorschläge** — stattdessen wird D4 enger gefasst (§4.4).
 
 **F1 — Schnitt.** ✅ *(a)* M2-08 in einem PR liegt bei rund 970 Zeilen.
 
@@ -370,10 +392,14 @@ b) Zwei PRs: Punkte 1–8 und 9 zusammen, Punkt 10 getrennt.
 c) Einer, Richtwert deutlich überschritten.
 
 **F2 — Wie kommt der Zeitpunkt des letzten grünen T-D-Laufs in die Plattform?**
-Neu gestellt, nachdem der erste Vorschlag gefallen ist (§4.4). Alle drei Wege
-kommen **ohne Secret** und **ohne laufende Handarbeit** aus; der Unterschied
-liegt darin, wie aktuell der angezeigte Wert ist und wie viel davon ein Test
-prüfen kann.
+✅ **Beantwortet am 22.09.2026: keiner der drei Wege.** D4 wird stattdessen enger
+gefasst — Punkt 10 heißt in M2 „vom T-D-Smoke abgedeckt", geprüft über den
+Marker in `tests_live/`; ein sichtbares Prüfdatum kommt erst mit M5 (§4.4, §4.5).
+Die drei Wege bleiben als Historie stehen.
+
+Sie kamen alle **ohne Secret** und **ohne laufende Handarbeit** aus; der
+Unterschied lag darin, wie aktuell der angezeigte Wert ist und wie viel davon ein
+Test prüfen kann.
 
 a) **Statuszweig, und `catalog-load` holt die Datei.** Der Live-Smoke pusht bei
    Grün mit `GITHUB_TOKEN` (`contents: write`) auf den ungeschützten Zweig
