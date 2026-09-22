@@ -60,6 +60,7 @@ export default function MapView() {
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const projection = useAppStore((s) => s.projection);
 
   // --- create the map once ---
   useEffect(() => {
@@ -70,8 +71,18 @@ export default function MapView() {
       center: [10, 20],
       zoom: 1.6,
       attributionControl: { compact: true },
+      // No rotate, no tilt (V-1, D27): mouse and touch only pan and zoom.
+      // `maxPitch: 0` blocks tilt regardless of input method; the drag/touch/
+      // keyboard handlers below additionally drop rotation itself so a
+      // pinch-rotate or ctrl-drag gesture doesn't just silently do nothing.
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      maxPitch: 0,
     });
     mapRef.current = map;
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
 
     const initDraw = () => {
@@ -123,6 +134,7 @@ export default function MapView() {
     const onStyleLoad = () => {
       ensureBaseLayers(map);
       const st = useAppStore.getState();
+      map.setProjection({ type: st.projection });
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       syncLayers(map, st.layers);
@@ -183,6 +195,13 @@ export default function MapView() {
   useEffect(() => {
     if (drawRef.current && readyRef.current) applyToolMode(drawRef.current, toolMode);
   }, [toolMode]);
+
+  // --- globe / flat map (V-1) — a display-only switch (D27); backend and
+  // tile URLs are unaffected, `setProjection` just re-renders the same layers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) map.setProjection({ type: projection });
+  }, [projection]);
 
   // --- AOI geometry ---
   useEffect(() => {
