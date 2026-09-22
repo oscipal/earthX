@@ -1,8 +1,10 @@
-"""The registry entries. One dataset so far: Sentinel-2 L2A over Earth Search v1.
+"""The registry entries: Sentinel-2 L2A over Earth Search v1 (COG), and
+Sentinel-2 L2A over the EOPF Sentinel Zarr Samples Service (Zarr, D23).
 
 Decided in docs/adr/0003-erster-datensatz.md §6 (first token-free dataset) and
-§11.2 (licence). Nothing here is a decision of its own; every value carries the
-place it comes from.
+§11.2 (licence), and in docs/adr/0007-zweites-format-zarr.md §12.11 (second
+dataset — the fifteen implementation conditions). Nothing here is a decision of
+its own; every value carries the place it comes from.
 
 KLAERUNGEN B13 stage M1-M4: entries live in Python. From M5 they become curated
 YAML and this module turns into the loader that builds the same objects.
@@ -10,7 +12,7 @@ YAML and this module turns into the loader that builds the same objects.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from earthx.catalog.registry import (
     AccessInfo,
@@ -27,11 +29,13 @@ from earthx.catalog.registry import (
     HealthStatus,
     LicenseInfo,
     LicenseTier,
+    Maturity,
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
     TermsOfUse,
     ViewerInfo,
+    ZarrInfo,
 )
 
 # Reachability of earth-search.aws.element84.com, measured in adr/0003 §10.1.
@@ -177,6 +181,146 @@ SENTINEL_2_L2A = DatasetConfig(
     # Reachability, not health in the sense M5 will measure it: adr/0003 §10.1 got
     # HTTP 200 on /v1/collections/sentinel-2-c1-l2a, nothing beyond that.
     health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_REACHABILITY_CHECKED),
+    # Element 84's Collection 1 is a released, versioned product line, not a pilot.
+    maturity=Maturity.STABLE,
+    zarr=None,
 )
 
-REGISTRY = DatasetRegistry((SENTINEL_2_L2A,))
+# adr/0007 §12: measured against the real collection on 20.09.2026 (Nachmessung
+# M2-03b) and again on 22.09.2026 in the M2-09b plan step (§3 of the plan) — both
+# hold unchanged. The reachability the field below records is this session's own
+# recheck, over `curl`, not a claim that a Cloud session can reach it through
+# `gateway` (adr/0002 T-D, plan §10 F7).
+_EOPF_CHECKED = date(2026, 9, 22)
+
+# Same Sentinel Data Legal Notice as the first dataset (D18, adr/0007 §12.6): the
+# EOPF item itself links an alias host (sentinel.esa.int) for the identical
+# document; the canonical URL from adr/0003 is kept so both entries carry one
+# record of the same terms rather than two that happen to agree today.
+SENTINEL_2_L2A_ZARR3 = DatasetConfig(
+    # The upstream collection id, and the *only* Sentinel-2 collection of this
+    # source in the registry (adr/0007 §12.11 point 12): `sentinel-2-l2a` (the
+    # older, ungrouped v2 layout) shares item ids with this one for current days
+    # and is deliberately left out, or the two would collide in the federated
+    # search's id space.
+    dataset_id="sentinel-2-l2a-zarr3",
+    title="Sentinel-2 L2A (Zarr3)",
+    description=(
+        "Sentinel-2 Level-2A as cloud-native Zarr (v3), served by the EOPF "
+        "Sentinel Zarr Samples Service (EODC) from data.eodc.eu. Six resolution "
+        "groups from 10 m to 720 m in one sharded store, CRS carried in the store "
+        "itself (adr/0007 §12.3). The provider marks this collection 'staging' "
+        "(earthx:maturity) — it may disappear without notice (adr/0007 §12.11 "
+        "point 14)."
+    ),
+    # The collection's own `cite-as` link (checked 22.09.2026); no separate
+    # persistent citation beyond it.
+    doi="https://doi.org/10.5270/S2_-znk9xsj",
+    citation=None,
+    data_class=DataClass.RASTER_TIME_SERIES,
+    format=DataFormat.ZARR,
+    # Measured at the collection itself (adr/0007 §12.6, rechecked 22.09.2026):
+    # not a placeholder like the first dataset's M1 entry — M2-09b reads the
+    # source before writing this.
+    spatial_extent=SpatialExtent(bbox=(-33.00058364868164, 34.20681381225586, 179.58160400390625, 72.0995864868164)),
+    # Start is the earliest item measured (adr/0007 §12.6: "erst ab 16. Juli
+    # belegt"); the end stays open — the archive is a moving, growing window
+    # (rund 1300 Items/Tag), not a closed one like a one-off product.
+    temporal_extent=TemporalExtent(start=datetime(2026, 7, 16, 10, 6, 1, tzinfo=timezone.utc), end=None),
+    capabilities=Capabilities(
+        roi=True,
+        time_range=True,
+        band_math=True,
+        interpolation=True,
+        ml_processing=True,
+        # Optical, dual-pol source data — decomp.py stays out (ENTSCHEIDUNGEN §3).
+        quad_pol=False,
+        # A time series, not a single coverage: density, not extent (adr/0004 §5).
+        single_coverage_product=False,
+    ),
+    license=LicenseInfo(
+        spdx_id=None,
+        name="Sentinel Data Legal Notice",
+        url=_LEGAL_NOTICE_URL,
+        commercial_use=True,
+        distribution=True,
+        derivatives=True,
+        share_alike=False,
+        attribution_required=True,
+        tier=LicenseTier.PROCESSING,
+        attribution_modified="Contains modified Copernicus Sentinel data {year}",
+        attribution_unmodified="Copernicus Sentinel data {year}",
+        # Identical text to the first dataset (D18) — one Sentinel Data Legal
+        # Notice, passed on the same way regardless of which source served the
+        # pixels. Otto, 22.09.2026 (M2-15): the platform offers no language
+        # choice at all, so the key set is exactly {"en"} — TermsOfUse checks
+        # this now (catalog/registry.py).
+        terms=TermsOfUse(
+            url=_LEGAL_NOTICE_URL,
+            notice={
+                "en": (
+                    "Use is subject to the Sentinel Data Legal Notice: {terms_url}. The data "
+                    "are provided without any express or implied warranty, including as regards "
+                    "quality and suitability for any purpose; by using them the user renounces "
+                    "any claims for damages against the European Union and the providers of the "
+                    "data. The waiver encompasses any dispute, including contracts and torts "
+                    "claims, that might be filed in court, in arbitration or in any other form "
+                    "of dispute settlement."
+                ),
+            },
+        ),
+    ),
+    access=AccessInfo(
+        token_free_checked_at=_EOPF_CHECKED,
+        method="anonymous HTTPS, no authentication header (adr/0007 §12.1, rechecked 22.09.2026)",
+        # Measured at data.eodc.eu, not at the older objects.eodc.eu (adr/0007
+        # §12.8): `Access-Control-Allow-Origin: *`, including on the `Range`
+        # header a Zarr reader needs. The viewer may load a quicklook straight
+        # from the source under this flag — moot here, since there is none
+        # (§12.7); the flag stays correct regardless of who reads it.
+        cors=True,
+    ),
+    source=SourceInfo(
+        adapter=AdapterKind.EOPF_STAC_V1,
+        endpoint="https://stac.core.eopf.eodc.eu",
+        source_collection_id="sentinel-2-l2a-zarr3",
+        # The only asset host this dataset opens (adr/0007 §12.11 point 5):
+        # `objects.eodc.eu` belongs to the older `sentinel-2-l2a` collection, and
+        # `zipped_product` (1.2 GB, also on data.eodc.eu) is kept out by naming no
+        # asset key for it anywhere a reader would resolve one, not by the host
+        # allowlist (point 10 — the allowlist alone no longer keeps it out).
+        asset_hosts=("data.eodc.eu",),
+        harvest_run=None,
+    ),
+    coverage=CoverageInfo(
+        provider=CoverageProvider.SAMPLE,
+        # Same granule size as the first dataset — this is still Sentinel-2, only
+        # a different store — so the same footprint and the same derived cap
+        # apply (max_geotile_level_for(110.0) == 8, checked by _check_coverage).
+        typical_footprint_km=110.0,
+        max_geotile_level=8,
+    ),
+    # Filled in M2-09b-2 together with the resolution and band selection it
+    # depends on (adr/0007 §12.11 points 2 and 8); the field allows None for
+    # exactly this reason (m1-fundament.md §2 did the same for the first dataset).
+    default_render=None,
+    # Same grouping key as the first dataset: one acquisition day per MGRS tile.
+    # Measured at a real item (22.09.2026): both `datetime` and `grid:code` are
+    # present on every item of this collection.
+    viewer=ViewerInfo(group_by=("datetime", "grid:code")),
+    health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_EOPF_CHECKED),
+    # adr/0007 §12.11 point 14 (Otto's first F8 condition): the provider calls
+    # this collection "staging" in its own title, and that must not be something
+    # a user finds out only once the source disappears.
+    maturity=Maturity.STAGING,
+    # Bands live inside resolution groups (adr/0007 §12.3, plan §3.2): an asset
+    # href names the group only, and the tile URL's asset key carries the
+    # variable after ":" (plan §10 F2). `multiscales` follows a named pilot
+    # convention (measured, plan §3 / adr/0007 §12.3, §12.11 point 2).
+    zarr=ZarrInfo(
+        variable_separator=":",
+        multiscales_convention="zarr-conventions/multiscales v0.1 (pilot)",
+    ),
+)
+
+REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3))

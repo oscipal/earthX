@@ -25,6 +25,7 @@ from earthx.catalog.registry import (
     HealthStatus,
     LicenseInfo,
     LicenseTier,
+    Maturity,
     SourceInfo,
     SpatialExtent,
     TemporalExtent,
@@ -101,6 +102,8 @@ def valid_config() -> DatasetConfig:
         ),
         viewer=ViewerInfo(group_by=("datetime",)),
         health=HealthInfo(status=HealthStatus.OK, last_checked_ok=date(2026, 1, 1)),
+        maturity=Maturity.STABLE,
+        zarr=None,
     )
 
 

@@ -1,0 +1,8 @@
+{
+  "type": "FeatureCollection",
+  "numberReturned": 0,
+  "features": [],
+  "links": [
+    {"rel": "self", "type": "application/json", "href": "https://stac.core.eopf.eodc.invalid/search"}
+  ]
+}

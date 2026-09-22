@@ -20,7 +20,7 @@ import psycopg
 import pytest
 
 from earthx.api.main import app
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
 
@@ -30,6 +30,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "earth_search"
 HOST = "earth-search.aws.element84.com"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
 DATASET_ID = SENTINEL_2_L2A.dataset_id
+ZARR3_DATASET_ID = SENTINEL_2_L2A_ZARR3.dataset_id
 
 
 def load_fixture(name: str) -> dict[str, Any]:
@@ -184,32 +185,52 @@ class TestFederatedSearch:
         assert len(response.json()["features"]) == 2
         assert seen[0].headers["host"] == HOST
 
-    async def test_a_missing_collections_argument_searches_the_one_collection_we_have(
+    async def test_a_missing_collections_argument_is_rejected_with_two_federated_sources(
         self, require_catalog_loaded: None
     ) -> None:
-        """M1's registry holds exactly one dataset, and it is federated (adr/0005
-        rule I: a search without ``collections`` is split per collection and merged
-        — with one collection, that split has exactly one branch)."""
+        """adr/0005 rule I says a search without ``collections`` is split per
+        collection and merged, but a merge across sources needs a real second
+        dataset to build and test against — M2-09b is that second dataset, and a
+        search naming no collection now reaches every federated one at once
+        (M2-09b plan §10 F3). Nothing is sent upstream: the rejection happens
+        before either source is asked."""
         handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
         async with _client(handler) as client:
             response = await client.get("/stac/search")
-        assert response.status_code == 200
-        assert seen[0].headers["host"] == HOST
+        assert response.status_code == 400
+        assert seen == []
+        detail = response.json()["detail"]
+        assert DATASET_ID in detail
+        assert ZARR3_DATASET_ID in detail
 
     async def test_a_search_spanning_more_than_one_source_is_rejected(
         self, require_catalog_loaded: None
     ) -> None:
-        """adr/0005 rule I says such a search is split per collection and merged, but
-        a merge across sources needs a real second dataset to build and test against
-        (M2) — otherwise it is not reachable at all in M1, and a best-effort
-        concatenation nobody could verify stayed correct would only look tested.
-        The one collection twice over is enough to trigger "more than one source",
-        without needing a second dataset that does not exist yet."""
+        """adr/0005 rule I says such a search is split per collection and merged,
+        but a merge across heterogeneous sources needs its own task to build and
+        test — a best-effort concatenation nobody could verify stayed correct
+        would only look tested. Naming both federated datasets explicitly triggers
+        the same rejection as leaving ``collections`` out entirely."""
         handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
         async with _client(handler) as client:
-            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{DATASET_ID}"})
+            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}"})
         assert response.status_code == 400
         assert seen == []
+
+    async def test_the_rejection_message_names_exactly_the_collections_it_saw(
+        self, require_catalog_loaded: None
+    ) -> None:
+        """M2-09b plan §10 F3 (Otto's addition to the recommendation): the sharpened
+        message names the collections a caller can choose between, not just that
+        there is more than one."""
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
+        async with _client(handler) as client:
+            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}"})
+        assert seen == []
+        detail = response.json()["detail"]
+        assert DATASET_ID in detail
+        assert ZARR3_DATASET_ID in detail
+        assert "name exactly one collection" in detail
 
     async def test_the_next_link_carries_our_own_marker_not_the_sources(
         self, require_catalog_loaded: None
@@ -243,6 +264,32 @@ class TestFederatedSearch:
         assert len(body["features"]) == 2  # a page of the fixture's 3 matched items
         assert body["numberMatched"] == 3
         assert seen[0].headers["host"] == HOST
+
+    async def test_numbermatched_is_left_out_when_the_source_has_no_count(self, require_catalog_loaded: None) -> None:
+        """adr/0007 §12.6: EOPF never sends one. Left out, not guessed from the page
+        size — `numberMatched` must not look like a checked total that happens to
+        equal how many items came back."""
+        handler, _ = _answering(httpx.Response(200, json=load_fixture("search_no_count")))
+        async with _client(handler) as client:
+            response = await client.get(f"/stac/collections/{DATASET_ID}/items")
+        assert response.status_code == 200
+        assert "numberMatched" not in response.json()
+
+    async def test_each_item_carries_its_own_links_not_the_sources(self, require_catalog_loaded: None) -> None:
+        """The source's own self/parent/root/collection links must not survive
+        inside a search or item_collection answer — the same rewrite `get_item`
+        already does for a single item (M2-09b, found against the real EOPF
+        source; the gap is the same for Earth Search, its synthetic search
+        fixtures just never carried per-item links before)."""
+        handler, _ = _answering(httpx.Response(200, json=load_fixture("search_no_count")))
+        async with _client(handler) as client:
+            response = await client.get(f"/stac/collections/{DATASET_ID}/items")
+        feature = response.json()["features"][0]
+        by_rel = {link["rel"]: link["href"] for link in feature["links"]}
+        for rel in ("self", "parent", "root", "collection"):
+            assert rel in by_rel
+            assert "earth-search.invalid" not in by_rel[rel]
+            assert by_rel[rel].startswith("http://test/")
 
     async def test_get_item_of_the_federated_collection(self, require_catalog_loaded: None) -> None:
         handler, seen = _answering(httpx.Response(200, json=load_fixture("item")))

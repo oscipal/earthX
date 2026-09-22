@@ -1,0 +1,37 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/raster/v2.0.0/schema.json"
+  ],
+  "id": "SYNTH_S2A_MSIL2A_20260921T141821_T26WME",
+  "collection": "sentinel-2-l2a-zarr3",
+  "geometry": {"type": "Polygon", "coordinates": [[[-28.5, 71.4], [-27.5, 71.4], [-27.5, 71.8], [-28.5, 71.8], [-28.5, 71.4]]]},
+  "bbox": [-28.5, 71.4, -27.5, 71.8],
+  "properties": {
+    "datetime": "2026-09-21T14:18:21Z",
+    "grid:code": "MGRS-26WME",
+    "proj:code": "EPSG:32626",
+    "proj:bbox": [399960.0, 7890240.0, 509760.0, 8000040.0]
+  },
+  "assets": {
+    "SR_10m": {
+      "href": "https://data.eodc.eu/synth/1.zarr/measurements/reflectance/r10m",
+      "gsd": 10,
+      "nodata": 0,
+      "data_type": "uint16",
+      "raster:spatial_resolution": 10,
+      "bands": [
+        {"name": "b04", "description": "Red (band 4)", "eo:common_name": "red", "eo:center_wavelength": 0.665, "eo:full_width_half_max": 0.038}
+      ]
+    },
+    "zipped_product": {
+      "href": "https://data.eodc.eu/synth/1.zarr.zip",
+      "description": "the zipped product archive",
+      "roles": ["data", "metadata", "archive"]
+    }
+  },
+  "links": []
+}

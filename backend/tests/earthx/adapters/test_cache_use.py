@@ -16,7 +16,7 @@ import pytest
 
 from earthx.adapters import SearchParams, get_item, search_items
 from earthx.adapters.cache import SearchCache
-from earthx.adapters.earth_search import TTL_CLOSED_S, TTL_ITEM_S, TTL_OPEN_EDGE_S
+from earthx.adapters.federated_search import TTL_CLOSED_S, TTL_ITEM_S, TTL_OPEN_EDGE_S
 
 from .conftest import answering, load
 

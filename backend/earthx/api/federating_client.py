@@ -265,7 +265,6 @@ class FederatingCoreCrudClient(CoreCrudClient):
             return None
 
         if len(federated_ids) == 1 and not native_ids:
-            # The one path M1's registry (one dataset) ever reaches.
             return await self._federated_page(
                 federated_ids[0], request, bbox=bbox, datetime_value=datetime_value, limit=limit, token=token
             )
@@ -273,13 +272,19 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # More than one source active at once (several federated collections, or a
         # mix of federated and native): rejected rather than merged. A merge across
         # heterogeneous sources needs a real second dataset to build and test
-        # against (M2) - not reachable at all with today's registry (one dataset),
-        # so a best-effort concatenation nobody could verify stayed correct would
-        # only look tested. Otto, before merge (docs/ENTSCHEIDUNGSLOG.md).
+        # against — with M2-09b's second federated dataset this branch is reachable
+        # by *any* search that does not name a collection, not only the deliberate
+        # multi-collection case M2's own tests still cover. A best-effort
+        # concatenation nobody could verify stayed correct would only look tested.
+        # Otto, before merge (docs/ENTSCHEIDUNGSLOG.md); M2-09b plan §10 F3 kept the
+        # rejection and only sharpened the message below.
         LOGGER.warning("rejected a search spanning more than one source at once: %s", target_ids)
         raise HTTPException(
             status_code=400,
-            detail="a search spanning more than one source is not supported yet; name exactly one collection",
+            detail=(
+                "a search spanning more than one source is not supported yet; "
+                f"name exactly one collection ({', '.join(sorted(federated_ids))})"
+            ),
         )
 
     async def _federated_page(
@@ -307,17 +312,39 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 )
         except (InvalidQuery, UnknownCollection, UpstreamError, UpstreamTimeout, UpstreamUnreachable) as error:
             raise _adapter_error_to_http(error) from error
-        return await self._to_item_collection(page, request)
+        return await self._to_item_collection(page, request, collection_id=collection_id)
 
-    async def _to_item_collection(self, page: ItemPage, request: Request) -> ItemCollection:
+    async def _to_item_collection(
+        self, page: ItemPage, request: Request, *, collection_id: str
+    ) -> ItemCollection:
         links = await PagingLinks(request=request, next=page.next_page_token, prev=None).get_links()
-        return cast(
+        features = []
+        for raw_item in page.items:
+            item = dict(raw_item)
+            # The same rewrite `get_item` does for a single item: our own self/
+            # parent/root/collection links replace whatever the source's own item
+            # carried (`ItemLinks.get_links` drops INFERRED_LINK_RELS from
+            # `extra_links`) — without this, a search or item_collection answer
+            # leaks the source's own address in every feature (M2-09b, Otto's
+            # local check against the real EOPF source; the same gap exists for
+            # Earth Search, whose synthetic search fixtures happened not to carry
+            # per-item links and so never showed it).
+            item["links"] = await ItemLinks(
+                collection_id=collection_id, item_id=item["id"], request=request
+            ).get_links(extra_links=item.get("links"))
+            features.append(item)
+        result: ItemCollection = cast(
             ItemCollection,
             {
                 "type": "FeatureCollection",
-                "features": [dict(item) for item in page.items],
+                "features": features,
                 "links": links,
-                "numberMatched": page.matched if page.matched is not None else len(page.items),
                 "numberReturned": len(page.items),
             },
         )
+        if page.matched is not None:
+            # Left out entirely rather than guessed at from the page size: a source
+            # without a checked total (adr/0007 §12.6) must not look like one that
+            # answered "10 of 10" (`numberMatched` is NotRequired on this type).
+            result["numberMatched"] = page.matched
+        return result

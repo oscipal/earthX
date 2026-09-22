@@ -18,13 +18,14 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.adapters.earth_search import TTL_CLOSED_S, TTL_OPEN_EDGE_S, UnknownCollection
+from earthx.adapters.earth_search import UnknownCollection
 from earthx.adapters.earth_search_coverage import (
     AGGREGATIONS,
     MAX_AOI_POINTS,
     TTL_WORLD_OVERVIEW_S,
     aggregate_coverage,
 )
+from earthx.adapters.federated_search import TTL_CLOSED_S, TTL_OPEN_EDGE_S
 from earthx.catalog.coverage import (
     WORLD_LEVEL_CAP,
     Completeness,
