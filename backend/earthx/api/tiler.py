@@ -17,8 +17,11 @@ What is composed:
   configuration of M1-03 applies at every endpoint rather than wherever someone
   remembered it.
 * **the caches** — the item cache the adapter already had (24 h, so a tile does
-  not re-fetch the item), and the statistics cache of adr/0006 (30 days). Both
-  are optional: without them the tiler is slower, never wrong (E5).
+  not re-fetch the item), the statistics cache of adr/0006 (30 days), and the
+  resolver cache of M2-14 (5 s, so a batch of tiles resolves the asset host once
+  rather than once per tile). All three are optional in the same sense: without
+  them the tiler is slower, never wrong (E5), and none of them caches a verdict —
+  every address still passes ``check_addresses`` on every request.
 
 The image is fully determined by the URL (adr/0001 Z4): the asset is named in it,
 the stretch travels as ``rescale``/``colormap_name``, and nothing here is
@@ -63,7 +66,7 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
-from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
+from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout
 from earthx.gateway.gdal import gdal_options
 from earthx.readers.cog import AssetPath, CogReader, asset_path
 
@@ -127,7 +130,14 @@ def _resolve_asset_path(
     """The href of ``asset`` on ``stac_item``, cleared through the gateway policy."""
     href = _resolve_asset_href(stac_item, asset)
     try:
-        return asset_path(href, state.earthx_policy, dataset_id=dataset, item_id=item, asset=asset)
+        return asset_path(
+            href,
+            state.earthx_policy,
+            dataset_id=dataset,
+            item_id=item,
+            asset=asset,
+            resolve=state.earthx_resolver,
+        )
     except GatewayError:
         # An address the registry does not cover. This is the refusal adr/0006 §3.3
         # describes, and it is the source's problem, not the caller's — hence 502.
@@ -300,7 +310,10 @@ def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any):
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with cache_pool() as pool, Gateway(app.state.earthx_policy) as gateway:
+    async with (
+        cache_pool() as pool,
+        Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
+    ):
         app.state.earthx_cache_pool = pool
         app.state.earthx_item_source = build_item_source(REGISTRY, gateway, pool)
         yield
@@ -319,6 +332,11 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
     app.state.earthx_gdal_options = gdal_options(policy)
+    # One resolver for the process, shared by the path dependency and the gateway:
+    # a tile batch resolves the asset host once instead of once per tile (M2-14).
+    # It caches the resolver's answer only — every address is checked again on
+    # every request, by `check_url` as before.
+    app.state.earthx_resolver = CachingResolver()
     app.state.earthx_item_source = None
     # The download route (M2-06) needs the dataset's licence, title and terms —
     # nothing the path dependency above already carries.
