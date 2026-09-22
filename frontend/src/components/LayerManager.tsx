@@ -1,3 +1,4 @@
+import { canDownloadLayer } from '../download';
 import { useAppStore } from '../store';
 import Draggable from './Draggable';
 
@@ -10,6 +11,7 @@ export default function LayerManager() {
   const setOpacity = useAppStore((s) => s.setLayerOpacity);
   const move = useAppStore((s) => s.moveLayer);
   const select = useAppStore((s) => s.selectLayer);
+  const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasetId = useAppStore((s) => s.datasetId);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const toggleCoverage = useAppStore((s) => s.toggleCoverage);
@@ -97,6 +99,16 @@ export default function LayerManager() {
                 >
                   ▼
                 </button>
+                {canDownloadLayer(l) && (
+                  <button
+                    type="button"
+                    className="lm-btn"
+                    title="Download the AOI crop for this layer"
+                    onClick={() => openDownload(l.id)}
+                  >
+                    ⇩
+                  </button>
+                )}
                 <button
                   type="button"
                   className="lm-btn danger"

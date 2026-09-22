@@ -6,6 +6,7 @@ import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './cov
 import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookAsset } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
+import { downloadRequestFor } from './download';
 import { polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
@@ -145,6 +146,8 @@ interface AppState {
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
   layerManagerOpen: boolean;
+  // The layer the download dialog (M2-07d) is open for, `null` when closed.
+  downloadDialogLayerId: string | null;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -193,6 +196,9 @@ interface AppState {
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
+  openDownloadDialog: (id: string) => void;
+  closeDownloadDialog: () => void;
+  confirmDownload: () => Promise<void>;
   enterFocus: () => Promise<void>;
   exitFocus: () => void;
   toggleDownloaded: () => void;
@@ -236,6 +242,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   layers: [],
   layerManagerOpen: false,
+  downloadDialogLayerId: null,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -376,6 +383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeGroupIndex: s.activeGroupIndex,
         selectedIds: [...s.selectedIds],
         aoi: s.aoi,
+        datasetId: s.datasetId,
       },
     };
     set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
@@ -409,6 +417,45 @@ export const useAppStore = create<AppState>((set, get) => ({
         showDownloaded: true,
       };
     }),
+
+  openDownloadDialog: (id) => set({ downloadDialogLayerId: id, error: null }),
+  closeDownloadDialog: () => set({ downloadDialogLayerId: null }),
+
+  // Download the AOI crop for the layer the dialog is open for (M2-06's
+  // `POST /collections/{dataset}/download`, M2-07d). `downloadRequestFor`
+  // already refused anything that is not a full-resolution layer with a
+  // drawn AOI, so a missing request here only means the layer was removed
+  // while the dialog was open.
+  confirmDownload: async () => {
+    const s = get();
+    const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
+    const req = layer && downloadRequestFor(layer);
+    if (!req) {
+      set({ downloadDialogLayerId: null });
+      return;
+    }
+    set({ downloading: true, error: null });
+    try {
+      const blob = await api.downloadCrop({
+        datasetId: req.datasetId,
+        items: req.items,
+        assets: req.assets,
+        aoi: req.aoi,
+        language: 'en',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${req.datasetId}-crop.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      set({ downloadDialogLayerId: null, notice: `Downloaded "${layer.name}".` });
+    } catch (e) {
+      set({ error: `Download failed: ${(e as Error).message}` });
+    } finally {
+      set({ downloading: false });
+    }
+  },
 
   // Enter full-resolution viewing (F10, M2-07b): build a tile URL per selected
   // item (or the whole active time step) from the registry's standard

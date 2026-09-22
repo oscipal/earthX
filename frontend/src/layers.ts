@@ -17,6 +17,11 @@ export interface LayerRestore {
   activeGroupIndex: number;
   selectedIds: string[];
   aoi: GeoJSON.Geometry | null;
+  // The dataset the layer was pinned from (M2-07d): the current selection
+  // (`store.datasetId`) can move on to a different dataset while the layer
+  // stays pinned, and a download has to name the dataset the pinned items
+  // actually belong to, not whatever is picked in the panel right now.
+  datasetId: string | null;
 }
 
 export interface MapLayer {
