@@ -177,7 +177,15 @@ SENTINEL_2_L2A = DatasetConfig(
     # of the time line (Otto, 20.09.2026). `datetime` enters the key as its UTC date,
     # `grid:code` is the MGRS tile Earth Search carries on every item of this
     # collection. M2-07a reads this field and implements nothing of its own.
-    viewer=ViewerInfo(group_by=("datetime", "grid:code")),
+    # Zoom levels released for the tile path (M2-10, Otto 22.09.2026 F2 a): exactly
+    # what the viewer already did before the field existed, now said out loud at the
+    # entry instead of defaulted in the client's code (KLAERUNGEN B10). z19 is
+    # several times past this source's ~10 m/px (≈z14 near the equator, coarser
+    # towards the poles) — headroom to zoom into real detail, without letting an
+    # ordinary scroll-zoom run up to MapLibre's own ceiling of z22. There is no
+    # lower bound to set: a COG carries overviews, so a tile at z0 costs a read of
+    # the coarsest overview and nothing more.
+    viewer=ViewerInfo(group_by=("datetime", "grid:code"), min_zoom=0, max_zoom=19),
     # Reachability, not health in the sense M5 will measure it: adr/0003 §10.1 got
     # HTTP 200 on /v1/collections/sentinel-2-c1-l2a, nothing beyond that.
     health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_REACHABILITY_CHECKED),
@@ -325,7 +333,13 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
     # Same grouping key as the first dataset: one acquisition day per MGRS tile.
     # Measured at a real item (22.09.2026): both `datetime` and `grid:code` are
     # present on every item of this collection.
-    viewer=ViewerInfo(group_by=("datetime", "grid:code")),
+    # Zoom levels released for the tile path (D23/F9, adr/0007 §12.10, measured):
+    # below z8 one tile shows several scenes, which is the coverage map's job and
+    # not the tile path's; above z14 the store has nothing finer than r10m, so a
+    # client overzooms the last level — which costs *less*, since the window read
+    # gets smaller. The level itself is still computed from the requested tile's
+    # own ground resolution (api.tiler._target_gsd), never looked up from the zoom.
+    viewer=ViewerInfo(group_by=("datetime", "grid:code"), min_zoom=8, max_zoom=14),
     health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_EOPF_CHECKED),
     # adr/0007 §12.11 point 14 (Otto's first F8 condition): the provider calls
     # this collection "staging" in its own title, and that must not be something

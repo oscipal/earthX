@@ -95,6 +95,15 @@ def test_the_viewer_groups_one_acquisition_day_per_mgrs_tile() -> None:
     assert viewer.group_by == ("datetime", "grid:code")
 
 
+def test_the_released_zoom_range_is_z8_to_z14() -> None:
+    """D23 / adr/0007 §12.10, F9 (a), measured: below z8 one tile shows several
+    scenes (the coverage map's job), above z14 the store has nothing finer than
+    r10m and a client overzooms the last level instead."""
+    viewer = SENTINEL_2_L2A_ZARR3.viewer
+    assert viewer is not None
+    assert (viewer.min_zoom, viewer.max_zoom) == (8, 14)
+
+
 def test_default_render_is_true_colour_on_the_10m_group() -> None:
     """M2-09b-2 plan §4.5, §10 F6: real-colour rescale starts at (0.0, 0.30) per
     band on the scaled reflectance this reader hands back, not on raw counters.

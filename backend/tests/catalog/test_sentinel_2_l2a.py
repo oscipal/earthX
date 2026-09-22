@@ -167,6 +167,15 @@ def test_the_viewer_groups_one_acquisition_day_per_mgrs_tile() -> None:
     assert viewer.group_by == ("datetime", "grid:code")
 
 
+def test_the_released_zoom_range_is_the_one_the_viewer_already_used() -> None:
+    """M2-10, Otto 22.09.2026 (F2 a plus his second addition): the levels the viewer
+    had as a constant are written into the entry, and the entry does not change what
+    they were — `0..19` is exactly the ceiling #47 set."""
+    viewer = SENTINEL_2_L2A.viewer
+    assert viewer is not None
+    assert (viewer.min_zoom, viewer.max_zoom) == (0, 19)
+
+
 def test_the_citation_is_open() -> None:
     """Checklist point 3: adr/0003 names neither a DOI nor a persistent citation."""
     assert SENTINEL_2_L2A.doi is None
