@@ -7,7 +7,7 @@ adding fields.
 
 The coverage fields of adr/0004 §6 are deliberately *not* here. They belong to the
 registry entry, which is what decides the coverage path (adr/0004 §5); putting them
-in the collection as well would add a ninth ``earthx:`` field to 5.1 — a change to
+in the collection as well would add another ``earthx:`` field to 5.1 — a change to
 the architecture, not a consequence of this task.
 """
 
@@ -166,6 +166,10 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "asset_hosts": list(config.source.asset_hosts),
             "harvest_run": config.source.harvest_run,
         },
+        # architekturplan.md 5.1, tenth row (adr/0007 §12.11 point 14): how settled
+        # the source itself is, not a measurement like earthx:health. No default on
+        # the entry (KLAERUNGEN B10), so this is always one of the three values.
+        "earthx:maturity": config.maturity.value,
     }
     collection.update(scientific)
     return collection

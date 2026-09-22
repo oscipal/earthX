@@ -50,6 +50,7 @@ class AdapterKind(Enum):
     """Which adapter speaks the protocol of the source (architekturplan.md 6.1)."""
 
     EARTH_SEARCH_V1 = "earth-search-v1"
+    EOPF_STAC_V1 = "eopf-stac-v1"
 
 
 class CoverageProvider(Enum):
@@ -67,6 +68,21 @@ class HealthStatus(Enum):
     DEGRADED = "degraded"
     FAILED = "failed"
     UNKNOWN = "unknown"
+
+
+class Maturity(Enum):
+    """How settled the *source* itself is — not a measurement like ``HealthStatus``,
+    a fact about the dataset that belongs with licence and attribution
+    (architekturplan.md 5.1, tenth ``earthx:`` field; adr/0007 §12.11 point 14).
+
+    A source can answer every request correctly and still be ``STAGING``: the
+    provider's own naming says it may disappear without notice. The platform must
+    not let a user find that out only once it does.
+    """
+
+    STABLE = "stable"
+    STAGING = "staging"
+    EXPERIMENTAL = "experimental"
 
 
 class ConfigError(ValueError):
@@ -195,6 +211,40 @@ class CoverageInfo:
     provider: CoverageProvider
     typical_footprint_km: float
     max_geotile_level: int
+
+
+@dataclass(frozen=True, slots=True)
+class ZarrInfo:
+    """What ``readers.zarr_reader`` needs to know about *this* store's layout,
+    beyond what it assumes by default (adr/0007 §7 point 7, §12.11 point 2).
+
+    ``None`` for the whole dataset (the field on :class:`DatasetConfig`) covers
+    every COG dataset and a Zarr dataset that addresses exactly the way M2-09a's
+    synthetic Mini-Zarr does — the variable is the asset href's own last path
+    segment, and ``multiscales`` is either absent or not needed.
+
+    ``variable_separator`` — an asset whose href already names a *group*, not a
+    variable (measured at ``sentinel-2-l2a-zarr3``: ``SR_10m`` points at
+    ``…/measurements/reflectance/r10m``, a group with several bands) cannot say
+    which variable a tile wants from its href alone. The tile URL's asset key
+    carries the variable instead, split off by this separator — a key
+    ``"SR_10m:b04"`` with separator ``":"`` names the item asset ``SR_10m`` and,
+    within the group its href points at, the variable ``b04``. The reader that
+    reads this field is M2-09b-2; here it is only recorded.
+
+    ``multiscales_convention`` — the name and version ``multiscales`` declares at
+    the store's own metadata, kept as a record because it is a pilot
+    (``zarr-conventions/multiscales`` v0.1 at the time of measurement) and *not*
+    a promise that the reader parses only that one version. ``None`` where the
+    store carries no ``multiscales`` attribute at all.
+    """
+
+    variable_separator: str | None
+    multiscales_convention: str | None
+
+    def __post_init__(self) -> None:
+        if self.variable_separator is not None and not self.variable_separator:
+            raise ConfigError("zarr.variable_separator must not be an empty string")
 
 
 @dataclass(frozen=True, slots=True)
@@ -405,6 +455,14 @@ class DatasetConfig:
     # None where nobody has decided how the viewer groups the items of this dataset.
     viewer: ViewerInfo | None
     health: HealthInfo
+    # How settled the source itself is (architekturplan.md 5.1, tenth field;
+    # adr/0007 §12.11 point 14). No default (KLAERUNGEN B10): every entry says this
+    # on purpose, it is part of the truth about the dataset like the licence.
+    maturity: Maturity
+    # None for a COG dataset and for a Zarr dataset addressed the M2-09a way (see
+    # ZarrInfo). A dataset whose store needs anything more says so here, not with a
+    # branch on `dataset_id` somewhere in `readers`.
+    zarr: ZarrInfo | None
 
     def __post_init__(self) -> None:
         self._check_license_is_identifiable()
@@ -412,6 +470,7 @@ class DatasetConfig:
         self._check_attribution()
         self._check_coverage()
         self._check_source()
+        self._check_zarr()
 
     def _check_license_is_identifiable(self) -> None:
         """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
@@ -484,6 +543,13 @@ class DatasetConfig:
                     f"{self.dataset_id}: asset_hosts entry {host!r} is not a bare host name "
                     "(no scheme, no path, no port, lower case)"
                 )
+
+    def _check_zarr(self) -> None:
+        """``ZarrInfo`` describes a Zarr store; a COG entry has nothing for it to say."""
+        if self.zarr is not None and self.format is not DataFormat.ZARR:
+            raise ConfigError(
+                f"{self.dataset_id}: zarr info is set but format is {self.format.value}, not zarr"
+            )
 
 
 class DatasetRegistry:

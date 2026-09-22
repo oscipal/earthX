@@ -1,6 +1,6 @@
 """The mapping onto a STAC Collection.
 
-Two things matter: the result is a valid STAC Collection, and it carries all eight
+Two things matter: the result is a valid STAC Collection, and it carries all ten
 ``earthx:`` fields of architekturplan.md 5.1 even where they are still empty.
 """
 
@@ -30,6 +30,7 @@ EARTHX_FIELDS = (
     "earthx:default_render",
     "earthx:viewer",
     "earthx:source",
+    "earthx:maturity",
 )
 
 
@@ -76,6 +77,12 @@ def test_source_carries_what_adr_0005_branches_on(collection: dict) -> None:
     source = collection["earthx:source"]
     assert source["adapter"] == "earth-search-v1"
     assert source["source_collection_id"] == "sentinel-2-c1-l2a"
+
+
+def test_maturity_is_the_registry_entrys_own_value(collection: dict) -> None:
+    """adr/0007 §12.11 point 14: a mapping, not a guess — whatever the entry
+    decided travels through unchanged."""
+    assert collection["earthx:maturity"] == "stable"
 
 
 def test_an_open_temporal_extent_stays_open(collection: dict) -> None:
