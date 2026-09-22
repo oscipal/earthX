@@ -1,10 +1,9 @@
 # EarthX
 
-Web-Plattform für Geo- und Satellitendaten. Die Zieltopologie steht in diesem
-Repo neben dem BIOMASS-Prototyp (`backend/app/` + `frontend/`) und wächst
-nach dem Strangler-Muster: Neues entsteht unter `backend/earthx/`, der
-Prototyp bleibt so lange lauffähig, bis seine Funktionen token-frei
-nachgebaut sind und Otto seine Entfernung entscheidet.
+Web-Plattform für Geo- und Satellitendaten. Der frühere BIOMASS-Prototyp
+(`backend/app/`) ist entfernt (`docs/adr/0008-prototyp-entfernen.md`); als
+Referenz bleibt er über den Tag `prototype-biomass` abrufbar. Die
+Zieltopologie unter `backend/earthx/` trägt jetzt die ganze Plattform.
 
 **Planung und Entscheidungen liegen in [`docs/`](docs/)**, verbindlich in
 dieser Reihenfolge: [`docs/ENTSCHEIDUNGEN_2026-09-18.md`](docs/ENTSCHEIDUNGEN_2026-09-18.md)
@@ -19,8 +18,7 @@ earthX/
   backend/
     earthx/            # Zieltopologie: gateway, catalog, adapters, api, …
                         # (Modulgrenzen: docs/architekturplan.md 3.1)
-    app/                # BIOMASS-Prototyp — siehe Abschnitt "Prototyp" unten
-  frontend/             # React + TypeScript + Vite (bedient bisher den Prototyp)
+  frontend/             # React + TypeScript + Vite
   docker-compose.yml     # Zieltopologie: api, tiler, worker, harvester, postgres, minio
   docs/                  # Planung, Architektur, ADRs, Entscheidungslog
 ```
@@ -137,67 +135,7 @@ STAC-Browser, aber ohne einen zweiten Container zu prüfen).
 
 ---
 
-## 3. Prototyp — Referenz, lokal mit eigenem Token
-
-`backend/app/` + `frontend/` sind der ursprüngliche **BIOMASS-Viewer**: ein
-Client für den ESA-MAAP-STAC-Katalog mit Kacheln, Zuschnitt, Stitching und
-Polarimetrie-Decompositionen. Er bleibt vorerst als lauffähige Referenz
-bestehen, wird aber nicht weiterentwickelt und braucht ein **eigenes
-MAAP-Konto samt Offline-Token** (siehe unten) — ohne Token startet nur die
-Suche, nicht Vorschau/Download.
-
-### Conda-Umgebung anlegen
-
-```bash
-conda env create -f environment.yml
-conda activate biomass-viewer
-```
-
-### Token konfigurieren
-
-```bash
-cd backend
-cp .env.example .env      # dann .env bearbeiten
-```
-
-`MAAP_TOKEN` in `backend/.env` setzen:
-
-1. ESA-MAAP-Konto anlegen: <https://portal.maap.eo.esa.int>
-2. Offline-Token erzeugen:
-   <https://portal.maap.eo.esa.int/ini/services/auth/token/index.php>
-3. Token als `MAAP_TOKEN=...` in `backend/.env` eintragen.
-
-Der Token bleibt serverseitig; das Frontend spricht nur mit diesem Backend.
-
-### Backend starten
-
-```bash
-# aus backend/, mit aktivierter conda-Umgebung:
-uvicorn app.main:app --reload --port 8000
-```
-
-- API-Doku: <http://localhost:8000/docs>
-- Health: <http://localhost:8000/api/health>
-
-### Frontend starten
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-<http://localhost:5173> öffnen; der Vite-Dev-Server leitet `/api` an das
-Backend auf Port 8000 weiter — Backend muss also laufen.
-
-Prototyp und neue Zieltopologie belegen beide lokal Port 8000 (Backend des
-Prototyps per `uvicorn`, `api`-Dienst der Zieltopologie per
-`docker compose`) — nicht gleichzeitig starten, ohne einen der beiden Ports
-zu verlegen.
-
----
-
-## 4. Attribution
+## 3. Attribution
 
 - **Sentinel-2 L2A** (Zieltopologie, Earth Search v1 / Registry of Open Data
   on AWS): Copernicus-Sentinel-Daten. Bei Weitergabe **veränderter** Daten:
@@ -206,25 +144,19 @@ zu verlegen.
   Nutzung unterliegt zusätzlich dem
   [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)
   (kein Gewährleistungsversprechen, Anspruchsverzicht des Nutzers).
-- **ESA-BIOMASS-Daten** (Prototyp) — © ESA, verteilt über
-  [MAAP](https://portal.maap.eo.esa.int). ESA-Datenrichtlinie beachten,
-  Mission und Verarbeitungsstufe bei Veröffentlichung nennen.
-- **Basiskarte** (Prototyp): Esri World Imagery — *Esri, Maxar, Earthstar
+- **Basiskarte**: Esri World Imagery — *Esri, Maxar, Earthstar
   Geographics, and the GIS User Community*.
-- **Geokodierung** (Prototyp): [Nominatim](https://nominatim.org/) über
-  [OpenStreetMap](https://www.openstreetmap.org/copyright)-Daten,
-  © OpenStreetMap-Mitwirkende (ODbL).
 
 ---
 
-## 5. Lizenz
+## 4. Lizenz
 
 Anwendungscode: **AGPL-3.0-or-later**, siehe [`LICENSE`](./LICENSE). Vor
 2026-09-18 veröffentlichte Releases bleiben unter der MIT-Lizenz verfügbar,
 unter der sie erschienen sind.
 
 Die AGPL deckt nur diesen Code, **nicht** die Satellitendaten oder
-Basiskarten- bzw. Geokodierungsergebnisse Dritter (siehe Abschnitt 4).
+Basiskarten-Ergebnisse Dritter (siehe Abschnitt 3).
 
 Hinweis zu AGPL §13: Wer eine veränderte Version dieser Software betreibt und
 Nutzer darauf über ein Netzwerk zugreifen lässt, muss ihnen Zugang zum

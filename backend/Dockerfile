@@ -33,4 +33,3 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY earthx ./earthx
-COPY app ./app
