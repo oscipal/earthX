@@ -25,13 +25,17 @@ export default function App() {
   );
   const toggleLayerManager = useAppStore((s) => s.toggleLayerManager);
   const layerCount = useAppStore((s) => s.layers.length);
+  const theme = useAppStore((s) => s.theme);
+  const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const projection = useAppStore((s) => s.projection);
+  const toggleProjection = useAppStore((s) => s.toggleProjection);
 
   useEffect(() => {
     loadDatasets();
   }, [loadDatasets]);
 
   return (
-    <div className="app" data-theme="tech">
+    <div className="app" data-theme={theme}>
       <MapView />
 
       <div className={`overlay top-left panel-dock${panelCollapsed ? ' collapsed' : ''}`}>
@@ -65,6 +69,24 @@ export default function App() {
           title="Open the layer manager"
         >
           ▤ Layers{layerCount ? ` (${layerCount})` : ''}
+        </button>
+        <button
+          type="button"
+          className="panel zoom-btn"
+          onClick={() => toggleProjection()}
+          title={projection === 'globe' ? 'Switch to the flat map' : 'Switch to the globe'}
+          aria-pressed={projection === 'globe'}
+        >
+          {projection === 'globe' ? '◎ Globe' : '▭ Flat'}
+        </button>
+        <button
+          type="button"
+          className="panel zoom-btn"
+          onClick={() => toggleTheme()}
+          title={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
+          aria-pressed={theme === 'normal'}
+        >
+          {theme === 'tech' ? '☾ Dark' : '☀ Light'}
         </button>
       </div>
 
