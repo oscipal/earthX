@@ -132,4 +132,10 @@ export interface DownloadedInfo {
   tileUrl: string; // MapLibre tile template ({z}/{x}/{y}), asset already baked in
   bounds: Bbox;
   asset: string;
+  // The levels this dataset is released for (`earthx:viewer`, M2-10). Below the
+  // lower one MapLibre requests nothing, above the upper one it overzooms the
+  // last level — which is also what the tile route allows, so the map never asks
+  // for a tile the backend answers with a 400.
+  minZoom: number;
+  maxZoom: number;
 }

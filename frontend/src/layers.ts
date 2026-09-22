@@ -7,7 +7,11 @@ import type { AppliedRender, Bbox, DownloadedInfo } from './types';
 
 export type LayerOverlay =
   | { kind: 'image'; url: string; coords: Coords4 } // a (transparent-nodata) quicklook
-  | { kind: 'raster'; tileUrl: string; bounds: Bbox }; // full-res / stitch / decomposition tiles
+  // Tiles: full resolution, a stitch, a decomposition — or the browse preview of a
+  // source that publishes no quicklook, which is the same thing pinned to a single
+  // level (M2-10). The range travels with the overlay so a pinned layer still knows
+  // it after `setStyle()` wipes every source.
+  | { kind: 'raster'; tileUrl: string; bounds: Bbox; minZoom: number; maxZoom: number };
 
 // Enough of the working state to bring a layer back into the active view.
 export interface LayerRestore {

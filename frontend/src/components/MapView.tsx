@@ -48,6 +48,8 @@ export default function MapView() {
   const toolMode = useAppStore((s) => s.toolMode);
   const aoi = useAppStore((s) => s.aoi);
   const groups = useAppStore((s) => s.groups);
+  const datasets = useAppStore((s) => s.datasets);
+  const datasetId = useAppStore((s) => s.datasetId);
   const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const downloaded = useAppStore((s) => s.downloaded);
@@ -140,6 +142,7 @@ export default function MapView() {
       syncLayers(map, st.layers);
       syncMosaic(map, {
         items: st.groups[st.activeGroupIndex]?.items ?? [],
+        dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
         downloaded: st.downloaded,
         selectedIds: st.selectedIds,
         render: st.appliedRender,
@@ -229,6 +232,7 @@ export default function MapView() {
     if (map && readyRef.current) {
       syncMosaic(map, {
         items: groups[activeGroupIndex]?.items ?? [],
+        dataset: datasets.find((d) => d.id === datasetId) ?? null,
         downloaded,
         selectedIds,
         render: appliedRender,
@@ -236,7 +240,17 @@ export default function MapView() {
         showDownloaded,
       });
     }
-  }, [groups, activeGroupIndex, selectedIds, downloaded, appliedRender, focusMode, showDownloaded]);
+  }, [
+    groups,
+    activeGroupIndex,
+    selectedIds,
+    downloaded,
+    appliedRender,
+    focusMode,
+    showDownloaded,
+    datasets,
+    datasetId,
+  ]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

@@ -4,7 +4,7 @@ import * as api from './api';
 import type { CoverageResponse } from './api';
 import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './coverage';
 import type { DatasetOption } from './datasets';
-import { datasetsFrom, defaultRenderOf, quicklookAsset } from './datasets';
+import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import { downloadRequestFor } from './download';
 import { polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
@@ -361,16 +361,38 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
         : Object.entries(s.downloaded);
       for (const [, info] of entries) {
-        overlays.push({ kind: 'raster', tileUrl: buildTileUrl(info, s.appliedRender), bounds: info.bounds });
+        overlays.push({
+          kind: 'raster',
+          tileUrl: buildTileUrl(info, s.appliedRender),
+          bounds: info.bounds,
+          minZoom: info.minZoom,
+          maxZoom: info.maxZoom,
+        });
       }
     } else {
       const items = s.selectedIds.length
         ? s.items.filter((it) => s.selectedIds.includes(it.id))
         : (group?.items ?? []);
+      const browsed = s.datasets.find((d) => d.id === s.datasetId);
       for (const it of items) {
-        const coords = quicklookCoords(it);
-        const asset = quicklookAsset(it);
-        if (coords && asset) overlays.push({ kind: 'image', url: asset.href, coords });
+        const plan = browsed ? quicklookPlan(it, browsed) : null;
+        if (!plan) continue;
+        if (plan.kind === 'image') {
+          const coords = quicklookCoords(it);
+          if (coords) overlays.push({ kind: 'image', url: plan.href, coords });
+          continue;
+        }
+        // The preview substitute (M2-10): pinned at the one level it is read on,
+        // so a pinned preview stays a preview and never turns into a full-
+        // resolution read when the map zooms in on it.
+        if (!it.bbox || !browsed) continue;
+        overlays.push({
+          kind: 'raster',
+          tileUrl: api.buildTileTemplate(browsed.id, it.id, plan.asset),
+          bounds: it.bbox,
+          minZoom: plan.zoom,
+          maxZoom: plan.zoom,
+        });
       }
     }
     if (overlays.length === 0) {
@@ -495,7 +517,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const downloaded: Record<string, DownloadedInfo> = {};
     for (const it of items) {
       if (!it.bbox) continue;
-      downloaded[it.id] = { tileUrl: api.buildTileTemplate(dataset.id, it.id, asset), bounds: it.bbox, asset };
+      downloaded[it.id] = {
+        tileUrl: api.buildTileTemplate(dataset.id, it.id, asset),
+        bounds: it.bbox,
+        asset,
+        minZoom: dataset.zoom.min,
+        maxZoom: dataset.zoom.max,
+      };
     }
     if (Object.keys(downloaded).length === 0) {
       set({ error: 'None of the selected scenes carry a bounding box to render.' });

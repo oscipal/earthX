@@ -8,6 +8,8 @@ function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
     tileUrl: '/collections/sentinel-2-c1-l2a/items/S2A_1/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual',
     bounds: [10, 47, 11, 48],
     asset: 'visual',
+    minZoom: 0,
+    maxZoom: 19,
     ...overrides,
   };
 }
