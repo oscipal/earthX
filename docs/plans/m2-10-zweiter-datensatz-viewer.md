@@ -1,8 +1,8 @@
 # M2-10 — Zweiter Datensatz im Viewer: Umsetzungsplan
 
 **Aufgabe:** M2-10 aus `docs/plans/m2-format-und-viewer.md` §4.
-**Stufe B** — dieses Dokument ist der Plan-Schritt. Umgesetzt wird erst nach
-Ottos Freigabe (§10).
+**Stufe B** — **von Otto am 22.09.2026 freigegeben** (F1 (a) bis F6 (a), dazu zwei
+Zusätze; §10). Der Plan-Schritt ist damit abgeschlossen, die Umsetzung läuft.
 **Ort im Repo:** `docs/plans/m2-10-zweiter-datensatz-viewer.md`
 **Grundlagen:** `plans/m2-format-und-viewer.md` (D8, D14, D19, D20, D23, D25, D26,
 Abnahmekriterium 1); `adr/0006` (Kachel-Pfad); `adr/0007` §12.7 (kein Quicklook),
@@ -145,9 +145,36 @@ Werte:
 | `sentinel-2-c1-l2a` | 0 | 19 | heutiges Verhalten unverändert (`mapLayers.ts`, #47) |
 | `sentinel-2-l2a-zarr3` | 8 | 14 | D23 / `adr/0007` §12.10, F9 (a) |
 
+**Ottos Zusatz 2 zu F2:** Die `0..19` des ersten Datensatzes stehen ausdrücklich
+in seinem Registry-Eintrag, nicht als Vorgabewert im Code. Das ist KLAERUNGEN B10
+in Reinform — ein Feld ohne Vorgabewert zwingt jeden Eintrag, die Stufen bewusst
+zu setzen, und ein vergessenes Feld ist ein `TypeError` am Eintrag statt einer
+falschen Antwort später.
+
 `collection.py::to_stac_collection` gibt beide unter `earthx:viewer` mit aus.
 `architekturplan.md` 5.1 bekommt in der `earthx:viewer`-Zeile den Zusatz, dass das
 Feld in M2 nicht mehr nur `group_by` trägt — eine Dokumentänderung, die an F1 hängt.
+
+### 4.1b `api/tiler.py` — der Tiler setzt die Stufen selbst durch
+
+**Ottos Zusatz 1 zu F1.** Die Registry allein genügt nicht: sie sagt dem *Viewer*,
+welche Stufen er anfragen darf, hindert aber keinen anderen Client daran, `z20`
+zu verlangen — bei diesem Datensatz eine Kachel, die auf `r10m` gelesen wird.
+Der Kachelpfad prüft die Stufe deshalb selbst.
+
+- Eine Anfrage, die `z`/`x`/`y` nennt (also eine Kachel, keine Statistik und kein
+  Zuschnitt), wird gegen `viewer.min_zoom`/`max_zoom` des Datensatzes geprüft,
+  **bevor** das Item geholt wird — eine abgewiesene Stufe kostet dann keinen
+  Request nach außen.
+- Außerhalb: **HTTP 400** mit einem Text, der die erlaubte Spanne nennt und keine
+  Adresse enthält. 400 und nicht 404, weil die Anfrage selbst falsch ist: 404
+  gehört der Kachel, die den Datenbestand verfehlt (`TileOutsideBounds`), und
+  beides auseinanderzuhalten ist der Punkt eines definierten Fehlers.
+- Ein Datensatz ohne `viewer` wird nicht stillschweigend durchgelassen, sondern
+  abgewiesen — dasselbe Nichtraten wie im Frontend (§4.2).
+
+Damit ist das Feld nicht nur eine Empfehlung an den Client, sondern die Grenze
+des Kachelpfads.
 
 ### 4.2 `frontend/src/types.ts`, `datasets.ts` — drei Felder und zwei reine Funktionen
 
@@ -216,6 +243,7 @@ Zarr-Pixel kommen aus dem Mini-Zarr von M2-09a.
 | Was | Wo | Fehlerfälle und zweckfremde Nutzung, die dazugehören |
 |---|---|---|
 | `ViewerInfo` Zoomfelder | `backend/tests/catalog/test_registry.py` | `min_zoom > max_zoom`; Stufe negativ; Stufe über 24; Feld fehlt → `TypeError` am Eintrag |
+| Tiler weist eine Stufe außerhalb ab | `backend/tests/earthx/api/test_tiler.py` | `z` über `max_zoom` → 400; `z` unter `min_zoom` → 400; die Grenzen selbst sind erlaubt; die Abweisung holt kein Item (kein Request nach außen); `/statistics` und der Zuschnitt sind nicht betroffen |
 | Beide Einträge tragen die Stufen | `tests/catalog/test_sentinel_2_l2a.py`, `…_zarr3.py` | zarr3 ist genau `8..14` (D23), COG unverändert `0..19` |
 | Serialisierung | `tests/catalog/test_collection.py` | `earthx:viewer` trägt alle drei Felder |
 | ZIP-Eintragsname | `tests/earthx/access/test_download.py` | Asset mit `:` und `,`; Asset, das nur aus Sonderzeichen besteht; zwei Assets, die auf denselben bereinigten Namen fielen |
@@ -254,12 +282,13 @@ Otto, nicht der CI.
 Jeder Schritt ist ein eigener Commit.
 
 1. `catalog`: `ViewerInfo` um die Zoomfelder, beide Einträge, Serialisierung, Tests.
-2. `frontend`: Typen, `zoomRangeOf`, `quicklookPlan`, Vitest — reine Logik, ohne Karte.
-3. `frontend`: `placeRaster` mit Zoombereich, `MAX_RASTER_ZOOM` entfällt.
-4. `frontend`: Vorschau-Ersatz im Browse-Modus und im Layer-Manager.
-5. `frontend`: die drei Hinweise (Reifegrad, zuletzt geprüft, Untergrenze).
-6. `access`: ZIP-Eintragsname und der Zarr-Zuschnitt-Test.
-7. `docs`: Entscheidungslog, `architekturplan.md` 5.1, Aufgabenschnitt auf erledigt.
+2. `api`: der Tiler weist eine Stufe außerhalb der freigegebenen Spanne ab (Zusatz 1), mit Test.
+3. `frontend`: Typen, `zoomRangeOf`, `quicklookPlan`, Vitest — reine Logik, ohne Karte.
+4. `frontend`: `placeRaster` mit Zoombereich, `MAX_RASTER_ZOOM` entfällt.
+5. `frontend`: Vorschau-Ersatz im Browse-Modus und im Layer-Manager.
+6. `frontend`: die drei Hinweise (Reifegrad, zuletzt geprüft, Untergrenze).
+7. `access`: ZIP-Eintragsname und der Zarr-Zuschnitt-Test.
+8. `docs`: Entscheidungslog, `architekturplan.md` 5.1, Aufgabenschnitt auf erledigt.
 
 Richtwert: unter 400 geänderte Zeilen ohne generierte Dateien. Die Schätzung
 liegt bei rund 300 — der größte Einzelposten ist Schritt 4.
@@ -288,9 +317,20 @@ liegt bei rund 300 — der größte Einzelposten ist Schritt 4.
 
 ---
 
-## 10. Fragen an Otto
+## 10. Fragen an Otto — **beantwortet am 22.09.2026**
 
-Alle sechs mit Empfehlung; Antwort als Nummer plus Buchstabe genügt.
+Otto hat alle sechs Empfehlungen angenommen: **F1 (a), F2 (a), F3 (a), F4 (a),
+F5 (a), F6 (a)**, dazu zwei Zusätze:
+
+- **Zu F1:** Der Tiler setzt die Zoomstufen aus `earthx:viewer` ebenfalls durch
+  und antwortet außerhalb davon mit einem definierten Fehler, belegt mit Test —
+  sonst kann jeder Client teure Zarr-Kacheln weit über z14 anfordern. Umgesetzt
+  in §4.1b.
+- **Zu F2:** Die Stufen `0..19` stehen ausdrücklich im Registry-Eintrag von
+  Sentinel-2, nicht als Vorgabewert im Code (KLAERUNGEN B10). Umgesetzt in §4.1.
+
+Die Fragen bleiben im Wortlaut stehen, damit nachlesbar ist, wogegen entschieden
+wurde.
 
 **F1 — Wo stehen die freigegebenen Zoomstufen?**
 (a) Zwei neue Felder `min_zoom`/`max_zoom` in `earthx:viewer`; die Zeile in
