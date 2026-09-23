@@ -563,6 +563,10 @@ M2 die Funktion zurück, die der Nutzer tatsächlich braucht (eine Datei über d
 AOI, D3), ohne dass der Kachel-Pfad eine Größenordnung teurer wird. Mosaik-
 Kacheln wandern nach M3, zusammen mit dem CDN.
 
+**Nachtrag M3-00 (2026-09-23):** Entschieden ist **M4**, nicht M3 (D11, P11 in
+`plans/m3-dritte-quelle-und-interface.md`); der Satz oben bleibt als
+ursprüngliche Einschätzung stehen.
+
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
 F15 fällt mit dem Token weg. Die Registry bekommt dafür zwei Felder: den

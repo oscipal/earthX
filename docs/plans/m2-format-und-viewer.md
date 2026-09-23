@@ -1,7 +1,7 @@
 # M2 — Zweites Format und generalisierter Viewer: Aufgabenschnitt
 
-**Status:** Fassung 5 vom 22.09.2026. **Alle Aufgaben sind erledigt und gemergt
-außer M2-12, der Abnahme.** Der Prototyp ist entfernt (#63), die befristete
+**Status:** Fassung 5 vom 22.09.2026. **Abgenommen** (M2-12, PR #70,
+2026-09-23; Belege in `docs/plans/m2-12-abnahme.md`). Der Prototyp ist entfernt (#63), die befristete
 Secret-Ausnahme damit beendet. Neu gegenüber Fassung 4: D28 (keine Sprachwahl),
 D29 (Punkt 10 der Checkliste in Fassung v1.1, `health.last_checked_ok` gestrichen),
 D30 (Trefferliste nach Überflug gruppiert), D31 (`ids`/`intersects` werden
@@ -145,7 +145,8 @@ Ortssuche über einen Ortsnamen (F1); Mosaik im Kachel-Pfad und Anzeige des
 Zuschnitts auf der Karte (D11); bessere Coverage-Heatmap, Kandidat Zählwürfel
 (D26); durchsuchbarer Datensatz-Katalog statt fester Blöcke in der Suchkachel;
 Durchreichen von `ids` und `intersects` (D31); Uvicorn-Worker des `tiler`
-(Betriebsfrage, M5); gemischte Suche über mehrere Quellen (D8, M3).
+(Betriebsfrage, M5); gemischte Suche über mehrere Quellen (D8, M3). Der
+Aufgabenschnitt dafür liegt in `docs/plans/m3-dritte-quelle-und-interface.md`.
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
