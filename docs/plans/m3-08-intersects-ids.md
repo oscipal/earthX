@@ -1,6 +1,17 @@
 # M3-08 — `intersects` und `ids` durchreichen: Plan-Schritt
 
-**Status:** Plan vom 23.09.2026, wartet auf Ottos Freigabe. Nichts umgesetzt.
+**Status (23.09.2026):** Otto hat alle sieben Empfehlungen angenommen; in
+derselben Sitzung umgesetzt (Fassung nach §4). **Noch nicht zu mergen:** Der
+parallele M3-02-Bericht hat unter K-01/K-02 (`docs/plans/
+m3-02-konformitaetsbericht.md` §8, Frage 1) entschieden, dass das Access-Log
+jedes Prozesses erst mit der neuen Aufgabe **M3-16** (Stufe A) ganz ohne
+Query-String schreibt — **„M3-08 wird erst nach M3-16 gemergt"**
+(`docs/plans/m3-dritte-quelle-und-interface.md` M3-08, M3-16). Diese Sitzung
+kannte die Frage beim eigenen Plan-Schritt noch nicht (F7 unten schlug nur die
+schmalere Schwärzung von `bbox`/`intersects` vor); der Frontend-Umstieg auf
+`POST` (Schritt 6) schließt den größten Teil von K-01 bereits (der Viewer
+sendet keine AOI mehr per `GET`), die Coverage-Route bleibt aber offen und ist
+M3-16s Aufgabe, nicht diese hier. Der Draft-PR steht und wartet auf M3-16.
 **Aufgabe:** M3-08 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4
 (P6, D31). **Stufe B.**
 **Grundlagen:** `adr/0005` Regeln I, III, V, VI, §3.5, K8; `adr/0004` §3.4;
@@ -315,3 +326,40 @@ curl -sS -X POST https://earth-search.aws.element84.com/v1/search \
 Für `ids` dieselbe Form mit `"ids":[…]`. Die Genauigkeitsprobe hat für beide
 Wege bis zu fünf Seiten geholt und jeden Footprint mit shapely gegen den
 Streifen geprüft.
+
+---
+
+## 8. Umsetzung (23.09.2026)
+
+Alle sieben Empfehlungen angenommen und wie in §4 umgesetzt, mit einer
+Abweichung und einem Nebenfund:
+
+- **F7 abweichend von der Empfehlung:** Statt nur `bbox`/`intersects` im
+  Zugriffslog von `api` zu schwärzen, verlangt der parallele M3-02-Bericht
+  (K-01/K-02) ein Access-Log **ganz ohne** Query-String, in **jedem** Prozess,
+  als eigene Aufgabe M3-16 — siehe der Status-Absatz oben. Umgesetzt ist hier
+  trotzdem eine `AccessLogRedactionFilter` auf `uvicorn.access` in `api`
+  (`earthx/logging.py`, `redact_access_log_coordinates`), die `bbox` und
+  `intersects` schwärzt: eine engere Zwischenlösung, die M3-16 nicht
+  vorwegnimmt (kein `configure_logging`/`RequestIdMiddleware` in den anderen
+  Prozessen, `docker-compose.yml` unverändert), aber die eigene neue Fläche
+  (`intersects` per `GET`) nicht ungeschützt lässt, während M3-16 aussteht.
+  Der Umstieg des Frontends auf `POST` (Schritt 6) schließt den größten Teil
+  von K-01 ohnehin: Der Viewer sendet keine AOI mehr per `GET`.
+- **Nebenfund:** `SearchParams(...)` wurde in `_federated_page`
+  (`api/federating_client.py`) außerhalb des `try`-Blocks gebaut, der ihre
+  eigene `InvalidQuery` auffängt — eine `bbox` außerhalb ±90 hätte über die
+  echte API also nie den `400` ergeben, den `test_search_params.py` seit M1-06
+  für sie zeigt, sondern einen unbehandelten `500`. Kein bestehender
+  Integrationstest hatte diesen Pfad über die App geprüft; einer der neuen
+  `intersects`-Tests in `tests/integration/test_api_federating.py` deckte es
+  auf. Behoben im selben Commit wie die neuen Parameter.
+
+**Geändert:** `backend/earthx/adapters/federated_search.py` (`intersects`,
+`ids`, Prüfungen, Fingerabdruck), `.../earth_search.py`, `.../eopf_stac.py`
+(Rumpf, Fähigkeiten), `.../adapters/__init__.py` (`UnsupportedFilter`,
+Fähigkeits-Dispatch), `backend/earthx/api/federating_client.py` (Durchreichen,
+Nebenfund-Fix), `backend/earthx/logging.py` + `api/main.py`
+(Zugriffslog-Filter); `frontend/src/api.ts` (`POST`), `geoUtils.ts`
+(`searchArea`), `store.ts`/`MapView.tsx`/`ControlPanel.tsx` (Punkt-AOI).
+Tests zu jedem Punkt in den passenden Dateien, siehe §5.
