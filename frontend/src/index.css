@@ -433,12 +433,18 @@ input[type='date']:focus {
   pointer-events: none;
 }
 
-/* Input + the transparent button that opens its picker (V-5). */
+/* Input + the transparent button that opens its picker (V-5). `min-width: 0`
+   lets it shrink inside the grid track below its content's natural size (see
+   `.date-row` below) — without it the field refused to shrink past its own
+   min-content width and pushed the row wider than the panel, clipping the
+   right field's calendar icon against the panel's edge (V-8). */
 .date-field {
   position: relative;
+  min-width: 0;
 }
 .date-field input[type='date'] {
   width: 100%;
+  min-width: 0;
 }
 .date-icon-btn {
   position: absolute;
@@ -460,10 +466,16 @@ input[type='date']:focus {
    left the gap too tight for the arrow once the date fields' own borders
    and the picker-icon button filled it. Each date field ends up slightly
    narrower than Point/Rectangle etc. above it so the arrow has somewhere
-   to sit; the row's total width still matches. */
+   to sit; the row's total width still matches.
+   `minmax(0, 1fr)`, not bare `1fr` (V-8): a plain `1fr` track has an
+   implicit `min-width: auto`, meaning it won't shrink below its content's
+   own min-content width — with the date input's reserved icon padding that
+   was wider than the space actually available, so the row overflowed the
+   panel and clipped the right field's calendar icon at the edge instead of
+   the fields shrinking to fit. */
 .date-row {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 6px;
   align-items: center;
 }
