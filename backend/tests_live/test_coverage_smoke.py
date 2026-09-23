@@ -26,7 +26,7 @@ from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
 
 # The same box and window as adr/0004 §3.2 and §3.1 of the plan measured.
 BBOX = (5.0, 45.0, 15.0, 55.0)

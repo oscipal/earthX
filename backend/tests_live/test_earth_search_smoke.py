@@ -24,7 +24,7 @@ from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("sentinel-2-c1-l2a")]
 
 # A small box over Central Europe and a month that closed long ago — the same corner
 # of the archive adr/0005 §3 measured, so a surprise here is comparable with it.
