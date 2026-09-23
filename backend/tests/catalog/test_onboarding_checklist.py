@@ -14,10 +14,12 @@ The wordings that apply to the last two points:
   the running platform worked without a secret or recurring manual work.
 
 Point 9 needs a running chain rather than a look at the entry, so it lives in
-``test_onboarding_endtoend.py``; :data:`CHECKED_ELSEWHERE` says where. Point 10
-is still open and :data:`NOT_YET_CHECKED` names the PR that closes it. Between
-them, ``test_every_point_is_accounted_for`` makes a forgotten point a failure
-rather than a silent gap.
+``test_onboarding_endtoend.py``. Point 10 needs a look at a different directory
+rather than at the entry: whether ``backend/tests_live/`` carries a module marked
+``@pytest.mark.live_dataset(<its id>)`` for it (Fassung v1.1, Otto 22.09.2026,
+M2-08 plan §4.4). Both live in :data:`CHECKED_ELSEWHERE`, which says where.
+``test_every_point_is_accounted_for`` makes a forgotten point a failure rather
+than a silent gap.
 
 Two kinds of failure, and the difference is deliberate:
 
@@ -31,8 +33,12 @@ Two kinds of failure, and the difference is deliberate:
 
 from __future__ import annotations
 
+import ast
+import functools
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -67,15 +73,57 @@ CHECKLIST = {
 # Points that are checked, but not by looking at the entry.
 CHECKED_ELSEWHERE = {
     9: "tests.catalog.test_onboarding_endtoend",
+    10: "test_every_registry_entry_is_covered_by_the_live_smoke, below — the "
+    "live_dataset marker in backend/tests_live/",
 }
 
-# Points nothing answers yet, with the PR that closes them. Point 10 is the
-# narrowed version of D4 (Otto, 22.09.2026): "the dataset is covered by the T-D
-# smoke", read off the marker in tests_live/ — not a date, which the platform
-# does not show until M5.
-NOT_YET_CHECKED = {
-    10: "M2-08-3 — covered by the T-D smoke, via the live_dataset marker",
-}
+# Points nothing answers yet, with the PR that closes them.
+NOT_YET_CHECKED: dict[int, str] = {}
+
+
+# --------------------------------------------------------------------------------
+# Point 10: covered by the T-D smoke, read off the live_dataset marker.
+# --------------------------------------------------------------------------------
+
+# backend/tests/catalog/test_onboarding_checklist.py -> parents[2] == backend/
+_TESTS_LIVE_DIR = Path(__file__).resolve().parents[2] / "tests_live"
+
+
+def _live_dataset_marks(module: ast.Module) -> Iterator[str]:
+    """The dataset ids named in this module's ``pytestmark``, if any.
+
+    Reads the source rather than importing the module: tests_live modules open a
+    ``Gateway`` fixture and expect the network guard of ``backend/tests/conftest.py``
+    to be absent, neither of which this checklist test wants to disturb just to see
+    which dataset a module claims to cover.
+    """
+    for node in ast.walk(module):
+        if not (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets)):
+            continue
+        marks = node.value.elts if isinstance(node.value, ast.List) else [node.value]
+        for mark in marks:
+            if (
+                isinstance(mark, ast.Call)
+                and isinstance(mark.func, ast.Attribute)
+                and mark.func.attr == "live_dataset"
+                and mark.args
+                and isinstance(mark.args[0], ast.Constant)
+                and isinstance(mark.args[0].value, str)
+            ):
+                yield mark.args[0].value
+
+
+@functools.lru_cache(maxsize=1)
+def _live_smoke_dataset_ids() -> frozenset[str]:
+    """Every dataset id any ``backend/tests_live`` module claims to cover."""
+    ids: set[str] = set()
+    for path in sorted(_TESTS_LIVE_DIR.glob("test_*.py")):
+        ids.update(_live_dataset_marks(ast.parse(path.read_text(), filename=str(path))))
+    return frozenset(ids)
+
+
+def _missing_live_smoke_coverage(dataset_ids: Iterable[str], covered: frozenset[str]) -> list[str]:
+    return [dataset_id for dataset_id in dataset_ids if dataset_id not in covered]
 
 
 @dataclass(frozen=True)
@@ -230,6 +278,56 @@ def test_the_two_datasets_cite_different_products() -> None:
     cog = REGISTRY.get("sentinel-2-c1-l2a")
     zarr = REGISTRY.get("sentinel-2-l2a-zarr3")
     assert cog.doi != zarr.doi
+
+
+def test_every_registry_entry_is_covered_by_the_live_smoke() -> None:
+    """Point 10, Fassung v1.1: every entry needs a tests_live module marked for it.
+
+    Not a date (M2-08 plan §4.4: no way to carry the last green run's timestamp into
+    the running platform came without a secret or recurring manual work) — just
+    whether ``backend/tests_live/`` still names the entry at all.
+    """
+    missing = _missing_live_smoke_coverage((config.dataset_id for config in REGISTRY), _live_smoke_dataset_ids())
+    assert not missing, f"no tests_live module marked live_dataset for: {missing}"
+
+
+def test_an_uncovered_dataset_id_is_reported_missing() -> None:
+    """The negative case point 10 would otherwise have no test for.
+
+    A real registry entry never lacks coverage right now (the test above pins
+    that), so this checks the reporting function itself against a made-up id
+    instead of trying to construct a genuinely uncovered entry.
+    """
+    covered = _live_smoke_dataset_ids()
+    assert "ghost-dataset" not in covered, "test id collides with a real live_dataset mark"
+    assert _missing_live_smoke_coverage(["ghost-dataset", *covered], covered) == ["ghost-dataset"]
+
+
+def test_live_dataset_marks_are_found_in_both_pytestmark_forms(tmp_path) -> None:
+    """The scanner reads a single mark and a list of marks alike.
+
+    ``tests_live`` writes both: earth-search's two files each carry
+    ``[pytest.mark.anyio, pytest.mark.live_dataset(...)]``, a plain
+    ``pytest.mark.live_dataset(...)`` alone would be just as valid pytest.
+    """
+    single = tmp_path / "test_single.py"
+    single.write_text('import pytest\n\npytestmark = pytest.mark.live_dataset("solo-dataset")\n')
+    grouped = tmp_path / "test_grouped.py"
+    grouped.write_text(
+        'import pytest\n\npytestmark = [pytest.mark.anyio, pytest.mark.live_dataset("grouped-dataset")]\n'
+    )
+    unrelated = tmp_path / "test_unrelated.py"
+    unrelated.write_text('import pytest\n\npytestmark = pytest.mark.anyio\n')
+
+    found = {
+        path.name: set(_live_dataset_marks(ast.parse(path.read_text(), filename=str(path))))
+        for path in (single, grouped, unrelated)
+    }
+    assert found == {
+        "test_single.py": {"solo-dataset"},
+        "test_grouped.py": {"grouped-dataset"},
+        "test_unrelated.py": set(),
+    }
 
 
 def test_every_point_is_accounted_for() -> None:

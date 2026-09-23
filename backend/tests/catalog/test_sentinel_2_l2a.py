@@ -193,7 +193,6 @@ def test_distribution_and_modification_are_both_allowed() -> None:
     assert SENTINEL_2_L2A.license.derivatives is True
 
 
-def test_access_and_health_are_dated() -> None:
-    """Onboarding checklist points 6 and 10: the check has a date and it is visible."""
+def test_access_is_dated() -> None:
+    """Onboarding checklist point 6: the anonymous access check has a date."""
     assert SENTINEL_2_L2A.access.token_free_checked_at == date(2026, 9, 18)
-    assert SENTINEL_2_L2A.health.last_checked_ok == date(2026, 9, 18)

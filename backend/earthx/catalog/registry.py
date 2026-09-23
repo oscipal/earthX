@@ -419,14 +419,16 @@ def _utc_date(instant: datetime) -> str:
 
 @dataclass(frozen=True, slots=True)
 class HealthInfo:
-    """Status and "last checked successfully" (KLAERUNGEN B12)."""
+    """Status of the source (KLAERUNGEN B12, Fassung v1.1 of point 10).
+
+    Carries no "last checked successfully" date: the only one this field ever held
+    was the date of the onboarding check itself, not of an actual health check, and
+    labelling it that way was the mix-up Otto ruled out (M2-08 plan §4.4,
+    ENTSCHEIDUNGSLOG 22.09.2026). A real check date arrives with M5's own health
+    checks, on a field of its own.
+    """
 
     status: HealthStatus
-    last_checked_ok: date | None
-
-    def __post_init__(self) -> None:
-        if self.status is HealthStatus.OK and self.last_checked_ok is None:
-            raise ConfigError("health status ok without a date of the last successful check (KLAERUNGEN B12)")
 
 
 @dataclass(frozen=True, slots=True)

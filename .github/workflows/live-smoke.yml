@@ -5,7 +5,10 @@
 # Cloud sessions do not run it either — `pytest` alone collects only backend/tests,
 # and this directory lies outside it.
 #
-# Small on purpose (adr/0005 §3.6): two metadata requests, no assets, no token.
+# Small on purpose (adr/0005 §3.6): a handful of metadata requests, no assets, no
+# token. One job per source (M2-08 plan §11 F3): a red run in one never colours the
+# other, and each job's own `earthx:` dataset id is what the onboarding checklist's
+# point 10 (Fassung v1.1) reads off the `live_dataset` marker in `backend/tests_live/`.
 
 name: Live smoke
 
@@ -42,7 +45,30 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
 
-      # Named explicitly: `pytest` on its own would collect backend/tests instead,
-      # which is the offline suite.
-      - name: Live smoke (pytest backend/tests_live)
-        run: pytest backend/tests_live
+      # Named explicitly, and to its own two files: `pytest` on its own would
+      # collect backend/tests instead (the offline suite), and `backend/tests_live`
+      # on its own would pull in the eopf job's file too.
+      - name: Live smoke (pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py)
+        run: pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py
+
+  eopf:
+    name: EOPF Sentinel Zarr Samples Service still answers as recorded
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
+
+      - name: Live smoke (pytest backend/tests_live/test_eopf_smoke.py)
+        run: pytest backend/tests_live/test_eopf_smoke.py

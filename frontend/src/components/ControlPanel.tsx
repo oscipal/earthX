@@ -63,9 +63,9 @@ function AoiExtras() {
 // How settled the source of the selected dataset is (D23: "staging" must not be
 // something a user finds out only once the source disappears).
 //
-// `earthx:health.last_checked_ok` is deliberately *not* shown next to it (Otto,
-// 22.09.2026, on M2-08's finding in #62): the field carries the date the dataset
-// was onboarded, not the date anything was checked, so displaying it would state
+// No "last checked" date is shown next to it: `earthx:health` carries only
+// `status` (M2-08-3, 2026-09-23) — the field it used to carry alongside dated only
+// the onboarding check, not an actual health check, and stating that would claim
 // something the platform does not know. A real check date comes with the health
 // checks in M5.
 function DatasetNotes() {

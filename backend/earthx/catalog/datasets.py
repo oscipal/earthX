@@ -195,9 +195,10 @@ SENTINEL_2_L2A = DatasetConfig(
     # lower bound to set: a COG carries overviews, so a tile at z0 costs a read of
     # the coarsest overview and nothing more.
     viewer=ViewerInfo(group_by=("datetime", "grid:code"), min_zoom=0, max_zoom=19),
-    # Reachability, not health in the sense M5 will measure it: adr/0003 §10.1 got
-    # HTTP 200 on /v1/collections/sentinel-2-c1-l2a, nothing beyond that.
-    health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_REACHABILITY_CHECKED),
+    # Not health in the sense M5 will measure it: adr/0003 §10.1 got HTTP 200 on
+    # /v1/collections/sentinel-2-c1-l2a, nothing beyond that. The reachability date
+    # itself lives on `access.token_free_checked_at` (point 6), not here.
+    health=HealthInfo(status=HealthStatus.OK),
     # Element 84's Collection 1 is a released, versioned product line, not a pilot.
     maturity=Maturity.STABLE,
     zarr=None,
@@ -349,7 +350,7 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
     # gets smaller. The level itself is still computed from the requested tile's
     # own ground resolution (api.tiler._target_gsd), never looked up from the zoom.
     viewer=ViewerInfo(group_by=("datetime", "grid:code"), min_zoom=8, max_zoom=14),
-    health=HealthInfo(status=HealthStatus.OK, last_checked_ok=_EOPF_CHECKED),
+    health=HealthInfo(status=HealthStatus.OK),
     # adr/0007 §12.11 point 14 (Otto's first F8 condition): the provider calls
     # this collection "staging" in its own title, and that must not be something
     # a user finds out only once the source disappears.

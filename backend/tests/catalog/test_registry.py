@@ -22,8 +22,6 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
-    HealthInfo,
-    HealthStatus,
     LicenseTier,
     SourceInfo,
     SpatialExtent,
@@ -261,14 +259,6 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="https"):
             TermsOfUse(url="http://example.invalid/t", notice={"en": "Terms: {terms_url}"})
 
-    def test_health_ok_without_a_date_is_rejected(self) -> None:
-        """KLAERUNGEN B12: "last checked successfully" has to be set to mean anything."""
-        with pytest.raises(ConfigError, match="last successful check"):
-            HealthInfo(status=HealthStatus.OK, last_checked_ok=None)
-
-    def test_health_unknown_without_a_date_is_fine(self) -> None:
-        assert HealthInfo(status=HealthStatus.UNKNOWN, last_checked_ok=None).last_checked_ok is None
-
     @pytest.mark.parametrize("endpoint", ["http://example.invalid/v1", "file:///etc/passwd", "example.invalid"])
     def test_a_non_https_endpoint_is_rejected(self, valid_config, vary, endpoint) -> None:
         """KLAERUNGEN B8: only https goes out, and the registry is where it is named."""
@@ -376,10 +366,6 @@ class TestEveryEntry:
 
     def test_the_grid_cap_fits_the_footprint(self, entry: DatasetConfig) -> None:
         assert entry.coverage.max_geotile_level <= max_geotile_level_for(entry.coverage.typical_footprint_km)
-
-    def test_a_healthy_entry_says_when_it_was_checked(self, entry: DatasetConfig) -> None:
-        if entry.health.status is HealthStatus.OK:
-            assert entry.health.last_checked_ok is not None
 
     def test_the_id_is_the_one_it_is_filed_under(self, entry: DatasetConfig) -> None:
         assert REGISTRY.get(entry.dataset_id) is entry

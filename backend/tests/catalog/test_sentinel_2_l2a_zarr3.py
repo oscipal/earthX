@@ -145,11 +145,9 @@ def test_zipped_product_is_not_reachable_as_an_asset() -> None:
     assert "zipped_product" not in SENTINEL_2_L2A_ZARR3.description
 
 
-def test_access_and_health_are_dated() -> None:
-    """Onboarding checklist points 6 and 10: the check has a date and it is visible."""
-    checked = date(2026, 9, 22)
-    assert SENTINEL_2_L2A_ZARR3.access.token_free_checked_at == checked
-    assert SENTINEL_2_L2A_ZARR3.health.last_checked_ok == checked
+def test_access_is_dated() -> None:
+    """Onboarding checklist point 6: the anonymous access check has a date."""
+    assert SENTINEL_2_L2A_ZARR3.access.token_free_checked_at == date(2026, 9, 22)
 
 
 def test_the_doi_is_the_collections_cite_as_link() -> None:
