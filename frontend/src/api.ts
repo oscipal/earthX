@@ -9,6 +9,10 @@ const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 interface StacLink {
   rel: string;
   href: string;
+  method?: string;
+  // Present on a `POST`-shaped link (M3-08, `PagingLinks.link_next` on the
+  // backend): the whole next request body, our own page token under `token`.
+  body?: Record<string, unknown>;
 }
 
 interface StacErrorBody {
@@ -66,6 +70,11 @@ export async function fetchCollections(): Promise<Collection[]> {
 export interface SearchQuery {
   collection: string;
   bbox?: Bbox;
+  // M3-08: a polygon or point AOI searches by its true shape instead of its bbox
+  // (`geoUtils.ts::searchArea` decides which of the two a caller sends — never
+  // both, the backend rejects that combination). Never sent as a `GET` query
+  // parameter, only in the `POST` body below.
+  intersects?: GeoJSON.Geometry;
   datetime?: string;
   limit?: number;
   token?: string;
@@ -78,24 +87,31 @@ export interface ItemPage {
   nextToken: string | null;
 }
 
-// The `token` query parameter carried by the response's `rel=next` link, not
-// a guessed format — `PagingLinks` on the backend is free to change its shape.
-// The base is a placeholder only, for parsing a relative `href`; it is never
-// used to reach a server (no DOM/`window` in the test environment, F2 = a).
+// M3-08: every search goes over `POST` now (F7a — keeps an AOI out of the access
+// log, which a `GET` query string cannot avoid), so the response's `next` link is
+// always the `POST`-shaped one: the token sits in `body.token`, not in `href`'s
+// query string (`PagingLinks.link_next` on the backend). The `href`-based reading
+// is kept as a fallback for a link this client did not itself ask for.
 export function nextTokenFrom(links: StacLink[] | undefined): string | null {
   const next = links?.find((l) => l.rel === 'next');
   if (!next) return null;
+  const fromBody = next.body?.token;
+  if (typeof fromBody === 'string') return fromBody;
   const url = new URL(next.href, 'http://localhost');
   return url.searchParams.get('token');
 }
 
-export function buildSearchUrl(q: SearchQuery): string {
-  const params = new URLSearchParams({ collections: q.collection });
-  if (q.bbox) params.set('bbox', q.bbox.join(','));
-  if (q.datetime) params.set('datetime', q.datetime);
-  if (q.limit) params.set('limit', String(q.limit));
-  if (q.token) params.set('token', q.token);
-  return `${BASE}/stac/search?${params.toString()}`;
+// The `POST /stac/search` body, in the same field names as `SearchParams`
+// (`backend/earthx/adapters/federated_search.py`) — `bbox`/`intersects` are
+// mutually exclusive there, so a caller sends at most one (`geoUtils.searchArea`).
+export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
+  const body: Record<string, unknown> = { collections: [q.collection] };
+  if (q.bbox) body.bbox = q.bbox;
+  if (q.intersects) body.intersects = q.intersects;
+  if (q.datetime) body.datetime = q.datetime;
+  if (q.limit) body.limit = q.limit;
+  if (q.token) body.token = q.token;
+  return body;
 }
 
 export async function searchItems(q: SearchQuery): Promise<ItemPage> {
@@ -104,7 +120,13 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberMatched?: number;
     numberReturned: number;
     links?: StacLink[];
-  }>(await fetch(buildSearchUrl(q)));
+  }>(
+    await fetch(`${BASE}/stac/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildSearchBody(q)),
+    }),
+  );
   return {
     features: body.features,
     numberMatched: body.numberMatched ?? null,

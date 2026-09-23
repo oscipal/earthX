@@ -1,37 +1,57 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildSearchUrl, buildStatisticsUrl, buildTileTemplate, errorDetail, fetchItem, HttpError, nextTokenFrom } from './api';
+import {
+  buildSearchBody,
+  buildStatisticsUrl,
+  buildTileTemplate,
+  errorDetail,
+  fetchItem,
+  HttpError,
+  nextTokenFrom,
+  searchItems,
+} from './api';
 
-describe('buildSearchUrl', () => {
+describe('buildSearchBody', () => {
   it('carries the collection, bbox, datetime range, limit and token', () => {
-    const url = buildSearchUrl({
+    const body = buildSearchBody({
       collection: 'sentinel-2-c1-l2a',
       bbox: [10, 47, 11, 48],
       datetime: '2026-07-01T00:00:00Z/2026-07-31T23:59:59Z',
       limit: 100,
       token: 'next:abc',
     });
-    const params = new URL(url, 'http://localhost').searchParams;
-    expect(params.get('collections')).toBe('sentinel-2-c1-l2a');
-    // bbox stays in the order it was given: [minx, miny, maxx, maxy].
-    expect(params.get('bbox')).toBe('10,47,11,48');
-    expect(params.get('datetime')).toBe('2026-07-01T00:00:00Z/2026-07-31T23:59:59Z');
-    expect(params.get('limit')).toBe('100');
-    expect(params.get('token')).toBe('next:abc');
+    expect(body).toEqual({
+      collections: ['sentinel-2-c1-l2a'],
+      bbox: [10, 47, 11, 48],
+      datetime: '2026-07-01T00:00:00Z/2026-07-31T23:59:59Z',
+      limit: 100,
+      token: 'next:abc',
+    });
   });
 
-  it('omits optional params entirely rather than sending them empty', () => {
-    const url = buildSearchUrl({ collection: 'sentinel-2-c1-l2a' });
-    const params = new URL(url, 'http://localhost').searchParams;
-    expect(params.has('bbox')).toBe(false);
-    expect(params.has('datetime')).toBe(false);
-    expect(params.has('limit')).toBe(false);
-    expect(params.has('token')).toBe(false);
+  it('carries intersects instead of bbox for a point or polygon AOI (M3-08)', () => {
+    const point: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
+    const body = buildSearchBody({ collection: 'sentinel-2-c1-l2a', intersects: point });
+    expect(body.intersects).toBe(point);
+    expect(body.bbox).toBeUndefined();
+  });
+
+  it('omits optional fields entirely rather than sending them empty', () => {
+    const body = buildSearchBody({ collection: 'sentinel-2-c1-l2a' });
+    expect(Object.keys(body)).toEqual(['collections']);
   });
 });
 
 describe('nextTokenFrom', () => {
-  it('reads the token out of the rel=next link', () => {
+  it('reads the token out of a POST-shaped next links body (M3-08 — every search goes over POST now)', () => {
+    const links = [
+      { rel: 'self', href: 'https://example.test/stac/search' },
+      { rel: 'next', href: 'https://example.test/stac/search', method: 'POST', body: { collections: ['x'], token: 'next:abc' } },
+    ];
+    expect(nextTokenFrom(links)).toBe('next:abc');
+  });
+
+  it('falls back to a GET-shaped hrefs query string', () => {
     const links = [
       { rel: 'self', href: 'https://example.test/stac/search?collections=x' },
       { rel: 'next', href: 'https://example.test/stac/search?collections=x&token=next%3Aabc' },
@@ -42,6 +62,32 @@ describe('nextTokenFrom', () => {
   it('is null when there is no next link', () => {
     expect(nextTokenFrom([{ rel: 'self', href: 'https://example.test/stac/search' }])).toBeNull();
     expect(nextTokenFrom(undefined)).toBeNull();
+  });
+});
+
+describe('searchItems', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the search as a POST body, not a GET query string (M3-08 F7a)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })),
+    );
+    const polygon: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[8, 47], [12, 47], [8, 51], [8, 47]]] };
+    await searchItems({ collection: 'sentinel-2-c1-l2a', intersects: polygon });
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('/stac/search');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      collections: ['sentinel-2-c1-l2a'],
+      intersects: polygon,
+    });
   });
 });
 
