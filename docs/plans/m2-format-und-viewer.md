@@ -745,6 +745,17 @@ Alle fünf Empfehlungen angenommen, zwei präzisiert:
   verworfenen Parameter beim Namen. Der Nebenbefund (`500` statt `502` beim
   Einzelabruf) wird mitgenommen und im PR eigens ausgewiesen.
 
+**Nachbesserung (23.09.2026), Kürzel „M2-17b":** Otto hat die Umsetzung des
+offenen PR ausprobiert und die Bedienung geändert, gegen die Empfehlung zu
+Frage 3: Das Feld „Scene name“ steht jetzt ganz oben im Suchmenü, über den
+AOI-Werkzeugen (Point/Rectangle/…), nicht mehr unter der Datensatz-Wahl. Es
+hat keinen eigenen Knopf mehr — der bestehende Suchknopf übernimmt beide
+Wege und heißt jetzt nur noch „Search“ (vorher „Search scenes“): trägt das
+Feld einen Namen, ruft er `findSceneByName`, sonst wie gehabt `runSearch`;
+ein Name geht vor, verlangt also weder AOI noch Zeitraum. `findSceneByName`
+selbst (Ziel-Datensatz, Meldungen, was sich bei Erfolg/Fehlschlag ändert)
+ist von der Umbenennung nicht berührt.
+
 ---
 
 ## 5. Abnahme von M2

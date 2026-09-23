@@ -127,38 +127,31 @@ function DatasetNotes() {
   );
 }
 
-// A separate lookup, not a heuristic bolted onto the search field above: the
-// scene-name syntax differs per dataset, and there is nothing else a free-text
-// field in the search menu could mean today (location search is hidden until
-// M3, F1) — so no guessing which one the user typed (M2-17).
-function SceneNameLookup() {
+// Not a heuristic bolted onto a generic search box: the scene-name syntax
+// differs per dataset, and there is nothing else a free-text field here could
+// mean today (location search is hidden until M3, F1) — so no guessing which
+// one the user typed (M2-17). One field, no button of its own — the single
+// "Search" button below decides which of the two lookups to run (M2-17,
+// Otto's redesign 23.09.2026: merged into the ordinary search action instead
+// of a separate "Find").
+function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
   const query = useAppStore((s) => s.sceneNameQuery);
   const setQuery = useAppStore((s) => s.setSceneNameQuery);
-  const loading = useAppStore((s) => s.sceneLookupLoading);
-  const findSceneByName = useAppStore((s) => s.findSceneByName);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const canFind = query.trim().length > 0 && !!datasetId && !loading;
-
   return (
-    <div className="scene-lookup">
+    <div className="scene-name-field">
       <label className="field-label" htmlFor="scene-name-input">
         Scene name
       </label>
-      <div className="scene-lookup-row">
-        <input
-          id="scene-name-input"
-          type="text"
-          value={query}
-          placeholder="e.g. S2C_T32TNT_20260920T103025_L2A"
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && canFind) void findSceneByName();
-          }}
-        />
-        <button type="button" className="tool-btn ghost" disabled={!canFind} onClick={() => void findSceneByName()}>
-          {loading ? 'Finding…' : 'Find'}
-        </button>
-      </div>
+      <input
+        id="scene-name-input"
+        type="text"
+        value={query}
+        placeholder="e.g. S2C_T32TNT_20260920T103025_L2A"
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSubmit();
+        }}
+      />
     </div>
   );
 }
@@ -273,9 +266,26 @@ export default function ControlPanel() {
   const setDateFrom = useAppStore((s) => s.setDateFrom);
   const setDateTo = useAppStore((s) => s.setDateTo);
   const searching = useAppStore((s) => s.searching);
+  const sceneLookupLoading = useAppStore((s) => s.sceneLookupLoading);
   const runSearch = useAppStore((s) => s.runSearch);
+  const findSceneByName = useAppStore((s) => s.findSceneByName);
+  const sceneNameQuery = useAppStore((s) => s.sceneNameQuery);
   const count = useAppStore((s) => s.items.length);
   const datasetId = useAppStore((s) => s.datasetId);
+
+  // One button for both lookups (M2-17, Otto's redesign): a scene name in the
+  // field above takes it, an AOI otherwise — the usual bbox/date search
+  // (`runSearch`) is untouched either way, this only decides which of the two
+  // it calls. A name takes priority over an AOI rather than requiring both,
+  // since the name lookup needs neither AOI nor date range (adr/0001 Z1).
+  const hasSceneName = sceneNameQuery.trim().length > 0;
+  const busy = searching || sceneLookupLoading;
+  const canSearch = !busy && !!datasetId && (hasSceneName || !!aoi);
+  const search = () => {
+    if (!canSearch) return;
+    if (hasSceneName) void findSceneByName();
+    else void runSearch();
+  };
 
   return (
     <div className="panel control-panel">
@@ -287,6 +297,8 @@ export default function ControlPanel() {
         </div>
       </div>
 
+      <SceneNameField onSubmit={search} />
+
       <label className="field-label">Area of interest</label>
       <Toolbar />
       <AoiExtras />
@@ -294,8 +306,6 @@ export default function ControlPanel() {
       <label className="field-label">Dataset</label>
       <DatasetSelector />
       <DatasetNotes />
-
-      <SceneNameLookup />
 
       <CoverageControls />
 
@@ -306,17 +316,12 @@ export default function ControlPanel() {
         <DateField value={dateTo} onChange={setDateTo} label="To date" />
       </div>
 
-      <button
-        type="button"
-        className="primary-btn"
-        disabled={!aoi || !datasetId || searching}
-        onClick={() => runSearch()}
-      >
-        {searching ? 'Searching…' : 'Search scenes'}
+      <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+        {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
       </button>
 
       {count > 0 && <p className="result-count">{count} scene(s) found</p>}
-      {!aoi && <p className="hint-text">Pick a tool to define an area of interest.</p>}
+      {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
     </div>
   );
 }

@@ -580,22 +580,6 @@ input[type='date']:focus {
   box-shadow: var(--glow);
 }
 
-/* --- scene name lookup (M2-17) --- */
-.scene-lookup-row {
-  display: flex;
-  gap: 6px;
-}
-.scene-lookup-row input[type='text'] {
-  flex: 1;
-  min-width: 0;
-}
-.scene-lookup-row .tool-btn {
-  flex: 0 0 auto;
-  justify-content: center;
-  font-size: 10px;
-  cursor: pointer;
-}
-
 /* --- AOI upload / last row --- */
 .aoi-extras {
   display: flex;
