@@ -726,6 +726,25 @@ Fehlschlag unverändert bleiben; Integrationstests für `ids` und `intersects` �
 `400` auf `GET` und `POST`; Lint, Typprüfung, Vitest, `ruff check backend`,
 `pytest`, `lint-imports` grün.
 
+#### Ottos Antworten (23.09.2026)
+
+Alle fünf Empfehlungen angenommen, zwei präzisiert:
+
+- **1, 3, 4** wie empfohlen: direkter Item-Abruf; eigenes Feld „Scene name“ mit
+  eigenem Knopf; bei unbekanntem Namen nur eine Meldung, sonst bleibt alles
+  unverändert.
+- **2, präzisiert:** Die Suche läuft nur im gewählten Datensatz. Findet sie
+  nichts, muss die Meldung sagen, dass der Name in **diesem Datensatz** nicht
+  existiert — die beiden Kataloge vergeben verschiedene Namen für dieselbe
+  Szene (Befund oben), und genau das soll der Nutzer merken, nicht nur ein
+  allgemeines „nicht gefunden“.
+- **5, verschärft:** Das stille Verwerfen von `ids` und `intersects` ist der
+  schwerwiegendste Befund — die API liefert heute falsche Treffer mit `200`.
+  Die Ablehnung mit `400` kommt jetzt, in M2-17, nicht später; das
+  Durchreichen bleibt eine eigene, spätere Aufgabe. Die Meldung nennt den
+  verworfenen Parameter beim Namen. Der Nebenbefund (`500` statt `502` beim
+  Einzelabruf) wird mitgenommen und im PR eigens ausgewiesen.
+
 ---
 
 ## 5. Abnahme von M2
