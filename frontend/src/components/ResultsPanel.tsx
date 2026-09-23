@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 
 import { quicklookAsset } from '../datasets';
 import { useAppStore } from '../store';
@@ -138,29 +138,14 @@ function GroupBlock({
 
 export default function ResultsPanel() {
   const groups = useAppStore((s) => s.groups);
-  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
-  const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
+  // Separate from `activeGroupIndex` (the time step the map/time slider
+  // show), so the currently open section can be collapsed without forcing a
+  // different one open, and so collapsing every section also hides their
+  // quicklooks on the map (V-6, V-11 — `store.ts::toggleResultsGroup` has
+  // the full reasoning).
+  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
+  const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
   const clearAll = useAppStore((s) => s.clearAll);
-  // Which section is open in the list — separate from `activeGroupIndex`
-  // (the time step the map/time slider show), so the currently open one can
-  // be collapsed without forcing a different one open (V-6). Stays in sync
-  // whenever `activeGroupIndex` changes some other way (a new search, the
-  // time slider, "play"); a manual collapse only changes this local state,
-  // so it doesn't get overwritten by that sync — `activeGroupIndex` itself
-  // hasn't changed.
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(activeGroupIndex);
-  useEffect(() => {
-    setExpandedIndex(activeGroupIndex);
-  }, [activeGroupIndex]);
-
-  const toggleGroup = (index: number) => {
-    if (index === expandedIndex) {
-      setExpandedIndex(null);
-    } else {
-      setExpandedIndex(index);
-      setActiveGroupIndex(index);
-    }
-  };
 
   if (groups.length === 0) return null;
 
@@ -186,7 +171,7 @@ export default function ResultsPanel() {
             key={g.key.join('\u0000')}
             group={g}
             index={i}
-            expanded={i === expandedIndex}
+            expanded={i === expandedGroupIndex}
             onToggle={toggleGroup}
           />
         ))}

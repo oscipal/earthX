@@ -184,6 +184,15 @@ interface AppState {
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
+  // Which group is open in the results list — `null` while every group is
+  // collapsed (V-11). Kept in sync with `activeGroupIndex` whenever that
+  // changes some other way (a new search, the time slider, "play", picking
+  // a pinned layer); manually collapsing the open group only changes this,
+  // leaving `activeGroupIndex` — and anything keyed to "the current time
+  // step" instead of "what the list has open" — untouched. `MapView` reads
+  // this (not `activeGroupIndex`) for the browse-mode quicklooks/preview
+  // tiles it shows, so collapsing every group hides them too.
+  expandedGroupIndex: number | null;
   selectedIds: string[];
   downloaded: Record<string, DownloadedInfo>;
 
@@ -232,6 +241,7 @@ interface AppState {
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
+  toggleResultsGroup: (i: number) => void;
   focusItem: (id: string) => void;
   toggleSelected: (id: string) => void;
   selectAllInActiveGroup: () => void;
@@ -284,6 +294,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   items: [],
   groups: [],
   activeGroupIndex: 0,
+  expandedGroupIndex: 0,
   selectedIds: [],
   downloaded: {},
 
@@ -312,6 +323,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       items: [],
       groups: [],
       activeGroupIndex: 0,
+      expandedGroupIndex: 0,
       selectedIds: [],
       error: null,
       notice: null,
@@ -357,6 +369,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       items: [],
       groups: [],
       activeGroupIndex: 0,
+      expandedGroupIndex: 0,
       selectedIds: [],
       panelCollapsed: false,
       playing: false,
@@ -470,6 +483,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloaded: r.downloaded,
         appliedRender: r.appliedRender,
         activeGroupIndex: r.activeGroupIndex,
+        expandedGroupIndex: r.activeGroupIndex,
         selectedIds: r.selectedIds,
         aoi: r.aoi,
         showDownloaded: true,
@@ -657,10 +671,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bb = unionBbox(boxes);
     if (bb) set({ flyToBbox: bb });
   },
-  setActiveGroupIndex: (activeGroupIndex) => set({ activeGroupIndex }),
+  // Also expands the matching group in the results list — everything that
+  // moves the "current" time step this way (the time slider, "play",
+  // clicking a scene, picking a pinned layer) is meant to bring the list
+  // along with it. A manual collapse (`toggleResultsGroup`) is the one path
+  // that intentionally leaves `activeGroupIndex` alone.
+  setActiveGroupIndex: (activeGroupIndex) => set({ activeGroupIndex, expandedGroupIndex: activeGroupIndex }),
+  // The results list's own toggle (V-11): collapsing the already-open group
+  // only ever changes `expandedGroupIndex`, never `activeGroupIndex` — so
+  // the map/time slider stay exactly where they were, they just lose their
+  // quicklooks/preview tiles until something is expanded again. Opening a
+  // different (collapsed) group goes through `setActiveGroupIndex` instead,
+  // keeping both in sync as usual.
+  toggleResultsGroup: (index) => {
+    const s = get();
+    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null });
+    else s.setActiveGroupIndex(index);
+  },
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);
-    if (idx >= 0) set({ activeGroupIndex: idx });
+    if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx });
   },
   toggleSelected: (id) =>
     set((s) => ({
@@ -736,13 +766,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         const groups = buildGroups(features, displayGroupBy(features, groupBy));
         const text = typeof notice === 'function' ? notice(groups) : notice;
-        set({ items: features, groups, activeGroupIndex: 0, selectedIds: [], error: null, notice: text });
+        set({
+          items: features,
+          groups,
+          activeGroupIndex: 0,
+          expandedGroupIndex: 0,
+          selectedIds: [],
+          error: null,
+          notice: text,
+        });
       } catch (e) {
         if (e instanceof MissingProperty) {
           set({
             items: [],
             groups: [],
             activeGroupIndex: 0,
+            expandedGroupIndex: 0,
             selectedIds: [],
             error: `Grouping failed: ${e.message}`,
             notice: null,

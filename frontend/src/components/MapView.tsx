@@ -48,6 +48,17 @@ function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
   draw.setMode(mode === 'none' ? 'static' : mode);
 }
 
+// Which group's items the map should treat as "current" (V-11): the
+// results list's own `expandedGroupIndex` in browse mode, since that is
+// what quicklooks/preview tiles and the click-to-select hit test follow —
+// collapsing every group there must hide them, same as never having
+// expanded one. In focus mode the list isn't even shown any more (`App.tsx`
+// swaps it for `ViewerControls`), so `activeGroupIndex` — the scene actually
+// viewed at full resolution — is what matters instead.
+function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; expandedGroupIndex: number | null }): number | null {
+  return st.focusMode ? st.activeGroupIndex : st.expandedGroupIndex;
+}
+
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -61,6 +72,7 @@ export default function MapView() {
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
   const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
+  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const downloaded = useAppStore((s) => s.downloaded);
   const flyToBbox = useAppStore((s) => s.flyToBbox);
@@ -161,7 +173,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       syncLayers(map, st.layers);
       syncMosaic(map, {
-        items: itemsForMap(st.groups, st.activeGroupIndex, st.selectedIds),
+        items: itemsForMap(st.groups, visibleGroupIndex(st), st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
         downloaded: st.downloaded,
         selectedIds: st.selectedIds,
@@ -191,7 +203,8 @@ export default function MapView() {
     map.on('click', (e) => {
       const st = useAppStore.getState();
       if (st.toolMode !== 'none') return;
-      const group = st.groups[st.activeGroupIndex];
+      const idx = visibleGroupIndex(st);
+      const group = idx === null ? undefined : st.groups[idx];
       if (!group) return;
       const { lng, lat } = e.lngLat;
       // Toggle the frame under the cursor.
@@ -263,20 +276,21 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
       syncBrowseMosaic(map, {
-        items: itemsForMap(groups, activeGroupIndex, selectedIds),
+        items: itemsForMap(groups, expandedGroupIndex, selectedIds),
         dataset: datasets.find((d) => d.id === datasetId) ?? null,
       });
     }
-  }, [focusMode, groups, activeGroupIndex, selectedIds, datasets, datasetId]);
+  }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
-      syncSelectionHighlight(map, itemsForMap(groups, activeGroupIndex, selectedIds), selectedIds);
+      const idx = focusMode ? activeGroupIndex : expandedGroupIndex;
+      syncSelectionHighlight(map, itemsForMap(groups, idx, selectedIds), selectedIds);
     }
-  }, [groups, activeGroupIndex, selectedIds]);
+  }, [groups, focusMode, activeGroupIndex, expandedGroupIndex, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

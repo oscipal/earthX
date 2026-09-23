@@ -187,4 +187,24 @@ describe('itemsForMap', () => {
   it('is empty for an out-of-range active index and no selection', () => {
     expect(itemsForMap(groups, 99, [])).toEqual([]);
   });
+
+  // V-11: every group collapsed (nothing "active" in the results list) must
+  // hide quicklooks on the map, same as an out-of-range index — but a
+  // selection still shows, exactly like a collapsed-but-valid group would.
+  describe('with every group collapsed (null)', () => {
+    it('is empty with no selection', () => {
+      expect(itemsForMap(groups, null, [])).toEqual([]);
+    });
+
+    it('still shows a selected item', () => {
+      const ids = itemsForMap(groups, null, ['b1']).map((it) => it.id);
+      expect(ids).toEqual(['b1']);
+    });
+
+    it('does not fall back to any particular group by accident', () => {
+      const ids = itemsForMap(groups, null, []).map((it) => it.id);
+      expect(ids).not.toContain('a1');
+      expect(ids).not.toContain('b1');
+    });
+  });
 });
