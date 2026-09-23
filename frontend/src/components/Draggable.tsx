@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 // to get — keeps it fully reachable instead of letting it vanish behind the
 // edge (V-10).
 const SCREEN_MARGIN = 8;
+// How long the auto-avoid nudge/restore animates (V-12: "fließend nicht
+// sprunghaft" — smooth, not a jump). Never applied while the user is
+// actively dragging, which must track the pointer with no lag.
+const AVOID_TRANSITION = 'transform 0.28s ease';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -13,13 +17,16 @@ function clamp(value: number, min: number, max: number): number {
 // non-interactive part (or the grip pill at the top). The offset is a translate
 // on top of the panel's normal anchored position, so layout stays responsive.
 //
-// Two extra, opt-in behaviors (V-10):
-// - `avoidSelector`: while the panel is still at its untouched anchor
-//   position (never dragged), nudge it right just far enough to clear
-//   whatever element `avoidSelector` matches, if and only if they actually
-//   overlap — not "whenever that element is open", which would move the
-//   panel even when there was nothing in its way. A manual drag always wins
-//   over this; it only applies at the default position.
+// Two extra, opt-in behaviors:
+// - `avoidSelector` (V-10, reworked V-12): `off` is the panel's own resting
+//   position — wherever the user last put it, or {0,0} at the untouched
+//   anchor — and is never rewritten by avoidance itself. On top of it, an
+//   auto-nudge (`avoidOffsetX`) pushes the panel right, smoothly, whenever
+//   its resting position actually overlaps whatever `avoidSelector` matches;
+//   the moment it no longer does (the target moved, or the panel was
+//   dragged elsewhere), the nudge eases back to 0 and the panel settles
+//   back at exactly that resting position — nothing else remembers or
+//   restores it, because nothing else ever needed to move it.
 // - The clamp below applies unconditionally to both that nudge and manual
 //   dragging: the panel can never end up (partially) past the viewport
 //   edge, on open, on drag, or after a resize.
@@ -43,6 +50,7 @@ export default function Draggable({
 }) {
   const [off, setOff] = useState({ x: 0, y: 0 });
   const [avoidOffsetX, setAvoidOffsetX] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const drag = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Read inside callbacks without making them (and the effects that use
@@ -61,13 +69,21 @@ export default function Draggable({
 
   const recalcAvoid = useCallback(() => {
     if (!avoidSelector) return;
-    if (offRef.current.x !== 0 || offRef.current.y !== 0) return; // a manual drag always wins
-    const own = anchorRect();
+    const anchor = anchorRect();
+    const el = rootRef.current;
     const avoidEl = document.querySelector(avoidSelector);
-    if (!own || !avoidEl) {
+    if (!anchor || !el || !avoidEl) {
       setAvoidOffsetX(0);
       return;
     }
+    // The panel's *resting* box — anchor plus whatever it was dragged to,
+    // ignoring any avoid-nudge already in effect — is what has to actually
+    // overlap the target. Testing the anchor alone (as the first version of
+    // this did) missed a dragged-but-still-overlapping panel entirely; using
+    // the currently rendered (already nudged) box would just keep re-nudging
+    // an amount that includes the previous nudge.
+    const { x: offX, y: offY } = offRef.current;
+    const own = new DOMRect(anchor.left + offX, anchor.top + offY, el.offsetWidth, el.offsetHeight);
     const avoid = avoidEl.getBoundingClientRect();
     const overlaps = own.left < avoid.right && own.right > avoid.left && own.top < avoid.bottom && own.bottom > avoid.top;
     if (!overlaps) {
@@ -129,8 +145,13 @@ export default function Draggable({
       setOff(clampToScreen(x, y));
     };
     const up = () => {
+      if (!drag.current) return;
       drag.current = null;
+      setDragging(false);
       document.body.classList.remove('dragging');
+      // The drop point may now overlap (or no longer overlap) the avoided
+      // element — nothing else triggers this recheck.
+      recalcAvoid();
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -138,7 +159,7 @@ export default function Draggable({
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-  }, [clampToScreen]);
+  }, [clampToScreen, recalcAvoid]);
 
   // A resize can leave a previously in-bounds manual position off-screen
   // (window shrunk) — re-clamp whatever offset is already set, auto-nudge
@@ -158,7 +179,18 @@ export default function Draggable({
     ) {
       return;
     }
-    drag.current = { mx: e.clientX, my: e.clientY, ox: off.x, oy: off.y };
+    // Fold any active avoid-nudge into `off` right where it visually is —
+    // grabbing the panel always means "wherever it is now", push included
+    // — and zero the nudge for the duration of the drag, so the pointer is
+    // the only thing moving it (no double-counting the nudge on top of the
+    // drag delta). `recalcAvoid` on release decides fresh whether the
+    // dropped spot needs a nudge of its own.
+    const startX = off.x + avoidOffsetX;
+    const startY = off.y;
+    drag.current = { mx: e.clientX, my: e.clientY, ox: startX, oy: startY };
+    setOff({ x: startX, y: startY });
+    setAvoidOffsetX(0);
+    setDragging(true);
     document.body.classList.add('dragging');
   };
 
@@ -167,7 +199,10 @@ export default function Draggable({
     <div
       ref={rootRef}
       className={`draggable${className ? ` ${className}` : ''}`}
-      style={{ transform: totalX || off.y ? `translate(${totalX}px, ${off.y}px)` : undefined }}
+      style={{
+        transform: totalX || off.y ? `translate(${totalX}px, ${off.y}px)` : undefined,
+        transition: avoidSelector && !dragging ? AVOID_TRANSITION : undefined,
+      }}
       onPointerDown={onPointerDown}
     >
       <span className="drag-grip" title="Drag to move" aria-hidden="true" />
