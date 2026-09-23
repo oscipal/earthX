@@ -574,6 +574,11 @@ kleiner und unregelmäßig ist als die Kachel.
 4. Der Download war im Layer-Manager nur für Layer verfügbar, die zuvor in Volltauflösung angesehen wurden (`store.downloaded` gefüllt) — ein nur als Quicklook angepinnter Layer zeigte trotz Tooltip „Download the AOI crop for this layer" keinen Download-Knopf. `LayerRestore` trägt jetzt `itemIds` (die gepinnten Szenen zum Zeitpunkt des Anpinnens, unabhängig von den aktuellen Suchergebnissen); `downloadRequestFor` weicht ohne Volltauflösung auf das Standard-Render-Asset der Registry aus (`earthx:default_render`), wie schon bei `downloadRequestForSelection` (Punkt 1 oben).
 5. Eine aufgeklappte Gruppe in der Trefferliste ließ sich nicht schließen, ohne eine andere zu öffnen (dieselbe Variable `activeGroupIndex` trieb sowohl den Akkordeon-Zustand als auch Karte/Zeitschieber). `ResultsPanel.tsx` hält den aufgeklappten Index jetzt als eigenen lokalen Zustand, synchronisiert per Effekt mit `activeGroupIndex`; ein manuelles Einklappen ändert nur diesen lokalen Zustand, Karte und Zeitschieber bleiben unverändert.
 
+**Nachbesserungen, Runde 3 (23.09.2026, Ottos Durchsicht des offenen PR):** drei weitere kleine Befunde, Kürzel „V-7":
+1. Der ESRI-Info-Knopf (Attribution) unten rechts stand standardmäßig aufgeklappt: `compact: true` macht die Attribution nur einklappbar, MapLibre startet sie aber trotzdem offen (`maplibregl-compact-show`/`open`) und klappt erst beim ersten Verschieben der Karte ein (eigener Listener auf `drag`). Jetzt direkt nach dem Erzeugen der Karte eingeklappt (`MapView.tsx`), ohne auf diese erste Bewegung zu warten.
+2. Der Layer-Manager saß standardmäßig fest bei `left: 420px` (auf die Breite des Suchmenüs abgestimmt). Jetzt `left: 16px`, wie das Suchmenü selbst — bleibt frei verschiebbar, das ist nur der Startpunkt.
+3. Abgeschnittene Szenennamen: Der Layer-Namensknopf im Layer-Manager trug als `title` nur einen festen Bedienhinweis, nie den (oft abgeschnittenen) Namen selbst — jetzt beides. Die Gruppen-Überschrift in der Trefferliste (kann bei langen Datatake-IDs ebenfalls abschneiden) hat jetzt denselben Hover-Titel; die einzelne Szenen-ID hatte ihn schon.
+
 ---
 
 ## 5. Abnahme von M2
