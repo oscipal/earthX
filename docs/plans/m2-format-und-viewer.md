@@ -127,6 +127,7 @@ Ottos Entscheidung zu M2-11).
 | V-2 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-1 |
 | V-3 | Zwei Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-2 |
 | V-4 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-3 |
+| M2-17 | Szene per Namen finden | B | Sonnet (mittel) | M2-07a, V-4 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
@@ -143,6 +144,7 @@ stauen (`m1-fundament.md` §6).
 10. V-2 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-1
 11. V-3 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-2
 12. V-4 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-3
+13. M2-17 — hängt an nichts Offenem; startet erst nach Ottos Freigabe des Plan-Schritts
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -606,6 +608,123 @@ Vitest-Fälle für `itemsForMap(_, null, _)` und `toggleResultsGroup` (Einklappe
 `Draggable.tsx`: Die Überlappungsprüfung baut das Ruhe-Rechteck jetzt aus Anker plus dem aktuellen `off` (dem Verschiebe-Offset) — ohne Sonderfall für „nie verschoben". `off` wird von der Ausweich-Logik selbst nie umgeschrieben, verschoben oder nicht, sodass das Panel immer wieder genau dorthin gleitet, wo es zuletzt stand, sobald nichts mehr im Weg ist. Neu geprüft wird jetzt auch beim Loslassen der Maustaste, nicht nur bei den Übergängen des Ausweich-Ziels. Ein Greifen mitten im Ausweichen faltet den aktuellen Versatz in `off` und setzt ihn für die Dauer des Ziehens auf 0, damit der Mauszeiger allein die Bewegung bestimmt; ein CSS-Übergang (nur außerhalb aktiven Ziehens) animiert das Ausweichen und seine Rücknahme.
 
 Mit Playwright gegen den lokalen Dev-Server geprüft: Panel auf die Steuerungstafel gezogen, weicht gleitend nach rechts aus (acht unterschiedliche Zwischenwerte über acht Stichproben, kein Sprung); Steuerungstafel eingeklappt → Panel kehrt exakt an die abgelegte Stelle zurück; wieder ausgeklappt → weicht erneut von dort aus; Übergang von 16 auf 372 in acht monoton wachsenden Stichproben belegt (16, 31, 152, 267, 330, 361, 370, 372).
+
+### M2-17 — Szene per Namen finden
+
+**Ziel:** Der Nutzer gibt einen Szenennamen ein, etwa
+`S2C_T32TNT_20260920T103025_L2A`, und bekommt genau diese eine Szene — ohne
+vorher eine AOI zu zeichnen oder einen Zeitraum zu wählen. Alle Texte englisch (D25).
+**Stufe B.** Erst dieser Plan-Schritt, dann Ottos Freigabe, dann Umsetzung.
+**Grundlage:** `adr/0001` Z1 (kein Endpunkt setzt eine vorherige Suche voraus);
+`adr/0005` Regel I (unbekannt heißt `404`, nicht leere Liste) und §3.5; D8 (keine
+gemischte Suche); F1 (Ortssuche erst in M3).
+
+#### Befund aus dem Plan-Schritt (23.09.2026)
+
+- **Einzelabruf gibt es schon.** `GET /stac/collections/{dataset}/items/{id}`
+  (`api/federating_client.py::get_item`) geht über die Adapter beider Quellen, prüft
+  die ID gegen `federated_search.ITEM_ID`, hält das Item 24 h im Such-Cache und
+  reicht die `404` der Quelle durch. Das Frontend ruft ihn bisher nicht auf.
+- **Die Quellen können beides [M].** Earth Search: Einzelabruf der Beispielszene
+  `200` in 0,61 s (17,7 kB), unbekannte ID `404` in 0,54 s; `POST /search` mit
+  `ids` liefert die Szene. EOPF STAC (`sentinel-2-l2a-zarr3`): Einzelabruf `200` in
+  1,29 s, unbekannte ID `404`, `ids`-Suche liefert ein Item.
+- **Unsere föderierte Suche verwirft `ids` still [M].** Gegen den Integrations-Aufbau
+  aus `tests/integration/test_api_federating.py` (pgstac echt, Quelle gemockt):
+  `GET` und `POST /stac/search` mit `ids=["NOPE_1"]` antworten `200` mit einer
+  gewöhnlichen, ungefilterten Trefferseite; der Upstream-Rumpf enthält kein `ids`.
+  **Dasselbe gilt für `intersects`:** ein Polygon kommt upstream nicht an, die
+  Antwort ist die Suche ohne Ortsfilter. `_dispatch_search` reicht nur
+  `collections`, `bbox`, `datetime`, `limit` und `token` weiter. Das Frontend ist
+  heute nicht betroffen (es schickt nur `bbox`), die API nach außen schon — genau das
+  „still verworfen“, das `adr/0005` Regel VI für `filter` ausschließt.
+- **Die Namen sind je Datensatz verschieden.** Dieselbe Aufnahme heißt bei Earth
+  Search `S2C_T32TNT_…_L2A`, im EOPF-Katalog nach ESA-Produktnamen
+  `S2C_MSIL2A_…_N0513_R139_T26WME_…`. Ein Name gehört also zu genau einem Datensatz.
+- **Nebenbefund [P]:** `get_item` fängt `UpstreamShapeError` nicht ab, obwohl
+  `_adapter_error_to_http` ihn als `502` kennt; eine Quelle, die statt eines Items
+  etwas anderes liefert, wird so zur `500`. Einzeiler, gehört in denselben
+  Backend-Commit wie Frage 5.
+- **Ein Freitextfeld gibt es im Suchmenü nicht.** Die Ortssuche ist in M2
+  ausgeblendet (F1); `runSearch` verlangt eine AOI.
+
+#### Plan-Schritt: fünf Fragen an Otto
+
+**1. Welcher Weg im Backend.**
+
+1. **Direkter Item-Abruf** über die bestehende Route. Kein neuer Backend-Code für
+   die Funktion selbst, 24-h-Cache und `404` sind schon da, Z1 ist erfüllt.
+   **Empfehlung.**
+2. `ids` in der föderierten Suche durchreichen. Beide Quellen könnten es, aber
+   Suchparameter, Fingerabdruck, Cache-Schlüssel und Tests müssten wachsen — für
+   einen Gewinn, der erst bei mehreren Namen auf einmal entsteht.
+
+**2. In welchem Datensatz gesucht wird.**
+
+1. **Im gewählten Datensatz**, genau ein Abruf. Vorhersehbar und im Sinne von D8;
+   ein Name des anderen Katalogs ergibt `404`, und die Meldung nennt den gewählten
+   Datensatz. **Empfehlung.**
+2. In allen anzeigbaren Datensätzen parallel, erster Treffer gewinnt. Bequemer, aber
+   ein Abruf je Datensatz und Eingabe, wächst mit jedem neuen Datensatz.
+3. Datensatz am Namensmuster erkennen. Dafür bräuchte die Registry ein neues Feld
+   (etwa `earthx:viewer.item_id_pattern`); das Frontend darf keine
+   datensatzspezifischen Muster fest einbauen. Eigene Entscheidung, nicht hier.
+
+**3. Wie die Eingabe von einer gewöhnlichen Suche unterschieden wird.**
+
+1. **Eigenes Feld „Scene name“ mit eigenem Knopf „Find“** im Suchmenü, unterhalb
+   der Datensatz-Wahl. Enter löst aus; leere Eingabe hält den Knopf deaktiviert;
+   Leerzeichen am Rand werden entfernt, sonst nichts umgeschrieben. AOI und Zeitraum
+   werden dafür weder verlangt noch verändert. Keine Erkennung, also kein
+   Fehlgriff; die Ortssuche bekommt in M3 ihr eigenes Feld. **Empfehlung.**
+2. Ein gemeinsames Suchfeld, das Szenennamen am Muster erkennt. Heute gibt es nichts
+   anderes, was man dort eingeben könnte (F1), und die Muster sind je Datensatz
+   verschieden (Frage 2) — Heuristik ohne Nutzen.
+3. Nur als Adresse (`?scene=…`). Gut zum Teilen, aber kein Eingabeweg; als
+   Ergänzung später denkbar.
+
+**4. Was bei unbekanntem Namen passiert.**
+
+1. **Meldung statt Ergebnis, sonst nichts:** `404` → „No scene named ‹name› in
+   ‹Datensatz›.“; `400` (Zeichen außerhalb von `ITEM_ID`) → „Not a valid scene
+   name.“; Fehler der Quelle → „Scene lookup failed: …“. Trefferliste, Auswahl, AOI
+   und Zeitraum bleiben, wie sie waren. Kein Rückfall auf eine Suche, keine
+   Ähnlichkeitssuche (Präfixe kann keine der Quellen ohne CQL2). **Empfehlung.**
+2. Wie 1, aber die Trefferliste wird geleert, wie bei einer fehlgeschlagenen Suche.
+
+Bei **Treffer** (kein Entscheidungspunkt, zur Einordnung): Die Szene ersetzt die
+Trefferliste als Ergebnis mit genau einer Gruppe über denselben Weg wie
+`runSearch` (`buildGroups`/`displayGroupBy`), ist ausgewählt, die Karte fliegt auf
+ihren Umriss, der Quicklook liegt wie gewohnt; Hinweis „Scene ‹name›, found by
+name.“ AOI und Zeitraum bleiben unverändert. Der Zuschnitt-Download braucht wie
+bisher eine AOI.
+
+**5. Der Befund „`ids` und `intersects` still verworfen“.**
+
+1. **In M2-17 abweisen:** Der föderierte Pfad antwortet auf `ids` und `intersects`
+   mit `400`, dieselbe Mechanik wie für `filter`/`sortby`; eigener Commit mit Tests
+   für `GET` und `POST`. Durchreichen beider Parameter wird eine eigene Aufgabe.
+   **Empfehlung.**
+2. Eigene Aufgabe (M2-18), M2-17 bleibt reines Frontend.
+3. Gleich durchreichen statt abweisen — der richtige Endzustand, aber mit
+   Geometrieprüfung und Cache-Schlüssel eine eigene Stufe-B-Aufgabe, nicht hier.
+
+#### Umfang nach Empfehlung
+
+- `api.ts::fetchItem(datasetId, itemId)` gegen
+  `/stac/collections/{dataset}/items/{id}`, Fehler nach Statuscode unterscheidbar.
+- Store-Aktion `findSceneByName`, getrennt von `runSearch`; Feld und Knopf in
+  `ControlPanel.tsx`.
+- Backend: `ids`/`intersects` im föderierten Pfad mit `400` abweisen (Frage 5).
+
+**Nicht anfassen:** `runSearch` und den Datums-Fallback; die Registry; ESA-Namen
+mit `.SAFE` oder Produktnamen im Earth-Search-Datensatz werden nicht übersetzt
+(ergeben `404`).
+**Abnahme:** Vitest-Fälle für Treffer, `404`, `400`, Quellenfehler, leere und mit
+Leerzeichen umrahmte Eingabe, und dass AOI, Zeitraum und Trefferliste bei einem
+Fehlschlag unverändert bleiben; Integrationstests für `ids` und `intersects` →
+`400` auf `GET` und `POST`; Lint, Typprüfung, Vitest, `ruff check backend`,
+`pytest`, `lint-imports` grün.
 
 ---
 
