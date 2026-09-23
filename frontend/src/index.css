@@ -25,6 +25,14 @@ body,
 body {
   font-family: var(--mono);
   overflow: hidden;
+  /* Belt-and-braces for the globe (V-6): MapLibre clears its canvas to
+     transparent before drawing, so wherever the sky/globe rendering doesn't
+     cover a pixel (the `sky`/`atmosphere-blend` tuning in mapStyles.ts
+     didn't fully fix this — see the ADR-shaped comment there), the browser's
+     own white page background used to show through instead. Matches the
+     style's own `background` layer color, and stays dark in both themes —
+     the basemap itself is theme-independent (D10). */
+  background: #04070a;
 }
 
 /* --- theme tokens --- */
