@@ -599,6 +599,14 @@ Mit Playwright gegen den lokalen Dev-Server durchgespielt (acht Szenarien: Auswe
 
 Vitest-Fälle für `itemsForMap(_, null, _)` und `toggleResultsGroup` (Einklappen ohne `activeGroupIndex` zu bewegen, erneutes Aufklappen, Resynchronisierung durch `setActiveGroupIndex` nach einem manuellen Einklappen).
 
+**Nachbesserung, Runde 8 (23.09.2026), Kürzel „V-12":** Otto hat die Runde-6-Lösung (`avoidSelector`) selbst ausprobiert und zwei echte Lücken gefunden, die die vorige Session übersehen hatte:
+1. Die Überlappungsprüfung maß immer nur den festen CSS-Anker des Layer-Managers, nie seine tatsächliche (ggf. verschobene) Ruheposition, und griff nach der ersten manuellen Verschiebung überhaupt nicht mehr — ein Panel, das man selbst auf die Steuerungstafel gezogen hat, blieb also einfach dort liegen.
+2. Das Ausweichen und seine Rücknahme geschahen ohne Übergang, sprunghaft statt gleitend.
+
+`Draggable.tsx`: Die Überlappungsprüfung baut das Ruhe-Rechteck jetzt aus Anker plus dem aktuellen `off` (dem Verschiebe-Offset) — ohne Sonderfall für „nie verschoben". `off` wird von der Ausweich-Logik selbst nie umgeschrieben, verschoben oder nicht, sodass das Panel immer wieder genau dorthin gleitet, wo es zuletzt stand, sobald nichts mehr im Weg ist. Neu geprüft wird jetzt auch beim Loslassen der Maustaste, nicht nur bei den Übergängen des Ausweich-Ziels. Ein Greifen mitten im Ausweichen faltet den aktuellen Versatz in `off` und setzt ihn für die Dauer des Ziehens auf 0, damit der Mauszeiger allein die Bewegung bestimmt; ein CSS-Übergang (nur außerhalb aktiven Ziehens) animiert das Ausweichen und seine Rücknahme.
+
+Mit Playwright gegen den lokalen Dev-Server geprüft: Panel auf die Steuerungstafel gezogen, weicht gleitend nach rechts aus (acht unterschiedliche Zwischenwerte über acht Stichproben, kein Sprung); Steuerungstafel eingeklappt → Panel kehrt exakt an die abgelegte Stelle zurück; wieder ausgeklappt → weicht erneut von dort aus; Übergang von 16 auf 372 in acht monoton wachsenden Stichproben belegt (16, 31, 152, 267, 330, 361, 370, 372).
+
 ---
 
 ## 5. Abnahme von M2
