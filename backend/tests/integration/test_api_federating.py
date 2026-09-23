@@ -142,36 +142,86 @@ class TestConformance:
             response = await client.get("/stac/search", params={"collections": DATASET_ID, "sortby": "-datetime"})
         assert response.status_code == 400
 
-    async def test_an_ids_parameter_is_rejected_not_silently_dropped(self, require_catalog_loaded: None) -> None:
-        """M2-17: before this check, `ids=["does-not-exist"]` answered `200` with an
-        ordinary, unfiltered page — nothing was ever sent upstream to filter by."""
+    async def test_a_get_ids_parameter_reaches_the_source(self, require_catalog_loaded: None) -> None:
+        """M3-08: `/search` forwards `ids` now — the M2-17 blanket rejection that
+        used to answer this with a plain `400` is gone from this route
+        (`TestRejectItemsEndpointKeys` covers where it still applies,
+        `/collections/{id}/items`)."""
         handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
         async with _client(handler) as client:
-            get_response = await client.get(
-                "/stac/search", params={"collections": DATASET_ID, "ids": "does-not-exist"}
+            response = await client.get(
+                "/stac/search", params={"collections": DATASET_ID, "ids": "SYNTH_T00AAA_20240601T100000_L2A"}
             )
-            post_response = await client.post(
-                "/stac/search", json={"collections": [DATASET_ID], "ids": ["does-not-exist"]}
-            )
-        assert get_response.status_code == 400
-        assert post_response.status_code == 400
-        assert seen == []
+        assert response.status_code == 200
+        assert body_of(seen[0])["ids"] == ["SYNTH_T00AAA_20240601T100000_L2A"]
 
-    async def test_an_intersects_parameter_is_rejected_not_silently_dropped(
-        self, require_catalog_loaded: None
-    ) -> None:
+    async def test_a_post_ids_parameter_reaches_the_source(self, require_catalog_loaded: None) -> None:
         handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
-        polygon = {"type": "Polygon", "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 2], [1, 1]]]}
         async with _client(handler) as client:
-            get_response = await client.get(
+            response = await client.post(
+                "/stac/search", json={"collections": [DATASET_ID], "ids": ["SYNTH_T00AAA_20240601T100000_L2A"]}
+            )
+        assert response.status_code == 200
+        assert body_of(seen[0])["ids"] == ["SYNTH_T00AAA_20240601T100000_L2A"]
+
+    async def test_a_get_intersects_parameter_reaches_the_source(self, require_catalog_loaded: None) -> None:
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        polygon = {"type": "Polygon", "coordinates": [[[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0], [1.0, 1.0]]]}
+        async with _client(handler) as client:
+            response = await client.get(
                 "/stac/search",
                 params={"collections": DATASET_ID, "intersects": json.dumps(polygon)},
             )
-            post_response = await client.post(
+        assert response.status_code == 200
+        assert body_of(seen[0])["intersects"] == polygon
+
+    async def test_a_post_intersects_parameter_reaches_the_source(self, require_catalog_loaded: None) -> None:
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        # A different polygon than the GET test above, so the two never collide on
+        # the same search-cache row within a shared table (`require_catalog_loaded`
+        # only clears it once, at the start of each test).
+        polygon = {"type": "Polygon", "coordinates": [[[3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0], [3.0, 3.0]]]}
+        async with _client(handler) as client:
+            response = await client.post(
                 "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon}
             )
-        assert get_response.status_code == 400
-        assert post_response.status_code == 400
+        assert response.status_code == 200
+        assert body_of(seen[0])["intersects"] == polygon
+
+    async def test_an_invalid_intersects_geometry_is_rejected_before_it_reaches_the_source(
+        self, require_catalog_loaded: None
+    ) -> None:
+        """Checked on our side even where the source would take it without a word
+        (M3-08 plan §2.2 — a latitude of 999)."""
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        bad = {"type": "Point", "coordinates": [10.0, 999.0]}
+        async with _client(handler) as client:
+            response = await client.post("/stac/search", json={"collections": [DATASET_ID], "intersects": bad})
+        assert response.status_code == 400
+        assert seen == []
+
+    async def test_malformed_json_in_a_get_intersects_parameter_is_400(self, require_catalog_loaded: None) -> None:
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        async with _client(handler) as client:
+            response = await client.get("/stac/search", params={"collections": DATASET_ID, "intersects": "{not json"})
+        assert response.status_code == 400
+        assert seen == []
+
+    async def test_ids_and_intersects_on_item_collection_are_still_rejected(
+        self, require_catalog_loaded: None
+    ) -> None:
+        """M3-08: `GET /collections/{id}/items` is not `item-search` — only
+        `/search` forwards either parameter (M2-17's rejection still applies
+        here, now for its own reason)."""
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
+        async with _client(handler) as client:
+            ids_response = await client.get(f"/stac/collections/{DATASET_ID}/items", params={"ids": "some-id"})
+            intersects_response = await client.get(
+                f"/stac/collections/{DATASET_ID}/items",
+                params={"intersects": json.dumps({"type": "Point", "coordinates": [1.0, 1.0]})},
+            )
+        assert ids_response.status_code == 400
+        assert intersects_response.status_code == 400
         assert seen == []
 
 
