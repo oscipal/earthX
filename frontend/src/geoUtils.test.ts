@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { quicklookCoords } from './geoUtils';
+import { coordsBbox, quicklookCoords } from './geoUtils';
+import type { Coords4 } from './geoUtils';
 import type { StacAsset, StacItem } from './types';
 
 // A real edge scene (S2C_T32TNT_20260920T103025_L2A, 2026-09-20, MGRS 32TNT):
@@ -88,5 +89,27 @@ describe('quicklookCoords', () => {
   it('returns null without an item', () => {
     expect(quicklookCoords(null)).toBeNull();
     expect(quicklookCoords(undefined)).toBeNull();
+  });
+});
+
+describe('coordsBbox', () => {
+  it('wraps a quicklook quad in its bounding box (V-2, store.ts::zoomToView)', () => {
+    const quad: Coords4 = [
+      [9, 48],
+      [10.5, 48],
+      [10.5, 47],
+      [9, 47],
+    ];
+    expect(coordsBbox(quad)).toEqual([9, 47, 10.5, 48]);
+  });
+
+  it('handles an unordered / degenerate quad the same way', () => {
+    const quad: Coords4 = [
+      [0, 0],
+      [0, 0],
+      [5, 5],
+      [-2, 3],
+    ];
+    expect(coordsBbox(quad)).toEqual([-2, 0, 5, 5]);
   });
 });
