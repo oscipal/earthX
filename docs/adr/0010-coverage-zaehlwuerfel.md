@@ -11,10 +11,11 @@
   `adr/0007` §12 (EOPF); `architekturplan.md` 3.1, 3.2; `KLAERUNGEN.md` B8, B9,
   B10; `ENTSCHEIDUNGSLOG.md` Zeilen „Coverage-Heatmap im Viewer zurückgestellt"
   (20.09.), „M2-07c abgeschlossen im kleinstmöglichen Umfang" (22.09.),
-  „Heatmap-Zählwürfel (D26)" (23.09.).
+  „Heatmap-Zählwürfel (D26)" (23.09.); `plans/m3-02-konformitaetsbericht.md`
+  K-06, K-07.
 - **Betroffen, falls angenommen:** `adr/0004` §5 (Nachtrag), `plans/m2-05-coverage.md`
   F3 (aufgehoben), `catalog/registry.py` (`CoverageInfo`), eine Migration in
-  `catalog`, Prozess `harvester`; Entscheidungslog.
+  `catalog`, `api/coverage_route.py`, Prozess `harvester`; Entscheidungslog.
 
 ---
 
@@ -392,7 +393,8 @@ Die Aufteilung folgt `adr/0004` §5 und `architekturplan.md` 3.1:
 | Teil | Modul | Grund |
 |---|---|---|
 | Zerlegung in Kacheln, Erkennen geänderter Monate über `updated`, 10 000-Grenze | `adapters` | Protokollwissen über Earth Search |
-| Tabelle, Migration, Abfrage, Regel V je Monat, Wahl zwischen Würfel und Live-Weg | `catalog` | Coverage-Anbieter, Postgres |
+| Tabelle, Migration, Abfrage, Regel V je Monat, die Regel „kann der Würfel diese Anfrage beantworten" als reine Funktion | `catalog` | Coverage-Nahtstelle, Postgres |
+| Wahl zwischen Würfel und Live-Weg je Anfrage | `api` (`coverage_route.py`) | dort wird heute komponiert; `catalog` darf keinen Adapter rufen (M3-02 K-07, Klärung in `adr/0011`) |
 | Anstoßen: täglich, geänderte Monate, Fortschritt | `discovery` | darf `adapters`, `catalog`, `gateway` (3.1) |
 | Prozess | `harvester` | laut 3.2 „I/O-lastig, geplant, Fortschritt in Postgres"; läuft in `docker-compose.yml` bereits als Hülle |
 
@@ -454,7 +456,8 @@ Ausgeschieden.
 ## 7. Empfehlung
 
 **Option D, in dieser Form.** Der Würfel ist ein **zusätzlicher Weg im
-Coverage-Anbieter**, kein Ersatz. `catalog` entscheidet je Anfrage:
+Coverage-Anbieter**, kein Ersatz. Je Anfrage gilt (Regel in `catalog`, Wahl in
+`api`, §5):
 
 | Anfrage | Weg |
 |---|---|
@@ -484,7 +487,7 @@ ersetzt. Das fängt auch das Nachpflegen alter Monate, das die Quelle
 tatsächlich tut.
 
 **Ort.** Wie in §5: Protokoll in `adapters`, Tabelle und Abfrage in `catalog`,
-Anstoß in `discovery`, Prozess `harvester`, gesichert über eine
+Wahl in `api`, Anstoß in `discovery`, Prozess `harvester`, gesichert über eine
 Advisory-Lock-Schleife. `jobs` und `processing` bleiben ohne Datenbank.
 
 **Registry.** Ein neues Feld in `CoverageInfo`, ohne Vorgabewert (B10), das je
