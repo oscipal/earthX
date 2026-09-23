@@ -15,10 +15,13 @@ from starlette.testclient import TestClient
 
 from earthx.logging import (
     REQUEST_ID_HEADER,
+    AccessLogRedactionFilter,
     JsonFormatter,
     RequestIdMiddleware,
     bind_request_id,
     get_request_id,
+    redact_access_log_coordinates,
+    redact_query_string,
     reset_request_id,
     summarize_geometry,
 )
@@ -271,3 +274,82 @@ class TestEndToEndGeometryLogging:
             line = formatter.format(record)
             assert str(_EXACT_LON) not in line
             assert str(_EXACT_LAT) not in line
+
+
+class TestRedactQueryString:
+    """M3-08 F7a: uvicorn's own access log writes a `GET` request's query string
+    verbatim — the one place an AOI could reach a log line untouched."""
+
+    def test_a_bbox_value_is_blanked(self) -> None:
+        redacted = redact_query_string(f"/stac/search?collections=x&bbox={_EXACT_LON},{_EXACT_LAT},1,2")
+        assert str(_EXACT_LON) not in redacted
+        assert str(_EXACT_LAT) not in redacted
+        assert "bbox=…" in redacted
+        assert "collections=x" in redacted  # everything else survives untouched
+
+    def test_an_intersects_value_is_blanked(self) -> None:
+        # Percent-encoded, matching what uvicorn's access log actually sees: it logs
+        # `scope["query_string"]` as received off the wire, never URL-decoded — a
+        # literal `{`, `"` or space never appears in it (a browser/`fetch` encodes
+        # them first, same as `URLSearchParams` on the frontend).
+        from urllib.parse import quote
+
+        raw = quote(json.dumps({"type": "Point", "coordinates": [_EXACT_LON, _EXACT_LAT]}, separators=(",", ":")))
+        redacted = redact_query_string(f"/stac/search?intersects={raw}&limit=10")
+        assert str(_EXACT_LON) not in redacted
+        assert "intersects=…" in redacted
+        assert "limit=10" in redacted
+
+    def test_a_path_with_neither_key_is_unchanged(self) -> None:
+        path = "/stac/collections/x/items?limit=5&token=abc"
+        assert redact_query_string(path) == path
+
+    def test_a_key_that_only_contains_the_substring_is_not_matched(self) -> None:
+        """`notbbox=…` is not `bbox` — the match requires `?`/`&` right before it."""
+        path = "/stac/search?notbbox=5"
+        assert redact_query_string(path) == path
+
+
+def _access_record(path_with_query: str) -> logging.LogRecord:
+    """The exact shape uvicorn logs one request as (`h11_impl.py`)."""
+    return logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=("127.0.0.1:1234", "GET", path_with_query, "1.1", 200),
+        exc_info=None,
+    )
+
+
+class TestAccessLogRedactionFilter:
+    def test_the_query_strings_coordinate_is_gone_from_the_formatted_line(self) -> None:
+        from urllib.parse import quote
+
+        raw = quote(json.dumps({"type": "Point", "coordinates": [_EXACT_LON, _EXACT_LAT]}, separators=(",", ":")))
+        record = _access_record(f"/stac/search?intersects={raw}")
+        assert AccessLogRedactionFilter().filter(record) is True
+        line = record.getMessage()
+        assert str(_EXACT_LON) not in line
+        assert "GET" in line and "200" in line
+
+    def test_a_record_with_no_args_is_left_alone(self) -> None:
+        record = logging.LogRecord(
+            name="uvicorn.access", level=logging.INFO, pathname=__file__, lineno=1, msg="plain", args=(), exc_info=None
+        )
+        assert AccessLogRedactionFilter().filter(record) is True
+        assert record.getMessage() == "plain"
+
+
+class TestRedactAccessLogCoordinates:
+    def test_attaching_twice_adds_the_filter_only_once(self) -> None:
+        logger = logging.getLogger("uvicorn.access")
+        before = [f for f in logger.filters if not isinstance(f, AccessLogRedactionFilter)]
+        try:
+            logger.filters = before
+            redact_access_log_coordinates()
+            redact_access_log_coordinates()
+            assert sum(isinstance(f, AccessLogRedactionFilter) for f in logger.filters) == 1
+        finally:
+            logger.filters = before

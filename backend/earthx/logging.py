@@ -180,3 +180,55 @@ def _collect_lon_lat(node: Any, lons: list[float], lats: list[float]) -> None:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+# M3-08 F7a: uvicorn's own access logger writes the request's raw query string
+# verbatim (``uvicorn.protocols.utils.get_path_with_query_string``) — the one place
+# a ``GET /stac/search?intersects=…`` or ``GET /coverage/{id}?bbox=…`` AOI would
+# otherwise reach a log line untouched, coordinates and all, bypassing the redaction
+# every other log line in this process already gets through :func:`summarize_geometry`
+# or this module's own ``HTTPException`` texts. Only the query string is touched — a
+# `POST` body never reaches this logger at all.
+_REDACTED_QUERY_KEYS = ("bbox", "intersects")
+_QUERY_VALUE_PATTERN = re.compile(r"(?P<prefix>[?&](?:" + "|".join(_REDACTED_QUERY_KEYS) + r")=)(?P<value>[^&\s\"]*)")
+
+
+def redact_query_string(text: str) -> str:
+    """Blanks the values of ``bbox``/``intersects`` in a URL's query string,
+    leaving the path and every other parameter as they were."""
+    return _QUERY_VALUE_PATTERN.sub(lambda match: match.group("prefix") + "…", text)
+
+
+class AccessLogRedactionFilter(logging.Filter):
+    """Attached to ``uvicorn.access`` by :func:`redact_access_log_coordinates`.
+
+    Uvicorn logs one line per request as
+    ``'%s - "%s %s HTTP/%s" %d'`` with ``(client_addr, method, path_with_query,
+    http_version, status)`` as the record's ``args``
+    (``uvicorn/protocols/http/h11_impl.py``) — a plain :class:`logging.Filter` is
+    the one hook that runs before that tuple is formatted into text, so this
+    rewrites just the one argument that can carry an AOI, in place.
+    """
+
+    _PATH_ARG_INDEX = 2
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) > self._PATH_ARG_INDEX and isinstance(args[self._PATH_ARG_INDEX], str):
+            patched = list(args)
+            patched[self._PATH_ARG_INDEX] = redact_query_string(patched[self._PATH_ARG_INDEX])
+            record.args = tuple(patched)
+        return True
+
+
+def redact_access_log_coordinates() -> None:
+    """Attaches :class:`AccessLogRedactionFilter` to ``uvicorn.access``, once.
+
+    Called from ``earthx.api.main`` at process start-up, after uvicorn's own
+    ``Config.configure_logging`` has already run (it runs in ``Config.__init__``,
+    before the ASGI app is imported) — so this adds to what uvicorn set up rather
+    than racing it. Idempotent, in case a process ever calls it twice.
+    """
+    logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(existing, AccessLogRedactionFilter) for existing in logger.filters):
+        logger.addFilter(AccessLogRedactionFilter())

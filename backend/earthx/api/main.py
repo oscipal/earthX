@@ -33,6 +33,7 @@ from earthx.api.coverage_route import router as coverage_router
 from earthx.api.dependencies import build_gateway, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.catalog.datasets import REGISTRY
+from earthx.logging import redact_access_log_coordinates
 
 # adr/0005 rule VI, plan §6 F2: query/fields/pagination describe our own collection
 # and paging; filter (CQL2) and sort are the two extensions the federated path cannot
@@ -57,6 +58,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _build_app() -> FastAPI:
+    # M3-08 F7a: `/stac/search` and `/coverage` can now carry an AOI in a `GET`
+    # query string (`intersects`, and `bbox` already could) — blanked in the access
+    # log before it ever gets there, not just in this process's own error texts.
+    redact_access_log_coordinates()
     settings = Settings(enabled_extensions=_ENABLED_EXTENSIONS, prefix_path=_PREFIX_PATH)
     # `Extensions()` on its own would build a *second*, default-constructed
     # `Settings()` that never sees `_ENABLED_EXTENSIONS` — passing `settings` here
