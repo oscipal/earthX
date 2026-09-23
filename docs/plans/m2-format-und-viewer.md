@@ -1,11 +1,12 @@
 # M2 — Zweites Format und generalisierter Viewer: Aufgabenschnitt
 
-**Status:** Fassung 4 vom 20.09.2026, nach dem Merge von #42–#49. Neu: englische
-Oberfläche (D25), Heatmap zurückgestellt (D26), V-1 um Kartenbedienung und Globus
-erweitert (D27), Aufgabe M2-15. Vorher Fassung 3 nach dem Merge von #37–#40. `adr/0006` und
-`adr/0007` sind angenommen, `adr/0007` um die Nachmessung §12 ergänzt. Alle
-Entscheidungen stehen im `docs/ENTSCHEIDUNGSLOG.md`. Erledigt: M2-00 bis M2-04,
-M2-03b und M2-05a; die Pläne für M2-05 und M2-07a liegen im Repo.
+**Status:** Fassung 5 vom 22.09.2026. **Alle Aufgaben sind erledigt und gemergt
+außer M2-12, der Abnahme.** Der Prototyp ist entfernt (#63), die befristete
+Secret-Ausnahme damit beendet. Neu gegenüber Fassung 4: D28 (keine Sprachwahl),
+D29 (Punkt 10 der Checkliste in Fassung v1.1, `health.last_checked_ok` gestrichen),
+D30 (Trefferliste nach Überflug gruppiert), D31 (`ids`/`intersects` werden
+abgewiesen statt still verworfen) und die Aufgaben V-2 bis V-4 sowie M2-17.
+`adr/0006`, `adr/0007` und `adr/0008` sind angenommen.
 **Ort im Repo:** `docs/plans/m2-format-und-viewer.md`
 **Grundlagen:** `projektplan.md` 4 (M2, Viewer-Strang); `architekturplan.md` 3.1,
 3.2, 6, 12.3, 13, 15.2; `adr/0001` (Zustand, Z4), `adr/0002` (Tests), `adr/0003`
@@ -61,6 +62,10 @@ aufgenommen, und das Frontend spricht nur noch mit der Zielarchitektur `earthx`.
 | D25 | **Die Oberfläche ist durchgehend englisch:** alle sichtbaren Texte, Legenden, Hinweise, Fehlermeldungen; Vorgabesprache des `terms_notice` ist Englisch. Hebt `adr/0004` §5.3 auf. Planungsdokumente bleiben deutsch | M2-06, M2-07c, M2-07d, M2-15, V-1 |
 | D26 | **Coverage-Heatmap im Viewer zurückgestellt.** M2-07c ist mit Minimalumfang gemergt (Ausschnitt auf ±180° begrenzt, standardmäßig aus). Die Verbesserung kommt nach M2; Kandidat ist ein täglich aktualisierter Zählwürfel je Datensatz (Zelle z9 × Monat × Wolkenklasse), der M2-05 F3 aufheben würde und vorher gemessen werden muss | M2-07c, §5 |
 | D27 | **Karte ohne Drehen und Kippen, Globus umschaltbar.** Maus und Touch verschieben und zoomen nur; die Globusprojektion von MapLibre (ab 5.0) ist reine Darstellung, Backend und Kachel-URLs bleiben unverändert | V-1 |
+| D28 | **Keine Sprachwahl, nur Englisch.** Schärft D25: kein Parameter zur Sprachwahl, auch nicht für den `terms_notice`; deutsche Fassungen in der Registry entfallen. Die Registry weist einen `terms_notice` mit mehr als einem Text ab | M2-15, M2-06 |
+| D29 | **Checkliste Punkt 10 in Fassung v1.1:** „vom T-D-Smoke abgedeckt“, geprüft über `@pytest.mark.live_dataset` in `tests_live/`. Ein sichtbares Prüfdatum kommt erst mit den Health-Checks in M5. `health.last_checked_ok` trug das Onboarding-Datum und ist gestrichen; `earthx:health` führt nur noch `status`. Verworfen: Statusdatei über einen Chore-PR — ein mit `GITHUB_TOKEN` angelegter PR löst keine Pflicht-Checks aus, und ein eigenes Token wäre ein Secret | M2-08, M2-10 |
+| D30 | **Trefferliste gruppiert nach Überflug** (Tag und `s2:datatake_id`), damit Kacheln desselben Überflugs beisammenstehen. Reine Darstellung: Szenen bleiben einzeln, jede mit eigenem Quicklook und eigener Kachel-URL. D19 und D11 bleiben unberührt | V-4 |
+| D31 | **`ids` und `intersects` werden mit `400` abgewiesen**, statt wie bisher still verworfen zu werden — die API lieferte sonst ungefilterte Treffer mit `200`. Das Durchreichen ist eine eigene spätere Aufgabe. Szenensuche läuft über den vorhandenen Einzelabruf, nur im gewählten Datensatz | M2-17 |
 | D24 | **Die Abnahme von M2 hängt nicht am Fortbestand der Quelle.** Fällt `sentinel-2-l2a-zarr3` weg, fällt die Aufnahme des zweiten Datensatzes, nicht M2; der Lesepfad gegen das synthetische Zarr aus M2-09a genügt | §5, M2-09a, M2-12 |
 ### 1.2 Fragen an Otto — beantwortet am 20.09.2026
 
@@ -112,39 +117,35 @@ Ottos Entscheidung zu M2-11).
 | M2-07a | Frontend: API-Client, Suche, Quicklooks, Zeitleiste | B | — | **erledigt** (#44) |
 | M2-07b | Frontend: Kacheln, Darstellungssteuerung, Layer-Manager | B | — | **erledigt** (#47) |
 | M2-07c | Frontend: Coverage-Heatmap | B | — | **erledigt**, Minimalumfang (#49, D26) |
-| M2-07d | Frontend: Download | B | Sonnet (mittel) | — |
-| M2-08 | Onboarding-Checkliste v1 als Test, Sentinel-2 vollständig | B | Plan Opus, Umsetzung Sonnet (mittel) | M2-05b, M2-06, M2-07d |
-| M2-09a | Zarr-Lesepfad gegen synthetisches Mini-Zarr | B | Plan Opus, Umsetzung Sonnet (hoch) | — |
-| M2-09b | Zweiter Datensatz im Katalog | B | Plan Opus, Umsetzung Sonnet (hoch) | M2-03b, M2-04, M2-09a |
+| M2-07d | Frontend: Download | B | — | **erledigt** (#51) |
+| M2-08 | Onboarding-Checkliste v1 als Test | B | — | **erledigt** (#62, #64), drei Teile |
+| M2-09a | Zarr-Lesepfad gegen synthetisches Mini-Zarr | B | — | **erledigt** (#52) |
+| M2-09b | Zweiter Datensatz im Katalog | B | — | **erledigt** (#55, #57, #60), drei Teile |
 | M2-10 | Zweiter Datensatz im Viewer | B | — | **erledigt** (#61) |
-| M2-11 | Vorlage: Prototyp entfernen | C | Opus | M2-08 |
-| M2-12 | M2-Abnahme und README | A | Sonnet (mittel) | alle |
+| M2-11 | Prototyp entfernen | C + A | — | **erledigt**: `adr/0008` (#59), Umsetzung (#63) |
+| M2-12 | M2-Abnahme und README | A | Sonnet (mittel) | **offen**, als Letztes |
 | M2-13 | Kleinkram: SessionStart-Hook, Live-Smoke-Nachtrag | A | — | **erledigt** (#42) |
 | M2-14 | Auflösung des Asset-Hosts zwischenspeichern | B | — | **erledigt** (#48), Frist 5 s |
-| M2-15 | Oberfläche durchgehend englisch | A | Sonnet (mittel) | M2-07d |
-| V-1 | Kartenbedienung, Globus, Theme (Viewer-Strang) | A | Sonnet (mittel) | M2-15 |
-| M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | Sonnet (klein) | M2-07a |
-| V-2 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-1 |
-| V-3 | Zwei Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-2 |
-| V-4 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-3 |
-| M2-17 | Szene per Namen finden | B | Sonnet (mittel) | M2-07a, V-4 |
+| M2-15 | Oberfläche durchgehend englisch | A | — | **erledigt** (#54), verschärft durch D28 |
+| V-1 | Kartenbedienung, Globus, Theme (Viewer-Strang) | A | — | **erledigt** (#56) |
+| M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | — | **erledigt** (#58) |
+| V-2 | Beschriftungen, Symbole, Zoom to selection, Ausrichtung (Viewer-Strang) | A | — | **erledigt** |
+| V-3 | Zwei Fehler: Neuladen beim Klick, Quicklook beim Zuklappen (Viewer-Strang) | A | — | **erledigt** |
+| V-4 | Trefferliste: Download, Name kopieren, Gruppierung nach Überflug (D30) | A | — | **erledigt** |
+| M2-17 | Szene per Namen finden, `ids`/`intersects` abweisen (D31) | B | — | **erledigt** (#68) |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
 
-1. ~~M2-00 bis M2-03~~ — erledigt
-2. ~~M2-03b, M2-04, M2-05a~~ — erledigt
-3. ~~M2-05b, M2-06, M2-07a, M2-07b, M2-07c, M2-13, M2-14~~ — erledigt
-4. M2-07d, M2-09a
-5. M2-15, M2-09b
-6. ~~V-1, M2-10~~ — erledigt
-7. M2-08
-8. M2-11, M2-12
-9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
-10. V-2 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-1
-11. V-3 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-2
-12. V-4 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-3
-13. M2-17 — hängt an nichts Offenem; startet erst nach Ottos Freigabe des Plan-Schritts
+Alle Wellen sind abgearbeitet. Offen ist allein **M2-12**, die Abnahme; sie läuft
+zuletzt, damit sie den Stand beschreibt, den Otto tatsächlich bedient.
+
+**Nach M2 vorgemerkt** (nicht Teil dieses Schnitts, gehört in die M3-Planung):
+Ortssuche über einen Ortsnamen (F1); Mosaik im Kachel-Pfad und Anzeige des
+Zuschnitts auf der Karte (D11); bessere Coverage-Heatmap, Kandidat Zählwürfel
+(D26); durchsuchbarer Datensatz-Katalog statt fester Blöcke in der Suchkachel;
+Durchreichen von `ids` und `intersects` (D31); Uvicorn-Worker des `tiler`
+(Betriebsfrage, M5); gemischte Suche über mehrere Quellen (D8, M3).
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
