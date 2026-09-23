@@ -125,6 +125,7 @@ Ottos Entscheidung zu M2-11).
 | V-1 | Kartenbedienung, Globus, Theme (Viewer-Strang) | A | Sonnet (mittel) | M2-15 |
 | M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | Sonnet (klein) | M2-07a |
 | V-2 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-1 |
+| V-3 | Zwei Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-2 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
@@ -139,6 +140,7 @@ stauen (`m1-fundament.md` §6).
 8. M2-11, M2-12
 9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
 10. V-2 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-1
+11. V-3 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-2
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -531,6 +533,17 @@ kleiner und unregelmäßig ist als die Kachel.
 
 **Nicht anfassen:** Backend; die Basiskarte; der interne Projektionswert `mercator`.
 **Abnahme:** Lint, Typprüfung und Vitest grün; im PR eine kurze Anleitung zum Ausprobieren der fünf Punkte.
+
+### V-3 — Zwei Befunde aus Ottos Durchsicht (Viewer-Strang)
+
+**Ziel:** Zwei kleine Befunde aus Ottos Durchsicht des Viewers sind behoben, jeweils an der Ursache, nicht nur am Symptom.
+**Stufe A.** Hängt an V-2 (gemergt), sonst an nichts.
+**Umfang:**
+1. Ein Klick auf ein Bild in Vollauflösung (Fokusmodus, M2-07b) löste dessen Szene über den bestehenden Karten-Klick-Handler zwar bereits `toggleSelected` aus, aber `syncMosaic` (`mapLayers.ts`) schreibt im Fokusmodus bedingungslos eine leere `FeatureCollection` auf die Auswahl-Quelle (`SEL_SRC`) statt sie wie im Browse-Modus aus `selectedIds` zu berechnen. Sichtbar wurde davon nur der Nebeneffekt: Jede Zustandsänderung reißt über `clearDynamicMosaic` alle Kachel-Layer ab und baut sie neu auf, was wie ein Neuladen wirkt, ohne dass je eine gelbe Umrandung erscheint. Fix: die Auswahl-Quelle bekommt im Fokusmodus dieselbe gelbe Umrandung wie im Browse-Modus, aus denselben Daten (`selectedIds` gegen die Items der aktiven Gruppe).
+2. Die Karte zeigt im Browse-Modus stets nur die Items der aktiven (aufgeklappten) Gruppe (`groups[activeGroupIndex]`, `MapView.tsx`); `ResultsPanel.tsx` klappt aber immer nur eine Gruppe gleichzeitig auf (Akkordeon über `activeGroupIndex`). Ein ausgewählter Quicklook aus einer anderen Gruppe verschwindet deshalb von der Karte, sobald man zu einer anderen Gruppe wechselt — das Zuklappen der Liste reißt ihn von der Karte mit, obwohl er weiter ausgewählt ist. Fix: die an die Karte übergebene Item-Menge ist die aktive Gruppe vereinigt mit allen ausgewählten Items anderer Gruppen (neue Hilfsfunktion in `grouping.ts`), sowohl im reaktiven Effekt als auch beim `style.load`-Wiederaufbau (Theme-Wechsel). Nicht ausgewählte Items einer zugeklappten Gruppe bleiben wie bisher von der Karte verschwunden — das ist gewolltes Verhalten, nur die Auswahl soll überleben.
+
+**Nicht anfassen:** Backend; Footprint-Anzeige (Coverage/M2-07c) und `pointInFootprint` (M2-16); der Karten-Klick-Handler selbst, der die Szene unter dem Cursor schon richtig ermittelt.
+**Abnahme:** Vitest-Fälle für beide Befunde (Auswahl-Umrandung im Fokusmodus aus `selectedIds`, ausgewähltes Item einer nicht aktiven Gruppe bleibt Teil der an die Karte übergebenen Items); Lint, Typprüfung und Vitest grün.
 
 ---
 
