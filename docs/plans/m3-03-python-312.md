@@ -1,7 +1,8 @@
 # M3-03 — Wechsel auf Python 3.12: Umsetzungsplan
 
 **Aufgabe:** M3-03 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B.** Plan-Schritt, **wartet auf Ottos Freigabe** (Fragen in §8).
+**Stufe B** — **von Otto am 23.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1),
+F4 (1) (§8). Der Plan-Schritt ist damit abgeschlossen, die Umsetzung läuft.
 **Ort im Repo:** `docs/plans/m3-03-python-312.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (P16, §4 M3-03,
 Abnahme §5 Punkt 7); `plans/m2-format-und-viewer.md` D17; `adr/0007` §3.8 und
