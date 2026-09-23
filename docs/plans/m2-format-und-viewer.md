@@ -591,6 +591,14 @@ kleiner und unregelmäßig ist als die Kachel.
 
 Mit Playwright gegen den lokalen Dev-Server durchgespielt (acht Szenarien: Ausweichen bei echter Überlappung, Rückkehr an den Rand ohne Überlappung, erneutes Ausweichen, manuelles Verschieben bleibt in beide Toggle-Richtungen unangetastet, Klemmen an allen vier Bildschirmrändern).
 
+**Nachbesserung, Runde 7 (23.09.2026), Kürzel „V-11":** Quicklooks blieben auf der Karte sichtbar, obwohl in der Trefferliste keine Gruppe mehr aufgeklappt war. Ursache: `expandedGroupIndex` (V-6, welche Sektion in der Liste offen ist) lebte nur als lokaler State in `ResultsPanel.tsx`; `MapView.tsx` kannte ihn nicht und las weiterhin `activeGroupIndex`, das ein manuelles Einklappen absichtlich unangetastet lässt (genau das war der Witz von V-6). `expandedGroupIndex` zieht jetzt in den Store um, wo beide Komponenten ihn lesen können:
+- `setActiveGroupIndex` (Zeitschieber, „Play", Klick auf eine Szene, Auswahl eines angepinnten Layers) hält `expandedGroupIndex` weiterhin synchron mit `activeGroupIndex`, wie zuvor implizit über den `useEffect` in `ResultsPanel.tsx`.
+- Neue Aktion `toggleResultsGroup` ist der einzige Pfad, der nur `expandedGroupIndex` ändert (auf `null` beim Einklappen der offenen Gruppe) und `activeGroupIndex` unberührt lässt.
+- `grouping.ts::itemsForMap` nimmt jetzt `number | null` für den zweiten Parameter; `null` bedeutet „keine Gruppe aktiv", liefert also nur die ausgewählten Items (wie zuvor schon ein außerhalb liegender Index).
+- `MapView.tsx` wählt je Aufrufstelle zwischen `activeGroupIndex` und `expandedGroupIndex`: im Fokusmodus ist die Trefferliste gar nicht sichtbar (App.tsx tauscht sie gegen `ViewerControls`), dort zählt weiterhin die in Volltauflösung angesehene Szene.
+
+Vitest-Fälle für `itemsForMap(_, null, _)` und `toggleResultsGroup` (Einklappen ohne `activeGroupIndex` zu bewegen, erneutes Aufklappen, Resynchronisierung durch `setActiveGroupIndex` nach einem manuellen Einklappen).
+
 ---
 
 ## 5. Abnahme von M2
