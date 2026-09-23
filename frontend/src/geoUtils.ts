@@ -66,6 +66,12 @@ export function polygonBbox(geom: GeoJSON.Geometry): Bbox | null {
 
 export type Coords4 = [[number, number], [number, number], [number, number], [number, number]];
 
+export function coordsBbox(coords: Coords4): Bbox {
+  const xs = coords.map((c) => c[0]);
+  const ys = coords.map((c) => c[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
 // Corner-quad transforms for image sources whose pixels are stored in a
 // different orientation than north-up. Quad order is [TL, TR, BR, BL].
 export function mirrorX(c: Coords4): Coords4 {

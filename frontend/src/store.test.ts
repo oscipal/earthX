@@ -95,3 +95,93 @@ describe('addCurrentToLayers while browsing', () => {
     expect(state.error).toMatch(/Nothing to add/);
   });
 });
+
+// V-2 point 3: "Zoom to selection" zooms to the AOI; failing that, to the
+// pinned layer images; failing that too, it has nothing to do (App.tsx's
+// `canZoom` then keeps the button disabled).
+describe('zoomToView', () => {
+  const AOI: GeoJSON.Geometry = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [1, 1],
+        [2, 1],
+        [2, 2],
+        [1, 2],
+        [1, 1],
+      ],
+    ],
+  };
+
+  beforeEach(() => {
+    useAppStore.setState({ aoi: null, layers: [], flyToBbox: null });
+  });
+
+  it('prefers the AOI over pinned layers', () => {
+    useAppStore.setState({
+      aoi: AOI,
+      layers: [
+        {
+          id: 'L1',
+          name: 'x',
+          visible: true,
+          opacity: 1,
+          overlays: [{ kind: 'raster', tileUrl: 'x', bounds: [40, 40, 41, 41], minZoom: 1, maxZoom: 1 }],
+          restore: {
+            focusMode: false,
+            downloaded: {},
+            appliedRender: {},
+            activeGroupIndex: 0,
+            selectedIds: [],
+            aoi: null,
+            datasetId: null,
+          },
+        },
+      ],
+    });
+    useAppStore.getState().zoomToView();
+    expect(useAppStore.getState().flyToBbox).toEqual([1, 1, 2, 2]);
+  });
+
+  it('falls back to the pinned layer images without an AOI, raster and image overlays alike', () => {
+    useAppStore.setState({
+      layers: [
+        {
+          id: 'L1',
+          name: 'x',
+          visible: true,
+          opacity: 1,
+          overlays: [
+            { kind: 'raster', tileUrl: 'x', bounds: [10, 10, 11, 11], minZoom: 1, maxZoom: 1 },
+            {
+              kind: 'image',
+              url: 'x',
+              coords: [
+                [20, 21],
+                [22, 21],
+                [22, 20],
+                [20, 20],
+              ],
+            },
+          ],
+          restore: {
+            focusMode: false,
+            downloaded: {},
+            appliedRender: {},
+            activeGroupIndex: 0,
+            selectedIds: [],
+            aoi: null,
+            datasetId: null,
+          },
+        },
+      ],
+    });
+    useAppStore.getState().zoomToView();
+    expect(useAppStore.getState().flyToBbox).toEqual([10, 10, 22, 21]);
+  });
+
+  it('does nothing with neither an AOI nor pinned layers', () => {
+    useAppStore.getState().zoomToView();
+    expect(useAppStore.getState().flyToBbox).toBeNull();
+  });
+});

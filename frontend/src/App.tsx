@@ -20,9 +20,9 @@ export default function App() {
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
   const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
-  const canZoom = useAppStore(
-    (s) => !!s.aoi || s.groups.length > 0 || Object.keys(s.downloaded).length > 0,
-  );
+  // "Zoom to selection" zooms to the AOI, else the pinned layer images;
+  // with neither, it stays visibly disabled (store.ts::zoomToView).
+  const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
   const toggleLayerManager = useAppStore((s) => s.toggleLayerManager);
   const layerCount = useAppStore((s) => s.layers.length);
   const theme = useAppStore((s) => s.theme);
@@ -58,7 +58,7 @@ export default function App() {
           className="panel zoom-btn"
           onClick={() => zoomToView()}
           disabled={!canZoom}
-          title="Zoom the map to fit the selection (or the active time step)"
+          title="Zoom the map to fit the AOI, or the pinned layer images"
         >
           ⤢ Zoom to selection
         </button>
@@ -68,16 +68,16 @@ export default function App() {
           onClick={() => toggleLayerManager()}
           title="Open the layer manager"
         >
-          ▤ Layers{layerCount ? ` (${layerCount})` : ''}
+          ☰ Layers{layerCount ? ` (${layerCount})` : ''}
         </button>
         <button
           type="button"
           className="panel zoom-btn"
           onClick={() => toggleProjection()}
-          title={projection === 'globe' ? 'Switch to the flat map' : 'Switch to the globe'}
+          title={projection === 'globe' ? 'Switch to the Mercator map' : 'Switch to the globe'}
           aria-pressed={projection === 'globe'}
         >
-          {projection === 'globe' ? '◎ Globe' : '▭ Flat'}
+          {projection === 'globe' ? '🗺 Mercator' : '🌐 Globe'}
         </button>
         <button
           type="button"
@@ -86,7 +86,7 @@ export default function App() {
           title={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
           aria-pressed={theme === 'normal'}
         >
-          {theme === 'tech' ? '☾ Dark' : '☀ Light'}
+          {theme === 'tech' ? '☀ Light' : '☾ Dark'}
         </button>
       </div>
 

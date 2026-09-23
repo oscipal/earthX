@@ -7,7 +7,7 @@ import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import { downloadRequestFor } from './download';
-import { polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
+import { coordsBbox, polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
@@ -589,18 +589,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ focusLoading: false });
     }
   },
-  // Zoom to the selected scenes, else the active time step, else the whole AOI.
+  // Zoom to the AOI; if none is drawn, to the pinned layer images; if there
+  // are none of those either, the button stays disabled (App.tsx::canZoom)
+  // and this is never called.
   zoomToView: () => {
-    const { items, selectedIds, groups, activeGroupIndex, aoi, focusMode, downloaded } = get();
-    if (focusMode) {
-      const bb = unionBbox(Object.values(downloaded).map((info) => info.bounds));
-      if (bb) set({ flyToBbox: bb });
-      return;
+    const { aoi, layers } = get();
+    if (aoi) {
+      const bb = polygonBbox(aoi);
+      if (bb) {
+        set({ flyToBbox: bb });
+        return;
+      }
     }
-    let boxes = items.filter((it) => selectedIds.includes(it.id)).map((it) => it.bbox);
-    if (boxes.length === 0) boxes = groups[activeGroupIndex]?.items.map((it) => it.bbox) ?? [];
-    let bb = unionBbox(boxes);
-    if (!bb && aoi) bb = polygonBbox(aoi);
+    const boxes = layers.flatMap((layer) =>
+      layer.overlays.map((ov) => (ov.kind === 'raster' ? ov.bounds : coordsBbox(ov.coords))),
+    );
+    const bb = unionBbox(boxes);
     if (bb) set({ flyToBbox: bb });
   },
   setActiveGroupIndex: (activeGroupIndex) => set({ activeGroupIndex }),
