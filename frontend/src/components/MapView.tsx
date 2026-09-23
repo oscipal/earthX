@@ -95,6 +95,16 @@ export default function MapView() {
     mapRef.current = map;
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
+
+    // `compact: true` only makes the attribution collapsible — MapLibre still
+    // starts it expanded (`maplibregl-compact-show`/`open`) and collapses it
+    // only once the user drags the map (its own `_updateCompactMinimize`,
+    // bound to the `drag` event). Collapsed to the small "i" button from the
+    // start instead of waiting for that first pan (V-7).
+    containerRef.current
+      .querySelector('.maplibregl-ctrl-attrib')
+      ?.classList.remove('maplibregl-compact-show');
+    containerRef.current.querySelector('.maplibregl-ctrl-attrib')?.removeAttribute('open');
     map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
 
     const initDraw = () => {
