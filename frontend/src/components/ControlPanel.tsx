@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 import type { CoverageHistogramPoint } from '../api';
 import { parseAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
@@ -5,6 +7,49 @@ import { maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
+
+// A date input plus a transparent button covering its calendar icon
+// (V-5). The tech theme draws its own icon and hides the native
+// `::-webkit-calendar-picker-indicator` behind `padding-right`, but that
+// padding also pushes the engine's real (invisible) hit-box for the
+// indicator inward, out from under the icon we draw at a fixed offset —
+// clicking the visible icon then misses the part that actually opens the
+// picker. `showPicker()` sidesteps the mismatch instead of chasing it
+// pixel by pixel.
+function DateField({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className="date-field">
+      <input
+        ref={ref}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+      />
+      <button
+        type="button"
+        className="date-icon-btn"
+        tabIndex={-1}
+        aria-label={`Open the ${label.toLowerCase()} calendar`}
+        onClick={() => {
+          const input = ref.current;
+          if (!input) return;
+          if (typeof input.showPicker === 'function') input.showPicker();
+          else input.focus();
+        }}
+      />
+    </div>
+  );
+}
 
 function AoiExtras() {
   const setAoi = useAppStore((s) => s.setAoi);
@@ -218,19 +263,9 @@ export default function ControlPanel() {
 
       <label className="field-label">Acquisition date</label>
       <div className="date-row">
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          aria-label="From date"
-        />
+        <DateField value={dateFrom} onChange={setDateFrom} label="From date" />
         <span>→</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          aria-label="To date"
-        />
+        <DateField value={dateTo} onChange={setDateTo} label="To date" />
       </div>
 
       <button
