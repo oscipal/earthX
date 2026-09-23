@@ -33,7 +33,7 @@ from typing import Annotated, Any, Literal, Protocol
 import morecantile
 import rasterio
 from attrs import define, field
-from fastapi import Depends, Path, Query, Request
+from fastapi import Depends, HTTPException, Path, Query, Request
 from morecantile.defaults import TileMatrixSets
 from rio_tiler.io import BaseReader
 from starlette.concurrency import run_in_threadpool
@@ -213,10 +213,21 @@ class EarthxTilerFactory(TilerFactory):
         the gap ``api.tiler._check_zoom_released`` used to leave open): a client that
         builds its tile requests from this document, rather than the fixed range the
         viewer already hardcodes, is then bounded by the same range the tile route
-        enforces. The ``minzoom``/``maxzoom`` query parameters still win when a caller
-        sets them explicitly — as before, they cannot widen what a tile request itself
-        accepts, so overriding them here narrows or shifts the advertised range, never
-        the enforced one.
+        enforces.
+
+        **Deliberate departure from TiTiler's own precedence:** TiTiler lets an
+        explicit ``minzoom``/``maxzoom`` query parameter overwrite its default
+        outright, trusting the caller. Once the default is a *released* range rather
+        than a reader's computed one, that trust would defeat the point of releasing
+        one at all — a caller could read its own out-of-range value straight back out
+        of a query parameter it set itself and still be sent to a level the tile
+        route refuses. So here an explicit value is honoured only within the
+        registry's range (:func:`_validate_zoom_override`): narrowing or shifting the
+        advertised range is still a caller's choice, but a value outside it, or a
+        ``minzoom`` above ``maxzoom``, is the same ``400`` the tile route itself gives
+        a level nobody serves. Where there is no released range at all
+        (``viewer_zoom`` is ``None`` — a factory built without the dependency, as
+        some tests do), nothing is validated and TiTiler's original precedence holds.
 
         Everything else — the tile URL, the reader-derived bounds and metadata — is
         unchanged from TiTiler's own implementation; only the zoom source differs.
@@ -237,11 +248,11 @@ class EarthxTilerFactory(TilerFactory):
             ] = None,
             minzoom: Annotated[
                 int | None,
-                Query(description="Overwrite default minzoom."),
+                Query(description="Overwrite default minzoom, within the dataset's released range."),
             ] = None,
             maxzoom: Annotated[
                 int | None,
-                Query(description="Overwrite default maxzoom."),
+                Query(description="Overwrite default maxzoom, within the dataset's released range."),
             ] = None,
             src_path=Depends(self.path_dependency),
             reader_params=Depends(self.reader_dependency),
@@ -255,6 +266,9 @@ class EarthxTilerFactory(TilerFactory):
             viewer_zoom=Depends(self.viewer_zoom_dependency),
         ):
             """Return TileJSON document for a dataset."""
+            _validate_zoom_override(
+                minzoom, maxzoom, viewer_zoom, dataset=str(request.path_params.get("dataset"))
+            )
             route_params = {
                 "z": "{z}",
                 "x": "{x}",
@@ -321,6 +335,33 @@ class EarthxTilerFactory(TilerFactory):
             response_model_exclude_none=True,
             operation_id=f"{self.operation_prefix}getTileJSON",
         )(tilejson)
+
+
+def _validate_zoom_override(
+    minzoom: int | None, maxzoom: int | None, viewer_zoom: tuple[int, int] | None, *, dataset: str
+) -> None:
+    """An explicit ``minzoom``/``maxzoom`` may narrow the released range, never leave it.
+
+    See the "Deliberate departure" note on :meth:`EarthxTilerFactory.tilejson` for
+    why this exists at all. A dataset without a released range validates nothing
+    (``viewer_zoom`` is ``None``), the same as TiTiler's own, unrestricted override.
+    """
+    if viewer_zoom is None:
+        return
+    viewer_min, viewer_max = viewer_zoom
+    for name, value in (("minzoom", minzoom), ("maxzoom", maxzoom)):
+        if value is not None and not viewer_min <= value <= viewer_max:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{name} {value} is not released for {dataset!r}, "
+                    f"which serves z{viewer_min} to z{viewer_max}"
+                ),
+            )
+    final_min = minzoom if minzoom is not None else viewer_min
+    final_max = maxzoom if maxzoom is not None else viewer_max
+    if final_min > final_max:
+        raise HTTPException(status_code=400, detail=f"minzoom {final_min} is above maxzoom {final_max}")
 
 
 def _read_statistics(
