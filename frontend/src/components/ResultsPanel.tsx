@@ -1,3 +1,5 @@
+import { useState, type MouseEvent } from 'react';
+
 import { quicklookAsset } from '../datasets';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
@@ -12,9 +14,24 @@ function timeOf(properties: Record<string, unknown>): string {
 function Row({ item }: { item: StacItem }) {
   const selectedIds = useAppStore((s) => s.selectedIds);
   const toggleSelected = useAppStore((s) => s.toggleSelected);
+  const [copied, setCopied] = useState(false);
 
   const selected = selectedIds.includes(item.id);
   const asset = quicklookAsset(item);
+
+  const copyName = (e: MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard
+      .writeText(item.id)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => {
+        // Clipboard unavailable (no permission, insecure context) — the name
+        // stays visible in the row to select and copy by hand.
+      });
+  };
 
   return (
     <li className={`result-row${selected ? ' selected' : ''}`} onClick={() => toggleSelected(item.id)}>
@@ -48,8 +65,19 @@ function Row({ item }: { item: StacItem }) {
       )}
       <div className="result-meta">
         <span className="result-date">{timeOf(item.properties)}</span>
-        <span className="result-id" title={item.id}>
-          {item.id}
+        <span className="result-id-row">
+          <span className="result-id" title={item.id}>
+            {item.id}
+          </span>
+          <button
+            type="button"
+            className="copy-btn"
+            title="Copy scene name"
+            aria-label={`Copy scene name ${item.id}`}
+            onClick={copyName}
+          >
+            {copied ? '✓' : '⧉'}
+          </button>
         </span>
       </div>
     </li>

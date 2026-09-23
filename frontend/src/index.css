@@ -399,13 +399,28 @@ input[type='date']:focus {
   cursor: pointer;
 }
 
+/* Same two equal columns and 6px gap as the pairs above it (`.toolbar`,
+   `.aoi-extras`, `.level-select`), so the date fields line up with
+   Point/Rectangle, Upload/Last AOI and Sentinel-2/Zarr3 (V-4). The "→"
+   separator used to sit in a flex row as a third item, which ate its own
+   width plus an extra gap and narrowed both inputs below the columns above
+   them — it is now an overlay centered on the gap instead of a layout track. */
 .date-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
+  align-items: center;
+  position: relative;
 }
 .date-row span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   color: var(--muted);
+  background: var(--panel-bg);
+  padding: 0 2px;
+  pointer-events: none;
 }
 
 /* --- search box + autocomplete --- */
@@ -696,12 +711,35 @@ input[type='date']:focus {
   font-size: 10px;
   color: var(--accent);
 }
+.result-id-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 .result-id {
   font-size: 9px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+.copy-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+.copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .badge {
   font-size: 8px;
