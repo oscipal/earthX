@@ -22,6 +22,13 @@ from types import MappingProxyType
 # 2**z columns, so a cell is EARTH_CIRCUMFERENCE_KM / 2**z wide (adr/0004 §5).
 EARTH_CIRCUMFERENCE_KM = 40075.0
 
+# Highest tile zoom a registry entry may release (M2-10). MapLibre's own ceiling is
+# z22 and a Web Mercator tile there is about 4 cm wide at the equator — several
+# orders past any imagery this platform serves. A level beyond this is an entry
+# mistake, not a wish, and the same reasoning as MAX_GEOTILE_LEVEL in
+# catalog/coverage.py: a grid finer than the data is a number, not a picture.
+MAX_TILE_ZOOM = 22
+
 
 class DataClass(Enum):
     """Data type class of a dataset (projektuebersicht.md §5). Raster only for now."""
@@ -290,12 +297,24 @@ class DefaultRender:
 class ViewerInfo:
     """What the viewer takes from the catalogue instead of from its own code.
 
-    M2 fills one thing, and the field stays that narrow until something else is
-    actually needed: ``group_by``, the key that turns a list of items into the steps
-    of the time line and into the scenes of one mosaic (Inventar F5, F11).
+    M2 fills three things: ``group_by``, the key that turns a list of items into the
+    steps of the time line and into the scenes of one mosaic (Inventar F5, F11), and
+    the two zoom levels that bound the tile path for this dataset (M2-10, Otto
+    22.09.2026 F1 a).
 
-    No default (KLAERUNGEN B10): a dataset whose items nobody has looked at has no
-    grouping, and guessing one would group scenes that do not belong together.
+    No default on any of them (KLAERUNGEN B10): a dataset whose items nobody has
+    looked at has no grouping, and guessing one would group scenes that do not belong
+    together; a dataset nobody has measured has no released zoom range either, and
+    guessing one would let a client ask for a tile that costs a hundred times what
+    the source can add to it.
+
+    **``min_zoom`` / ``max_zoom`` — the tile levels this dataset is released for.**
+    Below ``min_zoom`` one tile shows several scenes, which is the coverage map's job
+    and not the tile path's (adr/0007 §12.10). Above ``max_zoom`` the source has
+    nothing finer to give, so a client overzooms the last level instead of asking for
+    a tile that reads the same pixels again. Both are read by the viewer *and*
+    enforced by the tile route (``api.tiler``, Otto's first addition to F1): the field
+    is the boundary of the tile path, not a recommendation to a well-behaved client.
 
     **``group_by`` — item property names, in the order in which they make the key.**
     ``properties.`` is implied and must not be written. One rule goes with the field,
@@ -315,8 +334,14 @@ class ViewerInfo:
     """
 
     group_by: tuple[str, ...]
+    min_zoom: int
+    max_zoom: int
 
     def __post_init__(self) -> None:
+        self._check_group_by()
+        self._check_zoom()
+
+    def _check_group_by(self) -> None:
         if not self.group_by:
             raise ConfigError("viewer.group_by needs at least one property (KLAERUNGEN B10)")
         if len(set(self.group_by)) != len(self.group_by):
@@ -328,6 +353,19 @@ class ViewerInfo:
                 raise ConfigError(
                     f"viewer.group_by entry {name!r} carries the `properties.` prefix, which is implied"
                 )
+
+    def _check_zoom(self) -> None:
+        for name, level in (("min_zoom", self.min_zoom), ("max_zoom", self.max_zoom)):
+            # `bool` is an `int` in Python, and `True` as a zoom level is a typo
+            # nobody meant — a registry entry says a number or it says nothing.
+            if isinstance(level, bool) or not isinstance(level, int):
+                raise ConfigError(f"viewer.{name} must be a whole zoom level, not {level!r}")
+            if not 0 <= level <= MAX_TILE_ZOOM:
+                raise ConfigError(f"viewer.{name} {level} lies outside 0..{MAX_TILE_ZOOM}")
+        if self.min_zoom > self.max_zoom:
+            raise ConfigError(
+                f"viewer zoom range is empty: min_zoom {self.min_zoom} is above max_zoom {self.max_zoom}"
+            )
 
 
 class MissingProperty(LookupError):

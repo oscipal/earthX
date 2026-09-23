@@ -67,7 +67,13 @@ from earthx.adapters import (
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DataFormat, DatasetRegistry, LicenseTier, UnknownDatasetError
+from earthx.catalog.registry import (
+    DataFormat,
+    DatasetConfig,
+    DatasetRegistry,
+    LicenseTier,
+    UnknownDatasetError,
+)
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout, UrlRejected
@@ -200,8 +206,84 @@ def _target_gsd(request: Request, stac_item: dict[str, Any]) -> float | None:
     return abs(item_east - item_west) / tile_size
 
 
+def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
+    """The registry entry for ``dataset``, or a 404.
+
+    adr/0005 rule I: an unknown collection is a 404 and not an empty answer that
+    looks valid. Every route of this process starts here, so the refusal reads the
+    same whether it came from a tile, the statistics or a crop.
+    """
+    registry: DatasetRegistry = state.earthx_registry
+    try:
+        return registry.get(dataset)
+    except UnknownDatasetError:
+        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+
+
+def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
+    """Refuse a tile outside the zoom range the registry releases for this dataset.
+
+    Otto's first addition to M2-10 F1: the registry field tells the *viewer* which
+    levels to ask for, but nothing stops another client from asking for z20 — which
+    for a Zarr dataset means a tile read off the native 10 m level, an order of
+    magnitude more bytes for pixels no sharper than z14 already gives. The boundary
+    therefore lives here as well, not only in the client.
+
+    Checked before the item is fetched, so a refused level costs no request to the
+    source.
+
+    Only a *tile* carries a level. The other routes on this dependency —
+    ``/statistics`` (answered on the coarsest level there is), ``/info``,
+    ``/point`` and ``/tilejson.json`` — have no ``z`` to check and pass through.
+    ``/preview`` used to be among them and is gone (`access.tiles`): it carried no
+    level *and* computed no target resolution, so for a Zarr dataset it read the
+    native one. The AOI crop is not on this dependency at all; it resolves its own
+    paths and is answered at the asset's own resolution by design (M2-06).
+
+    **Known gap, deliberately left:** ``/tilejson.json`` still advertises the zoom
+    range its *reader* reports rather than the one the registry releases, so a
+    client that follows the TileJSON rather than building URLs itself can be sent
+    to levels this refuses. Closing it means reimplementing TiTiler's route (the
+    reader's ``minzoom``/``maxzoom`` are computed properties, not settable), which
+    is its own task — see the M2-10 plan.
+    """
+    level = request.path_params.get("z")
+    if level is None:
+        return
+    viewer = config.viewer
+    if viewer is None:
+        # Not a caller's mistake — the entry never said which levels it serves. 501
+        # for the same reason a format without a reader is one: the platform has not
+        # been set up for this, and guessing a range is exactly what KLAERUNGEN B10
+        # forbids.
+        raise HTTPException(
+            status_code=501,
+            detail=f"{config.dataset_id!r} names no released zoom range (earthx:viewer)",
+        )
+    try:
+        zoom = int(level)
+    except (TypeError, ValueError):
+        # TiTiler's own route typed this parameter; anything that gets past it is
+        # its refusal to make, not ours.
+        return
+    if not viewer.min_zoom <= zoom <= viewer.max_zoom:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"zoom level {zoom} is not released for {config.dataset_id!r}, "
+                f"which serves z{viewer.min_zoom} to z{viewer.max_zoom}"
+            ),
+        )
+
+
 def _resolve_asset_path(
-    state: Any, stac_item: dict[str, Any], *, dataset: str, item: str, asset: str, target_gsd: float | None = None
+    state: Any,
+    stac_item: dict[str, Any],
+    *,
+    config: DatasetConfig,
+    item: str,
+    asset: str,
+    target_gsd: float | None = None,
 ) -> AssetPath | ZarrAsset:
     """The href of ``asset`` on ``stac_item``, cleared through the gateway policy.
 
@@ -215,11 +297,7 @@ def _resolve_asset_path(
     *before* the href is looked up, because the item only ever advertises the
     group side of that key.
     """
-    registry: DatasetRegistry = state.earthx_registry
-    try:
-        config = registry.get(dataset)
-    except UnknownDatasetError:
-        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+    dataset = config.dataset_id
     if config.format not in _READABLE_FORMATS:
         raise HTTPException(
             status_code=501,
@@ -273,6 +351,10 @@ async def dataset_asset_path(
 ) -> AssetPath | ZarrAsset:
     """Turn dataset, item and asset into something a reader may open — and nothing else.
 
+    A tile also has to name a level this dataset is released for
+    (:func:`_check_zoom_released`) — checked first, so a level nobody serves costs
+    no request to the source.
+
     ``asset`` is required rather than defaulted from the registry's standard
     visualisation: a tile URL is supposed to say what it shows (adr/0001 Z4), and a
     default that lives in the registry would make two releases of the platform answer
@@ -280,9 +362,11 @@ async def dataset_asset_path(
     on the collection (``earthx:default_render``), which is where it can be a default.
     """
     state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_zoom_released(request, config)
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = _target_gsd(request, stac_item)
-    return _resolve_asset_path(state, stac_item, dataset=dataset, item=item, asset=asset, target_gsd=target_gsd)
+    return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset, target_gsd=target_gsd)
 
 
 class DownloadRequest(BaseModel):
@@ -313,11 +397,7 @@ async def download_crop(
     then the size cap — only after all of that does anything reach `gateway`.
     """
     state = request.app.state
-    registry: DatasetRegistry = state.earthx_registry
-    try:
-        config = registry.get(dataset)
-    except UnknownDatasetError:
-        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+    config = _dataset_config(state, dataset)
 
     if config.license.tier is not LicenseTier.PROCESSING:
         # A download hands out the source's pixels, cropped but otherwise
@@ -339,19 +419,25 @@ async def download_crop(
         raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
     try:
-        check_size_cap(item_count=len(matched), asset_count=len(body.assets))
+        check_size_cap(item_count=len(matched), asset_count=len(set(body.assets)))
     except AoiTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from None
 
+    # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
+    # and two identical keys would otherwise write the same file name into the
+    # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
+    wanted = list(dict.fromkeys(body.assets))
     crops = [
         AssetCrop(
             asset=asset,
             paths=tuple(
-                _resolve_asset_path(state, matched_item, dataset=dataset, item=matched_item["id"], asset=asset)
+                _resolve_asset_path(
+                    state, matched_item, config=config, item=matched_item["id"], asset=asset
+                )
                 for matched_item in matched
             ),
         )
-        for asset in body.assets
+        for asset in wanted
     ]
 
     try:
@@ -377,7 +463,7 @@ async def download_crop(
         extra={
             "dataset": dataset,
             "items": len(matched),
-            "assets": len(body.assets),
+            "assets": len(wanted),
             "bytes": len(zip_bytes),
         },
     )

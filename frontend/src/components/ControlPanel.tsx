@@ -1,6 +1,7 @@
 import type { CoverageHistogramPoint } from '../api';
 import { parseAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
+import { maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
@@ -59,6 +60,28 @@ function AoiExtras() {
   );
 }
 
+// How settled the source of the selected dataset is (D23: "staging" must not be
+// something a user finds out only once the source disappears).
+//
+// `earthx:health.last_checked_ok` is deliberately *not* shown next to it (Otto,
+// 22.09.2026, on M2-08's finding in #62): the field carries the date the dataset
+// was onboarded, not the date anything was checked, so displaying it would state
+// something the platform does not know. A real check date comes with the health
+// checks in M5.
+function DatasetNotes() {
+  const datasets = useAppStore((s) => s.datasets);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const dataset = datasets.find((d) => d.id === datasetId);
+  if (!dataset) return null;
+  const maturity = maturityNote(dataset.collection);
+  if (!maturity) return null;
+  return (
+    <div className="dataset-notes">
+      <p className="hint-text warn">{maturity}</p>
+    </div>
+  );
+}
+
 function DatasetSelector() {
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
@@ -66,19 +89,24 @@ function DatasetSelector() {
   if (datasets.length === 0) return null;
   return (
     <div className="level-select" role="group" aria-label="Dataset">
-      {datasets.map((d) => (
-        <button
-          key={d.id}
-          type="button"
-          className={`level-btn${datasetId === d.id ? ' active' : ''}`}
-          title={d.viewable ? d.title : `${d.title} — not viewable: ${d.reason}`}
-          aria-pressed={datasetId === d.id}
-          disabled={!d.viewable}
-          onClick={() => setDatasetId(d.id)}
-        >
-          {d.title}
-        </button>
-      ))}
+      {datasets.map((d) => {
+        const maturity = d.viewable ? maturityNote(d.collection) : null;
+        const label = d.viewable ? maturityLabel(d.collection) : null;
+        return (
+          <button
+            key={d.id}
+            type="button"
+            className={`level-btn${datasetId === d.id ? ' active' : ''}`}
+            title={d.viewable ? (maturity ? `${d.title} — ${maturity}` : d.title) : `${d.title} — not viewable: ${d.reason}`}
+            aria-pressed={datasetId === d.id}
+            disabled={!d.viewable}
+            onClick={() => setDatasetId(d.id)}
+          >
+            {d.title}
+            {label && <span className="maturity-chip">{label}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -184,6 +212,7 @@ export default function ControlPanel() {
 
       <label className="field-label">Dataset</label>
       <DatasetSelector />
+      <DatasetNotes />
 
       <CoverageControls />
 

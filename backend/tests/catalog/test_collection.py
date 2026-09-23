@@ -18,7 +18,7 @@ from earthx.catalog.collection import (
     _stac_license,
     to_stac_collection,
 )
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 
 EARTHX_FIELDS = (
     "earthx:data_class",
@@ -210,3 +210,21 @@ class TestLicenceSpellingFollowsTheStacVersion:
     def test_what_we_emit_today_matches_the_version_we_declare(self, collection: dict) -> None:
         assert collection["stac_version"] == STAC_VERSION
         assert collection["license"] == _stac_license(SENTINEL_2_L2A.license, STAC_VERSION)
+
+
+class TestTheViewerBlockCarriesTheReleasedZoomRange:
+    """M2-10: the levels reach the client on the collection, because that is the one
+    place the viewer can read them without a branch on the dataset id."""
+
+    def test_all_three_fields_travel(self, collection: dict) -> None:
+        viewer = collection["earthx:viewer"]
+        assert viewer == {"group_by": ["datetime", "grid:code"], "min_zoom": 0, "max_zoom": 19}
+
+    def test_the_second_dataset_carries_its_own_range(self) -> None:
+        viewer = to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:viewer"]
+        assert (viewer["min_zoom"], viewer["max_zoom"]) == (8, 14)
+
+    def test_a_dataset_without_a_viewer_block_stays_null(self, vary) -> None:
+        """No guessed range for an entry that names none — the same nothing-guessed
+        rule `group_by` already follows (KLAERUNGEN B10)."""
+        assert to_stac_collection(vary(viewer=None))["earthx:viewer"] is None

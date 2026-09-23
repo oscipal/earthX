@@ -100,7 +100,7 @@ def valid_config() -> DatasetConfig:
             expression=None,
             resampling="nearest",
         ),
-        viewer=ViewerInfo(group_by=("datetime",)),
+        viewer=ViewerInfo(group_by=("datetime",), min_zoom=0, max_zoom=19),
         health=HealthInfo(status=HealthStatus.OK, last_checked_ok=date(2026, 1, 1)),
         maturity=Maturity.STABLE,
         zarr=None,

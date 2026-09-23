@@ -57,6 +57,16 @@ describe('buildTileTemplate', () => {
     const url = buildTileTemplate('a b', 'c/d', 'visual');
     expect(url).toContain('/collections/a%20b/items/c%2Fd/tiles/');
   });
+
+  it("carries a Zarr group asset key back out exactly as it went in", () => {
+    // `SR_10m:b04,b03,b02` is one asset key: the group the item advertises plus
+    // the variables to composite (adr/0007 §12.11). The tiler splits it on the
+    // registry's separator, so a key that arrives re-encoded — or decoded twice
+    // — names a variable nobody has. Z4 as well: the same URL, the same image.
+    const key = 'SR_10m:b04,b03,b02';
+    const url = buildTileTemplate('sentinel-2-l2a-zarr3', 'S2B_1', key);
+    expect(new URL(url, 'http://localhost').searchParams.get('asset')).toBe(key);
+  });
 });
 
 describe('buildStatisticsUrl', () => {

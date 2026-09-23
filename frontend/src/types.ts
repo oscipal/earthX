@@ -40,7 +40,20 @@ export interface CollectionAccess {
 
 export interface EarthxViewer {
   group_by: string[];
+  // The tile levels this dataset is released for (M2-10, registry `ViewerInfo`).
+  // Below `min_zoom` one tile shows several scenes, which is the coverage map's
+  // job; above `max_zoom` the source has nothing finer, so the last level is
+  // overzoomed. The tile route enforces both — asking outside the range is a 400,
+  // not a slow tile.
+  min_zoom: number;
+  max_zoom: number;
 }
+
+// How settled the *source* is, not a measurement (`earthx:maturity`,
+// architekturplan.md 5.1). The union is what the registry can emit today; the
+// field is read as a plain string so a fourth value shows up in the interface
+// instead of being silently dropped.
+export type Maturity = 'stable' | 'staging' | 'experimental';
 
 // The registry's standard visualisation (`DefaultRender`, M2-04/D20), field names
 // mirroring the STAC `render` extension so they map onto tile-URL query params
@@ -80,6 +93,7 @@ export interface Collection {
   license?: string | null;
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
+  'earthx:maturity'?: Maturity | string | null;
   'earthx:default_render'?: EarthxDefaultRender | null;
   'earthx:license_flags'?: LicenseFlags | null;
 }
@@ -109,4 +123,10 @@ export interface DownloadedInfo {
   tileUrl: string; // MapLibre tile template ({z}/{x}/{y}), asset already baked in
   bounds: Bbox;
   asset: string;
+  // The levels this dataset is released for (`earthx:viewer`, M2-10). Below the
+  // lower one MapLibre requests nothing, above the upper one it overzooms the
+  // last level — which is also what the tile route allows, so the map never asks
+  // for a tile the backend answers with a 400.
+  minZoom: number;
+  maxZoom: number;
 }

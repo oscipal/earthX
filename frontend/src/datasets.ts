@@ -1,16 +1,42 @@
 // What the viewer needs from `/stac/collections`: the pick list, each entry's
-// grouping key (`earthx:viewer.group_by`), and which quicklook asset to show.
+// grouping key and released zoom levels (`earthx:viewer`), how settled the
+// source is (`earthx:maturity`), and what to show for one scene before anyone
+// asks for full resolution.
 //
-// No default grouping key (KLAERUNGEN B10, Otto 20.09.2026): a collection
-// without `earthx:viewer.group_by` is a gap in the dataset's onboarding, not
-// a case for a guessed key that could merge scenes that do not belong
-// together. Such a dataset stays listed, marked as not viewable, so the
-// viewer says what is missing instead of silently leaving it out.
+// Nothing here has a default (KLAERUNGEN B10, Otto 20.09.2026 and 22.09.2026):
+// a collection without `earthx:viewer.group_by` is a gap in the dataset's
+// onboarding, not a case for a guessed key that could merge scenes that do not
+// belong together, and one without a zoom range is a gap the tile route would
+// answer with a 400 anyway. Such a dataset stays listed, marked as not
+// viewable, so the viewer says what is missing instead of silently leaving it
+// out — and every difference between two datasets comes from here, never from
+// a branch on a dataset id somewhere in a component (M2-10).
 
-import type { Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
+import { appliedRenderFrom } from './render';
+import type { AppliedRender, Collection, EarthxDefaultRender, StacAsset, StacItem } from './types';
+
+// The tile levels a dataset is released for (registry `ViewerInfo`, M2-10).
+export interface ZoomRange {
+  min: number;
+  max: number;
+}
+
+// The same ceiling the registry enforces (`catalog.registry.MAX_TILE_ZOOM`), so a
+// range the backend would never accept is not treated as viewable here either. It
+// is also below MapLibre's own style limit of 24 — a source built with a larger
+// `maxzoom` throws inside `addSource`, in the middle of a map sync, which is not
+// where anyone would look for a registry mistake.
+const MAX_TILE_ZOOM = 22;
 
 export type DatasetOption =
-  | { id: string; title: string; collection: Collection; viewable: true; groupBy: string[] }
+  | {
+      id: string;
+      title: string;
+      collection: Collection;
+      viewable: true;
+      groupBy: string[];
+      zoom: ZoomRange;
+    }
   | { id: string; title: string; collection: Collection; viewable: false; reason: string };
 
 export function groupByOf(collection: Collection): string[] | null {
@@ -25,21 +51,91 @@ export function defaultRenderOf(collection: Collection): EarthxDefaultRender | n
   return collection['earthx:default_render'] ?? null;
 }
 
+// The released tile levels, or `null` where the dataset names none or names
+// something that cannot be a range. No guessed range, for the same reason there
+// is no guessed grouping key: below the lower bound a tile shows several scenes
+// and above the upper one the source has nothing finer, and both answers differ
+// per dataset. The tile route refuses a level outside the range with a 400, so a
+// guess here would only turn a registry gap into a wall of failed tiles.
+export function zoomRangeOf(collection: Collection): ZoomRange | null {
+  const viewer = collection['earthx:viewer'];
+  if (!viewer) return null;
+  const { min_zoom: min, max_zoom: max } = viewer;
+  if (!Number.isInteger(min) || !Number.isInteger(max)) return null;
+  if (min < 0 || max > MAX_TILE_ZOOM || min > max) return null;
+  return { min, max };
+}
+
 export function datasetsFrom(collections: Collection[]): DatasetOption[] {
   return collections.map((collection) => {
     const title = collection.title ?? collection.id;
     const groupBy = groupByOf(collection);
-    if (groupBy) {
-      return { id: collection.id, title, collection, viewable: true, groupBy };
+    const zoom = zoomRangeOf(collection);
+    if (groupBy && zoom) {
+      return { id: collection.id, title, collection, viewable: true, groupBy, zoom };
     }
     return {
       id: collection.id,
       title,
       collection,
       viewable: false,
-      reason: 'earthx:viewer.group_by is not set for this dataset',
+      reason: groupBy
+        ? 'earthx:viewer names no usable zoom range (min_zoom/max_zoom) for this dataset'
+        : 'earthx:viewer.group_by is not set for this dataset',
     };
   });
+}
+
+// How settled the source is (`earthx:maturity`), as the one line the interface
+// shows for it — `null` for a settled source, which needs no warning. An unknown
+// value is passed through rather than swallowed: a provider label nobody has
+// taught the viewer about still belongs in front of the user.
+export function maturityLabel(collection: Collection): string | null {
+  const maturity = collection['earthx:maturity'];
+  if (typeof maturity !== 'string' || maturity === '' || maturity === 'stable') return null;
+  return maturity;
+}
+
+export function maturityNote(collection: Collection): string | null {
+  const maturity = maturityLabel(collection);
+  if (maturity === null) return null;
+  if (maturity === 'staging') {
+    return 'staging: the provider may withdraw this collection without notice';
+  }
+  if (maturity === 'experimental') {
+    return 'experimental: the provider offers no stability for this collection';
+  }
+  return maturity;
+}
+
+// Why the map shows no imagery for this dataset at this zoom, or `null` when
+// that is not the reason (M2-10).
+//
+// Below `min_zoom` MapLibre requests no tiles at all — a raster source has no
+// underzoom — so the scenes simply are not drawn, and the map looks empty rather
+// than out of range. Above the floor this says nothing: an empty map then has
+// some other cause, and a hint that is always on is a hint nobody reads.
+//
+// Two limits worth knowing. It speaks for the *tile* paths, which is what a
+// released range bounds: a published quicklook is placed as an image and has no
+// floor, so for a dataset with `min_zoom > 0` whose items carry thumbnails this
+// would be wrong — no entry is in that position today (the COG one releases from
+// z0). And it follows the map's `moveend`, so during a long zoom gesture the map
+// is already empty while this still says nothing.
+//
+// It belongs wherever the app talks to the user and not in a panel that can be
+// slid away: the first version of this sat in the control panel, which
+// `runSearch` collapses, so it was never once visible in the situation it is
+// for (found locally by Otto, 22.09.2026).
+export function zoomFloorHint(dataset: DatasetOption | undefined, mapZoom: number): string | null {
+  // A zoom that is not a number compares false against everything, which would
+  // otherwise turn a broken reading into a standing hint.
+  if (!Number.isFinite(mapZoom)) return null;
+  if (!dataset?.viewable || mapZoom >= dataset.zoom.min) return null;
+  return (
+    `Zoom in to level ${dataset.zoom.min} to see imagery for ${dataset.title} — ` +
+    'below it one tile covers several scenes, which is what the coverage layer is for.'
+  );
 }
 
 // The quicklook asset, chosen generically: role `thumbnail`, then `overview`,
@@ -51,4 +147,48 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
   return (
     byRole('thumbnail') ?? byRole('overview') ?? assets.find((a) => a.type?.startsWith('image/')) ?? null
   );
+}
+
+// What the browse view can show for one scene before anyone asks for full
+// resolution (M2-10, Otto F3 a).
+//
+// `image` is a ready-made quicklook the source publishes; the browser loads it
+// straight from the asset host (D14). `tiles` is the substitute for a source that
+// publishes none at all — `sentinel-2-l2a-zarr3` has no asset with a `thumbnail`,
+// `overview`, `preview` or `visual` role anywhere (adr/0007 §12.7). The substitute
+// is a tile URL on the coarsest level the dataset releases, which for that dataset
+// is z8 and reads `r720m`: 38 kB and 0.6 s, measured (adr/0007 §12.4). No extra
+// registry field defines "the preview level" — the coarsest released level *is*
+// the preview, and everything above it is overzoomed, which is what a quicklook is.
+//
+// That equation holds while `min_zoom` is in the order of a scene, which is why
+// `sentinel-2-l2a-zarr3` sets z8 ("one tile is about one scene", adr/0007 §12.10).
+// For a dataset released from z0 the preview would be a world tile clipped to one
+// item — nearly nothing. No dataset reaches that case today (the COG one publishes
+// quicklooks, so it never takes this branch), and the day one does, the preview
+// level is the thing to name in the registry, not a rule to bend here.
+//
+// The decision hangs on the item and the registry entry, never on a dataset id:
+// a source that starts publishing thumbnails tomorrow gets them without a change
+// here, and one that stops falls back to the tiles the same way.
+export type QuicklookPlan =
+  | { kind: 'image'; href: string }
+  // `render` is the registry's standard visualisation, carried because a preview
+  // tile needs the same stretch the full-resolution view uses — without it the
+  // two views of one scene do not look like the same data (M2-10 review).
+  | { kind: 'tiles'; asset: string; zoom: number; render: AppliedRender };
+
+export function quicklookPlan(item: StacItem, dataset: DatasetOption): QuicklookPlan | null {
+  const asset = quicklookAsset(item);
+  if (asset?.href) return { kind: 'image', href: asset.href };
+  if (!dataset.viewable) return null;
+  const render = defaultRenderOf(dataset.collection);
+  const rendered = render?.assets?.[0];
+  if (!render || !rendered) return null;
+  return {
+    kind: 'tiles',
+    asset: rendered,
+    zoom: dataset.zoom.min,
+    render: appliedRenderFrom(render),
+  };
 }

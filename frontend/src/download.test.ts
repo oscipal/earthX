@@ -26,7 +26,7 @@ const AOI: GeoJSON.Geometry = {
 function restore(overrides: Partial<LayerRestore> = {}): LayerRestore {
   return {
     focusMode: true,
-    downloaded: { S2A_1: { tileUrl: 't', bounds: [10, 47, 11, 48], asset: 'visual' } },
+    downloaded: { S2A_1: { tileUrl: 't', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 } },
     appliedRender: {},
     activeGroupIndex: 0,
     selectedIds: ['S2A_1'],
@@ -62,8 +62,8 @@ describe('downloadRequestFor', () => {
     const req = downloadRequestFor(
       layer({
         downloaded: {
-          S2A_1: { tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual' },
-          S2A_2: { tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual' },
+          S2A_1: { tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
+          S2A_2: { tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
         },
       }),
     );

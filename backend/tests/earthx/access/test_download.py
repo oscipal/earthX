@@ -241,3 +241,52 @@ class TestBuildDownloadZip:
             item_ids=["ITEM1"],
         )
         assert write_paths, "the test did not actually exercise a write path"
+
+
+class TestTheNameACropGetsInsideTheZip:
+    """M2-10: the asset key travels into the archive, and for a Zarr dataset it is
+    not a plain word — ``SR_10m:b04,b03,b02`` names the group the item advertises
+    plus the variables to composite (adr/0007 §12.11). A ``:`` is not a legal
+    filename on Windows, so the archive would fail to extract or be silently
+    renamed where it matters least: on the user's disk."""
+
+    def test_a_plain_asset_key_is_left_alone(self) -> None:
+        assert dl.crop_filename("visual") == "visual.tif"
+
+    def test_a_zarr_group_key_loses_its_separators(self) -> None:
+        assert dl.crop_filename("SR_10m:b04,b03,b02") == "SR_10m_b04_b03_b02.tif"
+
+    @pytest.mark.parametrize(
+        ("asset", "expected"),
+        [
+            ("a/b", "a_b.tif"),  # a path separator would open a directory in the ZIP
+            ("../escape", "escape.tif"),  # ... and this one would leave it entirely
+            ("b04  b03", "b04_b03.tif"),  # a run collapses, it does not repeat
+            ("::::", "asset.tif"),  # nothing left over is still a nameable file
+            ("", "asset.tif"),
+        ],
+    )
+    def test_nothing_outside_a_plain_name_survives(self, asset: str, expected: str) -> None:
+        assert dl.crop_filename(asset) == expected
+
+    def test_two_different_keys_can_clean_to_the_same_name(self) -> None:
+        """A known, unresolved collision, pinned so that whoever hits it sees it here
+        first: `b04:b03` and `b04,b03` are different asset keys and become the same
+        file, which a ZIP allows and no user could untangle.
+
+        Deduplicating the request (`api.tiler.download_crop`) removes the case that
+        can actually happen — the same key asked for twice — but not this one. It
+        needs two keys that differ only in a character the cleaning removes, and no
+        registry entry in M2 carries such a pair.
+        """
+        assert dl.crop_filename("b04:b03") == dl.crop_filename("b04,b03")
+
+    def test_the_notice_names_the_key_the_cleaned_file_came_from(self) -> None:
+        notice = dl.build_notice_text(
+            SENTINEL_2_L2A, item_ids=["ITEM1"], assets=["SR_10m:b04,b03,b02"]
+        )
+        assert "SR_10m:b04,b03,b02" in notice
+        assert "SR_10m_b04_b03_b02.tif" in notice
+
+    def test_a_crop_without_named_assets_keeps_the_notice_as_it_was(self) -> None:
+        assert "Assets:" not in dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])

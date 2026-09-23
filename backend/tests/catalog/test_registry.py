@@ -306,7 +306,41 @@ class TestMalformedInput:
         """M2-07a reads this field and implements nothing of its own, so a key that
         needs interpreting is a bug in the viewer nobody would trace back to here."""
         with pytest.raises(ConfigError, match="group_by"):
-            ViewerInfo(group_by=group_by)
+            ViewerInfo(group_by=group_by, min_zoom=0, max_zoom=19)
+
+    @pytest.mark.parametrize(
+        ("min_zoom", "max_zoom", "match"),
+        [
+            (9, 8, "empty"),  # the range excludes every level there is
+            (-1, 14, "outside"),
+            (8, 23, "outside"),  # past MAX_TILE_ZOOM
+            (8.5, 14, "whole zoom level"),  # a fractional level is not a tile level
+            (True, 14, "whole zoom level"),  # bool is an int in Python, and never a zoom
+        ],
+    )
+    def test_a_zoom_range_that_releases_nothing_usable_is_rejected(
+        self, min_zoom, max_zoom, match
+    ) -> None:
+        """The tile route refuses a level outside this range (api.tiler), so a range
+        that is empty or nonsensical would turn every tile of the dataset into a 400
+        and the cause would be looked for anywhere but in the registry."""
+        with pytest.raises(ConfigError, match=match):
+            ViewerInfo(group_by=("datetime",), min_zoom=min_zoom, max_zoom=max_zoom)
+
+    @pytest.mark.parametrize("missing", ["min_zoom", "max_zoom"])
+    def test_the_zoom_levels_are_not_optional(self, missing) -> None:
+        """KLAERUNGEN B10 again: a dataset nobody measured has no released range, and
+        a default here would let a client ask for a tile that costs a hundred times
+        what the source can add to it (M2-10, Otto 22.09.2026)."""
+        fields = {"group_by": ("datetime",), "min_zoom": 0, "max_zoom": 19}
+        del fields[missing]
+        with pytest.raises(TypeError):
+            ViewerInfo(**fields)
+
+    def test_a_single_released_level_is_allowed(self) -> None:
+        """min == max is the browse-mode preview of M2-10: exactly one level is read
+        and everything above it is overzoomed, which is what a quicklook is."""
+        assert ViewerInfo(group_by=("datetime",), min_zoom=8, max_zoom=8).max_zoom == 8
 
     def test_an_asset_host_is_not_optional(self, valid_config) -> None:
         """KLAERUNGEN B10: a field with a default is a field nobody decided about."""

@@ -4,9 +4,11 @@
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 
+import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
-import { quicklookAsset } from './datasets';
+import { quicklookPlan } from './datasets';
+import type { DatasetOption } from './datasets';
 import { asFeatureCollection, bboxToPolygon, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import type { MapLayer } from './layers';
@@ -105,16 +107,17 @@ function placeImage(
   );
 }
 
-// No registry field names a dataset's ground sample distance yet (only the
-// Zarr candidate's D23 gives zoom bounds, and only for that one dataset), so
-// this is a generic ceiling rather than something derived per source. z19 is
-// several times past Sentinel-2's ~10 m/px (≈z14 near the equator, coarser
-// towards the poles) — enough headroom to zoom into real detail without
-// MapLibre requesting tiles the source cannot add anything to. Without a cap
-// here, nothing stops ordinary scroll-zoom from reaching MapLibre's own
-// default ceiling of z22 (256x as many requests over a session as z14, for
-// pixels no sharper than the source already has).
-const MAX_RASTER_ZOOM = 19;
+// The released levels come from the registry now (`earthx:viewer`, M2-10), not
+// from a constant here: they differ per source, and the tile route refuses
+// anything outside them with a 400, so a ceiling guessed in the client would
+// only produce failing tiles. Below `minzoom` MapLibre requests nothing at all
+// and above `maxzoom` it overzooms the last level — which is what "overzoom is
+// allowed above z14" means for the second dataset (adr/0007 §12.10), and what
+// keeps ordinary scroll-zoom off MapLibre's own ceiling of z22.
+interface RasterZoom {
+  minZoom: number;
+  maxZoom: number;
+}
 
 function placeRaster(
   map: MapLibreMap,
@@ -123,27 +126,36 @@ function placeRaster(
   tileUrl: string,
   bounds: [number, number, number, number],
   opacity: number,
+  zoom: RasterZoom,
 ): void {
   if (map.getSource(srcId)) return;
-  map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds, maxzoom: MAX_RASTER_ZOOM });
+  map.addSource(srcId, {
+    type: 'raster',
+    tiles: [tileUrl],
+    tileSize: 256,
+    bounds,
+    minzoom: zoom.minZoom,
+    maxzoom: zoom.maxZoom,
+  });
   map.addLayer(
     { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
     beforeAoi(map),
   );
 }
 
-// Full tile URL for a full-res overlay: `info.tileUrl` already carries the
-// mandatory `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
-// stretch/colormap/band params committed via "Apply". Also used by the store
-// to snapshot a layer.
-export function buildTileUrl(info: DownloadedInfo, render: AppliedRender): string {
+// Full tile URL from a template: the template already carries the mandatory
+// `asset` (api.ts `buildTileTemplate`, adr/0001 Z4); this adds the
+// stretch/colormap/band params — committed via "Apply" for a full-resolution
+// overlay, taken straight from the registry for a browse preview. Also used by
+// the store to snapshot a layer.
+export function buildTileUrl(template: string, render: AppliedRender): string {
   const params = new URLSearchParams();
   if (render.bidx) params.set('bidx', render.bidx);
   if (render.expression) params.set('expression', render.expression);
   if (render.colormapName) params.set('colormap_name', render.colormapName);
   if (render.rescale) params.set('rescale', render.rescale);
   const q = params.toString();
-  return q ? `${info.tileUrl}&${q}` : info.tileUrl;
+  return q ? `${template}&${q}` : template;
 }
 
 export function ensureBaseLayers(map: MapLibreMap): void {
@@ -283,13 +295,43 @@ export function footprintsFC(items: StacItem[]): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features };
 }
 
-function addQuicklook(map: MapLibreMap, item: StacItem, i: number, gen: number): void {
+// One scene in the browse view. A source that publishes a quicklook gets the
+// image it publishes, keyed transparent and placed on the scene's own pixel grid;
+// a source that publishes none (adr/0007 §12.7) gets tiles instead, pinned to the
+// coarsest level it releases and overzoomed above it — the cheap server-rendered
+// preview of `adr/0007` §6 point 5, and no new endpoint for it (M2-10, F3 a).
+function addPreview(
+  map: MapLibreMap,
+  item: StacItem,
+  i: number,
+  gen: number,
+  dataset: DatasetOption,
+): void {
+  const plan = quicklookPlan(item, dataset);
+  if (!plan) return;
+  if (plan.kind === 'tiles') {
+    // Placed by the tile grid itself, not by four corner coordinates: a tile is
+    // already in the map's own projection, so there is nothing to reproject and
+    // nothing to get wrong at a scene's rotated edges (the M2-16 bug).
+    if (!item.bbox) return;
+    placeRaster(
+      map,
+      `m-tiles-src-${i}`,
+      `m-tiles-lyr-${i}`,
+      buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render),
+      item.bbox,
+      1,
+      { minZoom: plan.zoom, maxZoom: plan.zoom },
+    );
+    dynSourceIds.push(`m-tiles-src-${i}`);
+    dynLayerIds.push(`m-tiles-lyr-${i}`);
+    return;
+  }
   const coords = quicklookCoords(item);
-  const asset = quicklookAsset(item);
-  if (!coords || !asset) return;
+  if (!coords) return;
   const srcId = `m-img-src-${i}`;
   const lyrId = `m-img-lyr-${i}`;
-  loadTransparent(asset.href, (dataUrl) => {
+  loadTransparent(plan.href, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this group
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
@@ -304,7 +346,7 @@ function addQuicklook(map: MapLibreMap, item: StacItem, i: number, gen: number):
 function addTiles(map: MapLibreMap, info: DownloadedInfo, i: number, render: AppliedRender): void {
   const srcId = `m-tiles-src-${i}`;
   const lyrId = `m-tiles-lyr-${i}`;
-  placeRaster(map, srcId, lyrId, buildTileUrl(info, render), info.bounds, 1);
+  placeRaster(map, srcId, lyrId, buildTileUrl(info.tileUrl, render), info.bounds, 1, info);
   dynSourceIds.push(srcId);
   dynLayerIds.push(lyrId);
 }
@@ -330,7 +372,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
       const lyrId = `layer-lyr-${idx}`;
       idx += 1;
       if (ov.kind === 'raster') {
-        placeRaster(map, srcId, lyrId, ov.tileUrl, ov.bounds, layer.opacity);
+        placeRaster(map, srcId, lyrId, ov.tileUrl, ov.bounds, layer.opacity, ov);
       } else {
         loadTransparent(ov.url, (dataUrl) => {
           if (gen !== layerGen) return;
@@ -347,6 +389,10 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
 
 export interface MosaicState {
   items: StacItem[]; // items of the active time step
+  // The dataset those items belong to: the browse preview reads its released
+  // levels and its standard visualisation from here rather than from a branch
+  // on the dataset id (M2-10).
+  dataset: DatasetOption | null;
   downloaded: Record<string, DownloadedInfo>;
   selectedIds: string[];
   render: AppliedRender;
@@ -371,8 +417,11 @@ export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
     setData(map, SEL_SRC, EMPTY_FC);
     return;
   }
-  // Browsing: quicklooks for the active time step; highlight selected footprints.
+  // Browsing: a preview per scene of the active time step; highlight selected
+  // footprints. Without a dataset there is nothing to preview *from* — the
+  // registry decides both the image and the level.
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
-  items.forEach((it, i) => addQuicklook(map, it, i, gen));
+  const { dataset } = s;
+  if (dataset) items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
   setData(map, SEL_SRC, footprintsFC(items.filter((it) => s.selectedIds.includes(it.id))));
 }

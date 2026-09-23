@@ -156,8 +156,17 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # architekturplan.md 5.1, ninth row: what the viewer decides from the
         # catalogue. `group_by` names item properties in key order; a property
         # holding an instant enters the key as its UTC date (registry.ViewerInfo).
+        # `min_zoom`/`max_zoom` are the tile levels this dataset is released for
+        # (M2-10) — read by the viewer and enforced by the tile route, so a client
+        # that ignores them gets a 400 rather than an expensive read.
         "earthx:viewer": (
-            None if config.viewer is None else {"group_by": list(config.viewer.group_by)}
+            None
+            if config.viewer is None
+            else {
+                "group_by": list(config.viewer.group_by),
+                "min_zoom": config.viewer.min_zoom,
+                "max_zoom": config.viewer.max_zoom,
+            }
         ),
         "earthx:source": {
             "adapter": config.source.adapter.value,

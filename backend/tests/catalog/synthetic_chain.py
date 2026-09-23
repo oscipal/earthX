@@ -35,7 +35,7 @@ import pytest
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
-from earthx.catalog.registry import DataFormat, DatasetConfig, DatasetRegistry
+from earthx.catalog.registry import DataFormat, DatasetConfig, DatasetRegistry, ViewerInfo
 from earthx.gateway import Gateway, Policy, check_url, host_of
 from tests.earthx.readers import mini_cog, mini_zarr, mini_zarr_composite
 
@@ -122,7 +122,7 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         item=item,
         render_asset=render_asset,
         aoi=_aoi(bounds),
-        tile=_covering_tile(bounds),
+        tile=_covering_tile(bounds, config.viewer),
         gateway=gateway,
         searched=searched,
         read_addresses=read_addresses,
@@ -239,13 +239,27 @@ def _aoi(bounds: tuple[float, ...]) -> dict[str, Any]:
     }
 
 
-def _covering_tile(bounds: tuple[float, ...]) -> tuple[int, int, int]:
-    """A web-mercator tile over the middle of the data, at a zoom it supports."""
+def _covering_tile(bounds: tuple[float, ...], viewer: ViewerInfo | None) -> tuple[int, int, int]:
+    """A web-mercator tile over the middle of the data, at a level the entry releases.
+
+    The finest released level, which is what a client asks for once it has zoomed
+    in (`earthx:viewer`, M2-10). The level has to come from the entry rather than
+    from the grid: since M2-10 the tile route refuses anything outside the released
+    range, so a chain that picked the first level fitting the synthetic store would
+    prove nothing about the dataset — it would test a request no client may send.
+
+    A tile that *contains* the centre always intersects the data, so the finest
+    released level always answers; whether it is filled edge to edge is not what
+    point 9 is about.
+    """
     west, south, east, north = transform_bounds(CRS, WGS84_CRS, *bounds)
     centre = ((west + east) / 2, (south + north) / 2)
-    for zoom in range(WEB_MERCATOR_TMS.minzoom, WEB_MERCATOR_TMS.maxzoom + 1):
+    lowest = WEB_MERCATOR_TMS.minzoom if viewer is None else viewer.min_zoom
+    finest = WEB_MERCATOR_TMS.maxzoom if viewer is None else viewer.max_zoom
+    for zoom in range(finest, lowest - 1, -1):
         tile = WEB_MERCATOR_TMS.tile(*centre, zoom)
         tile_bounds = WEB_MERCATOR_TMS.bounds(tile)
-        if tile_bounds.left >= west and tile_bounds.right <= east:
-            return (zoom, tile.x, tile.y)
-    raise AssertionError("no tile of the grid fits inside the synthetic store")
+        if tile_bounds.left < east and tile_bounds.right > west:
+            if tile_bounds.bottom < north and tile_bounds.top > south:
+                return (zoom, tile.x, tile.y)
+    raise AssertionError("no released level of the grid touches the synthetic store")
