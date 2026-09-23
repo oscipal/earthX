@@ -238,7 +238,7 @@ Jeder Datensatz ist eine STAC Collection, jede Szene ein STAC Item. Genutzte Ext
 | `earthx:license_flags` | `commercial_use`, `derivatives`, `share_alike`, `attribution_required` + SPDX-Kennung |
 | `earthx:access` | token-frei geprüft am, Methode, CORS vorhanden |
 | `earthx:distributions` | Fundorte/Spiegel mit Format, Region, Präferenz |
-| `earthx:health` | Status, zuletzt erfolgreich geprüft |
+| `earthx:health` | Status. Kein Prüfdatum (M2-08-3, 2026-09-23): das frühere Feld trug das Datum des Onboarding-Checks, nicht das einer Prüfung — ein echtes Prüfdatum kommt mit den Health-Checks in M5, auf einem eigenen Feld |
 | `earthx:default_render` | Standard-Visualisierung in den Feldnamen der STAC-`render`-Extension (`title`, `assets`, `rescale`, `colormap_name`, `expression`, `resampling`) |
 | `earthx:viewer` | Was der Viewer aus dem Katalog nimmt statt aus eigenem Code. In M2 drei Felder. `group_by`, der Gruppierungsschlüssel der Zeitleiste — Item-Eigenschaften in Schlüsselreihenfolge, `properties.` ist impliziert; eine Eigenschaft mit einem STAC-Zeitpunkt geht als ihr **UTC-Datum** in den Schlüssel ein. Für Sentinel-2: `["datetime", "grid:code"]`. Dazu `min_zoom` und `max_zoom`, die für diesen Datensatz freigegebenen Kachelstufen (M2-10): unterhalb zeigt eine Kachel mehrere Szenen — Sache der Coverage-Karte, nicht des Kachelpfads —, oberhalb hat die Quelle nichts Feineres und der Client überzoomt die letzte Stufe. Alle drei ohne Vorgabewert (B10); die Kachelroute weist eine Stufe außerhalb der Spanne mit `400` ab, das Feld ist also die Grenze des Kachelpfads und keine Empfehlung an einen gutwilligen Client |
 | `earthx:source` | Adapter-Typ, Quell-ID, Harvest-Lauf |

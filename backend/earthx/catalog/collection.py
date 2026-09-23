@@ -130,9 +130,6 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:distributions": [],
         "earthx:health": {
             "status": config.health.status.value,
-            "last_checked_ok": (
-                None if config.health.last_checked_ok is None else config.health.last_checked_ok.isoformat()
-            ),
         },
         # The field names of the STAC `render` extension (adr/0006 §5): what stands
         # here is what a tile URL carries, so it can be published as `renders` later

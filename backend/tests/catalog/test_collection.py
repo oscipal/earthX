@@ -94,9 +94,18 @@ def test_the_temporal_extent_is_the_one_the_source_reports(collection: dict) -> 
     assert collection["extent"]["temporal"]["interval"] == [["2015-06-27T10:25:31.456000Z", None]]
 
 
-def test_check_dates_are_written_as_plain_dates(collection: dict) -> None:
+def test_the_access_check_date_is_written_as_a_plain_date(collection: dict) -> None:
     assert collection["earthx:access"]["token_free_checked_at"] == "2026-09-18"
-    assert collection["earthx:health"]["last_checked_ok"] == "2026-09-18"
+
+
+def test_health_carries_only_status(collection: dict) -> None:
+    """architekturplan.md 5.1: `earthx:health` is a status, nothing dated.
+
+    A `last_checked_ok` key would be the date of the onboarding check again, not of
+    an actual health check — the mix-up M2-08-3 removed (ENTSCHEIDUNGSLOG
+    22.09.2026). A real check date is a field M5 adds, once it means something.
+    """
+    assert collection["earthx:health"] == {"status": "ok"}
 
 
 def test_the_terms_travel_with_the_collection(collection: dict) -> None:
