@@ -51,25 +51,28 @@ fi
 # schnell (M2-13, mehrere Sessions mussten sonst von Hand nachinstallieren).
 venv_minor() { "${VENV}/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null; }
 
-# Ein venv mit anderer Version wird ersetzt, nicht weiterbenutzt: sein
-# `bin/python` kann auf einen umgestellten Interpreter zeigen, während die Pakete
-# noch unter der alten Version liegen. `.venv/` enthält nur Installiertes.
-if [ -d "${VENV}" ] && [ "$(venv_minor)" != "${PYTHON_MINOR}" ]; then
-  log "Python-venv hat nicht Python ${PYTHON_MINOR}, wird neu angelegt (${VENV})"
+# Ein venv mit anderer Version oder ohne pip wird ersetzt, nicht weiterbenutzt:
+# sein `bin/python` kann auf einen umgestellten Interpreter zeigen, während die
+# Pakete noch unter der alten Version liegen, und ein abgebrochenes Anlegen
+# hinterlässt `bin/python` ohne `bin/pip`. `.venv/` enthält nur Installiertes.
+# Gelöscht wird nur, wenn der Interpreter für ein neues da ist.
+if [ -x "${PYTHON}" ] && [ -d "${VENV}" ] \
+  && { [ "$(venv_minor)" != "${PYTHON_MINOR}" ] || [ ! -x "${VENV}/bin/pip" ]; }; then
+  log "Python-venv hat nicht Python ${PYTHON_MINOR} oder kein pip, wird neu angelegt (${VENV})"
   rm -rf "${VENV}"
 fi
 
-if [ -x "${VENV}/bin/python" ]; then
+if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
   log "Python-venv existiert bereits (${VENV})"
 elif [ -x "${PYTHON}" ]; then
   log "Python-venv anlegen (${VENV}, ${PYTHON})"
-  "${PYTHON}" -m venv "${VENV}" || warn "Anlegen des venv fehlgeschlagen"
+  "${PYTHON}" -m venv "${VENV}" || { warn "Anlegen des venv fehlgeschlagen"; rm -rf "${VENV}"; }
 else
   # Kein Ausweichen auf eine andere Version: CI und Image laufen auf derselben.
-  warn "${PYTHON} fehlt im Image; kein venv angelegt"
+  warn "${PYTHON} fehlt im Image; kein venv mit Python ${PYTHON_MINOR}"
 fi
 
-if [ -x "${VENV}/bin/python" ]; then
+if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
   log "Backend-Abhängigkeiten installieren (backend/requirements-dev.txt)"
   "${VENV}/bin/pip" install --upgrade --quiet pip \
     && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
