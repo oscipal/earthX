@@ -983,12 +983,20 @@ input[type='date']:focus {
 }
 
 /* --- layer manager --- */
-/* Left edge with a small gap by default (V-7), same as the search panel's
-   own left offset — it used to sit at a fixed 420px, tuned to clear that
-   panel's width, but it is draggable and freely repositionable anyway. */
+/* Left edge with a small gap while the controls are collapsed (V-7); once
+   they're open again it steps aside to clear them instead of sitting
+   underneath (V-8, `.controls-open` set in App.tsx from the same
+   `panelCollapsed` the control dock itself reacts to). 420px is the search
+   panel's own width (`.top-left { max-width: 340px }`) plus its left offset
+   and the toggle chevron past its right edge. Still draggable — this only
+   ever sets the starting point. */
 .layermgr {
   top: 96px;
   left: 16px;
+  transition: left 0.32s ease;
+}
+.layermgr.controls-open {
+  left: 420px;
 }
 /* Closed state: hides the whole draggable (grip included) without
    unmounting it, so its drag offset survives a close/reopen. */

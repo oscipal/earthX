@@ -92,7 +92,7 @@ export default function App() {
         </button>
       </div>
 
-      <div className="overlay layermgr">
+      <div className={`overlay layermgr${panelCollapsed ? '' : ' controls-open'}`}>
         <LayerManager />
       </div>
 
