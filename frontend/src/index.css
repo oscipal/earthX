@@ -377,6 +377,17 @@ input[type='date']:focus {
   box-shadow: var(--glow);
 }
 
+/* The native calendar icon is drawn dark-on-transparent by default, which
+   disappears against the dark HUD input background. `color-scheme` asks the
+   browser for a light-colored icon to match; the explicit invert covers
+   engines (older Chromium/WebKit) that still draw it dark regardless. */
+.app[data-theme='tech'] input[type='date'] {
+  color-scheme: dark;
+}
+.app[data-theme='tech'] input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
 .date-row {
   display: flex;
   align-items: center;
