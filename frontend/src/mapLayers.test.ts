@@ -57,15 +57,20 @@ interface AddedSource {
 function fakeMap() {
   const sources: AddedSource[] = [];
   const layers: string[] = [];
+  // Data written via `source.setData(...)` on one of the fixed (non-dynamic)
+  // sources, keyed by source id — this is how `setCoverageDisplay` and the
+  // selection highlight (`SEL_SRC` = 'mosaicsel-src') publish their GeoJSON.
+  const data: Record<string, GeoJSON.GeoJSON> = {};
   const map = {
-    getSource: (id: string) => (id.startsWith('m-') ? undefined : { setData: () => {} }),
+    getSource: (id: string) =>
+      id.startsWith('m-') ? undefined : { setData: (d: GeoJSON.GeoJSON) => (data[id] = d) },
     getLayer: () => undefined,
     removeLayer: () => {},
     removeSource: () => {},
     addSource: (id: string, spec: Record<string, unknown>) => sources.push({ id, spec }),
     addLayer: (layer: { id: string }) => layers.push(layer.id),
   };
-  return { map, sources, layers };
+  return { map, sources, layers, data };
 }
 
 function zarrLikeDataset() {
@@ -143,5 +148,47 @@ describe('syncMosaic: the browse preview where a source publishes no quicklook',
       showDownloaded: true,
     });
     expect(sources.filter((s) => s.spec.type === 'raster')).toHaveLength(0);
+  });
+});
+
+// V-3, finding 1: a click on a full-resolution image toggles its selection
+// (MapView.tsx's map click handler already did this), but `syncMosaic` used
+// to overwrite the selection source with an empty FeatureCollection
+// unconditionally in focus mode — so nothing was ever drawn, and the only
+// visible effect was the raster layers being torn down and rebuilt (which
+// read as "the image reloads"). It must draw the same yellow outline browse
+// mode draws for a selected item, from the same `selectedIds`.
+describe('syncMosaic: the full-resolution selection highlight (focus mode)', () => {
+  const SEL_SRC = 'mosaicsel-src';
+
+  function focusView(selectedIds: string[]) {
+    const { map, sources, data } = fakeMap();
+    syncMosaic(map as never, {
+      items: [scene],
+      dataset: zarrLikeDataset(),
+      downloaded: { [scene.id]: info() },
+      selectedIds,
+      render: {},
+      focusMode: true,
+      showDownloaded: true,
+    });
+    return { sources, selection: data[SEL_SRC] as GeoJSON.FeatureCollection };
+  }
+
+  it('outlines a selected full-resolution image, not an empty collection', () => {
+    const { selection } = focusView([scene.id]);
+    expect(selection.features).toHaveLength(1);
+    expect(selection.features[0].properties?.id).toBe(scene.id);
+  });
+
+  it('carries no outline while nothing is selected', () => {
+    const { selection } = focusView([]);
+    expect(selection.features).toHaveLength(0);
+  });
+
+  it('keeps rendering the full-resolution raster regardless of the selection outline', () => {
+    const { sources, selection } = focusView([scene.id]);
+    expect(sources.filter((s) => s.spec.type === 'raster')).toHaveLength(1);
+    expect(selection.features).toHaveLength(1);
   });
 });

@@ -414,7 +414,11 @@ export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
         .slice(0, MAX_MOSAIC_LAYERS)
         .forEach((info, i) => addTiles(map, info, i, s.render));
     }
-    setData(map, SEL_SRC, EMPTY_FC);
+    // Same highlight as the browse mode below, from the same `selectedIds` —
+    // a click on a full-resolution image toggles its selection through the
+    // very same map click handler (MapView.tsx) that browse mode uses, so it
+    // deserves the very same yellow outline instead of no visible effect (V-3).
+    setData(map, SEL_SRC, footprintsFC(s.items.filter((it) => s.selectedIds.includes(it.id))));
     return;
   }
   // Browsing: a preview per scene of the active time step; highlight selected
