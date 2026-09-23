@@ -214,6 +214,21 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    Sitzung ein. Vorher war ein nacktes `pytest` in der Sitzung
    `/root/.local/bin/pytest`, ein Werkzeug des Images ohne die Backend-Pakete,
    das beim Sammeln abbrach; nur `.venv/bin/pytest` lief.
+   **Nachtrag 2026-09-23, zweite Messung — in einer frisch gestarteten
+   Sitzung bestanden:** `.venv/bin` steht vorn im `PATH`, ein nacktes `pytest`
+   ist das des venv, 1087 Tests grün auf 3.12.3. In einer laufenden
+   (fortgesetzten) Sitzung dagegen ist `$CLAUDE_ENV_FILE` leer — die Variable
+   ist nur im Prozess des Hooks selbst gesetzt, nicht in der Shell, die
+   Werkzeuge danach benutzen. Das ist kein Fehler des Hooks, sondern zeigt nur
+   den Unterschied zwischen „neu gestartet“ und „fortgesetzt“, wie schon in
+   §4 und §6 für Allowlist-Freigaben festgehalten. In der öffentlichen
+   Dokumentation von Claude Code (claude-code-on-the-web, Abschnitt zu
+   Umgebungsvariablen) ist `CLAUDE_ENV_FILE` nicht beschrieben; es steht nur
+   in der eingebauten Skill-Datei `session-start-hook`. **Folge:** Findet eine
+   Sitzung `pytest` außerhalb von `.venv` (z. B. `/root/.local/bin/pytest`
+   ohne die Backend-Pakete), ist das kein neuer Fehler, sondern dieser bereits
+   bekannte Fall — mit `.venv/bin/pytest` arbeiten oder eine neue Sitzung
+   starten.
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und
