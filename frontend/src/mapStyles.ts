@@ -24,6 +24,19 @@ const satelliteStyle: StyleSpecification = {
     { id: 'background', type: 'background', paint: { 'background-color': '#04070a' } },
     { id: 'satellite', type: 'raster', source: 'satellite' },
   ],
+  // What MapLibre paints behind the globe (V-1's projection switch, D27):
+  // `sky`'s defaults (`sky-color` a light blue, `horizon-color`/`fog-color`
+  // white) show through the atmosphere blend and leave the map behind the
+  // sphere looking white — visible on the flat map too, past the edge of the
+  // world. Matched to the `background` layer's near-black instead, with the
+  // atmosphere blended out rather than tinting it, so the globe sits on a
+  // black field the way the HUD's own dark theme does.
+  sky: {
+    'sky-color': '#04070a',
+    'horizon-color': '#04070a',
+    'fog-color': '#04070a',
+    'atmosphere-blend': 0,
+  },
 };
 
 export function baseMapStyle(): StyleSpecification {
