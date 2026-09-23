@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { DatasetOption } from './datasets';
 import {
   attributionText,
   canDownloadLayer,
@@ -8,7 +9,7 @@ import {
   termsNoticeText,
 } from './download';
 import type { LayerRestore, MapLayer } from './layers';
-import type { LicenseFlags } from './types';
+import type { Collection, LicenseFlags } from './types';
 
 const AOI: GeoJSON.Geometry = {
   type: 'Polygon',
@@ -30,6 +31,7 @@ function restore(overrides: Partial<LayerRestore> = {}): LayerRestore {
     appliedRender: {},
     activeGroupIndex: 0,
     selectedIds: ['S2A_1'],
+    itemIds: ['S2A_1'],
     aoi: AOI,
     datasetId: 'sentinel-2-l2a',
     ...overrides,
@@ -47,9 +49,39 @@ function layer(overrides: Partial<LayerRestore> = {}): MapLayer {
   };
 }
 
+function collection(overrides: Partial<Collection> = {}): Collection {
+  return {
+    id: 'sentinel-2-l2a',
+    title: 'Sentinel-2 L2A',
+    'earthx:default_render': {
+      title: 'True color',
+      assets: ['visual'],
+      rescale: null,
+      colormap_name: null,
+      expression: null,
+      resampling: 'nearest',
+    },
+    ...overrides,
+  };
+}
+
+function dataset(overrides: Partial<DatasetOption> = {}): DatasetOption {
+  return {
+    id: 'sentinel-2-l2a',
+    title: 'Sentinel-2 L2A',
+    collection: collection(),
+    viewable: true,
+    groupBy: ['datetime'],
+    zoom: { min: 0, max: 19 },
+    ...overrides,
+  } as DatasetOption;
+}
+
+const DATASETS = [dataset()];
+
 describe('downloadRequestFor', () => {
   it('builds items/assets/aoi from a full-resolution layer', () => {
-    const req = downloadRequestFor(layer());
+    const req = downloadRequestFor(layer(), DATASETS);
     expect(req).toEqual({
       datasetId: 'sentinel-2-l2a',
       items: ['S2A_1'],
@@ -61,37 +93,69 @@ describe('downloadRequestFor', () => {
   it('deduplicates the asset across several pinned items', () => {
     const req = downloadRequestFor(
       layer({
+        itemIds: ['S2A_1', 'S2A_2'],
         downloaded: {
           S2A_1: { tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
           S2A_2: { tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
         },
       }),
+      DATASETS,
     );
     expect(req?.items).toEqual(['S2A_1', 'S2A_2']);
     expect(req?.assets).toEqual(['visual']);
   });
 
-  it('returns null for a quicklook-only layer (not focus mode)', () => {
-    expect(downloadRequestFor(layer({ focusMode: false }))).toBeNull();
+  // V-6: a quicklook-only layer (pinned straight from the results list,
+  // never viewed at full resolution) can now be downloaded too, over the
+  // dataset's default visualisation asset — same reasoning as
+  // downloadRequestForSelection.
+  it('falls back to the dataset default render asset for a quicklook-only layer', () => {
+    const req = downloadRequestFor(layer({ focusMode: false, downloaded: {} }), DATASETS);
+    expect(req).toEqual({
+      datasetId: 'sentinel-2-l2a',
+      items: ['S2A_1'],
+      assets: ['visual'],
+      aoi: AOI,
+    });
+  });
+
+  it('returns null for a quicklook-only layer whose dataset has no default render', () => {
+    const noRender = [dataset({ collection: collection({ 'earthx:default_render': null }) })];
+    expect(downloadRequestFor(layer({ focusMode: false, downloaded: {} }), noRender)).toBeNull();
+  });
+
+  it('returns null for a quicklook-only layer whose dataset is not viewable', () => {
+    const notViewable = [
+      { id: 'sentinel-2-l2a', title: 'x', collection: collection(), viewable: false, reason: 'nope' } as DatasetOption,
+    ];
+    expect(downloadRequestFor(layer({ focusMode: false, downloaded: {} }), notViewable)).toBeNull();
   });
 
   it('returns null without a drawn AOI', () => {
-    expect(downloadRequestFor(layer({ aoi: null }))).toBeNull();
+    expect(downloadRequestFor(layer({ aoi: null }), DATASETS)).toBeNull();
   });
 
   it('returns null without a pinned dataset id', () => {
-    expect(downloadRequestFor(layer({ datasetId: null }))).toBeNull();
+    expect(downloadRequestFor(layer({ datasetId: null }), DATASETS)).toBeNull();
   });
 
-  it('returns null with nothing downloaded', () => {
-    expect(downloadRequestFor(layer({ downloaded: {} }))).toBeNull();
+  it('returns null with nothing downloaded in focus mode', () => {
+    expect(downloadRequestFor(layer({ downloaded: {} }), DATASETS)).toBeNull();
+  });
+
+  it('returns null without any pinned scenes', () => {
+    expect(downloadRequestFor(layer({ itemIds: [] }), DATASETS)).toBeNull();
   });
 });
 
 describe('canDownloadLayer', () => {
   it('mirrors downloadRequestFor', () => {
-    expect(canDownloadLayer(layer())).toBe(true);
-    expect(canDownloadLayer(layer({ focusMode: false }))).toBe(false);
+    expect(canDownloadLayer(layer(), DATASETS)).toBe(true);
+    expect(canDownloadLayer(layer({ aoi: null }), DATASETS)).toBe(false);
+  });
+
+  it('is true for a quicklook-only layer with a default render asset', () => {
+    expect(canDownloadLayer(layer({ focusMode: false, downloaded: {} }), DATASETS)).toBe(true);
   });
 });
 

@@ -133,6 +133,7 @@ describe('zoomToView', () => {
             appliedRender: {},
             activeGroupIndex: 0,
             selectedIds: [],
+            itemIds: [],
             aoi: null,
             datasetId: null,
           },
@@ -170,6 +171,7 @@ describe('zoomToView', () => {
             appliedRender: {},
             activeGroupIndex: 0,
             selectedIds: [],
+            itemIds: [],
             aoi: null,
             datasetId: null,
           },
@@ -183,5 +185,55 @@ describe('zoomToView', () => {
   it('does nothing with neither an AOI nor pinned layers', () => {
     useAppStore.getState().zoomToView();
     expect(useAppStore.getState().flyToBbox).toBeNull();
+  });
+});
+
+// V-11: the results list can collapse its open group without moving
+// activeGroupIndex (the time step the map/time slider show) — and MapView
+// hides quicklooks whenever nothing is expanded, so this has to actually
+// happen, not just look right in the panel.
+describe('toggleResultsGroup', () => {
+  const a = { id: 'a', properties: { datetime: '2026-07-25T10:00:00Z' }, assets: {} };
+  const b = { id: 'b', properties: { datetime: '2026-07-24T10:00:00Z' }, assets: {} };
+
+  beforeEach(() => {
+    useAppStore.setState({
+      groups: [
+        { key: ['2026-07-25'], label: '2026-07-25', items: [a] },
+        { key: ['2026-07-24'], label: '2026-07-24', items: [b] },
+      ],
+      activeGroupIndex: 0,
+      expandedGroupIndex: 0,
+    });
+  });
+
+  it('collapses the open group without touching activeGroupIndex', () => {
+    useAppStore.getState().toggleResultsGroup(0);
+    const s = useAppStore.getState();
+    expect(s.expandedGroupIndex).toBeNull();
+    expect(s.activeGroupIndex).toBe(0);
+  });
+
+  it('opening a different group expands it and moves activeGroupIndex along', () => {
+    useAppStore.getState().toggleResultsGroup(1);
+    const s = useAppStore.getState();
+    expect(s.expandedGroupIndex).toBe(1);
+    expect(s.activeGroupIndex).toBe(1);
+  });
+
+  it('re-opening the collapsed group restores both', () => {
+    useAppStore.getState().toggleResultsGroup(0); // collapse
+    useAppStore.getState().toggleResultsGroup(0); // re-open the same one
+    const s = useAppStore.getState();
+    expect(s.expandedGroupIndex).toBe(0);
+    expect(s.activeGroupIndex).toBe(0);
+  });
+
+  it('setActiveGroupIndex (time slider, "play") re-syncs expandedGroupIndex even after a manual collapse', () => {
+    useAppStore.getState().toggleResultsGroup(0); // collapse
+    useAppStore.getState().setActiveGroupIndex(1); // scrub the time slider
+    const s = useAppStore.getState();
+    expect(s.activeGroupIndex).toBe(1);
+    expect(s.expandedGroupIndex).toBe(1);
   });
 });

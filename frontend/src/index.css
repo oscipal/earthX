@@ -25,6 +25,14 @@ body,
 body {
   font-family: var(--mono);
   overflow: hidden;
+  /* Belt-and-braces for the globe (V-6): MapLibre clears its canvas to
+     transparent before drawing, so wherever the sky/globe rendering doesn't
+     cover a pixel (the `sky`/`atmosphere-blend` tuning in mapStyles.ts
+     didn't fully fix this — see the ADR-shaped comment there), the browser's
+     own white page background used to show through instead. Matches the
+     style's own `background` layer color, and stays dark in both themes —
+     the basemap itself is theme-independent (D10). */
+  background: #04070a;
 }
 
 /* --- theme tokens --- */
@@ -145,14 +153,6 @@ body.dragging * {
   z-index: 5;
   pointer-events: none;
 }
-/* keep the results panel's height cap through the draggable wrapper */
-.dock-results {
-  display: flex;
-  flex-direction: column;
-  max-height: 100%;
-  min-height: 0;
-}
-
 /* --- persistent zoom button (top-right) --- */
 .zoom-btn {
   padding: 9px 14px;
@@ -198,6 +198,38 @@ body.dragging * {
   box-shadow: var(--glow);
 }
 .panel-toggle:hover {
+  border-color: var(--accent);
+}
+
+/* --- collapsible results dock (right), same pattern mirrored horizontally
+   (V-5): fixed to the right edge instead of freely draggable, so it can't
+   end up somewhere the user has to go hunting for it. --- */
+.results-dock {
+  transition: transform 0.32s ease;
+}
+.results-dock.collapsed {
+  transform: translateX(calc(100% + 16px));
+}
+.results-toggle {
+  position: absolute;
+  top: 14px;
+  right: 100%;
+  margin-right: 6px;
+  width: 24px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px 0 0 8px;
+  color: var(--accent);
+  font-size: 16px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glow);
+}
+.results-toggle:hover {
   border-color: var(--accent);
 }
 
@@ -396,16 +428,60 @@ input[type='date']:focus {
 }
 .app[data-theme='tech'] input[type='date']::-webkit-calendar-picker-indicator {
   opacity: 0;
+  /* `.date-icon-btn` is the actual click target now (V-5) — this stays
+     invisible only to avoid a second, misaligned hit-box underneath it. */
+  pointer-events: none;
+}
+
+/* Input + the transparent button that opens its picker (V-5). `min-width: 0`
+   lets it shrink inside the grid track below its content's natural size (see
+   `.date-row` below) — without it the field refused to shrink past its own
+   min-content width and pushed the row wider than the panel, clipping the
+   right field's calendar icon against the panel's edge (V-8). */
+.date-field {
+  position: relative;
+  min-width: 0;
+}
+.date-field input[type='date'] {
+  width: 100%;
+  min-width: 0;
+}
+.date-icon-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 32px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
   cursor: pointer;
 }
 
+/* Lines up with the pairs above it (`.toolbar`, `.aoi-extras`,
+   `.level-select`) at the same overall width and gap (V-4), but the "→"
+   separator gets its own narrow middle column (`auto`) instead of an
+   absolute overlay with no room of its own (V-6) — two equal 1fr columns
+   left the gap too tight for the arrow once the date fields' own borders
+   and the picker-icon button filled it. Each date field ends up slightly
+   narrower than Point/Rectangle etc. above it so the arrow has somewhere
+   to sit; the row's total width still matches.
+   `minmax(0, 1fr)`, not bare `1fr` (V-8): a plain `1fr` track has an
+   implicit `min-width: auto`, meaning it won't shrink below its content's
+   own min-content width — with the date input's reserved icon padding that
+   was wider than the space actually available, so the row overflowed the
+   panel and clipped the right field's calendar icon at the edge instead of
+   the fields shrinking to fit. */
 .date-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 6px;
+  align-items: center;
 }
 .date-row span {
   color: var(--muted);
+  padding: 0 2px;
 }
 
 /* --- search box + autocomplete --- */
@@ -696,12 +772,35 @@ input[type='date']:focus {
   font-size: 10px;
   color: var(--accent);
 }
+.result-id-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 .result-id {
   font-size: 9px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+.copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+.copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .badge {
   font-size: 8px;
@@ -884,9 +983,20 @@ input[type='date']:focus {
 }
 
 /* --- layer manager --- */
+/* Left edge with a small gap (V-7) — the single, fixed anchor. Whether it
+   actually needs to step aside from the control dock, and clamping it to
+   stay fully on screen either way, is `Draggable`'s job now (`avoidSelector`,
+   V-10): CSS alone couldn't tell "the dock is open" from "the dock is open
+   and would actually overlap this panel", which nudged it aside even when
+   nothing was in its way. */
 .layermgr {
   top: 96px;
-  left: 420px;
+  left: 16px;
+}
+/* Closed state: hides the whole draggable (grip included) without
+   unmounting it, so its drag offset survives a close/reopen. */
+.layer-dock-hidden {
+  display: none;
 }
 .layer-manager {
   width: 340px;
@@ -1092,12 +1202,20 @@ input[type='date']:focus {
   }
 }
 
-/* MapLibre attribution: keep it subtle in the tech theme */
-.app[data-theme='tech'] .maplibregl-ctrl-attrib {
-  background: rgba(0, 0, 0, 0.5);
+/* MapLibre attribution in the tech theme. `.maplibregl-compact` (the
+   expanded "ⓘ" popup) sets its own `color: #000` and `background: #fff` at
+   the same specificity as the rules below, and wins on source order unless
+   matched here too — leaving the plain text between the links unreadably
+   black on our dark background even though the links themselves picked up
+   `--muted`. */
+.app[data-theme='tech'] .maplibregl-ctrl-attrib,
+.app[data-theme='tech'] .maplibregl-ctrl-attrib.maplibregl-compact,
+.app[data-theme='tech'] .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
 }
 .app[data-theme='tech'] .maplibregl-ctrl-attrib a {
-  color: var(--muted);
+  color: #fff;
 }
 
 /* --- what the catalogue says about the source (M2-10) --- */

@@ -3,8 +3,10 @@
 // and the attribution / terms text shown before the crop is requested
 // (adr/0003 §11.2: the notice belongs on the download, not only in a footer).
 
+import type { DatasetOption } from './datasets';
+import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
-import type { LicenseFlags } from './types';
+import type { LicenseFlags, StacItem } from './types';
 
 export interface DownloadRequestInfo {
   datasetId: string;
@@ -13,22 +15,55 @@ export interface DownloadRequestInfo {
   aoi: GeoJSON.Geometry;
 }
 
-// A layer can be downloaded once it has been viewed at full resolution (a
-// `raster` overlay backed by `store.downloaded`, M2-07b) over a drawn AOI. A
-// quicklook-only layer carries neither an asset key nor a crop AOI — only a
-// thumbnail URL and the item's own footprint — so there is nothing to crop.
-export function downloadRequestFor(layer: MapLayer): DownloadRequestInfo | null {
+// A layer can be downloaded once it has an AOI to crop (a layer pinned
+// before any AOI was drawn has nothing to cut the source data to). Two
+// cases (V-6 added the second):
+// - Viewed at full resolution first (a `raster` overlay backed by
+//   `store.downloaded`, M2-07b): the asset is whichever one was actually
+//   fetched, per item.
+// - A quicklook-only layer, pinned straight from the results list without
+//   ever switching into full-resolution viewing: the crop route reads the
+//   source's own pixels regardless of what the browser has fetched so far
+//   (same reasoning as `downloadRequestForSelection`, V-4), so the asset is
+//   the dataset's default visualisation asset.
+// Either way the scenes come from `restore.itemIds`, captured when the
+// layer was pinned — not from the live search results, which may have moved
+// on by the time someone opens the layer manager to download it.
+export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): DownloadRequestInfo | null {
   const { restore } = layer;
-  if (!restore.focusMode || !restore.datasetId || !restore.aoi) return null;
-  const entries = Object.entries(restore.downloaded);
-  if (entries.length === 0) return null;
-  const items = entries.map(([id]) => id);
-  const assets = [...new Set(entries.map(([, info]) => info.asset))];
-  return { datasetId: restore.datasetId, items, assets, aoi: restore.aoi };
+  if (!restore.datasetId || !restore.aoi || restore.itemIds.length === 0) return null;
+  if (restore.focusMode) {
+    const entries = Object.entries(restore.downloaded).filter(([id]) => restore.itemIds.includes(id));
+    if (entries.length === 0) return null;
+    const assets = [...new Set(entries.map(([, info]) => info.asset))];
+    return { datasetId: restore.datasetId, items: restore.itemIds, assets, aoi: restore.aoi };
+  }
+  const dataset = datasets.find((d) => d.id === restore.datasetId);
+  const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+  if (!asset) return null;
+  return { datasetId: restore.datasetId, items: restore.itemIds, assets: [asset], aoi: restore.aoi };
 }
 
-export function canDownloadLayer(layer: MapLayer): boolean {
-  return downloadRequestFor(layer) !== null;
+export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): boolean {
+  return downloadRequestFor(layer, datasets) !== null;
+}
+
+// The same request, built directly from a selection of quicklooks instead of
+// a pinned, already-full-resolution layer (V-4: "download a selected
+// quicklook" — the original data over the existing crop route, not the
+// preview image). Needs no prior "View full resolution": the crop route
+// reads the source's own pixels regardless of what the browser has fetched
+// so far, so the asset is the dataset's default visualisation asset, the
+// same one `quicklookPlan`'s tile fallback and `enterFocus` use.
+export function downloadRequestForSelection(
+  dataset: DatasetOption | undefined,
+  items: StacItem[],
+  aoi: GeoJSON.Geometry | null,
+): DownloadRequestInfo | null {
+  if (!aoi || !dataset || !dataset.viewable || items.length === 0) return null;
+  const asset = defaultRenderOf(dataset.collection)?.assets[0];
+  if (!asset) return null;
+  return { datasetId: dataset.id, items: items.map((it) => it.id), assets: [asset], aoi };
 }
 
 // `{year}` is the only placeholder the registry's attribution texts use

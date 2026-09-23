@@ -6,9 +6,9 @@ import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './cov
 import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
-import { downloadRequestFor } from './download';
+import { downloadRequestFor, downloadRequestForSelection } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
-import { buildGroups, groupIndexOfItem, MissingProperty } from './grouping';
+import { buildGroups, displayGroupBy, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
@@ -25,6 +25,15 @@ const MAX_SEARCH_ITEMS = 300;
 // frame — 400ms is a pause long enough to tell "still panning" from
 // "settled", not a measurement.
 const COVERAGE_DEBOUNCE_MS = 400;
+
+// The items a selection-wide action (download, "add to layers") applies to:
+// the picked scenes, or — with nothing picked — the whole active time step.
+// Shared so `openDownloadForSelection`/`confirmDownload` (V-4) build the same
+// set `addCurrentToLayers` already did.
+function selectionItemsFrom(s: AppState): StacItem[] {
+  const group = s.groups[s.activeGroupIndex];
+  return s.selectedIds.length ? s.items.filter((it) => s.selectedIds.includes(it.id)) : (group?.items ?? []);
+}
 
 function buildDatetime(from: string, to: string): string | undefined {
   const start = from ? `${from}T00:00:00Z` : '..';
@@ -142,6 +151,9 @@ interface AppState {
 
   // --- ui layout ---
   panelCollapsed: boolean; // left control panel slid off to the left
+  // Right-docked results list slid off to the right — collapsible the same
+  // way as the left control panel, not freely draggable any more (V-5).
+  resultsPanelCollapsed: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
   // swaps ResultsPanel/ViewBar for ViewerControls (App.tsx).
   focusMode: boolean;
@@ -153,6 +165,10 @@ interface AppState {
   layerManagerOpen: boolean;
   // The layer the download dialog (M2-07d) is open for, `null` when closed.
   downloadDialogLayerId: string | null;
+  // The dialog open for the current selection (V-4) rather than a pinned
+  // layer — downloading a selected quicklook's original data straight from
+  // the results list, before "Add to layers"/"View full resolution".
+  downloadSelection: boolean;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -168,6 +184,15 @@ interface AppState {
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
+  // Which group is open in the results list — `null` while every group is
+  // collapsed (V-11). Kept in sync with `activeGroupIndex` whenever that
+  // changes some other way (a new search, the time slider, "play", picking
+  // a pinned layer); manually collapsing the open group only changes this,
+  // leaving `activeGroupIndex` — and anything keyed to "the current time
+  // step" instead of "what the list has open" — untouched. `MapView` reads
+  // this (not `activeGroupIndex`) for the browse-mode quicklooks/preview
+  // tiles it shows, so collapsing every group hides them too.
+  expandedGroupIndex: number | null;
   selectedIds: string[];
   downloaded: Record<string, DownloadedInfo>;
 
@@ -193,6 +218,7 @@ interface AppState {
   clearFly: () => void;
   togglePanel: () => void;
   setPanelCollapsed: (v: boolean) => void;
+  toggleResultsPanel: () => void;
   clearAll: () => void;
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
@@ -202,6 +228,7 @@ interface AppState {
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
   openDownloadDialog: (id: string) => void;
+  openDownloadForSelection: () => void;
   closeDownloadDialog: () => void;
   confirmDownload: () => Promise<void>;
   enterFocus: () => Promise<void>;
@@ -214,6 +241,7 @@ interface AppState {
   autoStretch: () => Promise<void>;
   zoomToView: () => void;
   setActiveGroupIndex: (i: number) => void;
+  toggleResultsGroup: (i: number) => void;
   focusItem: (id: string) => void;
   toggleSelected: (id: string) => void;
   selectAllInActiveGroup: () => void;
@@ -245,6 +273,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapZoom: 1.6,
 
   panelCollapsed: false,
+  resultsPanelCollapsed: false,
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
@@ -252,6 +281,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   layers: [],
   layerManagerOpen: false,
   downloadDialogLayerId: null,
+  downloadSelection: false,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -264,6 +294,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   items: [],
   groups: [],
   activeGroupIndex: 0,
+  expandedGroupIndex: 0,
   selectedIds: [],
   downloaded: {},
 
@@ -292,6 +323,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       items: [],
       groups: [],
       activeGroupIndex: 0,
+      expandedGroupIndex: 0,
       selectedIds: [],
       error: null,
       notice: null,
@@ -330,12 +362,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearFly: () => set({ flyToBbox: null }),
   togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
   setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
+  toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
   clearAll: () => {
     set({
       aoi: null,
       items: [],
       groups: [],
       activeGroupIndex: 0,
+      expandedGroupIndex: 0,
       selectedIds: [],
       panelCollapsed: false,
       playing: false,
@@ -356,10 +390,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     const group = s.groups[s.activeGroupIndex];
     const overlays: LayerOverlay[] = [];
+    let itemIds: string[] = [];
     if (s.focusMode) {
       const entries = s.selectedIds.length
         ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
         : Object.entries(s.downloaded);
+      itemIds = entries.map(([id]) => id);
       for (const [, info] of entries) {
         overlays.push({
           kind: 'raster',
@@ -373,6 +409,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const items = s.selectedIds.length
         ? s.items.filter((it) => s.selectedIds.includes(it.id))
         : (group?.items ?? []);
+      itemIds = items.map((it) => it.id);
       const browsed = s.datasets.find((d) => d.id === s.datasetId);
       for (const it of items) {
         const plan = browsed ? quicklookPlan(it, browsed) : null;
@@ -415,6 +452,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         appliedRender: { ...s.appliedRender },
         activeGroupIndex: s.activeGroupIndex,
         selectedIds: [...s.selectedIds],
+        itemIds,
         aoi: s.aoi,
         datasetId: s.datasetId,
       },
@@ -445,26 +483,52 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloaded: r.downloaded,
         appliedRender: r.appliedRender,
         activeGroupIndex: r.activeGroupIndex,
+        expandedGroupIndex: r.activeGroupIndex,
         selectedIds: r.selectedIds,
         aoi: r.aoi,
         showDownloaded: true,
       };
     }),
 
-  openDownloadDialog: (id) => set({ downloadDialogLayerId: id, error: null }),
-  closeDownloadDialog: () => set({ downloadDialogLayerId: null }),
+  openDownloadDialog: (id) => set({ downloadDialogLayerId: id, downloadSelection: false, error: null }),
+  // Download the original data of the current selection (V-4) — the AOI
+  // crop route, not the quicklook image — without first "View full
+  // resolution" or "Add to layers". Validated the same way `confirmDownload`
+  // will re-check right before the request: an AOI, a viewable dataset with a
+  // default asset, and at least one picked (or the active time step's) scene.
+  openDownloadForSelection: () => {
+    const s = get();
+    const dataset = s.datasets.find((d) => d.id === s.datasetId);
+    const req = downloadRequestForSelection(dataset, selectionItemsFrom(s), s.aoi);
+    if (!req) {
+      set({
+        error: !s.aoi
+          ? 'Draw or search an area of interest first.'
+          : 'Nothing to download — pick a time step or select scenes first.',
+      });
+      return;
+    }
+    set({ downloadDialogLayerId: null, downloadSelection: true, error: null });
+  },
+  closeDownloadDialog: () => set({ downloadDialogLayerId: null, downloadSelection: false }),
 
-  // Download the AOI crop for the layer the dialog is open for (M2-06's
-  // `POST /collections/{dataset}/download`, M2-07d). `downloadRequestFor`
-  // already refused anything that is not a full-resolution layer with a
-  // drawn AOI, so a missing request here only means the layer was removed
-  // while the dialog was open.
+  // Download the AOI crop for whatever the dialog is open for (M2-06's
+  // `POST /collections/{dataset}/download`, M2-07d; V-4 added the selection
+  // case). `downloadRequestFor`/`downloadRequestForSelection` already refused
+  // anything incomplete, so a missing request here only means the layer was
+  // removed, or the selection/AOI changed, while the dialog was open.
   confirmDownload: async () => {
     const s = get();
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
-    const req = layer && downloadRequestFor(layer);
+    const dataset = s.datasets.find((d) => d.id === s.datasetId);
+    const req = s.downloadSelection
+      ? downloadRequestForSelection(dataset, selectionItemsFrom(s), s.aoi)
+      : layer && downloadRequestFor(layer, s.datasets);
+    const name = s.downloadSelection
+      ? `${dataset?.title ?? s.datasetId ?? '?'} · ${s.groups[s.activeGroupIndex]?.label ?? ''}`
+      : (layer?.name ?? '');
     if (!req) {
-      set({ downloadDialogLayerId: null });
+      set({ downloadDialogLayerId: null, downloadSelection: false });
       return;
     }
     set({ downloading: true, error: null });
@@ -482,7 +546,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       a.download = `${req.datasetId}-crop.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      set({ downloadDialogLayerId: null, notice: `Downloaded "${layer.name}".` });
+      set({ downloadDialogLayerId: null, downloadSelection: false, notice: `Downloaded "${name}".` });
     } catch (e) {
       set({ error: `Download failed: ${(e as Error).message}` });
     } finally {
@@ -607,10 +671,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const bb = unionBbox(boxes);
     if (bb) set({ flyToBbox: bb });
   },
-  setActiveGroupIndex: (activeGroupIndex) => set({ activeGroupIndex }),
+  // Also expands the matching group in the results list — everything that
+  // moves the "current" time step this way (the time slider, "play",
+  // clicking a scene, picking a pinned layer) is meant to bring the list
+  // along with it. A manual collapse (`toggleResultsGroup`) is the one path
+  // that intentionally leaves `activeGroupIndex` alone.
+  setActiveGroupIndex: (activeGroupIndex) => set({ activeGroupIndex, expandedGroupIndex: activeGroupIndex }),
+  // The results list's own toggle (V-11): collapsing the already-open group
+  // only ever changes `expandedGroupIndex`, never `activeGroupIndex` — so
+  // the map/time slider stay exactly where they were, they just lose their
+  // quicklooks/preview tiles until something is expanded again. Opening a
+  // different (collapsed) group goes through `setActiveGroupIndex` instead,
+  // keeping both in sync as usual.
+  toggleResultsGroup: (index) => {
+    const s = get();
+    if (index === s.expandedGroupIndex) set({ expandedGroupIndex: null });
+    else s.setActiveGroupIndex(index);
+  },
   focusItem: (id) => {
     const idx = groupIndexOfItem(get().groups, id);
-    if (idx >= 0) set({ activeGroupIndex: idx });
+    if (idx >= 0) set({ activeGroupIndex: idx, expandedGroupIndex: idx });
   },
   toggleSelected: (id) =>
     set((s) => ({
@@ -684,15 +764,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       notice: string | ((groups: TimeStepGroup[]) => string),
     ) => {
       try {
-        const groups = buildGroups(features, groupBy);
+        const groups = buildGroups(features, displayGroupBy(features, groupBy));
         const text = typeof notice === 'function' ? notice(groups) : notice;
-        set({ items: features, groups, activeGroupIndex: 0, selectedIds: [], error: null, notice: text });
+        set({
+          items: features,
+          groups,
+          activeGroupIndex: 0,
+          expandedGroupIndex: 0,
+          selectedIds: [],
+          error: null,
+          notice: text,
+        });
       } catch (e) {
         if (e instanceof MissingProperty) {
           set({
             items: [],
             groups: [],
             activeGroupIndex: 0,
+            expandedGroupIndex: 0,
             selectedIds: [],
             error: `Grouping failed: ${e.message}`,
             notice: null,

@@ -1,6 +1,29 @@
+import { useState, type MouseEvent } from 'react';
+
 import { quicklookAsset } from '../datasets';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
+
+// Two overlapping rounded rectangles — the same copy glyph Claude's own
+// interface uses, in place of the earlier "⧉" character glyph, which
+// rendered inconsistently and didn't read as "copy" at a glance (V-6).
+// `currentColor` so `.copy-btn`'s own color (and its `:hover` accent) still
+// drive it.
+function CopyIcon({ copied }: { copied: boolean }) {
+  if (copied) {
+    return (
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -12,9 +35,24 @@ function timeOf(properties: Record<string, unknown>): string {
 function Row({ item }: { item: StacItem }) {
   const selectedIds = useAppStore((s) => s.selectedIds);
   const toggleSelected = useAppStore((s) => s.toggleSelected);
+  const [copied, setCopied] = useState(false);
 
   const selected = selectedIds.includes(item.id);
   const asset = quicklookAsset(item);
+
+  const copyName = (e: MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard
+      .writeText(item.id)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => {
+        // Clipboard unavailable (no permission, insecure context) — the name
+        // stays visible in the row to select and copy by hand.
+      });
+  };
 
   return (
     <li className={`result-row${selected ? ' selected' : ''}`} onClick={() => toggleSelected(item.id)}>
@@ -48,31 +86,46 @@ function Row({ item }: { item: StacItem }) {
       )}
       <div className="result-meta">
         <span className="result-date">{timeOf(item.properties)}</span>
-        <span className="result-id" title={item.id}>
-          {item.id}
+        <span className="result-id-row">
+          <span className="result-id" title={item.id}>
+            {item.id}
+          </span>
+          <button
+            type="button"
+            className="copy-btn"
+            title="Copy scene name"
+            aria-label={`Copy scene name ${item.id}`}
+            onClick={copyName}
+          >
+            <CopyIcon copied={copied} />
+          </button>
         </span>
       </div>
     </li>
   );
 }
 
-function GroupBlock({ group, index }: { group: TimeStepGroup; index: number }) {
-  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
-  const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
-  const active = index === activeGroupIndex;
-
+function GroupBlock({
+  group,
+  index,
+  expanded,
+  onToggle,
+}: {
+  group: TimeStepGroup;
+  index: number;
+  expanded: boolean;
+  onToggle: (index: number) => void;
+}) {
   return (
-    <div className={`result-group${active ? ' active' : ''}`}>
-      <button
-        type="button"
-        className="result-group-head"
-        onClick={() => setActiveGroupIndex(index)}
-      >
-        <span className="rg-caret">{active ? '▾' : '▸'}</span>
-        <span className="rg-label">{group.label}</span>
+    <div className={`result-group${expanded ? ' active' : ''}`}>
+      <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
+        <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
+        <span className="rg-label" title={group.label}>
+          {group.label}
+        </span>
         <span className="rg-count">{group.items.length}</span>
       </button>
-      {active && (
+      {expanded && (
         <ul className="rg-items">
           {group.items.map((it) => (
             <Row key={it.id} item={it} />
@@ -85,7 +138,15 @@ function GroupBlock({ group, index }: { group: TimeStepGroup; index: number }) {
 
 export default function ResultsPanel() {
   const groups = useAppStore((s) => s.groups);
+  // Separate from `activeGroupIndex` (the time step the map/time slider
+  // show), so the currently open section can be collapsed without forcing a
+  // different one open, and so collapsing every section also hides their
+  // quicklooks on the map (V-6, V-11 — `store.ts::toggleResultsGroup` has
+  // the full reasoning).
+  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
+  const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
   const clearAll = useAppStore((s) => s.clearAll);
+
   if (groups.length === 0) return null;
 
   return (
@@ -106,7 +167,13 @@ export default function ResultsPanel() {
       </div>
       <div className="results-list">
         {groups.map((g, i) => (
-          <GroupBlock key={g.key.join('\u0000')} group={g} index={i} />
+          <GroupBlock
+            key={g.key.join('\u0000')}
+            group={g}
+            index={i}
+            expanded={i === expandedGroupIndex}
+            onToggle={toggleGroup}
+          />
         ))}
       </div>
     </div>

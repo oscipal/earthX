@@ -126,6 +126,7 @@ Ottos Entscheidung zu M2-11).
 | M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | Sonnet (klein) | M2-07a |
 | V-2 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-1 |
 | V-3 | Zwei Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-2 |
+| V-4 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-3 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
@@ -141,6 +142,7 @@ stauen (`m1-fundament.md` §6).
 9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
 10. V-2 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-1
 11. V-3 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-2
+12. V-4 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-3
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -544,6 +546,66 @@ kleiner und unregelmäßig ist als die Kachel.
 
 **Nicht anfassen:** Backend; Footprint-Anzeige (Coverage/M2-07c) und `pointInFootprint` (M2-16); der Karten-Klick-Handler selbst, der die Szene unter dem Cursor schon richtig ermittelt.
 **Abnahme:** Vitest-Fälle für beide Befunde (Auswahl-Umrandung im Fokusmodus aus `selectedIds`, ausgewähltes Item einer nicht aktiven Gruppe bleibt Teil der an die Karte übergebenen Items); Lint, Typprüfung und Vitest grün.
+
+### V-4 — Fünf Befunde aus Ottos Durchsicht (Viewer-Strang)
+
+**Ziel:** Fünf kleine Befunde aus Ottos Durchsicht des Viewers sind behoben. Alle Texte englisch (D25).
+**Stufe A.** Hängt an V-3 (gemergt), sonst an nichts.
+**Umfang:**
+1. Ein ausgewählter Quicklook lässt sich herunterladen: die Originaldaten über die bestehende Zuschnitt-Route (`POST /collections/{dataset}/download`, M2-06), nicht das Vorschaubild. Neuer „Download"-Knopf in `ViewBar.tsx` neben „View full resolution"/„Add to layers", ohne vorher in die Volltauflösung zu wechseln; öffnet denselben `DownloadDialog` wie beim Layer-Download, mit Attribution und `terms_notice`. Der Asset kommt aus der Standard-Visualisierung der Registry (`earthx:default_render`), derselbe, den `enterFocus`/`quicklookPlan` auch sonst verwenden.
+2. Der Szenenname lässt sich kopieren, mit dem üblichen Kopiersymbol neben der Szenen-ID in `ResultsPanel.tsx`, per `navigator.clipboard`.
+3. Die Trefferliste gruppiert nach Tag und Überflug (`s2:datatake_id`), nicht mehr nach Tag und MGRS-Kachel — reine Darstellung (Log-Eintrag 2026-09-22): `grouping.ts::displayGroupBy` bevorzugt `["datetime", "s2:datatake_id"]`, wenn jedes Item im aktuellen Suchergebnis die Eigenschaft trägt, sonst bleibt es beim registrierten `group_by` (Tag + `grid:code`). D19 und D11 bleiben unberührt: `buildGroups` führt weiterhin jede Szene einzeln mit eigenem Quicklook und eigener Kachel-URL, es entsteht kein Mosaik.
+4. Der Hintergrund hinter dem Globus (`mapStyles.ts`) war weiß, jetzt schwarz: MapLibres `sky`-Vorgaben (`sky-color`/`horizon-color`/`fog-color`, per Default hell) sind auf die Farbe der `background`-Ebene (`#04070a`) gesetzt, `atmosphere-blend: 0`.
+5. Die beiden Datumsfelder (`ControlPanel.tsx`, `.date-row`) treffen jetzt dieselben zwei Spalten wie die Kachelpaare darüber (Point/Rectangle, Upload/Last AOI, Sentinel-2/Zarr3): `date-row` ist ein Grid mit `repeat(2, 1fr)` und 6px Abstand statt einer Flex-Zeile mit dem Pfeil als drittem Element; der Pfeil liegt jetzt als Overlay über der Lücke.
+
+**Nicht anfassen:** Backend; die Registry (`earthx:viewer.group_by`, D19 bleibt unverändert); Kachel-Pfad und Mosaik-Verbot (D11).
+**Abnahme:** Vitest-Fälle für `displayGroupBy` (bevorzugt Datatake, Fallback bei fehlender Eigenschaft, leeres Ergebnis); Lint, Typprüfung und Vitest grün; im PR eine kurze Anleitung zum Ausprobieren der fünf Punkte.
+
+**Nachbesserungen (23.09.2026, Ottos Durchsicht des offenen PR):** vier weitere kleine Befunde, noch vor dem Merge in denselben PR eingearbeitet:
+1. Die ESRI-Attribution (Info-Knopf unten rechts) war im Dunkelmodus unlesbar: MapLibres `.maplibregl-compact` setzt `color: #000`/`background: #fff` in derselben Selektor-Spezifität wie unsere Regel und gewinnt je nach Reihenfolge — jetzt für `.maplibregl-ctrl-attrib` samt `.maplibregl-compact`/`.maplibregl-compact-show` explizit auf Weiß gesetzt.
+2. Der Kalender-Klick im Dunkelmodus ging ins Leere: `padding-right` verschiebt den unsichtbaren nativen `::-webkit-calendar-picker-indicator` nach innen, während unser gezeichnetes Symbol an einer festen Stelle sitzt — beide laufen auseinander. Ersetzt durch einen echten, transparenten Knopf über dem Symbol, der `input.showPicker()` aufruft (`ControlPanel.tsx::DateField`).
+3. Die Trefferliste war frei verschiebbar (`Draggable`) statt wie das Suchmenü fest an einer Seite und ein-/ausklappbar. Jetzt rechts angedockt (`overlay right results-dock`), mit demselben Auf-/Zuklapp-Muster wie `panel-dock` links, nur horizontal gespiegelt.
+4. Der Layer-Manager sprang beim Schließen und Wiederöffnen auf seine ursprüngliche Position zurück: `if (!open) return null` hat `Draggable` und damit seinen Verschiebe-Zustand jedes Mal komplett abgebaut. `Draggable` bleibt jetzt montiert und wird nur noch per CSS (`display: none`) versteckt.
+
+**Nachbesserungen, Runde 2 (23.09.2026, Ottos Durchsicht des offenen PR):** fünf weitere Befunde, in Commits mit dem Kürzel „V-6" (an nichts als Runde 1 hängend, kein eigener Plan-Eintrag):
+1. Der Globus-Hintergrund war trotz Runde 1 weiterhin weiß: MapLibre leert den WebGL-Canvas jeden Frame transparent, bevor der Sky-Pass zeichnet, und deckt offenbar nicht jeden Zustand vollständig ab. `body { background: #04070a }` (`index.css`) ist jetzt die tatsächliche Garantie, unabhängig vom Sky-Shader; die `sky`-Farben in `mapStyles.ts` bleiben als Ergänzung, der Kommentar dort hält die Fundstelle fest (`drawSky` vs. das separate, an `atmosphere-blend` hängende Halo).
+2. Die Datumsfelder waren zu breit, dem Pfeil in der Mitte blieb kein Platz: `date-row`s mittlere Spalte ist jetzt eine echte (`auto`-große) Grid-Spur statt eines Overlays ohne eigenen Platz; die Felder sind dadurch etwas schmäler als die Kachelpaare darüber, die Zeile insgesamt gleich breit.
+3. Das Kopiersymbol („⧉") wirkte unpassend. Ersetzt durch dasselbe Icon wie in Claudes eigener Oberfläche (zwei überlappende, abgerundete Rechtecke), als Inline-SVG mit `currentColor` (`ResultsPanel.tsx::CopyIcon`).
+4. Der Download war im Layer-Manager nur für Layer verfügbar, die zuvor in Volltauflösung angesehen wurden (`store.downloaded` gefüllt) — ein nur als Quicklook angepinnter Layer zeigte trotz Tooltip „Download the AOI crop for this layer" keinen Download-Knopf. `LayerRestore` trägt jetzt `itemIds` (die gepinnten Szenen zum Zeitpunkt des Anpinnens, unabhängig von den aktuellen Suchergebnissen); `downloadRequestFor` weicht ohne Volltauflösung auf das Standard-Render-Asset der Registry aus (`earthx:default_render`), wie schon bei `downloadRequestForSelection` (Punkt 1 oben).
+5. Eine aufgeklappte Gruppe in der Trefferliste ließ sich nicht schließen, ohne eine andere zu öffnen (dieselbe Variable `activeGroupIndex` trieb sowohl den Akkordeon-Zustand als auch Karte/Zeitschieber). `ResultsPanel.tsx` hält den aufgeklappten Index jetzt als eigenen lokalen Zustand, synchronisiert per Effekt mit `activeGroupIndex`; ein manuelles Einklappen ändert nur diesen lokalen Zustand, Karte und Zeitschieber bleiben unverändert.
+
+**Nachbesserungen, Runde 3 (23.09.2026, Ottos Durchsicht des offenen PR):** drei weitere kleine Befunde, Kürzel „V-7":
+1. Der ESRI-Info-Knopf (Attribution) unten rechts stand standardmäßig aufgeklappt: `compact: true` macht die Attribution nur einklappbar, MapLibre startet sie aber trotzdem offen (`maplibregl-compact-show`/`open`) und klappt erst beim ersten Verschieben der Karte ein (eigener Listener auf `drag`). Jetzt direkt nach dem Erzeugen der Karte eingeklappt (`MapView.tsx`), ohne auf diese erste Bewegung zu warten.
+2. Der Layer-Manager saß standardmäßig fest bei `left: 420px` (auf die Breite des Suchmenüs abgestimmt). Jetzt `left: 16px`, wie das Suchmenü selbst — bleibt frei verschiebbar, das ist nur der Startpunkt.
+3. Abgeschnittene Szenennamen: Der Layer-Namensknopf im Layer-Manager trug als `title` nur einen festen Bedienhinweis, nie den (oft abgeschnittenen) Namen selbst — jetzt beides. Die Gruppen-Überschrift in der Trefferliste (kann bei langen Datatake-IDs ebenfalls abschneiden) hat jetzt denselben Hover-Titel; die einzelne Szenen-ID hatte ihn schon.
+
+**Nachbesserungen, Runde 4 (23.09.2026, Otto per Screenshot), Kürzel „V-8":** zwei Befunde, einer davon eine Korrektur von Runde 3 Punkt 2.
+1. Die Datumsfelder liefen trotz Runde-2-Korrektur immer noch über den Panelrand hinaus, das Kalendersymbol des rechten Felds wurde am Rand abgeschnitten (Screenshot). Ursache: ein bloßes `1fr` in einem CSS-Grid trägt ein implizites `min-width: auto` und schrumpft nie unter die Content-Mindestbreite — die durch das reservierte Icon-Padding des Datumsfelds größer war als der tatsächlich verfügbare Platz, also lief die Zeile über. Behoben mit `minmax(0, 1fr)` für die beiden Datumsspalten plus `min-width: 0` auf Feld und Input.
+2. Der Layer-Manager sollte, wenn die Steuerungstafel links offen ist, rechts daneben ausweichen (nicht darunter liegen) und beim Einklappen der Tafel wieder an den linken Rand zurückwandern — Runde 3 Punkt 2 hatte ihn nur pauschal auf `left: 16px` fest gesetzt, ohne auf `panelCollapsed` zu reagieren. Jetzt `overlay layermgr` in `App.tsx` mit einer `controls-open`-Klasse aus demselben `panelCollapsed`, den auch die Steuerungstafel selbst benutzt; `left: 420px` (deckt Suchmenübreite plus Toggle-Pfeil ab) bei offener Tafel, sonst `left: 16px`, mit Übergang.
+
+**Nachbesserung, Runde 5 (23.09.2026), Kürzel „V-9":** Der Play-Knopf der Zeitleiste lief in die falsche Richtung. `groups` ist neueste-zuerst, die Zeitleiste zeigt links die älteste, rechts die neueste Szene (`sliderValue = groups.length - 1 - activeGroupIndex`); `TimeSlider.tsx`s Intervall zählte `activeGroupIndex` aber **hoch**, was den Schieberegler visuell von rechts nach links laufen ließ (neueste → älteste), entgegen seiner eigenen Beschriftung. Jetzt wird `activeGroupIndex` heruntergezählt (mit Wraparound), läuft also links nach rechts, ältere zu neuere Szenen, ab der aktuellen Position weiter. Der Wraparound liefert nebenbei den zweiten Wunsch: von der Standardposition ganz rechts (neueste Szene) aus beginnt der erste Schritt bei der ältesten (ganz links), ohne dass man den Regler vorher manuell zurücksetzen muss.
+
+**Nachbesserung, Runde 6 (23.09.2026), Kürzel „V-10":** Zwei Wünsche zum Layer-Manager, der bisherige Ansatz aus Runde 4 (`.controls-open`-CSS-Klasse) konnte keinen von beiden erfüllen, weil er rein an `panelCollapsed` hing statt an tatsächlicher Überlappung: (1) er soll nur ausweichen, wenn er der Steuerungstafel wirklich im Weg ist, nicht bei jedem Öffnen der Tafel unabhängig von echter Kollision; (2) er soll nie ganz oder teilweise vom Bildschirm verschwinden. Der `.controls-open`-Mechanismus in `App.tsx`/`index.css` ist entfernt; `Draggable.tsx` bekommt stattdessen zwei generische, opt-in Fähigkeiten:
+- `avoidSelector` misst das eigene (unverschobene) Anker-Rechteck gegen das per Selektor benannte Element und weicht nur bei echter Überlappung aus (`getBoundingClientRect`-Kollisionstest), begrenzt durch den Bildschirmrand. Eine manuelle Verschiebung durch den Nutzer gewinnt immer — die automatische Ausweichung greift nur an der unberührten Ankerposition. Neu geprüft wird bei `transitionend` (`transform`) des Ausweich-Ziels und über ein `recalcTrigger`-Prop, das der Aufrufer setzt — nötig, weil das Öffnen des Layer-Managers selbst sein eigenes (am Inhalt bemessenes) Anker-Rechteck von leer auf echte Größe ändert, wofür es kein DOM-Ereignis gibt. `LayerManager.tsx` übergibt `avoidSelector=".panel-dock"` und `recalcTrigger` aus `open`+`panelCollapsed`.
+- Eine bedingungslose Bildschirmrand-Klemme (`SCREEN_MARGIN`) für sowohl die automatische Ausweichung als auch jede manuelle Verschiebung — beim Ziehen, beim Öffnen und nach einer Fenstergrößenänderung.
+
+Mit Playwright gegen den lokalen Dev-Server durchgespielt (acht Szenarien: Ausweichen bei echter Überlappung, Rückkehr an den Rand ohne Überlappung, erneutes Ausweichen, manuelles Verschieben bleibt in beide Toggle-Richtungen unangetastet, Klemmen an allen vier Bildschirmrändern).
+
+**Nachbesserung, Runde 7 (23.09.2026), Kürzel „V-11":** Quicklooks blieben auf der Karte sichtbar, obwohl in der Trefferliste keine Gruppe mehr aufgeklappt war. Ursache: `expandedGroupIndex` (V-6, welche Sektion in der Liste offen ist) lebte nur als lokaler State in `ResultsPanel.tsx`; `MapView.tsx` kannte ihn nicht und las weiterhin `activeGroupIndex`, das ein manuelles Einklappen absichtlich unangetastet lässt (genau das war der Witz von V-6). `expandedGroupIndex` zieht jetzt in den Store um, wo beide Komponenten ihn lesen können:
+- `setActiveGroupIndex` (Zeitschieber, „Play", Klick auf eine Szene, Auswahl eines angepinnten Layers) hält `expandedGroupIndex` weiterhin synchron mit `activeGroupIndex`, wie zuvor implizit über den `useEffect` in `ResultsPanel.tsx`.
+- Neue Aktion `toggleResultsGroup` ist der einzige Pfad, der nur `expandedGroupIndex` ändert (auf `null` beim Einklappen der offenen Gruppe) und `activeGroupIndex` unberührt lässt.
+- `grouping.ts::itemsForMap` nimmt jetzt `number | null` für den zweiten Parameter; `null` bedeutet „keine Gruppe aktiv", liefert also nur die ausgewählten Items (wie zuvor schon ein außerhalb liegender Index).
+- `MapView.tsx` wählt je Aufrufstelle zwischen `activeGroupIndex` und `expandedGroupIndex`: im Fokusmodus ist die Trefferliste gar nicht sichtbar (App.tsx tauscht sie gegen `ViewerControls`), dort zählt weiterhin die in Volltauflösung angesehene Szene.
+
+Vitest-Fälle für `itemsForMap(_, null, _)` und `toggleResultsGroup` (Einklappen ohne `activeGroupIndex` zu bewegen, erneutes Aufklappen, Resynchronisierung durch `setActiveGroupIndex` nach einem manuellen Einklappen).
+
+**Nachbesserung, Runde 8 (23.09.2026), Kürzel „V-12":** Otto hat die Runde-6-Lösung (`avoidSelector`) selbst ausprobiert und zwei echte Lücken gefunden, die die vorige Session übersehen hatte:
+1. Die Überlappungsprüfung maß immer nur den festen CSS-Anker des Layer-Managers, nie seine tatsächliche (ggf. verschobene) Ruheposition, und griff nach der ersten manuellen Verschiebung überhaupt nicht mehr — ein Panel, das man selbst auf die Steuerungstafel gezogen hat, blieb also einfach dort liegen.
+2. Das Ausweichen und seine Rücknahme geschahen ohne Übergang, sprunghaft statt gleitend.
+
+`Draggable.tsx`: Die Überlappungsprüfung baut das Ruhe-Rechteck jetzt aus Anker plus dem aktuellen `off` (dem Verschiebe-Offset) — ohne Sonderfall für „nie verschoben". `off` wird von der Ausweich-Logik selbst nie umgeschrieben, verschoben oder nicht, sodass das Panel immer wieder genau dorthin gleitet, wo es zuletzt stand, sobald nichts mehr im Weg ist. Neu geprüft wird jetzt auch beim Loslassen der Maustaste, nicht nur bei den Übergängen des Ausweich-Ziels. Ein Greifen mitten im Ausweichen faltet den aktuellen Versatz in `off` und setzt ihn für die Dauer des Ziehens auf 0, damit der Mauszeiger allein die Bewegung bestimmt; ein CSS-Übergang (nur außerhalb aktiven Ziehens) animiert das Ausweichen und seine Rücknahme.
+
+Mit Playwright gegen den lokalen Dev-Server geprüft: Panel auf die Steuerungstafel gezogen, weicht gleitend nach rechts aus (acht unterschiedliche Zwischenwerte über acht Stichproben, kein Sprung); Steuerungstafel eingeklappt → Panel kehrt exakt an die abgelegte Stelle zurück; wieder ausgeklappt → weicht erneut von dort aus; Übergang von 16 auf 372 in acht monoton wachsenden Stichproben belegt (16, 31, 152, 267, 330, 361, 370, 372).
 
 ---
 

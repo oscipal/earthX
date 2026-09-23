@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGroups, groupKey, itemsForMap, MissingProperty } from './grouping';
+import { buildGroups, displayGroupBy, groupKey, itemsForMap, MissingProperty } from './grouping';
 import type { StacItem } from './types';
 
 function item(properties: Record<string, unknown>): StacItem {
@@ -114,6 +114,41 @@ describe('buildGroups', () => {
   });
 });
 
+// V-4: the results list heads groups by day + overpass (`s2:datatake_id`)
+// instead of day + MGRS tile, when the search results carry the property —
+// a display-only change, never affecting which scenes exist (D11) or the
+// registry's own `group_by` (D19).
+describe('displayGroupBy', () => {
+  it('prefers day + datatake when every item carries it', () => {
+    const a = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
+    const b = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS', 's2:datatake_id': 'GS2A_1' });
+    expect(displayGroupBy([a, b], SENTINEL_2_GROUP_BY)).toEqual(['datetime', 's2:datatake_id']);
+  });
+
+  it('two tiles of the same overpass land in one group', () => {
+    const a = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
+    const b = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS', 's2:datatake_id': 'GS2A_1' });
+    const groups = buildGroups([a, b], displayGroupBy([a, b], SENTINEL_2_GROUP_BY));
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map((it) => it.id)).toEqual(['an-item', 'an-item']);
+  });
+
+  it('falls back to the registry key when an item lacks the property', () => {
+    const withDatatake = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
+    const without = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS' });
+    expect(displayGroupBy([withDatatake, without], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
+  });
+
+  it('falls back to the registry key when no item carries the property', () => {
+    const scene = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS' });
+    expect(displayGroupBy([scene], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
+  });
+
+  it('falls back to the registry key for an empty result set', () => {
+    expect(displayGroupBy([], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
+  });
+});
+
 // V-3, finding 2: a selected quicklook must not disappear from the map when
 // its time step is no longer the one expanded in ResultsPanel's accordion
 // (`activeGroupIndex` switches away from it).
@@ -151,5 +186,25 @@ describe('itemsForMap', () => {
 
   it('is empty for an out-of-range active index and no selection', () => {
     expect(itemsForMap(groups, 99, [])).toEqual([]);
+  });
+
+  // V-11: every group collapsed (nothing "active" in the results list) must
+  // hide quicklooks on the map, same as an out-of-range index — but a
+  // selection still shows, exactly like a collapsed-but-valid group would.
+  describe('with every group collapsed (null)', () => {
+    it('is empty with no selection', () => {
+      expect(itemsForMap(groups, null, [])).toEqual([]);
+    });
+
+    it('still shows a selected item', () => {
+      const ids = itemsForMap(groups, null, ['b1']).map((it) => it.id);
+      expect(ids).toEqual(['b1']);
+    });
+
+    it('does not fall back to any particular group by accident', () => {
+      const ids = itemsForMap(groups, null, []).map((it) => it.id);
+      expect(ids).not.toContain('a1');
+      expect(ids).not.toContain('b1');
+    });
   });
 });

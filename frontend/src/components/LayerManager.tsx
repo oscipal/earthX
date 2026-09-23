@@ -4,6 +4,7 @@ import Draggable from './Draggable';
 
 export default function LayerManager() {
   const open = useAppStore((s) => s.layerManagerOpen);
+  const panelCollapsed = useAppStore((s) => s.panelCollapsed);
   const layers = useAppStore((s) => s.layers);
   const toggle = useAppStore((s) => s.toggleLayerManager);
   const remove = useAppStore((s) => s.removeLayer);
@@ -13,13 +14,24 @@ export default function LayerManager() {
   const select = useAppStore((s) => s.selectLayer);
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasetId = useAppStore((s) => s.datasetId);
+  const datasets = useAppStore((s) => s.datasets);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const toggleCoverage = useAppStore((s) => s.toggleCoverage);
 
-  if (!open) return null;
-
+  // `Draggable` stays mounted regardless of `open` and is only hidden with
+  // CSS: unmounting it (the previous `if (!open) return null`) threw away
+  // its drag offset every time the panel closed, so a moved panel snapped
+  // back to its original spot the next time it opened.
   return (
-    <Draggable className="layer-dock">
+    <Draggable
+      className={`layer-dock${open ? '' : ' layer-dock-hidden'}`}
+      avoidSelector=".panel-dock"
+      // Opening this panel (or the control dock collapsing/expanding) both
+      // change whether the two actually overlap — force a fresh check
+      // rather than relying only on `avoidSelector`'s own transition, which
+      // this panel's `open` toggle doesn't fire (see Draggable.tsx).
+      recalcTrigger={`${open}:${panelCollapsed}`}
+    >
       <div className="panel layer-manager">
         <div className="results-head">
           <h2>Layers</h2>
@@ -66,7 +78,7 @@ export default function LayerManager() {
                 <button
                   type="button"
                   className="lm-name"
-                  title="View this layer / continue working on it"
+                  title={`${l.name} — view this layer / continue working on it`}
                   onClick={() => select(l.id)}
                 >
                   {l.name}
@@ -99,7 +111,7 @@ export default function LayerManager() {
                 >
                   ▼
                 </button>
-                {canDownloadLayer(l) && (
+                {canDownloadLayer(l, datasets) && (
                   <button
                     type="button"
                     className="lm-btn"
