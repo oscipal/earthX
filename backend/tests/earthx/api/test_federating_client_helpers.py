@@ -32,6 +32,17 @@ class TestRejectDisallowedKeys:
         assert "filter" in excinfo.value.detail
         assert "sortby" in excinfo.value.detail
 
+    @pytest.mark.parametrize("key", ["ids", "intersects"])
+    def test_ids_and_intersects_are_refused_too(self, key: str) -> None:
+        """M2-17: both federated sources honour these, but `_dispatch_search` does
+        not forward either — measured as a silent `200` with an unfiltered page
+        before this check existed (docs/plans/m2-format-und-viewer.md M2-17)."""
+        with pytest.raises(HTTPException) as excinfo:
+            _reject_disallowed_keys({"collections", key})
+        assert excinfo.value.status_code == 400
+        assert key in excinfo.value.detail
+        assert "M2-17" in excinfo.value.detail
+
 
 class TestStripForwardToken:
     def test_no_token_is_no_token(self) -> None:

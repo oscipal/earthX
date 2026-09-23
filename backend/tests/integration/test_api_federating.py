@@ -142,6 +142,38 @@ class TestConformance:
             response = await client.get("/stac/search", params={"collections": DATASET_ID, "sortby": "-datetime"})
         assert response.status_code == 400
 
+    async def test_an_ids_parameter_is_rejected_not_silently_dropped(self, require_catalog_loaded: None) -> None:
+        """M2-17: before this check, `ids=["does-not-exist"]` answered `200` with an
+        ordinary, unfiltered page — nothing was ever sent upstream to filter by."""
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        async with _client(handler) as client:
+            get_response = await client.get(
+                "/stac/search", params={"collections": DATASET_ID, "ids": "does-not-exist"}
+            )
+            post_response = await client.post(
+                "/stac/search", json={"collections": [DATASET_ID], "ids": ["does-not-exist"]}
+            )
+        assert get_response.status_code == 400
+        assert post_response.status_code == 400
+        assert seen == []
+
+    async def test_an_intersects_parameter_is_rejected_not_silently_dropped(
+        self, require_catalog_loaded: None
+    ) -> None:
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        polygon = {"type": "Polygon", "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 2], [1, 1]]]}
+        async with _client(handler) as client:
+            get_response = await client.get(
+                "/stac/search",
+                params={"collections": DATASET_ID, "intersects": json.dumps(polygon)},
+            )
+            post_response = await client.post(
+                "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon}
+            )
+        assert get_response.status_code == 400
+        assert post_response.status_code == 400
+        assert seen == []
+
 
 class TestUnknownCollection:
     async def test_get_collection_is_pgstacs_own_404(self, require_catalog_loaded: None) -> None:
@@ -312,3 +344,15 @@ class TestFederatedSearch:
         async with _client(handler) as client:
             response = await client.get("/stac/search", params={"collections": DATASET_ID})
         assert response.status_code == 503
+
+    async def test_get_item_answering_something_that_is_not_an_item_is_502_not_a_crash(
+        self, require_catalog_loaded: None
+    ) -> None:
+        """M2-17 finding: `get_item` did not catch `UpstreamShapeError`, so this
+        turned into our own `500` instead of the `502` the error mapping already
+        has for it — the same case `post_search`/`get_search` were already
+        covered for (`search answer is not a JSON object`)."""
+        handler, _ = _answering(httpx.Response(200, json=["not", "an", "item"]))
+        async with _client(handler) as client:
+            response = await client.get(f"/stac/collections/{DATASET_ID}/items/does-not-exist")
+        assert response.status_code == 502
