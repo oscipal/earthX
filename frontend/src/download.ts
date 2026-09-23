@@ -3,8 +3,10 @@
 // and the attribution / terms text shown before the crop is requested
 // (adr/0003 §11.2: the notice belongs on the download, not only in a footer).
 
+import type { DatasetOption } from './datasets';
+import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
-import type { LicenseFlags } from './types';
+import type { LicenseFlags, StacItem } from './types';
 
 export interface DownloadRequestInfo {
   datasetId: string;
@@ -29,6 +31,24 @@ export function downloadRequestFor(layer: MapLayer): DownloadRequestInfo | null 
 
 export function canDownloadLayer(layer: MapLayer): boolean {
   return downloadRequestFor(layer) !== null;
+}
+
+// The same request, built directly from a selection of quicklooks instead of
+// a pinned, already-full-resolution layer (V-4: "download a selected
+// quicklook" — the original data over the existing crop route, not the
+// preview image). Needs no prior "View full resolution": the crop route
+// reads the source's own pixels regardless of what the browser has fetched
+// so far, so the asset is the dataset's default visualisation asset, the
+// same one `quicklookPlan`'s tile fallback and `enterFocus` use.
+export function downloadRequestForSelection(
+  dataset: DatasetOption | undefined,
+  items: StacItem[],
+  aoi: GeoJSON.Geometry | null,
+): DownloadRequestInfo | null {
+  if (!aoi || !dataset || !dataset.viewable || items.length === 0) return null;
+  const asset = defaultRenderOf(dataset.collection)?.assets[0];
+  if (!asset) return null;
+  return { datasetId: dataset.id, items: items.map((it) => it.id), assets: [asset], aoi };
 }
 
 // `{year}` is the only placeholder the registry's attribution texts use

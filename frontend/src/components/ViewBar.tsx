@@ -1,7 +1,9 @@
 // The "confirm" step of "click, select, confirm" (ENTSCHEIDUNGEN §2) for
 // switching from quicklook browsing into full-resolution viewing (M2-07b).
 // It replaces the prototype's DownloadBar for this step — an actual file
-// download is M2-06/M2-07d, not this.
+// download is M2-06/M2-07d, plus (V-4) a direct download of the selection's
+// original data over the existing crop route, without first viewing it at
+// full resolution.
 
 import { useAppStore } from '../store';
 
@@ -11,6 +13,7 @@ export default function ViewBar() {
   const enterFocus = useAppStore((s) => s.enterFocus);
   const clearSelection = useAppStore((s) => s.clearSelection);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
+  const openDownloadForSelection = useAppStore((s) => s.openDownloadForSelection);
 
   if (selectedIds.length === 0) return null;
 
@@ -39,6 +42,14 @@ export default function ViewBar() {
         onClick={() => addCurrentToLayers()}
       >
         ＋ Add to layers
+      </button>
+      <button
+        type="button"
+        className="ghost-btn"
+        title="Download the original data for the selected scenes over the AOI crop, not the preview image"
+        onClick={() => openDownloadForSelection()}
+      >
+        ⇩ Download
       </button>
       <button type="button" className="ghost-btn" disabled={focusLoading} onClick={() => clearSelection()}>
         Clear
