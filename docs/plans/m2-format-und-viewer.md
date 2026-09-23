@@ -579,6 +579,10 @@ kleiner und unregelmäßig ist als die Kachel.
 2. Der Layer-Manager saß standardmäßig fest bei `left: 420px` (auf die Breite des Suchmenüs abgestimmt). Jetzt `left: 16px`, wie das Suchmenü selbst — bleibt frei verschiebbar, das ist nur der Startpunkt.
 3. Abgeschnittene Szenennamen: Der Layer-Namensknopf im Layer-Manager trug als `title` nur einen festen Bedienhinweis, nie den (oft abgeschnittenen) Namen selbst — jetzt beides. Die Gruppen-Überschrift in der Trefferliste (kann bei langen Datatake-IDs ebenfalls abschneiden) hat jetzt denselben Hover-Titel; die einzelne Szenen-ID hatte ihn schon.
 
+**Nachbesserungen, Runde 4 (23.09.2026, Otto per Screenshot), Kürzel „V-8":** zwei Befunde, einer davon eine Korrektur von Runde 3 Punkt 2.
+1. Die Datumsfelder liefen trotz Runde-2-Korrektur immer noch über den Panelrand hinaus, das Kalendersymbol des rechten Felds wurde am Rand abgeschnitten (Screenshot). Ursache: ein bloßes `1fr` in einem CSS-Grid trägt ein implizites `min-width: auto` und schrumpft nie unter die Content-Mindestbreite — die durch das reservierte Icon-Padding des Datumsfelds größer war als der tatsächlich verfügbare Platz, also lief die Zeile über. Behoben mit `minmax(0, 1fr)` für die beiden Datumsspalten plus `min-width: 0` auf Feld und Input.
+2. Der Layer-Manager sollte, wenn die Steuerungstafel links offen ist, rechts daneben ausweichen (nicht darunter liegen) und beim Einklappen der Tafel wieder an den linken Rand zurückwandern — Runde 3 Punkt 2 hatte ihn nur pauschal auf `left: 16px` fest gesetzt, ohne auf `panelCollapsed` zu reagieren. Jetzt `overlay layermgr` in `App.tsx` mit einer `controls-open`-Klasse aus demselben `panelCollapsed`, den auch die Steuerungstafel selbst benutzt; `left: 420px` (deckt Suchmenübreite plus Toggle-Pfeil ab) bei offener Tafel, sonst `left: 16px`, mit Übergang.
+
 ---
 
 ## 5. Abnahme von M2
