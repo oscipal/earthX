@@ -77,16 +77,16 @@ export default function App() {
           title={projection === 'globe' ? 'Switch to the Mercator map' : 'Switch to the globe'}
           aria-pressed={projection === 'globe'}
         >
-          {projection === 'globe' ? '🌐 Globe' : '🗺 Mercator'}
+          {projection === 'globe' ? '🗺 Mercator' : '🌐 Globe'}
         </button>
         <button
           type="button"
           className="panel zoom-btn"
           onClick={() => toggleTheme()}
-          title={theme === 'tech' ? 'Dark theme — click to switch to light' : 'Light theme — click to switch to dark'}
+          title={theme === 'tech' ? 'Switch to the light theme' : 'Switch to the dark theme'}
           aria-pressed={theme === 'normal'}
         >
-          {theme === 'tech' ? '☾ Dark' : '☀ Light'}
+          {theme === 'tech' ? '☀ Light' : '☾ Dark'}
         </button>
       </div>
 

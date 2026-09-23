@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 //
 // V-2 (docs/plans/m2-format-und-viewer.md), five findings from Otto's review:
-// 1. the theme button must label the current state, not the switch's effect;
+// 1. the theme/projection buttons label the switch's *target* (what clicking
+//    gets you), e.g. "Light" while the theme is dark — confirmed with Otto
+//    2026-09-23 after an initial state-first reading of the same wording;
 // 2. icons: a globe for the globe, a map for the flat view (renamed
 //    "Mercator"), three horizontal bars for "Layers";
 // 3. "Zoom to selection" is disabled with neither an AOI nor pinned layers;
@@ -71,26 +73,28 @@ describe('top-right map controls', () => {
     vi.unstubAllGlobals();
   });
 
-  it('labels the theme button by the active theme, not by the switch target (point 1)', () => {
+  it('labels the theme button by the switch target: "Light" while dark, "Dark" while light (point 1)', () => {
     const view = mount();
-    expect(btn(view, 'Dark')?.textContent).toContain('☾');
-
-    act(() => {
-      btn(view, 'Dark')!.click();
-    });
     expect(btn(view, 'Light')?.textContent).toContain('☀');
     expect(btn(view, 'Dark')).toBeNull();
-  });
-
-  it('uses a globe icon for the globe and a map icon for the (renamed) Mercator view (point 2)', () => {
-    const view = mount();
-    expect(btn(view, 'Mercator')?.textContent).toMatch(/🗺/u);
-    expect(btn(view, 'Flat')).toBeNull();
 
     act(() => {
-      btn(view, 'Mercator')!.click();
+      btn(view, 'Light')!.click();
     });
+    expect(btn(view, 'Dark')?.textContent).toContain('☾');
+    expect(btn(view, 'Light')).toBeNull();
+  });
+
+  it('labels the projection button by the switch target: "Globe" while flat, "Mercator" while globe (point 2)', () => {
+    const view = mount();
     expect(btn(view, 'Globe')?.textContent).toMatch(/🌐/u);
+    expect(btn(view, 'Flat')).toBeNull();
+    expect(btn(view, 'Mercator')).toBeNull();
+
+    act(() => {
+      btn(view, 'Globe')!.click();
+    });
+    expect(btn(view, 'Mercator')?.textContent).toMatch(/🗺/u);
   });
 
   it('uses three horizontal bars for "Layers" (point 2)', () => {
