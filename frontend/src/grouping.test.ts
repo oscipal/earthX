@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGroups, groupKey, MissingProperty } from './grouping';
+import { buildGroups, groupKey, itemsForMap, MissingProperty } from './grouping';
 import type { StacItem } from './types';
 
 function item(properties: Record<string, unknown>): StacItem {
   return { id: 'an-item', properties, assets: {} };
+}
+
+function taggedItem(id: string, datetime: string): StacItem {
+  return { id, properties: { datetime }, assets: {} };
 }
 
 const SENTINEL_2_GROUP_BY = ['datetime', 'grid:code'];
@@ -107,5 +111,45 @@ describe('buildGroups', () => {
     const scene = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS' });
     const [group] = buildGroups([scene], SENTINEL_2_GROUP_BY);
     expect(group.label).toBe('2026-07-24 · MGRS-32TMS');
+  });
+});
+
+// V-3, finding 2: a selected quicklook must not disappear from the map when
+// its time step is no longer the one expanded in ResultsPanel's accordion
+// (`activeGroupIndex` switches away from it).
+describe('itemsForMap', () => {
+  const a1 = taggedItem('a1', '2026-07-25T10:00:00Z');
+  const a2 = taggedItem('a2', '2026-07-25T11:00:00Z');
+  const b1 = taggedItem('b1', '2026-07-24T10:00:00Z');
+  const b2 = taggedItem('b2', '2026-07-24T12:00:00Z');
+  // newest first: group 0 = 2026-07-25 (a1, a2), group 1 = 2026-07-24 (b1, b2)
+  const groups = buildGroups([a1, a2, b1, b2], ['datetime']);
+
+  it('is just the active group when nothing is selected', () => {
+    expect(itemsForMap(groups, 0, [])).toEqual(groups[0].items);
+  });
+
+  it('keeps a selected item of a collapsed group, on top of the active group', () => {
+    const ids = itemsForMap(groups, 0, ['b1']).map((it) => it.id);
+    expect(ids.sort()).toEqual(['a1', 'a2', 'b1']);
+  });
+
+  it('leaves a non-selected item of the collapsed group off the map', () => {
+    const ids = itemsForMap(groups, 0, ['b1']).map((it) => it.id);
+    expect(ids).not.toContain('b2');
+  });
+
+  it('does not duplicate an item that is both in the active group and selected', () => {
+    const ids = itemsForMap(groups, 0, ['a1']).map((it) => it.id);
+    expect(ids).toEqual(['a1', 'a2']);
+  });
+
+  it('picks up a selection once its group becomes active, without carrying the old one along by accident', () => {
+    const ids = itemsForMap(groups, 1, ['b1']).map((it) => it.id).sort();
+    expect(ids).toEqual(['b1', 'b2']);
+  });
+
+  it('is empty for an out-of-range active index and no selection', () => {
+    expect(itemsForMap(groups, 99, [])).toEqual([]);
   });
 });
