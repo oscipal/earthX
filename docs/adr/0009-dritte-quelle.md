@@ -1,7 +1,13 @@
 # ADR 0009 — Dritte Quelle: erste Nicht-STAC-Quelle mit materialisierten Items
 
-- **Status:** **Entwurf**, wartet auf Otto (Fragen in §9). Nichts davon ist
-  entschieden; die Empfehlung in §7 ist ein Vorschlag.
+- **Status:** **Angenommen** von Otto am 2026-09-23. Die sechs Fragen aus §9
+  sind dort beantwortet: **F1** Copernicus DEM GLO-30 direkt aus dem Bucket;
+  **F2** dritter Datensatz und zugleich Nicht-STAC-Quelle; **F3** Items in
+  pgstac, erzeugt von einem Einmal-Befehl in `discovery`; **F4** entfällt, die
+  Lizenz des DEM ist eingestuft (`adr/0003` §11.1); **F5** Coverage aus den
+  Kachel-Umrissen, als Fläche, `completeness = complete` (Lesart in §6);
+  **F6** Zenodo für M5 vorgemerkt, nur als Discovery- bzw. Metadatenquelle.
+  §8 gibt den entschiedenen Stand wieder; §10 nennt, was M3-11 noch klären muss.
 - **Datum:** 2026-09-23
 - **Aufgabe:** M3-01 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4.
 - **Autonomiestufe:** C — nur gemessen, gelesen und berichtet. Kein Produktivcode
@@ -11,7 +17,7 @@
   `adr/0003` §10, §11.1 (Copernicus DEM); `adr/0004` §5 (Coverage-Wege,
   Einmal-Produkte); `adr/0005` Regel I; `adr/0007` §3.10, §4.2 (ARCO-ERA5,
   Kandidatenfeld); Plan M3 P1, P2, P4; Entscheidungslog vom 23.09.2026.
-- **Betroffen (erst nach Annahme):** Zuschnitt von M3-11 in Fassung 2 des
+- **Betroffen:** Zuschnitt von M3-11 in Fassung 2 des
   M3-Plans; `catalog/registry.py` (`SourceInfo`, `CoverageInfo`);
   `api/federating_client.py`, `api/tiler.py` (Item-Quelle); M3-14.
 
@@ -23,7 +29,7 @@ Gemessen in einer Cloud-Sitzung am 23.09.2026, rund 17:30–18:30 UTC.
 Belegstufen wie in `adr/0004` und `adr/0007`:
 
 - **M** — in dieser Sitzung selbst gemessen; Befehl bzw. Adresse im Text oder im
-  Messanhang §11.
+  Messanhang §12.
 - **P** — am Primärdokument gelesen (Lizenzseite, README, Konfigurationsdatei,
   Record-Metadaten, Quelltext im Repo).
 - **S** — Suchtreffer mit Link, Primärdokument nicht gelesen.
@@ -324,6 +330,9 @@ Search `cop-dem-glo-30`. Daraus folgen zwei ehrliche Lesarten:
   und die Lizenz-Angabe der Quelle weicht vom geprüften Dokument ab. Der Beweis
   „Nicht-STAC“ fehlte dann in M3 ganz.
 
+**Entschieden (Otto, 23.09.2026, F2):** die erste Lesart — DEM aus dem Bucket
+als dritter Datensatz und zugleich Nicht-STAC-Quelle.
+
 ## 6. Coverage je Kandidat (`adr/0004`)
 
 `adr/0004` §5 kennt drei Wege: Upstream-Aggregation, eigenes SQL über
@@ -338,6 +347,15 @@ dazu für Einmal-Produkte die Ausdehnung aus der Collection
   **Vereinigung der Item-Footprints**. Das ist technisch `local-sql` über eigene
   Items, fachlich aber „Ausdehnung allein“ nach ENTSCHEIDUNGEN §2 — eine Frage
   der Auslegung an Otto (§9 F5).
+
+  > **Entschieden (Otto, 23.09.2026, F5): Lesart von ENTSCHEIDUNGEN §2.**
+  > „Ausdehnung“ ist bei einem Einmal-Produkt die **Vereinigung der
+  > Kachel-Umrisse**, nicht die `bbox` der Collection. Dargestellt wird sie als
+  > **Fläche, nicht als Dichte-Heatmap**, weil jede Zelle genau eine Abdeckung
+  > hätte. `completeness` ist `complete`: Die Plattform besitzt alle Items, es
+  > gibt nichts, das gekappt oder nur als Stichprobe gezählt wäre. Die Lesart
+  > gilt für das DEM; für weitere Einmal-Produkte ist sie die Vorgabe, bis Otto
+  > anders entscheidet.
 - **Zenodo Z1:** 21 globale Jahreskarten. Räumlich identisch, zeitlich ein
   Histogramm mit 21 Balken. Ausdehnung plus Zeit-Histogramm aus eigenen Items.
 - **Hansen:** Einmal-Produkt je Fassung; Ausdehnung aus den tatsächlich
@@ -411,7 +429,11 @@ braucht aber eine neue Angabe, ob Items föderiert oder materialisiert sind
 (§3.5, `SourceInfo.adapter` trägt heute beides). Neue Felder ohne Vorgabewert
 (B10); die Form schlägt M3-11 im Plan-Schritt vor.
 
-## 8. Empfehlung
+## 8. Empfehlung und Entscheidung
+
+Otto ist der Empfehlung am 23.09.2026 in allen Punkten gefolgt (§9); Punkt 2
+ist dabei auf M5 und auf Metadaten eingegrenzt, Punkt 5 um die Darstellung als
+Fläche ergänzt. Die Liste gibt den entschiedenen Stand wieder.
 
 1. **Quelle: Copernicus DEM GLO-30 direkt aus dem Bucket**, zugleich dritter
    Datensatz und erste Nicht-STAC-Quelle (P2: ja). Er ist der einzige Kandidat,
@@ -420,17 +442,20 @@ braucht aber eine neue Angabe, ob Items föderiert oder materialisiert sind
    gäbe es auch als STAC.
 2. **Zenodo nicht als Kachelquelle in M3.** Es ist die strukturell
    interessanteste Quelle, aber die Ratengrenze (133/min, 8000/h je IP) trägt
-   keinen Viewer. Zenodo gehört zu Discovery (Record-Metadaten, OAI-PMH, M5) oder
-   zu einer Zeit mit Kachel-Cache vor der Quelle.
+   keinen Viewer. **Entschieden:** für M5 vorgemerkt, **nur als Discovery- bzw.
+   Metadatenquelle** (Record-Metadaten, OAI-PMH), nicht als Quelle für Kacheln.
 3. **Hansen und ARCO-ERA5 nicht in M3**, beide wegen K4. ARCO-ERA5 ist ein
    Kandidat für die virtuellen Zarr-Stores bzw. Datenwürfel (Inkrement 7), Hansen
    für einen späteren Weg mit COG-Umwandlung — beides eigene Entscheidungen.
 4. **Materialisierung:** Items in **pgstac**, erzeugt von einem Einmal-Befehl in
    **`discovery`** (Adapter erzeugt, `catalog` lädt per `upsert`).
-5. **Coverage DEM:** Vereinigung der Item-Footprints über eigenes SQL, nicht die
-   globale `bbox` (§6).
+5. **Coverage DEM:** Vereinigung der Kachel-Umrisse über eigenes SQL, nicht die
+   globale `bbox`; als Fläche dargestellt, nicht als Dichte;
+   `completeness = complete` (§6).
+6. **Lizenz DEM:** wie eingestuft in `adr/0003` §11.1 — B11-Stufe *Processing*,
+   Attribution mit vorgeschriebenem Wortlaut. Nichts neu einzustufen.
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 2026-09-23
 
 **F1 — Quelle.**
 1. Copernicus DEM direkt aus dem Bucket (Empfehlung)
@@ -438,15 +463,22 @@ braucht aber eine neue Angabe, ob Items föderiert oder materialisiert sind
 3. Hansen GFC, mit Verstoß gegen K4 (Abnahme anpassen)
 4. ARCO-ERA5, mit Umbau von `readers` (Abnahme anpassen)
 
+**Antwort F1: (1)** Copernicus DEM GLO-30 direkt aus dem Bucket.
+
 **F2 — Rolle von DEM (P2).**
 1. DEM ist dritter Datensatz **und** Nicht-STAC-Quelle, aus dem Bucket (Empfehlung)
 2. DEM wird vierter Datensatz, föderiert über Earth Search; die Nicht-STAC-Quelle
    ist dann Zenodo oder Hansen
 
+**Antwort F2: (1)** dritter Datensatz und zugleich Nicht-STAC-Quelle.
+
 **F3 — Materialisierung (P4).**
 1. pgstac, Einmal-Befehl in `discovery` (Empfehlung)
 2. pgstac, Loader in `catalog` über eine Item-Datei
 3. stac-geoparquet
+
+**Antwort F3: (1)** Items in pgstac, erzeugt von einem Einmal-Befehl in
+`discovery`.
 
 **F4 — Lizenz (B11, nur falls Zenodo Z1 gewählt oder vorgemerkt wird).**
 CC-BY-SA-4.0 verlangt, Bearbeitungen unter derselben Lizenz weiterzugeben. Ist
@@ -458,16 +490,130 @@ das mit Kacheln und Zuschnitt-Download der Plattform vereinbar?
 Für DEM ist nichts neu einzustufen (angenommen am 18.09.2026). Offen bleibt nur
 der abweichende Lizenz-Link bei Earth Search (§3.1), der bei Weg F2.2 zählt.
 
+**Antwort F4: entfällt**, weil Zenodo nicht gewählt ist. Die Lizenz des DEM
+ist schon eingestuft: `adr/0003` §11.1, B11-Stufe *Processing*, Attribution
+mit vorgeschriebenem Wortlaut.
+
 **F5 — Coverage des DEM.**
 1. Vereinigung der Item-Footprints über eigenes SQL (Empfehlung)
 2. Ausdehnung aus der Collection-`bbox`, mit dem Hinweis, dass Lücken nicht
    sichtbar sind
 
+**Antwort F5: (1)** aus den Kachel-Umrissen, mit der Lesart von ENTSCHEIDUNGEN
+§2 aus §6: „Ausdehnung“ ist bei einem Einmal-Produkt die Vereinigung der
+Kachel-Umrisse; dargestellt als Fläche, nicht als Dichte-Heatmap;
+`completeness = complete`.
+
 **F6 — Zenodo vormerken?**
 1. Als Kandidat für M5 (Discovery über Record-Metadaten) vormerken (Empfehlung)
 2. Nicht weiter verfolgen
 
-## 10. Beobachtungen für M3-14 (noch kein Interface-Vorschlag)
+**Antwort F6: (1)** ja, aber nur als Discovery- bzw. Metadatenquelle, nicht als
+Quelle für Kacheln (Ratengrenze 133 Anfragen pro Minute je IP).
+
+## 10. Offen für M3-11
+
+Drei Fragen hat Otto mit der Annahme gestellt. Der Spike beantwortet sie so
+weit, wie er gemessen hat; entschieden werden sie im Plan-Schritt von M3-11.
+Nachgemessen am 23.09.2026 mit sechs weiteren Anfragen (eine Metadaten-XML,
+zwei Range-Reads, die Kachelliste von GLO-90).
+
+### 10.1 Welche Zeitangabe tragen die Items?
+
+**Was pgstac verlangt.** pgstac 0.9.12 legt für jedes Item einen Zeitraum ab;
+`datetime` und `end_datetime` sind in der Item-Tabelle `NOT NULL`
+**[P]** ([`003a_items.sql` zu v0.9.12](https://github.com/stac-utils/pgstac/blob/v0.9.12/src/pgstac/sql/003a_items.sql)).
+Die Funktion `pgstac.stac_daterange` nimmt `start_datetime`/`end_datetime`,
+wenn beide gesetzt sind, sonst `datetime` **[P]** (Funktionstext aus der
+lokal migrierten pgstac-Datenbank der Sitzung gelesen). STAC erlaubt
+`datetime: null`, dann sind `start_datetime` und `end_datetime` Pflicht **[P]**
+([Common Metadata](https://github.com/radiantearth/stac-spec/blob/master/commons/common-metadata.md)).
+Ein Item ganz ohne Zeitangabe geht also nicht.
+
+**Was die Quelle hergibt.** Der Kachelname enthält keine Zeit **[P]**
+(`readme.html`). Die Metadaten-XML je Kachel (44 kB) enthält einen
+Aufnahmezeitraum: für `N00_00_E006_00` `tsxx_startTime` 2011-07-30,
+`tsxx_stopTime` 2013-09-20; dazu Erzeugung der Kachel 2015-02-28, Ausgabe
+2020-01-10, Metadaten-Erstellung 2020-11-11 **[M]**. Gemessen ist das an
+**einer** Kachel; wie stark der Zeitraum zwischen Kacheln schwankt, ist
+**unbelegt**. Earth Search setzt für alle 26 450 Items `datetime`
+2021-04-22 (§3.1); woher dieses Datum stammt, ist **unbelegt**. Einen für das
+ganze Produkt belegten Aufnahmezeitraum hat der Spike nicht gefunden
+(**unbelegt**); die Lizenz nennt nur Urheberjahre (© DLR 2010–2014, © Airbus
+2014–2018, `adr/0003` §11.1) **[P]**, keinen Aufnahmezeitraum.
+
+**Optionen für den Plan-Schritt** **[A]**:
+
+1. `datetime: null` und `start_/end_datetime` je Kachel aus ihrer XML. Genau,
+   kostet aber 26 450 zusätzliche Anfragen (rund 1,2 GB) bei jedem Laden.
+2. `datetime: null` und ein Zeitraum für alle Kacheln. Braucht einen belegten
+   Produktzeitraum, den es noch nicht gibt.
+3. Ein fester `datetime` für alle Kacheln, wie bei Earth Search. Einfach, aber
+   ohne belegte Bedeutung.
+
+**Folge für den Viewer** **[A]**: Jede Wahl entscheidet, ob das DEM bei einer
+Suche mit Zeitraum überhaupt erscheint — ein Zeitraum 2011–2013 fiele bei einer
+Suche nach 2024 heraus. Außerdem setzt `earthx:viewer.group_by` heute ein
+`datetime` voraus (architekturplan 5.1); das berührt M3-12.
+
+### 10.2 Welcher Host kommt in `asset_hosts`?
+
+**Gemessen:** Beide Namen desselben Buckets antworten auf einen Range-Read mit
+`206` und ohne Weiterleitung — der globale
+`copernicus-dem-30m.s3.amazonaws.com` (0,67 s) und der regionale
+`copernicus-dem-30m.s3.eu-central-1.amazonaws.com` (0,49 s) **[M]**. Das sind
+Einzelwerte, kein Vergleich der Latenz. Der globale Name antwortet mit
+`x-amz-bucket-region: eu-central-1` (§3.1) **[M]**.
+
+**Was dafür spricht:** Der globale Name ist schon in der Allowlist der
+Cloud-Umgebung (M3-Plan §1.3) und in `adr/0003` §10.1 gemessen; der regionale
+ist dort nicht eingetragen, antwortete in dieser Sitzung aber auch **[M]**. Da
+die Items von der Plattform selbst erzeugt werden, bestimmt der Adapter den
+Host in der `href`; es genügt **ein** Name, und er muss mit dem in
+`asset_hosts` übereinstimmen **[A]**. Ob AWS den globalen Namen für Buckets
+außerhalb von `us-east-1` dauerhaft ohne Weiterleitung bedient, ist
+**unbelegt** — gemessen ist nur „heute ohne“.
+
+**Grenze:** `gateway` lässt einen Host und seine echten Subdomains zu
+(`gateway/policy.py`, `allows_host`) **[P]**. `s3.amazonaws.com` oder
+`amazonaws.com` darf deshalb nie in `asset_hosts` stehen — das gäbe jeden
+Bucket frei **[A]**.
+
+**Vorschlag für den Plan-Schritt:** der globale Name
+`copernicus-dem-30m.s3.amazonaws.com`.
+
+### 10.3 Welche Länder fehlen, und wo gehört das hin?
+
+**Gemessen:** Abgleich der Kachellisten von GLO-30 (26 450) und GLO-90
+(`copernicus-dem-90m.s3.amazonaws.com/tileList.txt`, 26 475, ebenfalls
+`Last-Modified` 2022-05-09) nach Kachelposition: **25 1°-Kacheln fehlen in
+GLO-30**, alle zwischen 38° und 42° N sowie 43° und 51° O; umgekehrt fehlt
+keine **[M]**. Diese Lage trifft Armenien und Aserbaidschan **[A]** — der
+Kachelname nennt kein Land, einige Randkacheln dürften auch Nachbarländer
+schneiden (**unbelegt**). `readme.html` sagt nur „specific countries“ **[P]**.
+Suchtreffer nennen Armenien und Aserbaidschan **[S]**
+([ASF HyP3](https://hyp3-docs.asf.alaska.edu/dems/)), einer spricht von 40
+Kacheln **[S]** ([WindPRO-Wiki](https://help.emd.dk/mediawiki/index.php/Copernicus_DEM))
+— gemessen sind im AWS-Bucket 25. Laut OpenTopography sind Armenien,
+Aserbaidschan und Moldau seit einer Fassung vom Juli 2024 freigegeben **[S]**
+([OpenTopography](https://opentopography.org/news/updated-copernicus-30m-DEM-available));
+der AWS-Bucket ist auf dem Stand vom 09.05.2022 **[M]** und enthält diese
+Freigabe nicht. Um Moldau fehlt im Bucket keine Kachel **[M]**.
+
+**Wohin damit** **[A]**:
+
+- **Coverage:** Die Lücke folgt ohne Zusatzdaten aus der Entscheidung zu F5 —
+  die Vereinigung der Kachel-Umrisse zeigt sie, ebenso die Meere ohne Kacheln.
+  Kein eigenes Feld nötig.
+- **Beschreibung der Collection:** ein Satz, dass es die öffentliche Fassung
+  GLO-30 im Stand des AWS-Buckets ist und Kacheln über dem Südkaukasus
+  (Armenien, Aserbaidschan) fehlen. Die Länder dort zu nennen ist eine
+  Ableitung aus Koordinaten und Suchtreffern; der Plan-Schritt entscheidet, ob
+  die Beschreibung sie nennt oder nur die Lage.
+- **Kein neues Registry-Feld** für ausgeschlossene Länder: Es gäbe nur diesen
+  einen Anwendungsfall, und die Coverage zeigt die Lücke ohnehin.
+
+## 11. Beobachtungen für M3-14 (noch kein Interface-Vorschlag)
 
 - **Zwei Fragen in einem Feld.** Welcher Adapter eine Quelle spricht und ob ihre
   Items föderiert oder materialisiert sind, trennt der Code heute nicht
@@ -494,7 +640,7 @@ der abweichende Lizenz-Link bei Earth Search (§3.1), der bei Weg F2.2 zählt.
   neu (Präfix bzw. Record). Eine Collection braucht dann eine Aussage, welche
   Fassung sie meint.
 
-## 11. Messanhang
+## 12. Messanhang
 
 Befehle gekürzt; `$CA` ist das CA-Bündel der Sitzung.
 
@@ -513,3 +659,7 @@ Befehle gekürzt; `$CA` ist das CA-Bündel der Sitzung.
 | Zenodo-Datei | Range auf `/records/<id>/files/<name>` | 206; `x-ratelimit-limit: 133` |
 | ARCO-ERA5 | `GET …zarr-v3/zarr.json`, `/.zmetadata`; Chunks `longitude/0`, `time/0`, `2m_temperature/700000.0.0` | 404; 200; Zarr v2, Werte §3.4 |
 | CORS | `GET` mit `Origin`, `OPTIONS`-Preflight mit `Range` | §3.1–§3.4 |
+| DEM-Zeitangaben | `GET …N00_00_E006_00_DEM/Copernicus_DSM_10_N00_00_E006_00.xml` | Aufnahme 2011-07-30 bis 2013-09-20 (§10.1) |
+| pgstac-Zeitregel | `pg_get_functiondef` für `pgstac.stac_daterange`, lokale Datenbank | `start_/end_datetime` vor `datetime` (§10.1) |
+| DEM-Endpunkte | Range `bytes=0-1023` über den globalen und den regionalen Namen | je 206, keine Weiterleitung (§10.2) |
+| Fehlende Kacheln | `GET copernicus-dem-90m…/tileList.txt`, Abgleich mit GLO-30 nach Position | 25 fehlen in GLO-30 (§10.3) |
