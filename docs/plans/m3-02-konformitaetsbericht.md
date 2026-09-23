@@ -364,7 +364,7 @@ Adapter (Upstream-Fehler, falsche Form, Cache-Ausfall). Fehlend:
 
 | Aufgabe | Funde |
 |---|---|
-| neue kleine Aufgabe vor M3-08 (Frage 1) | K-01, K-02, K-24, K-25 |
+| M3-16 (neu, Antwort 1) | K-01, K-02, K-24, K-25 |
 | M3-04 | K-15 |
 | M3-07a | K-10 (Rate), K-13, K-20 |
 | M3-10 | F-08, F-09, F-10 |
@@ -378,7 +378,7 @@ Adapter (Upstream-Fehler, falsche Form, Cache-Ausfall). Fehlend:
 
 ---
 
-## 8. Fragen an Otto
+## 8. Fragen an Otto und Antworten
 
 1. **AOI im Access-Log (K-01, K-02).** Wie beheben?
    1. Eigene kleine Aufgabe der Stufe A **vor** M3-08: Access-Log von uvicorn
@@ -388,19 +388,34 @@ Adapter (Upstream-Fehler, falsche Form, Cache-Ausfall). Fehlend:
    2. In M3-08 mitnehmen, weil M3-08 ohnehin „keine Koordinaten im Log“
       testet.
    3. Nur `--no-access-log` in `docker-compose.yml`; Logging-Aufbau später.
+
+   **Antwort (Otto, 23.09.2026): Option 1.** Neue Aufgabe M3-16 (Stufe A),
+   läuft sofort; M3-08 wird erst nach M3-16 gemergt.
 2. **Lizenzstufe an der Kachelroute (K-03).** Wann schließen?
    1. In M3-11, bevor der dritte Datensatz eingetragen wird; dazu eine
       Registry-Prüfung, dass `catalog`-Einträge kein `viewer` tragen.
       **(Empfehlung)**
    2. Sofort als eigene Aufgabe der Stufe A.
    3. Erst, wenn ein Datensatz der Stufe `catalog` kommt.
+
+   **Antwort (Otto, 23.09.2026): Option 1,** als Abnahmekriterium von M3-11.
+   Kacheln verlangen mindestens B11-Stufe „Anzeige“, der Download weiterhin
+   „Processing“.
 3. **Zugriffsauflösung in `api/tiler.py` (K-04).** Soll M3-14 den Ort der
    Zugriffsauflösung ausdrücklich als Frage aufnehmen?
    1. Ja, als eigene Option in `adr/0011`; Umbau frühestens mit M4.
       **(Empfehlung)**
    2. Nein, der Ort ist mit Antwort 5 vom 20.09.2026 entschieden.
+
+   **Antwort (Otto, 23.09.2026): Option 1, geschärft.** `adr/0011` legt den
+   Zielort fest; der Umbau ist der erste Schritt von M4, bevor `processing`
+   die Auflösung braucht.
 4. **Datums-Fallback im Frontend (K-22).** Architekturplan 5.2 sieht ihn im
    Katalog.
    1. Plan in M3-15 an die Entscheidung vom 20.09.2026 anpassen, Fallback
       bleibt im Frontend. **(Empfehlung)**
    2. Als Punkt „Nach M3 vorgemerkt“ für den Katalog aufnehmen.
+
+   **Antwort (Otto, 23.09.2026): Option 1.** Der Fallback bleibt im Frontend;
+   Neubewertung mit der Verfügbarkeits-Zeitleiste in M5. Die Anpassung von
+   `architekturplan.md` 5.2 macht M3-15.
