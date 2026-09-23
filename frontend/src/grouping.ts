@@ -84,3 +84,22 @@ export function buildGroups(items: StacItem[], groupBy: readonly string[]): Time
 export function groupIndexOfItem(groups: TimeStepGroup[], itemId: string): number {
   return groups.findIndex((g) => g.items.some((it) => it.id === itemId));
 }
+
+// What the map should show: the active (expanded-in-the-list) group's items,
+// plus any selected item that belongs to a different group. `ResultsPanel`
+// only ever expands one group at a time (an accordion over
+// `activeGroupIndex`), and collapsing it — by switching to another group —
+// must only change what the list displays, never make a selected quicklook
+// vanish from the map (V-3). An unselected item of a collapsed group still
+// drops off, same as before.
+export function itemsForMap(
+  groups: TimeStepGroup[],
+  activeGroupIndex: number,
+  selectedIds: readonly string[],
+): StacItem[] {
+  const active = groups[activeGroupIndex]?.items ?? [];
+  if (selectedIds.length === 0) return active;
+  const activeIds = new Set(active.map((it) => it.id));
+  const pinned = groups.flatMap((g) => g.items).filter((it) => !activeIds.has(it.id) && selectedIds.includes(it.id));
+  return pinned.length ? [...active, ...pinned] : active;
+}

@@ -11,6 +11,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
 import { showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
+import { itemsForMap } from '../grouping';
 import type { CoverageDisplay } from '../mapLayers';
 import { ensureBaseLayers, setAoiData, setCoverageDisplay, syncLayers, syncMosaic } from '../mapLayers';
 import { baseMapStyle } from '../mapStyles';
@@ -141,7 +142,7 @@ export default function MapView() {
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       syncLayers(map, st.layers);
       syncMosaic(map, {
-        items: st.groups[st.activeGroupIndex]?.items ?? [],
+        items: itemsForMap(st.groups, st.activeGroupIndex, st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
         downloaded: st.downloaded,
         selectedIds: st.selectedIds,
@@ -231,7 +232,7 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       syncMosaic(map, {
-        items: groups[activeGroupIndex]?.items ?? [],
+        items: itemsForMap(groups, activeGroupIndex, selectedIds),
         dataset: datasets.find((d) => d.id === datasetId) ?? null,
         downloaded,
         selectedIds,
