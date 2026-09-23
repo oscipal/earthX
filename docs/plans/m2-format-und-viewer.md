@@ -561,6 +561,12 @@ kleiner und unregelmäßig ist als die Kachel.
 **Nicht anfassen:** Backend; die Registry (`earthx:viewer.group_by`, D19 bleibt unverändert); Kachel-Pfad und Mosaik-Verbot (D11).
 **Abnahme:** Vitest-Fälle für `displayGroupBy` (bevorzugt Datatake, Fallback bei fehlender Eigenschaft, leeres Ergebnis); Lint, Typprüfung und Vitest grün; im PR eine kurze Anleitung zum Ausprobieren der fünf Punkte.
 
+**Nachbesserungen (23.09.2026, Ottos Durchsicht des offenen PR):** vier weitere kleine Befunde, noch vor dem Merge in denselben PR eingearbeitet:
+1. Die ESRI-Attribution (Info-Knopf unten rechts) war im Dunkelmodus unlesbar: MapLibres `.maplibregl-compact` setzt `color: #000`/`background: #fff` in derselben Selektor-Spezifität wie unsere Regel und gewinnt je nach Reihenfolge — jetzt für `.maplibregl-ctrl-attrib` samt `.maplibregl-compact`/`.maplibregl-compact-show` explizit auf Weiß gesetzt.
+2. Der Kalender-Klick im Dunkelmodus ging ins Leere: `padding-right` verschiebt den unsichtbaren nativen `::-webkit-calendar-picker-indicator` nach innen, während unser gezeichnetes Symbol an einer festen Stelle sitzt — beide laufen auseinander. Ersetzt durch einen echten, transparenten Knopf über dem Symbol, der `input.showPicker()` aufruft (`ControlPanel.tsx::DateField`).
+3. Die Trefferliste war frei verschiebbar (`Draggable`) statt wie das Suchmenü fest an einer Seite und ein-/ausklappbar. Jetzt rechts angedockt (`overlay right results-dock`), mit demselben Auf-/Zuklapp-Muster wie `panel-dock` links, nur horizontal gespiegelt.
+4. Der Layer-Manager sprang beim Schließen und Wiederöffnen auf seine ursprüngliche Position zurück: `if (!open) return null` hat `Draggable` und damit seinen Verschiebe-Zustand jedes Mal komplett abgebaut. `Draggable` bleibt jetzt montiert und wird nur noch per CSS (`display: none`) versteckt.
+
 ---
 
 ## 5. Abnahme von M2
