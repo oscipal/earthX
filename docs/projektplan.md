@@ -2,7 +2,7 @@
 
 > **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
 
-Stand: 2026-09-18 · Version 1.1 (Entwurf zur Iteration; ergänzt um die Bug-Report-Pipeline, Abschnitt 6.1)
+Stand: 2026-09-23 · Version 1.2 (M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P18 nachgezogen; Widersprüche aus der M3-Vorbereitung aufgelöst)
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
 
@@ -231,7 +231,7 @@ Reihenfolge und Inhalt folgen den Architektur-Inkrementen (Architekturplan 15.1)
 | M6 | Mehrnutzerbetrieb in der Cloud | XL | 4 bis 6 Wochen |
 | M7 | Ausbau in Paketen | offen | laufend |
 
-Parallel ab M2 läuft ein **Viewer-Strang** (V1, V2) mit reinen Frontend-Aufgaben, die vom Kern unabhängig sind und sich gut für parallele Sitzungen eignen.
+Parallel ab M2 läuft ein **Viewer-Strang** (VP1, VP2) mit reinen Frontend-Aufgaben, die vom Kern unabhängig sind und sich gut für parallele Sitzungen eignen.
 
 ### M0 — Projekt-Setup
 
@@ -254,14 +254,15 @@ Parallel ab M2 läuft ein **Viewer-Strang** (V1, V2) mit reinen Frontend-Aufgabe
 | Deine Entscheidungen | ADR "Zustand im Prototyp": was ersetzt wird, was bleibt |
 | Modelle | Audit: `explorer` + Opus-Auswertung; Umsetzung: Sonnet |
 
-### M2 — Zweites Format und generalisierter Viewer (Inkrement 2)
+### M2 — Zweites Format und generalisierter Viewer (Inkrement 2) — **abgenommen**
 
 Der Aufgabenschnitt liegt in `docs/plans/m2-format-und-viewer.md` und ist
 maßgeblich; diese Tabelle ist nur die Kurzfassung. M2 zerfällt seit dem
 2026-09-20 (M2-Schnitt) in zwei Stränge: **M2a** trägt Sentinel-2 durchgehend
 durch Kachel-Pfad, Coverage-Heatmap, Zuschnitt-Download und Frontend; **M2b**
 bringt Zarr als zweites Format, mit offenem Kandidatenfeld (`adr/0007`, nicht
-mehr fest EOPF).
+mehr fest EOPF). Abgenommen mit M2-12 (PR #70, 2026-09-23); Belege je
+Kriterium in `docs/plans/m2-12-abnahme.md`.
 
 | | |
 |---|---|
@@ -274,14 +275,20 @@ mehr fest EOPF).
 
 ### M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion (Inkrement 3)
 
+Der Aufgabenschnitt liegt in `docs/plans/m3-dritte-quelle-und-interface.md`
+(M3-00 bis M3-15, Vorentscheidungen P1–P18) und ist maßgeblich; diese Tabelle
+ist nur die Kurzfassung.
+
 | | |
 |---|---|
 | Ziel | Adapter-Nahtstellen an einer strukturell anderen Quelle prüfen, dann das Interface bewusst ableiten |
-| Inhalt | Anbindung eines statischen Buckets (z. B. Hansen GFC) oder Zenodo mit materialisierten Items; anonymer Zugriffs-Check; Lizenzfeld mit SPDX und Flags; danach Interface-Reflexion als ADR |
-| Funktionen | eigene AOI hochladen (GeoJSON, KML, Shapefile); Ortssuche mit Umriss und Bounding Box; Health-Status je Quelle (einfach) |
+| Inhalt | Spike zur Quellenwahl (`adr/0009`); Anbindung der gewählten Quelle mit materialisierten Items; anonymer Zugriffs-Check; Lizenz des neuen Datensatzes erfassen (B11, immer Otto); danach Interface-Reflexion als ADR (`adr/0011`) |
+| Funktionen | eigene AOI hochladen (GeoJSON, KML, Shapefile) über das Backend; Ortssuche mit Umriss und Bounding Box; gemischte Suche über eigene und föderierte Collections; `intersects` und `ids` durchreichen; Vollauflösung zeigt nur den AOI-Zuschnitt; Datensatz-Filter in der Suchkachel |
 | Abnahme | Dritte Quelle ohne Änderung an `readers` und ohne Sonderfälle im Frontend angebunden; ADR zum Adapter-Interface von dir freigegeben |
-| Deine Entscheidungen | welche Quelle; ESA-only oder Breite (Empfehlung: Breite, siehe Projektübersicht); Freigabe des Interface-ADR |
-| Modelle | Interface-Reflexion ist die erste sinnvolle Fable-Aufgabe (mehrdeutig, bereichsübergreifend, folgenreich); sonst `opusplan` |
+| Deine Entscheidungen | welche Quelle (nach `adr/0009`); Materialisierung; Freigabe des Interface-ADR |
+| Modelle | Interface-Reflexion: Opus, Effort hoch; Fable nur, wenn du die Session selbst interaktiv führst; sonst `opusplan` |
+
+Health-Status je Quelle ist **nicht** Teil von M3, sondern kommt mit M5.
 
 ### M4 — Processing-Kern mit lokalem Runner (Inkrement 4)
 
@@ -335,11 +342,15 @@ Reihenfolge nach Nutzen und Abhängigkeit; jedes Paket ist ein eigener kleiner M
 
 ### Viewer-Strang (parallel ab M2)
 
+Die Pakete heißen **VP1** und **VP2** (Namenskollision mit den `V-n`-Aufgaben
+des Viewer-Strangs aufgelöst, M3-00). „V-n" bezeichnet einzelne Aufgaben des
+Viewer-Strangs (z. B. V-1, V-2 …), „VPn" ein ganzes Paket.
+
 | Paket | Inhalt |
 |---|---|
 | V-1 | Theme-Umschalter zwischen dunkler und heller HUD-Palette; die Basiskarte bleibt Esri World Imagery, **ohne** helle Basiskarte (D10, 2026-09-20) — die folgt erst, wenn Esri-Bedingungen und Alternativen geklärt sind |
-| V1 | Swipe-/Split-Vergleich mit synchronisierten Karten; "Layer auf Ansicht zuschneiden"; Pixel-Inspektor; Zeitreihe am Punkt mit CSV-Export |
-| V2 | Schlanker Kartenexport (PNG/SVG, Titel, Colorbar, Maßstab, Attribution, optional ohne Hintergrundkarte) + generiertes matplotlib-Snippet; Wolkenfilter; Feinschliff Bedienbarkeit |
+| VP1 | Swipe-/Split-Vergleich mit synchronisierten Karten; "Layer auf Ansicht zuschneiden"; Pixel-Inspektor; Zeitreihe am Punkt mit CSV-Export |
+| VP2 | Schlanker Kartenexport (PNG/SVG, Titel, Colorbar, Maßstab, Attribution, optional ohne Hintergrundkarte) + generiertes matplotlib-Snippet; Wolkenfilter; Feinschliff Bedienbarkeit |
 
 ---
 
@@ -348,7 +359,7 @@ Reihenfolge nach Nutzen und Abhängigkeit; jedes Paket ist ein eigener kleiner M
 | Funktion | Herkunft | Meilenstein |
 |---|---|---|
 | ROI, Zeitraum, Datums-Fallback, Quicklooks, Layer Manager Basis, Coverage Map | Sammlung | M2 |
-| AOI-Upload, Ortssuche, Lizenzfeld, Zugriffs-Check | Sammlung / Bewertung | M3 |
+| AOI-Upload über das Backend (inkl. Shapefile), Ortssuche, Lizenz des neuen Datensatzes, Zugriffs-Check, gemischte Suche, `intersects`/`ids`, Zuschnitt-Ansicht in der Vollauflösung, Datensatz-Filter | Sammlung / Bewertung | M3 |
 | Processing-Panel, Standard-Parameter, Parameter übernehmen, Metadaten je Schritt | Sammlung | M4 |
 | Kostenschätzung, Cache, Provenienz, Zitierexport, Permalinks | Prinzipien / Bewertung | M4 |
 | Lokaler Runner (Einmalbefehl) | Gespräch | M4 |
@@ -356,7 +367,7 @@ Reihenfolge nach Nutzen und Abhängigkeit; jedes Paket ist ein eigener kleiner M
 | AOI-zuerst-Suche, Zeitleiste, Eignungskarte, Wünsche/Fehlermeldungen, Health-Status | Vorschläge / Bewertung | M5 |
 | Login, Quotas, API, Python-Snippet, QGIS über Standards, Datacube, Mehrfach-Download | Sammlung | M6 |
 | Python-Client mit Notebook-Export, Download-Skript | Vorschläge | M6 |
-| Swipe-Vergleich, Pixel-Inspektor, Kartenexport, Wolkenfilter | Bewertung | V1, V2 |
+| Swipe-Vergleich, Pixel-Inspektor, Kartenexport, Wolkenfilter | Bewertung | VP1, VP2 |
 | Chatbot, Discovery-Agent, Modell-Registry, externe Engines, Client-Side Computing | Sammlung | M7 |
 | Komposit, Vorher/Nachher, Stapelverarbeitung, Qualitäts-Overlay, Trainingsdatensatz-Baukasten | Vorschläge | M7 |
 | Arbeitsbereiche, DOI für Rezepte, Benachrichtigungen, eigene Daten per URL, Anbieter-Statistik, Ähnlichkeitssuche | Vorschläge | M7 |
@@ -378,7 +389,7 @@ Grundsatz: deterministische Aufgaben in GitHub Actions, Urteilsaufgaben als Clau
 | Doku-Drift: weichen `docs/` und Code voneinander ab? Issue mit Liste | Routine (wöchentlich) | Haiku | M1 |
 | Bug-Report-Triage und Behebung (6.1) | Routine (pro Meldung) | Haiku → Sonnet, Review Opus | M0 |
 | Harvest-Vorschläge zu Review-PRs aufbereiten inkl. Lizenz-Vorschlag | Routine (nach Harvest-Lauf) | Sonnet | M5 |
-| Architektur-Konformitätsbericht: Abweichungen vom Architekturplan, technische Schulden | Routine (monatlich) | Opus | M3 |
+| Architektur-Konformitätsbericht: Abweichungen vom Architekturplan, technische Schulden | einmalig zu Beginn von M3 (Stufe C), keine Routine (P18) | Opus | M3 |
 
 Routinen bekommen nur das nötige Repo, minimale Netzwerkrechte und keine Secrets. Fable wird nie als Routinen-Modell gewählt (3.2).
 
@@ -490,11 +501,12 @@ Ein PR ist fertig, wenn:
 
 | Thema | Wann nötig | Empfehlung |
 |---|---|---|
-| Code-Lizenz für das öffentliche Repo | M0 | entschieden werden muss sie; ohne `LICENSE` ist der Code rechtlich nicht freigegeben |
-| Erster token-freier Datensatz | M0 | Entscheidungsvorlage aus M0 Schritt 6; Kandidat EOPF Sentinel Zarr Samples |
+| Code-Lizenz für das öffentliche Repo | M0 | **entschieden:** AGPL-3.0-or-later (`ENTSCHEIDUNGSLOG.md`, 2026-09-18) |
+| Erster token-freier Datensatz | M0 | **entschieden:** Sentinel-2 L2A COG über Earth Search v1 zuerst, EOPF Sentinel Zarr Samples als zweiter (`ENTSCHEIDUNGSLOG.md`, 2026-09-18; `adr/0003`) |
 | Claude-Plan: reicht das Kontingent? | nach M0/M1 beobachten | Laut Dokumentation ist das Standardmodell auf Pro Sonnet 5, auf Max Opus 5. Erst messen, dann entscheiden |
-| TiTiler-Basis ja/nein | M2 | nach Spike |
-| ESA-only oder Quellenbreite; welche Nicht-STAC-Quelle | M3 | Breite; statischer Bucket oder Zenodo |
+| TiTiler-Basis ja/nein | M2 | **entschieden:** `titiler.core` nach Spike (`ENTSCHEIDUNGSLOG.md`, 2026-09-19/20; `adr/0006`) |
+| ESA-only oder Quellenbreite | M3 | **entschieden:** Quellenbreite (`ENTSCHEIDUNGSLOG.md`, 2026-09-23) |
+| Welche Nicht-STAC-Quelle | M3 | offen, Spike in `adr/0009` (M3-01) |
 | Adapter-Interface (ADR) | Ende M3 | aus drei realen Quellen ableiten |
 | Job-Queue | M4 | Postgres-gestützt, nach Spike |
 | Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | zunächst "selbst bezeugt", nicht im gemeinsamen Cache |
