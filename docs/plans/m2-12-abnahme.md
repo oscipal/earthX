@@ -5,7 +5,8 @@ ohne Code zu lesen.
 **Ort im Repo:** `docs/plans/m2-12-abnahme.md`
 **Grundlage:** `docs/plans/m2-format-und-viewer.md` Abschnitt 5 ("Abnahme von
 M2"), Stand nach dem Merge aller Aufgaben bis einschließlich M2-17 und V-1 bis
-V-4 (`main`, Commit `a5b1917`, PR #68).
+V-4 (`main`, Commit `5e40d04`, Fassung 5 des Plans, PR #69–#71). M2-12 ist
+laut Fassung 5 die letzte offene Aufgabe des Schnitts.
 
 Für dieses Kriterium gilt eine Einschränkung durch die Aufgabenstellung:
 
