@@ -144,12 +144,17 @@ export default function MapView() {
         if (!feat) return;
         const store = useAppStore.getState();
         let geom = feat.geometry as GeoJSON.Geometry;
+        // M3-08 F5a: the point itself is kept for `runSearch` to search by
+        // (`store.setAoi`'s second argument) — `geom` still becomes the buffer
+        // square that stays the display AOI and the download crop.
+        let point: GeoJSON.Point | null = null;
         if (geom.type === 'Point') {
-          const [lon, lat] = (geom as GeoJSON.Point).coordinates;
+          point = geom as GeoJSON.Point;
+          const [lon, lat] = point.coordinates;
           const buffer = store.config?.point_buffer_deg ?? 0.05;
           geom = bufferPointToPolygon(lon, lat, buffer);
         }
-        store.setAoi(geom);
+        store.setAoi(geom, point);
         // Zoom the map into the freshly drawn area.
         const bb = polygonBbox(geom);
         if (bb) store.flyTo(bb);
