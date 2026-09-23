@@ -145,14 +145,6 @@ body.dragging * {
   z-index: 5;
   pointer-events: none;
 }
-/* keep the results panel's height cap through the draggable wrapper */
-.dock-results {
-  display: flex;
-  flex-direction: column;
-  max-height: 100%;
-  min-height: 0;
-}
-
 /* --- persistent zoom button (top-right) --- */
 .zoom-btn {
   padding: 9px 14px;
@@ -198,6 +190,38 @@ body.dragging * {
   box-shadow: var(--glow);
 }
 .panel-toggle:hover {
+  border-color: var(--accent);
+}
+
+/* --- collapsible results dock (right), same pattern mirrored horizontally
+   (V-5): fixed to the right edge instead of freely draggable, so it can't
+   end up somewhere the user has to go hunting for it. --- */
+.results-dock {
+  transition: transform 0.32s ease;
+}
+.results-dock.collapsed {
+  transform: translateX(calc(100% + 16px));
+}
+.results-toggle {
+  position: absolute;
+  top: 14px;
+  right: 100%;
+  margin-right: 6px;
+  width: 24px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px 0 0 8px;
+  color: var(--accent);
+  font-size: 16px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glow);
+}
+.results-toggle:hover {
   border-color: var(--accent);
 }
 

@@ -16,6 +16,8 @@ export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
   const panelCollapsed = useAppStore((s) => s.panelCollapsed);
   const togglePanel = useAppStore((s) => s.togglePanel);
+  const resultsPanelCollapsed = useAppStore((s) => s.resultsPanelCollapsed);
+  const toggleResultsPanel = useAppStore((s) => s.toggleResultsPanel);
   const focusMode = useAppStore((s) => s.focusMode);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
@@ -95,10 +97,18 @@ export default function App() {
       </div>
 
       {!focusMode && hasGroups && (
-        <div className="overlay right">
-          <Draggable className="dock-results">
-            <ResultsPanel />
-          </Draggable>
+        <div className={`overlay right results-dock${resultsPanelCollapsed ? ' collapsed' : ''}`}>
+          <ResultsPanel />
+          <button
+            type="button"
+            className="results-toggle"
+            onClick={() => toggleResultsPanel()}
+            title={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
+            aria-label={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
+            aria-expanded={!resultsPanelCollapsed}
+          >
+            {resultsPanelCollapsed ? '‹' : '›'}
+          </button>
         </div>
       )}
 

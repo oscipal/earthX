@@ -151,6 +151,9 @@ interface AppState {
 
   // --- ui layout ---
   panelCollapsed: boolean; // left control panel slid off to the left
+  // Right-docked results list slid off to the right — collapsible the same
+  // way as the left control panel, not freely draggable any more (V-5).
+  resultsPanelCollapsed: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
   // swaps ResultsPanel/ViewBar for ViewerControls (App.tsx).
   focusMode: boolean;
@@ -206,6 +209,7 @@ interface AppState {
   clearFly: () => void;
   togglePanel: () => void;
   setPanelCollapsed: (v: boolean) => void;
+  toggleResultsPanel: () => void;
   clearAll: () => void;
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
@@ -259,6 +263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mapZoom: 1.6,
 
   panelCollapsed: false,
+  resultsPanelCollapsed: false,
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
@@ -345,6 +350,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearFly: () => set({ flyToBbox: null }),
   togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
   setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
+  toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
   clearAll: () => {
     set({
       aoi: null,
