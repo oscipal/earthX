@@ -16,10 +16,12 @@ export default function LayerManager() {
   const showCoverage = useAppStore((s) => s.showCoverage);
   const toggleCoverage = useAppStore((s) => s.toggleCoverage);
 
-  if (!open) return null;
-
+  // `Draggable` stays mounted regardless of `open` and is only hidden with
+  // CSS: unmounting it (the previous `if (!open) return null`) threw away
+  // its drag offset every time the panel closed, so a moved panel snapped
+  // back to its original spot the next time it opened.
   return (
-    <Draggable className="layer-dock">
+    <Draggable className={`layer-dock${open ? '' : ' layer-dock-hidden'}`}>
       <div className="panel layer-manager">
         <div className="results-head">
           <h2>Layers</h2>

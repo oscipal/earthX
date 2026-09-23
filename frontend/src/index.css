@@ -972,6 +972,11 @@ input[type='date']:focus {
   top: 96px;
   left: 420px;
 }
+/* Closed state: hides the whole draggable (grip included) without
+   unmounting it, so its drag offset survives a close/reopen. */
+.layer-dock-hidden {
+  display: none;
+}
 .layer-manager {
   width: 340px;
   max-height: 60vh;
