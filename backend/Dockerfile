@@ -2,9 +2,9 @@
 # Each docker-compose service picks its own `command:`; this file sets no
 # CMD/ENTRYPOINT on purpose ("ein Image, vier Startbefehle").
 #
-# python:3.12-slim matches the Python CI and the cloud session run on (M3-03)
-# and works there without a system GDAL — the pip wheels for rasterio/rio-tiler
-# bundle their own (docs/cloud-umgebung.md §3).
+# python:3.12-slim matches the Python that CI and the cloud session run on
+# (M3-03); as there, the pip wheels for rasterio/rio-tiler bring their own GDAL
+# (docs/cloud-umgebung.md §3).
 FROM python:3.12-slim
 
 WORKDIR /app
