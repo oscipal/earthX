@@ -66,6 +66,31 @@ mini_zarr.py`, In-Memory-Store); kein Netzzugriff, kein Abhängen von
 `data.eodc.eu`. Damit besteht dieser Teil von Kriterium 1 unabhängig davon,
 ob die echte `sentinel-2-l2a-zarr3`-Quelle online bleibt.
 
+### Lokale Vorführung
+
+Kriterium 1 verlangt ausdrücklich, dass Otto lokal prüft, nicht nur, dass
+Tests grün sind ("Otto prüft lokal", Abschnitt 5 Punkt 1 des Plans). Otto hat
+das am 22./23.09.2026 während der Reviews von M2-10, V-1 bis V-4 und M2-17 im
+laufenden Viewer getan und dabei für **beide** Datensätze bedient: Suche,
+Quicklooks (`sentinel-2-c1-l2a`, direkt vom Asset-Host) bzw. Ersatzkacheln auf
+der gröbsten freigegebenen Stufe (`sentinel-2-l2a-zarr3`, ohne Quicklook der
+Quelle), Ansicht in voller Auflösung, den Zuschnitt-Download als ZIP, die
+Szenensuche per Namen (M2-17) sowie Globus und Theme-Umschalter (V-1). Die
+einzelnen Befunde aus diesen Sitzungen und ihre Behebung stehen in
+`docs/ENTSCHEIDUNGSLOG.md` unter den Einträgen zu M2-10, V-1 bis V-4, M2-16
+und M2-17 sowie in den Nachbesserungsrunden in
+`docs/plans/m2-format-und-viewer.md` (V-6 bis V-12, M2-17b) — sie sind selbst
+der Beleg, dass ein Mensch beide Datensätze tatsächlich bedient hat, nicht nur
+ein automatisierter Test.
+
+Schritte, mit denen ein Dritter dieselbe Vorführung nachvollzieht, stehen in
+`README.md` Abschnitt 2, Unterabschnitt "Den Viewer starten (Frontend)":
+`docker compose up`, danach `cd frontend && npm run dev`,
+`http://localhost:5173` öffnen, zwischen den beiden Datensätzen wechseln, je
+eine AOI suchen oder eine Szene per Namen finden, in voller Auflösung
+ansehen, herunterladen, Globus/Theme umschalten und in "Layers" die
+Coverage-Heatmap einschalten.
+
 **Ergebnis:** Kriterium 1 erfüllt.
 
 ---
@@ -136,6 +161,13 @@ der ungefilterte Weltüberblick z0–z6 durchgehend unter 1,1 s (typisch
 0,60–0,88 s). Festgehalten außerdem in `docs/ENTSCHEIDUNGSLOG.md`
 (Zeile zum 19.09.2026, "Latenzziel der gefilterten Coverage: unter 1 s,
 typisch unter 0,5 s").
+
+**Ausdrücklich:** Diese Zahlen stammen unverändert vom 20.09.2026 aus PR #43
+(M2-05b). Diese Sitzung hat sie **nicht neu gemessen** — aus demselben Grund,
+aus dem sie hier überhaupt per `curl`-Beleg statt per Live-Lauf geführt
+werden: `gateway` erreicht die reale Quelle aus einer Cloud-Sitzung nicht
+(M2-13). Der Beleg ist damit ein Zitat des seinerzeitigen Messwerts, keine
+Bestätigung, dass die Latenz heute noch in diesem Bereich liegt.
 
 **Ergebnis:** Kriterium 3 erfüllt (Route; Heatmap-Qualität ausdrücklich nicht
 Teil dieser Abnahme).
