@@ -51,14 +51,32 @@ LOGGER = logging.getLogger("earthx.api.federating_client")
 # would swallow them rather than reject them.
 _DISALLOWED_QUERY_KEYS = frozenset({"filter", "filter-lang", "filter_lang", "sortby"})
 
+# M2-17: both federated sources honour `ids` and `intersects` (measured against
+# Earth Search and the EOPF STAC API in the plan step), but `_dispatch_search` below
+# forwards only `collections`/`bbox`/`datetime`/`limit`/`token` — either parameter
+# reached the search path and was silently dropped, answering `200` with an
+# ordinary, unfiltered page instead of the filtered one asked for. Otto, approving
+# the plan: reject rather than keep dropping it; a scene is looked up by name
+# through `get_item` instead (adr/0001 Z1). Passing either through the search path
+# is a separate, later task (docs/plans/m2-format-und-viewer.md M2-17).
+_UNSUPPORTED_SEARCH_KEYS = frozenset({"ids", "intersects"})
+
+
+def _reject_keys(keys: object, disallowed: frozenset[str], reason: str) -> None:
+    found = sorted(disallowed.intersection(keys))
+    if found:
+        raise HTTPException(status_code=400, detail=f"{', '.join(found)} {reason}")
+
 
 def _reject_disallowed_keys(keys: object) -> None:
-    found = sorted(_DISALLOWED_QUERY_KEYS.intersection(keys))
-    if found:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{', '.join(found)} is not available in M1 (adr/0005 rule VI; docs/plans/m1-07-stac-api.md §6)",
-        )
+    keys = frozenset(keys)
+    _reject_keys(keys, _DISALLOWED_QUERY_KEYS, "is not available in M1 (adr/0005 rule VI; docs/plans/m1-07-stac-api.md §6)")
+    _reject_keys(
+        keys,
+        _UNSUPPORTED_SEARCH_KEYS,
+        "is not supported for a federated collection (docs/plans/m2-format-und-viewer.md M2-17); "
+        "look up a single scene by id with GET /stac/collections/{collection_id}/items/{item_id} instead",
+    )
 
 
 async def _reject_disallowed_body(request: Request) -> None:
@@ -177,7 +195,17 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 item = await adapter_get_item(
                     collection_id, item_id, gateway=_gateway_of(request), cache=cache
                 )
-        except (InvalidQuery, UnknownCollection, UpstreamError, UpstreamTimeout, UpstreamUnreachable) as error:
+        except (
+            InvalidQuery,
+            UnknownCollection,
+            UpstreamError,
+            UpstreamTimeout,
+            UpstreamUnreachable,
+            UpstreamShapeError,
+        ) as error:
+            # M2-17 finding: this was missing `UpstreamShapeError`, so a source that
+            # answers something that is not an item turned into our own `500`
+            # instead of the `502` `_adapter_error_to_http` already knows for it.
             raise _adapter_error_to_http(error) from error
         item = dict(item)
         item["links"] = await ItemLinks(collection_id=collection_id, item_id=item_id, request=request).get_links(

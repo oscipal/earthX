@@ -200,6 +200,10 @@ interface AppState {
   dateFrom: string;
   dateTo: string;
 
+  // --- scene lookup by name (M2-17) ---
+  sceneNameQuery: string;
+  sceneLookupLoading: boolean;
+
   // --- ui ---
   searching: boolean;
   downloading: boolean; // no operation in 07a sets this; 07d's download will
@@ -252,6 +256,8 @@ interface AppState {
   setError: (v: string | null) => void;
   setNotice: (v: string | null) => void;
   runSearch: () => Promise<void>;
+  setSceneNameQuery: (v: string) => void;
+  findSceneByName: () => Promise<void>;
   toggleCoverage: () => void;
   setMapZoom: (zoom: number) => void;
   toggleTheme: () => void;
@@ -300,6 +306,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dateFrom: '',
   dateTo: '',
+
+  sceneNameQuery: '',
+  sceneLookupLoading: false,
 
   searching: false,
   downloading: false,
@@ -837,6 +846,73 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: `Search failed: ${(e as Error).message}`, items: [], groups: [], panelCollapsed: false });
     } finally {
       set({ searching: false });
+    }
+  },
+
+  setSceneNameQuery: (sceneNameQuery) => set({ sceneNameQuery }),
+
+  // Looks up one scene by its exact name, only in the currently selected
+  // dataset (Otto, 23.09.2026: no cross-dataset fallback, because the two
+  // catalogues name the same scene differently — a miss must say so). Unlike
+  // `runSearch`, this needs neither an AOI nor a date range and leaves both
+  // untouched. On any failure only `error` changes; the trefferliste,
+  // selection, AOI and date range stay exactly as they were (M2-17 F4).
+  findSceneByName: async () => {
+    const { sceneNameQuery, datasetId, datasets } = get();
+    const name = sceneNameQuery.trim();
+    if (!name) return;
+    const dataset = datasets.find((d) => d.id === datasetId);
+    if (!dataset) {
+      set({ error: 'Pick a dataset first.' });
+      return;
+    }
+    if (!dataset.viewable) {
+      set({ error: `This dataset cannot be shown yet: ${dataset.reason}` });
+      return;
+    }
+    set({ sceneLookupLoading: true, error: null });
+    try {
+      const item = await api.fetchItem(dataset.id, name);
+      if (!item) {
+        set({
+          error: `No scene named "${name}" in ${dataset.title} — the two catalogues name the same scene differently.`,
+          sceneLookupLoading: false,
+        });
+        return;
+      }
+      let groups: TimeStepGroup[];
+      try {
+        groups = buildGroups([item], displayGroupBy([item], dataset.groupBy));
+      } catch (e) {
+        if (e instanceof MissingProperty) {
+          set({ error: `Grouping failed: ${e.message}`, sceneLookupLoading: false });
+          return;
+        }
+        throw e;
+      }
+      const bbox = item.bbox ?? (item.geometry ? polygonBbox(item.geometry) : null);
+      set({
+        items: [item],
+        groups,
+        activeGroupIndex: 0,
+        expandedGroupIndex: 0,
+        selectedIds: [item.id],
+        panelCollapsed: true,
+        focusMode: false,
+        playing: false,
+        downloaded: {},
+        appliedRender: {},
+        error: null,
+        notice: `Scene ${item.id}, found by name.`,
+        sceneLookupLoading: false,
+        ...(bbox ? { flyToBbox: bbox } : {}),
+      });
+    } catch (e) {
+      if (e instanceof api.HttpError && e.status === 400) {
+        set({ error: 'Not a valid scene name.', sceneLookupLoading: false });
+        return;
+      }
+      set({ error: `Scene lookup failed: ${(e as Error).message}`, sceneLookupLoading: false });
     }
   },
 }));
