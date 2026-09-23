@@ -11,12 +11,18 @@ export default function TimeSlider() {
   const playing = useAppStore((s) => s.playing);
   const setPlaying = useAppStore((s) => s.setPlaying);
 
-  // Auto-advance through mosaic groups while playing.
+  // Auto-advance through mosaic groups while playing, left to right along
+  // the slider — oldest to newest, starting wherever the slider already is
+  // (V-9). `groups` is newest-first (index 0 = newest = the slider's right
+  // end, see `sliderValue` below), so moving right means *decreasing*
+  // `activeGroupIndex`; wrapping that below 0 back to `groups.length - 1`
+  // is also what makes pressing play at the default, rightmost position
+  // (the newest scene) restart from the leftmost (oldest) one.
   useEffect(() => {
     if (!playing || groups.length < 2) return;
     const id = window.setInterval(() => {
       const s = useAppStore.getState();
-      s.setActiveGroupIndex((s.activeGroupIndex + 1) % s.groups.length);
+      s.setActiveGroupIndex((s.activeGroupIndex - 1 + s.groups.length) % s.groups.length);
     }, 1400);
     return () => window.clearInterval(id);
   }, [playing, groups.length]);
