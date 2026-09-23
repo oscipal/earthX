@@ -240,12 +240,8 @@ def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
     native one. The AOI crop is not on this dependency at all; it resolves its own
     paths and is answered at the asset's own resolution by design (M2-06).
 
-    **Known gap, deliberately left:** ``/tilejson.json`` still advertises the zoom
-    range its *reader* reports rather than the one the registry releases, so a
-    client that follows the TileJSON rather than building URLs itself can be sent
-    to levels this refuses. Closing it means reimplementing TiTiler's route (the
-    reader's ``minzoom``/``maxzoom`` are computed properties, not settable), which
-    is its own task — see the M2-10 plan.
+    ``/tilejson.json`` no longer advertises the reader's own zoom range: M3-04 gives
+    it :func:`_viewer_zoom_range`, so it names the same range this function enforces.
     """
     level = request.path_params.get("z")
     if level is None:
@@ -274,6 +270,26 @@ def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
                 f"which serves z{viewer.min_zoom} to z{viewer.max_zoom}"
             ),
         )
+
+
+def _viewer_zoom_range(request: Request) -> tuple[int, int]:
+    """The registry's released zoom range for the dataset in the path (M3-04).
+
+    Feeds :meth:`~earthx.access.tiles.EarthxTilerFactory.tilejson` its
+    ``minzoom``/``maxzoom`` defaults, so the document a client follows names the same
+    range :func:`_check_zoom_released` enforces on every tile of this dataset, not the
+    range rio-tiler computes from the asset. A dataset without a released range is a
+    501, the same refusal :func:`_check_zoom_released` gives a tile of it.
+    """
+    dataset = str(request.path_params.get("dataset"))
+    config = _dataset_config(request.app.state, dataset)
+    viewer = config.viewer
+    if viewer is None:
+        raise HTTPException(
+            status_code=501,
+            detail=f"{config.dataset_id!r} names no released zoom range (earthx:viewer)",
+        )
+    return viewer.min_zoom, viewer.max_zoom
 
 
 def _resolve_asset_path(
@@ -549,6 +565,7 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
         path_dependency=dataset_asset_path,
         environment_dependency=gdal_environment,
         stats_cache_dependency=statistics_cache,
+        viewer_zoom_dependency=_viewer_zoom_range,
         router_prefix=ROUTER_PREFIX,
         name="tiles",
     )

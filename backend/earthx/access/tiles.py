@@ -26,18 +26,22 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 import morecantile
 import rasterio
 from attrs import define, field
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Path, Query, Request
 from morecantile.defaults import TileMatrixSets
 from rio_tiler.io import BaseReader
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import QueryParams
 from titiler.core.factory import TilerFactory
+from titiler.core.models.mapbox import TileJSON
 from titiler.core.models.responses import Statistics
+from titiler.core.resources.enums import ImageType
 from titiler.core.resources.responses import JSONResponse
 
 from earthx.readers.cog import AssetPath, CogReader
@@ -109,6 +113,14 @@ class EarthxTilerFactory(TilerFactory):
     # wrong (E5, adr/0001 §9.3). The default is "no cache", so a factory built in a
     # test needs nothing.
     stats_cache_dependency: Callable[..., StatsCache | None] = field(default=lambda: None)
+
+    # The registry's released zoom range (`earthx:viewer`), or ``None`` where a test
+    # builds a factory without one. `access` may import `catalog` (architekturplan.md
+    # 3.1), but the registry lookup itself needs the app's dataset id from the path
+    # and lives in `api.tiler`, which is the only place composing this factory sees
+    # both the request and the registry — so this stays a plain callable, the same
+    # shape as ``stats_cache_dependency``.
+    viewer_zoom_dependency: Callable[..., tuple[int, int] | None] = field(default=lambda: None)
 
     # The map viewer needs a URL it can paste; `/bbox` and `/feature` are the AOI
     # download of M2-06; OGC Maps is off in TiTiler itself. All three are decisions,
@@ -192,6 +204,164 @@ class EarthxTilerFactory(TilerFactory):
             if key is not None:
                 await _cache_set(cache, key, statistics, dataset_id=src_path.dataset_id)
             return statistics
+
+    def tilejson(self) -> None:  # noqa: C901
+        """Register ``GET /{tileMatrixSetId}/tilejson.json`` — TiTiler's, with one change.
+
+        ``minzoom``/``maxzoom`` default to the registry's released range
+        (``viewer_zoom_dependency``) instead of rio-tiler's reader-computed ones (M3-04,
+        the gap ``api.tiler._check_zoom_released`` used to leave open): a client that
+        builds its tile requests from this document, rather than the fixed range the
+        viewer already hardcodes, is then bounded by the same range the tile route
+        enforces.
+
+        **Deliberate departure from TiTiler's own precedence:** TiTiler lets an
+        explicit ``minzoom``/``maxzoom`` query parameter overwrite its default
+        outright, trusting the caller. Once the default is a *released* range rather
+        than a reader's computed one, that trust would defeat the point of releasing
+        one at all — a caller could read its own out-of-range value straight back out
+        of a query parameter it set itself and still be sent to a level the tile
+        route refuses. So here an explicit value is honoured only within the
+        registry's range (:func:`_validate_zoom_override`): narrowing or shifting the
+        advertised range is still a caller's choice, but a value outside it, or a
+        ``minzoom`` above ``maxzoom``, is the same ``400`` the tile route itself gives
+        a level nobody serves. Where there is no released range at all
+        (``viewer_zoom`` is ``None`` — a factory built without the dependency, as
+        some tests do), nothing is validated and TiTiler's original precedence holds.
+
+        Everything else — the tile URL, the reader-derived bounds and metadata — is
+        unchanged from TiTiler's own implementation; only the zoom source differs.
+        """
+
+        def tilejson(
+            request: Request,
+            tileMatrixSetId,
+            tilesize: Annotated[
+                int | None,
+                Query(gt=0, description="Tilesize in pixels. Default to 512."),
+            ] = 512,
+            tile_format: Annotated[
+                ImageType | None,
+                Query(
+                    description="Default will be automatically defined if the output image needs a mask (png) or not (jpeg)."
+                ),
+            ] = None,
+            minzoom: Annotated[
+                int | None,
+                Query(description="Overwrite default minzoom, within the dataset's released range."),
+            ] = None,
+            maxzoom: Annotated[
+                int | None,
+                Query(description="Overwrite default maxzoom, within the dataset's released range."),
+            ] = None,
+            src_path=Depends(self.path_dependency),
+            reader_params=Depends(self.reader_dependency),
+            tile_params=Depends(self.tile_dependency),
+            layer_params=Depends(self.layer_dependency),
+            dataset_params=Depends(self.dataset_dependency),
+            post_process=Depends(self.process_dependency),
+            colormap=Depends(self.colormap_dependency),
+            render_params=Depends(self.render_dependency),
+            env=Depends(self.environment_dependency),
+            viewer_zoom=Depends(self.viewer_zoom_dependency),
+        ):
+            """Return TileJSON document for a dataset."""
+            _validate_zoom_override(
+                minzoom, maxzoom, viewer_zoom, dataset=str(request.path_params.get("dataset"))
+            )
+            route_params = {
+                "z": "{z}",
+                "x": "{x}",
+                "y": "{y}",
+                "tileMatrixSetId": tileMatrixSetId,
+            }
+            if tile_format:
+                route_params["format"] = tile_format.value
+            tiles_url = self.url_for(request, "tile", **route_params)
+
+            qs_key_to_remove = [
+                "tilematrixsetid",
+                "tile_format",
+                "minzoom",
+                "maxzoom",
+            ]
+            qs: list[tuple[str, Any]] = [
+                (key, value) for (key, value) in request.query_params._list if key.lower() not in qs_key_to_remove
+            ]
+            if "tilesize" not in request.query_params:
+                qs.append(("tilesize", str(tilesize)))
+            tiles_url += f"?{QueryParams(qs)}"
+
+            tms = self.supported_tms.get(tileMatrixSetId)
+            with rasterio.Env(**env):
+                LOGGER.info(f"opening data with reader: {self.reader}")
+                with self.reader(src_path, tms=tms, **reader_params.as_dict()) as src_dst:
+                    default_minzoom, default_maxzoom = (
+                        viewer_zoom if viewer_zoom is not None else (src_dst.minzoom, src_dst.maxzoom)
+                    )
+                    body = {
+                        "bounds": src_dst.get_geographic_bounds(tms.rasterio_geographic_crs),
+                        "minzoom": minzoom if minzoom is not None else default_minzoom,
+                        "maxzoom": maxzoom if maxzoom is not None else default_maxzoom,
+                        "tiles": [tiles_url],
+                        "attribution": os.environ.get("TITILER_DEFAULT_ATTRIBUTION"),
+                    }
+
+                    # Custom TiTiler tilejson fields
+                    body["raster_layers"] = self.get_renders(src_dst)
+
+                    info = src_dst.info()
+                    body["band_descriptions"] = getattr(info, "band_descriptions", None)
+                    body["data_type"] = getattr(info, "dtype", None)
+                    body["minmax"] = getattr(info, "minmax", None)
+
+            return body
+
+        # `tileMatrixSetId`'s choices depend on `self.supported_tms`, a value that
+        # only exists once this method runs. Under `from __future__ import
+        # annotations` every other annotation above is a string too, resolved lazily
+        # against the module's globals — which never include `self`. Assigning the
+        # already-built type here, after `def`, skips that lazy resolution entirely
+        # (`typing.get_type_hints` only evaluates a *string* annotation), the same way
+        # TiTiler's own module manages it by not using postponed annotations at all.
+        tilejson.__annotations__["tileMatrixSetId"] = Annotated[
+            Literal[tuple(self.supported_tms.list())],
+            Path(description="Identifier selecting one of the TileMatrixSetId supported."),
+        ]
+        self.router.get(
+            "/{tileMatrixSetId}/tilejson.json",
+            response_model=TileJSON,
+            responses={200: {"description": "Return a tilejson"}},
+            response_model_exclude_none=True,
+            operation_id=f"{self.operation_prefix}getTileJSON",
+        )(tilejson)
+
+
+def _validate_zoom_override(
+    minzoom: int | None, maxzoom: int | None, viewer_zoom: tuple[int, int] | None, *, dataset: str
+) -> None:
+    """An explicit ``minzoom``/``maxzoom`` may narrow the released range, never leave it.
+
+    See the "Deliberate departure" note on :meth:`EarthxTilerFactory.tilejson` for
+    why this exists at all. A dataset without a released range validates nothing
+    (``viewer_zoom`` is ``None``), the same as TiTiler's own, unrestricted override.
+    """
+    if viewer_zoom is None:
+        return
+    viewer_min, viewer_max = viewer_zoom
+    for name, value in (("minzoom", minzoom), ("maxzoom", maxzoom)):
+        if value is not None and not viewer_min <= value <= viewer_max:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{name} {value} is not released for {dataset!r}, "
+                    f"which serves z{viewer_min} to z{viewer_max}"
+                ),
+            )
+    final_min = minzoom if minzoom is not None else viewer_min
+    final_max = maxzoom if maxzoom is not None else viewer_max
+    if final_min > final_max:
+        raise HTTPException(status_code=400, detail=f"minzoom {final_min} is above maxzoom {final_max}")
 
 
 def _read_statistics(
