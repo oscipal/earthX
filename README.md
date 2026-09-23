@@ -25,18 +25,43 @@ earthX/
 
 ---
 
-## 1. Stand (Meilenstein M1)
+## 1. Stand (Meilenstein M2)
 
-M1 trägt **Sentinel-2 L2A** (Earth Search v1, Collection `sentinel-2-c1-l2a`)
-token-frei durch die neue Architektur: eigenes `pgstac` für die Collection,
-Items föderiert per Adapter, jeder ausgehende Request über das `gateway`,
-nach außen eine lesbare STAC-API. Details und Abnahmebelege je Kriterium:
-siehe der PR, der diesen Stand einführt, und
-[`docs/plans/m1-fundament.md`](docs/plans/m1-fundament.md) Abschnitt 5.
+M2 trägt **zwei token-freie Datensätze in zwei Formaten** durch denselben
+Viewer:
 
-Noch **nicht** enthalten (siehe `docs/plans/m1-fundament.md` Abschnitt 2):
-Kacheln, Quicklooks, Zuschnitt/Stitching, Zarr/EOPF, Frontend auf die neue
-API umgestellt, Coverage-Heatmap gebaut (nur als ADR vorbereitet).
+- **Sentinel-2 L2A** (`sentinel-2-c1-l2a`), Earth Search v1 (Element 84),
+  Format **COG**. Zoomstufen z0–z19, Quicklooks direkt vom Asset-Host
+  (kein Proxy, D14).
+- **Sentinel-2 L2A (Zarr3)** (`sentinel-2-l2a-zarr3`), EOPF Sentinel Zarr
+  Samples Service (EODC), Format **Zarr** (v3). Zoomstufen z8–z14; die
+  Quelle führt selbst den Status „staging" (in Registry und Oberfläche
+  sichtbar) und keinen Quicklook — Ersatz ist eine Kachel auf der
+  gröbsten freigegebenen Stufe. Die Abnahme von M2 hängt nicht am
+  Fortbestand dieser Quelle: der Zarr-Lesepfad ist zusätzlich gegen ein
+  synthetisches Mini-Zarr getestet, ohne jeden Netzzugriff (D24).
+
+Für beide Datensätze funktionieren Suche (föderiert, je Datensatz, D8),
+Quicklooks bzw. Kachel-Ersatz, dynamische Kacheln über denselben
+URL-Aufbau (`dataset`/`item`/`asset`, kein freier `url`-Parameter, Z4),
+Coverage (Route `GET /coverage/{dataset_id}`, Heatmap im Frontend
+einschaltbar, standardmäßig aus) und der gestreamte AOI-Zuschnitt als ZIP
+(COG/Zarr-Ausschnitt plus Hinweisdatei, nichts wird serverseitig
+gespeichert). Das Frontend spricht ausschließlich mit `earthx`, keine
+Route des früheren Prototyps mehr; die Oberfläche ist durchgehend
+englisch (D25).
+
+Vollständige Belege je Abnahmekriterium (`docs/plans/m2-format-und-viewer.md`
+Abschnitt 5): [`docs/plans/m2-12-abnahme.md`](docs/plans/m2-12-abnahme.md).
+Der Aufgabenschnitt mit allen Einzelaufgaben, Entscheidungen und
+Nachbesserungen steht in
+[`docs/plans/m2-format-und-viewer.md`](docs/plans/m2-format-und-viewer.md).
+
+Noch **nicht** enthalten (siehe `docs/plans/m2-format-und-viewer.md`
+Abschnitt 2 "Abgrenzung"): Ergebnisse im Objektspeicher, Rezept, Operatoren
+und Jobs (M4); gemischte Suche über mehrere Quellen (M3); Ortssuche (M3);
+AOI-Upload über das Backend; eine verbesserte Coverage-Heatmap (Zählwürfel,
+nach M2, D26).
 
 ---
 
@@ -107,18 +132,55 @@ grafisch anzeigt — er läuft selbst **nicht** in diesem Repo, sondern separat
    docker run --rm -p 8080:8080 -e SB_catalogUrl="http://localhost:8000/stac" ghcr.io/radiantearth/stac-browser:latest
    ```
 2. Im Browser **`http://localhost:8080`** öffnen.
-3. Es erscheint die Landing Page des Katalogs mit der Collection
-   **Sentinel-2 L2A** (`sentinel-2-c1-l2a`). Auf die Collection klicken zeigt
-   ihre Beschreibung und Lizenz; **„Items"** öffnet die Suche und zeigt
-   Treffer aus Earth Search, durch den eigenen Katalog gereicht.
+3. Es erscheint die Landing Page des Katalogs mit **beiden** Collections:
+   **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, COG) und **Sentinel-2 L2A
+   (Zarr3)** (`sentinel-2-l2a-zarr3`, Zarr). Auf eine Collection klicken
+   zeigt ihre Beschreibung und Lizenz; **„Items"** öffnet die Suche und
+   zeigt Treffer aus der jeweiligen Quelle, durch den eigenen Katalog
+   gereicht.
 4. Fertig — das ist die Abnahme aus `docs/plans/m1-fundament.md` Abschnitt 5,
-   Punkt 1: ein STAC-Browser kann den eigenen Katalog lesen.
+   Punkt 1: ein STAC-Browser kann den eigenen Katalog lesen, jetzt für beide
+   Datensätze.
 
 Ohne einen separaten Browser lässt sich die API auch direkt ansehen:
 `http://localhost:8000/stac` liefert die Landing Page als JSON,
-`http://localhost:8000/stac/collections/sentinel-2-c1-l2a/items` eine
-Trefferliste (JSON in einem Browser-Tab ist weniger übersichtlich als ein
-STAC-Browser, aber ohne einen zweiten Container zu prüfen).
+`http://localhost:8000/stac/collections/sentinel-2-c1-l2a/items` bzw.
+`.../collections/sentinel-2-l2a-zarr3/items` je eine Trefferliste (JSON in
+einem Browser-Tab ist weniger übersichtlich als ein STAC-Browser, aber ohne
+einen zweiten Container zu prüfen).
+
+### Den Viewer starten (Frontend)
+
+Der Viewer ist die eigentliche Bedienoberfläche (Suche, Quicklooks,
+Zeitleiste, Kacheln, Coverage-Heatmap, Zuschnitt-Download) und läuft separat
+vom Backend, damit er im Entwicklungsmodus schnell neu lädt:
+
+1. Die Zieltopologie aus Schritt 2 muss laufen (`docker compose up`).
+2. In einem **neuen Terminal**:
+   ```bash
+   cd frontend
+   npm install   # einmalig
+   npm run dev
+   ```
+3. **`http://localhost:5173`** öffnen. Der Dev-Server leitet `/stac` und
+   `/coverage` an `api` (Port 8000) weiter, `/collections` (Kacheln,
+   Statistik) an `tiler` (Port 8001) — voreingestellt in
+   `frontend/vite.config.ts`, überschreibbar über `VITE_API_PROXY` /
+   `VITE_TILER_PROXY`.
+4. Oben im Suchmenü zwischen beiden Datensätzen wählen (Kachelpaar
+   Sentinel-2/Zarr3), eine AOI zeichnen (Punkt oder Rechteck) oder einen
+   Szenennamen eingeben (M2-17), suchen. Für `sentinel-2-l2a-zarr3` zeigt
+   die Oberfläche den Status „staging" sichtbar an (D23-Auflage).
+5. In „Layers" die Coverage-Heatmap einschalten (standardmäßig aus, D26) —
+   das ist die einzige Stelle, an der ihre Qualität außerhalb dieser
+   Abnahme geprüft werden kann.
+6. Ein ausgewähltes Bild herunterladen: „Download" in der Auswahl-Leiste
+   bzw. im Layer-Manager öffnet den Dialog mit Attribution und
+   `terms_notice`, vor dem eigentlichen Download.
+
+Vollständige Bedienung und alle Nachbesserungen aus Ottos Durchsicht:
+`docs/plans/m2-format-und-viewer.md`, Aufgaben V-1 bis V-4 und ihre
+Nachbesserungsrunden.
 
 ### Fehlersuche
 
@@ -137,13 +199,23 @@ STAC-Browser, aber ohne einen zweiten Container zu prüfen).
 
 ## 3. Attribution
 
-- **Sentinel-2 L2A** (Zieltopologie, Earth Search v1 / Registry of Open Data
-  on AWS): Copernicus-Sentinel-Daten. Bei Weitergabe **veränderter** Daten:
-  „Contains modified Copernicus Sentinel data [Jahr]", bei unveränderten:
-  „Copernicus Sentinel data [Jahr]" (`docs/adr/0003-erster-datensatz.md` §11.2).
+- **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, Earth Search v1 / Registry of Open
+  Data on AWS, Format COG) **und Sentinel-2 L2A (Zarr3)**
+  (`sentinel-2-l2a-zarr3`, EOPF Sentinel Zarr Samples Service / EODC, Format
+  Zarr): beide Copernicus-Sentinel-Daten, derselbe Text. Bei Weitergabe
+  **veränderter** Daten: „Contains modified Copernicus Sentinel data [Jahr]",
+  bei unveränderten: „Copernicus Sentinel data [Jahr]"
+  (`docs/adr/0003-erster-datensatz.md` §11.2, für den zweiten Datensatz
+  identisch übernommen, D18/`docs/adr/0007-zweites-format-zarr.md` §12.6).
   Nutzung unterliegt zusätzlich dem
   [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)
-  (kein Gewährleistungsversprechen, Anspruchsverzicht des Nutzers).
+  (kein Gewährleistungsversprechen, Anspruchsverzicht des Nutzers). Beide
+  Zitierangaben (`cite-as` der jeweiligen Quell-Collection):
+  Sentinel-2 L2A [doi.org/10.5270/S2_-742ikth](https://doi.org/10.5270/S2_-742ikth),
+  Sentinel-2 L2A (Zarr3) [doi.org/10.5270/S2_-znk9xsj](https://doi.org/10.5270/S2_-znk9xsj).
+  Die Zarr3-Quelle führt selbst den Status „staging" und kann ohne
+  Vorankündigung verschwinden (adr/0007 §12.11 Punkt 14) — die Abnahme von M2
+  hängt davon nicht ab (D24).
 - **Basiskarte**: Esri World Imagery — *Esri, Maxar, Earthstar
   Geographics, and the GIS User Community*.
 
