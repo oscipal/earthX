@@ -112,11 +112,15 @@ Heute legt `scripts/setup-cloud-session.sh` das venv mit `python3` an und prüft
 ein vorhandenes venv nie. Nach dem Wechsel muss es drei Dinge können:
 
 1. **Venv mit 3.12 anlegen, ausdrücklich:** `python3.12 -m venv`, nicht
-   `python3`. Das Interpreter-Kommando steht einmal oben im Skript
-   (`PYTHON=python3.12`).
+   `python3`. Das Interpreter-Kommando steht einmal oben im Skript.
+   *Umsetzung:* `PYTHON=/usr/bin/python3.12`, über den absoluten Pfad. Ein
+   `python3.12` im `PATH` war in der Sitzung zeitweise ein anderer Build
+   (`uv python install` legt einen nach `~/.local/bin`, vor `/usr/bin`); F1 (1)
+   meint das Ubuntu-Paket.
 2. **Ein venv mit falscher Version ersetzen:** Liefert
    `.venv/bin/python -c 'import sys; print(sys.version_info[:2])'` nicht
-   `(3, 12)`, wird `.venv` gelöscht und neu angelegt. `.venv/` ist
+   `(3, 12)` oder fehlt `bin/pip` (abgebrochenes Anlegen), wird `.venv`
+   gelöscht und neu angelegt — nur, wenn der 3.12-Interpreter da ist. `.venv/` ist
    `.gitignore`d und enthält nur Installiertes; Löschen ist hier Wegwerfen
    eines Build-Ergebnisses, keine Daten.
 3. **Fehlt `python3.12`, nicht auf 3.11 ausweichen:** Warnung mit genauer
@@ -141,7 +145,10 @@ messen (§6); aus dieser Sitzung ist `CLAUDE_ENV_FILE` nicht sichtbar.
 
 ## 5. Tests
 
-Neu `backend/tests/test_python_version.py`, zwei kleine Tests:
+Neu `backend/tests/test_python_version.py`, zwei kleine Tests (*Umsetzung:*
+dazu ein dritter, der verlangt, dass jeder `setup-python`-Schritt
+`env.PYTHON_VERSION` liest, samt Fällen ohne Version und mit
+`python-version-file`):
 
 - **Der Interpreter ist 3.12.** `sys.version_info[:2] == (3, 12)`. Schlägt in
   CI fehl, wenn `setup-python` doch eine andere Version liefert, und in einer

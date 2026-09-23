@@ -63,6 +63,10 @@ vollständig. Das venv belegt rund 310 MB.
 **Folge für `environment.yml`:** Die conda-Datei beschreibt weiter Ottos lokale
 Umgebung, ist in der Cloud aber wirkungslos. Der pip-Weg ist dort der einzige,
 und CI geht denselben Weg — damit prüft CI, was die Sitzung benutzt.
+*(Stand 2026-09-18. `environment.yml` ist mit dem Prototyp entfallen,
+`adr/0008`; der pip-Weg ist seither überall der einzige. Die Tabelle oben ist
+eine Messung unter 3.11; unter 3.12 lösen mehrere Pakete neuer auf,
+`plans/m3-03-python-312.md` §2.3.)*
 
 ## 4. Docker: startbar, aber nutzlos
 
