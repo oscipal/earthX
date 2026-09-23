@@ -126,6 +126,7 @@ Ottos Entscheidung zu M2-11).
 | M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | Sonnet (klein) | M2-07a |
 | V-2 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-1 |
 | V-3 | Zwei Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-2 |
+| V-4 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-3 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
@@ -141,6 +142,7 @@ stauen (`m1-fundament.md` §6).
 9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
 10. V-2 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-1
 11. V-3 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-2
+12. V-4 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-3
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -544,6 +546,20 @@ kleiner und unregelmäßig ist als die Kachel.
 
 **Nicht anfassen:** Backend; Footprint-Anzeige (Coverage/M2-07c) und `pointInFootprint` (M2-16); der Karten-Klick-Handler selbst, der die Szene unter dem Cursor schon richtig ermittelt.
 **Abnahme:** Vitest-Fälle für beide Befunde (Auswahl-Umrandung im Fokusmodus aus `selectedIds`, ausgewähltes Item einer nicht aktiven Gruppe bleibt Teil der an die Karte übergebenen Items); Lint, Typprüfung und Vitest grün.
+
+### V-4 — Fünf Befunde aus Ottos Durchsicht (Viewer-Strang)
+
+**Ziel:** Fünf kleine Befunde aus Ottos Durchsicht des Viewers sind behoben. Alle Texte englisch (D25).
+**Stufe A.** Hängt an V-3 (gemergt), sonst an nichts.
+**Umfang:**
+1. Ein ausgewählter Quicklook lässt sich herunterladen: die Originaldaten über die bestehende Zuschnitt-Route (`POST /collections/{dataset}/download`, M2-06), nicht das Vorschaubild. Neuer „Download"-Knopf in `ViewBar.tsx` neben „View full resolution"/„Add to layers", ohne vorher in die Volltauflösung zu wechseln; öffnet denselben `DownloadDialog` wie beim Layer-Download, mit Attribution und `terms_notice`. Der Asset kommt aus der Standard-Visualisierung der Registry (`earthx:default_render`), derselbe, den `enterFocus`/`quicklookPlan` auch sonst verwenden.
+2. Der Szenenname lässt sich kopieren, mit dem üblichen Kopiersymbol neben der Szenen-ID in `ResultsPanel.tsx`, per `navigator.clipboard`.
+3. Die Trefferliste gruppiert nach Tag und Überflug (`s2:datatake_id`), nicht mehr nach Tag und MGRS-Kachel — reine Darstellung (Log-Eintrag 2026-09-22): `grouping.ts::displayGroupBy` bevorzugt `["datetime", "s2:datatake_id"]`, wenn jedes Item im aktuellen Suchergebnis die Eigenschaft trägt, sonst bleibt es beim registrierten `group_by` (Tag + `grid:code`). D19 und D11 bleiben unberührt: `buildGroups` führt weiterhin jede Szene einzeln mit eigenem Quicklook und eigener Kachel-URL, es entsteht kein Mosaik.
+4. Der Hintergrund hinter dem Globus (`mapStyles.ts`) war weiß, jetzt schwarz: MapLibres `sky`-Vorgaben (`sky-color`/`horizon-color`/`fog-color`, per Default hell) sind auf die Farbe der `background`-Ebene (`#04070a`) gesetzt, `atmosphere-blend: 0`.
+5. Die beiden Datumsfelder (`ControlPanel.tsx`, `.date-row`) treffen jetzt dieselben zwei Spalten wie die Kachelpaare darüber (Point/Rectangle, Upload/Last AOI, Sentinel-2/Zarr3): `date-row` ist ein Grid mit `repeat(2, 1fr)` und 6px Abstand statt einer Flex-Zeile mit dem Pfeil als drittem Element; der Pfeil liegt jetzt als Overlay über der Lücke.
+
+**Nicht anfassen:** Backend; die Registry (`earthx:viewer.group_by`, D19 bleibt unverändert); Kachel-Pfad und Mosaik-Verbot (D11).
+**Abnahme:** Vitest-Fälle für `displayGroupBy` (bevorzugt Datatake, Fallback bei fehlender Eigenschaft, leeres Ergebnis); Lint, Typprüfung und Vitest grün; im PR eine kurze Anleitung zum Ausprobieren der fünf Punkte.
 
 ---
 
