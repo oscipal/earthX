@@ -1,8 +1,10 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 1 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
+**Status:** Fassung 1.1 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
 dritten Quelle (M3-11) werden nach der Annahme von `adr/0009` in Fassung 2 im
-Einzelnen geschnitten.
+Einzelnen geschnitten. Fassung 1.1 nimmt Ottos Antworten auf den
+Konformitätsbericht auf (`plans/m3-02-konformitaetsbericht.md` §8): neue
+Aufgabe M3-16, Eckpunkte in M3-11, M3-12, M3-14 und M3-15.
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
@@ -123,7 +125,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a |
 | M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 |
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b |
-| M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | — |
+| M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | — (Merge erst nach M3-16) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — |
 | M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b |
 | M3-11 | Dritte Quelle anbinden (Teile in Fassung 2) | B | Opus Plan, Sonnet (hoch) | `adr/0009` angenommen |
@@ -131,11 +133,13 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11 (eigene Items) |
 | M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11, M3-13 |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle |
+| M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A und C laufen
 daneben.
 
-1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05 (A/C), dazu M3-03 und M3-08 (B).
+1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05, M3-16 (A/C), dazu M3-03 und
+   M3-08 (B); M3-08 wird erst nach M3-16 gemergt.
 2. **Welle 2:** M3-06a, M3-09, danach M3-06b, M3-07a.
 3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12.
 4. **Welle 4:** M3-13, dann M3-14, zuletzt M3-15.
@@ -389,6 +393,9 @@ startet damit eine Suche.
 
 ### M3-08 — `intersects` und `ids` durchreichen
 
+**Merge erst nach M3-16** (Otto, 23.09.2026): `intersects` ist ein weiterer
+Query-Parameter mit Geometrie und darf nur in ein Log ohne Query-String.
+
 **Ziel:** Polygon-AOIs suchen genau statt über ihre Bounding Box; `ids` wird
 unterstützt statt mit `400` abgewiesen (D31, P6).
 **Stufe B.**
@@ -458,6 +465,17 @@ erzeugt und laut Entscheidung zu P4 abgelegt; Registry-Eintrag als
 Coverage laut `adr/0009`; Lizenz wie von Otto eingestuft; Checkliste 1–10 grün,
 Punkt 10 über `@pytest.mark.live_dataset` (D29); **`readers` unverändert**
 (M3-Abnahme); Fixtures synthetisch.
+**Abnahmekriterien aus M3-02** (Otto, 23.09.2026;
+`plans/m3-02-konformitaetsbericht.md`):
+- **K-05:** Registry und Dispatch haben einen Platz für materialisierte Items;
+  eine Collection mit eigenen Items wird ausdrücklich als solche erkannt, nicht
+  daran, dass kein bekannter Adapter eingetragen ist.
+- **K-06:** Die Coverage-Route ist nicht mehr fest auf Earth Search und EOPF
+  verdrahtet; der Weg des dritten Datensatzes folgt aus seinem
+  Registry-Eintrag.
+- **K-03:** Die Kachelroute prüft die Lizenzstufe: Kacheln verlangen
+  mindestens B11-Stufe „Anzeige“, der Download weiterhin „Processing“; mit
+  Test für einen Eintrag der Stufe `catalog`.
 
 ### M3-12 — Frontend-Sonderfälle in die Registry
 
@@ -467,7 +485,13 @@ Eigenschaft mehr (P10, M3-Abnahme).
 Eingabe.
 **Umfang:** Jede Stelle aus M3-02, die der dritte Datensatz trifft, wird ein
 Registry-Feld (bekannt: Gruppierung der Trefferliste nach `s2:datatake_id`
-aus D30, Nodata-Schwelle 16 der Quicklooks). Felder ohne Vorgabewert (B10),
+aus D30, Nodata-Schwelle 16 der Quicklooks). Dazu die vier Stellen, an denen
+ein globales Raster in EPSG:4326 scheitert (M3-02, Abschnitt 5): Quicklooks
+werden nur für UTM platziert (F-03); die Ausdehnung eines Einmal-Produkts wird
+in der Coverage nicht gezeichnet (F-07); das Datumsfeld erscheint auch ohne
+Zeitachse (F-06); die Vorschau-Stufe zeigt bei `min_zoom = 0` fast nichts
+(F-05). Bevor dafür ein neues Feld entsteht, prüfen, ob `earthx:data_class`
+(`architekturplan.md` 5.1) es schon trägt. Felder ohne Vorgabewert (B10),
 Zeile in `architekturplan.md` 5.1 nachziehen. Dazu ein Test, der
 `frontend/src` außerhalb der Tests auf Datensatz-Kennungen und
 quellenspezifische Eigenschaftsnamen prüft.
@@ -506,7 +530,10 @@ Zugriffsauflösung, Aggregation) gegen das Tatsächliche halten; Optionen für
 Signaturen mit Kriterien (Nicht-STAC nicht in STAC-Form gepresst, Test mit
 synthetischen Fixtures, Folgen für den Harvester in M5 und Processing in M4);
 Lehren aus EODAG knapp mit Quellen (`architekturplan.md` 15.2). Beobachtungen
-aus `adr/0009` einbeziehen.
+aus `adr/0009` einbeziehen. Der **Zielort der Zugriffsauflösung** (heute
+`api/tiler.py`, K-04 aus M3-02) ist eine eigene Option in `adr/0011`: Das ADR
+legt ihn fest, der Umbau ist der erste Schritt von M4, bevor `processing` die
+Auflösung braucht (Otto, 23.09.2026).
 **Nicht anfassen:** Code.
 **Abnahme:** `adr/0011-adapter-interface.md` mit Optionen, Empfehlung und
 Fragen; Otto gibt frei (M3-Abnahme).
@@ -518,7 +545,27 @@ Fragen; Otto gibt frei (M3-Abnahme).
 **Umfang:** Bericht `docs/plans/m3-15-abnahme.md` mit Belegen je Kriterium aus
 Abschnitt 5, nach dem Muster von `m2-12-abnahme.md`; README um den neuen
 Datensatz, Attribution (auch OpenStreetMap), Upload-Formate und Ortssuche
-ergänzt.
+ergänzt. `architekturplan.md` 5.2 an den Datums-Fallback im Frontend anpassen
+(entschieden mit M2-07a am 20.09.2026, bestätigt am 23.09.2026), mit dem
+Vermerk: Neubewertung mit der Verfügbarkeits-Zeitleiste in M5.
+
+### M3-16 — Keine AOI im Log
+
+**Ziel:** Kein Prozess schreibt Koordinaten oder Query-Strings ins Log
+(`CLAUDE.md`; K-01, K-02 aus `plans/m3-02-konformitaetsbericht.md`).
+**Stufe A.** Sonnet (hoch).
+**Umfang:**
+- Access-Log jedes HTTP-Prozesses ohne Query-String: Methode, Pfad, Status,
+  Dauer, Request-ID.
+- `configure_logging` und `RequestIdMiddleware` in jedem Prozess einbinden.
+- `summarize_geometry` überall dort, wo Geometrien geloggt werden.
+- Startbefehle bzw. `docker-compose.yml` anpassen.
+
+**Nicht anfassen:** `gateway`, Routenlogik.
+**Abnahme:** Tests gegen die App mit echtem Logging-Setup für
+`GET /stac/search?bbox=…`, `GET /coverage/…?bbox=…` und `POST …/download`:
+keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
+**Hängt ab von:** —. M3-08 wird erst nach M3-16 gemergt.
 
 ---
 
