@@ -7,6 +7,7 @@ neither should know which adapter a dataset uses).
 from __future__ import annotations
 
 import json
+import types
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,17 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.adapters import SearchParams, UnknownCollection, UnsupportedSource, get_item, search_items
+import earthx.adapters as adapters_pkg
+from earthx.adapters import (
+    SearchParams,
+    UnknownCollection,
+    UnsupportedFilter,
+    UnsupportedSource,
+    get_item,
+    search_items,
+)
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
-from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.registry import AdapterKind, DatasetRegistry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -105,3 +114,57 @@ class TestSearchParamsIsSharedAcrossAdapters:
 
         with pytest.raises(InvalidQuery):
             SearchParams(limit=101)
+
+
+class TestFilterCapabilities:
+    """M3-08 F4a: a filter a dataset's own source cannot honour is refused by name
+    here, before an adapter ever builds a request for it — no real adapter lacks
+    either capability today (measured, M3-08 plan §2.1), so both cases below use a
+    stand-in adapter with one flag turned off."""
+
+    async def test_intersects_is_refused_when_the_adapter_does_not_support_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stub = types.SimpleNamespace(SUPPORTS_INTERSECTS=False, SUPPORTS_IDS=True)
+        monkeypatch.setitem(adapters_pkg._ADAPTERS, AdapterKind.EARTH_SEARCH_V1, stub)
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedFilter, match="intersects"):
+                await search_items(
+                    SENTINEL_2_L2A.dataset_id,
+                    SearchParams(intersects={"type": "Point", "coordinates": [10.0, 49.0]}),
+                    gateway=gateway,
+                    registry=REGISTRY,
+                )
+        assert seen == []  # refused before the stub (or anything else) was asked
+
+    async def test_ids_is_refused_when_the_adapter_does_not_support_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub = types.SimpleNamespace(SUPPORTS_INTERSECTS=True, SUPPORTS_IDS=False)
+        monkeypatch.setitem(adapters_pkg._ADAPTERS, AdapterKind.EARTH_SEARCH_V1, stub)
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedFilter, match="ids"):
+                await search_items(
+                    SENTINEL_2_L2A.dataset_id,
+                    SearchParams(ids=("known-id",)),
+                    gateway=gateway,
+                    registry=REGISTRY,
+                )
+        assert seen == []
+
+    async def test_a_search_without_either_filter_never_calls_the_capability_check_in_vain(self) -> None:
+        """`params=None`/plain `SearchParams()` must not need either flag set."""
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            await search_items(SENTINEL_2_L2A.dataset_id, gateway=gateway, registry=REGISTRY)
+        assert seen[0].headers["host"] == "earth-search.aws.element84.com"
+
+    def test_every_known_adapter_supports_both_filters(self) -> None:
+        """K8: the landing page's ``item-search`` conformance class (adr/0005 rule
+        VI, `docs/plans/m1-07-stac-api.md` §6) only holds true while every adapter
+        this platform dispatches to can honour both `intersects` and `ids` — this
+        turns the day that stops being so into a failing test here, not a landing
+        page silently promising more than the weakest adapter can do."""
+        for kind, module in adapters_pkg._ADAPTERS.items():
+            assert getattr(module, "SUPPORTS_INTERSECTS", False), f"{kind} does not declare SUPPORTS_INTERSECTS"
+            assert getattr(module, "SUPPORTS_IDS", False), f"{kind} does not declare SUPPORTS_IDS"
