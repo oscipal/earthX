@@ -124,6 +124,7 @@ Ottos Entscheidung zu M2-11).
 | M2-15 | Oberfläche durchgehend englisch | A | Sonnet (mittel) | M2-07d |
 | V-1 | Kartenbedienung, Globus, Theme (Viewer-Strang) | A | Sonnet (mittel) | M2-15 |
 | M2-16 | Bug: Quicklook-Platzierung an Kachelrändern | A | Sonnet (klein) | M2-07a |
+| V-2 | Fünf Befunde aus Ottos Durchsicht (Viewer-Strang) | A | Sonnet (klein) | V-1 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
 stauen (`m1-fundament.md` §6).
@@ -137,6 +138,7 @@ stauen (`m1-fundament.md` §6).
 7. M2-08
 8. M2-11, M2-12
 9. M2-16 — Bugfix nebenbei, hängt an nichts außer dem bereits gemergten M2-07a
+10. V-2 — Bugfixes nebenbei, hängt an nichts außer dem bereits gemergten V-1
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -515,6 +517,20 @@ kleiner und unregelmäßig ist als die Kachel.
 
 **Nicht anfassen:** Footprint-Anzeige (Coverage/M2-07c) und `pointInFootprint` — die nutzen weiter die Datengeometrie, das ist ein anderes Feature und nicht Teil dieses Befunds.
 **Abnahme:** ein Vitest-Fall mit einer Randszene, deren Geometrie deutlich kleiner als die Kachel ist; die Eckpunkte stammen aus der Kachel. Fehlen `proj:bbox`/`proj:code` (in der Praxis: fehlt CRS oder Asset-Extent), wird kein Quicklook gezeigt statt eines falsch platzierten. Lint, Typprüfung, Vitest grün.
+
+### V-2 — Fünf Befunde aus Ottos Durchsicht (Viewer-Strang)
+
+**Ziel:** Fünf kleine Befunde aus Ottos Durchsicht der Oberfläche von V-1 sind behoben. Alle Texte englisch (D25).
+**Stufe A.** Hängt an V-1 (gemergt), sonst an nichts.
+**Umfang:**
+1. Der Theme-Knopf oben rechts beschriftete die Wirkung, nicht den Zustand. Der sichtbare Text (`☾ Dark`/`☀ Light`) zeigte bereits den aktuellen Zustand; das Tooltip nannte nur das Ziel des Wechsels. Tooltip auf Zustand-zuerst umgestellt (`"Dark theme — click to switch to light"`), dazu ein Vitest-Fall, der den sichtbaren Text festschreibt.
+2. Symbole ergänzt: 🌐 für den Globus, 🗺 für die flache Ansicht (umbenannt von „Flat" zu „Mercator", der interne Projektionswert `mercator` bleibt unverändert — er ist eine MapLibre-Konstante), ☰ (drei waagerechte Balken) für „Layers" statt der vorigen Rasterfläche.
+3. „Zoom to selection" (`store.ts::zoomToView`) zoomt jetzt zuerst auf die AOI, sonst auf die Bilder in den angepinnten Layern (`store.layers`, per neuem `geoUtils.ts::coordsBbox` auch für Quicklook-Overlays mit vier Eckpunkten), sonst gar nicht; `App.tsx::canZoom` deckt sich damit und hält den Knopf sichtbar deaktiviert, wenn beides fehlt. Vorher zoomte der Knopf auf die Auswahl bzw. den aktiven Zeitschritt — das ist entfallen.
+4. Das native Kalendersymbol von `input[type=date]` war im Dunkelmodus unsichtbar (dunkles Symbol auf dunklem Grund). Behoben über `color-scheme: dark` plus `filter: invert(1)` auf `::-webkit-calendar-picker-indicator`, nur im `tech`-Theme.
+5. „Add to layers" steht jetzt zusätzlich direkt neben „View full resolution" in der Auswahl-Leiste (`ViewBar.tsx`), nicht mehr nur im Zeitschieber oder erst nach dem Wechsel in die Volltauflösung — die dafür nötige Store-Funktion (`addCurrentToLayers`) unterstützte das Anpinnen eines Quicklooks im Browse-Modus bereits (M2-10), war aber aus der Auswahl-Leiste nicht erreichbar.
+
+**Nicht anfassen:** Backend; die Basiskarte; der interne Projektionswert `mercator`.
+**Abnahme:** Lint, Typprüfung und Vitest grün; im PR eine kurze Anleitung zum Ausprobieren der fünf Punkte.
 
 ---
 
