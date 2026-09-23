@@ -105,23 +105,25 @@ function Row({ item }: { item: StacItem }) {
   );
 }
 
-function GroupBlock({ group, index }: { group: TimeStepGroup; index: number }) {
-  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
-  const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
-  const active = index === activeGroupIndex;
-
+function GroupBlock({
+  group,
+  index,
+  expanded,
+  onToggle,
+}: {
+  group: TimeStepGroup;
+  index: number;
+  expanded: boolean;
+  onToggle: (index: number) => void;
+}) {
   return (
-    <div className={`result-group${active ? ' active' : ''}`}>
-      <button
-        type="button"
-        className="result-group-head"
-        onClick={() => setActiveGroupIndex(index)}
-      >
-        <span className="rg-caret">{active ? '▾' : '▸'}</span>
+    <div className={`result-group${expanded ? ' active' : ''}`}>
+      <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
+        <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
         <span className="rg-label">{group.label}</span>
         <span className="rg-count">{group.items.length}</span>
       </button>
-      {active && (
+      {expanded && (
         <ul className="rg-items">
           {group.items.map((it) => (
             <Row key={it.id} item={it} />
@@ -134,7 +136,30 @@ function GroupBlock({ group, index }: { group: TimeStepGroup; index: number }) {
 
 export default function ResultsPanel() {
   const groups = useAppStore((s) => s.groups);
+  const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
+  const setActiveGroupIndex = useAppStore((s) => s.setActiveGroupIndex);
   const clearAll = useAppStore((s) => s.clearAll);
+  // Which section is open in the list — separate from `activeGroupIndex`
+  // (the time step the map/time slider show), so the currently open one can
+  // be collapsed without forcing a different one open (V-6). Stays in sync
+  // whenever `activeGroupIndex` changes some other way (a new search, the
+  // time slider, "play"); a manual collapse only changes this local state,
+  // so it doesn't get overwritten by that sync — `activeGroupIndex` itself
+  // hasn't changed.
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(activeGroupIndex);
+  useEffect(() => {
+    setExpandedIndex(activeGroupIndex);
+  }, [activeGroupIndex]);
+
+  const toggleGroup = (index: number) => {
+    if (index === expandedIndex) {
+      setExpandedIndex(null);
+    } else {
+      setExpandedIndex(index);
+      setActiveGroupIndex(index);
+    }
+  };
+
   if (groups.length === 0) return null;
 
   return (
@@ -155,7 +180,13 @@ export default function ResultsPanel() {
       </div>
       <div className="results-list">
         {groups.map((g, i) => (
-          <GroupBlock key={g.key.join('\u0000')} group={g} index={i} />
+          <GroupBlock
+            key={g.key.join('\u0000')}
+            group={g}
+            index={i}
+            expanded={i === expandedIndex}
+            onToggle={toggleGroup}
+          />
         ))}
       </div>
     </div>
