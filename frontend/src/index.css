@@ -1181,12 +1181,20 @@ input[type='date']:focus {
   }
 }
 
-/* MapLibre attribution: keep it subtle in the tech theme */
-.app[data-theme='tech'] .maplibregl-ctrl-attrib {
-  background: rgba(0, 0, 0, 0.5);
+/* MapLibre attribution in the tech theme. `.maplibregl-compact` (the
+   expanded "ⓘ" popup) sets its own `color: #000` and `background: #fff` at
+   the same specificity as the rules below, and wins on source order unless
+   matched here too — leaving the plain text between the links unreadably
+   black on our dark background even though the links themselves picked up
+   `--muted`. */
+.app[data-theme='tech'] .maplibregl-ctrl-attrib,
+.app[data-theme='tech'] .maplibregl-ctrl-attrib.maplibregl-compact,
+.app[data-theme='tech'] .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
 }
 .app[data-theme='tech'] .maplibregl-ctrl-attrib a {
-  color: var(--muted);
+  color: #fff;
 }
 
 /* --- what the catalogue says about the source (M2-10) --- */
