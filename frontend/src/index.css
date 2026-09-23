@@ -971,9 +971,12 @@ input[type='date']:focus {
 }
 
 /* --- layer manager --- */
+/* Left edge with a small gap by default (V-7), same as the search panel's
+   own left offset — it used to sit at a fixed 420px, tuned to clear that
+   panel's width, but it is draggable and freely repositionable anyway. */
 .layermgr {
   top: 96px;
-  left: 420px;
+  left: 16px;
 }
 /* Closed state: hides the whole draggable (grip included) without
    unmounting it, so its drag offset survives a close/reopen. */
