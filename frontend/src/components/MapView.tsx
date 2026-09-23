@@ -13,7 +13,16 @@ import { showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { itemsForMap } from '../grouping';
 import type { CoverageDisplay } from '../mapLayers';
-import { ensureBaseLayers, setAoiData, setCoverageDisplay, syncLayers, syncMosaic } from '../mapLayers';
+import {
+  ensureBaseLayers,
+  setAoiData,
+  setCoverageDisplay,
+  syncBrowseMosaic,
+  syncFocusRaster,
+  syncLayers,
+  syncMosaic,
+  syncSelectionHighlight,
+} from '../mapLayers';
 import { baseMapStyle } from '../mapStyles';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
@@ -227,31 +236,37 @@ export default function MapView() {
     if (map && readyRef.current) syncLayers(map, layers);
   }, [layers]);
 
-  // --- active overlay / selection highlight ---
+  // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
+  // `selectedIds`: a selection toggle must never tear these down and reload
+  // them, only change the highlight (the effect below handles that). ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current && focusMode) {
+      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded });
+    }
+  }, [focusMode, downloaded, appliedRender, showDownloaded]);
+
+  // --- browse-mode preview overlays (quicklooks / preview tiles) — these do
+  // react to `selectedIds`, since a cross-group selection can pin a scene
+  // from a time step that isn't the expanded one onto the map (V-3, finding 2). ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current && !focusMode) {
+      syncBrowseMosaic(map, {
+        items: itemsForMap(groups, activeGroupIndex, selectedIds),
+        dataset: datasets.find((d) => d.id === datasetId) ?? null,
+      });
+    }
+  }, [focusMode, groups, activeGroupIndex, selectedIds, datasets, datasetId]);
+
+  // --- selection highlight — cheap, runs in both modes independently of the
+  // (potentially expensive) overlay rebuilds above. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
-      syncMosaic(map, {
-        items: itemsForMap(groups, activeGroupIndex, selectedIds),
-        dataset: datasets.find((d) => d.id === datasetId) ?? null,
-        downloaded,
-        selectedIds,
-        render: appliedRender,
-        focusMode,
-        showDownloaded,
-      });
+      syncSelectionHighlight(map, itemsForMap(groups, activeGroupIndex, selectedIds), selectedIds);
     }
-  }, [
-    groups,
-    activeGroupIndex,
-    selectedIds,
-    downloaded,
-    appliedRender,
-    focusMode,
-    showDownloaded,
-    datasets,
-    datasetId,
-  ]);
+  }, [groups, activeGroupIndex, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

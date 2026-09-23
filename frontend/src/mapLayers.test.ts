@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { buildTileUrl, syncMosaic } from './mapLayers';
+import { buildTileUrl, syncFocusRaster, syncMosaic, syncSelectionHighlight } from './mapLayers';
 import type { AppliedRender, DownloadedInfo, StacItem } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
@@ -57,6 +57,8 @@ interface AddedSource {
 function fakeMap() {
   const sources: AddedSource[] = [];
   const layers: string[] = [];
+  const removedSources: string[] = [];
+  const removedLayers: string[] = [];
   // Data written via `source.setData(...)` on one of the fixed (non-dynamic)
   // sources, keyed by source id — this is how `setCoverageDisplay` and the
   // selection highlight (`SEL_SRC` = 'mosaicsel-src') publish their GeoJSON.
@@ -65,12 +67,12 @@ function fakeMap() {
     getSource: (id: string) =>
       id.startsWith('m-') ? undefined : { setData: (d: GeoJSON.GeoJSON) => (data[id] = d) },
     getLayer: () => undefined,
-    removeLayer: () => {},
-    removeSource: () => {},
+    removeLayer: (id: string) => removedLayers.push(id),
+    removeSource: (id: string) => removedSources.push(id),
     addSource: (id: string, spec: Record<string, unknown>) => sources.push({ id, spec }),
     addLayer: (layer: { id: string }) => layers.push(layer.id),
   };
-  return { map, sources, layers, data };
+  return { map, sources, layers, data, removedSources, removedLayers };
 }
 
 function zarrLikeDataset() {
@@ -190,5 +192,53 @@ describe('syncMosaic: the full-resolution selection highlight (focus mode)', () 
     const { sources, selection } = focusView([scene.id]);
     expect(sources.filter((s) => s.spec.type === 'raster')).toHaveLength(1);
     expect(selection.features).toHaveLength(1);
+  });
+});
+
+describe('syncFocusRaster', () => {
+  it('renders one raster layer per downloaded scene, with the applied render in the tile URL', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: { rescale: '0,3000' },
+      showDownloaded: true,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    expect(source.spec.bounds).toEqual(info().bounds);
+    const url = new URL((source.spec.tiles as string[])[0], 'http://localhost');
+    expect(url.searchParams.get('rescale')).toBe('0,3000');
+  });
+
+  it('renders nothing while the image is hidden', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, { downloaded: { [scene.id]: info() }, render: {}, showDownloaded: false });
+    expect(sources).toHaveLength(0);
+  });
+});
+
+// V-3, finding 1's actual root cause: before this, MapView had one effect
+// covering both the raster tiles *and* the selection outline, keyed (among
+// other things) on `selectedIds` — so a click that only (de)selected a
+// full-resolution image still went through the whole reconcile, tearing the
+// raster layers down and rebuilding them. `syncSelectionHighlight` is the
+// only thing a selection toggle should ever have to run; it must never touch
+// a source or layer that `syncFocusRaster`/`syncBrowseMosaic` own.
+describe('syncSelectionHighlight: no layer churn', () => {
+  it('never adds or removes a raster/quicklook source or layer', () => {
+    const { map, sources, layers, data } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+    });
+    const sourcesAfterRaster = sources.length;
+    const layersAfterRaster = layers.length;
+    expect(sourcesAfterRaster).toBeGreaterThan(0);
+
+    syncSelectionHighlight(map as never, [scene], [scene.id]);
+
+    expect(sources).toHaveLength(sourcesAfterRaster);
+    expect(layers).toHaveLength(layersAfterRaster);
+    expect((data['mosaicsel-src'] as GeoJSON.FeatureCollection).features).toHaveLength(1);
   });
 });

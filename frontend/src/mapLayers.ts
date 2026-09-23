@@ -400,32 +400,55 @@ export interface MosaicState {
   showDownloaded: boolean; // when false, downloaded full-res overlays are hidden
 }
 
-/** Reconcile the whole active group: simultaneously show one overlay per
- *  adjacent frame covering the AOI (quicklook, or pyramidal tiles once
- *  downloaded), plus a highlight around frames selected for download. */
-export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
+// Full-resolution raster tiles (M2-07b). Tearing the existing layers down and
+// re-adding them is visible as the image disappearing and reappearing, so
+// this must only run when what should be drawn actually changes — which
+// scenes, the applied render, or the visibility toggle — never for a plain
+// selection toggle, which is `syncSelectionHighlight`'s job instead. Before
+// V-3 this and the highlight were one function always called together, so a
+// click that only (de)selected a full-resolution image still tore the tiles
+// down and reloaded them for no visual gain — the actual cause behind "a
+// click on a full-resolution image reloads it".
+export function syncFocusRaster(
+  map: MapLibreMap,
+  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded'>,
+): void {
+  clearDynamicMosaic(map);
+  if (!s.showDownloaded) return;
+  Object.values(s.downloaded)
+    .slice(0, MAX_MOSAIC_LAYERS)
+    .forEach((info, i) => addTiles(map, info, i, s.render));
+}
+
+// Browse-mode preview overlays: one per scene of `items` (the active time
+// step, plus any scene pinned onto the map by a cross-group selection — see
+// `itemsForMap`, V-3 finding 2). Without a dataset there is nothing to
+// preview *from* — the registry decides both the image and the level.
+export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'>): void {
   const gen = ++syncGen;
   clearDynamicMosaic(map);
-  if (s.focusMode) {
-    // Full-res view: render each downloaded overlay (a normal crop, a stitched
-    // mosaic, or a decomposition). Hidden via the visibility toggle.
-    if (s.showDownloaded) {
-      Object.values(s.downloaded)
-        .slice(0, MAX_MOSAIC_LAYERS)
-        .forEach((info, i) => addTiles(map, info, i, s.render));
-    }
-    // Same highlight as the browse mode below, from the same `selectedIds` —
-    // a click on a full-resolution image toggles its selection through the
-    // very same map click handler (MapView.tsx) that browse mode uses, so it
-    // deserves the very same yellow outline instead of no visible effect (V-3).
-    setData(map, SEL_SRC, footprintsFC(s.items.filter((it) => s.selectedIds.includes(it.id))));
-    return;
-  }
-  // Browsing: a preview per scene of the active time step; highlight selected
-  // footprints. Without a dataset there is nothing to preview *from* — the
-  // registry decides both the image and the level.
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
   if (dataset) items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
-  setData(map, SEL_SRC, footprintsFC(items.filter((it) => s.selectedIds.includes(it.id))));
+}
+
+// The yellow outline around selected scenes, in either mode. A plain GeoJSON
+// source update with no layer churn, so it is safe and cheap to run on every
+// selection change without going through `syncFocusRaster`/`syncBrowseMosaic`.
+export function syncSelectionHighlight(map: MapLibreMap, items: StacItem[], selectedIds: string[]): void {
+  const limited = items.slice(0, MAX_MOSAIC_LAYERS);
+  setData(map, SEL_SRC, footprintsFC(limited.filter((it) => selectedIds.includes(it.id))));
+}
+
+/** Reconcile everything in one call — used for a full rebuild (initial load,
+ *  after a style reload wipes every custom source/layer). Everyday updates
+ *  go through the finer-grained functions above instead, so a selection
+ *  toggle alone never forces a raster reload (V-3, finding 1). */
+export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
+  if (s.focusMode) {
+    syncFocusRaster(map, s);
+  } else {
+    syncBrowseMosaic(map, s);
+  }
+  syncSelectionHighlight(map, s.items, s.selectedIds);
 }
