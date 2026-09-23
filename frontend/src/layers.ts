@@ -20,6 +20,14 @@ export interface LayerRestore {
   appliedRender: AppliedRender;
   activeGroupIndex: number;
   selectedIds: string[];
+  // The scenes this layer represents, captured when it was pinned (V-6) —
+  // independent of `store.items`/`groups`, which may have moved on to a
+  // different search by the time the layer is downloaded. For a
+  // full-resolution layer this is `Object.keys(downloaded)`; for a
+  // quicklook-only one, the pinned scenes themselves (`addCurrentToLayers`
+  // may have skipped a few of those as map overlays for missing geometry,
+  // but a crop only needs the item id, the dataset and the AOI).
+  itemIds: string[];
   aoi: GeoJSON.Geometry | null;
   // The dataset the layer was pinned from (M2-07d): the current selection
   // (`store.datasetId`) can move on to a different dataset while the layer

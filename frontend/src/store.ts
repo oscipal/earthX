@@ -377,10 +377,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     const group = s.groups[s.activeGroupIndex];
     const overlays: LayerOverlay[] = [];
+    let itemIds: string[] = [];
     if (s.focusMode) {
       const entries = s.selectedIds.length
         ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
         : Object.entries(s.downloaded);
+      itemIds = entries.map(([id]) => id);
       for (const [, info] of entries) {
         overlays.push({
           kind: 'raster',
@@ -394,6 +396,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const items = s.selectedIds.length
         ? s.items.filter((it) => s.selectedIds.includes(it.id))
         : (group?.items ?? []);
+      itemIds = items.map((it) => it.id);
       const browsed = s.datasets.find((d) => d.id === s.datasetId);
       for (const it of items) {
         const plan = browsed ? quicklookPlan(it, browsed) : null;
@@ -436,6 +439,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         appliedRender: { ...s.appliedRender },
         activeGroupIndex: s.activeGroupIndex,
         selectedIds: [...s.selectedIds],
+        itemIds,
         aoi: s.aoi,
         datasetId: s.datasetId,
       },
@@ -505,7 +509,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const req = s.downloadSelection
       ? downloadRequestForSelection(dataset, selectionItemsFrom(s), s.aoi)
-      : layer && downloadRequestFor(layer);
+      : layer && downloadRequestFor(layer, s.datasets);
     const name = s.downloadSelection
       ? `${dataset?.title ?? s.datasetId ?? '?'} · ${s.groups[s.activeGroupIndex]?.label ?? ''}`
       : (layer?.name ?? '');

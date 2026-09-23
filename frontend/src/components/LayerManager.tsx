@@ -13,6 +13,7 @@ export default function LayerManager() {
   const select = useAppStore((s) => s.selectLayer);
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasetId = useAppStore((s) => s.datasetId);
+  const datasets = useAppStore((s) => s.datasets);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const toggleCoverage = useAppStore((s) => s.toggleCoverage);
 
@@ -101,7 +102,7 @@ export default function LayerManager() {
                 >
                   ▼
                 </button>
-                {canDownloadLayer(l) && (
+                {canDownloadLayer(l, datasets) && (
                   <button
                     type="button"
                     className="lm-btn"

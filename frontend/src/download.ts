@@ -15,22 +15,37 @@ export interface DownloadRequestInfo {
   aoi: GeoJSON.Geometry;
 }
 
-// A layer can be downloaded once it has been viewed at full resolution (a
-// `raster` overlay backed by `store.downloaded`, M2-07b) over a drawn AOI. A
-// quicklook-only layer carries neither an asset key nor a crop AOI — only a
-// thumbnail URL and the item's own footprint — so there is nothing to crop.
-export function downloadRequestFor(layer: MapLayer): DownloadRequestInfo | null {
+// A layer can be downloaded once it has an AOI to crop (a layer pinned
+// before any AOI was drawn has nothing to cut the source data to). Two
+// cases (V-6 added the second):
+// - Viewed at full resolution first (a `raster` overlay backed by
+//   `store.downloaded`, M2-07b): the asset is whichever one was actually
+//   fetched, per item.
+// - A quicklook-only layer, pinned straight from the results list without
+//   ever switching into full-resolution viewing: the crop route reads the
+//   source's own pixels regardless of what the browser has fetched so far
+//   (same reasoning as `downloadRequestForSelection`, V-4), so the asset is
+//   the dataset's default visualisation asset.
+// Either way the scenes come from `restore.itemIds`, captured when the
+// layer was pinned — not from the live search results, which may have moved
+// on by the time someone opens the layer manager to download it.
+export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): DownloadRequestInfo | null {
   const { restore } = layer;
-  if (!restore.focusMode || !restore.datasetId || !restore.aoi) return null;
-  const entries = Object.entries(restore.downloaded);
-  if (entries.length === 0) return null;
-  const items = entries.map(([id]) => id);
-  const assets = [...new Set(entries.map(([, info]) => info.asset))];
-  return { datasetId: restore.datasetId, items, assets, aoi: restore.aoi };
+  if (!restore.datasetId || !restore.aoi || restore.itemIds.length === 0) return null;
+  if (restore.focusMode) {
+    const entries = Object.entries(restore.downloaded).filter(([id]) => restore.itemIds.includes(id));
+    if (entries.length === 0) return null;
+    const assets = [...new Set(entries.map(([, info]) => info.asset))];
+    return { datasetId: restore.datasetId, items: restore.itemIds, assets, aoi: restore.aoi };
+  }
+  const dataset = datasets.find((d) => d.id === restore.datasetId);
+  const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+  if (!asset) return null;
+  return { datasetId: restore.datasetId, items: restore.itemIds, assets: [asset], aoi: restore.aoi };
 }
 
-export function canDownloadLayer(layer: MapLayer): boolean {
-  return downloadRequestFor(layer) !== null;
+export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): boolean {
+  return downloadRequestFor(layer, datasets) !== null;
 }
 
 // The same request, built directly from a selection of quicklooks instead of

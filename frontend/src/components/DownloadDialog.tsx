@@ -23,6 +23,7 @@ export default function DownloadDialog() {
   const layerId = useAppStore((s) => s.downloadDialogLayerId);
   const selectionMode = useAppStore((s) => s.downloadSelection);
   const layer = useAppStore((s) => s.layers.find((l) => l.id === s.downloadDialogLayerId));
+  const datasets = useAppStore((s) => s.datasets);
   const layerDataset = useAppStore((s) =>
     s.datasets.find((d) => d.id === (layer?.restore.datasetId ?? s.datasetId)),
   );
@@ -52,7 +53,7 @@ export default function DownloadDialog() {
   const req = selectionMode
     ? downloadRequestForSelection(selectionDataset, selectionItems, selectionAoi)
     : layer
-      ? downloadRequestFor(layer)
+      ? downloadRequestFor(layer, datasets)
       : null;
   const title = selectionMode
     ? [dataset?.title ?? selectionDataset?.id, activeGroupLabel].filter(Boolean).join(' · ')
