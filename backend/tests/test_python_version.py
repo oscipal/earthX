@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[2]
 # this one was (docs/plans/m3-03-python-312.md).
 EXPECTED = (3, 12)
 
-WORKFLOW_VERSION = re.compile(r'^\s*PYTHON_VERSION:\s*"(\d+\.\d+)"\s*$')
+WORKFLOW_VERSION = re.compile(r"""^\s*PYTHON_VERSION:\s*['"]?(\d+\.\d+)['"]?\s*$""")
 SOURCES = {
     "backend/Dockerfile": re.compile(r"^FROM\s+python:(\d+\.\d+)-slim\b"),
     ".github/workflows/ci.yml": WORKFLOW_VERSION,
@@ -63,12 +63,25 @@ def test_every_place_names_the_expected_version(path: str) -> None:
     assert declared_version(text, SOURCES[path]) == f"{EXPECTED[0]}.{EXPECTED[1]}"
 
 
+def setup_python_steps_reading_the_env(text: str) -> int:
+    """How many `setup-python` steps there are, if each reads `PYTHON_VERSION`.
+
+    Counted against each other so that a step without any version, or one reading
+    `python-version-file`, cannot pass by simply not matching.
+    """
+    lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
+    steps = sum(1 for line in lines if re.search(r"uses:\s*actions/setup-python@", line))
+    versions = [line for line in lines if line.startswith("python-version")]
+    reading_the_env = [line for line in versions if line == "python-version: ${{ env.PYTHON_VERSION }}"]
+    if steps == 0 or len(versions) != steps or len(reading_the_env) != steps:
+        raise ValueError(f"{steps} setup-python steps, {len(reading_the_env)} of them read env.PYTHON_VERSION")
+    return steps
+
+
 @pytest.mark.parametrize("path", [".github/workflows/ci.yml", ".github/workflows/live-smoke.yml"])
-def test_no_workflow_step_names_a_version_of_its_own(path: str) -> None:
+def test_every_setup_python_step_reads_the_workflow_version(path: str) -> None:
     """`PYTHON_VERSION` is only one place if every `setup-python` step reads it."""
-    lines = (REPO / path).read_text(encoding="utf-8").splitlines()
-    literal = [line.strip() for line in lines if "python-version:" in line and "env.PYTHON_VERSION" not in line]
-    assert literal == []
+    assert setup_python_steps_reading_the_env((REPO / path).read_text(encoding="utf-8")) >= 1
 
 
 class TestDeclaredVersion:
@@ -96,3 +109,32 @@ class TestDeclaredVersion:
     def test_a_python3_found_on_path_does_not_count_for_the_hook(self) -> None:
         with pytest.raises(ValueError, match="none"):
             declared_version("PYTHON=python3.12\n", SOURCES["scripts/setup-cloud-session.sh"])
+
+    def test_a_single_quoted_or_bare_workflow_version_still_counts(self) -> None:
+        text = "env:\n  PYTHON_VERSION: '3.12'\njobs:\n  PYTHON_VERSION: 3.11\n"
+        with pytest.raises(ValueError, match="3.11"):
+            declared_version(text, WORKFLOW_VERSION)
+
+
+class TestSetupPythonSteps:
+    STEP = "      - uses: actions/setup-python@v5\n        with:\n"
+
+    def test_steps_reading_the_env_are_counted(self) -> None:
+        text = (self.STEP + "          python-version: ${{ env.PYTHON_VERSION }}\n") * 2
+        assert setup_python_steps_reading_the_env(text) == 2
+
+    def test_a_workflow_without_setup_python_is_an_error_not_a_pass(self) -> None:
+        with pytest.raises(ValueError, match="0 setup-python"):
+            setup_python_steps_reading_the_env("jobs:\n  build:\n    runs-on: ubuntu-latest\n")
+
+    def test_a_literal_version_is_an_error(self) -> None:
+        with pytest.raises(ValueError):
+            setup_python_steps_reading_the_env(self.STEP + '          python-version: "3.11"\n')
+
+    def test_a_step_without_a_version_is_an_error(self) -> None:
+        with pytest.raises(ValueError):
+            setup_python_steps_reading_the_env(self.STEP + "          cache: pip\n")
+
+    def test_a_version_file_is_an_error(self) -> None:
+        with pytest.raises(ValueError):
+            setup_python_steps_reading_the_env(self.STEP + "          python-version-file: .python-version\n")
