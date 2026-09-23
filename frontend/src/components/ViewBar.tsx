@@ -10,6 +10,7 @@ export default function ViewBar() {
   const focusLoading = useAppStore((s) => s.focusLoading);
   const enterFocus = useAppStore((s) => s.enterFocus);
   const clearSelection = useAppStore((s) => s.clearSelection);
+  const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
 
   if (selectedIds.length === 0) return null;
 
@@ -30,6 +31,14 @@ export default function ViewBar() {
         onClick={() => enterFocus()}
       >
         {focusLoading ? 'Loading…' : 'View full resolution'}
+      </button>
+      <button
+        type="button"
+        className="ghost-btn"
+        title="Pin the selected scenes into the layer manager, at their current (preview) resolution"
+        onClick={() => addCurrentToLayers()}
+      >
+        ＋ Add to layers
       </button>
       <button type="button" className="ghost-btn" disabled={focusLoading} onClick={() => clearSelection()}>
         Clear
