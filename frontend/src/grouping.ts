@@ -81,6 +81,30 @@ export function buildGroups(items: StacItem[], groupBy: readonly string[]): Time
   });
 }
 
+// The property that names a Sentinel-2 overpass: all tiles of one datatake
+// share one value, unlike `grid:code`, which names the individual MGRS tile.
+const DATATAKE_PROPERTY = 's2:datatake_id';
+
+// V-4: the visible grouping in the results list clusters same-overpass
+// tiles under one heading (day + datatake) instead of one heading per MGRS
+// tile. This is purely how the list is headed — it never touches the
+// registry's `group_by` (D19, used to keep `grouping.ts` and
+// `catalog.registry.group_key` in sync) and it never changes which scenes
+// exist or what each one renders (D11): `buildGroups` still lists every
+// item individually inside its group, each with its own quicklook and its
+// own tile URL.
+//
+// Falls back to the registry's own key (day + tile) when an item in the
+// current result set does not carry the property, rather than deciding per
+// item — a mixed fallback would put some tiles of the same overpass under a
+// datatake heading and others under a tile heading, which is worse than
+// keeping the one grouping the search results already carried consistently.
+export function displayGroupBy(items: readonly StacItem[], fallback: readonly string[]): string[] {
+  const hasDatatake =
+    items.length > 0 && items.every((it) => it.properties && DATATAKE_PROPERTY in it.properties);
+  return hasDatatake ? ['datetime', DATATAKE_PROPERTY] : [...fallback];
+}
+
 export function groupIndexOfItem(groups: TimeStepGroup[], itemId: string): number {
   return groups.findIndex((g) => g.items.some((it) => it.id === itemId));
 }

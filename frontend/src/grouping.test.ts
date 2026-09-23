@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGroups, groupKey, itemsForMap, MissingProperty } from './grouping';
+import { buildGroups, displayGroupBy, groupKey, itemsForMap, MissingProperty } from './grouping';
 import type { StacItem } from './types';
 
 function item(properties: Record<string, unknown>): StacItem {
@@ -111,6 +111,41 @@ describe('buildGroups', () => {
     const scene = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS' });
     const [group] = buildGroups([scene], SENTINEL_2_GROUP_BY);
     expect(group.label).toBe('2026-07-24 · MGRS-32TMS');
+  });
+});
+
+// V-4: the results list heads groups by day + overpass (`s2:datatake_id`)
+// instead of day + MGRS tile, when the search results carry the property —
+// a display-only change, never affecting which scenes exist (D11) or the
+// registry's own `group_by` (D19).
+describe('displayGroupBy', () => {
+  it('prefers day + datatake when every item carries it', () => {
+    const a = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
+    const b = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS', 's2:datatake_id': 'GS2A_1' });
+    expect(displayGroupBy([a, b], SENTINEL_2_GROUP_BY)).toEqual(['datetime', 's2:datatake_id']);
+  });
+
+  it('two tiles of the same overpass land in one group', () => {
+    const a = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
+    const b = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS', 's2:datatake_id': 'GS2A_1' });
+    const groups = buildGroups([a, b], displayGroupBy([a, b], SENTINEL_2_GROUP_BY));
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map((it) => it.id)).toEqual(['an-item', 'an-item']);
+  });
+
+  it('falls back to the registry key when an item lacks the property', () => {
+    const withDatatake = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
+    const without = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS' });
+    expect(displayGroupBy([withDatatake, without], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
+  });
+
+  it('falls back to the registry key when no item carries the property', () => {
+    const scene = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS' });
+    expect(displayGroupBy([scene], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
+  });
+
+  it('falls back to the registry key for an empty result set', () => {
+    expect(displayGroupBy([], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
   });
 });
 
