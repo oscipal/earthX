@@ -983,20 +983,15 @@ input[type='date']:focus {
 }
 
 /* --- layer manager --- */
-/* Left edge with a small gap while the controls are collapsed (V-7); once
-   they're open again it steps aside to clear them instead of sitting
-   underneath (V-8, `.controls-open` set in App.tsx from the same
-   `panelCollapsed` the control dock itself reacts to). 420px is the search
-   panel's own width (`.top-left { max-width: 340px }`) plus its left offset
-   and the toggle chevron past its right edge. Still draggable — this only
-   ever sets the starting point. */
+/* Left edge with a small gap (V-7) — the single, fixed anchor. Whether it
+   actually needs to step aside from the control dock, and clamping it to
+   stay fully on screen either way, is `Draggable`'s job now (`avoidSelector`,
+   V-10): CSS alone couldn't tell "the dock is open" from "the dock is open
+   and would actually overlap this panel", which nudged it aside even when
+   nothing was in its way. */
 .layermgr {
   top: 96px;
   left: 16px;
-  transition: left 0.32s ease;
-}
-.layermgr.controls-open {
-  left: 420px;
 }
 /* Closed state: hides the whole draggable (grip included) without
    unmounting it, so its drag offset survives a close/reopen. */

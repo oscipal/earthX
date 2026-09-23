@@ -4,6 +4,7 @@ import Draggable from './Draggable';
 
 export default function LayerManager() {
   const open = useAppStore((s) => s.layerManagerOpen);
+  const panelCollapsed = useAppStore((s) => s.panelCollapsed);
   const layers = useAppStore((s) => s.layers);
   const toggle = useAppStore((s) => s.toggleLayerManager);
   const remove = useAppStore((s) => s.removeLayer);
@@ -22,7 +23,15 @@ export default function LayerManager() {
   // its drag offset every time the panel closed, so a moved panel snapped
   // back to its original spot the next time it opened.
   return (
-    <Draggable className={`layer-dock${open ? '' : ' layer-dock-hidden'}`}>
+    <Draggable
+      className={`layer-dock${open ? '' : ' layer-dock-hidden'}`}
+      avoidSelector=".panel-dock"
+      // Opening this panel (or the control dock collapsing/expanding) both
+      // change whether the two actually overlap — force a fresh check
+      // rather than relying only on `avoidSelector`'s own transition, which
+      // this panel's `open` toggle doesn't fire (see Draggable.tsx).
+      recalcTrigger={`${open}:${panelCollapsed}`}
+    >
       <div className="panel layer-manager">
         <div className="results-head">
           <h2>Layers</h2>
