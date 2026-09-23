@@ -120,7 +120,9 @@ function GroupBlock({
     <div className={`result-group${expanded ? ' active' : ''}`}>
       <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
         <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
-        <span className="rg-label">{group.label}</span>
+        <span className="rg-label" title={group.label}>
+          {group.label}
+        </span>
         <span className="rg-count">{group.items.length}</span>
       </button>
       {expanded && (

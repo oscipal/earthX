@@ -69,7 +69,7 @@ export default function LayerManager() {
                 <button
                   type="button"
                   className="lm-name"
-                  title="View this layer / continue working on it"
+                  title={`${l.name} — view this layer / continue working on it`}
                   onClick={() => select(l.id)}
                 >
                   {l.name}
