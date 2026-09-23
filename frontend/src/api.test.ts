@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildSearchUrl, buildStatisticsUrl, buildTileTemplate, errorDetail, nextTokenFrom } from './api';
+import { buildSearchUrl, buildStatisticsUrl, buildTileTemplate, errorDetail, fetchItem, HttpError, nextTokenFrom } from './api';
 
 describe('buildSearchUrl', () => {
   it('carries the collection, bbox, datetime range, limit and token', () => {
@@ -99,5 +99,42 @@ describe('errorDetail', () => {
     expect(errorDetail(body, 400, 'Bad Request')).toBe(
       'a search spanning more than one source is not supported yet; name exactly one collection',
     );
+  });
+});
+
+describe('fetchItem', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('encodes dataset and item id into the STAC item route', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { id: 'a/b' })));
+    await fetchItem('a b', 'c/d');
+    const url = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(url).toBe('/stac/collections/a%20b/items/c%2Fd');
+  });
+
+  it('returns undefined for a 404 — an unknown name, not an error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(404, { detail: 'Not Found' })));
+    expect(await fetchItem('sentinel-2-c1-l2a', 'does-not-exist')).toBeUndefined();
+  });
+
+  it('returns the item on a 200', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { id: 'S2A_1', properties: {}, assets: {} })));
+    const item = await fetchItem('sentinel-2-c1-l2a', 'S2A_1');
+    expect(item?.id).toBe('S2A_1');
+  });
+
+  it('throws an HttpError carrying the status for anything else, e.g. an invalid name', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(400, { detail: 'invalid characters' })));
+    await expect(fetchItem('sentinel-2-c1-l2a', 'bad name')).rejects.toMatchObject({
+      status: 400,
+      message: 'invalid characters',
+    });
+    await expect(fetchItem('sentinel-2-c1-l2a', 'bad name')).rejects.toBeInstanceOf(HttpError);
   });
 });

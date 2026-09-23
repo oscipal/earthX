@@ -29,6 +29,20 @@ export function errorDetail(body: unknown, status: number, statusText: string): 
   return fallback;
 }
 
+// Carries the HTTP status alongside the message `errorDetail` already builds, so a
+// caller that cares about the distinction (M2-17: a malformed name is `400`, an
+// unknown one is `404`, anything else is an upstream failure) does not have to
+// re-parse `.message` to get it back.
+export class HttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+  }
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let body: unknown;
@@ -37,7 +51,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     } catch {
       /* non-JSON error body — errorDetail falls back to the status line */
     }
-    throw new Error(errorDetail(body, res.status, res.statusText));
+    throw new HttpError(res.status, errorDetail(body, res.status, res.statusText));
   }
   return (await res.json()) as T;
 }
@@ -97,6 +111,18 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberReturned: body.numberReturned,
     nextToken: nextTokenFrom(body.links),
   };
+}
+
+// One scene by its exact name, no search in front of it (M2-17, adr/0001 Z1).
+// `undefined` — not a thrown error — means the collection does not have a scene
+// by that name (the source's own `404`, adr/0005 rule I): a real answer for a
+// well-formed name, not the exceptional case `jsonOrThrow` is for. A malformed
+// name or an upstream failure still throws, same as `searchItems`.
+export async function fetchItem(datasetId: string, itemId: string): Promise<StacItem | undefined> {
+  const url = `${BASE}/stac/collections/${encodeURIComponent(datasetId)}/items/${encodeURIComponent(itemId)}`;
+  const res = await fetch(url);
+  if (res.status === 404) return undefined;
+  return jsonOrThrow<StacItem>(res);
 }
 
 // The tiler process (adr/0006), a separate service from `/stac` — same-origin

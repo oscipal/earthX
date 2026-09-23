@@ -127,6 +127,42 @@ function DatasetNotes() {
   );
 }
 
+// A separate lookup, not a heuristic bolted onto the search field above: the
+// scene-name syntax differs per dataset, and there is nothing else a free-text
+// field in the search menu could mean today (location search is hidden until
+// M3, F1) — so no guessing which one the user typed (M2-17).
+function SceneNameLookup() {
+  const query = useAppStore((s) => s.sceneNameQuery);
+  const setQuery = useAppStore((s) => s.setSceneNameQuery);
+  const loading = useAppStore((s) => s.sceneLookupLoading);
+  const findSceneByName = useAppStore((s) => s.findSceneByName);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const canFind = query.trim().length > 0 && !!datasetId && !loading;
+
+  return (
+    <div className="scene-lookup">
+      <label className="field-label" htmlFor="scene-name-input">
+        Scene name
+      </label>
+      <div className="scene-lookup-row">
+        <input
+          id="scene-name-input"
+          type="text"
+          value={query}
+          placeholder="e.g. S2C_T32TNT_20260920T103025_L2A"
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && canFind) void findSceneByName();
+          }}
+        />
+        <button type="button" className="tool-btn ghost" disabled={!canFind} onClick={() => void findSceneByName()}>
+          {loading ? 'Finding…' : 'Find'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DatasetSelector() {
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
@@ -258,6 +294,8 @@ export default function ControlPanel() {
       <label className="field-label">Dataset</label>
       <DatasetSelector />
       <DatasetNotes />
+
+      <SceneNameLookup />
 
       <CoverageControls />
 

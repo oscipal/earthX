@@ -3,7 +3,7 @@
 // whose source publishes no quicklook produced no overlay at all, so pinning a
 // time step of `sentinel-2-l2a-zarr3` yielded "Nothing to add".
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
 import { useAppStore } from './store';
@@ -235,5 +235,129 @@ describe('toggleResultsGroup', () => {
     const s = useAppStore.getState();
     expect(s.activeGroupIndex).toBe(1);
     expect(s.expandedGroupIndex).toBe(1);
+  });
+});
+
+// M2-17: finding one scene by its exact name, without an AOI or date range.
+// Only the currently selected dataset is asked (Otto, 23.09.2026); on any
+// failure only `error` may change — items/groups/selection/AOI/date range
+// stay exactly as they were.
+describe('findSceneByName', () => {
+  const AOI: GeoJSON.Geometry = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [1, 1],
+        [2, 1],
+        [2, 2],
+        [1, 2],
+        [1, 1],
+      ],
+    ],
+  };
+  const PRIOR_ITEM = scene({ id: 'prior' });
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: '',
+      json: async () => body,
+    } as Response;
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({
+      datasets: datasetsFrom([COG_LIKE]),
+      datasetId: COG_LIKE.id,
+      sceneNameQuery: '',
+      sceneLookupLoading: false,
+      items: [PRIOR_ITEM],
+      groups: [{ key: ['2026-07-24'], label: '2026-07-24', items: [PRIOR_ITEM] }],
+      activeGroupIndex: 0,
+      selectedIds: ['prior'],
+      aoi: AOI,
+      dateFrom: '2026-01-01',
+      dateTo: '2026-01-31',
+      flyToBbox: null,
+      error: null,
+      notice: null,
+    });
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('does nothing for an empty query', async () => {
+    useAppStore.setState({ sceneNameQuery: '   ' });
+    await useAppStore.getState().findSceneByName();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(useAppStore.getState().items).toEqual([PRIOR_ITEM]);
+  });
+
+  it('trims the query before asking the backend', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, scene({ id: 'S2A_1' })));
+    useAppStore.setState({ sceneNameQuery: '  S2A_1  ' });
+    await useAppStore.getState().findSceneByName();
+    const url = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(url).toContain('/S2A_1');
+    expect(url).not.toContain('%20');
+  });
+
+  it('a found scene replaces the results, is selected, and the map flies to it — AOI and dates untouched', async () => {
+    const found = scene({ id: 'S2A_1', bbox: [5, 5, 6, 6] });
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, found));
+    useAppStore.setState({ sceneNameQuery: 'S2A_1' });
+    await useAppStore.getState().findSceneByName();
+    const s = useAppStore.getState();
+    expect(s.items).toEqual([found]);
+    expect(s.groups).toHaveLength(1);
+    expect(s.selectedIds).toEqual(['S2A_1']);
+    expect(s.flyToBbox).toEqual([5, 5, 6, 6]);
+    expect(s.notice).toMatch(/S2A_1/);
+    expect(s.notice).toMatch(/found by name/);
+    expect(s.error).toBeNull();
+    expect(s.aoi).toEqual(AOI);
+    expect(s.dateFrom).toBe('2026-01-01');
+    expect(s.dateTo).toBe('2026-01-31');
+  });
+
+  it('an unknown name names the dataset and leaves everything else as it was', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(404, { detail: 'Not Found' }));
+    useAppStore.setState({ sceneNameQuery: 'does-not-exist' });
+    await useAppStore.getState().findSceneByName();
+    const s = useAppStore.getState();
+    expect(s.error).toContain('does-not-exist');
+    expect(s.error).toContain(COG_LIKE.title);
+    expect(s.items).toEqual([PRIOR_ITEM]);
+    expect(s.groups).toHaveLength(1);
+    expect(s.selectedIds).toEqual(['prior']);
+    expect(s.aoi).toEqual(AOI);
+  });
+
+  it('a malformed name is reported as such, not as an upstream failure', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(400, { detail: 'item id contains characters …' }));
+    useAppStore.setState({ sceneNameQuery: 'not valid!' });
+    await useAppStore.getState().findSceneByName();
+    expect(useAppStore.getState().error).toBe('Not a valid scene name.');
+  });
+
+  it('an upstream failure is reported as a lookup failure, distinct from "not found"', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(502, { detail: 'the source could not be reached' }));
+    useAppStore.setState({ sceneNameQuery: 'S2A_1' });
+    await useAppStore.getState().findSceneByName();
+    const s = useAppStore.getState();
+    expect(s.error).toMatch(/^Scene lookup failed:/);
+    expect(s.items).toEqual([PRIOR_ITEM]);
+  });
+
+  it('a dataset that cannot be shown yet is refused before any request', async () => {
+    const [unviewable] = datasetsFrom([{ ...COG_LIKE, 'earthx:viewer': undefined }]);
+    useAppStore.setState({ datasets: [unviewable], datasetId: unviewable.id, sceneNameQuery: 'S2A_1' });
+    await useAppStore.getState().findSceneByName();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(useAppStore.getState().error).toMatch(/cannot be shown yet/);
   });
 });
