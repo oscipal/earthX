@@ -1,12 +1,13 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 1.2 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
+**Status:** Fassung 1.3 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
 dritten Quelle (M3-11) werden nach der Annahme von `adr/0009` in Fassung 2 im
 Einzelnen geschnitten. Fassung 1.1 nimmt Ottos Antworten auf den
 Konformitätsbericht auf (`plans/m3-02-konformitaetsbericht.md` §8): neue
 Aufgabe M3-16, Eckpunkte in M3-11, M3-12, M3-14 und M3-15. Fassung 1.2 nimmt
 Ottos Entscheidungen vom 23.09.2026 zum Download auf (P19): neue Aufgabe
-M3-17.
+M3-17. Fassung 1.3 nimmt Ottos Entscheidungen vom 23.09.2026 zum
+Download-Deckel und zur AOI-Maske auf: neue Aufgabe M3-18.
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
@@ -138,13 +139,14 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — |
 | M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09, M3-12 |
+| M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A und C laufen
 daneben.
 
 1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05, M3-16 (A/C), dazu M3-03 und
    M3-08 (B); M3-08 wird erst nach M3-16 gemergt.
-2. **Welle 2:** M3-06a, M3-09, danach M3-06b, M3-07a.
+2. **Welle 2:** M3-06a, M3-09, M3-18, danach M3-06b, M3-07a.
 3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12,
    danach M3-17.
 4. **Welle 4:** M3-13, dann M3-14, zuletzt M3-15.
@@ -587,6 +589,30 @@ in URLs oder Logs landet.
 **Abnahme:** Tests für jeden Fall aus P19 (Zuschnitt eine Gruppe, Zuschnitt
 mehrere Gruppen, eine ganze Szene COG, Zarr ohne AOI deaktiviert, mehrere
 ganze Szenen einzeln); Otto prüft lokal, dass Karte und Datei übereinstimmen.
+
+### M3-18 — Download-Deckel nach Ausgabegröße und Maske auf die AOI
+
+**Ziel:** Ein Zuschnitt über viele Szenen scheitert nicht mehr an einer
+Schätzung über die Eingabe-Items. Beim Polygon-AOI enthält die Datei nur
+Pixel innerhalb des Polygons.
+**Stufe B.**
+**Umfang:**
+- Die Größenprüfung vor dem Lesen rechnet mit der Ausgabe (Dateien × Assets ×
+  Pixel × Bytes nach dem Mergen), nicht mit Items × Assets. Zusätzlich eine
+  Grenze für den Arbeitsspeicher, die aus einer Messung stammt.
+- Zuschnitt maskiert auf die AOI-Geometrie (nodata außerhalb, für jeden
+  Datensatz und jede Gruppe gleich). Die Verdünnung der AOI (`adr/0004` §3.4,
+  D21) und der Punktanzahl-Deckel gelten weiter.
+
+**Im Plan-Schritt:** den Spitzenverbrauch an Arbeitsspeicher von
+`mosaic_reader` bei 1, 6 und 20 Items mit synthetischen COGs messen; daraus
+die Speichergrenze vorschlagen (z. B. höchste Zahl Items je Anfrage oder
+Abbruch des Mosaiks, sobald alle Pixel gefüllt sind).
+**Abnahme:** Tests für 6 Items unter dem Ausgabe-Deckel (200), Ausgabe über
+dem Deckel (Abweisung mit klarer Meldung), Speichergrenze greift; die Meldung
+im Frontend auf Englisch und verständlich. Test mit schrägem Polygon: Pixel
+außerhalb sind nodata, innerhalb gefüllt; Rechteck-AOI unverändert; keine
+Koordinaten im Log.
 
 ---
 
