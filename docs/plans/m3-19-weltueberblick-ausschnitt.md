@@ -187,9 +187,10 @@ gerundeten Ausschnitt als `bbox`. Folgen:
    ein Parameter `area=viewport` für die 24-h-Frist wäre nicht nötig; ich
    empfehle ihn erst, wenn die Last es zeigt (Frage F3).
 2. **Log.** Der Ausschnitt ist keine AOI, aber eine Kartenposition. Die Route
-   selbst loggt keine `bbox`. Das Access-Log des Servers schreibt heute noch
-   Query-Strings; das behebt M3-16. **Merge daher erst nach M3-16**, wie bei
-   M3-08.
+   selbst loggt keine `bbox`, und seit M3-16 (in `main`) schreibt das
+   Access-Log keinen Query-String mehr (`earthx/logging.py`) **[P]**. Ein
+   Vitest prüft zusätzlich, dass die gerundete `bbox` nicht genauer ist als
+   das Raster `L − 3`.
 
 ---
 

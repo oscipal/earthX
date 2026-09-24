@@ -110,6 +110,25 @@ class TestSearch:
         assert page.matched is None
         assert page.next_page_token is None
 
+    async def test_intersects_goes_out_as_sent(self) -> None:
+        """M3-08: measured that the EOPF STAC API's `POST /search` takes
+        `intersects` as-is too (plan §2.1)."""
+        polygon = {"type": "Polygon", "coordinates": [[[8.0, 47.0], [12.0, 47.0], [8.0, 51.0], [8.0, 47.0]]]}
+        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
+        async with gateway:
+            await search_items(DATASET_ID, SearchParams(intersects=polygon), gateway=gateway)
+        assert body_of(seen[0])["intersects"] == polygon
+
+    async def test_ids_goes_out_as_a_list(self) -> None:
+        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
+        async with gateway:
+            await search_items(
+                DATASET_ID,
+                SearchParams(ids=("SYNTH_S2A_MSIL2A_20260921T141821_T26WME",)),
+                gateway=gateway,
+            )
+        assert body_of(seen[0])["ids"] == ["SYNTH_S2A_MSIL2A_20260921T141821_T26WME"]
+
 
 class TestCollectionIsOurs:
     async def test_an_unknown_collection_never_reaches_the_source(self) -> None:

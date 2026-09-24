@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from earthx.logging import RequestIdMiddleware, configure_logging
+
+# M3-16: this process's own JSON logging, before anything can log a line
+# (K-01/K-02) — the compose command starts it with `--no-access-log`, so
+# `RequestIdMiddleware` below is this process's only access log.
+configure_logging()
+
 app = FastAPI(title="earthx-harvester")
+app.add_middleware(RequestIdMiddleware)
 
 
 @app.get("/health")
