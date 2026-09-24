@@ -64,11 +64,19 @@ detecting the one case where the mask would be all ``1`` reliably needs
 almost the same rasterisation this file already always does — not worth a
 special case that a consumer of the ZIP would then also have to know about.
 
-This reintroduces exactly the kind of validity that used to travel as a
-GDAL-internal mask band (the "Maske statt nodata" decision of 24.09.2026,
-`_masked_array_to_cog_bytes` below): that band still exists on the data
-file, but now reflects only the *source's own* invalidity (a real gap in the
-scene), never the AOI polygon — the polygon has its own file now.
+The *source's own* invalidity (a real gap in the scene) still has to reach
+the data file somehow — not as a mask band any more either (bug B, Otto's
+review of PR #86, 23.09.2026): a real Sentinel-2 window measured wildly
+different nodata counts per band (8600/686/2437 nodata pixels out of roughly
+a million, only 23 of them nodata in every band at once), so most of what one
+band calls nodata is genuine dark data in the others. Combining per-band
+masks the way the first version of this file did (``.any(axis=0)``) blanked
+out real data in bands that were perfectly valid, which is what a viewer
+showed as scattered white pixels over shadow, dark forest and water. The
+fix (:func:`_masked_array_to_cog_bytes`, :func:`_write_native_windowed_cog`)
+carries the source's own ``nodata`` value through as a plain tag instead —
+GDAL's own nodata check is per band already, so this needs no bookkeeping of
+its own, just not throwing that information away.
 """
 
 from __future__ import annotations
@@ -201,15 +209,20 @@ _FALLBACK_BYTES_PER_BAND = 8
 _FALLBACK_BAND_COUNT = 4
 
 # ZSTD, not `deflate` (M2-06's original choice): measured against a real
-# synthetic COG with the AOI mask this task adds (F3), `cog_translate`'s
-# DEFLATE encoding of a masked, single-tile crop was intermittently unreadable
-# afterwards ("ZIPDecode: incorrect data check", a handful of runs in a few
-# hundred, reproduced outside pytest too — not a flaky test). ZSTD was not
-# observed to do this in the same measurement (200/200). Read once at import,
-# not on every crop: `rio_cogeo` itself warns every time this profile is
-# built, about exactly the trade-off being made here on purpose (older
-# GDAL/libtiff builds may not read ZSTD-compressed TIFFs) — the warning is
-# real, one occurrence of it belongs in a log or a review, not one per crop.
+# synthetic COG with a masked, single-tile crop (F3, `add_mask=True`),
+# `cog_translate`'s DEFLATE encoding was intermittently unreadable afterwards
+# ("ZIPDecode: incorrect data check", a handful of runs in a few hundred,
+# reproduced outside pytest too — not a flaky test). ZSTD was not observed to
+# do this in the same measurement (200/200). The data COG has not passed
+# `add_mask=True` since bug B (23.09.2026, PR #86 review) replaced its
+# internal mask band with a plain `nodata` tag, so the specific corruption
+# this measured may no longer apply to it — kept as-is regardless (F9,
+# unconfirmed by Otto, is the place to revisit that, not here) since ZSTD is
+# still a perfectly fine choice either way. Read once at import, not on every
+# crop: `rio_cogeo` itself warns every time this profile is built, about
+# exactly the trade-off being made here on purpose (older GDAL/libtiff builds
+# may not read ZSTD-compressed TIFFs) — the warning is real, one occurrence of
+# it belongs in a log or a review, not one per crop.
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
     _MASKED_COG_PROFILE = cog_profiles.get("zstd")
@@ -551,10 +564,20 @@ def crop_asset(
     companion mask file (:func:`crop_asset_to_cog_bytes`).
     """
     bbox = shapely_shape(aoi_geometry).bounds
+    # `mosaic_reader` (below) does not carry a merged image's `nodata` through
+    # at all (checked against its source, bug B, PR #86 review) — captured here
+    # from whichever item's read happens to run first, so the merged image
+    # still gets a nodata tag naming the same value its own per-band mask
+    # already came from. Every item in one request is the same collection, so
+    # this is never a guess in practice: they declare the same nodata value.
+    first_nodata: list[float | None] = []
 
     def _read(path: AssetPath | ZarrAsset) -> ImageData:
         with open_reader(path) as reader:
-            return reader.part(bbox, width=width, height=height)
+            image = reader.part(bbox, width=width, height=height)
+        if not first_nodata:
+            first_nodata.append(image.nodata)
+        return image
 
     if len(asset_paths) == 1:
         try:
@@ -568,6 +591,8 @@ def crop_asset(
         )
     except EmptyMosaicError as error:
         raise AoiOutsideItems(str(error)) from None
+    if image.nodata is None and first_nodata:
+        image.nodata = first_nodata[0]
     return image
 
 
@@ -608,6 +633,16 @@ class AssetCropBytes:
 # GeoTIFF mask-file profile shared by both the windowed and the naive path
 # (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
 # overviews worth building and nobody tiles a binary mask for zoom levels.
+#
+# ZSTD, not `deflate`: found while chasing bug B (Otto's review of PR #86,
+# 23.09.2026) — repeating the mask-file tests alone (no code change) turned up
+# the exact corruption shape F9 (§9) already measured for the data COG
+# ("TIFFReadEncodedTile() failed" / "IReadBlock failed", a handful of runs in
+# a few dozen), just on this tiled DEFLATE write instead. Same GDAL build,
+# same failure mode, so the same fix: ZSTD was not observed to corrupt in the
+# repeated runs that found this. F9 is still open (unconfirmed by Otto) for
+# the data COG; this mask file never went through that review, so there is no
+# separate decision to wait on here — it is the same bug on new code.
 def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affine, block_size: int = 1024) -> dict:
     return {
         "driver": "GTiff",
@@ -623,7 +658,7 @@ def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affi
         # pads the last block, so no extra care is needed for a small crop.
         "blockxsize": block_size,
         "blockysize": block_size,
-        "compress": "deflate",
+        "compress": "zstd",
     }
 
 
@@ -645,14 +680,21 @@ def _write_native_windowed_cog(
     decides when that applies); a mosaic or an explicitly coarser resolution
     still goes through ``crop_asset``.
 
-    **Mask instead of nodata (Otto, 23.09.2026, M3-18 §3).** The data file's
-    own mask band reflects only the *source's* invalidity
-    (``numpy.ma.getmaskarray``) — the AOI polygon never touches a data pixel's
-    value or validity, whatever its shape. The polygon is rasterised block by
-    block too, but only into the separate mask array this function also
-    returns: keeping it block-wise, not a single whole-grid rasterise, is what
-    keeps this function's memory bound the same as before the polygon file was
-    added (module docstring).
+    **Per-band nodata, never a combined mask (Otto, 23.09.2026, PR #86 review,
+    bug B).** ``vrt.read(masked=True)`` already gives each band its own
+    validity — a real Sentinel-2 ``visual`` window measured 8600/686/2437
+    nodata pixels across its three bands in one 1024×1024 window, only 23 of
+    them nodata in *every* band, so most of those pixels are genuine dark data
+    (deep shadow, water), not "no coverage". Combining them with ``.any(axis=0)``
+    into one shared mask band — this function's first version — invalidated
+    all three bands wherever *any one* was at its own nodata value, turning
+    real dark pixels into blanked-out ones a viewer shows as empty/white. The
+    fix carries the source's own ``nodata`` value through as a plain tag
+    instead (:data:`rasterio.io.DatasetReader.nodata`, the same value
+    ``vrt.read(masked=True)`` already used to build each band's own mask) —
+    GDAL's nodata check is per band by definition, so this is "keep what the
+    source delivers, per band" with no bookkeeping of our own. No internal
+    mask band is written for the data file at all any more.
     """
     crop_transform, width, height = _native_crop_grid(dataset, aoi, dst_crs=dst_crs)
     aoi_mapping = shapely_mapping(aoi)
@@ -661,6 +703,8 @@ def _write_native_windowed_cog(
         dataset, crs=dst_crs, transform=crop_transform, width=width, height=height,
         resampling=Resampling.nearest,
     ) as vrt:
+        nodata = vrt.nodata
+        fill_value = nodata if nodata is not None else 0
         profile: dict[str, Any] = {
             "driver": "GTiff",
             "dtype": vrt.dtypes[0],
@@ -672,6 +716,7 @@ def _write_native_windowed_cog(
             "tiled": True,
             "blockxsize": block_size,
             "blockysize": block_size,
+            "nodata": nodata,
         }
         mask_profile = _mask_profile(height=height, width=width, crs=dst_crs, transform=crop_transform)
         with MemoryFile() as plain_mem, MemoryFile() as aoi_mask_mem:
@@ -692,11 +737,15 @@ def _write_native_windowed_cog(
                             fill=0,
                             dtype="uint8",
                         )
-                        source_invalid = numpy.ma.getmaskarray(block).any(axis=0)
-                        if (inside.astype(bool) & ~source_invalid).any():
+                        # "Has real data" for the AoiOutsideItems check below only
+                        # (never for the data file itself, module docstring): a
+                        # pixel counts once *any* band is valid there, not only
+                        # when every band is — the same criterion a mosaic's
+                        # FirstMethod already uses to call a pixel "filled".
+                        any_band_valid = ~numpy.ma.getmaskarray(block).all(axis=0)
+                        if (inside.astype(bool) & any_band_valid).any():
                             any_valid_in_aoi = True
-                        dst.write(numpy.ma.filled(block, 0), window=window)
-                        dst.write_mask((~source_invalid).astype("uint8") * 255, window=window)
+                        dst.write(numpy.ma.filled(block, fill_value), window=window)
                         mask_dst.write(inside, 1, window=window)
             if not any_valid_in_aoi:
                 raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
@@ -705,7 +754,6 @@ def _write_native_windowed_cog(
                     plain_ds,
                     cog_mem.name,
                     _MASKED_COG_PROFILE,
-                    add_mask=True,
                     in_memory=True,
                     quiet=True,
                 )
@@ -714,16 +762,9 @@ def _write_native_windowed_cog(
     return AssetCropBytes(data=data_bytes, mask=mask_bytes)
 
 
-def _aoi_mask_tif_bytes(
-    aoi: BaseGeometry, *, height: int, width: int, transform: rasterio.Affine, crs: Any
-) -> bytes:
-    """The companion mask file for a crop built the naive (whole-array) way (M3-18 §3).
-
-    One rasterise over the whole grid, not block by block: the naive path
-    already holds the whole data array in memory at once (:func:`crop_asset`),
-    so a same-shape single-band uint8 array adds nothing to that bound.
-    """
-    inside = rasterize(
+def _rasterize_aoi_mask(aoi: BaseGeometry, *, height: int, width: int, transform: rasterio.Affine) -> numpy.ndarray:
+    """``1`` inside ``aoi``, ``0`` outside, on the given grid (M3-18 §3)."""
+    return rasterize(
         [shapely_mapping(aoi)],
         out_shape=(height, width),
         transform=transform,
@@ -732,6 +773,10 @@ def _aoi_mask_tif_bytes(
         fill=0,
         dtype="uint8",
     )
+
+
+def _write_mask_tif_bytes(inside: numpy.ndarray, *, transform: rasterio.Affine, crs: Any) -> bytes:
+    height, width = inside.shape
     profile = _mask_profile(height=height, width=width, crs=crs, transform=transform)
     with MemoryFile() as mem:
         with mem.open(**profile) as dst:
@@ -740,10 +785,31 @@ def _aoi_mask_tif_bytes(
 
 
 def _image_to_asset_crop_bytes(image: ImageData, aoi: BaseGeometry) -> AssetCropBytes:
-    """The data COG plus its companion mask, from an already-read ``ImageData`` (M3-18 §3)."""
-    data_bytes = _masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+    """The data COG plus its companion mask, from an already-read ``ImageData`` (M3-18 §3).
+
+    ``image.nodata`` (bug B, 23.09.2026, PR #86 review) is rio-tiler's own
+    record of the value it already used to build ``image.array``'s per-band
+    mask — passing it on to :func:`_masked_array_to_cog_bytes` is what lets
+    the output file keep that same per-band nodata, not a mask combined across
+    bands.
+
+    **Rejects an AOI that misses the real data (bug A, Otto's review of PR
+    #86, 23.09.2026).** ``.part()`` (unlike ``.feature()``'s cutline read)
+    never raises for a bbox that turns out not to overlap the dataset at all —
+    it silently returns an entirely masked array. Left unchecked, a mosaic
+    whose STAC bbox passed the pre-filter but whose *actual*, often rotated
+    footprint the AOI polygon misses (M2-10's "a bbox is not the data") would
+    have come back as a normal-looking but completely empty ZIP instead of the
+    :class:`AoiOutsideItems` the windowed path (:func:`_write_native_windowed_cog`)
+    already raises for the equivalent single-item case.
+    """
     _count, height, width = image.array.shape
-    mask_bytes = _aoi_mask_tif_bytes(aoi, height=height, width=width, transform=image.transform, crs=image.crs)
+    inside = _rasterize_aoi_mask(aoi, height=height, width=width, transform=image.transform)
+    any_band_valid = ~numpy.ma.getmaskarray(image.array).all(axis=0)
+    if not (inside.astype(bool) & any_band_valid).any():
+        raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
+    data_bytes = _masked_array_to_cog_bytes(image.array, image.transform, image.crs, image.nodata)
+    mask_bytes = _write_mask_tif_bytes(inside, transform=image.transform, crs=image.crs)
     return AssetCropBytes(data=data_bytes, mask=mask_bytes)
 
 
@@ -788,7 +854,10 @@ def crop_asset_to_cog_bytes(
 
 
 def _masked_array_to_cog_bytes(
-    array: numpy.ma.MaskedArray, transform: rasterio.Affine, crs: rasterio.crs.CRS | None
+    array: numpy.ma.MaskedArray,
+    transform: rasterio.Affine,
+    crs: rasterio.crs.CRS | None,
+    nodata: float | None = None,
 ) -> bytes:
     """A real COG (internal tiling and overviews), built without touching disk.
 
@@ -799,43 +868,22 @@ def _masked_array_to_cog_bytes(
     filesystem — so both writes stay in the process's RAM (D3: "nichts wird auf
     Platte geschrieben").
 
-    **The mask band (F3, M3-18; redefined 23.09.2026, M3-18 §3).** A pixel the
-    *source itself* has no data for is written as ``0`` and carries no other
-    trace of what the source's data used to be there; its invalidity travels
-    as a GDAL-internal mask band instead, the same signal whether the asset
-    has one band or many and whether one item was read or several were
-    mosaicked. This band no longer reflects the AOI polygon at all (that used
-    to be true under F3, M3-18, Otto 24.09.2026) — the polygon has its own,
-    separate mask file now (module docstring, :func:`_aoi_mask_tif_bytes`),
-    so every pixel in the bounding box keeps the source's own value and
-    validity regardless of the polygon's shape. ``ImageData.to_raster`` cannot
-    build even this narrower band: it writes an alpha band once ``nodata`` is
-    unset, which is exactly how a single item and a mosaic used to come out
-    with different band counts (plan §2) — so the write happens here instead.
-
-    **The compression (:data:`_MASKED_COG_PROFILE`, module level).** A masked
-    COG is compressed with ZSTD, not `deflate` (M2-06's original choice) —
-    against a real synthetic COG with an oddly-shaped AOI, `cog_translate`'s
-    DEFLATE (and LZW) encoding of a masked crop was measured to intermittently
-    come out unreadable afterwards ("ZIPDecode: incorrect data check", a
-    handful of runs in a few hundred, reproduced outside pytest too, so a real
-    interaction this GDAL build cannot be trusted with — not a flaky test).
-    ZSTD was not observed to do this (200/200). `cog_translate` itself is
-    called with ``add_mask=True`` explicitly, not left to auto-detect the
-    plain file's own internal mask, for a second, independent reason: passing
-    a ``nodata`` value on the same call makes GDAL drop the mask instead of
-    carrying both, and reopening the finished COG to patch the tag in
-    afterwards (a real option, ``IGNORE_COG_LAYOUT_BREAK``) measured as its
-    own source of the same kind of corruption on these tiny, single-tile
-    crops. So no ``nodata`` tag is written at all, even where the source
-    declared one (``image.nodata``): the mask is the correctness mechanism a
-    reader must trust either way (module docstring); a ``nodata`` tag on top
-    was only ever additional information, never worth risking the download it
-    would ride on.
+    **Per-band nodata, never a combined mask (Otto, 23.09.2026, PR #86 review,
+    bug B).** ``array``'s own mask is already per band — the reader built it
+    from each band's own value against the source's declared ``nodata``
+    (:func:`_write_native_windowed_cog`'s docstring has the measurement: a
+    real Sentinel-2 window had three very different per-band nodata counts,
+    almost none of them nodata in *every* band). Filling with ``nodata`` and
+    tagging the output with the same value keeps that per-band distinction —
+    GDAL checks nodata per band by construction — instead of an internal mask
+    band this function's first version wrote from ``array``'s mask
+    ``.any(axis=0)``-combined across bands, which invalidated every band
+    wherever *any one* of them happened to sit at its own nodata value
+    (mostly real dark data, not missing coverage). The AOI polygon never
+    touches this file at all any more (module docstring); its own mask has a
+    separate file (:func:`_write_mask_tif_bytes`).
     """
-    invalid = numpy.ma.getmaskarray(array).any(axis=0)
-    filled = numpy.ma.filled(array, 0)
-    mask_band = (~invalid).astype("uint8") * 255
+    filled = numpy.ma.filled(array, nodata if nodata is not None else 0)
 
     count, height, width = filled.shape
     profile: dict[str, Any] = {
@@ -845,6 +893,7 @@ def _masked_array_to_cog_bytes(
         "height": height,
         "width": width,
         "transform": transform,
+        "nodata": nodata,
     }
     if crs:
         profile["crs"] = crs
@@ -852,13 +901,11 @@ def _masked_array_to_cog_bytes(
     with MemoryFile() as plain_mem:
         with plain_mem.open(**profile) as dst:
             dst.write(filled)
-            dst.write_mask(mask_band)
         with plain_mem.open() as plain_ds, MemoryFile() as cog_mem:
             cog_translate(
                 plain_ds,
                 cog_mem.name,
                 _MASKED_COG_PROFILE,
-                add_mask=True,
                 in_memory=True,
                 quiet=True,
             )

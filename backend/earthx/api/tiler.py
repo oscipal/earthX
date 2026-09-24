@@ -536,7 +536,19 @@ async def download_crop(
         raise HTTPException(status_code=400, detail=str(error)) from None
     except RioTilerError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
-    except (RasterioError, GatewayError):
+    except (RasterioIOError, GatewayError):
+        # A genuine read failure only (Otto, 23.09.2026, PR #86 review): a bug in
+        # our own COG-writing code can just as easily raise a `RasterioError` that
+        # is *not* `RasterioIOError` (an invalid transform, a block-size
+        # constraint, a bad array shape — the same distinction the tile path's
+        # `_rasterio_error`/`_rasterio_io_error` handlers already draw). Catching
+        # the whole `RasterioError` hierarchy here used to relabel any of those as
+        # "could not be read from the source", which is false and hides a code
+        # bug behind the same message a real upstream failure gets. Anything that
+        # is not `RasterioIOError` is deliberately left to propagate: `build_app`
+        # already registers `_rasterio_error` for exactly this route, which logs
+        # the real exception (with the request id, `logging.py`'s formatter) and
+        # answers 500, never silently.
         raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
 
     LOGGER.info(

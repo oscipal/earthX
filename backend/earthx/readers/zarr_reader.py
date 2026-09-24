@@ -582,7 +582,17 @@ class ZarrReader(XarrayReader):
             images.extend(method(reader, *args, **kwargs) for reader in self._extra_bands)
         finally:
             self._suppress_part_merge = False
-        image = images[0] if len(images) == 1 else ImageData.create_from_list(images)
+        if len(images) == 1:
+            image = images[0]
+        else:
+            image = ImageData.create_from_list(images)
+            # `create_from_list` drops `nodata` outright (checked against its
+            # own source, bug B, PR #86 review) — every variable of one asset
+            # shares the same nodata by construction (`_variable_names`/
+            # `_select_variable` all read it off the same group), so the first
+            # variable's own value speaks for the merged image too.
+            if image.nodata is None:
+                image.nodata = images[0].nodata
         return image.apply_expression(expression) if expression else image
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
