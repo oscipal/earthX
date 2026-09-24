@@ -2,13 +2,11 @@
 
 **Aufgabe:** M3-18 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 24.09.2026 freigegeben** mit F1 (1), F2 (1), F3
-(2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8) und **umgesetzt**. Zwei
-Punkte sind noch offen und halten den nächsten Umsetzungsschritt an: F9
-(§9, Kompression des maskierten Zuschnitts, Nebenfund) und die native
-Auflösung (§10, Ottos Erweiterung vom 23.09.2026 — Nummerierung nach dem
-Datum ihres Eingangs, nicht der Chronologie). **Der Code im Repo entspricht
-noch §1–§9** (4096 px Deckel, 200 MB); §10 ist Plan, keine Umsetzung, bis
-Otto die Fragen dort beantwortet.
+(2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8) und **umgesetzt**. Die
+native Auflösung (§10, Ottos Erweiterung vom 23.09.2026) ist mit Ottos
+Antworten auf F10a–c (§10.8) **ebenfalls umgesetzt** — Code, Tests und
+ENTSCHEIDUNGSLOG.md-Zeile stehen. F9 (§9, Kompression des maskierten
+Zuschnitts, Nebenfund) bleibt offen, unabhängig von §10.
 **Ort im Repo:** `docs/plans/m3-18-download-deckel-maske.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, §1.3, M3-17,
 M3-18, P19); `ENTSCHEIDUNGSLOG.md`, Zeilen vom 20.09.2026 (M2-06, Deckel) und
@@ -552,7 +550,7 @@ Verkleinerung. Ein Export einer ganzen, vielszenigen Fläche in voller
 Auflösung bleibt damit unmöglich, bis M4 einen Job dafür anbietet (Log-Zeile
 unten, als Vorschlag).
 
-### 10.5 Ergänzter Umfang (geplant, nicht umgesetzt)
+### 10.5 Ergänzter Umfang — **umgesetzt wie geplant, siehe §10.9 für die Details aus Ottos Antworten**
 
 - **`access/download.py`:** `estimate_output_dims`/`plan_outputs` ohne
   `max_side`-Deckel im Normalfall; `crop_asset` ohne `max_size` im
@@ -567,12 +565,15 @@ unten, als Vorschlag).
   bestehende Mechanismen, keine neue Leseart. Für COGs liest rio-tiler dann
   aus einer vorhandenen Overview-Stufe, für Zarr aus einer gröberen
   Auflösungsgruppe.
-- **Dateiname/Metadaten (Punkt 3):** Die gewählte Auflösung steht im
-  ZIP-Dateinamen (z. B. `visual_10m.tif` gegenüber `visual_60m.tif`,
-  `crop_filename` bekommt einen Suffix) und ist in der geschriebenen Datei
-  selbst durch die Pixelgröße im Geotransform bereits enthalten — ein Blick
-  mit `gdalinfo` zeigt sie, ohne dass ein eigenes Tag nötig wäre. Zusätzlich
-  in `ATTRIBUTION.txt` genannt (`build_notice_text`).
+- **Dateiname/Metadaten (Punkt 3) — umgesetzt mit dem Faktor, nicht mit
+  Metern:** `crop_filename` hängt bei einer gewählten Auflösung den Faktor an
+  (`visual_2x.tif`, nativ bleibt `visual.tif` ohne Suffix) — ein Meterwert
+  wäre je Asset unterschiedlich (verschiedene `gsd`) und bei Zarr teils gar
+  nicht bekannt, der Faktor ist dagegen für die ganze Anfrage eindeutig. Die
+  tatsächliche Pixelgröße steht ohnehin im Geotransform der Datei selbst
+  (`gdalinfo` zeigt sie). Zusätzlich in `ATTRIBUTION.txt` genannt
+  (`build_notice_text`, „Resolution: native“ bzw. „Resolution: 2x coarser
+  than native (chosen explicitly)“).
 - **`DownloadDialog.tsx`:** ein Auswahlfeld (nativ voreingestellt) mit
   wenigen groben Stufen (z. B. „Native“, „2× coarser“, „4× coarser“,
   „10× coarser“) — eine je Datensatz genau passende Liste (Sentinel-2s
@@ -582,14 +583,16 @@ unten, als Vorschlag).
 - **`plan_outputs`/`check_output_size_cap`:** Meldungstext um den zweiten Weg
   ergänzt (§10.2).
 
-### 10.6 Ergänzte Abnahme (geplant)
+### 10.6 Ergänzte Abnahme — **umgesetzt**
 
-| Abnahmepunkt | geplanter Test |
+| Abnahmepunkt | Test |
 |---|---|
-| groß, aber unter der Grenze → nativ | Route-Test: eine AOI, die nativ z. B. 6000×6000 px ergäbe (unter dem neuen Deckel), ohne Auflösungsfeld → `200`, die Datei hat die native Pixelgröße, nicht 4096 |
-| über der Grenze → Abweisung mit Meldung | Route-Test: eine AOI, die nativ über der Grenze aus §10.4 liegt → `413`, `detail` nennt die geschätzte Größe und beide Auswege (AOI verkleinern, gröbere Auflösung) |
-| gewählte Auflösung wird eingehalten | Route-Test: dieselbe große AOI mit einer ausdrücklich gewählten gröberen Auflösung → `200`, die Datei hat die erwartete (gröbere) Pixelgröße, nicht die native; Dateiname trägt den Auflösungswert |
-| fensterweises Lesen liefert dasselbe Ergebnis wie der bisherige Weg | Modul-Test: dieselbe AOI/COG einmal naiv, einmal fensterweise gelesen → identische Pixelwerte und Maske (Regressionsschutz für den Umbau aus §10.3) |
+| groß, aber unter der Grenze → nativ | `test_download.py::TestEstimateOutputDims::test_a_large_aoi_is_never_clipped_native_resolution_has_no_cap` — kein Deckel mehr auf die native Pixelzahl |
+| über der Grenze → Abweisung mit Meldung, nennt den kleinsten passenden Faktor | `test_download_route.py::test_over_the_cap_names_the_smallest_fitting_resolution_factor`, `test_over_the_cap_the_message_never_shrinks_the_request_itself` |
+| gewählte Auflösung wird eingehalten (Dateiname, Notiz) | `test_download_route.py::test_an_explicit_resolution_factor_is_honored_in_the_filename_and_notice`, `test_native_resolution_names_no_factor_in_filename_or_notice` |
+| unbekannter Faktor wird abgewiesen | `test_download_route.py::test_an_unknown_resolution_factor_is_a_validation_error` (`422`) |
+| Gleichzeitigkeitsgrenze (F10a) | `test_download_route.py::test_a_second_large_download_is_refused_with_503_and_retry_after`, `test_a_small_download_is_never_refused_by_the_concurrency_gate` |
+| fensterweises Lesen liefert dasselbe Ergebnis wie der bisherige Weg | `test_download_mask.py::TestWindowedReadMatchesTheWholeArrayRead` — bytegleich für ein Rechteck, gleiche Maske und < 1 Helligkeitsschritt Mittelwertabweichung für ein schräges Polygon |
 
 ### 10.7 Log-Zeilen
 
@@ -636,3 +639,73 @@ sobald Otto sie gewählt hat.
 
 **Von Otto auszuführen:** F10a–F10c beantworten; danach setzt diese Sitzung
 §10 um, in derselben Session.
+
+### 10.9 Antworten und Umsetzung (Otto, 24.09.2026) — **fest, umgesetzt**
+
+**F10a — 500 MB roh, zusätzlich eine Gleichzeitigkeitsgrenze.** Nicht nur
+Option 2 aus §10.8, sondern erweitert: höchstens ein Download ab 100 MB roh
+gleichzeitig je tiler-Prozess. Grund (Otto): die 3,1 GB Spitze aus §10.3/§10.4
+laufen im selben Prozess wie die Kachel-Auslieferung — zwei davon gleichzeitig
+dürfen die Karte nicht mitreißen. Der Schwellenwert 100 MB kommt aus der
+Messreihe in §10.3 (deutlich unter der 500-MB-Grenze, aber groß genug, dass
+kleine, alltägliche Zuschnitte nie blockiert werden). Umgesetzt:
+
+- `access/download.py`: `MAX_TOTAL_OUTPUT_BYTES = 500_000_000`,
+  `LARGE_DOWNLOAD_THRESHOLD_BYTES = 100_000_000` (neue Konstante, `access`
+  kennt nur den Wert, keinen Prozesszustand).
+- `api/tiler.py`: `_LARGE_DOWNLOAD_LOCK` (ein `asyncio.Lock()` je Prozess).
+  Ein Request, dessen geplante Ausgabe die Schwelle erreicht, prüft
+  `_LARGE_DOWNLOAD_LOCK.locked()`; ist er schon belegt, sofort `503` mit
+  `Retry-After: 30` und der Meldung „another large download is running, try
+  again shortly“ — kein Warten in einer Warteschlange. Prüfung und
+  `async with`-Erwerb liegen ohne `await` dazwischen, also lückenlos auf
+  asyncios Einzel-Thread-Loop (keine zwei Requests können sich dazwischen
+  einschieben).
+- **`docker-compose.yml` geprüft (Otto hatte danach gefragt): der `tiler`-
+  Dienst setzt kein Speicherlimit** — kein `mem_limit`, kein
+  `deploy.resources.limits.memory`, kein `mem_reservation` an keiner Stelle
+  der Datei. Die 100-MB-Gleichzeitigkeitsgrenze ist damit die einzige Bremse
+  gegen zwei große Zuschnitte gleichzeitig; ein Speicherlimit auf
+  Compose-Ebene bliebe eine spätere, eigene Entscheidung (kostenpflichtige
+  Infrastruktur/Deployment, „Ohne Rückfrage nicht ändern“ in `CLAUDE.md`).
+
+**F10b — Ja, umgesetzt.** `_write_native_windowed_cog` liest und schreibt
+einen einzelnen COG-Item-Zuschnitt in nativer Auflösung blockweise (1024×1024),
+validiert gegen den bisherigen Ganzarray-Weg (§10.6, Testklasse
+`TestWindowedReadMatchesTheWholeArrayRead`): für ein achsparalleles Rechteck
+bytegleich, für ein schräges Polygon exakt gleiche Maske und im Mittel unter
+einem Helligkeitsschritt Unterschied (Kantenrauschen der
+Nächster-Nachbar-Interpolation an der Schnittkante, keine echte Abweichung).
+Ein Mosaik aus mehreren Items, ein Zarr-Asset oder eine ausdrücklich gröbere
+Auflösung bleiben beim bisherigen Weg (`crop_asset` + `_masked_array_to_cog_bytes`)
+— die Messung in §10.3 war für den nativen Einzel-Item-Fall, und diese
+anderen Fälle sind schon durch `MAX_DOWNLOAD_ITEMS`/`exit_when_filled`
+(Mosaik) oder die kleinere Pixelzahl (gröbere Auflösung) begrenzt.
+
+**F10c — Generischer Faktor, umgesetzt wie 1. aus §10.8, mit zwei
+Ergänzungen von Otto:**
+
+1. Relativ zur nativen Auflösung je Asset (nicht je Datensatz) — jedes Asset
+   trägt seine eigene `gsd`, ein Mosaik verschiedener Quellen könnte sonst
+   nicht konsistent skaliert werden.
+2. Der Dialog zeigt die entstehende Auflösung in Metern je Asset, wo sie aus
+   `gsd` bzw. `proj:transform` ablesbar ist (z. B. „2× (20 m)“), sonst nur
+   den Faktor („2×“) ohne Zahl — nie eine geratene Zahl.
+3. Über dem Deckel nennt die Abweisungsmeldung den kleinsten Faktor aus
+   `RESOLUTION_FACTORS`, der die native Ausgabe unter den Deckel brächte, als
+   Vorschlag — ausgewählt wird er nie automatisch.
+
+Umgesetzt: `RESOLUTION_FACTORS = (1, 2, 4, 10)` in `access/download.py`;
+`DownloadRequest.resolution` (Pydantic, `422` bei einem anderen Wert) in
+`api/tiler.py`; `estimate_output_dims`/`plan_outputs` nehmen einen
+`resolution_factor` (teilt beide Pixel-Dimensionen, kein Deckel mehr);
+`check_output_size_cap` bekommt zusätzlich die *nativ* geplante Größe
+(`native_planned`), um den Vorschlag immer relativ zu nativ zu nennen, auch
+wenn schon eine gröbere Auflösung gewählt war. Frontend: `RESOLUTION_FACTORS`
+und `ResolutionFactor` in `api.ts`, `resolutionOptionLabel` in `download.ts`
+(Meter-Text aus `gsd`/`proj:transform`), ein Radio-Feld in `DownloadDialog.tsx`,
+`downloadResolution`/`setDownloadResolution` in `store.ts` (immer `1`, wenn
+der Dialog neu geöffnet wird — nie gemerkt, nie automatisch gewählt).
+
+Log-Zeile (Otto, „fest“): siehe `ENTSCHEIDUNGSLOG.md`, Eintrag vom
+24.09.2026 „M3-18 §10.8, F10a–c beantwortet“.
