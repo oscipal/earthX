@@ -1,7 +1,7 @@
 """The image carries the system libraries the wheels expect from it.
 
 `backend/Dockerfile` builds one image for all four processes
-(architekturplan.md 3.2, 12.1) on `python:3.11-slim`, and the note there says the
+(architekturplan.md 3.2, 12.1) on `python:3.12-slim`, and the note there says the
 pip wheels bring their own GDAL. That is true of GDAL and false of everything on
 the **manylinux whitelist**: a manylinux wheel bundles its dependencies *except*
 those, which the system is expected to provide. `libexpat.so.1` is one of them,

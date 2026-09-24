@@ -26,6 +26,12 @@ if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
 fi
 REPO_ROOT="${CLAUDE_PROJECT_DIR}"
 VENV="${REPO_ROOT}/.venv"
+# The image's Ubuntu package, by absolute path (M3-03, F1): `python3` in the cloud
+# image points at 3.11, and a `python3.12` found on PATH may be another build (a
+# `uv python install` puts one in ~/.local/bin, ahead of /usr/bin).
+# backend/tests/test_python_version.py checks this against CI and the Dockerfile.
+PYTHON=/usr/bin/python3.12
+PYTHON_MINOR="${PYTHON##*python}"
 
 # Running as root in the sandbox is normal; sudo is neither present nor
 # needed there. as_postgres/as_root abstract the two cases identically.
@@ -43,18 +49,48 @@ fi
 # backend/requirements.txt weniger Pakete listete (z. B. vor `titiler.core`
 # in M2-04), und pip überspringt bereits erfüllte Anforderungen ohnehin
 # schnell (M2-13, mehrere Sessions mussten sonst von Hand nachinstallieren).
-if [ -x "${VENV}/bin/python" ]; then
-  log "Python-venv existiert bereits (${VENV})"
-else
-  log "Python-venv anlegen (${VENV})"
-  python3 -m venv "${VENV}" || warn "Anlegen des venv fehlgeschlagen"
+venv_minor() { "${VENV}/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null; }
+
+# Ein venv mit anderer Version oder ohne pip wird ersetzt, nicht weiterbenutzt:
+# sein `bin/python` kann auf einen umgestellten Interpreter zeigen, während die
+# Pakete noch unter der alten Version liegen, und ein abgebrochenes Anlegen
+# hinterlässt `bin/python` ohne `bin/pip`. `.venv/` enthält nur Installiertes.
+# Gelöscht wird nur, wenn der Interpreter für ein neues da ist.
+if [ -x "${PYTHON}" ] && [ -d "${VENV}" ] \
+  && { [ "$(venv_minor)" != "${PYTHON_MINOR}" ] || [ ! -x "${VENV}/bin/pip" ]; }; then
+  log "Python-venv hat nicht Python ${PYTHON_MINOR} oder kein pip, wird neu angelegt (${VENV})"
+  rm -rf "${VENV}"
 fi
 
-if [ -x "${VENV}/bin/python" ]; then
+if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
+  log "Python-venv existiert bereits (${VENV})"
+elif [ -x "${PYTHON}" ]; then
+  log "Python-venv anlegen (${VENV}, ${PYTHON})"
+  "${PYTHON}" -m venv "${VENV}" || { warn "Anlegen des venv fehlgeschlagen"; rm -rf "${VENV}"; }
+else
+  # Kein Ausweichen auf eine andere Version: CI und Image laufen auf derselben.
+  warn "${PYTHON} fehlt im Image; kein venv mit Python ${PYTHON_MINOR}"
+fi
+
+if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
   log "Backend-Abhängigkeiten installieren (backend/requirements-dev.txt)"
   "${VENV}/bin/pip" install --upgrade --quiet pip \
     && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
     || warn "pip-Installation fehlgeschlagen"
+
+  # Damit ein nacktes `pytest` in der Sitzung das des venv ist und nicht das
+  # gleichnamige Werkzeug des Images ohne Backend-Pakete (M3-03, F4). Claude Code
+  # übergibt einem SessionStart-Hook dafür CLAUDE_ENV_FILE; die Zeilen darin gelten
+  # für alle folgenden Bash-Befehle der Sitzung.
+  if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+    log "venv in den Pfad der Sitzung eintragen"
+    {
+      printf 'export VIRTUAL_ENV=%q\n' "${VENV}"
+      printf 'export PATH=%q:"$PATH"\n' "${VENV}/bin"
+    } >> "${CLAUDE_ENV_FILE}" || warn "Schreiben nach CLAUDE_ENV_FILE fehlgeschlagen"
+  else
+    warn "CLAUDE_ENV_FILE ist nicht gesetzt; in der Sitzung .venv/bin/pytest benutzen"
+  fi
 fi
 
 # --- Node -----------------------------------------------------------------
@@ -125,7 +161,10 @@ ENVEOF
 # Sitzung scheinbar sauber startete. Die Zusammenfassung geht deshalb auf
 # stdout, und der Hook endet weiterhin mit Exit 0.
 
-have_venv() { [ -x "${VENV}/bin/python" ] && "${VENV}/bin/python" -c 'import psycopg, stac_fastapi.pgstac, titiler.core'; }
+have_venv() {
+  [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ] \
+    && "${VENV}/bin/python" -c 'import psycopg, stac_fastapi.pgstac, titiler.core'
+}
 have_frontend() { [ -d "${REPO_ROOT}/frontend/node_modules" ]; }
 have_postgres() { as_postgres psql -d earthx -tAc 'SELECT 1'; }
 have_postgis() {
