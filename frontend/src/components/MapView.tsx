@@ -48,6 +48,21 @@ function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
   draw.setMode(mode === 'none' ? 'static' : mode);
 }
 
+// M3-19: the current map extent and its on-screen size, both of which
+// `store.ts::refreshCoverage` needs (only for the no-AOI request) to derive
+// the geotile level and the request bbox — read here, at the one place that
+// has a live `Map` instance, rather than threaded through as separate state.
+function reportViewport(map: MapLibreMap): void {
+  const b = map.getBounds();
+  const el = map.getContainer();
+  useAppStore
+    .getState()
+    .setMapViewport(map.getZoom(), [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], {
+      width: el.clientWidth,
+      height: el.clientHeight,
+    });
+}
+
 // Which group's items the map should treat as "current" (V-11): the
 // results list's own `expandedGroupIndex` in browse mode, since that is
 // what quicklooks/preview tiles and the click-to-select hit test follow —
@@ -188,19 +203,19 @@ export default function MapView() {
       });
       initDraw();
       readyRef.current = true;
-      // The store needs an initial zoom before the first `moveend` (which
-      // only fires once the user pans/zooms) so a coverage fetch can pick a
-      // sensible geotile level from the very first render.
-      useAppStore.getState().setMapZoom(map.getZoom());
+      // The store needs an initial viewport before the first `moveend`
+      // (which only fires once the user pans/zooms) so a coverage fetch can
+      // pick a sensible geotile level and bbox from the very first render.
+      reportViewport(map);
     };
     map.on('style.load', onStyleLoad);
 
-    // Coverage (M2-07c) reacts to the map's zoom — its geotile *level*, per
-    // adr/0004 §6.3 — never to the pan viewport as a spatial filter (see the
-    // long comment on `refreshCoverage` in store.ts). Registered once on the
-    // map itself (unlike the custom layers, listeners survive a style reload).
+    // Coverage (M2-07c/M3-19) reacts to the map's zoom and, without an AOI,
+    // its visible extent (`refreshCoverage` in store.ts). Registered once on
+    // the map itself (unlike the custom layers, listeners survive a style
+    // reload).
     map.on('moveend', () => {
-      useAppStore.getState().setMapZoom(map.getZoom());
+      reportViewport(map);
     });
 
     // Clicking the displayed imagery toggles that scene's download selection

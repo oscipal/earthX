@@ -507,3 +507,120 @@ describe('runSearch', () => {
     expect(useAppStore.getState().notice).toMatch(/more than 1000 points/);
   });
 });
+
+// M3-19 (Otto, 23.09.2026): without an AOI, `refreshCoverage` asks for the
+// visible map extent and reuses an already-loaded answer for a viewport that
+// stays inside it, instead of firing a request on every `moveend`. With an
+// AOI nothing changes — every call still asks fresh.
+describe('refreshCoverage without an AOI (M3-19)', () => {
+  // A fresh id per test: the reuse cache is module-level (store.ts), so two
+  // tests sharing a dataset id would see each other's cached answers.
+  let testCounter = 0;
+  let DATASET_ID = '';
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  function coverageResponse(datasetId: string, level: number): unknown {
+    return {
+      dataset_id: datasetId,
+      grid: 'geotile',
+      level,
+      counting: 'centroid',
+      cells: [],
+      counted: 0,
+      total_count: 100_000,
+      completeness: 'complete',
+      max_count: 0,
+      histogram: [],
+      histogram_interval: 'month',
+      footprints_advised: false,
+      from_cache: false,
+      extent: null,
+    };
+  }
+
+  beforeEach(() => {
+    DATASET_ID = `coverage-reuse-m3-19-${testCounter++}`;
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args), clearTimeout });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const zoom = Number(new URL(url, 'http://x').searchParams.get('zoom'));
+        return jsonResponse(200, coverageResponse(DATASET_ID, zoom));
+      }),
+    );
+    useAppStore.setState({
+      datasetId: DATASET_ID,
+      showCoverage: true,
+      aoi: null,
+      aoiPoint: null,
+      dateFrom: '',
+      dateTo: '',
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+      coverageLoading: false,
+      viewportBbox: null,
+      viewportSize: null,
+      mapZoom: 1.6,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  // Both viewports lie inside 0°–180° / 0°–85° (levelForViewport(0, 1920,
+  // 1080) === 4, coverage.test.ts), so both round to the very same block.
+  it('does not repeat a request for a small pan that stays inside the same block', async () => {
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().coverage?.level).toBe(4);
+
+    setMapViewport(0, [15, 15, 55, 55], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().coverage?.level).toBe(4);
+  });
+
+  it('asks again once the zoom changes the level, even at the same spot', async () => {
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // levelForViewport(3, 1920, 1080) === 7 (coverage.test.ts) — a different
+    // level, so the cache entry at level 4 does not cover this request.
+    setMapViewport(3, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().coverage?.level).toBe(7);
+  });
+
+  it('with an AOI, every viewport report still asks fresh — no reuse', async () => {
+    const aoi: GeoJSON.Geometry = {
+      type: 'Polygon',
+      coordinates: [[[10, 49], [11, 49], [11, 50], [10, 50], [10, 49]]],
+    };
+    useAppStore.setState({ aoi });
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // The very same report a second time (e.g. a resize firing `moveend`
+    // without the map actually moving) is not treated as reuse either.
+    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
