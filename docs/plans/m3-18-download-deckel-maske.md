@@ -5,8 +5,12 @@
 (2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8) und **umgesetzt**. Die
 native Auflösung (§10, Ottos Erweiterung vom 23.09.2026) ist mit Ottos
 Antworten auf F10a–c (§10.8) **ebenfalls umgesetzt** — Code, Tests und
-ENTSCHEIDUNGSLOG.md-Zeile stehen. F9 (§9, Kompression des maskierten
-Zuschnitts, Nebenfund) bleibt offen, unabhängig von §10.
+ENTSCHEIDUNGSLOG.md-Zeile stehen. **Maske statt nodata** (§11, Ottos weitere
+Vorgabe vom 23.09.2026, ohne Rückfrage direkt umgesetzt) ist **ebenfalls
+umgesetzt**: die Datendatei ist immer ein reiner Bounding-Box-Zuschnitt, das
+AOI-Polygon lebt in einer eigenen Maskendatei je Asset plus einer
+`aoi.geojson` je ZIP. F9 (§9, Kompression des maskierten Zuschnitts,
+Nebenfund) bleibt offen, unabhängig von §10/§11.
 **Ort im Repo:** `docs/plans/m3-18-download-deckel-maske.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, §1.3, M3-17,
 M3-18, P19); `ENTSCHEIDUNGSLOG.md`, Zeilen vom 20.09.2026 (M2-06, Deckel) und
@@ -709,3 +713,121 @@ der Dialog neu geöffnet wird — nie gemerkt, nie automatisch gewählt).
 
 Log-Zeile (Otto, „fest“): siehe `ENTSCHEIDUNGSLOG.md`, Eintrag vom
 24.09.2026 „M3-18 §10.8, F10a–c beantwortet“.
+
+---
+
+## 11. Maske statt nodata (Otto, 23.09.2026) — **umgesetzt**
+
+Otto, wörtlich: „Maske statt nodata. Das ersetzt die Log-Zeile ‚Zuschnitt auf
+die AOI-Geometrie … nodata‘“. Direkt umgesetzt, keine Rückfrage: die Regel
+selbst ist eindeutig, nur eine einzelne Detailfrage (11.4) hing dran, und die
+löst dieser Abschnitt selbst.
+
+### 11.1 Was Otto vorgibt
+
+1. Die Pixelwerte bleiben in der ganzen Bounding Box erhalten — außerhalb des
+   Polygons wird nichts auf nodata gesetzt (und, das gilt gleichermaßen: auch
+   nicht auf eine andere Art unsichtbar/ungültig gemacht).
+2. Zusätzlich im ZIP je Gruppe eine Maskendatei (GeoTIFF, uint8, gleiches
+   Raster wie die Daten, 1 = innerhalb, 0 = außerhalb) und die AOI als
+   GeoJSON.
+3. Bei Rechteck-AOI keine Maske nötig; im Plan-Schritt entscheiden und
+   begründen, ob sie trotzdem der Einheitlichkeit halber mitkommt.
+4. `ENTSCHEIDUNGSLOG.md`: die bisherige Zeile (20.09./23.09.2026, „Zuschnitt
+   auf die AOI-Geometrie … nodata“) per Status auf „ersetzt am 2026-09-23“
+   setzen, neue Zeile mit dieser Regel (fest).
+
+### 11.2 Was das an §1–§10 ändert
+
+Die Datendatei war seit F3 (§4.3/§9) ein GDAL-intern maskiertes Bild, dessen
+Maske zwei Dinge gleichzeitig ausdrückte: „die Quelle hat hier keine Daten“
+und „das liegt außerhalb des AOI-Polygons“. Diese beiden Dinge trennt §11
+wieder auseinander:
+
+- **Die Datendatei liest jetzt die Bounding Box, nicht das Polygon.**
+  `crop_asset` ruft `.part(bbox, …)` statt `.feature(aoi_geometry, …)` —
+  `Reader.feature`/`XarrayReader.feature` rasterisieren die Eingabegeometrie
+  selbst als Cutline und backen sie in die zurückgegebene Maske ein, genau
+  das, was Punkt 1 verbietet. `.part()` liest die reine Rechteck-Bounding-Box;
+  was innerhalb davon ungültig ist, kommt jetzt ausschließlich von der Quelle
+  selbst (`numpy.ma.getmaskarray`), nie vom Polygon.
+- **Das Polygon bekommt eine eigene Datei.** `_aoi_mask_tif_bytes` (naiver
+  Pfad) bzw. der fensterweise Teil von `_write_native_windowed_cog` (F10b)
+  rasterisieren dieselbe Geometrie, die früher die Cutline-Maske der Daten
+  gefüttert hat, jetzt in ein eigenständiges, einbändiges uint8-GeoTIFF —
+  `1` innerhalb, `0` außerhalb, `all_touched=True`, exakt dieselbe
+  Rasterisierungsregel wie zuvor, nur nicht mehr mit den Daten verrechnet.
+- **`aoi.geojson`, einmal je ZIP.** Die Geometrie, die der Aufrufer geschickt
+  hat, unverändert als JSON — ein Konsument der Maskendateien braucht sie, um
+  die 0/1-Werte überhaupt einordnen zu können, ohne die ursprüngliche Anfrage
+  mitzuschleppen.
+- **Dateinamen.** `mask_filename(asset)` → `<crop_filename ohne .tif>_mask.tif`
+  (`visual_mask.tif`, mit gewählter Auflösung `visual_2x_mask.tif`) — dieselbe
+  Bereinigung wie `crop_filename`, damit Daten- und Maskendatei eines Assets im
+  Archiv nebeneinander stehen.
+- **Größenschätzung.** `PlannedOutput.total_bytes` zählt die Maskendatei mit
+  (ein zusätzliches Byte/Pixel) — sonst würde die Größenprüfung ein
+  einbändiges uint8-Asset (die häufigste Form) um bis zu Faktor 2 unterschätzen,
+  weil die Maskendatei für so ein Asset genauso groß wäre wie die Daten selbst.
+- **Notiztext.** `build_notice_text` nennt je Asset auch die Maskendatei und
+  erklärt in einer eigenen Zeile, wofür `aoi.geojson` und die Maskendateien da
+  sind.
+
+### 11.3 Ein Nebenfund beim Umsetzen: Zarr-Komposit-Assets
+
+`ZarrReader` (mehrere Variablen zu einem Bild zusammengesetzt, adr/0007
+§12.11) überschrieb bisher `tile`/`preview`/`feature`, um jede Variable
+einzeln zu lesen und zu einem mehrbändigen Bild zusammenzuführen — `part()`
+war nicht überschrieben. Naiv genauso überschrieben wie die anderen drei
+brach es `tile()`/`feature()`: beide lesen ihre eigenen Daten intern über
+`self.part(...)` (`XarrayReader.tile`/`feature`, rio-tiler-eigener Code), und
+sobald `part()` selbst zusammenführt, führt dieser interne Aufruf ein zweites
+Mal zusammen — ein Kachel-Request auf ein 3-Variablen-Komposit kam testweise
+mit 5 statt 3 Bändern zurück (die schon zusammengeführten 3 Bänder der ersten
+Variable plus je ein echtes Band für die zwei weiteren). Gefunden über
+`test_onboarding_endtoend.py`s Zarr3-Fälle, die vorher grün waren.
+
+**Fix:** ein Wiedereintritts-Schutz (`_suppress_part_merge`, gesetzt solange
+`_merged()` gerade eine der vier Methoden für `self` berechnet). Während des
+Schutzes liest `part()` nur die erste Variable (`XarrayReader.part(self, …)`
+direkt, kein erneutes Zusammenführen); von außen aufgerufen (der
+Normalfall für den Download-Zuschnitt) führt `part()` wie die anderen drei
+zusammen. Regressionstests: `test_zarr_composite.py`,
+`test_part_also_merges_all_three` und
+`test_tile_is_not_double_merged_now_that_part_is_also_overridden`.
+
+### 11.4 Rechteck-AOI: Maskendatei trotzdem mitgeschickt, immer
+
+Otto bat, das im Plan-Schritt zu entscheiden und zu begründen. Entscheidung:
+**immer eine Maskendatei, auch bei einem Rechteck-AOI.**
+
+Begründung: ein „Rechteck“ ist nur in WGS84-Lon/Lat eines. Das Pixelraster
+der Quelle ist es oft nicht — eine Sentinel-2-Kachel liegt in UTM und ist
+gegen Lon/Lat typischerweise gedreht (MGRS-Kacheln folgen dem UTM-Gitter,
+nicht Meridianen). Ein Lon/Lat-Rechteck, auf ein gedrehtes Pixelraster
+projiziert, ist selbst kein Rechteck mehr und lässt an den Ecken durchaus
+Pixel außerhalb — die Maske wäre also gerade dort nicht durchweg `1`, wo man
+es naiv erwarten würde. Zuverlässig zu erkennen, wann eine Maske tatsächlich
+überall `1` wäre, bräuchte fast dieselbe Rasterisierung, die diese Datei
+ohnehin immer berechnet — der sparsame Sonderfall spart also so gut wie
+nichts, macht das Verhalten aber davon abhängig, ob eine AOI zufällig
+achsparallel *und* rasterparallel ist. Ein einheitlicher Vertrag (immer eine
+Maskendatei) ist einfacher für jeden Konsumenten des ZIPs: er muss nie prüfen,
+ob eine Maskendatei diesmal fehlt. Getestet in
+`test_download_mask.py::test_a_rectangle_aoi_still_gets_a_mask_file_for_uniformity`
+— die Maske wird gelesen und geprüft, nicht als „sicher alles 1“ angenommen.
+
+### 11.5 Abnahme — **umgesetzt**
+
+| Abnahmepunkt | Test |
+|---|---|
+| Datendatei ist unverändert über die ganze Bounding Box, auch bei schrägem Polygon | `test_download_mask.py::test_a_slanted_polygon_leaves_the_data_file_untouched` |
+| Maskendatei markiert innerhalb/außerhalb korrekt | `test_download_mask.py::test_a_slanted_polygon_s_mask_file_marks_outside_and_inside` |
+| Rechteck-AOI bekommt trotzdem eine (geprüfte) Maskendatei | `test_download_mask.py::test_a_rectangle_aoi_still_gets_a_mask_file_for_uniformity` |
+| `aoi.geojson` trägt die angefragte Geometrie | `test_download_mask.py::test_the_aoi_geojson_carries_the_requested_geometry` |
+| ZIP-Inhalt: Daten-, Masken-, Notiz- und AOI-Datei je Asset/Request | `test_download.py::TestBuildDownloadZip`, `test_download_route.py` (mehrere Fälle) |
+| Zarr-Komposit: `part()` führt zusammen, `tile()`/`feature()` nicht doppelt | `test_zarr_composite.py::test_part_also_merges_all_three`, `test_tile_is_not_double_merged_now_that_part_is_also_overridden` |
+| Größenschätzung zählt die Maskendatei mit | `PlannedOutput.total_bytes`, indirekt über die bestehenden `TestPlanOutputsAndCheckOutputSizeCap`-Tests (unverändert grün, da relativ konsistent) |
+
+Log-Zeile (Otto, „fest“): siehe `ENTSCHEIDUNGSLOG.md`, Eintrag vom
+24.09.2026 „Maske statt nodata“.
