@@ -8,7 +8,7 @@ import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import { downloadRequestFor, downloadRequestForSelection } from './download';
-import { coordsBbox, polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
+import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, displayGroupBy, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
@@ -131,7 +131,13 @@ interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
   aoi: GeoJSON.Geometry | null;
+  // M3-08: the point the current AOI was drawn or uploaded from, kept apart from
+  // `aoi` (still the square `bufferPointToPolygon` built, which is what the map
+  // shows and the download crops) — only `runSearch` reads this, to search by the
+  // point itself rather than by its buffer square's bbox.
+  aoiPoint: GeoJSON.Point | null;
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
+  lastAoiPoint: GeoJSON.Point | null; // the point behind lastAoi, if it had one
   flyToBbox: Bbox | null;
   // --- view preferences (V-1), saved per browser (preferences.ts) ---
   theme: Theme;
@@ -222,7 +228,7 @@ interface AppState {
   loadDatasets: () => Promise<void>;
   setDatasetId: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
-  setAoi: (g: GeoJSON.Geometry | null) => void;
+  setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
   clearAoi: () => void;
   useLastAoi: () => void;
   flyTo: (b: Bbox) => void;
@@ -274,7 +280,9 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   toolMode: 'none',
   aoi: null,
+  aoiPoint: null,
   lastAoi: null,
+  lastAoiPoint: null,
   flyToBbox: null,
   theme: loadTheme(),
   projection: loadProjection(),
@@ -361,19 +369,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(toolMode === 'none' ? { toolMode } : { toolMode, panelCollapsed: true }),
   // The AOI is also the coverage route's spatial filter (`refreshCoverage`),
   // so every way it can change reschedules a refresh.
-  setAoi: (aoi) => {
-    set((s) => ({ aoi, lastAoi: aoi ?? s.lastAoi }));
+  setAoi: (aoi, point = null) => {
+    set((s) => ({
+      aoi,
+      aoiPoint: point,
+      lastAoi: aoi ?? s.lastAoi,
+      lastAoiPoint: aoi ? point : s.lastAoiPoint,
+    }));
     scheduleCoverageRefresh(set, get);
   },
   clearAoi: () => {
-    set({ aoi: null });
+    set({ aoi: null, aoiPoint: null });
     scheduleCoverageRefresh(set, get);
   },
   useLastAoi: () => {
-    const g = get().lastAoi;
+    const { lastAoi: g, lastAoiPoint } = get();
     if (!g) return;
     const bb = polygonBbox(g);
-    set({ aoi: g, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
+    set({ aoi: g, aoiPoint: lastAoiPoint, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
     scheduleCoverageRefresh(set, get);
   },
   flyTo: (flyToBbox) => set({ flyToBbox }),
@@ -384,6 +397,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearAll: () => {
     set({
       aoi: null,
+      aoiPoint: null,
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -774,7 +788,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   runSearch: async () => {
-    const { aoi, dateFrom, dateTo, datasetId, datasets } = get();
+    const { aoi, aoiPoint, dateFrom, dateTo, datasetId, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });
       return;
@@ -788,9 +802,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: `This dataset cannot be shown yet: ${dataset.reason}` });
       return;
     }
-    const bbox = polygonBbox(aoi);
-    if (!bbox) {
-      set({ error: 'Could not compute a bounding box for the area of interest.' });
+    // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
+    // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
+    // never for display or the download crop, which stay on `aoi`.
+    const area = searchArea(aoi, aoiPoint);
+    if (!area.bbox && !area.intersects) {
+      set({ error: 'Could not compute a search area for the area of interest.' });
       return;
     }
     const groupBy = dataset.groupBy;
@@ -800,7 +817,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     ) => {
       try {
         const groups = buildGroups(features, displayGroupBy(features, groupBy));
-        const text = typeof notice === 'function' ? notice(groups) : notice;
+        const base = typeof notice === 'function' ? notice(groups) : notice;
+        const text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
         set({
           items: features,
           groups,
@@ -840,7 +858,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     try {
       const datetimeRange = buildDatetime(dateFrom, dateTo);
-      const page = await api.searchAllPages({ collection: dataset.id, bbox, datetime: datetimeRange }, MAX_SEARCH_ITEMS);
+      const page = await api.searchAllPages(
+        { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
+        MAX_SEARCH_ITEMS,
+      );
       if (page.features.length > 0) {
         applyResults(page.features, (groups) => foundNotice(page.features, groups, page.numberMatched));
         return;
@@ -853,7 +874,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         (w) =>
           api.searchItems({
             collection: dataset.id,
-            bbox,
+            bbox: area.bbox,
+            intersects: area.intersects,
             datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`,
             limit: PAGE_LIMIT,
           }),
@@ -866,7 +888,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       const range = fullDayRange(fallback.item);
       const full = range
-        ? await api.searchAllPages({ collection: dataset.id, bbox, datetime: range }, MAX_SEARCH_ITEMS)
+        ? await api.searchAllPages(
+            { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: range },
+            MAX_SEARCH_ITEMS,
+          )
         : { features: [fallback.item], numberMatched: 1 };
       applyResults(full.features, fallbackNotice(fallback));
     } catch (e) {

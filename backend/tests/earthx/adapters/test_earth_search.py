@@ -86,6 +86,35 @@ class TestSearch:
             {"field": "id", "direction": "asc"},
         ]
 
+    async def test_intersects_goes_out_as_sent(self, dataset_id: str) -> None:
+        """M3-08: measured that Earth Search's `POST /search` takes `intersects`
+        as-is, no query-string encoding needed (plan §2.1)."""
+        polygon = {"type": "Polygon", "coordinates": [[[8.0, 47.0], [12.0, 47.0], [8.0, 51.0], [8.0, 47.0]]]}
+        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
+        async with gateway:
+            await search_items(dataset_id, SearchParams(intersects=polygon), gateway=gateway)
+        assert body_of(seen[0])["intersects"] == polygon
+        assert "bbox" not in body_of(seen[0])
+
+    async def test_ids_goes_out_as_a_list(self, dataset_id: str) -> None:
+        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
+        async with gateway:
+            await search_items(dataset_id, SearchParams(ids=("SYNTH_T00AAA_20240601T100000_L2A",)), gateway=gateway)
+        assert body_of(seen[0])["ids"] == ["SYNTH_T00AAA_20240601T100000_L2A"]
+
+    async def test_ids_and_a_time_window_both_go_out_together(self, dataset_id: str) -> None:
+        """M3-08 plan §2.1: measured that `ids` is AND-combined with other filters
+        upstream, not a shortcut around them — the request we build must carry
+        both, or that combination would silently stop being possible."""
+        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
+        async with gateway:
+            await search_items(
+                dataset_id, SearchParams(ids=("known",), start=WINDOW[0], end=WINDOW[1]), gateway=gateway
+            )
+        sent = body_of(seen[0])
+        assert sent["ids"] == ["known"]
+        assert sent["datetime"] == "2024-06-01T00:00:00Z/2024-06-30T00:00:00Z"
+
 
 class TestCollectionIsOurs:
     async def test_an_unknown_collection_never_reaches_the_source(self) -> None:

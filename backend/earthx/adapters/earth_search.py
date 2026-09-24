@@ -61,6 +61,13 @@ from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search")
 
+# M3-08 F4a: what this source can filter by, measured against the live API in the
+# plan step (M3-08 plan §2.1) — `adapters._check_capabilities` reads these before a
+# search reaches this module, so an unsupported filter is refused by name instead
+# of reaching here and being silently dropped from the request body.
+SUPPORTS_INTERSECTS = True
+SUPPORTS_IDS = True
+
 
 async def search_items(
     dataset_id: str,
@@ -147,6 +154,13 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     }
     if params.bbox is not None:
         body["bbox"] = [float(value) for value in params.bbox]
+    if params.intersects is not None:
+        body["intersects"] = params.intersects
+    if params.ids is not None:
+        # Measured (M3-08 plan §2.1): `ids` is AND-combined with a spatial or time
+        # filter by this source, not a shortcut around them — a caller who narrows
+        # both gets the intersection, not just the ids.
+        body["ids"] = list(params.ids)
     window = stac_interval(params.start, params.end)
     if window is not None:
         body["datetime"] = window

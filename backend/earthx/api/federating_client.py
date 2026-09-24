@@ -16,7 +16,9 @@ pool already lives (``request.app.state.get_connection``).
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -32,6 +34,7 @@ from earthx.adapters import (
     SearchCache,
     SearchParams,
     UnknownCollection,
+    UnsupportedFilter,
     UpstreamShapeError,
 )
 from earthx.adapters import get_item as adapter_get_item
@@ -51,15 +54,13 @@ LOGGER = logging.getLogger("earthx.api.federating_client")
 # would swallow them rather than reject them.
 _DISALLOWED_QUERY_KEYS = frozenset({"filter", "filter-lang", "filter_lang", "sortby"})
 
-# M2-17: both federated sources honour `ids` and `intersects` (measured against
-# Earth Search and the EOPF STAC API in the plan step), but `_dispatch_search` below
-# forwards only `collections`/`bbox`/`datetime`/`limit`/`token` — either parameter
-# reached the search path and was silently dropped, answering `200` with an
-# ordinary, unfiltered page instead of the filtered one asked for. Otto, approving
-# the plan: reject rather than keep dropping it; a scene is looked up by name
-# through `get_item` instead (adr/0001 Z1). Passing either through the search path
-# is a separate, later task (docs/plans/m2-format-und-viewer.md M2-17).
-_UNSUPPORTED_SEARCH_KEYS = frozenset({"ids", "intersects"})
+# M3-08: `/search` forwards `ids`/`intersects` to a federated source now (§4 of the
+# M3-08 plan), but OGC API Features' items endpoint (`GET /collections/{id}/items`)
+# never had either parameter — it is not `item-search`, and nothing here builds a
+# request body for it these two could go into. Kept as its own set (distinct from
+# M2-17's now-obsolete blanket rejection) so `item_collection` still says no, with
+# its own reason, while `/search` says yes.
+_ITEMS_ENDPOINT_DISALLOWED_KEYS = frozenset({"ids", "intersects"})
 
 
 def _reject_keys(keys: object, disallowed: frozenset[str], reason: str) -> None:
@@ -69,13 +70,18 @@ def _reject_keys(keys: object, disallowed: frozenset[str], reason: str) -> None:
 
 
 def _reject_disallowed_keys(keys: object) -> None:
-    keys = frozenset(keys)
-    _reject_keys(keys, _DISALLOWED_QUERY_KEYS, "is not available in M1 (adr/0005 rule VI; docs/plans/m1-07-stac-api.md §6)")
     _reject_keys(
-        keys,
-        _UNSUPPORTED_SEARCH_KEYS,
-        "is not supported for a federated collection (docs/plans/m2-format-und-viewer.md M2-17); "
-        "look up a single scene by id with GET /stac/collections/{collection_id}/items/{item_id} instead",
+        frozenset(keys),
+        _DISALLOWED_QUERY_KEYS,
+        "is not available in M1 (adr/0005 rule VI; docs/plans/m1-07-stac-api.md §6)",
+    )
+
+
+def _reject_items_endpoint_keys(keys: object) -> None:
+    _reject_keys(
+        frozenset(keys),
+        _ITEMS_ENDPOINT_DISALLOWED_KEYS,
+        "is not a parameter of this endpoint; search at GET/POST /stac/search instead (M3-08)",
     )
 
 
@@ -85,6 +91,34 @@ async def _reject_disallowed_body(request: Request) -> None:
     body = await request.json()
     if isinstance(body, dict):
         _reject_disallowed_keys(body.keys())
+
+
+def _dump_intersects(geometry: Any) -> dict[str, Any] | None:
+    """A POST body's ``intersects`` as a plain GeoJSON mapping.
+
+    ``search_request.intersects`` is already a parsed ``geojson_pydantic`` geometry
+    model (stac-pydantic's ``Intersection`` type), not a dict — ``model_dump`` turns
+    it back into the same shape ``SearchParams`` and the GET path both expect.
+    """
+    if geometry is None:
+        return None
+    if isinstance(geometry, Mapping):
+        return dict(geometry)
+    return geometry.model_dump(mode="json", exclude_none=True)
+
+
+def _parse_intersects_param(value: str | None) -> dict[str, Any] | None:
+    """A GET ``intersects`` query parameter — raw JSON text, same convention as the
+    coverage route (``api/coverage_route.py::_parse_intersects``)."""
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="intersects is not valid JSON") from None
+    if not isinstance(parsed, Mapping):
+        raise HTTPException(status_code=400, detail="intersects is not a GeoJSON object")
+    return dict(parsed)
 
 
 def _strip_forward_token(token: str | None) -> str | None:
@@ -119,6 +153,8 @@ def _adapter_error_to_http(error: Exception) -> HTTPException:
     status, which ``gateway.UpstreamError`` already carries unchanged (M1-03).
     """
     if isinstance(error, InvalidQuery):
+        return HTTPException(status_code=400, detail=str(error))
+    if isinstance(error, UnsupportedFilter):
         return HTTPException(status_code=400, detail=str(error))
     if isinstance(error, UnknownCollection):
         return HTTPException(status_code=404, detail=f"Collection {error} does not exist.")
@@ -178,6 +214,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # all — the same gap `post_search`/`get_search` close by looking at the raw
         # request instead of the already-filtered method arguments.
         _reject_disallowed_keys(request.query_params.keys())
+        _reject_items_endpoint_keys(request.query_params.keys())
         result = await self._federated_page(
             collection_id, request, bbox=bbox, datetime_value=datetime, limit=limit, token=token
         )
@@ -221,6 +258,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
             request,
             collections=collections,
             bbox=bbox,
+            intersects=_dump_intersects(search_request.intersects),
+            ids=tuple(search_request.ids) if search_request.ids else None,
             datetime_value=search_request.datetime,
             limit=search_request.limit,
             token=search_request.token,
@@ -235,6 +274,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         request: Request,
         collections: list[str] | None = None,
         bbox: tuple[float, ...] | None = None,
+        intersects: str | None = None,
+        ids: list[str] | None = None,
         datetime: str | None = None,
         limit: int | None = None,
         token: str | None = None,
@@ -242,11 +283,30 @@ class FederatingCoreCrudClient(CoreCrudClient):
     ) -> ItemCollection:
         _reject_disallowed_keys(request.query_params.keys())
         result = await self._dispatch_search(
-            request, collections=collections, bbox=bbox, datetime_value=datetime, limit=limit, token=token
+            request,
+            collections=collections,
+            bbox=bbox,
+            intersects=_parse_intersects_param(intersects),
+            ids=tuple(ids) if ids else None,
+            datetime_value=datetime,
+            limit=limit,
+            token=token,
         )
         if result is None:
+            # `ids`/`intersects` forwarded raw (as pgstac's own `get_search` — a
+            # native, non-federated collection — declares them itself): dropping
+            # them here would silently re-introduce the M2-17 bug for whichever
+            # collection this platform holds items for first.
             return await super().get_search(
-                request, collections=collections, bbox=bbox, datetime=datetime, limit=limit, token=token, **kwargs
+                request,
+                collections=collections,
+                bbox=bbox,
+                intersects=intersects,
+                ids=ids,
+                datetime=datetime,
+                limit=limit,
+                token=token,
+                **kwargs,
             )
         result["links"] = await SearchLinks(request=request).get_links(extra_links=result["links"])
         return result
@@ -280,6 +340,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         *,
         collections: list[str] | None,
         bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None = None,
+        ids: tuple[str, ...] | None = None,
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
@@ -294,7 +356,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
 
         if len(federated_ids) == 1 and not native_ids:
             return await self._federated_page(
-                federated_ids[0], request, bbox=bbox, datetime_value=datetime_value, limit=limit, token=token
+                federated_ids[0],
+                request,
+                bbox=bbox,
+                intersects=intersects,
+                ids=ids,
+                datetime_value=datetime_value,
+                limit=limit,
+                token=token,
             )
 
         # More than one source active at once (several federated collections, or a
@@ -321,24 +390,41 @@ class FederatingCoreCrudClient(CoreCrudClient):
         request: Request,
         *,
         bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None = None,
+        ids: tuple[str, ...] | None = None,
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
     ) -> ItemCollection:
         start, end = _datetime_bounds(datetime_value)
-        params = SearchParams(
-            bbox=tuple(bbox) if bbox else None,
-            start=start,
-            end=end,
-            limit=limit or SearchParams().limit,
-            page_token=_strip_forward_token(token),
-        )
         try:
+            # M3-08 finding: `SearchParams(...)` used to be built *outside* this
+            # try block, so its own `InvalidQuery` (bbox/time checks, now also
+            # intersects/ids) never reached `_adapter_error_to_http` and propagated
+            # as an unhandled `500` instead of the `400` it was always meant to be
+            # — unnoticed because no integration test had exercised that path
+            # through the real app before this task added one for `intersects`.
+            params = SearchParams(
+                bbox=tuple(bbox) if bbox else None,
+                intersects=intersects,
+                ids=ids,
+                start=start,
+                end=end,
+                limit=limit or SearchParams().limit,
+                page_token=_strip_forward_token(token),
+            )
             async with _cache_for(request) as cache:
                 page = await adapter_search_items(
                     collection_id, params, gateway=_gateway_of(request), cache=cache
                 )
-        except (InvalidQuery, UnknownCollection, UpstreamError, UpstreamTimeout, UpstreamUnreachable) as error:
+        except (
+            InvalidQuery,
+            UnsupportedFilter,
+            UnknownCollection,
+            UpstreamError,
+            UpstreamTimeout,
+            UpstreamUnreachable,
+        ) as error:
             raise _adapter_error_to_http(error) from error
         return await self._to_item_collection(page, request, collection_id=collection_id)
 
