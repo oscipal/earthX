@@ -106,6 +106,25 @@ def configure_logging(level: int = logging.INFO) -> None:
     root.handlers = [handler]
     for name in _URL_LOGGING_LIBRARIES:
         logging.getLogger(name).setLevel(max(level, logging.WARNING))
+    _disable_uvicorn_access_log()
+
+
+def _disable_uvicorn_access_log() -> None:
+    """The same two lines uvicorn's own ``--no-access-log`` (``access_log=False``)
+    runs (``uvicorn.config.Config.configure_logging``) — done here too, in code,
+    so the guarantee holds whether or not a process is actually started with that
+    flag (review of M3-16, PR #85: a local run following the README must be just
+    as safe). ``uvicorn.access`` writes the full request line, query string
+    included; it never reaches the root logger's own handler either way, because
+    uvicorn gives it its own handler and turns ``propagate`` off — before this
+    module is even imported (``Config.__init__`` runs uvicorn's own
+    ``configure_logging()`` first; ``Config.load()`` only imports the ASGI app,
+    and this call, afterwards), so this has to touch the same logger object
+    uvicorn's own flag would, not the root logger.
+    """
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.handlers = []
+    access_logger.propagate = False
 
 
 class RequestIdMiddleware:

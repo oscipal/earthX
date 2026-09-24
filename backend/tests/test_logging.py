@@ -4,11 +4,15 @@ redaction, and the one access-log line `RequestIdMiddleware` writes per request.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import json
 import logging
 import re
 
+import httpx
 import pytest
+import uvicorn
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -73,6 +77,60 @@ class TestConfigureLogging:
         finally:
             for name in ("httpx", "httpx2"):
                 logging.getLogger(name).setLevel(logging.NOTSET)
+
+
+class TestUvicornAccessLogIsDisabledInCode:
+    """M3-16 review: the guarantee must not depend on `--no-access-log` on the
+    command line — a process started any other way (a bare `uvicorn earthx.jobs
+    .main:app`, following the README without the flag) has to be exactly as
+    safe, because the code closes it, not the invocation.
+    """
+
+    def test_a_live_server_started_without_the_flag_still_logs_no_query_string(self) -> None:
+        from earthx.jobs.main import app
+
+        async def run_request() -> tuple[int, bytes]:
+            # Reproduces uvicorn's own startup order: `Config.__init__` runs uvicorn's
+            # own `configure_logging()` — giving `uvicorn.access` its own handler,
+            # exactly as it would be left *without* `--no-access-log` (`access_log=True`
+            # is the default) — before `Config.load()` imports the ASGI app string and
+            # this module's own `configure_logging()` gets its turn. `earthx.jobs.main`
+            # is typically already imported by the time this test runs, so that second
+            # call is reproduced explicitly, in the same order.
+            config = uvicorn.Config(app, host="127.0.0.1", port=0, access_log=True, log_level="info")
+            configure_logging()
+            server = uvicorn.Server(config)
+            task = asyncio.create_task(server.serve())
+            try:
+                while not server.started:
+                    await asyncio.sleep(0.01)
+                port = server.servers[0].sockets[0].getsockname()[1]
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"http://127.0.0.1:{port}/health",
+                        params={"bbox": f"{_EXACT_LON},{_EXACT_LAT},1,2"},
+                    )
+            finally:
+                server.should_exit = True
+                await task
+            return response.status_code, response.content
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            status_code, _ = asyncio.run(run_request())
+        assert status_code == 200
+
+        output = buffer.getvalue()
+        assert "?" not in output
+        assert str(_EXACT_LON) not in output
+        assert str(_EXACT_LAT) not in output
+
+        lines = [line for line in output.splitlines() if line.strip()]
+        assert len(lines) == 1  # not two: uvicorn's own access-log line never joins it
+        payload = json.loads(lines[0])
+        assert payload["logger"] == "earthx.request"
+        assert payload["path"] == "/health"
+        assert payload["status"] == 200
 
 
 class TestJsonFormatter:
