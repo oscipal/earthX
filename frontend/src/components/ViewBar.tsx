@@ -6,9 +6,14 @@
 // full resolution.
 //
 // M3-09 (Otto, 24.09.2026): the single "View full resolution" button became
-// two, both entering the same full-resolution view — "Crop to AOI" clips it
-// to the drawn AOI, "View full selection" shows the whole scene(s). Grouped
-// under one label so it stays clear both are full resolution, not a preview.
+// two, both entering the same full-resolution view — "Crop & merge to AOI"
+// clips it to the drawn AOI, "View full selection" shows the whole scene(s).
+// Grouped under one label so it stays clear both are full resolution, not a
+// preview. "Crop & merge" (renamed from "Crop to AOI", Otto's addendum) names
+// what the download of a cropped selection already does: scenes merge per
+// group (Überflug), different groups stay separate files (P19) — the view
+// itself does not merge anything yet (see the M3-09 plan's proposal for the
+// per-group outline and layer split, held for approval).
 
 import { useAppStore } from '../store';
 
@@ -43,7 +48,7 @@ export default function ViewBar() {
           }
           onClick={() => enterFocus(true)}
         >
-          {focusLoading ? 'Loading…' : 'Crop to AOI'}
+          {focusLoading ? 'Loading…' : 'Crop & merge to AOI'}
         </button>
         <button
           type="button"
