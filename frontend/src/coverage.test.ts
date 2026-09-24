@@ -2,16 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import type { CoverageCell, CoverageResponse } from './api';
 import {
+  bandViewportBbox,
+  bboxContains,
   cellBbox,
   cellsToFeatureCollection,
   clampBboxLongitude,
   completenessNote,
   coverageFillColorExpression,
-  coverageLevelFor,
   FOOTPRINT_MIN_ZOOM,
   InvalidCellKey,
+  levelForViewport,
+  MIN_VIEWPORT_LEVEL,
+  roundBboxToGrid,
   showFootprints,
-  WORLD_OVERVIEW_LEVEL,
 } from './coverage';
 
 // The 4 worked examples of backend/tests/catalog/test_coverage.py's
@@ -163,17 +166,84 @@ describe('showFootprints', () => {
 // M3-19: without an AOI the world overview always asks for z6, whatever the
 // map's own zoom is (adr/0010 Option B). With an AOI it still follows the
 // map's zoom, as before.
-describe('coverageLevelFor', () => {
-  it('is always the world overview level without an AOI, regardless of map zoom', () => {
-    expect(coverageLevelFor(1.6, false)).toBe(WORLD_OVERVIEW_LEVEL);
-    expect(coverageLevelFor(0, false)).toBe(WORLD_OVERVIEW_LEVEL);
-    expect(coverageLevelFor(18.9, false)).toBe(WORLD_OVERVIEW_LEVEL);
+// M3-19 (Otto, 23.09.2026): without an AOI, the level follows the map zoom
+// and the viewport size so roughly TARGET_CELL_COUNT cells cover the screen.
+// Expected values from plans/m3-19-weltueberblick-ausschnitt.md §1 (1920×1080:
+// L ≈ Z + 4; 2560×1440: L ≈ Z + 3.6).
+describe('levelForViewport', () => {
+  it('is roughly zoom + 4 on a 1920×1080 viewport', () => {
+    expect(levelForViewport(1.6, 1920, 1080)).toBe(6);
+    expect(levelForViewport(3, 1920, 1080)).toBe(7);
+    expect(levelForViewport(3.5, 1920, 1080)).toBe(7);
   });
 
-  it('follows the floored map zoom with an AOI, unchanged from before', () => {
-    expect(coverageLevelFor(8.9, true)).toBe(8);
-    expect(coverageLevelFor(1.6, true)).toBe(1);
-    expect(coverageLevelFor(0, true)).toBe(0);
+  it('needs a slightly finer step on a smaller (2560×1440) viewport', () => {
+    expect(levelForViewport(1.6, 2560, 1440)).toBe(5);
+  });
+
+  it('never falls below MIN_VIEWPORT_LEVEL, however far zoomed out', () => {
+    expect(levelForViewport(0, 1920, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+    expect(levelForViewport(-5, 1920, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+  });
+
+  it('is capped at the grid maximum (29), however far zoomed in', () => {
+    expect(levelForViewport(40, 1920, 1080)).toBe(29);
+  });
+
+  it('falls back to the floor rather than NaN/Infinity on a bad viewport size', () => {
+    expect(levelForViewport(8, 0, 0)).toBe(MIN_VIEWPORT_LEVEL);
+    expect(levelForViewport(8, -100, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+    expect(levelForViewport(Number.NaN, 1920, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+  });
+});
+
+describe('roundBboxToGrid', () => {
+  it('rounds outward to the block grid, not to the nearest cell', () => {
+    expect(roundBboxToGrid([1, 1, 5, 5], 2)).toEqual([0, 0, 90, 66.51326044311186]);
+  });
+
+  it('gives two nearby viewports the same rounded block', () => {
+    const a = roundBboxToGrid([10, 10, 60, 60], 1);
+    const b = roundBboxToGrid([15, 15, 55, 55], 1);
+    expect(a).toEqual(b);
+    expect(a[0]).toBe(0);
+    expect(a[1]).toBe(0);
+    expect(a[2]).toBe(180);
+    expect(a[3]).toBeCloseTo(85.0511287798, 9);
+  });
+
+  it('gives a viewport in a different block a different rounded bbox', () => {
+    const a = roundBboxToGrid([10, 10, 60, 60], 1);
+    const b = roundBboxToGrid([-5, 10, 60, 60], 1);
+    expect(a).not.toEqual(b);
+  });
+});
+
+describe('bandViewportBbox', () => {
+  it('leaves an ordinary viewport unchanged', () => {
+    expect(bandViewportBbox([5, 45, 15, 55])).toEqual([5, 45, 15, 55]);
+  });
+
+  it('replaces a viewport crossing ±180° with the full-width band', () => {
+    expect(bandViewportBbox([-200, 10, -170, 20])).toEqual([-180, 10, 180, 20]);
+    expect(bandViewportBbox([170, 10, 210, 20])).toEqual([-180, 10, 180, 20]);
+  });
+});
+
+describe('bboxContains', () => {
+  it('is true when the inner bbox lies within the outer one', () => {
+    expect(bboxContains([0, 0, 180, 85], [10, 10, 60, 60])).toBe(true);
+  });
+
+  it('is true for an identical bbox', () => {
+    expect(bboxContains([0, 0, 180, 85], [0, 0, 180, 85])).toBe(true);
+  });
+
+  it('is false once the inner bbox reaches past any one edge', () => {
+    expect(bboxContains([0, 0, 180, 85], [-1, 10, 60, 60])).toBe(false);
+    expect(bboxContains([0, 0, 180, 85], [10, 10, 181, 60])).toBe(false);
+    expect(bboxContains([0, 0, 180, 85], [10, -1, 60, 60])).toBe(false);
+    expect(bboxContains([0, 0, 180, 85], [10, 10, 60, 86])).toBe(false);
   });
 });
 
