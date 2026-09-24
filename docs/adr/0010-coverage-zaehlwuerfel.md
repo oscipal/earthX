@@ -1,6 +1,9 @@
 # ADR 0010 — Coverage: vorberechneter Zählwürfel
 
-- **Status:** Entwurf, wartet auf Otto (§9).
+- **Status:** **Angenommen** von Otto am 2026-09-23. Die sechs Fragen aus §9
+  sind dort beantwortet, alle wie empfohlen: Option D (§7), Weltüberblick aus
+  dem Würfel höchstens z7, Anstoß im `harvester`, EOPF ohne Würfel, Option B
+  vorgezogen als M3-19. Gebaut wird nicht in M3 (P13).
 - **Datum:** 2026-09-23
 - **Aufgabe:** M3-05 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4.
 - **Autonomiestufe:** C — gemessen, recherchiert und berichtet. Kein
@@ -13,7 +16,7 @@
   (20.09.), „M2-07c abgeschlossen im kleinstmöglichen Umfang" (22.09.),
   „Heatmap-Zählwürfel (D26)" (23.09.); `plans/m3-02-konformitaetsbericht.md`
   K-06, K-07.
-- **Betroffen, falls angenommen:** `adr/0004` §5 (Nachtrag), `plans/m2-05-coverage.md`
+- **Betroffen:** `adr/0004` §5 (Nachtrag), `plans/m2-05-coverage.md`
   F3 (aufgehoben), `catalog/registry.py` (`CoverageInfo`), eine Migration in
   `catalog`, `api/coverage_route.py`, Prozess `harvester`; Entscheidungslog.
 
@@ -509,12 +512,15 @@ bei 1,6 bis 2,4 MB und erzwänge Vektorkacheln.
 (rund 300 kB, unter der Schwelle); z8 erst mit Kompression oder Vektorkacheln
 (§9 F3).
 
-## 8. Folgen, falls angenommen
+## 8. Folgen
 
 - `plans/m2-05-coverage.md` F3 ist aufgehoben; `adr/0004` §5 bekommt einen
   Nachtrag „Würfel für den Weltüberblick", mit Verweis hierher.
-- Eine Bauaufgabe der Stufe B, frühestens mit dem `harvester` aus M3-11 (P4)
-  oder danach; laut Plan ist der Bau nicht Teil von M3 (P13).
+- Eine Bauaufgabe der Stufe B; der Bau ist nicht Teil von M3 (P13). Vorgemerkt
+  für M5, zusammen mit der Arbeit am `harvester` (Entscheidungslog,
+  23.09.2026, Status „Vorschlag"). Die Nachträge in `adr/0004` §5 und
+  `plans/m2-05-coverage.md` F3 kommen mit dieser Bauaufgabe.
+- Option B wird vorgezogen: **M3-19** im M3-Plan (F6).
 - `CoverageInfo` bekommt ein Feld; die Onboarding-Checkliste Punkt 2 prüft bei
   gesetztem Feld zusätzlich, dass der Würfel je Monat Regel V besteht.
 - Die Antwort der Route bekommt „Stand der Zählung"; das Frontend zeigt ihn in
@@ -522,39 +528,53 @@ bei 1,6 bis 2,4 MB und erzwänge Vektorkacheln.
 - Die Last auf Earth Search steigt um rund 1 700 Anfragen einmalig und
   15–35 Anfragen am Tag, sinkt aber für jeden Weltüberblick ohne AOI auf null.
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 2026-09-23
+
+Otto hat alle sechs Fragen wie empfohlen beantwortet; die Antwort steht
+jeweils unter der Frage.
 
 1. **F1 — Welche Würfelform?**
    (a) *Empfehlung:* **z8 × Monat, ohne Wolkenklasse**, nur für Anfragen ohne
    AOI (Option D). (b) z9 × Monat × 5 Wolkenklassen wie in D26 (Option C).
    (c) kein Würfel, nur Option B.
+   → **(a) angenommen:** z8 × Monat, ohne Wolkenklasse, nur ohne AOI.
 2. **F2 — Zeiträume, die keine ganzen Monate sind.**
    (a) *Empfehlung:* Live-Weg wie heute. (b) Auf ganze Monate runden und in
    der Legende ausweisen. (c) Würfel tageweise führen (rund fünfmal mehr
    Zeilen, unbelegt).
+   → **(a) angenommen:** Live-Weg wie heute.
 3. **F3 — Feinste Weltstufe aus dem Würfel.**
    (a) *Empfehlung:* **z7** (rund 300 kB), z8 erst mit Kompression.
    (b) z8 sofort, dazu `GZipMiddleware` in `api` (116 kB gzip, §3.8) und die
    Schwelle aus `adr/0004` §5 auf komprimierte Größe umstellen.
    (c) z8 als Vektorkacheln über `ST_AsMVT` in `api`.
+   → **(a) angenommen:** höchstens z7 aus dem Würfel.
 4. **F4 — Anstoß der Aktualisierung.**
    (a) *Empfehlung:* Schleife im `harvester` mit Advisory Lock. (b) Kommando
    für einen äußeren Zeitplaner. (c) Erst mit dem Queue-ADR in M4 klären.
+   → **(a) angenommen:** Schleife im `harvester` mit Advisory Lock.
 5. **F5 — EOPF (Quelle ohne Gesamtzahl).**
    (a) *Empfehlung:* **kein Würfel**, `sample` bleibt; das Fenster ist klein,
    der Datensatz „staging". (b) Täglich vollständig aufzählen (≈ 90 Seiten)
    und eine lückenlose Aufzählung als `complete` werten — das ändert
    Regel V, die heute ohne Gesamtzahl nie `complete` erlaubt.
+   → **(a) angenommen:** kein Würfel für EOPF, `sample` bleibt.
 6. **F6 — Option B vorziehen?**
    (a) *Empfehlung:* ja, als kleine Aufgabe der Stufe A in M3.
    (b) nein, zusammen mit dem Würfel.
+   → **(a) angenommen:** als M3-19 im M3-Plan, Stufe A.
 
 ## 10. Was offen blieb
 
-1. **Der verlorene Datensatz im Juni 2020** (§3.3) ist nicht aufgeklärt. Vor dem
-   Bau prüfen, ob er an der Datumsgrenze oder an einem fehlenden
-   `proj:centroid` liegt; das entscheidet, ob die Zerlegung eine Randregel
-   braucht.
+1. **Offenes Risiko zu Regel V: das fehlende Item im Juni 2020** (§3.3). Die
+   Zerlegung in Kacheln verlor ein Item (368 642 von 368 643); die Ursache ist
+   nicht aufgeklärt. Regel V hat es erkannt — der Monat wäre `truncated`. Das
+   Risiko: Verliert die Zerlegung Items **systematisch** (Datumsgrenze, fehlendes
+   `proj:centroid`), bleiben betroffene Monate dauerhaft `truncated`, und der
+   Würfel fällt dort immer auf den Live-Weg zurück. Zählt sie ein Item dagegen
+   doppelt und verliert zugleich ein anderes, stimmt die Summe, und Regel V
+   sieht den Fehler nicht. Vor dem Bau: die Ursache klären und die Zerlegung
+   mit einer Randregel und einem Test gegen genau diesen Fall absichern.
 2. **Zeilenzahl über alle Monate** ist aus einem gemessenen Monat hochgerechnet,
    nicht über den Katalog gezählt (§3.3, §12.3).
 3. **Weltansicht über alle Monate** ist aus der Zellmenge eines Monats gebaut;
