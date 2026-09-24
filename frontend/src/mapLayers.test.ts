@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { buildTileUrl, syncFocusRaster, syncMosaic, syncSelectionHighlight } from './mapLayers';
-import type { AppliedRender, DownloadedInfo, StacItem } from './types';
+import { buildTileUrl, syncFocusRaster, syncHighlight, syncMosaic, syncSelectionHighlight } from './mapLayers';
+import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
   return {
@@ -214,6 +214,63 @@ describe('syncFocusRaster', () => {
     syncFocusRaster(map as never, { downloaded: { [scene.id]: info() }, render: {}, showDownloaded: false });
     expect(sources).toHaveLength(0);
   });
+
+  // M3-09 finding: the map used to stack overlapping scenes in *selection*
+  // order (last-selected on top), the opposite of the download's mosaic
+  // (`access/download.py::crop_asset`, rio_tiler's `FirstMethod`: the
+  // *first* item wins). `downloaded`'s key order is selection order (it is
+  // built by `store.ts::enterFocus` iterating the selected items in that
+  // order), so the fixture below relies on the same thing.
+  it('draws the first-selected scene last, so it ends up on top — matching the download mosaic order', () => {
+    const { map, sources, layers } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: {
+        S2A_first: info({ bounds: [10, 47, 11, 48] }),
+        S2A_second: info({ bounds: [20, 47, 21, 48] }),
+      },
+      render: {},
+      showDownloaded: true,
+    });
+    const rasterSources = sources.filter((s) => s.spec.type === 'raster');
+    expect(rasterSources).toHaveLength(2);
+    expect(rasterSources[0].spec.bounds).toEqual([20, 47, 21, 48]); // bottom: second-selected
+    expect(rasterSources[1].spec.bounds).toEqual([10, 47, 11, 48]); // top: first-selected
+    // `placeRaster` always inserts right below the AOI layer, so whatever is
+    // added last ends up drawn on top (see `beforeAoi`).
+    expect(layers[layers.length - 1]).toBe(rasterSources[1].id.replace('src', 'lyr'));
+  });
+
+  it('routes tiles through the AOI-clip protocol when the view is cropped, with no AOI coordinate in the URL', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      aoi: {
+        type: 'Polygon',
+        coordinates: [[[10.987654, 47.123456], [11, 47], [11, 48], [10, 48], [10.987654, 47.123456]]],
+      },
+      cropToAoi: true,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    const url = (source.spec.tiles as string[])[0];
+    expect(url.startsWith('earthx-clip://')).toBe(true);
+    expect(url).not.toContain('10.987654');
+    expect(url).not.toContain('47.123456');
+  });
+
+  it('does not clip when the view shows the whole selection, even with an AOI drawn', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      aoi: { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]] },
+      cropToAoi: false,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    expect((source.spec.tiles as string[])[0].startsWith('earthx-clip://')).toBe(false);
+  });
 });
 
 // V-3, finding 1's actual root cause: before this, MapView had one effect
@@ -240,5 +297,81 @@ describe('syncSelectionHighlight: no layer churn', () => {
     expect(sources).toHaveLength(sourcesAfterRaster);
     expect(layers).toHaveLength(layersAfterRaster);
     expect((data['mosaicsel-src'] as GeoJSON.FeatureCollection).features).toHaveLength(1);
+  });
+});
+
+// M3-09 §10: in a cropped focus view, the yellow outline switches from one
+// ring per scene to one per group.
+describe('syncHighlight', () => {
+  const AOI: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 40],
+        [20, 40],
+        [20, 55],
+        [0, 55],
+        [0, 40],
+      ],
+    ],
+  };
+  const groupA: TimeStepGroup = {
+    key: ['a'],
+    label: 'a',
+    items: [
+      { id: 'S1', bbox: [1, 47, 2, 48], properties: {}, assets: {} },
+      { id: 'S2', bbox: [1.5, 47, 2.5, 48], properties: {}, assets: {} },
+    ],
+  };
+  const groupB: TimeStepGroup = {
+    key: ['b'],
+    label: 'b',
+    items: [{ id: 'S3', bbox: [10, 47, 11, 48], properties: {}, assets: {} }],
+  };
+
+  it('draws one ring per group when the view is cropped', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [],
+      selectedIds: [],
+      focusMode: true,
+      cropToAoi: true,
+      aoi: AOI,
+      downloaded: { S1: info(), S2: info(), S3: info() },
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(2);
+  });
+
+  it('falls back to the per-scene highlight when the view is not cropped', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [groupA.items[0]],
+      selectedIds: ['S1'],
+      focusMode: true,
+      cropToAoi: false,
+      aoi: AOI,
+      downloaded: { S1: info() },
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].properties?.id).toBe('S1');
+  });
+
+  it('falls back to the per-scene highlight while browsing (not in focus mode)', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [groupA.items[0]],
+      selectedIds: ['S1'],
+      focusMode: false,
+      cropToAoi: false,
+      aoi: null,
+      downloaded: {},
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
   });
 });

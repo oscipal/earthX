@@ -96,6 +96,89 @@ describe('addCurrentToLayers while browsing', () => {
   });
 });
 
+// M3-09 §10 (Otto): "Crop & merge to AOI" pins one layer per group instead
+// of one for the whole selection.
+describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
+  const AOI: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 40],
+        [20, 40],
+        [20, 55],
+        [0, 55],
+        [0, 40],
+      ],
+    ],
+  };
+  const GROUPS = [
+    { key: ['a'], label: 'Overpass A', items: [scene({ id: 'S1' }), scene({ id: 'S2' })] },
+    { key: ['b'], label: 'Overpass B', items: [scene({ id: 'S3' })] },
+  ];
+
+  function focusedDownload(id: string): { tileUrl: string; bounds: [number, number, number, number]; asset: string; minZoom: number; maxZoom: number } {
+    return { tileUrl: `/tiles/${id}/{z}/{x}/{y}`, bounds: [1, 47, 2, 48], asset: 'visual', minZoom: 0, maxZoom: 19 };
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({
+      datasets: datasetsFrom([COG_LIKE]),
+      datasetId: COG_LIKE.id,
+      groups: GROUPS,
+      activeGroupIndex: 0,
+      selectedIds: [],
+      focusMode: true,
+      aoi: AOI,
+      cropToAoi: true,
+      appliedRender: {},
+      downloaded: { S1: focusedDownload('S1'), S2: focusedDownload('S2'), S3: focusedDownload('S3') },
+      layers: [],
+      error: null,
+      notice: null,
+    });
+  });
+
+  it('pins one layer per group, not one for the whole selection', () => {
+    useAppStore.getState().addCurrentToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers).toHaveLength(2);
+    const itemIdSets = layers.map((l) => [...l.restore.itemIds].sort());
+    expect(itemIdSets).toContainEqual(['S1', 'S2']);
+    expect(itemIdSets).toContainEqual(['S3']);
+  });
+
+  it('clips each group layer\'s tile URLs to the AOI and marks it cropped', () => {
+    useAppStore.getState().addCurrentToLayers();
+    for (const layer of useAppStore.getState().layers) {
+      expect(layer.restore.cropToAoi).toBe(true);
+      expect(layer.restore.aoi).toEqual(AOI);
+      for (const overlay of layer.overlays) {
+        if (overlay.kind === 'raster') expect(overlay.tileUrl.startsWith('earthx-clip://')).toBe(true);
+      }
+    }
+  });
+
+  it('only pins the groups a narrower selection actually covers', () => {
+    useAppStore.setState({ selectedIds: ['S1'] });
+    useAppStore.getState().addCurrentToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers).toHaveLength(1);
+    expect(layers[0].restore.itemIds).toEqual(['S1']);
+  });
+
+  it('still pins one layer for the whole selection when the view is uncropped', () => {
+    useAppStore.setState({ cropToAoi: false });
+    useAppStore.getState().addCurrentToLayers();
+    const { layers } = useAppStore.getState();
+    expect(layers).toHaveLength(1);
+    expect([...layers[0].restore.itemIds].sort()).toEqual(['S1', 'S2', 'S3']);
+    expect(layers[0].restore.cropToAoi).toBe(false);
+    for (const overlay of layers[0].overlays) {
+      if (overlay.kind === 'raster') expect(overlay.tileUrl.startsWith('earthx-clip://')).toBe(false);
+    }
+  });
+});
+
 // V-2 point 3: "Zoom to selection" zooms to the AOI; failing that, to the
 // pinned layer images; failing that too, it has nothing to do (App.tsx's
 // `canZoom` then keeps the button disabled).
@@ -135,6 +218,7 @@ describe('zoomToView', () => {
             selectedIds: [],
             itemIds: [],
             aoi: null,
+            cropToAoi: false,
             datasetId: null,
           },
         },
@@ -173,6 +257,7 @@ describe('zoomToView', () => {
             selectedIds: [],
             itemIds: [],
             aoi: null,
+            cropToAoi: false,
             datasetId: null,
           },
         },

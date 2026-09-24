@@ -29,6 +29,22 @@ export interface DownloadRequestInfo {
 // Either way the scenes come from `restore.itemIds`, captured when the
 // layer was pinned — not from the live search results, which may have moved
 // on by the time someone opens the layer manager to download it.
+//
+// M3-09 (Otto's review of PR #84, 24.09.2026): a "View full selection"
+// (`restore.cropToAoi === false`) layer's download does *not* follow the
+// view here, unlike the map's own AOI clip. P19 requires the *original*
+// file for a whole COG scene — straight from the source through the
+// browser, bypassing the platform entirely — and, for Zarr, no download at
+// all without an AOI (button disabled, "Draw an AOI to download"). Routing
+// an uncropped download through this same crop endpoint would instead
+// downsize it to the tiler's output cap (`access/download.py`,
+// `MAX_OUTPUT_SIDE_PX`/M3-18), which is exactly what P19 rules out. Building
+// the real behaviour needs a source-format distinction (COG vs. Zarr) that
+// is not yet available to the frontend without dataset-specific branching —
+// that is M3-17's job (see its note in
+// `plans/m3-dritte-quelle-und-interface.md`). `restore.cropToAoi` still
+// drives the *map's* clip (`store.ts`, `mapLayers.ts`) — only the download
+// side of it was reverted here.
 export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): DownloadRequestInfo | null {
   const { restore } = layer;
   if (!restore.datasetId || !restore.aoi || restore.itemIds.length === 0) return null;
