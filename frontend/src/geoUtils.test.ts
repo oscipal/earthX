@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { coordsBbox, quicklookCoords } from './geoUtils';
+import { coordsBbox, MAX_INTERSECTS_POINTS, quicklookCoords, searchArea } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import type { StacAsset, StacItem } from './types';
 
@@ -111,5 +111,68 @@ describe('coordsBbox', () => {
       [-2, 3],
     ];
     expect(coordsBbox(quad)).toEqual([-2, 0, 5, 5]);
+  });
+});
+
+describe('searchArea', () => {
+  const RECTANGLE: GeoJSON.Geometry = {
+    type: 'Polygon',
+    coordinates: [[[8, 47], [12, 47], [12, 51], [8, 51], [8, 47]]],
+  };
+  const TRIANGLE: GeoJSON.Geometry = {
+    type: 'Polygon',
+    coordinates: [[[8, 47], [12, 47], [8, 51], [8, 47]]],
+  };
+  const POINT: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
+
+  function convexRing(n: number): GeoJSON.Position[] {
+    const ring: GeoJSON.Position[] = Array.from({ length: n }, (_, i) => [
+      10 + 0.01 * Math.cos((2 * Math.PI * i) / n),
+      49 + 0.01 * Math.sin((2 * Math.PI * i) / n),
+    ]);
+    ring.push(ring[0]);
+    return ring;
+  }
+
+  it('a point searches by intersects, regardless of the AOI polygon passed alongside it', () => {
+    expect(searchArea(RECTANGLE, POINT)).toEqual({ intersects: POINT });
+  });
+
+  it('no AOI and no point is an empty area', () => {
+    expect(searchArea(null, null)).toEqual({});
+  });
+
+  it('a rectangle searches by bbox', () => {
+    expect(searchArea(RECTANGLE, null)).toEqual({ bbox: [8, 47, 12, 51] });
+  });
+
+  it('a triangle searches by intersects', () => {
+    expect(searchArea(TRIANGLE, null)).toEqual({ intersects: TRIANGLE });
+  });
+
+  it('a polygon at exactly the point budget still searches by intersects', () => {
+    const polygon: GeoJSON.Geometry = { type: 'Polygon', coordinates: [convexRing(MAX_INTERSECTS_POINTS - 1)] };
+    const result = searchArea(polygon, null);
+    expect(result.intersects).toBe(polygon);
+    expect(result.truncatedNotice).toBeUndefined();
+  });
+
+  it('a polygon over the point budget falls back to its bbox, with a notice', () => {
+    const polygon: GeoJSON.Geometry = { type: 'Polygon', coordinates: [convexRing(MAX_INTERSECTS_POINTS)] };
+    const result = searchArea(polygon, null);
+    expect(result.intersects).toBeUndefined();
+    expect(result.bbox).toBeDefined();
+    expect(result.truncatedNotice).toMatch(new RegExp(`more than ${MAX_INTERSECTS_POINTS} points`));
+  });
+
+  it('a MultiPolygon (not a rectangle) still searches by intersects', () => {
+    const multi: GeoJSON.Geometry = {
+      type: 'MultiPolygon',
+      coordinates: [
+        [[[8, 47], [9, 47], [9, 48], [8, 48], [8, 47]]],
+        [[[11, 50], [12, 50], [12, 51], [11, 51], [11, 50]]],
+      ],
+    };
+    expect(searchArea(multi, null)).toEqual({ intersects: multi });
   });
 });

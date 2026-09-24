@@ -8,10 +8,13 @@ tries anyway must fail loudly instead of hanging until a timeout.
 
 from __future__ import annotations
 
+import logging
 import socket
 from collections.abc import Iterator
 
 import pytest
+
+from earthx.logging import JsonFormatter
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
@@ -43,3 +46,37 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
     yield
+
+
+class _JsonLineCapture(logging.Handler):
+    """Formats each record immediately, the way the real `StreamHandler` from
+    `earthx.logging.configure_logging` does — unlike `caplog`, which stores the raw
+    `LogRecord` and only formats it when a test inspects it later. `RequestIdMiddleware`
+    unbinds the request ID right after it logs (M3-16), so a record formatted late would
+    read `get_request_id()` back as `None` instead of the value that was actually bound
+    while the request was being handled.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFormatter(JsonFormatter())
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(self.format(record))
+
+
+@pytest.fixture
+def access_log_lines() -> Iterator[list[str]]:
+    """Every line `earthx.request` (`RequestIdMiddleware`'s access log) writes during
+    the test, rendered through the real `JsonFormatter` at emit time."""
+    handler = _JsonLineCapture()
+    logger = logging.getLogger("earthx.request")
+    logger.addHandler(handler)
+    previous_level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        yield handler.lines
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)

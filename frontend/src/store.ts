@@ -2,12 +2,21 @@ import { create } from 'zustand';
 
 import * as api from './api';
 import type { CoverageResponse } from './api';
-import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './coverage';
+import {
+  bandViewportBbox,
+  bboxContains,
+  clampBboxLongitude,
+  FOOTPRINT_FETCH_LIMIT,
+  levelForViewport,
+  roundBboxToGrid,
+  showFootprints,
+  VIEWPORT_ROUND_LEVELS,
+} from './coverage';
 import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import { downloadRequestFor, downloadRequestForSelection } from './download';
-import { coordsBbox, polygonBbox, quicklookCoords, unionBbox } from './geoUtils';
+import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, displayGroupBy, groupIndexOfItem, MissingProperty } from './grouping';
 import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
@@ -54,6 +63,39 @@ let coverageDebounceHandle: number | undefined;
 // state (the same pattern `mapLayers.ts` uses for quicklook loads).
 let coverageGen = 0;
 
+// M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
+// inside a bbox already asked for skips the request instead of repeating it.
+// Keyed on dataset/level/datetime — an AOI query never reads or writes this,
+// it always asks fresh (`plans/m3-19-weltueberblick-ausschnitt.md`: "mit AOI
+// bleibt alles wie heute"). Module-level like `coverageGen` above: it holds
+// no more than the interaction needs to feel warm, nothing a reload should
+// have to restore.
+interface ViewportCoverageEntry {
+  datasetId: string;
+  level: number;
+  datetime: string | undefined;
+  bbox: Bbox;
+  coverage: CoverageResponse;
+  footprints: GeoJSON.FeatureCollection | null;
+}
+const VIEWPORT_CACHE_SIZE = 8;
+let viewportCoverageCache: ViewportCoverageEntry[] = [];
+
+function cachedViewportCoverage(
+  datasetId: string,
+  level: number,
+  datetime: string | undefined,
+  viewport: Bbox,
+): ViewportCoverageEntry | undefined {
+  return viewportCoverageCache.find(
+    (e) => e.datasetId === datasetId && e.level === level && e.datetime === datetime && bboxContains(e.bbox, viewport),
+  );
+}
+
+function rememberViewportCoverage(entry: ViewportCoverageEntry): void {
+  viewportCoverageCache = [entry, ...viewportCoverageCache].slice(0, VIEWPORT_CACHE_SIZE);
+}
+
 function scheduleCoverageRefresh(set: SetState, get: GetState): void {
   window.clearTimeout(coverageDebounceHandle);
   coverageDebounceHandle = window.setTimeout(() => void refreshCoverage(set, get), COVERAGE_DEBOUNCE_MS);
@@ -62,14 +104,18 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 // Fetches the density grid for the current dataset/AOI/date filter (M2-07c),
 // and — only once the backend's `footprints_advised` and the frontend's own
 // zoom brake (coverage.ts) both agree — the real scene footprints to replace
-// it with. `bbox` is the search AOI (`aoi`, drawn/uploaded), never the map's
-// pan/zoom viewport: `adr/0004` §6.3 ties the geotile *level* to the map's
-// zoom, but its "räumlicher Filter" (has_spatial_filter) means an actual
-// narrowing criterion. Sending the viewport as `bbox` on every pan would
-// silently turn every browse into a "filtered" query and permanently disable
-// the coverage route's own world-view cap (`WORLD_LEVEL_CAP`) — the bug
-// behind the too-coarse cells reported after M2-07c's first local run; see
-// the PR for the measured levels and the (backend, Otto's-call) proposal.
+// it with.
+//
+// M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): with an AOI,
+// `bbox` is that AOI (`aoi`, drawn/uploaded) and the level follows the map's
+// floored zoom, unchanged from before. Without an AOI, `bbox` is the
+// *visible map extent* instead — banded across the antimeridian and rounded
+// outward to a coarser block (`coverage.ts`) so nearby viewports ask the
+// same question — and the level is derived from the viewport's own size so
+// roughly the same number of cells always covers the screen
+// (`levelForViewport`). Either way `bbox` is a real spatial filter as far as
+// the route is concerned, so its `WORLD_LEVEL_CAP` no longer applies to the
+// no-AOI case; see the plan for why that is intended, not a leftover.
 //
 // A failed density fetch clears the layer (nothing to fall back to); a
 // failed *footprints* fetch instead leaves `coverage` in place and
@@ -82,19 +128,45 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
     set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
     return;
   }
-  const gen = ++coverageGen;
-  const { datasetId } = s;
-  const rawBbox = s.aoi ? polygonBbox(s.aoi) : null;
-  // Clamped to ±180° longitude — a wide AOI drawn across a wrapped world
-  // copy (MapLibre repeats the map at low zoom) can otherwise carry corners
-  // past ±180, which the coverage route refuses outright (coverage.ts).
-  const bbox = rawBbox ? clampBboxLongitude(rawBbox) : undefined;
-  const zoom = Math.floor(s.mapZoom);
+  const { datasetId, aoi } = s;
+  const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
+
+  let bbox: Bbox | undefined;
+  let level: number;
+  let viewport: Bbox | undefined; // the raw (unrounded) extent, for the reuse check only
+  if (aoi) {
+    // Clamped to ±180° longitude — a wide AOI drawn across a wrapped world
+    // copy (MapLibre repeats the map at low zoom) can otherwise carry corners
+    // past ±180, which the coverage route refuses outright (coverage.ts).
+    const rawBbox = polygonBbox(aoi);
+    if (!rawBbox) {
+      set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
+      return;
+    }
+    bbox = clampBboxLongitude(rawBbox);
+    level = Math.floor(s.mapZoom);
+  } else {
+    if (s.viewportBbox === null || s.viewportSize === null) return; // map not ready yet
+    level = levelForViewport(s.mapZoom, s.viewportSize.width, s.viewportSize.height);
+    viewport = bandViewportBbox(s.viewportBbox);
+    bbox = roundBboxToGrid(viewport, level - VIEWPORT_ROUND_LEVELS);
+  }
+
+  const gen = ++coverageGen;
+
+  if (!hasAoi && viewport) {
+    const cached = cachedViewportCoverage(datasetId, level, datetime, viewport);
+    if (cached) {
+      set({ coverage: cached.coverage, coverageFootprints: cached.footprints, coverageLoading: false, coverageError: null });
+      return;
+    }
+  }
+
   set({ coverageLoading: true, coverageError: null });
   let coverage: CoverageResponse;
   try {
-    coverage = await api.fetchCoverage({ datasetId, zoom, bbox, datetime });
+    coverage = await api.fetchCoverage({ datasetId, zoom: level, bbox, datetime });
   } catch (e) {
     if (gen !== coverageGen) return;
     set({
@@ -107,14 +179,21 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   }
   if (gen !== coverageGen) return;
   set({ coverage, coverageFootprints: null, coverageLoading: false, coverageError: null });
-  if (!showFootprints(coverage, get().mapZoom)) return;
-  try {
-    const { features } = await api.searchAllPages({ collection: datasetId, bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
-    if (gen !== coverageGen) return;
-    set({ coverageFootprints: footprintsFC(features) });
-  } catch {
-    // Left at `null` — the density fill this dataset/viewport already has
-    // stays on screen (E5: a failed extra fetches degrades, it doesn't 404).
+  let footprints: GeoJSON.FeatureCollection | null = null;
+  if (showFootprints(coverage, get().mapZoom)) {
+    try {
+      const { features } = await api.searchAllPages({ collection: datasetId, bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
+      if (gen === coverageGen) {
+        footprints = footprintsFC(features);
+        set({ coverageFootprints: footprints });
+      }
+    } catch {
+      // Left at `null` — the density fill this dataset/viewport already has
+      // stays on screen (E5: a failed extra fetch degrades, it doesn't 404).
+    }
+  }
+  if (!hasAoi && viewport && gen === coverageGen && bbox) {
+    rememberViewportCoverage({ datasetId, level, datetime, bbox, coverage, footprints });
   }
 }
 
@@ -130,7 +209,13 @@ interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
   aoi: GeoJSON.Geometry | null;
+  // M3-08: the point the current AOI was drawn or uploaded from, kept apart from
+  // `aoi` (still the square `bufferPointToPolygon` built, which is what the map
+  // shows and the download crops) — only `runSearch` reads this, to search by the
+  // point itself rather than by its buffer square's bbox.
+  aoiPoint: GeoJSON.Point | null;
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
+  lastAoiPoint: GeoJSON.Point | null; // the point behind lastAoi, if it had one
   flyToBbox: Bbox | null;
   // --- view preferences (V-1), saved per browser (preferences.ts) ---
   theme: Theme;
@@ -145,9 +230,14 @@ interface AppState {
   // away from the density cells — `null` while density is showing or nothing
   // has loaded yet.
   coverageFootprints: GeoJSON.FeatureCollection | null;
-  // The map's zoom only — never its pan/viewport bbox, which is not the
-  // "räumlicher Filter" `adr/0004` §6.3 means (see `refreshCoverage`).
   mapZoom: number;
+  // The visible map extent and its CSS-pixel size, reported by `MapView` on
+  // `moveend`/first load. Read only by `refreshCoverage` to build the no-AOI
+  // request (M3-19) — an AOI is still the only thing that counts as the
+  // route's "räumlicher Filter" in the `adr/0004` §6.3 sense; this is never
+  // sent as one, only banded/rounded into `bbox` the same way an AOI is.
+  viewportBbox: Bbox | null;
+  viewportSize: { width: number; height: number } | null;
 
   // --- ui layout ---
   panelCollapsed: boolean; // left control panel slid off to the left
@@ -215,7 +305,7 @@ interface AppState {
   loadDatasets: () => Promise<void>;
   setDatasetId: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
-  setAoi: (g: GeoJSON.Geometry | null) => void;
+  setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
   clearAoi: () => void;
   useLastAoi: () => void;
   flyTo: (b: Bbox) => void;
@@ -259,7 +349,7 @@ interface AppState {
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
   toggleCoverage: () => void;
-  setMapZoom: (zoom: number) => void;
+  setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
   toggleProjection: () => void;
 }
@@ -267,7 +357,9 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   toolMode: 'none',
   aoi: null,
+  aoiPoint: null,
   lastAoi: null,
+  lastAoiPoint: null,
   flyToBbox: null,
   theme: loadTheme(),
   projection: loadProjection(),
@@ -277,6 +369,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   coverageError: null,
   coverageFootprints: null,
   mapZoom: 1.6,
+  viewportBbox: null,
+  viewportSize: null,
 
   panelCollapsed: false,
   resultsPanelCollapsed: false,
@@ -352,19 +446,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(toolMode === 'none' ? { toolMode } : { toolMode, panelCollapsed: true }),
   // The AOI is also the coverage route's spatial filter (`refreshCoverage`),
   // so every way it can change reschedules a refresh.
-  setAoi: (aoi) => {
-    set((s) => ({ aoi, lastAoi: aoi ?? s.lastAoi }));
+  setAoi: (aoi, point = null) => {
+    set((s) => ({
+      aoi,
+      aoiPoint: point,
+      lastAoi: aoi ?? s.lastAoi,
+      lastAoiPoint: aoi ? point : s.lastAoiPoint,
+    }));
     scheduleCoverageRefresh(set, get);
   },
   clearAoi: () => {
-    set({ aoi: null });
+    set({ aoi: null, aoiPoint: null });
     scheduleCoverageRefresh(set, get);
   },
   useLastAoi: () => {
-    const g = get().lastAoi;
+    const { lastAoi: g, lastAoiPoint } = get();
     if (!g) return;
     const bb = polygonBbox(g);
-    set({ aoi: g, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
+    set({ aoi: g, aoiPoint: lastAoiPoint, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
     scheduleCoverageRefresh(set, get);
   },
   flyTo: (flyToBbox) => set({ flyToBbox }),
@@ -375,6 +474,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearAll: () => {
     set({
       aoi: null,
+      aoiPoint: null,
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -729,8 +829,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (showCoverage) void refreshCoverage(set, get);
     else set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
   },
-  setMapZoom: (mapZoom) => {
-    set({ mapZoom });
+  setMapViewport: (mapZoom, viewportBbox, viewportSize) => {
+    set({ mapZoom, viewportBbox, viewportSize });
     scheduleCoverageRefresh(set, get);
   },
   setPlaying: (playing) => set({ playing }),
@@ -748,7 +848,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   runSearch: async () => {
-    const { aoi, dateFrom, dateTo, datasetId, datasets } = get();
+    const { aoi, aoiPoint, dateFrom, dateTo, datasetId, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });
       return;
@@ -762,9 +862,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: `This dataset cannot be shown yet: ${dataset.reason}` });
       return;
     }
-    const bbox = polygonBbox(aoi);
-    if (!bbox) {
-      set({ error: 'Could not compute a bounding box for the area of interest.' });
+    // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
+    // true shape, a rectangle by its bbox — `aoiPoint` is only ever read here,
+    // never for display or the download crop, which stay on `aoi`.
+    const area = searchArea(aoi, aoiPoint);
+    if (!area.bbox && !area.intersects) {
+      set({ error: 'Could not compute a search area for the area of interest.' });
       return;
     }
     const groupBy = dataset.groupBy;
@@ -774,7 +877,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     ) => {
       try {
         const groups = buildGroups(features, displayGroupBy(features, groupBy));
-        const text = typeof notice === 'function' ? notice(groups) : notice;
+        const base = typeof notice === 'function' ? notice(groups) : notice;
+        const text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
         set({
           items: features,
           groups,
@@ -813,7 +917,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     try {
       const datetimeRange = buildDatetime(dateFrom, dateTo);
-      const page = await api.searchAllPages({ collection: dataset.id, bbox, datetime: datetimeRange }, MAX_SEARCH_ITEMS);
+      const page = await api.searchAllPages(
+        { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
+        MAX_SEARCH_ITEMS,
+      );
       if (page.features.length > 0) {
         applyResults(page.features, (groups) => foundNotice(page.features, groups, page.numberMatched));
         return;
@@ -826,7 +933,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         (w) =>
           api.searchItems({
             collection: dataset.id,
-            bbox,
+            bbox: area.bbox,
+            intersects: area.intersects,
             datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`,
             limit: PAGE_LIMIT,
           }),
@@ -839,7 +947,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       const range = fullDayRange(fallback.item);
       const full = range
-        ? await api.searchAllPages({ collection: dataset.id, bbox, datetime: range }, MAX_SEARCH_ITEMS)
+        ? await api.searchAllPages(
+            { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: range },
+            MAX_SEARCH_ITEMS,
+          )
         : { features: [fallback.item], numberMatched: 1 };
       applyResults(full.features, fallbackNotice(fallback));
     } catch (e) {

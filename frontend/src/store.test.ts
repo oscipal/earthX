@@ -361,3 +361,266 @@ describe('findSceneByName', () => {
     expect(useAppStore.getState().error).toMatch(/cannot be shown yet/);
   });
 });
+
+// M3-08: `aoiPoint` travels alongside `aoi` (and `lastAoi`/`lastAoiPoint`) without
+// leaking into an unrelated AOI, since only `runSearch` ever reads it.
+describe('AOI point tracking', () => {
+  const POINT: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
+  const SQUARE: GeoJSON.Geometry = {
+    type: 'Polygon',
+    coordinates: [[[9.95, 48.95], [10.05, 48.95], [10.05, 49.05], [9.95, 49.05], [9.95, 48.95]]],
+  };
+  const RECTANGLE: GeoJSON.Geometry = {
+    type: 'Polygon',
+    coordinates: [[[8, 47], [12, 47], [12, 51], [8, 51], [8, 47]]],
+  };
+
+  // No jsdom in this project (Vitest runs plain Node, `preferences.test.ts`) —
+  // `setAoi`/`clearAoi`/`useLastAoi` schedule a debounced coverage refresh via
+  // `window.setTimeout`, which this stub only needs to not throw; the debounced
+  // refresh itself (against no dataset here) is not what these tests are about.
+  beforeEach(() => {
+    vi.stubGlobal('window', { setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args), clearTimeout });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('setAoi with a point keeps both the square and the point', () => {
+    useAppStore.getState().setAoi(SQUARE, POINT);
+    const s = useAppStore.getState();
+    expect(s.aoi).toBe(SQUARE);
+    expect(s.aoiPoint).toBe(POINT);
+  });
+
+  it('setAoi without a point clears any point a previous AOI had', () => {
+    useAppStore.getState().setAoi(SQUARE, POINT);
+    useAppStore.getState().setAoi(RECTANGLE);
+    expect(useAppStore.getState().aoiPoint).toBeNull();
+  });
+
+  it('clearAoi clears the point along with the AOI', () => {
+    useAppStore.getState().setAoi(SQUARE, POINT);
+    useAppStore.getState().clearAoi();
+    const s = useAppStore.getState();
+    expect(s.aoi).toBeNull();
+    expect(s.aoiPoint).toBeNull();
+  });
+
+  it('useLastAoi restores the point the last AOI was drawn from', () => {
+    useAppStore.getState().setAoi(SQUARE, POINT);
+    useAppStore.getState().clearAoi();
+    useAppStore.getState().useLastAoi();
+    const s = useAppStore.getState();
+    expect(s.aoi).toBe(SQUARE);
+    expect(s.aoiPoint).toBe(POINT);
+  });
+});
+
+// M3-08: `runSearch` asks `intersects` for a point or an ordinary polygon AOI,
+// `bbox` for a rectangle or a polygon over the point budget (geoUtils.searchArea).
+describe('runSearch', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  function requestBody(callIndex: number): Record<string, unknown> {
+    const [, init] = vi.mocked(fetch).mock.calls[callIndex];
+    return JSON.parse((init as RequestInit).body as string);
+  }
+
+  function baseState(overrides: Partial<ReturnType<typeof useAppStore.getState>> = {}) {
+    useAppStore.setState({
+      datasets: datasetsFrom([COG_LIKE]),
+      datasetId: COG_LIKE.id,
+      dateFrom: '',
+      dateTo: '',
+      items: [],
+      groups: [],
+      selectedIds: [],
+      error: null,
+      notice: null,
+      ...overrides,
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('a point AOI searches by the point itself, not its buffer square', async () => {
+    const point: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
+    const square: GeoJSON.Geometry = {
+      type: 'Polygon',
+      coordinates: [[[9.95, 48.95], [10.05, 48.95], [10.05, 49.05], [9.95, 49.05], [9.95, 48.95]]],
+    };
+    baseState({ aoi: square, aoiPoint: point });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
+
+    await useAppStore.getState().runSearch();
+
+    expect(requestBody(0).intersects).toEqual(point);
+    expect(requestBody(0).bbox).toBeUndefined();
+  });
+
+  it('a rectangle AOI still searches by bbox', async () => {
+    const rectangle: GeoJSON.Geometry = {
+      type: 'Polygon',
+      coordinates: [[[8, 47], [12, 47], [12, 51], [8, 51], [8, 47]]],
+    };
+    baseState({ aoi: rectangle, aoiPoint: null });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
+
+    await useAppStore.getState().runSearch();
+
+    expect(requestBody(0).bbox).toEqual([8, 47, 12, 51]);
+    expect(requestBody(0).intersects).toBeUndefined();
+    expect(useAppStore.getState().notice).toBe('No scenes found for this area.');
+  });
+
+  it('an ordinary polygon AOI searches by intersects', async () => {
+    const triangle: GeoJSON.Geometry = { type: 'Polygon', coordinates: [[[8, 47], [12, 47], [8, 51], [8, 47]]] };
+    baseState({ aoi: triangle, aoiPoint: null });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
+
+    await useAppStore.getState().runSearch();
+
+    expect(requestBody(0).intersects).toEqual(triangle);
+  });
+
+  it('a polygon over the point budget falls back to bbox with a notice (F2a)', async () => {
+    const n = 1001;
+    const ring: [number, number][] = Array.from({ length: n }, (_, i) => [
+      10 + 0.01 * Math.cos((2 * Math.PI * i) / n),
+      49 + 0.01 * Math.sin((2 * Math.PI * i) / n),
+    ]);
+    ring.push(ring[0]);
+    const huge: GeoJSON.Geometry = { type: 'Polygon', coordinates: [ring] };
+    baseState({ aoi: huge, aoiPoint: null });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })));
+
+    await useAppStore.getState().runSearch();
+
+    expect(requestBody(0).intersects).toBeUndefined();
+    expect(requestBody(0).bbox).toBeDefined();
+    expect(useAppStore.getState().notice).toMatch(/more than 1000 points/);
+  });
+});
+
+// M3-19 (Otto, 23.09.2026): without an AOI, `refreshCoverage` asks for the
+// visible map extent and reuses an already-loaded answer for a viewport that
+// stays inside it, instead of firing a request on every `moveend`. With an
+// AOI nothing changes — every call still asks fresh.
+describe('refreshCoverage without an AOI (M3-19)', () => {
+  // A fresh id per test: the reuse cache is module-level (store.ts), so two
+  // tests sharing a dataset id would see each other's cached answers.
+  let testCounter = 0;
+  let DATASET_ID = '';
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  function coverageResponse(datasetId: string, level: number): unknown {
+    return {
+      dataset_id: datasetId,
+      grid: 'geotile',
+      level,
+      counting: 'centroid',
+      cells: [],
+      counted: 0,
+      total_count: 100_000,
+      completeness: 'complete',
+      max_count: 0,
+      histogram: [],
+      histogram_interval: 'month',
+      footprints_advised: false,
+      from_cache: false,
+      extent: null,
+    };
+  }
+
+  beforeEach(() => {
+    DATASET_ID = `coverage-reuse-m3-19-${testCounter++}`;
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args), clearTimeout });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const zoom = Number(new URL(url, 'http://x').searchParams.get('zoom'));
+        return jsonResponse(200, coverageResponse(DATASET_ID, zoom));
+      }),
+    );
+    useAppStore.setState({
+      datasetId: DATASET_ID,
+      showCoverage: true,
+      aoi: null,
+      aoiPoint: null,
+      dateFrom: '',
+      dateTo: '',
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+      coverageLoading: false,
+      viewportBbox: null,
+      viewportSize: null,
+      mapZoom: 1.6,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  // Both viewports lie inside 0°–180° / 0°–85° (levelForViewport(0, 1920,
+  // 1080) === 4, coverage.test.ts), so both round to the very same block.
+  it('does not repeat a request for a small pan that stays inside the same block', async () => {
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().coverage?.level).toBe(4);
+
+    setMapViewport(0, [15, 15, 55, 55], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().coverage?.level).toBe(4);
+  });
+
+  it('asks again once the zoom changes the level, even at the same spot', async () => {
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(0, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // levelForViewport(3, 1920, 1080) === 7 (coverage.test.ts) — a different
+    // level, so the cache entry at level 4 does not cover this request.
+    setMapViewport(3, [10, 10, 60, 60], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().coverage?.level).toBe(7);
+  });
+
+  it('with an AOI, every viewport report still asks fresh — no reuse', async () => {
+    const aoi: GeoJSON.Geometry = {
+      type: 'Polygon',
+      coordinates: [[[10, 49], [11, 49], [11, 50], [10, 50], [10, 49]]],
+    };
+    useAppStore.setState({ aoi });
+    const { setMapViewport } = useAppStore.getState();
+
+    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // The very same report a second time (e.g. a resize firing `moveend`
+    // without the map actually moving) is not treated as reuse either.
+    setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});

@@ -86,7 +86,10 @@ services:
   api:
     build:
       context: ./backend
-    command: ["uvicorn", "earthx.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # M3-16: `--no-access-log` — uvicorn's own access log would write the raw
+    # query string (an AOI as `bbox`/`intersects`); `RequestIdMiddleware`
+    # (earthx.logging) is this process's access log instead.
+    command: ["uvicorn", "earthx.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     ports:
       - "8000:8000"
     environment:
@@ -120,7 +123,8 @@ services:
     # `access` may not import `gateway` (architekturplan.md 3.1), but the tile path
     # needs the allowlist, check_url and the GDAL configuration — so `api` composes
     # them (adr/0006 §5.1).
-    command: ["uvicorn", "earthx.api.tiler:app", "--host", "0.0.0.0", "--port", "8000"]
+    # M3-16: see the `api` service above — same reason for `--no-access-log`.
+    command: ["uvicorn", "earthx.api.tiler:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     ports:
       - "8001:8000"
     environment:
@@ -151,7 +155,8 @@ services:
   worker:
     build:
       context: ./backend
-    command: ["uvicorn", "earthx.jobs.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # M3-16: see the `api` service above — same reason for `--no-access-log`.
+    command: ["uvicorn", "earthx.jobs.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     ports:
       - "8002:8000"
     depends_on:
@@ -168,7 +173,8 @@ services:
   harvester:
     build:
       context: ./backend
-    command: ["uvicorn", "earthx.discovery.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # M3-16: see the `api` service above — same reason for `--no-access-log`.
+    command: ["uvicorn", "earthx.discovery.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     ports:
       - "8003:8000"
     depends_on:

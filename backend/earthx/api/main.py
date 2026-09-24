@@ -33,6 +33,7 @@ from earthx.api.coverage_route import router as coverage_router
 from earthx.api.dependencies import build_gateway, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.catalog.datasets import REGISTRY
+from earthx.logging import RequestIdMiddleware, configure_logging
 
 # adr/0005 rule VI, plan §6 F2: query/fields/pagination describe our own collection
 # and paging; filter (CQL2) and sort are the two extensions the federated path cannot
@@ -57,6 +58,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _build_app() -> FastAPI:
+    # M3-16: this process's own JSON logging, before anything can log a line
+    # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
+    # `RequestIdMiddleware` below is this process's only access log.
+    configure_logging()
     settings = Settings(enabled_extensions=_ENABLED_EXTENSIONS, prefix_path=_PREFIX_PATH)
     # `Extensions()` on its own would build a *second*, default-constructed
     # `Settings()` that never sees `_ENABLED_EXTENSIONS` — passing `settings` here
@@ -65,6 +70,7 @@ def _build_app() -> FastAPI:
     extensions = Extensions(settings=settings)
     api = instantiate_api(client=FederatingCoreCrudClient, settings=settings, extensions=extensions, lifespan=_lifespan)
     app = api.app
+    app.add_middleware(RequestIdMiddleware)
 
     @app.get("/health")
     def health() -> dict:

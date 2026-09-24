@@ -206,3 +206,61 @@ export function asFeatureCollection(geom: GeoJSON.Geometry | null): GeoJSON.Feat
     features: geom ? [{ type: 'Feature', geometry: geom, properties: {} }] : [],
   };
 }
+
+// M3-08 F1a: kept in lockstep with the backend's own cap
+// (`MAX_INTERSECTS_POINTS`, `backend/earthx/adapters/federated_search.py`) — a
+// polygon over this many positions is rejected there, so `searchArea` falls back
+// to the bounding box on this side rather than let the search fail.
+export const MAX_INTERSECTS_POINTS = 1000;
+
+// Counts the positions in a geometry, the same way the backend's own
+// `_check_positions` does: walks the (possibly nested) coordinates array down to
+// its leaves, one leaf per position.
+function countPositions(coords: unknown): number {
+  if (Array.isArray(coords) && typeof coords[0] === 'number') return 1;
+  if (!Array.isArray(coords)) return 0;
+  return coords.reduce((total: number, item) => total + countPositions(item), 0);
+}
+
+// A rectangle drawn with the "Rectangle" tool: a single ring of exactly five
+// points (closed) whose corners take only two distinct x- and two distinct y-
+// values. Sent as `bbox` rather than `intersects` — the same question, asked the
+// cheaper way and without spending any of the point budget above.
+function isAxisAlignedRectangle(geom: GeoJSON.Geometry): boolean {
+  if (geom.type !== 'Polygon' || geom.coordinates.length !== 1) return false;
+  const ring = geom.coordinates[0];
+  if (ring.length !== 5) return false;
+  const xs = new Set(ring.map(([x]) => x));
+  const ys = new Set(ring.map(([, y]) => y));
+  return xs.size === 2 && ys.size === 2;
+}
+
+export interface SearchArea {
+  bbox?: Bbox;
+  intersects?: GeoJSON.Geometry;
+  // Set only when a polygon went over MAX_INTERSECTS_POINTS and was searched by
+  // its bounding box instead (M3-08 F2a) — the caller folds this into its own
+  // search notice; unset otherwise, including for a plain rectangle.
+  truncatedNotice?: string;
+}
+
+// M3-08 F2a/F5a: what one search request asks for, given the drawn/uploaded AOI
+// and, separately, the point it was drawn or uploaded from (`store.ts` tracks the
+// two apart — the AOI square stays what the map shows and the download crops,
+// the point is only ever used here). A rectangle AOI still asks by `bbox`; a
+// point or any other polygon asks by `intersects`, except a polygon so large it
+// would be rejected upstream, which falls back to `bbox` with a notice instead.
+export function searchArea(aoi: GeoJSON.Geometry | null, point: GeoJSON.Point | null): SearchArea {
+  if (point) return { intersects: point };
+  if (!aoi) return {};
+  const bbox = polygonBbox(aoi);
+  if (!bbox) return {};
+  if (isAxisAlignedRectangle(aoi)) return { bbox };
+  if (countPositions((aoi as { coordinates?: unknown }).coordinates) > MAX_INTERSECTS_POINTS) {
+    return {
+      bbox,
+      truncatedNotice: `Area has more than ${MAX_INTERSECTS_POINTS} points; searched its bounding box instead.`,
+    };
+  }
+  return { intersects: aoi };
+}
