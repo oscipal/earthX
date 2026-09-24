@@ -2,10 +2,13 @@
 
 **Aufgabe:** M3-18 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 24.09.2026 freigegeben** mit F1 (1), F2 (1), F3
-(2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8). Der Plan-Schritt ist damit
-abgeschlossen, die Umsetzung ist erledigt. Ein Nebenfund während der
-Umsetzung (§9, Kompression des Zuschnitts) ist **nicht** durch F1–F8 gedeckt
-und braucht noch Ottos Bestätigung.
+(2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8) und **umgesetzt**. Zwei
+Punkte sind noch offen und halten den nächsten Umsetzungsschritt an: F9
+(§9, Kompression des maskierten Zuschnitts, Nebenfund) und die native
+Auflösung (§10, Ottos Erweiterung vom 23.09.2026 — Nummerierung nach dem
+Datum ihres Eingangs, nicht der Chronologie). **Der Code im Repo entspricht
+noch §1–§9** (4096 px Deckel, 200 MB); §10 ist Plan, keine Umsetzung, bis
+Otto die Fragen dort beantwortet.
 **Ort im Repo:** `docs/plans/m3-18-download-deckel-maske.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, §1.3, M3-17,
 M3-18, P19); `ENTSCHEIDUNGSLOG.md`, Zeilen vom 20.09.2026 (M2-06, Deckel) und
@@ -393,3 +396,243 @@ bräuchte aber einen Versions-Bump außerhalb dieser Aufgabe).
    rio-cogeo-Version hochzuziehen oder den DEFLATE-Fehler upstream zu melden.
 3. Zurück auf DEFLATE trotz der Messung, bis Otto es selbst nachvollzogen hat
    (die Maske bliebe dann mit dem gemessenen Restrisiko).
+
+---
+
+## 10. Erweiterung, Otto 23.09.2026: Download immer in nativer Auflösung
+
+**Status: Plan, keine Umsetzung.** Diese Vorgabe kam nach der Freigabe von
+F1–F8 und der Umsetzung von §1–§9; der Code im Repo entspricht noch dem
+4096-px-Deckel und den 200 MB aus §1–§9. Nummeriert als „§10“, weil sie nach
+§9 in dieses Dokument aufgenommen wurde — nicht, weil sie zeitlich danach
+läge (Otto hat sie am 23.09., einen Tag vor der Freigabe aus §8, verfasst;
+diese Sitzung erreicht sie erst jetzt).
+
+### 10.1 Was Otto vorgibt
+
+1. Der Download hat immer die native Auflösung der Quelle. Eine gröbere
+   Auflösung nur, wenn der Nutzer sie im Download-Dialog ausdrücklich wählt.
+   Die automatische Verkleinerung über `max_size` (4096 px) entfällt. Die
+   Karte darf weiter verkleinern (Kachel-Pfad unverändert).
+2. Liegt die Ausgabe über der Grenze: keine Verkleinerung, sondern eine
+   Abweisung mit verständlicher englischer Meldung, die die nötige Größe
+   nennt und zwei Wege: AOI verkleinern oder eine gröbere Auflösung
+   ausdrücklich wählen.
+3. Im Download-Dialog eine optionale Auflösungswahl. Voreinstellung nativ;
+   der Wert steht im Dateinamen und in den Metadaten der Datei.
+4. Im Plan-Schritt messen und vorschlagen, bis zu welcher Ausgabegröße ein
+   synchroner Download vertretbar ist (Arbeitsspeicher, Dauer; synthetische
+   COGs, fensterweises Lesen). Die 200 MB aus §1–§9 sind nicht gesetzt; Otto
+   entscheidet nach der Messung (§10.4).
+5. Zwei neue Log-Zeilen (§10.7).
+6. Plan-Abnahme um drei Tests ergänzen: groß-aber-unter-der-Grenze → nativ;
+   über der Grenze → Abweisung mit Meldung; gewählte Auflösung wird
+   eingehalten (§10.6).
+
+### 10.2 Was das an §1–§9 ändert
+
+- **`estimate_output_dims`/`plan_outputs` (§4.1):** Der `min(4096, …)`-Deckel
+  in der Pixel-Schätzung entfällt für den Normalfall — die Schätzung rechnet
+  mit der *nativen* Auflösung (`gsd`) über die volle AOI. `max_side` bleibt
+  als Parameter bestehen, aber nur noch für den Fall, dass der Nutzer
+  ausdrücklich eine gröbere Auflösung wählt (§10.5).
+- **`crop_asset`/`.feature()` (§4.2):** Ruft künftig ohne `max_size` (bzw.
+  `max_size=None`) auf, außer der Nutzer hat eine gröbere Auflösung gewählt.
+  rio-tiler liest dann die native Größe des angefragten Fensters (nachgeprüft:
+  `.feature()` ganz ohne `max_size`/`width`/`height` gibt exakt die native
+  Fenstergröße zurück, `rio_tiler.reader._missing_size` behandelt „beide
+  fehlen“ als „kein Deckel“, nicht als Fehler).
+- **200-MB-Grenze (§1–§9, Log 24.09.2026):** ersetzt durch einen neuen,
+  gemessenen Wert (§10.4) — nicht mehr 200 MB, sondern eine Grenze, die
+  erstmals gegen echte native Ausgabegrößen gemessen ist, nicht gegen den
+  4096-px-Deckel.
+- **Abweisungsmeldung (§4.1):** bekommt einen zweiten Satz mit dem zweiten
+  Ausweg (gröbere Auflösung), z. B.: *„This download would be about 850 MB at
+  native resolution, more than the 500 MB limit. Draw a smaller area, or
+  choose a coarser resolution in the download dialog.“*
+- **Frontend (`DownloadDialog.tsx`, §4.4):** ein optionales Auflösungsfeld,
+  Voreinstellung „Native“; der Zuschnittsname und die Attribution-Datei nennen
+  die gewählte Auflösung (§10.5).
+- **Zuschnitt größer als das, was `max_size` bisher erzwang (§2):** Die Antwort
+  auf die M2-Frage „was passiert bei einer AOI über 4096 px“ ändert sich —
+  bisher „wird verkleinert“, künftig „wird in voller Größe gelesen oder mit
+  §10.4s Grenze abgewiesen“.
+
+### 10.3 Messung: native Auflösung, naiv gegen fensterweises Lesen (23./24.09.2026)
+
+**Aufbau.** Eine synthetische COG in MGRS-Kachel-Maßstab: 10980 × 10980 px,
+10 m, EPSG:32632, 3 Bänder uint8 (Größe und Auflösung eines echten
+Sentinel-2-`visual`-Assets, adr/0003), lokale Datei (kein `/vsicurl/` — die
+Kosten des Gateways sind in §3 schon vermessen, hier geht es nur um die
+Lese-/Schreibstrategie). Gemessen für wachsende quadratische Ausschnitte, mit
+Maske und ZSTD-Kompression wie in §9 umgesetzt:
+
+- **Naiv** (heutiger Code ohne `max_size`-Deckel): ein `.feature()`/`read()`
+  über das ganze Fenster, dann Maske, dann `cog_translate`.
+- **Fensterweise** (Prototyp, nicht im Repo): dasselbe Ziel, aber Quelle und
+  Ausgabe werden in 1024×1024-Blöcken gelesen/geschrieben — nie mehr als ein
+  Block gleichzeitig im Python-Array.
+
+| Seite (px) | Ausgabe roh | Naiv: Spitze | Naiv: Zeit | Fensterweise: Spitze | Fensterweise: Zeit |
+|---|---|---|---|---|---|
+| 2000 | 12 MB | 170 MB | 1,2 s | 168 MB | 0,5 s |
+| 4000 | 48 MB | 531 MB | 3,6 s | 502 MB | 2,4 s |
+| 6000 | 108 MB | 1149 MB | 6,0 s | 1067 MB | 5,1 s |
+| 8000 | 192 MB | 1856 MB | 9,6 s | 1672 MB | 9,3 s |
+| 10000 | 300 MB | — nicht gemessen — | — | 2201 MB | 16,0 s |
+| 10980 (eine ganze Kachel) | 362 MB | 3049 MB | 16,6 s | 2292 MB | 15,0 s |
+| 12910 (zweite, größere COG) | 500 MB | 3599 MB | 23,5 s | 3128 MB | 21,1 s |
+| 18300 (dieselbe COG, volle Seite) | 1005 MB | 6328 MB | 41,9 s | 5102 MB | 39,5 s |
+
+Die Zeile bei 300 MB und die letzten beiden Zeilen sind eigene Messpunkte
+(die letzten beiden an einer zweiten, eigens dafür erzeugten
+18300 × 18300-px-COG, dieselbe Bauart), damit 300, 500 und rund 1000 MB echt
+gemessen sind statt aus den kleineren Größen hochgerechnet; bei 300 MB wurde
+nur die fensterweise Variante gemessen (die für §10.4 gebraucht wurde).
+
+**Was daraus folgt:**
+
+1. **Fensterweises Lesen hilft, aber mit sinkendem Ertrag.** Bei 362 MB roh
+   spart es rund ein Viertel der Spitze (2292 statt 3049 MB), bei 1005 MB roh
+   noch rund ein Fünftel (5102 statt 6328 MB) — und ist bei jeder der sechs
+   direkt verglichenen Größen etwas schneller, nie langsamer. Es hebt die
+   Grenze aber nicht auf: Der Faktor Spitze/Roh sinkt mit wachsender Größe
+   (naiv 14,2× → 6,3× über die Messreihe; fensterweise 14,0× → 5,1×), fixe
+   Kosten (COG-Header, Overviews, ZSTD-Puffer) fallen bei kleinen Dateien
+   stärker ins Gewicht, nähern sich aber offenbar einem Sockel von rund 5×
+   statt weiter zu fallen.
+2. **Der Grund, warum fensterweises Lesen keine Größenordnung gewinnt:** D3
+   verbietet jeden Zwischenschritt auf Platte — die fertige COG muss als
+   Ganzes im Arbeitsspeicher liegen (`MemoryFile`, GDALs virtuelles
+   Dateisystem), ob sie in einem Zug oder blockweise geschrieben wird. Echtes
+   Streaming (die Antwort schon senden, während GDAL noch schreibt) verträgt
+   sich nicht mit dem COG-Format (IFD und Overviews brauchen wahlfreien
+   Zugriff beim Schreiben) und würde D3 ohnehin nicht verletzen dürfen. Die
+   Ausgabegröße selbst bleibt damit der Hebel, nicht die Lesestrategie.
+3. **Zeit wächst linear mit der Rohgröße,** rund 0,041–0,046 s je MB, in
+   beiden Varianten. An echten Quellen kommt die Netzlatenz der einzelnen
+   Range-Reads oben drauf (adr/0006 §3.4: rund 1 s je Item unabhängig von der
+   Größe) — bei einem Item spielt das kaum eine Rolle, bei einem Mosaik über
+   mehrere Items (§3) schon.
+
+**Vorschlag:** Fensterweises Lesen umsetzen (ersetzt den heutigen naiven Weg
+in `crop_asset`/`_image_to_cog_bytes` auch für den ungewählten, nativen Fall)
+— rund ein Viertel weniger Spitzenspeicher bei großen Ausschnitten, nicht
+langsamer, kein erkennbarer Nachteil in dieser Messung. Der Mehraufwand ist
+eine Block-Schleife über bestehende rio-tiler-/rasterio-Bausteine (Fenster
+lesen, Fenster schreiben), keine neue Abhängigkeit.
+
+### 10.4 Vorschlag für die synchrone Grenze
+
+Drei Optionen, direkt aus der Messreihe in §10.3 (fensterweise, nicht
+hochgerechnet — 300 und 500 MB und rund 1000 MB sind eigene Messpunkte):
+
+| Roh-Deckel | gemessene Spitze | gemessene Zeit | deckt eine ganze Sentinel-2-Kachel (362 MB) |
+|---|---|---|---|
+| 300 MB | 2,2 GB | 16 s | **nein** |
+| **500 MB** | **3,1 GB** | **21 s** | **ja, mit Reserve** |
+| 1000 MB | 5,1 GB | 40 s | ja, mit viel Reserve |
+
+**Empfehlung: 500 MB roh** (Σ Dateien × Bänder × Byte je Band, vor der
+Kompression — dieselbe Größe, die `plan_outputs` heute schon rechnet, nur
+ohne den 4096-px-Deckel). Deckt den erwartbar häufigsten Fall (eine ganze
+Szene in nativer Auflösung, ein bis drei Bänder) mit Reserve, bleibt mit
+rund 21 s synchron zumutbar, und die Spitze von rund 3,1 GB je Anfrage passt
+zu den Größenordnungen aus §3/F4 (dort bis 1,6 GB bei 200 MB Deckel).
+
+**Nebenwirkung mit F5 (keine Grenze für gleichzeitige Zuschnitte im
+Prozess):** Bei 500 MB roh und rund 3,1 GB Spitze je Anfrage reichen 3–4
+gleichzeitige, randvolle Downloads, um den Prozessspeicher eines kleinen
+Servers auszuschöpfen. Diese Sitzung rührt F5 nicht an (Otto hat es
+entschieden), weist aber darauf hin, weil die native Auflösung die Zahlen
+gegenüber F5s Entscheidung (dort mit 200 MB gerechnet) auf das rund 2,5-fache.
+
+**Über der Grenze:** Abweisung mit `413` (§10.2), keine automatische
+Verkleinerung. Ein Export einer ganzen, vielszenigen Fläche in voller
+Auflösung bleibt damit unmöglich, bis M4 einen Job dafür anbietet (Log-Zeile
+unten, als Vorschlag).
+
+### 10.5 Ergänzter Umfang (geplant, nicht umgesetzt)
+
+- **`access/download.py`:** `estimate_output_dims`/`plan_outputs` ohne
+  `max_side`-Deckel im Normalfall; `crop_asset` ohne `max_size` im
+  Normalfall; fensterweises Lesen/Schreiben (§10.3) ersetzt den naiven Weg in
+  `crop_asset` und `_image_to_cog_bytes`; neue Grenze aus §10.4 statt 200 MB.
+- **`api/tiler.py` (`DownloadRequest`):** neues optionales Feld, z. B.
+  `resolution: Literal["native"] | float = "native"` (ein Vielfaches oder ein
+  Ziel-`gsd` in Metern — genaue Form ein Umsetzungsdetail, kein
+  Entscheidungspunkt). Bei einem gewählten Wert wird `max_size`/`width,height`
+  bzw. für Zarr `target_gsd` (existiert schon, `api/tiler.py:_target_gsd`,
+  heute für Crops fest auf `None`/nativ) entsprechend gesetzt — beides
+  bestehende Mechanismen, keine neue Leseart. Für COGs liest rio-tiler dann
+  aus einer vorhandenen Overview-Stufe, für Zarr aus einer gröberen
+  Auflösungsgruppe.
+- **Dateiname/Metadaten (Punkt 3):** Die gewählte Auflösung steht im
+  ZIP-Dateinamen (z. B. `visual_10m.tif` gegenüber `visual_60m.tif`,
+  `crop_filename` bekommt einen Suffix) und ist in der geschriebenen Datei
+  selbst durch die Pixelgröße im Geotransform bereits enthalten — ein Blick
+  mit `gdalinfo` zeigt sie, ohne dass ein eigenes Tag nötig wäre. Zusätzlich
+  in `ATTRIBUTION.txt` genannt (`build_notice_text`).
+- **`DownloadDialog.tsx`:** ein Auswahlfeld (nativ voreingestellt) mit
+  wenigen groben Stufen (z. B. „Native“, „2× coarser“, „4× coarser“,
+  „10× coarser“) — eine je Datensatz genau passende Liste (Sentinel-2s
+  10/20/60 m) wäre genauer, ist aber ein Registry-Feld und für M3 nicht
+  vorgesehen (F2 (1) braucht ebenfalls keins); ein generischer Faktor reicht
+  für den ersten Schritt.
+- **`plan_outputs`/`check_output_size_cap`:** Meldungstext um den zweiten Weg
+  ergänzt (§10.2).
+
+### 10.6 Ergänzte Abnahme (geplant)
+
+| Abnahmepunkt | geplanter Test |
+|---|---|
+| groß, aber unter der Grenze → nativ | Route-Test: eine AOI, die nativ z. B. 6000×6000 px ergäbe (unter dem neuen Deckel), ohne Auflösungsfeld → `200`, die Datei hat die native Pixelgröße, nicht 4096 |
+| über der Grenze → Abweisung mit Meldung | Route-Test: eine AOI, die nativ über der Grenze aus §10.4 liegt → `413`, `detail` nennt die geschätzte Größe und beide Auswege (AOI verkleinern, gröbere Auflösung) |
+| gewählte Auflösung wird eingehalten | Route-Test: dieselbe große AOI mit einer ausdrücklich gewählten gröberen Auflösung → `200`, die Datei hat die erwartete (gröbere) Pixelgröße, nicht die native; Dateiname trägt den Auflösungswert |
+| fensterweises Lesen liefert dasselbe Ergebnis wie der bisherige Weg | Modul-Test: dieselbe AOI/COG einmal naiv, einmal fensterweise gelesen → identische Pixelwerte und Maske (Regressionsschutz für den Umbau aus §10.3) |
+
+### 10.7 Log-Zeilen
+
+Otto hatte die ersten beiden Zeilen mit Status vorgegeben (Punkt 5 seiner
+Vorgabe); sie stehen schon am Ende von `ENTSCHEIDUNGSLOG.md`, nicht erst nach
+seiner Antwort auf §10.8:
+
+- „Download immer in nativer Auflösung; gröber nur auf ausdrückliche Wahl des
+  Nutzers; keine automatische Verkleinerung (ersetzt `max_size` 4096 aus
+  M2-06).“ | fest
+- „Exporte über der synchronen Grenze in voller Auflösung werden in M4 als Job
+  umgesetzt.“ | Vorschlag
+
+Eine dritte Zeile — die konkrete Grenze aus §10.4/§10.8 (F10a) — kommt erst,
+sobald Otto sie gewählt hat.
+
+### 10.8 Frage an Otto — F10: synchrone Grenze und fensterweises Lesen
+
+**F10a — Roh-Deckel für die Ausgabe (ersetzt 200 MB)?**
+1. 300 MB — enger, deckt keine ganze Sentinel-2-Kachel nativ; gemessen 2,2 GB
+   Spitze, 16 s.
+2. **500 MB (Empfehlung)** — deckt eine ganze Kachel mit Reserve; gemessen
+   3,1 GB Spitze, 21 s.
+3. 1000 MB — mehr Reserve (auch für zwei Assets einer ganzen Kachel); gemessen
+   5,1 GB Spitze, 40 s; zusammen mit F5 (keine Prozessgrenze) das größte
+   Risiko für den Prozessspeicher.
+4. Ein anderer Wert (Otto nennt ihn).
+
+**F10b — Fensterweises Lesen umsetzen?**
+1. **Ja (Empfehlung).** Rund ein Viertel weniger Spitzenspeicher bei großen
+   Ausschnitten, nicht langsamer, ersetzt den naiven Weg auch für den
+   nativen Fall. Mehraufwand: eine Block-Schleife, ein Regressionstest
+   (§10.6) gegen den heutigen Weg.
+2. Nein, einfacher Weg (heutiger Code ohne den `max_size`-Deckel) reicht,
+   solange der Roh-Deckel aus F10a genügend Reserve zur Spitzenmessung in
+   §10.3 lässt. Spart die Umbauarbeit, verschenkt aber das gemessene Viertel.
+
+**F10c — Form der Auflösungswahl im Request/Dialog?**
+1. **Generischer Faktor („Native“, „2×“, „4×“, „10×“ coarser) (Empfehlung).**
+   Reicht für den ersten Schritt, kein neues Registry-Feld.
+2. Konkrete Ziel-`gsd`-Werte je Datensatz aus der Registry (genauer, z. B.
+   „10 m / 20 m / 60 m“ bei Sentinel-2) — braucht ein neues Registry-Feld
+   (B10, kein Vorgabewert) und ist damit größer als M3 vorgesehen hat.
+
+**Von Otto auszuführen:** F10a–F10c beantworten; danach setzt diese Sitzung
+§10 um, in derselben Session.
