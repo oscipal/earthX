@@ -206,3 +206,22 @@ class TestAcceptanceCriteria:
         logged = "\n".join(record.getMessage() for record in caplog.records)
         for coordinate in ("7.1", "7.2", "46.1", "46.2"):
             assert coordinate not in logged
+
+    def test_the_access_log_line_carries_no_aoi_and_a_request_id(
+        self, client: TestClient, access_log_lines: list[str]
+    ) -> None:
+        """M3-16: `build_app` wires `RequestIdMiddleware` in — this is the one access-log
+        line the process writes for this request, method/path/status/duration only.
+        The AOI travels in the POST body (M2-06), which this line never reads either way.
+        """
+        response = _download(client)
+        assert response.status_code == 200
+        assert access_log_lines
+        for line in access_log_lines:
+            for coordinate in ("7.1", "7.2", "46.1", "46.2"):
+                assert coordinate not in line
+            payload = json.loads(line)
+            assert payload["request_id"]
+            assert payload["method"] == "POST"
+            assert payload["status"] == 200
+            assert isinstance(payload["duration_ms"], int | float)

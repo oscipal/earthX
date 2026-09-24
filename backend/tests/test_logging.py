@@ -1,4 +1,5 @@
-"""Tests for earthx.logging (M1-01): JSON format, request ID, geometry redaction."""
+"""Tests for earthx.logging (M1-01, M3-16): JSON format, request ID, geometry
+redaction, and the one access-log line `RequestIdMiddleware` writes per request."""
 
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from earthx.logging import (
     JsonFormatter,
     RequestIdMiddleware,
     bind_request_id,
+    configure_logging,
     get_request_id,
     reset_request_id,
     summarize_geometry,
@@ -54,6 +56,23 @@ def _make_record(message: str, **extra: object) -> logging.LogRecord:
     for key, value in extra.items():
         setattr(record, key, value)
     return record
+
+
+class TestConfigureLogging:
+    """M3-16: turning the root logger to INFO must not turn on a third-party
+    library's own "HTTP Request: <url>" line — `httpx`/`httpx2` log the full URL,
+    query string included, which is exactly where an AOI travels."""
+
+    def test_httpx_and_httpx2_are_raised_above_info(self) -> None:
+        for name in ("httpx", "httpx2"):
+            logging.getLogger(name).setLevel(logging.NOTSET)
+        try:
+            configure_logging()
+            for name in ("httpx", "httpx2"):
+                assert logging.getLogger(name).getEffectiveLevel() > logging.INFO
+        finally:
+            for name in ("httpx", "httpx2"):
+                logging.getLogger(name).setLevel(logging.NOTSET)
 
 
 class TestJsonFormatter:
@@ -223,6 +242,45 @@ class TestRequestIdMiddleware:
         assert get_request_id() is None
 
 
+class TestAccessLogLine:
+    """M3-16 (K-01/K-02): one access-log line per request, never a query string."""
+
+    def test_a_request_with_a_query_string_writes_one_line_without_it(
+        self, access_log_lines: list[str]
+    ) -> None:
+        client = TestClient(RequestIdMiddleware(_echo_app()))
+        response = client.get(f"/echo?bbox={_EXACT_LON},{_EXACT_LAT},1,2")
+        assert response.status_code == 200
+
+        assert len(access_log_lines) == 1
+        line = access_log_lines[0]
+        assert str(_EXACT_LON) not in line
+        assert str(_EXACT_LAT) not in line
+        assert "?" not in line
+
+        payload = json.loads(line)
+        assert payload["path"] == "/echo"
+        assert payload["method"] == "GET"
+        assert payload["status"] == 200
+        assert isinstance(payload["duration_ms"], int | float)
+        assert payload["duration_ms"] >= 0
+        assert payload["request_id"] == response.headers[REQUEST_ID_HEADER]
+
+    def test_a_failing_request_still_writes_one_line(self, access_log_lines: list[str]) -> None:
+        async def broken(request):
+            raise ValueError("boom")
+
+        app = Starlette(routes=[Route("/broken", broken)])
+        client = TestClient(RequestIdMiddleware(app), raise_server_exceptions=False)
+        response = client.get("/broken")
+        assert response.status_code == 500
+
+        assert len(access_log_lines) == 1
+        payload = json.loads(access_log_lines[0])
+        assert payload["status"] == 500
+        assert payload["path"] == "/broken"
+
+
 class TestEndToEndGeometryLogging:
     """A request carrying a polygon must never put its coordinates in the log."""
 
@@ -271,3 +329,28 @@ class TestEndToEndGeometryLogging:
             line = formatter.format(record)
             assert str(_EXACT_LON) not in line
             assert str(_EXACT_LAT) not in line
+
+
+class TestProcessEntrypointsWireTheMiddleware:
+    """M3-16 (K-02): each of the four HTTP processes calls `configure_logging` and
+    wires `RequestIdMiddleware` in, not only `test_logging.py`'s own bare apps."""
+
+    def test_api(self) -> None:
+        from earthx.api.main import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+    def test_tiler(self) -> None:
+        from earthx.api.tiler import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+    def test_worker(self) -> None:
+        from earthx.jobs.main import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+    def test_harvester(self) -> None:
+        from earthx.discovery.main import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
