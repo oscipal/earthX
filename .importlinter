@@ -43,6 +43,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:catalog]
 name = catalog imports only gateway
@@ -60,6 +61,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:adapters]
 name = adapters import only gateway and catalog
@@ -76,6 +78,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:readers]
 name = readers import only gateway
@@ -93,6 +96,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:access]
 name = access imports only readers and catalog
@@ -109,6 +113,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:processing]
 name = processing imports only access, readers and catalog
@@ -124,6 +129,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:jobs]
 name = jobs import only processing
@@ -141,6 +147,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:discovery]
 name = discovery imports only adapters, catalog and gateway
@@ -156,6 +163,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:identity]
 name = identity imports nothing else
@@ -174,6 +182,27 @@ forbidden_modules =
     earthx.discovery
     earthx.api
     earthx.datasets
+    earthx.chatbot
+
+; docs/plans/m7a-chatbot-lesewerkzeuge.md section 3: the chatbot reaches the platform
+; only through the public API over `gateway` (projektuebersicht.md, principle 7).
+[importlinter:contract:chatbot]
+name = chatbot imports only gateway
+type = forbidden
+allow_indirect_imports = True
+source_modules =
+    earthx.chatbot
+forbidden_modules =
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
 
 [importlinter:contract:datasets-isolated]
 name = nothing generic imports a dataset module
@@ -188,6 +217,7 @@ source_modules =
     earthx.jobs
     earthx.discovery
     earthx.identity
+    earthx.chatbot
 forbidden_modules =
     earthx.datasets
 
@@ -230,6 +260,7 @@ source_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.chatbot
 ; `httpx2` and `obstore` joined the list in M2-04 (adr/0006 §5 "Zu Frage 6",
 ; Otto 20.09.2026): `rio-tiler` fetches STAC items over `httpx2`, and
 ; `titiler.xarray` would bring `obstore` with M2-09. Both are clients, so both

@@ -1,0 +1,37 @@
+{
+  "collections": [
+    {
+      "type": "Collection",
+      "stac_version": "1.0.0",
+      "id": "synth-optical-l2a",
+      "title": "Synthetic Optical L2A",
+      "description": "Surface reflectance from a synthetic multispectral optical sensor.",
+      "license": "CC-BY-4.0",
+      "keywords": ["optical", "multispectral", "reflectance"],
+      "providers": [{"name": "Synthetic Space Agency", "roles": ["producer"]}],
+      "extent": {
+        "spatial": {"bbox": [[-180.0, -56.0, 180.0, 84.0]]},
+        "temporal": {"interval": [["2017-03-28T00:00:00Z", null]]}
+      },
+      "links": []
+    },
+    {
+      "type": "Collection",
+      "stac_version": "1.0.0",
+      "id": "synth-radar-alps",
+      "title": "Synthetic Radar Alps",
+      "description": "Backscatter from a synthetic C-band radar, only over the Alps.",
+      "license": "proprietary",
+      "keywords": ["radar", "sar"],
+      "extent": {
+        "spatial": {"bbox": [[5.0, 43.0, 17.0, 48.5]]},
+        "temporal": {"interval": [["2020-01-01T00:00:00Z", "2021-12-31T23:59:59Z"]]}
+      },
+      "links": []
+    }
+  ],
+  "links": [
+    {"rel": "self", "href": "https://stac.example.invalid/stac/collections", "type": "application/json"},
+    {"rel": "next", "href": "https://stac.example.invalid/stac/collections?token=page2", "type": "application/json"}
+  ]
+}

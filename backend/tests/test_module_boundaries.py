@@ -27,6 +27,8 @@ ALLOWED_IMPORTS = {
     "jobs": {"processing"},
     "discovery": {"adapters", "catalog", "gateway"},
     "identity": set(),
+    # plan m7a §3: the chatbot reads the platform only through its public API.
+    "chatbot": {"gateway"},
 }
 ALL_MODULES = set(ALLOWED_IMPORTS) | {"api", "datasets"}
 
@@ -132,7 +134,7 @@ def test_the_worker_core_reaches_no_database(config: configparser.ConfigParser) 
 
 
 def test_every_module_exists_as_a_package() -> None:
-    """architekturplan.md 3.1: all eleven modules exist, today as empty packages."""
+    """architekturplan.md 3.1: every module of the table exists as a package."""
     earthx_root = CONFIG.parent / "backend" / "earthx"
     for module in ALL_MODULES:
         assert (earthx_root / module / "__init__.py").is_file(), module

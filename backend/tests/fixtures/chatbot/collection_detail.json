@@ -1,0 +1,20 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "id": "synth-optical-l2a",
+  "title": "Synthetic Optical L2A",
+  "description": "Surface reflectance from a synthetic multispectral optical sensor.",
+  "license": "CC-BY-4.0",
+  "keywords": ["optical", "multispectral", "reflectance"],
+  "providers": [{"name": "Synthetic Space Agency", "roles": ["producer"]}],
+  "extent": {
+    "spatial": {"bbox": [[-180.0, -56.0, 180.0, 84.0]]},
+    "temporal": {"interval": [["2017-03-28T00:00:00Z", null]]}
+  },
+  "links": [],
+  "earthx:data_class": "open",
+  "earthx:capabilities": {"roi": true, "time_range": true, "band_math": true, "interpolation": false, "ml_processing": false, "quad_pol": false, "single_coverage_product": false},
+  "earthx:license_flags": {"spdx_id": "CC-BY-4.0", "commercial_use": true, "attribution_required": true, "tier": "open"},
+  "earthx:maturity": "stable",
+  "earthx:source": {"adapter": "earth_search", "endpoint": "https://upstream.example.invalid/v1", "asset_hosts": ["assets.example.invalid"]}
+}

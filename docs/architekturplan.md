@@ -141,6 +141,7 @@ flowchart TB
 | `jobs` | Queue, Worker, Fortschritt, Ergebnisse | `processing` |
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
 | `identity` | Konten, API-Keys, Quotas, Audit | — |
+| `chatbot` | Lesewerkzeuge und Dialog des Katalog-Chatbots (8.3), nur über die öffentliche API | `gateway` |
 | `api` | HTTP-Routen, setzt alles zusammen | alle |
 | `datasets/<id>` | Datensatzspezifika, die kein generischer Operator abdeckt | bleibt isoliert, wird von nichts Generischem importiert |
 
