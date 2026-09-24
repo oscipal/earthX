@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import random
+import secrets
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -67,10 +69,21 @@ def _dumps(payload: Any) -> bytes:
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
+# Generated fresh on every process start, never logged and never persisted anywhere
+# (review of PR #85, following up on PR #76): a plain, unsalted hash of the query
+# string is not enough — a bbox's four floats come from a map UI with limited
+# precision over a bounded range, small enough that someone who can see the digest
+# can guess candidate bboxes and recompute `sha256(query)` until one matches. Keyed
+# with a secret that dies with the process closes that: a guess can no longer be
+# checked against the observed digest without it.
+_QUERY_DIGEST_KEY = secrets.token_bytes(32)
+
+
 def _query_digest(url: str) -> str:
-    """A short hash of the query string, because the AOI must not reach a log."""
+    """An HMAC of the query string, keyed per process start — the AOI must not
+    reach a log, and an unkeyed hash of it is guessable (see `_QUERY_DIGEST_KEY`)."""
     query = httpx.URL(url).query
-    return hashlib.sha256(query).hexdigest()[:12] if query else ""
+    return hmac.new(_QUERY_DIGEST_KEY, query, hashlib.sha256).hexdigest()[:12] if query else ""
 
 
 class Gateway:

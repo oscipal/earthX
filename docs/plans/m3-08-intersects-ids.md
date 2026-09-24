@@ -1,17 +1,15 @@
 # M3-08 — `intersects` und `ids` durchreichen: Plan-Schritt
 
-**Status (23.09.2026):** Otto hat alle sieben Empfehlungen angenommen; in
-derselben Sitzung umgesetzt (Fassung nach §4). **Noch nicht zu mergen:** Der
-parallele M3-02-Bericht hat unter K-01/K-02 (`docs/plans/
-m3-02-konformitaetsbericht.md` §8, Frage 1) entschieden, dass das Access-Log
-jedes Prozesses erst mit der neuen Aufgabe **M3-16** (Stufe A) ganz ohne
-Query-String schreibt — **„M3-08 wird erst nach M3-16 gemergt"**
-(`docs/plans/m3-dritte-quelle-und-interface.md` M3-08, M3-16). Diese Sitzung
-kannte die Frage beim eigenen Plan-Schritt noch nicht (F7 unten schlug nur die
-schmalere Schwärzung von `bbox`/`intersects` vor); der Frontend-Umstieg auf
-`POST` (Schritt 6) schließt den größten Teil von K-01 bereits (der Viewer
-sendet keine AOI mehr per `GET`), die Coverage-Route bleibt aber offen und ist
-M3-16s Aufgabe, nicht diese hier. Der Draft-PR steht und wartet auf M3-16.
+**Status (24.09.2026):** Otto hat alle sieben Empfehlungen angenommen; in
+derselben Sitzung umgesetzt (Fassung nach §4). Die Merge-Sperre aus dem
+parallelen M3-02-Bericht (K-01/K-02, „M3-08 wird erst nach M3-16 gemergt")
+ist erledigt: M3-16 ist gemergt, `main` geholt. **F7 war eine engere
+Zwischenlösung** (`AccessLogRedactionFilter`/`redact_access_log_coordinates`
+in `api`, schwärzte nur `bbox`/`intersects`) und ist jetzt entfernt — M3-16s
+eigener Weg (uvicorns Access-Log ganz abgeschaltet, `RequestIdMiddleware` in
+jedem Prozess, kein Query-String mehr, egal welcher Parameter) übernimmt die
+Aufgabe vollständig, auch für die Coverage-Route, die F7 nicht erreichte.
+Siehe §8.2.
 **Aufgabe:** M3-08 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4
 (P6, D31). **Stufe B.**
 **Grundlagen:** `adr/0005` Regeln I, III, V, VI, §3.5, K8; `adr/0004` §3.4;
@@ -425,3 +423,26 @@ Koordinate erreicht ein Log.
   die Koordinate.
 
 Beide Testklassen sind Teil des PR.
+
+### 8.2 Zwischenlösung entfernt, `main` (mit M3-16) geholt (24.09.2026)
+
+M3-16 ist gemergt (PR oscipal/earthX#85). Entfernt: `AccessLogRedactionFilter`,
+`redact_query_string`, `redact_access_log_coordinates`
+(`backend/earthx/logging.py`), die Verdrahtung in `api/main.py`
+(`redact_access_log_coordinates()`-Aufruf, Import) und die zugehörigen Tests
+(`TestRedactQueryString`, `TestAccessLogRedactionFilter`,
+`TestRedactAccessLogCoordinates` in `backend/tests/test_logging.py`).
+
+M3-16 übernimmt die Aufgabe vollständig und weiter gefasst: `api` startet
+jetzt mit `configure_logging()` und `RequestIdMiddleware`, uvicorns eigenes
+Access-Log ist abgeschaltet (im Code, nicht nur per Startflag), und die eine
+verbleibende Access-Log-Zeile trägt nie einen Query-String — nicht nur die
+zwei Schlüssel `bbox`/`intersects`, die F7a schwärzte, sondern gar keinen.
+Das deckt auch die Coverage-Route, die F7a nie erreichte. Kein Konflikt beim
+Mergen von `main`: Meine Zusätze standen im selben Modul, aber an anderer
+Stelle als M3-16s Umbau, daher automatisch zusammengeführt — von Hand
+entfernt, weil Git das Sterben von totem Code nicht selbst erkennt.
+
+**Geprüft nach dem Entfernen:** `pytest` (Repo-Wurzel), `ruff check backend`,
+`lint-imports --config .importlinter`, `npm run lint`, `npx tsc -b`, Vitest —
+siehe Ergebnis im PR.
