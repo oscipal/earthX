@@ -154,11 +154,16 @@ describe('the selection bar', () => {
     vi.unstubAllGlobals();
   });
 
-  it('offers "Add to layers" next to "View full resolution" (point 5)', () => {
+  it('offers "Add to layers" next to the full-resolution buttons (point 5)', () => {
     const view = mount();
     const bar = view.querySelector('.download-bar');
     expect(bar).not.toBeNull();
-    expect(btn(bar as HTMLElement, 'View full resolution')).not.toBeNull();
+    // M3-09: one "View full resolution" button became two ("Crop to AOI" /
+    // "View full selection"), grouped under a shared "Full resolution" label
+    // so it stays clear both lead to the same full-resolution view.
+    expect(bar!.querySelector('[aria-label="View full resolution"]')).not.toBeNull();
+    expect(btn(bar as HTMLElement, 'Crop to AOI')).not.toBeNull();
+    expect(btn(bar as HTMLElement, 'View full selection')).not.toBeNull();
     expect(btn(bar as HTMLElement, 'Add to layers')).not.toBeNull();
   });
 });
