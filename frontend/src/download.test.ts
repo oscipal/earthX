@@ -33,6 +33,7 @@ function restore(overrides: Partial<LayerRestore> = {}): LayerRestore {
     selectedIds: ['S2A_1'],
     itemIds: ['S2A_1'],
     aoi: AOI,
+    cropToAoi: true,
     datasetId: 'sentinel-2-l2a',
     ...overrides,
   };
@@ -145,6 +146,44 @@ describe('downloadRequestFor', () => {
 
   it('returns null without any pinned scenes', () => {
     expect(downloadRequestFor(layer({ itemIds: [] }), DATASETS)).toBeNull();
+  });
+
+  // M3-09 / P19 "Download folgt der Ansicht": a layer pinned while showing
+  // the whole selection, uncropped ("View full selection"), downloads the
+  // whole scene — no drawn AOI needed at all.
+  it('downloads the scene\'s own bbox, without an AOI, when the layer was pinned uncropped', () => {
+    const req = downloadRequestFor(layer({ cropToAoi: false, aoi: null }), DATASETS);
+    expect(req).toEqual({
+      datasetId: 'sentinel-2-l2a',
+      items: ['S2A_1'],
+      assets: ['visual'],
+      aoi: {
+        type: 'Polygon',
+        coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]],
+      },
+    });
+  });
+
+  it('returns null for several scenes pinned uncropped — individual originals are M3-17\'s job', () => {
+    const req = downloadRequestFor(
+      layer({
+        cropToAoi: false,
+        aoi: null,
+        itemIds: ['S2A_1', 'S2A_2'],
+        downloaded: {
+          S2A_1: { tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
+          S2A_2: { tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
+        },
+      }),
+      DATASETS,
+    );
+    expect(req).toBeNull();
+  });
+
+  it('a quicklook-only layer still needs the AOI regardless of cropToAoi', () => {
+    expect(
+      downloadRequestFor(layer({ focusMode: false, downloaded: {}, cropToAoi: false, aoi: null }), DATASETS),
+    ).toBeNull();
   });
 });
 

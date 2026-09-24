@@ -5,6 +5,7 @@
 
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
+import { bboxToPolygon } from './geoUtils';
 import type { MapLayer } from './layers';
 import type { LicenseFlags, StacItem } from './types';
 
@@ -15,29 +16,43 @@ export interface DownloadRequestInfo {
   aoi: GeoJSON.Geometry;
 }
 
-// A layer can be downloaded once it has an AOI to crop (a layer pinned
-// before any AOI was drawn has nothing to cut the source data to). Two
-// cases (V-6 added the second):
-// - Viewed at full resolution first (a `raster` overlay backed by
-//   `store.downloaded`, M2-07b): the asset is whichever one was actually
-//   fetched, per item.
+// A layer can be downloaded once there is something to cut the source data
+// to. Three cases (V-6 added the second, M3-09 the third):
+// - Viewed at full resolution, cropped to the AOI ("Crop to AOI"): the asset
+//   is whichever one was actually fetched per item, the crop is `restore.aoi`.
+// - Viewed at full resolution, showing the whole selection uncropped ("View
+//   full selection", M3-09 P19 "Download folgt der Ansicht"): the download
+//   follows what was shown, not the drawn AOI, and no AOI is needed at all.
+//   Only a single whole scene is in scope here (P19's "eine ganze Szene
+//   gewählt") — several whole scenes downloaded individually, straight from
+//   the source without a merge, is M3-17's job. The scene's own bbox stands
+//   in for the AOI on today's crop route, which for one rectangular scene is
+//   a no-op crop rather than a real one.
 // - A quicklook-only layer, pinned straight from the results list without
 //   ever switching into full-resolution viewing: the crop route reads the
 //   source's own pixels regardless of what the browser has fetched so far
 //   (same reasoning as `downloadRequestForSelection`, V-4), so the asset is
-//   the dataset's default visualisation asset.
+//   the dataset's default visualisation asset, and the AOI is required as
+//   before — there is no "view" to follow here, only a search AOI.
 // Either way the scenes come from `restore.itemIds`, captured when the
 // layer was pinned — not from the live search results, which may have moved
 // on by the time someone opens the layer manager to download it.
 export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): DownloadRequestInfo | null {
   const { restore } = layer;
-  if (!restore.datasetId || !restore.aoi || restore.itemIds.length === 0) return null;
+  if (!restore.datasetId || restore.itemIds.length === 0) return null;
   if (restore.focusMode) {
     const entries = Object.entries(restore.downloaded).filter(([id]) => restore.itemIds.includes(id));
     if (entries.length === 0) return null;
     const assets = [...new Set(entries.map(([, info]) => info.asset))];
+    if (!restore.cropToAoi) {
+      if (entries.length !== 1) return null;
+      const [, info] = entries[0];
+      return { datasetId: restore.datasetId, items: restore.itemIds, assets, aoi: bboxToPolygon(info.bounds) };
+    }
+    if (!restore.aoi) return null;
     return { datasetId: restore.datasetId, items: restore.itemIds, assets, aoi: restore.aoi };
   }
+  if (!restore.aoi) return null;
   const dataset = datasets.find((d) => d.id === restore.datasetId);
   const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
   if (!asset) return null;
