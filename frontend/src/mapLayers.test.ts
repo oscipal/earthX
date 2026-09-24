@@ -214,6 +214,63 @@ describe('syncFocusRaster', () => {
     syncFocusRaster(map as never, { downloaded: { [scene.id]: info() }, render: {}, showDownloaded: false });
     expect(sources).toHaveLength(0);
   });
+
+  // M3-09 finding: the map used to stack overlapping scenes in *selection*
+  // order (last-selected on top), the opposite of the download's mosaic
+  // (`access/download.py::crop_asset`, rio_tiler's `FirstMethod`: the
+  // *first* item wins). `downloaded`'s key order is selection order (it is
+  // built by `store.ts::enterFocus` iterating the selected items in that
+  // order), so the fixture below relies on the same thing.
+  it('draws the first-selected scene last, so it ends up on top — matching the download mosaic order', () => {
+    const { map, sources, layers } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: {
+        S2A_first: info({ bounds: [10, 47, 11, 48] }),
+        S2A_second: info({ bounds: [20, 47, 21, 48] }),
+      },
+      render: {},
+      showDownloaded: true,
+    });
+    const rasterSources = sources.filter((s) => s.spec.type === 'raster');
+    expect(rasterSources).toHaveLength(2);
+    expect(rasterSources[0].spec.bounds).toEqual([20, 47, 21, 48]); // bottom: second-selected
+    expect(rasterSources[1].spec.bounds).toEqual([10, 47, 11, 48]); // top: first-selected
+    // `placeRaster` always inserts right below the AOI layer, so whatever is
+    // added last ends up drawn on top (see `beforeAoi`).
+    expect(layers[layers.length - 1]).toBe(rasterSources[1].id.replace('src', 'lyr'));
+  });
+
+  it('routes tiles through the AOI-clip protocol when the view is cropped, with no AOI coordinate in the URL', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      aoi: {
+        type: 'Polygon',
+        coordinates: [[[10.987654, 47.123456], [11, 47], [11, 48], [10, 48], [10.987654, 47.123456]]],
+      },
+      cropToAoi: true,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    const url = (source.spec.tiles as string[])[0];
+    expect(url.startsWith('earthx-clip://')).toBe(true);
+    expect(url).not.toContain('10.987654');
+    expect(url).not.toContain('47.123456');
+  });
+
+  it('does not clip when the view shows the whole selection, even with an AOI drawn', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      aoi: { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]] },
+      cropToAoi: false,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    expect((source.spec.tiles as string[])[0].startsWith('earthx-clip://')).toBe(false);
+  });
 });
 
 // V-3, finding 1's actual root cause: before this, MapView had one effect

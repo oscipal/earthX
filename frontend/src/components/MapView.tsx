@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
+import { addProtocol, Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   TerraDraw,
@@ -9,6 +9,7 @@ import {
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
+import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { itemsForMap } from '../grouping';
@@ -59,6 +60,11 @@ function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; e
   return st.focusMode ? st.activeGroupIndex : st.expandedGroupIndex;
 }
 
+// Registered once for the whole page, not per map instance — `addProtocol`
+// is a maplibre-gl-wide registration (M3-09), so re-mounting `MapView` gains
+// nothing from repeating it (and `addProtocol` is idempotent either way).
+addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
+
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -78,6 +84,7 @@ export default function MapView() {
   const flyToBbox = useAppStore((s) => s.flyToBbox);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
+  const cropToAoi = useAppStore((s) => s.cropToAoi);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const coverage = useAppStore((s) => s.coverage);
@@ -180,6 +187,8 @@ export default function MapView() {
         render: st.appliedRender,
         focusMode: st.focusMode,
         showDownloaded: st.showDownloaded,
+        aoi: st.aoi,
+        cropToAoi: st.cropToAoi,
       });
       initDraw();
       readyRef.current = true;
@@ -261,13 +270,15 @@ export default function MapView() {
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
-  // them, only change the highlight (the effect below handles that). ---
+  // them, only change the highlight (the effect below handles that). Keyed on
+  // `aoi` too (M3-09): redrawing the AOI while "Crop to AOI" is active must
+  // re-clip the tiles already on screen. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && focusMode) {
-      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded });
+      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded, aoi, cropToAoi });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, aoi, cropToAoi]);
 
   // --- browse-mode preview overlays (quicklooks / preview tiles) — these do
   // react to `selectedIds`, since a cross-group selection can pin a scene

@@ -4,6 +4,7 @@
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 
+import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
@@ -343,10 +344,20 @@ function addPreview(
   });
 }
 
-function addTiles(map: MapLibreMap, info: DownloadedInfo, i: number, render: AppliedRender): void {
+// `clip` is the AOI to cut this scene's tiles to, or `null` for the whole
+// scene ("View full selection", M3-09) — resolved by the caller from
+// `cropToAoi`, never read here from anywhere else, so this stays the one
+// place a raster overlay's tile URL is actually built.
+function addTiles(
+  map: MapLibreMap,
+  info: DownloadedInfo,
+  i: number,
+  render: AppliedRender,
+  clip: GeoJSON.Geometry | null,
+): void {
   const srcId = `m-tiles-src-${i}`;
   const lyrId = `m-tiles-lyr-${i}`;
-  placeRaster(map, srcId, lyrId, buildTileUrl(info.tileUrl, render), info.bounds, 1, info);
+  placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
   dynSourceIds.push(srcId);
   dynLayerIds.push(lyrId);
 }
@@ -398,6 +409,12 @@ export interface MosaicState {
   render: AppliedRender;
   focusMode: boolean; // full-res tiles are only drawn while focused on a download
   showDownloaded: boolean; // when false, downloaded full-res overlays are hidden
+  // The AOI to clip the full-resolution tiles to, and whether the current
+  // view actually is cropped to it (M3-09: "Crop to AOI" vs. "View full
+  // selection") — both optional so every existing call site that never draws
+  // a cropped view (the browse preview, most tests) can leave them out.
+  aoi?: GeoJSON.Geometry | null;
+  cropToAoi?: boolean;
 }
 
 // Full-resolution raster tiles (M2-07b). Tearing the existing layers down and
@@ -411,13 +428,19 @@ export interface MosaicState {
 // click on a full-resolution image reloads it".
 export function syncFocusRaster(
   map: MapLibreMap,
-  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded'>,
+  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi'>,
 ): void {
   clearDynamicMosaic(map);
   if (!s.showDownloaded) return;
-  Object.values(s.downloaded)
-    .slice(0, MAX_MOSAIC_LAYERS)
-    .forEach((info, i) => addTiles(map, info, i, s.render));
+  const clip = s.cropToAoi ? (s.aoi ?? null) : null;
+  const entries = Object.entries(s.downloaded).slice(0, MAX_MOSAIC_LAYERS);
+  // Drawn in reverse selection order, so the *first*-selected scene ends up
+  // topmost — the same "first valid pixel wins" rule the download's mosaic
+  // uses (rio_tiler's `FirstMethod`, `adr/0006` §3.5), so overlapping scenes
+  // agree between the view and the downloaded file. This used to draw in
+  // selection order, putting the *last*-selected scene on top instead
+  // (M3-09 finding).
+  [...entries].reverse().forEach(([, info], i) => addTiles(map, info, i, s.render, clip));
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time
