@@ -114,6 +114,30 @@ class TestACompositeTileCarriesThreeDistinctChannels:
             image = reader.feature(polygon)
         assert image.count == 3
 
+    def test_part_also_merges_all_three(self, requests: list[httpx.Request]) -> None:
+        """M3-18 §3: the download crop reads a bbox via ``part()``, not ``feature()``,
+        so ``part`` needs the same per-variable merge the other three methods have."""
+        bbox = transform_bounds(ITEM_CRS, WGS84_CRS, *mini_zarr_composite.store_bounds())
+        with ZarrReader(asset("b04,b03,b02")) as reader:
+            image = reader.part(bbox)
+        assert image.count == 3
+        centre = image.height // 2, image.width // 2
+        for band_index, name in enumerate(("b04", "b03", "b02")):
+            assert int(image.data[band_index][centre]) == BAND_VALUES[name]
+
+    def test_tile_is_not_double_merged_now_that_part_is_also_overridden(
+        self, requests: list[httpx.Request]
+    ) -> None:
+        """The exact regression this task found: ``XarrayReader.tile``/``feature``
+        read their own data through ``self.part(...)`` internally, so overriding
+        ``part`` without a reentrancy guard turned a 3-variable composite into a
+        5-band tile (the first variable's already-merged 3 bands, plus 2 more real
+        reads for the other two variables) instead of 3."""
+        z, x, y = covering_tile()
+        with ZarrReader(asset("b04,b03,b02")) as reader:
+            image = reader.tile(x, y, z)
+        assert image.count == 3
+
 
 class TestAWindowedReadStaysWindowed:
     """The reason `xarray.concat` is not used: it forces every band to load in
