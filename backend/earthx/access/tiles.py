@@ -369,14 +369,14 @@ def _validate_zoom_override(
 # the one route in this file that decimates the *whole* extent of the asset in a
 # single read (`.preview()`, no window) — a tile reads a small, reprojected
 # window and the AOI crop reads a small, localized one. A full-extent decimated
-# read over `vsicurl` touches far more scattered blocks than either, so a single
-# flaky block is more likely to land here, and GDAL's own retry
-# (`GDAL_HTTP_MAX_RETRY`, gateway/gdal.py) counts one HTTP request, not a whole
-# read. One retry with a freshly opened reader turns that back into the transient
-# blip it already is everywhere else the reads are smaller (regression found
-# locally by Otto right after M3-03's move to Python 3.12 — see the PR for both
-# this and the exception mapping below it, which used to report every
-# `RasterioError`, not just this one, as "could not be read from the source").
+# read over `vsicurl` touches far more scattered blocks than either, and GDAL's
+# own retry (`GDAL_HTTP_MAX_RETRY`, gateway/gdal.py) counts one HTTP request, not
+# a whole read — so a single flaky block among the many this route asks for has
+# more room to end the request than it would on a tile or a crop. One retry with
+# a freshly opened reader (open and read both — a permanent failure just costs
+# one extra attempt, bounded by this constant) is the cheap way to tell a
+# transient one from a real outage, without pretending to know for certain that
+# this is what a given occurrence was.
 _STATISTICS_READ_ATTEMPTS = 2
 
 
@@ -398,20 +398,20 @@ def _read_statistics(
     comes back out of it: a cache hit and a cold read are then the same answer by
     construction, not by inspection.
     """
-    last_error: RasterioIOError | None = None
-    for attempt in range(_STATISTICS_READ_ATTEMPTS):
+
+    def once() -> dict[str, Any]:
+        with rasterio.Env(**env):
+            with reader(src_path, **reader_params) as src_dst:
+                image = src_dst.preview(**layer_params, **image_params, **dataset_params)
+                statistics = image.statistics(**stats_params, hist_options=histogram_params)
+        return {name: value.model_dump(mode="json") for name, value in statistics.items()}
+
+    for _ in range(_STATISTICS_READ_ATTEMPTS - 1):
         try:
-            with rasterio.Env(**env):
-                with reader(src_path, **reader_params) as src_dst:
-                    image = src_dst.preview(**layer_params, **image_params, **dataset_params)
-                    statistics = image.statistics(**stats_params, hist_options=histogram_params)
-            return {name: value.model_dump(mode="json") for name, value in statistics.items()}
-        except RasterioIOError as error:
-            last_error = error
-            if attempt + 1 < _STATISTICS_READ_ATTEMPTS:
-                LOGGER.warning("could not read the asset for statistics, retrying once", exc_info=True)
-    assert last_error is not None  # the loop always runs at least once
-    raise last_error
+            return once()
+        except RasterioIOError:
+            LOGGER.warning("could not read the asset from the source, retrying once", exc_info=True)
+    return once()  # the last attempt: a RasterioIOError here is not retried again
 
 
 async def _cache_get(cache: StatsCache, key: str) -> dict[str, Any] | None:

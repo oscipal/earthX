@@ -1,32 +1,22 @@
-"""M3-03 regression: a flaky read of the whole scene must not become a false verdict.
+"""A flaky read of the whole scene must not become a false verdict (M3-03 review).
 
 ``/statistics`` is the one route that reads a dataset's *whole* extent in a single
 call (``.preview()``, no window — ``access.tiles._read_statistics``), which touches
 far more scattered blocks over ``vsicurl`` than a tile or the AOI crop ever do
-(both always read a small window). Right after the switch to Python 3.12 (M3-03:
-rasterio 1.5.1, GDAL 3.12.4) this route started failing intermittently for
-``sentinel-2-c1-l2a`` while the same scene's tiles and download kept working —
-Otto found it locally, not in a cloud session, which cannot reach the source at
-all (M2-13). The exact upstream exception could not be pinned down from the logs,
-because the handler that used to answer it discarded the traceback outright.
-
-What is deterministic and testable without a network is the two things that made
-the report worse than it had to be, and both are checked here against a real
-synthetic COG (``readers/mini_cog.py``) opened by the real ``CogReader``/GDAL,
-with only the reader's first call(s) made to fail:
+(both always read a small window). Two things made a real occurrence of this
+harder to diagnose than it had to be, and both are checked here against a real
+synthetic COG (``readers/mini_cog.py``) opened by the real ``CogReader``/GDAL, with
+only the reader's first call(s) made to fail — no network:
 
 * a single transient ``RasterioIOError`` failed the whole request instead of
   being retried, even though this route's own oversized read makes hitting one
   more likely than the small reads everywhere else do;
 * the app-level handler mapped *every* ``RasterioError`` — not just a real read
-  failure — to "the asset could not be read from the source", which would have
-  hidden a genuine code-level regression behind the same misleading message a
-  real upstream failure gets.
+  failure — to "the asset could not be read from the source", which would hide a
+  genuine code-level bug behind the same message a real upstream failure gets.
 
-Every test in this file failed before the fix (see the PR): the first two because
-``_read_statistics`` had no retry at all, the third because the single handler it
-replaced answered every ``RasterioError`` the same way, including one that has
-nothing to do with reading from the source.
+The three tests named for them below failed before the fix (see the PR); the
+happy-path test is a plain regression guard against the retry loop itself.
 """
 
 from __future__ import annotations
@@ -146,6 +136,6 @@ def test_a_non_io_rasterio_error_is_not_reported_as_unreadable(local_cog: AssetP
     )
     response = _client(local_cog, reader).get("/statistics")
 
-    assert response.status_code != 502
-    assert response.json()["detail"] != "the asset could not be read from the source"
+    assert response.status_code == 500
+    assert response.json() == {"detail": "the asset could not be processed"}
     assert reader.calls == 1, "a non-I/O error is not worth retrying"

@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from rasterio.errors import RasterioIOError
+from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import InvalidBandName, TileOutsideBounds
 
 from earthx.adapters.earth_search import UnknownCollection
@@ -246,6 +246,11 @@ class TestDefinedErrors:
             (TileOutsideBounds("tile 0/0/0 is outside"), 404),
             (InvalidBandName("no band b9"), 400),
             (RasterioIOError("the object is gone"), 502),
+            # Not a read failure — the other RasterioError subclasses GDAL raises
+            # for something it could not process, not for the source being
+            # unreachable, must not answer as 502 "could not be read from the
+            # source" (M3-03 review of the statistics regression).
+            (RasterioError("unsupported resampling algorithm for this driver"), 500),
         ],
     )
     def test_what_the_read_can_raise_has_a_status_of_its_own(

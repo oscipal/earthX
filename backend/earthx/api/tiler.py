@@ -617,14 +617,13 @@ def _problem(status_code: int, detail: str) -> JSONResponse:
 async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONResponse:
     """A genuine read failure: GDAL could not get bytes from the source.
 
-    Logged with the traceback — the single handler this replaced discarded it
-    outright, which is exactly why a statistics regression found locally by Otto
-    right after M3-03 (Python 3.12, rasterio 1.5.1) could not be pinned down from
-    a session's own logs (see the PR). `RasterioIOError` is `rasterio.errors`'
-    one subclass of `OSError`; every other `RasterioError` goes to
-    :func:`_rasterio_error` below instead of here.
+    Applies to every route on this dependency, not only `/statistics` — the one
+    place this actually fired is what led here (M3-03 review). Logged with the
+    traceback, which the single handler this replaced discarded outright.
+    `RasterioIOError` is `rasterio.errors`' one subclass of `OSError`; every other
+    `RasterioError` goes to :func:`_rasterio_error` below instead of here.
     """
-    LOGGER.warning("could not read the asset for statistics", exc_info=True)
+    LOGGER.warning("could not read the asset from the source", exc_info=True)
     return _problem(502, "the asset could not be read from the source")
 
 
@@ -634,11 +633,12 @@ async def _rasterio_error(request: Request, error: RasterioError) -> JSONRespons
     GDAL has over two dozen of these — an unsupported resampling algorithm, an
     invalid array shape, a GDAL version mismatch — none of which are about the
     source being unreachable. Reporting one as "could not be read from the
-    source" said something false about where the problem was and would have hidden
-    a genuine code-level regression behind the same misleading message a real
-    upstream failure gets (M3-03 review). Logged for the same reason as above.
+    source" would say something false about where the problem is and could hide a
+    genuine code-level bug behind the same message a real upstream failure gets.
+    This is our side of the line rather than the source's, hence `error`, not
+    `warning`.
     """
-    LOGGER.warning("the asset could not be processed", exc_info=True)
+    LOGGER.error("the asset could not be processed", exc_info=True)
     return _problem(500, "the asset could not be processed")
 
 
