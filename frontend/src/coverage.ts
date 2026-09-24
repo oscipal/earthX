@@ -133,6 +133,19 @@ export function showFootprints(result: CoverageResponse | null, zoom: number): b
   return !!result && result.footprints_advised && zoom >= FOOTPRINT_MIN_ZOOM;
 }
 
+// M3-19 (adr/0010 Option B, Frage 6): without an AOI, the request is the
+// unfiltered world view the backend's own `WORLD_LEVEL_CAP` already caps at
+// z6 (`catalog/coverage.py`) — but deriving the *requested* level from the
+// map's zoom still asked for something coarser at a low zoom (e.g. zoom 1.6
+// asked for level 1: four cells across the whole globe) before that cap ever
+// applied. Requesting z6 outright removes that detour. With an AOI the
+// request is a real spatial filter, so the map's zoom still decides.
+export const WORLD_OVERVIEW_LEVEL = 6;
+
+export function coverageLevelFor(mapZoom: number, hasAoi: boolean): number {
+  return hasAoi ? Math.floor(mapZoom) : WORLD_OVERVIEW_LEVEL;
+}
+
 // The legend's completeness line (`plans/m2-05-coverage.md` §3.5 table).
 // `null` means the legend needs no addition. English here, like the rest of
 // the interface (D25; `adr/0004` §5.3 nachtrag 22.09.2026 lifts the earlier

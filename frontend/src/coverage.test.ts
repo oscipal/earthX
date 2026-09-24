@@ -7,9 +7,11 @@ import {
   clampBboxLongitude,
   completenessNote,
   coverageFillColorExpression,
+  coverageLevelFor,
   FOOTPRINT_MIN_ZOOM,
   InvalidCellKey,
   showFootprints,
+  WORLD_OVERVIEW_LEVEL,
 } from './coverage';
 
 // The 4 worked examples of backend/tests/catalog/test_coverage.py's
@@ -155,6 +157,23 @@ describe('showFootprints', () => {
   it('stays false for a declared sample with no checked total, whatever the zoom', () => {
     const sample = response({ completeness: 'sample', total_count: null, footprints_advised: false });
     expect(showFootprints(sample, 20)).toBe(false);
+  });
+});
+
+// M3-19: without an AOI the world overview always asks for z6, whatever the
+// map's own zoom is (adr/0010 Option B). With an AOI it still follows the
+// map's zoom, as before.
+describe('coverageLevelFor', () => {
+  it('is always the world overview level without an AOI, regardless of map zoom', () => {
+    expect(coverageLevelFor(1.6, false)).toBe(WORLD_OVERVIEW_LEVEL);
+    expect(coverageLevelFor(0, false)).toBe(WORLD_OVERVIEW_LEVEL);
+    expect(coverageLevelFor(18.9, false)).toBe(WORLD_OVERVIEW_LEVEL);
+  });
+
+  it('follows the floored map zoom with an AOI, unchanged from before', () => {
+    expect(coverageLevelFor(8.9, true)).toBe(8);
+    expect(coverageLevelFor(1.6, true)).toBe(1);
+    expect(coverageLevelFor(0, true)).toBe(0);
   });
 });
 
