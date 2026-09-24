@@ -1,8 +1,11 @@
 # M3-18 — Download-Deckel nach Ausgabegröße und Maske auf die AOI: Umsetzungsplan
 
 **Aufgabe:** M3-18 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B** — Plan-Schritt. Die Session hält nach diesem Plan an; umgesetzt
-wird erst nach Ottos Antworten auf §8.
+**Stufe B** — **von Otto am 24.09.2026 freigegeben** mit F1 (1), F2 (1), F3
+(2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8). Der Plan-Schritt ist damit
+abgeschlossen, die Umsetzung ist erledigt. Ein Nebenfund während der
+Umsetzung (§9, Kompression des Zuschnitts) ist **nicht** durch F1–F8 gedeckt
+und braucht noch Ottos Bestätigung.
 **Ort im Repo:** `docs/plans/m3-18-download-deckel-maske.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, §1.3, M3-17,
 M3-18, P19); `ENTSCHEIDUNGSLOG.md`, Zeilen vom 20.09.2026 (M2-06, Deckel) und
@@ -112,73 +115,85 @@ drei vergebliche Versuche, die Zarr-Metadaten eines EOPF-Speichers zu lesen
 
 ## 4. Umfang
 
-### 4.1 Größenprüfung nach der Ausgabe
+### 4.1 Größenprüfung nach der Ausgabe — **umgesetzt wie geplant (F1 (1), F2 (1))**
 
-Neue reine Funktion in `access/download.py` (ersetzt `check_size_cap`), vor
-jedem Lesezugriff aufgerufen wie heute:
+`check_size_cap` ist ersetzt durch `plan_outputs` (eine `PlannedOutput` je
+Asset: Breite, Höhe, Byte je Pixel) und `check_output_size_cap` (Summe der
+`total_bytes`, `413` darüber). Aufgerufen in `api.tiler.download_crop`, vor
+jedem Lesezugriff, mit den Items nach dem AOI-Vorfilter (`matched`) und den
+angefragten Assets.
 
-> **Ausgabe = Σ über die Dateien (Pixel × Bänder × Byte je Band)**
-
-Heute ist eine Datei = ein Asset (eine Gruppe je Anfrage). M3-17 bringt
-mehrere Gruppen; die Funktion nimmt deshalb eine Liste geplanter Dateien, und
-M3-17 reicht nur mehr Einträge hinein.
-
-- **Pixel** (F1): lange Seite = min(4096, Ausdehnung der AOI / Auflösung des
-  Assets), kurze Seite nach dem Seitenverhältnis der AOI-Box in Grad (rio-tiler
-  rechnet in EPSG:4326, nachgeprüft: 2772/4096 = Verhältnis der Box). Die
-  Auflösung kommt aus dem Item: `gsd` am Asset, sonst `spatial_resolution` in
-  `raster:bands`, sonst `gsd` am Item; fehlt alles, 4096 px (obere Schranke).
-  Beide Quellen tragen `gsd` je Asset (gemessen, §3).
-- **Bänder × Byte** (F2): aus `raster:bands` bzw. `bands` des Item-Assets
-  (`data_type`); bei einem Zarr-Komposit (`SR_10m:b04,b03,b02`) die Zahl der
-  genannten Variablen. Fehlt der Datentyp, 8 Byte; fehlt die Bandzahl,
-  4 Bänder. Earth Search nennt beides (`visual` 3 × uint8, `red` 1 × uint16),
-  EOPF nur die Bänder, keinen Datentyp.
-- **Abweisung** mit `413` und einer Meldung auf Englisch, in MB gerundet und
-  mit einem Ausweg, z. B.: *„This download would be about 403 MB, more than
-  the 200 MB limit. Draw a smaller area or download fewer layers.“*
+- **Pixel** (F1): `estimate_output_dims` — lange Seite = min(4096, Ausdehnung
+  der AOI / Auflösung), kurze Seite nach dem Seitenverhältnis, mit einer
+  bewusst zu großzügigen (nie zu kleinen) Meter-je-Grad-Näherung, damit die
+  Schätzung nie unter der tatsächlichen rio-tiler-Ausgabe liegt (Test:
+  Vergleich gegen einen echten Lese-Zugriff auf eine synthetische COG). Die
+  Auflösung kommt aus dem Item (`_asset_gsd`): `gsd` am Asset, sonst
+  `spatial_resolution` in `raster:bands`, sonst `gsd` in `properties`; fehlt
+  alles, 4096 px.
+- **Bänder × Byte** (F2): `_asset_bytes_per_pixel`, aus `raster:bands` bzw.
+  `bands` des Item-Assets (`data_type`); bei einem Zarr-Komposit
+  (`SR_10m:b04,b03,b02`) die Zahl der Variablen im Asset-Schlüssel. Fehlt der
+  Datentyp, 8 Byte je Band; fehlt beides, 4 Bänder × 8 Byte.
+- **Abweisung** mit `413` und einer Meldung auf Englisch, in MB gerundet, mit
+  Ausweg: *„This download would be about 403 MB, more than the 200 MB limit.
+  Draw a smaller area or download fewer layers.“*
 
 Die 4096 px je Seite bleiben strukturell über `max_size` erzwungen.
 
-### 4.2 Grenze für den Arbeitsspeicher (F4, F5)
+**Nachtrag beim Testen:** Die Fixture `item_asset_hosts.json`
+(Earth-Search-Lesepfad, M2-04) trug weder `gsd` noch `raster:bands`; ergänzt
+um genau diese beiden Felder mit den am 24.09.2026 gemessenen echten Werten
+(`visual` 3 × uint8, `red` 1 × uint16), siehe README der Fixture. Ebenso trägt
+das generische Chain-Item aus `tests/catalog/synthetic_chain.py` (Onboarding-
+Checkliste, Punkt 9, beide Formate) jetzt `gsd`, aus der jeweiligen Format-
+Fixture (`mini_cog.RESOLUTION` / `mini_zarr_composite.RESOLUTION_M`) — ohne
+das fiel jeder Zuschnitt in diesen Tests auf den Rückfallwert und damit
+`413`.
 
-- **Nacheinander lesen:** `mosaic_reader(..., threads=1)`. Speicher je Anfrage
-  hängt dann nicht mehr an der Item-Zahl (§3 Punkt 1); obere Schranke aus der
-  Messung rund 1,6 GB am 200-MB-Deckel, bei `visual` rund 0,45 GB.
-- **Höchstens 25 Items je Anfrage** nach dem Vorfilter (gleiche Zahl wie der
-  Mosaik-Deckel je Kachel-URL in `adr/0006` §5, „Zu Frage 4“), sonst `413`: *„This download
-  covers 31 scenes; at most 25 fit in one download. Select fewer scenes or draw
-  a smaller area.“* Grund ist die Laufzeit (nacheinander ≈ 1 s je Item an der
-  Quelle), nicht der Speicher.
-- **Höchstens 2 Zuschnitte gleichzeitig im `tiler`-Prozess** (F5): ein
-  Semaphor ohne Warteschlange; die dritte Anfrage bekommt sofort `503` mit
-  `Retry-After: 30` und *„The server is busy preparing other downloads. Please
-  try again in a minute.“* Damit liegen Zuschnitte im Prozess bei höchstens
-  rund 3,2 GB. Das ist keine Ratenbegrenzung pro IP oder Nutzer (D6, nicht in
-  M3), sondern eine feste Obergrenze für den Prozess.
+### 4.2 Grenze für den Arbeitsspeicher — **F4 (1) umgesetzt, F5 (2): keine Grenze in M3**
 
-### 4.3 Maske auf die AOI (F3)
+- **Nacheinander lesen:** `crop_asset` ruft `mosaic_reader(..., threads=1)`.
+  Speicher je Anfrage hängt dann nicht mehr an der Item-Zahl (§3 Punkt 1);
+  obere Schranke aus der Messung rund 1,6 GB am 200-MB-Deckel, bei `visual`
+  rund 0,45 GB. Gemessener Nebeneffekt: rio-tiler liest dabei nur so viele
+  Items, wie es zum Füllen der AOI braucht (`FirstMethod.exit_when_filled`),
+  nicht mehr alle — ein eigener Test deckt beide Fälle ab (ein Item füllt
+  schon alles; ein zweites wird erst gelesen, wenn das erste nicht reicht).
+- **Höchstens 25 Items je Anfrage** (`check_item_count_cap`,
+  `MAX_DOWNLOAD_ITEMS`) nach dem Vorfilter, sonst `413`: *„This download
+  covers 26 scenes; at most 25 fit in one download. Select fewer scenes or
+  draw a smaller area.“*
+- **F5 (2), von Otto entschieden:** keine Grenze für gleichzeitige Zuschnitte
+  im `tiler`-Prozess in M3; der Prozess-Speicher wird mit dem Deployment (M6)
+  begrenzt. Kein Semaphor, kein `503`.
 
-- Nach dem Lesen (1 Item) bzw. dem Mosaik (mehrere Items) werden alle
-  maskierten Pixel — außerhalb des Polygons **und** ohne Daten — auf einen
-  `nodata`-Wert gesetzt, und die Datei trägt diesen Wert als `nodata`-Tag.
-  **Kein Alpha-Band mehr**, also dieselbe Bandzahl bei 1 und bei 20 Items.
-- Der Wert: das `nodata` der Quelle, sofern das erste gelesene Bild eines hat
-  (Sentinel-2 `visual`/`red`: 0); sonst je Datentyp fest: `NaN` bei float,
-  0 bei vorzeichenlosen, kleinster Wert bei vorzeichenbehafteten Ganzzahlen.
+### 4.3 Maske auf die AOI — **F3 (2) umgesetzt, mit einem Nebenfund (§9)**
+
+- `_image_to_cog_bytes` schreibt die Maske als **GDAL-interne Maskenband**
+  (`dst.write_mask(...)`, `cog_translate(..., add_mask=True)`), nicht als
+  `nodata`-Wert und nicht als Alpha-Band: dieselbe Bandzahl bei 1 und bei
+  20 Items, unabhängig vom Datentyp. Maskierte Pixel (außerhalb des Polygons
+  **oder** ohne Quelldaten) werden als `0` geschrieben.
+- **Abweichung von F3 (2):** Ottos Wortlaut sah zusätzlich einen `nodata`-Tag
+  vor, wenn die Quelle einen hat. Das ist **nicht** umgesetzt — siehe §9: Ein
+  `nodata`-Tag auf demselben Schreibvorgang lässt GDAL die Maske fallen, und
+  ein nachträgliches Patchen hat sich als eigene Quelle derselben Beschädigung
+  erwiesen (gemessen). Die Maske allein ist das Signal, dem ein Leser trauen
+  muss; ein zusätzlicher `nodata`-Tag war ohnehin nur ergänzende Information.
 - Die Ausdehnung bleibt die Box der AOI (Log 23.09.2026). Eine Rechteck-AOI
   ergibt dieselben Pixel wie heute (die Polygon-Maske deckt die ganze Box ab,
-  `all_touched=True`).
-- Die AOI geht wie heute unverdünnt aus dem Body in die Maske; die Verdünnung
-  aus `adr/0004` §3.4 betrifft nur die URL der Coverage-Anfrage und bleibt
-  unverändert. Stützpunkt-Deckel im Download: F6.
+  `all_touched=True`) — Test mit einer echten synthetischen COG.
+- **F6 (2), von Otto entschieden:** kein Stützpunkt-Deckel für die AOI im
+  Download.
 
-### 4.4 Frontend
+### 4.4 Frontend — **F8 (1) umgesetzt**
 
 - Die Meldungen kommen fertig formuliert aus dem Backend (`detail`), das
-  Frontend zeigt sie wie heute über `Download failed: …` (F8). Am Frontend-Code
-  ändert sich damit nichts; ein Vitest hält fest, dass der Text unverändert beim
-  Nutzer ankommt.
+  Frontend zeigt sie wie heute über `Download failed: …`. Am Frontend-Code
+  ändert sich nichts; drei neue Vitest-Fälle (`api.test.ts`) halten fest, dass
+  ein `413` (Ausgabe- und Item-Deckel) und ein Fehler ohne JSON-Body
+  (z. B. `503`) unverändert bzw. lesbar ankommen.
 
 ### 4.5 Nicht anfassen
 
@@ -188,58 +203,85 @@ folgt der Ansicht“ (M3-17), Registry-Felder (F2 Option 1 braucht keine).
 
 ---
 
-## 5. Tests
+## 5. Tests — **umgesetzt**
 
-Alle ohne Netz; COGs synthetisch per `tests/earthx/readers/mini_cog.py` im
-`tmp_path`.
+Alle ohne Netz; COGs synthetisch per `tests/earthx/readers/mini_cog.py`, in
+`backend/tests/earthx/access/test_download_mask.py` neu gegen eine echte
+synthetische COG (die anderen Fälle mit einem Fake-Reader in
+`test_download.py`).
 
 | Abnahmepunkt | Test |
 |---|---|
-| 6 Items unter dem Ausgabe-Deckel → 200 | Route-Test: 6 Items, 1 Asset, AOI groß genug für 4096 px; früher 413, jetzt 200 mit ZIP |
-| Ausgabe über dem Deckel → Abweisung mit klarer Meldung | Route-Test: viele Assets bzw. float64-Asset → 413; `detail` nennt MB und Grenze, enthält keine Byte-Rohzahlen und keine Koordinaten |
-| Speichergrenze greift | (a) 26 Items nach Vorfilter → 413 mit Text; (b) `mosaic_reader` wird mit `threads=1` aufgerufen; (c) Stapel aus 6 Fake-Readern mit voller Deckung: nur der erste wird gelesen; (d) drittes gleichzeitiges Zuschnitt-Request → 503 mit `Retry-After` |
-| schräges Polygon | echte synthetische COG, rautenförmiges Polygon: Pixel außerhalb = `nodata`, innerhalb gefüllt; gleich bei 1 und 2 Items (Bandzahl, `nodata`, Werte) |
-| Rechteck-AOI unverändert | gleiche COG, Rechteck-AOI: keine maskierten Pixel in der Datei, Werte wie beim Lesen ohne Maske |
-| Ausgabeschätzung | reine Funktion: Werte aus `raster:bands`, aus `bands` ohne Datentyp, Zarr-Komposit, fehlende Angaben (Rückfall); die Schätzung ist nie kleiner als die tatsächliche Größe, die rio-tiler für dieselbe AOI liefert |
-| zweckfremde Nutzung | `gsd` 0, negativ, Text oder `NaN` im Item → Rückfall statt Division durch 0; unbekannter `data_type` → 8 Byte |
-| keine Koordinaten im Log | Route-Test mit Polygon und `caplog`: keine Koordinate der AOI in Nachricht oder `extra`, auch nicht bei 413/503 |
-| Frontend | Vitest: `confirmDownload` zeigt bei 413 und 503 den `detail`-Text unverändert hinter `Download failed:` |
+| 6 Items unter dem Ausgabe-Deckel → 200 | `test_a_successful_crop_is_a_zip_with_the_notice_file` u. a. (Route) |
+| Ausgabe über dem Deckel → Abweisung mit klarer Meldung | `test_an_asset_without_size_metadata_falls_back_…` (Route, 413), `TestPlanOutputsAndCheckOutputSizeCap` (Modul) |
+| Item-Deckel greift | `test_more_than_the_item_cap_is_413` (Route), `TestCheckItemCountCap` (Modul) |
+| `threads=1`, liest nur so viel wie nötig | `TestCropAsset`: ein füllendes Item wird allein gelesen; ein zweites nur, wenn das erste nicht reicht (Modul) |
+| schräges Polygon | `test_a_slanted_polygon_masks_outside_and_keeps_inside`: echte COG, rautenförmiges Polygon — außerhalb `0` und aus der Maske, innerhalb echte Werte und in der Maske; keine `nodata`-Tag, kein Alpha-Band |
+| Rechteck-AOI unverändert | `test_a_rectangle_aoi_is_unchanged_no_pixel_is_masked_by_the_cutline`: dieselbe COG, keine maskierten Pixel |
+| Ausgabeschätzung | `TestAssetGsd`, `TestAssetBytesPerPixel`, `TestEstimateOutputDims`: Werte aus `raster:bands`, aus `bands` ohne Datentyp, Zarr-Komposit, fehlende Angaben (Rückfall); Vergleich gegen eine echte rio-tiler-Ausgabe für dieselbe AOI |
+| zweckfremde Nutzung | `test_a_malformed_gsd_is_treated_as_unknown_not_divided_by`: `gsd` 0, negativ, Text, `NaN`, `inf`, falscher Typ → Rückfall statt Division durch 0; unbekannter `data_type` → 8 Byte |
+| keine Koordinaten im Log | `test_no_aoi_coordinate_reaches_the_log` (Route, unverändert von M2-06) |
+| Frontend | `describe('downloadCrop', …)` in `api.test.ts`: ein `413` (Ausgabe- und Item-Deckel) und ein Fehler ohne JSON-Body kommen unverändert bzw. lesbar durch |
 
-`test_download.py::TestCheckSizeCap` wird durch Tests der neuen Funktion
-ersetzt.
+`test_download.py::TestCheckSizeCap` ist ersetzt durch `TestCheckItemCountCap`,
+`TestAssetGsd`, `TestAssetBytesPerPixel`, `TestEstimateOutputDims`,
+`TestPlanOutputsAndCheckOutputSizeCap`.
 
----
-
-## 6. Ablauf und Nachweise
-
-1. Commits klein und getrennt: Ausgabeschätzung; `threads=1` und Item-Deckel;
-   Semaphor; Maske; GDAL-Umgebung (F7); Vitest; Log-Zeilen.
-2. Vor „fertig“: `pytest`, `ruff check backend`, `lint-imports --config
-   .importlinter`, `npm run lint`, `npx tsc -b --pretty false`, Vitest; `main`
-   in den Branch holen.
-3. **Otto prüft lokal:** ein Zuschnitt über 6 Szenen eines Überflugs (früher
-   413); ein schräges Polygon in QGIS öffnen (außen transparent, 3 Bänder); ein
-   EOPF-Zuschnitt: Datentyp der Datei im ZIP ablesen (`gdalinfo`), damit die
-   8-Byte-Annahme aus F2 durch den gemessenen Wert ersetzt werden kann.
-
-Geschätzter Umfang: rund 350–450 geänderte Zeilen, davon gut die Hälfte Tests.
+**Nachtrag:** Kein Semaphor-Test (F5 (2): keine Grenze in M3) und kein Test
+für einen AOI-Stützpunkt-Deckel (F6 (2): keine Grenze).
 
 ---
 
-## 7. Log-Zeilen (am Ende von `ENTSCHEIDUNGSLOG.md`, nach der Freigabe)
+## 6. Ablauf und Nachweise — **erledigt**
+
+Commits klein und getrennt: Ausgabeschätzung; `threads=1` und Item-Deckel;
+Maske (mit dem Kompressions-Nebenfund, §9); GDAL-Umgebung (F7); Frontend-
+Tests; Log-Zeilen.
+
+**Geprüft:** `pytest` (1142 grün), `ruff check backend` (grün),
+`lint-imports --config .importlinter` (12 Verträge grün), `npm run lint`,
+`npx tsc -b --pretty false`, Vitest (225 grün). `main` war beim Start bereits
+aktuell im Branch.
+
+**Otto prüft lokal (§9 macht das wichtiger als im Plan-Schritt gedacht):**
+- Ein Zuschnitt über 6 Szenen eines Überflugs (früher `413`).
+- Ein schräges Polygon in QGIS öffnen (außen transparent, 3 Bänder, keine
+  vierte Alpha-Ebene).
+- **Die COG im ZIP mit den Werkzeugen öffnen, die tatsächlich im Einsatz
+  sind** (QGIS-Version, `gdalinfo`, jedes andere Programm) — wegen der
+  ZSTD-Kompression aus §9, nicht der bisherigen DEFLATE.
+- Ein EOPF-Zuschnitt: Datentyp der Datei im ZIP ablesen (`gdalinfo`), damit
+  die 8-Byte-Annahme aus F2 durch den gemessenen Wert ersetzt werden kann.
+
+Umfang: 3 Commits im Kern (`access/download.py`, `api/tiler.py`, Fixtures),
+dazu neue und geänderte Tests; deutlich über dem Richtwert von 400 Zeilen,
+weil die Ausgabeschätzung, die Maske und ihr Nebenfund (§9) je eigene,
+ausführlich begründete Funktionen und Tests brauchen.
+
+---
+
+## 7. Log-Zeilen (am Ende von `ENTSCHEIDUNGSLOG.md`)
 
 - M3-18: Ausgabegröße vor dem Lesen = Σ Dateien (Pixel × Bänder × Byte), Werte
-  laut F1/F2; 200 MB bleiben.
-- M3-18: Speichergrenze laut F4/F5, mit den Zahlen aus §3.
-- M3-18: `nodata` außerhalb der AOI laut F3, kein Alpha-Band.
-- M3-18, Nebenbefund: Download-Route ohne GDAL-Umgebung von `gateway` (F7);
-  AOI > 4096 px wird verkleinert (Antwort auf §1.3 „Lokal prüfen“).
-
----
+  laut F1 (1)/F2 (1); 200 MB bleiben.
+- M3-18: `threads=1` hält den Speicher unabhängig von der Item-Zahl (F4 (1));
+  25 Items je Anfrage (Deckel); keine Grenze für gleichzeitige Zuschnitte im
+  Prozess (F5 (2)).
+- M3-18: Maske auf die AOI als GDAL-interne Maskenband, kein Alpha-Band
+  (F3 (2)); **kein** `nodata`-Tag zusätzlich — Abweichung von F3 (2), Grund
+  in §9. Kein Stützpunkt-Deckel im Download (F6 (2)).
+- M3-18: Download-Route nutzt jetzt die GDAL-Umgebung von `gateway` (F7 (1),
+  Nebenbefund aus dem Plan-Schritt); AOI > 4096 px wird verkleinert, nicht
+  abgewiesen (Antwort auf §1.3 „Lokal prüfen“).
+- M3-18, Nebenfund während der Umsetzung (§9, **noch nicht durch Otto
+  bestätigt**): Ein maskierter Zuschnitt wird als ZSTD statt DEFLATE
+  komprimiert, weil DEFLATE mit `add_mask` in dieser GDAL-Version
+  reproduzierbar (gemessen, nicht spekuliert) gelegentlich eine unlesbare
+  Datei erzeugte.
 
 ## 8. Fragen an Otto
 
-**F1 — Woher kommt die Pixelzahl der Ausgabe?**
+**F1 — Woher kommt die Pixelzahl der Ausgabe?** — **Otto: (1), umgesetzt.**
 1. **Aus AOI und Auflösung im Item, gedeckelt auf 4096 px (Empfehlung).** Kein
    Kontakt zur Quelle vor der Prüfung, wie in M2-06. Die dritte Quelle
    materialisiert ihre Items selbst (M3-11) und kann `gsd` mitschreiben.
@@ -249,7 +291,7 @@ Geschätzter Umfang: rund 350–450 geänderte Zeilen, davon gut die Hälfte Tes
 3. Immer 4096 px an der langen Seite. Am einfachsten, weist aber kleine AOIs
    mit mehreren Bändern ab, die heute durchgehen.
 
-**F2 — Bänder und Byte je Pixel?**
+**F2 — Bänder und Byte je Pixel?** — **Otto: (1), umgesetzt.**
 1. **Aus `raster:bands`/`bands` im Item, Zarr-Komposit nach Variablen,
    Rückfall 8 Byte und 4 Bänder (Empfehlung).** Folge bis zu Ottos
    Nachmessung: EOPF-Zuschnitte (3 × 8 Byte angenommen) gehen bis etwa
@@ -257,7 +299,7 @@ Geschätzter Umfang: rund 350–450 geänderte Zeilen, davon gut die Hälfte Tes
 2. Neues Registry-Feld je Asset (Bänder, Datentyp), ohne Vorgabewert (B10).
    Genau, aber ein Pflichtfeld mehr bei jedem Onboarding.
 
-**F3 — Welcher Wert steht außerhalb der AOI?**
+**F3 — Welcher Wert steht außerhalb der AOI?** — **Otto: (2). Umgesetzt mit einer Abweichung, s. §9: kein zusätzlicher `nodata`-Tag.**
 1. **`nodata` der Quelle, sonst fest je Datentyp (`NaN`, 0, Minimum); kein
    Alpha-Band (Empfehlung).** Ein Format für 1 und viele Items, wie im Log
    „nodata außerhalb“. Schwäche: Hat eine Quelle kein `nodata` und ist 0 ein
@@ -268,7 +310,7 @@ Geschätzter Umfang: rund 350–450 geänderte Zeilen, davon gut die Hälfte Tes
 3. Immer Alpha-Band, wie heute beim Mosaik. Ändert die Bandzahl (RGB → RGBA,
    ein Band → zwei).
 
-**F4 — Speichergrenze je Anfrage?**
+**F4 — Speichergrenze je Anfrage?** — **Otto: (1), umgesetzt.**
 1. **Nacheinander lesen (`threads=1`) und höchstens 25 Items je Anfrage
    (Empfehlung).** Gemessen: Speicher unabhängig von der Item-Zahl, rund
    0,45 GB bei `visual`, höchstens rund 1,6 GB am 200-MB-Deckel. Laufzeit
@@ -279,24 +321,24 @@ Geschätzter Umfang: rund 350–450 geänderte Zeilen, davon gut die Hälfte Tes
 3. Zwei Reads gleichzeitig (`threads=2`): halbe Laufzeit im Raster-Fall,
    doppelter Speicher (722 MB bei 20 Items `visual`).
 
-**F5 — Grenze für gleichzeitige Zuschnitte im Prozess?**
+**F5 — Grenze für gleichzeitige Zuschnitte im Prozess?** — **Otto: (2), keine Grenze in M3.**
 1. **Höchstens 2, die dritte Anfrage sofort `503` mit `Retry-After`
    (Empfehlung).** Zuschnitte kosten im Prozess dann höchstens rund 3,2 GB.
 2. Keine in M3; der Prozess-Speicher wird mit dem Deployment (M6) begrenzt.
 
-**F6 — Stützpunkt-Deckel für die AOI im Download?**
+**F6 — Stützpunkt-Deckel für die AOI im Download?** — **Otto: (2), kein Deckel.**
 1. **Ja, 1000 Stützpunkte wie in M3-08 für die Suche, sonst `400` (Empfehlung).**
    Solange M3-08 nicht gemergt ist, eine eigene Konstante; danach eine
    gemeinsame.
 2. Nein; die Größe des Bodys begrenzt die AOI weiter nur indirekt.
 
-**F7 — Nebenbefund: Download-Route ohne GDAL-Umgebung von `gateway`.**
+**F7 — Nebenbefund: Download-Route ohne GDAL-Umgebung von `gateway`.** — **Otto: (1), umgesetzt.**
 1. **In M3-18 beheben (Empfehlung).** Die Messung in §3 lief mit dieser
    Umgebung; ohne sie gilt die Speichergrenze nur ungefähr, und Timeouts aus
    `gateway` greifen beim Zuschnitt nicht. Etwa 5 Zeilen in `api/tiler.py`.
 2. Als eigene kleine Aufgabe (Stufe A) nach M3-18.
 
-**F8 — Wer formuliert die Meldung?**
+**F8 — Wer formuliert die Meldung?** — **Otto: (1), umgesetzt.**
 1. **Das Backend im `detail`, auf Englisch mit MB und Ausweg; das Frontend
    zeigt sie unverändert (Empfehlung).** Eine Stelle für den Text.
 2. Das Backend liefert einen Code und Zahlen, das Frontend baut den Text.
@@ -304,3 +346,50 @@ Geschätzter Umfang: rund 350–450 geänderte Zeilen, davon gut die Hälfte Tes
 
 **Von Otto auszuführen:** nach der Umsetzung die lokalen Prüfungen aus §6
 Punkt 3.
+
+---
+
+## 9. Nebenfund während der Umsetzung: Kompression des maskierten Zuschnitts
+
+**Nicht durch F1–F8 gedeckt — Otto entscheidet.**
+
+Beim Testen der Maske gegen eine echte synthetische COG (schräges Polygon,
+§5) schlug das Lesen der fertigen ZIP-Datei gelegentlich fehl:
+`rasterio._err.CPLE_AppDefinedError: ZIPDecode: incorrect data check` /
+`TIFFReadEncodedTile() failed`. Nachgemessen (mehrere hundert Wiederholungen
+je Variante, in eigenen Prozessen, außerhalb von `pytest` reproduziert, damit
+es kein Testartefakt ist):
+
+| Variante | Ergebnis |
+|---|---|
+| `write_mask()` + `cog_translate` mit DEFLATE, Maske automatisch erkannt | fehlerhaft in ca. 4–15 von 100 Läufen |
+| dieselbe Maske, `cog_translate(..., add_mask=True)` explizit | weiterhin vereinzelt fehlerhaft |
+| Maske + `nodata`-Tag nachträglich auf die fertige COG gepatcht (`rasterio.open(..., "r+", IGNORE_COG_LAYOUT_BREAK="YES")`) | **eigene Fehlerquelle**: GDAL schreibt dabei den IFD ans Dateiende um („breaks COG layout“) und beschädigt dieselbe, kleine Einzel-Kachel-Datei erneut |
+| `write_mask()` + `cog_translate(..., add_mask=True)` mit **LZW** | fehlerhaft in ca. 14 von 100 Läufen |
+| `write_mask()` + `cog_translate(..., add_mask=True)` mit **ZSTD** | **0 von insgesamt über 550 Läufen** (mehrere Messreihen) |
+| `write_mask()` mit unkomprimiertem Profil (`raw`) | Absturz (Segfault) in fast jedem Lauf — kein gangbarer Weg |
+
+**Umgesetzt:** ZSTD-Kompression für jeden maskierten Zuschnitt
+(`access/download.py`, `_MASKED_COG_PROFILE`), mit `add_mask=True` explizit
+(vermeidet zusätzlich den Konflikt zwischen Maske und `nodata`-Tag, der zum
+Wegfallen der Maske führen würde). Kein `nodata`-Tag wird mehr geschrieben,
+auch wenn die Quelle einen hat (Abweichung von F3 (2), s. o.).
+
+**Folge für Otto:** ZSTD ist ein gültiges, aber neueres TIFF-Kompressionsschema
+(`rio_cogeo` selbst warnt beim Erzeugen des Profils: „might not be fully
+supported by software not built against latest libtiff“). Aktuelle QGIS-,
+GDAL- und `rasterio`-Versionen lesen es; ein sehr altes Programm könnte
+Probleme haben. Die Größe der ZIP-Datei ändert sich dadurch kaum (ZSTD ist
+DEFLATE meist ebenbürtig oder etwas kleiner).
+
+**Nicht untersucht, aus Zeitgründen:** ob eine andere `rio-cogeo`- oder
+GDAL-Version den DEFLATE-Fehler nicht zeigt (das wäre die sauberere Lösung,
+bräuchte aber einen Versions-Bump außerhalb dieser Aufgabe).
+
+**Frage an Otto — F9: Kompression des maskierten Zuschnitts.**
+1. **ZSTD wie umgesetzt (Empfehlung).** Messung eindeutig, DEFLATE bleibt für
+   alle anderen Fälle (Kachel-Pfad, unmaskierte Schreibvorgänge) unverändert.
+2. ZSTD nur vorläufig, mit einer eigenen kleinen Folgeaufgabe, die GDAL-/
+   rio-cogeo-Version hochzuziehen oder den DEFLATE-Fehler upstream zu melden.
+3. Zurück auf DEFLATE trotz der Messung, bis Otto es selbst nachvollzogen hat
+   (die Maske bliebe dann mit dem gemessenen Restrisiko).
