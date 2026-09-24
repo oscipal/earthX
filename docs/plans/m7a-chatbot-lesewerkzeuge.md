@@ -1,6 +1,6 @@
 # M7a (vorgezogen) — Chatbot-Backend mit Lesewerkzeugen: Plan
 
-**Status:** Entwurf, wartet auf Antworten zu F1–F5 (§7). **Stufe B**
+**Status:** Antworten von Víctor zu F1–F5 in §8 (24.09.2026); Lesewerkzeuge lokal umgesetzt, Ottos OK steht aus. **Stufe B**
 (`projektplan.md` 1.2): neues Modul, Plan zuerst, Umsetzung nach OK.
 **Aufgabe:** kleines Chatbot-Backend mit den Lesewerkzeugen
 `search_collections`, `get_collection` und `check_availability` gegen die
@@ -128,3 +128,23 @@ nutzen die vorhandenen Parameter `transport` und `resolve` von `Gateway`, ohne
 Netz; lokal läuft der Einmalbefehl gegen eine `https`-Adresse der API, die
 Policy bleibt unverändert *(Empfehlung)*. (2) Eine Ausnahme für `localhost` in
 der Policy; das lockert eine Sicherheitsregel und geht nur mit Otto.
+
+## 8. Antworten (Víctor, 24.09.2026)
+
+- **F1:** (1) `earthx.chatbot`, importiert nur `gateway`. Dazu ein Vertragstest:
+  `backend/tests/earthx/chatbot/test_contract.py` baut jede Collection der Registry
+  mit `catalog.collection.to_stac_collection` und prüft, dass der Chatbot sie findet
+  und die zugesagten Felder liest. Benennt der Katalog ein Feld um, schlägt das im
+  selben PR fehl.
+- **F2:** (2) Vorerst kein LLM. Umgesetzt sind nur die drei Werkzeuge, dazu
+  `TOOL_SPECS` (JSON-Schema) und `call_tool`, das jeden falschen Aufruf als
+  `error` beantwortet. Das LLM und die Tool-Schleife aus §4 folgen später.
+- **F3:** (1) Eigener schmaler Client über `gateway`, wenn das LLM kommt.
+- **F4:** Code lokal auf dem Branch, ohne Push, zum Ausprobieren.
+- **F5:** (1) Policy bleibt. `python -m earthx.chatbot` läuft nur gegen eine
+  öffentliche https-Adresse; lokale Adressen werden abgewiesen.
+
+Abweichung von §2: `check_availability` schickt nur `bbox`, kein `intersects`,
+weil `post_search` der föderierten Suche nur `bbox` weiterreicht
+(`api/federating_client.py`). Eine Box über den Antimeridian wird abgewiesen.
+
