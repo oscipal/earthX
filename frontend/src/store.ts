@@ -19,7 +19,7 @@ import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from 
 import { downloadRequestFor, downloadRequestForSelection } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, displayGroupBy, groupIndexOfItem, MissingProperty } from './grouping';
-import type { LayerOverlay, MapLayer } from './layers';
+import type { LayerOverlay, LayerRestore, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
@@ -505,82 +505,155 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleLayerManager: () => set((s) => ({ layerManagerOpen: !s.layerManagerOpen })),
+  // M3-09 §10 (Otto): a "Crop & merge to AOI" view pins one layer *per
+  // group*, not one for the whole selection — each with its own overlays,
+  // its own download, matching what a group's download has always merged
+  // into one file anyway (P19). "View full selection" and the quicklook
+  // (browse-mode) case are unchanged: one layer for the whole pinned
+  // selection, since there is nothing cropped to merge into groups.
   addCurrentToLayers: () => {
     const s = get();
-    const group = s.groups[s.activeGroupIndex];
-    const overlays: LayerOverlay[] = [];
-    let itemIds: string[] = [];
+    const activeGroup = s.groups[s.activeGroupIndex];
+    const dataset = s.datasets.find((d) => d.id === s.datasetId);
+    const batchId = Date.now().toString(36);
+    const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number): MapLayer => ({
+      id: `L${batchId}${salt}`,
+      name,
+      visible: true,
+      opacity: 1,
+      overlays,
+      restore,
+    });
+
     if (s.focusMode) {
       const entries = s.selectedIds.length
         ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
         : Object.entries(s.downloaded);
-      itemIds = entries.map(([id]) => id);
-      // Baked into the tile URL once, here, rather than re-decided later by
-      // `syncLayers`: a pinned layer keeps whatever crop it was pinned with
-      // even if the live AOI moves on afterwards (M3-09).
-      const clip = s.cropToAoi ? s.aoi : null;
-      for (const [, info] of entries) {
-        overlays.push({
-          kind: 'raster',
-          tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, s.appliedRender), clip),
-          bounds: info.bounds,
-          minZoom: info.minZoom,
-          maxZoom: info.maxZoom,
-        });
+      if (entries.length === 0) {
+        set({ error: 'Nothing to add — search and pick a time step first.' });
+        return;
       }
-    } else {
-      const items = s.selectedIds.length
-        ? s.items.filter((it) => s.selectedIds.includes(it.id))
-        : (group?.items ?? []);
-      itemIds = items.map((it) => it.id);
-      const browsed = s.datasets.find((d) => d.id === s.datasetId);
-      for (const it of items) {
-        const plan = browsed ? quicklookPlan(it, browsed) : null;
-        if (!plan) continue;
-        if (plan.kind === 'image') {
-          const coords = quicklookCoords(it);
-          if (coords) overlays.push({ kind: 'image', url: plan.href, coords });
-          continue;
+      if (s.cropToAoi && s.aoi) {
+        const aoi = s.aoi;
+        const byGroupIndex = new Map<number, [string, DownloadedInfo][]>();
+        for (const entry of entries) {
+          const idx = groupIndexOfItem(s.groups, entry[0]);
+          const bucket = byGroupIndex.get(idx) ?? [];
+          bucket.push(entry);
+          byGroupIndex.set(idx, bucket);
         }
-        // The preview substitute (M2-10): pinned at the one level it is read on,
-        // so a pinned preview stays a preview and never turns into a full-
-        // resolution read when the map zooms in on it.
-        // `browsed` is already non-null here (a plan needs one), named again so
-        // TypeScript can narrow it for the call below.
-        if (!it.bbox || !browsed) continue;
-        overlays.push({
-          kind: 'raster',
-          tileUrl: buildTileUrl(api.buildTileTemplate(browsed.id, it.id, plan.asset), plan.render),
-          bounds: it.bbox,
-          minZoom: plan.zoom,
-          maxZoom: plan.zoom,
+        const newLayers = [...byGroupIndex.entries()].map(([idx, groupEntries], i) => {
+          const label = idx >= 0 ? s.groups[idx]?.label : activeGroup?.label;
+          const itemIds = groupEntries.map(([id]) => id);
+          const overlays: LayerOverlay[] = groupEntries.map(([, info]) => ({
+            kind: 'raster',
+            tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, s.appliedRender), aoi),
+            bounds: info.bounds,
+            minZoom: info.minZoom,
+            maxZoom: info.maxZoom,
+          }));
+          return makeLayer(
+            `${dataset?.title ?? s.datasetId ?? '?'} · ${label ?? ''}`,
+            overlays,
+            {
+              focusMode: true,
+              downloaded: Object.fromEntries(groupEntries),
+              appliedRender: { ...s.appliedRender },
+              activeGroupIndex: s.activeGroupIndex,
+              selectedIds: itemIds,
+              itemIds,
+              aoi,
+              cropToAoi: true,
+              datasetId: s.datasetId,
+            },
+            i,
+          );
         });
+        set({
+          layers: [...newLayers, ...s.layers],
+          layerManagerOpen: true,
+          notice: `Added ${newLayers.length} layer${newLayers.length === 1 ? '' : 's'} (one per group).`,
+        });
+        return;
       }
+      const itemIds = entries.map(([id]) => id);
+      const overlays: LayerOverlay[] = entries.map(([, info]) => ({
+        kind: 'raster',
+        tileUrl: buildTileUrl(info.tileUrl, s.appliedRender),
+        bounds: info.bounds,
+        minZoom: info.minZoom,
+        maxZoom: info.maxZoom,
+      }));
+      const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${activeGroup?.label ?? ''}`;
+      const layer = makeLayer(
+        name,
+        overlays,
+        {
+          focusMode: true,
+          downloaded: { ...s.downloaded },
+          appliedRender: { ...s.appliedRender },
+          activeGroupIndex: s.activeGroupIndex,
+          selectedIds: [...s.selectedIds],
+          itemIds,
+          aoi: s.aoi,
+          cropToAoi: false,
+          datasetId: s.datasetId,
+        },
+        0,
+      );
+      set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
+      return;
+    }
+
+    const items = s.selectedIds.length
+      ? s.items.filter((it) => s.selectedIds.includes(it.id))
+      : (activeGroup?.items ?? []);
+    const itemIds = items.map((it) => it.id);
+    const overlays: LayerOverlay[] = [];
+    const browsed = s.datasets.find((d) => d.id === s.datasetId);
+    for (const it of items) {
+      const plan = browsed ? quicklookPlan(it, browsed) : null;
+      if (!plan) continue;
+      if (plan.kind === 'image') {
+        const coords = quicklookCoords(it);
+        if (coords) overlays.push({ kind: 'image', url: plan.href, coords });
+        continue;
+      }
+      // The preview substitute (M2-10): pinned at the one level it is read on,
+      // so a pinned preview stays a preview and never turns into a full-
+      // resolution read when the map zooms in on it.
+      // `browsed` is already non-null here (a plan needs one), named again so
+      // TypeScript can narrow it for the call below.
+      if (!it.bbox || !browsed) continue;
+      overlays.push({
+        kind: 'raster',
+        tileUrl: buildTileUrl(api.buildTileTemplate(browsed.id, it.id, plan.asset), plan.render),
+        bounds: it.bbox,
+        minZoom: plan.zoom,
+        maxZoom: plan.zoom,
+      });
     }
     if (overlays.length === 0) {
       set({ error: 'Nothing to add — search and pick a time step first.' });
       return;
     }
-    const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${group?.label ?? ''}`;
-    const layer: MapLayer = {
-      id: `L${Date.now().toString(36)}`,
+    const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${activeGroup?.label ?? ''}`;
+    const layer = makeLayer(
       name,
-      visible: true,
-      opacity: 1,
       overlays,
-      restore: {
-        focusMode: s.focusMode,
+      {
+        focusMode: false,
         downloaded: { ...s.downloaded },
         appliedRender: { ...s.appliedRender },
         activeGroupIndex: s.activeGroupIndex,
         selectedIds: [...s.selectedIds],
         itemIds,
         aoi: s.aoi,
-        cropToAoi: s.focusMode ? s.cropToAoi : false,
+        cropToAoi: false,
         datasetId: s.datasetId,
       },
-    };
+      0,
+    );
     set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
   },
   removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
