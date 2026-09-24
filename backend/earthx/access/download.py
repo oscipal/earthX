@@ -77,6 +77,19 @@ fix (:func:`_masked_array_to_cog_bytes`, :func:`_write_native_windowed_cog`)
 carries the source's own ``nodata`` value through as a plain tag instead —
 GDAL's own nodata check is per band already, so this needs no bookkeeping of
 its own, just not throwing that information away.
+
+**The crop's extent (Otto, 23.09.2026, precising "mask instead of nodata",
+M3-18 §13).** The data file and its mask are never padded out to the AOI's
+own full bounding box — their extent is the bounding box of *the AOI
+intersected with the union of this group's own item footprints*
+(:func:`compute_crop_region`), the same geometry the frontend's group outline
+already shows before a download starts (PR #84, ``groupOutline.ts``): a scene
+that only partly covers the AOI crops (and masks) only as far as that scene
+reaches; a group that fully covers the AOI crops to the AOI's own bounding box,
+unchanged from before. ``aoi.geojson`` and the mask's own pixel values are
+unaffected by this — both still carry the *original*, un-clipped AOI exactly
+as drawn or uploaded; only the grid the data and the mask are written on
+shrinks to match what the items actually cover.
 """
 
 from __future__ import annotations
@@ -115,6 +128,7 @@ from shapely.geometry import box
 from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 
 from earthx.catalog.registry import DatasetConfig
 from earthx.readers.cog import AssetPath
@@ -137,6 +151,7 @@ __all__ = [
     "build_notice_text",
     "check_item_count_cap",
     "check_output_size_cap",
+    "compute_crop_region",
     "crop_asset",
     "crop_asset_to_cog_bytes",
     "crop_filename",
@@ -297,6 +312,47 @@ def filter_items_intersecting_aoi(
     return matched
 
 
+def compute_crop_region(items: Sequence[Mapping[str, Any]], aoi: BaseGeometry) -> BaseGeometry:
+    """The AOI intersected with the union of ``items``' own footprints (M3-18 §13).
+
+    This, not the AOI's own bounding box, is what :func:`plan_outputs` sizes
+    the request against and what the actual crop is read to (module
+    docstring): the same geometry the frontend's group outline already shows
+    before a download starts (PR #84, ``groupOutline.ts``) — AOI ∩ union of
+    the group's own scene footprints, not the AOI padded out to its own
+    corners regardless of what the scenes actually cover.
+
+    Falls back to ``aoi`` unchanged when no item carries a usable
+    ``geometry`` at all — a detail this conservative should never block a
+    download over; a malformed geometry on one item is skipped rather than
+    failing the whole group, the same tolerance
+    :func:`filter_items_intersecting_aoi` already has for a malformed ``bbox``.
+
+    Raises :class:`AoiOutsideItems` when the intersection is empty — this
+    catches a bbox-based match (``filter_items_intersecting_aoi``) whose real,
+    often rotated footprint the AOI does not actually touch, before any asset
+    is opened (bug A, Otto's review of PR #86, 23.09.2026).
+    """
+    footprints = []
+    for item in items:
+        geometry = item.get("geometry")
+        if not geometry:
+            continue
+        try:
+            footprints.append(shapely_shape(geometry))
+        except (ShapelyError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+    if not footprints:
+        return aoi
+    try:
+        region = aoi.intersection(unary_union(footprints))
+    except (ShapelyError, ValueError):
+        return aoi
+    if region.is_empty:
+        raise AoiOutsideItems("the AOI does not touch the actual footprint of any given item")
+    return region
+
+
 def check_item_count_cap(item_count: int, *, max_items: int = MAX_DOWNLOAD_ITEMS) -> None:
     """Refuse a mosaic that would have to touch more than ``max_items`` scenes (F4, M3-18)."""
     if item_count <= 0:
@@ -442,7 +498,7 @@ class PlannedOutput:
 def plan_outputs(
     items: Sequence[Mapping[str, Any]],
     assets: Sequence[str],
-    aoi: BaseGeometry,
+    region: BaseGeometry,
     *,
     resolution_factor: int = 1,
 ) -> list[PlannedOutput]:
@@ -454,12 +510,17 @@ def plan_outputs(
     any item advertises for the asset — native unless ``resolution_factor``
     chooses a coarser one (F10c, M3-18 §10) — and the largest bytes-per-pixel
     any item advertises, in case sources ever disagree with each other.
+
+    ``region`` (M3-18 §13) should be the crop's own extent — AOI ∩ this
+    group's own footprints (:func:`compute_crop_region`) — not the AOI's own
+    full bounding box, so the estimate the size cap checks is not inflated by
+    an AOI corner none of the items actually reach.
     """
     planned = []
     for asset in assets:
         gsds = [gsd for gsd in (_asset_gsd(item, asset) for item in items) if gsd is not None]
         if gsds:
-            height, width = estimate_output_dims(aoi, min(gsds), resolution_factor=resolution_factor)
+            height, width = estimate_output_dims(region, min(gsds), resolution_factor=resolution_factor)
         else:
             # Nothing on any item says how fine this asset is — the same
             # conservative upper bound M2-06 used for the whole request
@@ -531,7 +592,7 @@ def check_output_size_cap(
 def crop_asset(
     open_reader: Callable[..., BaseReader],
     asset_paths: Sequence[AssetPath | ZarrAsset],
-    aoi_geometry: Mapping[str, Any],
+    region_geometry: Mapping[str, Any],
     *,
     width: int | None = None,
     height: int | None = None,
@@ -554,16 +615,19 @@ def crop_asset(
     passes both, already divided down from native by the chosen
     :data:`RESOLUTION_FACTORS` value.
 
-    **Reads the AOI's bounding box, not the polygon (Otto, 23.09.2026, M3-18
-    §3).** ``Reader.feature`` would rasterise ``aoi_geometry`` as a cutline and
-    bake it into the returned array's mask, which is exactly what the module
-    docstring's "mask instead of nodata" rule forbids for the data file: every
-    pixel in the bounding box has to keep the source's own value and validity,
-    whatever the polygon's shape. ``.part()`` reads the plain rectangle
-    instead; the polygon itself is rasterised separately, only for the
-    companion mask file (:func:`crop_asset_to_cog_bytes`).
+    **Reads ``region_geometry``'s bounding box, not a polygon (Otto,
+    23.09.2026, M3-18 §3/§13).** ``Reader.feature`` would rasterise a polygon
+    as a cutline and bake it into the returned array's mask, which is exactly
+    what the module docstring's "mask instead of nodata" rule forbids for the
+    data file: every pixel in the bounding box has to keep the source's own
+    value and validity. ``.part()`` reads the plain rectangle instead — the
+    caller passes the *crop region* here (AOI ∩ this group's own footprints,
+    :func:`compute_crop_region`), never the AOI's own full bounding box, so a
+    scene that only partly covers the AOI is not padded out to it. The AOI
+    polygon itself is rasterised separately, only for the companion mask file
+    (:func:`crop_asset_to_cog_bytes`).
     """
-    bbox = shapely_shape(aoi_geometry).bounds
+    bbox = shapely_shape(region_geometry).bounds
     # `mosaic_reader` (below) does not carry a merged image's `nodata` through
     # at all (checked against its source, bug B, PR #86 review) — captured here
     # from whichever item's read happens to run first, so the merged image
@@ -597,25 +661,30 @@ def crop_asset(
 
 
 def _native_crop_grid(
-    dataset: rasterio.DatasetReader, aoi: BaseGeometry, *, dst_crs: rasterio.crs.CRS = WGS84_CRS
+    dataset: rasterio.DatasetReader, region: BaseGeometry, *, dst_crs: rasterio.crs.CRS = WGS84_CRS
 ) -> tuple[rasterio.Affine, int, int]:
-    """The exact native-resolution output grid ``.feature()`` would produce for ``aoi``.
+    """The exact native-resolution output grid ``.feature()`` would produce for ``region``.
 
     ``rio_tiler``'s own ``Reader.feature`` (no ``width``/``height``/``max_size``)
     resamples at the dataset's native resolution, in ``dst_crs``, and sizes the
-    output from the AOI's own bounds divided by that resolution — not by
+    output from the extent's own bounds divided by that resolution — not by
     windowing into a whole-dataset grid, which was tried first here and
     measured to come out sub-pixel-misaligned against ``.feature()``'s actual
     transform (plan §10, "windowed transform misalignment"). This reproduces
     that computation directly: ``calculate_default_transform`` gives the
     resolution the reprojection would use, then :func:`rasterio.transform.from_bounds`
-    builds the same grid ``.feature()`` builds from the AOI's own extent.
+    builds the same grid ``.feature()`` builds from the extent's own bounds.
+
+    ``region`` (M3-18 §13) is the crop's own extent — AOI ∩ this group's own
+    footprints (:func:`compute_crop_region`), not the AOI's own full bounding
+    box — so a scene that only partly covers the AOI produces a grid no
+    bigger than what that scene actually reaches.
     """
     res_transform, _, _ = calculate_default_transform(
         dataset.crs, dst_crs, dataset.width, dataset.height, *dataset.bounds
     )
     w_res, h_res = res_transform.a, abs(res_transform.e)
-    minx, miny, maxx, maxy = aoi.bounds
+    minx, miny, maxx, maxy = region.bounds
     width = max(1, round((maxx - minx) / w_res))
     height = max(1, round((maxy - miny) / h_res))
     crop_transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
@@ -664,7 +733,8 @@ def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affi
 
 def _write_native_windowed_cog(
     dataset: rasterio.DatasetReader,
-    aoi: BaseGeometry,
+    region: BaseGeometry,
+    mask_geometry: BaseGeometry | None = None,
     *,
     dst_crs: rasterio.crs.CRS = WGS84_CRS,
     block_size: int = 1024,
@@ -695,9 +765,21 @@ def _write_native_windowed_cog(
     GDAL's nodata check is per band by definition, so this is "keep what the
     source delivers, per band" with no bookkeeping of our own. No internal
     mask band is written for the data file at all any more.
+
+    **The extent and the mask geometry are two different things (M3-18
+    §13).** ``region`` (AOI ∩ this group's own footprints,
+    :func:`compute_crop_region`) sizes the grid; ``mask_geometry`` — the
+    *original*, un-clipped AOI, defaulting to ``region`` when not given —
+    is what the mask file's ``1``/``0`` values are rasterised from. They
+    agree everywhere a full-AOI-covering scene makes ``region`` equal to the
+    AOI itself; they can differ at a partial scene's own edge, where
+    ``region``'s bounding box can include a sliver the mask still correctly
+    marks ``0`` (outside the AOI) or, for a corner the scene does not reach at
+    all, real image nodata.
     """
-    crop_transform, width, height = _native_crop_grid(dataset, aoi, dst_crs=dst_crs)
-    aoi_mapping = shapely_mapping(aoi)
+    mask_geometry = mask_geometry if mask_geometry is not None else region
+    crop_transform, width, height = _native_crop_grid(dataset, region, dst_crs=dst_crs)
+    mask_mapping = shapely_mapping(mask_geometry)
     any_valid_in_aoi = False
     with WarpedVRT(
         dataset, crs=dst_crs, transform=crop_transform, width=width, height=height,
@@ -729,7 +811,7 @@ def _write_native_windowed_cog(
                         block = vrt.read(window=window, masked=True)
                         block_transform = window_transform(window, crop_transform)
                         inside = rasterize(
-                            [aoi_mapping],
+                            [mask_mapping],
                             out_shape=(block_height, block_width),
                             transform=block_transform,
                             all_touched=True,
@@ -784,7 +866,7 @@ def _write_mask_tif_bytes(inside: numpy.ndarray, *, transform: rasterio.Affine, 
         return mem.read()
 
 
-def _image_to_asset_crop_bytes(image: ImageData, aoi: BaseGeometry) -> AssetCropBytes:
+def _image_to_asset_crop_bytes(image: ImageData, mask_geometry: BaseGeometry) -> AssetCropBytes:
     """The data COG plus its companion mask, from an already-read ``ImageData`` (M3-18 §3).
 
     ``image.nodata`` (bug B, 23.09.2026, PR #86 review) is rio-tiler's own
@@ -792,6 +874,12 @@ def _image_to_asset_crop_bytes(image: ImageData, aoi: BaseGeometry) -> AssetCrop
     mask — passing it on to :func:`_masked_array_to_cog_bytes` is what lets
     the output file keep that same per-band nodata, not a mask combined across
     bands.
+
+    ``mask_geometry`` is the *original*, un-clipped AOI (M3-18 §13) — the
+    grid ``image`` is already on came from the crop *region*
+    (:func:`compute_crop_region`), a possibly smaller extent than the AOI's
+    own bounding box, but the mask's ``1``/``0`` values are always the AOI
+    polygon itself, never the region.
 
     **Rejects an AOI that misses the real data (bug A, Otto's review of PR
     #86, 23.09.2026).** ``.part()`` (unlike ``.feature()``'s cutline read)
@@ -804,7 +892,7 @@ def _image_to_asset_crop_bytes(image: ImageData, aoi: BaseGeometry) -> AssetCrop
     already raises for the equivalent single-item case.
     """
     _count, height, width = image.array.shape
-    inside = _rasterize_aoi_mask(aoi, height=height, width=width, transform=image.transform)
+    inside = _rasterize_aoi_mask(mask_geometry, height=height, width=width, transform=image.transform)
     any_band_valid = ~numpy.ma.getmaskarray(image.array).all(axis=0)
     if not (inside.astype(bool) & any_band_valid).any():
         raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
@@ -816,10 +904,11 @@ def _image_to_asset_crop_bytes(image: ImageData, aoi: BaseGeometry) -> AssetCrop
 def crop_asset_to_cog_bytes(
     open_reader: Callable[..., BaseReader],
     asset_paths: Sequence[AssetPath | ZarrAsset],
-    aoi_geometry: Mapping[str, Any],
+    region_geometry: Mapping[str, Any],
     *,
     width: int | None = None,
     height: int | None = None,
+    mask_geometry: Mapping[str, Any] | None = None,
 ) -> AssetCropBytes:
     """The finished data COG and mask for one asset's crop — the windowed path where it applies, else the naive one.
 
@@ -831,8 +920,17 @@ def crop_asset_to_cog_bytes(
     bounded (mosaics by ``MAX_DOWNLOAD_ITEMS`` and ``exit_when_filled``,
     coarser reads by the smaller pixel count) so windowing them was not part
     of what plan §10.3 measured.
+
+    ``region_geometry`` (M3-18 §13) is the crop's own extent — AOI ∩ this
+    group's own footprints (:func:`compute_crop_region`) — and sizes the read;
+    ``mask_geometry``, defaulting to ``region_geometry`` when not given, is
+    the *original* AOI the mask's ``1``/``0`` values are rasterised from. A
+    caller that never computed a region (most existing callers, and every
+    test that predates M3-18 §13) gets the previous behaviour unchanged: one
+    geometry doing both jobs.
     """
-    aoi = shapely_shape(aoi_geometry)
+    region = shapely_shape(region_geometry)
+    mask_shape = shapely_shape(mask_geometry) if mask_geometry is not None else region
     native = width is None and height is None
     if native and len(asset_paths) == 1 and isinstance(asset_paths[0], AssetPath):
         try:
@@ -843,14 +941,14 @@ def crop_asset_to_cog_bytes(
                 # windowed optimisation — correctness never depends on it.
                 dataset = getattr(reader, "dataset", None)
                 if dataset is not None:
-                    return _write_native_windowed_cog(dataset, aoi)
-                image = reader.part(aoi.bounds, width=None, height=None)
+                    return _write_native_windowed_cog(dataset, region, mask_shape)
+                image = reader.part(region.bounds, width=None, height=None)
         except _AOI_MISSES_THE_DATA as error:
             raise AoiOutsideItems(str(error)) from None
-        return _image_to_asset_crop_bytes(image, aoi)
+        return _image_to_asset_crop_bytes(image, mask_shape)
 
-    image = crop_asset(open_reader, asset_paths, aoi_geometry, width=width, height=height)
-    return _image_to_asset_crop_bytes(image, aoi)
+    image = crop_asset(open_reader, asset_paths, region_geometry, width=width, height=height)
+    return _image_to_asset_crop_bytes(image, mask_shape)
 
 
 def _masked_array_to_cog_bytes(
@@ -1040,6 +1138,7 @@ def build_download_zip(
     crops: Sequence[AssetCrop],
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
+    region_geometry: Mapping[str, Any] | None = None,
     resolution_factor: int = 1,
     gdal_env: Mapping[str, str] | None = None,
 ) -> bytes:
@@ -1048,6 +1147,16 @@ def build_download_zip(
 
     Built entirely in memory (a ``BytesIO`` buffer, never a temp file) so the
     caller can stream the result without anything having touched disk.
+
+    ``aoi_geometry`` is always the *original* AOI, exactly as drawn or
+    uploaded (Otto, 23.09.2026, M3-18 §13): it is what ``aoi.geojson`` carries
+    and what each mask's ``1``/``0`` values are rasterised from, never
+    narrowed down to what the items actually cover. ``region_geometry`` — AOI
+    ∩ this group's own footprints, :func:`compute_crop_region`, defaulting to
+    ``aoi_geometry`` when not given — is what actually sizes the data and
+    mask files' grid: a scene that only partly covers the AOI crops (and
+    masks) only as far as that scene reaches, never padded out to the AOI's
+    own full bounding box.
 
     ``resolution_factor`` (F10c, M3-18 §10) only names the resolution the
     caller already resolved into each ``crop``'s ``width``/``height`` — it is
@@ -1062,12 +1171,18 @@ def build_download_zip(
     function through ``run_in_threadpool``, so the context has to be entered
     here, on the worker thread that actually reads, not around the ``await``.
     """
+    region_geometry = region_geometry if region_geometry is not None else aoi_geometry
     with rasterio.Env(**(gdal_env or {})):
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
             for crop in crops:
                 crop_bytes = crop_asset_to_cog_bytes(
-                    open_reader, crop.paths, aoi_geometry, width=crop.width, height=crop.height
+                    open_reader,
+                    crop.paths,
+                    region_geometry,
+                    width=crop.width,
+                    height=crop.height,
+                    mask_geometry=aoi_geometry,
                 )
                 archive.writestr(
                     crop_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.data
@@ -1075,6 +1190,8 @@ def build_download_zip(
                 archive.writestr(
                     mask_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.mask
                 )
+            # The original AOI, unclipped (Otto, 23.09.2026, M3-18 §13) — never
+            # `region_geometry`, whatever the items actually cover.
             archive.writestr(AOI_FILENAME, json.dumps(dict(aoi_geometry)))
             archive.writestr(
                 NOTICE_FILENAME,

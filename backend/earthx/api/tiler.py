@@ -46,6 +46,7 @@ from pydantic import BaseModel, Field
 from rasterio.errors import RasterioError, RasterioIOError
 from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
+from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.download import (
@@ -58,6 +59,7 @@ from earthx.access.download import (
     build_download_zip,
     check_item_count_cap,
     check_output_size_cap,
+    compute_crop_region,
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
     plan_outputs,
@@ -464,6 +466,17 @@ async def download_crop(
     if not matched:
         raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
+    try:
+        # AOI ∩ union of this group's own item footprints (Otto, 23.09.2026,
+        # M3-18 §13) — the same geometry the frontend's group outline already
+        # shows before a download starts (PR #84, `groupOutline.ts`). Tighter
+        # than the bbox pre-filter above, so it also catches the case that
+        # filter passed on a bbox alone but the items' real, often rotated
+        # footprints do not actually reach (bug A, Otto's review of PR #86).
+        region = compute_crop_region(matched, aoi)
+    except AoiOutsideItems as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
     # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
     # and two identical keys would otherwise write the same file name into the
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
@@ -473,8 +486,12 @@ async def download_crop(
     # already chose a coarser resolution, a rejection still needs the smallest
     # *native-relative* factor to suggest, not one relative to what was
     # already asked for.
-    native_planned = plan_outputs(matched, wanted, aoi)
-    planned = native_planned if body.resolution == 1 else plan_outputs(matched, wanted, aoi, resolution_factor=body.resolution)
+    native_planned = plan_outputs(matched, wanted, region)
+    planned = (
+        native_planned
+        if body.resolution == 1
+        else plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
+    )
     try:
         check_item_count_cap(len(matched))
         check_output_size_cap(planned, native_planned=native_planned)
@@ -513,6 +530,7 @@ async def download_crop(
             open_reader=open_asset,
             crops=crops,
             aoi_geometry=body.aoi,
+            region_geometry=shapely_mapping(region),
             item_ids=[matched_item["id"] for matched_item in matched],
             resolution_factor=body.resolution,
             # The GDAL/VSI settings `gateway` also uses for the tile path
