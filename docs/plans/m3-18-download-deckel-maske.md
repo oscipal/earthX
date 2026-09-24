@@ -970,3 +970,97 @@ die reale Messung oben (nicht automatisiert, im PR dokumentiert).
 
 Log-Zeile (Otto, „fest“ vorgeschlagen): siehe `ENTSCHEIDUNGSLOG.md`, Eintrag
 vom 24.09.2026 „Bug A/B aus Ottos Review von PR #86 behoben“.
+
+## 13. Präzisierung zur Maske (Otto, 23.09.2026) — **umgesetzt**
+
+§11 legte fest, dass die Datendatei ein reiner Bounding-Box-Zuschnitt bleibt
+und das AOI-Polygon nur in einer separaten Maskendatei lebt — offen blieb,
+*welche* Bounding Box das ist, wenn eine Gruppe aus mehreren Szenen besteht
+und nicht jede davon die ganze AOI abdeckt. Diese Präzisierung beantwortet
+genau das.
+
+### 13.1 Was Otto vorgibt
+
+1. **ZIP-Inhalt je Gruppe unverändert:** Datendatei und Maske je Asset
+   (eindeutig benannt, `mask_filename`), dazu einmal je ZIP die AOI als
+   GeoJSON (`aoi.geojson`) — immer die *Original-AOI*, wie gezeichnet oder
+   hochgeladen, nie beschnitten.
+2. **Neu: die Ausdehnung von Datendatei und Maske** ist die Bounding Box von
+   *(AOI ∩ Vereinigung der Footprints der Szenen dieser Gruppe)*, nicht mehr
+   die Bounding Box der ganzen AOI. Deckt eine Szene nur einen Teil der AOI
+   ab, reichen Datei und Maske nur so weit wie die Szene; deckt sie die AOI
+   ganz ab, bleibt es die Bounding Box der AOI, unverändert gegenüber §11.
+   Dieselbe Geometrie wie die gelbe Umrandung aus PR #84 (`groupOutline.ts`,
+   Log-Zeile vom 24.09.2026 zu M3-09 §10).
+3. **Maske unverändert:** gleiches Raster wie die Datendatei, `1` innerhalb
+   des AOI-Polygons, `0` außerhalb. Das Nodata der Szene bleibt Sache der
+   Datendatei; die Maske markiert nur die AOI, nie den (womöglich kleineren)
+   Footprint.
+
+### 13.2 Umsetzung
+
+Zwei Geometrien statt einer, überall dort, wo bisher nur die AOI durchgereicht
+wurde — jede neue Stelle bekommt einen *optionalen* Parameter, der ohne Angabe
+auf die bisherige Geometrie zurückfällt, damit kein bestehender Aufrufer (Tests
+eingeschlossen) sich ändern muss:
+
+- **`compute_crop_region(items, aoi)`** (neu, `backend/earthx/access/download.py`):
+  die AOI geschnitten mit der Vereinigung (`shapely.ops.unary_union`) der
+  `geometry`-Felder der übergebenen Items. Fehlt einem Item die `geometry`
+  oder ist sie unbrauchbar, wird es übersprungen (dieselbe Toleranz, die
+  `filter_items_intersecting_aoi` schon für eine kaputte `bbox` hat); tragen
+  gar keine Items eine `geometry`, fällt die Funktion auf die unveränderte AOI
+  zurück. Ist der Schnitt leer, wird `AoiOutsideItems` geworfen — das nutzt
+  denselben Fehlerpfad wie Befund A (§12.1): eine Bbox-Vorauswahl, deren echter
+  (oft gedrehter) Footprint die AOI gar nicht berührt, fliegt schon hier raus,
+  vor jedem Öffnen eines Readers.
+- **`api/tiler.py`, `download_crop`:** ruft `compute_crop_region` nach dem
+  bestehenden Bbox-Vorfilter auf, bevor `plan_outputs` die Ausgabegröße
+  schätzt — die Größenschätzung (§4.1/§10.8) läuft jetzt gegen die engere
+  `region`, nicht mehr gegen die volle AOI, damit ein AOI-Eck, das keine Szene
+  erreicht, den Größendeckel nicht künstlich aufbläht.
+- **`build_download_zip`** bekommt einen neuen optionalen Parameter
+  `region_geometry` (Default: `aoi_geometry`, also unverändertes Verhalten für
+  jeden Aufrufer, der ihn nicht setzt). `aoi_geometry` bleibt, was es immer
+  war: die Original-AOI, für `aoi.geojson` und für die Maskenwerte. Nur das
+  Raster von Datendatei und Maske wird jetzt aus `region_geometry` berechnet —
+  quer durch `crop_asset_to_cog_bytes` → `_write_native_windowed_cog`/
+  `crop_asset` (Größe/Fenster) und `_image_to_asset_crop_bytes`/
+  `_rasterize_aoi_mask` (Maskenwerte weiterhin aus der Original-AOI).
+
+**Bewusste Vereinfachung gegenüber dem Frontend:** `groupOutline.ts` bricht
+die Vereinigung einer Gruppe ab und zeigt stattdessen die Pro-Szene-Umrandung,
+wenn die kombinierte Lon-Spanne 180° übersteigt (Datumsgrenzen-Risiko,
+„Prinzip 9 — nie etwas zeigen, wofür wir nicht geradestehen können“,
+`groupOutline.ts`). `compute_crop_region` repliziert diesen Schutz nicht: bei
+einem Fehler in `shapely` (inkl. eines entarteten Schnitts über die
+Datumsgrenze) fällt die Funktion einfach auf die unveränderte AOI zurück,
+ohne die Gruppe eigens zu erkennen oder abzulehnen. Das ist eine bewusste
+Einschränkung des Umfangs dieser Präzisierung, kein Versehen — die Datumsgrenze
+selbst ist in M3-18 an keiner anderen Stelle behandelt (§8 nennt sie nicht),
+und Otto hat sie hier nicht angefragt. Sollte sie relevant werden, gehört sie
+als eigene Frage vor die nächste Änderung an dieser Funktion.
+
+### 13.3 Tests — **umgesetzt, rot ohne den Fix**
+
+Alle drei in `test_download_edge_cases.py`,
+Klasse `TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi` — jeder Test war
+vor dieser Änderung rot (fehlendes `compute_crop_region`), geprüft per
+`git stash` auf `backend/earthx/access/download.py`/`api/tiler.py`:
+
+| Fall | Erwartung |
+|---|---|
+| Eine Szene deckt die AOI nur teilweise ab | Datendatei *und* Maske enden an der Szene, nicht am AOI-Rand; `aoi.geojson` enthält trotzdem die ganze, unbeschnittene AOI |
+| Zwei Szenen einer Gruppe, AOI deutlich größer als beide zusammen | Ausdehnung = Bounding Box der Vereinigung beider Footprints, nicht die (größere) AOI |
+| Eine Szene deckt die AOI vollständig ab | `aoi.geojson` bleibt exakt die Eingabe-AOI (Kontrollfall zu den beiden obigen, isoliert nach Ottos Aufzählung) |
+
+Volle Suite nach der Änderung: `ruff check backend` sauber,
+`lint-imports --config .importlinter` unverändert 12/12 Contracts,
+`pytest` grün bis auf den bereits unter §12.1 dokumentierten, vorbestehenden
+COG-Schreibfehler (nicht neu, nicht Gegenstand dieser Präzisierung).
+
+### 13.4 Log-Zeile
+
+Siehe `ENTSCHEIDUNGSLOG.md`: die Zeile „Maske statt nodata“ (24.09.2026) ist
+jetzt „präzisiert am 2026-09-23“; neue Zeile vom 2026-09-23 „Präzisierung zur
+Maske (Otto), M3-18 §13“, Status „fest“.
