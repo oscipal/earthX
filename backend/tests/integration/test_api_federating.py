@@ -10,6 +10,7 @@ abnahme), so calling it here does not disturb whatever a session already loaded.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,6 +24,7 @@ from earthx.api.main import app
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
+from earthx.logging import JsonFormatter
 
 pytestmark = pytest.mark.anyio
 
@@ -406,3 +408,142 @@ class TestFederatedSearch:
         async with _client(handler) as client:
             response = await client.get(f"/stac/collections/{DATASET_ID}/items/does-not-exist")
         assert response.status_code == 502
+
+
+class TestNoCoordinatesReachAnyLog:
+    """M3-08 follow-up (Otto, 24.09.2026): does `intersects`/`bbox` ever reach a
+    log written by `gateway` or an adapter — the request URL, an upstream error's
+    text, or a retry? Each test carries its own distinctive, otherwise-unused
+    longitude and searches every captured log record (message and `extra`
+    fields alike, via the same `JsonFormatter` production logging renders with)
+    for it. `caplog` needs no `configure_logging()` call to capture what a
+    logger emits — it attaches its own handler at the root."""
+
+    def _assert_marker_absent(self, caplog: pytest.LogCaptureFixture, marker: str) -> None:
+        assert caplog.records, "the test would prove nothing if nothing was logged"
+        formatter = JsonFormatter()
+        for record in caplog.records:
+            assert marker not in record.getMessage()
+            assert marker not in formatter.format(record)  # extras (gateway_path, etc.) too
+
+    async def test_a_successful_search_with_intersects_logs_no_coordinate(
+        self, require_catalog_loaded: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        marker = "13.918273"  # a value distinctive enough it appears nowhere else
+        polygon = {
+            "type": "Polygon",
+            "coordinates": [[[float(marker), 47.0], [12.0, 47.0], [float(marker), 51.0], [float(marker), 47.0]]],
+        }
+        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        with caplog.at_level(logging.DEBUG):
+            async with _client(handler) as client:
+                response = await client.post(
+                    "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon}
+                )
+        assert response.status_code == 200
+        assert body_of(seen[0])["intersects"] == polygon  # the request really carried it
+        self._assert_marker_absent(caplog, marker)
+
+    async def test_a_retried_search_logs_no_coordinate(
+        self, require_catalog_loaded: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Two gateway log lines this time (one per attempt) — both checked."""
+        marker = "13.918274"
+        polygon = {
+            "type": "Polygon",
+            "coordinates": [[[float(marker), 47.0], [12.0, 47.0], [float(marker), 51.0], [float(marker), 47.0]]],
+        }
+        handler, seen = _answering(
+            httpx.Response(503, json={"description": "upstream says no"}),
+            httpx.Response(200, json=load_fixture("search_page_1")),
+        )
+        with caplog.at_level(logging.DEBUG):
+            async with _client(handler) as client:
+                response = await client.post(
+                    "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon}
+                )
+        assert response.status_code == 200
+        assert len(seen) == 2  # the retry actually happened
+        self._assert_marker_absent(caplog, marker)
+
+    async def test_an_upstream_rejection_that_echoes_the_coordinate_still_logs_none_of_it(
+        self, require_catalog_loaded: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Worst case: the *source* quotes the coordinate in its own error body
+        (measured for real, adr/0005 §3.5 and the M3-08 plan step §2.2 — Earth
+        Search's `invalid latitude 95.0` for a bad point). `_adapter_error_to_http`
+        already keeps that text out of our own response (adr/0005 rule III); this
+        proves it never reaches a log line either."""
+        marker = "13.918275"
+        polygon = {"type": "Point", "coordinates": [float(marker), 49.0]}
+        handler, seen = _answering(
+            httpx.Response(400, json={"description": f"invalid latitude near {marker}"})
+        )
+        with caplog.at_level(logging.DEBUG):
+            async with _client(handler) as client:
+                response = await client.post(
+                    "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon}
+                )
+        assert response.status_code == 400
+        assert marker not in response.text  # the source's own body did not reach the client either
+        assert len(seen) == 1
+        self._assert_marker_absent(caplog, marker)
+
+
+class TestSearchCacheAndPageTokenCarryNoGeometry:
+    """M3-08 follow-up (Otto, 24.09.2026): the plan (§4, Schritt 1) promised the
+    search cache and page token carry only the fingerprint hash, never the
+    geometry itself, in cleartext. `adapters.federated_search.search_fingerprint`
+    already only ever *hashes* `intersects`/`ids` in memory (`_check_geometry`
+    hands `SearchParams` the geometry, `search_fingerprint` folds it into a
+    SHA-256 digest before anything is written or returned) — proved here against
+    the real cache table and a real response body, not just read from the source."""
+
+    async def test_the_cache_row_carries_no_search_geometry(self, require_catalog_loaded: None) -> None:
+        marker = 13.918276
+        polygon = {"type": "Polygon", "coordinates": [[[marker, 47.0], [12.0, 47.0], [marker, 51.0], [marker, 47.0]]]}
+        handler, _ = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        async with _client(handler) as client:
+            response = await client.post(
+                "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon}
+            )
+        assert response.status_code == 200
+
+        with psycopg.connect(autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("SELECT cache_key, payload::text FROM public.earthx_search_cache")
+            rows = cur.fetchall()
+        assert rows, "the search should have written a cache row"
+        for cache_key, payload_text in rows:
+            assert str(marker) not in cache_key
+            assert str(marker) not in payload_text
+            # The row is keyed and addressed only by hash — never the geometry
+            # that produced it, in the key or in what got stored under it.
+
+    async def test_the_page_token_itself_carries_no_search_geometry(self, require_catalog_loaded: None) -> None:
+        """The page *token* (not the whole next link — a `POST` link's `body` is
+        the caller's own request echoed back, geometry and all, so it can be
+        repeated; that is not a leak, the caller already has it) embeds only the
+        fingerprint (a hash) and the upstream's own keyset marker (datetime, id,
+        collection) — never the geometry that was asked with, base64 and all
+        (`federated_search.encode_page_token`/`decode_page_token`)."""
+        marker = 13.918277
+        polygon = {"type": "Polygon", "coordinates": [[[marker, 47.0], [12.0, 47.0], [marker, 51.0], [marker, 47.0]]]}
+        handler, _ = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
+        async with _client(handler) as client:
+            response = await client.post(
+                "/stac/search", json={"collections": [DATASET_ID], "intersects": polygon, "limit": 2}
+            )
+        next_link = next(link for link in response.json()["links"] if link["rel"] == "next")
+        token = next_link["body"]["token"]
+        assert token.startswith("next:")
+        opaque_marker = token[len("next:") :]
+        assert str(marker) not in opaque_marker
+        # decode_page_token reads back exactly {v, d, h, m} — asserted structurally,
+        # not just "no substring", so a future field added to the token would have
+        # to be deliberate, not an accidental extra key.
+        import base64
+
+        padded = opaque_marker + "=" * (-len(opaque_marker) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+        assert set(payload.keys()) == {"v", "d", "h", "m"}
+        assert str(marker) not in json.dumps(payload)
