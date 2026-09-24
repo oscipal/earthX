@@ -531,3 +531,109 @@ class TestTheNameACropGetsInsideTheZip:
 
     def test_a_crop_without_named_assets_keeps_the_notice_as_it_was(self) -> None:
         assert "Assets:" not in dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+
+
+class TestPerBandNodataNeverCombinedAcrossBands:
+    """Bug B (Otto's review of PR #86, 23.09.2026): reading a real Sentinel-2
+    window found very different nodata counts per band (8600/686/2437 out of
+    roughly a million pixels, only 23 of them nodata in *every* band) — most
+    of what one band calls nodata is genuine dark data in the others. The
+    first version of this file combined every band's mask with
+    ``.any(axis=0)`` into one shared internal mask band, blanking a pixel in
+    *all* bands the moment *any one* of them was at its own nodata value —
+    what a viewer showed as scattered white pixels over shadow, dark forest
+    and water. Fixed by carrying the source's own ``nodata`` through as a
+    plain tag instead of an internal mask; these tests would have failed
+    against the pre-fix ``.any(axis=0)`` combination and this file's
+    synthetic fixtures (`mini_cog.py`) never contain a real nodata value at
+    all, which is why the existing suite never caught it (module docstring
+    of `test_download_mask.py`)."""
+
+    def test_a_bands_own_valid_value_survives_even_where_another_band_is_nodata(self) -> None:
+        # 2x2, 3 bands. (row=0, col=0): band 0 is nodata, bands 1/2 are real data.
+        # (row=1, col=0): only band 2 is nodata.
+        data = np.array(
+            [
+                [[0, 5], [7, 9]],
+                [[3, 5], [7, 9]],
+                [[4, 5], [0, 9]],
+            ],
+            dtype="uint8",
+        )
+        mask = np.zeros_like(data, dtype=bool)
+        mask[0, 0, 0] = True
+        mask[2, 1, 0] = True
+        array = np.ma.MaskedArray(data, mask=mask)
+        transform = rasterio.transform.from_bounds(0, 0, 1, 1, 2, 2)
+
+        cog_bytes = dl._masked_array_to_cog_bytes(array, transform, "EPSG:4326", 0)
+
+        with rasterio.io.MemoryFile(cog_bytes) as mf, mf.open() as ds:
+            assert ds.nodata == 0
+            out = ds.read()
+            # Band 1's real value at (0,0) survives — the bug blanked every
+            # band together the moment band 0 was nodata there.
+            assert out[1, 0, 0] == 3
+            assert out[0, 0, 0] == 0
+            # Band 0's real value at (1,0) survives — only band 2 was nodata there.
+            assert out[0, 1, 0] == 7
+            assert out[2, 1, 0] == 0
+
+    def test_no_nodata_means_no_tag_and_nothing_is_blanked(self) -> None:
+        """A source that declares no nodata at all is never treated as if it did."""
+        data = np.zeros((2, 2, 2), dtype="uint8")
+        data[:] = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+        array = np.ma.MaskedArray(data, mask=False)
+        transform = rasterio.transform.from_bounds(0, 0, 1, 1, 2, 2)
+
+        cog_bytes = dl._masked_array_to_cog_bytes(array, transform, "EPSG:4326", None)
+
+        with rasterio.io.MemoryFile(cog_bytes) as mf, mf.open() as ds:
+            assert ds.nodata is None
+            assert (ds.read() == data).all()
+
+
+class TestWindowedPerBandNodata:
+    """The same bug B fix, exercised through :func:`_write_native_windowed_cog`
+    (the single-COG-item native-resolution path, F10a/F10b) rather than
+    :func:`_masked_array_to_cog_bytes` directly — a real ``rasterio`` dataset
+    this time, not a hand-built masked array, since the windowed path reads
+    blocks off a live ``WarpedVRT`` rather than taking one already in hand."""
+
+    def test_the_windowed_path_also_keeps_each_bands_own_value(self) -> None:
+        import shapely.geometry
+        from rasterio.warp import transform_bounds
+
+        profile = {
+            "driver": "GTiff",
+            "dtype": "uint8",
+            "count": 2,
+            "height": 4,
+            "width": 4,
+            "crs": "EPSG:32632",
+            "transform": rasterio.transform.from_origin(600000, 5700000, 10, 10),
+            "nodata": 0,
+        }
+        # Band 0 is nodata everywhere; band 1 has real, valid data everywhere.
+        # A single differing pixel would be too fragile against this test's own
+        # reprojection (UTM source grid onto the native WGS84 output grid,
+        # nearest-neighbor) picking a slightly different source pixel — the
+        # bug this checks for is about *which band* a value survives in, not
+        # about a specific pixel position surviving resampling.
+        data = np.zeros((2, 4, 4), dtype="uint8")
+        data[1, :, :] = 42
+
+        with rasterio.io.MemoryFile() as mem:
+            with mem.open(**profile) as dst:
+                dst.write(data)
+            with mem.open() as dataset:
+                west, south, east, north = transform_bounds(dataset.crs, dl.WGS84_CRS, *dataset.bounds)
+                aoi = shapely.geometry.box(west, south, east, north)
+                result = dl._write_native_windowed_cog(dataset, aoi)
+
+        with rasterio.io.MemoryFile(result.data) as mf, mf.open() as ds:
+            assert ds.nodata == 0
+            out = ds.read()
+            # Band 1's real value at the pixel band 0 is nodata at must survive —
+            # the pre-fix `.any(axis=0)` combination blanked both bands there.
+            assert (out[1] == 42).any(), "band 1's real value was wrongly blanked"

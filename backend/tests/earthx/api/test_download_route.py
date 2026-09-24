@@ -21,6 +21,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+import rasterio.errors
 from fastapi.testclient import TestClient
 from rio_tiler.models import ImageData
 
@@ -59,7 +60,31 @@ class FakeReader:
         self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
     ) -> ImageData:
         data = (np.random.default_rng(0).random((3, 8, 8)) * 255).astype("uint8")
-        return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
+        # `bbox`, not a fixed placeholder: `access.download` now rasterises the
+        # real AOI polygon against this image's own transform (bug A/M3-18 §3)
+        # to decide whether any of it is real data — a bounds that does not
+        # even overlap the request's own AOI would always fail that check.
+        return ImageData(data, crs="EPSG:4326", bounds=bbox)
+
+
+class SourceReadFailureReader(FakeReader):
+    """A genuine read failure: GDAL could not get bytes from the source."""
+
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
+        raise rasterio.errors.RasterioIOError("simulated: could not open the remote asset")
+
+
+class InternalBugReader(FakeReader):
+    """A `RasterioError` that is *not* about the source being unreachable — the
+    same kind of mistake a bad transform, block size or array shape in our own
+    COG-writing code could raise (Otto, 23.09.2026, PR #86 review, bug A)."""
+
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
+        raise rasterio.errors.RasterBlockError("simulated: an internal bug, not a read failure")
 
 
 @pytest.fixture
@@ -326,3 +351,40 @@ class TestAcceptanceCriteria:
         actually held — an ordinary small request always goes through."""
         response = _download(client)
         assert response.status_code == 200
+
+    def test_a_genuine_read_failure_is_502_with_the_source_message(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Otto, 23.09.2026 (PR #86 review, bug A): only `RasterioIOError` — GDAL
+        genuinely could not get bytes from the source — earns this message."""
+        monkeypatch.setattr(
+            "earthx.api.tiler.open_asset", lambda src_path, **_: SourceReadFailureReader(src_path)
+        )
+        response = _download(client)
+        assert response.status_code == 502
+        assert response.json()["detail"] == "the asset could not be read from the source"
+
+    def test_an_internal_bug_is_500_not_mislabelled_as_a_read_failure(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The exact bug A this route used to have: a `RasterioError` that has
+        nothing to do with the source being unreachable (a bad transform, a block
+        size, an array shape — the kind of mistake our own COG-writing code can
+        make) was relabelled "could not be read from the source", hiding a code
+        bug behind the message a real upstream failure gets. It must come back as
+        a 500 with a different message, and the real exception must reach the
+        tiler's own log — `build_app`'s `_rasterio_error` handler, not the route's
+        local `except`, is what has to catch it now."""
+        monkeypatch.setattr(
+            "earthx.api.tiler.open_asset", lambda src_path, **_: InternalBugReader(src_path)
+        )
+        with caplog.at_level(logging.ERROR, logger="earthx.api.tiler"):
+            response = _download(client)
+        assert response.status_code == 500
+        assert response.json()["detail"] != "the asset could not be read from the source"
+        assert response.json()["detail"] == "the asset could not be processed"
+        logged = "\n".join(record.getMessage() for record in caplog.records)
+        assert "could not be processed" in logged
+        assert any(record.exc_info for record in caplog.records), (
+            "the real exception must reach the log, not just the generic message"
+        )
