@@ -256,7 +256,7 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 
 ## 14. Tools & Stack
 
-- Backend: FastAPI, Python, `pystac-client`, `rasterio`, `rio-tiler`, conda (`biomass-viewer`-Env, Python 3.11).
+- Backend: FastAPI, Python 3.12, `pystac-client`, `rasterio`, `rio-tiler`; Abhängigkeiten per pip aus `backend/requirements.txt`, kein conda mehr (seit M3-03, `plans/m3-03-python-312.md`). *(geändert)*
 - Frontend: React, Vite, TypeScript, MapLibre GL.
 - Datenzugriff: ESA-MAAP-STAC-Katalog, EOPF Sentinel Zarr Samples Service (Kandidat), Copernicus Data Space Ecosystem.
 - Formate: COG (aktuell), Zarr (Priorität für neue Quellen).
