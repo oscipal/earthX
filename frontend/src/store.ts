@@ -3,7 +3,16 @@ import { create } from 'zustand';
 import { clipTileUrl } from './aoiClip';
 import * as api from './api';
 import type { CoverageResponse } from './api';
-import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './coverage';
+import {
+  bandViewportBbox,
+  bboxContains,
+  clampBboxLongitude,
+  FOOTPRINT_FETCH_LIMIT,
+  levelForViewport,
+  roundBboxToGrid,
+  showFootprints,
+  VIEWPORT_ROUND_LEVELS,
+} from './coverage';
 import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
@@ -55,6 +64,39 @@ let coverageDebounceHandle: number | undefined;
 // state (the same pattern `mapLayers.ts` uses for quicklook loads).
 let coverageGen = 0;
 
+// M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
+// inside a bbox already asked for skips the request instead of repeating it.
+// Keyed on dataset/level/datetime — an AOI query never reads or writes this,
+// it always asks fresh (`plans/m3-19-weltueberblick-ausschnitt.md`: "mit AOI
+// bleibt alles wie heute"). Module-level like `coverageGen` above: it holds
+// no more than the interaction needs to feel warm, nothing a reload should
+// have to restore.
+interface ViewportCoverageEntry {
+  datasetId: string;
+  level: number;
+  datetime: string | undefined;
+  bbox: Bbox;
+  coverage: CoverageResponse;
+  footprints: GeoJSON.FeatureCollection | null;
+}
+const VIEWPORT_CACHE_SIZE = 8;
+let viewportCoverageCache: ViewportCoverageEntry[] = [];
+
+function cachedViewportCoverage(
+  datasetId: string,
+  level: number,
+  datetime: string | undefined,
+  viewport: Bbox,
+): ViewportCoverageEntry | undefined {
+  return viewportCoverageCache.find(
+    (e) => e.datasetId === datasetId && e.level === level && e.datetime === datetime && bboxContains(e.bbox, viewport),
+  );
+}
+
+function rememberViewportCoverage(entry: ViewportCoverageEntry): void {
+  viewportCoverageCache = [entry, ...viewportCoverageCache].slice(0, VIEWPORT_CACHE_SIZE);
+}
+
 function scheduleCoverageRefresh(set: SetState, get: GetState): void {
   window.clearTimeout(coverageDebounceHandle);
   coverageDebounceHandle = window.setTimeout(() => void refreshCoverage(set, get), COVERAGE_DEBOUNCE_MS);
@@ -63,14 +105,18 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 // Fetches the density grid for the current dataset/AOI/date filter (M2-07c),
 // and — only once the backend's `footprints_advised` and the frontend's own
 // zoom brake (coverage.ts) both agree — the real scene footprints to replace
-// it with. `bbox` is the search AOI (`aoi`, drawn/uploaded), never the map's
-// pan/zoom viewport: `adr/0004` §6.3 ties the geotile *level* to the map's
-// zoom, but its "räumlicher Filter" (has_spatial_filter) means an actual
-// narrowing criterion. Sending the viewport as `bbox` on every pan would
-// silently turn every browse into a "filtered" query and permanently disable
-// the coverage route's own world-view cap (`WORLD_LEVEL_CAP`) — the bug
-// behind the too-coarse cells reported after M2-07c's first local run; see
-// the PR for the measured levels and the (backend, Otto's-call) proposal.
+// it with.
+//
+// M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): with an AOI,
+// `bbox` is that AOI (`aoi`, drawn/uploaded) and the level follows the map's
+// floored zoom, unchanged from before. Without an AOI, `bbox` is the
+// *visible map extent* instead — banded across the antimeridian and rounded
+// outward to a coarser block (`coverage.ts`) so nearby viewports ask the
+// same question — and the level is derived from the viewport's own size so
+// roughly the same number of cells always covers the screen
+// (`levelForViewport`). Either way `bbox` is a real spatial filter as far as
+// the route is concerned, so its `WORLD_LEVEL_CAP` no longer applies to the
+// no-AOI case; see the plan for why that is intended, not a leftover.
 //
 // A failed density fetch clears the layer (nothing to fall back to); a
 // failed *footprints* fetch instead leaves `coverage` in place and
@@ -83,19 +129,45 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
     set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
     return;
   }
-  const gen = ++coverageGen;
-  const { datasetId } = s;
-  const rawBbox = s.aoi ? polygonBbox(s.aoi) : null;
-  // Clamped to ±180° longitude — a wide AOI drawn across a wrapped world
-  // copy (MapLibre repeats the map at low zoom) can otherwise carry corners
-  // past ±180, which the coverage route refuses outright (coverage.ts).
-  const bbox = rawBbox ? clampBboxLongitude(rawBbox) : undefined;
-  const zoom = Math.floor(s.mapZoom);
+  const { datasetId, aoi } = s;
+  const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
+
+  let bbox: Bbox | undefined;
+  let level: number;
+  let viewport: Bbox | undefined; // the raw (unrounded) extent, for the reuse check only
+  if (aoi) {
+    // Clamped to ±180° longitude — a wide AOI drawn across a wrapped world
+    // copy (MapLibre repeats the map at low zoom) can otherwise carry corners
+    // past ±180, which the coverage route refuses outright (coverage.ts).
+    const rawBbox = polygonBbox(aoi);
+    if (!rawBbox) {
+      set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
+      return;
+    }
+    bbox = clampBboxLongitude(rawBbox);
+    level = Math.floor(s.mapZoom);
+  } else {
+    if (s.viewportBbox === null || s.viewportSize === null) return; // map not ready yet
+    level = levelForViewport(s.mapZoom, s.viewportSize.width, s.viewportSize.height);
+    viewport = bandViewportBbox(s.viewportBbox);
+    bbox = roundBboxToGrid(viewport, level - VIEWPORT_ROUND_LEVELS);
+  }
+
+  const gen = ++coverageGen;
+
+  if (!hasAoi && viewport) {
+    const cached = cachedViewportCoverage(datasetId, level, datetime, viewport);
+    if (cached) {
+      set({ coverage: cached.coverage, coverageFootprints: cached.footprints, coverageLoading: false, coverageError: null });
+      return;
+    }
+  }
+
   set({ coverageLoading: true, coverageError: null });
   let coverage: CoverageResponse;
   try {
-    coverage = await api.fetchCoverage({ datasetId, zoom, bbox, datetime });
+    coverage = await api.fetchCoverage({ datasetId, zoom: level, bbox, datetime });
   } catch (e) {
     if (gen !== coverageGen) return;
     set({
@@ -108,14 +180,21 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   }
   if (gen !== coverageGen) return;
   set({ coverage, coverageFootprints: null, coverageLoading: false, coverageError: null });
-  if (!showFootprints(coverage, get().mapZoom)) return;
-  try {
-    const { features } = await api.searchAllPages({ collection: datasetId, bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
-    if (gen !== coverageGen) return;
-    set({ coverageFootprints: footprintsFC(features) });
-  } catch {
-    // Left at `null` — the density fill this dataset/viewport already has
-    // stays on screen (E5: a failed extra fetches degrades, it doesn't 404).
+  let footprints: GeoJSON.FeatureCollection | null = null;
+  if (showFootprints(coverage, get().mapZoom)) {
+    try {
+      const { features } = await api.searchAllPages({ collection: datasetId, bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
+      if (gen === coverageGen) {
+        footprints = footprintsFC(features);
+        set({ coverageFootprints: footprints });
+      }
+    } catch {
+      // Left at `null` — the density fill this dataset/viewport already has
+      // stays on screen (E5: a failed extra fetch degrades, it doesn't 404).
+    }
+  }
+  if (!hasAoi && viewport && gen === coverageGen && bbox) {
+    rememberViewportCoverage({ datasetId, level, datetime, bbox, coverage, footprints });
   }
 }
 
@@ -152,9 +231,14 @@ interface AppState {
   // away from the density cells — `null` while density is showing or nothing
   // has loaded yet.
   coverageFootprints: GeoJSON.FeatureCollection | null;
-  // The map's zoom only — never its pan/viewport bbox, which is not the
-  // "räumlicher Filter" `adr/0004` §6.3 means (see `refreshCoverage`).
   mapZoom: number;
+  // The visible map extent and its CSS-pixel size, reported by `MapView` on
+  // `moveend`/first load. Read only by `refreshCoverage` to build the no-AOI
+  // request (M3-19) — an AOI is still the only thing that counts as the
+  // route's "räumlicher Filter" in the `adr/0004` §6.3 sense; this is never
+  // sent as one, only banded/rounded into `bbox` the same way an AOI is.
+  viewportBbox: Bbox | null;
+  viewportSize: { width: number; height: number } | null;
 
   // --- ui layout ---
   panelCollapsed: boolean; // left control panel slid off to the left
@@ -272,7 +356,7 @@ interface AppState {
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
   toggleCoverage: () => void;
-  setMapZoom: (zoom: number) => void;
+  setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
   toggleProjection: () => void;
 }
@@ -292,6 +376,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   coverageError: null,
   coverageFootprints: null,
   mapZoom: 1.6,
+  viewportBbox: null,
+  viewportSize: null,
 
   panelCollapsed: false,
   resultsPanelCollapsed: false,
@@ -769,8 +855,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (showCoverage) void refreshCoverage(set, get);
     else set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
   },
-  setMapZoom: (mapZoom) => {
-    set({ mapZoom });
+  setMapViewport: (mapZoom, viewportBbox, viewportSize) => {
+    set({ mapZoom, viewportBbox, viewportSize });
     scheduleCoverageRefresh(set, get);
   },
   setPlaying: (playing) => set({ playing }),
