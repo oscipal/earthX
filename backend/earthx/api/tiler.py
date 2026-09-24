@@ -78,6 +78,7 @@ from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout, UrlRejected
 from earthx.gateway.gdal import gdal_options
+from earthx.logging import RequestIdMiddleware, configure_logging
 from earthx.readers.cog import AssetPath, asset_path
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, split_asset_key, zarr_asset
 
@@ -545,8 +546,13 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     against a registry of its own and without a database — not so that a deployment
     can: the process entrypoint below takes neither.
     """
+    # M3-16: this process's own JSON logging, before anything can log a line
+    # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
+    # `RequestIdMiddleware` below is this process's only access log.
+    configure_logging()
     policy = policy_from_registry(registry)
     app = FastAPI(title="earthx-tiler", lifespan=lifespan)
+    app.add_middleware(RequestIdMiddleware)
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
