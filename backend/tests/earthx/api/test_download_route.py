@@ -44,7 +44,7 @@ def item() -> dict[str, Any]:
 
 
 class FakeReader:
-    """No network: ``feature()`` hands back a tiny, fixed image."""
+    """No network: ``part()`` hands back a tiny, fixed image."""
 
     def __init__(self, src_path: object) -> None:
         self.src_path = src_path
@@ -55,8 +55,8 @@ class FakeReader:
     def __exit__(self, *exc: object) -> bool:
         return False
 
-    def feature(
-        self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
     ) -> ImageData:
         data = (np.random.default_rng(0).random((3, 8, 8)) * 255).astype("uint8")
         return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
@@ -162,7 +162,7 @@ class TestAcceptanceCriteria:
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
-            assert names == {"visual_2x.tif", "ATTRIBUTION.txt"}
+            assert names == {"visual_2x.tif", "visual_2x_mask.tif", "ATTRIBUTION.txt", "aoi.geojson"}
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "2x coarser than native" in notice
 
@@ -223,7 +223,7 @@ class TestAcceptanceCriteria:
         assert "attachment" in response.headers["content-disposition"]
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
-            assert names == {"visual.tif", "ATTRIBUTION.txt"}
+            assert names == {"visual.tif", "visual_mask.tif", "ATTRIBUTION.txt", "aoi.geojson"}
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
             assert SENTINEL_2_L2A.license.terms.url in notice
@@ -250,6 +250,7 @@ class TestAcceptanceCriteria:
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             assert archive.namelist().count("visual.tif") == 1
+            assert archive.namelist().count("visual_mask.tif") == 1
 
     def test_an_empty_item_or_asset_list_is_a_validation_error(self, client: TestClient) -> None:
         assert _download(client, items=[]).status_code == 422

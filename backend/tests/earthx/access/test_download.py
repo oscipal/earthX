@@ -10,6 +10,7 @@ whether rio-tiler can read a COG over HTTP, which `test_cog.py` and
 
 from __future__ import annotations
 
+import json
 import zipfile
 from io import BytesIO
 from typing import Any
@@ -38,7 +39,7 @@ def path(item_id: str = "ITEM1", asset: str = "visual") -> AssetPath:
 
 
 class FakeReader:
-    """A reader that never touches a network — ``feature()`` returns a small array."""
+    """A reader that never touches a network — ``part()`` returns a small array."""
 
     calls: list[AssetPath] = []
 
@@ -51,7 +52,9 @@ class FakeReader:
     def __exit__(self, *exc: object) -> bool:
         return False
 
-    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
         FakeReader.calls.append(self.src_path)
         data = (np.random.default_rng(0).random((3, 16, 16)) * 255).astype("uint8")
         return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
@@ -60,7 +63,9 @@ class FakeReader:
 class OutsideReader(FakeReader):
     """Every read raises: the bbox prefilter passed but the footprint does not."""
 
-    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
         raise PointOutsideBounds("outside")
 
 
@@ -294,7 +299,9 @@ class HalfMaskedReader(FakeReader):
 
     calls: list[AssetPath] = []
 
-    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
         HalfMaskedReader.calls.append(self.src_path)
         data = np.full((3, 16, 16), 10, dtype="uint8")
         mask = np.zeros((3, 16, 16), dtype=bool)
@@ -305,7 +312,9 @@ class HalfMaskedReader(FakeReader):
 class FillingReader(FakeReader):
     calls: list[AssetPath] = []
 
-    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
+    def part(
+        self, bbox: tuple[float, float, float, float], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
         FillingReader.calls.append(self.src_path)
         data = np.full((3, 16, 16), 20, dtype="uint8")
         return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
@@ -411,18 +420,34 @@ class TestBuildDownloadZip:
         )
         with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
             names = set(archive.namelist())
-            assert names == {"visual.tif", "red.tif", dl.NOTICE_FILENAME}
+            assert names == {
+                "visual.tif",
+                "visual_mask.tif",
+                "red.tif",
+                "red_mask.tif",
+                dl.NOTICE_FILENAME,
+                dl.AOI_FILENAME,
+            }
             notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
             # Each entry is a real, openable COG — not just bytes with a .tif name.
             # No alpha band regardless of the source having no nodata (F3, M3-18):
-            # the AOI mask travels as a GDAL-internal mask band instead, the same
-            # band count whether one item or a mosaic produced it.
+            # the AOI mask travels as its own file now (M3-18 §3), never the data
+            # file's band count.
             with rasterio.io.MemoryFile(archive.read("visual.tif")) as memfile, memfile.open() as ds:
                 assert ds.count == 3
                 assert ds.profile["driver"] == "GTiff"
-                # FakeReader.feature never masks anything, so every pixel is valid.
+                # FakeReader.part never masks anything, so every pixel is valid.
                 assert (ds.dataset_mask() == 255).all()
+            # The companion mask file: same grid, uint8, 1 inside the AOI polygon.
+            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as memfile, memfile.open() as mask_ds:
+                assert mask_ds.count == 1
+                assert mask_ds.dtypes[0] == "uint8"
+                assert mask_ds.width == 16
+                assert mask_ds.height == 16
+                assert set(np.unique(mask_ds.read(1))) <= {0, 1}
+            aoi_geojson = json.loads(archive.read(dl.AOI_FILENAME).decode("utf-8"))
+            assert aoi_geojson == GOOD_AOI
 
     def test_nothing_is_ever_written_outside_gdals_in_memory_filesystem(
         self, monkeypatch: pytest.MonkeyPatch
@@ -479,6 +504,11 @@ class TestTheNameACropGetsInsideTheZip:
     )
     def test_nothing_outside_a_plain_name_survives(self, asset: str, expected: str) -> None:
         assert dl.crop_filename(asset) == expected
+
+    def test_mask_filename_is_the_crop_filename_with_a_mask_suffix(self) -> None:
+        assert dl.mask_filename("visual") == "visual_mask.tif"
+        assert dl.mask_filename("visual", resolution_factor=2) == "visual_2x_mask.tif"
+        assert dl.mask_filename("SR_10m:b04,b03,b02") == "SR_10m_b04_b03_b02_mask.tif"
 
     def test_two_different_keys_can_clean_to_the_same_name(self) -> None:
         """A known, unresolved collision, pinned so that whoever hits it sees it here

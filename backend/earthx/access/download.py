@@ -47,10 +47,33 @@ ones whose own STAC bbox actually touches the AOI before any read — the
 reading every candidate's header — and ``rio_tiler.mosaic.mosaic_reader``
 merges the survivors with `FirstMethod` (first valid pixel wins), exactly the
 rule the client already knows from the time line grouping (F5, F11).
+
+**Mask instead of nodata (Otto, 23.09.2026, M3-18 §3, replacing the
+20.09.2026 decision of the same name).** The data file is always a plain
+bounding-box crop: every pixel keeps the source's own value and validity,
+whether or not it falls inside the AOI polygon — nothing is ever set to
+``nodata`` (or masked) just for lying outside the polygon. What the polygon
+actually covers travels as a *separate* file instead, one per asset
+(:func:`mask_filename`): a plain uint8 GeoTIFF on the same grid as the data,
+``1`` inside the polygon and ``0`` outside (never a COG — nobody tiles a
+binary mask). The AOI geometry itself also ships as ``aoi.geojson``, once per
+ZIP. A rectangular AOI gets a mask file too, deliberately, for uniformity
+(plan §11): a "rectangle" is only ever a rectangle in WGS84 lon/lat, not
+necessarily aligned with a rotated source pixel grid (an MGRS/UTM tile), so
+detecting the one case where the mask would be all ``1`` reliably needs
+almost the same rasterisation this file already always does — not worth a
+special case that a consumer of the ZIP would then also have to know about.
+
+This reintroduces exactly the kind of validity that used to travel as a
+GDAL-internal mask band (the "Maske statt nodata" decision of 24.09.2026,
+`_masked_array_to_cog_bytes` below): that band still exists on the data
+file, but now reflects only the *source's own* invalidity (a real gap in the
+scene), never the AOI polygon — the polygon has its own file now.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import warnings
@@ -90,6 +113,7 @@ from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
+    "AOI_FILENAME",
     "LARGE_DOWNLOAD_THRESHOLD_BYTES",
     "MAX_DOWNLOAD_ITEMS",
     "MAX_OUTPUT_SIDE_PX",
@@ -97,6 +121,7 @@ __all__ = [
     "RESOLUTION_FACTORS",
     "AoiOutsideItems",
     "AoiTooLarge",
+    "AssetCropBytes",
     "InvalidAoi",
     "NOTICE_FILENAME",
     "PlannedOutput",
@@ -109,6 +134,7 @@ __all__ = [
     "crop_filename",
     "estimate_output_dims",
     "filter_items_intersecting_aoi",
+    "mask_filename",
     "parse_aoi_geometry",
     "plan_outputs",
 ]
@@ -189,6 +215,12 @@ with warnings.catch_warnings():
     _MASKED_COG_PROFILE = cog_profiles.get("zstd")
 
 NOTICE_FILENAME = "ATTRIBUTION.txt"
+
+# The requested AOI, once per ZIP, as plain GeoJSON — the same geometry the
+# caller sent, in WGS84 (Otto, 23.09.2026, M3-18 §3): a consumer of the mask
+# files (below) needs the polygon itself to make sense of them without also
+# parsing the request that produced the ZIP.
+AOI_FILENAME = "aoi.geojson"
 
 # "This read does not touch the data" — one exception per reader for the same
 # fact. rio-tiler raises the first two for a COG; `NoDataInBounds` is what
@@ -384,7 +416,14 @@ class PlannedOutput:
 
     @property
     def total_bytes(self) -> int:
-        return self.width * self.height * self.bytes_per_pixel
+        """The data file plus its companion mask file (uint8, 1 byte/pixel, M3-18 §3).
+
+        Every asset now ships with a same-grid mask file (module docstring),
+        so the estimate the size cap checks has to count it too — a single-band
+        uint8 asset would otherwise have its real ZIP contribution understated
+        by up to a factor of two.
+        """
+        return self.width * self.height * (self.bytes_per_pixel + 1)
 
 
 def plan_outputs(
@@ -501,11 +540,21 @@ def crop_asset(
     any pixel cap. A caller that wants an explicitly coarser resolution
     passes both, already divided down from native by the chosen
     :data:`RESOLUTION_FACTORS` value.
+
+    **Reads the AOI's bounding box, not the polygon (Otto, 23.09.2026, M3-18
+    §3).** ``Reader.feature`` would rasterise ``aoi_geometry`` as a cutline and
+    bake it into the returned array's mask, which is exactly what the module
+    docstring's "mask instead of nodata" rule forbids for the data file: every
+    pixel in the bounding box has to keep the source's own value and validity,
+    whatever the polygon's shape. ``.part()`` reads the plain rectangle
+    instead; the polygon itself is rasterised separately, only for the
+    companion mask file (:func:`crop_asset_to_cog_bytes`).
     """
+    bbox = shapely_shape(aoi_geometry).bounds
 
     def _read(path: AssetPath | ZarrAsset) -> ImageData:
         with open_reader(path) as reader:
-            return reader.feature(dict(aoi_geometry), width=width, height=height)
+            return reader.part(bbox, width=width, height=height)
 
     if len(asset_paths) == 1:
         try:
@@ -548,28 +597,66 @@ def _native_crop_grid(
     return crop_transform, width, height
 
 
+@dataclass(frozen=True)
+class AssetCropBytes:
+    """The finished bytes for one asset's crop: the data COG and its companion mask (M3-18 §3)."""
+
+    data: bytes
+    mask: bytes
+
+
+# GeoTIFF mask-file profile shared by both the windowed and the naive path
+# (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
+# overviews worth building and nobody tiles a binary mask for zoom levels.
+def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affine, block_size: int = 1024) -> dict:
+    return {
+        "driver": "GTiff",
+        "dtype": "uint8",
+        "count": 1,
+        "height": height,
+        "width": width,
+        "crs": crs,
+        "transform": transform,
+        "tiled": True,
+        # A multiple of 16 is GDAL's only real requirement (found for the data
+        # profile above too) — it may exceed the image's own size, GDAL simply
+        # pads the last block, so no extra care is needed for a small crop.
+        "blockxsize": block_size,
+        "blockysize": block_size,
+        "compress": "deflate",
+    }
+
+
 def _write_native_windowed_cog(
     dataset: rasterio.DatasetReader,
     aoi: BaseGeometry,
     *,
     dst_crs: rasterio.crs.CRS = WGS84_CRS,
     block_size: int = 1024,
-) -> bytes:
-    """A native-resolution COG of ``aoi``, read and written one block at a time (F10a/F10b, M3-18 §10).
+) -> AssetCropBytes:
+    """The data COG plus its mask, read and written one block at a time (F10a/F10b, M3-18 §10/§3).
 
-    Byte-identical to ``crop_asset`` + :func:`_masked_array_to_cog_bytes` for a
-    rectangular AOI, and negligibly different (edge-of-cutline nearest-neighbor
-    noise only, plan §10.3) for a general polygon — validated against the
-    whole-array read before this was written. The difference is memory: no
-    array bigger than one ``block_size`` x ``block_size`` block is ever held at
-    once, measured (plan §10.3) to save a fifth to a quarter of peak RSS on a
-    large crop. Used only for a single COG item at native resolution
-    (:func:`crop_asset_to_cog_bytes` decides when that applies); a mosaic or an
-    explicitly coarser resolution still goes through ``crop_asset``.
+    Byte-identical to ``crop_asset`` + :func:`_masked_array_to_cog_bytes` for
+    the data file, validated against the whole-array read before this was
+    written. The difference is memory: no array bigger than one
+    ``block_size`` x ``block_size`` block is ever held at once, measured (plan
+    §10.3) to save a fifth to a quarter of peak RSS on a large crop. Used only
+    for a single COG item at native resolution (:func:`crop_asset_to_cog_bytes`
+    decides when that applies); a mosaic or an explicitly coarser resolution
+    still goes through ``crop_asset``.
+
+    **Mask instead of nodata (Otto, 23.09.2026, M3-18 §3).** The data file's
+    own mask band reflects only the *source's* invalidity
+    (``numpy.ma.getmaskarray``) — the AOI polygon never touches a data pixel's
+    value or validity, whatever its shape. The polygon is rasterised block by
+    block too, but only into the separate mask array this function also
+    returns: keeping it block-wise, not a single whole-grid rasterise, is what
+    keeps this function's memory bound the same as before the polygon file was
+    added (module docstring).
     """
     crop_transform, width, height = _native_crop_grid(dataset, aoi, dst_crs=dst_crs)
     aoi_mapping = shapely_mapping(aoi)
-    any_valid = False
+    any_valid_in_aoi = False
     with WarpedVRT(
         dataset, crs=dst_crs, transform=crop_transform, width=width, height=height,
         resampling=Resampling.nearest,
@@ -586,8 +673,9 @@ def _write_native_windowed_cog(
             "blockxsize": block_size,
             "blockysize": block_size,
         }
-        with MemoryFile() as plain_mem:
-            with plain_mem.open(**profile) as dst:
+        mask_profile = _mask_profile(height=height, width=width, crs=dst_crs, transform=crop_transform)
+        with MemoryFile() as plain_mem, MemoryFile() as aoi_mask_mem:
+            with plain_mem.open(**profile) as dst, aoi_mask_mem.open(**mask_profile) as mask_dst:
                 for row0 in range(0, height, block_size):
                     block_height = min(block_size, height - row0)
                     for col0 in range(0, width, block_size):
@@ -595,21 +683,22 @@ def _write_native_windowed_cog(
                         window = Window(col0, row0, block_width, block_height)
                         block = vrt.read(window=window, masked=True)
                         block_transform = window_transform(window, crop_transform)
-                        outside = rasterize(
+                        inside = rasterize(
                             [aoi_mapping],
                             out_shape=(block_height, block_width),
                             transform=block_transform,
                             all_touched=True,
-                            default_value=0,
-                            fill=1,
+                            default_value=1,
+                            fill=0,
                             dtype="uint8",
-                        ).astype(bool)
-                        invalid = outside | numpy.ma.getmaskarray(block).any(axis=0)
-                        if (~invalid).any():
-                            any_valid = True
+                        )
+                        source_invalid = numpy.ma.getmaskarray(block).any(axis=0)
+                        if (inside.astype(bool) & ~source_invalid).any():
+                            any_valid_in_aoi = True
                         dst.write(numpy.ma.filled(block, 0), window=window)
-                        dst.write_mask((~invalid).astype("uint8") * 255, window=window)
-            if not any_valid:
+                        dst.write_mask((~source_invalid).astype("uint8") * 255, window=window)
+                        mask_dst.write(inside, 1, window=window)
+            if not any_valid_in_aoi:
                 raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
             with plain_mem.open() as plain_ds, MemoryFile() as cog_mem:
                 cog_translate(
@@ -620,7 +709,42 @@ def _write_native_windowed_cog(
                     in_memory=True,
                     quiet=True,
                 )
-                return cog_mem.read()
+                data_bytes = cog_mem.read()
+            mask_bytes = aoi_mask_mem.read()
+    return AssetCropBytes(data=data_bytes, mask=mask_bytes)
+
+
+def _aoi_mask_tif_bytes(
+    aoi: BaseGeometry, *, height: int, width: int, transform: rasterio.Affine, crs: Any
+) -> bytes:
+    """The companion mask file for a crop built the naive (whole-array) way (M3-18 §3).
+
+    One rasterise over the whole grid, not block by block: the naive path
+    already holds the whole data array in memory at once (:func:`crop_asset`),
+    so a same-shape single-band uint8 array adds nothing to that bound.
+    """
+    inside = rasterize(
+        [shapely_mapping(aoi)],
+        out_shape=(height, width),
+        transform=transform,
+        all_touched=True,
+        default_value=1,
+        fill=0,
+        dtype="uint8",
+    )
+    profile = _mask_profile(height=height, width=width, crs=crs, transform=transform)
+    with MemoryFile() as mem:
+        with mem.open(**profile) as dst:
+            dst.write(inside, 1)
+        return mem.read()
+
+
+def _image_to_asset_crop_bytes(image: ImageData, aoi: BaseGeometry) -> AssetCropBytes:
+    """The data COG plus its companion mask, from an already-read ``ImageData`` (M3-18 §3)."""
+    data_bytes = _masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+    _count, height, width = image.array.shape
+    mask_bytes = _aoi_mask_tif_bytes(aoi, height=height, width=width, transform=image.transform, crs=image.crs)
+    return AssetCropBytes(data=data_bytes, mask=mask_bytes)
 
 
 def crop_asset_to_cog_bytes(
@@ -630,8 +754,8 @@ def crop_asset_to_cog_bytes(
     *,
     width: int | None = None,
     height: int | None = None,
-) -> bytes:
-    """The finished COG bytes for one asset's crop — the windowed path where it applies, else the naive one.
+) -> AssetCropBytes:
+    """The finished data COG and mask for one asset's crop — the windowed path where it applies, else the naive one.
 
     A single :class:`~earthx.readers.cog.AssetPath` at native resolution
     (``width``/``height`` both ``None``) uses :func:`_write_native_windowed_cog`
@@ -642,9 +766,9 @@ def crop_asset_to_cog_bytes(
     coarser reads by the smaller pixel count) so windowing them was not part
     of what plan §10.3 measured.
     """
+    aoi = shapely_shape(aoi_geometry)
     native = width is None and height is None
     if native and len(asset_paths) == 1 and isinstance(asset_paths[0], AssetPath):
-        aoi = shapely_shape(aoi_geometry)
         try:
             with open_reader(asset_paths[0]) as reader:
                 # `.dataset` is what rio-tiler's own `Reader` (the real
@@ -654,13 +778,13 @@ def crop_asset_to_cog_bytes(
                 dataset = getattr(reader, "dataset", None)
                 if dataset is not None:
                     return _write_native_windowed_cog(dataset, aoi)
-                image = reader.feature(dict(aoi_geometry), width=None, height=None)
+                image = reader.part(aoi.bounds, width=None, height=None)
         except _AOI_MISSES_THE_DATA as error:
             raise AoiOutsideItems(str(error)) from None
-        return _masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+        return _image_to_asset_crop_bytes(image, aoi)
 
     image = crop_asset(open_reader, asset_paths, aoi_geometry, width=width, height=height)
-    return _masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+    return _image_to_asset_crop_bytes(image, aoi)
 
 
 def _masked_array_to_cog_bytes(
@@ -675,15 +799,19 @@ def _masked_array_to_cog_bytes(
     filesystem — so both writes stay in the process's RAM (D3: "nichts wird auf
     Platte geschrieben").
 
-    **The AOI mask (F3, M3-18, Otto 24.09.2026).** A pixel the AOI polygon does
-    not cover — or that the source itself has no data for — is written as
-    ``0`` and carries no other trace of what the source's data used to be
-    there; its invalidity travels as a GDAL-internal mask band instead, the
-    same signal whether the asset has one band or many and whether one item
-    was read or several were mosaicked. ``ImageData.to_raster`` cannot do
-    this: it writes an alpha band once ``nodata`` is unset, which is exactly
-    how a single item and a mosaic used to come out with different band
-    counts (plan §2) — so the write happens here instead.
+    **The mask band (F3, M3-18; redefined 23.09.2026, M3-18 §3).** A pixel the
+    *source itself* has no data for is written as ``0`` and carries no other
+    trace of what the source's data used to be there; its invalidity travels
+    as a GDAL-internal mask band instead, the same signal whether the asset
+    has one band or many and whether one item was read or several were
+    mosaicked. This band no longer reflects the AOI polygon at all (that used
+    to be true under F3, M3-18, Otto 24.09.2026) — the polygon has its own,
+    separate mask file now (module docstring, :func:`_aoi_mask_tif_bytes`),
+    so every pixel in the bounding box keeps the source's own value and
+    validity regardless of the polygon's shape. ``ImageData.to_raster`` cannot
+    build even this narrower band: it writes an alpha band once ``nodata`` is
+    unset, which is exactly how a single item and a mosaic used to come out
+    with different band counts (plan §2) — so the write happens here instead.
 
     **The compression (:data:`_MASKED_COG_PROFILE`, module level).** A masked
     COG is compressed with ZSTD, not `deflate` (M2-06's original choice) —
@@ -768,6 +896,16 @@ def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
     return f"{cleaned or 'asset'}{suffix}.tif"
 
 
+def mask_filename(asset: str, *, resolution_factor: int = 1) -> str:
+    """The name ``asset``'s companion AOI mask file gets inside the ZIP (M3-18 §3).
+
+    Always ``<crop_filename>_mask.tif`` — same cleaning, same resolution
+    suffix, so the two files for one asset sort next to each other and the
+    pairing is obvious without reading the notice file.
+    """
+    return f"{crop_filename(asset, resolution_factor=resolution_factor)[:-4]}_mask.tif"
+
+
 def build_notice_text(
     config: DatasetConfig,
     *,
@@ -810,13 +948,24 @@ def build_notice_text(
         lines.append(
             "Assets: "
             + ", ".join(
-                f"{asset} ({crop_filename(asset, resolution_factor=resolution_factor)})" for asset in assets
+                f"{asset} ({crop_filename(asset, resolution_factor=resolution_factor)}, "
+                f"mask: {mask_filename(asset, resolution_factor=resolution_factor)})"
+                for asset in assets
             )
         )
     lines.append(
         "Resolution: native"
         if resolution_factor == 1
         else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
+    )
+    # Mask instead of nodata (Otto, 23.09.2026, M3-18 §3): every pixel in a data
+    # file keeps its bounding-box value regardless of the AOI polygon's shape;
+    # each asset's own mask file (above) is where the polygon actually lives —
+    # `AOI_FILENAME` is the polygon itself, once per ZIP, so the mask files need
+    # no further explanation than a pointer to it.
+    lines.append(
+        f"Mask: {AOI_FILENAME} carries the requested area; each asset's own mask "
+        "file is 1 inside it, 0 outside — the data files are not cropped to it."
     )
     lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
@@ -847,14 +996,15 @@ def build_download_zip(
     resolution_factor: int = 1,
     gdal_env: Mapping[str, str] | None = None,
 ) -> bytes:
-    """The finished ZIP: one COG per requested asset, plus :data:`NOTICE_FILENAME`.
+    """The finished ZIP: a data COG and a mask file per requested asset, the AOI
+    as GeoJSON, plus :data:`NOTICE_FILENAME`.
 
     Built entirely in memory (a ``BytesIO`` buffer, never a temp file) so the
     caller can stream the result without anything having touched disk.
 
     ``resolution_factor`` (F10c, M3-18 §10) only names the resolution the
     caller already resolved into each ``crop``'s ``width``/``height`` — it is
-    never used to compute pixels here, only to label the filename and the
+    never used to compute pixels here, only to label the filenames and the
     notice file with the value the caller chose.
 
     ``gdal_env`` (F7, M3-18): the same GDAL/VSI settings `gateway` builds for
@@ -869,12 +1019,16 @@ def build_download_zip(
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
             for crop in crops:
-                cog_bytes = crop_asset_to_cog_bytes(
+                crop_bytes = crop_asset_to_cog_bytes(
                     open_reader, crop.paths, aoi_geometry, width=crop.width, height=crop.height
                 )
                 archive.writestr(
-                    crop_filename(crop.asset, resolution_factor=resolution_factor), cog_bytes
+                    crop_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.data
                 )
+                archive.writestr(
+                    mask_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.mask
+                )
+            archive.writestr(AOI_FILENAME, json.dumps(dict(aoi_geometry)))
             archive.writestr(
                 NOTICE_FILENAME,
                 build_notice_text(

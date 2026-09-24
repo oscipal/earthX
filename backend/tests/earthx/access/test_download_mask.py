@@ -1,17 +1,25 @@
-"""The AOI mask a download's crop carries (F3, M3-18, Otto 24.09.2026).
+"""The AOI mask a download's crop carries (F3, M3-18; redefined 23.09.2026, M3-18 §3).
 
-``test_download.py`` checks ``_image_to_cog_bytes`` against a fake reader that
+``test_download.py`` checks the data/mask split against a fake reader that
 ignores the AOI geometry entirely — useful for the size cap and the ZIP shape,
-useless for the mask itself, which rio-tiler only ever computes from a real
-geometry against a real raster grid (``Reader.feature``'s own cutline
-rasterisation). This file reads the real synthetic COG of ``mini_cog.py``
-through the real ``open_asset``/``CogReader`` path — the socket swapped out,
-everything else real — the same pattern `test_download_zarr.py` uses for the
-second format.
+useless for the mask itself, which is only ever computed from a real geometry
+against a real raster grid (``rasterize``). This file reads the real synthetic
+COG of ``mini_cog.py`` through the real ``open_asset``/``CogReader`` path — the
+socket swapped out, everything else real — the same pattern
+`test_download_zarr.py` uses for the second format.
+
+**Mask instead of nodata (Otto, 23.09.2026, M3-18 §3).** The data file
+(``visual.tif``) is always the full bounding box, at the source's own
+validity, whatever the polygon's shape — nothing here masks a pixel for lying
+outside the AOI. The polygon itself lives in the companion mask file
+(``visual_mask.tif``): ``1`` inside, ``0`` outside, same grid as the data.
 """
 
 from __future__ import annotations
 
+import json
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -80,9 +88,6 @@ def _asset():
 
 
 def _open_zip_member(zip_bytes: bytes, name: str) -> rasterio.io.DatasetReader:
-    import zipfile
-    from io import BytesIO
-
     with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
         member = archive.read(name)
     memfile = MemoryFile(member)
@@ -90,7 +95,10 @@ def _open_zip_member(zip_bytes: bytes, name: str) -> rasterio.io.DatasetReader:
 
 
 class TestTheAoiMaskOnARealCog:
-    def test_a_slanted_polygon_masks_outside_and_keeps_inside(self, served: list[str]) -> None:
+    def test_a_slanted_polygon_leaves_the_data_file_untouched(self, served: list[str]) -> None:
+        """Otto, 23.09.2026 (M3-18 §3): the data file is a plain bounding-box crop —
+        every pixel keeps its source value and validity, whatever the polygon's
+        shape. The polygon itself is checked separately, on the mask file, below."""
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
             open_reader=open_asset,
@@ -99,33 +107,53 @@ class TestTheAoiMaskOnARealCog:
             item_ids=[ITEM],
         )
         with _open_zip_member(zip_bytes, "visual.tif") as raster:
-            # No alpha band, whatever the AOI shape — the mask is a GDAL-internal
-            # band, never a fourth data band (plan §2 "Maske, >= 2 Items").
+            # No alpha band (plan §2 "Maske, >= 2 Items") — still a GDAL-internal
+            # mask band, but reflecting only the source's own validity now.
             assert raster.count == 3
-            mask = raster.dataset_mask()
             data = raster.read()
 
-            corner_mask = mask[0, 0]
-            center_mask = mask[mask.shape[0] // 2, mask.shape[1] // 2]
-            assert corner_mask == 0, "the diamond's own corner must be outside the mask"
-            assert center_mask == 255, "the diamond's centre must be inside the mask"
-
-            # F3: a masked pixel is written as plain 0, not a leftover source value.
-            assert (data[:, 0, 0] == 0).all()
-            # And the mask, not a coincidence with the fill value, is what a reader
-            # must trust: an interior pixel is real data, so it is virtually never 0
-            # on all three bands (mini_cog.py reserves 0 and only ever writes 1..255).
-            assert not (data[:, mask.shape[0] // 2, mask.shape[1] // 2] == 0).all()
+            # mini_cog.py never writes the reserved nodata value (1..255 only), and
+            # the diamond no longer clips anything here — every pixel in the whole
+            # bounding box is valid and keeps its original value.
+            assert (raster.dataset_mask() == 255).all()
+            assert (data != 0).all()
 
             # No `nodata` tag at all (F3, M3-18): the mask above is what a reader
             # must trust, and cog_translate's `add_mask=True` measurably cannot
             # carry a `nodata` tag on the same call without corrupting the file
-            # (module docstring of `_image_to_cog_bytes`).
+            # (module docstring of `_masked_array_to_cog_bytes`).
             assert raster.nodata is None
 
-    def test_a_rectangle_aoi_is_unchanged_no_pixel_is_masked_by_the_cutline(
+    def test_a_slanted_polygon_s_mask_file_marks_outside_and_inside(self, served: list[str]) -> None:
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_asset,
+            crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
+            aoi_geometry=_diamond_aoi(),
+            item_ids=[ITEM],
+        )
+        with _open_zip_member(zip_bytes, "visual.tif") as raster, _open_zip_member(
+            zip_bytes, "visual_mask.tif"
+        ) as mask_raster:
+            assert mask_raster.count == 1
+            assert mask_raster.dtypes[0] == "uint8"
+            # Same grid as the data file — a consumer can index the two together.
+            assert mask_raster.shape == raster.shape
+            assert mask_raster.transform == raster.transform
+
+            mask = mask_raster.read(1)
+            corner = mask[0, 0]
+            centre = mask[mask.shape[0] // 2, mask.shape[1] // 2]
+            assert corner == 0, "the diamond's own corner must be outside the mask"
+            assert centre == 1, "the diamond's centre must be inside the mask"
+            assert set(mask.flatten().tolist()) <= {0, 1}
+
+    def test_a_rectangle_aoi_still_gets_a_mask_file_for_uniformity(
         self, served: list[str]
     ) -> None:
+        """Plan §11: a rectangle in WGS84 lon/lat is not necessarily aligned with
+        the source's own (possibly rotated) pixel grid, so a mask file ships even
+        here — checked, not assumed to be all `1`."""
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
             open_reader=open_asset,
@@ -135,10 +163,29 @@ class TestTheAoiMaskOnARealCog:
         )
         with _open_zip_member(zip_bytes, "visual.tif") as raster:
             assert raster.count == 3
-            # mini_cog.py never writes the reserved nodata value (1..255 only), so a
-            # plain rectangle AOI must come back with every pixel inside the mask —
-            # exactly the M2-06 behaviour this task must not change (plan §5).
+            # The data file is never cropped to the polygon (M3-18 §3) — every
+            # pixel of the bounding box stays valid, rectangle or not.
             assert (raster.dataset_mask() == 255).all()
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            assert "visual_mask.tif" in archive.namelist()
+        with _open_zip_member(zip_bytes, "visual_mask.tif") as mask_raster:
+            mask = mask_raster.read(1)
+            assert set(mask.flatten().tolist()) <= {0, 1}
+            assert (mask == 1).any()
+
+    def test_the_aoi_geojson_carries_the_requested_geometry(self, served: list[str]) -> None:
+        aoi_geometry = _diamond_aoi()
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_asset,
+            crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
+            aoi_geometry=aoi_geometry,
+            item_ids=[ITEM],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            # Round-tripped through JSON on both sides: the ring's points are
+            # plain tuples until they cross that boundary, lists afterwards.
+            assert json.loads(archive.read(dl.AOI_FILENAME).decode("utf-8")) == json.loads(json.dumps(aoi_geometry))
 
 
 class TestWindowedReadMatchesTheWholeArrayRead:
