@@ -33,6 +33,7 @@ function restore(overrides: Partial<LayerRestore> = {}): LayerRestore {
     selectedIds: ['S2A_1'],
     itemIds: ['S2A_1'],
     aoi: AOI,
+    cropToAoi: true,
     datasetId: 'sentinel-2-l2a',
     ...overrides,
   };
@@ -145,6 +146,22 @@ describe('downloadRequestFor', () => {
 
   it('returns null without any pinned scenes', () => {
     expect(downloadRequestFor(layer({ itemIds: [] }), DATASETS)).toBeNull();
+  });
+
+  // M3-09 review (Otto, 24.09.2026): a "View full selection" layer's download
+  // does *not* follow the view — it still needs the drawn AOI, exactly like a
+  // "Crop to AOI" layer. Routing an uncropped download through this same
+  // crop endpoint would downsize it to the tiler's output cap, which is not
+  // what P19 asks for a whole scene (the original, unresized, straight from
+  // the source); that real behaviour is M3-17's job.
+  it('still needs the drawn AOI when the layer was pinned uncropped ("View full selection")', () => {
+    expect(downloadRequestFor(layer({ cropToAoi: false, aoi: null }), DATASETS)).toBeNull();
+  });
+
+  it('a quicklook-only layer needs the AOI regardless of cropToAoi', () => {
+    expect(
+      downloadRequestFor(layer({ focusMode: false, downloaded: {}, cropToAoi: false, aoi: null }), DATASETS),
+    ).toBeNull();
   });
 });
 

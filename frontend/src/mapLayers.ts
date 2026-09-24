@@ -4,15 +4,17 @@
 
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
 
+import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
 import { quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
-import { asFeatureCollection, bboxToPolygon, quicklookCoords } from './geoUtils';
+import { asFeatureCollection, footprintOf, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
+import { groupOutlineFeatures } from './groupOutline';
 import type { MapLayer } from './layers';
-import type { AppliedRender, DownloadedInfo, StacItem } from './types';
+import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
@@ -278,11 +280,6 @@ function clearDynamicMosaic(map: MapLibreMap): void {
 const beforeAoi = (map: MapLibreMap): string | undefined =>
   map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
-function footprintOf(item: StacItem): GeoJSON.Geometry | null {
-  if (item.geometry) return item.geometry;
-  return item.bbox ? bboxToPolygon(item.bbox) : null;
-}
-
 // Exported for M2-07c: the same footprint-or-bbox fallback the mosaic
 // selection highlight uses, reused to draw real scene footprints once the
 // coverage answer's `footprints_advised` switches the map away from density.
@@ -343,10 +340,20 @@ function addPreview(
   });
 }
 
-function addTiles(map: MapLibreMap, info: DownloadedInfo, i: number, render: AppliedRender): void {
+// `clip` is the AOI to cut this scene's tiles to, or `null` for the whole
+// scene ("View full selection", M3-09) — resolved by the caller from
+// `cropToAoi`, never read here from anywhere else, so this stays the one
+// place a raster overlay's tile URL is actually built.
+function addTiles(
+  map: MapLibreMap,
+  info: DownloadedInfo,
+  i: number,
+  render: AppliedRender,
+  clip: GeoJSON.Geometry | null,
+): void {
   const srcId = `m-tiles-src-${i}`;
   const lyrId = `m-tiles-lyr-${i}`;
-  placeRaster(map, srcId, lyrId, buildTileUrl(info.tileUrl, render), info.bounds, 1, info);
+  placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
   dynSourceIds.push(srcId);
   dynLayerIds.push(lyrId);
 }
@@ -398,6 +405,18 @@ export interface MosaicState {
   render: AppliedRender;
   focusMode: boolean; // full-res tiles are only drawn while focused on a download
   showDownloaded: boolean; // when false, downloaded full-res overlays are hidden
+  // The AOI to clip the full-resolution tiles to, and whether the current
+  // view actually is cropped to it (M3-09: "Crop to AOI" vs. "View full
+  // selection") — both optional so every existing call site that never draws
+  // a cropped view (the browse preview, most tests) can leave them out.
+  aoi?: GeoJSON.Geometry | null;
+  cropToAoi?: boolean;
+  // The full grouping of the current results (M3-09 §10) — needed only to
+  // resolve which group each shown scene belongs to when cropped, where the
+  // selection outline becomes one ring per group instead of one per scene
+  // (`syncHighlight`). Optional like `aoi`/`cropToAoi` above, for the same
+  // reason: most call sites never draw a cropped view.
+  groups?: TimeStepGroup[];
 }
 
 // Full-resolution raster tiles (M2-07b). Tearing the existing layers down and
@@ -411,13 +430,19 @@ export interface MosaicState {
 // click on a full-resolution image reloads it".
 export function syncFocusRaster(
   map: MapLibreMap,
-  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded'>,
+  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi'>,
 ): void {
   clearDynamicMosaic(map);
   if (!s.showDownloaded) return;
-  Object.values(s.downloaded)
-    .slice(0, MAX_MOSAIC_LAYERS)
-    .forEach((info, i) => addTiles(map, info, i, s.render));
+  const clip = s.cropToAoi ? (s.aoi ?? null) : null;
+  const entries = Object.entries(s.downloaded).slice(0, MAX_MOSAIC_LAYERS);
+  // Drawn in reverse selection order, so the *first*-selected scene ends up
+  // topmost — the same "first valid pixel wins" rule the download's mosaic
+  // uses (rio_tiler's `FirstMethod`, `adr/0006` §3.5), so overlapping scenes
+  // agree between the view and the downloaded file. This used to draw in
+  // selection order, putting the *last*-selected scene on top instead
+  // (M3-09 finding).
+  [...entries].reverse().forEach(([, info], i) => addTiles(map, info, i, s.render, clip));
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time
@@ -440,6 +465,33 @@ export function syncSelectionHighlight(map: MapLibreMap, items: StacItem[], sele
   setData(map, SEL_SRC, footprintsFC(limited.filter((it) => selectedIds.includes(it.id))));
 }
 
+// M3-09 §10: in the cropped focus view ("Crop & merge to AOI"), the same
+// yellow outline source shows one ring per group instead of one per scene —
+// `groupOutlineFeatures` (pure geometry, `groupOutline.ts`) does the actual
+// union/intersection; this just publishes its result.
+function syncGroupOutlines(
+  map: MapLibreMap,
+  groups: TimeStepGroup[],
+  visibleIds: ReadonlySet<string>,
+  aoi: GeoJSON.Geometry,
+): void {
+  setData(map, SEL_SRC, { type: 'FeatureCollection', features: groupOutlineFeatures(groups, visibleIds, aoi) });
+}
+
+// Picks between the two: per-group outlines only in a cropped focus view (the
+// one case with something to merge), the plain per-scene highlight
+// otherwise — browsing, "View full selection", or without a usable AOI.
+export function syncHighlight(
+  map: MapLibreMap,
+  s: Pick<MosaicState, 'items' | 'selectedIds' | 'focusMode' | 'cropToAoi' | 'aoi' | 'downloaded' | 'groups'>,
+): void {
+  if (s.focusMode && s.cropToAoi && s.aoi && s.groups) {
+    syncGroupOutlines(map, s.groups, new Set(Object.keys(s.downloaded)), s.aoi);
+    return;
+  }
+  syncSelectionHighlight(map, s.items, s.selectedIds);
+}
+
 /** Reconcile everything in one call — used for a full rebuild (initial load,
  *  after a style reload wipes every custom source/layer). Everyday updates
  *  go through the finer-grained functions above instead, so a selection
@@ -450,5 +502,5 @@ export function syncMosaic(map: MapLibreMap, s: MosaicState): void {
   } else {
     syncBrowseMosaic(map, s);
   }
-  syncSelectionHighlight(map, s.items, s.selectedIds);
+  syncHighlight(map, s);
 }

@@ -32,6 +32,7 @@ export default function ViewerControls() {
   const applyRender = useAppStore((s) => s.applyRender);
   const autoStretch = useAppStore((s) => s.autoStretch);
   const focusLoading = useAppStore((s) => s.focusLoading);
+  const cropToAoi = useAppStore((s) => s.cropToAoi);
   const exitFocus = useAppStore((s) => s.exitFocus);
   const clearAll = useAppStore((s) => s.clearAll);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
@@ -45,7 +46,9 @@ export default function ViewerControls() {
   return (
     <div className="panel viewer-controls">
       <div className="vc-head">
-        <span className="vc-title">FULL-RESOLUTION VIEW · {datasetTitle}</span>
+        <span className="vc-title">
+          FULL-RESOLUTION VIEW · {datasetTitle} · {cropToAoi ? 'cropped to AOI' : 'whole selection'}
+        </span>
         <div className="results-head-right">
           <span className="vc-sub">
             {count} image{count === 1 ? '' : 's'}

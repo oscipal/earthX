@@ -4,6 +4,15 @@ import proj4 from 'proj4';
 
 import type { Bbox, StacAsset, StacItem } from './types';
 
+// A scene's own footprint, or its bbox as a rectangle when the item carries
+// no `geometry` — the same fallback the mosaic selection highlight
+// (`mapLayers.ts`) and the coverage footprints (M2-07c) both need, so it
+// lives here once rather than twice.
+export function footprintOf(item: Pick<StacItem, 'geometry' | 'bbox'>): GeoJSON.Geometry | null {
+  if (item.geometry) return item.geometry;
+  return item.bbox ? bboxToPolygon(item.bbox) : null;
+}
+
 export function bboxToPolygon(bbox: Bbox): GeoJSON.Polygon {
   const [minx, miny, maxx, maxy] = bbox;
   return {
