@@ -20,9 +20,9 @@ import {
   setCoverageDisplay,
   syncBrowseMosaic,
   syncFocusRaster,
+  syncHighlight,
   syncLayers,
   syncMosaic,
-  syncSelectionHighlight,
 } from '../mapLayers';
 import { baseMapStyle } from '../mapStyles';
 import { useAppStore } from '../store';
@@ -209,6 +209,7 @@ export default function MapView() {
         showDownloaded: st.showDownloaded,
         aoi: st.aoi,
         cropToAoi: st.cropToAoi,
+        groups: st.groups,
       });
       initDraw();
       readyRef.current = true;
@@ -314,14 +315,24 @@ export default function MapView() {
   }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
-  // (potentially expensive) overlay rebuilds above. ---
+  // (potentially expensive) overlay rebuilds above. In a cropped focus view
+  // ("Crop & merge to AOI", M3-09 §10) this draws one ring per group instead
+  // of one per scene (`syncHighlight` picks between the two). ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const idx = focusMode ? activeGroupIndex : expandedGroupIndex;
-      syncSelectionHighlight(map, itemsForMap(groups, idx, selectedIds), selectedIds);
+      syncHighlight(map, {
+        items: itemsForMap(groups, idx, selectedIds),
+        selectedIds,
+        focusMode,
+        cropToAoi,
+        aoi,
+        downloaded,
+        groups,
+      });
     }
-  }, [groups, focusMode, activeGroupIndex, expandedGroupIndex, selectedIds]);
+  }, [groups, focusMode, cropToAoi, aoi, downloaded, activeGroupIndex, expandedGroupIndex, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

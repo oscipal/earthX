@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { buildTileUrl, syncFocusRaster, syncMosaic, syncSelectionHighlight } from './mapLayers';
-import type { AppliedRender, DownloadedInfo, StacItem } from './types';
+import { buildTileUrl, syncFocusRaster, syncHighlight, syncMosaic, syncSelectionHighlight } from './mapLayers';
+import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
   return {
@@ -297,5 +297,81 @@ describe('syncSelectionHighlight: no layer churn', () => {
     expect(sources).toHaveLength(sourcesAfterRaster);
     expect(layers).toHaveLength(layersAfterRaster);
     expect((data['mosaicsel-src'] as GeoJSON.FeatureCollection).features).toHaveLength(1);
+  });
+});
+
+// M3-09 §10: in a cropped focus view, the yellow outline switches from one
+// ring per scene to one per group.
+describe('syncHighlight', () => {
+  const AOI: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 40],
+        [20, 40],
+        [20, 55],
+        [0, 55],
+        [0, 40],
+      ],
+    ],
+  };
+  const groupA: TimeStepGroup = {
+    key: ['a'],
+    label: 'a',
+    items: [
+      { id: 'S1', bbox: [1, 47, 2, 48], properties: {}, assets: {} },
+      { id: 'S2', bbox: [1.5, 47, 2.5, 48], properties: {}, assets: {} },
+    ],
+  };
+  const groupB: TimeStepGroup = {
+    key: ['b'],
+    label: 'b',
+    items: [{ id: 'S3', bbox: [10, 47, 11, 48], properties: {}, assets: {} }],
+  };
+
+  it('draws one ring per group when the view is cropped', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [],
+      selectedIds: [],
+      focusMode: true,
+      cropToAoi: true,
+      aoi: AOI,
+      downloaded: { S1: info(), S2: info(), S3: info() },
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(2);
+  });
+
+  it('falls back to the per-scene highlight when the view is not cropped', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [groupA.items[0]],
+      selectedIds: ['S1'],
+      focusMode: true,
+      cropToAoi: false,
+      aoi: AOI,
+      downloaded: { S1: info() },
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].properties?.id).toBe('S1');
+  });
+
+  it('falls back to the per-scene highlight while browsing (not in focus mode)', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [groupA.items[0]],
+      selectedIds: ['S1'],
+      focusMode: false,
+      cropToAoi: false,
+      aoi: null,
+      downloaded: {},
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
   });
 });
