@@ -29,6 +29,14 @@ export interface LayerRestore {
   // but a crop only needs the item id, the dataset and the AOI).
   itemIds: string[];
   aoi: GeoJSON.Geometry | null;
+  // Whether the full-resolution view this layer was pinned from was cropped
+  // to `aoi` ("Crop to AOI") or showed the whole selection uncropped ("View
+  // full selection", M3-09) — meaningless while `focusMode` is false, where a
+  // quicklook-only layer's download always needs `aoi` regardless of it.
+  // Drives both the map (was the pinned overlay's tile URL clipped) and the
+  // download (`download.ts::downloadRequestFor`: what "download follows the
+  // view" means for this layer, P19).
+  cropToAoi: boolean;
   // The dataset the layer was pinned from (M2-07d): the current selection
   // (`store.datasetId`) can move on to a different dataset while the layer
   // stays pinned, and a download has to name the dataset the pinned items

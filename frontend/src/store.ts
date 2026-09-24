@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { clipTileUrl } from './aoiClip';
 import * as api from './api';
 import type { CoverageResponse } from './api';
 import { clampBboxLongitude, FOOTPRINT_FETCH_LIMIT, showFootprints } from './coverage';
@@ -159,6 +160,12 @@ interface AppState {
   focusMode: boolean;
   showDownloaded: boolean;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
+  // Whether the current focus view is cropped to `aoi` ("Crop to AOI") or
+  // shows the whole selection uncropped ("View full selection", M3-09) —
+  // meaningless while `focusMode` is false. Drives the map's AOI clipping
+  // (`mapLayers.ts::syncFocusRaster`) and, once pinned, the layer's own
+  // download (`download.ts::downloadRequestFor`, P19).
+  cropToAoi: boolean;
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
@@ -235,7 +242,7 @@ interface AppState {
   openDownloadForSelection: () => void;
   closeDownloadDialog: () => void;
   confirmDownload: () => Promise<void>;
-  enterFocus: () => Promise<void>;
+  enterFocus: (cropToAoi: boolean) => Promise<void>;
   exitFocus: () => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
@@ -283,6 +290,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
+  cropToAoi: false,
 
   layers: [],
   layerManagerOpen: false,
@@ -337,6 +345,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       notice: null,
       focusMode: false,
+      cropToAoi: false,
       downloaded: {},
       appliedRender: {},
       coverage: null,
@@ -385,6 +394,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       notice: null,
       focusMode: false,
+      cropToAoi: false,
       downloaded: {},
       appliedRender: {},
       pendingColormapName: '',
@@ -405,10 +415,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? Object.entries(s.downloaded).filter(([id]) => s.selectedIds.includes(id))
         : Object.entries(s.downloaded);
       itemIds = entries.map(([id]) => id);
+      // Baked into the tile URL once, here, rather than re-decided later by
+      // `syncLayers`: a pinned layer keeps whatever crop it was pinned with
+      // even if the live AOI moves on afterwards (M3-09).
+      const clip = s.cropToAoi ? s.aoi : null;
       for (const [, info] of entries) {
         overlays.push({
           kind: 'raster',
-          tileUrl: buildTileUrl(info.tileUrl, s.appliedRender),
+          tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, s.appliedRender), clip),
           bounds: info.bounds,
           minZoom: info.minZoom,
           maxZoom: info.maxZoom,
@@ -463,6 +477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedIds: [...s.selectedIds],
         itemIds,
         aoi: s.aoi,
+        cropToAoi: s.focusMode ? s.cropToAoi : false,
         datasetId: s.datasetId,
       },
     };
@@ -495,6 +510,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         expandedGroupIndex: r.activeGroupIndex,
         selectedIds: r.selectedIds,
         aoi: r.aoi,
+        cropToAoi: r.cropToAoi,
         showDownloaded: true,
       };
     }),
@@ -568,7 +584,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   // visualisation, then measure a stretch once (adr/0006 §3.4) so the fields
   // are not left empty. Statistics are an optimisation (E5) — a failure keeps
   // the registry's static default in place instead of failing the view.
-  enterFocus: async () => {
+  // `cropToAoi` picks which of the two "View full resolution" buttons
+  // (`ViewBar.tsx`) was pressed — "Crop to AOI" or "View full selection"
+  // (M3-09); the AOI clip itself happens later, on the map
+  // (`mapLayers.ts::syncFocusRaster`), never here.
+  enterFocus: async (cropToAoi) => {
     const s = get();
     const group = s.groups[s.activeGroupIndex];
     const items = s.selectedIds.length
@@ -576,6 +596,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       : (group?.items ?? []);
     if (items.length === 0) {
       set({ error: 'Nothing to view — pick a time step or select scenes first.' });
+      return;
+    }
+    if (cropToAoi && !s.aoi) {
+      set({ error: 'Draw or search an area of interest first.' });
       return;
     }
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
@@ -608,6 +632,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       error: null,
       focusMode: true,
+      cropToAoi,
       showDownloaded: true,
       downloaded,
       appliedRender: appliedRenderFrom(render),
@@ -620,6 +645,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   exitFocus: () =>
     set({
       focusMode: false,
+      cropToAoi: false,
       downloaded: {},
       appliedRender: {},
       pendingColormapName: '',
@@ -808,6 +834,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       playing: false,
       panelCollapsed: true,
       focusMode: false,
+      cropToAoi: false,
       downloaded: {},
       appliedRender: {},
     });
@@ -899,6 +926,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedIds: [item.id],
         panelCollapsed: true,
         focusMode: false,
+        cropToAoi: false,
         playing: false,
         downloaded: {},
         appliedRender: {},
