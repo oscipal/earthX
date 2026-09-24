@@ -12,12 +12,20 @@
     "visual": {
       "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/00/A/AA/2026/7/SYNTH_T00AAA_20260724T100000_L2A/TCI.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
-      "roles": ["visual"]
+      "roles": ["visual"],
+      "gsd": 10,
+      "raster:bands": [
+        {"data_type": "uint8", "nodata": 0},
+        {"data_type": "uint8", "nodata": 0},
+        {"data_type": "uint8", "nodata": 0}
+      ]
     },
     "red": {
       "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/00/A/AA/2026/7/SYNTH_T00AAA_20260724T100000_L2A/B04.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
-      "roles": ["data", "reflectance"]
+      "roles": ["data", "reflectance"],
+      "gsd": 10,
+      "raster:bands": [{"data_type": "uint16", "nodata": 0}]
     },
     "thumbnail": {
       "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/00/A/AA/2026/7/SYNTH_T00AAA_20260724T100000_L2A/L2A_PVI.jpg",
