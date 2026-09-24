@@ -3,18 +3,19 @@
 **Aufgabe:** M3-09 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 24.09.2026 freigegeben**: F1 (1), F2 (eigener
 Wortlaut, seit einem weiteren Nachtrag „Crop & merge to AOI“ / „View full
-selection“, unter einer gemeinsamen „Full resolution“-Beschriftung, §6). Der
-Plan-Schritt ist damit abgeschlossen, die Umsetzung liegt in diesem
-Branch/PR; §5–§7 sind auf den tatsächlichen Stand nachgezogen
-(**Fassung 1.2**). **F3 wurde im Review von PR #84 (Otto, 24.09.2026) wieder
-zurückgenommen** — der Download eines Layers folgt nicht der Ansicht, sondern
-verlangt weiter immer eine AOI, wie vor dieser Aufgabe; was dazu geprüft
-wurde, steht jetzt als Fundstelle bei M3-17
-(`plans/m3-dritte-quelle-und-interface.md`, Abschnitt M3-17). Näheres in §7/§8.
-**§10 ist ein neuer Plan-Schritt** (Otto, weiterer Nachtrag zu PR #84,
-24.09.2026): Gruppen-Umrandung und -Zusammenfassung im Zuschnitt-Modus. **Die
-Session hält dort an** — noch nicht umgesetzt, wartet auf Ottos Antworten zu
-F4/F5.
+selection“, unter einer gemeinsamen „Full resolution“-Beschriftung, §6). **F3
+wurde im Review von PR #84 (Otto, 24.09.2026) wieder zurückgenommen und mit
+einem weiteren Nachtrag endgültig bestätigt** — der Download eines Layers
+folgt nicht der Ansicht, sondern verlangt weiter immer eine AOI, wie vor
+dieser Aufgabe; was dazu geprüft wurde, steht als Fundstelle bei M3-17
+(`plans/m3-dritte-quelle-und-interface.md`, Abschnitt M3-17). Bekannte
+Abweichung bis M3-17, siehe §7. **§10 ist mit F4 (a, `polyclip-ts` statt
+`polygon-clipping`) und F5 (ja) freigegeben (Otto, 24.09.2026) und
+umgesetzt** — Gruppen-Umrandung und ein Layer je Gruppe im Zuschnitt-Modus.
+Der Plan-Schritt ist damit vollständig abgeschlossen, die Umsetzung liegt in
+diesem Branch/PR; §5–§7 und §10 sind auf den tatsächlichen Stand nachgezogen
+(**Fassung 1.3** — „Fassung 2“ ist für den Schnitt von M3-11 reserviert und
+wird hier nicht verwendet).
 **Ort im Repo:** `docs/plans/m3-09-zuschnitt-ansicht.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (P11, P12, P19,
 §4 M3-09, M3-17, M3-18); `adr/0001` (Zustand, Z2, Z9); `adr/0006` (Kachel-Pfad,
@@ -97,7 +98,7 @@ bleiben unverändert. Die Entscheidung kommt als Zeile ins Log.
 
 ---
 
-## 5. Umsetzung von Weg A (Fassung 1.1: wie tatsächlich gebaut)
+## 5. Umsetzung von Weg A (wie tatsächlich gebaut)
 
 **Neues Modul `frontend/src/aoiClip.ts`.** Es importiert von `maplibre-gl`
 bewusst **nur Typen** (`import type`, zur Bauzeit entfernt): `store.ts` und
@@ -246,8 +247,16 @@ die Ansicht tatsächlich je Gruppe zusammenfasst.
   Fallunterscheidung (`asset_hosts`/`earthx:viewer` sagen nichts über das
   Format) — dafür fehlt ein Registry-Feld, wahrscheinlich zusammen mit M3-12.
   (4) Das Muster „Knopf deaktiviert + Tooltip mit Begründung“ für Zarr ohne
-  AOI gibt es in dieser Aufgabe schon einmal (der „Crop to AOI“-Knopf ohne
-  AOI, `ViewBar.tsx`) und lässt sich für M3-17 übernehmen.
+  AOI gibt es in dieser Aufgabe schon einmal (der „Crop & merge to AOI“-Knopf
+  ohne AOI, `ViewBar.tsx`) und lässt sich für M3-17 übernehmen.
+- **Bekannte Abweichung bis M3-17 (Otto, festgehalten 24.09.2026):** Bei
+  „View full selection“ mit einer gezeichneten AOI zeigt die Karte die ganzen
+  Szenen, ein Download des Layers liefert aber weiterhin den AOI-Zuschnitt —
+  weil `downloadRequestFor` immer `restore.aoi` verlangt und cropped, sobald
+  eine AOI da ist, unabhängig vom Zuschnitt-Modus der Ansicht. Das ist kein
+  neuer Fehler dieser Aufgabe (dasselbe galt schon vor M3-09, als es nur eine
+  Ansicht gab), aber jetzt sichtbarer, weil beide Modi nebeneinander existieren.
+  Aufgelöst wird das erst mit M3-17s eigenem Download-für-die-ganze-Szene-Weg.
 - **Nicht Teil von M3-09:** die COG-Direktweiterleitung ohne Umweg über die
   Plattform, der deaktivierte Zarr-Download ohne AOI, und der ZIP-Download
   mehrerer ganzer Originale einzeln (M3-17, P19) — alles wie ursprünglich
@@ -302,9 +311,7 @@ Umgesetzt in diesem Branch/PR (§1–§9). Entscheidungslog-Zeilen in
 
 ---
 
-## 10. Neuer Plan-Schritt: Gruppen-Umrandung und -Zusammenfassung (Otto, 24.09.2026)
-
-**Noch nicht umgesetzt — Vorschlag, Session hält an.**
+## 10. Gruppen-Umrandung und -Zusammenfassung im Zuschnitt-Modus (Otto, 24.09.2026 — freigegeben und umgesetzt)
 
 **Ziel.** Im Zuschnitt-Modus („Crop & merge to AOI“) stellt die gelbe
 Auswahl-Umrandung nicht mehr jede ganze Szene einzeln dar, sondern je Gruppe
@@ -312,98 +319,104 @@ Auswahl-Umrandung nicht mehr jede ganze Szene einzeln dar, sondern je Gruppe
 einen Ring: AOI ∩ Vereinigung der Szenen-Umrisse dieser Gruppe. Keine Linien
 zwischen Szenen derselben Gruppe. Ohne Zuschnitt („View full selection“)
 bleibt die Umrandung je Szene wie bisher — dort gibt es nichts zu vereinigen,
-weil nichts zugeschnitten wird.
+weil nichts zugeschnitten wird. Dazu: ein angehefteter Layer im
+Zuschnitt-Modus je Gruppe statt einem für die ganze Auswahl.
 
-**Wo das hingehört.** Rein im Browser, reine Funktion: Eingabe `groups:
+**Wo das sitzt.** Neues, reines Modul `frontend/src/groupOutline.ts` — kein
+MapLibre, kein Netzwerk, die AOI bleibt im Speicher. Eingabe `groups:
 TimeStepGroup[]` (schon vorhanden, `store.ts`), die Menge der gerade
-sichtbaren Item-IDs (`Object.keys(downloaded)`) und die AOI; Ausgabe eine
-`GeoJSON.FeatureCollection`, ein Feature je Gruppe. Kein neuer
-Gruppierungscode: Ein Item gehört zu der `TimeStepGroup` aus `store.groups`,
-die es enthält (`groupIndexOfItem`, schon vorhanden) — nicht zu einer neu
-berechneten Gruppe. Sitzt neben `syncSelectionHighlight` in `mapLayers.ts`,
-ersetzt sie nur, wenn `focusMode && cropToAoi` beide gelten; sonst unverändert
-die heutige Pro-Szene-Umrandung. Die AOI verlässt dafür so wenig den Browser
-wie beim Zuschnitt selbst (§5) — hier fällt nicht einmal ein Netzwerk-Request
-an, es ist reine Geometrie im Speicher.
+sichtbaren Item-IDs und die AOI; Ausgabe eine Liste von Features, eines je
+Gruppe. Kein neuer Gruppierungscode: Ein Item gehört zu der `TimeStepGroup`
+aus `store.groups`, die es enthält — dafür sorgt `footprintOf` (nach
+`geoUtils.ts` verschoben, jetzt von `mapLayers.ts` und `groupOutline.ts`
+gemeinsam genutzt) und `groupIndexOfItem` (schon vorhanden, für die
+Layer-Aufteilung in `store.ts`). `mapLayers.ts::syncHighlight` entscheidet je
+Aufruf zwischen der neuen Gruppen-Umrandung und der bisherigen
+Pro-Szene-Umrandung (`syncSelectionHighlight`) — genau dann, wenn
+`focusMode && cropToAoi && aoi` alle drei gelten, sonst unverändert wie
+zuvor.
 
-### F4 — Bibliothek für Vereinigung und Schnitt
+### F4 — Bibliothek für Vereinigung und Schnitt: `polyclip-ts` (Otto, a)
 
-Gemessen (`esbuild --bundle --minify`, ausgehend von der jeweils aktuellen
-npm-Version, Ergebnis in Byte minifiziert / gzip, für **beide** Operationen
-zusammen — Union kostet für jede Bibliothek fast genauso viel wie Union+Schnitt
-zusammen, der Unterschied liegt im Kern, nicht in der zweiten Operation):
+Gemessen (`esbuild --bundle --minify`, Ergebnis in Byte minifiziert / gzip,
+für **beide** Operationen zusammen — Union kostet für jede Bibliothek fast
+genauso viel wie Union+Schnitt zusammen, der Unterschied liegt im Kern, nicht
+in der zweiten Operation):
 
 | Bibliothek | Version | min / gzip | Eingabeform | Bemerkung |
 |---|---|---|---|---|
 | `polybooljs` | 1.2.2 | 14,5 kB / 5,1 kB | eigenes `{regions, inverted}`-Format | am kleinsten; braucht einen kleinen Adapter, Löcher nicht 1:1 wie GeoJSON |
 | `martinez-polygon-clipping` | 0.8.1 | 17,0 kB / 5,9 kB | Koordinaten-Arrays wie GeoJSON | turf hat diese Bibliothek in v7 wegen bekannter Robustheitsfehler durch `polyclip-ts` ersetzt |
-| **`polygon-clipping`** | 0.15.7 | 29,7 kB / 9,8 kB | **exakt `Polygon`/`MultiPolygon.coordinates`** | geprüft: `union([ring],[ring])`/`intersection(...)` nehmen und liefern dieselbe Ring-Array-Form wie `GeoJSON.Polygon.coordinates`; kaum Adapter nötig; weit verbreitet, gepflegt |
-| `polyclip-ts` (turf v7s Kern) | 0.16.8 | 42,1 kB / 15,2 kB | wie `polygon-clipping`, exakte Arithmetik (`bignumber.js`) | robuster gegenüber Selbstschnitten, aber deutlich schwerer für unseren Fall (einfache Szenen-Vierecke) |
-| `@turf/union` + `@turf/intersect` | 7.4.0 | 44,4 kB / 15,9 kB | `Feature<Polygon\|MultiPolygon>` | dünner Wrapper um `polyclip-ts`; braucht zusätzlich Feature-Verpackung |
+| `polygon-clipping` | 0.15.7 | 29,7 kB / 9,8 kB | exakt `Polygon`/`MultiPolygon.coordinates` | meine ursprüngliche Empfehlung: leichter, aber mit Fließkomma-Arithmetik statt exakter |
+| **`polyclip-ts`** (turf v7s Kern) | 0.16.8 | 42,1 kB / 15,2 kB | wie `polygon-clipping`, exakte Arithmetik (`bignumber.js`) | **Ottos Wahl** — robuster gegenüber Selbstschnitten und Grenzfällen, die ~5 kB gzip Unterschied sind es Otto wert |
+| `@turf/union` + `@turf/intersect` | 7.4.0 | 44,4 kB / 15,9 kB | `Feature<Polygon\|MultiPolygon>` | dünner Wrapper um `polyclip-ts`; ausgeschlagen, weil `polyclip-ts` direkt genauso robust ist, ohne die Feature-Verpackung |
 | `clipper-lib` | 6.4.2 | 100,1 kB / 25,9 kB | eigene Integer-Koordinaten | am schwersten, Skalierung Grad→Integer nötig |
 
-**Empfehlung: `polygon-clipping`.** Nimmt und liefert exakt die Ring-Array-Form
-von `GeoJSON.Polygon`/`MultiPolygon.coordinates` — für unsere Szenen-Vierecke
-und die AOI reicht das, ohne Feature-Verpackung oder ein fremdes Format. Bei
-9,8 kB gzip fällt es neben `maplibre-gl` und `terra-draw` kaum ins Gewicht.
-`polyclip-ts`/`@turf` wären robuster gegen pathologische Eingaben (selbst
-überschneidende Polygone), was hier nicht der erwartete Fall ist — echte
-Szenen-Footprints und eine im Zeichentool erzeugte AOI sind einfache,
-überwiegend konvexe Vierecke bzw. Polygone.
+`polyclip-ts` nimmt und liefert dieselbe Ring-Array-Form wie
+`Polygon`/`MultiPolygon.coordinates` (nur der `Ring`-Elementtyp ist ein
+Tupel `[number, number]` statt eines schlichten `number[]` — ein einziger,
+exakter Cast an dieser einen Stelle, sonst kein Adapter).
 
-**Antimeridian.** Keine der Bibliotheken versteht Kugelgeometrie — alle
-rechnen eben in Lon/Lat als wären es x/y. Eine Szene, deren Footprint über die
-180°-Linie reicht (MGRS-Zonen 1/60, selten aber real bei Sentinel-2), ergibt
-mit jeder dieser Bibliotheken ein falsches Ergebnis, wenn sie nicht vorher auf
-eine durchgehende Lon-Achse gebracht wird — ein eigenständiges, größeres
-Problem (Kugelgeometrie schneiden), das hier nicht mitgelöst wird.
-**Vorschlag:** vor dem Rechnen prüfen, ob die Lon-Spanne einer Gruppe (oder der
-AOI) 180° übersteigt (dieselbe Art Prüfung wie `coverage.ts::clampBboxLongitude`
-schon für den AOI-Wrap macher Weltkopien macht); trifft das zu, für **diese
-eine Gruppe** auf die bisherige Pro-Szene-Umrandung zurückfallen, statt eine
-falsche Vereinigung zu zeichnen (Prinzip 9: nichts Falsches ohne Kennzeichnung
-zeigen — hier: lieber die alte, richtige Darstellung als eine neue, falsche).
-Das eigentliche Schneiden über den Antimeridian bleibt ungelöst und wird nicht
-in M3-09 nachgebaut.
+**Antimeridian und Rechenfehler, beide mit Rückfall (Otto).** Keine dieser
+Bibliotheken versteht Kugelgeometrie — alle rechnen in Lon/Lat als wären es
+x/y. Eine Szene, deren Footprint über die 180°-Linie reicht (MGRS-Zonen
+1/60, selten aber real bei Sentinel-2), ergibt ein falsches Ergebnis, **ohne
+dass die Bibliothek dabei einen Fehler wirft** (geprüft: ein Ring von 179°
+bis −179° kommt als 358° breit statt 2° zurück). Deshalb prüft
+`groupOutlineFeatures` vor jeder Rechnung die kombinierte Lon-Spanne von
+Gruppen-Footprints und AOI (dieselbe Art Prüfung wie
+`coverage.ts::clampBboxLongitude` schon für den AOI-Wrap macher Weltkopien
+macht); übersteigt sie 180°, fällt **nur diese eine Gruppe** auf ihre
+bisherige Pro-Szene-Umrandung zurück. Zusätzlich läuft die eigentliche
+Rechnung in `try`/`catch`: Ein degenerierter Eingabewert (geprüft: `NaN` in
+einer Koordinate) lässt `polyclip-ts` selbst einen Fehler werfen
+(„Tried to create degenerate segment“) — auch das fällt auf die
+Pro-Szene-Umrandung dieser Gruppe zurück, statt die ganze Ansicht
+abzubrechen. Das eigentliche Schneiden über den Antimeridian bleibt
+ungelöst und wird nicht nachgebaut (Prinzip 9: lieber die alte, richtige
+Darstellung als eine neue, falsche).
 
-### F5 — Layer-Manager: ein Eintrag je Gruppe?
+### F5 — Layer-Manager: ein Eintrag je Gruppe (Otto, ja)
 
-**Otto empfiehlt: ja.** Deckt sich mit dem, was der Code schon hergibt: Ein
-`MapLayer` ist heute schon eine unabhängige Zeile im Layer-Manager mit eigenem
-Download (`downloadRequestFor` sendet nur `restore.itemIds`). Im
-Zuschnitt-Modus müsste `addCurrentToLayers` also nicht einen neuen Typ
-einführen, sondern **mehrere `MapLayer`-Objekte statt eines** anlegen — eines
-je Gruppe der gepinnten Items, jedes mit nur den Overlays und `itemIds` seiner
-eigenen Gruppe. Der Layer-Manager zeigt dann automatisch eine Zeile je Gruppe,
-jede mit ihrem eigenen ⇩-Knopf, ohne dass `LayerManager.tsx`, `LayerRestore`
-oder der Download-Endpunkt sich ändern müssten — items einer Gruppe waren im
-Download ohnehin schon immer gemeinsam gemergt (P19), das ändert sich nicht,
-es wird nur zu einer eigenen Layer-Zeile. **Empfehlung: ja, wie Otto
-vorschlägt.**
+`store.ts::addCurrentToLayers` legt im Zuschnitt-Modus **mehrere
+`MapLayer`-Objekte statt eines** an — eines je Gruppe der gepinnten Items,
+jedes mit nur den Overlays und `itemIds` seiner eigenen Gruppe, den
+Kachel-URLs schon auf die AOI zugeschnitten (`clipTileUrl`). Weder
+`LayerManager.tsx` noch `LayerRestore` noch der Download-Endpunkt mussten
+sich ändern: Der Layer-Manager zeigt automatisch eine Zeile je erzeugtem
+`MapLayer`, jede mit ihrem eigenen ⇩-Knopf über das schon bestehende
+`downloadRequestFor` (`restore.itemIds` bleibt je Layer auf die eine Gruppe
+begrenzt). Ohne Zuschnitt („View full selection“) und beim Anheften aus der
+Trefferliste (Browse-Modus) bleibt „Add to layers“ unverändert bei einem
+Layer für die ganze Auswahl.
 
-Ohne Zuschnitt bleibt „Add to layers“ unverändert bei einem Layer für die
-ganze Auswahl (dort gibt es keine Gruppen-Vereinigung, §10 gilt nur für
-„Crop & merge to AOI“).
+### Geänderte Dateien
 
-### Geänderte Dateien (Schätzung, nach Freigabe)
+`groupOutline.ts` + `groupOutline.test.ts` (neu), `geoUtils.ts`
+(`footprintOf` hierher verschoben und exportiert), `mapLayers.ts`
+(`syncHighlight`, `MosaicState.groups`) + neue Tests, `MapView.tsx`
+(`syncHighlight` statt `syncSelectionHighlight`, `groups` an `syncMosaic`),
+`store.ts::addCurrentToLayers` (mehrere Layer im Zuschnitt-Modus) + neue
+Tests, `package.json`/`package-lock.json` (`polyclip-ts` als Abhängigkeit).
+Kein Backend.
 
-`mapLayers.ts` (neue Funktion für die Gruppen-Umrandung, ersetzt
-`syncSelectionHighlight` im Zuschnitt-Modus), `store.ts::addCurrentToLayers`
-(mehrere Layer statt einem im Zuschnitt-Modus), `package.json`
-(`polygon-clipping` als Abhängigkeit), plus Tests. Kein Backend.
+### Abnahme
 
-### Abnahme (nach Freigabe)
-
-- Vitest: Umrandung einer Gruppe aus zwei überlappenden Szenen ist ein
-  einziger Ring; zwei Gruppen ergeben zwei Ringe; eine Gruppe ganz außerhalb
-  der AOI ergibt keinen Ring; eine Gruppe, deren Lon-Spanne 180° übersteigt,
-  fällt auf die Pro-Szene-Umrandung zurück, statt falsch zu rechnen; ohne
-  Zuschnitt bleibt die Pro-Szene-Umrandung unverändert.
-- Layer-Manager: Anheften im Zuschnitt-Modus mit zwei Gruppen ergibt zwei
-  Zeilen, jede mit eigenem Download; ohne Zuschnitt weiterhin eine Zeile.
-- `npm run lint`, `npx tsc -b --pretty false`, `npx vitest run` grün.
-
-**F4/F5 an Otto — Antwort erbeten, bevor gebaut wird:**
-1. F4: `polygon-clipping` — *Empfehlung* — oder eine der Alternativen oben.
-2. F5: ein Layer je Gruppe im Zuschnitt-Modus — *Empfehlung, wie von Otto
-   vorgeschlagen*.
+- **Vitest** (`groupOutline.test.ts`, 8 Tests): Umrandung einer Gruppe aus
+  zwei überlappenden Szenen ist ein einziger Ring; zwei Gruppen ergeben zwei
+  Ringe; eine Gruppe ohne sichtbare Items wird übersprungen; eine Gruppe ganz
+  außerhalb der AOI ergibt keinen Ring; ein degenerierter Eingabewert lässt
+  die Rechnung fehlschlagen und fällt auf die Pro-Szene-Umrandung zurück; eine
+  Gruppe, deren Lon-Spanne 180° übersteigt, ebenso; eine AOI, die kein
+  Polygon/MultiPolygon ist, lässt jede Gruppe zurückfallen; eine
+  `MultiPolygon`-AOI wird wie eine `Polygon`-AOI vereinigt.
+- **`mapLayers.test.ts`** (`syncHighlight`, 3 neue Tests): ein Ring je Gruppe
+  im Zuschnitt-Modus; Rückfall auf die Pro-Szene-Umrandung ohne Zuschnitt;
+  Rückfall beim Browsen (nicht im Fokus-Modus).
+- **`store.test.ts`** (4 neue Tests): ein Layer je Gruppe statt einem für die
+  ganze Auswahl im Zuschnitt-Modus; jeder Layer auf die AOI zugeschnitten und
+  als `cropToAoi: true` markiert; eine engere Auswahl heftet nur die davon
+  betroffenen Gruppen an; ohne Zuschnitt weiterhin ein Layer für die ganze
+  Auswahl (Regressionstest).
+- `npm run lint` (oxlint), `npx tsc -b --pretty false`, `npx vitest run`
+  grün.

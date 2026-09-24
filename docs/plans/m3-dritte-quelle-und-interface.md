@@ -590,27 +590,24 @@ mehrere Originale lädt; wie Gruppen im Download-Request übergeben werden,
 ohne datensatzspezifische Logik im Frontend; Beschriftung des Knopfs. Dazu
 prüfen: Lizenz und Attribution beim direkten Laden von der Quelle (B11), ob
 die Asset-URLs öffentlich über https erreichbar sind, und dass die AOI nicht
-in URLs oder Logs landet.
+in URLs oder Logs landet. **Aus M3-09 bereits bekannt (PR #84, Otto-Review
+24.09.2026), als Randbedingung für den Plan-Schritt:** der bestehende
+Zuschnitt-Endpunkt taugt nicht für ein Original — er deckelt strukturell auf
+`MAX_OUTPUT_SIDE_PX` (`access/download.py`, M3-18) — das Original muss direkt
+von der Quelle kommen, ohne Umweg über die Plattform; für Zarr ohne AOI fehlt
+noch der deaktivierte Download-Knopf mit Hinweis „Draw an AOI to download“
+(das Muster „Knopf deaktiviert + Tooltip mit Begründung“ gibt es in M3-09
+schon einmal, dem „Crop & merge to AOI“-Knopf ohne AOI, `ViewBar.tsx`, und
+lässt sich hier übernehmen). Weitere Fundstellen aus M3-09: ein
+`<a href=… download>`-Link im Browser lädt eine öffentliche Asset-URL ohne
+CORS-Freigabe (anders als die Canvas-Weiterverarbeitung der Quicklooks);
+ob eine Quelle COG oder Zarr ist, steht heute für das Frontend nirgends ohne
+datensatzspezifische Fallunterscheidung — dafür fehlt ein Registry-Feld,
+wahrscheinlich zusammen mit M3-12. Details: `plans/m3-09-zuschnitt-ansicht.md`
+§7/§8.
 **Abnahme:** Tests für jeden Fall aus P19 (Zuschnitt eine Gruppe, Zuschnitt
 mehrere Gruppen, eine ganze Szene COG, Zarr ohne AOI deaktiviert, mehrere
 ganze Szenen einzeln); Otto prüft lokal, dass Karte und Datei übereinstimmen.
-
-**Fundstelle aus M3-09 (PR #84, Otto-Review 24.09.2026):** Ein erster Versuch,
-den Download einer ganzen, uncropped angehefteten Szene über den bestehenden
-Zuschnitt-Endpunkt zu geben (Szenen-bbox als „AOI“), wurde dort zurückgenommen
-— er deckelt auf `MAX_OUTPUT_SIDE_PX` (`access/download.py`, M3-18) und liefert
-damit kein Original. Für M3-17 mitgebracht: (1) der Zuschnitt-Endpunkt ist für
-eine ganze COG-Szene der falsche Weg, sie braucht einen eigenen, der die
-Plattform ganz umgeht; (2) ein einfacher `<a href=… download>`-Link im Browser
-lädt eine öffentliche Asset-URL ohne CORS-Freigabe (anders als die
-Canvas-Weiterverarbeitung der Quicklooks) — vermutlich der einfachste Baustein
-dafür; (3) ob eine Quelle COG oder Zarr ist, steht heute für das Frontend
-nirgends ohne datensatzspezifische Fallunterscheidung — dafür fehlt ein
-Registry-Feld, wahrscheinlich zusammen mit M3-12; (4) das Muster „Knopf
-deaktiviert + Tooltip mit Begründung“ für den Zarr-Fall ohne AOI gibt es in
-M3-09 bereits einmal (der „Crop to AOI“-Knopf ohne AOI, `ViewBar.tsx`) und
-lässt sich hier übernehmen. Details:
-`plans/m3-09-zuschnitt-ansicht.md` §7/§8.
 
 ### M3-18 — Download-Deckel nach Ausgabegröße und Maske auf die AOI
 
