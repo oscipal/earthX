@@ -1,10 +1,12 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 1.1 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
+**Status:** Fassung 1.2 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
 dritten Quelle (M3-11) werden nach der Annahme von `adr/0009` in Fassung 2 im
 Einzelnen geschnitten. Fassung 1.1 nimmt Ottos Antworten auf den
 Konformitätsbericht auf (`plans/m3-02-konformitaetsbericht.md` §8): neue
-Aufgabe M3-16, Eckpunkte in M3-11, M3-12, M3-14 und M3-15.
+Aufgabe M3-16, Eckpunkte in M3-11, M3-12, M3-14 und M3-15. Fassung 1.2 nimmt
+Ottos Entscheidungen vom 23.09.2026 zum Download auf (P19): neue Aufgabe
+M3-17.
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
@@ -55,6 +57,7 @@ entsteht danach das Adapter-Interface als ADR.
 | P16 | **Kleinaufgaben:** tilejson-Fix als Stufe A; Python 3.12 als frühe Stufe-B-Aufgabe | M3-03, M3-04 |
 | P17 | **M3-00 Doku** bereinigt die Widersprüche aus der M3-Vorbereitung | M3-00 |
 | P18 | **Konformitätsbericht** einmal zu Beginn von M3, keine Routine | M3-02 |
+| P19 | **Download folgt der Ansicht:** heruntergeladen wird, was die Karte zeigt. Zuschnitt sichtbar: je Gruppe (Überflug, Gruppierungsschlüssel der Trefferliste, ab M3-12 aus der Registry) eine gemergte Datei, verschiedene Gruppen als getrennte Dateien im selben ZIP, Deckel 4096 px und 200 MB bleiben. Ganze Szene sichtbar, eine Szene gewählt (COG): Download der Originaldatei direkt von der Quelle durch den Browser, ohne Umweg über die Plattform. Zarr (EOPF): Download immer als Zuschnitt, nie der ganze Speicher; ohne AOI ist der Download-Knopf deaktiviert, Hinweis „Draw an AOI to download“. Mehrere ganze Szenen gewählt: in M3 die Originale einzeln; ein gemergtes Mosaik ganzer Szenen je Überflug ist ein Processing-Job und für M4 vorgemerkt (Vorschlag) | M3-17 |
 
 ### 1.2 Was in allen Aufgaben gilt
 
@@ -99,7 +102,7 @@ dieser Quelle nach der Checkliste; gemischte Suche und CQL2-Prüfung;
 mit Umriss und Bounding Box; Zuschnitt in der Vollauflösungs-Ansicht;
 Datensatz-Filter in der Suchkachel; Frontend-Sonderfälle in die Registry;
 tilejson-Fix; Python 3.12; Konformitätsbericht; Mess-Spike Zählwürfel;
-Interface-ADR.
+Interface-ADR; Download folgt der Ansicht.
 
 **Nicht in M3:** Mosaik im Kachel-Pfad (M4, P11); Rezept, Operatoren, Jobs,
 Objektspeicher (M4); Bau des Heatmap-Zählwürfels (P13); Health-Status und
@@ -107,7 +110,7 @@ Prüfdatum (M5, P14, D29); Hybrid-Suche (M5); Uvicorn-Worker des `tiler` (M5);
 COG-Header-Cache (Log offen); Neubewertung MinIO (vor M4); Ratenbegrenzung pro
 IP oder Nutzer (D6); Bug-Report Stufe 2 (D9); helle Basiskarte (D10);
 Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
-§13, Nutzungsbedingungen).
+§13, Nutzungsbedingungen); gemergtes Mosaik ganzer Szenen (M4, Job).
 
 ---
 
@@ -134,6 +137,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11, M3-13 |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — |
+| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09, M3-12 |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A und C laufen
 daneben.
@@ -141,7 +145,8 @@ daneben.
 1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05, M3-16 (A/C), dazu M3-03 und
    M3-08 (B); M3-08 wird erst nach M3-16 gemergt.
 2. **Welle 2:** M3-06a, M3-09, danach M3-06b, M3-07a.
-3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12.
+3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12,
+   danach M3-17.
 4. **Welle 4:** M3-13, dann M3-14, zuletzt M3-15.
 
 **Dateikonflikte im Frontend:** M3-06b, M3-07b, M3-10 und M3-12 berühren die
@@ -425,7 +430,7 @@ Szenen nur den Teil innerhalb der AOI, also das, was er herunterlädt (P12).
 **Verhalten (entschieden):** Trefferliste mit ganzen Quicklooks wie heute. In
 der Vollauflösung ist außerhalb der AOI das Bild ausgeblendet, die Basiskarte
 bleibt sichtbar. Ein Knopf: mit AOI zugeschnitten, ohne AOI (Szenensuche per
-Namen) die ganze Szene. Download unverändert.
+Namen) die ganze Szene. Download: siehe M3-17.
 **Randbedingungen:** keine exakte AOI in Kachel-URLs oder Logs; zustandslos,
 kein Zwischenspeicher des Zuschnitts (`adr/0001`); kein Mosaik im Kachel-Pfad
 (P11); keine datensatzspezifischen Sonderfälle; überlappende Szenen in
@@ -567,6 +572,22 @@ Vermerk: Neubewertung mit der Verfügbarkeits-Zeitleiste in M5.
 keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 **Hängt ab von:** —. M3-08 wird erst nach M3-16 gemergt.
 
+### M3-17 — Download folgt der Ansicht
+
+**Ziel:** Der Download liefert immer das, was die Karte zeigt (P19).
+**Stufe B.**
+**Verhalten (entschieden):** siehe P19.
+**Im Plan-Schritt vorschlagen:** welche Dateien bei „Original“ geladen werden
+(nur die Bänder der sichtbaren Darstellung oder alle); wie der Browser
+mehrere Originale lädt; wie Gruppen im Download-Request übergeben werden,
+ohne datensatzspezifische Logik im Frontend; Beschriftung des Knopfs. Dazu
+prüfen: Lizenz und Attribution beim direkten Laden von der Quelle (B11), ob
+die Asset-URLs öffentlich über https erreichbar sind, und dass die AOI nicht
+in URLs oder Logs landet.
+**Abnahme:** Tests für jeden Fall aus P19 (Zuschnitt eine Gruppe, Zuschnitt
+mehrere Gruppen, eine ganze Szene COG, Zarr ohne AOI deaktiviert, mehrere
+ganze Szenen einzeln); Otto prüft lokal, dass Karte und Datei übereinstimmen.
+
 ---
 
 ## 5. Abnahme von M3
@@ -581,7 +602,8 @@ keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 4. AOI aus GeoJSON, KML und Shapefile über das Backend; Ortssuche mit Umriss
    und Bounding Box; Polygon-AOIs suchen über `intersects`.
 5. Die Vollauflösung zeigt mit AOI nur den Zuschnitt, ohne AOI die ganze
-   Szene; keine AOI in Kachel-URLs oder Logs.
+   Szene; keine AOI in Kachel-URLs oder Logs; der Download entspricht der
+   Ansicht (M3-17).
 6. `adr/0011` (Adapter-Interface) ist von Otto freigegeben.
 7. Importregeln grün, kein ausgehender Request außerhalb von `gateway`;
    Pflicht-CI grün auf Python 3.12.
