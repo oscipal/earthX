@@ -15,8 +15,9 @@ only the reader's first call(s) made to fail — no network:
   failure — to "the asset could not be read from the source", which would hide a
   genuine code-level bug behind the same message a real upstream failure gets.
 
-The three tests named for them below failed before the fix (see the PR); the
-happy-path test is a plain regression guard against the retry loop itself.
+Every test below failed before the fix (see the PR) except the happy path, which
+is a plain regression guard against the retry loop itself — a failure can happen
+at the open or partway through the read, so both are covered.
 """
 
 from __future__ import annotations
@@ -57,7 +58,9 @@ class FlakyReader:
     """``open_asset``, except the first ``fail_first`` calls raise ``error``.
 
     Every later call opens the real synthetic COG for real — the point is that a
-    fix has to *recover*, not merely detect the failure.
+    fix has to *recover*, not merely detect the failure. Fails at *open*, one of
+    the two places a real read can fail; :class:`FlakyPreviewReader` below covers
+    the other.
     """
 
     def __init__(self, *, fail_first: int, error: Exception | None = None) -> None:
@@ -70,6 +73,58 @@ class FlakyReader:
         if self.calls <= self.fail_first:
             return _FailsToOpen(self.error)
         return open_asset(src_path, **reader_params)
+
+
+class _OpensFineFailsOnPreview:
+    """A real, opened reader whose ``preview()`` raises ``error`` if ``should_fail()``
+    still says so — a fresh instance is built per attempt, but the failure count is
+    the *reader's* to track, not this wrapper's (a retry opens a new one of these).
+
+    Stands in for a block fetch failing *after* the file opened successfully —
+    the far more likely place for one of the many scattered blocks a full-extent
+    decimated read touches to fail, as against :class:`_FailsToOpen` above, which
+    only covers the open itself.
+    """
+
+    def __init__(self, real: Any, *, should_fail: Any, error: Exception) -> None:
+        self._real = real
+        self._should_fail = should_fail
+        self._error = error
+
+    def __enter__(self) -> "_OpensFineFailsOnPreview":
+        self._src_dst = self._real.__enter__()
+        return self
+
+    def __exit__(self, *exc_info: object) -> bool:
+        return self._real.__exit__(*exc_info)
+
+    def preview(self, *args: Any, **kwargs: Any) -> Any:
+        if self._should_fail():
+            raise self._error
+        return self._src_dst.preview(*args, **kwargs)
+
+
+class FlakyPreviewReader:
+    """``open_asset``, except the *first* reader it hands back fails its ``preview()``.
+
+    The open always succeeds; only the read after it does not, once.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self._failed_once = False
+
+    def _should_fail(self) -> bool:
+        if self._failed_once:
+            return False
+        self._failed_once = True
+        return True
+
+    def __call__(self, src_path: Any, **reader_params: Any) -> Any:
+        self.calls += 1
+        real = open_asset(src_path, **reader_params)
+        error = RasterioIOError("simulated: a block failed partway through the read")
+        return _OpensFineFailsOnPreview(real, should_fail=self._should_fail, error=error)
 
 
 @pytest.fixture
@@ -123,6 +178,16 @@ def test_a_read_failure_that_never_recovers_is_still_reported_as_unreadable(loca
     assert response.status_code == 502
     assert response.json()["detail"] == "the asset could not be read from the source"
     assert reader.calls == 2, "retried exactly once, not forever"
+
+
+def test_a_failure_partway_through_the_read_is_also_retried_and_recovers(local_cog: AssetPath) -> None:
+    """The open can succeed and the read still fail — a fresh reader per attempt
+    covers that too, not only a reader that never opened at all."""
+    reader = FlakyPreviewReader()
+    response = _client(local_cog, reader).get("/statistics")
+
+    assert response.status_code == 200
+    assert reader.calls == 2, "the retry must open a fresh reader, not retry .preview() on the failed one"
 
 
 def test_a_non_io_rasterio_error_is_not_reported_as_unreadable(local_cog: AssetPath) -> None:
