@@ -831,3 +831,142 @@ ob eine Maskendatei diesmal fehlt. Getestet in
 
 Log-Zeile (Otto, „fest“): siehe `ENTSCHEIDUNGSLOG.md`, Eintrag vom
 24.09.2026 „Maske statt nodata“.
+
+---
+
+## 12. Zwei Befunde aus Ottos lokaler Prüfung von PR #86 (23.09.2026) — **behoben**
+
+### 12.1 Befund A: „Download failed: the asset could not be read from the source“ bei bestimmten Items
+
+**Ursache, Teil 1 — Fehlerabbildung.** `api/tiler.py::download_crop` fing bislang
+`except (RasterioError, GatewayError)` und meldete beides als 502 „the asset
+could not be read from the source“. `RasterioError` ist aber die Basisklasse
+für über zwei Dutzend GDAL-Fehler, von denen nur eine Unterklasse
+(`RasterioIOError`) einen echten Lesefehler bedeutet — jeder andere
+`RasterioError` (ein ungültiger Transform, eine Blockgrößen-Verletzung, eine
+falsche Array-Form: genau die Art Fehler, die ein Bug in unserem eigenen
+COG-Schreibcode auslöst) wurde durch dieses `except` genauso als „konnte nicht
+von der Quelle gelesen werden“ gemeldet — falsch, und es hätte den
+tatsächlichen Fehler verdeckt. `build_app` registriert dafür bereits die
+richtigen Handler (`_rasterio_io_error` → 502 mit `warning`-Log,
+`_rasterio_error` → 500 „the asset could not be processed“ mit `error`-Log
+und vollem Traceback, beide mit Request-ID über `logging.py`s Formatter) —
+sie kamen bei der Download-Route nur nie zum Zug, weil das lokale `except`
+alles vorher abfing. **Fix:** das lokale `except` fängt nur noch
+`RasterioIOError` (plus `GatewayError`, dessen Unterklassen alle echte
+Netzwerk-/Host-Fehler sind); alles andere propagiert zu den schon
+vorhandenen App-Handlern. Test:
+`test_download_route.py::test_a_genuine_read_failure_is_502_with_the_source_message`
+(unverändert 502) und
+`test_an_internal_bug_is_500_not_mislabelled_as_a_read_failure` (jetzt 500,
+mit Nachweis, dass der echte Fehler geloggt wird — wird ohne den Fix rot,
+mit `RasterBlockError` als Fall für „ein Bug, keine Quelle“).
+
+**Ursache, Teil 2 — echte Randfälle.** Fünf von Otto benannte Fälle,
+nachgestellt mit synthetischen COGs (`test_download_edge_cases.py`, keine
+Gateway-/Netzwerk-Anbindung nötig — `open_reader` öffnet einen echten
+`rio_tiler.io.rasterio.Reader` direkt gegen einen `/vsimem/`-Pfad):
+
+1. **Polygon ragt teilweise über den Rand des Assets** — funktionierte
+   bereits richtig (`.part()` liefert für den überhängenden Teil `nodata`,
+   für den übrigen Teil echte Daten), kein Fund, jetzt mit Test abgesichert.
+2. **Polygon trifft nur den nodata-Teil einer Randszene** und
+   **Polygon schneidet das Asset nicht, obwohl der Footprint es tut** sind
+   im Code dieselbe Lücke: `.part()` wirft — anders als `.feature()`s
+   Cutline-Lesart — **nie** eine Exception, wenn die angefragte Bounding Box
+   die Daten überhaupt nicht trifft; es kommt einfach ein vollständig
+   maskiertes Array zurück. Der fensterweise Pfad
+   (`_write_native_windowed_cog`) prüft das schon selbst (`any_valid_in_aoi`)
+   und meldet `AoiOutsideItems`; der naive/Mosaik-Pfad (`crop_asset` +
+   `_image_to_asset_crop_bytes`) tat das **nicht** — eine AOI, die die echten
+   (oft gedrehten) Daten eines Mosaiks verfehlt, wäre als scheinbar
+   erfolgreicher, aber vollständig leerer Download durchgegangen, statt als
+   `AoiOutsideItems`/400. **Fix:** `_image_to_asset_crop_bytes` rasterisiert
+   die AOI einmal (ohnehin für die Maskendatei nötig) und prüft vor dem
+   Schreiben, ob irgendein Pixel innerhalb der AOI in irgendeinem Band gültig
+   ist — sonst `AoiOutsideItems`, wie beim fensterweisen Pfad. Tests:
+   `TestPolygonOnlyTouchesNodata`, `TestPolygonMissesTheFootprintDespiteTheBbox`
+   (Mosaik aus zwei Items und Einzel-Item mit expliziter gröberer Auflösung,
+   die beide den naiven Pfad nehmen) — alle rot ohne den Fix.
+3. **Zwei Szenen einer Gruppe in verschiedenen UTM-Zonen** — funktionierte
+   bereits richtig: `.part()`s `dst_crs` ist immer die AOI-eigene (WGS84),
+   nie die native CRS eines Items, also reprojiziert jedes Mosaik-Item
+   unabhängig von seiner eigenen Zone auf dasselbe Ausgaberaster. Kein Fund,
+   jetzt mit Test (`TestMosaicAcrossUtmZones`) abgesichert.
+4. Siehe Punkt 2.
+5. **Maske bei Bändern mit unterschiedlicher Auflösung (10/20/60 m)** —
+   funktionierte bereits richtig: jede Maskendatei wird aus dem eigenen
+   `image.transform`/`image.array.shape` ihres Assets gebaut, nie aus einem
+   fremden. Test (`TestMaskMatchesEachAssetsOwnResolution`) prüft das explizit
+   mit zwei Assets unterschiedlicher nativer Auflösung im selben Request statt
+   es nur anzunehmen.
+
+**Warum die bisherigen Tests das nicht fanden:** `test_download_mask.py`s
+einziges synthetisches COG (`mini_cog.py`) deckt jedes Pixel mit Werten
+1..255 ab — es enthält **nirgends** echten Quellen-nodata innerhalb seiner
+Ausdehnung, nur außerhalb (der reservierte Tag-Wert, den niemand liest). Kein
+bestehender Test hat je eine AOI gebaut, die eine Szene *nur* an ihrem
+nodata-Rand trifft oder eine Bounding Box anfragt, die ein Item komplett
+verfehlt — die Randfälle, um die es hier geht, brauchten eigens dafür gebaute
+Geometrien und Nodata-Muster.
+
+**Nebenfund während der Investigation (nicht behoben, an Otto eskaliert):**
+`test_download_mask.py` wiederholt ausgeführt (`pytest` mehrfach als eigener
+Prozess gestartet) zeigt eine bereits im letzten Push vorhandene, intermittierende
+GDAL/libtiff-Korruption beim Schreiben komprimierter COGs
+(„ZSTDDecode: Unknown frame descriptor“, „TIFFReadEncodedTile() failed“) —
+dieselbe Fehlerart wie F9 (§9), aber **auch bei ZSTD**, nicht nur bei DEFLATE
+wie F9s Messung (200/200 sauber) nahelegte. Bestätigt reproduzierbar auf dem
+Stand *vor* dieser Sitzung (`git stash` auf Commit `2b2e5e1`, 20 Wiederholungen,
+mehrfach 1-3 von 6 Tests rot) — **kein neuer Fehler dieser Sitzung**, sondern
+vermutlich die eigentliche Ursache hinter Befund A: ein COG-Schreibfehler in
+unserem eigenen Code, der ohne den Fehlerabbildungs-Fix aus §12.1 als
+„could not be read from the source“ mislabelt wurde. Mit dem Fehlerabbildungs-Fix
+kommt er jetzt korrekt als 500 mit echtem Traceback im Log an — die Korruption
+selbst bleibt offen, F9 muss also auf „auch bei ZSTD reproduzierbar, wahrscheinlich
+Ursache von Befund A“ aktualisiert werden. Isolierte Stress-Skripte außerhalb
+von `pytest` konnten es nicht reproduzieren (0/220 über mehrere Varianten);
+es trat nur beim Ausführen der echten `pytest`-Testdatei auf, was auf eine
+Interaktion mit `pytest` selbst hindeutet (Output-Capturing, Assertion-Rewriting-
+Importhook), nicht auf einen reinen GDAL-Race. Otto muss über das weitere
+Vorgehen entscheiden (GDAL/libtiff-Version, `NUM_THREADS`-Erzwingung,
+Schreibstrategie) — außerhalb des Umfangs dieser Aufgabe.
+
+### 12.2 Befund B: Weiße Pixel im Zuschnitt (S2B_T32TNT_20260922T102300_L2A)
+
+**Direkt am echten Item geprüft** (curl/`rasterio` gegen
+`e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`, Lesepfad der
+Download-Route, außerhalb von `gateway`, wie von Otto verlangt):
+
+1. **Ja, echte nodata=0-Werte, aber pro Band sehr unterschiedlich.** Ein
+   1024×1024-Fenster nahe der Bildmitte (Bergschatten/Wald-Region) hat
+   8600/686/2437 nodata-Pixel je Band (von rund einer Million), aber nur
+   **23** Pixel sind in **allen drei** Bändern gleichzeitig nodata. Die
+   übrigen ~11 000 „irgendein Band ist nodata“-Pixel sind zu 99,8 % echte,
+   sehr dunkle Daten (Schattenhang, Wasser), keine fehlende Abdeckung.
+2. **Ja — genau das war der Fehler.** `numpy.ma.getmaskarray(block).any(axis=0)`
+   in `_write_native_windowed_cog`/`_masked_array_to_cog_bytes` kombinierte
+   die Bandmasken zu einer einzigen, für alle Bänder gemeinsamen
+   GDAL-Maskenband: sobald *irgendein* Band an einem Pixel bei seinem eigenen
+   nodata-Wert lag, wurde das Pixel in **allen** Bändern als ungültig markiert
+   — genau das Muster, das ein Betrachter als verstreute weiße Pixel über
+   Schattenhängen, dunklem Wald und Wasser zeigt.
+3. **Werte selbst wurden nicht verändert** — `numpy.ma.filled(array, 0)`
+   respektiert die eigene (bandweise) Maske jedes Bands, verändert also nie
+   ein gültiges Pixel eines anderen Bands. Betroffen war ausschließlich die
+   zusätzliche, kombinierte **Gültigkeits**-Information (die Maskenband), nicht
+   die Pixelwerte der Datendatei selbst — die „Maske statt nodata“-Regel für
+   das AOI-Polygon (§11) war davon nicht verletzt.
+
+**Fix:** kein internes Maskenband mehr für die Quellen-Gültigkeit. Stattdessen
+trägt die Datendatei den `nodata`-Wert der Quelle als reinen Tag weiter
+(`vrt.nodata`/`image.nodata`) — GDALs eigener nodata-Vergleich ist bereits pro
+Band, also braucht es dafür keine eigene Buchführung mehr. Kein `add_mask=True`
+mehr auf der Datendatei. Tests (rot ohne den Fix, siehe Diff-Historie dieser
+Sitzung):
+`test_download.py::TestPerBandNodataNeverCombinedAcrossBands`,
+`TestWindowedPerBandNodata` (synthetisch, unit-nah, kein Netz nötig) sowie
+die reale Messung oben (nicht automatisiert, im PR dokumentiert).
+
+Log-Zeile (Otto, „fest“ vorgeschlagen): siehe `ENTSCHEIDUNGSLOG.md`, Eintrag
+vom 24.09.2026 „Bug A/B aus Ottos Review von PR #86 behoben“.
