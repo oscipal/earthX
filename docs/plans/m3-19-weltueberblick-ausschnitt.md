@@ -1,6 +1,9 @@
 # M3-19 — Weltüberblick ohne AOI: sichtbarer Ausschnitt, Zellstufe folgt dem Kartenzoom
 
-**Status:** Plan (Stufe B), wartet auf Freigabe durch Otto. Nichts umgesetzt.
+**Status:** Umgesetzt. Otto hat §7 am 24.09.2026 wie empfohlen freigegeben
+(F1 (a) `N = 2 000`, F2 (a) Footprints ohne AOI zeigen, F3 (a) Cache-Frist
+5 min/Route unverändert, F4 (a) Farbskala je Antwort). Umsetzung in derselben
+Session, Diff im PR.
 **Datum:** 2026-09-24
 **Aufgabe:** M3-19 aus `plans/m3-dritte-quelle-und-interface.md`, **geänderte
 Vorgabe** von Otto am 23.09.2026 (ersetzt `adr/0010` Antwort 6a „ohne AOI immer
