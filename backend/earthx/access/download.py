@@ -10,26 +10,35 @@ Resolving items and hosts through `gateway` stays in `api` (architekturplan.md
 3.1: `access` may import `readers` and `catalog`, not `gateway`), the same
 split `access.tiles` already draws for the tile path.
 
+**A download is always native resolution (Otto, 23.09.2026, M3-18 §10) —
+never silently downscaled.** ``max_size``/an automatic pixel cap is gone; a
+crop reads at the source's own ``gsd`` unless the caller explicitly asks for
+a coarser one (``width``/``height`` set, F10c — a whole number of times
+coarser, computed by the caller in `api`). Over the size limit, the request
+is refused, never shrunk (F10a below).
+
 **The size cap is checked before any asset is opened, not after.** Rather than
 guess a source's bytes-on-the-wire (adr/0006 §3.4 measured that this depends on
-the COG's block layout, not the AOI), every read is bounded structurally by
-``max_size`` — no reader call here ever produces more than
-:data:`MAX_OUTPUT_SIDE_PX` pixels per side. The byte cap (M3-18, replacing
-M2-06's item-count x asset-count worst case, which rejected any crop of three
-or more items regardless of what they actually mosaic into) is instead built
-from what the *output* will be: :func:`plan_outputs` estimates each ZIP
-member's pixel count from the AOI and the item's own ``gsd``, and its
-bytes-per-pixel from the item's ``raster:bands``/``bands`` — all before a
-single reader is opened, so a request that could not possibly fit under the
-cap never reaches `gateway` or GDAL.
+the COG's block layout, not the AOI), :func:`plan_outputs` estimates each ZIP
+member's pixel count from the AOI and the item's own ``gsd`` (native, unless a
+coarser resolution was chosen), and its bytes-per-pixel from the item's
+``raster:bands``/``bands`` — all before a single reader is opened, so a
+request that could not possibly fit under :data:`MAX_TOTAL_OUTPUT_BYTES`
+(F10a, M3-18 §10) never reaches `gateway` or GDAL.
 
-**Memory is bounded separately from bytes (M3-18).** A mosaic across many
-items read all at once cost several gigabytes even under the 200 MB output cap
-(measured, plan §3) — `mosaic_reader` is therefore always called with
-``threads=1`` (:func:`crop_asset`), which also makes it stop reading further
-items the moment the AOI is fully covered, and a request is capped at
-:data:`MAX_DOWNLOAD_ITEMS` items so a mosaic that genuinely needs many of them
-does not run arbitrarily long.
+**Memory (F10a/F10b, M3-18 §10).** A single item's native-resolution crop is
+read and written one block at a time (:func:`_write_native_windowed_cog`), so
+its full pixel array is never held in Python at once — measured (plan §10.3)
+to save a fifth to a quarter of peak memory on a large crop, with the mask
+identical either way. A mosaic across items still reads one item's *whole*
+window at a time (`mosaic_reader`, ``threads=1``, unwindowed): items are
+capped at :data:`MAX_DOWNLOAD_ITEMS`, and `FirstMethod.exit_when_filled`
+already stops it as soon as the AOI is covered (measured, plan §3), so most
+mosaics only ever read one item's window regardless. A single, large
+native-resolution crop can still cost gigabytes (measured, plan §10.3) —
+`api.tiler` limits how many such crops run at once in the process
+(:data:`LARGE_DOWNLOAD_THRESHOLD_BYTES`, F10a), which belongs there, not here
+(`access` has no process-wide state).
 
 **Mosaicking (D11, adr/0006 §3.5, §4.2 Option M1):** only the crop mosaics
 across items in M2, never the tile path. The item list is filtered to the
@@ -54,9 +63,17 @@ from typing import Any
 
 import numpy
 import rasterio
+from rasterio.enums import Resampling
+from rasterio.features import rasterize
 from rasterio.io import MemoryFile
+from rasterio.transform import from_bounds as transform_from_bounds
+from rasterio.vrt import WarpedVRT
+from rasterio.warp import calculate_default_transform
+from rasterio.windows import Window
+from rasterio.windows import transform as window_transform
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
+from rio_tiler.constants import WGS84_CRS
 from rio_tiler.errors import EmptyMosaicError, PointOutsideBounds, TileOutsideBounds
 from rio_tiler.io import BaseReader
 from rio_tiler.models import ImageData
@@ -64,6 +81,7 @@ from rio_tiler.mosaic import mosaic_reader
 from rioxarray.exceptions import NoDataInBounds
 from shapely.errors import ShapelyError
 from shapely.geometry import box
+from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
@@ -72,9 +90,11 @@ from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
+    "LARGE_DOWNLOAD_THRESHOLD_BYTES",
     "MAX_DOWNLOAD_ITEMS",
     "MAX_OUTPUT_SIDE_PX",
     "MAX_TOTAL_OUTPUT_BYTES",
+    "RESOLUTION_FACTORS",
     "AoiOutsideItems",
     "AoiTooLarge",
     "InvalidAoi",
@@ -85,6 +105,7 @@ __all__ = [
     "check_item_count_cap",
     "check_output_size_cap",
     "crop_asset",
+    "crop_asset_to_cog_bytes",
     "crop_filename",
     "estimate_output_dims",
     "filter_items_intersecting_aoi",
@@ -92,19 +113,32 @@ __all__ = [
     "plan_outputs",
 ]
 
-# Recommendation confirmed by Otto in the plan step of M2-06 (2026-09-20): a
-# starting point, not a measurement — adr/0006 §3.4 has no cost curve for a
-# crop this large yet. 4096 px per side keeps one asset's raw array at or
-# below 4096*4096*4 bytes (~64 MB), and the combination with the byte cap below
-# is what actually limits a mosaic of many items or many assets.
+# Conservative fallback pixel dimension used only when an asset's `gsd` cannot
+# be read off any item at all (F1, M2-06/M3-18 §10) — no longer a downscale
+# mechanism for the normal case: a native-resolution crop is never clipped to
+# this (Otto, 23.09.2026, M3-18 §10).
 MAX_OUTPUT_SIDE_PX = 4096
 
-# 200 MB total across every planned output file a request produces (Otto,
-# 2026-09-20; scope corrected 2026-09-24, M3-18: the output, not the input —
-# see plan_outputs below). A single asset rarely reaches this on its own — the
-# pixel cap above already holds one band near 64 MB — so this cap mostly bites
-# a many-band asset or several assets requested at once.
-MAX_TOTAL_OUTPUT_BYTES = 200_000_000
+# 500 MB total, raw, across every planned output file a request produces
+# (Otto, 23.09.2026, M3-18 §10, replacing the 200 MB from 2026-09-20). Chosen
+# from the measurement in plan §10.3/§10.4: at 500 MB raw the whole crop+COG
+# pipeline peaks around 3.1 GB RSS and ~21 s in-process — acceptable for one
+# request at a time, not for several at once (see LARGE_DOWNLOAD_THRESHOLD_BYTES).
+MAX_TOTAL_OUTPUT_BYTES = 500_000_000
+
+# Above this raw output size, `api.tiler` allows only one such download to run
+# at a time per process (F10a, M3-18 §10): the measurement (plan §10.3) shows
+# peak memory growing roughly linearly with raw output size, so two downloads
+# at ~100 MB raw each would already approach the single-download peak the
+# 500 MB cap above was sized for, and two at the cap itself would not fit
+# beside the tile-serving path in the same process.
+LARGE_DOWNLOAD_THRESHOLD_BYTES = 100_000_000
+
+# The only resolution choices the download dialog offers (F10c, M3-18 §10):
+# native, and whole-number-coarser multiples of it. Generic factors, not new
+# per-asset registry fields — applied to whatever `gsd` each asset already
+# reports.
+RESOLUTION_FACTORS: tuple[int, ...] = (1, 2, 4, 10)
 
 # How many scenes a single mosaic may touch (F4, M3-18, Otto 24.09.2026). This
 # bounds runtime, not memory — `crop_asset`'s `threads=1` mosaic read already
@@ -312,31 +346,31 @@ _DEG_TO_M_LAT = 111_700.0
 _DEG_TO_M_LON_AT_EQUATOR = 111_320.0
 
 
-def estimate_output_dims(aoi: BaseGeometry, gsd: float, *, max_side: int = MAX_OUTPUT_SIDE_PX) -> tuple[int, int]:
-    """Conservative ``(height, width)`` in pixels for a ``max_size=max_side`` read of ``aoi`` at ``gsd`` m/pixel.
+def estimate_output_dims(
+    aoi: BaseGeometry, gsd: float, *, resolution_factor: int = 1
+) -> tuple[int, int]:
+    """Conservative ``(height, width)`` in pixels for a crop of ``aoi`` at ``gsd`` m/pixel.
 
-    Mirrors ``rio_tiler.utils._get_width_height`` (long side clipped to
-    ``max_side``, the other side scaled to keep the AOI's own aspect ratio),
-    but computed from the AOI geometry alone, before any reader opens a
-    dataset (F1, M3-18) — deliberately never smaller than what rio-tiler
-    itself will produce for the same request: the AOI's least-poleward
-    latitude sets the (largest possible) metres a degree of longitude is
-    worth here, and a straddled equator is the largest case of all.
+    Computed from the AOI geometry alone, before any reader opens a dataset
+    (F1, M3-18) — deliberately never smaller than what the reader itself will
+    produce for the same request: the AOI's least-poleward latitude sets the
+    (largest possible) metres a degree of longitude is worth here, and a
+    straddled equator is the largest case of all.
+
+    A download is native resolution unless the caller explicitly chose a
+    coarser one (Otto, 23.09.2026, M3-18 §10): there is no clamp to a maximum
+    side any more, only ``resolution_factor`` (one of :data:`RESOLUTION_FACTORS`)
+    dividing both dimensions down from native.
     """
     minx, miny, maxx, maxy = aoi.bounds
     least_poleward_lat = min(abs(miny), abs(maxy)) if miny * maxy > 0 else 0.0
     lon_m_per_degree = _DEG_TO_M_LON_AT_EQUATOR * math.cos(math.radians(least_poleward_lat))
     width_px = max(1, math.ceil((maxx - minx) * lon_m_per_degree / gsd))
     height_px = max(1, math.ceil((maxy - miny) * _DEG_TO_M_LAT / gsd))
-    if max(width_px, height_px) <= max_side:
-        return height_px, width_px
-    if height_px > width_px:
-        height = max_side
-        width = max(1, math.ceil(height * width_px / height_px))
-    else:
-        width = max_side
-        height = max(1, math.ceil(width * height_px / width_px))
-    return height, width
+    if resolution_factor != 1:
+        width_px = max(1, math.ceil(width_px / resolution_factor))
+        height_px = max(1, math.ceil(height_px / resolution_factor))
+    return height_px, width_px
 
 
 @dataclass(frozen=True)
@@ -358,26 +392,27 @@ def plan_outputs(
     assets: Sequence[str],
     aoi: BaseGeometry,
     *,
-    max_side: int = MAX_OUTPUT_SIDE_PX,
+    resolution_factor: int = 1,
 ) -> list[PlannedOutput]:
     """The worst-case size of every file :func:`build_download_zip` will write, one per asset.
 
     A mosaic across ``items`` is still one file per asset (M2-06; M3-17 keeps
     that shape, one call per group), so the size that matters is the single
     worst-case output, not a sum over items: the finest (smallest) resolution
-    any item advertises for the asset — the most pixels before ``max_side``
-    clips them — and the largest bytes-per-pixel any item advertises, in case
-    sources ever disagree with each other.
+    any item advertises for the asset — native unless ``resolution_factor``
+    chooses a coarser one (F10c, M3-18 §10) — and the largest bytes-per-pixel
+    any item advertises, in case sources ever disagree with each other.
     """
     planned = []
     for asset in assets:
         gsds = [gsd for gsd in (_asset_gsd(item, asset) for item in items) if gsd is not None]
         if gsds:
-            height, width = estimate_output_dims(aoi, min(gsds), max_side=max_side)
+            height, width = estimate_output_dims(aoi, min(gsds), resolution_factor=resolution_factor)
         else:
             # Nothing on any item says how fine this asset is — the same
-            # upper bound M2-06 used for the whole request (F1 option 1).
-            height = width = max_side
+            # conservative upper bound M2-06 used for the whole request
+            # (F1 option 1), scaled down the same way a known gsd would be.
+            height = width = max(1, math.ceil(MAX_OUTPUT_SIDE_PX / resolution_factor))
         bytes_per_pixel = max(
             (_asset_bytes_per_pixel(item, asset) for item in items),
             default=_FALLBACK_BAND_COUNT * _FALLBACK_BYTES_PER_BAND,
@@ -386,7 +421,28 @@ def plan_outputs(
     return planned
 
 
-def check_output_size_cap(planned: Sequence[PlannedOutput], *, max_bytes: int = MAX_TOTAL_OUTPUT_BYTES) -> None:
+def _smallest_fitting_factor(native_total_bytes: float, max_bytes: int) -> int | None:
+    """The smallest value in :data:`RESOLUTION_FACTORS` that brings ``native_total_bytes`` under ``max_bytes``.
+
+    A resolution factor divides both pixel dimensions, so it shrinks bytes by
+    its square — ``None`` if even the coarsest offered factor still would not
+    fit (F10c, M3-18 §10: never suggest a choice that would be refused too).
+    """
+    if native_total_bytes <= 0:
+        return None
+    needed = math.ceil(math.sqrt(native_total_bytes / max_bytes))
+    for factor in RESOLUTION_FACTORS:
+        if factor >= needed:
+            return factor
+    return None
+
+
+def check_output_size_cap(
+    planned: Sequence[PlannedOutput],
+    *,
+    max_bytes: int = MAX_TOTAL_OUTPUT_BYTES,
+    native_planned: Sequence[PlannedOutput] | None = None,
+) -> None:
     """Refuse a request whose planned output cannot fit, before any reader opens anything (M3-18).
 
     Replaces M2-06's item-count x asset-count worst case, which rejected any
@@ -394,15 +450,30 @@ def check_output_size_cap(planned: Sequence[PlannedOutput], *, max_bytes: int = 
     (plan §2) — the estimate here is per output file, built by
     :func:`plan_outputs` from the AOI and the items' own metadata, not from
     how many items or assets were asked for.
+
+    **Never shrinks the request (Otto, 23.09.2026, M3-18 §10).** Over the cap,
+    this always raises rather than silently choosing a coarser resolution.
+    When ``native_planned`` is given (the same request planned at native
+    resolution, F10c), the message names the smallest resolution factor from
+    :data:`RESOLUTION_FACTORS` that would bring the request under the cap, as
+    a suggestion the caller must still choose explicitly.
     """
     if not planned:
         raise AoiTooLarge("no output was planned for this request")
     total = sum(output.total_bytes for output in planned)
-    if total > max_bytes:
-        raise AoiTooLarge(
-            f"This download would be about {total / 1_000_000:.0f} MB, more than the "
-            f"{max_bytes / 1_000_000:.0f} MB limit. Draw a smaller area or download fewer layers."
-        )
+    if total <= max_bytes:
+        return
+    message = (
+        f"This download would be about {total / 1_000_000:.0f} MB, more than the "
+        f"{max_bytes / 1_000_000:.0f} MB limit. Draw a smaller area, or choose an "
+        "explicitly coarser resolution in the download dialog"
+    )
+    if native_planned is not None:
+        native_total = sum(output.total_bytes for output in native_planned)
+        factor = _smallest_fitting_factor(native_total, max_bytes)
+        if factor is not None and factor != 1:
+            message += f" (at least {factor}x would fit)"
+    raise AoiTooLarge(message + ".")
 
 
 def crop_asset(
@@ -410,7 +481,8 @@ def crop_asset(
     asset_paths: Sequence[AssetPath | ZarrAsset],
     aoi_geometry: Mapping[str, Any],
     *,
-    max_size: int = MAX_OUTPUT_SIDE_PX,
+    width: int | None = None,
+    height: int | None = None,
 ) -> ImageData:
     """The cropped, optionally mosaicked image for one asset across its item(s).
 
@@ -423,11 +495,17 @@ def crop_asset(
     many items are in ``asset_paths`` — rio-tiler then reads items one at a
     time and stops as soon as ``FirstMethod`` has filled every pixel the AOI
     covers, instead of opening every item's reader concurrently (plan §3).
+
+    ``width``/``height`` (Otto, 23.09.2026, M3-18 §10): ``None`` for both
+    means native resolution — this function no longer clips a native read to
+    any pixel cap. A caller that wants an explicitly coarser resolution
+    passes both, already divided down from native by the chosen
+    :data:`RESOLUTION_FACTORS` value.
     """
 
     def _read(path: AssetPath | ZarrAsset) -> ImageData:
         with open_reader(path) as reader:
-            return reader.feature(dict(aoi_geometry), max_size=max_size)
+            return reader.feature(dict(aoi_geometry), width=width, height=height)
 
     if len(asset_paths) == 1:
         try:
@@ -444,7 +522,150 @@ def crop_asset(
     return image
 
 
-def _image_to_cog_bytes(image: ImageData) -> bytes:
+def _native_crop_grid(
+    dataset: rasterio.DatasetReader, aoi: BaseGeometry, *, dst_crs: rasterio.crs.CRS = WGS84_CRS
+) -> tuple[rasterio.Affine, int, int]:
+    """The exact native-resolution output grid ``.feature()`` would produce for ``aoi``.
+
+    ``rio_tiler``'s own ``Reader.feature`` (no ``width``/``height``/``max_size``)
+    resamples at the dataset's native resolution, in ``dst_crs``, and sizes the
+    output from the AOI's own bounds divided by that resolution — not by
+    windowing into a whole-dataset grid, which was tried first here and
+    measured to come out sub-pixel-misaligned against ``.feature()``'s actual
+    transform (plan §10, "windowed transform misalignment"). This reproduces
+    that computation directly: ``calculate_default_transform`` gives the
+    resolution the reprojection would use, then :func:`rasterio.transform.from_bounds`
+    builds the same grid ``.feature()`` builds from the AOI's own extent.
+    """
+    res_transform, _, _ = calculate_default_transform(
+        dataset.crs, dst_crs, dataset.width, dataset.height, *dataset.bounds
+    )
+    w_res, h_res = res_transform.a, abs(res_transform.e)
+    minx, miny, maxx, maxy = aoi.bounds
+    width = max(1, round((maxx - minx) / w_res))
+    height = max(1, round((maxy - miny) / h_res))
+    crop_transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
+    return crop_transform, width, height
+
+
+def _write_native_windowed_cog(
+    dataset: rasterio.DatasetReader,
+    aoi: BaseGeometry,
+    *,
+    dst_crs: rasterio.crs.CRS = WGS84_CRS,
+    block_size: int = 1024,
+) -> bytes:
+    """A native-resolution COG of ``aoi``, read and written one block at a time (F10a/F10b, M3-18 §10).
+
+    Byte-identical to ``crop_asset`` + :func:`_masked_array_to_cog_bytes` for a
+    rectangular AOI, and negligibly different (edge-of-cutline nearest-neighbor
+    noise only, plan §10.3) for a general polygon — validated against the
+    whole-array read before this was written. The difference is memory: no
+    array bigger than one ``block_size`` x ``block_size`` block is ever held at
+    once, measured (plan §10.3) to save a fifth to a quarter of peak RSS on a
+    large crop. Used only for a single COG item at native resolution
+    (:func:`crop_asset_to_cog_bytes` decides when that applies); a mosaic or an
+    explicitly coarser resolution still goes through ``crop_asset``.
+    """
+    crop_transform, width, height = _native_crop_grid(dataset, aoi, dst_crs=dst_crs)
+    aoi_mapping = shapely_mapping(aoi)
+    any_valid = False
+    with WarpedVRT(
+        dataset, crs=dst_crs, transform=crop_transform, width=width, height=height,
+        resampling=Resampling.nearest,
+    ) as vrt:
+        profile: dict[str, Any] = {
+            "driver": "GTiff",
+            "dtype": vrt.dtypes[0],
+            "count": vrt.count,
+            "height": height,
+            "width": width,
+            "crs": dst_crs,
+            "transform": crop_transform,
+            "tiled": True,
+            "blockxsize": block_size,
+            "blockysize": block_size,
+        }
+        with MemoryFile() as plain_mem:
+            with plain_mem.open(**profile) as dst:
+                for row0 in range(0, height, block_size):
+                    block_height = min(block_size, height - row0)
+                    for col0 in range(0, width, block_size):
+                        block_width = min(block_size, width - col0)
+                        window = Window(col0, row0, block_width, block_height)
+                        block = vrt.read(window=window, masked=True)
+                        block_transform = window_transform(window, crop_transform)
+                        outside = rasterize(
+                            [aoi_mapping],
+                            out_shape=(block_height, block_width),
+                            transform=block_transform,
+                            all_touched=True,
+                            default_value=0,
+                            fill=1,
+                            dtype="uint8",
+                        ).astype(bool)
+                        invalid = outside | numpy.ma.getmaskarray(block).any(axis=0)
+                        if (~invalid).any():
+                            any_valid = True
+                        dst.write(numpy.ma.filled(block, 0), window=window)
+                        dst.write_mask((~invalid).astype("uint8") * 255, window=window)
+            if not any_valid:
+                raise AoiOutsideItems("the AOI does not cover any valid pixel of this item")
+            with plain_mem.open() as plain_ds, MemoryFile() as cog_mem:
+                cog_translate(
+                    plain_ds,
+                    cog_mem.name,
+                    _MASKED_COG_PROFILE,
+                    add_mask=True,
+                    in_memory=True,
+                    quiet=True,
+                )
+                return cog_mem.read()
+
+
+def crop_asset_to_cog_bytes(
+    open_reader: Callable[..., BaseReader],
+    asset_paths: Sequence[AssetPath | ZarrAsset],
+    aoi_geometry: Mapping[str, Any],
+    *,
+    width: int | None = None,
+    height: int | None = None,
+) -> bytes:
+    """The finished COG bytes for one asset's crop — the windowed path where it applies, else the naive one.
+
+    A single :class:`~earthx.readers.cog.AssetPath` at native resolution
+    (``width``/``height`` both ``None``) uses :func:`_write_native_windowed_cog`
+    (F10a/F10b, M3-18 §10). Everything else — a mosaic of several items, a
+    Zarr asset, or an explicitly coarser resolution — goes through the
+    existing whole-array :func:`crop_asset` path: those cases are already
+    bounded (mosaics by ``MAX_DOWNLOAD_ITEMS`` and ``exit_when_filled``,
+    coarser reads by the smaller pixel count) so windowing them was not part
+    of what plan §10.3 measured.
+    """
+    native = width is None and height is None
+    if native and len(asset_paths) == 1 and isinstance(asset_paths[0], AssetPath):
+        aoi = shapely_shape(aoi_geometry)
+        try:
+            with open_reader(asset_paths[0]) as reader:
+                # `.dataset` is what rio-tiler's own `Reader` (the real
+                # `CogReader`) exposes; a reader that does not have one (a test
+                # double, or a future reader type) simply does not get the
+                # windowed optimisation — correctness never depends on it.
+                dataset = getattr(reader, "dataset", None)
+                if dataset is not None:
+                    return _write_native_windowed_cog(dataset, aoi)
+                image = reader.feature(dict(aoi_geometry), width=None, height=None)
+        except _AOI_MISSES_THE_DATA as error:
+            raise AoiOutsideItems(str(error)) from None
+        return _masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+
+    image = crop_asset(open_reader, asset_paths, aoi_geometry, width=width, height=height)
+    return _masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+
+
+def _masked_array_to_cog_bytes(
+    array: numpy.ma.MaskedArray, transform: rasterio.Affine, crs: rasterio.crs.CRS | None
+) -> bytes:
     """A real COG (internal tiling and overviews), built without touching disk.
 
     Two in-memory GDAL datasets, never a filesystem path: the plain GeoTIFF is
@@ -484,7 +705,6 @@ def _image_to_cog_bytes(image: ImageData) -> bytes:
     was only ever additional information, never worth risking the download it
     would ride on.
     """
-    array = image.array
     invalid = numpy.ma.getmaskarray(array).any(axis=0)
     filled = numpy.ma.filled(array, 0)
     mask_band = (~invalid).astype("uint8") * 255
@@ -496,10 +716,10 @@ def _image_to_cog_bytes(image: ImageData) -> bytes:
         "count": count,
         "height": height,
         "width": width,
-        "transform": image.transform,
+        "transform": transform,
     }
-    if image.crs:
-        profile["crs"] = image.crs
+    if crs:
+        profile["crs"] = crs
 
     with MemoryFile() as plain_mem:
         with plain_mem.open(**profile) as dst:
@@ -523,7 +743,7 @@ def _image_to_cog_bytes(image: ImageData) -> bytes:
 _SAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-def crop_filename(asset: str) -> str:
+def crop_filename(asset: str, *, resolution_factor: int = 1) -> str:
     """The name the crop of ``asset`` gets inside the ZIP.
 
     The asset key travels into the archive, and for a Zarr dataset it is not a
@@ -533,6 +753,10 @@ def crop_filename(asset: str) -> str:
     silently renamed — so every run of anything outside ``[A-Za-z0-9._-]``
     becomes a single ``_``. ``visual`` stays ``visual``; the original key is
     named in the notice file, so nothing about the archive becomes a guess.
+
+    ``resolution_factor`` (F10c, M3-18 §10): an explicitly chosen coarser
+    resolution is named in the filename itself (``visual_2x.tif``), not only
+    in the notice — native (``1``) adds no suffix, unchanged from before.
     """
     # Stripped at both ends, dots included: `..` survives the allowlist on its own
     # (a dot is a legal filename character) and a member called `..` or `.._x` is a
@@ -540,10 +764,17 @@ def crop_filename(asset: str) -> str:
     cleaned = _SAFE_IN_FILENAME.sub("_", asset).strip("._")
     # A key made only of separators would otherwise leave an empty name, and a
     # ZIP entry called ".tif" is not something a user can tell apart from another.
-    return f"{cleaned or 'asset'}.tif"
+    suffix = f"_{resolution_factor}x" if resolution_factor != 1 else ""
+    return f"{cleaned or 'asset'}{suffix}.tif"
 
 
-def build_notice_text(config: DatasetConfig, *, item_ids: Sequence[str], assets: Sequence[str] = ()) -> str:
+def build_notice_text(
+    config: DatasetConfig,
+    *,
+    item_ids: Sequence[str],
+    assets: Sequence[str] = (),
+    resolution_factor: int = 1,
+) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
     Registry.py's own rule stays intact: attribution and the terms notice are
@@ -577,18 +808,33 @@ def build_notice_text(config: DatasetConfig, *, item_ids: Sequence[str], assets:
         # they came from are written out here — otherwise a Zarr crop's bands
         # could not be traced back to what was asked for.
         lines.append(
-            "Assets: " + ", ".join(f"{asset} ({crop_filename(asset)})" for asset in assets)
+            "Assets: "
+            + ", ".join(
+                f"{asset} ({crop_filename(asset, resolution_factor=resolution_factor)})" for asset in assets
+            )
         )
+    lines.append(
+        "Resolution: native"
+        if resolution_factor == 1
+        else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
+    )
     lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
 
 
 @dataclass(frozen=True)
 class AssetCrop:
-    """One asset's already-resolved read candidates — one path per surviving item."""
+    """One asset's already-resolved read candidates — one path per surviving item.
+
+    ``width``/``height`` (F10c, M3-18 §10): ``None`` for both means native
+    resolution; a caller that resolved an explicitly coarser factor (against
+    this asset's own ``gsd``) passes both, already computed down from native.
+    """
 
     asset: str
     paths: tuple[AssetPath | ZarrAsset, ...]
+    width: int | None = None
+    height: int | None = None
 
 
 def build_download_zip(
@@ -598,13 +844,18 @@ def build_download_zip(
     crops: Sequence[AssetCrop],
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
-    max_size: int = MAX_OUTPUT_SIDE_PX,
+    resolution_factor: int = 1,
     gdal_env: Mapping[str, str] | None = None,
 ) -> bytes:
     """The finished ZIP: one COG per requested asset, plus :data:`NOTICE_FILENAME`.
 
     Built entirely in memory (a ``BytesIO`` buffer, never a temp file) so the
     caller can stream the result without anything having touched disk.
+
+    ``resolution_factor`` (F10c, M3-18 §10) only names the resolution the
+    caller already resolved into each ``crop``'s ``width``/``height`` — it is
+    never used to compute pixels here, only to label the filename and the
+    notice file with the value the caller chose.
 
     ``gdal_env`` (F7, M3-18): the same GDAL/VSI settings `gateway` builds for
     the tile path (``earthx.gateway.gdal.gdal_options``) — timeouts, the read
@@ -618,10 +869,19 @@ def build_download_zip(
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
             for crop in crops:
-                image = crop_asset(open_reader, crop.paths, aoi_geometry, max_size=max_size)
-                archive.writestr(crop_filename(crop.asset), _image_to_cog_bytes(image))
+                cog_bytes = crop_asset_to_cog_bytes(
+                    open_reader, crop.paths, aoi_geometry, width=crop.width, height=crop.height
+                )
+                archive.writestr(
+                    crop_filename(crop.asset, resolution_factor=resolution_factor), cog_bytes
+                )
             archive.writestr(
                 NOTICE_FILENAME,
-                build_notice_text(config, item_ids=item_ids, assets=[crop.asset for crop in crops]),
+                build_notice_text(
+                    config,
+                    item_ids=item_ids,
+                    assets=[crop.asset for crop in crops],
+                    resolution_factor=resolution_factor,
+                ),
             )
         return buffer.getvalue()

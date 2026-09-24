@@ -55,7 +55,9 @@ class FakeReader:
     def __exit__(self, *exc: object) -> bool:
         return False
 
-    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+    def feature(
+        self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None
+    ) -> ImageData:
         data = (np.random.default_rng(0).random((3, 8, 8)) * 255).astype("uint8")
         return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
 
@@ -123,10 +125,54 @@ class TestAcceptanceCriteria:
     ) -> None:
         """`thumbnail` has neither `gsd` nor `raster:bands` on this item (F1/F2): the
         estimate falls back to the conservative worst case M2-06 used for the whole
-        request — big enough on its own to trip the 200 MB cap."""
+        request — big enough on its own to trip the 500 MB cap."""
         response = _download(client, assets=["thumbnail"])
         assert response.status_code == 413
         assert "MB" in response.json()["detail"]
+
+    def test_over_the_cap_the_message_never_shrinks_the_request_itself(
+        self, client: TestClient
+    ) -> None:
+        """Otto, 23.09.2026 (M3-18 §10): over the cap is always a refusal, never a
+        silent downscale — no zip is ever returned, whatever the message suggests."""
+        response = _download(client, assets=["thumbnail"])
+        assert response.status_code == 413
+        assert response.headers["content-type"] != "application/zip"
+
+    def test_over_the_cap_names_the_smallest_fitting_resolution_factor(
+        self, client: TestClient
+    ) -> None:
+        """F10c (M3-18 §10): the rejection suggests a factor from
+        `RESOLUTION_FACTORS` that would bring this same request under the cap,
+        not just "smaller area or fewer layers"."""
+        response = _download(client, assets=["thumbnail"])
+        assert response.status_code == 413
+        assert "x would fit" in response.json()["detail"]
+
+    def test_an_unknown_resolution_factor_is_a_validation_error(self, client: TestClient) -> None:
+        response = _download(client, resolution=3)
+        assert response.status_code == 422
+
+    def test_an_explicit_resolution_factor_is_honored_in_the_filename_and_notice(
+        self, client: TestClient
+    ) -> None:
+        """F10c (M3-18 §10): an explicitly coarser resolution travels into the
+        archive — the filename and the notice both name it, never silently."""
+        response = _download(client, resolution=2)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            names = set(archive.namelist())
+            assert names == {"visual_2x.tif", "ATTRIBUTION.txt"}
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+            assert "2x coarser than native" in notice
+
+    def test_native_resolution_names_no_factor_in_filename_or_notice(self, client: TestClient) -> None:
+        response = _download(client)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            assert "visual.tif" in archive.namelist()
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+            assert "Resolution: native" in notice
 
     def test_a_dataset_without_processing_tier_licence_is_refused(
         self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
@@ -252,3 +298,30 @@ class TestAcceptanceCriteria:
             assert payload["method"] == "POST"
             assert payload["status"] == 200
             assert isinstance(payload["duration_ms"], int | float)
+
+    def test_a_second_large_download_is_refused_with_503_and_retry_after(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """F10a (M3-18 §10): the process allows only one download near/above
+        `LARGE_DOWNLOAD_THRESHOLD_BYTES` at a time — a second one gets a 503 with
+        `Retry-After`, never queued and never silently downscaled."""
+
+        class _AlreadyRunning:
+            def locked(self) -> bool:
+                return True
+
+        monkeypatch.setattr("earthx.api.tiler.LARGE_DOWNLOAD_THRESHOLD_BYTES", 0)
+        monkeypatch.setattr("earthx.api.tiler._LARGE_DOWNLOAD_LOCK", _AlreadyRunning())
+
+        response = _download(client)
+        assert response.status_code == 503
+        assert response.headers["retry-after"] == "30"
+        assert "another large download is running" in response.json()["detail"]
+
+    def test_a_small_download_is_never_refused_by_the_concurrency_gate(
+        self, client: TestClient
+    ) -> None:
+        """The concurrency gate only applies once the process-wide lock is
+        actually held — an ordinary small request always goes through."""
+        response = _download(client)
+        assert response.status_code == 200

@@ -51,7 +51,7 @@ class FakeReader:
     def __exit__(self, *exc: object) -> bool:
         return False
 
-    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
         FakeReader.calls.append(self.src_path)
         data = (np.random.default_rng(0).random((3, 16, 16)) * 255).astype("uint8")
         return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
@@ -60,7 +60,7 @@ class FakeReader:
 class OutsideReader(FakeReader):
     """Every read raises: the bbox prefilter passed but the footprint does not."""
 
-    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
         raise PointOutsideBounds("outside")
 
 
@@ -205,13 +205,22 @@ class TestEstimateOutputDims:
         assert 900 <= height <= 1100
         assert 900 <= width <= 1100
 
-    def test_the_long_side_is_clipped_to_max_side_the_short_side_keeps_the_ratio(self) -> None:
+    def test_a_large_aoi_is_never_clipped_native_resolution_has_no_cap(self) -> None:
+        """Otto, 23.09.2026 (M3-18 §10): a download is always native resolution —
+        the old `max_side` clamp is gone, there is no pixel ceiling any more."""
         aoi = dl.parse_aoi_geometry(
             {"type": "Polygon", "coordinates": [[[0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], [0, 0]]]}
         )
-        height, width = dl.estimate_output_dims(aoi, gsd=10.0, max_side=256)
-        assert width == 256
+        height, width = dl.estimate_output_dims(aoi, gsd=10.0)
+        assert width > 2000
         assert height < width
+
+    def test_a_resolution_factor_divides_both_dimensions(self) -> None:
+        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
+        native = dl.estimate_output_dims(aoi, gsd=10.0)
+        coarser = dl.estimate_output_dims(aoi, gsd=10.0, resolution_factor=4)
+        assert coarser[0] == pytest.approx(native[0] / 4, abs=1)
+        assert coarser[1] == pytest.approx(native[1] / 4, abs=1)
 
     def test_a_finer_gsd_never_produces_fewer_pixels_up_to_the_cap(self) -> None:
         aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
@@ -285,7 +294,7 @@ class HalfMaskedReader(FakeReader):
 
     calls: list[AssetPath] = []
 
-    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
         HalfMaskedReader.calls.append(self.src_path)
         data = np.full((3, 16, 16), 10, dtype="uint8")
         mask = np.zeros((3, 16, 16), dtype=bool)
@@ -296,7 +305,7 @@ class HalfMaskedReader(FakeReader):
 class FillingReader(FakeReader):
     calls: list[AssetPath] = []
 
-    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+    def feature(self, geometry: dict[str, Any], *, width: int | None = None, height: int | None = None) -> ImageData:
         FillingReader.calls.append(self.src_path)
         data = np.full((3, 16, 16), 20, dtype="uint8")
         return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))

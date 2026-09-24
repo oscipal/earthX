@@ -139,3 +139,61 @@ class TestTheAoiMaskOnARealCog:
             # plain rectangle AOI must come back with every pixel inside the mask —
             # exactly the M2-06 behaviour this task must not change (plan §5).
             assert (raster.dataset_mask() == 255).all()
+
+
+class TestWindowedReadMatchesTheWholeArrayRead:
+    """F10a/F10b (M3-18 §10): the windowed native-resolution path
+    (:func:`_write_native_windowed_cog`, used automatically by
+    :func:`crop_asset_to_cog_bytes` for a single COG item) must produce the
+    same crop as the older whole-array path it replaces for that case — same
+    grid, same mask, and (up to nearest-neighbor edge noise on a slanted
+    cutline) the same pixel values."""
+
+    def _naive_cog_bytes(self, served: list[str], aoi_geometry: dict) -> bytes:
+        image = dl.crop_asset(open_asset, (_asset(),), aoi_geometry)
+        return dl._masked_array_to_cog_bytes(image.array, image.transform, image.crs)
+
+    def test_a_rectangle_aoi_is_pixel_identical(self, served: list[str]) -> None:
+        aoi_geometry = _rectangle_aoi()
+        windowed_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_asset,
+            crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
+            aoi_geometry=aoi_geometry,
+            item_ids=[ITEM],
+        )
+        naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
+        with (
+            _open_zip_member(windowed_bytes, "visual.tif") as windowed,
+            MemoryFile(naive_bytes).open() as naive,
+        ):
+            assert windowed.shape == naive.shape
+            assert windowed.transform == naive.transform
+            assert (windowed.dataset_mask() == naive.dataset_mask()).all()
+            assert (windowed.read() == naive.read()).all()
+
+    def test_a_slanted_aoi_masks_agree_and_values_are_near_identical(self, served: list[str]) -> None:
+        import numpy as np
+
+        aoi_geometry = _diamond_aoi()
+        windowed_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_asset,
+            crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
+            aoi_geometry=aoi_geometry,
+            item_ids=[ITEM],
+        )
+        naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
+        with (
+            _open_zip_member(windowed_bytes, "visual.tif") as windowed,
+            MemoryFile(naive_bytes).open() as naive,
+        ):
+            assert windowed.shape == naive.shape
+            # Exact mask agreement: the cutline rasterisation is the same
+            # `rasterize(..., all_touched=True)` call either way.
+            assert (windowed.dataset_mask() == naive.dataset_mask()).all()
+            # Values may differ by nearest-neighbor edge noise right at the
+            # cutline (plan §10, "windowed transform misalignment") — never by
+            # more than one full band step, and never on average.
+            diff = np.abs(windowed.read().astype(int) - naive.read().astype(int))
+            assert diff.mean() < 1.0

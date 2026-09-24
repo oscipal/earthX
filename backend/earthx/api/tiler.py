@@ -49,6 +49,8 @@ from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.download import (
+    LARGE_DOWNLOAD_THRESHOLD_BYTES,
+    RESOLUTION_FACTORS,
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
@@ -99,6 +101,15 @@ _READABLE_FORMATS = frozenset({DataFormat.COG, DataFormat.ZARR})
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
 # polygon does not belong in a query string) — so it cannot share ROUTER_PREFIX.
 DOWNLOAD_ROUTE = "/collections/{dataset}/download"
+
+# At most one download whose planned output reaches LARGE_DOWNLOAD_THRESHOLD_BYTES
+# runs at a time in this process (F10a, M3-18 §10): measured (plan §10.3/§10.4)
+# a single such crop can peak at several GB RSS in the same process that also
+# serves tiles, so two of them at once must not both run. Checked-then-acquired
+# with no `await` in between, which is race-free on asyncio's single-threaded
+# event loop (a second concurrent request cannot interleave between the check
+# and the `async with`).
+_LARGE_DOWNLOAD_LOCK = asyncio.Lock()
 
 
 def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
@@ -401,6 +412,14 @@ class DownloadRequest(BaseModel):
     items: list[str] = Field(min_length=1, max_length=64, description="item ids, one scene each")
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
+    resolution: int = Field(
+        default=1,
+        description=(
+            "how many times coarser than native resolution to read, one of "
+            f"{RESOLUTION_FACTORS} — 1 is native, the default (Otto, 23.09.2026, M3-18 §10). "
+            "Never chosen automatically; the caller (the download dialog) picks it explicitly."
+        ),
+    )
 
 
 async def download_crop(
@@ -434,6 +453,12 @@ async def download_crop(
     except InvalidAoi as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
 
+    if body.resolution not in RESOLUTION_FACTORS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resolution must be one of {RESOLUTION_FACTORS}, not {body.resolution!r}",
+        )
+
     items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
     matched = filter_items_intersecting_aoi(items, aoi)
     if not matched:
@@ -444,12 +469,19 @@ async def download_crop(
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
 
+    # Native is always planned too (F10c, M3-18 §10): even when the caller
+    # already chose a coarser resolution, a rejection still needs the smallest
+    # *native-relative* factor to suggest, not one relative to what was
+    # already asked for.
+    native_planned = plan_outputs(matched, wanted, aoi)
+    planned = native_planned if body.resolution == 1 else plan_outputs(matched, wanted, aoi, resolution_factor=body.resolution)
     try:
         check_item_count_cap(len(matched))
-        check_output_size_cap(plan_outputs(matched, wanted, aoi))
+        check_output_size_cap(planned, native_planned=native_planned)
     except AoiTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from None
 
+    planned_by_asset = {output.label: output for output in planned}
     crops = [
         AssetCrop(
             asset=asset,
@@ -459,18 +491,30 @@ async def download_crop(
                 )
                 for matched_item in matched
             ),
+            width=None if body.resolution == 1 else planned_by_asset[asset].width,
+            height=None if body.resolution == 1 else planned_by_asset[asset].height,
         )
         for asset in wanted
     ]
 
-    try:
-        zip_bytes = await run_in_threadpool(
+    total_planned_bytes = sum(output.total_bytes for output in planned)
+    large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
+    if large and _LARGE_DOWNLOAD_LOCK.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="another large download is running, try again shortly",
+            headers={"Retry-After": "30"},
+        )
+
+    async def _build_zip() -> bytes:
+        return await run_in_threadpool(
             build_download_zip,
             config=config,
             open_reader=open_asset,
             crops=crops,
             aoi_geometry=body.aoi,
             item_ids=[matched_item["id"] for matched_item in matched],
+            resolution_factor=body.resolution,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
@@ -479,6 +523,13 @@ async def download_crop(
             # it has to be entered inside the threadpool call, not around it.
             gdal_env=state.earthx_gdal_options,
         )
+
+    try:
+        if large:
+            async with _LARGE_DOWNLOAD_LOCK:
+                zip_bytes = await _build_zip()
+        else:
+            zip_bytes = await _build_zip()
     except AoiOutsideItems as error:
         # The bbox prefilter passed but the geometry itself misses every item's
         # actual footprint (a bbox is not the data — MGRS tiles are rotated).
@@ -495,6 +546,7 @@ async def download_crop(
             "items": len(matched),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
+            "resolution": body.resolution,
         },
     )
     return StreamingResponse(
