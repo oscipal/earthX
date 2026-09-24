@@ -62,6 +62,11 @@ from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.eopf_stac")
 
+# M3-08 F4a: measured against the live API in the plan step (M3-08 plan §2.1) — both
+# filters work here too. See earth_search.py for what reads these.
+SUPPORTS_INTERSECTS = True
+SUPPORTS_IDS = True
+
 
 async def search_items(
     dataset_id: str,
@@ -140,6 +145,12 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     }
     if params.bbox is not None:
         body["bbox"] = [float(value) for value in params.bbox]
+    if params.intersects is not None:
+        body["intersects"] = params.intersects
+    if params.ids is not None:
+        # Measured (M3-08 plan §2.1): AND-combined with a spatial or time filter,
+        # same as Earth Search — not a shortcut around them.
+        body["ids"] = list(params.ids)
     window = stac_interval(params.start, params.end)
     if window is not None:
         body["datetime"] = window

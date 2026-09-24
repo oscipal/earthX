@@ -69,11 +69,15 @@ function AoiExtras() {
         setError(`Could not read an AOI geometry from "${file.name}".`);
         return;
       }
+      // M3-08 F5a: same split as the draw tool (MapView.tsx) — the point itself
+      // is what a search asks with, the buffer square is what stays on screen.
+      let point: GeoJSON.Point | null = null;
       if (geom.type === 'Point') {
+        point = geom;
         const [lon, lat] = geom.coordinates;
         geom = bufferPointToPolygon(lon, lat, config?.point_buffer_deg ?? 0.05);
       }
-      setAoi(geom);
+      setAoi(geom, point);
       const bb = polygonBbox(geom);
       if (bb) flyTo(bb);
     } catch (err) {

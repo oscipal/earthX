@@ -27,11 +27,14 @@ from earthx.adapters.cache import CacheValue, SearchCache
 from earthx.adapters.earth_search_coverage import aggregate_coverage
 from earthx.adapters.federated_search import (
     DEFAULT_LIMIT,
+    MAX_IDS,
+    MAX_INTERSECTS_POINTS,
     MAX_LIMIT,
     InvalidQuery,
     ItemPage,
     SearchParams,
     UnknownCollection,
+    UnsupportedFilter,
     UnsupportedSource,
     UpstreamShapeError,
 )
@@ -60,6 +63,28 @@ def _adapter_for(dataset_id: str, registry: DatasetRegistry) -> ModuleType:
         raise UnsupportedSource(f"{dataset_id} is served by {kind}, which no adapter dispatch knows") from None
 
 
+def _check_capabilities(dataset_id: str, adapter: ModuleType, params: SearchParams | None) -> None:
+    """M3-08 F4a: a filter this dataset's own source cannot honour is refused by
+    name here, before the adapter ever builds a request — the posture M2-17 already
+    took for *every* federated collection when no adapter could honour either filter
+    (`api/federating_client.py`); this narrows that refusal to the one collection
+    (and, in principle, the one filter) that genuinely cannot.
+
+    Both current adapters support both filters (measured, M3-08 plan §2.1); this
+    only matters once a third source does not, which `test_every_adapter_supports_
+    intersects_and_ids` (`tests/earthx/adapters/test_dispatch.py`) turns into a
+    build failure rather than a silent gap the day that happens — K8 requires the
+    landing page's ``item-search`` promise to match the weakest adapter, and this is
+    the one place that promise could quietly stop being true.
+    """
+    if params is None:
+        return
+    if params.intersects is not None and not getattr(adapter, "SUPPORTS_INTERSECTS", False):
+        raise UnsupportedFilter(f"{dataset_id} does not support intersects")
+    if params.ids is not None and not getattr(adapter, "SUPPORTS_IDS", False):
+        raise UnsupportedFilter(f"{dataset_id} does not support ids")
+
+
 async def search_items(
     dataset_id: str,
     params: SearchParams | None = None,
@@ -70,6 +95,7 @@ async def search_items(
 ) -> ItemPage:
     """Search items of one federated collection, whichever source serves it."""
     adapter = _adapter_for(dataset_id, registry)
+    _check_capabilities(dataset_id, adapter, params)
     return await adapter.search_items(dataset_id, params, gateway=gateway, registry=registry, cache=cache)
 
 
@@ -88,6 +114,8 @@ async def get_item(
 
 __all__ = [
     "DEFAULT_LIMIT",
+    "MAX_IDS",
+    "MAX_INTERSECTS_POINTS",
     "MAX_LIMIT",
     "CacheValue",
     "InvalidQuery",
@@ -95,6 +123,7 @@ __all__ = [
     "SearchCache",
     "SearchParams",
     "UnknownCollection",
+    "UnsupportedFilter",
     "UnsupportedSource",
     "UpstreamShapeError",
     "aggregate_coverage",
