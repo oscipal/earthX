@@ -363,3 +363,65 @@ Nebenfund-Fix), `backend/earthx/logging.py` + `api/main.py`
 (Zugriffslog-Filter); `frontend/src/api.ts` (`POST`), `geoUtils.ts`
 (`searchArea`), `store.ts`/`MapView.tsx`/`ControlPanel.tsx` (Punkt-AOI).
 Tests zu jedem Punkt in den passenden Dateien, siehe §5.
+
+### 8.1 Nachweise auf Ottos Nachfrage (24.09.2026)
+
+**1. Ausgehende Anfragen (`gateway`, Adapter).** Geprüft: die URL der
+Anfrage an die Quelle, Fehlermeldungen, Wiederholungen. Ergebnis: keine
+Koordinate erreicht ein Log.
+
+- `gateway/client.py::Gateway._log` schreibt je Versuch nur Host, Pfad,
+  einen Hash des Query-Strings (`gateway_query_sha`, existiert seit M2-05b),
+  Status, Bytes, Dauer, Versuch und Wiederholungszahl — nie den Query-String
+  selbst und nie den Rumpf. Für `POST /search` (wo `intersects`/`ids` jetzt
+  stehen) gibt es ohnehin keinen Query-String; die Geometrie steht nur im
+  Rumpf, der an keiner Stelle geloggt wird.
+- Ein `UpstreamError` trägt bis zu 500 Zeichen der Antwort der Quelle als
+  Auszug (`gateway/client.py`); `_adapter_error_to_http` gibt davon nie den
+  Text weiter, nur den Statuscode (adr/0005 Regel III, M2-05b). Der Auszug
+  wird an keiner Stelle im Suchpfad geloggt — weder `federating_client.py`
+  noch die Adapter rufen `logger.error`/`logger.warning` mit der Ausnahme
+  auf. Die beiden `exc_info=True`-Stellen in `federated_search.py` gelten
+  dem Such-Cache (Lese-/Schreibfehler von Postgres), dessen Parameter nur
+  der Hash-Schlüssel und die Antwort-Items sind — nie die Such-Geometrie.
+- Wiederholungen laufen über denselben `_log`-Aufruf je Versuch, tragen also
+  keine zusätzliche Fläche bei.
+- **Test:** `tests/integration/test_api_federating.py::
+  TestNoCoordinatesReachAnyLog`, drei Fälle — einfache Suche, Suche mit
+  Wiederholung (`503` dann `200`), und eine Ablehnung der Quelle, deren
+  **eigener** Fehlertext die Koordinate zitiert (der ungünstigste Fall,
+  gemessen an Earth Search für eine ungültige Breite, `adr/0005` §3.5) —
+  prüft jede mitgeschnittene Log-Zeile (Nachricht **und** `extra`-Felder,
+  über denselben `JsonFormatter`, der auch im Betrieb rendert) auf eine
+  eigens markierte, sonst nirgends vorkommende Koordinate. Empfindlichkeit
+  von Hand geprüft: Eine testweise Änderung, die den Anfragerumpf mitloggt,
+  ließ genau diesen Test fehlschlagen; die Änderung wurde nicht committet.
+
+**2. Cache und Seitenmarke.** Geprüft: Steht die Geometrie im Klartext in
+`public.earthx_search_cache` oder in der Seitenmarke?
+
+- `search_fingerprint` (`federated_search.py`) hängt `intersects`/`ids` nur
+  zum Hashen an — das Ergebnis ist ein SHA-256-Digest, die Geometrie selbst
+  verlässt die Funktion nie. Der Cache-Schlüssel (`search_cache_key`) ist
+  wiederum ein Hash aus diesem Fingerabdruck. Die gespeicherte Zeile
+  (`_storable`) enthält nur die zurückgegebenen Items (deren **eigene**
+  Footprints — öffentliche STAC-Daten, nicht die Such-AOI), die Trefferzahl
+  und die Marke der Quelle.
+- Die Seitenmarke (`encode_page_token`) kodiert `{v, d, h, m}` — Version,
+  Datensatz, Fingerabdruck-Hash, die Marke der Quelle (Zeitpunkt, ID,
+  Collection). Keines der vier Felder ist die Geometrie.
+- Der `next`-Link einer `POST`-Suche gibt zusätzlich den **ganzen
+  Anfrage-Rumpf** zurück, `intersects` eingeschlossen — das ist beabsichtigt
+  (die Quelle muss dieselbe Anfrage wiederholen können) und keine
+  Klartext-Preisgabe: Der Rumpf ist, was der Aufrufer selbst gerade gesendet
+  hat, nicht etwas, das unser Speicher zusätzlich preisgibt. Ein erster
+  Testentwurf hat das fälschlich als Fund gewertet; korrigiert auf die
+  eigentliche Zusage — das `token`-Feld selbst.
+- **Test:** `tests/integration/test_api_federating.py::
+  TestSearchCacheAndPageTokenCarryNoGeometry` — liest die echte Tabelle
+  nach einer Suche mit markierter Geometrie und prüft `cache_key` und
+  `payload` auf die Koordinate; dekodiert das `token`-Feld des `next`-Links
+  und prüft strukturell (`{v, d, h, m}`, keine weiteren Schlüssel) sowie auf
+  die Koordinate.
+
+Beide Testklassen sind Teil des PR.
