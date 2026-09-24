@@ -3,10 +3,13 @@
 **Aufgabe:** M3-09 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 24.09.2026 freigegeben**: F1 (1), F2 (eigener
 Wortlaut „Crop to AOI“ / „View full selection“, unter einer gemeinsamen
-„Full resolution“-Beschriftung), F3 (Download folgt der Ansicht, begrenzt auf
-die eine ganze Szene, die F3 nennt — siehe §8). Der Plan-Schritt ist damit
-abgeschlossen, die Umsetzung liegt in diesem Branch/PR; §5–§7 sind auf den
-tatsächlichen Stand nachgezogen (**Fassung 2**).
+„Full resolution“-Beschriftung). Der Plan-Schritt ist damit abgeschlossen, die
+Umsetzung liegt in diesem Branch/PR; §5–§7 sind auf den tatsächlichen Stand
+nachgezogen (**Fassung 1.1**). **F3 wurde im Review von PR #84 (Otto,
+24.09.2026) wieder zurückgenommen** — der Download eines Layers folgt nicht
+der Ansicht, sondern verlangt weiter immer eine AOI, wie vor dieser Aufgabe;
+was dazu geprüft wurde, steht jetzt als Fundstelle bei M3-17
+(`plans/m3-dritte-quelle-und-interface.md`, Abschnitt M3-17). Näheres in §7/§8.
 **Ort im Repo:** `docs/plans/m3-09-zuschnitt-ansicht.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (P11, P12, P19,
 §4 M3-09, M3-17, M3-18); `adr/0001` (Zustand, Z2, Z9); `adr/0006` (Kachel-Pfad,
@@ -89,7 +92,7 @@ bleiben unverändert. Die Entscheidung kommt als Zeile ins Log.
 
 ---
 
-## 5. Umsetzung von Weg A (Fassung 2: wie tatsächlich gebaut)
+## 5. Umsetzung von Weg A (Fassung 1.1: wie tatsächlich gebaut)
 
 **Neues Modul `frontend/src/aoiClip.ts`.** Es importiert von `maplibre-gl`
 bewusst **nur Typen** (`import type`, zur Bauzeit entfernt): `store.ts` und
@@ -167,8 +170,8 @@ ungeklippt, ganz ohne eigene Fallunterscheidung.
 (Klippen, Reihenfolge, neue Tests), `MapView.tsx` (Registrierung, `aoi`/
 `cropToAoi` an `syncFocusRaster`/`syncMosaic`), `store.ts` (`cropToAoi`-Feld,
 `enterFocus(cropToAoi)`, `addCurrentToLayers`, `selectLayer`), `layers.ts`
-(`LayerRestore.cropToAoi`), `download.ts` + `download.test.ts`
-(„Download folgt der Ansicht“, §8 F3), `ViewBar.tsx`, `ViewerControls.tsx`,
+(`LayerRestore.cropToAoi`, nur für den Zuschnitt der Karte — der Download
+liest das Feld nicht, §7), `ViewBar.tsx`, `ViewerControls.tsx`,
 `AppTopBar.test.tsx`, `index.css`. Kein Backend, keine Registry, keine neuen
 Abhängigkeiten.
 
@@ -204,19 +207,38 @@ cropped to AOI“ bzw. „· whole selection“.
   ganze Bounding Box; erst M3-18 maskiert sie auf das Polygon. Otto kann die
   Abnahme „Karte und Datei stimmen überein“ deshalb **mit einer Rechteck-AOI
   sofort**, mit einem schrägen Polygon erst nach dem Merge von M3-18 prüfen.
-- **Download folgt der Ansicht (Otto, F3, 24.09.2026):** Der Download eines
-  angehefteten Layers folgt dem, was beim Anheften sichtbar war, nicht mehr
-  nur der zuletzt gezeichneten AOI. Bei „Crop to AOI“ unverändert (`restore.aoi`
-  nötig). Bei „View full selection“ und **genau einer** ganzen Szene liefert
-  der Download diese Szene, ohne AOI-Pflicht — über denselben Zuschnitt-
-  Endpunkt, mit der Bounding Box der Szene selbst als „AOI“ (bei einer
-  rechteckigen Szene faktisch kein echter Zuschnitt). Mehrere ganze Szenen
-  gleichzeitig uncropped angeheftet bleiben ohne Download-Knopf: Otto nannte
-  hier ausdrücklich „eine ganze Szene“ (Singular), und mehrere Originale
-  einzeln, direkt von der Quelle statt gemergt über diesen Endpunkt, ist
-  P19s eigener Punkt für **M3-17** — das wird hier nicht vorweggenommen.
-- **Sonst nicht Teil von M3-09:** die COG-Direktweiterleitung ohne Umweg über
-  die Plattform, und der ZIP-Download mehrerer ganzer Originale (M3-17, P19).
+- **F3 — Download eines angehefteten Layers, zurückgenommen (Otto, Review von
+  PR #84, 24.09.2026):** Ein erster Versuch ließ den Download einer „View full
+  selection“-Ansicht mit genau einer ganzen Szene ohne AOI über den
+  bestehenden Zuschnitt-Endpunkt laufen (Bounding Box der Szene als „AOI“).
+  Das entspricht **nicht** P19: Dieser Endpunkt deckelt die Ausgabe auf
+  `MAX_OUTPUT_SIDE_PX` (`access/download.py`, M3-18 rechnet den Deckel nach
+  Ausgabegröße), P19 verlangt für eine ganze COG-Szene aber das **Original,
+  unverkleinert, direkt von der Quelle durch den Browser** — kein Byte über
+  die Plattform (`architekturplan.md` 6.4). Für Zarr verlangt P19 ohne AOI gar
+  keinen Download, mit deaktiviertem Knopf und Hinweis „Draw an AOI to
+  download“. Zurückgenommen: `download.ts::downloadRequestFor` verlangt wieder
+  immer `restore.aoi`, unabhängig von `cropToAoi` — der Download verhält sich
+  wie vor dieser Aufgabe. `restore.cropToAoi` bleibt bestehen, aber nur für
+  den Zuschnitt der **Karte**.
+- **Was dazu für M3-17 herausgefunden wurde** (Fundstelle auch dort
+  vermerkt): (1) `access/download.py`s Zuschnitt-Endpunkt ist für ein Original
+  ungeeignet, weil er immer auf die Ausgabegröße deckelt — eine ganze COG-
+  Szene braucht einen eigenen Weg, keinen Parameter an diesem Endpunkt. (2)
+  Ein reiner `<a href=… download>`-Link im Browser lädt eine öffentliche
+  Asset-URL direkt, ganz ohne CORS-Freigabe (die Canvas-Weiterverarbeitung der
+  Quicklooks braucht CORS, ein bloßer Download-Link nicht) — vermutlich der
+  einfachste Baustein für die COG-Originaldatei. (3) Ob eine Quelle COG oder
+  Zarr ist, steht heute nirgends für das Frontend ohne datensatzspezifische
+  Fallunterscheidung (`asset_hosts`/`earthx:viewer` sagen nichts über das
+  Format) — dafür fehlt ein Registry-Feld, wahrscheinlich zusammen mit M3-12.
+  (4) Das Muster „Knopf deaktiviert + Tooltip mit Begründung“ für Zarr ohne
+  AOI gibt es in dieser Aufgabe schon einmal (der „Crop to AOI“-Knopf ohne
+  AOI, `ViewBar.tsx`) und lässt sich für M3-17 übernehmen.
+- **Nicht Teil von M3-09:** die COG-Direktweiterleitung ohne Umweg über die
+  Plattform, der deaktivierte Zarr-Download ohne AOI, und der ZIP-Download
+  mehrerer ganzer Originale einzeln (M3-17, P19) — alles wie ursprünglich
+  geplant, ohne Vorgriff durch diese Aufgabe.
 
 ---
 
@@ -230,11 +252,12 @@ gemeinsamen Beschriftung „Full resolution“ gruppiert, damit deutlich bleibt,
 dass beide zur Vollauflösung führen (§6).
 
 **F3 — Angeheftete Layer im Layer-Manager.** Ursprünglich nach „mit AOI
-anschneiden“ gefragt; Ottos Antwort geht weiter und macht daraus einen
-allgemeinen Grundsatz: der Download lädt herunter, was sichtbar ist — zeigt
-ein Layer eine ganze Szene ohne „Crop to AOI“, wird beim Download auch nicht
-auf die AOI zugeschnitten. Umgesetzt für den Fall, den Otto nennt (eine ganze
-Szene); mehrere ganze Szenen gleichzeitig bleiben M3-17 vorbehalten (§7).
+anschneiden“ gefragt; Ottos erste Antwort ging weiter („Download lädt herunter,
+was sichtbar ist“) und wurde so zuerst umgesetzt. Im Review von PR #84 stellte
+sich das als nicht deckungsgleich mit P19 heraus (§7) und wurde **wieder
+zurückgenommen**: der Download verlangt weiter immer eine AOI, wie vor dieser
+Aufgabe. Die eigentliche Antwort auf F3 ist damit P19 selbst, unverändert; die
+Prüfung dazu steht als Fundstelle bei M3-17.
 
 ---
 
@@ -246,14 +269,14 @@ Szene); mehrere ganze Szenen gleichzeitig bleiben M3-17 vorbehalten (§7).
   Ring-Projektion für Rechteck/Loch/`MultiPolygon`/außerhalb, Fehlerfälle wie
   falsches Schema, zu wenige Segmente, nicht-ganzzahlige z/x/y, fehlende innere
   URL) und ergänzt in `mapLayers.test.ts` (Reihenfolge, Klippen an/aus),
-  `download.test.ts` (Download folgt der Ansicht, §7/§8 F3) und
-  `AppTopBar.test.tsx` (beide Knöpfe, gemeinsame Gruppen-Beschriftung).
-  **Ergebnis:** `npx vitest run` — 14 Testdateien, **251 grün**, 0 rot.
+  `download.test.ts` (der Download braucht weiter immer eine AOI, auch
+  uncropped angeheftet, §7) und `AppTopBar.test.tsx` (beide Knöpfe, gemeinsame
+  Gruppen-Beschriftung). **Ergebnis:** `npx vitest run` grün.
 - `npm run lint` (oxlint): grün, keine Funde.
 - `npx tsc -b --pretty false`: grün, keine Fehler.
 - Backend unverändert; zur Kontrolle trotzdem ausgeführt: `ruff check backend`
   grün, `lint-imports --config .importlinter` 12/12 Verträge gehalten,
-  `pytest` (Repo-Wurzel) **1113 passed**, keine neuen Warnungen.
+  `pytest` (Repo-Wurzel) grün.
 - **Otto lokal (noch offen):** AOI über zwei überlappende Szenen, „Crop to
   AOI“, dann den Layer aus dem Layer-Manager herunterladen; Karte und Datei
   stimmen überein (mit einem Rechteck sofort prüfbar, mit einem schrägen
