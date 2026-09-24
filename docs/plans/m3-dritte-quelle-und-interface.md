@@ -6,7 +6,8 @@ Einzelnen geschnitten. Fassung 1.1 nimmt Ottos Antworten auf den
 Konformitätsbericht auf (`plans/m3-02-konformitaetsbericht.md` §8): neue
 Aufgabe M3-16, Eckpunkte in M3-11, M3-12, M3-14 und M3-15. Fassung 1.2 nimmt
 Ottos Entscheidungen vom 23.09.2026 zum Download auf (P19): neue Aufgabe
-M3-17.
+M3-17. Fassung 1.3 nimmt Ottos Antworten zu `adr/0010` auf: neue Aufgabe
+M3-19, gedrosselte Messungen in §1.2.
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
@@ -69,6 +70,8 @@ D28). Neue Registry-Felder ohne Vorgabewert (B10). Was hier nicht entschieden
 ist, schlägt die Session im Plan-Schritt mit nummerierten Optionen und
 Empfehlung vor und hält an. Vor dem Fertigmelden `main` in den Branch holen;
 eigene Log-Zeilen ans Ende von `ENTSCHEIDUNGSLOG.md`, alle anderen erhalten.
+Messungen an echten Quellen werden gedrosselt (höchstens 1 Anfrage pro
+Sekunde); die Zahl der Anfragen steht im Ergebnis.
 
 **Stufe B heißt hier:** Der Plan liegt als `docs/plans/m3-xx-<kurzname>.md` im
 Draft-PR, die Session hält an, Otto gibt frei, dann wird in derselben Session
@@ -138,13 +141,14 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — |
 | M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09, M3-12 |
+| M3-19 | Weltüberblick ohne AOI immer auf z6 | A | Sonnet (mittel) | — |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A und C laufen
 daneben.
 
 1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05, M3-16 (A/C), dazu M3-03 und
    M3-08 (B); M3-08 wird erst nach M3-16 gemergt.
-2. **Welle 2:** M3-06a, M3-09, danach M3-06b, M3-07a.
+2. **Welle 2:** M3-06a, M3-09, danach M3-06b, M3-07a; daneben M3-19 (A).
 3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12,
    danach M3-17.
 4. **Welle 4:** M3-13, dann M3-14, zuletzt M3-15.
@@ -587,6 +591,16 @@ in URLs oder Logs landet.
 **Abnahme:** Tests für jeden Fall aus P19 (Zuschnitt eine Gruppe, Zuschnitt
 mehrere Gruppen, eine ganze Szene COG, Zarr ohne AOI deaktiviert, mehrere
 ganze Szenen einzeln); Otto prüft lokal, dass Karte und Datei übereinstimmen.
+
+### M3-19 — Weltüberblick ohne AOI immer auf z6
+
+**Ziel:** Ohne AOI fordert die Coverage-Heatmap unabhängig vom Kartenzoom immer
+z6 an (`adr/0010`, Frage 6).
+**Stufe A.**
+**Umfang:** nur die Stelle im Frontend, die die Zellstufe der Coverage-Anfrage
+wählt; mit AOI bleibt alles wie heute.
+**Abnahme:** Vitest: ohne AOI bei jedem Kartenzoom z6, mit AOI unverändert;
+Otto prüft lokal die Weltansicht.
 
 ---
 
