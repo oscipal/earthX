@@ -43,7 +43,7 @@ import morecantile
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from rasterio.errors import RasterioError
+from rasterio.errors import RasterioError, RasterioIOError
 from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from starlette.concurrency import run_in_threadpool
@@ -587,9 +587,12 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
         # rendered from this asset. The message is rio-tiler's own and names no address.
         return _problem(400, str(error))
 
-    @app.exception_handler(RasterioError)
-    async def _rasterio_error(request: Request, error: RasterioError):
-        return _problem(502, "the asset could not be read from the source")
+    # Module-level, not a closure like the others above: a test builds its own
+    # bare app around `EarthxTilerFactory` (`access.tiles`, no registry, no
+    # gateway) and needs the same two handlers on it to check the mapping below
+    # without a real `build_app()` (backend/tests/earthx/api/test_statistics_read_errors.py).
+    app.add_exception_handler(RasterioIOError, _rasterio_io_error)
+    app.add_exception_handler(RasterioError, _rasterio_error)
 
     @app.exception_handler(ZarrAssetError)
     async def _zarr_asset_error(request: Request, error: ZarrAssetError):
@@ -609,6 +612,34 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
 
 def _problem(status_code: int, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail})
+
+
+async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONResponse:
+    """A genuine read failure: GDAL could not get bytes from the source.
+
+    Applies to every route on this dependency, not only `/statistics` — the one
+    place this actually fired is what led here (M3-03 review). Logged with the
+    traceback, which the single handler this replaced discarded outright.
+    `RasterioIOError` is `rasterio.errors`' one subclass of `OSError`; every other
+    `RasterioError` goes to :func:`_rasterio_error` below instead of here.
+    """
+    LOGGER.warning("could not read the asset from the source", exc_info=True)
+    return _problem(502, "the asset could not be read from the source")
+
+
+async def _rasterio_error(request: Request, error: RasterioError) -> JSONResponse:
+    """Every `RasterioError` that is *not* a read failure (:func:`_rasterio_io_error`).
+
+    GDAL has over two dozen of these — an unsupported resampling algorithm, an
+    invalid array shape, a GDAL version mismatch — none of which are about the
+    source being unreachable. Reporting one as "could not be read from the
+    source" would say something false about where the problem is and could hide a
+    genuine code-level bug behind the same message a real upstream failure gets.
+    This is our side of the line rather than the source's, hence `error`, not
+    `warning`.
+    """
+    LOGGER.error("the asset could not be processed", exc_info=True)
+    return _problem(500, "the asset could not be processed")
 
 
 app = build_app()

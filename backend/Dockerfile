@@ -2,10 +2,10 @@
 # Each docker-compose service picks its own `command:`; this file sets no
 # CMD/ENTRYPOINT on purpose ("ein Image, vier Startbefehle").
 #
-# python:3.11-slim matches environment.yml's pinned Python 3.11 and what
-# already works in CI and the cloud session without a system GDAL — the pip
-# wheels for rasterio/rio-tiler bundle their own (docs/cloud-umgebung.md §3).
-FROM python:3.11-slim
+# python:3.12-slim matches the Python that CI and the cloud session run on
+# (M3-03); as there, the pip wheels for rasterio/rio-tiler bring their own GDAL
+# (docs/cloud-umgebung.md §3).
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -19,8 +19,9 @@ WORKDIR /app
 #   provide — and `libgdal…so` in the rasterio wheel declares exactly one of
 #   them that a slim Debian does not carry: `NEEDED libexpat.so.1` (every other
 #   entry is either bundled with a hash in its name or part of the base
-#   runtime). `python:3.11-slim` builds CPython with its own expat and installs
-#   no shared one, so the library is simply absent.
+#   runtime). `python:3.11-slim`, the base until M3-03, built CPython with its
+#   own expat and installed no shared one, so the library was simply absent.
+#   Naming the package here means no base image has to happen to carry it.
 #
 # Until M2-04 no process in this image imported rasterio — `tiler` was a stub —
 # so the gap never showed. It is a property of the image, not of the new

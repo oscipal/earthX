@@ -25,6 +25,9 @@ concurrency:
   group: live-smoke
   cancel-in-progress: false
 
+env:
+  PYTHON_VERSION: "3.12"
+
 jobs:
   earth-search:
     name: Earth Search v1 still answers as recorded
@@ -36,7 +39,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: |
             backend/requirements.txt
@@ -61,7 +64,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: |
             backend/requirements.txt

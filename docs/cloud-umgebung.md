@@ -15,7 +15,7 @@
 
 | Frage | Antwort |
 |---|---|
-| Python | 3.11.15, systemweit; **kein** conda/mamba — `environment.yml` ist hier nicht nutzbar |
+| Python | seit M3-03 **3.12** (Ubuntu-Paket im Image) im venv des Hooks; `python3` zeigt weiter auf 3.11.15; **kein** conda/mamba |
 | Node | 22.22.2 mit npm 10.9.7; `npx`, `yarn`, `pnpm` vorhanden |
 | Backend-Abhängigkeiten | installieren sich **vollständig per pip**, ohne System-GDAL |
 | Docker | Daemon startbar, **Images aber nicht ladbar** — praktisch unbrauchbar |
@@ -34,7 +34,8 @@ Umgekehrt ist Docker die Erwartung, die sich **nicht** erfüllt.
 | Werkzeug | Version | Anmerkung |
 |---|---|---|
 | Betriebssystem | Ubuntu 24.04.4 LTS | 4 CPU, 15 GiB RAM, ~30 GiB freier Schreibplatz |
-| Python | 3.11.15 (`/usr/local/bin/python3`) | pip 24.0; venv funktioniert |
+| Python | 3.12.3 (`/usr/bin/python3.12`, Ubuntu-Paket, mit `venv`) | Stand 2026-09-23 (M3-03). Das venv des Projekts wird damit angelegt, siehe §7 |
+| Python, systemweit | 3.11.15 (`/usr/local/bin/python3 → /usr/bin/python3.11`) | `python3` und `python` zeigen darauf; im Image liegen außerdem 3.10 und 3.13. Nicht für das Projekt benutzen |
 | conda / mamba / micromamba | — | nicht vorhanden und nicht installierbar ohne Netzausnahme |
 | Node | 22.22.2, npm 10.9.7 | `npm ci` im Frontend: 56 Pakete, wenige Sekunden |
 | Docker CLI | 29.3.1, Compose v5.1.1 | siehe Abschnitt 4 |
@@ -62,6 +63,10 @@ vollständig. Das venv belegt rund 310 MB.
 **Folge für `environment.yml`:** Die conda-Datei beschreibt weiter Ottos lokale
 Umgebung, ist in der Cloud aber wirkungslos. Der pip-Weg ist dort der einzige,
 und CI geht denselben Weg — damit prüft CI, was die Sitzung benutzt.
+*(Stand 2026-09-18. `environment.yml` ist mit dem Prototyp entfallen,
+`adr/0008`; der pip-Weg ist seither überall der einzige. Die Tabelle oben ist
+eine Messung unter 3.11; unter 3.12 lösen mehrere Pakete neuer auf,
+`plans/m3-03-python-312.md` §2.3.)*
 
 ## 4. Docker: startbar, aber nutzlos
 
@@ -199,6 +204,31 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    noch nicht installiert war — erwartungsgemäß, da die apt-Installation
    erst mit der nächsten neu gestarteten Sitzung wirkt (siehe die
    Allowlist-Regel oben).
+   **Nachtrag 2026-09-23 (M3-03, `plans/m3-03-python-312.md`):** Der Hook
+   legt das venv mit `/usr/bin/python3.12` an, über den absoluten Pfad: `python3`
+   zeigt im Image auf 3.11, und ein `python3.12` im `PATH` kann ein anderer Build
+   sein (`uv python install` legt einen nach `~/.local/bin`, vor `/usr/bin`). Ein
+   venv mit anderer Version oder ein kaputtes venv wird ersetzt; fehlt der
+   Interpreter, meldet der Hook `venv FEHLT` und weicht nicht auf 3.11 aus.
+   Außerdem trägt er `.venv/bin` über `CLAUDE_ENV_FILE` in den `PATH` der
+   Sitzung ein. Vorher war ein nacktes `pytest` in der Sitzung
+   `/root/.local/bin/pytest`, ein Werkzeug des Images ohne die Backend-Pakete,
+   das beim Sammeln abbrach; nur `.venv/bin/pytest` lief.
+   **Nachtrag 2026-09-23, zweite Messung — in einer frisch gestarteten
+   Sitzung bestanden:** `.venv/bin` steht vorn im `PATH`, ein nacktes `pytest`
+   ist das des venv, 1087 Tests grün auf 3.12.3. In einer laufenden
+   (fortgesetzten) Sitzung dagegen ist `$CLAUDE_ENV_FILE` leer — die Variable
+   ist nur im Prozess des Hooks selbst gesetzt, nicht in der Shell, die
+   Werkzeuge danach benutzen. Das ist kein Fehler des Hooks, sondern zeigt nur
+   den Unterschied zwischen „neu gestartet“ und „fortgesetzt“, wie schon in
+   §4 und §6 für Allowlist-Freigaben festgehalten. In der öffentlichen
+   Dokumentation von Claude Code (claude-code-on-the-web, Abschnitt zu
+   Umgebungsvariablen) ist `CLAUDE_ENV_FILE` nicht beschrieben; es steht nur
+   in der eingebauten Skill-Datei `session-start-hook`. **Folge:** Findet eine
+   Sitzung `pytest` außerhalb von `.venv` (z. B. `/root/.local/bin/pytest`
+   ohne die Backend-Pakete), ist das kein neuer Fehler, sondern dieser bereits
+   bekannte Fall — mit `.venv/bin/pytest` arbeiten oder eine neue Sitzung
+   starten.
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und
