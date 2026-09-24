@@ -15,6 +15,10 @@ export interface StacAsset {
   // `proj:bbox` of its own.
   'proj:transform'?: number[];
   'proj:shape'?: number[];
+  // Ground sample distance in metres/pixel (STAC `gsd`, adr/0003 §3): read for
+  // the download dialog's resolution choice (F10c, M3-18 §10) — how many
+  // metres each `RESOLUTION_FACTORS` step actually means for this asset.
+  gsd?: number | null;
 }
 
 // A STAC Item as `/stac` returns it. `properties` is where a real STAC item
