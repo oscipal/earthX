@@ -25,6 +25,7 @@ and :func:`~earthx.access.download.crop_asset_to_cog_bytes` ever call through
 
 from __future__ import annotations
 
+import json
 import zipfile
 from io import BytesIO
 from typing import Any
@@ -36,6 +37,8 @@ from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 from rio_tiler.io.rasterio import Reader as RioTilerReader
+from shapely.geometry import mapping as shapely_mapping
+from shapely.geometry import shape as shapely_shape
 
 from earthx.access import download as dl
 from earthx.catalog.datasets import SENTINEL_2_L2A
@@ -271,3 +274,124 @@ class TestMaskMatchesEachAssetsOwnResolution:
             # otherwise this test would not distinguish "each asset gets its own
             # grid" from "one grid happens to fit both".
             assert visual_shape != scl_shape
+
+
+class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
+    """Otto's precising message, 23.09.2026 ("Präzisierung zur Maske"), M3-18
+    §13: the data file and its mask are sized to the bounding box of
+    (AOI ∩ union of the group's own item footprints), never the AOI's own
+    (possibly much larger) bounding box — while ``aoi.geojson`` always still
+    carries the original, un-clipped AOI regardless."""
+
+    def test_a_scene_covering_only_part_of_the_aoi_crops_no_further_than_the_scene(self) -> None:
+        data = np.full((3, 20, 20), 40, dtype="uint8")
+        transform = from_origin(600000, 5700000, 10, 10)
+        mem = _memcog(data, crs=UTM32, transform=transform)
+        footprint_bbox = _bbox_to_wgs84(UTM32, rasterio.transform.array_bounds(20, 20, transform))
+        west, south, east, north = footprint_bbox
+        lon_span = east - west
+        # The AOI reaches well past the item's real footprint to the east — a
+        # user-drawn area that only one scene of the group actually covers.
+        aoi = _polygon((west, south, east + lon_span * 2, north))
+        item = {"id": "ITEM1", "geometry": _polygon(footprint_bbox)}
+
+        region = dl.compute_crop_region([item], shapely_shape(aoi))
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_reader,
+            crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(mem),))],
+            aoi_geometry=aoi,
+            region_geometry=shapely_mapping(region),
+            item_ids=["ITEM1"],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+                out_west, out_south, out_east, out_north = transform_bounds(ds.crs, "EPSG:4326", *ds.bounds)
+            with rasterio.io.MemoryFile(archive.read("visual_mask.tif")) as mf, mf.open() as mask_ds:
+                mask_west, mask_south, mask_east, mask_north = transform_bounds(
+                    mask_ds.crs, "EPSG:4326", *mask_ds.bounds
+                )
+
+            # Both the data file and the mask end at the scene's own eastern
+            # edge, not the AOI's own (much further east) bounding box.
+            assert out_east == pytest.approx(east, abs=1e-3)
+            assert out_east < aoi.get("coordinates")[0][2][0] - lon_span * 0.5
+            assert mask_east == pytest.approx(east, abs=1e-3)
+
+            # ...yet the AOI written into the ZIP is still the whole, original
+            # area the user drew, unclipped by what the scene actually covers.
+            written_aoi = json.loads(archive.read("aoi.geojson"))
+            assert written_aoi == aoi
+
+    def test_two_scenes_of_one_group_crop_to_the_union_of_both_footprints(self) -> None:
+        data = np.full((3, 20, 20), 40, dtype="uint8")
+        transform1 = from_origin(600000, 5700000, 10, 10)
+        transform2 = from_origin(600300, 5700000, 10, 10)  # adjacent, to the east
+        mem1 = _memcog(data, crs=UTM32, transform=transform1)
+        mem2 = _memcog(data, crs=UTM32, transform=transform2)
+        fp1 = _bbox_to_wgs84(UTM32, rasterio.transform.array_bounds(20, 20, transform1))
+        fp2 = _bbox_to_wgs84(UTM32, rasterio.transform.array_bounds(20, 20, transform2))
+        union_west, union_south = min(fp1[0], fp2[0]), min(fp1[1], fp2[1])
+        union_east, union_north = max(fp1[2], fp2[2]), max(fp1[3], fp2[3])
+        # An AOI clearly larger than the union of both footprints in every
+        # direction — the group's own extent is what should bound the crop,
+        # not this margin.
+        margin = (union_north - union_south) * 0.5
+        aoi = _polygon(
+            (union_west - margin, union_south - margin, union_east + margin, union_north + margin)
+        )
+        items = [
+            {"id": "ITEM1", "geometry": _polygon(fp1)},
+            {"id": "ITEM2", "geometry": _polygon(fp2)},
+        ]
+
+        region = dl.compute_crop_region(items, shapely_shape(aoi))
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_reader,
+            crops=[
+                dl.AssetCrop(
+                    asset="visual",
+                    paths=(_asset_path(mem1, item_id="ITEM1"), _asset_path(mem2, item_id="ITEM2")),
+                )
+            ],
+            aoi_geometry=aoi,
+            region_geometry=shapely_mapping(region),
+            item_ids=["ITEM1", "ITEM2"],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            with rasterio.io.MemoryFile(archive.read("visual.tif")) as mf, mf.open() as ds:
+                out_bounds = transform_bounds(ds.crs, "EPSG:4326", *ds.bounds)
+
+            # The extent is the union of both scenes' own footprints, well
+            # short of the AOI's own (much larger, margin-padded) bounding box.
+            assert out_bounds[0] == pytest.approx(union_west, abs=1e-3)
+            assert out_bounds[2] == pytest.approx(union_east, abs=1e-3)
+            assert out_bounds[0] > aoi.get("coordinates")[0][0][0] + margin * 0.5
+
+            written_aoi = json.loads(archive.read("aoi.geojson"))
+            assert written_aoi == aoi
+
+    def test_geojson_in_the_zip_is_always_the_original_aoi_even_when_narrowed(self) -> None:
+        """A group that fully covers the AOI still ships ``aoi.geojson`` as the
+        AOI exactly as drawn — the same file the narrowing tests above already
+        check, isolated here as its own case per Otto's list (M3-18 §13)."""
+        data = np.full((3, 20, 20), 40, dtype="uint8")
+        transform = from_origin(600000, 5700000, 10, 10)
+        mem = _memcog(data, crs=UTM32, transform=transform)
+        footprint_bbox = _bbox_to_wgs84(UTM32, rasterio.transform.array_bounds(20, 20, transform))
+        aoi = _polygon(footprint_bbox)
+        item = {"id": "ITEM1", "geometry": _polygon(footprint_bbox)}
+
+        region = dl.compute_crop_region([item], shapely_shape(aoi))
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=open_reader,
+            crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(mem),))],
+            aoi_geometry=aoi,
+            region_geometry=shapely_mapping(region),
+            item_ids=["ITEM1"],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            written_aoi = json.loads(archive.read("aoi.geojson"))
+            assert written_aoi == aoi
