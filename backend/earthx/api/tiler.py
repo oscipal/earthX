@@ -54,9 +54,11 @@ from earthx.access.download import (
     AssetCrop,
     InvalidAoi,
     build_download_zip,
-    check_size_cap,
+    check_item_count_cap,
+    check_output_size_cap,
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
+    plan_outputs,
 )
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters import (
@@ -410,7 +412,9 @@ async def download_crop(
     Every check that can run before an asset is opened runs first, in the order
     M2-06's acceptance criteria list the failures: unknown dataset, licence tier,
     a malformed AOI, an unknown item, an AOI that touches none of the given items,
-    then the size cap — only after all of that does anything reach `gateway`.
+    the item-count cap, then the output size cap (M3-18: built from the AOI and
+    the items' own metadata, not from how many items or assets were asked for)
+    — only after all of that does anything reach `gateway`.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -434,15 +438,17 @@ async def download_crop(
     if not matched:
         raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
-    try:
-        check_size_cap(item_count=len(matched), asset_count=len(set(body.assets)))
-    except AoiTooLarge as error:
-        raise HTTPException(status_code=413, detail=str(error)) from None
-
     # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
     # and two identical keys would otherwise write the same file name into the
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
+
+    try:
+        check_item_count_cap(len(matched))
+        check_output_size_cap(plan_outputs(matched, wanted, aoi))
+    except AoiTooLarge as error:
+        raise HTTPException(status_code=413, detail=str(error)) from None
+
     crops = [
         AssetCrop(
             asset=asset,
@@ -464,6 +470,13 @@ async def download_crop(
             crops=crops,
             aoi_geometry=body.aoi,
             item_ids=[matched_item["id"] for matched_item in matched],
+            # The GDAL/VSI settings `gateway` also uses for the tile path
+            # (timeouts, the read cache, no directory listings on open) —
+            # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
+            # were unbounded and uncached. `rasterio.Env` is thread-local
+            # (adr/0006's own `_read_statistics` follows the same pattern), so
+            # it has to be entered inside the threadpool call, not around it.
+            gdal_env=state.earthx_gdal_options,
         )
     except AoiOutsideItems as error:
         # The bbox prefilter passed but the geometry itself misses every item's

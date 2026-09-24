@@ -112,9 +112,21 @@ class TestAcceptanceCriteria:
         assert response.status_code == 400
         assert "does not touch" in response.json()["detail"]
 
-    def test_an_aoi_too_large_for_the_cap_is_413(self, client: TestClient) -> None:
-        response = _download(client, items=[ITEM_ID] * 22, assets=["visual"] * 13)
+    def test_more_than_the_item_cap_is_413(self, client: TestClient) -> None:
+        """F4 (M3-18): a mosaic capped at 25 scenes, independent of the output size."""
+        response = _download(client, items=[ITEM_ID] * 26, assets=["visual"])
         assert response.status_code == 413
+        assert "26 scenes" in response.json()["detail"]
+
+    def test_an_asset_without_size_metadata_falls_back_to_the_worst_case_and_is_413(
+        self, client: TestClient
+    ) -> None:
+        """`thumbnail` has neither `gsd` nor `raster:bands` on this item (F1/F2): the
+        estimate falls back to the conservative worst case M2-06 used for the whole
+        request — big enough on its own to trip the 200 MB cap."""
+        response = _download(client, assets=["thumbnail"])
+        assert response.status_code == 413
+        assert "MB" in response.json()["detail"]
 
     def test_a_dataset_without_processing_tier_licence_is_refused(
         self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch

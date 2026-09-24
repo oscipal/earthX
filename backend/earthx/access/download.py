@@ -14,11 +14,22 @@ split `access.tiles` already draws for the tile path.
 guess a source's bytes-on-the-wire (adr/0006 §3.4 measured that this depends on
 the COG's block layout, not the AOI), every read is bounded structurally by
 ``max_size`` — no reader call here ever produces more than
-:data:`MAX_OUTPUT_SIDE_PX` pixels per side — and the byte cap is a worst-case
-arithmetic bound computed from the request shape (how many items, how many
-assets) before a single reader is opened. A request that could not possibly
-fit under the cap, even in the best case for a single asset, never reaches
-`gateway` or GDAL.
+:data:`MAX_OUTPUT_SIDE_PX` pixels per side. The byte cap (M3-18, replacing
+M2-06's item-count x asset-count worst case, which rejected any crop of three
+or more items regardless of what they actually mosaic into) is instead built
+from what the *output* will be: :func:`plan_outputs` estimates each ZIP
+member's pixel count from the AOI and the item's own ``gsd``, and its
+bytes-per-pixel from the item's ``raster:bands``/``bands`` — all before a
+single reader is opened, so a request that could not possibly fit under the
+cap never reaches `gateway` or GDAL.
+
+**Memory is bounded separately from bytes (M3-18).** A mosaic across many
+items read all at once cost several gigabytes even under the 200 MB output cap
+(measured, plan §3) — `mosaic_reader` is therefore always called with
+``threads=1`` (:func:`crop_asset`), which also makes it stop reading further
+items the moment the AOI is fully covered, and a request is capped at
+:data:`MAX_DOWNLOAD_ITEMS` items so a mosaic that genuinely needs many of them
+does not run arbitrarily long.
 
 **Mosaicking (D11, adr/0006 §3.5, §4.2 Option M1):** only the crop mosaics
 across items in M2, never the tile path. The item list is filtered to the
@@ -31,7 +42,9 @@ rule the client already knows from the time line grouping (F5, F11).
 
 from __future__ import annotations
 
+import math
 import re
+import warnings
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -39,6 +52,8 @@ from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any
 
+import numpy
+import rasterio
 from rasterio.io import MemoryFile
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
@@ -57,19 +72,24 @@ from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
 __all__ = [
+    "MAX_DOWNLOAD_ITEMS",
     "MAX_OUTPUT_SIDE_PX",
     "MAX_TOTAL_OUTPUT_BYTES",
     "AoiOutsideItems",
     "AoiTooLarge",
     "InvalidAoi",
     "NOTICE_FILENAME",
+    "PlannedOutput",
     "build_download_zip",
     "build_notice_text",
-    "check_size_cap",
+    "check_item_count_cap",
+    "check_output_size_cap",
     "crop_asset",
     "crop_filename",
+    "estimate_output_dims",
     "filter_items_intersecting_aoi",
     "parse_aoi_geometry",
+    "plan_outputs",
 ]
 
 # Recommendation confirmed by Otto in the plan step of M2-06 (2026-09-20): a
@@ -79,18 +99,60 @@ __all__ = [
 # is what actually limits a mosaic of many items or many assets.
 MAX_OUTPUT_SIDE_PX = 4096
 
-# 200 MB total across every asset and every item a request touches (Otto,
-# 2026-09-20). A single asset never reaches this on its own — the pixel cap
-# above already holds it near 64 MB — so this cap mostly bites when a mosaic or
-# a long asset list is requested at once.
+# 200 MB total across every planned output file a request produces (Otto,
+# 2026-09-20; scope corrected 2026-09-24, M3-18: the output, not the input —
+# see plan_outputs below). A single asset rarely reaches this on its own — the
+# pixel cap above already holds one band near 64 MB — so this cap mostly bites
+# a many-band asset or several assets requested at once.
 MAX_TOTAL_OUTPUT_BYTES = 200_000_000
 
-# The conservative per-pixel byte estimate the pre-read cap is built from:
-# worst case for the dtypes GDAL reads for imagery (uint8 up to float32), one
-# band. Real reads are almost always smaller once compressed and cropped to
-# valid data, which is the point — the estimate must never be an
-# underestimate, or the cap would let a request through that then blows memory.
-_BYTES_PER_PIXEL_WORST_CASE = 4
+# How many scenes a single mosaic may touch (F4, M3-18, Otto 24.09.2026). This
+# bounds runtime, not memory — `crop_asset`'s `threads=1` mosaic read already
+# stops as soon as the AOI is fully covered (measured, plan §3), so this only
+# matters when a mosaic genuinely needs many of its items to fill the AOI.
+# Matches the per-tile mosaic cap `adr/0006` §5 "Zu Frage 4" already uses.
+MAX_DOWNLOAD_ITEMS = 25
+
+# Bytes per pixel for one band's GDAL/STAC `data_type` name (adr/0006 §12.3
+# names the same set for `raster:bands`). Only the sizes both real sources'
+# items are measured to actually use are listed; anything else falls back to
+# the conservative worst case below rather than guessing.
+_BYTES_PER_DTYPE: dict[str, int] = {
+    "uint8": 1,
+    "int8": 1,
+    "byte": 1,
+    "uint16": 2,
+    "int16": 2,
+    "uint32": 4,
+    "int32": 4,
+    "float32": 4,
+    "uint64": 8,
+    "int64": 8,
+    "float64": 8,
+}
+
+# F2 (M3-18, Otto 24.09.2026): the fallback when an asset's band count or dtype
+# cannot be read off the item at all — deliberately never smaller than what
+# both real sources are measured to declare (Earth Search's `visual`: 3 bands
+# x 1 byte; EOPF's Zarr composites: as many bands as the asset key names, dtype
+# unknown). 8 bytes/band covers every dtype above; 4 bands is the widest a
+# Sentinel-2 asset in the registry names today (adr/0003).
+_FALLBACK_BYTES_PER_BAND = 8
+_FALLBACK_BAND_COUNT = 4
+
+# ZSTD, not `deflate` (M2-06's original choice): measured against a real
+# synthetic COG with the AOI mask this task adds (F3), `cog_translate`'s
+# DEFLATE encoding of a masked, single-tile crop was intermittently unreadable
+# afterwards ("ZIPDecode: incorrect data check", a handful of runs in a few
+# hundred, reproduced outside pytest too — not a flaky test). ZSTD was not
+# observed to do this in the same measurement (200/200). Read once at import,
+# not on every crop: `rio_cogeo` itself warns every time this profile is
+# built, about exactly the trade-off being made here on purpose (older
+# GDAL/libtiff builds may not read ZSTD-compressed TIFFs) — the warning is
+# real, one occurrence of it belongs in a log or a review, not one per crop.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", UserWarning)
+    _MASKED_COG_PROFILE = cog_profiles.get("zstd")
 
 NOTICE_FILENAME = "ATTRIBUTION.txt"
 
@@ -156,27 +218,190 @@ def filter_items_intersecting_aoi(
     return matched
 
 
-def check_size_cap(
-    *,
-    item_count: int,
-    asset_count: int,
-    max_side: int = MAX_OUTPUT_SIDE_PX,
-    max_bytes: int = MAX_TOTAL_OUTPUT_BYTES,
-) -> None:
-    """Refuse a request whose worst case cannot fit, before any reader opens anything.
-
-    The worst case assumes every item contributes a full ``max_side`` x
-    ``max_side`` raster for every requested asset — an upper bound a mosaic
-    read can only ever come in under, never exceed, because ``max_size`` on the
-    reader call enforces it structurally (§module docstring).
-    """
+def check_item_count_cap(item_count: int, *, max_items: int = MAX_DOWNLOAD_ITEMS) -> None:
+    """Refuse a mosaic that would have to touch more than ``max_items`` scenes (F4, M3-18)."""
     if item_count <= 0:
         raise AoiTooLarge("no item survived the AOI filter")
-    worst_case = item_count * asset_count * max_side * max_side * _BYTES_PER_PIXEL_WORST_CASE
-    if worst_case > max_bytes:
+    if item_count > max_items:
         raise AoiTooLarge(
-            f"{item_count} item(s) x {asset_count} asset(s) at up to {max_side}x{max_side} px "
-            f"could reach {worst_case} bytes, over the {max_bytes} byte cap"
+            f"This download covers {item_count} scenes; at most {max_items} fit in one download. "
+            "Select fewer scenes or draw a smaller area."
+        )
+
+
+def _finite_positive(value: Any) -> float | None:
+    """``value`` as a finite, positive float, or ``None`` for anything that is not one.
+
+    Used on values that come straight off a STAC item — a ``gsd`` of ``0``,
+    negative, ``NaN`` or a string is a malformed item, not something to divide
+    by (found in the plan step's "zweckfremde Nutzung" pass, M3-18).
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def _asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
+    """Ground sample distance of ``asset`` on ``item``, in metres/pixel, or ``None`` if unusable (F1).
+
+    Tried in the order both real sources are measured to carry it (plan §3):
+    the asset's own ``gsd``, then the first band's ``raster:bands``
+    ``spatial_resolution``, then the item's own ``properties.gsd``.
+    """
+    item_asset = item.get("assets", {})
+    item_asset = item_asset.get(asset, {}) if isinstance(item_asset, Mapping) else {}
+    if not isinstance(item_asset, Mapping):
+        item_asset = {}
+    candidates: list[Any] = [item_asset.get("gsd")]
+    bands = item_asset.get("raster:bands")
+    if isinstance(bands, list) and bands and isinstance(bands[0], Mapping):
+        candidates.append(bands[0].get("spatial_resolution"))
+    properties = item.get("properties")
+    if isinstance(properties, Mapping):
+        candidates.append(properties.get("gsd"))
+    for candidate in candidates:
+        gsd = _finite_positive(candidate)
+        if gsd is not None:
+            return gsd
+    return None
+
+
+def _dtype_bytes(data_type: Any) -> int:
+    """Bytes per pixel for one band's dtype name, or the conservative fallback."""
+    if isinstance(data_type, str):
+        size = _BYTES_PER_DTYPE.get(data_type.lower())
+        if size is not None:
+            return size
+    return _FALLBACK_BYTES_PER_BAND
+
+
+def _asset_bytes_per_pixel(item: Mapping[str, Any], asset: str) -> int:
+    """Bytes one pixel of ``asset`` costs in the output, summed over its bands (F2).
+
+    ``raster:bands``/``bands`` on the item's own asset entry names each band's
+    dtype where a source has one (Earth Search does; EOPF's Zarr assets are
+    measured not to, plan §3 — Otto's local check after this PR replaces the
+    fallback below with the measured value). A Zarr composite asset key
+    (``SR_10m:b04,b03,b02``, adr/0007 §12.11) names its band count in the key
+    itself even where the item carries no ``raster:bands`` at all.
+    """
+    item_asset = item.get("assets", {})
+    item_asset = item_asset.get(asset, {}) if isinstance(item_asset, Mapping) else {}
+    if not isinstance(item_asset, Mapping):
+        item_asset = {}
+    bands = item_asset.get("raster:bands") or item_asset.get("bands")
+    if isinstance(bands, list) and bands:
+        return sum(_dtype_bytes(band.get("data_type") if isinstance(band, Mapping) else None) for band in bands)
+    if ":" in asset:
+        variables = [v for v in asset.split(":", 1)[1].split(",") if v]
+        if variables:
+            return len(variables) * _FALLBACK_BYTES_PER_BAND
+    return _FALLBACK_BAND_COUNT * _FALLBACK_BYTES_PER_BAND
+
+
+# A degree of latitude is at most ~111,694 m on WGS84 (widest near the poles);
+# a degree of longitude is widest at the equator, ~111,320 m. Both are used as
+# upper bounds in `estimate_output_dims`, never the true value at the AOI's
+# actual latitude, which is not known without opening a reader (F1) — the
+# point is that the estimate can only come out too high, never too low.
+_DEG_TO_M_LAT = 111_700.0
+_DEG_TO_M_LON_AT_EQUATOR = 111_320.0
+
+
+def estimate_output_dims(aoi: BaseGeometry, gsd: float, *, max_side: int = MAX_OUTPUT_SIDE_PX) -> tuple[int, int]:
+    """Conservative ``(height, width)`` in pixels for a ``max_size=max_side`` read of ``aoi`` at ``gsd`` m/pixel.
+
+    Mirrors ``rio_tiler.utils._get_width_height`` (long side clipped to
+    ``max_side``, the other side scaled to keep the AOI's own aspect ratio),
+    but computed from the AOI geometry alone, before any reader opens a
+    dataset (F1, M3-18) — deliberately never smaller than what rio-tiler
+    itself will produce for the same request: the AOI's least-poleward
+    latitude sets the (largest possible) metres a degree of longitude is
+    worth here, and a straddled equator is the largest case of all.
+    """
+    minx, miny, maxx, maxy = aoi.bounds
+    least_poleward_lat = min(abs(miny), abs(maxy)) if miny * maxy > 0 else 0.0
+    lon_m_per_degree = _DEG_TO_M_LON_AT_EQUATOR * math.cos(math.radians(least_poleward_lat))
+    width_px = max(1, math.ceil((maxx - minx) * lon_m_per_degree / gsd))
+    height_px = max(1, math.ceil((maxy - miny) * _DEG_TO_M_LAT / gsd))
+    if max(width_px, height_px) <= max_side:
+        return height_px, width_px
+    if height_px > width_px:
+        height = max_side
+        width = max(1, math.ceil(height * width_px / height_px))
+    else:
+        width = max_side
+        height = max(1, math.ceil(width * height_px / width_px))
+    return height, width
+
+
+@dataclass(frozen=True)
+class PlannedOutput:
+    """One ZIP member's worst-case cost, computed before any reader opens anything (F1/F2, M3-18)."""
+
+    label: str
+    width: int
+    height: int
+    bytes_per_pixel: int
+
+    @property
+    def total_bytes(self) -> int:
+        return self.width * self.height * self.bytes_per_pixel
+
+
+def plan_outputs(
+    items: Sequence[Mapping[str, Any]],
+    assets: Sequence[str],
+    aoi: BaseGeometry,
+    *,
+    max_side: int = MAX_OUTPUT_SIDE_PX,
+) -> list[PlannedOutput]:
+    """The worst-case size of every file :func:`build_download_zip` will write, one per asset.
+
+    A mosaic across ``items`` is still one file per asset (M2-06; M3-17 keeps
+    that shape, one call per group), so the size that matters is the single
+    worst-case output, not a sum over items: the finest (smallest) resolution
+    any item advertises for the asset — the most pixels before ``max_side``
+    clips them — and the largest bytes-per-pixel any item advertises, in case
+    sources ever disagree with each other.
+    """
+    planned = []
+    for asset in assets:
+        gsds = [gsd for gsd in (_asset_gsd(item, asset) for item in items) if gsd is not None]
+        if gsds:
+            height, width = estimate_output_dims(aoi, min(gsds), max_side=max_side)
+        else:
+            # Nothing on any item says how fine this asset is — the same
+            # upper bound M2-06 used for the whole request (F1 option 1).
+            height = width = max_side
+        bytes_per_pixel = max(
+            (_asset_bytes_per_pixel(item, asset) for item in items),
+            default=_FALLBACK_BAND_COUNT * _FALLBACK_BYTES_PER_BAND,
+        )
+        planned.append(PlannedOutput(label=asset, width=width, height=height, bytes_per_pixel=bytes_per_pixel))
+    return planned
+
+
+def check_output_size_cap(planned: Sequence[PlannedOutput], *, max_bytes: int = MAX_TOTAL_OUTPUT_BYTES) -> None:
+    """Refuse a request whose planned output cannot fit, before any reader opens anything (M3-18).
+
+    Replaces M2-06's item-count x asset-count worst case, which rejected any
+    crop of three or more items regardless of what they actually mosaic into
+    (plan §2) — the estimate here is per output file, built by
+    :func:`plan_outputs` from the AOI and the items' own metadata, not from
+    how many items or assets were asked for.
+    """
+    if not planned:
+        raise AoiTooLarge("no output was planned for this request")
+    total = sum(output.total_bytes for output in planned)
+    if total > max_bytes:
+        raise AoiTooLarge(
+            f"This download would be about {total / 1_000_000:.0f} MB, more than the "
+            f"{max_bytes / 1_000_000:.0f} MB limit. Draw a smaller area or download fewer layers."
         )
 
 
@@ -193,6 +418,11 @@ def crop_asset(
     ``rio_tiler.mosaic.mosaic_reader`` with the default `FirstMethod` (first
     valid pixel wins, adr/0006 §3.5) — the same rule a viewer already applies
     when it groups a mosaic's scenes into one step of the time line.
+
+    ``threads=1`` (F4, M3-18): measured to hold memory flat regardless of how
+    many items are in ``asset_paths`` — rio-tiler then reads items one at a
+    time and stops as soon as ``FirstMethod`` has filled every pixel the AOI
+    covers, instead of opening every item's reader concurrently (plan §3).
     """
 
     def _read(path: AssetPath | ZarrAsset) -> ImageData:
@@ -207,7 +437,7 @@ def crop_asset(
 
     try:
         image, _used = mosaic_reader(
-            list(asset_paths), _read, allowed_exceptions=_AOI_MISSES_THE_DATA
+            list(asset_paths), _read, threads=1, allowed_exceptions=_AOI_MISSES_THE_DATA
         )
     except EmptyMosaicError as error:
         raise AoiOutsideItems(str(error)) from None
@@ -217,20 +447,70 @@ def crop_asset(
 def _image_to_cog_bytes(image: ImageData) -> bytes:
     """A real COG (internal tiling and overviews), built without touching disk.
 
-    Two in-memory GDAL datasets, never a filesystem path: ``ImageData.to_raster``
-    needs somewhere to write the plain GeoTIFF it knows how to build, and
+    Two in-memory GDAL datasets, never a filesystem path: the plain GeoTIFF is
+    written by hand here (not ``ImageData.to_raster``, see below), and
     ``cog_translate`` needs somewhere to write the COG it turns that into.
     ``MemoryFile.name`` is a ``/vsimem/...`` path — GDAL's own virtual
     filesystem — so both writes stay in the process's RAM (D3: "nichts wird auf
     Platte geschrieben").
+
+    **The AOI mask (F3, M3-18, Otto 24.09.2026).** A pixel the AOI polygon does
+    not cover — or that the source itself has no data for — is written as
+    ``0`` and carries no other trace of what the source's data used to be
+    there; its invalidity travels as a GDAL-internal mask band instead, the
+    same signal whether the asset has one band or many and whether one item
+    was read or several were mosaicked. ``ImageData.to_raster`` cannot do
+    this: it writes an alpha band once ``nodata`` is unset, which is exactly
+    how a single item and a mosaic used to come out with different band
+    counts (plan §2) — so the write happens here instead.
+
+    **The compression (:data:`_MASKED_COG_PROFILE`, module level).** A masked
+    COG is compressed with ZSTD, not `deflate` (M2-06's original choice) —
+    against a real synthetic COG with an oddly-shaped AOI, `cog_translate`'s
+    DEFLATE (and LZW) encoding of a masked crop was measured to intermittently
+    come out unreadable afterwards ("ZIPDecode: incorrect data check", a
+    handful of runs in a few hundred, reproduced outside pytest too, so a real
+    interaction this GDAL build cannot be trusted with — not a flaky test).
+    ZSTD was not observed to do this (200/200). `cog_translate` itself is
+    called with ``add_mask=True`` explicitly, not left to auto-detect the
+    plain file's own internal mask, for a second, independent reason: passing
+    a ``nodata`` value on the same call makes GDAL drop the mask instead of
+    carrying both, and reopening the finished COG to patch the tag in
+    afterwards (a real option, ``IGNORE_COG_LAYOUT_BREAK``) measured as its
+    own source of the same kind of corruption on these tiny, single-tile
+    crops. So no ``nodata`` tag is written at all, even where the source
+    declared one (``image.nodata``): the mask is the correctness mechanism a
+    reader must trust either way (module docstring); a ``nodata`` tag on top
+    was only ever additional information, never worth risking the download it
+    would ride on.
     """
+    array = image.array
+    invalid = numpy.ma.getmaskarray(array).any(axis=0)
+    filled = numpy.ma.filled(array, 0)
+    mask_band = (~invalid).astype("uint8") * 255
+
+    count, height, width = filled.shape
+    profile: dict[str, Any] = {
+        "driver": "GTiff",
+        "dtype": filled.dtype,
+        "count": count,
+        "height": height,
+        "width": width,
+        "transform": image.transform,
+    }
+    if image.crs:
+        profile["crs"] = image.crs
+
     with MemoryFile() as plain_mem:
-        image.to_raster(plain_mem.name)
+        with plain_mem.open(**profile) as dst:
+            dst.write(filled)
+            dst.write_mask(mask_band)
         with plain_mem.open() as plain_ds, MemoryFile() as cog_mem:
             cog_translate(
                 plain_ds,
                 cog_mem.name,
-                cog_profiles.get("deflate"),
+                _MASKED_COG_PROFILE,
+                add_mask=True,
                 in_memory=True,
                 quiet=True,
             )
@@ -319,19 +599,29 @@ def build_download_zip(
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
     max_size: int = MAX_OUTPUT_SIDE_PX,
+    gdal_env: Mapping[str, str] | None = None,
 ) -> bytes:
     """The finished ZIP: one COG per requested asset, plus :data:`NOTICE_FILENAME`.
 
     Built entirely in memory (a ``BytesIO`` buffer, never a temp file) so the
     caller can stream the result without anything having touched disk.
+
+    ``gdal_env`` (F7, M3-18): the same GDAL/VSI settings `gateway` builds for
+    the tile path (``earthx.gateway.gdal.gdal_options``) — timeouts, the read
+    cache, no directory listings on open. `access` may not import `gateway`
+    (architekturplan.md 3.1), so the caller in `api` resolves it and hands the
+    plain dict in. ``rasterio.Env`` is thread-local: the caller runs this whole
+    function through ``run_in_threadpool``, so the context has to be entered
+    here, on the worker thread that actually reads, not around the ``await``.
     """
-    buffer = BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for crop in crops:
-            image = crop_asset(open_reader, crop.paths, aoi_geometry, max_size=max_size)
-            archive.writestr(crop_filename(crop.asset), _image_to_cog_bytes(image))
-        archive.writestr(
-            NOTICE_FILENAME,
-            build_notice_text(config, item_ids=item_ids, assets=[crop.asset for crop in crops]),
-        )
-    return buffer.getvalue()
+    with rasterio.Env(**(gdal_env or {})):
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for crop in crops:
+                image = crop_asset(open_reader, crop.paths, aoi_geometry, max_size=max_size)
+                archive.writestr(crop_filename(crop.asset), _image_to_cog_bytes(image))
+            archive.writestr(
+                NOTICE_FILENAME,
+                build_notice_text(config, item_ids=item_ids, assets=[crop.asset for crop in crops]),
+            )
+        return buffer.getvalue()

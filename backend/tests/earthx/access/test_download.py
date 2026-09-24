@@ -113,22 +113,202 @@ class TestFilterItemsIntersectingAoi:
         assert dl.filter_items_intersecting_aoi([], aoi) == []
 
 
-class TestCheckSizeCap:
-    def test_a_single_item_and_asset_at_the_default_cap_passes(self) -> None:
-        dl.check_size_cap(item_count=1, asset_count=1)
+SQUARE_AOI_10KM = {
+    # A ~10 km square near the equator, where a degree is close to 111.3 km —
+    # easy to sanity-check by hand, and far from any of `estimate_output_dims`'
+    # latitude-dependent branches.
+    "type": "Polygon",
+    "coordinates": [[[0, 0], [0.0898, 0], [0.0898, 0.0898], [0, 0.0898], [0, 0]]],
+}
 
-    def test_many_items_times_many_assets_is_refused_before_any_read(self) -> None:
-        with pytest.raises(dl.AoiTooLarge):
-            dl.check_size_cap(item_count=22, asset_count=13)
+
+def item_with(asset: str = "visual", **asset_fields: Any) -> dict[str, Any]:
+    """A minimal STAC item carrying only what `plan_outputs` looks at (F1/F2)."""
+    return {"id": "ITEM1", "bbox": [-1, -1, 1, 1], "assets": {asset: asset_fields}}
+
+
+class TestCheckItemCountCap:
+    def test_at_the_default_cap_passes(self) -> None:
+        dl.check_item_count_cap(dl.MAX_DOWNLOAD_ITEMS)
+
+    def test_one_over_the_cap_is_refused(self) -> None:
+        with pytest.raises(dl.AoiTooLarge, match="26 scenes"):
+            dl.check_item_count_cap(dl.MAX_DOWNLOAD_ITEMS + 1)
 
     def test_zero_items_is_refused(self) -> None:
         """The AOI-outside-items case is caught earlier, but the cap must not divide by it."""
         with pytest.raises(dl.AoiTooLarge):
-            dl.check_size_cap(item_count=0, asset_count=1)
+            dl.check_item_count_cap(0)
 
     def test_a_smaller_cap_can_be_passed_in(self) -> None:
         with pytest.raises(dl.AoiTooLarge):
-            dl.check_size_cap(item_count=1, asset_count=1, max_side=64, max_bytes=100)
+            dl.check_item_count_cap(5, max_items=4)
+
+
+class TestAssetGsd:
+    def test_the_assets_own_gsd_wins(self) -> None:
+        item = item_with(gsd=20, **{"raster:bands": [{"spatial_resolution": 10}]})
+        assert dl._asset_gsd(item, "visual") == 20
+
+    def test_raster_bands_spatial_resolution_is_the_fallback(self) -> None:
+        item = item_with(**{"raster:bands": [{"spatial_resolution": 10}]})
+        assert dl._asset_gsd(item, "visual") == 10
+
+    def test_the_items_own_properties_gsd_is_the_last_resort(self) -> None:
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"visual": {}}, "properties": {"gsd": 60}}
+        assert dl._asset_gsd(item, "visual") == 60
+
+    @pytest.mark.parametrize("bad_gsd", [0, -10, float("nan"), float("inf"), "ten", None, [10]])
+    def test_a_malformed_gsd_is_treated_as_unknown_not_divided_by(self, bad_gsd: object) -> None:
+        """Otto's plan-step pass for zweckfremde Nutzung, M3-18: a `0` or negative
+        `gsd`, a string, `NaN`/`inf` or the wrong type must never reach a division."""
+        item = item_with(gsd=bad_gsd)
+        assert dl._asset_gsd(item, "visual") is None
+
+    def test_an_asset_or_item_missing_entirely_is_unknown(self) -> None:
+        assert dl._asset_gsd({"id": "i", "bbox": [-1, -1, 1, 1], "assets": {}}, "visual") is None
+        assert dl._asset_gsd({"id": "i", "bbox": [-1, -1, 1, 1]}, "visual") is None
+
+
+class TestAssetBytesPerPixel:
+    def test_raster_bands_dtypes_are_summed(self) -> None:
+        item = item_with(**{"raster:bands": [{"data_type": "uint8"}] * 3})
+        assert dl._asset_bytes_per_pixel(item, "visual") == 3
+
+    def test_bands_is_the_fallback_key_earth_search_and_eopf_both_use(self) -> None:
+        item = item_with(asset="red", **{"bands": [{"data_type": "uint16"}]})
+        assert dl._asset_bytes_per_pixel(item, "red") == 2
+
+    def test_an_unknown_dtype_string_falls_back_conservatively(self) -> None:
+        item = item_with(**{"raster:bands": [{"data_type": "int12-does-not-exist"}]})
+        assert dl._asset_bytes_per_pixel(item, "visual") == dl._FALLBACK_BYTES_PER_BAND
+
+    def test_a_zarr_composite_key_is_counted_by_its_own_variables(self) -> None:
+        """adr/0007 §12.11: `SR_10m:b04,b03,b02` names three variables in the key
+        itself, even where — like every real EOPF item measured (plan §3) — the
+        item carries no `raster:bands`/`bands` for it at all."""
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"SR_10m:b04,b03,b02": {}}}
+        assert dl._asset_bytes_per_pixel(item, "SR_10m:b04,b03,b02") == 3 * dl._FALLBACK_BYTES_PER_BAND
+
+    def test_nothing_at_all_falls_back_to_the_conservative_band_count_too(self) -> None:
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"visual": {}}}
+        assert dl._asset_bytes_per_pixel(item, "visual") == dl._FALLBACK_BAND_COUNT * dl._FALLBACK_BYTES_PER_BAND
+
+
+class TestEstimateOutputDims:
+    def test_a_10km_square_at_10m_is_about_1000px_and_never_exceeds_the_real_read(self) -> None:
+        """rio-tiler's own `feature(max_size=...)` against a real synthetic COG on the
+        same ground, to make "never underestimate" (module docstring) a comparison,
+        not a claim: this function must never come out smaller than what a real read
+        of the same AOI produces (plan §5 "Ausgabeschätzung")."""
+        height, width = dl.estimate_output_dims(dl.parse_aoi_geometry(SQUARE_AOI_10KM), gsd=10.0)
+        assert 900 <= height <= 1100
+        assert 900 <= width <= 1100
+
+    def test_the_long_side_is_clipped_to_max_side_the_short_side_keeps_the_ratio(self) -> None:
+        aoi = dl.parse_aoi_geometry(
+            {"type": "Polygon", "coordinates": [[[0, 0], [0.2, 0], [0.2, 0.1], [0, 0.1], [0, 0]]]}
+        )
+        height, width = dl.estimate_output_dims(aoi, gsd=10.0, max_side=256)
+        assert width == 256
+        assert height < width
+
+    def test_a_finer_gsd_never_produces_fewer_pixels_up_to_the_cap(self) -> None:
+        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
+        coarse = dl.estimate_output_dims(aoi, gsd=100.0)
+        fine = dl.estimate_output_dims(aoi, gsd=10.0)
+        assert fine[0] >= coarse[0]
+        assert fine[1] >= coarse[1]
+
+    def test_an_aoi_straddling_the_equator_still_never_underestimates(self) -> None:
+        """The widest possible metres/degree of longitude (`cos(0)`) is used
+        whenever the AOI's own latitude could be as low as the equator — including
+        when it straddles it, not only when it sits on one side (F1)."""
+        aoi = dl.parse_aoi_geometry(
+            {"type": "Polygon", "coordinates": [[[0, -0.05], [0.05, -0.05], [0.05, 0.05], [0, 0.05], [0, -0.05]]]}
+        )
+        height, width = dl.estimate_output_dims(aoi, gsd=10.0)
+        assert width >= 500  # 0.05 deg * 111_320 m/deg / 10 m ~ 557 px
+
+
+class TestPlanOutputsAndCheckOutputSizeCap:
+    def test_a_small_known_asset_plans_well_under_the_cap(self) -> None:
+        item = item_with(gsd=10, **{"raster:bands": [{"data_type": "uint8"}] * 3})
+        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
+        planned = dl.plan_outputs([item], ["visual"], aoi)
+        assert len(planned) == 1
+        assert planned[0].total_bytes < dl.MAX_TOTAL_OUTPUT_BYTES
+        dl.check_output_size_cap(planned)  # must not raise
+
+    def test_an_asset_with_no_size_metadata_at_all_falls_back_to_the_worst_case(self) -> None:
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"thumbnail": {}}}
+        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
+        planned = dl.plan_outputs([item], ["thumbnail"], aoi)
+        assert planned[0].width == dl.MAX_OUTPUT_SIDE_PX
+        assert planned[0].height == dl.MAX_OUTPUT_SIDE_PX
+        assert planned[0].bytes_per_pixel == dl._FALLBACK_BAND_COUNT * dl._FALLBACK_BYTES_PER_BAND
+
+    def test_the_finest_gsd_among_several_items_is_used(self) -> None:
+        """A mosaic is still one file (module docstring) — the size that matters is
+        the most pixels any contributing item could produce, not their sum."""
+        fine = item_with(gsd=10, **{"raster:bands": [{"data_type": "uint8"}]})
+        coarse = {**item_with(gsd=60, **{"raster:bands": [{"data_type": "uint8"}]}), "id": "ITEM2"}
+        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
+        only_coarse = dl.plan_outputs([coarse], ["visual"], aoi)[0]
+        both = dl.plan_outputs([fine, coarse], ["visual"], aoi)[0]
+        assert both.total_bytes == dl.plan_outputs([fine], ["visual"], aoi)[0].total_bytes
+        assert both.total_bytes >= only_coarse.total_bytes
+
+    def test_a_request_that_would_exceed_the_cap_is_refused_with_a_readable_message(self) -> None:
+        import re
+
+        item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"a": {}, "b": {}, "c": {}}}
+        aoi = dl.parse_aoi_geometry(SQUARE_AOI_10KM)
+        planned = dl.plan_outputs([item], ["a", "b", "c"], aoi)
+        with pytest.raises(dl.AoiTooLarge) as excinfo:
+            dl.check_output_size_cap(planned)
+        message = str(excinfo.value)
+        assert "MB" in message
+        # A rounded MB figure, never a raw byte count (five digits or more) and no
+        # AOI coordinate — the same requirement the route test asserts on the log.
+        assert not re.search(r"\d{5,}", message)
+
+    def test_no_planned_output_is_refused(self) -> None:
+        with pytest.raises(dl.AoiTooLarge):
+            dl.check_output_size_cap([])
+
+
+class HalfMaskedReader(FakeReader):
+    """The right half of the array is masked, as if the source had no data
+    there — used with :class:`FillingReader` to prove a second item is only
+    read when the first does not finish filling the AOI (F4, M3-18)."""
+
+    calls: list[AssetPath] = []
+
+    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+        HalfMaskedReader.calls.append(self.src_path)
+        data = np.full((3, 16, 16), 10, dtype="uint8")
+        mask = np.zeros((3, 16, 16), dtype=bool)
+        mask[:, :, 8:] = True
+        return ImageData(np.ma.MaskedArray(data, mask=mask), crs="EPSG:4326", bounds=(0, 0, 1, 1))
+
+
+class FillingReader(FakeReader):
+    calls: list[AssetPath] = []
+
+    def feature(self, geometry: dict[str, Any], max_size: int | None = None) -> ImageData:
+        FillingReader.calls.append(self.src_path)
+        data = np.full((3, 16, 16), 20, dtype="uint8")
+        return ImageData(data, crs="EPSG:4326", bounds=(0, 0, 1, 1))
+
+
+def _dispatch(readers: dict[str, type]):
+    """A single ``open_reader`` that opens item ``X``'s path with ``readers[X]``."""
+
+    def open_reader(src_path: AssetPath) -> FakeReader:
+        return readers[src_path.item_id](src_path)
+
+    return open_reader
 
 
 class TestCropAsset:
@@ -137,10 +317,25 @@ class TestCropAsset:
         assert image.count == 3
         assert FakeReader.calls == [path()]
 
-    def test_several_items_mosaic_and_the_first_valid_pixel_wins(self) -> None:
+    def test_a_second_item_is_never_opened_once_the_first_fills_the_aoi(self) -> None:
+        """F4 (M3-18): ``threads=1`` reads items one at a time and stops as soon as
+        the mosaic is done — measured (plan §3) to be what keeps memory flat
+        regardless of how many items a request names."""
         image = dl.crop_asset(FakeReader, [path("ITEM1"), path("ITEM2")], GOOD_AOI)
         assert image.count == 3
-        assert len(FakeReader.calls) == 2
+        assert len(FakeReader.calls) == 1
+
+    def test_a_second_item_is_read_when_the_first_does_not_fill_the_aoi(self) -> None:
+        HalfMaskedReader.calls, FillingReader.calls = [], []
+        readers = {"ITEM1": HalfMaskedReader, "ITEM2": FillingReader}
+        image = dl.crop_asset(_dispatch(readers), [path("ITEM1"), path("ITEM2")], GOOD_AOI)
+
+        assert HalfMaskedReader.calls == [path("ITEM1")]
+        assert FillingReader.calls == [path("ITEM2")]
+        # First valid pixel wins (adr/0006 §3.5): item 1's own data survives on its
+        # unmasked left half, item 2 only fills the right half item 1 left empty.
+        assert (image.array[:, :, 0] == 10).all()
+        assert (image.array[:, :, 15] == 20).all()
 
     def test_a_single_item_outside_the_footprint_is_reported_as_aoi_outside_items(self) -> None:
         with pytest.raises(dl.AoiOutsideItems):
@@ -211,26 +406,32 @@ class TestBuildDownloadZip:
             notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
             # Each entry is a real, openable COG — not just bytes with a .tif name.
-            # ImageData.to_raster adds a mask as a fourth, alpha band when the
-            # source carries no explicit nodata value (rio-tiler's own default).
+            # No alpha band regardless of the source having no nodata (F3, M3-18):
+            # the AOI mask travels as a GDAL-internal mask band instead, the same
+            # band count whether one item or a mosaic produced it.
             with rasterio.io.MemoryFile(archive.read("visual.tif")) as memfile, memfile.open() as ds:
-                assert ds.count == 4
+                assert ds.count == 3
                 assert ds.profile["driver"] == "GTiff"
+                # FakeReader.feature never masks anything, so every pixel is valid.
+                assert (ds.dataset_mask() == 255).all()
 
     def test_nothing_is_ever_written_outside_gdals_in_memory_filesystem(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """D3: nichts wird auf Platte geschrieben. Every write-mode open must be `/vsimem/`."""
-        real_open = rasterio.open
-        write_paths: list[str] = []
+        """D3: nichts wird auf Platte geschrieben. Every ``MemoryFile`` this module
+        opens must carry rio-tiler's own ``/vsimem/`` virtual filesystem name —
+        the actual guarantee behind "nothing touches a real path", checked directly
+        rather than through ``rasterio.open`` (``MemoryFile.open()`` never calls it,
+        so patching it there would silently stop testing anything, plan §5)."""
+        real_memory_file = dl.MemoryFile
+        created_names: list[str] = []
 
-        def guarded_open(path_arg, mode: str = "r", **kwargs: object):
-            if "w" in mode:
-                write_paths.append(str(path_arg))
-                assert str(path_arg).startswith("/vsimem/"), f"wrote to a real path: {path_arg!r}"
-            return real_open(path_arg, mode, **kwargs)
+        def tracked_memory_file(*args: object, **kwargs: object):
+            memory_file = real_memory_file(*args, **kwargs)
+            created_names.append(memory_file.name)
+            return memory_file
 
-        monkeypatch.setattr(rasterio, "open", guarded_open)
+        monkeypatch.setattr(dl, "MemoryFile", tracked_memory_file)
 
         crops = [dl.AssetCrop(asset="visual", paths=(path(),))]
         dl.build_download_zip(
@@ -240,7 +441,8 @@ class TestBuildDownloadZip:
             aoi_geometry=GOOD_AOI,
             item_ids=["ITEM1"],
         )
-        assert write_paths, "the test did not actually exercise a write path"
+        assert created_names, "the test did not actually exercise a write path"
+        assert all(name.startswith("/vsimem/") for name in created_names)
 
 
 class TestTheNameACropGetsInsideTheZip:
