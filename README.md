@@ -152,6 +152,32 @@ Ohne einen separaten Browser lässt sich die API auch direkt ansehen:
 einem Browser-Tab ist weniger übersichtlich als ein STAC-Browser, aber ohne
 einen zweiten Container zu prüfen).
 
+### Den dritten Datensatz laden: Copernicus DEM GLO-30 (M3-11b)
+
+Anders als die beiden Sentinel-2-Einträge hat der DEM keine eigene Such-API
+(`adr/0009`): Seine 26 450 Items entstehen einmalig aus der Kachelliste des
+AWS-Buckets und werden in den eigenen Katalog geschrieben. `catalog-load`
+kennt die Collection selbst schon (Schritt 3 oben), aber ohne diesen Schritt
+liefert eine Suche danach `0` Treffer.
+
+1. Die Zieltopologie muss laufen (`docker compose up`).
+2. In einem **neuen Terminal**:
+   ```bash
+   docker compose run --rm materialize cop-dem-glo-30
+   ```
+   Das läuft einmalig durch (rund 30 Anfragen an den Bucket, keine Bilddaten)
+   und endet mit einer Zeile wie `cop-dem-glo-30: loaded (source version …);
+   26450 items written, 0 deleted; …`. Ein erneuter Lauf ohne Änderung an der
+   Quelle endet stattdessen mit `unchanged` und schreibt nichts.
+3. Danach zeigt `http://localhost:8000/stac/collections/cop-dem-glo-30/items`
+   Treffer, und der Viewer findet den Datensatz über den Datensatz-Filter
+   (M3-10; bis dahin über die Collection-ID direkt).
+
+Absichtlich **kein** Compose-Dienst, der bei `docker compose up` mitläuft
+(`profiles: ["materialize"]`): Der Befehl reicht bis zu einer echten externen
+Quelle, und weder ein gewöhnlicher lokaler Start noch die CI sollen sie
+anfragen.
+
 ### Den Viewer starten (Frontend)
 
 Der Viewer ist die eigentliche Bedienoberfläche (Suche, Quicklooks,
@@ -224,6 +250,17 @@ Nachbesserungsrunden.
   Die Zarr3-Quelle führt selbst den Status „staging" und kann ohne
   Vorankündigung verschwinden (adr/0007 §12.11 Punkt 14) — die Abnahme von M2
   hängt davon nicht ab (D24).
+- **Copernicus DEM GLO-30** (`cop-dem-glo-30`, direkt aus dem AWS-Open-Data-Bucket,
+  Format COG; **M3-11b**, muss vor der ersten Anzeige erst über
+  `docker compose run --rm materialize cop-dem-glo-30` geladen werden, siehe
+  Abschnitt 2): „© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH
+  2014-2018 provided under COPERNICUS by the European Union and ESA; all
+  rights reserved"; bei Weitergabe **veränderter** Daten zusätzlich „produced
+  using Copernicus WorldDEM-30" (`docs/adr/0003-erster-datensatz.md` §11.1).
+  Nutzung unterliegt der
+  [Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open](https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf)
+  (Haftungsausschluss der Copernicus-Trägerorganisationen). Zitierangabe:
+  [doi.org/10.5270/ESA-c5d3d65](https://doi.org/10.5270/ESA-c5d3d65).
 - **Basiskarte**: Esri World Imagery — *Esri, Maxar, Earthstar
   Geographics, and the GIS User Community*.
 
