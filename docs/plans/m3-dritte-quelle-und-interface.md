@@ -500,6 +500,13 @@ und die Bedienung vorschlagen.
 **Abnahme:** Vitest für den Filter; mit drei Datensätzen keine
 Datensatz-Kennung im Frontend-Code nötig.
 
+> **Nachtrag (Otto, 26.09.2026, M3-11b F11):** Richtung „ein Zeitraum, mehrere
+> Datensätze zugleich“ — der Filter wird zur **Mehrfachauswahl**, nicht zur
+> Auswahl eines einzelnen Datensatzes. Der Viewer fragt dann mehrere
+> Collections zugleich ab, über die gemischte Suche (M3-13). Einzelheiten
+> (Bedienung der Mehrfachauswahl, Darstellung mehrerer Datensätze im
+> Ergebnis) klärt der Plan-Schritt von M3-10, sobald die Aufgabe ansteht.
+
 ### M3-11 — Dritte Quelle anbinden: Überblick
 
 Die dritte Quelle ist **Copernicus DEM GLO-30, direkt aus dem Bucket**
@@ -646,6 +653,26 @@ unverändert; der DEM ist im Viewer suchbar, als Fläche in der Coverage
 sichtbar, in voller Auflösung anzeigbar und als Zuschnitt ladbar; Checkliste
 grün; Otto prüft lokal.
 
+> **Nachtrag (Otto, 26.09.2026, M3-11b F11), zwei Verhaltensregeln:**
+>
+> 1. **Datensätze ohne Zeitachse** (`capabilities.time_range=False`, wie der
+>    DEM ab M3-11b): werden bei **jedem** gewählten Zeitraum angezeigt, nie
+>    nach Datum gefiltert. Die Oberfläche zeigt einen Hinweis mit dem
+>    Aufnahmezeitraum, z. B. „No time axis – acquired Dec 2010 to Jan 2015“
+>    (fest).
+> 2. **Datensätze ohne im Browser darstellbare Quicklooks:** Statt der
+>    Quicklook-Stufe erscheint direkt die Vollauflösung, zugeschnitten auf die
+>    AOI (Mechanismus aus M3-09). Ohne AOI ein Hinweis „Draw an AOI to view
+>    this dataset“ (Verhalten ohne AOI: Vorschlag, noch nicht endgültig
+>    entschieden). Unterhalb der kleinsten freigegebenen Zoomstufe erscheint
+>    „Zoom in to see this dataset“. Ob ein Datensatz Quicklooks hat, steht in
+>    der Registry, nicht im Frontend (fest).
+>
+> Beide Regeln sind Umfang dieser Aufgabe; Feldnamen und genaue Texte legt der
+> Plan-Schritt fest. Dazu die Richtung aus dem M3-10-Nachtrag: Mehrfachauswahl
+> von Datensätzen über die gemischte Suche (M3-13), nicht mehr Auswahl eines
+> einzelnen.
+
 ### M3-13 — Gemischte Suche und CQL2
 
 **Ziel:** Eine Suche über eigene und föderierte Collections liefert eine
@@ -664,6 +691,13 @@ Suche nutzt oder je Datensatz bleibt.
 **Abnahme:** Tests für gemischte Suche mit eigener und föderierter Collection,
 Ausfall einer Quelle, Paging über die Grenze, unbekannte Collection, `filter`
 auf einer Collection ohne Unterstützung.
+
+> **Nachtrag (Otto, 26.09.2026, M3-11b F11):** beantwortet die letzte
+> Im-Plan-Schritt-Frage oben — „ob der Viewer die gemischte Suche nutzt oder
+> je Datensatz bleibt“ — mit **ja, der Viewer nutzt sie**: ein Zeitraum, mehrere
+> Datensätze zugleich, ausgelöst über die Mehrfachauswahl von M3-10 (fest,
+> Richtung). Das Paging-Verfahren selbst und die weiteren Im-Plan-Schritt-Fragen
+> bleiben offen für den Plan-Schritt dieser Aufgabe.
 
 ### M3-14 — Interface-Reflexion → `adr/0011`
 
