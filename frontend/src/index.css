@@ -580,6 +580,78 @@ input[type='date']:focus {
   box-shadow: var(--glow);
 }
 
+/* --- place search (M3-07b) --- */
+.place-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.place-search-row {
+  display: flex;
+  gap: 6px;
+}
+.place-search-row input[type='text'] {
+  flex: 1;
+  width: auto;
+}
+.place-search-row .tool-btn {
+  flex: 0 0 auto;
+  grid-column: auto;
+  padding: 8px 12px;
+}
+/* In-flow, not a floating dropdown (plan §4): the panel already scrolls, and
+   an overlay would have to coordinate with the draw tool and the panel's own
+   collapse (`panelCollapsed`). */
+.place-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+.place-result {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 6px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.place-result:hover {
+  background: var(--row-hover);
+}
+.place-result-name {
+  font-weight: 700;
+  grid-column: 1;
+}
+.place-result-kind {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 10px;
+  align-self: start;
+}
+.place-result-display {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.place-attribution {
+  padding: 2px 8px;
+}
+.place-attribution a {
+  color: var(--muted);
+}
+
 /* --- AOI upload / last row --- */
 .aoi-extras {
   display: flex;

@@ -449,6 +449,38 @@ class TestBuildDownloadZip:
             aoi_geojson = json.loads(archive.read(dl.AOI_FILENAME).decode("utf-8"))
             assert aoi_geojson == GOOD_AOI
 
+    def test_aoi_geojson_keeps_extra_properties_the_caller_put_on_the_geometry(self) -> None:
+        """M3-07b F3 (Otto, 26.09.2026): a place-search AOI carries its OSM
+        provenance in a ``properties`` key on the geometry dict itself (never a
+        proper GeoJSON ``Feature`` — the frontend, the download request model in
+        `api/tiler.py` (``aoi: dict[str, Any]``) and ``parse_aoi_geometry`` all
+        treat the AOI as a bare geometry everywhere else). Nothing here has to
+        change for that to survive into ``aoi.geojson``: ``aoi_geometry`` is a
+        ``Mapping`` written back with ``json.dumps(dict(aoi_geometry))``, and
+        ``shapely.geometry.shape`` (``parse_aoi_geometry``) already ignores any
+        key beyond ``type``/``coordinates``. This test is the proof, not a
+        behaviour change — an upload or a drawn AOI never carries this key."""
+        aoi_with_provenance = {
+            **GOOD_AOI,
+            "properties": {
+                "source": "OpenStreetMap / Nominatim",
+                "attribution": "© OpenStreetMap contributors",
+                "license": "ODbL-1.0",
+            },
+        }
+        crops = [dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))]
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=FakeReader,
+            crops=crops,
+            aoi_geometry=aoi_with_provenance,
+            item_ids=["ITEM1"],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            aoi_geojson = json.loads(archive.read(dl.AOI_FILENAME).decode("utf-8"))
+        assert aoi_geojson == aoi_with_provenance
+        assert aoi_geojson["properties"]["attribution"] == "© OpenStreetMap contributors"
+
     def test_nothing_is_ever_written_outside_gdals_in_memory_filesystem(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
