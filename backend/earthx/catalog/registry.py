@@ -100,6 +100,31 @@ class HealthStatus(Enum):
     UNKNOWN = "unknown"
 
 
+class BrowseMode(Enum):
+    """What the viewer shows right after a search, before any tile is requested
+    (M3-12, Otto 26.09.2026 Nachtrag 2 / M3-11b F11).
+
+    ``QUICKLOOK`` — the source publishes a quicklook a browser can load
+    cross-origin and crop on its own canvas (Sentinel-2 COG). ``PREVIEW_TILES``
+    — no quicklook, but the dataset is released from a zoom level coarse
+    enough that one tile over an item stands in for one (the Zarr dataset,
+    which has no thumbnail/overview/preview/visual asset anywhere, adr/0007
+    §12.7). ``FULL_RESOLUTION`` — neither: the viewer shows the AOI crop in
+    full resolution straight after the search, the way the DEM does, because
+    it has no browsable quicklook and is not meaningfully previewable at a
+    coarse tile level either.
+
+    No default (KLAERUNGEN B10): before this field, the frontend guessed this
+    from whether an item happened to carry a thumbnail asset (``datasets.ts``
+    ``quicklookPlan``) — a source-specific fact the registry now states
+    outright instead.
+    """
+
+    QUICKLOOK = "quicklook"
+    PREVIEW_TILES = "preview_tiles"
+    FULL_RESOLUTION = "full_resolution"
+
+
 class Maturity(Enum):
     """How settled the *source* itself is — not a measurement like ``HealthStatus``,
     a fact about the dataset that belongs with licence and attribution
@@ -324,6 +349,23 @@ class DefaultRender:
             )
 
 
+def _check_property_names(field_name: str, values: tuple[str, ...]) -> None:
+    """The one rule ``group_by`` and ``results_group_by`` (M3-12) share: at least
+    one property, no repeats, and no ``properties.`` prefix (the prefix is
+    implied, ``ViewerInfo`` reads a bare name)."""
+    if not values:
+        raise ConfigError(f"viewer.{field_name} needs at least one property (KLAERUNGEN B10)")
+    if len(set(values)) != len(values):
+        raise ConfigError(f"viewer.{field_name} repeats a property: {values}")
+    for name in values:
+        if not name or name != name.strip():
+            raise ConfigError(f"viewer.{field_name} entry {name!r} is not a property name")
+        if name.startswith("properties."):
+            raise ConfigError(
+                f"viewer.{field_name} entry {name!r} carries the `properties.` prefix, which is implied"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class ViewerInfo:
     """What the viewer takes from the catalogue instead of from its own code.
@@ -362,28 +404,75 @@ class ViewerInfo:
 
     For Sentinel-2 the key is the acquisition day plus the MGRS tile:
     ``("datetime", "grid:code")``.
+
+    M3-12 adds three more fields, all still without a default (B10):
+
+    **``browse``** — see :class:`BrowseMode`.
+
+    **``quicklook_nodata_max``** — for ``browse=QUICKLOOK`` only: a quicklook
+    pixel with every band at or below this value is keyed transparent, so the
+    dark padding around an irregular scene does not paint over the basemap
+    (Sentinel-2's JPEGs are ``16``). ``None`` where the quicklook needs no such
+    freistellung. Must be ``None`` for the other two ``browse`` values — a
+    dataset that shows no quicklook has nothing for this to apply to.
+
+    **``results_group_by``** — the grouping key the *results list* heads its
+    groups by (V-4/D30) and the download route reuses as its per-group merge
+    (P19, M3-17): the same rule as ``group_by`` above, but a second field
+    because it may name a property ``group_by`` deliberately does not (M3-02
+    F-01) — Sentinel-2 COG groups its tile-and-day key display by day and
+    overpass instead (``s2:datatake_id``), the Zarr dataset by day and
+    overpass under its own vocabulary (``eopf:datatake_id``), and the DEM has
+    only one group for the whole dataset (``start_datetime``, every tile
+    shares the one acquisition period, M3-11b F7). Unlike the pre-M3-12
+    ``displayGroupBy`` in the frontend, there is no runtime fallback to
+    ``group_by`` when an item happens to lack the property: the registry
+    states the key that always applies, and a genuinely broken item still
+    surfaces as ``MissingProperty``, the same way a broken ``group_by`` item
+    always has.
+
+    A note on ``min_zoom`` for a dataset released from tiles that are already
+    clipped to their own item's extent (M3-09 onward: every tile URL is
+    per-item, never a mosaic): the reasoning above ("below it one tile shows
+    several scenes") does not hold there — an item's own tile costs the same
+    at every zoom down to where it stops touching its neighbours (measured for
+    the DEM, M3-12 plan step §3: z0 through z8 read the same overview block).
+    ``min_zoom`` is then a cost floor on how many tiles a viewport can ask for
+    at once, not a resolution floor; the DEM sets it to ``0`` on that basis.
     """
 
     group_by: tuple[str, ...]
     min_zoom: int
     max_zoom: int
+    browse: BrowseMode
+    quicklook_nodata_max: int | None
+    results_group_by: tuple[str, ...]
 
     def __post_init__(self) -> None:
         self._check_group_by()
         self._check_zoom()
+        self._check_results_group_by()
+        self._check_browse()
 
     def _check_group_by(self) -> None:
-        if not self.group_by:
-            raise ConfigError("viewer.group_by needs at least one property (KLAERUNGEN B10)")
-        if len(set(self.group_by)) != len(self.group_by):
-            raise ConfigError(f"viewer.group_by repeats a property: {self.group_by}")
-        for name in self.group_by:
-            if not name or name != name.strip():
-                raise ConfigError(f"viewer.group_by entry {name!r} is not a property name")
-            if name.startswith("properties."):
-                raise ConfigError(
-                    f"viewer.group_by entry {name!r} carries the `properties.` prefix, which is implied"
-                )
+        _check_property_names("group_by", self.group_by)
+
+    def _check_results_group_by(self) -> None:
+        _check_property_names("results_group_by", self.results_group_by)
+
+    def _check_browse(self) -> None:
+        if self.browse is BrowseMode.QUICKLOOK:
+            value = self.quicklook_nodata_max
+            if value is not None:
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ConfigError("viewer.quicklook_nodata_max must be a whole number 0..255, or None")
+                if not 0 <= value <= 255:
+                    raise ConfigError(f"viewer.quicklook_nodata_max {value} lies outside 0..255")
+        elif self.quicklook_nodata_max is not None:
+            raise ConfigError(
+                f"viewer.quicklook_nodata_max is set but browse is {self.browse.value}, not quicklook "
+                "(a dataset without a browsable quicklook has nothing for it to key transparent)"
+            )
 
     def _check_zoom(self) -> None:
         for name, level in (("min_zoom", self.min_zoom), ("max_zoom", self.max_zoom)):
@@ -549,6 +638,7 @@ class DatasetConfig:
         self._check_source()
         self._check_item_holding()
         self._check_zarr()
+        self._check_browse_cors()
 
     def _check_license_is_identifiable(self) -> None:
         """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
@@ -637,6 +727,18 @@ class DatasetConfig:
         if self.zarr is not None and self.format is not DataFormat.ZARR:
             raise ConfigError(
                 f"{self.dataset_id}: zarr info is set but format is {self.format.value}, not zarr"
+            )
+
+    def _check_browse_cors(self) -> None:
+        """M3-12, F-11: a quicklook the browser keys transparent on its own canvas
+        needs to load cross-origin from the asset host — without
+        ``Access-Control-Allow-Origin`` the canvas read throws (`mapLayers.ts`
+        ``keyBlackToTransparent``). A dataset that has not measured CORS on its
+        asset host cannot claim a browsable quicklook."""
+        if self.viewer is not None and self.viewer.browse is BrowseMode.QUICKLOOK and not self.access.cors:
+            raise ConfigError(
+                f"{self.dataset_id}: viewer.browse=quicklook needs access.cors=True "
+                "(a canvas cannot key a cross-origin quicklook transparent without it)"
             )
 
     def _check_item_holding(self) -> None:

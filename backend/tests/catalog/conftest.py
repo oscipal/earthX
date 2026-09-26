@@ -14,6 +14,7 @@ import pytest
 from earthx.catalog.registry import (
     AccessInfo,
     AdapterKind,
+    BrowseMode,
     Capabilities,
     CoverageInfo,
     CoverageProvider,
@@ -102,7 +103,18 @@ def valid_config() -> DatasetConfig:
             expression=None,
             resampling="nearest",
         ),
-        viewer=ViewerInfo(group_by=("datetime",), min_zoom=0, max_zoom=19),
+        viewer=ViewerInfo(
+            group_by=("datetime",),
+            min_zoom=0,
+            max_zoom=19,
+            # FULL_RESOLUTION needs no `access.cors=True` and no freistellung
+            # threshold — the least constrained combination, so a test that
+            # varies something unrelated to browse/grouping does not also
+            # have to satisfy QUICKLOOK's cross-field rule.
+            browse=BrowseMode.FULL_RESOLUTION,
+            quicklook_nodata_max=None,
+            results_group_by=("datetime",),
+        ),
         health=HealthInfo(status=HealthStatus.OK),
         maturity=Maturity.STABLE,
         zarr=None,
