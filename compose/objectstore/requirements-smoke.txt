@@ -1,0 +1,6 @@
+# Only for the CI step `Object store smoke` (M3-23, adr/0012 §9). Pinned to
+# the versions adr/0012 §5 measured against, and to backend/requirements.txt
+# for rasterio (kept in step with the wheel the application ships).
+boto3==1.43.103
+rasterio==1.5.1
+numpy>=1.26,<3
