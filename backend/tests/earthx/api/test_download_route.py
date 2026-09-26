@@ -25,6 +25,7 @@ import rasterio.errors
 from fastapi.testclient import TestClient
 from rio_tiler.models import ImageData
 
+from earthx.access import download as download_module
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseInfo, LicenseTier
@@ -388,3 +389,57 @@ class TestAcceptanceCriteria:
         assert any(record.exc_info for record in caplog.records), (
             "the real exception must reach the log, not just the generic message"
         )
+
+
+class TestAFileThatDoesNotReadBack:
+    """M3-22, F1: every generated file is read back before delivery; a failed
+    check writes the crop once more, a second failure is a 500 with the request
+    id — never a file nobody could open."""
+
+    def test_one_failed_check_is_retried_and_the_download_succeeds(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        real_verify = download_module._verify_asset_crop
+        calls = []
+
+        def fails_once(crop: Any) -> None:
+            calls.append(crop)
+            if len(calls) == 1:
+                raise download_module.CorruptOutput("simulated: a tile does not decode")
+            real_verify(crop)
+
+        monkeypatch.setattr(download_module, "_verify_asset_crop", fails_once)
+        with caplog.at_level(logging.WARNING):
+            response = _download(client)
+        assert response.status_code == 200
+        assert len(calls) == 2
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            assert archive.testzip() is None
+            assert "visual.tif" in archive.namelist()
+        warnings_logged = [record for record in caplog.records if record.levelno == logging.WARNING]
+        assert len(warnings_logged) == 1
+        assert "once more" in warnings_logged[0].getMessage()
+        # No AOI in the log (M3-16): none of the request's coordinates.
+        assert "46.1" not in warnings_logged[0].getMessage()
+        assert "7.1" not in warnings_logged[0].getMessage()
+
+    def test_two_failed_checks_are_a_500_with_the_request_id(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def always_fails(crop: Any) -> None:
+            raise download_module.CorruptOutput("simulated: a tile does not decode")
+
+        monkeypatch.setattr(download_module, "_verify_asset_crop", always_fails)
+        with caplog.at_level(logging.ERROR, logger="earthx.api.tiler"):
+            response = client.post(
+                f"/collections/{DATASET}/download",
+                json={"items": [ITEM_ID], "assets": ["visual"], "aoi": GOOD_AOI},
+                headers={"x-request-id": "m3-22-test-id"},
+            )
+        assert response.status_code == 500
+        assert response.headers["x-request-id"] == "m3-22-test-id"
+        detail = response.json()["detail"]
+        assert detail.startswith("a generated file did not pass verification")
+        assert "m3-22-test-id" in detail
+        assert "could not be read from the source" not in detail
+        assert any(record.exc_info for record in caplog.records)

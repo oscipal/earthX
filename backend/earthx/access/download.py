@@ -95,9 +95,11 @@ shrinks to match what the items actually cover.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import zipfile
+import zlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -107,6 +109,7 @@ from typing import Any
 import numpy
 import rasterio
 from rasterio.enums import Resampling
+from rasterio.errors import RasterioError
 from rasterio.features import rasterize
 from rasterio.io import MemoryFile
 from rasterio.transform import from_bounds as transform_from_bounds
@@ -132,6 +135,8 @@ from shapely.ops import unary_union
 from earthx.catalog.registry import DatasetConfig
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
+
+LOGGER = logging.getLogger("earthx.access.download")
 
 __all__ = [
     "AOI_FILENAME",
@@ -258,6 +263,15 @@ class AoiOutsideItems(ValueError):
 
 class AoiTooLarge(ValueError):
     """The request could not fit under the size cap, found before any asset was read."""
+
+
+class CorruptOutput(RuntimeError):
+    """A file this module just wrote did not read back cleanly (M3-22).
+
+    Deliberately not a ``RasterioError``: the route's handlers would report
+    one as a source read failure (502) or a processing error, and this is
+    neither — it is our own output failing its check before delivery.
+    """
 
 
 def parse_aoi_geometry(geometry: Mapping[str, Any]) -> BaseGeometry:
@@ -989,6 +1003,100 @@ def _masked_array_to_cog_bytes(
             return cog_mem.read()
 
 
+def _read_every_block(dataset: rasterio.DatasetReader) -> Any:
+    """Decode every block of every band; the largest value seen, for the mask's 0/1 check."""
+    peak = None
+    for _, window in dataset.block_windows(1):
+        block_peak = dataset.read(window=window).max()
+        peak = block_peak if peak is None else max(peak, block_peak)
+    return peak
+
+
+def _verify_asset_crop(crop: AssetCropBytes) -> None:
+    """Read both files of one crop back completely before they are delivered (M3-22, F1).
+
+    Header first — both are GeoTIFFs, the mask is one uint8 band of 0/1 on
+    exactly the data file's grid — then every block of every band, and for
+    the data file every overview level too. ``cog_validate`` alone would not
+    do: it checks the IFD layout but decodes no tile. Each file is opened with
+    its ``MemoryFile`` held by the ``with``: a ``MemoryFile`` over bytes does
+    not own them, and one collected while its dataset is still open reads
+    freed memory — the cause of every "corrupt download" seen so far (plan
+    m3-22 §3).
+    """
+    if not crop.data or not crop.mask:
+        raise CorruptOutput("a generated file is empty")
+    try:
+        with (
+            MemoryFile(crop.data) as data_mem,
+            data_mem.open() as data_ds,
+            MemoryFile(crop.mask) as mask_mem,
+            mask_mem.open() as mask_ds,
+        ):
+            if data_ds.driver != "GTiff" or mask_ds.driver != "GTiff":
+                raise CorruptOutput("a generated file is not a GeoTIFF")
+            if mask_ds.count != 1 or mask_ds.dtypes[0] != "uint8":
+                raise CorruptOutput("the mask file is not a single uint8 band")
+            if (data_ds.width, data_ds.height, data_ds.transform, data_ds.crs) != (
+                mask_ds.width, mask_ds.height, mask_ds.transform, mask_ds.crs
+            ):
+                raise CorruptOutput("the data file and its mask are not on the same grid")
+            _read_every_block(data_ds)
+            if _read_every_block(mask_ds) > 1:
+                raise CorruptOutput("the mask file holds values other than 0 and 1")
+            overview_count = len(data_ds.overviews(1))
+        for level in range(overview_count):
+            with MemoryFile(crop.data) as data_mem, data_mem.open(overview_level=level) as overview:
+                _read_every_block(overview)
+    except RasterioError as error:
+        raise CorruptOutput(f"a generated file does not read back: {error}") from error
+
+
+def _verified_crop(
+    open_reader: Callable[..., BaseReader],
+    asset_paths: Sequence[AssetPath | ZarrAsset],
+    region_geometry: Mapping[str, Any],
+    *,
+    asset: str,
+    width: int | None,
+    height: int | None,
+    mask_geometry: Mapping[str, Any],
+) -> AssetCropBytes:
+    """:func:`crop_asset_to_cog_bytes`, checked, and written once more if the check fails (M3-22, F1).
+
+    The retry repeats the whole crop, reads included: the windowed path
+    interleaves reading and writing, and a failure here is not expected to
+    happen at all (plan m3-22 §3). A second failure raises
+    :class:`CorruptOutput` — never a file nobody could open.
+    """
+    def write() -> AssetCropBytes:
+        return crop_asset_to_cog_bytes(
+            open_reader, asset_paths, region_geometry,
+            width=width, height=height, mask_geometry=mask_geometry,
+        )
+
+    crop = write()
+    try:
+        _verify_asset_crop(crop)
+        return crop
+    except CorruptOutput as error:
+        LOGGER.warning("the crop of asset %r did not read back, writing it once more: %s", asset, error)
+    crop = write()
+    _verify_asset_crop(crop)
+    return crop
+
+
+def _verify_zip(buffer: BytesIO) -> None:
+    """Check the CRC of every ZIP entry (M3-22, F1). No retry: the ZIP is written by Python alone."""
+    try:
+        with zipfile.ZipFile(buffer) as archive:
+            broken = archive.testzip()
+    except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+        raise CorruptOutput(f"the ZIP archive does not read back: {error}") from error
+    if broken is not None:
+        raise CorruptOutput(f"the ZIP entry {broken!r} fails its CRC check")
+
+
 # Everything a ZIP member name may keep. Deliberately narrow rather than a list
 # of what Windows forbids: an allowlist cannot be out of date the next time an
 # asset key picks up a new character.
@@ -1155,10 +1263,11 @@ def build_download_zip(
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
             for crop in crops:
-                crop_bytes = crop_asset_to_cog_bytes(
+                crop_bytes = _verified_crop(
                     open_reader,
                     crop.paths,
                     region_geometry,
+                    asset=crop.asset,
                     width=crop.width,
                     height=crop.height,
                     mask_geometry=aoi_geometry,
@@ -1181,4 +1290,5 @@ def build_download_zip(
                     resolution_factor=resolution_factor,
                 ),
             )
+        _verify_zip(buffer)
         return buffer.getvalue()

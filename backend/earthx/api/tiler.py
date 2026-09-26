@@ -55,6 +55,7 @@ from earthx.access.download import (
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
+    CorruptOutput,
     InvalidAoi,
     build_download_zip,
     check_item_count_cap,
@@ -84,7 +85,7 @@ from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout, UrlRejected
 from earthx.gateway.gdal import gdal_options
-from earthx.logging import RequestIdMiddleware, configure_logging
+from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.readers.cog import AssetPath, asset_path
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, split_asset_key, zarr_asset
 
@@ -568,6 +569,17 @@ async def download_crop(
         # the real exception (with the request id, `logging.py`'s formatter) and
         # answers 500, never silently.
         raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
+    except CorruptOutput:
+        # Our own output failed its read-back twice (M3-22, F1): never hand it
+        # out. The request id is in the body too, so a user can quote it.
+        LOGGER.error("a generated download file did not pass verification", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "a generated file did not pass verification. Please try again; "
+                f"if it keeps failing, report request ID {get_request_id()}."
+            ),
+        ) from None
 
     LOGGER.info(
         "download answered",
