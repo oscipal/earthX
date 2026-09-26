@@ -97,6 +97,19 @@ auslöst.
 Nutzungsbedingungen des öffentlichen Nominatim-Dienstes (Ratenbegrenzung) sind vor einem
 Betrieb mit mehreren Nutzern zu klären — offener Punkt, keine Entscheidung in `docs/`.
 
+**Nachtrag M3-07a/b (26.09.2026, umgesetzt):** `POST /geocode` (`earthx/api/geocode_route.py`)
+läuft über ein eigenes `gateway`, nur mit dem einen Host aus `EARTHX_GEOCODER_URL`
+(ungesetzt = Ortssuche aus). Gecacht in Postgres, mit gemeinsamer Rate über alle
+`api`-Prozesse (höchstens 1 Anfrage/s). Anders als der Prototyp: **kein Autocomplete**
+(Nominatims Nutzungsbedingung verbietet es), gesucht wird nur auf Enter oder Knopf; die
+Auswahl übernimmt den **Umriss** als AOI, wo Nominatim einen liefert, sonst die
+Bounding Box (F1, keine Wahl für den Nutzer) — statt wie bisher immer nur die Box. Eine
+aus der Ortssuche stammende AOI trägt ihre Herkunft (`source`, `attribution`, `license`)
+in ihren GeoJSON-Eigenschaften mit, die unverändert bis in `aoi.geojson` im Download-ZIP
+laufen (F3); eine hochgeladene oder gezeichnete AOI trägt das nicht. Attribution
+„© OpenStreetMap contributors" kommt aus der Antwort und steht unter der Trefferliste
+sowie, solange die AOI noch die aus der Ortssuche ist, unter dem Feld.
+
 ## F3 AOI aus Datei und „letzte AOI“ *(steht nicht in §2, ist aber im Code)*
 
 **Was und wo.** `frontend/src/aoiFile.ts`, eingebunden in `ControlPanel.tsx`

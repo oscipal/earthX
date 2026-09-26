@@ -333,3 +333,42 @@ fest, zur Klärung zusammen mit den Nominatim-Bedingungen vor dem ersten
 in `ATTRIBUTION.txt`), noch in M3.
 (3) In diesem PR mit erledigen (berührt Store, API und `access/download.py`,
 sprengt den Richtwert).
+
+---
+
+## 11. Umsetzung (26.09.2026)
+
+Freigabe: F1 (1), F2 (1), F3 (3).
+
+Umgesetzt wie oben, mit dieser Ergänzung zu F3: Die AOI trägt ihre Herkunft
+als `properties`-Schlüssel auf der Geometrie selbst (nie als `Feature`, wie
+Otto es verlangt hat — `placeAoi()` in `placeSearch.ts` liefert
+`{ ...geometry, properties: { source, attribution, license } }`); der Store,
+`searchArea` und der Download-Aufruf nehmen weiterhin eine bloße
+`GeoJSON.Geometry` entgegen, ohne eigene Änderung.
+
+**Kein Code in `access/download.py` musste dafür geändert werden.** Die
+Route lässt Eigenschaften schon heute unverändert durch: `body.aoi` ist ein
+`dict[str, Any]` (kein enges Pydantic-Modell, das sie abschneiden würde),
+`parse_aoi_geometry` prüft mit `shapely.geometry.shape`, das nur `type` und
+`coordinates` liest und jeden weiteren Schlüssel ignoriert, und
+`build_download_zip` schreibt `aoi_geometry` unverändert über
+`json.dumps(dict(aoi_geometry))` in `aoi.geojson`. Die „kleine Änderung, die
+ausdrücklich erlaubt ist" war damit nicht nötig — ein neuer Test in
+`test_download.py` (`test_aoi_geojson_keeps_extra_properties_the_caller_put_on_the_geometry`)
+hält das als Verhalten fest, statt es unbelegt zu lassen. Eine hochgeladene
+oder gezeichnete AOI trägt weiterhin keine `properties`.
+
+Nebenbei: `HttpError` (`api.ts`) bekommt `retryAfter` (Rohwert des
+`Retry-After`-Headers, `res.headers?.get(...)` — mit `?.`, damit bestehende
+Tests mit einer Mock-`Response` ohne `headers`-Feld weiterlaufen). Der
+Kommentar über `SceneNameField` verliert den Verweis auf „location search is
+hidden until M3, F1". `frontend/package-lock.json` war zu Beginn dieser
+Sitzung nicht vollständig installiert (`polyclip-ts` fehlte, wie in M3-24
+beschrieben); `npm ci` vor dem ersten `tsc`-Lauf behoben.
+
+**Getestet:** `npm run lint` (oxlint, sauber), `npx tsc -b --pretty false`
+(sauber), `npm test` (469 bestanden, 21 Dateien). Backend unverändert bis auf
+den einen neuen Test: `ruff check backend` (sauber), `pytest` vom
+Repo-Wurzelverzeichnis ohne `backend/tests_live` (1671 bestanden), `lint-imports`
+(12 Verträge, 0 gebrochen).
