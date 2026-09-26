@@ -19,7 +19,8 @@ earthX/
     earthx/            # Zieltopologie: gateway, catalog, adapters, api, …
                         # (Modulgrenzen: docs/architekturplan.md 3.1)
   frontend/             # React + TypeScript + Vite
-  docker-compose.yml     # Zieltopologie: api, tiler, worker, harvester, postgres, minio
+  docker-compose.yml     # Zieltopologie: api, tiler, worker, harvester, postgres, objectstore
+  compose/objectstore/    # Garage-Konfiguration und Bootstrap-Skripte (M3-23, adr/0012)
   docs/                  # Planung, Architektur, ADRs, Entscheidungslog
 ```
 
@@ -86,15 +87,18 @@ und kein Token. Alles läuft in Containern.
    docker compose up
    ```
    Das baut beim ersten Mal die Images (dauert ein paar Minuten) und startet
-   dann sechs Dienste: `postgres`, `minio`, sowie die vier Prozesse `api`,
-   `tiler`, `worker`, `harvester`. Zwei weitere Schritte laufen einmalig vorweg
-   und beenden sich danach von selbst: `pgstac-migrate` (richtet das
-   STAC-Schema in Postgres ein) und `catalog-load` (schreibt die
-   Sentinel-2-Collection und die Cache-Tabelle hinein). Das ist normal — nur
-   die sechs Dienste oben sollen dauerhaft laufen. Eine bestehende Datenbank
-   braucht nach M3-11a (neues Feld `earthx:source.item_holding`) einmal einen
-   neuen Lauf von `catalog-load`, damit die Collection-Dokumente das Feld
-   tragen; ein normaler `docker compose up` erledigt das von selbst.
+   dann sechs Dienste: `postgres`, `objectstore` (Garage, M3-23), sowie die
+   vier Prozesse `api`, `tiler`, `worker`, `harvester`. Vier weitere Schritte
+   laufen einmalig vorweg und beenden sich danach von selbst: `pgstac-migrate`
+   (richtet das STAC-Schema in Postgres ein), `catalog-load` (schreibt die
+   Sentinel-2-Collection und die Cache-Tabelle hinein), `objectstore-secrets`
+   (legt beim ersten Start Zugangsdaten für den Objektspeicher an) und
+   `objectstore-init` (legt darüber den S3-Schlüssel und den Bucket an). Das
+   ist normal — nur die sechs Dienste oben sollen dauerhaft laufen. Eine
+   bestehende Datenbank braucht nach M3-11a (neues Feld
+   `earthx:source.item_holding`) einmal einen neuen Lauf von `catalog-load`,
+   damit die Collection-Dokumente das Feld tragen; ein normaler
+   `docker compose up` erledigt das von selbst.
 4. **Warten, bis es bereit ist.** Im Terminal laufen die Logs aller Dienste
    durch. Es ist fertig, wenn keine Fehler mehr erscheinen und `api` seine
    Startzeile zeigt (z. B. `Uvicorn running on http://0.0.0.0:8000`). Im
@@ -107,9 +111,16 @@ und kein Token. Alles läuft in Containern.
    ```bash
    docker compose down
    ```
-   um die Container zu entfernen (die Daten in den Volumes `postgres-data`
-   und `minio-data` bleiben dabei erhalten; `docker compose down -v` löscht
-   auch sie).
+   um die Container zu entfernen (die Daten in den Volumes `postgres-data`,
+   `objectstore-data` und `objectstore-secrets` bleiben dabei erhalten;
+   `docker compose down -v` löscht auch sie).
+6. **Zugangsdaten des Objektspeichers auslesen** (z. B. für die `aws`-CLI),
+   ohne die Topologie neu zu starten:
+   ```bash
+   docker compose run --rm --no-deps objectstore-secrets show
+   ```
+   Gibt `S3_ACCESS_KEY`, `S3_SECRET_KEY` und `S3_BUCKET` auf dem eigenen
+   Terminal aus, sonst nirgends.
 
 ### Einen STAC-Browser auf den eigenen Katalog richten
 
@@ -214,7 +225,7 @@ Nachbesserungsrunden.
 ### Fehlersuche
 
 - **Port belegt** (`address already in use`): Ein anderer Prozess nutzt
-  5432, 8000–8003, 9000 oder 9001. Ihn beenden oder in `docker-compose.yml`
+  5432, 8000–8003 oder 3900. Ihn beenden oder in `docker-compose.yml`
   ein anderes Host-Port-Mapping wählen (das Format ist `"host:container"`,
   nur die linke Zahl ändern).
 - **Ein Dienst wird nicht `healthy`:** Logs des einzelnen Diensts ansehen,
@@ -223,11 +234,18 @@ Nachbesserungsrunden.
 - **`catalog-load` ist fehlgeschlagen:** `docker compose logs catalog-load`.
   Meist reicht ein sauberer Neustart mit leeren Volumes:
   `docker compose down -v && docker compose up`.
-- **`minio`-Image:** Seit 24.09.2026 sind die offiziellen MinIO-Images auf
-  Docker Hub, quay.io und ghcr.io nicht mehr öffentlich ziehbar. Übergangsweise
-  läuft `bitnamilegacy/minio` (per Digest gepinnt, siehe `docker-compose.yml`)
-  — nur für CI und lokale Entwicklung, kein produktiver Ersatz. Ein Ersatz-
-  Objektspeicher wird vor M4 evaluiert.
+- **Umstieg von MinIO (M3-23):** Ein alter `minio`-Container aus einem
+  Checkout vor M3-23 stört einen neuen Start nicht; einmal
+  `docker compose up -d --remove-orphans` räumt ihn auf. Das alte Volume
+  `minio-data` bleibt dabei bestehen, bis man es selbst löscht
+  (`docker volume rm earthx_minio-data`) — es enthält keine Daten, die der
+  neue Objektspeicher braucht.
+- **`objectstore-secrets` oder `objectstore-init` schlägt fehl mit „already
+  exists with a different secret“:** `S3_ACCESS_KEY`/`S3_SECRET_KEY` in
+  `.env` weichen von den beim ersten Start erzeugten Werten ab. Entweder die
+  Zeilen in `.env` wieder leeren oder das Volume `objectstore-secrets`
+  löschen, um mit den `.env`-Werten neu zu beginnen (löscht nur
+  Zugangsdaten, keine Objekte).
 
 ---
 

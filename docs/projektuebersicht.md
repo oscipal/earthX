@@ -241,7 +241,7 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 
 **Skalierbarkeit & Cloud-Portabilität** *(neu, konkretisiert Prinzip 2.16)*
 - Zustandsloses Backend: kein Nutzer- oder Sitzungszustand im Prozessspeicher oder auf der lokalen Platte. Jede Anfrage kann von jeder Instanz beantwortet werden, damit horizontal skaliert werden kann.
-- Zustand liegt nur in austauschbaren Diensten: Datenbank (Postgres), Cache (z. B. Redis), Objektspeicher (S3-kompatibel) für flüchtige Ergebnisse. Lokal durch leichte Entsprechungen ersetzt (z. B. MinIO, lokaler Redis), hinter derselben Schnittstelle.
+- Zustand liegt nur in austauschbaren Diensten: Datenbank (Postgres), Cache (z. B. Redis), Objektspeicher (S3-kompatibel) für flüchtige Ergebnisse. Lokal durch leichte Entsprechungen ersetzt (z. B. Garage, lokaler Redis), hinter derselben Schnittstelle.
 - Schwere Arbeit nie im Request: Processing läuft über eine Job-Queue mit getrennten Workern, die unabhängig vom Web-Backend skaliert werden. Lokal ein Worker, in der Cloud viele.
 - Alles containerisiert (Docker), Konfiguration ausschließlich über Umgebungsvariablen, keine hardcodierten Pfade oder Hosts.
 - Anbieter-Neutralität: nur portable Bausteine verwenden (Container, Postgres, S3-API, Standard-Queue). Proprietäre Cloud-Dienste nur hinter einer eigenen Abstraktionsschicht, damit die Anbieterwahl offen bleibt.

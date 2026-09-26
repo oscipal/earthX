@@ -122,23 +122,26 @@ jobs:
         run: lint-imports --config .importlinter
 
   compose-topology:
-    name: Compose topology (api, tiler, worker, harvester, postgres, minio)
+    name: Compose topology
     # M1-08 (docs/plans/m1-08-compose-topologie.md): one image, four start
     # commands (architekturplan.md 3.2, 12.1). Docker never runs in the cloud
     # session (adr/0002 §1, cloud-umgebung.md §4) — this job is the only place
     # that actually exercises `docker compose`.
+    # M3-23 (adr/0012): renamed from "Compose topology (…, minio)" — the
+    # object store is Garage now, and the name no longer names a product, so
+    # a future replacement does not need a second rename here.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Write throwaway .env (CI only, never a real secret)
+        # No S3_* here on purpose: this exercises the same generate-on-first-start
+        # path a fresh local checkout takes (docker-compose.yml, objectstore-secrets).
         run: |
           cat > .env <<'EOF'
           POSTGRES_USER=ci
           POSTGRES_PASSWORD=ci-throwaway
           POSTGRES_DB=earthx
-          MINIO_ROOT_USER=ci-minio
-          MINIO_ROOT_PASSWORD=ci-throwaway-minio
           EOF
 
       - name: Build images
@@ -149,7 +152,7 @@ jobs:
 
       - name: Wait for all services to report healthy
         run: |
-          services="postgres minio api tiler worker harvester"
+          services="postgres objectstore api tiler worker harvester"
           for i in $(seq 1 30); do
             unhealthy=""
             for s in $services; do
@@ -165,9 +168,9 @@ jobs:
           docker compose logs
           exit 1
 
-      - name: pgstac-migrate and catalog-load ran successfully
+      - name: One-shot steps ran successfully
         run: |
-          for s in pgstac-migrate catalog-load; do
+          for s in pgstac-migrate catalog-load objectstore-secrets objectstore-init; do
             code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq "$s")")"
             if [ "$code" != "0" ]; then
               echo "$s exited with $code"
@@ -176,10 +179,39 @@ jobs:
             fi
           done
 
+      - name: Object store credentials for the smoke steps (masked)
+        id: objectstore-creds
+        run: |
+          creds="$(docker compose run --rm --no-deps objectstore-secrets show)"
+          access_key="$(echo "$creds" | grep '^S3_ACCESS_KEY=' | cut -d= -f2-)"
+          secret_key="$(echo "$creds" | grep '^S3_SECRET_KEY=' | cut -d= -f2-)"
+          bucket="$(echo "$creds" | grep '^S3_BUCKET=' | cut -d= -f2-)"
+          echo "::add-mask::$access_key"
+          echo "::add-mask::$secret_key"
+          echo "access_key=$access_key" >> "$GITHUB_OUTPUT"
+          echo "secret_key=$secret_key" >> "$GITHUB_OUTPUT"
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: compose/objectstore/requirements-smoke.txt
+
+      - name: Install object store smoke dependencies
+        run: pip install -r compose/objectstore/requirements-smoke.txt
+
+      - name: Object store smoke (adr/0012 §9 — confirms the official image)
+        env:
+          S3_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.access_key }}
+          S3_SECRET_KEY: ${{ steps.objectstore-creds.outputs.secret_key }}
+          S3_BUCKET: ${{ steps.objectstore-creds.outputs.bucket }}
+        run: python compose/objectstore/smoke.py --write-marker
+
       - name: Restart one service, all stay (or become) healthy
         run: |
           docker compose restart worker
-          services="postgres minio api tiler worker harvester"
+          services="postgres objectstore api tiler worker harvester"
           for i in $(seq 1 30); do
             unhealthy=""
             for s in $services; do
@@ -194,6 +226,48 @@ jobs:
           echo "Timed out: restarting one service left another unhealthy."
           docker compose logs
           exit 1
+
+      - name: Second start with the existing volume
+        run: |
+          docker compose down
+          docker compose up -d
+          services="postgres objectstore api tiler worker harvester"
+          for i in $(seq 1 30); do
+            unhealthy=""
+            for s in $services; do
+              cid="$(docker compose ps -q "$s")"
+              status="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo missing)"
+              [ "$status" = "healthy" ] || unhealthy="$unhealthy $s($status)"
+            done
+            [ -z "$unhealthy" ] && { echo "All services healthy on the second start."; exit 0; }
+            echo "Waiting on:$unhealthy"
+            sleep 5
+          done
+          echo "Timed out on the second start."
+          docker compose logs
+          exit 1
+
+      - name: One-shot steps ran successfully on the second start
+        run: |
+          for s in pgstac-migrate catalog-load objectstore-secrets objectstore-init; do
+            code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -aq "$s")")"
+            if [ "$code" != "0" ]; then
+              echo "$s exited with $code"
+              docker compose logs "$s"
+              exit 1
+            fi
+          done
+
+      - name: Object store credentials are unchanged, and the earlier object is still there
+        env:
+          S3_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.access_key }}
+          S3_SECRET_KEY: ${{ steps.objectstore-creds.outputs.secret_key }}
+          S3_BUCKET: ${{ steps.objectstore-creds.outputs.bucket }}
+        run: |
+          creds="$(docker compose run --rm --no-deps objectstore-secrets show)"
+          echo "$creds" | grep -qF "S3_ACCESS_KEY=$S3_ACCESS_KEY"
+          echo "$creds" | grep -qF "S3_SECRET_KEY=$S3_SECRET_KEY"
+          python compose/objectstore/smoke.py --persisted
 
       - name: Logs (always, for diagnosis)
         if: always()

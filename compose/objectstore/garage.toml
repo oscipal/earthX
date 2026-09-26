@@ -1,0 +1,24 @@
+# Garage configuration for the EarthX compose topology (M3-23, adr/0012).
+#
+# No secret lives here: rpc_secret and admin.admin_token come from the files
+# that compose/objectstore/bootstrap.py writes before this service starts
+# (docker-compose.yml, service `objectstore`, GARAGE_RPC_SECRET_FILE /
+# GARAGE_ADMIN_TOKEN_FILE). A single node with replication_factor = 1 matches
+# --single-node below; db_engine = "sqlite" is what adr/0012 §5/§12.2 measured.
+
+metadata_dir = "/data/meta"
+data_dir = "/data/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.localhost"
+
+[admin]
+api_bind_addr = "[::]:3903"

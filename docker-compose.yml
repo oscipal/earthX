@@ -85,38 +85,72 @@ services:
       catalog-load:
         condition: service_completed_successfully
 
-  minio:
-    # Hotfix 24.09.2026 (Otto): Seit diesem Datum liefern Docker Hub, quay.io
-    # und ghcr.io für die offiziellen MinIO-Images nur noch "unauthorized"/
-    # "denied", auch für gepinnte Tags (nicht nur :latest) — der Pflicht-Check
-    # compose-topology war dadurch auf jedem PR rot.
-    # Übergangslösung: bitnamilegacy/minio, per Digest gepinnt (kein :latest),
-    # nur für CI und lokale Entwicklung gedacht, kein produktiver Ersatz.
-    # Der Tag dahinter ist nur eine Notiz für Menschen, nicht Teil des Pulls.
-    # Ersatz folgt: Spike zu einem alternativen Objektspeicher (Garage,
-    # SeaweedFS, RustFS u. a.) ist vor M4 vorgesehen (ENTSCHEIDUNGSLOG.md).
-    image: bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 # 2025.7.23-debian-12-r5
+  # M3-23 (adr/0012): Garage replaces MinIO. Three parts, because Garage's
+  # image has no shell (see below) and its `--default-bucket` flag reads the
+  # S3 key only from an env var, not from a file — so secrets are generated
+  # in a one-shot step before Garage starts, and the S3 key/bucket are
+  # created after it starts, over its admin API. `compose/objectstore/`
+  # holds the scripts and config; none of this is application code
+  # (backend/earthx is untouched, adr/0012 F5).
+
+  # One-shot: writes any secret that .env does not already provide
+  # (RPC secret, admin token, and — unless S3_ACCESS_KEY/S3_SECRET_KEY are
+  # set — the S3 key) as 0600 files into the objectstore-secrets volume.
+  # Idempotent: never overwrites an existing file.
+  objectstore-secrets:
+    build:
+      context: ./backend
+    entrypoint: ["python", "/objectstore/bootstrap.py"]
+    command: ["secrets"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      # Der offizielle MinIO-Server zeigt die Weboberfläche immer; Bitnamis
-      # Wrapper schaltet sie standardmäßig ab (MINIO_BROWSER=off) — hier
-      # wieder an, weil Port 9001 unten dafür veröffentlicht wird.
-      MINIO_BROWSER: "on"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-}
     volumes:
-      # bitnamilegacy/minio erwartet die Daten unter /bitnami/minio/data, nicht
-      # unter /data wie das offizielle Image. Der Pfad existiert im Image mit
-      # den Rechten für den Non-Root-User (1001); ein frisches Volume
-      # übernimmt sie beim ersten Start.
-      - minio-data:/bitnami/minio/data
+      - ./compose/objectstore:/objectstore:ro
+      - objectstore-secrets:/secrets
+    restart: "no"
+
+  objectstore:
+    # `dxflrs/garage` is `FROM scratch` (Deuxfleurs' own Dockerfile): a
+    # single static binary, no shell, no curl — hence the healthcheck below
+    # instead of the `curl`-based ones used elsewhere in this file, and why
+    # secrets can only reach it as files, not through an entrypoint script.
+    image: dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020
+    command: ["/garage", "server", "--single-node"]
+    environment:
+      GARAGE_RPC_SECRET_FILE: /secrets/rpc_secret
+      GARAGE_ADMIN_TOKEN_FILE: /secrets/admin_token
+    ports:
+      - "3900:3900"
+    volumes:
+      - ./compose/objectstore/garage.toml:/etc/garage.toml:ro
+      - objectstore-secrets:/secrets:ro
+      - objectstore-data:/data
+    depends_on:
+      objectstore-secrets:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "/garage", "status"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # One-shot: imports the S3 key and creates the bucket over Garage's admin
+  # API (port 3903, not published — compose-internal only), then grants the
+  # key access. Idempotent.
+  objectstore-init:
+    build:
+      context: ./backend
+    entrypoint: ["python", "/objectstore/bootstrap.py"]
+    command: ["init", "--admin-url", "http://objectstore:3903"]
+    volumes:
+      - ./compose/objectstore:/objectstore:ro
+      - objectstore-secrets:/secrets:ro
+    depends_on:
+      objectstore:
+        condition: service_healthy
+    restart: "no"
 
   api:
     build:
@@ -141,8 +175,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
+      objectstore-init:
+        condition: service_completed_successfully
       catalog-load:
         condition: service_completed_successfully
     healthcheck:
@@ -175,8 +211,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
+      objectstore-init:
+        condition: service_completed_successfully
       # The statistics cache table comes from our own migration 003, which
       # catalog-load applies.
       catalog-load:
@@ -197,8 +235,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
+      objectstore-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
@@ -215,8 +255,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      objectstore:
         condition: service_healthy
+      objectstore-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
@@ -225,4 +267,8 @@ services:
 
 volumes:
   postgres-data:
-  minio-data:
+  # M3-23: the previous `minio-data` volume is not renamed or migrated — an
+  # existing one is simply orphaned (README, "Umstieg von MinIO"); deleting
+  # it is Otto's call, not this compose file's.
+  objectstore-data:
+  objectstore-secrets:
