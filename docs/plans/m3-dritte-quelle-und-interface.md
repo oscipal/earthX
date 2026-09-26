@@ -159,6 +159,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
 | M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
 | M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
+| M3-24 | Setup-Hook installiert Frontend-Pakete nach Lockfile | A | Sonnet (mittel) | — | offen |
 
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
@@ -982,6 +983,14 @@ M4 (`adr/0012` F5).
 **Abnahme:** `compose-topology` grün mit Garage; keine Secrets im Diff; ein
 zweiter Start mit bestehendem Volume grün; Otto startet lokal mit
 `docker compose up -d` ohne Handarbeit.
+
+---
+
+### M3-24 — Setup-Hook installiert Frontend-Pakete nach Lockfile
+Ziel: Eine neue Session hat die Frontend-Pakete zum aktuellen package-lock.json, wie das venv zu den Backend-Anforderungen.
+Stufe A.
+Umfang: Der SessionStart-Hook vergleicht einen Hash von frontend/package-lock.json mit dem Stand der letzten Installation und führt bei Abweichung npm ci aus; sonst nichts. Anlass: polyclip-ts fehlte in zwei Sessions (M3-11c, M3-12). Ausdrücklich erlaubt: Änderung am Hook und seinem Skript.
+Abnahme: Test des Vergleichs; cloud-umgebung.md nachgezogen; eine frische Session zeigt polyclip-ts ohne Zutun.
 
 ---
 
