@@ -1,0 +1,80 @@
+[
+  {
+    "place_id": 111111,
+    "osm_type": "relation",
+    "osm_id": 2222222,
+    "boundingbox": [
+      "48.98",
+      "49.02",
+      "8.38",
+      "8.42"
+    ],
+    "lat": "49.0",
+    "lon": "8.4",
+    "display_name": "Musterstadt, Musterkreis, Beispielland",
+    "category": "boundary",
+    "type": "administrative",
+    "importance": 0.5,
+    "name": "Musterstadt",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            8.42,
+            49.0
+          ],
+          [
+            8.417321,
+            49.01
+          ],
+          [
+            8.41,
+            49.017321
+          ],
+          [
+            8.4,
+            49.02
+          ],
+          [
+            8.39,
+            49.017321
+          ],
+          [
+            8.382679,
+            49.01
+          ],
+          [
+            8.38,
+            49.0
+          ],
+          [
+            8.382679,
+            48.99
+          ],
+          [
+            8.39,
+            48.982679
+          ],
+          [
+            8.4,
+            48.98
+          ],
+          [
+            8.41,
+            48.982679
+          ],
+          [
+            8.417321,
+            48.99
+          ],
+          [
+            8.42,
+            49.0
+          ]
+        ]
+      ]
+    }
+  }
+]
