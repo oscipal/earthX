@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from datetime import datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as installed_version
 
@@ -166,6 +168,98 @@ def upsert_items(conn: psycopg.Connection, config: DatasetConfig, items: Iterabl
 def _upsert_item_batch(conn: psycopg.Connection, items: list[dict[str, object]]) -> None:
     with conn.cursor() as cur:
         cur.execute("SELECT pgstac.upsert_items(%s::jsonb)", (json.dumps(items),))
+
+
+def delete_items_except(conn: psycopg.Connection, config: DatasetConfig, keep_ids: Iterable[str]) -> int:
+    """Delete every item of a materialized collection not named in ``keep_ids``.
+
+    The other half of ``adr/0009`` §7.3's "delsert": a tile a fresh
+    ``tileList.txt`` no longer lists has to leave pgstac too, not just stop
+    being written (M3-11b plan §3.4). Refuses a federated entry outright, the
+    same guard :func:`upsert_items` already carries — a federated collection's
+    items are never our own pgstac's to delete from.
+
+    Like :func:`upsert_items`, the transaction is the caller's; this neither
+    commits nor rolls back. Schema-qualified (``pgstac.items``), so unlike
+    :func:`load_registry` this needs no ``search_path`` set on ``conn`` first.
+    Returns the number of rows removed.
+    """
+    if config.source.item_holding is not ItemHolding.MATERIALIZED:
+        raise PgstacError(
+            f"{config.dataset_id} is a federated dataset; its items are never in our own pgstac to delete from"
+        )
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM pgstac.items WHERE collection = %s AND NOT (id = ANY(%s))",
+            (config.dataset_id, list(keep_ids)),
+        )
+        return cur.rowcount
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializeRunRecord:
+    """One row of ``public.earthx_materialize_runs`` (M3-11b plan §3.5, F5).
+
+    ``status`` is ``"loaded"`` or ``"unchanged"`` — the same two outcomes
+    :class:`earthx.adapters.cop_dem_bucket.MaterializeOutcome` reports. A run
+    that failed is never recorded at all: its transaction rolls back
+    (``discovery.materialize``), and it reports itself on stderr with a
+    non-zero exit code instead.
+    """
+
+    dataset_id: str
+    started_at: datetime
+    finished_at: datetime
+    status: str
+    source_version: str
+    items_written: int
+    items_deleted: int
+    listed: int
+    missing: int
+    withheld: int
+
+
+def last_source_version(conn: psycopg.Connection, dataset_id: str) -> str | None:
+    """The ``source_version`` of the most recent recorded run, or ``None`` if
+    there has never been one — the materialize command's own "did the source
+    change" question (``adr/0009`` §7.3), answered without asking the source
+    for anything but a conditional ``GET`` first.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT source_version FROM public.earthx_materialize_runs "
+            "WHERE dataset_id = %s ORDER BY started_at DESC LIMIT 1",
+            (dataset_id,),
+        )
+        row = cur.fetchone()
+    return None if row is None else row[0]
+
+
+def record_materialize_run(conn: psycopg.Connection, record: MaterializeRunRecord) -> None:
+    """Append one row. A run is never updated after it is written (migration
+    004's own docstring) — a new run is always a new row.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO public.earthx_materialize_runs
+                (dataset_id, started_at, finished_at, status, source_version,
+                 items_written, items_deleted, listed, missing, withheld)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                record.dataset_id,
+                record.started_at,
+                record.finished_at,
+                record.status,
+                record.source_version,
+                record.items_written,
+                record.items_deleted,
+                record.listed,
+                record.missing,
+                record.withheld,
+            ),
+        )
 
 
 async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:
