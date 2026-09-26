@@ -1,7 +1,11 @@
 # M3-06b — AOI-Upload: Frontend auf die Route: Plan
 
 **Aufgabe:** M3-06b aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B — wartet auf Freigabe durch Otto** (Fragen in §9).
+**Stufe B — von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1)
+(§9), plus zwei Ergänzungen: die 1-MB-Konstante im Frontend trägt einen
+Kommentar auf die Backend-Konstante (§6, umgesetzt), und der KML/Shapefile-
+Befund aus §5/§8 wird abweichend vom ursprünglichen Umfang in diesem PR auch
+im Backend behoben (§10).
 **Ort im Repo:** `docs/plans/m3-06b-aoi-upload-frontend.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P7, M3-06b, §1.2
 (Oberflächentexte nur Englisch); `plans/m3-06a-aoi-upload-backend.md` §§6, 8–10
@@ -131,10 +135,10 @@ Koordinaten. `<name>` ist der Dateiname, wie heute schon in der Meldung
 Beispiele, wie die `400`-Zeile mit den heutigen Texten der Route aussieht:
 „Could not use "parcels.zip" as an AOI: the ZIP has no .prj file; the
 coordinate system is not guessed.“ — „Could not use "route.geojson" as an
-AOI: not a GeoJSON geometry type we support: 'LineString'.“ Nicht jeder Text
-ist gleich deutlich: Eine KML-Datei nur mit `LineString` ergibt „no usable
-geometry found in the file“ (nachgeprüft). Das bleibt so (§8), der PR nennt
-es.
+AOI: not a GeoJSON geometry type we support: 'LineString'.“ Eine KML-Datei
+oder ein Shapefile nur mit Linien ergab bislang die nicht hilfreiche „no
+usable geometry found in the file“ (nachgeprüft) — **auf Ottos Verlangen bei
+der Freigabe in diesem PR auch im Backend behoben, siehe §10.**
 
 Der Satzpunkt am Ende wird nicht verdoppelt, falls ein `detail` schon mit
 einem Punkt endet.
@@ -198,7 +202,9 @@ ohne `.prj`), um die Meldung zu sehen. Der PR nennt dafür die Befehle
 
 - Änderungen an der Route oder ihren Texten (M3-06a, erledigt). Fällt beim
   Umsetzen ein Text auf, der für Nutzer unverständlich ist, nennt der PR ihn,
-  ändert ihn aber nicht.
+  ändert ihn aber nicht — **Ausnahme: Otto hat bei der Freigabe verlangt, den
+  KML/Shapefile-Befund (§5) ausdrücklich doch in diesem PR zu beheben, siehe
+  §10.**
 - Maschinenlesbare Fehlercodes in der Route (siehe F1, Option 3).
 - Ortssuche (M3-07b), Datensatz-Filter (M3-10) — dieselbe Kachel, eigene
   Aufgaben danach.
@@ -208,11 +214,11 @@ ohne `.prj`), um die Meldung zu sehen. Der PR nennt dafür die Befehle
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet 26.09.2026
 
 **F1 — Fehlermeldungen (§5).**
 (1) Eigene Texte für Größe, Netzwerk und Serverfehler; bei `400` der Text der
-Route mit dem Vorspann „Could not use "<name>" as an AOI:“. **Empfehlung.**
+Route mit dem Vorspann „Could not use "<name>" as an AOI:“. **Otto: 1.**
 (2) Jeden bekannten Text der Route im Frontend auf einen eigenen Text
 abbilden — freier formulierbar, aber jede Textänderung im Backend bricht die
 Abbildung still.
@@ -222,12 +228,42 @@ in eine eigene Aufgabe.
 
 **F2 — Größenprüfung vor dem Senden (§6).**
 (1) Ja, 1 MiB als Konstante im Frontend, mit Verweis auf das Backend; `413`
-bleibt abgebildet. **Empfehlung.**
+bleibt abgebildet. **Otto: 1** — mit der Ergänzung, dass die Konstante im
+Frontend (`AOI_UPLOAD_MAX_BYTES`, `aoiFile.ts`) ausdrücklich auf
+`MAX_UPLOAD_BYTES` in `backend/earthx/access/aoi_upload.py` verweist, damit
+beide zusammen geändert werden — umgesetzt.
 (2) Nein, nur die `413` der Route — eine Zahl weniger doppelt, aber große
 Dateien erscheinen oft als Netzwerkfehler.
 
 **F3 — Knopf.**
 (1) Text „⤒ Upload AOI“, Tooltip „Upload a GeoJSON, KML or zipped Shapefile
-(max. 1 MB) as the AOI“, `accept=".geojson,.json,.kml,.zip"`. **Empfehlung.**
+(max. 1 MB) as the AOI“, `accept=".geojson,.json,.kml,.zip"`. **Otto: 1.**
 (2) Text „⤒ Upload GeoJSON/KML/SHP“, sonst wie (1) — länger, zeigt die
 Formate ohne Tooltip.
+
+---
+
+## 10. Nachtrag: der KML/Shapefile-Befund aus §5/§8 (Otto, 26.09.2026)
+
+Otto hat bei der Freigabe verlangt, den in §5/§8 genannten Befund — eine Datei
+nur mit Linien (oder, beim Shapefile, nur mit `MultiPoint`) ergab bislang die
+nicht hilfreiche Meldung „no usable geometry found in the file“ — **in diesem
+PR** zu beheben, abweichend vom in §8 festgehaltenen Ausschluss
+("Änderungen an der Route ... M3-06a, erledigt"). Umgesetzt in
+`backend/earthx/access/aoi_upload.py`:
+
+- `_kml_placemark_geometry` und `_shapefile_geometry` melden neben der
+  gefundenen Geometrie (falls keine brauchbare) auch die Art des gefundenen,
+  aber nicht unterstützten Elements zurück (`LineString`, `MultiPoint`).
+- `_combine_geometries` nimmt diese Menge als zweites, optionales Argument:
+  ist die Liste der brauchbaren Geometrien leer, aber es wurden ausschließlich
+  nicht unterstützte Typen gefunden, lautet die Meldung „the file contains
+  only lines/points; an AOI needs a polygon or a point“ statt der generischen
+  Meldung. Die generische Meldung bleibt für eine wirklich leere Datei (kein
+  erkennbares Geometrieelement überhaupt).
+- Neue Backend-Tests: KML nur mit `LineString`, Shapefile nur mit
+  `MultiPoint`, Shapefile nur mit Linien (ersetzt den alten Test, der die
+  generische Meldung für diesen Fall erwartete).
+
+Für GeoJSON war keine Änderung nötig: `LineString` wird dort schon heute mit
+einer Meldung abgewiesen, die den Typ ausdrücklich nennt.
