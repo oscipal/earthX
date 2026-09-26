@@ -1,6 +1,8 @@
 # M3-12 — Frontend-Sonderfälle in die Registry: Plan-Schritt
 
-**Status (26.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe (§9).
+**Status (26.09.2026):** Freigegeben und umgesetzt (Otto: F1 (1), F2 (1), F3 (2),
+F4 (1), F5 (1), F6 (1), F7 (1), F8 (1)), im selben Draft-PR wie dieser Plan.
+Details in `ENTSCHEIDUNGSLOG.md`, Zeile vom 26.09.2026.
 **Aufgabe:** M3-12 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P10,
 M3-Abnahme 1), mit den Nachträgen vom 26.09.2026 (M3-11b F11) und Ottos
 Änderungen vom 26.09.2026 zu Beginn dieser Session. **Stufe B.** Hängt an
