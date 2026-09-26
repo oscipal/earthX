@@ -86,7 +86,7 @@ async def search_items(
     fingerprint = search_fingerprint(dataset_id, params)
     marker = None if params.page_token is None else decode_page_token(params.page_token, dataset_id, fingerprint)
 
-    key = search_cache_key(fingerprint, marker)
+    key = search_cache_key(fingerprint, marker, params.limit)
     cached = await cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
         return page_from_stored(dataset_id, fingerprint, cached, from_cache=True)
