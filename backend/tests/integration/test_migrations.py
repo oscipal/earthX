@@ -37,13 +37,15 @@ def _forget_migrations(conn) -> None:
 
 class TestDiscovery:
     def test_the_shipped_migrations_are_what_earthx_adds_next_to_pgstac(self) -> None:
-        """pgstac holds the collections; our own tables are the two application caches
-        (the search cache of M1-06/E4, the statistics cache of M2-04, adr/0006 §5) and
-        the materialize run log of M3-11b (plan §3.5)."""
+        """pgstac holds the collections; our own tables are the application caches
+        (the search cache of M1-06/E4, the statistics cache of M2-04, adr/0006 §5),
+        the materialize run log of M3-11b (plan §3.5), and the place-search cache and
+        rate slot of M3-07a."""
         assert [(m.version, m.name) for m in discover_migrations()] == [
             ("002", "search_cache"),
             ("003", "stats_cache"),
             ("004", "materialize_runs"),
+            ("005", "geocode"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:

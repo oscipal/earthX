@@ -129,14 +129,20 @@ class Gateway:
         *,
         params: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
+        retry: bool = True,
     ) -> GatewayResponse:
         """Fetch a URL, assembling the query string here.
 
         ``/aggregate`` at Earth Search takes no POST (adr/0004 §3.1), so an AOI
         has to survive as a query parameter — up to the length limit, which
         ``check_url`` enforces before anything is sent.
+
+        ``retry=True`` by default, unlike ``post_json``: a plain GET is always
+        safe to repeat. ``retry=False`` exists for a caller with its own budget
+        for the request itself (M3-07a: the shared rate slot allows one send,
+        not a retried one).
         """
-        return await self._send("GET", url, params=params, headers=headers)
+        return await self._send("GET", url, params=params, headers=headers, retry=retry)
 
     async def post_json(
         self,
@@ -228,7 +234,9 @@ class Gateway:
         retry: bool,
         redirects: int,
     ) -> GatewayResponse:
-        may_retry = method == "GET" or retry
+        # `get()` defaults `retry` to True and `post_json()` to False — this is no
+        # longer a per-method rule (M3-07a): the caller's flag decides for both.
+        may_retry = retry
         for attempt in range(1, MAX_ATTEMPTS + 1):
             started = time.monotonic()
             last = attempt == MAX_ATTEMPTS

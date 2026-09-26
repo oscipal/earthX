@@ -133,6 +133,17 @@ async def test_retry_after_is_obeyed_but_capped() -> None:
     assert delays == [10.0]
 
 
+async def test_a_get_the_caller_marks_unsafe_to_repeat_is_not_retried() -> None:
+    """M3-07a: a caller with its own request budget (the shared rate slot) can opt a
+    GET out of the retry every other GET gets by default."""
+    handler, seen = replies(httpx.Response(503))
+    gateway, delays = build(handler)
+    async with gateway:
+        with pytest.raises(UpstreamError):
+            await gateway.get(URL, retry=False)
+    assert (len(seen), len(delays)) == (1, 0)
+
+
 async def test_a_post_is_not_repeated_unless_the_caller_allows_it() -> None:
     handler, seen = replies(httpx.Response(503))
     gateway, _ = build(handler)

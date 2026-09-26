@@ -120,9 +120,10 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 | `pypi.org`, `files.pythonhosted.org` | `planetarycomputer.microsoft.com` |
 | `registry.npmjs.org` | `catalogue.dataspace.copernicus.eu` |
 | `earth-search.aws.element84.com` (seit dem 18.09.2026 freigegeben, in Sitzungen vom 19.09.2026 erreichbar und gemessen) | `stac.eopf.copernicus.eu` |
-| `api.github.com`, `github.com` | `nominatim.openstreetmap.org`, `tile.openstreetmap.org` |
+| `api.github.com`, `github.com` | `tile.openstreetmap.org` |
 | Ubuntu-Archiv (`apt`) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
-| `mcr.microsoft.com` | |
+| `mcr.microsoft.com` | `operations.osmfoundation.org`, `nominatim.org`, `osmfoundation.org`, `www.openstreetmap.org` (Doku-Seiten, Beleg `plans/m3-07a-ortssuche-backend.md` §2) |
+| `nominatim.openstreetmap.org` (seit dem 26.09.2026 freigegeben, für M3-07a gemessen, Beleg `plans/m3-07a-ortssuche-backend.md` §3) | |
 | `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` (tatsächlicher Asset-Host von `sentinel-2-c1-l2a`, Beleg `adr/0006`) | |
 | `objects.eodc.eu`, **`data.eodc.eu`**, `stac.core.eopf.eodc.eu` (Beleg `adr/0007` §3.1, §12.1) | `download.user.eopf.eodc.eu`, `stac.browser.user.eopf.eodc.eu` (Beleg `adr/0007` §12.1) |
 
@@ -163,8 +164,10 @@ Registry-Eintrag.
 **Die Fassung von PR #35 ist damit überholt.** Sie führte `data.eodc.eu` als
 gesperrt; das war der Stand **vor** der Freigabe aus `adr/0007` F1.
 
-Das ändert nichts an der Testaufteilung. **Kein Geocoder ist erreichbar**, und
-für CDSE gilt die Sperre unverändert. Die Annahme, auf der `projektplan.md` 2.4
+Das ändert nichts an der Testaufteilung. Seit dem 26.09.2026 ist
+`nominatim.openstreetmap.org` erreichbar, nur für gedrosselte Messungen per
+`curl` (M3-07a); Tests laufen weiter gegen synthetische Fixtures. Für CDSE gilt die Sperre
+unverändert. Die Annahme, auf der `projektplan.md` 2.4
 und `docs/adr/0002-testaufteilung.md` aufbauen — Tests laufen ohne Live-Quellen —,
 bleibt bestehen: Erreichbarkeit ist die Grundlage für Spikes und Messungen, nicht
 für Tests in CI oder PR-Läufen. Live-Zugriffe bleiben auf zeitgesteuerte
