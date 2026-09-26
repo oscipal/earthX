@@ -1,8 +1,9 @@
 # M3-17 — Download folgt der Ansicht: Umsetzungsplan
 
 **Aufgabe:** M3-17 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B.** Plan-Schritt: Dieser Plan liegt im Draft-PR, die Session hält an,
-bis Otto die Fragen in §9 beantwortet hat. Noch kein Produktivcode.
+**Stufe B.** **Freigegeben (Otto, 26.09.2026): alle Fragen in §9 nach
+Empfehlung (F1–F6 jeweils Option 1).** Umgesetzt in diesem Branch/PR; §9 ist
+um die gewählte Option ergänzt, §10 hält den tatsächlichen Stand fest.
 **Abhängigkeit geändert (Otto, 23.09.2026):** M3-17 hängt nicht mehr von M3-12
 ab. Die Gruppierung je Überflug hat PR #84 gebaut (`store.groups`,
 `groupIndexOfItem`, ein Layer je Gruppe); M3-17 verwendet sie wieder und baut
@@ -246,7 +247,7 @@ Vor dem Fertigmelden: `ruff check backend`, `pytest`,
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet 26.09.2026 (alle nach Empfehlung, Option 1)
 
 **F1 — Welche Dateien bei „Original“?**
 1. Nur die Assets der sichtbaren Darstellung (heute bei Earth Search `visual`).
@@ -297,3 +298,83 @@ sichtbar?**
 der Tooltip nennt den Ausgang („Download the AOI crop, one file per group“ /
 „Download the original files straight from the source“ / „Draw an AOI to
 download“). Der Dialog heißt „Download crop“ bzw. „Download original files“.
+
+---
+
+## 10. Umsetzung (wie tatsächlich gebaut)
+
+**Backend.**
+- `access/download.py`: `GroupCrop` + `group_dirname` (F3). `build_download_zip`
+  bekam `additional_groups: Sequence[GroupCrop] = ()` und `skipped_item_ids`,
+  **ohne** die bestehende Signatur zu brechen — ein Aufruf ohne
+  `additional_groups` (jeder Aufrufer vor M3-17, die meisten Tests) erhält
+  genau das flache ZIP-Layout von vorher. Mit mehr als einer Gruppe schreibt
+  jede Gruppe in einen eigenen `group-NN/`-Ordner; `aoi.geojson` und
+  `ATTRIBUTION.txt` bleiben je ZIP einmal im Wurzelverzeichnis.
+  `build_notice_text` bekam `group_item_ids`/`skipped_item_ids` für die
+  „Group N (group-NN/): …“- bzw. „Not covered by the AOI, left out: …“-Zeilen.
+- `api/tiler.py`: `DownloadRequest.groups: list[list[str]]` ersetzt `items`,
+  mit einem `field_validator`, der leere Gruppen und eine über zwei (oder
+  innerhalb einer) Gruppen wiederholte Item-ID mit `422` abweist. Der Ablauf
+  in `download_crop` filtert und plant jede Gruppe einzeln
+  (`filter_items_intersecting_aoi`, `compute_crop_region`); eine Gruppe, die
+  die AOI nicht trifft, fällt weg statt die Anfrage scheitern zu lassen —
+  `400` nur, wenn keine Gruppe übrig bleibt. Deckel (`check_item_count_cap`,
+  `check_output_size_cap`) rechnen über die Summe aller übrig gebliebenen
+  Gruppen.
+- `catalog/collection.py`: `earthx:format` aus `DatasetConfig.format`
+  (F4), Zeile in `architekturplan.md` 5.1.
+
+**Frontend.**
+- `download.ts`: `decideDownloadOutcome` ist die ganze Tabelle aus §4 als eine
+  reine Funktion (Eingabe: `cropToAoi`, `hasAoi`, `isCog`). `isCogFormat`/
+  `assetHostsOf` lesen `earthx:format`/`earthx:source.asset_hosts`.
+  `isDirectDownloadHref` + `originalFileLinks` bauen die Originaldatei-Links
+  (nur `https` und ein Host aus `asset_hosts`, F4/B11). `downloadRequestFor`/
+  `downloadRequestForSelection` liefern jetzt `groups: string[][]` statt einer
+  flachen Liste, gefüllt über `grouping.ts::groupItemIdsFor` (F3) — dieselbe
+  Aufteilung, die `store.ts::addCurrentToLayers` (PR #84, F5) schon zieht,
+  keine zweite, download-eigene Gruppierung.
+- `layers.ts`: `LayerRestore.groupItemIds: string[][]`, beim Anheften gefüllt;
+  ein vor M3-17 angehefteter Layer hat keins und fällt auf eine Gruppe zurück.
+- `store.ts`: `openDownloadForSelection` entscheidet den Ausgang sofort (Items
+  liegen schon in `store.items`, kein Fetch nötig). `openDownloadDialog` ist
+  jetzt asynchron: Für einen Layer im Zuschnitt- oder deaktivierten Fall steht
+  der Ausgang sofort fest; für „Originale“ holt es einmalig die STAC-Items des
+  Layers (`api.fetchItem`), weil `restore` nur Kachel-Infos, keine
+  Asset-`href`s trägt.
+- `ViewBar.tsx`, `LayerManager.tsx`: der Download-Knopf bleibt sichtbar, wird
+  im Zarr-ohne-AOI-Fall deaktiviert mit Tooltip „Draw an AOI to download“ —
+  dasselbe Muster wie „Crop & merge to AOI“ in M3-09.
+- `DownloadDialog.tsx`: verzweigt auf `store.downloadOutcome`. Zuschnitt wie
+  bisher (Szenenzahl jetzt aus `req.groups.flat()`), Originale als reine
+  Link-Liste je Gruppe (F2), mit `attribution_unmodified` (neuer dritter
+  Parameter `modified` an `attributionText`) und ohne Lizenzstufen-Sperre
+  (B11: ein Link reicht schon auf Stufe „Katalogeintrag“).
+
+**F6 (Umfang):** wie geplant ein PR, siehe Diff.
+
+## 11. Abnahme
+
+- **pytest**: neue Fälle in `test_download_route.py` (zwei Gruppen als
+  getrennte Ordner im selben ZIP, eine Gruppe bleibt das flache Layout, eine
+  Gruppe fällt weg und die andere lädt trotzdem, alle Gruppen fallen weg →
+  `400` wie zuvor, leere/doppelte Item-ID → `422`, Item-Deckel über die Summe
+  aller Gruppen) sowie `earthx:format` in `test_collection.py`. `pytest`
+  (Repo-Wurzel): grün. `ruff check backend`: grün.
+  `lint-imports --config .importlinter`: 12/12 Verträge gehalten.
+- **Vitest**: neue Fälle in `download.test.ts` (die ganze
+  `decideDownloadOutcome`-Tabelle, `isCogFormat`, `assetHostsOf`,
+  `isDirectDownloadHref` inkl. `javascript:`/`data:`/fremder Host,
+  `originalFileLinks`, `downloadRequestForSelection` mit Gruppen),
+  `grouping.test.ts` (`groupItemIdsFor`) und `store.test.ts`
+  (`openDownloadForSelection`/`openDownloadDialog` für alle drei Ausgänge,
+  Fetch-Fehler, unbekannte Layer-ID, Layer ohne `groupItemIds`). `npx vitest
+  run`: grün. `npm run lint` (oxlint): grün. `npx tsc -b --pretty false`:
+  grün.
+- **Otto lokal (noch offen):** AOI über zwei Überflüge, „Crop & merge to
+  AOI“, Download aus der Auswahl — ein ZIP, zwei Ordner, jede Datei deckt
+  sich mit der gelben Umrandung ihrer Gruppe (PR #84). „View full selection“
+  mit einer Earth-Search-Szene: der Link lädt die Originaldatei direkt von
+  der Quelle; im Netzwerk-Tab keine Anfrage an die Plattform für diese Datei.
+  EOPF ohne AOI: Knopf deaktiviert.
