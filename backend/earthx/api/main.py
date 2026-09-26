@@ -31,8 +31,9 @@ from stac_fastapi.pgstac.models.extensions import Extensions
 
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import router as coverage_router
-from earthx.api.dependencies import build_gateway, cache_pool
+from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
+from earthx.api.geocode_route import router as geocode_router
 from earthx.catalog.datasets import REGISTRY
 from earthx.logging import RequestIdMiddleware, configure_logging
 
@@ -53,7 +54,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with cache_pool() as pool:
             app.state.earthx_cache_pool = pool
             app.state.earthx_gateway = build_gateway(REGISTRY)
-            yield
+            # M3-07a: a second, separate gateway that can reach only the geocoder's
+            # host — never a dataset's asset host, and no dataset route can reach it
+            # either. None of the three attributes below are set at all when place
+            # search is off; the route treats their absence as "not available".
+            geocoder = build_geocoder()
+            if geocoder is not None:
+                geocoder_gateway, geocoder_config = geocoder
+                app.state.earthx_geocoder_gateway = geocoder_gateway
+                app.state.earthx_geocoder_url = geocoder_config.base_url
+                app.state.earthx_geocoder_user_agent = geocoder_config.user_agent
+            try:
+                yield
+            finally:
+                if geocoder is not None:
+                    await geocoder_gateway.aclose()
     finally:
         await close_db_connection(app)
 
@@ -83,6 +98,8 @@ def _build_app() -> FastAPI:
     # M3-06a: an uploaded AOI file has nothing to do with STAC either, and needs
     # neither a dataset nor `gateway` — no reason to live on `tiler`.
     app.include_router(aoi_upload_router)
+    # M3-07a: place search, also outside `/stac` and also not a dataset route.
+    app.include_router(geocode_router)
 
     return app
 
