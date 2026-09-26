@@ -109,12 +109,14 @@ dieser Quelle nach der Checkliste; gemischte Suche und CQL2-Prüfung;
 mit Umriss und Bounding Box; Zuschnitt in der Vollauflösungs-Ansicht;
 Datensatz-Filter in der Suchkachel; Frontend-Sonderfälle in die Registry;
 tilejson-Fix; Python 3.12; Konformitätsbericht; Mess-Spike Zählwürfel;
-Interface-ADR; Download folgt der Ansicht; Spike zum Ersatz für MinIO.
+Interface-ADR; Download folgt der Ansicht; Spike zum Ersatz für MinIO;
+Umstellung der compose-Topologie auf Garage (M3-23, `adr/0012`).
 
 **Nicht in M3:** Mosaik im Kachel-Pfad (M4, P11); Rezept, Operatoren, Jobs,
 Objektspeicher (M4); Bau des Heatmap-Zählwürfels (P13); Health-Status und
 Prüfdatum (M5, P14, D29); Hybrid-Suche (M5); Uvicorn-Worker des `tiler` (M5);
-COG-Header-Cache (Log offen); Umbau auf einen MinIO-Ersatz (M4, nach M3-20);
+COG-Header-Cache (Log offen); Weg vom eigenen Code zum Objektspeicher (M4,
+`adr/0012` F5);
 Exporte über dem synchronen Deckel in voller Auflösung (M4, Job, P20);
 Zenodo als Metadatenquelle (M5, `adr/0009`); Zählwürfel (kein Bau auf
 Vorrat, in M5 je Datensatz nur bei gemessenem Bedarf, Log 26.09.2026); Zugriffsauflösung außerhalb von `api/tiler.py` (M4, K-04); Ratenbegrenzung pro
@@ -152,9 +154,10 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | in Arbeit |
 | M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — | erledigt (#86) |
 | M3-19 | Weltüberblick ohne AOI | A→B | Opus Plan, Sonnet (mittel) | — | erledigt (#83) |
-| M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | offen |
+| M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | in Arbeit |
 | M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
 | M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
+| M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | offen |
 
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
@@ -895,6 +898,31 @@ Sofortschutzes und seine Kosten (Zeit, Speicher bei 500 MB); Kompression.
 eingegrenzt; Sofortschutz mit Tests (defekte Datei → Neuversuch → Erfolg bzw.
 `500`); der Test aus der CI von #86 in 50 Wiederholungen grün; die zwei
 Log-Zeilen zur Korruption auf „fest“ oder „ersetzt“.
+
+### M3-23 — Garage statt MinIO
+
+**Ziel:** Die compose-Topologie nutzt Garage als S3-kompatiblen
+Objektspeicher; `bitnamilegacy/minio` ist entfernt (`adr/0012`).
+**Stufe B.**
+**Umfang:**
+- `docker-compose.yml`: Dienst neutral `objectstore`, Garage-Image per Digest
+  gepinnt; Variablen neutral `S3_*` (`adr/0012` F4); Healthcheck.
+- Keine Secrets im Repo: RPC-Secret, Admin-Token und Zugangsschlüssel werden
+  beim ersten Start erzeugt oder kommen aus einer nicht eingecheckten `.env`;
+  eingecheckt wird nur eine `.env.example` ohne Werte.
+- Initialisierung automatisch beim ersten Start (Layout, Bucket, Schlüssel),
+  idempotent; `docker compose up` funktioniert ohne Handarbeit, auch mit
+  bestehendem Volume.
+- Die in `adr/0012` §9 offenen Belege in der CI nachholen (offizielles Image
+  startet, boto3-Grundfunktionen, Range-Read einer COG).
+- `architekturplan.md` (Topologie) und README nachziehen; der Nachtrag zu
+  MinIO verweist auf `adr/0012`.
+
+**Nicht anfassen:** Anwendungscode; der Weg vom eigenen Code zum Speicher ist
+M4 (`adr/0012` F5).
+**Abnahme:** `compose-topology` grün mit Garage; keine Secrets im Diff; ein
+zweiter Start mit bestehendem Volume grün; Otto startet lokal mit
+`docker compose up -d` ohne Handarbeit.
 
 ---
 

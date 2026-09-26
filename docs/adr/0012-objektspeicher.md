@@ -1,6 +1,12 @@
 # ADR 0012 — Objektspeicher: Ersatz für MinIO
 
-- **Status:** Entwurf, wartet auf Otto. Die Fragen stehen in §10.
+- **Status:** **Angenommen** von Otto am 2026-09-26. Die sechs Fragen aus §10
+  sind dort beantwortet, alle nach Empfehlung: **F1** Garage ersetzt MinIO;
+  **F2** Umstellung jetzt als eigene Stufe-B-Aufgabe M3-23; **F3** kein
+  anonymes Lesen per Bucket-Policy, Ergebnisse nur über signierte URLs;
+  **F4** neutrale Namen (`S3_*`, Dienst `objectstore`); **F5** der Weg vom
+  eigenen Code zum Speicher wird im M4-Plan entschieden; **F6** die Images
+  bestätigt die CI in M3-23.
 - **Datum:** 2026-09-26
 - **Aufgabe:** M3-20 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P23).
 - **Autonomiestufe:** C — nur gemessen, gelesen und berichtet. Kein Code, keine
@@ -21,7 +27,7 @@
 
 ## Methode und Belegstufen
 
-Gemessen in einer Cloud-Sitzung am 26.09.2026, rund 10:40–12:30 UTC. Belegstufen
+Gemessen in einer Cloud-Sitzung am 26.09.2026, rund 10:40–12:45 UTC. Belegstufen
 wie in `adr/0009`:
 
 - **M** — in dieser Sitzung selbst gemessen; Befehl im Messanhang §12.
@@ -55,9 +61,9 @@ das eigene Repo beschränkt **[M]**. Aussagen, die an diesen Hosts hängen, sind
 **Umfang der Abrufe.** Rund 60 einzelne Metadaten-Anfragen (Docker-Hub-API,
 Registry-Manifeste, `git ls-remote`, Erreichbarkeit), gedrosselt auf höchstens
 eine je Sekunde, dazu fünf flache `git clone` und die Paketdownloads der vier
-Builds (Go-Proxy und crates.io, zusammen rund ⟨DL⟩). Die Quellen der Plattform
-(Sentinel-2, EOPF, DEM) wurden nicht berührt. Messungen am Speicher liefen nur
-gegen `127.0.0.1`.
+Builds (Go-Proxy, crates.io, zwei Toolchains, `protoc` aus dem Ubuntu-Archiv,
+zusammen rund 1 GB). Die Quellen der Plattform (Sentinel-2, EOPF, DEM) wurden
+nicht berührt. Messungen am Speicher liefen nur gegen `127.0.0.1`.
 
 Drei Recherche-Subagenten haben Sekundärquellen gesucht; jede Aussage aus ihren
 Berichten, die hier als **P** steht, ist am Quelltext oder an einem in der
@@ -111,7 +117,7 @@ Dienst läuft übergangsweise auf `bitnamilegacy/minio` (Log 26.09.2026).
 | 19.08.2025 | Letzte Aktualisierung von `bitnamilegacy/minio`; Beschreibung „Legacy Bitnami images (no longer updated)“ | Docker-Hub-API **[M]** |
 | Aug./Sep. 2025 | Bitnami verschiebt den freien Katalog nach `bitnamilegacy`; `bitnami/minio` hat keine öffentlichen Tags mehr | `bitnami/minio`: 0 Tags **[M]**; Hintergrund **[S]** |
 | 15.10.2025 | Letzter Release-Tag `RELEASE.2025-10-15T17-29-55Z`; Commit „update README.md … to point to source only releases“; am selben Tag Sicherheitsfix `c1a4949` „check sub-policy properly“ (Service-Accounts konnten ihre Inline-Policy umgehen) | Git-Historie **[M]**, Commit-Text **[P]**; CVE-2025-62506 als Nummer dazu **[S]** |
-| 04.12.2025 | „Maintenance Mode“ angekündigt (Issue #21714) | **[S]**, über Recherche |
+| 04.12.2025 | „Maintenance Mode“ angekündigt (`minio/minio#21714`) | **[S]**, über Recherche |
 | 12.02.2026 | Letzter Commit auf `master`: „clarify state of the project“; README beginnt mit „THIS REPOSITORY IS NO LONGER MAINTAINED“ und verweist auf AIStor Free/Enterprise | `git ls-remote`, Go-Proxy, README **[M]/[P]** |
 | 25.04.2026 | Repo archiviert | **[S]** (GitHub-API außerhalb des Repo-Scopes) |
 | 24.09.2026 | Offizielle Images nicht mehr ziehbar | Log 26.09.2026; heute: Docker-Hub-API kennt `minio/minio` und `minio/mc` nicht mehr („object not found“), Registry antwortet `401` **[M]**; `quay.io` aus der Sitzung gesperrt, dort unbelegt |
@@ -182,14 +188,15 @@ als Vergleichsbasis. Weitere in §4.5.
   Enterprise- oder Open-Core-Variante gefunden **[S]**.
 - **Pflege:** Tag `v2.4.1`, Commit vom 07.09.2026, Image vom 08.09.2026;
   davor `v2.2.0`–`v2.4.0` **[M]**. Docker Hub `dxflrs/garage` zuletzt
-  25.09.2026 (Commit-Builds), 6,6 Mio. Pulls **[M]**. Träger: Kollektiv Deuxfleurs, mehrfach
-  über NLnet/NGI gefördert (2021–2025) **[S]**. Keine CVE gefunden **[S]**.
+  25.09.2026 (Commit-Builds), 6,6 Mio. Pulls **[M]**. Träger: Kollektiv
+  Deuxfleurs, mehrfach über NLnet/NGI gefördert (2021–2025) **[S]**. Keine
+  CVE gefunden **[S]**.
 - **Image:** `dxflrs/garage:v2.4.1`, ein einziger Layer, 28 MB (amd64), dazu
-  arm64, arm und 386 **[M]**; das Dockerfile im Repo ist `FROM scratch` mit einer statischen
-  Binärdatei **[P]**. Gebaut mit Nix in der Woodpecker-CI des Projekts
-  (`.woodpecker/publish.yaml`), eine Signatur ist dort nicht zu finden **[P]**.
-  Feste Versionstags; daneben Commit-Tags **[M]**. Veröffentlicht auch auf crates.io (`garage = "2.4.1"`)
-  **[M]**.
+  arm64, arm und 386 **[M]**; das Dockerfile im Repo ist `FROM scratch` mit
+  einer statischen Binärdatei **[P]**. Gebaut mit Nix in der Woodpecker-CI
+  des Projekts (`.woodpecker/publish.yaml`), eine Signatur ist dort nicht zu
+  finden **[P]**. Feste Versionstags, daneben Commit-Tags; auch auf crates.io
+  (`garage = "2.4.1"`) **[M]**.
 - **S3 laut eigener Kompatibilitätstabelle [P]:** Multipart vollständig;
   vorsignierte URLs „Implemented“; CORS „Implemented“; **Bucket-Policy
   „Missing“** (Rechte statt dessen je Schlüssel und Bucket, anonymes Lesen nur
@@ -276,12 +283,22 @@ als Vergleichsbasis. Weitere in §4.5.
   den Workflows gefunden **[P]**. Das Image setzt
   `RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS="*"` als Vorgabe **[P]**.
 - **S3:** laut README Multipart, Versionierung, Lebenszyklus, Bucket-Policy,
-  CORS **[S]**. Admin-API unter `/rustfs/admin/v3/`, `mc admin` geht deshalb
-  nicht **[S]**.
+  CORS **[S]**; im Messlauf bestätigt, soweit geprüft (§5) **[M]**.
+  Admin-API unter `/rustfs/admin/v3/`, `mc admin` geht deshalb nicht **[S]**.
 - **Start:** Zugangsdaten aus `RUSTFS_ACCESS_KEY`/`RUSTFS_SECRET_KEY`;
-  Healthcheck `/health` **[P]** (`rustfs/src/server/prefix.rs`).
-
-⟨RUSTFS-MESSUNG⟩
+  Healthcheck `/health` **[P]/[M]** (`rustfs/src/server/prefix.rs`).
+- **Lizenzschlüssel im Code:** RustFS 1.0 enthält eine Lizenzprüfung mit
+  RSA-signierten Tokens und „Entitlements“ (`crates/license`,
+  `rustfs/src/license.rs`, `rustfs/src/connect/license_renewal.rs`); jede
+  S3-Anfrage läuft durch `license_check()` (`rustfs/src/storage/access.rs`)
+  **[P]**. Ohne das Cargo-Feature `license` ist die Prüfung ein No-op, und die
+  offiziellen Builds setzen es nicht (`.github/workflows/build.yml`) **[P]**.
+  Heute also ohne Wirkung — aber die Technik für eine lizenzpflichtige
+  Ausgabe liegt fertig im Kern **[A]**.
+- **Messung:** alle Prüfungen aus §5 bestanden, einschließlich Policy, CORS
+  und `x-amz-expiration` **[M]**. Der Tag `1.0.0` zeigt auf denselben Commit
+  wie `1.0.0-preview.4`; die Binärdatei meldet sich so **[M]**. Build nur mit
+  Rust 1.98.1 und `protoc`, 1 150 Crates **[M]**.
 
 ### 4.4 MinIO aus dem Quelltext (Vergleich)
 
@@ -312,7 +329,41 @@ also mit den Standard-Prüfsummen neuer SDKs —, dazu `rasterio` 1.5.1 / GDAL
 (2048 × 2048, Kacheln 512, zwei Overviews). Wegwerf-Zugangsdaten, keine Daten
 aus Quellen.
 
-⟨TABELLE⟩
+| Prüfung | MinIO (Quelltext, 15.10.2025) | Garage 2.4.1 | SeaweedFS 4.47 | RustFS 1.0.0 |
+|---|---|---|---|---|
+| Start bis Healthcheck `200` | 0,46–0,69 s | 0,13 s | 0,78–0,90 s | 0,14 s |
+| RSS drei Sekunden nach dem Start | 127–133 MiB | 26–27 MiB | 119–146 MiB | 204 MiB ¹ |
+| RSS nach dem Prüflauf | 140–149 MiB | 44–63 MiB | 198–222 MiB | 271 MiB ¹ |
+| Binärdatei (selbst gebaut) | 152 MB | 56 MB | 221 MB | 374 MB ¹ |
+| Offizielles Image (amd64, komprimiert) | — (`bitnamilegacy`: 99 MB) | 28 MB | 195 MB | 110 MB |
+| `PutObject` mit Standard-Prüfsummen von boto3 1.43 | ✅ | ✅ | ✅ | ✅ |
+| Multipart-Upload, drei Teile | ✅ | ✅ | ✅ | ✅ |
+| Multipart abbrechen | ✅ | ✅ | ✅ | ✅ |
+| `GetObject` mit `Range` → `206` | ✅ | ✅ | ✅ | ✅ |
+| vorsignierte GET-URL mit `Range` | ✅ | ✅ | ✅ | ✅ |
+| vorsignierte PUT-URL | ✅ | ✅ | ✅ | ✅ |
+| abgelaufene URL abgewiesen | ✅ `403` | ⚠ `400` | ✅ `403` | ✅ `403` |
+| URL auf anderen Schlüssel umgeschrieben → `403` | ✅ | ✅ | ✅ | ✅ |
+| anonym ohne Policy → abgewiesen | ✅ | ✅ | ✅ | ✅ |
+| Lebenszyklus `Expiration` angenommen | ✅ | ✅ | ✅ | ✅ |
+| Header `x-amz-expiration` am neuen Objekt | ✅ | — | — | ✅ |
+| Lebenszyklus `AbortIncompleteMultipartUpload` | ❌ `InvalidArgument` | ✅ | ✅ | ✅ |
+| Bucket-Policy, anonymes Lesen auf Präfix | ✅ | ❌ `NotImplemented` | ✅ | ✅ |
+| CORS je Bucket | ❌ `NotImplemented` | ✅ | ✅ | ✅ |
+| `ListObjectsV2`, `DeleteObjects` | ✅ | ✅ | ✅ | ✅ |
+| GDAL `/vsis3/`: Fenster und Overview | ✅ | ✅ | ✅ | ✅ |
+| GDAL `/vsicurl/` mit vorsignierter URL | ✅ | ✅ | ✅ | ✅ |
+| Verbindung nach außen während des Laufs ² | keine | keine | keine | keine |
+
+MinIO, Garage und SeaweedFS wurden zweimal gemessen (Spannen), RustFS einmal.
+¹ RustFS gebaut **ohne** das LTO-Profil des Projekts: mit `lto = "thin"` und
+einer Codegen-Einheit brauchte ein einzelner `rustc` 8,8 GB und wurde vom
+Speicherlimit der Sitzung beendet **[M]**; gebaut dann mit
+`CARGO_PROFILE_RELEASE_LTO=false`, `CODEGEN_UNITS=16` in 70 min. Größe und
+Speicher des offiziellen Builds weichen deshalb ab (unbelegt).
+² `ss -tunp` alle 0,5 s über 60 s, Proxy-Variablen entfernt: kein Socket zu
+einer Adresse außer `127.0.0.1`. Seltene Aufrufe (etwa eine tägliche
+Update-Prüfung) schließt das nicht aus.
 
 **Lesart.**
 
@@ -323,12 +374,25 @@ aus Quellen.
 - **MinIO** lehnt CORS je Bucket ab (`NotImplemented`) und die Regel
   `AbortIncompleteMultipartUpload` (`InvalidArgument`); beides ist keine
   M4-Pflicht, zeigt aber, dass auch MinIO nicht „das S3“ ist.
+- **`x-amz-expiration`** setzen nur MinIO und RustFS. Der Header ist
+  Auskunft für Clients, keine Voraussetzung für den Ablauf selbst.
 
 ---
 
 ## 6. Kriterienmatrix
 
-⟨MATRIX⟩
+Bewertung **[A]** aus den Belegen in §3–§5: ✅ erfüllt, ⚠ mit Einschränkung,
+❌ nicht erfüllt.
+
+| # | Kriterium | MinIO (Quelltext / `bitnamilegacy`) | Garage 2.4.1 | SeaweedFS 4.47 | RustFS 1.0.0 |
+|---|---|---|---|---|---|
+| K1 | Lizenz, Wechselrisiko | ⚠ AGPL-3.0; Hersteller hat die freie Ausgabe aufgegeben | ✅ AGPL-3.0, kein CLA, kein Open-Core | ⚠ Apache-2.0; Enterprise-Ausgabe daneben | ⚠ Apache-2.0; CLA erlaubt proprietäre Weitergabe; Lizenzprüfung im Kern angelegt |
+| K2 | Pflege, Sicherheit | ❌ keine Fixes seit 12.02.2026; Übergangs-Image vor einem Sicherheitsfix | ✅ Releases 2026, öffentliche Förderung, keine CVE gefunden | ⚠ wöchentliche Releases; mehrere kritische CVEs 2026, behoben | ⚠ 1.0 seit 16.09.2026; kritische CVE in der Alpha-Zeit |
+| K3 | Offizielles Image, Herkunft | ❌ offiziell weg; `bitnamilegacy` ohne Updates; eigenes Image nötig | ✅ `scratch`, Projekt-CI (Nix); ohne Signatur | ✅ Projekt-CI, cosign-signiert | ⚠ Projekt-CI, ohne Signatur |
+| K4 | S3 für M4 | ✅ alles außer CORS je Bucket | ⚠ alles außer Bucket-Policy | ✅ alles | ✅ alles |
+| K5 | Ressourcen | ⚠ 99 MB Image, 127–133 MiB RSS | ✅ 28 MB, 26 MiB | ⚠ 195 MB, 119–146 MiB | ⚠ 110 MB, 204 MiB (Build ohne LTO) |
+| K6 | Betrieb ohne Handarbeit | ✅ Zugangsdaten aus Env, `curl`-Healthcheck | ⚠ Konfigurationsdatei und RPC-Secret nötig; Bucket per Env | ✅ ein Befehl; Admin-UI abschalten | ⚠ Bucket nicht per Env; Vorgabe-Zugangsdaten, wenn Env fehlt |
+| K7 | Nähe zu verwaltetem S3 | ✅ | ⚠ `400` statt `403` bei abgelaufener URL | ✅ | ✅ |
 
 ---
 
@@ -355,7 +419,7 @@ Was sich je Kandidat ändert **[A]**, aus §4 und §5:
 | Bucket beim Start | ja (`--default-bucket`) | ja (`-bucket=…`) | nein, erst per Client |
 | Ports | 3900 (S3), 3903 (Admin/Health) | 8333 (S3) | 9000 (S3), 9001 (Konsole) |
 | Healthcheck | `["CMD", "/garage", "status"]` (kein `curl` im Image) | `curl -f` auf `/healthz` (`curl` im Image) | `curl -f` auf `/health` (`curl` im Image) |
-| Weboberfläche | keine im Kern | Admin-UI, abschalten oder Passwort | Konsole auf 9001 |
+| Weboberfläche | keine im Kern | Admin-UI, abschalten oder Passwort | Konsole (`--console-enable`, Port 9001) |
 
 **Vorschlag unabhängig vom Produkt [A]:** Die Variablen in `.env` neutral
 benennen (etwa `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`) und im
@@ -410,8 +474,9 @@ erst mit M4.**
 Begründung **[A]**, aus §4–§6:
 
 1. **K4 reicht für M4.** Alles, was 6.4, 7.4 und 12.3 verlangen — Multipart,
-   vorsignierte URLs, Range-Reads, Ablauf nach Tagen — hat Garage im Messlauf
-   bestanden, dazu CORS und die Abbruchregel für liegengebliebene
+   vorsignierte URLs, Range-Reads, eine Ablaufregel nach Tagen (angenommen;
+   ob sie greift, ist bei allen Kandidaten unbelegt, §5) — hat Garage im
+   Messlauf bestanden, dazu CORS und die Abbruchregel für liegengebliebene
    Multipart-Uploads, die MinIO ablehnt. Was fehlt, ist die Bucket-Policy. M4
    braucht sie nach dem Plan nicht: Ergebnisse bleiben privat und gehen nur
    über signierte URLs hinaus (6.4); anonymes Lesen ist nirgends vorgesehen
@@ -438,9 +503,13 @@ SeaweedFS die Wahl: Es hat alle Prüfungen bestanden, startet mit einem Befehl
 und bringt die Policy mit — zum Preis von 195 MB Image, sieben
 Teildiensten in einem Prozess und einer schwereren Sicherheitsgeschichte.
 
-**Nicht empfohlen:** RustFS (1.0 seit zehn Tagen, Vorgabe-Zugangsdaten,
-CLA), MinIO aus dem Quelltext (ungepflegt; eigener Bau ohne Fixes), die
-Distributionen aus §3.4 (paketieren denselben ungepflegten Kern).
+**Nicht empfohlen:** RustFS — funktional im Messlauf vollständig und am
+nächsten an MinIO, aber 1.0 erst seit zehn Tagen, Vorgabe-Zugangsdaten, ein
+CLA für proprietäre Weitergabe und eine fertig angelegte Lizenzprüfung im
+Kern; wer MinIO wegen des Rückzugs ersetzt, sollte nicht auf dieselbe
+Konstruktion setzen **[A]**. MinIO aus dem Quelltext (ungepflegt; eigener Bau
+ohne Fixes). Die Distributionen aus §3.4 (paketieren denselben ungepflegten
+Kern).
 
 **Warum schon in M3:** Der Pflicht-Check `compose-topology` hängt an einem
 Image, das keine Updates bekommt, ratenbegrenzt gezogen wird und jederzeit
@@ -471,7 +540,7 @@ Stufe B) muss der Job `compose-topology` belegen:
 
 ---
 
-## 10. Fragen an Otto
+## 10. Fragen an Otto — beantwortet am 2026-09-26
 
 **F1 — Welcher Speicher ersetzt MinIO in compose und CI?**
 1. Garage v2.4.1 — **Empfehlung** (§8)
@@ -480,22 +549,35 @@ Stufe B) muss der Job `compose-topology` belegen:
 4. MinIO bleibt: `bitnamilegacy/minio` weiter oder eigener Bau aus dem
    Quelltext
 
+**Antwort F1: (1)** Garage ersetzt MinIO in `docker-compose.yml` und CI.
+
 **F2 — Wann wird umgestellt?**
-1. Jetzt, als eigene Stufe-B-Aufgabe in M3 (etwa M3-21), mit den Prüfungen
-   aus §9 Punkte 1–4 — **Empfehlung**
+1. Jetzt, als eigene Stufe-B-Aufgabe in M3 (nächste freie Nummer, M3-23),
+   mit den Prüfungen aus §9 Punkte 1–4 — **Empfehlung**
 2. Mit dem ersten M4-Plan, zusammen mit dem ersten Test, der den Speicher
    braucht
 3. Erst, wenn `bitnamilegacy/minio` bricht
+
+**Antwort F2: (1)** Jetzt, als eigene Stufe-B-Aufgabe M3-23 („Garage statt
+MinIO“, `plans/m3-dritte-quelle-und-interface.md` §4); `bitnamilegacy/minio`
+bleibt nur bis zu deren Merge.
 
 **F3 — Braucht M4 anonymes Lesen per Bucket-Policy?**
 1. Nein: Ergebnisse bleiben privat und gehen nur über signierte URLs hinaus
    (6.4) — **Empfehlung**; dann trägt Garage
 2. Ja: dann SeaweedFS (F1 Option 2)
 
+**Antwort F3: (1)** Nein. Ergebnisse bleiben privat und gehen nur über
+signierte URLs hinaus; die fehlende Bucket-Policy von Garage ist kein
+Hindernis.
+
 **F4 — Sollen die `.env`-Variablen neutral heißen (`S3_ACCESS_KEY` …) und der
 Dienst `objectstore` statt nach dem Produkt (§7.1)?**
 1. Ja, mit der Umstellung aus F2 — **Empfehlung**
 2. Nein, produktspezifische Namen wie heute
+
+**Antwort F4: (1)** Ja. Variablen `S3_*`, Dienst `objectstore`; umgesetzt mit
+M3-23.
 
 **F5 — Weg vom eigenen Code zum eigenen Speicher (für den M4-Plan, nicht
 jetzt zu bauen).** `gateway` lässt heute nur `https` und öffentliche Adressen
@@ -509,12 +591,19 @@ Plattformdienst im compose-Netz.
 3. Jetzt festlegen: ein eigenes Modul für Plattformdienste mit eigenem
    Importvertrag
 
+**Antwort F5: (1)** Der M4-Plan schlägt den Weg vor, Otto entscheidet dort.
+M3-23 fasst den Anwendungscode nicht an.
+
 **F6 — Messung der Images:** Die Messung hier lief an selbst gebauten
 Binärdateien. Reicht das mit der Bestätigung in CI (§9 Punkt 4), oder soll
 eine Sitzung mit Docker-Freigabe (`production.cloudfront.docker.com`,
 `cloud-umgebung.md` §7) die Images vorher messen?
 1. CI-Bestätigung in der Umstellungsaufgabe reicht — **Empfehlung**
 2. Vorher eine Sitzung mit Freigabe
+
+**Antwort F6: (1)** Die CI bestätigt in M3-23, was §9 offen lässt: Das
+offizielle Image startet, die boto3-Grundfunktionen gehen, eine COG lässt
+sich per Range lesen.
 
 ---
 
@@ -604,7 +693,7 @@ minio server <dir> --address 127.0.0.1:9100            # MINIO_ROOT_USER/_PASSWO
 weed mini -dir=<dir> -ip=127.0.0.1 -admin.ui=false       # AWS_ACCESS_KEY_ID/_SECRET_ACCESS_KEY
 garage server --single-node --default-bucket             # GARAGE_CONFIG_FILE, GARAGE_RPC_SECRET,
                                                          # GARAGE_DEFAULT_ACCESS_KEY/_SECRET_KEY/_BUCKET
-rustfs <dir> --address 127.0.0.1:9200                    # RUSTFS_ACCESS_KEY/_SECRET_KEY
+rustfs server <dir> --address 127.0.0.1:9200             # RUSTFS_ACCESS_KEY/_SECRET_KEY
 ```
 
 `garage.toml` für die Messung: `db_engine = "sqlite"`,
