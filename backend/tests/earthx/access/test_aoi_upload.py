@@ -204,6 +204,16 @@ class TestKML:
         with pytest.raises(AoiUploadError, match="no usable geometry"):
             parse_kml(empty.encode())
 
+    def test_lines_only_kml_names_lines_in_the_message(self) -> None:
+        # M3-06b, Otto's review 26.09.2026: the old generic "no usable geometry
+        # found in the file" left a user exporting a route (LineString) guessing;
+        # this names what the file actually had.
+        route = """<kml><Document>
+        <Placemark><LineString><coordinates>0,0 1,1</coordinates></LineString></Placemark>
+        </Document></kml>"""
+        with pytest.raises(AoiUploadError, match="the file contains only lines"):
+            parse_kml(route.encode())
+
     def test_multiple_placemarks_are_unioned(self) -> None:
         two_polygons = """<kml><Document>
         <Placemark><Polygon><outerBoundaryIs><LinearRing><coordinates>
@@ -257,10 +267,30 @@ class TestShapefile:
         with pytest.raises(AoiUploadError, match="ZIP"):
             parse_shapefile_zip(b"not a zip")
 
-    def test_wrong_geometry_type_yields_no_usable_geometry(self) -> None:
+    def test_lines_only_shapefile_names_lines_in_the_message(self) -> None:
+        # M3-06b, Otto's review 26.09.2026: a shapefile of only line shapes gets a
+        # message that says so, not the generic "no usable geometry found".
         zip_bytes = _shapefile_zip([[[0.0, 0.0], [1.0, 1.0]]], shape_type=shapefile.POLYLINE)
-        with pytest.raises(AoiUploadError, match="no usable geometry"):
+        with pytest.raises(AoiUploadError, match="the file contains only lines"):
             parse_shapefile_zip(zip_bytes)
+
+    def test_multipoint_only_shapefile_names_points_in_the_message(self) -> None:
+        # A MultiPoint shapefile (one shape, several positions) is a different
+        # GeoJSON type than the single `Point` this route accepts (M3-06b).
+        shp_buf, shx_buf, dbf_buf = io.BytesIO(), io.BytesIO(), io.BytesIO()
+        writer = shapefile.Writer(shp=shp_buf, shx=shx_buf, dbf=dbf_buf, shapeType=shapefile.MULTIPOINT)
+        writer.field("name", "C")
+        writer.multipoint([[0.0, 0.0], [1.0, 1.0]])
+        writer.record("a")
+        writer.close()
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as archive:
+            archive.writestr("aoi.shp", shp_buf.getvalue())
+            archive.writestr("aoi.shx", shx_buf.getvalue())
+            archive.writestr("aoi.dbf", dbf_buf.getvalue())
+            archive.writestr("aoi.prj", "EPSG:4326")
+        with pytest.raises(AoiUploadError, match="the file contains only points"):
+            parse_shapefile_zip(zip_buf.getvalue())
 
     def test_unexpected_zip_entry_rejected(self) -> None:
         zip_bytes = _shapefile_zip([SQUARE["coordinates"][0]])
