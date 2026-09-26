@@ -23,6 +23,7 @@ from earthx.catalog.registry import (
     DefaultRender,
     HealthInfo,
     HealthStatus,
+    ItemHolding,
     LicenseInfo,
     LicenseTier,
     Maturity,
@@ -86,6 +87,7 @@ def valid_config() -> DatasetConfig:
             source_collection_id="test-collection",
             asset_hosts=("assets.example.invalid",),
             harvest_run=None,
+            item_holding=ItemHolding.FEDERATED,
         ),
         coverage=CoverageInfo(
             provider=CoverageProvider.UPSTREAM_AGGREGATION,

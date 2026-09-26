@@ -27,6 +27,7 @@ from earthx.catalog.registry import (
     DefaultRender,
     HealthInfo,
     HealthStatus,
+    ItemHolding,
     LicenseInfo,
     LicenseTier,
     Maturity,
@@ -155,6 +156,7 @@ SENTINEL_2_L2A = DatasetConfig(
         asset_hosts=("e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",),
         # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
         harvest_run=None,
+        item_holding=ItemHolding.FEDERATED,
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.UPSTREAM_AGGREGATION,
@@ -309,6 +311,7 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         # allowlist (point 10 — the allowlist alone no longer keeps it out).
         asset_hosts=("data.eodc.eu",),
         harvest_run=None,
+        item_holding=ItemHolding.FEDERATED,
     ),
     coverage=CoverageInfo(
         provider=CoverageProvider.SAMPLE,

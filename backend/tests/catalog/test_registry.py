@@ -22,6 +22,7 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
+    ItemHolding,
     LicenseTier,
     SourceInfo,
     SpatialExtent,
@@ -78,7 +79,9 @@ class TestLicenseTier:
 
     def test_no_derivatives_is_fine_as_a_catalog_entry(self, valid_config, vary) -> None:
         license_info = replace(valid_config.license, derivatives=False, tier=LicenseTier.CATALOG)
-        assert vary(license=license_info).license.tier is LicenseTier.CATALOG
+        # A catalog-tier entry names no viewer (M3-11a K-05) — unrelated to what
+        # this test is about, so it just clears the fixture's default.
+        assert vary(license=license_info, viewer=None).license.tier is LicenseTier.CATALOG
 
     @pytest.mark.parametrize("tier", [LicenseTier.DISPLAY, LicenseTier.PROCESSING])
     def test_no_distribution_above_catalog_is_rejected(self, valid_config, vary, tier) -> None:
@@ -152,6 +155,53 @@ class TestCoverage:
         contradict each other.
         """
         assert max_geotile_level_for(110.0) == 8
+
+
+class TestItemHolding:
+    """M3-11a K-05: which coverage and harvest fields make sense follows from where
+    the items live (`DatasetConfig._check_item_holding`)."""
+
+    def test_a_catalog_tier_entry_names_no_viewer(self, valid_config, vary) -> None:
+        """M3-02 K-03, Otto's answer of 23.09.2026: a dataset never displayed here
+        has nothing for `viewer` to say."""
+        license_info = replace(
+            valid_config.license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        with pytest.raises(ConfigError, match="viewer"):
+            vary(license=license_info)
+
+    def test_a_catalog_tier_entry_without_a_viewer_is_fine(self, valid_config, vary) -> None:
+        license_info = replace(
+            valid_config.license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        assert vary(license=license_info, viewer=None).viewer is None
+
+    def test_materialized_items_need_local_sql_coverage(self, valid_config, vary) -> None:
+        source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+        with pytest.raises(ConfigError, match="local-sql"):
+            vary(source=source)
+
+    def test_materialized_items_with_local_sql_coverage_are_fine(self, valid_config, vary) -> None:
+        source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+        assert vary(source=source, coverage=coverage).source.item_holding is ItemHolding.MATERIALIZED
+
+    def test_federated_items_cannot_use_local_sql_coverage(self, valid_config, vary) -> None:
+        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+        with pytest.raises(ConfigError, match="local-sql"):
+            vary(coverage=coverage)
+
+    def test_federated_items_carry_no_harvest_run(self, valid_config, vary) -> None:
+        source = replace(valid_config.source, harvest_run="2026-09-26T00:00:00Z")
+        with pytest.raises(ConfigError, match="harvest_run"):
+            vary(source=source)
+
+    def test_a_materialized_entry_may_carry_a_harvest_run(self, valid_config, vary) -> None:
+        source = replace(
+            valid_config.source, item_holding=ItemHolding.MATERIALIZED, harvest_run="2026-09-26T00:00:00Z"
+        )
+        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+        assert vary(source=source, coverage=coverage).source.harvest_run == "2026-09-26T00:00:00Z"
 
 
 class TestLookup:
@@ -340,6 +390,18 @@ class TestMalformedInput:
                 endpoint=valid_config.source.endpoint,
                 source_collection_id=valid_config.source.source_collection_id,
                 harvest_run=None,
+                item_holding=valid_config.source.item_holding,
+            )
+
+    def test_item_holding_is_not_optional(self, valid_config) -> None:
+        """M3-11a K-05: the same rule as every other flag KLAERUNGEN B10 covers."""
+        with pytest.raises(TypeError):
+            SourceInfo(
+                adapter=valid_config.source.adapter,
+                endpoint=valid_config.source.endpoint,
+                source_collection_id=valid_config.source.source_collection_id,
+                asset_hosts=valid_config.source.asset_hosts,
+                harvest_run=None,
             )
 
 
@@ -369,3 +431,25 @@ class TestEveryEntry:
 
     def test_the_id_is_the_one_it_is_filed_under(self, entry: DatasetConfig) -> None:
         assert REGISTRY.get(entry.dataset_id) is entry
+
+    def test_item_holding_is_one_of_the_two_known_values(self, entry: DatasetConfig) -> None:
+        """M3-11a K-05: enforced at construction already (`ConfigError` at import
+        time, `TestItemHolding` above), pinned again here as a named, per-entry
+        test — Otto, freeing M3-11a: a broken entry is meant to fail in CI by name,
+        not only as a collection error somewhere that happens to import the
+        registry."""
+        assert entry.source.item_holding in (ItemHolding.FEDERATED, ItemHolding.MATERIALIZED)
+
+    def test_item_holding_matches_the_coverage_provider(self, entry: DatasetConfig) -> None:
+        if entry.source.item_holding is ItemHolding.MATERIALIZED:
+            assert entry.coverage.provider is CoverageProvider.LOCAL_SQL
+        else:
+            assert entry.coverage.provider is not CoverageProvider.LOCAL_SQL
+
+    def test_a_federated_entry_carries_no_harvest_run(self, entry: DatasetConfig) -> None:
+        if entry.source.item_holding is ItemHolding.FEDERATED:
+            assert entry.source.harvest_run is None
+
+    def test_a_catalog_tier_entry_names_no_viewer(self, entry: DatasetConfig) -> None:
+        if entry.license.tier is LicenseTier.CATALOG:
+            assert entry.viewer is None

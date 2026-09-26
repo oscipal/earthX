@@ -79,6 +79,9 @@ def test_source_carries_what_adr_0005_branches_on(collection: dict) -> None:
     source = collection["earthx:source"]
     assert source["adapter"] == "earth-search-v1"
     assert source["source_collection_id"] == "sentinel-2-c1-l2a"
+    # M3-11a K-05: what `FederatingCoreCrudClient._holding_of` reads back off this
+    # very document to decide federated vs. materialized.
+    assert source["item_holding"] == "federated"
 
 
 def test_maturity_is_the_registry_entrys_own_value(collection: dict) -> None:
