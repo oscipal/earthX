@@ -1,7 +1,11 @@
 # M3-13 — Gemischte Suche und CQL2: Plan-Schritt
 
-**Status (26.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe. Kein
-Produktivcode geändert.
+**Status (26.09.2026):** Freigegeben und umgesetzt (Otto: F1 (1), F2 (1), F3
+(1), F4 (2), F5 (1), F6 (1), F7 (1)), im selben Draft-PR wie dieser Plan.
+F4 (2) zusätzlich zur Empfehlung: `ignored_filters_by_collection` bricht die
+Kennzeichnung je Collection auf, weil der Viewer mit Mehrfachauswahl (M3-10)
+je Datensatz einen Hinweis zeigen soll; die flache Liste bleibt für einfache
+Clients. Details in `ENTSCHEIDUNGSLOG.md`, Zeile vom 26.09.2026.
 **Aufgabe:** M3-13 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P6),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11): **ein Zeitraum, mehrere
 Datensätze zugleich; der Viewer nutzt die gemischte Suche.** **Stufe B.**
@@ -435,3 +439,73 @@ davon mehr als die Hälfte Tests.
    **(Empfehlung)**
 2. Zwei PRs: M3-13a gemischte Suche und Marke, M3-13b Extensions (F3/F5) und
    Frontend.
+
+---
+
+## 10. Umsetzung (26.09.2026)
+
+Alle sieben Empfehlungen angenommen und wie in §4 umgesetzt, mit F4 (2) statt
+der Empfehlung (siehe Statuszeile) und zwei Nebenfunden.
+
+- **Paging (F1):** `api/mixed_search.py` (neu) trägt die reinen Bausteine —
+  Anteile (`compute_shares`), Fingerabdruck der gemischten Suche
+  (`mixed_fingerprint`, ohne `limit`) und die eigene Marke (`encode_mixed_
+  token`/`decode_mixed_token`, `"k": "mixed"`). `federating_client.py` trägt
+  die Netzwerk-/DB-Seite: `_partition_sources` bildet die Quellen (eigene
+  Collections gruppiert nach `time_range`, jede föderierte einzeln, feste
+  Reihenfolge), `_mixed_page` fragt sie parallel mit `asyncio.gather`.
+- **Adapter-Marke ohne `limit` (F1):** `federated_search.search_fingerprint`
+  lässt `limit` weg, `search_cache_key` nimmt es stattdessen zusätzlich zum
+  Fingerabdruck auf (die Seite selbst hängt von der Seitengröße ab, die Suche
+  nicht). `TOKEN_VERSION` 1 → 2.
+- **Ausfall (F2):** `_federated_search_raw` (aus `_federated_page`
+  herausgezogen) liefert die rohe Ausnahme statt sie sofort in eine
+  `HTTPException` zu verwandeln; nur so kann die gemischte Seite zwischen
+  einem Klientenfehler (bricht die ganze Anfrage ab, wie bisher) und einer
+  echten Störung der Quelle (wird zu `incomplete_collections`) unterscheiden.
+  Budget 10 s über `asyncio.wait_for`, aus dem Modul gelesen (nicht als Name
+  importiert), damit ein Test es versetzen kann. Ein Fehler einer eigenen
+  Gruppe (`_native_group_page`) wird nicht aufgefangen — das ist Absicht
+  (§4.4).
+- **CQL2 (F3):** unverändert aus, mit Nachtrag in `adr/0005`.
+- **`ignored_filters_by_collection` (F4, Otto: 2 statt Empfehlung):** Zusätzlich
+  zur flachen Liste ein Feld je Collection, berechnet einmal aus denselben
+  Pro-Quelle-Daten (`_ignored_filters_of`). Die Coverage-Route (M3-11c)
+  geprüft und **nicht angeglichen**: Sie beantwortet immer genau einen
+  Datensatz, ihre flache Liste ist für `n = 1` bereits dieselbe Aussage wie
+  eine Aufschlüsselung je Collection — es gibt dort nichts, das von der neuen
+  Form abweicht.
+- **`query`/`fields` (F5):** `api/main.py` schaltet nur noch `pagination` ein;
+  `federating_client._DISALLOWED_QUERY_KEYS` weist beide mit `400` ab.
+  Vorprüfung wie von Otto verlangt: `frontend/src` schickte keins von beiden
+  (`SearchQuery` kennt die Felder gar nicht) — belegt durch einen neuen
+  Vitest-Test (`api.test.ts`, „never sends the disabled query/fields
+  extensions“), keine Änderung am Frontend nötig.
+- **Frontend (F6):** `api.ts`: `SearchQuery.collection` → `collections:
+  string[]`, `ItemPage`/`searchAllPages` tragen `incompleteCollections`
+  (über alle Seiten gesammelt, je Collection nur einmal). `store.ts` schickt
+  weiterhin `[dataset.id]`; Mehrfachauswahl bleibt M3-10.
+- **Nebenfund 1:** Ein gemischter Token, der auf einer späteren Seite nur noch
+  eine einzelne (eigene) Collection nennt — weil die übrigen Quellen
+  inzwischen erschöpft oder ausgefallen sind —, ging unvalidiert an pgstac
+  weiter und lieferte dessen eigenen internen Fehlertext zurück
+  (`asyncpg.exceptions.RaiseError`). Behoben: Der Einzel-Zweig weist einen
+  erkennbar gemischten Token jetzt selbst mit `400` ab
+  (`mixed_search.is_mixed_token`).
+- **Nebenfund 2:** Mit `limit=1` bekommt bei zwei Quellen nur die erste
+  (eigene Collections zuerst, feste Reihenfolge) einen Anteil; das ist
+  beabsichtigtes Verhalten, hat aber zwei Testannahmen widerlegt, die von
+  einer Verteilung ab der ersten Seite ausgingen — korrigiert auf `limit=2`.
+
+**Geändert:** `backend/earthx/api/mixed_search.py` (neu), `api/federating_client.py`
+(Dispatch, Fan-out, Token), `api/main.py` (Extensions), `adapters/federated_search.py`
+(Fingerabdruck, Cache-Schlüssel, `TOKEN_VERSION`), `adapters/earth_search.py`/
+`eopf_stac.py` (Cache-Schlüssel-Aufruf); `frontend/src/api.ts`, `store.ts`.
+Tests: `backend/tests/earthx/api/test_mixed_search.py` (neu, reine Bausteine),
+`backend/tests/integration/test_api_mixed_search.py` (neu, Fan-out gegen echtes
+pgstac), Anpassungen in `test_api_federating.py` (die früheren „mehr als eine
+Quelle“-Abweisungen sind jetzt Erfolgsfälle) und `test_search_params.py`
+(Fingerabdruck ohne `limit`); `frontend/src/api.test.ts`. Vor „fertig“
+ausgeführt: `ruff check backend` (grün), `pytest` (1718 grün), `lint-imports`
+(zwölf Verträge grün), `npm run lint` (grün), `npx tsc -b` (grün), Vitest
+(438 grün).

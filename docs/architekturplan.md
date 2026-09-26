@@ -282,6 +282,15 @@ sequenceDiagram
 
 Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern dieselbe STAC-Antwort. Das Fallback "nächstgelegenes Datum" und die Verfügbarkeits-Zeitleiste sind Abfragen auf dieser Schicht (Aggregation über `datetime`), nicht Logik im Frontend.
 
+**Gemischte Suche (M3-13, `adr/0005` Regel I).** Eine Suche kann beide Zeilen der
+Tabelle zugleich treffen — eigene Collections und mehr als eine föderierte. Jede
+beteiligte Quelle wird dann parallel gefragt, mit einem Anteil an der
+angeforderten Seitengröße, der sich auf jeder Seite neu verteilt (`api/mixed_search.py`).
+Scheitert eine föderierte Quelle, kommen die übrigen trotzdem, mit einer
+Kennzeichnung der fehlenden; ein Fehler des eigenen pgstac scheitert die ganze
+Anfrage, weil es dafür keine Teilantwort gibt. Die Konformitätsklassen der
+eigenen Landing Page (5.3) richten sich nach der schwächsten beteiligten Quelle.
+
 ### 5.3 Bausteine
 
 - **pgstac + stac-fastapi-pgstac** als Katalogkern und zugleich öffentliche STAC-API (Collection-Suche, Freitext, CQL2-Filter).
@@ -676,7 +685,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 |---|---|
 | Junge Bausteine (zarr-layer vor 1.0, async-geotiff neu, GeoZarr-Spezifikation in Bewegung, stac-fastapi-eodag nicht produktionsreif) | Nur hinter eigenen Nahtstellen einsetzen; Kernpfad auf reifen Bausteinen (pgstac, stac-fastapi, rio-tiler/TiTiler, xarray/zarr) |
 | Quellen drosseln oder sperren bei vielen Nutzern | Fetch-Gateway mit Limits pro Host, Caching, Bündelung; Kontakt zu Betreibern, eigener User-Agent |
-| Föderierte Suche ist so langsam wie die langsamste Quelle | Timeouts pro Quelle, Teilergebnisse mit Kennzeichnung, Cache, für kritische Quellen Items doch materialisieren |
+| Föderierte Suche ist so langsam wie die langsamste Quelle | Timeouts pro Quelle, Teilergebnisse mit Kennzeichnung, Cache, für kritische Quellen Items doch materialisieren — für die gemischte Suche umgesetzt (M3-13, 10 s je Quelle, `incomplete_collections`) |
 | Fehlende CORS-Header verhindern Rendering im Browser | T0 ist Option, nie Voraussetzung; Tiler bleibt der Standardweg |
 | Überarchitektur für ein kleines Team | Modularer Monolith, eine Datenbank, Git als Review-Queue, Standards nur in der Form übernehmen, nicht in voller Breite implementieren |
 | Interface wird STAC-förmig | Nicht-STAC-Quelle in Inkrement 3, vor der Interface-Reflexion |
