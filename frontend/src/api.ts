@@ -113,6 +113,12 @@ export interface ItemPage {
   numberMatched: number | null;
   numberReturned: number;
   nextToken: string | null;
+  // M3-12: filters the backend could not honour for at least one searched
+  // collection and dropped rather than silently applying — `datetime` for a
+  // dataset with `capabilities.time_range=False`. Empty when nothing was
+  // dropped. Mirrors the coverage route's own `ignored_filters`
+  // (`api/coverage_route.py`).
+  ignoredFilters: string[];
 }
 
 // M3-08: every search goes over `POST` now (F7a — keeps an AOI out of the access
@@ -148,6 +154,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberMatched?: number;
     numberReturned: number;
     links?: StacLink[];
+    ignored_filters?: string[];
   }>(
     await fetch(`${BASE}/stac/search`, {
       method: 'POST',
@@ -160,6 +167,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberMatched: body.numberMatched ?? null,
     numberReturned: body.numberReturned,
     nextToken: nextTokenFrom(body.links),
+    ignoredFilters: body.ignored_filters ?? [],
   };
 }
 
@@ -223,17 +231,21 @@ export async function fetchStatistics(
 export async function searchAllPages(
   q: Omit<SearchQuery, 'limit' | 'token'>,
   maxItems: number,
-): Promise<{ features: StacItem[]; numberMatched: number | null }> {
+): Promise<{ features: StacItem[]; numberMatched: number | null; ignoredFilters: string[] }> {
   let token: string | undefined;
   const features: StacItem[] = [];
   let numberMatched: number | null = null;
+  // Every page of one search drops the same filter for the same reason, so
+  // the first page's answer already speaks for the whole set.
+  let ignoredFilters: string[] = [];
   do {
     const page: ItemPage = await searchItems({ ...q, limit: 100, token });
     features.push(...page.features);
     if (numberMatched === null) numberMatched = page.numberMatched;
+    if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
     token = page.nextToken ?? undefined;
   } while (token && features.length < maxItems);
-  return { features, numberMatched };
+  return { features, numberMatched, ignoredFilters };
 }
 
 // The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the
@@ -299,8 +311,7 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed
 // synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
-// in `api/tiler.py`; `language` picks the notice file's text (M2-07d requests
-// `en`, matching the rest of the — English since 2026-09-20 — interface).
+// in `api/tiler.py`.
 // One of `RESOLUTION_FACTORS` in `access/download.py` (F10c, M3-18 §10):
 // how many times coarser than native to read. Native (`1`) is the default and
 // is never chosen automatically — the dialog always shows the choice.
@@ -316,7 +327,6 @@ export interface DownloadCropRequest {
   groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
-  language?: string;
   resolution?: ResolutionFactor;
 }
 
@@ -347,7 +357,6 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
-      language: req.language ?? 'en',
       resolution: req.resolution ?? 1,
     }),
   });
