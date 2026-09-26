@@ -1,6 +1,12 @@
 # ADR 0012 — Objektspeicher: Ersatz für MinIO
 
-- **Status:** Entwurf, wartet auf Otto. Die Fragen stehen in §10.
+- **Status:** **Angenommen** von Otto am 2026-09-26. Die sechs Fragen aus §10
+  sind dort beantwortet, alle nach Empfehlung: **F1** Garage ersetzt MinIO;
+  **F2** Umstellung jetzt als eigene Stufe-B-Aufgabe M3-23; **F3** kein
+  anonymes Lesen per Bucket-Policy, Ergebnisse nur über signierte URLs;
+  **F4** neutrale Namen (`S3_*`, Dienst `objectstore`); **F5** der Weg vom
+  eigenen Code zum Speicher wird im M4-Plan entschieden; **F6** die Images
+  bestätigt die CI in M3-23.
 - **Datum:** 2026-09-26
 - **Aufgabe:** M3-20 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P23).
 - **Autonomiestufe:** C — nur gemessen, gelesen und berichtet. Kein Code, keine
@@ -534,7 +540,7 @@ Stufe B) muss der Job `compose-topology` belegen:
 
 ---
 
-## 10. Fragen an Otto
+## 10. Fragen an Otto — beantwortet am 2026-09-26
 
 **F1 — Welcher Speicher ersetzt MinIO in compose und CI?**
 1. Garage v2.4.1 — **Empfehlung** (§8)
@@ -543,6 +549,8 @@ Stufe B) muss der Job `compose-topology` belegen:
 4. MinIO bleibt: `bitnamilegacy/minio` weiter oder eigener Bau aus dem
    Quelltext
 
+**Antwort F1: (1)** Garage ersetzt MinIO in `docker-compose.yml` und CI.
+
 **F2 — Wann wird umgestellt?**
 1. Jetzt, als eigene Stufe-B-Aufgabe in M3 (nächste freie Nummer, M3-23),
    mit den Prüfungen aus §9 Punkte 1–4 — **Empfehlung**
@@ -550,15 +558,26 @@ Stufe B) muss der Job `compose-topology` belegen:
    braucht
 3. Erst, wenn `bitnamilegacy/minio` bricht
 
+**Antwort F2: (1)** Jetzt, als eigene Stufe-B-Aufgabe M3-23 („Garage statt
+MinIO“, `plans/m3-dritte-quelle-und-interface.md` §4); `bitnamilegacy/minio`
+bleibt nur bis zu deren Merge.
+
 **F3 — Braucht M4 anonymes Lesen per Bucket-Policy?**
 1. Nein: Ergebnisse bleiben privat und gehen nur über signierte URLs hinaus
    (6.4) — **Empfehlung**; dann trägt Garage
 2. Ja: dann SeaweedFS (F1 Option 2)
 
+**Antwort F3: (1)** Nein. Ergebnisse bleiben privat und gehen nur über
+signierte URLs hinaus; die fehlende Bucket-Policy von Garage ist kein
+Hindernis.
+
 **F4 — Sollen die `.env`-Variablen neutral heißen (`S3_ACCESS_KEY` …) und der
 Dienst `objectstore` statt nach dem Produkt (§7.1)?**
 1. Ja, mit der Umstellung aus F2 — **Empfehlung**
 2. Nein, produktspezifische Namen wie heute
+
+**Antwort F4: (1)** Ja. Variablen `S3_*`, Dienst `objectstore`; umgesetzt mit
+M3-23.
 
 **F5 — Weg vom eigenen Code zum eigenen Speicher (für den M4-Plan, nicht
 jetzt zu bauen).** `gateway` lässt heute nur `https` und öffentliche Adressen
@@ -572,12 +591,19 @@ Plattformdienst im compose-Netz.
 3. Jetzt festlegen: ein eigenes Modul für Plattformdienste mit eigenem
    Importvertrag
 
+**Antwort F5: (1)** Der M4-Plan schlägt den Weg vor, Otto entscheidet dort.
+M3-23 fasst den Anwendungscode nicht an.
+
 **F6 — Messung der Images:** Die Messung hier lief an selbst gebauten
 Binärdateien. Reicht das mit der Bestätigung in CI (§9 Punkt 4), oder soll
 eine Sitzung mit Docker-Freigabe (`production.cloudfront.docker.com`,
 `cloud-umgebung.md` §7) die Images vorher messen?
 1. CI-Bestätigung in der Umstellungsaufgabe reicht — **Empfehlung**
 2. Vorher eine Sitzung mit Freigabe
+
+**Antwort F6: (1)** Die CI bestätigt in M3-23, was §9 offen lässt: Das
+offizielle Image startet, die boto3-Grundfunktionen gehen, eine COG lässt
+sich per Range lesen.
 
 ---
 
