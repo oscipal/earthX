@@ -97,7 +97,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import warnings
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -223,24 +222,13 @@ _BYTES_PER_DTYPE: dict[str, int] = {
 _FALLBACK_BYTES_PER_BAND = 8
 _FALLBACK_BAND_COUNT = 4
 
-# ZSTD, not `deflate` (M2-06's original choice): measured against a real
-# synthetic COG with a masked, single-tile crop (F3, `add_mask=True`),
-# `cog_translate`'s DEFLATE encoding was intermittently unreadable afterwards
-# ("ZIPDecode: incorrect data check", a handful of runs in a few hundred,
-# reproduced outside pytest too — not a flaky test). ZSTD was not observed to
-# do this in the same measurement (200/200). The data COG has not passed
-# `add_mask=True` since bug B (23.09.2026, PR #86 review) replaced its
-# internal mask band with a plain `nodata` tag, so the specific corruption
-# this measured may no longer apply to it — kept as-is regardless (F9,
-# unconfirmed by Otto, is the place to revisit that, not here) since ZSTD is
-# still a perfectly fine choice either way. Read once at import, not on every
-# crop: `rio_cogeo` itself warns every time this profile is built, about
-# exactly the trade-off being made here on purpose (older GDAL/libtiff builds
-# may not read ZSTD-compressed TIFFs) — the warning is real, one occurrence of
-# it belongs in a log or a review, not one per crop.
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", UserWarning)
-    _MASKED_COG_PROFILE = cog_profiles.get("zstd")
+# DEFLATE (M3-22, Otto 26.09.2026, F2): every GeoTIFF reader we could find
+# reads it, while ZSTD is an optional libtiff build dependency some current
+# installers leave out (plan m3-22 §8). The ZSTD detour of M3-18 (F9) chased a
+# corruption that was never in these files: it was a use-after-free in the
+# tests' own read path (plan m3-22 §3), and this writer produced no unreadable
+# file in 2,800 read-back runs with either codec.
+_MASKED_COG_PROFILE = cog_profiles.get("deflate")
 
 NOTICE_FILENAME = "ATTRIBUTION.txt"
 
@@ -702,16 +690,7 @@ class AssetCropBytes:
 # GeoTIFF mask-file profile shared by both the windowed and the naive path
 # (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
 # overviews worth building and nobody tiles a binary mask for zoom levels.
-#
-# ZSTD, not `deflate`: found while chasing bug B (Otto's review of PR #86,
-# 23.09.2026) — repeating the mask-file tests alone (no code change) turned up
-# the exact corruption shape F9 (§9) already measured for the data COG
-# ("TIFFReadEncodedTile() failed" / "IReadBlock failed", a handful of runs in
-# a few dozen), just on this tiled DEFLATE write instead. Same GDAL build,
-# same failure mode, so the same fix: ZSTD was not observed to corrupt in the
-# repeated runs that found this. F9 is still open (unconfirmed by Otto) for
-# the data COG; this mask file never went through that review, so there is no
-# separate decision to wait on here — it is the same bug on new code.
+# DEFLATE for the same reason as the data COG above (M3-22, F2).
 def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affine, block_size: int = 1024) -> dict:
     return {
         "driver": "GTiff",
@@ -727,7 +706,7 @@ def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affi
         # pads the last block, so no extra care is needed for a small crop.
         "blockxsize": block_size,
         "blockysize": block_size,
-        "compress": "zstd",
+        "compress": "deflate",
     }
 
 
