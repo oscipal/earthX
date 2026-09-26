@@ -26,7 +26,77 @@ Suchtext oder Treffer im Log.
 
 ## 2. Recherche: Nutzungsbedingungen und Alternativen
 
-RECHERCHE
+Recherche am 26.09.2026. Die Live-Seiten von `operations.osmfoundation.org`,
+`nominatim.org`, `osmfoundation.org` und `openstreetmap.org` sind aus der
+Cloud-Umgebung gesperrt. Gelesen wurden deshalb die Quelldateien, aus denen
+diese Seiten gebaut werden; die Zitate zur Nutzungsbedingung sind an der Datei
+selbst nachgeprüft. **Abrufe:** 7 erfolgreiche Webabrufe auf 6 URLs, dazu
+9 Websuchen als Zweitquelle; keine Anfrage an Nominatim selbst (die stehen in §3).
+
+### 2.1 Nutzungsbedingung von `nominatim.openstreetmap.org`
+
+Quelle: <https://operations.osmfoundation.org/policies/nominatim/>, gelesen
+als Quelldatei
+<https://raw.githubusercontent.com/openstreetmap/owg-website/gh-pages/policies/nominatim.md>.
+
+| Punkt | Wortlaut (Auszug) | Folge für den Plan |
+|---|---|---|
+| Rate | „an absolute **maximum of 1 request per second**" | wie P8 |
+| Summe | „the usage limits above apply **per website/application**: the sum of traffic by all your users should not exceed the limits" | Rate über alle Prozesse (§9), nicht je Prozess |
+| Kennung | „Provide a valid HTTP Referer or User-Agent identifying the application (stock User-Agents as set by http libraries will not do)" | eigener User-Agent (§7); `httpx`-Vorgabe reicht nicht |
+| Attribution | „Clearly display attribution as suitable for your medium" | Attribution in der Antwort, M3-07b zeigt sie (§7) |
+| Lizenz | „Data is provided under the ODbL license which requires to share alike (although small extractions are likely to be covered by fair usage / fair dealing)" | Lizenz `ODbL-1.0` in der Antwort; der Cache hält nur gesuchte Einzeltreffer |
+| Endnutzer | „Use that is directly triggered by the end-user (for example, user searches for something) is ok, provided that your number of users is moderate." | trägt P8 heute; „moderate" ist nicht beziffert (§2.3) |
+| Wechsel | „Apps must make sure that they can switch the service at our request at any time (in particular, switching should be possible without requiring a software update). If at all possible, **set up a proxy** and also enable caching of requests." | Proxy und Cache sind unser Weg; der Wechsel ohne Release führt zu F1 (§6) |
+| Autocomplete | „you must not implement such a service on the client side using the API" | P8 „ohne Autocomplete" ist Pflicht, nicht nur Wahl |
+| Periodisch | „periodic requests from apps are considered bulk geocoding and as such are strongly discouraged" | nichts im Plan fragt periodisch; kein Vorwärmen des Caches |
+| Kernfunktion | „Applications and services whose primary function is related to geocoding must run their own service." | trifft EarthX nicht; die Ortssuche ist eine Hilfe zur AOI |
+| Änderung | „this usage policy may change without notice … you might have your access withdrawn" | kein SLA; Ausfall muss sauber als `503`/`502` enden (§7) |
+
+Keine Frist für den Cache in der Bedingung; sie empfiehlt Caching nur.
+
+### 2.2 Weitere Quellen
+
+- **API** (<https://nominatim.org/release-docs/latest/api/Search/>, gelesen als
+  `docs/api/Search.md` und `Output.md` im Repo `osm-search/Nominatim`):
+  `polygon_threshold` ist eine Toleranz „in degrees"; `limit` höchstens 40;
+  `boundingbox` ist „min latitude, max latitude, min longitude, max longitude"
+  als Strings. Fehlerstatus sind dort nicht beschrieben; `429` bei zu hoher Rate
+  und `403` bei Sperre stammen aus Community-Berichten (Zweitquelle).
+- **Attribution und ODbL:** Die OSMF-Richtlinien (Attribution Guidelines,
+  Geocoding Guideline) waren nur über Suchzusammenfassungen erreichbar, nicht
+  wörtlich. Danach ist „© OpenStreetMap contributors" mit Link auf
+  `openstreetmap.org/copyright` die übliche Form, und einzelne
+  Geocoding-Treffer gelten nicht ohne Weiteres als abgeleitete Datenbank.
+  **Nicht wörtlich belegt**; gehört zur offenen Klärung vor dem ersten
+  öffentlichen Deployment (Log, Zeile „Nutzungsbedingungen … Nominatim").
+
+### 2.3 Widerspruch zu P8?
+
+**Nein.** Rate, Auslösung durch den Nutzer, Proxy mit Cache und kein
+Autocomplete entsprechen der Bedingung, zum Teil wörtlich. Zwei Vorbehalte,
+beide für später und beide schon im Log offen: „moderate number of users" ist
+für eine öffentliche Plattform nicht gesichert, und der Zugang kann jederzeit
+entzogen werden. Daraus folgt für jetzt nur, dass der Anbieter ohne Release
+abschaltbar und austauschbar sein soll (F1).
+
+Nebenbefund: Die Rate gilt je Anwendung. Ottos lokale Instanz und eine spätere
+Cloud-Instanz teilen sich keine Datenbank und damit keinen Slot (§9). Solange
+beides Entwicklung ist, bleibt die Summe weit unter 1/s; für das erste
+Deployment ist das mit zu klären.
+
+### 2.4 Alternativen
+
+| Dienst | Token | Umriss | Befund |
+|---|---|---|---|
+| Nominatim, öffentlich | nein (User-Agent Pflicht) | ja | P8 |
+| Nominatim, selbst betrieben | nein | ja | gleiche API, also nur ein anderer Endpunkt (F1); Betrieb mit Planet-Import ist groß, erst mit Deployment-Frage |
+| Photon (komoot) | nein | **nein** („There is no support for full geometry output", README) | fällt weg, der Umriss ist Teil der Aufgabe |
+| Pelias / geocode.earth | ja (gehostet) | ja | Token, kostenpflichtig |
+| OpenCage, LocationIQ, Geoapify, MapTiler | ja | teils | Token, kostenpflichtig oder Freikontingent; nicht einzeln verifiziert |
+| Google, Esri | ja | nein bzw. Zusatzprodukt | Token, kostenpflichtig, Speicherfristen (Google: Koordinaten höchstens 30 Tage) |
+
+Token-frei und mit Umriss bleibt nur Nominatim, öffentlich oder selbst betrieben.
 
 ---
 
@@ -111,18 +181,32 @@ Heute baut `api/dependencies.py` genau ein `Gateway`, dessen Allowlist aus der
 Registry stammt (Endpunkte und `asset_hosts`). Nominatim ist kein Datensatz und
 gehört nicht in die Registry.
 
-**Vorschlag:** Der Endpunkt steht als Konstante in `adapters/nominatim.py`
-(`https://nominatim.openstreetmap.org/search`). `api` baut beim Start ein
-**zweites, eigenes** `Gateway` nur für den Geocoder, mit einer `Policy`, die
-genau diesen Host erlaubt und engere Grenzen setzt: eine Verbindung,
-Antwort höchstens 2 MiB (gemessen: Russland bei 0,001° gut 0,65 MB), Lesezeit
-10 s. Das Registry-Gateway bleibt, wie es ist.
+Die Nutzungsbedingung verlangt, den Dienst „at our request at any time" und
+„without requiring a software update" wechseln zu können (§2.1). Für eine
+Web-App ist unser Backend der verlangte Proxy: Browser brauchen nie ein Update.
+Ob ein neues Release **unseres Backends** schon ein „software update" ist, sagt
+die Bedingung nicht; sicher ist, was ohne Release geht.
 
-Vorteile: Keine Datensatz-Route kann Nominatim erreichen und die Ortssuche
-keine Datenquelle; die engeren Grenzen gelten nur hier; ein Wechsel des
-Anbieters ist eine Code-Änderung mit Review, keine Umgebungsvariable, die
-unbemerkt die Allowlist verschiebt (der Weg, den M1-04 für die Registry
-verlassen hat, `Policy`-Docstring).
+**Vorschlag:** Der Endpunkt kommt aus einer Umgebungsvariable
+`EARTHX_GEOCODER_URL`; **ungesetzt oder leer ist die Ortssuche aus** (`503`,
+„Place search is not available"), wie ein leeres `EARTHX_ALLOWED_HOSTS` nichts
+erlaubt. `docker-compose.yml` und `.env.example` setzen den öffentlichen
+Nominatim-Endpunkt. Beim Start wird der Wert einmal geprüft (nur `https`,
+Port 443, keine Zugangsdaten, kein Query, Host über `normalize_host`); ist er
+ungültig, startet die Ortssuche nicht und sagt es in einer Log-Zeile ohne den
+Wert.
+
+`api` baut daraus ein **zweites, eigenes** `Gateway`, dessen `Policy` genau
+diesen einen Host erlaubt und engere Grenzen setzt: eine Verbindung, Antwort
+höchstens 2 MiB (gemessen: Russland bei 0,001° gut 0,65 MB), Lesezeit 10 s. Das
+Registry-Gateway bleibt, wie es ist.
+
+Damit: Abschalten und Wechsel (etwa auf ein selbst betriebenes Nominatim) sind
+ein Neustart mit anderer Variable; keine Datensatz-Route erreicht den
+Geocoder und die Ortssuche keine Datenquelle; die Variable verschiebt nur die
+Allowlist dieses einen Gateways, nicht die der Datensätze (der Grund, warum
+M1-04 die Allowlist aus der Umgebung in die Registry geholt hat, gilt hier nur
+für einen einzigen, festen Zweck).
 
 ---
 
@@ -160,7 +244,7 @@ nicht im Gateway.
 
 - `bbox` in unserer Reihenfolge `[west, süd, ost, nord]` als Zahlen. Eine Box,
   die nicht in −180…180/−90…90 liegt oder west > ost hat, wird verworfen,
-  nicht repariert; der Treffer bleibt dann ohne Box und ohne Umriss weg.
+  nicht repariert; der Treffer fällt dann ganz weg.
 - `outline` nur für `Polygon`/`MultiPolygon`, sonst `null` (Punkt, Linie).
   Ungültige Umrisse (`shapely.is_valid` falsch) werden einmal mit
   `make_valid` versucht; bleibt kein Polygon übrig, `null`.
@@ -199,8 +283,8 @@ Suchcache-Tabelle trägt `dataset_id NOT NULL`, und ein Pseudo-Datensatz
 müsste.
 
 - **Schlüssel:** SHA-256 über den normalisierten Text (klein, getrimmt,
-  Leerraum zusammengefasst) und die festen Parameter (Schwellwert, Limit,
-  Sprache, Deckel), damit eine Änderung der Parameter alte Einträge nicht
+  Leerraum zusammengefasst), den Host aus `EARTHX_GEOCODER_URL` und die
+  festen Parameter (Schwellwert, Limit, Sprache, Deckel), damit eine Änderung der Parameter alte Einträge nicht
   wiederverwendet. Gespeichert wird die **fertige, vereinfachte** Antwort,
   nicht die Rohantwort von Nominatim.
 - **Frist:** Vorschlag in F3. Leere Treffer bekommen eine kurze Frist (1 Tag),
@@ -322,11 +406,14 @@ der Anfragen.
 ## 12. Fragen an Otto
 
 **F1 — Geocoder-Host in der Allowlist (§6).**
-(1) Konstante im Adapter, **eigenes Gateway** nur mit diesem Host und engeren
-Grenzen. *(Empfehlung)*
-(2) Konstante im Adapter, Host zusätzlich in die Allowlist des bestehenden
-Registry-Gateways.
-(3) Umgebungsvariable wie im Prototyp (`geocoder_url`), Host daraus.
+(1) Endpunkt aus `EARTHX_GEOCODER_URL`, ungesetzt = Ortssuche aus;
+**eigenes Gateway** nur mit diesem Host und engeren Grenzen. Wechsel und
+Abschalten ohne Release. *(Empfehlung)*
+(2) Endpunkt als Konstante im Code, eigenes Gateway wie in 1; Wechsel nur per
+Release unseres Backends.
+(3) Host zusätzlich in die Allowlist des bestehenden Registry-Gateways
+(Konstante oder Variable); einfacher, aber alle Routen von `api` erreichen dann
+den Geocoder.
 
 **F2 — Rate über alle Prozesse (§9).**
 (1) Slot-Zeiger in Postgres, höchstens 2 s Wartezeit, sonst `503`; Postgres
@@ -336,8 +423,12 @@ Rate nur, solange es einen `api`-Prozess gibt, wie heute in compose).
 (3) Advisory Lock in Postgres, über die Wartezeit gehalten (blockiert eine
 Pool-Verbindung je wartender Anfrage).
 
-**F3 — Cache-Frist (§8).**
-FRIST
+**F3 — Cache-Frist (§8).** Die Bedingung nennt keine Frist (§2.1). Leere
+Treffer in allen Fällen 1 Tag.
+(1) 30 Tage. Umrisse und Namen ändern sich selten; ein Monat hält die Last an
+Nominatim klein, ohne dass eine korrigierte Grenze lange fehlt. *(Empfehlung)*
+(2) 7 Tage.
+(3) 90 Tage.
 
 **F4 — Deckel der Punktanzahl (§7).**
 (1) 1 000 Punkte — gleich `MAX_INTERSECTS_POINTS` (M3-08), damit der Umriss
