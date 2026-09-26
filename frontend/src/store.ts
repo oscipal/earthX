@@ -192,7 +192,7 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   let footprints: GeoJSON.FeatureCollection | null = null;
   if (showFootprints(coverage, get().mapZoom)) {
     try {
-      const { features } = await api.searchAllPages({ collection: datasetId, bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
+      const { features } = await api.searchAllPages({ collections: [datasetId], bbox, datetime }, FOOTPRINT_FETCH_LIMIT);
       if (gen === coverageGen) {
         footprints = footprintsFC(features);
         set({ coverageFootprints: footprints });
@@ -1194,7 +1194,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const datetimeRange = buildDatetime(dateFrom, dateTo);
       const page = await api.searchAllPages(
-        { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
+        { collections: [dataset.id], bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
         MAX_SEARCH_ITEMS,
       );
       if (page.features.length > 0) {
@@ -1215,7 +1215,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const fallback = await findFallback(
         (w) =>
           api.searchItems({
-            collection: dataset.id,
+            collections: [dataset.id],
             bbox: area.bbox,
             intersects: area.intersects,
             datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`,
@@ -1231,10 +1231,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const range = fullDayRange(fallback.item);
       const full = range
         ? await api.searchAllPages(
-            { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: range },
+            { collections: [dataset.id], bbox: area.bbox, intersects: area.intersects, datetime: range },
             MAX_SEARCH_ITEMS,
           )
-        : { features: [fallback.item], numberMatched: 1, ignoredFilters: [] };
+        : { features: [fallback.item], numberMatched: 1, ignoredFilters: [], incompleteCollections: [] };
       applyResults(full.features, fallbackNotice(fallback), full.ignoredFilters);
       await enterFullResolutionIfNeeded();
     } catch (e) {

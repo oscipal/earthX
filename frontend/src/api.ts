@@ -96,7 +96,11 @@ export async function uploadAoi(file: Blob, filename: string): Promise<GeoJSON.G
 }
 
 export interface SearchQuery {
-  collection: string;
+  // M3-13: a list, not one dataset — the backend now answers a search naming
+  // more than one collection with a genuine mixed page instead of a `400`
+  // (`api/mixed_search.py`). The viewer itself still ever names exactly one
+  // (M3-10 builds the multi-select that would send more).
+  collections: string[];
   bbox?: Bbox;
   // M3-08: a polygon or point AOI searches by its true shape instead of its bbox
   // (`geoUtils.ts::searchArea` decides which of the two a caller sends — never
@@ -106,6 +110,15 @@ export interface SearchQuery {
   datetime?: string;
   limit?: number;
   token?: string;
+}
+
+// One collection a mixed search could not reach on a given page (M3-13,
+// `api/mixed_search.py::IncompleteSource`) — `reason` is one of `timeout`,
+// `unreachable`, `upstream_error`, `unrecognised_answer`. Not shown in the UI
+// yet (M3-10).
+export interface IncompleteCollection {
+  collection: string;
+  reason: string;
 }
 
 export interface ItemPage {
@@ -119,6 +132,9 @@ export interface ItemPage {
   // dropped. Mirrors the coverage route's own `ignored_filters`
   // (`api/coverage_route.py`).
   ignoredFilters: string[];
+  // M3-13: collections a mixed search could not reach on this page. Empty for
+  // a single-collection search, which never partially fails this way.
+  incompleteCollections: IncompleteCollection[];
 }
 
 // M3-08: every search goes over `POST` now (F7a — keeps an AOI out of the access
@@ -139,7 +155,7 @@ export function nextTokenFrom(links: StacLink[] | undefined): string | null {
 // (`backend/earthx/adapters/federated_search.py`) — `bbox`/`intersects` are
 // mutually exclusive there, so a caller sends at most one (`geoUtils.searchArea`).
 export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
-  const body: Record<string, unknown> = { collections: [q.collection] };
+  const body: Record<string, unknown> = { collections: q.collections };
   if (q.bbox) body.bbox = q.bbox;
   if (q.intersects) body.intersects = q.intersects;
   if (q.datetime) body.datetime = q.datetime;
@@ -155,6 +171,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberReturned: number;
     links?: StacLink[];
     ignored_filters?: string[];
+    incomplete_collections?: IncompleteCollection[];
   }>(
     await fetch(`${BASE}/stac/search`, {
       method: 'POST',
@@ -168,6 +185,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberReturned: body.numberReturned,
     nextToken: nextTokenFrom(body.links),
     ignoredFilters: body.ignored_filters ?? [],
+    incompleteCollections: body.incomplete_collections ?? [],
   };
 }
 
@@ -231,21 +249,34 @@ export async function fetchStatistics(
 export async function searchAllPages(
   q: Omit<SearchQuery, 'limit' | 'token'>,
   maxItems: number,
-): Promise<{ features: StacItem[]; numberMatched: number | null; ignoredFilters: string[] }> {
+): Promise<{
+  features: StacItem[];
+  numberMatched: number | null;
+  ignoredFilters: string[];
+  incompleteCollections: IncompleteCollection[];
+}> {
   let token: string | undefined;
   const features: StacItem[] = [];
   let numberMatched: number | null = null;
   // Every page of one search drops the same filter for the same reason, so
   // the first page's answer already speaks for the whole set.
   let ignoredFilters: string[] = [];
+  // Unlike `ignoredFilters`, a mixed search's own failing source can change
+  // from page to page (M3-13: it stops being asked again once it fails, but a
+  // *different* source could still fail later) — collected across every page,
+  // deduplicated by collection so a repeated notice does not pile up.
+  const incompleteByCollection = new Map<string, IncompleteCollection>();
   do {
     const page: ItemPage = await searchItems({ ...q, limit: 100, token });
     features.push(...page.features);
     if (numberMatched === null) numberMatched = page.numberMatched;
     if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
+    for (const entry of page.incompleteCollections) {
+      if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
+    }
     token = page.nextToken ?? undefined;
   } while (token && features.length < maxItems);
-  return { features, numberMatched, ignoredFilters };
+  return { features, numberMatched, ignoredFilters, incompleteCollections: [...incompleteByCollection.values()] };
 }
 
 // The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the
