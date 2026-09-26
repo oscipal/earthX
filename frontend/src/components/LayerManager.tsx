@@ -1,4 +1,4 @@
-import { canDownloadLayer } from '../download';
+import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
 import { useAppStore } from '../store';
 import Draggable from './Draggable';
 
@@ -65,7 +65,9 @@ export default function LayerManager() {
           </p>
         ) : (
           <ul className="layer-list">
-            {layers.map((l, i) => (
+            {layers.map((l, i) => {
+              const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
+              return (
               <li key={l.id} className="layer-row">
                 <button
                   type="button"
@@ -111,12 +113,19 @@ export default function LayerManager() {
                 >
                   ▼
                 </button>
-                {canDownloadLayer(l, datasets) && (
+                {l.restore.itemIds.length > 0 && (
                   <button
                     type="button"
                     className="lm-btn"
-                    title="Download the AOI crop for this layer"
-                    onClick={() => openDownload(l.id)}
+                    disabled={downloadOutcome === 'disabled' || !canDownloadLayer(l, datasets)}
+                    title={
+                      downloadOutcome === 'disabled'
+                        ? 'Draw an AOI to download this layer'
+                        : downloadOutcome === 'originals'
+                          ? 'Download the original files, straight from the source'
+                          : 'Download the AOI crop, one file per group'
+                    }
+                    onClick={() => void openDownload(l.id)}
                   >
                     ⇩
                   </button>
@@ -130,7 +139,8 @@ export default function LayerManager() {
                   ✕
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
