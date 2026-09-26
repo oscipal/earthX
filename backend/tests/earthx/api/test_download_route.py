@@ -90,9 +90,18 @@ class InternalBugReader(FakeReader):
 @pytest.fixture
 def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
-        if item_id != ITEM_ID:
-            raise UpstreamError(404, "not found")
-        return item
+        # `ITEM_ID#n` (M3-17): a distinct id sharing the fixture's own bbox and
+        # geometry, so a test can name several "different" items — for the
+        # item-count cap, or for a second group — without the fixture needing
+        # a second real item on disk.
+        if item_id == ITEM_ID or item_id.startswith(f"{ITEM_ID}#"):
+            return {**item, "id": item_id}
+        # `ITEM_ID~outside#n` (M3-17): the fixture's own bbox, moved to
+        # `OUTSIDE_AOI` — a group made of these never survives
+        # `filter_items_intersecting_aoi` against `GOOD_AOI`.
+        if item_id.startswith(f"{ITEM_ID}~outside"):
+            return {**item, "id": item_id, "bbox": [50.0, 50.0, 51.0, 51.0]}
+        raise UpstreamError(404, "not found")
 
     @asynccontextmanager
     async def lifespan(app):
@@ -116,7 +125,7 @@ def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 def _download(client: TestClient, dataset: str = DATASET, **body: Any) -> Any:
-    payload = {"items": [ITEM_ID], "assets": ["visual"], "aoi": GOOD_AOI, **body}
+    payload = {"groups": [[ITEM_ID]], "assets": ["visual"], "aoi": GOOD_AOI, **body}
     return client.post(f"/collections/{dataset}/download", json=payload)
 
 
@@ -126,7 +135,7 @@ class TestAcceptanceCriteria:
         assert response.status_code == 404
 
     def test_an_unknown_item_is_a_defined_error(self, client: TestClient) -> None:
-        response = _download(client, items=["NOPE"])
+        response = _download(client, groups=[["NOPE"]])
         assert response.status_code == 404
         assert "NOPE" in response.json()["detail"]
 
@@ -140,8 +149,13 @@ class TestAcceptanceCriteria:
         assert "does not touch" in response.json()["detail"]
 
     def test_more_than_the_item_cap_is_413(self, client: TestClient) -> None:
-        """F4 (M3-18): a mosaic capped at 25 scenes, independent of the output size."""
-        response = _download(client, items=[ITEM_ID] * 26, assets=["visual"])
+        """F4 (M3-18): a mosaic capped at 25 scenes, independent of the output size.
+
+        M3-17: the cap covers the whole request, summed over every group — 26
+        single-item groups trip it exactly as one 26-item group did before.
+        """
+        groups = [[f"{ITEM_ID}#{i}"] for i in range(26)]
+        response = _download(client, groups=groups, assets=["visual"])
         assert response.status_code == 413
         assert "26 scenes" in response.json()["detail"]
 
@@ -253,6 +267,72 @@ class TestAcceptanceCriteria:
             assert "Contains modified Copernicus Sentinel data" in notice
             assert SENTINEL_2_L2A.license.terms.url in notice
 
+    def test_two_groups_land_in_separate_folders_of_the_same_zip(self, client: TestClient) -> None:
+        """P19: separate groups as separate files, together in one ZIP (M3-17)."""
+        response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            names = set(archive.namelist())
+            assert names == {
+                "group-01/visual.tif",
+                "group-01/visual_mask.tif",
+                "group-02/visual.tif",
+                "group-02/visual_mask.tif",
+                "ATTRIBUTION.txt",
+                "aoi.geojson",
+            }
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+            assert f"Group 1 (group-01/): {ITEM_ID}" in notice
+            assert f"Group 2 (group-02/): {ITEM_ID}#2" in notice
+
+    def test_a_single_group_stays_the_flat_layout_from_before_m3_17(self, client: TestClient) -> None:
+        response = _download(client, groups=[[ITEM_ID]])
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            assert set(archive.namelist()) == {
+                "visual.tif",
+                "visual_mask.tif",
+                "ATTRIBUTION.txt",
+                "aoi.geojson",
+            }
+
+    def test_a_group_that_misses_the_aoi_is_dropped_the_others_still_download(
+        self, client: TestClient
+    ) -> None:
+        """M3-17 plan §5: a group is dropped, not a failure, as long as another survives."""
+        response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}~outside"]])
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            # One surviving group: the flat layout, not a `group-01/` folder.
+            assert set(archive.namelist()) == {
+                "visual.tif",
+                "visual_mask.tif",
+                "ATTRIBUTION.txt",
+                "aoi.geojson",
+            }
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+            assert f"Not covered by the AOI, left out: {ITEM_ID}~outside" in notice
+        # Review finding 1: the dropped group must be visible before the file
+        # is even opened, not only inside ATTRIBUTION.txt — a header the
+        # dialog can read straight off the response.
+        assert response.headers["X-Total-Groups"] == "2"
+        assert response.headers["X-Skipped-Groups"] == "1"
+
+    def test_a_successful_download_with_no_dropped_group_names_zero_skipped(
+        self, client: TestClient
+    ) -> None:
+        response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])
+        assert response.status_code == 200
+        assert response.headers["X-Total-Groups"] == "2"
+        assert response.headers["X-Skipped-Groups"] == "0"
+
+    def test_every_group_missing_the_aoi_is_the_same_400_as_a_single_group_always_was(
+        self, client: TestClient
+    ) -> None:
+        response = _download(client, groups=[[f"{ITEM_ID}~outside"]])
+        assert response.status_code == 400
+        assert "does not touch" in response.json()["detail"]
+
     def test_a_language_field_in_the_body_is_ignored_the_notice_stays_english(
         self, client: TestClient
     ) -> None:
@@ -277,9 +357,16 @@ class TestAcceptanceCriteria:
             assert archive.namelist().count("visual.tif") == 1
             assert archive.namelist().count("visual_mask.tif") == 1
 
-    def test_an_empty_item_or_asset_list_is_a_validation_error(self, client: TestClient) -> None:
-        assert _download(client, items=[]).status_code == 422
+    def test_an_empty_group_list_group_or_asset_list_is_a_validation_error(self, client: TestClient) -> None:
+        assert _download(client, groups=[]).status_code == 422
+        assert _download(client, groups=[[]]).status_code == 422
+        assert _download(client, groups=[[ITEM_ID], []]).status_code == 422
         assert _download(client, assets=[]).status_code == 422
+
+    def test_the_same_item_named_in_two_groups_is_a_validation_error(self, client: TestClient) -> None:
+        """M3-17 plan §5: an item cannot belong to two merged files at once."""
+        response = _download(client, groups=[[ITEM_ID], [ITEM_ID]])
+        assert response.status_code == 422
 
     def test_no_aoi_coordinate_reaches_the_log(
         self, client: TestClient, caplog: pytest.LogCaptureFixture

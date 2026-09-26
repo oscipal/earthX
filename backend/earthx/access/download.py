@@ -10,6 +10,16 @@ Resolving items and hosts through `gateway` stays in `api` (architekturplan.md
 3.1: `access` may import `readers` and `catalog`, not `gateway`), the same
 split `access.tiles` already draws for the tile path.
 
+**Groups, one gemergte Datei each, in one ZIP (P19, M3-17).** A request may
+name more than one group of items (`api.tiler`'s ``DownloadRequest.groups`` —
+the same per-overpass grouping the results list and PR #84's group outline
+already use, not a new grouping this module invents). Each group mosaics and
+masks on its own extent (:class:`GroupCrop`, ``compute_crop_region`` per
+group); :func:`build_download_zip` writes a single group flat, as every
+download did before M3-17, and more than one into its own ``group-NN/``
+folder so the archive still holds exactly what P19 asks for: separate files
+per group, together in one ZIP.
+
 **A download is always native resolution (Otto, 23.09.2026, M3-18 §10) —
 never silently downscaled.** ``max_size``/an automatic pixel cap is gone; a
 crop reads at the source's own ``gsd`` unless the caller explicitly asks for
@@ -157,6 +167,8 @@ __all__ = [
     "crop_filename",
     "estimate_output_dims",
     "filter_items_intersecting_aoi",
+    "group_dirname",
+    "GroupCrop",
     "mask_filename",
     "parse_aoi_geometry",
     "plan_outputs",
@@ -1057,6 +1069,8 @@ def build_notice_text(
     item_ids: Sequence[str],
     assets: Sequence[str] = (),
     resolution_factor: int = 1,
+    group_item_ids: Sequence[Sequence[str]] | None = None,
+    skipped_item_ids: Sequence[str] = (),
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -1068,6 +1082,17 @@ def build_notice_text(
     the one that cannot under-claim what happened to the pixels.
 
     Always English (Otto, 22.09.2026): the platform offers no language choice.
+
+    ``group_item_ids`` (M3-17): with more than one group, the flat "Items:"
+    line ``item_ids`` alone would give is replaced by one "Group N:" line per
+    group, matching the ``group-NN/`` folders :func:`build_download_zip`
+    writes for the same request. ``None`` or a single group keeps the
+    previous flat line unchanged.
+
+    ``skipped_item_ids`` (M3-17): a whole group dropped before any asset was
+    opened because it did not touch the AOI (`api.tiler`'s ``download_crop``)
+    — named here so the ZIP itself says why fewer scenes are in it than were
+    requested, rather than the caller having to notice a shorter list.
     """
     license_ = config.license
     year = datetime.now(timezone.utc).year
@@ -1085,7 +1110,13 @@ def build_notice_text(
     if config.citation:
         lines.append(config.citation)
 
-    lines.append("Items: " + ", ".join(item_ids))
+    if group_item_ids is not None and len(group_item_ids) > 1:
+        for index, ids in enumerate(group_item_ids, start=1):
+            lines.append(f"Group {index} ({group_dirname(index - 1, len(group_item_ids))}): " + ", ".join(ids))
+    else:
+        lines.append("Items: " + ", ".join(item_ids))
+    if skipped_item_ids:
+        lines.append("Not covered by the AOI, left out: " + ", ".join(skipped_item_ids))
     if assets:
         # The file names in the archive are cleaned (`crop_filename`), so the keys
         # they came from are written out here — otherwise a Zarr crop's bands
@@ -1116,6 +1147,20 @@ def build_notice_text(
     return "\n\n".join(lines) + "\n"
 
 
+def group_dirname(index: int, group_count: int) -> str:
+    """The ZIP folder ``build_download_zip`` writes group ``index``'s files into (M3-17).
+
+    Empty with a single group (P19: "verschiedene Gruppen als getrennte
+    Dateien im selben ZIP" implies nothing about a lone group, which keeps
+    the flat layout every download had before M3-17). ``group_count`` sets
+    the zero-padding width so folders still sort correctly past ``group-09``.
+    """
+    if group_count <= 1:
+        return ""
+    width = max(2, len(str(group_count)))
+    return f"group-{index + 1:0{width}d}/"
+
+
 @dataclass(frozen=True)
 class AssetCrop:
     """One asset's already-resolved read candidates — one path per surviving item.
@@ -1131,6 +1176,24 @@ class AssetCrop:
     height: int | None = None
 
 
+@dataclass(frozen=True)
+class GroupCrop:
+    """A second (or third, ...) group in the same ZIP as the caller's first,
+    explicit group (M3-17: "verschiedene Gruppen als getrennte Dateien im
+    selben ZIP").
+
+    ``region_geometry`` is that group's own crop extent — AOI ∩ *this
+    group's* footprints (:func:`compute_crop_region`), not the request's AOI
+    padded out to a shared bounding box: a group whose scenes only partly
+    cover the AOI still crops (and masks) only as far as its own scenes
+    reach, exactly as a single-group request already does.
+    """
+
+    item_ids: Sequence[str]
+    crops: Sequence[AssetCrop]
+    region_geometry: Mapping[str, Any]
+
+
 def build_download_zip(
     *,
     config: DatasetConfig,
@@ -1139,6 +1202,8 @@ def build_download_zip(
     aoi_geometry: Mapping[str, Any],
     item_ids: Sequence[str],
     region_geometry: Mapping[str, Any] | None = None,
+    additional_groups: Sequence[GroupCrop] = (),
+    skipped_item_ids: Sequence[str] = (),
     resolution_factor: int = 1,
     gdal_env: Mapping[str, str] | None = None,
 ) -> bytes:
@@ -1170,36 +1235,57 @@ def build_download_zip(
     plain dict in. ``rasterio.Env`` is thread-local: the caller runs this whole
     function through ``run_in_threadpool``, so the context has to be entered
     here, on the worker thread that actually reads, not around the ``await``.
+
+    ``additional_groups`` (M3-17, P19: "verschiedene Gruppen als getrennte
+    Dateien im selben ZIP"): ``crops``/``region_geometry``/``item_ids`` above
+    describe this call's *first* group, exactly as before M3-17 — a caller
+    with only one group (every caller before M3-17, and most calls after it)
+    passes nothing here and gets the same flat archive layout as always. A
+    caller with more than one group also fills this in, one entry per further
+    group; every group, first or additional, then writes into its own
+    ``group-NN/`` folder (:func:`group_dirname`) instead of the archive root.
+    ``skipped_item_ids`` names items whose whole group was dropped upstream
+    (`api.tiler`) for not touching the AOI at all — recorded in the notice
+    only, never given a folder.
     """
     region_geometry = region_geometry if region_geometry is not None else aoi_geometry
+    groups = [GroupCrop(item_ids=item_ids, crops=crops, region_geometry=region_geometry), *additional_groups]
+    group_count = len(groups)
     with rasterio.Env(**(gdal_env or {})):
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for crop in crops:
-                crop_bytes = crop_asset_to_cog_bytes(
-                    open_reader,
-                    crop.paths,
-                    region_geometry,
-                    width=crop.width,
-                    height=crop.height,
-                    mask_geometry=aoi_geometry,
-                )
-                archive.writestr(
-                    crop_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.data
-                )
-                archive.writestr(
-                    mask_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.mask
-                )
+            all_assets: list[str] = []
+            for index, group in enumerate(groups):
+                folder = group_dirname(index, group_count)
+                for crop in group.crops:
+                    crop_bytes = crop_asset_to_cog_bytes(
+                        open_reader,
+                        crop.paths,
+                        group.region_geometry,
+                        width=crop.width,
+                        height=crop.height,
+                        mask_geometry=aoi_geometry,
+                    )
+                    archive.writestr(
+                        folder + crop_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.data
+                    )
+                    archive.writestr(
+                        folder + mask_filename(crop.asset, resolution_factor=resolution_factor), crop_bytes.mask
+                    )
+                    all_assets.append(crop.asset)
             # The original AOI, unclipped (Otto, 23.09.2026, M3-18 §13) — never
-            # `region_geometry`, whatever the items actually cover.
+            # a group's own region, whatever its items actually cover. Once per
+            # ZIP regardless of the group count, at the root.
             archive.writestr(AOI_FILENAME, json.dumps(dict(aoi_geometry)))
             archive.writestr(
                 NOTICE_FILENAME,
                 build_notice_text(
                     config,
-                    item_ids=item_ids,
-                    assets=[crop.asset for crop in crops],
+                    item_ids=[item_id for group in groups for item_id in group.item_ids],
+                    assets=list(dict.fromkeys(all_assets)),
                     resolution_factor=resolution_factor,
+                    group_item_ids=[list(group.item_ids) for group in groups] if group_count > 1 else None,
+                    skipped_item_ids=skipped_item_ids,
                 ),
             )
         return buffer.getvalue()

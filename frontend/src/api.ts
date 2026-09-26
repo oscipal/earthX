@@ -271,21 +271,44 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
 export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
 
+// `groups` (M3-17, replacing the flat `items` list): item ids per group,
+// mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
+// group, separate groups as separate files in the same ZIP (P19). A single
+// group is simply a list of one, the shape every download had before M3-17.
 export interface DownloadCropRequest {
   datasetId: string;
-  items: string[];
+  groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
   language?: string;
   resolution?: ResolutionFactor;
 }
 
-export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
+// `totalGroups`/`skippedGroups` (M3-17, review finding 1): `X-Total-Groups`/
+// `X-Skipped-Groups` off the response — a group dropped for never touching
+// the AOI is otherwise only named inside the ZIP's ATTRIBUTION.txt, which the
+// user only sees after the file is already saved. Counts only, read here
+// before the dialog's own notice ever mentions them (`store.confirmDownload`).
+export interface DownloadCropResult {
+  blob: Blob;
+  totalGroups: number;
+  skippedGroups: number;
+}
+
+// A missing/non-numeric header is `0`, never `NaN` propagating into a user
+// message — an older or misconfigured backend that does not send the header
+// at all just means "nothing to report", not "something is wrong here".
+function headerCount(res: Response, name: string): number {
+  const value = Number(res.headers.get(name));
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCropResult> {
   const res = await fetch(`${BASE}/collections/${encodeURIComponent(req.datasetId)}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      items: req.items,
+      groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
       language: req.language ?? 'en',
@@ -301,5 +324,7 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
     }
     throw new Error(errorDetail(body, res.status, res.statusText));
   }
-  return await res.blob();
+  const totalGroups = headerCount(res, 'X-Total-Groups');
+  const skippedGroups = headerCount(res, 'X-Skipped-Groups');
+  return { blob: await res.blob(), totalGroups, skippedGroups };
 }

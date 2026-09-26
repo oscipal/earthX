@@ -42,7 +42,7 @@ from typing import Annotated, Any
 import morecantile
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
 from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
@@ -55,7 +55,9 @@ from earthx.access.download import (
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
+    GroupCrop,
     InvalidAoi,
+    PlannedOutput,
     build_download_zip,
     check_item_count_cap,
     check_output_size_cap,
@@ -407,11 +409,22 @@ class DownloadRequest(BaseModel):
     A POST body rather than URL parameters, unlike the tile path's Z4 rule: the
     tile URL has to be cache-stable and CDN-able, but a crop answers once and is
     never cached (D11), and an AOI polygon can be far larger than fits comfortably
-    in a query string. ``items`` carries more than one id only for a mosaic
-    (adr/0006 §4.2 Option M1) — a single item is simply a list of one.
+    in a query string.
+
+    ``groups`` (M3-17, replacing the flat ``items`` list of M2-06/M3-18):
+    item ids, grouped exactly as the results list groups them (the same
+    per-overpass grouping PR #84's group outline already draws on the map) —
+    "download folgt der Ansicht" (P19). Each group mosaics into its own
+    merged file; more than one group lands in the same ZIP as separate files
+    (:func:`~earthx.access.download.build_download_zip`). A single group is
+    simply a list of one, the M2-06 shape.
     """
 
-    items: list[str] = Field(min_length=1, max_length=64, description="item ids, one scene each")
+    groups: list[list[str]] = Field(
+        min_length=1,
+        max_length=64,
+        description="item ids per group, one merged file per group, as the results list groups them",
+    )
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
     resolution: int = Field(
@@ -422,6 +435,26 @@ class DownloadRequest(BaseModel):
             "Never chosen automatically; the caller (the download dialog) picks it explicitly."
         ),
     )
+
+    @field_validator("groups")
+    @classmethod
+    def _groups_are_nonempty_and_disjoint(cls, groups: list[list[str]]) -> list[list[str]]:
+        """Each group names at least one item, and no item id repeats across (or within) a group.
+
+        A repeat would either mosaic the same scene onto itself for no reason,
+        or — across two groups — write the same item into two merged files
+        without saying which one "really" contains it; refused up front (422)
+        rather than silently accepted (M3-17 plan §5).
+        """
+        if any(len(group) == 0 for group in groups):
+            raise ValueError("each group must name at least one item")
+        seen: set[str] = set()
+        for group in groups:
+            for item_id in group:
+                if item_id in seen:
+                    raise ValueError(f"item {item_id!r} is named more than once across the groups")
+                seen.add(item_id)
+        return groups
 
 
 async def download_crop(
@@ -437,6 +470,16 @@ async def download_crop(
     the item-count cap, then the output size cap (M3-18: built from the AOI and
     the items' own metadata, not from how many items or assets were asked for)
     — only after all of that does anything reach `gateway`.
+
+    **Per group, not per item (M3-17).** ``body.groups`` names one or more
+    groups; each is filtered and cropped on its own extent exactly as a
+    single-group request always was. A group that does not touch the AOI at
+    all is *dropped*, not a failure — the request only fails with a `400`
+    once every group has been dropped that way, the same threshold a
+    single-group request already had. The item-count and output-size caps
+    below cover the *whole* request, summed over every surviving group: two
+    groups that would each fit alone can still add up to more than one
+    download is allowed to cost.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -461,21 +504,38 @@ async def download_crop(
             detail=f"resolution must be one of {RESOLUTION_FACTORS}, not {body.resolution!r}",
         )
 
-    items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
-    matched = filter_items_intersecting_aoi(items, aoi)
-    if not matched:
-        raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
+    # One fetch per item id, even where two groups would otherwise ask for it
+    # twice — the request validator already refuses that, so this dict never
+    # loses an entry to a second fetch overwriting the first.
+    all_ids = [item_id for group in body.groups for item_id in group]
+    fetched_items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in all_ids))
+    items_by_id = dict(zip(all_ids, fetched_items, strict=True))
 
-    try:
-        # AOI ∩ union of this group's own item footprints (Otto, 23.09.2026,
-        # M3-18 §13) — the same geometry the frontend's group outline already
-        # shows before a download starts (PR #84, `groupOutline.ts`). Tighter
-        # than the bbox pre-filter above, so it also catches the case that
-        # filter passed on a bbox alone but the items' real, often rotated
-        # footprints do not actually reach (bug A, Otto's review of PR #86).
-        region = compute_crop_region(matched, aoi)
-    except AoiOutsideItems as error:
-        raise HTTPException(status_code=400, detail=str(error)) from None
+    surviving_groups: list[tuple[list[dict[str, Any]], Any]] = []
+    skipped_item_ids: list[str] = []
+    for group_ids in body.groups:
+        group_items = [items_by_id[item_id] for item_id in group_ids]
+        matched = filter_items_intersecting_aoi(group_items, aoi)
+        if not matched:
+            skipped_item_ids.extend(group_ids)
+            continue
+        try:
+            # AOI ∩ union of this group's own item footprints (Otto,
+            # 23.09.2026, M3-18 §13) — the same geometry the frontend's group
+            # outline already shows before a download starts (PR #84,
+            # `groupOutline.ts`). Tighter than the bbox pre-filter above, so
+            # it also catches the case that filter passed on a bbox alone but
+            # the items' real, often rotated footprints do not actually reach
+            # (bug A, Otto's review of PR #86) — such a group is dropped the
+            # same way a group missing the bbox pre-filter already is.
+            region = compute_crop_region(matched, aoi)
+        except AoiOutsideItems:
+            skipped_item_ids.extend(group_ids)
+            continue
+        surviving_groups.append((matched, region))
+
+    if not surviving_groups:
+        raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
     # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
     # and two identical keys would otherwise write the same file name into the
@@ -486,35 +546,55 @@ async def download_crop(
     # already chose a coarser resolution, a rejection still needs the smallest
     # *native-relative* factor to suggest, not one relative to what was
     # already asked for.
-    native_planned = plan_outputs(matched, wanted, region)
-    planned = (
-        native_planned
+    native_planned_by_group: list[list[PlannedOutput]] = [
+        plan_outputs(matched, wanted, region) for matched, region in surviving_groups
+    ]
+    planned_by_group: list[list[PlannedOutput]] = (
+        native_planned_by_group
         if body.resolution == 1
-        else plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
+        else [
+            plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
+            for matched, region in surviving_groups
+        ]
     )
     try:
-        check_item_count_cap(len(matched))
-        check_output_size_cap(planned, native_planned=native_planned)
+        check_item_count_cap(sum(len(matched) for matched, _ in surviving_groups))
+        check_output_size_cap(
+            [output for planned in planned_by_group for output in planned],
+            native_planned=[output for planned in native_planned_by_group for output in planned],
+        )
     except AoiTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from None
 
-    planned_by_asset = {output.label: output for output in planned}
-    crops = [
-        AssetCrop(
-            asset=asset,
-            paths=tuple(
-                _resolve_asset_path(
-                    state, matched_item, config=config, item=matched_item["id"], asset=asset
-                )
-                for matched_item in matched
-            ),
-            width=None if body.resolution == 1 else planned_by_asset[asset].width,
-            height=None if body.resolution == 1 else planned_by_asset[asset].height,
+    def _crops_for(matched_items: list[dict[str, Any]], planned: list[PlannedOutput]) -> list[AssetCrop]:
+        planned_by_asset = {output.label: output for output in planned}
+        return [
+            AssetCrop(
+                asset=asset,
+                paths=tuple(
+                    _resolve_asset_path(
+                        state, matched_item, config=config, item=matched_item["id"], asset=asset
+                    )
+                    for matched_item in matched_items
+                ),
+                width=None if body.resolution == 1 else planned_by_asset[asset].width,
+                height=None if body.resolution == 1 else planned_by_asset[asset].height,
+            )
+            for asset in wanted
+        ]
+
+    first_matched, first_region = surviving_groups[0]
+    first_crops = _crops_for(first_matched, planned_by_group[0])
+    additional_groups = [
+        GroupCrop(
+            item_ids=[matched_item["id"] for matched_item in matched],
+            crops=_crops_for(matched, planned),
+            region_geometry=shapely_mapping(region),
         )
-        for asset in wanted
+        for (matched, region), planned in zip(surviving_groups[1:], planned_by_group[1:], strict=True)
     ]
 
-    total_planned_bytes = sum(output.total_bytes for output in planned)
+    total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
     large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
     if large and _LARGE_DOWNLOAD_LOCK.locked():
         raise HTTPException(
@@ -528,10 +608,12 @@ async def download_crop(
             build_download_zip,
             config=config,
             open_reader=open_asset,
-            crops=crops,
+            crops=first_crops,
             aoi_geometry=body.aoi,
-            region_geometry=shapely_mapping(region),
-            item_ids=[matched_item["id"] for matched_item in matched],
+            region_geometry=shapely_mapping(first_region),
+            item_ids=[matched_item["id"] for matched_item in first_matched],
+            additional_groups=additional_groups,
+            skipped_item_ids=skipped_item_ids,
             resolution_factor=body.resolution,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
@@ -569,11 +651,14 @@ async def download_crop(
         # answers 500, never silently.
         raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
 
+    skipped_group_count = len(body.groups) - len(surviving_groups)
     LOGGER.info(
         "download answered",
         extra={
             "dataset": dataset,
-            "items": len(matched),
+            "groups": len(surviving_groups),
+            "skipped_groups": skipped_group_count,
+            "items": sum(len(matched) for matched, _ in surviving_groups),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
             "resolution": body.resolution,
@@ -582,7 +667,19 @@ async def download_crop(
     return StreamingResponse(
         iter([zip_bytes]),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{dataset}-crop.zip"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{dataset}-crop.zip"',
+            # A group dropped for not touching the AOI at all (above) is
+            # recorded inside the ZIP's ATTRIBUTION.txt (`skipped_item_ids`),
+            # but that only reaches the user after the file is already saved —
+            # these two headers let the download dialog say so *before* that,
+            # review finding 1: "der Nutzer muss das sehen". Counts only
+            # (`X-Skipped-Groups`/`X-Total-Groups`), never item ids or
+            # anything geometry-shaped, so the CLAUDE.md rule against AOI/query
+            # data in a header still holds.
+            "X-Total-Groups": str(len(body.groups)),
+            "X-Skipped-Groups": str(skipped_group_count),
+        },
     )
 
 

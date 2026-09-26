@@ -147,6 +147,22 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
     expect(itemIdSets).toContainEqual(['S3']);
   });
 
+  it('each per-group layer carries its own itemIds as its one groupItemIds group (M3-17)', () => {
+    useAppStore.getState().addCurrentToLayers();
+    for (const layer of useAppStore.getState().layers) {
+      expect(layer.restore.groupItemIds).toEqual([layer.restore.itemIds]);
+    }
+  });
+
+  it('an uncropped "View full selection" layer still splits groupItemIds by group (M3-17)', () => {
+    useAppStore.setState({ cropToAoi: false });
+    useAppStore.getState().addCurrentToLayers();
+    const [layer] = useAppStore.getState().layers;
+    expect(layer.restore.groupItemIds.map((g) => [...g].sort())).toEqual(
+      expect.arrayContaining([['S1', 'S2'], ['S3']]),
+    );
+  });
+
   it('clips each group layer\'s tile URLs to the AOI and marks it cropped', () => {
     useAppStore.getState().addCurrentToLayers();
     for (const layer of useAppStore.getState().layers) {
@@ -217,6 +233,7 @@ describe('zoomToView', () => {
             activeGroupIndex: 0,
             selectedIds: [],
             itemIds: [],
+            groupItemIds: [],
             aoi: null,
             cropToAoi: false,
             datasetId: null,
@@ -256,6 +273,7 @@ describe('zoomToView', () => {
             activeGroupIndex: 0,
             selectedIds: [],
             itemIds: [],
+            groupItemIds: [],
             aoi: null,
             cropToAoi: false,
             datasetId: null,
@@ -707,5 +725,262 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
     setMapViewport(8, [10, 49, 11, 50], { width: 1920, height: 1080 });
     await vi.advanceTimersByTimeAsync(500);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+// M3-17: download follows the view — the crop/originals/disabled decision
+// (`download.ts::decideDownloadOutcome`) as the store wires it up for the
+// current selection (`openDownloadForSelection`) and a pinned layer
+// (`openDownloadDialog`, which alone needs a fetch: a layer's `restore`
+// carries tile info, not the STAC items' own asset `href`s).
+describe('download outcome (M3-17 plan §4)', () => {
+  const AOI: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 40],
+        [20, 40],
+        [20, 55],
+        [0, 55],
+        [0, 40],
+      ],
+    ],
+  };
+
+  const COG_DATASET: Collection = {
+    id: 'sentinel-2-c1-l2a',
+    title: 'Sentinel-2 L2A',
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19 },
+    'earthx:format': 'cog',
+    'earthx:source': { asset_hosts: ['data.test'] },
+    'earthx:default_render': {
+      title: 'True colour',
+      assets: ['visual'],
+      rescale: null,
+      colormap_name: null,
+      expression: null,
+      resampling: 'nearest',
+    },
+  };
+
+  const ZARR_DATASET: Collection = {
+    id: 'sentinel-2-l2a-zarr3',
+    title: 'Sentinel-2 L2A (Zarr3)',
+    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14 },
+    'earthx:format': 'zarr',
+  };
+
+  function cogScene(id: string): StacItem {
+    return scene({ id, assets: { visual: { href: `https://data.test/${id}.tif` } } });
+  }
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({
+      layers: [],
+      items: [],
+      groups: [],
+      selectedIds: [],
+      activeGroupIndex: 0,
+      focusMode: false,
+      cropToAoi: false,
+      aoi: null,
+      error: null,
+      notice: null,
+      downloadDialogLayerId: null,
+      downloadSelection: false,
+      downloadOutcome: null,
+      downloadOriginalLinks: null,
+    });
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe('openDownloadForSelection', () => {
+    it('an AOI drawn: the crop outcome, no fetch needed', () => {
+      const items = [cogScene('S1'), cogScene('S2')];
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items,
+        groups: [{ key: ['a'], label: 'Overpass A', items }],
+        aoi: AOI,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      const s = useAppStore.getState();
+      expect(s.downloadSelection).toBe(true);
+      expect(s.downloadOutcome).toBe('crop');
+      expect(s.error).toBeNull();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('no AOI, a COG dataset: the originals outcome, links built straight from store.items', () => {
+      const items = [cogScene('S1')];
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items,
+        groups: [{ key: ['a'], label: 'Overpass A', items }],
+        aoi: null,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      const s = useAppStore.getState();
+      expect(s.downloadSelection).toBe(true);
+      expect(s.downloadOutcome).toBe('originals');
+      expect(s.downloadOriginalLinks).toEqual([
+        { itemId: 'S1', groupLabel: 'Overpass A', asset: 'visual', href: 'https://data.test/S1.tif' },
+      ]);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('no AOI, a Zarr dataset: disabled, an error naming the reason, dialog not opened', () => {
+      const items = [scene({ id: 'S1' })];
+      useAppStore.setState({
+        datasets: datasetsFrom([ZARR_DATASET]),
+        datasetId: ZARR_DATASET.id,
+        items,
+        groups: [{ key: ['a'], label: 'Overpass A', items }],
+        aoi: null,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      const s = useAppStore.getState();
+      expect(s.downloadSelection).toBe(false);
+      expect(s.error).toMatch(/Draw an AOI/);
+    });
+
+    it('nothing picked and no active time step: a defined error, not a crash', () => {
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items: [],
+        groups: [],
+        aoi: AOI,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      expect(useAppStore.getState().error).toMatch(/Nothing to download/);
+    });
+
+    it("an asset href on a host the dataset does not name is left out of the originals", () => {
+      const items = [scene({ id: 'S1', assets: { visual: { href: 'https://elsewhere.invalid/x.tif' } } })];
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items,
+        groups: [{ key: ['a'], label: 'Overpass A', items }],
+        aoi: null,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      expect(useAppStore.getState().downloadOriginalLinks).toEqual([]);
+    });
+  });
+
+  describe('openDownloadDialog (a pinned layer)', () => {
+    function layerFixture(restoreOverrides: Record<string, unknown> = {}) {
+      return {
+        id: 'L1',
+        name: 'test layer',
+        visible: true,
+        opacity: 1,
+        overlays: [],
+        restore: {
+          focusMode: true,
+          downloaded: {},
+          appliedRender: {},
+          activeGroupIndex: 0,
+          selectedIds: [],
+          itemIds: ['S1', 'S2'],
+          groupItemIds: [['S1'], ['S2']],
+          aoi: null,
+          cropToAoi: false,
+          datasetId: COG_DATASET.id,
+          ...restoreOverrides,
+        },
+      };
+    }
+
+    it('a cropped layer: the crop outcome, known without any fetch', async () => {
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        layers: [layerFixture({ cropToAoi: true, aoi: AOI })],
+      });
+      await useAppStore.getState().openDownloadDialog('L1');
+      expect(useAppStore.getState().downloadOutcome).toBe('crop');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('a "View full selection" Zarr layer without an AOI: disabled, known without any fetch', async () => {
+      useAppStore.setState({
+        datasets: datasetsFrom([ZARR_DATASET]),
+        layers: [layerFixture({ datasetId: ZARR_DATASET.id })],
+      });
+      await useAppStore.getState().openDownloadDialog('L1');
+      expect(useAppStore.getState().downloadOutcome).toBe('disabled');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('a "View full selection" COG layer without an AOI: fetches each pinned item once, builds links', async () => {
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        layers: [layerFixture()],
+      });
+      vi.mocked(fetch).mockImplementation(async (url) => {
+        const id = String(url).split('/').pop() ?? '';
+        return jsonResponse(200, cogScene(id));
+      });
+
+      await useAppStore.getState().openDownloadDialog('L1');
+
+      const s = useAppStore.getState();
+      expect(s.downloadOutcome).toBe('originals');
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(s.downloadOriginalLinks).toEqual([
+        { itemId: 'S1', groupLabel: 'Group 1', asset: 'visual', href: 'https://data.test/S1.tif' },
+        { itemId: 'S2', groupLabel: 'Group 2', asset: 'visual', href: 'https://data.test/S2.tif' },
+      ]);
+    });
+
+    it('a layer pinned before M3-17 (no groupItemIds) falls back to one group', async () => {
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        layers: [layerFixture({ groupItemIds: [] })],
+      });
+      vi.mocked(fetch).mockImplementation(async (url) => {
+        const id = String(url).split('/').pop() ?? '';
+        return jsonResponse(200, cogScene(id));
+      });
+
+      await useAppStore.getState().openDownloadDialog('L1');
+
+      expect(useAppStore.getState().downloadOriginalLinks?.map((l) => l.groupLabel)).toEqual([
+        'Group 1',
+        'Group 1',
+      ]);
+    });
+
+    it('a fetch failure reports a defined error, and an empty link list rather than staying stuck loading', async () => {
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        layers: [layerFixture()],
+      });
+      vi.mocked(fetch).mockRejectedValue(new TypeError('network error'));
+
+      await useAppStore.getState().openDownloadDialog('L1');
+
+      const s = useAppStore.getState();
+      expect(s.error).toMatch(/Could not load the original files/);
+      expect(s.downloadOriginalLinks).toEqual([]);
+    });
+
+    it('an unknown layer id is a no-op, not a crash', async () => {
+      useAppStore.setState({ datasets: datasetsFrom([COG_DATASET]), layers: [] });
+      await useAppStore.getState().openDownloadDialog('nope');
+      expect(useAppStore.getState().downloadOutcome).toBeNull();
+    });
   });
 });
