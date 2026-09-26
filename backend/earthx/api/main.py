@@ -29,6 +29,7 @@ from stac_fastapi.pgstac.config import Settings
 from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
+from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import router as coverage_router
 from earthx.api.dependencies import build_gateway, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
@@ -79,6 +80,9 @@ def _build_app() -> FastAPI:
     # Outside `/stac` on purpose (M2-05b, plan §6.6 F1 a): the answer is not a STAC
     # object, and `/stac` stays the namespace of the standard.
     app.include_router(coverage_router)
+    # M3-06a: an uploaded AOI file has nothing to do with STAC either, and needs
+    # neither a dataset nor `gateway` — no reason to live on `tiler`.
+    app.include_router(aoi_upload_router)
 
     return app
 
