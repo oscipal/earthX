@@ -1150,6 +1150,49 @@ def mask_filename(asset: str, *, resolution_factor: int = 1) -> str:
     return f"{crop_filename(asset, resolution_factor=resolution_factor)[:-4]}_mask.tif"
 
 
+# M3-07b, review by Otto (26.09.2026): a place-search AOI carries its own
+# provenance in `properties` on the geometry dict (never a `Feature` —
+# `parse_aoi_geometry`/`api.tiler`'s request model both treat the AOI as a bare
+# geometry); the notice now names it, in words the caller supplied, not a
+# string this module would have to hardcode ("Nominatim" is one possible
+# `source` value, not the only one a future geocoder could send). The AOI
+# comes in as a plain ``dict[str, Any]`` on the request body, so nothing here
+# is implicitly trusted: only these three field *names* are read, only a
+# string value is used, and it is capped and flattened to one line before it
+# can reach the plain-text notice file.
+_AOI_PROVENANCE_MAX_FIELD_CHARS = 200
+
+
+def _aoi_provenance_field(properties: Mapping[str, Any], name: str) -> str | None:
+    value = properties.get(name)
+    if not isinstance(value, str):
+        return None
+    # First line only, trimmed: a value with an embedded newline could
+    # otherwise smuggle extra "lines" into the notice; capped in length so an
+    # oversized field cannot bloat it either.
+    first_line = value.splitlines()[0].strip() if value.strip() else ""
+    return first_line[:_AOI_PROVENANCE_MAX_FIELD_CHARS] or None
+
+
+def _aoi_provenance_line(aoi_geometry: Mapping[str, Any]) -> str | None:
+    """``None`` for the common case: a drawn or uploaded AOI carries no
+    ``properties`` at all, so the notice stays exactly as it was before this
+    field existed."""
+    properties = aoi_geometry.get("properties")
+    if not isinstance(properties, Mapping):
+        return None
+    attribution = _aoi_provenance_field(properties, "attribution")
+    license_ = _aoi_provenance_field(properties, "license")
+    parts = [part for part in (attribution, license_) if part]
+    if not parts:
+        return None
+    line = "AOI geometry: " + ", ".join(parts)
+    source = _aoi_provenance_field(properties, "source")
+    if source:
+        line += f" (via {source})"
+    return line
+
+
 def build_notice_text(
     config: DatasetConfig,
     *,
@@ -1158,6 +1201,7 @@ def build_notice_text(
     resolution_factor: int = 1,
     group_item_ids: Sequence[Sequence[str]] | None = None,
     skipped_item_ids: Sequence[str] = (),
+    aoi_geometry: Mapping[str, Any] | None = None,
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -1180,6 +1224,14 @@ def build_notice_text(
     opened because it did not touch the AOI (`api.tiler`'s ``download_crop``)
     — named here so the ZIP itself says why fewer scenes are in it than were
     requested, rather than the caller having to notice a shorter list.
+
+    ``aoi_geometry`` (M3-07b, Otto's review 26.09.2026): when it carries a
+    recognised provenance field in ``properties`` (a place-search AOI does,
+    plan §9's finding otherwise left unaddressed — a drawn or uploaded one
+    never does), one more line names it, so the notice — not only
+    ``aoi.geojson`` — says the AOI's own shape came from somewhere requiring
+    attribution. ``None`` (the previous behaviour, still every other caller's
+    default) and an AOI with no such field both leave the notice unchanged.
     """
     license_ = config.license
     year = datetime.now(timezone.utc).year
@@ -1230,6 +1282,10 @@ def build_notice_text(
         f"Mask: {AOI_FILENAME} carries the requested area; each asset's own mask "
         "file is 1 inside it, 0 outside — the data files are not cropped to it."
     )
+    if aoi_geometry is not None:
+        provenance_line = _aoi_provenance_line(aoi_geometry)
+        if provenance_line:
+            lines.append(provenance_line)
     lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
 
@@ -1374,6 +1430,7 @@ def build_download_zip(
                     resolution_factor=resolution_factor,
                     group_item_ids=[list(group.item_ids) for group in groups] if group_count > 1 else None,
                     skipped_item_ids=skipped_item_ids,
+                    aoi_geometry=aoi_geometry,
                 ),
             )
         _verify_zip(buffer)
