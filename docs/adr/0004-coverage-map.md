@@ -213,6 +213,11 @@ nichts, weil `total_count` in derselben Antwort mitgeliefert wird.
 > Beide Deckel werden **geklemmt, nicht abgelehnt**: eine zu feine Stufe
 > liefert die gröbere Karte mit ausgewiesener Stufe, keinen Fehler.
 
+**Nachtrag 2026-09-26 (M3-21):** Seit M3-19 (P22) schickt der Weltüberblick
+ohne AOI den sichtbaren Kartenausschnitt als räumlichen Filter mit; der
+z6-Deckel oben gilt seither nur noch für Anfragen ganz ohne Bounding Box.
+Originaltext oben unverändert.
+
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei
 Geohash p12, wo die Zellen zentimetergroß sind und 3848 Aufnahmen auf 2568
