@@ -25,7 +25,7 @@ from earthx.adapters import (
     search_items,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
-from earthx.catalog.registry import AdapterKind, DatasetRegistry
+from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -89,6 +89,25 @@ class TestSearchDispatchesByAdapter:
                 await search_items(other.dataset_id, gateway=gateway, registry=DatasetRegistry((other,)))
         assert seen == []
 
+    async def test_a_materialized_dataset_is_refused_before_any_adapter_is_asked(self) -> None:
+        """M3-11a K-05: a materialized dataset's items live in pgstac, not at a live
+        source — this dispatch is the federating client's and the tiler's own
+        fallback (both call it), so a caller that reaches it anyway for such a
+        dataset is a dispatch mistake, refused the same way an unknown
+        ``AdapterKind`` is."""
+        materialized = replace(
+            SENTINEL_2_L2A,
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+        )
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="materialized"):
+                await search_items(
+                    materialized.dataset_id, gateway=gateway, registry=DatasetRegistry((materialized,))
+                )
+        assert seen == []
+
 
 class TestGetItemDispatchesByAdapter:
     async def test_a_zarr_datasets_item_goes_to_eopf_stac(self) -> None:
@@ -104,6 +123,23 @@ class TestGetItemDispatchesByAdapter:
         # Normalised by the eopf_stac adapter, not left at the source's own version —
         # proof the dispatcher called the right module, not just the right host.
         assert item["stac_version"] == "1.0.0"
+
+    async def test_a_materialized_datasets_item_is_refused_here_too(self) -> None:
+        """The tiler's own item source dispatches on ``item_holding`` before it ever
+        reaches this function (M3-11a §3.3) — this is the safety net for a caller
+        that does not."""
+        materialized = replace(
+            SENTINEL_2_L2A,
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+        )
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "item")))
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="materialized"):
+                await get_item(
+                    materialized.dataset_id, "some-item", gateway=gateway, registry=DatasetRegistry((materialized,))
+                )
+        assert seen == []
 
 
 class TestSearchParamsIsSharedAcrossAdapters:
