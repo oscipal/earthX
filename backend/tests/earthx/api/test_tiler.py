@@ -27,9 +27,16 @@ from rio_tiler.errors import InvalidBandName, TileOutsideBounds
 
 from earthx.adapters.earth_search import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
-from earthx.api.tiler import DOWNLOAD_ROUTE, ROUTER_PREFIX, build_app
+from earthx.api.tiler import (
+    DOWNLOAD_ROUTE,
+    ROUTER_PREFIX,
+    MaterializedCatalogUnavailable,
+    MaterializedItemNotFound,
+    build_app,
+    build_item_source,
+)
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import DatasetRegistry, ViewerInfo
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, LicenseTier, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -464,3 +471,155 @@ class TestOnlyReleasedZoomLevels:
         assert response.status_code == 501, response.text
         assert fetched == []
         assert opened == []
+
+
+class TestDisplayLicenceTier:
+    """M3-02 K-03, K-26: a tile — and everything sharing its path dependency,
+    statistics among them — needs at least licence tier 'display' (KLAERUNGEN B11).
+    A dataset at tier 'catalog' is a link to the source, never something this
+    platform renders itself. The download route enforces the stricter 'processing'
+    tier on its own (`test_download_route.py::test_a_dataset_without_processing_tier_licence_is_refused`)
+    and is unaffected by this check.
+    """
+
+    @pytest.fixture
+    def catalog_tier_client(self, client: TestClient) -> TestClient:
+        """The same entry, licence lowered to 'catalog' and its viewer cleared — the
+        registry itself refuses a 'catalog' entry that still names one
+        (`DatasetConfig._check_license_tier`, M3-11a)."""
+        catalog_tier = replace(
+            SENTINEL_2_L2A,
+            license=replace(SENTINEL_2_L2A.license, tier=LicenseTier.CATALOG),
+            viewer=None,
+        )
+        registry = DatasetRegistry((catalog_tier,))
+        app = build_app(registry)
+        app.state.earthx_item_source = client.app.state.earthx_item_source
+        app.state.earthx_cache_pool = None
+        return TestClient(app)
+
+    def test_a_tile_is_refused(self, catalog_tier_client: TestClient, fetched: list[str]) -> None:
+        response = catalog_tier_client.get(f"{BASE}/tiles/WebMercatorQuad/8/1/1", params={"asset": "visual"})
+
+        assert response.status_code == 403, response.text
+        assert "KLAERUNGEN B11" in response.json()["detail"]
+        assert fetched == []  # refused before any item was fetched — same as the zoom check
+
+    def test_statistics_are_refused(self, catalog_tier_client: TestClient, fetched: list[str]) -> None:
+        response = catalog_tier_client.get(f"{BASE}/statistics", params={"asset": "visual"})
+
+        assert response.status_code == 403, response.text
+        assert fetched == []
+
+    def test_the_refusal_comes_before_the_missing_zoom_range_would(
+        self, catalog_tier_client: TestClient
+    ) -> None:
+        """Without this check first, a 'catalog' entry's cleared ``viewer`` would
+        answer 501 ('names no released zoom range') instead of 403 — the same 501
+        `TestOnlyReleasedZoomLevels.test_a_dataset_that_names_no_range_serves_no_tiles`
+        gives a dataset that simply never had a range released."""
+        response = catalog_tier_client.get(f"{BASE}/tiles/WebMercatorQuad/8/1/1", params={"asset": "visual"})
+
+        assert response.status_code == 403, response.text
+
+    def test_a_display_tier_dataset_is_unaffected(self, client: TestClient, fetched: list[str]) -> None:
+        """The first dataset is tier 'processing', above 'display' — proves this
+        check does not accidentally reject what already worked. Not a full render
+        (this fixture opens no real asset, per the module docstring): the item was
+        fetched and the answer is not the 403 this class is about."""
+        response = client.get(f"{BASE}/tiles/WebMercatorQuad/8/1/1", params={"asset": "visual"})
+
+        assert response.status_code != 403, response.text
+        assert fetched == [ITEM]
+
+
+def _materialized_entry() -> Any:
+    return replace(
+        SENTINEL_2_L2A,
+        source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+        coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+    )
+
+
+class _FakeConnection:
+    """Stands in for whatever ``pool.connection()`` yields — ``fetch_item`` is
+    monkeypatched in every test that uses this, so nothing here ever runs a query."""
+
+    async def __aenter__(self) -> "_FakeConnection":
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> bool:
+        return False
+
+
+class _FakePool:
+    def connection(self) -> _FakeConnection:
+        return _FakeConnection()
+
+
+class TestBuildItemSourceDispatchesByHolding:
+    """M3-11a §3.3: the tiler's own item source, one level below any route — a
+    materialized dataset reads pgstac directly (`catalog.pgstac.fetch_item`), a
+    federated one still goes through the adapter and gateway exactly as before.
+    """
+
+    @pytest.mark.anyio
+    async def test_a_materialized_item_comes_from_pgstac(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        materialized = _materialized_entry()
+        registry = DatasetRegistry((materialized,))
+        seen: list[tuple[str, str]] = []
+
+        async def fake_fetch_item(conn: object, dataset_id: str, item_id: str) -> dict[str, Any]:
+            seen.append((dataset_id, item_id))
+            return {"id": item_id, "type": "Feature"}
+
+        monkeypatch.setattr("earthx.api.tiler.fetch_item", fake_fetch_item)
+        item_source = build_item_source(registry, gateway=object(), pool=_FakePool())
+
+        item = await item_source(materialized.dataset_id, "some-item")
+
+        assert item == {"id": "some-item", "type": "Feature"}
+        assert seen == [(materialized.dataset_id, "some-item")]
+
+    @pytest.mark.anyio
+    async def test_a_materialized_item_missing_in_pgstac_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        materialized = _materialized_entry()
+        registry = DatasetRegistry((materialized,))
+
+        async def fake_fetch_item(conn: object, dataset_id: str, item_id: str) -> None:
+            return None
+
+        monkeypatch.setattr("earthx.api.tiler.fetch_item", fake_fetch_item)
+        item_source = build_item_source(registry, gateway=object(), pool=_FakePool())
+
+        with pytest.raises(MaterializedItemNotFound):
+            await item_source(materialized.dataset_id, "no-such-item")
+
+    @pytest.mark.anyio
+    async def test_a_materialized_dataset_without_a_pool_is_unavailable(self) -> None:
+        """Unlike a federated dataset, where no pool merely means no cache (E5), a
+        materialized dataset's items have no other place to come from at all."""
+        materialized = _materialized_entry()
+        registry = DatasetRegistry((materialized,))
+        item_source = build_item_source(registry, gateway=object(), pool=None)
+
+        with pytest.raises(MaterializedCatalogUnavailable):
+            await item_source(materialized.dataset_id, "some-item")
+
+    @pytest.mark.anyio
+    async def test_a_federated_dataset_is_unaffected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The pre-existing path — no pool, straight to the adapter — still runs for
+        a federated entry, proving the new branch above did not swallow it."""
+        seen: list[str] = []
+
+        async def fake_get_item(dataset_id: str, item_id: str, *, gateway: object, registry: object) -> dict[str, Any]:
+            seen.append(dataset_id)
+            return {"id": item_id}
+
+        monkeypatch.setattr("earthx.api.tiler.get_item", fake_get_item)
+        item_source = build_item_source(REGISTRY, gateway=object(), pool=None)
+
+        item = await item_source(SENTINEL_2_L2A.dataset_id, "some-item")
+
+        assert item == {"id": "some-item"}
+        assert seen == [SENTINEL_2_L2A.dataset_id]

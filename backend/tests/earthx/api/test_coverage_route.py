@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 
 from earthx.api.coverage_route import build_router
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 from tests.earthx.adapters.conftest import answering, gateway_for, load
@@ -187,7 +187,14 @@ class TestUnavailableProvider:
     def test_a_dataset_without_a_way_to_answer_is_501(self) -> None:
         """local-sql is the one way of adr/0004 §5 with no caller yet (plan §8):
         no dataset in M2 has its own items in pgstac."""
-        config = replace(SENTINEL_2_L2A, coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL))
+        config = replace(
+            SENTINEL_2_L2A,
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            # local-sql is only a valid combination on a materialized entry
+            # (M3-11a K-05) — this route's 501 is about no caller existing yet,
+            # not about the combination itself being invalid.
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+        )
         gateway, seen = answering(ok("aggregate_complete"))
         response = get(client_for(gateway, registry=DatasetRegistry((config,))))
         assert response.status_code == 501

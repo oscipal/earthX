@@ -39,7 +39,7 @@ from earthx.adapters import (
 )
 from earthx.adapters import get_item as adapter_get_item
 from earthx.adapters import search_items as adapter_search_items
-from earthx.catalog.registry import AdapterKind
+from earthx.catalog.registry import ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
@@ -204,17 +204,20 @@ class FederatingCoreCrudClient(CoreCrudClient):
         token: str | None = None,
         **kwargs: Any,
     ) -> ItemCollection:
-        adapter = await self._adapter_of(collection_id, request)
-        if adapter is None:
-            return await super().item_collection(
-                collection_id, request, bbox=bbox, datetime=datetime, limit=limit, token=token, **kwargs
-            )
         # Not `kwargs.keys()`: a disabled extension's field is absent from the parsed
         # request model entirely, so it never reaches here as a keyword argument at
         # all — the same gap `post_search`/`get_search` close by looking at the raw
-        # request instead of the already-filtered method arguments.
+        # request instead of the already-filtered method arguments. Checked before
+        # the holding lookup below, and so for a materialized collection too (M3-11a):
+        # before M3-11a this branch was unreachable for anything but a federated
+        # collection, because every collection in pgstac had a known adapter.
         _reject_disallowed_keys(request.query_params.keys())
         _reject_items_endpoint_keys(request.query_params.keys())
+        holding = await self._holding_of(collection_id, request)
+        if holding is not ItemHolding.FEDERATED:
+            return await super().item_collection(
+                collection_id, request, bbox=bbox, datetime=datetime, limit=limit, token=token, **kwargs
+            )
         result = await self._federated_page(
             collection_id, request, bbox=bbox, datetime_value=datetime, limit=limit, token=token
         )
@@ -224,8 +227,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
         return result
 
     async def get_item(self, item_id: str, collection_id: str, request: Request, **kwargs: Any) -> Item:
-        adapter = await self._adapter_of(collection_id, request)
-        if adapter is None:
+        holding = await self._holding_of(collection_id, request)
+        if holding is not ItemHolding.FEDERATED:
             return await super().get_item(item_id, collection_id, request, **kwargs)
         try:
             async with _cache_for(request) as cache:
@@ -313,22 +316,37 @@ class FederatingCoreCrudClient(CoreCrudClient):
 
     # -- dispatch -----------------------------------------------------------------
 
-    async def _adapter_of(self, collection_id: str, request: Request) -> AdapterKind | None:
-        """``earthx:source.adapter`` of a collection pgstac already knows about.
+    async def _holding_of(self, collection_id: str, request: Request) -> ItemHolding:
+        """``earthx:source.item_holding`` of a collection pgstac already knows about.
 
         Reuses ``super().get_collection`` on purpose: an unknown collection raises
         pgstac's own ``NotFoundError`` here exactly as it would for ``GET
         /collections/{id}`` (adr/0005 rule I) — there is no second lookup to keep
         in sync with it.
+
+        M3-11a (K-05): every collection in pgstac was written by ``catalog.load``
+        from a registry entry, so this field is always present and one of the two
+        values — never optional the way it is on a collection this platform did not
+        write itself. A collection where it is missing or unrecognised is therefore
+        a data problem (a stale document from before this field existed, or a
+        collection nobody loaded through the registry), not a signal to guess: this
+        raises rather than falling back to treating it as either kind, so a broken
+        collection fails loudly instead of silently answering pgstac's own
+        near-empty result for it (adr/0005 rule I).
         """
         collection = await self.get_collection(collection_id, request=request)
         source = collection.get("earthx:source")
-        if not isinstance(source, dict):
-            return None
+        raw_holding = source.get("item_holding") if isinstance(source, dict) else None
         try:
-            return AdapterKind(source.get("adapter"))
+            return ItemHolding(raw_holding)
         except ValueError:
-            return None
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"collection {collection_id!r} carries no valid earthx:source.item_holding "
+                    "(not loaded from the registry? run `python -m earthx.catalog.load`)"
+                ),
+            ) from None
 
     async def _all_collection_ids(self, request: Request) -> list[str]:
         collections = await self.all_collections(request=request)
@@ -346,9 +364,17 @@ class FederatingCoreCrudClient(CoreCrudClient):
         limit: int | None,
         token: str | None,
     ) -> ItemCollection | None:
-        """``None`` means: nothing here is federated, let ``super()`` answer as usual."""
+        """``None`` means: nothing here is federated, let ``super()`` answer as usual.
+
+        ``native_ids`` now also holds every *materialized* collection (M3-11a) —
+        pgstac answers those exactly as it always answered a collection with no
+        ``earthx:source`` at all, so the mixed-source rejection below covers a
+        federated-plus-materialized search the same way it already covered
+        federated-plus-federated.
+        """
         target_ids = collections or await self._all_collection_ids(request)
-        federated_ids = [cid for cid in target_ids if await self._adapter_of(cid, request) is not None]
+        holdings = {cid: await self._holding_of(cid, request) for cid in target_ids}
+        federated_ids = [cid for cid in target_ids if holdings[cid] is ItemHolding.FEDERATED]
         native_ids = [cid for cid in target_ids if cid not in federated_ids]
 
         if not federated_ids:

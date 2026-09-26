@@ -76,10 +76,12 @@ from earthx.adapters import (
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.pgstac import fetch_item
 from earthx.catalog.registry import (
     DataFormat,
     DatasetConfig,
     DatasetRegistry,
+    ItemHolding,
     LicenseTier,
     UnknownDatasetError,
 )
@@ -117,6 +119,20 @@ DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 _LARGE_DOWNLOAD_LOCK = asyncio.Lock()
 
 
+class MaterializedItemNotFound(LookupError):
+    """No item with this id in a materialized dataset's own pgstac collection."""
+
+
+class MaterializedCatalogUnavailable(RuntimeError):
+    """A materialized dataset's items live only in pgstac, and this process has no
+    pool to reach it with (`api/dependencies.py::cache_pool` was not opened).
+
+    Unlike a federated dataset — where the same pool is only a cache, and its
+    absence merely means a slower re-fetch of the source (E5) — a materialized
+    dataset's items have no other place to come from at all.
+    """
+
+
 def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
     """The address of one asset, or a 404 that says which of the two is missing."""
     assets = item.get("assets")
@@ -139,6 +155,12 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
         return await state.earthx_item_source(dataset, item)
     except UnknownCollection:
         raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+    except MaterializedItemNotFound:
+        # The materialized counterpart of the federated `UpstreamError` 404 below —
+        # same message, so a tile request cannot tell which path answered it.
+        raise HTTPException(status_code=404, detail=f"no item {item!r} in {dataset!r}") from None
+    except MaterializedCatalogUnavailable:
+        raise HTTPException(status_code=503, detail="the catalogue is not available") from None
     except UnsupportedSource as error:
         raise HTTPException(status_code=501, detail=str(error)) from None
     except InvalidQuery as error:
@@ -237,6 +259,26 @@ def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
         return registry.get(dataset)
     except UnknownDatasetError:
         raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+
+
+def _check_display_allowed(config: DatasetConfig) -> None:
+    """Refuse a tile, statistics, info, point or tilejson read below licence tier
+    'display' (KLAERUNGEN B11, M3-02 K-03, Otto's answer of 23.09.2026).
+
+    A dataset at tier `catalog` is a link to the source, never something this
+    platform renders itself — the registry already refuses such an entry a
+    `viewer` field (`DatasetConfig._check_license_tier`), so without this check
+    `_check_zoom_released` below would answer it with a `501` ("names no released
+    zoom range") instead of the `403` this is about. Called first, and before any
+    item is fetched, for the same reason `_check_zoom_released` is: a refused
+    dataset costs no request to the source. The download route enforces the
+    stricter `processing` tier on its own (`download_crop`) and is unaffected.
+    """
+    if config.license.tier is LicenseTier.CATALOG:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{config.dataset_id!r}'s licence permits a catalogue entry only, no display (KLAERUNGEN B11)",
+        )
 
 
 def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
@@ -398,6 +440,7 @@ async def dataset_asset_path(
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
     _check_zoom_released(request, config)
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = _target_gsd(request, stac_item)
@@ -715,13 +758,29 @@ async def statistics_cache(request: Request) -> AsyncIterator[PostgresStatsCache
 
 
 def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any):
-    """How the tiler gets an item: through the adapter, the gateway and the item cache.
+    """How the tiler gets an item: federated through the adapter and gateway, or
+    materialized straight out of pgstac (M3-11a, K-05).
 
     A closure rather than a dependency of its own, so that a test can put a recorded
     item in its place without a database and without a network (adr/0002 §2).
     """
 
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
+        try:
+            config = registry.get(dataset_id)
+        except UnknownDatasetError:
+            raise UnknownCollection(dataset_id) from None
+        if config.source.item_holding is ItemHolding.MATERIALIZED:
+            # No cache in front of this: the read is already local, and the item
+            # cache below exists to spare a *federated* dataset a round trip to a
+            # remote source, which is not the question here.
+            if pool is None:
+                raise MaterializedCatalogUnavailable(dataset_id)
+            async with pool.connection() as conn:
+                item = await fetch_item(conn, dataset_id, item_id)
+            if item is None:
+                raise MaterializedItemNotFound(item_id)
+            return item
         if pool is None:
             return await get_item(dataset_id, item_id, gateway=gateway, registry=registry)
         async with pool.connection() as conn:
@@ -739,7 +798,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
     ):
         app.state.earthx_cache_pool = pool
-        app.state.earthx_item_source = build_item_source(REGISTRY, gateway, pool)
+        # The registry `build_app` was actually given, not the module-wide default
+        # (M3-11a §2.2): before this field existed the two never diverged in a test,
+        # because nothing here read from pgstac at all — a materialized item does.
+        app.state.earthx_item_source = build_item_source(app.state.earthx_registry, gateway, pool)
         yield
 
 

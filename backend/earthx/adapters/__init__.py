@@ -39,7 +39,7 @@ from earthx.adapters.federated_search import (
     UpstreamShapeError,
 )
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import AdapterKind, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import AdapterKind, DatasetRegistry, ItemHolding, UnknownDatasetError
 from earthx.gateway import Gateway
 
 # One module per adapter kind — the only place that has to know every adapter this
@@ -54,9 +54,19 @@ _ADAPTERS = {
 def _adapter_for(dataset_id: str, registry: DatasetRegistry) -> ModuleType:
     """The module that serves ``dataset_id``, or the error its absence means."""
     try:
-        kind = registry.get(dataset_id).source.adapter
+        config = registry.get(dataset_id)
     except UnknownDatasetError:
         raise UnknownCollection(dataset_id) from None
+    if config.source.item_holding is ItemHolding.MATERIALIZED:
+        # M3-11a K-05: a materialized dataset's items live in our own pgstac, not
+        # at a live source — there is no search or item-fetch request for this
+        # module to build. The federating client dispatches such a collection to
+        # `super()` (pgstac) before it ever calls `search_items`/`get_item`; the
+        # tiler's item source does the equivalent through `catalog.pgstac.fetch_item`.
+        raise UnsupportedSource(
+            f"{dataset_id} holds items materialized in pgstac; adapters.search_items/get_item do not serve it"
+        )
+    kind = config.source.adapter
     try:
         return _ADAPTERS[kind]
     except KeyError:

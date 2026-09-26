@@ -51,6 +51,7 @@ from earthx.catalog.registry import (
     DataClass,
     DataFormat,
     DatasetConfig,
+    ItemHolding,
     LicenseTier,
 )
 
@@ -361,7 +362,10 @@ def test_point_1_falls_when_the_description_only_repeats_the_title(vary) -> None
 
 def test_point_2_falls_for_a_provider_nothing_answers(vary, valid_config) -> None:
     coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
-    findings = evaluate(vary(coverage=coverage))
+    # local-sql is only a valid combination on a materialized entry (M3-11a K-05);
+    # what point 2 is about here is that nothing answers it yet, regardless.
+    source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+    findings = evaluate(vary(coverage=coverage, source=source))
     assert findings == [Finding(2, "nothing answers coverage for provider 'local-sql'")]
 
 
