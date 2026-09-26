@@ -2,7 +2,7 @@
 
 > **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
 
-Stand: 2026-09-23 · Version 1.2 (M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P18 nachgezogen; Widersprüche aus der M3-Vorbereitung aufgelöst)
+Stand: 2026-09-26 · Version 1.3 (M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21)
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
 
@@ -276,7 +276,7 @@ Kriterium in `docs/plans/m2-12-abnahme.md`.
 ### M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion (Inkrement 3)
 
 Der Aufgabenschnitt liegt in `docs/plans/m3-dritte-quelle-und-interface.md`
-(M3-00 bis M3-15, Vorentscheidungen P1–P18) und ist maßgeblich; diese Tabelle
+(M3-00 bis M3-22, Vorentscheidungen P1–P24) und ist maßgeblich; diese Tabelle
 ist nur die Kurzfassung.
 
 | | |
@@ -506,8 +506,9 @@ Ein PR ist fertig, wenn:
 | Claude-Plan: reicht das Kontingent? | nach M0/M1 beobachten | Laut Dokumentation ist das Standardmodell auf Pro Sonnet 5, auf Max Opus 5. Erst messen, dann entscheiden |
 | TiTiler-Basis ja/nein | M2 | **entschieden:** `titiler.core` nach Spike (`ENTSCHEIDUNGSLOG.md`, 2026-09-19/20; `adr/0006`) |
 | ESA-only oder Quellenbreite | M3 | **entschieden:** Quellenbreite (`ENTSCHEIDUNGSLOG.md`, 2026-09-23) |
-| Welche Nicht-STAC-Quelle | M3 | offen, Spike in `adr/0009` (M3-01) |
+| Welche Nicht-STAC-Quelle | M3 | **entschieden:** Copernicus DEM GLO-30 direkt aus dem Bucket, zugleich dritter Datensatz (`ENTSCHEIDUNGSLOG.md`, 2026-09-23; `adr/0009`) |
 | Adapter-Interface (ADR) | Ende M3 | aus drei realen Quellen ableiten |
+| MinIO-Ersatz | vor M4 | offen, Spike in `adr/0012` (P23, M3-20) |
 | Job-Queue | M4 | Postgres-gestützt, nach Spike |
 | Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | zunächst "selbst bezeugt", nicht im gemeinsamen Cache |
 | Register und Portale für den Harvester | M5 | STAC Index/Atlas zuerst |
