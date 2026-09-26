@@ -1,6 +1,6 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 1.4 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
+**Status:** Fassung 1.5 vom 26.09.2026. Nichts ist begonnen. Die Aufgaben der
 dritten Quelle (M3-11) werden nach der Annahme von `adr/0009` in Fassung 2 im
 Einzelnen geschnitten. Fassung 1.1 nimmt Ottos Antworten auf den
 Konformitätsbericht auf (`plans/m3-02-konformitaetsbericht.md` §8): neue
@@ -9,7 +9,8 @@ Ottos Entscheidungen vom 23.09.2026 zum Download auf (P19): neue Aufgabe
 M3-17. Fassung 1.3 nimmt Ottos Antworten zu `adr/0010` auf: neue Aufgabe
 M3-19, gedrosselte Messungen in §1.2. Fassung 1.4 nimmt Ottos Entscheidungen
 vom 23.09.2026 zum Download-Deckel und zur AOI-Maske auf: neue Aufgabe
-M3-18.
+M3-18. Fassung 1.5 vermerkt Ottos Entscheidung vom 23.09.2026, dass M3-17
+nicht mehr von M3-12 abhängt (§3).
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
@@ -142,7 +143,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11, M3-13 |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — |
-| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09, M3-12 |
+| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 (M3-12 entfällt, siehe unten) |
 | M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — |
 | M3-19 | Weltüberblick ohne AOI immer auf z6 | A | Sonnet (mittel) | — |
 
@@ -152,9 +153,18 @@ daneben.
 1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05, M3-16 (A/C), dazu M3-03 und
    M3-08 (B); M3-08 wird erst nach M3-16 gemergt.
 2. **Welle 2:** M3-06a, M3-09, M3-18, danach M3-06b, M3-07a; daneben M3-19 (A).
-3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12,
-   danach M3-17.
+3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12;
+   M3-17 unabhängig davon.
 4. **Welle 4:** M3-13, dann M3-14, zuletzt M3-15.
+
+**Geänderte Abhängigkeit M3-17 (Otto, 23.09.2026):** M3-17 hängt nicht mehr
+von M3-12 ab. Die Gruppierung je Überflug hat PR #84 (M3-09) gebaut
+(`store.groups`, `groupIndexOfItem`, ein Layer je Gruppe); M3-17 verwendet sie
+wieder und baut keine neue datensatzspezifische Stelle. Den festen
+Eigenschaftsnamen der Gruppierung in die Registry zu räumen bleibt Aufgabe von
+M3-12; der Download folgt dem dann ohne Änderung. Das Registry-Feld für COG
+oder Zarr, das in M3-17 als „wahrscheinlich zusammen mit M3-12“ vermerkt ist,
+schlägt M3-17 selbst vor (`plans/m3-17-download-folgt-ansicht.md`).
 
 **Dateikonflikte im Frontend:** M3-06b, M3-07b, M3-10 und M3-12 berühren die
 Suchkachel (`ControlPanel.tsx` und Umgebung); deshalb nacheinander in dieser
