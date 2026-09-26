@@ -265,12 +265,19 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 // synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
 // in `api/tiler.py`; `language` picks the notice file's text (M2-07d requests
 // `en`, matching the rest of the — English since 2026-09-20 — interface).
+// One of `RESOLUTION_FACTORS` in `access/download.py` (F10c, M3-18 §10):
+// how many times coarser than native to read. Native (`1`) is the default and
+// is never chosen automatically — the dialog always shows the choice.
+export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
+export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
+
 export interface DownloadCropRequest {
   datasetId: string;
   items: string[];
   assets: string[];
   aoi: GeoJSON.Geometry;
   language?: string;
+  resolution?: ResolutionFactor;
 }
 
 export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
@@ -282,6 +289,7 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
       assets: req.assets,
       aoi: req.aoi,
       language: req.language ?? 'en',
+      resolution: req.resolution ?? 1,
     }),
   });
   if (!res.ok) {

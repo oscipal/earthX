@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 
+import { RESOLUTION_FACTORS } from '../api';
 import {
   attributionText,
   canExportLicense,
   downloadRequestFor,
   downloadRequestForSelection,
+  resolutionOptionLabel,
   termsNoticeText,
 } from '../download';
 import { useAppStore } from '../store';
@@ -46,6 +48,8 @@ export default function DownloadDialog() {
   const downloading = useAppStore((s) => s.downloading);
   const close = useAppStore((s) => s.closeDownloadDialog);
   const confirm = useAppStore((s) => s.confirmDownload);
+  const resolution = useAppStore((s) => s.downloadResolution);
+  const setResolution = useAppStore((s) => s.setDownloadResolution);
 
   if (!layerId && !selectionMode) return null;
 
@@ -83,6 +87,30 @@ export default function DownloadDialog() {
               </>
             )}
           </p>
+
+          {req && (
+            <div className="dialog-resolution">
+              <span>Resolution: </span>
+              {RESOLUTION_FACTORS.map((factor) => (
+                <label key={factor} style={{ marginRight: '1em' }}>
+                  <input
+                    type="radio"
+                    name="download-resolution"
+                    checked={resolution === factor}
+                    onChange={() => setResolution(factor)}
+                    disabled={downloading}
+                  />{' '}
+                  {[
+                    ...new Set(
+                      req.assets.map((asset) =>
+                        resolutionOptionLabel(selectionMode ? selectionItems : [], asset, factor),
+                      ),
+                    ),
+                  ].join(', ')}
+                </label>
+              ))}
+            </div>
+          )}
 
           {!exportAllowed && (
             <p className="hint-text">

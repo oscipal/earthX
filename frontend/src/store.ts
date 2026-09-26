@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { clipTileUrl } from './aoiClip';
 import * as api from './api';
-import type { CoverageResponse } from './api';
+import type { CoverageResponse, ResolutionFactor } from './api';
 import {
   bandViewportBbox,
   bboxContains,
@@ -266,6 +266,10 @@ interface AppState {
   // layer — downloading a selected quicklook's original data straight from
   // the results list, before "Add to layers"/"View full resolution".
   downloadSelection: boolean;
+  // The resolution choice in the open download dialog (F10c, M3-18 §10).
+  // Native (`1`) every time the dialog opens — never chosen automatically,
+  // and never remembered from a previous download.
+  downloadResolution: ResolutionFactor;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -331,6 +335,7 @@ interface AppState {
   openDownloadDialog: (id: string) => void;
   openDownloadForSelection: () => void;
   closeDownloadDialog: () => void;
+  setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
   exitFocus: () => void;
@@ -390,6 +395,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   layerManagerOpen: false,
   downloadDialogLayerId: null,
   downloadSelection: false,
+  downloadResolution: 1,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -688,7 +694,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
 
-  openDownloadDialog: (id) => set({ downloadDialogLayerId: id, downloadSelection: false, error: null }),
+  openDownloadDialog: (id) =>
+    set({ downloadDialogLayerId: id, downloadSelection: false, downloadResolution: 1, error: null }),
   // Download the original data of the current selection (V-4) — the AOI
   // crop route, not the quicklook image — without first "View full
   // resolution" or "Add to layers". Validated the same way `confirmDownload`
@@ -706,9 +713,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return;
     }
-    set({ downloadDialogLayerId: null, downloadSelection: true, error: null });
+    set({ downloadDialogLayerId: null, downloadSelection: true, downloadResolution: 1, error: null });
   },
   closeDownloadDialog: () => set({ downloadDialogLayerId: null, downloadSelection: false }),
+  setDownloadResolution: (factor) => set({ downloadResolution: factor }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
   // `POST /collections/{dataset}/download`, M2-07d; V-4 added the selection
@@ -737,6 +745,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         assets: req.assets,
         aoi: req.aoi,
         language: 'en',
+        resolution: s.downloadResolution,
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

@@ -4,6 +4,7 @@ import {
   buildSearchBody,
   buildStatisticsUrl,
   buildTileTemplate,
+  downloadCrop,
   errorDetail,
   fetchItem,
   HttpError,
@@ -182,5 +183,65 @@ describe('fetchItem', () => {
       message: 'invalid characters',
     });
     await expect(fetchItem('sentinel-2-c1-l2a', 'bad name')).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+// M3-18 F8: the backend formulates the download's error text (size cap, item
+// cap); this client only has to pass it through unchanged, the same way it
+// already does for every other route.
+describe('downloadCrop', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: 'x', json: async () => body } as Response;
+  }
+
+  function noJsonResponse(status: number, statusText: string): Response {
+    return {
+      ok: false,
+      status,
+      statusText,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    } as unknown as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const request = {
+    datasetId: 'sentinel-2-c1-l2a',
+    items: ['ITEM1'],
+    assets: ['visual'],
+    aoi: { type: 'Polygon' as const, coordinates: [] },
+  };
+
+  it('a 413 over the output size cap surfaces the backend detail unchanged', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(413, {
+          detail: 'This download would be about 403 MB, more than the 200 MB limit. Draw a smaller area or download fewer layers.',
+        }),
+      ),
+    );
+    await expect(downloadCrop(request)).rejects.toThrow(
+      'This download would be about 403 MB, more than the 200 MB limit. Draw a smaller area or download fewer layers.',
+    );
+  });
+
+  it('a 413 over the item cap surfaces the backend detail unchanged', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(413, { detail: 'This download covers 26 scenes; at most 25 fit in one download.' }),
+      ),
+    );
+    await expect(downloadCrop(request)).rejects.toThrow('This download covers 26 scenes; at most 25 fit in one download.');
+  });
+
+  it('an error response with no JSON body still reads as a plain, English message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(noJsonResponse(503, 'Service Unavailable')));
+    await expect(downloadCrop(request)).rejects.toThrow('503 Service Unavailable');
   });
 });

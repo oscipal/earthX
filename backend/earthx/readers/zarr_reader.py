@@ -483,8 +483,8 @@ class ZarrReader(XarrayReader):
     keeps ``self.input`` as the *first* variable, exactly like the single-variable
     case, and holds one extra :class:`~rio_tiler.io.xarray.XarrayReader` per
     additional variable — sharing this reader's already-open group and gateway, not
-    opening it again. ``tile``, ``preview`` and ``feature`` are overridden to read
-    every band and merge the results with :meth:`~rio_tiler.models.ImageData.create_from_list`,
+    opening it again. ``tile``, ``preview``, ``feature`` and ``part`` are overridden
+    to read every band and merge the results with :meth:`~rio_tiler.models.ImageData.create_from_list`,
     in the order the variables were named, so band 1 is always the first one asked
     for. Nothing else is overridden: an ``/info`` or ``/point`` request against a
     several-variable asset answers for the first variable alone, which is the
@@ -509,6 +509,14 @@ class ZarrReader(XarrayReader):
     #: (projektplan.md 7): what a tile cost the source, without saying where the
     #: source is.
     _log_context: dict[str, str] = attr.ib(init=False, factory=dict)
+    #: Set while `_merged` is computing `self`'s own contribution to a
+    #: `tile`/`feature` merge (below) — `XarrayReader.tile`/`feature` read their
+    #: data via `self.part(...)` internally, and without this guard that call
+    #: would resolve to `part` below and merge in every extra band a second
+    #: time, on top of the merge `_merged` already does for `tile`/`feature`
+    #: itself (found as a 5-band tile for a 3-variable composite: 2*3-1, the
+    #: double-merged first variable plus one real read per extra band).
+    _suppress_part_merge: bool = attr.ib(init=False, default=False)
 
     def __attrs_post_init__(self) -> None:
         asset = self.input
@@ -546,6 +554,21 @@ class ZarrReader(XarrayReader):
     def feature(self, *args: Any, **kwargs: Any) -> ImageData:
         return self._merged(XarrayReader.feature, *args, **kwargs)
 
+    def part(self, *args: Any, **kwargs: Any) -> ImageData:
+        """The bbox composite across every variable (M3-18 §3: the download crop
+        reads a bounding box, not a cutline, so it needs this where `feature`
+        used to be enough on its own).
+
+        Only merges when called from the outside: while `tile`/`feature`
+        above are themselves merging (`_suppress_part_merge`), their own
+        internal `self.part(...)` call reads `self.input` (the first variable)
+        alone, exactly as it would without this override — see
+        `_suppress_part_merge`'s docstring for why.
+        """
+        if self._suppress_part_merge:
+            return XarrayReader.part(self, *args, **kwargs)
+        return self._merged(XarrayReader.part, *args, **kwargs)
+
     def _merged(self, method: Any, *args: Any, expression: str | None = None, **kwargs: Any) -> ImageData:
         """One band from ``self`` (the first variable) plus one from each of
         ``self._extra_bands`` — same as the single-variable case when there are
@@ -553,9 +576,23 @@ class ZarrReader(XarrayReader):
         bands (``b1/b2``, …), so it runs once, after the merge, never per variable —
         the same order :class:`~titiler.core.factory.MultiBaseReader` applies it in.
         """
-        images = [method(self, *args, **kwargs)]
-        images.extend(method(reader, *args, **kwargs) for reader in self._extra_bands)
-        image = images[0] if len(images) == 1 else ImageData.create_from_list(images)
+        self._suppress_part_merge = True
+        try:
+            images = [method(self, *args, **kwargs)]
+            images.extend(method(reader, *args, **kwargs) for reader in self._extra_bands)
+        finally:
+            self._suppress_part_merge = False
+        if len(images) == 1:
+            image = images[0]
+        else:
+            image = ImageData.create_from_list(images)
+            # `create_from_list` drops `nodata` outright (checked against its
+            # own source, bug B, PR #86 review) — every variable of one asset
+            # shares the same nodata by construction (`_variable_names`/
+            # `_select_variable` all read it off the same group), so the first
+            # variable's own value speaks for the merged image too.
+            if image.nodata is None:
+                image.nodata = images[0].nodata
         return image.apply_expression(expression) if expression else image
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:

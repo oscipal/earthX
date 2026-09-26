@@ -48,8 +48,12 @@ ITEM_ID = "SYNTH_CHAIN_20260102T100000"
 #: What the mini stores have in common: UTM 32N, upper left at the same corner.
 CRS = mini_zarr.ITEM_CRS
 
-#: href, bounds in :data:`CRS`, and a reader of the read log.
-_Asset = tuple[str, tuple[float, ...], Callable[[], list[str]]]
+#: href, bounds in :data:`CRS`, the ground sample distance and a reader of the
+#: read log. The `gsd` (M3-18) is each format's own real resolution constant,
+#: not invented: without it on the item, the download route's size estimate
+#: (`access.download.plan_outputs`, F1) falls back to its conservative worst
+#: case and refuses even this chain's small AOI.
+_Asset = tuple[str, tuple[float, ...], float, Callable[[], list[str]]]
 
 
 class UnsupportedFormat(Exception):
@@ -105,14 +109,14 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     render_asset = config.default_render.assets[0]
 
     if config.format is DataFormat.COG:
-        href, bounds, read_addresses = _cog_asset(tmp_path, monkeypatch)
+        href, bounds, gsd, read_addresses = _cog_asset(tmp_path, monkeypatch)
     elif config.format is DataFormat.ZARR:
-        href, bounds, read_addresses = _zarr_asset(tmp_path, monkeypatch)
+        href, bounds, gsd, read_addresses = _zarr_asset(tmp_path, monkeypatch)
     else:
         raise UnsupportedFormat(f"no synthetic asset for format {config.format.value!r}")
 
     synthetic = replace(config, source=replace(config.source, asset_hosts=(HOST,)))
-    item = _stac_item(item_asset_key(config, render_asset), href, bounds)
+    item = _stac_item(item_asset_key(config, render_asset), href, bounds, gsd)
     gateway, searched = _gateway_answering_search(synthetic, item)
     _resolve_from_memory(monkeypatch)
 
@@ -134,7 +138,7 @@ def _cog_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
     cleared = mini_cog.serve_cog(path, monkeypatch)
     side = mini_cog.SIZE * mini_cog.RESOLUTION
     bounds = (mini_cog.ORIGIN_X, mini_cog.ORIGIN_Y - side, mini_cog.ORIGIN_X + side, mini_cog.ORIGIN_Y)
-    return mini_cog.ASSET_URL, bounds, lambda: list(cleared)
+    return mini_cog.ASSET_URL, bounds, mini_cog.RESOLUTION, lambda: list(cleared)
 
 
 def _zarr_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
@@ -153,10 +157,10 @@ def _zarr_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
     # list of fetched addresses — a stronger statement than the COG side can make,
     # where GDAL owns the socket (readers/cog.py docstring, KLAERUNGEN B8).
     href = f"{mini_zarr.BASE_URL}/{mini_zarr_composite.GROUP}"
-    return href, bounds, lambda: [str(request.url) for request in requests]
+    return href, bounds, mini_zarr_composite.RESOLUTION_M, lambda: [str(request.url) for request in requests]
 
 
-def _stac_item(asset_key: str, href: str, bounds: tuple[float, ...]) -> dict[str, Any]:
+def _stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float) -> dict[str, Any]:
     """The item the synthetic source answers with.
 
     It carries a real footprint in WGS84, because the download route filters the
@@ -181,8 +185,14 @@ def _stac_item(asset_key: str, href: str, bounds: tuple[float, ...]) -> dict[str
             # The Zarr store carries no CRS of its own (adr/0007 §3.4); for the
             # COG it is redundant and harmless.
             "proj:code": CRS,
+            # M3-18's download size estimate (`plan_outputs`, F1) falls back here
+            # for a Zarr composite key (`SR_10m:b04,b03,b02`), which never matches
+            # the bare group name this item's own `assets` carries — the same
+            # fallback a real EOPF item's `properties.gsd` is measured to serve
+            # (plan §3), not this fixture's own workaround.
+            "gsd": gsd,
         },
-        "assets": {asset_key: {"href": href}},
+        "assets": {asset_key: {"href": href, "gsd": gsd}},
         "links": [],
     }
 

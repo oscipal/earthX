@@ -46,17 +46,23 @@ from pydantic import BaseModel, Field
 from rasterio.errors import RasterioError, RasterioIOError
 from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
+from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.download import (
+    LARGE_DOWNLOAD_THRESHOLD_BYTES,
+    RESOLUTION_FACTORS,
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
     InvalidAoi,
     build_download_zip,
-    check_size_cap,
+    check_item_count_cap,
+    check_output_size_cap,
+    compute_crop_region,
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
+    plan_outputs,
 )
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters import (
@@ -97,6 +103,15 @@ _READABLE_FORMATS = frozenset({DataFormat.COG, DataFormat.ZARR})
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
 # polygon does not belong in a query string) — so it cannot share ROUTER_PREFIX.
 DOWNLOAD_ROUTE = "/collections/{dataset}/download"
+
+# At most one download whose planned output reaches LARGE_DOWNLOAD_THRESHOLD_BYTES
+# runs at a time in this process (F10a, M3-18 §10): measured (plan §10.3/§10.4)
+# a single such crop can peak at several GB RSS in the same process that also
+# serves tiles, so two of them at once must not both run. Checked-then-acquired
+# with no `await` in between, which is race-free on asyncio's single-threaded
+# event loop (a second concurrent request cannot interleave between the check
+# and the `async with`).
+_LARGE_DOWNLOAD_LOCK = asyncio.Lock()
 
 
 def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
@@ -399,6 +414,14 @@ class DownloadRequest(BaseModel):
     items: list[str] = Field(min_length=1, max_length=64, description="item ids, one scene each")
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
+    resolution: int = Field(
+        default=1,
+        description=(
+            "how many times coarser than native resolution to read, one of "
+            f"{RESOLUTION_FACTORS} — 1 is native, the default (Otto, 23.09.2026, M3-18 §10). "
+            "Never chosen automatically; the caller (the download dialog) picks it explicitly."
+        ),
+    )
 
 
 async def download_crop(
@@ -411,7 +434,9 @@ async def download_crop(
     Every check that can run before an asset is opened runs first, in the order
     M2-06's acceptance criteria list the failures: unknown dataset, licence tier,
     a malformed AOI, an unknown item, an AOI that touches none of the given items,
-    then the size cap — only after all of that does anything reach `gateway`.
+    the item-count cap, then the output size cap (M3-18: built from the AOI and
+    the items' own metadata, not from how many items or assets were asked for)
+    — only after all of that does anything reach `gateway`.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -430,20 +455,50 @@ async def download_crop(
     except InvalidAoi as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
 
+    if body.resolution not in RESOLUTION_FACTORS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resolution must be one of {RESOLUTION_FACTORS}, not {body.resolution!r}",
+        )
+
     items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
     matched = filter_items_intersecting_aoi(items, aoi)
     if not matched:
         raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
     try:
-        check_size_cap(item_count=len(matched), asset_count=len(set(body.assets)))
-    except AoiTooLarge as error:
-        raise HTTPException(status_code=413, detail=str(error)) from None
+        # AOI ∩ union of this group's own item footprints (Otto, 23.09.2026,
+        # M3-18 §13) — the same geometry the frontend's group outline already
+        # shows before a download starts (PR #84, `groupOutline.ts`). Tighter
+        # than the bbox pre-filter above, so it also catches the case that
+        # filter passed on a bbox alone but the items' real, often rotated
+        # footprints do not actually reach (bug A, Otto's review of PR #86).
+        region = compute_crop_region(matched, aoi)
+    except AoiOutsideItems as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
     # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
     # and two identical keys would otherwise write the same file name into the
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
+
+    # Native is always planned too (F10c, M3-18 §10): even when the caller
+    # already chose a coarser resolution, a rejection still needs the smallest
+    # *native-relative* factor to suggest, not one relative to what was
+    # already asked for.
+    native_planned = plan_outputs(matched, wanted, region)
+    planned = (
+        native_planned
+        if body.resolution == 1
+        else plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
+    )
+    try:
+        check_item_count_cap(len(matched))
+        check_output_size_cap(planned, native_planned=native_planned)
+    except AoiTooLarge as error:
+        raise HTTPException(status_code=413, detail=str(error)) from None
+
+    planned_by_asset = {output.label: output for output in planned}
     crops = [
         AssetCrop(
             asset=asset,
@@ -453,26 +508,65 @@ async def download_crop(
                 )
                 for matched_item in matched
             ),
+            width=None if body.resolution == 1 else planned_by_asset[asset].width,
+            height=None if body.resolution == 1 else planned_by_asset[asset].height,
         )
         for asset in wanted
     ]
 
-    try:
-        zip_bytes = await run_in_threadpool(
+    total_planned_bytes = sum(output.total_bytes for output in planned)
+    large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
+    if large and _LARGE_DOWNLOAD_LOCK.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="another large download is running, try again shortly",
+            headers={"Retry-After": "30"},
+        )
+
+    async def _build_zip() -> bytes:
+        return await run_in_threadpool(
             build_download_zip,
             config=config,
             open_reader=open_asset,
             crops=crops,
             aoi_geometry=body.aoi,
+            region_geometry=shapely_mapping(region),
             item_ids=[matched_item["id"] for matched_item in matched],
+            resolution_factor=body.resolution,
+            # The GDAL/VSI settings `gateway` also uses for the tile path
+            # (timeouts, the read cache, no directory listings on open) —
+            # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
+            # were unbounded and uncached. `rasterio.Env` is thread-local
+            # (adr/0006's own `_read_statistics` follows the same pattern), so
+            # it has to be entered inside the threadpool call, not around it.
+            gdal_env=state.earthx_gdal_options,
         )
+
+    try:
+        if large:
+            async with _LARGE_DOWNLOAD_LOCK:
+                zip_bytes = await _build_zip()
+        else:
+            zip_bytes = await _build_zip()
     except AoiOutsideItems as error:
         # The bbox prefilter passed but the geometry itself misses every item's
         # actual footprint (a bbox is not the data — MGRS tiles are rotated).
         raise HTTPException(status_code=400, detail=str(error)) from None
     except RioTilerError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
-    except (RasterioError, GatewayError):
+    except (RasterioIOError, GatewayError):
+        # A genuine read failure only (Otto, 23.09.2026, PR #86 review): a bug in
+        # our own COG-writing code can just as easily raise a `RasterioError` that
+        # is *not* `RasterioIOError` (an invalid transform, a block-size
+        # constraint, a bad array shape — the same distinction the tile path's
+        # `_rasterio_error`/`_rasterio_io_error` handlers already draw). Catching
+        # the whole `RasterioError` hierarchy here used to relabel any of those as
+        # "could not be read from the source", which is false and hides a code
+        # bug behind the same message a real upstream failure gets. Anything that
+        # is not `RasterioIOError` is deliberately left to propagate: `build_app`
+        # already registers `_rasterio_error` for exactly this route, which logs
+        # the real exception (with the request id, `logging.py`'s formatter) and
+        # answers 500, never silently.
         raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
 
     LOGGER.info(
@@ -482,6 +576,7 @@ async def download_crop(
             "items": len(matched),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
+            "resolution": body.resolution,
         },
     )
     return StreamingResponse(
