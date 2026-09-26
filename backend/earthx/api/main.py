@@ -37,10 +37,15 @@ from earthx.api.geocode_route import router as geocode_router
 from earthx.catalog.datasets import REGISTRY
 from earthx.logging import RequestIdMiddleware, configure_logging
 
-# adr/0005 rule VI, plan §6 F2: query/fields/pagination describe our own collection
-# and paging; filter (CQL2) and sort are the two extensions the federated path cannot
-# yet honour, so neither is ever enabled, whatever ENABLED_EXTENSIONS says.
-_ENABLED_EXTENSIONS = ["query", "fields", "pagination"]
+# adr/0005 rule VI, plan §6 F2, M3-13 F5: `pagination` describes our own paging;
+# `filter` (CQL2) and `sort` are two extensions the federated path cannot yet honour,
+# and `query`/`fields` turned out (M3-13 plan §2.2) to be a third and fourth — both
+# advertised on the landing page (K8) but silently dropped on a federated collection,
+# because the federated path never builds either into the upstream request. None of
+# the four is ever enabled, whatever ENABLED_EXTENSIONS says; `federating_client`'s
+# own `_DISALLOWED_QUERY_KEYS` turns a request that still sets one into a `400`
+# instead of a silently ignored parameter.
+_ENABLED_EXTENSIONS = ["pagination"]
 _PREFIX_PATH = "/stac"
 
 

@@ -29,14 +29,23 @@ from earthx.logging import JsonFormatter
 pytestmark = pytest.mark.anyio
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "earth_search"
+EOPF_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "eopf_stac"
 HOST = "earth-search.aws.element84.com"
+EOPF_HOST = "stac.core.eopf.eodc.eu"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
+# M3-13: the two-federated-sources tests below now reach both collections at once
+# (a mixed search, no longer rejected), so their own policy allows both hosts.
+MIXED_POLICY = Policy(allowed_hosts=frozenset({HOST, EOPF_HOST}))
 DATASET_ID = SENTINEL_2_L2A.dataset_id
 ZARR3_DATASET_ID = SENTINEL_2_L2A_ZARR3.dataset_id
 
 
 def load_fixture(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def load_eopf_fixture(name: str) -> dict[str, Any]:
+    return json.loads((EOPF_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
 def body_of(request: httpx.Request) -> dict[str, Any]:
@@ -60,12 +69,14 @@ def require_catalog_loaded(require_postgres_env: None) -> None:
 
 
 @asynccontextmanager
-async def _client(handler: Callable[[httpx.Request], httpx.Response]) -> AsyncIterator[httpx.AsyncClient]:
+async def _client(
+    handler: Callable[[httpx.Request], httpx.Response], *, policy: Policy = POLICY
+) -> AsyncIterator[httpx.AsyncClient]:
     async def sleep(seconds: float) -> None:
         return None
 
     async with app.router.lifespan_context(app):
-        app.state.earthx_gateway = Gateway(POLICY, transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep)
+        app.state.earthx_gateway = Gateway(policy, transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
@@ -78,6 +89,22 @@ def _answering(*responses: httpx.Response) -> tuple[Callable[[httpx.Request], ht
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return handler, seen
+
+
+def _answering_by_host(
+    by_host: dict[str, httpx.Response],
+) -> tuple[Callable[[httpx.Request], httpx.Response], list[httpx.Request]]:
+    """Two federated sources at once (M3-13) live on two different hosts — this
+    dispatches a mocked answer by which one a request actually reached."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        # Not `request.url.host`: the gateway connects to the resolved address and
+        # carries the real host only in its own `Host` header (SSRF pinning, M1-03).
+        return by_host[request.headers["host"]]
 
     return handler, seen
 
@@ -269,52 +296,66 @@ class TestFederatedSearch:
         assert len(response.json()["features"]) == 2
         assert seen[0].headers["host"] == HOST
 
-    async def test_a_missing_collections_argument_is_rejected_with_two_federated_sources(
+    async def test_a_search_without_collections_now_reaches_every_source_at_once(
         self, require_catalog_loaded: None
     ) -> None:
         """adr/0005 rule I says a search without ``collections`` is split per
-        collection and merged, but a merge across sources needs a real second
-        dataset to build and test against — M2-09b is that second dataset, and a
-        search naming no collection now reaches every federated one at once
-        (M2-09b plan §10 F3). Nothing is sent upstream: the rejection happens
-        before either source is asked."""
-        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
-        async with _client(handler) as client:
+        collection and merged; before M3-13 that promise stopped at a ``400``
+        the moment more than one source was actually involved (M2-09b plan §10
+        F3). ``require_catalog_loaded`` writes all three registry collections
+        (Earth Search, EOPF, the DEM), so a search naming none now reaches every
+        one of them at once — the DEM's own pgstac group answers empty (nothing
+        has materialized it in this test), both federated hosts are asked, and
+        the whole thing is a plain ``200``."""
+        handler, seen = _answering_by_host(
+            {
+                HOST: httpx.Response(200, json=load_fixture("search_empty")),
+                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_empty")),
+            }
+        )
+        async with _client(handler, policy=MIXED_POLICY) as client:
             response = await client.get("/stac/search")
-        assert response.status_code == 400
-        assert seen == []
-        detail = response.json()["detail"]
-        assert DATASET_ID in detail
-        assert ZARR3_DATASET_ID in detail
+        assert response.status_code == 200
+        assert response.json()["features"] == []
+        assert {request.headers["host"] for request in seen} == {HOST, EOPF_HOST}
 
-    async def test_a_search_spanning_more_than_one_source_is_rejected(
+    async def test_naming_both_federated_collections_answers_a_merged_page(
         self, require_catalog_loaded: None
     ) -> None:
-        """adr/0005 rule I says such a search is split per collection and merged,
-        but a merge across heterogeneous sources needs its own task to build and
-        test — a best-effort concatenation nobody could verify stayed correct
-        would only look tested. Naming both federated datasets explicitly triggers
-        the same rejection as leaving ``collections`` out entirely."""
-        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
-        async with _client(handler) as client:
-            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}"})
-        assert response.status_code == 400
-        assert seen == []
+        """The exact search M2-09b/M3-08 once rejected with a `400` naming both
+        collections as the caller's only choice (plan §10 F3) now answers with
+        both sources' items in one page (M3-13)."""
+        handler, seen = _answering_by_host(
+            {
+                HOST: httpx.Response(200, json=load_fixture("search_page_1")),
+                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_page_1")),
+            }
+        )
+        async with _client(handler, policy=MIXED_POLICY) as client:
+            response = await client.get(
+                "/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}", "limit": 10}
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["features"]) == 4
+        assert {item["collection"] for item in body["features"]} == {DATASET_ID, ZARR3_DATASET_ID}
+        assert {request.headers["host"] for request in seen} == {HOST, EOPF_HOST}
 
-    async def test_the_rejection_message_names_exactly_the_collections_it_saw(
-        self, require_catalog_loaded: None
-    ) -> None:
-        """M2-09b plan §10 F3 (Otto's addition to the recommendation): the sharpened
-        message names the collections a caller can choose between, not just that
-        there is more than one."""
-        handler, seen = _answering(httpx.Response(200, json=load_fixture("search_empty")))
-        async with _client(handler) as client:
+    async def test_a_mixed_page_never_claims_a_total_it_cannot_check(self, require_catalog_loaded: None) -> None:
+        """Earth Search's own fixture here carries a checked ``numberMatched``
+        (3) and EOPF never sends one at all (adr/0007 §12.6) — a mixed page must
+        not guess a combined total from the two, so it carries none (plan §4.2),
+        the same rule a single federated page already followed for a source with
+        no checked total of its own."""
+        handler, _ = _answering_by_host(
+            {
+                HOST: httpx.Response(200, json=load_fixture("search_page_1")),
+                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_page_1")),
+            }
+        )
+        async with _client(handler, policy=MIXED_POLICY) as client:
             response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}"})
-        assert seen == []
-        detail = response.json()["detail"]
-        assert DATASET_ID in detail
-        assert ZARR3_DATASET_ID in detail
-        assert "name exactly one collection" in detail
+        assert "numberMatched" not in response.json()
 
     async def test_the_next_link_carries_our_own_marker_not_the_sources(
         self, require_catalog_loaded: None
@@ -338,6 +379,30 @@ class TestFederatedSearch:
         assert second.status_code == 200
         assert len(seen) == 2
         assert body_of(seen[1])["next"] == "2024-06-02T10:00:00.000000Z,SYNTH_T00AAA_20240602T100000_L2A,sentinel-2-c1-l2a"
+
+    async def test_the_page_token_still_works_when_limit_changes_between_pages(
+        self, require_catalog_loaded: None
+    ) -> None:
+        """M3-13: the adapter's own page token no longer embeds `limit` in the
+        fingerprint it validates against (`search_fingerprint`) — needed so a
+        mixed search's fan-out can hand a source a different share on every
+        page. Proved here end to end, on an otherwise ordinary single-collection
+        search: continuing with `limit=1` after a first page fetched with
+        `limit=2` must not be refused as "a different search"."""
+        handler, seen = _answering(
+            httpx.Response(200, json=load_fixture("search_page_1")),
+            httpx.Response(200, json=load_fixture("search_page_2")),
+        )
+        async with _client(handler) as client:
+            first = await client.post("/stac/search", json={"collections": [DATASET_ID], "limit": 2})
+            next_link = next(link for link in first.json()["links"] if link["rel"] == "next")
+            second = await client.post(
+                "/stac/search",
+                json={"collections": [DATASET_ID], "limit": 1, "token": next_link["body"]["token"]},
+            )
+        assert second.status_code == 200
+        assert len(seen) == 2
+        assert body_of(seen[1])["limit"] == 1
 
     async def test_item_collection_of_the_federated_collection(self, require_catalog_loaded: None) -> None:
         handler, seen = _answering(httpx.Response(200, json=load_fixture("search_page_1")))
