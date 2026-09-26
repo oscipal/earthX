@@ -415,3 +415,72 @@ und ohne Herkunft, gegen die tatsächliche `ATTRIBUTION.txt`).
 (sauber), `pytest` vom Repo-Wurzelverzeichnis ohne `backend/tests_live`
 (1691 bestanden), `lint-imports` (12 Verträge, 0 gebrochen). Frontend
 unverändert, keine erneute Prüfung nötig.
+
+---
+
+## 13. Zweite Review-Nachbesserung (26.09.2026): Befund bestand fort
+
+Ottos lokale Prüfung nach §12, mit aktuellem Branch und neu gebauten
+Containern: `ATTRIBUTION.txt` weiterhin ohne OSM-Abschnitt, `aoi.geojson`
+weiterhin mit den Eigenschaften.
+
+**Gesucht:** jede Stelle, die `NOTICE_FILENAME`/`ATTRIBUTION.txt` schreibt,
+und jeder Weg, wie eine Download-Anfrage dorthin führt (eine Gruppe,
+mehrere Gruppen, fensterweises Lesen mit Auflösungsfaktor aus M3-18, Zarr).
+Befund: **genau eine Schreibstelle**, `build_download_zip` in
+`access/download.py`; genau ein Aufrufer, `download_crop` in
+`api/tiler.py`; keine Codepfad-Verzweigung, die `NOTICE_FILENAME` auf einem
+anderen Weg schriebe. Der Auflösungsfaktor (M3-18) ändert nur, welche
+Breite/Höhe je Asset geplant wird, nicht, wie die ZIP oder die Textdatei
+gebaut werden; Zarr-Assets laufen durch dieselbe `build_download_zip`
+(`test_download_zarr.py` bestätigt das schon länger für den Rest der
+Datei).
+
+**Neue Tests, die den tatsächlichen Frontend-Request nachbilden** (nicht
+nur einen direkten Aufruf von `build_notice_text`/`build_download_zip` wie
+in §12, sondern die echte FastAPI-Route mit `TestClient`, mit demselben
+JSON-Körper, den `frontend/src/api.ts::downloadCrop` sendet):
+
+- `test_download_route.py`: ein Treffer aus der Ortssuche als AOI, gegen
+  `POST /collections/{dataset}/download` — einzelne Gruppe, zwei Gruppen
+  (M3-17), expliziter Auflösungsfaktor (M3-18 F10c). Je eine Gegenprobe mit
+  einer AOI ohne `properties` (gezeichnet/hochgeladen), die den Abschnitt
+  nicht bekommt.
+- `test_download_zarr.py`: derselbe Fall über den echten Zarr-Lesepfad
+  (`mini_zarr`-Store, kein Netz).
+
+**Alle neuen Tests bestehen mit dem Code dieses Branches** — der
+OSM-Abschnitt erscheint in jeder Variante. Das grenzt einen Fehler im
+Code dieser Aufgabe aus, den ein Test hätte finden können; §12s Tests waren
+selbst schon keine reinen Funktionsaufrufe ohne Weiterverarbeitung (der
+`TestBuildDownloadZip`-Fall ging bereits durch `build_download_zip`), nur
+eben nicht durch die echte Route und nicht für die drei zusätzlichen Wege
+(Mehrgruppen, Auflösungsfaktor, Zarr) — diese Lücke ist mit den neuen Tests
+jetzt geschlossen, ohne dass sie etwas Abweichendes zutage gefördert hätte.
+
+**Wahrscheinlichste Ursache, warum der Befund trotzdem fortbesteht:** `api`
+und `tiler` sind in `docker-compose.yml` **eigenständige Dienste** —
+derselbe Build-Kontext (`./backend`), aber getrennte Images und Container,
+mit getrennten `command`-Zeilen (`earthx.api.main:app` bzw.
+`earthx.api.tiler:app`). `POST /collections/{id}/download` — und damit
+`ATTRIBUTION.txt` — läuft **in `tiler`**, nicht in `api` (wo `/geocode`
+liegt, der für M3-07b sichtbare Teil der Aufgabe). Ein Rebuild/Neustart,
+der nur `api` erfasst (naheliegend, wenn man die Ortssuche testet), lässt
+`tiler` mit dem alten Code weiterlaufen. Das passt genau zum Befund:
+`aoi.geojson`s Eigenschaften brauchten **keinen neuen Code** — das
+unveränderte Durchreichen von `properties` galt schon vor dieser Aufgabe
+(§12) —, während der OSM-Abschnitt in `ATTRIBUTION.txt` **neuer Code** ist,
+der nur mit einem tatsächlich neu gebauten und neu erzeugten `tiler`-
+Container läuft.
+
+**Vorschlag an Otto:** `tiler` gezielt neu bauen (`docker compose build
+tiler` oder `--no-cache`) und **neu erzeugen**, nicht nur neu starten
+(`docker compose up -d --force-recreate tiler`, ein bloßes `restart`
+verwendet weiterhin den zuvor erzeugten Container), dann erneut prüfen.
+Zeigt sich der Befund danach noch, ist er nicht dieser Codepfad — die
+Suche müsste dann woanders weitergehen, mit dem genauen Docker-Log der
+`tiler`-Container-ID als nächstem Schritt.
+
+**Getestet (erneut):** `ruff check backend` (sauber), `pytest` vom
+Repo-Wurzelverzeichnis ohne `backend/tests_live` (1696 bestanden),
+`lint-imports` (12 Verträge, 0 gebrochen).
