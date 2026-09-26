@@ -571,6 +571,12 @@ Regeln: Migrationen versioniert (Alembic); jede Komponente hat eine eigene DB-Ro
 
 Lokal (docker compose) und Cloud sind identisch aufgebaut: `api`, `tiler`, `worker`, `harvester`, Postgres, S3-kompatibler Objektspeicher (lokal MinIO), optional Redis als Cache. Konfiguration nur über Umgebungsvariablen. Für die Cloud: Container-Plattform oder Kubernetes, verwaltetes Postgres, CDN vor dem Tiler.
 
+**Nachtrag 2026-09-26 (M3-21):** Die offiziellen MinIO-Images sind seit dem
+24.09.2026 nicht mehr öffentlich ziehbar; Übergang mit `bitnamilegacy/minio`
+per Digest, nur CI und lokal. Ein Ersatz für MinIO wird vor M4 per Spike
+neu bewertet (P23, `plans/m3-dritte-quelle-und-interface.md` M3-20,
+`adr/0012`).
+
 Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für eine mögliche selbst gehostete Ausgabe für Institute oder Behörden, die Flächen und Ergebnisse nicht aus dem Haus geben dürfen. Das ist kein Ziel, aber eine Option, die die Architektur ohne Mehraufwand offen hält. Für einzelne Nutzer ist der Runner (7.7) der richtige Weg, nicht die ganze Plattform.
 
 ### 12.2 Compute folgt den Daten

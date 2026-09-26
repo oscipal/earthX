@@ -4,7 +4,8 @@
 M3-08, M3-09, M3-16, M3-18, M3-19 sowie der Hotfix zum MinIO-Image. In Arbeit:
 M3-06a und M3-17. Fassung 2 schneidet M3-11 nach der Annahme von `adr/0009` in
 M3-11a, M3-11b und M3-11c, nimmt die Entscheidungen vom 23. und 24.09.2026 als
-P20 bis P23 auf, hält den Schnitt als P24 fest, ergänzt den Spike M3-20 (Ersatz für MinIO) und ordnet die
+P20 bis P23 auf, hält den Schnitt als P24 fest, ergänzt den Spike M3-20 (Ersatz für MinIO), den Doku-Abgleich M3-21 und
+die Fehlersuche M3-22 (gelegentlich unlesbare Download-Dateien) und ordnet die
 Wellen neu. Wo eine erledigte Aufgabe anders umgesetzt wurde als hier
 beschrieben, gilt das Log; der Aufgabentext bleibt als Geschichte stehen.
 Frühere Fassungen: 1.1 (Antworten auf M3-02, M3-16), 1.2 (P19, M3-17),
@@ -53,7 +54,7 @@ entsteht danach das Adapter-Interface als ADR.
 | P9 | **Datensatz-Katalog in der Suchkachel:** einfacher Filter über `/stac/collections`; Hybrid-Suche bleibt M5 | M3-10 |
 | P10 | **Datensatzspezifische Sonderfälle im Frontend** werden Registry-Felder, soweit der dritte Datensatz sie trifft | M3-12 |
 | P11 | **Mosaik im Kachel-Pfad bleibt M4** | M3-00, M3-09 |
-| P12 | **Zuschnitt auf der Karte:** Die Trefferliste zeigt die Quicklooks ganz. In der vollen Auflösung zeigt die Karte von den gewählten Szenen nur den Teil innerhalb der AOI; außerhalb ist das Bild ausgeblendet, die Basiskarte bleibt. Ein Knopf wie bisher (mit AOI zugeschnitten, ohne AOI ganze Szene); Beschriftung im Plan-Schritt. Download unverändert. Weg im Plan-Schritt | M3-09 |
+| P12 | **Zuschnitt auf der Karte:** Die Trefferliste zeigt die Quicklooks ganz. In der vollen Auflösung zeigt die Karte von den gewählten Szenen nur den Teil innerhalb der AOI; außerhalb ist das Bild ausgeblendet, die Basiskarte bleibt. Ein Knopf wie bisher (mit AOI zugeschnitten, ohne AOI ganze Szene); Beschriftung im Plan-Schritt. Download unverändert. Weg im Plan-Schritt. **Umgesetzt mit zwei Knöpfen** („Crop & merge to AOI“, „View full selection“; Log 24.09.2026); der Download folgt der Ansicht erst mit M3-17 | M3-09 |
 | P13 | **Heatmap-Zählwürfel:** in M3 nur ein Mess-Spike; gebaut wird später | M3-05 |
 | P14 | **Health-Status kommt mit M5** | M3-00 |
 | P15 | **Interface-Reflexion** nach dem Merge der dritten Quelle, Stufe C, Opus mit Effort hoch | M3-14 |
@@ -113,8 +114,8 @@ Objektspeicher (M4); Bau des Heatmap-Zählwürfels (P13); Health-Status und
 Prüfdatum (M5, P14, D29); Hybrid-Suche (M5); Uvicorn-Worker des `tiler` (M5);
 COG-Header-Cache (Log offen); Umbau auf einen MinIO-Ersatz (M4, nach M3-20);
 Exporte über dem synchronen Deckel in voller Auflösung (M4, Job, P20);
-Zenodo als Metadatenquelle (M5, `adr/0009`); Bau des Zählwürfels (M5,
-Vorschlag); Zugriffsauflösung außerhalb von `api/tiler.py` (M4, K-04); Ratenbegrenzung pro
+Zenodo als Metadatenquelle (M5, `adr/0009`); Zählwürfel (kein Bau auf
+Vorrat, in M5 je Datensatz nur bei gemessenem Bedarf, Log 26.09.2026); Zugriffsauflösung außerhalb von `api/tiler.py` (M4, K-04); Ratenbegrenzung pro
 IP oder Nutzer (D6); Bug-Report Stufe 2 (D9); helle Basiskarte (D10);
 Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 §13, Nutzungsbedingungen); gemergtes Mosaik ganzer Szenen (M4, Job).
@@ -150,12 +151,15 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — | erledigt (#86) |
 | M3-19 | Weltüberblick ohne AOI | A→B | Opus Plan, Sonnet (mittel) | — | erledigt (#83) |
 | M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | offen |
+| M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
+| M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
 
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
 
-1. **Jetzt:** M3-06a und M3-17 (laufen); daneben M3-20 (C).
-2. **Nächster freier B-Platz:** M3-11a, danach M3-11b und M3-11c parallel
+1. **Jetzt:** M3-06a und M3-17 (laufen); daneben M3-20 (C) und M3-21 (A).
+2. **Nächster freier B-Platz:** M3-22, weil fehlerhafte Download-Dateien bei
+   Nutzern ankommen können. Danach M3-11a, dann M3-11b und M3-11c parallel
    (beide hängen nur an M3-11a). Die dritte Quelle hat Vorrang vor den
    Oberflächen-Aufgaben, weil M3-12, M3-13 und M3-14 an ihr hängen.
 3. **Dazwischen, sobald ein Platz frei ist:** M3-07a, M3-06b, dann M3-07b und
@@ -811,6 +815,77 @@ bleibt, bis Otto entscheidet.
 **Abnahme:** `adr/0012-objektspeicher.md` mit Kriterienmatrix, Belegen je
 Aussage, Empfehlung und Fragen an Otto.
 
+### M3-21 — Doku-Abgleich nach Fassung 2
+
+**Ziel:** Log und Plandokumente widersprechen einander nicht mehr (Durchsicht
+vom 26.09.2026).
+**Stufe A.** Nur `docs/`; kein Code.
+**Umfang:**
+- `ENTSCHEIDUNGSLOG.md`, nur die Status-Spalte bestehender Zeilen ändern, Text
+  stehen lassen; die Zeilen am Inhalt finden, nicht an der Zeilennummer:
+  - „Zuschnitt sichtbar: je Gruppe … Deckel 4096 px und 200 MB bleiben“ →
+    „Deckel ersetzt am 2026-09-24 (native Auflösung, 500 MB, P20)“.
+  - „Download-Deckel: 200 MB gelten für die Ausgabe …“ → „Wert ersetzt am
+    2026-09-24 (500 MB, F10a)“.
+  - „M3-09: Vollauflösung zeigt nur den Zuschnitt (F1 (1), F2 eigener Wortlaut,
+    F3)“ → „F3 zurückgenommen am 2026-09-24 (Review-Nachträge zu #84)“.
+  - „M3-18 freigegeben mit F1 (1) …“ → „F5 (keine Gleichzeitigkeitsgrenze) und
+    200-MB-Deckel ersetzt am 2026-09-24 (F10a)“.
+  - „M3-18, Abweichung von F3 (2): … GDAL-interne Maskenband …“ → „ersetzt am
+    2026-09-24 (Bug B: nodata-Tag der Quelle, Maske als eigene Datei)“.
+  - „M3-03 F4 (1): Der SessionStart-Hook setzt `.venv/bin` …“ → „fest, in
+    frischer Session belegt am 2026-09-23“.
+  - „Maske statt nodata (Otto) …“: Status „präzisiert am 2026-09-23“ auf
+    „präzisiert am 2026-09-24“ berichtigen.
+  - Die beiden Zeilen zur Korruption beim COG-Schreiben (ZSTD statt DEFLATE;
+    „Aktualisierung/Verschärfung“) bleiben „Vorschlag“, bis M3-22 sie
+    auflöst; Status ergänzen um „→ M3-22“.
+- `projektplan.md`: Stand und Version; M3-Abschnitt auf M3-00 bis M3-22 und
+  P1–P24; §10 „Welche Nicht-STAC-Quelle“ → entschieden (Copernicus DEM
+  GLO-30 aus dem Bucket, `adr/0009`); beim Objektspeicher MinIO einen Verweis
+  auf P23 und M3-20.
+- `adr/0004`, Stelle „ohne räumlichen Filter höchstens z6“: Nachtrag mit Datum,
+  dass der Weltüberblick seit M3-19 den sichtbaren Ausschnitt als räumlichen
+  Filter schickt (P22) und der z6-Deckel nur noch für Anfragen ganz ohne
+  Bounding Box gilt. Originaltext stehen lassen.
+- `architekturplan.md` Abschnitt Deployment/Topologie („lokal MinIO“): Verweis
+  auf P23 und M3-20.
+
+**Nicht anfassen:** Code, andere Plan-Dateien.
+**Abnahme:** Jeder Punkt im Diff nachvollziehbar; keine bestehende Log-Zeile
+gelöscht oder im Text geändert.
+
+### M3-22 — Gelegentlich unlesbare Download-Dateien
+
+**Ziel:** Kein Download liefert eine beschädigte Datei. Heute schreibt
+`cog_translate` mit Maske gelegentlich eine unlesbare COG (Log 24.09.2026:
+„ZIPDecode: incorrect data check“, bei DEFLATE und ZSTD); die CI von #86
+scheiterte am 24.09.2026 einmal an „TIFF directory is missing required
+ImageLength field“ im Test
+`test_a_slanted_aoi_masks_agree_and_values_are_near_identical`. Die Ursache ist
+offen.
+**Stufe B**, Plan-Schritt mit Opus (hoch).
+**Umfang:**
+- Ursache finden: Schreibweg (`/vsimem/`, `cog_translate`, fensterweises
+  Schreiben), `NUM_THREADS`, GDAL/libtiff-Version 3.12, Wechselwirkung mit
+  `pytest`. Reproduktion mit Wiederholungen (z. B. 500 Läufe), auch in der
+  CI.
+- **Sofortschutz, unabhängig von der Ursache:** Jede erzeugte Datei wird vor
+  dem Ausliefern vollständig gelesen bzw. validiert; ist sie defekt, wird
+  einmal neu geschrieben, sonst `500` mit Request-ID und klarer englischer
+  Meldung. Nie eine defekte Datei an den Nutzer.
+- Kompression entscheiden (Log 24.09.2026, ZSTD statt DEFLATE, „Vorschlag“):
+  Lesbarkeit in verbreiteten Programmen (QGIS, ältere GDAL) mit Beleg.
+- Der betroffene Test wird stabil grün; ein Stresstest läuft in der CI mit
+  begrenzter Laufzeit.
+
+**Im Plan-Schritt vorschlagen:** Reproduktionsweg und Messplan; Form des
+Sofortschutzes und seine Kosten (Zeit, Speicher bei 500 MB); Kompression.
+**Abnahme:** Ursache belegt oder, falls nicht auffindbar, begründet
+eingegrenzt; Sofortschutz mit Tests (defekte Datei → Neuversuch → Erfolg bzw.
+`500`); der Test aus der CI von #86 in 50 Wiederholungen grün; die zwei
+Log-Zeilen zur Korruption auf „fest“ oder „ersetzt“.
+
 ---
 
 ## 5. Abnahme von M3
@@ -831,6 +906,7 @@ Aussage, Empfehlung und Fragen an Otto.
 7. Importregeln grün, kein ausgehender Request außerhalb von `gateway`;
    Pflicht-CI grün auf Python 3.12.
 8. `adr/0012` (Ersatz für MinIO) liegt Otto zur Entscheidung vor.
+9. Kein Download liefert eine beschädigte Datei (M3-22).
 
 ---
 
