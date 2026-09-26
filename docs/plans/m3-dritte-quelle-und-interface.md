@@ -2,7 +2,8 @@
 
 **Status:** Fassung 2 vom 26.09.2026. Erledigt und gemergt: M3-00 bis M3-05,
 M3-08, M3-09, M3-16, M3-18, M3-19, M3-22 sowie der Hotfix zum MinIO-Image. In
-Arbeit: M3-06a und M3-17 (PR #88, im Review), M3-11a (PR #95, im Review).
+Arbeit: M3-06a und M3-17 (PR #88, im Review), M3-11a (PR #95, im Review),
+M3-23 (PR #100, freigegeben und umgesetzt, im Review).
 Fassung 2 schneidet M3-11 nach der
 Annahme von `adr/0009` in
 M3-11a, M3-11b und M3-11c, nimmt die Entscheidungen vom 23. und 24.09.2026 als

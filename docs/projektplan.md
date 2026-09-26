@@ -508,7 +508,7 @@ Ein PR ist fertig, wenn:
 | ESA-only oder Quellenbreite | M3 | **entschieden:** Quellenbreite (`ENTSCHEIDUNGSLOG.md`, 2026-09-23) |
 | Welche Nicht-STAC-Quelle | M3 | **entschieden:** Copernicus DEM GLO-30 direkt aus dem Bucket, zugleich dritter Datensatz (`ENTSCHEIDUNGSLOG.md`, 2026-09-23; `adr/0009`) |
 | Adapter-Interface (ADR) | Ende M3 | aus drei realen Quellen ableiten |
-| MinIO-Ersatz | vor M4 | offen, Spike in `adr/0012` (P23, M3-20) |
+| MinIO-Ersatz | vor M4 | **entschieden:** Garage ersetzt MinIO (`adr/0012`, M3-20, M3-23) |
 | Job-Queue | M4 | Postgres-gestützt, nach Spike |
 | Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | zunächst "selbst bezeugt", nicht im gemeinsamen Cache |
 | Register und Portale für den Harvester | M5 | STAC Index/Atlas zuerst |
