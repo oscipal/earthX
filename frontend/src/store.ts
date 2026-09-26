@@ -16,9 +16,18 @@ import {
 import type { DatasetOption } from './datasets';
 import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
-import { downloadRequestFor, downloadRequestForSelection } from './download';
+import {
+  assetHostsOf,
+  decideDownloadOutcome,
+  decideDownloadOutcomeForLayer,
+  downloadRequestFor,
+  downloadRequestForSelection,
+  isCogFormat,
+  originalFileLinks,
+  type OriginalFileLink,
+} from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
-import { buildGroups, displayGroupBy, groupIndexOfItem, MissingProperty } from './grouping';
+import { buildGroups, displayGroupBy, groupIndexOfItem, groupItemIdsFor, MissingProperty } from './grouping';
 import type { LayerOverlay, LayerRestore, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
@@ -270,6 +279,17 @@ interface AppState {
   // Native (`1`) every time the dialog opens — never chosen automatically,
   // and never remembered from a previous download.
   downloadResolution: ResolutionFactor;
+  // The outcome the open dialog follows (M3-17 plan §4) — `null` while
+  // nothing is open, or while `openDownloadDialog` is still fetching a
+  // layer's items to decide it (the crop and disabled outcomes never need
+  // that fetch and are known immediately).
+  downloadOutcome: 'crop' | 'originals' | 'disabled' | null;
+  // The clickable original-file links for the open dialog, once
+  // `downloadOutcome === 'originals'` is known and, for a pinned layer, its
+  // items have been fetched (`download.ts::originalFileLinks`). `null` while
+  // still loading; an empty list is a real, valid answer ("no asset on this
+  // dataset's own registered hosts").
+  downloadOriginalLinks: OriginalFileLink[] | null;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -332,7 +352,7 @@ interface AppState {
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
-  openDownloadDialog: (id: string) => void;
+  openDownloadDialog: (id: string) => Promise<void>;
   openDownloadForSelection: () => void;
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
@@ -396,6 +416,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadDialogLayerId: null,
   downloadSelection: false,
   downloadResolution: 1,
+  downloadOutcome: null,
+  downloadOriginalLinks: null,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -568,6 +590,10 @@ export const useAppStore = create<AppState>((set, get) => ({
               activeGroupIndex: s.activeGroupIndex,
               selectedIds: itemIds,
               itemIds,
+              // One group already (this is `addCurrentToLayers`'s own
+              // per-group split, PR #84 F5) — a single-element list, not
+              // `groupItemIdsFor`, which would just rediscover the same split.
+              groupItemIds: [itemIds],
               aoi,
               cropToAoi: true,
               datasetId: s.datasetId,
@@ -601,6 +627,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeGroupIndex: s.activeGroupIndex,
           selectedIds: [...s.selectedIds],
           itemIds,
+          groupItemIds: groupItemIdsFor(itemIds, s.groups),
           aoi: s.aoi,
           cropToAoi: false,
           datasetId: s.datasetId,
@@ -654,6 +681,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeGroupIndex: s.activeGroupIndex,
         selectedIds: [...s.selectedIds],
         itemIds,
+        groupItemIds: groupItemIdsFor(itemIds, s.groups),
         aoi: s.aoi,
         cropToAoi: false,
         datasetId: s.datasetId,
@@ -694,54 +722,138 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }),
 
-  openDownloadDialog: (id) =>
-    set({ downloadDialogLayerId: id, downloadSelection: false, downloadResolution: 1, error: null }),
-  // Download the original data of the current selection (V-4) — the AOI
-  // crop route, not the quicklook image — without first "View full
-  // resolution" or "Add to layers". Validated the same way `confirmDownload`
-  // will re-check right before the request: an AOI, a viewable dataset with a
-  // default asset, and at least one picked (or the active time step's) scene.
+  // Open the dialog for a pinned layer (M2-07d). The crop and disabled
+  // outcomes (M3-17 plan §4) are known synchronously from the layer's own
+  // `restore`; only the originals outcome needs the layer's STAC items
+  // fetched first (`restore` keeps tile info, not asset `href`s) — done here,
+  // once, rather than inside `download.ts`, which stays a pure module with no
+  // network calls of its own.
+  openDownloadDialog: async (id) => {
+    set({
+      downloadDialogLayerId: id,
+      downloadSelection: false,
+      downloadResolution: 1,
+      downloadOutcome: null,
+      downloadOriginalLinks: null,
+      error: null,
+    });
+    const s = get();
+    const layer = s.layers.find((l) => l.id === id);
+    if (!layer) return;
+    const outcome = decideDownloadOutcomeForLayer(layer, s.datasets);
+    set({ downloadOutcome: outcome });
+    if (outcome !== 'originals') return;
+    const datasetId = layer.restore.datasetId;
+    const dataset = s.datasets.find((d) => d.id === datasetId);
+    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    if (!datasetId || !dataset || !asset) {
+      set({ downloadOriginalLinks: [] });
+      return;
+    }
+    const hosts = assetHostsOf(dataset);
+    try {
+      const fetched = await Promise.all(layer.restore.itemIds.map((itemId) => api.fetchItem(datasetId, itemId)));
+      const items = fetched.filter((it): it is StacItem => it !== undefined);
+      const groupItemIds = layer.restore.groupItemIds.length > 0 ? layer.restore.groupItemIds : [layer.restore.itemIds];
+      const groups = groupItemIds.map((ids, i) => ({
+        label: `Group ${i + 1}`,
+        items: items.filter((it) => ids.includes(it.id)),
+      }));
+      // Still the dialog open for this same layer? The user may have closed
+      // it, or opened another one, while the fetch was in flight.
+      if (get().downloadDialogLayerId === id) {
+        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts) });
+      }
+    } catch (e) {
+      if (get().downloadDialogLayerId === id) {
+        set({ error: `Could not load the original files: ${(e as Error).message}`, downloadOriginalLinks: [] });
+      }
+    }
+  },
+  // Open the dialog for the current selection (V-4/M3-17) — the AOI crop or
+  // the original files, without first "View full resolution" or "Add to
+  // layers". Items are already loaded (`store.items`), so the originals
+  // outcome needs no fetch here, unlike a pinned layer's.
   openDownloadForSelection: () => {
     const s = get();
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    const req = downloadRequestForSelection(dataset, selectionItemsFrom(s), s.aoi);
-    if (!req) {
+    const outcome = decideDownloadOutcome({ cropToAoi: null, hasAoi: !!s.aoi, isCog: isCogFormat(dataset) });
+    if (outcome === 'disabled') {
+      set({ error: 'Draw an AOI to download this dataset.' });
+      return;
+    }
+    const items = selectionItemsFrom(s);
+    if (items.length === 0) {
+      set({ error: 'Nothing to download — pick a time step or select scenes first.' });
+      return;
+    }
+    if (outcome === 'crop') {
+      const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi);
+      if (!req) {
+        set({ error: 'Nothing to download — pick a time step or select scenes first.' });
+        return;
+      }
       set({
-        error: !s.aoi
-          ? 'Draw or search an area of interest first.'
-          : 'Nothing to download — pick a time step or select scenes first.',
+        downloadDialogLayerId: null,
+        downloadSelection: true,
+        downloadResolution: 1,
+        downloadOutcome: 'crop',
+        downloadOriginalLinks: null,
+        error: null,
       });
       return;
     }
-    set({ downloadDialogLayerId: null, downloadSelection: true, downloadResolution: 1, error: null });
+    // 'originals': the dataset's default asset, straight from the source.
+    const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
+    const groupItemIds = groupItemIdsFor(
+      items.map((it) => it.id),
+      s.groups,
+    );
+    const groups = groupItemIds.map((ids, i) => ({
+      label: s.groups[groupIndexOfItem(s.groups, ids[0])]?.label ?? `Group ${i + 1}`,
+      items: items.filter((it) => ids.includes(it.id)),
+    }));
+    const links = asset ? originalFileLinks(groups, [asset], assetHostsOf(dataset)) : [];
+    set({
+      downloadDialogLayerId: null,
+      downloadSelection: true,
+      downloadResolution: 1,
+      downloadOutcome: 'originals',
+      downloadOriginalLinks: links,
+      error: null,
+    });
   },
-  closeDownloadDialog: () => set({ downloadDialogLayerId: null, downloadSelection: false }),
+  closeDownloadDialog: () =>
+    set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null, downloadOriginalLinks: null }),
   setDownloadResolution: (factor) => set({ downloadResolution: factor }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
   // `POST /collections/{dataset}/download`, M2-07d; V-4 added the selection
-  // case). `downloadRequestFor`/`downloadRequestForSelection` already refused
-  // anything incomplete, so a missing request here only means the layer was
-  // removed, or the selection/AOI changed, while the dialog was open.
+  // case). Only ever called for the 'crop' outcome — the 'originals' outcome
+  // has no single request to confirm, just the links the dialog already
+  // shows (M3-17 plan §6, F2 option 1). `downloadRequestFor`/
+  // `downloadRequestForSelection` already refused anything incomplete, so a
+  // missing request here only means the layer was removed, or the
+  // selection/AOI changed, while the dialog was open.
   confirmDownload: async () => {
     const s = get();
     const layer = s.layers.find((l) => l.id === s.downloadDialogLayerId);
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const req = s.downloadSelection
-      ? downloadRequestForSelection(dataset, selectionItemsFrom(s), s.aoi)
+      ? downloadRequestForSelection(dataset, groupItemIdsFor(selectionItemsFrom(s).map((it) => it.id), s.groups), s.aoi)
       : layer && downloadRequestFor(layer, s.datasets);
     const name = s.downloadSelection
       ? `${dataset?.title ?? s.datasetId ?? '?'} · ${s.groups[s.activeGroupIndex]?.label ?? ''}`
       : (layer?.name ?? '');
     if (!req) {
-      set({ downloadDialogLayerId: null, downloadSelection: false });
+      set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null });
       return;
     }
     set({ downloading: true, error: null });
     try {
       const blob = await api.downloadCrop({
         datasetId: req.datasetId,
-        items: req.items,
+        groups: req.groups,
         assets: req.assets,
         aoi: req.aoi,
         language: 'en',
@@ -753,7 +865,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       a.download = `${req.datasetId}-crop.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      set({ downloadDialogLayerId: null, downloadSelection: false, notice: `Downloaded "${name}".` });
+      set({
+        downloadDialogLayerId: null,
+        downloadSelection: false,
+        downloadOutcome: null,
+        notice: `Downloaded "${name}".`,
+      });
     } catch (e) {
       set({ error: `Download failed: ${(e as Error).message}` });
     } finally {
