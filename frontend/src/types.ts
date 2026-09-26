@@ -42,6 +42,22 @@ export interface CollectionAccess {
   cors: boolean | null;
 }
 
+// The reader dispatch format (`DataFormat`, architekturplan.md 6.2), read only
+// to tell a whole scene the viewer may link straight to the source (a COG, one
+// file) from one it may not (a Zarr store has no single file, M3-17) —
+// without a dataset-specific branch anywhere. A value this union does not
+// name is treated like `'zarr'` (download.ts): unknown is never assumed to be
+// a linkable single file.
+export type DatasetFormat = 'cog' | 'zarr' | 'legacy';
+
+// `earthx:source` (architekturplan.md 5.1). `asset_hosts` is what M3-17's
+// original-file download checks a `href` against before ever showing it as a
+// link — the same hosts the tile path already trusts (D12), read here for the
+// first time by the frontend.
+export interface EarthxSource {
+  asset_hosts: string[];
+}
+
 export interface EarthxViewer {
   group_by: string[];
   // The tile levels this dataset is released for (M2-10, registry `ViewerInfo`).
@@ -100,6 +116,8 @@ export interface Collection {
   'earthx:maturity'?: Maturity | string | null;
   'earthx:default_render'?: EarthxDefaultRender | null;
   'earthx:license_flags'?: LicenseFlags | null;
+  'earthx:format'?: DatasetFormat | string | null;
+  'earthx:source'?: EarthxSource | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).

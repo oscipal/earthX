@@ -109,6 +109,26 @@ export function groupIndexOfItem(groups: TimeStepGroup[], itemId: string): numbe
   return groups.findIndex((g) => g.items.some((it) => it.id === itemId));
 }
 
+// `itemIds`, split back into the groups they came from (M3-17: "download
+// folgt der Ansicht" needs one merged file per group, P19) — exactly the
+// split `store.ts::addCurrentToLayers` (PR #84, F5) already draws for a
+// pinned layer, reused here rather than a second, download-specific
+// grouping. Buckets keep the order their first member was encountered in
+// `itemIds`; an id `groupIndexOfItem` cannot place in any group (should not
+// happen for a live search result, but never assumed) shares one bucket with
+// every other such id rather than silently joining a group it does not
+// belong to.
+export function groupItemIdsFor(itemIds: readonly string[], groups: readonly TimeStepGroup[]): string[][] {
+  const byGroupIndex = new Map<number, string[]>();
+  for (const itemId of itemIds) {
+    const idx = groupIndexOfItem(groups as TimeStepGroup[], itemId);
+    const bucket = byGroupIndex.get(idx);
+    if (bucket) bucket.push(itemId);
+    else byGroupIndex.set(idx, [itemId]);
+  }
+  return [...byGroupIndex.values()];
+}
+
 // What the map should show: the expanded-in-the-list group's items, plus any
 // selected item that belongs to a different group. `ResultsPanel` only ever
 // expands one group at a time, and collapsing it — by switching to another

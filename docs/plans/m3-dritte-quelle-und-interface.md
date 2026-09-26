@@ -2,7 +2,8 @@
 
 **Status:** Fassung 2 vom 26.09.2026. Erledigt und gemergt: M3-00 bis M3-05,
 M3-08, M3-09, M3-16, M3-18, M3-19 sowie der Hotfix zum MinIO-Image. In Arbeit:
-M3-06a und M3-17. Fassung 2 schneidet M3-11 nach der Annahme von `adr/0009` in
+M3-06a und M3-17 (PR #88, im Review). Fassung 2 schneidet M3-11 nach der
+Annahme von `adr/0009` in
 M3-11a, M3-11b und M3-11c, nimmt die Entscheidungen vom 23. und 24.09.2026 als
 P20 bis P23 auf, hält den Schnitt als P24 fest, ergänzt den Spike M3-20 (Ersatz für MinIO), den Doku-Abgleich M3-21 und
 die Fehlersuche M3-22 (gelegentlich unlesbare Download-Dateien) und ordnet die
@@ -157,7 +158,8 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
 
-1. **Jetzt:** M3-06a und M3-17 (laufen); daneben M3-20 (C) und M3-21 (A).
+1. **Jetzt:** M3-06a und M3-17 (laufen, M3-17 im Review); daneben M3-20 (C)
+   und M3-21 (A).
 2. **Nächster freier B-Platz:** M3-22, weil fehlerhafte Download-Dateien bei
    Nutzern ankommen können. Danach M3-11a, dann M3-11b und M3-11c parallel
    (beide hängen nur an M3-11a). Die dritte Quelle hat Vorrang vor den
@@ -712,11 +714,18 @@ keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 
 ### M3-17 — Download folgt der Ansicht
 
-**Stand:** in Arbeit. Die Abhängigkeit von M3-12 entfällt (Otto, 23.09.2026):
-Die Gruppierung je Überflug hat M3-09 schon gebaut; sie wird wiederverwendet,
-ohne neue datensatzspezifische Stelle. Braucht die Aufgabe eine Angabe, ob ein
-Datensatz COG oder Zarr ist, schlägt der Plan-Schritt dafür ein Registry-Feld
-vor (B10); M3-12 übernimmt es dann.
+**Stand:** in Arbeit, PR #88 im Review. Freigegeben mit allen Fragen (F1–F6)
+nach Empfehlung (Otto, 26.09.2026); Details, Optionen und die Umsetzung
+stehen in `plans/m3-17-download-folgt-ansicht.md` §9/§10. Die Abhängigkeit
+von M3-12 entfiel wie unten vermerkt (Otto, 23.09.2026): Die Gruppierung je
+Überflug hat M3-09 schon gebaut, `download.ts`/`api/tiler.py` verwenden sie
+wieder (`groups: string[][]`/`list[list[str]]`), keine neue
+datensatzspezifische Stelle. Die Angabe, ob ein Datensatz COG oder Zarr ist,
+kam als neues Feld `earthx:format` (Abbildung des vorhandenen
+`DatasetConfig.format`, kein neues Registry-Feld nötig) — unabhängig von
+M3-12, das den festen Gruppierungs-Eigenschaftsnamen weiterhin selbst in die
+Registry räumt. **Status erst nach dem Merge auf „erledigt“ setzen** (Otto,
+Review von PR #88).
 
 **Ziel:** Der Download liefert immer das, was die Karte zeigt (P19).
 **Stufe B.**

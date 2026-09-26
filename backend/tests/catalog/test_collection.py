@@ -1,7 +1,8 @@
 """The mapping onto a STAC Collection.
 
-Two things matter: the result is a valid STAC Collection, and it carries all ten
-``earthx:`` fields of architekturplan.md 5.1 even where they are still empty.
+Two things matter: the result is a valid STAC Collection, and it carries all
+eleven ``earthx:`` fields of architekturplan.md 5.1 even where they are still
+empty.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ EARTHX_FIELDS = (
     "earthx:viewer",
     "earthx:source",
     "earthx:maturity",
+    "earthx:format",
 )
 
 
@@ -83,6 +85,14 @@ def test_maturity_is_the_registry_entrys_own_value(collection: dict) -> None:
     """adr/0007 §12.11 point 14: a mapping, not a guess — whatever the entry
     decided travels through unchanged."""
     assert collection["earthx:maturity"] == "stable"
+
+
+def test_format_is_the_registry_entrys_own_value(collection: dict) -> None:
+    """M3-17: the frontend tells a COG scene (linkable straight from the source)
+    from a Zarr store (no single file to link) by this field, never by a
+    dataset-specific branch."""
+    assert collection["earthx:format"] == "cog"
+    assert to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:format"] == "zarr"
 
 
 def test_the_temporal_extent_is_the_one_the_source_reports(collection: dict) -> None:
