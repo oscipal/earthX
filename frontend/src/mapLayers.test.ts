@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { buildTileUrl, syncFocusRaster, syncHighlight, syncMosaic, syncSelectionHighlight } from './mapLayers';
+import {
+  buildTileUrl,
+  setCoverageDisplay,
+  syncFocusRaster,
+  syncHighlight,
+  syncMosaic,
+  syncSelectionHighlight,
+} from './mapLayers';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
@@ -75,12 +82,30 @@ function fakeMap() {
   return { map, sources, layers, data, removedSources, removedLayers };
 }
 
+const CAPABILITIES = {
+  roi: true,
+  time_range: true,
+  band_math: true,
+  interpolation: true,
+  ml_processing: true,
+  quad_pol: false,
+  single_coverage_product: false,
+};
+
 function zarrLikeDataset() {
   const [dataset] = datasetsFrom([
     {
       id: 'sentinel-2-l2a-zarr3',
       title: 'Sentinel-2 L2A (Zarr3)',
-      'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14 },
+      'earthx:capabilities': CAPABILITIES,
+      'earthx:viewer': {
+        group_by: ['datetime'],
+        min_zoom: 8,
+        max_zoom: 14,
+        browse: 'preview_tiles',
+        quicklook_nodata_max: null,
+        results_group_by: ['datetime'],
+      },
       'earthx:default_render': {
         title: 'True colour',
         assets: ['SR_10m:b04,b03,b02'],
@@ -202,6 +227,8 @@ describe('syncFocusRaster', () => {
       downloaded: { [scene.id]: info() },
       render: { rescale: '0,3000' },
       showDownloaded: true,
+      items: [scene],
+      dataset: null,
     });
     const [source] = sources.filter((s) => s.spec.type === 'raster');
     expect(source.spec.bounds).toEqual(info().bounds);
@@ -211,7 +238,13 @@ describe('syncFocusRaster', () => {
 
   it('renders nothing while the image is hidden', () => {
     const { map, sources } = fakeMap();
-    syncFocusRaster(map as never, { downloaded: { [scene.id]: info() }, render: {}, showDownloaded: false });
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: false,
+      items: [scene],
+      dataset: null,
+    });
     expect(sources).toHaveLength(0);
   });
 
@@ -230,6 +263,8 @@ describe('syncFocusRaster', () => {
       },
       render: {},
       showDownloaded: true,
+      items: [],
+      dataset: null,
     });
     const rasterSources = sources.filter((s) => s.spec.type === 'raster');
     expect(rasterSources).toHaveLength(2);
@@ -251,6 +286,8 @@ describe('syncFocusRaster', () => {
         coordinates: [[[10.987654, 47.123456], [11, 47], [11, 48], [10, 48], [10.987654, 47.123456]]],
       },
       cropToAoi: true,
+      items: [scene],
+      dataset: null,
     });
     const [source] = sources.filter((s) => s.spec.type === 'raster');
     const url = (source.spec.tiles as string[])[0];
@@ -267,6 +304,8 @@ describe('syncFocusRaster', () => {
       showDownloaded: true,
       aoi: { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]] },
       cropToAoi: false,
+      items: [scene],
+      dataset: null,
     });
     const [source] = sources.filter((s) => s.spec.type === 'raster');
     expect((source.spec.tiles as string[])[0].startsWith('earthx-clip://')).toBe(false);
@@ -287,6 +326,8 @@ describe('syncSelectionHighlight: no layer churn', () => {
       downloaded: { [scene.id]: info() },
       render: {},
       showDownloaded: true,
+      items: [scene],
+      dataset: null,
     });
     const sourcesAfterRaster = sources.length;
     const layersAfterRaster = layers.length;
@@ -373,5 +414,43 @@ describe('syncHighlight', () => {
     });
     const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
     expect(fc.features).toHaveLength(1);
+  });
+});
+
+// M3-12, F-07: a one-off product's coverage answer draws its extent, not a
+// density (ENTSCHEIDUNGEN §2) — only one of the three coverage sources ever
+// carries data at once.
+describe('setCoverageDisplay: area mode', () => {
+  const AREA: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+  };
+
+  it('publishes the area geometry on its own source', () => {
+    const { map, data } = fakeMap();
+    setCoverageDisplay(map as never, { mode: 'area', cells: [], maxCount: 0, footprints: null, area: AREA });
+    const fc = data['coverage-area-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].geometry).toEqual(AREA);
+  });
+
+  it('clears the area source in every other mode', () => {
+    const { map, data } = fakeMap();
+    setCoverageDisplay(map as never, { mode: 'density', cells: [], maxCount: 0, footprints: null, area: AREA });
+    const fc = data['coverage-area-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(0);
+  });
+
+  it('clears the density and footprints sources while showing an area', () => {
+    const { map, data } = fakeMap();
+    setCoverageDisplay(map as never, {
+      mode: 'area',
+      cells: [{ k: '4/1/1', n: 3 }],
+      maxCount: 3,
+      footprints: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: AREA }] },
+      area: AREA,
+    });
+    expect((data['coverage-src'] as GeoJSON.FeatureCollection).features).toHaveLength(0);
+    expect((data['coverage-footprints-src'] as GeoJSON.FeatureCollection).features).toHaveLength(0);
   });
 });

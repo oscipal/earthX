@@ -8,9 +8,9 @@ import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
-import { quicklookPlan } from './datasets';
+import { quicklookAsset, quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
-import { asFeatureCollection, footprintOf, quicklookCoords } from './geoUtils';
+import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { MapLayer } from './layers';
@@ -20,6 +20,7 @@ const AOI_SRC = 'aoi-src';
 const SEL_SRC = 'mosaicsel-src'; // highlighted (selected-for-download) footprints
 const COVERAGE_SRC = 'coverage-src'; // the density grid (M2-07c)
 const COVERAGE_FOOTPRINTS_SRC = 'coverage-footprints-src'; // real footprints once footprints_advised
+const COVERAGE_AREA_SRC = 'coverage-area-src'; // a one-off product's extent (M3-12, F-07)
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const MAX_MOSAIC_LAYERS = 40;
@@ -34,18 +35,28 @@ let syncGen = 0;
 // Bumped on each syncLayers (the layer manager) for the same reason.
 let layerGen = 0;
 const MAX_LAYER_OVERLAYS = 200;
-// Cache of processed (black-nodata → transparent) quicklook data URLs, keyed by
-// the (same-origin) image URL so the mosaic and the layer renderer share it.
+// Cache of processed quicklook data URLs, keyed by URL + the parameters that
+// change what gets drawn (freistellung threshold, AOI clip) so the same
+// source image loaded plain (browse mode, a pinned layer) and clipped to an
+// AOI (the focus-mode underlay below `min_zoom`, O5) never share an entry.
 const qlDataUrlCache = new Map<string, string>();
 
-// Near-black luminance threshold below which a pixel is treated as nodata and
-// made fully transparent.
-const NODATA_THRESHOLD = 16;
-
-// Redraw a quicklook JPEG into a canvas, turning its near-black nodata padding
-// transparent so only the acquisition swath shows over the basemap. Runs on the
-// same-origin proxied image, so the canvas is not tainted.
-function keyBlackToTransparent(img: HTMLImageElement): string {
+// Redraw a quicklook onto a canvas: an AOI clip if `clipRings` names one
+// (`Path2D`, `evenodd` — the same pattern `aoiClip.ts::maskedBitmap` uses to
+// clip a raster tile, on a different canvas API here because this one also
+// keys nodata afterwards) and, where the registry names a freistellung
+// threshold (M3-12, `earthx:viewer.quicklook_nodata_max`), any pixel at or
+// below it in every band made fully transparent — so only the acquisition
+// swath shows over the basemap, and outside an AOI clip nothing shows at all.
+// Runs on the image loaded straight from the asset host (D14, not a
+// same-origin proxy) with `crossOrigin = 'anonymous'` (`loadProcessed`
+// below), so the canvas is not tainted (M3-02 K-23: an earlier version of
+// this comment still described the pre-D14 proxy).
+function processQuicklook(
+  img: HTMLImageElement,
+  nodataMax: number | null,
+  clipRings: readonly (readonly [number, number][])[] | null,
+): string {
   const w = img.naturalWidth;
   const h = img.naturalHeight;
   const canvas = document.createElement('canvas');
@@ -53,22 +64,50 @@ function keyBlackToTransparent(img: HTMLImageElement): string {
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) return img.src;
-  ctx.drawImage(img, 0, 0);
-  const data = ctx.getImageData(0, 0, w, h);
-  const px = data.data;
-  for (let p = 0; p < px.length; p += 4) {
-    if (px[p] <= NODATA_THRESHOLD && px[p + 1] <= NODATA_THRESHOLD && px[p + 2] <= NODATA_THRESHOLD) {
-      px[p + 3] = 0;
+  const rings = clipRings?.filter((ring) => ring.length >= 3) ?? [];
+  if (rings.length > 0) {
+    const path = new Path2D();
+    for (const ring of rings) {
+      path.moveTo(ring[0][0], ring[0][1]);
+      for (const [px, py] of ring.slice(1)) path.lineTo(px, py);
+      path.closePath();
     }
+    ctx.save();
+    ctx.clip(path, 'evenodd');
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, 0, 0);
   }
-  ctx.putImageData(data, 0, 0);
+  if (nodataMax !== null) {
+    const data = ctx.getImageData(0, 0, w, h);
+    const px = data.data;
+    for (let p = 0; p < px.length; p += 4) {
+      if (px[p] <= nodataMax && px[p + 1] <= nodataMax && px[p + 2] <= nodataMax) {
+        px[p + 3] = 0;
+      }
+    }
+    ctx.putImageData(data, 0, 0);
+  }
   return canvas.toDataURL('image/png');
 }
 
-// Load a quicklook, key its black nodata transparent, and hand back the data
-// URL (cached).
-function loadTransparent(url: string, cb: (dataUrl: string) => void): void {
-  const cached = qlDataUrlCache.get(url);
+function qlCacheKey(url: string, nodataMax: number | null, clipRings: unknown): string {
+  return clipRings ? `${url}\u0000${nodataMax}\u0000${JSON.stringify(clipRings)}` : `${url}\u0000${nodataMax}`;
+}
+
+// Load a quicklook, process it (see `processQuicklook`), and hand back the
+// data URL (cached). `nodataMax` and `clipRings` come from the registry and
+// the caller's own AOI respectively — `mapLayers.ts` decides nothing about
+// which dataset gets which threshold, it only applies what it is given.
+function loadProcessed(
+  url: string,
+  nodataMax: number | null,
+  clipRings: readonly (readonly [number, number][])[] | null,
+  cb: (dataUrl: string) => void,
+): void {
+  const key = qlCacheKey(url, nodataMax, clipRings);
+  const cached = qlDataUrlCache.get(key);
   if (cached) {
     cb(cached);
     return;
@@ -83,8 +122,8 @@ function loadTransparent(url: string, cb: (dataUrl: string) => void): void {
   // instead (plan §9).
   img.crossOrigin = 'anonymous';
   img.onload = () => {
-    const dataUrl = keyBlackToTransparent(img);
-    qlDataUrlCache.set(url, dataUrl);
+    const dataUrl = processQuicklook(img, nodataMax, clipRings);
+    qlDataUrlCache.set(key, dataUrl);
     cb(dataUrl);
   };
   img.onerror = () => {
@@ -99,12 +138,25 @@ function placeImage(
   lyrId: string,
   dataUrl: string,
   coords: Coords4,
-  opacity: number,
+  // A plain opacity, or a MapLibre zoom expression (O5, `addQuicklookUnderlay`
+  // below needs the image to fade out exactly where the raster tiles above it
+  // take over — an `ImageSource` has no `minzoom`/`maxzoom` of its own the way
+  // a raster tile source does, so the boundary lives in `raster-opacity`
+  // instead). `unknown` rather than maplibre-gl's own expression type: this
+  // module stays loadable without the real library (see the import comment
+  // in `aoiClip.ts` for why), and `paint` itself accepts one loosely already
+  // (`coverage-heat`'s `fill-color` above).
+  opacity: number | unknown[],
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, { type: 'image', url: dataUrl, coordinates: coords });
   map.addLayer(
-    { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
+    {
+      id: lyrId,
+      type: 'raster',
+      source: srcId,
+      paint: { 'raster-opacity': opacity as never, 'raster-fade-duration': 0 },
+    },
     beforeAoi(map),
   );
 }
@@ -212,6 +264,27 @@ export function ensureBaseLayers(map: MapLibreMap): void {
       paint: { 'line-color': '#a6d96a', 'line-width': 1.4, 'line-opacity': 0.85 },
     });
   }
+  if (!map.getSource(COVERAGE_AREA_SRC)) {
+    map.addSource(COVERAGE_AREA_SRC, { type: 'geojson', data: EMPTY_FC });
+    // A one-off product (ENTSCHEIDUNGEN §2 "bei Einmal-Produkten durch die
+    // Ausdehnung allein"): one flat fill, no density legend — the density
+    // heatmap's whole point (how many acquisitions per cell) does not apply
+    // to a single elevation model or map with exactly one coverage.
+    map.addLayer({
+      id: 'coverage-area-fill',
+      type: 'fill',
+      source: COVERAGE_AREA_SRC,
+      layout: { visibility: 'none' },
+      paint: { 'fill-color': '#a6d96a', 'fill-opacity': 0.18 },
+    });
+    map.addLayer({
+      id: 'coverage-area-line',
+      type: 'line',
+      source: COVERAGE_AREA_SRC,
+      layout: { visibility: 'none' },
+      paint: { 'line-color': '#a6d96a', 'line-width': 1.4, 'line-opacity': 0.85 },
+    });
+  }
   if (!map.getSource(SEL_SRC)) {
     map.addSource(SEL_SRC, { type: 'geojson', data: EMPTY_FC });
     map.addLayer({
@@ -223,21 +296,26 @@ export function ensureBaseLayers(map: MapLibreMap): void {
   }
 }
 
-export type CoverageDisplayMode = 'off' | 'density' | 'footprints';
+export type CoverageDisplayMode = 'off' | 'density' | 'footprints' | 'area';
 
 export interface CoverageDisplay {
   mode: CoverageDisplayMode;
   cells: CoverageCell[];
   maxCount: number;
   footprints: GeoJSON.FeatureCollection | null;
+  // M3-12, F-07: the geometry of a one-off product's answer
+  // (`coverage.ts::areaGeometry`) — its own footprint union, or its plain
+  // extent where there is no union to draw.
+  area: GeoJSON.Geometry | null;
 }
 
-// Reconciles both coverage layers with the current mode — only one of the
-// two ever carries data, so a stray re-render can't show density and
-// footprints at once (`store.ts` picks the mode via `coverage.ts::showFootprints`).
+// Reconciles all three coverage layers with the current mode — only one of
+// them ever carries data, so a stray re-render can't show two at once
+// (`store.ts` picks the mode via `coverage.ts::showFootprints`/`isAreaAnswer`).
 export function setCoverageDisplay(map: MapLibreMap, display: CoverageDisplay): void {
   const density = display.mode === 'density';
   const footprints = display.mode === 'footprints';
+  const area = display.mode === 'area';
   setData(map, COVERAGE_SRC, density ? cellsToFeatureCollection(display.cells) : EMPTY_FC);
   if (density && map.getLayer('coverage-heat')) {
     map.setPaintProperty('coverage-heat', 'fill-color', coverageFillColorExpression(display.maxCount));
@@ -245,6 +323,9 @@ export function setCoverageDisplay(map: MapLibreMap, display: CoverageDisplay): 
   setVisibility(map, 'coverage-heat', density);
   setData(map, COVERAGE_FOOTPRINTS_SRC, footprints ? (display.footprints ?? EMPTY_FC) : EMPTY_FC);
   setVisibility(map, 'coverage-footprints-line', footprints);
+  setData(map, COVERAGE_AREA_SRC, area ? asFeatureCollection(display.area) : EMPTY_FC);
+  setVisibility(map, 'coverage-area-fill', area);
+  setVisibility(map, 'coverage-area-line', area);
 }
 
 function setVisibility(map: MapLibreMap, layerId: string, visible: boolean): void {
@@ -328,10 +409,46 @@ function addPreview(
   if (!coords) return;
   const srcId = `m-img-src-${i}`;
   const lyrId = `m-img-lyr-${i}`;
-  loadTransparent(plan.href, (dataUrl) => {
+  const nodataMax = dataset.viewable ? dataset.quicklookNodataMax : null;
+  loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this group
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
+      dynSourceIds.push(srcId);
+      dynLayerIds.push(lyrId);
+    } catch {
+      /* map/style went away while loading */
+    }
+  });
+}
+
+// Below `min_zoom`, for a dataset with a browsable quicklook (M3-12, O5): the
+// quicklook stands in for the raster tiles the map cannot show yet, cropped
+// to the AOI the same way the tiles above it are, instead of an empty area
+// while the AOI is still on screen. The raster tiles (`addTiles`, placed
+// right after this for the same scene) fade in at `dataset.zoom.min` via a
+// zoom-stepped `raster-opacity` — an image source has no `minzoom`/`maxzoom`
+// of its own the way a raster tile source does, so the boundary lives there
+// instead. Reuses the `m-img-*` id range the browse preview uses: focus mode
+// and browse mode never sync at once, and `clearDynamicMosaic` already
+// clears both ranges up front regardless of which mode is running.
+function addQuicklookUnderlay(
+  map: MapLibreMap,
+  item: StacItem,
+  dataset: DatasetOption & { viewable: true },
+  i: number,
+  clip: GeoJSON.Geometry | null,
+): void {
+  const asset = quicklookAsset(item);
+  if (!asset?.href) return;
+  const coords = quicklookCoords(item);
+  if (!coords) return;
+  const clipRings = clip ? quicklookAoiPixelRings(item, clip) : null;
+  const srcId = `m-img-src-${i}`;
+  const lyrId = `m-img-lyr-${i}`;
+  loadProcessed(asset.href, dataset.quicklookNodataMax, clipRings, (dataUrl) => {
+    try {
+      placeImage(map, srcId, lyrId, dataUrl, coords, ['step', ['zoom'], 1, dataset.zoom.min, 0]);
       dynSourceIds.push(srcId);
       dynLayerIds.push(lyrId);
     } catch {
@@ -381,7 +498,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
       if (ov.kind === 'raster') {
         placeRaster(map, srcId, lyrId, ov.tileUrl, ov.bounds, layer.opacity, ov);
       } else {
-        loadTransparent(ov.url, (dataUrl) => {
+        loadProcessed(ov.url, ov.nodataMax, null, (dataUrl) => {
           if (gen !== layerGen) return;
           try {
             placeImage(map, srcId, lyrId, dataUrl, ov.coords, layer.opacity);
@@ -430,19 +547,29 @@ export interface MosaicState {
 // click on a full-resolution image reloads it".
 export function syncFocusRaster(
   map: MapLibreMap,
-  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi'>,
+  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset'>,
 ): void {
   clearDynamicMosaic(map);
   if (!s.showDownloaded) return;
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
   const entries = Object.entries(s.downloaded).slice(0, MAX_MOSAIC_LAYERS);
+  const dataset = s.dataset;
   // Drawn in reverse selection order, so the *first*-selected scene ends up
   // topmost — the same "first valid pixel wins" rule the download's mosaic
   // uses (rio_tiler's `FirstMethod`, `adr/0006` §3.5), so overlapping scenes
   // agree between the view and the downloaded file. This used to draw in
   // selection order, putting the *last*-selected scene on top instead
   // (M3-09 finding).
-  [...entries].reverse().forEach(([, info], i) => addTiles(map, info, i, s.render, clip));
+  [...entries].reverse().forEach(([itemId, info], i) => {
+    // O5: the underlay goes down first, so `addTiles` right after it ends up
+    // on top (`beforeAoi` puts each newly added layer just below the AOI
+    // layer, so whichever is added later of the two is the more on top).
+    if (dataset?.viewable && dataset.browse === 'quicklook') {
+      const item = s.items.find((it) => it.id === itemId);
+      if (item) addQuicklookUnderlay(map, item, dataset, i, clip);
+    }
+    addTiles(map, info, i, s.render, clip);
+  });
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time

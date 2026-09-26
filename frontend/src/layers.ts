@@ -6,7 +6,12 @@ import type { Coords4 } from './geoUtils';
 import type { AppliedRender, Bbox, DownloadedInfo } from './types';
 
 export type LayerOverlay =
-  | { kind: 'image'; url: string; coords: Coords4 } // a (transparent-nodata) quicklook
+  // A (transparent-nodata) quicklook. `nodataMax` is the registry's
+  // freistellung threshold at the time this was pinned (M3-12) — captured
+  // here for the same reason `minZoom`/`maxZoom` are captured on the raster
+  // variant below: the live dataset selection can move on while the layer
+  // stays pinned.
+  | { kind: 'image'; url: string; coords: Coords4; nodataMax: number | null }
   // Tiles: full resolution, a stitch, a decomposition — or the browse preview of a
   // source that publishes no quicklook, which is the same thing pinned to a single
   // level (M2-10). The range travels with the overlay so a pinned layer still knows
