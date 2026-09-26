@@ -372,3 +372,46 @@ beschrieben); `npm ci` vor dem ersten `tsc`-Lauf behoben.
 den einen neuen Test: `ruff check backend` (sauber), `pytest` vom
 Repo-Wurzelverzeichnis ohne `backend/tests_live` (1671 bestanden), `lint-imports`
 (12 Verträge, 0 gebrochen).
+
+---
+
+## 12. Review-Nachbesserung (26.09.2026): Attribution auch in `ATTRIBUTION.txt`
+
+Ottos lokale Prüfung: `ATTRIBUTION.txt` im Download-ZIP nannte OpenStreetMap
+nicht, obwohl `aoi.geojson`s Eigenschaften die Herkunft schon trugen — wer
+nur die Textdatei liest (der eigentliche Zweck der Datei, §7 des
+`build_notice_text`-Docstrings: Attribution und Bedingungen der Quelle),
+sieht sie nicht.
+
+**Umgesetzt in `access/download.py`:** `build_notice_text` bekommt ein
+optionales `aoi_geometry: Mapping[str, Any] | None = None`. Erkennt es unter
+`aoi_geometry["properties"]` eines der drei Felder `attribution`, `license`,
+`source` als Zeichenkette, hängt es eine Zeile
+„AOI geometry: <attribution>, <license> (via <source>)“ an — jeder Teil nur,
+wenn das Feld vorhanden ist (nur `attribution`, nur `license` oder beide;
+`source` immer im Klammerzusatz, nie allein). Ohne `properties` oder ohne
+erkanntes Feld bleibt die Datei unverändert — der Fall für jede gezeichnete
+oder hochgeladene AOI. Die Herkunft kommt aus den vom Aufrufer gelieferten
+Werten, nie aus einer festen Zeichenkette im Backend (ein künftiger zweiter
+Geocoder bekäme so automatisch seine eigene Zeile).
+
+**Abwehr, da `aoi` ein rohes `dict[str, Any]` auf der Anfrage ist:** Nur die
+drei genannten Feldnamen werden gelesen; ein Wert, der keine Zeichenkette
+ist, wird ignoriert statt einen Fehler zu werfen; jeder Wert wird auf seine
+erste Zeile gekürzt (verhindert, dass eine eingebettete Newline eine
+zusätzliche, erfundene „Zeile“ in die Klartextdatei einschleust) und auf
+200 Zeichen gekappt. `build_download_zip` reicht sein bestehendes
+`aoi_geometry`-Argument einfach durch — kein neuer Parameter dort.
+
+**Tests:** elf neue Fälle in `TestBuildNoticeText` (kein `aoi_geometry`; eine
+AOI ohne `properties`; nur Attribution; nur Lizenz ohne „via“; nicht
+erkannte Feldnamen; nicht-Zeichenketten-Werte; `properties` selbst keine
+Mapping; ein überlanges Feld gekappt; ein mehrzeiliges Feld auf die erste
+Zeile gekürzt, die zweite taucht nirgends auf; ein leeres/nur-Leerraum-Feld
+neben einem echten) plus zwei in `TestBuildDownloadZip` (die ZIP-Ebene: mit
+und ohne Herkunft, gegen die tatsächliche `ATTRIBUTION.txt`).
+
+**Getestet (erneut, nach dieser Nachbesserung):** `ruff check backend`
+(sauber), `pytest` vom Repo-Wurzelverzeichnis ohne `backend/tests_live`
+(1691 bestanden), `lint-imports` (12 Verträge, 0 gebrochen). Frontend
+unverändert, keine erneute Prüfung nötig.
