@@ -194,6 +194,11 @@ Nachbesserungsrunden.
 - **`catalog-load` ist fehlgeschlagen:** `docker compose logs catalog-load`.
   Meist reicht ein sauberer Neustart mit leeren Volumes:
   `docker compose down -v && docker compose up`.
+- **`minio`-Image:** Seit 24.09.2026 sind die offiziellen MinIO-Images auf
+  Docker Hub, quay.io und ghcr.io nicht mehr öffentlich ziehbar. Übergangsweise
+  läuft `bitnamilegacy/minio` (per Digest gepinnt, siehe `docker-compose.yml`)
+  — nur für CI und lokale Entwicklung, kein produktiver Ersatz. Ein Ersatz-
+  Objektspeicher wird vor M4 evaluiert.
 
 ---
 
