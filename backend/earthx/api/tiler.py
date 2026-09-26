@@ -651,11 +651,13 @@ async def download_crop(
         # answers 500, never silently.
         raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
 
+    skipped_group_count = len(body.groups) - len(surviving_groups)
     LOGGER.info(
         "download answered",
         extra={
             "dataset": dataset,
             "groups": len(surviving_groups),
+            "skipped_groups": skipped_group_count,
             "items": sum(len(matched) for matched, _ in surviving_groups),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
@@ -665,7 +667,19 @@ async def download_crop(
     return StreamingResponse(
         iter([zip_bytes]),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{dataset}-crop.zip"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{dataset}-crop.zip"',
+            # A group dropped for not touching the AOI at all (above) is
+            # recorded inside the ZIP's ATTRIBUTION.txt (`skipped_item_ids`),
+            # but that only reaches the user after the file is already saved —
+            # these two headers let the download dialog say so *before* that,
+            # review finding 1: "der Nutzer muss das sehen". Counts only
+            # (`X-Skipped-Groups`/`X-Total-Groups`), never item ids or
+            # anything geometry-shaped, so the CLAUDE.md rule against AOI/query
+            # data in a header still holds.
+            "X-Total-Groups": str(len(body.groups)),
+            "X-Skipped-Groups": str(skipped_group_count),
+        },
     )
 
 

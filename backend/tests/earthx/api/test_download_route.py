@@ -312,6 +312,19 @@ class TestAcceptanceCriteria:
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Not covered by the AOI, left out: {ITEM_ID}~outside" in notice
+        # Review finding 1: the dropped group must be visible before the file
+        # is even opened, not only inside ATTRIBUTION.txt — a header the
+        # dialog can read straight off the response.
+        assert response.headers["X-Total-Groups"] == "2"
+        assert response.headers["X-Skipped-Groups"] == "1"
+
+    def test_a_successful_download_with_no_dropped_group_names_zero_skipped(
+        self, client: TestClient
+    ) -> None:
+        response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])
+        assert response.status_code == 200
+        assert response.headers["X-Total-Groups"] == "2"
+        assert response.headers["X-Skipped-Groups"] == "0"
 
     def test_every_group_missing_the_aoi_is_the_same_400_as_a_single_group_always_was(
         self, client: TestClient
