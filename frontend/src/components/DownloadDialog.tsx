@@ -58,6 +58,7 @@ export default function DownloadDialog() {
   const setResolution = useAppStore((s) => s.setDownloadResolution);
   const outcome = useAppStore((s) => s.downloadOutcome);
   const originalLinks = useAppStore((s) => s.downloadOriginalLinks);
+  const skippedGroupsNotice = useAppStore((s) => s.downloadSkippedGroupsNotice);
 
   if (!layerId && !selectionMode) return null;
 
@@ -126,6 +127,35 @@ export default function DownloadDialog() {
           </div>
           <div className="dialog-actions">
             <button type="button" className="lm-btn" onClick={close}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (skippedGroupsNotice) {
+    // The download already happened (`store.confirmDownload`); this replaces
+    // the confirmation UI rather than adding to it, so there is nothing left
+    // here to confirm a second time — just the one thing still worth saying.
+    return (
+      <div className="dialog-backdrop" onClick={close}>
+        <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="results-head">
+            <h2>Download crop</h2>
+            <button type="button" className="link-btn" title="Close" onClick={close}>
+              ✕
+            </button>
+          </div>
+          <div className="dialog-body">
+            <p>
+              <strong>{title}</strong>
+            </p>
+            <p className="hint-text">{skippedGroupsNotice}</p>
+          </div>
+          <div className="dialog-actions">
+            <button type="button" className="lm-btn primary" onClick={close}>
               Close
             </button>
           </div>

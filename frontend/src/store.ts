@@ -290,6 +290,13 @@ interface AppState {
   // still loading; an empty list is a real, valid answer ("no asset on this
   // dataset's own registered hosts").
   downloadOriginalLinks: OriginalFileLink[] | null;
+  // Set once a crop download has actually answered with at least one group
+  // dropped for not touching the AOI at all (review finding on M3-17: the
+  // user has to see this, not just find fewer files than requested in the
+  // ZIP's ATTRIBUTION.txt). The dialog stays open to show this English
+  // sentence instead of closing on a successful download, same as any other
+  // outcome the user needs to read before moving on. `null` otherwise.
+  downloadSkippedGroupsNotice: string | null;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -418,6 +425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadResolution: 1,
   downloadOutcome: null,
   downloadOriginalLinks: null,
+  downloadSkippedGroupsNotice: null,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -735,6 +743,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadResolution: 1,
       downloadOutcome: null,
       downloadOriginalLinks: null,
+      downloadSkippedGroupsNotice: null,
       error: null,
     });
     const s = get();
@@ -799,6 +808,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloadResolution: 1,
         downloadOutcome: 'crop',
         downloadOriginalLinks: null,
+        downloadSkippedGroupsNotice: null,
         error: null,
       });
       return;
@@ -820,11 +830,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadResolution: 1,
       downloadOutcome: 'originals',
       downloadOriginalLinks: links,
+      downloadSkippedGroupsNotice: null,
       error: null,
     });
   },
   closeDownloadDialog: () =>
-    set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null, downloadOriginalLinks: null }),
+    set({
+      downloadDialogLayerId: null,
+      downloadSelection: false,
+      downloadOutcome: null,
+      downloadOriginalLinks: null,
+      downloadSkippedGroupsNotice: null,
+    }),
   setDownloadResolution: (factor) => set({ downloadResolution: factor }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
@@ -851,7 +868,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ downloading: true, error: null });
     try {
-      const blob = await api.downloadCrop({
+      const result = await api.downloadCrop({
         datasetId: req.datasetId,
         groups: req.groups,
         assets: req.assets,
@@ -859,18 +876,30 @@ export const useAppStore = create<AppState>((set, get) => ({
         language: 'en',
         resolution: s.downloadResolution,
       });
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `${req.datasetId}-crop.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      set({
-        downloadDialogLayerId: null,
-        downloadSelection: false,
-        downloadOutcome: null,
-        notice: `Downloaded "${name}".`,
-      });
+      if (result.skippedGroups > 0) {
+        // A group never touched the AOI at all and was left out of the ZIP
+        // (`api/tiler.py::download_crop`) — the user has to see that now, not
+        // only by counting files inside the archive, so the dialog stays
+        // open with this instead of closing on success (review finding).
+        set({
+          downloadSkippedGroupsNotice:
+            `${result.skippedGroups} of ${result.totalGroups} group${result.totalGroups === 1 ? '' : 's'} ` +
+            `did not overlap the AOI and ${result.skippedGroups === 1 ? 'was' : 'were'} skipped.`,
+        });
+      } else {
+        set({
+          downloadDialogLayerId: null,
+          downloadSelection: false,
+          downloadOutcome: null,
+          notice: `Downloaded "${name}".`,
+        });
+      }
     } catch (e) {
       set({ error: `Download failed: ${(e as Error).message}` });
     } finally {

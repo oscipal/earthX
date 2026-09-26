@@ -205,6 +205,16 @@ describe('downloadCrop', () => {
     } as unknown as Response;
   }
 
+  function blobResponse(headers: Record<string, string> = {}): Response {
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(headers),
+      blob: async () => new Blob(['x']),
+    } as unknown as Response;
+  }
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -243,5 +253,29 @@ describe('downloadCrop', () => {
   it('an error response with no JSON body still reads as a plain, English message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(noJsonResponse(503, 'Service Unavailable')));
     await expect(downloadCrop(request)).rejects.toThrow('503 Service Unavailable');
+  });
+
+  // Review finding 1: a dropped group has to be visible before the file is
+  // even opened — these two headers are how `store.confirmDownload` finds out.
+  it('reads X-Total-Groups/X-Skipped-Groups off a successful response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(blobResponse({ 'X-Total-Groups': '3', 'X-Skipped-Groups': '1' })),
+    );
+    const result = await downloadCrop(request);
+    expect(result.totalGroups).toBe(3);
+    expect(result.skippedGroups).toBe(1);
+    expect(result.blob).toBeInstanceOf(Blob);
+  });
+
+  it('treats a missing or malformed count header as 0, never NaN', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(blobResponse()));
+    expect(await downloadCrop(request)).toMatchObject({ totalGroups: 0, skippedGroups: 0 });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(blobResponse({ 'X-Total-Groups': 'not-a-number', 'X-Skipped-Groups': '-1' })),
+    );
+    expect(await downloadCrop(request)).toMatchObject({ totalGroups: 0, skippedGroups: 0 });
   });
 });
