@@ -1,8 +1,8 @@
 # M3-22 — Gelegentlich unlesbare Download-Dateien: Plan
 
 **Aufgabe:** M3-22 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B** — Plan-Schritt. Wartet auf Ottos Freigabe (§7); bis dahin kein
-Produktivcode.
+**Stufe B** — **von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1),
+F3 (1), F4 (1) und **umgesetzt** (§9).
 **Ort im Repo:** `docs/plans/m3-22-unlesbare-downloads.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, M3-22, P20,
 P21); `plans/m3-18-download-deckel-maske.md` §9 (F9), §12.1 mit Update vom
@@ -318,3 +318,30 @@ aktuellen QGIS-Installer und ist bei ArcGIS, SNAP und MATLAB nicht belegt.
 Für eine Datei, die Nutzer in beliebiger Software öffnen, spricht das für F2
 (1). Der Kachel-Pfad ist davon nicht berührt; er liefert PNG/WebP-Kacheln,
 keine TIFF-Dateien.
+
+---
+
+## 9. Umsetzung (26.09.2026)
+
+Wie §5, mit diesen Einzelheiten:
+
+- **Erwartung für den Kopf:** Die Datendatei wird gegen ihre Maske geprüft
+  (gleiche Breite, Höhe, Transform, CRS; beide GeoTIFF; Maske ein uint8-Band
+  mit Werten 0/1). Beide entstehen unabhängig voneinander, eine eigene
+  Erwartung aus dem Plan der Ausgabe gibt es im nativen Pfad nicht.
+- **Lesefehler der Prüfung** (`RasterioIOError`) werden in `CorruptOutput`
+  übersetzt; sonst hätte die Route sie als „could not be read from the
+  source“ (502) gemeldet.
+- **Stresstest** in eigener Datei (`test_download_stress.py`), damit er nicht
+  mit M3-17 in `test_download_mask.py` kollidiert: 50 Runden in unter 2 s,
+  Deckel 30 s; lokal mit `EARTHX_DOWNLOAD_STRESS_RUNS=500` grün (17,5 s).
+- **Der Test aus der CI von #86** nach der Umsetzung 50 × als eigener
+  `pytest`-Prozess: 50/50 grün.
+- **F3, Fundstellen:** Der Wächter findet heute weder im Produktiv- noch im
+  Testcode eine Stelle. Im Produktivcode kam `MemoryFile(<bytes>)` außerhalb
+  von `with` nie vor. Im Testcode gab es drei, alle in
+  `tests/earthx/access/test_download_mask.py` und alle schon mit `5cf8a6d`
+  korrigiert (Helfer `_open_zip_member` und zweimal
+  `MemoryFile(naive_bytes).open()`); der Wächter meldet genau diese drei am
+  Stand vor `5cf8a6d`.
+
