@@ -119,6 +119,11 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # The licence link is the primary source of the texts above (adr/0003 §11.2).
         "links": [{"rel": "license", "href": config.license.url, "title": config.license.name}],
         "earthx:data_class": config.data_class.value,
+        # architekturplan.md 6.2's reader dispatch (`cog`, `zarr`, `legacy`) —
+        # published so the frontend can tell a whole scene it may link straight
+        # to the source (a COG) from one it may not (a Zarr store has no single
+        # file to link, M3-17) without a dataset-specific branch anywhere.
+        "earthx:format": config.format.value,
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
