@@ -65,18 +65,32 @@ services:
     restart: "no"
 
   minio:
-    # MinIO no longer publishes to Docker Hub (minio/minio); quay.io/minio/minio
-    # is the current official location for the same release tags.
-    image: quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z
-    command: ["server", "/data", "--console-address", ":9001"]
+    # Hotfix 24.09.2026 (Otto): Seit diesem Datum liefern Docker Hub, quay.io
+    # und ghcr.io für die offiziellen MinIO-Images nur noch "unauthorized"/
+    # "denied", auch für gepinnte Tags (nicht nur :latest) — der Pflicht-Check
+    # compose-topology war dadurch auf jedem PR rot.
+    # Übergangslösung: bitnamilegacy/minio, per Digest gepinnt (kein :latest),
+    # nur für CI und lokale Entwicklung gedacht, kein produktiver Ersatz.
+    # Der Tag dahinter ist nur eine Notiz für Menschen, nicht Teil des Pulls.
+    # Ersatz folgt: Spike zu einem alternativen Objektspeicher (Garage,
+    # SeaweedFS, RustFS u. a.) ist vor M4 vorgesehen (ENTSCHEIDUNGSLOG.md).
+    image: bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 # 2025.7.23-debian-12-r5
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # Der offizielle MinIO-Server zeigt die Weboberfläche immer; Bitnamis
+      # Wrapper schaltet sie standardmäßig ab (MINIO_BROWSER=off) — hier
+      # wieder an, weil Port 9001 unten dafür veröffentlicht wird.
+      MINIO_BROWSER: "on"
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio-data:/data
+      # bitnamilegacy/minio erwartet die Daten unter /bitnami/minio/data, nicht
+      # unter /data wie das offizielle Image. Der Pfad existiert im Image mit
+      # den Rechten für den Non-Root-User (1001); ein frisches Volume
+      # übernimmt sie beim ersten Start.
+      - minio-data:/bitnami/minio/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
