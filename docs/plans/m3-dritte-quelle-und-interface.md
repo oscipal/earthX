@@ -1,24 +1,24 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 1.4 vom 23.09.2026. Nichts ist begonnen. Die Aufgaben der
-dritten Quelle (M3-11) werden nach der Annahme von `adr/0009` in Fassung 2 im
-Einzelnen geschnitten. Fassung 1.1 nimmt Ottos Antworten auf den
-Konformitätsbericht auf (`plans/m3-02-konformitaetsbericht.md` §8): neue
-Aufgabe M3-16, Eckpunkte in M3-11, M3-12, M3-14 und M3-15. Fassung 1.2 nimmt
-Ottos Entscheidungen vom 23.09.2026 zum Download auf (P19): neue Aufgabe
-M3-17. Fassung 1.3 nimmt Ottos Antworten zu `adr/0010` auf: neue Aufgabe
-M3-19, gedrosselte Messungen in §1.2. Fassung 1.4 nimmt Ottos Entscheidungen
-vom 23.09.2026 zum Download-Deckel und zur AOI-Maske auf: neue Aufgabe
-M3-18.
+**Status:** Fassung 2 vom 26.09.2026. Erledigt und gemergt: M3-00 bis M3-05,
+M3-08, M3-09, M3-16, M3-18, M3-19 sowie der Hotfix zum MinIO-Image. In Arbeit:
+M3-06a und M3-17. Fassung 2 schneidet M3-11 nach der Annahme von `adr/0009` in
+M3-11a, M3-11b und M3-11c, nimmt die Entscheidungen vom 23. und 24.09.2026 als
+P20 bis P23 auf, hält den Schnitt als P24 fest, ergänzt den Spike M3-20 (Ersatz für MinIO) und ordnet die
+Wellen neu. Wo eine erledigte Aufgabe anders umgesetzt wurde als hier
+beschrieben, gilt das Log; der Aufgabentext bleibt als Geschichte stehen.
+Frühere Fassungen: 1.1 (Antworten auf M3-02, M3-16), 1.2 (P19, M3-17),
+1.3 (`adr/0010`, M3-19), 1.4 (M3-18).
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
 `adr/0003` (Datensätze), `adr/0004` (Coverage), `adr/0005` (föderierte Suche),
-`adr/0006` (Kachel-Pfad), `adr/0007` (Zarr), `adr/0008` (Prototyp entfernt);
+`adr/0006` (Kachel-Pfad), `adr/0007` (Zarr), `adr/0008` (Prototyp entfernt),
+`adr/0009` (dritte Quelle), `adr/0010` (Zählwürfel);
 `plans/m2-format-und-viewer.md` (D1–D31, „Nach M2 vorgemerkt“);
 `plans/m2-12-abnahme.md`; `prototyp-inventar.md`; `projektuebersicht.md` §5
-(Onboarding-Checkliste); `KLAERUNGEN.md` B8–B13; `ENTSCHEIDUNGSLOG.md`, Zeilen
-vom 23.09.2026.
+(Onboarding-Checkliste); `KLAERUNGEN.md` B8–B13; `plans/m3-02-konformitaetsbericht.md`;
+`ENTSCHEIDUNGSLOG.md`, Zeilen ab dem 23.09.2026.
 
 Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M3-xx aus
 `docs/plans/m3-dritte-quelle-und-interface.md` aus.“ Jede Aufgabe ist ohne das
@@ -38,7 +38,7 @@ entsteht danach das Adapter-Interface als ADR.
 
 ## 1. Vor dem Start
 
-### 1.1 Bereits entschieden (Otto, 23.09.2026, Log)
+### 1.1 Bereits entschieden (Otto, ab 23.09.2026, Log)
 
 | # | Entscheidung | wirkt auf |
 |---|---|---|
@@ -60,7 +60,12 @@ entsteht danach das Adapter-Interface als ADR.
 | P16 | **Kleinaufgaben:** tilejson-Fix als Stufe A; Python 3.12 als frühe Stufe-B-Aufgabe | M3-03, M3-04 |
 | P17 | **M3-00 Doku** bereinigt die Widersprüche aus der M3-Vorbereitung | M3-00 |
 | P18 | **Konformitätsbericht** einmal zu Beginn von M3, keine Routine | M3-02 |
-| P19 | **Download folgt der Ansicht:** heruntergeladen wird, was die Karte zeigt. Zuschnitt sichtbar: je Gruppe (Überflug, Gruppierungsschlüssel der Trefferliste, ab M3-12 aus der Registry) eine gemergte Datei, verschiedene Gruppen als getrennte Dateien im selben ZIP, Deckel 4096 px und 200 MB bleiben. Ganze Szene sichtbar, eine Szene gewählt (COG): Download der Originaldatei direkt von der Quelle durch den Browser, ohne Umweg über die Plattform. Zarr (EOPF): Download immer als Zuschnitt, nie der ganze Speicher; ohne AOI ist der Download-Knopf deaktiviert, Hinweis „Draw an AOI to download“. Mehrere ganze Szenen gewählt: in M3 die Originale einzeln; ein gemergtes Mosaik ganzer Szenen je Überflug ist ein Processing-Job und für M4 vorgemerkt (Vorschlag) | M3-17 |
+| P19 | **Download folgt der Ansicht:** heruntergeladen wird, was die Karte zeigt. Zuschnitt sichtbar: je Gruppe (Überflug, Gruppierungsschlüssel der Trefferliste, ab M3-12 aus der Registry) eine gemergte Datei, verschiedene Gruppen als getrennte Dateien im selben ZIP, Deckel 4096 px und 200 MB bleiben. Ganze Szene sichtbar, eine Szene gewählt (COG): Download der Originaldatei direkt von der Quelle durch den Browser, ohne Umweg über die Plattform. Zarr (EOPF): Download immer als Zuschnitt, nie der ganze Speicher; ohne AOI ist der Download-Knopf deaktiviert, Hinweis „Draw an AOI to download“. Mehrere ganze Szenen gewählt: in M3 die Originale einzeln; ein gemergtes Mosaik ganzer Szenen je Überflug ist ein Processing-Job und für M4 vorgemerkt (Vorschlag). **Der Deckel „4096 px und 200 MB“ ist durch P20 ersetzt** | M3-17 |
+| P20 | **Download in nativer Auflösung** (24.09.2026): nie automatisch verkleinert; gröber nur, wenn der Nutzer im Dialog ausdrücklich einen Faktor wählt (Native, 2×, 4×, 10×). Deckel 500 MB roh für die Ausgabe, höchstens ein Download ab 100 MB gleichzeitig je `tiler`-Prozess (sonst `503` mit `Retry-After`); über dem Deckel eine Abweisung mit Faktorvorschlag, nie eine stille Verkleinerung. Exporte darüber in voller Auflösung werden in M4 ein Job, kein Teil-Download in M3 | M3-18 (erledigt), M4 |
+| P21 | **Maske statt nodata** (24.09.2026): Die Datendatei behält jedes Pixel der Quelle; je Gruppe und Asset kommt eine Maske (1 innerhalb, 0 außerhalb des AOI-Polygons) mit. Ausdehnung von Datei und Maske ist die Bounding Box von (AOI ∩ Vereinigung der Footprints der Gruppe). Einmal je ZIP die Original-AOI als GeoJSON, unbeschnitten | M3-18 (erledigt), M3-17 |
+| P22 | **Weltüberblick ohne AOI** (23./24.09.2026): Anfrage auf den sichtbaren Ausschnitt, Zellstufe folgt dem Kartenzoom (Ziel rund 2 000 Zellen je Bildschirm); ersetzt `adr/0010` Antwort 6a | M3-19 (erledigt) |
+| P23 | **MinIO** (24.09.2026): Die offiziellen Images sind seit dem 24.09.2026 nicht mehr öffentlich ziehbar. Übergang mit `bitnamilegacy/minio` per Digest, nur CI und lokal. Die Neubewertung wird vorgezogen: Spike zu einem Ersatz vor M4 | M3-20 |
+| P24 | **Schnitt von M3-11** (26.09.2026, dieser Plan): drei Teile. M3-11a trennt in Registry und Dispatch „welcher Adapter“ von „föderiert oder materialisiert“ und baut den zweiten Weg für Items aus pgstac; M3-11b bringt den DEM-Adapter, den Einmal-Befehl in `discovery` und den Registry-Eintrag; M3-11c baut die Coverage über eigene Items. Die Zugriffsauflösung bleibt bis M4 in `api/tiler.py` (Log 23.09.2026, K-04) | M3-11a–c |
 
 ### 1.2 Was in allen Aufgaben gilt
 
@@ -81,21 +86,15 @@ umgesetzt.
 
 ### 1.3 Von Otto auszuführen
 
-- **Vor M3-01:** `zenodo.org` in der Allowlist der Cloud-Umgebung freigeben
-  (heute gesperrt, `adr/0007` §3). Die übrigen Kandidaten sind laut Messung
-  schon erreichbar: `storage.googleapis.com` (Hansen GFC, ARCO-ERA5;
-  `adr/0007` §3) und `copernicus-dem-30m.s3.amazonaws.com` (`adr/0003` §10).
-  Leitet einer davon auf einen anderen Host um, meldet die Session den Host
-  und hält an.
-- **Vor M3-07a:** `nominatim.openstreetmap.org` freigeben (heute gesperrt,
-  `cloud-umgebung.md` §6). Nur für Messungen per `curl`; Tests laufen gegen
-  synthetische Fixtures.
-- **Nach M3-01:** Quelle wählen, Materialisierung wählen, Lizenz des neuen
-  Datensatzes einstufen (B11, immer Otto). Danach schneide ich M3-11 in
-  Fassung 2 dieses Plans.
-- **Lokal prüfen, offen aus M2:** Was passiert beim Download mit einer AOI
-  größer als 4096 px je Seite (verkleinert oder abgewiesen)? Soll sich das
-  ändern, wird daraus eine kleine Aufgabe.
+- **Vor M3-07a:** `nominatim.openstreetmap.org` in der Allowlist der
+  Cloud-Umgebung freigeben (heute gesperrt, `cloud-umgebung.md` §6). Nur für
+  Messungen per `curl`; Tests laufen gegen synthetische Fixtures.
+- **Vor M3-11b:** nichts Neues. `copernicus-dem-30m.s3.amazonaws.com` ist aus
+  der Cloud-Umgebung erreichbar (`adr/0009` §10.2).
+- **Vor M3-20:** nichts vorab. Braucht die Session für eine Messung einen
+  gesperrten Host (etwa für ein Release-Archiv), nennt sie ihn und hält an.
+- **Nach den Plan-Schritten** von M3-11a und M3-11b: neue Registry-Felder und
+  die Zeitangabe der DEM-Items freigeben (B10, `adr/0009` §10.1).
 
 ---
 
@@ -107,12 +106,15 @@ dieser Quelle nach der Checkliste; gemischte Suche und CQL2-Prüfung;
 mit Umriss und Bounding Box; Zuschnitt in der Vollauflösungs-Ansicht;
 Datensatz-Filter in der Suchkachel; Frontend-Sonderfälle in die Registry;
 tilejson-Fix; Python 3.12; Konformitätsbericht; Mess-Spike Zählwürfel;
-Interface-ADR; Download folgt der Ansicht.
+Interface-ADR; Download folgt der Ansicht; Spike zum Ersatz für MinIO.
 
 **Nicht in M3:** Mosaik im Kachel-Pfad (M4, P11); Rezept, Operatoren, Jobs,
 Objektspeicher (M4); Bau des Heatmap-Zählwürfels (P13); Health-Status und
 Prüfdatum (M5, P14, D29); Hybrid-Suche (M5); Uvicorn-Worker des `tiler` (M5);
-COG-Header-Cache (Log offen); Neubewertung MinIO (vor M4); Ratenbegrenzung pro
+COG-Header-Cache (Log offen); Umbau auf einen MinIO-Ersatz (M4, nach M3-20);
+Exporte über dem synchronen Deckel in voller Auflösung (M4, Job, P20);
+Zenodo als Metadatenquelle (M5, `adr/0009`); Bau des Zählwürfels (M5,
+Vorschlag); Zugriffsauflösung außerhalb von `api/tiler.py` (M4, K-04); Ratenbegrenzung pro
 IP oder Nutzer (D6); Bug-Report Stufe 2 (D9); helle Basiskarte (D10);
 Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 §13, Nutzungsbedingungen); gemergtes Mosaik ganzer Szenen (M4, Job).
@@ -121,55 +123,62 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 
 ## 3. Übersicht und Reihenfolge
 
-| ID | Aufgabe | Stufe | Modell (Effort) | hängt ab von |
-|---|---|---|---|---|
-| M3-00 | Doku nachziehen | A | Sonnet (mittel) | — |
-| M3-01 | Spike dritte Quelle → `adr/0009` | C | Opus (hoch) | Allowlist §1.3 |
-| M3-02 | Architektur-Konformitätsbericht | C | Opus (hoch) | — |
-| M3-03 | Wechsel auf Python 3.12 | B | Opus Plan, Sonnet (hoch) | — |
-| M3-04 | `/tilejson.json` mit freigegebenen Zoomstufen | A | Sonnet (mittel) | — |
-| M3-05 | Mess-Spike Heatmap-Zählwürfel → `adr/0010` | C | Opus (hoch) | — |
-| M3-06a | AOI-Upload: Backend-Route mit Shapefile | B | Opus Plan, Sonnet (hoch) | M3-03 |
-| M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a |
-| M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 |
-| M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b |
-| M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | — (Merge erst nach M3-16) |
-| M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — |
-| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b |
-| M3-11 | Dritte Quelle anbinden (Teile in Fassung 2) | B | Opus Plan, Sonnet (hoch) | `adr/0009` angenommen |
-| M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | `adr/0009` angenommen, M3-02, M3-10 |
-| M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11 (eigene Items) |
-| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11, M3-13 |
-| M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle |
-| M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — |
-| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09, M3-12 |
-| M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — |
-| M3-19 | Weltüberblick ohne AOI immer auf z6 | A | Sonnet (mittel) | — |
+| ID | Aufgabe | Stufe | Modell (Effort) | hängt ab von | Stand |
+|---|---|---|---|---|---|
+| M3-00 | Doku nachziehen | A | Sonnet (mittel) | — | erledigt (#74) |
+| M3-01 | Spike dritte Quelle → `adr/0009` | C | Opus (hoch) | Allowlist | erledigt (#79) |
+| M3-02 | Architektur-Konformitätsbericht | C | Opus (hoch) | — | erledigt (#77) |
+| M3-03 | Wechsel auf Python 3.12 | B | Opus Plan, Sonnet (hoch) | — | erledigt (#75) |
+| M3-04 | `/tilejson.json` mit freigegebenen Zoomstufen | A | Sonnet (mittel) | — | erledigt (#78) |
+| M3-05 | Mess-Spike Heatmap-Zählwürfel → `adr/0010` | C | Opus (hoch) | — | erledigt (#80) |
+| M3-06a | AOI-Upload: Backend-Route mit Shapefile | B | Opus Plan, Sonnet (hoch) | M3-03 | in Arbeit |
+| M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a | offen |
+| M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 | offen |
+| M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | offen |
+| M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
+| M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
+| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b | offen |
+| M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | offen |
+| M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | offen |
+| M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | offen |
+| M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b, M3-10 | offen |
+| M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | offen |
+| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | offen |
+| M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | offen |
+| M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — | erledigt (#85) |
+| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | in Arbeit |
+| M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — | erledigt (#86) |
+| M3-19 | Weltüberblick ohne AOI | A→B | Opus Plan, Sonnet (mittel) | — | erledigt (#83) |
+| M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | offen |
 
-**Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A und C laufen
-daneben.
+**Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
+und C laufen daneben.
 
-1. **Welle 1:** M3-00, M3-01, M3-02, M3-04, M3-05, M3-16 (A/C), dazu M3-03 und
-   M3-08 (B); M3-08 wird erst nach M3-16 gemergt.
-2. **Welle 2:** M3-06a, M3-09, M3-18, danach M3-06b, M3-07a; daneben M3-19 (A).
-3. **Welle 3:** M3-07b, M3-10; nach Annahme von `adr/0009` M3-11 und M3-12,
-   danach M3-17.
-4. **Welle 4:** M3-13, dann M3-14, zuletzt M3-15.
+1. **Jetzt:** M3-06a und M3-17 (laufen); daneben M3-20 (C).
+2. **Nächster freier B-Platz:** M3-11a, danach M3-11b und M3-11c parallel
+   (beide hängen nur an M3-11a). Die dritte Quelle hat Vorrang vor den
+   Oberflächen-Aufgaben, weil M3-12, M3-13 und M3-14 an ihr hängen.
+3. **Dazwischen, sobald ein Platz frei ist:** M3-07a, M3-06b, dann M3-07b und
+   M3-10.
+4. **Danach:** M3-12 und M3-13, dann M3-14, zuletzt M3-15.
 
 **Dateikonflikte im Frontend:** M3-06b, M3-07b, M3-10 und M3-12 berühren die
 Suchkachel (`ControlPanel.tsx` und Umgebung); deshalb nacheinander in dieser
-Reihenfolge. M3-09 berührt Karte und Layer (`MapView.tsx`, `mapLayers.ts`) und
-kann parallel laufen.
+Reihenfolge. M3-17 berührt Layer-Manager und Download-Dialog und kann parallel
+laufen; M3-11a bis M3-11c sind reines Backend.
 
 **Feste ADR-Nummern**, damit parallele Sessions nicht kollidieren:
 `adr/0009-dritte-quelle.md` (M3-01), `adr/0010-coverage-zaehlwuerfel.md`
-(M3-05), `adr/0011-adapter-interface.md` (M3-14).
+(M3-05), `adr/0011-adapter-interface.md` (M3-14), `adr/0012-objektspeicher.md`
+(M3-20).
 
 ---
 
 ## 4. Die Aufgaben
 
 ### M3-00 — Doku nachziehen
+
+**Stand:** erledigt und gemergt (#74). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Die Plandokumente widersprechen einander und dem Log nicht mehr.
 **Stufe A.** Nur `docs/`; kein Code.
@@ -209,6 +218,8 @@ kann parallel laufen.
 aufgelöst; keine bestehende Log-Zeile gelöscht oder im Text geändert.
 
 ### M3-01 — Spike dritte Quelle → `adr/0009`
+
+**Stand:** erledigt und gemergt (#79). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Otto kann die Nicht-STAC-Quelle, die Art der Materialisierung und die
 Rolle von Copernicus DEM auf Grundlage von Messungen entscheiden.
@@ -252,6 +263,8 @@ Empfehlung und nummerierten Fragen an Otto; unbelegte Aussagen sind als
 
 ### M3-02 — Architektur-Konformitätsbericht
 
+**Stand:** erledigt und gemergt (#77). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Vor dem Ausbau ist bekannt, wo der Code vom Architekturplan und den
 Regeln abweicht.
 **Stufe C.** Nur lesen und berichten.
@@ -269,6 +282,8 @@ Schwere (Blocker / Schuld / Hinweis) und je Fund einem Vorschlag, in welche
 Aufgabe er gehört.
 
 ### M3-03 — Wechsel auf Python 3.12
+
+**Stand:** erledigt und gemergt (#75). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Backend, CI, Image und Cloud-Session laufen auf Python 3.12, bevor
 neue Abhängigkeiten dazukommen.
@@ -293,6 +308,8 @@ aus; `compose-topology` baut das Image auf 3.12.
 
 ### M3-04 — `/tilejson.json` mit freigegebenen Zoomstufen
 
+**Stand:** erledigt und gemergt (#78). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Ein Client, der dem TileJSON folgt, wird nur auf freigegebene Stufen
 geschickt.
 **Stufe A.**
@@ -306,6 +323,8 @@ eine Kachel-URL aus dem TileJSON auf Grenzstufe liefert `200`, eine Stufe
 darüber `400`; weiterhin kein freier `url`-Parameter im OpenAPI-Schema.
 
 ### M3-05 — Mess-Spike Heatmap-Zählwürfel → `adr/0010`
+
+**Stand:** erledigt und gemergt (#80). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Otto kann entscheiden, ob und wie ein vorberechneter Zählwürfel die
 Coverage-Heatmap verbessert (D26).
@@ -328,6 +347,8 @@ Coverage-Heatmap verbessert (D26).
 Empfehlung und Fragen an Otto.
 
 ### M3-06a — AOI-Upload: Backend-Route mit Shapefile
+
+**Stand:** in Arbeit.
 
 **Ziel:** Hochgeladene AOIs werden an einer Stelle einheitlich geprüft,
 zusätzlich zu GeoJSON und KML auch als Shapefile (P7).
@@ -405,6 +426,8 @@ startet damit eine Suche.
 
 ### M3-08 — `intersects` und `ids` durchreichen
 
+**Stand:** erledigt und gemergt (#76). Abweichungen vom Text stehen im Log.
+
 **Merge erst nach M3-16** (Otto, 23.09.2026): `intersects` ist ein weiterer
 Query-Parameter mit Geometrie und darf nur in ein Log ohne Query-String.
 
@@ -430,6 +453,8 @@ keine Koordinaten im Log landen; die bisherigen `400`-Tests aus M2-17 sind
 angepasst.
 
 ### M3-09 — Vollauflösung zeigt nur den Zuschnitt
+
+**Stand:** erledigt und gemergt (#84). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Nach „View full resolution“ sieht der Nutzer von den gewählten
 Szenen nur den Teil innerhalb der AOI, also das, was er herunterlädt (P12).
@@ -465,44 +490,141 @@ und die Bedienung vorschlagen.
 **Abnahme:** Vitest für den Filter; mit drei Datensätzen keine
 Datensatz-Kennung im Frontend-Code nötig.
 
-### M3-11 — Dritte Quelle anbinden
+### M3-11 — Dritte Quelle anbinden: Überblick
 
-**Ziel:** Die in `adr/0009` gewählte Nicht-STAC-Quelle läuft mit
-materialisierten Items im Katalog und im Viewer und besteht die Checkliste.
-**Stufe B.** **Wird nach Annahme von `adr/0009` in Fassung 2 in Teile
-geschnitten**; bis dahin nicht starten.
-**Bekannte Eckpunkte:** Adapter nach `architekturplan.md` 6.1; Items einmalig
-erzeugt und laut Entscheidung zu P4 abgelegt; Registry-Eintrag als
-`DatasetConfig` in `catalog/datasets.py` (B13), `asset_hosts` gesetzt (D12);
-Coverage laut `adr/0009`; Lizenz wie von Otto eingestuft; Checkliste 1–10 grün,
-Punkt 10 über `@pytest.mark.live_dataset` (D29); **`readers` unverändert**
-(M3-Abnahme); Fixtures synthetisch.
-**Abnahmekriterien aus M3-02** (Otto, 23.09.2026;
-`plans/m3-02-konformitaetsbericht.md`):
-- **K-05:** Registry und Dispatch haben einen Platz für materialisierte Items;
-  eine Collection mit eigenen Items wird ausdrücklich als solche erkannt, nicht
-  daran, dass kein bekannter Adapter eingetragen ist.
-- **K-06:** Die Coverage-Route ist nicht mehr fest auf Earth Search und EOPF
-  verdrahtet; der Weg des dritten Datensatzes folgt aus seinem
-  Registry-Eintrag.
+Die dritte Quelle ist **Copernicus DEM GLO-30, direkt aus dem Bucket**
+(`adr/0009`, angenommen am 23.09.2026): zugleich dritter Datensatz und erste
+Nicht-STAC-Quelle. Items liegen in **pgstac**, erzeugt von einem
+**Einmal-Befehl in `discovery`**; Coverage ist die **Vereinigung der
+Kachel-Umrisse** als Fläche, `completeness = complete`; die Lizenz ist
+eingestuft (`adr/0003` §11.1, B11-Stufe *Processing*, Attribution mit
+vorgeschriebenem Wortlaut). Die Arbeit ist in drei Teile geschnitten (P24).
+Für alle drei gilt: **`readers` bleibt unverändert** (M3-Abnahme), Fixtures
+sind synthetisch, und `adr/0009` §3.5 beschreibt den Code-Stand, auf dem sie
+aufsetzen.
+
+### M3-11a — Materialisierte Quellen in Registry, Dispatch und Item-Abruf
+
+**Ziel:** Die Plattform kennt Collections, deren Items in pgstac liegen, als
+eigene Art von Quelle: Sie sind über `/stac/search` findbar und über die
+Kachel- und Download-Route lesbar, ohne dass ein Datensatz dafür schon
+eingetragen ist.
+**Stufe B.**
+**Umfang:**
+- **K-05:** `earthx:source` trennt „welcher Adapter die Items erzeugt bzw.
+  abfragt“ von „föderiert oder materialisiert“. Heute entscheidet
+  `SourceInfo.adapter` allein über die Föderation (`adr/0009` §3.5, §11). Eine
+  materialisierte Collection wird ausdrücklich als solche erkannt, nicht daran,
+  dass kein bekannter Adapter eingetragen ist. Neue Felder ohne Vorgabewert
+  (B10); `architekturplan.md` 5.1 nachziehen.
+- **Suche:** Materialisierte Collections gehen über den bestehenden
+  pgstac-Pfad (`api/federating_client.py`, `super()`), jetzt aufgrund des neuen
+  Felds.
+- **Item-Abruf für Kacheln und Download:** zweiter Weg neben
+  `adapters.get_item` für Items aus pgstac (`api/tiler.py::build_item_source`).
+  Die Zugriffsauflösung bleibt bis M4 in `api/tiler.py` (K-04); keine
+  Verlagerung in dieser Aufgabe.
 - **K-03:** Die Kachelroute prüft die Lizenzstufe: Kacheln verlangen
-  mindestens B11-Stufe „Anzeige“, der Download weiterhin „Processing“; mit
-  Test für einen Eintrag der Stufe `catalog`.
+  mindestens B11-Stufe „Anzeige“, der Download weiterhin „Processing“.
+- **`catalog`** kann Items nach pgstac schreiben (`upsert`, pypgstac ist
+  gepinnt), als Funktion für M3-11b; `catalog` importiert dafür keinen Adapter.
+
+**Im Plan-Schritt vorschlagen:** Form und Namen der neuen Registry-Felder;
+wie die beiden bestehenden Einträge sie setzen; ob `SourceInfo.harvest_run`
+(heute ungenutzt) den Lauf protokolliert.
+**Nicht anfassen:** `readers`, bestehende Registry-Werte außer der neuen
+Angabe, die Coverage-Route (M3-11c).
+**Abnahme:** Integrationstests mit einer synthetischen materialisierten
+Collection und synthetischen Items in pgstac: Suche findet sie, eine Kachel und
+ein Zuschnitt lesen sie, eine föderierte Collection verhält sich unverändert;
+Lizenztest mit einem Eintrag der Stufe `catalog` (Kachel `403` bzw. die
+bestehende Abweisung, Download abgewiesen); Onboarding-Checkliste für beide
+bestehenden Datensätze grün; `lint-imports` grün.
+
+### M3-11b — DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag
+
+**Ziel:** Copernicus DEM GLO-30 steht als dritter Datensatz im Katalog, seine
+26 450 Items liegen in pgstac, und er besteht die Onboarding-Checkliste.
+**Stufe B.** Hängt an M3-11a.
+**Umfang:**
+- **Adapter** in `adapters`: liest `tileList.txt` über `gateway` und baut
+  aus dem Namensschema je Kachel ein Item (Footprint, Asset-`href` auf den
+  DEM-COG). Dem Listing nicht blind glauben (`adr/0009` §11): im Plan-Schritt
+  vorschlagen, wie fehlende Dateien erkannt werden, ohne 26 450 Anfragen je
+  Lauf.
+- **Einmal-Befehl** `python -m earthx.discovery.materialize <dataset>` (Name im
+  Plan-Schritt): Adapter erzeugt, `catalog` schreibt per `upsert`;
+  wiederholbar ohne Doppel; ein erneuter Lauf erkennt eine unveränderte Quelle
+  (ETag von `tileList.txt`, `adr/0009` §7.3). Kein Zeitplan, keine
+  Review-Queue (das ist M5).
+- **Registry-Eintrag** als `DatasetConfig` (B13): Lizenz und Attribution laut
+  `adr/0003` §11.1; `asset_hosts` mit genau einem Host, Vorschlag
+  `copernicus-dem-30m.s3.amazonaws.com` (`adr/0009` §10.2; nie
+  `s3.amazonaws.com` oder `amazonaws.com`); `earthx:data_class` als statisches
+  Raster; Beschreibung mit einem Satz zur Lücke über dem Südkaukasus
+  (`adr/0009` §10.3; ob Länder genannt werden, im Plan-Schritt); Darstellung
+  eines `float32`-Höhenmodells ohne `nodata` (Farbskala, Wertebereich) in
+  `earthx:viewer`; freigegebene Zoomstufen.
+- **Onboarding-Checkliste** 1–10 grün, Punkt 10 über
+  `@pytest.mark.live_dataset` (D29); Test mit synthetischer `tileList.txt`
+  und synthetischen COGs.
+- README: wie der Befehl lokal läuft.
+
+**Im Plan-Schritt vorschlagen, Otto entscheidet:** die **Zeitangabe der
+Items** (`adr/0009` §10.1: je Kachel aus der XML, ein Zeitraum für alle, oder
+ein fester `datetime`; pgstac verlangt einen Zeitraum), mit der Folge für
+Suchen mit Datumsfilter; wie der Befehl in `docker-compose.yml` bzw. lokal
+gestartet wird; Farbskala und Zoomstufen, gemessen an echten Kacheln
+(gedrosselt).
+**Nicht anfassen:** `readers`; die Coverage-Route (M3-11c); Frontend (M3-12).
+**Abnahme:** Befehl lädt synthetische Kacheln vollständig und idempotent;
+Checkliste grün für drei Datensätze; eine Kachel und ein Zuschnitt des DEM
+über die echte Kette lokal bei Otto; kein ausgehender Request außerhalb von
+`gateway`.
+
+### M3-11c — Coverage über eigene Items (`local-sql`)
+
+**Ziel:** Die Coverage einer materialisierten Collection kommt aus ihren
+eigenen Items; die Coverage-Route ist nicht mehr fest auf Earth Search und EOPF
+verdrahtet (K-06).
+**Stufe B.** Hängt an M3-11a; kann parallel zu M3-11b laufen.
+**Umfang:**
+- `CoverageProvider.LOCAL_SQL` bauen (heute `501`, `api/coverage_route.py`):
+  SQL über die Items in pgstac. Für Einmal-Produkte laut `adr/0009` §6 die
+  **Vereinigung der Footprints als Fläche**, keine Dichte;
+  `completeness = complete` (`adr/0004` Regel V).
+- Welcher Weg gilt, folgt aus dem Registry-Eintrag, nicht aus einer
+  Fallunterscheidung nach Quelle; Earth Search und EOPF verhalten sich
+  unverändert, der Weltüberblick nach P22 auch.
+- Antwortgröße im Rahmen von `adr/0004` (500 kB), auch für die Weltansicht
+  mit 26 450 Kacheln; im Plan-Schritt messen, ob die Fläche vereinfacht werden
+  muss und mit welcher Toleranz.
+
+**Im Plan-Schritt vorschlagen:** Form der Antwort für eine Fläche (die
+Heatmap kennt heute Zellen); wo die Vereinigung berechnet wird (SQL bei jeder
+Anfrage oder vorberechnet beim Laden durch M3-11b); Cache.
+**Nicht anfassen:** das Zeichnen im Frontend (M3-12, F-07).
+**Abnahme:** Tests mit synthetischen Items: Fläche deckt genau die Footprints,
+Lücken bleiben Lücken; Earth Search und EOPF unverändert; Antwortgröße unter
+der Schwelle; keine Koordinaten der Anfrage im Log.
 
 ### M3-12 — Frontend-Sonderfälle in die Registry
 
 **Ziel:** Das Frontend kennt keinen Datensatz und keine quellenspezifische
 Eigenschaft mehr (P10, M3-Abnahme).
-**Stufe B.** Nach Annahme von `adr/0009`, mit dem Bericht aus M3-02 als
-Eingabe.
-**Umfang:** Jede Stelle aus M3-02, die der dritte Datensatz trifft, wird ein
+**Stufe B.** Nach M3-11b (echter DEM-Eintrag) und M3-10, mit dem Bericht aus
+M3-02 als Eingabe. Braucht M3-17 ein Registry-Feld für COG oder Zarr, wird es
+hier übernommen.
+**Umfang:** Jede Stelle aus M3-02, die der DEM trifft, wird ein
 Registry-Feld (bekannt: Gruppierung der Trefferliste nach `s2:datatake_id`
 aus D30, Nodata-Schwelle 16 der Quicklooks). Dazu die vier Stellen, an denen
 ein globales Raster in EPSG:4326 scheitert (M3-02, Abschnitt 5): Quicklooks
 werden nur für UTM platziert (F-03); die Ausdehnung eines Einmal-Produkts wird
 in der Coverage nicht gezeichnet (F-07); das Datumsfeld erscheint auch ohne
 Zeitachse (F-06); die Vorschau-Stufe zeigt bei `min_zoom = 0` fast nichts
-(F-05). Bevor dafür ein neues Feld entsteht, prüfen, ob `earthx:data_class`
+(F-05). Die Coverage des DEM erscheint als Fläche (Antwortform aus M3-11c).
+`earthx:viewer.group_by` setzt heute ein `datetime` voraus (`adr/0009` §10.1).
+Bevor dafür ein neues Feld entsteht, prüfen, ob `earthx:data_class`
 (`architekturplan.md` 5.1) es schon trägt. Felder ohne Vorgabewert (B10),
 Zeile in `architekturplan.md` 5.1 nachziehen. Dazu ein Test, der
 `frontend/src` außerhalb der Tests auf Datensatz-Kennungen und
@@ -510,7 +632,9 @@ quellenspezifische Eigenschaftsnamen prüft.
 **Im Plan-Schritt vorschlagen:** Feldnamen und -form; Otto gibt neue Felder
 frei.
 **Abnahme:** Test grün; beide bestehenden Datensätze verhalten sich
-unverändert; Checkliste grün.
+unverändert; der DEM ist im Viewer suchbar, als Fläche in der Coverage
+sichtbar, in voller Auflösung anzeigbar und als Zuschnitt ladbar; Checkliste
+grün; Otto prüft lokal.
 
 ### M3-13 — Gemischte Suche und CQL2
 
@@ -518,7 +642,8 @@ unverändert; Checkliste grün.
 einheitliche STAC-Antwort (`adr/0005` Regel I, D8); die CQL2-Frage ist neu
 entschieden (Regel VI).
 **Stufe B**, Plan-Schritt mit Opus (hoch), weil Paging über mehrere Quellen
-heikel ist.
+heikel ist. Nach M3-11b: Die eigenen Items des DEM sind die erste echte
+eigene Collection.
 **Umfang:** gemischte Suche statt `400`; Seitenmarke über mehrere Quellen;
 Teilergebnisse und Zeitablauf je Quelle gekennzeichnet (`architekturplan.md`
 16); Konformitätsklassen der Landing Page passend zur schwächsten beteiligten
@@ -542,7 +667,7 @@ Zugriffsauflösung, Aggregation) gegen das Tatsächliche halten; Optionen für
 Signaturen mit Kriterien (Nicht-STAC nicht in STAC-Form gepresst, Test mit
 synthetischen Fixtures, Folgen für den Harvester in M5 und Processing in M4);
 Lehren aus EODAG knapp mit Quellen (`architekturplan.md` 15.2). Beobachtungen
-aus `adr/0009` einbeziehen. Der **Zielort der Zugriffsauflösung** (heute
+aus `adr/0009` §11 einbeziehen, dazu die Erfahrungen aus M3-11a–c. Der **Zielort der Zugriffsauflösung** (heute
 `api/tiler.py`, K-04 aus M3-02) ist eine eigene Option in `adr/0011`: Das ADR
 legt ihn fest, der Umbau ist der erste Schritt von M4, bevor `processing` die
 Auflösung braucht (Otto, 23.09.2026).
@@ -563,6 +688,8 @@ Vermerk: Neubewertung mit der Verfügbarkeits-Zeitleiste in M5.
 
 ### M3-16 — Keine AOI im Log
 
+**Stand:** erledigt und gemergt (#85). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Kein Prozess schreibt Koordinaten oder Query-Strings ins Log
 (`CLAUDE.md`; K-01, K-02 aus `plans/m3-02-konformitaetsbericht.md`).
 **Stufe A.** Sonnet (hoch).
@@ -580,6 +707,12 @@ keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 **Hängt ab von:** —. M3-08 wird erst nach M3-16 gemergt.
 
 ### M3-17 — Download folgt der Ansicht
+
+**Stand:** in Arbeit. Die Abhängigkeit von M3-12 entfällt (Otto, 23.09.2026):
+Die Gruppierung je Überflug hat M3-09 schon gebaut; sie wird wiederverwendet,
+ohne neue datensatzspezifische Stelle. Braucht die Aufgabe eine Angabe, ob ein
+Datensatz COG oder Zarr ist, schlägt der Plan-Schritt dafür ein Registry-Feld
+vor (B10); M3-12 übernimmt es dann.
 
 **Ziel:** Der Download liefert immer das, was die Karte zeigt (P19).
 **Stufe B.**
@@ -611,6 +744,11 @@ ganze Szenen einzeln); Otto prüft lokal, dass Karte und Datei übereinstimmen.
 
 ### M3-18 — Download-Deckel nach Ausgabegröße und Maske auf die AOI
 
+**Stand:** erledigt und gemergt (#86). **Umgesetzt wurde abweichend vom Text
+unten:** native Auflösung ohne automatische Verkleinerung, Deckel 500 MB roh
+mit Gleichzeitigkeitsgrenze (P20), Maske statt nodata mit Ausdehnung
+AOI ∩ Footprints (P21). Maßgeblich sind P20, P21 und das Log vom 24.09.2026.
+
 **Ziel:** Ein Zuschnitt über viele Szenen scheitert nicht mehr an einer
 Schätzung über die Eingabe-Items. Beim Polygon-AOI enthält die Datei nur
 Pixel innerhalb des Polygons.
@@ -633,7 +771,12 @@ im Frontend auf Englisch und verständlich. Test mit schrägem Polygon: Pixel
 außerhalb sind nodata, innerhalb gefüllt; Rechteck-AOI unverändert; keine
 Koordinaten im Log.
 
-### M3-19 — Weltüberblick ohne AOI immer auf z6
+### M3-19 — Weltüberblick ohne AOI
+
+**Stand:** erledigt und gemergt (#83). **Umgesetzt wurde abweichend vom Text
+unten** (Otto, 23./24.09.2026, P22): Ohne AOI fragt die Heatmap den sichtbaren
+Ausschnitt ab, die Zellstufe folgt dem Kartenzoom; die Aufgabe lief deshalb
+mit Plan-Schritt.
 
 **Ziel:** Ohne AOI fordert die Coverage-Heatmap unabhängig vom Kartenzoom immer
 z6 an (`adr/0010`, Frage 6).
@@ -642,6 +785,31 @@ z6 an (`adr/0010`, Frage 6).
 wählt; mit AOI bleibt alles wie heute.
 **Abnahme:** Vitest: ohne AOI bei jedem Kartenzoom z6, mit AOI unverändert;
 Otto prüft lokal die Weltansicht.
+
+### M3-20 — Spike Ersatz für MinIO → `adr/0012`
+
+**Ziel:** Otto kann vor M4 entscheiden, welcher S3-kompatible Objektspeicher
+MinIO in der Topologie ersetzt (P23).
+**Stufe C.** Kein Produktivcode; die Übergangslösung `bitnamilegacy/minio`
+bleibt, bis Otto entscheidet.
+**Umfang:**
+- Lage klären, mit Quellen: Was hat MinIO an Images und Lizenz geändert, gibt
+  es noch einen offiziellen, frei ziehbaren Weg (etwa Bau aus dem Quelltext),
+  und wie lange taugt `bitnamilegacy/minio`?
+- Kandidaten, mindestens Garage, SeaweedFS und RustFS; weitere mit
+  Begründung. Je Kandidat: Lizenz (vereinbar mit AGPL-3.0-or-later), Pflege
+  und Reife, offizielles Image und dessen Herkunft, S3-Funktionen, die M4
+  braucht (Multipart-Upload, vorsignierte URLs, Range-Reads für COG, Ablauf
+  bzw. Lebenszyklus für Ergebnisse, Bucket-Richtlinien), Ressourcenbedarf für
+  lokale Entwicklung und CI, Betriebsaufwand.
+- Was sich in `architekturplan.md` (Objektspeicher, Topologie) und in
+  `docker-compose.yml` ändern müsste; ob `gateway` betroffen ist.
+- Messen, soweit ohne Docker möglich (Binärdatei, gedrosselt); sonst
+  „unbelegt“ und im ADR sagen, was die CI später belegen muss.
+
+**Nicht anfassen:** Code, `docker-compose.yml`.
+**Abnahme:** `adr/0012-objektspeicher.md` mit Kriterienmatrix, Belegen je
+Aussage, Empfehlung und Fragen an Otto.
 
 ---
 
@@ -658,10 +826,11 @@ Otto prüft lokal die Weltansicht.
    und Bounding Box; Polygon-AOIs suchen über `intersects`.
 5. Die Vollauflösung zeigt mit AOI nur den Zuschnitt, ohne AOI die ganze
    Szene; keine AOI in Kachel-URLs oder Logs; der Download entspricht der
-   Ansicht (M3-17).
+   Ansicht (M3-17), in nativer Auflösung (P20), mit Maske (P21).
 6. `adr/0011` (Adapter-Interface) ist von Otto freigegeben.
 7. Importregeln grün, kein ausgehender Request außerhalb von `gateway`;
    Pflicht-CI grün auf Python 3.12.
+8. `adr/0012` (Ersatz für MinIO) liegt Otto zur Entscheidung vor.
 
 ---
 
@@ -677,4 +846,7 @@ Otto prüft lokal die Weltansicht.
 | Zuschnitt-Ansicht weicht von der Download-Datei ab | gleiche Reihenfolge wie das Mosaik; lokale Prüfung durch Otto (M3-09) |
 | Python 3.12 nicht in die Cloud-Session zu bekommen | M3-03 misst im Plan-Schritt, bevor umgestellt wird |
 | Mehrere Frontend-Aufgaben berühren die Suchkachel | feste Reihenfolge M3-06b → M3-07b → M3-10 → M3-12 |
+| Zeitangabe der DEM-Items lässt den DEM bei Suchen mit Datumsfilter verschwinden | M3-11b schlägt die Zeitangabe mit Folgen vor, Otto entscheidet; M3-12 blendet das Datumsfeld ohne Zeitachse aus |
+| Coverage-Fläche aus 26 450 Kacheln ist zu groß für die Weltansicht | M3-11c misst und vereinfacht mit belegter Toleranz |
+| `bitnamilegacy/minio` wird ebenfalls unerreichbar oder unsicher | nur CI und lokal, per Digest gepinnt; M3-20 vor M4 |
 | Mehrere PRs ändern `ENTSCHEIDUNGSLOG.md` am Ende | vor dem Fertigmelden `main` holen, alle Zeilen erhalten, eigene ans Ende |
