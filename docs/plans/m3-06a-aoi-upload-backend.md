@@ -1,8 +1,22 @@
 # M3-06a — AOI-Upload: Backend-Route mit Shapefile: Plan
 
 **Aufgabe:** M3-06a aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B.** Dieser Plan-Schritt hält an; Umsetzung erst nach Ottos Freigabe
-der Fragen in §9, in derselben Session.
+**Stufe B — von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1),
+F4 (1), F5 (**2**), F6 (1) (§13). F5 (2) heißt: Mehrere Features werden zu
+einer `MultiPolygon` vereinigt, wenn alle polygonal sind, statt abgewiesen zu
+werden (Empfehlung war 1/Abweisen) — §9 unten ist entsprechend angepasst.
+**Nachtrag beim Umsetzen (26.09.2026, zu F3):** Gemessen, dass Starlettes
+`max_part_size` (die Grundlage der F3-Empfehlung, Option A) **nur normale
+Formularfelder deckelt, keine Datei-Teile** — ein Datei-Teil über der
+1-MiB-Spool-Schwelle landet unabhängig von `max_part_size` in einer echten
+`SpooledTemporaryFile`-Platte-Datei (nachgeprüft: ein 1 048 577-Byte-Upload
+löste einen `rollover()`-Aufruf aus, `max_part_size=1_048_576` gesetzt oder
+nicht). Damit hätte Option A ihr eigenes Versprechen nicht eingehalten. §6 ist
+entsprechend auf **Option B** (Rohkörper statt `multipart/form-data`)
+umgeschrieben — dieselbe Größe (1 MiB), dasselbe Ziel (nachweisbar nie auf
+Platte), nur der Übertragungsweg ändert sich. Das ist eine technische
+Korrektur der Umsetzung von F3, keine neue Frage: Ziel und Deckelwert aus F3
+bleiben, wie von Otto freigegeben.
 **Ort im Repo:** `docs/plans/m3-06a-aoi-upload-backend.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P7, M3-06a;
 `architekturplan.md` 0, 3.1, 7.3; `projektuebersicht.md` §2 (Prinzipien 1, 9,
@@ -111,7 +125,7 @@ keine STAC-Ressource).
 
 ---
 
-## 6. Nur Arbeitsspeicher: das Multipart-Problem
+## 6. Nur Arbeitsspeicher: das Multipart-Problem — **umgesetzt als Option B**
 
 **Befund (nachgeprüft in der Sitzung, Starlette 1.7.0/FastAPI 0.141.1):**
 FastAPIs `UploadFile` läuft über Starlettes `MultiPartParser`, die **jeden**
@@ -125,14 +139,13 @@ gespeichert, auch nicht auf Platte" sobald eine Datei diese Schwelle
 
 | Option | Beschreibung | Dafür | Dagegen |
 |---|---|---|---|
-| **A. `UploadFile`/`multipart/form-data`, Deckel = 1 MiB (empfohlen)** | Größendeckel für den gesamten Upload exakt auf Starlettes eigene Spool-Schwelle legen (`Request.form(max_part_size=1_048_576)`, zusätzlich eigene Prüfung der gelesenen Bytes) | Klassisches, standardkonformes Muster (`<input type="file">` + `FormData`); Starlettes eigener Code garantiert dann, dass der Inhalt nie den Spool-Punkt erreicht — kein eigener Nachweis nötig, dass GDAL/Python nicht doch spult, weil die Schwelle selbst der Deckel ist. Ein AOI-Polygon mit dem in §8 vorgeschlagenen Punktanzahl-Deckel (20 000) passt als Text-GeoJSON oder als Shapefile-ZIP komfortabel unter 1 MiB (grobe Rechnung: 20 000 Stützpunkte × ~16 Byte im `.shp`-Binärformat ≈ 320 KiB, plus `.prj`/`.dbf` im Kilobyte-Bereich) | Deckel wirkt auf den ersten Blick klein/willkürlich; ein sehr detailreiches, aber legitimes Polygon (viele Zehntausend Stützpunkte) würde abgewiesen — dagegen steht, dass genau das auch der Punktanzahl-Deckel in §8 schon tut |
-| **B. Rohkörper ohne Multipart** | `POST` mit dem Dateiinhalt direkt als Body (`Content-Type` z. B. `application/zip`), Dateiname über einen Query-Parameter oder Header statt über `FormData`; `await request.body()` bzw. `request.stream()` mit eigenem, höherem Deckel (z. B. 10 MiB), da Starlettes Spool-Mechanik hier nicht greift (reine Body-Lesung, kein `MultiPartParser`) | Erlaubt einen großzügigeren Deckel ohne die 1-MiB-Grenze; einfacher zu prüfen (kein `python-multipart` nötig) | Untypisch für einen Datei-Upload aus dem Browser; das Frontend (M3-06b) müsste den Dateinamen separat mitschicken statt einem gewohnten `FormData`-Feld |
+| **A. `UploadFile`/`multipart/form-data`, Deckel = 1 MiB** | Größendeckel für den gesamten Upload exakt auf Starlettes eigene Spool-Schwelle legen (`Request.form(max_part_size=1_048_576)`, zusätzlich eigene Prüfung der gelesenen Bytes) | Klassisches, standardkonformes Muster (`<input type="file">` + `FormData`) | **Widerlegt beim Umsetzen:** `max_part_size` deckelt in dieser Starlette-Version nur normale Formularfelder (`MultiPartParser.on_part_data`, Zweig `self._current_part.file is None`); für einen Datei-Teil (`file is not None`) gibt es dort **keine** Größenprüfung — die Daten gehen ungeprüft in die `SpooledTemporaryFile`. Nachgemessen mit einer echten `TestClient`-Anfrage: ein Upload von exakt 1 048 576 Byte löste `rollover()` nicht aus, einer von 1 048 577 Byte dagegen schon — unabhängig davon, ob `max_part_size` gesetzt war. Otto freigegebenes F3 (1) wollte genau diese Garantie; Option A liefert sie in dieser Starlette-Version nicht, ohne selbst eine private, kaum wartbare Kopie des Multipart-Parsers zu schreiben |
+| **B. Rohkörper ohne Multipart (umgesetzt)** | `POST` mit dem Dateiinhalt direkt als Body, Dateiname über einen Pflicht-Query-Parameter `filename`; `request.stream()` in Häppchen gelesen, mit eigenem, laufend mitgezähltem Deckel — bricht ab, sobald `MAX_UPLOAD_BYTES` überschritten ist, **bevor** ein Byte mehr gelesen wird | Kein `SpooledTemporaryFile`, keine Starlette-Interna zwischen unserem Code und den Bytes; „landet nie auf Platte" ist dadurch eine triviale Tatsache über unseren eigenen Code, keine Annahme über Starlettes; kein `python-multipart` als Abhängigkeit nötig (§4-Pakete reichen) | Untypisch gegenüber einem klassischen `<input type="file">` + `FormData`-Upload; das Frontend (M3-06b) schickt `file` (ein `Blob`) direkt als Body und den Dateinamen als Query-Parameter, nicht als `FormData`-Feld — eine kleine, aber merkliche Abweichung vom Browser-Standardmuster |
 
-**Empfehlung: Option A.** 1 MiB deckt die in §8 vorgeschlagenen
-Deckelwerte komfortabel ab, ist Standard-Idiom, und macht den Beweis
-„landet nie auf Platte" trivial (Starlettes eigene Konstante ist der Deckel,
-nicht eine Annahme über ihr Verhalten). Ein Test hält das trotzdem fest, siehe
-§10 dritter Punkt. → **Frage F3**.
+**Umgesetzt: Option B**, mit demselben Deckel (1 MiB) und demselben Ziel, das
+F3 wollte — nur der Übertragungsweg ist ein anderer als ursprünglich
+vorgeschlagen (Nachtrag oben). Ein Test hält die Garantie trotzdem fest,
+siehe §11 dritter Punkt.
 
 ---
 
@@ -170,13 +183,12 @@ nicht eine Annahme über ihr Verhalten). Ein Test hält das trotzdem fest, siehe
   über `io.BytesIO`, jedes Element über `ZipFile.open(name)` in Häppchen
   gelesen, in ein weiteres `BytesIO` akkumuliert).
 - Erwartete Elemente (Dateiname-Endung, Groß-/Kleinschreibung ignoriert):
-  `.shp` und `.prj` **Pflicht**; `.shx`/`.dbf` optional (nur Geometrie wird
-  gebraucht, keine Attribute — zu verifizieren beim Umsetzen, ob `pyshp` ganz
-  ohne `.shx` einen reinen Shape-Scan erlaubt oder ob ein synthetischer `.shx`
-  aus dem `.shp` nachgebaut werden muss). Fehlt `.shp` oder `.prj` → `400`,
-  „fehlt", nicht geraten (explizit für `.prj` in der Aufgabenstellung
-  gefordert, hier gleich auf `.shp` erweitert, weil ohne `.shp` keine
-  Geometrie da ist).
+  `.shp` und `.prj` **Pflicht**; `.shx`/`.dbf` optional (nachgeprüft beim
+  Umsetzen: `shapefile.Reader(shp=..., shx=None, dbf=None)` liest die
+  Geometrie unverändert, `pyshp` verlangt keine der beiden für einen reinen
+  Shape-Zugriff). Fehlt `.shp` oder `.prj` → `400`, „fehlt", nicht geraten
+  (explizit für `.prj` in der Aufgabenstellung gefordert, hier gleich auf
+  `.shp` erweitert, weil ohne `.shp` keine Geometrie da ist).
 - **Erlaubtes Namensmuster** für Einträge: ein einziger regulärer Ausdruck
   `^[\w.-]+\.(shp|shx|dbf|prj|cpg)$` (ohne Pfadanteil, keine Groß-/
   Kleinschreibungsvorgabe). Alles, was nicht passt, macht den Upload
@@ -250,21 +262,29 @@ mehr als einem `Placemark`, das eine erlaubte Geometrie trägt):
 
 | Option | Verhalten | Bewertung |
 |---|---|---|
-| **A. Abweisen (empfohlen)** | `400` mit der Anzahl gefundener Geometrien, „export exactly one shape and upload again" | Ehrlich (Prinzip 9 „Ehrlichkeit in der Anzeige"): ein Nutzer, der aus Versehen mehrere Flächen exportiert, verliert sonst stillschweigend alle bis auf eine (heutiges `aoiFile.ts`-Verhalten, F3) — die Route soll das nicht wiederholen, wenn sie schon ohnehin geprüft wird |
-| **B. Vereinigen** (`shapely.union_all`) zu einer `MultiPolygon`, nur wenn alle Geometrien vom selben Grundtyp (polygonal) sind | erlaubt eine absichtlich mehrteilige AOI (z. B. zwei getrennte Untersuchungsgebiete) in einer Datei | verdeckt, ob mehrere Features Absicht oder Versehen waren; bei gemischten Typen (z. B. ein Polygon und ein Punkt) bräuchte es ohnehin eine Sonderregel |
-| **C. Erste brauchbare Geometrie, Rest verwerfen** | heutiges Verhalten von `aoiFile.ts` (F3), unverändert übernehmen | am wenigsten Überraschung gegenüber heute, aber genau die stille Flächen-Verkleinerung, die Prinzip 9 vermeiden soll — und M3-06a soll laut Ziel „einheitlich geprüft" liefern, nicht nur „genauso lax wie bisher" |
+| A. Abweisen (Empfehlung war dies) | `400` mit der Anzahl gefundener Geometrien, „export exactly one shape and upload again" | Ehrlich (Prinzip 9), aber verhindert eine absichtlich mehrteilige AOI in einer Datei |
+| **B. Vereinigen (Otto, F5 = 2, umgesetzt)** | `shapely.ops.unary_union` zu einer `Polygon`/`MultiPolygon`, **nur wenn alle gefundenen Geometrien polygonal sind** (`Polygon`/`MultiPolygon`); sind mehrere gefunden und mindestens eine ist kein Polygon (z. B. mehrere `Point`, oder ein `Point` neben einem `Polygon`), wird abgewiesen (`400`, nennt die gefundenen Typen) — dafür gibt es keine einfache, nicht-ratende Vereinigung | erlaubt eine absichtlich mehrteilige AOI (z. B. zwei getrennte Untersuchungsgebiete) in einer Datei, ohne bei uneindeutigen Mischungen zu raten |
+| C. Erste brauchbare Geometrie, Rest verwerfen | heutiges Verhalten von `aoiFile.ts` (F3) | am wenigsten Überraschung gegenüber heute, aber die stille Flächen-Verkleinerung, die Prinzip 9 vermeiden soll |
 
-**Empfehlung: Option A.** → **Frage F5.**
+**Otto, F5 = 2 (26.09.2026): Option B.** Mehrere polygonale Geometrien
+vereinigt die Route selbst zu einer `MultiPolygon` (bzw. `Polygon`, wenn die
+Vereinigung zusammenhängend wird); alles andere mit mehr als einer Geometrie
+bleibt ein `400`. Die abschließende Punktanzahl- und Gültigkeitsprüfung aus
+§7.4 läuft auf dem **vereinigten** Ergebnis.
 
 ---
 
 ## 10. API-Form
 
-- **Route:** `POST /aoi/upload`, im Prozess `api`, außerhalb `/stac` (analog
-  `/coverage/{dataset_id}`, §5).
-- **Anfrage:** `multipart/form-data`, ein Feld `file` (Option A aus §6);
-  Dateiname liefert die Formaterkennung (`.geojson`/`.json` → GeoJSON, `.kml`
-  → KML, `.zip` → Shapefile-Bündel); alles andere → `400`.
+- **Route:** `POST /aoi/upload?filename=<name>`, im Prozess `api`, außerhalb
+  `/stac` (analog `/coverage/{dataset_id}`, §5).
+- **Anfrage (Option B aus §6, nach dem Nachtrag zu F3):** der Dateiinhalt
+  direkt als Anfragekörper (kein `multipart/form-data`, kein `FormData`-Feld);
+  der Pflicht-Query-Parameter `filename` liefert die Formaterkennung
+  (`.geojson`/`.json` → GeoJSON, `.kml` → KML, `.zip` → Shapefile-Bündel);
+  alles andere → `400`. Frontend-seitig (M3-06b) heißt das: den ausgewählten
+  `File`/`Blob` direkt als `body` schicken, `file.name` als `filename` in die
+  URL.
 - **Antwort (`200`):** die geprüfte Geometrie direkt als GeoJSON-Objekt in
   EPSG:4326 (`{"type": "Polygon", "coordinates": [...]}`), ohne Hülle — passt
   unverändert in die Stelle, an der `frontend/src/aoiFile.ts`s
@@ -302,7 +322,10 @@ Je Format (GeoJSON, KML, Shapefile-ZIP), soweit zutreffend:
 7. KML mit einer externen Entität (`<!ENTITY xxe SYSTEM "file:///etc/passwd">`
    o. Ä.) → `400`, nie aufgelöst.
 8. zu viele Punkte (über `MAX_AOI_POINTS`) → `400`.
-9. mehrere Features/Placemarks/Datensätze → `400` mit Anzahl (Option A, §9).
+9. mehrere polygonale Features/Placemarks/Datensätze → `200`, vereinigte
+   `MultiPolygon`/`Polygon` (Option B, §9); mehrere Features, darunter
+   mindestens ein nicht-polygonales (z. B. zwei `Point` oder ein `Point` und
+   ein `Polygon`) → `400` mit den gefundenen Typen.
 10. selbstschneidendes („Bowtie") Polygon → `400`.
 11. Polygon über den Antimeridian (Longitude-Werte beidseitig `±179.x` im
     selben Ring) → `200`, wird durchgelassen (§7.4 Punkt 5).
@@ -337,30 +360,33 @@ Dazu, unabhängig vom Format:
 
 ---
 
-## 13. Fragen an Otto
+## 13. Fragen an Otto — beantwortet 26.09.2026
 
 **F1 — Bibliothek (§4).** (1) reine Python-Lösung: `pyshp` + `defusedxml` +
-`pyproj` (**empfohlen**). (2) OGR über `osgeo`-Bindings. (3) `fiona`/
-`pyogrio`/`geopandas`.
+`pyproj`. (2) OGR über `osgeo`-Bindings. (3) `fiona`/`pyogrio`/`geopandas`.
+**Otto: 1.**
 
 **F2 — Modul/Prozess (§5).** Parsing/Prüfung in `access/aoi_upload.py`, Route
-in `api/aoi_upload_route.py` im Prozess `api`, wie `coverage_route.py` — nur
-zur Bestätigung, keine echte Alternative gefunden. (1) so. (2) anders, bitte
-benennen.
+in `api/aoi_upload_route.py` im Prozess `api`, wie `coverage_route.py`. (1)
+so. (2) anders, bitte benennen. **Otto: 1.**
 
 **F3 — Multipart-Deckel (§6).** (1) `UploadFile`, Deckel 1 MiB = Starlettes
-Spool-Schwelle (**empfohlen**). (2) Rohkörper ohne Multipart, höherer Deckel
-(z. B. 10 MiB), Dateiname über Query-Parameter/Header statt `FormData`-Feld.
+Spool-Schwelle. (2) Rohkörper ohne Multipart, höherer Deckel (z. B. 10 MiB),
+Dateiname über Query-Parameter/Header statt `FormData`-Feld. **Otto: 1** —
+beim Umsetzen widerlegt (§6-Nachtrag: Starlettes eigener Deckel schützt keine
+Datei-Teile) und durch Option 2 (Rohkörper) ersetzt, bei unverändertem Ziel
+und Deckelwert (1 MiB).
 
 **F4 — Deckelwerte (§8).** (1) wie in der Tabelle: 1 MiB Upload, 20 MiB
-entpackt (Element und Summe), 10 ZIP-Elemente, 20 000 Punkte (**empfohlen**).
-(2) andere Werte, bitte nennen.
+entpackt (Element und Summe), 10 ZIP-Elemente, 20 000 Punkte. (2) andere
+Werte, bitte nennen. **Otto: 1.**
 
-**F5 — Mehrere Features (§9).** (1) abweisen, mit Anzahl in der Meldung
-(**empfohlen**). (2) zu einer `MultiPolygon` vereinigen, wenn alle Geometrien
-polygonal sind. (3) erste brauchbare Geometrie übernehmen, Rest stillschweigend
-verwerfen (heutiges Frontend-Verhalten).
+**F5 — Mehrere Features (§9).** (1) abweisen, mit Anzahl in der Meldung. (2)
+zu einer `MultiPolygon` vereinigen, wenn alle Geometrien polygonal sind. (3)
+erste brauchbare Geometrie übernehmen, Rest stillschweigend verwerfen
+(heutiges Frontend-Verhalten). **Otto: 2** — abweichend von der Empfehlung;
+§9 ist entsprechend umgeschrieben.
 
-**F6 — Erlaubte Geometrietypen (§9).** (1) `Polygon`, `MultiPolygon`, `Point`
-(**empfohlen**). (2) zusätzlich `LineString`/`MultiLineString`. (3) andere
-Auswahl, bitte nennen.
+**F6 — Erlaubte Geometrietypen (§9).** (1) `Polygon`, `MultiPolygon`, `Point`.
+(2) zusätzlich `LineString`/`MultiLineString`. (3) andere Auswahl, bitte
+nennen. **Otto: 1.**
