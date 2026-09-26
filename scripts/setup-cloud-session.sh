@@ -16,6 +16,10 @@ set -uo pipefail
 log() { printf '\n== %s\n' "$*"; }
 warn() { printf '\n!! %s\n' "$*" >&2; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/frontend-deps.sh
+source "${SCRIPT_DIR}/lib/frontend-deps.sh"
+
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
@@ -94,11 +98,23 @@ if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
 fi
 
 # --- Node -----------------------------------------------------------------
-if [ -d "${REPO_ROOT}/frontend/node_modules" ]; then
-  log "Frontend-Abhängigkeiten existieren bereits"
+# Ein bloßes "node_modules existiert" übersieht ein geändertes
+# package-lock.json (M3-24: polyclip-ts fehlte in zwei Sitzungen, M3-11c und
+# M3-12, weil node_modules aus einer älteren Sitzung stammte). Verglichen wird
+# deshalb ein Hash der Lockfile gegen den Stand der letzten Installation.
+FRONTEND="${REPO_ROOT}/frontend"
+FRONTEND_LOCKFILE="${FRONTEND}/package-lock.json"
+FRONTEND_LOCK_HASH_FILE="${FRONTEND}/node_modules/.package-lock.sha256"
+
+if [ ! -f "${FRONTEND_LOCKFILE}" ]; then
+  warn "frontend/package-lock.json fehlt; keine Frontend-Abhängigkeiten installiert"
+elif frontend_deps_current "${FRONTEND_LOCKFILE}" "${FRONTEND}/node_modules" "${FRONTEND_LOCK_HASH_FILE}"; then
+  log "Frontend-Abhängigkeiten aktuell (package-lock.json unverändert)"
 else
-  log "Frontend-Abhängigkeiten installieren"
-  (cd "${REPO_ROOT}/frontend" && npm ci --no-audit --no-fund) || warn "npm ci fehlgeschlagen"
+  log "Frontend-Abhängigkeiten installieren (npm ci)"
+  (cd "${FRONTEND}" && npm ci --no-audit --no-fund \
+    && frontend_lock_hash "${FRONTEND_LOCKFILE}" > "${FRONTEND_LOCK_HASH_FILE}") \
+    || warn "npm ci fehlgeschlagen"
 fi
 
 # --- Postgres + PostGIS -----------------------------------------------------
