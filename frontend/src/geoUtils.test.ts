@@ -82,6 +82,34 @@ describe('quicklookCoords', () => {
     expect(coords).not.toBeNull();
   });
 
+  it('prefers the registry-named asset over visual (M3-12 review F-04)', () => {
+    const preferredAsset: StacAsset = {
+      href: 'https://example.invalid/data.tif',
+      'proj:transform': [10, 0, 400000, 0, -10, 5300000],
+      'proj:shape': [500, 500],
+    };
+    const withVisual = quicklookCoords(edgeItem());
+    const withPreferred = quicklookCoords(
+      edgeItem({ assets: { visual: VISUAL_ASSET, data: preferredAsset } }),
+      'data',
+    );
+    expect(withPreferred).not.toEqual(withVisual);
+    expect(withPreferred).not.toBeNull();
+    expect(withPreferred).toHaveLength(4);
+  });
+
+  it('falls back to visual when the registry-named asset is missing or has no extent', () => {
+    const byName = quicklookCoords(edgeItem(), 'nonexistent');
+    const withoutName = quicklookCoords(edgeItem());
+    expect(byName).toEqual(withoutName);
+
+    const notGeoreferenced = quicklookCoords(
+      edgeItem({ assets: { visual: VISUAL_ASSET, thumbnail: { href: 'https://example.invalid/thumb.jpg' } } }),
+      'thumbnail',
+    );
+    expect(notGeoreferenced).toEqual(withoutName);
+  });
+
   it('shows no quicklook for a non-UTM proj:code it cannot convert', () => {
     expect(quicklookCoords(edgeItem({ properties: { 'proj:code': 'IAU_2015:30100' } }))).toBeNull();
   });
@@ -160,6 +188,20 @@ describe('quicklookAoiPixelRings', () => {
   it('is null when the item has no usable CRS, mirroring quicklookCoords', () => {
     const item = edgeItem({ properties: { datetime: '2026-09-20T10:37:40Z' } });
     expect(quicklookAoiPixelRings(item, { type: 'Polygon', coordinates: [[[0, 0]]] })).toBeNull();
+  });
+
+  it('clips onto the registry-named asset\'s pixel grid, not visual\'s (M3-12 review F-04)', () => {
+    const preferredAsset: StacAsset = {
+      href: 'https://example.invalid/data.tif',
+      'proj:transform': [10, 0, 499980, 0, -10, 5300040],
+      'proj:shape': [500, 500],
+    };
+    const item = edgeItem({ assets: { visual: VISUAL_ASSET, data: preferredAsset } });
+    const [tl, tr, br, bl] = quicklookCoords(item, 'data')!;
+    const aoi: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[tl, tr, br, bl, tl]] };
+    const [ring] = quicklookAoiPixelRings(item, aoi, 'data')!;
+    expect(ring[2][0]).toBeCloseTo(500, 3);
+    expect(ring[2][1]).toBeCloseTo(500, 3);
   });
 
   it('is null without a georeferenced asset', () => {

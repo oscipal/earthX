@@ -163,16 +163,27 @@ function assetExtent(asset: StacAsset): Coords4 | null {
 // `proj:bbox`: Earth Search's Sentinel-2 items carry no `proj:bbox` at all
 // (STAC projection extension v1.1 leaves it optional and unset here), so the
 // tile's true extent — nodata border included — has to come from an asset's
-// `proj:transform`/`proj:shape` instead. `visual` first, the RGB asset the
-// quicklook approximates and the dataset's own default-render asset;
-// otherwise the first asset that carries both fields.
-function georeferencedAsset(assets: Record<string, StacAsset>): StacAsset | null {
+// `proj:transform`/`proj:shape` instead.
+//
+// `preferred` (M3-12, F-04, Otto 26.09.2026) is the dataset's own registry
+// choice — `earthx:default_render.assets[0]` — checked before the `visual`
+// literal: today the two always agree (Sentinel-2 COG's default render *is*
+// `visual`), so this changes nothing yet, but a future `browse: 'quicklook'`
+// dataset with several georeferenced assets and no asset actually named
+// `visual` would otherwise fall through to "the first one found", in
+// `Object.values` order — not necessarily the one the dataset's own render
+// spec says to show. `visual` stays as a second guess for a caller that
+// passes no `preferred` (older code, a test); the plain fallback below is
+// the last resort for either case.
+function georeferencedAsset(assets: Record<string, StacAsset>, preferred?: string): StacAsset | null {
+  const named = preferred ? assets[preferred] : undefined;
+  if (named && assetExtent(named)) return named;
   if (assets.visual && assetExtent(assets.visual)) return assets.visual;
   return Object.values(assets).find((asset) => assetExtent(asset)) ?? null;
 }
 
-function georeferencedExtent(assets: Record<string, StacAsset>): Coords4 | null {
-  const asset = georeferencedAsset(assets);
+function georeferencedExtent(assets: Record<string, StacAsset>, preferred?: string): Coords4 | null {
+  const asset = georeferencedAsset(assets, preferred);
   return asset ? assetExtent(asset) : null;
 }
 
@@ -184,13 +195,16 @@ function georeferencedExtent(assets: Record<string, StacAsset>): Coords4 | null 
 // `null` (no quicklook) rather than a guess when the item's CRS or a
 // georeferenced asset's extent is missing, or the CRS isn't a UTM zone we
 // can convert.
-export function quicklookCoords(item: Pick<StacItem, 'properties' | 'assets'> | null | undefined): Coords4 | null {
+export function quicklookCoords(
+  item: Pick<StacItem, 'properties' | 'assets'> | null | undefined,
+  preferredAsset?: string,
+): Coords4 | null {
   if (!item) return null;
   const code = projCode(item.properties ?? {});
   if (!code) return null;
   const toWgs84 = toWgs84Converter(code);
   if (!toWgs84) return null;
-  const extent = georeferencedExtent(item.assets ?? {});
+  const extent = georeferencedExtent(item.assets ?? {}, preferredAsset);
   if (!extent) return null;
   return [toWgs84(extent[0]), toWgs84(extent[1]), toWgs84(extent[2]), toWgs84(extent[3])];
 }
@@ -220,12 +234,13 @@ function invertAffine(transform: number[]): ((x: number, y: number) => [number, 
 export function quicklookAoiPixelRings(
   item: Pick<StacItem, 'properties' | 'assets'>,
   aoi: GeoJSON.Geometry,
+  preferredAsset?: string,
 ): [number, number][][] | null {
   const code = projCode(item.properties ?? {});
   if (!code) return null;
   const fromWgs84 = fromWgs84Converter(code);
   if (!fromWgs84) return null;
-  const asset = georeferencedAsset(item.assets ?? {});
+  const asset = georeferencedAsset(item.assets ?? {}, preferredAsset);
   const transform = asset?.['proj:transform'];
   if (!asset || !isFiniteNumberArray(transform, 6)) return null;
   const invert = invertAffine(transform);

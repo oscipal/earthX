@@ -295,12 +295,25 @@ describe('quicklookAsset', () => {
     expect(quicklookAsset(it_)?.href).toBe('https://example.test/overview.jpg');
   });
 
-  it('falls back to the first image/* asset', () => {
+  it('falls back to a browsable image type with no role at all', () => {
+    const it_ = item({
+      preview: { href: 'https://example.test/preview.png', type: 'image/png' },
+      other: { href: 'https://example.test/other.json', type: 'application/json' },
+    });
+    expect(quicklookAsset(it_)?.href).toBe('https://example.test/preview.png');
+  });
+
+  // Found answering Otto's question on F-04 (26.09.2026): `image/tiff` also
+  // starts with `image/`, and the DEM's own COG asset carries exactly this
+  // type with no `thumbnail`/`overview` role — a browser cannot decode a
+  // GeoTIFF behind an `<img>` tag, so a COG must never qualify as a
+  // quicklook, real-data MIME coincidence or not.
+  it('does not treat a COG (image/tiff) with no role as a quicklook', () => {
     const it_ = item({
       data: { href: 'https://example.test/data.tif', type: 'image/tiff; application=geotiff' },
       other: { href: 'https://example.test/other.json', type: 'application/json' },
     });
-    expect(quicklookAsset(it_)?.href).toBe('https://example.test/data.tif');
+    expect(quicklookAsset(it_)).toBeNull();
   });
 
   it('is null when nothing matches', () => {

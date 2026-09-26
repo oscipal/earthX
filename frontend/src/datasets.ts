@@ -123,6 +123,17 @@ export function defaultRenderOf(collection: Collection): EarthxDefaultRender | n
   return collection['earthx:default_render'] ?? null;
 }
 
+// The asset georeferencing (`quicklookCoords`/`quicklookAoiPixelRings`,
+// M3-12 review F-04) should read off of, rather than the `visual` literal those
+// functions used to assume: the registry's own standard-visualisation asset,
+// the same one full-resolution viewing renders by default. `undefined` where
+// the dataset names none, which leaves those functions' `visual`/generic
+// fallback in charge, unchanged.
+export function preferredGeoreferencedAsset(dataset: DatasetOption): string | undefined {
+  if (!dataset.viewable) return undefined;
+  return defaultRenderOf(dataset.collection)?.assets?.[0];
+}
+
 // The released tile levels, or `null` where the dataset names none or names
 // something that cannot be a range. No guessed range, for the same reason there
 // is no guessed grouping key: below the lower bound a tile shows several scenes
@@ -247,13 +258,23 @@ export function zoomFloorHint(dataset: DatasetOption | undefined, mapZoom: numbe
 
 // The quicklook asset, chosen generically: role `thumbnail`, then `overview`,
 // then the first `image/*` asset. `null` when the item carries none.
+// Media types a browser can actually decode behind an `<img>` tag — found
+// while answering Otto's question on F-04 (26.09.2026): `image/tiff` also
+// starts with `image/`, so the generic fallback below used to treat the
+// DEM's own COG (`type: "image/tiff; …"`, no `thumbnail`/`overview` role) as
+// a browsable quicklook. Placement (`quicklookCoords`) already fails safe for
+// the DEM today, because its asset carries no `proj:transform` either — but
+// that is a second, unrelated reason nothing gets drawn, not something this
+// function should keep depending on. A COG is data, never a quicklook.
+const BROWSABLE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 export function quicklookAsset(item: StacItem): StacAsset | null {
   const assets = Object.values(item.assets ?? {});
   const byRole = (role: string): StacAsset | undefined =>
     assets.find((a) => a.roles?.includes(role));
-  return (
-    byRole('thumbnail') ?? byRole('overview') ?? assets.find((a) => a.type?.startsWith('image/')) ?? null
-  );
+  const byBrowsableType = (): StacAsset | undefined =>
+    assets.find((a) => a.type && BROWSABLE_IMAGE_TYPES.some((t) => a.type!.startsWith(t)));
+  return byRole('thumbnail') ?? byRole('overview') ?? byBrowsableType() ?? null;
 }
 
 // What the browse view can show for one scene before anyone asks for full

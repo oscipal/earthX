@@ -8,7 +8,7 @@ import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
-import { quicklookAsset, quicklookPlan } from './datasets';
+import { preferredGeoreferencedAsset, quicklookAsset, quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
 import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
@@ -405,7 +405,7 @@ function addPreview(
     dynLayerIds.push(`m-tiles-lyr-${i}`);
     return;
   }
-  const coords = quicklookCoords(item);
+  const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
   if (!coords) return;
   const srcId = `m-img-src-${i}`;
   const lyrId = `m-img-lyr-${i}`;
@@ -441,9 +441,10 @@ function addQuicklookUnderlay(
 ): void {
   const asset = quicklookAsset(item);
   if (!asset?.href) return;
-  const coords = quicklookCoords(item);
+  const preferred = preferredGeoreferencedAsset(dataset);
+  const coords = quicklookCoords(item, preferred);
   if (!coords) return;
-  const clipRings = clip ? quicklookAoiPixelRings(item, clip) : null;
+  const clipRings = clip ? quicklookAoiPixelRings(item, clip, preferred) : null;
   const srcId = `m-img-src-${i}`;
   const lyrId = `m-img-lyr-${i}`;
   loadProcessed(asset.href, dataset.quicklookNodataMax, clipRings, (dataUrl) => {

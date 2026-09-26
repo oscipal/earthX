@@ -14,7 +14,7 @@ import {
   VIEWPORT_ROUND_LEVELS,
 } from './coverage';
 import type { DatasetOption } from './datasets';
-import { acquisitionNote, datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
+import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
@@ -656,7 +656,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const plan = browsed ? quicklookPlan(it, browsed) : null;
       if (!plan) continue;
       if (plan.kind === 'image') {
-        const coords = quicklookCoords(it);
+        const coords = quicklookCoords(it, browsed && preferredGeoreferencedAsset(browsed));
         if (coords) {
           overlays.push({
             kind: 'image',
