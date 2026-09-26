@@ -39,11 +39,18 @@ export function errorDetail(body: unknown, status: number, statusText: string): 
 // re-parse `.message` to get it back.
 export class HttpError extends Error {
   readonly status: number;
+  // The raw `detail` field of a JSON error body, when there was one and it was
+  // a string — `undefined` for a non-JSON body, a missing `detail`, or a
+  // `detail` that wasn't a string (M3-06b: lets a caller (`aoiFile.ts`) tell "the
+  // route gave an actual reason" apart from `message`'s status-line fallback,
+  // which `errorDetail` also uses when there is no real detail to show).
+  readonly detail?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: string) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -55,7 +62,10 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     } catch {
       /* non-JSON error body — errorDetail falls back to the status line */
     }
-    throw new HttpError(res.status, errorDetail(body, res.status, res.statusText));
+    const detail = typeof (body as StacErrorBody | undefined)?.detail === 'string'
+      ? ((body as StacErrorBody).detail as string)
+      : undefined;
+    throw new HttpError(res.status, errorDetail(body, res.status, res.statusText), detail);
   }
   return (await res.json()) as T;
 }
@@ -65,6 +75,24 @@ export async function fetchCollections(): Promise<Collection[]> {
     await fetch(`${BASE}/stac/collections`),
   );
   return data.collections;
+}
+
+// M3-06b: `POST /aoi/upload` (M3-06a, `backend/earthx/api/aoi_upload_route.py`)
+// checks an uploaded GeoJSON/KML/Shapefile-ZIP file and returns the geometry it
+// found, in EPSG:4326. No `multipart/form-data` (the route's plan §6 measured
+// that Starlette spools any file part over 1 MiB to disk regardless of a size
+// cap, which the "never on disk" upload is built to avoid): the file goes as
+// the raw request body, its name as a query parameter. `jsonOrThrow` turns a
+// `400`/`413`/other error into an `HttpError` the caller (`aoiFile.ts`) maps to
+// a message; a successful response is the bare geometry object, no envelope.
+export async function uploadAoi(file: Blob, filename: string): Promise<GeoJSON.Geometry> {
+  return jsonOrThrow<GeoJSON.Geometry>(
+    await fetch(`${BASE}/aoi/upload?filename=${encodeURIComponent(filename)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    }),
+  );
 }
 
 export interface SearchQuery {

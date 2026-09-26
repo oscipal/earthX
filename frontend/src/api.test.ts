@@ -10,6 +10,7 @@ import {
   HttpError,
   nextTokenFrom,
   searchItems,
+  uploadAoi,
 } from './api';
 
 describe('buildSearchBody', () => {
@@ -277,5 +278,74 @@ describe('downloadCrop', () => {
       vi.fn().mockResolvedValue(blobResponse({ 'X-Total-Groups': 'not-a-number', 'X-Skipped-Groups': '-1' })),
     );
     expect(await downloadCrop(request)).toMatchObject({ totalGroups: 0, skippedGroups: 0 });
+  });
+});
+
+// M3-06b: `POST /aoi/upload` (M3-06a) is called with the file's own bytes as the
+// raw request body — never `FormData` (plan §6: Starlette's multipart parser
+// spools any file part over 1 MiB to disk, `max_part_size` or not).
+describe('uploadAoi', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('POSTs the file itself as the body and the name as a ?filename= query parameter', async () => {
+    const square: GeoJSON.Polygon = {
+      type: 'Polygon',
+      coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, square)));
+    const file = new File(['{}'], 'aoi.geojson');
+
+    const geometry = await uploadAoi(file, file.name);
+
+    expect(geometry).toEqual(square);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('/aoi/upload?filename=aoi.geojson');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(file); // the Blob itself, not a FormData wrapper
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream');
+  });
+
+  it('percent-encodes spaces and reserved characters in the filename', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { type: 'Point', coordinates: [0, 0] })));
+    const name = 'a b&c#d.kml';
+
+    await uploadAoi(new File([], name), name);
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe(`/aoi/upload?filename=${encodeURIComponent(name)}`);
+  });
+
+  it('rejects with an HttpError carrying the route detail on a 400', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(400, { detail: 'not valid JSON' })));
+
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({
+      status: 400,
+      detail: 'not valid JSON',
+    });
+  });
+
+  it('leaves detail undefined for a non-JSON error body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: async () => {
+          throw new Error('not json');
+        },
+      } as unknown as Response),
+    );
+
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({
+      status: 400,
+      detail: undefined,
+    });
   });
 });
