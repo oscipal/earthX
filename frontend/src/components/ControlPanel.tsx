@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import type { CoverageHistogramPoint } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { maturityLabel, maturityNote } from '../datasets';
+import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
@@ -20,10 +20,12 @@ function DateField({
   value,
   onChange,
   label,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
+  disabled?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
@@ -34,12 +36,14 @@ function DateField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
+        disabled={disabled}
       />
       <button
         type="button"
         className="date-icon-btn"
         tabIndex={-1}
         aria-label={`Open the ${label.toLowerCase()} calendar`}
+        disabled={disabled}
         onClick={() => {
           const input = ref.current;
           if (!input) return;
@@ -48,6 +52,35 @@ function DateField({
         }}
       />
     </div>
+  );
+}
+
+// M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis
+// (`capabilities.time_range=False`, the DEM) answers a search the same for
+// any chosen window — the fields stay visible and keep their values (the next
+// dataset picked may well have a time axis), but are locked rather than
+// bedienbar, with the acquisition period underneath explaining why a filter
+// would not narrow anything.
+function AcquisitionDateFields() {
+  const datasets = useAppStore((s) => s.datasets);
+  const datasetId = useAppStore((s) => s.datasetId);
+  const dateFrom = useAppStore((s) => s.dateFrom);
+  const dateTo = useAppStore((s) => s.dateTo);
+  const setDateFrom = useAppStore((s) => s.setDateFrom);
+  const setDateTo = useAppStore((s) => s.setDateTo);
+  const dataset = datasets.find((d) => d.id === datasetId);
+  const locked = !!dataset?.viewable && !dataset.hasTimeAxis;
+  const note = dataset?.viewable ? acquisitionNote(dataset.collection) : null;
+  return (
+    <>
+      <label className="field-label">Acquisition date</label>
+      <div className="date-row">
+        <DateField value={dateFrom} onChange={setDateFrom} label="From date" disabled={locked} />
+        <span>→</span>
+        <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
+      </div>
+      {locked && note && <p className="hint-text">{note}</p>}
+    </>
   );
 }
 
@@ -276,10 +309,6 @@ function CoverageControls() {
 
 export default function ControlPanel() {
   const aoi = useAppStore((s) => s.aoi);
-  const dateFrom = useAppStore((s) => s.dateFrom);
-  const dateTo = useAppStore((s) => s.dateTo);
-  const setDateFrom = useAppStore((s) => s.setDateFrom);
-  const setDateTo = useAppStore((s) => s.setDateTo);
   const searching = useAppStore((s) => s.searching);
   const sceneLookupLoading = useAppStore((s) => s.sceneLookupLoading);
   const runSearch = useAppStore((s) => s.runSearch);
@@ -324,12 +353,7 @@ export default function ControlPanel() {
 
       <CoverageControls />
 
-      <label className="field-label">Acquisition date</label>
-      <div className="date-row">
-        <DateField value={dateFrom} onChange={setDateFrom} label="From date" />
-        <span>→</span>
-        <DateField value={dateTo} onChange={setDateTo} label="To date" />
-      </div>
+      <AcquisitionDateFields />
 
       <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
         {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
