@@ -27,6 +27,7 @@ import numpy as np
 import rasterio
 from botocore.client import Config
 from botocore.exceptions import ClientError
+from redact import redact
 
 OBJECT_KEY = "smoke/native.tif"
 PERSISTED_KEY = "smoke/persisted.txt"
@@ -219,15 +220,23 @@ def main() -> int:
     bucket = os.environ["S3_BUCKET"]
     s3 = _client(access_key, secret_key, endpoint)
 
-    if args.persisted:
-        check_persisted_marker(s3, bucket)
-        return 0
+    try:
+        if args.persisted:
+            check_persisted_marker(s3, bucket)
+            return 0
 
-    run_full_suite(s3, bucket, access_key, secret_key, endpoint)
-    if args.write_marker:
-        write_persisted_marker(s3, bucket)
-    print("object store smoke: all checks passed")
-    return 0
+        run_full_suite(s3, bucket, access_key, secret_key, endpoint)
+        if args.write_marker:
+            write_persisted_marker(s3, bucket)
+        print("object store smoke: all checks passed")
+        return 0
+    except Exception as exc:
+        # Last line of defence before a raw traceback would print: boto3/S3
+        # error messages never echo back the secret key, but they do
+        # sometimes echo the access key id (e.g. `InvalidAccessKeyId`), and
+        # this job's log is public (the repo is public, see redact.py).
+        print(redact(f"object store smoke failed: {exc}", access_key, secret_key), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

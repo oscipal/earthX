@@ -25,8 +25,12 @@ from the backend image, before and after Garage starts:
             for a person to use locally (e.g. with the `aws` CLI). Never
             written to a log by the other subcommands.
 
-No secret value is ever printed by `secrets` or `init`; `show` is the one
-subcommand a human runs interactively for that reason.
+Neither `secrets` nor `init` ever print a credential — not the RPC secret,
+the admin token, the S3 secret key, or even the access key id, since
+`docker compose up` runs them as services and their output lands in
+`docker compose logs` and, in CI, in a log GitHub serves publicly (the repo
+is public, ENTSCHEIDUNGEN_2026-09-18.md §4). `show` is the one subcommand a
+human runs interactively, on their own terminal, for that reason.
 """
 
 from __future__ import annotations
@@ -42,6 +46,8 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from redact import redact
 
 # Garage's own limits (src/model/key_table.rs, v2.4.1): enforced here too so
 # a bad `.env` value fails fast, before Garage itself rejects it.
@@ -160,7 +166,13 @@ def cmd_secrets(_: argparse.Namespace) -> None:
             source = "generated"
         _write_secret_file(access_key_path, access_key)
         _write_secret_file(secret_key_path, secret_key)
-        print(f"objectstore-secrets: S3 key created ({source}), id {access_key}")
+        # Not even the access key id goes to stdout here: this is a service
+        # started by `docker compose up`, so its output lands in
+        # `docker compose logs` and, in CI, in a log GitHub serves publicly
+        # (the repo is public, ENTSCHEIDUNGEN_2026-09-18.md §4). The `show`
+        # subcommand below is the one place credentials are printed, and only
+        # for a person to run by hand on their own terminal.
+        print(f"objectstore-secrets: S3 key created ({source})")
 
     bucket_path = directory / "s3_bucket"
     if not bucket_path.exists():
@@ -224,17 +236,12 @@ def cmd_init(args: argparse.Namespace) -> None:
     bucket = _read_secret_file(directory / "s3_bucket")
     base_url = args.admin_url
 
-    # The admin API could in principle echo the token or a secret back inside
-    # an error body (e.g. "invalid Authorization: Bearer <token>"); every
-    # error text built from a response goes through this before it can reach
-    # an exception message, stdout or a log.
-    def redact(text: str) -> str:
-        for secret in (admin_token, secret_key):
-            text = text.replace(secret, "<redacted>")
-        return text
-
+    # The admin API could in principle echo the token, the secret or the
+    # access key id back inside an error body (e.g. "invalid Authorization:
+    # Bearer <token>"); every error text built from a response goes through
+    # this before it can reach an exception message, stdout or a log.
     def error_text(status: int, info: dict) -> str:
-        return redact(f"{status}: {info.get('error', info)}")
+        return redact(f"{status}: {info.get('error', info)}", admin_token, secret_key, access_key)
 
     _wait_for_admin_api(base_url, admin_token, args.attempts, args.delay)
 

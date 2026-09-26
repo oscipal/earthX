@@ -19,15 +19,23 @@ import argparse
 import importlib.util
 import re
 import stat
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-BOOTSTRAP_PATH = REPO / "compose" / "objectstore" / "bootstrap.py"
+OBJECTSTORE_DIR = REPO / "compose" / "objectstore"
+BOOTSTRAP_PATH = OBJECTSTORE_DIR / "bootstrap.py"
 
 
 def _load_bootstrap():
+    # bootstrap.py does `import redact` (a sibling module, not a package) the
+    # same way it works when run as `python /objectstore/bootstrap.py` inside
+    # the container: Python puts a script's own directory on sys.path[0].
+    # Loading it here by file path skips that, so it is added explicitly.
+    if str(OBJECTSTORE_DIR) not in sys.path:
+        sys.path.insert(0, str(OBJECTSTORE_DIR))
     spec = importlib.util.spec_from_file_location("objectstore_bootstrap", BOOTSTRAP_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -116,6 +124,10 @@ def init_args(admin_url: str = "http://objectstore:3903", attempts: int = 5, del
 
 def _write_secrets_for_init(secrets_dir: Path, secret_key: str = "a-sixteen-char-secret") -> None:
     secrets_dir.mkdir(parents=True, exist_ok=True)
+    # rpc_secret is not read by `init` (only Garage itself uses it), but a
+    # real secrets volume always has all four files, so tests that check
+    # "no credential in the output" (_all_credentials) expect it here too.
+    (secrets_dir / "rpc_secret").write_text("test-rpc-secret")
     (secrets_dir / "admin_token").write_text("test-admin-token")
     (secrets_dir / "s3_access_key").write_text("a-valid-access-key")
     (secrets_dir / "s3_secret_key").write_text(secret_key)
@@ -258,19 +270,66 @@ def test_init_gives_up_after_limited_retries_when_unreachable(secrets_dir, monke
 # --- no secret leaks ----------------------------------------------------
 
 
-def test_secrets_output_never_contains_secret_values(secrets_dir, capsys):
+def _all_credentials(directory: Path) -> list[str]:
+    """Every value that must never reach stdout/stderr from `secrets` or
+    `init`. This is deliberately wider than "secret": `objectstore-secrets`
+    and `objectstore-init` run as `docker compose up` services, so their
+    output lands in `docker compose logs` and, in CI, in a log GitHub serves
+    publicly (the repo is public, ENTSCHEIDUNGEN_2026-09-18.md §4) — the
+    access key id is not classified as a secret, but it identifies this run's
+    credentials just as precisely, so it is withheld from these two
+    subcommands too. Only `show`, run by hand, is meant to print it.
+    """
+    return [
+        (directory / name).read_text().strip()
+        for name in ("rpc_secret", "admin_token", "s3_access_key", "s3_secret_key")
+    ]
+
+
+def test_secrets_output_never_contains_any_credential_when_generated(secrets_dir, capsys):
     bootstrap.main(["secrets"])
-    rpc_secret = (secrets_dir / "rpc_secret").read_text().strip()
-    admin_token = (secrets_dir / "admin_token").read_text().strip()
-    secret_key = (secrets_dir / "s3_secret_key").read_text().strip()
+    credentials = _all_credentials(secrets_dir)
 
     captured = capsys.readouterr()
-    for secret in (rpc_secret, admin_token, secret_key):
-        assert secret not in captured.out
-        assert secret not in captured.err
+    for value in credentials:
+        assert value not in captured.out
+        assert value not in captured.err
 
 
-def test_init_output_never_contains_secret_values_even_when_reflected_in_an_error(
+def test_secrets_output_never_contains_any_credential_on_a_second_run(secrets_dir, capsys):
+    bootstrap.main(["secrets"])
+    capsys.readouterr()  # discard the first run's output
+    bootstrap.main(["secrets"])  # the "already present, unchanged" branch
+    credentials = _all_credentials(secrets_dir)
+
+    captured = capsys.readouterr()
+    for value in credentials:
+        assert value not in captured.out
+        assert value not in captured.err
+
+
+def test_secrets_output_never_contains_a_credential_given_via_env(secrets_dir, monkeypatch, capsys):
+    monkeypatch.setenv("S3_ACCESS_KEY", "my-access-key")
+    monkeypatch.setenv("S3_SECRET_KEY", "a-sixteen-char-secret")
+    bootstrap.main(["secrets"])
+
+    captured = capsys.readouterr()
+    assert "my-access-key" not in captured.out
+    assert "a-sixteen-char-secret" not in captured.out
+
+
+def test_init_successful_run_output_never_contains_any_credential(secrets_dir, fake_admin, capsys):
+    _write_secrets_for_init(secrets_dir)
+    bootstrap.cmd_init(init_args())
+    credentials = _all_credentials(secrets_dir)
+
+    captured = capsys.readouterr()
+    for value in credentials:
+        assert value not in captured.out
+        assert value not in captured.err
+
+
+def test_init_output_never_contains_credentials_even_when_reflected_in_an_error(
     secrets_dir, fake_admin, capsys
 ):
     _write_secrets_for_init(secrets_dir)
