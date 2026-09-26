@@ -1,7 +1,23 @@
 # M3-07a — Ortssuche: Recherche und Backend-Route: Plan
 
 **Aufgabe:** M3-07a aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
-**Stufe B — Plan-Schritt, wartet auf Ottos Freigabe** (Fragen in §12).
+**Stufe B — von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1),
+F4 (1), F5 (1) (§12), dazu vier Ergänzungen, die in die Umsetzung eingeflossen
+sind:
+
+- **Cache-Schlüssel:** Hash des normalisierten Suchtexts, nie der Klartext —
+  wie `search_fingerprint` aus M3-08 (`earthx/adapters/nominatim.py::_cache_key`).
+  Test dazu: `tests/integration/test_geocode_cache.py` liest die Tabelle direkt
+  und prüft, dass kein Klartext darin steht (über `TestTheCache`, keine eigene
+  Spalte dafür — die Nutzlast ist die fertige, bereits vereinfachte Antwort).
+- **User-Agent:** `EarthX/0.1 (+https://github.com/oscipal/earthX)`, keine
+  E-Mail-Adresse im Code; überschreibbar über `EARTHX_GEOCODER_USER_AGENT`.
+- **F1 umgesetzt:** `.env.example` trägt `EARTHX_GEOCODER_URL` ohne Wert, mit
+  Kommentar zur Nutzungsbedingung; README §2 „Ortssuche lokal einschalten"
+  sagt, wie man sie einschaltet.
+- **Attribution** kommt in jeder Antwort mit (`to_payload()`); die Anzeige ist
+  M3-07b.
+
 **Ort im Repo:** `docs/plans/m3-07a-ortssuche-backend.md`
 **Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P3, P8, §1.3, M3-07a;
 `prototyp-inventar.md` F2; `architekturplan.md` 3.1, 6.5, 12.3;
@@ -414,6 +430,7 @@ Release unseres Backends.
 (3) Host zusätzlich in die Allowlist des bestehenden Registry-Gateways
 (Konstante oder Variable); einfacher, aber alle Routen von `api` erreichen dann
 den Geocoder.
+**Otto: 1.**
 
 **F2 — Rate über alle Prozesse (§9).**
 (1) Slot-Zeiger in Postgres, höchstens 2 s Wartezeit, sonst `503`; Postgres
@@ -422,6 +439,7 @@ weg → `503`. *(Empfehlung)*
 Rate nur, solange es einen `api`-Prozess gibt, wie heute in compose).
 (3) Advisory Lock in Postgres, über die Wartezeit gehalten (blockiert eine
 Pool-Verbindung je wartender Anfrage).
+**Otto: 1.**
 
 **F3 — Cache-Frist (§8).** Die Bedingung nennt keine Frist (§2.1). Leere
 Treffer in allen Fällen 1 Tag.
@@ -429,6 +447,7 @@ Treffer in allen Fällen 1 Tag.
 Nominatim klein, ohne dass eine korrigierte Grenze lange fehlt. *(Empfehlung)*
 (2) 7 Tage.
 (3) 90 Tage.
+**Otto: 1.**
 
 **F4 — Deckel der Punktanzahl (§7).**
 (1) 1 000 Punkte — gleich `MAX_INTERSECTS_POINTS` (M3-08), damit der Umriss
@@ -436,9 +455,41 @@ ohne weitere Vereinfachung als `intersects` in die Suche passt. *(Empfehlung)*
 (2) 20 000 wie beim AOI-Upload (M3-06a); die Suche fiele dann bei großen
 Umrissen auf die Bounding Box zurück (M3-08 F2a).
 (3) 500.
+**Otto: 1.**
 
 **F5 — Form der Route (§7, §10).**
 (1) `POST /geocode` mit JSON-Körper: Der Suchtext steht in keiner URL.
 *(Empfehlung)*
 (2) `GET /geocode?q=…`: einfacher, aber der Text steht im Query-String, den
 unser Zugriffslog zwar weglässt, ein späterer Proxy aber mitschreiben könnte.
+**Otto: 1.**
+
+---
+
+## 13. Umsetzung (26.09.2026)
+
+Umgesetzt wie oben, mit diesen Ergänzungen gegenüber dem Plan-Text:
+
+- **`gateway.get()` bekommt `retry: bool = True`**, mit demselben Vorzeichen wie
+  bei `post_json` (Vorgabe sicher, Abweichler explizit). Bisher galt für jede
+  `GET`-Anfrage stillschweigend „immer wiederholbar"; das wird jetzt vom
+  Aufrufer entschieden, nicht mehr an der Methode festgemacht. Rückwirkungsfrei
+  für jeden bestehenden Aufrufer (kein Aufrufer übergab bisher `retry`), eigener
+  Test in `tests/earthx/gateway/test_client.py`.
+- **`gateway.inspect_url`/`UrlParts` sind jetzt aus `earthx.gateway` exportiert**
+  (waren nur intern in `gateway.policy`), damit `api.dependencies` den
+  konfigurierten Endpunkt einmal beim Start prüfen kann, ohne selbst `urllib`
+  zu importieren (verboten laut `http-only-in-gateway`).
+- **`.importlinter` unverändert** — die neuen Dateien liegen in bereits
+  bestehenden Modulen (`adapters`, `catalog`, `api`) und erben deren Verträge.
+- Migration `005_geocode.sql`; `earthx_rate_slots` bekommt keine Startzeile,
+  der erste `reserve()`/`push_back()` legt die Zeile selbst an (`ON CONFLICT`).
+- `tests/integration/conftest.py::SHIPPED_TABLES` und die feste Liste der
+  Migrationen in `tests/integration/test_migrations.py` um die zwei neuen
+  Tabellen bzw. `005_geocode` ergänzt.
+
+**Getestet:** `pytest` (1567 bestanden, inklusive `tests/integration` gegen die
+echte Postgres dieser Sitzung), `ruff check backend`, `lint-imports`. Latenz
+und Anzahl der Anfragen an Nominatim: siehe §3 (Plan-Schritt); in dieser
+Umsetzungssitzung ging keine weitere Anfrage an die echte Quelle — alle Tests
+laufen gegen synthetische Fixtures unter `tests/fixtures/nominatim/`.

@@ -189,6 +189,39 @@ Absichtlich **kein** Compose-Dienst, der bei `docker compose up` mitläuft
 Quelle, und weder ein gewöhnlicher lokaler Start noch die CI sollen sie
 anfragen.
 
+### Ortssuche lokal einschalten (M3-07a)
+
+Standardmäßig **aus**: `POST /geocode` antwortet `503`, solange
+`EARTHX_GEOCODER_URL` in `.env` leer ist — die sichere Voreinstellung, dieselbe
+wie bei einer leeren Allowlist. Zum Einschalten in `.env`:
+
+```
+EARTHX_GEOCODER_URL=https://nominatim.openstreetmap.org
+```
+
+und `docker compose up` neu starten (oder nur `api` neu bauen/starten). Das
+ist der öffentliche Nominatim-Dienst, dessen Nutzungsbedingung höchstens eine
+Anfrage pro Sekunde über alle Prozesse hinweg erlaubt und eine eigene
+Kennung verlangt — beides setzt `earthx.adapters.nominatim` bereits um, ein
+zweiter, eigener `EARTHX_GEOCODER_USER_AGENT` ist nur für einen eigenen
+Nominatim-Betrieb nötig. Die Bedingung erlaubt außerdem, den Dienst jederzeit
+zu wechseln, ohne einen Release zu brauchen — daher die Umgebungsvariable statt
+einer festen Adresse im Code. Ein ungültiger Wert (kein `https`, ein
+Portname, eine eigene Anfrage) schaltet nur die Ortssuche ab, nicht den
+ganzen Prozess (Log-Zeile ohne den Wert selbst).
+
+Test per `curl`, sobald `EARTHX_GEOCODER_URL` gesetzt ist:
+
+```bash
+curl -X POST http://localhost:8000/geocode -H 'content-type: application/json' -d '{"q": "Berlin"}'
+```
+
+Die erste Anfrage geht an Nominatim (gedrosselt, höchstens 1/s über alle
+`api`-Prozesse); dieselbe Anfrage kurz danach kommt aus dem Postgres-Cache
+(`from_cache` steht nicht in der Antwort, aber nur die erste braucht die
+volle Sekunde). Die Antwort trägt `attribution`/`attribution_url`/`license`
+— das Frontend zeigt sie (M3-07b).
+
 ### Den Viewer starten (Frontend)
 
 Der Viewer ist die eigentliche Bedienoberfläche (Suche, Quicklooks,
