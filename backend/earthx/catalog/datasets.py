@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 from earthx.catalog.registry import (
     AccessInfo,
     AdapterKind,
+    BrowseMode,
     Capabilities,
     CoverageInfo,
     CoverageProvider,
@@ -196,7 +197,21 @@ SENTINEL_2_L2A = DatasetConfig(
     # ordinary scroll-zoom run up to MapLibre's own ceiling of z22. There is no
     # lower bound to set: a COG carries overviews, so a tile at z0 costs a read of
     # the coarsest overview and nothing more.
-    viewer=ViewerInfo(group_by=("datetime", "grid:code"), min_zoom=0, max_zoom=19),
+    # M3-12: the source's own thumbnail (role `thumbnail`) is a real quicklook a
+    # browser loads cross-origin and keys transparent on its own canvas (D14,
+    # `access.cors=True` above); `16` is the JPEG's near-black padding
+    # threshold measured for this source (`mapLayers.ts` before this field
+    # existed). The results list heads its groups by day and overpass
+    # (`s2:datatake_id`, V-4/D30) rather than day and MGRS tile — `group_by`
+    # above stays the tile-and-day key it always was.
+    viewer=ViewerInfo(
+        group_by=("datetime", "grid:code"),
+        min_zoom=0,
+        max_zoom=19,
+        browse=BrowseMode.QUICKLOOK,
+        quicklook_nodata_max=16,
+        results_group_by=("datetime", "s2:datatake_id"),
+    ),
     # Not health in the sense M5 will measure it: adr/0003 §10.1 got HTTP 200 on
     # /v1/collections/sentinel-2-c1-l2a, nothing beyond that. The reachability date
     # itself lives on `access.token_free_checked_at` (point 6), not here.
@@ -352,7 +367,23 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
     # client overzooms the last level — which costs *less*, since the window read
     # gets smaller. The level itself is still computed from the requested tile's
     # own ground resolution (api.tiler._target_gsd), never looked up from the zoom.
-    viewer=ViewerInfo(group_by=("datetime", "grid:code"), min_zoom=8, max_zoom=14),
+    # M3-12: this source has no thumbnail, overview, preview or visual asset
+    # anywhere (adr/0007 §12.7) — the browse view falls back to a tile on the
+    # coarsest released level, `min_zoom` below, instead of a published image.
+    # F3 (2), Otto 26.09.2026: the results list groups by day and overpass
+    # under this source's own vocabulary — a befund of this plan step
+    # (§2.3): every item measured carries `eopf:datatake_id`, not
+    # `s2:datatake_id` — so tiles of one overpass land in one group and one
+    # merged download (P19) the same way Sentinel-2 COG's do; `group_by`
+    # above (day + MGRS tile) is unchanged.
+    viewer=ViewerInfo(
+        group_by=("datetime", "grid:code"),
+        min_zoom=8,
+        max_zoom=14,
+        browse=BrowseMode.PREVIEW_TILES,
+        quicklook_nodata_max=None,
+        results_group_by=("datetime", "eopf:datatake_id"),
+    ),
     health=HealthInfo(status=HealthStatus.OK),
     # adr/0007 §12.11 point 14 (Otto's first F8 condition): the provider calls
     # this collection "staging" in its own title, and that must not be something
@@ -513,10 +544,31 @@ COP_DEM_GLO_30 = DatasetConfig(
     # F7: every tile shares the same `start_datetime` (there is only one), so
     # grouping by it puts every DEM tile in one group — a AOI crop over several
     # tiles becomes one merged file (P19), the way a Sentinel-2 overpass does.
-    # z8 is roughly one DEM tile wide; z15 is three levels past the native
+    # `results_group_by` is the same key: one dataset, one group, nothing a
+    # results list would head differently.
+    #
+    # `min_zoom` 0, not 8 (M3-12 plan step §3, F4): a DEM tile's own overview
+    # block costs the same to read at every level from z0 to z8 — the source
+    # has no per-scene mosaic to spread thinner as the map zooms out, so
+    # "below min_zoom one tile shows several scenes" (`ViewerInfo`'s general
+    # reasoning) does not bound anything here; what does is how many of the
+    # up to 300 items a search can return sit on screen at once, which does
+    # not change with `min_zoom`. z15 is three levels past the native
     # ~30 m/px resolution, for zooming into real detail without reaching
     # MapLibre's own z22 ceiling on a dataset with nothing finer to give past it.
-    viewer=ViewerInfo(group_by=("start_datetime",), min_zoom=8, max_zoom=15),
+    #
+    # `browse=FULL_RESOLUTION` (M3-12, M3-11b F11 Nachtrag): no quicklook
+    # (`access.cors=False` above) and nothing a coarse tile would usefully
+    # preview either, so the viewer shows the AOI crop in full resolution
+    # straight after the search (M3-09's mechanism), never a quicklook stage.
+    viewer=ViewerInfo(
+        group_by=("start_datetime",),
+        min_zoom=0,
+        max_zoom=15,
+        browse=BrowseMode.FULL_RESOLUTION,
+        quicklook_nodata_max=None,
+        results_group_by=("start_datetime",),
+    ),
     health=HealthInfo(status=HealthStatus.OK),
     # A released, versioned product (state of 9 May 2022), not a pilot.
     maturity=Maturity.STABLE,

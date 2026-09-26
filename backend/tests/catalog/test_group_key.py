@@ -16,17 +16,25 @@ from datetime import datetime, timezone
 import pytest
 
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import MissingProperty, ViewerInfo, group_key
+from earthx.catalog.registry import BrowseMode, MissingProperty, ViewerInfo, group_key
 
 
 def viewer(*, group_by: tuple[str, ...]) -> ViewerInfo:
     """A ``ViewerInfo`` that varies only in its grouping key.
 
-    The zoom levels are mandatory on the entry (M2-10, KLAERUNGEN B10) but say
-    nothing about grouping, so they are filled in once here rather than repeated
-    in every case below, where they would only be noise.
+    The zoom levels and the M3-12 browse/grouping fields are mandatory on the
+    entry (M2-10, KLAERUNGEN B10) but say nothing about ``group_key``, so they
+    are filled in once here rather than repeated in every case below, where
+    they would only be noise.
     """
-    return ViewerInfo(group_by=group_by, min_zoom=0, max_zoom=19)
+    return ViewerInfo(
+        group_by=group_by,
+        min_zoom=0,
+        max_zoom=19,
+        browse=BrowseMode.FULL_RESOLUTION,
+        quicklook_nodata_max=None,
+        results_group_by=group_by,
+    )
 
 
 SENTINEL_2 = viewer(group_by=("datetime", "grid:code"))

@@ -55,6 +55,10 @@ describe('the originals dialog shows attribution and terms next to the links', (
           viewable: true,
           groupBy: ['datetime'],
           zoom: { min: 0, max: 19 },
+          browse: 'quicklook',
+          quicklookNodataMax: 16,
+          resultsGroupBy: ['datetime'],
+          hasTimeAxis: true,
           collection: {
             id: 'sentinel-2-c1-l2a',
             title: 'Sentinel-2 L2A',

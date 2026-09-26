@@ -14,7 +14,7 @@ import {
   VIEWPORT_ROUND_LEVELS,
 } from './coverage';
 import type { DatasetOption } from './datasets';
-import { datasetsFrom, defaultRenderOf, quicklookPlan } from './datasets';
+import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
@@ -27,7 +27,7 @@ import {
   type OriginalFileLink,
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
-import { buildGroups, displayGroupBy, groupIndexOfItem, groupItemIdsFor, MissingProperty } from './grouping';
+import { buildGroups, groupIndexOfItem, groupItemIdsFor, MissingProperty } from './grouping';
 import type { LayerOverlay, LayerRestore, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
@@ -656,8 +656,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       const plan = browsed ? quicklookPlan(it, browsed) : null;
       if (!plan) continue;
       if (plan.kind === 'image') {
-        const coords = quicklookCoords(it);
-        if (coords) overlays.push({ kind: 'image', url: plan.href, coords });
+        const coords = quicklookCoords(it, browsed && preferredGeoreferencedAsset(browsed));
+        if (coords) {
+          overlays.push({
+            kind: 'image',
+            url: plan.href,
+            coords,
+            nodataMax: browsed?.viewable ? browsed.quicklookNodataMax : null,
+          });
+        }
         continue;
       }
       // The preview substitute (M2-10): pinned at the one level it is read on,
@@ -873,7 +880,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         groups: req.groups,
         assets: req.assets,
         aoi: req.aoi,
-        language: 'en',
         resolution: s.downloadResolution,
       });
       const url = URL.createObjectURL(result.blob);
@@ -1124,15 +1130,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Could not compute a search area for the area of interest.' });
       return;
     }
-    const groupBy = dataset.groupBy;
+    const resultsGroupBy = dataset.resultsGroupBy;
+    // O2 (Otto, 26.09.2026): a dataset without a time axis answers the same
+    // for any chosen window, so its acquisition period — not a date filter
+    // that would narrow nothing — is what the search notice adds when the
+    // backend says it dropped `datetime` (`ignoredFilters`).
+    const timeNote = dataset.hasTimeAxis ? null : acquisitionNote(dataset.collection);
     const applyResults = (
       features: StacItem[],
       notice: string | ((groups: TimeStepGroup[]) => string),
+      ignoredFilters: readonly string[] = [],
     ) => {
       try {
-        const groups = buildGroups(features, displayGroupBy(features, groupBy));
+        const groups = buildGroups(features, resultsGroupBy);
         const base = typeof notice === 'function' ? notice(groups) : notice;
-        const text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
+        const withTruncated = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
+        const text = timeNote && ignoredFilters.includes('datetime') ? `${withTruncated} ${timeNote}.` : withTruncated;
         set({
           items: features,
           groups,
@@ -1158,6 +1171,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         throw e;
       }
     };
+    // O3 (Otto, 26.09.2026): a dataset with no browsable quicklook and no
+    // meaningful coarse-tile preview (`browse: 'full_resolution'`, the DEM)
+    // goes straight into the cropped full-resolution view after a search
+    // with results — `runSearch` never runs without an AOI (checked above),
+    // so this is always "Crop & merge to AOI", never "View full selection".
+    const enterFullResolutionIfNeeded = async () => {
+      if (dataset.browse === 'full_resolution') await get().enterFocus(true);
+    };
 
     set({
       searching: true,
@@ -1177,11 +1198,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         MAX_SEARCH_ITEMS,
       );
       if (page.features.length > 0) {
-        applyResults(page.features, (groups) => foundNotice(page.features, groups, page.numberMatched));
+        applyResults(page.features, (groups) => foundNotice(page.features, groups, page.numberMatched), page.ignoredFilters);
+        await enterFullResolutionIfNeeded();
         return;
       }
-      if (!dateFrom && !dateTo) {
-        applyResults([], 'No scenes found for this area.');
+      // O2: a dataset without a time axis never runs the ±90-day fallback —
+      // it answers the same for any window, so an empty result means the AOI
+      // has no coverage, not "wrong dates" (Otto, 26.09.2026; before this, a
+      // DEM search with an unrelated date range answered "No results in the
+      // chosen time range, nor within ±90 days", which named a filter that
+      // was never really in effect).
+      if (!dataset.hasTimeAxis || (!dateFrom && !dateTo)) {
+        applyResults([], 'No scenes found for this area.', page.ignoredFilters);
         return;
       }
       const fallback = await findFallback(
@@ -1206,8 +1234,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             { collection: dataset.id, bbox: area.bbox, intersects: area.intersects, datetime: range },
             MAX_SEARCH_ITEMS,
           )
-        : { features: [fallback.item], numberMatched: 1 };
-      applyResults(full.features, fallbackNotice(fallback));
+        : { features: [fallback.item], numberMatched: 1, ignoredFilters: [] };
+      applyResults(full.features, fallbackNotice(fallback), full.ignoredFilters);
+      await enterFullResolutionIfNeeded();
     } catch (e) {
       set({ error: `Search failed: ${(e as Error).message}`, items: [], groups: [], panelCollapsed: false });
     } finally {
@@ -1248,7 +1277,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       let groups: TimeStepGroup[];
       try {
-        groups = buildGroups([item], displayGroupBy([item], dataset.groupBy));
+        groups = buildGroups([item], dataset.resultsGroupBy);
       } catch (e) {
         if (e instanceof MissingProperty) {
           set({ error: `Grouping failed: ${e.message}`, sceneLookupLoading: false });
@@ -1274,6 +1303,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         sceneLookupLoading: false,
         ...(bbox ? { flyToBbox: bbox } : {}),
       });
+      // F7 (Otto, 26.09.2026): a dataset with no browsable quicklook and no
+      // meaningful coarse-tile preview shows the found scene in full
+      // resolution directly — a scene lookup carries no AOI, so this is
+      // always "View full selection", never a crop.
+      if (dataset.browse === 'full_resolution') await get().enterFocus(false);
     } catch (e) {
       if (e instanceof api.HttpError && e.status === 400) {
         set({ error: 'Not a valid scene name.', sceneLookupLoading: false });

@@ -10,7 +10,7 @@ import {
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
-import { showFootprints } from '../coverage';
+import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { itemsForMap } from '../grouping';
 import type { CoverageDisplay } from '../mapLayers';
@@ -28,21 +28,25 @@ import { baseMapStyle } from '../mapStyles';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
 
-// Only one of density/footprints is ever drawn (mapLayers.ts): footprints
-// once the backend advises it *and* the zoom brake agrees (coverage.ts), a
-// density fill otherwise. Turned off in focus mode so a full-resolution
-// raster is never obscured by a leftover coverage layer underneath it.
+// Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
+// product's extent (`area`, M3-12 F-07, ENTSCHEIDUNGEN §2) whenever the
+// answer names one, footprints once the backend advises them *and* the zoom
+// brake agrees (coverage.ts) for a time series, a density fill otherwise.
+// Turned off in focus mode so a full-resolution raster is never obscured by a
+// leftover coverage layer underneath it.
 function coverageDisplayFor(st: ReturnType<typeof useAppStore.getState>, zoom: number): CoverageDisplay {
-  if (!st.showCoverage || st.focusMode || !st.coverage) {
-    return { mode: 'off', cells: [], maxCount: 0, footprints: null };
+  const off: CoverageDisplay = { mode: 'off', cells: [], maxCount: 0, footprints: null, area: null };
+  if (!st.showCoverage || st.focusMode || !st.coverage) return off;
+  if (isAreaAnswer(st.coverage)) {
+    return { ...off, mode: 'area', area: areaGeometry(st.coverage) };
   }
   // Falls back to the density it already has rather than an empty layer
   // while the footprints request is still in flight or failed
   // (store.ts::refreshCoverage leaves `coverageFootprints` at `null` then).
   if (showFootprints(st.coverage, zoom) && st.coverageFootprints) {
-    return { mode: 'footprints', cells: [], maxCount: 0, footprints: st.coverageFootprints };
+    return { ...off, mode: 'footprints', footprints: st.coverageFootprints };
   }
-  return { mode: 'density', cells: st.coverage.cells, maxCount: st.coverage.max_count, footprints: null };
+  return { ...off, mode: 'density', cells: st.coverage.cells, maxCount: st.coverage.max_count };
 }
 
 function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
@@ -90,6 +94,7 @@ export default function MapView() {
   const toolMode = useAppStore((s) => s.toolMode);
   const aoi = useAppStore((s) => s.aoi);
   const groups = useAppStore((s) => s.groups);
+  const items = useAppStore((s) => s.items);
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
   const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
@@ -297,9 +302,10 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && focusMode) {
-      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded, aoi, cropToAoi });
+      const dataset = datasets.find((d) => d.id === datasetId) ?? null;
+      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded, aoi, cropToAoi, items, dataset });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, aoi, cropToAoi]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, aoi, cropToAoi, items, datasets, datasetId]);
 
   // --- browse-mode preview overlays (quicklooks / preview tiles) — these do
   // react to `selectedIds`, since a cross-group selection can pin a scene

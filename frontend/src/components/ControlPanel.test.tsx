@@ -10,7 +10,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { datasetsFrom } from '../datasets';
 import { useAppStore } from '../store';
+import type { Collection } from '../types';
 import ControlPanel from './ControlPanel';
 
 declare global {
@@ -121,5 +123,81 @@ describe('AoiExtras: uploading a file goes through POST /aoi/upload (M3-06b)', (
       await flush();
     });
     expect(uploadInput().disabled).toBe(false);
+  });
+});
+
+// M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis locks the date
+// fields instead of hiding them, with the acquisition period underneath.
+describe('AcquisitionDateFields: a dataset without a time axis', () => {
+  const CAPABILITIES = {
+    roi: true,
+    time_range: false,
+    band_math: true,
+    interpolation: true,
+    ml_processing: true,
+    quad_pol: false,
+    single_coverage_product: true,
+  };
+
+  const NO_TIME_AXIS: Collection = {
+    id: 'cop-dem-glo-30',
+    title: 'Copernicus DEM GLO-30',
+    extent: { temporal: { interval: [['2010-12-01T00:00:00Z', '2015-01-31T23:59:59Z']] } },
+    'earthx:capabilities': CAPABILITIES,
+    'earthx:viewer': {
+      group_by: ['start_datetime'],
+      min_zoom: 0,
+      max_zoom: 15,
+      browse: 'full_resolution',
+      quicklook_nodata_max: null,
+      results_group_by: ['start_datetime'],
+    },
+  };
+
+  const WITH_TIME_AXIS: Collection = {
+    id: 'sentinel-2-c1-l2a',
+    title: 'Sentinel-2 L2A',
+    'earthx:capabilities': { ...CAPABILITIES, time_range: true, single_coverage_product: false },
+    'earthx:viewer': {
+      group_by: ['datetime'],
+      min_zoom: 0,
+      max_zoom: 19,
+      browse: 'quicklook',
+      quicklook_nodata_max: 16,
+      results_group_by: ['datetime'],
+    },
+  };
+
+  function dateInputs(): HTMLInputElement[] {
+    return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+  }
+
+  it('disables both date fields and shows the acquisition period', () => {
+    useAppStore.setState({ datasets: datasetsFrom([NO_TIME_AXIS]), datasetId: NO_TIME_AXIS.id });
+    act(() => root.render(<ControlPanel />));
+
+    const [from, to] = dateInputs();
+    expect(from.disabled).toBe(true);
+    expect(to.disabled).toBe(true);
+    expect(container.textContent).toContain('No time axis – acquired Dec 2010 to Jan 2015');
+  });
+
+  it('leaves the fields enabled for a dataset with a time axis', () => {
+    useAppStore.setState({ datasets: datasetsFrom([WITH_TIME_AXIS]), datasetId: WITH_TIME_AXIS.id });
+    act(() => root.render(<ControlPanel />));
+
+    const [from, to] = dateInputs();
+    expect(from.disabled).toBe(false);
+    expect(to.disabled).toBe(false);
+    expect(container.textContent).not.toContain('No time axis');
+  });
+
+  it('leaves the fields enabled when no dataset is picked yet', () => {
+    useAppStore.setState({ datasets: [], datasetId: null });
+    act(() => root.render(<ControlPanel />));
+
+    const [from, to] = dateInputs();
+    expect(from.disabled).toBe(false);
+    expect(to.disabled).toBe(false);
   });
 });

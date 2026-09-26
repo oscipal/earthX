@@ -16,8 +16,11 @@ import { useAppStore } from '../store';
 // attribution and the source's terms notice have to be visible before it
 // starts, not only inside the crop ZIP's ATTRIBUTION.txt (adr/0003 §11.2).
 // English throughout, matching the rest of the interface since 2026-09-20 —
-// the crop's notice is requested from the backend with `language: 'en'`
-// (`store.confirmDownload`).
+// the platform offers no language choice at all (Otto, 22.09.2026), so
+// `termsNoticeText` below is never called with anything but its own English
+// default. M3-12, K-16: the crop request used to carry a `language` field the
+// backend's own `DownloadRequest` had already stopped declaring — pydantic
+// silently dropped it, so removing it changed nothing the backend did.
 //
 // Two ways in (V-4): a pinned, full-resolution layer from the layer manager
 // (`downloadDialogLayerId`), or the current selection straight from the

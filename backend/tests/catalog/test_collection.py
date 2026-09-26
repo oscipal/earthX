@@ -238,9 +238,18 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
     """M2-10: the levels reach the client on the collection, because that is the one
     place the viewer can read them without a branch on the dataset id."""
 
-    def test_all_three_fields_travel(self, collection: dict) -> None:
+    def test_all_fields_travel(self, collection: dict) -> None:
         viewer = collection["earthx:viewer"]
-        assert viewer == {"group_by": ["datetime", "grid:code"], "min_zoom": 0, "max_zoom": 19}
+        assert viewer == {
+            "group_by": ["datetime", "grid:code"],
+            "min_zoom": 0,
+            "max_zoom": 19,
+            # M3-12: what the browse view shows, its freistellung threshold, and
+            # the results-list/download grouping key (`registry.ViewerInfo`).
+            "browse": "quicklook",
+            "quicklook_nodata_max": 16,
+            "results_group_by": ["datetime", "s2:datatake_id"],
+        }
 
     def test_the_second_dataset_carries_its_own_range(self) -> None:
         viewer = to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:viewer"]

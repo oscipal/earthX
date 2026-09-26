@@ -9,10 +9,30 @@ import { datasetsFrom } from './datasets';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
 
+// M3-12: a full `earthx:capabilities` block, reused by both fixtures below —
+// only `time_range` matters to anything here, so one constant says so once.
+const CAPABILITIES = {
+  roi: true,
+  time_range: true,
+  band_math: true,
+  interpolation: true,
+  ml_processing: true,
+  quad_pol: false,
+  single_coverage_product: false,
+};
+
 const ZARR_LIKE: Collection = {
   id: 'sentinel-2-l2a-zarr3',
   title: 'Sentinel-2 L2A (Zarr3)',
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14 },
+  'earthx:capabilities': CAPABILITIES,
+  'earthx:viewer': {
+    group_by: ['datetime'],
+    min_zoom: 8,
+    max_zoom: 14,
+    browse: 'preview_tiles',
+    quicklook_nodata_max: null,
+    results_group_by: ['datetime'],
+  },
   'earthx:default_render': {
     title: 'True colour',
     assets: ['SR_10m:b04,b03,b02'],
@@ -26,7 +46,15 @@ const ZARR_LIKE: Collection = {
 const COG_LIKE: Collection = {
   id: 'sentinel-2-c1-l2a',
   title: 'Sentinel-2 L2A',
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19 },
+  'earthx:capabilities': CAPABILITIES,
+  'earthx:viewer': {
+    group_by: ['datetime'],
+    min_zoom: 0,
+    max_zoom: 19,
+    browse: 'quicklook',
+    quicklook_nodata_max: 16,
+    results_group_by: ['datetime'],
+  },
 };
 
 function scene(overrides: Partial<StacItem> = {}): StacItem {
@@ -264,6 +292,7 @@ describe('zoomToView', () => {
                 [22, 20],
                 [20, 20],
               ],
+              nodataMax: 16,
             },
           ],
           restore: {
@@ -750,7 +779,15 @@ describe('download outcome (M3-17 plan §4)', () => {
   const COG_DATASET: Collection = {
     id: 'sentinel-2-c1-l2a',
     title: 'Sentinel-2 L2A',
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19 },
+    'earthx:capabilities': CAPABILITIES,
+    'earthx:viewer': {
+      group_by: ['datetime'],
+      min_zoom: 0,
+      max_zoom: 19,
+      browse: 'quicklook',
+      quicklook_nodata_max: 16,
+      results_group_by: ['datetime'],
+    },
     'earthx:format': 'cog',
     'earthx:source': { asset_hosts: ['data.test'] },
     'earthx:default_render': {
@@ -766,7 +803,15 @@ describe('download outcome (M3-17 plan §4)', () => {
   const ZARR_DATASET: Collection = {
     id: 'sentinel-2-l2a-zarr3',
     title: 'Sentinel-2 L2A (Zarr3)',
-    'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14 },
+    'earthx:capabilities': CAPABILITIES,
+    'earthx:viewer': {
+      group_by: ['datetime'],
+      min_zoom: 8,
+      max_zoom: 14,
+      browse: 'preview_tiles',
+      quicklook_nodata_max: null,
+      results_group_by: ['datetime'],
+    },
     'earthx:format': 'zarr',
   };
 

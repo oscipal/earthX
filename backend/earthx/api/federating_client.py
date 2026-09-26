@@ -146,6 +146,36 @@ def _datetime_bounds(value: str | None) -> tuple[Any, Any]:
     return parsed, parsed
 
 
+def _apply_time_axis(datetime_value: str | None, time_ranges: list[bool]) -> tuple[str | None, tuple[str, ...]]:
+    """Whether/how ``datetime`` applies, given whether each target collection has
+    a time axis at all (M3-12, Otto 26.09.2026, M3-11b F11 Nachtrag).
+
+    A dataset with ``capabilities.time_range=False`` (the DEM) answers a search
+    the same for any chosen window — never filtered, not even the frontend's own
+    ±90-day fallback (``dateFallback.ts``). Dropped only when *every* named
+    collection lacks a time axis; named in the answer's ``ignored_filters``, the
+    same field the coverage route already uses for the identical rule
+    (``api/coverage_route.py``).
+
+    Validated once here, before anything is dropped: a malformed value is a
+    ``400`` (``str_to_interval`` raises its own ``HTTPException`` inside
+    ``_datetime_bounds``) whether or not the dataset has a time axis.
+
+    A search naming one collection with a time axis and one without is not
+    decided yet (M3-13) and does not reach this function today: the caller only
+    gathers ``time_ranges`` for the collections a single answer will actually
+    come from — one federated collection alone, or every native/materialized
+    one together — and ``_dispatch_search``'s own mixed-source rejection covers
+    every other combination before this runs.
+    """
+    if datetime_value is None:
+        return None, ()
+    _datetime_bounds(datetime_value)
+    if time_ranges and not any(time_ranges):
+        return None, ("datetime",)
+    return datetime_value, ()
+
+
 def _adapter_error_to_http(error: Exception) -> HTTPException:
     """Our own upstream errors, in the shape a STAC client already expects.
 
@@ -213,14 +243,26 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # collection, because every collection in pgstac had a known adapter.
         _reject_disallowed_keys(request.query_params.keys())
         _reject_items_endpoint_keys(request.query_params.keys())
-        holding = await self._holding_of(collection_id, request)
+        holding, time_range = await self._source_info_of(collection_id, request)
+        effective_datetime, ignored_filters = _apply_time_axis(datetime, [time_range])
         if holding is not ItemHolding.FEDERATED:
-            return await super().item_collection(
-                collection_id, request, bbox=bbox, datetime=datetime, limit=limit, token=token, **kwargs
+            result = await super().item_collection(
+                collection_id,
+                request,
+                bbox=bbox,
+                datetime=effective_datetime,
+                limit=limit,
+                token=token,
+                **kwargs,
             )
+            if ignored_filters:
+                result["ignored_filters"] = list(ignored_filters)
+            return result
         result = await self._federated_page(
-            collection_id, request, bbox=bbox, datetime_value=datetime, limit=limit, token=token
+            collection_id, request, bbox=bbox, datetime_value=effective_datetime, limit=limit, token=token
         )
+        if ignored_filters:
+            result["ignored_filters"] = list(ignored_filters)
         result["links"] = await ItemCollectionLinks(collection_id=collection_id, request=request).get_links(
             extra_links=result["links"]
         )
@@ -257,7 +299,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         await _reject_disallowed_body(request)
         collections = list(search_request.collections) if search_request.collections else None
         bbox = search_request.bbox
-        result = await self._dispatch_search(
+        result, effective_datetime, ignored_filters = await self._dispatch_search(
             request,
             collections=collections,
             bbox=bbox,
@@ -268,7 +310,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
             token=search_request.token,
         )
         if result is None:
-            return await super().post_search(search_request, request, **kwargs)
+            if effective_datetime != search_request.datetime:
+                search_request = search_request.model_copy(update={"datetime": effective_datetime})
+            result = await super().post_search(search_request, request, **kwargs)
+            if ignored_filters:
+                result["ignored_filters"] = list(ignored_filters)
+            return result
+        if ignored_filters:
+            result["ignored_filters"] = list(ignored_filters)
         result["links"] = await SearchLinks(request=request).get_links(extra_links=result["links"])
         return result
 
@@ -285,7 +334,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         **kwargs: Any,
     ) -> ItemCollection:
         _reject_disallowed_keys(request.query_params.keys())
-        result = await self._dispatch_search(
+        result, effective_datetime, ignored_filters = await self._dispatch_search(
             request,
             collections=collections,
             bbox=bbox,
@@ -300,24 +349,30 @@ class FederatingCoreCrudClient(CoreCrudClient):
             # native, non-federated collection — declares them itself): dropping
             # them here would silently re-introduce the M2-17 bug for whichever
             # collection this platform holds items for first.
-            return await super().get_search(
+            result = await super().get_search(
                 request,
                 collections=collections,
                 bbox=bbox,
                 intersects=intersects,
                 ids=ids,
-                datetime=datetime,
+                datetime=effective_datetime,
                 limit=limit,
                 token=token,
                 **kwargs,
             )
+            if ignored_filters:
+                result["ignored_filters"] = list(ignored_filters)
+            return result
+        if ignored_filters:
+            result["ignored_filters"] = list(ignored_filters)
         result["links"] = await SearchLinks(request=request).get_links(extra_links=result["links"])
         return result
 
     # -- dispatch -----------------------------------------------------------------
 
-    async def _holding_of(self, collection_id: str, request: Request) -> ItemHolding:
-        """``earthx:source.item_holding`` of a collection pgstac already knows about.
+    async def _source_info_of(self, collection_id: str, request: Request) -> tuple[ItemHolding, bool]:
+        """``earthx:source.item_holding`` and ``earthx:capabilities.time_range`` of
+        a collection pgstac already knows about, off the one document both live on.
 
         Reuses ``super().get_collection`` on purpose: an unknown collection raises
         pgstac's own ``NotFoundError`` here exactly as it would for ``GET
@@ -325,20 +380,27 @@ class FederatingCoreCrudClient(CoreCrudClient):
         in sync with it.
 
         M3-11a (K-05): every collection in pgstac was written by ``catalog.load``
-        from a registry entry, so this field is always present and one of the two
-        values — never optional the way it is on a collection this platform did not
-        write itself. A collection where it is missing or unrecognised is therefore
-        a data problem (a stale document from before this field existed, or a
-        collection nobody loaded through the registry), not a signal to guess: this
-        raises rather than falling back to treating it as either kind, so a broken
-        collection fails loudly instead of silently answering pgstac's own
+        from a registry entry, so ``item_holding`` is always present and one of the
+        two values — never optional the way it is on a collection this platform did
+        not write itself. A collection where it is missing or unrecognised is
+        therefore a data problem (a stale document from before this field existed,
+        or a collection nobody loaded through the registry), not a signal to guess:
+        this raises rather than falling back to treating it as either kind, so a
+        broken collection fails loudly instead of silently answering pgstac's own
         near-empty result for it (adr/0005 rule I).
+
+        ``time_range`` (M3-12) is read the same way but fails safe rather than
+        loudly when it is missing or not a plain bool: unlike ``item_holding``,
+        nothing about *routing* depends on it, only whether a `datetime` filter is
+        honoured — treating an unreadable value as "has a time axis" keeps a
+        search filtered exactly as it always was, rather than turning a stale or
+        foreign document into a new class of `500`.
         """
         collection = await self.get_collection(collection_id, request=request)
         source = collection.get("earthx:source")
         raw_holding = source.get("item_holding") if isinstance(source, dict) else None
         try:
-            return ItemHolding(raw_holding)
+            holding = ItemHolding(raw_holding)
         except ValueError:
             raise HTTPException(
                 status_code=500,
@@ -347,6 +409,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
                     "(not loaded from the registry? run `python -m earthx.catalog.load`)"
                 ),
             ) from None
+        capabilities = collection.get("earthx:capabilities")
+        raw_time_range = capabilities.get("time_range") if isinstance(capabilities, dict) else None
+        time_range = raw_time_range if isinstance(raw_time_range, bool) else True
+        return holding, time_range
+
+    async def _holding_of(self, collection_id: str, request: Request) -> ItemHolding:
+        holding, _ = await self._source_info_of(collection_id, request)
+        return holding
 
     async def _all_collection_ids(self, request: Request) -> list[str]:
         collections = await self.all_collections(request=request)
@@ -363,8 +433,11 @@ class FederatingCoreCrudClient(CoreCrudClient):
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
-    ) -> ItemCollection | None:
-        """``None`` means: nothing here is federated, let ``super()`` answer as usual.
+    ) -> tuple[ItemCollection | None, str | None, tuple[str, ...]]:
+        """A federated page, or ``(None, effective_datetime, ignored_filters)``
+        meaning: nothing here is federated, let ``super()`` answer as usual — with
+        ``effective_datetime`` in place of the raw value (M3-12) and
+        ``ignored_filters`` merged into whatever it returns.
 
         ``native_ids`` now also holds every *materialized* collection (M3-11a) —
         pgstac answers those exactly as it always answered a collection with no
@@ -373,24 +446,29 @@ class FederatingCoreCrudClient(CoreCrudClient):
         federated-plus-federated.
         """
         target_ids = collections or await self._all_collection_ids(request)
-        holdings = {cid: await self._holding_of(cid, request) for cid in target_ids}
-        federated_ids = [cid for cid in target_ids if holdings[cid] is ItemHolding.FEDERATED]
+        infos = {cid: await self._source_info_of(cid, request) for cid in target_ids}
+        federated_ids = [cid for cid in target_ids if infos[cid][0] is ItemHolding.FEDERATED]
         native_ids = [cid for cid in target_ids if cid not in federated_ids]
 
         if not federated_ids:
-            return None
+            effective_datetime, ignored_filters = _apply_time_axis(
+                datetime_value, [time_range for _, time_range in infos.values()]
+            )
+            return None, effective_datetime, ignored_filters
 
         if len(federated_ids) == 1 and not native_ids:
-            return await self._federated_page(
+            effective_datetime, ignored_filters = _apply_time_axis(datetime_value, [infos[federated_ids[0]][1]])
+            page = await self._federated_page(
                 federated_ids[0],
                 request,
                 bbox=bbox,
                 intersects=intersects,
                 ids=ids,
-                datetime_value=datetime_value,
+                datetime_value=effective_datetime,
                 limit=limit,
                 token=token,
             )
+            return page, effective_datetime, ignored_filters
 
         # More than one source active at once (several federated collections, or a
         # mix of federated and native): rejected rather than merged. A merge across
@@ -400,7 +478,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # multi-collection case M2's own tests still cover. A best-effort
         # concatenation nobody could verify stayed correct would only look tested.
         # Otto, before merge (docs/ENTSCHEIDUNGSLOG.md); M2-09b plan §10 F3 kept the
-        # rejection and only sharpened the message below.
+        # rejection and only sharpened the message below. Left unvalidated on
+        # purpose (M3-12): a malformed `datetime` on a search this route rejects
+        # anyway still gets *a* 400, just this one rather than a datetime-format one.
         LOGGER.warning("rejected a search spanning more than one source at once: %s", target_ids)
         raise HTTPException(
             status_code=400,

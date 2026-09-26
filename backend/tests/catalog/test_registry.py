@@ -16,6 +16,7 @@ import pytest
 
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
+    BrowseMode,
     Capabilities,
     ConfigError,
     CoverageProvider,
@@ -204,6 +205,37 @@ class TestItemHolding:
         assert vary(source=source, coverage=coverage).source.harvest_run == "2026-09-26T00:00:00Z"
 
 
+class TestBrowseCors:
+    """M3-12, F-11: a quicklook a browser keys transparent on its own canvas needs
+    cross-origin access to the asset host."""
+
+    def test_quicklook_without_cors_is_rejected(self, valid_config, vary) -> None:
+        viewer = replace(valid_config.viewer, browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16)
+        access = replace(valid_config.access, cors=False)
+        with pytest.raises(ConfigError, match="access.cors"):
+            vary(viewer=viewer, access=access)
+
+    def test_quicklook_with_cors_unmeasured_is_also_rejected(self, valid_config, vary) -> None:
+        """``cors=None`` (unmeasured) is not a claim of support either."""
+        viewer = replace(valid_config.viewer, browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16)
+        access = replace(valid_config.access, cors=None)
+        with pytest.raises(ConfigError, match="access.cors"):
+            vary(viewer=viewer, access=access)
+
+    def test_quicklook_with_cors_is_fine(self, valid_config, vary) -> None:
+        viewer = replace(valid_config.viewer, browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16)
+        access = replace(valid_config.access, cors=True)
+        assert vary(viewer=viewer, access=access).viewer.browse is BrowseMode.QUICKLOOK
+
+    def test_a_dataset_without_a_viewer_needs_no_cors_either(self, valid_config, vary) -> None:
+        """A catalog-tier entry (no viewer at all) has no browse mode to check."""
+        license_info = replace(
+            valid_config.license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        access = replace(valid_config.access, cors=False)
+        assert vary(license=license_info, viewer=None, access=access).viewer is None
+
+
 class TestLookup:
     """adr/0005 rule I: an unknown collection is a 404, never an empty result."""
 
@@ -235,6 +267,22 @@ def render(**overrides) -> DefaultRender:
         "resampling": "nearest",
     }
     return DefaultRender(**{**fields, **overrides})
+
+
+def full_viewer(**overrides) -> ViewerInfo:
+    """A valid ``ViewerInfo`` with one field group replaced (mirrors ``render``
+    above) — ``FULL_RESOLUTION``/``None`` is the least constrained ``browse``
+    combination, so a case about grouping or zoom does not also have to
+    satisfy ``QUICKLOOK``'s cross-field rule."""
+    fields = {
+        "group_by": ("datetime",),
+        "min_zoom": 0,
+        "max_zoom": 19,
+        "browse": BrowseMode.FULL_RESOLUTION,
+        "quicklook_nodata_max": None,
+        "results_group_by": ("datetime",),
+    }
+    return ViewerInfo(**{**fields, **overrides})
 
 
 class TestMalformedInput:
@@ -346,7 +394,23 @@ class TestMalformedInput:
         """M2-07a reads this field and implements nothing of its own, so a key that
         needs interpreting is a bug in the viewer nobody would trace back to here."""
         with pytest.raises(ConfigError, match="group_by"):
-            ViewerInfo(group_by=group_by, min_zoom=0, max_zoom=19)
+            full_viewer(group_by=group_by)
+
+    @pytest.mark.parametrize(
+        "results_group_by",
+        [
+            (),  # no key at all
+            ("start_datetime", "start_datetime"),  # the same property twice
+            ("properties.start_datetime",),  # the prefix is implied
+            ("",),
+            (" start_datetime",),
+        ],
+    )
+    def test_a_results_grouping_key_that_cannot_be_read_is_rejected(self, results_group_by) -> None:
+        """M3-12: the same rule as `group_by` (`_check_property_names` is shared),
+        checked again by name so a broken entry fails as this field, not that one."""
+        with pytest.raises(ConfigError, match="results_group_by"):
+            full_viewer(results_group_by=results_group_by)
 
     @pytest.mark.parametrize(
         ("min_zoom", "max_zoom", "match"),
@@ -365,14 +429,24 @@ class TestMalformedInput:
         that is empty or nonsensical would turn every tile of the dataset into a 400
         and the cause would be looked for anywhere but in the registry."""
         with pytest.raises(ConfigError, match=match):
-            ViewerInfo(group_by=("datetime",), min_zoom=min_zoom, max_zoom=max_zoom)
+            full_viewer(min_zoom=min_zoom, max_zoom=max_zoom)
 
-    @pytest.mark.parametrize("missing", ["min_zoom", "max_zoom"])
-    def test_the_zoom_levels_are_not_optional(self, missing) -> None:
+    @pytest.mark.parametrize(
+        "missing", ["min_zoom", "max_zoom", "browse", "quicklook_nodata_max", "results_group_by"]
+    )
+    def test_the_zoom_and_browse_fields_are_not_optional(self, missing) -> None:
         """KLAERUNGEN B10 again: a dataset nobody measured has no released range, and
         a default here would let a client ask for a tile that costs a hundred times
-        what the source can add to it (M2-10, Otto 22.09.2026)."""
-        fields = {"group_by": ("datetime",), "min_zoom": 0, "max_zoom": 19}
+        what the source can add to it (M2-10, Otto 22.09.2026) — the same reasoning
+        M3-12 applies to `browse`, `quicklook_nodata_max` and `results_group_by`."""
+        fields: dict[str, object] = {
+            "group_by": ("datetime",),
+            "min_zoom": 0,
+            "max_zoom": 19,
+            "browse": BrowseMode.FULL_RESOLUTION,
+            "quicklook_nodata_max": None,
+            "results_group_by": ("datetime",),
+        }
         del fields[missing]
         with pytest.raises(TypeError):
             ViewerInfo(**fields)
@@ -380,7 +454,27 @@ class TestMalformedInput:
     def test_a_single_released_level_is_allowed(self) -> None:
         """min == max is the browse-mode preview of M2-10: exactly one level is read
         and everything above it is overzoomed, which is what a quicklook is."""
-        assert ViewerInfo(group_by=("datetime",), min_zoom=8, max_zoom=8).max_zoom == 8
+        assert full_viewer(min_zoom=8, max_zoom=8).max_zoom == 8
+
+    def test_quicklook_nodata_max_may_be_a_number_under_quicklook(self) -> None:
+        assert full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16).quicklook_nodata_max == 16
+
+    def test_quicklook_nodata_max_may_be_none_under_quicklook(self) -> None:
+        """A quicklook that needs no freistellung at all — not every source has
+        Sentinel-2's black padding."""
+        assert full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=None).quicklook_nodata_max is None
+
+    @pytest.mark.parametrize("browse", [BrowseMode.PREVIEW_TILES, BrowseMode.FULL_RESOLUTION])
+    def test_quicklook_nodata_max_must_be_none_without_quicklook(self, browse) -> None:
+        """A dataset with no browsable quicklook has nothing for this threshold to
+        apply to (M3-12)."""
+        with pytest.raises(ConfigError, match="quicklook_nodata_max"):
+            full_viewer(browse=browse, quicklook_nodata_max=16)
+
+    @pytest.mark.parametrize("value", [-1, 256, 8.5, True])
+    def test_quicklook_nodata_max_out_of_range_is_rejected(self, value) -> None:
+        with pytest.raises(ConfigError, match="quicklook_nodata_max"):
+            full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=value)
 
     def test_an_asset_host_is_not_optional(self, valid_config) -> None:
         """KLAERUNGEN B10: a field with a default is a field nobody decided about."""
@@ -453,3 +547,14 @@ class TestEveryEntry:
     def test_a_catalog_tier_entry_names_no_viewer(self, entry: DatasetConfig) -> None:
         if entry.license.tier is LicenseTier.CATALOG:
             assert entry.viewer is None
+
+    def test_a_quicklook_dataset_has_measured_cors(self, entry: DatasetConfig) -> None:
+        """M3-12, F-11: enforced at construction (`TestBrowseCors`), pinned again
+        here by name, the same reasoning as `test_item_holding_is_one_of_the_two_
+        known_values` above."""
+        if entry.viewer is not None and entry.viewer.browse is BrowseMode.QUICKLOOK:
+            assert entry.access.cors is True
+
+    def test_results_group_by_is_set_wherever_group_by_is(self, entry: DatasetConfig) -> None:
+        if entry.viewer is not None:
+            assert entry.viewer.results_group_by

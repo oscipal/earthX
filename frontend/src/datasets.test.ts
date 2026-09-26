@@ -1,25 +1,59 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  acquisitionNote,
+  browseOf,
   datasetsFrom,
   defaultRenderOf,
   groupByOf,
   maturityNote,
   quicklookAsset,
+  quicklookNodataMaxOf,
   quicklookPlan,
+  resultsGroupByOf,
+  timeAxisOf,
   zoomFloorHint,
   zoomRangeOf,
 } from './datasets';
-import type { Collection, EarthxViewer, StacItem } from './types';
+import type { Collection, EarthxCapabilities, EarthxViewer, StacItem } from './types';
 
-function collection(overrides: Partial<Collection> = {}): Collection {
-  return { id: 'sentinel-2-c1-l2a', title: 'Sentinel-2 L2A', ...overrides };
+function capabilities(overrides: Partial<EarthxCapabilities> = {}): EarthxCapabilities {
+  return {
+    roi: true,
+    time_range: true,
+    band_math: true,
+    interpolation: true,
+    ml_processing: true,
+    quad_pol: false,
+    single_coverage_product: false,
+    ...overrides,
+  };
 }
 
-// A viewer block with the zoom range filled in, so a case about grouping does
-// not have to carry two numbers it says nothing about (and vice versa).
+function collection(overrides: Partial<Collection> = {}): Collection {
+  return {
+    id: 'sentinel-2-c1-l2a',
+    title: 'Sentinel-2 L2A',
+    'earthx:capabilities': capabilities(),
+    ...overrides,
+  };
+}
+
+// A viewer block with the zoom range and the M3-12 fields filled in, so a case
+// about grouping does not have to carry numbers it says nothing about (and vice
+// versa). `preview_tiles` is the default `browse` because most cases here are
+// about the tile-fallback mechanism it drives; a case about `quicklook` or
+// `full_resolution` sets it explicitly.
 function viewer(overrides: Partial<EarthxViewer> = {}): EarthxViewer {
-  return { group_by: ['datetime'], min_zoom: 0, max_zoom: 19, ...overrides };
+  return {
+    group_by: ['datetime'],
+    min_zoom: 0,
+    max_zoom: 19,
+    browse: 'preview_tiles',
+    quicklook_nodata_max: null,
+    results_group_by: ['datetime'],
+    ...overrides,
+  };
 }
 
 describe('groupByOf', () => {
@@ -77,6 +111,149 @@ describe('datasetsFrom', () => {
     expect(option.viewable).toBe(true);
     if (option.viewable) expect(option.groupBy).toEqual(['datetime', 'grid:code']);
   });
+
+  it('a viewable dataset carries browse, its freistellung threshold and its results grouping', () => {
+    const [option] = datasetsFrom([
+      collection({
+        'earthx:viewer': viewer({
+          browse: 'quicklook',
+          quicklook_nodata_max: 16,
+          results_group_by: ['datetime', 's2:datatake_id'],
+        }),
+      }),
+    ]);
+    expect(option.viewable).toBe(true);
+    if (option.viewable) {
+      expect(option.browse).toBe('quicklook');
+      expect(option.quicklookNodataMax).toBe(16);
+      expect(option.resultsGroupBy).toEqual(['datetime', 's2:datatake_id']);
+      expect(option.hasTimeAxis).toBe(true);
+    }
+  });
+
+  it('a dataset without earthx:viewer.browse is not viewable, and says why', () => {
+    const [option] = datasetsFrom([
+      collection({ 'earthx:viewer': { ...viewer(), browse: undefined as unknown as never } }),
+    ]);
+    expect(option.viewable).toBe(false);
+    if (!option.viewable) expect(option.reason).toMatch(/browse/);
+  });
+
+  it('a dataset with an unrecognised browse value is not viewable', () => {
+    const [option] = datasetsFrom([
+      collection({ 'earthx:viewer': { ...viewer(), browse: 'thumbnail-only' as unknown as never } }),
+    ]);
+    expect(option.viewable).toBe(false);
+    if (!option.viewable) expect(option.reason).toMatch(/browse/);
+  });
+
+  it('a dataset without earthx:viewer.results_group_by is not viewable', () => {
+    const [option] = datasetsFrom([
+      collection({ 'earthx:viewer': { ...viewer(), results_group_by: [] } }),
+    ]);
+    expect(option.viewable).toBe(false);
+    if (!option.viewable) expect(option.reason).toMatch(/results_group_by/);
+  });
+
+  it('a dataset without earthx:capabilities.time_range is not viewable', () => {
+    const [option] = datasetsFrom([
+      collection({ 'earthx:viewer': viewer(), 'earthx:capabilities': undefined }),
+    ]);
+    expect(option.viewable).toBe(false);
+    if (!option.viewable) expect(option.reason).toMatch(/time_range/);
+  });
+
+  it('hasTimeAxis carries a false value through — false is not a gap', () => {
+    const [option] = datasetsFrom([
+      collection({ 'earthx:viewer': viewer(), 'earthx:capabilities': capabilities({ time_range: false }) }),
+    ]);
+    expect(option.viewable).toBe(true);
+    if (option.viewable) expect(option.hasTimeAxis).toBe(false);
+  });
+});
+
+describe('browseOf', () => {
+  it('reads earthx:viewer.browse', () => {
+    expect(browseOf(collection({ 'earthx:viewer': viewer({ browse: 'full_resolution' }) }))).toBe(
+      'full_resolution',
+    );
+  });
+
+  it('is null when earthx:viewer is missing', () => {
+    expect(browseOf(collection())).toBeNull();
+  });
+
+  it('is null for a value the viewer does not recognise', () => {
+    expect(
+      browseOf(collection({ 'earthx:viewer': { ...viewer(), browse: 'something-else' as unknown as never } })),
+    ).toBeNull();
+  });
+});
+
+describe('resultsGroupByOf', () => {
+  it('reads earthx:viewer.results_group_by', () => {
+    expect(
+      resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: ['start_datetime'] }) })),
+    ).toEqual(['start_datetime']);
+  });
+
+  it('is null when empty or earthx:viewer is missing', () => {
+    expect(resultsGroupByOf(collection({ 'earthx:viewer': viewer({ results_group_by: [] }) }))).toBeNull();
+    expect(resultsGroupByOf(collection())).toBeNull();
+  });
+});
+
+describe('quicklookNodataMaxOf', () => {
+  it('reads the number the registry sets', () => {
+    expect(quicklookNodataMaxOf(collection({ 'earthx:viewer': viewer({ quicklook_nodata_max: 16 }) }))).toBe(16);
+  });
+
+  it('is null when the registry sets none', () => {
+    expect(quicklookNodataMaxOf(collection({ 'earthx:viewer': viewer({ quicklook_nodata_max: null }) }))).toBeNull();
+    expect(quicklookNodataMaxOf(collection())).toBeNull();
+  });
+});
+
+describe('timeAxisOf', () => {
+  it('reads earthx:capabilities.time_range', () => {
+    expect(timeAxisOf(collection({ 'earthx:capabilities': capabilities({ time_range: false }) }))).toBe(false);
+    expect(timeAxisOf(collection({ 'earthx:capabilities': capabilities({ time_range: true }) }))).toBe(true);
+  });
+
+  it('is null — a gap, not "no axis" — when earthx:capabilities is missing', () => {
+    expect(timeAxisOf(collection({ 'earthx:capabilities': undefined }))).toBeNull();
+  });
+});
+
+describe('acquisitionNote', () => {
+  const noAxis = (interval: (string | null)[]) =>
+    collection({
+      'earthx:capabilities': capabilities({ time_range: false }),
+      extent: { temporal: { interval: [interval] } },
+    });
+
+  it('formats the fixed acquisition period for a dataset without a time axis', () => {
+    expect(acquisitionNote(noAxis(['2010-12-01T00:00:00Z', '2015-01-31T23:59:59Z']))).toBe(
+      'No time axis – acquired Dec 2010 to Jan 2015',
+    );
+  });
+
+  it('is null for a dataset with a time axis, whatever the extent says', () => {
+    const withAxis = collection({
+      'earthx:capabilities': capabilities({ time_range: true }),
+      extent: { temporal: { interval: [['2020-01-01T00:00:00Z', null]] } },
+    });
+    expect(acquisitionNote(withAxis)).toBeNull();
+  });
+
+  it('is null when the extent is open at either end', () => {
+    expect(acquisitionNote(noAxis([null, '2015-01-31T23:59:59Z']))).toBeNull();
+    expect(acquisitionNote(noAxis(['2010-12-01T00:00:00Z', null]))).toBeNull();
+  });
+
+  it('is null when the extent is missing entirely', () => {
+    expect(acquisitionNote(collection({ 'earthx:capabilities': capabilities({ time_range: false }) }))).toBeNull();
+  });
 });
 
 describe('defaultRenderOf', () => {
@@ -118,12 +295,25 @@ describe('quicklookAsset', () => {
     expect(quicklookAsset(it_)?.href).toBe('https://example.test/overview.jpg');
   });
 
-  it('falls back to the first image/* asset', () => {
+  it('falls back to a browsable image type with no role at all', () => {
+    const it_ = item({
+      preview: { href: 'https://example.test/preview.png', type: 'image/png' },
+      other: { href: 'https://example.test/other.json', type: 'application/json' },
+    });
+    expect(quicklookAsset(it_)?.href).toBe('https://example.test/preview.png');
+  });
+
+  // Found answering Otto's question on F-04 (26.09.2026): `image/tiff` also
+  // starts with `image/`, and the DEM's own COG asset carries exactly this
+  // type with no `thumbnail`/`overview` role — a browser cannot decode a
+  // GeoTIFF behind an `<img>` tag, so a COG must never qualify as a
+  // quicklook, real-data MIME coincidence or not.
+  it('does not treat a COG (image/tiff) with no role as a quicklook', () => {
     const it_ = item({
       data: { href: 'https://example.test/data.tif', type: 'image/tiff; application=geotiff' },
       other: { href: 'https://example.test/other.json', type: 'application/json' },
     });
-    expect(quicklookAsset(it_)?.href).toBe('https://example.test/data.tif');
+    expect(quicklookAsset(it_)).toBeNull();
   });
 
   it('is null when nothing matches', () => {
@@ -260,6 +450,30 @@ describe('quicklookPlan', () => {
     const scene = item({ data: { href: 'https://example.test/x.tif', roles: ['data'] } });
     expect(quicklookPlan(scene, option(empty))).toBeNull();
   });
+
+  it('is null for browse: full_resolution, even with a default visualisation set', () => {
+    // The DEM's case (M3-12): no coarse-tile substitute either, because it would
+    // be a near-empty world tile clipped to one item (M3-02 F-05) — the viewer
+    // shows the AOI crop in full resolution directly instead (`store.ts`).
+    const noPreview = collection({
+      'earthx:viewer': viewer({ browse: 'full_resolution' }),
+      'earthx:default_render': render,
+    });
+    const scene = item({ data: { href: 'https://example.test/x.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(noPreview))).toBeNull();
+  });
+
+  it('is null for browse: quicklook when the item carries no quicklook of its own', () => {
+    // Sentinel-2 COG's case: no coarse-tile fallback for a dataset the registry
+    // says publishes quicklooks — a missing one here is a gap, not a cue to
+    // improvise a preview.
+    const quicklookDataset = collection({
+      'earthx:viewer': viewer({ browse: 'quicklook', quicklook_nodata_max: 16 }),
+      'earthx:default_render': render,
+    });
+    const scene = item({ data: { href: 'https://example.test/x.tif', roles: ['data'] } });
+    expect(quicklookPlan(scene, option(quicklookDataset))).toBeNull();
+  });
 });
 
 describe('zoomFloorHint', () => {
@@ -299,6 +513,15 @@ describe('zoomFloorHint', () => {
   it('is null when no dataset is selected or it is not viewable', () => {
     expect(zoomFloorHint(undefined, 0)).toBeNull();
     expect(zoomFloorHint(datasetsFrom([collection()])[0], 0)).toBeNull();
+  });
+
+  it('is null for browse: full_resolution below its own floor (M3-12, Otto 26.09.2026)', () => {
+    // No "Zoom in" hint for a dataset whose tiles are already per-item (M3-09) —
+    // there is nothing a released range would be hiding several scenes behind.
+    const [noPreview] = datasetsFrom([
+      collection({ 'earthx:viewer': viewer({ min_zoom: 8, max_zoom: 14, browse: 'full_resolution' }) }),
+    ]);
+    expect(zoomFloorHint(noPreview, 5)).toBeNull();
   });
 
   it.each([

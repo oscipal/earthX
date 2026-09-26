@@ -30,10 +30,28 @@ const AOI: GeoJSON.Polygon = {
   ],
 };
 
+const CAPABILITIES = {
+  roi: true,
+  time_range: true,
+  band_math: true,
+  interpolation: true,
+  ml_processing: true,
+  quad_pol: false,
+  single_coverage_product: false,
+};
+
 const COG_DATASET: Collection = {
   id: 'sentinel-2-c1-l2a',
   title: 'Sentinel-2 L2A',
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19 },
+  'earthx:capabilities': CAPABILITIES,
+  'earthx:viewer': {
+    group_by: ['datetime'],
+    min_zoom: 0,
+    max_zoom: 19,
+    browse: 'quicklook',
+    quicklook_nodata_max: 16,
+    results_group_by: ['datetime'],
+  },
   'earthx:format': 'cog',
   'earthx:license_flags': {
     spdx_id: null,

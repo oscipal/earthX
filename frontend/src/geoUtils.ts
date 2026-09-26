@@ -107,6 +107,28 @@ function utmProj4Def(code: string): string | null {
   return `+proj=utm +zone=${zone} +${north ? 'north' : 'south'} +datum=WGS84 +units=m +no_defs`;
 }
 
+function isEpsg4326(code: string): boolean {
+  return code.trim().toUpperCase() === 'EPSG:4326';
+}
+
+// A quicklook placement conversion for the item's CRS, in whichever direction
+// the caller needs — `null` for a CRS neither of the two forms below covers
+// (M3-02 F-03: before this, only a UTM zone worked; a global raster in
+// EPSG:4326, like the DEM, showed no quicklook at all). EPSG:4326 is the
+// identity: an asset's `proj:transform` already maps pixels straight to
+// lon/lat, no proj4 conversion needed.
+function toWgs84Converter(code: string): ((xy: [number, number]) => [number, number]) | null {
+  if (isEpsg4326(code)) return (xy) => xy;
+  const def = utmProj4Def(code);
+  return def ? (xy) => proj4(def, 'EPSG:4326', xy) as [number, number] : null;
+}
+
+function fromWgs84Converter(code: string): ((lonLat: [number, number]) => [number, number]) | null {
+  if (isEpsg4326(code)) return (lonLat) => lonLat;
+  const def = utmProj4Def(code);
+  return def ? (lonLat) => proj4('EPSG:4326', def, lonLat) as [number, number] : null;
+}
+
 // The item's own CRS, in either spelling STAC has for it — mirrors the
 // tiler's `_proj_code` (backend/earthx/api/tiler.py): `proj:code` is the
 // projection extension v2 field, `proj:epsg` (an int) the v1 one Earth
@@ -141,17 +163,28 @@ function assetExtent(asset: StacAsset): Coords4 | null {
 // `proj:bbox`: Earth Search's Sentinel-2 items carry no `proj:bbox` at all
 // (STAC projection extension v1.1 leaves it optional and unset here), so the
 // tile's true extent — nodata border included — has to come from an asset's
-// `proj:transform`/`proj:shape` instead. `visual` first, the RGB asset the
-// quicklook approximates and the dataset's own default-render asset;
-// otherwise the first asset that carries both fields.
-function georeferencedExtent(assets: Record<string, StacAsset>): Coords4 | null {
-  const visual = assets.visual && assetExtent(assets.visual);
-  if (visual) return visual;
-  for (const asset of Object.values(assets)) {
-    const extent = assetExtent(asset);
-    if (extent) return extent;
-  }
-  return null;
+// `proj:transform`/`proj:shape` instead.
+//
+// `preferred` (M3-12, F-04, Otto 26.09.2026) is the dataset's own registry
+// choice — `earthx:default_render.assets[0]` — checked before the `visual`
+// literal: today the two always agree (Sentinel-2 COG's default render *is*
+// `visual`), so this changes nothing yet, but a future `browse: 'quicklook'`
+// dataset with several georeferenced assets and no asset actually named
+// `visual` would otherwise fall through to "the first one found", in
+// `Object.values` order — not necessarily the one the dataset's own render
+// spec says to show. `visual` stays as a second guess for a caller that
+// passes no `preferred` (older code, a test); the plain fallback below is
+// the last resort for either case.
+function georeferencedAsset(assets: Record<string, StacAsset>, preferred?: string): StacAsset | null {
+  const named = preferred ? assets[preferred] : undefined;
+  if (named && assetExtent(named)) return named;
+  if (assets.visual && assetExtent(assets.visual)) return assets.visual;
+  return Object.values(assets).find((asset) => assetExtent(asset)) ?? null;
+}
+
+function georeferencedExtent(assets: Record<string, StacAsset>, preferred?: string): Coords4 | null {
+  const asset = georeferencedAsset(assets, preferred);
+  return asset ? assetExtent(asset) : null;
 }
 
 // Image-source corner quad for a scene's quicklook, from the *tile's* extent,
@@ -162,19 +195,71 @@ function georeferencedExtent(assets: Record<string, StacAsset>): Coords4 | null 
 // `null` (no quicklook) rather than a guess when the item's CRS or a
 // georeferenced asset's extent is missing, or the CRS isn't a UTM zone we
 // can convert.
-export function quicklookCoords(item: Pick<StacItem, 'properties' | 'assets'> | null | undefined): Coords4 | null {
+export function quicklookCoords(
+  item: Pick<StacItem, 'properties' | 'assets'> | null | undefined,
+  preferredAsset?: string,
+): Coords4 | null {
   if (!item) return null;
   const code = projCode(item.properties ?? {});
   if (!code) return null;
-  const def = utmProj4Def(code);
-  if (!def) return null;
-  const extent = georeferencedExtent(item.assets ?? {});
+  const toWgs84 = toWgs84Converter(code);
+  if (!toWgs84) return null;
+  const extent = georeferencedExtent(item.assets ?? {}, preferredAsset);
   if (!extent) return null;
-  const toWgs84 = ([x, y]: [number, number]): [number, number] => {
-    const [lon, lat] = proj4(def, 'EPSG:4326', [x, y]);
-    return [lon, lat];
-  };
   return [toWgs84(extent[0]), toWgs84(extent[1]), toWgs84(extent[2]), toWgs84(extent[3])];
+}
+
+// The inverse of a `proj:transform` affine (pixel col/row → projected x/y):
+// given a projected (x, y), the pixel (col, row) it came from. `null` for a
+// degenerate transform (zero determinant) — not a real pixel grid.
+function invertAffine(transform: number[]): ((x: number, y: number) => [number, number]) | null {
+  const [a, b, c, d, e, f] = transform;
+  const det = a * e - b * d;
+  if (!Number.isFinite(det) || det === 0) return null;
+  return (x, y) => {
+    const dx = x - c;
+    const dy = y - f;
+    return [(dx * e - b * dy) / det, (a * dy - d * dx) / det];
+  };
+}
+
+// Every ring of an AOI polygon/multipolygon (exterior and holes), as pixel
+// coordinates on the item's own georeferenced asset (M3-12, O5) — the inverse
+// of the corner conversion `quicklookCoords` above does, so a canvas can clip
+// a quicklook to the AOI the way `aoiClip.ts::ringsToTilePixels` clips a
+// raster tile to it in that tile's own Web-Mercator pixel space. `null` for
+// the same reasons `quicklookCoords` is: a CRS this cannot convert, or no
+// georeferenced asset to place the ring on — the caller then shows the
+// quicklook unclipped rather than blocking it on a geometry it cannot place.
+export function quicklookAoiPixelRings(
+  item: Pick<StacItem, 'properties' | 'assets'>,
+  aoi: GeoJSON.Geometry,
+  preferredAsset?: string,
+): [number, number][][] | null {
+  const code = projCode(item.properties ?? {});
+  if (!code) return null;
+  const fromWgs84 = fromWgs84Converter(code);
+  if (!fromWgs84) return null;
+  const asset = georeferencedAsset(item.assets ?? {}, preferredAsset);
+  const transform = asset?.['proj:transform'];
+  if (!asset || !isFiniteNumberArray(transform, 6)) return null;
+  const invert = invertAffine(transform);
+  if (!invert) return null;
+  const toPixel = ([lon, lat]: number[]): [number, number] => {
+    const [x, y] = fromWgs84([lon, lat]);
+    return invert(x, y);
+  };
+  return exteriorAndHoles(aoi).map((ring) => ring.map(toPixel));
+}
+
+// Mirrors `aoiClip.ts`'s private helper of the same name — kept separate
+// rather than shared, since the two modules solve the same GeoJSON-shape
+// problem for two different pixel grids and neither should depend on the
+// other's internals for it.
+function exteriorAndHoles(geom: GeoJSON.Geometry): number[][][] {
+  if (geom.type === 'Polygon') return geom.coordinates as number[][][];
+  if (geom.type === 'MultiPolygon') return (geom.coordinates as number[][][][]).flat();
+  return [];
 }
 
 function exteriorRing(geom: GeoJSON.Geometry | null | undefined): number[][] | null {

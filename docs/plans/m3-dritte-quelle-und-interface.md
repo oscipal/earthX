@@ -143,11 +143,11 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | offen |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
-| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b | offen |
+| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | offen |
 | M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
-| M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b, M3-10 | offen |
+| M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | in Arbeit |
 | M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | offen |
 | M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | offen |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | offen |
@@ -159,6 +159,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
 | M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
 | M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
+| M3-24 | Setup-Hook installiert Frontend-Pakete nach Lockfile | A | Sonnet (mittel) | — | offen |
 
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
@@ -169,13 +170,14 @@ und C laufen daneben.
    Nutzern ankommen können. Danach M3-11a, dann M3-11b und M3-11c parallel
    (beide hängen nur an M3-11a). Die dritte Quelle hat Vorrang vor den
    Oberflächen-Aufgaben, weil M3-12, M3-13 und M3-14 an ihr hängen.
-3. **Dazwischen, sobald ein Platz frei ist:** M3-07a, M3-06b, dann M3-07b und
-   M3-10.
-4. **Danach:** M3-12 und M3-13, dann M3-14, zuletzt M3-15.
+3. **Dazwischen, sobald ein Platz frei ist:** M3-07a, M3-06b, dann M3-07b.
+4. **Danach:** M3-12 und M3-13, dann M3-10, dann M3-14, zuletzt M3-15.
+   M3-12 läuft vor M3-10; die Abhängigkeit von M3-10 ist entfallen (Otto,
+   26.09.2026, Log).
 
-**Dateikonflikte im Frontend:** M3-06b, M3-07b, M3-10 und M3-12 berühren die
+**Dateikonflikte im Frontend:** M3-06b, M3-07b, M3-12 und M3-10 berühren die
 Suchkachel (`ControlPanel.tsx` und Umgebung); deshalb nacheinander in dieser
-Reihenfolge. M3-17 berührt Layer-Manager und Download-Dialog und kann parallel
+Reihenfolge (M3-12 vor M3-10: Otto, 26.09.2026). M3-17 berührt Layer-Manager und Download-Dialog und kann parallel
 laufen; M3-11a bis M3-11c sind reines Backend.
 
 **Feste ADR-Nummern**, damit parallele Sessions nicht kollidieren:
@@ -630,8 +632,10 @@ der Schwelle; keine Koordinaten der Anfrage im Log.
 
 **Ziel:** Das Frontend kennt keinen Datensatz und keine quellenspezifische
 Eigenschaft mehr (P10, M3-Abnahme).
-**Stufe B.** Nach M3-11b (echter DEM-Eintrag) und M3-10, mit dem Bericht aus
-M3-02 als Eingabe. Braucht M3-17 ein Registry-Feld für COG oder Zarr, wird es
+**Stufe B.** Nach M3-11b (echter DEM-Eintrag), mit dem Bericht aus M3-02 als
+Eingabe. Läuft vor M3-10; die Abhängigkeit von M3-10 ist entfallen (Otto,
+26.09.2026).
+**Plan-Schritt:** `plans/m3-12-frontend-sonderfaelle.md`. Braucht M3-17 ein Registry-Feld für COG oder Zarr, wird es
 hier übernommen.
 **Umfang:** Jede Stelle aus M3-02, die der DEM trifft, wird ein
 Registry-Feld (bekannt: Gruppierung der Trefferliste nach `s2:datatake_id`
@@ -673,6 +677,27 @@ grün; Otto prüft lokal.
 > Plan-Schritt fest. Dazu die Richtung aus dem M3-10-Nachtrag: Mehrfachauswahl
 > von Datensätzen über die gemischte Suche (M3-13), nicht mehr Auswahl eines
 > einzelnen.
+
+> **Nachtrag 2 (Otto, 26.09.2026, Start von M3-12), alles fest:**
+>
+> 1. **Reihenfolge:** M3-12 läuft vor M3-10; die Abhängigkeit von M3-10 entfällt.
+> 2. **Suche:** Datensätze ohne Zeitachse werden auch in der **Suche** nie nach
+>    Datum gefiltert, auch nicht über den ±90-Tage-Fallback. Wie die Coverage
+>    (M3-11c) nennt die Antwort den ignorierten Filter (`ignored_filters`), die
+>    Oberfläche zeigt den Aufnahmezeitraum. Die Änderung an der Suche im
+>    Backend ist Umfang dieser Aufgabe.
+> 3. **Ohne im Browser darstellbaren Quicklook:** Nach der Suche werden direkt
+>    die Daten in voller Auflösung, zugeschnitten auf die AOI, geladen
+>    (Mechanismus aus M3-09), ohne Zwischenschritt über Quicklooks.
+> 4. **Herauszoomen:** kein Hinweis „Zoom in“ (ersetzt „Zoom in to see this
+>    dataset“ aus Nachtrag 1, Regel 2). Der Plan-Schritt misst für den DEM
+>    gedrosselt, wie weit sich die kleinste freigegebene Zoomstufe senken lässt,
+>    wenn jede Kachel-Ebene auf die Ausdehnung ihrer Szene begrenzt ist (z4–z8);
+>    Ziel: der Zuschnitt bleibt sichtbar, solange die AOI auf dem Bildschirm ist.
+>    Ist das zu teuer, schlägt er eine Alternative vor.
+> 5. **Mit Quicklook:** Unterhalb der kleinsten freigegebenen Zoomstufe zeigt
+>    die Vollauflösungs-Ansicht den Quicklook, zugeschnitten auf die AOI, statt
+>    einer leeren Fläche; beim Hineinzoomen zurück zur vollen Auflösung.
 
 ### M3-13 — Gemischte Suche und CQL2
 
@@ -961,6 +986,14 @@ zweiter Start mit bestehendem Volume grün; Otto startet lokal mit
 
 ---
 
+### M3-24 — Setup-Hook installiert Frontend-Pakete nach Lockfile
+Ziel: Eine neue Session hat die Frontend-Pakete zum aktuellen package-lock.json, wie das venv zu den Backend-Anforderungen.
+Stufe A.
+Umfang: Der SessionStart-Hook vergleicht einen Hash von frontend/package-lock.json mit dem Stand der letzten Installation und führt bei Abweichung npm ci aus; sonst nichts. Anlass: polyclip-ts fehlte in zwei Sessions (M3-11c, M3-12). Ausdrücklich erlaubt: Änderung am Hook und seinem Skript.
+Abnahme: Test des Vergleichs; cloud-umgebung.md nachgezogen; eine frische Session zeigt polyclip-ts ohne Zutun.
+
+---
+
 ## 5. Abnahme von M3
 
 1. Die dritte Quelle (ohne Such-API, materialisierte Items) ist im Viewer
@@ -994,8 +1027,8 @@ zweiter Start mit bestehendem Volume grün; Otto startet lokal mit
 | Gemischte Suche ist so langsam wie die langsamste Quelle | Zeitablauf je Quelle, Teilergebnisse gekennzeichnet (M3-13) |
 | Zuschnitt-Ansicht weicht von der Download-Datei ab | gleiche Reihenfolge wie das Mosaik; lokale Prüfung durch Otto (M3-09) |
 | Python 3.12 nicht in die Cloud-Session zu bekommen | M3-03 misst im Plan-Schritt, bevor umgestellt wird |
-| Mehrere Frontend-Aufgaben berühren die Suchkachel | feste Reihenfolge M3-06b → M3-07b → M3-10 → M3-12 |
-| Zeitangabe der DEM-Items lässt den DEM bei Suchen mit Datumsfilter verschwinden | M3-11b schlägt die Zeitangabe mit Folgen vor, Otto entscheidet; M3-12 blendet das Datumsfeld ohne Zeitachse aus |
+| Mehrere Frontend-Aufgaben berühren die Suchkachel | feste Reihenfolge M3-06b → M3-07b → M3-12 → M3-10 (Otto, 26.09.2026) |
+| Zeitangabe der DEM-Items lässt den DEM bei Suchen mit Datumsfilter verschwinden | M3-11b schlägt die Zeitangabe mit Folgen vor, Otto entscheidet; M3-12 lässt die Suche den Datumsfilter für `time_range=False` verwerfen (Backend, `ignored_filters`) und zeigt den Aufnahmezeitraum (Otto, 26.09.2026) |
 | Coverage-Fläche aus 26 450 Kacheln ist zu groß für die Weltansicht | M3-11c misst und vereinfacht mit belegter Toleranz |
 | `bitnamilegacy/minio` wird ebenfalls unerreichbar oder unsicher | nur CI und lokal, per Digest gepinnt; M3-20 vor M4 |
 | Mehrere PRs ändern `ENTSCHEIDUNGSLOG.md` am Ende | vor dem Fertigmelden `main` holen, alle Zeilen erhalten, eigene ans Ende |

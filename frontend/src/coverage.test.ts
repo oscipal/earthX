@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CoverageCell, CoverageResponse } from './api';
 import {
+  areaGeometry,
   bandViewportBbox,
   bboxContains,
   cellBbox,
@@ -11,6 +12,7 @@ import {
   coverageFillColorExpression,
   FOOTPRINT_MIN_ZOOM,
   InvalidCellKey,
+  isAreaAnswer,
   levelForViewport,
   MIN_VIEWPORT_LEVEL,
   roundBboxToGrid,
@@ -162,6 +164,56 @@ describe('showFootprints', () => {
   it('stays false for a declared sample with no checked total, whatever the zoom', () => {
     const sample = response({ completeness: 'sample', total_count: null, footprints_advised: false });
     expect(showFootprints(sample, 20)).toBe(false);
+  });
+});
+
+// M3-12, F-07: a one-off product's answer (ENTSCHEIDUNGEN §2) — the union of
+// its own item footprints where the local-sql way built one, its plain
+// extent otherwise, never a density.
+describe('isAreaAnswer', () => {
+  it('is false without a result', () => {
+    expect(isAreaAnswer(null)).toBe(false);
+  });
+
+  it('is false for an ordinary density answer', () => {
+    expect(isAreaAnswer(response())).toBe(false);
+  });
+
+  it('is true when the answer names an area', () => {
+    const area: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] };
+    expect(isAreaAnswer(response({ area }))).toBe(true);
+  });
+
+  it('is true when the answer names only an extent, no area', () => {
+    expect(isAreaAnswer(response({ extent: [0, 0, 1, 1] }))).toBe(true);
+  });
+});
+
+describe('areaGeometry', () => {
+  it('prefers the area (the footprint union) when one is set', () => {
+    const area: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] };
+    expect(areaGeometry(response({ area, extent: [0, 0, 1, 1] }))).toEqual(area);
+  });
+
+  it('falls back to the extent as a rectangle when the area is empty', () => {
+    const empty: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [] };
+    const geometry = areaGeometry(response({ area: empty, extent: [-10, -5, 10, 5] }));
+    expect(geometry).toEqual({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-10, -5],
+          [10, -5],
+          [10, 5],
+          [-10, 5],
+          [-10, -5],
+        ],
+      ],
+    });
+  });
+
+  it('is null when neither is set', () => {
+    expect(areaGeometry(response())).toBeNull();
   });
 });
 

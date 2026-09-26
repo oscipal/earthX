@@ -160,7 +160,13 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # holding an instant enters the key as its UTC date (registry.ViewerInfo).
         # `min_zoom`/`max_zoom` are the tile levels this dataset is released for
         # (M2-10) — read by the viewer and enforced by the tile route, so a client
-        # that ignores them gets a 400 rather than an expensive read.
+        # that ignores them gets a 400 rather than an expensive read. `browse`,
+        # `quicklook_nodata_max` and `results_group_by` are M3-12's addition
+        # (registry.ViewerInfo, registry.BrowseMode): what the browse view shows
+        # right after a search, its quicklook freistellung threshold if any, and
+        # the key the results list and the download route group by (P19) —
+        # separate from `group_by` because a dataset may head its results
+        # display by a property `group_by` deliberately does not use (M3-02 F-01).
         "earthx:viewer": (
             None
             if config.viewer is None
@@ -168,6 +174,9 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 "group_by": list(config.viewer.group_by),
                 "min_zoom": config.viewer.min_zoom,
                 "max_zoom": config.viewer.max_zoom,
+                "browse": config.viewer.browse.value,
+                "quicklook_nodata_max": config.viewer.quicklook_nodata_max,
+                "results_group_by": list(config.viewer.results_group_by),
             }
         ),
         "earthx:source": {

@@ -4,6 +4,7 @@
 // and the components call these and do the drawing.
 
 import type { CoverageCell, CoverageCompleteness, CoverageResponse } from './api';
+import { bboxToPolygon } from './geoUtils';
 import type { Bbox } from './types';
 
 export class InvalidCellKey extends Error {}
@@ -131,6 +132,24 @@ export const FOOTPRINT_FETCH_LIMIT = 500;
 
 export function showFootprints(result: CoverageResponse | null, zoom: number): boolean {
   return !!result && result.footprints_advised && zoom >= FOOTPRINT_MIN_ZOOM;
+}
+
+// M3-12, F-07: a one-off product's coverage answer names its whole extent
+// instead of a density (ENTSCHEIDUNGEN §2, `adr/0009` §6) — `area`
+// (M3-11c's `local-sql` way, the union of the dataset's own item footprints)
+// or, without one, `extent` alone (a provider that has not built that path,
+// or an area that happens to come back empty). Either field being set is the
+// signal, never the dataset id.
+export function isAreaAnswer(result: CoverageResponse | null): boolean {
+  return !!result && (!!result.area || !!result.extent);
+}
+
+// The geometry to draw for an area answer, or `null` when there is truly
+// nothing to show (called only after `isAreaAnswer` is true, so this is a
+// defensive fallback, not an expected case).
+export function areaGeometry(result: CoverageResponse): GeoJSON.Geometry | null {
+  if (result.area && result.area.coordinates.length > 0) return result.area;
+  return result.extent ? bboxToPolygon(result.extent) : null;
 }
 
 // M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): without an AOI the
