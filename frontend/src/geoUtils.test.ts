@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { coordsBbox, MAX_INTERSECTS_POINTS, quicklookCoords, searchArea } from './geoUtils';
+import { coordsBbox, MAX_INTERSECTS_POINTS, quicklookAoiPixelRings, quicklookCoords, searchArea } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import type { StacAsset, StacItem } from './types';
 
@@ -86,9 +86,85 @@ describe('quicklookCoords', () => {
     expect(quicklookCoords(edgeItem({ properties: { 'proj:code': 'IAU_2015:30100' } }))).toBeNull();
   });
 
+  it('reads EPSG:4326 as the identity — a global raster in geographic coordinates (M3-02 F-03)', () => {
+    const asset: StacAsset = { href: 'https://example.invalid/data.tif', 'proj:transform': [1, 0, 5, 0, -1, 50], 'proj:shape': [10, 10] };
+    const coords = quicklookCoords(
+      edgeItem({ properties: { 'proj:code': 'EPSG:4326' }, assets: { visual: asset } }),
+    );
+    expect(coords).toEqual([
+      [5, 50],
+      [15, 50],
+      [15, 40],
+      [5, 40],
+    ]);
+  });
+
   it('returns null without an item', () => {
     expect(quicklookCoords(null)).toBeNull();
     expect(quicklookCoords(undefined)).toBeNull();
+  });
+});
+
+// M3-12, O5: the AOI, as pixel coordinates on the same asset `quicklookCoords`
+// places above — the inverse of that conversion, so a canvas can clip the
+// quicklook below `min_zoom` the way a raster tile is clipped.
+describe('quicklookAoiPixelRings', () => {
+  it('inverts quicklookCoords exactly: the tile corners round-trip to the pixel grid corners', () => {
+    const item = edgeItem();
+    const [tl, tr, br, bl] = quicklookCoords(item)!;
+    const aoi: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[tl, tr, br, bl, tl]] };
+    const [ring] = quicklookAoiPixelRings(item, aoi)!;
+    // `proj:shape` is [10980, 10980] (VISUAL_ASSET above): (0,0) top-left,
+    // (cols,0) top-right, (cols,rows) bottom-right, (0,rows) bottom-left.
+    expect(ring[0][0]).toBeCloseTo(0, 3);
+    expect(ring[0][1]).toBeCloseTo(0, 3);
+    expect(ring[1][0]).toBeCloseTo(10980, 3);
+    expect(ring[1][1]).toBeCloseTo(0, 3);
+    expect(ring[2][0]).toBeCloseTo(10980, 3);
+    expect(ring[2][1]).toBeCloseTo(10980, 3);
+    expect(ring[3][0]).toBeCloseTo(0, 3);
+    expect(ring[3][1]).toBeCloseTo(10980, 3);
+  });
+
+  it('places a smaller AOI somewhere inside the pixel grid, in proportion', () => {
+    // The centre of the tile lands at the centre of the pixel grid.
+    const item = edgeItem();
+    const [tl, tr, br, bl] = quicklookCoords(item)!;
+    const cx = (tl[0] + tr[0] + br[0] + bl[0]) / 4;
+    const cy = (tl[1] + tr[1] + br[1] + bl[1]) / 4;
+    const d = 0.001;
+    const aoi: GeoJSON.Polygon = {
+      type: 'Polygon',
+      coordinates: [[[cx - d, cy - d], [cx + d, cy - d], [cx + d, cy + d], [cx - d, cy + d], [cx - d, cy - d]]],
+    };
+    const [ring] = quicklookAoiPixelRings(item, aoi)!;
+    for (const [px, py] of ring) {
+      expect(px).toBeGreaterThan(0);
+      expect(px).toBeLessThan(10980);
+      expect(py).toBeGreaterThan(0);
+      expect(py).toBeLessThan(10980);
+    }
+  });
+
+  it('carries a hole through as a second ring', () => {
+    const item = edgeItem();
+    const [tl, tr, br, bl] = quicklookCoords(item)!;
+    const cx = (tl[0] + tr[0] + br[0] + bl[0]) / 4;
+    const cy = (tl[1] + tr[1] + br[1] + bl[1]) / 4;
+    const d = 0.001;
+    const hole: number[][] = [[cx - d, cy - d], [cx + d, cy - d], [cx + d, cy + d], [cx - d, cy + d], [cx - d, cy - d]];
+    const aoi: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[tl, tr, br, bl, tl], hole] };
+    expect(quicklookAoiPixelRings(item, aoi)).toHaveLength(2);
+  });
+
+  it('is null when the item has no usable CRS, mirroring quicklookCoords', () => {
+    const item = edgeItem({ properties: { datetime: '2026-09-20T10:37:40Z' } });
+    expect(quicklookAoiPixelRings(item, { type: 'Polygon', coordinates: [[[0, 0]]] })).toBeNull();
+  });
+
+  it('is null without a georeferenced asset', () => {
+    const item = edgeItem({ assets: { visual: { href: 'https://example.invalid/visual.tif' } } });
+    expect(quicklookAoiPixelRings(item, { type: 'Polygon', coordinates: [[[0, 0]]] })).toBeNull();
   });
 });
 
