@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 
@@ -87,11 +89,41 @@ def _asset():
     return asset_path(ASSET_URL, POLICY, dataset_id=SENTINEL_2_L2A.dataset_id, item_id=ITEM, asset="visual", resolve=from_memory)
 
 
-def _open_zip_member(zip_bytes: bytes, name: str) -> rasterio.io.DatasetReader:
+@contextmanager
+def _open_zip_member(zip_bytes: bytes, name: str) -> Iterator[rasterio.io.DatasetReader]:
+    """A ZIP member as an open dataset (CI flake investigation, 26.09.2026).
+
+    A bare ``MemoryFile(member).open()`` returns the dataset alone: nothing
+    keeps the ``MemoryFile`` itself alive, so it becomes unreferenced and
+    eligible for garbage collection the moment this function returns — while
+    the caller is still reading from the dataset it backs. ``MemoryFile``'s
+    own ``__del__`` unlinks its ``/vsimem/`` buffer, and depending on exactly
+    when the collector runs (never deterministic across pytest runs, which is
+    why this reproduced only intermittently and only inside a full test
+    session, never in an isolated 200-run stress script — plan §12.1's "0/220
+    outside pytest" was the same class of GC-timing observation, on a
+    different symptom), a read against the now half-torn-down buffer raises
+    ``TIFFScanlineSize64: Computed scanline size is zero`` — a corrupted-file
+    error with nothing wrong in the file itself. Nesting both context
+    managers here keeps ``memfile`` alive for exactly as long as the dataset
+    it owns is in use, the same pattern ``test_download.py`` already uses.
+    Confirmed as the actual cause (not `_write_native_windowed_cog`, the
+    production code this test exists to check): the failure vanished across
+    60/60 runs once the ``MemoryFile`` was kept alive, whether or not the
+    windowed and naive datasets were read concurrently.
+    """
     with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
         member = archive.read(name)
-    memfile = MemoryFile(member)
-    return memfile.open()
+    with MemoryFile(member) as memfile, memfile.open() as dataset:
+        yield dataset
+
+
+@contextmanager
+def _open_bytes(data: bytes) -> Iterator[rasterio.io.DatasetReader]:
+    """Plain COG bytes as an open dataset — the same GC-safe pattern as
+    :func:`_open_zip_member` above, for bytes that did not come out of a ZIP."""
+    with MemoryFile(data) as memfile, memfile.open() as dataset:
+        yield dataset
 
 
 class TestTheAoiMaskOnARealCog:
@@ -227,19 +259,12 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
         with (
             _open_zip_member(windowed_bytes, "visual.tif") as windowed,
-            MemoryFile(naive_bytes).open() as naive,
+            _open_bytes(naive_bytes) as naive,
         ):
             assert windowed.shape == naive.shape
             assert windowed.transform == naive.transform
-            # Near-exact, not byte-for-byte (this task's investigation): reusing
-            # one on-disk COG across many sequential opens in one test process
-            # occasionally lets GDAL's own block cache disagree with itself by a
-            # source pixel's width at the very edge of the read window — the same
-            # class of resampling-boundary noise `test_a_slanted_aoi_masks_agree_…`
-            # documents, here without even a slanted cutline involved. Never in
-            # the interior, never more than a handful of the grid's ~1000 pixels.
-            assert (windowed.dataset_mask() == naive.dataset_mask()).mean() > 0.99
-            assert (windowed.read() == naive.read()).mean() > 0.99
+            assert (windowed.dataset_mask() == naive.dataset_mask()).all()
+            assert (windowed.read() == naive.read()).all()
 
     def test_a_slanted_aoi_masks_agree_and_values_are_near_identical(self, served: list[str]) -> None:
         import numpy as np
@@ -255,7 +280,7 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         naive_bytes = self._naive_cog_bytes(served, aoi_geometry)
         with (
             _open_zip_member(windowed_bytes, "visual.tif") as windowed,
-            MemoryFile(naive_bytes).open() as naive,
+            _open_bytes(naive_bytes) as naive,
         ):
             assert windowed.shape == naive.shape
             # Near-exact mask agreement: both read the source's own nodata at the
