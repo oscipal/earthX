@@ -105,10 +105,11 @@ shrinks to match what the items actually cover.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
-import warnings
 import zipfile
+import zlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -118,6 +119,7 @@ from typing import Any
 import numpy
 import rasterio
 from rasterio.enums import Resampling
+from rasterio.errors import RasterioError
 from rasterio.features import rasterize
 from rasterio.io import MemoryFile
 from rasterio.transform import from_bounds as transform_from_bounds
@@ -143,6 +145,8 @@ from shapely.ops import unary_union
 from earthx.catalog.registry import DatasetConfig
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
+
+LOGGER = logging.getLogger("earthx.access.download")
 
 __all__ = [
     "AOI_FILENAME",
@@ -235,24 +239,13 @@ _BYTES_PER_DTYPE: dict[str, int] = {
 _FALLBACK_BYTES_PER_BAND = 8
 _FALLBACK_BAND_COUNT = 4
 
-# ZSTD, not `deflate` (M2-06's original choice): measured against a real
-# synthetic COG with a masked, single-tile crop (F3, `add_mask=True`),
-# `cog_translate`'s DEFLATE encoding was intermittently unreadable afterwards
-# ("ZIPDecode: incorrect data check", a handful of runs in a few hundred,
-# reproduced outside pytest too — not a flaky test). ZSTD was not observed to
-# do this in the same measurement (200/200). The data COG has not passed
-# `add_mask=True` since bug B (23.09.2026, PR #86 review) replaced its
-# internal mask band with a plain `nodata` tag, so the specific corruption
-# this measured may no longer apply to it — kept as-is regardless (F9,
-# unconfirmed by Otto, is the place to revisit that, not here) since ZSTD is
-# still a perfectly fine choice either way. Read once at import, not on every
-# crop: `rio_cogeo` itself warns every time this profile is built, about
-# exactly the trade-off being made here on purpose (older GDAL/libtiff builds
-# may not read ZSTD-compressed TIFFs) — the warning is real, one occurrence of
-# it belongs in a log or a review, not one per crop.
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", UserWarning)
-    _MASKED_COG_PROFILE = cog_profiles.get("zstd")
+# DEFLATE (M3-22, Otto 26.09.2026, F2): every GeoTIFF reader we could find
+# reads it, while ZSTD is an optional libtiff build dependency some current
+# installers leave out (plan m3-22 §8). The ZSTD detour of M3-18 (F9) chased a
+# corruption that was never in these files: it was a use-after-free in the
+# tests' own read path (plan m3-22 §3), and this writer produced no unreadable
+# file in 2,800 read-back runs with either codec.
+_MASKED_COG_PROFILE = cog_profiles.get("deflate")
 
 NOTICE_FILENAME = "ATTRIBUTION.txt"
 
@@ -282,6 +275,15 @@ class AoiOutsideItems(ValueError):
 
 class AoiTooLarge(ValueError):
     """The request could not fit under the size cap, found before any asset was read."""
+
+
+class CorruptOutput(RuntimeError):
+    """A file this module just wrote did not read back cleanly (M3-22).
+
+    Deliberately not a ``RasterioError``: the route's handlers would report
+    one as a source read failure (502) or a processing error, and this is
+    neither — it is our own output failing its check before delivery.
+    """
 
 
 def parse_aoi_geometry(geometry: Mapping[str, Any]) -> BaseGeometry:
@@ -714,16 +716,7 @@ class AssetCropBytes:
 # GeoTIFF mask-file profile shared by both the windowed and the naive path
 # (M3-18 §3): plain, not a COG — a same-grid, single-band 0/1 raster has no
 # overviews worth building and nobody tiles a binary mask for zoom levels.
-#
-# ZSTD, not `deflate`: found while chasing bug B (Otto's review of PR #86,
-# 23.09.2026) — repeating the mask-file tests alone (no code change) turned up
-# the exact corruption shape F9 (§9) already measured for the data COG
-# ("TIFFReadEncodedTile() failed" / "IReadBlock failed", a handful of runs in
-# a few dozen), just on this tiled DEFLATE write instead. Same GDAL build,
-# same failure mode, so the same fix: ZSTD was not observed to corrupt in the
-# repeated runs that found this. F9 is still open (unconfirmed by Otto) for
-# the data COG; this mask file never went through that review, so there is no
-# separate decision to wait on here — it is the same bug on new code.
+# DEFLATE for the same reason as the data COG above (M3-22, F2).
 def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affine, block_size: int = 1024) -> dict:
     return {
         "driver": "GTiff",
@@ -739,7 +732,7 @@ def _mask_profile(*, height: int, width: int, crs: Any, transform: rasterio.Affi
         # pads the last block, so no extra care is needed for a small crop.
         "blockxsize": block_size,
         "blockysize": block_size,
-        "compress": "zstd",
+        "compress": "deflate",
     }
 
 
@@ -1022,6 +1015,100 @@ def _masked_array_to_cog_bytes(
             return cog_mem.read()
 
 
+def _read_every_block(dataset: rasterio.DatasetReader) -> Any:
+    """Decode every block of every band; the largest value seen, for the mask's 0/1 check."""
+    peak = None
+    for _, window in dataset.block_windows(1):
+        block_peak = dataset.read(window=window).max()
+        peak = block_peak if peak is None else max(peak, block_peak)
+    return peak
+
+
+def _verify_asset_crop(crop: AssetCropBytes) -> None:
+    """Read both files of one crop back completely before they are delivered (M3-22, F1).
+
+    Header first — both are GeoTIFFs, the mask is one uint8 band of 0/1 on
+    exactly the data file's grid — then every block of every band, and for
+    the data file every overview level too. ``cog_validate`` alone would not
+    do: it checks the IFD layout but decodes no tile. Each file is opened with
+    its ``MemoryFile`` held by the ``with``: a ``MemoryFile`` over bytes does
+    not own them, and one collected while its dataset is still open reads
+    freed memory — the cause of every "corrupt download" seen so far (plan
+    m3-22 §3).
+    """
+    if not crop.data or not crop.mask:
+        raise CorruptOutput("a generated file is empty")
+    try:
+        with (
+            MemoryFile(crop.data) as data_mem,
+            data_mem.open() as data_ds,
+            MemoryFile(crop.mask) as mask_mem,
+            mask_mem.open() as mask_ds,
+        ):
+            if data_ds.driver != "GTiff" or mask_ds.driver != "GTiff":
+                raise CorruptOutput("a generated file is not a GeoTIFF")
+            if mask_ds.count != 1 or mask_ds.dtypes[0] != "uint8":
+                raise CorruptOutput("the mask file is not a single uint8 band")
+            if (data_ds.width, data_ds.height, data_ds.transform, data_ds.crs) != (
+                mask_ds.width, mask_ds.height, mask_ds.transform, mask_ds.crs
+            ):
+                raise CorruptOutput("the data file and its mask are not on the same grid")
+            _read_every_block(data_ds)
+            if _read_every_block(mask_ds) > 1:
+                raise CorruptOutput("the mask file holds values other than 0 and 1")
+            overview_count = len(data_ds.overviews(1))
+        for level in range(overview_count):
+            with MemoryFile(crop.data) as data_mem, data_mem.open(overview_level=level) as overview:
+                _read_every_block(overview)
+    except RasterioError as error:
+        raise CorruptOutput(f"a generated file does not read back: {error}") from error
+
+
+def _verified_crop(
+    open_reader: Callable[..., BaseReader],
+    asset_paths: Sequence[AssetPath | ZarrAsset],
+    region_geometry: Mapping[str, Any],
+    *,
+    asset: str,
+    width: int | None,
+    height: int | None,
+    mask_geometry: Mapping[str, Any],
+) -> AssetCropBytes:
+    """:func:`crop_asset_to_cog_bytes`, checked, and written once more if the check fails (M3-22, F1).
+
+    The retry repeats the whole crop, reads included: the windowed path
+    interleaves reading and writing, and a failure here is not expected to
+    happen at all (plan m3-22 §3). A second failure raises
+    :class:`CorruptOutput` — never a file nobody could open.
+    """
+    def write() -> AssetCropBytes:
+        return crop_asset_to_cog_bytes(
+            open_reader, asset_paths, region_geometry,
+            width=width, height=height, mask_geometry=mask_geometry,
+        )
+
+    crop = write()
+    try:
+        _verify_asset_crop(crop)
+        return crop
+    except CorruptOutput as error:
+        LOGGER.warning("the crop of asset %r did not read back, writing it once more: %s", asset, error)
+    crop = write()
+    _verify_asset_crop(crop)
+    return crop
+
+
+def _verify_zip(buffer: BytesIO) -> None:
+    """Check the CRC of every ZIP entry (M3-22, F1). No retry: the ZIP is written by Python alone."""
+    try:
+        with zipfile.ZipFile(buffer) as archive:
+            broken = archive.testzip()
+    except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+        raise CorruptOutput(f"the ZIP archive does not read back: {error}") from error
+    if broken is not None:
+        raise CorruptOutput(f"the ZIP entry {broken!r} fails its CRC check")
+
+
 # Everything a ZIP member name may keep. Deliberately narrow rather than a list
 # of what Windows forbids: an allowlist cannot be out of date the next time an
 # asset key picks up a new character.
@@ -1258,10 +1345,11 @@ def build_download_zip(
             for index, group in enumerate(groups):
                 folder = group_dirname(index, group_count)
                 for crop in group.crops:
-                    crop_bytes = crop_asset_to_cog_bytes(
+                    crop_bytes = _verified_crop(
                         open_reader,
                         crop.paths,
                         group.region_geometry,
+                        asset=crop.asset,
                         width=crop.width,
                         height=crop.height,
                         mask_geometry=aoi_geometry,
@@ -1288,4 +1376,5 @@ def build_download_zip(
                     skipped_item_ids=skipped_item_ids,
                 ),
             )
+        _verify_zip(buffer)
         return buffer.getvalue()
