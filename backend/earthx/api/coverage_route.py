@@ -4,10 +4,12 @@ At the base app, beside ``/health`` and outside ``/stac`` (plans/m2-05-coverage.
 §6.6, F1 a): the answer is not a STAC object, and ``/stac`` stays the namespace of
 the standard, in case the real STAC aggregation extension lands there one day.
 
-What this module adds beyond ``catalog.coverage`` and ``adapters.earth_search_coverage``
-is deliberately small (Otto's scope for M2-05b): reading the query parameters, turning
-them into a checked :class:`~earthx.catalog.coverage.CoverageQuery`, and mapping every
-error to a status code. Two things the scope names explicitly:
+What this module adds beyond ``catalog.coverage``, ``catalog.local_coverage`` and
+``adapters.coverage`` is deliberately small (Otto's scope for M2-05b, widened by
+M3-11c): reading the query parameters, turning them into a checked
+:class:`~earthx.catalog.coverage.CoverageQuery`, deciding which of the three ways of
+adr/0004 §5 answers a dataset (K-06), and mapping every error to a status code. Three
+things the scope names explicitly:
 
 * **The source's response body never reaches the answer or a log line** (plan §3.5).
   ``gateway.UpstreamError`` carries an excerpt for the traceback and for
@@ -16,19 +18,24 @@ error to a status code. Two things the scope names explicitly:
 * **Nothing here logs an AOI.** The one log line this route writes carries
   ``dataset_id``, the clamped ``level``, ``completeness`` and the answer's origin —
   never ``bbox``, ``intersects`` or ``max_cloud_cover``.
+* **A filter this dataset cannot honour is dropped, not silently applied** (M3-11c,
+  Otto 26.09.2026): ``datetime`` for a dataset with ``capabilities.time_range=False``,
+  and ``max_cloud_cover`` on the ``local-sql`` area way, which has no cloud cover to
+  filter on. Both are named in the answer's ``ignored_filters`` rather than just
+  disappearing from the query.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from stac_fastapi.types.rfc3339 import str_to_interval
 
-from earthx.adapters.earth_search_coverage import aggregate_coverage
-from earthx.adapters.eopf_sample_coverage import sample_coverage
+from earthx.adapters import coverage as adapter_coverage
 from earthx.adapters.federated_search import UpstreamShapeError
 from earthx.catalog.coverage import (
     HISTOGRAM_INTERVAL,
@@ -41,19 +48,35 @@ from earthx.catalog.coverage import (
     level_for_viewport,
 )
 from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.local_coverage import area_coverage, check_intersects_is_valid
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import GatewayError, UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
 LOGGER = logging.getLogger("earthx.api.coverage")
 
-# local-sql (adr/0004 §5) has no caller yet — no dataset in M2 has its own items
-# in pgstac (plan §8). Both other ways do, and share the `CoverageSource` seam.
+# `local-sql` without a single coverage product has no density path built yet
+# (M3-11c plan step §4.1 F4): a materialized time series would need its own
+# zoomed-grid counting over `pgstac.items`, which no dataset needs in M3. With a
+# single coverage product, `local-sql` *is* implemented — as the area way below,
+# not through this set (it never goes through `IMPLEMENTED_PROVIDERS`, the same
+# way `single_coverage_product` already skips it for `upstream-aggregation`/
+# `sample`, see `_area_path`).
 #
 # Public because onboarding checklist point 2 reads it: "a coverage provider is
 # assigned" is only worth anything if something answers for that provider
 # (projektuebersicht.md §5, D4).
 IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION, CoverageProvider.SAMPLE})
+
+
+def _area_path(config: Any) -> bool:
+    """Whether this entry answers through the ``local-sql`` area way (M3-11c):
+    the union of its own items' footprints, for a materialized one-off product.
+    A one-off product with any other provider keeps the unchanged extent way
+    below; ``local-sql`` without ``single_coverage_product`` is the density path
+    that is not built (F4), and never reaches this function's caller as ``True``.
+    """
+    return config.capabilities.single_coverage_product and config.coverage.provider is CoverageProvider.LOCAL_SQL
 
 
 def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
@@ -79,17 +102,19 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
         except UnknownDatasetError:
             raise HTTPException(status_code=404, detail=f"no dataset {dataset_id!r}") from None
 
-        # Checked before any provider is asked: a one-off product has an extent, not
-        # a density (adr/0004 §5, "Einmal-Produkte"), and registry.py already refuses
-        # to pair the flag with upstream aggregation — so this can never fall through
-        # to the density path by mistake.
-        if config.capabilities.single_coverage_product:
+        area_path = _area_path(config)
+        if config.capabilities.single_coverage_product and not area_path:
+            # Checked before any other provider is asked, unchanged since M2-05b: a
+            # one-off product answered by upstream aggregation or a sample has an
+            # extent, not a density (adr/0004 §5, "Einmal-Produkte") — nothing here
+            # reads a filter, the same as before M3-11c. `local-sql` is the one
+            # provider this entry can pair with that answers a real question
+            # instead (the area way, `area_path` above).
             return _serialise(extent_result(config.dataset_id, config.spatial_extent.bbox))
 
-        if config.coverage.provider not in IMPLEMENTED_PROVIDERS:
-            # local-sql has no caller yet (plan §8: "kein Datensatz in M2 hat
-            # eigene Items im pgstac"); upstream-aggregation and sample both do
-            # (M2-05b, M2-09b-3).
+        if not area_path and config.coverage.provider not in IMPLEMENTED_PROVIDERS:
+            # `local-sql` without `single_coverage_product` is the density path
+            # M3-11c does not build (plan step §4.1 F4): no dataset needs it in M3.
             raise HTTPException(
                 status_code=501,
                 detail=f"{dataset_id!r} has no coverage answer yet ({config.coverage.provider.value})",
@@ -110,26 +135,55 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
         except InvalidCoverageQuery as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
-        # Same seam either way (`CoverageSource`, adr/0004 §5): both answer
-        # `(query, config, *, gateway, registry, cache=None)`, so the registry
-        # entry alone decides which one is asked.
-        is_upstream = config.coverage.provider is CoverageProvider.UPSTREAM_AGGREGATION
-        source = aggregate_coverage if is_upstream else sample_coverage
+        # A filter this dataset structurally cannot honour is dropped here, once,
+        # for every way — not left to each way to remember on its own (Otto,
+        # 26.09.2026, M3-11c). `time_range=False` applies to any provider a future
+        # dataset without a time axis might use; `max_cloud_cover` only to the area
+        # way, which has no such property on a one-off product.
+        ignored_filters: list[str] = []
+        if not config.capabilities.time_range and (query.start is not None or query.end is not None):
+            query = replace(query, start=None, end=None)
+            ignored_filters.append("datetime")
+        if area_path and query.max_cloud_cover is not None:
+            query = replace(query, max_cloud_cover=None)
+            ignored_filters.append("max_cloud_cover")
+
+        # Checked ahead of the pool below, on purpose: a malformed request is a
+        # `400` whether or not the database happens to be reachable, and the two
+        # must never trade places (an unlucky pool outage must not mask a
+        # self-intersecting polygon as "the catalogue is not available").
+        if area_path and query.intersects is not None:
+            try:
+                check_intersects_is_valid(query.intersects)
+            except InvalidCoverageQuery as error:
+                raise HTTPException(status_code=400, detail=str(error)) from None
+
         gateway = request.app.state.earthx_gateway
         pool = getattr(request.app.state, "earthx_cache_pool", None)
         try:
-            if pool is None:
-                result = await source(query, config, gateway=gateway, registry=registry)
+            if area_path:
+                if pool is None:
+                    raise HTTPException(status_code=503, detail="the catalogue is not available")
+                async with pool.connection() as conn:
+                    result = await area_coverage(query, config, conn=conn, cache=PostgresSearchCache(conn))
+            elif pool is None:
+                result = await adapter_coverage(query, config, gateway=gateway, registry=registry)
             else:
                 async with pool.connection() as conn:
-                    result = await source(
+                    result = await adapter_coverage(
                         query, config, gateway=gateway, registry=registry, cache=PostgresSearchCache(conn)
                     )
+        except InvalidCoverageQuery as error:
+            # `area_coverage`'s own defensive re-check of `check_intersects_is_valid`
+            # (`local_coverage.py`) — the route above already validates the same
+            # geometry before this call is ever made, so this is unreachable through
+            # this route today, kept for a caller of `area_coverage` that skips it.
+            raise HTTPException(status_code=400, detail=str(error)) from None
         except CoverageProviderMismatch as error:
             # Reachable only if the registry and this route disagree about the
-            # dataset's provider, which the check above already rules out — kept as
-            # a 501 rather than an assertion, because a wrong answer here must never
-            # look like a wrong AOI.
+            # dataset's provider, which the checks above already rule out — kept
+            # as a 501 rather than an assertion, because a wrong answer here must
+            # never look like a wrong AOI.
             raise HTTPException(status_code=501, detail=str(error)) from None
         except UpstreamTimeout:
             raise HTTPException(status_code=504, detail="the source did not answer in time") from None
@@ -147,6 +201,9 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
                 status_code=502, detail="the source answered something coverage could not read"
             ) from None
 
+        if ignored_filters:
+            result = replace(result, ignored_filters=tuple(ignored_filters))
+
         LOGGER.info(
             "coverage answered",
             extra={
@@ -154,6 +211,8 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
                 "level": result.level,
                 "completeness": result.completeness.value,
                 "from_cache": result.from_cache,
+                "answer": "area" if area_path else "density",
+                "ignored_filters": result.ignored_filters,
             },
         )
         return _serialise(result)
@@ -219,6 +278,8 @@ def _serialise(result: CoverageResult) -> dict[str, Any]:
         "footprints_advised": result.footprints_advised,
         "from_cache": result.from_cache,
         "extent": None if result.extent is None else list(result.extent),
+        "area": result.area,
+        "ignored_filters": list(result.ignored_filters),
     }
 
 

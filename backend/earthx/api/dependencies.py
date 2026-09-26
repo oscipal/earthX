@@ -6,6 +6,13 @@ module opens a second, small ``psycopg`` pool for the pieces M1-04 and M1-06 alr
 built on ``psycopg`` — the registry's collection load and the search cache. Rebuilding
 either on ``asyncpg`` would touch code that is already accepted and tested, for a pool
 this process's traffic does not make the bottleneck.
+
+Two later tasks put the *same* pool to a third use that its name no longer quite
+covers: M3-11a reads a materialized dataset's own items through it
+(``catalog.pgstac.fetch_item``, from ``api.coverage_route``'s and ``api.tiler``'s
+``earthx_cache_pool``), and M3-11c's ``local-sql`` area way
+(``catalog.local_coverage.area_coverage``) unions them. Small still, on purpose — only
+this process's own traffic, never a bulk read.
 """
 
 from __future__ import annotations
@@ -18,8 +25,9 @@ from psycopg_pool import AsyncConnectionPool
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import Gateway, Policy, host_of
 
-# Small on purpose (§5 of the plan): this pool serves only the registry existence
-# check and the search cache, never pgstac's own item storage.
+# Small on purpose (§5 of the plan): this process's own traffic, never a bulk read
+# — a handful of item reads and one union over a materialized collection's own
+# footprints per request, not a batch load (module docstring).
 _CACHE_POOL_MIN_SIZE = 1
 _CACHE_POOL_MAX_SIZE = 5
 
