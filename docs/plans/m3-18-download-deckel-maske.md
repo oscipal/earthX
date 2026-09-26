@@ -932,6 +932,83 @@ Importhook), nicht auf einen reinen GDAL-Race. Otto muss über das weitere
 Vorgehen entscheiden (GDAL/libtiff-Version, `NUM_THREADS`-Erzwingung,
 Schreibstrategie) — außerhalb des Umfangs dieser Aufgabe.
 
+**Update (26.09.2026): Ursache gefunden — ein Test-Helfer, nicht der
+Produktivcode.** CI meldete `TestWindowedReadMatchesTheWholeArrayRead::
+test_a_slanted_aoi_masks_agree_and_values_are_near_identical` rot mit
+„TIFF directory is missing required ImageLength field“ / „Computed scanline
+size is zero“ beim Lesen von `visual.tif`. Lokal 20× und in voller Suite
+reproduziert (ca. 50–65 % Fehlerquote je Lauf).
+
+*Gefunden:* `test_download_mask.py::_open_zip_member` gab bislang nur
+`memfile.open()` zurück, ohne `memfile` selbst am Leben zu halten:
+```python
+def _open_zip_member(zip_bytes, name):
+    ...
+    memfile = MemoryFile(member)
+    return memfile.open()
+```
+Da nichts außer der lokalen Variable `memfile` auf das `MemoryFile`-Objekt
+verweist, ist es beim Rücksprung aus der Funktion sofort für den
+Garbage Collector freigegeben — `MemoryFile.__del__` löst dabei den
+zugehörigen `/vsimem/`-Puffer auf, während der zurückgegebene, noch offene
+`DatasetReader` genau diesen Puffer weiter braucht. Ob das rechtzeitig vor
+dem nächsten Lesezugriff passiert, hängt vom genauen GC-Zeitpunkt ab — nicht
+deterministisch über verschiedene `pytest`-Läufe hinweg (derselbe Grund,
+warum ein isoliertes 200-Lauf-Stress-Skript außerhalb von `pytest` es nie
+zeigte, siehe oben: andere Objekt-/Referenzlast, anderer GC-Zeitpunkt). Am
+zweiten, baugleichen Aufruf `MemoryFile(naive_bytes).open() as naive` — dort
+ganz ohne Namen für das `MemoryFile`-Objekt, also noch anfälliger — bestätigt:
+mit einem `keepalive`-Verweis auf beide `MemoryFile`-Objekte liefen 60/60
+Wiederholungen fehlerfrei; ohne ihn schlugen in derselben Konfiguration
+29/60 fehl.
+
+*Nachweis, dass es der Test-Helfer war, nicht `_write_native_windowed_cog`:*
+`_open_zip_member` allein, 60× wiederholt ohne die zweite (`naive`) Datei zu
+öffnen, schlug **nie** fehl. Erst das gleichzeitige Offenhalten zweier so
+erzeugter Datasets deckte die fehlende Referenz auf. Die Produktionsfunktionen
+selbst (`_write_native_windowed_cog`, `_masked_array_to_cog_bytes`,
+`crop_asset_to_cog_bytes`) verwenden durchweg `with MemoryFile() as mem: ...
+mem.read()` — das `MemoryFile`-Objekt bleibt dort immer bis nach dem
+`.read()` in Bytes am Leben, derselbe Fehler kann dort nicht auftreten
+(geprüft: alle Vorkommen in `download.py` durchsucht, keine weitere Stelle
+mit demselben Muster).
+
+*Fix:* `_open_zip_member` zu einem `@contextmanager` gemacht, der `memfile`
+und das offene Dataset im selben verschachtelten `with` hält
+(`with MemoryFile(member) as memfile, memfile.open() as dataset: yield
+dataset`) — dasselbe Muster, das `test_download.py` an den entsprechenden
+Stellen schon immer verwendet hat. Neuer Helfer `_open_bytes` für den
+zweiten, baugleichen Fall (`naive_bytes`, nicht aus einem ZIP). Beide Stellen
+in `TestWindowedReadMatchesTheWholeArrayRead` umgestellt.
+
+*Beiläufig gefunden:* die `> 0.99`-Toleranz in
+`test_a_rectangle_aoi_is_pixel_identical` (Kommentar: „GDALs Block-Cache
+disagreed mit sich selbst") war selbst ein Symptom desselben Bugs, nicht
+eine echte Resampling-Eigenschaft — mit dem Fix stimmen Maske und Pixelwerte
+für ein achsenparalleles Rechteck jetzt exakt überein (`.all()` statt
+`.mean() > 0.99`), über 150 Wiederholungen bestätigt. Die verbleibende
+Toleranz in `test_a_slanted_aoi_masks_agree_and_values_are_near_identical`
+bleibt: dort bauen der fensterweise und der naive Pfad ihr Ausgaberaster über
+zwei unabhängige Berechnungen (`_native_crop_grid` vs. `.part()`s eigene
+Transformation), was am Rand einer schrägen AOI-Kante bei Nearest-Neighbor-
+Resampling zu einzelnen Pixeln mit einer Quellpixelbreite Versatz führen
+kann — unabhängig vom hier gefundenen Bug, über 150 Wiederholungen weiter
+beobachtet, nie mehr als eine Handvoll der ~1000 Pixel des Rasters.
+
+*Beantwortet Ottos Frage, ob derselbe Fehler Befund A erklärt:* **Nein.**
+Befund A entstand aus einem zu breiten `except (RasterioError, ...)` in der
+Route (§12.1 oben) und ist unabhängig davon bereits behoben. Dieser Bug hier
+lebt ausschließlich im Test-Helfer (`_open_zip_member`) und betrifft keinen
+Pfad, den ein echter Download durchläuft — die Produktionsfunktionen geben
+immer bereits vollständig gelesene Bytes zurück, nie ein offenes, an ein
+`MemoryFile`-Objekt gebundenes Dataset.
+
+*Validierung:* jede der 50 in einem 25-Iterationen-Stresslauf erzeugten
+`visual.tif`-Dateien (Diamant- und Rechteck-AOI) einzeln mit
+`rio cogeo validate` geprüft — alle 50 gültig. Volle Suite danach 4× hintereinander
+grün (1246/1246 je Lauf), `test_download_mask.py` allein 20× hintereinander
+grün, der ursprünglich rote Test 30× hintereinander grün.
+
 ### 12.2 Befund B: Weiße Pixel im Zuschnitt (S2B_T32TNT_20260922T102300_L2A)
 
 **Direkt am echten Item geprüft** (curl/`rasterio` gegen
