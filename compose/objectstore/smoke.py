@@ -74,7 +74,7 @@ def check(label: str, condition: bool) -> None:
         raise SystemExit(f"smoke check failed: {label}")
 
 
-def run_full_suite(s3, bucket: str, access_key: str, secret_key: str, endpoint: str) -> None:
+def run_full_suite(s3, bucket: str, endpoint: str) -> None:
     payload = os.urandom(1024 * 1024)
     s3.put_object(Bucket=bucket, Key="smoke/plain.bin", Body=payload)
     check("PutObject", True)
@@ -173,24 +173,24 @@ def run_full_suite(s3, bucket: str, access_key: str, secret_key: str, endpoint: 
 
     cog_bytes = _synthetic_cog()
     s3.put_object(Bucket=bucket, Key=OBJECT_KEY, Body=cog_bytes)
-    with rasterio.Env(
-        AWS_ACCESS_KEY_ID=access_key,
-        AWS_SECRET_ACCESS_KEY=secret_key,
-        AWS_S3_ENDPOINT=endpoint.split("://", 1)[1],
-        AWS_HTTPS="NO",
-        AWS_VIRTUAL_HOSTING="FALSE",
-    ):
-        with rasterio.open(f"/vsis3/{bucket}/{OBJECT_KEY}") as src:
-            window = src.read(1, window=rasterio.windows.Window(0, 0, 32, 32))
-            check("GDAL /vsis3/ window read", window.shape == (32, 32))
-            check("GDAL /vsis3/ overview present", src.overviews(1) == [2, 4])
 
+    # Read over /vsicurl/ with a presigned URL rather than GDAL's direct S3
+    # virtual filesystem with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in
+    # rasterio.Env: rasterio 1.5.1 refuses those two options outright ("AWS
+    # credentials are handled exclusively by boto3", CI failure on this job,
+    # 26.09.2026) — GDAL's own AWS handling and boto3's must not both hold
+    # credentials at once. This needs no GDAL AWS configuration at all
+    # (earthx.gateway.gdal.vsicurl_path builds the same kind of path for a
+    # real dataset's tile reads), and is the path M4 uses in the platform
+    # itself (adr/0012 F3: signed URLs, no direct S3 credentials in the
+    # reading process).
     presigned_get = s3.generate_presigned_url(
         "get_object", Params={"Bucket": bucket, "Key": OBJECT_KEY}, ExpiresIn=60
     )
     with rasterio.open(f"/vsicurl/{presigned_get}") as src:
-        window = src.read(1, window=rasterio.windows.Window(0, 0, 16, 16))
-        check("GDAL /vsicurl/ presigned window read", window.shape == (16, 16))
+        window = src.read(1, window=rasterio.windows.Window(0, 0, 32, 32))
+        check("GDAL /vsicurl/ presigned window read", window.shape == (32, 32))
+        check("GDAL /vsicurl/ presigned overview present", src.overviews(1) == [2, 4])
 
 
 def write_persisted_marker(s3, bucket: str) -> None:
@@ -225,7 +225,7 @@ def main() -> int:
             check_persisted_marker(s3, bucket)
             return 0
 
-        run_full_suite(s3, bucket, access_key, secret_key, endpoint)
+        run_full_suite(s3, bucket, endpoint)
         if args.write_marker:
             write_persisted_marker(s3, bucket)
         print("object store smoke: all checks passed")
