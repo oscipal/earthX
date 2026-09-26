@@ -193,8 +193,8 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    (`.claude/settings.json`, Matcher `startup|resume`), wie in
    [Claude Code on the web](https://code.claude.com/docs/en/cloud-environments)
    beschrieben ("Install dependencies with a SessionStart hook"). Das Skript
-   legt das venv an, installiert Frontend-Pakete (jeweils nur, wenn noch
-   nicht vorhanden), startet Postgres per `service postgresql start` und
+   legt das venv an, installiert Frontend-Pakete (jeweils nur bei Bedarf,
+   siehe Nachtrag 2026-09-26), startet Postgres per `service postgresql start` und
    richtet Rolle, Datenbank und PostGIS-Extension idempotent ein. Es läuft
    nur bei `CLAUDE_CODE_REMOTE=true`, verwendet `sudo` nicht, wenn die
    Sitzung schon als root läuft, und endet immer mit Exit 0 — ein
@@ -232,6 +232,17 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    ohne die Backend-Pakete), ist das kein neuer Fehler, sondern dieser bereits
    bekannte Fall — mit `.venv/bin/pytest` arbeiten oder eine neue Sitzung
    starten.
+   **Nachtrag 2026-09-26 (M3-24):** Der Frontend-Teil prüfte bis dahin nur,
+   ob `frontend/node_modules` existiert — nicht, ob es zum aktuellen
+   `package-lock.json` passt. Ein `node_modules` aus einer älteren Sitzung
+   überlebte damit einen geänderten Lockfile unbemerkt; `polyclip-ts` fehlte
+   deshalb in zwei Sitzungen (M3-11c, M3-12). Der Hook vergleicht jetzt einen
+   Hash von `frontend/package-lock.json` gegen den Stand der letzten
+   erfolgreichen Installation (`frontend/node_modules/.package-lock.sha256`,
+   geschrieben nach `npm ci`) und installiert nur bei Abweichung neu — wie das
+   venv zu den Backend-Anforderungen. Die Vergleichslogik steht in
+   `scripts/lib/frontend-deps.sh`, getrennt vom Hook, damit sie ohne Postgres
+   und venv testbar ist (`backend/tests/test_frontend_deps_hook.py`).
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und
