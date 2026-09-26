@@ -1,7 +1,9 @@
-// Pure logic for M2-07d (download from the layer manager): which layers can
-// be downloaded, the request `POST /collections/{dataset}/download` needs,
-// and the attribution / terms text shown before the crop is requested
-// (adr/0003 §11.2: the notice belongs on the download, not only in a footer).
+// Pure logic for M2-07d/M3-17 (download from the layer manager or the current
+// selection): which layers can be downloaded, whether that means the AOI crop
+// or the original files straight from the source, the request
+// `POST /collections/{dataset}/download` needs, and the attribution / terms
+// text shown before either one starts (adr/0003 §11.2: the notice belongs on
+// the download, not only in a footer).
 
 import type { ResolutionFactor } from './api';
 import type { DatasetOption } from './datasets';
@@ -9,11 +11,121 @@ import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
 import type { LicenseFlags, StacItem } from './types';
 
+// `groups` (M3-17, replacing the flat `items` list): item ids per group, in
+// the same shape `DownloadRequest.groups` in `api/tiler.py` expects — one
+// merged file per group, separate groups as separate files in the same ZIP
+// (P19). A single group is simply a list of one, the shape every download
+// had before M3-17.
 export interface DownloadRequestInfo {
   datasetId: string;
-  items: string[];
+  groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
+}
+
+// Which of the three P19 outcomes a download follows (M3-17 plan §4): the AOI
+// crop, one merged file per group; the original files, straight from the
+// source; or disabled, with the reason to show in the button's tooltip
+// (M3-09's "Crop & merge to AOI" already has this pattern for a missing AOI).
+export type DownloadOutcomeKind = 'crop' | 'originals' | 'disabled';
+
+export const DRAW_AOI_TO_DOWNLOAD = 'Draw an AOI to download';
+
+// The single decision table of M3-17 plan §4, as one pure function: what a
+// download follows depends on which full-resolution view (if any) is active,
+// whether an AOI is drawn, and whether the dataset is a single file (COG) or
+// a store with no one file to link (`earthx:format`, anything but `'cog'`
+// counts as the latter — an unset or unrecognised value is never assumed
+// linkable).
+//
+// `cropToAoi` is `null` outside full-resolution viewing (browsing the results
+// list, or a layer pinned straight from a quicklook, M2-07d's "quicklook-only
+// layer") — there is no "Crop & merge"/"View full selection" choice to read,
+// so it falls back to whether an AOI happens to be drawn, same as P19's rule
+// for a whole scene with no full-resolution view entered at all.
+export function decideDownloadOutcome(params: {
+  cropToAoi: boolean | null;
+  hasAoi: boolean;
+  isCog: boolean;
+}): DownloadOutcomeKind {
+  const { cropToAoi, hasAoi, isCog } = params;
+  if (cropToAoi === false) {
+    // "View full selection": a whole COG scene is always its own original
+    // file, regardless of whether an AOI happens to be drawn too (P19) — only
+    // a source with no single file to link (Zarr) still needs the AOI crop.
+    if (isCog) return 'originals';
+    return hasAoi ? 'crop' : 'disabled';
+  }
+  if (hasAoi) return 'crop';
+  return isCog ? 'originals' : 'disabled';
+}
+
+// `earthx:format` (architekturplan.md 5.1, M3-17): only `'cog'` counts as a
+// single file the browser may link straight to the source. `undefined`/`null`
+// (a dataset onboarded before M3-17) and any other value (`'zarr'`,
+// `'legacy'`, an unrecognised future one) are all treated the same as Zarr —
+// never assumed to be one linkable file without the registry saying so.
+export function isCogFormat(dataset: DatasetOption | undefined): boolean {
+  return dataset?.collection['earthx:format'] === 'cog';
+}
+
+// `earthx:source.asset_hosts` (D12) — the hosts a `href` on this dataset's own
+// items may legitimately point at. Empty (not `undefined`/`null`, KLAERUNGEN
+// B10's "no default" already governs the registry field) when the collection
+// carries none, which then lets no link through — the same conservative
+// direction as `isCogFormat`.
+export function assetHostsOf(dataset: DatasetOption | undefined): string[] {
+  return dataset?.collection['earthx:source']?.asset_hosts ?? [];
+}
+
+// A `href` is only ever shown as a direct download link when it is `https`
+// and on a host this dataset's own registry entry names (D12) — never a
+// `javascript:`/`data:` scheme, a bare `s3://` address `readers` alone can
+// resolve, or a host a *different* dataset's items happen to live on. Items
+// arrive federated from foreign sources (architekturplan.md 5.2); nothing
+// about their `assets` shape is trusted further than this.
+export function isDirectDownloadHref(href: string, assetHosts: readonly string[]): boolean {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return false;
+  }
+  return url.protocol === 'https:' && assetHosts.includes(url.hostname);
+}
+
+// One clickable original file (M3-17 plan §6, F2 option 1): the dialog lists
+// these instead of triggering one big download — no CORS is needed for a
+// plain `<a href download>` (M3-09 §7, fund 2), and the browser is never
+// asked to fetch more than one large file into memory at once.
+export interface OriginalFileLink {
+  itemId: string;
+  groupLabel: string;
+  asset: string;
+  href: string;
+}
+
+// Built straight from already-fetched STAC items (never triggers a fetch
+// itself, V-4/M2-07d's own rule of keeping this module pure) — `groups`
+// carries a label per group (the results list's own group label, or a plain
+// "Group N" for a pinned layer, which does not keep the label around).
+export function originalFileLinks(
+  groups: readonly { label: string; items: readonly StacItem[] }[],
+  assets: readonly string[],
+  assetHosts: readonly string[],
+): OriginalFileLink[] {
+  const links: OriginalFileLink[] = [];
+  for (const group of groups) {
+    for (const item of group.items) {
+      for (const asset of assets) {
+        const href = item.assets[asset]?.href;
+        if (href && isDirectDownloadHref(href, assetHosts)) {
+          links.push({ itemId: item.id, groupLabel: group.label, asset, href });
+        }
+      }
+    }
+  }
+  return links;
 }
 
 // A layer can be downloaded once it has an AOI to crop (a layer pinned
@@ -31,38 +143,55 @@ export interface DownloadRequestInfo {
 // layer was pinned — not from the live search results, which may have moved
 // on by the time someone opens the layer manager to download it.
 //
-// M3-09 (Otto's review of PR #84, 24.09.2026): a "View full selection"
-// (`restore.cropToAoi === false`) layer's download does *not* follow the
-// view here, unlike the map's own AOI clip. P19 requires the *original*
-// file for a whole COG scene — straight from the source through the
-// browser, bypassing the platform entirely — and, for Zarr, no download at
-// all without an AOI (button disabled, "Draw an AOI to download"). Routing
-// an uncropped download through this same crop endpoint would instead crop
-// it to the AOI, which is exactly what P19 rules out (a whole, unclipped
-// scene). Building the real behaviour needs a source-format distinction
-// (COG vs. Zarr) that
-// is not yet available to the frontend without dataset-specific branching —
-// that is M3-17's job (see its note in
-// `plans/m3-dritte-quelle-und-interface.md`). `restore.cropToAoi` still
-// drives the *map's* clip (`store.ts`, `mapLayers.ts`) — only the download
-// side of it was reverted here.
+// Only ever called once `decideDownloadOutcomeForLayer` below has already
+// said this layer's download follows the crop (M3-17): a "View full
+// selection" COG layer's download is the *originals* outcome instead, built
+// separately once the dialog has fetched the items (`store.ts`).
+//
+// `restore.groupItemIds` (M3-17, PR #84's own per-overpass grouping reused,
+// not a new one) splits `itemIds` back into the groups the results list drew
+// them from, one merged file per group (P19) — a layer pinned before M3-17
+// carries no `groupItemIds` and falls back to one group of everything, the
+// flat shape every download had before.
 export function downloadRequestFor(layer: MapLayer, datasets: DatasetOption[]): DownloadRequestInfo | null {
   const { restore } = layer;
   if (!restore.datasetId || !restore.aoi || restore.itemIds.length === 0) return null;
+  const groups = restore.groupItemIds.length > 0 ? restore.groupItemIds : [restore.itemIds];
   if (restore.focusMode) {
     const entries = Object.entries(restore.downloaded).filter(([id]) => restore.itemIds.includes(id));
     if (entries.length === 0) return null;
     const assets = [...new Set(entries.map(([, info]) => info.asset))];
-    return { datasetId: restore.datasetId, items: restore.itemIds, assets, aoi: restore.aoi };
+    return { datasetId: restore.datasetId, groups, assets, aoi: restore.aoi };
   }
   const dataset = datasets.find((d) => d.id === restore.datasetId);
   const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
   if (!asset) return null;
-  return { datasetId: restore.datasetId, items: restore.itemIds, assets: [asset], aoi: restore.aoi };
+  return { datasetId: restore.datasetId, groups, assets: [asset], aoi: restore.aoi };
+}
+
+// The outcome (§4) for a pinned layer: `cropToAoi` only means anything while
+// the layer was pinned from full-resolution viewing (`restore.focusMode`) —
+// a quicklook-only layer reads like browsing the results list, `null`.
+export function decideDownloadOutcomeForLayer(layer: MapLayer, datasets: DatasetOption[]): DownloadOutcomeKind {
+  const { restore } = layer;
+  const dataset = datasets.find((d) => d.id === restore.datasetId);
+  return decideDownloadOutcome({
+    cropToAoi: restore.focusMode ? restore.cropToAoi : null,
+    hasAoi: !!restore.aoi,
+    isCog: isCogFormat(dataset),
+  });
 }
 
 export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): boolean {
-  return downloadRequestFor(layer, datasets) !== null;
+  if (layer.restore.itemIds.length === 0) return false;
+  const kind = decideDownloadOutcomeForLayer(layer, datasets);
+  if (kind === 'disabled') return false;
+  if (kind === 'crop') return downloadRequestFor(layer, datasets) !== null;
+  // 'originals': the exact reachable links are only known once the dialog
+  // fetches the items (`store.ts`) — here, a viewable dataset is enough to
+  // offer the button at all.
+  const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
+  return !!dataset?.viewable;
 }
 
 // The same request, built directly from a selection of quicklooks instead of
@@ -72,15 +201,22 @@ export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): bo
 // reads the source's own pixels regardless of what the browser has fetched
 // so far, so the asset is the dataset's default visualisation asset, the
 // same one `quicklookPlan`'s tile fallback and `enterFocus` use.
+//
+// `groups` (M3-17): item ids per group (`grouping.ts::groupItemIdsFor`,
+// built by the caller from the results list's own grouping — no new,
+// download-specific grouping here). Only ever called once
+// `decideDownloadOutcome` has already said the selection's download follows
+// the crop; browsing with no AOI at all is the *originals* outcome instead.
 export function downloadRequestForSelection(
   dataset: DatasetOption | undefined,
-  items: StacItem[],
+  groups: string[][],
   aoi: GeoJSON.Geometry | null,
 ): DownloadRequestInfo | null {
-  if (!aoi || !dataset || !dataset.viewable || items.length === 0) return null;
+  const nonEmptyGroups = groups.filter((group) => group.length > 0);
+  if (!aoi || !dataset || !dataset.viewable || nonEmptyGroups.length === 0) return null;
   const asset = defaultRenderOf(dataset.collection)?.assets[0];
   if (!asset) return null;
-  return { datasetId: dataset.id, items: items.map((it) => it.id), assets: [asset], aoi };
+  return { datasetId: dataset.id, groups: nonEmptyGroups, assets: [asset], aoi };
 }
 
 // `{year}` is the only placeholder the registry's attribution texts use
@@ -89,8 +225,19 @@ export function downloadRequestForSelection(
 // (access/download.py: "a crop is treated as modified data throughout"), so
 // the modified text is shown here, the unmodified one only as a fallback if
 // a dataset defines no modified text.
-export function attributionText(flags: LicenseFlags | null | undefined, year: number): string | null {
-  const text = flags?.attribution_modified ?? flags?.attribution_unmodified ?? null;
+// `modified` (M3-17): the AOI crop always counts as modified data (unchanged
+// reasoning, above); the *original* files are not, so the download dialog
+// shows the unmodified text for that outcome (M3-17 plan §6) — `false` picks
+// `attribution_unmodified` first, falling back the other way where a dataset
+// only defines one of the two texts.
+export function attributionText(
+  flags: LicenseFlags | null | undefined,
+  year: number,
+  modified = true,
+): string | null {
+  const text = modified
+    ? (flags?.attribution_modified ?? flags?.attribution_unmodified ?? null)
+    : (flags?.attribution_unmodified ?? flags?.attribution_modified ?? null);
   return text ? text.replaceAll('{year}', String(year)) : null;
 }
 

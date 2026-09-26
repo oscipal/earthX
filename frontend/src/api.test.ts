@@ -211,7 +211,7 @@ describe('downloadCrop', () => {
 
   const request = {
     datasetId: 'sentinel-2-c1-l2a',
-    items: ['ITEM1'],
+    groups: [['ITEM1']],
     assets: ['visual'],
     aoi: { type: 'Polygon' as const, coordinates: [] },
   };

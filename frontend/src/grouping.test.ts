@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGroups, displayGroupBy, groupKey, itemsForMap, MissingProperty } from './grouping';
-import type { StacItem } from './types';
+import { buildGroups, displayGroupBy, groupItemIdsFor, groupKey, itemsForMap, MissingProperty } from './grouping';
+import type { StacItem, TimeStepGroup } from './types';
 
 function item(properties: Record<string, unknown>): StacItem {
   return { id: 'an-item', properties, assets: {} };
@@ -206,5 +206,34 @@ describe('itemsForMap', () => {
       expect(ids).not.toContain('a1');
       expect(ids).not.toContain('b1');
     });
+  });
+});
+
+// M3-17: "download folgt der Ansicht" reuses this same per-overpass grouping
+// (PR #84) rather than a second, download-specific one.
+describe('groupItemIdsFor', () => {
+  const GROUPS: TimeStepGroup[] = [
+    { key: ['a'], label: 'Overpass A', items: [taggedItem('S1', '2026-07-24T10:00:00Z'), taggedItem('S2', '2026-07-24T10:00:01Z')] },
+    { key: ['b'], label: 'Overpass B', items: [taggedItem('S3', '2026-07-25T10:00:00Z')] },
+  ];
+
+  it('splits ids back into the groups they came from', () => {
+    expect(groupItemIdsFor(['S1', 'S2', 'S3'], GROUPS)).toEqual([['S1', 'S2'], ['S3']]);
+  });
+
+  it('keeps the order the first member of each group was encountered in', () => {
+    expect(groupItemIdsFor(['S3', 'S1', 'S2'], GROUPS)).toEqual([['S3'], ['S1', 'S2']]);
+  });
+
+  it('a subset of ids only produces the groups it actually touches', () => {
+    expect(groupItemIdsFor(['S1'], GROUPS)).toEqual([['S1']]);
+  });
+
+  it('an id no group contains shares one bucket with every other such id', () => {
+    expect(groupItemIdsFor(['S1', 'nope1', 'nope2'], GROUPS)).toEqual([['S1'], ['nope1', 'nope2']]);
+  });
+
+  it('an empty id list is an empty result', () => {
+    expect(groupItemIdsFor([], GROUPS)).toEqual([]);
   });
 });

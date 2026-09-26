@@ -271,9 +271,13 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
 export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
 
+// `groups` (M3-17, replacing the flat `items` list): item ids per group,
+// mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
+// group, separate groups as separate files in the same ZIP (P19). A single
+// group is simply a list of one, the shape every download had before M3-17.
 export interface DownloadCropRequest {
   datasetId: string;
-  items: string[];
+  groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
   language?: string;
@@ -285,7 +289,7 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      items: req.items,
+      groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
       language: req.language ?? 'en',
