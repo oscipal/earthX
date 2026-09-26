@@ -100,13 +100,19 @@ Betrieb mit mehreren Nutzern zu klären — offener Punkt, keine Entscheidung in
 ## F3 AOI aus Datei und „letzte AOI“ *(steht nicht in §2, ist aber im Code)*
 
 **Was und wo.** `frontend/src/aoiFile.ts`, eingebunden in `ControlPanel.tsx`
-(`AoiExtras`). Zwei Schaltflächen: „Upload KML/JSON“ und „Last AOI“.
+(`AoiExtras`). Zwei Schaltflächen: „Upload AOI“ und „Last AOI“.
 
-**Wie gelöst.** `parseAoiFile` liest GeoJSON (FeatureCollection → Feature → Geometry,
-erste brauchbare Geometrie gewinnt) oder KML über den `DOMParser` ohne zusätzliche
-Abhängigkeit; unterstützt werden Polygon (nur äußerer Ring), LineString und Point. Ein
-Punkt aus der Datei wird wie in F1 gepuffert. „Last AOI“ stellt die zuletzt gesetzte
-Geometrie aus `lastAoi` wieder her.
+**Wie gelöst.** Bis M3-06a/b lief das Parsen im Browser (`parseAoiFile`, GeoJSON
+oder KML über `DOMParser`, „erste brauchbare Geometrie gewinnt“, ohne Größen-
+oder Gültigkeitsprüfung, kein Shapefile). Seit M3-06a/b (26.09.2026) prüft und
+parst stattdessen `POST /aoi/upload` im Backend
+(`backend/earthx/access/aoi_upload.py`, Plan `plans/m3-06a-aoi-upload-backend.md`):
+zusätzlich Shapefile als ZIP, mit Größendeckel (1 MiB), Punktanzahl-Deckel,
+Gültigkeitsprüfung und sicherer XML-Verarbeitung. `frontend/src/aoiFile.ts`
+(`readAoiFile`) ruft nur noch diese Route auf und bildet ihre Fehlermeldungen ab
+(`plans/m3-06b-aoi-upload-frontend.md`). Ein Punkt aus der Datei wird wie in F1
+gepuffert. „Last AOI“ stellt die zuletzt gesetzte Geometrie aus `lastAoi` wieder
+her — unverändert im Client.
 
 **BIOMASS-spezifisch?** Nein.
 
@@ -114,10 +120,10 @@ Geometrie aus `lastAoi` wieder her.
 
 **Token/MAAP?** Nein.
 
-**Zielarchitektur.** Übernehmen. Der KML-Pfad ist bewusst minimal; er ignoriert innere
-Ringe, MultiGeometry und Höhenwerte. Für eine öffentliche Plattform ist das entweder
-sauber zu dokumentieren oder durch eine geprüfte Bibliothek zu ersetzen. Eine
-Größenbegrenzung der hochgeladenen Datei fehlt.
+**Zielarchitektur.** Übernommen (M3-06a/b). Parsen, Prüfung und Deckelwerte
+liegen jetzt im Backend statt im Client; `LineString` wird seither abgewiesen
+(kein Verbraucher dafür), mehrere polygonale Features werden vereinigt statt
+„erste gewinnt“.
 
 ## F4 Szenensuche über STAC und Produktfilter
 

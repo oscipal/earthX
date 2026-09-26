@@ -1,7 +1,7 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 import type { CoverageHistogramPoint } from '../api';
-import { parseAoiFile } from '../aoiFile';
+import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
 import { maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
@@ -58,17 +58,23 @@ function AoiExtras() {
   const lastAoi = useAppStore((s) => s.lastAoi);
   const config = useAppStore((s) => s.config);
   const setError = useAppStore((s) => s.setError);
+  // M3-06b: the request to the backend (M3-06a's `POST /aoi/upload`) takes
+  // longer than the old in-browser parse; this locks the control against a
+  // double-click firing two uploads while one is in flight.
+  const [uploading, setUploading] = useState(false);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
+    setUploading(true);
     try {
-      let geom = parseAoiFile(file.name, await file.text());
-      if (!geom) {
-        setError(`Could not read an AOI geometry from "${file.name}".`);
+      const { geometry, error } = await readAoiFile(file);
+      if (error) {
+        setError(error);
         return;
       }
+      let geom = geometry as GeoJSON.Geometry;
       // M3-08 F5a: same split as the draw tool (MapView.tsx) — the point itself
       // is what a search asks with, the buffer square is what stays on screen.
       let point: GeoJSON.Point | null = null;
@@ -80,21 +86,26 @@ function AoiExtras() {
       setAoi(geom, point);
       const bb = polygonBbox(geom);
       if (bb) flyTo(bb);
-    } catch (err) {
-      setError(`Failed to load AOI file: ${(err as Error).message}`);
+    } finally {
+      setUploading(false);
     }
   };
 
   return (
     <div className="aoi-extras">
-      <label className="tool-btn ghost" title="Upload a KML or GeoJSON to use as the AOI">
+      <label
+        className="tool-btn ghost"
+        aria-busy={uploading}
+        title="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
+      >
         <input
           type="file"
-          accept=".kml,.json,.geojson,application/json,application/vnd.google-earth.kml+xml"
+          accept=".geojson,.json,.kml,.zip"
           onChange={onFile}
+          disabled={uploading}
           hidden
         />
-        <span>⤒ Upload KML/JSON</span>
+        <span>⤒ {uploading ? 'Reading…' : 'Upload AOI'}</span>
       </label>
       <button
         type="button"
