@@ -6,7 +6,10 @@ Samples Service (the same dataset again, as Zarr, M2-09b). Both answer search an
 access resolution; each also answers a coverage way of adr/0004 §5 — Earth Search
 its aggregation, EOPF a declared sample — through :func:`coverage` below, dispatched
 by adapter and provider rather than by the caller picking a function (K-06, M3-11c).
-Discovery follows with the harvester (M5).
+``cop_dem_bucket`` (M3-11b) speaks a third, structurally different protocol: it
+never searches, it *materializes* — it turns a bucket's own tile list into STAC
+items, once, for the one-off command in ``discovery``. Discovery follows with the
+harvester proper (M5).
 
 Everything an adapter sends goes through ``gateway``; what it needs to know about a
 dataset it reads from ``catalog``. Which adapter serves which collection is decided
@@ -17,6 +20,13 @@ than making the caller pick a module. A dataset added to the registry under an
 ``AdapterKind`` this dispatch does not know is a dispatch mistake, not a wrong
 answer: :class:`UnsupportedSource`, the same error each adapter's own
 ``resolve_dataset`` raises for a mismatch it catches itself.
+
+:func:`materialize_items` is a second, separate dispatch (``_MATERIALIZERS``, not
+``_ADAPTERS``): a materializing adapter answers no search and no single-item
+request, so it has no place in the table :func:`search_items`/:func:`get_item`
+read — ``_adapter_for`` below refuses a materialized dataset before it ever looks
+there (M3-11a K-05), and a materializing ``AdapterKind`` is simply absent from
+``_ADAPTERS`` rather than present with nothing useful to do.
 """
 
 from __future__ import annotations
@@ -24,8 +34,9 @@ from __future__ import annotations
 from types import ModuleType
 from typing import Any
 
-from earthx.adapters import earth_search, eopf_stac
+from earthx.adapters import cop_dem_bucket, earth_search, eopf_stac
 from earthx.adapters.cache import CacheValue, SearchCache
+from earthx.adapters.cop_dem_bucket import MaterializeOutcome, NotMaterialized
 from earthx.adapters.earth_search_coverage import aggregate_coverage
 from earthx.adapters.eopf_sample_coverage import sample_coverage
 from earthx.adapters.federated_search import (
@@ -54,11 +65,19 @@ from earthx.catalog.registry import (
 from earthx.gateway import Gateway
 
 # One module per adapter kind — the only place that has to know every adapter this
-# platform speaks. Adding a third source means one more line here, not a change to
-# every caller of `search_items`/`get_item`.
+# platform speaks. Adding a fourth *federated* source means one more line here, not
+# a change to every caller of `search_items`/`get_item`. `cop_dem_bucket` is
+# deliberately absent (see `_MATERIALIZERS` below).
 _ADAPTERS = {
     AdapterKind.EARTH_SEARCH_V1: earth_search,
     AdapterKind.EOPF_STAC_V1: eopf_stac,
+}
+
+# The materializing counterpart of `_ADAPTERS`, read only by `materialize_items`
+# below — never by `search_items`/`get_item`, which a materialized dataset never
+# reaches (`_adapter_for` refuses it first).
+_MATERIALIZERS = {
+    AdapterKind.COP_DEM_BUCKET: cop_dem_bucket,
 }
 
 # K-06 / M3-11c: which function answers coverage for a federated collection follows
@@ -144,6 +163,33 @@ async def get_item(
     return await adapter.get_item(dataset_id, item_id, gateway=gateway, registry=registry, cache=cache)
 
 
+async def materialize_items(
+    config: DatasetConfig,
+    *,
+    gateway: Gateway,
+    known_version: str | None,
+) -> MaterializeOutcome:
+    """Build the items of one materialized dataset, whichever adapter produced it.
+
+    Takes the registry entry itself, not a ``dataset_id``/``registry`` pair like
+    :func:`search_items`/:func:`get_item`: the one caller (the one-off command in
+    ``discovery``, M3-11b) already holds the entry it is materializing, and handing
+    it straight through avoids a second registry lookup that could disagree with
+    the one the caller already made.
+    """
+    if config.source.item_holding is not ItemHolding.MATERIALIZED:
+        raise NotMaterialized(
+            f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
+        )
+    try:
+        module = _MATERIALIZERS[config.source.adapter]
+    except KeyError:
+        raise UnsupportedSource(
+            f"{config.dataset_id} is materialized by {config.source.adapter}, which no materializer dispatch knows"
+        ) from None
+    return await module.materialize_items(config, gateway=gateway, known_version=known_version)
+
+
 async def coverage(
     query: CoverageQuery,
     config: DatasetConfig,
@@ -178,6 +224,8 @@ __all__ = [
     "CacheValue",
     "InvalidQuery",
     "ItemPage",
+    "MaterializeOutcome",
+    "NotMaterialized",
     "SearchCache",
     "SearchParams",
     "UnknownCollection",
@@ -186,5 +234,6 @@ __all__ = [
     "UpstreamShapeError",
     "coverage",
     "get_item",
+    "materialize_items",
     "search_items",
 ]

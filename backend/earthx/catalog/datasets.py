@@ -368,4 +368,159 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
     ),
 )
 
-REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3))
+# M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
+# §10.1) — a period instead, the same for every tile and for the collection
+# itself, belonging to the *product*, not a measurement of one scene. Read
+# from the Product Handbook (v5.0, 29.11.2022, p. 30): "the TanDEM-X/WorldDEM
+# has been acquired between December 2010 and January 2015." Exported because
+# `adapters.cop_dem_bucket` stamps every item with the same two instants —
+# `adapters` may import `catalog` (`.importlinter`), not the other way round,
+# so the constant lives here rather than being duplicated at both ends.
+DEM_ACQUISITION_START = datetime(2010, 12, 1, tzinfo=timezone.utc)
+DEM_ACQUISITION_END = datetime(2015, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
+
+# adr/0003 §11.1: the licence PDF the AWS registry entry and the CDSE COP-DEM
+# page both link, read on 18.09.2026 and rechecked 26.09.2026 (M3-11b plan §2.7).
+_DEM_LICENSE_URL = (
+    "https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/"
+    "copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf"
+)
+
+# The licence's own vocabulary (Art. 6 a/b) and its liability waiver (Art. 6 c),
+# read from the primary document on 18.09.2026 (`adr/0003` §11.1) and reused
+# here verbatim rather than paraphrased.
+_DEM_ATTRIBUTION = (
+    "© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 "
+    "provided under COPERNICUS by the European Union and ESA; all rights reserved"
+)
+
+COP_DEM_GLO_30 = DatasetConfig(
+    # The name Earth Search and Microsoft Planetary Computer both use for the
+    # same product (M3-11b plan §3.6, F4) — no collision with either of the
+    # two entries above, because this one is not federated through them.
+    dataset_id="cop-dem-glo-30",
+    title="Copernicus DEM GLO-30",
+    description=(
+        "Copernicus DEM GLO-30 Public: global 30 m digital surface model from "
+        "the TanDEM-X mission (acquired December 2010 to January 2015), as "
+        "cloud-optimized GeoTIFF in 1° × 1° tiles, read directly "
+        "from the AWS Open Data bucket (state of 9 May 2022, adr/0009 §7.3). "
+        "Oceans carry no tiles, and 25 tiles between 38° and 42° N and "
+        "43° and 51° E are withheld from public release by the "
+        "Copernicus programme (adr/0009 §10.3)."
+    ),
+    # The product's own citation DOI (M3-11b plan §2.7, read from the CDSE
+    # COP-DEM page 26.09.2026) — the same page `adr/0003` §11.1 reads the
+    # licence from. Not specific to the GLO-30 instance; it is what the source
+    # itself asks to be cited with.
+    doi="https://doi.org/10.5270/ESA-c5d3d65",
+    citation=None,
+    # A single elevation model, not a stream of acquisitions (P24, adr/0009 §6):
+    # `single_coverage_product` below follows from this, not the other way round.
+    data_class=DataClass.RASTER_STATIC,
+    format=DataFormat.COG,
+    # From the bucket's own tile list (M3-11b plan §2.1, §2.6): latitudes S90 to
+    # N83, longitudes W180 to E179 (so the nominal cells reach N84/E180).
+    spatial_extent=SpatialExtent(bbox=(-180.0, -90.0, 180.0, 84.0)),
+    temporal_extent=TemporalExtent(start=DEM_ACQUISITION_START, end=DEM_ACQUISITION_END),
+    capabilities=Capabilities(
+        roi=True,
+        # No acquisition stream to filter by date (M3-11b F1) — a search with a
+        # time window is a question this dataset does not answer differently
+        # from one without (the ADR-decided behaviour for M3-12/M3-13: shown
+        # regardless of the chosen range, never date-filtered).
+        time_range=False,
+        band_math=True,
+        interpolation=True,
+        ml_processing=True,
+        # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
+        quad_pol=False,
+        # One elevation model, not a time series: extent, not density (adr/0004 §5).
+        single_coverage_product=True,
+    ),
+    license=LicenseInfo(
+        spdx_id=None,
+        name="Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open",
+        url=_DEM_LICENSE_URL,
+        commercial_use=True,
+        distribution=True,
+        derivatives=True,
+        share_alike=False,
+        attribution_required=True,
+        tier=LicenseTier.PROCESSING,
+        # Art. 6 b: the modified-data wording adds "produced using Copernicus
+        # WorldDEM-30" to the same attribution the unmodified data carries.
+        attribution_modified=f"{_DEM_ATTRIBUTION}; produced using Copernicus WorldDEM-30",
+        attribution_unmodified=_DEM_ATTRIBUTION,
+        terms=TermsOfUse(
+            url=_DEM_LICENSE_URL,
+            notice={
+                # Art. 6 c, the licence's own liability waiver, shortened only
+                # where it names the licence itself (`adr/0003` §11.1).
+                "en": (
+                    "Use is subject to the Licence for Copernicus DEM instance "
+                    "COP-DEM-GLO-30-F Global 30m Full, Free & Open: {terms_url}. "
+                    "The organisations in charge of the Copernicus programme, "
+                    "the European Union and ESA, do not incur any liability for "
+                    "the use of this data."
+                ),
+            },
+        ),
+    ),
+    access=AccessInfo(
+        token_free_checked_at=date(2026, 9, 26),
+        method="anonymous HTTPS, no authentication header (M3-11b plan §2.1)",
+        # Measured 26.09.2026 (M3-11b plan §2.2): no Access-Control-Allow-Origin
+        # on a plain GET. Moot for this dataset — it has no quicklook a browser
+        # would load straight from the source (M3-12 decides what appears
+        # instead: the full-resolution AOI crop, per the M3-11b F11 Nachtrag).
+        cors=False,
+    ),
+    source=SourceInfo(
+        adapter=AdapterKind.COP_DEM_BUCKET,
+        endpoint="https://copernicus-dem-30m.s3.amazonaws.com",
+        # The bucket has no STAC collection of its own (`adr/0009` §5) — its own
+        # name is the closest thing to a source-side identifier.
+        source_collection_id="copernicus-dem-30m",
+        # The global bucket name (`adr/0009` §10.2, M3-11b plan §2): never the
+        # bare `s3.amazonaws.com` or `amazonaws.com`, which would open every
+        # bucket on AWS to `gateway`'s allowlist (`registry.py`
+        # `DatasetConfig._check_source`).
+        asset_hosts=("copernicus-dem-30m.s3.amazonaws.com",),
+        harvest_run=None,
+        item_holding=ItemHolding.MATERIALIZED,
+    ),
+    coverage=CoverageInfo(
+        provider=CoverageProvider.LOCAL_SQL,
+        # The nominal 1x1-degree cell a tile name gives (`adapters.
+        # cop_dem_bucket`); `max_geotile_level_for(111.0) == 8`, checked by
+        # `DatasetConfig._check_coverage`.
+        typical_footprint_km=111.0,
+        max_geotile_level=8,
+    ),
+    default_render=DefaultRender(
+        title="Elevation",
+        assets=("data",),
+        # 0..5000 m: covers every measured tile's p98 (max 5907 m at the
+        # Himalaya sample, M3-11b plan §2.4) except the very highest peaks,
+        # which saturate white rather than clip to a flat colour — the
+        # trade-off `terrain` is chosen for (F6).
+        rescale=((0.0, 5000.0),),
+        colormap_name="terrain",
+        expression=None,
+        resampling="nearest",
+    ),
+    # F7: every tile shares the same `start_datetime` (there is only one), so
+    # grouping by it puts every DEM tile in one group — a AOI crop over several
+    # tiles becomes one merged file (P19), the way a Sentinel-2 overpass does.
+    # z8 is roughly one DEM tile wide; z15 is three levels past the native
+    # ~30 m/px resolution, for zooming into real detail without reaching
+    # MapLibre's own z22 ceiling on a dataset with nothing finer to give past it.
+    viewer=ViewerInfo(group_by=("start_datetime",), min_zoom=8, max_zoom=15),
+    health=HealthInfo(status=HealthStatus.OK),
+    # A released, versioned product (state of 9 May 2022), not a pilot.
+    maturity=Maturity.STABLE,
+    zarr=None,
+)
+
+REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3, COP_DEM_GLO_30))

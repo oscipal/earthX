@@ -58,6 +58,14 @@ class AdapterKind(Enum):
 
     EARTH_SEARCH_V1 = "earth-search-v1"
     EOPF_STAC_V1 = "eopf-stac-v1"
+    # M3-11b: this one only *materializes* items (adapters.materialize_items), it
+    # never searches or answers a single-item request — the dispatch tables in
+    # `adapters/__init__.py` (`_ADAPTERS`, `_MATERIALIZERS`) are separate for
+    # exactly that reason. A `SourceInfo` naming this kind always carries
+    # `item_holding=MATERIALIZED` (checked by `DatasetConfig._check_item_holding`
+    # only indirectly, through the coverage-provider pairing — nothing here ties
+    # an `AdapterKind` to an `ItemHolding` value, by design, per M3-11a K-05).
+    COP_DEM_BUCKET = "cop-dem-bucket"
 
 
 class ItemHolding(Enum):

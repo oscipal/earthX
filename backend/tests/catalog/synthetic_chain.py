@@ -35,9 +35,9 @@ import pytest
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
-from earthx.catalog.registry import DataFormat, DatasetConfig, DatasetRegistry, ViewerInfo
+from earthx.catalog.registry import DataFormat, DatasetConfig, DatasetRegistry, ItemHolding, ViewerInfo
 from earthx.gateway import Gateway, Policy, check_url, host_of
-from tests.earthx.readers import mini_cog, mini_zarr, mini_zarr_composite
+from tests.earthx.readers import mini_cog, mini_dem, mini_zarr, mini_zarr_composite
 
 #: The one host both synthetic stores live on.
 HOST = mini_zarr.HOST
@@ -107,6 +107,15 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         # testing an asset key this module invented.
         raise UnsupportedFormat(f"{config.dataset_id} has no standard visualisation to display")
     render_asset = config.default_render.assets[0]
+
+    if config.source.item_holding is ItemHolding.MATERIALIZED:
+        # M3-11b F9: link 1 is *creation*, not search — a materialized entry has
+        # no search API to answer one. `_build_materialized` builds `chain.item`
+        # by hand, the same way `_stac_item` below does for a federated entry;
+        # the real adapter (`adapters.cop_dem_bucket.materialize_items`) is
+        # exercised separately, against a canned bucket of its own
+        # (`test_onboarding_endtoend.py`'s replacement for link 1).
+        return _build_materialized(config, render_asset, tmp_path, monkeypatch)
 
     if config.format is DataFormat.COG:
         href, bounds, gsd, read_addresses = _cog_asset(tmp_path, monkeypatch)
@@ -239,7 +248,13 @@ def _resolve_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _aoi(bounds: tuple[float, ...]) -> dict[str, Any]:
     """A small box in the middle of the data, as WGS84 GeoJSON."""
-    west, south, east, north = transform_bounds(CRS, WGS84_CRS, *bounds)
+    return _aoi_wgs84(transform_bounds(CRS, WGS84_CRS, *bounds))
+
+
+def _aoi_wgs84(bounds: tuple[float, float, float, float]) -> dict[str, Any]:
+    """The same shrink-to-quarter box as :func:`_aoi`, for bounds already in WGS84
+    (the DEM branch, whose nominal cell needs no transform, M3-11b F3)."""
+    west, south, east, north = bounds
     dx, dy = (east - west) / 4, (north - south) / 4
     left, right = west + dx, east - dx
     bottom, top = south + dy, north - dy
@@ -262,7 +277,12 @@ def _covering_tile(bounds: tuple[float, ...], viewer: ViewerInfo | None) -> tupl
     released level always answers; whether it is filled edge to edge is not what
     point 9 is about.
     """
-    west, south, east, north = transform_bounds(CRS, WGS84_CRS, *bounds)
+    return _covering_tile_wgs84(transform_bounds(CRS, WGS84_CRS, *bounds), viewer)
+
+
+def _covering_tile_wgs84(bounds: tuple[float, float, float, float], viewer: ViewerInfo | None) -> tuple[int, int, int]:
+    """The same search as :func:`_covering_tile`, for bounds already in WGS84."""
+    west, south, east, north = bounds
     centre = ((west + east) / 2, (south + north) / 2)
     lowest = WEB_MERCATOR_TMS.minzoom if viewer is None else viewer.min_zoom
     finest = WEB_MERCATOR_TMS.maxzoom if viewer is None else viewer.max_zoom
@@ -273,3 +293,100 @@ def _covering_tile(bounds: tuple[float, ...], viewer: ViewerInfo | None) -> tupl
             if tile_bounds.bottom < north and tile_bounds.top > south:
                 return (zoom, tile.x, tile.y)
     raise AssertionError("no released level of the grid touches the synthetic store")
+
+
+# --------------------------------------------------------------------------------
+# Materialized entries (M3-11b): no search, an item built once from a tile name.
+# --------------------------------------------------------------------------------
+
+
+def _dem_item(
+    name: str, bbox: tuple[float, float, float, float], *, config: DatasetConfig, gsd: float
+) -> dict[str, Any]:
+    """A DEM-shaped item, hand-built like :func:`_stac_item` is for a federated
+    entry: no `datetime`, a `start_/end_datetime` period instead (M3-11b F1), and
+    its geometry the tile's own *nominal* cell (F3) — large enough to contain the
+    synthetic COG's real footprint (`mini_dem.BOUNDS` is exactly that cell), which
+    is all the download route's AOI-intersection check needs; the actual pixel
+    read goes through the file's own embedded CRS and transform, not this field.
+    """
+    west, south, east, north = bbox
+    ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
+    href = f"{config.source.endpoint}/{name}/{name}.tif"
+    return {
+        "id": name,
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "collection": config.dataset_id,
+        "bbox": [west, south, east, north],
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+        "properties": {
+            "datetime": None,
+            "start_datetime": "2010-12-01T00:00:00Z",
+            "end_datetime": "2015-01-31T23:59:59Z",
+            "gsd": gsd,
+            "proj:code": "EPSG:4326",
+        },
+        "assets": {"data": {"href": href, "gsd": gsd}},
+        "links": [],
+    }
+
+
+def _gateway_answering_materialize(config: DatasetConfig, item: dict[str, Any]) -> tuple[Gateway, list[httpx.Request]]:
+    """A gateway that answers `tileList.txt`, `blacklist.txt` and the bucket
+    listing with exactly the one tile `item` names — enough for
+    `adapters.materialize_items` to build that same item for real."""
+    seen: list[httpx.Request] = []
+    name = item["id"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        path = request.url.path
+        if path.endswith("/tileList.txt"):
+            return httpx.Response(200, content=f"{name}\r\n".encode(), headers={"etag": '"synthetic"'})
+        if path.endswith("/blacklist.txt"):
+            return httpx.Response(200, content=b"")
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+            f"<CommonPrefixes><Prefix>{name}/</Prefix></CommonPrefixes>"
+            "</ListBucketResult>"
+        ).encode()
+        return httpx.Response(200, content=body)
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    policy = Policy(allowed_hosts=frozenset({HOST, host_of(config.source.endpoint)}))
+    return (
+        Gateway(policy, transport=httpx.MockTransport(handler), resolve=mini_zarr.from_memory, sleep=sleep),
+        seen,
+    )
+
+
+def _build_materialized(
+    config: DatasetConfig, render_asset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Chain:
+    if config.format is not DataFormat.COG:
+        raise UnsupportedFormat(f"no synthetic materialize chain for format {config.format.value!r}")
+    path = mini_dem.build_mini_dem(tmp_path / "mini_dem.tif")
+    read_addresses = mini_dem.serve_dem(path, monkeypatch)
+    # Only the host has to match what the real adapter builds an href from
+    # (`config.source.endpoint`/`.tif`): `vsicurl_path` is monkeypatched above to
+    # serve the local file regardless of the path it is asked for.
+    synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,)))
+    item = _dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
+    gateway, searched = _gateway_answering_materialize(synthetic, item)
+    _resolve_from_memory(monkeypatch)
+
+    return Chain(
+        config=synthetic,
+        registry=DatasetRegistry((synthetic,)),
+        item=item,
+        render_asset=render_asset,
+        aoi=_aoi_wgs84(mini_dem.BOUNDS),
+        tile=_covering_tile_wgs84(mini_dem.BOUNDS, config.viewer),
+        gateway=gateway,
+        searched=searched,
+        read_addresses=lambda: list(read_addresses),
+    )

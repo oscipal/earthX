@@ -64,6 +64,27 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  # One-off, run by hand: `python -m earthx.discovery.materialize <dataset_id>`
+  # (M3-11b plan §3.7, F8). Under a profile so a plain `docker compose up`
+  # never starts it: the one materialized dataset today (`cop-dem-glo-30`)
+  # reaches a real external bucket, which must never happen from CI or an
+  # ordinary local start. Run it with:
+  #   docker compose run --rm materialize cop-dem-glo-30
+  materialize:
+    profiles: ["materialize"]
+    build:
+      context: ./backend
+    entrypoint: ["python", "-m", "earthx.discovery.materialize"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      catalog-load:
+        condition: service_completed_successfully
+
   # M3-23 (adr/0012): Garage replaces MinIO. Three parts, because Garage's
   # image has no shell (see below) and its `--default-bucket` flag reads the
   # S3 key only from an env var, not from a file — so secrets are generated

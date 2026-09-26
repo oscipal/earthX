@@ -16,6 +16,7 @@ short version: everything except the answers.
 
 from __future__ import annotations
 
+import re
 import zipfile
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -27,10 +28,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from earthx.access.download import NOTICE_FILENAME
-from earthx.adapters import SearchParams, search_items
+from earthx.adapters import SearchParams, materialize_items, search_items
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DatasetConfig, group_key
+from earthx.catalog.registry import DatasetConfig, ItemHolding, group_key
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain, UnsupportedFormat
 from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST
@@ -81,7 +82,18 @@ def test_this_module_is_the_one_the_checklist_points_at() -> None:
 
 
 async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -> None:
-    """Link 1. The request is the one the adapter really builds from the endpoint."""
+    """Link 1. For a federated entry: the request is the one the adapter really
+    builds from the endpoint. For a materialized entry (M3-11b F9): item
+    *creation* through the real adapter against the synthetic bucket, instead —
+    there is no search request to build."""
+    if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
+        outcome = await materialize_items(chain.config, gateway=chain.gateway, known_version=None)
+        assert [item["id"] for item in outcome.items] == [chain.item["id"]]
+        assert outcome.items[0]["bbox"] == chain.item["bbox"]
+        paths = {request.url.path for request in chain.searched}
+        assert paths == {"/tileList.txt", "/blacklist.txt", "/"}
+        return
+
     page = await search_items(
         chain.dataset_id,
         SearchParams(limit=10),
@@ -109,7 +121,10 @@ async def test_a_found_item_carries_the_key_the_viewer_groups_by(chain: Chain) -
     assert viewer is not None, "an entry the viewer cannot group has no display step"
     key = group_key(chain.item, viewer)
     assert len(key) == len(viewer.group_by)
-    assert key[0] == "2026-01-02", "a STAC instant enters the key as its UTC date (D19)"
+    # A STAC instant enters the key as its UTC date (D19) — the date itself
+    # differs by entry (a federated Sentinel-2 item vs. the DEM's fixed
+    # acquisition period, M3-11b F1), so only the shape is checked here.
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", key[0])
 
 
 def test_display_renders_a_tile_from_the_registrys_own_visualisation(
@@ -118,7 +133,7 @@ def test_display_renders_a_tile_from_the_registrys_own_visualisation(
     """Link 2. The asset key is checklist point 8's value, not one invented here."""
     zoom, x, y = chain.tile
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}"
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
         f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
@@ -134,7 +149,7 @@ def test_the_clipped_download_is_a_zip_of_raster_and_notice(client: TestClient, 
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
         json={
-            "groups": [[synthetic_chain.ITEM_ID]],
+            "groups": [[chain.item["id"]]],
             "assets": [chain.render_asset],
             "aoi": chain.aoi,
         },
@@ -152,7 +167,7 @@ def test_the_notice_carries_attribution_and_terms_of_this_entry(
     """Point 4 and point 9 meet here: the licence text travels with the pixels."""
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
-        json={"groups": [[synthetic_chain.ITEM_ID]], "assets": [chain.render_asset], "aoi": chain.aoi},
+        json={"groups": [[chain.item["id"]]], "assets": [chain.render_asset], "aoi": chain.aoi},
     )
     assert response.status_code == 200, response.text
 
@@ -166,11 +181,16 @@ def test_the_notice_carries_attribution_and_terms_of_this_entry(
 
 
 async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestClient) -> None:
-    """Point 9 itself: one item, found, displayed and downloaded, in that order."""
-    page = await search_items(
-        chain.dataset_id, SearchParams(limit=10), gateway=chain.gateway, registry=chain.registry
-    )
-    (found,) = page.items
+    """Point 9 itself: one item, found (or, materialized, created), displayed and
+    downloaded, in that order."""
+    if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
+        outcome = await materialize_items(chain.config, gateway=chain.gateway, known_version=None)
+        (found,) = outcome.items
+    else:
+        page = await search_items(
+            chain.dataset_id, SearchParams(limit=10), gateway=chain.gateway, registry=chain.registry
+        )
+        (found,) = page.items
 
     zoom, x, y = chain.tile
     tile = client.get(
@@ -201,7 +221,7 @@ def test_an_asset_on_a_host_the_entry_does_not_name_is_refused(
     }
     zoom, x, y = chain.tile
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}"
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
         f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
@@ -213,7 +233,7 @@ def test_an_aoi_outside_the_item_downloads_nothing(client: TestClient, chain: Ch
     outside = {"type": "Polygon", "coordinates": [[[50, 50], [51, 50], [51, 51], [50, 51], [50, 50]]]}
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
-        json={"groups": [[synthetic_chain.ITEM_ID]], "assets": [chain.render_asset], "aoi": outside},
+        json={"groups": [[chain.item["id"]]], "assets": [chain.render_asset], "aoi": outside},
     )
     assert response.status_code == 400, response.text
     assert not chain.read_addresses(), "nothing may be read for an AOI that touches no item"
