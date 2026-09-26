@@ -45,12 +45,21 @@ export class HttpError extends Error {
   // route gave an actual reason" apart from `message`'s status-line fallback,
   // which `errorDetail` also uses when there is no real detail to show).
   readonly detail?: string;
+  // The raw `Retry-After` response header, if the route sent one (M3-07b:
+  // `placeSearch.ts` uses its presence to tell a `503` that is only briefly
+  // busy — the shared rate slot, a cache/Postgres hiccup — apart from a `503`
+  // that means place search is not enabled on this server at all, which never
+  // carries this header). Not parsed into seconds: the value can be `5` or
+  // `30` depending on which of those it is, and showing either as a promised
+  // countdown would claim more than the next attempt actually holds.
+  readonly retryAfter?: string;
 
-  constructor(status: number, message: string, detail?: string) {
+  constructor(status: number, message: string, detail?: string, retryAfter?: string) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
     this.detail = detail;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -65,7 +74,12 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     const detail = typeof (body as StacErrorBody | undefined)?.detail === 'string'
       ? ((body as StacErrorBody).detail as string)
       : undefined;
-    throw new HttpError(res.status, errorDetail(body, res.status, res.statusText), detail);
+    throw new HttpError(
+      res.status,
+      errorDetail(body, res.status, res.statusText),
+      detail,
+      res.headers?.get('Retry-After') ?? undefined,
+    );
   }
   return (await res.json()) as T;
 }
@@ -91,6 +105,39 @@ export async function uploadAoi(file: Blob, filename: string): Promise<GeoJSON.G
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: file,
+    }),
+  );
+}
+
+// M3-07b: `POST /geocode` (M3-07a, `backend/earthx/api/geocode_route.py`) — a
+// place name resolved to an outline and a bounding box via Nominatim, over the
+// backend's own gateway. `outline` is `Polygon`/`MultiPolygon` or `null` (a
+// point/line hit, or an outline that stayed too large even simplified);
+// `bbox` is always `[west, south, east, north]` and already sanity-checked by
+// the route. `attribution`/`attribution_url`/`license` come on every answer,
+// even an empty `results: []` (the plan's placeSearch.ts shows them either way).
+export interface PlaceResult {
+  name: string;
+  display_name: string;
+  kind: string;
+  bbox: [number, number, number, number];
+  outline: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  outline_simplified: boolean;
+}
+
+export interface PlaceSearchResponse {
+  results: PlaceResult[];
+  attribution: string;
+  attribution_url: string;
+  license: string;
+}
+
+export async function geocodePlace(q: string): Promise<PlaceSearchResponse> {
+  return jsonOrThrow<PlaceSearchResponse>(
+    await fetch(`${BASE}/geocode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q }),
     }),
   );
 }

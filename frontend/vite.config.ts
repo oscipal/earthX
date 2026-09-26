@@ -6,8 +6,9 @@ import { defineConfig } from 'vitest/config'
 // VITE_API_PROXY if needed. /collections goes to the `tiler` process instead
 // (a separate process/port, architekturplan.md 3.2) — its tile and statistics
 // routes are rooted at /collections/{dataset}/items/{item}/... (adr/0006).
-// Override with VITE_TILER_PROXY. /coverage (M2-05b) and /aoi (M3-06a/b) both
-// sit on the `api` process's base app, outside /stac, so they share apiTarget.
+// Override with VITE_TILER_PROXY. /coverage (M2-05b), /aoi (M3-06a/b) and
+// /geocode (M3-07a/b) all sit on the `api` process's base app, outside /stac,
+// so they share apiTarget.
 const apiTarget = process.env.VITE_API_PROXY ?? 'http://localhost:8000'
 const tilerTarget = process.env.VITE_TILER_PROXY ?? 'http://localhost:8001'
 
@@ -19,6 +20,7 @@ export default defineConfig({
       '/stac': { target: apiTarget, changeOrigin: true },
       '/coverage': { target: apiTarget, changeOrigin: true },
       '/aoi': { target: apiTarget, changeOrigin: true },
+      '/geocode': { target: apiTarget, changeOrigin: true },
       '/collections': { target: tilerTarget, changeOrigin: true },
     },
   },
