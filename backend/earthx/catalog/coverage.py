@@ -238,10 +238,26 @@ class CoverageResult:
     # in der Zelle"). A second grid or a second counting rule would have to say so here.
     grid: str = "geotile"
     counting: str = "centroid"
-    # Set only by :func:`extent_result`: a one-off product has nothing to count, so
-    # it answers with the ground it covers instead of a density (adr/0004 §5, "Wo
-    # welcher Teil liegt" / "Einmal-Produkte").
+    # Set only by :func:`extent_result` and the ``local-sql`` area way
+    # (`catalog.local_coverage.area_coverage`, M3-11c): a one-off product has
+    # nothing to count, so it answers with the ground it covers instead of a
+    # density (adr/0004 §5, "Wo welcher Teil liegt" / "Einmal-Produkte"). For the
+    # area way this is the bbox of ``area`` below, not the collection's own extent.
     extent: tuple[float, float, float, float] | None = None
+    # Set only by the ``local-sql`` area way (M3-11c, adr/0009 §6 F5): the union of
+    # a materialized one-off product's own item footprints, as a GeoJSON
+    # ``MultiPolygon`` — the honest coverage of a dataset with nothing to count,
+    # cropped to whatever spatial filter the query carried. ``None`` everywhere
+    # else, including the ``extent_result`` way, which answers a different question
+    # (the collection's declared extent, not a union of items).
+    area: Mapping[str, Any] | None = None
+    # Filters the query carried that this answer could not honour and silently
+    # dropped rather than reject (Otto, 26.09.2026, M3-11c): ``"datetime"`` for a
+    # dataset with ``capabilities.time_range=False``, ``"max_cloud_cover"`` on the
+    # area way, which has no cloud cover to filter on. Named, not just dropped, so
+    # the frontend can say so instead of the map quietly answering a narrower
+    # question than the one asked (the same posture as `completeness=truncated`).
+    ignored_filters: tuple[str, ...] = ()
 
     @property
     def counted(self) -> int:

@@ -3,11 +3,13 @@
 One adapter per source protocol (architekturplan.md 6.1). ``earth_search`` speaks
 Earth Search v1 (Sentinel-2 L2A as COG); ``eopf_stac`` speaks the EOPF Sentinel Zarr
 Samples Service (the same dataset again, as Zarr, M2-09b). Both answer search and
-access resolution; Earth Search also answers the coverage aggregation of adr/0004
-since M2-05. ``cop_dem_bucket`` (M3-11b) speaks a third, structurally different
-protocol: it never searches, it *materializes* — it turns a bucket's own tile list
-into STAC items, once, for the one-off command in ``discovery``. Discovery follows
-with the harvester proper (M5).
+access resolution; each also answers a coverage way of adr/0004 §5 — Earth Search
+its aggregation, EOPF a declared sample — through :func:`coverage` below, dispatched
+by adapter and provider rather than by the caller picking a function (K-06, M3-11c).
+``cop_dem_bucket`` (M3-11b) speaks a third, structurally different protocol: it
+never searches, it *materializes* — it turns a bucket's own tile list into STAC
+items, once, for the one-off command in ``discovery``. Discovery follows with the
+harvester proper (M5).
 
 Everything an adapter sends goes through ``gateway``; what it needs to know about a
 dataset it reads from ``catalog``. Which adapter serves which collection is decided
@@ -36,6 +38,7 @@ from earthx.adapters import cop_dem_bucket, earth_search, eopf_stac
 from earthx.adapters.cache import CacheValue, SearchCache
 from earthx.adapters.cop_dem_bucket import MaterializeOutcome, NotMaterialized
 from earthx.adapters.earth_search_coverage import aggregate_coverage
+from earthx.adapters.eopf_sample_coverage import sample_coverage
 from earthx.adapters.federated_search import (
     DEFAULT_LIMIT,
     MAX_IDS,
@@ -49,8 +52,16 @@ from earthx.adapters.federated_search import (
     UnsupportedSource,
     UpstreamShapeError,
 )
+from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery, CoverageResult
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import AdapterKind, DatasetConfig, DatasetRegistry, ItemHolding, UnknownDatasetError
+from earthx.catalog.registry import (
+    AdapterKind,
+    CoverageProvider,
+    DatasetConfig,
+    DatasetRegistry,
+    ItemHolding,
+    UnknownDatasetError,
+)
 from earthx.gateway import Gateway
 
 # One module per adapter kind — the only place that has to know every adapter this
@@ -67,6 +78,17 @@ _ADAPTERS = {
 # reaches (`_adapter_for` refuses it first).
 _MATERIALIZERS = {
     AdapterKind.COP_DEM_BUCKET: cop_dem_bucket,
+}
+
+# K-06 / M3-11c: which function answers coverage for a federated collection follows
+# from the same two things the registry already names — its adapter and its
+# coverage provider — rather than a caller picking `aggregate_coverage` or
+# `sample_coverage` itself. `local-sql` is deliberately absent: a materialized
+# collection's own items need a database connection, not a `gateway`, and that way
+# lives in `catalog.local_coverage` instead (`adr/0004` §5, "Wo welcher Teil liegt").
+_COVERAGE = {
+    (AdapterKind.EARTH_SEARCH_V1, CoverageProvider.UPSTREAM_AGGREGATION): aggregate_coverage,
+    (AdapterKind.EOPF_STAC_V1, CoverageProvider.SAMPLE): sample_coverage,
 }
 
 
@@ -168,6 +190,32 @@ async def materialize_items(
     return await module.materialize_items(config, gateway=gateway, known_version=known_version)
 
 
+async def coverage(
+    query: CoverageQuery,
+    config: DatasetConfig,
+    *,
+    gateway: Gateway,
+    registry: DatasetRegistry = REGISTRY,
+    cache: SearchCache | None = None,
+) -> CoverageResult:
+    """Coverage density or declared sample for one federated collection, dispatched
+    by ``(adapter, coverage provider)`` (K-06, M3-11c) — the seam
+    ``api.coverage_route`` calls instead of picking ``aggregate_coverage`` or
+    ``sample_coverage`` itself, the same shape ``search_items``/``get_item`` above
+    already give "which adapter". A pair this table does not know is
+    :class:`~earthx.catalog.coverage.CoverageProviderMismatch`, the coverage
+    counterpart of :class:`UnsupportedSource`.
+    """
+    try:
+        answer = _COVERAGE[(config.source.adapter, config.coverage.provider)]
+    except KeyError:
+        raise CoverageProviderMismatch(
+            f"{config.dataset_id}: no coverage answer for adapter {config.source.adapter.value!r} "
+            f"and provider {config.coverage.provider.value!r}"
+        ) from None
+    return await answer(query, config, gateway=gateway, registry=registry, cache=cache)
+
+
 __all__ = [
     "DEFAULT_LIMIT",
     "MAX_IDS",
@@ -184,7 +232,7 @@ __all__ = [
     "UnsupportedFilter",
     "UnsupportedSource",
     "UpstreamShapeError",
-    "aggregate_coverage",
+    "coverage",
     "get_item",
     "materialize_items",
     "search_items",

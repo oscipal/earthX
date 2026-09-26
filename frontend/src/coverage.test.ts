@@ -136,6 +136,8 @@ function response(overrides: Partial<CoverageResponse> = {}): CoverageResponse {
     footprints_advised: false,
     from_cache: false,
     extent: null,
+    area: null,
+    ignored_filters: [],
     ...overrides,
   };
 }
