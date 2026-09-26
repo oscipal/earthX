@@ -47,3 +47,13 @@ rioxarray>=0.17
 # a pool, not a single connection; pypgstac[psycopg] above pulls in psycopg
 # itself already, this only adds the pooling extra.
 psycopg[pool]>=3.1
+# AOI upload (M3-06a, docs/plans/m3-06a-aoi-upload-backend.md §4, Otto F1). Pure
+# Python, no C extension, no second GDAL/OGR binding next to the one `rasterio`
+# already bundles: `pyshp` reads a Shapefile's geometry straight out of BytesIO,
+# `defusedxml` is what actually satisfies "no external XML entities" for KML
+# rather than a hand-rolled parser hardening.
+pyshp>=2.3
+defusedxml>=0.7
+# Already pulled in transitively by rioxarray for the `.rio` CRS accessor; listed
+# directly here too now that M3-06a's own code imports it (§7.3, .prj -> EPSG:4326).
+pyproj>=3.6
