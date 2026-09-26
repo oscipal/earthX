@@ -378,3 +378,47 @@ download“). Der Dialog heißt „Download crop“ bzw. „Download original fi
   mit einer Earth-Search-Szene: der Link lädt die Originaldatei direkt von
   der Quelle; im Netzwerk-Tab keine Anfrage an die Plattform für diese Datei.
   EOPF ohne AOI: Knopf deaktiviert.
+
+---
+
+## 12. Review von PR #88 (drei Punkte, behoben)
+
+1. **Übersprungene Gruppe sichtbar machen.** Die Antwort trug den Fund einer
+   nicht getroffenen Gruppe bisher nur in `ATTRIBUTION.txt` innerhalb des ZIP
+   — sichtbar erst, nachdem die Datei schon gespeichert ist. Der
+   Download-Route-Antwort liegen jetzt zwei Header bei, `X-Total-Groups` und
+   `X-Skipped-Groups` (Zählwerte, keine Item-IDs oder Geometrie — die
+   KLAERUNGEN-Regel gegen AOI/Query-Daten im Log gilt auch für Header). Der
+   Dialog zeigt bei `X-Skipped-Groups > 0` statt zu schließen einen englischen
+   Hinweis „`N` of `M` groups did not overlap the AOI and was/were skipped.“
+   und bleibt offen, bis der Nutzer ihn schließt.
+2. **`earthx:format` in `architekturplan.md` 5.1 nachgezogen.** Die Zeile
+   nennt jetzt Bedeutung, erlaubte Werte (`zarr`, `cog`, `legacy`) und
+   Herkunft (`DatasetConfig.format`, ohne Vorgabewert nach B10) ausdrücklich,
+   nicht nur den Verweis auf 6.2.
+3. **B11 für den Original-Download belegt.** `KLAERUNGEN.md` B11 nennt für die
+   Stufe „Katalogeintrag“ ausdrücklich „Link bzw. Weiterleitung zum Download
+   bei der Quelle“ — genau das, was M3-17s Original-Links tun. Keine höhere
+   Stufe nötig, deshalb bewusst keine `canExportLicense`-Sperre im
+   Originale-Zweig des Dialogs (anders als beim Zuschnitt, der „Processing“
+   verlangt). Die Attribution (`attribution_unmodified`, weil die Originale
+   unverändert sind) und die Nutzungsbedingungen stehen im Dialog direkt über
+   der Link-Liste — jetzt mit einem eigenen Komponententest
+   (`DownloadDialog.test.tsx`) belegt, der die echte Komponente rendert statt
+   nur die reinen Helfer aus `download.ts` zu prüfen.
+
+**Geänderte/neue Dateien:** `backend/earthx/api/tiler.py` (Header),
+`backend/tests/earthx/api/test_download_route.py` (zwei neue Tests),
+`docs/architekturplan.md` 5.1, `frontend/src/api.ts` (`DownloadCropResult`),
+`frontend/src/api.test.ts`, `frontend/src/store.ts`
+(`downloadSkippedGroupsNotice`), `frontend/src/store.confirmDownload.test.ts`
+(neu, eigene Datei wegen jsdom-Pragma), `frontend/src/components/
+DownloadDialog.tsx`, `frontend/src/components/DownloadDialog.test.tsx` (neu).
+
+**Abnahme:** `pytest` (Repo-Wurzel, 1301), `ruff check backend`,
+`lint-imports --config .importlinter` (12/12), `npm run lint`,
+`npx tsc -b --pretty false`, `npx vitest run` (363) — alle grün.
+
+**Status:** Otto hat verlangt, den Status von M3-17 in
+`plans/m3-dritte-quelle-und-interface.md` erst nach dem Merge auf „erledigt“
+zu setzen; bis dahin bleibt er „in Arbeit“ (siehe dort).
