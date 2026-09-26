@@ -157,7 +157,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | in Arbeit |
 | M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
 | M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
-| M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | offen |
+| M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
