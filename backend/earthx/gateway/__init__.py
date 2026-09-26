@@ -20,7 +20,15 @@ from earthx.gateway.errors import (
     UrlRejected,
     UrlTooLong,
 )
-from earthx.gateway.policy import ALLOWED_HOSTS_ENV, Policy, host_of, normalize_host, policy_from_env
+from earthx.gateway.policy import (
+    ALLOWED_HOSTS_ENV,
+    Policy,
+    UrlParts,
+    host_of,
+    inspect_url,
+    normalize_host,
+    policy_from_env,
+)
 from earthx.gateway.resolver import CachingResolver, Resolver, resolve_host
 
 __all__ = [
@@ -38,10 +46,12 @@ __all__ = [
     "UpstreamError",
     "UpstreamTimeout",
     "UpstreamUnreachable",
+    "UrlParts",
     "UrlRejected",
     "UrlTooLong",
     "check_url",
     "host_of",
+    "inspect_url",
     "normalize_host",
     "policy_from_env",
     "resolve_host",

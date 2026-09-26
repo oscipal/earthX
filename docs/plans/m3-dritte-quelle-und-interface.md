@@ -139,7 +139,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-05 | Mess-Spike Heatmap-Zählwürfel → `adr/0010` | C | Opus (hoch) | — | erledigt (#80) |
 | M3-06a | AOI-Upload: Backend-Route mit Shapefile | B | Opus Plan, Sonnet (hoch) | M3-03 | in Arbeit |
 | M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a | in Arbeit |
-| M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 | offen |
+| M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 | in Arbeit |
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | offen |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |

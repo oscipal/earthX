@@ -172,6 +172,10 @@ services:
       PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
+      # M3-07a: unset (the default) turns place search off — `api.dependencies`
+      # treats an empty value the same as unset.
+      EARTHX_GEOCODER_URL: ${EARTHX_GEOCODER_URL:-}
+      EARTHX_GEOCODER_USER_AGENT: ${EARTHX_GEOCODER_USER_AGENT:-}
     depends_on:
       postgres:
         condition: service_healthy

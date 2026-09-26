@@ -64,7 +64,13 @@ and run `pypgstac migrate` against it.
 # so that a migration whose table nobody drops fails the suite instead of leaving a
 # table behind that the next run reads as "already applied" — `earthx.catalog.load`
 # commits, so a full run really does leave them there.
-SHIPPED_TABLES = ("public.earthx_search_cache", "public.earthx_stats_cache", "public.earthx_materialize_runs")
+SHIPPED_TABLES = (
+    "public.earthx_search_cache",
+    "public.earthx_stats_cache",
+    "public.earthx_materialize_runs",
+    "public.earthx_geocode_cache",
+    "public.earthx_rate_slots",
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
