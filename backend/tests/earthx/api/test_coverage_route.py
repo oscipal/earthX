@@ -251,7 +251,76 @@ class TestSingleCoverageProduct:
         assert body["completeness"] == "complete"
         assert body["cells"] == []
         assert body["histogram"] == []
+        assert body["area"] is None
+        assert body["ignored_filters"] == []
         assert not seen
+
+
+class TestAreaPathWithoutADatabase:
+    """M3-11c: `local-sql` + `single_coverage_product` is the area way, answered
+    from a materialized dataset's own items in pgstac — the one way this route
+    cannot answer without the process's real database pool (unlike the extent way
+    above, which never touches a database or a network at all).
+    """
+
+    def _config(self) -> Any:
+        return replace(
+            SENTINEL_2_L2A,
+            capabilities=replace(SENTINEL_2_L2A.capabilities, single_coverage_product=True),
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+        )
+
+    def test_without_a_pool_the_answer_is_503_not_the_global_extent(self) -> None:
+        config = self._config()
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway, registry=DatasetRegistry((config,))), dataset_id=config.dataset_id)
+
+        assert response.status_code == 503
+        assert not seen
+
+    def test_a_broken_intersects_polygon_is_400_before_any_database_read(self) -> None:
+        """`local_coverage._check_intersects_is_valid`'s own, stricter check: a
+        self-intersecting polygon is refused before this ever asks for a pool —
+        the ``503`` above must never mask a `400` the request itself deserves."""
+        config = self._config()
+        area = json.dumps(
+            {"type": "Polygon", "coordinates": [[[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0], [0.0, 0.0]]]}
+        )
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(
+            client_for(gateway, registry=DatasetRegistry((config,))), dataset_id=config.dataset_id, intersects=area
+        )
+
+        assert response.status_code == 400
+        assert not seen
+
+
+class TestIgnoredFilters:
+    """Otto, 26.09.2026 (M3-11c): a filter a dataset structurally cannot honour is
+    dropped and named, not silently applied — for any provider, not only the area
+    way (`ignored_filters`).
+    """
+
+    def test_a_dataset_without_a_time_axis_ignores_the_datetime_filter(self) -> None:
+        config = replace(SENTINEL_2_L2A, capabilities=replace(SENTINEL_2_L2A.capabilities, time_range=False))
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(
+            client_for(gateway, registry=DatasetRegistry((config,))),
+            dataset_id=config.dataset_id,
+            datetime="2024-01-01T00:00:00Z/2024-12-31T00:00:00Z",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["ignored_filters"] == ["datetime"]
+        assert len(seen) == 1
+
+    def test_a_dataset_with_a_time_axis_keeps_the_datetime_filter(self) -> None:
+        gateway, seen = answering(ok("aggregate_complete"))
+        response = get(client_for(gateway), datetime="2024-01-01T00:00:00Z/2024-12-31T00:00:00Z")
+
+        assert response.status_code == 200
+        assert response.json()["ignored_filters"] == []
 
 
 class TestNoAoiReachesAnswerOrLog:

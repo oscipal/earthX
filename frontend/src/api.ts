@@ -267,6 +267,14 @@ export interface CoverageResponse {
   footprints_advised: boolean;
   from_cache: boolean;
   extent: Bbox | null;
+  // Set only by the `local-sql` area way (M3-11c): the union of a materialized
+  // one-off product's own item footprints, as a GeoJSON MultiPolygon. `null`
+  // everywhere else. Drawing it is M3-12 (M3-02 F-07); not read yet.
+  area: GeoJSON.MultiPolygon | null;
+  // Filters the request carried that this dataset could not honour and this
+  // answer silently dropped rather than reject, e.g. `["datetime"]` for a
+  // dataset without a time axis. Not surfaced in the UI yet (M3-12).
+  ignored_filters: string[];
 }
 
 export interface CoverageParams {
