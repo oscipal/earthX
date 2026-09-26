@@ -60,6 +60,21 @@ class AdapterKind(Enum):
     EOPF_STAC_V1 = "eopf-stac-v1"
 
 
+class ItemHolding(Enum):
+    """Where the items of a dataset live (architekturplan.md 5.2, M3-11a K-05).
+
+    A separate question from :class:`AdapterKind`: the adapter names *which*
+    protocol produces the items, this names *where they end up*. Before M3-11a a
+    collection counted as materialized whenever its ``adapter`` was one this
+    dispatch did not know — a coincidence, not a decision, and a typo in the
+    adapter value would have quietly fallen into that case too (adr/0009 §11,
+    M3-02 K-05). Every entry sets this explicitly (KLAERUNGEN B10).
+    """
+
+    FEDERATED = "federated"
+    MATERIALIZED = "materialized"
+
+
 class CoverageProvider(Enum):
     """How the coverage density of a dataset is answered (adr/0004 §5)."""
 
@@ -204,6 +219,13 @@ class SourceInfo:
     builds its allowlist from both, and without the asset hosts every read of a COG
     is refused while the search still works. Hosts, not URLs — one entry per name,
     exactly as it appears in an asset href.
+
+    ``item_holding`` decides whether ``/stac/search`` federates a live request to
+    ``endpoint`` (``FEDERATED``) or answers from this platform's own pgstac
+    (``MATERIALIZED``, M3-11a) — see :class:`ItemHolding`. ``adapter`` stays set
+    either way: for a federated dataset it is asked at search and item-fetch time,
+    for a materialized one it is the adapter the one-off load in ``discovery`` used
+    to build the items in the first place (M3-11b).
     """
 
     adapter: AdapterKind
@@ -211,6 +233,7 @@ class SourceInfo:
     source_collection_id: str
     asset_hosts: tuple[str, ...]
     harvest_run: str | None
+    item_holding: ItemHolding
 
 
 @dataclass(frozen=True, slots=True)
@@ -516,6 +539,7 @@ class DatasetConfig:
         self._check_attribution()
         self._check_coverage()
         self._check_source()
+        self._check_item_holding()
         self._check_zarr()
 
     def _check_license_is_identifiable(self) -> None:
@@ -528,8 +552,18 @@ class DatasetConfig:
             )
 
     def _check_license_tier(self) -> None:
-        """KLAERUNGEN B11: display and processing need distribution and modification."""
+        """KLAERUNGEN B11: display and processing need distribution and modification;
+        a catalogue-only entry names no viewer (M3-02 K-03, Otto's answer of
+        23.09.2026, closed by M3-11a) — nothing at that tier is ever rendered by
+        this platform, so a ``viewer`` field on it would name a grouping and a zoom
+        range for a tile route that refuses every request anyway (K-26).
+        """
         if self.license.tier is LicenseTier.CATALOG:
+            if self.viewer is not None:
+                raise ConfigError(
+                    f"{self.dataset_id}: tier catalog names a viewer, but a catalogue "
+                    "entry is never displayed here (KLAERUNGEN B11, M3-02 K-03)"
+                )
             return
         missing = [
             name
@@ -596,6 +630,33 @@ class DatasetConfig:
             raise ConfigError(
                 f"{self.dataset_id}: zarr info is set but format is {self.format.value}, not zarr"
             )
+
+    def _check_item_holding(self) -> None:
+        """M3-11a K-05: which coverage and harvest fields make sense follows from
+        where the items live, not the other way around.
+
+        A materialized dataset has no search API to aggregate at and nothing to
+        sample (adr/0009 §7) — its coverage can only come from its own items
+        (``local-sql``, M3-11c). A federated one is the reverse: ``local-sql``
+        would count rows nobody ever wrote for it, and ``harvest_run`` would name a
+        load that never happened.
+        """
+        if self.source.item_holding is ItemHolding.MATERIALIZED:
+            if self.coverage.provider is not CoverageProvider.LOCAL_SQL:
+                raise ConfigError(
+                    f"{self.dataset_id}: materialized items need coverage.provider=local-sql "
+                    "(adr/0009 §7 — no search API to aggregate at or sample)"
+                )
+        else:
+            if self.coverage.provider is CoverageProvider.LOCAL_SQL:
+                raise ConfigError(
+                    f"{self.dataset_id}: federated items cannot use coverage.provider=local-sql "
+                    "(no items of this dataset are held in our own pgstac)"
+                )
+            if self.source.harvest_run is not None:
+                raise ConfigError(
+                    f"{self.dataset_id}: federated items carry no harvest_run (nothing was materialized)"
+                )
 
 
 class DatasetRegistry:

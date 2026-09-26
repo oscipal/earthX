@@ -12,13 +12,19 @@ and no connection string in code.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as installed_version
 
 import psycopg
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry
+from earthx.catalog.registry import DatasetConfig, DatasetRegistry, ItemHolding
+
+# pgstac.upsert_items stages a batch through `items_staging_upsert`; a very large
+# generator (the Copernicus DEM's 26,450 tiles, M3-11b) is sent in pieces so this
+# process never holds one multi-hundred-megabyte JSON array in memory at once.
+ITEM_BATCH_SIZE = 1000
 
 
 class PgstacError(RuntimeError):
@@ -119,3 +125,59 @@ def read_collection(conn: psycopg.Connection, dataset_id: str) -> dict[str, obje
         cur.execute("SELECT content FROM pgstac.collections WHERE id = %s", (dataset_id,))
         row = cur.fetchone()
     return None if row is None else row[0]
+
+
+def upsert_items(conn: psycopg.Connection, config: DatasetConfig, items: Iterable[Mapping[str, object]]) -> int:
+    """Write the items of one materialized dataset into pgstac. Idempotent.
+
+    Refuses a federated entry outright (KLAERUNGEN B13 point 3, M3-11a §3.5): items
+    of a federated collection are never a second stored truth nobody reads — they
+    stay a live question to the source. Refuses an item whose own ``collection``
+    field does not name ``config.dataset_id``, rather than silently filing it under
+    a different collection than whatever built it claims.
+
+    The transaction is the caller's, exactly like :func:`load_collection` — nothing
+    here commits. Returns the number of items sent to pgstac.
+    """
+    if config.source.item_holding is not ItemHolding.MATERIALIZED:
+        raise PgstacError(
+            f"{config.dataset_id} is a federated dataset; its items are never written to pgstac "
+            "(KLAERUNGEN B13 point 3 — that would be a second truth nobody reads)"
+        )
+    count = 0
+    batch: list[dict[str, object]] = []
+    for item in items:
+        item_collection = item.get("collection")
+        if item_collection != config.dataset_id:
+            raise PgstacError(
+                f"{config.dataset_id}: item {item.get('id')!r} names collection "
+                f"{item_collection!r}, not this dataset"
+            )
+        batch.append(dict(item))
+        count += 1
+        if len(batch) >= ITEM_BATCH_SIZE:
+            _upsert_item_batch(conn, batch)
+            batch = []
+    if batch:
+        _upsert_item_batch(conn, batch)
+    return count
+
+
+def _upsert_item_batch(conn: psycopg.Connection, items: list[dict[str, object]]) -> None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT pgstac.upsert_items(%s::jsonb)", (json.dumps(items),))
+
+
+async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: str) -> dict[str, object] | None:
+    """One item of a materialized dataset's own pgstac collection, or ``None``.
+
+    ``conn`` is the caller's, from the same pool the tiler already holds for the
+    search cache (``api/dependencies.py::cache_pool``) — this commits and closes
+    nothing itself, the convention :class:`~earthx.catalog.search_cache.PostgresSearchCache`
+    already follows. The federated read path (``earthx.adapters.get_item``) is not
+    an alternative here: a federated dataset has no items in this database at all.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT pgstac.get_item(%s, %s)", (item_id, dataset_id))
+        row = await cur.fetchone()
+    return None if row is None or row[0] is None else row[0]

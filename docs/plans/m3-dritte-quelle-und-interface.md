@@ -1,8 +1,10 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
 **Status:** Fassung 2 vom 26.09.2026. Erledigt und gemergt: M3-00 bis M3-05,
-M3-08, M3-09, M3-16, M3-18, M3-19 sowie der Hotfix zum MinIO-Image. In Arbeit:
-M3-06a und M3-17. Fassung 2 schneidet M3-11 nach der Annahme von `adr/0009` in
+M3-08, M3-09, M3-16, M3-18, M3-19, M3-22 sowie der Hotfix zum MinIO-Image. In
+Arbeit: M3-06a und M3-17 (PR #88, im Review), M3-11a (PR #95, im Review).
+Fassung 2 schneidet M3-11 nach der
+Annahme von `adr/0009` in
 M3-11a, M3-11b und M3-11c, nimmt die Entscheidungen vom 23. und 24.09.2026 als
 P20 bis P23 auf, hält den Schnitt als P24 fest, ergänzt den Spike M3-20 (Ersatz für MinIO), den Doku-Abgleich M3-21 und
 die Fehlersuche M3-22 (gelegentlich unlesbare Download-Dateien) und ordnet die
@@ -133,13 +135,13 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-04 | `/tilejson.json` mit freigegebenen Zoomstufen | A | Sonnet (mittel) | — | erledigt (#78) |
 | M3-05 | Mess-Spike Heatmap-Zählwürfel → `adr/0010` | C | Opus (hoch) | — | erledigt (#80) |
 | M3-06a | AOI-Upload: Backend-Route mit Shapefile | B | Opus Plan, Sonnet (hoch) | M3-03 | in Arbeit |
-| M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a | offen |
+| M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a | in Arbeit |
 | M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 | offen |
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | offen |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
 | M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b | offen |
-| M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | offen |
+| M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | offen |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | offen |
 | M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b, M3-10 | offen |
@@ -157,7 +159,8 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
 
-1. **Jetzt:** M3-06a und M3-17 (laufen); daneben M3-20 (C) und M3-21 (A).
+1. **Jetzt:** M3-06a und M3-17 (laufen, M3-17 im Review); daneben M3-20 (C)
+   und M3-21 (A).
 2. **Nächster freier B-Platz:** M3-22, weil fehlerhafte Download-Dateien bei
    Nutzern ankommen können. Danach M3-11a, dann M3-11b und M3-11c parallel
    (beide hängen nur an M3-11a). Die dritte Quelle hat Vorrang vor den
@@ -712,11 +715,18 @@ keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 
 ### M3-17 — Download folgt der Ansicht
 
-**Stand:** in Arbeit. Die Abhängigkeit von M3-12 entfällt (Otto, 23.09.2026):
-Die Gruppierung je Überflug hat M3-09 schon gebaut; sie wird wiederverwendet,
-ohne neue datensatzspezifische Stelle. Braucht die Aufgabe eine Angabe, ob ein
-Datensatz COG oder Zarr ist, schlägt der Plan-Schritt dafür ein Registry-Feld
-vor (B10); M3-12 übernimmt es dann.
+**Stand:** in Arbeit, PR #88 im Review. Freigegeben mit allen Fragen (F1–F6)
+nach Empfehlung (Otto, 26.09.2026); Details, Optionen und die Umsetzung
+stehen in `plans/m3-17-download-folgt-ansicht.md` §9/§10. Die Abhängigkeit
+von M3-12 entfiel wie unten vermerkt (Otto, 23.09.2026): Die Gruppierung je
+Überflug hat M3-09 schon gebaut, `download.ts`/`api/tiler.py` verwenden sie
+wieder (`groups: string[][]`/`list[list[str]]`), keine neue
+datensatzspezifische Stelle. Die Angabe, ob ein Datensatz COG oder Zarr ist,
+kam als neues Feld `earthx:format` (Abbildung des vorhandenen
+`DatasetConfig.format`, kein neues Registry-Feld nötig) — unabhängig von
+M3-12, das den festen Gruppierungs-Eigenschaftsnamen weiterhin selbst in die
+Registry räumt. **Status erst nach dem Merge auf „erledigt“ setzen** (Otto,
+Review von PR #88).
 
 **Ziel:** Der Download liefert immer das, was die Karte zeigt (P19).
 **Stufe B.**

@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import type { DatasetOption } from './datasets';
 import {
+  assetHostsOf,
   attributionText,
   canDownloadLayer,
   canExportLicense,
+  decideDownloadOutcome,
+  decideDownloadOutcomeForLayer,
   downloadRequestFor,
+  downloadRequestForSelection,
+  isCogFormat,
+  isDirectDownloadHref,
+  originalFileLinks,
   resolutionOptionLabel,
   termsNoticeText,
 } from './download';
@@ -33,6 +40,7 @@ function restore(overrides: Partial<LayerRestore> = {}): LayerRestore {
     activeGroupIndex: 0,
     selectedIds: ['S2A_1'],
     itemIds: ['S2A_1'],
+    groupItemIds: [['S2A_1']],
     aoi: AOI,
     cropToAoi: true,
     datasetId: 'sentinel-2-l2a',
@@ -86,7 +94,7 @@ describe('downloadRequestFor', () => {
     const req = downloadRequestFor(layer(), DATASETS);
     expect(req).toEqual({
       datasetId: 'sentinel-2-l2a',
-      items: ['S2A_1'],
+      groups: [['S2A_1']],
       assets: ['visual'],
       aoi: AOI,
     });
@@ -96,6 +104,7 @@ describe('downloadRequestFor', () => {
     const req = downloadRequestFor(
       layer({
         itemIds: ['S2A_1', 'S2A_2'],
+        groupItemIds: [['S2A_1', 'S2A_2']],
         downloaded: {
           S2A_1: { tileUrl: 't1', bounds: [10, 47, 11, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
           S2A_2: { tileUrl: 't2', bounds: [11, 47, 12, 48], asset: 'visual', minZoom: 0, maxZoom: 19 },
@@ -103,7 +112,7 @@ describe('downloadRequestFor', () => {
       }),
       DATASETS,
     );
-    expect(req?.items).toEqual(['S2A_1', 'S2A_2']);
+    expect(req?.groups).toEqual([['S2A_1', 'S2A_2']]);
     expect(req?.assets).toEqual(['visual']);
   });
 
@@ -115,7 +124,7 @@ describe('downloadRequestFor', () => {
     const req = downloadRequestFor(layer({ focusMode: false, downloaded: {} }), DATASETS);
     expect(req).toEqual({
       datasetId: 'sentinel-2-l2a',
-      items: ['S2A_1'],
+      groups: [['S2A_1']],
       assets: ['visual'],
       aoi: AOI,
     });
@@ -167,13 +176,177 @@ describe('downloadRequestFor', () => {
 });
 
 describe('canDownloadLayer', () => {
-  it('mirrors downloadRequestFor', () => {
+  it('mirrors downloadRequestFor for the crop outcome', () => {
     expect(canDownloadLayer(layer(), DATASETS)).toBe(true);
-    expect(canDownloadLayer(layer({ aoi: null }), DATASETS)).toBe(false);
   });
 
   it('is true for a quicklook-only layer with a default render asset', () => {
     expect(canDownloadLayer(layer({ focusMode: false, downloaded: {} }), DATASETS)).toBe(true);
+  });
+
+  it('is true (originals) for a "View full selection" COG layer without an AOI', () => {
+    const cog = [dataset({ collection: collection({ 'earthx:format': 'cog' }) })];
+    expect(canDownloadLayer(layer({ cropToAoi: false, aoi: null }), cog)).toBe(true);
+  });
+
+  it('is false (disabled) for a "View full selection" Zarr layer without an AOI', () => {
+    const zarr = [dataset({ collection: collection({ 'earthx:format': 'zarr' }) })];
+    expect(canDownloadLayer(layer({ cropToAoi: false, aoi: null }), zarr)).toBe(false);
+  });
+
+  it('is false for a layer with nothing pinned at all', () => {
+    expect(canDownloadLayer(layer({ itemIds: [] }), DATASETS)).toBe(false);
+  });
+});
+
+describe('decideDownloadOutcome (M3-17 plan §4)', () => {
+  it('a cropped view ("Crop & merge to AOI") always crops, whatever the format', () => {
+    expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, isCog: true })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: true, hasAoi: true, isCog: false })).toBe('crop');
+  });
+
+  it('"View full selection" of a COG is always the originals, AOI or not', () => {
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: true, isCog: true })).toBe('originals');
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: false, isCog: true })).toBe('originals');
+  });
+
+  it('"View full selection" of a non-COG source needs the AOI, else disabled', () => {
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: true, isCog: false })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: false, hasAoi: false, isCog: false })).toBe('disabled');
+  });
+
+  it('browsing (no full-resolution view, cropToAoi null) follows the AOI, else the format', () => {
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: true, isCog: true })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: true, isCog: false })).toBe('crop');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: false, isCog: true })).toBe('originals');
+    expect(decideDownloadOutcome({ cropToAoi: null, hasAoi: false, isCog: false })).toBe('disabled');
+  });
+});
+
+describe('decideDownloadOutcomeForLayer', () => {
+  it('reads cropToAoi only in focus mode, format from the dataset', () => {
+    const cog = [dataset({ collection: collection({ 'earthx:format': 'cog' }) })];
+    expect(decideDownloadOutcomeForLayer(layer({ focusMode: true, cropToAoi: false, aoi: null }), cog)).toBe(
+      'originals',
+    );
+    // A quicklook-only layer ignores its own `cropToAoi` (meaningless outside
+    // focus mode) — it reads like browsing, not "View full selection".
+    expect(
+      decideDownloadOutcomeForLayer(layer({ focusMode: false, cropToAoi: false, aoi: null }), cog),
+    ).toBe('originals');
+  });
+
+  it('an unknown dataset is never assumed to be a COG', () => {
+    expect(decideDownloadOutcomeForLayer(layer({ cropToAoi: false, aoi: null }), [])).toBe('disabled');
+  });
+});
+
+describe('isCogFormat', () => {
+  it('is true only for the exact value "cog"', () => {
+    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'cog' }) }))).toBe(true);
+    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'zarr' }) }))).toBe(false);
+    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'legacy' }) }))).toBe(false);
+  });
+
+  it('a missing/unrecognised value is never assumed to be a COG', () => {
+    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': null }) }))).toBe(false);
+    expect(isCogFormat(dataset({ collection: collection({ 'earthx:format': 'geotiff' }) }))).toBe(false);
+    expect(isCogFormat(undefined)).toBe(false);
+  });
+});
+
+describe('assetHostsOf', () => {
+  it('reads earthx:source.asset_hosts', () => {
+    const withHosts = dataset({ collection: collection({ 'earthx:source': { asset_hosts: ['a.example'] } }) });
+    expect(assetHostsOf(withHosts)).toEqual(['a.example']);
+  });
+
+  it('is empty without a source entry or a dataset at all', () => {
+    expect(assetHostsOf(dataset())).toEqual([]);
+    expect(assetHostsOf(undefined)).toEqual([]);
+  });
+});
+
+describe('isDirectDownloadHref', () => {
+  const HOSTS = ['e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com'];
+
+  it('accepts an https href on a registered host', () => {
+    expect(isDirectDownloadHref('https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/x.tif', HOSTS)).toBe(
+      true,
+    );
+  });
+
+  it('refuses a host not on the list', () => {
+    expect(isDirectDownloadHref('https://elsewhere.example.invalid/x.tif', HOSTS)).toBe(false);
+  });
+
+  it('refuses anything not https (plain http, javascript:, s3:, data:)', () => {
+    expect(isDirectDownloadHref('http://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/x.tif', HOSTS)).toBe(
+      false,
+    );
+    expect(isDirectDownloadHref('javascript:alert(1)', HOSTS)).toBe(false);
+    expect(isDirectDownloadHref('s3://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/x.tif', HOSTS)).toBe(
+      false,
+    );
+    expect(isDirectDownloadHref('data:text/plain,x', HOSTS)).toBe(false);
+  });
+
+  it('refuses an unparseable href rather than throwing', () => {
+    expect(isDirectDownloadHref('not a url at all', HOSTS)).toBe(false);
+  });
+
+  it('refuses every host when the list is empty', () => {
+    expect(isDirectDownloadHref('https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/x.tif', [])).toBe(
+      false,
+    );
+  });
+});
+
+describe('originalFileLinks', () => {
+  const HOSTS = ['good.example'];
+
+  it('one link per item and asset, only on a registered https host', () => {
+    const good = item({ id: 'A', assets: { visual: { href: 'https://good.example/a.tif' } } });
+    const bad = item({ id: 'B', assets: { visual: { href: 'https://bad.example/b.tif' } } });
+    const links = originalFileLinks([{ label: 'Group 1', items: [good, bad] }], ['visual'], HOSTS);
+    expect(links).toEqual([{ itemId: 'A', groupLabel: 'Group 1', asset: 'visual', href: 'https://good.example/a.tif' }]);
+  });
+
+  it('an item with no asset of that name contributes nothing', () => {
+    const noAsset = item({ id: 'A', assets: {} });
+    expect(originalFileLinks([{ label: 'Group 1', items: [noAsset] }], ['visual'], HOSTS)).toEqual([]);
+  });
+
+  it('keeps groups and their labels apart', () => {
+    const a = item({ id: 'A', assets: { visual: { href: 'https://good.example/a.tif' } } });
+    const b = item({ id: 'B', assets: { visual: { href: 'https://good.example/b.tif' } } });
+    const links = originalFileLinks(
+      [
+        { label: 'Group 1', items: [a] },
+        { label: 'Group 2', items: [b] },
+      ],
+      ['visual'],
+      HOSTS,
+    );
+    expect(links.map((l) => l.groupLabel)).toEqual(['Group 1', 'Group 2']);
+  });
+});
+
+describe('downloadRequestForSelection (M3-17: groups, not a flat item list)', () => {
+  it('builds one group per given list of ids', () => {
+    const req = downloadRequestForSelection(dataset(), [['A', 'B'], ['C']], AOI);
+    expect(req).toEqual({ datasetId: 'sentinel-2-l2a', groups: [['A', 'B'], ['C']], assets: ['visual'], aoi: AOI });
+  });
+
+  it('drops an empty group rather than sending it to the backend', () => {
+    const req = downloadRequestForSelection(dataset(), [['A'], []], AOI);
+    expect(req?.groups).toEqual([['A']]);
+  });
+
+  it('is null once every group is empty, without an AOI, or without a viewable dataset', () => {
+    expect(downloadRequestForSelection(dataset(), [[]], AOI)).toBeNull();
+    expect(downloadRequestForSelection(dataset(), [['A']], null)).toBeNull();
+    expect(downloadRequestForSelection(undefined, [['A']], AOI)).toBeNull();
   });
 });
 
@@ -218,6 +391,16 @@ describe('attributionText', () => {
 
   it('is null without licence flags at all', () => {
     expect(attributionText(null, 2026)).toBeNull();
+  });
+
+  it('picks the unmodified text first when asked to (M3-17: the originals are unmodified)', () => {
+    expect(attributionText(flags(), 2026, false)).toBe('Copernicus Sentinel data 2026');
+  });
+
+  it('falls back to the modified text when unmodified is not set, even when asked for it', () => {
+    expect(attributionText(flags({ attribution_unmodified: null }), 2026, false)).toBe(
+      'Contains modified Copernicus Sentinel data 2026',
+    );
   });
 });
 

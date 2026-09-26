@@ -399,6 +399,11 @@ bräuchte aber einen Versions-Bump außerhalb dieser Aufgabe).
 3. Zurück auf DEFLATE trotz der Messung, bis Otto es selbst nachvollzogen hat
    (die Maske bliebe dann mit dem gemessenen Restrisiko).
 
+**Nachtrag 26.09.2026:** F9 ist durch M3-22 beantwortet
+(`plans/m3-22-unlesbare-downloads.md` §3, §7): Die gemessene Korruption lag im
+Leseweg der Tests (Use-after-free über `MemoryFile(bytes)`), nicht in den
+geschriebenen Dateien; beide Dateien sind seitdem wieder DEFLATE (F2).
+
 ---
 
 ## 10. Erweiterung, Otto 23.09.2026: Download immer in nativer Auflösung

@@ -119,6 +119,11 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # The licence link is the primary source of the texts above (adr/0003 §11.2).
         "links": [{"rel": "license", "href": config.license.url, "title": config.license.name}],
         "earthx:data_class": config.data_class.value,
+        # architekturplan.md 6.2's reader dispatch (`cog`, `zarr`, `legacy`) —
+        # published so the frontend can tell a whole scene it may link straight
+        # to the source (a COG) from one it may not (a Zarr store has no single
+        # file to link, M3-17) without a dataset-specific branch anywhere.
+        "earthx:format": config.format.value,
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
@@ -171,6 +176,10 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "source_collection_id": config.source.source_collection_id,
             "asset_hosts": list(config.source.asset_hosts),
             "harvest_run": config.source.harvest_run,
+            # M3-11a (K-05): federated or materialized — what `FederatingCoreCrudClient`
+            # branches search and item-fetch on, read back off this very document
+            # (`api/federating_client.py::_holding_of`).
+            "item_holding": config.source.item_holding.value,
         },
         # architekturplan.md 5.1, tenth row (adr/0007 §12.11 point 14): how settled
         # the source itself is, not a measurement like earthx:health. No default on

@@ -134,7 +134,7 @@ def test_the_clipped_download_is_a_zip_of_raster_and_notice(client: TestClient, 
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
         json={
-            "items": [synthetic_chain.ITEM_ID],
+            "groups": [[synthetic_chain.ITEM_ID]],
             "assets": [chain.render_asset],
             "aoi": chain.aoi,
         },
@@ -152,7 +152,7 @@ def test_the_notice_carries_attribution_and_terms_of_this_entry(
     """Point 4 and point 9 meet here: the licence text travels with the pixels."""
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
-        json={"items": [synthetic_chain.ITEM_ID], "assets": [chain.render_asset], "aoi": chain.aoi},
+        json={"groups": [[synthetic_chain.ITEM_ID]], "assets": [chain.render_asset], "aoi": chain.aoi},
     )
     assert response.status_code == 200, response.text
 
@@ -181,7 +181,7 @@ async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestCli
 
     crop = client.post(
         f"/collections/{chain.dataset_id}/download",
-        json={"items": [found["id"]], "assets": [chain.render_asset], "aoi": chain.aoi},
+        json={"groups": [[found["id"]]], "assets": [chain.render_asset], "aoi": chain.aoi},
     )
     assert crop.status_code == 200, crop.text
     assert NOTICE_FILENAME in zipfile.ZipFile(BytesIO(crop.content)).namelist()
@@ -213,7 +213,7 @@ def test_an_aoi_outside_the_item_downloads_nothing(client: TestClient, chain: Ch
     outside = {"type": "Polygon", "coordinates": [[[50, 50], [51, 50], [51, 51], [50, 51], [50, 50]]]}
     response = client.post(
         f"/collections/{chain.dataset_id}/download",
-        json={"items": [synthetic_chain.ITEM_ID], "assets": [chain.render_asset], "aoi": outside},
+        json={"groups": [[synthetic_chain.ITEM_ID]], "assets": [chain.render_asset], "aoi": outside},
     )
     assert response.status_code == 400, response.text
     assert not chain.read_addresses(), "nothing may be read for an AOI that touches no item"

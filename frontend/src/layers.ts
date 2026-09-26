@@ -28,6 +28,13 @@ export interface LayerRestore {
   // may have skipped a few of those as map overlays for missing geometry,
   // but a crop only needs the item id, the dataset and the AOI).
   itemIds: string[];
+  // `itemIds`, split back into the groups the results list drew them from
+  // (M3-17, `grouping.ts::groupItemIdsFor`) — one merged file per group on
+  // download (P19), reusing PR #84's own per-overpass grouping rather than a
+  // second, download-specific one. Empty for a layer pinned before M3-17;
+  // `download.ts::downloadRequestFor` then falls back to one group of
+  // everything, the flat shape every download had before.
+  groupItemIds: string[][];
   aoi: GeoJSON.Geometry | null;
   // Whether the full-resolution view this layer was pinned from was cropped
   // to `aoi` ("Crop to AOI") or showed the whole selection uncropped ("View

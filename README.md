@@ -91,7 +91,10 @@ und kein Token. Alles läuft in Containern.
    und beenden sich danach von selbst: `pgstac-migrate` (richtet das
    STAC-Schema in Postgres ein) und `catalog-load` (schreibt die
    Sentinel-2-Collection und die Cache-Tabelle hinein). Das ist normal — nur
-   die sechs Dienste oben sollen dauerhaft laufen.
+   die sechs Dienste oben sollen dauerhaft laufen. Eine bestehende Datenbank
+   braucht nach M3-11a (neues Feld `earthx:source.item_holding`) einmal einen
+   neuen Lauf von `catalog-load`, damit die Collection-Dokumente das Feld
+   tragen; ein normaler `docker compose up` erledigt das von selbst.
 4. **Warten, bis es bereit ist.** Im Terminal laufen die Logs aller Dienste
    durch. Es ist fertig, wenn keine Fehler mehr erscheinen und `api` seine
    Startzeile zeigt (z. B. `Uvicorn running on http://0.0.0.0:8000`). Im

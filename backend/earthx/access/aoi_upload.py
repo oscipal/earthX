@@ -65,6 +65,12 @@ ALLOWED_GEOMETRY_TYPES = frozenset({"Point", "Polygon", "MultiPolygon"})
 _POLYGONAL_TYPES = frozenset({"Polygon", "MultiPolygon"})
 MIN_RING_POINTS = 4
 
+# M3-06b (Otto's review 26.09.2026): friendlier words for the geometry kinds
+# `_combine_geometries` can name in "the file contains only …" — a plural noun,
+# not a GeoJSON/shapefile type name, for the one case users are likely to hit
+# (an export of a route or a line-drawn boundary instead of an area).
+_UNSUPPORTED_KIND_WORDS = {"LineString": "lines", "MultiLineString": "lines", "MultiPoint": "points"}
+
 _ZIP_CHUNK_BYTES = 65536
 _ZIP_MEMBER_NAME = re.compile(r"^[\w.-]+\.(shp|shx|dbf|prj|cpg)$", re.IGNORECASE)
 # RFC 7946: GeoJSON is always CRS84/EPSG:4326. An older export's `crs` member is
@@ -169,18 +175,23 @@ def parse_kml(content: bytes) -> dict[str, Any]:
         raise AoiUploadError("not valid XML/KML") from error
 
     geometries: list[dict[str, Any]] = []
+    skipped_kinds: set[str] = set()
     placemarks = [element for element in root.iter() if _local_name(element.tag) == "Placemark"]
     for placemark in placemarks:
-        geometry = _kml_placemark_geometry(placemark)
+        geometry, skipped = _kml_placemark_geometry(placemark)
         if geometry is not None:
             geometries.append(geometry)
+        elif skipped is not None:
+            skipped_kinds.add(skipped)
     if not placemarks:
         # No <Placemark> at all: fall back to a bare top-level <Polygon>/<Point>,
         # which is unusual but not invalid KML.
-        geometry = _kml_placemark_geometry(root)
+        geometry, skipped = _kml_placemark_geometry(root)
         if geometry is not None:
             geometries.append(geometry)
-    return _finalise_geometry(_combine_geometries(geometries))
+        elif skipped is not None:
+            skipped_kinds.add(skipped)
+    return _finalise_geometry(_combine_geometries(geometries, skipped_kinds))
 
 
 def _local_name(tag: str) -> str:
@@ -194,7 +205,12 @@ def _first_descendant(element: Element, local_name: str) -> Element | None:
     return None
 
 
-def _kml_placemark_geometry(element: Element) -> dict[str, Any] | None:
+def _kml_placemark_geometry(element: Element) -> tuple[dict[str, Any] | None, str | None]:
+    """Returns `(geometry, None)` for a usable `Polygon`/`Point`, or `(None, kind)`
+    when a geometry element was found but is not one we support (M3-06b, Otto's
+    review 26.09.2026: a KML that only has `LineString` placemarks used to fall
+    through to the generic "no usable geometry found in the file" — `kind` lets
+    `parse_kml` name what it actually saw instead)."""
     polygon = _first_descendant(element, "Polygon")
     if polygon is not None:
         # First <coordinates> found = the outer boundary, same simplification as
@@ -206,17 +222,19 @@ def _kml_placemark_geometry(element: Element) -> dict[str, Any] | None:
             if len(ring) >= 3:
                 if ring[0] != ring[-1]:
                     ring = [*ring, ring[0]]
-                return {"type": "Polygon", "coordinates": [ring]}
-        return None
+                return {"type": "Polygon", "coordinates": [ring]}, None
+        return None, None
     point = _first_descendant(element, "Point")
     if point is not None:
         coords_el = _first_descendant(point, "coordinates")
         if coords_el is not None and coords_el.text:
             positions = _parse_kml_coordinates(coords_el.text)
             if positions:
-                return {"type": "Point", "coordinates": positions[0]}
-        return None
-    return None
+                return {"type": "Point", "coordinates": positions[0]}, None
+        return None, None
+    if _first_descendant(element, "LineString") is not None:
+        return None, "LineString"
+    return None, None
 
 
 def _parse_kml_coordinates(text: str) -> list[list[float]]:
@@ -269,11 +287,14 @@ def parse_shapefile_zip(content: bytes) -> dict[str, Any]:
         raise AoiUploadError("not a valid shapefile") from error
 
     geometries: list[dict[str, Any]] = []
+    skipped_kinds: set[str] = set()
     for shape in shapes:
-        geometry = _shapefile_geometry(shape, transformer)
+        geometry, skipped = _shapefile_geometry(shape, transformer)
         if geometry is not None:
             geometries.append(geometry)
-    return _finalise_geometry(_combine_geometries(geometries))
+        elif skipped is not None:
+            skipped_kinds.add(skipped)
+    return _finalise_geometry(_combine_geometries(geometries, skipped_kinds))
 
 
 def _basename(name: str) -> str:
@@ -320,13 +341,16 @@ def _extract_shapefile_members(archive: zipfile.ZipFile) -> dict[str, io.BytesIO
     return members
 
 
-def _shapefile_geometry(shape: Any, transformer: pyproj.Transformer) -> dict[str, Any] | None:
+def _shapefile_geometry(shape: Any, transformer: pyproj.Transformer) -> tuple[dict[str, Any] | None, str | None]:
+    """Mirrors `_kml_placemark_geometry`'s `(geometry, skipped_kind)` shape (M3-06b):
+    a shapefile of e.g. only `MultiPoint` or line shapes (shapeType `MultiPoint`,
+    `PolyLine`) has no usable geometry, but the caller can still say what it saw."""
     geo = shape.__geo_interface__
     kind = geo.get("type")
     if kind not in ALLOWED_GEOMETRY_TYPES:
-        return None
+        return None, kind if kind else None
     coordinates = _transform_coordinates(_to_lists(geo.get("coordinates")), transformer)
-    return {"type": kind, "coordinates": coordinates}
+    return {"type": kind, "coordinates": coordinates}, None
 
 
 def _transform_coordinates(coordinates: Any, transformer: pyproj.Transformer) -> Any:
@@ -347,12 +371,22 @@ def _to_lists(value: Any) -> Any:
 # ------------------------------------------------------------------ shared checks
 
 
-def _combine_geometries(geometries: list[dict[str, Any]]) -> dict[str, Any]:
+def _combine_geometries(geometries: list[dict[str, Any]], skipped_kinds: set[str] | None = None) -> dict[str, Any]:
     """Otto's F5 = 2 (26.09.2026, plan §9): more than one usable geometry is merged
     into a single (multi)polygon when every one of them is polygonal, and refused
     otherwise — a point next to a polygon, or several points, has no single
-    unambiguous merged AOI."""
+    unambiguous merged AOI.
+
+    `skipped_kinds` (M3-06b, Otto's review 26.09.2026): geometry types the format
+    parser saw but does not support (KML `LineString`, a shapefile's `MultiPoint`
+    or line shapes). When the file has *only* those, the message names them
+    instead of the uninformative "no usable geometry found in the file" — that
+    generic text stays for a file with no recognisable geometry element at all.
+    """
     if not geometries:
+        if skipped_kinds:
+            described = ", ".join(sorted(_UNSUPPORTED_KIND_WORDS.get(k, k) for k in skipped_kinds))
+            raise AoiUploadError(f"the file contains only {described}; an AOI needs a polygon or a point")
         raise AoiUploadError("no usable geometry found in the file")
     if len(geometries) == 1:
         return geometries[0]
