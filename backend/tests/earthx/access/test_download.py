@@ -382,6 +382,73 @@ class TestBuildNoticeText:
         assert config.title in text
         assert "ITEM1" in text
 
+    def test_no_aoi_geometry_leaves_the_notice_as_it_was(self) -> None:
+        """The default (``aoi_geometry`` omitted) — every caller before this
+        review, and a drawn/uploaded AOI's caller today."""
+        assert "AOI geometry" not in dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+
+    def test_an_aoi_with_no_properties_key_leaves_the_notice_as_it_was(self) -> None:
+        """A drawn or uploaded AOI: `aoi_geometry` is passed, but it is a bare
+        geometry with nothing under ``properties`` (M3-07b F3 review, 26.09.2026)."""
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=GOOD_AOI)
+        assert "AOI geometry" not in text
+
+    def test_a_place_search_aoi_adds_one_line_naming_attribution_license_and_source(self) -> None:
+        aoi = {
+            **GOOD_AOI,
+            "properties": {
+                "source": "OpenStreetMap / Nominatim",
+                "attribution": "© OpenStreetMap contributors",
+                "license": "ODbL-1.0",
+            },
+        }
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via OpenStreetMap / Nominatim)" in text
+
+    def test_the_line_still_appears_with_only_attribution_and_no_source(self) -> None:
+        aoi = {**GOOD_AOI, "properties": {"attribution": "© OpenStreetMap contributors"}}
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "AOI geometry: © OpenStreetMap contributors" in text
+        assert "via" not in text
+
+    def test_a_properties_key_with_none_of_the_recognised_fields_adds_nothing(self) -> None:
+        aoi = {**GOOD_AOI, "properties": {"note": "not a recognised field"}}
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "AOI geometry" not in text
+
+    def test_non_string_provenance_fields_are_ignored_rather_than_crashing(self) -> None:
+        aoi = {**GOOD_AOI, "properties": {"attribution": 12345, "license": ["ODbL-1.0"], "source": None}}
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "AOI geometry" not in text
+
+    def test_a_properties_value_that_is_not_a_mapping_is_ignored_rather_than_crashing(self) -> None:
+        aoi = {**GOOD_AOI, "properties": "not a mapping"}
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "AOI geometry" not in text
+
+    def test_an_oversized_field_is_capped_rather_than_bloating_the_notice(self) -> None:
+        huge = "x" * 10_000
+        aoi = {**GOOD_AOI, "properties": {"attribution": huge}}
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        line = next(line for line in text.splitlines() if line.startswith("AOI geometry"))
+        assert len(line) < 250
+
+    def test_a_multiline_field_is_flattened_to_its_first_line_not_smuggled_in_whole(self) -> None:
+        """A value with an embedded newline could otherwise inject an extra,
+        unrelated "line" into the plain-text notice."""
+        aoi = {
+            **GOOD_AOI,
+            "properties": {"attribution": "© OpenStreetMap contributors\nFAKE NOTICE: this data is public domain"},
+        }
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "FAKE NOTICE" not in text
+        assert "AOI geometry: © OpenStreetMap contributors" in text
+
+    def test_a_blank_attribution_with_a_real_license_still_adds_the_license_alone(self) -> None:
+        aoi = {**GOOD_AOI, "properties": {"attribution": "   ", "license": "ODbL-1.0"}}
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        assert "AOI geometry: ODbL-1.0" in text
+
 
 def _dataset_without_terms():
     from dataclasses import replace
@@ -448,6 +515,60 @@ class TestBuildDownloadZip:
                 assert set(np.unique(mask_ds.read(1))) <= {0, 1}
             aoi_geojson = json.loads(archive.read(dl.AOI_FILENAME).decode("utf-8"))
             assert aoi_geojson == GOOD_AOI
+
+    def test_aoi_geojson_keeps_extra_properties_the_caller_put_on_the_geometry(self) -> None:
+        """M3-07b F3 (Otto, 26.09.2026): a place-search AOI carries its OSM
+        provenance in a ``properties`` key on the geometry dict itself (never a
+        proper GeoJSON ``Feature`` — the frontend, the download request model in
+        `api/tiler.py` (``aoi: dict[str, Any]``) and ``parse_aoi_geometry`` all
+        treat the AOI as a bare geometry everywhere else). Nothing here has to
+        change for that to survive into ``aoi.geojson``: ``aoi_geometry`` is a
+        ``Mapping`` written back with ``json.dumps(dict(aoi_geometry))``, and
+        ``shapely.geometry.shape`` (``parse_aoi_geometry``) already ignores any
+        key beyond ``type``/``coordinates``. This test is the proof, not a
+        behaviour change — an upload or a drawn AOI never carries this key.
+
+        Otto's follow-up review (26.09.2026) found the same provenance missing
+        from :data:`NOTICE_FILENAME` — a person only sees ``aoi.geojson``'s
+        properties if they think to open it. This test now also checks that
+        ``build_download_zip`` passes ``aoi_geometry`` on to
+        :func:`build_notice_text`, whose own tests (``TestBuildNoticeText``)
+        cover what it does with it in detail."""
+        aoi_with_provenance = {
+            **GOOD_AOI,
+            "properties": {
+                "source": "OpenStreetMap / Nominatim",
+                "attribution": "© OpenStreetMap contributors",
+                "license": "ODbL-1.0",
+            },
+        }
+        crops = [dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))]
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=FakeReader,
+            crops=crops,
+            aoi_geometry=aoi_with_provenance,
+            item_ids=["ITEM1"],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            aoi_geojson = json.loads(archive.read(dl.AOI_FILENAME).decode("utf-8"))
+            notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
+        assert aoi_geojson == aoi_with_provenance
+        assert aoi_geojson["properties"]["attribution"] == "© OpenStreetMap contributors"
+        assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via OpenStreetMap / Nominatim)" in notice
+
+    def test_a_drawn_or_uploaded_aoi_without_properties_leaves_the_notice_unchanged(self) -> None:
+        crops = [dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))]
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=FakeReader,
+            crops=crops,
+            aoi_geometry=GOOD_AOI,
+            item_ids=["ITEM1"],
+        )
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
+        assert "AOI geometry" not in notice
 
     def test_nothing_is_ever_written_outside_gdals_in_memory_filesystem(
         self, monkeypatch: pytest.MonkeyPatch
