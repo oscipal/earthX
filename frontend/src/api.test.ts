@@ -14,9 +14,9 @@ import {
 } from './api';
 
 describe('buildSearchBody', () => {
-  it('carries the collection, bbox, datetime range, limit and token', () => {
+  it('carries the collections, bbox, datetime range, limit and token', () => {
     const body = buildSearchBody({
-      collection: 'sentinel-2-c1-l2a',
+      collections: ['sentinel-2-c1-l2a'],
       bbox: [10, 47, 11, 48],
       datetime: '2026-07-01T00:00:00Z/2026-07-31T23:59:59Z',
       limit: 100,
@@ -31,16 +31,31 @@ describe('buildSearchBody', () => {
     });
   });
 
+  it('carries more than one collection at once (M3-13 — the backend now answers a mixed page)', () => {
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a', 'cop-dem-glo-30'] });
+    expect(body.collections).toEqual(['sentinel-2-c1-l2a', 'cop-dem-glo-30']);
+  });
+
   it('carries intersects instead of bbox for a point or polygon AOI (M3-08)', () => {
     const point: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
-    const body = buildSearchBody({ collection: 'sentinel-2-c1-l2a', intersects: point });
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'], intersects: point });
     expect(body.intersects).toBe(point);
     expect(body.bbox).toBeUndefined();
   });
 
   it('omits optional fields entirely rather than sending them empty', () => {
-    const body = buildSearchBody({ collection: 'sentinel-2-c1-l2a' });
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'] });
     expect(Object.keys(body)).toEqual(['collections']);
+  });
+
+  it('never sends the disabled query/fields extensions (M3-13 F5)', () => {
+    // Measured against the real API (M3-13 plan §2.2): both are silently
+    // dropped on a federated collection, so the backend now refuses them by
+    // name (`_DISALLOWED_QUERY_KEYS`) — `SearchQuery` has no field for either
+    // in the first place, so `buildSearchBody` structurally cannot send them.
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'] });
+    expect(body).not.toHaveProperty('query');
+    expect(body).not.toHaveProperty('fields');
   });
 });
 
@@ -82,7 +97,7 @@ describe('searchItems', () => {
       vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })),
     );
     const polygon: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[8, 47], [12, 47], [8, 51], [8, 47]]] };
-    await searchItems({ collection: 'sentinel-2-c1-l2a', intersects: polygon });
+    await searchItems({ collections: ['sentinel-2-c1-l2a'], intersects: polygon });
     const [url, init] = vi.mocked(fetch).mock.calls[0];
     expect(url).toBe('/stac/search');
     expect(init?.method).toBe('POST');

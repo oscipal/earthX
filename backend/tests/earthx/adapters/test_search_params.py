@@ -212,30 +212,39 @@ class TestIds:
 
 
 class TestSearchFingerprint:
-    """M3-08: `intersects`/`ids` join the fingerprint only when set, so a page token
-    or search-cache row minted before M3-08 still reads back (M3-08 plan §4.1)."""
+    """M3-08: `intersects`/`ids` join the fingerprint only when set. M3-13 drops
+    `limit` from it entirely (a mixed search hands each source a different share
+    of `limit` on every page, so the *same* search continued at a different
+    share must still read back as one search) — a page token or search-cache
+    row minted before M3-13 stops matching (`TOKEN_VERSION` bump, accepted)."""
 
-    def test_a_search_using_neither_hashes_exactly_as_before(self) -> None:
-        """Reimplements the pre-M3-08 payload independently of `search_fingerprint`
-        itself: a search without `intersects`/`ids` must still hash to what the
-        four-field payload (`dataset`/`bbox`/`datetime`/`limit`) always produced, or
-        every page token and search-cache row minted before M3-08 stops matching."""
+    def test_a_search_using_neither_hashes_to_the_three_field_payload(self) -> None:
+        """Reimplements the payload independently of `search_fingerprint` itself:
+        a search without `intersects`/`ids` hashes `dataset`/`bbox`/`datetime`
+        only — no `limit` (M3-13)."""
         import hashlib
         import json
 
         params = SearchParams(bbox=(8.0, 47.0, 12.0, 51.0), start=JUNE, limit=10)
-        pre_m3_08_payload = json.dumps(
+        pre_m3_13_payload = json.dumps(
             {
                 "dataset": "sentinel-2-c1-l2a",
                 "bbox": [8.0, 47.0, 12.0, 51.0],
                 "datetime": "2024-06-01T00:00:00Z/..",
-                "limit": 10,
             },
             separators=(",", ":"),
             sort_keys=True,
         )
-        expected = hashlib.sha256(pre_m3_08_payload.encode("utf-8")).hexdigest()
+        expected = hashlib.sha256(pre_m3_13_payload.encode("utf-8")).hexdigest()
         assert search_fingerprint("sentinel-2-c1-l2a", params) == expected
+
+    def test_limit_does_not_change_the_fingerprint(self) -> None:
+        """M3-13: a mixed search's fan-out hands the same continuing search a
+        different `limit` share on every page, so the fingerprint embedded in a
+        page token must not depend on it (`search_cache_key` still does)."""
+        base = SearchParams(bbox=(8.0, 47.0, 12.0, 51.0), start=JUNE, limit=10)
+        smaller = SearchParams(bbox=(8.0, 47.0, 12.0, 51.0), start=JUNE, limit=3)
+        assert search_fingerprint("ds", base) == search_fingerprint("ds", smaller)
 
     def test_intersects_changes_the_fingerprint(self) -> None:
         plain = search_fingerprint("ds", SearchParams())

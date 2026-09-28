@@ -66,7 +66,13 @@ TTL_ITEM_S = 24 * 60 * 60
 # or by a version that changed SORTBY, is refused rather than misread — one counter
 # for every adapter, because the marker's shape does not depend on which source it
 # was minted against.
-TOKEN_VERSION = 1
+#
+# 1 -> 2 (M3-13): the fingerprint this marker embeds no longer includes ``limit``
+# (below), so a marker minted under version 1 must not be read as a version-2 one —
+# only the version bump keeps that honest. A marker in flight when this deploys is
+# refused with `InvalidQuery`, the same as any other broken marker (adr/0005 rule
+# III); the caller starts a fresh search.
+TOKEN_VERSION = 2
 
 # M1-06 sent no ``sortby`` and rode on Earth Search's undocumented default order
 # (adr/0005 §8 point 5); M1-07 fixed one instead (docs/plans/m1-07-stac-api.md §7).
@@ -342,20 +348,23 @@ def stac_interval(start: datetime | None, end: datetime | None) -> str | None:
 
 
 def search_fingerprint(dataset_id: str, params: SearchParams) -> str:
-    """A hash of the search itself — without the page marker, which points into it.
+    """A hash of the search itself — without the page marker, which points into it,
+    and without ``limit`` (M3-13): the mixed search (``api/mixed_search.py``) hands
+    each source a different, page-by-page share of the requested page size, so the
+    *same* search continued at a different ``limit`` must still read back as one
+    search. ``search_cache_key`` below folds ``limit`` back in on its own, because a
+    cached page's *contents* still depend on how big it was asked to be.
 
     Numbers go in as floats and instants as their UTC text, so that ``47`` and ``47.0``,
     or the same moment written in two offsets, are one search and not two.
 
     ``intersects``/``ids`` are added to the payload only when set (M3-08): a search
-    that uses neither hashes exactly as it did before this field existed, so every
-    page token and search-cache row minted before M3-08 still reads back correctly.
+    that uses neither hashes exactly as it did when this field was introduced.
     """
     payload: dict[str, Any] = {
         "dataset": dataset_id,
         "bbox": None if params.bbox is None else [float(value) for value in params.bbox],
         "datetime": stac_interval(params.start, params.end),
-        "limit": params.limit,
     }
     if params.intersects is not None:
         # Serialised to its own normalised JSON text first (sorted keys, no
@@ -371,13 +380,17 @@ def search_fingerprint(dataset_id: str, params: SearchParams) -> str:
     ).hexdigest()
 
 
-def search_cache_key(fingerprint: str, marker: str | None) -> str:
+def search_cache_key(fingerprint: str, marker: str | None, limit: int) -> str:
     """The search plus the page it is on.
 
     Keyed on the decoded marker rather than on the token text: the same page, asked
     for with a token that lost or regained its base64 padding, is one entry.
+
+    ``limit`` is folded in here, not into ``fingerprint`` (M3-13): a page's stored
+    ``features`` depend on how many were asked for, even when the marker that reached
+    it is otherwise the same continuing search.
     """
-    return hashlib.sha256(f"search:{fingerprint}:{marker or ''}".encode()).hexdigest()
+    return hashlib.sha256(f"search:{fingerprint}:{limit}:{marker or ''}".encode()).hexdigest()
 
 
 def item_cache_key(dataset_id: str, item_id: str) -> str:
@@ -413,6 +426,12 @@ def decode_page_token(token: str, dataset_id: str, fingerprint: str) -> str:
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
     except (ValueError, binascii.Error) as error:
         raise InvalidQuery("page token is not readable") from error
+    if isinstance(payload, dict) and payload.get("k") == "mixed":
+        # M3-13: a mixed-search token (`api/mixed_search.py`) has its own shape and
+        # is never valid here, even though it happens to be readable JSON — this
+        # collection is being searched alone this time, so the caller must start a
+        # fresh search rather than have this quietly misread as an adapter marker.
+        raise InvalidQuery("page token is for a mixed search, not a single collection")
     if not isinstance(payload, dict) or payload.get("v") != TOKEN_VERSION:
         raise InvalidQuery("page token has a shape this version does not read")
     if payload.get("d") != dataset_id or payload.get("h") != fingerprint:

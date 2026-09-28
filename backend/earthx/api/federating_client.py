@@ -7,6 +7,18 @@ collection, ``earthx:source`` — read off the very document pgstac itself just 
 so an unknown collection is still pgstac's own 404 (rule I) — decides whether a call
 goes to ``super()`` or to ``earthx.adapters``.
 
+**Mixed search (M3-13).** A search naming more than one *source* — a federated
+collection, or a group of this platform's own collections that share whether a
+``datetime`` filter applies to them — used to be rejected with a ``400``
+(``_dispatch_search``'s old third branch). It now fans out: every open source is
+asked in parallel, each for its own share of ``limit``, recomputed on every page
+(``_mixed_page``, ``earthx.api.mixed_search``); a source that fails or times out
+turns into an ``incomplete_collections`` entry rather than failing the whole
+answer, except a failure of this platform's *own* database (a native source),
+which still fails the request outright — there is no partial result for that,
+same as before this task. ``_native_group_page`` still only ever reaches
+``super().post_search`` (rule I), never ``_search_base`` directly.
+
 The gateway and the search-cache pool are not constructor arguments: ``instantiate_api``
 builds this client itself (``client(pgstac_search_model=...)``), so there is nowhere to
 hand them in at construction time. They live on ``request.app.state`` instead, set once
@@ -16,13 +28,16 @@ pool already lives (``request.app.state.get_connection``).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, cast
 
 from fastapi import HTTPException, Request
+from pydantic import ValidationError
 from stac_fastapi.pgstac.core import CoreCrudClient
 from stac_fastapi.pgstac.models.links import ItemCollectionLinks, ItemLinks, PagingLinks, SearchLinks
 from stac_fastapi.types.rfc3339 import str_to_interval
@@ -39,6 +54,19 @@ from earthx.adapters import (
 )
 from earthx.adapters import get_item as adapter_get_item
 from earthx.adapters import search_items as adapter_search_items
+from earthx.api import mixed_search
+from earthx.api.mixed_search import (
+    REASON_TIMEOUT,
+    REASON_UNREACHABLE,
+    REASON_UNRECOGNISED_ANSWER,
+    REASON_UPSTREAM_ERROR,
+    IncompleteSource,
+    compute_shares,
+    decode_mixed_token,
+    encode_mixed_token,
+    is_mixed_token,
+    mixed_fingerprint,
+)
 from earthx.catalog.registry import ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
@@ -48,11 +76,16 @@ LOGGER = logging.getLogger("earthx.api.federating_client")
 # adr/0005 rule VI treats `filter`/CQL2 this way; the plan (docs/plans/
 # m1-07-stac-api.md §6, F2) extends the same reasoning to `sort`: the federated path
 # cannot yet honour a client-chosen field, so neither extension is enabled
-# (earthx/api/main.py). This is the other half of "not silently dropped": the request
-# models simply do not declare these fields when the extension is off, so without this
-# check pydantic's `extra="ignore"` (or FastAPI ignoring an undeclared query parameter)
-# would swallow them rather than reject them.
-_DISALLOWED_QUERY_KEYS = frozenset({"filter", "filter-lang", "filter_lang", "sortby"})
+# (earthx/api/main.py). M3-13 F5 adds `query`/`fields`: measured against the real API
+# (plan §2.2), both are silently dropped on a federated collection today (`#query`/
+# `#fields` are advertised on the landing page, K8, but the federated path never
+# builds them into the upstream request) — the fix is the same one already applied to
+# `filter`/`sort`: turn the extension off and refuse the parameter by name instead of
+# letting it look honoured. This is the other half of "not silently dropped": the
+# request models simply do not declare these fields when the extension is off, so
+# without this check pydantic's `extra="ignore"` (or FastAPI ignoring an undeclared
+# query parameter) would swallow them rather than reject them.
+_DISALLOWED_QUERY_KEYS = frozenset({"filter", "filter-lang", "filter_lang", "sortby", "query", "fields"})
 
 # M3-08: `/search` forwards `ids`/`intersects` to a federated source now (§4 of the
 # M3-08 plan), but OGC API Features' items endpoint (`GET /collections/{id}/items`)
@@ -161,12 +194,15 @@ def _apply_time_axis(datetime_value: str | None, time_ranges: list[bool]) -> tup
     ``400`` (``str_to_interval`` raises its own ``HTTPException`` inside
     ``_datetime_bounds``) whether or not the dataset has a time axis.
 
-    A search naming one collection with a time axis and one without is not
-    decided yet (M3-13) and does not reach this function today: the caller only
-    gathers ``time_ranges`` for the collections a single answer will actually
-    come from — one federated collection alone, or every native/materialized
-    one together — and ``_dispatch_search``'s own mixed-source rejection covers
-    every other combination before this runs.
+    M3-13: a search naming one collection with a time axis and one without is
+    handled by never mixing them into the same call in the first place —
+    ``_partition_sources`` groups this platform's own collections by their
+    ``time_range`` before this runs, and a federated collection is always its
+    own source. Every call this function gets is therefore already for *one*
+    source, which is why ``time_ranges`` — despite the plural name kept for the
+    "every named collection" wording above — is always a list of one identical
+    value in practice (several ids sharing one group's ``time_range``, or one
+    federated collection's own).
     """
     if datetime_value is None:
         return None, ()
@@ -174,6 +210,192 @@ def _apply_time_axis(datetime_value: str | None, time_ranges: list[bool]) -> tup
     if time_ranges and not any(time_ranges):
         return None, ("datetime",)
     return datetime_value, ()
+
+
+@dataclass(frozen=True, slots=True)
+class _NativeGroup:
+    """One or more of this platform's own collections, sharing whether a
+    ``datetime`` filter applies to them — answered by pgstac in a single call
+    (M3-13 §4.2). ``key`` addresses it inside a mixed page token; it never
+    collides with a federated source's key (a bare collection id), because it
+    always carries the ``native:`` prefix.
+    """
+
+    ids: tuple[str, ...]
+    effective_datetime: str | None
+    dropped_datetime: bool
+
+    @property
+    def key(self) -> str:
+        return "native:" + ",".join(self.ids)
+
+
+@dataclass(frozen=True, slots=True)
+class _FederatedSource:
+    """One federated collection — always its own source (M3-13 §4.2)."""
+
+    collection_id: str
+    effective_datetime: str | None
+    dropped_datetime: bool
+
+    @property
+    def key(self) -> str:
+        return self.collection_id
+
+
+_Source = _NativeGroup | _FederatedSource
+
+
+def _partition_sources(
+    target_ids: list[str], infos: Mapping[str, tuple[ItemHolding, bool]], datetime_value: str | None
+) -> list[_Source]:
+    """The distinct *sources* a search over ``target_ids`` reaches (M3-13 §4.2):
+    this platform's own collections, split into at most two groups by whether
+    ``datetime`` applies to them, followed by every federated collection in a
+    fixed order (native groups first, then federated by id) — pgstac-first
+    because a query with fewer, larger sources this platform controls is
+    cheaper to try than one that reaches out.
+
+    ``time_ranges``/``effective_datetime`` are resolved once here, per source —
+    not once for the whole search — because that is the only way a search
+    naming a collection with a time axis and one without honours ``datetime``
+    for the one and drops it for the other (M3-12, Otto's Nachtrag) rather than
+    doing one or the other for both, which was the state before this task.
+    """
+    federated_ids = sorted(cid for cid in target_ids if infos[cid][0] is ItemHolding.FEDERATED)
+    native_ids = [cid for cid in target_ids if cid not in federated_ids]
+    sources: list[_Source] = []
+    for time_range in (True, False):
+        group_ids = tuple(sorted(cid for cid in native_ids if infos[cid][1] is time_range))
+        if not group_ids:
+            continue
+        effective, ignored = _apply_time_axis(datetime_value, [time_range])
+        sources.append(_NativeGroup(ids=group_ids, effective_datetime=effective, dropped_datetime=bool(ignored)))
+    for collection_id in federated_ids:
+        effective, ignored = _apply_time_axis(datetime_value, [infos[collection_id][1]])
+        sources.append(
+            _FederatedSource(collection_id=collection_id, effective_datetime=effective, dropped_datetime=bool(ignored))
+        )
+    return sources
+
+
+def _ignored_filters_of(sources: list[_Source]) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
+    """The flat ``ignored_filters`` (unchanged shape, for a simple client) and the
+    new per-collection breakdown (Otto, M3-13 F4: "weil der Viewer mit
+    Mehrfachauswahl je Datensatz einen Hinweis zeigen soll") — computed together
+    because both read off the same per-source ``dropped_datetime``.
+    """
+    by_collection: dict[str, tuple[str, ...]] = {}
+    any_dropped = False
+    for source in sources:
+        if not source.dropped_datetime:
+            continue
+        any_dropped = True
+        ids = source.ids if isinstance(source, _NativeGroup) else (source.collection_id,)
+        for collection_id in ids:
+            by_collection[collection_id] = ("datetime",)
+    return (("datetime",) if any_dropped else ()), by_collection
+
+
+@dataclass(frozen=True, slots=True)
+class DispatchOutcome:
+    """What ``_dispatch_search`` decided, for ``post_search``/``get_search`` to act
+    on. ``result is None`` means: nothing here needs anything but pgstac's own
+    ``super()`` call, with ``effective_datetime`` in place of the raw value.
+    """
+
+    result: ItemCollection | None
+    effective_datetime: str | None
+    ignored_filters: tuple[str, ...]
+    ignored_by_collection: Mapping[str, tuple[str, ...]]
+    incomplete: tuple[IncompleteSource, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _MixedResult:
+    """What one page of ``_mixed_page`` produced: the merged answer, and every
+    source it could not reach this time (plan §4.4)."""
+
+    page: ItemCollection
+    incomplete: tuple[IncompleteSource, ...]
+
+
+def _apply_outcome_extras(result: dict[str, Any], outcome: DispatchOutcome) -> None:
+    if outcome.ignored_filters:
+        result["ignored_filters"] = list(outcome.ignored_filters)
+    if outcome.ignored_by_collection:
+        result["ignored_filters_by_collection"] = {
+            collection_id: list(values) for collection_id, values in outcome.ignored_by_collection.items()
+        }
+    if outcome.incomplete:
+        result["incomplete_collections"] = [dict(entry) for entry in outcome.incomplete]
+
+
+def _unquote_percent(value: str) -> str:
+    """A minimal ``%XX``/``+`` decoder for one query-string value.
+
+    ``earthx.api`` may not import ``urllib`` (the import-linter's
+    ``http-only-in-gateway`` contract, M1-02) — this is the one value a mixed
+    search's own paging ever needs out of a URL (the ``token`` parameter of a
+    pgstac-built ``GET``-style "next" link, ``PagingLinks.link_next``), decoded
+    by hand instead of pulling in the module that contract keeps out of every
+    module but ``gateway``. Percent-triples are collected as raw bytes before
+    decoding, so a multi-byte UTF-8 sequence split across them still reads back
+    correctly — not that a page marker (a collection id and an item id) is ever
+    anything but ASCII in practice.
+    """
+    value = value.replace("+", " ")
+    raw = bytearray()
+    index, length = 0, len(value)
+    while index < length:
+        char = value[index]
+        if char == "%" and index + 2 < length:
+            try:
+                raw.append(int(value[index + 1 : index + 3], 16))
+                index += 3
+                continue
+            except ValueError:
+                pass
+        raw.extend(char.encode("utf-8"))
+        index += 1
+    return raw.decode("utf-8", errors="replace")
+
+
+def _href_query_param(href: str, name: str) -> str | None:
+    query = href.split("?", 1)[1] if "?" in href else ""
+    for pair in query.split("&"):
+        if not pair:
+            continue
+        key, _, value = pair.partition("=")
+        if _unquote_percent(key) == name:
+            return _unquote_percent(value)
+    return None
+
+
+def _extract_next_marker(links: list[dict[str, Any]] | None) -> str | None:
+    """The raw pgstac marker of a "next" link, whichever shape it was built in.
+
+    A native group's own sub-search always goes through ``super().post_search``
+    (M3-13's ``_native_group_page``), but the *inbound* request that triggered a
+    mixed search may have been a ``GET`` — and ``PagingLinks.link_next`` shapes
+    the link after ``request.method``, not after how this module happened to
+    call pgstac. Reading either shape here means the caller need not know which
+    one it got: the marker in a ``POST``-shaped link's ``body["token"]``, or the
+    ``token`` query parameter of a ``GET``-shaped link's ``href`` — both carry
+    the same ``next:<marker>`` text, ``next:`` stripped here exactly as
+    ``_strip_forward_token`` already does for an inbound one.
+    """
+    for link in links or []:
+        if not isinstance(link, dict) or link.get("rel") != "next":
+            continue
+        body = link.get("body")
+        token = body.get("token") if isinstance(body, dict) else None
+        if not isinstance(token, str):
+            href = link.get("href")
+            token = _href_query_param(href, "token") if isinstance(href, str) else None
+        if isinstance(token, str):
+            return token[len("next:") :] if token.startswith("next:") else token
+    return None
 
 
 def _adapter_error_to_http(error: Exception) -> HTTPException:
@@ -299,7 +521,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         await _reject_disallowed_body(request)
         collections = list(search_request.collections) if search_request.collections else None
         bbox = search_request.bbox
-        result, effective_datetime, ignored_filters = await self._dispatch_search(
+        outcome = await self._dispatch_search(
             request,
             collections=collections,
             bbox=bbox,
@@ -309,17 +531,15 @@ class FederatingCoreCrudClient(CoreCrudClient):
             limit=search_request.limit,
             token=search_request.token,
         )
-        if result is None:
-            if effective_datetime != search_request.datetime:
-                search_request = search_request.model_copy(update={"datetime": effective_datetime})
+        if outcome.result is None:
+            if outcome.effective_datetime != search_request.datetime:
+                search_request = search_request.model_copy(update={"datetime": outcome.effective_datetime})
             result = await super().post_search(search_request, request, **kwargs)
-            if ignored_filters:
-                result["ignored_filters"] = list(ignored_filters)
+            _apply_outcome_extras(result, outcome)
             return result
-        if ignored_filters:
-            result["ignored_filters"] = list(ignored_filters)
-        result["links"] = await SearchLinks(request=request).get_links(extra_links=result["links"])
-        return result
+        _apply_outcome_extras(outcome.result, outcome)
+        outcome.result["links"] = await SearchLinks(request=request).get_links(extra_links=outcome.result["links"])
+        return outcome.result
 
     async def get_search(
         self,
@@ -334,7 +554,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         **kwargs: Any,
     ) -> ItemCollection:
         _reject_disallowed_keys(request.query_params.keys())
-        result, effective_datetime, ignored_filters = await self._dispatch_search(
+        outcome = await self._dispatch_search(
             request,
             collections=collections,
             bbox=bbox,
@@ -344,7 +564,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             limit=limit,
             token=token,
         )
-        if result is None:
+        if outcome.result is None:
             # `ids`/`intersects` forwarded raw (as pgstac's own `get_search` — a
             # native, non-federated collection — declares them itself): dropping
             # them here would silently re-introduce the M2-17 bug for whichever
@@ -355,18 +575,16 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 bbox=bbox,
                 intersects=intersects,
                 ids=ids,
-                datetime=effective_datetime,
+                datetime=outcome.effective_datetime,
                 limit=limit,
                 token=token,
                 **kwargs,
             )
-            if ignored_filters:
-                result["ignored_filters"] = list(ignored_filters)
+            _apply_outcome_extras(result, outcome)
             return result
-        if ignored_filters:
-            result["ignored_filters"] = list(ignored_filters)
-        result["links"] = await SearchLinks(request=request).get_links(extra_links=result["links"])
-        return result
+        _apply_outcome_extras(outcome.result, outcome)
+        outcome.result["links"] = await SearchLinks(request=request).get_links(extra_links=outcome.result["links"])
+        return outcome.result
 
     # -- dispatch -----------------------------------------------------------------
 
@@ -433,62 +651,68 @@ class FederatingCoreCrudClient(CoreCrudClient):
         datetime_value: str | None,
         limit: int | None,
         token: str | None,
-    ) -> tuple[ItemCollection | None, str | None, tuple[str, ...]]:
-        """A federated page, or ``(None, effective_datetime, ignored_filters)``
-        meaning: nothing here is federated, let ``super()`` answer as usual — with
-        ``effective_datetime`` in place of the raw value (M3-12) and
-        ``ignored_filters`` merged into whatever it returns.
+    ) -> DispatchOutcome:
+        """A federated page, a mixed page, or an outcome with ``result=None`` meaning:
+        nothing here is federated, let ``super()`` answer as usual — with
+        ``effective_datetime`` in place of the raw value (M3-12).
 
-        ``native_ids`` now also holds every *materialized* collection (M3-11a) —
-        pgstac answers those exactly as it always answered a collection with no
-        ``earthx:source`` at all, so the mixed-source rejection below covers a
-        federated-plus-materialized search the same way it already covered
-        federated-plus-federated.
+        ``_partition_sources`` treats every *materialized* collection (M3-11a) as
+        one of this platform's own — pgstac answers those exactly as it always
+        answered a collection with no ``earthx:source`` at all. M3-13 replaces the
+        old three-way split (all native / one federated alone / reject) with a
+        general one: ``_partition_sources`` names every distinct *source* the
+        search reaches, and a search touching more than one goes through
+        ``_mixed_page`` — the two narrower branches below are exactly the
+        ``len(sources) <= 1`` case of that same partition, kept as their own
+        branches because they need neither a page token of their own nor a
+        fan-out.
         """
         target_ids = collections or await self._all_collection_ids(request)
         infos = {cid: await self._source_info_of(cid, request) for cid in target_ids}
-        federated_ids = [cid for cid in target_ids if infos[cid][0] is ItemHolding.FEDERATED]
-        native_ids = [cid for cid in target_ids if cid not in federated_ids]
+        sources = _partition_sources(target_ids, infos, datetime_value)
+        ignored_filters, ignored_by_collection = _ignored_filters_of(sources)
 
-        if not federated_ids:
-            effective_datetime, ignored_filters = _apply_time_axis(
-                datetime_value, [time_range for _, time_range in infos.values()]
-            )
-            return None, effective_datetime, ignored_filters
-
-        if len(federated_ids) == 1 and not native_ids:
-            effective_datetime, ignored_filters = _apply_time_axis(datetime_value, [infos[federated_ids[0]][1]])
+        if len(sources) <= 1:
+            if not sources:
+                return DispatchOutcome(None, datetime_value, ignored_filters, ignored_by_collection)
+            source = sources[0]
+            if isinstance(source, _NativeGroup):
+                # A mixed token from an earlier page of the same paging sequence
+                # (a source dropped out and the search is single-source again):
+                # the native path below hands `token` straight to pgstac, which
+                # would otherwise try to read our own base64 blob as its keyset
+                # marker and answer with its own confusing internals rather than
+                # our own `400` (adr/0005 rule III).
+                bare = token[len("next:") :] if token is not None and token.startswith("next:") else token
+                if bare is not None and is_mixed_token(bare):
+                    raise _adapter_error_to_http(
+                        InvalidQuery("page token is a mixed-search token, not valid for a single collection")
+                    )
+                return DispatchOutcome(None, source.effective_datetime, ignored_filters, ignored_by_collection)
             page = await self._federated_page(
-                federated_ids[0],
+                source.collection_id,
                 request,
                 bbox=bbox,
                 intersects=intersects,
                 ids=ids,
-                datetime_value=effective_datetime,
+                datetime_value=source.effective_datetime,
                 limit=limit,
                 token=token,
             )
-            return page, effective_datetime, ignored_filters
+            return DispatchOutcome(page, source.effective_datetime, ignored_filters, ignored_by_collection)
 
-        # More than one source active at once (several federated collections, or a
-        # mix of federated and native): rejected rather than merged. A merge across
-        # heterogeneous sources needs a real second dataset to build and test
-        # against — with M2-09b's second federated dataset this branch is reachable
-        # by *any* search that does not name a collection, not only the deliberate
-        # multi-collection case M2's own tests still cover. A best-effort
-        # concatenation nobody could verify stayed correct would only look tested.
-        # Otto, before merge (docs/ENTSCHEIDUNGSLOG.md); M2-09b plan §10 F3 kept the
-        # rejection and only sharpened the message below. Left unvalidated on
-        # purpose (M3-12): a malformed `datetime` on a search this route rejects
-        # anyway still gets *a* 400, just this one rather than a datetime-format one.
-        LOGGER.warning("rejected a search spanning more than one source at once: %s", target_ids)
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "a search spanning more than one source is not supported yet; "
-                f"name exactly one collection ({', '.join(sorted(federated_ids))})"
-            ),
-        )
+        try:
+            # A broken page token (`decode_mixed_token`) or a malformed group query
+            # (`_native_group_page`) is a client mistake, the same as it already was
+            # for a single-collection search — not caught inside `_mixed_page` itself
+            # because it happens before, or outside, any one source's own fan-out call.
+            mixed = await self._mixed_page(
+                sources, request, bbox=bbox, intersects=intersects, ids=ids, datetime_value=datetime_value,
+                limit=limit, token=token,
+            )
+        except InvalidQuery as error:
+            raise _adapter_error_to_http(error) from error
+        return DispatchOutcome(mixed.page, datetime_value, ignored_filters, ignored_by_collection, mixed.incomplete)
 
     async def _federated_page(
         self,
@@ -502,27 +726,11 @@ class FederatingCoreCrudClient(CoreCrudClient):
         limit: int | None,
         token: str | None,
     ) -> ItemCollection:
-        start, end = _datetime_bounds(datetime_value)
         try:
-            # M3-08 finding: `SearchParams(...)` used to be built *outside* this
-            # try block, so its own `InvalidQuery` (bbox/time checks, now also
-            # intersects/ids) never reached `_adapter_error_to_http` and propagated
-            # as an unhandled `500` instead of the `400` it was always meant to be
-            # — unnoticed because no integration test had exercised that path
-            # through the real app before this task added one for `intersects`.
-            params = SearchParams(
-                bbox=tuple(bbox) if bbox else None,
-                intersects=intersects,
-                ids=ids,
-                start=start,
-                end=end,
-                limit=limit or SearchParams().limit,
-                page_token=_strip_forward_token(token),
+            page = await self._federated_search_raw(
+                collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
+                datetime_value=datetime_value, limit=limit, token=token,
             )
-            async with _cache_for(request) as cache:
-                page = await adapter_search_items(
-                    collection_id, params, gateway=_gateway_of(request), cache=cache
-                )
         except (
             InvalidQuery,
             UnsupportedFilter,
@@ -533,6 +741,206 @@ class FederatingCoreCrudClient(CoreCrudClient):
         ) as error:
             raise _adapter_error_to_http(error) from error
         return await self._to_item_collection(page, request, collection_id=collection_id)
+
+    async def _federated_search_raw(
+        self,
+        collection_id: str,
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        datetime_value: str | None,
+        limit: int | None,
+        token: str | None,
+    ) -> ItemPage:
+        """The adapter's own answer, with none of its exceptions caught.
+
+        Split out of ``_federated_page`` (M3-13) so a mixed search's fan-out can
+        tell a client mistake (``InvalidQuery``/``UnsupportedFilter`` — the whole
+        request is wrong, not just this source) from a source that is merely
+        unavailable right now (``UpstreamError`` and friends — this one source
+        becomes an ``incomplete_collections`` entry, the rest still answer);
+        ``_federated_page`` above turns every one of them into the single
+        request's own ``HTTPException``, the shape a lone federated search
+        already had before this task.
+        """
+        # M3-08 finding: `SearchParams(...)` used to be built *outside* the caller's
+        # try block, so its own `InvalidQuery` (bbox/time checks, now also
+        # intersects/ids) never reached `_adapter_error_to_http` and propagated as
+        # an unhandled `500` instead of the `400` it was always meant to be.
+        start, end = _datetime_bounds(datetime_value)
+        params = SearchParams(
+            bbox=tuple(bbox) if bbox else None,
+            intersects=intersects,
+            ids=ids,
+            start=start,
+            end=end,
+            limit=limit or SearchParams().limit,
+            page_token=_strip_forward_token(token),
+        )
+        async with _cache_for(request) as cache:
+            return await adapter_search_items(collection_id, params, gateway=_gateway_of(request), cache=cache)
+
+    async def _native_group_page(
+        self,
+        group: _NativeGroup,
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        limit: int,
+        marker: str | None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """One page of this platform's own items, for one group of collections
+        (M3-13). Reaches pgstac only through ``super().post_search`` (rule I) —
+        never ``_search_base`` directly — the same public entry point a lone
+        native search already went through before this task; the group's
+        ``collections``/``limit``/``token`` are simply this call's own, not the
+        whole request's. A malformed group query (should not happen: every
+        input already passed ``SearchParams``' own checks for the search as a
+        whole) is a client mistake here too, so it becomes ``InvalidQuery``
+        rather than an unhandled ``500`` — a genuine failure of *our own*
+        database, by contrast, is left to propagate and fail the whole request
+        (plan §4.4: no partial result for that).
+        """
+        try:
+            model = self.pgstac_search_model(
+                collections=list(group.ids),
+                bbox=bbox,
+                intersects=intersects,
+                ids=list(ids) if ids else None,
+                datetime=group.effective_datetime,
+                limit=limit,
+                token=None if marker is None else f"next:{marker}",
+            )
+        except (ValidationError, ValueError) as error:
+            raise InvalidQuery(str(error)) from error
+        result = await super().post_search(model, request)
+        features = result.get("features") or []
+        return list(features), _extract_next_marker(result.get("links"))
+
+    async def _mixed_page(
+        self,
+        sources: list[_Source],
+        request: Request,
+        *,
+        bbox: tuple[float, ...] | None,
+        intersects: Mapping[str, Any] | None,
+        ids: tuple[str, ...] | None,
+        datetime_value: str | None,
+        limit: int | None,
+        token: str | None,
+    ) -> _MixedResult:
+        """One page of a search spanning more than one source (M3-13 §3, Option 1):
+        every still-open source is asked in parallel, each for its own share of
+        ``limit`` — recomputed every page, so a source that still has more once
+        another runs out gets the room the finished one no longer needs, instead
+        of a page that only ever shrinks (the fixed-share alternative).
+        """
+        collection_ids = tuple(
+            cid for source in sources for cid in (source.ids if isinstance(source, _NativeGroup) else (source.collection_id,))
+        )
+        fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value)
+        known_source_keys = {source.key for source in sources}
+        by_key = {source.key: source for source in sources}
+
+        stripped_token = _strip_forward_token(token)
+        if stripped_token is None:
+            pending: dict[str, str | None] = {source.key: None for source in sources}
+            failed: dict[str, str] = {}
+        else:
+            pending, failed = decode_mixed_token(stripped_token, fingerprint, known_source_keys, set(collection_ids))
+
+        to_query = [by_key[key] for key in pending]
+        page_limit = limit if limit is not None else SearchParams().limit
+        shares = dict(zip((source.key for source in to_query), compute_shares(page_limit, len(to_query)), strict=True))
+
+        async def run(source: _Source) -> tuple[list[dict[str, Any]], str | None, str | None]:
+            """``(features, next inner marker, failure reason)``."""
+            share = shares[source.key]
+            marker = pending[source.key]
+            if share <= 0:
+                # Plan §4.2 step 3: no share this page, no call — carried forward
+                # unchanged by the caller below.
+                return [], marker, None
+            if isinstance(source, _NativeGroup):
+                features, next_marker = await self._native_group_page(
+                    source, request, bbox=bbox, intersects=intersects, ids=ids, limit=share, marker=marker
+                )
+                return features, next_marker, None
+            try:
+                page = await asyncio.wait_for(
+                    self._federated_search_raw(
+                        source.collection_id, request, bbox=bbox, intersects=intersects, ids=ids,
+                        datetime_value=source.effective_datetime, limit=share, token=marker,
+                    ),
+                    # Read off the module, not a name imported at load time
+                    # (`from ... import SOURCE_TIMEOUT_S`): a test's monkeypatch of
+                    # `mixed_search.SOURCE_TIMEOUT_S` would otherwise never reach a
+                    # constant this module already bound its own copy of.
+                    timeout=mixed_search.SOURCE_TIMEOUT_S,
+                )
+            except (InvalidQuery, UnsupportedFilter, UnknownCollection) as error:
+                # A client mistake, not a source outage — fails the whole request,
+                # the same as a lone federated search would (`_federated_page`).
+                raise _adapter_error_to_http(error) from error
+            except TimeoutError:
+                return [], None, REASON_TIMEOUT
+            except UpstreamTimeout:
+                return [], None, REASON_TIMEOUT
+            except UpstreamUnreachable:
+                return [], None, REASON_UNREACHABLE
+            except UpstreamError:
+                return [], None, REASON_UPSTREAM_ERROR
+            except UpstreamShapeError:
+                return [], None, REASON_UNRECOGNISED_ANSWER
+            item_collection = await self._to_item_collection(page, request, collection_id=source.collection_id)
+            return item_collection["features"], page.next_page_token, None
+
+        tasks = [asyncio.ensure_future(run(source)) for source in to_query]
+        try:
+            outcomes = await asyncio.gather(*tasks)
+        except BaseException:
+            # A client-mistake `HTTPException` from one source must not leave the
+            # others running past the response that already failed the request.
+            for task in tasks:
+                task.cancel()
+            raise
+
+        combined_features: list[dict[str, Any]] = []
+        next_pending: dict[str, str | None] = {}
+        newly_failed: dict[str, str] = {}
+        for source, (features, next_marker, reason) in zip(to_query, outcomes, strict=True):
+            combined_features.extend(features)
+            if reason is not None:
+                newly_failed[source.key] = reason
+            elif next_marker is not None:
+                next_pending[source.key] = next_marker
+            elif shares[source.key] <= 0:
+                next_pending[source.key] = pending[source.key]
+            # else: queried, no error, no further marker — this source is done.
+
+        failed_total = {**failed, **newly_failed}
+        links: list[dict[str, Any]] = []
+        if next_pending:
+            next_token = encode_mixed_token(fingerprint, next_pending, failed_total)
+            links = await PagingLinks(request=request, next=next_token, prev=None).get_links()
+        page: ItemCollection = cast(
+            ItemCollection,
+            {
+                "type": "FeatureCollection",
+                "features": combined_features,
+                "links": links,
+                "numberReturned": len(combined_features),
+            },
+        )
+        incomplete = tuple(
+            IncompleteSource(collection=collection_id, reason=reason)
+            for collection_id, reason in sorted(failed_total.items())
+        )
+        return _MixedResult(page=page, incomplete=incomplete)
 
     async def _to_item_collection(
         self, page: ItemPage, request: Request, *, collection_id: str

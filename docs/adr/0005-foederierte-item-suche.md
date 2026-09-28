@@ -328,6 +328,17 @@ mehrere Collections wird je Collection aufgeteilt und zusammengeführt.
 Eine Collection, die weder im eigenen pgstac noch in der Registry steht, ergibt
 `404` — nicht die leere Liste aus §3.5.
 
+> **Nachtrag (M3-13, 26.09.2026):** Umgesetzt. Eine Suche über mehrere Quellen
+> (eigene Collections, gruppiert nach `earthx:capabilities.time_range`, und
+> jede föderierte Collection einzeln) fächert sich statt zusammengeführt zu
+> werden — jede offene Quelle bekommt parallel einen Anteil am `limit`, neu
+> verteilt auf jeder Seite (`api/mixed_search.py`, `FederatingCoreCrudClient.
+> _mixed_page`). Scheitert eine föderierte Quelle (Zeitablauf, nicht
+> erreichbar, Fehlerstatus, unlesbare Antwort), kommen die übrigen mit `200`
+> und `incomplete_collections`; ein Fehler des eigenen pgstac lässt die ganze
+> Anfrage scheitern, wie zuvor bei einer einzelnen eigenen Collection. Details
+> und Messungen: `plans/m3-13-gemischte-suche.md`.
+
 **Regel II — Zwei Cache-Fristen, entschieden am Zeitfenster.** Der Such-Cache
 liegt im Anwendungs-Cache in Postgres (E4). Schlüssel ist der Hash der
 normalisierten Suche einschließlich Seitenmarke (das ist zugleich Z9 aus
@@ -357,6 +368,18 @@ nicht in unsere API; die Form der eigenen und der föderierten Marke bleibt glei
 (`architekturplan.md` 6.3) ist eine andere Sache und gehört zu M2 (E3) — sie wäre
 ein Cache-Eintrag mit Adresse, nicht eine Sitzung.
 
+> **Nachtrag (M3-13, 26.09.2026):** Die gemischte Suche gibt eine **zweite,
+> eigene** Markenform aus (`"k": "mixed"`, `api/mixed_search.py`), die je
+> offener Quelle deren innere Marke trägt und nie mit der Marke einer
+> Einzelsuche verwechselt wird — jede der beiden Formen weist die andere
+> ausdrücklich ab. Dafür trägt die Marke einer einzelnen föderierten Quelle
+> ihren Fingerabdruck jetzt **ohne** `limit` (`TOKEN_VERSION` 1 → 2): Eine
+> gemischte Suche verteilt das angeforderte `limit` auf jeder Seite neu unter
+> den noch offenen Quellen, dieselbe Suche muss also auch bei wechselndem
+> Anteil noch als dieselbe erkannt werden. Eine Marke, die während des
+> Deployments unterwegs war, wird mit `400` abgewiesen (K3 bleibt erhalten: der
+> Neustart selbst ändert nichts, nur die Versionsgrenze).
+
 **Regel IV — Eigener Client in `gateway`, kein `pystac_client`.** Ein schmaler
 `httpx.AsyncClient` hinter der Gateway-Schnittstelle (§3.8). `pystac_client`
 bleibt im Prototyp (`backend/app/stac.py`) und wandert nicht mit. Die Abhängigkeit
@@ -380,6 +403,16 @@ hätte nichts zu unterscheiden. **Mit M3 neu zu prüfen** — dort kommt mit der
 ersten Nicht-STAC-Quelle die erste Collection mit materialisierten Items
 (`architekturplan.md` 15.1, Inkrement 3), und damit erstmals ein Fall, in dem
 CQL2 etwas leisten könnte.
+
+> **Nachtrag (M3-13, 26.09.2026):** Erneut geprüft. Die erste eigene Collection
+> (der DEM, M3-11b) trägt außer Aufnahmezeitraum und `gsd` nichts, wonach sich
+> filtern ließe — `bbox`/`intersects`/`datetime` decken das bereits ab, und
+> Earth Search kann weiterhin kein CQL2. CQL2 bleibt deshalb aus; neu zu prüfen,
+> sobald eine eigene Collection filterbare Eigenschaften trägt (frühestens mit
+> dem Harvester in M5). **Zusätzlicher Befund (M3-13 plan §2.2):** Die Landing
+> Page wies `query`/`fields` aus, obwohl beide auf einer föderierten Collection
+> ohne Wirkung blieben (gemessen, still verworfen) — dasselbe Muster wie
+> `filter`. Beide sind jetzt aus denselben Gründen ebenfalls aus.
 
 ---
 

@@ -148,7 +148,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
 | M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | in Arbeit |
-| M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | offen |
+| M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | in Arbeit |
 | M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | offen |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | offen |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — | erledigt (#85) |
@@ -707,6 +707,7 @@ entschieden (Regel VI).
 **Stufe B**, Plan-Schritt mit Opus (hoch), weil Paging über mehrere Quellen
 heikel ist. Nach M3-11b: Die eigenen Items des DEM sind die erste echte
 eigene Collection.
+**Plan-Schritt:** `plans/m3-13-gemischte-suche.md`.
 **Umfang:** gemischte Suche statt `400`; Seitenmarke über mehrere Quellen;
 Teilergebnisse und Zeitablauf je Quelle gekennzeichnet (`architekturplan.md`
 16); Konformitätsklassen der Landing Page passend zur schwächsten beteiligten
