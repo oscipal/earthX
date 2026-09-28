@@ -126,6 +126,259 @@ describe('AoiExtras: uploading a file goes through POST /aoi/upload (M3-06b)', (
   });
 });
 
+// M3-07b: `PlaceSearchField` calls `POST /geocode` and takes the chosen hit as
+// the AOI. `placeSearch.test.ts` covers the request/response mapping itself;
+// this is about the field, list and selection actually reaching the store —
+// the same split `AoiExtras`'s tests above make with `aoiFile.test.ts`.
+describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () => {
+  const BERLIN_OUTLINE: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [[[13.0, 52.3], [13.8, 52.3], [13.8, 52.7], [13.0, 52.7], [13.0, 52.3]]],
+  };
+
+  function placeInput(): HTMLInputElement {
+    return container.querySelector('.place-search-row input[type="text"]') as HTMLInputElement;
+  }
+
+  function findButton(): HTMLButtonElement {
+    return container.querySelector('.place-search-row button') as HTMLButtonElement;
+  }
+
+  function resultButtons(): HTMLButtonElement[] {
+    return [...container.querySelectorAll('.place-results .place-result')] as HTMLButtonElement[];
+  }
+
+  // React tracks a controlled input's value through its own value tracker, so
+  // setting `.value` directly and firing a plain event leaves it thinking
+  // nothing changed. Going through the native setter (bypassing React's
+  // override) is the usual way around that without a testing-library helper.
+  function typeInto(input: HTMLInputElement, value: string): void {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function pressEnter(input: HTMLInputElement): void {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  }
+
+  function placeResponse(results: unknown[]): unknown {
+    return {
+      results,
+      attribution: '© OpenStreetMap contributors',
+      attribution_url: 'https://www.openstreetmap.org/copyright',
+      license: 'ODbL-1.0',
+    };
+  }
+
+  it('does not search on every keystroke, only on Enter (Nominatim forbids autocomplete)', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(200, placeResponse([])));
+    vi.stubGlobal('fetch', fetchSpy);
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'Neuland');
+      await flush();
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pressEnter(placeInput());
+      await flush();
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('/geocode');
+    expect(init.body).toBe(JSON.stringify({ q: 'Neuland' }));
+  });
+
+  it('does not send an empty or whitespace-only search', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(200, placeResponse([])));
+    vi.stubGlobal('fetch', fetchSpy);
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), '   ');
+      pressEnter(placeInput());
+      await flush();
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(findButton().disabled).toBe(true);
+  });
+
+  it('takes a hit with an outline as the AOI, buffers no point, and does not start a dataset search', async () => {
+    const runSearch = vi.fn();
+    useAppStore.setState({ runSearch });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          200,
+          placeResponse([
+            {
+              name: 'Neuland',
+              display_name: 'Neuland, Testland',
+              kind: 'boundary/administrative',
+              bbox: [13.0, 52.3, 13.8, 52.7],
+              outline: BERLIN_OUTLINE,
+              outline_simplified: false,
+            },
+          ]),
+        ),
+      ),
+    );
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'Neuland');
+      pressEnter(placeInput());
+      await flush();
+    });
+    expect(resultButtons()).toHaveLength(1);
+
+    await act(async () => {
+      resultButtons()[0].click();
+    });
+
+    const state = useAppStore.getState();
+    expect(state.aoi).toEqual({ ...BERLIN_OUTLINE, properties: { source: 'OpenStreetMap / Nominatim', attribution: '© OpenStreetMap contributors', license: 'ODbL-1.0' } });
+    expect(state.aoiPoint).toBeNull();
+    expect(state.lastAoi).toEqual(state.aoi);
+    expect(state.flyToBbox).toEqual([13.0, 52.3, 13.8, 52.7]);
+    expect(runSearch).not.toHaveBeenCalled();
+    // the list closes once a hit is chosen
+    expect(resultButtons()).toHaveLength(0);
+  });
+
+  it('falls back to the bbox as a rectangle when a hit carries no outline (a point/line hit)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          200,
+          placeResponse([
+            {
+              name: 'Bahnhof Neuland',
+              display_name: 'Bahnhof Neuland, Testland',
+              kind: 'railway/station',
+              bbox: [13.4, 52.5, 13.401, 52.501],
+              outline: null,
+              outline_simplified: false,
+            },
+          ]),
+        ),
+      ),
+    );
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'Bahnhof');
+      pressEnter(placeInput());
+      await flush();
+    });
+    await act(async () => {
+      resultButtons()[0].click();
+    });
+
+    expect(useAppStore.getState().aoi).toMatchObject({ type: 'Polygon' });
+  });
+
+  it('shows "No place found." with attribution for an empty result list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, placeResponse([]))));
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'bxlxrghqz');
+      pressEnter(placeInput());
+      await flush();
+    });
+
+    expect(container.textContent).toContain('No place found.');
+    expect(container.textContent).toContain('© OpenStreetMap contributors');
+  });
+
+  it('renders the attribution as a link only when its URL is https', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          results: [],
+          attribution: 'Untrusted',
+          attribution_url: 'javascript:alert(1)',
+          license: 'ODbL-1.0',
+        }),
+      ),
+    );
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'x');
+      pressEnter(placeInput());
+      await flush();
+    });
+
+    expect(container.querySelector('.place-attribution a')).toBeNull();
+    expect(container.textContent).toContain('Untrusted');
+  });
+
+  it('maps a route error into the shared error line and leaves the AOI untouched', async () => {
+    const existing: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] };
+    useAppStore.setState({ aoi: existing });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(422, { detail: 'search text is empty' })),
+    );
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'x');
+      pressEnter(placeInput());
+      await flush();
+    });
+
+    const state = useAppStore.getState();
+    expect(state.error).toBe('Could not search for this place: search text is empty.');
+    expect(state.aoi).toBe(existing);
+    expect(resultButtons()).toHaveLength(0);
+  });
+
+  it('shows the picked place under the field while its AOI is still active, and drops the line once the AOI changes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          200,
+          placeResponse([
+            {
+              name: 'Neuland',
+              display_name: 'Neuland, Testland',
+              kind: 'boundary/administrative',
+              bbox: [13.0, 52.3, 13.8, 52.7],
+              outline: BERLIN_OUTLINE,
+              outline_simplified: false,
+            },
+          ]),
+        ),
+      ),
+    );
+    act(() => root.render(<ControlPanel />));
+
+    await act(async () => {
+      typeInto(placeInput(), 'Neuland');
+      pressEnter(placeInput());
+      await flush();
+    });
+    await act(async () => {
+      resultButtons()[0].click();
+    });
+    expect(container.textContent).toContain('Neuland · © OpenStreetMap contributors');
+
+    act(() => useAppStore.setState({ aoi: null }));
+    root.render(<ControlPanel />);
+    expect(container.textContent).not.toContain('Neuland · © OpenStreetMap contributors');
+  });
+});
+
 // M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis locks the date
 // fields instead of hiding them, with the acquisition period underneath.
 describe('AcquisitionDateFields: a dataset without a time axis', () => {

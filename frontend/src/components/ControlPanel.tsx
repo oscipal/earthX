@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
 
-import type { CoverageHistogramPoint } from '../api';
+import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
 import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
+import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
 
@@ -81,6 +82,123 @@ function AcquisitionDateFields() {
       </div>
       {locked && note && <p className="hint-text">{note}</p>}
     </>
+  );
+}
+
+// M3-07b: a place name resolved to an AOI via `POST /geocode` (M3-07a). Search
+// only fires on Enter/"Find" — Nominatim's usage policy forbids an
+// autocomplete-style client (M3-07a §2.1), so there is deliberately no
+// on-keystroke suggestion here, unlike a typical search box.
+function PlaceSearchField() {
+  const setAoi = useAppStore((s) => s.setAoi);
+  const flyTo = useAppStore((s) => s.flyTo);
+  const currentAoi = useAppStore((s) => s.aoi);
+  const setError = useAppStore((s) => s.setError);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<PlaceResult[]>([]);
+  const [attribution, setAttribution] = useState<{ text: string; url?: string } | null>(null);
+  const [picked, setPicked] = useState<{ name: string; geometry: GeoJSON.Geometry } | null>(null);
+  // Guards against an earlier, slower request overwriting the list a newer
+  // one already filled in (plan §4: "eine noch laufende ältere Anfrage, die
+  // später ankommt, wird verworfen").
+  const requestRef = useRef(0);
+
+  const runSearch = async () => {
+    const q = query.trim();
+    if (!q || searching) return;
+    const requestId = ++requestRef.current;
+    setSearching(true);
+    const outcome = await searchPlaces(q);
+    if (requestId !== requestRef.current) return;
+    setSearching(false);
+    if (outcome.error) {
+      setShowResults(false);
+      setResults([]);
+      setAttribution(null);
+      setError(outcome.error);
+      return;
+    }
+    setResults(outcome.results ?? []);
+    setAttribution(outcome.attribution ? { text: outcome.attribution, url: outcome.attributionUrl } : null);
+    setShowResults(true);
+  };
+
+  const choose = (result: PlaceResult) => {
+    const geometry = placeAoi(result);
+    setAoi(geometry);
+    setPicked({ name: result.name, geometry });
+    setShowResults(false);
+    flyTo(result.bbox);
+  };
+
+  // The "picked from here" line only holds while the store's AOI is still
+  // (by identity) the geometry this field handed to `setAoi` — a redraw, an
+  // upload or "Clear" replaces that object, so the line disappears without
+  // this field having to know why the AOI changed.
+  const stillActive = !!picked && currentAoi === picked.geometry;
+
+  return (
+    <div className="place-search">
+      <div className="place-search-row">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void runSearch();
+            if (e.key === 'Escape') setShowResults(false);
+          }}
+          placeholder="Place name"
+          aria-label="Place"
+          maxLength={200}
+        />
+        <button
+          type="button"
+          className="tool-btn ghost"
+          aria-busy={searching}
+          disabled={searching || !query.trim()}
+          onClick={() => void runSearch()}
+        >
+          {searching ? 'Finding…' : 'Find'}
+        </button>
+      </div>
+      {showResults && (
+        <div className="place-results">
+          {results.length === 0 && <p className="hint-text">No place found.</p>}
+          {results.map((r, i) => (
+            <button
+              key={`${r.display_name}-${i}`}
+              type="button"
+              className="place-result"
+              title={r.outline_simplified ? 'Outline simplified' : undefined}
+              onClick={() => choose(r)}
+            >
+              <span className="place-result-name">{r.name}</span>
+              <span className="place-result-kind">{r.kind.split('/')[0]}</span>
+              <span className="place-result-display">{r.display_name}</span>
+            </button>
+          ))}
+          {attribution && (
+            <p className="hint-text place-attribution">
+              {attribution.url?.startsWith('https://') ? (
+                <a href={attribution.url} target="_blank" rel="noopener noreferrer">
+                  {attribution.text}
+                </a>
+              ) : (
+                attribution.text
+              )}
+            </p>
+          )}
+        </div>
+      )}
+      {stillActive && picked && (
+        <p className="hint-text place-attribution">
+          {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -176,9 +294,9 @@ function DatasetNotes() {
 }
 
 // Not a heuristic bolted onto a generic search box: the scene-name syntax
-// differs per dataset, and there is nothing else a free-text field here could
-// mean today (location search is hidden until M3, F1) — so no guessing which
-// one the user typed (M2-17). One field, no button of its own — the single
+// differs per dataset, and a place name has its own field now
+// (`PlaceSearchField`, M3-07b) — so no guessing which one the user typed
+// (M2-17). One field, no button of its own — the single
 // "Search" button below decides which of the two lookups to run (M2-17,
 // Otto's redesign 23.09.2026: merged into the ordinary search action instead
 // of a separate "Find").
@@ -344,6 +462,7 @@ export default function ControlPanel() {
       <SceneNameField onSubmit={search} />
 
       <label className="field-label">Area of interest</label>
+      <PlaceSearchField />
       <Toolbar />
       <AoiExtras />
 

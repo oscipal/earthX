@@ -349,3 +349,55 @@ describe('uploadAoi', () => {
     });
   });
 });
+
+// M3-07b: `jsonOrThrow`'s `HttpError` carries the raw `Retry-After` header,
+// which `placeSearch.ts` uses to tell a briefly-busy 503 apart from one that
+// means place search is simply not enabled. Exercised through `uploadAoi`
+// (any `jsonOrThrow` caller does) rather than duplicating a whole request —
+// the header handling lives in `jsonOrThrow` itself, not per-route.
+describe('HttpError.retryAfter', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is set from a Retry-After response header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Headers({ 'Retry-After': '5' }),
+        json: async () => ({ detail: 'place search is not available' }),
+      } as unknown as Response),
+    );
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: '5' });
+  });
+
+  it('is undefined when the response has no such header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Headers(),
+        json: async () => ({ detail: 'place search is not available' }),
+      } as unknown as Response),
+    );
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: undefined });
+  });
+
+  it('is undefined when the mocked response carries no headers object at all (older test doubles)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({}),
+      } as unknown as Response),
+    );
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: undefined });
+  });
+});

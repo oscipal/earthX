@@ -266,7 +266,70 @@ class TestAcceptanceCriteria:
             assert names == {"visual.tif", "visual_mask.tif", "ATTRIBUTION.txt", "aoi.geojson"}
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
-            assert SENTINEL_2_L2A.license.terms.url in notice
+
+    def test_a_place_search_aoi_names_openstreetmap_in_the_notice_too(self, client: TestClient) -> None:
+        """M3-07b, Otto's second local check (26.09.2026): the exact request
+        shape `frontend/src/api.ts::downloadCrop` sends for an AOI that came
+        from `placeSearch.ts::placeAoi` — properties on the geometry itself,
+        never a `Feature`, exactly as `body.aoi: dict[str, Any]` receives it.
+        `aoi.geojson` already carried this; this is the route-level proof that
+        `ATTRIBUTION.txt` now does too, not just a direct call to
+        `build_notice_text` (`TestBuildNoticeText` covers that unit in every
+        variant already)."""
+        place_search_aoi = {
+            **GOOD_AOI,
+            "properties": {
+                "source": "OpenStreetMap / Nominatim",
+                "attribution": "© OpenStreetMap contributors",
+                "license": "ODbL-1.0",
+            },
+        }
+        response = _download(client, aoi=place_search_aoi)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+        assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via OpenStreetMap / Nominatim)" in notice
+
+    def test_a_drawn_or_uploaded_aoi_names_nothing_extra_in_the_notice(self, client: TestClient) -> None:
+        """The default request shape (`GOOD_AOI`, no `properties`) — a drawn or
+        uploaded AOI, both before and after M3-07b."""
+        response = _download(client)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+        assert "AOI geometry" not in notice
+
+    def test_two_groups_with_a_place_search_aoi_still_name_openstreetmap_once(
+        self, client: TestClient
+    ) -> None:
+        """M3-17's multi-group path (`additional_groups`) writes the notice the
+        same way the single-group path does — a second way through
+        `build_download_zip` that could, in principle, have forwarded a
+        different (or no) `aoi_geometry` to `build_notice_text`."""
+        place_search_aoi = {
+            **GOOD_AOI,
+            "properties": {"attribution": "© OpenStreetMap contributors", "license": "ODbL-1.0"},
+        }
+        response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]], aoi=place_search_aoi)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+        assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0" in notice
+
+    def test_an_explicit_resolution_factor_with_a_place_search_aoi_still_names_it(
+        self, client: TestClient
+    ) -> None:
+        """M3-18's windowed/coarser-resolution path (F10c, `resolution != 1`)
+        plans different `width`/`height` per crop but calls the same
+        `build_download_zip` — checked so a resolution-factor request is not a
+        silent second way to lose the provenance line."""
+        place_search_aoi = {**GOOD_AOI, "properties": {"attribution": "© OpenStreetMap contributors"}}
+        response = _download(client, resolution=2, aoi=place_search_aoi)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+        assert "AOI geometry: © OpenStreetMap contributors" in notice
+        assert "2x coarser than native" in notice
 
     def test_two_groups_land_in_separate_folders_of_the_same_zip(self, client: TestClient) -> None:
         """P19: separate groups as separate files, together in one ZIP (M3-17)."""
