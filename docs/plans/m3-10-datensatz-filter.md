@@ -482,12 +482,16 @@ Namenssuche über mehrere Datensätze (F8) sind **M3-10b**.
   bleiben). Wird ein Datensatz ohne eigenen Abschnitt aktiv, gehen Liste,
   Auswahl und Vollauflösung des vorigen Datensatzes; die Auswahl im Filter ist
   während einer laufenden Suche gesperrt.
-- **Offen, Frage an Otto:** Die Such-Zuschnitte des DEM liegen als angeheftete
-  Ebenen **über** den Quicklooks (angeheftete Ebenen werden über der
-  Vorschau gezeichnet). In der AOI verdeckt ein deckender DEM-Zuschnitt einen
-  Sentinel-2-Quicklook; Deckkraft, Sichtbarkeit und Reihenfolge stellt man im
-  Layer-Manager ein. Der Plan sprach bei F5 (2) von „unter den Quicklooks“; das
-  wäre eine eigene Änderung der Zeichenreihenfolge in `mapLayers.ts`.
+- **Zeichenreihenfolge (Otto, 30.09.2026, Option 2):** Die automatisch gesetzten
+  Zuschnitte (`fromSearch`) liegen unter den Quicklooks, wie bei F5 (2)
+  formuliert. Umsetzung in `mapLayers.ts`: eine unsichtbare Markierungsebene
+  (`layer-floor`, `background`, `visibility: none`) unter allem, was die App
+  sonst zeichnet; `syncLayers` setzt Such-Zuschnitte direkt darunter, alles
+  andere weiterhin unter die AOI-Kontur. Damit gilt es unabhängig davon, was
+  zuerst gezeichnet wird. Von Hand angeheftete Ebenen und deren Reihenfolge im
+  Layer-Manager bleiben unverändert; Such-Zuschnitte liegen unter allen
+  anderen Ebenen, untereinander gilt die Listenreihenfolge. Test:
+  `mapLayers.test.ts`, „draw order: automatic crops under the quicklooks“.
 - **Schlagworte (F6 (1)):** `DatasetConfig.keywords` (ohne Vorgabewert, mindestens
   ein nicht leeres Schlagwort, Registry-Prüfung), als STAC-`keywords` in
   `to_stac_collection`; Werte wie in §4.6; `architekturplan.md` 5.1 nachgezogen.

@@ -147,6 +147,7 @@ function placeImage(
   // in `aoiClip.ts` for why), and `paint` itself accepts one loosely already
   // (`coverage-heat`'s `fill-color` above).
   opacity: number | unknown[],
+  belowFloor = false,
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, { type: 'image', url: dataUrl, coordinates: coords });
@@ -157,7 +158,7 @@ function placeImage(
       source: srcId,
       paint: { 'raster-opacity': opacity as never, 'raster-fade-duration': 0 },
     },
-    beforeAoi(map),
+    belowFloor ? beforeFloor(map) : beforeAoi(map),
   );
 }
 
@@ -181,6 +182,7 @@ function placeRaster(
   bounds: [number, number, number, number],
   opacity: number,
   zoom: RasterZoom,
+  belowFloor = false,
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, {
@@ -193,7 +195,7 @@ function placeRaster(
   });
   map.addLayer(
     { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
-    beforeAoi(map),
+    belowFloor ? beforeFloor(map) : beforeAoi(map),
   );
 }
 
@@ -215,6 +217,7 @@ export function buildTileUrl(template: string, render: AppliedRender): string {
 export function ensureBaseLayers(map: MapLibreMap): void {
   if (!map.getSource(AOI_SRC)) {
     map.addSource(AOI_SRC, { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: LAYER_FLOOR, type: 'background', layout: { visibility: 'none' }, paint: {} });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -361,6 +364,17 @@ function clearDynamicMosaic(map: MapLibreMap): void {
 const beforeAoi = (map: MapLibreMap): string | undefined =>
   map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
 
+// Where the layers a search pinned by itself go (M3-10 F5, `MapLayer.fromSearch`):
+// just below an invisible marker layer that sits under everything else the app
+// draws — the browse quicklooks, the layers the user pinned — so an automatic
+// AOI crop never covers what a search shows on top of it. Every other layer is
+// added just below the AOI outline, that is, above the marker, whichever of them
+// is added first. Without the marker (a map that has not run `ensureBaseLayers`)
+// it falls back to that same place.
+const LAYER_FLOOR = 'layer-floor';
+const beforeFloor = (map: MapLibreMap): string | undefined =>
+  map.getLayer(LAYER_FLOOR) ? LAYER_FLOOR : beforeAoi(map);
+
 // Exported for M2-07c: the same footprint-or-bbox fallback the mosaic
 // selection highlight uses, reused to draw real scene footprints once the
 // coverage answer's `footprints_advised` switches the map away from density.
@@ -488,6 +502,8 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
   const gen = ++layerGen;
   clearLayerOverlays(map);
   // Render bottom-to-top: layers[0] is the top of the list, so draw it last.
+  // The layers a search pinned by itself sit below everything else regardless of
+  // their place in the list (`LAYER_FLOOR`); among themselves the list order holds.
   let idx = 0;
   for (const layer of [...layers].reverse()) {
     if (!layer.visible) continue;
@@ -497,12 +513,12 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
       const lyrId = `layer-lyr-${idx}`;
       idx += 1;
       if (ov.kind === 'raster') {
-        placeRaster(map, srcId, lyrId, ov.tileUrl, ov.bounds, layer.opacity, ov);
+        placeRaster(map, srcId, lyrId, ov.tileUrl, ov.bounds, layer.opacity, ov, layer.fromSearch === true);
       } else {
         loadProcessed(ov.url, ov.nodataMax, null, (dataUrl) => {
           if (gen !== layerGen) return;
           try {
-            placeImage(map, srcId, lyrId, dataUrl, ov.coords, layer.opacity);
+            placeImage(map, srcId, lyrId, dataUrl, ov.coords, layer.opacity, layer.fromSearch === true);
           } catch {
             /* superseded / map gone */
           }
