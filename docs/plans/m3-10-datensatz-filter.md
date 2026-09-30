@@ -1,7 +1,9 @@
 # M3-10 — Datensatz-Filter in der Suchkachel: Plan-Schritt
 
-**Status (30.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe. Kein
-Produktivcode in diesem Stand.
+**Status (30.09.2026):** Freigegeben (Otto: F1 (1), F2 (1), F3 (1), F4 (1),
+**F5 (2)**, F6 (1), F7 (1), F8 (1), F9 (1)). **Teil 1 (M3-10a) umgesetzt** im
+selben Draft-PR, Stand in §10; **Teil 2 (M3-10b)** folgt nach dem Merge in einer
+neuen Session. Details in `ENTSCHEIDUNGSLOG.md`, Zeilen vom 30.09.2026.
 **Aufgabe:** M3-10 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P9),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11) und Ottos Vorgaben vom
 26.09.2026 zum Start dieser Aufgabe (unten O1–O3, Log). **Stufe B.** Hängt an
@@ -164,10 +166,10 @@ axis – acquired Dec 2010 to Jan 2015“ (Text aus M3-12, fest).
   Vollauflösung lesen sie wie bisher und brauchen keine Änderung.
 - **`setOpenSection(datasetId | null)`**: klappt genau einen Abschnitt auf
   (→ F2), setzt `datasetId`, übernimmt dessen `items`/`groups`, setzt
-  Zeitschritt und Auswahl zurück und verlässt die Vollauflösung. Ist der neue
-  Datensatz `browse: 'full_resolution'`, startet danach der AOI-Zuschnitt
-  (M3-12 O3). Zuklappen leert `items`/`groups`; die Karte zeigt dann keine
-  Quicklooks.
+  Zeitschritt und Auswahl zurück und verlässt die Vollauflösung. Zuklappen
+  leert `items`/`groups`; die Karte zeigt dann keine Quicklooks. Den
+  AOI-Zuschnitt eines `full_resolution`-Datensatzes startet **nicht** das
+  Aufklappen, sondern die Suche selbst (F5 (2), §4.5).
 - **`runSearch`** schickt `collections: selectedDatasetIds` (nur anzeigbare).
   Die Items werden nach `item.collection` auf die Abschnitte verteilt und dort
   je Datensatz mit dessen `resultsGroupBy` gruppiert. Ein Item ohne
@@ -261,11 +263,23 @@ liegen übereinander.
   aktive der erste gewählte.
 - **Quicklooks (F4):** nur die des offenen Zeitschritts im offenen Abschnitt,
   wie heute. Die Zeitleiste zeigt die Überflüge dieses Abschnitts.
-- **Vollauflösung (F5):** gilt für den offenen Abschnitt und dessen Auswahl.
-  Einen anderen Abschnitt aufzuklappen, verlässt sie. Ein Datensatz mit
-  `browse: 'full_resolution'` (der DEM) geht beim Aufklappen seines Abschnitts
-  direkt in den AOI-Zuschnitt (M3-12 O3), nicht schon nach der Suche, solange
-  ein anderer Abschnitt offen ist.
+- **Vollauflösung (F5 (2), Otto 30.09.2026):** Ein Datensatz mit
+  `browse: 'full_resolution'` (der DEM) erscheint **nach jeder Suche sofort**
+  als auf die AOI zugeschnittene Vollauflösung, gleich welcher Abschnitt offen
+  ist und auch bei einer Suche zusammen mit Sentinel-2 („direkt die Daten laden
+  für die AOI nach der Suche“). Umsetzung: Die Suche heftet den Zuschnitt je
+  Zeitschritt als Ebene an (`searchLayers.ts`, gleiche Form wie „Crop & merge to
+  AOI“, M3-09 §10), gekennzeichnet mit `fromSearch`; eine Wiederholung ersetzt
+  sie, statt sie zu stapeln. Die Karte zeichnet angeheftete Ebenen unabhängig
+  vom offenen Abschnitt. Die Vollauflösungs-Ansicht mit Stretch-Steuerung
+  (`focusMode`) bleibt dem, was der Nutzer selbst startet (Auswahl, „Crop &
+  merge to AOI“) oder über die Ebene im Layer-Manager wählt.
+- **Angeheftete Ebenen (F4 (1), Otto 30.09.2026):** Ebenen verschiedener
+  Datensätze bleiben im Layer-Manager und auf der Karte zugleich sichtbar,
+  unabhängig vom offenen Abschnitt, von der Auswahl im Filter und von der
+  nächsten Suche (nur die eigenen Such-Zuschnitte des erneut gesuchten
+  Datensatzes werden ersetzt). Eine Ebene zu wählen macht ihren Datensatz zum
+  aktiven und öffnet seinen Abschnitt.
 - Download, „Add to layers“ und Auto-Stretch folgen dem aktiven Datensatz,
   ohne Änderung am Code (§4.2). Die Auswahl von Szenen gilt je Abschnitt und
   wird beim Wechsel geleert; Item-Kennungen sind nur innerhalb einer
@@ -400,7 +414,7 @@ Grobe Schätzung **[A]**, ohne generierte Dateien:
    Aufklappen seines Abschnitts. Vergleich über angeheftete Ebenen.
    **(Empfehlung)**
 2. DEM-Zuschnitt sofort nach jeder Suche, auch wenn ein anderer Abschnitt
-   offen ist, als eigene Ebene unter den Quicklooks.
+   offen ist, als eigene Ebene unter den Quicklooks. **(Otto: gewählt)**
 
 **F6 — Schlagworte (§2.4, §4.6)**
 1. Neues Registry-Feld `keywords` ohne Vorgabewert, als STAC-`keywords`
@@ -424,3 +438,57 @@ Grobe Schätzung **[A]**, ohne generierte Dateien:
 1. Zwei PRs: M3-10a (≈ 500 Zeilen, davon ≈ 250 Tests), M3-10b (≈ 330, davon
    ≈ 170). **(Empfehlung)**
 2. Ein PR mit getrennten Commits, ≈ 830 Zeilen, davon ≈ 420 Tests.
+
+---
+
+## 10. Umsetzung M3-10a (30.09.2026)
+
+Ottos Antworten wie im Kopf; F5 (2) statt der Empfehlung. Umgesetzt ist der
+erste PR (F9 (1)); §4.4 („Load more“), der Fallback je Abschnitt (F7) und die
+Namenssuche über mehrere Datensätze (F8) sind **M3-10b**.
+
+- **Filter (§3, §4.1):** `datasets.ts`: `keywordsOf`, `datasetMatches`,
+  `filterDatasets`; `ControlPanel.tsx`: `DatasetFilter` (Textfeld, Liste mit
+  Kontrollkästchen, Reifegrad-Chip, Beschreibung im `title`); die alte Knopfzeile
+  und ihr CSS (`.level-select`) sind weg. Ausgewählte Datensätze bleiben
+  gelistet, auch wenn der Filter sie nicht trifft.
+- **Store (§4.2):** neu `selectedDatasetIds`, `sections`, `openSectionId`,
+  `toggleDatasetSelected`, `setOpenSection`; `datasetId` heißt „aktiver
+  Datensatz“, `setDatasetId` macht einen Datensatz aktiv (öffnet seinen
+  Abschnitt, wenn die Suche einen hat). Die Aufteilung auf Abschnitte steht als
+  reine Funktion in `sections.ts`. `items`/`groups` spiegeln den offenen
+  Abschnitt; `TimeSlider`, `MapView`, Download und Vollauflösung blieben
+  unverändert.
+- **Suche:** `runSearch` schickt alle ausgewählten anzeigbaren Collections in
+  einem Aufruf. Ein Item ohne oder mit fremder `collection` fällt heraus und
+  wird im Hinweis gezählt; bei genau einem Datensatz gehören alle Items ihm. Der
+  ±90-Tage-Fallback läuft bis M3-10b nur bei genau einem ausgewählten Datensatz
+  mit Zeitachse; bei mehreren gibt es „No scenes found for this area and date
+  range.“.
+- **Trefferliste (§4.3):** `ResultsPanel.tsx` mit einem Abschnitt je Datensatz
+  (Akkordeon, Name, Reifegrad, Trefferzahl); Hinweise aus
+  `ignored_filters_by_collection`, `incomplete_collections` und Gruppierfehlern
+  stehen im Kopf, auch zugeklappt. Anfangs offen: der erste Abschnitt mit
+  Treffern (F2 (1)).
+- **Heatmap (F3 (1)):** Die Legende nennt den aktiven Datensatz; mit mehreren
+  ausgewählten Datensätzen wählt man dort (`select`), was auch den Abschnitt
+  öffnet.
+- **F5 (2) und F4 (1):** siehe §4.5. Zwei Nebenfunde: (1) `addCurrentToLayers`
+  bildete Ebenen-Kennungen aus der Uhr allein; zwei Ebenen in derselben
+  Millisekunde bekamen dieselbe Kennung (`nextBatchId`, ein Zähler dazu). (2)
+  `selectLayer` ließ den aktiven Datensatz unberührt, sodass die Liste von einem
+  anderen Datensatz sprach als die gewählte Ebene; jetzt wird ihr Datensatz
+  aktiv.
+- **Schlagworte (F6 (1)):** `DatasetConfig.keywords` (ohne Vorgabewert, mindestens
+  ein nicht leeres Schlagwort, Registry-Prüfung), als STAC-`keywords` in
+  `to_stac_collection`; Werte wie in §4.6; `architekturplan.md` 5.1 nachgezogen.
+
+**Geändert:** `backend/earthx/catalog/registry.py`, `datasets.py`,
+`collection.py`; `frontend/src/api.ts`, `types.ts`, `datasets.ts`, `layers.ts`,
+`store.ts`, `sections.ts` (neu), `searchLayers.ts` (neu),
+`components/ControlPanel.tsx`, `ResultsPanel.tsx`, `index.css`. Tests:
+`backend/tests/catalog/test_registry.py`, `test_collection.py`, `conftest.py`;
+`frontend/src/datasets.test.ts`, `api.test.ts`, `sections.test.ts` (neu),
+`searchLayers.test.ts` (neu), `store.sections.test.ts` (neu), `store.test.ts`,
+`mapLayers.test.ts`, `components/ControlPanel.test.tsx`,
+`components/ResultsPanel.test.tsx` (neu).

@@ -233,6 +233,7 @@ Jeder Datensatz ist eine STAC Collection, jede Szene ein STAC Item. Genutzte Ext
 
 | Feld | Inhalt |
 |---|---|
+| `keywords` (STAC-Kernfeld, ohne Präfix) | Schlagworte des Datensatzes, mindestens eines, ohne Vorgabewert (B10). Der Datensatz-Filter der Suchkachel (M3-10) sucht im Client über Titel, Beschreibung und diese Liste |
 | `earthx:data_class` | Datentyp-Klasse (Raster-Zeitreihe, statisches Raster, ...) |
 | `earthx:capabilities` | Flags: ROI, Zeitraum, Band-Math, Interpolation erlaubt, ML geeignet, ... `time_range=False` (bisher nur der DEM) heißt: kein Datensatz mit Aufnahmeachse, ein gewählter Zeitraum ändert die Antwort nicht. Sowohl `/coverage` (M3-11c) als auch `/stac/search` (M3-12) verwerfen `datetime` dann vor jeder Anfrage und nennen das in `ignored_filters` der Antwort, statt den Filter still anzuwenden oder eine Suche wegen eines Zeitraums leer zu melden, der ohnehin nichts bedeutet |
 | `earthx:license_flags` | `commercial_use`, `derivatives`, `share_alike`, `attribution_required` + SPDX-Kennung |
