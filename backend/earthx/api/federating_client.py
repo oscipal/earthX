@@ -309,6 +309,11 @@ class DispatchOutcome:
     ignored_filters: tuple[str, ...]
     ignored_by_collection: Mapping[str, tuple[str, ...]]
     incomplete: tuple[IncompleteSource, ...] = ()
+    # `open_collections` (Otto, 30.09.2026, M3-10b): a mixed page names them
+    # itself; a single-source answer (`None` here) has them all open exactly
+    # while it links a next page — `searched` are that source's collections.
+    open_collections: tuple[str, ...] | None = None
+    searched: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,9 +323,26 @@ class _MixedResult:
 
     page: ItemCollection
     incomplete: tuple[IncompleteSource, ...]
+    open_collections: tuple[str, ...]
+
+
+def _collections_of(source: _Source) -> tuple[str, ...]:
+    return source.ids if isinstance(source, _NativeGroup) else (source.collection_id,)
+
+
+def _open_collections_of(result: dict[str, Any], outcome: DispatchOutcome) -> tuple[str, ...]:
+    if outcome.open_collections is not None:
+        return outcome.open_collections
+    has_next = any(link.get("rel") == "next" for link in result.get("links") or [])
+    return outcome.searched if has_next else ()
 
 
 def _apply_outcome_extras(result: dict[str, Any], outcome: DispatchOutcome) -> None:
+    # Which collections' source still has pages (Otto, 30.09.2026, M3-10b): the
+    # viewer's ±90-day fallback waits for a dataset whose source may still bring
+    # scenes of the date range. Collections sharing a source are open together.
+    # The page token itself stays opaque (adr/0005 rule III).
+    result["open_collections"] = list(_open_collections_of(result, outcome))
     if outcome.ignored_filters:
         result["ignored_filters"] = list(outcome.ignored_filters)
     if outcome.ignored_by_collection:
@@ -676,6 +698,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             if not sources:
                 return DispatchOutcome(None, datetime_value, ignored_filters, ignored_by_collection)
             source = sources[0]
+            searched = _collections_of(source)
             if isinstance(source, _NativeGroup):
                 # A mixed token from an earlier page of the same paging sequence
                 # (a source dropped out and the search is single-source again):
@@ -688,7 +711,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
                     raise _adapter_error_to_http(
                         InvalidQuery("page token is a mixed-search token, not valid for a single collection")
                     )
-                return DispatchOutcome(None, source.effective_datetime, ignored_filters, ignored_by_collection)
+                return DispatchOutcome(
+                    None, source.effective_datetime, ignored_filters, ignored_by_collection, searched=searched
+                )
             page = await self._federated_page(
                 source.collection_id,
                 request,
@@ -699,7 +724,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
                 limit=limit,
                 token=token,
             )
-            return DispatchOutcome(page, source.effective_datetime, ignored_filters, ignored_by_collection)
+            return DispatchOutcome(
+                page, source.effective_datetime, ignored_filters, ignored_by_collection, searched=searched
+            )
 
         try:
             # A broken page token (`decode_mixed_token`) or a malformed group query
@@ -712,7 +739,14 @@ class FederatingCoreCrudClient(CoreCrudClient):
             )
         except InvalidQuery as error:
             raise _adapter_error_to_http(error) from error
-        return DispatchOutcome(mixed.page, datetime_value, ignored_filters, ignored_by_collection, mixed.incomplete)
+        return DispatchOutcome(
+            mixed.page,
+            datetime_value,
+            ignored_filters,
+            ignored_by_collection,
+            mixed.incomplete,
+            open_collections=mixed.open_collections,
+        )
 
     async def _federated_page(
         self,
@@ -839,9 +873,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
         another runs out gets the room the finished one no longer needs, instead
         of a page that only ever shrinks (the fixed-share alternative).
         """
-        collection_ids = tuple(
-            cid for source in sources for cid in (source.ids if isinstance(source, _NativeGroup) else (source.collection_id,))
-        )
+        collection_ids = tuple(cid for source in sources for cid in _collections_of(source))
         fingerprint = mixed_fingerprint(collection_ids, bbox, intersects, ids, datetime_value)
         known_source_keys = {source.key for source in sources}
         by_key = {source.key: source for source in sources}
@@ -940,7 +972,8 @@ class FederatingCoreCrudClient(CoreCrudClient):
             IncompleteSource(collection=collection_id, reason=reason)
             for collection_id, reason in sorted(failed_total.items())
         )
-        return _MixedResult(page=page, incomplete=incomplete)
+        open_collections = tuple(cid for source in sources if source.key in next_pending for cid in _collections_of(source))
+        return _MixedResult(page=page, incomplete=incomplete, open_collections=open_collections)
 
     async def _to_item_collection(
         self, page: ItemPage, request: Request, *, collection_id: str
