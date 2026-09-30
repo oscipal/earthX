@@ -8,6 +8,7 @@ ohne Code zu lesen.
 (Merge von PR #108, 30.09.2026). Alle Aufgaben von M3-00 bis M3-24 außer M3-15
 sind gemergt (PR #74 bis #108, Tabelle im Plan §3).
 **Muster:** `docs/plans/m2-12-abnahme.md`.
+**Abgenommen von Otto am 30.09.2026.** Frage 1 (`readers`): Lesart „für den Anschluss der dritten Quelle unverändert“ übernommen. Frage 2 (`CLAUDE.md`): Zeile ergänzt. Frage 3 (Lock-Datei) bleibt Vorschlag.
 
 Ergänzungen von Otto (30.09.2026), die dieser Bericht umsetzt: Belege je
 Kriterium; wo nur Otto lokal prüfen kann, eine kurze Anleitung (Abschnitt 10);

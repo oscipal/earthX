@@ -1,9 +1,8 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 3 vom 30.09.2026. **Alle Aufgaben außer M3-15 sind gemergt**
-(Tabelle in §3, Belege in `m3-15-abnahme.md`). M3-15 (Abnahmebericht und README)
-liegt als Draft-PR vor. **Der Plan gilt als abgeschlossen, sobald Otto abnimmt**;
-bis dahin bleibt der Status „abnahmereif“ (§5).
+**Status: Abgenommen am 30.09.2026** (Otto). Fassung 3 vom 30.09.2026: alle
+Aufgaben gemergt bzw. mit PR #109 (M3-15) erledigt; Belege in `m3-15-abnahme.md`,
+Log-Zeile „M3 abgenommen“.
 Fassung 2 (26.09.2026) schnitt M3-11 nach der Annahme von `adr/0009` in
 M3-11a, M3-11b und M3-11c, nahm die Entscheidungen vom 23. und 24.09.2026 als
 P20 bis P23 auf, hielt den Schnitt als P24 fest, ergänzte den Spike M3-20 (Ersatz
@@ -151,7 +150,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | erledigt (#101) |
 | M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | erledigt (#105) |
 | M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | erledigt (#107, angenommen, Otto 30.09.2026) |
-| M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | Draft-PR, wartet auf Ottos Abnahme |
+| M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | erledigt (#109) |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — | erledigt (#85) |
 | M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | erledigt (#88) |
 | M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — | erledigt (#86) |
@@ -794,7 +793,7 @@ Fragen; Otto gibt frei (M3-Abnahme).
 
 ### M3-15 — M3-Abnahme und README
 
-**Stand:** Draft-PR, wartet auf Ottos Abnahme. Bericht: `plans/m3-15-abnahme.md`. Ergänzungen von Otto (30.09.2026): Belege je Kriterium 1–9 aus §5 nach dem Muster von `m2-12-abnahme.md`; wo nur Otto lokal prüfen kann, eine kurze Anleitung (Windows/PowerShell, `docker compose up -d --build`); im Bericht ein Abschnitt „Nach M3 vorgemerkt“ mit allen offenen Punkten aus Log und Plan; der Status aller M3-Aufgaben in diesem Plan auf dem tatsächlichen Stand; keine Codeänderungen. **Erst mit Ottos Abnahme** wird der Plan als abgeschlossen markiert.
+**Stand:** erledigt (#109), M3 abgenommen am 30.09.2026. Bericht: `plans/m3-15-abnahme.md`. Ergänzungen von Otto (30.09.2026): Belege je Kriterium 1–9 aus §5 nach dem Muster von `m2-12-abnahme.md`; wo nur Otto lokal prüfen kann, eine kurze Anleitung (Windows/PowerShell, `docker compose up -d --build`); im Bericht ein Abschnitt „Nach M3 vorgemerkt“ mit allen offenen Punkten aus Log und Plan; der Status aller M3-Aufgaben in diesem Plan auf dem tatsächlichen Stand; keine Codeänderungen. Der Plan ist mit Ottos Abnahme am 30.09.2026 als abgeschlossen markiert.
 
 **Ziel:** Otto kann M3 anhand des PR abnehmen, ohne Code zu lesen.
 **Stufe A.**
@@ -1059,10 +1058,10 @@ Abnahme: Test des Vergleichs; cloud-umgebung.md nachgezogen; eine frische Sessio
 
 ## 5. Abnahme von M3
 
-**Stand der Abnahme (30.09.2026):** Belege je Kriterium 1–9 stehen in
-`plans/m3-15-abnahme.md`. Mit Ottos Abnahme wird dieser Plan als abgeschlossen
-markiert (Kopf und Tabelle in §3) und eine Log-Zeile „M3 abgenommen“ mit Datum
-und Nummer des PR von M3-15 ergänzt, wie bei M2.
+**Abgenommen am 30.09.2026 (Otto).** Belege je Kriterium 1–9 stehen in
+`plans/m3-15-abnahme.md`. Zu Kriterium 1: „`readers` unverändert“ gilt für den
+Anschluss der dritten Quelle; die Änderung an `zarr_reader.py` stammt aus M3-18
+(#86), der COG-Pfad ist unberührt.
 
 1. Die dritte Quelle (ohne Such-API, materialisierte Items) ist im Viewer
    suchbar, anzeigbar und als Zuschnitt ladbar. `readers` ist in M3
