@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { acquisitionNote, filterDatasets, maturityLabel, maturityNote } from '../datasets';
+import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
 import { totalItems } from '../sections';
@@ -342,58 +342,42 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
   );
 }
 
-// The dataset filter (M3-10): a text field over a list of tick boxes, one row per
-// dataset from `/stac/collections`. Every ticked dataset is searched at once. The
-// filter only narrows what is *offered*: a ticked dataset stays listed whether it
-// matches or not, so a selection never disappears behind a search word. A dataset
-// that cannot be shown stays listed, unticked and disabled, with the reason.
-function DatasetFilter() {
+// The dataset choice (M3-10): one toggle button per dataset from
+// `/stac/collections`, any number at once — a click picks a dataset (drawn
+// highlighted), another click drops it again. Every picked dataset is searched
+// together. Four rows are visible; with more the list scrolls. A dataset that
+// cannot be shown stays listed, disabled, with the reason.
+function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
   const searching = useAppStore((s) => s.searching);
-  const [query, setQuery] = useState('');
   if (datasets.length === 0) return null;
-  const shown = filterDatasets(datasets, query, selectedDatasetIds);
   return (
-    <div className="dataset-filter">
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Filter datasets"
-        aria-label="Filter datasets"
-        maxLength={100}
-      />
-      <ul className="dataset-list" aria-label="Datasets">
-        {shown.map((d) => {
-          const maturity = d.viewable ? maturityNote(d.collection) : null;
-          const label = d.viewable ? maturityLabel(d.collection) : null;
-          const description = d.collection.description;
-          return (
-            <li key={d.id}>
-              <label
-                className={`dataset-option${d.viewable ? '' : ' disabled'}`}
-                title={
-                  d.viewable
-                    ? [d.title, maturity, description].filter(Boolean).join(' — ')
-                    : `${d.title} — not viewable: ${d.reason}`
-                }
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedDatasetIds.includes(d.id)}
-                  disabled={!d.viewable || searching}
-                  onChange={() => toggle(d.id)}
-                />
-                <span className="dataset-option-title">{d.title}</span>
-                {label && <span className="maturity-chip">{label}</span>}
-              </label>
-            </li>
-          );
-        })}
-      </ul>
-      {shown.length === 0 && <p className="hint-text">No dataset matches.</p>}
+    <div className="dataset-list" role="group" aria-label="Datasets">
+      {datasets.map((d) => {
+        const picked = selectedDatasetIds.includes(d.id);
+        const maturity = d.viewable ? maturityNote(d.collection) : null;
+        const label = d.viewable ? maturityLabel(d.collection) : null;
+        return (
+          <button
+            key={d.id}
+            type="button"
+            className={`dataset-toggle${picked ? ' active' : ''}`}
+            title={
+              d.viewable
+                ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
+                : `${d.title} — not viewable: ${d.reason}`
+            }
+            aria-pressed={picked}
+            disabled={!d.viewable || searching}
+            onClick={() => toggle(d.id)}
+          >
+            <span className="dataset-toggle-title">{d.title}</span>
+            {label && <span className="maturity-chip">{label}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -445,7 +429,23 @@ function CoverageControls() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const setDatasetId = useAppStore((s) => s.setDatasetId);
-  if (!datasetId || !showCoverage) return null;
+  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
+  if (!datasetId) return null;
+
+  // Off by default (M2-07c); switched here, in the control panel, since M3-10 —
+  // the layer manager lists pinned layers only.
+  const toggle = (
+    <button
+      type="button"
+      className={`coverage-toggle${showCoverage ? ' active' : ''}`}
+      aria-pressed={showCoverage}
+      title={showCoverage ? 'Hide the coverage map' : 'Show how densely the dataset covers the world'}
+      onClick={() => toggleCoverage()}
+    >
+      Coverage map
+    </button>
+  );
+  if (!showCoverage) return <div className="coverage-controls">{toggle}</div>;
 
   const note = coverage ? completenessNote(coverage) : null;
   // M3-10 F3: the heatmap shows one dataset — the active one. With several
@@ -456,6 +456,7 @@ function CoverageControls() {
 
   return (
     <div className="coverage-controls">
+      {toggle}
       {ticked.length > 1 ? (
         <select
           className="coverage-dataset"
@@ -524,39 +525,44 @@ export default function ControlPanel() {
 
   return (
     <div className="panel control-panel">
-      <div className="brand">
-        <span className="brand-mark" />
-        <div>
-          <h1>EarthX</h1>
-          <p>Geo and satellite data viewer</p>
+      <div className="control-scroll">
+        <div className="brand">
+          <span className="brand-mark" />
+          <div>
+            <h1>EarthX</h1>
+            <p>Geo and satellite data viewer</p>
+          </div>
         </div>
+
+        <SceneNameField onSubmit={search} />
+
+        <label className="field-label">Area of interest</label>
+        <PlaceSearchField />
+        <Toolbar />
+        <AoiExtras />
+
+        <label className="field-label">
+          Datasets
+          {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
+        </label>
+        <DatasetPicker />
+        <DatasetNotes />
+
+        <CoverageControls />
+
+        <AcquisitionDateFields />
       </div>
 
-      <SceneNameField onSubmit={search} />
+      {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
+      <div className="control-footer">
+        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+          {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
+        </button>
 
-      <label className="field-label">Area of interest</label>
-      <PlaceSearchField />
-      <Toolbar />
-      <AoiExtras />
-
-      <label className="field-label">
-        Datasets
-        {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
-      </label>
-      <DatasetFilter />
-      <DatasetNotes />
-
-      <CoverageControls />
-
-      <AcquisitionDateFields />
-
-      <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
-        {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
-      </button>
-
-      {count > 0 && <p className="result-count">{count} scene(s) found</p>}
-      {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}
-      {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
+        {count > 0 && <p className="result-count">{count} scene(s) found</p>}
+        {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}
+        {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
+      </div>
     </div>
   );
 }

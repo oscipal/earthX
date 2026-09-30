@@ -13,10 +13,7 @@ export default function LayerManager() {
   const move = useAppStore((s) => s.moveLayer);
   const select = useAppStore((s) => s.selectLayer);
   const openDownload = useAppStore((s) => s.openDownloadDialog);
-  const datasetId = useAppStore((s) => s.datasetId);
   const datasets = useAppStore((s) => s.datasets);
-  const showCoverage = useAppStore((s) => s.showCoverage);
-  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
 
   // `Draggable` stays mounted regardless of `open` and is only hidden with
   // CSS: unmounting it (the previous `if (!open) return null`) threw away
@@ -42,22 +39,6 @@ export default function LayerManager() {
             </button>
           </div>
         </div>
-
-        {/* Off by default (M2-07c); a plain toggle row rather than a list
-            entry, since it isn't a pinned layer and has no opacity/order. */}
-        {datasetId && (
-          <div className="layer-row coverage-row">
-            <button
-              type="button"
-              className={`lm-eye${showCoverage ? '' : ' off'}`}
-              title={showCoverage ? 'Hide' : 'Show'}
-              onClick={() => toggleCoverage()}
-            >
-              {showCoverage ? '●' : '○'}
-            </button>
-            <span className="lm-name">Coverage heatmap</span>
-          </div>
-        )}
 
         {layers.length === 0 ? (
           <p className="hint-text lm-empty">
