@@ -149,7 +149,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
 | M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | in Arbeit |
 | M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | in Arbeit |
-| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | offen |
+| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | in Arbeit (Entwurf, wartet auf Otto) |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | offen |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — | erledigt (#85) |
 | M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | in Arbeit |
