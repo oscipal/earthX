@@ -179,7 +179,7 @@ describe('toggleDatasetSelected', () => {
     } as never;
     useAppStore.setState({
       layers: [layer],
-      sections: [{ datasetId: 'optical', items: [], groups: [], notes: [], groupingError: null }],
+      sections: [{ datasetId: 'optical', items: [], groups: [], notes: [], groupingError: null, origin: 'search', incomplete: false }],
       openSectionId: 'optical',
       notice: 'x',
     });
@@ -358,7 +358,7 @@ describe('runSearch over several datasets', () => {
 
   it('a failed search leaves no stale sections behind', async () => {
     useAppStore.setState({
-      sections: [{ datasetId: 'optical', items: [], groups: [], notes: [], groupingError: null }],
+      sections: [{ datasetId: 'optical', items: [], groups: [], notes: [], groupingError: null, origin: 'search', incomplete: false }],
       openSectionId: 'optical',
     });
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')));

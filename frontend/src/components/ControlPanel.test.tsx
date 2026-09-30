@@ -610,8 +610,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     const item = { id: 'x', bbox: null, properties: {}, assets: {} };
     useAppStore.setState({
       sections: [
-        { datasetId: 'optical', items: [item, item], groups: [], notes: [], groupingError: null },
-        { datasetId: 'dem', items: [item], groups: [], notes: [], groupingError: null },
+        { datasetId: 'optical', items: [item, item], groups: [], notes: [], groupingError: null, origin: 'search', incomplete: false },
+        { datasetId: 'dem', items: [item], groups: [], notes: [], groupingError: null, origin: 'search', incomplete: false },
       ],
     });
     act(() => root.render(<ControlPanel />));
