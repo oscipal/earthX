@@ -8,6 +8,9 @@ neuen Session. Details in `ENTSCHEIDUNGSLOG.md`, Zeilen vom 30.09.2026.
 Textfilter, Dropdown statt aufklappbarer Abschnitte, Coverage-Map im Control
 Center, Layout des Control Centers (§11). §3, §4.1 und §4.3 beschreiben den
 neuen Stand; die Antwort auf F2 (Akkordeon) ist damit ersetzt.
+**Zweite Rückmeldung (30.09.2026, §12):** Karte folgt dem Dropdown (ersetzt
+F5 (2)), Datensatz-Knöpfe als 2×2-Raster, abgesetztes Dropdown, Coverage-Knopf
+im Fuß, heller Hintergrund hinter der Weltkugel.
 **Aufgabe:** M3-10 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P9),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11) und Ottos Vorgaben vom
 26.09.2026 zum Start dieser Aufgabe (unten O1–O3, Log). **Stufe B.** Hängt an
@@ -108,18 +111,18 @@ wieder als Knöpfe, jetzt als **Umschalter mit Mehrfachauswahl**:
 
 ```
 Datasets                                  2 selected
-[ Sentinel-2 L2A                              ]   <- gewählt, hervorgehoben
-[ Sentinel-2 L2A (Zarr3)             staging  ]   <- gewählt
-[ Copernicus DEM GLO-30                       ]
-[ Landsat Collection 2                        ]
-  (ab dem fünften Datensatz scrollt die Liste)
-[ Coverage map ]
+[ Sentinel-2 L2A     ] [ Sentinel-2 L2A (Za… ]   <- gewählt, hervorgehoben
+[ Copernicus DEM GLO ] [ Landsat Collection  ]
+  (ab dem fünften Datensatz scrollt das Raster)
+--------------------------------------------------
+[ ▦ Coverage ] [            Search             ]   <- Fuß, immer sichtbar
 ```
 
 - Ein Knopf je Datensatz aus `/stac/collections`: Klick wählt aus (Rahmen,
   getönte Fläche, Glühen, fette Schrift, `aria-pressed`), erneuter Klick wählt
   ab. Keine Kontrollkästchen, **kein Textfilter**.
-- Vier Datensätze sind zugleich sichtbar; gibt es mehr, scrollt die Liste.
+- Vier Datensätze sind zugleich sichtbar, als **Raster 2×2** (zweite
+  Rückmeldung); gibt es mehr, scrollt das Raster.
 - Reifegrad-Chip im Knopf, Beschreibung im `title`. Nicht anzeigbare
   Datensätze bleiben gelistet, abgeschaltet, Grund im `title`.
 - `DatasetNotes` zeigt die Reifegrad-Sätze aller gewählten Datensätze, je mit
@@ -129,9 +132,13 @@ Datasets                                  2 selected
   least one dataset.“
 - Die Auswahl zu ändern, leert die Trefferliste (sie passt nicht mehr zur
   Suche); während einer laufenden Suche ist sie gesperrt.
-- **Coverage-Map** wird hier geschaltet (Umschalter „Coverage map“ unter den
-  Datensätzen), nicht mehr im Layer-Manager; darunter Legende und Histogramm,
-  mit mehreren gewählten Datensätzen mit der Wahl, welcher gezeigt wird (F3).
+- **Coverage-Knopf „Coverage“** im Fuß neben „Search“, immer sichtbar und von
+  den Datensatz-Knöpfen abgesetzt (Symbol, gestrichelter Rahmen, bis er an ist).
+  Ein Datensatz gewählt: ein Klick zeigt dessen Coverage, der nächste blendet sie
+  aus. Mehrere gewählt: erst der Klick öffnet die Auswahl, von welchem Datensatz
+  (mit „Hide coverage“, wenn sie an ist); bis dahin wird nichts gezeichnet.
+  Ohne gewählten Datensatz ist der Knopf sichtbar, aber aus. Legende und
+  Histogramm stehen im scrollenden Teil, mit dem Datensatz im Titel.
 
 **Layout:** Das Control Center ist höchstens so hoch wie das Fenster abzüglich
 zweimal 16 px (oben und unten derselbe Abstand). Der Inhalt scrollt; „Search“,
@@ -280,35 +287,38 @@ letzte Marke zurück, dazu `ignoredFiltersByCollection`.
 
 ### 4.5 Heatmap, Quicklooks, Vollauflösung (→ F3, F4, F5)
 
-Leitgedanke: **Die Karte zeigt zu jeder Zeit einen Datensatz: den aktiven.**
-Vergleiche über Datensätze gehen über den Layer-Manager: Angeheftete Ebenen
-tragen schon heute ihren eigenen Datensatz (`LayerRestore.datasetId`) und
-liegen übereinander.
+Leitgedanke (Otto, 30.09.2026, zweite Rückmeldung): **Die Karte folgt dem
+Dropdown.** Zu sehen ist nur der im Dropdown gewählte Datensatz — seine
+Quicklooks, sein automatischer Zuschnitt, seine Footprints. Andere Datensätze
+der Suche sind unsichtbar, außer der Nutzer hat eine Ebene davon im
+Layer-Manager angeheftet; angeheftete Ebenen (`LayerRestore.datasetId`) bleiben
+immer zu sehen und liegen übereinander.
 
-- **Heatmap (F3):** zeigt den aktiven Datensatz. Die Legende nennt seinen
-  Titel. Sind mehrere gewählt, hat die Legende eine Auswahl unter ihnen; die
-  Wahl macht den Datensatz aktiv und klappt nach einer Suche auch seinen
-  Abschnitt auf (dieselbe Handlung wie §4.3). Vor der ersten Suche ist der
-  aktive der erste gewählte.
-- **Quicklooks (F4):** nur die des offenen Zeitschritts im offenen Abschnitt,
-  wie heute. Die Zeitleiste zeigt die Überflüge dieses Abschnitts.
-- **Vollauflösung (F5 (2), Otto 30.09.2026):** Ein Datensatz mit
-  `browse: 'full_resolution'` (der DEM) erscheint **nach jeder Suche sofort**
-  als auf die AOI zugeschnittene Vollauflösung, gleich welcher Abschnitt offen
-  ist und auch bei einer Suche zusammen mit Sentinel-2 („direkt die Daten laden
-  für die AOI nach der Suche“). Umsetzung: Die Suche heftet den Zuschnitt je
-  Zeitschritt als Ebene an (`searchLayers.ts`, gleiche Form wie „Crop & merge to
-  AOI“, M3-09 §10), gekennzeichnet mit `fromSearch`; eine Wiederholung ersetzt
-  sie, statt sie zu stapeln. Die Karte zeichnet angeheftete Ebenen unabhängig
-  vom offenen Abschnitt. Die Vollauflösungs-Ansicht mit Stretch-Steuerung
-  (`focusMode`) bleibt dem, was der Nutzer selbst startet (Auswahl, „Crop &
-  merge to AOI“) oder über die Ebene im Layer-Manager wählt.
+- **Coverage (F3, ersetzt):** Die Coverage-Map gehört nicht mehr zum aktiven
+  Datensatz. Der Knopf „Coverage“ im Fuß des Control Centers (§3) zeigt sie für
+  einen gewählten Datensatz (`coverageDatasetId`), unabhängig vom Dropdown; die
+  Auswahl in der Legende aus M3-10a entfällt, weil der Knopf sie ersetzt.
+- **Quicklooks (F4):** nur die des offenen Zeitschritts im gewählten Datensatz,
+  wie heute. Die Zeitleiste zeigt die Überflüge dieses Datensatzes.
+- **Automatischer Zuschnitt (ersetzt F5 (2) vom 30.09.2026, zweite
+  Rückmeldung):** Ein Datensatz mit `browse: 'full_resolution'` (der DEM)
+  erscheint als auf die AOI zugeschnittene Vollauflösung, **sobald er im
+  Dropdown gewählt ist** — nicht mehr als angeheftete Ebene. Der Zuschnitt
+  gehört zu den Suchergebnissen seines Datensatzes (`searchCrops` im Store, je
+  Zeitschritt eine Ebene, `searchLayers.ts`); er ist auf der Karte, solange sein
+  Datensatz gewählt ist, und geht mit den Ergebnissen (neue Suche, Auswahl
+  geändert, „Clear all“). Anheften kann ihn der Nutzer selbst („＋ Pin to
+  layers“ unter dem Dropdown, `pinSearchCrops`); die Kopie bleibt dann, egal
+  welcher Datensatz gewählt ist. Die Zeichenreihenfolge „unter den Quicklooks“
+  ist damit gegenstandslos (Quicklooks und Zuschnitt gehören nie zum selben
+  Datensatz), die Markierungsebene dafür ist entfernt. Die Vollauflösungs-Ansicht
+  mit Stretch-Steuerung (`focusMode`) bleibt dem, was der Nutzer selbst startet.
 - **Angeheftete Ebenen (F4 (1), Otto 30.09.2026):** Ebenen verschiedener
   Datensätze bleiben im Layer-Manager und auf der Karte zugleich sichtbar,
-  unabhängig vom offenen Abschnitt, von der Auswahl im Filter und von der
-  nächsten Suche (nur die eigenen Such-Zuschnitte des erneut gesuchten
-  Datensatzes werden ersetzt). Eine Ebene zu wählen macht ihren Datensatz zum
-  aktiven und öffnet seinen Abschnitt.
+  unabhängig vom gewählten Datensatz, von der Auswahl im Control Center und von
+  der nächsten Suche. Eine Ebene zu wählen macht ihren Datensatz zum aktiven und
+  öffnet seinen Abschnitt (ist er nicht mehr angehakt, wird er wieder
+  angehakt).
 - Download, „Add to layers“ und Auto-Stretch folgen dem aktiven Datensatz,
   ohne Änderung am Code (§4.2). Die Auswahl von Szenen gilt je Abschnitt und
   wird beim Wechsel geleert; Item-Kennungen sind nur innerhalb einer
@@ -511,7 +521,8 @@ Namenssuche über mehrere Datensätze (F8) sind **M3-10b**.
   bleiben). Wird ein Datensatz ohne eigenen Abschnitt aktiv, gehen Liste,
   Auswahl und Vollauflösung des vorigen Datensatzes; die Auswahl im Filter ist
   während einer laufenden Suche gesperrt.
-- **Zeichenreihenfolge (Otto, 30.09.2026, Option 2):** Die automatisch gesetzten
+- **Zeichenreihenfolge (Otto, 30.09.2026, Option 2) — ersetzt am 30.09.2026, §12:
+  Markierungsebene und `fromSearch` sind entfernt.** Die automatisch gesetzten
   Zuschnitte (`fromSearch`) liegen unter den Quicklooks, wie bei F5 (2)
   formuliert. Umsetzung in `mapLayers.ts`: eine unsichtbare Markierungsebene
   (`layer-floor`, `background`, `visibility: none`) unter allem, was die App
@@ -567,3 +578,43 @@ Coverage-Schalter, Fuß mit „Search“), `ResultsPanel.test.tsx` (Dropdown),
 `LayerManager.test.tsx` (neu, keine Coverage-Zeile), `store.sections.test.ts`
 (immer ein Datensatz gewählt, leerer Datensatz wählbar). Nicht in einem Test
 prüfbar ist die Pixelgeometrie; dafür der Beleg oben.
+
+---
+
+## 12. Zweite Rückmeldung nach Ottos lokaler Prüfung (30.09.2026)
+
+1. **Karte folgt dem Dropdown** (§4.5): Quicklooks, automatischer Zuschnitt und
+   Footprints nur für den gewählten Datensatz; angeheftete Ebenen bleiben.
+   `searchCrops` statt angehefteter Ebenen mit Flag; `layersOnMap`
+   (`searchLayers.ts`) bestimmt, was `MapView` zeichnet; `pinSearchCrops` ist der
+   eigene Schritt des Nutzers. Die Markierungsebene für „unter den Quicklooks“
+   ist entfernt (gegenstandslos). Ersetzt F5 (2) vom 30.09.2026.
+2. **Datensatz-Knöpfe als Raster 2×2** (`.dataset-list`, `grid`), darüber scrollt
+   es. Lange Titel umbrechen auf zwei Zeilen, neben dem Reifegrad-Chip bleibt es
+   eine.
+3. **Dropdown abgesetzt:** eigene getönte Karte mit Beschriftung „Showing
+   dataset“, Akzentlinie darunter, darüber „Scenes by time step“ als Kopf der
+   Liste. Ein Skill `frontend-design` gab es in dieser Umgebung nicht; die
+   Gestaltung folgt den vorhandenen Theme-Tokens und dem HUD-Muster aus
+   `prototyp-inventar.md`.
+4. **Coverage-Knopf** wie in §3; `coverageDatasetId` im Store, `showCoverageFor`
+   und `hideCoverage` ersetzen `toggleCoverage`; `setDatasetId` und die
+   Legenden-Auswahl entfallen. Wird der Datensatz der Coverage abgewählt, geht sie
+   aus.
+5. **Hintergrund hinter der Weltkugel:** Token `--map-bg` (Tech: dunkel, Hell:
+   `#ffffff`); `.app` malt ihn, der `body` hat keine feste Farbe mehr, und
+   `background`-Ebene und `sky` der Karte bekommen den Tokenwert beim Erzeugen und
+   bei jedem Themenwechsel (`mapStyles.ts::applyMapBackground`).
+
+Tests: `store.sections.test.ts` (Sichtbarkeit je Dropdown-Wahl, angeheftete Ebenen
+bleiben, Coverage unabhängig vom Dropdown), `searchLayers.test.ts`
+(`layersOnMap`), `ControlPanel.test.tsx` (Coverage-Auswahl erst beim Klick),
+`ResultsPanel.test.tsx` (abgesetzte Karte, Pin-Zeile), `mapStyles.test.ts` (neu,
+Token in beiden Themen, Stil, Umfärben).
+
+Beleg mit Chromium (Playwright, Antworten gemockt): Raster mit 2 Spalten und 2
+Zeilen, der fünfte Knopf verdeckt und das Raster scrollt; „Coverage“ und „Search“
+im Fuß, „Search“ im Fenster; vor der Auswahl in der Coverage-Wahl wird nichts
+gezeichnet; `.app` malt im Hell-Modus `rgb(255, 255, 255)`, im Dunkel-Modus
+`rgb(4, 7, 10)`. Das Globus-Bild selbst (Kacheln) ließ sich ohne Netz nicht
+prüfen.

@@ -520,6 +520,14 @@ Datensatz-Kennung im Frontend-Code nötig.
 > weiter die gemischte Marke der ganzen Suche fort), und der ±90-Tage-Fallback
 > läuft für den im Dropdown gewählten Datensatz, wenn er im Zeitraum nichts
 > hat.
+>
+> **Zweite Rückmeldung (Otto, 30.09.2026):** Die Karte folgt dem Dropdown (nur der
+> gewählte Datensatz ist zu sehen, außer angehefteten Ebenen); der automatische
+> Zuschnitt des DEM gehört zu den Ergebnissen seines Datensatzes und ist keine
+> angeheftete Ebene mehr (ersetzt F5 (2)); Datensatz-Knöpfe als 2×2-Raster;
+> Coverage-Knopf im Fuß des Control Centers. Für M3-10b: „Load more“ und Fallback
+> beziehen sich weiter auf den im Dropdown gewählten Datensatz; neue Items
+> erscheinen auf der Karte nur für diesen Datensatz.
 
 > **Nachtrag (Otto, 26.09.2026, M3-11b F11):** Richtung „ein Zeitraum, mehrere
 > Datensätze zugleich“ — der Filter wird zur **Mehrfachauswahl**, nicht zur
