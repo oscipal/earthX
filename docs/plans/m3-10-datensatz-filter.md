@@ -4,6 +4,10 @@
 **F5 (2)**, F6 (1), F7 (1), F8 (1), F9 (1)). **Teil 1 (M3-10a) umgesetzt** im
 selben Draft-PR, Stand in §10; **Teil 2 (M3-10b)** folgt nach dem Merge in einer
 neuen Session. Details in `ENTSCHEIDUNGSLOG.md`, Zeilen vom 30.09.2026.
+**Geändert nach Ottos lokaler Prüfung (30.09.2026):** Umschalt-Knöpfe statt
+Textfilter, Dropdown statt aufklappbarer Abschnitte, Coverage-Map im Control
+Center, Layout des Control Centers (§11). §3, §4.1 und §4.3 beschreiben den
+neuen Stand; die Antwort auf F2 (Akkordeon) ist damit ersetzt.
 **Aufgabe:** M3-10 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P9),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11) und Ottos Vorgaben vom
 26.09.2026 zum Start dieser Aufgabe (unten O1–O3, Log). **Stufe B.** Hängt an
@@ -97,37 +101,42 @@ ist damit ein bestehender Test, der grün bleiben muss.
 
 ---
 
-## 3. Bedienung (Vorschlag)
+## 3. Bedienung (Stand nach Ottos Prüfung, 30.09.2026)
 
-**Filter in der Suchkachel** an der Stelle der heutigen Knopfzeile:
+**Datensatz-Auswahl im Control Center** an der Stelle der früheren Knopfzeile,
+wieder als Knöpfe, jetzt als **Umschalter mit Mehrfachauswahl**:
 
 ```
 Datasets                                  2 selected
-[ Filter datasets…                              ]
-[x] Sentinel-2 L2A
-[x] Sentinel-2 L2A (Zarr3)            staging
-[ ] Copernicus DEM GLO-30
+[ Sentinel-2 L2A                              ]   <- gewählt, hervorgehoben
+[ Sentinel-2 L2A (Zarr3)             staging  ]   <- gewählt
+[ Copernicus DEM GLO-30                       ]
+[ Landsat Collection 2                        ]
+  (ab dem fünften Datensatz scrollt die Liste)
+[ Coverage map ]
 ```
 
-- Ein Textfeld „Filter datasets“, darunter eine Liste mit Kontrollkästchen,
-  eine Zeile je Datensatz: Titel und Reifegrad-Chip wie heute. Die
-  Beschreibung steht im `title` der Zeile.
-- Filter im Client: ohne Groß-/Kleinschreibung und ohne Akzente; jedes durch
-  Leerzeichen getrennte Wort muss in Titel, Beschreibung oder Schlagworten
-  vorkommen. Die Eingabe ist Text, kein regulärer Ausdruck.
-- **Gewählte Datensätze bleiben immer sichtbar**, auch wenn der Filter sie
-  nicht trifft; er grenzt nur die übrigen ein. So verschwindet keine Auswahl
-  hinter einem Suchwort.
-- Trifft der Filter nichts: „No dataset matches“.
-- Nicht anzeigbare Datensätze bleiben gelistet, Kontrollkästchen
-  abgeschaltet, Grund im `title` (wie heute).
+- Ein Knopf je Datensatz aus `/stac/collections`: Klick wählt aus (Rahmen,
+  getönte Fläche, Glühen, fette Schrift, `aria-pressed`), erneuter Klick wählt
+  ab. Keine Kontrollkästchen, **kein Textfilter**.
+- Vier Datensätze sind zugleich sichtbar; gibt es mehr, scrollt die Liste.
+- Reifegrad-Chip im Knopf, Beschreibung im `title`. Nicht anzeigbare
+  Datensätze bleiben gelistet, abgeschaltet, Grund im `title`.
 - `DatasetNotes` zeigt die Reifegrad-Sätze aller gewählten Datensätze, je mit
-  Titel.
-- Vorauswahl beim Laden: der erste anzeigbare Datensatz (wie heute).
+  Titel, sobald mehr als einer gewählt ist.
+- Vorauswahl beim Laden: der erste anzeigbare Datensatz.
 - Keine gewählten Datensätze: „Search“ ist abgeschaltet, Hinweis „Select at
   least one dataset.“
-- Die Auswahl zu ändern, leert die Trefferliste (wie heute `setDatasetId`),
-  denn sie passt nicht mehr zur Suche.
+- Die Auswahl zu ändern, leert die Trefferliste (sie passt nicht mehr zur
+  Suche); während einer laufenden Suche ist sie gesperrt.
+- **Coverage-Map** wird hier geschaltet (Umschalter „Coverage map“ unter den
+  Datensätzen), nicht mehr im Layer-Manager; darunter Legende und Histogramm,
+  mit mehreren gewählten Datensätzen mit der Wahl, welcher gezeigt wird (F3).
+
+**Layout:** Das Control Center ist höchstens so hoch wie das Fenster abzüglich
+zweimal 16 px (oben und unten derselbe Abstand). Der Inhalt scrollt; „Search“,
+Trefferzahl und Hinweise stehen in einem festen Fuß darunter und sind bei jeder
+Fensterhöhe sichtbar.
 
 **Zeitraum:** Die Datumsfelder sperren sich nur, wenn **alle** gewählten
 Datensätze keine Zeitachse haben. Ist mindestens einer ohne Zeitachse gewählt,
@@ -138,14 +147,12 @@ axis – acquired Dec 2010 to Jan 2015“ (Text aus M3-12, fest).
 
 ## 4. Vorgeschlagene Umsetzung
 
-### 4.1 Datensätze und Filter (`datasets.ts`)
+### 4.1 Datensätze (`datasets.ts`)
 
-- `datasetMatches(dataset, query): boolean` und
-  `filterDatasets(datasets, query, selectedIds): DatasetOption[]` als reine
-  Funktionen (Vitest).
-- `keywordsOf(collection)` liest STAC-`keywords`, nur Zeichenketten, sonst
-  leer (→ F6).
-- Neues Feld im Typ `Collection`: `keywords?: string[] | null`.
+Kein Filter mehr (Otto, 30.09.2026): Die Funktionen `datasetMatches`,
+`filterDatasets` und `keywordsOf` sind entfernt. Das Feld `keywords` bleibt in
+Registry und STAC-Collection (und im Typ `Collection`) für den künftigen
+Datensatz-Browser, den das Frontend heute nicht liest.
 
 ### 4.2 Store: Auswahl, Abschnitte, aktiver Datensatz
 
@@ -164,12 +171,12 @@ axis – acquired Dec 2010 to Jan 2015“ (Text aus M3-12, fest).
 - `items`, `groups`, `activeGroupIndex`, `expandedGroupIndex` bleiben und
   spiegeln den **offenen** Abschnitt. `TimeSlider`, `MapView`, Download und
   Vollauflösung lesen sie wie bisher und brauchen keine Änderung.
-- **`setOpenSection(datasetId | null)`**: klappt genau einen Abschnitt auf
-  (→ F2), setzt `datasetId`, übernimmt dessen `items`/`groups`, setzt
-  Zeitschritt und Auswahl zurück und verlässt die Vollauflösung. Zuklappen
-  leert `items`/`groups`; die Karte zeigt dann keine Quicklooks. Den
-  AOI-Zuschnitt eines `full_resolution`-Datensatzes startet **nicht** das
-  Aufklappen, sondern die Suche selbst (F5 (2), §4.5).
+- **`setOpenSection(datasetId)`**: die Wahl im Dropdown (§4.3, ersetzt das
+  Aufklappen des Akkordeons aus F2): setzt `datasetId`, übernimmt dessen
+  `items`/`groups`, setzt Zeitschritt und Auswahl zurück und verlässt die
+  Vollauflösung. Es gibt kein „keiner offen“ mehr; dieselbe Wahl noch einmal ist
+  wirkungslos. Den AOI-Zuschnitt eines `full_resolution`-Datensatzes startet
+  **nicht** die Wahl, sondern die Suche selbst (F5 (2), §4.5).
 - **`runSearch`** schickt `collections: selectedDatasetIds` (nur anzeigbare).
   Die Items werden nach `item.collection` auf die Abschnitte verteilt und dort
   je Datensatz mit dessen `resultsGroupBy` gruppiert. Ein Item ohne
@@ -182,23 +189,28 @@ axis – acquired Dec 2010 to Jan 2015“ (Text aus M3-12, fest).
   nur diesen Datensatz; sein Hinweis steht im Kopf des Abschnitts.
 - **Namenssuche** (`findSceneByName`) → F8.
 
-### 4.3 Trefferliste (`ResultsPanel.tsx`)
+### 4.3 Trefferliste (`ResultsPanel.tsx`) — Dropdown statt Abschnitte
 
 ```
-Results                          412   Clear all
-▾ Sentinel-2 L2A                 214
-    ▸ 2026-09-12 · R065           12
-    ▾ 2026-09-07 · R108           10
-        [ ] thumbnail S2B_…
-▸ Sentinel-2 L2A (Zarr3)  staging 196
-▸ Copernicus DEM GLO-30             2
-    No time axis – acquired Dec 2010 to Jan 2015
-[ Load more ]   More scenes may be available.
+Results                                  412   Clear all
+[ Sentinel-2 L2A                       214  ▾ ]   <- Box: gewählter Datensatz
+  Sentinel-2 L2A (Zarr3)  staging      196        <- Dropdown (geöffnet)
+  Sentinel-1 GRD                         0
+     Results incomplete: the source timed out.
+▾ 2026-09-12 · R065                     12
+    [ ] thumbnail S2B_…
+▸ 2026-09-07 · R108                     10
 ```
 
-- Je Abschnitt ein Kopf mit Aufklapp-Pfeil, Titel, Reifegrad-Chip und
-  Trefferzahl. Darunter, **auch zugeklappt**, die Hinweise des Abschnitts
-  (O3):
+- Oben eine **Box mit Dropdown**: Sie nennt den Datensatz, dessen Treffer die
+  Liste zeigt (Titel, Reifegrad-Chip, Trefferzahl), und öffnet eine Liste aller
+  gesuchten Datensätze. Die Liste steht im Fluss des Panels (kein Popup, das der
+  Panelrand abschneiden könnte); Klick auf die Box, Escape oder ein Klick
+  außerhalb schließen sie.
+- **Die gewählte Option ist der aktive Datensatz**: Heatmap, Quicklooks,
+  Zeitleiste, Vollauflösung und Download folgen ihr wie bisher (§4.5).
+- Die Hinweise je Datensatz stehen in der Box (für den gewählten) und in seiner
+  Option im Dropdown:
   - `ignored_filters_by_collection[id]` enthält `datetime` → der Text aus
     `acquisitionNote` (fest aus M3-12); jeder andere ignorierte Filter →
     „Filter not applied: <name>“.
@@ -207,13 +219,17 @@ Results                          412   Clear all
     answer“; unbekannter Grund → „Results incomplete (<reason>)“.
   - Fallback → der bestehende `fallbackNotice`-Text.
   - Leer → „No scenes for this area.“
-- Innerhalb des Abschnitts die Gruppen je Überflug wie heute (`GroupBlock`,
-  `results_group_by`).
-- Nur ein Abschnitt ist offen (Akkordeon, → F2); den offenen Zeitschritt
-  merkt sich der Store über den Gruppen-Schlüssel, nicht über den Index, damit
-  „Load more“ ihn nicht verschiebt (§4.4).
-- **Anfangs offen** (→ F2): der erste Abschnitt mit Treffern in der
-  Reihenfolge der Datensatzliste; hat keiner Treffer, bleibt alles zu.
+- Darunter die Gruppen je Überflug wie heute (`GroupBlock`,
+  `results_group_by`); den offenen Zeitschritt merkt sich der Store über den
+  Gruppen-Schlüssel, nicht über den Index, damit „Load more“ ihn nicht
+  verschiebt (§4.4).
+- **Anfangs gewählt:** der erste Datensatz mit Treffern in der Reihenfolge der
+  Datensatzliste; hat keiner Treffer, der zuvor aktive.
+- **Das Fenster verschwindet nie durch die Wahl.** Es gibt kein „nichts
+  gewählt“; auch ein Datensatz ohne Treffer ist wählbar und zeigt seine Hinweise
+  in der Box. Das Fenster fehlt nur, wenn ein einzelner Datensatz nichts fand
+  (dann spricht der Such-Hinweis) oder noch nicht gesucht wurde. Mit nur einem
+  gesuchten Datensatz ist die Box ohne Dropdown.
 - Überschrift „Time steps“ wird „Results“; die Zahl im Kopf ist die Summe.
 
 ### 4.4 „Load more“ und die gemischte Seitenmarke (→ F1)
@@ -223,7 +239,15 @@ alle Collections (M3-13 §4.3), und für den Client ist sie undurchsichtig
 (`adr/0005` Regel III). Eine Fortsetzung je Datensatz gibt es damit nicht,
 ohne das Backend zu ändern oder die Marke im Client aufzuschlüsseln.
 
-**Vorschlag: ein gemeinsamer Knopf.**
+**Vorschlag: ein gemeinsamer Knopf.** Nach Ottos Änderung vom 30.09.2026
+(Dropdown, §4.3) sitzt er **unter der Liste des im Dropdown gewählten
+Datensatzes** und ist die Fortsetzung der ganzen Suche: Er lädt die nächste
+Seite der gemischten Marke, neue Items landen in ihrem Datensatz, und die
+Trefferzahlen im Dropdown wachsen. Er ist an den gewählten Datensatz gebunden,
+soweit sein Satz und sein Platz betroffen sind — nicht seine Wirkung, denn eine
+Fortsetzung nur eines Datensatzes braucht eine Marke je Collection (Backend, oben
+Option 2 von F1, verworfen). Der Satz unter dem Knopf nennt deshalb nicht den
+gewählten Datensatz als den mit „mehr“.
 
 - Die erste Suche blättert wie heute bis 300 Items. Bleibt danach eine Marke
   übrig, steht am Ende der Liste „Load more“ mit dem Satz „More scenes may be
@@ -241,8 +265,13 @@ ohne das Backend zu ändern oder die Marke im Client aufzuschlüsseln.
   Marke nach einem Deployment nicht mehr gilt) lässt die geladenen Treffer
   stehen und sagt: „Could not load more results — search again.“
 - Suche, Auswahl, AOI oder Zeitraum zu ändern, verwirft die Marke.
-- Abschnitte aus dem ±90-Tage-Fallback (§4.2) blättern nicht mit; der
-  Fallback lädt ohnehin den ganzen Tag.
+- Datensätze aus dem ±90-Tage-Fallback (§4.2) blättern nicht mit; der Fallback
+  lädt ohnehin den ganzen Tag.
+- **Fallback je Datensatz (F7, nach Ottos Änderung):** Er bezieht sich auf den
+  im Dropdown gewählten Datensatz: Wählt der Nutzer einen Datensatz mit
+  Zeitachse, der keine Treffer im Zeitraum hat, läuft für ihn (nur für ihn) der
+  ±90-Tage-Fallback; das Ergebnis und sein Hinweis stehen in seiner Box und
+  seiner Option. Keine parallelen Fallback-Suchen beim Suchen.
 - Mit einem einzigen gewählten Datensatz ist es dieselbe Bedienung; die Marke
   ist dann die des Adapters oder von pgstac.
 
@@ -352,8 +381,8 @@ Grobe Schätzung **[A]**, ohne generierte Dateien:
 
 | Teil | Inhalt | Zeilen, davon Tests |
 |---|---|---|
-| M3-10a | Filter, Mehrfachauswahl, Abschnitte, aktiver Datensatz, Heatmap-Legende, `ignoredFiltersByCollection`, F6 | ≈ 500, davon ≈ 250 |
-| M3-10b | „Load more“, Fallback je Abschnitt, Namenssuche über mehrere | ≈ 330, davon ≈ 170 |
+| M3-10a | Umschalt-Knöpfe, Mehrfachauswahl, Dropdown der Treffer, aktiver Datensatz, Coverage-Schalter, Heatmap-Legende, `ignoredFiltersByCollection`, F6 | ≈ 500, davon ≈ 250 (tatsächlich mehr, §10) |
+| M3-10b | „Load more“, Fallback für den gewählten Datensatz, Namenssuche über mehrere | ≈ 330, davon ≈ 170 |
 
 ---
 
@@ -505,3 +534,36 @@ Namenssuche über mehrere Datensätze (F8) sind **M3-10b**.
 `searchLayers.test.ts` (neu), `store.sections.test.ts` (neu), `store.test.ts`,
 `mapLayers.test.ts`, `components/ControlPanel.test.tsx`,
 `components/ResultsPanel.test.tsx` (neu).
+
+---
+
+## 11. Nachbesserung nach Ottos lokaler Prüfung (30.09.2026)
+
+Alle sechs Punkte im selben PR umgesetzt.
+
+1. **Umschalt-Knöpfe** mit Mehrfachauswahl statt Liste mit Kontrollkästchen
+   (`DatasetPicker`, `.dataset-toggle`); gewählte Knöpfe sind getönt, umrandet,
+   glühen und sind fett.
+2. **Vier Zeilen sichtbar**, darüber scrollt die Liste (`max-height` aus
+   Zeilenhöhe und Abstand).
+3. **Kein Textfilter mehr;** Filterfunktionen entfernt (§4.1), `keywords` bleibt.
+4. **Layout:** `.control-panel` ist höchstens `100dvh − 32px` hoch (oben wie unten
+   16 px), Inhalt scrollt in `.control-scroll`, „Search“ und Hinweise stehen in
+   `.control-footer`; dazu kompakter (Abstände, Werkzeugleiste dreispaltig).
+   Beleg mit Chromium (Playwright, Datensatzliste mit sechs Einträgen): Abstand
+   oben 16 px; unten 16 px, sobald der Inhalt die Fensterhöhe füllt, sonst mehr;
+   „Search“ liegt in allen geprüften Höhen im Fenster (600, 720, 768, 900,
+   1080 px); ab 720 px Höhe scrollt nichts.
+5. **Trefferliste:** Dropdown-Box statt Abschnitten (§4.3). Ursache des
+   verschwindenden Fensters: `App.tsx` blendete die Ergebnisleiste aus, sobald
+   `groups` leer war, was beim Zuklappen des offenen Abschnitts geschah. Jetzt
+   gibt es kein Zuklappen mehr, und die Leiste hängt an `hasResultsPanel`
+   (`sections.ts`), nicht an den Gruppen des gewählten Datensatzes.
+6. **Coverage-Map** im Control Center (`CoverageControls`), Zeile im
+   Layer-Manager entfernt.
+
+Tests: `ControlPanel.test.tsx` (Umschalter, kein Filter, Vierzeilen-Liste,
+Coverage-Schalter, Fuß mit „Search“), `ResultsPanel.test.tsx` (Dropdown),
+`LayerManager.test.tsx` (neu, keine Coverage-Zeile), `store.sections.test.ts`
+(immer ein Datensatz gewählt, leerer Datensatz wählbar). Nicht in einem Test
+prüfbar ist die Pixelgeometrie; dafür der Beleg oben.

@@ -143,8 +143,8 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | in Arbeit |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
-| M3-10a | Datensatz-Filter in der Suchkachel: Mehrfachauswahl, Abschnitte je Datensatz, aktiver Datensatz | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | Draft-PR |
-| M3-10b | Datensatz-Filter Teil 2: „Load more“, ±90-Tage-Fallback je Abschnitt, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | offen |
+| M3-10a | Datensatz-Auswahl in der Suchkachel: Umschalt-Knöpfe mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz, Coverage-Schalter | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | Draft-PR |
+| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | offen |
 | M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
@@ -505,12 +505,21 @@ und die Bedienung vorschlagen.
 **Abnahme:** Vitest für den Filter; mit drei Datensätzen keine
 Datensatz-Kennung im Frontend-Code nötig.
 
-> **Schnitt (Otto, 30.09.2026, F9 (1)):** Zwei PRs. **M3-10a** (Filter,
-> Mehrfachauswahl, Abschnitte, aktiver Datensatz, Heatmap-Legende,
-> `ignored_filters_by_collection`, Schlagworte in der Registry) und **M3-10b**
-> („Load more“, ±90-Tage-Fallback je Abschnitt, Namenssuche über mehrere
+> **Schnitt (Otto, 30.09.2026, F9 (1)):** Zwei PRs. **M3-10a** (Umschalt-Knöpfe
+> mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz,
+> Heatmap-Legende, `ignored_filters_by_collection`, Schlagworte in der Registry)
+> und **M3-10b** („Load more“, ±90-Tage-Fallback, Namenssuche über mehrere
 > Datensätze; nach dem Merge von M3-10a in einer neuen Session). Bedienung und
 > Entscheidungen F1–F9: `plans/m3-10-datensatz-filter.md`.
+>
+> **Änderung nach Ottos lokaler Prüfung (30.09.2026):** Statt Filter mit
+> Kontrollkästchen jetzt Umschalt-Knöpfe (vier sichtbar, sonst scrollbar, kein
+> Textfilter); statt aufklappbarer Abschnitte ein Dropdown über der Trefferliste;
+> die Coverage-Map wird im Control Center geschaltet. Für M3-10b heißt das:
+> „Load more“ sitzt unter der Liste des im Dropdown gewählten Datensatzes (setzt
+> weiter die gemischte Marke der ganzen Suche fort), und der ±90-Tage-Fallback
+> läuft für den im Dropdown gewählten Datensatz, wenn er im Zeitraum nichts
+> hat.
 
 > **Nachtrag (Otto, 26.09.2026, M3-11b F11):** Richtung „ein Zeitraum, mehrere
 > Datensätze zugleich“ — der Filter wird zur **Mehrfachauswahl**, nicht zur
