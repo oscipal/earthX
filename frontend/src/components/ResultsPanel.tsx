@@ -140,8 +140,9 @@ function GroupBlock({
 
 // One dataset's entry in the box and in the dropdown (M3-10): title, maturity
 // chip, scene count, and under them the notes that belong to it — dropped
-// filters, an unreachable source, a grouping failure.
+// filters, an unreachable source, a grouping failure, the ±90-day fallback.
 function SectionSummary({ section }: { section: ResultSection }) {
+  const lookingForDate = useAppStore((s) => s.fallbackDatasetId === section.datasetId);
   const title = useAppStore((s) => s.datasets.find((d) => d.id === section.datasetId)?.title ?? section.datasetId);
   const label = useAppStore((s) => {
     const dataset = s.datasets.find((d) => d.id === section.datasetId);
@@ -156,11 +157,15 @@ function SectionSummary({ section }: { section: ResultSection }) {
         {label && <span className="maturity-chip">{label}</span>}
         <span className="rg-count">{section.items.length}</span>
       </span>
-      {section.notes.map((note, i) => (
-        <span key={`${i}-${note}`} className="dataset-select-note">
-          {note}
-        </span>
-      ))}
+      {lookingForDate ? (
+        <span className="dataset-select-note">Looking for the nearest date with scenes…</span>
+      ) : (
+        section.notes.map((note, i) => (
+          <span key={`${i}-${note}`} className="dataset-select-note">
+            {note}
+          </span>
+        ))
+      )}
     </>
   );
 }
@@ -251,6 +256,26 @@ function CropRow({ openId }: { openId: string | null }) {
   );
 }
 
+// "Load more" (M3-10 F1) continues the whole search, whichever dataset the
+// dropdown shows: the page token spans every dataset asked and cannot be split
+// per dataset, so the sentence names none of them as the one with more.
+function LoadMore() {
+  const canLoad = useAppStore((s) => s.searchContext?.nextToken != null);
+  const loading = useAppStore((s) => s.loadingMore);
+  const failed = useAppStore((s) => s.loadMoreError);
+  const loadMore = useAppStore((s) => s.loadMore);
+  if (failed) return <p className="hint-text load-more">{failed}</p>;
+  if (!canLoad) return null;
+  return (
+    <div className="load-more">
+      <span className="hint-text">More scenes may be available.</span>
+      <button type="button" className="ghost-btn" disabled={loading} onClick={() => void loadMore()}>
+        {loading ? 'Loading…' : 'Load more'}
+      </button>
+    </div>
+  );
+}
+
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
   // The dataset shown is the one whose scenes `groups`/`items` hold
@@ -297,6 +322,7 @@ export default function ResultsPanel() {
           />
         ))}
       </div>
+      <LoadMore />
     </div>
   );
 }

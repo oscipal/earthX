@@ -1088,6 +1088,18 @@ input[type='date']:focus {
   gap: 8px;
   padding: 6px 14px 0;
 }
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 14px 12px;
+}
+.load-more .ghost-btn {
+  padding: 6px 12px;
+  font-size: 11px;
+}
 .dataset-select-box,
 .dataset-select-option {
   width: 100%;

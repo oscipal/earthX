@@ -8,7 +8,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
 import { buildSections } from '../sections';
@@ -293,5 +293,61 @@ describe('ResultsPanel dataset dropdown', () => {
     load(MIXED);
     act(() => (container.querySelector('.link-btn') as HTMLButtonElement).click());
     expect(useAppStore.getState().sections).toEqual([]);
+  });
+});
+
+describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
+  type Context = NonNullable<ReturnType<typeof useAppStore.getState>['searchContext']>;
+  const withToken = (nextToken: string | null) => ({ searchContext: { nextToken } as Context });
+  const loadMoreRow = () => container.querySelector('.load-more');
+  const loadMoreButton = () => loadMoreRow()?.querySelector('button') as HTMLButtonElement | null;
+  const original = useAppStore.getState().loadMore;
+
+  beforeEach(() => useAppStore.setState({ searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetId: null }));
+  afterEach(() => useAppStore.setState({ loadMore: original }));
+
+  it('offers "Load more" below the scenes while the search has a token left, naming no dataset', () => {
+    const loadMore = vi.fn(async () => {});
+    useAppStore.setState({ ...withToken('p4'), loadMore });
+    load(MIXED);
+    expect(text(loadMoreRow())).toContain('More scenes may be available.');
+    expect(text(loadMoreRow())).not.toContain('Optical');
+    const list = container.querySelector('.results-list')!;
+    expect(list.compareDocumentPosition(loadMoreRow()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    act(() => loadMoreButton()!.click());
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays below whichever dataset is chosen', () => {
+    useAppStore.setState(withToken('p4'));
+    load(MIXED);
+    openList();
+    act(() => options()[2].click());
+    expect(useAppStore.getState().openSectionId).toBe('dem');
+    expect(loadMoreButton()).not.toBeNull();
+  });
+
+  it('is locked while loading', () => {
+    useAppStore.setState({ ...withToken('p4'), loadingMore: true });
+    load(MIXED);
+    expect(loadMoreButton()!.disabled).toBe(true);
+    expect(text(loadMoreButton())).toBe('Loading…');
+  });
+
+  it('is not there without a token; after a failure it says to search again instead', () => {
+    load(MIXED);
+    expect(loadMoreRow()).toBeNull();
+    act(() => useAppStore.setState({ loadMoreError: 'Could not load more results — search again.' }));
+    expect(text(loadMoreRow())).toBe('Could not load more results — search again.');
+    expect(loadMoreButton()).toBeNull();
+  });
+
+  it('says in the box that the nearest date is being looked for, in place of the notes', () => {
+    load([scene('d1', 'dem', { start_datetime: '2011-01-01T00:00:00Z' })]);
+    openList();
+    act(() => options()[0].click());
+    act(() => useAppStore.setState({ fallbackDatasetId: 'optical' }));
+    expect(text(box())).toContain('Looking for the nearest date with scenes…');
+    expect(text(box())).not.toContain('No scenes for this area.');
   });
 });
