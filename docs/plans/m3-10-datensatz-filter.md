@@ -645,8 +645,10 @@ ihm folgt (§4.3–§4.5, §12).
   load more results — search again.“ und verwirft die Marke. AOI oder Zeitraum zu
   ändern verwirft nur die Marke, die Treffer bleiben; Auswahl ändern, neue Suche,
   Namenssuche und „Clear all“ verwerfen die ganze Suche. Eine Antwort, die danach
-  kommt, wird nicht mehr angezeigt (Zähler `searchGen`); das gilt auch für den
-  Fallback.
+  kommt, wird nicht mehr angezeigt (Zähler `searchGen`); das gilt für die Suche
+  selbst, „Load more“, den Fallback und die Namenssuche. Lässt sich eine neue Szene
+  nicht gruppieren, behält ihr Datensatz die geladenen Szenen und sagt in der Box,
+  dass die später geladenen fehlen.
 - **Fallback (F7):** Er läuft für den im Dropdown gewählten Datensatz, wenn dessen
   Box leer ist, der Datensatz eine Zeitachse hat, ein Zeitraum gesucht wurde und
   seine Quelle vollständig geantwortet hat (`sections.ts::needsFallback`). Bei der
@@ -655,14 +657,23 @@ ihm folgt (§4.3–§4.5, §12).
   wird. Keine parallelen Fallback-Suchen. Er fragt nur diesen Datensatz, mit AOI
   und Zeitraum der Suche, und läuft einmal je Suche. Ergebnis und Hinweis stehen
   in Box und Option des Datensatzes; solange er läuft, steht dort „Looking for the
-  nearest date with scenes…“. Ein Fehler steht ebenfalls dort („Could not look for
-  the nearest date: …“) statt als Fehler der ganzen Suche. Mit einem Datensatz
-  sagt der Such-Hinweis es wie bisher.
+  nearest date with scenes…“. Für denselben Datensatz läuft er nie zweimal
+  zugleich. Ein Fehler steht ebenfalls dort („Could not look for the nearest date:
+  …“) statt als Fehler der ganzen Suche, auch wenn er bei der Suche selbst läuft.
+  Mit einem Datensatz sagt der Such-Hinweis es wie bisher, und ein Fehler ist wie
+  bisher „Search failed“. Die Trefferzahl im Such-Hinweis zählt nur Szenen aus dem
+  gesuchten Zeitraum, keine aus einem Fallback.
 - **Fallback und „Load more“:** Ein Datensatz im Fallback blättert nicht mit und
   behält den Fallback, solange die fortgesetzte Suche nichts für ihn bringt.
   Bringt sie doch Treffer im Zeitraum (möglich, wenn sich eigene Collections eine
   Quelle der gemischten Suche teilen und die ersten 300 Items von einer anderen
   kamen), ersetzen diese den Fallback — er stand nur für „nichts im Zeitraum“.
+  Antwortet „Load more“ vor einem noch laufenden Fallback, verwirft der Fallback
+  sein Ergebnis.
+- **Offen (Frage an Otto, aus dem Review):** Solange eine Seitenmarke übrig ist,
+  kann ein leerer Datensatz auf späteren Seiten doch Treffer im Zeitraum haben
+  (geteilte Quelle, s. o.). Der Fallback läuft heute trotzdem, und sein Hinweis
+  „No results in the chosen time range“ kann dann zu viel behaupten.
 - **Namenssuche (F8):** Sie fragt alle angehakten anzeigbaren Datensätze parallel.
   Der erste Datensatz in Listenreihenfolge mit der Szene öffnet im Dropdown, die
   Karte fliegt hin, die Szene ist ausgewählt; jeder andere sagt in seiner Box, was

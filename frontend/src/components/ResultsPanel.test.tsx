@@ -303,7 +303,7 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
   const loadMoreButton = () => loadMoreRow()?.querySelector('button') as HTMLButtonElement | null;
   const original = useAppStore.getState().loadMore;
 
-  beforeEach(() => useAppStore.setState({ searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetId: null }));
+  beforeEach(() => useAppStore.setState({ searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetIds: [] }));
   afterEach(() => useAppStore.setState({ loadMore: original }));
 
   it('offers "Load more" below the scenes while the search has a token left, naming no dataset', () => {
@@ -346,7 +346,7 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
     load([scene('d1', 'dem', { start_datetime: '2011-01-01T00:00:00Z' })]);
     openList();
     act(() => options()[0].click());
-    act(() => useAppStore.setState({ fallbackDatasetId: 'optical' }));
+    act(() => useAppStore.setState({ fallbackDatasetIds: ['optical'] }));
     expect(text(box())).toContain('Looking for the nearest date with scenes…');
     expect(text(box())).not.toContain('No scenes for this area.');
   });

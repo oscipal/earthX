@@ -142,7 +142,7 @@ function GroupBlock({
 // chip, scene count, and under them the notes that belong to it — dropped
 // filters, an unreachable source, a grouping failure, the ±90-day fallback.
 function SectionSummary({ section }: { section: ResultSection }) {
-  const lookingForDate = useAppStore((s) => s.fallbackDatasetId === section.datasetId);
+  const lookingForDate = useAppStore((s) => s.fallbackDatasetIds.includes(section.datasetId));
   const title = useAppStore((s) => s.datasets.find((d) => d.id === section.datasetId)?.title ?? section.datasetId);
   const label = useAppStore((s) => {
     const dataset = s.datasets.find((d) => d.id === section.datasetId);

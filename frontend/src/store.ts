@@ -27,7 +27,7 @@ import {
   type OriginalFileLink,
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
-import { buildGroups, groupIndexOfItem, groupItemIdsFor, MissingProperty } from './grouping';
+import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
 import type { LayerOverlay, LayerRestore, MapLayer } from './layers';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
@@ -352,23 +352,26 @@ function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections
       : 'No scenes found for this area and date range.';
   }
   if (datasets.length === 1) {
-    return foundNotice(ctx.features, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
+    return foundNotice(sections[0].items, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
   }
-  const steps = sections.reduce((sum, section) => sum + section.groups.length, 0);
-  const found = sections.reduce((sum, section) => sum + section.items.length, 0);
+  // What the search found in its date range: a fallback's scenes are not counted.
+  const own = sections.filter((section) => section.origin === 'search');
+  const steps = own.reduce((sum, section) => sum + section.groups.length, 0);
+  const found = own.reduce((sum, section) => sum + section.items.length, 0);
   return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
 }
 
 // Lays out the scenes a search has loaded: one section per dataset asked, their
 // AOI crops and the search notice. A new search opens the first dataset with
-// scenes, else the active one; "Load more" (`keepOpen`) keeps the dataset and
-// time step that are open, and a dataset showing its ±90-day fallback keeps it
-// while the search still has nothing of its own for it.
+// scenes, else the active one. "Load more" (`keepOpen`) keeps the dataset and
+// time step that are open; a dataset showing its ±90-day fallback keeps it while
+// the search still has nothing of its own for it, and a dataset whose new scenes
+// cannot be grouped keeps the scenes it had.
 function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, keepOpen: boolean): void {
   const s = get();
   const datasets = viewableDatasets(s.datasets, ctx.datasetIds);
   const { sections: built, stray } = buildSections(ctx.features, datasets, ctx.answer);
-  const failed = datasets.length === 1 ? built[0]?.groupingError : null;
+  const failed = datasets.length === 1 && !keepOpen ? built[0]?.groupingError : null;
   if (failed) {
     set({
       ...openSectionState(null),
@@ -383,7 +386,17 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
   }
   const sections = built.map((section) => {
     const shown = keepOpen ? s.sections.find((x) => x.datasetId === section.datasetId) : undefined;
-    return shown?.origin === 'fallback' && section.items.length === 0 ? shown : section;
+    if (!shown) return section;
+    if (section.groupingError && !shown.groupingError) {
+      const note = `Grouping failed: ${section.groupingError} — the scenes loaded since are left out.`;
+      return shown.notes.includes(note) ? shown : { ...shown, notes: [...shown.notes, note] };
+    }
+    if (shown.origin === 'fallback' && section.items.length === 0) {
+      // A source that failed only now is still said.
+      const added = section.notes.filter((note) => note !== NO_SCENES_NOTE && !shown.notes.includes(note));
+      return { ...shown, incomplete: section.incomplete, notes: [...shown.notes, ...added] };
+    }
+    return section;
   });
   const open = keepOpen
     ? (sections.find((x) => x.datasetId === s.openSectionId) ?? null)
@@ -422,16 +435,29 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
 // The ±90-day fallback for one dataset of the search (M3-10 F7, Otto
 // 30.09.2026): asks only that dataset around the searched date range and puts
 // the nearest day's scenes, or that there are none, in its section. With one
-// dataset searched the search notice says it too, as before M3-10. Pages only
-// within that day, never with "Load more". A failure is the caller's to report.
-async function runFallback(set: SetState, get: GetState, datasetId: string): Promise<void> {
+// dataset searched the search notice says it too, as before M3-10, and a failure
+// is thrown for `runSearch` to report (`rethrow`); otherwise the failure is said
+// in the dataset's box. Pages only within that day, never with "Load more".
+async function runFallback(set: SetState, get: GetState, datasetId: string, rethrow: boolean): Promise<void> {
   const s = get();
   const ctx = s.searchContext;
   const section = s.sections.find((x) => x.datasetId === datasetId);
   const [dataset] = viewableDatasets(s.datasets, [datasetId]);
   if (!ctx || !section || !dataset || !needsFallback(section, dataset, ctx.dateFrom, ctx.dateTo)) return;
+  if (s.fallbackDatasetIds.includes(datasetId)) return;
   const gen = searchGen;
-  set({ fallbackDatasetId: datasetId });
+  set({ fallbackDatasetIds: [...s.fallbackDatasetIds, datasetId] });
+  // Only a section still waiting for this fallback is replaced: a "Load more"
+  // that answered first may have brought scenes in the date range.
+  const replace = (make: (current: ResultSection) => ResultSection) => {
+    if (gen !== searchGen) return null;
+    const now = get();
+    const current = now.sections.find((x) => x.datasetId === datasetId);
+    if (!current || current.origin !== 'search' || current.items.length > 0) return null;
+    const replacement = make(current);
+    return { now, replacement, sections: now.sections.map((x) => (x.datasetId === datasetId ? replacement : x)) };
+  };
+  const withoutNoScenes = (current: ResultSection) => current.notes.filter((note) => note !== NO_SCENES_NOTE);
   try {
     const query = { ...ctx.query, collections: [datasetId] };
     const found = await findFallback(
@@ -440,21 +466,21 @@ async function runFallback(set: SetState, get: GetState, datasetId: string): Pro
       ctx.dateFrom,
       ctx.dateTo,
     );
-    let replacement: ResultSection;
+    let built: ResultSection | null = null;
     if (found) {
       const range = fullDayRange(found.item);
       const full = range
         ? await api.searchAllPages({ ...query, datetime: range }, MAX_SEARCH_ITEMS)
         : { features: [found.item], ...NO_ANSWER_FILTERS };
-      const [built] = buildSections(full.features, [dataset], full).sections;
-      replacement = { ...built, origin: 'fallback', notes: [fallbackNotice(found), ...built.notes] };
-    } else {
-      const notes = section.notes.filter((note) => note !== NO_SCENES_NOTE);
-      replacement = { ...section, origin: 'fallback', notes: [NO_FALLBACK_MESSAGE, ...notes] };
+      built = buildSections(full.features, [dataset], full).sections[0];
     }
-    if (gen !== searchGen) return;
-    const now = get();
-    const sections = now.sections.map((x) => (x.datasetId === datasetId ? replacement : x));
+    const done = replace((current) =>
+      found && built
+        ? { ...built, origin: 'fallback', notes: [fallbackNotice(found), ...built.notes] }
+        : { ...current, origin: 'fallback', notes: [NO_FALLBACK_MESSAGE, ...withoutNoScenes(current)] },
+    );
+    if (!done) return;
+    const { now, replacement, sections } = done;
     const { crops, problems } = cropsForSearch(viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi);
     const singleNotice = replacement.groupingError
       ? { error: `Grouping failed: ${replacement.groupingError}`, notice: null }
@@ -465,8 +491,14 @@ async function runFallback(set: SetState, get: GetState, datasetId: string): Pro
       searchCrops: crops,
       ...(ctx.datasetIds.length === 1 ? singleNotice : {}),
     });
+  } catch (e) {
+    if (rethrow) throw e;
+    // Not tried again for this search.
+    const note = `Could not look for the nearest date: ${(e as Error).message}`;
+    const done = replace((current) => ({ ...current, origin: 'fallback', notes: [note, ...withoutNoScenes(current)] }));
+    if (done) set({ sections: done.sections });
   } finally {
-    if (get().fallbackDatasetId === datasetId) set({ fallbackDatasetId: null });
+    if (gen === searchGen) set({ fallbackDatasetIds: get().fallbackDatasetIds.filter((id) => id !== datasetId) });
   }
 }
 
@@ -481,7 +513,7 @@ function dropPageToken(set: SetState, get: GetState): void {
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
-  return { searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetId: null };
+  return { searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetIds: [] };
 }
 
 interface AppState {
@@ -598,8 +630,8 @@ interface AppState {
   // "Load more" (M3-10b): running, and why it last failed.
   loadingMore: boolean;
   loadMoreError: string | null;
-  // The dataset whose ±90-day fallback is running, `null` while none is.
-  fallbackDatasetId: string | null;
+  // The datasets whose ±90-day fallback is running.
+  fallbackDatasetIds: string[];
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
@@ -738,7 +770,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchContext: null,
   loadingMore: false,
   loadMoreError: null,
-  fallbackDatasetId: null,
+  fallbackDatasetIds: [],
   items: [],
   groups: [],
   activeGroupIndex: 0,
@@ -831,19 +863,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (section.origin === 'name' && section.items.length > 0 && dataset?.viewable && dataset.browse === 'full_resolution') {
       void get().enterFocus(false);
     }
-    const gen = searchGen;
-    runFallback(set, get, id).catch((e: unknown) => {
-      if (gen !== searchGen) return;
-      // Said in the dataset's own box; not tried again for this search.
-      const note = `Could not look for the nearest date: ${(e as Error).message}`;
-      set({
-        sections: get().sections.map((x) =>
-          x.datasetId === id
-            ? { ...x, origin: 'fallback', notes: [note, ...x.notes.filter((n) => n !== NO_SCENES_NOTE)] }
-            : x,
-        ),
-      });
-    });
+    void runFallback(set, get, id, false);
   },
 
   // Activating a draw tool slides the control panel away so it can't block the
@@ -1558,6 +1578,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...forgetSearch(),
       ...LEAVE_FOCUS,
     });
+    // "Clear all" or another step that drops the results may come before the answer.
+    const gen = searchGen;
     try {
       const query = {
         collections: chosen.map((d) => d.id),
@@ -1566,6 +1588,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datetime: buildDatetime(dateFrom, dateTo),
       };
       const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
+      if (gen !== searchGen) return;
       showSearchResults(
         set,
         get,
@@ -1590,9 +1613,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       // The dataset the dropdown opens with found nothing in the date range (so
       // did every other one, or it would not be open): its fallback is part of the
       // search. A dataset without a time axis never runs it (O2, Otto 26.09.2026).
+      // Its failure fails the search only when it is the one dataset searched;
+      // otherwise the other datasets' notes stay and its box says it.
       const { openSectionId } = get();
-      if (openSectionId) await runFallback(set, get, openSectionId);
+      if (openSectionId) await runFallback(set, get, openSectionId, chosen.length === 1);
     } catch (e) {
+      if (gen !== searchGen) return;
       set({
         error: `Search failed: ${(e as Error).message}`,
         sections: [],
@@ -1666,6 +1692,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     set({ sceneLookupLoading: true, error: null });
+    const gen = searchGen;
     const answers = await Promise.all(
       chosen.map((dataset) =>
         api.fetchItem(dataset.id, name).then(
@@ -1674,6 +1701,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       ),
     );
+    // A search, "Clear all" or a change of the ticks came first: this answer is stale.
+    if (gen !== searchGen) {
+      set({ sceneLookupLoading: false });
+      return;
+    }
     const invalid = (failure: Error | null) => failure instanceof api.HttpError && failure.status === 400;
     const sections = chosen.map((dataset, i): ResultSection => {
       const { item, failure } = answers[i];
@@ -1689,8 +1721,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         return { ...section, items: [item], groups: buildGroups([item], dataset.resultsGroupBy), notes: [] };
       } catch (e) {
-        if (!(e instanceof MissingProperty)) throw e;
-        return { ...section, items: [], groups: [], notes: [`Grouping failed: ${e.message}`], groupingError: e.message };
+        // `MissingProperty` in practice; anything else must not leave the lookup locked either.
+        const message = (e as Error).message;
+        return { ...section, items: [], groups: [], notes: [`Grouping failed: ${message}`], groupingError: message };
       }
     });
     const open = firstSectionWithItems(sections);

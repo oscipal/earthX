@@ -125,7 +125,7 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
     searchContext: null,
     loadingMore: false,
     loadMoreError: null,
-    fallbackDatasetId: null,
+    fallbackDatasetIds: [],
     sceneNameQuery: '',
     sceneLookupLoading: false,
   });
@@ -907,6 +907,55 @@ describe('"Load more" (M3-10 F1)', () => {
     expect(state.loadingMore).toBe(false);
   });
 
+  it('a new scene that cannot be grouped leaves the loaded scenes standing, with a note', async () => {
+    vi.stubGlobal(
+      'fetch',
+      routed((body) => (body.token === 'p4' ? page([{ ...opticalScene('bad', 'optical', '2026-07-26'), properties: {} }], null) : byToken(body))),
+    );
+    await search();
+    await loadMore();
+    const optical = useAppStore.getState().sections[0];
+    expect(optical.items).toHaveLength(200);
+    expect(optical.notes).toEqual(['Grouping failed: item bad is missing property "datetime" — the scenes loaded since are left out.']);
+    expect(useAppStore.getState().error).toBeNull();
+  });
+
+  it('"Clear all" drops what a search, a "Load more" or a fallback answers afterwards', async () => {
+    let answer: (value: unknown) => void = () => {};
+    const hold = () => new Promise((resolve) => (answer = resolve));
+    vi.stubGlobal('fetch', routed(hold));
+    const running = search();
+    useAppStore.getState().clearAll();
+    answer(page([opticalScene('o1', 'optical', '2026-07-24')], null));
+    await running;
+    expect(useAppStore.getState().sections).toEqual([]);
+    expect(useAppStore.getState().searchContext).toBeNull();
+
+    useAppStore.setState({ aoi: AOI });
+    vi.stubGlobal('fetch', routed((body) => (body.token === 'p4' ? hold() : byToken(body))));
+    await search();
+    const more = loadMore();
+    useAppStore.getState().clearAll();
+    answer(PAGES.p4);
+    await more;
+    expect(useAppStore.getState().sections).toEqual([]);
+
+    useAppStore.setState({ aoi: AOI, dateFrom: '2026-07-01', dateTo: '2026-07-31' });
+    vi.stubGlobal(
+      'fetch',
+      routed((body) =>
+        (body.collections as string[]).length > 1 ? page([opticalScene('o1', 'optical', '2026-07-24')], null) : hold(),
+      ),
+    );
+    await search();
+    useAppStore.getState().setOpenSection('optical-zarr');
+    useAppStore.getState().clearAll();
+    answer(page([opticalScene('p1', 'optical-zarr', '2026-06-20')], null));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(useAppStore.getState().sections).toEqual([]);
+    expect(useAppStore.getState().fallbackDatasetIds).toEqual([]);
+  });
+
   it('with one dataset, the notice counts the matches without telling to narrow the search', async () => {
     reset(['optical']);
     vi.stubGlobal('fetch', routed((body) => ({ ...byToken(body), numberMatched: 305 })));
@@ -954,7 +1003,7 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
     const state = useAppStore.getState();
     expect(zarr().notes[0]).toBe('No results in the chosen time range — nearest scene: 2026-06-20');
     expect(state.items.map((i) => i.id)).toEqual(['f1', 'f2']);
-    expect(state.fallbackDatasetId).toBeNull();
+    expect(state.fallbackDatasetIds).toEqual([]);
     expect(count('optical')).toBe(1);
     expect(state.notice).toBe('2 scene(s) in 2 time step(s) across 3 datasets.');
   });
@@ -1004,7 +1053,106 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
     await vi.waitFor(() => expect(zarr().origin).toBe('fallback'));
     expect(zarr().notes[0]).toBe('Could not look for the nearest date: source down');
     expect(useAppStore.getState().error).toBeNull();
-    expect(useAppStore.getState().fallbackDatasetId).toBeNull();
+    expect(useAppStore.getState().fallbackDatasetIds).toEqual([]);
+    const asked = vi.mocked(fetch).mock.calls.length;
+    choose('optical');
+    choose('optical-zarr');
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(asked);
+  });
+
+  it('at search time, a failure with several datasets stays in the box and keeps the other notes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      routed((body) =>
+        body.datetime === RANGE
+          ? page([], null, { incomplete_collections: [{ collection: 'optical-zarr', reason: 'timeout' }] })
+          : Promise.reject(new Error('source down')),
+      ),
+    );
+    await search();
+    const state = useAppStore.getState();
+    expect(state.error).toBeNull();
+    expect(state.sections.map((x) => x.notes[0])).toEqual([
+      'Could not look for the nearest date: source down',
+      'Results incomplete: the source timed out.',
+      'No scenes for this area.',
+    ]);
+    expect(state.searchContext).not.toBeNull();
+  });
+
+  it('at search time, a failure with one dataset fails the search, as before', async () => {
+    reset(['optical']);
+    useAppStore.setState({ dateFrom: '2026-07-01', dateTo: '2026-07-31' });
+    vi.stubGlobal(
+      'fetch',
+      routed((body) => (body.datetime === RANGE ? page([], null) : Promise.reject(new Error('source down')))),
+    );
+    await search();
+    expect(useAppStore.getState().error).toBe('Search failed: source down');
+    expect(useAppStore.getState().sections).toEqual([]);
+  });
+
+  it('with one dataset, the nearest day found is the search notice', async () => {
+    reset(['optical-zarr']);
+    useAppStore.setState({ dateFrom: '2026-07-01', dateTo: '2026-07-31' });
+    vi.stubGlobal(
+      'fetch',
+      routed((body) => {
+        if (body.datetime === RANGE) return page([], null);
+        if (body.datetime === NEAREST_DAY) {
+          return page([opticalScene('f1', 'optical-zarr', '2026-06-20'), opticalScene('f2', 'optical-zarr', '2026-06-20')], null);
+        }
+        return page([opticalScene('p1', 'optical-zarr', '2026-06-20')], null);
+      }),
+    );
+    await search();
+    const state = useAppStore.getState();
+    expect(state.notice).toBe('No results in the chosen time range — nearest scene: 2026-06-20');
+    expect(state.items.map((i) => i.id)).toEqual(['f1', 'f2']);
+  });
+
+  it('never runs twice at once for one dataset; the box of each running dataset says it is looking', async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    vi.stubGlobal(
+      'fetch',
+      routed((body) => {
+        if (body.datetime === RANGE) return page([opticalScene('o1', 'optical', '2026-07-24')], null);
+        return new Promise((resolve) => answers.push(resolve));
+      }),
+    );
+    reset(['optical', 'optical-zarr', 'dem']);
+    useAppStore.setState({ dateFrom: '2026-07-01', dateTo: '2026-07-31' });
+    await search();
+    choose('optical-zarr');
+    choose('optical');
+    choose('optical-zarr');
+    await Promise.resolve();
+    expect(answers).toHaveLength(1);
+    expect(useAppStore.getState().fallbackDatasetIds).toEqual(['optical-zarr']);
+  });
+
+  it('a "Load more" that answers first with scenes in the date range is not overwritten by the fallback', async () => {
+    let probe: (value: unknown) => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      routed((body) => {
+        if (body.datetime === NEAREST_DAY) return page([opticalScene('f1', 'optical-zarr', '2026-06-20')], null);
+        if (JSON.stringify(body.collections) === '["optical-zarr"]') return new Promise((resolve) => (probe = resolve));
+        const token = (body.token as string | undefined) ?? '';
+        return token === 'q4'
+          ? page([opticalScene('z1', 'optical-zarr', '2026-07-30')], null)
+          : page(scenes(token || 'a', 'optical', '2026-07-24'), ({ '': 'q2', q2: 'q3', q3: 'q4' } as Record<string, string>)[token]);
+      }),
+    );
+    await search();
+    choose('optical-zarr');
+    await loadMore();
+    expect(zarr().items.map((i) => i.id)).toEqual(['z1']);
+    probe(page([opticalScene('p1', 'optical-zarr', '2026-06-20')], null));
+    await vi.waitFor(() => expect(useAppStore.getState().fallbackDatasetIds).toEqual([]));
+    expect(zarr().origin).toBe('search');
+    expect(useAppStore.getState().items.map((i) => i.id)).toEqual(['z1']);
   });
 
   it('an answer that comes after a new search is dropped', async () => {
@@ -1012,7 +1160,7 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
     vi.stubGlobal('fetch', backend({}, () => new Promise((resolve) => (answer = resolve))));
     await search();
     choose('optical-zarr');
-    expect(useAppStore.getState().fallbackDatasetId).toBe('optical-zarr');
+    expect(useAppStore.getState().fallbackDatasetIds).toEqual(['optical-zarr']);
     vi.stubGlobal('fetch', routed(() => page([opticalScene('o1', 'optical', '2026-07-24')], null)));
     await search();
     answer(page([opticalScene('p1', 'optical-zarr', '2026-06-20')], null));
@@ -1043,6 +1191,8 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
     expect(count('optical')).toBe(301);
     expect(zarr().items.map((i) => i.id)).toEqual(['f1']);
     expect(useAppStore.getState().openSectionId).toBe('optical-zarr');
+    // The fallback's scene is not a scene of the searched date range.
+    expect(useAppStore.getState().notice).toBe('301 scene(s) in 2 time step(s) across 3 datasets.');
   });
 
   it('scenes in the date range that "Load more" brings replace the fallback', async () => {
@@ -1154,6 +1304,18 @@ describe('looking up a scene by name in every ticked dataset (M3-10 F8)', () => 
     await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
     expect(useAppStore.getState().cropToAoi).toBe(false);
     expect(Object.keys(useAppStore.getState().downloaded)).toEqual([NAME]);
+  });
+
+  it('an answer that comes after "Clear all" is dropped and unlocks the lookup', async () => {
+    let answer: (value: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))));
+    useAppStore.setState({ selectedDatasetIds: ['optical'] });
+    const running = lookUp();
+    useAppStore.getState().clearAll();
+    answer(jsonResponse(opticalScene(NAME, 'optical', '2026-07-24')));
+    await running;
+    expect(useAppStore.getState().sections).toEqual([]);
+    expect(useAppStore.getState().sceneLookupLoading).toBe(false);
   });
 
   it('the selection cannot change while a lookup runs', () => {
