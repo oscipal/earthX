@@ -139,8 +139,9 @@ Datasets                                  2 selected
 - **Coverage-Knopf „Coverage“** direkt unter dem 2×2-Raster (Otto, 30.09.2026,
   ersetzt „im Fuß neben Search“), außerhalb des Rasters und damit sichtbar, wie
   weit das Raster auch scrollt; von den Datensatz-Knöpfen abgesetzt (Symbol,
-  gestrichelter Rahmen, bis er an ist). Die Auswahl des Datensatzes öffnet unter
-  ihm im Fluss des Panels.
+  gestrichelter Rahmen, bis er an ist). Die Auswahl des Datensatzes legt sich als
+  Dropdown über den Inhalt (§13). Daneben „Clear coverage“, nur aktiv, solange
+  eine Coverage angezeigt wird; beide Knöpfe füllen die Breite des Panels.
   Ein Datensatz gewählt: ein Klick zeigt dessen Coverage, der nächste blendet sie
   aus. Mehrere gewählt: erst der Klick öffnet die Auswahl, von welchem Datensatz
   (mit „Hide coverage“, wenn sie an ist); bis dahin wird nichts gezeichnet.
@@ -719,3 +720,27 @@ Otto prüft lokal: drei Datensätze, eine AOI und ein Zeitraum mit mehr als 300
 Sentinel-2-Treffern („Load more“, Zahlen im Dropdown, offener Zeitschritt bleibt);
 ein Zeitraum ohne Treffer für einen Datensatz (Wahl im Dropdown startet den
 Fallback nur für ihn); ein Szenenname mit mehreren angehakten Datensätzen.
+- **Dropdowns als Überlagerung (Otto, 30.09.2026):** Auswahl in der Trefferliste,
+  Datensatz-Auswahl der Coverage und Treffer der Ortssuche nutzen
+  `components/Popover.tsx`: per Portal in `.app` gerendert (die Panels werden mit
+  `transform` verschoben und würden ein `position: fixed` darin abschneiden),
+  über dem Inhalt statt ihn zu verschieben, im Fenster gehalten (nach oben, wenn
+  unten der Platz fehlt und oben mehr ist; sonst scrollend), folgt dem Anker bei
+  jedem Frame und schließt, wenn der Anker das Fenster verlässt (z. B. wenn das
+  Panel für ein Zeichenwerkzeug wegschiebt), dazu Escape, Klick daneben und Tab.
+  Tastatur: Pfeil nach unten öffnet (bzw. springt aus dem Ortsfeld in die Liste),
+  Pfeile, Pos1/Ende bewegen, Escape gibt den Fokus an den Auslöser zurück. Die
+  Colormap-Auswahl der Vollauflösung ist ein natives `<select>` und verhält sich
+  schon so. Ersetzt die „in-flow“-Entscheidung der Ortssuche aus M3-07b.
+  Beleg mit Chromium (Playwright, gemockt): Beim Öffnen der Coverage-Auswahl und
+  der Ortstreffer bewegen sich darunterliegende Elemente um 0 px; Fokus und
+  Escape wie beschrieben; Coverage-Zeile 310 px breit wie das Datensatz-Raster.
+  Das Aufklappen nach oben ist nur im Unit-Test belegt: Im Control Center lässt
+  der Fuß unter dem Coverage-Knopf in den geprüften Fensterhöhen stets genug
+  Platz.
+- **„Clear coverage“ (Otto, 30.09.2026):** siehe §3.
+- **Löschknopf in Textfeldern (Otto, 30.09.2026):** Szenenname und Ortsname haben
+  rechts ein kleines „×“ (`components/ClearableInput.tsx`), sichtbar nur mit
+  Inhalt; es leert das Feld (beim Ort schließt es auch die Trefferliste) und
+  lässt den Fokus im Feld. Datums- und Zahlenfelder sind keine Textfelder und
+  bleiben ohne.
