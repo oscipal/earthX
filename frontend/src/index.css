@@ -341,11 +341,35 @@ body.dragging * {
   box-shadow: var(--glow);
 }
 
+/* The dock keeps the same gap below as above (16px, `.top-left`): the panel is at
+   most as tall as the window minus both gaps. Its content scrolls, the search
+   button and the hints under it stay put in a footer of their own, so "Search" is
+   on screen at any window height. */
 .control-panel {
-  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.control-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Whatever does not fit scrolls; nothing inside is squeezed to make room. */
+.control-scroll > * {
+  flex-shrink: 0;
+}
+.control-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--panel-border);
 }
 
 .brand {
@@ -460,8 +484,8 @@ input[type='date']:focus {
   cursor: pointer;
 }
 
-/* Lines up with the pairs above it (`.toolbar`, `.aoi-extras`,
-   `.dataset-filter`) at the same overall width and gap (V-4), but the "→"
+/* Lines up with the pairs above it (`.aoi-extras`,
+   `.dataset-list`) at the same overall width and gap (V-4), but the "→"
    separator gets its own narrow middle column (`auto`) instead of an
    absolute overlay with no room of its own (V-6) — two equal 1fr columns
    left the gap too tight for the arrow once the date fields' own borders
@@ -536,14 +560,14 @@ input[type='date']:focus {
 /* --- toolbar --- */
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 .tool-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px;
+  padding: 7px 6px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
@@ -566,19 +590,8 @@ input[type='date']:focus {
   cursor: not-allowed;
 }
 .tool-btn.ghost {
-  grid-column: span 2;
+  grid-column: 1 / -1;
   justify-content: center;
-}
-
-/* --- global coverage toggle --- */
-.coverage-toggle {
-  justify-content: center;
-  font-size: 11px;
-}
-.coverage-toggle.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: var(--glow);
 }
 
 /* --- place search (M3-07b) --- */
@@ -890,55 +903,80 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
 }
 
-/* --- dataset filter (M3-10) --- */
-.dataset-filter {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+/* --- dataset toggles (M3-10): four rows visible, then the list scrolls --- */
 .dataset-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  --dataset-row: 32px;
+  --dataset-gap: 5px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 180px;
+  gap: var(--dataset-gap);
+  max-height: calc(4 * var(--dataset-row) + 3 * var(--dataset-gap) + 2px);
   overflow-y: auto;
+  /* room for the glow and the scrollbar without shifting the buttons */
+  padding: 1px 3px 1px 1px;
 }
-.dataset-option {
+.dataset-toggle {
+  flex: 0 0 var(--dataset-row);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 0 10px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 11px;
+  text-align: left;
   cursor: pointer;
 }
-.dataset-option:has(input:checked) {
-  color: var(--accent);
+.dataset-toggle:hover:not(:disabled) {
   border-color: var(--accent);
+}
+.dataset-toggle.active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--input-bg));
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
   box-shadow: var(--glow);
 }
-.dataset-option.disabled {
+.dataset-toggle:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.dataset-option-title {
+.dataset-toggle-title {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.dataset-option .maturity-chip {
+.dataset-toggle .maturity-chip {
   margin-top: 0;
 }
 .field-label-aside {
   float: right;
   text-transform: none;
   letter-spacing: 0;
+}
+.coverage-toggle {
+  padding: 7px 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.coverage-toggle.active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--input-bg));
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: var(--glow);
 }
 .coverage-dataset {
   width: 100%;
@@ -954,45 +992,79 @@ input[type='date']:focus {
   color: var(--accent);
 }
 
-/* --- results: one section per dataset (M3-10) --- */
-.result-section {
+/* --- results: the dataset dropdown at the top (M3-10) --- */
+.dataset-select {
+  padding: 8px 8px 4px;
   border-bottom: 1px solid var(--panel-border);
 }
-.result-section-head {
+.dataset-select-box,
+.dataset-select-option {
   width: 100%;
+  box-sizing: border-box;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 7px 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
   color: var(--text);
   font-family: var(--mono);
   font-size: 12px;
-  font-weight: 600;
-  padding: 8px 6px;
-  cursor: pointer;
   text-align: left;
+  cursor: pointer;
+  position: relative;
 }
-.result-section.open > .result-section-head {
+.dataset-select-box {
+  padding-right: 26px;
+  border-color: var(--accent);
+}
+.dataset-select-box:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.dataset-select-box .rg-caret {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.dataset-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.dataset-select-option:hover {
+  border-color: var(--accent);
+}
+.dataset-select-option.selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--input-bg));
+  border-color: var(--accent);
   color: var(--accent);
 }
-.result-section-head:hover {
-  background: var(--row-hover);
+.dataset-select-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.rs-title {
+.dataset-select-title {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
 }
-.result-section-head .maturity-chip {
+.dataset-select-line .maturity-chip {
   margin-top: 0;
 }
-.result-section-note {
-  padding: 0 6px 6px 26px;
-}
-.result-section .result-group {
-  margin-left: 12px;
+.dataset-select-note {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: normal;
 }
 
 /* --- grouped (mosaic) results --- */
@@ -1233,13 +1305,6 @@ input[type='date']:focus {
 .lm-name:hover {
   background: var(--row-hover);
   color: var(--accent);
-}
-.coverage-row .lm-name {
-  cursor: default;
-}
-.coverage-row .lm-name:hover {
-  background: none;
-  color: var(--text);
 }
 .lm-opacity {
   width: 56px;
