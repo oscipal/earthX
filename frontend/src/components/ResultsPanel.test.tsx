@@ -107,6 +107,8 @@ function text(el: Element | null): string {
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement('div');
+  // Dropdowns open in `.app` (`Popover`), outside the panel.
+  container.className = 'app';
   document.body.append(container);
   root = createRoot(container);
 });
@@ -293,6 +295,42 @@ describe('ResultsPanel dataset dropdown', () => {
     load(MIXED);
     act(() => (container.querySelector('.link-btn') as HTMLButtonElement).click());
     expect(useAppStore.getState().sections).toEqual([]);
+  });
+});
+
+describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
+  it('opens outside the panel without moving anything in it', () => {
+    load(MIXED);
+    const panel = container.querySelector('.results-panel')!;
+    const before = panel.innerHTML;
+    openList();
+    const list = container.querySelector('.dataset-select-list') as HTMLElement;
+    expect(panel.contains(list)).toBe(false);
+    expect(list.style.position).toBe('fixed');
+    expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"').replace('▴', '▾')).toBe(before);
+  });
+
+  it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape returns to the box', () => {
+    load(MIXED);
+    box().focus();
+    act(() => box().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(document.activeElement).toBe(options()[0]);
+    expect(options()[0].getAttribute('aria-selected')).toBe('true');
+    act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
+    expect(document.activeElement).toBe(options()[2]);
+    act(() => options()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(options()).toEqual([]);
+    expect(document.activeElement).toBe(box());
+  });
+
+  it('closes on a click beside it, and on Tab', () => {
+    load(MIXED);
+    openList();
+    act(() => document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+    expect(options()).toEqual([]);
+    openList();
+    act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })));
+    expect(options()).toEqual([]);
   });
 });
 

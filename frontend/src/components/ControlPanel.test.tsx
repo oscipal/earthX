@@ -26,6 +26,8 @@ let root: Root;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement('div');
+  // Dropdowns open in `.app` (`Popover`), outside the panel.
+  container.className = 'app';
   document.body.append(container);
   root = createRoot(container);
   useAppStore.setState({ aoi: null, aoiPoint: null, lastAoi: null, lastAoiPoint: null, error: null, config: null });
@@ -141,7 +143,7 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
   }
 
   function findButton(): HTMLButtonElement {
-    return container.querySelector('.place-search-row button') as HTMLButtonElement;
+    return container.querySelector('.place-search-row > button') as HTMLButtonElement;
   }
 
   function resultButtons(): HTMLButtonElement[] {
@@ -281,6 +283,69 @@ describe('PlaceSearchField: searching a place and picking a hit (M3-07b)', () =>
     });
 
     expect(useAppStore.getState().aoi).toMatchObject({ type: 'Polygon' });
+  });
+
+  describe('the results lie over the panel and are worked with the keyboard (Otto, 30.09.2026)', () => {
+    const HIT = {
+      name: 'Neuland',
+      display_name: 'Neuland, Testland',
+      kind: 'boundary/administrative',
+      bbox: [13.0, 52.3, 13.8, 52.7],
+      outline: BERLIN_OUTLINE,
+      outline_simplified: false,
+    };
+    async function found() {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, placeResponse([HIT, { ...HIT, name: 'Altland' }]))));
+      act(() => root.render(<ControlPanel />));
+      const panel = container.querySelector('.control-panel')!;
+      act(() => typeInto(placeInput(), 'Neuland'));
+      const before = panel.innerHTML;
+      await act(async () => {
+        pressEnter(placeInput());
+        await flush();
+      });
+      return { panel, before };
+    }
+    const key = (el: Element, k: string) => act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })));
+
+    it('the list opens outside the panel and moves nothing in it', async () => {
+      const { panel, before } = await found();
+      const list = container.querySelector('.place-results') as HTMLElement;
+      expect(list).not.toBeNull();
+      expect(panel.contains(list)).toBe(false);
+      expect(list.style.position).toBe('fixed');
+      expect(panel.innerHTML).toBe(before);
+    });
+
+    it('arrow down moves from the field into the list, Escape closes it', async () => {
+      await found();
+      placeInput().focus();
+      key(placeInput(), 'ArrowDown');
+      expect(document.activeElement).toBe(resultButtons()[0]);
+      key(resultButtons()[0], 'ArrowDown');
+      expect(document.activeElement).toBe(resultButtons()[1]);
+      key(resultButtons()[1], 'ArrowUp');
+      expect(document.activeElement).toBe(resultButtons()[0]);
+      key(resultButtons()[0], 'Escape');
+      expect(container.querySelector('.place-results')).toBeNull();
+    });
+
+    it('a click beside it closes it', async () => {
+      await found();
+      act(() => document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+      expect(container.querySelector('.place-results')).toBeNull();
+    });
+
+    it('the "×" empties the field, closes the list and keeps the focus in the field', async () => {
+      await found();
+      const clear = container.querySelector('.place-search-row .clear-btn') as HTMLButtonElement;
+      expect(clear.getAttribute('aria-label')).toBe('Clear place name');
+      act(() => clear.click());
+      expect(placeInput().value).toBe('');
+      expect(container.querySelector('.place-results')).toBeNull();
+      expect(container.querySelector('.place-search-row .clear-btn')).toBeNull();
+      expect(document.activeElement).toBe(placeInput());
+    });
   });
 
   it('shows "No place found." with attribution for an empty result list', async () => {
@@ -618,6 +683,17 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(container.textContent).toContain('3 scene(s) found');
   });
 
+  it('the scene name field has a "×" while it holds text, which empties it', () => {
+    setUp(['optical']);
+    const clear = () => container.querySelector('.scene-name-field .clear-btn') as HTMLButtonElement | null;
+    expect(clear()).toBeNull();
+    act(() => useAppStore.setState({ sceneNameQuery: 'S2B_42' }));
+    expect(clear()?.getAttribute('aria-label')).toBe('Clear scene name');
+    act(() => clear()!.click());
+    expect(useAppStore.getState().sceneNameQuery).toBe('');
+    expect(clear()).toBeNull();
+  });
+
   describe('the date fields', () => {
     function dateInputs(): HTMLInputElement[] {
       return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
@@ -672,12 +748,51 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       expect(button().textContent).toBe('Coverage');
     });
 
-    it('opens the choice of dataset below the button', () => {
+    it('opens the choice of dataset over the panel, moving nothing in it', () => {
       setUp(['optical', 'dem']);
+      const panel = container.querySelector('.control-panel')!;
+      const before = panel.innerHTML;
       act(() => button().click());
-      const wrap = container.querySelector('.coverage-button-wrap')!;
-      expect(wrap.lastElementChild?.classList.contains('coverage-choice')).toBe(true);
-      expect(button().compareDocumentPosition(wrap.lastElementChild!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const choice = container.querySelector('.coverage-choice') as HTMLElement;
+      expect(choice).not.toBeNull();
+      expect(panel.contains(choice)).toBe(false);
+      expect(choice.style.position).toBe('fixed');
+      // Only the button's own state changes; nothing is inserted into the panel.
+      expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"')).toBe(before);
+    });
+
+    it('is worked with the keyboard: arrow down opens it at the first entry, arrows move, Escape returns to the button', () => {
+      setUp(['optical', 'dem']);
+      button().focus();
+      act(() => button().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+      expect(document.activeElement).toBe(choices()[0]);
+      act(() => choices()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+      expect(document.activeElement).toBe(choices()[1]);
+      act(() => choices()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+      expect(document.activeElement).toBe(choices()[0]); // wraps round
+      act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(document.activeElement).toBe(button());
+    });
+
+    it('"Clear coverage" is on only while a coverage map is shown, and hides it', () => {
+      const clear = () => container.querySelector('.coverage-clear-btn') as HTMLButtonElement;
+      setUp(['optical']);
+      expect(clear().textContent).toBe('Clear coverage');
+      expect(clear().disabled).toBe(true);
+      act(() => button().click());
+      expect(useAppStore.getState().showCoverage).toBe(true);
+      expect(clear().disabled).toBe(false);
+      act(() => clear().click());
+      expect(useAppStore.getState().showCoverage).toBe(false);
+      expect(useAppStore.getState().coverageDatasetId).toBeNull();
+      expect(clear().disabled).toBe(true);
+    });
+
+    it('"Coverage" and "Clear coverage" share one row', () => {
+      setUp(['optical']);
+      const row = container.querySelector('.coverage-button-wrap')!;
+      expect([...row.children].map((c) => c.textContent)).toEqual(['Coverage', 'Clear coverage']);
     });
 
     it('is visible but off when no dataset is picked', () => {

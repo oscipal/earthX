@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useRef, useState, type MouseEvent } from 'react';
 
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
+import Popover from './Popover';
 
 // Two overlapping rounded rectangles — the same copy glyph Claude's own
 // interface uses, in place of the earlier "⧉" character glyph, which
@@ -173,38 +174,24 @@ function SectionSummary({ section }: { section: ResultSection }) {
 // The box at the top of the results (M3-10, Otto 30.09.2026): it names the
 // dataset whose scenes the list shows — the active dataset, which heatmap,
 // quicklooks and full resolution follow — and opens a list of every searched
-// dataset to switch. The list is part of the panel's own flow, not a popup, so
-// the panel's edge does not clip it. Choosing never closes the panel.
+// dataset to switch. The list lies over the scenes below it (`Popover`).
+// Choosing never closes the panel.
 function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; openId: string | null }) {
   const setOpenSection = useAppStore((s) => s.setOpenSection);
   const [listOpen, setListOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setListOpen(false), []);
   const shown = sections.find((section) => section.datasetId === openId) ?? sections[0];
-
-  useEffect(() => {
-    if (!listOpen) return;
-    const away = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setListOpen(false);
-    };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setListOpen(false);
-    };
-    document.addEventListener('pointerdown', away);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [listOpen]);
 
   if (!shown) return null;
   const several = sections.length > 1;
   return (
-    <div className="dataset-select" ref={rootRef}>
+    <div className="dataset-select">
       <span className="eyebrow" id="dataset-select-label">
         Showing dataset
       </span>
       <button
+        ref={boxRef}
         type="button"
         className="dataset-select-box"
         aria-haspopup={several ? 'listbox' : undefined}
@@ -212,29 +199,42 @@ function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; open
         aria-labelledby="dataset-select-label"
         disabled={!several}
         onClick={() => setListOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (several && e.key === 'ArrowDown') {
+            e.preventDefault();
+            setListOpen(true);
+          }
+        }}
       >
         <SectionSummary section={shown} />
         {several && <span className="rg-caret">{listOpen ? '▴' : '▾'}</span>}
       </button>
-      {several && listOpen && (
-        <div className="dataset-select-list" role="listbox" aria-label="Searched datasets">
-          {sections.map((section) => (
-            <button
-              key={section.datasetId}
-              type="button"
-              role="option"
-              aria-selected={section.datasetId === shown.datasetId}
-              className={`dataset-select-option${section.datasetId === shown.datasetId ? ' selected' : ''}`}
-              onClick={() => {
-                setOpenSection(section.datasetId);
-                setListOpen(false);
-              }}
-            >
-              <SectionSummary section={section} />
-            </button>
-          ))}
-        </div>
-      )}
+      <Popover
+        anchorRef={boxRef}
+        open={several && listOpen}
+        onClose={close}
+        className="dataset-select-list"
+        role="listbox"
+        ariaLabel="Searched datasets"
+        focusOnOpen
+      >
+        {sections.map((section) => (
+          <button
+            key={section.datasetId}
+            type="button"
+            role="option"
+            aria-selected={section.datasetId === shown.datasetId}
+            className={`dataset-select-option${section.datasetId === shown.datasetId ? ' selected' : ''}`}
+            onClick={() => {
+              setOpenSection(section.datasetId);
+              setListOpen(false);
+              boxRef.current?.focus();
+            }}
+          >
+            <SectionSummary section={section} />
+          </button>
+        ))}
+      </Popover>
     </div>
   );
 }
