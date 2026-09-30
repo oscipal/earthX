@@ -317,7 +317,9 @@ describe('runSearch over several datasets', () => {
       ['No scenes for this area.'],
       ['No scenes for this area.'],
     ]);
-    expect(state.openSectionId).toBeNull();
+    // The dropdown still shows a dataset — the one that was active.
+    expect(state.openSectionId).toBe('optical');
+    expect(state.items).toEqual([]);
     expect(state.notice).toBe('No scenes found for this area.');
     expect(state.datasetId).toBe('optical');
   });
@@ -419,15 +421,26 @@ describe('setOpenSection and setDatasetId', () => {
     expect(state.groups).toHaveLength(2);
   });
 
-  it('closing the open section empties the mirror but keeps the sections and the active dataset', async () => {
+  it('there is no way to show no dataset: an empty dataset can be chosen, and it shows nothing', async () => {
     await searched();
-    useAppStore.getState().setOpenSection(null);
+    useAppStore.getState().setOpenSection('dem');
+    useAppStore.getState().setOpenSection('optical-zarr');
+    useAppStore.getState().setOpenSection('optical');
     const state = useAppStore.getState();
-    expect(state.openSectionId).toBeNull();
+    expect(state.openSectionId).toBe('optical');
+    expect(state.sections).toHaveLength(3);
+  });
+
+  it('choosing a dataset without scenes shows its notes and no scenes, and keeps the panel', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([opticalScene('o1', 'optical', '2026-07-24')]))));
+    await useAppStore.getState().runSearch();
+    useAppStore.getState().setOpenSection('dem');
+    const state = useAppStore.getState();
+    expect(state.openSectionId).toBe('dem');
+    expect(state.datasetId).toBe('dem');
     expect(state.items).toEqual([]);
     expect(state.groups).toEqual([]);
     expect(state.sections).toHaveLength(3);
-    expect(state.datasetId).toBe('optical');
   });
 
   it('opening the section that is already open is harmless', async () => {
@@ -530,7 +543,6 @@ describe('full-resolution datasets after a search (F5)', () => {
     const before = useAppStore.getState().layers;
     useAppStore.getState().setOpenSection('dem');
     useAppStore.getState().setOpenSection('optical');
-    useAppStore.getState().setOpenSection(null);
     expect(useAppStore.getState().layers).toBe(before);
   });
 
@@ -628,7 +640,7 @@ describe('pinned layers of several datasets (F4)', () => {
     const datasetsPinned = () =>
       new Set(useAppStore.getState().layers.filter((l) => l.visible).map((l) => l.restore.datasetId));
     expect(datasetsPinned()).toEqual(new Set(['optical', 'optical-zarr', 'dem']));
-    for (const open of ['optical', 'dem', null, 'optical-zarr'] as const) {
+    for (const open of ['optical', 'dem', 'optical-zarr'] as const) {
       useAppStore.getState().setOpenSection(open);
       expect(datasetsPinned()).toEqual(new Set(['optical', 'optical-zarr', 'dem']));
     }

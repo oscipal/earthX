@@ -393,7 +393,7 @@ interface AppState {
   loadDatasets: () => Promise<void>;
   toggleDatasetSelected: (id: string) => void;
   setDatasetId: (id: string) => void;
-  setOpenSection: (id: string | null) => void;
+  setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
   setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
   clearAoi: () => void;
@@ -584,25 +584,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     scheduleCoverageRefresh(set, get);
   },
-  // Opens one results section — and with it the dataset it belongs to — or, with
-  // `null`, closes the open one (then the map shows no quicklooks). Only one is
-  // open at a time (M3-10 F2). What the previous section had on screen in full
+  // Shows one dataset's results — the dropdown of the results panel (M3-10) — and
+  // makes that dataset the active one. Exactly one is shown while a search has
+  // results; there is no "none". What the previous dataset had on screen in full
   // resolution goes with it; pinned layers do not.
   setOpenSection: (id) => {
     const s = get();
-    const section = id === null ? null : s.sections.find((x) => x.datasetId === id);
-    if (id !== null && !section) return;
+    const section = s.sections.find((x) => x.datasetId === id);
+    if (!section || id === s.openSectionId) return;
     set({
-      ...openSectionState(section ?? null),
-      ...(section ? { datasetId: section.datasetId } : {}),
+      ...openSectionState(section),
+      datasetId: section.datasetId,
       selectedIds: [],
       playing: false,
       ...LEAVE_FOCUS,
-      ...(section && section.datasetId !== s.datasetId
-        ? { coverage: null, coverageFootprints: null, coverageError: null }
-        : {}),
+      ...(section.datasetId !== s.datasetId ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
     });
-    if (section && section.datasetId !== s.datasetId) scheduleCoverageRefresh(set, get);
+    if (section.datasetId !== s.datasetId) scheduleCoverageRefresh(set, get);
   },
 
   // Activating a draw tool slides the control panel away so it can't block the
@@ -1297,7 +1295,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         return;
       }
-      const open = firstSectionWithItems(sections);
+      // The dropdown always shows a dataset: the first with scenes, else the one
+      // that was active (or, failing that, the first).
+      const open =
+        firstSectionWithItems(sections) ??
+        sections.find((x) => x.datasetId === get().datasetId) ??
+        sections[0] ??
+        null;
       const base = typeof notice === 'function' ? notice(sections) : notice;
       let text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
       if (timeNote && answer.ignoredFilters.includes('datetime')) text = `${text} ${timeNote}.`;

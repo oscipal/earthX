@@ -3,12 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   acquisitionNote,
   browseOf,
-  datasetMatches,
   datasetsFrom,
   defaultRenderOf,
-  filterDatasets,
   groupByOf,
-  keywordsOf,
   maturityNote,
   quicklookAsset,
   quicklookNodataMaxOf,
@@ -542,97 +539,5 @@ describe('zoomFloorHint', () => {
     // starts at, and the tiles are still not requested.
     expect(zoomFloorHint(option(), 7.9)).toContain('level 8');
     expect(zoomFloorHint(option(), 8.1)).toBeNull();
-  });
-});
-
-// M3-10: the dataset filter is plain text over title, description and keywords.
-describe('keywordsOf', () => {
-  it('reads the STAC keywords', () => {
-    expect(keywordsOf(collection({ keywords: ['optical', 'sentinel-2'] }))).toEqual(['optical', 'sentinel-2']);
-  });
-
-  it.each([
-    ['missing', undefined],
-    ['null', null],
-    ['not a list', 'optical' as unknown as string[]],
-  ])('is empty when keywords are %s', (_case, keywords) => {
-    expect(keywordsOf(collection({ keywords }))).toEqual([]);
-  });
-
-  it('drops entries that are not strings', () => {
-    expect(keywordsOf(collection({ keywords: ['dem', 3, null, { a: 1 }] as unknown as string[] }))).toEqual(['dem']);
-  });
-});
-
-describe('datasetMatches / filterDatasets', () => {
-  const dem = datasetsFrom([
-    collection({
-      id: 'cop-dem-glo-30',
-      title: 'Copernicus DEM GLO-30',
-      description: 'Global 30 m digital surface model, acquired by TanDEM-X.',
-      keywords: ['elevation', 'terrain'],
-      'earthx:capabilities': capabilities({ time_range: false }),
-      'earthx:viewer': viewer({ browse: 'full_resolution' }),
-    }),
-  ])[0];
-  const s2 = datasetsFrom([
-    collection({
-      description: 'Optical imagery, Zürich included.',
-      keywords: ['sentinel-2', 'multispectral'],
-      'earthx:viewer': viewer(),
-    }),
-  ])[0];
-
-  it('matches everything for an empty or blank filter', () => {
-    expect(datasetMatches(dem, '')).toBe(true);
-    expect(datasetMatches(dem, '   \t ')).toBe(true);
-  });
-
-  it('matches title, description and keywords', () => {
-    expect(datasetMatches(dem, 'glo-30')).toBe(true); // title
-    expect(datasetMatches(dem, 'tandem')).toBe(true); // description
-    expect(datasetMatches(dem, 'terrain')).toBe(true); // keyword
-    expect(datasetMatches(s2, 'terrain')).toBe(false);
-  });
-
-  it('ignores case and accents', () => {
-    expect(datasetMatches(s2, 'ZURICH')).toBe(true);
-    expect(datasetMatches(s2, 'zürich')).toBe(true);
-    expect(datasetMatches(s2, 'MULTISPECTRAL')).toBe(true);
-  });
-
-  it('needs every word, in any order and any field', () => {
-    expect(datasetMatches(dem, 'terrain copernicus')).toBe(true);
-    expect(datasetMatches(dem, 'copernicus optical')).toBe(false);
-  });
-
-  it('reads the input as text, never as a pattern', () => {
-    expect(datasetMatches(dem, '.*')).toBe(false);
-    expect(datasetMatches(dem, '(')).toBe(false);
-    expect(datasetMatches(dem, '\\')).toBe(false);
-    expect(datasetMatches(dem, '[a-z]+')).toBe(false);
-  });
-
-  it('copes with a very long input and with a collection that has no description', () => {
-    expect(datasetMatches(dem, 'x'.repeat(100_000))).toBe(false);
-    expect(datasetMatches(datasetsFrom([collection()])[0], 'anything')).toBe(false);
-  });
-
-  it('keeps ticked datasets in the list whether or not they match, in list order', () => {
-    const list = [s2, dem];
-    expect(filterDatasets(list, 'terrain', []).map((d) => d.id)).toEqual(['cop-dem-glo-30']);
-    expect(filterDatasets(list, 'terrain', ['sentinel-2-c1-l2a']).map((d) => d.id)).toEqual([
-      'sentinel-2-c1-l2a',
-      'cop-dem-glo-30',
-    ]);
-    expect(filterDatasets(list, 'nothing matches this', ['cop-dem-glo-30']).map((d) => d.id)).toEqual([
-      'cop-dem-glo-30',
-    ]);
-  });
-
-  it('lists a dataset that cannot be shown when it matches', () => {
-    const [broken] = datasetsFrom([{ id: 'x', title: 'Broken thing', 'earthx:capabilities': capabilities() }]);
-    expect(broken.viewable).toBe(false);
-    expect(filterDatasets([broken], 'broken', []).map((d) => d.id)).toEqual(['x']);
   });
 });

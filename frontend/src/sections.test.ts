@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { buildSections, firstSectionWithItems, incompleteNote, totalItems } from './sections';
+import { buildSections, firstSectionWithItems, hasResultsPanel, incompleteNote, totalItems } from './sections';
 import type { Collection, StacItem } from './types';
 
 const CAPABILITIES = {
@@ -220,5 +220,18 @@ describe('firstSectionWithItems / totalItems', () => {
     const { sections } = buildSections([], [optical, dem], NOTHING);
     expect(firstSectionWithItems(sections)).toBeNull();
     expect(totalItems(sections)).toBe(0);
+  });
+});
+
+describe('hasResultsPanel', () => {
+  it('is on with scenes, and off for no search', () => {
+    const { sections } = buildSections([item('o1', 'optical', { datetime: '2026-07-24T10:00:00Z' })], [optical], NOTHING);
+    expect(hasResultsPanel(sections)).toBe(true);
+    expect(hasResultsPanel([])).toBe(false);
+  });
+
+  it('is off for a single dataset with nothing found, on for several with nothing found', () => {
+    expect(hasResultsPanel(buildSections([], [optical], NOTHING).sections)).toBe(false);
+    expect(hasResultsPanel(buildSections([], [optical, dem], NOTHING).sections)).toBe(true);
   });
 });

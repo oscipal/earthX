@@ -115,3 +115,11 @@ export function firstSectionWithItems(sections: readonly ResultSection[]): Resul
 export function totalItems(sections: readonly ResultSection[]): number {
   return sections.reduce((sum, section) => sum + section.items.length, 0);
 }
+
+// Whether the results panel has anything to show: scenes, or several datasets
+// whose sections can say why they have none. A single dataset with nothing found
+// is the search notice's business alone. The panel never disappears because of
+// what is chosen in it (M3-10).
+export function hasResultsPanel(sections: readonly ResultSection[]): boolean {
+  return totalItems(sections) > 0 || sections.length > 1;
+}
