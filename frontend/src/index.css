@@ -392,6 +392,7 @@ body.dragging * {
 }
 
 input[type='text'],
+input[type='search'],
 input[type='date'] {
   width: 100%;
   padding: 8px 10px;
@@ -889,14 +890,27 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
 }
 
-/* --- product-level selector --- */
-.level-select {
+/* --- dataset filter (M3-10) --- */
+.dataset-filter {
   display: flex;
+  flex-direction: column;
   gap: 6px;
 }
-.level-btn {
-  flex: 1;
-  padding: 7px 4px;
+.dataset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.dataset-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
@@ -905,10 +919,80 @@ input[type='date']:focus {
   font-size: 11px;
   cursor: pointer;
 }
-.level-btn.active {
+.dataset-option:has(input:checked) {
   color: var(--accent);
   border-color: var(--accent);
   box-shadow: var(--glow);
+}
+.dataset-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dataset-option-title {
+  flex: 1;
+  min-width: 0;
+}
+.dataset-option .maturity-chip {
+  margin-top: 0;
+}
+.field-label-aside {
+  float: right;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.coverage-dataset {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.coverage-dataset-name {
+  color: var(--accent);
+}
+
+/* --- results: one section per dataset (M3-10) --- */
+.result-section {
+  border-bottom: 1px solid var(--panel-border);
+}
+.result-section-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.result-section.open > .result-section-head {
+  color: var(--accent);
+}
+.result-section-head:hover {
+  background: var(--row-hover);
+}
+.rs-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-section-head .maturity-chip {
+  margin-top: 0;
+}
+.result-section-note {
+  padding: 0 6px 6px 26px;
+}
+.result-section .result-group {
+  margin-left: 12px;
 }
 
 /* --- grouped (mosaic) results --- */

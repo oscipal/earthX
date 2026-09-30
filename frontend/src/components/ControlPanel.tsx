@@ -3,9 +3,10 @@ import { useRef, useState } from 'react';
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
+import { acquisitionNote, filterDatasets, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
+import { totalItems } from '../sections';
 import { useAppStore } from '../store';
 import Toolbar from './Toolbar';
 
@@ -62,16 +63,25 @@ function DateField({
 // dataset picked may well have a time axis), but are locked rather than
 // bedienbar, with the acquisition period underneath explaining why a filter
 // would not narrow anything.
+//
+// M3-10: with several datasets ticked the window still means something for those
+// that have a time axis, so the fields lock only when *none* of the ticked ones
+// has one; each one without says so under the fields, named by title.
 function AcquisitionDateFields() {
   const datasets = useAppStore((s) => s.datasets);
-  const datasetId = useAppStore((s) => s.datasetId);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const dateFrom = useAppStore((s) => s.dateFrom);
   const dateTo = useAppStore((s) => s.dateTo);
   const setDateFrom = useAppStore((s) => s.setDateFrom);
   const setDateTo = useAppStore((s) => s.setDateTo);
-  const dataset = datasets.find((d) => d.id === datasetId);
-  const locked = !!dataset?.viewable && !dataset.hasTimeAxis;
-  const note = dataset?.viewable ? acquisitionNote(dataset.collection) : null;
+  const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+  const withoutTimeAxis = ticked.filter((d) => d.viewable && !d.hasTimeAxis);
+  const locked = ticked.length > 0 && withoutTimeAxis.length === ticked.length;
+  const notes = withoutTimeAxis.flatMap((d) => {
+    const note = acquisitionNote(d.collection);
+    if (!note) return [];
+    return [{ id: d.id, text: ticked.length > 1 ? `${d.title}: ${note}` : note }];
+  });
   return (
     <>
       <label className="field-label">Acquisition date</label>
@@ -80,7 +90,11 @@ function AcquisitionDateFields() {
         <span>→</span>
         <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
       </div>
-      {locked && note && <p className="hint-text">{note}</p>}
+      {notes.map((n) => (
+        <p key={n.id} className="hint-text">
+          {n.text}
+        </p>
+      ))}
     </>
   );
 }
@@ -271,7 +285,7 @@ function AoiExtras() {
   );
 }
 
-// How settled the source of the selected dataset is (D23: "staging" must not be
+// How settled the source of each ticked dataset is (D23: "staging" must not be
 // something a user finds out only once the source disappears).
 //
 // No "last checked" date is shown next to it: `earthx:health` carries only
@@ -281,14 +295,20 @@ function AoiExtras() {
 // checks in M5.
 function DatasetNotes() {
   const datasets = useAppStore((s) => s.datasets);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const dataset = datasets.find((d) => d.id === datasetId);
-  if (!dataset) return null;
-  const maturity = maturityNote(dataset.collection);
-  if (!maturity) return null;
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+  const notes = ticked.flatMap((d) => {
+    const maturity = maturityNote(d.collection);
+    return maturity ? [{ id: d.id, text: ticked.length > 1 ? `${d.title}: ${maturity}` : maturity }] : [];
+  });
+  if (notes.length === 0) return null;
   return (
     <div className="dataset-notes">
-      <p className="hint-text warn">{maturity}</p>
+      {notes.map((n) => (
+        <p key={n.id} className="hint-text warn">
+          {n.text}
+        </p>
+      ))}
     </div>
   );
 }
@@ -322,31 +342,57 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
   );
 }
 
-function DatasetSelector() {
+// The dataset filter (M3-10): a text field over a list of tick boxes, one row per
+// dataset from `/stac/collections`. Every ticked dataset is searched at once. The
+// filter only narrows what is *offered*: a ticked dataset stays listed whether it
+// matches or not, so a selection never disappears behind a search word. A dataset
+// that cannot be shown stays listed, unticked and disabled, with the reason.
+function DatasetFilter() {
   const datasets = useAppStore((s) => s.datasets);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const setDatasetId = useAppStore((s) => s.setDatasetId);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const toggle = useAppStore((s) => s.toggleDatasetSelected);
+  const [query, setQuery] = useState('');
   if (datasets.length === 0) return null;
+  const shown = filterDatasets(datasets, query, selectedDatasetIds);
   return (
-    <div className="level-select" role="group" aria-label="Dataset">
-      {datasets.map((d) => {
-        const maturity = d.viewable ? maturityNote(d.collection) : null;
-        const label = d.viewable ? maturityLabel(d.collection) : null;
-        return (
-          <button
-            key={d.id}
-            type="button"
-            className={`level-btn${datasetId === d.id ? ' active' : ''}`}
-            title={d.viewable ? (maturity ? `${d.title} — ${maturity}` : d.title) : `${d.title} — not viewable: ${d.reason}`}
-            aria-pressed={datasetId === d.id}
-            disabled={!d.viewable}
-            onClick={() => setDatasetId(d.id)}
-          >
-            {d.title}
-            {label && <span className="maturity-chip">{label}</span>}
-          </button>
-        );
-      })}
+    <div className="dataset-filter">
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Filter datasets"
+        aria-label="Filter datasets"
+        maxLength={100}
+      />
+      <ul className="dataset-list" aria-label="Datasets">
+        {shown.map((d) => {
+          const maturity = d.viewable ? maturityNote(d.collection) : null;
+          const label = d.viewable ? maturityLabel(d.collection) : null;
+          const description = d.collection.description;
+          return (
+            <li key={d.id}>
+              <label
+                className={`dataset-option${d.viewable ? '' : ' disabled'}`}
+                title={
+                  d.viewable
+                    ? [d.title, maturity, description].filter(Boolean).join(' — ')
+                    : `${d.title} — not viewable: ${d.reason}`
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedDatasetIds.includes(d.id)}
+                  disabled={!d.viewable}
+                  onChange={() => toggle(d.id)}
+                />
+                <span className="dataset-option-title">{d.title}</span>
+                {label && <span className="maturity-chip">{label}</span>}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {shown.length === 0 && <p className="hint-text">No dataset matches.</p>}
     </div>
   );
 }
@@ -395,12 +441,36 @@ function CoverageControls() {
   const dateFrom = useAppStore((s) => s.dateFrom);
   const dateTo = useAppStore((s) => s.dateTo);
   const datasetId = useAppStore((s) => s.datasetId);
+  const datasets = useAppStore((s) => s.datasets);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const setDatasetId = useAppStore((s) => s.setDatasetId);
   if (!datasetId || !showCoverage) return null;
 
   const note = coverage ? completenessNote(coverage) : null;
+  // M3-10 F3: the heatmap shows one dataset — the active one. With several
+  // ticked, the legend says which and offers the others; choosing one also
+  // opens its results section (`setDatasetId`).
+  const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+  const activeTitle = datasets.find((d) => d.id === datasetId)?.title ?? datasetId;
 
   return (
     <div className="coverage-controls">
+      {ticked.length > 1 ? (
+        <select
+          className="coverage-dataset"
+          aria-label="Dataset shown in the coverage layer"
+          value={datasetId}
+          onChange={(e) => setDatasetId(e.target.value)}
+        >
+          {ticked.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.title}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <p className="hint-text coverage-dataset-name">{activeTitle}</p>
+      )}
       {coverageLoading && <p className="hint-text">Loading coverage…</p>}
       {coverageError && <p className="hint-text error">{coverageError}</p>}
       {coverage && (
@@ -432,7 +502,8 @@ export default function ControlPanel() {
   const runSearch = useAppStore((s) => s.runSearch);
   const findSceneByName = useAppStore((s) => s.findSceneByName);
   const sceneNameQuery = useAppStore((s) => s.sceneNameQuery);
-  const count = useAppStore((s) => s.items.length);
+  const count = useAppStore((s) => totalItems(s.sections));
+  const selectedCount = useAppStore((s) => s.selectedDatasetIds.length);
   const datasetId = useAppStore((s) => s.datasetId);
 
   // One button for both lookups (M2-17, Otto's redesign): a scene name in the
@@ -442,7 +513,8 @@ export default function ControlPanel() {
   // since the name lookup needs neither AOI nor date range (adr/0001 Z1).
   const hasSceneName = sceneNameQuery.trim().length > 0;
   const busy = searching || sceneLookupLoading;
-  const canSearch = !busy && !!datasetId && (hasSceneName || !!aoi);
+  // The scene-name lookup asks the active dataset; a search asks every ticked one.
+  const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || !!aoi);
   const search = () => {
     if (!canSearch) return;
     if (hasSceneName) void findSceneByName();
@@ -466,8 +538,11 @@ export default function ControlPanel() {
       <Toolbar />
       <AoiExtras />
 
-      <label className="field-label">Dataset</label>
-      <DatasetSelector />
+      <label className="field-label">
+        Datasets
+        {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
+      </label>
+      <DatasetFilter />
       <DatasetNotes />
 
       <CoverageControls />
@@ -479,6 +554,7 @@ export default function ControlPanel() {
       </button>
 
       {count > 0 && <p className="result-count">{count} scene(s) found</p>}
+      {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}
       {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
     </div>
   );

@@ -1,6 +1,8 @@
 import { useState, type MouseEvent } from 'react';
 
-import { quicklookAsset } from '../datasets';
+import { maturityLabel, quicklookAsset } from '../datasets';
+import type { ResultSection } from '../sections';
+import { totalItems } from '../sections';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
 
@@ -136,25 +138,75 @@ function GroupBlock({
   );
 }
 
-export default function ResultsPanel() {
-  const groups = useAppStore((s) => s.groups);
-  // Separate from `activeGroupIndex` (the time step the map/time slider
-  // show), so the currently open section can be collapsed without forcing a
-  // different one open, and so collapsing every section also hides their
-  // quicklooks on the map (V-6, V-11 — `store.ts::toggleResultsGroup` has
-  // the full reasoning).
+// One dataset's part of the list (M3-10): head with title and scene count, the
+// section's notes (dropped filters, an unreachable source — shown even folded,
+// so they are never hidden behind a click), and, while open, its time steps.
+function SectionBlock({ section, open }: { section: ResultSection; open: boolean }) {
+  const title = useAppStore((s) => s.datasets.find((d) => d.id === section.datasetId)?.title ?? section.datasetId);
+  const label = useAppStore((s) => {
+    const dataset = s.datasets.find((d) => d.id === section.datasetId);
+    return dataset?.viewable ? maturityLabel(dataset.collection) : null;
+  });
+  const setOpenSection = useAppStore((s) => s.setOpenSection);
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
+  const groups = useAppStore((s) => s.groups);
+  return (
+    <section className={`result-section${open ? ' open' : ''}`} aria-label={title}>
+      <button
+        type="button"
+        className="result-section-head"
+        aria-expanded={open}
+        onClick={() => setOpenSection(open ? null : section.datasetId)}
+      >
+        <span className="rg-caret">{open ? '▾' : '▸'}</span>
+        <span className="rs-title" title={title}>
+          {title}
+        </span>
+        {label && <span className="maturity-chip">{label}</span>}
+        <span className="rg-count">{section.items.length}</span>
+      </button>
+      {section.notes.map((note) => (
+        <p key={note} className="hint-text result-section-note">
+          {note}
+        </p>
+      ))}
+      {open &&
+        groups.map((g, i) => (
+          <GroupBlock
+            key={g.key.join('\u0000')}
+            group={g}
+            index={i}
+            expanded={i === expandedGroupIndex}
+            onToggle={toggleGroup}
+          />
+        ))}
+    </section>
+  );
+}
+
+export default function ResultsPanel() {
+  const sections = useAppStore((s) => s.sections);
+  // Only one section is open, and it is the one whose scenes `groups`/`items`
+  // hold (`store.ts::setOpenSection`). Within it, the open time step stays
+  // separate from `activeGroupIndex` (the one the map and time slider show), so
+  // the open group can be collapsed without forcing a different one open, and
+  // collapsing every group also hides its quicklooks on the map (V-6, V-11 —
+  // `store.ts::toggleResultsGroup` has the full reasoning).
+  const openSectionId = useAppStore((s) => s.openSectionId);
   const clearAll = useAppStore((s) => s.clearAll);
 
-  if (groups.length === 0) return null;
+  // A single dataset with nothing found is the search notice's business alone;
+  // with several, the sections say which ones came back empty or incomplete.
+  const total = totalItems(sections);
+  if (total === 0 && sections.length < 2) return null;
 
   return (
     <div className="panel results-panel">
       <div className="results-head">
-        <h2>Time steps</h2>
+        <h2>Results</h2>
         <div className="results-head-right">
-          <span>{groups.length}</span>
+          <span>{total}</span>
           <button
             type="button"
             className="link-btn"
@@ -166,14 +218,8 @@ export default function ResultsPanel() {
         </div>
       </div>
       <div className="results-list">
-        {groups.map((g, i) => (
-          <GroupBlock
-            key={g.key.join('\u0000')}
-            group={g}
-            index={i}
-            expanded={i === expandedGroupIndex}
-            onToggle={toggleGroup}
-          />
+        {sections.map((section) => (
+          <SectionBlock key={section.datasetId} section={section} open={section.datasetId === openSectionId} />
         ))}
       </div>
     </div>

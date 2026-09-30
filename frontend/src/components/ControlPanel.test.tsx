@@ -426,7 +426,11 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   }
 
   it('disables both date fields and shows the acquisition period', () => {
-    useAppStore.setState({ datasets: datasetsFrom([NO_TIME_AXIS]), datasetId: NO_TIME_AXIS.id });
+    useAppStore.setState({
+      datasets: datasetsFrom([NO_TIME_AXIS]),
+      selectedDatasetIds: [NO_TIME_AXIS.id],
+      datasetId: NO_TIME_AXIS.id,
+    });
     act(() => root.render(<ControlPanel />));
 
     const [from, to] = dateInputs();
@@ -436,7 +440,11 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   });
 
   it('leaves the fields enabled for a dataset with a time axis', () => {
-    useAppStore.setState({ datasets: datasetsFrom([WITH_TIME_AXIS]), datasetId: WITH_TIME_AXIS.id });
+    useAppStore.setState({
+      datasets: datasetsFrom([WITH_TIME_AXIS]),
+      selectedDatasetIds: [WITH_TIME_AXIS.id],
+      datasetId: WITH_TIME_AXIS.id,
+    });
     act(() => root.render(<ControlPanel />));
 
     const [from, to] = dateInputs();
@@ -446,11 +454,245 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   });
 
   it('leaves the fields enabled when no dataset is picked yet', () => {
-    useAppStore.setState({ datasets: [], datasetId: null });
+    useAppStore.setState({ datasets: [], selectedDatasetIds: [], datasetId: null });
     act(() => root.render(<ControlPanel />));
 
     const [from, to] = dateInputs();
     expect(from.disabled).toBe(false);
     expect(to.disabled).toBe(false);
+  });
+});
+
+// M3-10: the dataset filter replaces the row of dataset buttons — a text field
+// over a list of tick boxes, every ticked dataset searched at once.
+describe('DatasetFilter: choosing datasets (M3-10)', () => {
+  const CAPABILITIES = {
+    roi: true,
+    time_range: true,
+    band_math: true,
+    interpolation: true,
+    ml_processing: true,
+    quad_pol: false,
+    single_coverage_product: false,
+  };
+
+  function collection(id: string, title: string, extra: Partial<Collection> = {}): Collection {
+    return {
+      id,
+      title,
+      'earthx:capabilities': CAPABILITIES,
+      'earthx:viewer': {
+        group_by: ['datetime'],
+        min_zoom: 0,
+        max_zoom: 14,
+        browse: 'quicklook',
+        quicklook_nodata_max: null,
+        results_group_by: ['datetime'],
+      },
+      ...extra,
+    };
+  }
+
+  const OPTICAL = collection('optical', 'Optical imagery', {
+    description: 'Multispectral optical imagery.',
+    keywords: ['sentinel-2'],
+    'earthx:maturity': 'staging',
+  });
+  const DEM = collection('dem', 'Elevation model', {
+    description: 'A digital surface model.',
+    keywords: ['terrain'],
+    extent: { temporal: { interval: [['2010-12-01T00:00:00Z', '2015-01-31T23:59:59Z']] } },
+    'earthx:capabilities': { ...CAPABILITIES, time_range: false },
+  });
+  const BROKEN: Collection = { id: 'broken', title: 'Broken data', 'earthx:capabilities': CAPABILITIES };
+
+  function setUp(selected: string[]) {
+    useAppStore.setState({
+      datasets: datasetsFrom([OPTICAL, DEM, BROKEN]),
+      selectedDatasetIds: selected,
+      datasetId: selected[0] ?? null,
+      sections: [],
+      openSectionId: null,
+      items: [],
+      groups: [],
+      aoi: null,
+      sceneNameQuery: '',
+      showCoverage: false,
+    });
+    act(() => root.render(<ControlPanel />));
+  }
+
+  function filterInput(): HTMLInputElement {
+    return container.querySelector('.dataset-filter input[type="search"]') as HTMLInputElement;
+  }
+  function options(): HTMLLabelElement[] {
+    return [...container.querySelectorAll('.dataset-list .dataset-option')] as HTMLLabelElement[];
+  }
+  function checkboxOf(label: HTMLLabelElement): HTMLInputElement {
+    return label.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  }
+  function titles(): string[] {
+    return options().map((o) => o.querySelector('.dataset-option-title')!.textContent ?? '');
+  }
+  function typeInto(input: HTMLInputElement, value: string): void {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function searchButton(): HTMLButtonElement {
+    return container.querySelector('.control-panel .primary-btn') as HTMLButtonElement;
+  }
+
+  it('lists every dataset with a tick box, ticked as selected', () => {
+    setUp(['optical']);
+    expect(titles()).toEqual(['Optical imagery', 'Elevation model', 'Broken data']);
+    expect(options().map((o) => checkboxOf(o).checked)).toEqual([true, false, false]);
+    expect(container.textContent).toContain('1 selected');
+  });
+
+  it('ticking one adds it to the selection; unticking removes it', () => {
+    setUp(['optical']);
+    act(() => checkboxOf(options()[1]).click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'dem']);
+    expect(container.textContent).toContain('2 selected');
+    act(() => checkboxOf(options()[0]).click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
+  });
+
+  it('shows a dataset that cannot be shown unticked and disabled, with the reason', () => {
+    setUp(['optical']);
+    const broken = options()[2];
+    expect(checkboxOf(broken).disabled).toBe(true);
+    expect(broken.title).toContain('not viewable');
+    expect(broken.title).toContain('group_by');
+  });
+
+  it('shows the maturity chip and puts the description into the tooltip', () => {
+    setUp(['optical']);
+    expect(options()[0].querySelector('.maturity-chip')?.textContent).toBe('staging');
+    expect(options()[0].title).toContain('Multispectral optical imagery.');
+  });
+
+  it('filters over title, description and keywords', () => {
+    setUp(['optical']);
+    act(() => typeInto(filterInput(), 'terrain'));
+    // the ticked dataset stays listed, the match joins it
+    expect(titles()).toEqual(['Optical imagery', 'Elevation model']);
+    act(() => typeInto(filterInput(), 'surface model'));
+    expect(titles()).toEqual(['Optical imagery', 'Elevation model']);
+    act(() => typeInto(filterInput(), ''));
+    expect(titles()).toHaveLength(3);
+  });
+
+  it('never hides a ticked dataset behind a filter that does not match it', () => {
+    setUp(['dem']);
+    act(() => typeInto(filterInput(), 'sentinel'));
+    expect(titles()).toEqual(['Optical imagery', 'Elevation model']);
+    expect(checkboxOf(options()[1]).checked).toBe(true);
+  });
+
+  it('says so when nothing matches and nothing is ticked', () => {
+    setUp([]);
+    act(() => typeInto(filterInput(), 'zzz'));
+    expect(titles()).toEqual([]);
+    expect(container.textContent).toContain('No dataset matches.');
+  });
+
+  it('takes a regular-expression character as plain text', () => {
+    setUp([]);
+    act(() => typeInto(filterInput(), '.*'));
+    expect(titles()).toEqual([]);
+    expect(container.textContent).toContain('No dataset matches.');
+  });
+
+  it('with nothing ticked, asks for a dataset and keeps Search off even with an AOI', () => {
+    setUp([]);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
+    act(() => root.render(<ControlPanel />));
+    expect(container.textContent).toContain('Select at least one dataset.');
+    expect(searchButton().disabled).toBe(true);
+  });
+
+  it('with one ticked and an AOI, Search is on', () => {
+    setUp(['optical']);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
+    act(() => root.render(<ControlPanel />));
+    expect(container.textContent).not.toContain('Select at least one dataset.');
+    expect(searchButton().disabled).toBe(false);
+  });
+
+  it('sums the scenes over every section for the count under Search', () => {
+    setUp(['optical', 'dem']);
+    const item = { id: 'x', bbox: null, properties: {}, assets: {} };
+    useAppStore.setState({
+      sections: [
+        { datasetId: 'optical', items: [item, item], groups: [], notes: [], groupingError: null },
+        { datasetId: 'dem', items: [item], groups: [], notes: [], groupingError: null },
+      ],
+    });
+    act(() => root.render(<ControlPanel />));
+    expect(container.textContent).toContain('3 scene(s) found');
+  });
+
+  describe('the date fields', () => {
+    function dateInputs(): HTMLInputElement[] {
+      return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+    }
+
+    it('stay usable while one ticked dataset has a time axis, and name each one without', () => {
+      setUp(['optical', 'dem']);
+      expect(dateInputs().every((i) => !i.disabled)).toBe(true);
+      expect(container.textContent).toContain('Elevation model: No time axis – acquired Dec 2010 to Jan 2015');
+    });
+
+    it('lock only when every ticked dataset lacks a time axis', () => {
+      setUp(['dem']);
+      expect(dateInputs().every((i) => i.disabled)).toBe(true);
+      // one dataset: the note without a title prefix, as before
+      expect(container.textContent).toContain('No time axis – acquired Dec 2010 to Jan 2015');
+      expect(container.textContent).not.toContain('Elevation model: No time axis');
+    });
+  });
+
+  it('lists the maturity note of every ticked dataset, named by title once there are several', () => {
+    setUp(['optical', 'dem']);
+    const notes = [...container.querySelectorAll('.dataset-notes .hint-text')].map((n) => n.textContent);
+    expect(notes).toEqual(['Optical imagery: staging: the provider may withdraw this collection without notice']);
+  });
+
+  describe('the coverage legend', () => {
+    function coverageSelect(): HTMLSelectElement | null {
+      return container.querySelector('select.coverage-dataset');
+    }
+
+    it('names the dataset shown, and offers the ticked ones once there are several', () => {
+      setUp(['optical', 'dem']);
+      useAppStore.setState({ showCoverage: true, datasetId: 'optical' });
+      act(() => root.render(<ControlPanel />));
+      const select = coverageSelect()!;
+      expect([...select.options].map((o) => o.textContent)).toEqual(['Optical imagery', 'Elevation model']);
+      expect(select.value).toBe('optical');
+    });
+
+    it('choosing another makes it the active dataset', () => {
+      setUp(['optical', 'dem']);
+      useAppStore.setState({ showCoverage: true, datasetId: 'optical' });
+      act(() => root.render(<ControlPanel />));
+      const select = coverageSelect()!;
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
+        setter.call(select, 'dem');
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      expect(useAppStore.getState().datasetId).toBe('dem');
+    });
+
+    it('with one dataset ticked, only names it', () => {
+      setUp(['optical']);
+      useAppStore.setState({ showCoverage: true });
+      act(() => root.render(<ControlPanel />));
+      expect(coverageSelect()).toBeNull();
+      expect(container.querySelector('.coverage-dataset-name')?.textContent).toBe('Optical imagery');
+    });
   });
 });
