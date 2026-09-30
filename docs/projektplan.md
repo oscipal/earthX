@@ -295,7 +295,7 @@ Health-Status je Quelle ist **nicht** Teil von M3, sondern kommt mit M5.
 | | |
 |---|---|
 | Ziel | Rezept und Operator-Registry tragen Vorschau, Job, Cache, Provenienz und lokale Ausführung |
-| Inhalt | Rezept-Schema mit kanonischem Hash; Operator-Registry mit JSON-Schema, Kostenmodell, Metadaten-Transformation; Worker-Kern als reine Funktion; Stufen T1 und T2; Job-Queue (vorher Spike); Ergebnis-Cache; Ablaufdatum; lokaler Runner als Einmalbefehl mit festem Image-Tag; Vergleichstest Cloud gegen lokal |
+| Inhalt | **Erste Schritte (`adr/0011`, Otto 30.09.2026):** M4-01a Zugriffsauflösung nach `access` und gemeinsame Stelle für Items; M4-01b `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen. Danach: Rezept-Schema mit kanonischem Hash; Operator-Registry mit JSON-Schema, Kostenmodell, Metadaten-Transformation; Worker-Kern als reine Funktion; Stufen T1 und T2; Job-Queue (vorher Spike); Ergebnis-Cache; Ablaufdatum; lokaler Runner als Einmalbefehl mit festem Image-Tag; Vergleichstest Cloud gegen lokal |
 | Funktionen | Operatoren: Band-Math, Reprojektion/Resampling/Auflösung, Masking, Normalisierung, Ausgabeformat; automatische Skalierung und Einheiten; aus Schemas generiertes Processing-Panel; "Parameter von Datensatz übernehmen"; Kostenschätzung vor Start; Download mit Attribution, Zitat (BibTeX) und Rezept; Methodentext-Generator; Permalinks |
 | Abnahme | Dasselbe Rezept liefert als Vorschau, als Job und im lokalen Runner übereinstimmende Ergebnisse (Toleranz definiert); zweiter identischer Auftrag kommt aus dem Cache |
 | Deine Entscheidungen | ADR Job-Queue; welche Operatoren zuerst; Status lokaler Ergebnisse |
