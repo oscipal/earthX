@@ -81,6 +81,10 @@ class TestKeywords:
         with pytest.raises(ConfigError, match="non-blank"):
             vary(keywords=("elevation", blank))
 
+    def test_a_single_string_is_not_a_list_of_keywords(self, vary) -> None:
+        with pytest.raises(ConfigError, match="tuple"):
+            vary(keywords="dem")
+
     def test_a_keyword_that_is_not_a_string_is_rejected(self, vary) -> None:
         with pytest.raises(ConfigError, match="non-blank"):
             vary(keywords=("elevation", 3))

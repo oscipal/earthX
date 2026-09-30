@@ -648,6 +648,8 @@ class DatasetConfig:
     def _check_keywords(self) -> None:
         """At least one keyword, each a non-blank string (M3-10): the viewer's filter
         reads them, and a blank one would match every search word it is a part of."""
+        if not isinstance(self.keywords, tuple):
+            raise ConfigError(f"{self.dataset_id}: keywords must be a tuple of strings, not one string")
         if not self.keywords:
             raise ConfigError(f"{self.dataset_id}: keywords names no keyword")
         if not all(isinstance(word, str) and word.strip() for word in self.keywords):
