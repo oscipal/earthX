@@ -456,8 +456,9 @@ function CoverageLegend() {
   );
 }
 
-// The "Coverage" button (M3-10, Otto 30.09.2026): always on screen, in the footer
-// beside "Search", set apart from the dataset buttons. One dataset picked: a click
+// The "Coverage" button (M3-10, Otto 30.09.2026): right under the grid of dataset
+// buttons, outside it so it stays in view however that grid scrolls, and set
+// apart from them. The choice of dataset opens below it, in the panel's flow. One dataset picked: a click
 // shows its coverage (or hides it again). Several picked: the click first offers
 // the choice of which dataset — nothing is drawn until one is chosen. Off by
 // default (M2-07c).
@@ -500,6 +501,30 @@ function CoverageButton() {
 
   return (
     <div className="coverage-button-wrap" ref={rootRef}>
+      <button
+        type="button"
+        className={`coverage-btn${showCoverage ? ' active' : ''}`}
+        aria-pressed={showCoverage}
+        aria-haspopup={picked.length > 1 ? 'menu' : undefined}
+        aria-expanded={picked.length > 1 ? choosing : undefined}
+        disabled={picked.length === 0}
+        title={
+          picked.length === 0
+            ? 'Pick a dataset to see its coverage'
+            : showCoverage
+              ? 'Coverage map on — click to change or hide it'
+              : 'Show how densely a dataset covers the world'
+        }
+        onClick={onClick}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+          <rect x="2" y="2" width="5" height="5" />
+          <rect x="9" y="2" width="5" height="5" fill="currentColor" fillOpacity="0.45" />
+          <rect x="2" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.2" />
+          <rect x="9" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.75" />
+        </svg>
+        <span>Coverage</span>
+      </button>
       {choosing && picked.length > 1 && (
         <div className="coverage-choice" role="menu" aria-label="Coverage of which dataset">
           {picked.map((d) => (
@@ -532,30 +557,6 @@ function CoverageButton() {
           )}
         </div>
       )}
-      <button
-        type="button"
-        className={`coverage-btn${showCoverage ? ' active' : ''}`}
-        aria-pressed={showCoverage}
-        aria-haspopup={picked.length > 1 ? 'menu' : undefined}
-        aria-expanded={picked.length > 1 ? choosing : undefined}
-        disabled={picked.length === 0}
-        title={
-          picked.length === 0
-            ? 'Pick a dataset to see its coverage'
-            : showCoverage
-              ? 'Coverage map on — click to change or hide it'
-              : 'Show how densely a dataset covers the world'
-        }
-        onClick={onClick}
-      >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-          <rect x="2" y="2" width="5" height="5" />
-          <rect x="9" y="2" width="5" height="5" fill="currentColor" fillOpacity="0.45" />
-          <rect x="2" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.2" />
-          <rect x="9" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.75" />
-        </svg>
-        <span>Coverage</span>
-      </button>
     </div>
   );
 }
@@ -609,6 +610,7 @@ export default function ControlPanel() {
           {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
         </label>
         <DatasetPicker />
+        <CoverageButton />
         <DatasetNotes />
 
         <CoverageLegend />
@@ -618,12 +620,9 @@ export default function ControlPanel() {
 
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
-        <div className="action-row">
-          <CoverageButton />
-          <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
-            {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
-          </button>
-        </div>
+        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+          {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
+        </button>
 
         {count > 0 && <p className="result-count">{count} scene(s) found</p>}
         {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}

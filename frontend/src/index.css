@@ -975,23 +975,17 @@ input[type='date']:focus {
 }
 /* The footer's action row: "Coverage" beside "Search" — kept apart from the
    dataset buttons (its own place, an icon, dashed outline until it is on). */
-.action-row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.action-row .primary-btn {
-  flex: 1;
-}
 .coverage-button-wrap {
-  position: relative;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 .coverage-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 0 12px;
+  padding: 7px 12px;
   background: transparent;
   border: 1px dashed var(--panel-border);
   border-radius: 6px;
@@ -1016,13 +1010,9 @@ input[type='date']:focus {
   opacity: 0.4;
   cursor: not-allowed;
 }
-/* The choice of which dataset: opens above the button, inside the footer. */
+/* The choice of which dataset: below the button, in the panel's own flow. */
 .coverage-choice {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 3;
-  min-width: 220px;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 4px;

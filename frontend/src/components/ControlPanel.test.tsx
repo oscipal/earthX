@@ -662,12 +662,22 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
     }
 
-    it('is always there, in the footer beside Search, apart from the dataset buttons', () => {
+    it('sits right under the grid of dataset buttons, outside it, and not in the footer', () => {
       setUp(['optical']);
       expect(button()).not.toBeNull();
-      expect(container.querySelector('.control-footer .action-row .coverage-btn')).not.toBeNull();
-      expect(container.querySelector('.dataset-list .coverage-btn')).toBeNull();
+      const grid = container.querySelector('.dataset-list')!;
+      expect(grid.nextElementSibling?.classList.contains('coverage-button-wrap')).toBe(true);
+      expect(grid.querySelector('.coverage-btn')).toBeNull();
+      expect(container.querySelector('.control-footer .coverage-btn')).toBeNull();
       expect(button().textContent).toBe('Coverage');
+    });
+
+    it('opens the choice of dataset below the button', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      const wrap = container.querySelector('.coverage-button-wrap')!;
+      expect(wrap.lastElementChild?.classList.contains('coverage-choice')).toBe(true);
+      expect(button().compareDocumentPosition(wrap.lastElementChild!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('is visible but off when no dataset is picked', () => {
