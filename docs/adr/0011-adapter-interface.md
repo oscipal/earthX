@@ -16,7 +16,9 @@
 - **Betroffen:** `backend/earthx/adapters/` (alle Module), `api/tiler.py`
   (Zugriffsauflösung, Item-Quelle), `api/federating_client.py` (Routing),
   `api/coverage_route.py`, `catalog/registry.py` (`SourceInfo.harvest_run`),
-  `architekturplan.md` 6.1; M4 (erster Schritt), M5 (Harvester).
+  `readers` (eigene Fehlerklasse, §6.4); `architekturplan.md` 3.1 (Spalte
+  „Zuständig für“ bei `adapters` und `access`, nicht die Importspalte) und 6.1;
+  M4 (erster Schritt), M5 (Harvester).
 
 ---
 
@@ -56,7 +58,9 @@ Die Empfehlungen, jede mit einer Frage in §11:
    Item mit: Items mit lesbaren `href`s. Das Item besorgt weiter `api`.
    `processing` kann `access` importieren, ohne eine Importregel zu lockern.
    Der Worker-Kern bekommt aufgelöste Adressen (B9, 7.3). Das ist der erste
-   Schritt von M4.
+   Schritt von M4. **Es verschiebt eine Zuständigkeit aus 3.1:** Dort steht die
+   Zugriffsauflösung heute bei `adapters`. Die Importspalte bleibt, die Spalte
+   „Zuständig für“ ändert sich (F2, F8).
 3. **Signaturen nehmen den Registry-Eintrag (F3).** Adapter bekommen die
    `DatasetConfig`, nicht `dataset_id` mit `registry=REGISTRY` als Vorgabe
    (K-09). Regel I prüft dann der Dispatcher einmal, statt dass jeder Adapter
@@ -70,9 +74,10 @@ Die Empfehlungen, jede mit einer Frage in §11:
 6. **STAC-API-Dialekt erst mit der nächsten STAC-API-Quelle (F6).** Die beiden
    STAC-Adapter unterscheiden sich im Code in drei Stellen (§3.2 B2). Das
    Zusammenlegen lohnt erst in M5 und wird nicht auf Vorrat gebaut.
-7. **Architekturplan 6.1 neu fassen (F8).** Nötig sind sechs Fähigkeiten statt
-   vier. „Genutzt von“ muss `api` bzw. `discovery` heißen statt `catalog`
-   (K-07). Entwurf in §4.3.
+7. **Architekturplan 3.1 und 6.1 anpassen (F8).** In 6.1 sind sechs
+   Fähigkeiten nötig statt vier. „Genutzt von“ muss `api` bzw. `discovery`
+   heißen statt `catalog` (K-07). In 3.1 wandert „Zugriffsauflösung“ von
+   `adapters` zu `access`. Entwurf in §4.3.
 8. **EODAG nicht als Bibliothek (F9).** EODAG holt selbst über `requests` und
    `boto3` [P]. Damit wäre `gateway` umgangen (B8) und die Importregel
    `http-only-in-gateway` verletzt.
@@ -106,7 +111,7 @@ ADR gegeben (M3-02 §8, Antwort 3). Und was folgt daraus für M4 und M5?
 | K2 | Jede Fähigkeit lässt sich mit synthetischen Fixtures testen, ohne private Tabellen zu überschreiben | Plan M3-14; CLAUDE.md; `adr/0002` |
 | K3 | Der Harvester (M5) passt hinein, ohne dass sich die Form ändert | Plan M3-14; architekturplan 4, 15.1 |
 | K4 | Processing (M4) bekommt die Zugriffsauflösung, ohne eine Importregel zu lockern und ohne Plattformdienste im Worker-Kern | Plan M3-14; 3.1; B9; 7.3 |
-| K5 | Die Modulgrenzen aus 3.1 bleiben, wie sie sind | CLAUDE.md „Unverrückbar“ |
+| K5 | Die Modulgrenzen aus 3.1 bleiben, wie sie sind: Keine Importregel wird gelockert. Eine Verschiebung in der Spalte „Zuständig für“ ist erlaubt, braucht aber Ottos Freigabe und wird als solche benannt | CLAUDE.md „Unverrückbar“ |
 | K6 | Eine neue Quelle ändert eine Stelle, nicht jeden Aufrufer | architekturplan 1.1, Ziel 1 |
 | K7 | Was nicht geht, wird ausdrücklich abgewiesen, nie still ersetzt | `adr/0005` Regel I; B10 |
 | K8 | Der Umbau bleibt für ein kleines Team überschaubar | architekturplan 1.1, Ziel 6 |
@@ -125,7 +130,7 @@ ADR gegeben (M3-02 §8, Antwort 3). Und was folgt daraus für M4 und M5?
 | Materialisierung | — | — | `materialize_items` | `adapters/__init__.py:79` `_MATERIALIZERS`; `discovery/materialize.py` |
 | Normalisierung | keine | STAC 1.1 → 1.0, `zipped_product` entfernt | baut Items selbst | `eopf_stac.py:225`, `:222`; `cop_dem_bucket.py` `_item` |
 | Coverage | Aggregation der Quelle | ausgewiesene Stichprobe | Fläche aus eigenen Items, SQL | `adapters/__init__.py:89` `_COVERAGE`; `catalog/local_coverage.py` |
-| Filter `intersects`/`ids` | ja | ja | pgstac: ja | Modulkonstanten `SUPPORTS_*`, gelesen per `getattr` (`adapters/__init__.py:117`) |
+| Filter `intersects`/`ids` | ja | ja | pgstac: ja | Modulkonstanten `SUPPORTS_*`, gelesen per `getattr` (`adapters/__init__.py:133`, `:135`) |
 | CQL2 an der Quelle | nein [M] | ja [M] | pgstac: kann es, ist aus | `plans/m3-13-…` §2.3 |
 | Seitenmarke | Keyset `body.next` | Keyset `body.token` | Keyset `coll:item-id` | `plans/m3-13-…` §2.3 [M] |
 | Zugriffsauflösung | — | — | — | generisch in `api/tiler.py:356` `_resolve_asset_path` |
@@ -151,8 +156,8 @@ eigene Fehlerklassen mit denselben Namen wie `federated_search`
   Das bestätigt `adr/0009` §11. Sie läuft offline im Prozess `discovery`, nicht
   bei einer Anfrage. Sie ist bedingt (`If-None-Match`, `known_version`) und
   liefert einen Bericht mit Zahlen: gelistet, im Bucket, fehlend,
-  zurückgehalten, unbekannt. Über 1 % Fehlendem bricht sie ab
-  (`cop_dem_bucket.py`, `MaterializeOutcome`). Mit Suche hat die Signatur
+  zurückgehalten, unbekannt. Sind mehr als 1 % der Liste fehlend oder
+  zurückgehalten, bricht sie ab (`cop_dem_bucket.py:292`, `MaterializeOutcome`). Mit Suche hat die Signatur
   nichts gemein.
 - **B4: Coverage hängt an der Item-Haltung, nicht nur am Adapter.** Die zwei
   föderierten Wege wählt die Tabelle `(AdapterKind, CoverageProvider)`. Den
@@ -173,7 +178,11 @@ eigene Fehlerklassen mit denselben Namen wie `federated_search`
     (`federating_client.py:591`).
   - Der Einzelabruf für Kacheln und Download liest die Python-Registry
     (`tiler.py:760`).
-  - Die Coverage liest die Python-Registry (`coverage_route.py:105`).
+  - Die Coverage liest die Python-Registry (`coverage_route.py:105`). Sie
+    fragt nicht `item_holding`, sondern Provider `local-sql` und
+    `single_coverage_product` (`_area_path`). Gleichwertig ist das nur, weil
+    `DatasetConfig._check_item_holding` Haltung und Provider koppelt
+    (`catalog/registry.py:744`).
   - Dazu kommt die Sicherung in `adapters._adapter_for` (`__init__.py:95`).
 
   Das sind zwei Wahrheiten (K-11). Sie stimmen, solange `catalog.load` nach
@@ -186,12 +195,12 @@ eigene Fehlerklassen mit denselben Namen wie `federated_search`
     (`tests/earthx/adapters/test_dispatch.py:165`).
 - **B8: Adapter lesen Registry-Inhalt (K-09, gewachsen).**
   - Fünf Module setzen `registry=REGISTRY` als Vorgabe.
-  - `cop_dem_bucket.py:43` importiert zusätzlich `DEM_ACQUISITION_START/END`
+  - `cop_dem_bucket.py:44` importiert zusätzlich `DEM_ACQUISITION_START/END`
     aus `catalog.datasets`. Dieselben Werte stehen im Eintrag als
     `temporal_extent` (`datasets.py:456`).
 - **B9: Das Fehlervokabular liegt am falschen Ort.** `UnsupportedSource` und
   `UpstreamShapeError` stehen in `federated_search.py`. `cop_dem_bucket` ist
-  nicht föderiert und importiert sie trotzdem von dort (`:42`).
+  nicht föderiert und importiert sie trotzdem von dort (`:43`).
 - **B10: `SourceInfo.harvest_run` ist bei allen drei Einträgen `None`.** Den
   Lauf mit ETag protokolliert `public.earthx_materialize_runs` (M3-11b §3.5).
   M3-11a F3 und M3-11b §3.5 haben die Frage an dieses ADR gegeben.
@@ -238,6 +247,14 @@ ein Fehler im Text von 6.1.
 | Zugriffsauflösung | Welcher Reader und welche geprüfte Adresse gehören zu diesem Asset? | `access`, generisch; Adapter liefern dafür Items mit lesbaren hrefs (§5.3) | `api`, `processing` |
 
 Den Satz „Auth ist bewusst eine spätere Fähigkeit“ würde ich stehen lassen.
+
+In **3.1** ändert sich mit F2 (1) nur die Spalte „Zuständig für“, nicht die
+Importspalte:
+
+| Modul | heute | nach F2 (1) |
+|---|---|---|
+| `adapters` | Protokolle der Quellen: Discovery, Suche, Zugriffsauflösung | Protokolle der Quellen: Discovery, Suche, Einzelabruf, Materialisierung, Aggregation; Items mit lesbaren hrefs (§5.3) |
+| `access` | Tiles, Quicklooks, Statistik, Download-Vermittlung | Zugriffsauflösung, Tiles, Quicklooks, Statistik, Download-Vermittlung |
 
 ---
 
@@ -349,7 +366,9 @@ Regeln, geprüft beim Bau der Tabelle und in einem Test über die echte Registry
   - Der `coverage.provider` steht in `coverage`, außer bei `local-sql`, das
     `catalog` beantwortet (B4).
 
-  Heute fällt so ein Fehler erst beim ersten Aufruf auf.
+  Ob Haltung und Provider zusammenpassen, prüft der Eintrag schon heute beim
+  Bau (`ConfigError`). Fehlt dagegen eine Zeile in einer Dispatch-Tabelle,
+  fällt das heute erst beim ersten Aufruf auf.
 - Die Dispatcher heißen weiter `search_items`, `get_item`, `materialize_items`
   und `coverage`. Sie nehmen `config` und eine Tabelle
   `Mapping[AdapterKind, AdapterSpec]`, ohne Vorgabe. Regel I (unbekannte
@@ -366,19 +385,25 @@ und zwar in den Items selbst. Jedes Item, das `search`, `fetch` oder
 
 1. Es ist STAC 1.0, so wie die eigene API es ausgibt. Normalisierung ist Sache
    des Adapters, wie `eopf_stac.normalize_item` heute.
-2. Jeder `href` eines Assets, das die Plattform anbietet, ist `https` auf einem
-   Host aus `asset_hosts` des Eintrags. Eine Übersetzung wie `s3://` → `https`
-   gehört hierher, nicht in den Reader.
-3. Assets, die nicht angeboten werden dürfen, fehlen, statt später gefiltert zu
-   werden (Vorbild `zipped_product`, D23).
+2. Jeder `href` eines Assets ist eine `https`-Adresse. Eine Übersetzung wie
+   `s3://` → `https` gehört hierher, nicht in den Reader. Ob der Host erlaubt
+   ist, prüft weiter die Auflösung beim Öffnen und weist mit `502` ab
+   (`api/tiler.py:413`). Dieses Verhalten bleibt, wie es ist. Der Vertrag
+   entfernt keine Assets auf fremden Hosts.
+3. Assets, von denen der Adapter weiß, dass sie nicht angeboten werden dürfen,
+   fehlen, statt später gefiltert zu werden (Vorbild `zipped_product`, D23).
+   Das tut EOPF schon heute.
 4. Bei materialisierten Quellen: Keiner Quell-Liste wird geglaubt, ohne sie
    gegen das Listing zu prüfen. Der Bericht nennt, was fehlt (`adr/0009` §11,
    M3-11b §3.2).
 
-Ein **Vertragstest** läuft über jeden Eintrag der Tabelle mit den vorhandenen
-synthetischen Fixtures (`tests/fixtures/earth_search`, `eopf_stac` und
-Bucket-Stubs). Er prüft Punkt 1 und 2 mit der Policy aus der Registry. So wird
-K2 zu einer Regel für jede künftige Quelle, nicht zu einer Absicht.
+Ein **Vertragstest** läuft über jeden Eintrag der Tabelle mit synthetischen
+Fixtures. Er prüft Punkt 1 und 2 (Form und Schema, nicht den Host). Die
+vorhandenen Fixtures zeigen bewusst auf `example.invalid`, eine enthält
+absichtlich ein Asset auf einem fremden Host (`item_asset_hosts.json`). Eine
+Host-Prüfung gegen die Registry würde also dort scheitern, und das ist
+gewollt. So wird K2 zu einer Regel für jede künftige Quelle, nicht zu einer
+Absicht.
 
 ---
 
@@ -390,12 +415,18 @@ Drei Schritte, heute alle im Prozess `tiler`:
 
 | Schritt | Heute | Braucht |
 |---|---|---|
-| a) Item besorgen | `tiler.py:760` `build_item_source`: föderiert über `adapters.get_item`, materialisiert über `catalog.fetch_item` | `adapters`, `gateway`, Datenbank |
+| a) Item besorgen | `tiler.py:760` `build_item_source`: föderiert über `adapters.get_item`, materialisiert über `catalog.pgstac.fetch_item` | `adapters`, `gateway`, Datenbank |
 | b) Quellenspezifisches am href | in den Adaptern, beim Bau des Items (B5) | Adapter |
 | c) Asset → Reader-Eingabe | `tiler.py:356` `_resolve_asset_path` samt `_resolve_asset_href` (`:136`), `_proj_code` (`:183`), `_target_gsd` (`:207`): Reader nach `format`, Zarr-Trenner, CRS, Stufe, `check_url` über `readers.asset_path`/`zarr_asset` | Registry-Eintrag (`catalog`), `readers`, eine `Policy` |
 
 Schritt c wird von Kachel und Download genutzt (`tiler.py:619`). In M4 braucht
 ihn `processing`, und das darf `api` nicht importieren. Das ist der Kern von K-04.
+
+Der heutige Ort ist begründet: Nach Ottos Antwort 5 vom 20.09.2026 zu
+`adr/0006` behält `access` Fabrik und Rendering, die Zusammensetzung liegt in
+`api`, weil `access` `gateway` nicht importieren darf (`api/tiler.py` Z. 1–7).
+Die Empfehlung hier revidiert diese Antwort teilweise. Sie hält die
+Begründung ein, denn `access` importiert auch nach Z3 nichts aus `gateway`.
 
 ### 6.2 Randbedingungen
 
@@ -405,6 +436,15 @@ ihn `processing`, und das darf `api` nicht importieren. Das ist der Kern von K-0
   - `adapters` darf `readers` nicht importieren.
   - `readers` darf `catalog` nicht importieren.
   - Keine Regel wird gelockert (CLAUDE.md).
+- **Kettenzählung:** Der Vertrag `no-database-in-worker-core` zählt Ketten
+  (`processing → … → psycopg`). Nach dem Log vom 20.09.2026 darf `processing`
+  ab M4 nur DB-freie Teile von `catalog` erreichen. Daraus folgt: Die neue
+  Auflösung in `access` darf aus `catalog` nur `catalog.registry` importieren.
+  Das ist heute frei von `psycopg` (geprüft durch Import in der Sitzung).
+  `catalog.datasets`, `catalog.pgstac` und die Caches darf sie nicht importieren.
+- **Kein `gateway` in `access` und `processing`, auch nicht als Typ:**
+  `.importlinter` setzt kein `exclude_type_checking_imports`. Auch eine
+  Annotation `policy: Policy` unter `TYPE_CHECKING` zählt als Import.
 - **B9, 7.3:** Der Worker-Kern bekommt „Rezept und aufgelöste
   Asset-Adressen“. Er hat keine Datenbank und keine interne API. Schritt a
   kann deshalb nicht im Worker-Kern laufen: Er braucht die Datenbank
@@ -419,8 +459,8 @@ ihn `processing`, und das darf `api` nicht importieren. Das ist der Kern von K-0
 | | Ort | processing kann es nutzen | Importregeln | Bewertung |
 |---|---|---|---|---|
 | Z1 | bleibt in `api/tiler.py` | nein, zweite Kopie in `processing` | unverändert | gegen K4, K6 |
-| Z2 | `adapters` (Wortlaut 6.1) | nein: `processing → adapters` verboten; `adapters → readers` verboten, also nur eine Beschreibung, kein Reader-Objekt | bräuchte zwei Lockerungen | gegen K5; materialisierte Quellen haben zur Laufzeit gar keinen Adapter |
-| **Z3** | **`access`** | ja: `processing → access` erlaubt | unverändert: `access` importiert `readers` und `catalog` | erfüllt K4, K5 |
+| Z2 | `adapters` (Wortlaut 3.1 und 6.1) | nein: `processing → adapters` verboten; `adapters → readers` verboten, also nur eine Beschreibung, kein Reader-Objekt | bräuchte zwei Lockerungen | entspricht der Zuständigkeit in 3.1, verletzt aber die Importregeln (gegen K4, K5); materialisierte Quellen haben zur Laufzeit gar keinen Adapter |
+| **Z3** | **`access`** | ja: `processing → access` erlaubt | unverändert: `access` importiert `readers` und `catalog.registry`; Fehlerklasse aus `readers` (§6.4) | erfüllt K4; K5 teilweise: Importregeln bleiben, die Zuständigkeit in 3.1 verschiebt sich (F8) |
 | Z4 | neues Modul, etwa `resolve` | ja, wenn 3.1 es so einträgt | neue Zeile in 3.1 und `.importlinter` | ein bewegliches Teil mehr (K8); fachlich dasselbe wie Z3 |
 | Z5 | `readers` | ja | bräuchte `readers → catalog` (Lockerung) | gegen K5 |
 
@@ -435,7 +475,7 @@ class ResolvedAsset:               # serialisierbar, geht ins Rezept (7.1, 7.7)
     item_id: str
     asset: str
     reader: Literal["cog", "zarr"]
-    href: str                      # geprüft gegen asset_hosts des Eintrags
+    href: str                      # Host mit asset_hosts verglichen, DNS-Prüfung erst beim Öffnen des Eintrags
     variable: str | None           # nur Zarr
     crs: str | None                # proj:code bzw. proj:epsg des Items
 
@@ -447,12 +487,22 @@ def open_asset_ref(ref: ResolvedAsset, policy, resolve, *,
 
 - `resolve_asset` ist rein: kein Netz, keine Policy. Hier liegt, was heute
   `_resolve_asset_path` ohne `check_url` tut, samt Abweisung eines Formats ohne
-  Reader. Eine eigene Fehlerklasse ersetzt die heutige Unterscheidung
-  „400 wegen des Schlüssels, 502 wegen des Items“, die an `UrlRejected` hängt.
+  Reader. Die heutige Unterscheidung „400 wegen des Schlüssels, 502 wegen des
+  Items“ hängt an `UrlRejected`, das `readers.split_asset_key` wirft
+  (`zarr_reader.py:420`). `access` kann das nicht fangen, ohne `gateway` zu
+  importieren.
+- **Fehler übersetzt `readers`.** `readers` darf `gateway` importieren. Es
+  bekommt eine eigene Fehlerklasse, etwa `AssetRejected(UrlRejected)`.
+  `split_asset_key`, `asset_path` und `zarr_asset` werfen nur noch sie. Weil
+  sie von `UrlRejected` erbt, bleibt das Fangen in `api` gleich. `access` und
+  `processing` fangen die Klasse aus `readers`. **Nur unter dieser Bedingung
+  geht Z3 ohne Lockerung einer Importregel.**
 - `open_asset_ref` reicht `policy` und `resolve` an `readers.asset_path` bzw.
-  `readers.zarr_asset` durch, die `check_url` aufrufen. `access` importiert
-  dafür `gateway` nicht. Die Fehler aus `gateway` übersetzt weiter `api` in
-  HTTP-Codes.
+  `readers.zarr_asset` durch, die `check_url` aufrufen. Das ist erlaubt, weil
+  die Verträge direkte Importe zählen (`allow_indirect_imports = True`). Als
+  Typ nimmt `access` den Neu-Export aus `readers` oder `object`, nie einen
+  Import aus `gateway`. Die übrigen Fehler aus `gateway` übersetzt weiter `api`
+  in HTTP-Codes.
 - `_target_gsd` zieht mit nach `access`. Es rechnet aus einer Kachelgeometrie,
   was `access` ohnehin rendert.
 - **Schritt a bleibt in `api`**, als eine gemeinsame Item-Quelle (F4, §7).
@@ -476,8 +526,11 @@ aus der API oder der Rezeptdatei.
 
 Offen für den M4-Plan, nicht hier zu entscheiden: Wer baut im Worker die
 `Policy` aus den Hosts der `ResolvedAsset` (B9: „Allowlist ergibt sich aus den
-aufgelösten Asset-Adressen“)? `processing` und `jobs` dürfen `gateway` nicht
-importieren. Eine kleine Fabrik in `readers` wäre der naheliegende Ort [A].
+aufgelösten Asset-Adressen“)? Und wer setzt dort die GDAL-Konfiguration
+`gateway.gdal.gdal_options(policy)`, die der Tiler für jeden COG-Lesezugriff
+setzt (`api/tiler.py:91`, `:825`)? `processing` und `jobs` dürfen `gateway`
+nicht importieren. Eine kleine Fabrik in `readers`, die beides liefert, wäre
+der naheliegende Ort [A].
 
 ---
 
@@ -489,7 +542,7 @@ Wahrheit (B6).
 | | Vorgehen | Pro | Contra |
 |---|---|---|---|
 | D1 | so lassen | kein Umbau | zwei Wahrheiten; M4 bräuchte eine vierte Stelle für die Job-Annahme |
-| **D2** | eine Item-Quelle in `api` für Einzelabruf (Tiler, Download, Job-Annahme, `federating_client.get_item`); das Routing aller Wege liest die Python-Registry; `api` und `tiler` prüfen beim Start, dass jede Collection in pgstac dieselbe `item_holding` trägt, sonst Start mit Fehler | eine Wahrheit fürs Routing; ein Fehler fällt beim Start auf statt bei einer Anfrage | kleiner Umbau in `federating_client` |
+| **D2** | eine Item-Quelle in `api` für Einzelabruf (Tiler, Download, Job-Annahme, `federating_client.get_item`); das Routing aller Wege liest die Python-Registry; `api` prüft beim Start, dass jede Collection in pgstac dieselbe `item_holding` trägt, sonst Start mit Fehler (`api` läuft ohnehin nie ohne pgstac); der `tiler` prüft dasselbe nur, wenn er einen Pool hat, und startet ohne Datenbank wie heute (E5) | eine Wahrheit fürs Routing; ein Fehler fällt beim Start auf statt bei einer Anfrage | kleiner Umbau in `federating_client` |
 | D3 | alles liest das pgstac-Dokument | eine Wahrheit | der Tiler bräuchte für jede Kachel eine Datenbankabfrage; ohne Datenbank bliebe er auch für föderierte Quellen stehen (gegen E5) |
 
 Regel I bleibt bei D2 unverändert: Eine unbekannte Collection ist weiter die
@@ -588,7 +641,8 @@ Und EODAG würde `gateway` umgehen.
 
 **F2: Zielort der Zugriffsauflösung (K-04)**
 1. `access`, rein (`resolve_asset`) plus Öffnen (`open_asset_ref`); das Item
-   besorgt `api` **(Empfehlung)**
+   besorgt `api`; Fehlerklasse in `readers`; in 3.1 wandert die Zuständigkeit
+   von `adapters` zu `access` **(Empfehlung)**
 2. bleibt in `api/tiler.py`; `processing` baut eine zweite Kopie
 3. neues Modul in 3.1
 4. `adapters`, mit Lockerung zweier Importregeln
@@ -622,8 +676,9 @@ Und EODAG würde `gateway` umgehen.
 2. nur (a) in M4, (b) mit M5
 3. beides noch in M3, als Stufe B
 
-**F8: `architekturplan.md` 6.1**
-1. nach Freigabe in diesem PR durch den Entwurf aus §4.3 ersetzen **(Empfehlung)**
+**F8: `architekturplan.md` 3.1 und 6.1**
+1. nach Freigabe in diesem PR nach §4.3 anpassen: 6.1 neu, in 3.1 nur die
+   Spalte „Zuständig für“ bei `adapters` und `access` **(Empfehlung)**
 2. in M3-15
 
 **F9: EODAG (Spike aus architekturplan 15.2)**
