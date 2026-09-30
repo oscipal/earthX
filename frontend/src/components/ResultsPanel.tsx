@@ -196,12 +196,15 @@ function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; open
   const several = sections.length > 1;
   return (
     <div className="dataset-select" ref={rootRef}>
+      <span className="eyebrow" id="dataset-select-label">
+        Showing dataset
+      </span>
       <button
         type="button"
         className="dataset-select-box"
         aria-haspopup={several ? 'listbox' : undefined}
         aria-expanded={several ? listOpen : undefined}
-        aria-label="Dataset shown in the list"
+        aria-labelledby="dataset-select-label"
         disabled={!several}
         onClick={() => setListOpen((v) => !v)}
       >
@@ -227,6 +230,23 @@ function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; open
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// A dataset with no browsable preview (the DEM) is drawn on the map as its AOI crop
+// as soon as it is the chosen dataset (`store.ts::searchCrops`). It is part of the
+// results, so it leaves the map with them; pinning is the user's own step.
+function CropRow({ openId }: { openId: string | null }) {
+  const hasCrop = useAppStore((s) => s.searchCrops.some((c) => c.restore.datasetId === openId));
+  const pin = useAppStore((s) => s.pinSearchCrops);
+  if (!hasCrop) return null;
+  return (
+    <div className="crop-row">
+      <span className="hint-text">Full-resolution crop is on the map.</span>
+      <button type="button" className="link-btn" title="Keep it on the map when another dataset is chosen" onClick={() => pin()}>
+        ＋ Pin to layers
+      </button>
     </div>
   );
 }
@@ -264,6 +284,8 @@ export default function ResultsPanel() {
         </div>
       </div>
       <DatasetDropdown sections={sections} openId={openSectionId} />
+      <CropRow openId={openSectionId} />
+      <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
       <div className="results-list">
         {groups.map((g, i) => (
           <GroupBlock

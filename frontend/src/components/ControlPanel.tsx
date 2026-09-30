@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
@@ -416,63 +416,22 @@ function CoverageHistogram({
   );
 }
 
-// Off by default, switched on from the layer manager ("Layers" button) —
-// the legend/histogram here only ever appear once that toggle is on.
-function CoverageControls() {
+// The legend and histogram of the coverage map, in the scrolling part of the
+// panel; the "Coverage" button that switches it on is `CoverageButton` below.
+function CoverageLegend() {
   const showCoverage = useAppStore((s) => s.showCoverage);
   const coverage = useAppStore((s) => s.coverage);
   const coverageLoading = useAppStore((s) => s.coverageLoading);
   const coverageError = useAppStore((s) => s.coverageError);
   const dateFrom = useAppStore((s) => s.dateFrom);
   const dateTo = useAppStore((s) => s.dateTo);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const datasets = useAppStore((s) => s.datasets);
-  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
-  const setDatasetId = useAppStore((s) => s.setDatasetId);
-  const toggleCoverage = useAppStore((s) => s.toggleCoverage);
-  if (!datasetId) return null;
-
-  // Off by default (M2-07c); switched here, in the control panel, since M3-10 —
-  // the layer manager lists pinned layers only.
-  const toggle = (
-    <button
-      type="button"
-      className={`coverage-toggle${showCoverage ? ' active' : ''}`}
-      aria-pressed={showCoverage}
-      title={showCoverage ? 'Hide the coverage map' : 'Show how densely the dataset covers the world'}
-      onClick={() => toggleCoverage()}
-    >
-      Coverage map
-    </button>
-  );
-  if (!showCoverage) return <div className="coverage-controls">{toggle}</div>;
+  const title = useAppStore((s) => s.datasets.find((d) => d.id === s.coverageDatasetId)?.title ?? s.coverageDatasetId);
+  if (!showCoverage) return null;
 
   const note = coverage ? completenessNote(coverage) : null;
-  // M3-10 F3: the heatmap shows one dataset — the active one. With several
-  // ticked, the legend says which and offers the others; choosing one also
-  // opens its results section (`setDatasetId`).
-  const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
-  const activeTitle = datasets.find((d) => d.id === datasetId)?.title ?? datasetId;
-
   return (
     <div className="coverage-controls">
-      {toggle}
-      {ticked.length > 1 ? (
-        <select
-          className="coverage-dataset"
-          aria-label="Dataset shown in the coverage layer"
-          value={datasetId}
-          onChange={(e) => setDatasetId(e.target.value)}
-        >
-          {ticked.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.title}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <p className="hint-text coverage-dataset-name">{activeTitle}</p>
-      )}
+      <p className="hint-text coverage-dataset-name">Coverage · {title}</p>
       {coverageLoading && <p className="hint-text">Loading coverage…</p>}
       {coverageError && <p className="hint-text error">{coverageError}</p>}
       {coverage && (
@@ -493,6 +452,110 @@ function CoverageControls() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// The "Coverage" button (M3-10, Otto 30.09.2026): always on screen, in the footer
+// beside "Search", set apart from the dataset buttons. One dataset picked: a click
+// shows its coverage (or hides it again). Several picked: the click first offers
+// the choice of which dataset — nothing is drawn until one is chosen. Off by
+// default (M2-07c).
+function CoverageButton() {
+  const datasets = useAppStore((s) => s.datasets);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const showCoverage = useAppStore((s) => s.showCoverage);
+  const coverageDatasetId = useAppStore((s) => s.coverageDatasetId);
+  const showCoverageFor = useAppStore((s) => s.showCoverageFor);
+  const hideCoverage = useAppStore((s) => s.hideCoverage);
+  const [choosing, setChoosing] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const picked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+
+  useEffect(() => {
+    if (!choosing) return;
+    const away = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setChoosing(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setChoosing(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [choosing]);
+
+  const onClick = () => {
+    if (picked.length === 0) return;
+    if (picked.length > 1) {
+      setChoosing((v) => !v);
+      return;
+    }
+    if (showCoverage) hideCoverage();
+    else showCoverageFor(picked[0].id);
+  };
+
+  return (
+    <div className="coverage-button-wrap" ref={rootRef}>
+      {choosing && picked.length > 1 && (
+        <div className="coverage-choice" role="menu" aria-label="Coverage of which dataset">
+          {picked.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={showCoverage && coverageDatasetId === d.id}
+              className={`coverage-choice-item${showCoverage && coverageDatasetId === d.id ? ' active' : ''}`}
+              onClick={() => {
+                showCoverageFor(d.id);
+                setChoosing(false);
+              }}
+            >
+              {d.title}
+            </button>
+          ))}
+          {showCoverage && (
+            <button
+              type="button"
+              role="menuitem"
+              className="coverage-choice-item off"
+              onClick={() => {
+                hideCoverage();
+                setChoosing(false);
+              }}
+            >
+              Hide coverage
+            </button>
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        className={`coverage-btn${showCoverage ? ' active' : ''}`}
+        aria-pressed={showCoverage}
+        aria-haspopup={picked.length > 1 ? 'menu' : undefined}
+        aria-expanded={picked.length > 1 ? choosing : undefined}
+        disabled={picked.length === 0}
+        title={
+          picked.length === 0
+            ? 'Pick a dataset to see its coverage'
+            : showCoverage
+              ? 'Coverage map on — click to change or hide it'
+              : 'Show how densely a dataset covers the world'
+        }
+        onClick={onClick}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+          <rect x="2" y="2" width="5" height="5" />
+          <rect x="9" y="2" width="5" height="5" fill="currentColor" fillOpacity="0.45" />
+          <rect x="2" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.2" />
+          <rect x="9" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.75" />
+        </svg>
+        <span>Coverage</span>
+      </button>
     </div>
   );
 }
@@ -548,16 +611,19 @@ export default function ControlPanel() {
         <DatasetPicker />
         <DatasetNotes />
 
-        <CoverageControls />
+        <CoverageLegend />
 
         <AcquisitionDateFields />
       </div>
 
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
-        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
-          {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
-        </button>
+        <div className="action-row">
+          <CoverageButton />
+          <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+            {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
+          </button>
+        </div>
 
         {count > 0 && <p className="result-count">{count} scene(s) found</p>}
         {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}

@@ -123,6 +123,18 @@ const MIXED = [
 ];
 
 describe('ResultsPanel dataset dropdown', () => {
+  it('sets the dropdown apart as a selector card of its own, labelled, above the scenes', () => {
+    load(MIXED);
+    const card = container.querySelector('.dataset-select')!;
+    expect(card.querySelector('.eyebrow')?.textContent).toBe('Showing dataset');
+    expect(box().getAttribute('aria-labelledby')).toBe('dataset-select-label');
+    const eyebrows = [...container.querySelectorAll('.eyebrow')].map((e) => e.textContent);
+    expect(eyebrows).toEqual(['Showing dataset', 'Scenes by time step']);
+    // the card comes before the list of scenes in the panel
+    const panel = container.querySelector('.results-panel')!;
+    expect(card.compareDocumentPosition(panel.querySelector('.results-list')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows the dataset chosen in the box with its title, chip and scene count, and the total', () => {
     load(MIXED);
     expect(text(box())).toContain('Optical imagery');
@@ -260,6 +272,21 @@ describe('ResultsPanel dataset dropdown', () => {
     useAppStore.setState({ sections: [], openSectionId: null, items: [], groups: [] });
     act(() => root.render(<ResultsPanel />));
     expect(container.querySelector('.results-panel')).toBeNull();
+  });
+
+  it('offers to pin the crop of a dataset drawn as one, only while that dataset is chosen', () => {
+    load(MIXED);
+    expect(container.querySelector('.crop-row')).toBeNull();
+    const crop = { id: 'c', name: 'Elevation model · x', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'dem' } } as never;
+    useAppStore.setState({ searchCrops: [crop] });
+    act(() => root.render(<ResultsPanel />));
+    expect(container.querySelector('.crop-row')).toBeNull(); // optical is chosen
+    openList();
+    act(() => options()[2].click());
+    expect(container.querySelector('.crop-row')?.textContent).toContain('Full-resolution crop is on the map.');
+    act(() => (container.querySelector('.crop-row .link-btn') as HTMLButtonElement).click());
+    expect(useAppStore.getState().layers).toHaveLength(1);
+    useAppStore.setState({ searchCrops: [], layers: [] });
   });
 
   it('"Clear all" empties the list', () => {

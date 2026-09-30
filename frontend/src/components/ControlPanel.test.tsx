@@ -518,6 +518,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
       aoi: null,
       sceneNameQuery: '',
       showCoverage: false,
+      coverageDatasetId: null,
     });
     act(() => root.render(<ControlPanel />));
   }
@@ -581,7 +582,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(buttons()[0].title).toContain('Multispectral optical imagery.');
   });
 
-  it('shows every dataset of the catalogue, however many — the list itself scrolls (CSS shows four rows)', () => {
+  it('shows every dataset of the catalogue in one grid, however many — the grid itself scrolls (CSS shows 2 x 2)', () => {
     const many = Array.from({ length: 7 }, (_, i) => collection(`extra-${i}`, `Extra ${i}`));
     useAppStore.setState({ datasets: datasetsFrom([OPTICAL, DEM, ...many]), selectedDatasetIds: [], datasetId: null });
     act(() => root.render(<ControlPanel />));
@@ -653,66 +654,98 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(scroll.querySelector('.dataset-list')).not.toBeNull();
   });
 
-  describe('the coverage map switch (M3-10, Otto 30.09.2026)', () => {
-    function coverageToggle(): HTMLButtonElement | null {
-      return container.querySelector('.coverage-toggle');
+  describe('the "Coverage" button (M3-10, Otto 30.09.2026)', () => {
+    function button(): HTMLButtonElement {
+      return container.querySelector('.coverage-btn') as HTMLButtonElement;
+    }
+    function choices(): HTMLButtonElement[] {
+      return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
     }
 
-    it('lives in the control panel, off by default', () => {
+    it('is always there, in the footer beside Search, apart from the dataset buttons', () => {
       setUp(['optical']);
-      expect(coverageToggle()).not.toBeNull();
-      expect(coverageToggle()!.getAttribute('aria-pressed')).toBe('false');
-      expect(container.querySelector('.coverage-legend')).toBeNull();
+      expect(button()).not.toBeNull();
+      expect(container.querySelector('.control-footer .action-row .coverage-btn')).not.toBeNull();
+      expect(container.querySelector('.dataset-list .coverage-btn')).toBeNull();
+      expect(button().textContent).toBe('Coverage');
     });
 
-    it('switches the coverage map on and off', () => {
+    it('is visible but off when no dataset is picked', () => {
+      setUp([]);
+      expect(button()).not.toBeNull();
+      expect(button().disabled).toBe(true);
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+    });
+
+    it('with one dataset picked, a click shows its coverage; another click hides it — no question asked', () => {
       setUp(['optical']);
-      act(() => coverageToggle()!.click());
+      act(() => button().click());
       expect(useAppStore.getState().showCoverage).toBe(true);
-      expect(coverageToggle()!.getAttribute('aria-pressed')).toBe('true');
-      act(() => coverageToggle()!.click());
+      expect(useAppStore.getState().coverageDatasetId).toBe('optical');
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(button().getAttribute('aria-pressed')).toBe('true');
+      act(() => button().click());
       expect(useAppStore.getState().showCoverage).toBe(false);
     });
 
-    it('is not offered without an active dataset', () => {
-      setUp([]);
-      expect(coverageToggle()).toBeNull();
-    });
-  });
-
-  describe('the coverage legend', () => {
-    function coverageSelect(): HTMLSelectElement | null {
-      return container.querySelector('select.coverage-dataset');
-    }
-
-    it('names the dataset shown, and offers the ticked ones once there are several', () => {
+    it('with several picked, nothing is drawn until the click, and the click offers the choice', () => {
       setUp(['optical', 'dem']);
-      useAppStore.setState({ showCoverage: true, datasetId: 'optical' });
-      act(() => root.render(<ControlPanel />));
-      const select = coverageSelect()!;
-      expect([...select.options].map((o) => o.textContent)).toEqual(['Optical imagery', 'Elevation model']);
-      expect(select.value).toBe('optical');
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(useAppStore.getState().showCoverage).toBe(false);
+      act(() => button().click());
+      expect(useAppStore.getState().showCoverage).toBe(false); // still nothing drawn
+      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model']);
     });
 
-    it('choosing another makes it the active dataset', () => {
+    it('choosing a dataset draws its coverage and closes the choice', () => {
       setUp(['optical', 'dem']);
-      useAppStore.setState({ showCoverage: true, datasetId: 'optical' });
-      act(() => root.render(<ControlPanel />));
-      const select = coverageSelect()!;
+      act(() => button().click());
+      act(() => choices()[1].click());
+      expect(useAppStore.getState().coverageDatasetId).toBe('dem');
+      expect(useAppStore.getState().showCoverage).toBe(true);
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(container.textContent).toContain('Coverage · Elevation model');
+    });
+
+    it('with the coverage on and several picked, the choice also offers to hide it and marks the current one', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      act(() => button().click());
+      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model', 'Hide coverage']);
+      expect(choices()[0].getAttribute('aria-checked')).toBe('true');
+      act(() => choices()[2].click());
+      expect(useAppStore.getState().showCoverage).toBe(false);
+    });
+
+    it('Escape and a click outside close the choice without drawing anything', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
       act(() => {
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
-        setter.call(select, 'dem');
-        select.dispatchEvent(new Event('change', { bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       });
-      expect(useAppStore.getState().datasetId).toBe('dem');
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      act(() => button().click());
+      act(() => {
+        document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      });
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(useAppStore.getState().showCoverage).toBe(false);
     });
 
-    it('with one dataset ticked, only names it', () => {
+    it('has no dataset choice in the legend any more: the button is the one place', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      expect(container.querySelector('select')).toBeNull();
+      expect(container.querySelector('.coverage-controls')).not.toBeNull();
+    });
+
+    it('shows the legend under the datasets only while the coverage is on', () => {
       setUp(['optical']);
-      useAppStore.setState({ showCoverage: true });
-      act(() => root.render(<ControlPanel />));
-      expect(coverageSelect()).toBeNull();
-      expect(container.querySelector('.coverage-dataset-name')?.textContent).toBe('Optical imagery');
+      expect(container.querySelector('.coverage-controls')).toBeNull();
+      act(() => button().click());
+      expect(container.querySelector('.coverage-controls')).not.toBeNull();
     });
   });
 });
