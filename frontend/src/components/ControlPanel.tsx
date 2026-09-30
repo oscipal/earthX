@@ -351,7 +351,7 @@ function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
-  const searching = useAppStore((s) => s.searching);
+  const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   if (datasets.length === 0) return null;
   return (
     <div className="dataset-list" role="group" aria-label="Datasets">
@@ -370,7 +370,7 @@ function DatasetPicker() {
                 : `${d.title} — not viewable: ${d.reason}`
             }
             aria-pressed={picked}
-            disabled={!d.viewable || searching}
+            disabled={!d.viewable || busy}
             onClick={() => toggle(d.id)}
           >
             <span className="dataset-toggle-title">{d.title}</span>
@@ -578,7 +578,7 @@ export default function ControlPanel() {
   // since the name lookup needs neither AOI nor date range (adr/0001 Z1).
   const hasSceneName = sceneNameQuery.trim().length > 0;
   const busy = searching || sceneLookupLoading;
-  // The scene-name lookup asks the active dataset; a search asks every ticked one.
+  // The scene-name lookup and the search both ask every ticked dataset.
   const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || !!aoi);
   const search = () => {
     if (!canSearch) return;

@@ -34,7 +34,7 @@ import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
-import { buildSections, firstSectionWithItems } from './sections';
+import { buildSections, combineAnswers, firstSectionWithItems, NO_SCENES_NOTE, needsFallback } from './sections';
 import { fullResolutionLayers } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -213,10 +213,19 @@ async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   }
 }
 
-function foundNotice(features: StacItem[], groups: TimeStepGroup[], numberMatched: number | null): string {
+// With a page token left, "Load more" fetches the rest, so the notice only says
+// how many there are.
+function foundNotice(
+  features: StacItem[],
+  groups: TimeStepGroup[],
+  numberMatched: number | null,
+  canLoadMore: boolean,
+): string {
   const base = `${features.length} scene(s) in ${groups.length} time step(s).`;
   if (numberMatched !== null && numberMatched > features.length) {
-    return `${base} ${numberMatched} matched in total — narrow the area or date range to see the rest.`;
+    return canLoadMore
+      ? `${base} ${numberMatched} matched in total.`
+      : `${base} ${numberMatched} matched in total — narrow the area or date range to see the rest.`;
   }
   return base;
 }
@@ -257,6 +266,222 @@ function openSectionState(section: ResultSection | null) {
     activeGroupIndex: 0,
     expandedGroupIndex: 0,
   };
+}
+
+const groupKeyId = (group: TimeStepGroup | undefined) => group?.key.join('\u0000');
+
+// The open section again after "Load more" added scenes to it: the same time
+// steps stay active and open, found by their key — new scenes can move their index.
+function reopenedSectionState(s: AppState, section: ResultSection | null) {
+  const indexOf = (index: number) =>
+    Math.max(0, section?.groups.findIndex((g) => groupKeyId(g) === groupKeyId(s.groups[index])) ?? 0);
+  return {
+    ...openSectionState(section),
+    activeGroupIndex: indexOf(s.activeGroupIndex),
+    expandedGroupIndex: s.expandedGroupIndex === null ? null : indexOf(s.expandedGroupIndex),
+  };
+}
+
+type ViewableDataset = Extract<DatasetOption, { viewable: true }>;
+
+function viewableDatasets(datasets: DatasetOption[], ids: readonly string[]): ViewableDataset[] {
+  return ids
+    .map((id) => datasets.find((d) => d.id === id))
+    .filter((d): d is ViewableDataset => d?.viewable === true);
+}
+
+// The search the results belong to (M3-10b): what "Load more" continues and what
+// the ±90-day fallback of a chosen dataset asks again. Its AOI and dates are the
+// ones it ran with; changing them in the control panel afterwards drops only the
+// page token (`dropPageToken`).
+interface SearchContext {
+  datasetIds: string[];
+  query: Omit<api.SearchQuery, 'limit' | 'token'>;
+  dateFrom: string;
+  dateTo: string;
+  aoi: GeoJSON.Geometry;
+  truncatedNotice: string | null;
+  // Every scene loaded so far and what the answers said about them, over every
+  // "Load more".
+  features: StacItem[];
+  answer: SectionSearchAnswer;
+  numberMatched: number | null;
+  // The page token left over — the mixed one for the whole search, never one per
+  // dataset (M3-10 F1). `null` once the search is complete or cannot go on.
+  nextToken: string | null;
+}
+
+// Bumped by everything that replaces or drops the results, so a "Load more" or a
+// fallback answering afterwards can tell that its results are gone.
+let searchGen = 0;
+
+// Item ids are unique only within a collection.
+const sceneKey = (item: StacItem) => `${item.collection ?? ''}\u0000${item.id}`;
+
+// The AOI crops of every dataset without a browsable preview (`browse:
+// 'full_resolution'`, the DEM): part of that dataset's results, on the map while
+// it is the one chosen in the dropdown (Otto, 30.09.2026). `problems` names a
+// dataset whose scenes could not be drawn.
+function cropsForSearch(
+  datasets: ViewableDataset[],
+  sections: ResultSection[],
+  aoi: GeoJSON.Geometry,
+): { crops: MapLayer[]; problems: string[] } {
+  const batchId = nextBatchId();
+  const problems: string[] = [];
+  const crops = datasets.flatMap((dataset) => {
+    const section = sections.find((x) => x.datasetId === dataset.id);
+    if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
+    const drawn = fullResolutionLayers(dataset, section, aoi, batchId);
+    if (drawn.length === 0) {
+      problems.push(
+        defaultRenderOf(dataset.collection)?.assets[0]
+          ? `${dataset.title}: none of its scenes carries a bounding box to draw.`
+          : `${dataset.title} has no default visualisation yet (earthx:default_render).`,
+      );
+    }
+    return drawn;
+  });
+  return { crops, problems };
+}
+
+function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
+  if (ctx.features.length === 0) {
+    return datasets.length === 1 || (!ctx.dateFrom && !ctx.dateTo)
+      ? 'No scenes found for this area.'
+      : 'No scenes found for this area and date range.';
+  }
+  if (datasets.length === 1) {
+    return foundNotice(ctx.features, sections[0].groups, ctx.numberMatched, ctx.nextToken !== null);
+  }
+  const steps = sections.reduce((sum, section) => sum + section.groups.length, 0);
+  const found = sections.reduce((sum, section) => sum + section.items.length, 0);
+  return `${found} scene(s) in ${steps} time step(s) across ${datasets.length} datasets.`;
+}
+
+// Lays out the scenes a search has loaded: one section per dataset asked, their
+// AOI crops and the search notice. A new search opens the first dataset with
+// scenes, else the active one; "Load more" (`keepOpen`) keeps the dataset and
+// time step that are open, and a dataset showing its ±90-day fallback keeps it
+// while the search still has nothing of its own for it.
+function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, keepOpen: boolean): void {
+  const s = get();
+  const datasets = viewableDatasets(s.datasets, ctx.datasetIds);
+  const { sections: built, stray } = buildSections(ctx.features, datasets, ctx.answer);
+  const failed = datasets.length === 1 ? built[0]?.groupingError : null;
+  if (failed) {
+    set({
+      ...openSectionState(null),
+      sections: [],
+      searchCrops: [],
+      selectedIds: [],
+      searchContext: null,
+      error: `Grouping failed: ${failed}`,
+      notice: null,
+    });
+    return;
+  }
+  const sections = built.map((section) => {
+    const shown = keepOpen ? s.sections.find((x) => x.datasetId === section.datasetId) : undefined;
+    return shown?.origin === 'fallback' && section.items.length === 0 ? shown : section;
+  });
+  const open = keepOpen
+    ? (sections.find((x) => x.datasetId === s.openSectionId) ?? null)
+    : (firstSectionWithItems(sections) ?? sections.find((x) => x.datasetId === s.datasetId) ?? sections[0] ?? null);
+  // O2 (Otto, 26.09.2026): a dataset without a time axis answers the same for
+  // any chosen window, so its acquisition period is what the notice adds when
+  // the backend dropped `datetime`. With several datasets that note stands in
+  // each section instead.
+  const single = datasets.length === 1 ? datasets[0] : null;
+  const timeNote =
+    single && !single.hasTimeAxis && ctx.answer.ignoredFilters.includes('datetime')
+      ? acquisitionNote(single.collection)
+      : null;
+  const { crops, problems } = cropsForSearch(datasets, sections, ctx.aoi);
+  const notice = [
+    resultsNotice(ctx, datasets, sections),
+    ctx.truncatedNotice,
+    timeNote && `${timeNote}.`,
+    stray > 0 ? `${stray} scene(s) of other datasets were left out.` : null,
+    ...problems,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  set({
+    sections,
+    ...(keepOpen ? reopenedSectionState(s, open) : openSectionState(open)),
+    ...(open ? { datasetId: open.datasetId } : {}),
+    searchCrops: crops,
+    selectedIds: keepOpen ? s.selectedIds.filter((id) => open?.items.some((it) => it.id === id)) : [],
+    searchContext: ctx,
+    error: null,
+    notice,
+  });
+}
+
+// The ±90-day fallback for one dataset of the search (M3-10 F7, Otto
+// 30.09.2026): asks only that dataset around the searched date range and puts
+// the nearest day's scenes, or that there are none, in its section. With one
+// dataset searched the search notice says it too, as before M3-10. Pages only
+// within that day, never with "Load more". A failure is the caller's to report.
+async function runFallback(set: SetState, get: GetState, datasetId: string): Promise<void> {
+  const s = get();
+  const ctx = s.searchContext;
+  const section = s.sections.find((x) => x.datasetId === datasetId);
+  const [dataset] = viewableDatasets(s.datasets, [datasetId]);
+  if (!ctx || !section || !dataset || !needsFallback(section, dataset, ctx.dateFrom, ctx.dateTo)) return;
+  const gen = searchGen;
+  set({ fallbackDatasetId: datasetId });
+  try {
+    const query = { ...ctx.query, collections: [datasetId] };
+    const found = await findFallback(
+      (w) =>
+        api.searchItems({ ...query, datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`, limit: PAGE_LIMIT }),
+      ctx.dateFrom,
+      ctx.dateTo,
+    );
+    let replacement: ResultSection;
+    if (found) {
+      const range = fullDayRange(found.item);
+      const full = range
+        ? await api.searchAllPages({ ...query, datetime: range }, MAX_SEARCH_ITEMS)
+        : { features: [found.item], ...NO_ANSWER_FILTERS };
+      const [built] = buildSections(full.features, [dataset], full).sections;
+      replacement = { ...built, origin: 'fallback', notes: [fallbackNotice(found), ...built.notes] };
+    } else {
+      const notes = section.notes.filter((note) => note !== NO_SCENES_NOTE);
+      replacement = { ...section, origin: 'fallback', notes: [NO_FALLBACK_MESSAGE, ...notes] };
+    }
+    if (gen !== searchGen) return;
+    const now = get();
+    const sections = now.sections.map((x) => (x.datasetId === datasetId ? replacement : x));
+    const { crops, problems } = cropsForSearch(viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi);
+    const singleNotice = replacement.groupingError
+      ? { error: `Grouping failed: ${replacement.groupingError}`, notice: null }
+      : { notice: [replacement.notes[0], ctx.truncatedNotice, ...problems].filter(Boolean).join(' ') };
+    set({
+      sections,
+      ...(now.openSectionId === datasetId ? openSectionState(replacement) : {}),
+      searchCrops: crops,
+      ...(ctx.datasetIds.length === 1 ? singleNotice : {}),
+    });
+  } finally {
+    if (get().fallbackDatasetId === datasetId) set({ fallbackDatasetId: null });
+  }
+}
+
+// A search on screen that the control panel would no longer run the same way
+// (another AOI, other dates) cannot be continued: "Load more" would add scenes of
+// the old one (M3-10 §4.4). The results themselves stay.
+function dropPageToken(set: SetState, get: GetState): void {
+  const ctx = get().searchContext;
+  if (ctx?.nextToken) set({ searchContext: { ...ctx, nextToken: null } });
+}
+
+// What every replacement of the results resets besides the results themselves.
+function forgetSearch() {
+  searchGen += 1;
+  return { searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetId: null };
 }
 
 interface AppState {
@@ -369,6 +594,12 @@ interface AppState {
   // `groups` and the two indices below mirror the *open* section only.
   sections: ResultSection[];
   openSectionId: string | null;
+  searchContext: SearchContext | null;
+  // "Load more" (M3-10b): running, and why it last failed.
+  loadingMore: boolean;
+  loadMoreError: string | null;
+  // The dataset whose ±90-day fallback is running, `null` while none is.
+  fallbackDatasetId: string | null;
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
@@ -446,6 +677,7 @@ interface AppState {
   setError: (v: string | null) => void;
   setNotice: (v: string | null) => void;
   runSearch: () => Promise<void>;
+  loadMore: () => Promise<void>;
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
   showCoverageFor: (datasetId: string) => void;
@@ -503,6 +735,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   datasetId: null,
   sections: [],
   openSectionId: null,
+  searchContext: null,
+  loadingMore: false,
+  loadMoreError: null,
+  fallbackDatasetId: null,
   items: [],
   groups: [],
   activeGroupIndex: 0,
@@ -542,9 +778,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // layers stay (they carry their own dataset).
   toggleDatasetSelected: (id) => {
     const s = get();
-    // Not while a search is running: its answer would land on a selection that
-    // is no longer the one it asked.
-    if (s.searching) return;
+    // Not while a search or a lookup is running: its answer would land on a
+    // selection that is no longer the one it asked.
+    if (s.searching || s.sceneLookupLoading) return;
     const dataset = s.datasets.find((d) => d.id === id);
     const ticked = s.selectedDatasetIds.includes(id);
     if (!dataset || (!ticked && !dataset.viewable)) return;
@@ -558,6 +794,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       datasetId,
       sections: [],
       openSectionId: null,
+      ...forgetSearch(),
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -575,7 +812,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Shows one dataset's results — the dropdown of the results panel (M3-10) — and
   // makes that dataset the active one. Exactly one is shown while a search has
   // results; there is no "none". What the previous dataset had on screen in full
-  // resolution goes with it; pinned layers do not.
+  // resolution goes with it; pinned layers do not. A dataset with nothing in the
+  // searched date range gets its ±90-day fallback now (M3-10b); a scene found by
+  // name in a dataset without browsable preview is shown in full resolution, as
+  // the lookup does for the dataset it opens with.
   setOpenSection: (id) => {
     const s = get();
     const section = s.sections.find((x) => x.datasetId === id);
@@ -586,6 +826,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedIds: [],
       playing: false,
       ...LEAVE_FOCUS,
+    });
+    const dataset = s.datasets.find((d) => d.id === id);
+    if (section.origin === 'name' && section.items.length > 0 && dataset?.viewable && dataset.browse === 'full_resolution') {
+      void get().enterFocus(false);
+    }
+    const gen = searchGen;
+    runFallback(set, get, id).catch((e: unknown) => {
+      if (gen !== searchGen) return;
+      // Said in the dataset's own box; not tried again for this search.
+      const note = `Could not look for the nearest date: ${(e as Error).message}`;
+      set({
+        sections: get().sections.map((x) =>
+          x.datasetId === id
+            ? { ...x, origin: 'fallback', notes: [note, ...x.notes.filter((n) => n !== NO_SCENES_NOTE)] }
+            : x,
+        ),
+      });
     });
   },
 
@@ -602,10 +859,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastAoi: aoi ?? s.lastAoi,
       lastAoiPoint: aoi ? point : s.lastAoiPoint,
     }));
+    dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   clearAoi: () => {
     set({ aoi: null, aoiPoint: null });
+    dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   useLastAoi: () => {
@@ -613,6 +872,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!g) return;
     const bb = polygonBbox(g);
     set({ aoi: g, aoiPoint: lastAoiPoint, toolMode: 'none', ...(bb ? { flyToBbox: bb } : {}) });
+    dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   flyTo: (flyToBbox) => set({ flyToBbox }),
@@ -626,6 +886,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       aoiPoint: null,
       sections: [],
       openSectionId: null,
+      ...forgetSearch(),
       // The crops a search drew go with it; what the user pinned stays.
       searchCrops: [],
       items: [],
@@ -841,6 +1102,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
     const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
     const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
+    if (r.aoi !== s.aoi) dropPageToken(set, get);
     set({
       ...(tickable
         ? { selectedDatasetIds: s.datasets.filter((d) => d.id === dataset.id || s.selectedDatasetIds.includes(d.id)).map((d) => d.id) }
@@ -1199,10 +1461,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearSelection: () => set({ selectedIds: [] }),
   setDateFrom: (dateFrom) => {
     set({ dateFrom });
+    dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   setDateTo: (dateTo) => {
     set({ dateTo });
+    dropPageToken(set, get);
     scheduleCoverageRefresh(set, get);
   },
   // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
@@ -1271,9 +1535,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     // M3-10: every ticked dataset is asked at once, in one mixed search (M3-13).
-    const chosen = selectedDatasetIds
-      .map((id) => datasets.find((d) => d.id === id))
-      .filter((d): d is Extract<DatasetOption, { viewable: true }> => d?.viewable === true);
+    const chosen = viewableDatasets(datasets, selectedDatasetIds);
     if (chosen.length === 0) {
       const blocked = datasets.find((d) => selectedDatasetIds.includes(d.id));
       set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Pick a dataset first.' });
@@ -1287,139 +1549,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Could not compute a search area for the area of interest.' });
       return;
     }
-    const collections = chosen.map((d) => d.id);
-    // O2 (Otto, 26.09.2026): a dataset without a time axis answers the same
-    // for any chosen window, so its acquisition period — not a date filter
-    // that would narrow nothing — is what the search notice adds when the
-    // backend says it dropped `datetime` (`ignoredFilters`). With several
-    // datasets that note stands in each section's head instead.
-    const single = chosen.length === 1 ? chosen[0] : null;
-    const timeNote = single && !single.hasTimeAxis ? acquisitionNote(single.collection) : null;
-    const applyResults = (
-      features: StacItem[],
-      answer: SectionSearchAnswer,
-      notice: string | ((sections: ResultSection[]) => string),
-    ) => {
-      const { sections, stray } = buildSections(features, chosen, answer);
-      const failed = single ? sections[0]?.groupingError : null;
-      if (failed) {
-        set({
-          ...openSectionState(null),
-          sections: [],
-          searchCrops: [],
-          selectedIds: [],
-          error: `Grouping failed: ${failed}`,
-          notice: null,
-        });
-        return;
-      }
-      // The dropdown always shows a dataset: the first with scenes, else the one
-      // that was active (or, failing that, the first).
-      const open =
-        firstSectionWithItems(sections) ??
-        sections.find((x) => x.datasetId === get().datasetId) ??
-        sections[0] ??
-        null;
-      const base = typeof notice === 'function' ? notice(sections) : notice;
-      let text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
-      if (timeNote && answer.ignoredFilters.includes('datetime')) text = `${text} ${timeNote}.`;
-      if (stray > 0) text = `${text} ${stray} scene(s) of other datasets were left out.`;
-      // A dataset with no browsable preview (`browse: 'full_resolution'`, the DEM)
-      // has its results drawn at once as the full-resolution view cut to the AOI:
-      // part of that dataset's results (Otto, 30.09.2026), on the map while the
-      // dataset is chosen in the dropdown — not layers in the layer manager.
-      const batchId = nextBatchId();
-      const crops = chosen.flatMap((dataset) => {
-        const section = sections.find((x) => x.datasetId === dataset.id);
-        if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
-        const drawn = fullResolutionLayers(dataset, section, aoi, batchId);
-        if (drawn.length === 0) {
-          text = defaultRenderOf(dataset.collection)?.assets[0]
-            ? `${text} ${dataset.title}: none of its scenes carries a bounding box to draw.`
-            : `${text} ${dataset.title} has no default visualisation yet (earthx:default_render).`;
-        }
-        return drawn;
-      });
-      set({
-        sections,
-        ...openSectionState(open),
-        ...(open ? { datasetId: open.datasetId } : {}),
-        searchCrops: crops,
-        selectedIds: [],
-        error: null,
-        notice: text,
-      });
-    };
-    const multiNotice = (sections: ResultSection[]) => {
-      const steps = sections.reduce((sum, section) => sum + section.groups.length, 0);
-      const found = sections.reduce((sum, section) => sum + section.items.length, 0);
-      return `${found} scene(s) in ${steps} time step(s) across ${chosen.length} datasets.`;
-    };
-
     set({
       searching: true,
       error: null,
       notice: null,
       playing: false,
       panelCollapsed: true,
+      ...forgetSearch(),
       ...LEAVE_FOCUS,
     });
     try {
-      const datetimeRange = buildDatetime(dateFrom, dateTo);
-      const page = await api.searchAllPages(
-        { collections, bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
-        MAX_SEARCH_ITEMS,
+      const query = {
+        collections: chosen.map((d) => d.id),
+        bbox: area.bbox,
+        intersects: area.intersects,
+        datetime: buildDatetime(dateFrom, dateTo),
+      };
+      const page = await api.searchAllPages(query, MAX_SEARCH_ITEMS);
+      showSearchResults(
+        set,
+        get,
+        {
+          datasetIds: query.collections,
+          query,
+          dateFrom,
+          dateTo,
+          aoi,
+          truncatedNotice: area.truncatedNotice ?? null,
+          features: page.features,
+          answer: {
+            ignoredFilters: page.ignoredFilters,
+            ignoredFiltersByCollection: page.ignoredFiltersByCollection,
+            incompleteCollections: page.incompleteCollections,
+          },
+          numberMatched: page.numberMatched,
+          nextToken: page.nextToken,
+        },
+        false,
       );
-      if (page.features.length > 0) {
-        applyResults(
-          page.features,
-          page,
-          single
-            ? (sections) => foundNotice(page.features, sections[0].groups, page.numberMatched)
-            : multiNotice,
-        );
-        return;
-      }
-      // O2: a dataset without a time axis never runs the ±90-day fallback —
-      // it answers the same for any window, so an empty result means the AOI
-      // has no coverage, not "wrong dates" (Otto, 26.09.2026; before this, a
-      // DEM search with an unrelated date range answered "No results in the
-      // chosen time range, nor within ±90 days", which named a filter that
-      // was never really in effect). With several datasets the fallback waits
-      // for M3-10b, which runs it per section.
-      if (!single || !single.hasTimeAxis || (!dateFrom && !dateTo)) {
-        applyResults([], page, single || (!dateFrom && !dateTo) ? 'No scenes found for this area.' : 'No scenes found for this area and date range.');
-        return;
-      }
-      const fallback = await findFallback(
-        (w) =>
-          api.searchItems({
-            collections,
-            bbox: area.bbox,
-            intersects: area.intersects,
-            datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`,
-            limit: PAGE_LIMIT,
-          }),
-        dateFrom,
-        dateTo,
-      );
-      if (!fallback) {
-        applyResults([], NO_ANSWER_FILTERS, NO_FALLBACK_MESSAGE);
-        return;
-      }
-      const range = fullDayRange(fallback.item);
-      const full = range
-        ? await api.searchAllPages(
-            { collections, bbox: area.bbox, intersects: area.intersects, datetime: range },
-            MAX_SEARCH_ITEMS,
-          )
-        : { features: [fallback.item], numberMatched: 1, ...NO_ANSWER_FILTERS };
-      applyResults(full.features, full, () => fallbackNotice(fallback));
+      // The dataset the dropdown opens with found nothing in the date range (so
+      // did every other one, or it would not be open): its fallback is part of the
+      // search. A dataset without a time axis never runs it (O2, Otto 26.09.2026).
+      const { openSectionId } = get();
+      if (openSectionId) await runFallback(set, get, openSectionId);
     } catch (e) {
       set({
         error: `Search failed: ${(e as Error).message}`,
         sections: [],
         searchCrops: [],
+        searchContext: null,
         ...openSectionState(null),
         panelCollapsed: false,
       });
@@ -1428,77 +1606,140 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Continues the whole search with its page token (M3-10 F1): one more walk of
+  // up to `MAX_SEARCH_ITEMS`, whichever dataset the dropdown shows. New scenes go
+  // to their own dataset; the dataset and time step open stay open. A failure
+  // keeps what is loaded, and the token with it goes: a token that failed once
+  // (e.g. `400` after a deployment) is not worth a second try.
+  loadMore: async () => {
+    const s = get();
+    const ctx = s.searchContext;
+    if (!ctx?.nextToken || s.loadingMore || s.searching) return;
+    const gen = searchGen;
+    set({ loadingMore: true, loadMoreError: null });
+    try {
+      const page = await api.searchAllPages(ctx.query, MAX_SEARCH_ITEMS, ctx.nextToken);
+      if (gen !== searchGen) return;
+      const known = new Set(ctx.features.map(sceneKey));
+      // The AOI or dates may have changed while this ran: then the search can
+      // still show what it loaded, but not go on.
+      const stillCurrent = get().searchContext?.nextToken === ctx.nextToken;
+      showSearchResults(
+        set,
+        get,
+        {
+          ...ctx,
+          features: [...ctx.features, ...page.features.filter((it) => !known.has(sceneKey(it)))],
+          answer: combineAnswers(ctx.answer, page),
+          nextToken: stillCurrent ? page.nextToken : null,
+        },
+        true,
+      );
+    } catch {
+      if (gen !== searchGen) return;
+      set({
+        searchContext: { ...ctx, nextToken: null },
+        loadMoreError: 'Could not load more results — search again.',
+      });
+    } finally {
+      if (gen === searchGen) set({ loadingMore: false });
+    }
+  },
+
   setSceneNameQuery: (sceneNameQuery) => set({ sceneNameQuery }),
 
-  // Looks up one scene by its exact name, only in the currently selected
-  // dataset (Otto, 23.09.2026: no cross-dataset fallback, because the two
-  // catalogues name the same scene differently — a miss must say so). Unlike
-  // `runSearch`, this needs neither an AOI nor a date range and leaves both
-  // untouched. On any failure only `error` changes; the trefferliste,
-  // selection, AOI and date range stay exactly as they were (M2-17 F4).
+  // Looks up one scene by its exact name in every ticked dataset at once (M3-10
+  // F8): the catalogues name the same scene differently (Otto, 23.09.2026), so a
+  // name usually hits one of them — no dataset stands in for another. The first
+  // with the scene opens in the dropdown; every other says in its box what it
+  // answered. Unlike `runSearch`, this needs neither an AOI nor a date range and
+  // leaves both untouched. When no dataset has the scene only `error` changes;
+  // results, selection, AOI and date range stay exactly as they were (M2-17 F4).
   findSceneByName: async () => {
-    const { sceneNameQuery, datasetId, datasets } = get();
+    const { sceneNameQuery, selectedDatasetIds, datasets } = get();
     const name = sceneNameQuery.trim();
     if (!name) return;
-    const dataset = datasets.find((d) => d.id === datasetId);
-    if (!dataset) {
-      set({ error: 'Pick a dataset first.' });
-      return;
-    }
-    if (!dataset.viewable) {
-      set({ error: `This dataset cannot be shown yet: ${dataset.reason}` });
+    const chosen = viewableDatasets(datasets, selectedDatasetIds);
+    if (chosen.length === 0) {
+      const blocked = datasets.find((d) => selectedDatasetIds.includes(d.id));
+      set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Pick a dataset first.' });
       return;
     }
     set({ sceneLookupLoading: true, error: null });
-    try {
-      const item = await api.fetchItem(dataset.id, name);
+    const answers = await Promise.all(
+      chosen.map((dataset) =>
+        api.fetchItem(dataset.id, name).then(
+          (item) => ({ item, failure: null }),
+          (e: unknown) => ({ item: undefined, failure: e as Error }),
+        ),
+      ),
+    );
+    const invalid = (failure: Error | null) => failure instanceof api.HttpError && failure.status === 400;
+    const sections = chosen.map((dataset, i): ResultSection => {
+      const { item, failure } = answers[i];
+      const section = { datasetId: dataset.id, origin: 'name' as const, incomplete: false, groupingError: null };
       if (!item) {
-        set({
-          error: `No scene named "${name}" in ${dataset.title} — the two catalogues name the same scene differently.`,
-          sceneLookupLoading: false,
-        });
-        return;
+        const note = !failure
+          ? `No scene named "${name}".`
+          : invalid(failure)
+            ? 'Not a valid scene name for this dataset.'
+            : `Scene lookup failed: ${failure.message}`;
+        return { ...section, items: [], groups: [], notes: [note] };
       }
-      let groups: TimeStepGroup[];
       try {
-        groups = buildGroups([item], dataset.resultsGroupBy);
+        return { ...section, items: [item], groups: buildGroups([item], dataset.resultsGroupBy), notes: [] };
       } catch (e) {
-        if (e instanceof MissingProperty) {
-          set({ error: `Grouping failed: ${e.message}`, sceneLookupLoading: false });
-          return;
-        }
-        throw e;
+        if (!(e instanceof MissingProperty)) throw e;
+        return { ...section, items: [], groups: [], notes: [`Grouping failed: ${e.message}`], groupingError: e.message };
       }
-      const bbox = item.bbox ?? (item.geometry ? polygonBbox(item.geometry) : null);
-      // One section for the one scene (the lookup asks only the active dataset;
-      // M3-10b widens it to every ticked one).
-      const section: ResultSection = { datasetId: dataset.id, items: [item], groups, notes: [], groupingError: null };
-      set({
-        sections: [section],
-        ...openSectionState(section),
-        selectedIds: [item.id],
-        panelCollapsed: true,
-        focusMode: false,
-        cropToAoi: false,
-        playing: false,
-        downloaded: {},
-        appliedRender: {},
-        error: null,
-        notice: `Scene ${item.id}, found by name.`,
-        sceneLookupLoading: false,
-        ...(bbox ? { flyToBbox: bbox } : {}),
-      });
-      // F7 (Otto, 26.09.2026): a dataset with no browsable quicklook and no
-      // meaningful coarse-tile preview shows the found scene in full
-      // resolution directly — a scene lookup carries no AOI, so this is
-      // always "View full selection", never a crop.
-      if (dataset.browse === 'full_resolution') await get().enterFocus(false);
-    } catch (e) {
-      if (e instanceof api.HttpError && e.status === 400) {
-        set({ error: 'Not a valid scene name.', sceneLookupLoading: false });
-        return;
+    });
+    const open = firstSectionWithItems(sections);
+    if (!open) {
+      const several = chosen.length > 1;
+      const failed = answers.find(({ failure }) => failure && !invalid(failure));
+      const grouping = sections.find((section) => section.groupingError);
+      let error: string;
+      if (failed) {
+        const where = several ? ` (${chosen[answers.indexOf(failed)].title})` : '';
+        error = `Scene lookup failed${where}: ${failed.failure?.message}`;
+      } else if (grouping) {
+        error = `Grouping failed: ${grouping.groupingError}`;
+      } else if (answers.every(({ failure }) => invalid(failure))) {
+        error = 'Not a valid scene name.';
+      } else {
+        error = several
+          ? `No scene named "${name}" in the selected datasets — the catalogues name the same scene differently.`
+          : `No scene named "${name}" in ${chosen[0].title} — the two catalogues name the same scene differently.`;
       }
-      set({ error: `Scene lookup failed: ${(e as Error).message}`, sceneLookupLoading: false });
+      set({ error, sceneLookupLoading: false });
+      return;
     }
+    const item = open.items[0];
+    const dataset = chosen.find((d) => d.id === open.datasetId);
+    const foundIn = sections.filter((section) => section.items.length > 0);
+    const where =
+      chosen.length > 1 ? ` in ${foundIn.map((x) => chosen.find((d) => d.id === x.datasetId)?.title).join(', ')}` : '';
+    const bbox = item.bbox ?? (item.geometry ? polygonBbox(item.geometry) : null);
+    set({
+      sections,
+      ...openSectionState(open),
+      ...forgetSearch(),
+      datasetId: open.datasetId,
+      // A lookup carries no AOI, so there is no crop of the last search to keep.
+      searchCrops: [],
+      selectedIds: [item.id],
+      panelCollapsed: true,
+      playing: false,
+      ...LEAVE_FOCUS,
+      error: null,
+      notice: `Scene ${item.id}, found by name${where}.`,
+      sceneLookupLoading: false,
+      ...(bbox ? { flyToBbox: bbox } : {}),
+    });
+    // F7 (Otto, 26.09.2026): a dataset with no browsable quicklook and no
+    // meaningful coarse-tile preview shows the found scene in full
+    // resolution directly — a scene lookup carries no AOI, so this is
+    // always "View full selection", never a crop.
+    if (dataset?.browse === 'full_resolution') await get().enterFocus(false);
   },
 }));
