@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import type { CoverageHistogramPoint, PlaceResult } from '../api';
 import { readAoiFile } from '../aoiFile';
@@ -6,8 +6,11 @@ import { completenessNote } from '../coverage';
 import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
+import { focusFirstItem } from '../popover';
 import { totalItems } from '../sections';
 import { useAppStore } from '../store';
+import ClearableInput from './ClearableInput';
+import Popover from './Popover';
 import Toolbar from './Toolbar';
 
 // A date input plus a transparent button covering its calendar icon
@@ -118,6 +121,9 @@ function PlaceSearchField() {
   // one already filled in (plan §4: "eine noch laufende ältere Anfrage, die
   // später ankommt, wird verworfen").
   const requestRef = useRef(0);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const closeResults = useCallback(() => setShowResults(false), []);
 
   const runSearch = async () => {
     const q = query.trim();
@@ -155,14 +161,19 @@ function PlaceSearchField() {
 
   return (
     <div className="place-search">
-      <div className="place-search-row">
-        <input
-          type="text"
+      <div className="place-search-row" ref={rowRef}>
+        <ClearableInput
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
+          onClear={closeResults}
+          clearLabel="Clear place name"
           onKeyDown={(e) => {
             if (e.key === 'Enter') void runSearch();
             if (e.key === 'Escape') setShowResults(false);
+            if (e.key === 'ArrowDown' && showResults) {
+              e.preventDefault();
+              focusFirstItem(resultsRef.current);
+            }
           }}
           placeholder="Place name"
           aria-label="Place"
@@ -178,8 +189,8 @@ function PlaceSearchField() {
           {searching ? 'Finding…' : 'Find'}
         </button>
       </div>
-      {showResults && (
-        <div className="place-results">
+      <Popover anchorRef={rowRef} open={showResults} onClose={closeResults} className="place-results" ariaLabel="Places found">
+        <div ref={resultsRef}>
           {results.length === 0 && <p className="hint-text">No place found.</p>}
           {results.map((r, i) => (
             <button
@@ -206,7 +217,7 @@ function PlaceSearchField() {
             </p>
           )}
         </div>
-      )}
+      </Popover>
       {stillActive && picked && (
         <p className="hint-text place-attribution">
           {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
@@ -328,12 +339,12 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
       <label className="field-label" htmlFor="scene-name-input">
         Scene name
       </label>
-      <input
+      <ClearableInput
         id="scene-name-input"
-        type="text"
         value={query}
         placeholder="e.g. S2C_T32TNT_20260920T103025_L2A"
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={setQuery}
+        clearLabel="Clear scene name"
         onKeyDown={(e) => {
           if (e.key === 'Enter') onSubmit();
         }}
@@ -351,7 +362,7 @@ function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
-  const searching = useAppStore((s) => s.searching);
+  const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   if (datasets.length === 0) return null;
   return (
     <div className="dataset-list" role="group" aria-label="Datasets">
@@ -370,7 +381,7 @@ function DatasetPicker() {
                 : `${d.title} — not viewable: ${d.reason}`
             }
             aria-pressed={picked}
-            disabled={!d.viewable || searching}
+            disabled={!d.viewable || busy}
             onClick={() => toggle(d.id)}
           >
             <span className="dataset-toggle-title">{d.title}</span>
@@ -456,11 +467,13 @@ function CoverageLegend() {
   );
 }
 
-// The "Coverage" button (M3-10, Otto 30.09.2026): always on screen, in the footer
-// beside "Search", set apart from the dataset buttons. One dataset picked: a click
-// shows its coverage (or hides it again). Several picked: the click first offers
-// the choice of which dataset — nothing is drawn until one is chosen. Off by
-// default (M2-07c).
+// The "Coverage" button (M3-10, Otto 30.09.2026): right under the grid of dataset
+// buttons, outside it so it stays in view however that grid scrolls, and set
+// apart from them. One dataset picked: a click shows its coverage (or hides it
+// again). Several picked: the click first offers the choice of which dataset,
+// lying over what is below — nothing is drawn until one is chosen. Beside it
+// "Clear coverage", on only while a coverage map is shown; the two fill the
+// panel's width. Off by default (M2-07c).
 function CoverageButton() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
@@ -469,24 +482,10 @@ function CoverageButton() {
   const showCoverageFor = useAppStore((s) => s.showCoverageFor);
   const hideCoverage = useAppStore((s) => s.hideCoverage);
   const [choosing, setChoosing] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setChoosing(false), []);
   const picked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
-
-  useEffect(() => {
-    if (!choosing) return;
-    const away = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setChoosing(false);
-    };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setChoosing(false);
-    };
-    document.addEventListener('pointerdown', away);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [choosing]);
 
   const onClick = () => {
     if (picked.length === 0) return;
@@ -497,42 +496,16 @@ function CoverageButton() {
     if (showCoverage) hideCoverage();
     else showCoverageFor(picked[0].id);
   };
+  const chosen = (act: () => void) => {
+    act();
+    setChoosing(false);
+    buttonRef.current?.focus();
+  };
 
   return (
-    <div className="coverage-button-wrap" ref={rootRef}>
-      {choosing && picked.length > 1 && (
-        <div className="coverage-choice" role="menu" aria-label="Coverage of which dataset">
-          {picked.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={showCoverage && coverageDatasetId === d.id}
-              className={`coverage-choice-item${showCoverage && coverageDatasetId === d.id ? ' active' : ''}`}
-              onClick={() => {
-                showCoverageFor(d.id);
-                setChoosing(false);
-              }}
-            >
-              {d.title}
-            </button>
-          ))}
-          {showCoverage && (
-            <button
-              type="button"
-              role="menuitem"
-              className="coverage-choice-item off"
-              onClick={() => {
-                hideCoverage();
-                setChoosing(false);
-              }}
-            >
-              Hide coverage
-            </button>
-          )}
-        </div>
-      )}
+    <div className="coverage-button-wrap" ref={rowRef}>
       <button
+        ref={buttonRef}
         type="button"
         className={`coverage-btn${showCoverage ? ' active' : ''}`}
         aria-pressed={showCoverage}
@@ -547,6 +520,12 @@ function CoverageButton() {
               : 'Show how densely a dataset covers the world'
         }
         onClick={onClick}
+        onKeyDown={(e) => {
+          if (picked.length > 1 && e.key === 'ArrowDown') {
+            e.preventDefault();
+            setChoosing(true);
+          }
+        }}
       >
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
           <rect x="2" y="2" width="5" height="5" />
@@ -556,6 +535,43 @@ function CoverageButton() {
         </svg>
         <span>Coverage</span>
       </button>
+      <button
+        type="button"
+        className="coverage-btn coverage-clear-btn"
+        disabled={!showCoverage}
+        title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
+        onClick={() => hideCoverage()}
+      >
+        Clear coverage
+      </button>
+      <Popover
+        anchorRef={rowRef}
+        triggerRef={buttonRef}
+        open={choosing && picked.length > 1}
+        onClose={close}
+        className="coverage-choice"
+        role="menu"
+        ariaLabel="Coverage of which dataset"
+        focusOnOpen
+      >
+        {picked.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            role="menuitemradio"
+            aria-checked={showCoverage && coverageDatasetId === d.id}
+            className={`coverage-choice-item${showCoverage && coverageDatasetId === d.id ? ' active' : ''}`}
+            onClick={() => chosen(() => showCoverageFor(d.id))}
+          >
+            {d.title}
+          </button>
+        ))}
+        {showCoverage && (
+          <button type="button" role="menuitem" className="coverage-choice-item off" onClick={() => chosen(hideCoverage)}>
+            Hide coverage
+          </button>
+        )}
+      </Popover>
     </div>
   );
 }
@@ -578,7 +594,7 @@ export default function ControlPanel() {
   // since the name lookup needs neither AOI nor date range (adr/0001 Z1).
   const hasSceneName = sceneNameQuery.trim().length > 0;
   const busy = searching || sceneLookupLoading;
-  // The scene-name lookup asks the active dataset; a search asks every ticked one.
+  // The scene-name lookup and the search both ask every ticked dataset.
   const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || !!aoi);
   const search = () => {
     if (!canSearch) return;
@@ -609,6 +625,7 @@ export default function ControlPanel() {
           {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
         </label>
         <DatasetPicker />
+        <CoverageButton />
         <DatasetNotes />
 
         <CoverageLegend />
@@ -618,12 +635,9 @@ export default function ControlPanel() {
 
       {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
       <div className="control-footer">
-        <div className="action-row">
-          <CoverageButton />
-          <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
-            {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
-          </button>
-        </div>
+        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+          {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
+        </button>
 
         {count > 0 && <p className="result-count">{count} scene(s) found</p>}
         {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}

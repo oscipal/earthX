@@ -495,4 +495,49 @@ describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () 
     expect(result.ignoredFiltersByCollection).toEqual({ dem: ['datetime'], later: ['datetime'] });
     expect(result.incompleteCollections).toEqual([{ collection: 'eopf', reason: 'timeout' }]);
   });
+
+  // M3-10b: "Load more" continues a walk with the token the last one left over.
+  it('starts from a given token and hands back the one left once maxItems stopped it', async () => {
+    const page = (ids: string[], token: string | null) => ({
+      features: ids.map((id) => ({ id })),
+      numberReturned: ids.length,
+      links: token ? [{ rel: 'next', href: '/stac/search', body: { token } }] : [],
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(page(['a', 'b'], 't3')))
+      .mockResolvedValueOnce(jsonResponse(page(['c', 'd'], 't4')));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await searchAllPages({ collections: ['x', 'y'], bbox: [1, 2, 3, 4] }, 3, 't2');
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies.map((b) => b.token)).toEqual(['t2', 't3']);
+    expect(bodies[0]).toMatchObject({ collections: ['x', 'y'], bbox: [1, 2, 3, 4] });
+    expect(result.features.map((f) => f.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(result.nextToken).toBe('t4');
+  });
+
+  it("hands back the last page's open collections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ features: [{ id: 'a' }], numberReturned: 1, links: [{ rel: 'next', href: '/stac/search', body: { token: 't2' } }], open_collections: ['x', 'y'] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ features: [{ id: 'b' }], numberReturned: 1, open_collections: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await searchAllPages({ collections: ['x', 'y'] }, 300)).openCollections).toEqual([]);
+  });
+
+  it.each([
+    ['missing', undefined, null],
+    ['not a list', 'x', null],
+    ['a list with other things in it', ['x', 7, null], ['x']],
+  ])('reads open_collections %s', async (_case, value, expected) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [], numberReturned: 0, open_collections: value })));
+    expect((await searchItems({ collections: ['x'] })).openCollections).toEqual(expected);
+  });
+
+  it('hands back no token once the result is complete', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [{ id: 'a' }], numberReturned: 1 })));
+    expect((await searchAllPages({ collections: ['x'] }, 300)).nextToken).toBeNull();
+  });
 });

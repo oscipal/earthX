@@ -22,7 +22,17 @@ export interface ResultSection {
   // Set when the scenes could not be grouped (a grouping property missing on an
   // item, `grouping.ts::MissingProperty`): the section then holds no scenes.
   groupingError: string | null;
+  // Where the scenes come from: the search itself, the ±90-day fallback run for
+  // this dataset (M3-10b), or a lookup by scene name.
+  origin: 'search' | 'fallback' | 'name';
+  // The source did not answer in full (`incomplete_collections`): an empty
+  // section then says nothing about the date range.
+  incomplete: boolean;
 }
+
+export const NO_SCENES_NOTE = 'No scenes for this area.';
+// An empty section whose source still has pages (M3-10b, Otto 30.09.2026).
+export const LOAD_MORE_NOTE = 'Load more to see if there are any.';
 
 // Why a source did not answer, in the words of the head (the reasons are
 // `api/mixed_search.py`'s four; anything else still gets named).
@@ -100,10 +110,60 @@ export function buildSections(
       groupingError = e.message;
       notes.push(`Grouping failed: ${e.message}`);
     }
-    if (kept.length === 0 && notes.length === 0) notes.push('No scenes for this area.');
-    return { datasetId: dataset.id, items: kept, groups, notes, groupingError };
+    if (kept.length === 0 && notes.length === 0) notes.push(NO_SCENES_NOTE);
+    return { datasetId: dataset.id, items: kept, groups, notes, groupingError, origin: 'search', incomplete: !!incomplete };
   });
   return { sections, stray };
+}
+
+// Two answers of one search as one (a first walk and its "Load more"): as within
+// a walk (`api.searchAllPages`), the first answer that names a collection's
+// dropped filters speaks for the whole search, and every source that failed on
+// any page stays named, once.
+export function combineAnswers(first: SectionSearchAnswer, next: SectionSearchAnswer): SectionSearchAnswer {
+  const incomplete = [...first.incompleteCollections];
+  for (const entry of next.incompleteCollections) {
+    if (!incomplete.some((known) => known.collection === entry.collection)) incomplete.push(entry);
+  }
+  return {
+    ignoredFilters: first.ignoredFilters.length > 0 ? first.ignoredFilters : next.ignoredFilters,
+    ignoredFiltersByCollection: { ...next.ignoredFiltersByCollection, ...first.ignoredFiltersByCollection },
+    incompleteCollections: incomplete,
+  };
+}
+
+// An empty section of the search, its source answered in full: whether it has
+// nothing is not known yet while that source still has pages, and the section
+// says so instead of "No scenes for this area." (Otto, 30.09.2026).
+export function withSourceState(section: ResultSection, sourceOpen: boolean): ResultSection {
+  const waiting =
+    sourceOpen && section.origin === 'search' && section.items.length === 0 && section.groupingError === null && !section.incomplete;
+  if (!waiting) return section;
+  return { ...section, notes: [...section.notes.filter((note) => note !== NO_SCENES_NOTE), LOAD_MORE_NOTE] };
+}
+
+// Whether the ±90-day fallback (`dateFallback.ts`) is due for a section chosen in
+// the dropdown (M3-10 F7, Otto 30.09.2026): the search found nothing for it in a
+// date range, its source answered in full and has no further page (otherwise
+// "Load more" may still bring scenes of the range), and a date range means
+// something to it. It runs once per section — a section it has run for has
+// another origin.
+export function needsFallback(
+  section: ResultSection,
+  dataset: ViewableDataset,
+  dateFrom: string,
+  dateTo: string,
+  sourceOpen: boolean,
+): boolean {
+  return (
+    !sourceOpen &&
+    section.origin === 'search' &&
+    section.items.length === 0 &&
+    section.groupingError === null &&
+    !section.incomplete &&
+    dataset.hasTimeAxis &&
+    (dateFrom !== '' || dateTo !== '')
+  );
 }
 
 // The section that is open right after a search (M3-10 F2): the first, in the

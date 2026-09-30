@@ -11,6 +11,9 @@ neuen Stand; die Antwort auf F2 (Akkordeon) ist damit ersetzt.
 **Zweite Rückmeldung (30.09.2026, §12):** Karte folgt dem Dropdown (ersetzt
 F5 (2)), Datensatz-Knöpfe als 2×2-Raster, abgesetztes Dropdown, Coverage-Knopf
 im Fuß, heller Hintergrund hinter der Weltkugel.
+**Teil 2 (M3-10b) umgesetzt** (30.09.2026, eigener Draft-PR): „Load more“,
+Fallback für den im Dropdown gewählten Datensatz, Namenssuche über alle
+angehakten Datensätze; Stand und Auslegungen in §13.
 **Aufgabe:** M3-10 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P9),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11) und Ottos Vorgaben vom
 26.09.2026 zum Start dieser Aufgabe (unten O1–O3, Log). **Stufe B.** Hängt an
@@ -114,8 +117,9 @@ Datasets                                  2 selected
 [ Sentinel-2 L2A     ] [ Sentinel-2 L2A (Za… ]   <- gewählt, hervorgehoben
 [ Copernicus DEM GLO ] [ Landsat Collection  ]
   (ab dem fünften Datensatz scrollt das Raster)
+[ ▦ Coverage ]                                   <- direkt unter dem Raster
 --------------------------------------------------
-[ ▦ Coverage ] [            Search             ]   <- Fuß, immer sichtbar
+[                   Search                     ]   <- Fuß, immer sichtbar
 ```
 
 - Ein Knopf je Datensatz aus `/stac/collections`: Klick wählt aus (Rahmen,
@@ -132,8 +136,12 @@ Datasets                                  2 selected
   least one dataset.“
 - Die Auswahl zu ändern, leert die Trefferliste (sie passt nicht mehr zur
   Suche); während einer laufenden Suche ist sie gesperrt.
-- **Coverage-Knopf „Coverage“** im Fuß neben „Search“, immer sichtbar und von
-  den Datensatz-Knöpfen abgesetzt (Symbol, gestrichelter Rahmen, bis er an ist).
+- **Coverage-Knopf „Coverage“** direkt unter dem 2×2-Raster (Otto, 30.09.2026,
+  ersetzt „im Fuß neben Search“), außerhalb des Rasters und damit sichtbar, wie
+  weit das Raster auch scrollt; von den Datensatz-Knöpfen abgesetzt (Symbol,
+  gestrichelter Rahmen, bis er an ist). Die Auswahl des Datensatzes legt sich als
+  Dropdown über den Inhalt (§13). Daneben „Clear coverage“, nur aktiv, solange
+  eine Coverage angezeigt wird; beide Knöpfe füllen die Breite des Panels.
   Ein Datensatz gewählt: ein Klick zeigt dessen Coverage, der nächste blendet sie
   aus. Mehrere gewählt: erst der Klick öffnet die Auswahl, von welchem Datensatz
   (mit „Hide coverage“, wenn sie an ist); bis dahin wird nichts gezeichnet.
@@ -344,7 +352,8 @@ bekommt keinen neuen Punkt.
 ### 4.7 Nicht anfassen
 
 `readers`, `access`, Tiler-, Coverage- und Download-Route, die gemischte Suche
-selbst (`api/mixed_search.py`, `federating_client.py`), Registry außer F6,
+selbst (`api/mixed_search.py`, `federating_client.py`; Ausnahme: das Feld
+`open_collections`, Otto 30.09.2026), Registry außer F6,
 `MAX_SEARCH_ITEMS`, Hybrid-Suche (M5).
 
 ---
@@ -618,3 +627,120 @@ im Fuß, „Search“ im Fenster; vor der Auswahl in der Coverage-Wahl wird nich
 gezeichnet; `.app` malt im Hell-Modus `rgb(255, 255, 255)`, im Dunkel-Modus
 `rgb(4, 7, 10)`. Das Globus-Bild selbst (Kacheln) ließ sich ohne Netz nicht
 prüfen.
+
+---
+
+## 13. Umsetzung M3-10b (30.09.2026)
+
+Grundlage: F1 (1), F7 (1), F8 (1), übertragen auf das Dropdown und die Karte, die
+ihm folgt (§4.3–§4.5, §12).
+
+- **„Load more“ (F1, §4.4):** `api.searchAllPages` nimmt eine Start-Marke und gibt
+  die übrige Marke zurück. Der Store hält die Suche, zu der die Treffer gehören
+  (`searchContext`: Anfrage, AOI und Zeitraum der Suche, geladene Items,
+  gesammelte Antwort, Marke). Der Knopf steht unter der Liste des gewählten
+  Datensatzes, mit „More scenes may be available.“, und führt die gemischte Marke
+  der ganzen Suche fort, je Klick bis 300 Items. Neue Items landen in ihrem
+  Datensatz; gewählter Datensatz, aktiver und offener Zeitschritt (über den
+  Gruppen-Schlüssel) und die ausgewählten Szenen bleiben. Ein Item, das schon
+  geladen ist (gleiche Collection und Kennung), kommt nicht doppelt dazu. Die
+  Trefferzahlen und der Such-Hinweis wachsen mit; mit einem Datensatz sagt der
+  Hinweis bei verbleibender Marke nur noch „… matched in total.“, ohne den Rat,
+  die Suche zu verkleinern.
+- **Fehler und Verwerfen:** Ein Fehler lässt die Treffer stehen, sagt „Could not
+  load more results — search again.“ und verwirft die Marke. AOI oder Zeitraum zu
+  ändern verwirft nur die Marke, die Treffer bleiben; Auswahl ändern, neue Suche,
+  Namenssuche und „Clear all“ verwerfen die ganze Suche. Eine Antwort, die danach
+  kommt, wird nicht mehr angezeigt (Zähler `searchGen`); das gilt für die Suche
+  selbst, „Load more“, den Fallback und die Namenssuche. Lässt sich eine neue Szene
+  nicht gruppieren, behält ihr Datensatz die geladenen Szenen und sagt in der Box,
+  dass die später geladenen fehlen.
+- **Fallback (F7):** Er läuft für den im Dropdown gewählten Datensatz, wenn dessen
+  Box leer ist, der Datensatz eine Zeitachse hat, ein Zeitraum gesucht wurde und
+  seine Quelle vollständig geantwortet hat (`sections.ts::needsFallback`). Bei der
+  Suche selbst betrifft das nur den Datensatz, mit dem das Dropdown öffnet — also
+  nur, wenn kein Datensatz Treffer hat; sonst, sobald ein leerer Datensatz gewählt
+  wird. Keine parallelen Fallback-Suchen. Er fragt nur diesen Datensatz, mit AOI
+  und Zeitraum der Suche, und läuft einmal je Suche. Ergebnis und Hinweis stehen
+  in Box und Option des Datensatzes; solange er läuft, steht dort „Looking for the
+  nearest date with scenes…“. Für denselben Datensatz läuft er nie zweimal
+  zugleich. Ein Fehler steht ebenfalls dort („Could not look for the nearest date:
+  …“) statt als Fehler der ganzen Suche, auch wenn er bei der Suche selbst läuft.
+  Mit einem Datensatz sagt der Such-Hinweis es wie bisher, und ein Fehler ist wie
+  bisher „Search failed“. Die Trefferzahl im Such-Hinweis zählt nur Szenen aus dem
+  gesuchten Zeitraum, keine aus einem Fallback.
+- **Fallback und „Load more“:** Ein Datensatz im Fallback blättert nicht mit und
+  behält den Fallback, solange die fortgesetzte Suche nichts für ihn bringt.
+  Bringt sie doch Treffer im Zeitraum (möglich, wenn sich eigene Collections eine
+  Quelle der gemischten Suche teilen und die ersten 300 Items von einer anderen
+  kamen), ersetzen diese den Fallback — er stand nur für „nichts im Zeitraum“.
+  Antwortet „Load more“ vor einem noch laufenden Fallback, verwirft der Fallback
+  sein Ergebnis.
+- **Fallback wartet auf die Quelle (Otto, 30.09.2026: Option 1 auf
+  Quellen-Ebene, Umsetzung Option 1 mit `open_collections`).** Jede Antwort der
+  Suche nennt `open_collections` (Backend, `federating_client.py`; §4.7 ist für
+  genau dieses Feld geöffnet, Nachtrag in `adr/0005` Regel III und
+  `architekturplan.md` 5.2). Solange die Collection des gewählten Datensatzes
+  darin steht und eine Marke übrig ist, läuft kein Fallback, und die Box sagt
+  „Load more to see if there are any.“ statt „No scenes for this area.“ — das gilt
+  für jeden leeren Datensatz mit offener Quelle, nicht nur für einen mit
+  Zeitachse. Ist seine Quelle erschöpft, startet der Fallback sofort, auch wenn
+  andere Quellen noch Seiten haben; ebenso nach dem „Load more“, das die Quelle
+  erschöpft, wenn der Datensatz gewählt ist. Nennt eine Antwort das Feld nicht,
+  gilt jede Collection als offen, solange eine Marke übrig ist. Ist die Marke
+  verworfen (andere AOI oder Daten, Fehler), gibt es kein Nachladen mehr, und der
+  Fallback läuft beim Wählen.
+- **Coverage-Knopf unter dem Raster (Otto, 30.09.2026):** siehe §3; umgesetzt im
+  PR von M3-10b. Beleg mit Chromium (Playwright, sechs Datensätze gemockt, 600 und
+  900 px Fensterhöhe): Knopf 8 px unter dem Raster, gleiche Lage nach dem Scrollen
+  des Rasters, Auswahl öffnet darunter.
+- **Namenssuche (F8):** Sie fragt alle angehakten anzeigbaren Datensätze parallel.
+  Der erste Datensatz in Listenreihenfolge mit der Szene öffnet im Dropdown, die
+  Karte fliegt hin, die Szene ist ausgewählt; jeder andere sagt in seiner Box, was
+  er geantwortet hat („No scene named …“, „Not a valid scene name for this
+  dataset.“, „Scene lookup failed: …“). Hat keiner die Szene, ändert sich nur der
+  Fehler (M2-17 F4): kein Datensatz fand sie, alle lehnten den Namen ab, oder eine
+  Quelle fiel aus (mit Titel). Mit einem Datensatz ist die Bedienung wie bisher.
+  Ein Treffer in einem Datensatz ohne Vorschau (DEM) zeigt die Vollauflösung,
+  sobald sein Datensatz im Dropdown gewählt ist, nicht nur, wenn er als erster
+  öffnet. Während der Namenssuche ist die Datensatz-Auswahl gesperrt wie während
+  der Suche.
+- **Nebenfund:** Die Namenssuche ließ die Zuschnitte der vorigen AOI-Suche
+  (`searchCrops`) stehen; fand sie eine DEM-Kachel, lagen die alten Zuschnitte
+  wieder auf der Karte. Jetzt leert sie sie.
+
+**Geändert:** `backend/earthx/api/federating_client.py` (`open_collections`);
+`frontend/src/api.ts`, `sections.ts`, `store.ts`, `components/ResultsPanel.tsx`,
+`components/ControlPanel.tsx`, `index.css`. Tests:
+`backend/tests/integration/test_api_mixed_search.py` (`TestOpenCollections`);
+`api.test.ts`, `sections.test.ts`, `store.sections.test.ts`, `store.test.ts`,
+`components/ResultsPanel.test.tsx`, `components/ControlPanel.test.tsx`.
+
+Otto prüft lokal: drei Datensätze, eine AOI und ein Zeitraum mit mehr als 300
+Sentinel-2-Treffern („Load more“, Zahlen im Dropdown, offener Zeitschritt bleibt);
+ein Zeitraum ohne Treffer für einen Datensatz (Wahl im Dropdown startet den
+Fallback nur für ihn); ein Szenenname mit mehreren angehakten Datensätzen.
+- **Dropdowns als Überlagerung (Otto, 30.09.2026):** Auswahl in der Trefferliste,
+  Datensatz-Auswahl der Coverage und Treffer der Ortssuche nutzen
+  `components/Popover.tsx`: per Portal in `.app` gerendert (die Panels werden mit
+  `transform` verschoben und würden ein `position: fixed` darin abschneiden),
+  über dem Inhalt statt ihn zu verschieben, im Fenster gehalten (nach oben, wenn
+  unten der Platz fehlt und oben mehr ist; sonst scrollend), folgt dem Anker bei
+  jedem Frame und schließt, wenn der Anker das Fenster verlässt (z. B. wenn das
+  Panel für ein Zeichenwerkzeug wegschiebt), dazu Escape, Klick daneben und Tab.
+  Tastatur: Pfeil nach unten öffnet (bzw. springt aus dem Ortsfeld in die Liste),
+  Pfeile, Pos1/Ende bewegen, Escape gibt den Fokus an den Auslöser zurück. Die
+  Colormap-Auswahl der Vollauflösung ist ein natives `<select>` und verhält sich
+  schon so. Ersetzt die „in-flow“-Entscheidung der Ortssuche aus M3-07b.
+  Beleg mit Chromium (Playwright, gemockt): Beim Öffnen der Coverage-Auswahl und
+  der Ortstreffer bewegen sich darunterliegende Elemente um 0 px; Fokus und
+  Escape wie beschrieben; Coverage-Zeile 310 px breit wie das Datensatz-Raster.
+  Das Aufklappen nach oben ist nur im Unit-Test belegt: Im Control Center lässt
+  der Fuß unter dem Coverage-Knopf in den geprüften Fensterhöhen stets genug
+  Platz.
+- **„Clear coverage“ (Otto, 30.09.2026):** siehe §3.
+- **Löschknopf in Textfeldern (Otto, 30.09.2026):** Szenenname und Ortsname haben
+  rechts ein kleines „×“ (`components/ClearableInput.tsx`), sichtbar nur mit
+  Inhalt; es leert das Feld (beim Ort schließt es auch die Trefferliste) und
+  lässt den Fokus im Feld. Datums- und Zahlenfelder sind keine Textfelder und
+  bleiben ohne.

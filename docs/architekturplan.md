@@ -291,6 +291,13 @@ Scheitert eine föderierte Quelle, kommen die übrigen trotzdem, mit einer
 Kennzeichnung der fehlenden; ein Fehler des eigenen pgstac scheitert die ganze
 Anfrage, weil es dafür keine Teilantwort gibt. Die Konformitätsklassen der
 eigenen Landing Page (5.3) richten sich nach der schwächsten beteiligten Quelle.
+Jede Antwort der Suche nennt neben `ignored_filters`, `ignored_filters_by_collection`
+und `incomplete_collections` auch **`open_collections`**: die Collections, deren
+Quelle noch weitere Seiten hat (Otto, 30.09.2026, M3-10b). Teilen sich mehrere
+Collections eine Quelle, sind alle offen, solange die Quelle offen ist; eine
+gescheiterte Quelle ist nicht offen; bei einer Suche über eine Quelle sind deren
+Collections offen, solange die Antwort eine nächste Seite verlinkt. Die
+Seitenmarke bleibt dabei undurchsichtig (`adr/0005` Regel III).
 
 ### 5.3 Bausteine
 

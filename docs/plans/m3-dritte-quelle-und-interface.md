@@ -144,7 +144,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
 | M3-10a | Datensatz-Auswahl in der Suchkachel: Umschalt-Knöpfe mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz, Coverage-Schalter | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | Draft-PR |
-| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | offen |
+| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | Draft-PR |
 | M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |

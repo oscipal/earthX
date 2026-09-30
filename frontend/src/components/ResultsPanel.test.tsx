@@ -8,7 +8,7 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from '../datasets';
 import { buildSections } from '../sections';
@@ -107,6 +107,8 @@ function text(el: Element | null): string {
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement('div');
+  // Dropdowns open in `.app` (`Popover`), outside the panel.
+  container.className = 'app';
   document.body.append(container);
   root = createRoot(container);
 });
@@ -293,5 +295,97 @@ describe('ResultsPanel dataset dropdown', () => {
     load(MIXED);
     act(() => (container.querySelector('.link-btn') as HTMLButtonElement).click());
     expect(useAppStore.getState().sections).toEqual([]);
+  });
+});
+
+describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
+  it('opens outside the panel without moving anything in it', () => {
+    load(MIXED);
+    const panel = container.querySelector('.results-panel')!;
+    const before = panel.innerHTML;
+    openList();
+    const list = container.querySelector('.dataset-select-list') as HTMLElement;
+    expect(panel.contains(list)).toBe(false);
+    expect(list.style.position).toBe('fixed');
+    expect(panel.innerHTML.replace(/aria-expanded="true"/, 'aria-expanded="false"').replace('▴', '▾')).toBe(before);
+  });
+
+  it('is worked with the keyboard: arrow down opens it at the chosen dataset, Escape returns to the box', () => {
+    load(MIXED);
+    box().focus();
+    act(() => box().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(document.activeElement).toBe(options()[0]);
+    expect(options()[0].getAttribute('aria-selected')).toBe('true');
+    act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
+    expect(document.activeElement).toBe(options()[2]);
+    act(() => options()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(options()).toEqual([]);
+    expect(document.activeElement).toBe(box());
+  });
+
+  it('closes on a click beside it, and on Tab', () => {
+    load(MIXED);
+    openList();
+    act(() => document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+    expect(options()).toEqual([]);
+    openList();
+    act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })));
+    expect(options()).toEqual([]);
+  });
+});
+
+describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
+  type Context = NonNullable<ReturnType<typeof useAppStore.getState>['searchContext']>;
+  const withToken = (nextToken: string | null) => ({ searchContext: { nextToken } as Context });
+  const loadMoreRow = () => container.querySelector('.load-more');
+  const loadMoreButton = () => loadMoreRow()?.querySelector('button') as HTMLButtonElement | null;
+  const original = useAppStore.getState().loadMore;
+
+  beforeEach(() => useAppStore.setState({ searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetIds: [] }));
+  afterEach(() => useAppStore.setState({ loadMore: original }));
+
+  it('offers "Load more" below the scenes while the search has a token left, naming no dataset', () => {
+    const loadMore = vi.fn(async () => {});
+    useAppStore.setState({ ...withToken('p4'), loadMore });
+    load(MIXED);
+    expect(text(loadMoreRow())).toContain('More scenes may be available.');
+    expect(text(loadMoreRow())).not.toContain('Optical');
+    const list = container.querySelector('.results-list')!;
+    expect(list.compareDocumentPosition(loadMoreRow()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    act(() => loadMoreButton()!.click());
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays below whichever dataset is chosen', () => {
+    useAppStore.setState(withToken('p4'));
+    load(MIXED);
+    openList();
+    act(() => options()[2].click());
+    expect(useAppStore.getState().openSectionId).toBe('dem');
+    expect(loadMoreButton()).not.toBeNull();
+  });
+
+  it('is locked while loading', () => {
+    useAppStore.setState({ ...withToken('p4'), loadingMore: true });
+    load(MIXED);
+    expect(loadMoreButton()!.disabled).toBe(true);
+    expect(text(loadMoreButton())).toBe('Loading…');
+  });
+
+  it('is not there without a token; after a failure it says to search again instead', () => {
+    load(MIXED);
+    expect(loadMoreRow()).toBeNull();
+    act(() => useAppStore.setState({ loadMoreError: 'Could not load more results — search again.' }));
+    expect(text(loadMoreRow())).toBe('Could not load more results — search again.');
+    expect(loadMoreButton()).toBeNull();
+  });
+
+  it('says in the box that the nearest date is being looked for, in place of the notes', () => {
+    load([scene('d1', 'dem', { start_datetime: '2011-01-01T00:00:00Z' })]);
+    openList();
+    act(() => options()[0].click());
+    act(() => useAppStore.setState({ fallbackDatasetIds: ['optical'] }));
+    expect(text(box())).toContain('Looking for the nearest date with scenes…');
+    expect(text(box())).not.toContain('No scenes for this area.');
   });
 });

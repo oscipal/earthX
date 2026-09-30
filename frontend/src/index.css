@@ -604,26 +604,17 @@ input[type='date']:focus {
   display: flex;
   gap: 6px;
 }
-.place-search-row input[type='text'] {
-  flex: 1;
-  width: auto;
-}
 .place-search-row .tool-btn {
   flex: 0 0 auto;
   grid-column: auto;
   padding: 8px 12px;
 }
-/* In-flow, not a floating dropdown (plan §4): the panel already scrolls, and
-   an overlay would have to coordinate with the draw tool and the panel's own
-   collapse (`panelCollapsed`). */
-.place-results {
+/* A dropdown over the panel (`Popover`, Otto 30.09.2026) — it closes when the
+   panel slides away for a draw tool or the collapse toggle. */
+.place-results > div {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px;
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
 }
 .place-result {
   display: grid;
@@ -975,23 +966,18 @@ input[type='date']:focus {
 }
 /* The footer's action row: "Coverage" beside "Search" — kept apart from the
    dataset buttons (its own place, an icon, dashed outline until it is on). */
-.action-row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.action-row .primary-btn {
-  flex: 1;
-}
+/* "Coverage" and "Clear coverage" fill the panel's width, like the tool rows. */
 .coverage-button-wrap {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 .coverage-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  padding: 0 12px;
+  padding: 7px 12px;
   background: transparent;
   border: 1px dashed var(--panel-border);
   border-radius: 6px;
@@ -1016,22 +1002,29 @@ input[type='date']:focus {
   opacity: 0.4;
   cursor: not-allowed;
 }
-/* The choice of which dataset: opens above the button, inside the footer. */
-.coverage-choice {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 3;
-  min-width: 220px;
+/* --- dropdowns (`components/Popover.tsx`, Otto 30.09.2026) ---
+   Over what is below them, never pushing it down; placed and sized by the
+   component so they stay in the window, scrolling when taller. */
+.popover {
+  z-index: 50;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 6px;
+  overflow-y: auto;
   background: var(--panel-bg);
   border: 1px solid var(--accent);
   border-radius: 8px;
   box-shadow: var(--glow);
   backdrop-filter: blur(10px);
+}
+.popover:focus-within {
+  outline: none;
+}
+.popover button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 .coverage-choice-item {
   padding: 7px 10px;
@@ -1088,6 +1081,18 @@ input[type='date']:focus {
   gap: 8px;
   padding: 6px 14px 0;
 }
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 14px 12px;
+}
+.load-more .ghost-btn {
+  padding: 6px 12px;
+  font-size: 11px;
+}
 .dataset-select-box,
 .dataset-select-option {
   width: 100%;
@@ -1127,8 +1132,6 @@ input[type='date']:focus {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 240px;
-  overflow-y: auto;
 }
 .dataset-select-option:hover {
   border-color: var(--accent);
@@ -1563,4 +1566,40 @@ input[type='date']:focus {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #ffd166;
+}
+
+/* --- text fields with a "×" that empties them (Otto, 30.09.2026) --- */
+.clearable {
+  position: relative;
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+.clearable input[type='text'] {
+  width: 100%;
+  padding-right: 28px;
+}
+.clear-btn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.clear-btn:hover,
+.clear-btn:focus-visible {
+  color: var(--accent);
+  outline: none;
 }

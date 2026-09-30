@@ -143,10 +143,9 @@ export async function geocodePlace(q: string): Promise<PlaceSearchResponse> {
 }
 
 export interface SearchQuery {
-  // M3-13: a list, not one dataset — the backend now answers a search naming
-  // more than one collection with a genuine mixed page instead of a `400`
-  // (`api/mixed_search.py`). The viewer itself still ever names exactly one
-  // (M3-10 builds the multi-select that would send more).
+  // M3-13: a list, not one dataset — the backend answers a search naming more
+  // than one collection with a genuine mixed page (`api/mixed_search.py`); the
+  // viewer sends every dataset ticked in the control panel (M3-10).
   collections: string[];
   bbox?: Bbox;
   // M3-08: a polygon or point AOI searches by its true shape instead of its bbox
@@ -186,6 +185,15 @@ export interface ItemPage {
   // M3-13: collections a mixed search could not reach on this page. Empty for
   // a single-collection search, which never partially fails this way.
   incompleteCollections: IncompleteCollection[];
+  // M3-10b: the collections whose source still has pages after this one
+  // (collections sharing a source are open together). `null` where the answer
+  // does not say — the caller then cannot rule out more for any of them.
+  openCollections: string[] | null;
+}
+
+function openCollectionsFrom(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((c): c is string => typeof c === 'string');
 }
 
 // A body field that should be `{collection: [filter, …]}`; anything else —
@@ -238,6 +246,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     ignored_filters?: string[];
     ignored_filters_by_collection?: unknown;
     incomplete_collections?: IncompleteCollection[];
+    open_collections?: unknown;
   }>(
     await fetch(`${BASE}/stac/search`, {
       method: 'POST',
@@ -253,6 +262,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     ignoredFilters: body.ignored_filters ?? [],
     ignoredFiltersByCollection: ignoredByCollectionFrom(body.ignored_filters_by_collection),
     incompleteCollections: body.incomplete_collections ?? [],
+    openCollections: openCollectionsFrom(body.open_collections),
   };
 }
 
@@ -312,18 +322,25 @@ export async function fetchStatistics(
 // Pages through `nextToken` until the result is complete or `maxItems` is
 // reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
 // date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
-// walk every page rather than trust the first one.
+// walk every page rather than trust the first one. `startToken` continues an
+// earlier walk ("Load more", M3-10b); `nextToken` is what is left once
+// `maxItems` stopped it, `null` when the result is complete.
 export async function searchAllPages(
   q: Omit<SearchQuery, 'limit' | 'token'>,
   maxItems: number,
+  startToken?: string,
 ): Promise<{
   features: StacItem[];
   numberMatched: number | null;
   ignoredFilters: string[];
   ignoredFiltersByCollection: Record<string, string[]>;
   incompleteCollections: IncompleteCollection[];
+  nextToken: string | null;
+  openCollections: string[] | null;
 }> {
-  let token: string | undefined;
+  let token = startToken;
+  // The last page's: it says where the walk stopped.
+  let openCollections: string[] | null = null;
   const features: StacItem[] = [];
   let numberMatched: number | null = null;
   // Every page of one search drops the same filter for the same reason, so
@@ -349,6 +366,7 @@ export async function searchAllPages(
       if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
     }
     token = page.nextToken ?? undefined;
+    openCollections = page.openCollections;
   } while (token && features.length < maxItems);
   return {
     features,
@@ -356,6 +374,8 @@ export async function searchAllPages(
     ignoredFilters,
     ignoredFiltersByCollection,
     incompleteCollections: [...incompleteByCollection.values()],
+    nextToken: token ?? null,
+    openCollections,
   };
 }
 

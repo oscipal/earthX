@@ -57,6 +57,14 @@ NATIVE_A = replace(
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
 )
 
+# A second materialized collection with a time axis: shares NATIVE_A's source (one
+# native group, M3-13 §4.2).
+NATIVE_B = replace(
+    NATIVE_A,
+    dataset_id="earthx-test-mixed-native-b",
+    source=replace(NATIVE_A.source, source_collection_id="earthx-test-mixed-native-b"),
+)
+
 # The DEM-shaped case: materialized, no time axis (M3-11b F1).
 NATIVE_NO_TIME = replace(
     NATIVE_A,
@@ -118,6 +126,13 @@ def native_no_time_loaded(require_postgres_env: None) -> None:
     _load_native(NATIVE_NO_TIME, ["n0", "n1"], datetime_value=None)
     yield
     _drop_native(NATIVE_NO_TIME)
+
+
+@pytest.fixture
+def native_b_loaded(require_postgres_env: None) -> None:
+    _load_native(NATIVE_B, ["b0"])
+    yield
+    _drop_native(NATIVE_B)
 
 
 @pytest.fixture
@@ -343,6 +358,83 @@ class TestPagingAcrossTheBoundary:
         assert sum(federated_per_page) == 5
         first_page_without_native = next(index for index, count in enumerate(native_per_page) if count == 0)
         assert federated_per_page[first_page_without_native] > federated_per_page[0]
+
+
+class TestOpenCollections:
+    """``open_collections`` (Otto, 30.09.2026, M3-10b): the collections whose source
+    still has pages — what the viewer's ±90-day fallback waits on, without reading
+    the page token (adr/0005 rule III)."""
+
+    @staticmethod
+    async def _pages(client: httpx.AsyncClient, collections: list[str], limit: int) -> list[dict[str, Any]]:
+        bodies: list[dict[str, Any]] = []
+        token: str | None = None
+        for _ in range(20):
+            request: dict[str, Any] = {"collections": collections, "limit": limit}
+            if token:
+                request["token"] = token
+            response = await client.post("/stac/search", json=request)
+            assert response.status_code == 200
+            bodies.append(response.json())
+            next_link = next((link for link in bodies[-1]["links"] if link["rel"] == "next"), None)
+            if next_link is None:
+                return bodies
+            token = next_link["body"]["token"]
+        raise AssertionError("paging did not end")
+
+    async def test_an_exhausted_source_of_its_own_is_not_open_while_the_other_is(
+        self, native_a_loaded: None, earth_search_collection_loaded: None
+    ) -> None:
+        async with _client(_paged_earth_search_handler(_synthetic_federated_items(20))) as client:
+            response = await client.post(
+                "/stac/search", json={"collections": [NATIVE_A.dataset_id, DATASET_ID], "limit": 10}
+            )
+        body = response.json()
+        assert sum(item["collection"] == NATIVE_A.dataset_id for item in body["features"]) == 3
+        assert body["open_collections"] == [DATASET_ID]
+
+    async def test_collections_sharing_a_source_are_open_while_it_is(
+        self, native_a_loaded: None, native_b_loaded: None, earth_search_collection_loaded: None
+    ) -> None:
+        collections = [NATIVE_A.dataset_id, NATIVE_B.dataset_id, DATASET_ID]
+        async with _client(_paged_earth_search_handler(_synthetic_federated_items(20))) as client:
+            bodies = await self._pages(client, collections, 4)
+        native = {NATIVE_A.dataset_id, NATIVE_B.dataset_id}
+        # Page 1: the native group (four items) gave two — both of its collections
+        # are open, whichever of them those two came from.
+        assert set(bodies[0]["open_collections"]) == native | {DATASET_ID}
+        # Once the group has given all four, neither is; the federated one still is.
+        group_done = next(
+            index
+            for index in range(len(bodies))
+            if sum(item["collection"] in native for body in bodies[: index + 1] for item in body["features"]) == 4
+        )
+        assert bodies[group_done]["open_collections"] == [DATASET_ID]
+        assert bodies[-1]["open_collections"] == []
+
+    async def test_a_failed_source_is_not_open(self, native_a_loaded: None, earth_search_collection_loaded: None) -> None:
+        def unreachable(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        async with _client(unreachable) as client:
+            response = await client.post(
+                "/stac/search", json={"collections": [NATIVE_A.dataset_id, DATASET_ID], "limit": 2}
+            )
+        body = response.json()
+        assert body["incomplete_collections"] == [{"collection": DATASET_ID, "reason": "unreachable"}]
+        assert body["open_collections"] == [NATIVE_A.dataset_id]
+
+    async def test_a_single_source_search_is_open_exactly_while_it_links_a_next_page(
+        self, native_a_loaded: None, native_b_loaded: None, earth_search_collection_loaded: None
+    ) -> None:
+        native = [NATIVE_A.dataset_id, NATIVE_B.dataset_id]
+        async with _client(_paged_earth_search_handler(_synthetic_federated_items(5))) as client:
+            native_pages = await self._pages(client, native, 2)
+            federated_pages = await self._pages(client, [DATASET_ID], 2)
+        assert sorted(native_pages[0]["open_collections"]) == sorted(native)
+        assert native_pages[-1]["open_collections"] == []
+        assert federated_pages[0]["open_collections"] == [DATASET_ID]
+        assert federated_pages[-1]["open_collections"] == []
 
 
 class TestSourceFailure:

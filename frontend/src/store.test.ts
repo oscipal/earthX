@@ -401,6 +401,7 @@ describe('findSceneByName', () => {
   beforeEach(() => {
     useAppStore.setState({
       datasets: datasetsFrom([COG_LIKE]),
+      selectedDatasetIds: [COG_LIKE.id],
       datasetId: COG_LIKE.id,
       sceneNameQuery: '',
       sceneLookupLoading: false,
@@ -487,7 +488,12 @@ describe('findSceneByName', () => {
 
   it('a dataset that cannot be shown yet is refused before any request', async () => {
     const [unviewable] = datasetsFrom([{ ...COG_LIKE, 'earthx:viewer': undefined }]);
-    useAppStore.setState({ datasets: [unviewable], datasetId: unviewable.id, sceneNameQuery: 'S2A_1' });
+    useAppStore.setState({
+      datasets: [unviewable],
+      selectedDatasetIds: [unviewable.id],
+      datasetId: unviewable.id,
+      sceneNameQuery: 'S2A_1',
+    });
     await useAppStore.getState().findSceneByName();
     expect(fetch).not.toHaveBeenCalled();
     expect(useAppStore.getState().error).toMatch(/cannot be shown yet/);
