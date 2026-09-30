@@ -9,6 +9,7 @@ import {
   fetchItem,
   HttpError,
   nextTokenFrom,
+  searchAllPages,
   searchItems,
   uploadAoi,
 } from './api';
@@ -414,5 +415,84 @@ describe('HttpError.retryAfter', () => {
       } as unknown as Response),
     );
     await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: undefined });
+  });
+});
+
+describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () => {
+  function jsonResponse(body: unknown): Response {
+    return { ok: true, status: 200, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the per-collection breakdown next to the flat list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          features: [],
+          numberReturned: 0,
+          ignored_filters: ['datetime'],
+          ignored_filters_by_collection: { 'cop-dem-glo-30': ['datetime'] },
+        }),
+      ),
+    );
+    const page = await searchItems({ collections: ['a', 'cop-dem-glo-30'] });
+    expect(page.ignoredFilters).toEqual(['datetime']);
+    expect(page.ignoredFiltersByCollection).toEqual({ 'cop-dem-glo-30': ['datetime'] });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['a list', ['datetime']],
+    ['a string', 'datetime'],
+  ])('reads it as empty when it is %s', async (_case, value) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ features: [], numberReturned: 0, ignored_filters_by_collection: value })),
+    );
+    expect((await searchItems({ collections: ['a'] })).ignoredFiltersByCollection).toEqual({});
+  });
+
+  it('skips entries whose value is not a list of strings', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          features: [],
+          numberReturned: 0,
+          ignored_filters_by_collection: { good: ['datetime', 7], bad: 'datetime', worse: { a: 1 }, none: [7] },
+        }),
+      ),
+    );
+    expect((await searchItems({ collections: ['a'] })).ignoredFiltersByCollection).toEqual({ good: ['datetime'] });
+  });
+
+  it('collects the breakdown across pages; the first page naming a collection wins', async () => {
+    const pages = [
+      {
+        features: [{ id: 'a' }],
+        numberReturned: 1,
+        links: [{ rel: 'next', href: '/stac/search', body: { token: 't2' } }],
+        ignored_filters_by_collection: { dem: ['datetime'] },
+        incomplete_collections: [{ collection: 'eopf', reason: 'timeout' }],
+      },
+      {
+        features: [{ id: 'b' }],
+        numberReturned: 1,
+        ignored_filters_by_collection: { dem: ['other'], later: ['datetime'] },
+        incomplete_collections: [{ collection: 'eopf', reason: 'unreachable' }],
+      },
+    ];
+    const fetchMock = vi.fn();
+    for (const page of pages) fetchMock.mockResolvedValueOnce(jsonResponse(page));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await searchAllPages({ collections: ['dem', 'later', 'eopf'] }, 300);
+    expect(result.features).toHaveLength(2);
+    expect(result.ignoredFiltersByCollection).toEqual({ dem: ['datetime'], later: ['datetime'] });
+    expect(result.incompleteCollections).toEqual([{ collection: 'eopf', reason: 'timeout' }]);
   });
 });

@@ -199,6 +199,44 @@ export function datasetsFrom(collections: Collection[]): DatasetOption[] {
   });
 }
 
+// The STAC `keywords` of a collection (M3-10), strings only — anything else a
+// collection carries there is ignored rather than trusted, since the filter
+// below would otherwise have to guard against it on every keystroke.
+export function keywordsOf(collection: Collection): string[] {
+  const keywords = collection.keywords;
+  return Array.isArray(keywords) ? keywords.filter((word): word is string => typeof word === 'string') : [];
+}
+
+// Case- and accent-insensitive comparison text for the dataset filter: NFD
+// splits an accent off its letter, the range below drops it.
+function foldText(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+// Whether a dataset answers a filter typed into the search tile (M3-10): every
+// space-separated word must occur in the title, description or a keyword. The
+// input is plain text — never a pattern — so `(` or `.*` search for themselves.
+// An empty or blank filter matches everything.
+export function datasetMatches(dataset: DatasetOption, query: string): boolean {
+  const words = foldText(query).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const haystack = foldText(
+    [dataset.title, dataset.collection.description ?? '', ...keywordsOf(dataset.collection)].join('\n'),
+  );
+  return words.every((word) => haystack.includes(word));
+}
+
+// The datasets the filter list shows: those matching the filter, plus every
+// selected one whether it matches or not — a selection must never vanish behind
+// a search word. Order is the dataset list's own, never the match order.
+export function filterDatasets(
+  datasets: DatasetOption[],
+  query: string,
+  selectedIds: readonly string[],
+): DatasetOption[] {
+  return datasets.filter((d) => selectedIds.includes(d.id) || datasetMatches(d, query));
+}
+
 // How settled the source is (`earthx:maturity`), as the one line the interface
 // shows for it — `null` for a settled source, which needs no warning. An unknown
 // value is passed through rather than swallowed: a provider label nobody has

@@ -152,6 +152,9 @@ export interface Collection {
   id: string;
   title?: string | null;
   description?: string | null;
+  // STAC core `keywords` (M3-10): what the dataset filter matches besides title and
+  // description. Optional — a collection served by an older backend carries none.
+  keywords?: string[] | null;
   license?: string | null;
   extent?: { temporal?: StacTemporalExtent };
   'earthx:access'?: CollectionAccess;
