@@ -78,7 +78,7 @@ Branch-Namen und PR-Titel auf **Englisch**.
 Backend (aus dem Repo-Wurzelverzeichnis, laut `adr/0002` §6 und `.github/workflows/ci.yml`; aus `backend/` sammelt `pytest` auch `tests_live` ein und geht ins Netz):
 - Lint: `ruff check backend`
 - Tests: `pytest`
-- Importregeln: `lint-imports --config .importlinter`
+- Importregeln: `lint-imports --config .importlinter` (aus der Repo-Wurzel mit `PYTHONPATH=backend`, wie in der CI)
 
 Frontend (aus `frontend/`, laut `frontend/package.json`):
 - Lint: `npm run lint` (oxlint)

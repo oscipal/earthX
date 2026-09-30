@@ -1,16 +1,15 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
-**Status:** Fassung 2 vom 26.09.2026. Erledigt und gemergt: M3-00 bis M3-05,
-M3-08, M3-09, M3-16, M3-18, M3-19, M3-22 sowie der Hotfix zum MinIO-Image. In
-Arbeit: M3-06a und M3-17 (PR #88, im Review), M3-11a (PR #95, im Review),
-M3-23 (PR #100, freigegeben und umgesetzt, im Review).
-Fassung 2 schneidet M3-11 nach der
-Annahme von `adr/0009` in
-M3-11a, M3-11b und M3-11c, nimmt die Entscheidungen vom 23. und 24.09.2026 als
-P20 bis P23 auf, hält den Schnitt als P24 fest, ergänzt den Spike M3-20 (Ersatz für MinIO), den Doku-Abgleich M3-21 und
-die Fehlersuche M3-22 (gelegentlich unlesbare Download-Dateien) und ordnet die
-Wellen neu. Wo eine erledigte Aufgabe anders umgesetzt wurde als hier
-beschrieben, gilt das Log; der Aufgabentext bleibt als Geschichte stehen.
+**Status: Abgenommen am 30.09.2026** (Otto). Fassung 3 vom 30.09.2026: alle
+Aufgaben gemergt bzw. mit PR #109 (M3-15) erledigt; Belege in `m3-15-abnahme.md`,
+Log-Zeile „M3 abgenommen“.
+Fassung 2 (26.09.2026) schnitt M3-11 nach der Annahme von `adr/0009` in
+M3-11a, M3-11b und M3-11c, nahm die Entscheidungen vom 23. und 24.09.2026 als
+P20 bis P23 auf, hielt den Schnitt als P24 fest, ergänzte den Spike M3-20 (Ersatz
+für MinIO), den Doku-Abgleich M3-21 und die Fehlersuche M3-22 und ordnete die
+Wellen neu. Fassung 3 bringt nur die Stände nach. Wo eine erledigte Aufgabe
+anders umgesetzt wurde als hier beschrieben, gilt das Log; der Aufgabentext
+bleibt als Geschichte stehen.
 Frühere Fassungen: 1.1 (Antworten auf M3-02, M3-16), 1.2 (P19, M3-17),
 1.3 (`adr/0010`, M3-19), 1.4 (M3-18).
 **Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
@@ -137,32 +136,32 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-03 | Wechsel auf Python 3.12 | B | Opus Plan, Sonnet (hoch) | — | erledigt (#75) |
 | M3-04 | `/tilejson.json` mit freigegebenen Zoomstufen | A | Sonnet (mittel) | — | erledigt (#78) |
 | M3-05 | Mess-Spike Heatmap-Zählwürfel → `adr/0010` | C | Opus (hoch) | — | erledigt (#80) |
-| M3-06a | AOI-Upload: Backend-Route mit Shapefile | B | Opus Plan, Sonnet (hoch) | M3-03 | in Arbeit |
+| M3-06a | AOI-Upload: Backend-Route mit Shapefile | B | Opus Plan, Sonnet (hoch) | M3-03 | erledigt (#89) |
 | M3-06b | AOI-Upload: Frontend auf die Route | B | Opus Plan, Sonnet (mittel) | M3-06a | erledigt (#96) |
 | M3-07a | Ortssuche: Recherche und Backend-Route | B | Opus Plan, Sonnet (hoch) | Allowlist §1.3 | erledigt (#102) |
-| M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | in Arbeit |
+| M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | erledigt (#103) |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
-| M3-10a | Datensatz-Auswahl in der Suchkachel: Umschalt-Knöpfe mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz, Coverage-Schalter | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | Draft-PR |
-| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | Draft-PR |
-| M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
-| M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
+| M3-10a | Datensatz-Auswahl in der Suchkachel: Umschalt-Knöpfe mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz, Coverage-Schalter | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | erledigt (#106) |
+| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | erledigt (#108) |
+| M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | erledigt (#95) |
+| M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#99) |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
-| M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | in Arbeit |
-| M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | in Arbeit |
-| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | erledigt (angenommen, Otto 30.09.2026) |
-| M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | offen |
+| M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | erledigt (#101) |
+| M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | erledigt (#105) |
+| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | erledigt (#107, angenommen, Otto 30.09.2026) |
+| M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | erledigt (#109) |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — | erledigt (#85) |
-| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | in Arbeit |
+| M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | erledigt (#88) |
 | M3-18 | Download-Deckel nach Ausgabegröße und Maske auf die AOI | B | Opus Plan, Sonnet (hoch) | — | erledigt (#86) |
 | M3-19 | Weltüberblick ohne AOI | A→B | Opus Plan, Sonnet (mittel) | — | erledigt (#83) |
-| M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | in Arbeit |
-| M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
-| M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
-| M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
-| M3-24 | Setup-Hook installiert Frontend-Pakete nach Lockfile | A | Sonnet (mittel) | — | erledigt |
+| M3-20 | Spike Ersatz für MinIO → `adr/0012` | C | Opus (hoch) | — | erledigt (#94, #97; angenommen, Otto 26.09.2026) |
+| M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | erledigt (#92) |
+| M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | erledigt (#93) |
+| M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | erledigt (#100) |
+| M3-24 | Setup-Hook installiert Frontend-Pakete nach Lockfile | A | Sonnet (mittel) | — | erledigt (#104) |
 
-**Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
+**Wellen ab Fassung 2** (alle durchlaufen, Stand 30.09.2026; die Reihenfolge bleibt als Geschichte stehen). Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
 
 1. **Jetzt:** M3-06a und M3-17 (laufen, M3-17 im Review); daneben M3-20 (C)
@@ -362,7 +361,7 @@ Empfehlung und Fragen an Otto.
 
 ### M3-06a — AOI-Upload: Backend-Route mit Shapefile
 
-**Stand:** in Arbeit.
+**Stand:** erledigt und gemergt (#89). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Hochgeladene AOIs werden an einer Stelle einheitlich geprüft,
 zusätzlich zu GeoJSON und KML auch als Shapefile (P7).
@@ -389,6 +388,8 @@ geschrieben wird; `lint-imports` grün.
 
 ### M3-06b — AOI-Upload: Frontend auf die Route
 
+**Stand:** erledigt und gemergt (#96). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Das Frontend lädt AOIs über die Route aus M3-06a hoch und kann
 Shapefile.
 **Stufe B.**
@@ -399,6 +400,8 @@ Fehlermeldungen der Route werden verständlich angezeigt, auf Englisch.
 Datei jedes Formats hoch.
 
 ### M3-07a — Ortssuche: Recherche und Backend-Route
+
+**Stand:** erledigt und gemergt (#102). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Die Plattform kann einen Ortsnamen in Umriss und Bounding Box
 auflösen, über `gateway` und im Rahmen der Nutzungsbedingungen (P8, F2).
@@ -427,6 +430,8 @@ Eingabe; Test, dass die Rate greift; Test, dass kein Suchtext im Log landet;
 Latenz per `curl` im PR belegt (M2-13).
 
 ### M3-07b — Ortssuche: Frontend
+
+**Stand:** erledigt und gemergt (#103). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Das Suchfeld für Orte ist zurück (F2) und liefert eine AOI.
 **Stufe B.**
@@ -493,6 +498,8 @@ und heruntergeladene Datei übereinstimmen.
 
 ### M3-10 — Datensatz-Filter in der Suchkachel
 
+**Stand:** erledigt und gemergt: M3-10a (#106) und M3-10b (#108). Abweichungen vom Text stehen im Log und im Plan `plans/m3-10-datensatz-filter.md`.
+
 **Ziel:** Datensätze werden über einen Filter gewählt statt über feste Blöcke
 (P9).
 **Stufe B.**
@@ -551,6 +558,8 @@ aufsetzen.
 
 ### M3-11a — Materialisierte Quellen in Registry, Dispatch und Item-Abruf
 
+**Stand:** erledigt und gemergt (#95). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Die Plattform kennt Collections, deren Items in pgstac liegen, als
 eigene Art von Quelle: Sie sind über `/stac/search` findbar und über die
 Kachel- und Download-Route lesbar, ohne dass ein Datensatz dafür schon
@@ -588,6 +597,8 @@ bestehende Abweisung, Download abgewiesen); Onboarding-Checkliste für beide
 bestehenden Datensätze grün; `lint-imports` grün.
 
 ### M3-11b — DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag
+
+**Stand:** erledigt und gemergt (#99). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Copernicus DEM GLO-30 steht als dritter Datensatz im Katalog, seine
 26 450 Items liegen in pgstac, und er besteht die Onboarding-Checkliste.
@@ -630,6 +641,8 @@ Checkliste grün für drei Datensätze; eine Kachel und ein Zuschnitt des DEM
 
 ### M3-11c — Coverage über eigene Items (`local-sql`)
 
+**Stand:** erledigt und gemergt (#98). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Die Coverage einer materialisierten Collection kommt aus ihren
 eigenen Items; die Coverage-Route ist nicht mehr fest auf Earth Search und EOPF
 verdrahtet (K-06).
@@ -655,6 +668,8 @@ Lücken bleiben Lücken; Earth Search und EOPF unverändert; Antwortgröße unte
 der Schwelle; keine Koordinaten der Anfrage im Log.
 
 ### M3-12 — Frontend-Sonderfälle in die Registry
+
+**Stand:** erledigt und gemergt (#101). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Das Frontend kennt keinen Datensatz und keine quellenspezifische
 Eigenschaft mehr (P10, M3-Abnahme).
@@ -727,6 +742,8 @@ grün; Otto prüft lokal.
 
 ### M3-13 — Gemischte Suche und CQL2
 
+**Stand:** erledigt und gemergt (#105). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Eine Suche über eigene und föderierte Collections liefert eine
 einheitliche STAC-Antwort (`adr/0005` Regel I, D8); die CQL2-Frage ist neu
 entschieden (Regel VI).
@@ -754,6 +771,8 @@ auf einer Collection ohne Unterstützung.
 
 ### M3-14 — Interface-Reflexion → `adr/0011`
 
+**Stand:** erledigt und gemergt (#107); `adr/0011` von Otto angenommen am 30.09.2026 (F1–F9 je Option 1).
+
 **Ziel:** Das Adapter-Interface ist aus drei realen Quellen abgeleitet und von
 Otto freigegeben.
 **Stufe C.** Opus, Effort hoch; Fable nur, wenn Otto die Session interaktiv
@@ -773,6 +792,8 @@ Auflösung braucht (Otto, 23.09.2026).
 Fragen; Otto gibt frei (M3-Abnahme).
 
 ### M3-15 — M3-Abnahme und README
+
+**Stand:** erledigt (#109), M3 abgenommen am 30.09.2026. Bericht: `plans/m3-15-abnahme.md`. Ergänzungen von Otto (30.09.2026): Belege je Kriterium 1–9 aus §5 nach dem Muster von `m2-12-abnahme.md`; wo nur Otto lokal prüfen kann, eine kurze Anleitung (Windows/PowerShell, `docker compose up -d --build`); im Bericht ein Abschnitt „Nach M3 vorgemerkt“ mit allen offenen Punkten aus Log und Plan; der Status aller M3-Aufgaben in diesem Plan auf dem tatsächlichen Stand; keine Codeänderungen. Der Plan ist mit Ottos Abnahme am 30.09.2026 als abgeschlossen markiert.
 
 **Ziel:** Otto kann M3 anhand des PR abnehmen, ohne Code zu lesen.
 **Stufe A.**
@@ -805,7 +826,7 @@ keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 
 ### M3-17 — Download folgt der Ansicht
 
-**Stand:** in Arbeit, PR #88 im Review. Freigegeben mit allen Fragen (F1–F6)
+**Stand:** erledigt und gemergt (#88). Freigegeben mit allen Fragen (F1–F6)
 nach Empfehlung (Otto, 26.09.2026); Details, Optionen und die Umsetzung
 stehen in `plans/m3-17-download-folgt-ansicht.md` §9/§10. Die Abhängigkeit
 von M3-12 entfiel wie unten vermerkt (Otto, 23.09.2026): Die Gruppierung je
@@ -815,8 +836,7 @@ datensatzspezifische Stelle. Die Angabe, ob ein Datensatz COG oder Zarr ist,
 kam als neues Feld `earthx:format` (Abbildung des vorhandenen
 `DatasetConfig.format`, kein neues Registry-Feld nötig) — unabhängig von
 M3-12, das den festen Gruppierungs-Eigenschaftsnamen weiterhin selbst in die
-Registry räumt. **Status erst nach dem Merge auf „erledigt“ setzen** (Otto,
-Review von PR #88).
+Registry räumt.
 
 **Ziel:** Der Download liefert immer das, was die Karte zeigt (P19).
 **Stufe B.**
@@ -892,6 +912,8 @@ Otto prüft lokal die Weltansicht.
 
 ### M3-20 — Spike Ersatz für MinIO → `adr/0012`
 
+**Stand:** erledigt und gemergt (#94 und #97). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Otto kann vor M4 entscheiden, welcher S3-kompatible Objektspeicher
 MinIO in der Topologie ersetzt (P23).
 **Stufe C.** Kein Produktivcode; die Übergangslösung `bitnamilegacy/minio`
@@ -916,6 +938,8 @@ bleibt, bis Otto entscheidet.
 Aussage, Empfehlung und Fragen an Otto.
 
 ### M3-21 — Doku-Abgleich nach Fassung 2
+
+**Stand:** erledigt und gemergt (#92). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Log und Plandokumente widersprechen einander nicht mehr (Durchsicht
 vom 26.09.2026).
@@ -957,6 +981,8 @@ gelöscht oder im Text geändert.
 
 ### M3-22 — Gelegentlich unlesbare Download-Dateien
 
+**Stand:** erledigt und gemergt (#93). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Kein Download liefert eine beschädigte Datei. Heute schreibt
 `cog_translate` mit Maske gelegentlich eine unlesbare COG (Log 24.09.2026:
 „ZIPDecode: incorrect data check“, bei DEFLATE und ZSTD); die CI von #86
@@ -988,6 +1014,8 @@ Log-Zeilen zur Korruption auf „fest“ oder „ersetzt“.
 
 ### M3-23 — Garage statt MinIO
 
+**Stand:** erledigt und gemergt (#100). Abweichungen vom Text stehen im Log.
+
 **Ziel:** Die compose-Topologie nutzt Garage als S3-kompatiblen
 Objektspeicher; `bitnamilegacy/minio` ist entfernt (`adr/0012`).
 **Stufe B.**
@@ -1015,7 +1043,7 @@ zweiter Start mit bestehendem Volume grün; Otto startet lokal mit
 
 ### M3-24 — Setup-Hook installiert Frontend-Pakete nach Lockfile
 
-**Stand:** erledigt. Beleg (Session von M3-10, 30.09.2026): `frontend/node_modules/polyclip-ts`
+**Stand:** erledigt und gemergt (#104). Beleg (Session von M3-10, 30.09.2026): `frontend/node_modules/polyclip-ts`
 war nach dem Start vorhanden, ohne dass die Session `npm` aufgerufen hat; das
 Verzeichnis und `node_modules/.package-lock.sha256` tragen den Zeitstempel des
 SessionStart-Hooks (`npm ci`). Nach dem Fortsetzen der Session meldete der Hook
@@ -1029,6 +1057,11 @@ Abnahme: Test des Vergleichs; cloud-umgebung.md nachgezogen; eine frische Sessio
 ---
 
 ## 5. Abnahme von M3
+
+**Abgenommen am 30.09.2026 (Otto).** Belege je Kriterium 1–9 stehen in
+`plans/m3-15-abnahme.md`. Zu Kriterium 1: „`readers` unverändert“ gilt für den
+Anschluss der dritten Quelle; die Änderung an `zarr_reader.py` stammt aus M3-18
+(#86), der COG-Pfad ist unberührt.
 
 1. Die dritte Quelle (ohne Such-API, materialisierte Items) ist im Viewer
    suchbar, anzeigbar und als Zuschnitt ladbar. `readers` ist in M3

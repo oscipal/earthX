@@ -2,7 +2,7 @@
 
 > **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
 
-Stand: 2026-09-26 · Version 1.3 (M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21)
+Stand: 2026-09-30 · Version 1.4 (M3 abgenommen am 30.09.2026; M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21)
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
 
@@ -273,10 +273,10 @@ Kriterium in `docs/plans/m2-12-abnahme.md`.
 | Deine Entscheidungen | Spike-Ergebnis TiTiler annehmen oder eigene Endpunkte; Zarr-Kandidat aus `adr/0007` |
 | Modelle | Spike-Auswertung `architect`; Reader `opusplan`; Frontend Sonnet |
 
-### M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion (Inkrement 3)
+### M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion (Inkrement 3) — **abgenommen**
 
 Der Aufgabenschnitt liegt in `docs/plans/m3-dritte-quelle-und-interface.md`
-(M3-00 bis M3-22, Vorentscheidungen P1–P24) und ist maßgeblich; diese Tabelle
+(M3-00 bis M3-24, Vorentscheidungen P1–P24) und ist maßgeblich; diese Tabelle
 ist nur die Kurzfassung.
 
 | | |
