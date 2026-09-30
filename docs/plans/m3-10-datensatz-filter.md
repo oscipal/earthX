@@ -351,7 +351,8 @@ bekommt keinen neuen Punkt.
 ### 4.7 Nicht anfassen
 
 `readers`, `access`, Tiler-, Coverage- und Download-Route, die gemischte Suche
-selbst (`api/mixed_search.py`, `federating_client.py`), Registry außer F6,
+selbst (`api/mixed_search.py`, `federating_client.py`; Ausnahme: das Feld
+`open_collections`, Otto 30.09.2026), Registry außer F6,
 `MAX_SEARCH_ITEMS`, Hybrid-Suche (M5).
 
 ---
@@ -674,14 +675,20 @@ ihm folgt (§4.3–§4.5, §12).
   kamen), ersetzen diese den Fallback — er stand nur für „nichts im Zeitraum“.
   Antwortet „Load more“ vor einem noch laufenden Fallback, verwirft der Fallback
   sein Ergebnis.
-- **Fallback bei übriger Seitenmarke (Otto, 30.09.2026: Option 1 auf
-  Quellen-Ebene) — angehalten.** Vorgabe: Der Fallback startet, sobald die Quelle
-  des gewählten Datensatzes laut gemischter Seitenmarke erschöpft ist; hat sie
-  noch Seiten, sagt die Box „Load more to see if there are any.“ Befund: Das
-  steht der Marke nicht offen. Sie ist für den Client undurchsichtig (`adr/0005`
-  Regel III, §4.4 oben), und die gemischte Suche liefert sonst keine Angabe je
-  Quelle; §4.7 schließt Änderungen an ihr aus. Bis zur Entscheidung bleibt der
-  Stand von oben (Fallback läuft auch bei übriger Marke).
+- **Fallback wartet auf die Quelle (Otto, 30.09.2026: Option 1 auf
+  Quellen-Ebene, Umsetzung Option 1 mit `open_collections`).** Jede Antwort der
+  Suche nennt `open_collections` (Backend, `federating_client.py`; §4.7 ist für
+  genau dieses Feld geöffnet, Nachtrag in `adr/0005` Regel III und
+  `architekturplan.md` 5.2). Solange die Collection des gewählten Datensatzes
+  darin steht und eine Marke übrig ist, läuft kein Fallback, und die Box sagt
+  „Load more to see if there are any.“ statt „No scenes for this area.“ — das gilt
+  für jeden leeren Datensatz mit offener Quelle, nicht nur für einen mit
+  Zeitachse. Ist seine Quelle erschöpft, startet der Fallback sofort, auch wenn
+  andere Quellen noch Seiten haben; ebenso nach dem „Load more“, das die Quelle
+  erschöpft, wenn der Datensatz gewählt ist. Nennt eine Antwort das Feld nicht,
+  gilt jede Collection als offen, solange eine Marke übrig ist. Ist die Marke
+  verworfen (andere AOI oder Daten, Fehler), gibt es kein Nachladen mehr, und der
+  Fallback läuft beim Wählen.
 - **Coverage-Knopf unter dem Raster (Otto, 30.09.2026):** siehe §3; umgesetzt im
   PR von M3-10b. Beleg mit Chromium (Playwright, sechs Datensätze gemockt, 600 und
   900 px Fensterhöhe): Knopf 8 px unter dem Raster, gleiche Lage nach dem Scrollen
@@ -701,8 +708,10 @@ ihm folgt (§4.3–§4.5, §12).
   (`searchCrops`) stehen; fand sie eine DEM-Kachel, lagen die alten Zuschnitte
   wieder auf der Karte. Jetzt leert sie sie.
 
-**Geändert:** `frontend/src/api.ts`, `sections.ts`, `store.ts`,
-`components/ResultsPanel.tsx`, `components/ControlPanel.tsx`, `index.css`. Tests:
+**Geändert:** `backend/earthx/api/federating_client.py` (`open_collections`);
+`frontend/src/api.ts`, `sections.ts`, `store.ts`, `components/ResultsPanel.tsx`,
+`components/ControlPanel.tsx`, `index.css`. Tests:
+`backend/tests/integration/test_api_mixed_search.py` (`TestOpenCollections`);
 `api.test.ts`, `sections.test.ts`, `store.sections.test.ts`, `store.test.ts`,
 `components/ResultsPanel.test.tsx`, `components/ControlPanel.test.tsx`.
 

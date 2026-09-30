@@ -380,6 +380,15 @@ ein Cache-Eintrag mit Adresse, nicht eine Sitzung.
 > Deployments unterwegs war, wird mit `400` abgewiesen (K3 bleibt erhalten: der
 > Neustart selbst ändert nichts, nur die Versionsgrenze).
 
+> **Nachtrag (M3-10b, Otto 30.09.2026):** Die Marke bleibt für den Client
+> undurchsichtig; was er über den Stand der Quellen wissen muss, steht als
+> eigenes Feld in der Antwort: `open_collections` nennt die Collections, deren
+> Quelle noch weitere Seiten hat (bei der gemischten Suche die Quellen der
+> nächsten Marke, sonst alle Collections der einen Quelle, solange eine nächste
+> Seite verlinkt ist). Collections einer gemeinsamen Quelle sind zusammen offen.
+> Anlass: Der ±90-Tage-Fallback des Viewers wartet, solange die Quelle des
+> gewählten Datensatzes noch Treffer im Zeitraum bringen kann.
+
 **Regel IV — Eigener Client in `gateway`, kein `pystac_client`.** Ein schmaler
 `httpx.AsyncClient` hinter der Gateway-Schnittstelle (§3.8). `pystac_client`
 bleibt im Prototyp (`backend/app/stac.py`) und wandert nicht mit. Die Abhängigkeit
