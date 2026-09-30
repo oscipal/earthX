@@ -281,7 +281,9 @@ sequenceDiagram
 | Warum | Lizenz-Flags, Capabilities, Embeddings, Health gibt es nur bei uns | Frische, keine Synchronisation, keine Speicherkosten |
 | Ausnahme | — | Quellen ohne Such-API (statische Buckets, Zenodo-Dateien, Tile-adressierte Quellen): Items werden einmalig erzeugt und im eigenen pgstac materialisiert; für große statische Bestände alternativ stac-geoparquet |
 
-Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern dieselbe STAC-Antwort. Das Fallback "nächstgelegenes Datum" und die Verfügbarkeits-Zeitleiste sind Abfragen auf dieser Schicht (Aggregation über `datetime`), nicht Logik im Frontend.
+Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern dieselbe STAC-Antwort. Die Verfügbarkeits-Zeitleiste ist eine Abfrage auf dieser Schicht (Aggregation über `datetime`), nicht Logik im Frontend.
+
+**Datums-Fallback im Frontend (entschieden mit M2-07a am 20.09.2026, bestätigt am 23.09.2026, M3-15).** Das Fallback „nächstgelegenes Datum“ läuft nicht auf dieser Schicht, sondern im Frontend (`dateFallback.ts`): Bleibt eine Suche im gewählten Zeitraum leer, sucht der Viewer in drei Stufen (±7, ±30, ±90 Tage) mit einer Probe je Stufe das nächstgelegene Datum mit Treffern und fragt danach dieses Datum voll ab; er kennzeichnet ihn als Fallback in der Oberfläche. Datensätze ohne Zeitachse (`capabilities.time_range=False`) werden nie nach Datum gefiltert und haben deshalb keinen Fallback. **Neubewertung mit der Verfügbarkeits-Zeitleiste in M5.**
 
 **Gemischte Suche (M3-13, `adr/0005` Regel I).** Eine Suche kann beide Zeilen der
 Tabelle zugleich treffen — eigene Collections und mehr als eine föderierte. Jede
