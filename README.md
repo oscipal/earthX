@@ -26,43 +26,61 @@ earthX/
 
 ---
 
-## 1. Stand (Meilenstein M2)
+## 1. Stand (Meilenstein M3)
 
-M2 trägt **zwei token-freie Datensätze in zwei Formaten** durch denselben
-Viewer:
+M3 trägt **drei token-freie Datensätze** durch denselben Viewer, darunter die
+erste Quelle ganz ohne Such-API:
 
 - **Sentinel-2 L2A** (`sentinel-2-c1-l2a`), Earth Search v1 (Element 84),
-  Format **COG**. Zoomstufen z0–z19, Quicklooks direkt vom Asset-Host
-  (kein Proxy, D14).
+  Format **COG**, föderierte Suche. Zoomstufen z0–z19, Quicklooks direkt vom
+  Asset-Host (kein Proxy, D14).
 - **Sentinel-2 L2A (Zarr3)** (`sentinel-2-l2a-zarr3`), EOPF Sentinel Zarr
-  Samples Service (EODC), Format **Zarr** (v3). Zoomstufen z8–z14; die
-  Quelle führt selbst den Status „staging" (in Registry und Oberfläche
-  sichtbar) und keinen Quicklook — Ersatz ist eine Kachel auf der
-  gröbsten freigegebenen Stufe. Die Abnahme von M2 hängt nicht am
-  Fortbestand dieser Quelle: der Zarr-Lesepfad ist zusätzlich gegen ein
+  Samples Service (EODC), Format **Zarr** (v3), föderierte Suche. Zoomstufen
+  z8–z14; die Quelle führt selbst den Status „staging“ (in Registry und
+  Oberfläche sichtbar) und keinen Quicklook. Die Abnahme hängt nicht am
+  Fortbestand dieser Quelle: Der Zarr-Lesepfad ist zusätzlich gegen ein
   synthetisches Mini-Zarr getestet, ohne jeden Netzzugriff (D24).
+- **Copernicus DEM GLO-30** (`cop-dem-glo-30`), direkt aus dem AWS-Open-Data-Bucket,
+  Format **COG**, **ohne Such-API**: Die 26 450 Items erzeugt ein Einmal-Befehl
+  aus der Kachelliste des Buckets und schreibt sie in den eigenen Katalog
+  (pgstac; `adr/0009`). Keine Zeitachse: Der Datensatz wird nie nach Datum
+  gefiltert; die Oberfläche nennt den Aufnahmezeitraum.
 
-Für beide Datensätze funktionieren Suche (föderiert, je Datensatz, D8),
-Quicklooks bzw. Kachel-Ersatz, dynamische Kacheln über denselben
-URL-Aufbau (`dataset`/`item`/`asset`, kein freier `url`-Parameter, Z4),
-Coverage (Route `GET /coverage/{dataset_id}`, Heatmap im Frontend
-einschaltbar, standardmäßig aus) und der gestreamte AOI-Zuschnitt als ZIP
-(COG/Zarr-Ausschnitt plus Hinweisdatei, nichts wird serverseitig
-gespeichert). Das Frontend spricht ausschließlich mit `earthx`, keine
-Route des früheren Prototyps mehr; die Oberfläche ist durchgehend
-englisch (D25).
+Was M3 dazu bringt:
 
-Vollständige Belege je Abnahmekriterium (`docs/plans/m2-format-und-viewer.md`
-Abschnitt 5): [`docs/plans/m2-12-abnahme.md`](docs/plans/m2-12-abnahme.md).
-Der Aufgabenschnitt mit allen Einzelaufgaben, Entscheidungen und
-Nachbesserungen steht in
-[`docs/plans/m2-format-und-viewer.md`](docs/plans/m2-format-und-viewer.md).
+- **Suche:** eine gemischte Suche über eigene und föderierte Collections mit
+  einer STAC-Antwort und gekennzeichneten Teilergebnissen (`adr/0005`);
+  Polygon-AOIs suchen über `intersects`, `ids` wird durchgereicht;
+  Datensatz-Auswahl mit Umschalt-Knöpfen (Mehrfachauswahl), Dropdown der
+  Treffer je Datensatz, „Load more“ und der Datums-Fallback (±7, ±30, ±90 Tage,
+  `architekturplan.md` 5.2).
+- **AOI:** Punkt, Rechteck, Polygon; **Upload** von **GeoJSON, KML und
+  Shapefile (ZIP)** über das Backend (`POST /aoi/upload`, einheitliche
+  Prüfung, nichts wird gespeichert); **Ortssuche** mit Umriss oder Bounding Box
+  über Nominatim (`POST /geocode`, standardmäßig aus, siehe unten).
+- **Ansicht und Download:** Die Vollauflösung zeigt mit AOI nur den Zuschnitt,
+  ohne AOI die ganze Szene; der Download folgt der Ansicht, in **nativer
+  Auflösung** (nie automatisch verkleinert, Deckel 500 MB) und mit einer
+  **Maske** für die Fläche des AOI-Polygons (die Datendatei behält jedes Pixel
+  der Quelle). Jede erzeugte Datei wird vor dem Ausliefern geprüft.
+- **Coverage:** Heatmap je Datensatz, für den DEM die Fläche der Kacheln aus den
+  eigenen Items; der Weltüberblick fragt den sichtbaren Ausschnitt ab.
+- **Topologie:** **Garage** ersetzt MinIO als S3-kompatibler Objektspeicher
+  (`adr/0012`); Python 3.12 in Backend, CI und Image; kein Prozess schreibt
+  Koordinaten oder Query-Strings ins Log.
+- **Architektur:** Das Adapter-Interface ist aus den drei Quellen abgeleitet
+  (`adr/0011`, angenommen); der Umbau ist der erste Schritt von M4.
 
-Noch **nicht** enthalten (siehe `docs/plans/m2-format-und-viewer.md`
-Abschnitt 2 "Abgrenzung"): Ergebnisse im Objektspeicher, Rezept, Operatoren
-und Jobs (M4); gemischte Suche über mehrere Quellen (M3); Ortssuche (M3);
-AOI-Upload über das Backend; eine verbesserte Coverage-Heatmap (Zählwürfel,
-nach M2, D26).
+Vollständige Belege je Abnahmekriterium und die Liste der offenen Punkte:
+[`docs/plans/m3-15-abnahme.md`](docs/plans/m3-15-abnahme.md) (Aufgabenschnitt:
+[`docs/plans/m3-dritte-quelle-und-interface.md`](docs/plans/m3-dritte-quelle-und-interface.md)).
+Die Belege für M2 stehen in
+[`docs/plans/m2-12-abnahme.md`](docs/plans/m2-12-abnahme.md).
+
+Noch **nicht** enthalten: Ergebnisse im Objektspeicher, Rezept, Operatoren und
+Jobs (M4); Exporte über dem synchronen Deckel und gemergte Mosaike ganzer
+Szenen (M4, als Job); Health-Status, Harvester-Zeitplan und Hybrid-Suche (M5);
+Login und Quotas (M6).
 
 ---
 
@@ -146,20 +164,22 @@ grafisch anzeigt — er läuft selbst **nicht** in diesem Repo, sondern separat
    docker run --rm -p 8080:8080 -e SB_catalogUrl="http://localhost:8000/stac" ghcr.io/radiantearth/stac-browser:latest
    ```
 2. Im Browser **`http://localhost:8080`** öffnen.
-3. Es erscheint die Landing Page des Katalogs mit **beiden** Collections:
-   **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, COG) und **Sentinel-2 L2A
-   (Zarr3)** (`sentinel-2-l2a-zarr3`, Zarr). Auf eine Collection klicken
+3. Es erscheint die Landing Page des Katalogs mit den Collections:
+   **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, COG), **Sentinel-2 L2A
+   (Zarr3)** (`sentinel-2-l2a-zarr3`, Zarr) und **Copernicus DEM GLO-30**
+   (`cop-dem-glo-30`, COG; Items erst nach dem Schritt unten). Auf eine Collection klicken
    zeigt ihre Beschreibung und Lizenz; **„Items"** öffnet die Suche und
    zeigt Treffer aus der jeweiligen Quelle, durch den eigenen Katalog
    gereicht.
 4. Fertig — das ist die Abnahme aus `docs/plans/m1-fundament.md` Abschnitt 5,
-   Punkt 1: ein STAC-Browser kann den eigenen Katalog lesen, jetzt für beide
+   Punkt 1: ein STAC-Browser kann den eigenen Katalog lesen, jetzt für alle
    Datensätze.
 
 Ohne einen separaten Browser lässt sich die API auch direkt ansehen:
 `http://localhost:8000/stac` liefert die Landing Page als JSON,
-`http://localhost:8000/stac/collections/sentinel-2-c1-l2a/items` bzw.
-`.../collections/sentinel-2-l2a-zarr3/items` je eine Trefferliste (JSON in
+`http://localhost:8000/stac/collections/sentinel-2-c1-l2a/items`,
+`.../collections/sentinel-2-l2a-zarr3/items` bzw. `.../collections/cop-dem-glo-30/items`
+je eine Trefferliste (JSON in
 einem Browser-Tab ist weniger übersichtlich als ein STAC-Browser, aber ohne
 einen zweiten Container zu prüfen).
 
@@ -181,8 +201,8 @@ liefert eine Suche danach `0` Treffer.
    26450 items written, 0 deleted; …`. Ein erneuter Lauf ohne Änderung an der
    Quelle endet stattdessen mit `unchanged` und schreibt nichts.
 3. Danach zeigt `http://localhost:8000/stac/collections/cop-dem-glo-30/items`
-   Treffer, und der Viewer findet den Datensatz über den Datensatz-Filter
-   (M3-10; bis dahin über die Collection-ID direkt).
+   Treffer, und der Viewer findet den Datensatz über die Datensatz-Knöpfe in
+   der Suchkachel (M3-10).
 
 Absichtlich **kein** Compose-Dienst, der bei `docker compose up` mitläuft
 (`profiles: ["materialize"]`): Der Befehl reicht bis zu einer echten externen
@@ -220,7 +240,22 @@ Die erste Anfrage geht an Nominatim (gedrosselt, höchstens 1/s über alle
 `api`-Prozesse); dieselbe Anfrage kurz danach kommt aus dem Postgres-Cache
 (`from_cache` steht nicht in der Antwort, aber nur die erste braucht die
 volle Sekunde). Die Antwort trägt `attribution`/`attribution_url`/`license`
-— das Frontend zeigt sie (M3-07b).
+— das Frontend zeigt „© OpenStreetMap contributors" unter den Treffern, und
+stammt die AOI eines Downloads aus der Ortssuche, steht der Hinweis samt
+Lizenz (ODbL-1.0) in `ATTRIBUTION.txt` des ZIP (M3-07b). Im Viewer gibt es ein
+eigenes Feld „Place" im AOI-Abschnitt der Suchkachel.
+
+### AOI-Datei hochladen (M3-06a, M3-06b)
+
+Im AOI-Abschnitt der Suchkachel lässt sich eine Datei wählen: **GeoJSON**
+(`.geojson`, `.json`), **KML** (`.kml`) oder **Shapefile** als **ZIP** (`.zip`
+mit `.shp`, `.shx`, `.dbf` und **`.prj`**; fehlt die `.prj`, wird abgewiesen,
+das Koordinatensystem wird nie geraten). Das Frontend schickt die Datei an
+`POST /aoi/upload`; das Backend prüft sie einheitlich und gibt eine Geometrie
+in EPSG:4326 zurück. Nichts wird gespeichert, auch nicht vorübergehend auf
+der Platte. Grenzen: Upload höchstens 1 MiB, ein ZIP höchstens 10 Einträge
+und 20 MiB entpackt, höchstens 20 000 Stützpunkte. Die Fehlermeldung nennt den
+Grund auf Englisch. Die zuletzt verwendete AOI merkt sich der Browser.
 
 ### Den Viewer starten (Frontend)
 
@@ -240,16 +275,23 @@ vom Backend, damit er im Entwicklungsmodus schnell neu lädt:
    Statistik) an `tiler` (Port 8001) — voreingestellt in
    `frontend/vite.config.ts`, überschreibbar über `VITE_API_PROXY` /
    `VITE_TILER_PROXY`.
-4. Oben im Suchmenü zwischen beiden Datensätzen wählen (Kachelpaar
-   Sentinel-2/Zarr3), eine AOI zeichnen (Punkt oder Rechteck) oder einen
-   Szenennamen eingeben (M2-17), suchen. Für `sentinel-2-l2a-zarr3` zeigt
-   die Oberfläche den Status „staging" sichtbar an (D23-Auflage).
+4. In der Suchkachel einen oder mehrere Datensätze mit den Umschalt-Knöpfen
+   wählen (Mehrfachauswahl, gemischte Suche), eine AOI zeichnen (Punkt,
+   Rechteck, Polygon), eine Datei hochladen oder einen Ort suchen, oder einen
+   Szenennamen eingeben (M2-17), suchen. Das Dropdown über der Trefferliste
+   wählt den Datensatz, dessen Treffer die Karte zeigt; „Load more" lädt
+   weitere Seiten. Für `sentinel-2-l2a-zarr3` zeigt die Oberfläche den
+   Status „staging" sichtbar an (D23-Auflage); der DEM hat keine Zeitachse
+   und erscheint bei jedem Zeitraum.
 5. In „Layers" die Coverage-Heatmap einschalten (standardmäßig aus, D26) —
    das ist die einzige Stelle, an der ihre Qualität außerhalb dieser
    Abnahme geprüft werden kann.
-6. Ein ausgewähltes Bild herunterladen: „Download" in der Auswahl-Leiste
-   bzw. im Layer-Manager öffnet den Dialog mit Attribution und
-   `terms_notice`, vor dem eigentlichen Download.
+6. „Crop & merge to AOI" zeigt von den gewählten Szenen nur den Teil in der
+   AOI, „View full selection" die ganzen Szenen. „Download" in der
+   Auswahl-Leiste bzw. im Layer-Manager öffnet den Dialog mit Attribution,
+   `terms_notice` und der Wahl der Auflösung (Native, 2×, 4×, 10×), vor dem
+   eigentlichen Download. Der Download folgt der Ansicht (Zuschnitt: ein ZIP
+   mit Datei und Maske je Gruppe, `aoi.geojson` und `ATTRIBUTION.txt`).
 
 Vollständige Bedienung und alle Nachbesserungen aus Ottos Durchsicht:
 `docs/plans/m2-format-und-viewer.md`, Aufgaben V-1 bis V-4 und ihre
@@ -312,6 +354,12 @@ Nachbesserungsrunden.
   [Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open](https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf)
   (Haftungsausschluss der Copernicus-Trägerorganisationen). Zitierangabe:
   [doi.org/10.5270/ESA-c5d3d65](https://doi.org/10.5270/ESA-c5d3d65).
+- **Ortssuche** (`POST /geocode`, nur wenn eingeschaltet): „© OpenStreetMap
+  contributors" (Daten unter der Open Database License, ODbL-1.0;
+  [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright)),
+  über den öffentlichen Nominatim-Dienst. Die Nutzungsbedingungen des Dienstes
+  sind vor dem ersten öffentlichen Deployment noch zu klären
+  (`docs/ENTSCHEIDUNGSLOG.md`).
 - **Basiskarte**: Esri World Imagery — *Esri, Maxar, Earthstar
   Geographics, and the GIS User Community*.
 
