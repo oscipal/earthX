@@ -11,6 +11,9 @@ neuen Stand; die Antwort auf F2 (Akkordeon) ist damit ersetzt.
 **Zweite Rückmeldung (30.09.2026, §12):** Karte folgt dem Dropdown (ersetzt
 F5 (2)), Datensatz-Knöpfe als 2×2-Raster, abgesetztes Dropdown, Coverage-Knopf
 im Fuß, heller Hintergrund hinter der Weltkugel.
+**Teil 2 (M3-10b) umgesetzt** (30.09.2026, eigener Draft-PR): „Load more“,
+Fallback für den im Dropdown gewählten Datensatz, Namenssuche über alle
+angehakten Datensätze; Stand und Auslegungen in §13.
 **Aufgabe:** M3-10 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P9),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11) und Ottos Vorgaben vom
 26.09.2026 zum Start dieser Aufgabe (unten O1–O3, Log). **Stufe B.** Hängt an
@@ -618,3 +621,69 @@ im Fuß, „Search“ im Fenster; vor der Auswahl in der Coverage-Wahl wird nich
 gezeichnet; `.app` malt im Hell-Modus `rgb(255, 255, 255)`, im Dunkel-Modus
 `rgb(4, 7, 10)`. Das Globus-Bild selbst (Kacheln) ließ sich ohne Netz nicht
 prüfen.
+
+---
+
+## 13. Umsetzung M3-10b (30.09.2026)
+
+Grundlage: F1 (1), F7 (1), F8 (1), übertragen auf das Dropdown und die Karte, die
+ihm folgt (§4.3–§4.5, §12).
+
+- **„Load more“ (F1, §4.4):** `api.searchAllPages` nimmt eine Start-Marke und gibt
+  die übrige Marke zurück. Der Store hält die Suche, zu der die Treffer gehören
+  (`searchContext`: Anfrage, AOI und Zeitraum der Suche, geladene Items,
+  gesammelte Antwort, Marke). Der Knopf steht unter der Liste des gewählten
+  Datensatzes, mit „More scenes may be available.“, und führt die gemischte Marke
+  der ganzen Suche fort, je Klick bis 300 Items. Neue Items landen in ihrem
+  Datensatz; gewählter Datensatz, aktiver und offener Zeitschritt (über den
+  Gruppen-Schlüssel) und die ausgewählten Szenen bleiben. Ein Item, das schon
+  geladen ist (gleiche Collection und Kennung), kommt nicht doppelt dazu. Die
+  Trefferzahlen und der Such-Hinweis wachsen mit; mit einem Datensatz sagt der
+  Hinweis bei verbleibender Marke nur noch „… matched in total.“, ohne den Rat,
+  die Suche zu verkleinern.
+- **Fehler und Verwerfen:** Ein Fehler lässt die Treffer stehen, sagt „Could not
+  load more results — search again.“ und verwirft die Marke. AOI oder Zeitraum zu
+  ändern verwirft nur die Marke, die Treffer bleiben; Auswahl ändern, neue Suche,
+  Namenssuche und „Clear all“ verwerfen die ganze Suche. Eine Antwort, die danach
+  kommt, wird nicht mehr angezeigt (Zähler `searchGen`); das gilt auch für den
+  Fallback.
+- **Fallback (F7):** Er läuft für den im Dropdown gewählten Datensatz, wenn dessen
+  Box leer ist, der Datensatz eine Zeitachse hat, ein Zeitraum gesucht wurde und
+  seine Quelle vollständig geantwortet hat (`sections.ts::needsFallback`). Bei der
+  Suche selbst betrifft das nur den Datensatz, mit dem das Dropdown öffnet — also
+  nur, wenn kein Datensatz Treffer hat; sonst, sobald ein leerer Datensatz gewählt
+  wird. Keine parallelen Fallback-Suchen. Er fragt nur diesen Datensatz, mit AOI
+  und Zeitraum der Suche, und läuft einmal je Suche. Ergebnis und Hinweis stehen
+  in Box und Option des Datensatzes; solange er läuft, steht dort „Looking for the
+  nearest date with scenes…“. Ein Fehler steht ebenfalls dort („Could not look for
+  the nearest date: …“) statt als Fehler der ganzen Suche. Mit einem Datensatz
+  sagt der Such-Hinweis es wie bisher.
+- **Fallback und „Load more“:** Ein Datensatz im Fallback blättert nicht mit und
+  behält den Fallback, solange die fortgesetzte Suche nichts für ihn bringt.
+  Bringt sie doch Treffer im Zeitraum (möglich, wenn sich eigene Collections eine
+  Quelle der gemischten Suche teilen und die ersten 300 Items von einer anderen
+  kamen), ersetzen diese den Fallback — er stand nur für „nichts im Zeitraum“.
+- **Namenssuche (F8):** Sie fragt alle angehakten anzeigbaren Datensätze parallel.
+  Der erste Datensatz in Listenreihenfolge mit der Szene öffnet im Dropdown, die
+  Karte fliegt hin, die Szene ist ausgewählt; jeder andere sagt in seiner Box, was
+  er geantwortet hat („No scene named …“, „Not a valid scene name for this
+  dataset.“, „Scene lookup failed: …“). Hat keiner die Szene, ändert sich nur der
+  Fehler (M2-17 F4): kein Datensatz fand sie, alle lehnten den Namen ab, oder eine
+  Quelle fiel aus (mit Titel). Mit einem Datensatz ist die Bedienung wie bisher.
+  Ein Treffer in einem Datensatz ohne Vorschau (DEM) zeigt die Vollauflösung,
+  sobald sein Datensatz im Dropdown gewählt ist, nicht nur, wenn er als erster
+  öffnet. Während der Namenssuche ist die Datensatz-Auswahl gesperrt wie während
+  der Suche.
+- **Nebenfund:** Die Namenssuche ließ die Zuschnitte der vorigen AOI-Suche
+  (`searchCrops`) stehen; fand sie eine DEM-Kachel, lagen die alten Zuschnitte
+  wieder auf der Karte. Jetzt leert sie sie.
+
+**Geändert:** `frontend/src/api.ts`, `sections.ts`, `store.ts`,
+`components/ResultsPanel.tsx`, `components/ControlPanel.tsx`, `index.css`. Tests:
+`api.test.ts`, `sections.test.ts`, `store.sections.test.ts`, `store.test.ts`,
+`components/ResultsPanel.test.tsx`, `components/ControlPanel.test.tsx`.
+
+Otto prüft lokal: drei Datensätze, eine AOI und ein Zeitraum mit mehr als 300
+Sentinel-2-Treffern („Load more“, Zahlen im Dropdown, offener Zeitschritt bleibt);
+ein Zeitraum ohne Treffer für einen Datensatz (Wahl im Dropdown startet den
+Fallback nur für ihn); ein Szenenname mit mehreren angehakten Datensätzen.
