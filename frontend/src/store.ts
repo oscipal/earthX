@@ -137,11 +137,14 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 // a second, optional request.
 async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const s = get();
-  if (!s.showCoverage || !s.datasetId) {
+  // The coverage map has a dataset of its own (chosen at the "Coverage" button,
+  // M3-10), independent of the dataset whose results the map shows.
+  const datasetId = s.coverageDatasetId ?? s.datasetId;
+  if (!s.showCoverage || !datasetId) {
     set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
     return;
   }
-  const { datasetId, aoi } = s;
+  const { aoi } = s;
   const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
 
@@ -273,6 +276,8 @@ interface AppState {
   projection: Projection;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
+  // The dataset the coverage map is drawn for; `null` while it is off.
+  coverageDatasetId: string | null;
   coverage: CoverageResponse | null;
   coverageLoading: boolean;
   coverageError: string | null;
@@ -309,6 +314,11 @@ interface AppState {
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
+  // The AOI crops a search draws by itself for a dataset with no browsable preview
+  // (`browse: 'full_resolution'`): part of that dataset's results, on the map only
+  // while that dataset is the one chosen in the results dropdown. Not in `layers`;
+  // `pinSearchCrops` copies them there.
+  searchCrops: MapLayer[];
   layerManagerOpen: boolean;
   // The layer the download dialog (M2-07d) is open for, `null` when closed.
   downloadDialogLayerId: string | null;
@@ -392,7 +402,6 @@ interface AppState {
   // --- actions ---
   loadDatasets: () => Promise<void>;
   toggleDatasetSelected: (id: string) => void;
-  setDatasetId: (id: string) => void;
   setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
   setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
@@ -439,7 +448,9 @@ interface AppState {
   runSearch: () => Promise<void>;
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
-  toggleCoverage: () => void;
+  showCoverageFor: (datasetId: string) => void;
+  hideCoverage: () => void;
+  pinSearchCrops: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
   toggleProjection: () => void;
@@ -455,6 +466,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: loadTheme(),
   projection: loadProjection(),
   showCoverage: false,
+  coverageDatasetId: null,
   coverage: null,
   coverageLoading: false,
   coverageError: null,
@@ -471,6 +483,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   cropToAoi: false,
 
   layers: [],
+  searchCrops: [],
   layerManagerOpen: false,
   downloadDialogLayerId: null,
   downloadSelection: false,
@@ -554,35 +567,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       notice: null,
       playing: false,
       ...LEAVE_FOCUS,
-      // The heatmap follows the active dataset only, so ticking another one
-      // leaves it standing.
-      ...(datasetId !== s.datasetId ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
+      searchCrops: [],
     });
-    if (datasetId !== s.datasetId) scheduleCoverageRefresh(set, get);
-  },
-  // Makes a dataset the active one (the heatmap legend's choice, M3-10 F3). Where
-  // the last search has a section for it, that section opens, so the list, the
-  // time slider and the map move along; otherwise only the heatmap follows.
-  setDatasetId: (datasetId) => {
-    const s = get();
-    if (datasetId === s.datasetId || !s.selectedDatasetIds.includes(datasetId)) return;
-    if (s.sections.some((section) => section.datasetId === datasetId)) {
-      s.setOpenSection(datasetId);
-      return;
-    }
-    // No section of its own: what the list and the map hold belongs to another
-    // dataset, so it goes rather than being read as this one's.
-    set({
-      datasetId,
-      ...openSectionState(null),
-      selectedIds: [],
-      playing: false,
-      ...LEAVE_FOCUS,
-      coverage: null,
-      coverageFootprints: null,
-      coverageError: null,
-    });
-    scheduleCoverageRefresh(set, get);
+    // The coverage map is for a dataset that is picked; dropping that one drops it.
+    if (s.coverageDatasetId && !selectedDatasetIds.includes(s.coverageDatasetId)) get().hideCoverage();
   },
   // Shows one dataset's results — the dropdown of the results panel (M3-10) — and
   // makes that dataset the active one. Exactly one is shown while a search has
@@ -598,9 +586,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedIds: [],
       playing: false,
       ...LEAVE_FOCUS,
-      ...(section.datasetId !== s.datasetId ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
     });
-    if (section.datasetId !== s.datasetId) scheduleCoverageRefresh(set, get);
   },
 
   // Activating a draw tool slides the control panel away so it can't block the
@@ -640,9 +626,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       aoiPoint: null,
       sections: [],
       openSectionId: null,
-      // The crops a search pinned by itself go with it (M3-10 F5); what the user
-      // pinned stays.
-      layers: get().layers.filter((l) => !l.fromSearch),
+      // The crops a search drew go with it; what the user pinned stays.
+      searchCrops: [],
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -856,14 +841,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
     const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
     const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
-    const changesDataset = !!becomesActive && becomesActive !== s.datasetId;
     set({
       ...(tickable
         ? { selectedDatasetIds: s.datasets.filter((d) => d.id === dataset.id || s.selectedDatasetIds.includes(d.id)).map((d) => d.id) }
         : {}),
-      ...(section ? openSectionState(section) : changesDataset ? openSectionState(null) : {}),
+      ...(section ? openSectionState(section) : becomesActive && becomesActive !== s.datasetId ? openSectionState(null) : {}),
       ...(becomesActive ? { datasetId: becomesActive } : {}),
-      ...(changesDataset ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,
@@ -874,7 +857,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
     });
-    if (changesDataset) scheduleCoverageRefresh(set, get);
   },
 
   // Open the dialog for a pinned layer (M2-07d). The crop and disabled
@@ -1223,11 +1205,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ dateTo });
     scheduleCoverageRefresh(set, get);
   },
-  toggleCoverage: () => {
-    const showCoverage = !get().showCoverage;
-    set({ showCoverage });
-    if (showCoverage) void refreshCoverage(set, get);
-    else set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
+  // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
+  showCoverageFor: (datasetId) => {
+    if (!get().selectedDatasetIds.includes(datasetId)) return;
+    set({
+      showCoverage: true,
+      coverageDatasetId: datasetId,
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+    });
+    void refreshCoverage(set, get);
+  },
+  hideCoverage: () => {
+    set({
+      showCoverage: false,
+      coverageDatasetId: null,
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+      coverageLoading: false,
+    });
+  },
+  // Copies the AOI crops of the dataset shown in the results into the layer
+  // manager, where they stay whichever dataset is chosen next. The user's own
+  // step: a search never pins anything by itself.
+  pinSearchCrops: () => {
+    const s = get();
+    const crops = s.searchCrops.filter((c) => c.restore.datasetId === s.openSectionId);
+    if (crops.length === 0) {
+      set({ error: 'Nothing to pin — this dataset has no crop to show.' });
+      return;
+    }
+    const batchId = nextBatchId();
+    const pinned = crops.map((c, i) => ({ ...c, id: `L${batchId}${i}` }));
+    set({
+      layers: [...pinned, ...s.layers],
+      layerManagerOpen: true,
+      error: null,
+      notice: `Pinned ${pinned.length} layer${pinned.length === 1 ? '' : 's'} (${pinned[0].name.split(' · ')[0]}).`,
+    });
   },
   setMapViewport: (mapZoom, viewportBbox, viewportSize) => {
     set({ mapZoom, viewportBbox, viewportSize });
@@ -1289,6 +1306,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           ...openSectionState(null),
           sections: [],
+          searchCrops: [],
           selectedIds: [],
           error: `Grouping failed: ${failed}`,
           notice: null,
@@ -1306,38 +1324,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       let text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
       if (timeNote && answer.ignoredFilters.includes('datetime')) text = `${text} ${timeNote}.`;
       if (stray > 0) text = `${text} ${stray} scene(s) of other datasets were left out.`;
-      // F5 (Otto, 30.09.2026): a dataset with no browsable preview appears at
-      // once as the full-resolution view cut to the AOI — pinned as layers, so it
-      // stays on the map whichever section is open. A repeat search over the same
-      // dataset replaces its earlier crops instead of stacking a second set.
+      // A dataset with no browsable preview (`browse: 'full_resolution'`, the DEM)
+      // has its results drawn at once as the full-resolution view cut to the AOI:
+      // part of that dataset's results (Otto, 30.09.2026), on the map while the
+      // dataset is chosen in the dropdown — not layers in the layer manager.
       const batchId = nextBatchId();
-      const fresh = chosen.flatMap((dataset) => {
+      const crops = chosen.flatMap((dataset) => {
         const section = sections.find((x) => x.datasetId === dataset.id);
         if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
-        const pinned = fullResolutionLayers(dataset, section, aoi, batchId);
-        if (pinned.length === 0) {
+        const drawn = fullResolutionLayers(dataset, section, aoi, batchId);
+        if (drawn.length === 0) {
           text = defaultRenderOf(dataset.collection)?.assets[0]
             ? `${text} ${dataset.title}: none of its scenes carries a bounding box to draw.`
             : `${text} ${dataset.title} has no default visualisation yet (earthx:default_render).`;
         }
-        return pinned;
+        return drawn;
       });
-      const searched = new Set(collections);
-      const kept = get().layers.filter((l) => !(l.fromSearch && l.restore.datasetId && searched.has(l.restore.datasetId)));
-      const previous = get().datasetId;
       set({
         sections,
         ...openSectionState(open),
         ...(open ? { datasetId: open.datasetId } : {}),
-        layers: [...fresh, ...kept],
+        searchCrops: crops,
         selectedIds: [],
         error: null,
         notice: text,
-        // The heatmap belongs to the dataset that was active before; the new
-        // one's follows the refresh below.
-        ...(open && open.datasetId !== previous ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
       });
-      if (open && open.datasetId !== previous) scheduleCoverageRefresh(set, get);
     };
     const multiNotice = (sections: ResultSection[]) => {
       const steps = sections.reduce((sum, section) => sum + section.groups.length, 0);
@@ -1408,6 +1419,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         error: `Search failed: ${(e as Error).message}`,
         sections: [],
+        searchCrops: [],
         ...openSectionState(null),
         panelCollapsed: false,
       });

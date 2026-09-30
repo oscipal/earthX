@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { datasetsFrom } from './datasets';
 import {
   buildTileUrl,
-  ensureBaseLayers,
   setCoverageDisplay,
   syncFocusRaster,
   syncHighlight,
@@ -508,121 +507,5 @@ describe('syncLayers: pinned layers of several datasets', () => {
     const { map, sources } = stackMap();
     syncLayers(map as never, [pinned('a', 'dem', 'https://t/a', false), pinned('b', 'optical', 'https://t/b')]);
     expect([...sources.values()].map((s) => (s.tiles as string[])[0])).toEqual(['https://t/b']);
-  });
-});
-
-// M3-10 F5 (Otto, 30.09.2026): what a search pins by itself (a full-resolution
-// crop of a dataset with no preview) is drawn under the quicklooks; what the user
-// pinned, and the order they set in the layer manager, stay as they were.
-describe('draw order: automatic crops under the quicklooks', () => {
-  // A map that keeps its layers in draw order and honours `beforeId`, which is
-  // what decides who covers whom. `urls` maps a raster layer id to its tile URL.
-  function withUrls() {
-    const order: string[] = [];
-    const sources = new Set<string>();
-    const urls = new Map<string, string>();
-    const map = {
-      getSource: (id: string) => (sources.has(id) ? { setData: () => {} } : undefined),
-      getLayer: (id: string) => (order.includes(id) ? {} : undefined),
-      addSource: (id: string, spec: { tiles?: string[] }) => {
-        sources.add(id);
-        if (spec.tiles) urls.set(id.replace('-src-', '-lyr-'), spec.tiles[0]);
-      },
-      removeSource: (id: string) => sources.delete(id),
-      removeLayer: (id: string) => {
-        const at = order.indexOf(id);
-        if (at >= 0) order.splice(at, 1);
-      },
-      addLayer: (layer: { id: string }, before?: string) => {
-        const at = before ? order.indexOf(before) : -1;
-        if (at >= 0) order.splice(at, 0, layer.id);
-        else order.push(layer.id);
-      },
-    };
-    // The tile URLs of the raster layers drawn, bottom of the stack first.
-    const stack = () => order.filter((id) => urls.has(id)).map((id) => urls.get(id)!);
-    return { map, order, stack };
-  }
-
-  function layer(id: string, url: string, fromSearch = false) {
-    return {
-      id,
-      name: id,
-      visible: true,
-      opacity: 1,
-      fromSearch,
-      overlays: [{ kind: 'raster' as const, tileUrl: url, bounds: [0, 0, 1, 1] as [number, number, number, number], minZoom: 0, maxZoom: 12 }],
-      restore: {} as never,
-    };
-  }
-
-  const dataset = zarrLikeDataset();
-  const browseState = {
-    items: [scene],
-    dataset,
-    downloaded: {},
-    selectedIds: [],
-    render: {},
-    focusMode: false,
-    showDownloaded: true,
-  };
-
-  it('puts a crop a search pinned below the browse quicklooks, whichever is drawn first', () => {
-    for (const cropsFirst of [true, false]) {
-      const { map, order, stack } = withUrls();
-      ensureBaseLayers(map as never);
-      const crop = layer('crop', 'https://t/crop/{z}/{x}/{y}', true);
-      if (cropsFirst) syncLayers(map as never, [crop]);
-      syncMosaic(map as never, browseState);
-      if (!cropsFirst) syncLayers(map as never, [crop]);
-      expect(stack()[0]).toBe('https://t/crop/{z}/{x}/{y}');
-      expect(stack()).toHaveLength(2);
-      expect(order.indexOf('layer-lyr-0')).toBeLessThan(order.indexOf('m-tiles-lyr-0'));
-      expect(order.indexOf('m-tiles-lyr-0')).toBeLessThan(order.indexOf('aoi-fill'));
-    }
-  });
-
-  it('leaves a layer the user pinned above the quicklooks, as before', () => {
-    const { map, order } = withUrls();
-    ensureBaseLayers(map as never);
-    syncMosaic(map as never, browseState);
-    syncLayers(map as never, [layer('mine', 'https://t/mine/{z}/{x}/{y}')]);
-    expect(order.indexOf('m-tiles-lyr-0')).toBeLessThan(order.indexOf('layer-lyr-0'));
-  });
-
-  it('keeps the layer manager order among the layers the user pinned, crops in between or not', () => {
-    const { map, stack } = withUrls();
-    ensureBaseLayers(map as never);
-    // layers[0] is the top of the list
-    syncLayers(map as never, [
-      layer('top', 'https://t/top/{z}/{x}/{y}'),
-      layer('crop', 'https://t/crop/{z}/{x}/{y}', true),
-      layer('bottom', 'https://t/bottom/{z}/{x}/{y}'),
-    ]);
-    expect(stack()).toEqual(['https://t/crop/{z}/{x}/{y}', 'https://t/bottom/{z}/{x}/{y}', 'https://t/top/{z}/{x}/{y}']);
-  });
-
-  it('keeps the list order among several crops', () => {
-    const { map, stack } = withUrls();
-    ensureBaseLayers(map as never);
-    syncLayers(map as never, [
-      layer('upper', 'https://t/upper/{z}/{x}/{y}', true),
-      layer('lower', 'https://t/lower/{z}/{x}/{y}', true),
-    ]);
-    expect(stack()).toEqual(['https://t/lower/{z}/{x}/{y}', 'https://t/upper/{z}/{x}/{y}']);
-  });
-
-  it('a crop on a map without the marker layer still draws, at the old place', () => {
-    const { map, stack } = withUrls();
-    syncLayers(map as never, [layer('crop', 'https://t/crop/{z}/{x}/{y}', true)]);
-    expect(stack()).toEqual(['https://t/crop/{z}/{x}/{y}']);
-  });
-
-  it('draws nothing for a crop that is switched off', () => {
-    const { map, order, stack } = withUrls();
-    ensureBaseLayers(map as never);
-    syncLayers(map as never, [{ ...layer('crop', 'https://t/crop/{z}/{x}/{y}', true), visible: false }]);
-    expect(stack()).toEqual([]);
-    expect(order).not.toContain('layer-lyr-0');
   });
 });

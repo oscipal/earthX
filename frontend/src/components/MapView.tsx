@@ -24,7 +24,8 @@ import {
   syncLayers,
   syncMosaic,
 } from '../mapLayers';
-import { baseMapStyle } from '../mapStyles';
+import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles';
+import { layersOnMap } from '../searchLayers';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
 
@@ -111,14 +112,17 @@ export default function MapView() {
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const searchCrops = useAppStore((s) => s.searchCrops);
+  const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
+  const theme = useAppStore((s) => s.theme);
 
   // --- create the map once ---
   useEffect(() => {
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: baseMapStyle(),
+      style: baseMapStyle(mapBackgroundOf(containerRef.current)),
       center: [10, 20],
       zoom: 1.6,
       attributionControl: { compact: true },
@@ -203,7 +207,7 @@ export default function MapView() {
       map.setProjection({ type: st.projection });
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
-      syncLayers(map, st.layers);
+      syncLayers(map, layersOnMap(st.layers, st.searchCrops, st.openSectionId));
       syncMosaic(map, {
         items: itemsForMap(st.groups, visibleGroupIndex(st), st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
@@ -267,6 +271,14 @@ export default function MapView() {
     if (drawRef.current && readyRef.current) applyToolMode(drawRef.current, toolMode);
   }, [toolMode]);
 
+  // --- backdrop colour: the theme token, into the style's own background layer
+  // and the globe's sky, on every theme switch ---
+  useEffect(() => {
+    const map = mapRef.current;
+    const colour = mapBackgroundOf(containerRef.current);
+    if (map && readyRef.current && colour) applyMapBackground(map, colour);
+  }, [theme]);
+
   // --- globe / flat map (V-1) — a display-only switch (D27); backend and
   // tile URLs are unaffected, `setProjection` just re-renders the same layers.
   useEffect(() => {
@@ -288,11 +300,13 @@ export default function MapView() {
     }
   }, [showCoverage, coverage, coverageFootprints, mapZoom, focusMode]);
 
-  // --- pinned layers (layer manager) ---
+  // --- pinned layers (layer manager), and under them the AOI crops of the
+  // dataset chosen in the results dropdown (M3-10): the map shows that dataset
+  // only, plus whatever the user pinned. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncLayers(map, layers);
-  }, [layers]);
+    if (map && readyRef.current) syncLayers(map, layersOnMap(layers, searchCrops, openSectionId));
+  }, [layers, searchCrops, openSectionId]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload

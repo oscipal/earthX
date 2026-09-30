@@ -1,7 +1,8 @@
-// The layers a search pins by itself (M3-10 F5, Otto 30.09.2026): a dataset with
-// `browse: 'full_resolution'` has no quicklook to show first, so after every
-// search its scenes appear straight away as the full-resolution view cut to the
-// AOI — as pinned layers, which the map draws whichever results section is open.
+// The AOI crops a search draws by itself (M3-10, Otto 30.09.2026): a dataset with
+// `browse: 'full_resolution'` has no quicklook to show first, so its scenes appear
+// straight away as the full-resolution view cut to the AOI. They belong to that
+// dataset's results and are on the map only while the dataset is the one chosen in
+// the results dropdown; the user can pin them (`store.ts::pinSearchCrops`).
 
 import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
@@ -48,7 +49,6 @@ export function fullResolutionLayers(
       name: `${dataset.title} · ${group.label}`,
       visible: true,
       opacity: 1,
-      fromSearch: true,
       overlays: Object.values(downloaded).map((info) => ({
         kind: 'raster' as const,
         tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, applied), aoi),
@@ -72,4 +72,12 @@ export function fullResolutionLayers(
     });
   });
   return layers;
+}
+
+// What the map draws besides the browse view: the layers the user pinned — always,
+// whatever dataset is chosen — and, under them, the crops of the dataset chosen in
+// the dropdown. The crops of every other dataset of the search stay off the map.
+export function layersOnMap(pinned: MapLayer[], crops: MapLayer[], chosenDatasetId: string | null): MapLayer[] {
+  if (chosenDatasetId === null) return pinned;
+  return [...pinned, ...crops.filter((crop) => crop.restore.datasetId === chosenDatasetId)];
 }

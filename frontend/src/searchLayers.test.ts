@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { fullResolutionLayers } from './searchLayers';
+import { fullResolutionLayers, layersOnMap } from './searchLayers';
 import { buildSections } from './sections';
 import type { Collection, StacItem } from './types';
 
@@ -53,7 +53,7 @@ function sectionFor(collection: Collection, items: StacItem[]) {
 }
 
 describe('fullResolutionLayers', () => {
-  it('pins one cropped, search-owned layer per time-step group', () => {
+  it('builds one cropped layer per time-step group', () => {
     const { dataset, section } = sectionFor(DEM, [
       tile('a', '2011-01-01T00:00:00Z'),
       tile('b', '2011-01-01T00:00:00Z'),
@@ -61,7 +61,7 @@ describe('fullResolutionLayers', () => {
     ]);
     const layers = fullResolutionLayers(dataset, section, AOI, 'x');
     expect(layers).toHaveLength(2);
-    expect(layers.every((l) => l.fromSearch === true && l.visible && l.opacity === 1)).toBe(true);
+    expect(layers.every((l) => l.visible && l.opacity === 1)).toBe(true);
     expect(new Set(layers.map((l) => l.id)).size).toBe(2);
     expect(layers.map((l) => l.restore.itemIds.sort())).toEqual(
       section.groups.map((g) => g.items.map((i) => i.id).sort()),
@@ -109,5 +109,29 @@ describe('fullResolutionLayers', () => {
   it('pins nothing for an empty section', () => {
     const { dataset, section } = sectionFor(DEM, []);
     expect(fullResolutionLayers(dataset, section, AOI, 'x')).toEqual([]);
+  });
+});
+
+describe('layersOnMap', () => {
+  function layer(id: string, datasetId: string | null) {
+    return { id, name: id, visible: true, opacity: 1, overlays: [], restore: { datasetId } as never };
+  }
+  const pinned = [layer('p1', 'optical'), layer('p2', 'dem')];
+  const crops = [layer('c1', 'dem'), layer('c2', 'dem'), layer('c3', 'other-full-resolution')];
+
+  it("draws the pinned layers, and under them the crops of the chosen dataset only", () => {
+    expect(layersOnMap(pinned, crops, 'dem').map((l) => l.id)).toEqual(['p1', 'p2', 'c1', 'c2']);
+  });
+
+  it('draws no crop when the chosen dataset has none', () => {
+    expect(layersOnMap(pinned, crops, 'optical').map((l) => l.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('draws only the pinned layers when no dataset is chosen', () => {
+    expect(layersOnMap(pinned, crops, null).map((l) => l.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('copes with nothing pinned and nothing cropped', () => {
+    expect(layersOnMap([], [], 'dem')).toEqual([]);
   });
 });

@@ -63,9 +63,4 @@ export interface MapLayer {
   opacity: number;
   overlays: LayerOverlay[];
   restore: LayerRestore;
-  // Set on the AOI crops a search pins by itself for a dataset with no browsable
-  // preview (`browse: 'full_resolution'`, M3-10 F5). A later search over the same
-  // dataset replaces them instead of piling up a second copy; a layer the user
-  // pinned never carries it.
-  fromSearch?: boolean;
 }
