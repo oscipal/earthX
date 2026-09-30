@@ -1,6 +1,6 @@
 # M7a (vorgezogen) — Chatbot-Backend mit Lesewerkzeugen: Plan
 
-**Status:** Antworten von Víctor zu F1–F5 in §8 (24.09.2026); Lesewerkzeuge lokal umgesetzt, Ottos OK steht aus. **Stufe B**
+**Status:** Antworten von Víctor zu F1–F5 in §8 (24.09.2026), F2 am 30.09.2026 geändert (§9); Lesewerkzeuge, LLM-Client und Tool-Schleife lokal umgesetzt, Ottos OK steht aus. **Stufe B**
 (`projektplan.md` 1.2): neues Modul, Plan zuerst, Umsetzung nach OK.
 **Aufgabe:** kleines Chatbot-Backend mit den Lesewerkzeugen
 `search_collections`, `get_collection` und `check_availability` gegen die
@@ -148,3 +148,24 @@ Abweichung von §2: `check_availability` schickt nur `bbox`, kein `intersects`,
 weil `post_search` der föderierten Suche nur `bbox` weiterreicht
 (`api/federating_client.py`). Eine Box über den Antimeridian wird abgewiesen.
 
+## 9. Nachtrag: LLM angebunden (Víctor, 30.09.2026)
+
+Víctor hat die Empfehlungen aus §7 bestätigt, F2 jetzt mit Option (1): Claude
+Sonnet über die Messages-API. Umgesetzt wie in §4:
+
+- `earthx.chatbot.llm`: schmaler Client auf `Gateway.post_json`, ohne SDK.
+  Modellname aus `EARTHX_CHATBOT_MODEL`, Schlüssel aus `ANTHROPIC_API_KEY`,
+  beide nur in der lokalen Umgebung. Das Gateway für das Modell erlaubt nur den
+  Host der Messages-API; weil eine Antwort mit Werkzeugrunden länger dauert als
+  eine STAC-Seite, bekommt diese eine Policy 120 s Lesezeit statt 15 s. Sonst
+  gelten die Grenzen der Policy unverändert.
+- `anthropic` steht als Verbot in `http-only-in-gateway` und in der
+  AST-Prüfung von `test_no_outbound_outside_gateway.py`.
+- `earthx.chatbot.dialogue`: eine Dialogrunde, zustandslos. Höchstens 6
+  Werkzeugrunden, danach eine Antwort mit `tool_choice: none`. Werkzeugergebnisse
+  gehen als JSON im `tool_result`, gekürzt auf 20 000 Zeichen. Der Systemprompt
+  verlangt Rückfragen und erklärt Werkzeugergebnisse zu Daten.
+- CLI: `python -m earthx.chatbot chat ["Frage"]`, ohne Frage ein Dialog auf
+  stdin; der Verlauf lebt nur im Prozess.
+- Tests offline mit Stub-Modell und synthetischer API (`test_llm.py`,
+  `test_dialogue.py`, `test_cli.py`); kein Test ruft ein echtes Modell auf.
