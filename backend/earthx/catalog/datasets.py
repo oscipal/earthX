@@ -58,6 +58,7 @@ SENTINEL_2_L2A = DatasetConfig(
         "5.0 on. Served by Earth Search v1 (Element 84) from the Registry of Open "
         "Data on AWS (adr/0003 §3, Option B)."
     ),
+    keywords=("sentinel-2", "optical", "multispectral", "surface reflectance", "copernicus"),
     # The collection's own `cite-as` link (read from the source on 22.09.2026, M2-08
     # plan §3), the same seam the second entry takes its DOI from. adr/0003 left
     # onboarding checklist point 3 open because M1 read nothing from the source; the
@@ -248,6 +249,7 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         "(earthx:maturity) — it may disappear without notice (adr/0007 §12.11 "
         "point 14)."
     ),
+    keywords=("sentinel-2", "optical", "multispectral", "surface reflectance", "copernicus", "zarr"),
     # The collection's own `cite-as` link (checked 22.09.2026); no separate
     # persistent citation beyond it.
     doi="https://doi.org/10.5270/S2_-znk9xsj",
@@ -440,6 +442,7 @@ COP_DEM_GLO_30 = DatasetConfig(
         "43° and 51° E are withheld from public release by the "
         "Copernicus programme (adr/0009 §10.3)."
     ),
+    keywords=("elevation", "dem", "dsm", "terrain", "copernicus", "tandem-x"),
     # The product's own citation DOI (M3-11b plan §2.7, read from the CDSE
     # COP-DEM page 26.09.2026) — the same page `adr/0003` §11.1 reads the
     # licence from. Not specific to the GLO-30 instance; it is what the source

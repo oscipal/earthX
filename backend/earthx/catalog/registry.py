@@ -602,6 +602,10 @@ class DatasetConfig:
     dataset_id: str
     title: str
     description: str
+    # What the viewer's dataset filter matches besides title and description (M3-10,
+    # published as STAC `keywords`). No default (KLAERUNGEN B10): an entry names them
+    # on purpose, at least one.
+    keywords: tuple[str, ...]
     # Onboarding checklist, point 3: a DOI where one exists, otherwise a persistent
     # citation. Both None means the point is still open for this dataset.
     doi: str | None
@@ -631,6 +635,7 @@ class DatasetConfig:
     zarr: ZarrInfo | None
 
     def __post_init__(self) -> None:
+        self._check_keywords()
         self._check_license_is_identifiable()
         self._check_license_tier()
         self._check_attribution()
@@ -639,6 +644,14 @@ class DatasetConfig:
         self._check_item_holding()
         self._check_zarr()
         self._check_browse_cors()
+
+    def _check_keywords(self) -> None:
+        """At least one keyword, each a non-blank string (M3-10): the viewer's filter
+        reads them, and a blank one would match every search word it is a part of."""
+        if not self.keywords:
+            raise ConfigError(f"{self.dataset_id}: keywords names no keyword")
+        if not all(isinstance(word, str) and word.strip() for word in self.keywords):
+            raise ConfigError(f"{self.dataset_id}: every keyword must be a non-blank string")
 
     def _check_license_is_identifiable(self) -> None:
         """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
