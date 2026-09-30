@@ -9,6 +9,7 @@ import {
   incompleteNote,
   needsFallback,
   totalItems,
+  withSourceState,
 } from './sections';
 import type { Collection, StacItem } from './types';
 
@@ -279,14 +280,14 @@ describe('needsFallback (M3-10 F7)', () => {
   const empty = () => buildSections([], [optical, dem], NOTHING).sections;
 
   it('is due for an empty section of a dataset with a time axis when a date range was searched', () => {
-    expect(needsFallback(empty()[0], optical, '2026-07-01', '2026-07-31')).toBe(true);
-    expect(needsFallback(empty()[0], optical, '', '2026-07-31')).toBe(true);
-    expect(needsFallback(empty()[0], optical, '2026-07-01', '')).toBe(true);
+    expect(needsFallback(empty()[0], optical, '2026-07-01', '2026-07-31', false)).toBe(true);
+    expect(needsFallback(empty()[0], optical, '', '2026-07-31', false)).toBe(true);
+    expect(needsFallback(empty()[0], optical, '2026-07-01', '', false)).toBe(true);
   });
 
   it('is not due without a date range, nor for a dataset without a time axis', () => {
-    expect(needsFallback(empty()[0], optical, '', '')).toBe(false);
-    expect(needsFallback(empty()[1], dem, '2026-07-01', '2026-07-31')).toBe(false);
+    expect(needsFallback(empty()[0], optical, '', '', false)).toBe(false);
+    expect(needsFallback(empty()[1], dem, '2026-07-01', '2026-07-31', false)).toBe(false);
   });
 
   it('is not due for a section with scenes, a grouping failure or a source that did not answer in full', () => {
@@ -298,13 +299,37 @@ describe('needsFallback (M3-10 F7)', () => {
     }).sections;
     expect(incomplete.incomplete).toBe(true);
     for (const section of [withScenes, broken, incomplete]) {
-      expect(needsFallback(section, optical, '2026-07-01', '2026-07-31')).toBe(false);
+      expect(needsFallback(section, optical, '2026-07-01', '2026-07-31', false)).toBe(false);
     }
+  });
+
+  it('is not due while the source still has pages', () => {
+    expect(needsFallback(empty()[0], optical, '2026-07-01', '2026-07-31', true)).toBe(false);
   });
 
   it('runs once: not again for a section it has run for, nor for one found by name', () => {
     const [section] = empty();
-    expect(needsFallback({ ...section, origin: 'fallback' }, optical, '2026-07-01', '2026-07-31')).toBe(false);
-    expect(needsFallback({ ...section, origin: 'name' }, optical, '2026-07-01', '2026-07-31')).toBe(false);
+    expect(needsFallback({ ...section, origin: 'fallback' }, optical, '2026-07-01', '2026-07-31', false)).toBe(false);
+    expect(needsFallback({ ...section, origin: 'name' }, optical, '2026-07-01', '2026-07-31', false)).toBe(false);
+  });
+});
+
+describe('withSourceState (M3-10b)', () => {
+  const [empty, withScenes] = buildSections(
+    [item('d1', 'dem', { start_datetime: '2011-01-01T00:00:00Z' })],
+    [optical, dem],
+    NOTHING,
+  ).sections;
+
+  it('an empty section whose source has pages left says to load more, not that there is nothing', () => {
+    expect(withSourceState(empty, true).notes).toEqual(['Load more to see if there are any.']);
+    expect(withSourceState(empty, false)).toBe(empty);
+  });
+
+  it('leaves a section with scenes, a failed source or a fallback as it is', () => {
+    const [incomplete] = buildSections([], [optical], { ...NOTHING, incompleteCollections: [{ collection: 'optical', reason: 'timeout' }] }).sections;
+    for (const section of [withScenes, incomplete, { ...empty, origin: 'fallback' as const }]) {
+      expect(withSourceState(section, true)).toBe(section);
+    }
   });
 });

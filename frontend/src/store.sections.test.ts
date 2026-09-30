@@ -1142,7 +1142,9 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
         const token = (body.token as string | undefined) ?? '';
         return token === 'q4'
           ? page([opticalScene('z1', 'optical-zarr', '2026-07-30')], null)
-          : page(scenes(token || 'a', 'optical', '2026-07-24'), ({ '': 'q2', q2: 'q3', q3: 'q4' } as Record<string, string>)[token]);
+          : page(scenes(token || 'a', 'optical', '2026-07-24'), ({ '': 'q2', q2: 'q3', q3: 'q4' } as Record<string, string>)[token], {
+              open_collections: ['optical'],
+            });
       }),
     );
     await search();
@@ -1181,7 +1183,7 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
         const token = (body.token as string | undefined) ?? '';
         return token === 'q4'
           ? page([opticalScene('n1', 'optical', '2026-07-30')], null)
-          : page(scenes(token || 'a', 'optical', '2026-07-24'), answer[token]);
+          : page(scenes(token || 'a', 'optical', '2026-07-24'), answer[token], { open_collections: ['optical'] });
       }),
     );
     await search();
@@ -1206,7 +1208,9 @@ describe('±90-day fallback for the dataset chosen in the dropdown (M3-10 F7)', 
         const token = (body.token as string | undefined) ?? '';
         return token === 'q4'
           ? page([opticalScene('z1', 'optical-zarr', '2026-07-30')], null)
-          : page(scenes(token || 'a', 'optical', '2026-07-24'), ({ '': 'q2', q2: 'q3', q3: 'q4' } as Record<string, string>)[token]);
+          : page(scenes(token || 'a', 'optical', '2026-07-24'), ({ '': 'q2', q2: 'q3', q3: 'q4' } as Record<string, string>)[token], {
+              open_collections: ['optical'],
+            });
       }),
     );
     await search();
@@ -1322,5 +1326,70 @@ describe('looking up a scene by name in every ticked dataset (M3-10 F8)', () => 
     useAppStore.setState({ sceneLookupLoading: true });
     useAppStore.getState().toggleDatasetSelected('dem');
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'optical-zarr', 'dem']);
+  });
+});
+
+describe('the fallback waits while the chosen dataset\'s source has pages (Otto, 30.09.2026)', () => {
+  const NEAREST_DAY = '2026-06-20T00:00:00Z/2026-06-20T23:59:59Z';
+  const NEXT: Record<string, string | undefined> = { '': 'r2', r2: 'r3', r3: 'r4' };
+  // Three pages of optical scenes leave token `r4`, which has one more and ends the
+  // search; `open` is the backend's `open_collections` until then. The Zarr dataset
+  // has nothing in the range; its fallback finds 2026-06-20.
+  function backend(open: string[] | undefined) {
+    return routed((body) => {
+      if (JSON.stringify(body.collections) === '["optical-zarr"]') {
+        return body.datetime === NEAREST_DAY
+          ? page([opticalScene('f1', 'optical-zarr', '2026-06-20')], null)
+          : page([opticalScene('p1', 'optical-zarr', '2026-06-20')], null);
+      }
+      const token = (body.token as string | undefined) ?? '';
+      if (token === 'r4') return page([opticalScene('last', 'optical', '2026-07-30')], null, { open_collections: [] });
+      return page(scenes(token || 'a', 'optical', '2026-07-24'), NEXT[token] ?? null, open ? { open_collections: open } : {});
+    });
+  }
+  const zarr = () => useAppStore.getState().sections.find((s) => s.datasetId === 'optical-zarr')!;
+  const probes = () =>
+    vi.mocked(fetch).mock.calls.filter((_, i) => JSON.stringify(searchBody(i).collections) === '["optical-zarr"]').length;
+
+  beforeEach(() => useAppStore.setState({ dateFrom: '2026-07-01', dateTo: '2026-07-31' }));
+
+  it('its own source done: the fallback starts at once, although other sources still have pages', async () => {
+    vi.stubGlobal('fetch', backend(['optical']));
+    await search();
+    expect(useAppStore.getState().searchContext?.nextToken).toBe('r4');
+    useAppStore.getState().setOpenSection('optical-zarr');
+    await vi.waitFor(() => expect(zarr().origin).toBe('fallback'));
+    expect(zarr().items.map((i) => i.id)).toEqual(['f1']);
+  });
+
+  it('a shared source with pages left: no fallback, the box says to load more', async () => {
+    vi.stubGlobal('fetch', backend(['optical', 'optical-zarr']));
+    await search();
+    useAppStore.getState().setOpenSection('optical-zarr');
+    await Promise.resolve();
+    expect(probes()).toBe(0);
+    expect(zarr().origin).toBe('search');
+    expect(zarr().notes).toEqual(['Load more to see if there are any.']);
+    expect(useAppStore.getState().fallbackDatasetIds).toEqual([]);
+  });
+
+  it('once "Load more" has exhausted the source, the fallback starts for the chosen dataset', async () => {
+    vi.stubGlobal('fetch', backend(['optical', 'optical-zarr']));
+    await search();
+    useAppStore.getState().setOpenSection('optical-zarr');
+    await loadMore();
+    await vi.waitFor(() => expect(zarr().origin).toBe('fallback'));
+    expect(zarr().notes[0]).toBe('No results in the chosen time range — nearest scene: 2026-06-20');
+    expect(useAppStore.getState().items.map((i) => i.id)).toEqual(['f1']);
+    expect(count('optical')).toBe(301);
+  });
+
+  it('an answer that names no open collections counts as open while a token is left', async () => {
+    vi.stubGlobal('fetch', backend(undefined));
+    await search();
+    useAppStore.getState().setOpenSection('optical-zarr');
+    await Promise.resolve();
+    expect(probes()).toBe(0);
+    expect(zarr().notes).toEqual(['Load more to see if there are any.']);
   });
 });

@@ -516,6 +516,26 @@ describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () 
     expect(result.nextToken).toBe('t4');
   });
 
+  it("hands back the last page's open collections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ features: [{ id: 'a' }], numberReturned: 1, links: [{ rel: 'next', href: '/stac/search', body: { token: 't2' } }], open_collections: ['x', 'y'] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ features: [{ id: 'b' }], numberReturned: 1, open_collections: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await searchAllPages({ collections: ['x', 'y'] }, 300)).openCollections).toEqual([]);
+  });
+
+  it.each([
+    ['missing', undefined, null],
+    ['not a list', 'x', null],
+    ['a list with other things in it', ['x', 7, null], ['x']],
+  ])('reads open_collections %s', async (_case, value, expected) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [], numberReturned: 0, open_collections: value })));
+    expect((await searchItems({ collections: ['x'] })).openCollections).toEqual(expected);
+  });
+
   it('hands back no token once the result is complete', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [{ id: 'a' }], numberReturned: 1 })));
     expect((await searchAllPages({ collections: ['x'] }, 300)).nextToken).toBeNull();

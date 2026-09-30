@@ -31,6 +31,8 @@ export interface ResultSection {
 }
 
 export const NO_SCENES_NOTE = 'No scenes for this area.';
+// An empty section whose source still has pages (M3-10b, Otto 30.09.2026).
+export const LOAD_MORE_NOTE = 'Load more to see if there are any.';
 
 // Why a source did not answer, in the words of the head (the reasons are
 // `api/mixed_search.py`'s four; anything else still gets named).
@@ -130,17 +132,31 @@ export function combineAnswers(first: SectionSearchAnswer, next: SectionSearchAn
   };
 }
 
+// An empty section of the search, its source answered in full: whether it has
+// nothing is not known yet while that source still has pages, and the section
+// says so instead of "No scenes for this area." (Otto, 30.09.2026).
+export function withSourceState(section: ResultSection, sourceOpen: boolean): ResultSection {
+  const waiting =
+    sourceOpen && section.origin === 'search' && section.items.length === 0 && section.groupingError === null && !section.incomplete;
+  if (!waiting) return section;
+  return { ...section, notes: [...section.notes.filter((note) => note !== NO_SCENES_NOTE), LOAD_MORE_NOTE] };
+}
+
 // Whether the ±90-day fallback (`dateFallback.ts`) is due for a section chosen in
 // the dropdown (M3-10 F7, Otto 30.09.2026): the search found nothing for it in a
-// date range, its source answered in full, and a date range means something to
-// it. It runs once per section — a section it has run for has another origin.
+// date range, its source answered in full and has no further page (otherwise
+// "Load more" may still bring scenes of the range), and a date range means
+// something to it. It runs once per section — a section it has run for has
+// another origin.
 export function needsFallback(
   section: ResultSection,
   dataset: ViewableDataset,
   dateFrom: string,
   dateTo: string,
+  sourceOpen: boolean,
 ): boolean {
   return (
+    !sourceOpen &&
     section.origin === 'search' &&
     section.items.length === 0 &&
     section.groupingError === null &&

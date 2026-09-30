@@ -34,7 +34,15 @@ import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
 import type { ResultSection, SectionSearchAnswer } from './sections';
-import { buildSections, combineAnswers, firstSectionWithItems, NO_SCENES_NOTE, needsFallback } from './sections';
+import {
+  buildSections,
+  combineAnswers,
+  firstSectionWithItems,
+  LOAD_MORE_NOTE,
+  NO_SCENES_NOTE,
+  needsFallback,
+  withSourceState,
+} from './sections';
 import { fullResolutionLayers } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
@@ -309,6 +317,15 @@ interface SearchContext {
   // The page token left over — the mixed one for the whole search, never one per
   // dataset (M3-10 F1). `null` once the search is complete or cannot go on.
   nextToken: string | null;
+  // The backend's `open_collections` of the last page; `null` if it named none.
+  openCollections: string[] | null;
+}
+
+// Whether "Load more" may still bring scenes of this dataset: its source has pages
+// left (Otto, 30.09.2026). Unknown counts as open — the fallback would otherwise
+// claim "no results in the chosen time range" too early.
+function sourceOpen(ctx: SearchContext, datasetId: string): boolean {
+  return ctx.nextToken !== null && (ctx.openCollections?.includes(datasetId) ?? true);
 }
 
 // Bumped by everything that replaces or drops the results, so a "Load more" or a
@@ -384,7 +401,8 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     });
     return;
   }
-  const sections = built.map((section) => {
+  const sections = built.map((fresh) => {
+    const section = withSourceState(fresh, sourceOpen(ctx, fresh.datasetId));
     const shown = keepOpen ? s.sections.find((x) => x.datasetId === section.datasetId) : undefined;
     if (!shown) return section;
     if (section.groupingError && !shown.groupingError) {
@@ -443,7 +461,8 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
   const ctx = s.searchContext;
   const section = s.sections.find((x) => x.datasetId === datasetId);
   const [dataset] = viewableDatasets(s.datasets, [datasetId]);
-  if (!ctx || !section || !dataset || !needsFallback(section, dataset, ctx.dateFrom, ctx.dateTo)) return;
+  if (!ctx || !section || !dataset) return;
+  if (!needsFallback(section, dataset, ctx.dateFrom, ctx.dateTo, sourceOpen(ctx, datasetId))) return;
   if (s.fallbackDatasetIds.includes(datasetId)) return;
   const gen = searchGen;
   set({ fallbackDatasetIds: [...s.fallbackDatasetIds, datasetId] });
@@ -457,7 +476,8 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
     const replacement = make(current);
     return { now, replacement, sections: now.sections.map((x) => (x.datasetId === datasetId ? replacement : x)) };
   };
-  const withoutNoScenes = (current: ResultSection) => current.notes.filter((note) => note !== NO_SCENES_NOTE);
+  const withoutNoScenes = (current: ResultSection) =>
+    current.notes.filter((note) => note !== NO_SCENES_NOTE && note !== LOAD_MORE_NOTE);
   try {
     const query = { ...ctx.query, collections: [datasetId] };
     const found = await findFallback(
@@ -1607,6 +1627,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           numberMatched: page.numberMatched,
           nextToken: page.nextToken,
+          openCollections: page.openCollections,
         },
         false,
       );
@@ -1658,9 +1679,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           features: [...ctx.features, ...page.features.filter((it) => !known.has(sceneKey(it)))],
           answer: combineAnswers(ctx.answer, page),
           nextToken: stillCurrent ? page.nextToken : null,
+          openCollections: page.openCollections,
         },
         true,
       );
+      // The chosen dataset may have been waiting on its source, which is done now.
+      const { openSectionId } = get();
+      if (openSectionId) void runFallback(set, get, openSectionId, false);
     } catch {
       if (gen !== searchGen) return;
       set({
