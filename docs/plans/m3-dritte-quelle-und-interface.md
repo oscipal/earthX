@@ -143,7 +143,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | in Arbeit |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
-| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | offen |
+| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | Plan-Schritt |
 | M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
@@ -495,6 +495,7 @@ und heruntergeladene Datei übereinstimmen.
 **Ziel:** Datensätze werden über einen Filter gewählt statt über feste Blöcke
 (P9).
 **Stufe B.**
+**Plan-Schritt:** `plans/m3-10-datensatz-filter.md`.
 **Umfang:** Liste aus `/stac/collections`, Filter über Titel, Beschreibung und
 Schlagworte im Client; Reifegrad („staging“) bleibt sichtbar. Keine Suche im
 Backend, keine Hybrid-Suche (M5).
