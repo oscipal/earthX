@@ -559,6 +559,14 @@ describe('DatasetFilter: choosing datasets (M3-10)', () => {
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
   });
 
+  it('locks the tick boxes while a search runs', () => {
+    setUp(['optical']);
+    useAppStore.setState({ searching: true });
+    act(() => root.render(<ControlPanel />));
+    expect(options().every((o) => checkboxOf(o).disabled)).toBe(true);
+    useAppStore.setState({ searching: false });
+  });
+
   it('shows a dataset that cannot be shown unticked and disabled, with the reason', () => {
     setUp(['optical']);
     const broken = options()[2];

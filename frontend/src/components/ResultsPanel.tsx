@@ -166,8 +166,8 @@ function SectionBlock({ section, open }: { section: ResultSection; open: boolean
         {label && <span className="maturity-chip">{label}</span>}
         <span className="rg-count">{section.items.length}</span>
       </button>
-      {section.notes.map((note) => (
-        <p key={note} className="hint-text result-section-note">
+      {section.notes.map((note, i) => (
+        <p key={`${i}-${note}`} className="hint-text result-section-note">
           {note}
         </p>
       ))}

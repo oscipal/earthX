@@ -461,7 +461,7 @@ input[type='date']:focus {
 }
 
 /* Lines up with the pairs above it (`.toolbar`, `.aoi-extras`,
-   `.level-select`) at the same overall width and gap (V-4), but the "→"
+   `.dataset-filter`) at the same overall width and gap (V-4), but the "→"
    separator gets its own narrow middle column (`auto`) instead of an
    absolute overlay with no room of its own (V-6) — two equal 1fr columns
    left the gap too tight for the arrow once the date fields' own borders

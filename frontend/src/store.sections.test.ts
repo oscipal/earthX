@@ -366,6 +366,31 @@ describe('runSearch over several datasets', () => {
   });
 });
 
+describe('changing the selection while a search runs', () => {
+  it('is ignored: the answer would land on a selection it did not ask', () => {
+    useAppStore.setState({ searching: true });
+    useAppStore.getState().toggleDatasetSelected('optical');
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'optical-zarr', 'dem']);
+  });
+});
+
+describe('the heatmap follows the active dataset only', () => {
+  it('ticking another dataset leaves the active one and its heatmap', () => {
+    reset(['optical']);
+    useAppStore.setState({ coverage: { dataset_id: 'optical' } as never });
+    useAppStore.getState().toggleDatasetSelected('dem');
+    expect(useAppStore.getState().coverage).not.toBeNull();
+  });
+
+  it('a search that opens a section of another dataset drops the old heatmap', async () => {
+    useAppStore.setState({ coverage: { dataset_id: 'optical' } as never });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([opticalScene('z1', 'optical-zarr', '2026-07-24')]))));
+    await useAppStore.getState().runSearch();
+    expect(useAppStore.getState().datasetId).toBe('optical-zarr');
+    expect(useAppStore.getState().coverage).toBeNull();
+  });
+});
+
 describe('setOpenSection and setDatasetId', () => {
   async function searched() {
     vi.stubGlobal(
@@ -403,6 +428,14 @@ describe('setOpenSection and setDatasetId', () => {
     expect(state.groups).toEqual([]);
     expect(state.sections).toHaveLength(3);
     expect(state.datasetId).toBe('optical');
+  });
+
+  it('opening the section that is already open is harmless', async () => {
+    await searched();
+    useAppStore.getState().setOpenSection('optical');
+    useAppStore.getState().setOpenSection('optical');
+    expect(useAppStore.getState().openSectionId).toBe('optical');
+    expect(useAppStore.getState().items.map((i) => i.id)).toEqual(['o1']);
   });
 
   it('an unknown section changes nothing', async () => {
@@ -536,6 +569,15 @@ describe('full-resolution datasets after a search (F5)', () => {
     expect(useAppStore.getState().layers.filter((l) => l.fromSearch && l.restore.datasetId === 'dem')).toHaveLength(2);
   });
 
+  it('says something else when the visualisation exists but no scene has a bounding box', async () => {
+    reset(['dem']);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([{ ...demTile('d1'), bbox: null }]))));
+    await useAppStore.getState().runSearch();
+    const state = useAppStore.getState();
+    expect(state.layers).toEqual([]);
+    expect(state.notice).toContain('none of its scenes carries a bounding box');
+  });
+
   it('says so when the dataset has no standard visualisation to draw', async () => {
     reset(['dem']);
     useAppStore.setState({ datasets: datasetsFrom([{ ...DEM, 'earthx:default_render': null }]) });
@@ -633,13 +675,39 @@ describe('pinned layers of several datasets (F4)', () => {
     expect(state.layers.filter((l) => l.visible)).toHaveLength(3);
   });
 
-  it('choosing a layer of a dataset that is no longer ticked leaves the active dataset alone', async () => {
+  it('choosing a layer of a dataset that is no longer ticked ticks it again, keeping the results', async () => {
     await searchedAndPinned();
     useAppStore.getState().toggleDatasetSelected('optical'); // wipes sections, unticks it
     const layer = useAppStore.getState().layers.find((l) => l.restore.datasetId === 'optical')!;
-    const activeBefore = useAppStore.getState().datasetId;
     useAppStore.getState().selectLayer(layer.id);
-    expect(useAppStore.getState().datasetId).toBe(activeBefore);
-    expect(useAppStore.getState().layers.some((l) => l.id === layer.id)).toBe(true);
+    const state = useAppStore.getState();
+    expect(state.selectedDatasetIds).toContain('optical');
+    expect(state.datasetId).toBe('optical');
+    // No section for it any more: the list shows nothing of another dataset.
+    expect(state.items).toEqual([]);
+    expect(state.openSectionId).toBeNull();
+  });
+
+  it('never leaves the list holding another dataset\'s scenes when a dataset without a section becomes active', async () => {
+    await searchedAndPinned();
+    useAppStore.setState({
+      selectedIds: ['z1'],
+      focusMode: true,
+      downloaded: { z1: { tileUrl: 't', bounds: [0, 0, 1, 1], asset: 'a', minZoom: 0, maxZoom: 1 } },
+    });
+    // A scene-name lookup keeps a single section; the other ticked dataset has none.
+    useAppStore.setState({
+      sections: useAppStore.getState().sections.filter((s) => s.datasetId === 'optical-zarr'),
+      openSectionId: 'optical-zarr',
+      datasetId: 'optical-zarr',
+    });
+    useAppStore.getState().setDatasetId('dem');
+    const state = useAppStore.getState();
+    expect(state.datasetId).toBe('dem');
+    expect(state.items).toEqual([]);
+    expect(state.groups).toEqual([]);
+    expect(state.selectedIds).toEqual([]);
+    expect(state.focusMode).toBe(false);
+    expect(state.downloaded).toEqual({});
   });
 });

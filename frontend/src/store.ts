@@ -222,7 +222,7 @@ function foundNotice(features: StacItem[], groups: TimeStepGroup[], numberMatche
 // millisecond the same id, and a layer is found again by that id.
 let batchSeq = 0;
 function nextBatchId(): string {
-  return `${Date.now().toString(36)}${(batchSeq++).toString(36)}`;
+  return `${Date.now().toString(36)}-${(batchSeq++).toString(36)}-`;
 }
 
 // A search answer that names nothing dropped and nothing missing — for the paths
@@ -517,7 +517,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         datasets,
         selectedDatasetIds: firstViewable ? [firstViewable.id] : [],
-        datasetId: (firstViewable ?? datasets[0])?.id ?? null,
+        datasetId: firstViewable?.id ?? null,
       });
     } catch (e) {
       set({ error: `Backend not reachable: ${(e as Error).message}` });
@@ -529,15 +529,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   // layers stay (they carry their own dataset).
   toggleDatasetSelected: (id) => {
     const s = get();
+    // Not while a search is running: its answer would land on a selection that
+    // is no longer the one it asked.
+    if (s.searching) return;
     const dataset = s.datasets.find((d) => d.id === id);
     const ticked = s.selectedDatasetIds.includes(id);
     if (!dataset || (!ticked && !dataset.viewable)) return;
     const selectedDatasetIds = s.datasets
       .filter((d) => (d.id === id ? !ticked : s.selectedDatasetIds.includes(d.id)))
       .map((d) => d.id);
+    const datasetId =
+      s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null);
     set({
       selectedDatasetIds,
-      datasetId: s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null),
+      datasetId,
       sections: [],
       openSectionId: null,
       items: [],
@@ -549,11 +554,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       notice: null,
       playing: false,
       ...LEAVE_FOCUS,
-      coverage: null,
-      coverageFootprints: null,
-      coverageError: null,
+      // The heatmap follows the active dataset only, so ticking another one
+      // leaves it standing.
+      ...(datasetId !== s.datasetId ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
     });
-    scheduleCoverageRefresh(set, get);
+    if (datasetId !== s.datasetId) scheduleCoverageRefresh(set, get);
   },
   // Makes a dataset the active one (the heatmap legend's choice, M3-10 F3). Where
   // the last search has a section for it, that section opens, so the list, the
@@ -565,7 +570,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       s.setOpenSection(datasetId);
       return;
     }
-    set({ datasetId, coverage: null, coverageFootprints: null, coverageError: null });
+    // No section of its own: what the list and the map hold belongs to another
+    // dataset, so it goes rather than being read as this one's.
+    set({
+      datasetId,
+      ...openSectionState(null),
+      selectedIds: [],
+      playing: false,
+      ...LEAVE_FOCUS,
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+    });
     scheduleCoverageRefresh(set, get);
   },
   // Opens one results section — and with it the dataset it belongs to — or, with
@@ -835,15 +851,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     const r = l.restore;
     // A layer belongs to the dataset it was pinned from (F4): choosing it makes
     // that dataset the active one — and opens its section, if the last search
-    // has one — so the list and the controls speak of the layer's own scenes.
+    // has one — so the list and the controls speak of the layer's own scenes. A
+    // dataset that is not ticked (any more) is ticked by this, without touching
+    // the results, so the active dataset stays one of the ticked ones.
     const section = r.datasetId ? s.sections.find((x) => x.datasetId === r.datasetId) : undefined;
-    const becomesActive = r.datasetId && s.selectedDatasetIds.includes(r.datasetId) ? r.datasetId : null;
+    const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
+    const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
+    const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
+    const changesDataset = !!becomesActive && becomesActive !== s.datasetId;
     set({
-      ...(section ? openSectionState(section) : {}),
-      ...(becomesActive ? { datasetId: becomesActive } : {}),
-      ...(becomesActive && becomesActive !== s.datasetId
-        ? { coverage: null, coverageFootprints: null, coverageError: null }
+      ...(tickable
+        ? { selectedDatasetIds: s.datasets.filter((d) => d.id === dataset.id || s.selectedDatasetIds.includes(d.id)).map((d) => d.id) }
         : {}),
+      ...(section ? openSectionState(section) : changesDataset ? openSectionState(null) : {}),
+      ...(becomesActive ? { datasetId: becomesActive } : {}),
+      ...(changesDataset ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,
@@ -854,7 +876,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
     });
-    if (becomesActive && becomesActive !== s.datasetId) scheduleCoverageRefresh(set, get);
+    if (changesDataset) scheduleCoverageRefresh(set, get);
   },
 
   // Open the dialog for a pinned layer (M2-07d). The crop and disabled
@@ -1289,7 +1311,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         const section = sections.find((x) => x.datasetId === dataset.id);
         if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
         const pinned = fullResolutionLayers(dataset, section, aoi, batchId);
-        if (pinned.length === 0) text = `${text} ${dataset.title} has no default visualisation yet (earthx:default_render).`;
+        if (pinned.length === 0) {
+          text = defaultRenderOf(dataset.collection)?.assets[0]
+            ? `${text} ${dataset.title}: none of its scenes carries a bounding box to draw.`
+            : `${text} ${dataset.title} has no default visualisation yet (earthx:default_render).`;
+        }
         return pinned;
       });
       const searched = new Set(collections);
@@ -1303,6 +1329,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedIds: [],
         error: null,
         notice: text,
+        // The heatmap belongs to the dataset that was active before; the new
+        // one's follows the refresh below.
+        ...(open && open.datasetId !== previous ? { coverage: null, coverageFootprints: null, coverageError: null } : {}),
       });
       if (open && open.datasetId !== previous) scheduleCoverageRefresh(set, get);
     };

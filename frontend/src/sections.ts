@@ -80,7 +80,11 @@ export function buildSections(
     const notes: string[] = [];
     // A search over one source may name no per-collection breakdown; its flat
     // list can then only mean that source.
-    const ignored = answer.ignoredFiltersByCollection[dataset.id] ?? (datasets.length === 1 ? answer.ignoredFilters : []);
+    const ignored = Object.hasOwn(answer.ignoredFiltersByCollection, dataset.id)
+      ? answer.ignoredFiltersByCollection[dataset.id]
+      : datasets.length === 1
+        ? answer.ignoredFilters
+        : [];
     for (const filter of ignored) notes.push(ignoredFilterNote(dataset, filter));
     const incomplete = answer.incompleteCollections.find((entry) => entry.collection === dataset.id);
     if (incomplete) notes.push(incompleteNote(incomplete.reason));

@@ -351,6 +351,7 @@ function DatasetFilter() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
+  const searching = useAppStore((s) => s.searching);
   const [query, setQuery] = useState('');
   if (datasets.length === 0) return null;
   const shown = filterDatasets(datasets, query, selectedDatasetIds);
@@ -382,7 +383,7 @@ function DatasetFilter() {
                 <input
                   type="checkbox"
                   checked={selectedDatasetIds.includes(d.id)}
-                  disabled={!d.viewable}
+                  disabled={!d.viewable || searching}
                   onChange={() => toggle(d.id)}
                 />
                 <span className="dataset-option-title">{d.title}</span>

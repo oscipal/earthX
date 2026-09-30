@@ -193,7 +193,7 @@ export interface ItemPage {
 // crash: a note is only ever a hint, it must not take the results list down.
 function ignoredByCollectionFrom(value: unknown): Record<string, string[]> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const result: Record<string, string[]> = {};
+  const result: Record<string, string[]> = Object.create(null);
   for (const [collection, filters] of Object.entries(value)) {
     if (!Array.isArray(filters)) continue;
     const names = filters.filter((f): f is string => typeof f === 'string');
@@ -343,7 +343,7 @@ export async function searchAllPages(
     // Kept per collection like the flat list: the first page that names a
     // collection speaks for the whole search.
     for (const [collection, filters] of Object.entries(page.ignoredFiltersByCollection)) {
-      if (!(collection in ignoredFiltersByCollection)) ignoredFiltersByCollection[collection] = filters;
+      if (!Object.hasOwn(ignoredFiltersByCollection, collection)) ignoredFiltersByCollection[collection] = filters;
     }
     for (const entry of page.incompleteCollections) {
       if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
