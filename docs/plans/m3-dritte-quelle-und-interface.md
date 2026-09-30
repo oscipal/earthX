@@ -120,7 +120,7 @@ COG-Header-Cache (Log offen); Weg vom eigenen Code zum Objektspeicher (M4,
 `adr/0012` F5);
 Exporte über dem synchronen Deckel in voller Auflösung (M4, Job, P20);
 Zenodo als Metadatenquelle (M5, `adr/0009`); Zählwürfel (kein Bau auf
-Vorrat, in M5 je Datensatz nur bei gemessenem Bedarf, Log 26.09.2026); Zugriffsauflösung außerhalb von `api/tiler.py` (M4, K-04); Ratenbegrenzung pro
+Vorrat, in M5 je Datensatz nur bei gemessenem Bedarf, Log 26.09.2026); Zugriffsauflösung außerhalb von `api/tiler.py` (M4, K-04) und der Umbau des Adapter-Interfaces nach `adr/0011` (erste Schritte von M4: **M4-01a** Zugriffsauflösung nach `access` und gemeinsame Stelle für Items; **M4-01b** `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen); Ratenbegrenzung pro
 IP oder Nutzer (D6); Bug-Report Stufe 2 (D9); helle Basiskarte (D10);
 Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 §13, Nutzungsbedingungen); gemergtes Mosaik ganzer Szenen (M4, Job).
@@ -150,7 +150,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
 | M3-12 | Frontend-Sonderfälle in die Registry | B | Opus Plan, Sonnet (hoch) | M3-11b (M3-10 entfällt, Otto 26.09.2026) | in Arbeit |
 | M3-13 | Gemischte Suche und CQL2 | B | Opus Plan (hoch), Sonnet (hoch) | M3-11b | in Arbeit |
-| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | offen |
+| M3-14 | Interface-Reflexion → `adr/0011` | C | Opus (hoch) | M3-11c, M3-13 | erledigt (angenommen, Otto 30.09.2026) |
 | M3-15 | M3-Abnahme und README | A | Sonnet (mittel) | alle | offen |
 | M3-16 | Keine AOI im Log | A | Sonnet (hoch) | — | erledigt (#85) |
 | M3-17 | Download folgt der Ansicht | B | Opus Plan, Sonnet (hoch) | M3-09 | in Arbeit |
