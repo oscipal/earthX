@@ -565,6 +565,7 @@ describe('runSearch', () => {
   function baseState(overrides: Partial<ReturnType<typeof useAppStore.getState>> = {}) {
     useAppStore.setState({
       datasets: datasetsFrom([COG_LIKE]),
+      selectedDatasetIds: [COG_LIKE.id],
       datasetId: COG_LIKE.id,
       dateFrom: '',
       dateTo: '',
