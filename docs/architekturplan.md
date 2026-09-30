@@ -134,9 +134,9 @@ flowchart TB
 |---|---|---|
 | `gateway` | Alle ausgehenden HTTP/S3-Zugriffe | nichts Fachliches |
 | `catalog` | STAC-Modell, pgstac, Suche, Lizenz- und Capability-Felder | `gateway` |
-| `adapters` | Protokolle der Quellen: Discovery, Suche, Zugriffsauflösung | `gateway`, `catalog` (nur Modelle) |
+| `adapters` | Protokolle der Quellen: Discovery, Suche, Einzelabruf, Materialisierung, Aggregation; liefern Items mit lesbaren hrefs (6.1) | `gateway`, `catalog` (nur Modelle) |
 | `readers` | Formate: `cog.py`, `zarr_reader.py`, später virtuelle Stores | `gateway` |
-| `access` | Tiles, Quicklooks, Statistik, Download-Vermittlung | `readers`, `catalog` |
+| `access` | Zugriffsauflösung (Asset → Reader und geprüfte Adresse, 6.1), Tiles, Quicklooks, Statistik, Download-Vermittlung | `readers`, `catalog` |
 | `processing` | Rezepte, Operator-Registry, Kostenmodell, Provenienz | `access`, `readers`, `catalog` |
 | `jobs` | Queue, Worker, Fortschritt, Ergebnisse | `processing` |
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
@@ -302,20 +302,30 @@ eigenen Landing Page (5.3) richten sich nach der schwächsten beteiligten Quelle
 
 ## 6. Zugriffs-Ebene
 
-### 6.1 Adapter-Nahtstellen (ohne Signaturen)
+### 6.1 Adapter-Nahtstellen
 
-Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt mehrere **getrennte** Fähigkeiten ab; nicht jede Quelle braucht alle, und die Liste ist **nicht abschließend** — sie wächst mit den realen Quellen:
+Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt mehrere **getrennte** Fähigkeiten ab; nicht jede Quelle braucht alle. Die Fähigkeiten stammen aus den drei realen Quellen (Earth Search, EOPF, Copernicus-DEM-Bucket) und sind in `adr/0011` (angenommen am 30.09.2026) begründet. Jede Quelle meldet, was sie kann; was sie nicht kann, ist ausdrücklich abwesend und wird abgewiesen, nie still ersetzt.
 
-| Fähigkeit | Frage, die sie beantwortet | Genutzt von |
-|---|---|---|
-| Discovery | Welche Datensätze gibt es bei dieser Quelle, mit welchen Metadaten? | `discovery` |
-| Suche | Welche Szenen gibt es für AOI und Zeitraum? | `catalog` (Föderation) |
-| Zugriffsauflösung | Welche lesbare Adresse und welcher Reader gehören zu diesem Asset? | `access`, `processing` |
-| Aggregation (optional) | Wie viele Aufnahmen liegen je Rasterzelle und je Zeitschritt unter Filter F? | `catalog` (Coverage Map) |
+| Fähigkeit | Frage, die sie beantwortet | Bietet | Genutzt von |
+|---|---|---|---|
+| Discovery (ab M5) | Welche Datensätze gibt es bei dieser Quelle, mit welchen Metadaten? | Adapter mit Collection-Protokoll | `discovery` |
+| Suche | Welche Items gibt es für AOI, Zeitraum, `ids`? | Adapter einer föderierten Quelle; bei materialisierter Haltung pgstac | `api` |
+| Einzelabruf | Welches Item hat diese Kennung? | wie Suche | `api` (Item-Quelle für Kachel, Download, Job-Annahme) |
+| Materialisierung | Welche Items bietet die Quelle an, einmal gebaut und gegen die Quelle geprüft? | Adapter einer materialisierten Quelle | `discovery` |
+| Aggregation (optional) | Wie viele Aufnahmen liegen je Rasterzelle und je Zeitschritt unter Filter F? | Adapter (Aggregation der Quelle oder Stichprobe) oder `catalog` (SQL über eigene Items) | `api` (Coverage Map) |
+| Zugriffsauflösung | Welcher Reader und welche geprüfte Adresse gehören zu diesem Asset? | `access`, generisch; Adapter liefern dafür Items mit lesbaren hrefs | `api`, `processing` |
 
-Aggregation ist die vierte Fähigkeit, entschieden am 19.09.2026 mit `adr/0004`. Sie ist **optional**: Bringt eine Quelle sie nicht mit (Earth Search tut es über die STAC-Aggregation-Extension, andere nicht), ist die Rückfallebene eine **ausgewiesene Stichprobe** — die Antwort trägt dann sichtbar den Wert `stichprobe`, statt Vollständigkeit vorzutäuschen (`adr/0004` §5, Regel V). Das quellenspezifische Protokollwissen liegt in `adapters`, die Nahtstelle und das SQL für eigene Items in `catalog`.
+`catalog` ruft keinen Adapter auf (3.1). Im Code setzt `api` die Fähigkeiten zusammen; die Materialisierung ruft `discovery` auf.
 
-Auth ist bewusst eine spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden. Die konkreten Signaturen entstehen, wie beschlossen, aus den ersten zwei bis drei realen Quellen. Damit das Interface nicht STAC-förmig wird, muss darunter eine Nicht-STAC-Quelle sein.
+**Form.** Je Quelle ein deklarierter Eintrag (`AdapterSpec`) mit einer Funktion je Fähigkeit oder `None`, dazu die Filter-Fähigkeiten der Quelle als Daten. Signaturen nehmen den Registry-Eintrag (`DatasetConfig`) statt einer Kennung mit Vorgabe-Registry. Der Umbau ist M4-01b (`adr/0011` §5).
+
+**Item-Vertrag.** Jedes Item, das ein Adapter liefert, ist STAC 1.0 und trägt `https`-Adressen; Übersetzungen wie `s3://` → `https` und das Weglassen nicht anzubietender Assets geschehen im Adapter, nicht im Reader (`adr/0011` §5.3).
+
+**Zugriffsauflösung** ist kein Adapterthema, sondern generisch: eine reine, serialisierbare Auflösung (`ResolvedAsset`) plus Öffnen mit geprüfter Adresse, beides in `access`; das Item besorgt `api`. Aus `access` fließt nichts aus `gateway`; Fehler übersetzt `readers`. Das ist der erste Schritt von M4 (M4-01a, `adr/0011` §6).
+
+Aggregation ist die vierte der ursprünglich genannten Fähigkeiten, entschieden am 19.09.2026 mit `adr/0004`. Sie ist **optional**: Bringt eine Quelle sie nicht mit (Earth Search tut es über die STAC-Aggregation-Extension, andere nicht), ist die Rückfallebene eine **ausgewiesene Stichprobe** — die Antwort trägt dann sichtbar den Wert `stichprobe`, statt Vollständigkeit vorzutäuschen (`adr/0004` §5, Regel V). Das quellenspezifische Protokollwissen liegt in `adapters`, die Nahtstelle und das SQL für eigene Items in `catalog`.
+
+Auth ist bewusst eine spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden.
 
 ### 6.2 Reader und erweiterte Format-Hierarchie
 
@@ -663,7 +673,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 | Föderierte Item-Suche | Latenz und Limits realer Upstream-STAC-APIs; welcher Cache-TTL ist vertretbar? |
 | Job-Queue | Erfüllt eine Postgres-Queue die Anforderungen aus 7.5, inklusive Fairness und Fortschritts-Events? |
 | VirtualiZarr + Icechunk | Funktioniert ein virtueller Store über ein reales NetCDF- oder TIFF-Archiv einer Kandidatenquelle, anonym und performant? |
-| EODAG | Spart EODAG als Bibliothek Adapter-Arbeit für token-freie Anbieter, oder dominiert der Konfigurationsaufwand? |
+| EODAG | Spart EODAG als Bibliothek Adapter-Arbeit für token-freie Anbieter, oder dominiert der Konfigurationsaufwand? Beantwortet mit `adr/0011` §9: nicht als Bibliothek, weil es am `gateway` vorbei holt |
 | Lokaler Runner | Liefert derselbe Kern lokal und in der Cloud bitgleiche (oder innerhalb definierter Toleranz gleiche) Ergebnisse? Erlauben gängige Browser den Zugriff von der https-Oberfläche auf einen Tile-Server auf localhost? |
 | Hybrid-Suche | Reicht pgvector + Volltext mit RRF auf einem Testkatalog für die Bewertungs-Anfragen? |
 

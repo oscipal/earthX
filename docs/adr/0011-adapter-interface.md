@@ -1,12 +1,15 @@
 # ADR 0011 — Adapter-Interface: aus drei Quellen abgeleitet
 
-- **Status:** **Entwurf**, wartet auf Otto. Neun Fragen stehen in §11. Die
-  Freigabe gehört zur M3-Abnahme (M3-14).
+- **Status:** **Angenommen** von Otto am 2026-09-30. Alle neun Fragen aus §11
+  sind nach Empfehlung beantwortet (F1–F9: Option 1). Der Umbau ist der erste
+  Schritt von M4, zugeschnitten als M4-01a und M4-01b (F7). Die Anpassung von
+  `architekturplan.md` 3.1 und 6.1 (F8) ist mit dieser Annahme umgesetzt.
 - **Datum:** 2026-09-30
 - **Aufgabe:** M3-14 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P15).
 - **Autonomiestufe:** C. Die Grundlage ist gelesen und berichtet. Code,
-  Registry, Importregeln und `architekturplan.md` bleiben unverändert. Was sich
-  nach einer Freigabe dort ändert, steht als Vorschlag in §4.3 und §6.5.
+  Registry und Importregeln bleiben unverändert. Was sich in
+  `architekturplan.md` ändert, steht in §4.3 und ist nach der Annahme (F8)
+  übernommen. Der Code-Umbau steht in §6.5 und gehört zu M4.
 - **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §3, §5; `KLAERUNGEN.md` B8, B9,
   B10, B13; `architekturplan.md` 1.2, 3.1, 5.1, 5.2, 6.1, 6.2, 7.1, 7.3, 7.7,
   15.2, 16; `adr/0004` §5; `adr/0005` Regeln I–VI; `adr/0009` §7, §10, §11;
@@ -614,7 +617,9 @@ Damit ist die Spike-Frage aus architekturplan 15.2 („Spart EODAG als Bibliothe
 Adapter-Arbeit?“) für die drei realen Quellen beantwortet. Der
 quellenspezifische Code je STAC-Quelle ist klein (B2). Der Rest sind
 Plattformregeln (Regeln I–VI, `gateway`, Marke, Cache), die EODAG nicht kennt.
-Und EODAG würde `gateway` umgehen.
+Und EODAG würde `gateway` umgehen. Die Muster der Anbieter-Konfiguration aus
+EODAG (Provider als Kombination generischer Plugins) können dem Harvester in M5
+als Anregung dienen (Otto, F9).
 
 ---
 
@@ -631,13 +636,18 @@ Und EODAG würde `gateway` umgehen.
 
 ---
 
-## 11. Fragen an Otto
+## 11. Fragen an Otto — beantwortet am 2026-09-30
+
+Otto hat alle neun Fragen mit Option 1 beantwortet. Zu F7 und F9 gab er
+Präzisierungen (unten). Die Fragen stehen mit ihrem ursprünglichen Wortlaut da.
 
 **F1: Form des Interfaces**
 1. S3: getrennte Fähigkeiten, je Quelle ein `AdapterSpec` **(Empfehlung)**
 2. S1: Status quo mit Typen
 3. S2: eine Klasse `DataSourceAdapter`
 4. S4: Konfiguration statt Code
+
+**Antwort F1: (1)** getrennte Fähigkeiten, je Quelle ein `AdapterSpec`.
 
 **F2: Zielort der Zugriffsauflösung (K-04)**
 1. `access`, rein (`resolve_asset`) plus Öffnen (`open_asset_ref`); das Item
@@ -647,11 +657,15 @@ Und EODAG würde `gateway` umgehen.
 3. neues Modul in 3.1
 4. `adapters`, mit Lockerung zweier Importregeln
 
+**Antwort F2: (1)** `access`, mit Fehlerklasse in `readers`; die Zuständigkeit in 3.1 wandert von `adapters` zu `access`.
+
 **F3: Signaturen mit `DatasetConfig` (K-09)**
 1. ja; `registry=REGISTRY` als Vorgabe entfällt, die DEM-Zeitkonstanten kommen
    aus `config.temporal_extent` **(Empfehlung)**
 2. nur die Vorgabe `REGISTRY` streichen, `dataset_id` bleibt
 3. so lassen
+
+**Antwort F3: (1)** Signaturen mit `DatasetConfig`, ohne Vorgabe `REGISTRY`.
 
 **F4: Weg zum Item und Routing (K-11)**
 1. D2: eine Item-Quelle in `api`, Routing aus der Registry, Abgleich mit pgstac
@@ -659,15 +673,21 @@ Und EODAG würde `gateway` umgehen.
 2. D1: so lassen
 3. D3: alles aus dem pgstac-Dokument
 
+**Antwort F4: (1)** eine Item-Quelle in `api`, Routing aus der Registry, Abgleich mit pgstac beim Start.
+
 **F5: `SourceInfo.harvest_run`**
 1. entfernen; die Läufe stehen in `earthx_materialize_runs` **(Empfehlung)**
 2. bis M5 stehen lassen
 3. umdeuten auf die Kennung des letzten Laufs
 
+**Antwort F5: (1)** `SourceInfo.harvest_run` entfällt.
+
 **F6: STAC-API-Dialekt (ein Modul für beide STAC-Quellen)**
 1. erst mit der nächsten STAC-API-Quelle, also in M5 **(Empfehlung)**
 2. jetzt, im ersten Schritt von M4
 3. nie
+
+**Antwort F6: (1)** ein gemeinsames Modul für STAC-APIs erst mit der nächsten STAC-API-Quelle (M5).
 
 **F7: Zeitpunkt und Schnitt des Umbaus**
 1. erster Schritt von M4, zwei PRs: (a) Zugriffsauflösung und Item-Quelle
@@ -676,14 +696,20 @@ Und EODAG würde `gateway` umgehen.
 2. nur (a) in M4, (b) mit M5
 3. beides noch in M3, als Stufe B
 
+**Antwort F7: (1)** erster Schritt von M4 in zwei PRs. Im M3-Plan („Nicht in M3“) und im Projektplan bei M4 eingetragen als **M4-01a** (Zugriffsauflösung nach `access` und gemeinsame Stelle für Items) und **M4-01b** (`AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen).
+
 **F8: `architekturplan.md` 3.1 und 6.1**
 1. nach Freigabe in diesem PR nach §4.3 anpassen: 6.1 neu, in 3.1 nur die
    Spalte „Zuständig für“ bei `adapters` und `access` **(Empfehlung)**
 2. in M3-15
 
+**Antwort F8: (1)** `architekturplan.md` 6.1 neu gefasst, in 3.1 nur die Spalte „Zuständig für“ bei `adapters` und `access` geändert; Importspalte und `.importlinter` unverändert.
+
 **F9: EODAG (Spike aus architekturplan 15.2)**
 1. als beantwortet markieren: nicht als Bibliothek, Begründung §9 **(Empfehlung)**
 2. für M5 offen lassen, für Protokolle wie OData oder CSW
+
+**Antwort F9: (1)** als beantwortet markiert: EODAG nicht als Bibliothek, weil es am `gateway` vorbei holt. Die Muster der Anbieter-Konfiguration aus EODAG können dem Harvester in M5 als Anregung dienen.
 
 ---
 
