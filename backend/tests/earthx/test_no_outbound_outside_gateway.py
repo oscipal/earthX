@@ -28,9 +28,10 @@ CONTRACT = "importlinter:contract:http-only-in-gateway"
 # The contract may grow, but never below this: these are the packages that can
 # open a connection of their own. `httpx2` and `obstore` joined in M2-04 (adr/0006
 # §3.2, Otto's answer 6): `rio-tiler` fetches STAC items over `httpx2`, and
-# `titiler.xarray` would bring `obstore` with M2-09.
+# `titiler.xarray` would bring `obstore` with M2-09. `anthropic` joined with the
+# chatbot's model client (plan m7a F3), which goes through `gateway` instead.
 CORE = frozenset(
-    {"httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore"}
+    {"httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore", "anthropic"}
 )
 
 # `rio_tiler.io.stac` is the way rio-tiler fetches by itself, and the list above

@@ -269,6 +269,8 @@ source_modules =
 ; package as a forbidden module ("subpackages of external packages are not valid"),
 ; so that one is checked over the syntax tree in
 ; backend/tests/earthx/test_no_outbound_outside_gateway.py.
+; `anthropic` joined with the chatbot's model client (plan m7a §4, F3): the SDK
+; opens its own connections, so the Messages API is reached over `gateway` instead.
 forbidden_modules =
     httpx
     httpx2
@@ -278,3 +280,4 @@ forbidden_modules =
     aiohttp
     boto3
     obstore
+    anthropic
