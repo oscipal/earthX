@@ -478,7 +478,16 @@ Namenssuche über mehrere Datensätze (F8) sind **M3-10b**.
   Millisekunde bekamen dieselbe Kennung (`nextBatchId`, ein Zähler dazu). (2)
   `selectLayer` ließ den aktiven Datensatz unberührt, sodass die Liste von einem
   anderen Datensatz sprach als die gewählte Ebene; jetzt wird ihr Datensatz
-  aktiv.
+  aktiv (ist er nicht mehr angehakt, wird er wieder angehakt, die Ergebnisse
+  bleiben). Wird ein Datensatz ohne eigenen Abschnitt aktiv, gehen Liste,
+  Auswahl und Vollauflösung des vorigen Datensatzes; die Auswahl im Filter ist
+  während einer laufenden Suche gesperrt.
+- **Offen, Frage an Otto:** Die Such-Zuschnitte des DEM liegen als angeheftete
+  Ebenen **über** den Quicklooks (angeheftete Ebenen werden über der
+  Vorschau gezeichnet). In der AOI verdeckt ein deckender DEM-Zuschnitt einen
+  Sentinel-2-Quicklook; Deckkraft, Sichtbarkeit und Reihenfolge stellt man im
+  Layer-Manager ein. Der Plan sprach bei F5 (2) von „unter den Quicklooks“; das
+  wäre eine eigene Änderung der Zeichenreihenfolge in `mapLayers.ts`.
 - **Schlagworte (F6 (1)):** `DatasetConfig.keywords` (ohne Vorgabewert, mindestens
   ein nicht leeres Schlagwort, Registry-Prüfung), als STAC-`keywords` in
   `to_stac_collection`; Werte wie in §4.6; `architekturplan.md` 5.1 nachgezogen.
