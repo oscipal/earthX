@@ -1,8 +1,8 @@
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
-import { totalItems } from '../sections';
+import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
 
@@ -138,75 +138,121 @@ function GroupBlock({
   );
 }
 
-// One dataset's part of the list (M3-10): head with title and scene count, the
-// section's notes (dropped filters, an unreachable source — shown even folded,
-// so they are never hidden behind a click), and, while open, its time steps.
-function SectionBlock({ section, open }: { section: ResultSection; open: boolean }) {
+// One dataset's entry in the box and in the dropdown (M3-10): title, maturity
+// chip, scene count, and under them the notes that belong to it — dropped
+// filters, an unreachable source, a grouping failure.
+function SectionSummary({ section }: { section: ResultSection }) {
   const title = useAppStore((s) => s.datasets.find((d) => d.id === section.datasetId)?.title ?? section.datasetId);
   const label = useAppStore((s) => {
     const dataset = s.datasets.find((d) => d.id === section.datasetId);
     return dataset?.viewable ? maturityLabel(dataset.collection) : null;
   });
-  const setOpenSection = useAppStore((s) => s.setOpenSection);
-  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
-  const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
-  const groups = useAppStore((s) => s.groups);
   return (
-    <section className={`result-section${open ? ' open' : ''}`} aria-label={title}>
-      <button
-        type="button"
-        className="result-section-head"
-        aria-expanded={open}
-        onClick={() => setOpenSection(open ? null : section.datasetId)}
-      >
-        <span className="rg-caret">{open ? '▾' : '▸'}</span>
-        <span className="rs-title" title={title}>
+    <>
+      <span className="dataset-select-line">
+        <span className="dataset-select-title" title={title}>
           {title}
         </span>
         {label && <span className="maturity-chip">{label}</span>}
         <span className="rg-count">{section.items.length}</span>
-      </button>
+      </span>
       {section.notes.map((note, i) => (
-        <p key={`${i}-${note}`} className="hint-text result-section-note">
+        <span key={`${i}-${note}`} className="dataset-select-note">
           {note}
-        </p>
+        </span>
       ))}
-      {open &&
-        groups.map((g, i) => (
-          <GroupBlock
-            key={g.key.join('\u0000')}
-            group={g}
-            index={i}
-            expanded={i === expandedGroupIndex}
-            onToggle={toggleGroup}
-          />
-        ))}
-    </section>
+    </>
+  );
+}
+
+// The box at the top of the results (M3-10, Otto 30.09.2026): it names the
+// dataset whose scenes the list shows — the active dataset, which heatmap,
+// quicklooks and full resolution follow — and opens a list of every searched
+// dataset to switch. The list is part of the panel's own flow, not a popup, so
+// the panel's edge does not clip it. Choosing never closes the panel.
+function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; openId: string | null }) {
+  const setOpenSection = useAppStore((s) => s.setOpenSection);
+  const [listOpen, setListOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const shown = sections.find((section) => section.datasetId === openId) ?? sections[0];
+
+  useEffect(() => {
+    if (!listOpen) return;
+    const away = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setListOpen(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setListOpen(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [listOpen]);
+
+  if (!shown) return null;
+  const several = sections.length > 1;
+  return (
+    <div className="dataset-select" ref={rootRef}>
+      <button
+        type="button"
+        className="dataset-select-box"
+        aria-haspopup={several ? 'listbox' : undefined}
+        aria-expanded={several ? listOpen : undefined}
+        aria-label="Dataset shown in the list"
+        disabled={!several}
+        onClick={() => setListOpen((v) => !v)}
+      >
+        <SectionSummary section={shown} />
+        {several && <span className="rg-caret">{listOpen ? '▴' : '▾'}</span>}
+      </button>
+      {several && listOpen && (
+        <div className="dataset-select-list" role="listbox" aria-label="Searched datasets">
+          {sections.map((section) => (
+            <button
+              key={section.datasetId}
+              type="button"
+              role="option"
+              aria-selected={section.datasetId === shown.datasetId}
+              className={`dataset-select-option${section.datasetId === shown.datasetId ? ' selected' : ''}`}
+              onClick={() => {
+                setOpenSection(section.datasetId);
+                setListOpen(false);
+              }}
+            >
+              <SectionSummary section={section} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
-  // Only one section is open, and it is the one whose scenes `groups`/`items`
-  // hold (`store.ts::setOpenSection`). Within it, the open time step stays
-  // separate from `activeGroupIndex` (the one the map and time slider show), so
-  // the open group can be collapsed without forcing a different one open, and
-  // collapsing every group also hides its quicklooks on the map (V-6, V-11 —
+  // The dataset shown is the one whose scenes `groups`/`items` hold
+  // (`store.ts::setOpenSection`). Within it, the open time step stays separate
+  // from `activeGroupIndex` (the one the map and time slider show), so the open
+  // group can be collapsed without forcing a different one open, and collapsing
+  // every group also hides its quicklooks on the map (V-6, V-11 —
   // `store.ts::toggleResultsGroup` has the full reasoning).
   const openSectionId = useAppStore((s) => s.openSectionId);
+  const groups = useAppStore((s) => s.groups);
+  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
+  const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
   const clearAll = useAppStore((s) => s.clearAll);
 
-  // A single dataset with nothing found is the search notice's business alone;
-  // with several, the sections say which ones came back empty or incomplete.
-  const total = totalItems(sections);
-  if (total === 0 && sections.length < 2) return null;
+  if (!hasResultsPanel(sections)) return null;
 
   return (
     <div className="panel results-panel">
       <div className="results-head">
         <h2>Results</h2>
         <div className="results-head-right">
-          <span>{total}</span>
+          <span>{totalItems(sections)}</span>
           <button
             type="button"
             className="link-btn"
@@ -217,9 +263,16 @@ export default function ResultsPanel() {
           </button>
         </div>
       </div>
+      <DatasetDropdown sections={sections} openId={openSectionId} />
       <div className="results-list">
-        {sections.map((section) => (
-          <SectionBlock key={section.datasetId} section={section} open={section.datasetId === openSectionId} />
+        {groups.map((g, i) => (
+          <GroupBlock
+            key={g.key.join('\u0000')}
+            group={g}
+            index={i}
+            expanded={i === expandedGroupIndex}
+            onToggle={toggleGroup}
+          />
         ))}
       </div>
     </div>

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 //
-// M3-10: the results list is one collapsible section per dataset — title and
-// scene count in the head, the section's notes under it even while folded, the
-// time-step groups inside while open.
+// M3-10 (Otto, 30.09.2026): the results list has a box with a dropdown at the top
+// to choose the dataset whose scenes are shown — the choice is the active
+// dataset. Title, scene count and the dataset's notes are in the box and in the
+// dropdown; the time-step groups below stay grouped per overpass. The panel does
+// not disappear by choosing.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -89,11 +91,17 @@ function load(features: StacItem[], answer = { ignoredFilters: [] as string[], i
   act(() => root.render(<ResultsPanel />));
 }
 
-function heads(): HTMLButtonElement[] {
-  return [...container.querySelectorAll('.result-section-head')] as HTMLButtonElement[];
+function box(): HTMLButtonElement {
+  return container.querySelector('.dataset-select-box') as HTMLButtonElement;
 }
-function headText(head: HTMLElement): string {
-  return head.textContent ?? '';
+function options(): HTMLButtonElement[] {
+  return [...container.querySelectorAll('.dataset-select-option')] as HTMLButtonElement[];
+}
+function openList(): void {
+  act(() => box().click());
+}
+function text(el: Element | null): string {
+  return el?.textContent ?? '';
 }
 
 beforeEach(() => {
@@ -114,76 +122,136 @@ const MIXED = [
   scene('d1', 'dem', { start_datetime: '2011-01-01T00:00:00Z' }),
 ];
 
-describe('ResultsPanel sections', () => {
-  it('shows one head per dataset with its title and scene count, and the total', () => {
+describe('ResultsPanel dataset dropdown', () => {
+  it('shows the dataset chosen in the box with its title, chip and scene count, and the total', () => {
     load(MIXED);
-    expect(heads().map((h) => headText(h))).toEqual([
-      '▾Optical imagerystaging2',
-      '▸Optical (Zarr)0',
-      '▸Elevation model1',
-    ]);
-    expect(container.querySelector('.results-head')?.textContent).toContain('3');
+    expect(text(box())).toContain('Optical imagery');
+    expect(text(box())).toContain('staging');
+    expect(text(box().querySelector('.rg-count'))).toBe('2');
+    expect(text(container.querySelector('.results-head'))).toContain('3');
     expect(container.querySelector('h2')?.textContent).toBe('Results');
   });
 
-  it('has the first section with scenes open, and shows its time steps only', () => {
+  it('starts on the first dataset with scenes and shows its time steps', () => {
     load(MIXED);
-    expect(heads()[0].getAttribute('aria-expanded')).toBe('true');
-    expect(heads()[2].getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelectorAll('.result-group')).toHaveLength(2);
+    expect(useAppStore.getState().openSectionId).toBe('optical');
+  });
+
+  it('keeps the list closed until the box is clicked, then lists every searched dataset with its count', () => {
+    load(MIXED);
+    expect(options()).toHaveLength(0);
+    openList();
+    expect(options().map((o) => text(o.querySelector('.dataset-select-title')))).toEqual([
+      'Optical imagery',
+      'Optical (Zarr)',
+      'Elevation model',
+    ]);
+    expect(options().map((o) => text(o.querySelector('.rg-count')))).toEqual(['2', '0', '1']);
+    expect(options().map((o) => o.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+  });
+
+  it('choosing a dataset shows its scenes, makes it the active dataset and closes the list', () => {
+    load(MIXED);
+    openList();
+    act(() => options()[2].click());
+    expect(useAppStore.getState().datasetId).toBe('dem');
+    expect(useAppStore.getState().openSectionId).toBe('dem');
+    expect(text(box())).toContain('Elevation model');
+    expect(container.querySelectorAll('.result-group')).toHaveLength(1);
+    expect(options()).toHaveLength(0);
+  });
+
+  it('the panel stays whatever is chosen — also a dataset without scenes', () => {
+    load(MIXED);
+    openList();
+    act(() => options()[1].click());
+    expect(container.querySelector('.results-panel')).not.toBeNull();
+    expect(container.querySelectorAll('.result-group')).toHaveLength(0);
+    expect(text(box())).toContain('Optical (Zarr)');
+    expect(text(box())).toContain('No scenes for this area.');
+    // and back again
+    openList();
+    act(() => options()[0].click());
     expect(container.querySelectorAll('.result-group')).toHaveLength(2);
   });
 
-  it('opening another section closes the first: one open at a time', () => {
+  it('clicking the box again closes the list without changing the choice', () => {
     load(MIXED);
-    act(() => heads()[2].click());
-    expect(heads()[0].getAttribute('aria-expanded')).toBe('false');
-    expect(heads()[2].getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelectorAll('.result-group')).toHaveLength(1);
-    expect(useAppStore.getState().datasetId).toBe('dem');
+    openList();
+    act(() => box().click());
+    expect(options()).toHaveLength(0);
+    expect(useAppStore.getState().openSectionId).toBe('optical');
   });
 
-  it('clicking the open head closes it, and the panel stays', () => {
+  it('Escape and a click outside close the list', () => {
     load(MIXED);
-    act(() => heads()[0].click());
-    expect(container.querySelectorAll('.result-group')).toHaveLength(0);
-    expect(heads()).toHaveLength(3);
-    expect(useAppStore.getState().openSectionId).toBeNull();
+    openList();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(options()).toHaveLength(0);
+    openList();
+    act(() => {
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
+    expect(options()).toHaveLength(0);
   });
 
-  it('shows a section\'s notes under its head even while the section is folded', () => {
+  it("shows a dataset's notes in the box and in its option of the dropdown", () => {
     load(MIXED, {
       ignoredFilters: ['datetime'],
       ignoredFiltersByCollection: { dem: ['datetime'] },
       incompleteCollections: [{ collection: 'zarr', reason: 'unreachable' }],
     });
-    const notes = [...container.querySelectorAll('.result-section')].map((s) =>
-      [...s.querySelectorAll('.result-section-note')].map((n) => n.textContent),
-    );
+    // the box shows the chosen dataset's notes (none for the optical one) …
+    expect(box().querySelectorAll('.dataset-select-note')).toHaveLength(0);
+    openList();
+    const notes = options().map((o) => [...o.querySelectorAll('.dataset-select-note')].map((n) => n.textContent));
     expect(notes).toEqual([
       [],
       ['Results incomplete: the source was not reachable.'],
       ['No time axis – acquired Dec 2010 to Jan 2015'],
     ]);
-    expect(heads()[2].getAttribute('aria-expanded')).toBe('false');
+    // … and choosing the DEM brings its note into the box
+    act(() => options()[2].click());
+    expect(text(box())).toContain('No time axis – acquired Dec 2010 to Jan 2015');
   });
 
-  it('keeps time-step grouping inside a section', () => {
+  it('keeps time-step grouping inside the list', () => {
     load(MIXED);
-    const labels = [...container.querySelectorAll('.result-section.open .rg-label')].map((l) => l.textContent);
+    const labels = [...container.querySelectorAll('.result-group .rg-label')].map((l) => l.textContent);
     expect(labels).toEqual(['2026-07-25', '2026-07-24']);
   });
 
-  it('shows the panel with several datasets even when none has scenes, so the sections can say why', () => {
+  it('shows the panel with several datasets even when none has scenes, so the box can say why', () => {
     load([]);
-    expect(heads()).toHaveLength(3);
-    expect(container.querySelectorAll('.result-section-note')).toHaveLength(3);
+    expect(container.querySelector('.results-panel')).not.toBeNull();
+    expect(text(box())).toContain('No scenes for this area.');
+  });
+
+  it('for a single dataset shows the box, without a dropdown to open', () => {
+    const datasets = datasetsFrom(COLLECTIONS);
+    const single = datasets.filter((d) => d.id === 'optical') as Extract<(typeof datasets)[number], { viewable: true }>[];
+    const { sections } = buildSections(MIXED.slice(0, 2), single, { ignoredFilters: [], ignoredFiltersByCollection: {}, incompleteCollections: [] });
+    useAppStore.setState({
+      datasets,
+      sections,
+      openSectionId: 'optical',
+      datasetId: 'optical',
+      items: sections[0].items,
+      groups: sections[0].groups,
+    });
+    act(() => root.render(<ResultsPanel />));
+    expect(box().disabled).toBe(true);
+    expect(box().querySelector('.rg-caret')).toBeNull();
   });
 
   it('shows nothing for a single dataset with nothing found (the search notice speaks)', () => {
     const datasets = datasetsFrom(COLLECTIONS);
     const single = datasets.filter((d) => d.id === 'optical') as Extract<(typeof datasets)[number], { viewable: true }>[];
     const { sections } = buildSections([], single, { ignoredFilters: [], ignoredFiltersByCollection: {}, incompleteCollections: [] });
-    useAppStore.setState({ datasets, sections, openSectionId: null, items: [], groups: [] });
+    useAppStore.setState({ datasets, sections, openSectionId: 'optical', items: [], groups: [] });
     act(() => root.render(<ResultsPanel />));
     expect(container.querySelector('.results-panel')).toBeNull();
   });
