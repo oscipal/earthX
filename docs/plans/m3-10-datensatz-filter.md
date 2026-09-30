@@ -117,8 +117,9 @@ Datasets                                  2 selected
 [ Sentinel-2 L2A     ] [ Sentinel-2 L2A (Za… ]   <- gewählt, hervorgehoben
 [ Copernicus DEM GLO ] [ Landsat Collection  ]
   (ab dem fünften Datensatz scrollt das Raster)
+[ ▦ Coverage ]                                   <- direkt unter dem Raster
 --------------------------------------------------
-[ ▦ Coverage ] [            Search             ]   <- Fuß, immer sichtbar
+[                   Search                     ]   <- Fuß, immer sichtbar
 ```
 
 - Ein Knopf je Datensatz aus `/stac/collections`: Klick wählt aus (Rahmen,
@@ -135,8 +136,11 @@ Datasets                                  2 selected
   least one dataset.“
 - Die Auswahl zu ändern, leert die Trefferliste (sie passt nicht mehr zur
   Suche); während einer laufenden Suche ist sie gesperrt.
-- **Coverage-Knopf „Coverage“** im Fuß neben „Search“, immer sichtbar und von
-  den Datensatz-Knöpfen abgesetzt (Symbol, gestrichelter Rahmen, bis er an ist).
+- **Coverage-Knopf „Coverage“** direkt unter dem 2×2-Raster (Otto, 30.09.2026,
+  ersetzt „im Fuß neben Search“), außerhalb des Rasters und damit sichtbar, wie
+  weit das Raster auch scrollt; von den Datensatz-Knöpfen abgesetzt (Symbol,
+  gestrichelter Rahmen, bis er an ist). Die Auswahl des Datensatzes öffnet unter
+  ihm im Fluss des Panels.
   Ein Datensatz gewählt: ein Klick zeigt dessen Coverage, der nächste blendet sie
   aus. Mehrere gewählt: erst der Klick öffnet die Auswahl, von welchem Datensatz
   (mit „Hide coverage“, wenn sie an ist); bis dahin wird nichts gezeichnet.
@@ -670,10 +674,18 @@ ihm folgt (§4.3–§4.5, §12).
   kamen), ersetzen diese den Fallback — er stand nur für „nichts im Zeitraum“.
   Antwortet „Load more“ vor einem noch laufenden Fallback, verwirft der Fallback
   sein Ergebnis.
-- **Offen (Frage an Otto, aus dem Review):** Solange eine Seitenmarke übrig ist,
-  kann ein leerer Datensatz auf späteren Seiten doch Treffer im Zeitraum haben
-  (geteilte Quelle, s. o.). Der Fallback läuft heute trotzdem, und sein Hinweis
-  „No results in the chosen time range“ kann dann zu viel behaupten.
+- **Fallback bei übriger Seitenmarke (Otto, 30.09.2026: Option 1 auf
+  Quellen-Ebene) — angehalten.** Vorgabe: Der Fallback startet, sobald die Quelle
+  des gewählten Datensatzes laut gemischter Seitenmarke erschöpft ist; hat sie
+  noch Seiten, sagt die Box „Load more to see if there are any.“ Befund: Das
+  steht der Marke nicht offen. Sie ist für den Client undurchsichtig (`adr/0005`
+  Regel III, §4.4 oben), und die gemischte Suche liefert sonst keine Angabe je
+  Quelle; §4.7 schließt Änderungen an ihr aus. Bis zur Entscheidung bleibt der
+  Stand von oben (Fallback läuft auch bei übriger Marke).
+- **Coverage-Knopf unter dem Raster (Otto, 30.09.2026):** siehe §3; umgesetzt im
+  PR von M3-10b. Beleg mit Chromium (Playwright, sechs Datensätze gemockt, 600 und
+  900 px Fensterhöhe): Knopf 8 px unter dem Raster, gleiche Lage nach dem Scrollen
+  des Rasters, Auswahl öffnet darunter.
 - **Namenssuche (F8):** Sie fragt alle angehakten anzeigbaren Datensätze parallel.
   Der erste Datensatz in Listenreihenfolge mit der Szene öffnet im Dropdown, die
   Karte fliegt hin, die Szene ist ausgewählt; jeder andere sagt in seiner Box, was
