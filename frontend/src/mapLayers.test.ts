@@ -6,6 +6,7 @@ import {
   setCoverageDisplay,
   syncFocusRaster,
   syncHighlight,
+  syncLayers,
   syncMosaic,
   syncSelectionHighlight,
 } from './mapLayers';
@@ -452,5 +453,59 @@ describe('setCoverageDisplay: area mode', () => {
     });
     expect((data['coverage-src'] as GeoJSON.FeatureCollection).features).toHaveLength(0);
     expect((data['coverage-footprints-src'] as GeoJSON.FeatureCollection).features).toHaveLength(0);
+  });
+});
+
+// M3-10 F4 (Otto, 30.09.2026): pinned layers of different datasets are drawn
+// together — the map keeps no notion of "the open dataset" for them.
+describe('syncLayers: pinned layers of several datasets', () => {
+  function stackMap() {
+    const sources = new Map<string, Record<string, unknown>>();
+    const layers = new Map<string, { source: string; paint: Record<string, unknown> }>();
+    const map = {
+      getSource: (id: string) => sources.get(id),
+      getLayer: (id: string) => layers.get(id),
+      removeLayer: (id: string) => layers.delete(id),
+      removeSource: (id: string) => sources.delete(id),
+      addSource: (id: string, spec: Record<string, unknown>) => sources.set(id, spec),
+      addLayer: (layer: { id: string; source: string; paint: Record<string, unknown> }) => layers.set(layer.id, layer),
+    };
+    return { map, sources, layers };
+  }
+
+  function pinned(id: string, datasetId: string, url: string, visible = true) {
+    return {
+      id,
+      name: id,
+      visible,
+      opacity: 0.8,
+      overlays: [{ kind: 'raster' as const, tileUrl: url, bounds: [0, 0, 1, 1] as [number, number, number, number], minZoom: 0, maxZoom: 12 }],
+      restore: { datasetId } as never,
+    };
+  }
+
+  it('draws a layer of each dataset, bottom of the list first', () => {
+    const { map, sources, layers } = stackMap();
+    syncLayers(map as never, [
+      pinned('top', 'dem', 'https://t/dem/{z}/{x}/{y}'),
+      pinned('bottom', 'optical', 'https://t/optical/{z}/{x}/{y}'),
+    ]);
+    const urls = [...sources.values()].map((s) => (s.tiles as string[])[0]);
+    expect(urls).toEqual(['https://t/optical/{z}/{x}/{y}', 'https://t/dem/{z}/{x}/{y}']);
+    expect(layers.size).toBe(2);
+  });
+
+  it('draws the same layers on the next sync, whatever else changed in between', () => {
+    const { map, sources } = stackMap();
+    const list = [pinned('a', 'dem', 'https://t/a'), pinned('b', 'optical', 'https://t/b')];
+    syncLayers(map as never, list);
+    syncLayers(map as never, list);
+    expect(sources.size).toBe(2);
+  });
+
+  it('leaves out only the layer that is switched off', () => {
+    const { map, sources } = stackMap();
+    syncLayers(map as never, [pinned('a', 'dem', 'https://t/a', false), pinned('b', 'optical', 'https://t/b')]);
+    expect([...sources.values()].map((s) => (s.tiles as string[])[0])).toEqual(['https://t/b']);
   });
 });

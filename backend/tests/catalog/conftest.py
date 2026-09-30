@@ -42,6 +42,7 @@ def valid_config() -> DatasetConfig:
         dataset_id="test-dataset",
         title="Test dataset",
         description="Synthetic entry, used only by the tests.",
+        keywords=("synthetic", "test"),
         doi="10.5555/test",
         citation="Test publisher (2026): Test dataset, version 1.",
         data_class=DataClass.RASTER_TIME_SERIES,

@@ -426,7 +426,11 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   }
 
   it('disables both date fields and shows the acquisition period', () => {
-    useAppStore.setState({ datasets: datasetsFrom([NO_TIME_AXIS]), datasetId: NO_TIME_AXIS.id });
+    useAppStore.setState({
+      datasets: datasetsFrom([NO_TIME_AXIS]),
+      selectedDatasetIds: [NO_TIME_AXIS.id],
+      datasetId: NO_TIME_AXIS.id,
+    });
     act(() => root.render(<ControlPanel />));
 
     const [from, to] = dateInputs();
@@ -436,7 +440,11 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   });
 
   it('leaves the fields enabled for a dataset with a time axis', () => {
-    useAppStore.setState({ datasets: datasetsFrom([WITH_TIME_AXIS]), datasetId: WITH_TIME_AXIS.id });
+    useAppStore.setState({
+      datasets: datasetsFrom([WITH_TIME_AXIS]),
+      selectedDatasetIds: [WITH_TIME_AXIS.id],
+      datasetId: WITH_TIME_AXIS.id,
+    });
     act(() => root.render(<ControlPanel />));
 
     const [from, to] = dateInputs();
@@ -446,11 +454,298 @@ describe('AcquisitionDateFields: a dataset without a time axis', () => {
   });
 
   it('leaves the fields enabled when no dataset is picked yet', () => {
-    useAppStore.setState({ datasets: [], datasetId: null });
+    useAppStore.setState({ datasets: [], selectedDatasetIds: [], datasetId: null });
     act(() => root.render(<ControlPanel />));
 
     const [from, to] = dateInputs();
     expect(from.disabled).toBe(false);
     expect(to.disabled).toBe(false);
+  });
+});
+
+// M3-10 (Otto, 30.09.2026): one toggle button per dataset, any number at once,
+// every picked dataset searched together. No text filter, no tick boxes.
+describe('DatasetPicker: choosing datasets (M3-10)', () => {
+  const CAPABILITIES = {
+    roi: true,
+    time_range: true,
+    band_math: true,
+    interpolation: true,
+    ml_processing: true,
+    quad_pol: false,
+    single_coverage_product: false,
+  };
+
+  function collection(id: string, title: string, extra: Partial<Collection> = {}): Collection {
+    return {
+      id,
+      title,
+      'earthx:capabilities': CAPABILITIES,
+      'earthx:viewer': {
+        group_by: ['datetime'],
+        min_zoom: 0,
+        max_zoom: 14,
+        browse: 'quicklook',
+        quicklook_nodata_max: null,
+        results_group_by: ['datetime'],
+      },
+      ...extra,
+    };
+  }
+
+  const OPTICAL = collection('optical', 'Optical imagery', {
+    description: 'Multispectral optical imagery.',
+    keywords: ['sentinel-2'],
+    'earthx:maturity': 'staging',
+  });
+  const DEM = collection('dem', 'Elevation model', {
+    description: 'A digital surface model.',
+    keywords: ['terrain'],
+    extent: { temporal: { interval: [['2010-12-01T00:00:00Z', '2015-01-31T23:59:59Z']] } },
+    'earthx:capabilities': { ...CAPABILITIES, time_range: false },
+  });
+  const BROKEN: Collection = { id: 'broken', title: 'Broken data', 'earthx:capabilities': CAPABILITIES };
+
+  function setUp(selected: string[]) {
+    useAppStore.setState({
+      datasets: datasetsFrom([OPTICAL, DEM, BROKEN]),
+      selectedDatasetIds: selected,
+      datasetId: selected[0] ?? null,
+      sections: [],
+      openSectionId: null,
+      items: [],
+      groups: [],
+      aoi: null,
+      sceneNameQuery: '',
+      showCoverage: false,
+      coverageDatasetId: null,
+    });
+    act(() => root.render(<ControlPanel />));
+  }
+
+  function buttons(): HTMLButtonElement[] {
+    return [...container.querySelectorAll('.dataset-list .dataset-toggle')] as HTMLButtonElement[];
+  }
+  function titles(): string[] {
+    return buttons().map((b) => b.querySelector('.dataset-toggle-title')!.textContent ?? '');
+  }
+  function searchButton(): HTMLButtonElement {
+    return container.querySelector('.control-footer .primary-btn') as HTMLButtonElement;
+  }
+
+  it('lists every dataset as a toggle button, the picked ones pressed', () => {
+    setUp(['optical']);
+    expect(titles()).toEqual(['Optical imagery', 'Elevation model', 'Broken data']);
+    expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
+    expect(buttons()[0].classList.contains('active')).toBe(true);
+    expect(container.textContent).toContain('1 selected');
+  });
+
+  it('has no tick boxes and no text filter', () => {
+    setUp(['optical']);
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(container.querySelector('input[type="search"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Filter datasets"]')).toBeNull();
+  });
+
+  it('a click picks a dataset, another click drops it again — any number at once', () => {
+    setUp(['optical']);
+    act(() => buttons()[1].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'dem']);
+    expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false']);
+    expect(container.textContent).toContain('2 selected');
+    act(() => buttons()[0].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
+    act(() => buttons()[1].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual([]);
+  });
+
+  it('locks the buttons while a search runs', () => {
+    setUp(['optical']);
+    useAppStore.setState({ searching: true });
+    act(() => root.render(<ControlPanel />));
+    expect(buttons().every((b) => b.disabled)).toBe(true);
+    useAppStore.setState({ searching: false });
+  });
+
+  it('shows a dataset that cannot be shown disabled, with the reason', () => {
+    setUp(['optical']);
+    const broken = buttons()[2];
+    expect(broken.disabled).toBe(true);
+    expect(broken.title).toContain('not viewable');
+    expect(broken.title).toContain('group_by');
+  });
+
+  it('shows the maturity chip and puts the description into the tooltip', () => {
+    setUp(['optical']);
+    expect(buttons()[0].querySelector('.maturity-chip')?.textContent).toBe('staging');
+    expect(buttons()[0].title).toContain('Multispectral optical imagery.');
+  });
+
+  it('shows every dataset of the catalogue in one grid, however many — the grid itself scrolls (CSS shows 2 x 2)', () => {
+    const many = Array.from({ length: 7 }, (_, i) => collection(`extra-${i}`, `Extra ${i}`));
+    useAppStore.setState({ datasets: datasetsFrom([OPTICAL, DEM, ...many]), selectedDatasetIds: [], datasetId: null });
+    act(() => root.render(<ControlPanel />));
+    expect(buttons()).toHaveLength(9);
+  });
+
+  it('with nothing ticked, asks for a dataset and keeps Search off even with an AOI', () => {
+    setUp([]);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
+    act(() => root.render(<ControlPanel />));
+    expect(container.textContent).toContain('Select at least one dataset.');
+    expect(searchButton().disabled).toBe(true);
+  });
+
+  it('with one ticked and an AOI, Search is on', () => {
+    setUp(['optical']);
+    useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
+    act(() => root.render(<ControlPanel />));
+    expect(container.textContent).not.toContain('Select at least one dataset.');
+    expect(searchButton().disabled).toBe(false);
+  });
+
+  it('sums the scenes over every section for the count under Search', () => {
+    setUp(['optical', 'dem']);
+    const item = { id: 'x', bbox: null, properties: {}, assets: {} };
+    useAppStore.setState({
+      sections: [
+        { datasetId: 'optical', items: [item, item], groups: [], notes: [], groupingError: null },
+        { datasetId: 'dem', items: [item], groups: [], notes: [], groupingError: null },
+      ],
+    });
+    act(() => root.render(<ControlPanel />));
+    expect(container.textContent).toContain('3 scene(s) found');
+  });
+
+  describe('the date fields', () => {
+    function dateInputs(): HTMLInputElement[] {
+      return [...container.querySelectorAll('.date-field input[type="date"]')] as HTMLInputElement[];
+    }
+
+    it('stay usable while one ticked dataset has a time axis, and name each one without', () => {
+      setUp(['optical', 'dem']);
+      expect(dateInputs().every((i) => !i.disabled)).toBe(true);
+      expect(container.textContent).toContain('Elevation model: No time axis – acquired Dec 2010 to Jan 2015');
+    });
+
+    it('lock only when every ticked dataset lacks a time axis', () => {
+      setUp(['dem']);
+      expect(dateInputs().every((i) => i.disabled)).toBe(true);
+      // one dataset: the note without a title prefix, as before
+      expect(container.textContent).toContain('No time axis – acquired Dec 2010 to Jan 2015');
+      expect(container.textContent).not.toContain('Elevation model: No time axis');
+    });
+  });
+
+  it('lists the maturity note of every ticked dataset, named by title once there are several', () => {
+    setUp(['optical', 'dem']);
+    const notes = [...container.querySelectorAll('.dataset-notes .hint-text')].map((n) => n.textContent);
+    expect(notes).toEqual(['Optical imagery: staging: the provider may withdraw this collection without notice']);
+  });
+
+  it('keeps the search button in a footer of its own, outside the scrolling part', () => {
+    setUp(['optical']);
+    const panel = container.querySelector('.control-panel')!;
+    const scroll = panel.querySelector('.control-scroll')!;
+    const footer = panel.querySelector('.control-footer')!;
+    expect(footer.querySelector('.primary-btn')).not.toBeNull();
+    expect(scroll.querySelector('.primary-btn')).toBeNull();
+    expect(scroll.querySelector('.dataset-list')).not.toBeNull();
+  });
+
+  describe('the "Coverage" button (M3-10, Otto 30.09.2026)', () => {
+    function button(): HTMLButtonElement {
+      return container.querySelector('.coverage-btn') as HTMLButtonElement;
+    }
+    function choices(): HTMLButtonElement[] {
+      return [...container.querySelectorAll('.coverage-choice-item')] as HTMLButtonElement[];
+    }
+
+    it('is always there, in the footer beside Search, apart from the dataset buttons', () => {
+      setUp(['optical']);
+      expect(button()).not.toBeNull();
+      expect(container.querySelector('.control-footer .action-row .coverage-btn')).not.toBeNull();
+      expect(container.querySelector('.dataset-list .coverage-btn')).toBeNull();
+      expect(button().textContent).toBe('Coverage');
+    });
+
+    it('is visible but off when no dataset is picked', () => {
+      setUp([]);
+      expect(button()).not.toBeNull();
+      expect(button().disabled).toBe(true);
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+    });
+
+    it('with one dataset picked, a click shows its coverage; another click hides it — no question asked', () => {
+      setUp(['optical']);
+      act(() => button().click());
+      expect(useAppStore.getState().showCoverage).toBe(true);
+      expect(useAppStore.getState().coverageDatasetId).toBe('optical');
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(button().getAttribute('aria-pressed')).toBe('true');
+      act(() => button().click());
+      expect(useAppStore.getState().showCoverage).toBe(false);
+    });
+
+    it('with several picked, nothing is drawn until the click, and the click offers the choice', () => {
+      setUp(['optical', 'dem']);
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(useAppStore.getState().showCoverage).toBe(false);
+      act(() => button().click());
+      expect(useAppStore.getState().showCoverage).toBe(false); // still nothing drawn
+      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model']);
+    });
+
+    it('choosing a dataset draws its coverage and closes the choice', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[1].click());
+      expect(useAppStore.getState().coverageDatasetId).toBe('dem');
+      expect(useAppStore.getState().showCoverage).toBe(true);
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(container.textContent).toContain('Coverage · Elevation model');
+    });
+
+    it('with the coverage on and several picked, the choice also offers to hide it and marks the current one', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      act(() => button().click());
+      expect(choices().map((c) => c.textContent)).toEqual(['Optical imagery', 'Elevation model', 'Hide coverage']);
+      expect(choices()[0].getAttribute('aria-checked')).toBe('true');
+      act(() => choices()[2].click());
+      expect(useAppStore.getState().showCoverage).toBe(false);
+    });
+
+    it('Escape and a click outside close the choice without drawing anything', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      act(() => button().click());
+      act(() => {
+        document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      });
+      expect(container.querySelector('.coverage-choice')).toBeNull();
+      expect(useAppStore.getState().showCoverage).toBe(false);
+    });
+
+    it('has no dataset choice in the legend any more: the button is the one place', () => {
+      setUp(['optical', 'dem']);
+      act(() => button().click());
+      act(() => choices()[0].click());
+      expect(container.querySelector('select')).toBeNull();
+      expect(container.querySelector('.coverage-controls')).not.toBeNull();
+    });
+
+    it('shows the legend under the datasets only while the coverage is on', () => {
+      setUp(['optical']);
+      expect(container.querySelector('.coverage-controls')).toBeNull();
+      act(() => button().click());
+      expect(container.querySelector('.coverage-controls')).not.toBeNull();
+    });
   });
 });

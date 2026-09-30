@@ -143,7 +143,8 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-07b | Ortssuche: Frontend | B | Opus Plan, Sonnet (mittel) | M3-07a, M3-06b | in Arbeit |
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
-| M3-10 | Datensatz-Filter in der Suchkachel | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | offen |
+| M3-10a | Datensatz-Auswahl in der Suchkachel: Umschalt-Knöpfe mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz, Coverage-Schalter | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | Draft-PR |
+| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | offen |
 | M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | in Arbeit |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
@@ -159,7 +160,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-21 | Doku-Abgleich nach Fassung 2 | A | Sonnet (mittel) | — | offen |
 | M3-22 | Gelegentlich unlesbare Download-Dateien | B | Opus Plan (hoch), Sonnet (hoch) | — | offen |
 | M3-23 | Garage statt MinIO | B | Opus Plan, Sonnet (hoch) | — | in Arbeit |
-| M3-24 | Setup-Hook installiert Frontend-Pakete nach Lockfile | A | Sonnet (mittel) | — | in Arbeit |
+| M3-24 | Setup-Hook installiert Frontend-Pakete nach Lockfile | A | Sonnet (mittel) | — | erledigt |
 
 **Wellen ab Fassung 2.** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben.
@@ -495,6 +496,7 @@ und heruntergeladene Datei übereinstimmen.
 **Ziel:** Datensätze werden über einen Filter gewählt statt über feste Blöcke
 (P9).
 **Stufe B.**
+**Plan-Schritt:** `plans/m3-10-datensatz-filter.md`.
 **Umfang:** Liste aus `/stac/collections`, Filter über Titel, Beschreibung und
 Schlagworte im Client; Reifegrad („staging“) bleibt sichtbar. Keine Suche im
 Backend, keine Hybrid-Suche (M5).
@@ -502,6 +504,30 @@ Backend, keine Hybrid-Suche (M5).
 und die Bedienung vorschlagen.
 **Abnahme:** Vitest für den Filter; mit drei Datensätzen keine
 Datensatz-Kennung im Frontend-Code nötig.
+
+> **Schnitt (Otto, 30.09.2026, F9 (1)):** Zwei PRs. **M3-10a** (Umschalt-Knöpfe
+> mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz,
+> Heatmap-Legende, `ignored_filters_by_collection`, Schlagworte in der Registry)
+> und **M3-10b** („Load more“, ±90-Tage-Fallback, Namenssuche über mehrere
+> Datensätze; nach dem Merge von M3-10a in einer neuen Session). Bedienung und
+> Entscheidungen F1–F9: `plans/m3-10-datensatz-filter.md`.
+>
+> **Änderung nach Ottos lokaler Prüfung (30.09.2026):** Statt Filter mit
+> Kontrollkästchen jetzt Umschalt-Knöpfe (vier sichtbar, sonst scrollbar, kein
+> Textfilter); statt aufklappbarer Abschnitte ein Dropdown über der Trefferliste;
+> die Coverage-Map wird im Control Center geschaltet. Für M3-10b heißt das:
+> „Load more“ sitzt unter der Liste des im Dropdown gewählten Datensatzes (setzt
+> weiter die gemischte Marke der ganzen Suche fort), und der ±90-Tage-Fallback
+> läuft für den im Dropdown gewählten Datensatz, wenn er im Zeitraum nichts
+> hat.
+>
+> **Zweite Rückmeldung (Otto, 30.09.2026):** Die Karte folgt dem Dropdown (nur der
+> gewählte Datensatz ist zu sehen, außer angehefteten Ebenen); der automatische
+> Zuschnitt des DEM gehört zu den Ergebnissen seines Datensatzes und ist keine
+> angeheftete Ebene mehr (ersetzt F5 (2)); Datensatz-Knöpfe als 2×2-Raster;
+> Coverage-Knopf im Fuß des Control Centers. Für M3-10b: „Load more“ und Fallback
+> beziehen sich weiter auf den im Dropdown gewählten Datensatz; neue Items
+> erscheinen auf der Karte nur für diesen Datensatz.
 
 > **Nachtrag (Otto, 26.09.2026, M3-11b F11):** Richtung „ein Zeitraum, mehrere
 > Datensätze zugleich“ — der Filter wird zur **Mehrfachauswahl**, nicht zur
@@ -989,7 +1015,11 @@ zweiter Start mit bestehendem Volume grün; Otto startet lokal mit
 
 ### M3-24 — Setup-Hook installiert Frontend-Pakete nach Lockfile
 
-**Stand:** in Arbeit.
+**Stand:** erledigt. Beleg (Session von M3-10, 30.09.2026): `frontend/node_modules/polyclip-ts`
+war nach dem Start vorhanden, ohne dass die Session `npm` aufgerufen hat; das
+Verzeichnis und `node_modules/.package-lock.sha256` tragen den Zeitstempel des
+SessionStart-Hooks (`npm ci`). Nach dem Fortsetzen der Session meldete der Hook
+„Frontend-Abhängigkeiten aktuell (package-lock.json unverändert)“.
 
 Ziel: Eine neue Session hat die Frontend-Pakete zum aktuellen package-lock.json, wie das venv zu den Backend-Anforderungen.
 Stufe A.

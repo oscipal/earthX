@@ -162,7 +162,7 @@ export interface SearchQuery {
 // One collection a mixed search could not reach on a given page (M3-13,
 // `api/mixed_search.py::IncompleteSource`) — `reason` is one of `timeout`,
 // `unreachable`, `upstream_error`, `unrecognised_answer`. Not shown in the UI
-// yet (M3-10).
+// in the results list's section head (M3-10).
 export interface IncompleteCollection {
   collection: string;
   reason: string;
@@ -179,9 +179,27 @@ export interface ItemPage {
   // dropped. Mirrors the coverage route's own `ignored_filters`
   // (`api/coverage_route.py`).
   ignoredFilters: string[];
+  // M3-13 F4: the same, broken down per collection — what a mixed search's
+  // results list needs to say which dataset a note belongs to (M3-10). Empty
+  // where the backend names none (a search over a single source may not).
+  ignoredFiltersByCollection: Record<string, string[]>;
   // M3-13: collections a mixed search could not reach on this page. Empty for
   // a single-collection search, which never partially fails this way.
   incompleteCollections: IncompleteCollection[];
+}
+
+// A body field that should be `{collection: [filter, …]}`; anything else —
+// including entries of the wrong type — reads as "nothing named", never as a
+// crash: a note is only ever a hint, it must not take the results list down.
+function ignoredByCollectionFrom(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, string[]> = Object.create(null);
+  for (const [collection, filters] of Object.entries(value)) {
+    if (!Array.isArray(filters)) continue;
+    const names = filters.filter((f): f is string => typeof f === 'string');
+    if (names.length > 0) result[collection] = names;
+  }
+  return result;
 }
 
 // M3-08: every search goes over `POST` now (F7a — keeps an AOI out of the access
@@ -218,6 +236,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberReturned: number;
     links?: StacLink[];
     ignored_filters?: string[];
+    ignored_filters_by_collection?: unknown;
     incomplete_collections?: IncompleteCollection[];
   }>(
     await fetch(`${BASE}/stac/search`, {
@@ -232,6 +251,7 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberReturned: body.numberReturned,
     nextToken: nextTokenFrom(body.links),
     ignoredFilters: body.ignored_filters ?? [],
+    ignoredFiltersByCollection: ignoredByCollectionFrom(body.ignored_filters_by_collection),
     incompleteCollections: body.incomplete_collections ?? [],
   };
 }
@@ -300,6 +320,7 @@ export async function searchAllPages(
   features: StacItem[];
   numberMatched: number | null;
   ignoredFilters: string[];
+  ignoredFiltersByCollection: Record<string, string[]>;
   incompleteCollections: IncompleteCollection[];
 }> {
   let token: string | undefined;
@@ -308,6 +329,7 @@ export async function searchAllPages(
   // Every page of one search drops the same filter for the same reason, so
   // the first page's answer already speaks for the whole set.
   let ignoredFilters: string[] = [];
+  const ignoredFiltersByCollection: Record<string, string[]> = {};
   // Unlike `ignoredFilters`, a mixed search's own failing source can change
   // from page to page (M3-13: it stops being asked again once it fails, but a
   // *different* source could still fail later) — collected across every page,
@@ -318,12 +340,23 @@ export async function searchAllPages(
     features.push(...page.features);
     if (numberMatched === null) numberMatched = page.numberMatched;
     if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
+    // Kept per collection like the flat list: the first page that names a
+    // collection speaks for the whole search.
+    for (const [collection, filters] of Object.entries(page.ignoredFiltersByCollection)) {
+      if (!Object.hasOwn(ignoredFiltersByCollection, collection)) ignoredFiltersByCollection[collection] = filters;
+    }
     for (const entry of page.incompleteCollections) {
       if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
     }
     token = page.nextToken ?? undefined;
   } while (token && features.length < maxItems);
-  return { features, numberMatched, ignoredFilters, incompleteCollections: [...incompleteByCollection.values()] };
+  return {
+    features,
+    numberMatched,
+    ignoredFilters,
+    ignoredFiltersByCollection,
+    incompleteCollections: [...incompleteByCollection.values()],
+  };
 }
 
 // The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the

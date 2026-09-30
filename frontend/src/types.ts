@@ -152,6 +152,10 @@ export interface Collection {
   id: string;
   title?: string | null;
   description?: string | null;
+  // STAC core `keywords` (M3-10): kept for the dataset browser that comes after M3
+  // (looking through all datasets with their descriptions); the viewer does not read
+  // them yet. Optional — a collection served by an older backend carries none.
+  keywords?: string[] | null;
   license?: string | null;
   extent?: { temporal?: StacTemporalExtent };
   'earthx:access'?: CollectionAccess;

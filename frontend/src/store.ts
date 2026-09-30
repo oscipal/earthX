@@ -33,6 +33,9 @@ import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
+import type { ResultSection, SectionSearchAnswer } from './sections';
+import { buildSections, firstSectionWithItems } from './sections';
+import { fullResolutionLayers } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -134,11 +137,14 @@ function scheduleCoverageRefresh(set: SetState, get: GetState): void {
 // a second, optional request.
 async function refreshCoverage(set: SetState, get: GetState): Promise<void> {
   const s = get();
-  if (!s.showCoverage || !s.datasetId) {
+  // The coverage map has a dataset of its own (chosen at the "Coverage" button,
+  // M3-10), independent of the dataset whose results the map shows.
+  const datasetId = s.coverageDatasetId ?? s.datasetId;
+  if (!s.showCoverage || !datasetId) {
     set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
     return;
   }
-  const { datasetId, aoi } = s;
+  const { aoi } = s;
   const hasAoi = aoi !== null;
   const datetime = buildDatetime(s.dateFrom, s.dateTo);
 
@@ -215,6 +221,44 @@ function foundNotice(features: StacItem[], groups: TimeStepGroup[], numberMatche
   return base;
 }
 
+// A layer id prefix, unique per call: the clock alone gives two pins within one
+// millisecond the same id, and a layer is found again by that id.
+let batchSeq = 0;
+function nextBatchId(): string {
+  return `${Date.now().toString(36)}-${(batchSeq++).toString(36)}-`;
+}
+
+// A search answer that names nothing dropped and nothing missing — for the paths
+// that build a result without a search behind it.
+const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incompleteCollections: never[] } = {
+  ignoredFilters: [],
+  ignoredFiltersByCollection: {},
+  incompleteCollections: [],
+};
+
+// What leaving the full-resolution view resets — the same set `exitFocus` clears.
+const LEAVE_FOCUS = {
+  focusMode: false,
+  cropToAoi: false,
+  downloaded: {},
+  appliedRender: {},
+  pendingColormapName: '',
+  pendingVmin: '',
+  pendingVmax: '',
+} as const;
+
+// The list-facing state an open section stands for: its scenes and groups, first
+// time step open. `null` closes everything.
+function openSectionState(section: ResultSection | null) {
+  return {
+    openSectionId: section?.datasetId ?? null,
+    items: section?.items ?? [],
+    groups: section?.groups ?? [],
+    activeGroupIndex: 0,
+    expandedGroupIndex: 0,
+  };
+}
+
 interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
@@ -232,6 +276,8 @@ interface AppState {
   projection: Projection;
   // --- coverage heatmap (M2-07c) ---
   showCoverage: boolean;
+  // The dataset the coverage map is drawn for; `null` while it is off.
+  coverageDatasetId: string | null;
   coverage: CoverageResponse | null;
   coverageLoading: boolean;
   coverageError: string | null;
@@ -268,6 +314,11 @@ interface AppState {
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
+  // The AOI crops a search draws by itself for a dataset with no browsable preview
+  // (`browse: 'full_resolution'`): part of that dataset's results, on the map only
+  // while that dataset is the one chosen in the results dropdown. Not in `layers`;
+  // `pinSearchCrops` copies them there.
+  searchCrops: MapLayer[];
   layerManagerOpen: boolean;
   // The layer the download dialog (M2-07d) is open for, `null` when closed.
   downloadDialogLayerId: string | null;
@@ -308,7 +359,16 @@ interface AppState {
   // --- data ---
   config: { point_buffer_deg: number } | null; // no server config endpoint any more; the client default (0.05) applies
   datasets: DatasetOption[];
+  // M3-10: what the dataset filter has ticked — a search asks all of them at once.
+  selectedDatasetIds: string[];
+  // The *active* dataset: the one the map, time slider, heatmap, full-resolution
+  // view and download follow. It is the open results section's dataset, or the
+  // one picked in the heatmap legend; always one of `selectedDatasetIds`.
   datasetId: string | null;
+  // One entry per dataset the last search asked, in filter order (M3-10). `items`,
+  // `groups` and the two indices below mirror the *open* section only.
+  sections: ResultSection[];
+  openSectionId: string | null;
   items: StacItem[];
   groups: TimeStepGroup[];
   activeGroupIndex: number;
@@ -341,7 +401,8 @@ interface AppState {
 
   // --- actions ---
   loadDatasets: () => Promise<void>;
-  setDatasetId: (id: string) => void;
+  toggleDatasetSelected: (id: string) => void;
+  setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
   setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
   clearAoi: () => void;
@@ -387,7 +448,9 @@ interface AppState {
   runSearch: () => Promise<void>;
   setSceneNameQuery: (v: string) => void;
   findSceneByName: () => Promise<void>;
-  toggleCoverage: () => void;
+  showCoverageFor: (datasetId: string) => void;
+  hideCoverage: () => void;
+  pinSearchCrops: () => void;
   setMapViewport: (zoom: number, bbox: Bbox, size: { width: number; height: number }) => void;
   toggleTheme: () => void;
   toggleProjection: () => void;
@@ -403,6 +466,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: loadTheme(),
   projection: loadProjection(),
   showCoverage: false,
+  coverageDatasetId: null,
   coverage: null,
   coverageLoading: false,
   coverageError: null,
@@ -419,6 +483,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   cropToAoi: false,
 
   layers: [],
+  searchCrops: [],
   layerManagerOpen: false,
   downloadDialogLayerId: null,
   downloadSelection: false,
@@ -434,7 +499,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   config: null,
   datasets: [],
+  selectedDatasetIds: [],
   datasetId: null,
+  sections: [],
+  openSectionId: null,
   items: [],
   groups: [],
   activeGroupIndex: 0,
@@ -459,14 +527,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       const collections = await api.fetchCollections();
       const datasets = datasetsFrom(collections);
       const firstViewable = datasets.find((d) => d.viewable);
-      set({ datasets, datasetId: (firstViewable ?? datasets[0])?.id ?? null });
+      set({
+        datasets,
+        selectedDatasetIds: firstViewable ? [firstViewable.id] : [],
+        datasetId: firstViewable?.id ?? null,
+      });
     } catch (e) {
       set({ error: `Backend not reachable: ${(e as Error).message}` });
     }
   },
-  setDatasetId: (datasetId) => {
+  // The filter's tick box (M3-10). A dataset that cannot be shown is never
+  // ticked. Whatever the last search found no longer matches the new selection,
+  // so the results go, as they did when a single dataset was switched; pinned
+  // layers stay (they carry their own dataset).
+  toggleDatasetSelected: (id) => {
+    const s = get();
+    // Not while a search is running: its answer would land on a selection that
+    // is no longer the one it asked.
+    if (s.searching) return;
+    const dataset = s.datasets.find((d) => d.id === id);
+    const ticked = s.selectedDatasetIds.includes(id);
+    if (!dataset || (!ticked && !dataset.viewable)) return;
+    const selectedDatasetIds = s.datasets
+      .filter((d) => (d.id === id ? !ticked : s.selectedDatasetIds.includes(d.id)))
+      .map((d) => d.id);
+    const datasetId =
+      s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null);
     set({
+      selectedDatasetIds,
       datasetId,
+      sections: [],
+      openSectionId: null,
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -474,15 +565,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedIds: [],
       error: null,
       notice: null,
-      focusMode: false,
-      cropToAoi: false,
-      downloaded: {},
-      appliedRender: {},
-      coverage: null,
-      coverageFootprints: null,
-      coverageError: null,
+      playing: false,
+      ...LEAVE_FOCUS,
+      searchCrops: [],
     });
-    scheduleCoverageRefresh(set, get);
+    // The coverage map is for a dataset that is picked; dropping that one drops it.
+    if (s.coverageDatasetId && !selectedDatasetIds.includes(s.coverageDatasetId)) get().hideCoverage();
+  },
+  // Shows one dataset's results — the dropdown of the results panel (M3-10) — and
+  // makes that dataset the active one. Exactly one is shown while a search has
+  // results; there is no "none". What the previous dataset had on screen in full
+  // resolution goes with it; pinned layers do not.
+  setOpenSection: (id) => {
+    const s = get();
+    const section = s.sections.find((x) => x.datasetId === id);
+    if (!section || id === s.openSectionId) return;
+    set({
+      ...openSectionState(section),
+      datasetId: section.datasetId,
+      selectedIds: [],
+      playing: false,
+      ...LEAVE_FOCUS,
+    });
   },
 
   // Activating a draw tool slides the control panel away so it can't block the
@@ -520,6 +624,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       aoi: null,
       aoiPoint: null,
+      sections: [],
+      openSectionId: null,
+      // The crops a search drew go with it; what the user pinned stays.
+      searchCrops: [],
       items: [],
       groups: [],
       activeGroupIndex: 0,
@@ -551,7 +659,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     const activeGroup = s.groups[s.activeGroupIndex];
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    const batchId = Date.now().toString(36);
+    const batchId = nextBatchId();
     const makeLayer = (name: string, overlays: LayerOverlay[], restore: LayerRestore, salt: number): MapLayer => ({
       id: `L${batchId}${salt}`,
       name,
@@ -719,23 +827,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       [arr[i], arr[j]] = [arr[j], arr[i]];
       return { layers: arr };
     }),
-  selectLayer: (id) =>
-    set((s) => {
-      const l = s.layers.find((x) => x.id === id);
-      if (!l) return {};
-      const r = l.restore;
-      return {
-        focusMode: r.focusMode,
-        downloaded: r.downloaded,
-        appliedRender: r.appliedRender,
-        activeGroupIndex: r.activeGroupIndex,
-        expandedGroupIndex: r.activeGroupIndex,
-        selectedIds: r.selectedIds,
-        aoi: r.aoi,
-        cropToAoi: r.cropToAoi,
-        showDownloaded: true,
-      };
-    }),
+  selectLayer: (id) => {
+    const s = get();
+    const l = s.layers.find((x) => x.id === id);
+    if (!l) return;
+    const r = l.restore;
+    // A layer belongs to the dataset it was pinned from (F4): choosing it makes
+    // that dataset the active one — and opens its section, if the last search
+    // has one — so the list and the controls speak of the layer's own scenes. A
+    // dataset that is not ticked (any more) is ticked by this, without touching
+    // the results, so the active dataset stays one of the ticked ones.
+    const section = r.datasetId ? s.sections.find((x) => x.datasetId === r.datasetId) : undefined;
+    const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
+    const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
+    const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
+    set({
+      ...(tickable
+        ? { selectedDatasetIds: s.datasets.filter((d) => d.id === dataset.id || s.selectedDatasetIds.includes(d.id)).map((d) => d.id) }
+        : {}),
+      ...(section ? openSectionState(section) : becomesActive && becomesActive !== s.datasetId ? openSectionState(null) : {}),
+      ...(becomesActive ? { datasetId: becomesActive } : {}),
+      focusMode: r.focusMode,
+      downloaded: r.downloaded,
+      appliedRender: r.appliedRender,
+      activeGroupIndex: r.activeGroupIndex,
+      expandedGroupIndex: r.activeGroupIndex,
+      selectedIds: r.selectedIds,
+      aoi: r.aoi,
+      cropToAoi: r.cropToAoi,
+      showDownloaded: true,
+    });
+  },
 
   // Open the dialog for a pinned layer (M2-07d). The crop and disabled
   // outcomes (M3-17 plan §4) are known synchronously from the layer's own
@@ -1083,11 +1205,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ dateTo });
     scheduleCoverageRefresh(set, get);
   },
-  toggleCoverage: () => {
-    const showCoverage = !get().showCoverage;
-    set({ showCoverage });
-    if (showCoverage) void refreshCoverage(set, get);
-    else set({ coverage: null, coverageFootprints: null, coverageError: null, coverageLoading: false });
+  // The "Coverage" button (M3-10): draws the coverage of one of the picked datasets.
+  showCoverageFor: (datasetId) => {
+    if (!get().selectedDatasetIds.includes(datasetId)) return;
+    set({
+      showCoverage: true,
+      coverageDatasetId: datasetId,
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+    });
+    void refreshCoverage(set, get);
+  },
+  hideCoverage: () => {
+    set({
+      showCoverage: false,
+      coverageDatasetId: null,
+      coverage: null,
+      coverageFootprints: null,
+      coverageError: null,
+      coverageLoading: false,
+    });
+  },
+  // Copies the AOI crops of the dataset shown in the results into the layer
+  // manager, where they stay whichever dataset is chosen next. The user's own
+  // step: a search never pins anything by itself.
+  pinSearchCrops: () => {
+    const s = get();
+    const crops = s.searchCrops.filter((c) => c.restore.datasetId === s.openSectionId);
+    if (crops.length === 0) {
+      set({ error: 'Nothing to pin — this dataset has no crop to show.' });
+      return;
+    }
+    const batchId = nextBatchId();
+    const pinned = crops.map((c, i) => ({ ...c, id: `L${batchId}${i}` }));
+    set({
+      layers: [...pinned, ...s.layers],
+      layerManagerOpen: true,
+      error: null,
+      notice: `Pinned ${pinned.length} layer${pinned.length === 1 ? '' : 's'} (${pinned[0].name.split(' · ')[0]}).`,
+    });
   },
   setMapViewport: (mapZoom, viewportBbox, viewportSize) => {
     set({ mapZoom, viewportBbox, viewportSize });
@@ -1108,18 +1265,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   runSearch: async () => {
-    const { aoi, aoiPoint, dateFrom, dateTo, datasetId, datasets } = get();
+    const { aoi, aoiPoint, dateFrom, dateTo, selectedDatasetIds, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });
       return;
     }
-    const dataset = datasets.find((d) => d.id === datasetId);
-    if (!dataset) {
-      set({ error: 'Pick a dataset first.' });
-      return;
-    }
-    if (!dataset.viewable) {
-      set({ error: `This dataset cannot be shown yet: ${dataset.reason}` });
+    // M3-10: every ticked dataset is asked at once, in one mixed search (M3-13).
+    const chosen = selectedDatasetIds
+      .map((id) => datasets.find((d) => d.id === id))
+      .filter((d): d is Extract<DatasetOption, { viewable: true }> => d?.viewable === true);
+    if (chosen.length === 0) {
+      const blocked = datasets.find((d) => selectedDatasetIds.includes(d.id));
+      set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Pick a dataset first.' });
       return;
     }
     // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
@@ -1130,54 +1287,73 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Could not compute a search area for the area of interest.' });
       return;
     }
-    const resultsGroupBy = dataset.resultsGroupBy;
+    const collections = chosen.map((d) => d.id);
     // O2 (Otto, 26.09.2026): a dataset without a time axis answers the same
     // for any chosen window, so its acquisition period — not a date filter
     // that would narrow nothing — is what the search notice adds when the
-    // backend says it dropped `datetime` (`ignoredFilters`).
-    const timeNote = dataset.hasTimeAxis ? null : acquisitionNote(dataset.collection);
+    // backend says it dropped `datetime` (`ignoredFilters`). With several
+    // datasets that note stands in each section's head instead.
+    const single = chosen.length === 1 ? chosen[0] : null;
+    const timeNote = single && !single.hasTimeAxis ? acquisitionNote(single.collection) : null;
     const applyResults = (
       features: StacItem[],
-      notice: string | ((groups: TimeStepGroup[]) => string),
-      ignoredFilters: readonly string[] = [],
+      answer: SectionSearchAnswer,
+      notice: string | ((sections: ResultSection[]) => string),
     ) => {
-      try {
-        const groups = buildGroups(features, resultsGroupBy);
-        const base = typeof notice === 'function' ? notice(groups) : notice;
-        const withTruncated = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
-        const text = timeNote && ignoredFilters.includes('datetime') ? `${withTruncated} ${timeNote}.` : withTruncated;
+      const { sections, stray } = buildSections(features, chosen, answer);
+      const failed = single ? sections[0]?.groupingError : null;
+      if (failed) {
         set({
-          items: features,
-          groups,
-          activeGroupIndex: 0,
-          expandedGroupIndex: 0,
+          ...openSectionState(null),
+          sections: [],
+          searchCrops: [],
           selectedIds: [],
-          error: null,
-          notice: text,
+          error: `Grouping failed: ${failed}`,
+          notice: null,
         });
-      } catch (e) {
-        if (e instanceof MissingProperty) {
-          set({
-            items: [],
-            groups: [],
-            activeGroupIndex: 0,
-            expandedGroupIndex: 0,
-            selectedIds: [],
-            error: `Grouping failed: ${e.message}`,
-            notice: null,
-          });
-          return;
-        }
-        throw e;
+        return;
       }
+      // The dropdown always shows a dataset: the first with scenes, else the one
+      // that was active (or, failing that, the first).
+      const open =
+        firstSectionWithItems(sections) ??
+        sections.find((x) => x.datasetId === get().datasetId) ??
+        sections[0] ??
+        null;
+      const base = typeof notice === 'function' ? notice(sections) : notice;
+      let text = area.truncatedNotice ? `${base} ${area.truncatedNotice}` : base;
+      if (timeNote && answer.ignoredFilters.includes('datetime')) text = `${text} ${timeNote}.`;
+      if (stray > 0) text = `${text} ${stray} scene(s) of other datasets were left out.`;
+      // A dataset with no browsable preview (`browse: 'full_resolution'`, the DEM)
+      // has its results drawn at once as the full-resolution view cut to the AOI:
+      // part of that dataset's results (Otto, 30.09.2026), on the map while the
+      // dataset is chosen in the dropdown — not layers in the layer manager.
+      const batchId = nextBatchId();
+      const crops = chosen.flatMap((dataset) => {
+        const section = sections.find((x) => x.datasetId === dataset.id);
+        if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
+        const drawn = fullResolutionLayers(dataset, section, aoi, batchId);
+        if (drawn.length === 0) {
+          text = defaultRenderOf(dataset.collection)?.assets[0]
+            ? `${text} ${dataset.title}: none of its scenes carries a bounding box to draw.`
+            : `${text} ${dataset.title} has no default visualisation yet (earthx:default_render).`;
+        }
+        return drawn;
+      });
+      set({
+        sections,
+        ...openSectionState(open),
+        ...(open ? { datasetId: open.datasetId } : {}),
+        searchCrops: crops,
+        selectedIds: [],
+        error: null,
+        notice: text,
+      });
     };
-    // O3 (Otto, 26.09.2026): a dataset with no browsable quicklook and no
-    // meaningful coarse-tile preview (`browse: 'full_resolution'`, the DEM)
-    // goes straight into the cropped full-resolution view after a search
-    // with results — `runSearch` never runs without an AOI (checked above),
-    // so this is always "Crop & merge to AOI", never "View full selection".
-    const enterFullResolutionIfNeeded = async () => {
-      if (dataset.browse === 'full_resolution') await get().enterFocus(true);
+    const multiNotice = (sections: ResultSection[]) => {
+      const steps = sections.reduce((sum, section) => sum + section.groups.length, 0);
+      const found = sections.reduce((sum, section) => sum + section.items.length, 0);
+      return `${found} scene(s) in ${steps} time step(s) across ${chosen.length} datasets.`;
     };
 
     set({
@@ -1186,20 +1362,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       notice: null,
       playing: false,
       panelCollapsed: true,
-      focusMode: false,
-      cropToAoi: false,
-      downloaded: {},
-      appliedRender: {},
+      ...LEAVE_FOCUS,
     });
     try {
       const datetimeRange = buildDatetime(dateFrom, dateTo);
       const page = await api.searchAllPages(
-        { collections: [dataset.id], bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
+        { collections, bbox: area.bbox, intersects: area.intersects, datetime: datetimeRange },
         MAX_SEARCH_ITEMS,
       );
       if (page.features.length > 0) {
-        applyResults(page.features, (groups) => foundNotice(page.features, groups, page.numberMatched), page.ignoredFilters);
-        await enterFullResolutionIfNeeded();
+        applyResults(
+          page.features,
+          page,
+          single
+            ? (sections) => foundNotice(page.features, sections[0].groups, page.numberMatched)
+            : multiNotice,
+        );
         return;
       }
       // O2: a dataset without a time axis never runs the ±90-day fallback —
@@ -1207,15 +1385,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       // has no coverage, not "wrong dates" (Otto, 26.09.2026; before this, a
       // DEM search with an unrelated date range answered "No results in the
       // chosen time range, nor within ±90 days", which named a filter that
-      // was never really in effect).
-      if (!dataset.hasTimeAxis || (!dateFrom && !dateTo)) {
-        applyResults([], 'No scenes found for this area.', page.ignoredFilters);
+      // was never really in effect). With several datasets the fallback waits
+      // for M3-10b, which runs it per section.
+      if (!single || !single.hasTimeAxis || (!dateFrom && !dateTo)) {
+        applyResults([], page, single || (!dateFrom && !dateTo) ? 'No scenes found for this area.' : 'No scenes found for this area and date range.');
         return;
       }
       const fallback = await findFallback(
         (w) =>
           api.searchItems({
-            collections: [dataset.id],
+            collections,
             bbox: area.bbox,
             intersects: area.intersects,
             datetime: `${w.start}T00:00:00Z/${w.end}T23:59:59Z`,
@@ -1225,20 +1404,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         dateTo,
       );
       if (!fallback) {
-        applyResults([], NO_FALLBACK_MESSAGE);
+        applyResults([], NO_ANSWER_FILTERS, NO_FALLBACK_MESSAGE);
         return;
       }
       const range = fullDayRange(fallback.item);
       const full = range
         ? await api.searchAllPages(
-            { collections: [dataset.id], bbox: area.bbox, intersects: area.intersects, datetime: range },
+            { collections, bbox: area.bbox, intersects: area.intersects, datetime: range },
             MAX_SEARCH_ITEMS,
           )
-        : { features: [fallback.item], numberMatched: 1, ignoredFilters: [], incompleteCollections: [] };
-      applyResults(full.features, fallbackNotice(fallback), full.ignoredFilters);
-      await enterFullResolutionIfNeeded();
+        : { features: [fallback.item], numberMatched: 1, ...NO_ANSWER_FILTERS };
+      applyResults(full.features, full, () => fallbackNotice(fallback));
     } catch (e) {
-      set({ error: `Search failed: ${(e as Error).message}`, items: [], groups: [], panelCollapsed: false });
+      set({
+        error: `Search failed: ${(e as Error).message}`,
+        sections: [],
+        searchCrops: [],
+        ...openSectionState(null),
+        panelCollapsed: false,
+      });
     } finally {
       set({ searching: false });
     }
@@ -1286,11 +1470,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         throw e;
       }
       const bbox = item.bbox ?? (item.geometry ? polygonBbox(item.geometry) : null);
+      // One section for the one scene (the lookup asks only the active dataset;
+      // M3-10b widens it to every ticked one).
+      const section: ResultSection = { datasetId: dataset.id, items: [item], groups, notes: [], groupingError: null };
       set({
-        items: [item],
-        groups,
-        activeGroupIndex: 0,
-        expandedGroupIndex: 0,
+        sections: [section],
+        ...openSectionState(section),
         selectedIds: [item.id],
         panelCollapsed: true,
         focusMode: false,

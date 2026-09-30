@@ -69,6 +69,30 @@ class TestCapabilitiesAreExplicit:
             valid_config.capabilities.quad_pol = True
 
 
+class TestKeywords:
+    """M3-10: the viewer's dataset filter reads them, so an entry names at least one."""
+
+    def test_an_entry_without_keywords_is_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="keywords"):
+            vary(keywords=())
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t"])
+    def test_a_blank_keyword_is_rejected(self, vary, blank) -> None:
+        with pytest.raises(ConfigError, match="non-blank"):
+            vary(keywords=("elevation", blank))
+
+    def test_a_single_string_is_not_a_list_of_keywords(self, vary) -> None:
+        with pytest.raises(ConfigError, match="tuple"):
+            vary(keywords="dem")
+
+    def test_a_keyword_that_is_not_a_string_is_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="non-blank"):
+            vary(keywords=("elevation", 3))
+
+    def test_every_registered_dataset_names_keywords(self) -> None:
+        assert all(config.keywords for config in REGISTRY)
+
+
 class TestLicenseTier:
     """KLAERUNGEN B11: no modification allowed means catalogue entry with a link."""
 

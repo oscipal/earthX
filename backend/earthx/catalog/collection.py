@@ -104,6 +104,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "id": config.dataset_id,
         "title": config.title,
         "description": config.description,
+        "keywords": list(config.keywords),
         "license": _stac_license(config.license),
         "extent": {
             "spatial": {"bbox": [list(config.spatial_extent.bbox)]},

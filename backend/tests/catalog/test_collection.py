@@ -259,3 +259,14 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
         """No guessed range for an entry that names none — the same nothing-guessed
         rule `group_by` already follows (KLAERUNGEN B10)."""
         assert to_stac_collection(vary(viewer=None))["earthx:viewer"] is None
+
+
+class TestKeywords:
+    """M3-10: published as the STAC core field, for the viewer's dataset filter."""
+
+    def test_the_collection_carries_the_entrys_keywords_as_a_list(self, collection: dict) -> None:
+        assert collection["keywords"] == list(SENTINEL_2_L2A.keywords)
+
+    def test_a_changed_list_cannot_reach_back_into_the_entry(self, collection: dict) -> None:
+        collection["keywords"].append("extra")
+        assert "extra" not in SENTINEL_2_L2A.keywords

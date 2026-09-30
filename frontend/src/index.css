@@ -25,14 +25,6 @@ body,
 body {
   font-family: var(--mono);
   overflow: hidden;
-  /* Belt-and-braces for the globe (V-6): MapLibre clears its canvas to
-     transparent before drawing, so wherever the sky/globe rendering doesn't
-     cover a pixel (the `sky`/`atmosphere-blend` tuning in mapStyles.ts
-     didn't fully fix this — see the ADR-shaped comment there), the browser's
-     own white page background used to show through instead. Matches the
-     style's own `background` layer color, and stays dark in both themes —
-     the basemap itself is theme-independent (D10). */
-  background: #04070a;
 }
 
 /* --- theme tokens --- */
@@ -46,6 +38,8 @@ body {
   --input-bg: rgba(10, 20, 26, 0.9);
   --glow: 0 0 18px rgba(25, 224, 255, 0.18);
   --row-hover: rgba(25, 224, 255, 0.08);
+  /* Behind the map and the globe: what shows where no imagery is drawn. */
+  --map-bg: #04070a;
 }
 
 .app[data-theme='normal'] {
@@ -58,6 +52,7 @@ body {
   --input-bg: rgba(255, 255, 255, 0.96);
   --glow: 0 2px 10px rgba(0, 0, 0, 0.12);
   --row-hover: rgba(10, 126, 164, 0.08);
+  --map-bg: #ffffff;
 }
 
 .app {
@@ -65,6 +60,11 @@ body {
   width: 100vw;
   height: 100vh;
   color: var(--text);
+  /* What shows behind the globe and wherever no imagery is drawn: MapLibre clears
+     its canvas to transparent every frame (V-6), so this is the actual backdrop.
+     A theme token — dark in the tech theme, white in the light one — and the
+     style's own `background` layer and `sky` follow it (`mapStyles.ts`). */
+  background: var(--map-bg);
 }
 
 /* Higher specificity (.app .map) + explicit size so maplibre-gl.css's
@@ -341,11 +341,35 @@ body.dragging * {
   box-shadow: var(--glow);
 }
 
+/* The dock keeps the same gap below as above (16px, `.top-left`): the panel is at
+   most as tall as the window minus both gaps. Its content scrolls, the search
+   button and the hints under it stay put in a footer of their own, so "Search" is
+   on screen at any window height. */
 .control-panel {
-  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.control-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Whatever does not fit scrolls; nothing inside is squeezed to make room. */
+.control-scroll > * {
+  flex-shrink: 0;
+}
+.control-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--panel-border);
 }
 
 .brand {
@@ -392,6 +416,7 @@ body.dragging * {
 }
 
 input[type='text'],
+input[type='search'],
 input[type='date'] {
   width: 100%;
   padding: 8px 10px;
@@ -459,8 +484,8 @@ input[type='date']:focus {
   cursor: pointer;
 }
 
-/* Lines up with the pairs above it (`.toolbar`, `.aoi-extras`,
-   `.level-select`) at the same overall width and gap (V-4), but the "→"
+/* Lines up with the pairs above it (`.aoi-extras`,
+   `.dataset-list`) at the same overall width and gap (V-4), but the "→"
    separator gets its own narrow middle column (`auto`) instead of an
    absolute overlay with no room of its own (V-6) — two equal 1fr columns
    left the gap too tight for the arrow once the date fields' own borders
@@ -535,14 +560,14 @@ input[type='date']:focus {
 /* --- toolbar --- */
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 .tool-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px;
+  padding: 7px 6px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
@@ -565,19 +590,8 @@ input[type='date']:focus {
   cursor: not-allowed;
 }
 .tool-btn.ghost {
-  grid-column: span 2;
+  grid-column: 1 / -1;
   justify-content: center;
-}
-
-/* --- global coverage toggle --- */
-.coverage-toggle {
-  justify-content: center;
-  font-size: 11px;
-}
-.coverage-toggle.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: var(--glow);
 }
 
 /* --- place search (M3-07b) --- */
@@ -889,26 +903,261 @@ input[type='date']:focus {
   border: 1px solid var(--panel-border);
 }
 
-/* --- product-level selector --- */
-.level-select {
-  display: flex;
-  gap: 6px;
+/* --- dataset toggles (M3-10): a 2 x 2 grid, then the list scrolls --- */
+.dataset-list {
+  --dataset-row: 40px;
+  --dataset-gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: var(--dataset-row);
+  gap: var(--dataset-gap);
+  max-height: calc(2 * var(--dataset-row) + var(--dataset-gap) + 2px);
+  overflow-y: auto;
+  /* room for the glow and the scrollbar without shifting the buttons */
+  padding: 1px 3px 1px 1px;
 }
-.level-btn {
-  flex: 1;
-  padding: 7px 4px;
+.dataset-toggle {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 9px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 11px;
+  text-align: left;
   cursor: pointer;
 }
-.level-btn.active {
+.dataset-toggle:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dataset-toggle.active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--input-bg));
+  border-color: var(--accent);
   color: var(--accent);
+  font-weight: 700;
+  box-shadow: var(--glow);
+}
+.dataset-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Half the panel width: a long title wraps onto a second line (two at most); next
+   to the maturity chip it keeps one, so the button stays one row high. */
+.dataset-toggle-title {
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.dataset-toggle:has(.maturity-chip) .dataset-toggle-title {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.dataset-toggle .maturity-chip {
+  margin-top: 0;
+  line-height: 1.1;
+}
+.field-label-aside {
+  float: right;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* The footer's action row: "Coverage" beside "Search" — kept apart from the
+   dataset buttons (its own place, an icon, dashed outline until it is on). */
+.action-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.action-row .primary-btn {
+  flex: 1;
+}
+.coverage-button-wrap {
+  position: relative;
+  display: flex;
+}
+.coverage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px dashed var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+.coverage-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.coverage-btn.active {
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  box-shadow: var(--glow);
+}
+.coverage-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* The choice of which dataset: opens above the button, inside the footer. */
+.coverage-choice {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 3;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: var(--glow);
+  backdrop-filter: blur(10px);
+}
+.coverage-choice-item {
+  padding: 7px 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.coverage-choice-item:hover {
+  border-color: var(--accent);
+}
+.coverage-choice-item.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+.coverage-choice-item.off {
+  color: var(--muted);
+}
+.coverage-dataset-name {
+  color: var(--accent);
+}
+
+/* --- results: the dataset dropdown at the top (M3-10) ---
+   A selector card of its own — tinted, with an eyebrow label and an accent rule
+   under it — so it reads as the choice of which dataset the scenes below belong
+   to, not as one of the scenes. */
+.eyebrow {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dataset-select {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 10px 12px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-bottom: 2px solid var(--accent);
+}
+.results-list-eyebrow {
+  padding: 10px 14px 0;
+}
+.crop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px 0;
+}
+.dataset-select-box,
+.dataset-select-option {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 7px 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+}
+.dataset-select-box {
+  padding-right: 28px;
   border-color: var(--accent);
   box-shadow: var(--glow);
+}
+.dataset-select-box:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.dataset-select-box .rg-caret {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  color: var(--accent);
+  font-size: 13px;
+}
+.dataset-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.dataset-select-option:hover {
+  border-color: var(--accent);
+}
+.dataset-select-option.selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--input-bg));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dataset-select-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dataset-select-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.dataset-select-line .maturity-chip {
+  margin-top: 0;
+}
+.dataset-select-note {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: normal;
 }
 
 /* --- grouped (mosaic) results --- */
@@ -1149,13 +1398,6 @@ input[type='date']:focus {
 .lm-name:hover {
   background: var(--row-hover);
   color: var(--accent);
-}
-.coverage-row .lm-name {
-  cursor: default;
-}
-.coverage-row .lm-name:hover {
-  background: none;
-  color: var(--text);
 }
 .lm-opacity {
   width: 56px;

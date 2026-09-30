@@ -10,6 +10,7 @@ import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
 import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
+import { hasResultsPanel } from './sections';
 import { useAppStore } from './store';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
   const focusMode = useAppStore((s) => s.focusMode);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
+  const hasResults = useAppStore((s) => hasResultsPanel(s.sections));
   const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
   // "Zoom to selection" zooms to the AOI, else the pinned layer images;
   // with neither, it stays visibly disabled (store.ts::zoomToView).
@@ -96,7 +98,7 @@ export default function App() {
         <LayerManager />
       </div>
 
-      {!focusMode && hasGroups && (
+      {!focusMode && hasResults && (
         <div className={`overlay right results-dock${resultsPanelCollapsed ? ' collapsed' : ''}`}>
           <ResultsPanel />
           <button
