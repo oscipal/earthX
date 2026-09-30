@@ -137,9 +137,8 @@ _DATETIME_SCHEMA = {
     "description": "One ISO 8601 instant, or 'start/end' with '..' for an open end, e.g. '2024-06-01/2024-06-30'.",
 }
 
-# Tool definitions in the JSON Schema shape LLM tool APIs and MCP both read. No
-# model uses them yet (plan m7a F2); they are here so the contract is fixed and
-# tested before one does.
+# Tool definitions in the JSON Schema shape LLM tool APIs and MCP both read; the
+# dialogue sends them to the model as they are.
 TOOL_SPECS: tuple[dict[str, Any], ...] = (
     {
         "name": "search_collections",

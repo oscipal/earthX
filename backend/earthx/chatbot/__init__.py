@@ -4,11 +4,25 @@ The chatbot has no special rights (projektuebersicht.md, principle 7): it reads 
 platform only through the public STAC API, over HTTP and through `gateway`, exactly
 as any outside client would. It may import `gateway` and nothing else.
 
-This package holds the three read tools and nothing that talks to a language model
-yet (plan m7a §7, F2 option 2). The tools recommend nothing and start no jobs.
+It holds the three read tools, a narrow client for the Anthropic Messages API and
+the tool loop of one dialogue turn (plan m7a §4, F2 option 1 from 30.09.2026). The
+chatbot recommends; no tool starts a job.
 """
 
+from earthx.chatbot.dialogue import Reply, reply
+from earthx.chatbot.llm import AnthropicMessages, ChatModel, ModelError
 from earthx.chatbot.tools import TOOL_SPECS, CatalogTools, UnknownCollection, call_tool
 from earthx.chatbot.validation import InvalidArgument
 
-__all__ = ["TOOL_SPECS", "CatalogTools", "InvalidArgument", "UnknownCollection", "call_tool"]
+__all__ = [
+    "TOOL_SPECS",
+    "AnthropicMessages",
+    "CatalogTools",
+    "ChatModel",
+    "InvalidArgument",
+    "ModelError",
+    "Reply",
+    "UnknownCollection",
+    "call_tool",
+    "reply",
+]
