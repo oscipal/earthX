@@ -10,8 +10,9 @@ The STAC root comes from ``--stac-url`` or ``EARTHX_CHATBOT_STAC_URL``. Its host
 the only one the gateway lets through; the gateway's rules stay as they are, so the
 address must be https and publicly routable (plan m7a F5).
 
-``chat`` also needs ``EARTHX_CHATBOT_MODEL`` and ``ANTHROPIC_API_KEY`` in the
-environment. Without a question it asks for one line after another until an empty
+``chat`` runs a local open-weight model if ``EARTHX_CHATBOT_LOCAL_MODEL`` names a
+GGUF file (needs ``llama-cpp-python``); otherwise it asks Claude and needs
+``EARTHX_CHATBOT_MODEL`` and ``ANTHROPIC_API_KEY`` in the environment. Without a question it asks for one line after another until an empty
 line; the transcript lives in this process only and is gone when it ends.
 """
 
@@ -22,16 +23,19 @@ import asyncio
 import json
 import os
 import sys
+from contextlib import AsyncExitStack
 from typing import Any
 
 from earthx.chatbot.dialogue import reply
-from earthx.chatbot.llm import MESSAGES_URL, AnthropicMessages, ModelError
+from earthx.chatbot.llm import MESSAGES_URL, AnthropicMessages, ChatModel, ModelError
+from earthx.chatbot.local import LocalModel
 from earthx.chatbot.tools import CatalogTools, call_tool
 from earthx.gateway import Gateway, GatewayError, Policy, host_of
 
 STAC_URL_ENV = "EARTHX_CHATBOT_STAC_URL"
 MODEL_ENV = "EARTHX_CHATBOT_MODEL"
 API_KEY_ENV = "ANTHROPIC_API_KEY"
+LOCAL_MODEL_ENV = "EARTHX_CHATBOT_LOCAL_MODEL"
 # A model answer with several tool rounds takes longer than a STAC page.
 MODEL_READ_TIMEOUT_S = 120.0
 
@@ -74,14 +78,17 @@ async def _run(stac_url: str, name: str, arguments: dict[str, Any]) -> dict[str,
         return await call_tool(CatalogTools(gateway, stac_url), name, arguments)
 
 
-async def _chat(stac_url: str, model: str, api_key: str, question: str | None) -> int:
-    llm_policy = Policy(allowed_hosts=frozenset({host_of(MESSAGES_URL)}), read_timeout_s=MODEL_READ_TIMEOUT_S)
-    async with (
-        Gateway(Policy(allowed_hosts=frozenset({host_of(stac_url)}))) as stac_gateway,
-        Gateway(llm_policy) as llm_gateway,
-    ):
+async def _chat(stac_url: str, settings: dict[str, str], question: str | None) -> int:
+    async with AsyncExitStack() as stack:
+        stac_gateway = await stack.enter_async_context(Gateway(Policy(allowed_hosts=frozenset({host_of(stac_url)}))))
         tools = CatalogTools(stac_gateway, stac_url)
-        llm = AnthropicMessages(llm_gateway, api_key=api_key, model=model)
+        llm: ChatModel
+        if LOCAL_MODEL_ENV in settings:
+            llm = LocalModel.from_file(settings[LOCAL_MODEL_ENV])
+        else:
+            policy = Policy(allowed_hosts=frozenset({host_of(MESSAGES_URL)}), read_timeout_s=MODEL_READ_TIMEOUT_S)
+            llm_gateway = await stack.enter_async_context(Gateway(policy))
+            llm = AnthropicMessages(llm_gateway, api_key=settings[API_KEY_ENV], model=settings[MODEL_ENV])
         transcript: list[dict[str, Any]] = []
         while True:
             text = question if question is not None else _ask()
@@ -113,16 +120,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no STAC root: pass --stac-url or set {STAC_URL_ENV}", file=sys.stderr)
         return 2
     if args.command == "chat":
-        model, api_key = os.environ.get(MODEL_ENV), os.environ.get(API_KEY_ENV)
-        missing = [name for name, value in ((MODEL_ENV, model), (API_KEY_ENV, api_key)) if not value]
+        names = (LOCAL_MODEL_ENV,) if os.environ.get(LOCAL_MODEL_ENV) else (MODEL_ENV, API_KEY_ENV)
+        settings = {name: os.environ.get(name, "") for name in names}
+        missing = [name for name, value in settings.items() if not value]
         if missing:
-            print(f"chat needs {' and '.join(missing)} in the environment", file=sys.stderr)
+            print(f"chat needs {' and '.join(missing)} in the environment, or {LOCAL_MODEL_ENV}", file=sys.stderr)
             return 2
         try:
-            return asyncio.run(_chat(args.stac_url, model, api_key, args.question))
+            return asyncio.run(_chat(args.stac_url, settings, args.question))
         except GatewayError as error:
             print(f"refused: {error}", file=sys.stderr)
             return 2
+        except ModelError as error:
+            print(f"model error: {error}", file=sys.stderr)
+            return 1
     try:
         result = asyncio.run(_run(args.stac_url, *_call(args)))
     except GatewayError as error:
