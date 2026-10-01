@@ -1,6 +1,7 @@
 # ADR 0011 — Lokaler Modellserver für den Chatbot (Ollama über localhost)
 
-**Status:** Entwurf, wartet auf Otto (Lockerung einer Sicherheitsregel, CLAUDE.md)
+**Status:** Abgelehnt zugunsten von B (Víctor, 01.10.2026). Die Loopback-Ausnahme
+wird nicht beantragt; das Gateway bleibt unverändert.
 **Datum:** 2026-10-01
 **Kontext-Dokumente:** `plans/m7a-chatbot-lesewerkzeuge.md` §9, §10; KLAERUNGEN B8;
 `gateway/policy.py`, `gateway/resolver.py`
@@ -57,3 +58,9 @@ Entscheidung mit M6 und folgt nicht aus diesem ADR.
 1. Ist die Ausnahme nach A vertretbar, oder bleibt Loopback ausnahmslos gesperrt (dann B oder C)?
 2. Falls A: Reicht der Test aus §2, oder soll die Ausnahme zusätzlich hinter einem
    eigenen Importvertrag stehen, sodass nur `earthx.chatbot.__main__` sie setzen kann?
+
+## 6. Entscheidung
+
+Víctor wählt B: `llama-cpp-python` mit CUDA selbst bauen (VS Build Tools 2022,
+CUDA Toolkit 12.9). Keine Sicherheitsregel wird gelockert, die Fragen in §5
+entfallen.
