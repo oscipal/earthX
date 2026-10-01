@@ -169,3 +169,20 @@ Sonnet über die Messages-API. Umgesetzt wie in §4:
   stdin; der Verlauf lebt nur im Prozess.
 - Tests offline mit Stub-Modell und synthetischer API (`test_llm.py`,
   `test_dialogue.py`, `test_cli.py`); kein Test ruft ein echtes Modell auf.
+
+## 10. Nachtrag: lokales Open-Weight-Modell (Víctor, 01.10.2026)
+
+Víctor möchte vorerst ein freies, herunterladbares und kommerziell nutzbares Modell.
+Gewählt: Qwen3-8B (Apache 2.0 laut Model Card von Qwen; Einstufung durch Otto
+steht aus), im Prozess über `llama-cpp-python` 0.3.19, weil es für Windows nur bis
+dahin fertige Pakete gibt und Qwen3.5 eine neuere Laufzeit bräuchte.
+
+- `earthx.chatbot.local.LocalModel`: dieselbe `ChatModel`-Schnittstelle. Übersetzt
+  das Transkript in Chat-Nachrichten und die `<tool_call>`-Ausgabe des Modells
+  zurück in `tool_use`-Blöcke. Lädt nur eine lokale GGUF-Datei, öffnet keine
+  Verbindung; die Gateway-Regeln bleiben unberührt.
+- Gewählt per `EARTHX_CHATBOT_LOCAL_MODEL` (Pfad zur Datei); ohne sie bleibt
+  Claude der Weg.
+- `llama-cpp-python` ist eine optionale lokale Abhängigkeit, nicht in den
+  requirements.
+
