@@ -11,7 +11,8 @@ the only one the gateway lets through; the gateway's rules stay as they are, so 
 address must be https and publicly routable (plan m7a F5).
 
 ``chat`` runs a local open-weight model if ``EARTHX_CHATBOT_LOCAL_MODEL`` names a
-GGUF file (needs ``llama-cpp-python``); otherwise it asks Claude and needs
+GGUF file (needs ``llama-cpp-python``; ``EARTHX_CHATBOT_GPU_LAYERS`` moves that
+many layers to the GPU, -1 all of them); otherwise it asks Claude and needs
 ``EARTHX_CHATBOT_MODEL`` and ``ANTHROPIC_API_KEY`` in the environment. Without a question it asks for one line after another until an empty
 line; the transcript lives in this process only and is gone when it ends.
 """
@@ -36,6 +37,7 @@ STAC_URL_ENV = "EARTHX_CHATBOT_STAC_URL"
 MODEL_ENV = "EARTHX_CHATBOT_MODEL"
 API_KEY_ENV = "ANTHROPIC_API_KEY"
 LOCAL_MODEL_ENV = "EARTHX_CHATBOT_LOCAL_MODEL"
+GPU_LAYERS_ENV = "EARTHX_CHATBOT_GPU_LAYERS"
 # A model answer with several tool rounds takes longer than a STAC page.
 MODEL_READ_TIMEOUT_S = 120.0
 
@@ -84,7 +86,7 @@ async def _chat(stac_url: str, settings: dict[str, str], question: str | None) -
         tools = CatalogTools(stac_gateway, stac_url)
         llm: ChatModel
         if LOCAL_MODEL_ENV in settings:
-            llm = LocalModel.from_file(settings[LOCAL_MODEL_ENV])
+            llm = LocalModel.from_file(settings[LOCAL_MODEL_ENV], gpu_layers=_gpu_layers())
         else:
             policy = Policy(allowed_hosts=frozenset({host_of(MESSAGES_URL)}), read_timeout_s=MODEL_READ_TIMEOUT_S)
             llm_gateway = await stack.enter_async_context(Gateway(policy))
@@ -105,6 +107,14 @@ async def _chat(stac_url: str, settings: dict[str, str], question: str | None) -
             print(answer.text, flush=True)
             if question is not None:
                 return 0
+
+
+def _gpu_layers() -> int:
+    raw = os.environ.get(GPU_LAYERS_ENV, "0")
+    try:
+        return int(raw)
+    except ValueError:
+        raise ModelError(f"{GPU_LAYERS_ENV} must be a whole number, -1 for all layers") from None
 
 
 def _ask() -> str:

@@ -46,13 +46,14 @@ class LocalModel:
         self._ids = itertools.count(1)
 
     @classmethod
-    def from_file(cls, path: str) -> LocalModel:
+    def from_file(cls, path: str, *, gpu_layers: int = 0) -> LocalModel:
+        """Load a GGUF file; ``gpu_layers`` layers go to the GPU if the runtime was built with one, -1 for all."""
         try:
             from llama_cpp import Llama
         except ImportError:
             raise ModelError("a local model needs llama-cpp-python in this environment") from None
         try:
-            return cls(Llama(model_path=path, n_ctx=CONTEXT_TOKENS, verbose=False))
+            return cls(Llama(model_path=path, n_ctx=CONTEXT_TOKENS, n_gpu_layers=gpu_layers, verbose=False))
         except (OSError, ValueError) as error:
             raise ModelError(f"the local model could not be loaded: {type(error).__name__}") from None
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from earthx.chatbot.__main__ import API_KEY_ENV, LOCAL_MODEL_ENV, MODEL_ENV, STAC_URL_ENV, main
+from earthx.chatbot.__main__ import API_KEY_ENV, GPU_LAYERS_ENV, LOCAL_MODEL_ENV, MODEL_ENV, STAC_URL_ENV, main
 
 
 def test_without_a_stac_root_it_says_what_is_missing(
@@ -55,3 +55,12 @@ def test_a_local_model_needs_no_key_and_a_missing_file_is_a_model_error(
     monkeypatch.setenv(LOCAL_MODEL_ENV, str(tmp_path / "missing.gguf"))
     assert main(["--stac-url", "https://stac.example.invalid/stac", "chat", "radar?"]) == 1
     assert capsys.readouterr().err.startswith("model error:")
+
+
+def test_a_gpu_layer_count_that_is_not_a_number_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(LOCAL_MODEL_ENV, str(tmp_path / "model.gguf"))
+    monkeypatch.setenv(GPU_LAYERS_ENV, "all")
+    assert main(["--stac-url", "https://stac.example.invalid/stac", "chat", "radar?"]) == 1
+    assert GPU_LAYERS_ENV in capsys.readouterr().err
