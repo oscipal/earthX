@@ -297,6 +297,29 @@ Vollständige Bedienung und alle Nachbesserungen aus Ottos Durchsicht:
 `docs/plans/m2-format-und-viewer.md`, Aufgaben V-1 bis V-4 und ihre
 Nachbesserungsrunden.
 
+### Backend-Abhängigkeiten ändern oder erneuern (M4-00b)
+
+`backend/requirements.txt` und `backend/requirements-dev.txt` sagen, was das
+Backend braucht. Installiert wird aber überall — CI, Image, Cloud-Sitzung — aus
+den Lock-Dateien `backend/requirements.lock` und
+`backend/requirements-dev.lock`: feste Versionen, jede Datei gegen einen Hash
+geprüft. Eine neue Veröffentlichung irgendwo im Abhängigkeitsbaum ändert damit
+nichts, bis die Lock-Dateien bewusst erneuert werden.
+
+Erzeugt werden sie mit [`uv`](https://pypi.org/project/uv/) (in der
+Cloud-Sitzung vorhanden, lokal z. B. `pip install uv`), aus der Repo-Wurzel:
+
+```bash
+scripts/lock-backend.sh            # nach einer Änderung an einer .txt-Datei
+scripts/lock-backend.sh --upgrade  # alles auf die neuesten erlaubten Versionen
+```
+
+Ohne `--upgrade` bleiben alle schon gesperrten Versionen stehen; nur was die
+`.txt`-Dateien neu verlangen, kommt dazu. Danach
+`pytest backend/tests/test_backend_lock.py` und die ganze Suite. Ein Erneuern
+mit `--upgrade` ist ein eigener PR, der die neuen Pakete im Baum nennt. Nach dem
+Merge einer neuen Lock-Datei lokal einmal `docker compose build --no-cache`.
+
 ### Fehlersuche
 
 - **Port belegt** (`address already in use`): Ein anderer Prozess nutzt

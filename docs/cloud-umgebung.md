@@ -67,6 +67,9 @@ und CI geht denselben Weg — damit prüft CI, was die Sitzung benutzt.
 `adr/0008`; der pip-Weg ist seither überall der einzige. Die Tabelle oben ist
 eine Messung unter 3.11; unter 3.12 lösen mehrere Pakete neuer auf,
 `plans/m3-03-python-312.md` §2.3.)*
+*(Nachtrag 2026-10-02, M4-00b: CI, Image und Sitzung installieren seither aus
+den Lock-Dateien `backend/requirements.lock` und `backend/requirements-dev.lock`
+mit Hash-Prüfung, nicht mehr direkt aus den `.txt`-Dateien; siehe §7.)*
 
 ## 4. Docker: startbar, aber nutzlos
 
@@ -243,6 +246,16 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    venv zu den Backend-Anforderungen. Die Vergleichslogik steht in
    `scripts/lib/frontend-deps.sh`, getrennt vom Hook, damit sie ohne Postgres
    und venv testbar ist (`backend/tests/test_frontend_deps_hook.py`).
+   **Nachtrag 2026-10-02 (M4-00b, `plans/m4-00b-lock-datei.md`):** Der Hook
+   installiert die Backend-Pakete aus `backend/requirements-dev.lock` mit
+   `--require-hashes`, wie die CI; das Image installiert aus
+   `backend/requirements.lock`. Die `.txt`-Dateien sind nur noch die Eingabe
+   für `scripts/lock-backend.sh` (mit `uv`, in der Sitzung unter
+   `/root/.local/bin/uv` vorhanden). Erneuern: `README.md` §2, „Backend-
+   Abhängigkeiten ändern oder erneuern“. Ein venv aus einer älteren Sitzung
+   wird beim nächsten Start auf die Versionen der Lock-Datei gebracht; Pakete,
+   die nicht mehr in der Lock-Datei stehen, bleiben darin liegen. Die Wirkung
+   in einer neu gestarteten Sitzung ist noch zu belegen (PR #113).
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und

@@ -397,3 +397,26 @@ Objektspeicher-Smoke in `compose-topology`)?**
 **Von Otto auszuführen:**
 - Nach der Umsetzung eine neue Session auf diesem Branch starten (§8 Punkt 7).
 - Nach dem Merge lokal `docker compose build --no-cache` (Plan §1.3).
+
+---
+
+## 10. Stand der Umsetzung (02.10.2026)
+
+Umgesetzt wie in §3–§7 mit den Antworten F1–F4 (je Option 1).
+
+- `scripts/lock-backend.sh` erzeugt `requirements.lock` (110 Einträge) und
+  `requirements-dev.lock` (121 Einträge, darin alle 110 unverändert) [M].
+- Frisches venv, `pip install --require-hashes --only-binary :all:
+  --no-binary version-parser -r backend/requirements-dev.lock` ohne Cache:
+  `pip check` ohne Befund, `pip freeze` identisch mit dem Projekt-venv
+  (118 Pakete). Aus `requirements.lock` allein: 108 Pakete, `pip check` ohne
+  Befund [M].
+- `backend/tests/test_backend_lock.py`: 37 Fälle grün. Gegenproben am echten
+  Repo [M]: `shapely` aus `requirements.lock` entfernt → rot
+  („shapely is not in the lock file“); im Dockerfile `--no-binary
+  version-parser` vor `--only-binary :all:` gesetzt → rot. Beide danach
+  zurückgesetzt.
+- `packaging` steht als direkte Dev-Anforderung in `requirements-dev.txt`;
+  die Version (26.3) blieb unverändert.
+- **Offen:** Beleg des SessionStart-Hooks in einer neu gestarteten Session
+  (§8 Punkt 7). Otto startet sie nach dem „fertig“.
