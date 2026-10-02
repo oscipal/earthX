@@ -80,19 +80,21 @@ from earthx.adapters import (
     InvalidQuery,
     UnknownCollection,
     UnsupportedSource,
-    get_item,
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
+from earthx.api.item_source import (
+    MaterializedCatalogUnavailable,
+    MaterializedItemNotFound,
+    build_item_source,
+    check_item_holdings,
+)
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.pgstac import fetch_item
 from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
-    ItemHolding,
     LicenseTier,
     UnknownDatasetError,
 )
-from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout
 from earthx.gateway.gdal import gdal_options
@@ -121,20 +123,6 @@ DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 # event loop (a second concurrent request cannot interleave between the check
 # and the `async with`).
 _LARGE_DOWNLOAD_LOCK = asyncio.Lock()
-
-
-class MaterializedItemNotFound(LookupError):
-    """No item with this id in a materialized dataset's own pgstac collection."""
-
-
-class MaterializedCatalogUnavailable(RuntimeError):
-    """A materialized dataset's items live only in pgstac, and this process has no
-    pool to reach it with (`api/dependencies.py::cache_pool` was not opened).
-
-    Unlike a federated dataset — where the same pool is only a cache, and its
-    absence merely means a slower re-fetch of the source (E5) — a materialized
-    dataset's items have no other place to come from at all.
-    """
 
 
 async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
@@ -657,40 +645,6 @@ async def statistics_cache(request: Request) -> AsyncIterator[PostgresStatsCache
         yield PostgresStatsCache(conn)
 
 
-def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any):
-    """How the tiler gets an item: federated through the adapter and gateway, or
-    materialized straight out of pgstac (M3-11a, K-05).
-
-    A closure rather than a dependency of its own, so that a test can put a recorded
-    item in its place without a database and without a network (adr/0002 §2).
-    """
-
-    async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
-        try:
-            config = registry.get(dataset_id)
-        except UnknownDatasetError:
-            raise UnknownCollection(dataset_id) from None
-        if config.source.item_holding is ItemHolding.MATERIALIZED:
-            # No cache in front of this: the read is already local, and the item
-            # cache below exists to spare a *federated* dataset a round trip to a
-            # remote source, which is not the question here.
-            if pool is None:
-                raise MaterializedCatalogUnavailable(dataset_id)
-            async with pool.connection() as conn:
-                item = await fetch_item(conn, dataset_id, item_id)
-            if item is None:
-                raise MaterializedItemNotFound(item_id)
-            return item
-        if pool is None:
-            return await get_item(dataset_id, item_id, gateway=gateway, registry=registry)
-        async with pool.connection() as conn:
-            return await get_item(
-                dataset_id, item_id, gateway=gateway, registry=registry, cache=PostgresSearchCache(conn)
-            )
-
-    return item_source
-
-
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with (
@@ -698,6 +652,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
     ):
         app.state.earthx_cache_pool = pool
+        # Only with a pool: without a database this process still starts and serves
+        # federated datasets as before (E5); a materialized item is then a 503.
+        if pool is not None:
+            async with pool.connection() as conn:
+                await check_item_holdings(app.state.earthx_registry, conn)
         # The registry `build_app` was actually given, not the module-wide default
         # (M3-11a §2.2): before this field existed the two never diverged in a test,
         # because nothing here read from pgstac at all — a materialized item does.

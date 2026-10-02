@@ -34,6 +34,7 @@ from earthx.api.coverage_route import router as coverage_router
 from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
+from earthx.api.item_source import check_item_holdings
 from earthx.catalog.datasets import REGISTRY
 from earthx.logging import RequestIdMiddleware, configure_logging
 
@@ -57,6 +58,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await connect_to_db(app, add_write_connection_pool=False)
     try:
         async with cache_pool() as pool:
+            # adr/0011 §7 D2: routing reads the registry, so pgstac must not say
+            # otherwise; a disagreement stops the start (Otto, M4-01a F2).
+            async with pool.connection() as conn:
+                await check_item_holdings(REGISTRY, conn)
             app.state.earthx_cache_pool = pool
             app.state.earthx_gateway = build_gateway(REGISTRY)
             # M3-07a: a second, separate gateway that can reach only the geocoder's

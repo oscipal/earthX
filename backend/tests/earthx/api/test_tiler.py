@@ -30,13 +30,10 @@ from earthx.api.dependencies import policy_from_registry
 from earthx.api.tiler import (
     DOWNLOAD_ROUTE,
     ROUTER_PREFIX,
-    MaterializedCatalogUnavailable,
-    MaterializedItemNotFound,
     build_app,
-    build_item_source,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding, LicenseTier, ViewerInfo
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -531,95 +528,3 @@ class TestDisplayLicenceTier:
 
         assert response.status_code != 403, response.text
         assert fetched == [ITEM]
-
-
-def _materialized_entry() -> Any:
-    return replace(
-        SENTINEL_2_L2A,
-        source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
-        coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
-    )
-
-
-class _FakeConnection:
-    """Stands in for whatever ``pool.connection()`` yields — ``fetch_item`` is
-    monkeypatched in every test that uses this, so nothing here ever runs a query."""
-
-    async def __aenter__(self) -> "_FakeConnection":
-        return self
-
-    async def __aexit__(self, *exc_info: object) -> bool:
-        return False
-
-
-class _FakePool:
-    def connection(self) -> _FakeConnection:
-        return _FakeConnection()
-
-
-class TestBuildItemSourceDispatchesByHolding:
-    """M3-11a §3.3: the tiler's own item source, one level below any route — a
-    materialized dataset reads pgstac directly (`catalog.pgstac.fetch_item`), a
-    federated one still goes through the adapter and gateway exactly as before.
-    """
-
-    @pytest.mark.anyio
-    async def test_a_materialized_item_comes_from_pgstac(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        materialized = _materialized_entry()
-        registry = DatasetRegistry((materialized,))
-        seen: list[tuple[str, str]] = []
-
-        async def fake_fetch_item(conn: object, dataset_id: str, item_id: str) -> dict[str, Any]:
-            seen.append((dataset_id, item_id))
-            return {"id": item_id, "type": "Feature"}
-
-        monkeypatch.setattr("earthx.api.tiler.fetch_item", fake_fetch_item)
-        item_source = build_item_source(registry, gateway=object(), pool=_FakePool())
-
-        item = await item_source(materialized.dataset_id, "some-item")
-
-        assert item == {"id": "some-item", "type": "Feature"}
-        assert seen == [(materialized.dataset_id, "some-item")]
-
-    @pytest.mark.anyio
-    async def test_a_materialized_item_missing_in_pgstac_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        materialized = _materialized_entry()
-        registry = DatasetRegistry((materialized,))
-
-        async def fake_fetch_item(conn: object, dataset_id: str, item_id: str) -> None:
-            return None
-
-        monkeypatch.setattr("earthx.api.tiler.fetch_item", fake_fetch_item)
-        item_source = build_item_source(registry, gateway=object(), pool=_FakePool())
-
-        with pytest.raises(MaterializedItemNotFound):
-            await item_source(materialized.dataset_id, "no-such-item")
-
-    @pytest.mark.anyio
-    async def test_a_materialized_dataset_without_a_pool_is_unavailable(self) -> None:
-        """Unlike a federated dataset, where no pool merely means no cache (E5), a
-        materialized dataset's items have no other place to come from at all."""
-        materialized = _materialized_entry()
-        registry = DatasetRegistry((materialized,))
-        item_source = build_item_source(registry, gateway=object(), pool=None)
-
-        with pytest.raises(MaterializedCatalogUnavailable):
-            await item_source(materialized.dataset_id, "some-item")
-
-    @pytest.mark.anyio
-    async def test_a_federated_dataset_is_unaffected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The pre-existing path — no pool, straight to the adapter — still runs for
-        a federated entry, proving the new branch above did not swallow it."""
-        seen: list[str] = []
-
-        async def fake_get_item(dataset_id: str, item_id: str, *, gateway: object, registry: object) -> dict[str, Any]:
-            seen.append(dataset_id)
-            return {"id": item_id}
-
-        monkeypatch.setattr("earthx.api.tiler.get_item", fake_get_item)
-        item_source = build_item_source(REGISTRY, gateway=object(), pool=None)
-
-        item = await item_source(SENTINEL_2_L2A.dataset_id, "some-item")
-
-        assert item == {"id": "some-item"}
-        assert seen == [SENTINEL_2_L2A.dataset_id]

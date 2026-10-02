@@ -275,3 +275,17 @@ async def fetch_item(conn: psycopg.AsyncConnection, dataset_id: str, item_id: st
         await cur.execute("SELECT pgstac.get_item(%s, %s)", (item_id, dataset_id))
         row = await cur.fetchone()
     return None if row is None or row[0] is None else row[0]
+
+
+async def read_item_holdings(conn: psycopg.AsyncConnection) -> dict[str, str | None]:
+    """``earthx:source.item_holding`` of every collection in pgstac, by collection id.
+
+    ``None`` where a collection carries no such field (one not written by
+    :func:`load_collection`). Read at the start of `api` and `tiler`, which compare
+    it with the registry (M4-01a, adr/0011 §7 D2); like :func:`fetch_item` it uses
+    the caller's connection and commits nothing.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT id, content->'earthx:source'->>'item_holding' FROM pgstac.collections")
+        rows = await cur.fetchall()
+    return {row[0]: row[1] for row in rows}
