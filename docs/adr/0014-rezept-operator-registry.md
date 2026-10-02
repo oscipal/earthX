@@ -5,10 +5,8 @@
     Option 1).
   - Dazu Auflagen zu F2, F3, F7 und F9. Sie stehen in §15a und sind in §4.4,
     §4.5, §5.4 und §6.3 eingearbeitet.
-  - **Offen ist F7a (§15a):** Die Auflage zu F7 („Skalierung nur aus
-    `raster:bands` des Items“) ist für `sentinel-2-l2a-zarr3` so nicht
-    erfüllbar, weil dessen Items keine Skalierung tragen [M]. Dieser Teil hält
-    an, bis Otto F7a beantwortet.
+  - **F7a** (Skalierung, wenn das Item keine trägt) hat Otto am selben Tag mit
+    Option 1 entschieden (§15a, §5.4).
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -132,8 +130,9 @@ Jede Empfehlung hat eine Frage in §15.
      schon Reflexion (CF-Dekodierung), der COG-Pfad Rohwerte [M]. Ohne Regel
      ergäbe dasselbe Rezept für die zwei Sentinel-2-Datensätze verschiedene
      Zahlen.
-   - Auflage F7: Skalierung nur aus `raster:bands` des Items. **Offen F7a:**
-     Das Item von `sentinel-2-l2a-zarr3` trägt keine (§15a).
+   - Auflage F7: Skalierung aus `raster:bands` des Items. F7a (1): Trägt das
+     Item keine, gilt die generische CF-Dekodierung des Readers; das betrifft
+     `sentinel-2-l2a-zarr3` (§5.4, §15a).
 6. **Kostenschätzung (F8):** aus AOI, `gsd` und Datentyp, wie `plan_outputs`
    heute, mit gemessenen Durchsatzwerten. Einheiten sind Megapixel mal
    Operatorfaktor.
@@ -844,24 +843,36 @@ aus datensatzspezifischem Code.
 - Für die Umsetzung vorgesehen (M4-09): ein Test mit einem synthetischen Item
   mit Offset und Nodata.
 
-**Befund zur Auflage [M], offen als F7a (§15a):**
+**Befund zur Auflage [M]:**
 - Das Item von `sentinel-2-l2a-zarr3` trägt keine Skalierung. Die Assets haben
   nur `nodata` und `data_type`, die `bands` nur Namen und eo-Angaben. Kein
   `raster:scale`/`raster:offset` kommt im Item vor, obwohl es raster v2
-  deklariert (§17.1).
+  deklariert (§17.10).
 - Skalierung und Offset stehen nur im Store, als CF-Attribute, die der Reader
   heute selbst dekodiert (§3.11).
-- Bis F7a beantwortet ist, steht hier nichts Weiteres fest.
 
-**Unverändert aus dem Entwurf:**
-- Das Rezept vermerkt je Eingabe die angewandte Skalierung. Der Worker
-  vergleicht sie beim Öffnen mit der Datei (`scales`/`offsets` bzw.
-  CF-Attribute).
-- Weichen sie ab, scheitert der Job mit einem benannten Fehler, statt still
-  zu rechnen (K7).
-- Die Regel gilt auch in T1: Die Kachel ruft `unscale=True` auf. Das ist heute
-  nicht der Fall; die Standard-Visualisierung rechnet auf DN, was für `visual`
-  (uint8) auch richtig ist.
+**Entschieden mit F7a (1), Otto 2026-10-02:**
+- **Item mit Skalierung:** Die Werte aus `raster:bands` gelten. Der Kern wendet
+  sie auf die Rohwerte an; der Reader liest roh.
+  - Für Zarr heißt das: öffnen ohne CF-Dekodierung (`mask_and_scale=False`).
+    Das ist eine generische Option in `readers`, nicht je Datensatz.
+- **Item ohne Skalierung:** Es gilt die generische CF-Dekodierung des Readers
+  (xarray-Standard). Das ist kein datensatzspezifischer Code. Heute betrifft
+  das `sentinel-2-l2a-zarr3`.
+- **Quelle im Rezept:** Das Rezept vermerkt je Eingabe die angewandte
+  Skalierung und ihre Quelle, `item` oder `store-cf`.
+- **Vergleich:** Tragen Item und Datei bzw. Store beide eine Skalierung, prüft
+  der Worker beim Öffnen, dass sie gleich sind. Verglichen werden die
+  COG-Tags `scales`/`offsets` bzw. die CF-Attribute. Eine Abweichung lässt den
+  Job mit einem benannten Fehler scheitern, statt still zu rechnen (K7).
+- **Auslegung [A], Vorschlag, gilt bis Otto widerspricht:** Trägt weder das
+  Item noch der Store eine Skalierung, wird nicht skaliert. Trägt dann aber die
+  COG-Datei selbst Tags ungleich 1/0, scheitert der Job ebenso. Das betrifft
+  heute die eigenen DEM-Items, die kein `raster:bands` tragen
+  (`cop_dem_bucket._item`); Q14 braucht dort nur die Reprojektion.
+- **T1:** Dieselbe Regel gilt in der Kachel, denn der Kern ist derselbe
+  (§6.2). Die Standard-Visualisierung rechnet weiter auf DN; das ist für
+  `visual` (uint8) richtig und kein Band-Math.
 
 ### 5.5 Kostenmodell und Schätzung (F8)
 
@@ -1288,8 +1299,8 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
 ## 15. Fragen an Otto — beantwortet am 2026-10-02
 
 Otto hat alle fünfzehn Fragen mit Option 1 beantwortet. Die Fragen stehen mit
-ihrem ursprünglichen Wortlaut da. Die Auflagen und die offene Rückfrage F7a
-stehen in §15a.
+ihrem ursprünglichen Wortlaut da. Die Auflagen und die Rückfrage F7a, ebenfalls
+mit Option 1 beantwortet, stehen in §15a.
 
 **F1 — Aufbau des Rezepts (§4.1)**
 1. Drei Schichten (Auftrag, Rezept, Provenienz), lineare Schrittfolge
@@ -1346,7 +1357,7 @@ stehen in §15a.
 2. Parameter `unscale` ohne Vorgabe, der Nutzer wählt
 3. Rohwerte
 
-**Antwort F7: (1)** physikalische Werte; Auflage F7 und offene Rückfrage F7a (§15a).
+**Antwort F7: (1)** physikalische Werte; Auflage F7 und Rückfrage F7a, beantwortet mit (1) (§15a).
 
 **F8 — Kostenschätzung (§5.5)**
 1. Aus AOI, `gsd` und Datentyp wie `plan_outputs`, Dauer aus gemessenem
@@ -1418,7 +1429,7 @@ stehen in §15a.
 
 ---
 
-## 15a. Auflagen (Otto, 2026-10-02) und offene Rückfrage
+## 15a. Auflagen (Otto, 2026-10-02) und Rückfrage F7a
 
 **Auflagen, eingearbeitet:**
 
@@ -1440,7 +1451,7 @@ außerhalb des Hauptthreads betrifft den heutigen Kachel- und Download-Pfad im
 `tiler` nicht. Belege in §3.6, Messung in §17.11. Kein Befund, nichts
 anzuhalten.
 
-**F7a — offen: Skalierung, wenn das Item keine trägt (§5.4)**
+**F7a — Skalierung, wenn das Item keine trägt (§5.4), entschieden am 2026-10-02**
 
 Befund [M]:
 - `sentinel-2-l2a-zarr3` trägt im Item weder `raster:scale` noch
@@ -1468,6 +1479,10 @@ Befund [M]:
    aus den CF-Attributen des Stores. Das ist eine generische Abbildung CF →
    STAC im Adapter. Es kostet je Item einen Abruf der konsolidierten
    Metadaten (gemessen 496 kB) in Suche und Einzelabruf.
+
+**Antwort F7a: (1)** Skalierung aus dem Item, wo vorhanden. Sonst gilt die
+generische CF-Dekodierung des Readers, mit Quelle im Rezept und Vergleich, wo
+beide vorhanden sind. Umgesetzt in §5.4.
 
 ---
 
