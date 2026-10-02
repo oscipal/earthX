@@ -53,6 +53,8 @@ fi
 # backend/requirements.txt weniger Pakete listete (z. B. vor `titiler.core`
 # in M2-04), und pip überspringt bereits erfüllte Anforderungen ohnehin
 # schnell (M2-13, mehrere Sessions mussten sonst von Hand nachinstallieren).
+# Seit M4-00b aus der Lock-Datei, mit Hash-Prüfung: dieselben Versionen wie in
+# der CI. Optionen und ihre Reihenfolge erklärt scripts/lock-backend.sh.
 venv_minor() { "${VENV}/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null; }
 
 # Ein venv mit anderer Version oder ohne pip wird ersetzt, nicht weiterbenutzt:
@@ -77,9 +79,11 @@ else
 fi
 
 if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
-  log "Backend-Abhängigkeiten installieren (backend/requirements-dev.txt)"
+  log "Backend-Abhängigkeiten installieren (backend/requirements-dev.lock)"
   "${VENV}/bin/pip" install --upgrade --quiet pip \
-    && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
+    && "${VENV}/bin/pip" install --quiet --require-hashes \
+      --only-binary :all: --no-binary version-parser \
+      -r "${REPO_ROOT}/backend/requirements-dev.lock" \
     || warn "pip-Installation fehlgeschlagen"
 
   # Damit ein nacktes `pytest` in der Sitzung das des venv ist und nicht das

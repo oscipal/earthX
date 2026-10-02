@@ -30,7 +30,11 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y curl libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# The runtime lock file, hash-checked (M4-00b): the same versions CI tests, not
+# whatever is newest on the day of the build. scripts/lock-backend.sh writes it
+# from requirements.txt and explains the options and their order.
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes \
+      --only-binary :all: --no-binary version-parser -r requirements.lock
 
 COPY earthx ./earthx
