@@ -146,6 +146,13 @@ flowchart TB
 
 Die Importregeln werden automatisch geprüft (z. B. import-linter in der CI). So bleibt der Monolith teilbar: Jedes Modul kann später ein eigener Dienst werden, ohne dass Code entflochten werden muss.
 
+**Nachtrag 2026-10-02 (M4 Q4, Q5):** `jobs` darf die Datenbank (psycopg) und ist
+die Hülle mit Queue und Datenbank; `processing` bleibt der Worker-Kern ohne
+Datenbank, Queue, Objektspeicher und interne API (`no-database-in-worker-core`
+bleibt für `processing`). Die Vertragsform schlägt `adr/0013` vor. Ein eigenes
+Modul für Plattformdienste (Objektspeicher) kommt mit `adr/0015`; nur `jobs` und
+`api` dürfen es importieren, `gateway` bleibt unverändert.
+
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
 | Prozess | Last | Skalierung | Zustand |
@@ -372,6 +379,10 @@ Begleitdatei. Ausgeliefert wird ein ZIP aus COG und Textdatei mit Attribution,
 Lesen. Objektspeicher mit Ablauf, signierte URLs und das Rezept als
 Begleitdatei für Downloads bleiben M4.
 
+**Nachtrag 2026-10-02 (M4 Q13):** Das ZIP des synchronen Zuschnitts bekommt in M4
+zusätzlich `recipe.json` und `citation.bib`; den Inhalt legt `adr/0014` fest, die
+Umsetzung ist M4-14.
+
 ### 6.5 Fetch-Gateway
 
 Einziger Weg nach außen für `adapters`, `readers`, `discovery` und Health-Checks:
@@ -383,6 +394,11 @@ Einziger Weg nach außen für `adapters`, `readers`, `discovery` und Health-Chec
 - Metriken pro Host: Latenz, Fehlerquote, Volumen. Das ist zugleich die Datengrundlage für den Health-Status.
 
 Dieses eine Modul setzt drei Prinzipien gleichzeitig um: Security by Design, Rücksicht auf die Quellen, Kostenbewusstsein.
+
+**Nachtrag 2026-10-02 (M4 Q5):** Maßgeblich ist „nur `https`“ (M1-03 F4); `s3`
+für bekannte Buckets entfällt. Der eigene Objektspeicher läuft nicht über
+`gateway`, sondern über das Modul für Plattformdienste (`adr/0015`) mit festem
+Endpunkt aus der Konfiguration.
 
 ---
 
@@ -425,6 +441,13 @@ Aus diesem einen Objekt folgt:
 | Lizenzprüfung | Kombination der `license_flags` aller Eingaben wird vor Ausführung geprüft |
 
 Das Rezept lehnt sich konzeptionell an openEO-Prozessgraphen an (benannte Prozesse mit Parametern, gerichtete Abfolge). Eine Übersetzung Rezept → openEO-Prozessgraph ist damit später machbar, ohne jetzt die volle openEO-API zu implementieren.
+
+**Nachtrag 2026-10-02 (M4 Q8, Q11):** Der Hash des kanonischen Rezepts ist nur
+intern der Cache-Schlüssel. Nach außen (URLs, Job-IDs, Permalinks) gehen nur
+zufällige Kennungen, weil der Hash aus der AOI zurückrechenbar wäre. Ein
+Cache-Treffer gilt nur, wenn alle Eingaben eine Fassung tragen (ETag des Assets
+oder `updated` am Item); sonst wird neu gerechnet. Rezepte mit AOI gelten als
+personenbezogen.
 
 ### 7.2 Operator-Registry
 
@@ -525,6 +548,13 @@ Festlegungen:
 
 Abgrenzung: T0 (Browser) bleibt auf Anzeige und leichte Operatoren beschränkt, weil dort eine zweite Implementierung der Operatoren nötig wäre. T2L nutzt denselben Code wie die Cloud und liefert deshalb gleichwertige Ergebnisse.
 
+**Nachtrag 2026-10-02 (M4 Q12):** In M4 gibt es nur den Modus „Offline mit
+Rezeptdatei“. Das Image wird lokal mit festem Tag gebaut und nicht in einer
+Registry veröffentlicht (das Beispiel `ghcr.io/earthx/runner` oben ist Zielbild).
+Ergebnisse sind `self_attested` und kommen nie in den gemeinsamen Cache; ein
+Vergleichstest Cloud gegen lokal läuft in der CI. Einmalbefehl mit Rezept-ID und
+verbundener Runner folgen später (7f).
+
 ---
 
 ## 8. Erlebnis-Ebene
@@ -623,6 +653,11 @@ Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für
 | HTTP/CDN | Tiles, Quicklooks, Katalogantworten | CDN / Browser |
 | Anwendung | föderierte Item-Suchen, Such-IDs für Mosaike, Header-Infos von COGs | Redis oder Postgres |
 | Ergebnis | Job-Ergebnisse per Rezept-Hash | Objektspeicher mit Ablaufdatum |
+
+**Nachtrag 2026-10-02 (M4 Q10, Q11):** Die Zeile „Ergebnis“ gilt nur für
+Eingaben mit Fassung (ETag oder `updated`); lokal erzeugte Ergebnisse kommen nie
+hinein. Ablauffrist: 7 Tage als Startwert, auch für gespeicherte Rezepte,
+belegt durch einen Test des Ablaufs (`adr/0012` §9 Punkt 5).
 | Pipeline | Rohantworten der Quellen per Inhalts-Hash | Postgres |
 
 ### 12.4 Beobachtbarkeit
@@ -674,6 +709,10 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 | 5 | Discovery-Trichter Stufen 0 und 1 für Collections, Verify, Dedupe, Git-basierter Review, Health-Checks, Hybrid-Suche | der "Crawler" |
 | 6 | Identität, Quotas, Cloud-Migration, CDN, Lasttest | Mehrnutzerbetrieb |
 | 7 | Chatbot + MCP, Discovery-Stufen 2 und 3, virtuelle Zarr-Stores, Container-Modelle, externe Engines, verbundener Runner mit Auswahl in der Oberfläche, Rendering im Browser | Ausbau |
+
+**Nachtrag 2026-10-02 (M4 Q6):** Die ersten Operatoren in Inkrement 4 sind
+Band-Math (T1 und T2) und Reprojektion/Resampling (T2); Masking und
+Normalisierung folgen je als eigene Aufgabe (`plans/m4-processing-kern.md`).
 
 ### 15.2 Spikes (kurz, zeitlich begrenzt, mit klarer Frage)
 
