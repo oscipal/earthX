@@ -1,6 +1,14 @@
 # ADR 0014 — Rezept und Operator-Registry
 
-- **Status:** Entwurf, offen. Otto entscheidet über die fünfzehn Fragen in §15.
+- **Status:** **Angenommen** von Otto am 2026-10-02.
+  - Alle fünfzehn Fragen aus §15 sind nach Empfehlung beantwortet (F1–F15:
+    Option 1).
+  - Dazu Auflagen zu F2, F3, F7 und F9. Sie stehen in §15a und sind in §4.4,
+    §4.5, §5.4 und §6.3 eingearbeitet.
+  - **Offen ist F7a (§15a):** Die Auflage zu F7 („Skalierung nur aus
+    `raster:bands` des Items“) ist für `sentinel-2-l2a-zarr3` so nicht
+    erfüllbar, weil dessen Items keine Skalierung tragen [M]. Dieser Teil hält
+    an, bis Otto F7a beantwortet.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -102,8 +110,8 @@ Jede Empfehlung hat eine Frage in §15.
      über das validierte Modell. RFC 8785 wäre die standardkonforme Alternative
      mit einer kleinen Abhängigkeit (§4.4).
    - In den Cache-Schlüssel gehen Rezept, Fassungen, Operator-Versionen und die
-     Versionen von GDAL, rasterio und numexpr. Gemessen hängt das Ergebnis
-     davon ab (§3.4).
+     Versionen von GDAL, rasterio, numexpr und numpy (Auflage F3). Gemessen
+     hängt das Ergebnis davon ab (§3.4).
 3. **Fassung der Eingaben (F4).**
    - Earth Search liefert je Asset eine Prüfsumme `file:checksum` ohne
      zusätzliche Anfrage [M]. EOPF hat nur `updated` am Item, `data.eodc.eu`
@@ -124,6 +132,8 @@ Jede Empfehlung hat eine Frage in §15.
      schon Reflexion (CF-Dekodierung), der COG-Pfad Rohwerte [M]. Ohne Regel
      ergäbe dasselbe Rezept für die zwei Sentinel-2-Datensätze verschiedene
      Zahlen.
+   - Auflage F7: Skalierung nur aus `raster:bands` des Items. **Offen F7a:**
+     Das Item von `sentinel-2-l2a-zarr3` trägt keine (§15a).
 6. **Kostenschätzung (F8):** aus AOI, `gsd` und Datentyp, wie `plan_outputs`
    heute, mit gemessenen Durchsatzwerten. Einheiten sind Megapixel mal
    Operatorfaktor.
@@ -131,7 +141,10 @@ Jede Empfehlung hat eine Frage in §15.
    - T2 gegen T2L: **bitgleich**.
    - T1 gegen T2 bei Band-Math: **bitgleich** auf einer Zoomstufe, die die
      native Ebene liest, mit `nearest`. Gemessen: 100 % von 2,6 Mio. Pixeln.
-   - Übersichtsstufen sind Vorschau und werden nicht verglichen.
+   - Bitgleich heißt: auf der nativen Ebene und auf derselben
+     CPU-Architektur (Auflage F9).
+   - Übersichtsstufen sind eine Annäherung, werden nicht verglichen und in der
+     Oberfläche als „Preview“ gekennzeichnet.
    - Die Reprojektion ist planabhängig: Blockung und Näherung ändern Werte,
      die Thread-Zahl nicht [M]. Der Blockplan gehört deshalb zur
      Operator-Version.
@@ -350,8 +363,30 @@ wie in §3.2, Ausgabe float32 als gekacheltes GeoTIFF auf lokaler Platte,
     (`cpl_vsil_curl.cpp` v3.12.2 Z. 479). `GDAL_HTTP_UNSAFESSL` und der
     User-Agent werden dagegen zur Anfragezeit im ausführenden Thread gelesen
     (`cpl_http.cpp` Z. 505–541) [P].
-- Heute läuft das gut, weil `access/download.py` Z. 1397 das `Env` auf dem
-  Thread betritt, der liest, und `mosaic_reader` mit `threads=1` arbeitet.
+- **Der heutige `tiler` ist nicht betroffen [M][P]:** Kachel, Statistik und
+  Download lesen auf demselben Thread, der vorher das `Env` mit den Optionen
+  aus `gateway` betreten hat.
+  - Belegstellen [P]:
+    - Kachel: `titiler/core/factory.py` Z. 913, im synchronen Endpunkt
+      `def tile` (Z. 866), der im Thread-Pool läuft.
+    - Statistik: `access/tiles.py` Z. 403, in `once()` unter
+      `run_in_threadpool`.
+    - TileJSON: `access/tiles.py` Z. 297, synchroner Endpunkt.
+    - Download: `access/download.py` Z. 1397, mit `mosaic_reader(threads=1)`
+      (Z. 667–668); `create_tasks` ruft bei `threads ≤ 1` im aufrufenden
+      Thread auf (`rio_tiler/tasks.py` Z. 52–61).
+  - Gemessen (§17.11): Eine Sonde in `DatasetReader.read` und
+    `WarpedVRT.read` lief über die echten Routen mit dem Gerüst aus
+    `synthetic_chain.py`, je drei Routen für drei Datensätze. Alle 15
+    GDAL-Lesezugriffe liefen auf einem Nicht-Hauptthread, und in allen galten
+    `GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR`, die erlaubten Endungen und die
+    Zeitlimits aus `gateway`.
+  - Zarr-Kacheln und -Statistik lesen gar nicht über GDAL, sondern über
+    `GatewayStore`. Die drei GDAL-Lesezugriffe beim Zarr-Download sind die
+    Prüflesungen der geschriebenen COG.
+  - Einschränkung: `TestClient` hält die Ereignisschleife in einem eigenen
+    Thread, uvicorn im Hauptthread. Synchrone Endpunkte laufen in beiden
+    Fällen im Thread-Pool. Ein lesender `async`-Endpunkt existiert nicht.
 
 ### 3.7 Welche Adressen GDAL abruft — [M]
 
@@ -599,6 +634,35 @@ Browser noch der Runner berechnet ihn: Lokale Ergebnisse kommen nie in den Cache
 Python gebraucht (Abgleich in einem anderen Werkzeug), dann H1 mit neuer
 Verfahrenskennung. Das ist eine Zeile und ein Lock-Eintrag.
 
+**Kanonisierungsregeln, Verfahren `c1` (angenommen mit F2, Auflage F2):**
+
+1. Eingabe ist das validierte Modell (`strict=True`, `extra="forbid"`),
+   ausgegeben mit `model_dump(mode="json")`.
+2. **Schlüsselreihenfolge:** `sort_keys=True`, also nach den Codepunkten der
+   Python-Zeichenkette, rekursiv. Die Modelle haben nur ASCII-Schlüssel; dort
+   gleicht das der UTF-16-Ordnung aus RFC 8785.
+3. **Trennzeichen:** `separators=(",", ":")`, kein Leerraum.
+4. **`ensure_ascii=False`:** Nicht-ASCII-Zeichen in Werten bleiben als Zeichen
+   stehen; die Bytes sind UTF-8. Keine Unicode-Normalisierung (wie RFC 8785).
+5. **`allow_nan=False`:** NaN und ±Infinity sind ein Fehler (I-JSON).
+6. **Zahlen:**
+   - Ein float-Feld ist immer float. `1` und `1.0` werden beide zu `1.0` [M].
+   - Ein int-Feld nimmt nur Ganzzahlen; `1.0` und `true` werden abgewiesen
+     [M].
+   - `-0.0` wird vor dem Serialisieren zu `0.0`. pydantic selbst lässt es als
+     `-0.0` stehen [M].
+   - Floats stehen in der kürzesten Form, die Python ausgibt (`repr`): `1e-07`,
+     `1e+20` [M]. RFC 8785 schriebe `1e-7` und `100000000000000000000`; das
+     ist der Grund für die eigene Kennung `c1`.
+7. **Arrays** behalten ihre Reihenfolge. Koordinaten werden nicht gerundet
+   (unten).
+8. **Hash:** SHA-256 über die UTF-8-Bytes, Hex in Kleinbuchstaben, Präfix
+   `c1:`.
+9. **Test (M4-07, Auflage F2):** feste erwartete Hashwerte für einige
+   synthetische Rezepte. Abgedeckt sind die Grenzfälle `1`/`1.0`, `-0.0`,
+   `1e-7`, Nicht-ASCII in einem Wert und eine andere Schlüsselreihenfolge in
+   der Eingabe, die denselben Hash geben muss.
+
 **Was nicht normalisiert wird:**
 - AOI-Koordinaten werden nicht gerundet. Zwei gezeichnete AOIs, die sich in der
   achten Nachkommastelle unterscheiden, sind zwei Aufträge. Ehrlich neu rechnen
@@ -614,7 +678,7 @@ Kern = `recipe_version`, `inputs` (mit `resolved`, `version`, `bands`), `aoi`,
 | Variante | Inhalt von `engine` | Folge |
 |---|---|---|
 | E1 | nichts | ein GDAL-Update, das den Warp ändert, liefert alte Ergebnisse unter neuem Code |
-| **E2** | Version von `earthx.processing` (Kernpaket), GDAL, rasterio und numexpr | gemessen ändern Plan und Näherung das Ergebnis (§3.4); ein Wechsel von GDAL kann das auch |
+| **E2** | Version von `earthx.processing` (Kernpaket), GDAL, rasterio, numexpr und numpy (numpy: Auflage F3) | gemessen ändern Plan und Näherung das Ergebnis (§3.4); ein Wechsel von GDAL kann das auch |
 | E3 | die ganze Image-Version | jedes Deployment leert den Cache; bei 7 Tagen Frist vertretbar, aber unnötig grob |
 
 **Empfehlung: E2.** Nie im Schlüssel: Kennungen nach außen, Zeitpunkte, die
@@ -770,11 +834,28 @@ Reflexion (CF-Dekodierung im Reader), aus dem COG-Pfad als Rohwert, solange
 - NDVI aus Rohwerten: 0,478.
 - NDVI aus Reflexion (×0,0001 − 0,1): 0,846.
 
-**Empfehlung: Band-Math rechnet immer auf physikalischen Werten.**
-- COG mit `unscale=True`; die Skalierung steht in der Datei (§3.11). Zarr
-  über die CF-Dekodierung.
-- Das Rezept vermerkt je Eingabe die Skalierung aus dem Item (`bands`). Der
-  Worker vergleicht sie beim Öffnen mit der Datei (`scales`/`offsets` bzw.
+**Empfehlung, angenommen (F7): Band-Math rechnet immer auf physikalischen
+Werten.**
+
+**Auflage F7:** Skalierung und Offset kommen aus `raster:bands` des Items, nie
+aus datensatzspezifischem Code.
+- STAC 1.0 mit raster v1: `raster:bands[].scale`/`offset`.
+- STAC 1.1 mit raster v2: `bands[].raster:scale`/`raster:offset` (§3.10).
+- Für die Umsetzung vorgesehen (M4-09): ein Test mit einem synthetischen Item
+  mit Offset und Nodata.
+
+**Befund zur Auflage [M], offen als F7a (§15a):**
+- Das Item von `sentinel-2-l2a-zarr3` trägt keine Skalierung. Die Assets haben
+  nur `nodata` und `data_type`, die `bands` nur Namen und eo-Angaben. Kein
+  `raster:scale`/`raster:offset` kommt im Item vor, obwohl es raster v2
+  deklariert (§17.1).
+- Skalierung und Offset stehen nur im Store, als CF-Attribute, die der Reader
+  heute selbst dekodiert (§3.11).
+- Bis F7a beantwortet ist, steht hier nichts Weiteres fest.
+
+**Unverändert aus dem Entwurf:**
+- Das Rezept vermerkt je Eingabe die angewandte Skalierung. Der Worker
+  vergleicht sie beim Öffnen mit der Datei (`scales`/`offsets` bzw.
   CF-Attribute).
 - Weichen sie ab, scheitert der Job mit einem benannten Fehler, statt still
   zu rechnen (K7).
@@ -877,11 +958,15 @@ Job.
 
 | Vergleich | Operator | Bedingung | Toleranz | gemessen |
 |---|---|---|---|---|
-| **T2 ↔ T2L** | alle | gleiches Image (Q12), Blockplan fest in `op_version` | **bitgleich** in allen Pixeln; Metadaten gleich außer `execution`, `runner_version`, `self_attested`, Zeiten | Band-Math: Blöcke 512/1024/2048 und ganz bitgleich; numexpr 1/8 Threads gleich; Warp 1/4 Threads gleich (§3.2, §3.4, §3.5) |
-| **T1 ↔ T2** | Band-Math | Kachelraster einer Zoomstufe, die die native Ebene liest; Resampling `nearest`; beide mit `unscale=True` | **bitgleich**, Anteil identischer gültiger Pixel = 1, Maske gleich | z13 und z14: 100 % von je 2,6 Mio. Pixeln (§3.3) |
-| T1 ↔ T2 | Band-Math | Übersichtsstufe | kein Vergleich; die Kachel ist als Vorschau gekennzeichnet | z11/z12: 0,004–0,005 % identisch, p99 0,37–0,39 (§3.3) |
+| **T2 ↔ T2L** | alle | gleiches Image (Q12), Blockplan fest in `op_version`, dieselbe CPU-Architektur (CI, x86_64; Auflage F9) | **bitgleich** in allen Pixeln; Metadaten gleich außer `execution`, `runner_version`, `self_attested`, Zeiten | Band-Math: Blöcke 512/1024/2048 und ganz bitgleich; numexpr 1/8 Threads gleich; Warp 1/4 Threads gleich (§3.2, §3.4, §3.5) |
+| **T1 ↔ T2** | Band-Math | Kachelraster einer Zoomstufe, die die native Ebene liest; Resampling `nearest`; dieselbe Skalierung (§5.4); dieselbe CPU-Architektur | **bitgleich**, Anteil identischer gültiger Pixel = 1, Maske gleich | z13 und z14: 100 % von je 2,6 Mio. Pixeln (§3.3) |
+| T1 ↔ T2 | Band-Math | Übersichtsstufe | kein Vergleich; eine Annäherung, in der Oberfläche als „Preview“ gekennzeichnet (Auflage F9) | z11/z12: 0,004–0,005 % identisch, p99 0,37–0,39 (§3.3) |
 | T2 ↔ unabhängige Referenz (ganzes `reproject`) | Reprojektion | gleiche Parameter, anderer Plan | `nearest` ≥ 97 % identisch; `bilinear`/`cubic` auf Höhen: p99 ≤ 0,3 m, max ≤ 1 m; auf NDVI: p99 ≤ 0,01 | DEM: 97,7 %; p99 0,20/0,24 m, max 0,70/0,83 m; NDVI p99 0,0029–0,0083 (§3.4) |
 
+- **Auflage F9:** Bitgleichheit gilt auf der nativen Ebene und auf derselben
+  CPU-Architektur. Der Vergleich Cloud gegen Runner läuft deshalb auf
+  derselben Architektur (CI, x86_64). Andere Architekturen liegen außerhalb
+  dieser Zusage; gemessen ist hier nur x86_64.
 - Die erste und die zweite Zeile tragen die M4-Abnahme 1. Die vierte ist eine
   Plausibilitätsprüfung für M4-10. Ihre Grenzen sind aus synthetischen Daten
   abgeleitet [A].
@@ -1196,13 +1281,19 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
 
 ---
 
-## 15. Fragen an Otto
+## 15. Fragen an Otto — beantwortet am 2026-10-02
+
+Otto hat alle fünfzehn Fragen mit Option 1 beantwortet. Die Fragen stehen mit
+ihrem ursprünglichen Wortlaut da. Die Auflagen und die offene Rückfrage F7a
+stehen in §15a.
 
 **F1 — Aufbau des Rezepts (§4.1)**
 1. Drei Schichten (Auftrag, Rezept, Provenienz), lineare Schrittfolge
    **(Empfehlung)**
 2. Ein Dokument mit optionalen Feldern
 3. openEO-Prozessgraph als Rezept
+
+**Antwort F1: (1)** drei Schichten, lineare Schrittfolge.
 
 **F2 — Kanonisierung (§4.4)**
 1. `json.dumps` mit festen Regeln über das validierte Modell, SHA-256 mit
@@ -1211,11 +1302,15 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
 2. RFC 8785 sofort, mit `rfc8785` (Apache-2.0, ohne Abhängigkeiten)
 3. RFC 8785 als eigene Implementierung im Repo
 
+**Antwort F2: (1)** `json.dumps` mit festen Regeln, SHA-256 mit Verfahrenskennung; Auflage F2 (§15a).
+
 **F3 — Was in den Cache-Schlüssel geht (§4.5)**
 1. Rezept-Kern mit Fassungen und `op_version`, dazu die Versionen von
    `earthx.processing`, GDAL, rasterio, numexpr **(Empfehlung)**
 2. Ohne Bibliotheksversionen
 3. Die ganze Image-Version
+
+**Antwort F3: (1)**, mit Auflage F3: numpy zusätzlich im Schlüssel (§15a).
 
 **F4 — Fassung je Eingabe, Ergänzung zu Q11 (§4.6)**
 1. `file:checksum` vor ETag (`HEAD` über `gateway` bei der Annahme) vor
@@ -1223,11 +1318,15 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
 2. Nur wie Q11: ETag per `HEAD` oder `updated`
 3. Nur `updated`
 
+**Antwort F4: (1)** `file:checksum` vor ETag vor `updated`.
+
 **F5 — Form der Operator-Registry (§5.1)**
 1. pydantic-Modelle, strikt, JSON Schema 2020-12, keine neue Abhängigkeit
    **(Empfehlung)**
 2. Handgeschriebene JSON Schemas mit `jsonschema`
 3. openEO-Prozessdefinitionen
+
+**Antwort F5: (1)** pydantic-Modelle.
 
 **F6 — Anwendbarkeit der Reprojektion (§5.3)**
 1. Neues Flag `reprojection` je Datensatz (B10), Methoden außer `nearest`
@@ -1235,16 +1334,22 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
 2. Kein Flag, nur Lizenzstufe; `interpolation` für Methoden außer `nearest`
 3. Alles unter `interpolation`
 
+**Antwort F6: (1)** neues Flag `reprojection`; Methoden außer `nearest` brauchen zusätzlich `interpolation`.
+
 **F7 — Skalierung bei Band-Math (§5.4)**
 1. Immer physikalische Werte; Skalierung im Rezept vermerkt, Abweichung von der
    Datei bricht ab **(Empfehlung)**
 2. Parameter `unscale` ohne Vorgabe, der Nutzer wählt
 3. Rohwerte
 
+**Antwort F7: (1)** physikalische Werte; Auflage F7 und offene Rückfrage F7a (§15a).
+
 **F8 — Kostenschätzung (§5.5)**
 1. Aus AOI, `gsd` und Datentyp wie `plan_outputs`, Dauer aus gemessenem
    Durchsatz, Einheiten = Megapixel × Operatorfaktor **(Empfehlung)**
 2. Nur Pixel und Bytes, keine Dauer und keine Einheiten bis M6
+
+**Antwort F8: (1)** Schätzung wie `plan_outputs`, Dauer aus Durchsatz, Einheiten aus Operatorfaktoren.
 
 **F9 — Toleranz (§6.3)**
 1. T2 = T2L bitgleich; T1 = T2 bitgleich bei nativer Ebene und `nearest`;
@@ -1253,11 +1358,15 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
    Übersicht
 3. T2 = T2L mit kleiner Toleranz statt bitgleich
 
+**Antwort F9: (1)**, mit Auflage F9 (§15a).
+
 **F10 — Lesen im Worker (§7)**
 1. Eigene Blockschleife über `readers`, 1024 px, ohne Dask, Ausgabe blockweise
    auf lokale Platte **(Empfehlung)**
 2. odc-stac mit `patch_url` für COG, eigener Weg für Zarr
 3. rioxarray/xarray mit Dask lokal
+
+**Antwort F10: (1)** eigene Blockschleife über `readers`, ohne Dask.
 
 **F11 — `Policy` und GDAL im Worker (§8)**
 1. Fabrik `readers.read_access_for(hrefs)`, Allowlist = Hosts des Rezepts;
@@ -1267,12 +1376,16 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
    Rezept
 3. Der Worker bekommt Policy und GDAL-Optionen fertig aus `api` über die Queue
 
+**Antwort F11: (1)** Fabrik in `readers`, Allowlist aus dem Rezept, Prüfung gegen `asset_hosts` in `api`.
+
 **F12 — Job-Schnittstelle in M4 (§9)**
 1. OGC API Processes 1.0 in Form und Vokabular: ein Prozess `recipe`, nur
    asynchron, Status, Ergebnis, Abbruch; keine Job-Liste; erklärt `core`,
    `json`, `dismiss` **(Empfehlung)**
 2. Wie 1, zusätzlich jeder Operator als eigener Prozess
 3. Eigene Routen ohne OGC-Form
+
+**Antwort F12: (1)** OGC-Form mit einem Prozess `recipe`, nur asynchron, ohne Job-Liste.
 
 **F13 — `recipe.json` und `citation.bib` (§10)**
 1. `recipe.json` im Schema aus §4.2 mit `steps: []`, ohne Hash und Kennung;
@@ -1282,16 +1395,75 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
    fertigem BibTeX je Datensatz (Herausgeber, Jahr)
 3. Wie 1, `sci:doi` bleibt vorerst URL
 
+**Antwort F13: (1)** `recipe.json` mit `steps: []`, `citation.bib` als `@misc`, `sci:doi` wird in M4-14 zum DOI-Namen mit `cite-as`-Link.
+
 **F14 — Form der Checkliste v2 (§11)**
 1. Parametrisierter Test je Registry-Eintrag auf `synthetic_chain.py`,
    Zuordnung Datensatz → Operator im Test mit Wächtertest **(Empfehlung)**
 2. Zuordnung als neues Registry-Feld
+
+**Antwort F14: (1)** parametrisierter Test auf `synthetic_chain.py`, Zuordnung im Test mit Wächtertest.
 
 **F15 — Rezept-ID nach Q15 (§9)**
 1. Eigene zufällige `recipe_id` je angenommenem Rezept, getrennt von `jobID`;
    Grundlage für Permalink und Bug-Report; Ablauf nach 7 Tagen
    **(Empfehlung)**
 2. `jobID` dient zugleich als Rezept-ID
+
+**Antwort F15: (1)** eigene zufällige `recipe_id`, getrennt von `jobID`.
+
+---
+
+## 15a. Auflagen (Otto, 2026-10-02) und offene Rückfrage
+
+**Auflagen, eingearbeitet:**
+
+- **F2:** Die Kanonisierungsregeln (Schlüsselreihenfolge, Trennzeichen,
+  `ensure_ascii`, Fließkommazahlen wie `1` gegen `1.0` und `-0.0`) stehen im
+  ADR, in §4.4. Für die Umsetzung ist ein Test mit festen erwarteten
+  Hashwerten vorgesehen.
+- **F3:** numpy kommt zusätzlich in den Cache-Schlüssel (§4.5).
+- **F7:** Skalierung und Offset kommen aus `raster:bands` des Items, nie aus
+  datensatzspezifischem Code. Für die Umsetzung ist ein Test mit einem
+  synthetischen Item vorgesehen, mit Offset und Nodata (§5.4).
+- **F9:** Bitgleichheit gilt auf der nativen Ebene und auf derselben
+  CPU-Architektur. Eine Vorschau auf gröberen Zoomstufen ist eine Annäherung
+  und wird in der Oberfläche als „Preview“ gekennzeichnet. Für den Vergleich
+  Cloud gegen Runner gilt dieselbe Architektur (CI, x86_64) (§6.3).
+
+**Geklärt mit Beleg (Ottos Zusatzfrage):** Der Verlust der GDAL-Optionen
+außerhalb des Hauptthreads betrifft den heutigen Kachel- und Download-Pfad im
+`tiler` nicht. Belege in §3.6, Messung in §17.11. Kein Befund, nichts
+anzuhalten.
+
+**F7a — offen: Skalierung, wenn das Item keine trägt (§5.4)**
+
+Befund [M]:
+- `sentinel-2-l2a-zarr3` trägt im Item weder `raster:scale` noch
+  `raster:offset`.
+- Die Werte stehen nur als CF-Attribute im Store (`scale_factor 0.0001`,
+  `add_offset −0.1`), und `readers/zarr_reader.py` dekodiert sie heute
+  generisch (xarray-Standard).
+- Streng nach Auflage F7 hätte Band-Math für diesen Datensatz keine
+  Skalierung. Q14 verlangt aber Band-Math für ihn in der Checkliste v2.
+- Auch die eigenen DEM-Items tragen kein `raster:bands`
+  (`cop_dem_bucket._item`). Dort braucht Q14 nur die Reprojektion; die ist von
+  der Skalierung unabhängig.
+
+1. Trägt das Item `raster:bands` mit Skalierung, gilt sie, und der Reader liest
+   roh. Trägt es keine, gilt die generische CF-Dekodierung des Readers. Das ist
+   kein datensatzspezifischer Code.
+   - Das Rezept vermerkt die Quelle (`item` oder `store-cf`).
+   - Haben Item und Store beide eine Skalierung, werden sie verglichen; eine
+     Abweichung bricht ab.
+   - **(Empfehlung)**
+2. Streng nach Auflage: ohne Skalierung im Item kein Band-Math.
+   `sentinel-2-l2a-zarr3` fällt für Band-Math aus. Q14 braucht für ihn dann
+   einen anderen Operator in der Checkliste v2 (etwa die Reprojektion).
+3. Der EOPF-Adapter ergänzt `bands[].raster:scale/offset` beim Normalisieren
+   aus den CF-Attributen des Stores. Das ist eine generische Abbildung CF →
+   STAC im Adapter. Es kostet je Item einen Abruf der konsolidierten
+   Metadaten (gemessen 496 kB) in Suche und Einzelabruf.
 
 ---
 
@@ -1478,9 +1650,39 @@ ganz.
   allen Fällen in einem Prozess zählte für den Standardfall 10 Anfragen ohne
   die Datei selbst, weil sie aus dem prozessweiten VSI-Cache kam.
 
-### 17.10 CF-Dekodierung im Zarr-Pfad (§3.11)
+### 17.10 CF-Dekodierung im Zarr-Pfad (§3.11) und Bandangaben im EOPF-Item (§5.4)
 
-Ein Mini-Store `zarr_format=3` mit `uint16` und `scale_factor`/`add_offset`/
+**Mini-Store:** `zarr_format=3` mit `uint16` und `scale_factor`/`add_offset`/
 `_FillValue` als Attribute, geöffnet mit denselben Argumenten wie
 `readers/zarr_reader.py` Z. 634. Ergebnis: float64
 `[[0.02, 0.24], [nan, 0.0]]`.
+
+**EOPF-Item** aus der Suche in §17.1, rekursiv durchsucht:
+- Kein Feld `raster:scale`, `raster:offset`, `scale` oder `offset` im ganzen
+  Item, obwohl `stac_extensions` raster v2.0.0 nennt.
+- `SR_10m` trägt `nodata: 0`, `data_type: uint16` und
+  `raster:spatial_resolution: 10`. Seine `bands` tragen nur Name und eo-Felder.
+- Zum Vergleich trägt das Earth-Search-Item an `nir`
+  `raster:bands [{"nodata": 0, "data_type": "uint16", "scale": 0.0001, "offset": -0.1}]`.
+- Keine zusätzliche Anfrage: Ausgewertet wurde die schon geladene Antwort.
+
+### 17.11 GDAL-Optionen im heutigen `tiler` (§3.6)
+
+`probe/test_tiler_env_probe.py`:
+- Die Datei lag für den Lauf kurz unter `backend/tests/catalog/` und wurde
+  danach wieder entfernt.
+- Sie nutzt die Fixtures `chain` und `client` aus `test_onboarding_endtoend.py`
+  und ersetzt `rasterio.io.DatasetReader.read` und `rasterio.vrt.WarpedVRT.read`
+  durch eine Sonde.
+- Die Sonde hält je Lesezugriff fest: Threadname, Hauptthread ja/nein und
+  `get_gdal_config` für `GDAL_DISABLE_READDIR_ON_OPEN`,
+  `CPL_VSIL_CURL_ALLOWED_EXTENSIONS`, `GDAL_HTTP_TIMEOUT` und
+  `VSI_CACHE_SIZE`.
+
+Ergebnis, 9 von 9 Fällen bestanden:
+
+| Datensatz | Kachel | Statistik | Download |
+|---|---|---|---|
+| `sentinel-2-c1-l2a` | 1 Lesezugriff, Nicht-Hauptthread, Optionen aktiv | 1, dito | 4, dito |
+| `sentinel-2-l2a-zarr3` | 0 (Zarr über `GatewayStore`) | 0 | 3 (Prüflesung der COG), dito |
+| `cop-dem-glo-30` | 1, dito | 1, dito | 4, dito |
