@@ -135,8 +135,8 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 
 | ID | Aufgabe | Teil | Stufe | Modell (Effort) | hängt ab von | Stand |
 |---|---|---|---|---|---|---|
-| M4-00 | Doku nachziehen | M4a | A | Sonnet (mittel) | — | offen |
-| M4-00b | Lock-Datei für die Backend-Pakete | M4a | B | Opus Plan, Sonnet (hoch) | — | offen |
+| M4-00 | Doku nachziehen | M4a | A | Sonnet (mittel) | — | PR #111 |
+| M4-00b | Lock-Datei für die Backend-Pakete | M4a | B | Opus Plan, Sonnet (hoch) | — | PR #113 |
 | M4-01a | Zugriffsauflösung nach `access`, eine Item-Quelle in `api` | M4a | B | Opus Plan, Sonnet (hoch) | — | offen |
 | M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a (nach Merge, neue Session) | offen |
 | M4-02 | Spike Job-Queue → `adr/0013` | M4a | C | Opus (hoch) | — | offen |

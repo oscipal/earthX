@@ -1,4 +1,5 @@
 tests/
 requirements-dev.txt
+requirements-dev.lock
 **/__pycache__/
 **/*.pyc
