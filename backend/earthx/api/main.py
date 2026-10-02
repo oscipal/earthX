@@ -36,6 +36,7 @@ from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
 from earthx.api.item_source import check_item_holdings
 from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.registry import DatasetRegistry
 from earthx.logging import RequestIdMiddleware, configure_logging
 
 # adr/0005 rule VI, plan §6 F2, M3-13 F5: `pagination` describes our own paging;
@@ -61,9 +62,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # adr/0011 §7 D2: routing reads the registry, so pgstac must not say
             # otherwise; a disagreement stops the start (Otto, M4-01a F2).
             async with pool.connection() as conn:
-                await check_item_holdings(REGISTRY, conn)
+                await check_item_holdings(app.state.earthx_registry, conn)
             app.state.earthx_cache_pool = pool
-            app.state.earthx_gateway = build_gateway(REGISTRY)
+            app.state.earthx_gateway = build_gateway(app.state.earthx_registry)
             # M3-07a: a second, separate gateway that can reach only the geocoder's
             # host — never a dataset's asset host, and no dataset route can reach it
             # either. None of the three attributes below are set at all when place
@@ -83,7 +84,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await close_db_connection(app)
 
 
-def _build_app() -> FastAPI:
+def build_app(registry: DatasetRegistry = REGISTRY) -> FastAPI:
+    """The api application. ``registry`` is an argument so that a test can route
+    collections of its own (M4-01a), the same shape ``api.tiler.build_app`` has;
+    the process entrypoint below takes the default.
+    """
     # M3-16: this process's own JSON logging, before anything can log a line
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
@@ -97,6 +102,9 @@ def _build_app() -> FastAPI:
     api = instantiate_api(client=FederatingCoreCrudClient, settings=settings, extensions=extensions, lifespan=_lifespan)
     app = api.app
     app.add_middleware(RequestIdMiddleware)
+    # What routes a collection federated or materialized (adr/0011 §7 D2), and
+    # what the gateway's allowlist and the start-up comparison are built from.
+    app.state.earthx_registry = registry
 
     @app.get("/health")
     def health() -> dict:
@@ -114,4 +122,4 @@ def _build_app() -> FastAPI:
     return app
 
 
-app = _build_app()
+app = build_app()

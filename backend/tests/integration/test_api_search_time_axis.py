@@ -23,10 +23,10 @@ import httpx
 import psycopg
 import pytest
 
-from earthx.api.main import app
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.api.main import build_app
+from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
 
 pytestmark = pytest.mark.anyio
 
@@ -56,6 +56,9 @@ WITH_TIME_AXIS = replace(
     capabilities=replace(NO_TIME_AXIS.capabilities, time_range=True),
     source=replace(NO_TIME_AXIS.source, source_collection_id="earthx-test-with-time-axis"),
 )
+
+# Routing reads the registry (M4-01a), so the app has to know these collections.
+app = build_app(DatasetRegistry((*REGISTRY, NO_TIME_AXIS, WITH_TIME_AXIS)))
 
 
 def _item(collection_id: str, item_id: str, datetime_value: str) -> dict[str, Any]:

@@ -52,9 +52,9 @@ from earthx.adapters import (
     UnsupportedFilter,
     UpstreamShapeError,
 )
-from earthx.adapters import get_item as adapter_get_item
 from earthx.adapters import search_items as adapter_search_items
 from earthx.api import mixed_search
+from earthx.api.item_source import build_item_source, item_holding_of
 from earthx.api.mixed_search import (
     REASON_TIMEOUT,
     REASON_UNREACHABLE,
@@ -67,7 +67,7 @@ from earthx.api.mixed_search import (
     is_mixed_token,
     mixed_fingerprint,
 )
-from earthx.catalog.registry import ItemHolding
+from earthx.catalog.registry import DatasetRegistry, ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
@@ -458,6 +458,13 @@ async def _cache_for(request: Request):
         yield cast(SearchCache, PostgresSearchCache(conn))
 
 
+def _registry_of(request: Request) -> DatasetRegistry:
+    registry = getattr(request.app.state, "earthx_registry", None)
+    if registry is None:
+        raise RuntimeError("earthx.api.main did not set request.app.state.earthx_registry")
+    return registry
+
+
 def _gateway_of(request: Request):
     gateway = getattr(request.app.state, "earthx_gateway", None)
     if gateway is None:
@@ -516,11 +523,13 @@ class FederatingCoreCrudClient(CoreCrudClient):
         holding = await self._holding_of(collection_id, request)
         if holding is not ItemHolding.FEDERATED:
             return await super().get_item(item_id, collection_id, request, **kwargs)
+        # The same item source as the tiler's tiles and download (adr/0011 §7 D2),
+        # built per call around this process's gateway and pool.
+        item_source = build_item_source(
+            _registry_of(request), _gateway_of(request), getattr(request.app.state, "earthx_cache_pool", None)
+        )
         try:
-            async with _cache_for(request) as cache:
-                item = await adapter_get_item(
-                    collection_id, item_id, gateway=_gateway_of(request), cache=cache
-                )
+            item = await item_source(collection_id, item_id)
         except (
             InvalidQuery,
             UnknownCollection,
@@ -611,42 +620,38 @@ class FederatingCoreCrudClient(CoreCrudClient):
     # -- dispatch -----------------------------------------------------------------
 
     async def _source_info_of(self, collection_id: str, request: Request) -> tuple[ItemHolding, bool]:
-        """``earthx:source.item_holding`` and ``earthx:capabilities.time_range`` of
-        a collection pgstac already knows about, off the one document both live on.
+        """How the items of a collection pgstac knows are held, and whether it has
+        a time axis.
 
         Reuses ``super().get_collection`` on purpose: an unknown collection raises
         pgstac's own ``NotFoundError`` here exactly as it would for ``GET
         /collections/{id}`` (adr/0005 rule I) — there is no second lookup to keep
         in sync with it.
 
-        M3-11a (K-05): every collection in pgstac was written by ``catalog.load``
-        from a registry entry, so ``item_holding`` is always present and one of the
-        two values — never optional the way it is on a collection this platform did
-        not write itself. A collection where it is missing or unrecognised is
-        therefore a data problem (a stale document from before this field existed,
-        or a collection nobody loaded through the registry), not a signal to guess:
-        this raises rather than falling back to treating it as either kind, so a
-        broken collection fails loudly instead of silently answering pgstac's own
-        near-empty result for it (adr/0005 rule I).
+        **The holding comes from the registry**, not from the document
+        (adr/0011 §7 D2, M4-01a): the tiler and the download route by the registry
+        too, and the start of this process has already refused a pgstac that
+        disagrees (``api.item_source.check_item_holdings``). A collection pgstac
+        knows and the registry does not — a left-over, or one written outside
+        ``catalog.load`` — cannot be routed, and is refused loudly rather than
+        answered as pgstac's own near-empty result for it (Otto, M4-01a F2).
 
-        ``time_range`` (M3-12) is read the same way but fails safe rather than
-        loudly when it is missing or not a plain bool: unlike ``item_holding``,
+        ``time_range`` (M3-12) still comes from the document, and fails safe rather
+        than loudly when it is missing or not a plain bool: unlike ``item_holding``,
         nothing about *routing* depends on it, only whether a `datetime` filter is
         honoured — treating an unreadable value as "has a time axis" keeps a
         search filtered exactly as it always was, rather than turning a stale or
         foreign document into a new class of `500`.
         """
         collection = await self.get_collection(collection_id, request=request)
-        source = collection.get("earthx:source")
-        raw_holding = source.get("item_holding") if isinstance(source, dict) else None
         try:
-            holding = ItemHolding(raw_holding)
-        except ValueError:
+            holding = item_holding_of(_registry_of(request), collection_id)
+        except UnknownCollection:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"collection {collection_id!r} carries no valid earthx:source.item_holding "
-                    "(not loaded from the registry? run `python -m earthx.catalog.load`)"
+                    f"collection {collection_id!r} is not in the registry, so it has no "
+                    "earthx:source.item_holding to route by (run `python -m earthx.catalog.load`)"
                 ),
             ) from None
         capabilities = collection.get("earthx:capabilities")
