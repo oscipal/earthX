@@ -31,8 +31,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # The runtime lock file, hash-checked (M4-00b): the same versions CI tests, not
-# whatever is newest on the day of the build. Written by scripts/lock-backend.sh
-# from requirements.txt, which explains the options and their order.
+# whatever is newest on the day of the build. scripts/lock-backend.sh writes it
+# from requirements.txt and explains the options and their order.
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes \
       --only-binary :all: --no-binary version-parser -r requirements.lock

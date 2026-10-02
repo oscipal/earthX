@@ -411,12 +411,21 @@ Umgesetzt wie in §3–§7 mit den Antworten F1–F4 (je Option 1).
   `pip check` ohne Befund, `pip freeze` identisch mit dem Projekt-venv
   (118 Pakete). Aus `requirements.lock` allein: 108 Pakete, `pip check` ohne
   Befund [M].
-- `backend/tests/test_backend_lock.py`: 37 Fälle grün. Gegenproben am echten
+- `backend/tests/test_backend_lock.py`: 44 Fälle grün. Gegenproben am echten
   Repo [M]: `shapely` aus `requirements.lock` entfernt → rot
   („shapely is not in the lock file“); im Dockerfile `--no-binary
-  version-parser` vor `--only-binary :all:` gesetzt → rot. Beide danach
-  zurückgesetzt.
-- `packaging` steht als direkte Dev-Anforderung in `requirements-dev.txt`;
-  die Version (26.3) blieb unverändert.
+  version-parser` vor `--only-binary :all:` gesetzt → rot; der Stand von
+  `ci.yml` vor der YAML-Korrektur (unten) → rot. Alle danach zurückgesetzt.
+- **Korrektur aus dem Review vor dem Fertigmelden:** Ein ungequotetes
+  `run: … --only-binary :all: --no-binary …` ist kein gültiges YAML (`: ` öffnet
+  ein Mapping); beide Workflows wären von GitHub verworfen worden. Die
+  Installationsschritte stehen jetzt als Block (`run: |`), und der Test liest
+  die Workflows als YAML statt als Text, über alle Dateien unter
+  `.github/workflows/`. Der fehlerhafte Stand war kurz auf dem Branch gepusht.
+- `packaging` und `pyyaml` stehen als direkte Dev-Anforderungen in
+  `requirements-dev.txt`; beide waren schon im Baum, ihre Versionen (26.3,
+  6.0.3) blieben unverändert.
+- `backend/.dockerignore` nimmt `requirements-dev.lock` aus dem Build-Kontext,
+  wie schon `requirements-dev.txt`.
 - **Offen:** Beleg des SessionStart-Hooks in einer neu gestarteten Session
   (§8 Punkt 7). Otto startet sie nach dem „fertig“.
