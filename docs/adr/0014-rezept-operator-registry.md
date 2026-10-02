@@ -1,6 +1,6 @@
 # ADR 0014 — Rezept und Operator-Registry
 
-- **Status:** Entwurf, offen. Otto entscheidet über die vierzehn Fragen in §15.
+- **Status:** Entwurf, offen. Otto entscheidet über die fünfzehn Fragen in §15.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -51,8 +51,11 @@ sind dieselben Versionen, auf denen `readers` und `access` heute laufen.
 Bibliotheken, die das Projekt nicht hat (odc-stac, dask, jsonschema, rfc8785),
 lagen nur in einer eigenen venv im Kratzverzeichnis, nie im Projekt-venv.
 Recherche und Messung teilten sich die Hauptsitzung und drei Hilfsagenten. Deren
-Berichte mit wörtlichen Zitaten liegen im Kratzverzeichnis. Was hier steht, ist
-an den genannten Stellen belegt.
+Berichte mit wörtlichen Zitaten liegen nur im Kratzverzeichnis der Sitzung, nicht
+im Repo. Was sie am Primärtext gelesen haben, trägt hier **[P]** mit Datei und
+Zeile; das lässt sich aus dem Repo heraus nachprüfen (Wheel von PyPI laden bzw.
+Datei im Repo des Herausgebers öffnen). Was sie selbst gemessen haben, trägt
+**[M, Hilfsagent]**; das Skript dazu steht nicht im Messanhang.
 
 **Gesperrte Hosts.** Gesperrt waren `www.rfc-editor.org`, `datatracker.ietf.org`,
 `docs.ogc.org`, `api.openeo.org`, `gdal.org`, `*.readthedocs.io`,
@@ -143,13 +146,15 @@ Jede Empfehlung hat eine Frage in §15.
    - Eine Fabrik in `readers` baut aus den Adressen des Rezepts Policy,
      GDAL-Optionen und Resolver.
    - Die Optionen gelten prozessweit (Hauptthread) und zusätzlich je Lesethread.
-   - Ohne die Optionen aus `gateway` stellt GDAL 10 statt 3 Anfragen, darunter
-     ein Verzeichnis-Listing und 8 Sidecar-Proben [M].
+   - Ohne die Optionen aus `gateway` stellt GDAL 13 statt 3 Anfragen für
+     dasselbe Fenster: zusätzlich ein Verzeichnis-Listing und 9 Sidecar-Proben
+     [M].
 10. **Job-Schnittstelle (F12).**
     - Form und Vokabular von OGC API Processes 1.0, mit einem Prozess `recipe`.
     - Nur asynchron, mit Status, Ergebnis und Abbruch. Keine Job-Liste ohne
       Konten.
-    - Zufällige Kennungen mit 128 Bit.
+    - Zufällige Kennungen mit 128 Bit: `jobID` und eine eigene `recipe_id`,
+      die Grundlage für Permalink und Bug-Report (Q15, F15).
 11. **`recipe.json` und `citation.bib` (F13).**
     - `recipe.json` hat dasselbe Schema mit `steps: []`.
     - `citation.bib` ist `@misc` je Datensatz aus den Registry-Feldern.
@@ -210,7 +215,8 @@ neun Punkte des Auftrags stehen in §4 bis §12.
 **Wie es gerechnet wird [P].**
 - `rio_tiler/expression.py` Z. 98–139 wertet jeden Block mit
   `numexpr.evaluate` aus und ersetzt das Ergebnis mit `numpy.nan_to_num`.
-- `models.py` Z. 689–709 legt die Maske als ODER aller Bandmasken an.
+- `models.py` Z. 689–710 ruft das auf und legt die Maske als ODER aller
+  Bandmasken an (Z. 710).
 - `io/rasterio.py` Z. 354–375: Erst wird gelesen, also auf das Kachelraster
   gewarpt, dann kommt die Expression.
 - Dieselbe Funktion `ImageData.apply_expression` nutzt auch `ZarrReader._merged`
@@ -277,6 +283,11 @@ wird jeweils der Hash des ganzen Ergebnisses:
 | bilinear | 0,15 % identisch, p99 **0,20 m**, max **0,70 m** | bitgleich |
 | cubic | 0,12 % identisch, p99 0,24 m, max 0,83 m | bitgleich |
 
+**Zeiten** für die 64 MP Ausgabe, 1 Thread: `reproject` ganz 6,5 s (nearest),
+11,1 s (bilinear), 11,6 s (cubic); `WarpedVRT` blockweise 3,4 s, 9,0 s, 10,6 s.
+Mit 4 Threads ganz 3,1 s, 4,1 s, 5,1 s. Mit `tolerance=0` dauert `reproject`
+bilinear ganz 20,6 s statt 9,2 s.
+
 **Folge [A].**
 - Das Ergebnis einer Reprojektion hängt vom Ausführungsplan ab: Blockung,
   Fehlerschwelle der Näherung und `warp_mem_limit` (es steuert die interne
@@ -328,7 +339,8 @@ wie in §3.2, Ausgabe float32 als gekacheltes GeoTIFF auf lokaler Platte,
 - Weitere Stellen:
   - **dask 2026.8.0:** Der Thread-Scheduler gibt nur `contextvars` weiter, kein
     `threading.local` (`threaded.py` Z. 39–59) [P]. Aus einem
-    Nicht-Hauptthread kamen 16 von 16 Aufgaben ohne Option an [M, Hilfsagent].
+    Nicht-Hauptthread kamen 16 von 16 Aufgaben ohne Option an [M, Hilfsagent,
+    Skript nur im Kratzverzeichnis].
   - **rioxarray 0.23:** ruft nirgends `rasterio.Env` auf [P].
   - **rio-tiler:** `create_tasks` und `mosaic_reader` geben kein `Env` weiter;
     `MultiBaseReader` dagegen schon, über `@inherit_rasterio_env`
@@ -344,13 +356,14 @@ wie in §3.2, Ausgabe float32 als gekacheltes GeoTIFF auf lokaler Platte,
 ### 3.7 Welche Adressen GDAL abruft — [M]
 
 Gemessen gegen einen lokalen Range-Server mit derselben synthetischen COG
-(§17.9). Gelesen wurde ein Fenster von 512² px.
+(§17.9), jeder Fall in einem frischen Prozess (der VSI-Cache von GDAL gilt
+prozessweit). Gelesen wurde ein Fenster von 512² px.
 
-| Einstellung | Anfragen | Pfade |
+| Einstellung | Anfragen | was |
 |---|---|---|
-| `gateway.gdal.gdal_options` | **3** | nur die Datei |
-| GDAL-Standard | 10 | Datei, Verzeichnis `/` und 8 Sidecar-Proben (`.aux.xml`, `.msk`, `.AUX`, `.xml` …) |
-| `gdal_options`, Adresse leitet per `302` auf einen anderen Host um | 6 | GDAL folgt der Weiterleitung auf den fremden Host |
+| `gateway.gdal.gdal_options` | **3** | `HEAD` der Datei, Range-`GET` auf den Kopf (32 kB), Range-`GET` auf die Daten |
+| GDAL-Standard | 13 | dieselben 3 (Kopf in 16 kB), dazu `GET /` (Verzeichnis-Listing) und 9 `HEAD` auf Sidecars (`.tif.aux.xml`, `.aux`, `.AUX`, `.tif.aux`, `.tif.AUX`, `.xml`, `.XML`, `.tif.msk`, `.tif.MSK`) |
+| `gdal_options`, Adresse leitet per `302` auf einen anderen Host um | 6 | jede der 3 Anfragen erst an die geprüfte Adresse (`302`), dann an den fremden Host (`200`/`206`) |
 
 - Der dritte Fall ist die Lücke, die `gateway/gdal.py` schon beschreibt:
   GDAL folgt bis zu 10 Weiterleitungen selbst (`cpl_http.cpp` Z. 2376, 2386)
@@ -358,7 +371,7 @@ Gemessen gegen einen lokalen Range-Server mit derselben synthetischen COG
 - Eine Option, die das für `/vsicurl/` abschaltet, wurde nicht gefunden. Die
   Lücke schließt erst der Egress-Proxy aus M6 (B8, Stufe 2).
 
-### 3.8 Bausteine für das Lesen — [P], Belege beim Hilfsagenten
+### 3.8 Bausteine für das Lesen — [P], Zeilen in den Wheels von PyPI
 
 | Baustein | Version, Lizenz | liest wie | GDAL-Optionen je Thread | jede URL durch `check_url` | Zarr | neue Abhängigkeiten |
 |---|---|---|---|---|---|---|
@@ -456,8 +469,9 @@ Gemessen gegen einen lokalen Range-Server mit derselben synthetischen COG
   - Bei Earth Search liegen Rot und NIR in zwei Dateien (`B04.tif`,
     `B08.tif`). Band-Math über zwei COG-Assets braucht in T1 also einen
     Mehr-Asset-Weg (Aufgabe für M4-09, §6.2).
-- **Haken in TiTiler:** `TilerFactory.process_dependency` (`factory.py` Z. 317,
-  angewandt Z. 470–485) bekommt das fertige `ImageData` jeder Kachel. Dort kann
+- **Haken in TiTiler:** `TilerFactory.process_dependency` (`factory.py` Z. 317)
+  bekommt in der Kachelroute (`def tile` Z. 853, angewandt Z. 929–930) das
+  fertige `ImageData` jeder Kachel. Dort kann
   ein Operator-Kern als „Algorithmus“ hängen. `access` darf `processing` nicht
   importieren. Den Haken reicht deshalb `api/tiler.py` herein, so wie heute
   die Pfad-Abhängigkeit.
@@ -504,11 +518,11 @@ mechanisch in einen openEO-Graphen übersetzen, umgekehrt nicht [A].
     {
       "name": "s2",
       "dataset": "sentinel-2-c1-l2a",
-      "groups": [["S2A_T32TLR_…_L2A"]],
+      "groups": [["<item-id>"]],
       "assets": ["red", "nir"],
       "resolved": [
         {
-          "asset": {"dataset_id": "sentinel-2-c1-l2a", "item_id": "S2A_T32TLR_…_L2A", "asset": "red",
+          "asset": {"dataset_id": "sentinel-2-c1-l2a", "item_id": "<item-id>", "asset": "red",
                     "reader": "cog", "href": "https://…/B04.tif", "variable": null, "crs": "EPSG:32632"},
           "version": {"kind": "file:checksum", "value": "1220…"},
           "bands": [{"data_type": "uint16", "nodata": 0, "scale": 0.0001, "offset": -0.1}]
@@ -677,33 +691,33 @@ nennt (F4).
 ```python
 # processing/operators/base.py
 class Tier(Enum):
-    T1 = "T1"   # tiler, je Kachel
-    T2 = "T2"   # worker und lokaler Runner, derselbe Kern
+    T1 = "T1"   # tiler, per tile
+    T2 = "T2"   # worker and local runner, the same core
 
 @dataclass(frozen=True, slots=True)
 class Requirement:
-    capabilities: frozenset[str]          # Felder von catalog.registry.Capabilities, alle müssen True sein
-    data_classes: frozenset[DataClass]    # leer heißt: jede
+    capabilities: frozenset[str]          # fields of catalog.registry.Capabilities, all must be True
+    data_classes: frozenset[DataClass]    # empty means any
     licence_tier: LicenseTier             # PROCESSING (B11)
 
 @dataclass(frozen=True, slots=True)
 class Operator:
     op: str                               # "band_math"
     op_version: int
-    category: str                         # Reiter im Panel
-    title: str                            # Oberflächentext, Englisch
+    category: str                         # tab in the processing panel
+    title: str                            # UI text, English
     description: str
     citation: str | None
     params: type[BaseModel]               # strict, extra="forbid" → JSON Schema
     requires: Requirement
     tiers: frozenset[Tier]
-    kind: Literal["pixel", "grid"]        # pixel: je Block/Kachel; grid: eigener Plan (Reprojektion)
+    kind: Literal["pixel", "grid"]        # pixel: per block/tile; grid: own plan (reprojection)
     estimate: Callable[[GridPlan, BaseModel], CostEstimate]
     transform: Callable[[RasterMeta, BaseModel], RasterMeta]
-    run: Callable[..., Any]               # Kern; bei "pixel": ImageData → ImageData
+    run: Callable[..., Any]               # core; for "pixel": ImageData -> ImageData
 
 def applicable(operator: Operator, config: DatasetConfig) -> list[str]:
-    """Leer heißt anwendbar, sonst die Gründe. Aufgerufen von api, nie im Worker-Kern."""
+    """Empty means applicable, otherwise the reasons. Called by api, never in the worker core."""
 ```
 
 - Die Registry ist ein unveränderliches Mapping `op → Operator` in
@@ -787,17 +801,20 @@ Weg wie `access.download.estimate_output_dims` und `plan_outputs`
 - Die Zahl ist eine Schranke für die Anzeige („etwa“), keine Zusage.
 
 **Einheiten [A]:** Megapixel der Ausgabe × Summe der Operatorfaktoren. Die
-Faktoren kommen aus den Zeiten in §3.4 und §3.5, relativ zu Band-Math:
+Faktoren sind Startwerte, abgeleitet aus lokalen Zeiten je Megapixel Ausgabe,
+1 Thread, relativ zu Band-Math (0,146 s/MP, §3.5, Blöcke 1024):
 
-| Operator | Faktor |
-|---|---|
-| Band-Math | 1,0 |
-| Reprojektion `nearest` | 0,5 |
-| Reprojektion `bilinear` | 1,2 |
-| Reprojektion `cubic` | 1,5 |
-| Export ohne Operator | 0,3 |
+| Operator | gemessen | Faktor |
+|---|---|---|
+| Band-Math | 9,8 s für 67,1 MP (§3.5) | 1,0 |
+| Reprojektion `nearest` | 3,4 s für 64,0 MP, blockweise (§3.4) | 0,4 |
+| Reprojektion `bilinear` | 9,0 s für 64,0 MP, blockweise (§3.4) | 1,0 |
+| Reprojektion `cubic` | 10,6 s für 64,0 MP, blockweise (§3.4) | 1,1 |
+| Export ohne Operator | 15,0 s für 120,6 MP, Zuschnitt mit Maske (`plans/m3-18-…` §10.3) | 0,9 |
 
-Eine Kalibrierung gegen echte Läufe folgt mit M4-08.
+Die Messungen lesen lokale Dateien; das Netz fehlt darin. Die Reprojektion las
+ein schon gerechnetes Band, Band-Math zwei Bänder mit Schreiben. Die Faktoren
+sind deshalb grob. Eine Kalibrierung gegen echte Läufe folgt mit M4-08.
 
 **Wer ablehnt:** Der globale Deckel für gleichzeitige Jobs (Q9) und ein
 Pixeldeckel je Job sind Sache von `adr/0013` und M4-08. Die Schätzung liefert
@@ -862,7 +879,7 @@ Job.
 |---|---|---|---|---|
 | **T2 ↔ T2L** | alle | gleiches Image (Q12), Blockplan fest in `op_version` | **bitgleich** in allen Pixeln; Metadaten gleich außer `execution`, `runner_version`, `self_attested`, Zeiten | Band-Math: Blöcke 512/1024/2048 und ganz bitgleich; numexpr 1/8 Threads gleich; Warp 1/4 Threads gleich (§3.2, §3.4, §3.5) |
 | **T1 ↔ T2** | Band-Math | Kachelraster einer Zoomstufe, die die native Ebene liest; Resampling `nearest`; beide mit `unscale=True` | **bitgleich**, Anteil identischer gültiger Pixel = 1, Maske gleich | z13 und z14: 100 % von je 2,6 Mio. Pixeln (§3.3) |
-| T1 ↔ T2 | Band-Math | Übersichtsstufe | kein Vergleich; die Kachel ist als Vorschau gekennzeichnet | z11/z12: 0,005 % identisch, p99 0,37 (§3.3) |
+| T1 ↔ T2 | Band-Math | Übersichtsstufe | kein Vergleich; die Kachel ist als Vorschau gekennzeichnet | z11/z12: 0,004–0,005 % identisch, p99 0,37–0,39 (§3.3) |
 | T2 ↔ unabhängige Referenz (ganzes `reproject`) | Reprojektion | gleiche Parameter, anderer Plan | `nearest` ≥ 97 % identisch; `bilinear`/`cubic` auf Höhen: p99 ≤ 0,3 m, max ≤ 1 m; auf NDVI: p99 ≤ 0,01 | DEM: 97,7 %; p99 0,20/0,24 m, max 0,70/0,83 m; NDVI p99 0,0029–0,0083 (§3.4) |
 
 - Die erste und die zweite Zeile tragen die M4-Abnahme 1. Die vierte ist eine
@@ -938,9 +955,15 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
      `xarray.open_*`, `rioxarray.open_rasterio` und `rio_tiler.io.Reader` mit
      einer Zeichenkette (Vorschlag für M4-07).
 2. **GDAL-Optionen in jedem Lesethread:**
-   - Der Worker-Prozess betritt `rasterio.Env(**options)` einmal im
-     Hauptthread beim Start. Das gilt dann prozessweit, auch für spätere
-     Threads (§3.6).
+   - Der Einstieg des Worker-Prozesses (heute `jobs/main.py`; `jobs` darf
+     `processing` importieren) und der Einstieg des Runners rufen beim Start
+     im Hauptthread `processing.worker_environment()` auf und halten es offen.
+     Das ist ein Kontext um `rasterio.Env(**readers.process_gdal_options())`.
+     Es gilt dann prozessweit, auch für spätere Threads (§3.6).
+   - Das geht ohne die Adressen eines Jobs: `gateway.gdal.gdal_options` hängt
+     nur von den Zeitlimits der `Policy` ab, nicht von der Allowlist
+     (`gateway/gdal.py` Z. 31–54) [P]. `readers.process_gdal_options()`
+     übergibt dafür die Vorgaben von `Policy` und ergänzt `GDAL_CACHEMAX`.
    - Zusätzlich betritt jede Lesefunktion das `Env` auf ihrem eigenen Thread,
      wie `download.py` es heute tut.
    - Ein Test startet Lesefunktionen aus einem Thread-Pool und prüft die
@@ -955,15 +978,25 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
 **Vorschlag (F11), eine Fabrik in `readers`:**
 
 ```python
-# readers/access.py — readers darf gateway importieren
+# readers/access.py — readers may import gateway
+def process_gdal_options() -> Mapping[str, str]:
+    """gateway.gdal.gdal_options(Policy defaults) + GDAL_CACHEMAX; host-independent."""
+
 @dataclass(frozen=True, slots=True)
 class ReadAccess:
-    policy: Policy
-    gdal_options: Mapping[str, str]   # gateway.gdal.gdal_options(policy) + GDAL_CACHEMAX
-    resolve: Resolver                 # CachingResolver je Job
+    policy: Policy                    # allowlist = hosts of the recipe's assets
+    gdal_options: Mapping[str, str]   # the same as process_gdal_options()
+    resolve: Resolver                 # one CachingResolver per job
 
 def read_access_for(hrefs: Iterable[str]) -> ReadAccess: ...
 ```
+
+Zwei Zeitpunkte, eine Quelle der Optionen:
+- **Beim Start des Prozesses** setzt `processing.worker_environment()` die
+  GDAL-Optionen prozessweit (§7.3 Punkt 2).
+- **Je Job** baut `processing.run` mit `read_access_for` die Allowlist und den
+  Resolver. Die GDAL-Optionen sind dieselben; jede Lesefunktion betritt sie
+  noch einmal auf ihrem Thread.
 
 - **Eingabe sind Adressen, nicht Hosts.** `processing` darf `urllib` nicht
   importieren (Vertrag `http-only-in-gateway`). Den Host zieht `gateway.host_of`.
@@ -979,8 +1012,9 @@ def read_access_for(hrefs: Iterable[str]) -> ReadAccess: ...
 - Die Grenzen der Policy (Zeitlimits, Verbindungen je Host) bleiben die
   Vorgaben aus `gateway.policy` und gelten wie im `tiler`.
 - Wer die Fabrik aufruft: `processing.run(recipe, …)` selbst, ganz am Anfang.
-  `jobs` und der Runner geben nur Rezept, Arbeitsordner und Fortschrittsrückruf
-  herein. Damit beantwortet sich die offene Frage aus `adr/0011` §6.5.
+  `jobs` und der Runner rufen beim Start `processing.worker_environment()` auf
+  und geben je Job nur Rezept, Arbeitsordner und Fortschrittsrückruf herein.
+  Damit beantwortet sich die offene Frage aus `adr/0011` §6.5.
 
 ---
 
@@ -999,9 +1033,15 @@ def read_access_for(hrefs: Iterable[str]) -> ReadAccess: ...
 | Callback, HTML | nein | nicht gebraucht |
 | Konformität erklärt | `core`, `json`, `dismiss` | `ogc-process-description` nicht, wegen des Widerspruchs OpenAPI 3.0 / 2020-12 (§3.10) |
 
-- **Kennungen:** `jobID` ist `secrets.token_urlsafe(16)`, also 128 Bit
-  Zufall. Er ist nicht zu erraten (Q9) und nicht aus dem Rezept abgeleitet
-  (Q8).
+- **Kennungen (F15):**
+  - `jobID` ist `secrets.token_urlsafe(16)`, also 128 Bit Zufall. Er ist nicht
+    zu erraten (Q9) und nicht aus dem Rezept abgeleitet (Q8).
+  - Das angenommene Rezept bekommt eine eigene `recipe_id` derselben Art. Sie
+    bleibt gleich, wenn derselbe Nutzer dasselbe Rezept erneut startet oder ein
+    Cache-Treffer antwortet; ein Job ist dagegen ein Lauf.
+  - `recipe_id` ist die Rezept-ID aus Q15: Grundlage für Permalink (M4-19) und
+    für Bug-Report Stufe 3. Sie läuft mit dem Rezept nach 7 Tagen ab (Q10).
+  - Den Hash sieht nach außen niemand; er bleibt der interne Schlüssel.
 - **Fortschritt** per SSE ist kein Teil von OGC. Die Form schlägt `adr/0013`
   vor (7.4). `progress` (0–100) steht zusätzlich im Statusdokument.
 - **Statuswerte** wie OGC. Version 2 heißt `id` statt `jobID` (§3.10). Das
@@ -1028,8 +1068,9 @@ def read_access_for(hrefs: Iterable[str]) -> ReadAccess: ...
   - Q11 betrifft nur den Cache.
 - **Provenienz:** Block `provenance` mit `execution: "cloud"`,
   `kind: "sync-download"`, den Versionen aus §4.5 und dem Zeitpunkt.
-- **Weggelassen:** kein Hash, keine Kennung. Ein synchroner Zuschnitt wird
-  nicht gespeichert (D3) und braucht deshalb keine.
+- **Weggelassen:** kein Hash. Beim synchronen Zuschnitt auch keine
+  `recipe_id`: Er wird nicht gespeichert (D3) und braucht deshalb keine. Das
+  `recipe.json` eines Jobs trägt dagegen seine `recipe_id` (§9, F15).
 - **Wer baut:** `api`, denn dort liegen Items, Fassungen und Registry. Die
   Datei geht als Bytes an `access.download.build_download_zip`, das
   `processing` nicht importieren darf.
@@ -1134,8 +1175,8 @@ Je Datensatz ein Eintrag `@misc` aus den Registry-Feldern:
 | `processing/recipe.py` | Modelle für Auftrag, Rezept und Provenienz; Kanonisierung; Hash | unverändert (3.1) |
 | `processing/operators/` | Registry, `band_math`, `reproject`, `applicable` | `access`, `readers`, `catalog.registry` |
 | `processing/plan.py` | T1/T2-Planer, Ausgaberaster, Kostenschätzung | dito |
-| `processing/core.py` | `run(recipe, *, workdir, progress) -> RunResult`, eine reine Funktion | dito |
-| `readers/access.py` | `read_access_for(hrefs)` | `gateway` |
+| `processing/core.py` | `run(recipe, *, workdir, progress) -> RunResult`, eine reine Funktion; `worker_environment()` für den Prozessstart | dito |
+| `readers/access.py` | `process_gdal_options()`, `read_access_for(hrefs)` | `gateway` |
 | `api` | Annahme (Items, `resolve_asset`, Fassung per `gateway`), Job-Routen, `process_dependency` für den `tiler`, `recipe.json`/`citation.bib` | alle |
 | `jobs` | Hülle: Queue, Upload, Fortschritt (`adr/0013`, `adr/0015`) | nur `processing` |
 
@@ -1246,6 +1287,12 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
    Zuordnung Datensatz → Operator im Test mit Wächtertest **(Empfehlung)**
 2. Zuordnung als neues Registry-Feld
 
+**F15 — Rezept-ID nach Q15 (§9)**
+1. Eigene zufällige `recipe_id` je angenommenem Rezept, getrennt von `jobID`;
+   Grundlage für Permalink und Bug-Report; Ablauf nach 7 Tagen
+   **(Empfehlung)**
+2. `jobID` dient zugleich als Rezept-ID
+
 ---
 
 ## 16. Quellen
@@ -1264,9 +1311,9 @@ Keine Importregel ändert sich. `.importlinter` bleibt, wie es ist.
   `test_onboarding_checklist.py`
 
 **Bibliotheken im Projekt-venv [P]**
-- `rio_tiler/expression.py` Z. 98–139, `models.py` Z. 689–709,
+- `rio_tiler/expression.py` Z. 98–139, `models.py` Z. 689–710,
   `io/rasterio.py` Z. 354–375, `tasks.py` Z. 48–61, `utils.py` Z. 906–935
-- `titiler/core/factory.py` Z. 317, 470–485; `titiler/core/algorithm/base.py`
+- `titiler/core/factory.py` Z. 317, 853, 929–930; `titiler/core/algorithm/base.py`
 - `rasterio/env.py` Z. 26, 56; `rasterio/_env.pyx` Z. 185–188
   (= `https://raw.githubusercontent.com/rasterio/rasterio/main/rasterio/_env.pyx`)
 - `rioxarray/_io.py` (kein `rasterio.Env`; `RASTERIO_LOCK` Z. 44)
@@ -1422,11 +1469,14 @@ ganz.
 
 ### 17.9 Abrufe von GDAL (§3.7)
 
-- `rangeserver.py synth 8765 req.log`: ein Range-fähiger HTTP-Server, der jede
-  Anfrage protokolliert. `/redirect/<pfad>` antwortet `302` auf
-  `127.0.0.2:8765`.
-- `gdal_urls.py req.log 8765`: liest ein 512²-Fenster mit
-  `earthx.gateway.gdal.gdal_options(Policy(...))` bzw. mit GDAL-Standard.
+- `rangeserver.py synth <port> <log>`: ein Range-fähiger HTTP-Server, der jede
+  Anfrage mit Methode, Pfad und `Range` protokolliert. `/redirect/<pfad>`
+  antwortet `302` auf `127.0.0.2:<port>`.
+- `gdal_urls_sep.py <log> <port> opts|default|redirect`: liest ein
+  512²-Fenster mit `earthx.gateway.gdal.gdal_options(Policy(...))` bzw. mit
+  GDAL-Standard, **jeder Fall in einem eigenen Prozess**. Ein erster Lauf mit
+  allen Fällen in einem Prozess zählte für den Standardfall 10 Anfragen ohne
+  die Datei selbst, weil sie aus dem prozessweiten VSI-Cache kam.
 
 ### 17.10 CF-Dekodierung im Zarr-Pfad (§3.11)
 
