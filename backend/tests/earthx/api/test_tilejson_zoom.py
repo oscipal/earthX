@@ -49,7 +49,7 @@ def _client_for(chain: Chain) -> TestClient:
 
 def _tilejson(client: TestClient, chain: Chain, **params: Any) -> dict[str, Any]:
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}/WebMercatorQuad/tilejson.json",
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}/WebMercatorQuad/tilejson.json",
         params={"asset": chain.render_asset, **params},
     )
     assert response.status_code == 200, response.text
@@ -58,7 +58,7 @@ def _tilejson(client: TestClient, chain: Chain, **params: Any) -> dict[str, Any]
 
 def _tilejson_rejected(client: TestClient, chain: Chain, **params: Any) -> None:
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}/WebMercatorQuad/tilejson.json",
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}/WebMercatorQuad/tilejson.json",
         params={"asset": chain.render_asset, **params},
     )
     assert response.status_code == 400, response.text
@@ -97,7 +97,7 @@ def test_a_tile_at_the_advertised_boundary_is_served(client: TestClient, chain: 
     zoom, x, y = chain.tile
     assert zoom == viewer.max_zoom, "the chain's covering tile is at the finest released level"
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}"
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
         f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
         params={"asset": chain.render_asset},
     )
@@ -112,7 +112,7 @@ def test_one_level_above_the_advertised_boundary_is_refused(client: TestClient, 
     zoom, x, y = chain.tile
 
     response = client.get(
-        f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}"
+        f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
         f"/tiles/WebMercatorQuad/{zoom + 1}/{x * 2}/{y * 2}.png",
         params={"asset": chain.render_asset},
     )
@@ -154,7 +154,7 @@ class TestTheLowerBoundary:
         assert zoom == 7
 
         response = client.get(
-            f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}"
+            f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
             f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
             params={"asset": chain.render_asset},
         )
@@ -168,7 +168,7 @@ class TestTheLowerBoundary:
         assert zoom == 8
 
         response = client.get(
-            f"/collections/{chain.dataset_id}/items/{synthetic_chain.ITEM_ID}"
+            f"/collections/{chain.dataset_id}/items/{chain.item['id']}"
             f"/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png",
             params={"asset": chain.render_asset},
         )

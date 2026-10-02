@@ -132,9 +132,14 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
     turn a ``dataset``/``item`` pair into a STAC item through the same cached
     ``earthx_item_source``, and a source failure means the same thing to a tile
     request and a crop request.
+
+    An item whose ``id`` is missing or is not the one asked for is the source's
+    mistake, the same ``502`` either way (Otto's review of M4-01a): the asset that
+    gets opened is named after the item's own id, and a tile must not show
+    another scene under the name it asked for.
     """
     try:
-        return await state.earthx_item_source(dataset, item)
+        fetched = await state.earthx_item_source(dataset, item)
     except UnknownCollection:
         raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
     except MaterializedItemNotFound:
@@ -160,6 +165,13 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
         # Broad on purpose — a gateway error that has no branch of its own is still an
         # answer about the source, and a 500 would call it our mistake.
         raise HTTPException(status_code=502, detail="the item could not be fetched") from None
+    if fetched.get("id") != item:
+        raise HTTPException(status_code=502, detail=_malformed_item_detail(item))
+    return fetched
+
+
+def _malformed_item_detail(item: str) -> str:
+    return f"the source did not deliver item {item!r} intact"
 
 
 def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
@@ -296,7 +308,7 @@ def _resolve_asset_path(
     except AssetNotOnItem as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
     except MalformedItem:
-        raise HTTPException(status_code=502, detail=f"the source did not deliver item {item!r} intact") from None
+        raise HTTPException(status_code=502, detail=_malformed_item_detail(item)) from None
     try:
         return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd)
     except AssetRejected:
