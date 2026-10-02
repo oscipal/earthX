@@ -10,3 +10,6 @@ import-linter>=2.0
 # A direct test dependency: pystac-client happens to pull it in today, but that
 # package is excluded from the target path (KLAERUNGEN B8, adr/0005 rule IV).
 pystac>=1.10
+# Reads requirement specifiers in test_backend_lock.py (M4-00b). Already pulled in
+# by pytest; listed directly because the test imports it.
+packaging>=24
