@@ -185,4 +185,9 @@ dahin fertige Pakete gibt und Qwen3.5 eine neuere Laufzeit bräuchte.
   Claude der Weg.
 - `llama-cpp-python` ist eine optionale lokale Abhängigkeit, nicht in den
   requirements.
+- Messung am 02.10.2026, derselbe Dialog mit zwei Runden gegen Earth Search:
+  CPU-Paket 0.3.19 7 min 3 s; selbst gebaut mit CUDA 12.9 und
+  `EARTHX_CHATBOT_GPU_LAYERS=20` auf der RTX 3050 (4 GB) 1 min 30 s. Qwen3-8B
+  fragt sinnvoll nach und findet `sentinel-1-grd`, ruft `check_availability`
+  aber nicht von sich aus auf und deutet „proprietary“ als kostenpflichtig.
 
