@@ -427,5 +427,11 @@ Umgesetzt wie in §3–§7 mit den Antworten F1–F4 (je Option 1).
   6.0.3) blieben unverändert.
 - `backend/.dockerignore` nimmt `requirements-dev.lock` aus dem Build-Kontext,
   wie schon `requirements-dev.txt`.
-- **Offen:** Beleg des SessionStart-Hooks in einer neu gestarteten Session
-  (§8 Punkt 7). Otto startet sie nach dem „fertig“.
+- **SessionStart-Hook in einer neu gestarteten Session belegt** (Otto,
+  02.10.2026, §8 Punkt 7): Der Hook meldet „Backend-Abhängigkeiten installieren
+  (backend/requirements-dev.lock)“ und in der Zusammenfassung `venv ok`. Ein
+  Abgleich von `pip freeze` mit der Dev-Lock-Datei zeigt nur drei Einträge, die
+  ausschließlich in der Lock-Datei stehen, und alle drei entfallen auf Linux per
+  Marker: `colorama` (`win32`), `httpx2-jsfetch` (`emscripten`) und `tzdata`
+  (`win32`/`emscripten`). Kein Paket steht nur im venv.
+  `test_backend_lock.py` ist dort mit 44 Fällen grün.

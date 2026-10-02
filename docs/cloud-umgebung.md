@@ -254,8 +254,10 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    `/root/.local/bin/uv` vorhanden). Erneuern: `README.md` §2, „Backend-
    Abhängigkeiten ändern oder erneuern“. Ein venv aus einer älteren Sitzung
    wird beim nächsten Start auf die Versionen der Lock-Datei gebracht; Pakete,
-   die nicht mehr in der Lock-Datei stehen, bleiben darin liegen. Die Wirkung
-   in einer neu gestarteten Sitzung ist noch zu belegen (PR #113).
+   die nicht mehr in der Lock-Datei stehen, bleiben darin liegen. In einer neu
+   gestarteten Sitzung am 2026-10-02 belegt (PR #113): `venv ok`, und das venv
+   stimmt mit der Lock-Datei überein, bis auf drei Pakete, die auf Linux per
+   Marker entfallen.
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und
