@@ -27,10 +27,10 @@ import psycopg
 import pytest
 
 from earthx.api import mixed_search
-from earthx.api.main import app
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.api.main import build_app
+from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
-from earthx.catalog.registry import CoverageProvider, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
 from earthx.gateway import Gateway, Policy
 from earthx.logging import JsonFormatter
 
@@ -72,6 +72,9 @@ NATIVE_NO_TIME = replace(
     source=replace(NATIVE_A.source, source_collection_id="earthx-test-mixed-native-notime"),
     capabilities=replace(SENTINEL_2_L2A.capabilities, time_range=False),
 )
+
+# Routing reads the registry (M4-01a), so the app has to know these collections.
+app = build_app(DatasetRegistry((*REGISTRY, NATIVE_A, NATIVE_B, NATIVE_NO_TIME)))
 
 
 def load_fixture(name: str) -> dict[str, Any]:

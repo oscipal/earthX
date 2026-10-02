@@ -24,7 +24,8 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from earthx.api.tiler import _resolve_asset_path, _target_gsd
+from earthx.access.resolve import target_gsd_for as _target_gsd
+from earthx.api.tiler import _resolve_asset_path
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy

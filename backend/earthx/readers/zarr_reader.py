@@ -59,13 +59,14 @@ from zarr.core.buffer import Buffer, BufferPrototype, default_buffer_prototype
 
 from earthx.gateway import (
     Gateway,
+    GatewayError,
     Policy,
     Resolver,
     UpstreamError,
-    UrlRejected,
     check_url,
     resolve_host,
 )
+from earthx.readers.errors import AssetRejected
 
 LOGGER = logging.getLogger("earthx.readers.zarr")
 
@@ -386,7 +387,7 @@ def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, st
         for index in range(len(segments) - 1, -1, -1):
             if segments[index].endswith(STORE_SUFFIX):
                 return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), variable
-        raise UrlRejected(
+        raise AssetRejected(
             f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}"
         )
     head, _, tail_variable = href.rstrip("/").rpartition("/")
@@ -394,7 +395,7 @@ def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, st
     for index in range(len(segments) - 1, -1, -1):
         if segments[index].endswith(STORE_SUFFIX):
             return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), tail_variable
-    raise UrlRejected(
+    raise AssetRejected(
         f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}, "
         "and its variable as the last segment"
     )
@@ -417,7 +418,7 @@ def split_asset_key(asset_key: str, separator: str | None) -> tuple[str, str | N
         return asset_key, None
     item_asset, sep, variable = asset_key.partition(separator)
     if not sep or not item_asset or not variable:
-        raise UrlRejected(
+        raise AssetRejected(
             f"asset {asset_key!r} does not name a variable; this dataset addresses a group "
             f"asset as '<asset>{separator}<variable>'"
         )
@@ -438,9 +439,9 @@ def zarr_asset(
 ) -> ZarrAsset:
     """Clear an asset address and return what the reader opens, or raise the reason why not.
 
-    Raises whatever :func:`earthx.gateway.check_url` raises, and
-    :class:`~earthx.gateway.UrlRejected` for an address
-    :func:`split_asset_href` cannot read. The refusal happens here and not at the
+    Raises :class:`~earthx.readers.errors.AssetRejected` for whatever
+    :func:`earthx.gateway.check_url` refuses (its refusal stays attached as
+    ``__cause__``) and for an address :func:`split_asset_href` cannot read. The refusal happens here and not at the
     first chunk, so an address on a host the registry does not name costs no request
     at all.
 
@@ -449,8 +450,11 @@ def zarr_asset(
     """
     store_url, group, resolved_variable = split_asset_href(href, variable=variable)
     if not resolved_variable:
-        raise UrlRejected("a Zarr asset address ends in the name of the variable to read")
-    check_url(store_url, policy, resolve=resolve)
+        raise AssetRejected("a Zarr asset address ends in the name of the variable to read")
+    try:
+        check_url(store_url, policy, resolve=resolve)
+    except GatewayError as error:
+        raise AssetRejected(str(error)) from error
     return ZarrAsset(
         store_url=store_url,
         group=group,

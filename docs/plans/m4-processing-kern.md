@@ -137,7 +137,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 |---|---|---|---|---|---|---|
 | M4-00 | Doku nachziehen | M4a | A | Sonnet (mittel) | — | PR #111 |
 | M4-00b | Lock-Datei für die Backend-Pakete | M4a | B | Opus Plan, Sonnet (hoch) | — | PR #113 |
-| M4-01a | Zugriffsauflösung nach `access`, eine Item-Quelle in `api` | M4a | B | Opus Plan, Sonnet (hoch) | — | offen |
+| M4-01a | Zugriffsauflösung nach `access`, eine Item-Quelle in `api` | M4a | B | Opus Plan, Sonnet (hoch) | — | PR #112 |
 | M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a (nach Merge, neue Session) | offen |
 | M4-02 | Spike Job-Queue → `adr/0013` | M4a | C | Opus (hoch) | — | offen |
 | M4-03 | Rezept und Operator-Registry → `adr/0014` | M4a | C | Opus (xhigh) | — | PR #114, angenommen |
@@ -310,6 +310,8 @@ abgewiesen (`adr/0011` §5, §6.5 Punkt 3; F1, F3, F5).
 - `SourceInfo.harvest_run` entfällt in Registry, Collection-Abbildung, Tests und,
   falls genannt, `architekturplan.md` 5.1.
 - Kein gemeinsames Modul für STAC-APIs (F6, M5).
+- `coverage_route` bekommt die Registry aus `build_app(registry)`; in einer App
+  gibt es danach nur eine Registry (Test).
 
 **Nicht anfassen:** `access/resolve.py` (M4-01a), das Verhalten der Routen.
 **Abnahme:** bestehende Routen-Tests grün; ein Test über jeden Registry-Eintrag,
