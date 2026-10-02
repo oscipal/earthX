@@ -499,7 +499,7 @@ prozessweit). Gelesen wurde ein Fenster von 512² px.
   Standard-Dekodierung. Gemessen wird daraus float64-Reflexion, der Füllwert
   wird NaN (§17.10).
 - **Ein Asset je Kachel:** Die Kachelroute nimmt genau einen Asset-Schlüssel
-  (`api/tiler.py` Z. 427).
+  (`api/tiler.py` Z. 427 auf dem Stand nach PR #110, nach M4-01a Z. 327).
   - Zarr kann mehrere Variablen einer Gruppe kombinieren (`"SR_10m:b04,b08"`).
   - Bei Earth Search liegen Rot und NIR in zwei Dateien (`B04.tif`,
     `B08.tif`). Band-Math über zwei COG-Assets braucht in T1 also einen
@@ -1088,9 +1088,13 @@ Zwei Zeitpunkte, eine Quelle der Optionen:
 - **Allowlist = Hosts der `ResolvedAsset` des Rezepts.** So steht es in B9
   wörtlich.
   - In der Cloud stellt `api` bei der Annahme sicher, dass jeder Host in
-    `asset_hosts` seines Datensatzes liegt. `resolve_asset` vergleicht ihn
-    schon (`adr/0011` §6.4). Ein Rezept, das ein Nutzer mit fremden Adressen
-    einreicht, wird dort neu aufgelöst oder abgewiesen, nie durchgereicht.
+    `asset_hosts` seines Datensatzes liegt. Ein Rezept, das ein Nutzer mit
+    fremden Adressen einreicht, wird dort neu aufgelöst oder abgewiesen, nie
+    durchgereicht.
+  - Diese Prüfung gehört nach M4-07/M4-08 in die Annahme. `resolve_asset`
+    selbst prüft nach M4-01a ausdrücklich nichts: „without fetching or
+    checking anything“ (`access/resolve.py` Z. 135–136) [P]. Die Skizze in
+    `adr/0011` §6.4 hatte das noch als Kommentar am `href`.
   - Im lokalen Runner gilt, was in der Rezeptdatei steht (umgekehrtes
     Vertrauen, architekturplan 11). Der Runner nennt die Hosts vor dem Start
     (`adr/0016`).
@@ -1679,7 +1683,9 @@ ganz.
   `CPL_VSIL_CURL_ALLOWED_EXTENSIONS`, `GDAL_HTTP_TIMEOUT` und
   `VSI_CACHE_SIZE`.
 
-Ergebnis, 9 von 9 Fällen bestanden:
+Ergebnis, 9 von 9 Fällen bestanden. Zweimal gemessen, mit gleichem Ergebnis:
+einmal auf dem Stand nach PR #113 und einmal nach dem Merge von M4-01a (#112),
+das den Weg von Item und Asset im `tiler` umgebaut hat.
 
 | Datensatz | Kachel | Statistik | Download |
 |---|---|---|---|
