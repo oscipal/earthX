@@ -992,7 +992,7 @@ def read_access_for(hrefs: Iterable[str]) -> ReadAccess: ...
 |---|---|---|
 | Landing Page, API-Definition, `/conformance` | ja, unter eigenem Präfix | Core [P]; getrennt von der STAC-Landing-Page |
 | `GET /processes`, `GET /processes/{id}` | ja: **ein** Prozess `recipe`; die Operator-Schemas stehen als `$defs` in seiner Eingabe (Discriminated Union über `op`) | das Panel liest genau dieses Schema (K8) |
-| `POST /processes/recipe/execution` | nur asynchron (`Prefer: respond-async` → 201 + `Location`; ohne `Prefer` ebenfalls asynchron, `jobControlOptions: ["async-execute", "dismiss"]`) | Jobs dauern Sekunden bis Minuten (§3.5) |
+| `POST /processes/recipe/execution` | nur asynchron (`Prefer: respond-async` → 201 + `Location`; ohne `Prefer` ebenfalls asynchron, `jobControlOptions: ["async-execute", "dismiss"]`) | Jobs dauern Sekunden bis Minuten (§3.5); bietet ein Prozess nur `async-execute`, „SHALL [the server] respond asynchronously“, mit oder ohne `Prefer` (`REQ_process-execute-default-execution-mode`, `…-auto-execution-mode`) [P] |
 | `GET /jobs/{jobID}`, `/results` | ja; Ergebnisse als Links mit signierten URLs (`adr/0012` F3, `adr/0015`) | Q9 |
 | `DELETE /jobs/{jobID}` (dismiss) | ja, als Abbruch | Abbruch gehört zu 7.5 und `adr/0013` |
 | `GET /jobs` (job-list) | **nein** | ohne Konten zeigte sie fremde Jobs (Q9) |
