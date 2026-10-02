@@ -42,7 +42,7 @@ deshalb aus dem Quellpaket `pip-26.2.1` (PyPI) gelesen, die uv-Optionen aus
 | Werkzeug | Stand | Befund |
 |---|---|---|
 | `uv` | 0.8.17 im Image (`/root/.local/bin/uv`), neueste Version auf PyPI 0.12.22 | `uv pip compile` vorhanden; löst `backend/requirements.txt` in unter 4 s auf [M] |
-| `pip-tools` | 7.6.1 auf PyPI | per `pip install pip-tools` installierbar; Laufzeit und Ergebnis in §2.5 [M] |
+| `pip-tools` | 7.6.1 auf PyPI | per `pip install pip-tools` in der Session installierbar; Laufzeit und Ergebnis in §2.5 [M] |
 | `pip lock` | in pip 26.2.1 vorhanden | schreibt `pylock.toml`; `pip install` liest das Format in 26.2.1 nicht (kein Treffer für `pylock` im Installationsbefehl des Quellpakets) [P] — fällt damit aus, CI und Image bräuchten ein zweites Werkzeug |
 
 Wichtig für alle Varianten: **Installiert wird mit `pip` allein.** Das
@@ -107,7 +107,17 @@ wird nicht gegen einen eingecheckten Hash geprüft [A].
 
 ### 2.5 pip-tools zum Vergleich
 
-<!-- Ergebnis des Vergleichslaufs folgt -->
+`pip-compile --generate-hashes --allow-unsafe` (pip-tools 7.6.1) auf
+`backend/requirements.txt` [M]:
+
+- Laufzeit 4 min 53 s gegen unter 4 s mit uv (pip-tools lädt die Dateien für
+  die Hashes selbst herunter).
+- 108 Pakete, **dieselben Versionen** wie `uv` für Linux x86_64; die Dateien
+  unterscheiden sich nur in der Schreibweise der Extras
+  (`psycopg[binary,pool]` statt `psycopg`).
+- `pip-compile --help` kennt keine Option für eine andere Zielplattform oder
+  eine universelle Auflösung; es löst für die Umgebung auf, in der es läuft.
+- Warnt, dass sich mit Version 8.0.0 der Standard für Extras ändert.
 
 ---
 
