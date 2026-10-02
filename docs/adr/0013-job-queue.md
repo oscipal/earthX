@@ -29,6 +29,10 @@
     Sitzung); `adr/0005` §6 (Verbindungen je Host); `adr/0012` F3, F5;
     `adr/0014` §3.5, §3.6, §4.4–§4.7, §7.2, §7.3, §8, §9, §12, §13.
   - `plans/m3-07a-ortssuche-backend.md` §9 (`RateSlot`).
+  - Der **Entwurf** von `adr/0015` (M4-04, parallel entstanden, Stand
+    `eeda0b5`, noch nicht auf `main`): Schlüssel `results/{result_id}/…`,
+    Aufräumen erst der Objekte, dann der Zeilen, Treffer nur mit 24 h Rest.
+    Wo dieses ADR darauf verweist, steht „Entwurf `adr/0015`“.
   - Entscheidungslog bis 02.10.2026, besonders „M4 Q4“, „M4 Q8“–„M4 Q11“ und
     die offene Zeile „Worker-Einstieg in `jobs` darf `datasets` nicht
     importieren“.
@@ -491,7 +495,7 @@ CREATE TABLE public.earthx_run (
     worker           text,
     lease_until      timestamptz,
     error_kind       text,                 -- Fehlerklasse, kein Text mit URL
-    result_ref       jsonb,                -- Verweis in den Speicher (adr/0015)
+    result_id        text,                 -- zufällig, Präfix im Speicher (Entwurf adr/0015 K1)
     created_at       timestamptz NOT NULL DEFAULT now(),
     started_at       timestamptz,
     finished_at      timestamptz,
@@ -653,15 +657,18 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
 
 - **Abschluss:**
   - Er schirmt sich über die Versuchsnummer ab:
-    `UPDATE … SET status = 'successful', result_ref = … WHERE run_id = … AND
+    `UPDATE … SET status = 'successful', result_id = … WHERE run_id = … AND
     attempt = :mein_versuch AND status = 'running'`.
   - 0 Zeilen heißen: Der Lauf gehört inzwischen einem anderen Versuch. Das
     eigene Ergebnis wird verworfen (M3).
-- **Hochladen:** unter einem Schlüssel aus interner `run_id` und Versuch, der
-  nach außen nichts verrät.
-  - Erst der Abschluss macht das Objekt zum Ergebnis.
-  - Verwaiste Objekte verwerfen die Ablaufregeln des Speichers (`adr/0015`)
-    [A].
+- **Hochladen:** Jeder Versuch lädt unter einer eigenen zufälligen
+  `result_id` hoch (`results/{result_id}/…`, so der Entwurf von `adr/0015`
+  K1, M4-04).
+  - Erst der Abschluss trägt die `result_id` in den Lauf ein und macht das
+    Objekt zum Ergebnis.
+  - Was ein abgeschirmter Versuch hochgeladen hat, gehört keinem Lauf. Das
+    verwirft die Ablaufregel am Bucket (Entwurf `adr/0015` §7.2, „Netz für
+    Waisen“) [A].
 - **Tote Worker:**
   - Lease 60 s, Heartbeat alle 15 s durch den Aufseher.
   - Ein Aufräumer in jedem Aufseher prüft alle 15 s
@@ -718,12 +725,18 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
 ### 5.8 Aufräumen nach der Frist (K10, F9)
 
 - **Ablaufzeiten:**
-  - `earthx_run.expires_at = finished_at + 7 Tage`.
-  - Job und Rezept laufen 7 Tage nach ihrem eigenen Abschluss ab (Q10).
-  - Läufe, die nie fertig wurden, laufen 7 Tage nach `created_at` ab.
-- **Aufräumen:**
+  - `earthx_run.expires_at = finished_at + 7 Tage`; Läufe, die nie fertig
+    wurden, laufen 7 Tage nach `created_at` ab.
+  - Ein Job läuft mit seinem Lauf ab (Q10).
+  - Ein Rezept bleibt, solange ein Job darauf verweist, und geht mit dem
+    letzten. Das deckt sich mit dem Entwurf von `adr/0015` §7.1: „Das Rezept
+    lebt so lange wie das längste Ergebnis, das es verwendet“.
+- **Aufräumen:** Wann und wo, lässt der Entwurf von `adr/0015` (§7.2, A1)
+  diesem ADR. Vorschlag:
   - Stündlich räumt ein Aufseher auf, geschützt durch `pg_try_advisory_lock`,
     sodass es nur einer tut.
+  - Erst die Objekte eines abgelaufenen Laufs über das Modul für
+    Plattformdienste, dann die Zeilen (Entwurf `adr/0015` A1).
   - Gelöscht wird in Stapeln von 5000: erst Jobs, dann Läufe ohne Job, dann
     Rezepte ohne Job.
   - Indizes auf allen Fremdschlüsseln sind Pflicht (M5: 232 s gegen 0,38 s).
@@ -781,6 +794,11 @@ forbidden_modules =
 - **Vertrag `jobs`:** bleibt in M4-08 („jobs import only processing“). Das
   Modul für Plattformdienste aus `adr/0015` kommt dort mit M4-06 dazu, nicht
   hier.
+- **Objektspeicher im Kern:** Der Entwurf von `adr/0015` (§4.2) will
+  `processing` das Modul `earthx.objectstore` und `botocore` verbieten und
+  lässt offen, ob das ein eigener Vertrag ist oder in diesen eingeht. Beides
+  passt hierzu. Vorschlag: in diesen, denn er heißt dann „der Worker-Kern
+  erreicht keinen Plattformdienst“ und deckt B9 an einer Stelle [A].
 - **Test:** `backend/tests/test_module_boundaries.py` Z. 130 prüft heute
   `{"jobs", "processing"}`. Die Zeile ändert sich mit, und der Test prüft
   zusätzlich `psycopg_pool` und `asyncpg`.
@@ -789,7 +807,7 @@ forbidden_modules =
 
 | Modul | Zuständig für | Darf importieren |
 |---|---|---|
-| `jobs` | Queue, Aufseher und Kindprozesse der Worker, Fortschritt, Abbruch, Ablauf, Ergebnisse | `processing`; psycopg (Q4); das Modul für Plattformdienste (`adr/0015`) |
+| `jobs` | Queue, Aufseher und Kindprozesse der Worker, Fortschritt, Abbruch, Ablauf, Ergebnisse | `processing`; psycopg (Q4); das Modul für Plattformdienste (`adr/0015`, im Entwurf `objectstore`) |
 
 ### 6.2 Ort des Worker-Einstiegs (F10)
 
