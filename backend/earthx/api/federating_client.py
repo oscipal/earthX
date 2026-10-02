@@ -523,8 +523,11 @@ class FederatingCoreCrudClient(CoreCrudClient):
         holding = await self._holding_of(collection_id, request)
         if holding is not ItemHolding.FEDERATED:
             return await super().get_item(item_id, collection_id, request, **kwargs)
-        # The same item source as the tiler's tiles and download (adr/0011 §7 D2),
-        # built per call around this process's gateway and pool.
+        # The same item source as the tiler's tiles and download (adr/0011 §7 D2).
+        # Building it does no input or output — it only closes over registry,
+        # gateway and pool. It is built per call rather than once at start-up
+        # because the gateway is read from `app.state` at request time: that is
+        # the app's gateway, and the one a test replaces with a mocked transport.
         item_source = build_item_source(
             _registry_of(request), _gateway_of(request), getattr(request.app.state, "earthx_cache_pool", None)
         )
