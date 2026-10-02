@@ -20,7 +20,8 @@
     Processes, nur asynchron, mit `dismiss`, ohne Job-Liste (§9); der Kern ist
     `processing.run(recipe, *, workdir, progress)` mit einem Rückruf je Block
     (§7.2, §13); `jobs` ruft beim Prozessstart
-    `processing.worker_environment()` auf (§7.3, §8).
+    `processing.worker_environment()` auf (§7.3, §8). Wo dieses ADR davon
+    abweicht, steht es in §9.
 - **Grundlage:**
   - `architekturplan.md` 0, 3.1, 3.2, 7.3, 7.4, 7.5, 7.6, 10, 12.3, 12.4,
     15.2 (Spike „Job-Queue“).
@@ -97,8 +98,8 @@ Jede Empfehlung hat eine Frage in §10.
 1. **Eine eigene schlanke Queue auf Postgres in `jobs` (F1),** hinter der
    Nahtstelle `JobRunner` aus 7.5. Keine neue Abhängigkeit, kein neuer Dienst.
    - Die Anforderungen, die M4 über 7.5 hinaus stellt (globaler Deckel nach Q9,
-     Grenze je Quelle über Prozesse, Fortschritt, Ablauf nach Q10, kein Hash
-     im Payload nach Q8), deckt keine der geprüften Bibliotheken ab [P].
+     Grenze je Quelle über Prozesse, Fortschritt, Ablauf nach Q10), deckt
+     keine der geprüften Bibliotheken ab [P].
    - Jede davon ist mit wenigen SQL-Anweisungen gemessen [M]: Abholen mit
      `SKIP LOCKED`, Deckel, Grenze je Host, Erkennung toter Worker,
      Abschirmung gegen einen wieder erwachten Worker, Fortschritt per
@@ -118,11 +119,13 @@ Jede Empfehlung hat eine Frage in §10.
      [P].
    - Kosten: rund 1,0–1,5 s Start und 143 MB je Kind [M].
 4. **Startwerte (F4):** global **4** gleichzeitige Jobs, je Quell-Host **2**,
-   je Worker-Container 2 Slots. Der Deckel steht in der Datenbank, nicht in
-   der Zahl der Container.
+   je Worker-Container 2 Slots. Deckel und Grenze je Host stehen als Zeile in
+   der Datenbank, nicht in der Zahl der Container und nicht in deren
+   Umgebung.
    - Gemessen hält der Deckel über 8 Prozesse genau, aber **nur**, wenn die
      Sperre in einer eigenen Anweisung vor dem Zählen genommen wird. In einer
      Anweisung lief er unter `READ COMMITTED` auf 4 bis 6 statt 3 [M].
+   - Das gilt nur unter `READ COMMITTED`, der Vorgabe von Postgres [A].
 5. **Tote Worker (F5):** Lease 60 s, Heartbeat alle 15 s durch den Aufseher.
    - Stirbt nur das Kind, merkt es der Aufseher sofort.
    - Ein wieder erwachter Worker kann ein fremdes Ergebnis nicht
@@ -154,8 +157,10 @@ Jede Empfehlung hat eine Frage in §10.
 11. **Grenze je Quelle über Prozesse:** `RateSlot` taugt nicht als Vorbild für
     die Lesezugriffe des Kerns. Der Kern liest über GDAL und darf die
     Datenbank nicht erreichen (B9). Die Grenze gilt deshalb je Job beim
-    Abholen [M]. Mit einem Lesethread je Job (`adr/0014` §7.2) ist das
-    zugleich eine Grenze für die Verbindungen [A].
+    Abholen [M] (F4). Sie zählt Läufe, nicht Verbindungen. Mit einem
+    Lesethread je Job (`adr/0014` §7.2) liegt die Zahl der gleichzeitigen
+    Abrufe je Host ungefähr ebenso hoch [A]; erzwungen wird das erst mit dem
+    Egress-Proxy aus M6.
 
 ---
 
@@ -275,7 +280,12 @@ startet sie mit `uvicorn earthx.jobs.main:app` (`docker-compose.yml` Z. 236
 - **Fehlt:** Priorität, Eindeutigkeit, Abbruch, Fortschritt, Dead-Letter und
   Wiederholungsstrategie [P, Suche in `pgmq.sql`]. Dazu kommt ein festes
   Schema `pgmq` (`pgmq.control` Z. 2–6) [P].
-- **Python-Client:** bringt `orjson` neu mit (PyPI) [P].
+- **Python-Client:** bringt `orjson` neu mit (PyPI) [P]. Verbindungen nach
+  außen (B8): Er importiert `urllib.parse` nur, um die Verbindungszeichenkette
+  zu zerlegen (`pgmq/base.py` Z. 10, 92–166), und lädt sein SQL aus dem Paket
+  (`pgmq/install.py` Z. 11, 37). Einen HTTP-Client importiert er nicht [P,
+  Wheel 1.1.4]. Das optionale Extra `fastapi` bringt einen eigenen Server mit
+  (`pgmq/api/`), den das Projekt nicht bräuchte.
 
 **Nur als Vergleich:**
 
@@ -284,6 +294,17 @@ startet sie mit `uvicorn earthx.jobs.main:app` (`docker-compose.yml` Z. 236
 | **Celery + Redis** | ja: Redis | nein, nur über eine Outbox [A] | Celery BSD-3 [P]; Redis-Server ab 7.4 RSALv2/SSPLv1/AGPLv3 zur Wahl, ≤ 7.2 und Valkey BSD-3 [P] | laufende Tasks nur per `revoke(terminate=True)`, „you must never call this programmatically“ (`docs/userguide/workers.rst` Z. 589–600) [P]; Redis-Sichtbarkeit 1 h, lange Tasks laufen sonst mehrfach (`redis.rst` Z. 79–89) [P] |
 | **Hatchet** | ja: Engine, API, Migration; RabbitMQ als Vorgabe (`pkg/config/server/server.go` Z. 568) [P] | nein, Einreihen über gRPC/REST [A] | MIT [P] | Server ruft per Vorgabe `https://security.hatchet.run` auf (`server.go` Z. 395–398; `pkg/security/security.go` Z. 140–159) [P]; SDK bringt `aiohttp`, `urllib3`, `grpcio` [P, PyPI] |
 | **Temporal** | ja: Server mit eigener Persistenz [P] | nein [A] | MIT [P] | SDK mit Rust-Kern (`.gitmodules`) [P] |
+
+**Verbindungen nach außen (B8)** jenseits des eigenen Dienstes, gesucht nach
+Importen von `requests`, `urllib.request`, `httpx` und `aiohttp` [P, Klone]:
+- **Celery:** nur im optionalen Ergebnis-Backend für Google Cloud Storage
+  (`celery/backends/gcs.py`). Sonst verbindet es sich zum Broker, das ist sein
+  Zweck.
+- **Temporal-SDK:** nur in `temporalio/contrib/gcp/cloud_run/id/_metadata.py`
+  (`urllib.request`, Metadaten-Dienst von Cloud Run). Sonst verbindet es sich
+  per gRPC aus dem Rust-Kern zum Temporal-Server.
+- **Hatchet:** siehe Tabelle; dazu lädt der „Embedded“-Modus des SDK eine
+  Binärdatei von GitHub (`sdks/python/hatchet_sdk/embedded.py` Z. 194–253).
 
 Alle drei brauchen einen Dienst neben Postgres. Damit verletzen sie die
 Entscheidung „eine Datenbank: Postgres“ (0 Punkt 9) und 7.5 („kein
@@ -339,7 +360,7 @@ Alle gegen Postgres 16.14 der Sitzung; das Schema der eigenen Queue steht in
 120 Jobs. Ein Beobachter zählte laufende Zeilen (rund 90 000 Stichproben je
 Lauf).
 
-| Variante | Höchstzahl gleichzeitig (4 Läufe) |
+| Variante | Höchstzahl gleichzeitig (2 Läufe je Variante) |
 |---|---|
 | Sperre `pg_advisory_xact_lock` und Zählen **in einer Anweisung** | 6, 4 (statt 3) |
 | Sperre in **eigener Anweisung**, dann Zählen und Holen | 3, 3 |
@@ -415,6 +436,9 @@ Kindprozess öffnet keine Verbindung, und gestartet wird mit `spawn` (§5.3).
 - 1,01–1,54 s in 4 Läufen;
 - 142–143 MB höchster Speicher des Kindes.
 
+Das ist eine Annäherung: Das vorgeschlagene Kind (§5.3) lädt zusätzlich
+`processing` und `pydantic`, aber nicht `jobs` und kein psycopg (§6.2).
+
 ---
 
 ## 4. Kriterienmatrix
@@ -427,7 +451,7 @@ eigenem Code, ❌ nicht erfüllt.
 | K1 | dauerhaft | ✅ Postgres | ✅ Postgres | ✅ Postgres | ⚠ Redis-Persistenz | ✅ | ✅ |
 | K2 | transaktional mit Jobzeile | ✅ [M1] | ✅ ab 3.8 [P][M7] | ✅ `pgmq.send` ist ein `INSERT` [A] | ❌ | ❌ | ❌ |
 | K3 | Fairness, Prioritäten | ⚠ Spalte `priority`; Fairness erst mit Konten (M6) | ⚠ Priorität, kein Schutz vor Verhungern [P] | ❌ keine Priorität [P] | ⚠ | ✅ [S] | ✅ [S] |
-| K4 | Abbruch, notfalls hart | ✅ Kindprozess [M8][A] | ⚠ async ja, sync nur kooperativ, kein hartes Ende [P][M7] | ❌ selbst bauen | ⚠ Prozess beenden, „never programmatically“ [P] | ✅ [S] | ✅ [S] |
+| K4 | Abbruch, notfalls hart | ✅ Kindprozess beenden [A]; Kind-Absturz wie M3 | ⚠ async ja, sync nur kooperativ, kein hartes Ende [P][M7] | ❌ selbst bauen | ⚠ Prozess beenden, „never programmatically“ [P] | ✅ [S] | ✅ [S] |
 | K5 | Wiederholung, Idempotenz | ✅ Versuchsnummer schirmt ab [M3]; gleiche Aufträge [M5] | ⚠ Strategien ja [P]; tote Jobs nur mit eigener Task [P][M7] | ⚠ nur Sichtbarkeitsfenster [M] | ⚠ [P] | ✅ [S] | ✅ [S] |
 | K6 | Fortschritt bis `api` | ✅ Zeile + `NOTIFY` [M4] | ❌ keine Spalte [P], selbst bauen | ❌ selbst bauen | ⚠ Result-Backend | ✅ [S] | ✅ [S] |
 | K7 | Pools nach Region/Ressource | ✅ Spalte `pool` im Holen [A] | ✅ Queues [P] | ✅ Queues [P] | ✅ | ✅ | ✅ |
@@ -438,7 +462,7 @@ eigenem Code, ❌ nicht erfüllt.
 | K12 | kein neuer Dienst, keine Verbindung nach außen | ✅ | ✅ [P] | ✅ | ❌ Redis | ❌ Engine; Rückruf nach außen [P] | ❌ Server |
 | K13 | Lizenz | ✅ eigener Code | ✅ MIT | ✅ PostgreSQL, Apache-2.0 | ⚠ Redis-Server | ✅ | ✅ |
 | K14 | Pflege, Abhängigkeiten | ⚠ eigener Code und eigene Tests | ⚠ 9 Releases/Jahr; „looking for maintainers“; +2 Pakete [P] | ⚠ +`orjson`; viel eigener Code | ⚠ | ⚠ viele Pakete | ⚠ Rust-Kern |
-| K15 | kein Hash, keine AOI im Payload | ✅ Payload nur `jobID` und Zahlen [A] | ✅ Argumente frei wählbar | ✅ | ✅ | ✅ | ✅ |
+| K15 | kein Hash, keine AOI im Payload | ✅ Payload nur interne `run_id` und Zahlen [A] | ✅ Argumente frei wählbar | ✅ | ✅ | ✅ | ✅ |
 
 ---
 
@@ -469,12 +493,19 @@ Migrationen (`catalog/migrations/005_geocode.sql` [P]). Sie sind getrennt nach
 öffentlichem Job und internem Lauf (F6):
 
 ```sql
--- Rezept: angenommen von api, personenbezogen (Q8), 7 Tage (Q10)
+-- Rezept: angenommen von api, personenbezogen (Q8); lebt, solange ein Job
+-- oder Lauf darauf verweist (§5.8)
 CREATE TABLE public.earthx_recipe (
     recipe_id   text PRIMARY KEY,          -- token_urlsafe(16), nach außen (adr/0014 F15)
     body        jsonb NOT NULL,            -- Rezept mit ResolvedAsset (adr/0014 §4.1)
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    expires_at  timestamptz NOT NULL
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Deckel als Zeile, damit alle Aufseher denselben Wert lesen (§5.7)
+CREATE TABLE public.earthx_job_limits (
+    only_row    boolean PRIMARY KEY DEFAULT true CHECK (only_row),
+    global_cap  int NOT NULL,              -- Start 4
+    host_cap    int NOT NULL               -- Start 2
 );
 
 -- Lauf: intern, je Cache-Schlüssel höchstens einer aktiv
@@ -482,7 +513,7 @@ CREATE TABLE public.earthx_run (
     run_id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     cache_key        text NOT NULL,        -- "c1:<hex>", nie nach außen (Q8)
     cacheable        boolean NOT NULL,     -- alle Eingaben mit Fassung (Q11)
-    recipe_id        text NOT NULL REFERENCES public.earthx_recipe ON DELETE CASCADE,
+    recipe_id        text NOT NULL REFERENCES public.earthx_recipe ON DELETE RESTRICT,
     status           text NOT NULL CHECK (status IN ('accepted','running','successful','failed','dismissed')),
     pool             text NOT NULL DEFAULT 'default',
     priority         smallint NOT NULL DEFAULT 0,
@@ -499,7 +530,7 @@ CREATE TABLE public.earthx_run (
     created_at       timestamptz NOT NULL DEFAULT now(),
     started_at       timestamptz,
     finished_at      timestamptz,
-    expires_at       timestamptz
+    expires_at       timestamptz NOT NULL  -- erst created_at + 7 Tage, beim Abschluss finished_at + 7 Tage
 );
 CREATE INDEX ON public.earthx_run (pool, priority DESC, created_at) WHERE status = 'accepted';
 CREATE INDEX ON public.earthx_run (lease_until) WHERE status = 'running';
@@ -510,19 +541,24 @@ CREATE INDEX ON public.earthx_run (cache_key, finished_at) WHERE status = 'succe
 -- Job: öffentlich, ein Auftrag; OGC-Statusdokument liest den Lauf
 CREATE TABLE public.earthx_job (
     job_id      text PRIMARY KEY,          -- token_urlsafe(16) (Q9, adr/0014 F15)
-    run_id      bigint NOT NULL REFERENCES public.earthx_run ON DELETE CASCADE,
-    recipe_id   text NOT NULL REFERENCES public.earthx_recipe ON DELETE CASCADE,
+    run_id      bigint NOT NULL REFERENCES public.earthx_run ON DELETE RESTRICT,
+    recipe_id   text NOT NULL REFERENCES public.earthx_recipe ON DELETE RESTRICT,
     dismissed   boolean NOT NULL DEFAULT false,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    expires_at  timestamptz NOT NULL
+    created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON public.earthx_job (run_id);
 CREATE INDEX ON public.earthx_job (recipe_id);
-CREATE INDEX ON public.earthx_job (expires_at);
 ```
 
+- Ein Job hat keine eigene Frist; er läuft mit seinem Lauf ab (§5.8). Alle
+  Fremdschlüssel sind `RESTRICT`: Gelöscht wird nur in der Reihenfolge aus
+  §5.8, und kein Löschen reißt einen Lauf mit, an dem ein anderer gültiger
+  Job hängt.
+- Auch `RESTRICT` prüft beim Löschen die Kindtabelle. Der Index auf jedem
+  Fremdschlüssel bleibt deshalb Pflicht (M5).
+
 - **Annahme** in `api`, in **einer** Transaktion (K2):
-  1. Rezeptzeile schreiben.
+  1. Rezeptzeile schreiben, mit neuer `recipe_id` je Auftrag (§9).
   2. Bei einem Treffer im Cache: Jobzeile auf den fertigen Lauf, fertig (F9).
   3. Sonst `INSERT … ON CONFLICT (cache_key) WHERE status IN
      ('accepted','running') DO NOTHING` für den Lauf. Wurde nichts eingefügt,
@@ -544,9 +580,10 @@ WITH running AS (SELECT hosts FROM public.earthx_run WHERE status = 'running'),
 next AS (                                                    -- Anweisung 2
     SELECT r.run_id FROM public.earthx_run r
     WHERE r.status = 'accepted' AND r.pool = ANY(%(pools)s) AND r.not_before <= now()
-      AND (SELECT count(*) FROM running) < %(global_cap)s
+      AND (SELECT count(*) FROM running) < (SELECT global_cap FROM public.earthx_job_limits)
       AND NOT EXISTS (SELECT 1 FROM unnest(r.hosts) h
-                      WHERE (SELECT count(*) FROM running x WHERE h = ANY (x.hosts)) >= %(host_cap)s)
+                      WHERE (SELECT count(*) FROM running x WHERE h = ANY (x.hosts))
+                            >= (SELECT host_cap FROM public.earthx_job_limits))
     ORDER BY r.priority DESC, r.created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
@@ -561,19 +598,26 @@ RETURNING r.run_id, r.attempt, r.recipe_id;
 - Die Sperre serialisiert nur die Entscheidung „wer darf als Nächstes“.
   Sie gilt bis zum Ende der kurzen Transaktion. Gemessen kostet sie kaum
   Durchsatz (M2).
+- Die Transaktion muss unter `READ COMMITTED` laufen, der Vorgabe von
+  Postgres und psycopg. Unter `REPEATABLE READ` nähme schon Anweisung 1 den
+  Schnappschuss, und der Fehler aus M2 käme zurück [A]. M4-08 setzt die
+  Isolationsstufe deshalb ausdrücklich.
 - Wartet kein Job oder ist der Deckel voll, schläft der Aufseher, bis ein
   `NOTIFY` auf dem Kanal `earthx_jobs_wake` kommt. Den Weckruf senden
   Einreichen, Abschluss und Abbruch. Spätestens nach 5 s holt der Aufseher
   trotzdem (wie Procrastinate, `worker.py` Z. 29 [P]).
-- Der Deckel steht in der Datenbank. Mehr Container erhöhen ihn also nicht
-  still [A].
+- Deckel und Grenze je Host liest die Abfrage aus `earthx_job_limits`. Mehr
+  Container oder eine abweichende Umgebung eines Containers erhöhen sie also
+  nicht still [A]. Die Zeile setzt die Migration mit den Startwerten; ändern
+  geht per SQL ohne Neustart.
 
 ### 5.3 Worker-Hülle: Aufseher und Kindprozess je Job (F3)
 
 ```
 worker-Container
 └── Aufseher (jobs, psycopg; ein Prozess)
-    ├── Slot 1: Kindprozess (spawn) → processing.worker_environment(); processing.run(recipe, workdir, progress)
+    ├── Slot 1: Kindprozess (spawn, Ziel in api/worker_child.py)
+    │           → Operatoren registrieren; processing.worker_environment(); processing.run(recipe, workdir=…, progress=…)
     └── Slot 2: …
 ```
 
@@ -586,12 +630,17 @@ worker-Container
   - schreibt den Fortschritt (§5.4);
   - lädt nach dem Ende hoch (Modul aus `adr/0015`);
   - schließt mit der Versuchsnummer ab (§5.6).
-- **Das Kind** kennt weder Datenbank noch Queue noch Speicher (B9). Es
-  bekommt Rezept, Arbeitsordner und eine Pipe für Fortschritt und
-  Abbruchsignal. Das ist genau die Schnittstelle aus `adr/0014` §8: „`jobs`
-  und der Runner … geben je Job nur Rezept, Arbeitsordner und
-  Fortschrittsrückruf herein“. Der Runner (M4-16) ruft dieselbe Funktion ohne
-  Aufseher.
+- **Das Kind** kennt weder Datenbank noch Queue noch Speicher (B9). Sein
+  Ziel liegt in einem Modul, das `jobs` nicht importiert (§6.2); psycopg
+  kommt so gar nicht erst in den Prozess. Es bekommt Rezept, Arbeitsordner
+  und eine Pipe für Fortschritt und Abbruchsignal.
+  - `processing.run` behält die Signatur aus `adr/0014` §13:
+    `run(recipe, *, workdir, progress)`. Die Operatoren kommen nicht als
+    Argument, sondern werden vorher registriert, durch Komposition am
+    Einstieg (`adr/0014` §12).
+  - Abweichung von `adr/0014` §8: `processing.worker_environment()` ruft das
+    Kind beim Start auf, nicht der Aufseher in `jobs` (§9).
+  - Der Runner (M4-16) ruft `processing.run` ebenso, ohne Aufseher.
 - **Warum ein Prozess je Job [A]:**
   - Ein hängender oder zu langer Job lässt sich hart beenden. Ein Thread lässt
     sich das nicht (Procrastinate synchron: nur kooperativ [P]).
@@ -688,9 +737,9 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
     Validierung, eine abweichende Skalierung (`adr/0014` F7a: der Job
     scheitert) und eine Überschreitung der Laufzeit. Die Fehlerklasse steht in
     `error_kind`, ohne URL (wie `gateway/errors.py`).
-- **Laufzeitdeckel:** Ein Lauf, der länger als das Doppelte der Schätzung
-  (`adr/0014` §5.5) und mindestens 10 min läuft, wird hart beendet [A]. Den
-  festen Wert kalibriert M4-08 an echten Läufen.
+- **Laufzeitdeckel:** Ein Lauf wird hart beendet, wenn er länger läuft als
+  max(2 × geschätzte Dauer, 10 min); die Schätzung kommt aus `adr/0014`
+  §5.5 [A]. Den Faktor kalibriert M4-08 an echten Läufen.
 
 ### 5.7 Globaler Deckel und Rücksicht auf die Quellen (K8, K9, F4)
 
@@ -698,14 +747,16 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
 
 | Wert | Start | Begründung [A] |
 |---|---|---|
-| gleichzeitige Läufe, global | **4** | Ein Lauf braucht 110–150 MB für das Lesen (`adr/0014` §3.5) und ein Kind mit 143 MB Grundlast (M8). 4 Läufe passen damit in rund 1,2 GB. Ein Lesethread je Lauf (`adr/0014` §7.2) heißt bis zu 4 Kerne; die Sitzung und GitHub-Runner haben 4. |
-| gleichzeitige Läufe je Quell-Host | **2** | `gateway` erlaubt je Prozess 6 Verbindungen je Host (`gateway/policy.py` Z. 72, `adr/0005` §6 [P]). Mit 2 Läufen zu je einem Lesethread bleibt der Worker-Anteil je Host bei rund 2 gleichzeitigen Abrufen, neben `tiler` und `api`. Das schont kleine Anbieter wie `data.eodc.eu`. |
+| gleichzeitige Läufe, global | **4** | Speicher je Lauf: gemessen 148 MB Spitze für den ganzen Prozess bei Blöcken von 1024 px und `GDAL_CACHEMAX` 64 MB, davon 70 MB Grundlast (`adr/0014` §3.5). Das Kind hier lädt mehr (143 MB Grundlast, M8), und `adr/0014` §7.2 schlägt 256 MB Cache vor. Grob: 143 MB + rund 80 MB Arbeitsdaten + bis zu 256 MB Cache ≈ 0,5 GB je Lauf, 4 Läufe ≈ 2 GB. Ein Lesethread je Lauf (`adr/0014` §7.2) heißt bis zu 4 Kerne; die Sitzung und GitHub-Runner haben 4. |
+| gleichzeitige Läufe je Quell-Host | **2** | Zum Vergleich: `gateway` lässt je Prozess 6 gleichzeitige Anfragen je Host zu (`gateway/policy.py` Z. 72, `adr/0005` §6 [P]). Diese Semaphore gilt nur für Anfragen über `Gateway`, nicht für die Lesezugriffe von GDAL (`gateway/client.py` Z. 305–307; `gateway/gdal.py` setzt keine Grenze für Verbindungen) [P]. Mit 2 Läufen zu je einem Lesethread liegen die Abrufe der Worker je Host bei ungefähr 2 [A], neben `tiler` und `api`. Das schont kleine Anbieter wie `data.eodc.eu`. |
 | Slots je Worker-Container | **2** | Lokal reicht ein Container. Mit 2 Containern ist der globale Deckel erreicht. |
 | Lease / Heartbeat | 60 s / 15 s | Vier Heartbeats je Lease; ein verpasster schadet nicht |
 | Abholen ohne Weckruf | alle 5 s | wie Procrastinate [P] |
 
-- Alle Werte kommen aus Umgebungsvariablen. Nur der globale Deckel und die
-  Grenze je Host stehen in der Abfrage (§5.2).
+- Deckel und Grenze je Host stehen in `earthx_job_limits` (§5.2). Slots,
+  Lease, Heartbeat und Abholabstand gelten je Container und kommen aus
+  Umgebungsvariablen; dort schadet eine Abweichung zwischen Containern
+  nicht.
 - **`RateSlot` als Vorbild (Auftrag des Plans):**
   - `PostgresRateSlot` ist ein gemeinsamer Zeiger je Quelle, der Abstände
     zwischen einzelnen Anfragen vergibt (`catalog/geocode_cache.py` Z. 81–102
@@ -725,20 +776,25 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
 ### 5.8 Aufräumen nach der Frist (K10, F9)
 
 - **Ablaufzeiten:**
-  - `earthx_run.expires_at = finished_at + 7 Tage`; Läufe, die nie fertig
-    wurden, laufen 7 Tage nach `created_at` ab.
-  - Ein Job läuft mit seinem Lauf ab (Q10).
-  - Ein Rezept bleibt, solange ein Job darauf verweist, und geht mit dem
-    letzten. Das deckt sich mit dem Entwurf von `adr/0015` §7.1: „Das Rezept
-    lebt so lange wie das längste Ergebnis, das es verwendet“.
+  - Beim Einfügen setzt `api` `earthx_run.expires_at = created_at + 7 Tage`.
+    Das gilt für Läufe, die nie fertig werden. Der Abschluss setzt
+    `finished_at + 7 Tage` (Q10).
+  - Ein Job hat keine eigene Frist; er läuft mit seinem Lauf ab.
+  - Ein Rezept hat keine eigene Frist; es bleibt, solange ein Job oder ein
+    Lauf darauf verweist. Das deckt sich mit dem Entwurf von `adr/0015` §7.1:
+    „Das Rezept lebt so lange wie das längste Ergebnis, das es verwendet“.
+    **Auslegung von Q10:** „7 Tage für gespeicherte Rezepte“ heißt damit 7
+    Tage nach Abschluss des letzten Laufs, der es braucht.
 - **Aufräumen:** Wann und wo, lässt der Entwurf von `adr/0015` (§7.2, A1)
   diesem ADR. Vorschlag:
   - Stündlich räumt ein Aufseher auf, geschützt durch `pg_try_advisory_lock`,
     sodass es nur einer tut.
   - Erst die Objekte eines abgelaufenen Laufs über das Modul für
     Plattformdienste, dann die Zeilen (Entwurf `adr/0015` A1).
-  - Gelöscht wird in Stapeln von 5000: erst Jobs, dann Läufe ohne Job, dann
-    Rezepte ohne Job.
+  - Gelöscht wird in Stapeln von 5000: erst die Jobs abgelaufener Läufe,
+    dann abgelaufene Läufe ohne Job, dann Rezepte ohne Job und ohne Lauf.
+    Mit `RESTRICT` (§5.1) scheitert jeder andere Weg laut, statt still
+    gültige Zeilen mitzunehmen.
   - Indizes auf allen Fremdschlüsseln sind Pflicht (M5: 232 s gegen 0,38 s).
 - **Cache-Treffer:**
   - Ein Treffer gilt nur, wenn der fertige Lauf `cacheable` ist und
@@ -747,13 +803,19 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
   - Grund: Der neue Job verweist auf das alte Objekt. Er darf nicht länger
     leben als das Objekt im Speicher, und eine signierte URL soll nicht kurz
     vor dem Löschen ausgegeben werden.
+  - **Auslegung von Q10:** Das Ergebnis eines Jobs, der aus dem Cache
+    kommt, gilt damit zwischen 24 h und 7 Tagen, nicht volle 7 Tage. Q10
+    nennt 7 Tage als Frist, nach der Ergebnisse spätestens verschwinden;
+    eine kürzere Restzeit für einen Treffer widerspricht dem nicht [A]. Wer
+    volle 7 Tage will, wählt F9 Option 2.
   - Die Regel am Bucket und ihr Beleg sind Sache von `adr/0015` (Q10,
     `adr/0012` §9 Punkt 5).
 
 ### 5.9 Fairness, Prioritäten, Pools (K3, K7) — vorbereitet, nicht gebaut
 
 - **Fairness je Nutzer:** braucht Konten, also M6 (D6, Q9). Bis dahin gilt die
-  Reihenfolge nach Priorität und Eingang.
+  Reihenfolge nach Priorität und Eingang. Die Frage aus 15.2 („inklusive
+  Fairness“) ist damit nur abgeleitet, nicht gemessen.
   - Eine spätere Fairness passt in dieselbe Abfrage: höchstens n laufende je
     Konto, wie die Grenze je Host [A].
 - **Priorität:** Die Spalte gibt es, in M4 ist sie immer 0. Free/Pro kommt mit
@@ -791,6 +853,9 @@ forbidden_modules =
   - Beide könnten `processing` sonst unbemerkt zur Datenbank bringen.
   - Eine Queue-Bibliothek kommt mit Empfehlung E nicht dazu. Mit F1 Option 2
     gehörte `procrastinate` in dieselbe Liste.
+- **`adr/0014` §13** sagt noch „`.importlinter` bleibt, wie es ist“ und
+  „`jobs` … nur `processing`“. Das ist durch Q4 überholt: `jobs` bekommt
+  psycopg.
 - **Vertrag `jobs`:** bleibt in M4-08 („jobs import only processing“). Das
   Modul für Plattformdienste aus `adr/0015` kommt dort mit M4-06 dazu, nicht
   hier.
@@ -816,11 +881,15 @@ forbidden_modules =
   §12; offene Logzeile vom 02.10.2026).
 - **Vorschlag:** ein Einstieg `earthx/api/worker_main.py` als
   Kompositionswurzel, wie `api/tiler.py` für den `tiler`.
-  - Er baut die Operator-Registry; später gehört der Quad-Pol-Operator aus
-    `datasets` dazu.
-  - Er übergibt sie an `jobs.worker.run(operators=…, settings=…)`.
-  - Das Kind startet über eine Funktion in derselben Datei. Sie ist für
-    `spawn` importierbar und gibt die Registry an `processing.run` weiter.
+  - Er ruft `jobs.worker.run(child_target=…, settings=…)`; die Schleife
+    liegt in `jobs`.
+  - Das Ziel des Kindes liegt in einem eigenen Modul
+    `earthx/api/worker_child.py`, das `jobs` nicht importiert. Es ist für
+    `spawn` importierbar, registriert die Operatoren (später auch den
+    Quad-Pol-Operator aus `datasets`), ruft `processing.worker_environment()`
+    und dann `processing.run(recipe, workdir=…, progress=…)`.
+  - `api/__init__.py` ist nur ein Docstring [P]. Das Kind lädt also weder
+    `jobs` noch psycopg, obwohl sein Modul in `api` liegt.
   - `jobs` selbst importiert weiter nur `processing`. Keine Regel wird
     gelockert.
   - compose startet `worker` dann mit `python -m earthx.api.worker_main`.
@@ -834,7 +903,7 @@ forbidden_modules =
 - **`jobs` darf `catalog` nicht importieren.** Ein eigener Läufer in `jobs`
   wäre eine zweite Buchführung.
   - Ein eigenes Verzeichnis `jobs/migrations/` mit demselben Läufer stieße auf
-    dessen Schlüssel: Er bucht nach `version` allein [P, Z. 40]. Zwei
+    dessen Schlüssel: Er bucht nach `version` allein [P, Z. 41]. Zwei
     Verzeichnisse hätten also zwei `006`.
 - **Vorschlag:** die Tabellen aus §5.1 als nächste Nummer in
   `catalog/migrations/` (`006_jobs.sql`), mit einem Kommentar, dass sie `jobs`
@@ -880,13 +949,29 @@ Tests gegen echtes Postgres, in CI und Sitzung (`adr/0002` §2):
 
 ---
 
-## 9. Abweichung von `adr/0014`
+## 9. Abweichungen von `adr/0014`
 
-`adr/0014` §9 sagt zu F15: „ein Job ist dagegen ein Lauf“. Mit F6 Option 1
-ist ein Job ein Auftrag. Mehrere Aufträge können sich einen internen Lauf
-teilen. Nach außen ändert sich nichts: Jeder Auftrag bekommt eine eigene
-zufällige `jobID` mit eigenem Status und eigenem `dismiss`. Wählt Otto F6
-Option 2, bleibt der Wortlaut von `adr/0014` unberührt.
+1. **Job und Lauf.** `adr/0014` §9 sagt zu F15: „ein Job ist dagegen ein
+   Lauf“. Mit F6 Option 1 ist ein Job ein Auftrag. Mehrere Aufträge können
+   sich einen internen Lauf teilen. Nach außen ändert sich nichts: Jeder
+   Auftrag bekommt eine eigene zufällige `jobID` mit eigenem Status und
+   eigenem `dismiss`. Wählt Otto F6 Option 2, bleibt der Wortlaut unberührt.
+2. **`recipe_id` je Auftrag.** `adr/0014` F15: „`recipe_id` bleibt gleich,
+   wenn derselbe Nutzer dasselbe Rezept erneut startet oder ein Cache-Treffer
+   antwortet.“ Ohne Konten ist „derselbe Nutzer“ nicht erkennbar. Eine
+   gemeinsame `recipe_id` für einen Cache-Treffer verbände außerdem die
+   Aufträge zweier Personen über eine Kennung. Vorschlag für M4: jede Annahme
+   eine neue `recipe_id`. Ein erneuter Start über eine bekannte `recipe_id`
+   (Permalink) ist Sache von M4-19 [A].
+3. **Wer `worker_environment()` aufruft.** `adr/0014` §8: „`jobs` und der
+   Runner rufen beim Start `processing.worker_environment()` auf“. Hier ruft
+   es das Kind je Job beim Start auf (§5.3, §6.2). Der Aufseher liest kein
+   Raster und braucht die GDAL-Optionen nicht. Die Wirkung ist dieselbe: Die
+   Optionen gelten im Hauptthread des Prozesses, der liest (`adr/0014`
+   §3.6).
+4. **Operatoren.** Die Registry kommt nicht als Argument in
+   `processing.run`, sondern wird am Einstieg registriert (`adr/0014` §12).
+   Die Signatur aus §13 bleibt.
 
 ---
 
@@ -915,6 +1000,8 @@ Option 2, bleibt der Wortlaut von `adr/0014` unberührt.
 3. Threads im Worker-Prozess (kein hartes Beenden)
 
 **F4 — Startwerte (§5.7)?**
+Die Grenze je Host gilt je Lauf beim Abholen, nicht je Anfrage wie
+`RateSlot` (§5.7).
 1. Global 4 Läufe, je Quell-Host 2, 2 Slots je Container — **Empfehlung**
 2. Vorsichtiger: global 2, je Host 1, 1 Slot
 3. Großzügiger: global 8, je Host 4, 4 Slots
@@ -935,6 +1022,9 @@ Option 2, bleibt der Wortlaut von `adr/0014` unberührt.
 3. Die vorhandene `jobID` zurückgeben. **Nicht empfohlen:** Wer das Rezept
    kennt, könnte fremde Jobs abbrechen
 
+In allen drei Fällen bekommt jeder Auftrag eine eigene `recipe_id` (§9
+Punkt 2).
+
 **F7 — Fortschritt (§5.4)?**
 1. SSE `GET /jobs/{jobID}/events` aus `api`, je Prozess eine
    `LISTEN`-Verbindung, Zeile als Wahrheit, höchstens 1 Meldung je Sekunde und
@@ -948,8 +1038,9 @@ Option 2, bleibt der Wortlaut von `adr/0014` unberührt.
 2. Keine automatische Wiederholung; der Nutzer startet neu
 
 **F9 — Ablauf und Cache-Treffer (§5.8)?**
-1. Zeilen laufen 7 Tage nach Abschluss ab; stündlich in Stapeln löschen; ein
-   Treffer nur mit mindestens 24 h Restlaufzeit — **Empfehlung**
+1. Zeilen laufen 7 Tage nach Abschluss des Laufs ab; stündlich in Stapeln
+   löschen; ein Treffer nur mit mindestens 24 h Restlaufzeit, sein Ergebnis
+   gilt also 24 h bis 7 Tage (Auslegung von Q10, §5.8) — **Empfehlung**
 2. Ein Treffer verlängert die Frist des Ergebnisses (braucht ein Kopieren
    oder Neusetzen im Speicher, `adr/0015`)
 3. Jeder Treffer gilt bis zum Ablauf; die signierte URL endet dann früher
