@@ -9,6 +9,9 @@
 # token. One job per source (M2-08 plan §11 F3): a red run in one never colours the
 # other, and each job's own `earthx:` dataset id is what the onboarding checklist's
 # point 10 (Fassung v1.1) reads off the `live_dataset` marker in `backend/tests_live/`.
+#
+# Each job installs from backend/requirements-dev.lock, hash-checked, like CI (M4-00b;
+# the options and their order are explained in scripts/lock-backend.sh).
 
 name: Live smoke
 
@@ -41,12 +44,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
+          cache-dependency-path: backend/requirements-dev.lock
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes --only-binary :all: --no-binary version-parser \
+            -r backend/requirements-dev.lock
 
       # Named explicitly, and to its own two files: `pytest` on its own would
       # collect backend/tests instead (the offline suite), and `backend/tests_live`
@@ -66,12 +70,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
+          cache-dependency-path: backend/requirements-dev.lock
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes --only-binary :all: --no-binary version-parser \
+            -r backend/requirements-dev.lock
 
       - name: Live smoke (pytest backend/tests_live/test_eopf_smoke.py)
         run: pytest backend/tests_live/test_eopf_smoke.py
@@ -88,12 +93,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
+          cache-dependency-path: backend/requirements-dev.lock
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r backend/requirements-dev.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes --only-binary :all: --no-binary version-parser \
+            -r backend/requirements-dev.lock
 
       - name: Live smoke (pytest backend/tests_live/test_cop_dem_smoke.py)
         run: pytest backend/tests_live/test_cop_dem_smoke.py
