@@ -310,6 +310,8 @@ abgewiesen (`adr/0011` §5, §6.5 Punkt 3; F1, F3, F5).
 - `SourceInfo.harvest_run` entfällt in Registry, Collection-Abbildung, Tests und,
   falls genannt, `architekturplan.md` 5.1.
 - Kein gemeinsames Modul für STAC-APIs (F6, M5).
+- `coverage_route` bekommt die Registry aus `build_app(registry)`; in einer App
+  gibt es danach nur eine Registry (Test).
 
 **Nicht anfassen:** `access/resolve.py` (M4-01a), das Verhalten der Routen.
 **Abnahme:** bestehende Routen-Tests grün; ein Test über jeden Registry-Eintrag,

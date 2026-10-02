@@ -295,14 +295,19 @@ bestehenden Tests zu Kachel und Download sind nur an Importzeilen und
 Collections bauen die App mit `build_app(DatasetRegistry((*REGISTRY, …)))`;
 ihre Assertions sind unverändert.
 
-**Abweichungen vom Plan:**
+**Abweichungen vom Plan** — von Otto im Review am 02.10.2026 angenommen, mit
+Ergänzungen:
 
 - **`MalformedItem` (neu, `502`):** `ResolvedAsset.item_id` kommt aus dem Item
   selbst, wie `adr/0011` §6.4 die Signatur `resolve_asset(item, config, asset)`
   vorgibt. Ein Item ohne `id` wird deshalb mit `502` abgewiesen („the source did
   not deliver item … intact“). Vorher lief es mit der ID aus dem Pfad weiter.
-  Ein gültiges STAC-Item hat immer eine `id`; betroffen ist nur eine fehlerhafte
-  Antwort der Quelle.
+  **Ergänzung:** Ein Item mit einer anderen `id` als der angefragten ist
+  ebenfalls `502` mit derselben Meldung. Geprüft wird in `_fetch_item`, also
+  für Kachel und Download; getestet für COG, Zarr und materialisiertes Item
+  (`test_item_id_mismatch.py`). `test_tilejson_zoom.py` fragte den DEM unter
+  der ID des föderierten Synthese-Items an und bekam das Kachel-Item zurück;
+  er fragt jetzt nach der ID des Items, das er bekommt.
 - **`target_gsd_for`** statt `target_gsd`: Der Parameter `target_gsd` von
   `open_asset_ref` hätte die Funktion im selben Modul verdeckt.
 - **Item-Quelle in `api` je Aufruf gebaut:** `federating_client.get_item` baut
@@ -310,17 +315,24 @@ ihre Assertions sind unverändert.
   von `app.state`, statt eine im Lifespan gebaute Funktion zu nutzen. So bleibt
   der Prüfpunkt, an dem die T-C-Tests das Gateway durch eines mit
   Mock-Transport ersetzen. Die Funktion ist dieselbe wie im `tiler`.
-- **Coverage-Route** bleibt auf `REGISTRY` (`coverage_router` auf Modulebene).
-  `build_app(registry)` reicht die Registry an Routing, Gateway und
-  Startabgleich, nicht an `/coverage` (keine weitere Verhaltensänderung).
+  **Ergänzung:** Ein Kommentar an der Stelle sagt, dass der Bau keine Ein- oder
+  Ausgabe macht und warum er je Aufruf geschieht.
+- **Coverage-Route** bleibt in diesem PR auf `REGISTRY` (`coverage_router` auf
+  Modulebene). `build_app(registry)` reicht die Registry an Routing, Gateway und
+  Startabgleich, nicht an `/coverage`. **Ergänzung:** Nachgezogen in M4-01b
+  (`plans/m4-processing-kern.md`, M4-01b „Umfang“): `coverage_route` bekommt
+  die Registry aus `build_app(registry)`, danach gibt es in einer App nur eine
+  Registry (Test).
 
 **Tests (neu):** `tests/earthx/readers/test_asset_rejected.py`,
 `tests/earthx/access/test_resolve.py`, `tests/earthx/api/test_item_source.py`
 (davon vier Tests aus `test_tiler.py` umgezogen),
-`tests/integration/test_item_holding_check.py`. Gegenprobe zu F3: Liest
+`tests/earthx/api/test_item_id_mismatch.py`,
+`tests/integration/test_item_holding_check.py`. Gegenproben: Liest
 `_source_info_of` die `item_holding` wieder aus dem Dokument, fällt
-`test_get_item_routes_by_the_registry_not_by_the_document` mit `404` statt `200`.
+`test_get_item_routes_by_the_registry_not_by_the_document` mit `404` statt
+`200`; ohne den ID-Vergleich in `_fetch_item` fallen 9 der 15 Tests in
+`test_item_id_mismatch.py`.
 
-**Offen, nicht in dieser Aufgabe:** Zwei Docstrings in Tests nennen noch den
-alten Ort (`test_zarr_levels.py`: „`api.tiler._target_gsd`“); nach F1 wurden in
-bestehenden Tests nur Importzeilen geändert.
+Der Docstring in `test_zarr_levels.py` nennt nach dem Review den neuen Ort
+(`access.resolve.target_gsd_for`); geändert ist nur der Docstring.
