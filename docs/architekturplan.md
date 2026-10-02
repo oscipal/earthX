@@ -653,12 +653,12 @@ Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für
 | HTTP/CDN | Tiles, Quicklooks, Katalogantworten | CDN / Browser |
 | Anwendung | föderierte Item-Suchen, Such-IDs für Mosaike, Header-Infos von COGs | Redis oder Postgres |
 | Ergebnis | Job-Ergebnisse per Rezept-Hash | Objektspeicher mit Ablaufdatum |
+| Pipeline | Rohantworten der Quellen per Inhalts-Hash | Postgres |
 
 **Nachtrag 2026-10-02 (M4 Q10, Q11):** Die Zeile „Ergebnis“ gilt nur für
 Eingaben mit Fassung (ETag oder `updated`); lokal erzeugte Ergebnisse kommen nie
 hinein. Ablauffrist: 7 Tage als Startwert, auch für gespeicherte Rezepte,
 belegt durch einen Test des Ablaufs (`adr/0012` §9 Punkt 5).
-| Pipeline | Rohantworten der Quellen per Inhalts-Hash | Postgres |
 
 ### 12.4 Beobachtbarkeit
 
