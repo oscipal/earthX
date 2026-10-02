@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
@@ -42,12 +43,15 @@ LOCKS = {
 }
 
 # Every place that installs the backend packages, and the lock it must install from.
+# Each must contain at least one install command; any other workflow that installs
+# the backend packages is checked against the dev lock too (WORKFLOWS below).
 INSTALL_SITES = {
     ".github/workflows/ci.yml": "backend/requirements-dev.lock",
     ".github/workflows/live-smoke.yml": "backend/requirements-dev.lock",
     "backend/Dockerfile": "requirements.lock",
     "scripts/setup-cloud-session.sh": "backend/requirements-dev.lock",
 }
+WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.y*ml"))
 
 HASH = re.compile(r"^--hash=sha256:[0-9a-f]{64}$")
 # The backend's own files, not e.g. compose/objectstore/requirements-smoke.txt.
@@ -144,33 +148,53 @@ def lock_problems(requirements: list[Requirement], lock: dict[str, Locked]) -> l
 
 
 def install_commands(text: str) -> list[str]:
-    """Each `pip install` command in ``text`` that names a backend requirement or lock file."""
+    """Each pip command in ``text`` that installs from a backend requirement or lock file."""
     commands = []
     for line in logical_lines(text):
         for part in line.split("&&"):
-            if re.search(r"\bpip\b.*\binstall\b", part) and BACKEND_FILE.search(part):
+            if re.search(r"\bpip3?\b.*\b(install|sync)\b", part) and BACKEND_FILE.search(part):
                 commands.append(part.strip())
     return commands
 
 
+def workflow_run_scripts(path: Path) -> list[str]:
+    """The `run:` scripts of every step, read as YAML: what GitHub runs, not the raw text."""
+    workflow = yaml.safe_load(path.read_text())
+    return [
+        step["run"]
+        for job in workflow.get("jobs", {}).values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    ]
+
+
+def site_install_commands(path: Path) -> list[str]:
+    if path.suffix in (".yml", ".yaml"):
+        return [c for script in workflow_run_scripts(path) for c in install_commands(script)]
+    return install_commands(path.read_text())
+
+
 def install_problems(command: str, lock: str) -> list[str]:
     """What keeps ``command`` from being a hash-checked install from ``lock``."""
-    tokens = shlex.split(command)
+    try:
+        tokens = shlex.split(command, comments=True)
+    except ValueError as exc:
+        return [f"cannot split {command!r}: {exc}"]
     problems = []
+    lock_parts = Path(lock).parts
     files = [tokens[i + 1] for i, t in enumerate(tokens[:-1]) if t in ("-r", "--requirement")]
-    if not files or not all(f.endswith(lock) for f in files):
+    if not files or not all(Path(f).parts[-len(lock_parts) :] == lock_parts for f in files):
         problems.append(f"does not install from {lock}: {files}")
     if "--require-hashes" not in tokens:
         problems.append("no --require-hashes")
     pairs = list(zip(tokens, tokens[1:], strict=False))
-    try:
-        only_binary = pairs.index(("--only-binary", ":all:"))
-        no_binary = pairs.index(("--no-binary", "version-parser"))
-    except ValueError:
+    only_binary = [i for i, pair in enumerate(pairs) if pair == ("--only-binary", ":all:")]
+    no_binary = [i for i, pair in enumerate(pairs) if pair == ("--no-binary", "version-parser")]
+    if not only_binary or not no_binary:
         problems.append("not '--only-binary :all:' and '--no-binary version-parser'")
-    else:
-        if no_binary < only_binary:
-            problems.append("'--no-binary version-parser' before '--only-binary :all:' (pip drops it)")
+    elif no_binary[-1] < only_binary[-1]:
+        # pip lets a later `--only-binary :all:` clear every earlier `--no-binary`.
+        problems.append("'--only-binary :all:' after '--no-binary version-parser' (pip drops the exception)")
     return problems
 
 
@@ -200,9 +224,16 @@ def test_the_lock_file_names_the_script_that_writes_it(lock: Path) -> None:
 
 @pytest.mark.parametrize("path", sorted(INSTALL_SITES))
 def test_every_install_site_installs_from_the_lock_with_hashes(path: str) -> None:
-    commands = install_commands((REPO / path).read_text())
+    commands = site_install_commands(REPO / path)
     assert commands, f"{path}: no install command found — reworded? then adjust this test"
     problems = {command: install_problems(command, INSTALL_SITES[path]) for command in commands}
+    assert not any(problems.values()), {c: p for c, p in problems.items() if p}
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
+def test_no_workflow_installs_the_backend_any_other_way(path: Path) -> None:
+    """Also the YAML check: a `run:` GitHub cannot parse never runs at all."""
+    problems = {c: install_problems(c, "backend/requirements-dev.lock") for c in site_install_commands(path)}
     assert not any(problems.values()), {c: p for c, p in problems.items() if p}
 
 
@@ -210,7 +241,7 @@ def test_the_lock_script_compiles_with_the_options_the_installers_use() -> None:
     """Wheels only while renewing too, so a new sdist-only package shows up there."""
     text = LOCK_SCRIPT.read_text()
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
-    for option in ("--generate-hashes", "--only-binary :all:", "--no-binary version-parser"):
+    for option in ("--universal", "--generate-hashes", "--only-binary :all:", "--no-binary version-parser"):
         assert option in code, option
 
 
@@ -306,11 +337,21 @@ def test_a_malformed_lock_file_is_rejected(text: str, message: str) -> None:
         (
             "pip install --require-hashes --no-binary version-parser --only-binary :all: "
             "-r backend/requirements-dev.lock",
-            "before '--only-binary :all:'",
+            "after '--no-binary version-parser'",
+        ),
+        (
+            "pip install --require-hashes --only-binary :all: --no-binary version-parser --only-binary :all: "
+            "-r backend/requirements-dev.lock",
+            "after '--no-binary version-parser'",
         ),
         (
             "pip install --require-hashes --only-binary :all: --no-binary version-parser "
-            "-r backend/requirements.lock",
+            "-r backend/xrequirements-dev.lock",
+            "does not install from",
+        ),
+        ("pip install --require-hashes -r 'backend/requirements-dev.lock", "cannot split"),
+        (
+            "pip install --require-hashes --only-binary :all: --no-binary version-parser -r backend/requirements.lock",
             "does not install from",
         ),
     ],
@@ -334,8 +375,34 @@ def test_install_commands_are_found_across_continuations_and_chains() -> None:
         "RUN pip install --no-cache-dir \\\n      --require-hashes -r requirements.lock\n"
         "  npm ci\n"
         "        run: pip install -r compose/objectstore/requirements-smoke.txt\n"
+        "pip3 install -r backend/requirements.txt\n"
+        "uv pip sync backend/requirements.lock\n"
     )
     assert install_commands(text) == [
         "pip install -r backend/requirements-dev.lock",
         "RUN pip install --no-cache-dir --require-hashes -r requirements.lock",
+        "pip3 install -r backend/requirements.txt",
+        "uv pip sync backend/requirements.lock",
     ]
+
+
+def test_a_workflow_run_is_read_as_yaml(tmp_path: Path) -> None:
+    workflow = tmp_path / "ci.yml"
+    workflow.write_text(
+        "jobs:\n  backend:\n    steps:\n      - uses: actions/checkout@v4\n      - run: |\n"
+        "          pip install --require-hashes --only-binary :all: --no-binary version-parser \\\n"
+        "            -r backend/requirements-dev.lock\n"
+    )
+    [command] = site_install_commands(workflow)
+    assert install_problems(command, "backend/requirements-dev.lock") == []
+
+
+def test_an_unquoted_run_with_a_colon_is_not_valid_yaml(tmp_path: Path) -> None:
+    """The plain scalar `--only-binary :all: --no-binary` holds ': ' and breaks the file."""
+    workflow = tmp_path / "ci.yml"
+    workflow.write_text(
+        "jobs:\n  backend:\n    steps:\n"
+        "      - run: pip install --only-binary :all: --no-binary version-parser -r backend/requirements-dev.lock\n"
+    )
+    with pytest.raises(yaml.YAMLError):
+        site_install_commands(workflow)
