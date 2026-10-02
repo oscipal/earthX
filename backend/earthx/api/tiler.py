@@ -11,10 +11,11 @@ What is composed:
 * **the path dependency** — ``dataset`` and ``item`` from the path, ``asset``
   from the query, resolved through the registry and the adapter into an
   :class:`~earthx.readers.cog.AssetPath` or, where the registry says the dataset is
-  Zarr, a :class:`~earthx.readers.zarr_reader.ZarrAsset` (M2-09a). This is the only
-  place in the process where an address is built, the only place the format is
-  decided, and it cannot build either without ``check_url``. There is no free
-  ``url`` parameter anywhere in the schema; a test proves it.
+  Zarr, a :class:`~earthx.readers.zarr_reader.ZarrAsset` (M2-09a). The resolution
+  itself lives in :mod:`earthx.access.resolve` since M4-01a, where `processing` can
+  reach it too; this process hands it the policy and maps its refusals to HTTP. It
+  cannot build an address without ``check_url``. There is no free ``url``
+  parameter anywhere in the schema; a test proves it.
 * **the environment dependency** — ``gdal_options(policy)``, so the central GDAL
   configuration of M1-03 applies at every endpoint rather than wherever someone
   remembered it.
@@ -39,12 +40,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-import morecantile
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
-from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
 from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
@@ -67,6 +66,15 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
+from earthx.access.resolve import (
+    AssetNotOnItem,
+    InvalidAssetKey,
+    MalformedItem,
+    NoReader,
+    open_asset_ref,
+    resolve_asset,
+    target_gsd_for,
+)
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters import (
     InvalidQuery,
@@ -78,7 +86,6 @@ from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.pgstac import fetch_item
 from earthx.catalog.registry import (
-    DataFormat,
     DatasetConfig,
     DatasetRegistry,
     ItemHolding,
@@ -87,11 +94,12 @@ from earthx.catalog.registry import (
 )
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout, UrlRejected
+from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
-from earthx.readers.cog import AssetPath, asset_path
-from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, split_asset_key, zarr_asset
+from earthx.readers import AssetRejected
+from earthx.readers.cog import AssetPath
+from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
 
 LOGGER = logging.getLogger("earthx.api.tiler")
 
@@ -99,10 +107,6 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # metadata of that very item. The tiler answers under its own port (docker-compose),
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
-
-# The formats a reader exists for. `LEGACY` is the prototype's shape and has none
-# in the target path, so it is a 501 rather than an attempt (adr/0007 §6 point 2).
-_READABLE_FORMATS = frozenset({DataFormat.COG, DataFormat.ZARR})
 
 # The download route (M2-06) names only the dataset in its path — the item(s) and
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
@@ -131,16 +135,6 @@ class MaterializedCatalogUnavailable(RuntimeError):
     absence merely means a slower re-fetch of the source (E5) — a materialized
     dataset's items have no other place to come from at all.
     """
-
-
-def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
-    """The address of one asset, or a 404 that says which of the two is missing."""
-    assets = item.get("assets")
-    entry = assets.get(asset) if isinstance(assets, dict) else None
-    href = entry.get("href") if isinstance(entry, dict) else None
-    if not isinstance(href, str):
-        raise HTTPException(status_code=404, detail=f"the item carries no asset {asset!r}")
-    return href
 
 
 async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
@@ -178,73 +172,6 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
         # Broad on purpose — a gateway error that has no branch of its own is still an
         # answer about the source, and a 500 would call it our mistake.
         raise HTTPException(status_code=502, detail="the item could not be fetched") from None
-
-
-def _proj_code(stac_item: dict[str, Any]) -> str | None:
-    """The item's own CRS, in either spelling STAC has for it.
-
-    ``proj:code`` is the projection extension v2, ``proj:epsg`` the v1 field our own
-    API still emits (adr/0007 §6 point 4). A Zarr store may carry no CRS at all
-    (§3.4), and then this is the only place it can come from; where the store does
-    carry one, this stays the fallback.
-    """
-    properties = stac_item.get("properties")
-    if not isinstance(properties, dict):
-        return None
-    code = properties.get("proj:code")
-    if isinstance(code, str) and code:
-        return code
-    epsg = properties.get("proj:epsg")
-    return f"EPSG:{epsg}" if isinstance(epsg, int) else None
-
-
-# Forced onto the coarsest `multiscales` level there is: adr/0007 §12.11 point 8
-# measured the difference against a fine level at ~5% in `p98`, and the read stays
-# cheap regardless of where on the extent the item sits.
-_COARSEST_LEVEL = float("inf")
-
-
-def _target_gsd(request: Request, stac_item: dict[str, Any]) -> float | None:
-    """The ground sample distance a Zarr read should aim for, or ``None`` to leave
-    the level exactly as the asset names it.
-
-    Three cases, and only three — everything else reads the level the item's asset
-    already points at, unchanged since M2-09a:
-
-    * **``/statistics``** is answered on the coarsest level there is (§12.11 point 8).
-    * **a tile request** names ``z``/``x``/``y``/``tileMatrixSetId`` in its own route
-      (TiTiler's own path, matched here through ``request.path_params`` rather than
-      a parameter of this function, so nothing here has to repeat TiTiler's route
-      shape). The real ground resolution of that tile is computed from its own
-      bounds, reprojected into the item's CRS — not read off a fixed zoom table,
-      because a Web Mercator tile's real resolution scales with ``cos(latitude)``
-      (adr/0007 §12.10) and a table would pick the wrong level near either end of
-      this dataset's 34°–72° N extent.
-    * **anything else** (a preview, the AOI crop) computes nothing and returns
-      ``None`` — a crop wants the resolution its asset names, not the coarsest
-      level statistics settles for.
-    """
-    if request.url.path.endswith("/statistics"):
-        return _COARSEST_LEVEL
-    path_params = request.path_params
-    if not {"z", "x", "y", "tileMatrixSetId"} <= path_params.keys():
-        return None
-    crs = _proj_code(stac_item)
-    if crs is None:
-        return None
-    try:
-        tms = morecantile.tms.get(str(path_params["tileMatrixSetId"]))
-        z = int(path_params["z"])
-        west, south, east, north = tms.bounds(int(path_params["x"]), int(path_params["y"]), z)
-        item_west, _, item_east, _ = transform_bounds("EPSG:4326", crs, west, south, east, north)
-        tile_size = tms.matrix(z).tileWidth
-    except Exception:
-        # A resolution this cannot compute (an unknown TMS id, a CRS transform
-        # that fails) is not worth failing the tile over — it reads the level the
-        # asset names instead, the same as before this feature existed.
-        LOGGER.warning("could not compute a target resolution for the tile", exc_info=True)
-        return None
-    return abs(item_east - item_west) / tile_size
 
 
 def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
@@ -362,56 +289,29 @@ def _resolve_asset_path(
     asset: str,
     target_gsd: float | None = None,
 ) -> AssetPath | ZarrAsset:
-    """The href of ``asset`` on ``stac_item``, cleared through the gateway policy.
+    """``asset`` of ``stac_item``, resolved in `access` and cleared through the gateway
+    policy — or the ``HTTPException`` its refusal maps to.
 
-    **The registry's ``format`` picks the reader**, here and nowhere else: `access`
-    renders whatever it is handed and the client sends the same tile URL either way
-    (M2-09a). A format without a reader is refused rather than read as a COG — a
-    silent fallback would turn a registry mistake into a wrong picture.
-
-    For a Zarr dataset, ``asset`` may carry a variable after the registry's
-    ``ZarrInfo.variable_separator`` (adr/0007 §12.11, plan §10 F2) — split off
-    *before* the href is looked up, because the item only ever advertises the
-    group side of that key.
+    The resolution itself is :func:`~earthx.access.resolve.resolve_asset` and
+    :func:`~earthx.access.resolve.open_asset_ref`; what is left here is the HTTP
+    answer to each refusal. ``item`` is the id the caller asked for; the resolved
+    asset carries the item's own.
     """
-    dataset = config.dataset_id
-    if config.format not in _READABLE_FORMATS:
-        raise HTTPException(
-            status_code=501,
-            detail=f"{dataset!r} is stored as {config.format.value}, which no reader opens",
-        )
-    if config.format is DataFormat.ZARR:
-        separator = config.zarr.variable_separator if config.zarr is not None else None
-        try:
-            item_asset, variable = split_asset_key(asset, separator)
-        except UrlRejected as error:
-            # The caller's own query parameter is shaped wrong — a 400, not the 502
-            # below, which is about what the *item* points at.
-            raise HTTPException(status_code=400, detail=str(error)) from None
     try:
-        if config.format is DataFormat.ZARR:
-            href = _resolve_asset_href(stac_item, item_asset)
-            return zarr_asset(
-                href,
-                state.earthx_policy,
-                dataset_id=dataset,
-                item_id=item,
-                asset=asset,
-                crs=_proj_code(stac_item),
-                resolve=state.earthx_resolver,
-                variable=variable,
-                target_gsd=target_gsd,
-            )
-        href = _resolve_asset_href(stac_item, asset)
-        return asset_path(
-            href,
-            state.earthx_policy,
-            dataset_id=dataset,
-            item_id=item,
-            asset=asset,
-            resolve=state.earthx_resolver,
-        )
-    except GatewayError:
+        ref = resolve_asset(stac_item, config, asset)
+    except NoReader as error:
+        raise HTTPException(status_code=501, detail=str(error)) from None
+    except InvalidAssetKey as error:
+        # The caller's own query parameter is shaped wrong — a 400, not the 502
+        # below, which is about what the *item* points at.
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except AssetNotOnItem as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except MalformedItem:
+        raise HTTPException(status_code=502, detail=f"the source did not deliver item {item!r} intact") from None
+    try:
+        return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd)
+    except AssetRejected:
         # An address the registry does not cover. This is the refusal adr/0006 §3.3
         # describes, and it is the source's problem, not the caller's — hence 502.
         raise HTTPException(
@@ -443,7 +343,7 @@ async def dataset_asset_path(
     _check_display_allowed(config)
     _check_zoom_released(request, config)
     stac_item = await _fetch_item(state, dataset, item)
-    target_gsd = _target_gsd(request, stac_item)
+    target_gsd = target_gsd_for(request, stac_item)
     return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset, target_gsd=target_gsd)
 
 
