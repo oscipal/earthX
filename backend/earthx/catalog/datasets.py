@@ -368,7 +368,7 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
     # not the tile path's; above z14 the store has nothing finer than r10m, so a
     # client overzooms the last level — which costs *less*, since the window read
     # gets smaller. The level itself is still computed from the requested tile's
-    # own ground resolution (api.tiler._target_gsd), never looked up from the zoom.
+    # own ground resolution (access.resolve.target_gsd_for), never looked up from the zoom.
     # M3-12: this source has no thumbnail, overview, preview or visual asset
     # anywhere (adr/0007 §12.7) — the browse view falls back to a tile on the
     # coarsest released level, `min_zoom` below, instead of a published image.

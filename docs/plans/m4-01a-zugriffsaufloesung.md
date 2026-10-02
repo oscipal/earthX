@@ -1,7 +1,8 @@
 # M4-01a — Zugriffsauflösung nach `access`, eine Item-Quelle in `api`: Plan
 
 **Aufgabe:** M4-01a aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan zur Freigabe; die Session hält nach diesem Plan an.
+**Stufe B** — **von Otto am 02.10.2026 freigegeben** mit F1 (1), F2 (1),
+F3 (1, präzisiert) und F4 (1) und **umgesetzt** (§8).
 **Ort im Repo:** `docs/plans/m4-01a-zugriffsaufloesung.md`
 **Grundlagen:** `adr/0011` §6.1–§6.5, §7 (D2), §11 (F2, F4, F7);
 `plans/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01a; `architekturplan.md`
@@ -272,3 +273,54 @@ die zwei Fehlerklassen und die `monkeypatch`-Ziele `earthx.api.tiler.fetch_item`
 **F4: PR-Größe** (rund 700 Zeilen mit Tests und Verschiebungen)
 1. ein PR wie im M4-Plan, mit getrennten Commits nach §5 **(Empfehlung)**
 2. zwei PRs: erst §3.1–§3.3 (Zugriffsauflösung), dann §3.4–§3.5 (Item-Quelle)
+
+**Antworten (Otto, 02.10.2026):** F1 (1), F2 (1), F4 (1) wie empfohlen; F2 und F3
+je mit Test. F3 (1) **mit Präzisierung:** Die Entscheidung föderiert/materialisiert
+trifft auch in `federating_client.get_item` die Registry über `item_holding_of`;
+nur das Holen eines materialisierten Items bleibt bei `super().get_item`. Dazu
+freigegeben: `build_app(registry)` in `api/main.py`, mit `REGISTRY` als Vorgabe
+im Betrieb und ohne weitere Verhaltensänderung.
+
+---
+
+## 8. Umsetzung (02.10.2026)
+
+Vier Commits nach F4: (a) `readers`-Fehlerklasse, (b) `access/resolve.py`,
+(c) `api/item_source.py` mit Startabgleich, (d) `build_app(registry)`, Routing
+in `federating_client` und Testanpassungen; dazu ein Commit für Doku und Log.
+
+**Wie geplant:** §3.1 bis §3.6. `.importlinter` ist unverändert; die
+bestehenden Tests zu Kachel und Download sind nur an Importzeilen und
+`monkeypatch`-Zielen geändert (F1). Die drei T-C-Dateien mit eigenen
+Collections bauen die App mit `build_app(DatasetRegistry((*REGISTRY, …)))`;
+ihre Assertions sind unverändert.
+
+**Abweichungen vom Plan:**
+
+- **`MalformedItem` (neu, `502`):** `ResolvedAsset.item_id` kommt aus dem Item
+  selbst, wie `adr/0011` §6.4 die Signatur `resolve_asset(item, config, asset)`
+  vorgibt. Ein Item ohne `id` wird deshalb mit `502` abgewiesen („the source did
+  not deliver item … intact“). Vorher lief es mit der ID aus dem Pfad weiter.
+  Ein gültiges STAC-Item hat immer eine `id`; betroffen ist nur eine fehlerhafte
+  Antwort der Quelle.
+- **`target_gsd_for`** statt `target_gsd`: Der Parameter `target_gsd` von
+  `open_asset_ref` hätte die Funktion im selben Modul verdeckt.
+- **Item-Quelle in `api` je Aufruf gebaut:** `federating_client.get_item` baut
+  `build_item_source(registry, gateway, pool)` bei jedem Aufruf um das Gateway
+  von `app.state`, statt eine im Lifespan gebaute Funktion zu nutzen. So bleibt
+  der Prüfpunkt, an dem die T-C-Tests das Gateway durch eines mit
+  Mock-Transport ersetzen. Die Funktion ist dieselbe wie im `tiler`.
+- **Coverage-Route** bleibt auf `REGISTRY` (`coverage_router` auf Modulebene).
+  `build_app(registry)` reicht die Registry an Routing, Gateway und
+  Startabgleich, nicht an `/coverage` (keine weitere Verhaltensänderung).
+
+**Tests (neu):** `tests/earthx/readers/test_asset_rejected.py`,
+`tests/earthx/access/test_resolve.py`, `tests/earthx/api/test_item_source.py`
+(davon vier Tests aus `test_tiler.py` umgezogen),
+`tests/integration/test_item_holding_check.py`. Gegenprobe zu F3: Liest
+`_source_info_of` die `item_holding` wieder aus dem Dokument, fällt
+`test_get_item_routes_by_the_registry_not_by_the_document` mit `404` statt `200`.
+
+**Offen, nicht in dieser Aufgabe:** Zwei Docstrings in Tests nennen noch den
+alten Ort (`test_zarr_levels.py`: „`api.tiler._target_gsd`“); nach F1 wurden in
+bestehenden Tests nur Importzeilen geändert.
