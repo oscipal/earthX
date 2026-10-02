@@ -1,8 +1,13 @@
 # M4-00b — Lock-Datei für die Backend-Pakete: Umsetzungsplan
 
 **Aufgabe:** M4-00b aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan-Schritt. Die Session hält nach diesem Plan an; umgesetzt
-wird erst nach Ottos Freigabe (Fragen F1–F4 in §9).
+**Stufe B** — **von Otto am 02.10.2026 freigegeben** mit F1 (1), F2 (1),
+F3 (1), F4 (1) (§9). Dazu: Das Backend läuft bei Otto nur in Docker (Docker
+Desktop unter Windows, x86_64), nie nativ; Linux x86_64 ist Pflicht, aarch64
+darf mitlaufen, native Plattformen außerhalb von Docker müssen nicht abgedeckt
+sein. Die Reihenfolge der pip-Optionen prüft ein Test; der Grund für die
+Ausnahme `version-parser` steht im Erzeugungsskript. Der Plan-Schritt ist damit
+abgeschlossen, die Umsetzung läuft.
 **Ort im Repo:** `docs/plans/m4-00b-lock-datei.md`
 **Grundlagen:** `plans/m4-processing-kern.md` (Q16, §1.2, §4 M4-00b, §5 Punkt 9,
 §6); `plans/m3-15-abnahme.md` §12 („Lock-Datei“); `plans/m3-03-python-312.md`
