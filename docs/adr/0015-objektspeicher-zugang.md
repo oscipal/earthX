@@ -37,7 +37,11 @@
     `backend/earthx/logging.py`.
   - `compose/objectstore/bootstrap.py`, `docker-compose.yml`, `.env.example`,
     `backend/requirements.txt` und die Lock-Dateien (M4-00b).
-  - `architekturplan.md` 3.1 (neue Zeile), 6.4, 11.
+  - `architekturplan.md` 3.1 (neue Zeile `objectstore`, Nachtrag zur Zeile
+    `gateway`), 6.4, 11; `KLAERUNGEN.md` B8 (Nachtrag, §4.4).
+  - `adr/0014` §9 (Ergebnislinks über `api`, §6.1).
+  - `backend/Dockerfile` (`AWS_EC2_METADATA_DISABLED`), `backend/requirements-dev.txt`
+    (`moto`).
 
 ---
 
@@ -61,7 +65,9 @@ keinen Daemon (`cloud-umgebung.md` §4). Garage v2.4.1 wurde mit
 `268334b`) und als Einzelknoten auf `127.0.0.1` gestartet. Schlüssel und Bucket
 legte das vorhandene `compose/objectstore/bootstrap.py` an (`secrets`, dann
 `init` gegen die Admin-API), also derselbe Weg wie in compose **[M]**. Die
-selbst gebaute Binärdatei ist dynamisch gegen glibc gelinkt **[M]**; das
+selbst gebaute Binärdatei ist dynamisch gegen glibc gelinkt (`ldd`) **[M]**;
+`adr/0012` §4.1 nennt den eigenen Bau dort „statisch“, das gilt für diesen Bau
+nicht (Korrektur). Das
 offizielle Image ist dagegen `FROM scratch` mit einer musl-Binärdatei
 (`Dockerfile`, `flake.nix` Z. 45: `x86_64-unknown-linux-musl`) **[P]**. Das ist
 für den Ablauftest wichtig (§7.4).
@@ -89,7 +95,8 @@ Primärdokument nachgelesen.
 
 ## 0. Kurzfassung
 
-Jede Empfehlung hat eine Frage in §14.
+Jede Empfehlung mit Entscheidungsbedarf hat eine Frage in §14; was ohne
+Widerspruch gelten soll, steht dort unter „Kleinentscheidungen“.
 
 1. **Modul `earthx.objectstore` (F1, F2).** Es kennt genau einen Speicher, aus
    der Konfiguration, und nimmt nur Kennungen entgegen, nie eine URL. Zeile in
@@ -98,7 +105,8 @@ Jede Empfehlung hat eine Frage in §14.
    `http-only-in-gateway` erlaubt: `earthx.objectstore.client -> botocore`.
    Gemessen: Dieselbe Zeile lässt jeden anderen Import von `botocore` brechen,
    auch im selben Modul **[M]**. Die Verbotsliste wächst um `botocore`,
-   `urllib3` und weitere S3-Clients.
+   `urllib3` und weitere S3-Clients. B8 und die Zeile `gateway` in 3.1 bekommen
+   einen Nachtrag (§4.4).
 2. **Client: `botocore` allein, ohne `boto3` (F3).**
    - **Befund:** Liegt `boto3` im Image, öffnet rasterio für jede Adresse mit
      `amazonaws.com` im Pfad eine boto3-Sitzung und fragt dabei den
@@ -134,22 +142,25 @@ Jede Empfehlung hat eine Frage in §14.
      Tagen plus Abbruch liegengebliebener Multipart-Uploads nach 1 Tag ist das
      Netz für Waisen.
    - **Gemessen mit verstellter Uhr:** Objekte vom 02.10. liegen am 09.10. noch,
-     am 10.10. um 0 Uhr UTC sind sie gelöscht; der Multipart-Rest war am 04.10.
-     weg **[M]**. Garage rechnet „7 Tage“ also als 7 bis 8 Tage **[M][P]**.
+     am 10.10. sind sie gelöscht; der Multipart-Rest war am 04.10. weg **[M]**.
+     Der Worker läuft um 0 Uhr UTC **[P]**. Garage rechnet „7 Tage“ also als 7
+     bis 8 Tage **[M][P]**.
    - Die Regel setzt `objectstore-init` über Garages Admin-API (gemessen
      **[M]**), in Produktion die Infrastruktur. `jobs` prüft sie beim Start
      nur lesend. Der Schreibschlüssel darf die Regel in Garage auch löschen
      **[M]**; deshalb hängt nichts allein an ihr.
-   - **Beleg nach `adr/0012` §9 Punkt 5:** Der Aufräumer wird in der CI mit
-     injizierter Uhr getestet. Die Regel selbst ist hier an der Binärdatei
-     belegt; mit dem offiziellen Image geht `libfaketime` nicht (musl,
-     statisch).
-5. **Ablage (F10, F11).** Schlüssel `results/{result_id}/{name}` mit eigener
+   - **Beleg — Abweichung von `adr/0012` §9 Punkt 5, Otto entscheidet (F9):**
+     Die CI testet den Aufräumer mit injizierter Uhr. Das Greifen der Regel
+     ist nur hier an der Binärdatei belegt, nicht in der CI; mit dem
+     offiziellen Image geht `libfaketime` nicht (musl, statisch).
+5. **Rezeptfrist (F13):** offen, ob die 7 Tage ab Annahme oder ab der letzten
+   Nutzung zählen; Vorschlag: ab der letzten Nutzung.
+6. **Ablage (F10, F11).** Schlüssel `results/{result_id}/{name}` mit eigener
    zufälliger `result_id`, nie Job-ID, Hash oder AOI. Ein Ergebnis ohne Fassung
    wird ebenso 7 Tage gespeichert, nur ohne Cache-Eintrag (Frage aus
    `adr/0014` §14). Ein Treffer zählt nur bei mindestens 24 Stunden
    Restlaufzeit.
-6. **Zugangsdaten (F12).** Nur aus der Umgebung, mit Namen `S3_*` (nie
+7. **Zugangsdaten (F12).** Nur aus der Umgebung, mit Namen `S3_*` (nie
    `AWS_*`, wegen rasterio, Punkt 2), auch als `S3_*_FILE`. `botocore` und
    `urllib3` kommen auf die Liste der Logger, die `configure_logging` auf
    `WARNING` hebt: Bei `DEBUG` schreiben sie Schlüssel-ID und Signatur ins Log,
@@ -184,7 +195,7 @@ und `api`.
 
 | # | Kriterium | Quelle |
 |---|---|---|
-| K1 | Nur `jobs` und `api` erreichen den Speicher; `processing` nicht, auch nicht über eine Kette | Q4, Q5; B9; 3.1 |
+| K1 | Nur `jobs` und `api` erreichen den Speicher (`api` schließt `api/tiler.py` ein, weil es im selben Paket liegt); `processing` nicht, auch nicht über eine Kette | Q4, Q5; B9; 3.1 |
 | K2 | `gateway` und die Regel „kein Client außerhalb von `gateway`“ werden für kein anderes Modul gelockert | Q5; B8 |
 | K3 | Der Speicher ist nur über einen festen Endpunkt aus der Konfiguration erreichbar; keine Funktion nimmt eine URL entgegen | Q5 |
 | K4 | Kein neuer Weg nach außen, auch nicht als Nebenwirkung einer Bibliothek | B8; `adr/0006` §5 |
@@ -230,9 +241,14 @@ Zugangsdaten und reichte sie als GDAL-Optionen weiter **[M]**; das tut
   `sentinel-cogs.s3.us-west-2.amazonaws.com`, DEM:
   `copernicus-dem-30m.s3.amazonaws.com`, `adr/0009` §3.1). Jeder spätere Weg,
   der eine solche `https`-Adresse ohne `/vsicurl/` an rasterio gibt, etwa
-  rioxarray oder ein Datensatzmodul wie `decomp.py` mit `rasterio.open(href)`,
-  würde im Cloud-Betrieb den Metadatendienst fragen. Dort antwortet er, und
-  GDAL bekäme die Rolle der Maschine.
+  rioxarray, würde im Cloud-Betrieb den Metadatendienst fragen. Dort
+  antwortet er, und GDAL bekäme die Rolle der Maschine. `decomp.py` öffnet
+  schon heute rohe Adressen mit `rasterio.open` (Z. 84–85), ruht aber
+  (ENTSCHEIDUNGEN §3) **[P]**.
+- Dasselbe Muster bei pystac: `pystac/stac_io.py` nimmt `urllib3.PoolManager`
+  statt `urllib`, sobald `urllib3` importierbar ist (Z. 24–30, 304–305) **[P]**,
+  aus dem Review. Heute folgenlos, weil `earthx` pystac nicht selbst zum Laden
+  nutzt; `urllib3` kommt aber mit `botocore` ins Image.
 - Das Image ist für alle vier Prozesse gleich (3.2). `boto3` für den Worker
   hieße `boto3` auch im `tiler`.
 - `moto` (E7, Tests) hängt von `boto3` ab (`Requires-Dist: boto3>=1.9.201`,
@@ -330,7 +346,7 @@ UTC auf **[S]** (§15).
 | Version | 1.43.103 | 1.43.103 | 3.9.2 | 7.2.20 | 0.11.1 |
 | Lizenz | Apache-2.0 | Apache-2.0 | Apache-2.0 | Apache-2.0 | MIT **[S]** |
 | installiert | 33 MB | 35 MB | 48 MB | 15 MB | 16 MB |
-| neu im Image (nicht schon in `requirements.lock`) | `botocore`, `jmespath`, `urllib3` | dazu `boto3`, `s3transfer` | dazu `aiohttp` und sieben weitere | `minio`, `argon2-cffi`, `pycryptodome`, `urllib3`, … | `obstore` |
+| neu im Image (nicht schon in `requirements.lock`) | 3: `botocore`, `jmespath`, `urllib3` | 5: dazu `boto3`, `s3transfer` | 12: dazu `aiobotocore`, `aiohttp` und sieben weitere | 7: `minio`, `argon2-cffi`, `argon2-cffi-bindings`, `cffi`, `pycparser`, `pycryptodome`, `urllib3` | 1: `obstore` |
 | Import + Client | 237–287 ms, +36 MiB | 305–428 ms, +39 MiB | — | 208–226 ms, +20 MiB | 16–21 ms, +10 MiB |
 | rasterio sieht `boto3` (§3.1) | **nein** | ja | nein | nein | nein |
 | eigene Bindung | — | — | `botocore<1.43.107,>=1.43.101` | — | — |
@@ -436,18 +452,23 @@ Nutzereingaben entsteht **[A]**.
 `api` darf ohnehin alles. In `.importlinter` heißt das:
 
 1. **Neuer Vertrag `objectstore`** nach dem Muster von `gateway`: verbietet alle
-   übrigen Module von 3.1.
+   übrigen Module von 3.1, mit `allow_indirect_imports = True` (verlangt von
+   `test_module_boundary_contracts_only_count_direct_imports`).
 2. **Alle anderen Modulverträge** bekommen `earthx.objectstore` in ihre
    `forbidden_modules`, außer `jobs`. `test_module_boundaries.py` rechnet das
    heute schon aus der Tabelle (`ALL_MODULES - ALLOWED_IMPORTS[m]`) **[P]**;
    dort kommen `objectstore` in `ALLOWED_IMPORTS` und `jobs` →
    `{"processing", "objectstore"}` hinzu.
-3. **Kettenvertrag für den Worker-Kern:** `processing` bekommt
-   `earthx.objectstore` und `botocore` als verboten, ohne
-   `allow_indirect_imports`, wie `no-database-in-worker-core` heute psycopg
-   (B9). Ob das ein eigener Vertrag ist oder in den von `adr/0013`
-   umgeschnittenen eingeht, entscheidet M4-06 mit `adr/0013` **[A]**.
-4. **`http-only-in-gateway`:**
+3. **`datasets-isolated`** bekommt `earthx.objectstore` als Quelle;
+   `test_datasets_stay_isolated` verlangt das, sobald `objectstore` in
+   `ALLOWED_IMPORTS` steht.
+4. **Eigener Kettenvertrag `no-object-store-in-worker-core`:** Quelle nur
+   `earthx.processing`, verboten `earthx.objectstore` und `botocore`, ohne
+   `allow_indirect_imports`, wie heute psycopg (B9). In den bestehenden
+   `no-database-in-worker-core` passt es nicht: Dort ist auch `jobs` Quelle, und
+   `jobs` darf `objectstore` importieren. Der neue Vertrag kommt in die
+   Parameterliste von `test_the_two_chain_sensitive_contracts_keep_counting_chains`.
+5. **`http-only-in-gateway`:**
    - `earthx.objectstore` kommt zu den `source_modules` (es ist nicht
      `gateway`; alle Clients bleiben ihm verboten);
    - `botocore`, `urllib3`, `s3transfer`, `aiobotocore`, `aioboto3`, `minio`
@@ -456,9 +477,21 @@ Nutzereingaben entsteht **[A]**.
 
 So bleibt `http-only-in-gateway` für jedes andere Modul so streng wie heute,
 und die einzige Ausnahme steht als ein Import im Vertrag, nicht als ein Modul
-(§3.5) **[M]**. Gegenüber einem eigenen Vertrag nur für `objectstore` (Option
-V2 in F2) spart das eine zweite Liste, die mit der ersten Schritt halten
-müsste.
+(§3.5) **[M]**. Gegenüber einem eigenen Vertrag nur für `objectstore` (Option 2
+in F2) spart das eine zweite Liste, die mit der ersten Schritt halten müsste.
+
+**Nachgemessen im Review [M]:** Der ganze Umbau (Punkte 1–5) an einer Kopie
+mit einem `objectstore/client.py` und einem Import aus `jobs`, dazu die
+Testanpassungen aus 2 und §4.3: `lint-imports` hält 13 Verträge mit „1 ignored
+import“, die 149 Tests von `test_module_boundaries.py` und
+`test_no_outbound_outside_gateway.py` sind grün. Ohne Punkt 3 bricht
+`test_datasets_stay_isolated`; mit `objectstore` im heutigen
+`no-database-in-worker-core` bricht der Vertrag an `jobs`.
+
+**Lesart von Q5 („eigener Importvertrag“):** Das Modul bekommt seinen eigenen
+Modulvertrag (Punkt 1) und einen eigenen Kettenvertrag (Punkt 4); der Client
+selbst bleibt im gemeinsamen Vertrag `http-only-in-gateway`, mit einer Zeile
+Ausnahme **[A]**.
 
 ### 4.3 AST-Test nach dem Muster von `test_no_outbound_outside_gateway.py`
 
@@ -466,9 +499,12 @@ Neue Datei `backend/tests/earthx/test_objectstore_boundary.py`, ohne Netz:
 
 1. **Nur `jobs`, `api` und `objectstore` selbst** importieren
    `earthx.objectstore` — Lauf über den Syntaxbaum jedes Moduls, auch Importe in
-   Funktionen und `from earthx import objectstore`.
-2. **`botocore` nur in `objectstore/client.py`;** jedes andere Modul (auch
-   `gateway`) importiert es nicht.
+   Funktionen, `from earthx import objectstore` und relative Importe (aufgelöst
+   gegen den Paketpfad; `imported_roots` im bestehenden Test wertet nur
+   `level == 0` aus).
+2. **`botocore` nur in `objectstore/client.py`;** jedes andere Modul importiert
+   es nicht. Für `gateway` ist das eine Verschärfung (dort ist heute auch
+   `boto3` nicht verboten); `gateway` selbst bleibt sonst unverändert (Q5).
 3. **`objectstore` importiert keinen anderen Client** aus der Verbotsliste.
 4. **Kein `boto3` im Image:** `boto3` und `s3transfer` stehen nicht in
    `backend/requirements.lock` (§3.1). Ein Satz im Test sagt, warum.
@@ -478,6 +514,25 @@ Neue Datei `backend/tests/earthx/test_objectstore_boundary.py`, ohne Netz:
 `test_no_outbound_outside_gateway.py` nimmt `objectstore/client.py` dann für
 genau `botocore` aus und sonst nichts; die Liste `CORE` wächst um `botocore`
 und `urllib3`.
+
+### 4.4 Folgen für B8 und 3.1
+
+B8 und die Zeile `gateway` in 3.1 („Alle ausgehenden HTTP/S3-Zugriffe“), dazu
+der Name des Vertrags („HTTP and S3 clients live only in gateway“), sagen nach
+diesem ADR nicht mehr ganz, was gilt. **Vorschlag für Nachträge mit Datum,
+Originaltext bleibt:**
+
+- `KLAERUNGEN.md` B8: „Der eigene Objektspeicher ist ein Plattformdienst, kein
+  Weg nach außen. Sein Client liegt in `objectstore` (`adr/0015`); die einzige
+  Ausnahme vom Client-Verbot ist der Import `earthx.objectstore.client ->
+  botocore`. Für Datenquellen gilt B8 unverändert.“
+- `architekturplan.md` 3.1, Zeile `gateway`: „alle ausgehenden Zugriffe auf
+  Datenquellen; der eigene Objektspeicher über `objectstore`“.
+- Der Vertragsname bleibt, sein Kommentar in `.importlinter` nennt die
+  Ausnahme.
+
+B8 ist in `CLAUDE.md` als unverrückbar genannt; deshalb steht der Nachtrag hier
+als Vorschlag zur Entscheidung (F2), nicht als Folge.
 
 ---
 
@@ -509,8 +564,11 @@ und `urllib3`.
 - Der Prozess setzt `AWS_EC2_METADATA_DISABLED=true` (Dockerfile) als zweite
   Sicherung gegen den Weg aus §3.1 **[A]**.
 
-**Abhängigkeit:** `botocore` in `backend/requirements.txt` mit Kappe auf die
-Hauptversion, erneuerte Lock-Datei im selben PR (M4-Plan §1.2). `moto` kommt in
+**Abhängigkeit:** `botocore` in `backend/requirements.txt`, erneuerte
+Lock-Datei im selben PR (M4-Plan §1.2). Eine Kappe auf die Hauptversion
+brächte nichts: botocore bleibt bei 1.x und erscheint wöchentlich; auch der
+Wechsel der Prüfsummen kam in einer Unterversion (1.36). Die Last trägt der
+Lock **[A]**. `moto` kommt in
 `requirements-dev.txt` und bringt dort `boto3` mit; das ist nur die
 Testumgebung (§3.1).
 
@@ -526,7 +584,10 @@ Testumgebung (§3.1).
 | R2 | Das Ergebnisdokument enthält die signierten URLs selbst | einfacher; aber ein geöffnetes Panel hält nach Ablauf tote Links, und das Frontend muss `400`/`403` des Speichers deuten |
 | R3 | `api` streamt das Ergebnis selbst | keine signierte URL nötig; widerspricht 6.4 („Auslieferung über signierte URLs“) und belastet `api` mit Hunderten MB |
 
-**Empfehlung R1.** Die Kennung `jobID` ist ohnehin der Zugang (Q9, 128 Bit,
+**Empfehlung R1.** Das weicht vom Wortlaut von `adr/0014` §9 ab („Ergebnisse
+als Links mit signierten URLs“): Die Links im Ergebnisdokument sind dann Links
+auf `api`, die signierte URL kommt erst mit dem `303`. Die Form des Dokuments
+nach OGC bleibt. Die Kennung `jobID` ist ohnehin der Zugang (Q9, 128 Bit,
 `adr/0014` §9); der Redirect gibt nichts heraus, was der Halter der `jobID`
 nicht schon darf **[A]**. Die Antwort trägt `Cache-Control: no-store`, damit
 kein Zwischenspeicher eine signierte URL aufhebt **[A]**.
@@ -593,8 +654,9 @@ Browser-Verlauf; deshalb dieselben Regeln wie für Logs (`adr/0014` §4.7)
 
 ### 6.6 `400` statt `403`
 
-Garage weist abgelaufene URLs mit `400 InvalidRequest` ab, AWS mit
-`403 AccessDenied` (`adr/0012` §4.1) **[M]**. Mit R1 und L1 tritt das im Panel
+Garage weist abgelaufene URLs mit `400 InvalidRequest` ab **[M]**; AWS
+antwortet `403 AccessDenied` (`adr/0012` §4.1, dort an MinIO, SeaweedFS und
+RustFS gemessen; AWS selbst nicht) **[S]**. Mit R1 und L1 tritt das im Panel
 kaum auf; Tests gegen den Speicher akzeptieren beides, wie
 `compose/objectstore/smoke.py` heute **[P]**.
 
@@ -609,10 +671,21 @@ kaum auf; Tests gegen den Speicher akzeptieren beides, wie
   sobald die Zeilen gelöscht sind **[A]**.
 - **Für die Bytes:** spätestens einen Tag später, durch Aufräumer oder Regel
   (§3.3) **[M]**.
-- **Für Zeilen:** Job, Ergebnis, Rezept und Ereignisse mit `expires_at`
-  (Spalte nach architekturplan 10, `result.expires_at`). Das Rezept lebt so
-  lange wie das längste Ergebnis, das es verwendet; ein Rezept mit AOI ist
-  personenbezogen (Q8) **[A]**.
+- **Für Zeilen:** Job, Ergebnis und Ereignisse mit `expires_at` (Spalte nach
+  architekturplan 10, `result.expires_at`).
+- **Für das Rezept** ist der Bezugspunkt offen. `adr/0014` §9 sagt, die
+  `recipe_id` bleibe bei erneutem Start gleich und laufe „mit dem Rezept nach
+  7 Tagen ab“. Startet derselbe Nutzer das Rezept an Tag 6 neu, ohne Treffer,
+  lebt das neue Ergebnis bis Tag 13. Zwei Lesarten (F13):
+  - **7 Tage nach der letzten Nutzung:** Jeder Lauf oder Treffer setzt die
+    Frist des Rezepts neu; das Rezept lebt so lange wie sein jüngstes
+    Ergebnis. Nie gibt es ein Ergebnis ohne Rezept.
+  - **7 Tage ab Annahme, fest:** Ein Start nach Tag 7 ist ein neues Rezept mit
+    neuer `recipe_id`; ein Ergebnis kann sein Rezept überleben. Die AOI liegt
+    dann noch in `recipe.json` neben dem Ergebnis (§8.1), nicht mehr in der
+    Datenbank.
+  Ein Rezept mit AOI ist personenbezogen (Q8); in beiden Lesarten gibt es nach
+  7 Tagen ohne Nutzung nichts mehr davon **[A]**.
 
 ### 7.2 Zwei Schichten
 
@@ -649,7 +722,7 @@ Garage kennt im Filter nur Präfix und Größe (`adr/0012` §4.1) **[P]**.
 
 | Option | Was belegt den Ablauf | Aufwand |
 |---|---|---|
-| **B1** | (a) Test des Aufräumers mit injizierter Uhr gegen `moto` in `pytest`; (b) Schritt in `compose-topology`: Regel gesetzt und gelesen, Prüfung beim Start von `jobs`; (c) die Messung in §3.3 an der Binärdatei, wiederholt bei jedem Wechsel der Garage-Version | klein; (c) ist kein CI-Lauf |
+| **B1** | (a) Test des Aufräumers mit injizierter Uhr gegen `moto` in `pytest`; (b) in `compose-topology`: `compose/objectstore/smoke.py` liest die Regel zurück, und `worker` wird nur `healthy`, wenn seine Startprüfung (W1) die Regel findet — beides ohne Änderung an `.github/`, weil der Schritt schon läuft; (c) die Messung in §3.3 an der Binärdatei, wiederholt bei jedem Wechsel der Garage-Version | klein; (c) ist kein CI-Lauf |
 | B2 | B1 und zusätzlich ein wöchentlicher CI-Job, der Garage aus dem Quelltext baut (dynamisch gelinkt) und den Lauf aus §3.3 mit `libfaketime` wiederholt | rund 7 Minuten Bau je Lauf ohne Cache **[M]**; Änderung an `.github/` |
 | B3 | ein zeitgesteuerter Lauf über 24 Stunden mit `Days: 1` | ein Runner von GitHub läuft höchstens 6 Stunden je Job **[S]**; braucht einen eigenen Runner |
 
@@ -660,6 +733,11 @@ dort nicht **[A]**, nicht gemessen.
 **Empfehlung B1.** Der Ablauf, den Nutzer sehen, hängt am Aufräumer und an
 `expires_at` (A1), und genau das prüft (a) in jeder CI. Die Regel ist das Netz;
 ihr Greifen ist für v2.4.1 hier gemessen.
+
+**Das weicht von `adr/0012` §9 Punkt 5 ab.** Dort steht für die Regel: ein
+Test mit verstellter Uhr oder ein Lauf über 24 Stunden in der CI, „sonst gilt
+Ablauf als unbelegt“. B1 belegt in der CI den Aufräumer, nicht die Regel. Wer
+den Wortlaut halten will, wählt B2.
 
 ---
 
@@ -721,7 +799,15 @@ schickt. Ohne Regel bekäme er einen Link, der in Minuten erlischt.
   getrennte Volumes (oder Unterordner) für `api` und `worker`; das Volume mit
   Admin-Token und RPC-Secret bleibt bei `objectstore` und den
   Einmal-Schritten **[A]**. Die Form legt M4-06 fest.
-- `.env` bleibt ohne Werte (`.env.example`); erzeugt wird wie heute.
+- **`.env` heute:** `S3_ACCESS_KEY`/`S3_SECRET_KEY` überschreiben den einen
+  erzeugten Schlüssel `earthx-platform` (M3-23). Vorschlag: Sie gelten weiter
+  für diesen Schlüssel, der Besitzerrechte hat und nur für Otto (`show`, `aws`
+  CLI) und die Einmal-Schritte da ist. Die zwei Dienstschlüssel aus §6.4
+  werden immer erzeugt, nie aus `.env` gesetzt **[A]**. `.env` bleibt in der
+  Vorlage leer.
+- **Weitere Variablen:** `S3_ADDRESSING_STYLE` (Vorgabe `path`) und
+  `S3_LIFECYCLE_CHECK` (Vorgabe `required`; `off` nur für einen Anbieter ohne
+  Lebenszyklus, §9.3, dann trägt der Aufräumer allein).
 
 ### 9.2 Nichts in Logs
 
@@ -729,8 +815,10 @@ schickt. Ohne Regel bekäme er einen Link, der in Minuten erlischt.
   `earthx/logging.py` und werden damit auf `WARNING` gehoben, wie `httpx` seit
   M3-16 **[P]**. Grund: Bei `DEBUG` stehen Schlüssel-ID und Signatur im Log
   (§3.2) **[M]**.
-- **Fehlertexte:** `objectstore/errors.py` übernimmt die Schwärzung aus
-  `compose/objectstore/redact.py` (M3-23) für Schlüssel-ID und Secret; jede
+- **Fehlertexte:** `objectstore/errors.py` schwärzt Schlüssel-ID und Secret wie
+  `compose/objectstore/redact.py` (M3-23). Das ist eine Kopie der vier Zeilen:
+  `compose/` liegt außerhalb des Pakets und ist aus `earthx` nicht importierbar
+  **[A]**. Jede
   `ClientError` wird in eine eigene Fehlerklasse ohne Originaltext übersetzt
   **[A]**. Grund: Garage nennt die Schlüssel-ID in `AccessDenied` (§3.2) **[M]**.
 - **Signierte URLs** sind Schlüssel auf Zeit. Sie erscheinen in keinem Log; die
@@ -749,7 +837,7 @@ Secret-Verwaltung. Voraussetzungen beim Anbieter (§15):
   ohne Codeänderung) **[A]**;
 - Lebenszyklus mit Präfix und Abbruch liegengebliebener Multipart-Uploads.
   Fehlt das, trägt der Aufräumer (A1) den Ablauf allein, und `jobs` startet nur
-  mit ausdrücklichem Verzicht auf die Prüfung (F8) **[A]**;
+  mit `S3_LIFECYCLE_CHECK=off` (§9.1, F8) **[A]**;
 - Rechte je Schlüssel getrennt nach Lesen und Schreiben (S1).
 
 Stand bei EU-Anbietern, nur aus Suchtreffern und Doku-Quellen auf GitHub,
@@ -781,7 +869,7 @@ Bewertung **[A]** aus §3–§9: ✅ erfüllt, ⚠ mit Einschränkung, ❌ nicht
 | K4 kein neuer Weg nach außen | ✅ gemessen | ❌ rasterio fragt den Metadatendienst | ✅ | ✅ | ✅ | ✅ |
 | K5 signierte URLs, Dateiname | ✅ gemessen | ✅ | ✅ | ✅ | ⚠ unbelegt | ✅ |
 | K8 verwaltetes S3 | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ jede Abweichung selbst |
-| K9 Teile | ✅ drei Pakete | ⚠ fünf | ❌ elf, enge Bindung | ⚠ eigene Kryptografie | ✅ eines | ⚠ eigener Code |
+| K9 Teile (neu im Image) | ✅ drei Pakete | ⚠ fünf | ❌ zwölf, enge Bindung | ⚠ sieben, eigene Kryptografie | ✅ eines | ⚠ eigener Code |
 
 **Durchsetzung des Ablaufs**
 
@@ -791,6 +879,69 @@ Bewertung **[A]** aus §3–§9: ✅ erfüllt, ⚠ mit Einschränkung, ❌ nicht
 | K6 Frist für Zeilen | ✅ gemeinsam | ⚠ zwei Uhren | ✅ |
 | K6 Beleg in CI | ✅ eigene Uhr | ❌ nur an der Binärdatei | ✅ |
 | K8 verwaltetes S3 | ✅ auch ohne Regel | ⚠ hängt am Anbieter | ✅ |
+
+**Modulname (F1)**
+
+| # | N1 `objectstore` | N2 `services` | N3 `storage` |
+|---|---|---|---|
+| K1, K2 enge Ausnahme | ✅ ein Dienst, ein Vertrag | ⚠ jeder weitere Dienst erbt die Ausnahme | ✅ |
+| K9 Klarheit | ✅ wie der compose-Dienst | ⚠ Sammelbecken | ⚠ verwechselbar mit Quellen |
+
+**Weg zum Browser, Lebensdauer, Endpunkt, Schlüssel (F4–F6)**
+
+| # | R1 Redirect | R2 URL im Dokument | R3 `api` streamt |
+|---|---|---|---|
+| K5 kurze Laufzeit | ✅ 15 min reichen | ⚠ Laufzeit muss die Sitzung decken | ✅ keine URL |
+| 6.4 kein Byte durch das Backend | ✅ | ✅ | ❌ |
+| K9 Teile | ⚠ eine Route mehr | ✅ | ⚠ Streaming in `api` |
+
+| # | L1 15 min | L2 1 h | L3 24 h |
+|---|---|---|---|
+| K5 kurze Laufzeit (11: „kurze Laufzeit“) | ✅ | ⚠ | ❌ geteilte URL ein Tag lang gültig |
+| Download-Manager mit Pausen | ⚠ Neustart über den Link | ✅ | ✅ |
+
+| # | E1 zwei Endpunkte | E2 Reverse-Proxy | E3 `api` streamt |
+|---|---|---|---|
+| Browser erreicht den Speicher | ✅ gemessen | ⚠ nicht gemessen, Pfad in der Signatur | ✅ |
+| K8 verwaltetes S3 | ✅ beide gleich | ⚠ Proxy vor fremdem Dienst | ✅ |
+
+| # | S1 zwei Schlüssel | S2 ein Schlüssel |
+|---|---|---|
+| K5 URL kann wenig | ✅ nur Lesen, gemessen | ❌ Schlüssel-ID mit Schreibrecht in jeder URL |
+| K7 Zugangsdaten | ✅ `api` hält kein Schreibrecht | ⚠ |
+| K9 Teile | ⚠ zwei Schlüssel | ✅ |
+
+**Wer setzt die Regel, wie wird sie belegt (F8, F9)**
+
+| # | W1 Init + Prüfung | W2 `jobs` setzt | W3 nur Doku |
+|---|---|---|---|
+| K6 Regel da | ✅ geprüft beim Start | ✅ | ❌ |
+| K7 Rechte der Anwendung | ✅ ändert nie die Bucket-Konfiguration | ⚠ braucht `PutLifecycleConfiguration` | ✅ |
+| K8 verwaltetes S3 | ✅ Infrastruktur setzt | ✅ | ⚠ |
+
+| # | B1 Aufräumer in CI + Messung | B2 dazu Garage aus Quelltext in CI | B3 24 h |
+|---|---|---|---|
+| K6 Ablauf für Nutzer belegt | ✅ jede CI | ✅ | ✅ |
+| `adr/0012` §9 Punkt 5 wörtlich | ❌ Regel nur in der Sitzung | ✅ wöchentlich | ✅ |
+| K9 Aufwand | ✅ | ⚠ 7 min Bau, `.github/` | ❌ eigener Runner |
+
+**Ablage und Treffer (F10, F11)**
+
+| # | K1 `result_id` | K2 `jobID` | K3 Hash |
+|---|---|---|---|
+| K5 keine fremde Kennung, kein Hash | ✅ | ⚠ `jobID` von A bei Treffer für B | ❌ Q8 |
+
+| # | T1 ≥ 24 h Rest | T2 Kopie | T3 beliebig |
+|---|---|---|---|
+| Nutzer bekommt brauchbare Frist | ✅ | ✅ | ❌ |
+| K9 | ✅ | ⚠ Kopien | ✅ |
+
+**Zugangsdaten (F12)**
+
+| # | `S3_*` und `S3_*_FILE` | nur `S3_*` |
+|---|---|---|
+| K7 nichts in `docker inspect` | ✅ Dateien | ⚠ Werte in der Umgebung des Containers |
+| K4 rasterio bleibt unberührt | ✅ | ✅ |
 
 ---
 
@@ -855,6 +1006,9 @@ Begründung **[A]**, aus §3–§10:
   eigenen Speicher lesen, an `gateway` vorbei): nicht in M4a; eigene Frage, wenn
   sie kommt.
 - Virtuelle Stores (Icechunk) im Speicher: später.
+- Ob `DELETE /jobs/{jobID}` (dismiss, `adr/0014` §9) bei einem fertigen Job
+  das Ergebnis sofort löscht: mit der Job-API in M4-08; ein Ergebnis, das als
+  Treffer anderer Jobs dient, darf dabei nicht verschwinden.
 - Die selbst gehostete Ausgabe und Produktion im Einzelnen: erstes öffentliches
   Deployment.
 
@@ -867,15 +1021,14 @@ Begründung **[A]**, aus §3–§10:
 2. `earthx.services`
 3. `earthx.storage`
 
-**F2 — Wie der Client erlaubt wird (§4.2, §3.5)**
-1. Zeile in 3.1 (`objectstore` importiert nichts Fachliches; `jobs` darf es);
-   `objectstore` als Quelle in `http-only-in-gateway` mit genau einer
-   `ignore_imports`-Zeile `earthx.objectstore.client -> botocore`; Liste um
-   `botocore`, `urllib3`, `s3transfer`, `aiobotocore`, `aioboto3`, `minio`
-   verschärft; Kettenvertrag für `processing` um `earthx.objectstore` und
-   `botocore` **(Empfehlung)**
+**F2 — Wie der Client erlaubt wird (§4.2–§4.4)**
+1. Eine Ausnahmezeile `objectstore.client -> botocore`, Verbotsliste
+   verschärft, Verträge und Nachträge zu B8 und 3.1 wie in §4.2 und §4.4
+   **(Empfehlung)**
 2. Wie 1, aber `objectstore` nicht in `http-only-in-gateway`, sondern mit
-   eigenem Vertrag und eigener Liste ohne `botocore`
+   eigenem Vertrag und eigener Liste; dafür wird
+   `test_http_clients_are_confined_to_gateway` gelockert (es verlangt heute
+   jedes Modul außer `gateway` als Quelle)
 3. Wie 1, ohne die Verschärfung um `urllib3` und die übrigen Clients
 
 **F3 — Client (§5, §3.1, §3.4)**
@@ -899,7 +1052,10 @@ Begründung **[A]**, aus §3–§10:
 
 **F6 — Endpunkt und Schlüssel (§6.3, §6.4)**
 1. Zwei Endpunkte (`S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`), zwei Schlüssel
-   (Worker liest und schreibt, `api` nur lesen) **(Empfehlung)**
+   (Worker liest und schreibt, `api` nur lesen). Die ID des Leseschlüssels
+   steht dann bewusst in jeder signierten URL; M3-23 hatte Schlüssel-IDs als
+   nicht auszugeben behandelt, hier gilt das nur noch für Schlüssel mit
+   Schreibrecht **(Empfehlung)**
 2. Zwei Endpunkte, ein Schlüssel
 3. Reverse-Proxy unter dem Host des Frontends, ein Schlüssel
 
@@ -911,15 +1067,18 @@ Begründung **[A]**, aus §3–§10:
 
 **F8 — Wer setzt die Bucket-Regel (§7.3)**
 1. `objectstore-init` über die Admin-API, in Produktion die Infrastruktur;
-   `jobs` prüft beim Start lesend und startet ohne Regel nicht
+   `jobs` prüft beim Start lesend und startet ohne Regel nicht; abschaltbar nur
+   mit `S3_LIFECYCLE_CHECK=off` für einen Anbieter ohne Lebenszyklus
    **(Empfehlung)**
 2. `jobs` setzt sie beim Start selbst
 3. Nur dokumentiert
 
 **F9 — Beleg des Ablaufs (§7.4)**
-1. Aufräumer-Test mit eigener Uhr in jeder CI, Regel in `compose-topology`
-   gesetzt und gelesen, Greifen der Regel durch die Messung hier, wiederholt
-   bei jedem Garage-Wechsel **(Empfehlung)**
+1. Aufräumer-Test mit eigener Uhr in jeder CI; Regel in `compose-topology`
+   gesetzt und gelesen (über `smoke.py` und die Startprüfung, ohne Änderung an
+   `.github/`); Greifen der Regel durch die Messung hier, wiederholt bei jedem
+   Garage-Wechsel. Abweichung vom Wortlaut von `adr/0012` §9 Punkt 5
+   **(Empfehlung)**
 2. Wie 1, dazu ein wöchentlicher CI-Job mit Garage aus dem Quelltext und
    `libfaketime`
 3. Lauf über 24 Stunden auf einem eigenen Runner
@@ -941,6 +1100,25 @@ Begründung **[A]**, aus §3–§10:
    **(Empfehlung)**
 2. Wie 1, aber nur `S3_*` als Wert (ohne `_FILE`); compose reicht die Werte aus
    den Dateien über ein Startskript durch
+
+**F13 — Bezugspunkt der Rezeptfrist (§7.1)**
+1. 7 Tage nach der letzten Nutzung: jeder Lauf oder Treffer setzt die Frist
+   des Rezepts neu; nie ein Ergebnis ohne Rezept **(Empfehlung)**
+2. 7 Tage ab Annahme, fest; ein späterer Start ist ein neues Rezept
+
+**Kleinentscheidungen, die mit der Antwort gelten, wenn Otto nicht
+widerspricht:**
+
+- Dateiname über `response-content-disposition` aus Datensatz, Operator und
+  Datum, nie AOI oder Hash (§6.5).
+- `Cache-Control: no-store` auf dem `303` (§6.1).
+- `S3_PUBLIC_ENDPOINT` nur mit `https`, außer `localhost` und `127.0.0.1`
+  (§6.3).
+- `Config(proxies={})` und ausdrückliche Timeouts im Client (§5).
+- `.env` überschreibt weiter nur den Besitzerschlüssel aus M3-23; die zwei
+  Dienstschlüssel werden immer erzeugt (§9.1).
+- Weitere Präfixe bekommen eigene Regeln, wenn sie entstehen (§7.3).
+- Nachträge zu B8 und 3.1 wie in §4.4, sobald F2 beantwortet ist.
 
 ---
 
