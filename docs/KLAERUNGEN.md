@@ -75,6 +75,8 @@ Der M1-Test "kein Request außerhalb des Gateways" besteht deshalb aus: (a) stat
 
 Gemeint ist: Der Worker-Kern ist **plattformunabhängig und zustandslos**. Er hat keinen Zugriff auf Plattformdienste (Datenbank, Queue, Objektspeicher, interne APIs) und hält keinen Zustand zwischen Aufrufen. Lesender Zugriff auf die **Datenquellen** ist erlaubt und nötig, und zwar über die Bibliothek `gateway`, die deshalb auch im lokalen Runner mitläuft. Die Allowlist ergibt sich dort aus den aufgelösten Asset-Adressen des Rezepts. "Umgeht das Fetch-Gateway" im Architekturplan 7.7 meint nur: Die Zugriffe kommen von der IP des Nutzers statt von der Plattform.
 
+**Nachtrag 02.10.2026:** Der Worker-Kern ist `processing`; `jobs` ist die Hülle mit Queue und Datenbank (Q4, 02.10.2026).
+
 ### B10. Capability-Flags und generische Operatoren — *Vorschlag (Auslegung)*
 
 Capability-Flags werden **im Eintrag des jeweiligen Datensatzes** gesetzt: Jeder Datensatz schaltet jede Fähigkeit ausdrücklich frei. Generische Operatoren (Band-Math, Reprojektion) sind damit unbedenklich, weil sie nirgends stillschweigend gelten. Datensatzspezifische Operatoren (z. B. die polarimetrische Dekomposition) bleiben zusätzlich an eine Capability gebunden, die nur Datensätze mit passenden Daten setzen — für `decomp.py` ist das komplexe Quad-Pol-Daten (ENTSCHEIDUNGEN §3). Eine Registry-Prüfung (Test) verlangt für jeden Eintrag vollständig gesetzte Flags.

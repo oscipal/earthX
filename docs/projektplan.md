@@ -2,7 +2,7 @@
 
 > **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
 
-Stand: 2026-09-30 · Version 1.4 (M3 abgenommen am 30.09.2026; M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21)
+Stand: 2026-10-02 · Version 1.5 (M4-Schnitt nach `plans/m4-processing-kern.md` Q1–Q16 nachgezogen; M3 abgenommen am 30.09.2026; M2 abgenommen)
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
 
@@ -295,10 +295,11 @@ Health-Status je Quelle ist **nicht** Teil von M3, sondern kommt mit M5.
 | | |
 |---|---|
 | Ziel | Rezept und Operator-Registry tragen Vorschau, Job, Cache, Provenienz und lokale Ausführung |
-| Inhalt | **Erste Schritte (`adr/0011`, Otto 30.09.2026):** M4-01a Zugriffsauflösung nach `access` und gemeinsame Stelle für Items; M4-01b `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen. Danach: Rezept-Schema mit kanonischem Hash; Operator-Registry mit JSON-Schema, Kostenmodell, Metadaten-Transformation; Worker-Kern als reine Funktion; Stufen T1 und T2; Job-Queue (vorher Spike); Ergebnis-Cache; Ablaufdatum; lokaler Runner als Einmalbefehl mit festem Image-Tag; Vergleichstest Cloud gegen lokal |
-| Funktionen | Operatoren: Band-Math, Reprojektion/Resampling/Auflösung, Masking, Normalisierung, Ausgabeformat; automatische Skalierung und Einheiten; aus Schemas generiertes Processing-Panel; "Parameter von Datensatz übernehmen"; Kostenschätzung vor Start; Download mit Attribution, Zitat (BibTeX) und Rezept; Methodentext-Generator; Permalinks |
+| Maßgeblich | `plans/m4-processing-kern.md` (Fassung 1 vom 02.10.2026). **Teilung (Q2):** M4a ist der Kern (M4-00 bis M4-15), M4b der Ausbau (M4-16 bis M4-19: lokaler Runner, Mosaik im Kachel-Pfad, Masking und Normalisierung, Permalinks, Methodentext, Skalierung); die Abnahme kommt einmal am Ende (M4-20) |
+| Inhalt | **Erste Schritte (`adr/0011`, Otto 30.09.2026):** M4-01a Zugriffsauflösung nach `access` und gemeinsame Stelle für Items; M4-01b `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen. Danach: Rezept-Schema mit kanonischem Hash; Operator-Registry mit JSON-Schema, Kostenmodell, Metadaten-Transformation; Worker-Kern als reine Funktion; Stufen T1 und T2; Job-Queue (vorher Spike); Weg zum Objektspeicher als eigenes Modul für Plattformdienste mit signierten URLs (`adr/0015`); Export über dem synchronen Deckel als Job; Mosaik ganzer Szenen je Überflug als Job; Mosaik im Kachel-Pfad; Ergebnis-Cache; Ablaufdatum (7 Tage als Startwert); lokaler Runner offline mit Rezeptdatei, lokal gebautes Image mit festem Tag (Q12); Vergleichstest Cloud gegen lokal |
+| Funktionen | Operatoren: zuerst Band-Math und Reprojektion/Resampling (Q6), weitere danach (Masking, Normalisierung, Auflösung, Ausgabeformat); automatische Skalierung und Einheiten; aus Schemas generiertes Processing-Panel; "Parameter von Datensatz übernehmen"; Kostenschätzung vor Start; Download mit Attribution, Zitat (BibTeX) und Rezept; Methodentext-Generator; Permalinks |
 | Abnahme | Dasselbe Rezept liefert als Vorschau, als Job und im lokalen Runner übereinstimmende Ergebnisse (Toleranz definiert); zweiter identischer Auftrag kommt aus dem Cache |
-| Deine Entscheidungen | ADR Job-Queue; welche Operatoren zuerst; Status lokaler Ergebnisse |
+| Deine Entscheidungen | `adr/0013` Job-Queue, `adr/0014` Rezept und Operator-Registry, `adr/0015` Weg zum Objektspeicher, `adr/0016` lokaler Runner; Operatoren (Q6) und Status lokaler Ergebnisse (Q12) sind entschieden |
 | Modelle | Rezept- und Registry-Design `architect` (Opus, xhigh); Operatoren einzeln als Stufe-A-Issues mit Sonnet, gut parallelisierbar |
 
 ### M5 — Discovery und Suche (Inkrement 5)
@@ -371,7 +372,7 @@ Viewer-Strangs (z. B. V-1, V-2 …), „VPn" ein ganzes Paket.
 | Chatbot, Discovery-Agent, Modell-Registry, externe Engines, Client-Side Computing | Sammlung | M7 |
 | Komposit, Vorher/Nachher, Stapelverarbeitung, Qualitäts-Overlay, Trainingsdatensatz-Baukasten | Vorschläge | M7 |
 | Arbeitsbereiche, DOI für Rezepte, Benachrichtigungen, eigene Daten per URL, Anbieter-Statistik, Ähnlichkeitssuche | Vorschläge | M7 |
-| Bug-Report mit automatischer Triage und Behebung durch Claude | Gespräch | M0 (Stufe 1), Stufe 2 vertagt bis zur Deployment-Frage (D9), M4, M6 |
+| Bug-Report mit automatischer Triage und Behebung durch Claude | Gespräch | M0 (Stufe 1), Stufe 2 und 3 vertagt bis zur Deployment-Frage (D9, Q15), M4 liefert nur die Rezept-ID, M6 |
 | Verworfen/ersetzt: Layer frei skalieren, voller Plot-Editor, 3D, DOI als Ausschlusskriterium | Bewertung | — |
 
 ---
@@ -443,7 +444,7 @@ flowchart TD
 |---|---|---|
 | 1 | GitHub-Issue-Vorlage "Bug" mit den strukturierten Feldern; Triage-Routine auf neue Issues mit Label `bug-report`; Fix als PR. Reicht, solange du und wenige Tester die einzigen Nutzer seid. | M0 |
 | 2 | Knopf "Fehler melden" im Viewer, Backend erzeugt das bereinigte Issue; automatischer Kontext (Version, Datensätze, Frontend-Fehler) | vertagt bis zur Frage nach dem Deployment (D9, 2026-09-20): braucht ein GitHub-Schreibrecht und damit ein Secret |
-| 3 | Rezept/Permalink und Trace-ID als Kontext; Reproduktion über das Rezept | M4 |
+| 3 | Rezept/Permalink und Trace-ID als Kontext; Reproduktion über das Rezept | vertagt zusammen mit Stufe 2 (Q15, 02.10.2026); M4 liefert nur die Rezept-ID als Grundlage |
 | 4 | Status für den Melder (eingegangen, in Prüfung, bestätigt, behoben in Version X), Missbrauchsschutz über Login und Quotas, `ux-friction`-Auswertung | M6 |
 
 Technischer Auslöser: Routinen lassen sich laut Dokumentation per Zeitplan, API-Aufruf oder GitHub-Ereignis starten. Ob "Issue erstellt/gelabelt" als Ereignis direkt unterstützt wird, ist in M0 zu prüfen; sicherer Rückfallweg ist ein kleiner GitHub-Actions-Workflow auf `issues: labeled`, der die Routine per API-Aufruf startet.
@@ -507,10 +508,10 @@ Ein PR ist fertig, wenn:
 | TiTiler-Basis ja/nein | M2 | **entschieden:** `titiler.core` nach Spike (`ENTSCHEIDUNGSLOG.md`, 2026-09-19/20; `adr/0006`) |
 | ESA-only oder Quellenbreite | M3 | **entschieden:** Quellenbreite (`ENTSCHEIDUNGSLOG.md`, 2026-09-23) |
 | Welche Nicht-STAC-Quelle | M3 | **entschieden:** Copernicus DEM GLO-30 direkt aus dem Bucket, zugleich dritter Datensatz (`ENTSCHEIDUNGSLOG.md`, 2026-09-23; `adr/0009`) |
-| Adapter-Interface (ADR) | Ende M3 | aus drei realen Quellen ableiten |
+| Adapter-Interface (ADR) | Ende M3 | **entschieden:** `adr/0011` (30.09.2026) |
 | MinIO-Ersatz | vor M4 | **entschieden:** Garage ersetzt MinIO (`adr/0012`, M3-20, M3-23) |
-| Job-Queue | M4 | Postgres-gestützt, nach Spike |
-| Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | zunächst "selbst bezeugt", nicht im gemeinsamen Cache |
+| Job-Queue | M4 | Postgres-gestützt; wird mit `adr/0013` entschieden (M4-02) |
+| Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | **entschieden:** `self_attested`, nie im gemeinsamen Cache (Q12, 02.10.2026) |
 | Register und Portale für den Harvester | M5 | STAC Index/Atlas zuerst |
 | Cloud-Anbieter, Identity-Provider | M6 | nach Datennähe, Egress, EU/CH, kein Lock-in |
 | Registrierungspflicht für alles oder anonymes Ansehen | M6 | anonym ansehen, Login ab Jobs/Downloads/API |
