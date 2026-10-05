@@ -1,6 +1,10 @@
 # ADR 0015 — Weg zum Objektspeicher
 
-- **Status:** Entwurf, wartet auf Otto (Fragen in §14).
+- **Status:** **Angenommen** von Otto am 2026-10-05.
+  - Alle dreizehn Fragen aus §14 sind nach Empfehlung beantwortet (F1–F13:
+    Option 1); die Kleinentscheidungen gelten.
+  - Dazu Auflagen zu F2, F8, F9 und F13. Sie stehen in §14a und sind in §4.1,
+    §4.4, §7.1, §7.3, §7.4, §9.1 und §13 eingearbeitet.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-04 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode und keine Änderung an
@@ -436,6 +440,11 @@ Modul mit eigenem Vertrag; so bleibt jede Ausnahme so eng wie hier **[A]**.
 | `objectstore/results.py` | `upload_result(result_id, name, path)`, `signed_download(result_id, name, *, not_after, filename) -> str`, `delete_result(result_id)`, `lifecycle_ok() -> bool` |
 | `objectstore/errors.py` | eigene Fehlerklassen; Texte laufen durch die Schwärzung (§9.2) |
 
+**Endpunkt nur aus der Konfiguration (Auflage F2).** Endpunkte, Region und
+Bucket kommen ausschließlich aus der Umgebung des Prozesses (§9.1), nie aus
+einem Rezept, einer Anfrage oder der Datenbank. `StoreConfig` entsteht einmal
+beim Start; ein Test belegt, dass kein anderer Weg zum Client führt.
+
 Keine Funktion nimmt Bucket, Endpunkt, Host oder URL entgegen. `result_id` und
 `name` werden gegen ein festes Muster geprüft (`result_id` wie
 `secrets.token_urlsafe(16)`, `name` aus einer festen Menge wie `result.tif`,
@@ -519,20 +528,22 @@ und `urllib3`.
 
 B8 und die Zeile `gateway` in 3.1 („Alle ausgehenden HTTP/S3-Zugriffe“), dazu
 der Name des Vertrags („HTTP and S3 clients live only in gateway“), sagen nach
-diesem ADR nicht mehr ganz, was gilt. **Vorschlag für Nachträge mit Datum,
-Originaltext bleibt:**
+diesem ADR nicht mehr ganz, was gilt. **Nachträge mit Datum, Originaltext
+bleibt** — mit der Annahme von F2 geschrieben (`KLAERUNGEN.md` B8,
+`architekturplan.md` 3.1, Nachträge vom 2026-10-05):
 
-- `KLAERUNGEN.md` B8: „Der eigene Objektspeicher ist ein Plattformdienst, kein
+- `KLAERUNGEN.md` B8: Der eigene Objektspeicher ist ein Plattformdienst, kein
   Weg nach außen. Sein Client liegt in `objectstore` (`adr/0015`); die einzige
   Ausnahme vom Client-Verbot ist der Import `earthx.objectstore.client ->
-  botocore`. Für Datenquellen gilt B8 unverändert.“
+  botocore`. Der Endpunkt kommt nur aus der Konfiguration, nie aus Rezept,
+  Anfrage oder Datenbank. Für Datenquellen gilt B8 unverändert.
 - `architekturplan.md` 3.1, Zeile `gateway`: „alle ausgehenden Zugriffe auf
   Datenquellen; der eigene Objektspeicher über `objectstore`“.
 - Der Vertragsname bleibt, sein Kommentar in `.importlinter` nennt die
   Ausnahme.
 
-B8 ist in `CLAUDE.md` als unverrückbar genannt; deshalb steht der Nachtrag hier
-als Vorschlag zur Entscheidung (F2), nicht als Folge.
+B8 ist in `CLAUDE.md` als unverrückbar genannt; deshalb stand der Nachtrag
+hier zur Entscheidung (F2). Otto hat ihn mit F2 angenommen.
 
 ---
 
@@ -686,6 +697,11 @@ kaum auf; Tests gegen den Speicher akzeptieren beides, wie
     Datenbank.
   Ein Rezept mit AOI ist personenbezogen (Q8); in beiden Lesarten gibt es nach
   7 Tagen ohne Nutzung nichts mehr davon **[A]**.
+- **Entschieden (F13, Option 1, mit Auflage):** Die Frist des Rezepts ist
+  7 Tage nach der letzten Nutzung. **Nur ein Lauf oder ein Cache-Treffer**
+  verlängert sie. Ansehen oder Abrufen eines Rezepts (Status, Ergebnisdokument,
+  `recipe.json`, später ein Permalink) verlängert sie nie. Für Permalinks
+  (M4-19) wird die Frist neu entschieden (§13).
 
 ### 7.2 Zwei Schichten
 
@@ -714,6 +730,10 @@ Job der Queue oder Schleife im Worker), legt `adr/0013` fest **[A]**.
 **Empfehlung W1.** Die Prüfung beim Start ist mit dem Leseschlüssel möglich
 (§3.3); `jobs` nutzt seinen eigenen.
 
+**Auflage F8:** `S3_LIFECYCLE_CHECK=off` schreibt beim Start eine Warnung ins
+Log (ohne Werte aus der Konfiguration) und ist in `docker-compose.yml` nie
+gesetzt. Ein Test belegt beides.
+
 **Andere Präfixe** (`tmp/` für abgebrochene Uploads, später Icechunk unter
 `virtual/`, architekturplan 10) bekommen eigene Regeln, wenn sie entstehen.
 Garage kennt im Filter nur Präfix und Größe (`adr/0012` §4.1) **[P]**.
@@ -738,6 +758,22 @@ ihr Greifen ist für v2.4.1 hier gemessen.
 Test mit verstellter Uhr oder ein Lauf über 24 Stunden in der CI, „sonst gilt
 Ablauf als unbelegt“. B1 belegt in der CI den Aufräumer, nicht die Regel. Wer
 den Wortlaut halten will, wählt B2.
+
+**Entschieden (F9, Option 1, mit Auflage):** `adr/0012` §9 Punkt 5 hat dazu
+einen Nachtrag vom 2026-10-05. Das Greifen der Regel ist durch die
+Sitzungsmessung vom 02.10.2026 an Garage v2.4.1 belegt (§3.3).
+
+**Wechsel der Garage-Version.** Eine Anleitung dafür gibt es im Repo nicht;
+deshalb steht sie hier. Wer das Image in `docker-compose.yml` auf eine neue
+Version oder einen neuen Digest setzt:
+
+1. baut die neue Version aus dem Tag mit `cargo build --release --locked`
+   (dynamisch gelinkt, §Methode);
+2. wiederholt den Lauf aus §16.3 mit `libfaketime` (Objekte schreiben,
+   Neustarts mit +1, +2, +7, +8 Tagen) und vergleicht mit der Tabelle in
+   §3.3;
+3. trägt Datum, Version und Ergebnis als Nachtrag in §3.3 dieses ADR ein; weicht
+   das Ergebnis ab, wird nicht gewechselt, bevor Otto entschieden hat.
 
 ---
 
@@ -807,7 +843,8 @@ schickt. Ohne Regel bekäme er einen Link, der in Minuten erlischt.
   Vorlage leer.
 - **Weitere Variablen:** `S3_ADDRESSING_STYLE` (Vorgabe `path`) und
   `S3_LIFECYCLE_CHECK` (Vorgabe `required`; `off` nur für einen Anbieter ohne
-  Lebenszyklus, §9.3, dann trägt der Aufräumer allein).
+  Lebenszyklus, §9.3, dann trägt der Aufräumer allein; mit Warnung beim Start
+  und nie in `docker-compose.yml`, Auflage F8).
 
 ### 9.2 Nichts in Logs
 
@@ -994,6 +1031,14 @@ Begründung **[A]**, aus §3–§10:
    Konfigurationsfehler ohne Werte im Text.
 6. Test, dass der Client mit `proxies={}` gebaut ist und ein
    `HTTP_PROXY` in der Umgebung ihn nicht umleitet (§3.2).
+7. Auflage F2: Test, dass der Client nur aus `StoreConfig` aus der Umgebung
+   entsteht; keine öffentliche Funktion nimmt Endpunkt, Host, Bucket oder URL.
+8. Auflage F8: Test, dass `S3_LIFECYCLE_CHECK=off` beim Start genau eine
+   Warnung ohne Konfigurationswerte schreibt, und dass `docker-compose.yml` die
+   Variable nicht setzt.
+9. Auflage F13: Test, dass nur ein Lauf oder Treffer die Frist eines Rezepts
+   verlängert, ein Abruf von Status, Ergebnis oder `recipe.json` nicht
+   (M4-08).
 
 ---
 
@@ -1006,6 +1051,9 @@ Begründung **[A]**, aus §3–§10:
   eigenen Speicher lesen, an `gateway` vorbei): nicht in M4a; eigene Frage, wenn
   sie kommt.
 - Virtuelle Stores (Icechunk) im Speicher: später.
+- **Offen (Auflage F13): Frist für Permalinks.** Wird ein Rezept per
+  Permalink geteilt (M4-19), ist die Frist neu zu entscheiden. Bis dahin
+  verlängert nur ein Lauf oder Treffer die Frist (§7.1).
 - Ob `DELETE /jobs/{jobID}` (dismiss, `adr/0014` §9) bei einem fertigen Job
   das Ergebnis sofort löscht: mit der Job-API in M4-08; ein Ergebnis, das als
   Treffer anderer Jobs dient, darf dabei nicht verschwinden.
@@ -1014,12 +1062,18 @@ Begründung **[A]**, aus §3–§10:
 
 ---
 
-## 14. Fragen an Otto
+## 14. Fragen an Otto — beantwortet am 2026-10-05
+
+Otto hat alle dreizehn Fragen mit Option 1 beantwortet und die
+Kleinentscheidungen angenommen. Die Fragen stehen mit ihrem ursprünglichen
+Wortlaut da. Die Auflagen stehen in §14a.
 
 **F1 — Name des Moduls (§4.1)**
 1. `earthx.objectstore` **(Empfehlung)**
 2. `earthx.services`
 3. `earthx.storage`
+
+**Antwort F1: (1)** `earthx.objectstore`.
 
 **F2 — Wie der Client erlaubt wird (§4.2–§4.4)**
 1. Eine Ausnahmezeile `objectstore.client -> botocore`, Verbotsliste
@@ -1031,6 +1085,8 @@ Begründung **[A]**, aus §3–§10:
    jedes Modul außer `gateway` als Quelle)
 3. Wie 1, ohne die Verschärfung um `urllib3` und die übrigen Clients
 
+**Antwort F2: (1)**, mit Auflage F2 (§14a).
+
 **F3 — Client (§5, §3.1, §3.4)**
 1. `botocore` allein, `boto3` nie im Image (Wächtertest),
    `AWS_EC2_METADATA_DISABLED=true` im Dockerfile **(Empfehlung)**
@@ -1038,17 +1094,23 @@ Begründung **[A]**, aus §3–§10:
 3. `obstore` (von der Verbotsliste nehmen, nur für `objectstore`)
 4. eigener SigV4-Client
 
+**Antwort F3: (1)** `botocore` allein, `boto3` nie im Image.
+
 **F4 — Weg der signierten URL zum Browser (§6.1)**
 1. Stabiler Link in `api`, `303` auf eine frisch signierte URL
    **(Empfehlung)**
 2. Signierte URLs direkt im Ergebnisdokument
 3. `api` streamt
 
+**Antwort F4: (1)** stabiler Link in `api` mit `303`.
+
 **F5 — Lebensdauer der signierten URL (§6.2)**
 1. 15 Minuten, nie über `expires_at`; `410` ab weniger als 60 Sekunden
    Restlaufzeit **(Empfehlung)**
 2. 1 Stunde
 3. 24 Stunden
+
+**Antwort F5: (1)** 15 Minuten.
 
 **F6 — Endpunkt und Schlüssel (§6.3, §6.4)**
 1. Zwei Endpunkte (`S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`), zwei Schlüssel
@@ -1059,11 +1121,15 @@ Begründung **[A]**, aus §3–§10:
 2. Zwei Endpunkte, ein Schlüssel
 3. Reverse-Proxy unter dem Host des Frontends, ein Schlüssel
 
+**Antwort F6: (1)** zwei Endpunkte, zwei Schlüssel.
+
 **F7 — Durchsetzung der 7 Tage (§7.2)**
 1. Aufräumer in `jobs` für Objekte und Zeilen, Bucket-Regel als Netz
    **(Empfehlung)**
 2. Nur Bucket-Regel; Zeilen getrennt
 3. Nur Aufräumer
+
+**Antwort F7: (1)** Aufräumer in `jobs`, Bucket-Regel als Netz.
 
 **F8 — Wer setzt die Bucket-Regel (§7.3)**
 1. `objectstore-init` über die Admin-API, in Produktion die Infrastruktur;
@@ -1072,6 +1138,8 @@ Begründung **[A]**, aus §3–§10:
    **(Empfehlung)**
 2. `jobs` setzt sie beim Start selbst
 3. Nur dokumentiert
+
+**Antwort F8: (1)**, mit Auflage F8 (§14a).
 
 **F9 — Beleg des Ablaufs (§7.4)**
 1. Aufräumer-Test mit eigener Uhr in jeder CI; Regel in `compose-topology`
@@ -1083,16 +1151,22 @@ Begründung **[A]**, aus §3–§10:
    `libfaketime`
 3. Lauf über 24 Stunden auf einem eigenen Runner
 
+**Antwort F9: (1)**, mit Auflage F9 (§14a).
+
 **F10 — Ablage und Ergebnis ohne Fassung (§8.1, §8.2)**
 1. `results/{result_id}/{name}` mit eigener zufälliger `result_id`; Ergebnisse
    ohne Fassung ebenso 7 Tage, nur ohne Cache-Eintrag **(Empfehlung)**
 2. `results/{jobID}/{name}`; sonst wie 1
 3. Wie 1, aber Ergebnisse ohne Fassung nur 24 Stunden (zweiter Präfix)
 
+**Antwort F10: (1)** `results/{result_id}/{name}`; Ergebnisse ohne Fassung 7 Tage ohne Cache-Eintrag.
+
 **F11 — Restlaufzeit eines Cache-Treffers (§8.3)**
 1. Treffer nur bei mindestens 24 Stunden Restlaufzeit **(Empfehlung)**
 2. Treffer kopiert das Objekt mit neuer Frist
 3. Treffer mit beliebiger Restlaufzeit
+
+**Antwort F11: (1)** Treffer nur bei mindestens 24 Stunden Restlaufzeit.
 
 **F12 — Zugangsdaten und Logs (§9.1, §9.2)**
 1. `S3_*` und `S3_*_FILE`, nie `AWS_*`; ein Volume je Dienst; `botocore` und
@@ -1101,13 +1175,16 @@ Begründung **[A]**, aus §3–§10:
 2. Wie 1, aber nur `S3_*` als Wert (ohne `_FILE`); compose reicht die Werte aus
    den Dateien über ein Startskript durch
 
+**Antwort F12: (1)** `S3_*` und `S3_*_FILE`.
+
 **F13 — Bezugspunkt der Rezeptfrist (§7.1)**
 1. 7 Tage nach der letzten Nutzung: jeder Lauf oder Treffer setzt die Frist
    des Rezepts neu; nie ein Ergebnis ohne Rezept **(Empfehlung)**
 2. 7 Tage ab Annahme, fest; ein späterer Start ist ein neues Rezept
 
-**Kleinentscheidungen, die mit der Antwort gelten, wenn Otto nicht
-widerspricht:**
+**Antwort F13: (1)**, mit Auflage F13 (§14a).
+
+**Kleinentscheidungen** (angenommen am 2026-10-05):
 
 - Dateiname über `response-content-disposition` aus Datensatz, Operator und
   Datum, nie AOI oder Hash (§6.5).
@@ -1119,6 +1196,23 @@ widerspricht:**
   Dienstschlüssel werden immer erzeugt (§9.1).
 - Weitere Präfixe bekommen eigene Regeln, wenn sie entstehen (§7.3).
 - Nachträge zu B8 und 3.1 wie in §4.4, sobald F2 beantwortet ist.
+
+---
+
+## 14a. Auflagen (Otto, 2026-10-05)
+
+- **F2:** Der Endpunkt kommt ausschließlich aus der Konfiguration, nie aus
+  Rezept, Anfrage oder Datenbank (§4.1). Die Nachträge zu `KLAERUNGEN.md` B8
+  und `architekturplan.md` 3.1 sind in diesem PR geschrieben (§4.4).
+- **F8:** `S3_LIFECYCLE_CHECK=off` schreibt beim Start eine Warnung ins Log
+  und ist in `docker-compose.yml` nie gesetzt (§7.3, §9.1).
+- **F9:** Nachtrag in `adr/0012` §9 Punkt 5: Das Greifen der Regel ist durch
+  die Sitzungsmessung vom 02.10.2026 an Garage v2.4.1 belegt. Bei jedem
+  Wechsel der Garage-Version wird die Messung wiederholt; eine Anleitung zum
+  Versionswechsel gab es nicht, deshalb steht der Punkt in §7.4 dieses ADR.
+- **F13:** Nur ein Lauf oder ein Cache-Treffer verlängert die Frist eines
+  Rezepts, Ansehen oder Abrufen nie (§7.1). Für Permalinks (M4-19) wird die
+  Frist neu entschieden; offener Punkt in §13.
 
 ---
 
