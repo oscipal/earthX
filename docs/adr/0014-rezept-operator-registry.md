@@ -7,6 +7,9 @@
     §4.5, §5.4 und §6.3 eingearbeitet.
   - **F7a** (Skalierung, wenn das Item keine trägt) hat Otto am selben Tag mit
     Option 1 entschieden (§15a, §5.4).
+  - **Nachtrag vom 2026-10-05:** §15b nennt die Stellen, an denen die
+    Annahme von `adr/0013` (Job-Queue, Hülle `jobs`) diesen Text berührt. Der
+    Originaltext bleibt stehen.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -1483,6 +1486,27 @@ Befund [M]:
 **Antwort F7a: (1)** Skalierung aus dem Item, wo vorhanden. Sonst gilt die
 generische CF-Dekodierung des Readers, mit Quelle im Rezept und Vergleich, wo
 beide vorhanden sind. Umgesetzt in §5.4.
+
+---
+
+## 15b. Nachtrag vom 2026-10-05: Berührungen mit `adr/0013`
+
+`adr/0013` (Job-Queue und Hülle `jobs`) hat Otto am 2026-10-05 angenommen. Mit
+der Auflage zu dessen F6 steht hier, wo es diesen Text berührt. Der
+Originaltext oben bleibt unverändert; maßgeblich ist `adr/0013` §9 und §6.
+
+| Stelle hier | Was dort steht | Was gilt jetzt | Beleg |
+|---|---|---|---|
+| §9 „Kennungen (F15)“: „ein Job ist dagegen ein Lauf“ | ein `jobID` je Lauf | **Der Job ist vom Lauf getrennt.** Ein Job ist ein Auftrag; gleiche Aufträge können sich einen internen Lauf teilen. Jeder Auftrag hat eine eigene zufällige `jobID` mit eigenem Status und eigenem `dismiss`. | `adr/0013` §9 Punkt 1 (F6 Option 1) |
+| §9 „Kennungen (F15)“: „`recipe_id` bleibt gleich, wenn derselbe Nutzer dasselbe Rezept erneut startet oder ein Cache-Treffer antwortet“ | gemeinsame `recipe_id` | **Eigene `recipe_id` je Auftrag**, auch bei einem Cache-Treffer. Ohne Konten ist „derselbe Nutzer“ nicht erkennbar, und eine gemeinsame Kennung verbände die Aufträge zweier Personen. Der erneute Start über eine bekannte `recipe_id` (Permalink) ist Sache von M4-19. | `adr/0013` §9 Punkt 2 |
+| §8 und §7.3 Punkt 2: „`jobs` und der Runner rufen beim Start `processing.worker_environment()` auf“ | der Aufseher bzw. der Runner | **Das Kind je Job ruft es beim Start auf** (`jobs/child.py`); der Aufseher liest kein Raster. Die Wirkung bleibt: Die Optionen gelten im Hauptthread des Prozesses, der liest. | `adr/0013` §9 Punkt 3, §5.3, §6.2 |
+| §13: „`jobs` … nur `processing`“, „Keine Importregel ändert sich“ | Zeile `jobs` und `.importlinter` unverändert | **Überholt durch Q4 (02.10.2026):** `jobs` darf psycopg; `no-database-in-worker-core` gilt nur noch für `processing`, dort mit `psycopg_pool` und `asyncpg`. | `adr/0013` §6.1 (F2) |
+| §12 „Lücke für später“ und §14: Worker-Einstieg offen | Vorschlag Kompositionswurzel in `api` | **Der Einstieg bleibt in `jobs`** (F10 Option 2). Die Lücke beim Quad-Pol-Operator bleibt offen; die Logzeile vom 02.10.2026 ebenso. | `adr/0013` §6.2 |
+| §14: Queue, Deckel, SSE, Ort des Worker-Einstiegs | Sache von `adr/0013` | entschieden dort: eigene Queue in `jobs`, Deckel 4 und je Host 2, SSE aus `api`, Einstieg in `jobs` | `adr/0013` §5, §6 |
+
+Keine Abweichung sind die Signatur `processing.run(recipe, *, workdir,
+progress)` (§7.2, §13) und die Registrierung der Operatoren in `processing`
+(§13); beide bleiben.
 
 ---
 
