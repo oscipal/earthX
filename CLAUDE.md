@@ -17,7 +17,7 @@ Die Datei ist nur noch Beschreibung des Code-Stands vom 13.08.2026.
 ## Unverrückbar
 
 - Modulgrenzen laut `docs/architekturplan.md` 3.1; Importregeln nie lockern.
-- Ausgehende Requests nur über `gateway` (KLAERUNGEN B8).
+- Ausgehende Requests nur über `gateway`; einzige Ausnahme ist der eigene Objektspeicher über earthx.objectstore (KLAERUNGEN B8, Nachtrag, adr/0015).
 - Worker-Kern zustandslos und ohne Plattformdienste — keine Datenbank, Queue,
   Objektspeicher oder interne API (KLAERUNGEN B9). Lesen der Datenquellen über
   `gateway` ist erlaubt.
