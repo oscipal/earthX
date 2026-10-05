@@ -538,6 +538,16 @@ Stufe B) muss der Job `compose-topology` belegen:
    werden — ein Test mit verstellter Uhr oder ein zeitgesteuerter Lauf über
    24 Stunden; ohne diesen Beleg gilt „Ablauf“ als unbelegt.
 
+   **Nachtrag 2026-10-05 (`adr/0015` F9, Otto):** Das Greifen der Regel ist
+   durch die Sitzungsmessung vom 02.10.2026 an Garage v2.4.1 belegt
+   (`adr/0015` §3.3, §16.3: aus dem Quelltext gebaut, mit `libfaketime` um
+   +1, +2, +7 und +8 Tage verstellt; Objekte unter `results/` mit dem Lauf am
+   achten Tag gelöscht, ein offener Multipart-Upload am zweiten). In der CI
+   belegt ein Test des Aufräumers mit injizierter Uhr den Ablauf, den Nutzer
+   sehen; die Regel selbst wird dort nur gesetzt und gelesen. Bei jedem
+   Wechsel der Garage-Version wird die Messung wiederholt; die Schritte stehen
+   in `adr/0015` §7.4.
+
 ---
 
 ## 10. Fragen an Otto — beantwortet am 2026-09-26
