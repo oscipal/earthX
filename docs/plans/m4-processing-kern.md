@@ -141,7 +141,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a (nach Merge, neue Session) | offen |
 | M4-02 | Spike Job-Queue → `adr/0013` | M4a | C | Opus (hoch) | — | offen |
 | M4-03 | Rezept und Operator-Registry → `adr/0014` | M4a | C | Opus (xhigh) | — | PR #114, angenommen |
-| M4-04 | Weg zum Objektspeicher → `adr/0015` | M4a | C | Opus (hoch) | — | PR #115, Fragen an Otto |
+| M4-04 | Weg zum Objektspeicher → `adr/0015` | M4a | C | Opus (hoch) | — | PR #115, angenommen |
 | M4-05 | Lokaler Runner → `adr/0016` | M4b | C | Opus (hoch) | `adr/0014` angenommen | offen |
 | M4-06 | Modul für Plattformdienste: signierte URLs, Ablauf | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | Umriss, Fassung 2 |
 | M4-07 | Rezept, Hash, Operator-Registry, Worker-Kern | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014`, M4-01a | Umriss, Fassung 2 |
