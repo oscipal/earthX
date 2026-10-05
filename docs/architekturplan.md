@@ -153,6 +153,15 @@ bleibt für `processing`). Die Vertragsform schlägt `adr/0013` vor. Ein eigenes
 Modul für Plattformdienste (Objektspeicher) kommt mit `adr/0015`; nur `jobs` und
 `api` dürfen es importieren, `gateway` bleibt unverändert.
 
+**Nachtrag 2026-10-05 (`adr/0015`, angenommen):** Neue Zeile `objectstore` —
+zuständig für den Zugang zum eigenen Objektspeicher (Upload, signierte URLs,
+Löschen, Prüfen der Ablaufregel) über einen Endpunkt ausschließlich aus der
+Konfiguration; darf nichts Fachliches importieren. `jobs` darf zusätzlich
+`objectstore` importieren, `api` ohnehin alles. Die Zeile `gateway` heißt damit:
+alle ausgehenden Zugriffe auf **Datenquellen**; der eigene Objektspeicher läuft
+über `objectstore` (KLAERUNGEN B8, Nachtrag 2026-10-05). Die einzige Ausnahme vom
+Client-Verbot ist der Import `earthx.objectstore.client -> botocore`.
+
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
 | Prozess | Last | Skalierung | Zustand |
