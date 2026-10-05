@@ -1,7 +1,12 @@
 # ADR 0013 — Job-Queue und Hülle `jobs`
 
-- **Status:** **Entwurf**, wartet auf Otto. Die Fragen F1–F11 stehen in §10.
-- **Datum:** 2026-10-02
+- **Status:** **Angenommen** von Otto am 2026-10-05, mit Auflagen.
+  - Die elf Fragen aus §10 sind beantwortet: F1–F9 und F11 Option 1
+    (Empfehlung), **F10 Option 2** (der Worker-Einstieg bleibt in `jobs`).
+  - Die Auflagen zu F3, F6, F7, F8 und F10 stehen in §10a. Sie sind in §5.3,
+    §5.4, §5.6, §6.2 und §9 eingearbeitet. Der Nachtrag zu F6 steht in
+    `adr/0014` §15b.
+- **Datum:** 2026-10-02 (Entwurf), 2026-10-05 (Annahme)
 - **Aufgabe:** M4-02 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Kein Produktivcode, keine Änderung an `.importlinter`,
   an `docker-compose.yml` oder an der CI. Gemessen wurde mit Skripten im
@@ -117,7 +122,10 @@ Jede Empfehlung hat eine Frage in §10.
    - Nur so lässt sich ein laufender Job hart beenden. Ein Thread lässt sich
      nicht abbrechen; Procrastinate kann es bei synchronen Jobs auch nicht
      [P].
-   - Kosten: rund 1,0–1,5 s Start und 143 MB je Kind [M].
+   - Startmethode **`spawn`**, nicht `fork` (Auflage F3, §5.3): Der Aufseher
+     hat Threads und Verbindungen, und `fork` gibt sie ins Kind weiter [M].
+   - Startkosten je Job: rund 1,2 s (Median; 1,1–2,5 s in 5 Läufen) und
+     145 MB im Kind [M].
 4. **Startwerte (F4):** global **4** gleichzeitige Jobs, je Quell-Host **2**,
    je Worker-Container 2 Slots. Deckel und Grenze je Host stehen als Zeile in
    der Datenbank, nicht in der Zahl der Container und nicht in deren
@@ -138,21 +146,30 @@ Jede Empfehlung hat eine Frage in §10.
    Lauf nur ab, wenn kein anderer Job daran hängt. So kann niemand fremde Jobs
    abbrechen, nur weil er dasselbe Rezept kennt.
 7. **Fortschritt (F7):** Die Zeile in Postgres ist die Wahrheit, `NOTIFY` nur
-   der Weckruf. Jeder `api`-Prozess hält eine `LISTEN`-Verbindung und
-   verteilt an SSE-Clients.
+   der Weckruf. Jeder `api`-Prozess hält **genau eine** `LISTEN`-Verbindung
+   und verteilt an alle SSE-Clients (Auflage F7).
+   - Ein Pooler im Transaktionsmodus (M6) bricht `LISTEN`; die Verbindung
+     müsste dann am Pooler vorbei laufen (§5.4).
    - Gemessen: Median 0,8 ms, p99 2,1 ms bei 100 Ereignissen/s.
    - Kein Ereignis bei Rollback; Payload über 8000 Bytes wird abgewiesen.
    - Wer nicht zuhört, verpasst Ereignisse; die Zeile hat den Stand [M][P].
-8. **Wiederholung (F8):** automatisch höchstens 3 Versuche, nur bei
-   vorübergehenden Fehlern, mit Backoff und Jitter.
+8. **Wiederholung (F8):** automatisch höchstens 3 Versuche, mit Backoff und
+   Jitter, nur bei Zeitüberschreitung der Quelle, `5xx` der Quelle und
+   verlorener Lease (Auflage F8). Die Tabelle Fehlerart → wiederholen steht
+   in §5.6.
+   - GDAL meldet alle drei Quellfehler als `RasterioIOError` und nennt den
+     Status nur im Text [M]. Der Kern erkennt zwei Textmuster; ein Test gegen
+     einen lokalen Server sichert sie.
 9. **Ablauf (F9):** Job-, Lauf- und Rezeptzeilen laufen 7 Tage nach Abschluss
    ab und werden stündlich in Stapeln gelöscht. Ein Cache-Treffer gilt nur,
    wenn das Ergebnis noch mindestens 24 h gilt.
    - Ohne Index auf dem Fremdschlüssel dauerte das Löschen von 50 000
      abgelaufenen Rezepten 232 s, mit Index 0,38 s [M].
-10. **Einstieg und Migrationen (F10, F11):** Der Worker startet aus einer
-    Kompositionswurzel in `api`; die Schleife liegt in `jobs`. Das löst die
-    offene Logzeile zu `datasets` ohne Lockerung. Die Tabellen kommen als
+10. **Einstieg und Migrationen (F10, F11):** Der Worker-Einstieg bleibt in
+    `jobs` (Otto: F10 Option 2). Der Worker braucht `catalog.datasets` nicht,
+    weil das Rezept alles trägt; ein Laufzeitbedarf ist im ADR nicht
+    genannt. Die offene Logzeile zu `datasets` (Quad-Pol-Operator) bleibt
+    offen und gehört zu dessen Registrierung. Die Tabellen kommen als
     nächste Nummer in `catalog/migrations/`.
 11. **Grenze je Quelle über Prozesse:** `RateSlot` taugt nicht als Vorbild für
     die Lesezugriffe des Kerns. Der Kern liest über GDAL und darf die
@@ -437,7 +454,43 @@ Kindprozess öffnet keine Verbindung, und gestartet wird mit `spawn` (§5.3).
 - 142–143 MB höchster Speicher des Kindes.
 
 Das ist eine Annäherung: Das vorgeschlagene Kind (§5.3) lädt zusätzlich
-`processing` und `pydantic`, aber nicht `jobs` und kein psycopg (§6.2).
+`processing` und `pydantic`, aber nicht `jobs` und kein psycopg (§6.2). M9
+misst deshalb den Start über `multiprocessing` selbst.
+
+**M9 Start des Kindprozesses über `multiprocessing` (Auflage F3).** Ein
+Elternprozess wie der Aufseher (psycopg geladen, ein Thread läuft) startet je
+Methode 5 Kinder; das Ziel lädt dieselben Bibliotheken wie M8 samt `pydantic`.
+
+| Methode | Start bis Ende | davon bis zum Aufruf des Ziels | Imports im Kind | psycopg im Kind geladen |
+|---|---|---|---|---|
+| `spawn` | 1,08–2,52 s, Median 1,20 s (der längste Lauf war der erste, kalt) | 0,04–0,08 s | 0,83–2,22 s | nein |
+| `fork` | 0,93–1,03 s, Median 0,97 s | 0,00 s | 0,92–1,01 s | **ja** |
+
+- Höchster Speicher der Kinder: 145 MB.
+- `fork` spart nur, wenn der Elternprozess die Bibliotheken schon geladen
+  hat. Hier hatte er sie nicht; sonst müsste der Aufseher GDAL und rasterio
+  laden, was §5.3 gerade vermeiden will.
+- Vorgabe in diesem venv: `multiprocessing.get_start_method()` gibt `fork`
+  zurück. `spawn` muss also ausdrücklich gesetzt werden.
+- `os.fork()` in einem Prozess mit einem zweiten Thread:
+  `DeprecationWarning: This process is multi-threaded, use of fork() may lead
+  to deadlocks in the child.`
+
+**M10 Was GDAL bei einem Fehler der Quelle meldet (Auflage F8).** Ein lokaler
+Wegwerf-Server antwortet mit `503`, `404` bzw. gar nicht; gelesen mit
+`rasterio.open("/vsicurl/…")` und den Zeitlimits aus `gateway/gdal.py`
+(GDAL 3.12.2, ohne `gateway`, nur lokal):
+
+| Antwort der Quelle | Ausnahme | Text |
+|---|---|---|
+| `503` | `rasterio.errors.RasterioIOError` | `HTTP response code: 503` |
+| `404` | `rasterio.errors.RasterioIOError` | `HTTP response code: 404` |
+| keine Antwort, Zeitlimit 2 s | `rasterio.errors.RasterioIOError` | `CURL error: Operation timed out after 2002 milliseconds with 0 bytes received` |
+
+- Alle drei sind dieselbe Klasse. Der Statuscode steht nur im Text, ohne URL.
+- Die `gateway`-Klassen (`UpstreamError` mit `status_code`, `UpstreamTimeout`)
+  kommen nur bei Anfragen über `Gateway`, also bei Zarr über `GatewayStore`
+  und beim `HEAD` der Annahme [P, `gateway/errors.py` Z. 64–82].
 
 ---
 
@@ -616,8 +669,8 @@ RETURNING r.run_id, r.attempt, r.recipe_id;
 ```
 worker-Container
 └── Aufseher (jobs, psycopg; ein Prozess)
-    ├── Slot 1: Kindprozess (spawn, Ziel in api/worker_child.py)
-    │           → Operatoren registrieren; processing.worker_environment(); processing.run(recipe, workdir=…, progress=…)
+    ├── Slot 1: Kindprozess (spawn, Ziel jobs/child.py)
+    │           → processing.worker_environment(); processing.run(recipe, workdir=…, progress=…)
     └── Slot 2: …
 ```
 
@@ -631,16 +684,39 @@ worker-Container
   - lädt nach dem Ende hoch (Modul aus `adr/0015`);
   - schließt mit der Versuchsnummer ab (§5.6).
 - **Das Kind** kennt weder Datenbank noch Queue noch Speicher (B9). Sein
-  Ziel liegt in einem Modul, das `jobs` nicht importiert (§6.2); psycopg
-  kommt so gar nicht erst in den Prozess. Es bekommt Rezept, Arbeitsordner
-  und eine Pipe für Fortschritt und Abbruchsignal.
+  Ziel `jobs/child.py` importiert nur `processing` (§6.2); psycopg kommt so
+  gar nicht erst in den Prozess. Es bekommt Rezept, Arbeitsordner und eine
+  Pipe für Fortschritt und Abbruchsignal.
   - `processing.run` behält die Signatur aus `adr/0014` §13:
-    `run(recipe, *, workdir, progress)`. Die Operatoren kommen nicht als
-    Argument, sondern werden vorher registriert, durch Komposition am
-    Einstieg (`adr/0014` §12).
+    `run(recipe, *, workdir, progress)`. Die Operatoren (Band-Math,
+    Reprojektion) registriert `processing` selbst (`adr/0014` §13).
   - Abweichung von `adr/0014` §8: `processing.worker_environment()` ruft das
     Kind beim Start auf, nicht der Aufseher in `jobs` (§9).
   - Der Runner (M4-16) ruft `processing.run` ebenso, ohne Aufseher.
+- **Startmethode: `spawn`, nicht `fork` (Auflage F3).** Der Aufseher erzeugt
+  die Kinder mit `multiprocessing.get_context("spawn")`, nie mit einer
+  globalen Einstellung (die Vorgabe ist hier `fork`, M9).
+  - **Threads:** Der Aufseher hat Threads (Heartbeat, `LISTEN`-Verbindung,
+    Lesen der Pipes). Python 3.12 warnt beim `fork` eines solchen Prozesses
+    vor Verklemmungen im Kind [M, M9].
+  - **Geerbter Zustand:** `fork` gibt geladene Module und offene
+    Verbindungen ins Kind weiter. Gemessen war psycopg im `fork`-Kind
+    geladen, im `spawn`-Kind nicht [M, M9]; ein Procrastinate-Pool lieferte
+    nach `fork` keine Verbindung (M7). Das Kind soll weder psycopg noch eine
+    Verbindung besitzen (B9).
+  - **GDAL:** GDAL und libcurl halten Threads, Verbindungen und Caches im
+    Prozess. Das Kind soll mit frischem GDAL beginnen und die Optionen aus
+    `processing.worker_environment()` im Hauptthread setzen (`adr/0014`
+    §3.6, §7.3). Ob ein `fork` daran etwas ändert, ist nicht gemessen [A];
+    `spawn` braucht die Antwort nicht.
+  - **Kosten je Job, gemessen (M9):** rund 1,2 s Start (Median; 1,1–2,5 s in
+    5 Läufen, der längste war kalt), davon 0,8–2,2 s Imports und 0,04–0,08 s
+    bis zum Aufruf des Ziels, und 145 MB im Kind. Gegen einen Job von rund
+    10 s (Band-Math, 8192², `adr/0014` §3.5) sind das etwa 12 % [A]; bei
+    Jobs von Minuten fällt es nicht mehr ins Gewicht.
+  - `fork` wäre nur schneller, wenn der Aufseher die Bibliotheken vorlädt
+    (Millisekunden statt 1 s). Dazu müsste er GDAL laden, was die Punkte
+    oben ausschließen.
 - **Warum ein Prozess je Job [A]:**
   - Ein hängender oder zu langer Job lässt sich hart beenden. Ein Thread lässt
     sich das nicht (Procrastinate synchron: nur kooperativ [P]).
@@ -648,11 +724,11 @@ worker-Container
   - `processing.worker_environment()` gilt im Hauptthread des Kindes für den
     ganzen Prozess (`adr/0014` §3.6, §7.3). Der Aufseher braucht kein GDAL.
   - Ein Absturz des Kindes, etwa durch den OOM-Killer, ist für den Aufseher
-    sofort sichtbar (Exit-Code) und wird nach §5.6 behandelt.
-- **Kosten:** 1,0–1,5 s Start und 143 MB je Kind (M8). Ein Band-Math-Job über
-  eine 8192²-Szene braucht lokal rund 10 s (`adr/0014` §3.5). Für Jobs im
-  Bereich Sekunden bis Minuten ist das vertretbar [A]. Ein langlebiges Kind
-  je Slot wäre schneller, verlöre aber die Abgrenzung zwischen Jobs.
+    sofort sichtbar (Exit-Code). Der Lauf endet als `failed` mit
+    `error_kind = child_crashed`, ohne Wiederholung (§5.6).
+- **Kosten:** siehe Startmethode oben. Für Jobs im Bereich Sekunden bis
+  Minuten ist das vertretbar [A]. Ein langlebiges Kind je Slot wäre
+  schneller, verlöre aber die Abgrenzung zwischen Jobs (F3 Option 2).
 - **Health:** Der Aufseher behält `/health` (heute `jobs/main.py`). „Gesund“
   heißt: Er hat in den letzten 30 s die Datenbank erreicht [A].
 
@@ -667,11 +743,28 @@ worker-Container
   - Die Payload trägt die interne `run_id`, keine `jobID`, keinen Hash und
     keine AOI. Ein Kanal ist innerhalb der Datenbank für jede Sitzung
     lesbar; nach außen geht davon nichts.
-- **`api`:**
-  - Je Prozess eine eigene `LISTEN`-Verbindung außerhalb des Pools, wie
-    Procrastinate es macht (`psycopg_connector.py` Z. 306 [P]).
-  - Verteilt wird im Speicher an die SSE-Verbindungen des Prozesses, über
-    `run_id` → `jobID`.
+- **`api` (Auflage F7):**
+  - **Genau eine** `LISTEN`-Verbindung je `api`-Prozess, außerhalb des Pools,
+    wie Procrastinate es macht (`psycopg_connector.py` Z. 306 [P]). Sie
+    gehört dem Prozess, nicht einem SSE-Client.
+  - Eine Aufgabe im Prozess liest sie und verteilt jede Meldung im Speicher
+    über `run_id` → `jobID` an **alle** SSE-Verbindungen, die den Lauf
+    verfolgen. Zehn oder tausend Clients ändern die Zahl der
+    Datenbankverbindungen nicht (`max_connections` ist hier 100 [M]).
+  - Bricht die Verbindung ab, verbindet sich die Aufgabe neu, setzt `LISTEN`
+    zuerst und liest dann für jeden verbundenen Client die Zeile. Was
+    dazwischen gesendet wurde, kommt nicht nach (M4); die Zeile hat den
+    Stand.
+  - **Pooler:** `LISTEN` gilt je Sitzung und endet mit ihr (`listen.sgml`
+    Z. 50–51 [P]). Ein Pooler im Transaktionsmodus, wie er mit M6 kommen
+    kann, bricht das: PgBouncer sagt, in diesem Modus „clients must not use
+    any session-based features, since each transaction ends up in a
+    different connection and thus gets a different session state“
+    (`doc/config.md` Z. 680–683 [P]). Dann muss die `LISTEN`-Verbindung am
+    Pooler vorbei direkt zu Postgres gehen oder über einen Pool im
+    Sitzungsmodus; sonst bleibt nur das Abfragen der Zeile (F7 Option 3).
+    Dasselbe gilt für den Weckruf der Aufseher (`earthx_jobs_wake`); ihr
+    Rückfall ist das Abholen alle 5 s (§5.2).
 - **Route:** `GET /jobs/{jobID}/events` mit `text/event-stream`, gebaut auf
   `StreamingResponse` ohne neue Abhängigkeit [A].
   - Beim Verbinden erst `LISTEN`, dann die Zeile lesen und als erstes Ereignis
@@ -728,15 +821,49 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
     einen still verschwundenen Rechner vor rund 2 h (§3.2). Hinter einem
     Pooler im Transaktionsmodus gilt sie nicht [A]. Deshalb nur als Option
     in F5.
-- **Wiederholung nur bei vorübergehenden Fehlern:**
-  - Dazu zählen ein Abbruch des Workers (Lease, Kind-Absturz), eine
-    Zeitüberschreitung der Quelle und eine `5xx`.
-  - Backoff über `not_before`: 30 s × 2^(Versuch−1), mit ±20 % Jitter. Höchstens
-    3 Versuche.
-  - Nie wiederholt werden: eine Abweisung durch `gateway`, Fehler der
-    Validierung, eine abweichende Skalierung (`adr/0014` F7a: der Job
-    scheitert) und eine Überschreitung der Laufzeit. Die Fehlerklasse steht in
-    `error_kind`, ohne URL (wie `gateway/errors.py`).
+- **Wiederholung nur bei vorübergehenden Fehlern (Auflage F8):**
+  - Wiederholt wird, wenn die Fehlerart in der Tabelle „ja“ trägt. Alles
+    andere, auch Unbekanntes, scheitert sofort: `status = 'failed'` mit
+    `error_kind`.
+  - Backoff über `not_before`: 30 s × 2^(Versuch−1), mit ±20 % Jitter.
+    Höchstens 3 Versuche.
+  - `error_kind` nennt die Klasse, nie Text mit URL, Rezept oder Hash (wie
+    `gateway/errors.py`).
+
+| Fehlerart | wie erkannt | wiederholen |
+|---|---|---|
+| Zeitüberschreitung der Quelle | `UpstreamTimeout` (Zarr, `HEAD`); bei GDAL `RasterioIOError` mit Text `CURL error: Operation timed out …` (M10) | **ja** |
+| Quelle antwortet `5xx` | `UpstreamError` mit `status_code` ≥ 500; bei GDAL `RasterioIOError` mit Text `HTTP response code: 5xx` (M10) | **ja** |
+| Lease verloren (Container weg, Aufseher hängt, Heartbeat bleibt aus) | Aufräumer, §5.6 „Tote Worker“ | **ja** |
+| Quelle antwortet `4xx` (`404`, `403`, `400`) | `UpstreamError` < 500; bei GDAL `HTTP response code: 4xx` | nein |
+| Quelle antwortet `429` | `UpstreamError` mit 429 bzw. GDAL `HTTP response code: 429` | nein (nicht freigegeben, siehe Anmerkung) |
+| Quelle ohne Antwort, aber keine Zeitüberschreitung (Verbindung verweigert) | `UpstreamUnreachable` (nicht `UpstreamTimeout`) | nein (nicht freigegeben, siehe Anmerkung) |
+| Abweisung durch `gateway` | `UrlRejected`, `AssetRejected`, `AddressRejected`, `UrlTooLong`, `ResponseTooLarge`, `TooManyRedirects` | nein |
+| Ungültiges Rezept | Validierung (pydantic) bei der Annahme in `api`, im Kern ein unbekannter Operator oder eine unbekannte Rezept- oder Operator-Version | nein |
+| Abweichende Skalierung (`adr/0014` F7a) | der Kern bricht beim Öffnen ab | nein |
+| Speicherabbruch: das Kind wird wegen Speichermangel beendet, oder ein Hochladen in den Objektspeicher bricht ab oder scheitert | Exit-Signal des Kindes (`child_crashed`) bzw. Fehler des Moduls für Plattformdienste | nein |
+| Absturz des Kindes aus anderem Grund | Exit-Code des Kindes (`child_crashed`) | nein |
+| Laufzeitdeckel überschritten | Aufseher beendet das Kind | nein |
+| Abbruch durch den Nutzer (`dismiss`) | Flag `cancel_requested` | nein |
+| Alles Übrige, auch ein unbekannter Fehler im Kern | keine Klasse | nein |
+
+  - **Anmerkung zu „Speicherabbruch“:** Otto nennt den Fall ohne Klammer. Die
+    Tabelle schließt beide Lesarten aus, Hauptspeicher und Objektspeicher.
+    Ein vom Betriebssystem beendetes Kind ist von einem hart beendeten oder
+    abgestürzten nicht zu unterscheiden (alle enden durch ein Signal); ein
+    erneuter Versuch träfe bei Speichermangel dasselbe.
+  - **Anmerkung zu `429` und „keine Antwort“:** Otto nennt Zeitüberschreitung,
+    `5xx` und verlorene Lease. Die beiden Zeilen sind vorübergehend, aber
+    nicht freigegeben; sie aufzunehmen wäre eine neue Entscheidung.
+  - **GDAL meldet keine Klasse (M10).** Alle drei Fälle sind
+    `RasterioIOError`; der Statuscode steht nur im Text. Der Kern ordnet
+    deshalb an der Grenze des Kindes zwei Textmuster zu (`HTTP response code:
+    5xx`, `CURL error: Operation timed out`). Jeder andere Text bleibt
+    „nein“. Die Texte hängen an der GDAL-Version (gemessen 3.12.2), die schon
+    im Cache-Schlüssel steht (`adr/0014` §4.5). M4-08 sichert das mit einem
+    Test gegen einen lokalen Server, der `503`, `404` und nichts liefert
+    (Muster M10); der Test bricht bei einem GDAL-Wechsel, der den Text ändert
+    [A].
 - **Laufzeitdeckel:** Ein Lauf wird hart beendet, wenn er länger läuft als
   max(2 × geschätzte Dauer, 10 min); die Schätzung kommt aus `adr/0014`
   §5.5 [A]. Den Faktor kalibriert M4-08 an echten Läufen.
@@ -787,8 +914,10 @@ kein anderer, nicht verworfener Job am Lauf, dann gilt:
     Tage nach Abschluss des letzten Laufs, der es braucht.
 - **Aufräumen:** Wann und wo, lässt der Entwurf von `adr/0015` (§7.2, A1)
   diesem ADR. Vorschlag:
-  - Stündlich räumt ein Aufseher auf, geschützt durch `pg_try_advisory_lock`,
-    sodass es nur einer tut.
+  - Stündlich räumt ein Aufseher auf, geschützt durch
+    `pg_try_advisory_xact_lock` in der Transaktion des Stapels, sodass es nur
+    einer tut. Die Sperre auf Transaktionsebene hält auch hinter einem Pooler
+    im Transaktionsmodus (§5.4).
   - Erst die Objekte eines abgelaufenen Laufs über das Modul für
     Plattformdienste, dann die Zeilen (Entwurf `adr/0015` A1).
   - Gelöscht wird in Stapeln von 5000: erst die Jobs abgelaufener Läufe,
@@ -874,26 +1003,36 @@ forbidden_modules =
 |---|---|---|
 | `jobs` | Queue, Aufseher und Kindprozesse der Worker, Fortschritt, Abbruch, Ablauf, Ergebnisse | `processing`; psycopg (Q4); das Modul für Plattformdienste (`adr/0015`, im Entwurf `objectstore`) |
 
-### 6.2 Ort des Worker-Einstiegs (F10)
+### 6.2 Ort des Worker-Einstiegs (F10, Otto: Option 2)
 
-- **Heute:** `jobs/main.py`. Der Vertrag `jobs` verbietet `datasets`. Ein
-  späterer Quad-Pol-Operator ließe sich dort nicht registrieren (`adr/0014`
-  §12; offene Logzeile vom 02.10.2026).
-- **Vorschlag:** ein Einstieg `earthx/api/worker_main.py` als
-  Kompositionswurzel, wie `api/tiler.py` für den `tiler`.
-  - Er ruft `jobs.worker.run(child_target=…, settings=…)`; die Schleife
-    liegt in `jobs`.
-  - Das Ziel des Kindes liegt in einem eigenen Modul
-    `earthx/api/worker_child.py`, das `jobs` nicht importiert. Es ist für
-    `spawn` importierbar, registriert die Operatoren (später auch den
-    Quad-Pol-Operator aus `datasets`), ruft `processing.worker_environment()`
-    und dann `processing.run(recipe, workdir=…, progress=…)`.
-  - `api/__init__.py` ist nur ein Docstring [P]. Das Kind lädt also weder
-    `jobs` noch psycopg, obwohl sein Modul in `api` liegt.
-  - `jobs` selbst importiert weiter nur `processing`. Keine Regel wird
-    gelockert.
-  - compose startet `worker` dann mit `python -m earthx.api.worker_main`.
-    `/health` liefert der Aufseher aus `jobs`.
+- **Der Einstieg bleibt in `jobs`.** `jobs/main.py` startet weiter den Prozess
+  `worker`. Die Schleife des Aufsehers kommt nach `jobs/worker.py`, das Ziel
+  des Kindprozesses nach `jobs/child.py` (M4-08).
+- **Warum nicht in `api` (Otto):** `api` ist die HTTP-Schicht. Das Rezept trägt
+  alles, was der Worker braucht (`adr/0011` §6.4; `adr/0014` §3.11, §4.1:
+  `ResolvedAsset`, Fassung, Bandangaben). Der Worker liest weder pgstac noch
+  `catalog.datasets`.
+- **Geprüft (Auflage F10):** Dieses ADR nennt keinen Laufzeitbedarf des
+  Workers an `catalog.datasets`. `processing` erreicht aus `catalog` nur
+  `catalog.registry`; was es vom Datensatz braucht, kommt über das Rezept
+  herein (`adr/0014` §3.11, M4-Plan §1.2).
+- **Das Kind lädt kein psycopg.** `jobs/child.py` importiert nur
+  `earthx.processing`. `earthx/jobs/__init__.py` bleibt ohne Importe; sonst
+  lüde jedes Kind `jobs` samt psycopg. M4-08 prüft das mit einem Test, der ein
+  Kind startet und `sys.modules` auf `psycopg`, `psycopg_pool`, `asyncpg` und
+  `earthx.jobs.worker` untersucht (Gegenprobe zu M9, wo `fork` psycopg ins
+  Kind trug).
+- **Operatoren:** `processing` registriert Band-Math und Reprojektion selbst
+  (`processing/operators/`, `adr/0014` §13). Der Einstieg muss nichts
+  zusammensetzen.
+- **Offen bleibt der Quad-Pol-Operator.** Sein Code liegt in `datasets/`, und
+  `jobs` darf `datasets` nicht importieren (Verträge `jobs` und
+  `datasets-isolated`). Die offene Logzeile vom 02.10.2026 bleibt offen. Sie
+  gehört zur Aufgabe, die den ruhenden Operator registriert (`adr/0014`
+  §12); dieses ADR entscheidet sie nicht.
+- **Neben `/health`:** Wie der Aufseher neben der App läuft (`lifespan` in
+  `jobs/main.py` oder ein eigener Prozess), legt M4-08 fest; der
+  compose-Befehl ändert sich höchstens dort.
 
 ### 6.3 Migrationen (F11)
 
@@ -932,8 +1071,9 @@ Tests gegen echtes Postgres, in CI und Sitzung (`adr/0002` §2):
    Anweisung scheitert. So fällt ein Rückbau auf.
 2. **Grenze je Host:** wie M6.
 3. **Abschirmung:** Versuch 1 kann nach Neueinreihen nicht abschließen (M3).
-4. **Toter Worker:** Kind mit `SIGKILL` → sofortige Behandlung; Aufseher weg →
-   Neueinreihen nach Ablauf der Lease (mit kurzer Lease im Test).
+4. **Toter Worker:** Kind mit `SIGKILL` → Lauf `failed` mit `child_crashed`,
+   ohne Wiederholung; Aufseher weg → Neueinreihen nach Ablauf der Lease (mit
+   kurzer Lease im Test).
 5. **Gleiche Aufträge:** gleichzeitig eingereicht → ein Lauf; `DELETE` eines
    Jobs bricht den Lauf nicht ab, solange ein anderer daran hängt.
 6. **Fortschritt:** SSE liefert den Stand der Zeile beim Verbinden und danach
@@ -946,6 +1086,16 @@ Tests gegen echtes Postgres, in CI und Sitzung (`adr/0002` §2):
    `404`; keine Antwort und kein Log nennt Hash, AOI oder `href`.
 10. **Kettenregel:** `lint-imports` mit dem Vertrag aus §6.1;
     `test_module_boundaries.py` angepasst.
+11. **Startmethode:** Kinder entstehen nur aus `get_context("spawn")`; ein
+    Kind hat weder `psycopg`, `psycopg_pool`, `asyncpg` noch
+    `earthx.jobs.worker` in `sys.modules` (§6.2).
+12. **Eine `LISTEN`-Verbindung:** 50 SSE-Clients an einem `api`-Prozess ergeben
+    eine Verbindung dieses Prozesses in `pg_stat_activity`; nach einem Abbruch
+    der Verbindung stellt der Prozess sie wieder her, und jeder Client
+    bekommt den Stand der Zeile (§5.4).
+13. **Wiederholung:** eine Prüfung je Zeile der Tabelle in §5.6; die
+    GDAL-Texte gegen einen lokalen Server mit `503`, `404` und ohne Antwort
+    (Muster M10). Unbekannte Fehler scheitern ohne Wiederholung.
 
 ---
 
@@ -965,17 +1115,19 @@ Tests gegen echtes Postgres, in CI und Sitzung (`adr/0002` §2):
    (Permalink) ist Sache von M4-19 [A].
 3. **Wer `worker_environment()` aufruft.** `adr/0014` §8: „`jobs` und der
    Runner rufen beim Start `processing.worker_environment()` auf“. Hier ruft
-   es das Kind je Job beim Start auf (§5.3, §6.2). Der Aufseher liest kein
-   Raster und braucht die GDAL-Optionen nicht. Die Wirkung ist dieselbe: Die
-   Optionen gelten im Hauptthread des Prozesses, der liest (`adr/0014`
-   §3.6).
-4. **Operatoren.** Die Registry kommt nicht als Argument in
-   `processing.run`, sondern wird am Einstieg registriert (`adr/0014` §12).
-   Die Signatur aus §13 bleibt.
+   es das Kind (`jobs/child.py`) je Job beim Start auf (§5.3, §6.2). Der
+   Aufseher liest kein Raster und braucht die GDAL-Optionen nicht. Die
+   Wirkung ist dieselbe: Die Optionen gelten im Hauptthread des Prozesses, der
+   liest (`adr/0014` §3.6).
+
+Keine Abweichung sind die Signatur von `processing.run` (§13) und die
+Registrierung der Operatoren (§13); beide bleiben, wie `adr/0014` sie
+beschreibt. Alle drei Abweichungen stehen als Nachtrag in `adr/0014` §15b
+(Auflage F6).
 
 ---
 
-## 10. Fragen an Otto
+## 10. Fragen an Otto — beantwortet am 2026-10-05
 
 **F1 — Welche Queue?**
 1. Eigene schlanke Queue auf Postgres in `jobs`, hinter `JobRunner` (§5) —
@@ -985,6 +1137,8 @@ Tests gegen echtes Postgres, in CI und Sitzung (`adr/0002` §2):
    festhängende Jobs und ein Deckel nur über Worker × `concurrency`
 3. pgmq als reines SQL, dazu eigene Logik für alles außer Abholen
 
+**Antwort F1: (1)** Eigene schlanke Queue auf Postgres in `jobs`.
+
 **F2 — Vertrag für den Worker-Kern (§6.1)?**
 1. `no-database-in-worker-core` nur noch für `processing`, verboten dort
    `psycopg`, `psycopg_pool`, `asyncpg`; Vertrag `jobs` bleibt; Zeile `jobs`
@@ -993,11 +1147,15 @@ Tests gegen echtes Postgres, in CI und Sitzung (`adr/0002` §2):
 3. Wie 1, dazu ein neuer Vertrag: Datenbanktreiber nur in `catalog`, `jobs`,
    `api`, `discovery`
 
+**Antwort F2: (1)** `no-database-in-worker-core` nur noch für `processing`, dort auch `psycopg_pool` und `asyncpg` verboten.
+
 **F3 — Wie führt der Worker einen Job aus (§5.3)?**
 1. Aufseher je Container, je Job ein frischer Kindprozess (`spawn`); hartes
    Beenden möglich; 1–1,5 s und 143 MB je Kind — **Empfehlung**
 2. Ein langlebiges Kind je Slot (schneller, aber Zustand zwischen Jobs)
 3. Threads im Worker-Prozess (kein hartes Beenden)
+
+**Antwort F3: (1)** Aufseher je Container, ein Kindprozess je Job. Auflage: Startmethode und Startkosten nennen (§10a, §5.3).
 
 **F4 — Startwerte (§5.7)?**
 Die Grenze je Host gilt je Lauf beim Abholen, nicht je Anfrage wie
@@ -1006,6 +1164,8 @@ Die Grenze je Host gilt je Lauf beim Abholen, nicht je Anfrage wie
 2. Vorsichtiger: global 2, je Host 1, 1 Slot
 3. Großzügiger: global 8, je Host 4, 4 Slots
 
+**Antwort F4: (1)** Global 4, je Quell-Host 2, 2 Slots je Container.
+
 **F5 — Wie werden tote Worker erkannt (§5.6)?**
 1. Lease 60 s mit Heartbeat 15 s durch den Aufseher, Abschluss mit
    Versuchsnummer — **Empfehlung**
@@ -1013,6 +1173,8 @@ Die Grenze je Host gilt je Lauf beim Abholen, nicht je Anfrage wie
    (13 ms nach Prozessende, M3); bricht hinter einem Pooler im
    Transaktionsmodus
 3. Nur Advisory-Lock (erkennt hängende Worker nicht, M3)
+
+**Antwort F5: (1)** Lease 60 s, Heartbeat 15 s, Abschluss mit Versuchsnummer.
 
 **F6 — Gleiche Aufträge zur selben Zeit (§5.1, §5.5, §9)?**
 1. Öffentlicher Job getrennt vom internen Lauf. Gleiche Aufträge hängen an
@@ -1025,6 +1187,8 @@ Die Grenze je Host gilt je Lauf beim Abholen, nicht je Anfrage wie
 In allen drei Fällen bekommt jeder Auftrag eine eigene `recipe_id` (§9
 Punkt 2).
 
+**Antwort F6: (1)** Job getrennt vom Lauf. Auflage: Nachtrag in `adr/0014` (§10a).
+
 **F7 — Fortschritt (§5.4)?**
 1. SSE `GET /jobs/{jobID}/events` aus `api`, je Prozess eine
    `LISTEN`-Verbindung, Zeile als Wahrheit, höchstens 1 Meldung je Sekunde und
@@ -1032,10 +1196,14 @@ Punkt 2).
 2. Kein SSE in M4, nur Abfragen von `GET /jobs/{jobID}`
 3. SSE, aber `api` fragt die Zeile jede Sekunde ab statt `LISTEN`
 
+**Antwort F7: (1)** SSE aus `api`. Auflage: genau eine `LISTEN`-Verbindung je Prozess, Hinweis zum Pooler (§10a, §5.4).
+
 **F8 — Wiederholung (§5.6)?**
 1. Automatisch, höchstens 3 Versuche, nur bei vorübergehenden Fehlern, Backoff
    30 s × 2^(n−1) mit Jitter — **Empfehlung**
 2. Keine automatische Wiederholung; der Nutzer startet neu
+
+**Antwort F8: (1)** Höchstens 3 Versuche, nur bei vorübergehenden Fehlern. Auflage: Tabelle Fehlerart → wiederholen (§10a, §5.6).
 
 **F9 — Ablauf und Cache-Treffer (§5.8)?**
 1. Zeilen laufen 7 Tage nach Abschluss des Laufs ab; stündlich in Stapeln
@@ -1045,17 +1213,44 @@ Punkt 2).
    oder Neusetzen im Speicher, `adr/0015`)
 3. Jeder Treffer gilt bis zum Ablauf; die signierte URL endet dann früher
 
+**Antwort F9: (1)** 7 Tage nach Abschluss, Treffer nur mit mindestens 24 h Rest.
+
 **F10 — Ort des Worker-Einstiegs (§6.2)?**
 1. Kompositionswurzel `api/worker_main.py`, Schleife in `jobs`; löst die
    offene Logzeile zu `datasets` ohne Lockerung — **Empfehlung**
 2. Einstieg bleibt in `jobs/main.py`; der Quad-Pol-Operator wird später
    anders gelöst
 
+**Antwort F10: (2)** Der Worker-Einstieg bleibt in `jobs`. Begründung (Otto): `api` ist die HTTP-Schicht; das Rezept trägt alles, was der Worker braucht (`adr/0011` §6.4, `adr/0014`), also braucht er `catalog.datasets` nicht. Nennt das ADR einen Laufzeitbedarf des Workers an `catalog.datasets`, ist das zu melden und anzuhalten; das ADR nennt keinen (§6.2).
+
 **F11 — Wohin die Migration der Job-Tabellen (§6.3)?**
 1. Nächste Nummer in `catalog/migrations/` (`006_jobs.sql`), ein Läufer, eine
    Folge — **Empfehlung**
 2. Eigenes Verzeichnis `jobs/migrations/`; der Läufer bucht dann nach
    Verzeichnis und Version (Änderung an `catalog/schema.py`)
+
+**Antwort F11: (1)** `catalog/migrations/006_jobs.sql`.
+
+---
+
+## 10a. Auflagen (Otto, 2026-10-05)
+
+- **F3:** Die Startmethode des Kindprozesses ist `spawn`, nicht `fork`, mit
+  Begründung (Threads, geerbter Zustand, GDAL) und gemessenen Startkosten je
+  Job: §5.3, M9.
+- **F6:** Nachtrag in `adr/0014` mit Verweis auf §9 dieses ADR (Job getrennt
+  vom Lauf, eigene `recipe_id` je Auftrag) und den übrigen Abweichungen:
+  `adr/0014` §15b.
+- **F7:** Genau eine `LISTEN`-Verbindung je `api`-Prozess, verteilt auf alle
+  SSE-Clients; Hinweis, dass ein Pooler im Transaktionsmodus (M6) `LISTEN`
+  bricht: §5.4.
+- **F8:** Automatische Wiederholung nur bei vorübergehenden Fehlern
+  (Zeitüberschreitung, `5xx` der Quelle, verlorene Lease); nie bei ungültigem
+  Rezept, Abweisung durch `gateway` oder Speicherabbruch. Tabelle Fehlerart →
+  wiederholen: §5.6.
+- **F10:** Der Worker-Einstieg bleibt in `jobs`. Wäre ein Laufzeitbedarf an
+  `catalog.datasets` genannt, wäre anzuhalten; geprüft, es gibt keinen:
+  §6.2.
 
 ---
 
@@ -1130,6 +1325,9 @@ Z. 1 (raw.githubusercontent.com).
 - `mvcc.sgml` Z. 1531–1552.
 - `func.sgml` Z. 28590–28592, 28736–28752.
 - `config.sgml` Z. 954–1062, 9346–9391.
+
+**PgBouncer:** `pgbouncer/pgbouncer`, `doc/config.md` Z. 680–683
+(raw.githubusercontent.com).
 
 **Linux:** `torvalds/linux` `Documentation/networking/ip-sysctl.rst`
 Z. 593–605.
@@ -1300,3 +1498,31 @@ subprocess.run([sys.executable, "-c", "import numpy, rasterio, rio_tiler.io, xar
 
 Gemessen wurden Wandzeit und `ru_maxrss` des Kindes (rasterio 1.5.2, GDAL
 3.12.2).
+
+### 12.11 M9
+
+Im Projekt-venv, je Methode fünf Kinder aus einem Elternprozess mit geladenem
+`psycopg` und einem laufenden Thread:
+
+```python
+ctx = multiprocessing.get_context("spawn")   # bzw. "fork"
+p = ctx.Process(target=run, args=(queue, time.time())); p.start()
+# run(): meldet die Zeit bis zum Aufruf, importiert numpy, rasterio, rio_tiler.io, xarray, zarr,
+#        numexpr, pydantic, earthx.access.resolve, earthx.readers, meldet die Importzeit und
+#        ob "psycopg" in sys.modules steht
+```
+
+Dazu `multiprocessing.get_start_method()` und `os.fork()` in einem Prozess
+mit einem zweiten Thread unter `warnings.simplefilter("always")`. Speicher aus
+`ru_maxrss` der Kinder.
+
+### 12.12 M10
+
+Ein `http.server.ThreadingHTTPServer` auf `127.0.0.1` mit zufälligem Port
+antwortet je Pfad mit `503`, `404` oder schläft 30 s. Gelesen wurde mit
+`rasterio.Env(GDAL_HTTP_TIMEOUT="2", GDAL_HTTP_CONNECTTIMEOUT="2",
+GDAL_HTTP_MAX_RETRY="0", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
+CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif")` und
+`rasterio.open("/vsicurl/http://127.0.0.1:<port>/<pfad>/x.tif")`; ausgegeben
+wurden Klasse und Text der Ausnahme. Der lokale Server steht nur im
+Kratzverzeichnis; `gateway` war nicht beteiligt.
