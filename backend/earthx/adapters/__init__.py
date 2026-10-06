@@ -18,8 +18,8 @@ the federating client in ``api``, through :func:`search_items`/:func:`get_item`
 below, which dispatch on the registry entry's own ``earthx:source.adapter`` rather
 than making the caller pick a module. A dataset added to the registry under an
 ``AdapterKind`` this dispatch does not know is a dispatch mistake, not a wrong
-answer: :class:`UnsupportedSource`, the same error each adapter's own
-``resolve_dataset`` raises for a mismatch it catches itself.
+answer: :class:`UnsupportedSource`. Every function here takes the registry entry,
+which the caller looks up once through :func:`dataset_config` (adr/0011 F3).
 
 :func:`materialize_items` is a second, separate dispatch (``_MATERIALIZERS``, not
 ``_ADAPTERS``): a materializing adapter answers no search and no single-item
@@ -56,7 +56,6 @@ from earthx.adapters.federated_search import (
     SearchParams,
 )
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery, CoverageResult
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
     AdapterKind,
     CoverageProvider,
@@ -95,26 +94,35 @@ _COVERAGE = {
 }
 
 
-def _adapter_for(dataset_id: str, registry: DatasetRegistry) -> ModuleType:
-    """The module that serves ``dataset_id``, or the error its absence means."""
+def dataset_config(registry: DatasetRegistry, dataset_id: str) -> DatasetConfig:
+    """The registry entry for ``dataset_id``, or :class:`UnknownCollection`.
+
+    adr/0005 rule I, in one place (adr/0011 F3, M4-01b F2): the caller looks the
+    entry up once and hands it to every function below, instead of each adapter
+    looking it up again in a registry of its own choosing.
+    """
     try:
-        config = registry.get(dataset_id)
+        return registry.get(dataset_id)
     except UnknownDatasetError:
         raise UnknownCollection(dataset_id) from None
+
+
+def _adapter_for(config: DatasetConfig) -> ModuleType:
+    """The module that serves ``config``, or the error its absence means."""
     if config.source.item_holding is ItemHolding.MATERIALIZED:
         # M3-11a K-05: a materialized dataset's items live in our own pgstac, not
         # at a live source — there is no search or item-fetch request for this
         # module to build. The federating client dispatches such a collection to
         # `super()` (pgstac) before it ever calls `search_items`/`get_item`; the
-        # tiler's item source does the equivalent through `catalog.pgstac.fetch_item`.
+        # item source does the equivalent through `catalog.pgstac.fetch_item`.
         raise UnsupportedSource(
-            f"{dataset_id} holds items materialized in pgstac; adapters.search_items/get_item do not serve it"
+            f"{config.dataset_id} holds items materialized in pgstac; adapters.search_items/get_item do not serve it"
         )
     kind = config.source.adapter
     try:
         return _ADAPTERS[kind]
     except KeyError:
-        raise UnsupportedSource(f"{dataset_id} is served by {kind}, which no adapter dispatch knows") from None
+        raise UnsupportedSource(f"{config.dataset_id} is served by {kind}, which no adapter dispatch knows") from None
 
 
 def _check_capabilities(dataset_id: str, adapter: ModuleType, params: SearchParams | None) -> None:
@@ -140,30 +148,28 @@ def _check_capabilities(dataset_id: str, adapter: ModuleType, params: SearchPara
 
 
 async def search_items(
-    dataset_id: str,
+    config: DatasetConfig,
     params: SearchParams | None = None,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> ItemPage:
     """Search items of one federated collection, whichever source serves it."""
-    adapter = _adapter_for(dataset_id, registry)
-    _check_capabilities(dataset_id, adapter, params)
-    return await adapter.search_items(dataset_id, params, gateway=gateway, registry=registry, cache=cache)
+    adapter = _adapter_for(config)
+    _check_capabilities(config.dataset_id, adapter, params)
+    return await adapter.search_items(config, params, gateway=gateway, cache=cache)
 
 
 async def get_item(
-    dataset_id: str,
+    config: DatasetConfig,
     item_id: str,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> dict[str, Any]:
     """One item by id, without a search in front of it, whichever source serves it."""
-    adapter = _adapter_for(dataset_id, registry)
-    return await adapter.get_item(dataset_id, item_id, gateway=gateway, registry=registry, cache=cache)
+    adapter = _adapter_for(config)
+    return await adapter.get_item(config, item_id, gateway=gateway, cache=cache)
 
 
 async def materialize_items(
@@ -174,11 +180,7 @@ async def materialize_items(
 ) -> MaterializeOutcome:
     """Build the items of one materialized dataset, whichever adapter produced it.
 
-    Takes the registry entry itself, not a ``dataset_id``/``registry`` pair like
-    :func:`search_items`/:func:`get_item`: the one caller (the one-off command in
-    ``discovery``, M3-11b) already holds the entry it is materializing, and handing
-    it straight through avoids a second registry lookup that could disagree with
-    the one the caller already made.
+    Takes the registry entry itself, like every dispatch here (adr/0011 F3).
     """
     if config.source.item_holding is not ItemHolding.MATERIALIZED:
         raise NotMaterialized(
@@ -198,7 +200,6 @@ async def coverage(
     config: DatasetConfig,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> CoverageResult:
     """Coverage density or declared sample for one federated collection, dispatched
@@ -216,7 +217,7 @@ async def coverage(
             f"{config.dataset_id}: no coverage answer for adapter {config.source.adapter.value!r} "
             f"and provider {config.coverage.provider.value!r}"
         ) from None
-    return await answer(query, config, gateway=gateway, registry=registry, cache=cache)
+    return await answer(query, config, gateway=gateway, cache=cache)
 
 
 __all__ = [
@@ -236,6 +237,7 @@ __all__ = [
     "UnsupportedSource",
     "UpstreamShapeError",
     "coverage",
+    "dataset_config",
     "get_item",
     "materialize_items",
     "search_items",

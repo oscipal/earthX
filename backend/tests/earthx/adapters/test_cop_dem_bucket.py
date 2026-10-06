@@ -10,6 +10,7 @@ the three is trusted blindly ("Quell-Listen lügen", `adr/0009` §11).
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -17,6 +18,7 @@ import pytest
 from earthx.adapters import NotMaterialized, UnsupportedSource, UpstreamShapeError, materialize_items
 from earthx.adapters.cop_dem_bucket import COG_MEDIA_TYPE, MAX_NOT_LOADABLE_FRACTION
 from earthx.catalog.datasets import COP_DEM_GLO_30, DEM_ACQUISITION_END, DEM_ACQUISITION_START, SENTINEL_2_L2A
+from earthx.catalog.registry import TemporalExtent
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -351,6 +353,29 @@ class TestItemShape:
         (item,) = outcome.items
         assert item["properties"]["start_datetime"] == DEM_ACQUISITION_START.strftime("%Y-%m-%dT%H:%M:%SZ")
         assert item["properties"]["end_datetime"] == DEM_ACQUISITION_END.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    async def test_the_acquisition_period_is_the_entrys_own(self) -> None:
+        """adr/0011 F3: the period comes from the entry handed in, not from a second
+        copy in `catalog.datasets` — a different entry stamps a different period."""
+        other = TemporalExtent(
+            start=datetime(2011, 1, 1, tzinfo=timezone.utc), end=datetime(2012, 6, 30, 12, 0, tzinfo=timezone.utc)
+        )
+        gateway, _ = bucket(tile_list_names=[TILE_NE])
+        async with gateway:
+            outcome = await materialize_items(
+                replace(_config(), temporal_extent=other), gateway=gateway, known_version=None
+            )
+        (item,) = outcome.items
+        assert item["properties"]["start_datetime"] == "2011-01-01T00:00:00Z"
+        assert item["properties"]["end_datetime"] == "2012-06-30T12:00:00Z"
+
+    async def test_an_entry_without_an_end_is_refused_before_any_request(self) -> None:
+        open_ended = replace(_config(), temporal_extent=replace(_config().temporal_extent, end=None))
+        gateway, seen = bucket(tile_list_names=[TILE_NE])
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="temporal_extent has no end"):
+                await materialize_items(open_ended, gateway=gateway, known_version=None)
+        assert seen == []
 
 
 class TestDispatch:

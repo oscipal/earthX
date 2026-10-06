@@ -167,12 +167,10 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
                 async with pool.connection() as conn:
                     result = await area_coverage(query, config, conn=conn, cache=PostgresSearchCache(conn))
             elif pool is None:
-                result = await adapter_coverage(query, config, gateway=gateway, registry=registry)
+                result = await adapter_coverage(query, config, gateway=gateway)
             else:
                 async with pool.connection() as conn:
-                    result = await adapter_coverage(
-                        query, config, gateway=gateway, registry=registry, cache=PostgresSearchCache(conn)
-                    )
+                    result = await adapter_coverage(query, config, gateway=gateway, cache=PostgresSearchCache(conn))
         except InvalidCoverageQuery as error:
             # `area_coverage`'s own defensive re-check of `check_intersects_is_valid`
             # (`local_coverage.py`) — the route above already validates the same

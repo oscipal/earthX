@@ -17,11 +17,10 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.adapters.eopf_stac import get_item, resolve_dataset, search_items
-from earthx.adapters.errors import UnknownCollection, UnsupportedSource, UpstreamShapeError
+from earthx.adapters.eopf_stac import get_item, search_items
+from earthx.adapters.errors import UnsupportedSource, UpstreamShapeError
 from earthx.adapters.federated_search import SearchParams
 from earthx.catalog.datasets import SENTINEL_2_L2A_ZARR3
-from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -30,7 +29,6 @@ pytestmark = pytest.mark.anyio
 FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "eopf_stac"
 HOST = "stac.core.eopf.eodc.eu"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
-DATASET_ID = SENTINEL_2_L2A_ZARR3.dataset_id
 
 
 def load(name: str) -> dict[str, Any]:
@@ -67,7 +65,7 @@ class TestSearch:
     async def test_a_page_comes_back_normalised_to_stac_1_0(self) -> None:
         gateway, _ = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            page = await search_items(DATASET_ID, SearchParams(limit=2), gateway=gateway)
+            page = await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(limit=2), gateway=gateway)
         assert [item["id"] for item in page.items] == [
             "SYNTH_S2A_MSIL2A_20260921T141821_T26WME",
             "SYNTH_S2A_MSIL2A_20260921T141821_T26WMD",
@@ -83,13 +81,13 @@ class TestSearch:
         truncated ones — the coverage sample of M2-09b-3 is why, not a bug here."""
         gateway, _ = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            page = await search_items(DATASET_ID, SearchParams(limit=2), gateway=gateway)
+            page = await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(limit=2), gateway=gateway)
         assert page.matched is None
 
     async def test_the_search_asks_for_the_upstream_collection_id(self) -> None:
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
-            await search_items(DATASET_ID, SearchParams(bbox=(-33.0, 34.0, 179.0, 72.0)), gateway=gateway)
+            await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(bbox=(-33.0, 34.0, 179.0, 72.0)), gateway=gateway)
         assert seen[0].url.path == "/search"
         assert seen[0].headers["host"] == HOST
         assert body_of(seen[0])["collections"] == [SENTINEL_2_L2A_ZARR3.source.source_collection_id]
@@ -97,7 +95,7 @@ class TestSearch:
     async def test_every_search_carries_our_own_fixed_sortby(self) -> None:
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
-            await search_items(DATASET_ID, gateway=gateway)
+            await search_items(SENTINEL_2_L2A_ZARR3, gateway=gateway)
         assert body_of(seen[0])["sortby"] == [
             {"field": "properties.datetime", "direction": "desc"},
             {"field": "id", "direction": "asc"},
@@ -106,7 +104,7 @@ class TestSearch:
     async def test_an_empty_result_is_an_empty_page_not_an_error(self) -> None:
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
-            page = await search_items(DATASET_ID, gateway=gateway)
+            page = await search_items(SENTINEL_2_L2A_ZARR3, gateway=gateway)
         assert page.items == ()
         assert page.matched is None
         assert page.next_page_token is None
@@ -117,14 +115,14 @@ class TestSearch:
         polygon = {"type": "Polygon", "coordinates": [[[8.0, 47.0], [12.0, 47.0], [8.0, 51.0], [8.0, 47.0]]]}
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
-            await search_items(DATASET_ID, SearchParams(intersects=polygon), gateway=gateway)
+            await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(intersects=polygon), gateway=gateway)
         assert body_of(seen[0])["intersects"] == polygon
 
     async def test_ids_goes_out_as_a_list(self) -> None:
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
             await search_items(
-                DATASET_ID,
+                SENTINEL_2_L2A_ZARR3,
                 SearchParams(ids=("SYNTH_S2A_MSIL2A_20260921T141821_T26WME",)),
                 gateway=gateway,
             )
@@ -132,31 +130,20 @@ class TestSearch:
 
 
 class TestCollectionIsOurs:
-    async def test_an_unknown_collection_never_reaches_the_source(self) -> None:
-        gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
-        async with gateway:
-            with pytest.raises(UnknownCollection, match="no-such-collection"):
-                await search_items("no-such-collection", gateway=gateway)
-        assert seen == []
-
     async def test_a_collection_of_another_adapter_is_not_served_here(self) -> None:
         other = replace(SENTINEL_2_L2A_ZARR3, source=replace(SENTINEL_2_L2A_ZARR3.source, adapter="some-other-protocol"))
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
             with pytest.raises(UnsupportedSource):
-                await search_items(other.dataset_id, gateway=gateway, registry=DatasetRegistry((other,)))
+                await search_items(other, gateway=gateway)
         assert seen == []
-
-    def test_resolve_dataset_is_this_adapters_own_check(self) -> None:
-        assert resolve_dataset(DATASET_ID, DatasetRegistry((SENTINEL_2_L2A_ZARR3,))) is SENTINEL_2_L2A_ZARR3
-
 
 class TestPaging:
     async def test_a_next_link_becomes_a_token_of_our_own(self) -> None:
         upstream_marker = "next:sentinel-2-l2a-zarr3:SYNTH_S2A_MSIL2A_20260921T141821_T26WMD"
         gateway, _ = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            page = await search_items(DATASET_ID, SearchParams(limit=2), gateway=gateway)
+            page = await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(limit=2), gateway=gateway)
         assert page.next_page_token is not None
         assert page.next_page_token != upstream_marker
         assert upstream_marker not in page.next_page_token
@@ -167,8 +154,10 @@ class TestPaging:
             httpx.Response(200, json=load("search_page_1")), httpx.Response(200, json=load("search_empty"))
         )
         async with gateway:
-            first = await search_items(DATASET_ID, SearchParams(limit=2), gateway=gateway)
-            await search_items(DATASET_ID, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway)
+            first = await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(limit=2), gateway=gateway)
+            await search_items(
+                SENTINEL_2_L2A_ZARR3, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway
+            )
         assert "token" in body_of(seen[1])
         assert "next" not in body_of(seen[1])
         assert body_of(seen[1])["token"] == "next:sentinel-2-l2a-zarr3:SYNTH_S2A_MSIL2A_20260921T141821_T26WMD"
@@ -181,14 +170,14 @@ class TestPaging:
         gateway, _ = answering(httpx.Response(200, json=answer))
         async with gateway:
             with pytest.raises(UpstreamShapeError, match="marker"):
-                await search_items(DATASET_ID, SearchParams(limit=2), gateway=gateway)
+                await search_items(SENTINEL_2_L2A_ZARR3, SearchParams(limit=2), gateway=gateway)
 
 
 class TestGetItem:
     async def test_an_item_comes_back_normalised(self) -> None:
         gateway, seen = answering(httpx.Response(200, json=load("item")))
         async with gateway:
-            item = await get_item(DATASET_ID, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", gateway=gateway)
+            item = await get_item(SENTINEL_2_L2A_ZARR3, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", gateway=gateway)
         assert item["stac_version"] == "1.0.0"
         assert item["properties"]["proj:epsg"] == 32626
         assert seen[0].url.path == f"/collections/{SENTINEL_2_L2A_ZARR3.source.source_collection_id}/items/SYNTH_S2A_MSIL2A_20260921T141821_T26WME"
@@ -198,7 +187,7 @@ class TestGetItem:
         get_item — not just the pure normalize_item function."""
         gateway, _ = answering(httpx.Response(200, json=load("item")))
         async with gateway:
-            item = await get_item(DATASET_ID, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", gateway=gateway)
+            item = await get_item(SENTINEL_2_L2A_ZARR3, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", gateway=gateway)
         assert "zipped_product" not in item["assets"]
 
     async def test_a_missing_item_stays_the_sources_404(self) -> None:
@@ -207,12 +196,5 @@ class TestGetItem:
         gateway, _ = answering(httpx.Response(404, json={"detail": "not found"}))
         async with gateway:
             with pytest.raises(UpstreamError) as excinfo:
-                await get_item(DATASET_ID, "no-such-item", gateway=gateway)
+                await get_item(SENTINEL_2_L2A_ZARR3, "no-such-item", gateway=gateway)
         assert excinfo.value.status_code == 404
-
-    async def test_an_unknown_collection_is_refused_for_a_single_item_too(self) -> None:
-        gateway, seen = answering(httpx.Response(200, json=load("item")))
-        async with gateway:
-            with pytest.raises(UnknownCollection):
-                await get_item("no-such-collection", "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", gateway=gateway)
-        assert seen == []

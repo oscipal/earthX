@@ -19,7 +19,7 @@ from earthx.api.item_source import (
     item_holding_of,
 )
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
+from earthx.catalog.registry import CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding
 
 
 def _materialized_entry() -> Any:
@@ -101,8 +101,8 @@ class TestBuildItemSourceDispatchesByHolding:
         a federated entry, proving the new branch above did not swallow it."""
         seen: list[str] = []
 
-        async def fake_get_item(dataset_id: str, item_id: str, *, gateway: object, registry: object) -> dict[str, Any]:
-            seen.append(dataset_id)
+        async def fake_get_item(config: DatasetConfig, item_id: str, *, gateway: object) -> dict[str, Any]:
+            seen.append(config.dataset_id)
             return {"id": item_id}
 
         monkeypatch.setattr("earthx.api.item_source.get_item", fake_get_item)

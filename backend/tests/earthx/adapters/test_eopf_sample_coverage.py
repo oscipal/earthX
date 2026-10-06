@@ -22,7 +22,6 @@ import httpx
 import pytest
 
 from earthx.adapters.eopf_sample_coverage import SAMPLE_PAGES, sample_coverage
-from earthx.adapters.errors import UnknownCollection
 from earthx.catalog.coverage import (
     Completeness,
     CoverageProviderMismatch,
@@ -33,7 +32,6 @@ from earthx.catalog.coverage import (
     geotile_key,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
-from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -294,18 +292,6 @@ class TestTheLevelCapHoldsAtTheSeam:
 
 class TestDispatchMistakes:
     """Asking the wrong way for a dataset is an error, not an empty map."""
-
-    async def test_an_unknown_dataset_is_the_search_path_s_error(self) -> None:
-        gateway, seen = answering(ok("search_empty"))
-
-        with pytest.raises(UnknownCollection):
-            await sample_coverage(
-                CoverageQuery(dataset_id="no-such-dataset", level=8),
-                gateway=gateway,
-                registry=DatasetRegistry((SENTINEL_2_L2A_ZARR3,)),
-            )
-
-        assert seen == []
 
     async def test_a_dataset_answered_another_way_is_refused(self) -> None:
         gateway, seen = answering(ok("search_empty"))

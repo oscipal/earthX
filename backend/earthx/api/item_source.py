@@ -19,9 +19,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from earthx.adapters import UnknownCollection, get_item
+from earthx.adapters import dataset_config, get_item
 from earthx.catalog.pgstac import fetch_item, read_item_holdings
-from earthx.catalog.registry import DatasetRegistry, ItemHolding, UnknownDatasetError
+from earthx.catalog.registry import DatasetRegistry, ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import Gateway
 
@@ -60,10 +60,7 @@ class ItemHoldingMismatch(RuntimeError):
 
 def item_holding_of(registry: DatasetRegistry, dataset_id: str) -> ItemHolding:
     """Federated or materialized, as the registry says — or :class:`UnknownCollection`."""
-    try:
-        return registry.get(dataset_id).source.item_holding
-    except UnknownDatasetError:
-        raise UnknownCollection(dataset_id) from None
+    return dataset_config(registry, dataset_id).source.item_holding
 
 
 def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any) -> ItemSource:
@@ -75,7 +72,8 @@ def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any) ->
     """
 
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
-        if item_holding_of(registry, dataset_id) is ItemHolding.MATERIALIZED:
+        config = dataset_config(registry, dataset_id)
+        if config.source.item_holding is ItemHolding.MATERIALIZED:
             # No cache in front of this: the read is already local, and the item
             # cache below exists to spare a *federated* dataset a round trip to a
             # remote source, which is not the question here.
@@ -87,11 +85,9 @@ def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any) ->
                 raise MaterializedItemNotFound(item_id)
             return item
         if pool is None:
-            return await get_item(dataset_id, item_id, gateway=gateway, registry=registry)
+            return await get_item(config, item_id, gateway=gateway)
         async with pool.connection() as conn:
-            return await get_item(
-                dataset_id, item_id, gateway=gateway, registry=registry, cache=PostgresSearchCache(conn)
-            )
+            return await get_item(config, item_id, gateway=gateway, cache=PostgresSearchCache(conn))
 
     return item_source
 

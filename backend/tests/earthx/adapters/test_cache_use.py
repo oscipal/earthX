@@ -17,6 +17,7 @@ import pytest
 from earthx.adapters import SearchParams, get_item, search_items
 from earthx.adapters.cache import SearchCache
 from earthx.adapters.federated_search import TTL_CLOSED_S, TTL_ITEM_S, TTL_OPEN_EDGE_S
+from earthx.catalog.datasets import SENTINEL_2_L2A
 
 from .conftest import answering, load
 
@@ -59,8 +60,8 @@ class TestTheCacheIsUsed:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            first = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
-            second = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            first = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
+            second = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert len(seen) == 1
         assert first.from_cache is False
         assert second.from_cache is True
@@ -71,16 +72,16 @@ class TestTheCacheIsUsed:
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            first = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
-            second = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            first = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
+            second = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert second.next_page_token == first.next_page_token
 
     async def test_a_different_search_is_a_different_entry(self, dataset_id: str) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
-            await search_items(dataset_id, SearchParams(bbox=(8.0, 47.0, 12.0, 51.0)), gateway=gateway, cache=cache)
-            await search_items(dataset_id, SearchParams(bbox=(8.0, 47.0, 12.0, 52.0)), gateway=gateway, cache=cache)
+            await search_items(SENTINEL_2_L2A, SearchParams(bbox=(8.0, 47.0, 12.0, 51.0)), gateway=gateway, cache=cache)
+            await search_items(SENTINEL_2_L2A, SearchParams(bbox=(8.0, 47.0, 12.0, 52.0)), gateway=gateway, cache=cache)
         assert len(seen) == 2
         assert len(cache.entries) == 2
 
@@ -91,13 +92,13 @@ class TestTheCacheIsUsed:
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
             await search_items(
-                dataset_id,
+                SENTINEL_2_L2A,
                 SearchParams(bbox=(8, 47, 12, 51), start=datetime(2024, 6, 1, 2, tzinfo=berlin)),
                 gateway=gateway,
                 cache=cache,
             )
             await search_items(
-                dataset_id,
+                SENTINEL_2_L2A,
                 SearchParams(bbox=(8.0, 47.0, 12.0, 51.0), start=datetime(2024, 6, 1, 0, tzinfo=timezone.utc)),
                 gateway=gateway,
                 cache=cache,
@@ -109,8 +110,8 @@ class TestTheCacheIsUsed:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("item")))
         async with gateway:
-            first = await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
-            second = await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            first = await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            second = await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
         assert len(seen) == 1
         assert second == first
         assert set(cache.datasets.values()) == {dataset_id}
@@ -124,7 +125,7 @@ class TestTheTwoLifetimes:
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
             await search_items(
-                dataset_id,
+                SENTINEL_2_L2A,
                 SearchParams(start=NOW - timedelta(days=60), end=NOW - timedelta(days=30)),
                 gateway=gateway,
                 cache=cache,
@@ -137,7 +138,7 @@ class TestTheTwoLifetimes:
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
             await search_items(
-                dataset_id,
+                SENTINEL_2_L2A,
                 SearchParams(start=NOW - timedelta(days=30), end=NOW - timedelta(days=3)),
                 gateway=gateway,
                 cache=cache,
@@ -148,14 +149,16 @@ class TestTheTwoLifetimes:
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
-            await search_items(dataset_id, SearchParams(start=NOW - timedelta(days=30)), gateway=gateway, cache=cache)
+            await search_items(
+                SENTINEL_2_L2A, SearchParams(start=NOW - timedelta(days=30)), gateway=gateway, cache=cache
+            )
         assert set(cache.ttls.values()) == {TTL_OPEN_EDGE_S}
 
     async def test_a_single_item_is_kept_for_a_day(self, dataset_id: str) -> None:
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("item")))
         async with gateway:
-            await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
         assert set(cache.ttls.values()) == {TTL_ITEM_S}
 
 
@@ -165,7 +168,7 @@ class TestACacheThatIsNotThere:
     async def test_without_a_cache_the_answer_is_the_same(self, dataset_id: str) -> None:
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            with_none = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=None)
+            with_none = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=None)
         assert len(seen) == 1
         assert len(with_none.items) == 2
 
@@ -173,7 +176,7 @@ class TestACacheThatIsNotThere:
         cache = FakeCache(fails=True)
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            page = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            page = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert cache.reads  # it was asked
         assert len(seen) == 1  # and the source answered instead
         assert len(page.items) == 2
@@ -183,16 +186,16 @@ class TestACacheThatIsNotThere:
         cache = FakeCache(fails=True)
         gateway, _ = answering(httpx.Response(200, json=load("item")))
         async with gateway:
-            item = await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            item = await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
         assert item["id"] == "SYNTH_T00AAA_20240601T100000_L2A"
 
     async def test_an_emptied_cache_only_costs_another_request(self, dataset_id: str) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            before = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            before = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
             cache.entries.clear()
-            after = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            after = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert len(seen) == 2
         assert [item["id"] for item in after.items] == [item["id"] for item in before.items]
         assert after.next_page_token == before.next_page_token
@@ -205,10 +208,10 @@ class TestACacheThatAnswersNonsense:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
             for key in cache.entries:
                 cache.entries[key] = {"something": "from another release"}
-            page = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            page = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert len(seen) == 2
         assert len(page.items) == 2
 
@@ -216,10 +219,10 @@ class TestACacheThatAnswersNonsense:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("item")))
         async with gateway:
-            await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
             for key in cache.entries:
                 cache.entries[key] = {"item": None}
-            item = await get_item(dataset_id, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
+            item = await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
         assert len(seen) == 2
         assert item["id"] == "SYNTH_T00AAA_20240601T100000_L2A"
 
@@ -234,12 +237,12 @@ class TestPagingAndCacheTogether:
             httpx.Response(200, json=load("search_page_1")), httpx.Response(200, json=load("search_page_2"))
         )
         async with gateway:
-            first = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            first = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
             second = await search_items(
-                dataset_id, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway, cache=cache
+                SENTINEL_2_L2A, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway, cache=cache
             )
             again = await search_items(
-                dataset_id, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway, cache=cache
+                SENTINEL_2_L2A, SearchParams(limit=2, page_token=first.next_page_token), gateway=gateway, cache=cache
             )
         assert len(cache.entries) == 2
         assert [item["id"] for item in second.items] == ["SYNTH_T00AAA_20240603T100000_L2A"]
@@ -254,14 +257,14 @@ class TestPagingAndCacheTogether:
             httpx.Response(200, json=load("search_page_1")), httpx.Response(200, json=load("search_page_2"))
         )
         async with gateway:
-            first = await search_items(dataset_id, SearchParams(limit=2), gateway=gateway, cache=cache)
+            first = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
             token = first.next_page_token
             assert token is not None
             await search_items(
-                dataset_id, SearchParams(limit=2, page_token=token), gateway=gateway, cache=cache
+                SENTINEL_2_L2A, SearchParams(limit=2, page_token=token), gateway=gateway, cache=cache
             )
             padded = await search_items(
-                dataset_id, SearchParams(limit=2, page_token=token + "=="), gateway=gateway, cache=cache
+                SENTINEL_2_L2A, SearchParams(limit=2, page_token=token + "=="), gateway=gateway, cache=cache
             )
         assert padded.from_cache is True
         assert len(seen) == 2

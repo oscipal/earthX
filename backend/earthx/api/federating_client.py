@@ -51,6 +51,7 @@ from earthx.adapters import (
     UnknownCollection,
     UnsupportedFilter,
     UpstreamShapeError,
+    dataset_config,
 )
 from earthx.adapters import search_items as adapter_search_items
 from earthx.api import mixed_search
@@ -821,8 +822,11 @@ class FederatingCoreCrudClient(CoreCrudClient):
             limit=limit or SearchParams().limit,
             page_token=_strip_forward_token(token),
         )
+        # The app's own registry, the same one that routed this collection here
+        # (adr/0011 §7 D2) — not a module-wide default (M4-01b).
+        config = dataset_config(_registry_of(request), collection_id)
         async with _cache_for(request) as cache:
-            return await adapter_search_items(collection_id, params, gateway=_gateway_of(request), cache=cache)
+            return await adapter_search_items(config, params, gateway=_gateway_of(request), cache=cache)
 
     async def _native_group_page(
         self,

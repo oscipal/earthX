@@ -105,8 +105,8 @@ class TestTheAdapterOnTheRealCache:
     async def test_the_second_search_is_answered_from_postgres(self, cache: PostgresSearchCache) -> None:
         gateway, seen = gateway_answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            first = await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
-            second = await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
+            first = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
+            second = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert len(seen) == 1
         assert second.from_cache is True
         assert [item["id"] for item in second.items] == [item["id"] for item in first.items]
@@ -119,13 +119,13 @@ class TestTheAdapterOnTheRealCache:
         cache object and the gateway are all built anew between the two calls."""
         gateway, _ = gateway_answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            page = await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
+            page = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert page.next_page_token is not None
 
         after_restart, seen = gateway_answering(httpx.Response(200, json=load("item")))
         async with after_restart:
             item = await get_item(
-                DATASET,
+                SENTINEL_2_L2A,
                 page.items[0]["id"],
                 gateway=after_restart,
                 cache=PostgresSearchCache(aconn),
@@ -140,9 +140,9 @@ class TestTheAdapterOnTheRealCache:
         still answers from the source instead of turning into an error."""
         gateway, seen = gateway_answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
-            await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
+            await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
             await aconn.execute("DROP TABLE public.earthx_search_cache")
-            page = await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
+            page = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert len(seen) == 2
         assert len(page.items) == 2
         assert page.from_cache is False
@@ -162,7 +162,7 @@ class TestTheAdapterOnTheRealCache:
         await aconn.execute("DROP TABLE public.earthx_search_cache")
 
         async with gateway:
-            await search_items(DATASET, SearchParams(limit=2), gateway=gateway, cache=cache)
+            await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
 
         async with aconn.cursor() as cur:
             await cur.execute("SELECT 1")

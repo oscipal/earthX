@@ -40,8 +40,7 @@ from xml.etree.ElementTree import ParseError
 from defusedxml import ElementTree as DefusedET
 from defusedxml.common import DefusedXmlException
 
-from earthx.adapters.errors import NotMaterialized, UpstreamShapeError
-from earthx.catalog.datasets import DEM_ACQUISITION_END, DEM_ACQUISITION_START
+from earthx.adapters.errors import NotMaterialized, UnsupportedSource, UpstreamShapeError
 from earthx.catalog.registry import DatasetConfig, ItemHolding
 from earthx.gateway import Gateway
 
@@ -217,8 +216,11 @@ def _item(name: str, bbox: tuple[float, float, float, float], *, config: Dataset
             # (`adr/0009` §10.1) — a period, the same for every tile, belonging
             # to the *product*, not a measurement of this one tile.
             "datetime": None,
-            "start_datetime": _stac_instant(DEM_ACQUISITION_START),
-            "end_datetime": _stac_instant(DEM_ACQUISITION_END),
+            # From the entry's own temporal extent (adr/0011 F3), not a second
+            # copy of the same two instants; `materialize_items` has checked
+            # that both ends are set.
+            "start_datetime": _stac_instant(config.temporal_extent.start),
+            "end_datetime": _stac_instant(config.temporal_extent.end),
             # Nominal resolution (`adr/0009` §3.1); the download size estimate
             # (M3-18) falls back to a worst case without it.
             "gsd": 30.0,
@@ -251,6 +253,11 @@ async def materialize_items(
         raise NotMaterialized(
             f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
         )
+    if config.temporal_extent.end is None:
+        # Every DEM item carries the product's whole acquisition period; an open
+        # end would leave each one without `end_datetime`, which STAC requires
+        # beside `start_datetime` when `datetime` is null.
+        raise UnsupportedSource(f"{config.dataset_id}: temporal_extent has no end; a DEM item needs one")
 
     tile_list_url = f"{config.source.endpoint}{TILE_LIST_PATH}"
     headers = {"if-none-match": known_version} if known_version else None
