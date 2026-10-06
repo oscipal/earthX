@@ -433,3 +433,68 @@ docker compose logs objectstore-init
 
 `.env` bleibt, wie sie ist; die zwei Dienstschlüssel und zwei neue Volumes
 entstehen beim ersten Start von selbst.
+
+---
+
+## 10. Umsetzung (06.10.2026)
+
+Umgesetzt wie freigegeben, in thematischen Commits (§6) in PR #119. `main`
+nach #121 (ADR 0016) per Merge geholt; die Lock-Dateien waren dort nicht
+geändert.
+
+**Abweichungen und Befunde beim Bauen:**
+
+1. **Drei Versuche heißen `total_max_attempts: 3`.** botocore zählt
+   `max_attempts` ohne den ersten Versuch (gemessen: `max_attempts: 3` ergibt
+   `total_max_attempts: 4`). F6 meint drei Versuche insgesamt.
+2. **Die Übersetzung der `botocore`-Fehler liegt in `client.py`, nicht in
+   `results.py`.** Nur `client.py` darf `botocore` importieren, also auch
+   dessen Ausnahmeklassen nicht anderswo nennen. `client.py` hat dafür eine
+   schmale Klasse `S3` mit den neun Aufrufen, die das Modul braucht, alle
+   gegen den einen Bucket aus der Konfiguration.
+3. **`init` nannte bei „different secret“ die Schlüssel-ID** des
+   Besitzerschlüssels im Fehlertext (seit M3-23). Das ginge in
+   `docker compose logs` und das CI-Log; jetzt steht dort der Name
+   `earthx-platform`. Ein Test je Schlüssel belegt es (Auflage F2).
+4. **Smoke las `Content-Disposition` aus einem `dict`**; Garage sendet die
+   Köpfe klein geschrieben. Gefunden am offiziellen Image (unten), behoben.
+5. **Die Gegenprobe ist ein Test** (`test_import_linter_catches_violations.py`):
+   `lint-imports` mit der echten `.importlinter` über eine Kopie des Pakets —
+   grün mit „1 ignored import“, gebrochen bei einem zweiten `botocore`-Import
+   in `objectstore` und in `processing`, bei `access -> objectstore`,
+   `processing -> objectstore`, der Kette `processing -> catalog ->
+   objectstore` und `objectstore -> catalog`.
+6. **Weitere Tests als geplant:** `test_compose_objectstore_wiring.py` (jeder
+   Prozess sieht nur seinen Schlüssel, `tiler`/`harvester` keinen, kein
+   `AWS_*`, das Admin-Volume nur bei den Einmal-Schritten) und
+   `test_objectstore_smoke_output.py` (der Smoke gibt bei keinem Fehler einen
+   der sechs Schlüsselwerte aus). Der Smoke ist jetzt importierbar, weil er
+   nur noch Pakete aus dem Dev-Lock braucht.
+7. `results.py` hat zusätzlich `new_result_id()` (`secrets.token_urlsafe(16)`)
+   für M4-08a.
+
+**Lokaler Lauf am offiziellen Image [M].** `cloud-umgebung.md` §4 (Nachtrag
+vom 05.10.2026): `docker pull` geht in der Sitzung. Garage
+`dxflrs/garage:v2.4.1` mit dem Digest aus `docker-compose.yml` lief mit
+`--network host` (Kopie von `garage.toml` mit `0.0.0.0` statt `[::]`, die
+Sitzung hat kein IPv6). Dagegen, ohne Proxy-Variablen:
+
+| Prüfung | Ergebnis |
+|---|---|
+| `bootstrap.py secrets`, `init`, zweites `init` | ✅ Schlüssel importiert, Rechte gesetzt, Regel gesetzt und zurückgelesen; zweiter Lauf idempotent; keine Kennung in der Ausgabe |
+| Worker-Startprüfung mit Regel | ✅ startet |
+| Regel mit Besitzerschlüssel gelöscht | ✅ `LifecycleMissing`, startet nicht |
+| `S3_LIFECYCLE_CHECK=off` | ✅ eine Warnung ohne Werte, startet |
+| erneutes `init` | ✅ Regel wieder da, Worker startet |
+| `upload_result` 16 MiB (3 Teile), signierte URL, `delete_result` | ✅ `200`, Dateiname im Kopf, danach nichts unter dem Präfix |
+| Modul mit dem `api`-Schlüssel | ✅ liest die Regel; Upload → `StoreDenied`, Text ohne Schlüssel-ID |
+| Modul mit unbekanntem Schlüssel | ✅ `StoreDenied` ohne Schlüssel-ID (Garage nennt sie in `AccessDenied`) |
+| `smoke.py --write-marker`, dann `--persisted` | ✅ 23 Prüfungen, davon 9 neue zu Regel, Rechten und Endpunkten |
+| `smoke.py` mit falschem `api`-Schlüssel | ✅ bricht ab, Ausgabe `No such key: <redacted>`; keiner der Werte im Text |
+
+Ein ganzes `docker compose up` ging in der Sitzung nicht (`apt-get` im
+`Dockerfile` scheitert, `cloud-umgebung.md` §4); das belegt die CI
+(`compose-topology`).
+
+**Ergebnisse:** siehe PR-Beschreibung (pytest, ruff, `lint-imports`,
+compose-topology).

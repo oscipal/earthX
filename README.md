@@ -110,9 +110,12 @@ und kein Token. Alles läuft in Containern.
    laufen einmalig vorweg und beenden sich danach von selbst: `pgstac-migrate`
    (richtet das STAC-Schema in Postgres ein), `catalog-load` (schreibt die
    Sentinel-2-Collection und die Cache-Tabelle hinein), `objectstore-secrets`
-   (legt beim ersten Start Zugangsdaten für den Objektspeicher an) und
-   `objectstore-init` (legt darüber den S3-Schlüssel und den Bucket an). Das
-   ist normal — nur die sechs Dienste oben sollen dauerhaft laufen. Eine
+   (legt beim ersten Start Zugangsdaten für den Objektspeicher an, seit M4-06
+   auch je einen Schlüssel für `worker` und `api` in eigenen Volumes) und
+   `objectstore-init` (legt darüber die Schlüssel und den Bucket an und setzt
+   die Ablaufregel für `results/`: 7 Tage, offene Multipart-Uploads nach
+   1 Tag). Das ist normal — nur die sechs Dienste oben sollen dauerhaft
+   laufen. `worker` startet nur, wenn die Ablaufregel am Bucket steht. Eine
    bestehende Datenbank braucht nach M3-11a (neues Feld
    `earthx:source.item_holding`) einmal einen neuen Lauf von `catalog-load`,
    damit die Collection-Dokumente das Feld tragen; ein normaler
@@ -130,15 +133,24 @@ und kein Token. Alles läuft in Containern.
    docker compose down
    ```
    um die Container zu entfernen (die Daten in den Volumes `postgres-data`,
-   `objectstore-data` und `objectstore-secrets` bleiben dabei erhalten;
-   `docker compose down -v` löscht auch sie).
+   `objectstore-data`, `objectstore-secrets`, `objectstore-key-jobs` und
+   `objectstore-key-api` bleiben dabei erhalten; `docker compose down -v`
+   löscht auch sie).
 6. **Zugangsdaten des Objektspeichers auslesen** (z. B. für die `aws`-CLI),
    ohne die Topologie neu zu starten:
    ```bash
    docker compose run --rm --no-deps objectstore-secrets show
    ```
    Gibt `S3_ACCESS_KEY`, `S3_SECRET_KEY` und `S3_BUCKET` auf dem eigenen
-   Terminal aus, sonst nirgends.
+   Terminal aus, sonst nirgends; dazu die zwei Dienstschlüssel
+   (`S3_JOBS_*`, `S3_API_*`). `.env` legt nur den ersten fest, die
+   Dienstschlüssel werden immer erzeugt.
+7. **Ablaufregel prüfen** (M4-06):
+   ```bash
+   docker compose logs objectstore-init
+   ```
+   zeigt `lifecycle rule results-7d set (prefix results/, expire after 7 days,
+   abort multipart after 1 day)` — ohne Schlüssel oder Secret.
 
 ### Einen STAC-Browser auf den eigenen Katalog richten
 
@@ -332,6 +344,11 @@ Merge einer neuen Lock-Datei lokal einmal `docker compose build --no-cache`.
 - **`catalog-load` ist fehlgeschlagen:** `docker compose logs catalog-load`.
   Meist reicht ein sauberer Neustart mit leeren Volumes:
   `docker compose down -v && docker compose up`.
+- **`worker` wird nicht `healthy`, im Log steht „worker not started: the
+  bucket has no enabled lifecycle rule …“:** Die Regel für `results/` fehlt
+  oder wurde geändert (z. B. mit der `aws`-CLI und dem Besitzerschlüssel).
+  `docker compose up -d objectstore-init` setzt sie neu, danach
+  `docker compose restart worker`.
 - **Umstieg von MinIO (M3-23):** Ein alter `minio`-Container aus einem
   Checkout vor M3-23 stört einen neuen Start nicht; einmal
   `docker compose up -d --remove-orphans` räumt ihn auf. Das alte Volume
