@@ -105,9 +105,7 @@ class S3:
     def put_object(self, key: str, body: BinaryIO, content_type: str) -> None:
         self._call(
             "PutObject",
-            lambda: self._internal.put_object(
-                Bucket=self._config.bucket, Key=key, Body=body, ContentType=content_type
-            ),
+            lambda: self._internal.put_object(Bucket=self._config.bucket, Key=key, Body=body, ContentType=content_type),
         )
 
     def create_multipart_upload(self, key: str, content_type: str) -> str:
@@ -140,9 +138,7 @@ class S3:
     def abort_multipart_upload(self, key: str, upload_id: str) -> None:
         self._call(
             "AbortMultipartUpload",
-            lambda: self._internal.abort_multipart_upload(
-                Bucket=self._config.bucket, Key=key, UploadId=upload_id
-            ),
+            lambda: self._internal.abort_multipart_upload(Bucket=self._config.bucket, Key=key, UploadId=upload_id),
         )
 
     def list_keys(self, prefix: str) -> Iterator[str]:

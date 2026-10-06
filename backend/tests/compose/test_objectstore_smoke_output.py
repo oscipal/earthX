@@ -89,9 +89,7 @@ def test_a_failed_check_exits_with_one_and_a_redacted_line(environment: None, mo
     assert "smoke check failed: Multipart upload" in _assert_nothing_leaks(capsys)
 
 
-def test_a_missing_service_key_fails_without_printing_the_others(
-    environment: None, monkeypatch, capsys
-) -> None:
+def test_a_missing_service_key_fails_without_printing_the_others(environment: None, monkeypatch, capsys) -> None:
     monkeypatch.delenv("S3_API_SECRET_KEY")
     monkeypatch.setattr(smoke, "run_full_suite", lambda *args: None)
     assert smoke.main() == 1

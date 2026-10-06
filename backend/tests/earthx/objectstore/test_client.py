@@ -141,6 +141,7 @@ def loopback(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, list[str], 
     `no_network` forbids every name lookup; urllib3 looks up even an address, so this
     lets exactly 127.0.0.1 through.
     """
+
     def loopback_only(host: object, *args: object, **kwargs: object) -> object:
         if host != "127.0.0.1":
             raise RuntimeError(f"lookup of {host!r} in a loopback test")
