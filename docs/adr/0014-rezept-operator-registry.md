@@ -10,6 +10,9 @@
   - **Nachtrag vom 2026-10-05:** §15b nennt die Stellen, an denen die
     Annahme von `adr/0013` (Job-Queue, Hülle `jobs`) diesen Text berührt. Der
     Originaltext bleibt stehen.
+  - **Nachtrag vom 2026-10-06:** §15c präzisiert die Zusage zu F9 und §6.3
+    nach dem Befund aus `adr/0016` §3.3 und engt R5 ein. Der Originaltext
+    bleibt stehen.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -1507,6 +1510,46 @@ Originaltext oben bleibt unverändert; maßgeblich ist `adr/0013` §9 und §6.
 Keine Abweichung sind die Signatur `processing.run(recipe, *, workdir,
 progress)` (§7.2, §13) und die Registrierung der Operatoren in `processing`
 (§13); beide bleiben.
+
+---
+
+## 15c. Nachtrag vom 2026-10-06: Toleranz über Rechner (zu F9 und §6.3)
+
+`adr/0016` (lokaler Runner) hat Otto am 2026-10-06 angenommen, F8 mit Auflage.
+Grundlage ist der Befund in `adr/0016` §3.3. Der Originaltext in §0 Punkt 7,
+§6.3 und §15a (Auflage F9) bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+**Befund [M] (`adr/0016` §3.3, §12a):** „Dieselbe CPU-Architektur“ reicht für
+Bitgleichheit nicht. numpy wählt Funktionen nach der SIMD-Stufe der CPU, glibc
+nach FMA und AVX2. Auf derselben x86_64-CPU mit simuliert abgeschalteten
+Erweiterungen gilt:
+- Grundrechenarten, Vergleiche, `sqrt`, ganzzahlige Potenzen mit |n| ≤ 50 in
+  numexpr und der Warp (`nearest`, `bilinear`, `cubic`) bleiben bitgleich;
+- `log`, `exp`, `sin` und gebrochene Potenzen weichen um bis 1 ULP (float64)
+  bzw. bis 4 ULP (float32) ab.
+
+**Was jetzt gilt:**
+
+| Stelle | bisher | jetzt |
+|---|---|---|
+| §6.3, Zeile T2 ↔ T2L | bitgleich auf derselben CPU-Architektur (CI, x86_64) | **bitgleich auf derselben Maschine** (so prüft es die CI: beide Läufe im selben Job, kein gespeicherter Referenz-Hash). Über Maschinen hinweg bitgleich für alles, was Band-Math in M4 erlaubt (unten), und für die Reprojektion |
+| §6.3, Zeile T1 ↔ T2 (Band-Math) | bitgleich bei nativer Ebene und `nearest`, dieselbe CPU-Architektur | unverändert; mit der eingeengten Funktionsliste gilt es auch über Maschinen |
+| Auflage F9 (§15a) | dieselbe CPU-Architektur | zusätzlich: Funktionen außerhalb der Liste unten sind nicht bitstabil über Maschinen; sie kommen erst mit eigener Toleranz |
+| R5 (`plans/m4-processing-kern.md` §1.1b) | feste Liste von numexpr-Funktionen, Vorschlag durch M4-09 | **eingeengt:** nur bitstabile Funktionen (unten) |
+
+**Band-Math in M4 (R5, eingeengt):** Grundrechenarten (`+ - * /`),
+Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt` und ganzzahlige
+Potenzen mit |n| ≤ 50, ausgewertet mit `optimization="aggressive"`. `log`,
+`exp`, Winkelfunktionen und gebrochene Potenzen folgen später, je mit eigener
+Toleranz in ULP.
+
+**Folgen:**
+- Der Vergleichstest T2 ↔ T2L (§6.4) rechnet beide Läufe im selben Job auf
+  derselben Maschine (`adr/0016` §7.2).
+- Ein Cache-Treffer kann wenige ULP von einer Neuberechnung abweichen, sobald
+  Funktionen außerhalb der Liste dazukommen und Worker auf verschiedenen
+  CPU-Typen laufen. Der Cache-Schlüssel (§4.5, E2) enthält die CPU-Stufe
+  nicht; das bleibt eine offene Zeile im Log.
 
 ---
 

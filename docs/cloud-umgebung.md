@@ -18,7 +18,7 @@
 | Python | seit M3-03 **3.12** (Ubuntu-Paket im Image) im venv des Hooks; `python3` zeigt weiter auf 3.11.15; **kein** conda/mamba |
 | Node | 22.22.2 mit npm 10.9.7; `npx`, `yarn`, `pnpm` vorhanden |
 | Backend-Abhängigkeiten | installieren sich **vollständig per pip**, ohne System-GDAL |
-| Docker | Daemon startbar, **Images aber nicht ladbar** — praktisch unbrauchbar |
+| Docker | Daemon startbar; seit spätestens 2026-10-05 **`docker pull` möglich**, aber `docker build` scheitert am apt-Schritt (Debian-Spiegel `403`), siehe §4 |
 | Postgres | 16.13 vorinstalliert, gestoppt; startet; PostGIS 3.4 nachinstallierbar |
 | pgstac | 0.9.12 migriert erfolgreich in die lokale Datenbank |
 | EO-Datenquellen | **keine erreichbar** |
@@ -94,6 +94,20 @@ in der Cloud-Sitzung nicht verfügbar. Selbst gebaute Images aus einem
 `Dockerfile` scheitern am Basis-Image aus derselben Quelle. Das ist eine
 Netz-Policy-Frage, keine Rechtefrage: Otto könnte die beiden Blob-Hosts der
 Allowlist der Umgebung hinzufügen; ohne das bleibt Docker außen vor.
+
+> **Nachtrag 2026-10-05 (M4-05, `adr/0016`):** Der Abschnitt oben ist
+> überholt. Gemessen am 2026-10-05:
+> - Nach `sudo dockerd` lädt `docker pull` Images, etwa `python:3.12-slim`
+>   (Debian 13).
+> - `docker build` mit `backend/Dockerfile` scheitert trotzdem am Schritt
+>   `apt-get update`: `deb.debian.org` und `ftp.de.debian.org` antworten mit
+>   **403** (über HTTPS ohne Antwort).
+> - pip im Build erreicht PyPI, braucht dafür aber den CA-Bundle des Proxys im
+>   Image.
+> - Für eine Messung lässt sich das Image mit einer Kopie des `Dockerfile` im
+>   Kratzverzeichnis bauen (apt-Schritt ersetzt, CA-Bundle für pip;
+>   `adr/0016`, Methode). Für Tests, die das echte `Dockerfile` bauen, bleibt
+>   die CI der Ort (`compose-topology`).
 
 ## 5. Postgres, PostGIS, pgstac: ja
 
@@ -264,5 +278,6 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
      `pkg-containers.githubusercontent.com` in die Allowlist der Umgebung, damit
      Docker in Sitzungen nutzbar wird? Empfehlung: **vorerst nein** — die
      Testaufteilung kommt ohne aus, und in CI gibt es Service-Container.
+     (Nachtrag 2026-10-05: `docker pull` geht inzwischen ohnehin, §4.)
    - Objektspeicher in Tests: `moto` im Prozess oder nur in CI? Empfehlung:
      **`moto`**, sobald der erste Test ihn braucht (nicht jetzt).
