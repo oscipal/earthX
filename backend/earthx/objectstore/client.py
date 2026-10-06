@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, BinaryIO, TypeVar
 
+import botocore.loaders
 import botocore.session
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
@@ -58,10 +59,16 @@ def _botocore_config(config: StoreConfig) -> Config:
     )
 
 
+# One loader for every session: it caches the S3 service model, which costs a
+# tenth of a second to read for each client otherwise. Sessions stay separate.
+_LOADER = botocore.loaders.create_loader()
+
+
 def _create(config: StoreConfig, endpoint: str) -> Any:
     # A bare session: no profile, no shared config file; the keys are passed
     # explicitly, so no credential resolver runs (adr/0015 §3.2).
     session = botocore.session.Session()
+    session.register_component("data_loader", _LOADER)
     return session.create_client(
         "s3",
         endpoint_url=endpoint,
