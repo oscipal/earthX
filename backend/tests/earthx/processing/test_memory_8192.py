@@ -1,10 +1,16 @@
-"""A T2 run over an 8192² scene stays below 300 MB peak memory (M4-07a acceptance, adr/0014 §3.5).
+"""Peak memory of a T2 run: below 500 MB at 8192², and not growing with the scene (M4-07a F11).
 
-The scene is the one §17.2 describes: two ``uint16`` bands with Sentinel-2's
-``scale``/``offset``, smooth fields with noise (σ 60 and 90 DN), a nodata strip,
-512 px blocks, deflate. It is written here, in the test process; the run itself
-happens in a fresh process (``memory_run.py``), so its ``ru_maxrss`` counts the run
-and nothing the test process did before. Approved F10: part of the normal suite.
+The scene is the one adr/0014 §17.2 describes: two ``uint16`` bands with
+Sentinel-2's ``scale``/``offset``, smooth fields with noise (σ 60 and 90 DN), a
+nodata strip, 512 px blocks, deflate. It is written here, in the test process; each
+run happens in a fresh process (``memory_run.py``) that measures its own ``VmHWM``,
+so nothing the test process did counts (plan M4-07a §9.3).
+
+Otto, 06.10.2026 (F11 option 1, with a condition): the whole child stays below
+500 MB at 8192² with ``GDAL_CACHEMAX`` 64 MB, and the same test runs 2048² too and
+checks that the peak grows by at most a fixed amount from one to the other — the
+evidence that memory follows the block size, not the scene. Part of the normal
+suite (F10).
 """
 
 from __future__ import annotations
@@ -23,23 +29,28 @@ from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
 from tests.earthx.processing import sources
-from tests.earthx.processing.memory_run import SIZE
 
 BACKEND = Path(__file__).resolve().parents[3]
 
-#: The acceptance criterion of M4-07a (plan M4-processing-kern, M4-07a).
-PEAK_LIMIT_MB = 300
+#: The acceptance of M4-07a after F11 (Otto, 06.10.2026): the whole child process at 8192².
+PEAK_LIMIT_MB = 500
+
+#: How much the peak may grow from 2048² to 8192², 16 times the pixels (F11 condition).
+#: Measured: SESSION and CI below, see plan M4-07a §9.5 for the reserve.
+GROWTH_LIMIT_MB = 200
+
+SMALL, LARGE = 2048, 8192
 
 
-def build_scene(path: Path) -> Path:
-    """§17.2 at 8192², written row strip by row strip so the test process stays small too."""
+def build_scene(path: Path, size: int) -> Path:
+    """§17.2 at ``size``², written row strip by row strip so the test process stays small too."""
     generator = numpy.random.default_rng(seed=20261006)
     profile = {
         "driver": "GTiff",
         "dtype": "uint16",
         "count": 2,
-        "width": SIZE,
-        "height": SIZE,
+        "width": size,
+        "height": size,
         "crs": sources.CRS,
         "transform": from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
         "nodata": 0,
@@ -48,19 +59,19 @@ def build_scene(path: Path) -> Path:
         "blockysize": 512,
     }
     plain = path.with_suffix(".plain.tif")
-    cols = numpy.arange(SIZE)
+    cols = numpy.arange(size)
     with rasterio.open(plain, "w", **profile) as destination:
-        for row in range(0, SIZE, 512):
+        for row in range(0, size, 512):
             rows = numpy.arange(row, row + 512)[:, None]
             red = (
-                1200 + 400 * numpy.sin(rows / 900) + 300 * numpy.cos(cols / 700) + generator.normal(0, 60, (512, SIZE))
+                1200 + 400 * numpy.sin(rows / 900) + 300 * numpy.cos(cols / 700) + generator.normal(0, 60, (512, size))
             )
             nir = (
-                3400 + 900 * numpy.sin(rows / 1300) + 500 * numpy.cos(cols / 500) + generator.normal(0, 90, (512, SIZE))
+                3400 + 900 * numpy.sin(rows / 1300) + 500 * numpy.cos(cols / 500) + generator.normal(0, 90, (512, size))
             )
             block = numpy.stack([red, nir]).clip(1, 60000).astype("uint16")
-            block[:, :, 4000:4040] = 0
-            destination.write(block, window=Window(0, row, SIZE, 512))
+            block[:, :, size // 2 : size // 2 + 40] = 0
+            destination.write(block, window=Window(0, row, size, 512))
         destination.scales = (sources.SCALE, sources.SCALE)
         destination.offsets = (sources.OFFSET, sources.OFFSET)
     cog_profile = cog_profiles.get("deflate")
@@ -71,22 +82,30 @@ def build_scene(path: Path) -> Path:
 
 
 @pytest.fixture(scope="module")
-def scene(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return build_scene(tmp_path_factory.mktemp("scene") / "big.tif")
+def scenes(tmp_path_factory: pytest.TempPathFactory) -> dict[int, Path]:
+    root = tmp_path_factory.mktemp("scenes")
+    return {size: build_scene(root / f"scene-{size}.tif", size) for size in (SMALL, LARGE)}
 
 
-def measure(scene: Path, workdir: Path, cachemax_mb: int | None = None) -> dict:
-    command = [sys.executable, "-m", "tests.earthx.processing.memory_run", str(scene), str(workdir)]
-    if cachemax_mb is not None:
-        command.append(str(cachemax_mb))
+def measure(scene: Path, workdir: Path, size: int) -> dict:
+    command = [sys.executable, "-m", "tests.earthx.processing.memory_run", str(scene), str(workdir), str(size)]
     output = subprocess.run(command, cwd=BACKEND, capture_output=True, text=True, check=True, timeout=600)
     return json.loads(output.stdout.strip().splitlines()[-1])
 
 
-def test_a_t2_run_over_8192_squared_stays_below_300_mb(scene: Path, tmp_path: Path) -> None:
-    measured = measure(scene, tmp_path)
-    print(f"\n8192² T2 run: {measured}")
-    assert measured["blocks"] == 64
-    assert measured["peak_mb"] < PEAK_LIMIT_MB
-    with rasterio.open(tmp_path / "result.tif") as result:
-        assert (result.width, result.height, result.count) == (SIZE, SIZE, 2)
+def test_the_peak_stays_below_the_limit_and_does_not_follow_the_scene_size(
+    scenes: dict[int, Path], tmp_path: Path
+) -> None:
+    measured = {}
+    for size in (SMALL, LARGE):
+        workdir = tmp_path / str(size)
+        workdir.mkdir()
+        measured[size] = measure(scenes[size], workdir, size)
+        print(f"\n{size}² T2 run: {measured[size]}")
+        assert measured[size]["blocks"] == (size // 1024) ** 2
+        with rasterio.open(workdir / "result.tif") as result:
+            assert (result.width, result.height, result.count) == (size, size, 2)
+    growth = measured[LARGE]["peak_mb"] - measured[SMALL]["peak_mb"]
+    print(f"growth {SMALL}² → {LARGE}²: {growth:.1f} MB")
+    assert measured[LARGE]["peak_mb"] < PEAK_LIMIT_MB
+    assert growth <= GROWTH_LIMIT_MB

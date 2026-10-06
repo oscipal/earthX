@@ -1,7 +1,8 @@
 """One T2 run in a process of its own, for the peak memory of adr/0014 §3.5 (plan M4-07a §3.8, F10).
 
 Called by ``test_memory_8192.py`` as ``python -m tests.earthx.processing.memory_run
-<cog> <workdir> [<GDAL_CACHEMAX in MB>]``. It puts the COG behind the same two
+<cog> <workdir> <size> [<GDAL_CACHEMAX in MB>]``, ``size`` being the side of the
+square scene in pixels. It puts the COG behind the same two
 seams the tests use — ``vsicurl_path`` and the resolver — enters
 ``worker_environment()`` in its main thread as a `jobs` child does (adr/0013 §5.3),
 runs the test operator ``scale`` over both bands and prints one JSON line: peak
@@ -30,8 +31,6 @@ from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.processing.testops import OPERATORS
 
-SIZE = 8192
-
 
 def high_water_mb() -> float:
     """Peak resident memory of this address space, from ``/proc/self/status``."""
@@ -41,7 +40,7 @@ def high_water_mb() -> float:
     raise RuntimeError("no VmHWM in /proc/self/status")
 
 
-def main(cog: Path, workdir: Path, cachemax_mb: int | None) -> None:
+def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None) -> None:
     address = sources.url("big")
     cog_reader.vsicurl_path = lambda checked: str(cog)
     read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
@@ -54,7 +53,7 @@ def main(cog: Path, workdir: Path, cachemax_mb: int | None) -> None:
         "inputs": [
             {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": ["big"], "resolved": [entry]}
         ],
-        "aoi": sources.whole(SIZE, SIZE),
+        "aoi": sources.whole(size, size),
         "steps": [{"op": "scale", "op_version": 1, "params": {"factor": 2.0}}],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
@@ -74,4 +73,4 @@ def main(cog: Path, workdir: Path, cachemax_mb: int | None) -> None:
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]) if len(sys.argv) > 3 else None)
+    main(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]) if len(sys.argv) > 4 else None)
