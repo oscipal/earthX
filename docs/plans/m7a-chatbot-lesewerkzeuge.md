@@ -190,4 +190,8 @@ dahin fertige Pakete gibt und Qwen3.5 eine neuere Laufzeit bräuchte.
   `EARTHX_CHATBOT_GPU_LAYERS=20` auf der RTX 3050 (4 GB) 1 min 30 s. Qwen3-8B
   fragt sinnvoll nach und findet `sentinel-1-grd`, ruft `check_availability`
   aber nicht von sich aus auf und deutet „proprietary“ als kostenpflichtig.
+- 06.10.2026: Qwen3-8B schreibt einen Aufruf gelegentlich in `<tools>` statt
+  `<tool_call>` (das Tag, mit dem sein Template die Werkzeugliste umschließt);
+  `LocalModel` liest beide als Aufruf. Ab und zu kündigt es eine Suche an, ohne
+  sie aufzurufen; das fängt kein Parser ab.
 
