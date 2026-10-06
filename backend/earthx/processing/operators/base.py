@@ -93,8 +93,8 @@ class RasterMeta:
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
-        left, top = self.transform * (0, 0)
-        right, bottom = self.transform * (self.width, self.height)
+        left, top = self.transform @ (0, 0)
+        right, bottom = self.transform @ (self.width, self.height)
         return (min(left, right), min(top, bottom), max(left, right), max(top, bottom))
 
     @property

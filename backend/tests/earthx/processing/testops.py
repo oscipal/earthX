@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy
 from pydantic import BaseModel, ConfigDict, Field
 from rasterio.enums import Resampling
+from rasterio.transform import Affine
 from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 from rio_tiler.models import ImageData
@@ -52,7 +53,7 @@ def _coarsen_meta(meta: RasterMeta, params: CoarsenParams) -> RasterMeta:
     factor = params.factor
     width = -(-meta.width // factor)
     height = -(-meta.height // factor)
-    transform = meta.transform * meta.transform.scale(factor, factor)
+    transform = meta.transform @ Affine.scale(factor, factor)
     return RasterMeta(meta.crs, transform, width, height, meta.bands, resampled=True)
 
 
