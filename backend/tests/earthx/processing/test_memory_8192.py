@@ -94,18 +94,22 @@ def measure(scene: Path, workdir: Path, size: int) -> dict:
 
 
 def test_the_peak_stays_below_the_limit_and_does_not_follow_the_scene_size(
-    scenes: dict[int, Path], tmp_path: Path
+    scenes: dict[int, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     measured = {}
     for size in (SMALL, LARGE):
         workdir = tmp_path / str(size)
         workdir.mkdir()
         measured[size] = measure(scenes[size], workdir, size)
-        print(f"\n{size}² T2 run: {measured[size]}")
         assert measured[size]["blocks"] == (size // 1024) ** 2
         with rasterio.open(workdir / "result.tif") as result:
             assert (result.width, result.height, result.count) == (size, size, 2)
     growth = measured[LARGE]["peak_mb"] - measured[SMALL]["peak_mb"]
-    print(f"growth {SMALL}² → {LARGE}²: {growth:.1f} MB")
+    # Printed even when the test passes: the CI log is where the numbers behind
+    # the limits are read off (plan M4-07a §9.5).
+    with capsys.disabled():
+        for size in (SMALL, LARGE):
+            print(f"\nT2 memory {size}²: {measured[size]}")
+        print(f"T2 memory growth {SMALL}² → {LARGE}²: {growth:.1f} MB")
     assert measured[LARGE]["peak_mb"] < PEAK_LIMIT_MB
     assert growth <= GROWTH_LIMIT_MB
