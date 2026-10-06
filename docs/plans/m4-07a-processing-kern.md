@@ -462,8 +462,9 @@ F1–F10 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
   M3-18 §3). Bei `grid`-Schritten entsteht die Maske auf dem Endraster.
   `RunResult` nennt beide Dateien.
 - **Versionsangabe:** Das Paket `earthx` bekommt `__version__` in
-  `backend/earthx/__init__.py` als einzige Quelle (PEP 440, Startwert
-  `0.4.0.dev0` für den Stand in M4). Sie geht als `earthx` in den Block
+  `backend/earthx/__init__.py` als einzige Quelle, SemVer 0.x mit Startwert
+  `0.4.0` (`adr/0016` §9 V1 und F10, seit 06.10.2026 angenommen; M4-16 bildet
+  daraus Tag und `runner_version`). Sie geht als `earthx` in den Block
   `engine` des Cache-Schlüssels und in die Provenienz; der Runner übernimmt sie
   nach `adr/0016`. Sie ersetzt die in §3.1 geplante eigene Zahl
   `ENGINE_VERSION`: Ein Kern, der Ergebnisse ändert, erhöht `__version__`.

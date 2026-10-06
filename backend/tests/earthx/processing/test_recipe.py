@@ -328,5 +328,6 @@ def test_the_asset_model_matches_the_dataclass_field_for_field() -> None:
     assert ResolvedAssetModel.model_validate_json(json.dumps(entry)).to_asset() == ResolvedAsset(**entry)
 
 
-def test_the_package_version_is_pep_440() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?", earthx.__version__)
+def test_the_package_version_is_semver_0_x() -> None:
+    # adr/0016 §9, F10: plain MAJOR.MINOR.PATCH, so `runner_version` can append `+g<commit>`.
+    assert re.fullmatch(r"0\.\d+\.\d+", earthx.__version__)
