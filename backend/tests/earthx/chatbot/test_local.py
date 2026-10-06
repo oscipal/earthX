@@ -75,6 +75,20 @@ async def test_tool_calls_become_tool_use_blocks() -> None:
     assert len({u["id"] for u in uses}) == 2
 
 
+async def test_a_call_in_the_tools_tag_is_a_call_too() -> None:
+    text = '<tools>\n{"name": "search_collections", "arguments": {"query": "sentinel radar", "limit": 5}}\n</tools>'
+    message = await ask(LocalModel(StubRuntime(text)))
+    assert message["stop_reason"] == "tool_use"
+    [use] = message["content"]
+    assert (use["name"], use["input"]) == ("search_collections", {"query": "sentinel radar", "limit": 5})
+
+
+async def test_mismatched_tags_are_not_a_call() -> None:
+    text = '<tools>{"name": "search_collections", "arguments": {}}</tool_call>'
+    message = await ask(LocalModel(StubRuntime(text)))
+    assert message["stop_reason"] == "end_turn"
+
+
 @pytest.mark.parametrize("raw", ["not json", '["a list"]', '{"arguments": {}}'])
 async def test_a_broken_tool_call_names_no_tool(raw: str) -> None:
     message = await ask(LocalModel(StubRuntime(f"<tool_call>{raw}</tool_call>")))

@@ -27,7 +27,9 @@ CONTEXT_TOKENS = 16384
 # Qwen3's switch for an answer without a reasoning block, much faster on a CPU.
 NO_THINK = "/no_think"
 
-_TOOL_CALL = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+# Now and then Qwen wraps a call in ``<tools>``, the tag its template puts around
+# the tool list, instead of ``<tool_call>``; both are read as a call.
+_TOOL_CALL = re.compile(r"<(tool_call|tools)>\s*(.*?)\s*</\1>", re.DOTALL)
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
@@ -85,7 +87,7 @@ class LocalModel:
 
     def _message(self, text: str, allow_tools: bool, finish_reason: object) -> dict[str, Any]:
         text = _THINK.sub("", text)
-        calls = _TOOL_CALL.findall(text) if allow_tools else []
+        calls = [raw for _, raw in _TOOL_CALL.findall(text)] if allow_tools else []
         prose = _TOOL_CALL.sub("", text).strip()
         content: list[dict[str, Any]] = [{"type": "text", "text": prose}] if prose else []
         content.extend(self._tool_use(raw) for raw in calls)
