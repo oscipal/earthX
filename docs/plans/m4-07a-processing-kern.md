@@ -473,3 +473,79 @@ F1–F10 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
   geändert, werden sie nur aus `main` übernommen (M4-07a ändert keine).
   `pytest`, `ruff`, `lint-imports` und die Laufzeit des Tests 8192² in der CI
   stehen im PR.
+
+---
+
+## 9. Befund zur Speicherabnahme (06.10.2026) — **Frage an Otto, Abnahme angehalten**
+
+Die Abnahme verlangt für einen T2-Lauf des Test-Operators über 8192² weniger als
+300 MB Spitzenspeicher. Gemessen ist das mit dem Test aus §3.8
+(`test_memory_8192.py`: Szene nach `adr/0014` §17.2, zwei Bänder `uint16` mit
+`scale`/`offset`, 512er Blöcke, deflate; Lauf in einem frischen Prozess, der wie
+ein Kind aus `jobs` zuerst `worker_environment()` betritt). Die Grenze hält der
+Kern nicht. Der Test ist im PR enthalten und **schlägt fehl**, bis F11
+beantwortet ist.
+
+### 9.1 Messung [M]
+
+Alle Läufe in dieser Session, lokale Datei, 1 Lesethread, 64 Blöcke. Spitze ist
+`VmHWM` des Kindprozesses (§9.3). Werte in MB.
+
+| `GDAL_CACHEMAX` | Spitze ganzer Lauf | davon nach den Imports | Blockschleife ohne COG-Schritt | Zeit |
+|---|---|---|---|---|
+| 8 MB | 343 | 160 | 304 | 44 s |
+| 16 MB | 365 | 160 | 312 | 42 s |
+| 32 MB | 397 | 160 | — | 42 s |
+| **64 MB (F1)** | **466** | **160** | **361** | **39 s** |
+| 256 MB | 807 | 160 | 566 | 40 s |
+| 64 MB, nur der COG-Schritt mit 16 MB | 364 | 160 | 361 | 37 s |
+
+- **Sockel 160 MB.** Allein `import earthx.processing` belegt 147–160 MB.
+  `rio_tiler.models` bringt rund 130 MB mit (rasterio, numpy, numexpr,
+  morecantile, pyproj), dazu xarray, zarr und rioxarray über `readers`.
+  `adr/0013` M9 hat für das Kind 145 MB gemessen. Die Messung in `adr/0014`
+  §3.5 ging dagegen von einem Prozess mit 70 MB aus (nur Python, rasterio,
+  numexpr). Daraus kam die Grenze von 300 MB.
+- **Blockschleife ohne Kern:** Ein Lesen und Schreiben mit `rasterio` allein,
+  ohne `processing`, kommt im selben Prozess auf 297 MB, ohne die Imports des
+  Kerns auf 205 MB. Davon gehen rund 37 MB auf die Maske (`masked=True`).
+- **COG-Schritt:** `cog_translate` braucht für das Ergebnis (330 MB deflate,
+  float32 mit Rauschen) bei 64 MB Cache rund 100 MB zusätzlich und 25–27 s, also
+  zwei Drittel der Laufzeit. Der GDAL-eigene COG-Treiber ist gleich teuer
+  (gemessen 28,6 s). `adr/0014` §3.5 hat nur ein gekacheltes GeoTIFF gemessen,
+  ohne COG.
+- `GDAL_CACHEMAX` 256 MB läge bei 807 MB. F1 ist damit bestätigt.
+
+### 9.2 Was der Kern selbst kostet [A]
+
+Die Blockschleife des Kerns liegt mit 361 MB etwa 60 MB über der reinen
+`rasterio`-Schleife im selben Prozess (297 MB). Das sind die Kopien je Block:
+Skalierung, Kern, Typumwandlung, `filled`. Das lässt sich verkleinern, bringt
+den Lauf aber nicht unter 300 MB, solange der Sockel bei 160 MB liegt.
+
+### 9.3 Nebenbefund: `ru_maxrss` taugt im Test nicht [M]
+
+Unter Linux überlebt `ru_maxrss` ein `exec`. Ein Kind, das pytest startet,
+meldete deshalb mindestens die Spitze des Elternprozesses. Der hatte vorher die
+Szene gebaut: gemessen 1494 MB unter pytest gegen 471 MB für denselben Lauf aus
+der Shell. `memory_run.py` misst deshalb `VmHWM` aus `/proc/self/status`. Das
+betrifft auch jede spätere Messung, die `jobs` an einem Kind macht.
+
+### 9.4 Frage
+
+**F11 — Speichergrenze für einen T2-Lauf über 8192²**
+1. Grenze 500 MB für den ganzen Kindprozess, Sockel eingeschlossen;
+   `GDAL_CACHEMAX` bleibt 64 MB (F1). Gemessen 466 MB. Der Test prüft das, und
+   `adr/0014` §3.5 bekommt einen Nachtrag zum Sockel **(Empfehlung)**
+2. `GDAL_CACHEMAX` 16 MB im ganzen Kern und Grenze 400 MB (gemessen 365 MB);
+   F1 würde damit geändert
+3. Grenze 300 MB halten. Das braucht einen Umbau außerhalb dieser Aufgabe,
+   etwa ein Kind ohne Zarr-Imports für COG-Läufe oder den COG-Schritt in einem
+   eigenen Prozess; der Test bleibt bis dahin rot
+4. Grenze als Zuwachs über dem Sockel: höchstens 350 MB über den Imports
+   (gemessen 306 MB)
+
+Unabhängig davon: Der COG-Schritt kostet zwei Drittel der Laufzeit. Ein
+schnelleres Profil (etwa ZSTD oder deflate mit Predictor) wäre eine
+rechenrelevante Festlegung mit eigener Messung. Ich schlage sie als eigene Zeile
+im Log vor (offen), nicht in diesem PR.
