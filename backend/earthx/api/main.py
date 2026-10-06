@@ -31,7 +31,7 @@ from stac_fastapi.pgstac.models.extensions import Extensions
 
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_upload_route import router as aoi_upload_router
-from earthx.api.coverage_route import router as coverage_router
+from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
@@ -120,7 +120,7 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = 
 
     # Outside `/stac` on purpose (M2-05b, plan §6.6 F1 a): the answer is not a STAC
     # object, and `/stac` stays the namespace of the standard.
-    app.include_router(coverage_router)
+    app.include_router(build_coverage_router(registry, adapters))
     # M3-06a: an uploaded AOI file has nothing to do with STAC either, and needs
     # neither a dataset nor `gateway` — no reason to live on `tiler`.
     app.include_router(aoi_upload_router)
