@@ -36,21 +36,24 @@ from typing import Any
 
 from earthx.adapters import cop_dem_bucket, earth_search, eopf_stac
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.adapters.cop_dem_bucket import MaterializeOutcome, NotMaterialized
+from earthx.adapters.cop_dem_bucket import MaterializeOutcome
 from earthx.adapters.earth_search_coverage import aggregate_coverage
 from earthx.adapters.eopf_sample_coverage import sample_coverage
+from earthx.adapters.errors import (
+    InvalidQuery,
+    NotMaterialized,
+    UnknownCollection,
+    UnsupportedFilter,
+    UnsupportedSource,
+    UpstreamShapeError,
+)
 from earthx.adapters.federated_search import (
     DEFAULT_LIMIT,
     MAX_IDS,
     MAX_INTERSECTS_POINTS,
     MAX_LIMIT,
-    InvalidQuery,
     ItemPage,
     SearchParams,
-    UnknownCollection,
-    UnsupportedFilter,
-    UnsupportedSource,
-    UpstreamShapeError,
 )
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery, CoverageResult
 from earthx.catalog.datasets import REGISTRY

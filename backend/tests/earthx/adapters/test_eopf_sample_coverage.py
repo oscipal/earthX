@@ -22,7 +22,7 @@ import httpx
 import pytest
 
 from earthx.adapters.eopf_sample_coverage import SAMPLE_PAGES, sample_coverage
-from earthx.adapters.federated_search import UnknownCollection
+from earthx.adapters.errors import UnknownCollection
 from earthx.catalog.coverage import (
     Completeness,
     CoverageProviderMismatch,

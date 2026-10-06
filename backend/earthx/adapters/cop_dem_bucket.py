@@ -40,7 +40,7 @@ from xml.etree.ElementTree import ParseError
 from defusedxml import ElementTree as DefusedET
 from defusedxml.common import DefusedXmlException
 
-from earthx.adapters.federated_search import UnsupportedSource, UpstreamShapeError
+from earthx.adapters.errors import NotMaterialized, UpstreamShapeError
 from earthx.catalog.datasets import DEM_ACQUISITION_END, DEM_ACQUISITION_START
 from earthx.catalog.registry import DatasetConfig, ItemHolding
 from earthx.gateway import Gateway
@@ -76,10 +76,6 @@ _TILE_NAME_RE = re.compile(r"^Copernicus_DSM_COG_10_(?P<ns>[NS])(?P<lat>\d{2})_0
 # Matching just the coordinate lets the three sources (list, bucket listing,
 # blacklist) agree on what tile they mean without agreeing on how to spell it.
 _COORD_RE = re.compile(r"[NS]\d{2}_00_[EW]\d{3}_00")
-
-
-class NotMaterialized(UnsupportedSource):
-    """This dataset's items are not materialized here (M3-11a K-05)."""
 
 
 @dataclass(frozen=True, slots=True)

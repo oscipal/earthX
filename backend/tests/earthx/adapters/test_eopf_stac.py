@@ -18,7 +18,8 @@ import httpx
 import pytest
 
 from earthx.adapters.eopf_stac import get_item, resolve_dataset, search_items
-from earthx.adapters.federated_search import SearchParams, UnknownCollection, UnsupportedSource, UpstreamShapeError
+from earthx.adapters.errors import UnknownCollection, UnsupportedSource, UpstreamShapeError
+from earthx.adapters.federated_search import SearchParams
 from earthx.catalog.datasets import SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import DatasetRegistry
 from earthx.gateway import Policy

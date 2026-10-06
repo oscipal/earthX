@@ -36,7 +36,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from stac_fastapi.types.rfc3339 import str_to_interval
 
 from earthx.adapters import coverage as adapter_coverage
-from earthx.adapters.federated_search import UpstreamShapeError
+from earthx.adapters.errors import UpstreamShapeError
 from earthx.catalog.coverage import (
     HISTOGRAM_INTERVAL,
     CoverageProviderMismatch,

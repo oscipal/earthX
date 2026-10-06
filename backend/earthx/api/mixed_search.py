@@ -30,7 +30,7 @@ import json
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, TypedDict
 
-from earthx.adapters.federated_search import InvalidQuery
+from earthx.adapters.errors import InvalidQuery
 
 # adr/0005 rule V's read timeout is 15 s (gateway.Policy); a mixed page's own budget
 # per source sits under that with room to spare, well above the slowest single

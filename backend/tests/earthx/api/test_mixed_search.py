@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from earthx.adapters.federated_search import InvalidQuery
+from earthx.adapters.errors import InvalidQuery
 from earthx.api.mixed_search import (
     compute_shares,
     decode_mixed_token,

@@ -43,6 +43,7 @@ from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
 from earthx.adapters.cache import CacheValue, SearchCache
+from earthx.adapters.errors import InvalidQuery, UpstreamShapeError
 from earthx.catalog.registry import DatasetConfig
 
 LOGGER = logging.getLogger("earthx.adapters.federated_search")
@@ -116,31 +117,6 @@ _GEOMETRY_TYPES = frozenset(
     {"Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "GeometryCollection"}
 )
 _POLYGONAL_TYPES = frozenset({"Polygon", "MultiPolygon"})
-
-
-class InvalidQuery(ValueError):
-    """The request breaks one of our own rules, before anything is sent upstream."""
-
-
-class UnknownCollection(LookupError):
-    """No such collection in our catalogue (adr/0005 rule I) — the caller's 404."""
-
-
-class UnsupportedSource(LookupError):
-    """The collection exists, but another adapter serves it. A dispatch mistake."""
-
-
-class UnsupportedFilter(LookupError):
-    """The collection's own source cannot honour `intersects` or `ids` (M3-08 F4a).
-
-    A dispatch fact, not a caller mistake — the parameter itself is valid, this
-    particular source just cannot filter by it (yet). Kept apart from
-    :class:`InvalidQuery` so the two map to different, honest `400` texts.
-    """
-
-
-class UpstreamShapeError(RuntimeError):
-    """The source answered something that is not a STAC item collection."""
 
 
 @dataclass(frozen=True, slots=True)

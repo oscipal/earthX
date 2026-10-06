@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import InvalidBandName, TileOutsideBounds
 
-from earthx.adapters.earth_search import UnknownCollection
+from earthx.adapters.errors import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
 from earthx.api.tiler import (
     DOWNLOAD_ROUTE,
