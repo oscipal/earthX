@@ -2,7 +2,7 @@
 
 **Aufgabe:** M4-01b aus `docs/plans/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 06.10.2026 freigegeben** mit F1–F6 je Option 1,
-mit einer Auflage zum Registry-Test (§7, Antworten).
+mit einer Auflage zum Registry-Test (§7, Antworten), und **umgesetzt** (§8).
 **Ort im Repo:** `docs/plans/m4-01b-adapter-spec.md`
 **Grundlagen:** `adr/0011` §3.2 (B4, B6–B10), §5.1–§5.3, §6.5 Punkt 3, §11
 (F1, F3, F5, F6, F7); `plans/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01b;
@@ -404,3 +404,84 @@ adr/0011 §5.2: „prüft der Aufrufer, der den Eintrag sucht“)
 - Vor dem Fertigmelden `main` holen; Konflikte mit M4-07a (#120, Flag
   `reprojection`) in `catalog/registry.py` und `datasets.py` so lösen, dass
   beide Änderungen erhalten bleiben.
+
+---
+
+## 8. Umsetzung (06.10.2026)
+
+Vor der Umsetzung ist `main` mit M4-06 (#118) und M4-07a (#120) in den Branch
+geholt; der Merge lief ohne Konflikte, das Flag `reprojection` aus M4-07a steht
+in `registry.py` und `datasets.py` unverändert. Danach sechs Commits nach §5:
+(1) `adapters/errors.py`, (2) Signaturen mit `DatasetConfig`, (3)
+`adapters/spec.py` mit Dispatch und Abgleich beim App-Bau, (4) `/coverage` mit
+Registry und Tabelle der App, (5) `harvest_run` entfernen, (6) Doku und Log.
+
+**Wie geplant:** §3.1 bis §3.7. `.importlinter` ist unverändert; kein Modul in
+`adapters` importiert noch `catalog.datasets` (AST-Test).
+
+**Abweichungen und Präzisierungen:**
+
+- **Prüfung beim Bau eines Specs:** Ein `AdapterSpec` in einer von §5.2
+  ausgeschlossenen Form wirft beim Bau `ValueError`, ein doppeltes `kind` in
+  `spec_table` ebenso. Das sind Programmierfehler beim Import, keine
+  `ConfigError` der Registry.
+- **Texte der Abweisungen:** Eine Art ohne Spec heißt weiter „… which no
+  adapter dispatch knows“; ein Spec ohne Suche „… which offers no search“; ein
+  Spec ohne Materialisierung behält den alten Text „… which no materializer
+  dispatch knows“, damit der bestehende Test unverändert bleibt.
+- **Regel-I-Tests:** Die Tests „unbekannte Collection erreicht die Quelle
+  nicht“ in `test_earth_search.py`, `test_eopf_stac.py`,
+  `test_earth_search_coverage.py` und `test_eopf_sample_coverage.py` entfallen,
+  weil dort keine Suche nach dem Eintrag mehr stattfindet. Regel I prüfen jetzt
+  drei Tests von `dataset_config` in `test_dispatch.py`.
+- **Adapter-Tests rufen das Modul:** `test_earth_search.py`,
+  `test_cache_use.py` und `integration/test_search_cache.py` riefen den
+  Dispatcher, obwohl sie das Earth-Search-Modul prüfen. Sie importieren jetzt
+  `earthx.adapters.earth_search`, damit sie keine Tabelle brauchen. Ihre
+  Assertions sind unverändert.
+- **Testeintrag mit DEM-Zeitraum:** `integration/test_materialize_command.py`
+  baut einen Eintrag auf Basis von Sentinel-2 mit `cop-dem-bucket`. Er hatte
+  ein offenes Zeitende und bekommt jetzt `COP_DEM_GLO_30.temporal_extent`, weil
+  der Adapter den Zeitraum aus dem Eintrag nimmt (§3.2).
+- **Umfang:** rund 760 Zeilen Produktivcode geändert (453 hinzu, 309 weg) und
+  rund 1070 Zeilen Tests (761 hinzu, 312 weg). Das ist mehr als die Schätzung in
+  §5. Der größte Teil sind Testaufrufe mit der neuen Signatur und die neue
+  Datei `test_spec.py` (rund 300 Zeilen).
+
+**Tests (neu):** `tests/earthx/adapters/test_spec.py` (Form des Specs, der
+Registry-Test nach Ottos Auflage, Gegenproben, `check_adapter_specs`,
+App-Bau, AST-Test), `tests/earthx/api/test_one_registry_per_app.py`
+(`/coverage`), `tests/integration/test_api_one_registry.py` (STAC-Suche und
+Items-Route, T-C) sowie in `test_cop_dem_bucket.py` zwei Tests zum Zeitraum aus
+dem Eintrag.
+
+**Registry-Test nach Ottos Auflage:** Für jeden Eintrag von `REGISTRY` prüft
+`test_what_its_holding_needs_is_offered`, dass der Spec alles anbietet, was die
+Haltung verlangt: föderiert Suche, Einzelabruf, `intersects` und `ids`;
+materialisiert Materialisierung; dazu Coverage, außer bei `local-sql` und
+`single_coverage_product`. `test_what_it_does_not_need_is_refused_without_a_request`
+ruft jede übrige Fähigkeit über den Dispatcher auf und verlangt eine Abweisung
+mit `UnsupportedSource`, `UnsupportedFilter` oder `CoverageProviderMismatch`,
+ohne Anfrage am Transport. Ein dritter Test belegt, dass beide zusammen jede
+Fähigkeit abdecken.
+
+**Gegenproben** (je einmal von Hand ausgeführt, danach zurückgesetzt):
+
+- Im DEM-Spec `materialize=None`: 2 Tests in `test_spec.py` fallen
+  (`test_what_its_holding_needs_is_offered[cop-dem-glo-30]`,
+  `test_every_capability_of_every_entry_is_accounted_for`).
+- Der echte Eintrag `sentinel-2-c1-l2a` mit Provider `sample` statt
+  `upstream-aggregation`: 5 Tests fallen, darunter der Registry-Test für diesen
+  Eintrag, der Abgleich und der Bau beider Apps.
+- Suche bzw. `/coverage` wieder mit der festen `REGISTRY`: alle 4 Tests in
+  `test_one_registry_per_app.py` und `test_api_one_registry.py` fallen.
+
+Dauerhaft im Test stehen dieselben Gegenproben an manipulierten Kopien
+(`TestTheCheckFailsForAManipulatedEntry`): ein materialisierter Eintrag ohne
+Materialisierung, ein föderierter ohne Suche, ein Provider ohne Antwort, eine
+Quelle ohne `ids` und eine Tabelle ohne die Art des Eintrags.
+
+**Prüfungen:** `ruff check backend` sauber; `lint-imports` 14 Verträge
+gehalten (12 vor M4-06 und M4-07a, 14 auf `main`); `pytest` aus der Repo-Wurzel
+mit dem Postgres der Session 2578 bestanden; vor der Umsetzung, auf dem Branch
+nach dem Merge von `main`, waren es 2542.
