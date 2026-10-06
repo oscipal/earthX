@@ -477,15 +477,14 @@ F1–F10 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
 
 ---
 
-## 9. Befund zur Speicherabnahme (06.10.2026) — **Frage an Otto, Abnahme angehalten**
+## 9. Befund zur Speicherabnahme (06.10.2026) — **F11 beantwortet (§9.5)**
 
 Die Abnahme verlangt für einen T2-Lauf des Test-Operators über 8192² weniger als
 300 MB Spitzenspeicher. Gemessen ist das mit dem Test aus §3.8
 (`test_memory_8192.py`: Szene nach `adr/0014` §17.2, zwei Bänder `uint16` mit
 `scale`/`offset`, 512er Blöcke, deflate; Lauf in einem frischen Prozess, der wie
-ein Kind aus `jobs` zuerst `worker_environment()` betritt). Die Grenze hält der
-Kern nicht. Der Test ist im PR enthalten und **schlägt fehl**, bis F11
-beantwortet ist.
+ein Kind aus `jobs` zuerst `worker_environment()` betritt). Die Grenze hielt der
+Kern nicht; Otto hat sie mit F11 auf 500 MB gesetzt (§9.5).
 
 ### 9.1 Messung [M]
 
@@ -550,3 +549,58 @@ Unabhängig davon: Der COG-Schritt kostet zwei Drittel der Laufzeit. Ein
 schnelleres Profil (etwa ZSTD oder deflate mit Predictor) wäre eine
 rechenrelevante Festlegung mit eigener Messung. Ich schlage sie als eigene Zeile
 im Log vor (offen), nicht in diesem PR.
+
+### 9.5 Antwort F11 (Otto, 06.10.2026) und Umsetzung
+
+**F11: Option 1, mit Auflage.** Grenze 500 MB für den ganzen Kindprozess
+(`VmHWM`), `GDAL_CACHEMAX` bleibt 64 MB. Derselbe Test rechnet zusätzlich
+2048² und prüft, dass die Spitze von 2048² auf 8192² höchstens um einen festen
+Betrag wächst. Damit ist belegt, dass der Speicher nicht mit der Szenengröße
+wächst.
+
+**Umgesetzt** in `test_memory_8192.py`: beide Szenen im selben Test, je ein
+frischer Kindprozess, Grenze `PEAK_LIMIT_MB = 500`, Wachstum höchstens
+`GROWTH_LIMIT_MB` (unten).
+
+**Messung [M]**, je Lauf `VmHWM` in MB, Kind wie im Image ohne `boto3` (§9.6):
+
+| Größe | Session (4 Läufe) | CI (Lauf 394) | nach den Imports |
+|---|---|---|---|
+| 2048² | 330 / 330 / 330 / 330 | 335 | 163 (CI 165) |
+| 4096² | 441 / 436 (vor dem Merge von M4-06) | — | 160 |
+| 8192² | 469 / 480 / 480 / 466 | 483 | 163 (CI 165) |
+| Wachstum 2048² → 8192² | 139 / 150 / 150 / 137 | 147 | — |
+
+Laufzeit des Tests in der CI: 40 s für beide Szenen samt Aufbau (8192²-Lauf
+28 s, 2048²-Lauf 2 s).
+
+- **Die Kurve sättigt.** Von 2048² auf 4096² (4-mal so viele Pixel) wächst die
+  Spitze um rund 110 MB, von 4096² auf 8192² (noch einmal 4-mal) nur um rund
+  35 MB. Das Wachstum kommt vom Füllen der Caches: dem GDAL-Blockcache (64 MB),
+  den eine 2048²-Szene mit 16 MB Rohdaten nicht füllt, und dem COG-Schritt
+  (§9.1). Mit der Fläche wächst es nicht; 16-mal so viele Pixel wären bei
+  einem Kern, der die Szene hält, rund 250 MB mehr Rohdaten allein.
+- **Betrag mit Reserve: `GROWTH_LIMIT_MB = 200`.** Höchstes gemessenes
+  Wachstum 150 MB (Session), in der CI 147 MB; 200 MB lassen rund ein Drittel
+  Reserve für Schwankungen der Runner. Die Grenze bleibt unter den 252 MB, die
+  allein die zusätzlichen Rohdaten (2 × `uint16`, 8192² gegen 2048²) bei einem
+  Kern ausmachten, der die Szene hält. Der Test unterscheidet also weiter
+  zwischen „füllt Caches“ und „wächst mit der Fläche“. Ein Kern, der die ganze
+  Szene als Array hält, läge ohnehin über 1 GB darüber (`adr/0014` §3.5:
+  3168 MB).
+- **Abstand zur Grenze von 500 MB:** In der CI lag die Spitze bei 8192² bei
+  483 MB, also 17 MB unter der Grenze. Wächst der Import-Sockel (neue
+  Abhängigkeiten im Kind) oder der COG-Schritt, wird der Test das zuerst
+  zeigen; das ist gewollt.
+
+### 9.6 Nebenfund nach dem Merge von M4-06: `boto3` in der Dev-Umgebung [M]
+
+`moto` (Testdouble des Objektspeichers, M4-06) bringt `boto3` in die
+Dev-Lock-Datei. `rasterio.session` importiert `boto3`, sobald es installiert
+ist, und damit `botocore`, und zwar in jedem Prozess, der rasterio importiert.
+Im Image fehlen `boto3` und `s3transfer` (`requirements.lock`, Wächtertest in
+`test_backend_lock.py`), dort lädt `import earthx.processing` kein `botocore`
+(geprüft). Der Reinheitstest und die Speichermessung blenden `boto3` deshalb
+vor dem ersten Import aus. Eine Gegenprobe zeigt, dass der Test `botocore`
+weiter sieht, wenn etwas es importiert. Dasselbe betrifft den Test für das Kind
+in M4-08a (`adr/0013` §9 Punkt 11).

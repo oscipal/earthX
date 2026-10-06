@@ -36,7 +36,9 @@ BACKEND = Path(__file__).resolve().parents[3]
 PEAK_LIMIT_MB = 500
 
 #: How much the peak may grow from 2048² to 8192², 16 times the pixels (F11 condition).
-#: Measured: SESSION and CI below, see plan M4-07a §9.5 for the reserve.
+#: Measured 137–150 MB in the session and 147 MB in the CI; 200 MB keeps about a third
+#: in reserve and still stays below the 252 MB of extra raw data alone that a core
+#: holding the scene would add (plan M4-07a §9.5).
 GROWTH_LIMIT_MB = 200
 
 SMALL, LARGE = 2048, 8192
