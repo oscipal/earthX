@@ -349,6 +349,11 @@ Merge einer neuen Lock-Datei lokal einmal `docker compose build --no-cache`.
   oder wurde geändert (z. B. mit der `aws`-CLI und dem Besitzerschlüssel).
   `docker compose up -d objectstore-init` setzt sie neu, danach
   `docker compose restart worker`.
+- **Garage zeigt keine einzelnen Anfragen im Log (seit M4-06):** Absicht —
+  diese Zeilen nennen die Schlüssel-ID jeder Anfrage, und `docker compose logs`
+  landet in der CI im öffentlichen Log. Zum Nachsehen lokal einmal mit
+  geändertem `RUST_LOG` starten (in `docker-compose.yml` beim Dienst
+  `objectstore` `garage_api_common=error` weglassen), danach zurücksetzen.
 - **Umstieg von MinIO (M3-23):** Ein alter `minio`-Container aus einem
   Checkout vor M3-23 stört einen neuen Start nicht; einmal
   `docker compose up -d --remove-orphans` räumt ihn auf. Das alte Volume

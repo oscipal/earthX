@@ -58,3 +58,11 @@ def test_only_the_one_shot_steps_see_the_admin_volume() -> None:
 def test_the_bootstrap_steps_see_both_service_keys() -> None:
     assert set(KEY_VOLUMES.values()) <= set(_volumes("objectstore-secrets"))
     assert set(KEY_VOLUMES.values()) <= set(_volumes("objectstore-init"))
+
+
+def test_garage_does_not_log_requests_with_their_key_id() -> None:
+    """Garage's request log names the access key of every request (`(key GK…)`,
+    `GetKeyInfo?id=GK…`); measured 56, 24 and 22 lines for the three keys of one
+    local run against the official image, none with this filter. The CI prints
+    `docker compose logs` on a failed start before it masks the keys."""
+    assert _environment("objectstore")["RUST_LOG"] == "netapp=info,garage=info,garage_api_common=error"

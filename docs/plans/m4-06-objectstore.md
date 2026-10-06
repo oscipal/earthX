@@ -470,7 +470,19 @@ geändert.
    `test_objectstore_smoke_output.py` (der Smoke gibt bei keinem Fehler einen
    der sechs Schlüsselwerte aus). Der Smoke ist jetzt importierbar, weil er
    nur noch Pakete aus dem Dev-Lock braucht.
-7. `results.py` hat zusätzlich `new_result_id()` (`secrets.token_urlsafe(16)`)
+7. **Garages Zugriffs-Log nennt die Schlüssel-ID jeder Anfrage**
+   (`(key GK…)`, `GET /v2/GetKeyInfo?id=GK…`), gesehen im CI-Log des ersten
+   grünen Laufs, dort maskiert. Der Schritt „Wait for all services to report
+   healthy“ gibt bei einem Fehlschlag aber `docker compose logs` aus, bevor die
+   Schlüssel maskiert sind — gegen die Auflage zu F2. `.github/` bleibt dafür
+   unverändert; stattdessen bekommt `objectstore` in `docker-compose.yml`
+   `RUST_LOG: netapp=info,garage=info,garage_api_common=error` (Garages
+   Vorgabe ohne Anfrage-Log). Gemessen am offiziellen Image: ohne Filter
+   56, 24 und 22 Zeilen mit den drei IDs, mit Filter keine **[M]**.
+8. `botocore` liest das S3-Dienstmodell je Session neu (rund 0,1 s je
+   Client); ein gemeinsamer Daten-Loader spart das, die Sessions bleiben
+   getrennt.
+9. `results.py` hat zusätzlich `new_result_id()` (`secrets.token_urlsafe(16)`)
    für M4-08a.
 
 **Lokaler Lauf am offiziellen Image [M].** `cloud-umgebung.md` §4 (Nachtrag
