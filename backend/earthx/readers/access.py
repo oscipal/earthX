@@ -26,13 +26,15 @@ from earthx.gateway import CachingResolver, Policy, Resolver, UrlRejected, host_
 from earthx.gateway.gdal import gdal_options
 from earthx.readers.errors import AssetRejected
 
-__all__ = ["GDAL_CACHEMAX_MB", "ReadAccess", "process_gdal_options", "read_access_for"]
+__all__ = ["GDAL_CACHEMAX_BYTES", "ReadAccess", "process_gdal_options", "read_access_for"]
 
-#: GDAL's block cache for one worker process, in MB. Set rather than left at its
-#: default of 5 % of RAM, which cost a worker several hundred MB in the
-#: measurement; 64 MB is the measured value (148 MB peak for 1024 px blocks over
-#: an 8192² scene, adr/0014 §3.5 and the addendum to §7.2).
-GDAL_CACHEMAX_MB = 64
+#: GDAL's block cache for one worker process. Set rather than left at its default
+#: of 5 % of RAM, which cost a worker several hundred MB in the measurement; 64 MB
+#: is the measured value (148 MB peak for 1024 px blocks over an 8192² scene,
+#: adr/0014 §3.5 and the addendum to §7.2). In bytes and as an integer, because
+#: that is what ``rasterio.Env`` takes for this one option (it calls
+#: ``GDALSetCacheMax64``); GDAL itself would read a small number as MB.
+GDAL_CACHEMAX_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,14 +42,14 @@ class ReadAccess:
     """Everything one run needs to open its inputs: whom to ask, how, and through what."""
 
     policy: Policy
-    gdal_options: Mapping[str, str]
+    gdal_options: Mapping[str, str | int]
     resolve: Resolver
 
 
-def process_gdal_options() -> Mapping[str, str]:
+def process_gdal_options() -> Mapping[str, str | int]:
     """The GDAL settings every read of a worker runs under, independent of the job."""
-    options = dict(gdal_options(Policy(allowed_hosts=frozenset())))
-    options["GDAL_CACHEMAX"] = str(GDAL_CACHEMAX_MB)
+    options: dict[str, str | int] = dict(gdal_options(Policy(allowed_hosts=frozenset())))
+    options["GDAL_CACHEMAX"] = GDAL_CACHEMAX_BYTES
     return MappingProxyType(options)
 
 

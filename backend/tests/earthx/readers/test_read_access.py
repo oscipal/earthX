@@ -7,19 +7,27 @@ import pytest
 from earthx.gateway.gdal import gdal_options
 from earthx.gateway.policy import Policy
 from earthx.readers import AssetRejected
-from earthx.readers.access import GDAL_CACHEMAX_MB, process_gdal_options, read_access_for
+from earthx.readers.access import GDAL_CACHEMAX_BYTES, process_gdal_options, read_access_for
 
 
 class TestProcessGdalOptions:
     def test_are_the_gateway_options_plus_the_block_cache(self) -> None:
         options = dict(process_gdal_options())
-        assert options.pop("GDAL_CACHEMAX") == str(GDAL_CACHEMAX_MB) == "64"
+        assert options.pop("GDAL_CACHEMAX") == GDAL_CACHEMAX_BYTES == 64 * 1024 * 1024
         assert options == gdal_options(Policy(allowed_hosts=frozenset()))
 
     def test_do_not_depend_on_any_allowlist(self) -> None:
         assert gdal_options(Policy(allowed_hosts=frozenset({"a.example"}))) == gdal_options(
             Policy(allowed_hosts=frozenset())
         )
+
+    def test_rasterio_takes_them_and_sets_the_cache_in_bytes(self) -> None:
+        import rasterio
+        from rasterio._env import get_gdal_config
+
+        with rasterio.Env(**process_gdal_options()):
+            assert get_gdal_config("GDAL_CACHEMAX") == 64 * 1024 * 1024
+            assert get_gdal_config("GDAL_DISABLE_READDIR_ON_OPEN") == "EMPTY_DIR"
 
     def test_cannot_be_changed_by_a_caller(self) -> None:
         with pytest.raises(TypeError):

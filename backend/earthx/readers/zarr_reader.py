@@ -559,6 +559,15 @@ class ZarrReader(XarrayReader):
         super().__attrs_post_init__()
         self._extra_bands = tuple(XarrayReader(array, tms=self.tms, options=self.options) for array in arrays[1:])
 
+    @property
+    def arrays(self) -> tuple[xarray.DataArray, ...]:
+        """Every variable this reader reads, in the order named — the first is ``self.input``.
+
+        For a caller that needs what each variable says about itself, such as its CF
+        attributes when the store was opened with ``decode_cf=False`` (adr/0014 §5.4).
+        """
+        return (self.input, *(reader.input for reader in self._extra_bands))
+
     def tile(self, *args: Any, **kwargs: Any) -> ImageData:
         return self._merged(XarrayReader.tile, *args, **kwargs)
 
