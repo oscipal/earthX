@@ -57,7 +57,7 @@ def test_the_double_is_a_search_cache() -> None:
 
 
 class TestTheCacheIsUsed:
-    async def test_a_second_identical_search_does_not_reach_the_source(self, dataset_id: str) -> None:
+    async def test_a_second_identical_search_does_not_reach_the_source(self) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
@@ -68,7 +68,7 @@ class TestTheCacheIsUsed:
         assert second.from_cache is True
         assert [item["id"] for item in second.items] == [item["id"] for item in first.items]
 
-    async def test_a_cached_page_keeps_its_page_token(self, dataset_id: str) -> None:
+    async def test_a_cached_page_keeps_its_page_token(self) -> None:
         """A page out of the cache has to be as usable as a fresh one, marker included."""
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("search_page_1")))
@@ -77,7 +77,7 @@ class TestTheCacheIsUsed:
             second = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=cache)
         assert second.next_page_token == first.next_page_token
 
-    async def test_a_different_search_is_a_different_entry(self, dataset_id: str) -> None:
+    async def test_a_different_search_is_a_different_entry(self) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
@@ -86,7 +86,7 @@ class TestTheCacheIsUsed:
         assert len(seen) == 2
         assert len(cache.entries) == 2
 
-    async def test_the_same_search_written_differently_is_one_entry(self, dataset_id: str) -> None:
+    async def test_the_same_search_written_differently_is_one_entry(self) -> None:
         """47 and 47.0 are the same box, and so are the same instant in two offsets."""
         cache = FakeCache()
         berlin = timezone(timedelta(hours=2))
@@ -121,7 +121,7 @@ class TestTheCacheIsUsed:
 class TestTheTwoLifetimes:
     """adr/0005 rule II with Otto's F1: seven days decide, not the age of the request."""
 
-    async def test_a_window_well_behind_us_is_kept_for_a_day(self, dataset_id: str) -> None:
+    async def test_a_window_well_behind_us_is_kept_for_a_day(self) -> None:
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
@@ -133,7 +133,7 @@ class TestTheTwoLifetimes:
             )
         assert set(cache.ttls.values()) == {TTL_CLOSED_S}
 
-    async def test_a_window_that_ends_within_the_last_week_is_kept_for_five_minutes(self, dataset_id: str) -> None:
+    async def test_a_window_that_ends_within_the_last_week_is_kept_for_five_minutes(self) -> None:
         """Scenes are still delivered into the days right behind the edge."""
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
@@ -146,7 +146,7 @@ class TestTheTwoLifetimes:
             )
         assert set(cache.ttls.values()) == {TTL_OPEN_EDGE_S}
 
-    async def test_an_open_window_is_kept_for_five_minutes(self, dataset_id: str) -> None:
+    async def test_an_open_window_is_kept_for_five_minutes(self) -> None:
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("search_empty")))
         async with gateway:
@@ -155,7 +155,7 @@ class TestTheTwoLifetimes:
             )
         assert set(cache.ttls.values()) == {TTL_OPEN_EDGE_S}
 
-    async def test_a_single_item_is_kept_for_a_day(self, dataset_id: str) -> None:
+    async def test_a_single_item_is_kept_for_a_day(self) -> None:
         cache = FakeCache()
         gateway, _ = answering(httpx.Response(200, json=load("item")))
         async with gateway:
@@ -166,14 +166,14 @@ class TestTheTwoLifetimes:
 class TestACacheThatIsNotThere:
     """E5: a failing cache makes the platform slower, never a 404."""
 
-    async def test_without_a_cache_the_answer_is_the_same(self, dataset_id: str) -> None:
+    async def test_without_a_cache_the_answer_is_the_same(self) -> None:
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
             with_none = await search_items(SENTINEL_2_L2A, SearchParams(limit=2), gateway=gateway, cache=None)
         assert len(seen) == 1
         assert len(with_none.items) == 2
 
-    async def test_a_cache_that_cannot_be_read_is_asked_past(self, dataset_id: str) -> None:
+    async def test_a_cache_that_cannot_be_read_is_asked_past(self) -> None:
         cache = FakeCache(fails=True)
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
@@ -182,7 +182,7 @@ class TestACacheThatIsNotThere:
         assert len(seen) == 1  # and the source answered instead
         assert len(page.items) == 2
 
-    async def test_a_cache_that_cannot_be_written_does_not_lose_the_answer(self, dataset_id: str) -> None:
+    async def test_a_cache_that_cannot_be_written_does_not_lose_the_answer(self) -> None:
         """The answer is already in hand; failing now would throw it away over bookkeeping."""
         cache = FakeCache(fails=True)
         gateway, _ = answering(httpx.Response(200, json=load("item")))
@@ -190,7 +190,7 @@ class TestACacheThatIsNotThere:
             item = await get_item(SENTINEL_2_L2A, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway, cache=cache)
         assert item["id"] == "SYNTH_T00AAA_20240601T100000_L2A"
 
-    async def test_an_emptied_cache_only_costs_another_request(self, dataset_id: str) -> None:
+    async def test_an_emptied_cache_only_costs_another_request(self) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
@@ -205,7 +205,7 @@ class TestACacheThatIsNotThere:
 class TestACacheThatAnswersNonsense:
     """A row from an older release, or a damaged one, is a miss — not an answer."""
 
-    async def test_a_page_without_features_is_fetched_again(self, dataset_id: str) -> None:
+    async def test_a_page_without_features_is_fetched_again(self) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
         async with gateway:
@@ -216,7 +216,7 @@ class TestACacheThatAnswersNonsense:
         assert len(seen) == 2
         assert len(page.items) == 2
 
-    async def test_an_item_row_without_an_item_is_fetched_again(self, dataset_id: str) -> None:
+    async def test_an_item_row_without_an_item_is_fetched_again(self) -> None:
         cache = FakeCache()
         gateway, seen = answering(httpx.Response(200, json=load("item")))
         async with gateway:
@@ -232,7 +232,7 @@ class TestPagingAndCacheTogether:
     """The page marker is part of the cache key — the only thing keeping page two
     from being served the contents of page one."""
 
-    async def test_the_second_page_is_its_own_entry(self, dataset_id: str) -> None:
+    async def test_the_second_page_is_its_own_entry(self) -> None:
         cache = FakeCache()
         gateway, seen = answering(
             httpx.Response(200, json=load("search_page_1")), httpx.Response(200, json=load("search_page_2"))
@@ -251,7 +251,7 @@ class TestPagingAndCacheTogether:
         assert [item["id"] for item in again.items] == [item["id"] for item in second.items]
         assert len(seen) == 2
 
-    async def test_a_token_that_lost_its_padding_is_the_same_entry(self, dataset_id: str) -> None:
+    async def test_a_token_that_lost_its_padding_is_the_same_entry(self) -> None:
         """The key is built from the decoded marker, so the two spellings meet."""
         cache = FakeCache()
         gateway, seen = answering(

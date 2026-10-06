@@ -138,6 +138,7 @@ class TestCollectionIsOurs:
                 await search_items(other, gateway=gateway)
         assert seen == []
 
+
 class TestPaging:
     async def test_a_next_link_becomes_a_token_of_our_own(self) -> None:
         upstream_marker = "next:sentinel-2-l2a-zarr3:SYNTH_S2A_MSIL2A_20260921T141821_T26WMD"

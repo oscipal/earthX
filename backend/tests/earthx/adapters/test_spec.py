@@ -198,15 +198,6 @@ class TestEveryRegistryEntryAgainstTheTable:
                 await _ask(capability, config, gateway)
         assert seen == []
 
-    def test_every_capability_of_every_entry_is_accounted_for(self) -> None:
-        """Nothing falls between the two tests above: what is not needed is refused,
-        what is needed is offered, and the two together cover every capability."""
-        for config in REGISTRY:
-            needed = _required(config)
-            refused = {capability for capability in CAPABILITIES if capability not in needed}
-            assert needed | refused == set(CAPABILITIES)
-            assert needed <= _offered(config, ADAPTER_SPECS)
-
 
 class TestTheCheckFailsForAManipulatedEntry:
     """The counter-test Otto asked for: a manipulated entry or table is found."""
@@ -236,6 +227,49 @@ class TestTheCheckFailsForAManipulatedEntry:
 
     def test_a_table_without_the_entrys_kind(self) -> None:
         assert _missing(COP_DEM_GLO_30, _without(AdapterKind.COP_DEM_BUCKET)) == ["materialize"]
+
+
+class TestDispatchWithAHandedInTable:
+    """The branches of the dispatch the registry-wide tests above cannot reach,
+    because the real table has every kind the real registry names."""
+
+    @pytest.mark.anyio
+    async def test_coverage_is_answered_by_the_spec_of_the_entrys_kind(self) -> None:
+        asked: list[str] = []
+
+        async def answer(query: CoverageQuery, config: DatasetConfig, **kwargs: object) -> str:
+            asked.append(config.dataset_id)
+            return "answered"
+
+        table = spec_table(_spec(coverage={CoverageProvider.UPSTREAM_AGGREGATION: answer}))
+        gateway, seen = _recording_gateway()
+        async with gateway:
+            query = CoverageQuery(dataset_id=SENTINEL_2_L2A.dataset_id, level=3)
+            assert await coverage(query, SENTINEL_2_L2A, adapters=table, gateway=gateway) == "answered"
+        assert asked == [SENTINEL_2_L2A.dataset_id]
+        assert seen == []
+
+    @pytest.mark.anyio
+    async def test_coverage_for_a_kind_missing_from_the_table_is_refused(self) -> None:
+        gateway, seen = _recording_gateway()
+        async with gateway:
+            with pytest.raises(CoverageProviderMismatch):
+                query = CoverageQuery(dataset_id=SENTINEL_2_L2A.dataset_id, level=3)
+                await coverage(query, SENTINEL_2_L2A, adapters=_without(AdapterKind.EARTH_SEARCH_V1), gateway=gateway)
+        assert seen == []
+
+    @pytest.mark.anyio
+    async def test_materializing_a_kind_missing_from_the_table_is_refused(self) -> None:
+        gateway, seen = _recording_gateway()
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="no materializer"):
+                await materialize_items(
+                    COP_DEM_GLO_30,
+                    adapters=_without(AdapterKind.COP_DEM_BUCKET),
+                    gateway=gateway,
+                    known_version=None,
+                )
+        assert seen == []
 
 
 class TestCheckAdapterSpecs:

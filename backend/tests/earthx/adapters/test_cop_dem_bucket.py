@@ -389,8 +389,9 @@ class TestDispatch:
         assert seen == []
 
     async def test_a_materialized_kind_no_materializer_knows_is_refused(self) -> None:
-        """A dispatch mistake, not a real dataset — the same posture
-        `adapters._adapter_for` takes for an unknown `AdapterKind` (`test_dispatch.py`)."""
+        """A dispatch mistake, not a real dataset: the kind's spec offers no
+        `materialize`, refused the way search refuses an unknown `AdapterKind`
+        (`test_dispatch.py`)."""
         stranded = replace(_config(), source=replace(_config().source, adapter=SENTINEL_2_L2A.source.adapter))
         gateway, seen = bucket(tile_list_names=[TILE_NE])
         async with gateway:

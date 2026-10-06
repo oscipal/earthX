@@ -60,7 +60,6 @@ from earthx.gateway import Gateway
 LOGGER = logging.getLogger("earthx.adapters.eopf_stac")
 
 
-
 async def search_items(
     config: DatasetConfig,
     params: SearchParams | None = None,

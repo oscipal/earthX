@@ -230,7 +230,6 @@ class TestItemHolding:
             replace(valid_config.source, harvest_run=None)
 
 
-
 class TestBrowseCors:
     """M3-12, F-11: a quicklook a browser keys transparent on its own canvas needs
     cross-origin access to the asset host."""

@@ -59,7 +59,6 @@ from earthx.gateway import Gateway
 LOGGER = logging.getLogger("earthx.adapters.earth_search")
 
 
-
 async def search_items(
     config: DatasetConfig,
     params: SearchParams | None = None,

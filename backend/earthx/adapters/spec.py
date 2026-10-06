@@ -138,11 +138,12 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
 def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> None:
     """Refuse an app whose registry asks an adapter for something ``adapters`` lacks.
 
-    Only what an app itself asks an adapter for (M4-01b §3.3): search and item
-    fetch for a federated entry, and coverage unless ``catalog`` answers it
-    (``local-sql``) or the route answers with the extent alone
-    (``single_coverage_product``). Whether a materialized entry can be
-    materialized is ``discovery``'s question, refused by the dispatch there.
+    Every entry's ``AdapterKind`` must be in the table. Beyond that, only what an
+    app itself asks an adapter for (M4-01b §3.3): search and item fetch for a
+    federated entry, and coverage unless ``catalog`` answers it (``local-sql``) or
+    the route answers with the extent alone (``single_coverage_product``). Whether
+    a materialized entry can be materialized is ``discovery``'s question, refused
+    by the dispatch there.
     """
     problems: list[str] = []
     for config in registry:
