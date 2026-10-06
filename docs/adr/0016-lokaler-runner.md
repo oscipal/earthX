@@ -1,6 +1,10 @@
 # ADR 0016 — Lokaler Runner
 
-- **Status:** **Entwurf**, wartet auf Otto (Fragen in §12).
+- **Status:** **Angenommen** von Otto am 2026-10-06.
+  - Alle elf Fragen aus §12 sind nach Empfehlung beantwortet (F1–F11:
+    Option 1); die Kleinentscheidungen gelten.
+  - Dazu Auflagen zu F2, F8 und F10 und die Korrektur eines Nebenfunds. Sie
+    stehen in §12a und sind in §0, §5, §7.2 und §10 eingearbeitet.
 - **Datum:** 2026-10-05
 - **Aufgabe:** M4-05 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode und keine Änderung an
@@ -139,6 +143,9 @@ Jede Empfehlung hat eine Frage in §12.
      (Varianten mit und ohne FMA) [M][P\*].
    - Empfehlung: Die Zusage aus `adr/0014` F9 wird so präzisiert, nicht
      erzwungen. M4-09 bekommt den Befund für die Funktionsliste aus R5.
+   - **Auflage F8:** Zusätzlich wird R5 eingeengt. Band-Math erlaubt in M4
+     nur bitstabile Funktionen; `log`, `exp`, Winkelfunktionen und
+     gebrochene Potenzen folgen später mit eigener Toleranz (§12a).
 9. **Plattformen und Befehl (F9):** x86_64 mit Docker Desktop oder Podman
    unter Windows, macOS und Linux. Auf ARM-Rechnern wird nativ gebaut. Das
    Ergebnis liegt dann außerhalb der Bitgleich-Zusage und trägt die
@@ -480,11 +487,26 @@ ENTRYPOINT ["python", "-m", "earthx.runner"]
   außer `processing` und `catalog`. Eine zusätzliche Regel erlaubt aus
   `catalog` nur `catalog.datasets` und `catalog.registry`; Form nach dem
   Muster der vorhandenen Verträge;
-- `earthx.runner` als Quelle in `no-database-in-worker-core`,
-  `no-object-store-in-worker-core` (R2), `http-only-in-gateway` und
-  `datasets-isolated`. Diese Verträge zählen Ketten mit (außer
-  `http-only-in-gateway`); eine Kette `runner → … → psycopg` fällt also auf;
+- **Kettenvertrag wie für `processing` (Auflage F2):** `earthx.runner`
+  erreicht weder `psycopg`, `psycopg_pool`, `asyncpg`, `earthx.objectstore`
+  noch `botocore`, auch nicht über eine Kette. Dafür wird `earthx.runner`
+  Quelle in `no-database-in-worker-core` und `no-object-store-in-worker-core`
+  (R2), oder es bekommt einen eigenen Vertrag mit genau dieser Liste; die
+  Form wählt M4-16 nach dem Stand von `.importlinter` nach M4-06 und M4-08a;
+- `earthx.runner` als Quelle in `http-only-in-gateway` und
+  `datasets-isolated`;
+- **Test (Auflage F2):** Ein frischer Prozess importiert `earthx.runner`;
+  danach steht keines der fünf Module in `sys.modules`;
 - `test_module_boundaries.py` kennt die neue Zeile.
+
+**Geprüft (Auflage F2) [M]:** `import earthx.catalog.datasets` in einem
+frischen Prozess lädt aus `earthx` nur `earthx.catalog`,
+`earthx.catalog.registry` und `earthx.catalog.datasets`. `psycopg`,
+`psycopg_pool`, `asyncpg`, `botocore` und `earthx.objectstore` stehen danach
+nicht in `sys.modules`; `python -X importtime` zeigt keinen Import davon.
+`catalog/__init__.py` importiert nichts. F4 kann die erlaubten Hosts also aus
+`catalog.datasets` nehmen; eine zweite, datenbankfreie Quelle ist nicht
+nötig.
 
 Das sind neue, strengere Regeln für ein neues Modul. Keine bestehende Regel
 wird gelockert.
@@ -635,8 +657,9 @@ Test, und der Schalter läge im Image beim Nutzer.
 
 **Teil 1, `pytest` im Backend-Job:**
 - Fixtures: die synthetische COG mit `scale`/`offset` und das Zarr mit
-  CF-Attributen aus `adr/0014` §6.4. Je ein Rezept: Band-Math (mit einer
-  Funktion aus der Liste von M4-09) und Reprojektion (`bilinear`).
+  CF-Attributen aus `adr/0014` §6.4. Je ein Rezept: Band-Math (mit `sqrt` oder
+  `where` aus der bitstabilen Liste von M4-09, Auflage F8) und Reprojektion
+  (`bilinear`).
 - Zwei Kindprozesse mit `get_context("spawn")`. Der eine ruft den Einstieg von
   `jobs` (`jobs/child.py`), der andere den Einstieg des Runners
   (`earthx.runner`, Unterbefehl `run`). Beide setzen vor dem Aufruf dieselbe
@@ -750,7 +773,8 @@ die Lock-Datei. Das betrifft alle vier Dienste.
 | Kosten | keine | numpy-Funktionen bis 8× langsamer, numexpr kaum [M]; glibc-Maskierung auch für `memcpy` (nicht gemessen); Namen der Tunables ändern sich still zwischen glibc-Versionen [M] | Nutzer verlieren gängige Indizes mit `log` oder Potenzen |
 | belegt | [M] | nur simuliert auf einer CPU; eine echte v2-CPU fehlt [A] | [M] |
 
-**Empfehlung: T1.** Lokale Ergebnisse sind ohnehin `self_attested` und nicht
+**Empfehlung: T1.** (Angenommen mit der Auflage, zusätzlich T3 in M4
+anzuwenden; §12a.) Lokale Ergebnisse sind ohnehin `self_attested` und nicht
 im Cache. Abweichungen von wenigen ULP ändern keine Aussage eines Index. T2
 kostet Leistung in jedem Job und hängt an still ignorierbaren Namen. M4-09
 bekommt den Befund trotzdem, damit die Funktionsliste nach R5 mit Wissen
@@ -775,7 +799,10 @@ entsteht.
 
 ---
 
-## 12. Fragen an Otto
+## 12. Fragen an Otto — beantwortet am 2026-10-06
+
+Otto hat alle elf Fragen mit Option 1 beantwortet. Die Fragen stehen mit
+ihrem ursprünglichen Wortlaut da; die Auflagen stehen in §12a.
 
 **F1 — Image (§4)**
 1. Eigene Build-Stufe `runner` im selben `Dockerfile` auf der Stufe der
@@ -784,12 +811,16 @@ entsteht.
 2. Dasselbe Image wie `worker`, Runner nur als anderer Befehl
 3. Eigenes schlankes Image mit eigener Lock-Datei (rund 10 % kleiner)
 
+**Antwort F1: (1)** eigene Build-Stufe `runner` im selben `Dockerfile`.
+
 **F2 — Modul (§5)**
 1. Neues Modul `earthx.runner`, darf nur `processing` und `catalog.datasets`;
    Quelle in den Ketten-Verträgen des Kerns; neue Zeile in 3.1
    **(Empfehlung)**
 2. In `jobs`, gesichert durch einen Test auf `sys.modules`
 3. In `processing` als `python -m earthx.processing`
+
+**Antwort F2: (1)** neues Modul `earthx.runner`; Auflage F2 (§12a).
 
 **F3 — Rezeptdatei in M4 (§6.1)**
 1. Genau das Rezept (`recipe.json` beim Ergebnis), geprüft mit denselben
@@ -798,12 +829,16 @@ entsteht.
 2. Wie 1, dazu ein Endpunkt, der einen Auftrag ohne Lauf zum Rezept auflöst
 3. Wie 2, aber ohne AOI; der Runner ergänzt sie lokal
 
+**Antwort F3: (1)** nur vorhandene Rezeptdateien, kein neuer Endpunkt in M4.
+
 **F4 — Allowlist (§6.2)**
 1. Hosts des Rezepts, zusätzlich gegen `asset_hosts` der Registry im Image;
    unbekannt → Abbruch; Hosts werden vor dem Lesen genannt
    **(Empfehlung)**
 2. Nur die Hosts des Rezepts (B9 wörtlich), genannt vor dem Lesen
 3. Wie 2, mit Rückfrage am Terminal
+
+**Antwort F4: (1)** Hosts des Rezepts, zusätzlich gegen die Registry im Image.
 
 **F5 — Ausgabe und Provenienz (§6.3)**
 1. Neuer Ordner je Lauf mit zufälligem Namen, nie überschreiben; dieselben
@@ -814,11 +849,15 @@ entsteht.
    eigener Datei
 3. Dateien direkt in `/out`, vorhandene werden überschrieben
 
+**Antwort F5: (1)** neuer Ordner je Lauf mit `provenance.json`.
+
 **F6 — Cache-Volume (§6.4)**
 1. Keines in M4; die Festlegung aus 7.7 bleibt als offene Zeile im Log
    **(Empfehlung)**
 2. Datei-Cache für Zarr-Chunks über `zarr.experimental.cache_store.CacheStore`
 3. Assets vorab ganz herunterladen
+
+**Antwort F6: (1)** kein Cache-Volume in M4.
 
 **F7 — Vergleichstest (§7)**
 1. `pytest` mit zwei Einstiegen in frischen `spawn`-Prozessen, Vergleich im
@@ -828,6 +867,8 @@ entsteht.
 3. Voller Lauf im Container gegen einen lokalen Fixture-Server; braucht eine
    Lockerung von `check_url` für Tests
 
+**Antwort F7: (1)** `pytest` mit zwei Einstiegen plus Prüfung der Stufe im Compose-Job.
+
 **F8 — Toleranz über Rechner (§10, Präzisierung zu `adr/0014` F9)**
 1. Zusage präzisieren: bitgleich auf derselben Maschine; über Maschinen
    bitgleich für Grundrechenarten, Vergleiche, `sqrt`, Warp; bei Funktionen
@@ -836,11 +877,15 @@ entsteht.
 2. Dispatch von numpy und glibc im Image festnageln, für `worker` und Runner
 3. Band-Math nur mit korrekt gerundeten Funktionen (R5 enger)
 
+**Antwort F8: (1)** Zusage präzisieren; Auflage F8: R5 wird zusätzlich eingeengt (§12a).
+
 **F9 — Plattformen (§3.5, §8)**
 1. x86_64 mit Docker Desktop oder Podman; ARM baut nativ, außerhalb der
    Bitgleich-Zusage, mit `platform` in der Provenienz **(Empfehlung)**
 2. Immer `--platform linux/amd64`, auch auf ARM (Emulation)
 3. Nur x86_64
+
+**Antwort F9: (1)** x86_64; ARM nativ außerhalb der Zusage.
 
 **F10 — Version und Tag (§9)**
 1. `__version__` in `earthx/__init__.py` (SemVer 0.x), Tag
@@ -849,15 +894,57 @@ entsteht.
 2. Tag und Version = kurzer Commit
 3. Tag = Datum
 
+**Antwort F10: (1)** `__version__` plus Commit; Auflage F10: entsteht in M4-07a (§12a).
+
 **F11 — Basis-Image (§9)**
 1. `python:3.12-slim` per Digest festnageln, Erneuern als eigener PR wie die
    Lock-Datei; gilt für alle vier Dienste **(Empfehlung)**
 2. Gleitender Tag bleibt
 
+**Antwort F11: (1)** Basis-Image per Digest.
+
 **Kleinentscheidungen** (gelten mit der Annahme, sofern Otto nicht
 widerspricht): Unterbefehle `run`, `check`, `versions` und die Exit-Codes aus
 §4.2; UID 10001; Befehle in einer Zeile; der Hinweis zu WSL2 und zur Lizenz
-von Docker Desktop in der Anleitung.
+von Docker Desktop in der Anleitung. **Angenommen.**
+
+---
+
+## 12a. Auflagen (Otto, 2026-10-06)
+
+- **F2:** `earthx.runner` bekommt einen Kettenvertrag wie `processing`: kein
+  `psycopg`, `psycopg_pool`, `asyncpg`, `earthx.objectstore`, `botocore`. Für
+  M4-16 ist ein Test vorgesehen, dass der Import des Runners keines davon
+  lädt (§5). Geprüft in dieser Sitzung: `import earthx.catalog.datasets` lädt
+  kein psycopg und keines der anderen vier Module [M] (§5). F4 bleibt damit
+  wie empfohlen.
+- **F8:** Die Zusage wird präzisiert (T1), und zusätzlich wird R5 eingeengt
+  (T3 für M4): Band-Math erlaubt in M4 nur bitstabile Funktionen —
+  Grundrechenarten, Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt`
+  und ganzzahlige Potenzen. `log`, `exp`, Winkelfunktionen und gebrochene
+  Potenzen folgen später mit eigener Toleranz. Eingearbeitet als Nachtrag in
+  `adr/0014` §15c (zu F9 und §6.3), in R5 (`plans/m4-processing-kern.md`
+  §1.1b) und als Hinweis bei M4-09.
+- **F10:** `__version__` entsteht in M4-07a, weil der Cache-Schlüssel sie
+  zuerst braucht (`adr/0014` §4.5, E2); M4-16 übernimmt sie für Tag und
+  `runner_version`. Vermerkt bei M4-07a im Plan.
+- **Nebenfund `cloud-umgebung.md` §4:** im selben PR korrigiert (`docker pull`
+  geht, `apt` im Build scheitert an den Debian-Spiegeln mit `403`).
+
+**Ganzzahlige Potenzen, nachgeprüft am 2026-10-06 [P][M]:**
+- numexpr zerlegt mit `optimization="aggressive"` (Vorgabe von
+  `numexpr.evaluate`) ganz- und halbzahlige Exponenten mit |n| ≤ 50 in
+  Multiplikationen und `sqrt` (`numexpr/expressions.py`, `pow_op`,
+  `RANGE = 50`). Größere Exponenten gehen an `pow`.
+- Gemessen, Einstellung A gegen D aus §3.3, float32 und float64: `x**2`,
+  `x**3`, `x**7`, `x**-2` und `x**50` gleich; `x**51` in float64 **anders**
+  (§14.5).
+- Für R5 heißt „ganzzahlige Potenzen“ deshalb: ganzzahlige Exponenten mit
+  |n| ≤ 50, ausgewertet mit `optimization="aggressive"`. Halbzahlige
+  Exponenten (`x**0.5`) erlaubt R5 nicht; dafür gibt es `sqrt`.
+- M4-09 belegt die erlaubten Funktionen und Exponenten mit einem Test unter
+  den Einstellungen A und D aus §3.3, wenn die Sitzung `GLIBC_TUNABLES`
+  wirken lässt.
 
 ---
 
@@ -960,4 +1047,15 @@ GLIBC_TUNABLES=… /lib64/ld-linux-x86-64.so.2 --list-diagnostics | grep 'featur
 # ohne: 0x7ed83203; mit -AVX2,-FMA,-AVX512F: 0x7ed82203 (Bit 12 FMA weg); mit -…_Usable: unverändert
 # ulp.py: ULP-Abstand über die Bitmuster (int32/int64-Sicht), Zeit als Mittel aus 5 Aufrufen
 # Im Image: dieselben Skripte per docker run, ohne und mit Einstellung D -> wie venv
+```
+
+### 14.5 Ganzzahlige Potenzen (§12a)
+
+```bash
+# intpow.py: numexpr x**n für n in 2, 3, 7, -2, 50, 51; float32 und float64; Werte 0,5–1,5
+python intpow.py > ip_A.json
+NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR \
+  GLIBC_TUNABLES=glibc.cpu.hwcaps=-AVX2,-FMA,-AVX512F,-AVX512CD,-AVX512BW,-AVX512DQ,-AVX512VL \
+  python intpow.py > ip_D.json
+# -> alle gleich außer x**51 float64
 ```
