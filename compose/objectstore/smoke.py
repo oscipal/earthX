@@ -32,6 +32,7 @@ import secrets
 import sys
 import time
 import urllib.request
+from email.message import Message
 from urllib.error import HTTPError
 
 import botocore.session
@@ -209,13 +210,15 @@ def _status(call) -> int:
     return 200
 
 
-def _http_status(request: urllib.request.Request | str) -> tuple[int, dict]:
+def _http_status(request: urllib.request.Request | str) -> tuple[int, Message | None]:
+    """Status and headers; the headers as `Message`, which looks names up without
+    regard to case (Garage sends them in lower case)."""
     try:
         with urllib.request.urlopen(request) as resp:
             resp.read()
-            return resp.status, dict(resp.headers)
+            return resp.status, resp.headers
     except HTTPError as exc:
-        return exc.code, {}
+        return exc.code, None
 
 
 def _is_results_rule(rule: dict) -> bool:
@@ -260,7 +263,7 @@ def run_service_key_suite(jobs, api, api_internal_signer, bucket: str, endpoint:
     check("GET URL signed with the api key for the public endpoint -> 200", status == 200)
     check(
         "Content-Disposition carries the file name",
-        headers.get("Content-Disposition") == 'attachment; filename="earthx-smoke.tif"',
+        headers is not None and headers.get("Content-Disposition") == 'attachment; filename="earthx-smoke.tif"',
     )
 
     internal_url = api_internal_signer.generate_presigned_url(
