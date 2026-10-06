@@ -1,7 +1,9 @@
 # M4-07a — Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker: Plan
 
 **Aufgabe:** M4-07a aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan zur Freigabe; die Session hält nach diesem Dokument an.
+**Stufe B** — **von Otto am 06.10.2026 freigegeben** mit F1–F10 je Option 1
+und Auflagen zu F1, F2, F4 und F9 sowie einer Versionsangabe für `earthx`
+(§8). Wo §3 und §8 sich widersprechen, gilt §8.
 **Ort im Repo:** `docs/plans/m4-07a-processing-kern.md`
 **Grundlagen:** `adr/0014` §4–§8, §13, §15a, §15b; `adr/0013` §5.3, §5.5, §9
 (Kind ruft `worker_environment()`, Abbruch im nächsten Block);
@@ -433,3 +435,41 @@ Vor dem Fertigmelden: `main` holen, `pytest`, `ruff check backend`,
    rund 200 MB in `tmp_path`) **(Empfehlung)**
 2. Nur als Messskript mit Ergebnis im PR; in der Suite ein kleiner Lauf (2048²)
    mit anteiliger Grenze
+
+---
+
+## 8. Freigabe (Otto, 06.10.2026)
+
+F1–F10 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
+
+- **F1:** `GDAL_CACHEMAX` 64 MB. Als Nachtrag in `adr/0014` §7.2 vermerkt
+  (gemessen 148 MB Spitze, §3.5).
+- **F2:** Das Schema erlaubt schon jetzt Listen von Items (`groups`) und
+  Assets, damit M4-09, M4-11 und M4-12 den Hash nicht durch eine
+  Schemaänderung brechen. `run` weist mehr als ein Item (mehr als eine Gruppe
+  oder mehr als ein Item in einer Gruppe) mit `UnsupportedRecipe` ab; ein Test
+  belegt das. **Mehrere Assets eines Items kann `run` schon**, solange sie
+  dasselbe Raster haben (etwa `red` und `nir` als zwei COG-Dateien oder
+  `SR_10m:b04,b08` als ein Zarr-Asset mit zwei Variablen); sonst
+  `GridMismatch`. Bänder verschiedener Auflösung ergänzt M4-09.
+- **F4:** `workfile.py` öffnet nur Pfade unterhalb des Arbeitsordners: keine
+  URL, kein `/vsi…`, kein Pfad außerhalb, auch nicht über `..` oder einen
+  symbolischen Link. Tests mit Gegenprobe.
+- **F9:** wie M3-18 einschließlich Maske: Die Datendatei behält die Werte in
+  der ganzen Ausdehnung `bbox(AOI ∩ Rastergrenzen)`; daneben schreibt `run`
+  eine Maskendatei (`mask.tif`, GeoTIFF, `uint8`, gleiches Raster wie das
+  Ergebnis, `1` innerhalb des AOI-Polygons, `0` außerhalb, `all_touched` wie
+  M3-18 §3). Bei `grid`-Schritten entsteht die Maske auf dem Endraster.
+  `RunResult` nennt beide Dateien.
+- **Versionsangabe:** Das Paket `earthx` bekommt `__version__` in
+  `backend/earthx/__init__.py` als einzige Quelle (PEP 440, Startwert
+  `0.4.0.dev0` für den Stand in M4). Sie geht als `earthx` in den Block
+  `engine` des Cache-Schlüssels und in die Provenienz; der Runner übernimmt sie
+  nach `adr/0016`. Sie ersetzt die in §3.1 geplante eigene Zahl
+  `ENGINE_VERSION`: Ein Kern, der Ergebnisse ändert, erhöht `__version__`.
+- **Log:** Zeile „M4-07a freigegeben“ am Ende von `ENTSCHEIDUNGSLOG.md`; Stand
+  von M4-07a in `m4-processing-kern.md` §3 auf „PR #120“.
+- **Vor dem Fertigmelden:** `main` holen; hat M4-06 die Lock-Dateien
+  geändert, werden sie nur aus `main` übernommen (M4-07a ändert keine).
+  `pytest`, `ruff`, `lint-imports` und die Laufzeit des Tests 8192² in der CI
+  stehen im PR.

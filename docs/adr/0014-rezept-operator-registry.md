@@ -1039,6 +1039,12 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
   Worker, gesteuert durch `adr/0013`. `GDAL_NUM_THREADS` bleibt ungesetzt.
 - **Speicher:** `GDAL_CACHEMAX` wird ausdrücklich gesetzt, Vorschlag 256 MB.
   Der Standard wäre 5 % des RAM.
+  - **Nachtrag vom 2026-10-06 (Freigabe M4-07a, F1):** gesetzt werden
+    **64 MB**, der in §3.5 gemessene Wert (1024er Blöcke, 148 MB Spitze). Für
+    256 MB gibt es keine Messung; ein Lauf über die 268 MB Rohdaten einer
+    8192²-Szene füllt den Cache voraussichtlich ganz und läge dann über der
+    Abnahmegrenze von 300 MB [A]. Quelle: `plans/m4-07a-processing-kern.md`
+    §6, §8.
 - **Fortschritt und Abbruch:** ein Rückruf je Block. Die Hülle kann darin
   abbrechen.
 
