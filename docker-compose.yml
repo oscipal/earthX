@@ -2,8 +2,9 @@
 # docs/plans/m1-07-stac-api.md §8).
 #
 # One image (backend/Dockerfile), four start commands: api, tiler, worker,
-# harvester. tiler/worker/harvester are M1 shells: they start, report
-# healthy on /health, and do nothing else. api serves the outward STAC API
+# harvester. worker and harvester are still shells: they start, report
+# healthy on /health, and do nothing else (worker checks the object store
+# first, M4-06). api serves the outward STAC API
 # (M1-07) and is the only process that needs the collection catalog-load
 # writes.
 #
@@ -97,6 +98,11 @@ services:
   # (RPC secret, admin token, and — unless S3_ACCESS_KEY/S3_SECRET_KEY are
   # set — the S3 key) as 0600 files into the objectstore-secrets volume.
   # Idempotent: never overwrites an existing file.
+  #
+  # M4-06 (adr/0015 §6.4, §9.1): also the two service keys — `earthx-jobs` for
+  # `worker` (read, write) and `earthx-api` for `api` (read only) — each in a
+  # volume of its own, so each process sees only its own key and neither sees
+  # the admin token. Always generated; `.env` pins only the owner key above.
   objectstore-secrets:
     build:
       context: ./backend
@@ -109,6 +115,8 @@ services:
     volumes:
       - ./compose/objectstore:/objectstore:ro
       - objectstore-secrets:/secrets
+      - objectstore-key-jobs:/keys/jobs
+      - objectstore-key-api:/keys/api
     restart: "no"
 
   objectstore:
@@ -121,6 +129,12 @@ services:
     environment:
       GARAGE_RPC_SECRET_FILE: /secrets/rpc_secret
       GARAGE_ADMIN_TOKEN_FILE: /secrets/admin_token
+      # M4-06: Garage's own default (`netapp=info,garage=info`, src/garage/main.rs)
+      # minus its request log. That logger writes every request with the access
+      # key id — `(key GK…)` and `/v2/GetKeyInfo?id=GK…` — and `docker compose
+      # logs` reaches the public CI log, also on a failed start before the CI
+      # masks the keys (Otto's condition to plan M4-06 F2). Errors still log.
+      RUST_LOG: netapp=info,garage=info,garage_api_common=error
     ports:
       - "3900:3900"
     volumes:
@@ -138,7 +152,10 @@ services:
 
   # One-shot: imports the S3 key and creates the bucket over Garage's admin
   # API (port 3903, not published — compose-internal only), then grants the
-  # key access. Idempotent.
+  # key access. Since M4-06 also imports the two service keys with their own
+  # rights and sets the lifecycle rule for `results/` (7 days, open multipart
+  # uploads after 1 day; adr/0015 §7.3), which `worker` checks before it
+  # starts. Idempotent.
   objectstore-init:
     build:
       context: ./backend
@@ -147,6 +164,8 @@ services:
     volumes:
       - ./compose/objectstore:/objectstore:ro
       - objectstore-secrets:/secrets:ro
+      - objectstore-key-jobs:/keys/jobs:ro
+      - objectstore-key-api:/keys/api:ro
     depends_on:
       objectstore:
         condition: service_healthy
@@ -176,6 +195,17 @@ services:
       # treats an empty value the same as unset.
       EARTHX_GEOCODER_URL: ${EARTHX_GEOCODER_URL:-}
       EARTHX_GEOCODER_USER_AGENT: ${EARTHX_GEOCODER_USER_AGENT:-}
+      # M4-06 (adr/0015 §9.1): the object store, read-only key. Used from M4-08b
+      # for signed result links; signed for the endpoint the browser reaches
+      # (§6.3), which is port 3900 published below.
+      S3_ENDPOINT: http://objectstore:3900
+      S3_PUBLIC_ENDPOINT: http://localhost:3900
+      S3_REGION: garage
+      S3_BUCKET: ${S3_BUCKET:-earthx}
+      S3_ACCESS_KEY_FILE: /run/secrets/objectstore/access_key
+      S3_SECRET_KEY_FILE: /run/secrets/objectstore/secret_key
+    volumes:
+      - objectstore-key-api:/run/secrets/objectstore:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -236,6 +266,18 @@ services:
     command: ["uvicorn", "earthx.jobs.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     ports:
       - "8002:8000"
+    # M4-06 (adr/0015 §9.1): the object store, read-write key. The worker does
+    # not start unless the bucket carries the `results/` lifecycle rule that
+    # objectstore-init sets (adr/0015 §7.3, F8).
+    environment:
+      S3_ENDPOINT: http://objectstore:3900
+      S3_PUBLIC_ENDPOINT: http://localhost:3900
+      S3_REGION: garage
+      S3_BUCKET: ${S3_BUCKET:-earthx}
+      S3_ACCESS_KEY_FILE: /run/secrets/objectstore/access_key
+      S3_SECRET_KEY_FILE: /run/secrets/objectstore/secret_key
+    volumes:
+      - objectstore-key-jobs:/run/secrets/objectstore:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -276,3 +318,6 @@ volumes:
   # it is Otto's call, not this compose file's.
   objectstore-data:
   objectstore-secrets:
+  # M4-06: one volume per service key, mounted only by its own process.
+  objectstore-key-jobs:
+  objectstore-key-api:

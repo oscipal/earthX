@@ -164,6 +164,9 @@ class Capabilities:
     time_range: bool
     band_math: bool
     interpolation: bool
+    #: Reprojection and resampling to another grid (adr/0014 §5.3, F6; R3). A
+    #: method other than ``nearest`` needs ``interpolation`` as well.
+    reprojection: bool
     ml_processing: bool
     quad_pol: bool
     single_coverage_product: bool

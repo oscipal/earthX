@@ -28,10 +28,15 @@ CONTRACT = "importlinter:contract:http-only-in-gateway"
 # The contract may grow, but never below this: these are the packages that can
 # open a connection of their own. `httpx2` and `obstore` joined in M2-04 (adr/0006
 # §3.2, Otto's answer 6): `rio-tiler` fetches STAC items over `httpx2`, and
-# `titiler.xarray` would bring `obstore` with M2-09.
+# `titiler.xarray` would bring `obstore` with M2-09. `botocore` and `urllib3` joined
+# in M4-06 (adr/0015 §3.6, §4.3).
 CORE = frozenset(
-    {"httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore"}
+    {"httpx", "httpx2", "requests", "urllib", "aiohttp", "pystac_client", "boto3", "obstore", "botocore", "urllib3"}
 )
+
+# The one exception (adr/0015 F2): the object store's client may import `botocore`,
+# and only that. It is the same line `.importlinter` ignores.
+EXCEPTIONS = {PACKAGE / "objectstore" / "client.py": frozenset({"botocore"})}
 
 # `rio_tiler.io.stac` is the way rio-tiler fetches by itself, and the list above
 # cannot name it: import-linter refuses a subpackage of an external package as a
@@ -69,7 +74,14 @@ def test_the_contract_that_ci_enforces_still_names_every_client() -> None:
 
 @pytest.mark.parametrize("path", modules_outside_gateway(), ids=lambda path: str(path.relative_to(PACKAGE)))
 def test_no_module_outside_the_gateway_imports_a_client(path: Path) -> None:
-    assert not imported_roots(path.read_text(encoding="utf-8")) & forbidden_modules()
+    allowed = EXCEPTIONS.get(path, frozenset())
+    assert not imported_roots(path.read_text(encoding="utf-8")) & (forbidden_modules() - allowed)
+
+
+def test_the_exception_is_used_and_covers_nothing_else() -> None:
+    """An exception nobody needs any more should go, rather than wait for a second use."""
+    for path, allowed in EXCEPTIONS.items():
+        assert imported_roots(path.read_text(encoding="utf-8")) & forbidden_modules() == allowed
 
 
 def test_the_gateway_itself_does_import_one() -> None:

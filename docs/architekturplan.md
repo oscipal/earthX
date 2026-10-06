@@ -132,15 +132,16 @@ flowchart TB
 
 | Modul | Zuständig für | Darf importieren |
 |---|---|---|
-| `gateway` | Alle ausgehenden HTTP/S3-Zugriffe | nichts Fachliches |
+| `gateway` | Alle ausgehenden Zugriffe auf Datenquellen; der eigene Objektspeicher über `objectstore` | nichts Fachliches |
 | `catalog` | STAC-Modell, pgstac, Suche, Lizenz- und Capability-Felder | `gateway` |
 | `adapters` | Protokolle der Quellen: Discovery, Suche, Einzelabruf, Materialisierung, Aggregation; liefern Items mit lesbaren hrefs (6.1) | `gateway`, `catalog` (nur Modelle) |
 | `readers` | Formate: `cog.py`, `zarr_reader.py`, später virtuelle Stores | `gateway` |
 | `access` | Zugriffsauflösung (Asset → Reader und geprüfte Adresse, 6.1), Tiles, Quicklooks, Statistik, Download-Vermittlung | `readers`, `catalog` |
 | `processing` | Rezepte, Operator-Registry, Kostenmodell, Provenienz | `access`, `readers`, `catalog` |
-| `jobs` | Queue, Worker, Fortschritt, Ergebnisse | `processing` |
+| `jobs` | Queue, Worker, Fortschritt, Ergebnisse | `processing`, `objectstore` |
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
 | `identity` | Konten, API-Keys, Quotas, Audit | — |
+| `objectstore` | Zugang zum eigenen Objektspeicher: Upload, signierte URLs, Löschen, Prüfen der Ablaufregel; ein Endpunkt aus der Konfiguration (`adr/0015`) | nichts Fachliches |
 | `api` | HTTP-Routen, setzt alles zusammen | alle |
 | `datasets/<id>` | Datensatzspezifika, die kein generischer Operator abdeckt | bleibt isoliert, wird von nichts Generischem importiert |
 
@@ -161,6 +162,7 @@ Konfiguration; darf nichts Fachliches importieren. `jobs` darf zusätzlich
 alle ausgehenden Zugriffe auf **Datenquellen**; der eigene Objektspeicher läuft
 über `objectstore` (KLAERUNGEN B8, Nachtrag 2026-10-05). Die einzige Ausnahme vom
 Client-Verbot ist der Import `earthx.objectstore.client -> botocore`.
+Mit M4-06 (06.10.2026) in die Tabelle oben übernommen.
 
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
@@ -251,7 +253,7 @@ Jeder Datensatz ist eine STAC Collection, jede Szene ein STAC Item. Genutzte Ext
 |---|---|
 | `keywords` (STAC-Kernfeld, ohne Präfix) | Schlagworte des Datensatzes, mindestens eines, ohne Vorgabewert (B10). Der Datensatz-Filter der Suchkachel (M3-10) sucht im Client über Titel, Beschreibung und diese Liste |
 | `earthx:data_class` | Datentyp-Klasse (Raster-Zeitreihe, statisches Raster, ...) |
-| `earthx:capabilities` | Flags: ROI, Zeitraum, Band-Math, Interpolation erlaubt, ML geeignet, ... `time_range=False` (bisher nur der DEM) heißt: kein Datensatz mit Aufnahmeachse, ein gewählter Zeitraum ändert die Antwort nicht. Sowohl `/coverage` (M3-11c) als auch `/stac/search` (M3-12) verwerfen `datetime` dann vor jeder Anfrage und nennen das in `ignored_filters` der Antwort, statt den Filter still anzuwenden oder eine Suche wegen eines Zeitraums leer zu melden, der ohnehin nichts bedeutet |
+| `earthx:capabilities` | Flags: ROI, Zeitraum, Band-Math, Interpolation erlaubt, Reprojektion (M4 R3, `adr/0014` F6; Methoden außer `nearest` brauchen zusätzlich Interpolation), ML geeignet, ... `time_range=False` (bisher nur der DEM) heißt: kein Datensatz mit Aufnahmeachse, ein gewählter Zeitraum ändert die Antwort nicht. Sowohl `/coverage` (M3-11c) als auch `/stac/search` (M3-12) verwerfen `datetime` dann vor jeder Anfrage und nennen das in `ignored_filters` der Antwort, statt den Filter still anzuwenden oder eine Suche wegen eines Zeitraums leer zu melden, der ohnehin nichts bedeutet |
 | `earthx:license_flags` | `commercial_use`, `derivatives`, `share_alike`, `attribution_required` + SPDX-Kennung |
 | `earthx:access` | token-frei geprüft am, Methode, CORS vorhanden |
 | `earthx:distributions` | Fundorte/Spiegel mit Format, Region, Präferenz |

@@ -338,6 +338,20 @@ wie in §3.2, Ausgabe float32 als gekacheltes GeoTIFF auf lokaler Platte,
 - Der synchrone Zuschnitt brauchte für eine ganze Kachel 2,3 GB, weil die COG
   nach D3 im Speicher entstehen muss (`plans/m3-18-…` §10.3). Ein Job darf
   dagegen auf lokale Platte schreiben.
+- **Nachtrag vom 2026-10-06 (M4-07a, F11):** Die Zahlen oben gelten für ein
+  Messskript mit 70 MB Sockel und ohne COG-Schritt. Der echte Kern liegt
+  darüber [M]:
+  - Ein Kindprozess, der `earthx.processing` importiert, belegt schon nach den
+    Imports rund 160 MB; rund 130 MB davon kommen über rio-tiler, den der Kern
+    für die Gleichheit mit T1 braucht (vgl. `adr/0013` M9: 145 MB).
+  - Der COG-Schritt am Ende (`cog_translate`) war hier nicht gemessen. Er
+    kostet bei 8192² rund 100 MB zusätzlich und zwei Drittel der Laufzeit.
+  - Gemessen mit `GDAL_CACHEMAX` 64 MB als `VmHWM` des Kindes: 466–474 MB in
+    der Sitzung, 486 MB in der CI.
+  - Otto hat deshalb die Abnahmegrenze von 300 MB auf **500 MB für den ganzen
+    Kindprozess** gesetzt. Dazu kommt ein Test, dass die Spitze von 2048² auf
+    8192² nur um einen festen Betrag wächst. Quelle:
+    `plans/m4-07a-processing-kern.md` §9.
 
 ### 3.6 GDAL-Optionen in Threads — [M] und [P]
 
@@ -1042,6 +1056,12 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
   Worker, gesteuert durch `adr/0013`. `GDAL_NUM_THREADS` bleibt ungesetzt.
 - **Speicher:** `GDAL_CACHEMAX` wird ausdrücklich gesetzt, Vorschlag 256 MB.
   Der Standard wäre 5 % des RAM.
+  - **Nachtrag vom 2026-10-06 (Freigabe M4-07a, F1):** gesetzt werden
+    **64 MB**, der in §3.5 gemessene Wert (1024er Blöcke, 148 MB Spitze). Für
+    256 MB gibt es keine Messung; ein Lauf über die 268 MB Rohdaten einer
+    8192²-Szene füllt den Cache voraussichtlich ganz und läge dann über der
+    Abnahmegrenze von 300 MB [A]. Quelle: `plans/m4-07a-processing-kern.md`
+    §6, §8.
 - **Fortschritt und Abbruch:** ein Rückruf je Block. Die Hülle kann darin
   abbrechen.
 

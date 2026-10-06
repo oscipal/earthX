@@ -169,8 +169,8 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-03 | Rezept und Operator-Registry → `adr/0014` | M4a | C | Opus (xhigh) | — | erledigt, angenommen (#114) |
 | M4-04 | Weg zum Objektspeicher → `adr/0015` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#115) |
 | M4-05 | Lokaler Runner → `adr/0016` | M4b | C | Opus (hoch) | `adr/0014` | erledigt, angenommen (#121) |
-| M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | offen |
-| M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | offen |
+| M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | in Arbeit (PR #119) |
+| M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | PR #120 |
 | M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | offen |
 | M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | offen |
 | M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | offen |

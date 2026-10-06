@@ -67,15 +67,21 @@ class TestConfigureLogging:
     library's own "HTTP Request: <url>" line — `httpx`/`httpx2` log the full URL,
     query string included, which is exactly where an AOI travels."""
 
-    def test_httpx_and_httpx2_are_raised_above_info(self) -> None:
-        for name in ("httpx", "httpx2"):
+    @pytest.mark.parametrize("level", [logging.INFO, logging.DEBUG])
+    def test_the_client_libraries_are_raised_to_warning(self, level: int) -> None:
+        """`botocore`/`urllib3` since M4-06: key id and signature at DEBUG (adr/0015 §9.2)."""
+        names = ("httpx", "httpx2", "botocore", "urllib3")
+        root = logging.getLogger()
+        previous = root.level
+        for name in names:
             logging.getLogger(name).setLevel(logging.NOTSET)
         try:
-            configure_logging()
-            for name in ("httpx", "httpx2"):
-                assert logging.getLogger(name).getEffectiveLevel() > logging.INFO
+            configure_logging(level)
+            for name in names:
+                assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING
         finally:
-            for name in ("httpx", "httpx2"):
+            root.setLevel(previous)
+            for name in names:
                 logging.getLogger(name).setLevel(logging.NOTSET)
 
 
@@ -97,7 +103,11 @@ class TestUvicornAccessLogIsDisabledInCode:
             # this module's own `configure_logging()` gets its turn. `earthx.jobs.main`
             # is typically already imported by the time this test runs, so that second
             # call is reproduced explicitly, in the same order.
-            config = uvicorn.Config(app, host="127.0.0.1", port=0, access_log=True, log_level="info")
+            # `lifespan="off"`: since M4-06 the worker's start checks the object store
+            # (tests/earthx/jobs/test_startup.py); this test is about the access log.
+            config = uvicorn.Config(
+                app, host="127.0.0.1", port=0, access_log=True, log_level="info", lifespan="off"
+            )
             configure_logging()
             server = uvicorn.Server(config)
             task = asyncio.create_task(server.serve())

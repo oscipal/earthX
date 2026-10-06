@@ -55,6 +55,7 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
         "time_range": caps.time_range,
         "band_math": caps.band_math,
         "interpolation": caps.interpolation,
+        "reprojection": caps.reprojection,
         "ml_processing": caps.ml_processing,
         "quad_pol": caps.quad_pol,
         "single_coverage_product": caps.single_coverage_product,

@@ -8,7 +8,7 @@ empty.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pystac
 import pytest
@@ -20,6 +20,7 @@ from earthx.catalog.collection import (
     to_stac_collection,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.registry import Capabilities
 
 EARTHX_FIELDS = (
     "earthx:data_class",
@@ -44,6 +45,12 @@ def collection() -> dict:
 @pytest.mark.parametrize("field", EARTHX_FIELDS)
 def test_every_earthx_field_of_5_1_is_present(collection: dict, field: str) -> None:
     assert field in collection
+
+
+def test_every_capability_flag_is_published(collection: dict) -> None:
+    published = collection["earthx:capabilities"]
+    assert set(published) == {field.name for field in fields(Capabilities)}
+    assert published["reprojection"] is True
 
 
 def test_the_coverage_fields_stay_out_of_the_collection(collection: dict) -> None:

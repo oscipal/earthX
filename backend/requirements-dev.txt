@@ -15,3 +15,7 @@ pystac>=1.10
 # uvicorn[standard]); listed directly because the test imports them.
 packaging>=24
 pyyaml>=6
+# S3 in-process for the objectstore tests (M4-06, adr/0015 §5, §12 point 5). Brings
+# `boto3` into the dev environment only; the image never has it
+# (test_objectstore_boundary.py checks backend/requirements.lock).
+moto[s3]>=5.1

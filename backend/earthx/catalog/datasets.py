@@ -86,6 +86,8 @@ SENTINEL_2_L2A = DatasetConfig(
         time_range=True,
         band_math=True,
         interpolation=True,
+        # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
+        reprojection=True,
         ml_processing=True,
         # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
         quad_pol=False,
@@ -269,6 +271,8 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         time_range=True,
         band_math=True,
         interpolation=True,
+        # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
+        reprojection=True,
         ml_processing=True,
         # Optical, dual-pol source data — decomp.py stays out (ENTSCHEIDUNGEN §3).
         quad_pol=False,
@@ -466,6 +470,8 @@ COP_DEM_GLO_30 = DatasetConfig(
         time_range=False,
         band_math=True,
         interpolation=True,
+        # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
+        reprojection=True,
         ml_processing=True,
         # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
         quad_pol=False,

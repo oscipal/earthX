@@ -37,4 +37,9 @@ COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes \
       --only-binary :all: --no-binary version-parser -r requirements.lock
 
+# Second guard behind `botocore` alone (adr/0015 §5, F3): no AWS library in this
+# image may ask the instance metadata service for credentials. The object store
+# client gets its keys only from S3_* (earthx/objectstore/config.py).
+ENV AWS_EC2_METADATA_DISABLED=true
+
 COPY earthx ./earthx
