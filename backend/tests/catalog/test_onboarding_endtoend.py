@@ -28,7 +28,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from earthx.access.download import NOTICE_FILENAME
-from earthx.adapters import SearchParams, materialize_items, search_items
+from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, search_items
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, ItemHolding, group_key
@@ -87,14 +87,16 @@ async def test_search_reaches_the_source_through_its_own_adapter(chain: Chain) -
     *creation* through the real adapter against the synthetic bucket, instead —
     there is no search request to build."""
     if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
-        outcome = await materialize_items(chain.config, gateway=chain.gateway, known_version=None)
+        outcome = await materialize_items(
+            chain.config, adapters=ADAPTER_SPECS, gateway=chain.gateway, known_version=None
+        )
         assert [item["id"] for item in outcome.items] == [chain.item["id"]]
         assert outcome.items[0]["bbox"] == chain.item["bbox"]
         paths = {request.url.path for request in chain.searched}
         assert paths == {"/tileList.txt", "/blacklist.txt", "/"}
         return
 
-    page = await search_items(chain.config, SearchParams(limit=10), gateway=chain.gateway)
+    page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
 
     assert [item["id"] for item in page.items] == [synthetic_chain.ITEM_ID]
 
@@ -179,10 +181,12 @@ async def test_the_whole_chain_runs_for_this_entry(chain: Chain, client: TestCli
     """Point 9 itself: one item, found (or, materialized, created), displayed and
     downloaded, in that order."""
     if chain.config.source.item_holding is ItemHolding.MATERIALIZED:
-        outcome = await materialize_items(chain.config, gateway=chain.gateway, known_version=None)
+        outcome = await materialize_items(
+            chain.config, adapters=ADAPTER_SPECS, gateway=chain.gateway, known_version=None
+        )
         (found,) = outcome.items
     else:
-        page = await search_items(chain.config, SearchParams(limit=10), gateway=chain.gateway)
+        page = await search_items(chain.config, SearchParams(limit=10), adapters=ADAPTER_SPECS, gateway=chain.gateway)
         (found,) = page.items
 
     zoom, x, y = chain.tile

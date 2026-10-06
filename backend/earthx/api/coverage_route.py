@@ -35,6 +35,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from stac_fastapi.types.rfc3339 import str_to_interval
 
+from earthx.adapters import ADAPTER_SPECS, AdapterSpecs
 from earthx.adapters import coverage as adapter_coverage
 from earthx.adapters.errors import UpstreamShapeError
 from earthx.catalog.coverage import (
@@ -79,7 +80,7 @@ def _area_path(config: Any) -> bool:
     return config.capabilities.single_coverage_product and config.coverage.provider is CoverageProvider.LOCAL_SQL
 
 
-def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
+def build_router(registry: DatasetRegistry = REGISTRY, adapters: AdapterSpecs = ADAPTER_SPECS) -> APIRouter:
     """The router, built against ``registry`` — a parameter so a test can pass its
     own registry, the same shape ``api.tiler.build_app`` already uses.
     """
@@ -167,10 +168,12 @@ def build_router(registry: DatasetRegistry = REGISTRY) -> APIRouter:
                 async with pool.connection() as conn:
                     result = await area_coverage(query, config, conn=conn, cache=PostgresSearchCache(conn))
             elif pool is None:
-                result = await adapter_coverage(query, config, gateway=gateway)
+                result = await adapter_coverage(query, config, adapters=adapters, gateway=gateway)
             else:
                 async with pool.connection() as conn:
-                    result = await adapter_coverage(query, config, gateway=gateway, cache=PostgresSearchCache(conn))
+                    result = await adapter_coverage(
+                        query, config, adapters=adapters, gateway=gateway, cache=PostgresSearchCache(conn)
+                    )
         except InvalidCoverageQuery as error:
             # `area_coverage`'s own defensive re-check of `check_intersects_is_valid`
             # (`local_coverage.py`) — the route above already validates the same

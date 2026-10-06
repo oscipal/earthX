@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from earthx.adapters import NotMaterialized, UnsupportedSource, UpstreamShapeError, materialize_items
+from earthx.adapters import ADAPTER_SPECS, NotMaterialized, UnsupportedSource, UpstreamShapeError, materialize_items
 from earthx.adapters.cop_dem_bucket import COG_MEDIA_TYPE, MAX_NOT_LOADABLE_FRACTION
 from earthx.catalog.datasets import COP_DEM_GLO_30, DEM_ACQUISITION_END, DEM_ACQUISITION_START, SENTINEL_2_L2A
 from earthx.catalog.registry import TemporalExtent
@@ -134,7 +134,7 @@ class TestALoadedRun:
     async def test_every_listed_and_bucketed_tile_becomes_an_item(self) -> None:
         gateway, seen = bucket(tile_list_names=[TILE_NE, TILE_SW])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
         assert outcome.status == "loaded"
         assert outcome.source_version == '"synthetic-etag"'
@@ -149,19 +149,19 @@ class TestALoadedRun:
     async def test_the_conditional_header_carries_the_known_version(self) -> None:
         gateway, seen = bucket(tile_list_names=[TILE_NE], etag='"v2"')
         async with gateway:
-            await materialize_items(_config(), gateway=gateway, known_version='"v1"')
+            await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version='"v1"')
         assert seen[0].headers["if-none-match"] == '"v1"'
 
     async def test_no_conditional_header_without_a_known_version(self) -> None:
         gateway, seen = bucket(tile_list_names=[TILE_NE])
         async with gateway:
-            await materialize_items(_config(), gateway=gateway, known_version=None)
+            await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert "if-none-match" not in seen[0].headers
 
     async def test_a_trailing_blank_line_is_ignored(self) -> None:
         gateway, _ = bucket(tile_list_names=[TILE_NE, "", ""])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert [item["id"] for item in outcome.items] == [TILE_NE]
 
     async def test_a_paginated_listing_is_combined(self) -> None:
@@ -170,7 +170,7 @@ class TestALoadedRun:
             listing_pages=[[TILE_NE], [TILE_SW], [TILE_SE]],
         )
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert outcome.in_bucket == 3
         assert {item["id"] for item in outcome.items} == {TILE_NE, TILE_SW, TILE_SE}
         listing_requests = [request for request in seen if request.url.path == "/"]
@@ -181,7 +181,9 @@ class TestUnchanged:
     async def test_a_304_is_reported_without_reading_anything_else(self) -> None:
         gateway, seen = unchanged_bucket(known_etag='"same"')
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version='"same"')
+            outcome = await materialize_items(
+                _config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version='"same"'
+            )
         assert outcome.status == "unchanged"
         assert outcome.source_version == '"same"'
         assert outcome.items == ()
@@ -197,7 +199,7 @@ class TestReconciliation:
         names = _many_tile_names(200) + [TILE_NE]
         gateway, _ = bucket(tile_list_names=names, listing_pages=[_many_tile_names(200)])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert TILE_NE not in {item["id"] for item in outcome.items}
         assert outcome.missing == 1
         assert outcome.withheld == 0
@@ -209,7 +211,7 @@ class TestReconciliation:
             blacklist_names=[_BLACKLIST_NAME.format(coord="N46_00_E010_00")],
         )
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert TILE_NE not in {item["id"] for item in outcome.items}
         assert outcome.withheld == 1
         assert outcome.missing == 0
@@ -218,7 +220,7 @@ class TestReconciliation:
         base = _many_tile_names(200)
         gateway, _ = bucket(tile_list_names=base, listing_pages=[base + [TILE_NE]])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert TILE_NE not in {item["id"] for item in outcome.items}
         assert outcome.unknown == 1
 
@@ -232,7 +234,7 @@ class TestReconciliation:
             blacklist_names=[_BLACKLIST_NAME.format(coord="N46_00_E010_00")],
         )
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert outcome.withheld == 1
         assert outcome.missing == 0
 
@@ -242,7 +244,7 @@ class TestAbort:
         gateway, _ = bucket(tile_list_names=[TILE_NE], listing_pages=[[]])
         async with gateway:
             with pytest.raises(UpstreamShapeError, match="no prefixes"):
-                await materialize_items(_config(), gateway=gateway, known_version=None)
+                await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
     async def test_at_the_one_percent_threshold_nothing_aborts(self) -> None:
         names = [f"Copernicus_DSM_COG_10_N{lat:02d}_00_E010_00_DEM" for lat in range(90)]  # 90 tiles
@@ -254,7 +256,7 @@ class TestAbort:
         missing_one = names_hundred[0]
         gateway, _ = bucket(tile_list_names=names_hundred, listing_pages=[names_hundred[1:]])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert outcome.missing == 1
         assert missing_one not in {item["id"] for item in outcome.items}
         assert MAX_NOT_LOADABLE_FRACTION == 0.01
@@ -267,7 +269,7 @@ class TestAbort:
         gateway, _ = bucket(tile_list_names=names, listing_pages=[names[2:]])
         async with gateway:
             with pytest.raises(UpstreamShapeError, match="not loadable"):
-                await materialize_items(_config(), gateway=gateway, known_version=None)
+                await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
 
 class TestMalformedSource:
@@ -275,7 +277,7 @@ class TestMalformedSource:
         gateway, _ = bucket(tile_list_names=[TILE_NE, "not-a-dem-tile-name"])
         async with gateway:
             with pytest.raises(UpstreamShapeError, match="does not match"):
-                await materialize_items(_config(), gateway=gateway, known_version=None)
+                await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
     async def test_a_response_without_an_etag_fails(self) -> None:
         async def sleep(seconds: float) -> None:
@@ -287,7 +289,7 @@ class TestMalformedSource:
         gateway = Gateway(POLICY, transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep)
         async with gateway:
             with pytest.raises(UpstreamShapeError, match="ETag"):
-                await materialize_items(_config(), gateway=gateway, known_version=None)
+                await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
     async def test_a_bucket_listing_that_is_not_xml_fails(self) -> None:
         async def sleep(seconds: float) -> None:
@@ -304,7 +306,7 @@ class TestMalformedSource:
         gateway = Gateway(POLICY, transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep)
         async with gateway:
             with pytest.raises(UpstreamShapeError, match="not valid XML"):
-                await materialize_items(_config(), gateway=gateway, known_version=None)
+                await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
 
 
 class TestItemShape:
@@ -321,7 +323,7 @@ class TestItemShape:
     async def test_the_nominal_bbox_matches_the_tile_name(self, name: str, bbox: list[float]) -> None:
         gateway, _ = bucket(tile_list_names=[name])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         (item,) = outcome.items
         assert item["bbox"] == bbox
         assert item["geometry"]["type"] == "Polygon"
@@ -329,7 +331,7 @@ class TestItemShape:
     async def test_the_asset_points_at_the_endpoint_configured_host(self) -> None:
         gateway, _ = bucket(tile_list_names=[TILE_NE])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         (item,) = outcome.items
         asset = item["assets"]["data"]
         assert asset["href"] == f"https://{HOST}/{TILE_NE}/{TILE_NE}.tif"
@@ -339,7 +341,7 @@ class TestItemShape:
     async def test_the_item_carries_the_collection_id_and_no_datetime(self) -> None:
         gateway, _ = bucket(tile_list_names=[TILE_NE])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         (item,) = outcome.items
         assert item["collection"] == _config().dataset_id
         assert item["properties"]["datetime"] is None
@@ -349,7 +351,7 @@ class TestItemShape:
     async def test_the_acquisition_period_matches_the_registry_constants(self) -> None:
         gateway, _ = bucket(tile_list_names=[TILE_NE])
         async with gateway:
-            outcome = await materialize_items(_config(), gateway=gateway, known_version=None)
+            outcome = await materialize_items(_config(), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         (item,) = outcome.items
         assert item["properties"]["start_datetime"] == DEM_ACQUISITION_START.strftime("%Y-%m-%dT%H:%M:%SZ")
         assert item["properties"]["end_datetime"] == DEM_ACQUISITION_END.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -363,7 +365,7 @@ class TestItemShape:
         gateway, _ = bucket(tile_list_names=[TILE_NE])
         async with gateway:
             outcome = await materialize_items(
-                replace(_config(), temporal_extent=other), gateway=gateway, known_version=None
+                replace(_config(), temporal_extent=other), adapters=ADAPTER_SPECS, gateway=gateway, known_version=None
             )
         (item,) = outcome.items
         assert item["properties"]["start_datetime"] == "2011-01-01T00:00:00Z"
@@ -374,7 +376,7 @@ class TestItemShape:
         gateway, seen = bucket(tile_list_names=[TILE_NE])
         async with gateway:
             with pytest.raises(UnsupportedSource, match="temporal_extent has no end"):
-                await materialize_items(open_ended, gateway=gateway, known_version=None)
+                await materialize_items(open_ended, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert seen == []
 
 
@@ -383,7 +385,7 @@ class TestDispatch:
         gateway, seen = bucket(tile_list_names=[TILE_NE])
         async with gateway:
             with pytest.raises(NotMaterialized):
-                await materialize_items(SENTINEL_2_L2A, gateway=gateway, known_version=None)
+                await materialize_items(SENTINEL_2_L2A, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert seen == []
 
     async def test_a_materialized_kind_no_materializer_knows_is_refused(self) -> None:
@@ -393,5 +395,5 @@ class TestDispatch:
         gateway, seen = bucket(tile_list_names=[TILE_NE])
         async with gateway:
             with pytest.raises(UnsupportedSource, match="no materializer dispatch knows"):
-                await materialize_items(stranded, gateway=gateway, known_version=None)
+                await materialize_items(stranded, adapters=ADAPTER_SPECS, gateway=gateway, known_version=None)
         assert seen == []

@@ -14,8 +14,9 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.adapters import SearchParams, get_item, search_items
+from earthx.adapters import SearchParams
 from earthx.adapters.cache import SearchCache
+from earthx.adapters.earth_search import get_item, search_items
 from earthx.adapters.federated_search import TTL_CLOSED_S, TTL_ITEM_S, TTL_OPEN_EDGE_S
 from earthx.catalog.datasets import SENTINEL_2_L2A
 

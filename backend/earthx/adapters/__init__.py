@@ -1,45 +1,38 @@
-"""Source protocols: discovery, search, access resolution, aggregation.
+"""Source protocols: search, item fetch, materialization, aggregation.
 
 One adapter per source protocol (architekturplan.md 6.1). ``earth_search`` speaks
 Earth Search v1 (Sentinel-2 L2A as COG); ``eopf_stac`` speaks the EOPF Sentinel Zarr
 Samples Service (the same dataset again, as Zarr, M2-09b). Both answer search and
-access resolution; each also answers a coverage way of adr/0004 §5 — Earth Search
-its aggregation, EOPF a declared sample — through :func:`coverage` below, dispatched
-by adapter and provider rather than by the caller picking a function (K-06, M3-11c).
-``cop_dem_bucket`` (M3-11b) speaks a third, structurally different protocol: it
-never searches, it *materializes* — it turns a bucket's own tile list into STAC
-items, once, for the one-off command in ``discovery``. Discovery follows with the
-harvester proper (M5).
+item fetch; each also answers a coverage way of adr/0004 §5 — Earth Search its
+aggregation, EOPF a declared sample (K-06, M3-11c). ``cop_dem_bucket`` (M3-11b)
+speaks a third, structurally different protocol: it never searches, it
+*materializes* — it turns a bucket's own tile list into STAC items, once, for the
+one-off command in ``discovery``. Discovery follows with the harvester proper (M5).
 
-Everything an adapter sends goes through ``gateway``; what it needs to know about a
-dataset it reads from ``catalog``. Which adapter serves which collection is decided
-by the caller from ``earthx:source`` (adr/0005 rule I) — from M1-07 on that caller is
-the federating client in ``api``, through :func:`search_items`/:func:`get_item`
-below, which dispatch on the registry entry's own ``earthx:source.adapter`` rather
-than making the caller pick a module. A dataset added to the registry under an
-``AdapterKind`` this dispatch does not know is a dispatch mistake, not a wrong
-answer: :class:`UnsupportedSource`. Every function here takes the registry entry,
-which the caller looks up once through :func:`dataset_config` (adr/0011 F3).
+What each protocol offers is declared once, as an
+:class:`~earthx.adapters.spec.AdapterSpec` (adr/0011 F1). The functions below
+dispatch on the registry entry's own ``earthx:source.adapter`` through the table
+the caller hands in (``adapters=``, no default), so no caller picks a module and
+no test patches a private table. What the entry's source does not offer is refused
+by name before any request goes out — :class:`UnsupportedSource`,
+:class:`UnsupportedFilter`, or for coverage
+:class:`~earthx.catalog.coverage.CoverageProviderMismatch` — never answered by
+something else.
 
-:func:`materialize_items` is a second, separate dispatch (``_MATERIALIZERS``, not
-``_ADAPTERS``): a materializing adapter answers no search and no single-item
-request, so it has no place in the table :func:`search_items`/:func:`get_item`
-read — ``_adapter_for`` below refuses a materialized dataset before it ever looks
-there (M3-11a K-05), and a materializing ``AdapterKind`` is simply absent from
-``_ADAPTERS`` rather than present with nothing useful to do.
+Everything here takes the registry entry, not a dataset id (adr/0011 F3): the
+caller looks it up once through :func:`dataset_config` (adr/0005 rule I). A
+materialized entry is never searched or fetched here — its items live in our own
+pgstac, which ``api`` asks instead (M3-11a K-05).
 """
 
 from __future__ import annotations
 
-from types import ModuleType
 from typing import Any
 
-from earthx.adapters import cop_dem_bucket, earth_search, eopf_stac
 from earthx.adapters.cache import CacheValue, SearchCache
 from earthx.adapters.cop_dem_bucket import MaterializeOutcome
-from earthx.adapters.earth_search_coverage import aggregate_coverage
-from earthx.adapters.eopf_sample_coverage import sample_coverage
 from earthx.adapters.errors import (
+    AdapterSpecMismatch,
     InvalidQuery,
     NotMaterialized,
     UnknownCollection,
@@ -55,43 +48,10 @@ from earthx.adapters.federated_search import (
     ItemPage,
     SearchParams,
 )
+from earthx.adapters.spec import ADAPTER_SPECS, AdapterSpec, AdapterSpecs, FilterSupport, check_adapter_specs
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery, CoverageResult
-from earthx.catalog.registry import (
-    AdapterKind,
-    CoverageProvider,
-    DatasetConfig,
-    DatasetRegistry,
-    ItemHolding,
-    UnknownDatasetError,
-)
+from earthx.catalog.registry import DatasetConfig, DatasetRegistry, ItemHolding, UnknownDatasetError
 from earthx.gateway import Gateway
-
-# One module per adapter kind — the only place that has to know every adapter this
-# platform speaks. Adding a fourth *federated* source means one more line here, not
-# a change to every caller of `search_items`/`get_item`. `cop_dem_bucket` is
-# deliberately absent (see `_MATERIALIZERS` below).
-_ADAPTERS = {
-    AdapterKind.EARTH_SEARCH_V1: earth_search,
-    AdapterKind.EOPF_STAC_V1: eopf_stac,
-}
-
-# The materializing counterpart of `_ADAPTERS`, read only by `materialize_items`
-# below — never by `search_items`/`get_item`, which a materialized dataset never
-# reaches (`_adapter_for` refuses it first).
-_MATERIALIZERS = {
-    AdapterKind.COP_DEM_BUCKET: cop_dem_bucket,
-}
-
-# K-06 / M3-11c: which function answers coverage for a federated collection follows
-# from the same two things the registry already names — its adapter and its
-# coverage provider — rather than a caller picking `aggregate_coverage` or
-# `sample_coverage` itself. `local-sql` is deliberately absent: a materialized
-# collection's own items need a database connection, not a `gateway`, and that way
-# lives in `catalog.local_coverage` instead (`adr/0004` §5, "Wo welcher Teil liegt").
-_COVERAGE = {
-    (AdapterKind.EARTH_SEARCH_V1, CoverageProvider.UPSTREAM_AGGREGATION): aggregate_coverage,
-    (AdapterKind.EOPF_STAC_V1, CoverageProvider.SAMPLE): sample_coverage,
-}
 
 
 def dataset_config(registry: DatasetRegistry, dataset_id: str) -> DatasetConfig:
@@ -107,25 +67,26 @@ def dataset_config(registry: DatasetRegistry, dataset_id: str) -> DatasetConfig:
         raise UnknownCollection(dataset_id) from None
 
 
-def _adapter_for(config: DatasetConfig) -> ModuleType:
-    """The module that serves ``config``, or the error its absence means."""
+def _federated_spec(config: DatasetConfig, adapters: AdapterSpecs) -> AdapterSpec:
+    """The spec that searches and fetches for ``config``, or the error its absence means."""
     if config.source.item_holding is ItemHolding.MATERIALIZED:
         # M3-11a K-05: a materialized dataset's items live in our own pgstac, not
-        # at a live source — there is no search or item-fetch request for this
-        # module to build. The federating client dispatches such a collection to
-        # `super()` (pgstac) before it ever calls `search_items`/`get_item`; the
-        # item source does the equivalent through `catalog.pgstac.fetch_item`.
+        # at a live source — there is no search or item-fetch request to build. The
+        # federating client and the item source route such a collection to pgstac
+        # before they ever call `search_items`/`get_item`.
         raise UnsupportedSource(
             f"{config.dataset_id} holds items materialized in pgstac; adapters.search_items/get_item do not serve it"
         )
     kind = config.source.adapter
-    try:
-        return _ADAPTERS[kind]
-    except KeyError:
-        raise UnsupportedSource(f"{config.dataset_id} is served by {kind}, which no adapter dispatch knows") from None
+    spec = adapters.get(kind)
+    if spec is None:
+        raise UnsupportedSource(f"{config.dataset_id} is served by {kind}, which no adapter dispatch knows")
+    if spec.search is None or spec.fetch is None or spec.filters is None:
+        raise UnsupportedSource(f"{config.dataset_id} is served by {kind}, which offers no search")
+    return spec
 
 
-def _check_capabilities(dataset_id: str, adapter: ModuleType, params: SearchParams | None) -> None:
+def _check_filters(dataset_id: str, filters: FilterSupport, params: SearchParams | None) -> None:
     """M3-08 F4a: a filter this dataset's own source cannot honour is refused by
     name here, before the adapter ever builds a request — the posture M2-17 already
     took for *every* federated collection when no adapter could honour either filter
@@ -133,17 +94,18 @@ def _check_capabilities(dataset_id: str, adapter: ModuleType, params: SearchPara
     (and, in principle, the one filter) that genuinely cannot.
 
     Both current adapters support both filters (measured, M3-08 plan §2.1); this
-    only matters once a third source does not, which `test_every_adapter_supports_
-    intersects_and_ids` (`tests/earthx/adapters/test_dispatch.py`) turns into a
-    build failure rather than a silent gap the day that happens — K8 requires the
-    landing page's ``item-search`` promise to match the weakest adapter, and this is
-    the one place that promise could quietly stop being true.
+    only matters once a third source does not, which
+    `test_every_known_adapter_supports_both_filters`
+    (`tests/earthx/adapters/test_dispatch.py`) turns into a build failure rather
+    than a silent gap the day that happens — K8 requires the landing page's
+    ``item-search`` promise to match the weakest adapter, and this is the one place
+    that promise could quietly stop being true.
     """
     if params is None:
         return
-    if params.intersects is not None and not getattr(adapter, "SUPPORTS_INTERSECTS", False):
+    if params.intersects is not None and not filters.intersects:
         raise UnsupportedFilter(f"{dataset_id} does not support intersects")
-    if params.ids is not None and not getattr(adapter, "SUPPORTS_IDS", False):
+    if params.ids is not None and not filters.ids:
         raise UnsupportedFilter(f"{dataset_id} does not support ids")
 
 
@@ -151,80 +113,84 @@ async def search_items(
     config: DatasetConfig,
     params: SearchParams | None = None,
     *,
+    adapters: AdapterSpecs,
     gateway: Gateway,
     cache: SearchCache | None = None,
 ) -> ItemPage:
     """Search items of one federated collection, whichever source serves it."""
-    adapter = _adapter_for(config)
-    _check_capabilities(config.dataset_id, adapter, params)
-    return await adapter.search_items(config, params, gateway=gateway, cache=cache)
+    spec = _federated_spec(config, adapters)
+    _check_filters(config.dataset_id, spec.filters, params)
+    return await spec.search(config, params, gateway=gateway, cache=cache)
 
 
 async def get_item(
     config: DatasetConfig,
     item_id: str,
     *,
+    adapters: AdapterSpecs,
     gateway: Gateway,
     cache: SearchCache | None = None,
 ) -> dict[str, Any]:
     """One item by id, without a search in front of it, whichever source serves it."""
-    adapter = _adapter_for(config)
-    return await adapter.get_item(config, item_id, gateway=gateway, cache=cache)
+    spec = _federated_spec(config, adapters)
+    return await spec.fetch(config, item_id, gateway=gateway, cache=cache)
 
 
 async def materialize_items(
     config: DatasetConfig,
     *,
+    adapters: AdapterSpecs,
     gateway: Gateway,
     known_version: str | None,
 ) -> MaterializeOutcome:
-    """Build the items of one materialized dataset, whichever adapter produced it.
-
-    Takes the registry entry itself, like every dispatch here (adr/0011 F3).
-    """
+    """Build the items of one materialized dataset, whichever adapter produced it."""
     if config.source.item_holding is not ItemHolding.MATERIALIZED:
         raise NotMaterialized(
             f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
         )
-    try:
-        module = _MATERIALIZERS[config.source.adapter]
-    except KeyError:
+    spec = adapters.get(config.source.adapter)
+    if spec is None or spec.materialize is None:
         raise UnsupportedSource(
             f"{config.dataset_id} is materialized by {config.source.adapter}, which no materializer dispatch knows"
-        ) from None
-    return await module.materialize_items(config, gateway=gateway, known_version=known_version)
+        )
+    return await spec.materialize(config, gateway=gateway, known_version=known_version)
 
 
 async def coverage(
     query: CoverageQuery,
     config: DatasetConfig,
     *,
+    adapters: AdapterSpecs,
     gateway: Gateway,
     cache: SearchCache | None = None,
 ) -> CoverageResult:
     """Coverage density or declared sample for one federated collection, dispatched
     by ``(adapter, coverage provider)`` (K-06, M3-11c) — the seam
     ``api.coverage_route`` calls instead of picking ``aggregate_coverage`` or
-    ``sample_coverage`` itself, the same shape ``search_items``/``get_item`` above
-    already give "which adapter". A pair this table does not know is
+    ``sample_coverage`` itself. A pair the table does not answer is
     :class:`~earthx.catalog.coverage.CoverageProviderMismatch`, the coverage
-    counterpart of :class:`UnsupportedSource`.
+    counterpart of :class:`UnsupportedSource`; ``local-sql`` never is, because
+    ``catalog`` answers it (adr/0004 §5).
     """
-    try:
-        answer = _COVERAGE[(config.source.adapter, config.coverage.provider)]
-    except KeyError:
+    spec = adapters.get(config.source.adapter)
+    answer = None if spec is None else spec.coverage.get(config.coverage.provider)
+    if answer is None:
         raise CoverageProviderMismatch(
             f"{config.dataset_id}: no coverage answer for adapter {config.source.adapter.value!r} "
             f"and provider {config.coverage.provider.value!r}"
-        ) from None
+        )
     return await answer(query, config, gateway=gateway, cache=cache)
 
 
 __all__ = [
+    "ADAPTER_SPECS",
     "DEFAULT_LIMIT",
     "MAX_IDS",
     "MAX_INTERSECTS_POINTS",
     "MAX_LIMIT",
+    "AdapterSpec",
+    "AdapterSpecMismatch",
+    "AdapterSpecs",
     "CacheValue",
     "InvalidQuery",
     "ItemPage",
@@ -236,6 +202,7 @@ __all__ = [
     "UnsupportedFilter",
     "UnsupportedSource",
     "UpstreamShapeError",
+    "check_adapter_specs",
     "coverage",
     "dataset_config",
     "get_item",

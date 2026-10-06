@@ -44,6 +44,7 @@ from stac_fastapi.types.rfc3339 import str_to_interval
 from stac_fastapi.types.stac import Item, ItemCollection
 
 from earthx.adapters import (
+    AdapterSpecs,
     InvalidQuery,
     ItemPage,
     SearchCache,
@@ -466,6 +467,13 @@ def _registry_of(request: Request) -> DatasetRegistry:
     return registry
 
 
+def _adapters_of(request: Request) -> AdapterSpecs:
+    adapters = getattr(request.app.state, "earthx_adapters", None)
+    if adapters is None:
+        raise RuntimeError("earthx.api.main did not set request.app.state.earthx_adapters")
+    return adapters
+
+
 def _gateway_of(request: Request):
     gateway = getattr(request.app.state, "earthx_gateway", None)
     if gateway is None:
@@ -526,11 +534,15 @@ class FederatingCoreCrudClient(CoreCrudClient):
             return await super().get_item(item_id, collection_id, request, **kwargs)
         # The same item source as the tiler's tiles and download (adr/0011 §7 D2).
         # Building it does no input or output — it only closes over registry,
-        # gateway and pool. It is built per call rather than once at start-up
-        # because the gateway is read from `app.state` at request time: that is
-        # the app's gateway, and the one a test replaces with a mocked transport.
+        # adapter table, gateway and pool. It is built per call rather than once
+        # at start-up because the gateway is read from `app.state` at request
+        # time: that is the app's gateway, and the one a test replaces with a
+        # mocked transport.
         item_source = build_item_source(
-            _registry_of(request), _gateway_of(request), getattr(request.app.state, "earthx_cache_pool", None)
+            _registry_of(request),
+            _adapters_of(request),
+            _gateway_of(request),
+            getattr(request.app.state, "earthx_cache_pool", None),
         )
         try:
             item = await item_source(collection_id, item_id)
@@ -826,7 +838,9 @@ class FederatingCoreCrudClient(CoreCrudClient):
         # (adr/0011 §7 D2) — not a module-wide default (M4-01b).
         config = dataset_config(_registry_of(request), collection_id)
         async with _cache_for(request) as cache:
-            return await adapter_search_items(config, params, gateway=_gateway_of(request), cache=cache)
+            return await adapter_search_items(
+                config, params, adapters=_adapters_of(request), gateway=_gateway_of(request), cache=cache
+            )
 
     async def _native_group_page(
         self,

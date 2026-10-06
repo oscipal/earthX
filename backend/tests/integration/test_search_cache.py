@@ -12,8 +12,9 @@ import httpx
 import psycopg
 import pytest
 
-from earthx.adapters import SearchParams, get_item, search_items
+from earthx.adapters import SearchParams
 from earthx.adapters.cache import SearchCache
+from earthx.adapters.earth_search import get_item, search_items
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.schema import discover_migrations
 from earthx.catalog.search_cache import PostgresSearchCache

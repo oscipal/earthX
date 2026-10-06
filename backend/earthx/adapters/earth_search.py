@@ -58,12 +58,6 @@ from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search")
 
-# M3-08 F4a: what this source can filter by, measured against the live API in the
-# plan step (M3-08 plan §2.1) — `adapters._check_capabilities` reads these before a
-# search reaches this module, so an unsupported filter is refused by name instead
-# of reaching here and being silently dropped from the request body.
-SUPPORTS_INTERSECTS = True
-SUPPORTS_IDS = True
 
 
 async def search_items(

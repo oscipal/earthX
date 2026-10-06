@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 import psycopg
 
 from earthx.adapters import (
+    ADAPTER_SPECS,
     MaterializeOutcome,
     UnsupportedSource,
     UpstreamShapeError,
@@ -84,7 +85,7 @@ async def run_materialize(
     known_version = None if force else last_source_version(conn, config.dataset_id)
 
     started_at = datetime.now(timezone.utc)
-    outcome = await materialize_items(config, gateway=gateway, known_version=known_version)
+    outcome = await materialize_items(config, adapters=ADAPTER_SPECS, gateway=gateway, known_version=known_version)
     finished_at = datetime.now(timezone.utc)
 
     if outcome.status == "unchanged":

@@ -19,7 +19,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from earthx.adapters import dataset_config, get_item
+from earthx.adapters import AdapterSpecs, dataset_config, get_item
 from earthx.catalog.pgstac import fetch_item, read_item_holdings
 from earthx.catalog.registry import DatasetRegistry, ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
@@ -63,7 +63,7 @@ def item_holding_of(registry: DatasetRegistry, dataset_id: str) -> ItemHolding:
     return dataset_config(registry, dataset_id).source.item_holding
 
 
-def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any) -> ItemSource:
+def build_item_source(registry: DatasetRegistry, adapters: AdapterSpecs, gateway: Gateway, pool: Any) -> ItemSource:
     """How a process gets an item: federated through the adapter and gateway, or
     materialized straight out of pgstac (M3-11a, K-05).
 
@@ -85,9 +85,9 @@ def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any) ->
                 raise MaterializedItemNotFound(item_id)
             return item
         if pool is None:
-            return await get_item(config, item_id, gateway=gateway)
+            return await get_item(config, item_id, adapters=adapters, gateway=gateway)
         async with pool.connection() as conn:
-            return await get_item(config, item_id, gateway=gateway, cache=PostgresSearchCache(conn))
+            return await get_item(config, item_id, adapters=adapters, gateway=gateway, cache=PostgresSearchCache(conn))
 
     return item_source
 

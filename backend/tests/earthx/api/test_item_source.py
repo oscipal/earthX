@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from earthx.adapters import UnknownCollection
+from earthx.adapters import ADAPTER_SPECS, UnknownCollection
 from earthx.api.item_source import (
     ItemHoldingMismatch,
     MaterializedCatalogUnavailable,
@@ -63,7 +63,7 @@ class TestBuildItemSourceDispatchesByHolding:
             return {"id": item_id, "type": "Feature"}
 
         monkeypatch.setattr("earthx.api.item_source.fetch_item", fake_fetch_item)
-        item_source = build_item_source(registry, gateway=object(), pool=_FakePool())
+        item_source = build_item_source(registry, ADAPTER_SPECS, gateway=object(), pool=_FakePool())
 
         item = await item_source(materialized.dataset_id, "some-item")
 
@@ -79,7 +79,7 @@ class TestBuildItemSourceDispatchesByHolding:
             return None
 
         monkeypatch.setattr("earthx.api.item_source.fetch_item", fake_fetch_item)
-        item_source = build_item_source(registry, gateway=object(), pool=_FakePool())
+        item_source = build_item_source(registry, ADAPTER_SPECS, gateway=object(), pool=_FakePool())
 
         with pytest.raises(MaterializedItemNotFound):
             await item_source(materialized.dataset_id, "no-such-item")
@@ -90,7 +90,7 @@ class TestBuildItemSourceDispatchesByHolding:
         materialized dataset's items have no other place to come from at all."""
         materialized = _materialized_entry()
         registry = DatasetRegistry((materialized,))
-        item_source = build_item_source(registry, gateway=object(), pool=None)
+        item_source = build_item_source(registry, ADAPTER_SPECS, gateway=object(), pool=None)
 
         with pytest.raises(MaterializedCatalogUnavailable):
             await item_source(materialized.dataset_id, "some-item")
@@ -101,12 +101,14 @@ class TestBuildItemSourceDispatchesByHolding:
         a federated entry, proving the new branch above did not swallow it."""
         seen: list[str] = []
 
-        async def fake_get_item(config: DatasetConfig, item_id: str, *, gateway: object) -> dict[str, Any]:
+        async def fake_get_item(
+            config: DatasetConfig, item_id: str, *, adapters: object, gateway: object
+        ) -> dict[str, Any]:
             seen.append(config.dataset_id)
             return {"id": item_id}
 
         monkeypatch.setattr("earthx.api.item_source.get_item", fake_get_item)
-        item_source = build_item_source(REGISTRY, gateway=object(), pool=None)
+        item_source = build_item_source(REGISTRY, ADAPTER_SPECS, gateway=object(), pool=None)
 
         item = await item_source(SENTINEL_2_L2A.dataset_id, "some-item")
 

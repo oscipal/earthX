@@ -77,9 +77,12 @@ from earthx.access.resolve import (
 )
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters import (
+    ADAPTER_SPECS,
+    AdapterSpecs,
     InvalidQuery,
     UnknownCollection,
     UnsupportedSource,
+    check_adapter_specs,
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
@@ -672,17 +675,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # The registry `build_app` was actually given, not the module-wide default
         # (M3-11a §2.2): before this field existed the two never diverged in a test,
         # because nothing here read from pgstac at all — a materialized item does.
-        app.state.earthx_item_source = build_item_source(app.state.earthx_registry, gateway, pool)
+        app.state.earthx_item_source = build_item_source(
+            app.state.earthx_registry, app.state.earthx_adapters, gateway, pool
+        )
         yield
 
 
-def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> FastAPI:
+def build_app(
+    registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = ADAPTER_SPECS, lifespan=_lifespan
+) -> FastAPI:
     """The tiler application, with everything the factory needs hung on it.
 
-    ``registry`` and ``lifespan`` are arguments so that a test can build the same app
-    against a registry of its own and without a database — not so that a deployment
-    can: the process entrypoint below takes neither.
+    ``registry``, ``adapters`` and ``lifespan`` are arguments so that a test can build
+    the same app against a registry of its own and without a database — not so that
+    a deployment can: the process entrypoint below takes none of them. A registry
+    entry that asks an adapter for something ``adapters`` lacks stops the build
+    (M4-01b F1).
     """
+    check_adapter_specs(registry, adapters)
     # M3-16: this process's own JSON logging, before anything can log a line
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
@@ -703,6 +713,8 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     # The download route (M2-06) needs the dataset's licence, title and terms —
     # nothing the path dependency above already carries.
     app.state.earthx_registry = registry
+    # The item source fetches federated items through this table (adr/0011 F1).
+    app.state.earthx_adapters = adapters
 
     factory = EarthxTilerFactory(
         path_dependency=dataset_asset_path,

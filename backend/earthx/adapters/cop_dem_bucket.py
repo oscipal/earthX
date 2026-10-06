@@ -5,9 +5,9 @@ bucket has no catalogue and no search API (`adr/0009` §3.1, §5). What it has i
 `tileList.txt` (one tile name per line) and a fixed naming scheme that gives a
 tile's location without opening it. This module turns that into STAC items,
 once, for the one-off command in `discovery` (M3-11b plan §3.1) — it is a
-*materializer*, not a search adapter, and stays out of `adapters._ADAPTERS`
-(the search/get-item dispatch table) for exactly that reason; `adapters.
-materialize_items` is the only way in.
+*materializer*, not a search adapter: its `AdapterSpec` (`adapters/spec.py`)
+offers `materialize` and nothing else, and `adapters.materialize_items` is the
+only way in.
 
 Three things this module refuses to trust, all measured in the M3-11b plan
 step (`docs/plans/m3-11b-dem-adapter.md` §2):

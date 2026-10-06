@@ -59,10 +59,6 @@ from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.eopf_stac")
 
-# M3-08 F4a: measured against the live API in the plan step (M3-08 plan §2.1) — both
-# filters work here too. See earth_search.py for what reads these.
-SUPPORTS_INTERSECTS = True
-SUPPORTS_IDS = True
 
 
 async def search_items(

@@ -37,3 +37,11 @@ class UnsupportedFilter(LookupError):
 
 class UpstreamShapeError(RuntimeError):
     """The source answered something that is not what its protocol promises."""
+
+
+class AdapterSpecMismatch(RuntimeError):
+    """The registry names a capability the adapter table has no answer for (M4-01b).
+
+    Raised when an app is built, not per request: the mistake is in how the
+    platform is put together, and it is the same for every request.
+    """

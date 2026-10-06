@@ -29,6 +29,7 @@ from stac_fastapi.pgstac.config import Settings
 from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
 from stac_fastapi.pgstac.models.extensions import Extensions
 
+from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import router as coverage_router
 from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
@@ -84,11 +85,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await close_db_connection(app)
 
 
-def build_app(registry: DatasetRegistry = REGISTRY) -> FastAPI:
-    """The api application. ``registry`` is an argument so that a test can route
-    collections of its own (M4-01a), the same shape ``api.tiler.build_app`` has;
-    the process entrypoint below takes the default.
+def build_app(registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = ADAPTER_SPECS) -> FastAPI:
+    """The api application. ``registry`` and ``adapters`` are arguments so that a
+    test can route collections of its own (M4-01a, M4-01b), the same shape
+    ``api.tiler.build_app`` has; the process entrypoint below takes the defaults.
+
+    A registry entry that asks an adapter for something ``adapters`` lacks stops
+    the build (:func:`~earthx.adapters.check_adapter_specs`, M4-01b F1).
     """
+    check_adapter_specs(registry, adapters)
     # M3-16: this process's own JSON logging, before anything can log a line
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
@@ -105,6 +110,9 @@ def build_app(registry: DatasetRegistry = REGISTRY) -> FastAPI:
     # What routes a collection federated or materialized (adr/0011 §7 D2), and
     # what the gateway's allowlist and the start-up comparison are built from.
     app.state.earthx_registry = registry
+    # Which source answers what (adr/0011 F1): search, item fetch and coverage
+    # dispatch through this table, never a module-wide default.
+    app.state.earthx_adapters = adapters
 
     @app.get("/health")
     def health() -> dict:

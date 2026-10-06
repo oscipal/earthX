@@ -13,14 +13,8 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from earthx.adapters import (
-    InvalidQuery,
-    SearchParams,
-    UnsupportedSource,
-    UpstreamShapeError,
-    get_item,
-    search_items,
-)
+from earthx.adapters import InvalidQuery, SearchParams, UnsupportedSource, UpstreamShapeError
+from earthx.adapters.earth_search import get_item, search_items
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetConfig
 from earthx.gateway.errors import UpstreamError, UpstreamTimeout
