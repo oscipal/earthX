@@ -90,7 +90,10 @@ class JsonFormatter(logging.Formatter):
 # start reaching stdout on its own, bypassing `gateway.client`'s own careful line
 # (a query-string hash, never the string itself). Raised to WARNING, not silenced
 # outright, so a real connection error from either still surfaces.
-_URL_LOGGING_LIBRARIES = ("httpx", "httpx2")
+# M4-06 (adr/0015 §9.2): `botocore` and `urllib3`, the object store's client, write
+# the access key id, the canonical request and the signature of a signed URL at
+# DEBUG (measured, §3.2) — the same treatment.
+_URL_LOGGING_LIBRARIES = ("httpx", "httpx2", "botocore", "urllib3")
 
 
 def configure_logging(level: int = logging.INFO) -> None:

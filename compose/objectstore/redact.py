@@ -1,11 +1,10 @@
 """A single, dependency-free place to strip credentials out of text before it
 can reach stdout, stderr, or an exception message (M3-23).
 
-Both `bootstrap.py` (imports boto3/rasterio only inside `smoke.py`, not here)
-and `smoke.py` use this. Kept in its own module, with no third-party import,
-so it can be tested directly wherever Python runs — `smoke.py` itself needs
-`boto3`/`rasterio`, which are not backend dependencies and are not installed
-outside the CI step that runs it.
+Both `bootstrap.py` and `smoke.py` use this. Kept in its own module, with no
+third-party import, so `bootstrap.py` stays standard-library only and this can
+be tested directly wherever Python runs. `earthx/objectstore/errors.py` carries
+a copy, because `compose/` is outside the package (adr/0015 §9.2).
 """
 
 from __future__ import annotations
