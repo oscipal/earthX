@@ -175,7 +175,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | offen |
 | M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | offen |
 | M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | offen |
-| M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | offen |
+| M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | Entwurf-PR |
 | M4-11 | Export über dem Deckel als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | offen |
 | M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | offen |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | offen |
