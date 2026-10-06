@@ -462,14 +462,12 @@ materialisiert Materialisierung; dazu Coverage, außer bei `local-sql` und
 `single_coverage_product`. `test_what_it_does_not_need_is_refused_without_a_request`
 ruft jede übrige Fähigkeit über den Dispatcher auf und verlangt eine Abweisung
 mit `UnsupportedSource`, `UnsupportedFilter` oder `CoverageProviderMismatch`,
-ohne Anfrage am Transport. Ein dritter Test belegt, dass beide zusammen jede
-Fähigkeit abdecken.
+ohne Anfrage am Transport. Zusammen decken beide jede Fähigkeit jedes Eintrags ab.
 
 **Gegenproben** (je einmal von Hand ausgeführt, danach zurückgesetzt):
 
-- Im DEM-Spec `materialize=None`: 2 Tests in `test_spec.py` fallen
-  (`test_what_its_holding_needs_is_offered[cop-dem-glo-30]`,
-  `test_every_capability_of_every_entry_is_accounted_for`).
+- Im DEM-Spec `materialize=None`: der Registry-Test
+  `test_what_its_holding_needs_is_offered[cop-dem-glo-30]` fällt.
 - Der echte Eintrag `sentinel-2-c1-l2a` mit Provider `sample` statt
   `upstream-aggregation`: 5 Tests fallen, darunter der Registry-Test für diesen
   Eintrag, der Abgleich und der Bau beider Apps.
@@ -481,7 +479,20 @@ Dauerhaft im Test stehen dieselben Gegenproben an manipulierten Kopien
 Materialisierung, ein föderierter ohne Suche, ein Provider ohne Antwort, eine
 Quelle ohne `ids` und eine Tabelle ohne die Art des Eintrags.
 
+**Review** (Subagent `reviewer`): kein Blocker. Behoben sind überzählige bzw.
+fehlende Leerzeilen, ungenutzte Fixture-Parameter in `test_cache_use.py`, ein
+Docstring mit `_adapter_for`, ein tautologischer Test in `test_spec.py` (entfernt)
+und zwei Lücken: Dispatch von Coverage und Materialisierung für eine Art, die in
+der Tabelle fehlt, sowie ein positiver Coverage-Aufruf über eine hereingereichte
+Tabelle (`TestDispatchWithAHandedInTable`). Präzisiert: Regel I prüft
+`adapters.dataset_config` für den Weg zu den Adaptern (Suche, Einzelabruf,
+Item-Quelle); `/coverage` und die Kachel-Routen schlagen den Eintrag weiter
+selbst nach und antworten wie bisher mit `404`. Nicht aus diesem PR, aber
+gefunden: `_federated_page` in `federating_client.py` fängt `UpstreamShapeError`
+nicht, eine einzelne föderierte Suche antwortet auf eine unlesbare Quelle mit
+`500` statt `502` (Stand auf `main` gleich).
+
 **Prüfungen:** `ruff check backend` sauber; `lint-imports` 14 Verträge
 gehalten (12 vor M4-06 und M4-07a, 14 auf `main`); `pytest` aus der Repo-Wurzel
-mit dem Postgres der Session 2578 bestanden; vor der Umsetzung, auf dem Branch
+mit dem Postgres der Session 2580 bestanden; vor der Umsetzung, auf dem Branch
 nach dem Merge von `main`, waren es 2542.
