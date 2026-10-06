@@ -177,11 +177,13 @@ def open_asset_ref(
     resolve: Resolver,
     *,
     target_gsd: float | None = None,
+    decode_cf: bool = True,
 ) -> AssetPath | ZarrAsset:
     """What a reader may open for ``ref``, cleared through ``policy`` — or :class:`AssetRejected`.
 
-    ``target_gsd`` only means something to a Zarr read (see
-    :class:`~earthx.readers.zarr_reader.ZarrAsset`); a COG picks its overview itself.
+    ``target_gsd`` and ``decode_cf`` only mean something to a Zarr read (see
+    :class:`~earthx.readers.zarr_reader.ZarrAsset`); a COG picks its overview itself
+    and is always read as stored.
     """
     if ref.reader == "zarr":
         return zarr_asset(
@@ -194,6 +196,7 @@ def open_asset_ref(
             resolve=resolve,
             variable=ref.variable,
             target_gsd=target_gsd,
+            decode_cf=decode_cf,
         )
     return asset_path(
         ref.href,
