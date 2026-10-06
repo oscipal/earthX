@@ -1,8 +1,9 @@
 # M4-06 — Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel: Plan
 
 **Aufgabe:** M4-06 aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan-Schritt; die Sitzung hält nach diesem Dokument an, bis Otto
-die Fragen in §8 beantwortet hat.
+**Stufe B** — **von Otto am 06.10.2026 freigegeben:** F1–F7 je Option 1,
+Kleinentscheidungen angenommen, Befund zu `smoke.py` (§2) angenommen. Dazu
+Auflagen zu F2 und F4 (§8, „Antworten“). Umsetzung in PR #119.
 **Ort im Repo:** `docs/plans/m4-06-objectstore.md`
 **Grundlagen:** `adr/0015` §3–§9, §12 Punkte 1–8, §14 (F1–F13), §14a;
 `plans/m4-processing-kern.md` §1.1b (R2, R4), §1.2, §1.3, M4-06;
@@ -164,7 +165,10 @@ vorhandenen für `httpx`: bei `configure_logging(DEBUG)` stehen beide auf
   Konfigurationswerte, dann Abbruch (uvicorn beendet den Prozess, der
   Container wird nicht `healthy`). Bei `off` **genau eine** Warnung, ohne
   Werte, und kein Abruf der Regel (Auflage F8).
-- Was als „passende Regel“ gilt, legt F4 fest.
+- „Passende Regel“ (F4, Auflage): am Inhalt erkannt, nicht am Namen —
+  aktiviert, Präfix `results/`, `Expiration.Days = 7`,
+  `AbortIncompleteMultipartUpload.DaysAfterInitiation = 1`. Weitere Regeln am
+  Bucket stören nicht.
 - Tests (`backend/tests/earthx/jobs/test_startup.py`, mit `moto`): startet
   mit Regel; startet nicht ohne Regel, mit falscher Frist, mit anderem Präfix,
   mit deaktivierter Regel; startet nicht ohne Konfiguration und nennt dabei
@@ -392,7 +396,19 @@ Sache:
 2. Teilen in M4-06a (Modul, Verträge, Abhängigkeiten, Logs; nur `pytest`) und
    M4-06b (compose, `bootstrap.py`, Smoke, `jobs`-Start, R4) als zwei Sitzungen
 
-**Kleinentscheidungen** (gelten ohne Widerspruch):
+**Antworten (Otto, 06.10.2026):** F1–F7 je **(1)**; Kleinentscheidungen
+angenommen. Auflagen:
+
+- **F2:** Erlaubt ist unter `.github/` genau die Änderung am Schritt in
+  `ci.yml`, der die Schlüssel liest, mit `::add-mask::` maskiert und
+  weiterreicht, dazu die Lock-Zeile aus R4. Kein Schlüssel und keine
+  Schlüssel-ID erscheint im CI-Log, auch nicht bei einem Fehler (Test oder
+  Beleg im PR).
+- **F4:** Die Regel wird am Inhalt erkannt (Präfix `results/`, aktiviert,
+  Ablauf 7 Tage, Abbruch Multipart 1 Tag), nicht am Namen; weitere Regeln am
+  Bucket stören nicht.
+
+**Kleinentscheidungen** (angenommen):
 
 - `signed_download` wirft `ResultExpiring` bei weniger als 60 s Restlaufzeit;
   die `410` daraus baut M4-08b.
