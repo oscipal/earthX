@@ -1,8 +1,8 @@
 # M4-01b — `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen: Plan
 
 **Aufgabe:** M4-01b aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan zur Freigabe; die Umsetzung beginnt erst nach Ottos Antwort
-auf §7.
+**Stufe B** — **von Otto am 06.10.2026 freigegeben** mit F1–F6 je Option 1,
+mit einer Auflage zum Registry-Test (§7, Antworten).
 **Ort im Repo:** `docs/plans/m4-01b-adapter-spec.md`
 **Grundlagen:** `adr/0011` §3.2 (B4, B6–B10), §5.1–§5.3, §6.5 Punkt 3, §11
 (F1, F3, F5, F6, F7); `plans/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01b;
@@ -387,3 +387,20 @@ adr/0011 §5.2: „prüft der Aufrufer, der den Eintrag sucht“)
 1. ein PR wie im M4-Plan, mit getrennten Commits nach §5 **(Empfehlung)**
 2. zwei PRs: erst §3.1, §3.2 und §3.5 (Fehlerklassen, Signaturen,
    `harvest_run`), dann §3.3 und §3.4 (`AdapterSpec`, `/coverage`)
+
+**Antworten (Otto, 06.10.2026):** F1–F6 je Option 1.
+
+- **Einschränkung beim App-Bau angenommen, mit Auflage:** Der Test über die
+  echte `REGISTRY` prüft jeden Eintrag vollständig gegen `adr/0011` §5: jede
+  Fähigkeit aus dem Eintrag ist durch den `AdapterSpec` gedeckt oder wird
+  ausdrücklich abgewiesen; materialisiert braucht Materialisierung; föderiert
+  braucht Suche und Einzelabruf. Gegenprobe im PR: ein manipulierter Eintrag
+  lässt den Test fallen.
+- **Nebenwirkung STAC-Suche** (Registry der App statt fester `REGISTRY`):
+  angenommen, das ist das Ziel; mit Test.
+- **F5:** Der Vertragstest für Items kommt als offene Zeile ins Log
+  („Vertragstest Items je Adapter, Stufe A, nach M4-01b“); Otto nimmt ihn beim
+  nächsten Plan-Update als Aufgabe auf.
+- Vor dem Fertigmelden `main` holen; Konflikte mit M4-07a (#120, Flag
+  `reprojection`) in `catalog/registry.py` und `datasets.py` so lösen, dass
+  beide Änderungen erhalten bleiben.
