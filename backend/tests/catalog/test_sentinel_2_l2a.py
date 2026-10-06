@@ -14,6 +14,7 @@ from earthx.catalog.registry import (
     CoverageProvider,
     DataClass,
     DataFormat,
+    ItemHolding,
     LicenseTier,
 )
 
@@ -38,7 +39,7 @@ def test_our_id_is_the_upstream_one_not_the_collection_it_replaces() -> None:
 
 def test_items_are_federated_not_harvested() -> None:
     """architekturplan.md 5.2: Earth Search has a search API, so nothing is copied."""
-    assert SENTINEL_2_L2A.source.harvest_run is None
+    assert SENTINEL_2_L2A.source.item_holding is ItemHolding.FEDERATED
 
 
 def test_license_is_processing_with_the_flags_from_adr_0003() -> None:

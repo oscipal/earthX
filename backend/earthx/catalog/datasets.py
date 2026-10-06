@@ -159,7 +159,6 @@ SENTINEL_2_L2A = DatasetConfig(
         # collection and deliberately stays out of the allowlist.
         asset_hosts=("e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com",),
         # Federated items, nothing harvested into our own pgstac (architekturplan.md 5.2).
-        harvest_run=None,
         item_holding=ItemHolding.FEDERATED,
     ),
     coverage=CoverageInfo(
@@ -331,7 +330,6 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         # asset key for it anywhere a reader would resolve one, not by the host
         # allowlist (point 10 — the allowlist alone no longer keeps it out).
         asset_hosts=("data.eodc.eu",),
-        harvest_run=None,
         item_holding=ItemHolding.FEDERATED,
     ),
     coverage=CoverageInfo(
@@ -527,7 +525,6 @@ COP_DEM_GLO_30 = DatasetConfig(
         # bucket on AWS to `gateway`'s allowlist (`registry.py`
         # `DatasetConfig._check_source`).
         asset_hosts=("copernicus-dem-30m.s3.amazonaws.com",),
-        harvest_run=None,
         item_holding=ItemHolding.MATERIALIZED,
     ),
     coverage=CoverageInfo(

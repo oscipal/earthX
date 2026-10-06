@@ -268,7 +268,6 @@ class SourceInfo:
     endpoint: str
     source_collection_id: str
     asset_hosts: tuple[str, ...]
-    harvest_run: str | None
     item_holding: ItemHolding
 
 
@@ -760,14 +759,13 @@ class DatasetConfig:
             )
 
     def _check_item_holding(self) -> None:
-        """M3-11a K-05: which coverage and harvest fields make sense follows from
-        where the items live, not the other way around.
+        """M3-11a K-05: which coverage provider makes sense follows from where the
+        items live, not the other way around.
 
         A materialized dataset has no search API to aggregate at and nothing to
         sample (adr/0009 §7) — its coverage can only come from its own items
         (``local-sql``, M3-11c). A federated one is the reverse: ``local-sql``
-        would count rows nobody ever wrote for it, and ``harvest_run`` would name a
-        load that never happened.
+        would count rows nobody ever wrote for it.
         """
         if self.source.item_holding is ItemHolding.MATERIALIZED:
             if self.coverage.provider is not CoverageProvider.LOCAL_SQL:
@@ -775,16 +773,11 @@ class DatasetConfig:
                     f"{self.dataset_id}: materialized items need coverage.provider=local-sql "
                     "(adr/0009 §7 — no search API to aggregate at or sample)"
                 )
-        else:
-            if self.coverage.provider is CoverageProvider.LOCAL_SQL:
-                raise ConfigError(
-                    f"{self.dataset_id}: federated items cannot use coverage.provider=local-sql "
-                    "(no items of this dataset are held in our own pgstac)"
-                )
-            if self.source.harvest_run is not None:
-                raise ConfigError(
-                    f"{self.dataset_id}: federated items carry no harvest_run (nothing was materialized)"
-                )
+        elif self.coverage.provider is CoverageProvider.LOCAL_SQL:
+            raise ConfigError(
+                f"{self.dataset_id}: federated items cannot use coverage.provider=local-sql "
+                "(no items of this dataset are held in our own pgstac)"
+            )
 
 
 class DatasetRegistry:

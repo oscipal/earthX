@@ -55,7 +55,6 @@ MATERIALIZED = replace(
         asset_hosts=(HOST,),
         item_holding=ItemHolding.MATERIALIZED,
         source_collection_id="earthx-test-materialize-command",
-        harvest_run=None,
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
     # The DEM adapter stamps every item with the entry's own acquisition period

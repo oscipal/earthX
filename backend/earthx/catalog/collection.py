@@ -186,7 +186,6 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "endpoint": config.source.endpoint,
             "source_collection_id": config.source.source_collection_id,
             "asset_hosts": list(config.source.asset_hosts),
-            "harvest_run": config.source.harvest_run,
             # M3-11a (K-05): federated or materialized — what `FederatingCoreCrudClient`
             # branches search and item-fetch on, read back off this very document
             # (`api/federating_client.py::_holding_of`).

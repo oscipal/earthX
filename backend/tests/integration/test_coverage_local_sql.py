@@ -51,7 +51,6 @@ AREA_DATASET = replace(
         SENTINEL_2_L2A.source,
         item_holding=ItemHolding.MATERIALIZED,
         source_collection_id=DATASET_ID,
-        harvest_run=None,
         asset_hosts=("assets.example.invalid",),
     ),
 )
