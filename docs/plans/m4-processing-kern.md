@@ -70,7 +70,7 @@ eine Wahl braucht.
 | R2 | **Kettenvertrag für den Objektspeicher:** ein eigener Vertrag `no-object-store-in-worker-core` nach `adr/0015` §4.2 Punkt 4, nicht als Zusatz zu `no-database-in-worker-core` (Vorschlag in `adr/0013` §6.1). So ändern M4-06 und M4-08a getrennte Verträge, und der Umbau ist so gemessen, wie `adr/0015` ihn beschreibt | M4-06, M4-08a |
 | R3 | **Flag `reprojection`** (`adr/0014` F6): alle drei Registry-Einträge setzen es ausdrücklich auf `true` (B10). `interpolation` bleibt, wie es heute je Eintrag steht | M4-07a, M4-10 |
 | R4 | **`compose/objectstore/requirements-smoke.txt`** bekommt in M4-06 eine Lock-Datei nach dem Muster von M4-00b; das schließt die offene Zeile vom 02.10.2026 | M4-06 |
-| R5 | **Band-Math-Ausdrücke:** erlaubt sind nur die Bandnamen des Rezepts, Zahlen, die Operatoren `+ - * / **`, Vergleiche, Klammern und eine feste Liste von numexpr-Funktionen; höchstens 256 Zeichen. Geprüft wird im Parametermodell, bevor numexpr den Ausdruck sieht. Die Funktionsliste schlägt M4-09 im Plan-Schritt vor | M4-09 |
+| R5 | **Band-Math-Ausdrücke:** erlaubt sind nur die Bandnamen des Rezepts, Zahlen, die Operatoren `+ - * / **`, Vergleiche, Klammern und eine feste Liste von numexpr-Funktionen; höchstens 256 Zeichen. Geprüft wird im Parametermodell, bevor numexpr den Ausdruck sieht. Die Funktionsliste schlägt M4-09 im Plan-Schritt vor. **Eingeengt am 2026-10-06 (`adr/0016` F8, `adr/0014` §15c):** In M4 erlaubt Band-Math nur bitstabile Funktionen: Grundrechenarten, Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt` und ganzzahlige Potenzen mit \|n\| ≤ 50, ausgewertet mit `optimization="aggressive"`. `log`, `exp`, Winkelfunktionen und gebrochene Potenzen folgen später mit eigener Toleranz | M4-09 |
 | R6 | **Doppelzeile im Log:** Die Zeile „`adr/0014` §5.4, Auslegung zu F7a“ steht nach dem Merge von #114 und #115 zweimal. Die erste („Vorschlag“) bekommt in der Statusspalte den Verweis auf die zweite („fest am 2026-10-05“); gelöscht wird nichts | `ENTSCHEIDUNGSLOG.md` |
 
 ### 1.2 Was in allen Aufgaben gilt
@@ -168,7 +168,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-02 | Spike Job-Queue → `adr/0013` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#116) |
 | M4-03 | Rezept und Operator-Registry → `adr/0014` | M4a | C | Opus (xhigh) | — | erledigt, angenommen (#114) |
 | M4-04 | Weg zum Objektspeicher → `adr/0015` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#115) |
-| M4-05 | Lokaler Runner → `adr/0016` | M4b | C | Opus (hoch) | `adr/0014` | offen |
+| M4-05 | Lokaler Runner → `adr/0016` | M4b | C | Opus (hoch) | `adr/0014` | erledigt, angenommen (#121) |
 | M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | offen |
 | M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | PR #120 |
 | M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | offen |
@@ -577,6 +577,10 @@ nutzen.
   `processing`; Test für die GDAL-Optionen aus einem Thread-Pool (§7.3 Punkt 2).
 - Test, dass der Import von `earthx.processing` kein `psycopg`, `psycopg_pool`,
   `asyncpg`, `botocore` oder `earthx.objectstore` lädt.
+- **Versionsangabe (`adr/0016` F10):** `__version__` in `earthx/__init__.py`,
+  SemVer 0.x. Sie ist die Version von `earthx.processing` im Cache-Schlüssel
+  (§4.5, E2); M4-16 übernimmt sie für den Image-Tag und `runner_version`. Ein
+  Sprung ist Pflicht, sobald sich ein Ergebnis ändern kann.
 
 **Nicht in dieser Aufgabe:** Annahme in `api` (M4-07b), Band-Math und
 Reprojektion (M4-09, M4-10), Queue (M4-08a).
@@ -682,10 +686,18 @@ bitgleich auf der nativen Ebene.
   (§6.2, Mehr-Asset-Lücke).
 - Vergleichstest T1 ↔ T2 nach §6.4 mit synthetischem COG (Skalierung,
   Offset) und Mini-Zarr (CF-Attribute).
+- **Hinweis (`adr/0016` F8, `adr/0014` §15c):** R5 ist eingeengt. Die
+  Funktionsliste enthält nur bitstabile Funktionen (siehe R5 in §1.1b);
+  `log`, `exp`, Winkelfunktionen und gebrochene Potenzen sind abzuweisen.
+  numexpr zerlegt ganzzahlige Exponenten nur bis |n| ≤ 50 und nur mit
+  `optimization="aggressive"` in Multiplikationen; darüber rechnet es mit
+  `pow`, und das Ergebnis hängt von der CPU ab (`adr/0016` §12a, §14.5).
 
 **Abnahme:** Vergleichstest bitgleich auf der nativen Ebene; Tests für R5
-(abgewiesene Namen, Attribute, Aufrufe, Länge) und für fehlende Capability;
-bestehende Kachel-Tests grün.
+(abgewiesene Namen, Attribute, Aufrufe, Länge, abgewiesene Funktionen und
+Exponenten über 50) und für fehlende Capability; ein Test zeigt, dass jede
+erlaubte Funktion unter den Einstellungen A und D aus `adr/0016` §3.3
+dieselben Bytes liefert; bestehende Kachel-Tests grün.
 
 ### M4-10 — Operator Reprojektion/Resampling (T2)
 
