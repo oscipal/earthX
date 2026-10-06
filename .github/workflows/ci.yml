@@ -196,21 +196,34 @@ jobs:
           echo "access_key=$access_key" >> "$GITHUB_OUTPUT"
           echo "secret_key=$secret_key" >> "$GITHUB_OUTPUT"
           echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          # M4-06 (adr/0015 §6.4): the two service keys, masked before use.
+          for name in JOBS_ACCESS_KEY JOBS_SECRET_KEY API_ACCESS_KEY API_SECRET_KEY; do
+            value="$(echo "$creds" | grep "^S3_${name}=" | cut -d= -f2-)"
+            echo "::add-mask::$value"
+            echo "$(echo "$name" | tr '[:upper:]' '[:lower:]')=$value" >> "$GITHUB_OUTPUT"
+          done
 
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: compose/objectstore/requirements-smoke.txt
+          cache-dependency-path: compose/objectstore/requirements-smoke.lock
 
+      # From the lock file, hash-checked (M4 R4; scripts/lock-backend.sh).
       - name: Install object store smoke dependencies
-        run: pip install -r compose/objectstore/requirements-smoke.txt
+        run: |
+          pip install --require-hashes --only-binary :all: \
+            -r compose/objectstore/requirements-smoke.lock
 
       - name: Object store smoke (adr/0012 §9 — confirms the official image)
         env:
           S3_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.access_key }}
           S3_SECRET_KEY: ${{ steps.objectstore-creds.outputs.secret_key }}
           S3_BUCKET: ${{ steps.objectstore-creds.outputs.bucket }}
+          S3_JOBS_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.jobs_access_key }}
+          S3_JOBS_SECRET_KEY: ${{ steps.objectstore-creds.outputs.jobs_secret_key }}
+          S3_API_ACCESS_KEY: ${{ steps.objectstore-creds.outputs.api_access_key }}
+          S3_API_SECRET_KEY: ${{ steps.objectstore-creds.outputs.api_secret_key }}
         run: python compose/objectstore/smoke.py --write-marker
 
       - name: Restart one service, all stay (or become) healthy

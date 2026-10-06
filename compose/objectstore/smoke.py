@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""CI-only smoke test for the `objectstore` (Garage) service (M3-23, adr/0012 §9).
+"""CI-only smoke test for the `objectstore` (Garage) service (M3-23, adr/0012 §9; M4-06, adr/0015 §12).
 
 Confirms against the *official* image what adr/0012 could only measure at
-self-built binaries: PutObject/GetObject, multipart, presigned URLs,
-lifecycle rules and a GDAL range-read all work. Runs only in the
-`compose-topology` CI job, never in a cloud session (no Docker daemon there,
-adr/0002 §1) and never as part of `pytest` (`backend/tests/compose` covers
-`bootstrap.py` itself, without a running Garage).
+self-built binaries: PutObject/GetObject, multipart, presigned URLs and a
+GDAL range-read all work. Since M4-06 it also confirms what `earthx.objectstore`
+relies on (adr/0015 §12 point 4): the lifecycle rule for `results/` that
+`objectstore-init` sets is there, the `api` key can read and sign but neither
+write nor delete, a URL signed for the public endpoint works, and one signed
+for the internal endpoint does not work over another host.
+
+It only *reads* the lifecycle configuration. Writing one replaces the whole
+configuration, and the worker does not start without the `results/` rule.
+
+Runs only in the `compose-topology` CI job, never in a cloud session (no
+Docker daemon there, adr/0002 §1) and never as part of `pytest`
+(`backend/tests/compose` covers `bootstrap.py` itself, without a running
+Garage). Uses `botocore` like the application, not `boto3` (plan M4-06 F1),
+installed from `requirements-smoke.lock`.
 
 Throwaway credentials and a throwaway CI-only endpoint only; nothing here
-touches a real data source or the `gateway` allowlist.
+touches a real data source or the `gateway` allowlist. No credential reaches
+the output, also not on failure: every line goes through `redact` first.
 """
 
 from __future__ import annotations
@@ -17,15 +28,16 @@ from __future__ import annotations
 import argparse
 import io
 import os
+import secrets
 import sys
 import time
 import urllib.request
 from urllib.error import HTTPError
 
-import boto3
+import botocore.session
 import numpy as np
 import rasterio
-from botocore.client import Config
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from redact import redact
 
@@ -33,14 +45,27 @@ OBJECT_KEY = "smoke/native.tif"
 PERSISTED_KEY = "smoke/persisted.txt"
 
 
+# The address `api` and `worker` reach the store under inside the compose network.
+INTERNAL_ENDPOINT = "http://objectstore:3900"
+# adr/0015 §7.3, recognised by content as the worker does (plan M4-06 F4).
+RESULTS_PREFIX = "results/"
+
+
 def _client(access_key: str, secret_key: str, endpoint: str):
-    return boto3.client(
+    """The same settings as `earthx/objectstore/client.py`."""
+    return botocore.session.Session().create_client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         region_name="garage",
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+            proxies={},
+        ),
     )
 
 
@@ -146,23 +171,6 @@ def run_full_suite(s3, bucket: str, endpoint: str) -> None:
         anon_rejected = exc.code in (401, 403)
     check("Anonymous GET without a policy rejected", anon_rejected)
 
-    s3.put_bucket_lifecycle_configuration(
-        Bucket=bucket,
-        LifecycleConfiguration={
-            "Rules": [
-                {
-                    "ID": "expire-results",
-                    "Status": "Enabled",
-                    "Filter": {"Prefix": "smoke/"},
-                    "Expiration": {"Days": 1},
-                    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
-                }
-            ]
-        },
-    )
-    rules = s3.get_bucket_lifecycle_configuration(Bucket=bucket)["Rules"]
-    check("Lifecycle rule accepted and read back", any(r["ID"] == "expire-results" for r in rules))
-
     listing = s3.list_objects_v2(Bucket=bucket, Prefix="smoke/")
     keys = {o["Key"] for o in listing.get("Contents", [])}
     check("ListObjectsV2 sees written objects", "smoke/plain.bin" in keys)
@@ -193,6 +201,77 @@ def run_full_suite(s3, bucket: str, endpoint: str) -> None:
         check("GDAL /vsicurl/ presigned overview present", src.overviews(1) == [2, 4])
 
 
+def _status(call) -> int:
+    try:
+        call()
+    except ClientError as exc:
+        return exc.response["ResponseMetadata"]["HTTPStatusCode"]
+    return 200
+
+
+def _http_status(request: urllib.request.Request | str) -> tuple[int, dict]:
+    try:
+        with urllib.request.urlopen(request) as resp:
+            resp.read()
+            return resp.status, dict(resp.headers)
+    except HTTPError as exc:
+        return exc.code, {}
+
+
+def _is_results_rule(rule: dict) -> bool:
+    filter_ = rule.get("Filter") or {}
+    return (
+        rule.get("Status") == "Enabled"
+        and set(filter_) == {"Prefix"}
+        and filter_["Prefix"] == RESULTS_PREFIX
+        and (rule.get("Expiration") or {}).get("Days") == 7
+        and (rule.get("AbortIncompleteMultipartUpload") or {}).get("DaysAfterInitiation") == 1
+    )
+
+
+def run_service_key_suite(jobs, api, api_internal_signer, bucket: str, endpoint: str) -> None:
+    """adr/0015 §12 point 4, with the two keys `objectstore-init` created."""
+    rules = api.get_bucket_lifecycle_configuration(Bucket=bucket)["Rules"]
+    check("Lifecycle rule for results/ set (read with the api key)", any(_is_results_rule(r) for r in rules))
+
+    key = f"{RESULTS_PREFIX}smoke-{secrets.token_urlsafe(8)}/result.tif"
+    body = b"written by the jobs key"
+    check("jobs key writes under results/", _status(lambda: jobs.put_object(Bucket=bucket, Key=key, Body=body)) == 200)
+
+    check(
+        "api key cannot write (403)",
+        _status(lambda: api.put_object(Bucket=bucket, Key=f"{key}.api", Body=b"x")) == 403,
+    )
+    check("api key cannot delete (403)", _status(lambda: api.delete_object(Bucket=bucket, Key=key)) == 403)
+    put_url = api.generate_presigned_url("put_object", Params={"Bucket": bucket, "Key": f"{key}.url"}, ExpiresIn=60)
+    status, _ = _http_status(urllib.request.Request(put_url, data=b"x", method="PUT"))
+    check("PUT URL signed with the api key rejected (403)", status == 403)
+
+    get_url = api.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": bucket,
+            "Key": key,
+            "ResponseContentDisposition": 'attachment; filename="earthx-smoke.tif"',
+        },
+        ExpiresIn=60,
+    )
+    status, headers = _http_status(get_url)
+    check("GET URL signed with the api key for the public endpoint -> 200", status == 200)
+    check(
+        "Content-Disposition carries the file name",
+        headers.get("Content-Disposition") == 'attachment; filename="earthx-smoke.tif"',
+    )
+
+    internal_url = api_internal_signer.generate_presigned_url(
+        "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=60
+    )
+    status, _ = _http_status(endpoint + internal_url.removeprefix(INTERNAL_ENDPOINT))
+    check("URL signed for the internal endpoint rejected over another host (403)", status == 403)
+
+    check("jobs key deletes", _status(lambda: jobs.delete_object(Bucket=bucket, Key=key)) == 200)
+
+
 def write_persisted_marker(s3, bucket: str) -> None:
     s3.put_object(Bucket=bucket, Key=PERSISTED_KEY, Body=b"written on the first compose start")
 
@@ -218,24 +297,37 @@ def main() -> int:
     access_key = os.environ["S3_ACCESS_KEY"]
     secret_key = os.environ["S3_SECRET_KEY"]
     bucket = os.environ["S3_BUCKET"]
-    s3 = _client(access_key, secret_key, endpoint)
+    credentials = [access_key, secret_key]
 
     try:
+        s3 = _client(access_key, secret_key, endpoint)
         if args.persisted:
             check_persisted_marker(s3, bucket)
             return 0
 
+        jobs_key = (os.environ["S3_JOBS_ACCESS_KEY"], os.environ["S3_JOBS_SECRET_KEY"])
+        api_key = (os.environ["S3_API_ACCESS_KEY"], os.environ["S3_API_SECRET_KEY"])
+        credentials += [*jobs_key, *api_key]
         run_full_suite(s3, bucket, endpoint)
+        run_service_key_suite(
+            _client(*jobs_key, endpoint),
+            _client(*api_key, endpoint),
+            _client(*api_key, INTERNAL_ENDPOINT),
+            bucket,
+            endpoint,
+        )
         if args.write_marker:
             write_persisted_marker(s3, bucket)
         print("object store smoke: all checks passed")
         return 0
-    except Exception as exc:
-        # Last line of defence before a raw traceback would print: boto3/S3
-        # error messages never echo back the secret key, but they do
-        # sometimes echo the access key id (e.g. `InvalidAccessKeyId`), and
-        # this job's log is public (the repo is public, see redact.py).
-        print(redact(f"object store smoke failed: {exc}", access_key, secret_key), file=sys.stderr)
+    except (Exception, SystemExit) as exc:
+        # Last line of defence before a raw traceback would print: S3 error
+        # messages never echo back the secret key, but they do sometimes echo
+        # the access key id (e.g. `InvalidAccessKeyId`, Garage's `AccessDenied`),
+        # and this job's log is public (the repo is public, see redact.py).
+        # `SystemExit` from `check` and a missing variable (`KeyError`) go the
+        # same way, so nothing unfiltered ever reaches the log.
+        print(redact(f"object store smoke failed: {exc}", *credentials), file=sys.stderr)
         return 1
 
 

@@ -36,10 +36,15 @@ LOCK_SCRIPT = REPO / "scripts" / "lock-backend.sh"
 RUNTIME_LOCK = BACKEND / "requirements.lock"
 DEV_LOCK = BACKEND / "requirements-dev.lock"
 
+# M4 R4: the object store smoke in CI (compose-topology) installs from a lock of its own.
+SMOKE_REQUIREMENTS = REPO / "compose" / "objectstore" / "requirements-smoke.txt"
+SMOKE_LOCK = REPO / "compose" / "objectstore" / "requirements-smoke.lock"
+
 # Each requirement file and the lock written from it.
 LOCKS = {
     BACKEND / "requirements.txt": RUNTIME_LOCK,
     BACKEND / "requirements-dev.txt": DEV_LOCK,
+    SMOKE_REQUIREMENTS: SMOKE_LOCK,
 }
 
 # Every place that installs the backend packages, and the lock it must install from.
@@ -54,7 +59,7 @@ INSTALL_SITES = {
 WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.y*ml"))
 
 HASH = re.compile(r"^--hash=sha256:[0-9a-f]{64}$")
-# The backend's own files, not e.g. compose/objectstore/requirements-smoke.txt.
+# The backend's own files; compose/objectstore/requirements-smoke.lock has a test of its own.
 BACKEND_FILE = re.compile(r"\brequirements(-dev)?\.(txt|lock)\b")
 
 
@@ -216,10 +221,39 @@ def test_the_dev_lock_installs_what_the_image_installs() -> None:
     assert not differing, f"locked differently for the image and for CI: {differing}"
 
 
-@pytest.mark.parametrize("lock", [RUNTIME_LOCK, DEV_LOCK], ids=lambda p: p.name)
+@pytest.mark.parametrize("lock", [RUNTIME_LOCK, DEV_LOCK, SMOKE_LOCK], ids=lambda p: p.name)
 def test_the_lock_file_names_the_script_that_writes_it(lock: Path) -> None:
     header = lock.read_text().splitlines()[:3]
     assert any(line.strip() == "#    scripts/lock-backend.sh" for line in header), header
+
+
+def test_the_smoke_runs_what_the_image_ships() -> None:
+    """Compiled with the runtime lock as a constraint (plan M4-06 F1): botocore, rasterio
+    and numpy in the smoke are the versions the platform runs."""
+    runtime = parse_lock(RUNTIME_LOCK.read_text())
+    smoke = parse_lock(SMOKE_LOCK.read_text())
+    differing = sorted(name for name, locked in smoke.items() if name in runtime and runtime[name] != locked)
+    assert not differing, f"locked differently for the image and for the smoke: {differing}"
+    assert {"botocore", "rasterio", "numpy"} <= set(smoke)
+    assert not {"boto3", "s3transfer"} & set(smoke)
+
+
+def test_the_smoke_step_installs_its_lock_with_hashes() -> None:
+    commands = [
+        part.strip()
+        for script in workflow_run_scripts(REPO / ".github" / "workflows" / "ci.yml")
+        for line in logical_lines(script)
+        for part in line.split("&&")
+        if "requirements-smoke" in part
+    ]
+    assert commands, "ci.yml: no install of the smoke requirements found"
+    for command in commands:
+        tokens = shlex.split(command)
+        assert tokens[:2] == ["pip", "install"], command
+        assert "--require-hashes" in tokens, command
+        assert ("--only-binary", ":all:") in list(zip(tokens, tokens[1:], strict=False)), command
+        files = [tokens[i + 1] for i, t in enumerate(tokens[:-1]) if t in ("-r", "--requirement")]
+        assert files == ["compose/objectstore/requirements-smoke.lock"], command
 
 
 @pytest.mark.parametrize("path", sorted(INSTALL_SITES))

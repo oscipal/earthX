@@ -1,9 +1,8 @@
 """Static checks on compose/objectstore/smoke.py's GDAL setup (M3-23).
 
-`smoke.py` needs `boto3`/`rasterio`, which are not backend dependencies and
-are installed only for the CI step that runs it (compose/objectstore/
-requirements-smoke.txt) — so it cannot be imported here. These checks read
-its source with `ast` instead, which is enough to catch the mistake that
+These checks read `smoke.py`'s source with `ast` (it was not importable
+here until M4-06 moved it from `boto3` to `botocore`), which is enough to
+catch the mistake that
 only showed up once in CI (26.09.2026): rasterio 1.5.1 refuses
 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in `rasterio.Env` outright
 ("AWS credentials are handled exclusively by boto3"), so a `/vsis3/` read

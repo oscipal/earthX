@@ -4,6 +4,9 @@
 #
 #   backend/requirements.txt      -> backend/requirements.lock      (image)
 #   backend/requirements-dev.txt  -> backend/requirements-dev.lock  (CI, session)
+#   compose/objectstore/requirements-smoke.txt
+#                                 -> compose/objectstore/requirements-smoke.lock
+#                                    (CI step `Object store smoke`, M4 R4)
 #
 # The .txt files stay the input; the .lock files are what CI, backend/Dockerfile
 # and scripts/setup-cloud-session.sh install, with `pip install --require-hashes`.
@@ -19,8 +22,9 @@
 # * --universal: one file for every platform (Otto, F2). Linux x86_64 is what CI,
 #   the image and the session run; Linux aarch64 comes along. Packages only some
 #   platform needs carry an environment marker and are skipped elsewhere.
-# * The dev lock is compiled against the runtime lock as a constraint, so every
-#   package the image installs is locked to the same version in CI.
+# * The dev lock and the smoke lock are compiled against the runtime lock as a
+#   constraint, so every package the image installs is locked to the same
+#   version in CI and in the smoke.
 # * --only-binary :all: --no-binary version-parser: wheels only, so that nothing
 #   is built from source with build dependencies no hash covers. The one
 #   exception is `version-parser`, a dependency of `pypgstac` that is published
@@ -60,4 +64,6 @@ compile() { # compile <input> <output> [extra uv arguments...]
 
 compile backend/requirements.txt backend/requirements.lock "$@"
 compile backend/requirements-dev.txt backend/requirements-dev.lock \
+  --constraint backend/requirements.lock "$@"
+compile compose/objectstore/requirements-smoke.txt compose/objectstore/requirements-smoke.lock \
   --constraint backend/requirements.lock "$@"
