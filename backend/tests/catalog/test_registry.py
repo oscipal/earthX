@@ -45,6 +45,7 @@ class TestCapabilitiesAreExplicit:
             "time_range",
             "band_math",
             "interpolation",
+            "reprojection",
             "ml_processing",
             "quad_pol",
             "single_coverage_product",
@@ -56,6 +57,7 @@ class TestCapabilitiesAreExplicit:
             "time_range": True,
             "band_math": True,
             "interpolation": True,
+            "reprojection": True,
             "ml_processing": False,
             "quad_pol": False,
             "single_coverage_product": False,
@@ -67,6 +69,11 @@ class TestCapabilitiesAreExplicit:
     def test_a_flag_cannot_be_changed_after_the_fact(self, valid_config) -> None:
         with pytest.raises(AttributeError):
             valid_config.capabilities.quad_pol = True
+
+    @pytest.mark.parametrize("entry", list(REGISTRY), ids=lambda entry: entry.dataset_id)
+    def test_every_entry_switches_reprojection_on_itself(self, entry) -> None:
+        # M4 R3 (Otto, 05.10.2026): all three entries set the flag explicitly.
+        assert entry.capabilities.reprojection is True
 
 
 class TestKeywords:

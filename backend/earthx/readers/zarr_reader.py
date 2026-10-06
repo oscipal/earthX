@@ -340,6 +340,12 @@ class ZarrAsset:
     coarsest ``multiscales`` level whose resolution is still at least that fine,
     or the finest level there is if none is (adr/0007 §12.10, §12.11 point 2).
     Read by the reader, not by this module — see ``readers.zarr_reader._open_group``.
+
+    ``decode_cf`` says whether the CF attributes of the store (``scale_factor``,
+    ``add_offset``, ``_FillValue``) are applied on reading, as xarray does by
+    default. ``False`` reads the stored values as they are and leaves the attributes
+    on the variable, for a caller that applies a scaling of its own (adr/0014 §5.4,
+    F7a). A generic switch, never a decision per dataset.
     """
 
     store_url: str
@@ -352,6 +358,7 @@ class ZarrAsset:
     item_id: str
     asset: str
     target_gsd: float | None = None
+    decode_cf: bool = True
 
 
 def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, str, str]:
@@ -436,6 +443,7 @@ def zarr_asset(
     resolve: Resolver = resolve_host,
     variable: str | None = None,
     target_gsd: float | None = None,
+    decode_cf: bool = True,
 ) -> ZarrAsset:
     """Clear an asset address and return what the reader opens, or raise the reason why not.
 
@@ -445,8 +453,9 @@ def zarr_asset(
     first chunk, so an address on a host the registry does not name costs no request
     at all.
 
-    ``variable`` and ``target_gsd`` pass straight through to :func:`split_asset_href`
-    and :class:`ZarrAsset` — see there for what each one changes.
+    ``variable``, ``target_gsd`` and ``decode_cf`` pass straight through to
+    :func:`split_asset_href` and :class:`ZarrAsset` — see there for what each one
+    changes.
     """
     store_url, group, resolved_variable = split_asset_href(href, variable=variable)
     if not resolved_variable:
@@ -466,6 +475,7 @@ def zarr_asset(
         item_id=item_id,
         asset=asset,
         target_gsd=target_gsd,
+        decode_cf=decode_cf,
     )
 
 
@@ -548,6 +558,15 @@ class ZarrReader(XarrayReader):
         self._dataset = dataset
         super().__attrs_post_init__()
         self._extra_bands = tuple(XarrayReader(array, tms=self.tms, options=self.options) for array in arrays[1:])
+
+    @property
+    def arrays(self) -> tuple[xarray.DataArray, ...]:
+        """Every variable this reader reads, in the order named — the first is ``self.input``.
+
+        For a caller that needs what each variable says about itself, such as its CF
+        attributes when the store was opened with ``decode_cf=False`` (adr/0014 §5.4).
+        """
+        return (self.input, *(reader.input for reader in self._extra_bands))
 
     def tile(self, *args: Any, **kwargs: Any) -> ImageData:
         return self._merged(XarrayReader.tile, *args, **kwargs)
@@ -641,6 +660,7 @@ def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
             consolidated=True,
             zarr_format=ZARR_FORMAT,
             decode_coords="all",
+            mask_and_scale=asset.decode_cf,
             chunks=None,
         )
     except (KeyError, FileNotFoundError):

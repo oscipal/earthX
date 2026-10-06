@@ -57,6 +57,7 @@ def valid_config() -> DatasetConfig:
             time_range=True,
             band_math=True,
             interpolation=True,
+            reprojection=True,
             ml_processing=False,
             quad_pol=False,
             single_coverage_product=False,
