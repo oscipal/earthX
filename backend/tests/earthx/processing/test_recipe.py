@@ -25,9 +25,8 @@ from earthx.processing.recipe import (
     recipe_from_data,
     recipe_hash,
 )
-from tests.earthx.processing.recipes import FakeOperators, recipe_data, request_data, resolved
-
-OPERATORS = FakeOperators()
+from tests.earthx.processing.recipes import recipe_data, request_data, resolved
+from tests.earthx.processing.testops import OPERATORS
 
 #: Fixed on purpose (condition F2): a change here is a change of method `c1`, and
 #: every cache key computed before it would silently stop matching.
@@ -55,7 +54,15 @@ def _zarr_recipe() -> dict:
         variable="b04,b08",
     )
     return recipe_data(
-        inputs=[{"name": "z", "dataset": "synthetic", "groups": [["ITEM_Z"]], "assets": ["r10m:b04,b08"], "resolved": [entry]}]
+        inputs=[
+            {
+                "name": "z",
+                "dataset": "synthetic",
+                "groups": [["ITEM_Z"]],
+                "assets": ["r10m:b04,b08"],
+                "resolved": [entry],
+            }
+        ]
     )
 
 
@@ -215,7 +222,13 @@ class TestRefusals:
 
     @pytest.mark.parametrize(
         ("reader", "scaled", "scaling"),
-        [("cog", True, "none"), ("cog", False, "item"), ("cog", False, "store-cf"), ("zarr", False, "none"), ("zarr", True, "store-cf")],
+        [
+            ("cog", True, "none"),
+            ("cog", False, "item"),
+            ("cog", False, "store-cf"),
+            ("zarr", False, "none"),
+            ("zarr", True, "store-cf"),
+        ],
     )
     def test_a_scaling_source_that_contradicts_the_bands(self, reader: str, scaled: bool, scaling: str) -> None:
         data = recipe_data()

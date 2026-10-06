@@ -440,7 +440,9 @@ def _normalise_steps[M: _Common](document: M, operators: OperatorLookup) -> M:
         try:
             model = operators.params_model(step.op, step.op_version)
         except LookupError:
-            raise UnknownOperator(f"step {index}: operator {step.op!r} version {step.op_version} is not available") from None
+            raise UnknownOperator(
+                f"step {index}: operator {step.op!r} version {step.op_version} is not available"
+            ) from None
         try:
             params = model.model_validate_json(json.dumps(step.params, allow_nan=False), strict=True)
         except ValidationError as error:
@@ -542,4 +544,3 @@ def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = Non
     if isinstance(updated, str) and updated:
         return InputVersion(kind="updated", value=updated)
     return None
-

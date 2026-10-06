@@ -9,28 +9,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
-
 HOST = "store.example.invalid"
-
-
-class ScaleParams(BaseModel):
-    """Parameters of the test operators: one float and one optional label."""
-
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-    factor: float
-    label: str | None = None
-
-
-class FakeOperators:
-    """The lookup :func:`earthx.processing.recipe.parse_recipe` needs, with one operator."""
-
-    def params_model(self, op: str, op_version: int) -> type[BaseModel]:
-        if (op, op_version) == ("scale", 1):
-            return ScaleParams
-        raise LookupError(op)
-
 
 SQUARE = {
     "type": "Polygon",
