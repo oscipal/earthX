@@ -164,7 +164,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-00 | Doku nachziehen | M4a | A | Sonnet (mittel) | — | erledigt (#111) |
 | M4-00b | Lock-Datei für die Backend-Pakete | M4a | B | Opus Plan, Sonnet (hoch) | — | erledigt (#113) |
 | M4-01a | Zugriffsauflösung nach `access`, eine Item-Quelle in `api` | M4a | B | Opus Plan, Sonnet (hoch) | — | erledigt (#112) |
-| M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a | offen |
+| M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a | Plan zur Freigabe (`plans/m4-01b-adapter-spec.md`) |
 | M4-02 | Spike Job-Queue → `adr/0013` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#116) |
 | M4-03 | Rezept und Operator-Registry → `adr/0014` | M4a | C | Opus (xhigh) | — | erledigt, angenommen (#114) |
 | M4-04 | Weg zum Objektspeicher → `adr/0015` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#115) |
