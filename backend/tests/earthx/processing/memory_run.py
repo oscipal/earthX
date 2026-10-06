@@ -14,6 +14,11 @@ Nothing here opens a socket.
 that much, whatever it did itself (measured: 1494 MB under pytest against 471 MB
 for the same run started from a shell). ``VmHWM`` belongs to the address space,
 which ``exec`` replaces.
+
+**As in the image, without ``boto3``.** ``rasterio.session`` imports ``boto3`` when
+it is installed; only the development environment has it, through ``moto``
+(M4-06). It is hidden before the first import, as in ``test_import_is_pure.py``,
+so the measured child carries what a child in the image carries.
 """
 
 from __future__ import annotations
@@ -22,14 +27,6 @@ import json
 import sys
 import time
 from pathlib import Path
-
-import earthx.readers.access as read_access
-import earthx.readers.cog as cog_reader
-from earthx.processing import run, worker_environment
-from earthx.processing.recipe import recipe_from_data
-from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
-from tests.earthx.processing.testops import OPERATORS
 
 
 def high_water_mb() -> float:
@@ -41,6 +38,15 @@ def high_water_mb() -> float:
 
 
 def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None) -> None:
+    # Imported here, after `boto3` is hidden (module docstring), not at the top.
+    import earthx.readers.access as read_access
+    import earthx.readers.cog as cog_reader
+    from earthx.processing import run, worker_environment
+    from earthx.processing.recipe import recipe_from_data
+    from tests.earthx.processing import sources
+    from tests.earthx.processing.recipes import resolved
+    from tests.earthx.processing.testops import OPERATORS
+
     address = sources.url("big")
     cog_reader.vsicurl_path = lambda checked: str(cog)
     read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
@@ -73,4 +79,5 @@ def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None) -> None:
 
 
 if __name__ == "__main__":
+    sys.modules["boto3"] = None  # type: ignore[assignment]
     main(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]) if len(sys.argv) > 4 else None)
