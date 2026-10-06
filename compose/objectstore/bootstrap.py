@@ -8,21 +8,26 @@ exclusively to the `objectstore` service inside the compose network — the
 same network the healthchecks already reach with `curl` — never to a data
 source, so it does not fall under `gateway` (KLAERUNGEN B8: that rule covers
 how the *application* reaches data sources). How the application itself will
-reach the object store in M4 is left to that plan (adr/0012 F5); nothing
-here decides it.
+reach the object store is `earthx.objectstore` (M4-06, adr/0015); this
+script only prepares the store for it: the keys `api` and `worker` use, and the
+bucket rule the worker checks before it starts.
 
 Garage's image is `FROM scratch` (no shell, no curl), so this script cannot
 run *inside* that container. Instead it runs as two one-shot steps built
 from the backend image, before and after Garage starts:
 
   secrets   Generate the RPC secret, admin token and (unless given via env)
-            the S3 access key/secret, as 0600 files in a shared volume.
-            Idempotent: existing files are never overwritten.
+            the S3 access key/secret, as 0600 files in a shared volume; and
+            the two service keys (M4-06, adr/0015 §6.4), each into a volume of
+            its own. Idempotent: existing files are never overwritten.
   init      Against Garage's already-running admin API, import the S3 key
             and create the bucket if missing, then grant the key full
-            access. Idempotent.
+            access; import the service keys with their own rights (`jobs`
+            reads and writes, `api` only reads) and set the lifecycle rule
+            for `results/` (adr/0015 §7.3). Idempotent.
   show      Print the S3 access key id and secret from the secrets volume,
-            for a person to use locally (e.g. with the `aws` CLI). Never
+            and the two service keys, for a person to use locally (e.g. with
+            the `aws` CLI) and for the CI smoke step, which masks them. Never
             written to a log by the other subcommands.
 
 Neither `secrets` nor `init` ever print a credential — not the RPC secret,
@@ -46,6 +51,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 from redact import redact
 
@@ -61,6 +67,41 @@ _BUCKET_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$")
 
 DEFAULT_BUCKET = "earthx"
 KEY_NAME = "earthx-platform"
+
+
+class ServiceKey(NamedTuple):
+    """A key one process uses (adr/0015 §6.4, plan M4-06 F3): always generated,
+    never from `.env`, in a volume only that process mounts."""
+
+    label: str
+    name: str
+    dir_env: str
+    default_dir: str
+    permissions: dict[str, bool]
+
+    def directory(self) -> Path:
+        return Path(os.environ.get(self.dir_env, self.default_dir))
+
+
+SERVICE_KEYS = (
+    # `worker` writes and deletes results; it may not own the bucket.
+    ServiceKey(
+        "jobs", "earthx-jobs", "OBJECTSTORE_JOBS_KEY_DIR", "/keys/jobs", {"read": True, "write": True, "owner": False}
+    ),
+    # `api` only signs GET URLs: a URL signed with it can neither write nor delete (§3.3).
+    ServiceKey(
+        "api", "earthx-api", "OBJECTSTORE_API_KEY_DIR", "/keys/api", {"read": True, "write": False, "owner": False}
+    ),
+)
+
+# adr/0015 §7.3. The worker recognises it by content, not by its ID (plan M4-06 F4).
+LIFECYCLE_RULE = {
+    "ID": "results-7d",
+    "Status": "Enabled",
+    "Filter": {"Prefix": "results/"},
+    "Expiration": {"Days": 7},
+    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+}
 
 
 class BootstrapError(RuntimeError):
@@ -185,6 +226,29 @@ def cmd_secrets(_: argparse.Namespace) -> None:
             "back."
         )
 
+    for key in SERVICE_KEYS:
+        _ensure_service_key(key)
+
+
+def _ensure_service_key(key: ServiceKey) -> None:
+    directory = key.directory()
+    directory.mkdir(parents=True, exist_ok=True)
+    if stat.S_IMODE(directory.stat().st_mode) & 0o077:
+        directory.chmod(0o700)
+    access_key_path = directory / "access_key"
+    secret_key_path = directory / "secret_key"
+    if access_key_path.exists() and secret_key_path.exists():
+        print(f"objectstore-secrets: service key for {key.label} already present, unchanged")
+        return
+    if access_key_path.exists() or secret_key_path.exists():
+        raise BootstrapError(
+            f"Only one of access_key/secret_key exists for the {key.label} service "
+            "key; remove both to regenerate, or restore the missing file."
+        )
+    _write_secret_file(access_key_path, "GK" + secrets_module.token_hex(12))
+    _write_secret_file(secret_key_path, secrets_module.token_hex(32))
+    print(f"objectstore-secrets: service key for {key.label} created")
+
 
 def _admin_request(
     base_url: str, token: str, method: str, path: str, body: dict | None = None
@@ -262,8 +326,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     elif status == 200:
         existing_secret = info.get("secretAccessKey")
         if existing_secret is not None and existing_secret != secret_key:
+            # No key id here: this error lands in `docker compose logs` and the CI log.
             raise BootstrapError(
-                f"S3 key {access_key} already exists in Garage with a "
+                f"S3 key {KEY_NAME} already exists in Garage with a "
                 "different secret than the one in the secrets volume. "
                 "Refusing to overwrite it."
             )
@@ -303,9 +368,104 @@ def cmd_init(args: argparse.Namespace) -> None:
         raise BootstrapError(f"AllowBucketKey failed ({error_text(status, info)})")
     print("objectstore-init: granted key access to the bucket")
 
+    for key in SERVICE_KEYS:
+        _init_service_key(base_url, admin_token, bucket_id, key, error_text)
+
+    _set_lifecycle_rule(base_url, admin_token, bucket_id, error_text)
+
+
+def _init_service_key(base_url: str, admin_token: str, bucket_id: str, key: ServiceKey, error_text) -> None:
+    """Import one service key and give it exactly its rights on the bucket.
+
+    Allow what it needs, then deny the rest: a key from an earlier run with
+    more rights loses them (plan M4-06, Kleinentscheidung).
+    """
+    directory = key.directory()
+    access_key = _read_secret_file(directory / "access_key")
+    secret_key = _read_secret_file(directory / "secret_key")
+
+    def text(status: int, info: dict) -> str:
+        return redact(error_text(status, info), access_key, secret_key)
+
+    status, info = _admin_request(base_url, admin_token, "GET", f"/v2/GetKeyInfo?id={access_key}&showSecretKey=true")
+    if status == 404:
+        status, info = _admin_request(
+            base_url,
+            admin_token,
+            "POST",
+            "/v2/ImportKey",
+            {"accessKeyId": access_key, "secretAccessKey": secret_key, "name": key.name},
+        )
+        if status not in (200, 201):
+            raise BootstrapError(f"ImportKey for {key.label} failed ({text(status, info)})")
+        print(f"objectstore-init: imported service key for {key.label}")
+    elif status == 200:
+        existing_secret = info.get("secretAccessKey")
+        if existing_secret is not None and existing_secret != secret_key:
+            raise BootstrapError(
+                f"Service key {key.name} already exists in Garage with a different "
+                "secret than the one in its volume. Refusing to overwrite it."
+            )
+        print(f"objectstore-init: service key for {key.label} already imported")
+    else:
+        raise BootstrapError(f"GetKeyInfo for {key.label} failed ({text(status, info)})")
+
+    allow = {name: value for name, value in key.permissions.items() if value}
+    deny = {name: True for name, value in key.permissions.items() if not value}
+    for endpoint, permissions in (("/v2/AllowBucketKey", allow), ("/v2/DenyBucketKey", deny)):
+        status, info = _admin_request(
+            base_url,
+            admin_token,
+            "POST",
+            endpoint,
+            {"bucketId": bucket_id, "accessKeyId": access_key, "permissions": permissions},
+        )
+        if status != 200:
+            raise BootstrapError(f"{endpoint.rsplit('/', 1)[1]} for {key.label} failed ({text(status, info)})")
+    rights = ", ".join(name for name in ("read", "write", "owner") if key.permissions[name])
+    print(f"objectstore-init: service key for {key.label} may {rights}")
+
+
+def _is_lifecycle_rule(rule: dict) -> bool:
+    """The rule of adr/0015 §7.3, by content (the same test as `earthx.objectstore`)."""
+    filter_ = rule.get("Filter") or {}
+    return (
+        rule.get("Status") == "Enabled"
+        and set(filter_) == {"Prefix"}
+        and filter_.get("Prefix") == LIFECYCLE_RULE["Filter"]["Prefix"]
+        and (rule.get("Expiration") or {}).get("Days") == LIFECYCLE_RULE["Expiration"]["Days"]
+        and (rule.get("AbortIncompleteMultipartUpload") or {}).get("DaysAfterInitiation")
+        == LIFECYCLE_RULE["AbortIncompleteMultipartUpload"]["DaysAfterInitiation"]
+    )
+
+
+def _set_lifecycle_rule(base_url: str, admin_token: str, bucket_id: str, error_text) -> None:
+    """Set the bucket's lifecycle rules to exactly the `results/` rule, then read them back.
+
+    Over the admin API (adr/0015 §7.3, W1): the application's keys never change the
+    bucket configuration. Further prefixes get rules of their own when they arise.
+    """
+    status, info = _admin_request(
+        base_url, admin_token, "POST", f"/v2/UpdateBucket?id={bucket_id}", {"lifecycleRules": [LIFECYCLE_RULE]}
+    )
+    if status != 200:
+        raise BootstrapError(f"UpdateBucket failed ({error_text(status, info)})")
+    status, info = _admin_request(base_url, admin_token, "GET", f"/v2/GetBucketInfo?id={bucket_id}")
+    if status != 200:
+        raise BootstrapError(f"GetBucketInfo failed ({error_text(status, info)})")
+    rules = [rule for rule in info.get("lifecycleRules") or [] if _is_lifecycle_rule(rule)]
+    if not rules:
+        raise BootstrapError("the lifecycle rule for results/ did not read back after UpdateBucket")
+    rule = rules[0]
+    print(
+        f"objectstore-init: lifecycle rule {rule.get('ID', '(no id)')} set "
+        f"(prefix {rule['Filter']['Prefix']}, expire after {rule['Expiration']['Days']} days, "
+        f"abort multipart after {rule['AbortIncompleteMultipartUpload']['DaysAfterInitiation']} day)"
+    )
+
 
 def cmd_show(_: argparse.Namespace) -> None:
-    """Print the S3 access key and secret for a person to use locally."""
+    """Print the S3 access key and secret, and the two service keys."""
     directory = _secrets_dir()
     access_key = _read_secret_file(directory / "s3_access_key")
     secret_key = _read_secret_file(directory / "s3_secret_key")
@@ -313,6 +473,10 @@ def cmd_show(_: argparse.Namespace) -> None:
     print(f"S3_ACCESS_KEY={access_key}")
     print(f"S3_SECRET_KEY={secret_key}")
     print(f"S3_BUCKET={bucket}")
+    for key in SERVICE_KEYS:
+        prefix = f"S3_{key.label.upper()}"
+        print(f"{prefix}_ACCESS_KEY={_read_secret_file(key.directory() / 'access_key')}")
+        print(f"{prefix}_SECRET_KEY={_read_secret_file(key.directory() / 'secret_key')}")
 
 
 def main(argv: list[str] | None = None) -> int:

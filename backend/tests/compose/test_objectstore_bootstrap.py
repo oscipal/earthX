@@ -49,6 +49,9 @@ bootstrap = _load_bootstrap()
 def secrets_dir(tmp_path, monkeypatch):
     directory = tmp_path / "secrets"
     monkeypatch.setenv("OBJECTSTORE_SECRETS_DIR", str(directory))
+    # M4-06: the service keys live in volumes of their own.
+    monkeypatch.setenv("OBJECTSTORE_JOBS_KEY_DIR", str(tmp_path / "keys-jobs"))
+    monkeypatch.setenv("OBJECTSTORE_API_KEY_DIR", str(tmp_path / "keys-api"))
     for var in ("S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_BUCKET"):
         monkeypatch.delenv(var, raising=False)
     return directory
@@ -61,11 +64,17 @@ class FakeAdminApi:
 
     def __init__(self) -> None:
         self.keys: dict[str, str] = {}
+        self.key_names: dict[str, str] = {}
         self.buckets: dict[str, str] = {}
+        self.permissions: dict[str, dict[str, bool]] = {}
+        self.lifecycle_rules: dict[str, list] = {}
         self.import_calls = 0
         self.create_calls = 0
         self.allow_calls = 0
+        self.update_calls = 0
         self._next_error: tuple[int, dict] | None = None
+        self._next_import_error: tuple[int, dict] | None = None
+        self.drop_lifecycle_rules = False
 
     def fail_next_bucket_lookup_with(self, status: int, error: str) -> None:
         self._next_error = (status, {"error": error})
@@ -82,9 +91,25 @@ class FakeAdminApi:
             return 200, {"accessKeyId": key_id, "secretAccessKey": secret}
 
         if path == "/v2/ImportKey":
+            if self._next_import_error is not None:
+                status, info = self._next_import_error
+                self._next_import_error = None
+                return status, info
             self.import_calls += 1
             self.keys[body["accessKeyId"]] = body["secretAccessKey"]
+            self.key_names[body["accessKeyId"]] = body["name"]
             return 201, {"accessKeyId": body["accessKeyId"]}
+
+        if path.startswith("/v2/GetBucketInfo?id="):
+            bucket_id = path.split("id=")[1]
+            rules = [] if self.drop_lifecycle_rules else self.lifecycle_rules.get(bucket_id, [])
+            return 200, {"id": bucket_id, "lifecycleRules": rules}
+
+        if path.startswith("/v2/UpdateBucket?id="):
+            self.update_calls += 1
+            bucket_id = path.split("id=")[1]
+            self.lifecycle_rules[bucket_id] = body["lifecycleRules"]
+            return 200, {"id": bucket_id, "lifecycleRules": body["lifecycleRules"]}
 
         if path.startswith("/v2/GetBucketInfo"):
             if self._next_error is not None:
@@ -104,8 +129,13 @@ class FakeAdminApi:
             self.buckets[alias] = bucket_id
             return 201, {"id": bucket_id, "globalAliases": [alias]}
 
-        if path == "/v2/AllowBucketKey":
-            self.allow_calls += 1
+        if path in ("/v2/AllowBucketKey", "/v2/DenyBucketKey"):
+            allow = path == "/v2/AllowBucketKey"
+            self.allow_calls += allow
+            granted = self.permissions.setdefault(body["accessKeyId"], {"read": False, "write": False, "owner": False})
+            for name, flag in body["permissions"].items():
+                if flag:
+                    granted[name] = allow
             return 200, {"id": body["bucketId"]}
 
         raise AssertionError(f"unexpected admin API call: {method} {path}")
@@ -132,6 +162,11 @@ def _write_secrets_for_init(secrets_dir: Path, secret_key: str = "a-sixteen-char
     (secrets_dir / "s3_access_key").write_text("a-valid-access-key")
     (secrets_dir / "s3_secret_key").write_text(secret_key)
     (secrets_dir / "s3_bucket").write_text("earthx")
+    for label in ("jobs", "api"):
+        directory = secrets_dir.parent / f"keys-{label}"
+        directory.mkdir(exist_ok=True)
+        (directory / "access_key").write_text(f"GK{label}servicekey0001")
+        (directory / "secret_key").write_text(f"{label}-service-secret-0000000000")
 
 
 # --- secrets --------------------------------------------------------------
@@ -229,9 +264,9 @@ def test_init_imports_key_creates_bucket_and_grants_access(secrets_dir, fake_adm
 
     bootstrap.cmd_init(init_args())
 
-    assert fake_admin.import_calls == 1
+    assert fake_admin.import_calls == 3
     assert fake_admin.create_calls == 1
-    assert fake_admin.allow_calls == 1
+    assert fake_admin.allow_calls == 3
     assert fake_admin.keys["a-valid-access-key"] == "a-sixteen-char-secret"
     assert "earthx" in fake_admin.buckets
 
@@ -242,9 +277,9 @@ def test_init_second_run_does_not_recreate_key_or_bucket(secrets_dir, fake_admin
     bootstrap.cmd_init(init_args())
     bootstrap.cmd_init(init_args())
 
-    assert fake_admin.import_calls == 1
+    assert fake_admin.import_calls == 3
     assert fake_admin.create_calls == 1
-    assert fake_admin.allow_calls == 2  # granted again each run; idempotent on Garage's side
+    assert fake_admin.allow_calls == 6  # granted again each run; idempotent on Garage's side
 
 
 def test_init_rejects_key_that_exists_with_a_different_secret(secrets_dir, fake_admin):
@@ -283,6 +318,10 @@ def _all_credentials(directory: Path) -> list[str]:
     return [
         (directory / name).read_text().strip()
         for name in ("rpc_secret", "admin_token", "s3_access_key", "s3_secret_key")
+    ] + [
+        (directory.parent / f"keys-{label}" / name).read_text().strip()
+        for label in ("jobs", "api")
+        for name in ("access_key", "secret_key")
     ]
 
 
@@ -363,3 +402,146 @@ def test_show_prints_the_stored_credentials(secrets_dir, capsys):
     captured = capsys.readouterr()
     assert f"S3_ACCESS_KEY={access_key}" in captured.out
     assert f"S3_SECRET_KEY={secret_key}" in captured.out
+
+
+# --- M4-06: service keys and the lifecycle rule (adr/0015 §6.4, §7.3) -------
+
+
+def _service_key(secrets_dir: Path, label: str, name: str = "access_key") -> str:
+    return (secrets_dir.parent / f"keys-{label}" / name).read_text().strip()
+
+
+def test_secrets_creates_both_service_keys_in_their_own_directories(secrets_dir):
+    assert bootstrap.main(["secrets"]) == 0
+
+    seen = set()
+    for label in ("jobs", "api"):
+        directory = secrets_dir.parent / f"keys-{label}"
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+        assert sorted(p.name for p in directory.iterdir()) == ["access_key", "secret_key"]
+        for name in ("access_key", "secret_key"):
+            assert stat.S_IMODE((directory / name).stat().st_mode) == 0o600
+        access_key = _service_key(secrets_dir, label)
+        assert re.match(r"^GK[0-9a-f]{24}$", access_key)
+        assert re.match(r"^[0-9a-f]{64}$", _service_key(secrets_dir, label, "secret_key"))
+        seen.add(access_key)
+    seen.add((secrets_dir / "s3_access_key").read_text().strip())
+    assert len(seen) == 3
+
+
+def test_secrets_second_run_keeps_the_service_keys(secrets_dir):
+    assert bootstrap.main(["secrets"]) == 0
+    before = {label: _service_key(secrets_dir, label, "secret_key") for label in ("jobs", "api")}
+    assert bootstrap.main(["secrets"]) == 0
+    assert {label: _service_key(secrets_dir, label, "secret_key") for label in ("jobs", "api")} == before
+
+
+def test_the_service_keys_never_come_from_env(secrets_dir, monkeypatch):
+    """adr/0015 §9.1: `.env` pins only the owner key; the service keys are always generated."""
+    monkeypatch.setenv("S3_ACCESS_KEY", "my-access-key")
+    monkeypatch.setenv("S3_SECRET_KEY", "a-sixteen-char-secret")
+    assert bootstrap.main(["secrets"]) == 0
+    for label in ("jobs", "api"):
+        assert _service_key(secrets_dir, label) != "my-access-key"
+        assert _service_key(secrets_dir, label, "secret_key") != "a-sixteen-char-secret"
+
+
+def test_secrets_refuses_half_a_service_key(secrets_dir, capsys):
+    assert bootstrap.main(["secrets"]) == 0
+    (secrets_dir.parent / "keys-api" / "secret_key").unlink()
+    assert bootstrap.main(["secrets"]) == 1
+    assert "api service key" in capsys.readouterr().err
+
+
+def test_init_gives_each_key_exactly_its_rights(secrets_dir, fake_admin):
+    _write_secrets_for_init(secrets_dir)
+    bootstrap.cmd_init(init_args())
+
+    jobs, api = _service_key(secrets_dir, "jobs"), _service_key(secrets_dir, "api")
+    assert fake_admin.key_names[jobs] == "earthx-jobs"
+    assert fake_admin.key_names[api] == "earthx-api"
+    assert fake_admin.permissions[jobs] == {"read": True, "write": True, "owner": False}
+    assert fake_admin.permissions[api] == {"read": True, "write": False, "owner": False}
+    assert fake_admin.permissions["a-valid-access-key"] == {"read": True, "write": True, "owner": True}
+
+
+def test_init_takes_rights_away_from_an_api_key_that_had_more(secrets_dir, fake_admin):
+    _write_secrets_for_init(secrets_dir)
+    api = _service_key(secrets_dir, "api")
+    fake_admin.permissions[api] = {"read": True, "write": True, "owner": True}
+
+    bootstrap.cmd_init(init_args())
+
+    assert fake_admin.permissions[api] == {"read": True, "write": False, "owner": False}
+
+
+def test_init_sets_exactly_the_results_rule_and_says_so(secrets_dir, fake_admin, capsys):
+    _write_secrets_for_init(secrets_dir)
+    bucket_id = "bucket-1"
+    fake_admin.lifecycle_rules[bucket_id] = [{"ID": "expire-results", "Status": "Enabled", "Filter": {"Prefix": "smoke/"}}]
+
+    bootstrap.cmd_init(init_args())
+
+    assert fake_admin.lifecycle_rules[bucket_id] == [
+        {
+            "ID": "results-7d",
+            "Status": "Enabled",
+            "Filter": {"Prefix": "results/"},
+            "Expiration": {"Days": 7},
+            "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1},
+        }
+    ]
+    out = capsys.readouterr().out
+    assert (
+        "objectstore-init: lifecycle rule results-7d set (prefix results/, expire after 7 days, "
+        "abort multipart after 1 day)"
+    ) in out.splitlines()
+
+
+def test_init_sets_the_rule_again_on_every_run(secrets_dir, fake_admin):
+    _write_secrets_for_init(secrets_dir)
+    bootstrap.cmd_init(init_args())
+    bootstrap.cmd_init(init_args())
+    assert fake_admin.update_calls == 2
+    assert fake_admin.import_calls == 3
+
+
+def test_init_fails_when_the_rule_does_not_read_back(secrets_dir, fake_admin):
+    _write_secrets_for_init(secrets_dir)
+    fake_admin.drop_lifecycle_rules = True
+    with pytest.raises(bootstrap.BootstrapError, match="did not read back"):
+        bootstrap.cmd_init(init_args())
+
+
+@pytest.mark.parametrize("label", ["owner", "jobs", "api"])
+def test_a_key_with_a_different_secret_is_refused_without_naming_its_id(secrets_dir, fake_admin, label):
+    _write_secrets_for_init(secrets_dir)
+    key_id = "a-valid-access-key" if label == "owner" else _service_key(secrets_dir, label)
+    fake_admin.keys[key_id] = "a-completely-different-secret"
+
+    with pytest.raises(bootstrap.BootstrapError, match="different secret") as excinfo:
+        bootstrap.cmd_init(init_args())
+    assert key_id not in str(excinfo.value)
+
+
+def test_a_failed_service_key_import_echoing_credentials_is_redacted(secrets_dir, fake_admin):
+    _write_secrets_for_init(secrets_dir)
+    jobs_id = _service_key(secrets_dir, "jobs")
+    jobs_secret = _service_key(secrets_dir, "jobs", "secret_key")
+    fake_admin.keys["a-valid-access-key"] = "a-sixteen-char-secret"  # owner key already there
+    fake_admin._next_import_error = (400, {"error": f"bad key {jobs_id} / {jobs_secret} / test-admin-token"})
+
+    with pytest.raises(bootstrap.BootstrapError) as excinfo:
+        bootstrap.cmd_init(init_args())
+    for value in (jobs_id, jobs_secret, "test-admin-token"):
+        assert value not in str(excinfo.value)
+
+
+def test_show_prints_the_service_keys_under_their_own_names(secrets_dir, capsys):
+    bootstrap.main(["secrets"])
+    capsys.readouterr()
+    assert bootstrap.main(["show"]) == 0
+    out = capsys.readouterr().out
+    for label in ("jobs", "api"):
+        assert f"S3_{label.upper()}_ACCESS_KEY={_service_key(secrets_dir, label)}" in out
+        assert f"S3_{label.upper()}_SECRET_KEY={_service_key(secrets_dir, label, 'secret_key')}" in out
