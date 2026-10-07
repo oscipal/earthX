@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 import re
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -27,7 +28,7 @@ from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import CACHE_MIN_REMAINING, WAKE_CHANNEL, notify_progress
 from earthx.objectstore.results import RESULT_TTL
-from earthx.processing.operators import REGISTRY
+from earthx.processing.operators import REGISTRY, OperatorRegistry
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import Recipe, cache_key, recipe_hosts, run_key
 
@@ -37,7 +38,10 @@ __all__ = [
     "JobStatus",
     "RecipeIdTaken",
     "dismiss",
+    "job_recipe",
+    "job_run",
     "job_status",
+    "run_jobs",
     "submit",
 ]
 
@@ -47,7 +51,7 @@ RUNTIME_FACTOR = 2.0
 MIN_RUNTIME_SECONDS = 600
 
 # `secrets.token_urlsafe(16)`: 128 bits, 22 characters (adr/0014 F15).
-_ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
+_ID = re.compile(r"^[A-Za-z0-9_-]{22}\Z")  # `\Z`: `$` also takes a newline at the end
 
 Status = Literal["accepted", "running", "successful", "failed", "dismissed"]
 
@@ -76,25 +80,26 @@ class JobStatus:
     result: dict[str, Any] | None
 
 
-def _runtime_limit(recipe: Recipe) -> int:
-    seconds = estimate(recipe, REGISTRY).seconds * RUNTIME_FACTOR
+def _runtime_limit(recipe: Recipe, operators: OperatorRegistry) -> int:
+    seconds = estimate(recipe, operators).seconds * RUNTIME_FACTOR
     return max(MIN_RUNTIME_SECONDS, math.ceil(seconds))
 
 
-def submit(conn: psycopg.Connection, recipe: Recipe) -> str:
+def submit(conn: psycopg.Connection, recipe: Recipe, *, operators: OperatorRegistry = REGISTRY) -> str:
     """Place the order and return its ``job_id``.
 
     In one transaction: the recipe row, then a job on a finished run of the same cache key
     if one exists with at least 24 hours of life left (Q11, adr/0013 §5.8), else on the
     active run of the same key, else on a new run. A recipe without a ``recipe_id`` gets a
-    new one; every order has its own (adr/0013 §9 point 2).
+    new one; every order has its own (adr/0013 §9 point 2). ``operators`` is the registry the
+    runtime limit is estimated with: the one the recipe was validated with (`api` hands it in).
     """
     recipe_id = recipe.recipe_id or secrets.token_urlsafe(16)
     stored = recipe.model_copy(update={"recipe_id": recipe_id})
     key = run_key(stored)
     cacheable = cache_key(stored) is not None
     hosts = list(recipe_hosts(stored))
-    max_seconds = _runtime_limit(stored)
+    max_seconds = _runtime_limit(stored, operators)
     job_id = secrets.token_urlsafe(16)
     with conn.transaction():
         try:
@@ -203,6 +208,51 @@ def job_status(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
     return None if row is None else _status(row)
 
 
+def job_recipe(conn: psycopg.Connection, job_id: str) -> dict[str, Any] | None:
+    """The recipe the job was placed with: its own, with its own ``recipe_id`` (M4-08b).
+
+    Never the recipe of the run another job may have caused: two equal orders share a run
+    but not a recipe, so ``recipe.json`` of one never shows the ``recipe_id`` of the other.
+    Reads only, like :func:`job_status`; ``None`` for an identifier that is malformed or unknown.
+    """
+    if not isinstance(job_id, str) or not _ID.match(job_id):
+        return None
+    row = conn.execute(
+        "SELECT r.body FROM public.earthx_job j JOIN public.earthx_recipe r ON r.recipe_id = j.recipe_id "
+        "WHERE j.job_id = %s",
+        (job_id,),
+    ).fetchone()
+    return None if row is None else row[0]
+
+
+def job_run(conn: psycopg.Connection, job_id: str) -> int | None:
+    """The number of the run a job hangs on, for the process that maps progress messages to jobs.
+
+    The number is internal (Q8): it travels in the progress messages of the database and is never
+    handed to a client. Reads only.
+    """
+    if not isinstance(job_id, str) or not _ID.match(job_id):
+        return None
+    row = conn.execute("SELECT run_id FROM public.earthx_job WHERE job_id = %s", (job_id,)).fetchone()
+    return None if row is None else row[0]
+
+
+def run_jobs(conn: psycopg.Connection, run_id: int, job_ids: Sequence[str]) -> list[JobStatus]:
+    """The state of the given jobs of one run, in one query: what a progress message needs to fan out.
+
+    Only jobs that hang on ``run_id`` come back, so a caller cannot read another run's job
+    through here. Reads only.
+    """
+    valid = [job_id for job_id in job_ids if isinstance(job_id, str) and _ID.match(job_id)]
+    if not valid:
+        return []
+    rows = conn.execute(
+        _STATUS_SQL.replace("WHERE j.job_id = %s", "WHERE j.run_id = %s AND j.job_id = ANY(%s)"),
+        (run_id, valid),
+    ).fetchall()
+    return [_status(row) for row in rows]
+
+
 def dismiss(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
     """Dismiss the job (OGC ``dismiss``); returns its state afterwards, ``None`` if unknown.
 
@@ -221,10 +271,13 @@ def dismiss(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
         run_id = job[0]
         # Locking the run orders concurrent dismissals of jobs that share it: the second one
         # waits, then counts the first one's flag too.
-        run = conn.execute("SELECT status FROM public.earthx_run WHERE run_id = %s FOR UPDATE", (run_id,)).fetchone()
+        run = conn.execute(
+            "SELECT status, progress FROM public.earthx_run WHERE run_id = %s FOR UPDATE", (run_id,)
+        ).fetchone()
         live = conn.execute(
             "SELECT count(*) FROM public.earthx_job WHERE run_id = %s AND NOT dismissed", (run_id,)
         ).fetchone()
+        told = False
         if run is not None and live is not None and live[0] == 0:
             if run[0] == "accepted":
                 done = conn.execute(
@@ -237,7 +290,12 @@ def dismiss(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
                 ).fetchone()
                 if done is not None:
                     notify_progress(conn, run_id, done[0], "dismissed")
+                    told = True
             elif run[0] == "running":
                 conn.execute("UPDATE public.earthx_run SET cancel_requested = true WHERE run_id = %s", (run_id,))
                 conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
+        if run is not None and not told:
+            # The run goes on, or has long finished, but this job's own state changed: whoever follows
+            # the job (SSE in `api`) is told through the run's channel, which is the only one there is.
+            notify_progress(conn, run_id, run[1], run[0])
     return job_status(conn, job_id)

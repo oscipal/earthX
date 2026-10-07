@@ -160,7 +160,12 @@ def _open_sources(recipe: Recipe, stack: ExitStack) -> list[Source]:
     return sources
 
 
-def _check_scope(recipe: Recipe) -> RasterOutput:
+def check_scope(recipe: Recipe) -> RasterOutput:
+    """The raster output of a recipe this core can run, or :class:`UnsupportedRecipe`.
+
+    ``run`` calls it first; `api` calls it before a job is queued, so that a recipe the core
+    would turn away does not wait its turn first (M4-08b K3).
+    """
     if not isinstance(recipe.output, RasterOutput):
         raise UnsupportedRecipe("the core computes a raster output; a crop is described, not run")
     if len(recipe.inputs) != 1 or len(recipe.inputs[0].groups) != 1 or len(recipe.inputs[0].groups[0]) != 1:
@@ -305,7 +310,7 @@ def _write_mask(state: _Run, meta: RasterMeta, aoi: dict) -> None:
 
 def run(recipe: Recipe, *, workdir: Path, progress: Progress, operators: OperatorRegistry = REGISTRY) -> RunResult:
     """Compute ``recipe`` into ``workdir`` and describe the result; a pure function of its inputs."""
-    output = _check_scope(recipe)
+    output = check_scope(recipe)
     planned = plan_steps(recipe.steps, operators)
     passes = segments(planned)
     state = _Run(workdir, progress)

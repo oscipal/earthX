@@ -38,6 +38,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
@@ -84,6 +85,7 @@ from earthx.adapters import (
     AdapterSpecs,
     check_adapter_specs,
 )
+from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.intake import describe_bands
 from earthx.api.item_source import (
@@ -487,6 +489,11 @@ def _open_reader(src_path: Any, **reader_params: Any) -> Any:
     return open_asset(src_path, **reader_params)
 
 
+# The stages of `OrderRefused` at which a crop is refused rather than delivered without
+# its `recipe.json` (Otto, 07.10.2026): a foreign host, an input gone from its source.
+_RECIPE_ABORTS = frozenset({"hosts", "version"})
+
+
 class DownloadRequest(BaseModel):
     """Body of ``POST /collections/{dataset}/download`` (M2-06, architekturplan 6.4 D3).
 
@@ -678,6 +685,33 @@ async def download_crop(
         for (matched, region), planned in zip(surviving_groups[1:], planned_by_group[1:], strict=True)
     ]
 
+    # The worker core stays out of the tiler's start (the intake imports it), so it is
+    # loaded when the first crop asks for its recipe.
+    from earthx.api.intake import crop_recipe_json
+
+    accepted_at = datetime.now(timezone.utc)
+    recipe_omitted_cause: str | None = None
+    try:
+        recipe_json: bytes | None = crop_recipe_json(
+            config,
+            groups=[matched for matched, _ in surviving_groups],
+            assets=wanted,
+            aoi=body.aoi,
+            resolution_factor=body.resolution,
+            accepted_at=accepted_at,
+        )
+    except OrderRefused as refused:
+        # By cause (Otto, 07.10.2026): an address its dataset does not declare, or an
+        # input that is gone from its source, stops the download. Anything else the
+        # items' metadata does to the recipe costs the ZIP its `recipe.json` only.
+        if refused.stage in _RECIPE_ABORTS:
+            LOGGER.warning("crop recipe refused", extra={"dataset": dataset, "stage": refused.stage})
+            raise HTTPException(status_code=refused.status_code, detail=refused.detail) from None
+        LOGGER.warning("crop recipe omitted", extra={"dataset": dataset, "stage": refused.stage})
+        recipe_json = None
+        recipe_omitted_cause = refused.stage
+    bib = citation_bib(config, downloaded=accepted_at.date())
+
     total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
     large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
     if large and _LARGE_DOWNLOAD_LOCK.locked():
@@ -699,6 +733,9 @@ async def download_crop(
             additional_groups=additional_groups,
             skipped_item_ids=skipped_item_ids,
             resolution_factor=body.resolution,
+            recipe_json=recipe_json,
+            citation_bib=bib,
+            recipe_omitted_cause=recipe_omitted_cause,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads

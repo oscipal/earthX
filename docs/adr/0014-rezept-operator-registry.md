@@ -16,6 +16,9 @@
   - **Nachtrag vom 2026-10-07 (M4-10b, Otto):** §7.2 und §7.3 Punkt 2 halten
     die feste mmap-Schwelle in `worker_environment()` fest. Der Originaltext
     bleibt stehen.
+  - **Nachtrag vom 2026-10-07 (M4-08b, Otto):** §15d: Die Job-Schnittstelle
+    erklärt keine Konformitätsklasse (zu F12 und §9). Der Originaltext bleibt
+    stehen.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -1612,6 +1615,43 @@ Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
 | §6.3, Zeile T1 ↔ T2 (Band-Math), für **Zarr** | bitgleich | **Entschieden am 2026-10-07 (Otto, Option 1):** COG: bitgleich ohne Einschränkung. Zarr: bitgleich außerhalb von 0,125 Quellpixel an einer Pixelgrenze (GDALs Näherungsschwelle); an der Grenze darf `nearest` den Nachbarn wählen. Die Formel auf dem exakt nächsten Quellpixel stimmt überall. T2 ↔ T2L bleibt bitgleich. Befund [M]: 13 von 3489 gültigen Pixeln einer z14-Kachel weichen ab (dazu eines in der Maske), alle bis 0,003 Quellpixel an einer Grenze; Ursache sind zwei `nearest`-Warps verschiedener Näherung (`XarrayReader` gegen `Reader` auf dem COG des Ergebnisses), nicht der Operator. Der Vergleichstest prüft beides (`tests/earthx/api/test_tiler_operator.py`) | `plans/m4-09-band-math.md` §9 Punkt 3, §10; Log 2026-10-07 |
 
 ---
+
+---
+
+## 15d. Nachtrag vom 2026-10-07: keine Konformität erklärt (zu F12 und §9)
+
+Otto hat M4-08b am 2026-10-07 freigegeben, F4 mit Option 2
+(`plans/m4-08b-job-api.md` §8). Der Originaltext in §0 Punkt 10, §9 (Tabelle,
+Zeile „Konformität erklärt“) und F12 bleibt stehen; maßgeblich ist dieser
+Nachtrag.
+
+**Befund [P]** (OGC API – Processes – Part 1: Core 1.0, Commit `7a6bad0`,
+`core/requirements/core/REQ_process-execute-inputs.adoc`): Requirement 18
+(`/req/core/process-execute-inputs`) verlangt in Teil A Eingaben inline und in
+Teil B Eingaben **per Referenz**: „The server SHALL support process input
+values specified by reference (i.e. using a link)“. Wer `core` erklärt, sagt zu,
+dass der Server eine Adresse aus der Anfrage abruft.
+
+**Das verbietet B8** (`KLAERUNGEN.md`): Ausgehende Requests laufen nur über
+`gateway`, und die Allowlist ergibt sich aus der Registry, nie aus einer
+Anfrage. Eine Adresse des Auftraggebers abzurufen, wäre genau der Weg, den die
+Allowlist schließt. `adr/0014` F12 hat `core`, `json` und `dismiss` erklärt,
+ohne diesen Punkt zu nennen.
+
+| Stelle | bisher | jetzt |
+|---|---|---|
+| §0 Punkt 10, §9 Tabelle „Konformität erklärt“ | `core`, `json`, `dismiss` | **keine.** `GET /processing/conformance` antwortet mit einer leeren Liste `conformsTo`; auch `json` und `dismiss` werden nicht erklärt |
+| F12 Antwort (1) | OGC-Form mit einem Prozess `recipe`, nur asynchron, ohne Job-Liste | unverändert in der **Form**: Pfade, Vokabular, Statuswerte, Statusdokument, Ergebnisdokument. Dazu kein Konformitätsanspruch |
+| Eingabe per Referenz | nicht behandelt | ein Eingang als Link (Objekt mit `href`) wird mit `400` abgewiesen; der Text sagt, dass Eingaben nur inline angenommen werden. Es folgt keine Anfrage an die genannte Adresse |
+
+Die Landing Page und die API-Definition sagen es offen: „follows the form of
+OGC API – Processes, no conformance claimed“.
+
+**Wann sich das ändert:** Erklären lässt sich eine Klasse erst, wenn Eingaben
+per Referenz möglich sind, und zwar unter einer **eigenen Netzwerk-Policy**
+(eigene Allowlist, eigener Egress, kein Zugriff auf die Hosts der Registry
+und nichts im Innern der Plattform). Das ist eine eigene Entscheidung und
+nicht Teil von M4. Bis dahin erhebt die Plattform keinen Anspruch.
 
 ---
 

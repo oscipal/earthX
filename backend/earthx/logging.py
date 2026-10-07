@@ -37,6 +37,19 @@ REQUEST_ID_HEADER = "x-request-id"
 # line or a downstream header. Anything else is replaced, not rejected.
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
+# M4-08b F6: the `jobID` in `/processing/jobs/{jobID}/…` is the way to a job's result (Q9: 128 bits,
+# no account), so the access log names the route, not the job — the worker's logs never carry it
+# either. Whatever stands in that segment, a valid identifier or not, is replaced.
+# Anywhere in the path, so a prefix such as a `root_path` does not hide it, and through any
+# number of slashes in front of the segment.
+_JOB_PATH = re.compile(r"(/processing/jobs/)/*[^/]+")
+
+
+def loggable_path(path: str | None) -> str | None:
+    """``path`` as the access log writes it: a job's identifier replaced by ``{jobID}``."""
+    return _JOB_PATH.sub(r"\1{jobID}", path) if path else path
+
+
 # Coarse on purpose: a populated grid cell this size hides where inside it a
 # point, polygon vertex, or bbox edge actually was.
 _COORDINATE_PRECISION = 0
@@ -180,7 +193,7 @@ class RequestIdMiddleware:
                 "request handled",
                 extra={
                     "method": scope.get("method"),
-                    "path": scope.get("path"),
+                    "path": loggable_path(scope.get("path")),
                     "status": status_code,
                     "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
                 },

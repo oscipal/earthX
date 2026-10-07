@@ -39,7 +39,7 @@ import math
 import secrets
 from collections.abc import Awaitable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -69,6 +69,7 @@ from earthx.processing.errors import RecipeInvalid, UnknownOperator
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands
 from earthx.processing.recipe import (
+    AppliedScaling,
     Band,
     InputRequest,
     InputVersion,
@@ -96,6 +97,7 @@ __all__ = [
     "check_recipe_hosts",
     "crop_recipe_json",
     "describe_bands",
+    "job_recipe_json",
 ]
 
 # The starting values of an order's size (Otto, M4-07b F5). One input per order until
@@ -632,4 +634,40 @@ def crop_recipe_json(
         **recipe.model_dump(mode="json", exclude={"recipe_id"}),
         "provenance": provenance.model_dump(mode="json"),
     }
+    return _document_bytes(document)
+
+
+def _document_bytes(document: Mapping[str, Any]) -> bytes:
+    """UTF-8, two spaces, keys sorted: the person's own file, no hash input."""
     return (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+
+
+def job_recipe_json(
+    body: Mapping[str, Any],
+    *,
+    config: DatasetConfig | None,
+    result: Mapping[str, Any],
+    started: datetime | None,
+    finished: datetime | None,
+) -> bytes:
+    """``recipe.json`` of a job, from the job's **own** recipe and what the run reported (adr/0014 §10.1).
+
+    ``body`` is the recipe stored for this job, with its own ``recipe_id``: two equal orders share
+    a run but never a recipe, so this file never shows another order's identifier (M4-08a F4). No
+    hash. ``provenance`` is the cloud run: the versions and the scaling the core reported
+    (``result``), the times of the run that computed it — for a cache hit those of the first
+    order — and the attribution of the dataset, if the registry still knows it.
+    """
+    attribution = attribution_text(config, year=(finished or started or datetime.now(UTC)).year) if config else None
+    provenance = Provenance(
+        execution="cloud",
+        kind="job",
+        runner_version=None,
+        self_attested=False,
+        engine=dict(result.get("engine") or {}),
+        scaling=[AppliedScaling.model_validate(entry) for entry in result.get("scaling") or []],
+        started=started,
+        finished=finished,
+        attribution=[attribution] if attribution else [],
+    )
+    return _document_bytes({**body, "provenance": provenance.model_dump(mode="json")})

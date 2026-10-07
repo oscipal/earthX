@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
@@ -18,6 +17,7 @@ from earthx.processing import core as core_module
 from earthx.processing.errors import AoiOutsideInputs, GridMismatch, UnsupportedRecipe
 from earthx.processing.recipe import recipe_from_data, recipe_hash
 from earthx.readers import AssetRejected
+from tests.conftest import own_log_text
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.processing.testops import OPERATORS
@@ -274,7 +274,7 @@ def test_logs_name_no_address_no_aoi_and_no_hash(tmp_path: Path, caplog: pytest.
     data = _recipe([SCALE_2])
     caplog.set_level(logging.DEBUG)
     _run(data, tmp_path)
-    text = "\n".join(f"{record.getMessage()} {json.dumps(record.__dict__, default=str)}" for record in caplog.records)
+    text = "\n".join(own_log_text(record) for record in caplog.records)
     assert "processing run finished" in text
     assert sources.HOST not in text
     assert recipe_hash(recipe_from_data(data, OPERATORS)) not in text

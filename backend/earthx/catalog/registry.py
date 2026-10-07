@@ -12,6 +12,7 @@ later on.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -142,6 +143,30 @@ class Maturity(Enum):
 
 class ConfigError(ValueError):
     """A registry entry contradicts a rule from docs/."""
+
+
+_DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
+_DOI_NAME = re.compile(r"10\.\d{4,9}/[^\s{}]+")
+
+
+def doi_name(doi: str | None) -> str | None:
+    """The DOI name (``10.5270/...``) of a registry ``doi``, which may be a resolver URL.
+
+    The entries keep the URL the source's ``cite-as`` link gives (adr/0014 §10.2);
+    STAC's ``sci:doi`` and BibTeX's ``doi`` want the name. ``None`` for a missing or
+    blank value; anything else that is no DOI name is a :class:`ConfigError`, so a
+    typo fails here rather than ending up as a wrong citation.
+    """
+    if doi is None or not doi.strip():
+        return None
+    text = doi.strip()
+    for prefix in _DOI_PREFIXES:
+        if text.lower().startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    if not _DOI_NAME.fullmatch(text):
+        raise ConfigError(f"{doi!r} is no DOI name or DOI resolver URL")
+    return text
 
 
 class UnknownDatasetError(LookupError):
@@ -643,6 +668,7 @@ class DatasetConfig:
 
     def __post_init__(self) -> None:
         self._check_keywords()
+        self._check_doi()
         self._check_license_is_identifiable()
         self._check_license_tier()
         self._check_attribution()
@@ -661,6 +687,16 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: keywords names no keyword")
         if not all(isinstance(word, str) and word.strip() for word in self.keywords):
             raise ConfigError(f"{self.dataset_id}: every keyword must be a non-blank string")
+
+    def _check_doi(self) -> None:
+        """A DOI that is no DOI stops the start (M4-14, Otto 07.10.2026), not the first citation.
+
+        A blank one is left to onboarding checklist point 3, which names it as a finding.
+        """
+        try:
+            doi_name(self.doi)
+        except ConfigError as error:
+            raise ConfigError(f"{self.dataset_id}: {error}") from None
 
     def _check_license_is_identifiable(self) -> None:
         """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
