@@ -14,7 +14,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
@@ -29,7 +29,7 @@ from earthx.api.intake import (
     check_recipe_hosts,
     crop_recipe_json,
 )
-from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, fetch_item_or_refuse
+from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, Stage, fetch_item_or_refuse
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
@@ -696,6 +696,77 @@ class TestRefusals:
         item["assets"]["red"]["raster:bands"] = [{"data_type": "uint16", **band}]
         error = await refused(order(), Source((S2, item)))
         assert error.status_code == 502
+
+
+class TestStages:
+    """Every refusal names where it happened, as one of a fixed set, and the log line carries it."""
+
+    @staticmethod
+    async def _cases() -> dict[str, tuple[Any, ...]]:
+        no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False))
+        display = replace(S2, license=replace(S2.license, tier=LicenseTier.DISPLAY))
+        foreign = s2_item()
+        foreign["assets"]["red"]["href"] = f"https://{EOPF_HOST}/x.tif"
+        odd_bands = s2_item()
+        odd_bands["assets"]["red"]["raster:bands"] = {"scale": 2}
+        long_crs = s2_item()
+        long_crs["properties"]["proj:code"] = "EPSG:" + "9" * 300
+        far = {
+            "type": "Polygon",
+            "coordinates": [[[100.0, 10.0], [100.1, 10.0], [100.1, 10.1], [100.0, 10.1], [100.0, 10.0]]],
+        }
+        good = Source((S2, s2_item()))
+        return {
+            "order": (order(recipe_version=2), good, {}),
+            "size": (order(groups=tuple((f"S2_{i}",) for i in range(MAX_ORDER_ITEMS + 1))), good, {}),
+            "dataset": (order("no-such-dataset"), good, {}),
+            "license": (order(), good, {"registry": DatasetRegistry((display,))}),
+            "applicable": (order(), good, {"registry": DatasetRegistry((no_math,))}),
+            "items": (order(), Source(), {}),
+            "aoi": (order(aoi=far), good, {}),
+            "resolve": (order(assets=("swir",)), good, {}),
+            "hosts": (order(assets=("red",)), Source((S2, foreign)), {}),
+            "bands": (order(assets=("red",)), Source((S2, odd_bands)), {}),
+            "recipe": (order(assets=("red",)), Source((S2, long_crs)), {}),
+        }
+
+    async def test_each_stage_is_named_by_the_refusal_and_by_the_log(self, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level(logging.WARNING, logger="httpx")
+        cases = await self._cases()
+        with caplog.at_level(logging.INFO, logger="earthx.api.intake"):
+            for stage, (document, source, extra) in cases.items():
+                error = await refused(document, source, **extra)
+                assert error.stage == stage, error.detail
+        logged = [record for record in caplog.records if record.getMessage() == "order refused"]
+        assert [record.order_stage for record in logged] == list(cases)  # type: ignore[attr-defined]
+
+    async def test_a_version_that_is_gone_names_its_stage(self) -> None:
+        source = Source((DEM, dem_item()))
+        error = await refused(
+            order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)), source, Heads(lambda r: httpx.Response(404))
+        )
+        assert error.stage == "version"
+
+    async def test_the_stages_are_a_fixed_set_and_none_is_left_unproved(self) -> None:
+        cases = await self._cases()
+        assert set(get_args(Stage)) - set(cases) == {"version"}, "`version` is proved by the test above"
+        assert len(set(get_args(Stage))) == len(get_args(Stage))
+
+    async def test_the_log_line_carries_the_stage_and_nothing_of_the_order(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="httpx")
+        far = {
+            "type": "Polygon",
+            "coordinates": [[[100.0, 10.0], [100.1, 10.0], [100.1, 10.1], [100.0, 10.1], [100.0, 10.0]]],
+        }
+        with caplog.at_level(logging.DEBUG):
+            await refused(order(aoi=far), Source((S2, s2_item())))
+        (record,) = [r for r in caplog.records if r.getMessage() == "order refused"]
+        assert (record.order_stage, record.order_status) == ("aoi", 422)  # type: ignore[attr-defined]
+        text = record.getMessage() + " " + str(record.__dict__)
+        for forbidden in ("100.1", "https://", "c1:", "bbox", "?"):
+            assert forbidden not in text, forbidden
 
 
 class TestMalformedItems:

@@ -479,8 +479,6 @@ F1–F8 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
 
 **Bekannte Grenzen:**
 
-- Das Log `order refused` nennt Status und Text, nicht die Stufe (Plan §3.3
-  Schritt 11 sagte „und Stufe“): Der Text benennt sie schon.
 - **Zahl der `HEAD`:** Ein COG-Datensatz ohne `file:checksum` kostet eine Anfrage
   je Item und Asset, bei 25 Items und 16 Assets bis zu 400 (die Grenze von sechs
   je Host in `gateway` bremst sie). Der Plan rechnete „1 je Kachel“, das stimmt
@@ -488,3 +486,12 @@ F1–F8 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
   mehr als eines.
 - Die Subdomain-Regel von `Policy.allows_host` (echte Subdomains einer erlaubten
   Domain gelten) bestand schon; bei S3-Buckets scheitert sie praktisch an TLS.
+
+**Ergänzung aus Ottos Review von #123 (07.10.2026): die Stufe im Log.**
+`OrderRefused` trägt `stage`, eine feste Kennung aus `Stage` (`api/item_source.py`):
+`order`, `size`, `dataset`, `license`, `applicable`, `items`, `aoi`, `resolve`,
+`hosts`, `bands`, `version`, `recipe`. Das Log `order refused` nennt sie als
+`order_stage` neben Status und geschwärztem Text, nie AOI, Adresse oder Query.
+Ein Test löst jede Stufe außer `version` aus und prüft Ausnahme und Logzeile;
+`version` (404 am `HEAD`) hat einen eigenen. Ein weiterer prüft, dass die Zeile
+nichts vom Auftrag enthält. Jede Abweisung trägt die Stufe als Pflichtargument.

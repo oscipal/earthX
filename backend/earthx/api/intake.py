@@ -136,7 +136,10 @@ async def accept_order(
     try:
         accepted = await _accept(raw, registry, operators, item_source, gateway)
     except OrderRefused as refused:
-        LOGGER.info("order refused", extra={"order_status": refused.status_code, "order_reason": refused.detail})
+        LOGGER.info(
+            "order refused",
+            extra={"order_stage": refused.stage, "order_status": refused.status_code, "order_reason": refused.detail},
+        )
         raise
     recipe = accepted.recipe
     LOGGER.info(
@@ -164,15 +167,17 @@ async def _accept(
     try:
         request = parse_request(raw, operators)
     except RecipeInvalid as error:
-        raise OrderRefused(422, str(error)) from None
+        raise OrderRefused(422, str(error), "order") from None
     entry = _check_scope(request)
 
     try:
         config = dataset_config(registry, entry.dataset)
     except UnknownCollection:
-        raise OrderRefused(422, f"no dataset {entry.dataset!r}") from None
+        raise OrderRefused(422, f"no dataset {entry.dataset!r}", "dataset") from None
     if config.license.tier is not LicenseTier.PROCESSING:
-        raise OrderRefused(403, f"the licence of {config.dataset_id!r} does not permit processing (KLAERUNGEN B11)")
+        raise OrderRefused(
+            403, f"the licence of {config.dataset_id!r} does not permit processing (KLAERUNGEN B11)", "license"
+        )
     _check_steps(request, config, operators)
 
     ids = [item for group in entry.groups for item in group]
@@ -213,7 +218,9 @@ async def _accept(
     except RecipeInvalid as error:
         # Only reachable when an item breaks a rule the recipe models state (a CRS
         # field of the wrong kind, say) — the source's mistake, not the caller's.
-        raise OrderRefused(502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}") from None
+        raise OrderRefused(
+            502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}", "recipe"
+        ) from None
     check_recipe_hosts(recipe, registry)
     return AcceptedOrder(recipe, cache_key(recipe) is not None, skipped)
 
@@ -235,24 +242,26 @@ def _refuse_a_recipe(raw: bytes | str) -> None:
     resolved = isinstance(inputs, list) and any(isinstance(entry, dict) and "resolved" in entry for entry in inputs)
     if resolved or "recipe_id" in document:
         raise OrderRefused(
-            400, "send the order without addresses: no `resolved` and no `recipe_id`; the platform resolves it"
+            400,
+            "send the order without addresses: no `resolved` and no `recipe_id`; the platform resolves it",
+            "order",
         )
 
 
 def _check_scope(request: RecipeRequest) -> InputRequest:
     """What an order may ask for, judged before anything is fetched (F5)."""
     if len(request.inputs) != 1:
-        raise OrderRefused(422, "an order has exactly one input")
+        raise OrderRefused(422, "an order has exactly one input", "order")
     if not isinstance(request.output, RasterOutput):
-        raise OrderRefused(422, "an order for a job asks for a raster output")
+        raise OrderRefused(422, "an order for a job asks for a raster output", "order")
     if len(request.steps) > MAX_ORDER_STEPS:
-        raise OrderRefused(422, f"an order has at most {MAX_ORDER_STEPS} steps")
+        raise OrderRefused(422, f"an order has at most {MAX_ORDER_STEPS} steps", "size")
     entry = request.inputs[0]
     if len(entry.assets) > MAX_ORDER_ASSETS:
-        raise OrderRefused(422, f"an order names at most {MAX_ORDER_ASSETS} assets")
+        raise OrderRefused(422, f"an order names at most {MAX_ORDER_ASSETS} assets", "size")
     count = sum(len(group) for group in entry.groups)
     if count > MAX_ORDER_ITEMS:
-        raise OrderRefused(413, f"this order names {count} items; at most {MAX_ORDER_ITEMS} fit in one order")
+        raise OrderRefused(413, f"this order names {count} items; at most {MAX_ORDER_ITEMS} fit in one order", "size")
     return entry
 
 
@@ -261,13 +270,13 @@ def _check_steps(request: RecipeRequest, config: DatasetConfig, operators: Opera
         try:
             operator = operators.operator(step.op, step.op_version)
         except UnknownOperator as error:
-            raise OrderRefused(422, str(error)) from None
+            raise OrderRefused(422, str(error), "applicable") from None
         if Tier.T2 not in operator.tiers:
-            raise OrderRefused(422, f"step {index}: {step.op!r} does not run as a job")
+            raise OrderRefused(422, f"step {index}: {step.op!r} does not run as a job", "applicable")
         params = operator.params.model_validate_json(json.dumps(step.params), strict=True)
         reasons = applicable(operator, config, params)
         if reasons:
-            raise OrderRefused(422, f"step {index}: {step.op!r} cannot run here: {'; '.join(reasons)}")
+            raise OrderRefused(422, f"step {index}: {step.op!r} cannot run here: {'; '.join(reasons)}", "applicable")
 
 
 async def _gather[T](awaitables: Iterable[Awaitable[T]]) -> list[T]:
@@ -291,14 +300,14 @@ def _groups_the_aoi_touches(
     try:
         aoi = parse_aoi_geometry(request.aoi.model_dump(mode="json"))
     except InvalidAoi as error:
-        raise OrderRefused(422, str(error)) from None
+        raise OrderRefused(422, str(error), "aoi") from None
     kept: list[list[str]] = []
     skipped: list[str] = []
     for group in groups:
         try:
             matched = filter_items_intersecting_aoi([items[item_id] for item_id in group], aoi)
         except (ValueError, TypeError):
-            raise OrderRefused(502, "an item of the order carries a bbox that is not four numbers") from None
+            raise OrderRefused(502, "an item of the order carries a bbox that is not four numbers", "items") from None
         if matched:
             try:
                 compute_crop_region(matched, aoi)
@@ -309,7 +318,7 @@ def _groups_the_aoi_touches(
         if touched:
             kept.append([item_id for item_id in group if item_id in touched])
     if not kept:
-        raise OrderRefused(422, "the AOI does not touch any of the given items")
+        raise OrderRefused(422, "the AOI does not touch any of the given items", "aoi")
     return kept, tuple(skipped)
 
 
@@ -331,15 +340,17 @@ def _resolve_checked(item: Mapping[str, Any], config: DatasetConfig, asset: str,
     try:
         ref = resolve_asset(item, config, asset)
     except NoReader as error:
-        raise OrderRefused(501, str(error)) from None
+        raise OrderRefused(501, str(error), "resolve") from None
     except (InvalidAssetKey, AssetNotOnItem) as error:
-        raise OrderRefused(422, str(error)) from None
+        raise OrderRefused(422, str(error), "resolve") from None
     except MalformedItem as error:
-        raise OrderRefused(502, str(error)) from None
+        raise OrderRefused(502, str(error), "resolve") from None
     try:
         inspect_url(ref.href, policy)
     except (UrlRejected, UrlTooLong):
-        raise OrderRefused(502, "the item points at a host this dataset does not declare (asset_hosts)") from None
+        raise OrderRefused(
+            502, "the item points at a host this dataset does not declare (asset_hosts)", "hosts"
+        ) from None
     return ref
 
 
@@ -354,7 +365,7 @@ def check_recipe_hosts(recipe: Recipe, registry: DatasetRegistry) -> None:
         try:
             config = registry.get(entry.dataset)
         except UnknownDatasetError:
-            raise OrderRefused(400, f"no dataset {entry.dataset!r}") from None
+            raise OrderRefused(400, f"no dataset {entry.dataset!r}", "dataset") from None
         _check_hosts_of(recipe, config)
 
 
@@ -368,7 +379,7 @@ def _check_hosts_of(recipe: Recipe, config: DatasetConfig) -> None:
             try:
                 inspect_url(resolved.asset.href, policy)
             except (UrlRejected, UrlTooLong):
-                raise OrderRefused(400, "the recipe names an address its dataset does not declare") from None
+                raise OrderRefused(400, "the recipe names an address its dataset does not declare", "hosts") from None
 
 
 # --- bands, scaling source, version ------------------------------------------
@@ -378,7 +389,7 @@ def _number(value: Any, what: str, item: str) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise OrderRefused(502, malformed_item_detail(item) + f" ({what} is not a finite number)")
+        raise OrderRefused(502, malformed_item_detail(item) + f" ({what} is not a finite number)", "bands")
     return float(value)
 
 
@@ -391,7 +402,9 @@ def _entries(asset_entry: Mapping[str, Any]) -> list[Mapping[str, Any]]:
         # A description that is not a list of objects is not skipped past: dropping an
         # entry shifts the bands behind it, and that is a silent change of numbers (K7).
         if not isinstance(found, list) or not all(isinstance(entry, Mapping) for entry in found):
-            raise OrderRefused(502, f"the item describes its bands in a form this platform does not read ({key})")
+            raise OrderRefused(
+                502, f"the item describes its bands in a form this platform does not read ({key})", "bands"
+            )
         if found:
             return list(found)
     return []
@@ -409,7 +422,7 @@ def _band(entry: Mapping[str, Any], item: str) -> Band:
             offset=_number(entry.get("offset", entry.get("raster:offset")), "offset", item),
         )
     except ValidationError:
-        raise OrderRefused(502, malformed_item_detail(item) + " (a band is not described correctly)") from None
+        raise OrderRefused(502, malformed_item_detail(item) + " (a band is not described correctly)", "bands") from None
 
 
 _NO_BAND = Band(data_type=None, nodata=None, scale=None, offset=None)
@@ -431,7 +444,7 @@ def _bands_of(target: _Target) -> list[Band]:
         return [_band(raw, item_id) for raw in entries]
     names = [raw["name"] for raw in entries if isinstance(raw.get("name"), str)]
     if len(set(names)) != len(names):
-        raise OrderRefused(502, malformed_item_detail(item_id) + " (two bands share a name)")
+        raise OrderRefused(502, malformed_item_detail(item_id) + " (two bands share a name)", "bands")
     named = {raw["name"]: raw for raw in entries if isinstance(raw.get("name"), str)}
     bands = []
     for name in target.ref.variable.split(",") if target.ref.variable else [None]:
@@ -461,7 +474,9 @@ def _version(item: Mapping[str, Any], key: str, *, etag: str | None = None) -> I
     try:
         return input_version(item, key, etag=etag)
     except ValidationError:
-        raise OrderRefused(502, malformed_item_detail(str(item.get("id"))) + " (a version is not usable)") from None
+        raise OrderRefused(
+            502, malformed_item_detail(str(item.get("id"))) + " (a version is not usable)", "version"
+        ) from None
 
 
 async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
@@ -482,7 +497,9 @@ async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     except UpstreamError as error:
         if error.status_code in _GONE:
             raise OrderRefused(
-                502, f"an input of the order is no longer at its source ({target.ref.dataset_id}/{target.ref.item_id})"
+                502,
+                f"an input of the order is no longer at its source ({target.ref.dataset_id}/{target.ref.item_id})",
+                "version",
             ) from None
         _warn_no_version(target, error)
         return None
@@ -576,7 +593,9 @@ def crop_recipe_json(
     try:
         recipe = recipe_from_data(data, OperatorRegistry())
     except RecipeInvalid as error:
-        raise OrderRefused(502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}") from None
+        raise OrderRefused(
+            502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}", "recipe"
+        ) from None
     _check_hosts_of(recipe, config)
     attribution = attribution_text(config, year=accepted_at.year)
     provenance = Provenance(
