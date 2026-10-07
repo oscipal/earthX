@@ -42,7 +42,7 @@ STEPS = {
     "scale": {"op": "scale", "op_version": 1, "params": {"factor": 2.0}},
     "reproject": {
         "op": "reproject",
-        "op_version": 1,
+        "op_version": 2,
         "params": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
     },
 }
