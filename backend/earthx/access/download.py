@@ -150,6 +150,7 @@ LOGGER = logging.getLogger("earthx.access.download")
 
 __all__ = [
     "AOI_FILENAME",
+    "CITATION_FILENAME",
     "LARGE_DOWNLOAD_THRESHOLD_BYTES",
     "MAX_DOWNLOAD_ITEMS",
     "MAX_OUTPUT_SIDE_PX",
@@ -161,6 +162,7 @@ __all__ = [
     "InvalidAoi",
     "NOTICE_FILENAME",
     "PlannedOutput",
+    "RECIPE_FILENAME",
     "asset_gsd",
     "attribution_text",
     "build_download_zip",
@@ -256,6 +258,11 @@ NOTICE_FILENAME = "ATTRIBUTION.txt"
 # files (below) needs the polygon itself to make sense of them without also
 # parsing the request that produced the ZIP.
 AOI_FILENAME = "aoi.geojson"
+
+# What `api` builds and hands in as bytes (adr/0014 §10): the recipe that describes
+# the crop and the dataset's citation. `access` writes them and knows no schema.
+RECIPE_FILENAME = "recipe.json"
+CITATION_FILENAME = "citation.bib"
 
 # "This read does not touch the data" — one exception per reader for the same
 # fact. rio-tiler raises the first two for a COG; `NoDataInBounds` is what
@@ -1357,6 +1364,8 @@ def build_download_zip(
     skipped_item_ids: Sequence[str] = (),
     resolution_factor: int = 1,
     gdal_env: Mapping[str, str] | None = None,
+    recipe_json: bytes | None = None,
+    citation_bib: bytes | None = None,
 ) -> bytes:
     """The finished ZIP: a data COG and a mask file per requested asset, the AOI
     as GeoJSON, plus :data:`NOTICE_FILENAME`.
@@ -1398,6 +1407,12 @@ def build_download_zip(
     ``skipped_item_ids`` names items whose whole group was dropped upstream
     (`api.tiler`) for not touching the AOI at all — recorded in the notice
     only, never given a folder.
+
+    ``recipe_json`` and ``citation_bib`` (adr/0014 §10, M4-14): finished files from
+    `api`, written once at the root as :data:`RECIPE_FILENAME` and
+    :data:`CITATION_FILENAME` regardless of the group count, as ``aoi.geojson`` is.
+    This function does not look inside them (`access` may not import `processing`);
+    ``None`` leaves the file out.
     """
     region_geometry = region_geometry if region_geometry is not None else aoi_geometry
     groups = [GroupCrop(item_ids=item_ids, crops=crops, region_geometry=region_geometry), *additional_groups]
@@ -1429,6 +1444,10 @@ def build_download_zip(
             # a group's own region, whatever its items actually cover. Once per
             # ZIP regardless of the group count, at the root.
             archive.writestr(AOI_FILENAME, json.dumps(dict(aoi_geometry)))
+            if recipe_json is not None:
+                archive.writestr(RECIPE_FILENAME, recipe_json)
+            if citation_bib is not None:
+                archive.writestr(CITATION_FILENAME, citation_bib)
             archive.writestr(
                 NOTICE_FILENAME,
                 build_notice_text(
