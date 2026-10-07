@@ -104,6 +104,26 @@ def require_postgres_env(_postgres_env: None) -> None:
         pytest.fail(_REMOTE_DB.format(host=host, allowed=", ".join(sorted(_LOCAL_HOSTS))), pytrace=False)
 
 
+@pytest.fixture(autouse=True)
+def _object_store_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Since M4-08b `api` signs result links, so its lifespan needs the object store's configuration.
+
+    Signing opens no connection (adr/0015 §3.2), so invented values are enough; the host is a
+    reserved name, so nothing here can reach a real store.
+    """
+    for name, value in {
+        "S3_ENDPOINT": "http://objectstore.invalid:3900",
+        "S3_PUBLIC_ENDPOINT": "http://localhost:3900",
+        "S3_REGION": "garage",
+        "S3_BUCKET": "earthx",
+        "S3_ACCESS_KEY": "GKtestaccesskey0001",
+        "S3_SECRET_KEY": "test-secret-key-0000000000000000",
+    }.items():
+        monkeypatch.setenv(name, value)
+    for name in ("S3_ACCESS_KEY_FILE", "S3_SECRET_KEY_FILE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     """The async T-C tests run on asyncio, through the plugin `anyio` ships."""

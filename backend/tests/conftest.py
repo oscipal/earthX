@@ -32,6 +32,23 @@ def log_line_without_timestamp(line: str) -> str:
     return json.dumps(payload)
 
 
+_STANDARD_RECORD_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {"message", "asctime"}
+
+
+def own_log_fields(record: logging.LogRecord) -> dict[str, object]:
+    """The fields a caller added with `extra=`: no `logging.LogRecord` standard attribute, no time."""
+    return {key: value for key, value in record.__dict__.items() if key not in _STANDARD_RECORD_ATTRS}
+
+
+def own_log_text(record: logging.LogRecord) -> str:
+    """The message and the caller's own fields of a record, as one string for a "never logged" search.
+
+    `str(record.__dict__)` also holds `created`, `relativeCreated`, `msecs`, `thread` and `process`;
+    a digit-string marker such as "9.01" matches inside them by chance (`relativeCreated` 25239.017...).
+    """
+    return record.getMessage() + " " + json.dumps(own_log_fields(record), default=str)
+
+
 def format_without_timestamp(record: logging.LogRecord) -> str:
     return log_line_without_timestamp(JsonFormatter().format(record))
 

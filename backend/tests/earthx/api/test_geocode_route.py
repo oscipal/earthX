@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 import earthx.api.geocode_route as geocode_route_module
 from earthx.api.geocode_route import router
+from tests.conftest import own_log_text
 from tests.earthx.adapters.conftest import NOMINATIM_HOST, NOMINATIM_POLICY, answering, gateway_for, load_nominatim
 
 BASE_URL = f"https://{NOMINATIM_HOST}"
@@ -229,8 +230,7 @@ def test_no_search_text_or_result_name_reaches_the_log(monkeypatch: pytest.Monke
     response = client.post("/geocode", json={"q": secret_query})
     assert response.status_code == 200
     for record in caplog.records:
-        assert secret_query not in record.getMessage()
-        assert secret_query not in str(record.__dict__)
+        assert secret_query not in own_log_text(record)
 
 
 def test_a_cache_hit_answers_without_a_new_gateway_request(monkeypatch: pytest.MonkeyPatch) -> None:
