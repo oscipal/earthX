@@ -175,7 +175,8 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | offen |
 | M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | offen |
 | M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | offen |
-| M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | PR #125 (Entwurf) |
+| M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | erledigt (#125) |
+| M4-10b | Nachbesserung M4-10: Spitzenspeicher von `reproject` unter 500 MB | M4a | A | Opus (hoch) | M4-10 | PR #126 (Entwurf) |
 | M4-11 | Export über dem Deckel als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | offen |
 | M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | offen |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | offen |
@@ -708,6 +709,85 @@ Blockplan fest in `op_version`.
 **Abnahme:** Plausibilitätstest gegen ein ganzes `reproject` mit den
 Grenzen aus §6.3; Test, dass ohne `reprojection` bzw. `interpolation`
 abgewiesen wird; T2 zweimal gerechnet ist bitgleich.
+
+### M4-10b — Spitzenspeicher von `reproject` (Nachbesserung zu M4-10)
+
+**Stufe A.** Grundlage `adr/0014` §3.5 (Nachtrag F11), §6.3, §7.2;
+Log-Zeilen zu M4-07a F11 und M4-10.
+**Anlass:** `test_memory_reproject.py` riss in der CI: bilinear 4096² mit
+503,9 MB `VmHWM` gegen die Grenze von 500 MB.
+
+**Messung [M]** (`VmHWM` des Kindprozesses in MB, `GDAL_CACHEMAX` 64 MB, Szene
+wie in M4-07a; „Kern“ ist der Lauf mit dem Test-Operator `scale`; Spannen über
+drei Läufe, 8192² je ein Lauf):
+
+| Lauf | Größe | vorher, Sitzung | vorher, CI | nachher, Sitzung | nachher, CI |
+|---|---|---|---|---|---|
+| `reproject` bilinear | 2048² | 382–383 | — | 346 | 354 |
+| `reproject` bilinear | 4096² | 479–492 | 480–508 (5 Läufe) | 425 | 433 |
+| `reproject` bilinear | 8192² | 531 | — | 443 | — |
+| `reproject` nearest | 2048² | 389 | — | 343 | — |
+| `reproject` nearest | 4096² | 497–529 | — | 422 | — |
+| `reproject` nearest | 8192² | 523 | — | 440 | — |
+| Kern | 2048² | 327–329 | 334–336 | 288 | 294 |
+| Kern | 4096² | 420–424 | — | 370 | — |
+| Kern | 8192² | 462 | 475–486 | 394 | 400 |
+
+- Nach den Imports liegt das Kind bei 161 MB (CI 165 MB), vorher wie nachher.
+- Nachher streuen die drei Läufe je Größe um höchstens 0,4 MB, vorher um bis
+  zu 32 MB.
+- Die Spitze sättigt: Bilinear wächst von 2048² auf 4096² um 79 MB und von
+  4096² auf 8192² nur noch um 18 MB.
+- Zeit für bilinear 4096² in der Sitzung: 25–28 s nachher gegen 32–34 s vorher.
+
+**Ursache [M].**
+- **Heap-Fragmentierung durch glibc, rund 80 MB und die Streuung.** glibc hebt
+  die mmap-Schwelle nach jedem freigegebenen großen Puffer auf dessen Größe an
+  (bis 32 MB). Danach landen die Blockpuffer eines Durchgangs (16 MB float64 je
+  Block, dazu Masken und Kopien) im Heap, wo kleine, länger lebende
+  Allokationen von GDAL sie festhalten. Der Prozess gibt den Speicher dann nicht
+  mehr zurück, und die Spitze hängt von der Reihenfolge der Freigaben ab. Beleg:
+  Mit fester Schwelle (`MALLOC_MMAP_THRESHOLD_=131072`, sonst unverändert)
+  fällt nearest 4096² von 497–529 auf 423 MB, und das RSS nach dem
+  Warp-Durchgang von 416–473 auf 282 MB.
+- **Ein zweiter Lesevorgang für die Maske.** `vrt.read(masked=True)` lässt GDAL
+  die Maske aus einem zweiten Lesen des gewarpten Bandes ableiten. Das kostet
+  Zeit und eigene Puffer, und es stimmt nicht immer mit dem ersten überein: Bei
+  2048² maskierte es 3 Pixel je Band, die Werte hatten.
+- **Nicht die Ursache:**
+  - `warp_mem_limit`: 16 MB senkt die Spitze nach dem Umbau nur um 8 MB
+    (418 gegen 425 MB), 256 MB ändern nichts. Das VRT warpt in eigenen Blöcken
+    von 512 × 128 px, weit unter 64 MB. Der Blockplan bleibt deshalb, wie er
+    ist.
+  - Der GDAL-Cache: Er bleibt bei 64 MB gedeckelt, auch im Warp-Durchgang.
+  - Die Zwischendatei: Sie liegt auf Platte, nicht im Speicher.
+  - Ein über den ganzen Durchgang wiederverwendetes `WarpedVRT` war schlechter
+    (537 MB, nearest 4096²), weil seine Blöcke bis zum Ende im Cache bleiben.
+
+**Umsetzung.**
+- `worker_environment()` setzt die mmap-Schwelle von glibc über `mallopt` fest
+  auf 128 KiB, den Startwert von glibc. Das gilt für den ganzen Prozess
+  und ändert keinen berechneten Wert. Ohne glibc passiert nichts. Das Image
+  (`python:3.12-slim`, Debian) hat glibc.
+- `reproject` liest einmal und maskiert, wo der Warp NaN gelassen hat.
+  Toleranz, `warp_mem_limit` und Blockgröße bleiben gleich. Das Ergebnis
+  ändert sich in den Pixeln der zweiten Maske, deshalb gilt jetzt
+  **`op_version` 2**; ein Rezept mit Version 1 wird abgewiesen (K7).
+- `test_memory_reproject.py` rechnet 2048² und 4096² mit `bilinear`: 4096² unter
+  500 MB, Wachstum dazwischen höchstens `GROWTH_LIMIT_MB` = 120 MB.
+
+**Abstand zur Grenze [M]:** In der CI (Lauf 433) liegt bilinear 4096² bei
+433 MB, 67 MB unter der Grenze; die fünf Läufe davor lagen bei 480–508 MB.
+Gefordert waren stabil mindestens 30 MB.
+
+**Wachstumsgrenze:** gemessen 79 MB von 2048² auf 4096², in der Sitzung wie in
+der CI. 120 MB lassen ein Drittel Reserve und bleiben unter den 192 MB, um die
+die float64-Zwischendatei zwischen den beiden Größen wächst; ein Warp, der seine
+Quelle hielte, läge darüber.
+
+**Laufzeit [M]:** CI bilinear 4096² 13,6 s statt 16,5–17,0 s. Der Kern bei
+8192² braucht 35,8 s statt 31,4–34,0 s; vermutlich kostet die feste Schwelle
+dort zusätzliche mmap-Aufrufe und Seitenfehler [A].
 
 ### M4-11 — Export über dem Deckel als Job
 
