@@ -32,7 +32,7 @@ from earthx.jobs.worker import Supervisor
 from earthx.logging import JsonFormatter
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, upload_result
-from tests.earthx.jobs.support import HOST, make_recipe, most_at_once, run_row, wait_until
+from tests.earthx.jobs.support import make_recipe, most_at_once, run_row, wait_until
 
 BACKEND = Path(__file__).resolve().parents[3]
 FAST: dict[str, Any] = {
@@ -588,41 +588,59 @@ class TestChildrenAreSpawned:
 
 
 class TestLogs:
-    def test_no_log_line_of_a_run_names_the_recipe_the_hash_the_address_the_aoi_or_an_identifier(
+    def test_no_log_line_of_any_way_a_run_can_end_names_the_recipe_the_hash_the_address_the_aoi_or_an_id(
         self,
         db: psycopg.Connection,
         make_supervisor: Callable[..., Supervisor],
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        caplog.set_level(logging.DEBUG)
-        recipe = make_recipe(recipe_id="Q" * 22)
-        make_supervisor("succeed", slots=1).start()
-        done = submit(db, recipe)
-        _wait_for(db, done, "successful")
+        """Success, a named failure, a crash by signal and a failed upload; each ends a run and each logs."""
+        caplog.set_level(logging.DEBUG, logger="earthx")
         monkeypatch.setenv("CHILD_KIND", "source_4xx")
-        crashed = submit(db, make_recipe("ITEM_B", host="other.example.invalid"))
-        wait_until(lambda: any(r.getMessage() == "run ended" for r in caplog.records))
-        time.sleep(0.5)
-        formatter = JsonFormatter()
-        lines = "\n".join(formatter.format(record) for record in caplog.records)
-        status = job_status(db, done)
+        hosts = {
+            "ITEM_OK": "ok.example.invalid",
+            "ITEM_FAIL": "fail.example.invalid",
+            "ITEM_DIE": "die.example.invalid",
+        }
+        jobs = {
+            item: submit(db, make_recipe(item, host=host, recipe_id=item[5:].ljust(22, "Q")))
+            for item, host in hosts.items()
+        }
+        make_supervisor("by_item", slots=3).start()
+        for item, job in jobs.items():
+            _wait_for(db, job, "successful" if item == "ITEM_OK" else "failed")
+        wait_until(lambda: sum(r.getMessage() == "run ended" for r in caplog.records) == 3)
+
+        def failing_upload(store: Store, result_id: str, name: str, path: Path) -> None:
+            raise StoreUnavailable("the store did not answer")
+
+        monkeypatch.setattr("earthx.jobs.worker.upload_result", failing_upload)
+        late = submit(db, make_recipe("ITEM_OK", host="late.example.invalid"))
+        _wait_for(db, late, "failed")
+        wait_until(lambda: sum(r.getMessage() == "run ended" for r in caplog.records) == 4)
+
+        lines = "\n".join(JsonFormatter().format(r) for r in caplog.records if r.name.startswith("earthx"))
+        outcomes = sorted(r.outcome for r in caplog.records if r.getMessage() == "run ended")  # type: ignore[attr-defined]
+        assert outcomes == sorted(["source_4xx", "successful", "child_crashed", "upload_failed"])
+        status = job_status(db, jobs["ITEM_OK"])
         assert status is not None and status.result_id is not None
-        for secret in (
+        secrets_ = [
             "c1:",
-            HOST,
-            "other.example.invalid",
-            "ITEM_A",
-            "Q" * 22,
-            done,
-            crashed,
+            *hosts.values(),
+            "late.example.invalid",
+            *hosts,
+            *jobs.values(),
+            late,
+            status.result_id,
+            "OK" + "Q" * 20,
             "47.0",
             "9.0",
             "https://",
-            "recipe",
-        ):
-            assert secret not in lines.replace("recipe.json", ""), secret
-        assert '"run": 1' in lines or '"run":1' in lines
+        ]
+        for secret in secrets_:
+            assert secret not in lines, secret
+        assert '"run": ' in lines
 
     def test_a_database_error_is_logged_by_its_class_and_never_its_text(
         self, make_supervisor: Callable[..., Supervisor], caplog: pytest.LogCaptureFixture

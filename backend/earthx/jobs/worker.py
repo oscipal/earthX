@@ -169,6 +169,13 @@ class Supervisor:
             if _RUN_DIRECTORY.match(entry.name) and entry.is_dir() and not entry.is_symlink():
                 shutil.rmtree(entry, ignore_errors=True)
 
+    @staticmethod
+    def _close(conn: psycopg.Connection | None) -> None:
+        """Close a connection that failed; its own error says nothing more."""
+        if conn is not None:
+            with contextlib.suppress(psycopg.Error):
+                conn.close()
+
     def _database_error(self, where: str, error: Exception) -> None:
         # The class only: the text of a database error can name the value that broke a key.
         LOGGER.warning("worker database error", extra={"where": where, "error": type(error).__name__})
@@ -187,6 +194,9 @@ class Supervisor:
                             self._wake_all()
             except psycopg.Error as error:
                 self._database_error("listen", error)
+                self._stopping.wait(self.config.poll_seconds)
+            except Exception as error:  # noqa: BLE001 - a thread that dies prints its text to stderr; only the class is logged
+                LOGGER.error("listener failed", extra={"error": type(error).__name__})
                 self._stopping.wait(self.config.poll_seconds)
 
     def _wake_all(self) -> None:
@@ -209,9 +219,12 @@ class Supervisor:
                     cleanup(conn, self.store)
             except psycopg.Error as error:
                 self._database_error("maintain", error)
+                self._close(conn)
                 conn = None
             except ObjectStoreError as error:
                 LOGGER.warning("clean-up failed at the object store", extra={"error": type(error).__name__})
+            except Exception as error:  # noqa: BLE001 - see `_listen`
+                LOGGER.error("maintenance failed", extra={"error": type(error).__name__})
             self._stopping.wait(self.config.sweep_seconds)
 
     def _slot(self, index: int) -> None:
@@ -233,9 +246,10 @@ class Supervisor:
                 self._run_one(conn, picked)
             except psycopg.Error as error:
                 self._database_error("slot", error)
+                self._close(conn)
                 conn = None
                 self._stopping.wait(self.config.poll_seconds)
-            except Exception as error:  # noqa: BLE001 - a slot that dies leaves its run to the lease sweeper, silently
+            except Exception as error:  # noqa: BLE001
                 # Whatever it was, the run it held is not ended here: its lease runs out and the
                 # sweeper queues it again. The class only, never the text (Q8).
                 LOGGER.error("slot failed", extra={"error": type(error).__name__})
@@ -426,8 +440,18 @@ class Supervisor:
         except OSError:
             self._forget(result_id)
             queue.finish_failed(conn, run_id, attempt, "unknown", backoff_seconds=self.config.backoff_seconds)
-            return "result_missing"
-        if queue.finish_successful(conn, run_id, attempt, result_id, info):
+            return "unknown"
+        except psycopg.Error:
+            # The lease could not be renewed, so the run is probably not ours any more: the upload
+            # belongs to no run. The bucket rule is the net if this delete fails too.
+            self._forget(result_id)
+            raise
+        try:
+            finished = queue.finish_successful(conn, run_id, attempt, result_id, info)
+        except psycopg.Error:
+            self._forget(result_id)
+            raise
+        if finished:
             return "successful"
         # Another attempt owns the run now: this upload belongs to no run (adr/0013 §5.6).
         self._forget(result_id)
@@ -438,7 +462,11 @@ class Supervisor:
             delete_result(self.store, result_id)
 
     def _while_beating(self, conn: psycopg.Connection, picked: queue.Claim, work: Callable[[], None]) -> None:
-        """Run ``work`` in a thread and renew the lease meanwhile: an upload can outlast a lease."""
+        """Run ``work`` in a thread and renew the lease meanwhile: an upload can outlast a lease.
+
+        If the heartbeat finds the run taken over, the upload still runs to its end; closing the
+        run then fails on the attempt number and the upload is deleted again.
+        """
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload") as pool:
             future: Future[None] = pool.submit(work)
             while True:

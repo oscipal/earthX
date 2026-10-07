@@ -151,7 +151,7 @@ class TestBatches:
 class TestRecipes:
     """Adr/0015 F13: a recipe lives while a job or run refers to it; only a run or a hit lengthens that."""
 
-    def test_a_recipe_lives_as_long_as_the_latest_result_that_uses_it(
+    def test_a_recipe_goes_with_its_run_and_not_with_another_result_of_the_same_order(
         self, db: psycopg.Connection, store: Store
     ) -> None:
         recipe = make_recipe()

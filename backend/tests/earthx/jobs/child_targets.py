@@ -149,3 +149,12 @@ def write_modules(workdir: str, conn: Any) -> None:
     Path(os.environ["PROBE_OUT"]).write_text(json.dumps(loaded))
     conn.send(("failed", "unknown"))
     conn.close()
+
+
+def by_item(workdir: str, conn: Any) -> None:
+    """Behave as the first item of the recipe says: `ITEM_OK` succeeds, `ITEM_FAIL` fails, `ITEM_DIE` is killed."""
+    import json
+
+    recipe = json.loads((Path(workdir) / "recipe.json").read_text())
+    item = recipe["inputs"][0]["groups"][0][0]
+    {"ITEM_OK": succeed, "ITEM_FAIL": fail, "ITEM_DIE": die_by_signal}[item](workdir, conn)
