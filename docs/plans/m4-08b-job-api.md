@@ -512,9 +512,17 @@ Invoke-RestMethod http://localhost:8000/processing/   # Landing Page mit vier Li
 Invoke-RestMethod "http://localhost:8000/processing/processes/recipe?dataset=cop-dem-glo-30"
 ```
 
-Einen Auftrag mit echter AOI stellt das Panel aus M4-13; bis dahin steht ein
-Beispielauftrag mit synthetischen Werten im PR-Text, nicht hier. `.env` bleibt,
-wie sie ist.
+Einen Auftrag mit echter AOI stellt das Panel aus M4-13. Bis dahin spielt
+`scripts/try-job.ps1` einen kleinen echten Job durch (Reprojektion des DEM über
+eine ausgedachte Fläche, Ergebnisse nach `.\try-job-output\`, Cache-Treffer,
+`DELETE`, Suche der `jobID` im Log von `api`); der DEM muss vorher mit
+`docker compose run --rm materialize cop-dem-glo-30` geladen sein:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1
+```
+
+`.env` bleibt, wie sie ist.
 
 ---
 
@@ -624,4 +632,13 @@ und alles im Frontend (M4-13), `citation.bib` und `attribution.txt` (M4-11,
 M4-14), Permalinks (M4-19).
 
 **Prüfungen im PR:** siehe PR-Text (pytest, ruff, `lint-imports`, CI-Lauf).
+
+**Skript `scripts/try-job.ps1`** (auf Ottos Wunsch, nach der Umsetzung): ein
+kleiner echter Job gegen `http://localhost:8000`, sechs Schritte mit `OK` oder
+`FEHLER`, Zusammenfassung, Exit-Code `1` bei einem Fehler. Windows PowerShell
+5.1, nur `Invoke-WebRequest`, keine Module. In der Sitzung unter PowerShell
+7.4.6 gegen eine Attrappe der Plattform durchgespielt (guter Lauf, kein
+Cache-Treffer, gescheiterter Job, `jobID` im Log, Plattform nicht erreichbar);
+Windows PowerShell 5.1 selbst und die echten Quellen sind aus der Sitzung nicht
+erreichbar, dort läuft es zum ersten Mal bei Otto.
 

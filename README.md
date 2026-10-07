@@ -361,6 +361,24 @@ Einen Auftrag stellt das Processing-Panel (M4-13); der Rumpf von
 `{"inputs": {"recipe": <Auftrag>}}`. Die `jobID` ist der Zugang zum Ergebnis:
 Sie steht in keinem Log, und ohne Konten gibt es keine Job-Liste.
 
+**Einen echten Job einmal durchspielen (PowerShell, Windows PowerShell 5.1):**
+`scripts/try-job.ps1` schickt gegen `http://localhost:8000` eine Reprojektion
+des Copernicus DEM über eine kleine, ausgedachte Fläche, wartet auf das Ende,
+holt `result.tif`, `mask.tif` und `recipe.json` nach `.\try-job-output\`,
+sendet denselben Auftrag noch einmal (muss ein Cache-Treffer sein), verwirft
+beide Jobs und sucht in `docker compose logs api` nach den `jobID`s. Jeder
+Schritt steht als `OK` oder `FEHLER` da, am Ende eine Zusammenfassung; der
+Exit-Code ist `1`, sobald ein Schritt fehlschlägt.
+
+```powershell
+docker compose run --rm materialize cop-dem-glo-30   # einmalig, siehe oben
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1
+```
+
+Fläche, Ziel-CRS, Auflösung, Resampling und Zeitlimit stehen als Variablen
+oben im Skript. Es braucht laufende Dienste `api` und `worker` und für den
+Download den veröffentlichten Port 3900 des Objektspeichers.
+
 ### Fehlersuche
 
 - **Port belegt** (`address already in use`): Ein anderer Prozess nutzt
