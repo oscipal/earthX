@@ -121,8 +121,9 @@ mehr hat, C, dass der neue Test den echten Fehler im Aufseher weiter fängt.
 
 ## 6. Prüfungen
 
-- `pytest` aus der Repo-Wurzel: 3109 bestanden (lief während der 500 Läufe
-  gleichzeitig, also unter zusätzlicher Last).
+- `pytest` aus der Repo-Wurzel: vor dem Holen von `main` 3109 bestanden (lief
+  während der 500 Läufe gleichzeitig, also unter zusätzlicher Last); nach dem
+  Merge von `main` (#128, #129, #131) 3614 bestanden, 8 übersprungen.
 - `ruff check backend`: sauber.
 - `lint-imports --config .importlinter` (`PYTHONPATH=backend`): 14 Verträge
   gehalten, 0 gebrochen.
