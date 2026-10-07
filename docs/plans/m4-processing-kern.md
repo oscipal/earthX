@@ -174,7 +174,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | PR #123 |
 | M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | PR #124 |
 | M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | offen |
-| M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | offen |
+| M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | Plan, PR #127 (Entwurf) |
 | M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | erledigt (#125) |
 | M4-10b | Nachbesserung M4-10: Spitzenspeicher von `reproject` unter 500 MB | M4a | A | Opus (hoch) | M4-10 | PR #126 (Entwurf) |
 | M4-11 | Export über dem Deckel als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | offen |
