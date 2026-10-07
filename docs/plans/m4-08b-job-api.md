@@ -537,3 +537,91 @@ Teil B (Requirement 18) verlangt Eingaben per Referenz; das verbietet B8. Daher:
   Referenz unter einer eigenen Netzwerk-Policy möglich sind.
 - Landing Page und Doku nennen das Verhältnis zu OGC offen („follows the form
   of OGC API – Processes, no conformance claimed“).
+
+---
+
+## 11. Umsetzung (07.10.2026)
+
+Umgesetzt wie freigegeben, in thematischen Commits in PR #128. `main` per Merge
+geholt. Keine neue Abhängigkeit, keine Lock-Datei geändert, keine Importregel
+gelockert; `.github/`, `.claude/` und `CLAUDE.md` unberührt. Geändert hat sich
+`docker-compose.yml` (Startbefehl von `api`, siehe 8).
+
+**Neu:** `api/processing_route.py` (Routen, Fehlerform, Ergebnis-Links),
+`api/processing_docs.py` (Landing Page, `conformsTo`, Prozess, Schema des
+Auftrags), `api/job_events.py` (die eine `LISTEN`-Verbindung und das Verteilen),
+`intake.job_recipe_json`, in `jobs/submit.py` `job_recipe`, `job_run`,
+`run_jobs`, in `processing` `check_scope` und `loads_i_json`,
+`logging.loggable_path`.
+
+**Abweichungen und Befunde beim Bauen:**
+
+1. **F4 (2) wie beschlossen.** `/processing/conformance` ist `{"conformsTo": []}`;
+   Landing Page, API-Definition und Prozess tragen „follows the form of OGC
+   API – Processes, no conformance claimed“. Ein Eingang als Objekt mit `href`,
+   als Text oder als `{"value": …}` ist `400` („inputs are accepted inline only
+   …“), **bevor** Item-Quelle, `gateway` oder Datenbank etwas sehen; Tests
+   belegen, dass dabei weder eine Quelle gefragt noch etwas eingereiht noch die
+   Adresse wiederholt wird. `adr/0014` §15d trägt den Nachtrag.
+2. **`submit(…, operators=)`.** `submit` schätzte den Laufzeitdeckel mit der
+   Registry der Plattform; `api` validiert aber mit der, die es bekommen hat
+   (Tests: mit Testoperatoren). Der Parameter hat die Plattform als Vorgabe, `api`
+   gibt seine eigene hinein.
+3. **`dismiss` sendet immer eine Meldung** auf dem Kanal des Laufs, auch wenn der
+   Lauf für andere Jobs weiterläuft. Sonst erführe ein Strom, der den verworfenen
+   Job verfolgt, nichts davon. (Änderung an M4-08a-Code, mit Test.)
+4. **OpenAPI aus einer eigenen App.** Diese FastAPI-Version hält eingebundene
+   Router als Ganzes (`_IncludedRouter`); `app.routes` zählt sie nicht einzeln
+   auf. `/processing/api` baut das Dokument deshalb aus dem Router allein, einmal
+   und zwischengespeichert.
+5. **Der Hub liest auch den ersten Stand.** Erste Fassung: die Route las die Zeile
+   selbst. Der Reviewer fand die Lücke: Ein Fan-out konnte einen älteren Stand
+   nach dem neueren in den Platz legen. Jetzt trägt `subscribe` den Lauf als
+   geändert ein, und der eine Leser liefert auch den ersten Stand; Tests prüfen,
+   dass Stände nie rückwärts laufen.
+6. **Weitere Abweisungen, die der Plan nicht nannte:** `415` für alles außer
+   `application/json`; ein Pfad unter `/jobs/`, der keine Route ist (`a/b`,
+   `//id`), antwortet wie ein unbekannter Job (`404`, `no-store`); eine einzelne
+   Surrogat-Escape-Folge (`"\ud800"`) im Auftrag ist `400`, nicht `500`.
+7. **`410` vor „noch nicht fertig“.** Ein gescheiterter oder wartender Job nach
+   dem Ende seiner Frist meldet auf den Links `410`, nicht noch einmal seinen
+   Fehler.
+8. **Herunterfahren.** uvicorn wartet vor dem Shutdown des `lifespan` auf alle
+   offenen Verbindungen; ein Strom eines wartenden Jobs endet nie von selbst
+   (am Minimalbeispiel belegt). `api` startet deshalb mit
+   `--timeout-graceful-shutdown 5` (kleiner als die 10 s von compose); danach
+   laufen `events.stop()` und das Schließen der Pools. Der Browser verbindet
+   über `EventSource` neu. Ein Test fährt einen echten Server mit offenem Strom
+   herunter, ohne den Hub vorher anzuhalten; `tests/compose/test_compose_api.py`
+   hält den Befehl fest.
+9. **Dateiname nur ASCII.** Ein Test mit einem Umlaut im Datensatznamen fand,
+   dass `str.isalnum()` Nicht-ASCII durchlässt, das der Speicher abweist. Die
+   Registry-IDs sind ASCII; gesichert ist es jetzt trotzdem im Namen selbst.
+10. **Befunde des `reviewer`, behoben:** `LISTEN`-Verbindung mit
+    TCP-Keepalives (still abgerissene Verbindung nach rund 90 s statt 2 h);
+    Wartezeit auf eine Pool-Verbindung 5 s statt 30 s und `/health` als `async`
+    (der Check teilt die Threads mit den Routen); Kennungen mit `\Z` statt `$`
+    (kein Zeilenumbruch am Ende); das Zugriffslog ersetzt die `jobID` auch hinter
+    einem `root_path` und bei mehreren Schrägstrichen; `RecipeIdTaken` und
+    Fehlschläge beim Signieren und Einreihen antworten in der Form der API;
+    der `lifespan` schließt, was er geöffnet hat, auch wenn der Start halb
+    scheitert; Tests, die weniger bewiesen als sie sagten (Wert der
+    `result_id` im Log, lose `or`-Prüfungen), geschärft.
+11. **Bewusst nicht geändert:** `check_recipe_hosts` läuft in `accept_order` und
+    noch einmal in der Route; das zweite Mal ist billig und hält die Zusage des
+    Plans, dass jedes Rezept vor dem Einreihen geprüft wird, auch wenn
+    `accept_order` später anders gebaut wird.
+
+**Messung [M]** (`import earthx.api.main`, `VmHWM`, 3 Läufe, Sitzung): vorher
+102 MB und 1,1–1,6 s, nachher **189 MB und 2,6–3,1 s**. Grund: `api` lädt jetzt
+`processing` (rasterio, numpy, numexpr), um Aufträge anzunehmen und
+`check_scope` zu fragen. Das ist die Grundlast des Prozesses, nicht die eines
+Auftrags. Wer die Job-Schnittstelle in einen eigenen Prozess legen will
+(Log: offen), findet die Stelle in `api/main.py`.
+
+**Nicht gebaut (Plan §5):** Proxy-Eintrag `/processing` in `frontend/vite.config.ts`
+und alles im Frontend (M4-13), `citation.bib` und `attribution.txt` (M4-11,
+M4-14), Permalinks (M4-19).
+
+**Prüfungen im PR:** siehe PR-Text (pytest, ruff, `lint-imports`, CI-Lauf).
+
