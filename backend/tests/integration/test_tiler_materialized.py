@@ -35,7 +35,6 @@ MATERIALIZED = replace(
         SENTINEL_2_L2A.source,
         item_holding=ItemHolding.MATERIALIZED,
         source_collection_id="earthx-test-materialized-tiler",
-        harvest_run=None,
         asset_hosts=("assets.example.invalid",),
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),

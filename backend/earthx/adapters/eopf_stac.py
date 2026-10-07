@@ -33,16 +33,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from earthx.adapters.cache import CacheValue, SearchCache
+from earthx.adapters.errors import InvalidQuery, UpstreamShapeError
 from earthx.adapters.federated_search import (
     ITEM_ID,
     SORTBY,
     TTL_ITEM_S,
-    InvalidQuery,
     ItemPage,
     SearchParams,
-    UnknownCollection,
-    UnsupportedSource,
-    UpstreamShapeError,
     cache_get,
     cache_set,
     decode_page_token,
@@ -50,35 +47,30 @@ from earthx.adapters.federated_search import (
     item_cache_key,
     matched_count,
     page_from_stored,
+    require_adapter,
     require_feature_list,
     search_cache_key,
     search_fingerprint,
     stac_interval,
     ttl_for_window,
 )
-from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import AdapterKind, DatasetConfig, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.eopf_stac")
 
-# M3-08 F4a: measured against the live API in the plan step (M3-08 plan §2.1) — both
-# filters work here too. See earth_search.py for what reads these.
-SUPPORTS_INTERSECTS = True
-SUPPORTS_IDS = True
-
 
 async def search_items(
-    dataset_id: str,
+    config: DatasetConfig,
     params: SearchParams | None = None,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> ItemPage:
     """Search items of one federated collection. ``cache=None`` is a valid call (E5)."""
     params = params or SearchParams()
-    config = resolve_dataset(dataset_id, registry)
+    require_adapter(config, AdapterKind.EOPF_STAC_V1)
+    dataset_id = config.dataset_id
     fingerprint = search_fingerprint(dataset_id, params)
     marker = None if params.page_token is None else decode_page_token(params.page_token, dataset_id, fingerprint)
 
@@ -99,16 +91,16 @@ async def search_items(
 
 
 async def get_item(
-    dataset_id: str,
+    config: DatasetConfig,
     item_id: str,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> dict[str, Any]:
     """One item by id, without a search in front of it (adr/0001 Z1), normalised
     to STAC 1.0 before it is cached or returned."""
-    config = resolve_dataset(dataset_id, registry)
+    require_adapter(config, AdapterKind.EOPF_STAC_V1)
+    dataset_id = config.dataset_id
     if not ITEM_ID.match(item_id):
         raise InvalidQuery("item id contains characters we do not put into a URL path")
 
@@ -124,17 +116,6 @@ async def get_item(
     item = normalize_item(payload)
     await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
-
-
-def resolve_dataset(dataset_id: str, registry: DatasetRegistry) -> DatasetConfig:
-    """Our own catalogue decides whether a collection exists (adr/0005 rule I)."""
-    try:
-        config = registry.get(dataset_id)
-    except UnknownDatasetError:
-        raise UnknownCollection(dataset_id) from None
-    if config.source.adapter is not AdapterKind.EOPF_STAC_V1:
-        raise UnsupportedSource(f"{dataset_id} is served by {config.source.adapter}, not the EOPF STAC API")
-    return config
 
 
 def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None) -> dict[str, Any]:

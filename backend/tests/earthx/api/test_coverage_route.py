@@ -21,6 +21,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
@@ -77,7 +78,7 @@ def client_for(gateway, *, registry: DatasetRegistry | None = None) -> TestClien
     ``tests/earthx/api/test_tiler.py``: there is no lifespan here to run.
     """
     app = FastAPI()
-    app.include_router(build_router(registry=registry or DatasetRegistry((SENTINEL_2_L2A,))))
+    app.include_router(build_router(registry or DatasetRegistry((SENTINEL_2_L2A,)), ADAPTER_SPECS))
     app.state.earthx_gateway = gateway
     app.state.earthx_cache_pool = None
     return TestClient(app)

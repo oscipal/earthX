@@ -39,7 +39,6 @@ from earthx.adapters.earth_search import (
     cache_get,
     cache_set,
     endpoint_of,
-    resolve_dataset,
     stac_interval,
     ttl_for_window,
 )
@@ -55,8 +54,7 @@ from earthx.catalog.coverage import (
     level_for_viewport,
     parse_cell_key,
 )
-from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import CoverageProvider, DatasetConfig, DatasetRegistry
+from earthx.catalog.registry import CoverageProvider, DatasetConfig
 from earthx.gateway import Gateway, UrlTooLong
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search_coverage")
@@ -87,19 +85,16 @@ CACHE_VERSION = 1
 
 async def aggregate_coverage(
     query: CoverageQuery,
-    config: DatasetConfig | None = None,
+    config: DatasetConfig,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> CoverageResult:
     """Density, histogram and a checked completeness, from ``GET /aggregate``.
 
-    ``config=None`` looks the dataset up here; ``api`` passes the entry it already
-    holds. ``cache=None`` is a valid call: without a cache this is slower, never wrong
-    (E5).
+    ``config`` is the registry entry ``api`` already holds (adr/0011 F3).
+    ``cache=None`` is a valid call: without a cache this is slower, never wrong (E5).
     """
-    config = config if config is not None else resolve_dataset(query.dataset_id, registry)
     if config.dataset_id != query.dataset_id:
         raise CoverageProviderMismatch(f"{query.dataset_id} was asked for, {config.dataset_id} was handed in")
     if config.coverage.provider is not CoverageProvider.UPSTREAM_AGGREGATION:

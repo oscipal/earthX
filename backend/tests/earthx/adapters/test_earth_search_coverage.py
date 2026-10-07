@@ -18,7 +18,6 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.adapters.earth_search import UnknownCollection
 from earthx.adapters.earth_search_coverage import (
     AGGREGATIONS,
     MAX_AOI_POINTS,
@@ -91,7 +90,7 @@ async def test_one_request_carries_cells_total_and_histogram(dataset_id: str) ->
     """adr/0004 §3.1: the probe may only compare numbers from the same answer."""
     gateway, seen = answering(ok("aggregate_complete"))
 
-    result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+    result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway)
 
     assert len(seen) == 1
     assert seen[0].method == "GET"
@@ -114,6 +113,7 @@ async def test_the_query_string_is_the_one_that_was_measured(dataset_id: str) ->
             end=datetime(2024, 12, 31, tzinfo=UTC),
             max_cloud_cover=20.0,
         ),
+        SENTINEL_2_L2A,
         gateway=gateway,
     )
 
@@ -130,7 +130,7 @@ async def test_the_query_string_is_the_one_that_was_measured(dataset_id: str) ->
 async def test_a_world_query_sends_no_area_at_all(dataset_id: str) -> None:
     gateway, seen = answering(ok("aggregate_complete"))
 
-    await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=3), gateway=gateway)
+    await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=3), SENTINEL_2_L2A, gateway=gateway)
 
     params = params_of(seen[0])
     assert "bbox" not in params
@@ -143,13 +143,17 @@ class TestRuleVOnRealAnswers:
 
     async def test_equal_sums_are_complete(self, dataset_id: str) -> None:
         gateway, _ = answering(ok("aggregate_complete"))
-        result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway
+        )
         assert result.completeness is Completeness.COMPLETE
 
     async def test_the_truncation_is_caught_although_overflow_says_zero(self, dataset_id: str) -> None:
         """The fixture is the z8 shape: cells short of the total, ``overflow: 0``."""
         gateway, _ = answering(ok("aggregate_truncated"))
-        result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway
+        )
         assert result.counted == 42
         assert result.total_count == 90
         assert result.completeness is Completeness.TRUNCATED
@@ -163,7 +167,7 @@ class TestTheAoiAndTheUrlLimit:
         area = polygon(10)
 
         result = await aggregate_coverage(
-            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), gateway=gateway
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), SENTINEL_2_L2A, gateway=gateway
         )
 
         assert json.loads(params_of(seen[0])["intersects"]) == area
@@ -175,7 +179,7 @@ class TestTheAoiAndTheUrlLimit:
         area = polygon(3000)
 
         result = await aggregate_coverage(
-            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), gateway=gateway
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), SENTINEL_2_L2A, gateway=gateway
         )
 
         # The first shape never left the house: `check_url` refused it on length, so
@@ -196,7 +200,7 @@ class TestTheAoiAndTheUrlLimit:
         area = {"type": "Polygon", "coordinates": [[*ring, ring[0]]]}
 
         result = await aggregate_coverage(
-            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), gateway=gateway
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), SENTINEL_2_L2A, gateway=gateway
         )
 
         assert len(seen) == 1
@@ -215,7 +219,9 @@ class TestTheAoiAndTheUrlLimit:
         small = [[10.0, 50.0], [10.1, 50.0], [10.1, 50.1], [10.0, 50.0]]
         area = {"type": "MultiPolygon", "coordinates": [[ring(5000)], [small]]}
 
-        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), gateway=gateway)
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=area), SENTINEL_2_L2A, gateway=gateway
+        )
 
         sent = json.loads(params_of(seen[0])["intersects"])
         assert sent["type"] == "MultiPolygon"
@@ -228,7 +234,7 @@ class TestTheAoiAndTheUrlLimit:
         gateway, seen = answering(ok("aggregate_complete"))
 
         await aggregate_coverage(
-            CoverageQuery(dataset_id=dataset_id, level=8, intersects=polygon(3000)), gateway=gateway
+            CoverageQuery(dataset_id=dataset_id, level=8, intersects=polygon(3000)), SENTINEL_2_L2A, gateway=gateway
         )
 
         sent = json.loads(params_of(seen[0])["intersects"])["coordinates"][0]
@@ -244,7 +250,9 @@ class TestUpstreamMisbehaving:
         cache = FakeCache()
 
         with pytest.raises(UpstreamError):
-            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway, cache=cache)
+            await aggregate_coverage(
+                CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway, cache=cache
+            )
 
         assert cache.entries == {}
 
@@ -253,7 +261,9 @@ class TestUpstreamMisbehaving:
             raise httpx.ReadTimeout("too slow", request=request)
 
         with pytest.raises(UpstreamTimeout):
-            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway_for(handler))
+            await aggregate_coverage(
+                CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway_for(handler)
+            )
 
     async def test_a_503_is_retried_and_then_reaches_the_caller(self, dataset_id: str) -> None:
         """A read is safe to repeat, so the gateway tries three times before giving up."""
@@ -261,7 +271,9 @@ class TestUpstreamMisbehaving:
         cache = FakeCache()
 
         with pytest.raises(UpstreamError) as raised:
-            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway, cache=cache)
+            await aggregate_coverage(
+                CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway, cache=cache
+            )
 
         assert raised.value.status_code == 503
         assert len(seen) == 3
@@ -272,7 +284,9 @@ class TestUpstreamMisbehaving:
         cache = FakeCache()
 
         with pytest.raises(UpstreamCoverageShapeError):
-            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway, cache=cache)
+            await aggregate_coverage(
+                CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway, cache=cache
+            )
 
         assert cache.entries == {}
 
@@ -292,7 +306,7 @@ class TestUpstreamMisbehaving:
         gateway, _ = answering(httpx.Response(200, json=payload))
 
         with pytest.raises(UpstreamCoverageShapeError):
-            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway)
 
     async def test_a_histogram_bucket_without_an_instant_is_refused(self, dataset_id: str) -> None:
         payload = {
@@ -305,14 +319,16 @@ class TestUpstreamMisbehaving:
         gateway, _ = answering(httpx.Response(200, json=payload))
 
         with pytest.raises(UpstreamCoverageShapeError):
-            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+            await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway)
 
     async def test_a_missing_total_is_truncated_rather_than_an_error(self, dataset_id: str) -> None:
         """A source without a total is the M2-09b case, and it is a legitimate answer."""
         payload = {"aggregations": [{"name": "grid_geotile_frequency", "buckets": [{"key": "8/1/1", "frequency": 7}]}]}
         gateway, _ = answering(httpx.Response(200, json=payload))
 
-        result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway
+        )
 
         assert result.total_count is None
         assert result.completeness is Completeness.TRUNCATED
@@ -327,8 +343,8 @@ class TestTheCache:
         cache = FakeCache()
         query = CoverageQuery(dataset_id=dataset_id, level=8)
 
-        first = await aggregate_coverage(query, gateway=gateway, cache=cache)
-        second = await aggregate_coverage(query, gateway=gateway, cache=cache)
+        first = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
+        second = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
 
         assert len(seen) == 1
         assert first.from_cache is False
@@ -340,8 +356,8 @@ class TestTheCache:
         gateway, _ = answering(ok("aggregate_complete"))
         query = CoverageQuery(dataset_id=dataset_id, level=8)
 
-        without = await aggregate_coverage(query, gateway=gateway, cache=None)
-        broken = await aggregate_coverage(query, gateway=gateway, cache=FakeCache(fails=True))
+        without = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=None)
+        broken = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=FakeCache(fails=True))
 
         assert broken.cells == without.cells
         assert broken.total_count == without.total_count
@@ -353,10 +369,10 @@ class TestTheCache:
         cache = FakeCache()
         query = CoverageQuery(dataset_id=dataset_id, level=8)
 
-        await aggregate_coverage(query, gateway=gateway, cache=cache)
+        await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
         for key in cache.entries:
             cache.entries[key] = {"v": 0, "cells": [], "histogram": []}
-        again = await aggregate_coverage(query, gateway=gateway, cache=cache)
+        again = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
 
         assert len(seen) == 2
         assert again.from_cache is False
@@ -376,10 +392,10 @@ class TestTheCache:
         cache = FakeCache()
         query = CoverageQuery(dataset_id=dataset_id, level=8)
 
-        await aggregate_coverage(query, gateway=gateway, cache=cache)
+        await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
         for key in cache.entries:
             cache.entries[key] = row
-        again = await aggregate_coverage(query, gateway=gateway, cache=cache)
+        again = await aggregate_coverage(query, SENTINEL_2_L2A, gateway=gateway, cache=cache)
 
         assert len(seen) == 2
         assert again.from_cache is False
@@ -390,8 +406,12 @@ class TestTheCache:
         cache = FakeCache()
         area = (5.0, 45.0, 15.0, 55.0)
 
-        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=6, bbox=area), gateway=gateway, cache=cache)
-        await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8, bbox=area), gateway=gateway, cache=cache)
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=6, bbox=area), SENTINEL_2_L2A, gateway=gateway, cache=cache
+        )
+        await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8, bbox=area), SENTINEL_2_L2A, gateway=gateway, cache=cache
+        )
 
         assert len(seen) == 2
         assert len(cache.entries) == 2
@@ -403,6 +423,7 @@ class TestTheCache:
 
         await aggregate_coverage(
             CoverageQuery(dataset_id=dataset_id, level=8, bbox=(5.25, 45.75, 15.25, 55.75)),
+            SENTINEL_2_L2A,
             gateway=gateway,
             cache=cache,
         )
@@ -433,7 +454,7 @@ class TestTheCache:
         cache = FakeCache()
 
         await aggregate_coverage(
-            CoverageQuery(dataset_id=dataset_id, level=6, **query_kwargs), gateway=gateway, cache=cache
+            CoverageQuery(dataset_id=dataset_id, level=6, **query_kwargs), SENTINEL_2_L2A, gateway=gateway, cache=cache
         )
 
         assert list(cache.ttls.values()) == [expected]
@@ -450,7 +471,9 @@ class TestTheCapsHoldAtTheSeam:
     async def test_a_world_query_is_clamped_to_the_world_cap(self, dataset_id: str) -> None:
         gateway, seen = answering(ok("aggregate_complete"))
 
-        result = await aggregate_coverage(CoverageQuery(dataset_id=dataset_id, level=8), gateway=gateway)
+        result = await aggregate_coverage(
+            CoverageQuery(dataset_id=dataset_id, level=8), SENTINEL_2_L2A, gateway=gateway
+        )
 
         assert params_of(seen[0])["grid_geotile_frequency_precision"] == str(WORLD_LEVEL_CAP)
         assert result.level == WORLD_LEVEL_CAP
@@ -459,7 +482,9 @@ class TestTheCapsHoldAtTheSeam:
         gateway, seen = answering(ok("aggregate_complete"))
 
         result = await aggregate_coverage(
-            CoverageQuery(dataset_id=dataset_id, level=14, bbox=(5.0, 45.0, 15.0, 55.0)), gateway=gateway
+            CoverageQuery(dataset_id=dataset_id, level=14, bbox=(5.0, 45.0, 15.0, 55.0)),
+            SENTINEL_2_L2A,
+            gateway=gateway,
         )
 
         assert params_of(seen[0])["grid_geotile_frequency_precision"] == "8"
@@ -468,12 +493,6 @@ class TestTheCapsHoldAtTheSeam:
 
 class TestDispatchMistakes:
     """Asking the wrong way for a dataset is an error, not an empty map."""
-
-    async def test_an_unknown_dataset_is_the_search_path_s_error(self, dataset_id: str) -> None:
-        gateway, _ = answering(ok("aggregate_complete"))
-
-        with pytest.raises(UnknownCollection):
-            await aggregate_coverage(CoverageQuery(dataset_id="no-such-dataset", level=8), gateway=gateway)
 
     async def test_a_dataset_answered_another_way_is_refused(self, dataset_id: str) -> None:
         """``local-sql`` and ``sample`` exist in the registry but not yet in code."""
