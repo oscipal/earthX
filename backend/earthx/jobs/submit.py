@@ -51,7 +51,7 @@ RUNTIME_FACTOR = 2.0
 MIN_RUNTIME_SECONDS = 600
 
 # `secrets.token_urlsafe(16)`: 128 bits, 22 characters (adr/0014 F15).
-_ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
+_ID = re.compile(r"^[A-Za-z0-9_-]{22}\Z")  # `\Z`: `$` also takes a newline at the end
 
 Status = Literal["accepted", "running", "successful", "failed", "dismissed"]
 

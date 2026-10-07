@@ -51,7 +51,7 @@ from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
 from earthx.catalog.registry import DatasetRegistry, UnknownDatasetError
 from earthx.gateway import Gateway
-from earthx.jobs.submit import JobStatus, dismiss, job_recipe, job_status, submit
+from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring
 from earthx.objectstore.results import MIN_REMAINING, RESULT_NAMES, Store, signed_download
 from earthx.processing import check_scope
@@ -435,7 +435,11 @@ def _unwrap(raw: bytes) -> bytes:
     if document.get("response", "document") != "document":
         raise Problem(400, "response is document: a job's results are links, never the bytes")
     _check_outputs(document.get("outputs"))
-    return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    try:
+        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except UnicodeEncodeError:
+        # A lone surrogate (`"\ud800"`) is valid JSON text and not a string anyone can store.
+        raise Problem(400, "not a JSON document: a string holds a character that has no UTF-8 form") from None
 
 
 def _check_outputs(outputs: Any) -> None:
@@ -496,6 +500,9 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
     try:
         job_id = await _db(api, lambda conn, recipe: submit(conn, recipe, operators=api.operators), accepted.recipe)
+    except RecipeIdTaken:
+        # Cannot happen (a recipe_id is new for every order); if it does, it is ours, and the text names no value.
+        raise Problem(500, "the job could not be placed") from None
     except RuntimeError:
         LOGGER.warning("the queue could not place an order")
         raise Problem(503, "the job queue could not place the job; try again", headers={"Retry-After": "5"}) from None
@@ -590,11 +597,16 @@ def _download_name(body: dict[str, Any] | None, status: JobStatus, suffix: str) 
     except (KeyError, IndexError, TypeError):
         dataset, operators = "result", []
     day = (status.finished_at or status.created_at).astimezone(UTC).strftime("%Y%m%d")
-    clean = "".join(c if c.isalnum() or c in "-_" else "-" for c in dataset)[:64] or "result"
-    steps = "-".join(operators) or "export"
+    clean = _ascii(dataset)[:64] or "result"
+    steps = "-".join(_ascii(op) for op in operators) or "export"
     if len(steps) > 40:
         steps = f"{len(operators)}-steps"
     return f"{clean}_{steps}_{day}{suffix}"
+
+
+def _ascii(text: str) -> str:
+    """Letters and digits of ASCII, ``-`` and ``_``; anything else becomes ``-`` (the store refuses the rest)."""
+    return "".join(c if c.isascii() and (c.isalnum() or c in "-_") else "-" for c in text)
 
 
 _SUFFIXES = {"result.tif": ".tif", "mask.tif": "_mask.tif", "recipe.json": "_recipe.json"}
@@ -688,12 +700,7 @@ async def job_events(
     """The state of the row first, then every change, as ``status`` events; the stream ends with the job."""
     root = _root(request)
     previous: JobStatus | None = None
-    try:
-        state = await api.events.current(sub)
-    except (PoolTimeout, psycopg.OperationalError):
-        # The stream has not begun to say anything yet; ending it makes the browser ask again.
-        LOGGER.warning("the queue database is not reachable")
-        return
+    state = await sub.next()  # the row, read by the hub as soon as the client was registered
     while state is not None:
         if state != previous:
             yield ServerSentEvent(data=_dump(_status_info(root, state)), event="status")
@@ -701,3 +708,9 @@ async def job_events(
         if state.status in TERMINAL:
             return
         state = await sub.next()
+
+
+@router.api_route("/jobs/{rest:path}", methods=["GET", "DELETE"], include_in_schema=False)
+async def no_such_path(rest: str) -> Response:
+    """What is under ``/jobs/`` and is no route of this API (``a/b``, ``..``): the same ``404`` as a job that is not there."""
+    raise _no_such_job()

@@ -109,7 +109,7 @@ class TestApiDescription:
     async def test_there_is_no_job_list(self, docs_client: httpx.AsyncClient) -> None:
         paths = (await docs_client.get("/processing/api")).json()["paths"]
         assert "/processing/jobs" not in paths
-        assert (await docs_client.get("/processing/jobs")).status_code in (404, 405)
+        assert (await docs_client.get("/processing/jobs", follow_redirects=True)).status_code == 404
 
     async def test_it_does_not_describe_what_outside_the_prefix_does(self) -> None:
         app = build_app(None)

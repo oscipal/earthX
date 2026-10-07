@@ -375,6 +375,13 @@ class TestReadingForTheJobApi:
         assert job_run(db, bad) is None
         assert run_jobs(db, 1, [bad]) == []
 
+    def test_a_newline_after_an_identifier_is_not_an_identifier(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        for call in (job_status, dismiss, job_recipe, job_run):
+            assert call(db, job_id + "\n") is None, call.__name__
+        assert job_status(db, job_id) is not None, "and the job itself is still there, untouched"
+        assert not db.execute("SELECT dismissed FROM public.earthx_job").fetchone()[0]
+
     def test_an_unknown_identifier_finds_nothing(self, db: psycopg.Connection) -> None:
         assert job_recipe(db, "A" * 22) is None
         assert job_run(db, "A" * 22) is None

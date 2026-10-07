@@ -40,7 +40,9 @@ _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 # M4-08b F6: the `jobID` in `/processing/jobs/{jobID}/…` is the way to a job's result (Q9: 128 bits,
 # no account), so the access log names the route, not the job — the worker's logs never carry it
 # either. Whatever stands in that segment, a valid identifier or not, is replaced.
-_JOB_PATH = re.compile(r"^(/processing/jobs/)[^/]+")
+# Anywhere in the path, so a prefix such as a `root_path` does not hide it, and through any
+# number of slashes in front of the segment.
+_JOB_PATH = re.compile(r"(/processing/jobs/)/*[^/]+")
 
 
 def loggable_path(path: str | None) -> str | None:

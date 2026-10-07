@@ -10,8 +10,8 @@ database sees (``max_connections`` is 100).
 else; for each message the process reads the rows of the jobs that follow the run, once for
 all of them, and puts the newest state in each client's slot. A slot holds one state: a slow
 client never delays another and never sees an old state after a new one. A client that
-connects registers first and reads its row second, so nothing sent in between is lost; a
-state it gets twice is sent once. When the connection breaks the process connects again
+connects registers first and has its row read by that same reader, so nothing sent in between
+is lost, and states reach it in the order they were read; a state it gets twice is sent once. When the connection breaks the process connects again
 (1 s, doubling up to 30 s), runs ``LISTEN`` first, and reads the row of every client — what
 was sent meanwhile does not come again, and does not need to.
 
@@ -47,6 +47,12 @@ MAX_FOLLOWERS = 500
 
 #: A job in one of these states changes no more.
 TERMINAL = frozenset({"successful", "failed", "dismissed"})
+
+# A connection that only listens would never notice a network that dropped without a word: the
+# operating system's own keep-alive starts after about two hours. These make libpq notice in
+# about a minute and a half (idle 30 s, then 3 probes 20 s apart); the client's `EventSource`
+# asks again meanwhile.
+_KEEPALIVE = {"keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 20, "keepalives_count": 3}
 
 _RECONNECT_FIRST_S = 1.0
 _RECONNECT_LAST_S = 30.0
@@ -141,7 +147,12 @@ class JobEvents:
     # --- clients ---------------------------------------------------------
 
     async def subscribe(self, job_id: str) -> Subscription:
-        """Follow ``job_id``; :class:`TooManyFollowers` when full, ``LookupError`` for an unknown job."""
+        """Follow ``job_id``; :class:`TooManyFollowers` when full, ``LookupError`` for an unknown job.
+
+        The client is registered and its run marked, so its first state is read by the same reader
+        that serves every later one — one reader per process, so states reach a client in the order
+        they were read and an old one never follows a new one.
+        """
         self._check_room()
         run_id = await asyncio.to_thread(self._job_run, job_id)
         if run_id is None:
@@ -150,6 +161,7 @@ class JobEvents:
         sub = Subscription(job_id, run_id)
         self._subs[run_id].add(sub)
         self._count += 1
+        self._mark(run_id)
         return sub
 
     def unsubscribe(self, sub: Subscription) -> None:
@@ -159,11 +171,6 @@ class JobEvents:
             self._count -= 1
             if not subs:
                 del self._subs[sub.run_id]
-
-    async def current(self, sub: Subscription) -> JobStatus | None:
-        """The state of the row now: what a client gets first, after it has registered."""
-        states = await asyncio.to_thread(self._read, sub.run_id, [sub.job_id])
-        return states[0] if states else None
 
     def _check_room(self) -> None:
         if self._count >= self._max:
@@ -191,7 +198,7 @@ class JobEvents:
         while True:
             try:
                 async with await psycopg.AsyncConnection.connect(
-                    "", autocommit=True, application_name=APPLICATION_NAME
+                    "", autocommit=True, application_name=APPLICATION_NAME, **_KEEPALIVE
                 ) as conn:
                     await conn.execute(f"LISTEN {PROGRESS_CHANNEL}")
                     # LISTEN stands, so a state read now cannot miss a message sent after it.

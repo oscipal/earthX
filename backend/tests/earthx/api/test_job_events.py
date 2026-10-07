@@ -16,7 +16,7 @@ import pytest
 from earthx.api import job_events
 from earthx.api.job_events import APPLICATION_NAME, JobEvents, TooManyFollowers, _run_of
 from earthx.jobs import queue
-from earthx.jobs.submit import dismiss, submit
+from earthx.jobs.submit import dismiss, job_status, submit
 from tests.earthx.api.conftest import Rig
 from tests.earthx.jobs.support import add_run, make_recipe
 
@@ -30,6 +30,31 @@ async def settle(sub: job_events.Subscription, timeout: float = 5.0):
 async def nothing_comes(sub: job_events.Subscription, wait: float = 0.5) -> None:
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(sub.next(), wait)
+
+
+async def follow(events: JobEvents, job_id: str) -> job_events.Subscription:
+    """Subscribe and take the first state, which the hub reads as soon as the client is registered."""
+    sub = await events.subscribe(job_id)
+    await settle(sub)
+    return sub
+
+
+async def follow_all(events: JobEvents, job_ids) -> list[job_events.Subscription]:
+    """Several clients at once, each with its first state taken.
+
+    Registering a client has the hub read the whole run, so a client that was there before gets its
+    state once more; the stream drops a state it has sent already. Here all register first, and the
+    first states are taken after.
+    """
+    subs = [await events.subscribe(job_id) for job_id in job_ids]
+    await asyncio.sleep(0.2)  # the reads for the registrations are done
+    for sub in subs:
+        while True:
+            try:
+                await asyncio.wait_for(sub.next(), 0.05)
+            except TimeoutError:
+                break
+    return subs
 
 
 def set_progress(db: psycopg.Connection, run_id: int, progress: int, status: str = "running", *, tell: bool = True):
@@ -66,12 +91,12 @@ class TestFollowing:
         run_id, (job_id,) = add_run(rig.db, status="running")
         set_progress(rig.db, run_id, 35, tell=False)
         sub = await rig.events.subscribe(job_id)
-        state = await rig.events.current(sub)
-        assert state is not None and (state.status, state.progress) == ("running", 35)
+        state = await settle(sub)  # read by the hub as soon as the client was registered
+        assert (state.status, state.progress) == ("running", 35)
 
     async def test_a_message_brings_the_new_state(self, rig: Rig) -> None:
         run_id, (job_id,) = add_run(rig.db, status="running")
-        sub = await rig.events.subscribe(job_id)
+        sub = await follow(rig.events, job_id)
         set_progress(rig.db, run_id, 40)
         state = await settle(sub)
         assert state is not None and (state.status, state.progress) == ("running", 40)
@@ -79,7 +104,7 @@ class TestFollowing:
     async def test_every_client_of_the_run_gets_it_and_a_client_of_another_run_does_not(self, rig: Rig) -> None:
         run_a, (first, second) = add_run(rig.db, status="running", jobs=2)
         _, (other,) = add_run(rig.db, status="running")
-        subs = [await rig.events.subscribe(job_id) for job_id in (first, second, other)]
+        subs = await follow_all(rig.events, (first, second, other))
         set_progress(rig.db, run_a, 60)
         got = [await settle(sub) for sub in subs[:2]]
         assert [state.progress for state in got] == [60, 60] and {state.job_id for state in got} == {first, second}
@@ -87,7 +112,7 @@ class TestFollowing:
 
     async def test_one_read_serves_all_clients_of_a_run(self, rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
         run_id, jobs = add_run(rig.db, status="running", jobs=5)
-        subs = [await rig.events.subscribe(job_id) for job_id in jobs]
+        subs = await follow_all(rig.events, jobs)
         reads: list[tuple[int, list[str]]] = []
         original = rig.events._read
 
@@ -104,7 +129,7 @@ class TestFollowing:
     async def test_a_run_nobody_follows_costs_no_read(self, rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
         run_id, _ = add_run(rig.db, status="running")
         _, (followed,) = add_run(rig.db, status="running")
-        sub = await rig.events.subscribe(followed)
+        sub = await follow(rig.events, followed)
         reads: list[int] = []
         original = rig.events._read
         monkeypatch.setattr(rig.events, "_read", lambda run, ids: (reads.append(run), original(run, ids))[1])
@@ -115,19 +140,28 @@ class TestFollowing:
     async def test_a_slot_holds_the_newest_state_only(self, rig: Rig) -> None:
         run_id, (job_id,) = add_run(rig.db, status="running")
         sub = await rig.events.subscribe(job_id)
-        older = await rig.events.current(sub)
+        older = await settle(sub)
         set_progress(rig.db, run_id, 20, tell=False)
-        newer = await rig.events.current(sub)
-        assert older is not None and newer is not None
+        (newer,) = await asyncio.to_thread(rig.events._read, run_id, [job_id])
         sub.put(older)
         sub.put(newer)
         assert await settle(sub) == newer
         await nothing_comes(sub, 0.2)
 
+    async def test_states_never_go_back_whatever_the_timing(self, rig: Rig) -> None:
+        """The first state and every later one come from one reader, so none arrives after a newer one."""
+        run_id, (job_id,) = add_run(rig.db, status="running")
+        sub = await rig.events.subscribe(job_id)
+        for progress in range(1, 41):  # messages while the first read may still be under way
+            set_progress(rig.db, run_id, progress)
+        seen = [(await settle(sub)).progress]
+        while seen[-1] < 40:
+            seen.append((await settle(sub)).progress)
+        assert seen == sorted(seen) and len(set(seen)) == len(seen)
+
     async def test_a_slow_client_delays_nobody(self, rig: Rig) -> None:
         run_id, (slow, fast) = add_run(rig.db, status="running", jobs=2)
-        await rig.events.subscribe(slow)  # never reads
-        sub = await rig.events.subscribe(fast)
+        slow_sub, sub = await follow_all(rig.events, (slow, fast))  # the first never reads again
         for progress in (10, 20, 30):
             set_progress(rig.db, run_id, progress)
             await settle(sub)
@@ -135,7 +169,7 @@ class TestFollowing:
 
     async def test_a_rolled_back_message_is_never_sent(self, rig: Rig) -> None:
         run_id, (job_id,) = add_run(rig.db, status="running")
-        sub = await rig.events.subscribe(job_id)
+        sub = await follow(rig.events, job_id)
         with psycopg.connect(autocommit=False) as other:
             queue.notify_progress(other, run_id, 50, "running")
             other.rollback()
@@ -145,11 +179,12 @@ class TestFollowing:
         first = submit(rig.db, make_recipe())
         second = submit(rig.db, make_recipe())
         sub = await rig.events.subscribe(first)
+        assert (await settle(sub)).status == "accepted"
         dismiss(rig.db, first)
-        state = await settle(sub)
-        assert state.status == "dismissed"
+        assert (await settle(sub)).status == "dismissed"
         assert rig.db.execute("SELECT status FROM public.earthx_run").fetchone() == ("accepted",)
-        assert second
+        other = job_status(rig.db, second)
+        assert other is not None and other.status == "accepted", "the other job of the run is untouched"
 
 
 class TestRoom:
@@ -168,7 +203,7 @@ class TestRoom:
 
     async def test_stopping_ends_every_stream(self, rig: Rig) -> None:
         _, (job_id,) = add_run(rig.db, status="running")
-        sub = await rig.events.subscribe(job_id)
+        sub = await follow(rig.events, job_id)
         waiting = asyncio.create_task(sub.next())
         await asyncio.sleep(0.1)
         await rig.events.stop()
@@ -180,7 +215,7 @@ class TestOneConnection:
 
     async def test_fifty_clients_are_one_connection(self, rig: Rig) -> None:
         runs = [add_run(rig.db, status="running", jobs=5) for _ in range(10)]
-        subs = [await rig.events.subscribe(job_id) for _, jobs in runs for job_id in jobs]
+        subs = await follow_all(rig.events, [job_id for _, jobs in runs for job_id in jobs])
         assert len(subs) == 50 and rig.events.followers == 50
         assert len(listen_connections(rig.db)) == 1
 
@@ -189,7 +224,7 @@ class TestOneConnection:
     ) -> None:
         run_a, jobs_a = add_run(rig.db, status="running", jobs=3)
         run_b, jobs_b = add_run(rig.db, status="running", jobs=2)
-        subs = [await rig.events.subscribe(job_id) for job_id in (*jobs_a, *jobs_b)]
+        subs = await follow_all(rig.events, (*jobs_a, *jobs_b))
         (pid,) = listen_connections(rig.db)
         with caplog.at_level(logging.WARNING, logger="earthx.api.job_events"):
             rig.db.execute("SELECT pg_terminate_backend(%s)", (pid,))
@@ -208,9 +243,31 @@ class TestOneConnection:
         down = [record.getMessage() for record in caplog.records if "is down" in record.getMessage()]
         assert down and all(message.split(": ", 1)[1].isidentifier() for message in down)
 
+    async def test_the_connection_asks_the_network_for_keepalives(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A network that drops without a word would otherwise hang every stream for about two hours."""
+        seen: dict = {}
+        real = psycopg.AsyncConnection.connect
+
+        async def spy(cls, *args, **kwargs):
+            seen.update(kwargs)
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(psycopg.AsyncConnection, "connect", classmethod(spy))
+        hub = JobEvents(rig.pool)
+        await hub.start()
+        try:
+            assert hub.listening
+        finally:
+            await hub.stop()
+        assert seen["keepalives"] == 1 and seen["application_name"] == APPLICATION_NAME
+        assert seen["keepalives_idle"] + seen["keepalives_interval"] * seen["keepalives_count"] <= 120
+        assert seen["autocommit"] is True
+
     async def test_noise_on_the_channel_is_ignored(self, rig: Rig) -> None:
         run_id, (job_id,) = add_run(rig.db, status="running")
-        sub = await rig.events.subscribe(job_id)
+        sub = await follow(rig.events, job_id)
         for junk in ("", "x", "[]", '{"run": "7"}', '{"run": true}', '{"run": null}', '{"p": 1}', "\u0000"[:0] + "{"):
             rig.db.execute("SELECT pg_notify(%s, %s)", (queue.PROGRESS_CHANNEL, junk))
         await nothing_comes(sub, 0.3)

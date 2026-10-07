@@ -63,6 +63,7 @@ _PREFIX_PATH = "/stac"
 # A small pool of its own, like the search cache's: this process's own traffic, never a bulk read.
 _JOB_POOL_MIN_SIZE = 1
 _JOB_POOL_MAX_SIZE = 4
+_JOB_POOL_TIMEOUT_S = 5.0
 
 
 @asynccontextmanager
@@ -82,45 +83,51 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await check_item_holdings(app.state.earthx_registry, conn)
             app.state.earthx_cache_pool = pool
             app.state.earthx_gateway = build_gateway(app.state.earthx_registry)
+            # `timeout`: a request that waits for one of the four connections waits 5 s, not 30,
+            # so a flood of job requests cannot hold every worker thread of the process for long
+            # (the health check shares them).
             job_pool = ConnectionPool(
                 conninfo="",
                 min_size=_JOB_POOL_MIN_SIZE,
                 max_size=_JOB_POOL_MAX_SIZE,
+                timeout=_JOB_POOL_TIMEOUT_S,
                 kwargs={"autocommit": True},
                 open=False,
             )
             await asyncio.to_thread(job_pool.open, True)
             events = JobEvents(job_pool)
-            await events.start()
-            app.state.earthx_job_api = JobApi(
-                registry=app.state.earthx_registry,
-                operators=app.state.earthx_operators,
-                item_source=build_item_source(
-                    app.state.earthx_registry, app.state.earthx_adapters, app.state.earthx_gateway, pool
-                ),
-                gateway=app.state.earthx_gateway,
-                store=store,
-                pool=job_pool,
-                events=events,
-            )
-            # M3-07a: a second, separate gateway that can reach only the geocoder's
-            # host — never a dataset's asset host, and no dataset route can reach it
-            # either. None of the three attributes below are set at all when place
-            # search is off; the route treats their absence as "not available".
-            geocoder = build_geocoder()
-            if geocoder is not None:
-                geocoder_gateway, geocoder_config = geocoder
-                app.state.earthx_geocoder_gateway = geocoder_gateway
-                app.state.earthx_geocoder_url = geocoder_config.base_url
-                app.state.earthx_geocoder_user_agent = geocoder_config.user_agent
             try:
-                yield
+                await events.start()
+                app.state.earthx_job_api = JobApi(
+                    registry=app.state.earthx_registry,
+                    operators=app.state.earthx_operators,
+                    item_source=build_item_source(
+                        app.state.earthx_registry, app.state.earthx_adapters, app.state.earthx_gateway, pool
+                    ),
+                    gateway=app.state.earthx_gateway,
+                    store=store,
+                    pool=job_pool,
+                    events=events,
+                )
+                # M3-07a: a second, separate gateway that can reach only the geocoder's
+                # host — never a dataset's asset host, and no dataset route can reach it
+                # either. None of the three attributes below are set at all when place
+                # search is off; the route treats their absence as "not available".
+                geocoder = build_geocoder()
+                if geocoder is not None:
+                    geocoder_gateway, geocoder_config = geocoder
+                    app.state.earthx_geocoder_gateway = geocoder_gateway
+                    app.state.earthx_geocoder_url = geocoder_config.base_url
+                    app.state.earthx_geocoder_user_agent = geocoder_config.user_agent
+                try:
+                    yield
+                finally:
+                    if geocoder is not None:
+                        await geocoder_gateway.aclose()
             finally:
                 app.state.earthx_job_api = None
                 await events.stop()
                 await asyncio.to_thread(job_pool.close)
-                if geocoder is not None:
-                    await geocoder_gateway.aclose()
     finally:
         await close_db_connection(app)
 
@@ -164,7 +171,7 @@ def build_app(
     app.state.earthx_job_api = None
 
     @app.get("/health")
-    def health() -> dict:
+    async def health() -> dict:
         return {"status": "ok", "service": "api"}
 
     # Outside `/stac` on purpose (M2-05b, plan §6.6 F1 a): the answer is not a STAC

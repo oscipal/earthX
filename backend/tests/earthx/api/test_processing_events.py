@@ -8,6 +8,7 @@ the stream as a browser would. The worker's messages are sent from a second conn
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 from collections.abc import AsyncIterator, Callable
@@ -17,6 +18,7 @@ import httpx
 import psycopg
 import pytest
 import uvicorn
+from fastapi import FastAPI
 
 from earthx.api.job_events import APPLICATION_NAME
 from earthx.jobs import queue
@@ -327,3 +329,47 @@ class TestWhatTheStreamLeavesInTheLog:
         await until(lambda: any("/events" in line for line in access_log_lines))
         assert not [line for line in access_log_lines if job_id in line]
         assert any(json.loads(line)["path"] == "/processing/jobs/{jobID}/events" for line in access_log_lines)
+
+
+class TestShuttingDown:
+    """uvicorn waits for every open connection before it runs the lifespan's shutdown (0.54, `Server.shutdown`).
+
+    A stream of a waiting job never ends by itself, so the process is started with
+    `--timeout-graceful-shutdown` (compose, `tests/compose/test_compose_api.py`); after that time uvicorn
+    stops waiting, the lifespan runs and closes the hub, and the client may connect again.
+    """
+
+    async def test_an_open_stream_does_not_keep_the_process_from_shutting_down(self, rig: Rig) -> None:
+        stopped: list[bool] = []
+
+        @contextlib.asynccontextmanager
+        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+            yield
+            await rig.events.stop()
+            stopped.append(True)
+
+        rig.app.router.lifespan_context = lifespan
+        config = uvicorn.Config(
+            rig.app,
+            host="127.0.0.1",
+            port=0,
+            log_level="warning",
+            lifespan="on",
+            access_log=False,
+            timeout_graceful_shutdown=1,
+        )
+        server = uvicorn.Server(config)
+        task = asyncio.create_task(server.serve())
+        while not server.started:
+            await asyncio.sleep(0.01)
+        base = f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
+        job_id = await placed(rig)
+        stream = await follow(base, job_id)
+        try:
+            assert await stream.next() is not None
+            server.should_exit = True  # the hub is NOT stopped first: only the timeout can end this
+            await asyncio.wait_for(task, 15)
+            assert stopped == [True], "the lifespan's shutdown ran"
+            assert await stream.next() is None, "and the stream ended"
+        finally:
+            await stream.close()

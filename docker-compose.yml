@@ -177,7 +177,20 @@ services:
     # M3-16: `--no-access-log` — uvicorn's own access log would write the raw
     # query string (an AOI as `bbox`/`intersects`); `RequestIdMiddleware`
     # (earthx.logging) is this process's access log instead.
-    command: ["uvicorn", "earthx.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    # M4-08b: `--timeout-graceful-shutdown` — uvicorn waits for every open connection before it runs
+    # the lifespan's shutdown, and a progress stream (SSE) of a waiting job does not end by itself.
+    # After 5 s it stops waiting, so the pools and the LISTEN connection are closed before compose's
+    # own 10 s end in SIGKILL; the browser's EventSource connects again.
+    command:
+      - uvicorn
+      - earthx.api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-access-log
+      - --timeout-graceful-shutdown
+      - "5"
     ports:
       - "8000:8000"
     environment:

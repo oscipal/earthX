@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -24,6 +24,8 @@ from earthx.api.job_events import JobEvents
 from earthx.api.processing_route import _FAILURES, LINK_NAMES, MAX_BODY_BYTES, JobApi
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
+from earthx.jobs.submit import RecipeIdTaken
+from earthx.objectstore.errors import StoreUnavailable
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (
     DEM,
@@ -151,7 +153,7 @@ class TestPlacing:
             assert response.status_code == 201
             assert response.headers["preference-applied"] == "respond-async"
         sync = await rig.client.post(EXECUTION, json=envelope(), headers={"Prefer": "respond-sync"})
-        assert sync.status_code == 201 and sync.json()["status"] in ("accepted", "successful")
+        assert sync.status_code == 201 and sync.json()["status"] == "accepted"
 
     async def test_equal_orders_share_a_run_but_not_a_job_or_a_recipe(self, rig: Rig) -> None:
         first, second = await place(rig), await place(rig)
@@ -279,6 +281,7 @@ class TestWhatIsNotAnInlineOrder:
             b'{"inputs": {"recipe": {"recipe_version": 1e999}}}',
             b'{"inputs": {"recipe": {"recipe_version": 9007199254740993}}}',
             b"\xff\xfe",
+            b'{"inputs": {"recipe": {"recipe_version": 1, "x": "\\ud800"}}}',
         ],
     )
     async def test_a_body_that_is_not_a_json_object_is_a_400(self, rig: Rig, raw: bytes) -> None:
@@ -341,7 +344,7 @@ class TestWhatIsNotAnInlineOrder:
         assert (await rig.client.request(method, EXECUTION)).status_code == 405
 
     async def test_there_is_no_synchronous_execution_and_no_job_list(self, rig: Rig) -> None:
-        assert (await rig.client.get("/processing/jobs")).status_code in (404, 405)
+        assert (await rig.client.get("/processing/jobs", follow_redirects=True)).status_code == 404
         assert (await rig.client.get(EXECUTION)).status_code == 405
 
 
@@ -369,7 +372,8 @@ class TestWhatTheOrderMayNotBe:
     async def test_parameters_the_operator_does_not_take_are_a_422(self, rig: Rig) -> None:
         step = {"op": "scale", "op_version": 1, "params": {"factor": "2", "extra": 1}}
         body = await self.refused(rig, order(steps=[step]), 422, "order")
-        assert "factor" in body["detail"] or "steps" in body["detail"]
+        assert "parameters of step 0 (scale)" in body["detail"], "it says which step, and not what was sent"
+        assert '"2"' not in body["detail"], "what was sent is not repeated"
 
     async def test_a_crop_is_not_a_job(self, rig: Rig) -> None:
         crop = {
@@ -559,6 +563,7 @@ MALFORMED = [
     "%2e%2e",
     "a b",
     "A" * 22 + "%00",
+    "A" * 22 + "%0A",
     "é" * 22,
 ]
 
@@ -883,20 +888,20 @@ class TestDismissing:
 
 
 class TestWhatLogsAndHeadersCarry:
-    async def lifecycle(self, rig: Rig) -> str:
+    async def lifecycle(self, rig: Rig) -> tuple[str, str]:
         job_id = (await place(rig, order(steps=[]))).json()["jobID"]
-        finish(rig.db, job_id)
+        result_id = finish(rig.db, job_id)
         for tail in ("", "/results", "/results/result.tif", "/results/mask.tif", "/results/recipe.json"):
             await rig.client.get(f"/processing/jobs/{job_id}{tail}")
         await rig.client.delete(f"/processing/jobs/{job_id}")
         await rig.client.get(f"/processing/jobs/{job_id}")
-        return job_id
+        return job_id, result_id
 
     async def test_the_access_log_names_the_route_and_never_the_job(
         self, rig: Rig, access_log_lines: list[str]
     ) -> None:
-        job_id = await self.lifecycle(rig)
-        assert not [line for line in access_log_lines if job_id in line]
+        job_id, result_id = await self.lifecycle(rig)
+        assert not [line for line in access_log_lines if job_id in line or result_id in line]
         paths = {json.loads(line)["path"] for line in access_log_lines}
         assert "/processing/jobs/{jobID}" in paths and "/processing/jobs/{jobID}/results/result.tif" in paths
         assert "/processing/jobs/{jobID}/results/recipe.json" in paths
@@ -913,10 +918,10 @@ class TestWhatLogsAndHeadersCarry:
         # The platform's own loggers: production sets `botocore` and `httpx`, which write signatures
         # and full URLs at lower levels, to WARNING (earthx.logging, adr/0015 §9.2).
         with caplog.at_level(logging.DEBUG, logger="earthx"):
-            job_id = await self.lifecycle(rig)
+            job_id, result_id = await self.lifecycle(rig)
         text = "\n".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records)
         assert caplog.records
-        for forbidden in (job_id, "9.01", "47.01", S2_HOST, "c1:", "1220S2_A", "result_id", "secret"):
+        for forbidden in (job_id, result_id, "9.01", "47.01", S2_HOST, "c1:", "1220S2_A", "secret"):
             assert forbidden not in text, forbidden
 
     async def test_a_placed_job_is_logged_by_its_recipe_not_its_job(
@@ -949,3 +954,105 @@ class TestOtherDatasets:
         finish(rig.db, job_id)
         _, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif"))
         assert "cop-dem-glo-30_scale_20260305.tif" in query["response-content-disposition"][0]
+
+
+class TestWhatGoesWrongInside:
+    """Failures that are the platform's, answered in the form of the API and without a text of the driver or the store."""
+
+    async def test_a_store_that_cannot_sign_is_a_503_that_names_nothing(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*args: Any, **kwargs: Any) -> str:
+            raise StoreUnavailable("http://objectstore:3900 GKtestaccesskey0001 refused")
+
+        monkeypatch.setattr("earthx.api.processing_route.signed_download", broken)
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif")
+        problem(response, 503)
+        assert response.headers["retry-after"] == "5"
+        assert "objectstore" not in response.text and "GKtest" not in response.text
+
+    async def test_a_queue_that_cannot_place_the_job_is_a_503(self, rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
+        def busy(*args: Any, **kwargs: Any) -> str:
+            raise RuntimeError("the queue could not place the order; try again")
+
+        monkeypatch.setattr("earthx.api.processing_route.submit", busy)
+        response = await place(rig)
+        problem(response, 503)
+        assert response.headers["retry-after"] == "5"
+
+    async def test_a_recipe_id_that_is_taken_is_a_500_in_the_form_of_the_api_without_the_value(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def taken(*args: Any, **kwargs: Any) -> str:
+            raise RecipeIdTaken("a recipe with this recipe_id exists")
+
+        monkeypatch.setattr("earthx.api.processing_route.submit", taken)
+        response = await place(rig)
+        assert problem(response, 500)["detail"] == "the job could not be placed"
+        assert response.headers["cache-control"] == "no-store"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/processing/jobs/{id}/results/a/b",
+            "/processing/jobs/{id}/results/result.tif/more",
+            "/processing/jobs/{id}/x",
+            "/processing/jobs//{id}",
+            "/processing/jobs/a/b/c/d",
+        ],
+    )
+    @pytest.mark.parametrize("method", ["GET", "DELETE"])
+    async def test_a_path_under_jobs_that_is_no_route_is_the_same_404_as_a_job_that_is_not_there(
+        self, rig: Rig, path: str, method: str
+    ) -> None:
+        job_id = await placed(rig)
+        response = await rig.client.request(method, path.replace("{id}", job_id))
+        assert problem(response, 404)["type"].endswith("/no-such-job")
+        assert response.headers["cache-control"] == "no-store"
+        assert job_id not in response.text
+
+    async def test_the_wrong_method_on_a_route_is_still_a_405(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        assert (await rig.client.post(f"/processing/jobs/{job_id}")).status_code in (404, 405)
+        assert (await rig.client.put(f"/processing/jobs/{job_id}")).status_code in (404, 405)
+
+
+class TestTheNameOfADownload:
+    """The name is built from the job's own recipe; a recipe of another shape must not break the link."""
+
+    def status(self) -> Any:
+        from earthx.jobs.submit import JobStatus
+
+        created = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
+        return JobStatus(
+            job_id="A" * 22, recipe_id="B" * 22, status="successful", progress=100, created_at=created,
+            started_at=None, finished_at=None, expires_at=created, error_kind=None, result_id="C" * 22, result={},
+        )  # fmt: skip
+
+    @pytest.mark.parametrize(
+        "body", [None, {}, {"inputs": []}, {"inputs": [{}], "steps": []}, {"inputs": "x", "steps": 3}]
+    )
+    def test_a_recipe_of_another_shape_gives_the_plain_name_of_the_day(self, body: Any) -> None:
+        from earthx.api.processing_route import _download_name
+
+        assert _download_name(body, self.status(), ".tif") == "result_export_20260102.tif"
+
+    def test_the_day_is_the_runs_end_in_utc_else_the_jobs_creation(self) -> None:
+        from dataclasses import replace
+
+        from earthx.api.processing_route import _download_name
+
+        body = {"inputs": [{"dataset": "d"}], "steps": []}
+        late = replace(self.status(), finished_at=datetime(2026, 3, 5, 23, 30, tzinfo=timezone(timedelta(hours=-5))))
+        assert _download_name(body, late, ".tif") == "d_export_20260306.tif"
+
+    def test_a_dataset_name_that_the_store_would_refuse_is_cleaned_and_many_steps_are_counted(self) -> None:
+        from earthx.api.processing_route import _download_name
+        from earthx.objectstore.results import _check_filename
+
+        body = {"inputs": [{"dataset": "we ird/na\u00efme" + "x" * 200}], "steps": [{"op": "a" * 30}, {"op": "b" * 30}]}
+        name = _download_name(body, self.status(), "_recipe.json")
+        _check_filename(name)  # the store's own rule
+        assert "2-steps" in name and name.endswith("_20260102_recipe.json")
