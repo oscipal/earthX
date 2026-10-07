@@ -376,11 +376,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1
 ```
 
 Ohne Angaben läuft Sentinel-2 (`sentinel-2-c1-l2a`) über eine Fläche von rund
-0,8 × 1,1 km im Juli 2025 (dort gibt es 18 Szenen) und braucht nichts weiter.
+0,7 × 1,1 km auf freiem Land im Inland, Juli 2025 (dort gibt es 18 Szenen), und
+braucht nichts weiter. Gesucht wird wie im Viewer: `POST /stac/search` mit
+`collections`, `bbox`, `datetime` und `limit`.
 Mit Parametern: `-Dataset`, `-Bbox "West,Süd,Ost,Nord"` (Dezimalpunkt, in
 Anführungszeichen, höchstens 2 × 2 km), `-Datetime 2025-07-01/2025-07-31`
-(für den DEM ohne Wirkung), dazu `-Asset`, `-Resolution`, `-TargetCrs`.
+(für den DEM ohne Wirkung), dazu `-Asset`, `-Resolution`, `-TargetCrs`,
+`-BaseUrl`. `-SearchOnly` führt nur die Suche aus (Item gefunden oder nicht),
+`-Verbose` gibt jede gesendete Anfrage samt Rumpf und die Größe jeder Antwort
+aus (dann steht auch die Fläche auf dem Bildschirm).
 Beschreibung: `Get-Help .\scripts\try-job.ps1 -Full`.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1 -SearchOnly -Verbose -Bbox "8.535,47.365,8.545,47.372" -Datetime 2025-06-01/2025-08-31
+```
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1 -Dataset cop-dem-glo-30

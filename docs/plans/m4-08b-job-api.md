@@ -657,3 +657,23 @@ Prüfen: `-File` reicht `-Bbox 9.5,47.5,…` als einen Text durch, den PowerShel
 in eine Zahlenliste wandelt; `-Bbox` ist deshalb ein Text, den das Skript mit
 Dezimalpunkt selbst liest.
 
+**Zweite Rückmeldung (Zürich: „kein Item“, obwohl der Viewer Szenen zeigt).**
+Ursache **belegt**: Die Plattform antwortet auf die Suche mit
+`application/geo+json`. PowerShell reicht `.Content` für diesen Typ als
+`byte[]` durch (gemessen unter 7.4.6: `application/json` und `text/plain` als
+Text, `application/geo+json` und `application/octet-stream` als Bytes); das
+Skript machte daraus nie ein JSON und meldete „kein Item“. Mit der alten Fassung
+gegen einen Server, der die Form einer echten Antwort mit diesem Typ liefert,
+ist genau das zu sehen. Gegen die echte Plattform (App, Postgres, pgstac) mit
+einer Quelle in der Form einer echten Antwort liefern sowohl `POST /stac/search`
+als auch die alte `GET`-Route die Szene: Route, Reihenfolge der Bbox
+(West, Süd, Ost, Nord) und Datumsformat waren richtig. Geändert: das Skript liest
+die Bytes der Antwort selbst (UTF-8), sucht wie der Viewer mit `POST
+/stac/search` (JSON mit `collections`, `bbox` als vier Zahlen, `datetime` mit
+Zeiten, `limit`), unterscheidet „Antwort nicht lesbar“ von „kein Item“, gibt mit
+`-Verbose` Anfrage, Rumpf, Größe und Typ jeder Antwort aus und kennt `-SearchOnly`
+und `-BaseUrl`. Vorgabefläche jetzt freies Land im Inland (rund 0,7 × 1,1 km,
+18 Szenen im Juli 2025, gegen die Quelle geprüft). Nebenbefund: Antwortet die Quelle
+mit 200 und HTML statt JSON, antwortet die Plattform `500` (`JSONDecodeError` im
+Adapter) statt `502`; nicht Teil dieser Aufgabe.
+
