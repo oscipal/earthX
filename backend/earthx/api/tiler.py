@@ -79,15 +79,11 @@ from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters import (
     ADAPTER_SPECS,
     AdapterSpecs,
-    InvalidQuery,
-    UnknownCollection,
-    UnsupportedSource,
     check_adapter_specs,
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
+from earthx.api.intake import OrderRefused, fetch_item, malformed_item_detail
 from earthx.api.item_source import (
-    MaterializedCatalogUnavailable,
-    MaterializedItemNotFound,
     build_item_source,
     check_item_holdings,
 )
@@ -99,7 +95,7 @@ from earthx.catalog.registry import (
     UnknownDatasetError,
 )
 from earthx.catalog.stats_cache import PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout
+from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.readers import AssetRejected
@@ -131,50 +127,13 @@ _LARGE_DOWNLOAD_LOCK = asyncio.Lock()
 async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
     """The item, or the ``HTTPException`` its absence or the source's failure maps to.
 
-    Shared by :func:`dataset_asset_path` and the download route of M2-06 — both
-    turn a ``dataset``/``item`` pair into a STAC item through the same cached
-    ``earthx_item_source``, and a source failure means the same thing to a tile
-    request and a crop request.
-
-    An item whose ``id`` is missing or is not the one asked for is the source's
-    mistake, the same ``502`` either way (Otto's review of M4-01a): the asset that
-    gets opened is named after the item's own id, and a tile must not show
-    another scene under the name it asked for.
+    Shared by :func:`dataset_asset_path` and the download route of M2-06; what a
+    failure means is decided once, in :func:`earthx.api.intake.fetch_item`.
     """
     try:
-        fetched = await state.earthx_item_source(dataset, item)
-    except UnknownCollection:
-        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
-    except MaterializedItemNotFound:
-        # The materialized counterpart of the federated `UpstreamError` 404 below —
-        # same message, so a tile request cannot tell which path answered it.
-        raise HTTPException(status_code=404, detail=f"no item {item!r} in {dataset!r}") from None
-    except MaterializedCatalogUnavailable:
-        raise HTTPException(status_code=503, detail="the catalogue is not available") from None
-    except UnsupportedSource as error:
-        raise HTTPException(status_code=501, detail=str(error)) from None
-    except InvalidQuery as error:
-        raise HTTPException(status_code=400, detail=str(error)) from None
-    except UpstreamError as error:
-        if error.status_code == 404:
-            raise HTTPException(status_code=404, detail=f"no item {item!r} in {dataset!r}") from None
-        # The source answered something we do not pass on. Its text is not repeated:
-        # it can carry the query, and the query can carry an AOI (projektplan.md 7).
-        raise HTTPException(status_code=502, detail="the source did not deliver the item") from None
-    except UpstreamTimeout:
-        raise HTTPException(status_code=504, detail="the source did not answer in time") from None
-    except GatewayError:
-        # Unreachable, too large, too many redirects: the source's side of the line.
-        # Broad on purpose — a gateway error that has no branch of its own is still an
-        # answer about the source, and a 500 would call it our mistake.
-        raise HTTPException(status_code=502, detail="the item could not be fetched") from None
-    if fetched.get("id") != item:
-        raise HTTPException(status_code=502, detail=_malformed_item_detail(item))
-    return fetched
-
-
-def _malformed_item_detail(item: str) -> str:
-    return f"the source did not deliver item {item!r} intact"
+        return await fetch_item(state.earthx_item_source, dataset, item)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
 
 
 def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
@@ -311,7 +270,7 @@ def _resolve_asset_path(
     except AssetNotOnItem as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
     except MalformedItem:
-        raise HTTPException(status_code=502, detail=_malformed_item_detail(item)) from None
+        raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
     try:
         return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd)
     except AssetRejected:
