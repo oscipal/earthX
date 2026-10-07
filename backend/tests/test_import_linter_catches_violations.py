@@ -86,11 +86,26 @@ def test_the_real_contracts_hold_with_exactly_one_ignored_import(tmp_path: Path)
             "the worker core reaches no object store",
         ),
         ({"earthx/objectstore/bad.py": "import earthx.catalog\n"}, "objectstore imports nothing domain-specific"),
+        # M4-08a (adr/0013 §6.1): the core reaches no database driver, pool or async driver.
+        ({"earthx/processing/bad.py": "import psycopg\n"}, "the worker core reaches no database"),
+        ({"earthx/processing/bad.py": "import psycopg_pool\n"}, "the worker core reaches no database"),
+        ({"earthx/processing/bad.py": "import asyncpg\n"}, "the worker core reaches no database"),
+        (
+            {"earthx/catalog/bad_db.py": "import psycopg_pool\n", "earthx/processing/uses.py": "import earthx.catalog.bad_db\n"},
+            "the worker core reaches no database",
+        ),
     ],
     ids=["second-botocore-in-objectstore", "botocore-in-processing", "access-uses-store", "processing-uses-store",
-         "chain-via-catalog", "store-imports-catalog"],
+         "chain-via-catalog", "store-imports-catalog", "psycopg-in-processing", "pool-in-processing",
+         "asyncpg-in-processing", "pool-chain-via-catalog"],
 )  # fmt: skip
 def test_the_real_contracts_break_on_each_forbidden_import(tmp_path: Path, extra: dict[str, str], broken: str) -> None:
     result = _lint_copy(tmp_path, extra)
     assert result.returncode != 0, result.stdout
     assert [line for line in result.stdout.splitlines() if line.startswith(broken) and " BROKEN" in line]
+
+
+def test_the_shell_may_use_the_database_driver(tmp_path: Path) -> None:
+    """M4 Q4: `jobs` is the shell with the queue; only `processing` is held to B9."""
+    result = _lint_copy(tmp_path, {"earthx/jobs/uses_db.py": "import psycopg\n"})
+    assert result.returncode == 0, result.stdout

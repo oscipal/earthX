@@ -138,7 +138,7 @@ flowchart TB
 | `readers` | Formate: `cog.py`, `zarr_reader.py`, später virtuelle Stores | `gateway` |
 | `access` | Zugriffsauflösung (Asset → Reader und geprüfte Adresse, 6.1), Tiles, Quicklooks, Statistik, Download-Vermittlung | `readers`, `catalog` |
 | `processing` | Rezepte, Operator-Registry, Kostenmodell, Provenienz | `access`, `readers`, `catalog` |
-| `jobs` | Queue, Worker, Fortschritt, Ergebnisse | `processing`, `objectstore` |
+| `jobs` | Queue, Aufseher und Kindprozesse der Worker, Fortschritt, Abbruch, Ablauf, Ergebnisse | `processing`, `objectstore`; psycopg (Q4, `adr/0013`) |
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
 | `identity` | Konten, API-Keys, Quotas, Audit | — |
 | `objectstore` | Zugang zum eigenen Objektspeicher: Upload, signierte URLs, Löschen, Prüfen der Ablaufregel; ein Endpunkt aus der Konfiguration (`adr/0015`) | nichts Fachliches |
@@ -163,6 +163,13 @@ alle ausgehenden Zugriffe auf **Datenquellen**; der eigene Objektspeicher läuft
 über `objectstore` (KLAERUNGEN B8, Nachtrag 2026-10-05). Die einzige Ausnahme vom
 Client-Verbot ist der Import `earthx.objectstore.client -> botocore`.
 Mit M4-06 (06.10.2026) in die Tabelle oben übernommen.
+
+**Nachtrag 2026-10-07 (M4-08a, `adr/0013` §6.1):** Zeile `jobs` jetzt mit Aufseher
+und Kindprozessen, Abbruch und Ablauf, und mit psycopg in der dritten Spalte
+(Q4). Der Vertrag `no-database-in-worker-core` gilt nur noch für `processing` und
+verbietet dort `psycopg`, `psycopg_pool` und `asyncpg`; er zählt weiter Ketten.
+Originaltext der Zeile: „Queue, Worker, Fortschritt, Ergebnisse | `processing`,
+`objectstore`“.
 
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
