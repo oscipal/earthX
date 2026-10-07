@@ -422,3 +422,40 @@ class TestProcessEntrypointsWireTheMiddleware:
         from earthx.discovery.main import app
 
         assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+
+class TestAJobIdentifierIsNotLogged:
+    """M4-08b F6: `/processing/jobs/{jobID}` is the way to a job's result; the log names the route, not the job."""
+
+    @pytest.mark.parametrize(
+        ("path", "logged"),
+        [
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA", "/processing/jobs/{jobID}"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results", "/processing/jobs/{jobID}/results"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results/result.tif", "/processing/jobs/{jobID}/results/result.tif"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/events", "/processing/jobs/{jobID}/events"),
+            ("/processing/jobs/not-an-identifier-but-secret/results", "/processing/jobs/{jobID}/results"),
+            ("/processing/jobs/", "/processing/jobs/"),
+            ("/processing/jobs", "/processing/jobs"),
+            ("/processing/processes/recipe", "/processing/processes/recipe"),
+            ("/stac/collections/x/items/AAAAAAAAAAAAAAAAAAAAAA", "/stac/collections/x/items/AAAAAAAAAAAAAAAAAAAAAA"),
+            ("/health", "/health"),
+            ("", ""),
+            (None, None),
+        ],
+    )  # fmt: skip
+    def test_the_path_as_the_access_log_writes_it(self, path: str | None, logged: str | None) -> None:
+        from earthx.logging import loggable_path
+
+        assert loggable_path(path) == logged
+
+    def test_the_middleware_writes_it_so(self, access_log_lines: list[str]) -> None:
+        async def endpoint(request):
+            return JSONResponse({})
+
+        app = Starlette(routes=[Route("/processing/jobs/{job_id}/results", endpoint)])
+        client = TestClient(RequestIdMiddleware(app))
+        assert client.get("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results").status_code == 200
+        (line,) = access_log_lines
+        assert json.loads(line)["path"] == "/processing/jobs/{jobID}/results"
+        assert "AAAAAAAAAAAAAAAAAAAAAA" not in line

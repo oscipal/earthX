@@ -20,10 +20,12 @@ keeps working unchanged.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from psycopg_pool import ConnectionPool
 from stac_fastapi.pgstac.app import instantiate_api
 from stac_fastapi.pgstac.config import Settings
 from stac_fastapi.pgstac.db import close_db_connection, connect_to_db
@@ -35,10 +37,16 @@ from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
-from earthx.api.item_source import check_item_holdings
+from earthx.api.item_source import build_item_source, check_item_holdings
+from earthx.api.job_events import JobEvents
+from earthx.api.processing_route import JobApi
+from earthx.api.processing_route import router as processing_router
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry
 from earthx.logging import RequestIdMiddleware, configure_logging
+from earthx.objectstore.results import Store
+from earthx.processing.operators import REGISTRY as OPERATORS
+from earthx.processing.operators import OperatorRegistry
 
 # adr/0005 rule VI, plan §6 F2, M3-13 F5: `pagination` describes our own paging;
 # `filter` (CQL2) and `sort` are two extensions the federated path cannot yet honour,
@@ -51,12 +59,20 @@ from earthx.logging import RequestIdMiddleware, configure_logging
 _ENABLED_EXTENSIONS = ["pagination"]
 _PREFIX_PATH = "/stac"
 
+# M4-08b: the job API takes jobs through the queue of `jobs`, which speaks synchronous psycopg.
+# A small pool of its own, like the search cache's: this process's own traffic, never a bulk read.
+_JOB_POOL_MIN_SIZE = 1
+_JOB_POOL_MAX_SIZE = 4
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Providing a custom lifespan to `instantiate_api` replaces its default one
     # entirely (its own docstring: "the caller is responsible for managing db
     # connections") — pgstac's own asyncpg pool is opened and closed here too.
+    # The job API signs result links, so the process does not start without the object store's
+    # configuration (M4-08b F7): a missing value names itself in the error, never its value.
+    store = Store.from_environ()
     await connect_to_db(app, add_write_connection_pool=False)
     try:
         async with cache_pool() as pool:
@@ -66,6 +82,27 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await check_item_holdings(app.state.earthx_registry, conn)
             app.state.earthx_cache_pool = pool
             app.state.earthx_gateway = build_gateway(app.state.earthx_registry)
+            job_pool = ConnectionPool(
+                conninfo="",
+                min_size=_JOB_POOL_MIN_SIZE,
+                max_size=_JOB_POOL_MAX_SIZE,
+                kwargs={"autocommit": True},
+                open=False,
+            )
+            await asyncio.to_thread(job_pool.open, True)
+            events = JobEvents(job_pool)
+            await events.start()
+            app.state.earthx_job_api = JobApi(
+                registry=app.state.earthx_registry,
+                operators=app.state.earthx_operators,
+                item_source=build_item_source(
+                    app.state.earthx_registry, app.state.earthx_adapters, app.state.earthx_gateway, pool
+                ),
+                gateway=app.state.earthx_gateway,
+                store=store,
+                pool=job_pool,
+                events=events,
+            )
             # M3-07a: a second, separate gateway that can reach only the geocoder's
             # host — never a dataset's asset host, and no dataset route can reach it
             # either. None of the three attributes below are set at all when place
@@ -79,16 +116,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 yield
             finally:
+                app.state.earthx_job_api = None
+                await events.stop()
+                await asyncio.to_thread(job_pool.close)
                 if geocoder is not None:
                     await geocoder_gateway.aclose()
     finally:
         await close_db_connection(app)
 
 
-def build_app(registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = ADAPTER_SPECS) -> FastAPI:
-    """The api application. ``registry`` and ``adapters`` are arguments so that a
-    test can route collections of its own (M4-01a, M4-01b), the same shape
-    ``api.tiler.build_app`` has; the process entrypoint below takes the defaults.
+def build_app(
+    registry: DatasetRegistry = REGISTRY,
+    *,
+    adapters: AdapterSpecs = ADAPTER_SPECS,
+    operators: OperatorRegistry = OPERATORS,
+) -> FastAPI:
+    """The api application. ``registry``, ``adapters`` and ``operators`` are arguments so that a
+    test can route collections and run operators of its own (M4-01a, M4-01b, M4-08b), the same
+    shape ``api.tiler.build_app`` has; the process entrypoint below takes the defaults.
 
     A registry entry that asks an adapter for something ``adapters`` lacks stops
     the build (:func:`~earthx.adapters.check_adapter_specs`, M4-01b F1).
@@ -113,6 +158,10 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = 
     # Which source answers what (adr/0011 F1): search, item fetch and coverage
     # dispatch through this table, never a module-wide default.
     app.state.earthx_adapters = adapters
+    # M4-08b: the operators the job API describes and accepts; what the lifespan hands the routes
+    # (`earthx_job_api`) is set once the process has its pools.
+    app.state.earthx_operators = operators
+    app.state.earthx_job_api = None
 
     @app.get("/health")
     def health() -> dict:
@@ -126,6 +175,9 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = 
     app.include_router(aoi_upload_router)
     # M3-07a: place search, also outside `/stac` and also not a dataset route.
     app.include_router(geocode_router)
+    # M4-08b: the job API under its own prefix, in the form of OGC API – Processes with no
+    # conformance claimed (adr/0014 §15d).
+    app.include_router(processing_router)
 
     return app
 
