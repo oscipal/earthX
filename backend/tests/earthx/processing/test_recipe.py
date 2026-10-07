@@ -24,6 +24,8 @@ from earthx.processing.recipe import (
     parse_request,
     recipe_from_data,
     recipe_hash,
+    recipe_hosts,
+    run_key,
 )
 from tests.earthx.processing.recipes import recipe_data, request_data, resolved
 from tests.earthx.processing.testops import OPERATORS
@@ -280,6 +282,45 @@ class TestCacheKey:
         assert set(engine) == {"earthx", "gdal", "rasterio", "numexpr", "numpy"}
         assert engine["earthx"] == earthx.__version__
         assert all(engine.values())
+
+
+class TestRunKey:
+    """Equal orders share one active run, versions or not (adr/0013 §5.1, plan M4-08a K2)."""
+
+    ENGINE = TestCacheKey.ENGINE
+
+    def test_an_input_without_a_version_still_has_a_run_key_but_no_cache_key(self) -> None:
+        data = recipe_data()
+        data["inputs"][0]["resolved"][1]["version"] = None
+        recipe = recipe_from_data(data, OPERATORS)
+        assert cache_key(recipe, self.ENGINE) is None
+        key = run_key(recipe, self.ENGINE)
+        assert key.startswith("c1:") and len(key) == 3 + 64
+
+    def test_with_every_version_it_is_the_cache_key(self) -> None:
+        recipe = recipe_from_data(recipe_data(), OPERATORS)
+        assert run_key(recipe, self.ENGINE) == cache_key(recipe, self.ENGINE)
+
+    def test_it_ignores_the_recipe_id_and_follows_the_order(self) -> None:
+        plain = recipe_from_data(recipe_data(), OPERATORS)
+        with_id = recipe_from_data(recipe_data(recipe_id="B" * 22), OPERATORS)
+        other = recipe_from_data(recipe_data(steps=[]), OPERATORS)
+        assert run_key(plain, self.ENGINE) == run_key(with_id, self.ENGINE)
+        assert run_key(plain, self.ENGINE) != run_key(other, self.ENGINE)
+
+    def test_the_key_names_no_coordinate_and_no_address(self) -> None:
+        key = run_key(recipe_from_data(recipe_data(), OPERATORS), self.ENGINE)
+        assert re.fullmatch(r"c1:[0-9a-f]{64}", key)
+
+
+class TestRecipeHosts:
+    def test_sorted_and_each_host_once(self) -> None:
+        data = recipe_data()
+        data["inputs"][0]["resolved"][0]["asset"]["href"] = "https://b.example.invalid/x/red.tif"
+        data["inputs"][0]["resolved"][1]["asset"]["href"] = "https://A.example.invalid/x/nir.tif"
+        assert recipe_hosts(recipe_from_data(data, OPERATORS)) == ("a.example.invalid", "b.example.invalid")
+        same = recipe_from_data(recipe_data(), OPERATORS)
+        assert recipe_hosts(same) == ("store.example.invalid",)
 
 
 class TestInputVersion:
