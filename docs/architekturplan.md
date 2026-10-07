@@ -177,6 +177,16 @@ verbietet dort `psycopg`, `psycopg_pool` und `asyncpg`; er zählt weiter Ketten.
 Originaltext der Zeile: „Queue, Worker, Fortschritt, Ergebnisse | `processing`,
 `objectstore`“.
 
+**Nachtrag 2026-10-07 (M4-08b, `adr/0014` §15d):** `api` trägt die Job-Schnittstelle
+unter `/processing` (`api/processing_route.py`, `processing_docs.py`,
+`job_events.py`): ein Prozess `recipe`, nur asynchron, Status, Ergebnis-Links
+mit `303` auf eine frisch signierte URL, `recipe.json` je Job, Fortschritt per
+SSE aus genau einer `LISTEN`-Verbindung je Prozess. Sie folgt der Form von OGC
+API – Processes und erklärt **keine Konformität** (`/conformance` leer; Eingaben
+per Referenz sind mit B8 unvereinbar und werden mit `400` abgewiesen). `api`
+öffnet dafür den Objektspeicher (Leseschlüssel, nur Signieren) und startet nicht
+ohne dessen Konfiguration. Keine Importregel ändert sich.
+
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
 | Prozess | Last | Skalierung | Zustand |

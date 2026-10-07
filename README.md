@@ -343,6 +343,24 @@ Ohne `--upgrade` bleiben alle schon gesperrten Versionen stehen; nur was die
 mit `--upgrade` ist ein eigener PR, der die neuen Pakete im Baum nennt. Nach dem
 Merge einer neuen Lock-Datei lokal einmal `docker compose build --no-cache`.
 
+### Job-Schnittstelle (seit M4-08b)
+
+`api` (Port 8000) trägt unter `/processing` die Schnittstelle für Rechenaufträge.
+Sie folgt der Form von OGC API – Processes und erhebt **keinen Anspruch auf
+Konformität** (`/processing/conformance` ist leer): Eingaben werden nur inline
+angenommen, nie als Link. Ansehen ohne Auftrag:
+
+```bash
+curl http://localhost:8000/processing/                      # Einstieg mit Links
+curl http://localhost:8000/processing/processes/recipe      # Prozess mit dem Schema des Auftrags
+curl "http://localhost:8000/processing/processes/recipe?dataset=cop-dem-glo-30"
+```
+
+Einen Auftrag stellt das Processing-Panel (M4-13); der Rumpf von
+`POST /processing/processes/recipe/execution` ist
+`{"inputs": {"recipe": <Auftrag>}}`. Die `jobID` ist der Zugang zum Ergebnis:
+Sie steht in keinem Log, und ohne Konten gibt es keine Job-Liste.
+
 ### Fehlersuche
 
 - **Port belegt** (`address already in use`): Ein anderer Prozess nutzt
@@ -355,6 +373,10 @@ Merge einer neuen Lock-Datei lokal einmal `docker compose build --no-cache`.
 - **`catalog-load` ist fehlgeschlagen:** `docker compose logs catalog-load`.
   Meist reicht ein sauberer Neustart mit leeren Volumes:
   `docker compose down -v && docker compose up`.
+- **`api` startet nicht, im Log steht „S3_… is not set“ oder „… must be …“
+  (seit M4-08b):** `api` signiert die Ergebnis-Links der Job-Schnittstelle und
+  braucht dafür die `S3_*`-Angaben des Objektspeichers (in `docker-compose.yml`
+  gesetzt, Schlüssel nur lesend). Die Meldung nennt die Variable, nie ihren Wert.
 - **`worker` wird nicht `healthy`, im Log steht „worker not started: the
   bucket has no enabled lifecycle rule …“:** Die Regel für `results/` fehlt
   oder wurde geändert (z. B. mit der `aws`-CLI und dem Besitzerschlüssel).
