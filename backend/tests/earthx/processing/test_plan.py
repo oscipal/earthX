@@ -6,10 +6,12 @@ import pytest
 from rasterio.transform import Affine, from_origin
 from rasterio.warp import transform_geom
 
-from earthx.processing.errors import AoiOutsideInputs, UnknownOperator, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, RecipeInvalid, UnknownOperator, UnsupportedRecipe
+from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import (
     EXPORT_FACTOR,
     SECONDS_PER_ASSET,
+    check_bands,
     crop_window,
     estimate,
     plan_steps,
@@ -102,7 +104,7 @@ class TestEstimate:
         assert cost.assets == 2
         assert cost.input_bytes == cost.input_pixels * 2  # uint16
         assert cost.output_pixels == cost.input_pixels // 2  # one asset's grid
-        assert cost.output_bytes == cost.output_pixels * 4  # one float32 band
+        assert cost.output_bytes == cost.output_pixels * 4 * 2  # two float32 bands, as the core writes them
         assert cost.seconds >= 2 * SECONDS_PER_ASSET
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
 
@@ -127,3 +129,64 @@ class TestEstimate:
             entry["gsd"] = None
         unknown = estimate(recipe_from_data(data, OPERATORS), OPERATORS)
         assert unknown.input_pixels > known.input_pixels
+
+    def test_band_math_has_one_float_band_whatever_the_inputs_are(self) -> None:
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}
+        cost = estimate(recipe_from_data(recipe_data(steps=[step]), REGISTRY), REGISTRY)
+        assert cost.output_bytes == cost.output_pixels * 4
+        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
+
+    def test_the_estimate_does_not_reject_a_name_it_cannot_know(self) -> None:
+        """An estimate falls back to the asset key for an asset whose bands only the file names."""
+        data = recipe_data(steps=[{"op": "band_math", "op_version": 1, "params": {"expression": "red + nir"}}])
+        for entry in data["inputs"][0]["resolved"]:
+            entry["bands"], entry["scaling"] = [], "none"
+        assert estimate(recipe_from_data(data, REGISTRY), REGISTRY).output_pixels > 0
+
+
+class TestCheckBands:
+    def _recipe(self, expression: str, **options):
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": expression}}
+        return recipe_from_data(recipe_data(steps=[step], **options), REGISTRY)
+
+    def test_the_names_of_the_assets_pass(self) -> None:
+        check_bands(self._recipe("(nir - red) / (nir + red)"), REGISTRY)
+
+    def test_an_unknown_name_is_named_with_the_bands_there_are(self) -> None:
+        with pytest.raises(RecipeInvalid, match=r"swir.*red, nir"):
+            check_bands(self._recipe("swir + red"), REGISTRY)
+
+    def test_the_output_of_one_step_is_the_input_of_the_next(self) -> None:
+        data = recipe_data(
+            steps=[
+                {"op": "band_math", "op_version": 1, "params": {"expression": "nir - red"}},
+                {"op": "band_math", "op_version": 1, "params": {"expression": "band_math * 2"}},
+            ]
+        )
+        check_bands(recipe_from_data(data, REGISTRY), REGISTRY)
+        data["steps"][1]["params"]["expression"] = "red * 2"
+        with pytest.raises(RecipeInvalid, match="red"):
+            check_bands(recipe_from_data(data, REGISTRY), REGISTRY)
+
+    def test_an_asset_whose_bands_only_the_file_knows_is_not_judged(self) -> None:
+        recipe = self._recipe("anything_at_all + red")
+        for entry in recipe.inputs[0].resolved:
+            entry.bands.clear()
+        check_bands(recipe, REGISTRY)
+
+    def test_a_multiband_asset_is_named_by_number(self) -> None:
+        recipe = self._recipe("nir_2 - nir_1")
+        entry = recipe.inputs[0].resolved[1]
+        entry.bands.append(entry.bands[0].model_copy())
+        check_bands(recipe, REGISTRY)
+        with pytest.raises(RecipeInvalid, match="nir_3"):
+            check_bands(self._with_two_nir_bands("nir_3 - red"), REGISTRY)
+
+    def _with_two_nir_bands(self, expression: str):
+        recipe = self._recipe(expression)
+        entry = recipe.inputs[0].resolved[1]
+        entry.bands.append(entry.bands[0].model_copy())
+        return recipe
+
+    def test_a_recipe_without_steps_has_nothing_to_check(self) -> None:
+        check_bands(recipe_from_data(recipe_data(steps=[]), REGISTRY), REGISTRY)

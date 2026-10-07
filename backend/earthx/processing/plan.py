@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy
@@ -31,6 +31,7 @@ from earthx.access.download import MAX_OUTPUT_SIDE_PX, estimate_output_dims
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.recipe import Band, Recipe, Step
+from earthx.processing.source import expected_band_names
 
 __all__ = [
     "EXPORT_FACTOR",
@@ -39,6 +40,7 @@ __all__ = [
     "CostEstimate",
     "PlannedStep",
     "Segment",
+    "check_bands",
     "crop_window",
     "estimate",
     "plan_steps",
@@ -165,30 +167,63 @@ def _band_bytes(bands: Sequence[Band]) -> int:
     return sum(_value_bytes(band.data_type) for band in bands) or _FALLBACK_BYTES_PER_VALUE
 
 
+def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
+    """The raster the first pass would read, as far as the recipe says (no read).
+
+    The bands of every input asset, in order, named as the core names them. Where an
+    asset's names are only in the file, ``names_known`` decides: ``False`` falls back to
+    the asset key (an estimate does not care), ``True`` gives up and returns ``None``
+    (a check against the names would reject what the file may well offer). CRS, pixel
+    size and extent are those of the first asset; the size is set by the caller.
+    """
+    bands: list[BandMeta] = []
+    resolved = [entry for item in recipe.inputs for entry in item.resolved]
+    for entry in resolved:
+        names = expected_band_names(entry)
+        if names is None:
+            if names_known:
+                return None
+            names = [entry.asset.asset]
+        types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
+        bands.extend(BandMeta(name, data_type or "float64", None) for name, data_type in zip(names, types, strict=True))
+    first = resolved[0]
+    gsd = first.gsd or 1.0
+    return RasterMeta(first.asset.crs or "EPSG:4326", Affine(gsd, 0, 0, 0, -gsd, 0), 1, 1, tuple(bands))
+
+
+def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
+    """Run every step's ``transform`` on the bands the inputs will carry; ``RecipeInvalid`` for a wrong name.
+
+    Where the item does not say how many bands an asset has, the file does, and the
+    core checks again before it reads the first block (plan M4-09 §3.3). Nothing is read.
+    """
+    meta = _input_meta(recipe, names_known=True)
+    if meta is None:
+        return
+    for step in plan_steps(recipe.steps, operators):
+        meta = step.operator.transform(meta, step.params)
+
+
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing."""
     aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
     input_pixels = input_bytes = assets = 0
-    first: RasterMeta | None = None
+    width = height = 0
     for item in recipe.inputs:
         for entry in item.resolved:
             assets += 1
             if entry.gsd is not None:
-                height, width = estimate_output_dims(aoi, entry.gsd)
+                rows, columns = estimate_output_dims(aoi, entry.gsd)
             else:
-                height = width = MAX_OUTPUT_SIDE_PX
-            input_pixels += height * width
-            input_bytes += height * width * _band_bytes(entry.bands)
-            if first is None:
-                gsd = entry.gsd or 1.0
-                bands = tuple(
-                    BandMeta(name=f"b{index + 1}", data_type=band.data_type or "float64", nodata=None)
-                    for index, band in enumerate(entry.bands)
-                ) or (BandMeta(name="b1", data_type="float64", nodata=None),)
-                first = RasterMeta(entry.asset.crs or "EPSG:4326", Affine(gsd, 0, 0, 0, -gsd, 0), width, height, bands)
-    assert first is not None  # a recipe has at least one resolved input
+                rows = columns = MAX_OUTPUT_SIDE_PX
+            if not width:
+                height, width = rows, columns
+            input_pixels += rows * columns
+            input_bytes += rows * columns * _band_bytes(entry.bands)
+    meta = _input_meta(recipe, names_known=False)
+    assert meta is not None  # a recipe has at least one resolved input
+    meta = replace(meta, width=width, height=height)
     planned = plan_steps(recipe.steps, operators)
-    meta = first
     for step in planned:
         meta = step.operator.transform(meta, step.params)
     output_pixels = meta.width * meta.height

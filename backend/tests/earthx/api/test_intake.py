@@ -584,6 +584,33 @@ class TestRefusals:
         assert error.status_code == 403
         assert source.calls == []
 
+    async def test_a_band_the_inputs_do_not_have_is_refused_naming_the_bands_before_any_job(
+        self, source: Source
+    ) -> None:
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "(swir - red) / (swir + red)"}}
+        error = await refused(order(steps=[step]), source)
+        assert (error.status_code, error.stage) == (422, "applicable")
+        assert "swir" in error.detail and "red, nir" in error.detail
+
+    async def test_an_expression_outside_r5_is_refused_with_the_reason(self, source: Source) -> None:
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "log(red)"}}
+        error = await refused(order(steps=[step]), source)
+        # The order layer names the field and the kind of error, never the text (adr/0014 §4.7).
+        assert error.status_code == 422 and "step 0 (band_math)" in error.detail and "expression" in error.detail
+        assert "log" not in error.detail
+
+    async def test_band_math_over_the_bands_of_the_order_is_accepted(self, source: Source) -> None:
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}
+        accepted = await accept(order(steps=[step]), source)
+        assert [s.op for s in accepted.recipe.steps] == ["band_math"]
+
+    async def test_where_the_item_does_not_count_the_bands_the_name_check_waits_for_the_file(self) -> None:
+        """The DEM item describes no bands: a COG may hold several, so the core checks when it has the file."""
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "data_2 - data_1"}}
+        source = Source((DEM, dem_item("DEM_N47_E009")))
+        accepted = await accept(order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",), steps=[step]), source)
+        assert accepted.recipe.steps[0].op == "band_math"
+
     async def test_an_operator_that_only_runs_as_a_tile_is_no_job(self, source: Source) -> None:
         tile_only = replace(SCALE, op="tile_only", tiers=frozenset({Tier.T1}))
         error = await refused(
