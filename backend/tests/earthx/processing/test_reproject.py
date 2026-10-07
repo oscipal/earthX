@@ -13,11 +13,12 @@ from pydantic import ValidationError
 from rasterio.enums import Resampling
 from rasterio.transform import from_origin
 from rasterio.warp import reproject as warp_reproject
+from rasterio.windows import Window
 from rio_tiler.io import Reader
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.processing import run
-from earthx.processing.errors import UnsupportedRecipe
+from earthx.processing.errors import UnknownOperator, UnsupportedRecipe
 from earthx.processing.operators import REGISTRY, REPROJECT, BandMeta, RasterMeta, ReprojectParams, applicable
 from earthx.processing.operators import reproject as reproject_module
 from earthx.processing.recipe import recipe_from_data
@@ -35,7 +36,7 @@ def _params(**overrides) -> ReprojectParams:
 
 def _step(**overrides) -> dict:
     params = {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "nearest", **overrides}
-    return {"op": "reproject", "op_version": 1, "params": params}
+    return {"op": "reproject", "op_version": 2, "params": params}
 
 
 class TestParameters:
@@ -82,7 +83,7 @@ class TestParameters:
             )
 
     def test_the_parameters_are_a_json_schema(self) -> None:
-        schema = REGISTRY.params_schema("reproject", 1)
+        schema = REGISTRY.params_schema("reproject", 2)
         assert schema["required"] == ["crs", "resolution", "resampling"]
         assert schema["additionalProperties"] is False
 
@@ -160,7 +161,49 @@ class TestTheTargetGrid:
 
     def test_the_block_plan_is_part_of_the_version_not_of_the_order(self) -> None:
         assert (reproject_module.TOLERANCE, reproject_module.WARP_MEM_LIMIT_MB) == (0.125, 64.0)
-        assert REPROJECT.op_version == 1
+        assert REPROJECT.op_version == 2
+
+    def test_a_recipe_of_version_1_is_refused(self) -> None:
+        with pytest.raises(UnknownOperator):
+            recipe_from_data(_recipe({**_step(), "op_version": 1}), REGISTRY)
+
+
+def _work_file(path: Path, size: int) -> Path:
+    """A float64 pass file as the core writes it: two noisy bands, NaN where masked, a NaN strip."""
+    generator = numpy.random.default_rng(seed=20261007)
+    rows, cols = numpy.arange(size)[:, None], numpy.arange(size)[None, :]
+    red = 0.12 + 0.04 * numpy.sin(rows / 90) + 0.03 * numpy.cos(cols / 70) + generator.normal(0, 0.006, (size, size))
+    data = numpy.stack([red, 2 * red])
+    data[:, :, size // 2 : size // 2 + 40] = numpy.nan
+    profile = {
+        "driver": "GTiff",
+        "dtype": "float64",
+        "count": 2,
+        "width": size,
+        "height": size,
+        "crs": sources.CRS,
+        "transform": from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
+        "nodata": float("nan"),
+        "tiled": True,
+        "blockxsize": 256,
+        "blockysize": 256,
+    }
+    with rasterio.open(path, "w", **profile) as destination:
+        destination.write(data)
+    return path
+
+
+@pytest.mark.parametrize("resampling", ["nearest", "bilinear", "cubic"])
+def test_a_block_is_masked_exactly_where_the_warp_left_no_value(tmp_path: Path, resampling: str) -> None:
+    """Version 1 took the mask from a second warp and masked values the first one had (M4-10b)."""
+    params = _params(resampling=resampling)
+    with rasterio.open(_work_file(tmp_path / "pass-0.tif", 1024)) as source:
+        bands = tuple(BandMeta(name, "float64", float("nan")) for name in ("red", "nir"))
+        target = REPROJECT.transform(_meta(width=1024, height=1024, bands=bands), params)
+        block = REPROJECT.run(source, target, Window(0, 0, 1024, 1024), params)
+    assert block.dtype == numpy.float64
+    assert 0 < block.mask.sum() < block.size
+    assert numpy.array_equal(block.mask, numpy.isnan(block.data))
 
 
 @pytest.fixture(scope="module")
