@@ -82,10 +82,12 @@ from earthx.adapters import (
     check_adapter_specs,
 )
 from earthx.api.dependencies import cache_pool, policy_from_registry
-from earthx.api.intake import OrderRefused, fetch_item, malformed_item_detail
 from earthx.api.item_source import (
+    OrderRefused,
     build_item_source,
     check_item_holdings,
+    fetch_item_or_refuse,
+    malformed_item_detail,
 )
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
@@ -128,10 +130,10 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
     """The item, or the ``HTTPException`` its absence or the source's failure maps to.
 
     Shared by :func:`dataset_asset_path` and the download route of M2-06; what a
-    failure means is decided once, in :func:`earthx.api.intake.fetch_item`.
+    failure means is decided once, in :func:`earthx.api.item_source.fetch_item_or_refuse`.
     """
     try:
-        return await fetch_item(state.earthx_item_source, dataset, item)
+        return await fetch_item_or_refuse(state.earthx_item_source, dataset, item)
     except OrderRefused as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from None
 

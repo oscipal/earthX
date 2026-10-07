@@ -28,9 +28,8 @@ from earthx.api.intake import (
     accept_order,
     check_recipe_hosts,
     crop_recipe_json,
-    fetch_item,
 )
-from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound
+from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, fetch_item_or_refuse
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
@@ -741,7 +740,7 @@ class TestLogs:
         assert all(len(record.order_recipe_id) == 22 for record in accepted)  # type: ignore[attr-defined]
 
 
-# --- fetch_item ---------------------------------------------------------------
+# --- fetch_item_or_refuse ---------------------------------------------------------------
 
 
 class TestFetchItem:
@@ -750,9 +749,9 @@ class TestFetchItem:
             raise UnknownCollection(dataset)
 
         with pytest.raises(OrderRefused) as tile:
-            await fetch_item(unknown, "nope", "x")
+            await fetch_item_or_refuse(unknown, "nope", "x")
         with pytest.raises(OrderRefused) as body:
-            await fetch_item(unknown, "nope", "x", not_found=422)
+            await fetch_item_or_refuse(unknown, "nope", "x", not_found=422)
         assert (tile.value.status_code, body.value.status_code) == (404, 422)
 
     async def test_a_timeout_is_a_504(self) -> None:
@@ -762,7 +761,7 @@ class TestFetchItem:
             raise UpstreamTimeout("x")
 
         with pytest.raises(OrderRefused) as error:
-            await fetch_item(slow, "d", "i")
+            await fetch_item_or_refuse(slow, "d", "i")
         assert error.value.status_code == 504
 
 
