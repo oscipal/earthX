@@ -28,12 +28,10 @@ def test_a_child_of_a_supervisor_under_uvicorn_loads_no_database_and_the_supervi
     db: psycopg.Connection, tmp_path: Path
 ) -> None:
     probe = tmp_path / "modules.json"
-    env = {
-        **os.environ,
-        "SP_WORKDIR": str(tmp_path / "work"),
-        "PROBE_OUT": str(probe),
-        "PYTHONPATH": f"{BACKEND}:{os.environ.get('PYTHONPATH', '')}",
-    }
+    # No PYTHONPATH: in the image `earthx` is found only because uvicorn puts the working directory on
+    # `sys.path`, and the child has to find it the same way (spawn hands the parent's `sys.path` on).
+    env = {**os.environ, "SP_WORKDIR": str(tmp_path / "work"), "PROBE_OUT": str(probe)}
+    env.pop("PYTHONPATH", None)
     uvicorn = Path(sys.executable).with_name("uvicorn")
     server = subprocess.Popen(
         [str(uvicorn), "tests.earthx.jobs.uvicorn_app:app", "--port", "0", "--no-access-log"],

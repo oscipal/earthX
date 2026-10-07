@@ -85,6 +85,15 @@ def test_a_small_file_is_put_under_the_result_prefix(store: Store, tmp_path: Pat
     assert head["ContentType"] == "application/json"
 
 
+def test_the_mask_of_a_result_lies_next_to_it_as_a_geotiff(store: Store, tmp_path: Path) -> None:
+    """M4-08a F4: a job leaves `result.tif` and `mask.tif`, and nothing else, under its prefix."""
+    result_id = new_result_id()
+    for name in ("result.tif", "mask.tif"):
+        upload_result(store, result_id, name, _file(tmp_path, 64))
+    assert _keys(store) == {f"results/{result_id}/result.tif", f"results/{result_id}/mask.tif"}
+    assert _head(store, f"results/{result_id}/mask.tif")["ContentType"] == "image/tiff; application=geotiff"
+
+
 def test_a_large_file_goes_up_in_parts(store: Store, tmp_path: Path) -> None:
     result_id = new_result_id()
     size = 2 * results.PART_SIZE + 1234
