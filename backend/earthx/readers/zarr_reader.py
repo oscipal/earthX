@@ -224,7 +224,9 @@ class GatewayStore(Store):
         key_ranges: Iterable[tuple[str, ByteRequest | None]],
     ) -> list[Buffer | None]:
         """The ranges of a sharded read, concurrently — the gateway caps the host itself."""
-        return list(await asyncio.gather(*(self.get(key, prototype, byte_range) for key, byte_range in key_ranges)))
+        return list(
+            await asyncio.gather(*(self.get(key, prototype, byte_range) for key, byte_range in key_ranges))
+        )
 
     async def exists(self, key: str) -> bool:
         """Ask for the first byte rather than the object: existence is not a download."""
@@ -392,7 +394,9 @@ def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, st
         for index in range(len(segments) - 1, -1, -1):
             if segments[index].endswith(STORE_SUFFIX):
                 return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), variable
-        raise AssetRejected(f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}")
+        raise AssetRejected(
+            f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}"
+        )
     head, _, tail_variable = href.rstrip("/").rpartition("/")
     segments = head.split("/")
     for index in range(len(segments) - 1, -1, -1):
@@ -661,7 +665,8 @@ def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
         )
     except (KeyError, FileNotFoundError):
         raise UnknownGroup(
-            f"{asset.dataset_id}/{asset.item_id}: asset {asset.asset!r} points at a group the store does not have"
+            f"{asset.dataset_id}/{asset.item_id}: asset {asset.asset!r} points at a group "
+            "the store does not have"
         ) from None
     except ValueError as error:
         raise StoreNotReadable(
@@ -712,7 +717,9 @@ def _multiscales_layout(store: GatewayStore, group: str) -> list[Any] | None:
     return layout if isinstance(layout, list) else None
 
 
-def _select_level(layout: list[Any], target_gsd: float, *, dataset_id: str, item_id: str, asset: str) -> str:
+def _select_level(
+    layout: list[Any], target_gsd: float, *, dataset_id: str, item_id: str, asset: str
+) -> str:
     """The coarsest ``multiscales`` level whose resolution is still at least
     ``target_gsd``-fine, or the finest level there is if none is that fine
     (adr/0007 §12.10: computed from the requested resolution, never looked up in a
@@ -775,7 +782,8 @@ def _select_variable(dataset: xarray.Dataset, asset: ZarrAsset, name: str) -> xa
             array = array.rio.write_crs(asset.crs)
         except (CRSError, ValueError):
             raise MissingCrs(
-                f"{asset.dataset_id}/{asset.item_id}: {asset.crs!r} is not a usable coordinate reference system"
+                f"{asset.dataset_id}/{asset.item_id}: {asset.crs!r} is not a usable "
+                "coordinate reference system"
             ) from None
     if array.rio.crs is None:
         raise MissingCrs(
