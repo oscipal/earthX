@@ -172,7 +172,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | in Arbeit (PR #119) |
 | M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | PR #120 |
 | M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | offen |
-| M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | offen |
+| M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | Plan in PR #124 |
 | M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | offen |
 | M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | offen |
 | M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | offen |
