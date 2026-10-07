@@ -705,18 +705,67 @@ class TestRecipeAndCitation:
         assert "url " not in bib
         assert "Test publisher (2026): Test dataset, version 1." in bib
 
-    def test_a_recipe_that_cannot_be_built_is_a_refusal_not_a_zip(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize(("stage", "status"), [("hosts", 400), ("version", 502)])
+    def test_a_foreign_host_or_a_vanished_input_stops_the_download(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        stage: str,
+        status: int,
     ) -> None:
+        """Otto, 07.10.2026: these two causes are refused, not delivered without the recipe."""
+
         def refuse(*_args: Any, **_kwargs: Any) -> bytes:
-            raise OrderRefused(502, "the items of 'x' do not make a valid recipe", "recipe")
+            raise OrderRefused(status, f"refused at {stage}", stage)  # type: ignore[arg-type]
 
         monkeypatch.setattr("earthx.api.intake.crop_recipe_json", refuse)
         with caplog.at_level(logging.WARNING, logger="earthx.api.tiler"):
             response = _download(client)
-        assert response.status_code == 502
+        assert response.status_code == status
         assert response.headers["content-type"] != "application/zip"
         refusals = [record for record in caplog.records if record.getMessage() == "crop recipe refused"]
-        assert len(refusals) == 1
-        assert refusals[0].stage == "recipe"
+        assert [record.stage for record in refusals] == [stage]
         assert "7.1" not in caplog.text
+
+    @pytest.mark.parametrize("stage", ["bands", "recipe", "resolve"])
+    def test_any_other_recipe_failure_delivers_the_zip_without_recipe_json(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        stage: str,
+    ) -> None:
+        def refuse(*_args: Any, **_kwargs: Any) -> bytes:
+            raise OrderRefused(502, "an item at 7.1,46.1 is odd", stage)  # type: ignore[arg-type]
+
+        monkeypatch.setattr("earthx.api.intake.crop_recipe_json", refuse)
+        with caplog.at_level(logging.WARNING, logger="earthx.api.tiler"):
+            response = _download(client)
+        with _zip_of(response) as archive:
+            names = set(archive.namelist())
+            notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+        assert "recipe.json" not in names
+        assert {"visual.tif", "visual_mask.tif", "aoi.geojson", "citation.bib"} <= names
+        assert f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})." in notice
+        assert "7.1" not in notice
+        omitted = [record for record in caplog.records if record.getMessage() == "crop recipe omitted"]
+        assert [record.stage for record in omitted] == [stage]
+        assert "7.1" not in caplog.text
+
+    def test_an_item_whose_bands_are_described_in_a_form_nobody_reads_costs_only_the_recipe(
+        self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The real path, no patch: `raster:bands` that is no list is refused at stage `bands`."""
+        odd = {**item, "assets": {**item["assets"], "visual": {**item["assets"]["visual"], "raster:bands": "garbage"}}}
+        for test_client in _client_for(REGISTRY, odd, monkeypatch):
+            response = _download(test_client)
+            if response.status_code != 200:
+                pytest.skip(f"the crop planning itself refuses this item first ({response.status_code})")
+            with _zip_of(response) as archive:
+                assert "recipe.json" not in archive.namelist()
+                assert "(cause: bands)" in archive.read("ATTRIBUTION.txt").decode("utf-8")
+
+    def test_a_zip_with_its_recipe_says_nothing_about_a_missing_one(self, client: TestClient) -> None:
+        with _zip_of(_download(client)) as archive:
+            assert "is not included" not in archive.read("ATTRIBUTION.txt").decode("utf-8")

@@ -264,6 +264,9 @@ AOI_FILENAME = "aoi.geojson"
 RECIPE_FILENAME = "recipe.json"
 CITATION_FILENAME = "citation.bib"
 
+# What the notice may name as the reason `recipe.json` is missing: a code, not a message.
+_CAUSE_CODE = re.compile(r"[a-z_]{1,32}")
+
 # "This read does not touch the data" — one exception per reader for the same
 # fact. rio-tiler raises the first two for a COG; `NoDataInBounds` is what
 # rioxarray raises under `XarrayReader.feature` when the AOI misses the array,
@@ -1217,6 +1220,7 @@ def build_notice_text(
     group_item_ids: Sequence[Sequence[str]] | None = None,
     skipped_item_ids: Sequence[str] = (),
     aoi_geometry: Mapping[str, Any] | None = None,
+    recipe_omitted_cause: str | None = None,
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -1247,7 +1251,15 @@ def build_notice_text(
     ``aoi.geojson`` — says the AOI's own shape came from somewhere requiring
     attribution. ``None`` (the previous behaviour, still every other caller's
     default) and an AOI with no such field both leave the notice unchanged.
+
+    ``recipe_omitted_cause`` (M4-14, Otto 07.10.2026): the ZIP has no ``recipe.json``
+    because `api` could not build one; one sentence says so and names the cause by its
+    fixed code (a lower-case word such as ``bands``), never by anything the request or
+    the item contained — no AOI, address or query. Anything else than such a code is
+    refused rather than written into the file.
     """
+    if recipe_omitted_cause is not None and not _CAUSE_CODE.fullmatch(recipe_omitted_cause):
+        raise ValueError("recipe_omitted_cause is a short lower-case code")
     license_ = config.license
     year = datetime.now(timezone.utc).year
     lines = [config.title]
@@ -1301,6 +1313,11 @@ def build_notice_text(
         provenance_line = _aoi_provenance_line(aoi_geometry)
         if provenance_line:
             lines.append(provenance_line)
+    if recipe_omitted_cause is not None:
+        lines.append(
+            f"{RECIPE_FILENAME} is not included: the recipe could not be built from the "
+            f"source's item metadata (cause: {recipe_omitted_cause})."
+        )
     lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
 
@@ -1366,6 +1383,7 @@ def build_download_zip(
     gdal_env: Mapping[str, str] | None = None,
     recipe_json: bytes | None = None,
     citation_bib: bytes | None = None,
+    recipe_omitted_cause: str | None = None,
 ) -> bytes:
     """The finished ZIP: a data COG and a mask file per requested asset, the AOI
     as GeoJSON, plus :data:`NOTICE_FILENAME`.
@@ -1412,7 +1430,8 @@ def build_download_zip(
     `api`, written once at the root as :data:`RECIPE_FILENAME` and
     :data:`CITATION_FILENAME` regardless of the group count, as ``aoi.geojson`` is.
     This function does not look inside them (`access` may not import `processing`);
-    ``None`` leaves the file out.
+    ``None`` leaves the file out; ``recipe_omitted_cause`` then says so in the notice
+    (:func:`build_notice_text`).
     """
     region_geometry = region_geometry if region_geometry is not None else aoi_geometry
     groups = [GroupCrop(item_ids=item_ids, crops=crops, region_geometry=region_geometry), *additional_groups]
@@ -1458,6 +1477,7 @@ def build_download_zip(
                     group_item_ids=[list(group.item_ids) for group in groups] if group_count > 1 else None,
                     skipped_item_ids=skipped_item_ids,
                     aoi_geometry=aoi_geometry,
+                    recipe_omitted_cause=recipe_omitted_cause,
                 ),
             )
         _verify_zip(buffer)

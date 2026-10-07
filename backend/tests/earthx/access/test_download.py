@@ -509,6 +509,21 @@ class TestRecipeAndCitationFiles:
         with self._zip(recipe_json=b"") as archive:
             assert archive.read(dl.RECIPE_FILENAME) == b""
 
+    def test_the_notice_says_once_why_the_recipe_is_missing(self) -> None:
+        with self._zip(citation_bib=b"@misc{x}\n", recipe_omitted_cause="bands") as archive:
+            notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
+        assert notice.count("recipe.json is not included") == 1
+        assert "(cause: bands)" in notice
+
+    @pytest.mark.parametrize("cause", ["", "Bands", "7.1,46.1", "a\nb", "https://x.example/a", "x" * 33, "bands "])
+    def test_a_cause_that_is_no_code_is_refused_not_written_into_the_notice(self, cause: str) -> None:
+        with pytest.raises(ValueError):
+            dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], recipe_omitted_cause=cause)
+
+    def test_without_a_cause_the_notice_is_the_one_it_was(self) -> None:
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+        assert "is not included" not in text
+
     def test_with_several_groups_they_sit_once_at_the_root(self) -> None:
         second = dl.GroupCrop(
             item_ids=["ITEM2"],

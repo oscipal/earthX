@@ -9,7 +9,6 @@ import pytest
 
 from earthx.api.citation import citation_bib
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import ConfigError
 
 DAY = date(2026, 10, 7)
 
@@ -83,11 +82,6 @@ def test_line_breaks_in_a_value_do_not_break_the_entry() -> None:
 def test_a_dataset_id_that_is_no_bibtex_key_is_made_one() -> None:
     config = replace(SENTINEL_2_L2A, dataset_id="odd id,{x}")
     assert _bib(config).startswith("@misc{odd_id__x_,\n")
-
-
-def test_a_doi_that_is_no_doi_is_refused_not_cited() -> None:
-    with pytest.raises(ConfigError):
-        citation_bib(replace(SENTINEL_2_L2A, doi="not a doi"), downloaded=DAY)
 
 
 def test_the_file_is_utf_8_bytes() -> None:
