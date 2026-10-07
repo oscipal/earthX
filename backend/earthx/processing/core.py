@@ -28,6 +28,7 @@ they share one grid. More is :class:`UnsupportedRecipe` until M4-09, M4-11 and M
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import math
 import threading
@@ -82,6 +83,15 @@ _INTERMEDIATE_DTYPE = "float64"
 
 Progress = Callable[[int, int], None]
 
+#: glibc's ``M_MMAP_THRESHOLD`` for ``mallopt``.
+_M_MMAP_THRESHOLD = -3
+
+#: Buffers from this size on get pages of their own and give them back when freed.
+#: Left alone, glibc raises the threshold to the largest buffer freed so far (up to
+#: 32 MB), so the block buffers of a pass end up in the heap, where GDAL's small
+#: allocations pin them; the peak then depends on the order of frees (M4-10b).
+MMAP_THRESHOLD_BYTES = 128 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class RunResult:
@@ -104,12 +114,29 @@ def worker_environment() -> Iterator[None]:
 
     Entered once, in the main thread of the process that reads: only there does
     rasterio set them process-wide; from any other thread they would hold for that
-    thread alone (§3.6), which is why this refuses to be entered elsewhere.
+    thread alone (§3.6), which is why this refuses to be entered elsewhere. It also
+    fixes the allocator's mmap threshold for the process (:func:`_fix_mmap_threshold`).
     """
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError("worker_environment() is entered in the main thread of the worker process")
+    if not _fix_mmap_threshold():
+        LOGGER.warning("mmap threshold left to the C library", extra={"threshold_bytes": MMAP_THRESHOLD_BYTES})
     with rasterio.Env(**process_gdal_options()):
         yield
+
+
+def _fix_mmap_threshold() -> bool:
+    """Fix glibc's mmap threshold at :data:`MMAP_THRESHOLD_BYTES` for the rest of the process.
+
+    No effect on any value computed, only on where the buffers live. Without glibc
+    (another C library) it does nothing and returns ``False``; the peak memory
+    measured in M4-10b then no longer holds, which is why the caller logs it.
+    """
+    try:
+        mallopt = ctypes.CDLL("libc.so.6").mallopt
+    except (OSError, AttributeError):
+        return False
+    return mallopt(_M_MMAP_THRESHOLD, MMAP_THRESHOLD_BYTES) == 1
 
 
 def _blocks(width: int, height: int) -> Iterator[Window]:

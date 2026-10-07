@@ -8,7 +8,13 @@ the previous pass's file in the work directory (approved F3), through a
 (the core's ``BLOCK_SIZE``), the approximation threshold ``tolerance`` and
 ``warp_mem_limit`` (§3.4); the number of threads changes nothing. So the two are
 constants here, not parameters, and a change to either raises ``op_version`` (E2,
-§6.3 row 1): :data:`TOLERANCE` and :data:`WARP_MEM_LIMIT_MB` belong to version 1.
+§6.3 row 1): :data:`TOLERANCE` and :data:`WARP_MEM_LIMIT_MB` belong to version 2.
+
+**One warp per block (version 2, M4-10b).** A pixel is masked where the warp left
+NaN. Version 1 read with ``masked=True``: GDAL then derived the mask from a second
+read of the warped band, which did not always agree with the first and masked a
+few pixels at the edge of the data that had values (3 per band of 4.3 million at
+2048²). The second read cost time and buffers of its own.
 
 **What the caller has to allow.** ``reprojection`` always (R3); ``interpolation``
 for every resampling except ``nearest`` (§5.3, F6). The resampling has no default
@@ -126,7 +132,8 @@ def _run(source, target: RasterMeta, window: Window, params: BaseModel) -> numpy
         src_nodata=math.nan,
         nodata=math.nan,
     ) as vrt:
-        return vrt.read(window=window, masked=True)
+        data = vrt.read(window=window)
+    return numpy.ma.masked_array(data, mask=numpy.isnan(data))
 
 
 def _lineage(params: BaseModel) -> str:
@@ -136,7 +143,7 @@ def _lineage(params: BaseModel) -> str:
 
 REPROJECT = Operator(
     op="reproject",
-    op_version=1,
+    op_version=2,
     category="geometry",
     title="Reproject and resample",
     description="Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
