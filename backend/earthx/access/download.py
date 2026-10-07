@@ -164,6 +164,7 @@ __all__ = [
     "build_download_zip",
     "build_notice_text",
     "asset_gsd",
+    "attribution_text",
     "check_item_count_cap",
     "check_output_size_cap",
     "compute_crop_region",
@@ -1194,6 +1195,12 @@ def _aoi_provenance_line(aoi_geometry: Mapping[str, Any]) -> str | None:
     return line
 
 
+def attribution_text(config: DatasetConfig, *, year: int) -> str | None:
+    """The attribution a crop carries: the conservative "modified" text, else the plain one."""
+    text = config.license.attribution_modified or config.license.attribution_unmodified
+    return text.format(year=year) if text else None
+
+
 def build_notice_text(
     config: DatasetConfig,
     *,
@@ -1238,9 +1245,9 @@ def build_notice_text(
     year = datetime.now(timezone.utc).year
     lines = [config.title]
 
-    attribution = license_.attribution_modified or license_.attribution_unmodified
+    attribution = attribution_text(config, year=year)
     if attribution:
-        lines.append(attribution.format(year=year))
+        lines.append(attribution)
 
     if license_.terms is not None:
         text = license_.terms.notice["en"]

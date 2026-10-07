@@ -39,6 +39,7 @@ import math
 import secrets
 from collections.abc import Awaitable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -47,6 +48,7 @@ from earthx.access.download import (
     AoiOutsideItems,
     InvalidAoi,
     asset_gsd,
+    attribution_text,
     compute_crop_region,
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
@@ -69,10 +71,12 @@ from earthx.processing.recipe import (
     Band,
     InputRequest,
     InputVersion,
+    Provenance,
     RasterOutput,
     Recipe,
     RecipeRequest,
     cache_key,
+    engine_versions,
     input_version,
     parse_request,
     recipe_from_data,
@@ -89,6 +93,7 @@ __all__ = [
     "OrderRefused",
     "accept_order",
     "check_recipe_hosts",
+    "crop_recipe_json",
     "fetch_item",
     "malformed_item_detail",
 ]
@@ -412,7 +417,15 @@ def check_recipe_hosts(recipe: Recipe, registry: DatasetRegistry) -> None:
             config = registry.get(entry.dataset)
         except UnknownDatasetError:
             raise OrderRefused(400, f"no dataset {entry.dataset!r}") from None
-        policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
+        check_recipe_hosts_of(recipe, config)
+
+
+def check_recipe_hosts_of(recipe: Recipe, config: DatasetConfig) -> None:
+    """The addresses of the inputs of ``config``'s dataset, against its ``asset_hosts``."""
+    policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
+    for entry in recipe.inputs:
+        if entry.dataset != config.dataset_id:
+            continue
         for resolved in entry.resolved:
             try:
                 inspect_url(resolved.asset.href, policy)
@@ -545,3 +558,84 @@ def _resolved_json(target: _Target, version: InputVersion | None) -> dict[str, A
         "scaling": _scaling_of(target, bands),
         "gsd": asset_gsd(target.item, target.item_asset),
     }
+
+
+# --- recipe.json of the synchronous crop (adr/0014 §10.1) --------------------
+
+
+def crop_recipe_json(
+    config: DatasetConfig,
+    *,
+    groups: Sequence[Sequence[Mapping[str, Any]]],
+    assets: Sequence[str],
+    aoi: Mapping[str, Any],
+    resolution_factor: int,
+    accepted_at: datetime,
+) -> bytes:
+    """``recipe.json`` for the ZIP of a crop, as bytes (M4-14 puts it in).
+
+    The same schema as a job's recipe, ``steps: []``, the output described as the
+    crop it is (§10.1). ``groups`` are the items the crop actually reads, already
+    filtered by the AOI; each is resolved and its address checked like an order's.
+    Versions are those that need no request — the checksum, ``updated`` — so a DEM
+    tile carries ``null``: a ``HEAD`` per tile for a side file is not worth it, and
+    Q11 concerns the cache, which a crop has none of. No ``recipe_id`` (a crop is
+    not stored, D3), no hash; ``provenance`` says how it came about.
+
+    Bytes, so that `access.download` can write the file without importing
+    `processing`; it is the person's own file, so the AOI is in it, like in
+    ``aoi.geojson``.
+    """
+    policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
+    separator = config.zarr.variable_separator if config.zarr is not None else None
+    targets = [
+        _Target(item, resolve_checked(item, config, asset, policy), separator)
+        for group in groups
+        for item in group
+        for asset in assets
+    ]
+    data = {
+        "recipe_version": 1,
+        "inputs": [
+            {
+                "name": "input",
+                "dataset": config.dataset_id,
+                "groups": [[item["id"] for item in group] for group in groups],
+                "assets": list(assets),
+                "resolved": [
+                    _resolved_json(target, input_version(target.item, target.item_asset)) for target in targets
+                ],
+            }
+        ],
+        "aoi": dict(aoi),
+        "steps": [],
+        "output": {
+            "kind": "crop",
+            "format": "cog",
+            "resolution_factor": resolution_factor,
+            "extent": "bbox(aoi ∩ footprints)",
+            "mask": "file",
+        },
+    }
+    try:
+        recipe = recipe_from_data(data, OperatorRegistry())
+    except RecipeInvalid as error:
+        raise OrderRefused(502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}") from None
+    check_recipe_hosts_of(recipe, config)
+    attribution = attribution_text(config, year=accepted_at.year)
+    provenance = Provenance(
+        execution="cloud",
+        kind="sync-download",
+        runner_version=None,
+        self_attested=False,
+        engine=engine_versions(),
+        scaling=[],
+        started=accepted_at,
+        finished=None,
+        attribution=[attribution] if attribution else [],
+    )
+    document = {
+        **recipe.model_dump(mode="json", exclude={"recipe_id"}),
+        "provenance": provenance.model_dump(mode="json"),
+    }
+    return (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
