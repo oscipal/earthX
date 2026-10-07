@@ -16,12 +16,17 @@
       5. DELETE both jobs, expect "dismissed"
       6. search `docker compose logs api` for the job IDs: any hit is a FEHLER
 
-    The order names exactly ONE item: the newest one the catalog finds for the area and period.
-    The default area is a synthetic square, not anybody's site; it goes to the platform in the order
-    and in the search only, and the script never prints it (only its size).
+    The search is the one the viewer makes: POST /stac/search with {"collections": [id], "bbox":
+    [west, south, east, north], "datetime": "start/end", "limit": 1}. The order names exactly ONE
+    item: the newest one the catalog finds for the area and period.
+
+    The default area is a synthetic square on open farmland inland, not anybody's site; it goes to
+    the platform in the search and in the order only. The script prints only its size - except with
+    -Verbose, which prints every request the script sends (method, address, body, so the area too)
+    and the size and type of every answer; use it to see what a search asked and what came back.
 
     Defaults need no setup: sentinel-2-c1-l2a is searched live at its source, and in July 2025 the
-    default area has 18 scenes (checked against the source on 07.10.2026, one request).
+    default area has 18 scenes (checked against the source on 07.10.2026).
 
     cop-dem-glo-30 has no live search: its items exist only after
     `docker compose run --rm materialize cop-dem-glo-30`, which loads the WHOLE dataset (it cannot be
@@ -36,7 +41,7 @@
 
 .PARAMETER Bbox
     West, south, east, north in decimal degrees with a decimal point, separated by commas, e.g.
-    -Bbox "9.50,47.50,9.51,47.51" (the default). In quotes when the script is started with -File.
+    -Bbox "10.50,49.50,10.51,49.51" (the default). In quotes when the script is started with -File.
     At most 2 x 2 km: a larger area is refused before anything is sent.
 
 .PARAMETER Datetime
@@ -49,6 +54,13 @@
 .PARAMETER Resolution
     Pixel size in the units of -TargetCrs. Default: 20 for sentinel-2-c1-l2a, 90 for cop-dem-glo-30.
 
+.PARAMETER BaseUrl
+    Where the platform's api runs. Default http://localhost:8000.
+
+.PARAMETER SearchOnly
+    Only the search of step 1: finds the item and stops (exit code 0 or 1). To check an area and a
+    period before a job is sent.
+
 .PARAMETER TargetCrs
     Target CRS of the reproject step. Default EPSG:3035 (metres, for Europe); choose another for
     other parts of the world.
@@ -58,7 +70,11 @@
     Sentinel-2 over the default area, July 2025.
 
 .EXAMPLE
-    .\scripts\try-job.ps1 -Bbox "9.50,47.50,9.51,47.51" -Datetime 2025-06-01/2025-06-30
+    .\scripts\try-job.ps1 -Bbox "10.50,49.50,10.51,49.51" -Datetime 2025-06-01/2025-06-30
+
+.EXAMPLE
+    .\scripts\try-job.ps1 -SearchOnly -Verbose -Bbox "8.535,47.365,8.545,47.372" -Datetime 2025-06-01/2025-08-31
+    Only look for a scene, and print the search that was sent and the size of the answer.
 
 .EXAMPLE
     .\scripts\try-job.ps1 -Dataset cop-dem-glo-30
@@ -67,15 +83,16 @@
 [CmdletBinding()]
 param(
     [string]$Dataset = 'sentinel-2-c1-l2a',
-    [string]$Bbox = '9.50,47.50,9.51,47.51',
+    [string]$Bbox = '10.50,49.50,10.51,49.51',
     [string]$Datetime,
     [string]$Asset,
     [double]$Resolution,
-    [string]$TargetCrs = 'EPSG:3035'
+    [string]$TargetCrs = 'EPSG:3035',
+    [string]$BaseUrl = 'http://localhost:8000',
+    [switch]$SearchOnly
 )
 
 # ---- what else to try (change here) -------------------------------------------------------------
-$BaseUrl        = 'http://localhost:8000'
 $Resampling     = 'bilinear'          # nearest | bilinear | cubic
 $TimeoutSeconds = 300                 # how long to wait for the job
 $PollSeconds    = 3
@@ -155,8 +172,37 @@ function Get-HeaderValue {
     return $null
 }
 
+function ConvertFrom-Bytes {
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -eq 0) { return '' }
+    $text = [System.Text.Encoding]::UTF8.GetString($Bytes)
+    return $text.TrimStart([char]0xFEFF)
+}
+
+function Get-ResponseBytes {
+    # The bytes of an Invoke-WebRequest answer. Not `.Content`: Windows PowerShell 5.1 hands that back as
+    # bytes for a type it does not know as text (the platform's search answers application/geo+json),
+    # and as text, decoded by a guessed charset, for others. Reading the bytes ourselves is the same everywhere.
+    param($Response)
+    try {
+        $stream = $Response.RawContentStream
+        if ($null -ne $stream) { return ,$stream.ToArray() }
+    } catch { }
+    $content = $Response.Content
+    if ($content -is [byte[]]) { return ,$content }
+    if ($null -eq $content) { return ,([byte[]]@()) }
+    return ,[System.Text.Encoding]::UTF8.GetBytes([string]$content)
+}
+
+function Limit-Text {
+    param([string]$Text, [int]$Max = 1500)
+    if ($Text.Length -le $Max) { return $Text }
+    return $Text.Substring(0, $Max) + " ... ($($Text.Length) Zeichen)"
+}
+
 function Invoke-Http {
     # One request; never throws. Status 0 means the platform could not be reached at all.
+    # With -Verbose: the request as sent (method, address, body) and the size and type of the answer.
     param(
         [string]$Method = 'GET',
         [string]$Uri,
@@ -165,29 +211,44 @@ function Invoke-Http {
         [switch]$NoRedirect
     )
     $request = @{ Uri = $Uri; Method = $Method; UseBasicParsing = $true; TimeoutSec = 120 }
+    Write-Verbose "-> $Method $Uri"
     if ($Body) {
         $request.Body        = $Body
         $request.ContentType = 'application/json; charset=utf-8'
+        Write-Verbose "   Rumpf ($($Body.Length) Zeichen): $(Limit-Text $Body)"
     }
     if ($NoRedirect) { $request.MaximumRedirection = 0 }
     if ($OutFile)    { $request.OutFile = $OutFile; $request.PassThru = $true }    # without it nothing is returned
     try {
         $response = Invoke-WebRequest @request
-        return [pscustomobject]@{ Status = [int]$response.StatusCode; Headers = $response.Headers; Content = $response.Content; Error = $null }
+        $type = Get-HeaderValue $response.Headers 'Content-Type'
+        if ($OutFile) {
+            $text  = ''
+            $bytes = (Get-Item -LiteralPath $OutFile).Length
+        } else {
+            $raw   = Get-ResponseBytes $response
+            $text  = ConvertFrom-Bytes $raw
+            $bytes = $raw.Length
+        }
+        Write-Verbose "<- HTTP $([int]$response.StatusCode), $bytes Bytes, Content-Type: $type"
+        return [pscustomobject]@{ Status = [int]$response.StatusCode; Headers = $response.Headers; Content = $text; Bytes = $bytes; Type = $type; Error = $null }
     } catch {
         $caught  = $_
         $failure = $caught.Exception.Response
         if ($null -eq $failure) {
-            return [pscustomobject]@{ Status = 0; Headers = $null; Content = ''; Error = $caught.Exception.Message }
+            Write-Verbose "<- keine Antwort: $($caught.Exception.Message)"
+            return [pscustomobject]@{ Status = 0; Headers = $null; Content = ''; Bytes = 0; Type = $null; Error = $caught.Exception.Message }
         }
         $text = ''
         try {
-            $reader = New-Object System.IO.StreamReader($failure.GetResponseStream())
+            $reader = New-Object System.IO.StreamReader($failure.GetResponseStream(), [System.Text.Encoding]::UTF8)
             $text = $reader.ReadToEnd()
             $reader.Close()
         } catch { }
         if (-not $text -and $null -ne $caught.ErrorDetails) { $text = [string]$caught.ErrorDetails.Message }
-        return [pscustomobject]@{ Status = [int]$failure.StatusCode; Headers = $failure.Headers; Content = $text; Error = $null }
+        $type = Get-HeaderValue $failure.Headers 'Content-Type'
+        Write-Verbose "<- HTTP $([int]$failure.StatusCode), $($text.Length) Zeichen, Content-Type: $type"
+        return [pscustomobject]@{ Status = [int]$failure.StatusCode; Headers = $failure.Headers; Content = $text; Bytes = $text.Length; Type = $type; Error = $null }
     }
 }
 
@@ -206,6 +267,8 @@ function Get-ProblemText {
     param($Response)
     $problem = ConvertFrom-JsonSafe $Response.Content
     if ($null -ne $problem -and $null -ne $problem.title) { return "$($problem.title): $($problem.detail) [$($problem.type)]" }
+    if ($null -ne $problem -and $null -ne $problem.description) { return "$($problem.code): $($problem.description)" }
+    if ($null -ne $problem -and $problem.detail -is [string]) { return [string]$problem.detail }
     if ($Response.Error) { return $Response.Error }
     return "HTTP $($Response.Status)"
 }
@@ -300,7 +363,7 @@ function Write-DemHint {
     param([double[]]$Box)
     $tiles = @(Get-DemTileNames $Box)
     $names = ($tiles | ForEach-Object { $_.Name }) -join ', '
-    $any = Invoke-Http -Uri "$BaseUrl/stac/collections/$Dataset/items?limit=1"
+    $any = Invoke-Http -Method Post -Uri "$BaseUrl/stac/search" -Body ('{"collections": ["' + $Dataset + '"], "limit": 1}')
     $anything = ($any.Status -eq 200 -and (Get-FeatureCount (ConvertFrom-JsonSafe $any.Content)) -gt 0)
     Write-Info "Das Gebiet liegt in $($tiles.Count) Kachel(n) des $Dataset (je 1 x 1 Grad): $names"
     if ($anything) {
@@ -375,22 +438,32 @@ $east  = Format-Number $box[2]
 $north = Format-Number $box[3]
 $bboxText = "$west,$south,$east,$north"
 
-$searchUrl = "$BaseUrl/stac/collections/$Dataset/items?limit=1&bbox=$bboxText"
-if ($stacDatetime) { $searchUrl += '&datetime=' + [System.Uri]::EscapeDataString($stacDatetime) }
-$found = Invoke-Http -Uri $searchUrl
-if ($found.Status -eq 404) {
-    Stop-Here "Item suchen: der Datensatz $Dataset ist der Plattform unbekannt (HTTP 404)"
+# The search the viewer makes (frontend api.ts searchItems): POST /stac/search with a JSON body, bbox as
+# four numbers [west, south, east, north], datetime as "start/end" with times, limit.
+$searchBody = '{"collections": ["' + $Dataset + '"], "bbox": [' + $bboxText + ']'
+if ($stacDatetime) { $searchBody += ', "datetime": "' + $stacDatetime + '"' }
+$searchBody += ', "limit": 1}'
+$found = Invoke-Http -Method Post -Uri "$BaseUrl/stac/search" -Body $searchBody
+if ($found.Status -eq 0) {
+    Stop-Here "Item suchen: die Plattform antwortet nicht ($($found.Error)) - läuft sie (docker compose up)?"
 }
 if ($found.Status -ne 200) {
-    Stop-Here "Item suchen: HTTP $($found.Status) $($found.Error) - läuft die Plattform (docker compose up)?"
+    Stop-Here "Item suchen: HTTP $($found.Status) - $(Get-ProblemText $found)"
 }
 $collection = ConvertFrom-JsonSafe $found.Content
+if ($null -eq $collection) {
+    Stop-Here "Item suchen: die Antwort ist kein lesbares JSON ($($found.Bytes) Bytes, Content-Type: $($found.Type)); mit -Verbose sieht man die Anfrage"
+}
+if ($null -eq $collection.features) {
+    Stop-Here "Item suchen: die Antwort hat kein Feld features ($($found.Bytes) Bytes, Content-Type: $($found.Type))"
+}
+Write-Info "Antwort der Suche: $($found.Bytes) Bytes, $(Get-FeatureCount $collection) Item(s)"
 if ((Get-FeatureCount $collection) -lt 1) {
     if ($Dataset -eq 'cop-dem-glo-30') {
         Write-DemHint $box
     } else {
         Write-Info "Der Katalog findet für $Dataset in diesem Gebiet und Zeitraum kein Item."
-        Write-Info 'Zeitraum erweitern (-Datetime 2025-06-01/2025-08-31) oder ein anderes Gebiet wählen (-Bbox).'
+        Write-Info 'Zeitraum erweitern (-Datetime 2025-06-01/2025-08-31) oder ein anderes Gebiet wählen (-Bbox); -Verbose zeigt die gesendete Anfrage.'
     }
     Stop-Here 'Item suchen: kein Item gefunden'
 }
@@ -406,6 +479,10 @@ if ($item.properties -and $item.properties.datetime) {
     }
 }
 Write-Result $true "Item gefunden (genau eines wird verwendet): $itemId$when"
+if ($SearchOnly) {
+    Show-Summary
+    exit 0
+}
 
 $order = @"
 {"inputs": {"recipe": {
