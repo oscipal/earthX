@@ -26,8 +26,8 @@ from tests.earthx.processing.test_memory_8192 import BACKEND, PEAK_LIMIT_MB, bui
 SMALL, LARGE = 2048, 4096
 
 #: How much the peak may grow from 2048² to 4096², 4 times the pixels (M4-10b).
-#: Measured 79 MB in the session and 79–80 MB in the CI; 120 MB keeps a third in
-#: reserve and stays below the 201 MB by which the float64 file of the pixel pass
+#: Measured 79 MB in the session and in the CI (run 433); 120 MB keeps a third in
+#: reserve and stays below the 192 MB by which the float64 file of the pixel pass
 #: grows, which a warp holding its source would add.
 GROWTH_LIMIT_MB = 120
 
@@ -51,18 +51,19 @@ def test_a_bilinear_reprojection_stays_below_the_limit_and_does_not_follow_the_s
 ) -> None:
     measured = {}
     for size in (SMALL, LARGE):
-        workdir = tmp_path / str(size)
-        workdir.mkdir()
-        measured[size] = measure(scenes[size], workdir, size)
-        with rasterio.open(workdir / "result.tif") as result:
-            assert result.crs.to_epsg() == 3035
-            assert result.count == 2
-            assert result.width >= size * 0.99 and result.height >= size * 0.99
-        assert measured[size]["blocks"] >= 2 * (size // 1024) ** 2  # a pixel pass and a warp pass
+        (tmp_path / str(size)).mkdir()
+        measured[size] = measure(scenes[size], tmp_path / str(size), size)
     growth = measured[LARGE]["peak_mb"] - measured[SMALL]["peak_mb"]
+    # Printed before any check: the CI log is where the numbers behind the limits are read off.
     with capsys.disabled():
         for size in (SMALL, LARGE):
             print(f"\nT2 memory reproject bilinear {size}²: {measured[size]}")
         print(f"T2 memory reproject growth {SMALL}² → {LARGE}²: {growth:.1f} MB")
+    for size in (SMALL, LARGE):
+        with rasterio.open(tmp_path / str(size) / "result.tif") as result:
+            assert result.crs.to_epsg() == 3035
+            assert result.count == 2
+            assert result.width >= size * 0.99 and result.height >= size * 0.99
+        assert measured[size]["blocks"] >= 2 * (size // 1024) ** 2  # a pixel pass and a warp pass
     assert measured[LARGE]["peak_mb"] < PEAK_LIMIT_MB
     assert growth <= GROWTH_LIMIT_MB
