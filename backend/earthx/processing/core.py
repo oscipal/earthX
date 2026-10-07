@@ -8,8 +8,8 @@ runner keeps it (adr/0016).
 **How it reads (L1, F10).** Each input asset is opened once per run through
 ``access.open_asset_ref``, so every address has passed ``check_url`` in `readers`
 (§7.3 point 1). The first pass reads 1024 px blocks with ``part()`` in the input's
-own grid — an exact window, no warp — applies the scaling of §5.4 and the ``pixel``
-kernels, and writes a tiled GeoTIFF. A ``grid`` step is a pass of its own over the
+own grid (the finest of its assets) — an exact window, no warp — applies the scaling of
+§5.4 and the ``pixel`` kernels, and writes a tiled GeoTIFF. A ``grid`` step is a pass of its own over the
 previous file (approved F3). Reading happens on the calling thread, under the GDAL
 options of `readers` entered on that thread (§7.3 point 2); there is no second
 reading thread.
@@ -23,7 +23,9 @@ To stop, the callback raises :class:`~earthx.processing.errors.RunCancelled`; th
 core removes every file it wrote and re-raises, as it does for any other failure.
 
 **Scope (F2).** One input, one group, one item; several assets of that item when
-they share one grid. More is :class:`UnsupportedRecipe` until M4-09, M4-11 and M4-12.
+they share one grid or are nested (the coarser read onto the finest with ``nearest``,
+the result marked resampled; :mod:`earthx.processing.source`). More is
+:class:`UnsupportedRecipe` until M4-11 and M4-12.
 """
 
 from __future__ import annotations
@@ -53,15 +55,13 @@ from rio_cogeo.profiles import cog_profiles
 from rio_tiler.models import ImageData
 
 from earthx.access.resolve import open_asset_ref
-from earthx.processing.errors import GridMismatch, UnsupportedRecipe
+from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
 from earthx.processing.plan import PlannedStep, Segment, crop_window, plan_steps, segments
-from earthx.processing.recipe import AppliedScaling, RasterOutput, Recipe, ResolvedInput, engine_versions
-from earthx.processing.scaling import apply_scaling, scaling_for_cog, scaling_for_zarr
+from earthx.processing.recipe import AppliedScaling, RasterOutput, Recipe, engine_versions
+from earthx.processing.source import Source, common_grid, merge_images
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
-from earthx.readers.cog import AssetPath, CogReader
-from earthx.readers.zarr_reader import ZarrReader
 
 __all__ = ["BLOCK_SIZE", "MASK_NAME", "RESULT_NAME", "Progress", "RunResult", "run", "worker_environment"]
 
@@ -149,85 +149,14 @@ def _block_count(meta: RasterMeta) -> int:
     return -(-meta.width // BLOCK_SIZE) * -(-meta.height // BLOCK_SIZE)
 
 
-class _Source:
-    """One input asset, opened once: its grid, its scaling, its blocks in physical values."""
-
-    def __init__(self, entry: ResolvedInput, reader: CogReader | ZarrReader) -> None:
-        self.entry = entry
-        self.reader = reader
-        self.crs = CRS.from_user_input(reader.crs)
-        self.transform: Affine = reader.transform
-        self.width: int = reader.width
-        self.height: int = reader.height
-        what = f"{entry.asset.dataset_id}/{entry.asset.item_id}/{entry.asset.asset}"
-        if isinstance(reader, CogReader):
-            dataset = reader.dataset
-            self.scaling = scaling_for_cog(entry.scaling, entry.bands, dataset.scales, dataset.offsets, what)
-            count = dataset.count
-            self.names = [entry.asset.asset] if count == 1 else [f"{entry.asset.asset}_{i + 1}" for i in range(count)]
-            self.data_types = list(dataset.dtypes)
-            self.nodata = [dataset.nodata] * count
-        else:
-            arrays = reader.arrays
-            source = [array.attrs if entry.scaling == "item" else array.encoding for array in arrays]
-            self.scaling = scaling_for_zarr(entry.scaling, entry.bands, source, what)
-            self.names = [str(array.name) for array in arrays]
-            self.data_types = [str(array.dtype) for array in arrays]
-            self.nodata = [array.rio.nodata for array in arrays]
-        self.nodata = [None if value is None else float(value) for value in self.nodata]
-
-    def same_grid(self, other: _Source) -> bool:
-        return (
-            self.crs == other.crs
-            and self.transform.almost_equals(other.transform)
-            and (self.width, self.height) == (other.width, other.height)
-        )
-
-    def read(self, window: Window) -> ImageData:
-        left, top = self.transform @ (window.col_off, window.row_off)
-        right, bottom = self.transform @ (window.col_off + window.width, window.row_off + window.height)
-        image = self.reader.part(
-            (left, bottom, right, top),
-            dst_crs=self.crs,
-            bounds_crs=self.crs,
-            width=int(window.width),
-            height=int(window.height),
-            max_size=None,
-        )
-        image = apply_scaling(image, self.scaling)
-        if len(self.names) == image.count:
-            image.band_names = list(self.names)
-        return image
-
-
-def _merge(images: list[ImageData]) -> ImageData:
-    if len(images) == 1:
-        return images[0]
-    merged = ImageData.create_from_list(images)
-    names = [name for image in images for name in image.band_names]
-    nodata = {image.nodata for image in images}
-    return ImageData(
-        merged.array,
-        bounds=merged.bounds,
-        crs=merged.crs,
-        band_names=names,
-        nodata=nodata.pop() if len(nodata) == 1 else None,
-    )
-
-
-def _open_sources(recipe: Recipe, stack: ExitStack) -> list[_Source]:
+def _open_sources(recipe: Recipe, stack: ExitStack) -> list[Source]:
     access = read_access_for(recipe.hrefs())
     sources = []
     for entry in recipe.inputs[0].resolved:
         target = open_asset_ref(
             entry.asset.to_asset(), access.policy, access.resolve, decode_cf=entry.scaling == "store-cf"
         )
-        reader = CogReader(target) if isinstance(target, AssetPath) else ZarrReader(target)
-        stack.enter_context(reader)
-        sources.append(_Source(entry, reader))
-    first = sources[0]
-    if any(not first.same_grid(other) for other in sources[1:]):
-        raise GridMismatch("the assets of this recipe do not share one grid; resampling them comes with M4-09")
+        sources.append(Source.open(entry, target, stack))
     return sources
 
 
@@ -243,7 +172,7 @@ def _nodata_for(dtype: str, meta: RasterMeta) -> float:
     if numpy.issubdtype(numpy.dtype(dtype), numpy.floating):
         return float("nan")
     values = {band.nodata for band in meta.bands}
-    if len(values) != 1 or None in values:
+    if len(values) != 1 or None in values or any(math.isnan(value) for value in values):
         raise UnsupportedRecipe("an integer output needs one nodata value shared by every band")
     return float(values.pop())
 
@@ -319,14 +248,17 @@ def _transform_meta(meta: RasterMeta, steps: tuple[PlannedStep, ...]) -> RasterM
     return meta
 
 
-def _source_meta(sources: list[_Source], window: Window, transform: Affine) -> RasterMeta:
+def _source_meta(
+    sources: list[Source], finest: Source, resampled: bool, window: Window, transform: Affine
+) -> RasterMeta:
     bands = []
     for source in sources:
         for name, data_type, nodata in zip(source.names, source.data_types, source.nodata, strict=True):
             data_type = "float32" if source.scaling.applied_by_core else data_type
             bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata))
-    first = sources[0]
-    return RasterMeta(first.crs.to_string(), transform, int(window.width), int(window.height), tuple(bands))
+    return RasterMeta(
+        finest.crs.to_string(), transform, int(window.width), int(window.height), tuple(bands), resampled
+    )
 
 
 def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, str]) -> dict[str, Any]:
@@ -346,6 +278,10 @@ def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, 
     ]
     properties["processing:software"] = {name: engine[name] for name in ("earthx", "gdal", "rasterio", "numexpr")}
     properties["processing:lineage"] = "; ".join(step.operator.lineage(step.params) for step in planned) or "crop"
+    added = [step.operator.properties(step.params) for step in planned]
+    for key in sorted({key for entry in added for key in entry}):
+        values = [entry[key] for entry in added if key in entry]
+        properties[key] = values[0] if len(values) == 1 else values
     properties["earthx:resampled"] = meta.resampled
     return properties
 
@@ -380,11 +316,11 @@ def run(recipe: Recipe, *, workdir: Path, progress: Progress, operators: Operato
         with ExitStack() as stack:
             stack.enter_context(rasterio.Env(**process_gdal_options()))
             sources = _open_sources(recipe, stack)
-            first = sources[0]
+            finest, resampled = common_grid(sources)
             window, transform = crop_window(
-                recipe.aoi.model_dump(mode="json"), first.crs.to_string(), first.transform, first.width, first.height
+                recipe.aoi.model_dump(mode="json"), finest.crs.to_string(), finest.transform, finest.width, finest.height
             )
-            metas = [_source_meta(sources, window, transform)]
+            metas = [_source_meta(sources, finest, resampled, window, transform)]
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
             state.total = sum(_block_count(meta) for meta in metas[1:])
@@ -395,6 +331,7 @@ def run(recipe: Recipe, *, workdir: Path, progress: Progress, operators: Operato
                     state,
                     segment,
                     sources if index == 0 else None,
+                    finest.transform,
                     previous,
                     window,
                     metas[index],
@@ -461,7 +398,8 @@ def run(recipe: Recipe, *, workdir: Path, progress: Progress, operators: Operato
 def _run_pass(
     state: _Run,
     segment: Segment,
-    sources: list[_Source] | None,
+    sources: list[Source] | None,
+    grid: Affine,
     previous: str | None,
     window: Window,
     source_meta: RasterMeta,
@@ -484,7 +422,7 @@ def _run_pass(
 
         def block(w: Window) -> numpy.ma.MaskedArray:
             absolute = Window(window.col_off + w.col_off, window.row_off + w.row_off, w.width, w.height)
-            image = _merge([source.read(absolute) for source in sources])
+            image = merge_images([source.read(absolute, grid) for source in sources])
             return _pixel_kernels(image, segment.steps).array
 
         state.write_pass(name, target_meta, dtype, nodata, block, last)

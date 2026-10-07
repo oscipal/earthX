@@ -77,6 +77,7 @@ def _run(workdir: Path, conn: Any) -> None:
                 "scaling": [applied.model_dump(mode="json") for applied in result.scaling],
                 "blocks": result.blocks,
                 "valid_pixels": result.valid_pixels,
+                "resampled": result.meta.resampled,
                 "engine": result.engine,
                 "width": result.meta.width,
                 "height": result.meta.height,

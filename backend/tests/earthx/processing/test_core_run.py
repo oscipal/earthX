@@ -239,7 +239,7 @@ class TestRefusals:
         self, tmp_path: Path, bands: dict[str, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         coarse = sources.build_band_cog(
-            tmp_path / "b11.tif", sources.ramp(WIDTH // 2, HEIGHT // 2, 800), resolution=20.0
+            tmp_path / "b11.tif", sources.ramp(WIDTH // 2 - 7, HEIGHT // 2, 800), resolution=20.0
         )
         sources.serve({sources.url("red"): bands["red"], sources.url("b11"): coarse}, monkeypatch)
         work = tmp_path / "work"

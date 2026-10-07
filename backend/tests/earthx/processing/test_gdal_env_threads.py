@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 from rasterio._env import get_gdal_config
 
-from earthx.processing import core as core_module
 from earthx.processing import run, worker_environment
+from earthx.processing import source as source_module
 from earthx.processing.recipe import recipe_from_data
 from earthx.readers import process_gdal_options
 from tests.earthx.processing import sources
@@ -59,13 +59,13 @@ def test_run_reads_under_the_options_from_a_pool_thread_without_worker_environme
     cog = sources.build_band_cog(tmp_path / "red.tif", sources.ramp(64, 64, 1200))
     sources.serve({sources.url("red"): cog}, monkeypatch)
     seen: list[dict[str, object]] = []
-    original = core_module._Source.read
+    original = source_module.Source.read
 
-    def probe(self, window):
+    def probe(self, window, grid=None):
         seen.append(_seen())
-        return original(self, window)
+        return original(self, window, grid)
 
-    monkeypatch.setattr(core_module._Source, "read", probe)
+    monkeypatch.setattr(source_module.Source, "read", probe)
     data = {
         "recipe_version": 1,
         "inputs": [
