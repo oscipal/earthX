@@ -522,12 +522,12 @@ docker compose ps        # api und tiler: healthy
 $tile = "http://localhost:8001/collections/sentinel-2-c1-l2a/items/S2B_T32UNV_20250729T102457_L2A/tiles/WebMercatorQuad/14/8669/5591.png"
 
 # 1. NDVI als Operator: 200, ein 256 x 256 PNG (rot-gelb-grün, -1 bis 1)
-$ndvi = "$tile?asset=red&asset=nir&op=band_math&op_version=1&params=%7B%22expression%22%3A%22%28nir-red%29%2F%28nir%2Bred%29%22%7D&rescale=-1,1&colormap_name=rdylgn"
+$ndvi = "${tile}?asset=red&asset=nir&op=band_math&op_version=1&params=%7B%22expression%22%3A%22%28nir-red%29%2F%28nir%2Bred%29%22%7D&rescale=-1,1&colormap_name=rdylgn"
 Invoke-WebRequest -Uri $ndvi -OutFile ndvi.png
 Start-Process ndvi.png
 
 # 2. freier expression-Parameter: 400 mit Verweis auf op=band_math
-$free = "$tile?asset=red&asset=nir&expression=(nir-red)/(nir%2Bred)&rescale=-1,1"
+$free = "${tile}?asset=red&asset=nir&expression=(nir-red)/(nir%2Bred)&rescale=-1,1"
 try { Invoke-WebRequest -Uri $free -OutFile free.png } catch { [int]$_.Exception.Response.StatusCode; $_.ErrorDetails.Message }
 ```
 
