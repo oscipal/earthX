@@ -1,8 +1,9 @@
 # M4-09 — Operator Band-Math (T1, T2): Plan
 
 **Aufgabe:** M4-09 aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** (R1) — **Plan, wartet auf Ottos Freigabe.** Bis dahin gibt es
-keinen Produktivcode.
+**Stufe B** (R1) — **von Otto am 07.10.2026 freigegeben** mit F1–F5 je Option 1
+und Auflagen zu F2, F3, F4 (§8). Umsetzung siehe §9. Wo §3 und §8 sich
+widersprechen, gilt §8.
 **Ort im Repo:** `docs/plans/m4-09-band-math.md`
 **Grundlagen:** `adr/0014` §3.2, §3.3, §5.2–§5.6, §6.1–§6.4, §15a (F7, F7a,
 F9), §15c; `adr/0016` §3.3, §12a, §14.4, §14.5; `plans/m4-processing-kern.md`
@@ -379,3 +380,113 @@ sagt):
   Grund übersprungen, wenn `GLIBC_TUNABLES` nicht wirkt.
 - **K8:** Bandnamen prüft verbindlich der Kern beim Start; Annahme und Kachel
   prüfen vorher, soweit die Namen dort bekannt sind (§3.3).
+
+---
+
+## 8. Freigabe (Otto, 07.10.2026)
+
+F1 (1), F2 (1), F3 (1), F4 (1), F5 (1); K1–K8 angenommen, einschließlich
+`processing:expression.format = "numexpr"` als Nachtrag in `adr/0014`.
+
+**Auflagen:**
+- **F3:** Freie `expression`- und `algorithm`-Parameter im `tiler` werden mit
+  `400` und Verweis auf `op=band_math` abgewiesen, je ein Test; vorher im
+  Frontend belegen, dass keiner davon genutzt wird. Eigene Log-Zeile
+  (Verhaltensänderung des `tiler`).
+- **F4:** `&`, `|`, `~` nur auf booleschen Ausdrücken (Vergleiche und ihre
+  Verknüpfungen); auf Zahlen definierter `400` aus der R5-Prüfung, nie ein
+  `500` aus numexpr. R5 in §1.1b des M4-Plans um diese Erweiterung ergänzen,
+  mit Log-Zeile.
+- **F2:** Die Markierung „resampled“ steht in der Provenienz des Jobs und ist
+  für M4-13 abrufbar.
+
+---
+
+## 9. Umsetzung (07.10.2026)
+
+Umgesetzt wie freigegeben, in thematischen Commits in PR #127. `main` war beim
+Start schon im Branch (nichts nachzuholen). Keine neue Abhängigkeit, keine
+Lock-Datei geändert; `.github/`, `.claude/`, `CLAUDE.md` und `.importlinter`
+unberührt, `lint-imports` hält alle 14 Verträge.
+
+**Belege zu den Auflagen:**
+- **F3, Frontend:** `grep` über `frontend/src` (ohne Tests): `algorithm` kommt
+  nirgends vor. `expression` kommt in vier Zeilen vor: das Feld
+  `EarthxDefaultRender.expression` (`types.ts`), `AppliedRender.expression`
+  (`types.ts`), die Übernahme `appliedRenderFrom` (`render.ts`) und der
+  Query-Parameter in `buildTileUrl` (`mapLayers.ts`). Der Wert stammt nur aus
+  `default_render.expression` der Registry; alle drei Einträge setzen `None`.
+  `bidx` setzt nichts. Kein Eingabefeld des Frontends erzeugt einen Ausdruck.
+- **F3, Registry:** `DefaultRender` weist `expression` ungleich `None` ab (und
+  verlangt jetzt ein Asset), solange M4-13 die Standard-Visualisierung nicht auf
+  `op` abbildet. Der bisherige Test „ein Ausdruck allein genügt“ wurde zur
+  Abweisung umgeschrieben.
+- **F4:** Die Prüfung typisiert den Syntaxbaum (Zahl oder Wahrheitswert):
+  `&`, `|`, `~` nehmen nur Vergleiche und ihre Verknüpfungen, `where` verlangt
+  einen Wahrheitswert als Bedingung. `red & nir`, `~red`, `red > 0 & nir > 0`
+  (Pythons Vorrang bindet `&` stärker) sind `ValueError` der Prüfung → `400`
+  im `tiler`, `422` in der Annahme; 65 abgewiesene Formen stehen im Test.
+- **F2:** `resampled` steht an drei Stellen: `RunResult.meta.resampled`, dem
+  STAC-Feld `earthx:resampled` im Ergebnis und dem Bericht des Kindes
+  (`jobs/child.py`, Schlüssel `resampled`). Dieser Bericht wird als
+  `earthx_run.result` gespeichert (`queue.finish_successful`); M4-08b reicht ihn
+  an M4-13 weiter. Die Rezeptmodelle sind unverändert (`Provenance` wird nicht
+  gehasht und bleibt, wie es ist).
+
+**Abweichungen vom Plan und Befunde beim Bauen:**
+
+1. **Maske nur aus den Bändern, die der Ausdruck nennt.** §3.1 sagte „ODER
+   aller Bandmasken wie rio-tiler“. Ein Ausdruck über `red` soll nicht dort
+   ausfallen, wo ein ungenanntes Asset des Auftrags `nodata` hat. Bei der
+   üblichen Eingabe (genau die genannten Assets) ist das dasselbe.
+2. **Status der Tile-Route: `400` für Form, `422` für „nicht hier“.** `400`:
+   Query fehlerhaft oder `params` ungültig (R5 eingeschlossen, Ottos Auflage F4);
+   `422`: wohlgeformt, aber unbekannter Operator oder Version, läuft nicht als
+   Kachel, Datensatz erlaubt es nicht, Bandname nicht an den Assets
+   (`RecipeInvalid` → `422`), nicht passende Raster (`GridMismatch` → `422`).
+   `ScalingMismatch` (Item und Datei widersprechen sich) ist `502`: die Seite
+   der Quelle.
+3. **Zarr: T1 ↔ T2 nicht in jedem Pixel bitgleich, am Rand der Näherung.**
+   Das COG-Paar ist bitgleich (über 1 Mio. gültige Pixel und die Maske des
+   `nodata`-Ecks, drei Ausdrücke). Beim Mini-Zarr weichen von 3489 gültigen
+   Pixeln einer z14-Kachel 13 ab, ein weiteres liegt nur in einer der beiden
+   Masken. Ursache [M]: Die Kachel (T1) liest `XarrayReader`, die Referenz
+   liest das COG-Ergebnis des Jobs über `Reader.tile`; beides sind
+   `nearest`-Warps mit verschiedener Näherung. Wo der Mittelpunkt eines
+   Kachelpixels bis 0,003 Quellpixel von einer Pixelgrenze entfernt liegt,
+   wählen sie verschiedene Nachbarn. Die Kachel selbst ist in **jedem** Pixel
+   die Formel auf dem exakt nächsten Quellpixel (unabhängig nachgerechnet, mit
+   und ohne Item-Skalierung). Der Test verlangt deshalb beides: Kachel =
+   Formel auf dem nächsten Quellpixel überall; Kachel = Job überall außer
+   innerhalb von 0,125 Quellpixel (GDALs Näherungsschwelle) von einer Grenze,
+   und dort höchstens 2 % der Pixel. **Die Abnahme „bitgleich“ gilt damit für
+   COG ohne Einschränkung und für Zarr bis auf diese Grenzpixel; Otto
+   entscheidet, ob das genügt** (Frage im PR).
+4. **`estimate` zählt jetzt die Bänder aller Assets.** Bisher kam das
+   Ausgabe-Raster der Schätzung nur aus dem ersten Asset. Die Namensprüfung vor
+   der Warteschlange braucht alle Bandnamen, und ein Lauf ohne Schritt schreibt
+   auch alle Bänder; der Test `test_a_band_math_like_run` erwartete deshalb ein
+   Band zu wenig (4 statt 8 Byte je Pixel für die zwei Bänder von `scale`).
+5. **Ganzzahlige Ausgabe mit NaN-`nodata`** (Band-Math in `uint16`) fiel erst
+   beim Schreiben als GDAL-Fehler auf. `core._nodata_for` weist sie jetzt als
+   `UnsupportedRecipe` ab, vor dem ersten Block.
+6. **`Operator.properties`** (neues Feld mit Vorgabe) trägt
+   `processing:expression` ins Ergebnis, ohne dass der Kern den Operator
+   kennt. Zwei Band-Math-Schritte ergeben eine Liste.
+7. **`Source` ist öffentlich** (`processing/source.py`, vorher `core._Source`)
+   und hält die Rasterregel von F2; `merge_images` zog mit. Der Test
+   `test_gdal_env_threads.py` greift darauf zu.
+8. **Namensprüfung vor der Warteschlange** (`plan.check_bands`, aufgerufen in
+   `accept_order`, Stufe `applicable`): nur wo das Item die Zahl der Bänder
+   nennt; sonst prüft der Kern vor dem ersten Block. Die Annahme nennt bei
+   einem ungültigen Ausdruck Feld und Fehlerart, nicht den Text (Vorgabe von
+   `adr/0014` §4.7); den Grund liefert die Kachel-Route im `400`.
+9. **`tilejson` mit `op`:** getestet; die Kachel-URL darin trägt `asset`
+   (wiederholt), `op`, `op_version` und `params` weiter. `info()` des Readers
+   ist leer (keine Bandbeschreibung, Typ `float32`).
+10. **Nicht gemessen:** Zarr-Kacheln unterhalb der nativen Ebene (Vorschau) und
+    Mosaik. Der Test für z11 prüft nur `200`.
+
+**Gemessen am Ende (Sitzung, x86_64):** Setting A gegen D (`GLIBC_TUNABLES`
+wirkt: `0x7ed83203` → `0x7ed82203`) liefert für 14 Ausdrücke in float32 und
+float64 dieselben SHA-256; die Gegenprobe mit `log`, `exp`, `x**51` weicht ab.
