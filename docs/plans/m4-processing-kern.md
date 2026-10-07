@@ -172,7 +172,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | in Arbeit (PR #119) |
 | M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | PR #120 |
 | M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | offen |
-| M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | Plan in PR #124 |
+| M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | PR #124 |
 | M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | offen |
 | M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | offen |
 | M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | PR #125 (Entwurf) |
@@ -664,6 +664,10 @@ herunterladen.
   `410` ab `expires_at` oder bei weniger als 60 s Rest.
 - SSE: genau eine `LISTEN`-Verbindung je `api`-Prozess, verteilt auf alle
   Clients; beim Verbinden zuerst der Stand der Zeile.
+- **`recipe.json` erzeugt `api`** je Job aus dessen eigenem Rezept; sie liegt
+  nicht im Objektspeicher (Otto, 07.10.2026, M4-08a F4), damit kein Auftrag die
+  `recipe_id` eines anderen sieht. Neben `result.tif` und `mask.tif` legt der
+  Worker nichts unter `results/{result_id}/` ab.
 - **Im Plan-Schritt zu entscheiden** (`adr/0015` §13): ob `DELETE` eines
   fertigen Jobs das Ergebnis löscht; ein Ergebnis, das Treffer anderer Jobs
   bedient, darf nicht verschwinden.

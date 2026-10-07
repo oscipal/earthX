@@ -1,7 +1,9 @@
 # M4-08a — Queue und Worker-Hülle in `jobs`: Plan
 
 **Aufgabe:** M4-08a aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan zur Freigabe; die Sitzung hält nach diesem Commit an.
+**Stufe B** — **von Otto am 07.10.2026 freigegeben:** F1–F7 je Option 1, außer
+**F4 Option 3**; K1–K6 angenommen. Dazu Auflagen zu F2, F4 und zum Speicher (§8,
+„Antworten“). Umsetzung in PR #124.
 **Ort im Repo:** `docs/plans/m4-08a-jobs-queue.md`
 **Grundlagen:** `adr/0013` §5, §6, §8, §9, §10, §10a; `adr/0015` §7, §8,
 §12 Punkt 9, §13, §14a (F13); `adr/0014` §4.4–§4.7, §5.5, §7.2, §9, §15b;
@@ -176,9 +178,41 @@ nicht (K3).
   Alles andere `failed` mit `error_kind`.
 - **Lease-Prüfung** alle 15 s: `running` mit `lease_until < now()` → wie
   `lease_lost` oben.
-- **Herunterfahren** (SIGTERM über uvicorn): kein neues Abholen, Kinder
-  beenden, eigene Läufe sofort wie `lease_lost` behandeln, statt 60 s auf
-  die Lease zu warten (K5).
+- **Herunterfahren** (SIGTERM über uvicorn, Auflage F2): kein neues Abholen;
+  laufende Kinder werden beendet (`terminate`, nach 5 s `SIGKILL`); die Läufe
+  des Aufsehers werden sofort wie `lease_lost` behandelt (K5): wieder
+  `accepted`, wenn Versuche übrig sind, `Lease` freigegeben, statt 60 s auf
+  den Ablauf zu warten. Der Aufseher löscht die Arbeitsordner seiner Läufe.
+  Test: Aufseher mit laufendem Kind herunterfahren → Kind tot, Zeile
+  `accepted` ohne `worker` und `lease_until`, Weckruf gesendet.
+- **Mehrere Aufseher (Auflage F2):** Der Deckel hängt nur an der Zeile in
+  `earthx_job_limits` und an der Sperre, nicht an der Zahl der Aufseher.
+  Test: zwei Aufseher mit je 4 Slots gegen dieselbe Datenbank, Deckel 4,
+  viele Läufe → nie mehr als 4 gleichzeitig (aus den Zeiten der Zeilen
+  gerechnet, nicht durch Stichproben), und 4 werden erreicht.
+- **Speicherabbruch des Kindes (Auflage):**
+  - Das Kind liest bei jeder Fortschrittsmeldung `VmHWM` aus
+    `/proc/self/status` (nicht `ru_maxrss`; Log 06.10.2026, M4-07a §9.3) und
+    schickt es mit. Der Aufseher behält den letzten Wert und schreibt ihn bei
+    jedem Ende ins Log (`peak_mb`). Die Zahl, an der M4-07a misst, ist
+    500 MB je Kind für einen T2-Lauf über 8192² (F11, M4-07a §9.5); der
+    Aufseher setzt keine eigene Grenze, er meldet nur.
+  - **Erkannt** wird ein Speicherabbruch auf zwei Wegen, beide ohne
+    Wiederholung (`adr/0013` §5.6, Zeile „Speicherabbruch“):
+    1. Das Kind fängt `MemoryError` an seiner Grenze und meldet
+       `("failed", "out_of_memory")`.
+    2. Das Kind endet durch ein Signal, das der Aufseher nicht selbst
+       geschickt hat (Exit-Code < 0, meist `SIGKILL` des OOM-Killers):
+       `error_kind = child_crashed`. Ein Signal, das der Aufseher selbst
+       schickte (Abbruch, Laufzeitdeckel, Herunterfahren), zählt als das,
+       was ihn ausgelöst hat.
+  - Der OOM-Killer ist von einem anderen `SIGKILL` nicht zu unterscheiden
+    (`adr/0013` §5.6, Anmerkung); die Log-Zeile trägt deshalb `peak_mb` und
+    Signalnummer, damit ein Mensch die Lesart prüfen kann.
+  - Tests: ein Kind, das unter `RLIMIT_AS` mehr anfordert → `out_of_memory`;
+    ein Kind, das sich selbst `SIGKILL` schickt → `child_crashed` mit dem
+    letzten `peak_mb` im Log; ein echter Lauf über `jobs/child.py` meldet
+    `peak_mb` > 0 und unter 500.
 - **Logs:** `run_id`, Versuch, Status, `error_kind`, Sekunden, Spitze des
   Kindes in MB (`VmHWM`, vom Kind gemeldet; Log-Zeile vom 06.10.2026); nie
   Rezept, Hash, AOI, `href` oder `jobID`. Beim Start eine Zeile „worker
@@ -219,8 +253,11 @@ nicht (K3).
 ### 3.6 Ergebnis und Cache (`adr/0015` §8, Q11)
 
 - Upload nach dem Ende des Kindes, im Aufseher: `new_result_id()` je Versuch,
-  `upload_result(store, result_id, "result.tif", …)`. Was sonst unter das
-  Präfix kommt, ist F4.
+  `upload_result` für `result.tif` und `mask.tif` (F4 Option 3, wie M3-18,
+  M4-07a F9). `mask.tif` kommt als Name in `objectstore.RESULT_NAMES`
+  (`image/tiff; application=geotiff`). `recipe.json` liegt **nicht** im
+  Speicher: `api` erzeugt sie in M4-08b je Job aus dessen eigenem Rezept, damit
+  kein Auftrag die `recipe_id` eines anderen sieht.
 - Ein Cache-Eintrag entsteht, indem ein `cacheable` Lauf `successful` wird;
   ein Treffer gilt nur mit mindestens 24 h Restlaufzeit (§3.3, Schritt 2).
   Lauf ohne Fassung: Ergebnis wird gespeichert, 7 Tage, nie Treffer
@@ -290,6 +327,8 @@ Sitzung (`adr/0002` §2), ohne Netz:
 | 11 Startmethode | Kind meldet `get_start_method() == "spawn"`; `psycopg`, `psycopg_pool`, `asyncpg`, `earthx.jobs.worker`, `earthx.objectstore` nicht in `sys.modules` (`boto3` vorher ausgeblendet wie in M4-07a §9.6); Gegenprobe mit `fork` sieht `psycopg` |
 | 13 Wiederholung | je Zeile der Tabelle §5.6 eine Prüfung; GDAL-Texte gegen einen lokalen `http.server` mit `503`, `404` und ohne Antwort (Muster M10); unbekannter Fehler scheitert ohne Wiederholung; Backoff in den Grenzen ±20 % |
 | `adr/0015` §12 Punkt 9 | `submit` (Lauf, Treffer) und Abschluss ändern die Lebensdauer eines Rezepts; `job_status` über alle Zustände schreibt nichts (`xmin` der Zeilen unverändert) |
+| Auflage F2 | zwei Aufseher mit je 4 Slots gegen dieselbe Datenbank, Deckel 4 nie überschritten und erreicht; Herunterfahren beendet die Kinder und gibt die Leases frei |
+| Auflage Speicher | `MemoryError` im Kind → `out_of_memory`; Signal von außen → `child_crashed`, beide ohne Wiederholung, `peak_mb` im Log |
 | zusätzlich | Fortschritt: `NOTIFY` bei Commit, keins bei Rollback, Drosselung; Logs ohne Hash, AOI, `href`, `jobID`; `/health` 503 ohne Datenbank; Ende-zu-Ende über `child.py` mit Upload in moto |
 
 Punkt 6, 9 und 12 gehören zu M4-08b (Routen und SSE).
@@ -417,6 +456,28 @@ Richtwert von 400 (F7). Geplante Commits, je eine Sache:
   `lease_lost` (Wiederholung, wenn Versuche übrig sind).
 - **K6** Der Arbeitsordner-Stamm des Containers wird beim Start geleert
   (Reste nach einem Absturz).
+- **K7** (aus der Auflage zum Speicher) Neuer `error_kind` `out_of_memory`
+  für ein `MemoryError` im Kind; `child_crashed` bleibt für Signale. Beide
+  ohne Wiederholung.
+
+---
+
+**Antworten (Otto, 07.10.2026):** F1 (1), F2 (1), F3 (1), **F4 (3)**, F5 (1),
+F6 (1), F7 (1); K1–K6 angenommen. Auflagen:
+
+- **F4:** Neben dem Ergebnis liegen `result.tif` und `mask.tif` (wie M3-18,
+  Auflage F9 aus M4-07a). `recipe.json` liegt nicht im Speicher; `api` erzeugt
+  sie in M4-08b je Job aus dessen eigenem Rezept, damit kein Auftrag die
+  `recipe_id` eines anderen sieht. Vermerk bei M4-08b in
+  `m4-processing-kern.md`.
+- **F2:** Der Deckel hält unabhängig von der Zahl der Aufseher (Test mit zwei
+  Aufsehern gegen dieselbe Datenbank). Beim Herunterfahren werden laufende
+  Kinder beendet und ihre Leases freigegeben (Test).
+- **Speicher:** Erkennung eines Speicherabbruchs des Kindes und
+  `error_kind` ohne Wiederholung stehen in §3.4; Messungen mit `VmHWM`
+  (Log 06.10. und 07.10.2026, M4-07a).
+- **Offen im Log** (wie vorgeschlagen, §5): Laufzeitdeckel an echten Läufen
+  kalibrieren; Verbindungen je Lauf zählen.
 
 ---
 
