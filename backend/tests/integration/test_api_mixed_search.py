@@ -32,7 +32,7 @@ from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.pgstac import load_collection, upsert_items, use_pgstac_search_path
 from earthx.catalog.registry import CoverageProvider, DatasetRegistry, ItemHolding
 from earthx.gateway import Gateway, Policy
-from earthx.logging import JsonFormatter
+from tests.conftest import format_without_timestamp
 
 pytestmark = pytest.mark.anyio
 
@@ -725,10 +725,9 @@ class TestMixedPageTokenValidation:
 class TestNoCoordinatesInAFailingMixedSearch:
     def _assert_marker_absent(self, caplog: pytest.LogCaptureFixture, marker: str) -> None:
         assert caplog.records, "the test would prove nothing if nothing was logged"
-        formatter = JsonFormatter()
         for record in caplog.records:
             assert marker not in record.getMessage()
-            assert marker not in formatter.format(record)
+            assert marker not in format_without_timestamp(record)
 
     async def test_a_failing_source_in_a_mixed_search_logs_no_coordinate(
         self, native_a_loaded: None, earth_search_collection_loaded: None, caplog: pytest.LogCaptureFixture

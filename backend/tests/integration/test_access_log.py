@@ -25,6 +25,7 @@ from earthx.api.main import app
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
+from tests.conftest import log_line_without_timestamp
 from tests.earthx.adapters.conftest import load as load_earth_search_fixture
 
 pytestmark = pytest.mark.anyio
@@ -68,7 +69,8 @@ async def _client(handler: Callable[[httpx.Request], httpx.Response]) -> AsyncIt
 def _assert_clean_access_log(lines: list[str], *, method: str) -> None:
     """No coordinate, no query string at all, and the fields K-01/K-02 ask for."""
     assert lines, "expected RequestIdMiddleware to write at least one access-log line"
-    for line in lines:
+    for raw in lines:
+        line = log_line_without_timestamp(raw)
         assert _EXACT_LON not in line
         assert _EXACT_LAT not in line
         assert "?" not in line  # the whole query string is gone, not just bbox/intersects

@@ -8,6 +8,7 @@ tries anyway must fail loudly instead of hanging until a timeout.
 
 from __future__ import annotations
 
+import json
 import logging
 import socket
 from collections.abc import Iterator
@@ -17,6 +18,22 @@ import pytest
 from earthx.logging import JsonFormatter
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+
+
+def log_line_without_timestamp(line: str) -> str:
+    """A JSON log line minus its `timestamp`.
+
+    The timestamp carries microseconds, so a digit-string marker (a coordinate such as
+    "9.0") can match inside it by chance. What a log may leak is in the message and the
+    fields, never in the time.
+    """
+    payload = json.loads(line)
+    del payload["timestamp"]
+    return json.dumps(payload)
+
+
+def format_without_timestamp(record: logging.LogRecord) -> str:
+    return log_line_without_timestamp(JsonFormatter().format(record))
 
 
 class NetworkAccessError(RuntimeError):

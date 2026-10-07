@@ -29,9 +29,9 @@ from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
 from earthx.jobs.submit import dismiss, job_status, submit
 from earthx.jobs.worker import Supervisor
-from earthx.logging import JsonFormatter
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, upload_result
+from tests.conftest import format_without_timestamp
 from tests.earthx.jobs.support import make_recipe, most_at_once, run_row, wait_until
 
 BACKEND = Path(__file__).resolve().parents[3]
@@ -620,7 +620,7 @@ class TestLogs:
         _wait_for(db, late, "failed")
         wait_until(lambda: sum(r.getMessage() == "run ended" for r in caplog.records) == 4)
 
-        lines = "\n".join(JsonFormatter().format(r) for r in caplog.records if r.name.startswith("earthx"))
+        lines = "\n".join(format_without_timestamp(r) for r in caplog.records if r.name.startswith("earthx"))
         outcomes = sorted(r.outcome for r in caplog.records if r.getMessage() == "run ended")  # type: ignore[attr-defined]
         assert outcomes == sorted(["source_4xx", "successful", "child_crashed", "upload_failed"])
         status = job_status(db, jobs["ITEM_OK"])
@@ -650,7 +650,7 @@ class TestLogs:
             supervisor._database_error(
                 "slot", psycopg.errors.UniqueViolation("Key (cache_key)=(c1:secret) already exists.")
             )
-        assert "secret" not in "".join(JsonFormatter().format(r) for r in caplog.records)
+        assert "secret" not in "".join(format_without_timestamp(r) for r in caplog.records)
         assert caplog.records[0].error == "UniqueViolation"  # type: ignore[attr-defined]
 
 
