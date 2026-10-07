@@ -13,6 +13,9 @@
   - **Nachtrag vom 2026-10-06:** §15c präzisiert die Zusage zu F9 und §6.3
     nach dem Befund aus `adr/0016` §3.3 und engt R5 ein. Der Originaltext
     bleibt stehen.
+  - **Nachtrag vom 2026-10-07 (M4-10b, Otto):** §7.2 und §7.3 Punkt 2 halten
+    die feste mmap-Schwelle in `worker_environment()` fest. Der Originaltext
+    bleibt stehen.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -1062,6 +1065,25 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
     8192²-Szene füllt den Cache voraussichtlich ganz und läge dann über der
     Abnahmegrenze von 300 MB [A]. Quelle: `plans/m4-07a-processing-kern.md`
     §6, §8.
+  - **Nachtrag vom 2026-10-07 (M4-10b, Otto F1 Option 1):**
+    `processing.worker_environment()` setzt zusätzlich die mmap-Schwelle von
+    glibc über `mallopt` fest auf **128 KiB**, den Startwert von glibc.
+    - Grund [M]: Ohne feste Schwelle hebt glibc sie nach jedem großen
+      freigegebenen Puffer an (bis 32 MB). Die Blockpuffer landen dann im Heap,
+      kleine Allokationen von GDAL halten sie dort fest, und die Spitze hängt
+      von der Reihenfolge der Freigaben ab. `reproject` bilinear 4096² streute
+      so zwischen 479 und 508 MB und riss die Grenze von 500 MB; mit fester
+      Schwelle sind es 425 MB in der Sitzung und 433 MB in der CI, über drei
+      Läufe auf 0,4 MB gleich.
+    - Die Einstellung ändert keinen berechneten Wert, nur wo die Puffer liegen.
+    - Sie gilt für den ganzen Prozess und damit für jedes Kind in `jobs` und
+      für den lokalen Runner, weil beide `worker_environment()` betreten
+      (§7.3 Punkt 2).
+    - Ohne glibc (etwa musl) bleibt die Schwelle beim Standard der
+      C-Bibliothek; `worker_environment()` loggt dann eine Warnung, weil die
+      gemessene Spitze nicht mehr gilt. Das Image (`python:3.12-slim`, Debian)
+      hat glibc.
+    - Quelle: `plans/m4-processing-kern.md` M4-10b; `processing/core.py`.
 - **Fortschritt und Abbruch:** ein Rückruf je Block. Die Hülle kann darin
   abbrechen.
 
@@ -1082,6 +1104,11 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
      im Hauptthread `processing.worker_environment()` auf und halten es offen.
      Das ist ein Kontext um `rasterio.Env(**readers.process_gdal_options())`.
      Es gilt dann prozessweit, auch für spätere Threads (§3.6).
+   - **Nachtrag vom 2026-10-07 (M4-10b):** `worker_environment()` setzt
+     außerdem die feste mmap-Schwelle aus §7.2. Der Runner muss deshalb
+     `worker_environment()` selbst aufrufen; ein eigenes
+     `rasterio.Env(**process_gdal_options())` reicht nicht, sonst rechnet er
+     mit einem anderen Speicherprofil als die Cloud (M4-16).
    - Das geht ohne die Adressen eines Jobs: `gateway.gdal.gdal_options` hängt
      nur von den Zeitlimits der `Policy` ab, nicht von der Allowlist
      (`gateway/gdal.py` Z. 31–54) [P]. `readers.process_gdal_options()`

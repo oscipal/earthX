@@ -776,6 +776,11 @@ drei Läufe, 8192² je ein Lauf):
 - `test_memory_reproject.py` rechnet 2048² und 4096² mit `bilinear`: 4096² unter
   500 MB, Wachstum dazwischen höchstens `GROWTH_LIMIT_MB` = 120 MB.
 
+**F1 (Otto, 07.10.2026): Option 1.** Die feste mmap-Schwelle bleibt in
+`worker_environment()` und gilt für das Kind in `jobs` und den lokalen Runner;
+der Runner ruft `worker_environment()` selbst auf (M4-16). Festgehalten in
+`adr/0014` §7.2 und §7.3 Punkt 2.
+
 **Abstand zur Grenze [M]:** In der CI (Lauf 433) liegt bilinear 4096² bei
 433 MB, 67 MB unter der Grenze; die fünf Läufe davor lagen bei 480–508 MB.
 Gefordert waren stabil mindestens 30 MB.
@@ -848,6 +853,9 @@ vierten Eintrag ohne Zuordnung (Gegenprobe im PR).
 - **M4-16 Lokaler Runner** offline nach `adr/0016`, Vergleich T2 ↔ T2L
   bitgleich in der CI (`adr/0014` §6.3, §6.4); Änderung an `.github/` dann
   ausdrücklich erlaubt.
+  Der Einstieg des Runners ruft im Hauptthread
+  `processing.worker_environment()` auf, nicht nur `rasterio.Env`: Es setzt
+  auch die feste mmap-Schwelle aus M4-10b (`adr/0014` §7.2, §7.3 Punkt 2).
 - **M4-17 Mosaik im Kachel-Pfad** (P11): zustandslos (`adr/0001`), keine
   exakte AOI in der Kachel-URL; Optionen aus `adr/0006` §3 und
   `architekturplan.md` 6.3 (Such-ID mit kurzem Cache in Postgres, E4);
