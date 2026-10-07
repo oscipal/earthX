@@ -491,3 +491,83 @@ docker compose logs worker         # erwartet: "worker started with 2 slots", ke
 
 `.env` bleibt, wie sie ist. Die Migration 006 wendet `catalog-load` beim Start
 an.
+
+
+---
+
+## 10. Umsetzung (07.10.2026)
+
+Umgesetzt wie freigegeben, in thematischen Commits in PR #124. `main` nach #125
+(M4-10) per Merge geholt. Keine neue Abhängigkeit, keine Lock-Datei geändert;
+`.github/`, `.claude/` und `CLAUDE.md` unberührt.
+
+**Abweichungen und Befunde beim Bauen:**
+
+1. **Mehr Dateien als geplant.** Die SQL-Schicht liegt in `jobs/queue.py`
+   (Abholen, Lease, Abschluss, Wiederholung), nicht in `worker.py`: Der
+   Aufseher bleibt Prozess- und Threadlogik, und die SQL-Anweisungen sind
+   ohne Prozesse testbar. Dazu `jobs/config.py` (`WORKER_*`), `jobs/entry.py`
+   und `jobs/cleanup.py`.
+2. **`ChildTarget` (`jobs/entry.py`).** Ein Kind findet sein Ziel über
+   `pickle`, das braucht das Funktionsobjekt, und `earthx.jobs.child`
+   importiert `processing` (rasterio, GDAL). Der Aufseher soll das nicht
+   laden (K3). `ChildTarget` ist ein kleines aufrufbares Objekt, das als zwei
+   Namen gepickelt wird und die Funktion erst im Kind importiert. Ein Test
+   prüft, dass `import earthx.jobs.worker` weder `processing`, `rasterio`,
+   `numpy`, `readers`, `gateway`, `submit` noch `child` lädt.
+3. **`failure_kind` in zwei Teilen (F1).** `readers.source_failure_kind` kennt
+   die `gateway`-Klassen und die zwei GDAL-Texte; `processing.failure_kind`
+   ergänzt die eigenen Klassen und `MemoryError`. Der Test gegen einen lokalen
+   Server (`503`, `500`, `404`, `429`, keine Antwort) liest den echten
+   GDAL-Text der Sitzung; er bricht bei einem GDAL-Wechsel, der ihn ändert.
+4. **`started_at` und `lease_until` mit `clock_timestamp()`, nicht `now()`.**
+   `now()` ist der Beginn der Transaktion, also vor dem Warten auf die Sperre.
+   Mit `clock_timestamp()` sind die Zeiten der Zeilen selbst der Beleg für den
+   Deckel: Der Test rechnet aus ihnen, wie viele Läufe höchstens zugleich
+   liefen, statt Stichproben zu ziehen.
+5. **Gegenprobe zum Deckel ist deterministisch (Abnahme 1).** Eine Verbindung
+   hält die Sperre und die Abholung offen, die zweite startet und wartet auf
+   die Sperre, dann schreibt die erste fest. Mit Sperre und Zählen in einer
+   Anweisung läuft die zweite mit veraltetem Stand und überschreitet den
+   Deckel (2 Läufe bei Deckel 1); mit der Fassung aus `queue.py` nicht. Dazu
+   eine Verbindung, deren Vorgabe `REPEATABLE READ` ist: Auch sie hält den
+   Deckel, weil `claim` die Stufe ausdrücklich setzt. Entfernt man diese Zeile,
+   bricht genau dieser Test (geprüft).
+6. **`submit` hängt eine Bestellung an einen Lauf, der gerade abgebrochen
+   wird, und hebt den Abbruch auf; `finish_cancelled` reiht den Lauf wieder
+   ein, wenn inzwischen ein lebender Job daran hängt.** Das ist im Plan nicht
+   beschrieben und schließt das Fenster zwischen „letzter Job verworfen“ und
+   „Kind bekommt `cancel`“, in dem ein neuer gleicher Auftrag sonst ein
+   Ergebnis bekäme, das nie entsteht.
+7. **Das Herunterfahren gibt einen Lauf zurück wie `lease_lost`, aber ohne
+   Wartezeit (K5).** Der Versuch zählt trotzdem. Eine Abholung im Moment des
+   Herunterfahrens wird zurückgegeben, bevor ein Kind startet.
+8. **`WORKER_*` lehnt `NaN` und `inf` ab.** Der Test dafür fand, dass
+   `nan <= 0` falsch ist und die Prüfung durchließ.
+9. **`/health` antwortet 200, wenn die App ohne Lebenszyklus läuft** (der
+   Zugriffslog-Test in `test_logging.py` startet sie so) und 503, sobald ein
+   Aufseher da ist und die Datenbank 30 s nicht erreichte. Nach dem Ende des
+   Lebenszyklus steht `app.state.supervisor` wieder auf `None`, sonst sähe
+   jeder spätere Test der Sitzung ein 503.
+10. **Unter echtem `uvicorn`** (Konsolenskript wie in compose, ohne
+    `PYTHONPATH`) lädt das Kind weder `psycopg`, `psycopg_pool`, `asyncpg`,
+    `botocore`, `boto3`, `earthx.objectstore` noch `earthx.jobs.worker`;
+    `earthx` findet es über den `sys.path`, den `spawn` vom Elternprozess
+    übernimmt. Nach `SIGTERM` beendet uvicorn den Lebenszyklus sauber und
+    meldet danach den Status `-15` (es löst das Signal erneut aus).
+11. **Test-Datenbank (F6).** Je Sitzung `earthx_jobs_<zufall>`, mit den
+    Migrationen, am Ende `DROP DATABASE … WITH (FORCE)`; `PGDATABASE` zeigt
+    darauf, so findet sie auch ein gestartetes Kind.
+
+**Speicher des Kindes [M]** (`VmHWM` des ganzen Kindprozesses, ohne `boto3` wie
+im Image, synthetische Szene, `steps: []`, Export als COG):
+
+| Szene | Spitze | Dauer samt Start |
+|---|---|---|
+| 512² | 187 MB | 1,5 s |
+| 2048² | 248 MB | 1,9 s |
+
+Beides weit unter den 500 MB aus M4-07a F11; der Test für 512² verlangt
+100 bis 500 MB. Die Spitze für 8192² misst `test_memory_8192.py` (M4-07a §9.5).
+
+**Prüfungen im PR:** siehe PR-Text (pytest, ruff, `lint-imports`, compose-topology).
