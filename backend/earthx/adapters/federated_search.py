@@ -8,10 +8,9 @@ page marker.
 
 What lives here, and why it does not vary by source:
 
-* **Rule I** groundwork — :class:`UnknownCollection` and :class:`UnsupportedSource`
-  are the vocabulary every adapter's ``resolve_dataset`` raises; the lookup itself
-  stays with the adapter, because it is the one place that knows its own
-  :class:`~earthx.catalog.registry.AdapterKind`.
+* **Rule I** is not here: ``adapters.dataset_config`` looks the entry up, once,
+  and every adapter takes the entry itself (adr/0011 F3). What stays is
+  :func:`require_adapter`, the check that an adapter was handed an entry it serves.
 * **Rule III** — the page marker we hand out is ours, one shape (:data:`TOKEN_VERSION`)
   regardless of which source it points into. Splitting the token format per source
   would mean a client's marker only works against the source it was minted for,
@@ -43,7 +42,8 @@ from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.catalog.registry import DatasetConfig
+from earthx.adapters.errors import InvalidQuery, UnsupportedSource, UpstreamShapeError
+from earthx.catalog.registry import AdapterKind, DatasetConfig
 
 LOGGER = logging.getLogger("earthx.adapters.federated_search")
 
@@ -116,31 +116,6 @@ _GEOMETRY_TYPES = frozenset(
     {"Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "GeometryCollection"}
 )
 _POLYGONAL_TYPES = frozenset({"Polygon", "MultiPolygon"})
-
-
-class InvalidQuery(ValueError):
-    """The request breaks one of our own rules, before anything is sent upstream."""
-
-
-class UnknownCollection(LookupError):
-    """No such collection in our catalogue (adr/0005 rule I) — the caller's 404."""
-
-
-class UnsupportedSource(LookupError):
-    """The collection exists, but another adapter serves it. A dispatch mistake."""
-
-
-class UnsupportedFilter(LookupError):
-    """The collection's own source cannot honour `intersects` or `ids` (M3-08 F4a).
-
-    A dispatch fact, not a caller mistake — the parameter itself is valid, this
-    particular source just cannot filter by it (yet). Kept apart from
-    :class:`InvalidQuery` so the two map to different, honest `400` texts.
-    """
-
-
-class UpstreamShapeError(RuntimeError):
-    """The source answered something that is not a STAC item collection."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -468,6 +443,17 @@ def matched_count(payload: dict[str, Any]) -> int | None:
         context = payload.get("context")
         value = context.get("matched") if isinstance(context, dict) else None
     return value if isinstance(value, int) else None
+
+
+def require_adapter(config: DatasetConfig, kind: AdapterKind) -> None:
+    """Refuse an entry another adapter serves, before any request is built.
+
+    The dispatch never hands one over (``adapters.spec``); this guards a direct call
+    with the wrong entry, which would otherwise ask a source about a collection it
+    does not hold.
+    """
+    if config.source.adapter is not kind:
+        raise UnsupportedSource(f"{config.dataset_id} is served by {config.source.adapter}, not {kind}")
 
 
 def endpoint_of(config: DatasetConfig) -> str:

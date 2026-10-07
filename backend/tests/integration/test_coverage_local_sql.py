@@ -26,6 +26,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from earthx.adapters import ADAPTER_SPECS
 from earthx.api.coverage_route import build_router
 from earthx.api.dependencies import cache_pool
 from earthx.catalog.datasets import SENTINEL_2_L2A
@@ -50,7 +51,6 @@ AREA_DATASET = replace(
         SENTINEL_2_L2A.source,
         item_holding=ItemHolding.MATERIALIZED,
         source_collection_id=DATASET_ID,
-        harvest_run=None,
         asset_hosts=("assets.example.invalid",),
     ),
 )
@@ -178,7 +178,7 @@ def app_client(area_dataset_loaded: None) -> Any:
     `test_tiler_materialized.py::app_client` already uses for the tiler."""
     registry = DatasetRegistry((AREA_DATASET, NO_TIME_AXIS))
     app = FastAPI(lifespan=_lifespan)
-    app.include_router(build_router(registry=registry))
+    app.include_router(build_router(registry, ADAPTER_SPECS))
     # No coverage answer here ever calls a gateway (the whole point of the area
     # way), but the route still reads `request.app.state.earthx_gateway`
     # unconditionally before deciding which path to take.

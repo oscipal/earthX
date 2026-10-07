@@ -5,9 +5,9 @@ bucket has no catalogue and no search API (`adr/0009` §3.1, §5). What it has i
 `tileList.txt` (one tile name per line) and a fixed naming scheme that gives a
 tile's location without opening it. This module turns that into STAC items,
 once, for the one-off command in `discovery` (M3-11b plan §3.1) — it is a
-*materializer*, not a search adapter, and stays out of `adapters._ADAPTERS`
-(the search/get-item dispatch table) for exactly that reason; `adapters.
-materialize_items` is the only way in.
+*materializer*, not a search adapter: its `AdapterSpec` (`adapters/spec.py`)
+offers `materialize` and nothing else, and `adapters.materialize_items` is the
+only way in.
 
 Three things this module refuses to trust, all measured in the M3-11b plan
 step (`docs/plans/m3-11b-dem-adapter.md` §2):
@@ -40,8 +40,7 @@ from xml.etree.ElementTree import ParseError
 from defusedxml import ElementTree as DefusedET
 from defusedxml.common import DefusedXmlException
 
-from earthx.adapters.federated_search import UnsupportedSource, UpstreamShapeError
-from earthx.catalog.datasets import DEM_ACQUISITION_END, DEM_ACQUISITION_START
+from earthx.adapters.errors import NotMaterialized, UnsupportedSource, UpstreamShapeError
 from earthx.catalog.registry import DatasetConfig, ItemHolding
 from earthx.gateway import Gateway
 
@@ -76,10 +75,6 @@ _TILE_NAME_RE = re.compile(r"^Copernicus_DSM_COG_10_(?P<ns>[NS])(?P<lat>\d{2})_0
 # Matching just the coordinate lets the three sources (list, bucket listing,
 # blacklist) agree on what tile they mean without agreeing on how to spell it.
 _COORD_RE = re.compile(r"[NS]\d{2}_00_[EW]\d{3}_00")
-
-
-class NotMaterialized(UnsupportedSource):
-    """This dataset's items are not materialized here (M3-11a K-05)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,8 +216,11 @@ def _item(name: str, bbox: tuple[float, float, float, float], *, config: Dataset
             # (`adr/0009` §10.1) — a period, the same for every tile, belonging
             # to the *product*, not a measurement of this one tile.
             "datetime": None,
-            "start_datetime": _stac_instant(DEM_ACQUISITION_START),
-            "end_datetime": _stac_instant(DEM_ACQUISITION_END),
+            # From the entry's own temporal extent (adr/0011 F3), not a second
+            # copy of the same two instants; `materialize_items` has checked
+            # that both ends are set.
+            "start_datetime": _stac_instant(config.temporal_extent.start),
+            "end_datetime": _stac_instant(config.temporal_extent.end),
             # Nominal resolution (`adr/0009` §3.1); the download size estimate
             # (M3-18) falls back to a worst case without it.
             "gsd": 30.0,
@@ -255,6 +253,11 @@ async def materialize_items(
         raise NotMaterialized(
             f"{config.dataset_id} is not materialized; adapters.materialize_items does not build its items"
         )
+    if config.temporal_extent.end is None:
+        # Every DEM item carries the product's whole acquisition period; an open
+        # end would leave each one without `end_datetime`, which STAC requires
+        # beside `start_datetime` when `datetime` is null.
+        raise UnsupportedSource(f"{config.dataset_id}: temporal_extent has no end; a DEM item needs one")
 
     tile_list_url = f"{config.source.endpoint}{TILE_LIST_PATH}"
     headers = {"if-none-match": known_version} if known_version else None

@@ -89,7 +89,6 @@ def valid_config() -> DatasetConfig:
             endpoint="https://example.invalid/v1",
             source_collection_id="test-collection",
             asset_hosts=("assets.example.invalid",),
-            harvest_run=None,
             item_holding=ItemHolding.FEDERATED,
         ),
         coverage=CoverageInfo(

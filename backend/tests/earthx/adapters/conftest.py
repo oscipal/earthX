@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import DatasetConfig
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -48,6 +49,12 @@ def _public(host: str, port: int) -> tuple[str, ...]:
 @pytest.fixture
 def dataset_id() -> str:
     return SENTINEL_2_L2A.dataset_id
+
+
+@pytest.fixture
+def config() -> DatasetConfig:
+    """The registry entry the adapters take since M4-01b (adr/0011 F3)."""
+    return SENTINEL_2_L2A
 
 
 def gateway_for(handler: Callable[[httpx.Request], httpx.Response], *, policy: Policy = POLICY) -> Gateway:

@@ -223,17 +223,11 @@ class TestItemHolding:
         with pytest.raises(ConfigError, match="local-sql"):
             vary(coverage=coverage)
 
-    def test_federated_items_carry_no_harvest_run(self, valid_config, vary) -> None:
-        source = replace(valid_config.source, harvest_run="2026-09-26T00:00:00Z")
-        with pytest.raises(ConfigError, match="harvest_run"):
-            vary(source=source)
-
-    def test_a_materialized_entry_may_carry_a_harvest_run(self, valid_config, vary) -> None:
-        source = replace(
-            valid_config.source, item_holding=ItemHolding.MATERIALIZED, harvest_run="2026-09-26T00:00:00Z"
-        )
-        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
-        assert vary(source=source, coverage=coverage).source.harvest_run == "2026-09-26T00:00:00Z"
+    def test_an_entry_names_no_harvest_run(self, valid_config) -> None:
+        """adr/0011 F5: materialize runs are logged in `earthx_materialize_runs`;
+        an entry in code cannot record one, so the field is gone, not left empty."""
+        with pytest.raises(TypeError, match="harvest_run"):
+            replace(valid_config.source, harvest_run=None)
 
 
 class TestBrowseCors:
@@ -514,7 +508,6 @@ class TestMalformedInput:
                 adapter=valid_config.source.adapter,
                 endpoint=valid_config.source.endpoint,
                 source_collection_id=valid_config.source.source_collection_id,
-                harvest_run=None,
                 item_holding=valid_config.source.item_holding,
             )
 
@@ -526,7 +519,6 @@ class TestMalformedInput:
                 endpoint=valid_config.source.endpoint,
                 source_collection_id=valid_config.source.source_collection_id,
                 asset_hosts=valid_config.source.asset_hosts,
-                harvest_run=None,
             )
 
 
@@ -570,10 +562,6 @@ class TestEveryEntry:
             assert entry.coverage.provider is CoverageProvider.LOCAL_SQL
         else:
             assert entry.coverage.provider is not CoverageProvider.LOCAL_SQL
-
-    def test_a_federated_entry_carries_no_harvest_run(self, entry: DatasetConfig) -> None:
-        if entry.source.item_holding is ItemHolding.FEDERATED:
-            assert entry.source.harvest_run is None
 
     def test_a_catalog_tier_entry_names_no_viewer(self, entry: DatasetConfig) -> None:
         if entry.license.tier is LicenseTier.CATALOG:

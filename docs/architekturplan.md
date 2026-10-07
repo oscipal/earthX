@@ -345,7 +345,7 @@ Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt mehrere **getrennte
 
 `catalog` ruft keinen Adapter auf (3.1). Im Code setzt `api` die Fähigkeiten zusammen; die Materialisierung ruft `discovery` auf.
 
-**Form.** Je Quelle ein deklarierter Eintrag (`AdapterSpec`) mit einer Funktion je Fähigkeit oder `None`, dazu die Filter-Fähigkeiten der Quelle als Daten. Signaturen nehmen den Registry-Eintrag (`DatasetConfig`) statt einer Kennung mit Vorgabe-Registry. Der Umbau ist M4-01b (`adr/0011` §5).
+**Form.** Je Quelle ein deklarierter Eintrag (`AdapterSpec`) mit einer Funktion je Fähigkeit oder `None`, dazu die Filter-Fähigkeiten der Quelle als Daten. Signaturen nehmen den Registry-Eintrag (`DatasetConfig`) statt einer Kennung mit Vorgabe-Registry; die Tabelle reicht der Aufrufer herein, und eine App startet nicht, wenn ihre Registry etwas verlangt, das die Tabelle nicht hat. Umgesetzt mit M4-01b in `adapters/spec.py` (`adr/0011` §5).
 
 **Item-Vertrag.** Jedes Item, das ein Adapter liefert, ist STAC 1.0 und trägt `https`-Adressen; Übersetzungen wie `s3://` → `https` und das Weglassen nicht anzubietender Assets geschehen im Adapter, nicht im Reader (`adr/0011` §5.3).
 

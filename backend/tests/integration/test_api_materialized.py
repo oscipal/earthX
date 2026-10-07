@@ -41,7 +41,6 @@ MATERIALIZED = replace(
         SENTINEL_2_L2A.source,
         item_holding=ItemHolding.MATERIALIZED,
         source_collection_id="earthx-test-materialized-api",
-        harvest_run=None,
     ),
     coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
 )

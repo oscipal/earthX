@@ -89,6 +89,8 @@ def test_source_carries_what_adr_0005_branches_on(collection: dict) -> None:
     # M3-11a K-05: what `FederatingCoreCrudClient._holding_of` reads back off this
     # very document to decide federated vs. materialized.
     assert source["item_holding"] == "federated"
+    # adr/0011 F5: runs live in `earthx_materialize_runs`, not in the document.
+    assert "harvest_run" not in source
 
 
 def test_maturity_is_the_registry_entrys_own_value(collection: dict) -> None:

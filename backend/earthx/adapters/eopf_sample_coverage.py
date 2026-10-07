@@ -50,7 +50,7 @@ from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
 from earthx.adapters.cache import SearchCache
-from earthx.adapters.eopf_stac import resolve_dataset, search_items
+from earthx.adapters.eopf_stac import search_items
 from earthx.adapters.federated_search import SearchParams
 from earthx.catalog.coverage import (
     CoverageCell,
@@ -64,8 +64,7 @@ from earthx.catalog.coverage import (
     geotile_key,
     level_for_viewport,
 )
-from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import CoverageProvider, DatasetConfig, DatasetRegistry
+from earthx.catalog.registry import CoverageProvider, DatasetConfig
 from earthx.gateway import Gateway
 
 # Otto, plan §10 F5: five pages of a hundred, the same 500 the frontend already
@@ -77,18 +76,16 @@ SAMPLE_PAGES = 5
 
 async def sample_coverage(
     query: CoverageQuery,
-    config: DatasetConfig | None = None,
+    config: DatasetConfig,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> CoverageResult:
     """Density, histogram and a declared-sample completeness, from paged search.
 
-    ``config=None`` looks the dataset up here; ``api`` passes the entry it already
-    holds, the same shape ``aggregate_coverage`` accepts (``CoverageSource``).
+    ``config`` is the registry entry ``api`` already holds, the same shape
+    ``aggregate_coverage`` accepts (``CoverageSource``).
     """
-    config = config if config is not None else resolve_dataset(query.dataset_id, registry)
     if config.dataset_id != query.dataset_id:
         raise CoverageProviderMismatch(f"{query.dataset_id} was asked for, {config.dataset_id} was handed in")
     if config.coverage.provider is not CoverageProvider.SAMPLE:
@@ -107,10 +104,9 @@ async def sample_coverage(
     page_token: str | None = None
     for _ in range(SAMPLE_PAGES):
         page = await search_items(
-            query.dataset_id,
+            config,
             SearchParams(bbox=bbox, start=query.start, end=query.end, limit=SAMPLE_PAGE_SIZE, page_token=page_token),
             gateway=gateway,
-            registry=registry,
             cache=cache,
         )
         for item in page.items:
