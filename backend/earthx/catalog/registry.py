@@ -663,6 +663,7 @@ class DatasetConfig:
 
     def __post_init__(self) -> None:
         self._check_keywords()
+        self._check_doi()
         self._check_license_is_identifiable()
         self._check_license_tier()
         self._check_attribution()
@@ -681,6 +682,16 @@ class DatasetConfig:
             raise ConfigError(f"{self.dataset_id}: keywords names no keyword")
         if not all(isinstance(word, str) and word.strip() for word in self.keywords):
             raise ConfigError(f"{self.dataset_id}: every keyword must be a non-blank string")
+
+    def _check_doi(self) -> None:
+        """A DOI that is no DOI stops the start (M4-14, Otto 07.10.2026), not the first citation.
+
+        A blank one is left to onboarding checklist point 3, which names it as a finding.
+        """
+        try:
+            doi_name(self.doi)
+        except ConfigError as error:
+            raise ConfigError(f"{self.dataset_id}: {error}") from None
 
     def _check_license_is_identifiable(self) -> None:
         """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
