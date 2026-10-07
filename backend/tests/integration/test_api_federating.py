@@ -24,7 +24,7 @@ from earthx.api.main import app
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.load import main as load_catalog
 from earthx.gateway import Gateway, Policy
-from earthx.logging import JsonFormatter
+from tests.conftest import format_without_timestamp
 
 pytestmark = pytest.mark.anyio
 
@@ -486,10 +486,9 @@ class TestNoCoordinatesReachAnyLog:
 
     def _assert_marker_absent(self, caplog: pytest.LogCaptureFixture, marker: str) -> None:
         assert caplog.records, "the test would prove nothing if nothing was logged"
-        formatter = JsonFormatter()
         for record in caplog.records:
             assert marker not in record.getMessage()
-            assert marker not in formatter.format(record)  # extras (gateway_path, etc.) too
+            assert marker not in format_without_timestamp(record)  # extras (gateway_path, etc.) too
 
     async def test_a_successful_search_with_intersects_logs_no_coordinate(
         self, require_catalog_loaded: None, caplog: pytest.LogCaptureFixture
