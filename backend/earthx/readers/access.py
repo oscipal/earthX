@@ -53,11 +53,10 @@ def process_gdal_options() -> Mapping[str, str | int]:
     return MappingProxyType(options)
 
 
-def read_access_for(hrefs: Iterable[str]) -> ReadAccess:
-    """A :class:`ReadAccess` whose allowlist holds exactly the hosts of ``hrefs``.
+def hosts_for(hrefs: Iterable[str]) -> frozenset[str]:
+    """The hosts ``hrefs`` name; :class:`~earthx.readers.errors.AssetRejected` for one that names none.
 
-    Raises :class:`~earthx.readers.errors.AssetRejected` for an address without a
-    valid host; the text names the reason, never the address.
+    The text names the reason, never the address. A run needs at least one address.
     """
     hosts: set[str] = set()
     for href in hrefs:
@@ -67,8 +66,17 @@ def read_access_for(hrefs: Iterable[str]) -> ReadAccess:
             raise AssetRejected(f"an input address names no valid host ({error.reason})") from None
     if not hosts:
         raise AssetRejected("a run needs at least one input address")
+    return frozenset(hosts)
+
+
+def read_access_for(hrefs: Iterable[str]) -> ReadAccess:
+    """A :class:`ReadAccess` whose allowlist holds exactly the hosts of ``hrefs``.
+
+    Raises :class:`~earthx.readers.errors.AssetRejected` for an address without a
+    valid host; the text names the reason, never the address.
+    """
     return ReadAccess(
-        policy=Policy(allowed_hosts=frozenset(hosts)),
+        policy=Policy(allowed_hosts=hosts_for(hrefs)),
         gdal_options=process_gdal_options(),
         resolve=CachingResolver(resolve=resolve_host),
     )

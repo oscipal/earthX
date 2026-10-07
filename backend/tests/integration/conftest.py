@@ -70,6 +70,10 @@ SHIPPED_TABLES = (
     "public.earthx_materialize_runs",
     "public.earthx_geocode_cache",
     "public.earthx_rate_slots",
+    "public.earthx_job",
+    "public.earthx_run",
+    "public.earthx_job_limits",
+    "public.earthx_recipe",
 )
 
 

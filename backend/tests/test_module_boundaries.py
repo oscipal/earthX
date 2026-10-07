@@ -141,11 +141,14 @@ def test_the_worker_core_reaches_no_database(config: configparser.ConfigParser) 
     """KLAERUNGEN B9: no database, queue, object store or internal API in the core.
 
     Guarded rather than only stated since M1-04b, which is when psycopg became a real
-    dependency. Reading the data sources through `gateway` stays allowed.
+    dependency. Reading the data sources through `gateway` stays allowed. Since M4-08a
+    only `processing` is the core: `jobs` is the shell with the queue and may use
+    psycopg (M4 Q4, adr/0013 §6.1), and the contract names the pool and the async
+    driver as well.
     """
     section = "importlinter:contract:no-database-in-worker-core"
-    assert _modules(config, section, "source_modules") == {"jobs", "processing"}
-    assert "psycopg" in _modules(config, section, "forbidden_modules")
+    assert _modules(config, section, "source_modules") == {"processing"}
+    assert _modules(config, section, "forbidden_modules") == {"psycopg", "psycopg_pool", "asyncpg"}
 
 
 def test_the_worker_core_reaches_no_object_store(config: configparser.ConfigParser) -> None:

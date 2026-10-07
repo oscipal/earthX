@@ -223,13 +223,18 @@ forbidden_modules =
     earthx.datasets
 
 [importlinter:contract:no-database-in-worker-core]
-name = the worker core reaches no database (KLAERUNGEN B9)
+name = the worker core reaches no database (KLAERUNGEN B9, M4 Q4)
 type = forbidden
+; Only `processing` is the core (M4 Q4, adr/0013 §6.1): `jobs` is the shell with
+; the queue and the database and may import psycopg. The contract still counts
+; chains, so `processing -> ... -> psycopg` stays a violation. The two pool and
+; driver packages are listed because they sit beside `psycopg` in the venv.
 source_modules =
-    earthx.jobs
     earthx.processing
 forbidden_modules =
     psycopg
+    psycopg_pool
+    asyncpg
 
 [importlinter:contract:no-object-store-in-worker-core]
 name = the worker core reaches no object store (KLAERUNGEN B9, adr/0015 §4.2)

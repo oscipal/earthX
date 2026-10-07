@@ -45,6 +45,7 @@ import earthx
 from earthx.access.download import RESOLUTION_FACTORS
 from earthx.access.resolve import ReaderKind, ResolvedAsset
 from earthx.processing.errors import RecipeInvalid, UnknownOperator
+from earthx.readers import hosts_for
 
 __all__ = [
     "HASH_METHOD",
@@ -71,6 +72,8 @@ __all__ = [
     "parse_request",
     "recipe_from_data",
     "recipe_hash",
+    "recipe_hosts",
+    "run_key",
 ]
 
 #: The one recipe version this core runs (§4.3). An incompatible change raises it.
@@ -519,11 +522,29 @@ def engine_versions() -> dict[str, str]:
     }
 
 
+def run_key(recipe: Recipe, engine: Mapping[str, str] | None = None) -> str:
+    """The key under which equal orders share one run (adr/0013 §5.1), versions or not.
+
+    The same digest as :func:`cache_key`, but also for a recipe whose inputs carry no
+    version: orders placed at the same time still attach to one active run, they just
+    never become a cache hit for a later one (Q11). Internal like the hash (Q8).
+    """
+    return _digest({"engine": dict(engine if engine is not None else engine_versions()), "recipe": _core(recipe)})
+
+
 def cache_key(recipe: Recipe, engine: Mapping[str, str] | None = None) -> str | None:
     """The internal cache key, or ``None`` when an input carries no version (Q11)."""
     if any(entry.version is None for item in recipe.inputs for entry in item.resolved):
         return None
-    return _digest({"engine": dict(engine if engine is not None else engine_versions()), "recipe": _core(recipe)})
+    return run_key(recipe, engine)
+
+
+def recipe_hosts(recipe: Recipe) -> tuple[str, ...]:
+    """The hosts the recipe reads, sorted: what the queue counts per source (adr/0013 §5.7).
+
+    :class:`~earthx.readers.errors.AssetRejected` when an address names no host.
+    """
+    return tuple(sorted(hosts_for(recipe.hrefs())))
 
 
 def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = None) -> InputVersion | None:

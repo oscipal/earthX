@@ -7,7 +7,7 @@ import pytest
 from earthx.gateway.gdal import gdal_options
 from earthx.gateway.policy import Policy
 from earthx.readers import AssetRejected
-from earthx.readers.access import GDAL_CACHEMAX_BYTES, process_gdal_options, read_access_for
+from earthx.readers.access import GDAL_CACHEMAX_BYTES, hosts_for, process_gdal_options, read_access_for
 
 
 class TestProcessGdalOptions:
@@ -65,3 +65,16 @@ class TestReadAccessFor:
     def test_no_address_at_all_is_refused(self) -> None:
         with pytest.raises(AssetRejected):
             read_access_for([])
+
+
+class TestHostsFor:
+    def test_the_hosts_of_the_addresses_lowercased_and_once(self) -> None:
+        assert hosts_for(["https://Data.Example.org/a.tif", "https://data.example.org/b.tif"]) == frozenset(
+            {"data.example.org"}
+        )
+
+    @pytest.mark.parametrize("hrefs", [[], ["not an address"], ["https://127.0.0.1/a.tif"]])
+    def test_nothing_or_a_bad_address_is_refused(self, hrefs: list[str]) -> None:
+        with pytest.raises(AssetRejected) as caught:
+            hosts_for(hrefs)
+        assert "127.0.0.1" not in str(caught.value)

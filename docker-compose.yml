@@ -266,10 +266,23 @@ services:
     command: ["uvicorn", "earthx.jobs.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
     ports:
       - "8002:8000"
+    # M4-08a (adr/0013 §5.3): on SIGTERM the supervisor ends its children and gives
+    # their runs back, which takes a few seconds; compose's default of 10 s is
+    # too tight for several slots.
+    stop_grace_period: 30s
     # M4-06 (adr/0015 §9.1): the object store, read-write key. The worker does
     # not start unless the bucket carries the `results/` lifecycle rule that
     # objectstore-init sets (adr/0015 §7.3, F8).
     environment:
+      # M4-08a: the queue lives in Postgres (migration 006, applied by
+      # catalog-load); same libpq-style names as api and catalog-load. The slots,
+      # lease, heartbeat and polling interval (WORKER_*) keep their defaults here
+      # (adr/0013 §5.7); the cap and the limit per host are a row in the database.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
       S3_ENDPOINT: http://objectstore:3900
       S3_PUBLIC_ENDPOINT: http://localhost:3900
       S3_REGION: garage
@@ -284,6 +297,8 @@ services:
       objectstore:
         condition: service_healthy
       objectstore-init:
+        condition: service_completed_successfully
+      catalog-load:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

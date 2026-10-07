@@ -9,6 +9,13 @@ Dienst `pgstac-migrate`); was hier liegt, gehört uns.
 Collections in pgstac liegen; die Nummerierung beginnt deshalb bei `002` (die `001`
 war die Buchführungstabelle, bevor sie zum Läufer wanderte, siehe unten).
 
+`006_jobs.sql` — die Warteschlange der Jobs aus M4-08a (`adr/0013` §5.1, §6.3):
+`earthx_recipe`, `earthx_run`, `earthx_job` und die Zeile `earthx_job_limits` mit Deckel
+und Grenze je Host. Die Tabellen gehören dem Modul `jobs`, das sie nur mit SQL
+anfasst; sie liegen hier, weil `jobs` `catalog` nicht importieren darf und die
+Buchführung des Läufers eine einzige sein soll. Jeder Fremdschlüssel ist
+`RESTRICT` und hat einen Index.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
