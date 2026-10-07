@@ -558,6 +558,34 @@ Umgesetzt wie freigegeben, in thematischen Commits in PR #124. `main` nach #125
 11. **Test-Datenbank (F6).** Je Sitzung `earthx_jobs_<zufall>`, mit den
     Migrationen, am Ende `DROP DATABASE … WITH (FORCE)`; `PGDATABASE` zeigt
     darauf, so findet sie auch ein gestartetes Kind.
+12. **Befunde der Prüfung durch den `reviewer`, behoben:**
+    - Ein Lauf endet erst, nachdem die Zeilensperre gehalten wird, und die
+      lebenden Jobs werden in einer eigenen Anweisung danach gezählt
+      (`_lock_attempt`). Vorher zählte `finish_cancelled` mit dem Stand vor
+      dem Warten und verwarf einen Lauf, an den inzwischen ein gleicher Auftrag
+      angehängt war. Zwei Tests stellen den Wettlauf deterministisch nach;
+      ersetzt man die zwei Anweisungen durch eine, bricht der erste.
+    - Ein Lauf, der gerade abgebrochen wird und keinen lebenden Job mehr hat,
+      wird bei einem Fehler, einer verlorenen Lease oder dem Herunterfahren
+      `dismissed` statt wiederholt.
+    - Der Sweeper fasst nur eine Lease an, die beim Zugriff noch abgelaufen ist.
+    - Das Verwerfen eines wartenden Laufs sendet die Fortschrittsmeldung
+      (`queue.notify_progress` ist jetzt öffentlich).
+    - Eine vorhandene `recipe_id` ergibt `RecipeIdTaken` ohne den Wert statt
+      der rohen Datenbankmeldung.
+    - Fehlgeschlagene Verbindungen werden geschlossen; ein Datenbankfehler beim
+      Abschluss löscht den Upload; `_listen` und `_maintain` protokollieren
+      jede andere Ausnahme mit der Klasse, statt mit ihrem Text auf `stderr`
+      zu sterben. Der Logtest deckt jetzt Erfolg, benannten Fehler, Absturz
+      durch Signal und Upload-Fehler ab.
+13. **Bewusst nicht geändert:** (a) Ein Fehler beim Heartbeat beendet das Kind,
+    auch ein gesundes: Ohne Verbindung kann der Aufseher es nicht mehr führen,
+    und die Lease läuft ohnehin ab. (b) `dismissed` setzt `expires_at` nicht
+    neu: Es bleibt Erstellung plus 7 Tage, weil es kein Ergebnis zu behalten
+    gibt. (c) Die Hosts eines Rezepts kommen aus `readers.hosts_for` statt aus
+    `read_access_for(...).policy.allowed_hosts` (§3.3): dasselbe Ergebnis,
+    ohne einen Resolver zu bauen. (d) Der Nebenbefund `zarr_reader.py`
+    (reines `ruff format`) ist wieder herausgenommen.
 
 **Speicher des Kindes [M]** (`VmHWM` des ganzen Kindprozesses, ohne `boto3` wie
 im Image, synthetische Szene, `steps: []`, Export als COG):
