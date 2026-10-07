@@ -470,6 +470,27 @@ class TestTheQueueIsNotThere:
             dead.close()
 
 
+class TestTheProgressHubIsNotThere:
+    async def test_a_hub_that_cannot_reach_the_database_is_a_503_before_the_stream_starts(self, rig: Rig) -> None:
+        dead = ConnectionPool(
+            conninfo="host=127.0.0.1 port=1 dbname=x user=x password=secret-password",
+            min_size=0,
+            max_size=1,
+            timeout=1,
+            open=False,
+        )
+        dead.open(wait=False)
+        job_id = await placed(rig)
+        try:
+            api = replace_api(rig.api, events=JobEvents(dead))
+            async with client_for(api) as client:
+                response = await client.get(f"/processing/jobs/{job_id}/events")
+            assert response.status_code == 503 and response.headers["retry-after"] == "5"
+            assert "secret-password" not in response.text
+        finally:
+            dead.close()
+
+
 class TestStatus:
     async def test_the_states_of_a_job(self, rig: Rig) -> None:
         job_id = await placed(rig)
@@ -697,6 +718,22 @@ class TestResultLinks:
             body = problem(response, 410)
             assert body["type"] == "urn:earthx:gone" and response.headers["cache-control"] == "no-store"
             assert "location" not in response.headers
+
+    @pytest.mark.parametrize("state", ["failed", "accepted", "running"])
+    async def test_a_job_that_did_not_succeed_is_gone_at_the_end_of_its_life_not_failed_again(
+        self, rig: Rig, state: str
+    ) -> None:
+        job_id = await placed(rig)
+        if state == "failed":
+            finish(rig.db, job_id, status="failed", kind="source_5xx", expires="-1 hour")
+        else:
+            rig.db.execute(
+                "UPDATE public.earthx_run SET status = %s, expires_at = clock_timestamp() - interval '1 hour'", (state,)
+            )
+        for tail in ("result.tif", "mask.tif", "recipe.json"):
+            response = await rig.client.get(f"/processing/jobs/{job_id}/results/{tail}")
+            assert problem(response, 410)["type"] == "urn:earthx:gone"
+        assert (await rig.client.get(f"/processing/jobs/{job_id}")).status_code == 404
 
     async def test_a_result_with_more_than_a_minute_left_is_still_linked(self, rig: Rig) -> None:
         job_id = await placed(rig)

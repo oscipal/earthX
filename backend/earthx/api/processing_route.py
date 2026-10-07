@@ -611,10 +611,11 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     status = await _db(api, job_status, jobID)
     if status is None or status.status == "dismissed":
         raise _no_such_job()
-    status = _ready(status)
-    # From the end of the job's life, or 60 s before it, until the rows are gone: 410, not 404 (K8).
+    # From the end of the job's life, or 60 s before it, until the rows are gone: 410, not 404 (K8),
+    # whatever state the job ended in — a failed job past its life does not tell its failure.
     if status.expires_at - datetime.now(UTC) < MIN_REMAINING:
         raise Problem(410, "the result has expired", type_="urn:earthx:gone", title="Gone")
+    status = _ready(status)
     body = await _db(api, job_recipe, jobID)
     filename = _download_name(body, status, _SUFFIXES[name])
     if name == "recipe.json":
@@ -660,6 +661,9 @@ async def _follow(jobID: str, api: Api) -> AsyncIterator[Subscription]:
     await _live_job(api, jobID)
     try:
         sub = await api.events.subscribe(jobID)
+    except (PoolTimeout, psycopg.OperationalError):
+        LOGGER.warning("the queue database is not reachable")
+        raise Problem(503, "the job queue is not reachable; try again", headers={"Retry-After": "5"}) from None
     except TooManyFollowers:
         raise Problem(
             503, "this server follows as many jobs as it can; try again", headers={"Retry-After": "5"}
@@ -684,7 +688,12 @@ async def job_events(
     """The state of the row first, then every change, as ``status`` events; the stream ends with the job."""
     root = _root(request)
     previous: JobStatus | None = None
-    state = await api.events.current(sub)
+    try:
+        state = await api.events.current(sub)
+    except (PoolTimeout, psycopg.OperationalError):
+        # The stream has not begun to say anything yet; ending it makes the browser ask again.
+        LOGGER.warning("the queue database is not reachable")
+        return
     while state is not None:
         if state != previous:
             yield ServerSentEvent(data=_dump(_status_info(root, state)), event="status")
