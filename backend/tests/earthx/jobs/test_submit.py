@@ -26,8 +26,11 @@ from earthx.jobs.submit import (
     run_jobs,
     submit,
 )
-from earthx.processing.recipe import cache_key, run_key
+from earthx.processing.errors import UnknownOperator
+from earthx.processing.recipe import cache_key, recipe_from_data, run_key
 from tests.earthx.jobs.support import HOST, add_run, make_recipe, run_row, status_of
+from tests.earthx.processing.recipes import recipe_data
+from tests.earthx.processing.testops import OPERATORS
 
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
 
@@ -315,6 +318,26 @@ class TestStatus:
             assert job_status(db, job_id) is not None
         assert job_status(db, "A" * 22) is None
         assert snapshot() == before
+
+
+class TestTheRegistryTheLimitIsEstimatedWith:
+    """`api` validates an order with a registry and hands the same one to `submit` (M4-08b)."""
+
+    def test_a_recipe_with_an_operator_of_the_given_registry_is_placed(self, db: psycopg.Connection) -> None:
+        step = {"op": "scale", "op_version": 1, "params": {"factor": 2.0, "label": None}}
+        recipe = recipe_from_data(recipe_data(steps=[step]), OPERATORS)
+        job_id = submit(db, recipe, operators=OPERATORS)
+        assert job_status(db, job_id) is not None
+        assert db.execute("SELECT max_seconds FROM public.earthx_run").fetchone() is not None
+
+    def test_the_platforms_registry_is_the_default_and_does_not_know_a_test_operator(
+        self, db: psycopg.Connection
+    ) -> None:
+        step = {"op": "scale", "op_version": 1, "params": {"factor": 2.0, "label": None}}
+        recipe = recipe_from_data(recipe_data(steps=[step]), OPERATORS)
+        with pytest.raises(UnknownOperator):
+            submit(db, recipe)
+        assert _count(db, "earthx_run") == 0, "nothing was written"
 
 
 class TestReadingForTheJobApi:

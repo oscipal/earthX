@@ -28,7 +28,7 @@ from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import CACHE_MIN_REMAINING, WAKE_CHANNEL, notify_progress
 from earthx.objectstore.results import RESULT_TTL
-from earthx.processing.operators import REGISTRY
+from earthx.processing.operators import REGISTRY, OperatorRegistry
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import Recipe, cache_key, recipe_hosts, run_key
 
@@ -80,25 +80,26 @@ class JobStatus:
     result: dict[str, Any] | None
 
 
-def _runtime_limit(recipe: Recipe) -> int:
-    seconds = estimate(recipe, REGISTRY).seconds * RUNTIME_FACTOR
+def _runtime_limit(recipe: Recipe, operators: OperatorRegistry) -> int:
+    seconds = estimate(recipe, operators).seconds * RUNTIME_FACTOR
     return max(MIN_RUNTIME_SECONDS, math.ceil(seconds))
 
 
-def submit(conn: psycopg.Connection, recipe: Recipe) -> str:
+def submit(conn: psycopg.Connection, recipe: Recipe, *, operators: OperatorRegistry = REGISTRY) -> str:
     """Place the order and return its ``job_id``.
 
     In one transaction: the recipe row, then a job on a finished run of the same cache key
     if one exists with at least 24 hours of life left (Q11, adr/0013 §5.8), else on the
     active run of the same key, else on a new run. A recipe without a ``recipe_id`` gets a
-    new one; every order has its own (adr/0013 §9 point 2).
+    new one; every order has its own (adr/0013 §9 point 2). ``operators`` is the registry the
+    runtime limit is estimated with: the one the recipe was validated with (`api` hands it in).
     """
     recipe_id = recipe.recipe_id or secrets.token_urlsafe(16)
     stored = recipe.model_copy(update={"recipe_id": recipe_id})
     key = run_key(stored)
     cacheable = cache_key(stored) is not None
     hosts = list(recipe_hosts(stored))
-    max_seconds = _runtime_limit(stored)
+    max_seconds = _runtime_limit(stored, operators)
     job_id = secrets.token_urlsafe(16)
     with conn.transaction():
         try:
