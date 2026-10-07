@@ -119,7 +119,8 @@ def worker_environment() -> Iterator[None]:
     """
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError("worker_environment() is entered in the main thread of the worker process")
-    _fix_mmap_threshold()
+    if not _fix_mmap_threshold():
+        LOGGER.warning("mmap threshold left to the C library", extra={"threshold_bytes": MMAP_THRESHOLD_BYTES})
     with rasterio.Env(**process_gdal_options()):
         yield
 
@@ -128,7 +129,8 @@ def _fix_mmap_threshold() -> bool:
     """Fix glibc's mmap threshold at :data:`MMAP_THRESHOLD_BYTES` for the rest of the process.
 
     No effect on any value computed, only on where the buffers live. Without glibc
-    (another C library) it does nothing and says so.
+    (another C library) it does nothing and returns ``False``; the peak memory
+    measured in M4-10b then no longer holds, which is why the caller logs it.
     """
     try:
         mallopt = ctypes.CDLL("libc.so.6").mallopt
