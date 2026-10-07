@@ -1,7 +1,7 @@
 """The operator registry and the applicability check (adr/0014 §5.1–§5.3).
 
 An immutable mapping ``(op, op_version) → Operator``. :data:`REGISTRY` is the one
-the platform runs; it holds ``reproject`` (M4-10); band math (M4-09) registers here too. A caller that needs more — a test, and later the
+the platform runs; it holds ``band_math`` (M4-09) and ``reproject`` (M4-10). A caller that needs more — a test, and later the
 composition root that hands in the quad-pol operator from `datasets/` (§12) —
 builds its own with :meth:`OperatorRegistry.with_operators`, and passes it to
 ``processing.run``.
@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from earthx.catalog.registry import DatasetConfig, LicenseTier
 from earthx.processing.errors import UnknownOperator
+from earthx.processing.operators.band_math import BAND_MATH
 from earthx.processing.operators.base import Operator
 from earthx.processing.operators.reproject import REPROJECT
 
@@ -79,7 +80,7 @@ class OperatorRegistry(Mapping[tuple[str, int], Operator]):
         return {"$schema": JSON_SCHEMA_DIALECT, **schema}
 
 
-REGISTRY = OperatorRegistry([REPROJECT])
+REGISTRY = OperatorRegistry([BAND_MATH, REPROJECT])
 
 
 def applicable(operator: Operator, config: DatasetConfig, params: BaseModel | None = None) -> list[str]:
