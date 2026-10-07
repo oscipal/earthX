@@ -460,8 +460,8 @@ unberührt, `lint-imports` hält alle 14 Verträge.
    Formel auf dem nächsten Quellpixel überall; Kachel = Job überall außer
    innerhalb von 0,125 Quellpixel (GDALs Näherungsschwelle) von einer Grenze,
    und dort höchstens 2 % der Pixel. **Die Abnahme „bitgleich“ gilt damit für
-   COG ohne Einschränkung und für Zarr bis auf diese Grenzpixel; Otto
-   entscheidet, ob das genügt** (Frage im PR).
+   COG ohne Einschränkung und für Zarr bis auf diese Grenzpixel; Otto hat das am
+   07.10.2026 mit Option 1 entschieden (§10).**
 4. **`estimate` zählt jetzt die Bänder aller Assets.** Bisher kam das
    Ausgabe-Raster der Schätzung nur aus dem ersten Asset. Die Namensprüfung vor
    der Warteschlange braucht alle Bandnamen, und ein Lauf ohne Schritt schreibt
@@ -490,3 +490,47 @@ unberührt, `lint-imports` hält alle 14 Verträge.
 **Gemessen am Ende (Sitzung, x86_64):** Setting A gegen D (`GLIBC_TUNABLES`
 wirkt: `0x7ed83203` → `0x7ed82203`) liefert für 14 Ausdrücke in float32 und
 float64 dieselben SHA-256; die Gegenprobe mit `log`, `exp`, `x**51` weicht ab.
+
+---
+
+## 10. Antworten (Otto, 07.10.2026) und Prüfanleitung
+
+- **Zarr T1 ↔ T2: Option 1.** `adr/0014` §15d präzisiert §6.3: COG bitgleich
+  ohne Einschränkung; Zarr bitgleich außerhalb von 0,125 Quellpixel an einer
+  Pixelgrenze, an der Grenze darf `nearest` den Nachbarn wählen; die Formel
+  stimmt überall; T2 ↔ T2L bleibt bitgleich. Abnahmekriterium 1 in §5 des
+  M4-Plans verweist darauf. Die Log-Zeile steht auf „fest am 2026-10-07
+  (Otto)“.
+- **Abweichungen 1–4 aus §9 angenommen.**
+- **Roter Test aus M4-08a** (`test_worker.py::TestLogs`, die Koordinate `9.0`
+  steckt im Zeitstempel): nicht hier, eigene Session. Nach deren Merge wird
+  `main` geholt und der CI-Lauf im PR genannt.
+
+**Lokale Prüfanleitung (Windows/PowerShell).** Die Kachel liegt vollständig im
+Footprint des Items, das Item und der Footprint sind aus der Sitzung per `curl`
+belegt (eine Anfrage an Earth Search); gerendert wurde gegen die echte Quelle
+nicht, das ist Ottos Prüfung.
+
+```powershell
+docker compose up -d --build
+docker compose ps        # api und tiler: healthy
+
+$tile = "http://localhost:8001/collections/sentinel-2-c1-l2a/items/S2A_T32TMT_20260731T102238_L2A/tiles/WebMercatorQuad/14/8581/5739.png"
+
+# 1. NDVI als Operator: 200, ein 256 x 256 PNG (rot-gelb-grün, -1 bis 1)
+$ndvi = "$tile?asset=red&asset=nir&op=band_math&op_version=1&params=%7B%22expression%22%3A%22%28nir-red%29%2F%28nir%2Bred%29%22%7D&rescale=-1,1&colormap_name=rdylgn"
+Invoke-WebRequest -Uri $ndvi -OutFile ndvi.png
+Start-Process ndvi.png
+
+# 2. freier expression-Parameter: 400 mit Verweis auf op=band_math
+$free = "$tile?asset=red&asset=nir&expression=(nir-red)/(nir%2Bred)&rescale=-1,1"
+try { Invoke-WebRequest -Uri $free -OutFile free.png } catch { [int]$_.Exception.Response.StatusCode; $_.ErrorDetails.Message }
+```
+
+Erwartet bei 2: `400` und `{"detail":"'expression' is not accepted; ask for an
+expression with op=band_math&op_version=1&params=…"}`. Beide Adressen lassen sich
+auch im Browser öffnen (die erste als Bild, die zweite zeigt den Fehlertext).
+Zusatz: mit `params=%7B%22expression%22%3A%22log%28red%29%22%7D` statt NDVI
+antwortet der `tiler` mit `400` und nennt die erlaubten Funktionen (`log` liegt
+außerhalb von R5). In den Logs (`docker compose logs tiler`) steht weder der
+Ausdruck noch eine AOI.

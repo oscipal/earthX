@@ -886,7 +886,11 @@ M4-Aufgaben in §3; README nachziehen; keine Codeänderung.
 
 1. Dasselbe Rezept liefert als T1-Vorschau, als Job (T2) und im lokalen Runner
    (offline) übereinstimmende Ergebnisse innerhalb der Toleranz aus `adr/0014`;
-   der Vergleichstest läuft in der CI.
+   der Vergleichstest läuft in der CI. „Übereinstimmend“ heißt für T1 ↔ T2 bei
+   Band-Math: COG bitgleich ohne Einschränkung; Zarr bitgleich außerhalb von
+   0,125 Quellpixel an einer Pixelgrenze, wo `nearest` den Nachbarn wählen darf,
+   und die Formel stimmt überall; T2 ↔ T2L bleibt bitgleich (`adr/0014` §15d,
+   Log vom 2026-10-07).
 2. Ein zweiter identischer Auftrag kommt aus dem Cache, wenn alle Eingaben eine
    Fassung tragen (Q11); lokale Ergebnisse kommen nie in den Cache.
 3. `processing` ist ohne Datenbank, Queue, Objektspeicher und `gateway`;
