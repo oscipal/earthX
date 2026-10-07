@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import zipfile
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from io import BytesIO
@@ -26,6 +27,7 @@ from fastapi.testclient import TestClient
 from rio_tiler.models import ImageData
 
 from earthx.access import download as download_module
+from earthx.api.item_source import OrderRefused
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseInfo, LicenseTier
@@ -89,7 +91,11 @@ class InternalBugReader(FakeReader):
 
 
 @pytest.fixture
-def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    yield from _client_for(REGISTRY, item, monkeypatch)
+
+
+def _client_for(registry: DatasetRegistry, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
         # `ITEM_ID#n` (M3-17): a distinct id sharing the fixture's own bbox and
         # geometry, so a test can name several "different" items — for the
@@ -120,7 +126,7 @@ def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> TestClient:
         lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
     )
     monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: FakeReader(src_path))
-    app = build_app(REGISTRY, lifespan=lifespan)
+    app = build_app(registry, lifespan=lifespan)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -202,7 +208,14 @@ class TestAcceptanceCriteria:
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
-            assert names == {"visual_2x.tif", "visual_2x_mask.tif", "ATTRIBUTION.txt", "aoi.geojson"}
+            assert names == {
+                "visual_2x.tif",
+                "visual_2x_mask.tif",
+                "ATTRIBUTION.txt",
+                "aoi.geojson",
+                "recipe.json",
+                "citation.bib",
+            }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "2x coarser than native" in notice
 
@@ -263,7 +276,14 @@ class TestAcceptanceCriteria:
         assert "attachment" in response.headers["content-disposition"]
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             names = set(archive.namelist())
-            assert names == {"visual.tif", "visual_mask.tif", "ATTRIBUTION.txt", "aoi.geojson"}
+            assert names == {
+                "visual.tif",
+                "visual_mask.tif",
+                "ATTRIBUTION.txt",
+                "aoi.geojson",
+                "recipe.json",
+                "citation.bib",
+            }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
 
@@ -344,6 +364,8 @@ class TestAcceptanceCriteria:
                 "group-02/visual_mask.tif",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
+                "recipe.json",
+                "citation.bib",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Group 1 (group-01/): {ITEM_ID}" in notice
@@ -358,6 +380,8 @@ class TestAcceptanceCriteria:
                 "visual_mask.tif",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
+                "recipe.json",
+                "citation.bib",
             }
 
     def test_a_group_that_misses_the_aoi_is_dropped_the_others_still_download(
@@ -373,6 +397,8 @@ class TestAcceptanceCriteria:
                 "visual_mask.tif",
                 "ATTRIBUTION.txt",
                 "aoi.geojson",
+                "recipe.json",
+                "citation.bib",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Not covered by the AOI, left out: {ITEM_ID}~outside" in notice
@@ -593,3 +619,101 @@ class TestAFileThatDoesNotReadBack:
         assert "m3-22-test-id" in detail
         assert "could not be read from the source" not in detail
         assert any(record.exc_info for record in caplog.records)
+
+
+def _zip_of(response: Any) -> zipfile.ZipFile:
+    assert response.status_code == 200
+    return zipfile.ZipFile(BytesIO(response.content))
+
+
+class TestRecipeAndCitation:
+    """adr/0014 §10 (M4-14): the crop's ZIP carries ``recipe.json`` and ``citation.bib``."""
+
+    def test_recipe_json_describes_the_crop_with_no_steps(self, client: TestClient) -> None:
+        with _zip_of(_download(client)) as archive:
+            recipe = json.loads(archive.read("recipe.json"))
+        assert recipe["steps"] == []
+        assert recipe["output"] == {
+            "kind": "crop",
+            "format": "cog",
+            "resolution_factor": 1,
+            "extent": "bbox(aoi ∩ footprints)",
+            "mask": "file",
+        }
+        assert recipe["aoi"] == GOOD_AOI
+        assert recipe["inputs"][0]["dataset"] == DATASET
+        assert recipe["inputs"][0]["groups"] == [[ITEM_ID]]
+        assert recipe["inputs"][0]["assets"] == ["visual"]
+        assert recipe["provenance"]["kind"] == "sync-download"
+        assert recipe["provenance"]["execution"] == "cloud"
+
+    def test_recipe_json_has_neither_hash_nor_identifier(self, client: TestClient) -> None:
+        """A crop is not stored (D3), so it has no ``recipe_id``; the hash stays internal (§10.1)."""
+        with _zip_of(_download(client)) as archive:
+            text = archive.read("recipe.json").decode("utf-8")
+        assert "recipe_id" not in text
+        assert "c1:" not in text
+
+    def test_recipe_json_names_the_resolution_factor_the_caller_chose(self, client: TestClient) -> None:
+        with _zip_of(_download(client, resolution=2)) as archive:
+            recipe = json.loads(archive.read("recipe.json"))
+        assert recipe["output"]["resolution_factor"] == 2
+
+    def test_recipe_json_holds_the_aoi_without_a_place_search_provenance(self, client: TestClient) -> None:
+        """The recipe model forbids ``properties``; the notice and ``aoi.geojson`` keep them."""
+        place_search_aoi = {**GOOD_AOI, "properties": {"attribution": "© OpenStreetMap contributors"}}
+        with _zip_of(_download(client, aoi=place_search_aoi)) as archive:
+            recipe = json.loads(archive.read("recipe.json"))
+            assert json.loads(archive.read("aoi.geojson"))["properties"]["attribution"]
+        assert recipe["aoi"] == GOOD_AOI
+
+    def test_several_groups_make_one_recipe_at_the_root(self, client: TestClient) -> None:
+        with _zip_of(_download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])) as archive:
+            names = archive.namelist()
+            recipe = json.loads(archive.read("recipe.json"))
+        assert names.count("recipe.json") == 1
+        assert names.count("citation.bib") == 1
+        assert recipe["inputs"][0]["groups"] == [[ITEM_ID], [f"{ITEM_ID}#2"]]
+
+    def test_a_dropped_group_is_not_in_the_recipe(self, client: TestClient) -> None:
+        """The recipe says what was read, as the notice says what was left out."""
+        with _zip_of(_download(client, groups=[[ITEM_ID], [f"{ITEM_ID}~outside"]])) as archive:
+            recipe = json.loads(archive.read("recipe.json"))
+        assert recipe["inputs"][0]["groups"] == [[ITEM_ID]]
+
+    def test_an_asset_listed_twice_is_one_asset_in_the_recipe(self, client: TestClient) -> None:
+        with _zip_of(_download(client, assets=["visual", "visual"])) as archive:
+            recipe = json.loads(archive.read("recipe.json"))
+        assert recipe["inputs"][0]["assets"] == ["visual"]
+
+    def test_citation_bib_is_the_datasets_misc_entry(self, client: TestClient) -> None:
+        with _zip_of(_download(client)) as archive:
+            bib = archive.read("citation.bib").decode("utf-8")
+        assert bib.startswith(f"@misc{{{DATASET},\n")
+        assert "doi     = {10.5270/S2_-742ikth}" in bib
+        assert "url     = {https://doi.org/10.5270/S2_-742ikth}" in bib
+        assert "Contains modified Copernicus Sentinel data" in bib
+
+    def test_a_dataset_without_a_doi_cites_its_citation_text(
+        self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config = replace(SENTINEL_2_L2A, doi=None, citation="Test publisher (2026): Test dataset, version 1.")
+        for test_client in _client_for(DatasetRegistry((config,)), item, monkeypatch):
+            with _zip_of(_download(test_client)) as archive:
+                bib = archive.read("citation.bib").decode("utf-8")
+        assert "doi " not in bib
+        assert "url " not in bib
+        assert "Test publisher (2026): Test dataset, version 1." in bib
+
+    def test_a_recipe_that_cannot_be_built_is_a_refusal_not_a_zip(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def refuse(*_args: Any, **_kwargs: Any) -> bytes:
+            raise OrderRefused(502, "the items of 'x' do not make a valid recipe", "recipe")
+
+        monkeypatch.setattr("earthx.api.intake.crop_recipe_json", refuse)
+        with caplog.at_level(logging.WARNING, logger="earthx.api.tiler"):
+            response = _download(client)
+        assert response.status_code == 502
+        assert response.headers["content-type"] != "application/zip"
+        assert "7.1" not in caplog.text

@@ -38,6 +38,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -81,6 +82,7 @@ from earthx.adapters import (
     AdapterSpecs,
     check_adapter_specs,
 )
+from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
     OrderRefused,
@@ -502,6 +504,25 @@ async def download_crop(
         for (matched, region), planned in zip(surviving_groups[1:], planned_by_group[1:], strict=True)
     ]
 
+    # The worker core stays out of the tiler's start (the intake imports it), so it is
+    # loaded when the first crop asks for its recipe.
+    from earthx.api.intake import crop_recipe_json
+
+    accepted_at = datetime.now(timezone.utc)
+    try:
+        recipe_json = crop_recipe_json(
+            config,
+            groups=[matched for matched, _ in surviving_groups],
+            assets=wanted,
+            aoi=body.aoi,
+            resolution_factor=body.resolution,
+            accepted_at=accepted_at,
+        )
+    except OrderRefused as refused:
+        LOGGER.warning("crop recipe refused", extra={"dataset": dataset, "stage": refused.stage})
+        raise HTTPException(status_code=refused.status_code, detail=refused.detail) from None
+    bib = citation_bib(config, downloaded=accepted_at.date())
+
     total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
     large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
     if large and _LARGE_DOWNLOAD_LOCK.locked():
@@ -523,6 +544,8 @@ async def download_crop(
             additional_groups=additional_groups,
             skipped_item_ids=skipped_item_ids,
             resolution_factor=body.resolution,
+            recipe_json=recipe_json,
+            citation_bib=bib,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
