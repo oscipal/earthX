@@ -42,7 +42,7 @@ from earthx.processing.errors import (
 )
 from earthx.readers import AssetRejected
 from tests.earthx.jobs import claimers
-from tests.earthx.jobs.support import add_run, run_row, status_of, wait_until
+from tests.earthx.jobs.support import add_run, most_at_once, run_row, status_of, wait_until
 
 
 def _pick(conn: psycopg.Connection, worker: str = "w1", lease: float = 60.0):
@@ -256,7 +256,7 @@ class TestTheCapHoldsWhenWorkersPickUpAtTheSameTime:
             counts = pool.starmap(claimers.claim_until_empty, [(f"proc{index}", 0.05) for index in range(8)])
         assert sum(counts) == runs
         assert db.execute("SELECT count(*) FROM public.earthx_run WHERE status = 'successful'").fetchone() == (runs,)
-        assert _most_at_once(db) == cap, "the cap is held and reached"
+        assert most_at_once(db) == cap, "the cap is held and reached"
 
     def test_eight_processes_never_run_more_than_the_limit_per_host(self, db: psycopg.Connection) -> None:
         db.execute("UPDATE public.earthx_job_limits SET global_cap = 8, host_cap = 2")
@@ -265,18 +265,7 @@ class TestTheCapHoldsWhenWorkersPickUpAtTheSameTime:
         with multiprocessing.get_context("spawn").Pool(8) as pool:
             counts = pool.starmap(claimers.claim_until_empty, [(f"proc{index}", 0.05) for index in range(8)])
         assert sum(counts) == 24
-        assert _most_at_once(db) == 2
-
-
-def _most_at_once(conn: psycopg.Connection) -> int:
-    """The most runs that ran at the same time, from the times the rows themselves recorded."""
-    rows = conn.execute("SELECT started_at, finished_at FROM public.earthx_run").fetchall()
-    events = sorted([(start, 1) for start, _ in rows] + [(end, -1) for _, end in rows], key=lambda e: (e[0], e[1]))
-    current = best = 0
-    for _, step in events:
-        current += step
-        best = max(best, current)
-    return best
+        assert most_at_once(db) == 2
 
 
 class TestAttemptsAndShielding:

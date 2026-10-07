@@ -122,3 +122,14 @@ def wait_until(condition: Callable[[], bool], timeout: float = 20.0, interval: f
             return
         time.sleep(interval)
     raise AssertionError(f"not true within {timeout} s: {getattr(condition, '__name__', condition)}")
+
+
+def most_at_once(conn: psycopg.Connection) -> int:
+    """The most runs that ran at the same time, from the times the rows themselves recorded."""
+    rows = conn.execute("SELECT started_at, finished_at FROM public.earthx_run").fetchall()
+    events = sorted([(start, 1) for start, _ in rows] + [(end, -1) for _, end in rows], key=lambda e: (e[0], e[1]))
+    current = best = 0
+    for _, step in events:
+        current += step
+        best = max(best, current)
+    return best

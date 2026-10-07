@@ -122,3 +122,17 @@ def end_to_end(workdir: str, conn: Any) -> None:
     cog_reader.vsicurl_path = lambda checked: cog
     read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
     run_child(workdir, conn)
+
+
+def fail_first_attempt(workdir: str, conn: Any) -> None:
+    """The first attempt of a run fails with ``CHILD_KIND``; the next ones succeed. The work directory is `<run>-<attempt>`."""
+    if int(Path(workdir).name.split("-")[1]) == 1:
+        fail(workdir, conn)
+    else:
+        succeed(workdir, conn)
+
+
+def done_without_files(workdir: str, conn: Any) -> None:
+    """Claims success but wrote nothing."""
+    conn.send(("done", {"blocks": 1}))
+    conn.close()
