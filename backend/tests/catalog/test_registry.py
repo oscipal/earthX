@@ -342,8 +342,8 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="rescale"):
             render(rescale=rescale)
 
-    def test_a_visualisation_without_an_asset_or_an_expression_is_rejected(self) -> None:
-        with pytest.raises(ConfigError, match="asset or an expression"):
+    def test_a_visualisation_without_an_asset_is_rejected(self) -> None:
+        with pytest.raises(ConfigError, match="needs an asset"):
             render(assets=())
 
     def test_a_colormap_on_several_assets_is_rejected(self) -> None:
@@ -351,9 +351,11 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="colormap"):
             render(assets=("red", "green", "blue"), colormap_name="viridis")
 
-    def test_an_expression_alone_is_enough(self) -> None:
-        """Band math has no asset list, and adr/0006 §5 keeps the render-extension field."""
-        assert render(assets=(), expression="(nir-red)/(nir+red)").expression
+    @pytest.mark.parametrize("assets", [(), ("red", "nir")])
+    def test_an_expression_is_not_served_until_the_panel_maps_it_to_an_operator(self, assets) -> None:
+        """The tiler refuses a free `expression` with a 400 (plan M4-09, F3); an entry may not carry one."""
+        with pytest.raises(ConfigError, match="op=band_math"):
+            render(assets=assets, expression="(nir-red)/(nir+red)")
 
     def test_terms_without_an_english_text_are_rejected(self) -> None:
         """The UI is English (D25); a German-only notice cannot be shown."""
