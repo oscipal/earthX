@@ -22,11 +22,11 @@ from tests.earthx.processing.testops import OPERATORS as TEST_REGISTRY
 
 
 class TestRegistry:
-    def test_the_platform_registry_is_empty_until_m4_09_and_m4_10(self) -> None:
-        assert len(REGISTRY) == 0
+    def test_the_platform_registry_holds_reproject_until_m4_09(self) -> None:
+        assert set(REGISTRY) == {("reproject", 1)}
 
     def test_adding_operators_leaves_the_original_alone(self) -> None:
-        assert set(TEST_REGISTRY) == {("scale", 1), ("coarsen", 1)}
+        assert set(TEST_REGISTRY) == {("reproject", 1), ("scale", 1), ("coarsen", 1)}
         assert ("scale", 1) not in REGISTRY
 
     def test_it_cannot_be_changed_in_place(self) -> None:
