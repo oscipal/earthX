@@ -60,6 +60,9 @@ class TestParameters:
             {"resolution": "10"},
             {"resampling": "magic"},
             {"resampling": "near"},
+            {"resampling": "lanczos"},
+            {"resampling": "cubicspline"},
+            {"resampling": "average"},
             {"align": "yes"},
             {"tolerance": 0},
             {"warp_mem_limit": 1},
@@ -103,7 +106,7 @@ class TestWhereItApplies:
         config = replace(config, capabilities=replace(config.capabilities, interpolation=False))
         assert applicable(REPROJECT, config, _params(resampling="nearest")) == []
 
-    @pytest.mark.parametrize("resampling", ["bilinear", "cubic", "cubicspline", "lanczos", "average"])
+    @pytest.mark.parametrize("resampling", ["bilinear", "cubic"])
     def test_every_other_method_needs_interpolation(self, resampling: str) -> None:
         config = next(iter(DATASETS))
         config = replace(config, capabilities=replace(config.capabilities, interpolation=False))

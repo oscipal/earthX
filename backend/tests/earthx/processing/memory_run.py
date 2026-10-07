@@ -1,11 +1,12 @@
 """One T2 run in a process of its own, for the peak memory of adr/0014 §3.5 (plan M4-07a §3.8, F10).
 
 Called by ``test_memory_8192.py`` as ``python -m tests.earthx.processing.memory_run
-<cog> <workdir> <size> [<GDAL_CACHEMAX in MB>]``, ``size`` being the side of the
+<cog> <workdir> <size> [<GDAL_CACHEMAX in MB> [<step>]]``, ``size`` being the side of the
 square scene in pixels. It puts the COG behind the same two
 seams the tests use — ``vsicurl_path`` and the resolver — enters
 ``worker_environment()`` in its main thread as a `jobs` child does (adr/0013 §5.3),
-runs the test operator ``scale`` over both bands and prints one JSON line: peak
+runs one step over both bands — the test operator ``scale``, or with ``step`` set to
+``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
 
@@ -37,7 +38,17 @@ def high_water_mb() -> float:
     raise RuntimeError("no VmHWM in /proc/self/status")
 
 
-def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None) -> None:
+STEPS = {
+    "scale": {"op": "scale", "op_version": 1, "params": {"factor": 2.0}},
+    "reproject": {
+        "op": "reproject",
+        "op_version": 1,
+        "params": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
+    },
+}
+
+
+def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str = "scale") -> None:
     # Imported here, after `boto3` is hidden (module docstring), not at the top.
     import earthx.readers.access as read_access
     import earthx.readers.cog as cog_reader
@@ -60,7 +71,7 @@ def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None) -> None:
             {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": ["big"], "resolved": [entry]}
         ],
         "aoi": sources.whole(size, size),
-        "steps": [{"op": "scale", "op_version": 1, "params": {"factor": 2.0}}],
+        "steps": [STEPS[step]],
         "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
     }
     recipe = recipe_from_data(data, OPERATORS)
@@ -80,4 +91,10 @@ def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None) -> None:
 
 if __name__ == "__main__":
     sys.modules["boto3"] = None  # type: ignore[assignment]
-    main(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]) if len(sys.argv) > 4 else None)
+    main(
+        Path(sys.argv[1]),
+        Path(sys.argv[2]),
+        int(sys.argv[3]),
+        int(sys.argv[4]) if len(sys.argv) > 4 else None,
+        sys.argv[5] if len(sys.argv) > 5 else "scale",
+    )

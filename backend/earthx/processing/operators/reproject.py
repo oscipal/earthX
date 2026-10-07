@@ -12,7 +12,8 @@ constants here, not parameters, and a change to either raises ``op_version`` (E2
 
 **What the caller has to allow.** ``reprojection`` always (R3); ``interpolation``
 for every resampling except ``nearest`` (§5.3, F6). The resampling has no default
-(B10): the order names it.
+(B10): the order names it. Only the methods measured against §6.3 are offered; more
+follow with their own measurement.
 """
 
 from __future__ import annotations
@@ -51,14 +52,10 @@ _RESAMPLING = {
     "nearest": Resampling.nearest,
     "bilinear": Resampling.bilinear,
     "cubic": Resampling.cubic,
-    "cubicspline": Resampling.cubic_spline,
-    "lanczos": Resampling.lanczos,
-    "average": Resampling.average,
 }
 
-#: Starting values relative to band math (§5.5): measured for the first three, the
-#: others take the cost of the nearest measured kernel and are calibrated with M4-08.
-_COST = {"nearest": 0.4, "bilinear": 1.0, "cubic": 1.1, "cubicspline": 1.1, "lanczos": 1.1, "average": 1.0}
+#: Starting values relative to band math (§5.5), calibrated against real runs with M4-08.
+_COST = {"nearest": 0.4, "bilinear": 1.0, "cubic": 1.1}
 
 
 class ReprojectParams(BaseModel):
@@ -70,7 +67,7 @@ class ReprojectParams(BaseModel):
     resolution: float = Field(
         gt=0, allow_inf_nan=False, description="Pixel size in the units of the target CRS, square pixels."
     )
-    resampling: Literal["nearest", "bilinear", "cubic", "cubicspline", "lanczos", "average"] = Field(
+    resampling: Literal["nearest", "bilinear", "cubic"] = Field(
         description="No default: the choice changes the values. Anything but nearest interpolates."
     )
     align: bool = Field(
