@@ -15,9 +15,22 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 import pytest
 
-from earthx.jobs.submit import MIN_RUNTIME_SECONDS, JobStatus, RecipeIdTaken, dismiss, job_status, submit
-from earthx.processing.recipe import cache_key, run_key
+from earthx.jobs.submit import (
+    MIN_RUNTIME_SECONDS,
+    JobStatus,
+    RecipeIdTaken,
+    dismiss,
+    job_recipe,
+    job_run,
+    job_status,
+    run_jobs,
+    submit,
+)
+from earthx.processing.errors import UnknownOperator
+from earthx.processing.recipe import cache_key, recipe_from_data, run_key
 from tests.earthx.jobs.support import HOST, add_run, make_recipe, run_row, status_of
+from tests.earthx.processing.recipes import recipe_data
+from tests.earthx.processing.testops import OPERATORS
 
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
 
@@ -307,6 +320,85 @@ class TestStatus:
         assert snapshot() == before
 
 
+class TestTheRegistryTheLimitIsEstimatedWith:
+    """`api` validates an order with a registry and hands the same one to `submit` (M4-08b)."""
+
+    def test_a_recipe_with_an_operator_of_the_given_registry_is_placed(self, db: psycopg.Connection) -> None:
+        step = {"op": "scale", "op_version": 1, "params": {"factor": 2.0, "label": None}}
+        recipe = recipe_from_data(recipe_data(steps=[step]), OPERATORS)
+        job_id = submit(db, recipe, operators=OPERATORS)
+        assert job_status(db, job_id) is not None
+        assert db.execute("SELECT max_seconds FROM public.earthx_run").fetchone() is not None
+
+    def test_the_platforms_registry_is_the_default_and_does_not_know_a_test_operator(
+        self, db: psycopg.Connection
+    ) -> None:
+        step = {"op": "scale", "op_version": 1, "params": {"factor": 2.0, "label": None}}
+        recipe = recipe_from_data(recipe_data(steps=[step]), OPERATORS)
+        with pytest.raises(UnknownOperator):
+            submit(db, recipe)
+        assert _count(db, "earthx_run") == 0, "nothing was written"
+
+
+class TestReadingForTheJobApi:
+    """What M4-08b reads besides the status: the job's own recipe, its run, the jobs of one run."""
+
+    def test_two_equal_orders_share_a_run_but_each_job_reads_its_own_recipe(self, db: psycopg.Connection) -> None:
+        first = submit(db, make_recipe())
+        second = submit(db, make_recipe())
+        assert _count(db, "earthx_run") == 1
+        bodies = [job_recipe(db, job) for job in (first, second)]
+        assert all(body is not None for body in bodies)
+        ids = {body["recipe_id"] for body in bodies if body is not None}
+        assert ids == {job_status(db, first).recipe_id, job_status(db, second).recipe_id}  # type: ignore[union-attr]
+        assert len(ids) == 2
+
+    def test_the_run_of_a_job_is_the_run_the_progress_messages_name(self, db: psycopg.Connection) -> None:
+        first = submit(db, make_recipe())
+        second = submit(db, make_recipe())
+        assert job_run(db, first) == job_run(db, second) == _run_of(db)
+
+    def test_run_jobs_gives_the_state_of_the_named_jobs_of_that_run_only(self, db: psycopg.Connection) -> None:
+        first = submit(db, make_recipe())
+        second = submit(db, make_recipe())
+        other = submit(db, make_recipe("ITEM_B"))
+        run = job_run(db, first)
+        assert run is not None
+        states = run_jobs(db, run, [first, second, other])
+        assert sorted(state.job_id for state in states) == sorted([first, second])
+        assert run_jobs(db, run, [second])[0].job_id == second
+
+    @pytest.mark.parametrize("bad", ["", "short", "A" * 21, "A" * 23, "A" * 21 + "/", "../" * 8])
+    def test_a_malformed_identifier_finds_nothing(self, db: psycopg.Connection, bad: str) -> None:
+        submit(db, make_recipe())
+        assert job_recipe(db, bad) is None
+        assert job_run(db, bad) is None
+        assert run_jobs(db, 1, [bad]) == []
+
+    def test_a_newline_after_an_identifier_is_not_an_identifier(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        for call in (job_status, dismiss, job_recipe, job_run):
+            assert call(db, job_id + "\n") is None, call.__name__
+        assert job_status(db, job_id) is not None, "and the job itself is still there, untouched"
+        assert not db.execute("SELECT dismissed FROM public.earthx_job").fetchone()[0]
+
+    def test_an_unknown_identifier_finds_nothing(self, db: psycopg.Connection) -> None:
+        assert job_recipe(db, "A" * 22) is None
+        assert job_run(db, "A" * 22) is None
+        assert run_jobs(db, 1, ["A" * 22]) == []
+
+    def test_none_of_them_writes(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        before = db.execute("SELECT xmin::text, job_id FROM public.earthx_job").fetchall()
+        before_run = db.execute("SELECT xmin::text FROM public.earthx_run").fetchall()
+        run = job_run(db, job_id)
+        assert run is not None
+        job_recipe(db, job_id)
+        run_jobs(db, run, [job_id])
+        assert db.execute("SELECT xmin::text, job_id FROM public.earthx_job").fetchall() == before
+        assert db.execute("SELECT xmin::text FROM public.earthx_run").fetchall() == before_run
+
+
 class TestDismiss:
     def test_a_waiting_run_is_dismissed_at_once_and_frees_its_key(self, db: psycopg.Connection) -> None:
         recipe = make_recipe()
@@ -341,6 +433,16 @@ class TestDismiss:
         assert run_row(db, run_id, "cancel_requested") == (False,)
         other = job_status(db, second)
         assert other is not None and other.status == "running"
+
+    def test_a_dismissal_that_leaves_the_run_going_still_tells_those_who_follow_the_job(
+        self, db: psycopg.Connection
+    ) -> None:
+        run_id, (first, _second) = add_run(db, status="running", jobs=2)
+        with psycopg.connect(autocommit=True) as listener:
+            listener.execute("LISTEN earthx_job_progress")
+            dismiss(db, first)
+            messages = [json.loads(n.payload) for n in listener.notifies(timeout=0.3)]
+        assert messages == [{"run": run_id, "p": 0, "s": "running"}]
 
     def test_the_last_dismissal_cancels_the_run(self, db: psycopg.Connection) -> None:
         run_id, (first, second) = add_run(db, status="running", jobs=2)
