@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from earthx.access.aoi_upload import MAX_UPLOAD_BYTES
 from earthx.api.aoi_upload_route import router
+from tests.conftest import own_log_text
 
 SQUARE = {"type": "Polygon", "coordinates": [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
 
@@ -114,6 +115,6 @@ def test_no_coordinate_or_content_in_the_log(client: TestClient, caplog: pytest.
             params={"filename": "aoi.geojson"},
             content=json.dumps({"type": "Point", "coordinates": [12.3456, 78.9012]}),
         )
-    full_text = "\n".join(str(record.__dict__) for record in caplog.records)
+    full_text = "\n".join(own_log_text(record) for record in caplog.records)
     assert "12.3456" not in full_text
     assert "78.9012" not in full_text
