@@ -472,6 +472,70 @@ def _dataset_without_terms():
     )
 
 
+class TestRecipeAndCitationFiles:
+    """M4-14: `access` writes the two files `api` hands in, byte for byte, and reads neither."""
+
+    def _zip(self, **extra) -> zipfile.ZipFile:
+        zip_bytes = dl.build_download_zip(
+            config=SENTINEL_2_L2A,
+            open_reader=FakeReader,
+            crops=[dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))],
+            aoi_geometry=GOOD_AOI,
+            item_ids=["ITEM1"],
+            **extra,
+        )
+        return zipfile.ZipFile(BytesIO(zip_bytes))
+
+    def test_both_files_are_written_as_given(self) -> None:
+        with self._zip(recipe_json=b'{"not": "looked at"}', citation_bib=b"@misc{x}\n") as archive:
+            assert archive.read(dl.RECIPE_FILENAME) == b'{"not": "looked at"}'
+            assert archive.read(dl.CITATION_FILENAME) == b"@misc{x}\n"
+
+    def test_the_file_names_are_the_ones_the_adr_names(self) -> None:
+        assert (dl.RECIPE_FILENAME, dl.CITATION_FILENAME) == ("recipe.json", "citation.bib")
+
+    def test_a_caller_that_hands_in_none_gets_the_zip_it_always_got(self) -> None:
+        with self._zip() as archive:
+            assert dl.RECIPE_FILENAME not in archive.namelist()
+            assert dl.CITATION_FILENAME not in archive.namelist()
+
+    def test_one_file_alone_is_possible(self) -> None:
+        with self._zip(citation_bib=b"@misc{x}\n") as archive:
+            assert dl.CITATION_FILENAME in archive.namelist()
+            assert dl.RECIPE_FILENAME not in archive.namelist()
+
+    def test_empty_bytes_are_still_a_file(self) -> None:
+        """`None` means "none"; an empty file is the caller's own statement, not skipped."""
+        with self._zip(recipe_json=b"") as archive:
+            assert archive.read(dl.RECIPE_FILENAME) == b""
+
+    def test_the_notice_says_once_why_the_recipe_is_missing(self) -> None:
+        with self._zip(citation_bib=b"@misc{x}\n", recipe_omitted_cause="bands") as archive:
+            notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
+        assert notice.count("recipe.json is not included") == 1
+        assert "(cause: bands)" in notice
+
+    @pytest.mark.parametrize("cause", ["", "Bands", "7.1,46.1", "a\nb", "https://x.example/a", "x" * 33, "bands "])
+    def test_a_cause_that_is_no_code_is_refused_not_written_into_the_notice(self, cause: str) -> None:
+        with pytest.raises(ValueError):
+            dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], recipe_omitted_cause=cause)
+
+    def test_without_a_cause_the_notice_is_the_one_it_was(self) -> None:
+        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+        assert "is not included" not in text
+
+    def test_with_several_groups_they_sit_once_at_the_root(self) -> None:
+        second = dl.GroupCrop(
+            item_ids=["ITEM2"],
+            crops=[dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))],
+            region_geometry=GOOD_AOI,
+        )
+        with self._zip(additional_groups=[second], recipe_json=b"{}", citation_bib=b"@misc{x}\n") as archive:
+            names = archive.namelist()
+        assert names.count(dl.RECIPE_FILENAME) == 1
+        assert names.count(dl.CITATION_FILENAME) == 1
+
+
 class TestBuildDownloadZip:
     def test_the_zip_carries_one_cog_per_asset_and_the_notice_file(self) -> None:
         crops = [
