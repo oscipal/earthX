@@ -64,8 +64,8 @@ from earthx.access.resolve import (
 from earthx.adapters import UnknownCollection, dataset_config
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier, UnknownDatasetError
-from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, inspect_url
-from earthx.processing.errors import RecipeInvalid
+from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
+from earthx.processing.errors import RecipeInvalid, UnknownOperator
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.recipe import (
     Band,
@@ -103,7 +103,7 @@ MAX_ORDER_ITEMS = 25
 MAX_ORDER_ASSETS = 16
 MAX_ORDER_STEPS = 16
 
-# A weak ETag says "equivalent", not "identical" (RFC 9110 §8.8.1) — no version.
+# What a version may hold (`processing.recipe.Text`).
 _ETAG_MAX_CHARS = 256
 
 # The source says the object is not there (any more): the job would fail later.
@@ -183,7 +183,7 @@ async def _accept(
     policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
     separator = config.zarr.variable_separator if config.zarr is not None else None
     targets = [
-        _Target(items[item_id], resolve_checked(items[item_id], config, asset, policy), separator)
+        _Target(items[item_id], _resolve_checked(items[item_id], config, asset, policy), separator, policy)
         for group in groups
         for item_id in group
         for asset in entry.assets
@@ -260,7 +260,7 @@ def _check_steps(request: RecipeRequest, config: DatasetConfig, operators: Opera
     for index, step in enumerate(request.steps):
         try:
             operator = operators.operator(step.op, step.op_version)
-        except LookupError as error:
+        except UnknownOperator as error:
             raise OrderRefused(422, str(error)) from None
         if Tier.T2 not in operator.tiers:
             raise OrderRefused(422, f"step {index}: {step.op!r} does not run as a job")
@@ -295,7 +295,10 @@ def _groups_the_aoi_touches(
     kept: list[list[str]] = []
     skipped: list[str] = []
     for group in groups:
-        matched = filter_items_intersecting_aoi([items[item_id] for item_id in group], aoi)
+        try:
+            matched = filter_items_intersecting_aoi([items[item_id] for item_id in group], aoi)
+        except (ValueError, TypeError):
+            raise OrderRefused(502, "an item of the order carries a bbox that is not four numbers") from None
         if matched:
             try:
                 compute_crop_region(matched, aoi)
@@ -315,6 +318,7 @@ class _Target:
     item: Mapping[str, Any]
     ref: ResolvedAsset
     separator: str | None
+    policy: Policy
 
     @property
     def item_asset(self) -> str:
@@ -322,7 +326,7 @@ class _Target:
         return split_asset_key(self.ref.asset, self.separator)[0]
 
 
-def resolve_checked(item: Mapping[str, Any], config: DatasetConfig, asset: str, policy: Policy) -> ResolvedAsset:
+def _resolve_checked(item: Mapping[str, Any], config: DatasetConfig, asset: str, policy: Policy) -> ResolvedAsset:
     """:func:`resolve_asset`, then the address against this dataset's ``asset_hosts`` (adr/0014 §8)."""
     try:
         ref = resolve_asset(item, config, asset)
@@ -334,7 +338,7 @@ def resolve_checked(item: Mapping[str, Any], config: DatasetConfig, asset: str, 
         raise OrderRefused(502, str(error)) from None
     try:
         inspect_url(ref.href, policy)
-    except UrlRejected:
+    except (UrlRejected, UrlTooLong):
         raise OrderRefused(502, "the item points at a host this dataset does not declare (asset_hosts)") from None
     return ref
 
@@ -351,10 +355,10 @@ def check_recipe_hosts(recipe: Recipe, registry: DatasetRegistry) -> None:
             config = registry.get(entry.dataset)
         except UnknownDatasetError:
             raise OrderRefused(400, f"no dataset {entry.dataset!r}") from None
-        check_recipe_hosts_of(recipe, config)
+        _check_hosts_of(recipe, config)
 
 
-def check_recipe_hosts_of(recipe: Recipe, config: DatasetConfig) -> None:
+def _check_hosts_of(recipe: Recipe, config: DatasetConfig) -> None:
     """The addresses of the inputs of ``config``'s dataset, against its ``asset_hosts``."""
     policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
     for entry in recipe.inputs:
@@ -363,7 +367,7 @@ def check_recipe_hosts_of(recipe: Recipe, config: DatasetConfig) -> None:
         for resolved in entry.resolved:
             try:
                 inspect_url(resolved.asset.href, policy)
-            except UrlRejected:
+            except (UrlRejected, UrlTooLong):
                 raise OrderRefused(400, "the recipe names an address its dataset does not declare") from None
 
 
@@ -382,8 +386,14 @@ def _entries(asset_entry: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     """The band descriptions of an item asset: ``raster:bands`` (raster v1), else ``bands`` (STAC 1.1)."""
     for key in ("raster:bands", "bands"):
         found = asset_entry.get(key)
-        if isinstance(found, list) and found:
-            return [entry for entry in found if isinstance(entry, Mapping)]
+        if found is None:
+            continue
+        # A description that is not a list of objects is not skipped past: dropping an
+        # entry shifts the bands behind it, and that is a silent change of numbers (K7).
+        if not isinstance(found, list) or not all(isinstance(entry, Mapping) for entry in found):
+            raise OrderRefused(502, f"the item describes its bands in a form this platform does not read ({key})")
+        if found:
+            return list(found)
     return []
 
 
@@ -419,6 +429,9 @@ def _bands_of(target: _Target) -> list[Band]:
     entries = _entries(entry)
     if target.ref.reader == "cog":
         return [_band(raw, item_id) for raw in entries]
+    names = [raw["name"] for raw in entries if isinstance(raw.get("name"), str)]
+    if len(set(names)) != len(names):
+        raise OrderRefused(502, malformed_item_detail(item_id) + " (two bands share a name)")
     named = {raw["name"]: raw for raw in entries if isinstance(raw.get("name"), str)}
     bands = []
     for name in target.ref.variable.split(",") if target.ref.variable else [None]:
@@ -437,9 +450,18 @@ def _scaling_of(target: _Target, bands: Sequence[Band]) -> str:
 
 
 def _usable_etag(value: str | None) -> str | None:
+    """A strong ETag that fits; a weak one says "equivalent", not "identical" (RFC 9110 §8.8.1)."""
     if not value or value.startswith("W/") or len(value) > _ETAG_MAX_CHARS:
         return None
     return value
+
+
+def _version(item: Mapping[str, Any], key: str, *, etag: str | None = None) -> InputVersion | None:
+    """:func:`input_version`, where a value the model refuses (over 256 characters) is the source's mistake."""
+    try:
+        return input_version(item, key, etag=etag)
+    except ValidationError:
+        raise OrderRefused(502, malformed_item_detail(str(item.get("id"))) + " (a version is not usable)") from None
 
 
 async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
@@ -452,11 +474,11 @@ async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     warning without the address, the order goes on.
     """
     key = target.item_asset
-    own = input_version(target.item, key)
+    own = _version(target.item, key)
     if (own is not None and own.kind == "file:checksum") or target.ref.reader != "cog":
         return own
     try:
-        response = await gateway.head(target.ref.href)
+        response = await gateway.head(target.ref.href, within=target.policy)
     except UpstreamError as error:
         if error.status_code in _GONE:
             raise OrderRefused(
@@ -467,7 +489,7 @@ async def _version_of(target: _Target, gateway: Gateway) -> InputVersion | None:
     except GatewayError as error:
         _warn_no_version(target, error)
         return None
-    return input_version(target.item, key, etag=_usable_etag(response.headers.get("etag")))
+    return _version(target.item, key, etag=_usable_etag(response.headers.get("etag")))
 
 
 def _warn_no_version(target: _Target, error: GatewayError) -> None:
@@ -523,7 +545,7 @@ def crop_recipe_json(
     policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
     separator = config.zarr.variable_separator if config.zarr is not None else None
     targets = [
-        _Target(item, resolve_checked(item, config, asset, policy), separator)
+        _Target(item, _resolve_checked(item, config, asset, policy), separator, policy)
         for group in groups
         for item in group
         for asset in assets
@@ -536,12 +558,12 @@ def crop_recipe_json(
                 "dataset": config.dataset_id,
                 "groups": [[item["id"] for item in group] for group in groups],
                 "assets": list(assets),
-                "resolved": [
-                    _resolved_json(target, input_version(target.item, target.item_asset)) for target in targets
-                ],
+                "resolved": [_resolved_json(target, _version(target.item, target.item_asset)) for target in targets],
             }
         ],
-        "aoi": dict(aoi),
+        # The geometry alone: a place-search AOI carries `properties` for the notice and
+        # `aoi.geojson`, and the recipe model forbids them (M4-07b review).
+        "aoi": {key: aoi[key] for key in ("type", "coordinates") if key in aoi},
         "steps": [],
         "output": {
             "kind": "crop",
@@ -555,7 +577,7 @@ def crop_recipe_json(
         recipe = recipe_from_data(data, OperatorRegistry())
     except RecipeInvalid as error:
         raise OrderRefused(502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}") from None
-    check_recipe_hosts_of(recipe, config)
+    _check_hosts_of(recipe, config)
     attribution = attribution_text(config, year=accepted_at.year)
     provenance = Provenance(
         execution="cloud",

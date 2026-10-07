@@ -39,7 +39,7 @@ from earthx.gateway.errors import (
     UrlRejected,
     UrlTooLong,
 )
-from earthx.gateway.policy import Policy
+from earthx.gateway.policy import Policy, inspect_url
 from earthx.gateway.resolver import resolve_host
 
 LOGGER = logging.getLogger("earthx.gateway")
@@ -150,6 +150,7 @@ class Gateway:
         *,
         headers: Mapping[str, str] | None = None,
         retry: bool = True,
+        within: Policy | None = None,
     ) -> GatewayResponse:
         """``HEAD`` a URL: the headers only, ``content`` stays empty (M4-07b).
 
@@ -157,8 +158,13 @@ class Gateway:
         redirects followed here, a status from 400 up raised as
         :class:`UpstreamError`. The size limit of a body does not apply, because
         there is none: a ``Content-Length`` of a whole COG is what a ``HEAD`` is for.
+
+        ``within`` narrows, never widens: every hop has to pass this policy's
+        allowlist as well. The process's own policy names every dataset's hosts, and a
+        caller that asks about one dataset's object must not take its answer from
+        another's host after a redirect.
         """
-        return await self._send("HEAD", url, headers=headers, retry=retry)
+        return await self._send("HEAD", url, headers=headers, retry=retry, within=within)
 
     async def post_json(
         self,
@@ -182,10 +188,13 @@ class Gateway:
         headers: Mapping[str, str] | None = None,
         content: bytes | None = None,
         retry: bool = True,
+        within: Policy | None = None,
     ) -> GatewayResponse:
         target = self._assemble(url, params)
         redirects = 0
         while True:
+            if within is not None:
+                inspect_url(target, within)  # before anything is resolved
             checked = check_url(target, self._policy, resolve=self._resolve)
             async with self._semaphore(checked.host):
                 response = await self._attempt(

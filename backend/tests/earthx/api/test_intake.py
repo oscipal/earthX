@@ -412,6 +412,13 @@ class TestCopernicusDem:
         accepted = await accept(self.order(), Source((DEM, item)), Heads(lambda r: httpx.Response(403)))
         assert accepted.recipe.inputs[0].resolved[0].version is None
 
+    async def test_a_head_redirected_to_another_datasets_host_goes_on_without_a_version(self) -> None:
+        """The host is on the process's list (it serves Sentinel-2), but not on this dataset's."""
+        heads = Heads(lambda request: httpx.Response(302, headers={"location": f"https://{S2_HOST}/x.tif"}))
+        accepted = await accept(self.order(), self.source(), heads)
+        assert accepted.recipe.inputs[0].resolved[0].version is None
+        assert len(heads.requests) == 1, "the redirect was not followed"
+
     async def test_a_checksum_spares_the_head(self) -> None:
         item = dem_item()
         item["assets"]["data"]["file:checksum"] = "1220abc"
@@ -447,6 +454,22 @@ class TestHosts:
         assert "asset_hosts" in error.detail
         assert href not in error.detail
         assert heads.requests == []
+
+    async def test_an_address_over_the_length_limit_is_refused_not_a_crash(self) -> None:
+        item = s2_item()
+        item["assets"]["red"]["href"] = f"https://{S2_HOST}/" + "a" * 9000
+        error = await refused(order(assets=("red",)), Source((S2, item)))
+        assert error.status_code == 502
+
+    async def test_a_recipe_address_over_the_limit_in_bytes_is_refused_not_a_crash(self) -> None:
+        accepted = await accept(order(assets=("red",)), Source((S2, s2_item())))
+        data = accepted.recipe.model_dump(mode="json")
+        # Under 8192 characters, over 8192 bytes: the model lets it by, the policy does not.
+        data["inputs"][0]["resolved"][0]["asset"]["href"] = f"https://{S2_HOST}/" + "ä" * 4200
+        forged = recipe_from_data(data, OPERATORS)
+        with pytest.raises(OrderRefused) as error:
+            check_recipe_hosts(forged, REGISTRY)
+        assert error.value.status_code == 400
 
     async def test_a_real_subdomain_of_a_declared_host_is_a_declared_host(self) -> None:
         item = s2_item()
@@ -619,7 +642,7 @@ class TestRefusals:
         assert "S2_B" in error.detail
 
     async def test_an_item_that_is_not_the_one_asked_for(self) -> None:
-        source = Source((S2, {**s2_item("S2_OTHER"), "id": "S2_OTHER"}))
+        source = Source((S2, s2_item("S2_OTHER")))
         source.items[("sentinel-2-c1-l2a", "S2_A")] = s2_item("S2_OTHER")
         error = await refused(order(), source)
         assert error.status_code == 502
@@ -671,6 +694,54 @@ class TestRefusals:
     ) -> None:
         item = s2_item()
         item["assets"]["red"]["raster:bands"] = [{"data_type": "uint16", **band}]
+        error = await refused(order(), Source((S2, item)))
+        assert error.status_code == 502
+
+
+class TestMalformedItems:
+    """What an item says wrongly is the source's mistake: a 502 by name, never a crash and never a guess."""
+
+    async def test_a_checksum_or_update_time_too_long_for_a_version(self) -> None:
+        item = s2_item()
+        item["assets"]["red"]["file:checksum"] = "x" * 300
+        error = await refused(order(assets=("red",)), Source((S2, item)))
+        assert error.status_code == 502
+        eopf = eopf_item()
+        eopf["properties"]["updated"] = "y" * 300
+        error = await refused(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04",)), Source((EOPF, eopf)))
+        assert error.status_code == 502
+
+    @pytest.mark.parametrize(
+        "bands",
+        [
+            [None, {"data_type": "uint16", "scale": 0.5, "offset": 1.0}],
+            {"scale": 2},
+            "uint16",
+            [[1, 2]],
+        ],
+        ids=["a null entry shifts the next", "an object for a list", "a string", "a list in a list"],
+    )
+    async def test_band_descriptions_that_are_not_a_list_of_objects(self, bands: Any) -> None:
+        item = s2_item()
+        item["assets"]["red"]["raster:bands"] = bands
+        error = await refused(order(assets=("red",)), Source((S2, item)))
+        assert error.status_code == 502
+        assert "raster:bands" in error.detail
+
+    async def test_two_bands_with_one_name(self) -> None:
+        item = eopf_item()
+        item["assets"]["SR_10m"].pop("raster:bands")
+        item["assets"]["SR_10m"]["bands"] = [
+            {"name": "b04", "raster:scale": 0.1},
+            {"name": "b04", "raster:scale": 0.2},
+        ]
+        error = await refused(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04",)), Source((EOPF, item)))
+        assert error.status_code == 502
+        assert "share a name" in error.detail
+
+    async def test_a_bbox_that_is_not_four_numbers(self) -> None:
+        item = s2_item()
+        item["bbox"] = ["a", "b", "c", "d"]
         error = await refused(order(), Source((S2, item)))
         assert error.status_code == 502
 
@@ -832,6 +903,20 @@ class TestCropRecipeJson:
     def test_an_item_pointing_off_the_dataset_is_refused_here_too(self) -> None:
         item = s2_item()
         item["assets"]["red"]["href"] = "https://evil.example/B04.tif"
+        with pytest.raises(OrderRefused) as error:
+            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT)
+        assert error.value.status_code == 502
+
+    def test_an_aoi_with_properties_keeps_only_its_geometry(self) -> None:
+        """A place-search AOI carries its provenance in `properties` (M3-07b); the notice reads it, the recipe does not."""
+        aoi = {**SQUARE, "properties": {"attribution": "OSM contributors"}}
+        raw = crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=aoi, resolution_factor=1, accepted_at=AT)
+        assert json.loads(raw)["aoi"] == SQUARE
+        assert b"OSM" not in raw
+
+    def test_a_checksum_too_long_for_a_version_is_refused_not_a_crash(self) -> None:
+        item = s2_item()
+        item["assets"]["red"]["file:checksum"] = "x" * 300
         with pytest.raises(OrderRefused) as error:
             crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT)
         assert error.value.status_code == 502

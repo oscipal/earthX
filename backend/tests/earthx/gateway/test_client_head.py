@@ -258,3 +258,46 @@ async def test_a_head_never_logs_its_query(caplog: pytest.LogCaptureFixture) -> 
     assert caplog.records
     assert "9.01,47.01" not in caplog.text
     assert "bbox" not in caplog.text
+
+
+async def test_a_head_within_a_narrower_policy_refuses_a_redirect_to_a_host_outside_it() -> None:
+    """``within`` only narrows: ``OTHER`` is on the gateway's own list, but not on this one's."""
+    handler, seen = redirecting(f"https://{OTHER}/a.tif")
+    gateway, _ = build(handler)
+    async with gateway:
+        with pytest.raises(UrlRejected):
+            await gateway.head(URL, within=Policy(allowed_hosts=frozenset({HOST})))
+    assert len(seen) == 1
+
+
+async def test_a_head_within_a_policy_still_follows_a_redirect_inside_it() -> None:
+    handler, seen = redirecting(f"https://{OTHER}/a.tif")
+    gateway, _ = build(handler)
+    async with gateway:
+        response = await gateway.head(URL, within=Policy(allowed_hosts=frozenset({HOST, OTHER})))
+    assert response.headers["etag"] == '"far"'
+    assert len(seen) == 2
+
+
+async def test_within_never_widens_the_gateways_own_policy() -> None:
+    handler, seen = redirecting("https://evil.tld/a.tif")
+    gateway, _ = build(handler)
+    async with gateway:
+        with pytest.raises(UrlRejected):
+            await gateway.head(URL, within=Policy(allowed_hosts=frozenset({HOST, "evil.tld"})))
+    assert len(seen) == 1
+
+
+async def test_a_host_outside_within_is_refused_before_it_is_resolved() -> None:
+    resolved: list[str] = []
+
+    def resolve(host: str, port: int) -> tuple[str, ...]:
+        resolved.append(host)
+        return ("93.184.216.34",)
+
+    handler, seen = replies(httpx.Response(200))
+    gateway, _ = build(handler, resolve=resolve)
+    async with gateway:
+        with pytest.raises(UrlRejected):
+            await gateway.head(f"https://{OTHER}/a.tif", within=Policy(allowed_hosts=frozenset({HOST})))
+    assert resolved == [] and seen == []

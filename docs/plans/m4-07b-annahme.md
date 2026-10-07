@@ -451,3 +451,40 @@ F1–F8 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
 - Der Test der Logs setzt `httpx` wie die Produktion auf `WARNING`
   (`earthx/logging.py`): Der Logger von `httpx` schreibt sonst die URL, bei
   `HEAD` ohne Query.
+
+**Befunde des `reviewer` (07.10.2026), behoben:**
+
+- **`HEAD` über eine Weiterleitung auf den Host eines anderen Datensatzes:** Die
+  Policy des Prozesses kennt die Hosts aller Datensätze; eine Weiterleitung auf
+  `e84-…` hätte dem DEM die Fassung des Sentinel-2-Buckets gegeben. `Gateway.head`
+  hat deshalb den Parameter `within`: eine zweite Policy, die jeden Sprung
+  zusätzlich bestehen muss, vor jeder Namensauflösung. Er engt nur ein. Die
+  Annahme übergibt die Hosts des eigenen Datensatzes; die Weiterleitung gilt dann
+  wie jede andere Abweisung von `head()` (Fassung leer, Warnung).
+- **`UrlTooLong` und zu lange Fassungen** (`file:checksum`, `updated` über 256
+  Zeichen) waren nicht abgefangene Ausnahmen (500). Jetzt `502` bzw. `400`.
+- **Bandbeschreibungen:** Einträge, die keine Objekte sind, und
+  `raster:bands`/`bands` in anderer Form als einer Liste ließen Bänder still
+  verrutschen oder verschwinden. Jetzt `502`, ebenso zwei Bänder mit einem Namen
+  und eine `bbox`, die nicht aus vier Zahlen besteht.
+- **`crop_recipe_json` und `properties` an der AOI:** Eine Orts-AOI trägt sie
+  (M3-07b); das Rezeptmodell verbietet sie. Das Rezept bekommt nur `type` und
+  `coordinates`; die Herkunft bleibt in `aoi.geojson` und `ATTRIBUTION.txt`.
+- **Der `tiler` lud über `api.intake` den ganzen Worker-Kern.** `OrderRefused`
+  und die Fehlerabbildung stehen jetzt in `api/item_source.py`
+  (`fetch_item_or_refuse`; der Name `fetch_item` gehört der pgstac-Funktion, die
+  Tests patchen).
+- Aufgeräumt: toter Zweig in `_check_steps`, Kommentar zur Fassung am richtigen
+  Ort, `_resolve_checked` und `_check_hosts_of` nicht öffentlich.
+
+**Bekannte Grenzen:**
+
+- Das Log `order refused` nennt Status und Text, nicht die Stufe (Plan §3.3
+  Schritt 11 sagte „und Stufe“): Der Text benennt sie schon.
+- **Zahl der `HEAD`:** Ein COG-Datensatz ohne `file:checksum` kostet eine Anfrage
+  je Item und Asset, bei 25 Items und 16 Assets bis zu 400 (die Grenze von sechs
+  je Host in `gateway` bremst sie). Der Plan rechnete „1 je Kachel“, das stimmt
+  für das DEM mit seinem einen Asset. Heute hat kein Datensatz, der es betrifft,
+  mehr als eines.
+- Die Subdomain-Regel von `Policy.allows_host` (echte Subdomains einer erlaubten
+  Domain gelten) bestand schon; bei S3-Buckets scheitert sie praktisch an TLS.
