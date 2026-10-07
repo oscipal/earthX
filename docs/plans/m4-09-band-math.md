@@ -486,6 +486,17 @@ unberührt, `lint-imports` hält alle 14 Verträge.
    ist leer (keine Bandbeschreibung, Typ `float32`).
 10. **Nicht gemessen:** Zarr-Kacheln unterhalb der nativen Ebene (Vorschau) und
     Mosaik. Der Test für z11 prüft nur `200`.
+11. **Nach dem Merge von `main` (M4-08b, M4-14, M4-07b-fix): Start des `tiler` bleibt
+    leicht.** M4-14 verlangt, dass `import earthx.api.tiler` weder `earthx.api.intake`
+    noch `earthx.processing` lädt (`test_tiler_start_is_light.py`). Der `tiler` lädt die
+    Operator-Seite deshalb erst bei der ersten Kachel mit `op` (`_operator_support`);
+    `OperatorInput` liegt im `tiler` und ist lose getypt, `processing.tile` liest es über
+    ein Protokoll (`TileInputs`). Die Fehler der Operator-Kachel (`RecipeInvalid`,
+    `GridMismatch`, `ScalingMismatch`) wandelt der Reader in `TileRefused` mit Status
+    (`422`, `422`, `502`); der vorhandene Handler für rio-tilers Fehler liest ihn, so
+    braucht der `tiler` beim Start keine Klasse aus `processing`. Dazu: Die
+    Auftrags-Schema-Liste (`test_processing_docs.py`) kennt jetzt `band_math` als ersten
+    Schritt.
 
 **Gemessen am Ende (Sitzung, x86_64):** Setting A gegen D (`GLIBC_TUNABLES`
 wirkt: `0x7ed83203` → `0x7ed82203`) liefert für 14 Ausdrücke in float32 und

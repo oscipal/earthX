@@ -15,40 +15,55 @@ only on the native level is the tile bit-identical with the job (§6.3, F9).
 from __future__ import annotations
 
 from contextlib import ExitStack
-from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 from rio_tiler.errors import RioTilerError
 from rio_tiler.models import ImageData
 
+from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch
 from earthx.processing.operators.base import BandMeta, Operator, RasterMeta
 from earthx.processing.recipe import ResolvedInput
 from earthx.processing.source import Source, common_grid, merge_images
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
-__all__ = ["OperatorInput", "OperatorTileReader", "TileOptionRefused"]
+__all__ = ["OperatorTileReader", "TileInputs", "TileOptionRefused", "TileRefused"]
 
 
-class TileOptionRefused(RioTilerError):
-    """A tile option that has no meaning for an operator's tile (`400` in `api`)."""
+class TileRefused(RioTilerError):
+    """A refusal of an operator tile, with the HTTP status `api` answers it with (rio-tiler's handler reads it)."""
+
+    status_code = 400
 
 
-@dataclass(frozen=True, slots=True)
-class OperatorInput:
-    """What the path of an operator tile stands for: its assets, the operator and its parameters."""
+class TileOptionRefused(TileRefused):
+    """A tile option that has no meaning for an operator's tile (`400`)."""
+
+
+class TileInputs(Protocol):
+    """What `api` hands the reader: the assets of the tile, the operator and its validated parameters."""
 
     inputs: tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...]
     operator: Operator
     params: BaseModel
 
 
+def _as_refusal(error: BaseException) -> BaseException:
+    """The error as a :class:`TileRefused` with its status, or itself where it is none of the three below."""
+    for kind, status in ((RecipeInvalid, 422), (GridMismatch, 422), (ScalingMismatch, 502)):
+        if isinstance(error, kind):
+            refused = TileRefused(str(error))
+            refused.status_code = status
+            return refused
+    return error
+
+
 class OperatorTileReader:
     """Opens the assets of an :class:`OperatorInput` and reads the merged tile in physical values."""
 
-    def __init__(self, source: OperatorInput, *, tms: Any = None, **options: Any) -> None:
+    def __init__(self, source: TileInputs, *, tms: Any = None, **options: Any) -> None:
         if options:
             raise TileOptionRefused("this reader takes no reader options")
         self._input = source
@@ -66,9 +81,9 @@ class OperatorTileReader:
             meta = RasterMeta(finest.crs.to_string(), finest.transform, finest.width, finest.height, bands, resampled)
             # The names and the syntax are judged before the first pixel, as in a job.
             self._input.operator.transform(meta, self._input.params)
-        except BaseException:
+        except BaseException as error:
             self._stack.close()
-            raise
+            raise _as_refusal(error) from error
         return self
 
     def __exit__(self, *exc_info: Any) -> None:

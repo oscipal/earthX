@@ -38,7 +38,9 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
@@ -87,7 +89,6 @@ from earthx.adapters import (
 )
 from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
-from earthx.api.intake import describe_bands
 from earthx.api.item_source import (
     OrderRefused,
     build_item_source,
@@ -106,11 +107,6 @@ from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
-from earthx.processing.errors import GridMismatch, RecipeInvalid, ScalingMismatch, UnknownOperator
-from earthx.processing.operators import REGISTRY as OPERATORS
-from earthx.processing.operators import OperatorRegistry, Tier, applicable
-from earthx.processing.recipe import ResolvedAssetModel, ResolvedInput
-from earthx.processing.tile import OperatorInput, OperatorTileReader
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
@@ -309,6 +305,43 @@ def _resolve_asset_path(
     return _open_ref(state, ref, target_gsd=target_gsd)
 
 
+@dataclass(frozen=True, slots=True)
+class OperatorInput:
+    """What the path of an operator tile stands for: its assets, the operator and its parameters.
+
+    Defined here and typed loosely on purpose: the tiler does not load the worker core when it
+    starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
+    object by its three attributes (``TileInputs``).
+    """
+
+    inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
+    operator: Any
+    params: Any
+
+
+def _operator_support() -> Any:
+    """The worker core's operator side, imported when the first operator tile needs it.
+
+    A start of the tiler stays light (``test_tiler_start_is_light``): `processing` brings numexpr
+    and the COG writer, which a tiler that never sees ``op`` has no use for.
+    """
+    from earthx.api.intake import describe_bands
+    from earthx.processing import operators, tile
+    from earthx.processing.errors import UnknownOperator
+    from earthx.processing.recipe import ResolvedAssetModel, ResolvedInput
+
+    return SimpleNamespace(
+        registry=operators.REGISTRY,
+        applicable=operators.applicable,
+        tier=operators.Tier,
+        unknown_operator=UnknownOperator,
+        resolved_input=ResolvedInput,
+        resolved_asset=ResolvedAssetModel,
+        reader=tile.OperatorTileReader,
+        describe_bands=describe_bands,
+    )
+
+
 # A tile URL that carries an operator names it, its version and its parameters, and
 # nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8).
 MAX_OPERATOR_ASSETS = 16
@@ -330,9 +363,7 @@ def _refuse_free_parameters(request: Request) -> None:
             )
 
 
-def _operator_request(
-    request: Request, config: DatasetConfig, operators: OperatorRegistry
-) -> tuple[Any, Any] | None:
+def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any] | None:
     """``(operator, parameters)`` of an ``op`` in the query, or ``None`` when the URL names none.
 
     ``400`` for a query that is malformed or whose parameters do not validate (R5
@@ -344,6 +375,8 @@ def _operator_request(
     given = [name for name in ("op", "op_version", "params") if name in query]
     if not given:
         return None
+    support = _operator_support()
+    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
     if len(given) != 3 or any(len(query.getlist(name)) != 1 for name in given):
         raise HTTPException(status_code=400, detail="op, op_version and params go together, once each")
     raw = query["params"]
@@ -355,9 +388,9 @@ def _operator_request(
         raise HTTPException(status_code=400, detail="op_version is a whole number") from None
     try:
         operator = operators.operator(query["op"], version)
-    except UnknownOperator as error:
+    except support.unknown_operator as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
-    if Tier.T1 not in operator.tiers or operator.kind != "pixel":
+    if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
         raise HTTPException(status_code=422, detail=f"{operator.op!r} does not run as a tile")
     try:
         params = operator.params.model_validate_json(raw, strict=True)
@@ -367,7 +400,7 @@ def _operator_request(
             for entry in error.errors(include_url=False, include_input=False, include_context=False)
         )
         raise HTTPException(status_code=400, detail=f"params: {problems}") from None
-    reasons = applicable(operator, config, params)
+    reasons = support.applicable(operator, config, params)
     if reasons:
         raise HTTPException(status_code=422, detail=f"{operator.op!r} cannot run here: {'; '.join(reasons)}")
     return operator, params
@@ -385,16 +418,17 @@ def _operator_input(
     target_gsd: float | None,
 ) -> OperatorInput:
     """The assets of an operator tile, each with the bands and scaling source the item describes."""
+    support = _operator_support()
     inputs = []
     for key in assets:
         ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
         try:
-            bands, scaling = describe_bands(stac_item, config, ref)
+            bands, scaling = support.describe_bands(stac_item, config, ref)
             # Item scaling is applied by the core, so the reader reads raw; without it the
             # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
             target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=scaling == "store-cf")
-            entry = ResolvedInput(
-                asset=ResolvedAssetModel(**ref.to_json()), version=None, bands=bands, scaling=scaling, gsd=None
+            entry = support.resolved_input(
+                asset=support.resolved_asset(**ref.to_json()), version=None, bands=bands, scaling=scaling, gsd=None
             )
         except OrderRefused as error:
             raise HTTPException(status_code=error.status_code, detail=error.detail) from None
@@ -433,7 +467,7 @@ async def dataset_asset_path(
     _check_display_allowed(config)
     _check_zoom_released(request, config)
     _refuse_free_parameters(request)
-    requested = _operator_request(request, config, getattr(state, "earthx_operators", OPERATORS))
+    requested = _operator_request(request, config)
     if requested is None:
         if len(asset) != 1:
             raise HTTPException(status_code=400, detail="name one asset, or several together with op")
@@ -485,7 +519,7 @@ def operator_post_process(
 def _open_reader(src_path: Any, **reader_params: Any) -> Any:
     """The reader of the tile: ours for an operator's inputs, `access`'s for a single asset."""
     if isinstance(src_path, OperatorInput):
-        return OperatorTileReader(src_path, **reader_params)
+        return _operator_support().reader(src_path, **reader_params)
     return open_asset(src_path, **reader_params)
 
 
@@ -890,8 +924,6 @@ def build_app(
     # The item source fetches federated items through this table (adr/0011 F1).
     app.state.earthx_adapters = adapters
 
-    app.state.earthx_operators = OPERATORS
-
     factory = EarthxTilerFactory(
         path_dependency=dataset_asset_path,
         layer_dependency=BidxParams,
@@ -919,22 +951,8 @@ def build_app(
     async def _rio_tiler_error(request: Request, error: RioTilerError):
         # Band names, expressions, colormaps: what the caller asked for cannot be
         # rendered from this asset. The message is rio-tiler's own and names no address.
-        return _problem(400, str(error))
-
-    @app.exception_handler(RecipeInvalid)
-    async def _operator_not_applicable(request: Request, error: RecipeInvalid):
-        # An operator tile names a band the assets do not have: well formed, but not
-        # something these assets can answer. The text names bands, never an address.
-        return _problem(422, str(error))
-
-    @app.exception_handler(GridMismatch)
-    async def _grid_mismatch(request: Request, error: GridMismatch):
-        return _problem(422, str(error))
-
-    @app.exception_handler(ScalingMismatch)
-    async def _scaling_mismatch(request: Request, error: ScalingMismatch):
-        # Item and file disagree on the scaling: the source's side of the line (adr/0014 §5.4).
-        return _problem(502, str(error))
+        # An operator tile's refusals (`processing.tile.TileRefused`) carry their own status.
+        return _problem(getattr(error, "status_code", 400), str(error))
 
     # Module-level, not a closure like the others above: a test builds its own
     # bare app around `EarthxTilerFactory` (`access.tiles`, no registry, no
