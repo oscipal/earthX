@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import re
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -28,6 +29,7 @@ from earthx.logging import (
     reset_request_id,
     summarize_geometry,
 )
+from tests.conftest import format_without_timestamp, log_line_without_timestamp
 
 # A distinctive, high-precision coordinate pair. If this exact value (or its
 # repr as a bare float) ever shows up in a log line, the redaction failed.
@@ -143,6 +145,30 @@ class TestUvicornAccessLogIsDisabledInCode:
         assert payload["status"] == 200
 
 
+class TestFormatWithoutTimestamp:
+    def _record_at_a_time_containing(self, digits: str, message: str, **extra: object) -> logging.LogRecord:
+        record = _make_record(message, **extra)
+        record.created = datetime(2026, 10, 7, 13, 26, 39, 3729, tzinfo=timezone.utc).timestamp()
+        assert digits in JsonFormatter().format(record)  # the raw line matches by chance
+        return record
+
+    def test_digits_that_only_the_timestamp_holds_are_not_in_the_rendered_line(self) -> None:
+        record = self._record_at_a_time_containing("9.0", "run ended", run="r1")
+        assert "9.0" not in format_without_timestamp(record)
+
+    def test_a_coordinate_in_the_message_is_still_in_the_rendered_line(self) -> None:
+        record = self._record_at_a_time_containing("9.0", "read window at 47.0,9.0")
+        assert "9.0" in format_without_timestamp(record)
+
+    def test_a_coordinate_in_an_extra_field_is_still_in_the_rendered_line(self) -> None:
+        record = self._record_at_a_time_containing("9.0", "run ended", bbox="9.0,47.0")
+        assert "47.0" in format_without_timestamp(record)
+
+    def test_a_line_without_a_timestamp_is_refused_rather_than_passed_on(self) -> None:
+        with pytest.raises(KeyError):
+            log_line_without_timestamp(json.dumps({"message": "no time"}))
+
+
 class TestJsonFormatter:
     def test_output_is_one_json_object_with_the_expected_fields(self) -> None:
         token = bind_request_id("req-abc123")
@@ -173,7 +199,7 @@ class TestJsonFormatter:
         # Guards against a future caller bypassing summarize_geometry and
         # logging a raw geometry directly as an extra field.
         record = _make_record("aoi received", aoi=summarize_geometry(_VALID_POLYGON))
-        line = JsonFormatter().format(record)
+        line = format_without_timestamp(record)
         assert str(_EXACT_LON) not in line
         assert str(_EXACT_LAT) not in line
 
@@ -370,9 +396,8 @@ class TestEndToEndGeometryLogging:
             response = client.post("/aoi", json={"aoi": malformed_aoi})
 
         assert response.status_code == 200
-        formatter = JsonFormatter()
         for record in caplog.records:
-            line = formatter.format(record)
+            line = format_without_timestamp(record)
             assert str(_EXACT_LON) not in line
 
     def test_a_valid_aoi_in_a_request_does_not_leak_coordinates_into_the_log(
@@ -392,9 +417,8 @@ class TestEndToEndGeometryLogging:
             response = client.post("/aoi", json={"aoi": _VALID_POLYGON})
 
         assert response.status_code == 200
-        formatter = JsonFormatter()
         for record in caplog.records:
-            line = formatter.format(record)
+            line = format_without_timestamp(record)
             assert str(_EXACT_LON) not in line
             assert str(_EXACT_LAT) not in line
 
