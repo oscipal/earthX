@@ -503,19 +503,23 @@ float64 dieselben SHA-256; die Gegenprobe mit `log`, `exp`, `x**51` weicht ab.
   (Otto)“.
 - **Abweichungen 1–4 aus §9 angenommen.**
 - **Roter Test aus M4-08a** (`test_worker.py::TestLogs`, die Koordinate `9.0`
-  steckt im Zeitstempel): nicht hier, eigene Session. Nach deren Merge wird
-  `main` geholt und der CI-Lauf im PR genannt.
+  steckt im Zeitstempel): nicht hier, eigene Session (M4-08a-fix, #130, gemergt).
+  `main` ist danach geholt, der CI-Lauf im PR genannt.
 
-**Lokale Prüfanleitung (Windows/PowerShell).** Die Kachel liegt vollständig im
-Footprint des Items, das Item und der Footprint sind aus der Sitzung per `curl`
-belegt (eine Anfrage an Earth Search); gerendert wurde gegen die echte Quelle
-nicht, das ist Ottos Prüfung.
+**Lokale Prüfanleitung (Windows/PowerShell).** Dieselbe Szene, die `scripts/try-job.ps1`
+(M4-08b) für sein Standardgebiet und seinen Standardzeitraum wählt: die neueste von 18
+Szenen im Juli 2025, `S2B_T32UNV_20250729T102457_L2A` (Wolkenbedeckung 60 %; geprüft
+am 07.10.2026 mit einer Suchanfrage an Earth Search aus der Sitzung, wie sie der
+Viewer stellt). Die Kachel `14/8669/5591` liegt vollständig im Footprint der Szene und
+enthält das Westende des Standardgebiets. Gerendert gegen die echte Quelle wurde
+nicht, das ist die Prüfung hier; mit den synthetischen Daten der Tests liefern
+dieselben Aufrufe `200` (PNG) bzw. `400`.
 
 ```powershell
 docker compose up -d --build
 docker compose ps        # api und tiler: healthy
 
-$tile = "http://localhost:8001/collections/sentinel-2-c1-l2a/items/S2A_T32TMT_20260731T102238_L2A/tiles/WebMercatorQuad/14/8581/5739.png"
+$tile = "http://localhost:8001/collections/sentinel-2-c1-l2a/items/S2B_T32UNV_20250729T102457_L2A/tiles/WebMercatorQuad/14/8669/5591.png"
 
 # 1. NDVI als Operator: 200, ein 256 x 256 PNG (rot-gelb-grün, -1 bis 1)
 $ndvi = "$tile?asset=red&asset=nir&op=band_math&op_version=1&params=%7B%22expression%22%3A%22%28nir-red%29%2F%28nir%2Bred%29%22%7D&rescale=-1,1&colormap_name=rdylgn"
