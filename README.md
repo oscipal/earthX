@@ -115,7 +115,9 @@ und kein Token. Alles läuft in Containern.
    `objectstore-init` (legt darüber die Schlüssel und den Bucket an und setzt
    die Ablaufregel für `results/`: 7 Tage, offene Multipart-Uploads nach
    1 Tag). Das ist normal — nur die sechs Dienste oben sollen dauerhaft
-   laufen. `worker` startet nur, wenn die Ablaufregel am Bucket steht. Eine
+   laufen. `worker` startet nur, wenn die Ablaufregel am Bucket steht und die
+   Tabellen der Warteschlange da sind (Migration `006`, angewandt von
+   `catalog-load`; seit M4-08a). Eine
    bestehende Datenbank braucht nach M3-11a (neues Feld
    `earthx:source.item_holding`) einmal einen neuen Lauf von `catalog-load`,
    damit die Collection-Dokumente das Feld tragen; ein normaler
@@ -151,6 +153,15 @@ und kein Token. Alles läuft in Containern.
    ```
    zeigt `lifecycle rule results-7d set (prefix results/, expire after 7 days,
    abort multipart after 1 day)` — ohne Schlüssel oder Secret.
+8. **Worker prüfen** (M4-08a):
+   ```bash
+   docker compose ps worker
+   docker compose logs worker
+   ```
+   `worker` zeigt `healthy`, das Log `worker started with 2 slots` und keine
+   Fehler. Er holt Läufe aus Postgres ab, höchstens 4 gleichzeitig und 2 je
+   Quell-Host (die Zeile `earthx_job_limits`), und rechnet jeden in einem
+   eigenen Kindprozess. Routen zum Einreihen folgen mit M4-08b.
 
 ### Einen STAC-Browser auf den eigenen Katalog richten
 
