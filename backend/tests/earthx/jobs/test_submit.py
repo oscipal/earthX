@@ -7,6 +7,7 @@ The queue tables are real and committed, in a database of the session's own
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -14,11 +15,17 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 import pytest
 
-from earthx.jobs.submit import MIN_RUNTIME_SECONDS, JobStatus, dismiss, job_status, submit
+from earthx.jobs.submit import MIN_RUNTIME_SECONDS, JobStatus, RecipeIdTaken, dismiss, job_status, submit
 from earthx.processing.recipe import cache_key, run_key
 from tests.earthx.jobs.support import HOST, add_run, make_recipe, run_row, status_of
 
 ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
+
+
+def _run_of(conn: psycopg.Connection) -> int:
+    row = conn.execute("SELECT run_id FROM public.earthx_run").fetchone()
+    assert row is not None
+    return row[0]
 
 
 def _count(conn: psycopg.Connection, table: str) -> int:
@@ -67,10 +74,13 @@ class TestSubmit:
         again = recipe_from_data(body[0], REGISTRY)
         assert run_key(again) == run_key(recipe)
 
-    def test_a_recipe_id_that_exists_is_refused_and_leaves_nothing_behind(self, db: psycopg.Connection) -> None:
+    def test_a_recipe_id_that_exists_is_refused_without_naming_it_and_leaves_nothing_behind(
+        self, db: psycopg.Connection
+    ) -> None:
         submit(db, make_recipe(recipe_id="B" * 22))
-        with pytest.raises(psycopg.errors.UniqueViolation):
+        with pytest.raises(RecipeIdTaken) as caught:
             submit(db, make_recipe("ITEM_OTHER", recipe_id="B" * 22))
+        assert "B" * 22 not in str(caught.value) and caught.value.__cause__ is None
         assert (_count(db, "earthx_recipe"), _count(db, "earthx_run"), _count(db, "earthx_job")) == (1, 1, 1)
 
     def test_equal_orders_placed_one_after_the_other_share_the_active_run(self, db: psycopg.Connection) -> None:
@@ -205,6 +215,18 @@ class TestStatus:
             {"blocks": 3},
         )
 
+    def test_a_successful_job_shows_a_result_that_names_no_address_and_no_run(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        db.execute(
+            "UPDATE public.earthx_run SET status = 'successful', result_id = %s, progress = 100, result = %s",
+            ("R" * 22, json.dumps({"blocks": 3, "width": 4, "properties": {"gsd": 10.0}})),
+        )
+        status = job_status(db, job_id)
+        assert status is not None
+        assert status.result == {"blocks": 3, "width": 4, "properties": {"gsd": 10.0}}
+        text = repr(status)
+        assert "c1:" not in text and HOST not in text and "run_id" not in text
+
     def test_a_failed_job_names_its_error_kind_and_nothing_else(self, db: psycopg.Connection) -> None:
         run_id, (job_id,) = add_run(db, status="failed")
         db.execute("UPDATE public.earthx_run SET error_kind = 'source_4xx' WHERE run_id = %s", (run_id,))
@@ -294,6 +316,14 @@ class TestDismiss:
         assert db.execute("SELECT status FROM public.earthx_run").fetchone() == ("dismissed",)
         submit(db, recipe)  # the same order again starts a new run
         assert _count(db, "earthx_run") == 2
+
+    def test_dismissing_a_waiting_run_tells_those_who_listen_to_its_progress(self, db: psycopg.Connection) -> None:
+        job_id = submit(db, make_recipe())
+        with psycopg.connect(autocommit=True) as listener:
+            listener.execute("LISTEN earthx_job_progress")
+            dismiss(db, job_id)
+            messages = [json.loads(n.payload) for n in listener.notifies(timeout=0.3)]
+        assert messages == [{"run": _run_of(db), "p": 0, "s": "dismissed"}]
 
     def test_a_running_run_is_asked_to_cancel_and_the_workers_are_woken(self, db: psycopg.Connection) -> None:
         run_id, (job_id,) = add_run(db, status="running")

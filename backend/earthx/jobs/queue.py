@@ -42,6 +42,7 @@ __all__ = [
     "finish_failed",
     "finish_successful",
     "heartbeat",
+    "notify_progress",
     "release",
     "requeue_expired",
     "write_progress",
@@ -114,7 +115,8 @@ class Claim:
     recipe: dict[str, Any]
 
 
-def _notify(conn: psycopg.Connection, run_id: int, progress: int, status: str) -> None:
+def notify_progress(conn: psycopg.Connection, run_id: int, progress: int, status: str) -> None:
+    """Send the progress message of a run; in the caller's transaction, so a rollback sends none."""
     payload = json.dumps({"run": run_id, "p": progress, "s": status}, separators=(",", ":"))
     conn.execute("SELECT pg_notify(%s, %s)", (PROGRESS_CHANNEL, payload))
 
@@ -138,7 +140,7 @@ def claim(
         row = conn.execute(CLAIM_SQL, {"pools": list(pools), "worker": worker, "lease": lease_seconds}).fetchone()
         if row is None:
             return None
-        _notify(conn, row[0], 0, "running")
+        notify_progress(conn, row[0], 0, "running")
         return Claim(run_id=row[0], attempt=row[1], max_seconds=row[2], recipe=row[3])
 
 
@@ -170,7 +172,7 @@ def write_progress(conn: psycopg.Connection, run_id: int, attempt: int, percent:
         ).fetchone()
         if row is None:
             return None
-        _notify(conn, run_id, percent, "running")
+        notify_progress(conn, run_id, percent, "running")
         return bool(row[0])
 
 
@@ -195,7 +197,7 @@ def finish_successful(
         ).fetchone()
         if row is None:
             return False
-        _notify(conn, run_id, 100, "successful")
+        notify_progress(conn, run_id, 100, "successful")
         return True
 
 
@@ -207,7 +209,6 @@ WITH ended AS (
     SELECT run_id, (%(retry)s AND attempt < max_attempts) AS again
     FROM public.earthx_run
     WHERE run_id = %(run)s AND attempt = %(attempt)s AND status = 'running'
-    FOR UPDATE
 )
 UPDATE public.earthx_run r
 SET status = CASE WHEN e.again THEN 'accepted' ELSE 'failed' END,
@@ -228,15 +229,79 @@ RETURNING r.status, r.progress
 """
 
 
+def _lock_attempt(
+    conn: psycopg.Connection, run_id: int, attempt: int, *, lease_expired_only: bool = False
+) -> tuple[bool, bool] | None:
+    """Lock the run for this attempt, then read ``(cancel_requested, a live job hangs on it)``.
+
+    ``None`` if the attempt no longer owns the run (or, with ``lease_expired_only``, if its
+    lease was renewed since). Two statements, on purpose, like the pick-up: in READ COMMITTED
+    the second one starts after the lock is held and so sees every job a concurrent
+    ``submit`` committed while this one waited. Counting in the statement that waits for the
+    lock would use the picture from before the wait and could dismiss a run that has a live
+    job (the same stale count as the cap, adr/0013 §5.2).
+    """
+    locked = conn.execute(
+        """
+        SELECT 1 FROM public.earthx_run
+        WHERE run_id = %s AND attempt = %s AND status = 'running'
+          AND (NOT %s OR lease_until < clock_timestamp())
+        FOR UPDATE
+        """,
+        (run_id, attempt, lease_expired_only),
+    ).fetchone()
+    if locked is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT cancel_requested,
+               EXISTS (SELECT 1 FROM public.earthx_job j WHERE j.run_id = %s AND NOT j.dismissed)
+        FROM public.earthx_run WHERE run_id = %s
+        """,
+        (run_id, run_id),
+    ).fetchone()
+    assert row is not None
+    return bool(row[0]), bool(row[1])
+
+
+def _dismiss_locked(conn: psycopg.Connection, run_id: int) -> str:
+    conn.execute(
+        """
+        UPDATE public.earthx_run
+        SET status = 'dismissed', worker = NULL, lease_until = NULL, cancel_requested = false,
+            finished_at = clock_timestamp()
+        WHERE run_id = %s
+        """,
+        (run_id,),
+    )
+    row = conn.execute("SELECT progress FROM public.earthx_run WHERE run_id = %s", (run_id,)).fetchone()
+    notify_progress(conn, run_id, row[0] if row else 0, "dismissed")
+    return "dismissed"
+
+
 def finish_failed(
-    conn: psycopg.Connection, run_id: int, attempt: int, kind: str, *, backoff_seconds: float = 30.0
+    conn: psycopg.Connection,
+    run_id: int,
+    attempt: int,
+    kind: str,
+    *,
+    backoff_seconds: float = 30.0,
+    lease_expired_only: bool = False,
 ) -> str | None:
     """End an attempt with a failure named ``kind``; returns the run's new status or ``None`` if not owned.
 
     Back to ``accepted`` with a delay of ``backoff_seconds × 2^(attempt−1)`` ±20 % if ``kind`` is
-    in :data:`RETRYABLE` and attempts are left (adr/0013 §5.6), ``failed`` otherwise.
+    in :data:`RETRYABLE` and attempts are left (adr/0013 §5.6), ``failed`` otherwise. A run that
+    was being cancelled and has no live job any more is ``dismissed`` instead: nobody waits for
+    a second attempt of it.
     """
     with conn.transaction():
+        state = _lock_attempt(conn, run_id, attempt, lease_expired_only=lease_expired_only)
+        if state is None:
+            return None
+        cancel_requested, live = state
+        if cancel_requested and not live:
+            return _dismiss_locked(conn, run_id)
         row = conn.execute(
             _END_ATTEMPT_SQL,
             {
@@ -248,9 +313,8 @@ def finish_failed(
                 "ttl": RESULT_TTL,
             },
         ).fetchone()
-        if row is None:
-            return None
-        _notify(conn, run_id, row[1], row[0])
+        assert row is not None
+        notify_progress(conn, run_id, row[1], row[0])
         if row[0] == "accepted":
             _wake(conn)
         return row[0]
@@ -268,30 +332,24 @@ def finish_cancelled(conn: psycopg.Connection, run_id: int, attempt: int) -> str
     the cancel was asked for, adr/0013 §5.5), the run goes back to the queue instead.
     """
     with conn.transaction():
-        row = conn.execute(
-            """
-            UPDATE public.earthx_run r
-            SET status = CASE WHEN live.any THEN 'accepted' ELSE 'dismissed' END,
-                worker = NULL, lease_until = NULL, cancel_requested = false,
-                progress = CASE WHEN live.any THEN 0 ELSE r.progress END,
-                not_before = clock_timestamp(),
-                finished_at = CASE WHEN live.any THEN NULL ELSE clock_timestamp() END
-            FROM (
-                SELECT EXISTS (
-                    SELECT 1 FROM public.earthx_job j WHERE j.run_id = %(run)s AND NOT j.dismissed
-                ) AS any
-            ) AS live
-            WHERE r.run_id = %(run)s AND r.attempt = %(attempt)s AND r.status = 'running'
-            RETURNING r.status, r.progress
-            """,
-            {"run": run_id, "attempt": attempt},
-        ).fetchone()
-        if row is None:
+        state = _lock_attempt(conn, run_id, attempt)
+        if state is None:
             return None
-        _notify(conn, run_id, row[1], row[0])
-        if row[0] == "accepted":
-            _wake(conn)
-        return row[0]
+        _, live = state
+        if not live:
+            return _dismiss_locked(conn, run_id)
+        conn.execute(
+            """
+            UPDATE public.earthx_run
+            SET status = 'accepted', worker = NULL, lease_until = NULL, cancel_requested = false,
+                progress = 0, not_before = clock_timestamp()
+            WHERE run_id = %s
+            """,
+            (run_id,),
+        )
+        notify_progress(conn, run_id, 0, "accepted")
+        _wake(conn)
+        return "accepted"
 
 
 def requeue_expired(conn: psycopg.Connection, *, backoff_seconds: float = 30.0) -> int:
@@ -308,6 +366,9 @@ def requeue_expired(conn: psycopg.Connection, *, backoff_seconds: float = 30.0) 
         """
     ).fetchall()
     for run_id, attempt in expired:
-        if finish_failed(conn, run_id, attempt, "lease_lost", backoff_seconds=backoff_seconds) is not None:
+        if (
+            finish_failed(conn, run_id, attempt, "lease_lost", backoff_seconds=backoff_seconds, lease_expired_only=True)
+            is not None
+        ):
             handled += 1
     return handled

@@ -507,6 +507,103 @@ class TestCancelled:
         assert _pick(db, "next") is not None
 
 
+def _lock_state(conn: psycopg.Connection, run_id: int) -> None:
+    conn.execute("SELECT 1 FROM public.earthx_run WHERE run_id = %s FOR UPDATE", (run_id,))
+
+
+def _waiting_for_a_row_lock(conn: psycopg.Connection) -> bool:
+    row = conn.execute(
+        "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event IN ('transactionid', 'tuple')"
+    ).fetchone()
+    return row is not None and row[0] >= 1
+
+
+class TestACancelAndANewOrderAtTheSameTime:
+    """The count of live jobs is taken after the lock is held: a job that committed while the cancel waited counts."""
+
+    def _race(self, db: psycopg.Connection, end: Callable[[psycopg.Connection, int, int], object]):
+        run_id, (first, _) = add_run(db, jobs=2)
+        picked = _pick(db)
+        assert picked is not None
+        db.execute("UPDATE public.earthx_job SET dismissed = true")
+        db.execute("UPDATE public.earthx_run SET cancel_requested = true")
+        results: list[object] = []
+        with psycopg.connect(autocommit=True) as ender:
+            thread = threading.Thread(target=lambda: results.append(end(ender, run_id, picked.attempt)))
+            with db.transaction():
+                # What `submit` does when an equal order attaches: lock the run, then add a live job.
+                db.execute("UPDATE public.earthx_run SET cancel_requested = false WHERE run_id = %s", (run_id,))
+                thread.start()
+                wait_until(lambda: _waiting_for_a_row_lock(db))
+                recipe = db.execute("SELECT recipe_id FROM public.earthx_run WHERE run_id = %s", (run_id,)).fetchone()
+                assert recipe is not None
+                db.execute(
+                    "INSERT INTO public.earthx_job (job_id, run_id, recipe_id) VALUES ('L' || repeat('x', 21), %s, %s)",
+                    (run_id, recipe[0]),
+                )
+            thread.join(20)
+            assert not thread.is_alive()
+        return run_id, results[0]
+
+    def test_a_cancel_that_waited_sees_the_job_that_attached_meanwhile(self, db: psycopg.Connection) -> None:
+        run_id, result = self._race(db, lambda conn, run, attempt: finish_cancelled(conn, run, attempt))
+        assert result == "accepted"
+        assert status_of(db, run_id) == "accepted"
+
+    def test_a_failure_that_waited_sees_it_too(self, db: psycopg.Connection) -> None:
+        run_id, result = self._race(db, lambda conn, run, attempt: finish_failed(conn, run, attempt, "unknown"))
+        assert result == "failed", "the run is over for its attempt, and the live job is not dismissed with it"
+        assert run_row(db, run_id, "error_kind") == ("unknown",)
+
+
+class TestARunThatWasBeingCancelledIsNotTriedAgain:
+    @pytest.mark.parametrize("how", ["source_5xx", "lease_lost", "release"])
+    def test_nobody_waits_for_its_second_attempt(self, db: psycopg.Connection, how: str) -> None:
+        run_id, _ = add_run(db)
+        picked = _pick(db)
+        assert picked is not None
+        db.execute("UPDATE public.earthx_job SET dismissed = true")
+        db.execute("UPDATE public.earthx_run SET cancel_requested = true")
+        if how == "release":
+            assert release(db, run_id, picked.attempt) == "dismissed"
+        else:
+            assert finish_failed(db, run_id, picked.attempt, how) == "dismissed"
+        assert run_row(db, run_id, "status", "cancel_requested", "worker") == ("dismissed", False, None)
+        assert _pick(db, "next") is None
+
+    def test_one_that_a_live_job_waits_for_is_tried_again(self, db: psycopg.Connection) -> None:
+        run_id, (_first, _second) = add_run(db, jobs=2)
+        picked = _pick(db)
+        assert picked is not None
+        db.execute(
+            "UPDATE public.earthx_job SET dismissed = true WHERE job_id = (SELECT min(job_id) FROM public.earthx_job)"
+        )
+        db.execute("UPDATE public.earthx_run SET cancel_requested = true")
+        assert finish_failed(db, run_id, picked.attempt, "source_5xx") == "accepted"
+
+    def test_the_dismissal_is_announced(self, db: psycopg.Connection) -> None:
+        run_id, _ = add_run(db)
+        picked = _pick(db)
+        assert picked is not None
+        db.execute("UPDATE public.earthx_job SET dismissed = true")
+        db.execute("UPDATE public.earthx_run SET cancel_requested = true")
+        with psycopg.connect(autocommit=True) as listener:
+            listener.execute(f"LISTEN {PROGRESS_CHANNEL}")
+            finish_cancelled(db, run_id, picked.attempt)
+            assert [json.loads(n.payload) for n in listener.notifies(timeout=0.3)] == [
+                {"run": run_id, "p": 0, "s": "dismissed"}
+            ]
+
+
+class TestSweepingTouchesOnlyExpiredLeases:
+    def test_a_lease_renewed_since_the_look_is_not_taken_away(self, db: psycopg.Connection) -> None:
+        run_id, _ = add_run(db, status="running", attempt=1, lease_seconds=30)
+        assert finish_failed(db, run_id, 1, "lease_lost", lease_expired_only=True) is None
+        assert status_of(db, run_id) == "running"
+        _lease_runs_out(db, run_id)
+        assert finish_failed(db, run_id, 1, "lease_lost", lease_expired_only=True, backoff_seconds=0) == "accepted"
+
+
 class TestNotifications:
     def _listen(self) -> psycopg.Connection:
         listener = psycopg.connect(autocommit=True)

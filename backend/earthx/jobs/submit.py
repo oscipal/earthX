@@ -25,7 +25,7 @@ from typing import Any, Literal
 import psycopg
 from psycopg.types.json import Jsonb
 
-from earthx.jobs.queue import CACHE_MIN_REMAINING, WAKE_CHANNEL
+from earthx.jobs.queue import CACHE_MIN_REMAINING, WAKE_CHANNEL, notify_progress
 from earthx.objectstore.results import RESULT_TTL
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
@@ -35,6 +35,7 @@ __all__ = [
     "MIN_RUNTIME_SECONDS",
     "RUNTIME_FACTOR",
     "JobStatus",
+    "RecipeIdTaken",
     "dismiss",
     "job_status",
     "submit",
@@ -49,6 +50,10 @@ MIN_RUNTIME_SECONDS = 600
 _ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
 
 Status = Literal["accepted", "running", "successful", "failed", "dismissed"]
+
+
+class RecipeIdTaken(ValueError):
+    """The ``recipe_id`` the caller gave belongs to another recipe; the text names no value."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,10 +97,15 @@ def submit(conn: psycopg.Connection, recipe: Recipe) -> str:
     max_seconds = _runtime_limit(stored)
     job_id = secrets.token_urlsafe(16)
     with conn.transaction():
-        conn.execute(
-            "INSERT INTO public.earthx_recipe (recipe_id, body) VALUES (%s, %s)",
-            (recipe_id, Jsonb(stored.model_dump(mode="json"))),
-        )
+        try:
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO public.earthx_recipe (recipe_id, body) VALUES (%s, %s)",
+                    (recipe_id, Jsonb(stored.model_dump(mode="json"))),
+                )
+        except psycopg.errors.UniqueViolation:
+            # Not the database's text: it would name the identifier that was refused.
+            raise RecipeIdTaken("a recipe with this recipe_id exists") from None
         run_id, created = _run_for(conn, key, cacheable, recipe_id, hosts, max_seconds)
         conn.execute(
             "INSERT INTO public.earthx_job (job_id, run_id, recipe_id) VALUES (%s, %s, %s)",
@@ -217,13 +227,16 @@ def dismiss(conn: psycopg.Connection, job_id: str) -> JobStatus | None:
         ).fetchone()
         if run is not None and live is not None and live[0] == 0:
             if run[0] == "accepted":
-                conn.execute(
+                done = conn.execute(
                     """
                     UPDATE public.earthx_run SET status = 'dismissed', finished_at = clock_timestamp()
                     WHERE run_id = %s AND status = 'accepted'
+                    RETURNING progress
                     """,
                     (run_id,),
-                )
+                ).fetchone()
+                if done is not None:
+                    notify_progress(conn, run_id, done[0], "dismissed")
             elif run[0] == "running":
                 conn.execute("UPDATE public.earthx_run SET cancel_requested = true WHERE run_id = %s", (run_id,))
                 conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
