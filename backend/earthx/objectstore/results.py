@@ -43,6 +43,7 @@ PART_SIZE = 8 * 1024 * 1024
 # M4-11/M4-12 when a job writes further files.
 RESULT_NAMES: Mapping[str, str] = {
     "result.tif": "image/tiff; application=geotiff; profile=cloud-optimized",
+    "mask.tif": "image/tiff; application=geotiff",
     "recipe.json": "application/json",
     "citation.bib": "application/x-bibtex",
     "attribution.txt": "text/plain; charset=utf-8",
