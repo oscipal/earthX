@@ -136,3 +136,16 @@ def done_without_files(workdir: str, conn: Any) -> None:
     """Claims success but wrote nothing."""
     conn.send(("done", {"blocks": 1}))
     conn.close()
+
+
+def write_modules(workdir: str, conn: Any) -> None:
+    """Write what this child has loaded to ``PROBE_OUT``, then say it failed (there is nothing to upload)."""
+    import json
+
+    sys.modules["boto3"] = None  # type: ignore[assignment]
+    import earthx.jobs.child  # noqa: F401
+
+    loaded = sorted(name for name, module in sys.modules.items() if module is not None)
+    Path(os.environ["PROBE_OUT"]).write_text(json.dumps(loaded))
+    conn.send(("failed", "unknown"))
+    conn.close()

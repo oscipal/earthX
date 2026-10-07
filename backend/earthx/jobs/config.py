@@ -11,6 +11,7 @@ A bad value stops the start and names the variable, never the value.
 
 from __future__ import annotations
 
+import math
 import os
 import tempfile
 from collections.abc import Mapping
@@ -60,8 +61,8 @@ class WorkerConfig:
             ("WORKER_HEARTBEAT_SECONDS", self.heartbeat_seconds),
             ("WORKER_POLL_SECONDS", self.poll_seconds),
         ):
-            if value <= 0:
-                raise WorkerConfigError(f"{name} must be greater than 0")
+            if not (math.isfinite(value) and value > 0):
+                raise WorkerConfigError(f"{name} must be a finite number greater than 0")
         if self.heartbeat_seconds * 2 > self.lease_seconds:
             raise WorkerConfigError("WORKER_HEARTBEAT_SECONDS must be at most half of WORKER_LEASE_SECONDS")
 
