@@ -163,6 +163,7 @@ __all__ = [
     "PlannedOutput",
     "build_download_zip",
     "build_notice_text",
+    "asset_gsd",
     "check_item_count_cap",
     "check_output_size_cap",
     "compute_crop_region",
@@ -394,7 +395,7 @@ def _finite_positive(value: Any) -> float | None:
     return number
 
 
-def _asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
+def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
     """Ground sample distance of ``asset`` on ``item``, in metres/pixel, or ``None`` if unusable (F1).
 
     Tried in the order both real sources are measured to carry it (plan §3):
@@ -532,7 +533,7 @@ def plan_outputs(
     """
     planned = []
     for asset in assets:
-        gsds = [gsd for gsd in (_asset_gsd(item, asset) for item in items) if gsd is not None]
+        gsds = [gsd for gsd in (asset_gsd(item, asset) for item in items) if gsd is not None]
         if gsds:
             height, width = estimate_output_dims(region, min(gsds), resolution_factor=resolution_factor)
         else:

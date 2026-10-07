@@ -153,26 +153,26 @@ class TestCheckItemCountCap:
 class TestAssetGsd:
     def test_the_assets_own_gsd_wins(self) -> None:
         item = item_with(gsd=20, **{"raster:bands": [{"spatial_resolution": 10}]})
-        assert dl._asset_gsd(item, "visual") == 20
+        assert dl.asset_gsd(item, "visual") == 20
 
     def test_raster_bands_spatial_resolution_is_the_fallback(self) -> None:
         item = item_with(**{"raster:bands": [{"spatial_resolution": 10}]})
-        assert dl._asset_gsd(item, "visual") == 10
+        assert dl.asset_gsd(item, "visual") == 10
 
     def test_the_items_own_properties_gsd_is_the_last_resort(self) -> None:
         item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"visual": {}}, "properties": {"gsd": 60}}
-        assert dl._asset_gsd(item, "visual") == 60
+        assert dl.asset_gsd(item, "visual") == 60
 
     @pytest.mark.parametrize("bad_gsd", [0, -10, float("nan"), float("inf"), "ten", None, [10]])
     def test_a_malformed_gsd_is_treated_as_unknown_not_divided_by(self, bad_gsd: object) -> None:
         """Otto's plan-step pass for zweckfremde Nutzung, M3-18: a `0` or negative
         `gsd`, a string, `NaN`/`inf` or the wrong type must never reach a division."""
         item = item_with(gsd=bad_gsd)
-        assert dl._asset_gsd(item, "visual") is None
+        assert dl.asset_gsd(item, "visual") is None
 
     def test_an_asset_or_item_missing_entirely_is_unknown(self) -> None:
-        assert dl._asset_gsd({"id": "i", "bbox": [-1, -1, 1, 1], "assets": {}}, "visual") is None
-        assert dl._asset_gsd({"id": "i", "bbox": [-1, -1, 1, 1]}, "visual") is None
+        assert dl.asset_gsd({"id": "i", "bbox": [-1, -1, 1, 1], "assets": {}}, "visual") is None
+        assert dl.asset_gsd({"id": "i", "bbox": [-1, -1, 1, 1]}, "visual") is None
 
 
 class TestAssetBytesPerPixel:
