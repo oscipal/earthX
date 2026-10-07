@@ -144,6 +144,22 @@ class Gateway:
         """
         return await self._send("GET", url, params=params, headers=headers, retry=retry)
 
+    async def head(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        retry: bool = True,
+    ) -> GatewayResponse:
+        """``HEAD`` a URL: the headers only, ``content`` stays empty (M4-07b).
+
+        The same road as :meth:`get` — ``check_url`` on every hop, the per-host cap,
+        redirects followed here, a status from 400 up raised as
+        :class:`UpstreamError`. The size limit of a body does not apply, because
+        there is none: a ``Content-Length`` of a whole COG is what a ``HEAD`` is for.
+        """
+        return await self._send("HEAD", url, headers=headers, retry=retry)
+
     async def post_json(
         self,
         url: str,
@@ -279,7 +295,7 @@ class Gateway:
         )
         response = await self._client.send(request, stream=True)
         try:
-            body = await self._read(response)
+            body = b"" if method == "HEAD" else await self._read(response)
         finally:
             await response.aclose()
         return GatewayResponse(
