@@ -513,10 +513,11 @@ Invoke-RestMethod "http://localhost:8000/processing/processes/recipe?dataset=cop
 ```
 
 Einen Auftrag mit echter AOI stellt das Panel aus M4-13. Bis dahin spielt
-`scripts/try-job.ps1` einen kleinen echten Job durch (Reprojektion des DEM über
-eine ausgedachte Fläche, Ergebnisse nach `.\try-job-output\`, Cache-Treffer,
-`DELETE`, Suche der `jobID` im Log von `api`); der DEM muss vorher mit
-`docker compose run --rm materialize cop-dem-glo-30` geladen sein:
+`scripts/try-job.ps1` einen kleinen echten Job durch (ein Item, Reprojektion über
+eine ausgedachte Fläche von höchstens 2 × 2 km, Ergebnisse nach
+`.\try-job-output\`, Cache-Treffer, `DELETE`, Suche der `jobID` im Log von `api`).
+Vorgabe ist Sentinel-2 im Juli 2025 und braucht nichts weiter; `-Dataset`,
+`-Bbox` und `-Datetime` ändern es (`Get-Help .\scripts\try-job.ps1 -Full`):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1
@@ -641,4 +642,18 @@ kleiner echter Job gegen `http://localhost:8000`, sechs Schritte mit `OK` oder
 Cache-Treffer, gescheiterter Job, `jobID` im Log, Plattform nicht erreichbar);
 Windows PowerShell 5.1 selbst und die echten Quellen sind aus der Sitzung nicht
 erreichbar, dort läuft es zum ersten Mal bei Otto.
+
+Änderung nach Ottos Rückmeldung (der DEM hatte im Testgebiet kein Item):
+Vorgabe jetzt `sentinel-2-c1-l2a`; Parameter `-Dataset`, `-Bbox`, `-Datetime`
+(dazu `-Asset`, `-Resolution`, `-TargetCrs`); höchstens 2 × 2 km, sonst bricht
+das Skript vor dem Senden ab; der Auftrag nimmt genau ein Item (das neueste im
+Zeitraum). Die Vorgabe ist gegen die echte Quelle geprüft: 18 Szenen im Juli 2025
+über der Vorgabefläche, Asset `red` vorhanden (eine Anfrage an Earth Search). Beim
+DEM ohne Item nennt das Skript die Kachel und, was `materialize` lädt: immer die
+ganze Welt (26 450 Items, kein Gebietsfilter), rund 30 Anfragen, Listing etwa 45 s
+(Messung vom 26.09.2026), **Schreiben der 26 450 Items 235 s [M]** (neu gemessen in
+der Postgres der Sitzung, in einer Transaktion zurückgerollt). Gefunden beim
+Prüfen: `-File` reicht `-Bbox 9.5,47.5,…` als einen Text durch, den PowerShell nicht
+in eine Zahlenliste wandelt; `-Bbox` ist deshalb ein Text, den das Skript mit
+Dezimalpunkt selbst liest.
 

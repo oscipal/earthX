@@ -362,8 +362,9 @@ Einen Auftrag stellt das Processing-Panel (M4-13); der Rumpf von
 Sie steht in keinem Log, und ohne Konten gibt es keine Job-Liste.
 
 **Einen echten Job einmal durchspielen (PowerShell, Windows PowerShell 5.1):**
-`scripts/try-job.ps1` schickt gegen `http://localhost:8000` eine Reprojektion
-des Copernicus DEM über eine kleine, ausgedachte Fläche, wartet auf das Ende,
+`scripts/try-job.ps1` sucht gegen `http://localhost:8000` genau ein Item für
+eine kleine, ausgedachte Fläche (höchstens 2 × 2 km), schickt eine
+Reprojektion davon, wartet auf das Ende,
 holt `result.tif`, `mask.tif` und `recipe.json` nach `.\try-job-output\`,
 sendet denselben Auftrag noch einmal (muss ein Cache-Treffer sein), verwirft
 beide Jobs und sucht in `docker compose logs api` nach den `jobID`s. Jeder
@@ -371,13 +372,31 @@ Schritt steht als `OK` oder `FEHLER` da, am Ende eine Zusammenfassung; der
 Exit-Code ist `1`, sobald ein Schritt fehlschlägt.
 
 ```powershell
-docker compose run --rm materialize cop-dem-glo-30   # einmalig, siehe oben
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1
 ```
 
-Fläche, Ziel-CRS, Auflösung, Resampling und Zeitlimit stehen als Variablen
-oben im Skript. Es braucht laufende Dienste `api` und `worker` und für den
-Download den veröffentlichten Port 3900 des Objektspeichers.
+Ohne Angaben läuft Sentinel-2 (`sentinel-2-c1-l2a`) über eine Fläche von rund
+0,8 × 1,1 km im Juli 2025 (dort gibt es 18 Szenen) und braucht nichts weiter.
+Mit Parametern: `-Dataset`, `-Bbox "West,Süd,Ost,Nord"` (Dezimalpunkt, in
+Anführungszeichen, höchstens 2 × 2 km), `-Datetime 2025-07-01/2025-07-31`
+(für den DEM ohne Wirkung), dazu `-Asset`, `-Resolution`, `-TargetCrs`.
+Beschreibung: `Get-Help .\scripts\try-job.ps1 -Full`.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1 -Dataset cop-dem-glo-30
+```
+
+Der DEM hat keine Live-Suche: Ohne ein materialisiertes Item für die Fläche
+sagt das Skript, welche Kachel es braucht und was
+`docker compose run --rm materialize cop-dem-glo-30` lädt — immer den ganzen
+Datensatz (26 450 Items, keine Bilddaten), rund 30 Anfragen an den Bucket,
+rund 5 Minuten (Listing etwa 45 s, Schreiben der Items etwa 4 Minuten; beides
+gemessen, das Schreiben in der Postgres einer Sitzung).
+
+Fläche, Zeitraum, Ziel-CRS und Auflösung sind Parameter, Resampling und
+Zeitlimit Variablen oben im Skript. Es braucht laufende Dienste `api` und
+`worker` und für den Download den veröffentlichten Port 3900 des
+Objektspeichers.
 
 ### Fehlersuche
 
