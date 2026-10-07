@@ -35,6 +35,7 @@ from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.recipe import cache_key, recipe_from_data, recipe_hash
+from tests.conftest import own_log_text
 from tests.earthx.processing.testops import OPERATORS, SCALE
 
 pytestmark = pytest.mark.anyio
@@ -378,7 +379,7 @@ class TestCopernicusDem:
         assert len(warnings) == 1
         assert warnings[0].order_error == "UpstreamError"  # type: ignore[attr-defined]
         assert warnings[0].order_item == "DEM_N47_E009"  # type: ignore[attr-defined]
-        assert "https://" not in warnings[0].getMessage() + str(warnings[0].__dict__)
+        assert "https://" not in own_log_text(warnings[0])
 
     async def test_a_head_that_times_out_goes_on_without_a_version(self, caplog: pytest.LogCaptureFixture) -> None:
         def slow(request: httpx.Request) -> httpx.Response:
@@ -764,7 +765,7 @@ class TestStages:
             await refused(order(aoi=far), Source((S2, s2_item())))
         (record,) = [r for r in caplog.records if r.getMessage() == "order refused"]
         assert (record.order_stage, record.order_status) == ("aoi", 422)  # type: ignore[attr-defined]
-        text = record.getMessage() + " " + str(record.__dict__)
+        text = own_log_text(record)
         for forbidden in ("100.1", "https://", "c1:", "bbox", "?"):
             assert forbidden not in text, forbidden
 
@@ -874,7 +875,7 @@ class TestLogs:
                 source,
             )
         assert caplog.records
-        text = "\n".join(record.getMessage() + " " + str(record.__dict__) for record in caplog.records)
+        text = "\n".join(own_log_text(record) for record in caplog.records)
         for forbidden in ("47.01", "9.01", "100.1", "https://", "c1:", S2_HOST + "/tiles", "evil"):
             assert forbidden not in text, forbidden
         accepted = [record for record in caplog.records if record.getMessage() == "order accepted"]

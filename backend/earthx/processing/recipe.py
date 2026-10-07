@@ -68,6 +68,7 @@ __all__ = [
     "canonical_bytes",
     "engine_versions",
     "input_version",
+    "loads_i_json",
     "parse_recipe",
     "parse_request",
     "recipe_from_data",
@@ -406,8 +407,18 @@ def _safe_int(text: str) -> int:
 
 def _check_i_json(raw: bytes | str) -> None:
     """§4.4 step 1: everything ``json.loads`` would otherwise collapse silently."""
+    loads_i_json(raw)
+
+
+def loads_i_json(raw: bytes | str) -> Any:
+    """A JSON document as Python data, with the checks of §4.4 step 1.
+
+    For the caller that has to look inside a document before it hands the order on (`api`
+    unwraps the OGC envelope): the same duplicate keys, ``NaN`` and out-of-range numbers
+    are refused as :class:`RecipeInvalid`, and no value is named in the text.
+    """
     try:
-        json.loads(
+        return json.loads(
             raw,
             object_pairs_hook=_reject_duplicates,
             parse_constant=_reject_constant,

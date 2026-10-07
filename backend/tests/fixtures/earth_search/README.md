@@ -56,3 +56,17 @@ zeigen, statt leer zu sein wie in den übrigen Dateien hier. Beweist zwei Dinge 
 einmal: dass `numberMatched` in der Antwort fehlt, statt aus der Seitengröße
 geraten zu werden, und dass jedes Item seine eigenen `self`/`parent`/`root`-Links
 bekommt, statt die der Quelle zu behalten.
+
+## Form einer echten Antwort (M4-08b, `search_real_shape.json`)
+
+Von Hand geschrieben, **nicht aufgezeichnet**: Der Satz der Schlüssel und die Typen
+stammen aus einer Antwort, die am 07.10.2026 einmal von
+`POST /v1/search` gelesen wurde (`sentinel-2-c1-l2a`, `limit` 2; Kopf
+`content-type: application/geo+json; charset=utf-8`; oben `context`,
+`numberMatched`, `numberReturned`, `features`, `links` mit `next` als POST-Link
+mit Rumpf; ein Item mit den Schlüsseln `type`, `stac_version`, `id`,
+`properties`, `geometry`, `links`, `assets`, `bbox`, `stac_extensions`,
+`collection`, 23 Assets). Alle Werte sind erfunden (ID `SYNTH_…`, Zeiten, Zahlen,
+Geometrie, Prüfsumme); nichts davon ist ein echtes Metadatum. Der Test
+`tests/integration/test_try_job_search.py` prüft, dass Schlüssel und Assets mit
+dieser Form übereinstimmen, soweit das Skript `scripts/try-job.ps1` sie liest.

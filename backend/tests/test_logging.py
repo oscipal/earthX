@@ -29,7 +29,7 @@ from earthx.logging import (
     reset_request_id,
     summarize_geometry,
 )
-from tests.conftest import format_without_timestamp, log_line_without_timestamp
+from tests.conftest import format_without_timestamp, log_line_without_timestamp, own_log_fields, own_log_text
 
 # A distinctive, high-precision coordinate pair. If this exact value (or its
 # repr as a bare float) ever shows up in a log line, the redaction failed.
@@ -167,6 +167,30 @@ class TestFormatWithoutTimestamp:
     def test_a_line_without_a_timestamp_is_refused_rather_than_passed_on(self) -> None:
         with pytest.raises(KeyError):
             log_line_without_timestamp(json.dumps({"message": "no time"}))
+
+
+class TestOwnLogText:
+    def _record(self, message: str, **extra: object) -> logging.LogRecord:
+        record = _make_record(message, **extra)
+        record.relativeCreated = 25239.017
+        record.msecs = 9.01
+        assert "9.01" in str(record.__dict__)  # the standard attributes match by chance
+        return record
+
+    def test_digits_that_only_a_standard_attribute_holds_are_not_in_the_text(self) -> None:
+        assert "9.01" not in own_log_text(self._record("run ended", run="r1"))
+
+    def test_a_coordinate_in_the_message_is_still_in_the_text(self) -> None:
+        assert "9.01" in own_log_text(self._record("read window at 47.01,9.01"))
+
+    def test_a_coordinate_in_an_own_field_is_still_in_the_text(self) -> None:
+        assert "9.01" in own_log_text(self._record("run ended", bbox="9.01,47.01"))
+
+    def test_only_the_callers_fields_are_listed(self) -> None:
+        assert own_log_fields(self._record("run ended", run="r1", count=2)) == {"run": "r1", "count": 2}
+
+    def test_a_value_that_is_not_json_is_written_out_not_dropped(self) -> None:
+        assert "9.01" in own_log_text(self._record("run ended", where=(9.01, 47.01), when=datetime(2026, 1, 1)))
 
 
 class TestJsonFormatter:
@@ -446,3 +470,43 @@ class TestProcessEntrypointsWireTheMiddleware:
         from earthx.discovery.main import app
 
         assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+
+class TestAJobIdentifierIsNotLogged:
+    """M4-08b F6: `/processing/jobs/{jobID}` is the way to a job's result; the log names the route, not the job."""
+
+    @pytest.mark.parametrize(
+        ("path", "logged"),
+        [
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA", "/processing/jobs/{jobID}"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results", "/processing/jobs/{jobID}/results"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results/result.tif", "/processing/jobs/{jobID}/results/result.tif"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/events", "/processing/jobs/{jobID}/events"),
+            ("/processing/jobs/not-an-identifier-but-secret/results", "/processing/jobs/{jobID}/results"),
+            ("/earthx/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results", "/earthx/processing/jobs/{jobID}/results"),
+            ("/processing/jobs//AAAAAAAAAAAAAAAAAAAAAA", "/processing/jobs/{jobID}"),
+            ("/processing/jobs///AAAAAAAAAAAAAAAAAAAAAA/events", "/processing/jobs/{jobID}/events"),
+            ("/processing/jobs/", "/processing/jobs/"),
+            ("/processing/jobs", "/processing/jobs"),
+            ("/processing/processes/recipe", "/processing/processes/recipe"),
+            ("/stac/collections/x/items/AAAAAAAAAAAAAAAAAAAAAA", "/stac/collections/x/items/AAAAAAAAAAAAAAAAAAAAAA"),
+            ("/health", "/health"),
+            ("", ""),
+            (None, None),
+        ],
+    )  # fmt: skip
+    def test_the_path_as_the_access_log_writes_it(self, path: str | None, logged: str | None) -> None:
+        from earthx.logging import loggable_path
+
+        assert loggable_path(path) == logged
+
+    def test_the_middleware_writes_it_so(self, access_log_lines: list[str]) -> None:
+        async def endpoint(request):
+            return JSONResponse({})
+
+        app = Starlette(routes=[Route("/processing/jobs/{job_id}/results", endpoint)])
+        client = TestClient(RequestIdMiddleware(app))
+        assert client.get("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results").status_code == 200
+        (line,) = access_log_lines
+        assert json.loads(line)["path"] == "/processing/jobs/{jobID}/results"
+        assert "AAAAAAAAAAAAAAAAAAAAAA" not in line

@@ -20,6 +20,7 @@ from earthx.processing.recipe import (
     canonical_bytes,
     engine_versions,
     input_version,
+    loads_i_json,
     parse_recipe,
     parse_request,
     recipe_from_data,
@@ -372,3 +373,37 @@ def test_the_asset_model_matches_the_dataclass_field_for_field() -> None:
 def test_the_package_version_is_semver_0_x() -> None:
     # adr/0016 §9, F10: plain MAJOR.MINOR.PATCH, so `runner_version` can append `+g<commit>`.
     assert re.fullmatch(r"0\.\d+\.\d+", earthx.__version__)
+
+
+class TestLoadsIJson:
+    """`loads_i_json` is the check of §4.4 step 1 for a caller that has to look inside a document."""
+
+    def test_a_plain_document_is_read(self) -> None:
+        assert loads_i_json('{"a": [1, 2.5, "x"]}') == {"a": [1, 2.5, "x"]}
+        assert loads_i_json(b'{"a": 1}') == {"a": 1}
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            '{"a": 1, "a": 2}',
+            '{"a": NaN}',
+            '{"a": Infinity}',
+            '{"a": 1e999}',
+            '{"a": 9007199254740993}',
+            "{",
+            "",
+            "nope",
+        ],
+    )
+    def test_what_json_would_collapse_or_accept_silently_is_refused(self, raw: str) -> None:
+        with pytest.raises(RecipeInvalid):
+            loads_i_json(raw)
+
+    def test_a_refusal_does_not_repeat_the_value(self) -> None:
+        with pytest.raises(RecipeInvalid) as raised:
+            loads_i_json('{"secret-coordinate-47.123456": 1, "secret-coordinate-47.123456": 2}')
+        assert str(raised.value) == "duplicate key 'secret-coordinate-47.123456'"  # the key, never a value
+
+    def test_it_is_the_check_the_parsers_use(self) -> None:
+        with pytest.raises(RecipeInvalid, match="duplicate key"):
+            parse_request('{"recipe_version": 1, "recipe_version": 1}', OPERATORS)

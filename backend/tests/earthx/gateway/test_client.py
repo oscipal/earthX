@@ -15,6 +15,7 @@ import pytest
 from earthx.gateway import AddressRejected, Policy, UrlRejected, UrlTooLong, client
 from earthx.gateway.client import Gateway, GatewayResponse
 from earthx.gateway.errors import ResponseTooLarge, TooManyRedirects, UpstreamError, UpstreamTimeout
+from tests.conftest import own_log_text
 
 HOST = "earth-search.aws.element84.com"
 OTHER = "cdn.example.org"
@@ -301,7 +302,7 @@ async def test_the_aoi_never_reaches_the_log(caplog: pytest.LogCaptureFixture) -
         async with gateway:
             await gateway.get(f"https://{HOST}/v1/aggregate", params={"intersects": "POINT(7.1234 51.5678)"})
 
-    written = " ".join(str(value) for record in caplog.records for value in vars(record).values())
+    written = " ".join(own_log_text(record) for record in caplog.records)
     assert "51.5678" not in written
     assert "7.1234" not in written
     assert caplog.records[0].gateway_host == HOST
@@ -345,7 +346,7 @@ class TestQueryDigestIsKeyedNotAPlainHash:
             async with gateway:
                 await gateway.get(f"https://{HOST}/v1/aggregate", params={"bbox": "5.1,45.2,15.3,55.4"})
         key_hex = client._QUERY_DIGEST_KEY.hex()
-        written = " ".join(str(value) for record in caplog.records for value in vars(record).values())
+        written = " ".join(own_log_text(record) for record in caplog.records)
         assert key_hex not in written
         assert str(client._QUERY_DIGEST_KEY) not in written
 

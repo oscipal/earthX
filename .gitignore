@@ -26,3 +26,6 @@ Thumbs.db
 claude-code-prompt-biomass-viewer.md
 data/
 .env.test
+
+# Output of scripts/try-job.ps1 (downloaded rasters)
+try-job-output/

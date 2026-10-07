@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from earthx.catalog.registry import DatasetConfig, LicenseInfo
+from earthx.catalog.registry import DatasetConfig, LicenseInfo, doi_name
 
 # STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
 # value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
@@ -84,11 +84,22 @@ def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
 def _scientific(config: DatasetConfig) -> dict[str, object]:
     """DOI and citation, left out entirely where the dataset has neither."""
     fields: dict[str, object] = {}
-    if config.doi:
-        fields["sci:doi"] = config.doi
+    name = doi_name(config.doi)
+    if name:
+        # The DOI name, as the extension defines the field (adr/0014 §10.2); the
+        # registry keeps the URL the source's own `cite-as` link gave.
+        fields["sci:doi"] = name
     if config.citation:
         fields["sci:citation"] = config.citation
     return fields
+
+
+def _links(config: DatasetConfig) -> list[dict[str, str]]:
+    links = [{"rel": "license", "href": config.license.url, "title": config.license.name}]
+    name = doi_name(config.doi)
+    if name:
+        links.append({"rel": "cite-as", "href": f"https://doi.org/{name}"})
+    return links
 
 
 def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
@@ -119,7 +130,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             },
         },
         # The licence link is the primary source of the texts above (adr/0003 §11.2).
-        "links": [{"rel": "license", "href": config.license.url, "title": config.license.name}],
+        "links": _links(config),
         "earthx:data_class": config.data_class.value,
         # architekturplan.md 6.2's reader dispatch (`cog`, `zarr`, `legacy`) —
         # published so the frontend can tell a whole scene it may link straight
