@@ -431,6 +431,27 @@ class TestShutdown:
         _wait_for(db, job_id, "successful", timeout=15)
         assert run_row(db, _run_id(db), "attempt") == (2,)
 
+    def test_a_run_picked_up_in_the_moment_of_the_shutdown_is_given_back_before_a_child_starts(
+        self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        supervisor = make_supervisor("succeed", slots=1)
+        started: list[object] = []
+        real_claim = queue.claim
+
+        def claim_and_stop(conn: psycopg.Connection, **kwargs: Any) -> queue.Claim | None:
+            picked = real_claim(conn, **kwargs)
+            if picked is not None:
+                supervisor._stopping.set()
+            return picked
+
+        monkeypatch.setattr(queue, "claim", claim_and_stop)
+        monkeypatch.setattr(supervisor, "_start_child", lambda *args: started.append(args))
+        job_id = submit(db, make_recipe())
+        supervisor.start()
+        wait_until(lambda: _state(db, job_id) == "accepted" and run_row(db, _run_id(db), "attempt")[0] == 1)
+        assert started == [], "no child was started for it"
+        assert run_row(db, _run_id(db), "worker", "lease_until") == (None, None)
+
     def test_a_stopped_supervisor_picks_up_nothing_more(
         self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor]
     ) -> None:

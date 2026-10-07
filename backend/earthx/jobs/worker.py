@@ -226,6 +226,10 @@ class Supervisor:
                     wake.wait(self.config.poll_seconds)
                     wake.clear()
                     continue
+                if self._stopping.is_set():
+                    # Picked up in the moment of the shutdown: give it back before a child is started for it.
+                    queue.release(conn, picked.run_id, picked.attempt)
+                    break
                 self._run_one(conn, picked)
             except psycopg.Error as error:
                 self._database_error("slot", error)
