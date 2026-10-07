@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
-from earthx.adapters import AdapterSpecs, dataset_config, get_item
+from earthx.adapters import AdapterSpecs, InvalidQuery, UnknownCollection, UnsupportedSource, dataset_config, get_item
 from earthx.catalog.pgstac import fetch_item, read_item_holdings
 from earthx.catalog.registry import DatasetRegistry, ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
-from earthx.gateway import Gateway
+from earthx.gateway import Gateway, GatewayError, UpstreamError, UpstreamTimeout
 
 LOGGER = logging.getLogger("earthx.api.item_source")
 
@@ -34,9 +34,13 @@ __all__ = [
     "ItemSource",
     "MaterializedCatalogUnavailable",
     "MaterializedItemNotFound",
+    "OrderRefused",
+    "Stage",
     "build_item_source",
     "check_item_holdings",
+    "fetch_item_or_refuse",
     "item_holding_of",
+    "malformed_item_detail",
 ]
 
 
@@ -118,3 +122,78 @@ async def check_item_holdings(registry: DatasetRegistry, conn: Any) -> tuple[str
             extra={"collections": list(unknown)},
         )
     return unknown
+
+
+#: Where an order was turned away, as a fixed identifier for the log (M4-07b, Otto's review of #123).
+#: In the order of the intake: the order itself, its size, dataset, licence, operators, items,
+#: AOI against the items, resolving an asset, its address, bands, version, the recipe as a whole.
+Stage = Literal[
+    "order", "size", "dataset", "license", "applicable", "items", "aoi", "resolve", "hosts", "bands", "version", "recipe"
+]  # fmt: skip
+
+
+class OrderRefused(Exception):
+    """An order, or an item it names, is turned away.
+
+    ``detail`` is English, short and redacted: it names datasets, items and fields,
+    never an AOI, an address or a hash (adr/0014 §4.7). The caller turns
+    ``status_code`` and ``detail`` into its own answer, in one line. ``stage`` says
+    where, as one of a fixed set, so a log line can name it without repeating anything
+    the order contained.
+    """
+
+    def __init__(self, status_code: int, detail: str, stage: Stage) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+        self.stage: Stage = stage
+
+
+def malformed_item_detail(item: str) -> str:
+    return f"the source did not deliver item {item!r} intact"
+
+
+async def fetch_item_or_refuse(item_source: ItemSource, dataset: str, item: str, *, not_found: int = 404) -> dict[str, Any]:
+    """The item, or the :class:`OrderRefused` its absence or the source's failure maps to.
+
+    The tile routes and the intake turn a ``dataset``/``item`` pair into a STAC item
+    through the same ``item_source``, and a source failure means the same thing to
+    both. ``not_found`` is the status for a dataset or item that does not exist: the
+    tile routes name them in the path and answer ``404``, an order names them in the
+    body and answers ``422``.
+
+    An item whose ``id`` is missing or is not the one asked for is the source's
+    mistake, the same ``502`` either way (Otto's review of M4-01a): the asset that
+    gets opened is named after the item's own id, and a tile must not show another
+    scene under the name it asked for.
+    """
+    try:
+        fetched = await item_source(dataset, item)
+    except UnknownCollection:
+        raise OrderRefused(not_found, f"no dataset {dataset!r}", "items") from None
+    except MaterializedItemNotFound:
+        # The materialized counterpart of the federated `UpstreamError` 404 below —
+        # same message, so a caller cannot tell which path answered it.
+        raise OrderRefused(not_found, f"no item {item!r} in {dataset!r}", "items") from None
+    except MaterializedCatalogUnavailable:
+        raise OrderRefused(503, "the catalogue is not available", "items") from None
+    except UnsupportedSource as error:
+        raise OrderRefused(501, str(error), "items") from None
+    except InvalidQuery as error:
+        raise OrderRefused(400, str(error), "items") from None
+    except UpstreamError as error:
+        if error.status_code == 404:
+            raise OrderRefused(not_found, f"no item {item!r} in {dataset!r}", "items") from None
+        # The source answered something we do not pass on. Its text is not repeated:
+        # it can carry the query, and the query can carry an AOI (projektplan.md 7).
+        raise OrderRefused(502, "the source did not deliver the item", "items") from None
+    except UpstreamTimeout:
+        raise OrderRefused(504, "the source did not answer in time", "items") from None
+    except GatewayError:
+        # Unreachable, too large, too many redirects: the source's side of the line.
+        # Broad on purpose — a gateway error that has no branch of its own is still an
+        # answer about the source, and a 500 would call it our mistake.
+        raise OrderRefused(502, "the item could not be fetched", "items") from None
+    if fetched.get("id") != item:
+        raise OrderRefused(502, malformed_item_detail(item), "items")
+    return fetched

@@ -161,6 +161,8 @@ __all__ = [
     "InvalidAoi",
     "NOTICE_FILENAME",
     "PlannedOutput",
+    "asset_gsd",
+    "attribution_text",
     "build_download_zip",
     "build_notice_text",
     "check_item_count_cap",
@@ -394,7 +396,7 @@ def _finite_positive(value: Any) -> float | None:
     return number
 
 
-def _asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
+def asset_gsd(item: Mapping[str, Any], asset: str) -> float | None:
     """Ground sample distance of ``asset`` on ``item``, in metres/pixel, or ``None`` if unusable (F1).
 
     Tried in the order both real sources are measured to carry it (plan §3):
@@ -532,7 +534,7 @@ def plan_outputs(
     """
     planned = []
     for asset in assets:
-        gsds = [gsd for gsd in (_asset_gsd(item, asset) for item in items) if gsd is not None]
+        gsds = [gsd for gsd in (asset_gsd(item, asset) for item in items) if gsd is not None]
         if gsds:
             height, width = estimate_output_dims(region, min(gsds), resolution_factor=resolution_factor)
         else:
@@ -1193,6 +1195,12 @@ def _aoi_provenance_line(aoi_geometry: Mapping[str, Any]) -> str | None:
     return line
 
 
+def attribution_text(config: DatasetConfig, *, year: int) -> str | None:
+    """The attribution a crop carries: the conservative "modified" text, else the plain one."""
+    text = config.license.attribution_modified or config.license.attribution_unmodified
+    return text.format(year=year) if text else None
+
+
 def build_notice_text(
     config: DatasetConfig,
     *,
@@ -1237,9 +1245,9 @@ def build_notice_text(
     year = datetime.now(timezone.utc).year
     lines = [config.title]
 
-    attribution = license_.attribution_modified or license_.attribution_unmodified
+    attribution = attribution_text(config, year=year)
     if attribution:
-        lines.append(attribution.format(year=year))
+        lines.append(attribution)
 
     if license_.terms is not None:
         text = license_.terms.notice["en"]
