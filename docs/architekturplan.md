@@ -164,6 +164,12 @@ alle ausgehenden Zugriffe auf **Datenquellen**; der eigene Objektspeicher läuft
 Client-Verbot ist der Import `earthx.objectstore.client -> botocore`.
 Mit M4-06 (06.10.2026) in die Tabelle oben übernommen.
 
+**Nachtrag 2026-10-07 (M4-07b):** `api` nimmt Aufträge an (`api/intake.py`): aus
+einem Auftrag ohne Adressen wird ein Rezept mit Fassung je Eingabe, Bandangaben
+und Skalierungsquelle; jeder Host liegt in `asset_hosts` des eigenen
+Datensatzes. `gateway` bekommt dafür `head()` (nur Köpfe, dieselben Prüfungen
+wie `get`). Keine Importregel ändert sich.
+
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
 | Prozess | Last | Skalierung | Zustand |

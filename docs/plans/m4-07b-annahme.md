@@ -1,8 +1,9 @@
 # M4-07b — Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung: Plan
 
 **Aufgabe:** M4-07b aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan-Schritt. Die Session hält nach diesem Plan an; umgesetzt
-wird erst nach Ottos Freigabe (§7).
+**Stufe B** — **von Otto am 07.10.2026 freigegeben** mit F1–F8 je Option 1 und
+Auflagen zu `gateway.head()`, F5 und F6 (§8). Wo §3 und §8 sich widersprechen,
+gilt §8.
 **Ort im Repo:** `docs/plans/m4-07b-annahme.md`
 **Grundlagen:** `adr/0014` §4.1, §4.2, §4.3, §4.6, §4.7, §5.3, §5.4 (F7a),
 §8 (Allowlist), §10.1, §15a, §15b; `adr/0013` §9 Punkt 2;
@@ -404,3 +405,49 @@ Vor dem Fertigmelden: `main` holen, `pytest`, `ruff check backend`,
    der Status steht in `api/intake.py`; M4-08b übersetzt sie in einer Zeile in
    `HTTPException` **(Empfehlung)**
 2. Fachliche Fehlerklassen je Fall; die Abbildung auf Status macht M4-08b
+
+---
+
+## 8. Freigabe (Otto, 07.10.2026) und Umsetzung
+
+F1–F8 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
+
+- **`gateway.head()`:** Ein Test belegt, dass `head()` dieselben Prüfungen
+  durchläuft wie `get`: `check_url`, Grenze je Host, Weiterleitungen mit
+  Prüfung jedes Ziels, keine private Adresse; Gegenprobe mit abgewiesenen
+  Adressen. → `tests/earthx/gateway/test_client_head.py` (30 Fälle: Schema,
+  Port, Zugangsdaten, Namenstricks, IP-Literale, zu lange URL, privater Name,
+  Weiterleitung auf fremden Host und auf private Adresse, Schleife, Grenze
+  von sechs je Host, Wiederholung, Zeitüberschreitung, kein Query im Log). Eine
+  Gegenprobe mit herausgenommener Körper-Ausnahme lässt zwei der Tests scheitern.
+- **F6 enger:** 404 und 410 weisen den Auftrag mit `502` ab. Jede andere
+  Antwort ab 400, jede `5xx` und eine Zeitüberschreitung lassen die Fassung
+  leer (kein Cache-Treffer); eine Warnung steht im Log ohne Query und ohne
+  Adresse. Tests für 404, 410, 403, 405, 503 und Zeitüberschreitung; dazu
+  Weiterleitung auf fremden Host. Ein gescheitertes `HEAD` fällt **nicht** auf
+  `updated` zurück: leer heißt leer.
+- **F5:** `MAX_ORDER_ITEMS = 25`, `MAX_ORDER_ASSETS = 16`, `MAX_ORDER_STEPS = 16`
+  als Konstanten an einer Stelle (`api/intake.py`). M4-12 darf die Grenze für
+  Items mit Begründung anheben; sie hängt bewusst nicht an
+  `MAX_DOWNLOAD_ITEMS`.
+
+**Wie umgesetzt, wo es von §3 abweicht oder es genauer sagt:**
+
+- Die Fehlerabbildung der Item-Quelle steht in `api/intake.py::fetch_item` und
+  wirft `OrderRefused`; `api/tiler.py::_fetch_item` übersetzt sie in einer
+  Zeile. Der Parameter `not_found` trennt `404` (Pfad) von `422` (Rumpf).
+- `skipped_items` nennt jedes Item, das die AOI nicht berührt, auch innerhalb
+  einer Gruppe, die bleibt. Der Zuschnitt lässt solche Items ebenfalls weg,
+  nennt aber nur ganze Gruppen; das Rezept ist hier genauer.
+- `check_recipe_hosts(recipe, registry)` ruft `check_recipe_hosts_of(recipe,
+  config)`; `crop_recipe_json` nutzt die zweite für seine bekannte
+  Konfiguration.
+- Der Auftrag für einen Job verlangt eine Ausgabe `raster`; `crop` ist nur für
+  `crop_recipe_json` da (`422`).
+- Ein Operator, der nicht in `T2` läuft, ist als Job abgewiesen (`422`).
+- `access.download.attribution_text` ist neu und gemeinsam für
+  `build_notice_text` und `recipe.json`; `asset_gsd` ist öffentlich
+  (Umbenennung).
+- Der Test der Logs setzt `httpx` wie die Produktion auf `WARNING`
+  (`earthx/logging.py`): Der Logger von `httpx` schreibt sonst die URL, bei
+  `HEAD` ohne Query.
