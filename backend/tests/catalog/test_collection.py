@@ -19,7 +19,7 @@ from earthx.catalog.collection import (
     _stac_license,
     to_stac_collection,
 )
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import Capabilities
 
 EARTHX_FIELDS = (
@@ -153,7 +153,28 @@ def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_ext
 
 def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict) -> None:
     assert collection["stac_extensions"] == [SCIENTIFIC_EXTENSION]
-    assert collection["sci:doi"] == SENTINEL_2_L2A.doi
+    assert collection["sci:doi"] == "10.5270/S2_-742ikth"
+
+
+@pytest.mark.parametrize("config", list(REGISTRY), ids=lambda config: config.dataset_id)
+def test_a_doi_is_the_name_and_comes_with_a_cite_as_link(config) -> None:
+    """adr/0014 §10.2 (M4-14): `sci:doi` is the DOI name, the URL is the `cite-as` link."""
+    built = to_stac_collection(config)
+    name = built["sci:doi"]
+    assert name.startswith("10.")
+    assert "://" not in name
+    assert {"rel": "cite-as", "href": f"https://doi.org/{name}"} in built["links"]
+
+
+def test_a_dataset_without_a_doi_has_no_cite_as_link(valid_config) -> None:
+    bare = to_stac_collection(replace(valid_config, doi=None, citation=None))
+    assert [link["rel"] for link in bare["links"]] == ["license"]
+
+
+def test_a_blank_doi_is_no_doi(valid_config) -> None:
+    blank = to_stac_collection(replace(valid_config, doi="  ", citation=None))
+    assert "sci:doi" not in blank
+    assert blank["stac_extensions"] == []
 
 
 def test_a_dataset_without_a_doi_declares_no_scientific_extension(valid_config) -> None:
