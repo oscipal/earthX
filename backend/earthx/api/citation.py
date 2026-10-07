@@ -29,6 +29,8 @@ _ESCAPES = {
     "#": r"\#",
     "_": r"\_",
     "$": r"\$",
+    "^": r"\textasciicircum{}",
+    "~": r"\textasciitilde{}",
 }
 
 
@@ -50,7 +52,8 @@ def citation_bib(config: DatasetConfig, *, downloaded: date) -> bytes:
         fields.append(("doi", name))
         fields.append(("url", f"https://doi.org/{name}"))
     notes = [attribution_text(config, year=downloaded.year), config.citation]
-    note = " ".join(_escaped(text) for text in notes if text)
+    parts = [_escaped(text) for text in notes if text]
+    note = " ".join(part if part.endswith(".") or part is parts[-1] else part + "." for part in parts)
     if note:
         fields.append(("note", note))
     fields.append(("urldate", downloaded.isoformat()))

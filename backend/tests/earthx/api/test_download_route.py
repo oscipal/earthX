@@ -716,4 +716,7 @@ class TestRecipeAndCitation:
             response = _download(client)
         assert response.status_code == 502
         assert response.headers["content-type"] != "application/zip"
+        refusals = [record for record in caplog.records if record.getMessage() == "crop recipe refused"]
+        assert len(refusals) == 1
+        assert refusals[0].stage == "recipe"
         assert "7.1" not in caplog.text

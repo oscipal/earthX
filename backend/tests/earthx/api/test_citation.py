@@ -9,6 +9,7 @@ import pytest
 
 from earthx.api.citation import citation_bib
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.registry import ConfigError
 
 DAY = date(2026, 10, 7)
 
@@ -54,7 +55,7 @@ def test_without_a_doi_the_persistent_citation_stands_as_note() -> None:
     assert "doi " not in bib
     assert "url " not in bib
     assert "Publisher (2026): Dataset, version 1." in bib
-    assert "Contains modified Copernicus Sentinel data" in bib
+    assert "Sentinel data 2026. Publisher (2026)" in bib
 
 
 def test_without_doi_and_citation_the_entry_still_has_title_and_date() -> None:
@@ -69,9 +70,9 @@ def test_the_year_of_the_attribution_is_the_year_of_the_download() -> None:
 
 
 def test_characters_bibtex_acts_on_are_escaped_so_braces_stay_balanced() -> None:
-    config = replace(SENTINEL_2_L2A, title="Tom & {Jerry} 100% #1 a_b $5 \\x", doi=None, citation=None)
+    config = replace(SENTINEL_2_L2A, title="Tom & {Jerry} 100% #1 a_b $5 \\x ^ ~", doi=None, citation=None)
     title = next(line for line in _bib(config).splitlines() if line.lstrip().startswith("title"))
-    assert title.strip() == r"title   = {Tom \& \{Jerry\} 100\% \#1 a\_b \$5 \textbackslash{}x},"
+    assert title.strip() == r"title   = {Tom \& \{Jerry\} 100\% \#1 a\_b \$5 \textbackslash{}x \textasciicircum{} \textasciitilde{}},"
 
 
 def test_line_breaks_in_a_value_do_not_break_the_entry() -> None:
@@ -85,8 +86,6 @@ def test_a_dataset_id_that_is_no_bibtex_key_is_made_one() -> None:
 
 
 def test_a_doi_that_is_no_doi_is_refused_not_cited() -> None:
-    from earthx.catalog.registry import ConfigError
-
     with pytest.raises(ConfigError):
         citation_bib(replace(SENTINEL_2_L2A, doi="not a doi"), downloaded=DAY)
 
