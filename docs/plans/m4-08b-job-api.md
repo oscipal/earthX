@@ -1,8 +1,9 @@
 # M4-08b — Job-API (OGC-Form), Ergebnis-Links, SSE: Plan
 
 **Aufgabe:** M4-08b aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan-Schritt. Die Session hält nach diesem Plan an; umgesetzt wird
-nach Ottos Freigabe in derselben Session.
+**Stufe B** — **von Otto am 07.10.2026 freigegeben:** F1–F3 und F5–F8 je
+Option 1, **F4 Option 2**; K1–K10 angenommen. Wo §3 und §8 („Antworten“)
+sich widersprechen, gilt §8. Umsetzung in PR #128.
 **Ort im Repo:** `docs/plans/m4-08b-job-api.md`
 **Grundlagen:** `adr/0014` §4.1, §4.7, §9, §10.1, §15b; `adr/0013` §5.4, §5.5,
 §5.8, §8 (Punkte 6, 9, 12), §9; `adr/0015` §6, §7.1, §8.1, §13, §14 (F4–F6),
@@ -103,9 +104,9 @@ beim Verbinden zuerst mit dem Stand der Zeile.
 
 | Methode | Pfad | Antwort |
 |---|---|---|
-| GET | `/processing/` | Landing Page: Links `self`, `service-desc` (`/processing/api`), `conformance`, `processes` |
+| GET | `/processing/` | Landing Page: Links `self`, `service-desc` (`/processing/api`), `conformance`, `processes`; Text: „follows the form of OGC API – Processes, no conformance claimed“ (F4) |
 | GET | `/processing/api` | OpenAPI nur der Routen unter `/processing` |
-| GET | `/processing/conformance` | `conformsTo` nach F4 |
+| GET | `/processing/conformance` | `{"conformsTo": []}`: keine Klasse erklärt, auch nicht `json` oder `dismiss` (F4) |
 | GET | `/processing/processes` | ein Prozess `recipe` (Zusammenfassung), `limit` angenommen |
 | GET | `/processing/processes/recipe` | Prozessbeschreibung, Schema des Auftrags (§3.3); `?dataset=` filtert |
 | POST | `/processing/processes/recipe/execution` | `201`, `Location`, `statusInfo` |
@@ -165,7 +166,8 @@ beim Verbinden zuerst mit dem Stand der Zeile.
 2. **OGC-Hülle prüfen** (F3, F4): nur die Schlüssel `inputs`, `outputs`,
    `response`; `inputs` hat genau den Schlüssel `recipe`, dessen Wert ein
    Objekt ist. Eine Eingabe als Link (`href`) oder als `{"value": …}` →
-   `400` mit dem Hinweis, den Auftrag inline zu schicken. `response` fehlt oder
+   `400`; der Text sagt, dass Eingaben nur inline angenommen werden (F4,
+   B8). Es folgt keine Anfrage an die Adresse. `response` fehlt oder
    ist `document`; `outputs` fehlt oder nennt nur bekannte Ausgänge mit
    `transmissionMode: reference`. Sonst `400`.
 3. **Annahme:** `accept_order(<recipe als Bytes>, …)`; `OrderRefused` → Status
@@ -346,6 +348,7 @@ nicht kopiert), ohne Netz; Speicher als `Store` mit fester Test-Konfiguration
 | Dateiname | aus Datensatz, Operator und Datum, in `response-content-disposition` der signierten URL und in `recipe.json`; nie AOI, Hash, `jobID` |
 | `recipe.json` | aus dem eigenen Rezept des Jobs, eigene `recipe_id`, kein Objekt im Speicher |
 | OGC-Form | `201` + `Location`; `statusInfo`; `result-not-ready`; `no-such-job`; `dismiss` → `dismissed` |
+| F4 (2) | `conformsTo` leer; Landing Page, API-Definition und Prozessbeschreibung sagen „no conformance claimed“; ein Eingang als Link (Objekt mit `href`) → `400` mit dem Hinweis „inline only“, und weder Item-Quelle noch `gateway` werden gerufen; `adr/0014` §15d |
 
 ---
 
@@ -472,7 +475,7 @@ OGC verlangt einen Code „that corresponds to the reason of the failure“.
 2. Teilen: M4-08b-1 (Routen, Links, `recipe.json`) und M4-08b-2 (SSE) als zwei
    Sitzungen
 
-**Kleinentscheidungen** (gelten, wenn Otto nicht widerspricht):
+**Kleinentscheidungen** (gelten, wenn Otto nicht widerspricht; angenommen am 07.10.2026):
 
 - **K1** Ein eigener synchroner Pool (1–4) in `api` für `jobs/submit.py`,
   Aufrufe im Threadpool; `submit.py` bleibt synchron.
@@ -512,3 +515,25 @@ Invoke-RestMethod "http://localhost:8000/processing/processes/recipe?dataset=cop
 Einen Auftrag mit echter AOI stellt das Panel aus M4-13; bis dahin steht ein
 Beispielauftrag mit synthetischen Werten im PR-Text, nicht hier. `.env` bleibt,
 wie sie ist.
+
+---
+
+## 10. Antworten (Otto, 07.10.2026)
+
+F1 (1), F2 (1), F3 (1), **F4 (2)**, F5 (1), F6 (1), F7 (1), F8 (1); K1–K10
+angenommen.
+
+**F4 (2), Begründung (Otto):** OGC API Processes Part 1, `/req/core/process-execute-inputs`
+Teil B (Requirement 18) verlangt Eingaben per Referenz; das verbietet B8. Daher:
+
+- Die Form nach OGC bleibt (Landing Page unter `/processing`,
+  `/processing/conformance`, `/processes`, Job-Routen), aber `/conformance`
+  antwortet mit leerer `conformsTo`-Liste. Keine Klasse wird erklärt, auch
+  nicht `json` oder `dismiss`.
+- Eine Eingabe als Link (Objekt mit `href`) wird mit `400` abgewiesen. Der
+  Text sagt, dass Eingaben nur inline angenommen werden. Ein Test belegt es.
+- Nachtrag in `adr/0014` zu F12 (§15d): keine Konformität erklärt, Grund
+  Requirement 18 B und B8; erklärt werden kann sie erst, wenn Eingaben per
+  Referenz unter einer eigenen Netzwerk-Policy möglich sind.
+- Landing Page und Doku nennen das Verhältnis zu OGC offen („follows the form
+  of OGC API – Processes, no conformance claimed“).
