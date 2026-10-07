@@ -8,39 +8,85 @@
 
         powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\try-job.ps1
 
-    Needs the Copernicus DEM in the local catalog (README: "Den dritten Datensatz laden"):
-
-        docker compose run --rm materialize cop-dem-glo-30
-
     Steps, each printed as OK or FEHLER:
-      1. send an order (reproject on cop-dem-glo-30), expect 201 and a Location
+      1. find one item for the area, send an order (reproject of one asset), expect 201 and a Location
       2. poll the status until successful or failed
       3. fetch the results, follow the 303, save result.tif, mask.tif and recipe.json
       4. send the same order again: expect a cache hit (successful at once, no new run)
       5. DELETE both jobs, expect "dismissed"
       6. search `docker compose logs api` for the job IDs: any hit is a FEHLER
 
-    The area below is a synthetic square, not anybody's site. It goes to the platform in the order
-    only; the script never prints it.
-#>
+    The order names exactly ONE item: the newest one the catalog finds for the area and period.
+    The default area is a synthetic square, not anybody's site; it goes to the platform in the order
+    and in the search only, and the script never prints it (only its size).
 
-# ---- what to try (change here) ------------------------------------------------------------------
+    Defaults need no setup: sentinel-2-c1-l2a is searched live at its source, and in July 2025 the
+    default area has 18 scenes (checked against the source on 07.10.2026, one request).
+
+    cop-dem-glo-30 has no live search: its items exist only after
+    `docker compose run --rm materialize cop-dem-glo-30`, which loads the WHOLE dataset (it cannot be
+    limited to an area). If the area has no item, the script says which tile it needs and what the
+    command would load: 26 450 items, about 30 requests to the source bucket (no image data), about
+    5 minutes (about 45 s of listing at the source, measured on 26.09.2026, and about 4 minutes to
+    write the items, measured here on 07.10.2026 in a session Postgres; yours will differ).
+
+.PARAMETER Dataset
+    Registry id of the dataset. Default sentinel-2-c1-l2a. Known: sentinel-2-c1-l2a (asset red, 20 m)
+    and cop-dem-glo-30 (asset data, 90 m). Any other id needs -Asset and -Resolution.
+
+.PARAMETER Bbox
+    West, south, east, north in decimal degrees with a decimal point, separated by commas, e.g.
+    -Bbox "9.50,47.50,9.51,47.51" (the default). In quotes when the script is started with -File.
+    At most 2 x 2 km: a larger area is refused before anything is sent.
+
+.PARAMETER Datetime
+    Period to search, as a date or a date interval: 2025-07-01/2025-07-31 (the default for
+    sentinel-2-c1-l2a), or RFC 3339 instants. Ignored for cop-dem-glo-30, whose items have no instant.
+
+.PARAMETER Asset
+    Asset key to reproject. Default: red for sentinel-2-c1-l2a, data for cop-dem-glo-30.
+
+.PARAMETER Resolution
+    Pixel size in the units of -TargetCrs. Default: 20 for sentinel-2-c1-l2a, 90 for cop-dem-glo-30.
+
+.PARAMETER TargetCrs
+    Target CRS of the reproject step. Default EPSG:3035 (metres, for Europe); choose another for
+    other parts of the world.
+
+.EXAMPLE
+    .\scripts\try-job.ps1
+    Sentinel-2 over the default area, July 2025.
+
+.EXAMPLE
+    .\scripts\try-job.ps1 -Bbox "9.50,47.50,9.51,47.51" -Datetime 2025-06-01/2025-06-30
+
+.EXAMPLE
+    .\scripts\try-job.ps1 -Dataset cop-dem-glo-30
+    Copernicus DEM over the default area (needs the materialized catalog, see above).
+#>
+[CmdletBinding()]
+param(
+    [string]$Dataset = 'sentinel-2-c1-l2a',
+    [string]$Bbox = '9.50,47.50,9.51,47.51',
+    [string]$Datetime,
+    [string]$Asset,
+    [double]$Resolution,
+    [string]$TargetCrs = 'EPSG:3035'
+)
+
+# ---- what else to try (change here) -------------------------------------------------------------
 $BaseUrl        = 'http://localhost:8000'
-$Dataset        = 'cop-dem-glo-30'
-$Asset          = 'data'
-# A small square in decimal degrees (synthetic): about 1 km on a side, inside one 1x1 degree tile.
-$AoiWest        = 9.50
-$AoiSouth       = 47.50
-$AoiEast        = 9.51
-$AoiNorth       = 47.51
-# The reproject step: target CRS, pixel size in the units of that CRS (metres for EPSG:3035).
-$TargetCrs      = 'EPSG:3035'
-$Resolution     = 90.0
 $Resampling     = 'bilinear'          # nearest | bilinear | cubic
 $TimeoutSeconds = 300                 # how long to wait for the job
 $PollSeconds    = 3
 $OutputDir      = '.\try-job-output'
 $ComposeFile    = $null              # default: docker-compose.yml next to the scripts folder
+$MaxSideKm      = 2.0                # the largest area the script sends
+# What each known dataset needs besides its id.
+$Presets = @{
+    'sentinel-2-c1-l2a' = @{ Asset = 'red';  Resolution = 20.0; Datetime = '2025-07-01/2025-07-31' }
+    'cop-dem-glo-30'    = @{ Asset = 'data'; Resolution = 90.0; Datetime = '' }
+}
 # -------------------------------------------------------------------------------------------------
 
 $ErrorActionPreference = 'Stop'
@@ -174,6 +220,110 @@ function Test-TiffFile {
     return ($little -or $big)
 }
 
+function ConvertTo-Box {
+    # "w,s,e,n" (commas, semicolons or blanks) -> four numbers read with a decimal point; $null if not four numbers.
+    param([string]$Text)
+    $tokens = @($Text -split '[,;\s]+' | Where-Object { $_ })
+    if ($tokens.Count -ne 4) { return $null }
+    $numbers = @()
+    foreach ($token in $tokens) {
+        $value = 0.0
+        if (-not [double]::TryParse($token, [System.Globalization.NumberStyles]::Float, $Invariant, [ref]$value)) { return $null }
+        $numbers += $value
+    }
+    return $numbers
+}
+
+function Get-AreaSizeKm {
+    # Width and height of the box in km (a spherical approximation; plenty for a size limit).
+    param([double[]]$Box)
+    $kmPerDegree = 111.32
+    $height = ($Box[3] - $Box[1]) * $kmPerDegree
+    $width  = ($Box[2] - $Box[0]) * $kmPerDegree * [math]::Cos((($Box[1] + $Box[3]) / 2) * [math]::PI / 180)
+    return @($width, $height)
+}
+
+function ConvertTo-StacDatetime {
+    # '2025-07-01/2025-07-31' -> '2025-07-01T00:00:00Z/2025-07-31T23:59:59Z'; one date -> that whole day.
+    param([string]$Text)
+    $parts = $Text.Trim().Split('/')
+    if ($parts.Count -eq 1 -and $parts[0] -ne '..') { $parts = @($parts[0], $parts[0]) }
+    if ($parts.Count -ne 2) { return $null }
+    $out = @()
+    for ($n = 0; $n -lt 2; $n++) {
+        $part = $parts[$n].Trim()
+        if ($part -eq '..') {
+            $out += $part
+        } elseif ($part -match '^\d{4}-\d{2}-\d{2}$') {
+            if ($n -eq 0) { $out += "${part}T00:00:00Z" } else { $out += "${part}T23:59:59Z" }
+        } elseif ($part -match '^\d{4}-\d{2}-\d{2}T[0-9:.]+(Z|[+-]\d{2}:\d{2})$') {
+            $out += $part
+        } else {
+            return $null
+        }
+    }
+    return ($out -join '/')
+}
+
+function Get-FeatureCount {
+    param($Collection)
+    if ($null -eq $Collection -or $null -eq $Collection.features) { return 0 }
+    return @($Collection.features).Count
+}
+
+function Get-DemTileNames {
+    # The 1 x 1 degree tiles a box touches, named as the source names them (the south-west corner).
+    param([double[]]$Box)
+    $names = @()
+    $lat0 = [int][math]::Floor($Box[1]); $lat1 = [int][math]::Floor($Box[3] - 1e-9)
+    $lon0 = [int][math]::Floor($Box[0]); $lon1 = [int][math]::Floor($Box[2] - 1e-9)
+    for ($lat = $lat0; $lat -le $lat1; $lat++) {
+        for ($lon = $lon0; $lon -le $lon1; $lon++) {
+            if ($lat -ge 0) { $ns = 'N{0:00}' -f $lat } else { $ns = 'S{0:00}' -f (-$lat) }
+            if ($lon -ge 0) { $ew = 'E{0:000}' -f $lon } else { $ew = 'W{0:000}' -f (-$lon) }
+            $names += [pscustomobject]@{ Name = "Copernicus_DSM_COG_10_${ns}_00_${ew}_00_DEM"; Lat = $lat; Lon = $lon }
+        }
+    }
+    return $names
+}
+
+function Write-MaterializeFacts {
+    Write-Info '  Umfang:   26 450 Items (eine je Kachel der Quelle), keine Bilddaten'
+    Write-Info '  Anfragen: rund 30 an copernicus-dem-30m.s3.amazonaws.com (Kachelliste 1,1 MB, Sperrliste, Bucket-Listing in 27 Seiten)'
+    Write-Info '  Dauer:    rund 5 Minuten: das Listing etwa 45 s (gemessen am 26.09.2026, 1 Anfrage/s), das Schreiben der Items'
+    Write-Info '            in den Katalog etwa 4 Minuten (235 s für 26 450 Items, gemessen am 07.10.2026 in der Postgres einer'
+    Write-Info '            Sitzung; auf diesem Rechner kann es anders sein)'
+    Write-Info '  Danach:   ein zweiter Lauf ohne Änderung an der Quelle endet nach einer Anfrage mit "unchanged".'
+}
+
+function Write-DemHint {
+    param([double[]]$Box)
+    $tiles = @(Get-DemTileNames $Box)
+    $names = ($tiles | ForEach-Object { $_.Name }) -join ', '
+    $any = Invoke-Http -Uri "$BaseUrl/stac/collections/$Dataset/items?limit=1"
+    $anything = ($any.Status -eq 200 -and (Get-FeatureCount (ConvertFrom-JsonSafe $any.Content)) -gt 0)
+    Write-Info "Das Gebiet liegt in $($tiles.Count) Kachel(n) des $Dataset (je 1 x 1 Grad): $names"
+    if ($anything) {
+        Write-Info 'Der Katalog hat Items für diesen Datensatz, aber keins für diese Kachel.'
+        $gap = @($tiles | Where-Object { $_.Lat -ge 38 -and $_.Lat -le 41 -and $_.Lon -ge 43 -and $_.Lon -le 50 })
+        if ($gap.Count -gt 0) {
+            Write-Info 'Die Kachel liegt in der Lücke der 25 zurückgezogenen Kacheln (N38-N41, E043-E050, adr/0009 §10.3): die Quelle selbst hat dort nichts.'
+        } else {
+            Write-Info 'Mögliche Gründe: offenes Meer (dort gibt es keine DEM-Kacheln), oder der Katalog ist unvollständig.'
+            Write-Info '  Unvollständig? Ein neuer Lauf mit --force lädt die ganze Kachelliste neu (Umfang und Dauer unten):'
+            Write-Info "    docker compose run --rm materialize $Dataset --force"
+            Write-MaterializeFacts
+        }
+        Write-Info 'Oder ein Gebiet an Land wählen (-Bbox) bzw. -Dataset sentinel-2-c1-l2a (Standard), das nichts davon braucht.'
+        return
+    }
+    Write-Info "Der Katalog hat für $Dataset noch gar kein Item: der Datensatz wurde nicht materialisiert."
+    Write-Info 'Der Befehl lässt sich nicht auf ein Gebiet beschränken; er lädt den ganzen Datensatz, also auch die Kachel(n) oben:'
+    Write-Info "    docker compose run --rm materialize $Dataset"
+    Write-MaterializeFacts
+    Write-Info 'Wer nicht warten will: -Dataset sentinel-2-c1-l2a (Standard) braucht nichts davon.'
+}
+
 if (-not $ComposeFile) {
     $here = $PSScriptRoot
     if (-not $here) { $here = Join-Path (Get-Location).Path 'scripts' }
@@ -186,29 +336,81 @@ Write-Host "Job-Schnittstelle unter $BaseUrl/processing, Datensatz $Dataset" -Fo
 # ---- 1. place the order -------------------------------------------------------------------------
 Write-Step '1. Auftrag senden'
 
-$west  = Format-Number $AoiWest
-$south = Format-Number $AoiSouth
-$east  = Format-Number $AoiEast
-$north = Format-Number $AoiNorth
-$bbox  = "$west,$south,$east,$north"
+# The inputs, checked before anything is sent.
+$box = ConvertTo-Box $Bbox
+if ($null -eq $box) { Stop-Here '-Bbox: genau vier Zahlen mit Dezimalpunkt erwartet: "West,Süd,Ost,Nord"' }
+if ($box[0] -ge $box[2] -or $box[1] -ge $box[3] -or $box[0] -lt -180 -or $box[2] -gt 180 -or $box[1] -lt -90 -or $box[3] -gt 90) {
+    Stop-Here '-Bbox: West < Ost und Süd < Nord, Längen -180..180, Breiten -90..90 erwartet'
+}
+$size = Get-AreaSizeKm $box
+if ($size[0] -gt $MaxSideKm -or $size[1] -gt $MaxSideKm) {
+    Stop-Here ("-Bbox: das Gebiet ist {0} x {1} km, erlaubt sind höchstens {2} x {2} km" -f `
+        $size[0].ToString('0.0', $Invariant), $size[1].ToString('0.0', $Invariant), $MaxSideKm.ToString('0.#', $Invariant))
+}
+if ($Presets.ContainsKey($Dataset)) {
+    if (-not $Asset)      { $Asset = $Presets[$Dataset].Asset }
+    if (-not $Resolution) { $Resolution = $Presets[$Dataset].Resolution }
+    if (-not $PSBoundParameters.ContainsKey('Datetime')) { $Datetime = $Presets[$Dataset].Datetime }
+}
+if (-not $Asset -or -not $Resolution) {
+    Stop-Here "Datensatz ${Dataset}: unbekannt für dieses Skript, -Asset und -Resolution angeben"
+}
+if ($Resolution -le 0) { Stop-Here '-Resolution: eine Zahl größer als 0 erwartet' }
+if ($Dataset -eq 'cop-dem-glo-30' -and $Datetime) {
+    Write-Info 'Hinweis: cop-dem-glo-30 hat keinen Zeitpunkt je Item, -Datetime wird nicht verwendet.'
+    $Datetime = ''
+}
+$stacDatetime = $null
+if ($Datetime) {
+    $stacDatetime = ConvertTo-StacDatetime $Datetime
+    if (-not $stacDatetime) { Stop-Here "-Datetime: '$Datetime' nicht lesbar (z. B. 2025-07-01/2025-07-31)" }
+}
+$kmText = "{0} x {1} km" -f $size[0].ToString('0.0', $Invariant), $size[1].ToString('0.0', $Invariant)
+Write-Info "Gebiet: $kmText, Asset $Asset, Ziel $TargetCrs mit $(Format-Number $Resolution)"
+if ($stacDatetime) { Write-Info "Zeitraum: $stacDatetime" }
 
-$found = Invoke-Http -Uri "$BaseUrl/stac/collections/$Dataset/items?limit=1&bbox=$bbox"
+$west  = Format-Number $box[0]
+$south = Format-Number $box[1]
+$east  = Format-Number $box[2]
+$north = Format-Number $box[3]
+$bboxText = "$west,$south,$east,$north"
+
+$searchUrl = "$BaseUrl/stac/collections/$Dataset/items?limit=1&bbox=$bboxText"
+if ($stacDatetime) { $searchUrl += '&datetime=' + [System.Uri]::EscapeDataString($stacDatetime) }
+$found = Invoke-Http -Uri $searchUrl
+if ($found.Status -eq 404) {
+    Stop-Here "Item suchen: der Datensatz $Dataset ist der Plattform unbekannt (HTTP 404)"
+}
 if ($found.Status -ne 200) {
     Stop-Here "Item suchen: HTTP $($found.Status) $($found.Error) - läuft die Plattform (docker compose up)?"
 }
 $collection = ConvertFrom-JsonSafe $found.Content
-if ($null -eq $collection -or @($collection.features).Count -lt 1) {
-    Write-Info "Der Katalog kennt keine Items für $Dataset in diesem Bereich."
-    Write-Info "Einmalig laden: docker compose run --rm materialize $Dataset"
+if ((Get-FeatureCount $collection) -lt 1) {
+    if ($Dataset -eq 'cop-dem-glo-30') {
+        Write-DemHint $box
+    } else {
+        Write-Info "Der Katalog findet für $Dataset in diesem Gebiet und Zeitraum kein Item."
+        Write-Info 'Zeitraum erweitern (-Datetime 2025-06-01/2025-08-31) oder ein anderes Gebiet wählen (-Bbox).'
+    }
     Stop-Here 'Item suchen: kein Item gefunden'
 }
-$itemId = [string]$collection.features[0].id
-Write-Result $true "Item gefunden: $itemId"
+$item   = $collection.features[0]
+$itemId = [string]$item.id
+$when   = ''
+if ($item.properties -and $item.properties.datetime) {
+    $raw = $item.properties.datetime
+    if ($raw -is [datetime]) {      # PowerShell 6+ turns the text into a date; 5.1 leaves it as text
+        $when = ' vom ' + $raw.ToUniversalTime().ToString('yyyy-MM-dd HH:mm', $Invariant) + ' UTC'
+    } else {
+        $when = " vom $raw"
+    }
+}
+Write-Result $true "Item gefunden (genau eines wird verwendet): $itemId$when"
 
 $order = @"
 {"inputs": {"recipe": {
   "recipe_version": 1,
-  "inputs": [{"name": "dem", "dataset": "$Dataset", "groups": [["$itemId"]], "assets": ["$Asset"]}],
+  "inputs": [{"name": "scene", "dataset": "$Dataset", "groups": [["$itemId"]], "assets": ["$Asset"]}],
   "aoi": {"type": "Polygon", "coordinates": [[[$west, $south], [$east, $south], [$east, $north], [$west, $north], [$west, $south]]]},
   "steps": [{"op": "reproject", "op_version": 2, "params": {"crs": "$TargetCrs", "resolution": $(Format-Number $Resolution), "resampling": "$Resampling"}}],
   "output": {"kind": "raster", "format": "cog", "dtype": "float32"}
@@ -352,7 +554,11 @@ if ($again.Status -ne 201) {
         if (-not $finished) {
             Write-Info '- der erste Job ist nicht successful, es gibt nichts, was als Treffer dienen könnte'
         }
-        Write-Info '- die Quelle gab keine Fassung der Eingabe (der DEM braucht einen ETag auf einen HEAD-Abruf): ohne Fassung kein Treffer'
+        if ($Dataset -eq 'cop-dem-glo-30') {
+            Write-Info '- die Quelle gab keine Fassung der Eingabe (der DEM braucht einen ETag auf einen HEAD-Abruf): ohne Fassung kein Treffer'
+        } else {
+            Write-Info '- die Quelle gab keine Fassung der Eingabe (Prüfsumme file:checksum am Asset oder updated am Item): ohne Fassung kein Treffer'
+        }
         Write-Info '- das Ergebnis hat weniger als 24 Stunden Restlaufzeit'
         Write-Info '- die Quelle hat sich zwischen den Aufträgen geändert (neue Fassung)'
         Write-Info '- Einzelheiten: docker compose logs api (Zeile "order accepted", Feld order_cacheable)'
