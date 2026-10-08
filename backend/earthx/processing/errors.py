@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = [
     "AoiOutsideInputs",
+    "ExportTooLarge",
     "GridMismatch",
     "ProcessingError",
     "RecipeInvalid",
@@ -34,6 +35,10 @@ class UnknownOperator(RecipeInvalid):
 
 class UnsupportedRecipe(ProcessingError):
     """A valid recipe asks for something this core does not run yet (plan M4-07a §8, F2)."""
+
+
+class ExportTooLarge(UnsupportedRecipe):
+    """An export would write more than ``crop_rules.MAX_EXPORT_JOB_BYTES`` (M4-11 F5)."""
 
 
 class ScalingMismatch(ProcessingError):
