@@ -447,7 +447,9 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
         raise Problem(400, f"the input {docs.PROCESS_ID!r} is the order itself, a JSON object")
     if document.get("response", "document") != "document":
         raise Problem(400, "response is document: a job's results are links, never the bytes")
-    _check_outputs(document.get("outputs"))
+    output = order.get("output")
+    export = isinstance(output, dict) and output.get("kind") == "crop"
+    _check_outputs(document.get("outputs"), docs.EXPORT_OUTPUTS if export else docs.RASTER_OUTPUTS)
     try:
         return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8"), provenance
     except UnicodeEncodeError:
@@ -482,11 +484,12 @@ def _aoi_provenance(value: Any) -> dict[str, str]:
     return dict(value)
 
 
-def _check_outputs(outputs: Any) -> None:
+def _check_outputs(outputs: Any, names: tuple[str, ...]) -> None:
+    """``outputs`` names only outputs a job of this kind has: a raster job's or an export's (M4-11a)."""
     if outputs is None:
         return
-    if not isinstance(outputs, dict) or set(outputs) - set(docs.OUTPUTS):
-        raise Problem(400, f"outputs names some of {', '.join(docs.OUTPUTS)}")
+    if not isinstance(outputs, dict) or set(outputs) - set(names):
+        raise Problem(400, f"outputs names some of {', '.join(names)}")
     for entry in outputs.values():
         if not isinstance(entry, dict) or set(entry) - {"transmissionMode"}:
             raise Problem(400, "an output takes only transmissionMode")

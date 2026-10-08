@@ -1118,6 +1118,18 @@ class TestAnExport:
         problem(response, 400)
         untouched(rig)
 
+    @pytest.mark.parametrize(("document", "name"), [("export", "result"), ("export", "mask"), ("raster", "export")])
+    async def test_outputs_name_only_what_a_job_of_this_kind_has(self, rig: Rig, document: str, name: str) -> None:
+        recipe = export_order() if document == "export" else order()
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": recipe}, "outputs": {name: {}}})
+        assert "outputs names" in problem(response, 400)["detail"]
+        untouched(rig)
+
+    async def test_an_export_may_ask_for_its_own_outputs(self, rig: Rig) -> None:
+        outputs = {"export": {"transmissionMode": "reference"}, "recipe": {}}
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order()}, "outputs": outputs})
+        assert response.status_code == 201, response.text
+
     async def test_a_lone_surrogate_in_the_origin_is_a_400(self, rig: Rig) -> None:
         """Valid JSON text, no UTF-8 form: it may not reach ATTRIBUTION.txt (review of M4-11a)."""
         body = json.dumps({"inputs": {"recipe": export_order(), "aoiProvenance": {"attribution": "SURROGATE"}}})
