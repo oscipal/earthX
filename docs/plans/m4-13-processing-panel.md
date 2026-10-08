@@ -1,8 +1,12 @@
 # M4-13 — Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status: Plan
 
 **Aufgabe:** M4-13 aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B** — Plan-Schritt. Die Session hält nach diesem Plan an; umgesetzt
-wird nach Ottos Freigabe (§8).
+**Stufe B** — **von Otto am 08.10.2026 freigegeben:** F1–F9 wie empfohlen
+(je Option 1), K1–K12 angenommen. Umsetzung in drei PRs (F7): M4-13a (Backend,
+§3.1, §3.2 und die Backend-Tests aus §3.8) in dieser Session, M4-13b (Panel,
+Formular, Schätzung, Start, Job-Status, Download) und M4-13c (Vorschau,
+„Preview“) je in einer neuen Session nach dem Merge des vorigen. Die
+Statusanzeige aus M4-13b nutzt später M4-11b. Siehe §10.
 **Ort im Repo:** `docs/plans/m4-13-processing-panel.md`
 **Grundlagen:** `adr/0014` §5.3, §5.5, §5.6, §6.1–§6.3 (Auflage F9), §9,
 §15c, §15d; `adr/0013` §5.4, §5.5; `plans/m4-processing-kern.md` §1.1 (Q8,
@@ -643,3 +647,15 @@ Im Browser `http://localhost:5173`:
 
 Die Gegenprobe zur Lizenzstufe gibt es nur als Frontend-Test: Alle drei
 Einträge haben die Stufe *processing*.
+
+---
+
+## 10. Freigabe (Otto, 08.10.2026) und Umsetzung
+
+**Freigabe:** F1–F9 je Option 1 (Empfehlung), K1–K12 angenommen. Oberflächentexte
+nur Englisch.
+
+**Schnitt (F7):** Die Teilaufgaben stehen als M4-13a bis M4-13c in
+`plans/m4-processing-kern.md` §3. M4-11b hängt an M4-13b.
+
+**M4-13a — Umsetzung:** siehe unten, nach dem Fertigmelden ergänzt.
