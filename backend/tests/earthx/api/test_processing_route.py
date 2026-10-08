@@ -28,8 +28,10 @@ from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (
+    CROP,
     DEM,
     NEAR,
+    PLACE,
     S2_HOST,
     SCALE_STEP,
     dem_item,
@@ -241,11 +243,12 @@ class TestWhatIsNotAnInlineOrder:
     @pytest.mark.parametrize(
         ("document", "fragment"),
         [
-            ({}, "exactly one input"),
-            ({"inputs": {}}, "exactly one input"),
-            ({"inputs": []}, "exactly one input"),
-            ({"inputs": {"other": {}}}, "exactly one input"),
-            ({"inputs": {"recipe": {}, "other": {}}}, "exactly one input"),
+            ({}, "holds the input"),
+            ({"inputs": {}}, "holds the input"),
+            ({"inputs": []}, "holds the input"),
+            ({"inputs": {"other": {}}}, "holds the input"),
+            ({"inputs": {"recipe": {}, "other": {}}}, "holds the input"),
+            ({"inputs": {"aoiProvenance": {"source": "x"}}}, "holds the input"),
             ({"inputs": {"recipe": []}}, "a JSON object"),
             ({"inputs": {"recipe": 7}}, "a JSON object"),
             ({"inputs": {"recipe": None}}, "a JSON object"),
@@ -375,15 +378,8 @@ class TestWhatTheOrderMayNotBe:
         assert "parameters of step 0 (scale)" in body["detail"], "it says which step, and not what was sent"
         assert '"2"' not in body["detail"], "what was sent is not repeated"
 
-    async def test_a_crop_is_not_a_job(self, rig: Rig) -> None:
-        crop = {
-            "kind": "crop",
-            "format": "cog",
-            "resolution_factor": 1,
-            "extent": "bbox(aoi ∩ footprints)",
-            "mask": "file",
-        }
-        await self.refused(rig, order(steps=[], output=crop), 422, "order")
+    async def test_an_export_with_steps_is_refused(self, rig: Rig) -> None:
+        await self.refused(rig, order(output=CROP), 422, "order")
 
     async def test_an_unknown_item_is_a_422_that_names_it(self, rig: Rig) -> None:
         body = await self.refused(rig, order(groups=(("NO_SUCH_ITEM",),)), 422, "items")
@@ -678,7 +674,7 @@ class TestResults:
             assert forbidden not in response.text
 
     async def test_the_links_name_what_the_store_holds_and_what_api_builds(self) -> None:
-        assert LINK_NAMES == ("result.tif", "mask.tif", "recipe.json")
+        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "recipe.json")
 
 
 def signed(response: httpx.Response) -> tuple[str, dict[str, list[str]]]:
@@ -1056,3 +1052,101 @@ class TestTheNameOfADownload:
         name = _download_name(body, self.status(), "_recipe.json")
         _check_filename(name)  # the store's own rule
         assert "2-steps" in name and name.endswith("_20260102_recipe.json")
+
+
+# --- an export (M4-11a) ------------------------------------------------------------
+
+EXPORT_RESULT = {
+    "files": ["export.zip"],
+    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt"],
+    "groups": 1,
+    "assets": 1,
+    "blocks": 3,
+    "engine": RESULT["engine"],
+    "scaling": [],
+    "started": "2026-03-05T09:58:30+00:00",
+    "finished": "2026-03-05T09:59:45+00:00",
+    "bytes": 54321,
+}
+
+
+def export_order() -> dict[str, Any]:
+    return order(assets=("red",), steps=[], output=CROP)
+
+
+class TestAnExport:
+    async def test_two_equal_exports_get_runs_of_their_own_with_their_side_files(self, rig: Rig) -> None:
+        await placed(rig, export_order())
+        await placed(rig, export_order())
+        rows = rig.db.execute("SELECT cacheable, attachments FROM public.earthx_run ORDER BY run_id").fetchall()
+        assert [cacheable for cacheable, _ in rows] == [False, False]
+        for _, attachments in rows:
+            assert set(attachments["files"]) == {"ATTRIBUTION.txt", "citation.bib", "aoi.geojson"}
+
+    async def test_the_origin_of_a_place_aoi_goes_into_the_side_files(self, rig: Rig) -> None:
+        response = await rig.client.post(
+            EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": PLACE}}
+        )
+        assert response.status_code == 201, response.text
+        (attachments,) = rig.db.execute("SELECT attachments FROM public.earthx_run").fetchone()  # type: ignore[misc]
+        assert "AOI geometry: © OpenStreetMap contributors" in attachments["files"]["ATTRIBUTION.txt"]
+        assert json.loads(attachments["files"]["aoi.geojson"])["properties"] == PLACE
+        (body,) = rig.db.execute("SELECT body FROM public.earthx_recipe").fetchone()  # type: ignore[misc]
+        assert "properties" not in body["aoi"] and "OpenStreetMap" not in json.dumps(body)
+
+    @pytest.mark.parametrize(
+        "provenance",
+        [
+            {},
+            {"other": "x"},
+            {"source": ""},
+            {"source": "x" * 201},
+            {"source": "two\nlines"},
+            {"source": " padded"},
+            {"source": 7},
+            "© OpenStreetMap",
+            {"href": "https://example.invalid/provenance.json"},
+            {"value": {"source": "x"}},
+        ],
+    )
+    async def test_a_malformed_origin_is_a_400_and_nothing_is_fetched(self, rig: Rig, provenance: Any) -> None:
+        response = await rig.client.post(
+            EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": provenance}}
+        )
+        problem(response, 400)
+        untouched(rig)
+
+    async def test_an_origin_with_a_raster_order_is_a_400(self, rig: Rig) -> None:
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": order(), "aoiProvenance": PLACE}})
+        assert problem(response, 400)["type"].endswith(":order")
+
+    async def test_the_results_are_the_zip_and_the_recipe(self, rig: Rig) -> None:
+        job_id = await placed(rig, export_order())
+        finish(rig.db, job_id, result=EXPORT_RESULT)
+        document = (await rig.client.get(f"/processing/jobs/{job_id}/results")).json()
+        assert list(document) == ["export", "recipe"]
+        assert document["export"]["type"] == "application/zip" and document["export"]["length"] == 54321
+
+    async def test_the_zip_link_is_a_303_named_by_dataset_export_and_date(self, rig: Rig) -> None:
+        job_id = await placed(rig, export_order())
+        result_id = finish(rig.db, job_id, result=EXPORT_RESULT)
+        path, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/export.zip"))
+        assert path == f"/earthx/results/{result_id}/export.zip"
+        assert "sentinel-2-c1-l2a_export_20260305.zip" in query["response-content-disposition"][0]
+
+    async def test_a_name_of_the_other_output_is_a_404_either_way(self, rig: Rig) -> None:
+        export_job = await placed(rig, export_order())
+        finish(rig.db, export_job, result=EXPORT_RESULT)
+        raster_job = await placed(rig)
+        finish(rig.db, raster_job)
+        for job_id, name in ((export_job, "result.tif"), (export_job, "mask.tif"), (raster_job, "export.zip")):
+            response = await rig.client.get(f"/processing/jobs/{job_id}/results/{name}")
+            assert problem(response, 404)["type"] == "urn:earthx:no-such-result"
+
+    async def test_the_recipe_link_carries_the_times_the_export_wrote_into_its_zip(self, rig: Rig) -> None:
+        job_id = await placed(rig, export_order())
+        finish(rig.db, job_id, result=EXPORT_RESULT)
+        document = (await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")).json()
+        assert document["provenance"]["started"].startswith("2026-03-05T09:58:30")
+        assert document["provenance"]["finished"].startswith("2026-03-05T09:59:45")
+        assert document["output"]["kind"] == "crop" and set(document["inputs"][0]["footprints"]) == {"S2_A"}

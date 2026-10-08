@@ -73,8 +73,9 @@ RESULT_NOT_READY = f"{_TYPE_BASE}result-not-ready"
 _FAILED_TYPE = "urn:earthx:job-failed:"
 _ORDER_TYPE = "urn:earthx:order-refused:"
 
-#: What a link under ``/results`` may name. `result.tif` and `mask.tif` lie in the store, `recipe.json` is built.
-LINK_NAMES = ("result.tif", "mask.tif", "recipe.json")
+#: What a link under ``/results`` may name. `result.tif`, `mask.tif` and `export.zip` lie in the store,
+#: `recipe.json` is built. A job has the names of its own output only (:func:`_names_of`).
+LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "recipe.json")
 
 _ENVELOPE_KEYS = frozenset({"inputs", "outputs", "response"})
 _TRANSMISSION = "reference"
@@ -405,11 +406,12 @@ async def _read_body(request: Request) -> bytes:
     return b"".join(chunks)
 
 
-def _unwrap(raw: bytes) -> bytes:
+def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
     """The order inside the envelope ``{"inputs": {"recipe": {…}}}``, as JSON text; or the ``400`` that says why not.
 
     Only the part of the envelope the platform can honour is taken. An input given by
-    reference is the part it cannot (F4, B8): nothing is fetched for it.
+    reference is the part it cannot (F4, B8): nothing is fetched for it. Beside the order,
+    an export may carry ``aoiProvenance`` (M4-11 F4), returned checked as the second value.
     """
     try:
         document = loads_i_json(raw)
@@ -423,8 +425,14 @@ def _unwrap(raw: bytes) -> bytes:
             400, f"the request has members this API does not take: {', '.join(repr(k[:32]) for k in unknown[:5])}"
         )
     inputs = document.get("inputs")
-    if not isinstance(inputs, dict) or set(inputs) != {docs.PROCESS_ID}:
-        raise Problem(400, f"inputs holds exactly one input, {docs.PROCESS_ID!r}")
+    if not isinstance(inputs, dict) or docs.PROCESS_ID not in inputs or set(inputs) - {
+        docs.PROCESS_ID,
+        docs.AOI_PROVENANCE,
+    }:
+        raise Problem(
+            400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an export, {docs.AOI_PROVENANCE!r}"
+        )
+    provenance = _aoi_provenance(inputs[docs.AOI_PROVENANCE]) if docs.AOI_PROVENANCE in inputs else None
     order = inputs[docs.PROCESS_ID]
     if (isinstance(order, dict) and "href" in order) or isinstance(order, str):
         raise Problem(400, docs.INLINE_ONLY)
@@ -436,10 +444,35 @@ def _unwrap(raw: bytes) -> bytes:
         raise Problem(400, "response is document: a job's results are links, never the bytes")
     _check_outputs(document.get("outputs"))
     try:
-        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        return json.dumps(order, ensure_ascii=False, allow_nan=False).encode("utf-8"), provenance
     except UnicodeEncodeError:
         # A lone surrogate (`"\ud800"`) is valid JSON text and not a string anyone can store.
         raise Problem(400, "not a JSON document: a string holds a character that has no UTF-8 form") from None
+
+
+def _aoi_provenance(value: Any) -> dict[str, str]:
+    """``aoiProvenance``: inline, some of the three fields, each one line of plain text (M4-11 F4).
+
+    Stricter than the crop, which flattens such a value: here a value that would need it
+    is refused, so what lands in ``ATTRIBUTION.txt`` is what was sent.
+    """
+    if (isinstance(value, dict) and ("href" in value or "value" in value)) or isinstance(value, str):
+        raise Problem(400, docs.INLINE_ONLY)
+    fields = docs.AOI_PROVENANCE_FIELDS
+    if not isinstance(value, dict) or not value or set(value) - set(fields):
+        raise Problem(400, f"{docs.AOI_PROVENANCE} names some of {', '.join(fields)}")
+    for text in value.values():
+        if (
+            not isinstance(text, str)
+            or not 0 < len(text) <= docs.AOI_PROVENANCE_MAX_CHARS
+            or text != text.strip()
+            or any(ord(char) < 32 or 127 <= ord(char) < 160 or char in "\u2028\u2029" for char in text)
+        ):
+            raise Problem(
+                400,
+                f"each field of {docs.AOI_PROVENANCE} is one line of 1 to {docs.AOI_PROVENANCE_MAX_CHARS} characters",
+            )
+    return dict(value)
 
 
 def _check_outputs(outputs: Any) -> None:
@@ -482,7 +515,7 @@ def _refused(error: OrderRefused) -> Problem:
 async def execute(request: Request, process_id: str, api: Api) -> Response:
     if process_id != docs.PROCESS_ID:
         raise Problem(404, "there is no such process", type_=NO_SUCH_PROCESS, title="No such process")
-    order = _unwrap(await _read_body(request))
+    order, provenance = _unwrap(await _read_body(request))
     try:
         accepted = await accept_order(
             order,
@@ -490,6 +523,7 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
             operators=api.operators,
             item_source=api.item_source,
             gateway=api.gateway,
+            aoi_provenance=provenance,
         )
         check_recipe_hosts(accepted.recipe, api.registry)
     except OrderRefused as error:
@@ -499,7 +533,11 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
     except UnsupportedRecipe as error:
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
     try:
-        job_id = await _db(api, lambda conn, recipe: submit(conn, recipe, operators=api.operators), accepted.recipe)
+        job_id = await _db(
+            api,
+            lambda conn, recipe: submit(conn, recipe, operators=api.operators, attachments=accepted.attachments),
+            accepted.recipe,
+        )
     except RecipeIdTaken:
         # Cannot happen (a recipe_id is new for every order); if it does, it is ours, and the text names no value.
         raise Problem(500, "the job could not be placed") from None
@@ -567,11 +605,22 @@ def _ready(status: JobStatus) -> JobStatus:
     return status
 
 
+def _is_export(status: JobStatus) -> bool:
+    return (status.result or {}).get("files") == ["export.zip"]
+
+
+def _names_of(status: JobStatus) -> tuple[str, ...]:
+    """The files under ``/results`` of this job: those of its own output, and ``recipe.json``."""
+    outputs = docs.EXPORT_OUTPUTS if _is_export(status) else docs.RASTER_OUTPUTS
+    return tuple(docs.OUTPUTS[name][0] for name in outputs)
+
+
 def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
     base = f"{root}{docs.PREFIX}/jobs/{status.job_id}/results"
     result = status.result or {}
     document: dict[str, Any] = {}
-    for name, (file, title) in docs.OUTPUTS.items():
+    for name in docs.EXPORT_OUTPUTS if _is_export(status) else docs.RASTER_OUTPUTS:
+        file, title = docs.OUTPUTS[name]
         link: dict[str, Any] = {"href": f"{base}/{file}", "type": RESULT_NAMES[file], "title": title}
         if name == "result":
             for key, member in (("bytes", "length"), ("width", "width"), ("height", "height"), ("bands", "bands")):
@@ -579,6 +628,8 @@ def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
                     link[member] = result[key]
             if "properties" in result:
                 link["properties"] = result["properties"]
+        if name == "export" and "bytes" in result:
+            link["length"] = result["bytes"]
         document[name] = link
     return document
 
@@ -609,7 +660,7 @@ def _ascii(text: str) -> str:
     return "".join(c if c.isascii() and (c.isalnum() or c in "-_") else "-" for c in text)
 
 
-_SUFFIXES = {"result.tif": ".tif", "mask.tif": "_mask.tif", "recipe.json": "_recipe.json"}
+_SUFFIXES = {"result.tif": ".tif", "mask.tif": "_mask.tif", "export.zip": ".zip", "recipe.json": "_recipe.json"}
 
 
 @router.get(
@@ -628,6 +679,8 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     if status.expires_at - datetime.now(UTC) < MIN_REMAINING:
         raise Problem(410, "the result has expired", type_="urn:earthx:gone", title="Gone")
     status = _ready(status)
+    if name not in _names_of(status):
+        raise Problem(404, "there is no such result", type_="urn:earthx:no-such-result", title="No such result")
     body = await _db(api, job_recipe, jobID)
     filename = _download_name(body, status, _SUFFIXES[name])
     if name == "recipe.json":
@@ -651,14 +704,24 @@ def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus
         config = api.registry.get(dataset) if isinstance(dataset, str) else None
     except UnknownDatasetError:
         config = None
-    content = job_recipe_json(
-        body, config=config, result=status.result or {}, started=status.started_at, finished=status.finished_at
-    )
+    result = status.result or {}
+    started, finished = status.started_at, status.finished_at
+    if _is_export(status):
+        # The times the export wrote into its own recipe.json, so that both copies are one file (M4-11 K4).
+        started, finished = _instant(result.get("started")) or started, _instant(result.get("finished")) or finished
+    content = job_recipe_json(body, config=config, result=result, started=started, finished=finished)
     return Response(
         content,
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _instant(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return None
 
 
 # --- progress ----------------------------------------------------------------
