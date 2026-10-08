@@ -171,6 +171,8 @@ class ExportResult:
     engine: dict[str, str]
     started: datetime
     finished: datetime
+    #: The attribution its ``recipe.json`` carries, for the copy `api` serves (K4).
+    attribution: tuple[str, ...]
 
 
 def check_export(recipe: Recipe) -> CropOutput:
@@ -533,6 +535,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
         engine=engine,
         started=started,
         finished=finished,
+        attribution=attachments.attribution,
     )
 
 

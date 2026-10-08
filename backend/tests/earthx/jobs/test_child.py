@@ -12,6 +12,7 @@ import warnings
 import zipfile
 from collections.abc import Callable
 from contextlib import nullcontext
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -22,6 +23,8 @@ from rio_cogeo.cogeo import cog_validate
 import earthx.jobs as jobs_package
 from earthx.jobs import child
 from earthx.jobs.child import high_water_mb
+from earthx.processing.operators import REGISTRY
+from earthx.processing.recipe import job_recipe_document, parse_recipe
 from tests.earthx.jobs import child_targets
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import CROP, resolved
@@ -282,6 +285,16 @@ class TestARealExport:
             assert archive.namelist() == done["members"]
             assert archive.read("ATTRIBUTION.txt") == b"Synthetic\n"
             assert json.loads(archive.read("recipe.json"))["recipe_id"] == "E" * 22
+            in_zip = archive.read("recipe.json")
+        body = parse_recipe((workdir / "recipe.json").read_bytes(), REGISTRY).model_dump(mode="json")
+        served = job_recipe_document(
+            body,
+            attribution=done["attribution"],
+            result=done,
+            started=datetime.fromisoformat(done["started"]),
+            finished=datetime.fromisoformat(done["finished"]),
+        )
+        assert in_zip == served, "the link of api and the file in the ZIP are one file (K4)"
         assert done["bytes"] == (workdir / "export.zip").stat().st_size
         assert 0 < done["peak_mb"] < 500
 

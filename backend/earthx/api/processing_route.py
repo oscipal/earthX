@@ -58,7 +58,7 @@ from earthx.objectstore.results import MIN_REMAINING, RESULT_NAMES, Store, signe
 from earthx.processing import check_scope
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import OperatorRegistry
-from earthx.processing.recipe import RECIPE_VERSION, loads_i_json
+from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
 
 LOGGER = logging.getLogger("earthx.api.processing")
 
@@ -715,11 +715,20 @@ def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus
     except UnknownDatasetError:
         config = None
     result = status.result or {}
-    started, finished = status.started_at, status.finished_at
-    if _is_export(status):
-        # The times the export wrote into its own recipe.json, so that both copies are one file (M4-11 K4).
-        started, finished = _instant(result.get("started")) or started, _instant(result.get("finished")) or finished
-    content = job_recipe_json(body, config=config, result=result, started=started, finished=finished)
+    if _is_export(status) and isinstance(result.get("attribution"), list):
+        # The times and the attribution the export wrote into its own recipe.json, so that both
+        # copies are one file (M4-11 K4) — also across a new year or a changed registry.
+        content = job_recipe_document(
+            body,
+            attribution=[str(entry) for entry in result["attribution"]],
+            result=result,
+            started=_instant(result.get("started")) or status.started_at,
+            finished=_instant(result.get("finished")) or status.finished_at,
+        )
+    else:
+        content = job_recipe_json(
+            body, config=config, result=result, started=status.started_at, finished=status.finished_at
+        )
     return Response(
         content,
         media_type="application/json",

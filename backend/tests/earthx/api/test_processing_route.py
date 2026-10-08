@@ -26,6 +26,7 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
+from earthx.processing.recipe import job_recipe_document
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (
     CROP,
@@ -1064,6 +1065,7 @@ EXPORT_RESULT = {
     "blocks": 3,
     "engine": RESULT["engine"],
     "scaling": [],
+    "attribution": ["Contains modified Copernicus Sentinel data 2025"],
     "started": "2026-03-05T09:58:30+00:00",
     "finished": "2026-03-05T09:59:45+00:00",
     "bytes": 54321,
@@ -1172,3 +1174,22 @@ class TestAnExport:
         assert document["provenance"]["started"].startswith("2026-03-05T09:58:30")
         assert document["provenance"]["finished"].startswith("2026-03-05T09:59:45")
         assert document["output"]["kind"] == "crop" and set(document["inputs"][0]["footprints"]) == {"S2_A"}
+
+    async def test_the_recipe_link_is_the_file_in_the_zip_whatever_the_registry_says_now(self, rig: Rig) -> None:
+        """Accepted in one year, finished in the next: the link repeats the export's attribution (review, M4-11a)."""
+        job_id = await placed(rig, export_order())
+        finish(rig.db, job_id, result=EXPORT_RESULT)
+        served = (await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")).content
+        (body,) = rig.db.execute(  # type: ignore[misc]
+            "SELECT r.body FROM public.earthx_recipe r JOIN public.earthx_job j USING (recipe_id) WHERE j.job_id = %s",
+            (job_id,),
+        ).fetchone()
+        written = job_recipe_document(
+            body,
+            attribution=EXPORT_RESULT["attribution"],
+            result=EXPORT_RESULT,
+            started=datetime.fromisoformat(EXPORT_RESULT["started"]),
+            finished=datetime.fromisoformat(EXPORT_RESULT["finished"]),
+        )
+        assert served == written
+        assert json.loads(served)["provenance"]["attribution"] == ["Contains modified Copernicus Sentinel data 2025"]
