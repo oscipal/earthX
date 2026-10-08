@@ -27,6 +27,7 @@ from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
+from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (
     DEM,
@@ -933,7 +934,7 @@ class TestWhatLogsAndHeadersCarry:
         # and full URLs at lower levels, to WARNING (earthx.logging, adr/0015 §9.2).
         with caplog.at_level(logging.DEBUG, logger="earthx"):
             job_id, result_id = await self.lifecycle(rig)
-        text = "\n".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records)
+        text = "\n".join(own_log_text(record) for record in caplog.records)
         assert caplog.records
         for forbidden in (job_id, result_id, "9.01", "47.01", S2_HOST, "c1:", "1220S2_A", "secret"):
             assert forbidden not in text, forbidden
@@ -944,7 +945,7 @@ class TestWhatLogsAndHeadersCarry:
         with caplog.at_level(logging.INFO, logger="earthx.api.processing"):
             body = (await place(rig)).json()
         record = next(r for r in caplog.records if r.getMessage() == "job placed")
-        assert record.order_recipe_id == body["recipeID"] and body["jobID"] not in str(record.__dict__)
+        assert record.order_recipe_id == body["recipeID"] and body["jobID"] not in own_log_text(record)
 
     @pytest.mark.parametrize(
         "path",
