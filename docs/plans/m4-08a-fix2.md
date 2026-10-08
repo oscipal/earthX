@@ -3,6 +3,8 @@
 **Aufgabe:** M4-08a-fix2 (Nachbesserung zu M4-08a, PR #124).
 **Stufe B** wegen eines möglichen Wettlaufs im Aufseher. Ergebnis: Die Ursache
 liegt **nur im Test**; laut Auftrag direkt behoben, kein Halt.
+**Review Otto (08.10.2026, PR #132):** angenommen; der Nebenbefund in §3
+bleibt als bekannte Einschränkung.
 **Ort im Repo:** `docs/plans/m4-08a-fix2.md`
 **Grundlagen:** `adr/0013` §5.2, §5.6; `plans/m4-08a-jobs-queue.md` §3.4
 („Herunterfahren“, K5); `plans/m4-processing-kern.md` §3.
@@ -84,7 +86,7 @@ also zwei Abfragen. Ablauf eines Fehlschlags:
 Das ist eine Zeitannahme des Tests (zwei Lesezugriffe gelten als ein Bild),
 kein Wettlauf zwischen Abholen und Herunterfahren.
 
-**Nebenbefund ohne Änderung:** Kommt `stop()` zwischen der Prüfung von
+**Bekannte Einschränkung (Nebenbefund, ohne Änderung; Otto, 08.10.2026):** Kommt `stop()` zwischen der Prüfung von
 `_stopping` nach dem Abholen und `_start_child`, startet ein Kind und wird in
 der ersten Runde von `_watch` beendet; der Lauf geht über `_conclude` →
 `release` zurück. Die Lease wird also auch dann sofort freigegeben (K5);
