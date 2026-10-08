@@ -83,3 +83,9 @@ def test_footprints_name_exactly_the_items() -> None:
     del data["inputs"][0]["footprints"]["ITEM_B"]
     with pytest.raises(RecipeInvalid):
         recipe_from_data(data, OPERATORS)
+
+
+def test_two_assets_with_one_file_name_are_refused() -> None:
+    data = crop_data(assets=("B04", "B04."))
+    with pytest.raises(UnsupportedRecipe, match="same file name"):
+        check_scope(recipe_from_data(data, OPERATORS))

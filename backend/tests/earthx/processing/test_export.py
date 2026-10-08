@@ -31,7 +31,7 @@ from earthx.access.crop_rules import compute_crop_region
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.processing import RunCancelled, run
-from earthx.processing.errors import AoiOutsideInputs
+from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
 from earthx.processing.recipe import recipe_from_data
 from earthx.readers import Policy
@@ -353,3 +353,17 @@ def test_missing_or_unreadable_attachments_are_named_not_shown(tmp_path: Path) -
     (tmp_path / "attachments.json").write_text("not json {")
     with pytest.raises(AttachmentsInvalid, match="cannot be read"):
         read_attachments(tmp_path)
+
+
+def test_items_of_one_group_with_other_bands_are_no_mosaic(
+    scenes: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    single = tmp_path / "single.tif"
+    _visual(single, _bands(10)[:1])
+    sources.serve({sources.url("item_a"): scenes["ITEM_A"], sources.url("item_b"): single}, monkeypatch)
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip([["ITEM_A"]], AOI)))
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    with pytest.raises(UnsupportedRecipe, match="differ in their bands"):
+        _export([["ITEM_A", "ITEM_B"]], workdir, crop)
+    assert list(workdir.iterdir()) == []

@@ -176,3 +176,10 @@ def name_a_foreign_file(workdir: str, conn: Any) -> None:
     (Path(workdir) / "notes.txt").write_bytes(b"x")
     conn.send(("done", {"files": ["result.tif", "notes.txt"], "blocks": 1}))
     conn.close()
+
+
+def export_without_attachments(workdir: str, conn: Any) -> None:
+    """Leaves ``export.zip`` for a run that is no export (it has no attachments)."""
+    (Path(workdir) / "export.zip").write_bytes(b"x")
+    conn.send(("done", {"files": ["export.zip"], "blocks": 1}))
+    conn.close()

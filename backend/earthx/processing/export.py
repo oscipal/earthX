@@ -192,6 +192,9 @@ def check_export(recipe: Recipe) -> CropOutput:
         raise UnsupportedRecipe("an export has exactly one input")
     if any(entry.asset.reader != "cog" for entry in recipe.inputs[0].resolved):
         raise UnsupportedRecipe("export jobs read COG assets only for now")
+    names = [crop_filename(asset) for asset in recipe.inputs[0].assets]
+    if len(set(names)) != len(names):
+        raise UnsupportedRecipe("two assets of the export would get the same file name in the ZIP")
     estimate(recipe, REGISTRY)
     return output
 
@@ -365,6 +368,8 @@ class _Export:
                 _Item(dataset, output.transform, output.width, output.height, alone=alone, stack=stack)
                 for dataset in datasets
             ]
+            if len({(len(item.indexes), item.dtype) for item in items}) != 1:
+                raise UnsupportedRecipe("the items of a group differ in their bands or data type; no mosaic")
             nodata = items[0].nodata
             fill_value = nodata if nodata is not None else 0
             profile = {

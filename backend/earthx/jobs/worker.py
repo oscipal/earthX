@@ -69,9 +69,9 @@ LOGGER = logging.getLogger("earthx.jobs")
 #: What a finished child leaves in its work directory and what is uploaded (plan M4-08a F4).
 RESULT_FILES = ("result.tif", "mask.tif")
 
-#: What an export leaves instead (M4-11a). The child names its files; only these sets pass.
+#: What an export leaves instead (M4-11a). The child names its files; a run with attachments is
+#: an export and uploads these, any other run the two above, and nothing else.
 EXPORT_FILES = ("export.zip",)
-_UPLOADS = frozenset({RESULT_FILES, EXPORT_FILES})
 
 _RUN_DIRECTORY = re.compile(r"^\d+-\d+$")
 _SPAWN = multiprocessing.get_context("spawn")
@@ -431,7 +431,8 @@ class Supervisor:
     ) -> str:
         run_id, attempt = picked.run_id, picked.attempt
         files = tuple(info.get("files") or RESULT_FILES)
-        if files not in _UPLOADS:
+        expected = EXPORT_FILES if picked.attachments is not None else RESULT_FILES
+        if files != expected:
             LOGGER.warning("child reported files it may not leave", extra={"run": run_id, "attempt": attempt})
             queue.finish_failed(conn, run_id, attempt, "unknown", backoff_seconds=self.config.backoff_seconds)
             return "unknown"

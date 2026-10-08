@@ -287,6 +287,15 @@ class TestAnExport:
         body = store.s3._internal.get_object(Bucket=BUCKET, Key=f"results/{status.result_id}/export.zip")
         assert json.loads(body["Body"].read()) == ATTACHMENTS.to_json()
 
+    def test_a_raster_child_that_reports_an_export_zip_fails_and_uploads_nothing(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("export_without_attachments").start()
+        job_id = submit(db, make_recipe())
+        _wait_for(db, job_id, "failed")
+        assert run_row(db, _run_id(db), "error_kind") == ("unknown",)
+        assert _stored(store) == []
+
     def test_a_child_naming_a_file_outside_the_two_sets_fails_and_uploads_nothing(
         self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
     ) -> None:
