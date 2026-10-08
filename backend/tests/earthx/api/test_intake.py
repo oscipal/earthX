@@ -19,6 +19,7 @@ from typing import Any, get_args
 import httpx
 import pytest
 
+from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
 from earthx.adapters.errors import UnknownCollection
 from earthx.api.intake import (
     MAX_ORDER_ASSETS,
@@ -34,6 +35,7 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
 from earthx.processing.operators import OperatorRegistry, Tier
+from earthx.processing.plan import export_outputs
 from earthx.processing.recipe import cache_key, recipe_from_data, recipe_hash
 from tests.conftest import own_log_text
 from tests.earthx.processing.testops import OPERATORS, SCALE
@@ -1116,3 +1118,26 @@ class TestAnExport:
         with pytest.raises(OrderRefused) as caught:
             await accept(order(), source, aoi_provenance=PLACE)
         assert caught.value.status_code == 400 and source.calls == []
+
+
+class TestTheJobsCapMatchesTheCropsEstimate:
+    """M4-11 K5: the crop route offers a job by its own estimate; the job must count the same bytes."""
+
+    @staticmethod
+    def _crop_total(items: list[dict[str, Any]]) -> int:
+        aoi = parse_aoi_geometry(SQUARE)
+        region = compute_crop_region(items, aoi)
+        return sum(output.total_bytes for output in plan_outputs(items, ["visual"], region))
+
+    async def test_the_export_is_estimated_as_the_crop_estimates_it(self) -> None:
+        items = [visual_item("S2_A"), visual_item("S2_B", (8.95, 46.95, 9.2, 47.2))]
+        accepted = await accept(export_order((("S2_A", "S2_B"),)), Source(*((S2, item) for item in items)))
+        assert sum(output.total_bytes for output in export_outputs(accepted.recipe)) == self._crop_total(items)
+
+    async def test_the_cap_holds_to_the_byte(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        total = self._crop_total([visual_item("S2_A")])
+        source = Source((S2, visual_item("S2_A")))
+        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", total)
+        assert (await accept(export_order(), source)).attachments is not None
+        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", total - 1)
+        assert (await refused(export_order(), source)).status_code == 413
