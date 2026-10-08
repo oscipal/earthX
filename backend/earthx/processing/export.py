@@ -134,8 +134,12 @@ class Attachments:
         if set(self.files) != set(ATTACHMENT_LIMITS):
             raise AttachmentsInvalid(f"an export takes exactly {', '.join(sorted(ATTACHMENT_LIMITS))}")
         for name, text in self.files.items():
-            if not isinstance(text, str) or len(text.encode("utf-8")) > ATTACHMENT_LIMITS[name]:
-                raise AttachmentsInvalid(f"{name} is text of at most {ATTACHMENT_LIMITS[name]} bytes")
+            try:
+                size = len(text.encode("utf-8")) if isinstance(text, str) else None
+            except UnicodeEncodeError:
+                size = None  # a lone surrogate: no UTF-8 form, no file
+            if size is None or size > ATTACHMENT_LIMITS[name]:
+                raise AttachmentsInvalid(f"{name} is UTF-8 text of at most {ATTACHMENT_LIMITS[name]} bytes")
         if len(self.attribution) > _ATTRIBUTION_ENTRIES or not all(
             isinstance(entry, str) and len(entry) <= _ATTRIBUTION_CHARS for entry in self.attribution
         ):

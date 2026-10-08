@@ -1103,6 +1103,8 @@ class TestAnExport:
             {"source": "x" * 201},
             {"source": "two\nlines"},
             {"source": " padded"},
+            {"source": "right\u202eto left"},
+            {"source": "zero\u200bwidth"},
             {"source": 7},
             "© OpenStreetMap",
             {"href": "https://example.invalid/provenance.json"},
@@ -1113,6 +1115,14 @@ class TestAnExport:
         response = await rig.client.post(
             EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": provenance}}
         )
+        problem(response, 400)
+        untouched(rig)
+
+    async def test_a_lone_surrogate_in_the_origin_is_a_400(self, rig: Rig) -> None:
+        """Valid JSON text, no UTF-8 form: it may not reach ATTRIBUTION.txt (review of M4-11a)."""
+        body = json.dumps({"inputs": {"recipe": export_order(), "aoiProvenance": {"attribution": "SURROGATE"}}})
+        raw = body.replace("SURROGATE", "a\\ud800b").encode("ascii")
+        response = await rig.client.post(EXECUTION, content=raw, headers={"content-type": "application/json"})
         problem(response, 400)
         untouched(rig)
 

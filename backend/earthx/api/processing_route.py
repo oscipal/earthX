@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -78,6 +79,10 @@ _ORDER_TYPE = "urn:earthx:order-refused:"
 LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "recipe.json")
 
 _ENVELOPE_KEYS = frozenset({"inputs", "outputs", "response"})
+
+#: Unicode categories a field of ``aoiProvenance`` may not hold: control, format, surrogate,
+#: private use, unassigned, line and paragraph separators.
+_NOT_PLAIN_TEXT = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 _TRANSMISSION = "reference"
 
 #: ``error_kind`` of a failed run → (status of the result, fixed title) (M4-08b F5).
@@ -454,7 +459,9 @@ def _aoi_provenance(value: Any) -> dict[str, str]:
     """``aoiProvenance``: inline, some of the three fields, each one line of plain text (M4-11 F4).
 
     Stricter than the crop, which flattens such a value: here a value that would need it
-    is refused, so what lands in ``ATTRIBUTION.txt`` is what was sent.
+    is refused, so what lands in ``ATTRIBUTION.txt`` is what was sent. Refused besides:
+    control and format characters (bidirectional overrides, zero-width marks), lone
+    surrogates and line or paragraph separators (:data:`_NOT_PLAIN_TEXT`).
     """
     if (isinstance(value, dict) and ("href" in value or "value" in value)) or isinstance(value, str):
         raise Problem(400, docs.INLINE_ONLY)
@@ -466,7 +473,7 @@ def _aoi_provenance(value: Any) -> dict[str, str]:
             not isinstance(text, str)
             or not 0 < len(text) <= docs.AOI_PROVENANCE_MAX_CHARS
             or text != text.strip()
-            or any(ord(char) < 32 or 127 <= ord(char) < 160 or char in "\u2028\u2029" for char in text)
+            or any(unicodedata.category(char) in _NOT_PLAIN_TEXT for char in text)
         ):
             raise Problem(
                 400,

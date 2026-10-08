@@ -32,7 +32,7 @@ from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.processing import RunCancelled, run
 from earthx.processing.errors import AoiOutsideInputs
-from earthx.processing.export import EXPORT_NAME, Attachments
+from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
 from earthx.processing.recipe import recipe_from_data
 from earthx.readers import Policy
 from earthx.readers.cog import asset_path
@@ -313,3 +313,43 @@ def test_no_aoi_address_or_hash_reaches_the_log(tmp_path: Path, caplog: pytest.L
     assert sources.HOST not in text
     assert f"{AOI['coordinates'][0][0][0]:.4f}"[:7] not in text
     assert "c1:" not in text
+
+
+FILES = {"ATTRIBUTION.txt": "a\n", "citation.bib": "@misc{a}\n", "aoi.geojson": "{}"}
+
+
+@pytest.mark.parametrize(
+    ("files", "attribution"),
+    [
+        ({**FILES, "notes.txt": "x"}, ()),
+        ({key: value for key, value in FILES.items() if key != "citation.bib"}, ()),
+        ({**FILES, "ATTRIBUTION.txt": "x" * (64 * 1024 + 1)}, ()),
+        ({**FILES, "citation.bib": "\ud800"}, ()),
+        ({**FILES, "aoi.geojson": 7}, ()),
+        (FILES, ("x" * 1025,)),
+        (FILES, tuple("x" for _ in range(9))),
+        (FILES, (7,)),
+    ],
+)
+def test_attachments_are_the_fixed_files_of_bounded_text(files: dict, attribution: tuple) -> None:
+    with pytest.raises(AttachmentsInvalid):
+        Attachments(files=files, attribution=attribution)
+
+
+@pytest.mark.parametrize("data", [None, [], {"files": FILES}, {"files": [], "attribution": []}, {"files": FILES, "attribution": "x"}])
+def test_attachments_from_json_take_only_their_own_shape(data: Any) -> None:
+    with pytest.raises(AttachmentsInvalid):
+        Attachments.from_json(data)
+
+
+def test_attachments_survive_their_json_form() -> None:
+    attachments = Attachments(files=FILES, attribution=("a",))
+    assert Attachments.from_json(json.loads(json.dumps(attachments.to_json()))) == attachments
+
+
+def test_missing_or_unreadable_attachments_are_named_not_shown(tmp_path: Path) -> None:
+    with pytest.raises(AttachmentsInvalid, match="cannot be read"):
+        read_attachments(tmp_path)
+    (tmp_path / "attachments.json").write_text("not json {")
+    with pytest.raises(AttachmentsInvalid, match="cannot be read"):
+        read_attachments(tmp_path)

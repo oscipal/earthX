@@ -142,7 +142,8 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
                 "title": "Origin of the area of interest",
                 "description": (
                     "For an export (output crop) only: where a place-search AOI came from, written into "
-                    "ATTRIBUTION.txt and aoi.geojson of the export. Not part of the recipe."
+                    "ATTRIBUTION.txt and aoi.geojson of the export. Not part of the recipe. Each field is one "
+                    "line of plain text: no leading or trailing space, no control or format characters."
                 ),
                 "minOccurs": 0,
                 "maxOccurs": 1,
