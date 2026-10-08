@@ -26,6 +26,7 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
+from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (
     DEM,
@@ -435,6 +436,19 @@ class TestWhatTheOrderMayNotBe:
     async def test_a_refusal_never_repeats_the_area(self, rig: Rig) -> None:
         response = await place(rig, order(assets=("no_such_asset",)))
         assert "47.01" not in response.text and "9.01" not in response.text
+
+    async def test_a_band_the_item_does_not_describe_is_a_422_and_not_in_the_queue(self, rig: Rig) -> None:
+        # The check at acceptance cannot tell where an asset has no band description; the time limit of
+        # the run is the first place that can, and it used to end as a 500.
+        item = s2_item()
+        item["assets"]["red"].pop("raster:bands")
+        rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(EXECUTION, json=envelope(order(assets=("red",), steps=[step])))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:applicable" and "red_2" in body["detail"]
+        assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
 
 
 def replace_api(api: JobApi, **changes: Any) -> JobApi:

@@ -533,6 +533,10 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
     try:
         job_id = await _db(api, lambda conn, recipe: submit(conn, recipe, operators=api.operators), accepted.recipe)
+    except RecipeInvalid as error:
+        # `submit` estimates the run to set its time limit, and that is the first place a band name the
+        # item does not describe can fail: the check at acceptance could not tell (the same as the estimate).
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}applicable") from None
     except RecipeIdTaken:
         # Cannot happen (a recipe_id is new for every order); if it does, it is ours, and the text names no value.
         raise Problem(500, "the job could not be placed") from None
