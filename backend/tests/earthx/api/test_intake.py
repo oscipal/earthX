@@ -201,11 +201,19 @@ async def accept(
     *,
     registry: DatasetRegistry = REGISTRY,
     operators: OperatorRegistry = OPERATORS,
+    aoi_provenance: dict[str, str] | None = None,
 ):
     raw = document if isinstance(document, (str, bytes)) else json.dumps(document)
     heads = heads or Heads()
     async with gateway_for(heads) as gateway:
-        return await accept_order(raw, registry=registry, operators=operators, item_source=source, gateway=gateway)
+        return await accept_order(
+            raw,
+            registry=registry,
+            operators=operators,
+            item_source=source,
+            gateway=gateway,
+            aoi_provenance=aoi_provenance,
+        )
 
 
 async def refused(
@@ -622,18 +630,6 @@ class TestRefusals:
         assert error.status_code == 422
         assert "does not run as a job" in error.detail
 
-    async def test_an_order_for_a_crop_is_no_job(self, source: Source) -> None:
-        crop = {
-            "kind": "crop",
-            "format": "cog",
-            "resolution_factor": 1,
-            "extent": "bbox(aoi ∩ footprints)",
-            "mask": "file",
-        }
-        error = await refused(order(output=crop), source)
-        assert error.status_code == 422
-        assert "raster" in error.detail
-
     async def test_two_inputs(self, source: Source) -> None:
         document = order()
         document["inputs"].append({**document["inputs"][0], "name": "second"})
@@ -1031,3 +1027,92 @@ class TestCropRecipeJson:
         footprints = document["inputs"][0]["footprints"]
         assert footprints["S2_A"] == with_polygon["geometry"]
         assert footprints["S2_B"] is None
+
+
+# --- an export (M4-11a) ------------------------------------------------------------
+
+CROP = {"kind": "crop", "format": "cog", "resolution_factor": 1, "extent": "bbox(aoi ∩ footprints)", "mask": "file"}
+PLACE = {"attribution": "© OpenStreetMap contributors", "license": "ODbL-1.0", "source": "Nominatim"}
+
+
+def export_order(groups: tuple[tuple[str, ...], ...] = (("S2_A",),), **override: Any) -> dict[str, Any]:
+    return order(groups=groups, assets=("visual",), **{"steps": [], "output": CROP, **override})
+
+
+def visual_item(item_id: str, bbox: tuple[float, float, float, float] = NEAR) -> dict[str, Any]:
+    item = s2_item(item_id, bbox)
+    item["assets"]["visual"] = {
+        "href": f"https://{S2_HOST}/{item_id}/TCI.tif",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "gsd": 10,
+        "raster:bands": [{"data_type": "uint8", "nodata": 0}] * 3,
+    }
+    return item
+
+
+class TestAnExport:
+    async def test_it_becomes_a_crop_recipe_with_footprints_and_its_side_files(self) -> None:
+        source = Source((S2, visual_item("S2_A")), (S2, visual_item("S2_B")), (S2, visual_item("S2_C")))
+        accepted = await accept(export_order((("S2_A", "S2_B"), ("S2_C",))), source)
+        recipe = accepted.recipe
+        assert recipe.output.kind == "crop" and recipe.steps == []
+        assert set(recipe.inputs[0].footprints or {}) == {"S2_A", "S2_B", "S2_C"}
+        assert accepted.cacheable is False
+        assert accepted.attachments is not None
+        notice = accepted.attachments.files["ATTRIBUTION.txt"]
+        assert "Group 1 (group-01/): S2_A, S2_B" in notice and "Group 2 (group-02/): S2_C" in notice
+        assert "visual (visual.tif, mask: visual_mask.tif)" in notice
+        assert accepted.attachments.files["citation.bib"].startswith("@misc{sentinel-2-c1-l2a,")
+        assert json.loads(accepted.attachments.files["aoi.geojson"]) == SQUARE
+        assert accepted.attachments.attribution and "Copernicus" in accepted.attachments.attribution[0]
+
+    async def test_the_origin_of_a_place_aoi_reaches_the_side_files_and_never_the_recipe(self) -> None:
+        source = Source((S2, visual_item("S2_A")))
+        plain = await accept(export_order(), source)
+        placed = await accept(export_order(), source, aoi_provenance=PLACE)
+        assert placed.attachments is not None
+        assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via Nominatim)" in placed.attachments.files[
+            "ATTRIBUTION.txt"
+        ]
+        assert json.loads(placed.attachments.files["aoi.geojson"])["properties"] == PLACE
+        assert "properties" not in placed.recipe.aoi.model_dump(mode="json")
+        assert recipe_hash(placed.recipe) == recipe_hash(plain.recipe)
+
+    async def test_only_groups_left_out_entirely_are_named_as_left_out(self) -> None:
+        source = Source(
+            (S2, visual_item("S2_A")), (S2, visual_item("S2_FAR", FAR)), (S2, visual_item("S2_GONE", FAR))
+        )
+        accepted = await accept(export_order((("S2_A", "S2_FAR"), ("S2_GONE",))), source)
+        assert accepted.attachments is not None
+        notice = accepted.attachments.files["ATTRIBUTION.txt"]
+        assert "Not covered by the AOI, left out: S2_GONE" in notice
+        assert "S2_FAR" not in notice
+        assert accepted.skipped_items == ("S2_FAR", "S2_GONE")
+
+    async def test_an_export_with_steps_is_refused(self) -> None:
+        error = await refused(export_order(steps=[SCALE_STEP]), Source((S2, visual_item("S2_A"))))
+        assert error.status_code == 422 and "no steps" in error.detail
+
+    async def test_an_export_at_a_coarser_resolution_is_refused(self) -> None:
+        error = await refused(export_order(output={**CROP, "resolution_factor": 2}), Source((S2, visual_item("S2_A"))))
+        assert error.status_code == 422 and "native resolution" in error.detail
+
+    async def test_a_zarr_dataset_is_refused_before_any_item_is_fetched(self) -> None:
+        source = Source((EOPF, eopf_item()))
+        document = order(dataset=EOPF.dataset_id, groups=(("EOPF_A",),), assets=("SR_10m:b04",), steps=[], output=CROP)
+        error = await refused(document, source)
+        assert error.status_code == 422 and "COG assets only" in error.detail
+        assert source.calls == []
+
+    async def test_an_export_over_5_gb_is_refused_by_the_estimate(self) -> None:
+        wide = (8.0, 45.0, 14.0, 50.0)
+        aoi = _footprint(wide)
+        error = await refused(export_order(aoi=aoi), Source((S2, visual_item("S2_A", wide))))
+        assert error.status_code == 413 and error.stage == "size"
+        assert "5000 MB" in error.detail
+
+    async def test_aoi_provenance_belongs_to_an_export_only(self) -> None:
+        source = Source((S2, s2_item()))
+        with pytest.raises(OrderRefused) as caught:
+            await accept(order(), source, aoi_provenance=PLACE)
+        assert caught.value.status_code == 400 and source.calls == []

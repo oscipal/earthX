@@ -9,7 +9,8 @@ becomes a :class:`~earthx.processing.recipe.Recipe`. The routes that call this
 next one costs anything (the status in brackets):
 
 1. the order parses and validates (422); it carries no address and no ``recipe_id``
-   (400, F1), a job wants a raster output (422);
+   (400, F1), a job wants a raster output or a crop — an export, without steps and at
+   native resolution (422, M4-11a);
 2. its size is within the caps (413, 422) — no network yet;
 3. the dataset exists (422), its licence reaches *processing* (403, B11), every step
    is an operator this platform runs as a job and ``applicable`` to this dataset
@@ -24,7 +25,10 @@ next one costs anything (the status in brackets):
    §5.4, F7);
 7. each input gets its version (adr/0014 §4.6, F4): the checksum, else — for a COG —
    the ETag of a ``HEAD`` through `gateway`, else the item's ``updated``. A source
-   that cannot say leaves the version empty, and with it the cache (Q11).
+   that cannot say leaves the version empty, and with it the cache (Q11);
+8. an export (M4-11a) carries the footprints of its items, is refused above 5 GB by
+   the cost estimate (413, F5) and for a Zarr dataset (422, F6), and gets the side
+   files of its ZIP (:func:`export_attachments`).
 
 Nothing here logs an AOI, an address or a hash (adr/0014 §4.7); the texts of
 :class:`OrderRefused` name fields, datasets, items and operators only.
@@ -45,10 +49,14 @@ from typing import Any
 from pydantic import ValidationError
 
 from earthx.access.download import (
+    AOI_FILENAME,
+    CITATION_FILENAME,
+    NOTICE_FILENAME,
     AoiOutsideItems,
     InvalidAoi,
     asset_gsd,
     attribution_text,
+    build_notice_text,
     compute_crop_region,
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
@@ -62,14 +70,17 @@ from earthx.access.resolve import (
     resolve_asset,
 )
 from earthx.adapters import UnknownCollection, dataset_config
+from earthx.api.citation import citation_bib
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier, UnknownDatasetError
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
-from earthx.processing.errors import RecipeInvalid, UnknownOperator
+from earthx.processing.errors import ExportTooLarge, RecipeInvalid, UnknownOperator
+from earthx.processing.export import Attachments
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
-from earthx.processing.plan import check_bands
+from earthx.processing.plan import check_bands, estimate
 from earthx.processing.recipe import (
     Band,
+    CropOutput,
     InputRequest,
     InputVersion,
     Provenance,
@@ -98,6 +109,8 @@ __all__ = [
     "check_recipe_hosts",
     "crop_recipe_json",
     "describe_bands",
+    "export_attachments",
+    "footprint_of",
     "job_recipe_json",
 ]
 
@@ -127,6 +140,9 @@ class AcceptedOrder:
     recipe: Recipe
     cacheable: bool
     skipped_items: tuple[str, ...]
+    #: For an export only (M4-11a): the side files of its ZIP, built here because only `api`
+    #: reads the registry and sees the origin of the AOI.
+    attachments: Attachments | None = None
 
 
 async def accept_order(
@@ -136,10 +152,16 @@ async def accept_order(
     operators: OperatorRegistry,
     item_source: ItemSource,
     gateway: Gateway,
+    aoi_provenance: Mapping[str, str] | None = None,
 ) -> AcceptedOrder:
-    """The order as a recipe with a ``recipe_id`` — or an :class:`OrderRefused` (module docstring)."""
+    """The order as a recipe with a ``recipe_id`` — or an :class:`OrderRefused` (module docstring).
+
+    ``aoi_provenance`` (M4-11 F4) is where a place-search AOI came from (``attribution``,
+    ``license``, ``source``), checked by the caller; it only goes into the side files of
+    an export, never into the recipe or its hash.
+    """
     try:
-        accepted = await _accept(raw, registry, operators, item_source, gateway)
+        accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance)
     except OrderRefused as refused:
         LOGGER.info(
             "order refused",
@@ -167,6 +189,7 @@ async def _accept(
     operators: OperatorRegistry,
     item_source: ItemSource,
     gateway: Gateway,
+    aoi_provenance: Mapping[str, str] | None,
 ) -> AcceptedOrder:
     _refuse_a_recipe(raw)
     try:
@@ -174,6 +197,9 @@ async def _accept(
     except RecipeInvalid as error:
         raise OrderRefused(422, str(error), "order") from None
     entry = _check_scope(request)
+    export = isinstance(request.output, CropOutput)
+    if aoi_provenance is not None and not export:
+        raise OrderRefused(400, "aoiProvenance belongs to an export (the output crop) only", "order")
 
     try:
         config = dataset_config(registry, entry.dataset)
@@ -183,6 +209,8 @@ async def _accept(
         raise OrderRefused(
             403, f"the licence of {config.dataset_id!r} does not permit processing (KLAERUNGEN B11)", "license"
         )
+    if export and config.zarr is not None:
+        raise OrderRefused(422, "export jobs read COG assets only for now; this dataset is a Zarr store", "applicable")
     _check_steps(request, config, operators)
 
     ids = [item for group in entry.groups for item in group]
@@ -211,6 +239,11 @@ async def _accept(
                 "resolved": [
                     _resolved_json(target, version) for target, version in zip(targets, versions, strict=True)
                 ],
+                **(
+                    {"footprints": {item_id: footprint_of(items[item_id]) for group in groups for item_id in group}}
+                    if export
+                    else {}
+                ),
             }
         ],
         "aoi": request.aoi.model_dump(mode="json"),
@@ -231,7 +264,61 @@ async def _accept(
         check_bands(recipe, operators)
     except RecipeInvalid as error:
         raise OrderRefused(422, str(error), "applicable") from None
-    return AcceptedOrder(recipe, cache_key(recipe) is not None, skipped)
+    if not export:
+        return AcceptedOrder(recipe, cache_key(recipe) is not None, skipped)
+    try:
+        estimate(recipe, operators)
+    except ExportTooLarge as error:
+        raise OrderRefused(413, str(error), "size") from None
+    kept = {item_id for group in groups for item_id in group}
+    attachments = export_attachments(
+        config,
+        recipe,
+        dropped=[item_id for group in entry.groups if kept.isdisjoint(group) for item_id in group],
+        aoi_provenance=aoi_provenance,
+        accepted_at=datetime.now(UTC),
+    )
+    return AcceptedOrder(recipe, False, skipped, attachments)
+
+
+def export_attachments(
+    config: DatasetConfig,
+    recipe: Recipe,
+    *,
+    dropped: Sequence[str],
+    aoi_provenance: Mapping[str, str] | None,
+    accepted_at: datetime,
+) -> Attachments:
+    """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
+
+    ``ATTRIBUTION.txt`` with the groups the recipe reads, the items of groups the AOI did
+    not touch at all (the crop names only those, not single items left out of a group) and
+    the origin of a place-search AOI; ``citation.bib`` dated the day of acceptance;
+    ``aoi.geojson`` the AOI with that origin as ``properties``, like the crop's. And the
+    attribution for the provenance of ``recipe.json``.
+    """
+    entry = recipe.inputs[0]
+    aoi = recipe.aoi.model_dump(mode="json")
+    if aoi_provenance:
+        aoi = {**aoi, "properties": dict(aoi_provenance)}
+    groups = [list(group) for group in entry.groups]
+    notice = build_notice_text(
+        config,
+        item_ids=[item_id for group in groups for item_id in group],
+        assets=list(entry.assets),
+        group_item_ids=groups if len(groups) > 1 else None,
+        skipped_item_ids=list(dropped),
+        aoi_geometry=aoi,
+    )
+    attribution = attribution_text(config, year=accepted_at.year)
+    return Attachments(
+        files={
+            NOTICE_FILENAME: notice,
+            CITATION_FILENAME: citation_bib(config, downloaded=accepted_at.date()).decode("utf-8"),
+            AOI_FILENAME: json.dumps(aoi),
+        },
+        attribution=(attribution,) if attribution else (),
+    )
 
 
 def _refuse_a_recipe(raw: bytes | str) -> None:
@@ -261,8 +348,14 @@ def _check_scope(request: RecipeRequest) -> InputRequest:
     """What an order may ask for, judged before anything is fetched (F5)."""
     if len(request.inputs) != 1:
         raise OrderRefused(422, "an order has exactly one input", "order")
-    if not isinstance(request.output, RasterOutput):
-        raise OrderRefused(422, "an order for a job asks for a raster output", "order")
+    if isinstance(request.output, CropOutput):
+        # An export (M4-11a): the source's own values at native resolution (K1).
+        if request.steps:
+            raise OrderRefused(422, "an export has no steps; it delivers the source's own values", "order")
+        if request.output.resolution_factor != 1:
+            raise OrderRefused(422, "an export job reads at native resolution only (resolution_factor 1)", "order")
+    elif not isinstance(request.output, RasterOutput):
+        raise OrderRefused(422, "an order for a job asks for a raster or a crop output", "order")
     if len(request.steps) > MAX_ORDER_STEPS:
         raise OrderRefused(422, f"an order has at most {MAX_ORDER_STEPS} steps", "size")
     entry = request.inputs[0]
