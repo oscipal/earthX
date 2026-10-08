@@ -16,10 +16,11 @@ Two kinds, because they need different things from the core:
   ``warp_mem_limit``) is part of the operator and versioned with ``op_version``
   (§3.4). Only ``T2``.
 
-Two deviations from the sketch in §5.2, both in plan M4-07a §3.2: ``cost_factor``
-instead of a full ``estimate`` (the estimate itself is computed once, in
-:mod:`earthx.processing.plan`), and ``extra_requirements`` for flags that depend on
-the parameters (``interpolation`` for a resampling other than ``nearest``, §5.3).
+Deviations from the sketch in §5.2: ``cost_factor`` instead of a full ``estimate``
+(the estimate itself is computed once, in :mod:`earthx.processing.plan`),
+``extra_requirements`` for flags that depend on the parameters (``interpolation`` for
+a resampling other than ``nearest``, §5.3; plan M4-07a §3.2), and ``properties`` for
+what a step adds to the result's STAC properties (plan M4-09, §5.6).
 """
 
 from __future__ import annotations
@@ -106,6 +107,10 @@ def _no_extra_requirements(params: BaseModel) -> frozenset[str]:
     return frozenset()
 
 
+def _no_properties(params: BaseModel) -> dict[str, Any]:
+    return {}
+
+
 @dataclass(frozen=True, slots=True)
 class Operator:
     """One registered operator in one version."""
@@ -125,6 +130,8 @@ class Operator:
     run: Callable[..., Any]
     lineage: Callable[[BaseModel], str]
     extra_requirements: Callable[[BaseModel], frozenset[str]] = field(default=_no_extra_requirements)
+    #: STAC properties this step adds to the result, such as ``processing:expression`` (§5.6).
+    properties: Callable[[BaseModel], dict[str, Any]] = field(default=_no_properties)
 
     def __post_init__(self) -> None:
         if not _OP_NAME.match(self.op):

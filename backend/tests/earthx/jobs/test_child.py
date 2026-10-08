@@ -10,13 +10,16 @@ import json
 import multiprocessing
 import warnings
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from rio_cogeo.cogeo import cog_validate
 
 import earthx.jobs as jobs_package
+from earthx.jobs import child
 from earthx.jobs.child import high_water_mb
 from tests.earthx.jobs import child_targets
 from tests.earthx.processing import sources
@@ -128,6 +131,32 @@ def _run_real_child(
     return _messages(process, parent), workdir
 
 
+class TestTheReportOfADoneRun:
+    def test_it_carries_the_resampled_mark_the_panel_reads_from_the_job(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Plan M4-09, Otto's condition on F2: a result that had a coarser asset read onto a finer grid says so."""
+        (tmp_path / "result.tif").write_bytes(b"x")
+        (tmp_path / "recipe.json").write_text("{}")
+        for resampled in (True, False):
+            result = SimpleNamespace(
+                properties={},
+                scaling=(),
+                blocks=1,
+                valid_pixels=1,
+                engine={},
+                meta=SimpleNamespace(width=1, height=1, bands=(object(),), resampled=resampled),
+                path=tmp_path / "result.tif",
+            )
+            sent: list[Any] = []
+            conn = SimpleNamespace(send=sent.append, poll=lambda: False, close=lambda: None)
+            monkeypatch.setattr(child, "parse_recipe", lambda raw, registry: None)
+            monkeypatch.setattr(child, "run", lambda recipe, _result=result, **_: _result)
+            monkeypatch.setattr(child, "worker_environment", nullcontext)
+            child._run(tmp_path, conn)
+            assert sent[-1][0] == "done" and sent[-1][1]["resampled"] is resampled
+
+
 class TestARealRun:
     def test_the_child_runs_the_recipe_and_leaves_result_and_mask(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -141,6 +170,7 @@ class TestARealRun:
         assert (done["width"], done["height"], done["bands"]) == (SIZE, SIZE, 1)
         assert done["bytes"] == (workdir / "result.tif").stat().st_size
         assert done["blocks"] >= 1 and done["valid_pixels"] > 0
+        assert done["resampled"] is False
 
     def test_progress_counts_blocks_and_carries_the_peak(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         messages, _ = _run_real_child(tmp_path, monkeypatch, _recipe_json())

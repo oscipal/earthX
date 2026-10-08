@@ -169,7 +169,12 @@ class TestOrderSchema:
         schema = order_schema(OPERATORS)
         refs = [entry["$ref"] for entry in schema["properties"]["steps"]["items"]["oneOf"]]
         # The test registry holds the real operators too, and its own two (testops).
-        assert refs == ["#/$defs/step_coarsen_v1", "#/$defs/step_reproject_v2", "#/$defs/step_scale_v1"]
+        assert refs == [
+            "#/$defs/step_band_math_v1",
+            "#/$defs/step_coarsen_v1",
+            "#/$defs/step_reproject_v2",
+            "#/$defs/step_scale_v1",
+        ]
         step = schema["$defs"]["step_scale_v1"]
         assert step["properties"]["op"] == {"const": "scale"}
         assert step["properties"]["op_version"] == {"const": 1}

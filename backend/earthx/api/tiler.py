@@ -36,18 +36,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Path, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
+from rio_tiler.models import ImageData
 from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
+from titiler.core.dependencies import BidxParams
 
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
@@ -72,6 +76,7 @@ from earthx.access.resolve import (
     InvalidAssetKey,
     MalformedItem,
     NoReader,
+    ResolvedAsset,
     open_asset_ref,
     resolve_asset,
     target_gsd_for,
@@ -246,6 +251,40 @@ def _viewer_zoom_range(request: Request) -> tuple[int, int]:
     return viewer.min_zoom, viewer.max_zoom
 
 
+def _resolve_ref(stac_item: dict[str, Any], *, config: DatasetConfig, item: str, asset: str) -> ResolvedAsset:
+    """``asset`` of ``stac_item`` resolved in `access`, or the ``HTTPException`` its refusal maps to.
+
+    ``item`` is the id the caller asked for; the resolved asset carries the item's own.
+    """
+    try:
+        return resolve_asset(stac_item, config, asset)
+    except NoReader as error:
+        raise HTTPException(status_code=501, detail=str(error)) from None
+    except InvalidAssetKey as error:
+        # The caller's own query parameter is shaped wrong — a 400, not the 502
+        # below, which is about what the *item* points at.
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except AssetNotOnItem as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except MalformedItem:
+        raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
+
+
+def _open_ref(
+    state: Any, ref: ResolvedAsset, *, target_gsd: float | None = None, decode_cf: bool = True
+) -> AssetPath | ZarrAsset:
+    """``ref`` cleared through the gateway policy, or the ``HTTPException`` its refusal maps to."""
+    try:
+        return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd, decode_cf=decode_cf)
+    except AssetRejected:
+        # An address the registry does not cover. This is the refusal adr/0006 §3.3
+        # describes, and it is the source's problem, not the caller's — hence 502.
+        raise HTTPException(
+            status_code=502,
+            detail="the item points at a host this dataset does not declare (asset_hosts)",
+        ) from None
+
+
 def _resolve_asset_path(
     state: Any,
     stac_item: dict[str, Any],
@@ -260,38 +299,154 @@ def _resolve_asset_path(
 
     The resolution itself is :func:`~earthx.access.resolve.resolve_asset` and
     :func:`~earthx.access.resolve.open_asset_ref`; what is left here is the HTTP
-    answer to each refusal. ``item`` is the id the caller asked for; the resolved
-    asset carries the item's own.
+    answer to each refusal.
     """
+    ref = _resolve_ref(stac_item, config=config, item=item, asset=asset)
+    return _open_ref(state, ref, target_gsd=target_gsd)
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorInput:
+    """What the path of an operator tile stands for: its assets, the operator and its parameters.
+
+    Defined here and typed loosely on purpose: the tiler does not load the worker core when it
+    starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
+    object by its three attributes (``TileInputs``).
+    """
+
+    inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
+    operator: Any
+    params: Any
+
+
+def _operator_support() -> Any:
+    """The worker core's operator side, imported when the first operator tile needs it.
+
+    A start of the tiler stays light (``test_tiler_start_is_light``): `processing` brings numexpr
+    and the COG writer, which a tiler that never sees ``op`` has no use for.
+    """
+    from earthx.api.intake import describe_bands
+    from earthx.processing import operators, tile
+    from earthx.processing.errors import UnknownOperator
+    from earthx.processing.recipe import ResolvedAssetModel, ResolvedInput
+
+    return SimpleNamespace(
+        registry=operators.REGISTRY,
+        applicable=operators.applicable,
+        tier=operators.Tier,
+        unknown_operator=UnknownOperator,
+        resolved_input=ResolvedInput,
+        resolved_asset=ResolvedAssetModel,
+        reader=tile.OperatorTileReader,
+        describe_bands=describe_bands,
+    )
+
+
+# A tile URL that carries an operator names it, its version and its parameters, and
+# nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8).
+MAX_OPERATOR_ASSETS = 16
+MAX_OPERATOR_PARAMS_CHARS = 2048
+_OPERATOR_ROUTES = frozenset({"tile", "tilejson"})
+
+# TiTiler's free band-math and algorithm parameters. They computed on raw values with
+# every numexpr function, outside R5 and the scaling of adr/0014 §5.4; `op=band_math`
+# is the one way to ask for an expression (plan M4-09, F3).
+_FREE_PARAMETERS = ("expression", "algorithm", "algorithm_params")
+
+
+def _refuse_free_parameters(request: Request) -> None:
+    for name in _FREE_PARAMETERS:
+        if name in request.query_params:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name!r} is not accepted; ask for an expression with op=band_math&op_version=1&params=…",
+            )
+
+
+def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any] | None:
+    """``(operator, parameters)`` of an ``op`` in the query, or ``None`` when the URL names none.
+
+    ``400`` for a query that is malformed or whose parameters do not validate (R5
+    included); ``422`` for one that is well formed but not something this platform
+    does here — an operator it does not know, one that does not run as a tile, one the
+    dataset does not allow.
+    """
+    query = request.query_params
+    given = [name for name in ("op", "op_version", "params") if name in query]
+    if not given:
+        return None
+    support = _operator_support()
+    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
+    if len(given) != 3 or any(len(query.getlist(name)) != 1 for name in given):
+        raise HTTPException(status_code=400, detail="op, op_version and params go together, once each")
+    raw = query["params"]
+    if len(raw) > MAX_OPERATOR_PARAMS_CHARS:
+        raise HTTPException(status_code=400, detail=f"params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
     try:
-        ref = resolve_asset(stac_item, config, asset)
-    except NoReader as error:
-        raise HTTPException(status_code=501, detail=str(error)) from None
-    except InvalidAssetKey as error:
-        # The caller's own query parameter is shaped wrong — a 400, not the 502
-        # below, which is about what the *item* points at.
-        raise HTTPException(status_code=400, detail=str(error)) from None
-    except AssetNotOnItem as error:
-        raise HTTPException(status_code=404, detail=str(error)) from None
-    except MalformedItem:
-        raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
+        version = int(query["op_version"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="op_version is a whole number") from None
     try:
-        return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd)
-    except AssetRejected:
-        # An address the registry does not cover. This is the refusal adr/0006 §3.3
-        # describes, and it is the source's problem, not the caller's — hence 502.
-        raise HTTPException(
-            status_code=502,
-            detail="the item points at a host this dataset does not declare (asset_hosts)",
-        ) from None
+        operator = operators.operator(query["op"], version)
+    except support.unknown_operator as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
+        raise HTTPException(status_code=422, detail=f"{operator.op!r} does not run as a tile")
+    try:
+        params = operator.params.model_validate_json(raw, strict=True)
+    except ValidationError as error:
+        problems = "; ".join(
+            f"{'.'.join(map(str, entry['loc'])) or 'params'}: {entry['msg']}"
+            for entry in error.errors(include_url=False, include_input=False, include_context=False)
+        )
+        raise HTTPException(status_code=400, detail=f"params: {problems}") from None
+    reasons = support.applicable(operator, config, params)
+    if reasons:
+        raise HTTPException(status_code=422, detail=f"{operator.op!r} cannot run here: {'; '.join(reasons)}")
+    return operator, params
+
+
+def _operator_input(
+    state: Any,
+    stac_item: dict[str, Any],
+    *,
+    config: DatasetConfig,
+    item: str,
+    assets: list[str],
+    operator: Any,
+    params: Any,
+    target_gsd: float | None,
+) -> OperatorInput:
+    """The assets of an operator tile, each with the bands and scaling source the item describes."""
+    support = _operator_support()
+    inputs = []
+    for key in assets:
+        ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
+        try:
+            bands, scaling = support.describe_bands(stac_item, config, ref)
+            # Item scaling is applied by the core, so the reader reads raw; without it the
+            # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
+            target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=scaling == "store-cf")
+            entry = support.resolved_input(
+                asset=support.resolved_asset(**ref.to_json()), version=None, bands=bands, scaling=scaling, gsd=None
+            )
+        except OrderRefused as error:
+            raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+        except ValidationError:
+            raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
+        inputs.append((entry, target))
+    return OperatorInput(tuple(inputs), operator, params)
 
 
 async def dataset_asset_path(
     request: Request,
     dataset: Annotated[str, Path(description="dataset id of the registry")],
     item: Annotated[str, Path(description="item id at the source")],
-    asset: Annotated[str, Query(description="asset key of the item, e.g. `visual`")],
-) -> AssetPath | ZarrAsset:
+    asset: Annotated[
+        list[str],
+        Query(description="asset key of the item, e.g. `visual`; several only together with `op`"),
+    ],
+) -> AssetPath | ZarrAsset | OperatorInput:
     """Turn dataset, item and asset into something a reader may open — and nothing else.
 
     A tile also has to name a level this dataset is released for
@@ -303,14 +458,69 @@ async def dataset_asset_path(
     default that lives in the registry would make two releases of the platform answer
     the same URL with two pictures. The standard visualisation travels to the client
     on the collection (``earthx:default_render``), which is where it can be a default.
+
+    With ``op``, ``op_version`` and ``params`` the URL asks for an operator over one or
+    several assets of the item (M4-09, adr/0014 §6.2) — on a tile or its TileJSON only.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
     _check_display_allowed(config)
     _check_zoom_released(request, config)
+    _refuse_free_parameters(request)
+    requested = _operator_request(request, config)
+    if requested is None:
+        if len(asset) != 1:
+            raise HTTPException(status_code=400, detail="name one asset, or several together with op")
+        stac_item = await _fetch_item(state, dataset, item)
+        target_gsd = target_gsd_for(request, stac_item)
+        return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset[0], target_gsd=target_gsd)
+    route = request.scope.get("route")
+    if getattr(route, "name", None) not in _OPERATOR_ROUTES:
+        raise HTTPException(status_code=400, detail="op is for tiles and their TileJSON only")
+    if len(asset) > MAX_OPERATOR_ASSETS or len(set(asset)) != len(asset):
+        raise HTTPException(
+            status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them"
+        )
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = target_gsd_for(request, stac_item)
-    return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset, target_gsd=target_gsd)
+    operator, params = requested
+    return _operator_input(
+        state,
+        stac_item,
+        config=config,
+        item=item,
+        assets=asset,
+        operator=operator,
+        params=params,
+        target_gsd=target_gsd,
+    )
+
+
+def operator_post_process(
+    src_path: Annotated[Any, Depends(dataset_asset_path)],
+    op: Annotated[str | None, Query(description="operator of a computed tile, such as `band_math`")] = None,
+    op_version: Annotated[int | None, Query(ge=1, description="version of the operator")] = None,
+    params: Annotated[
+        str | None, Query(max_length=MAX_OPERATOR_PARAMS_CHARS, description="its parameters, as JSON")
+    ] = None,
+) -> Callable[[ImageData], ImageData] | None:
+    """TiTiler's ``process_dependency`` for our tile: the operator's kernel, the one a job calls.
+
+    The path dependency has already validated ``op`` and built the inputs, so this only
+    hands its kernel to the factory. TiTiler's own ``algorithm`` parameters are gone
+    (plan M4-09, F3).
+    """
+    if not isinstance(src_path, OperatorInput):
+        return None
+    operator, parameters = src_path.operator, src_path.params
+    return lambda image: operator.run(image, parameters)
+
+
+def _open_reader(src_path: Any, **reader_params: Any) -> Any:
+    """The reader of the tile: ours for an operator's inputs, `access`'s for a single asset."""
+    if isinstance(src_path, OperatorInput):
+        return _operator_support().reader(src_path, **reader_params)
+    return open_asset(src_path, **reader_params)
 
 
 # The stages of `OrderRefused` at which a crop is refused rather than delivered without
@@ -716,6 +926,9 @@ def build_app(
 
     factory = EarthxTilerFactory(
         path_dependency=dataset_asset_path,
+        layer_dependency=BidxParams,
+        process_dependency=operator_post_process,
+        reader=_open_reader,
         environment_dependency=gdal_environment,
         stats_cache_dependency=statistics_cache,
         viewer_zoom_dependency=_viewer_zoom_range,
@@ -738,7 +951,8 @@ def build_app(
     async def _rio_tiler_error(request: Request, error: RioTilerError):
         # Band names, expressions, colormaps: what the caller asked for cannot be
         # rendered from this asset. The message is rio-tiler's own and names no address.
-        return _problem(400, str(error))
+        # An operator tile's refusals (`processing.tile.TileRefused`) carry their own status.
+        return _problem(getattr(error, "status_code", 400), str(error))
 
     # Module-level, not a closure like the others above: a test builds its own
     # bare app around `EarthxTilerFactory` (`access.tiles`, no registry, no

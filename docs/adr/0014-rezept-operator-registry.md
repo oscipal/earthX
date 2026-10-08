@@ -1601,6 +1601,21 @@ Toleranz in ULP.
   CPU-Typen laufen. Der Cache-Schlüssel (§4.5, E2) enthält die CPU-Stufe
   nicht; das bleibt eine offene Zeile im Log.
 
+## 15d. Nachtrag vom 2026-10-07: `processing:expression` und Band-Math (zu §5.2, §5.6; M4-09)
+
+Otto hat die Kleinentscheidung K1 von M4-09 am 2026-10-07 angenommen. Der
+Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
+
+| Stelle hier | Was dort steht | Was gilt jetzt | Beleg |
+|---|---|---|---|
+| §5.6: „`processing:expression` mit `format: "rio-calc"` bei Band-Math“ | `rio-calc` | **`format: "numexpr"`**, der Wert ist ein Objekt `{"format": "numexpr", "expression": "<Text>"}`. `rio calc` von rasterio hat eine Lisp-Syntax (`rasterio/rio/calc.py`, Docstring) [P]; unsere Ausdrücke sind Infix in numexpr-Syntax mit der Positivliste von R5. Bei mehreren Band-Math-Schritten ist der Wert eine Liste in der Reihenfolge der Schritte | `plans/m4-09-band-math.md` K1, §9 |
+| §5.2: „Der Kern ist `ImageData.apply_expression` aus rio-tiler“ | rio-tilers Funktion | **Eigener Kern in `processing/operators/band_math.py`** (Auflage F1 von M4-09): `numexpr.evaluate` mit `optimization="aggressive"`, Eingaben `float64`, Ergebnis `float32`; nicht endliche Ergebnisse (`0/0`, `x/0`) werden maskiert statt mit `nan_to_num` zu `0.0` (§3.2) und die Maske ist das ODER der Masken der Bänder, die der Ausdruck nennt. Kachel (T1) und Job (T2) rufen dieselbe Funktion | M4-09 F1, §9 Punkt 1 |
+| §5.2 und R5: „`+ - * /`, Klammern und eine kleine Liste von numexpr-Funktionen“ | keine logischen Verknüpfungen | **`&`, `\|`, `~` nur auf Wahrheitswerten** (Vergleiche und ihre Verknüpfungen); die Funktionen sind `where`, `abs`, `minimum`, `maximum`, `sqrt` (§15c); `**` nur mit ganzzahligem Literal, \|n\| ≤ 50 | M4-09 F4; `plans/m4-processing-kern.md` §1.1b (R5) |
+| §6.2: „Bänder verschiedener Auflösung“ nicht geregelt | `GridMismatch` (M4-07a F2) | **Verschachtelte Raster** (gleiches CRS, gleiche Ausdehnung, jede Pixelgröße ein ganzes Vielfaches der feinsten) werden mit `nearest` auf das feinste Raster gelesen; das Ergebnis trägt `earthx:resampled=true`, der Bericht des Jobs den Schlüssel `resampled`. Gemessen: Kachel eines 20-m-Assets gegen die auf 10 m verdoppelte Kachel, z13–z15, 100 % gleich | M4-09 F2, §2 |
+| §6.3, Zeile T1 ↔ T2 (Band-Math), für **Zarr** | bitgleich | **Entschieden am 2026-10-07 (Otto, Option 1):** COG: bitgleich ohne Einschränkung. Zarr: bitgleich außerhalb von 0,125 Quellpixel an einer Pixelgrenze (GDALs Näherungsschwelle); an der Grenze darf `nearest` den Nachbarn wählen. Die Formel auf dem exakt nächsten Quellpixel stimmt überall. T2 ↔ T2L bleibt bitgleich. Befund [M]: 13 von 3489 gültigen Pixeln einer z14-Kachel weichen ab (dazu eines in der Maske), alle bis 0,003 Quellpixel an einer Grenze; Ursache sind zwei `nearest`-Warps verschiedener Näherung (`XarrayReader` gegen `Reader` auf dem COG des Ergebnisses), nicht der Operator. Der Vergleichstest prüft beides (`tests/earthx/api/test_tiler_operator.py`) | `plans/m4-09-band-math.md` §9 Punkt 3, §10; Log 2026-10-07 |
+
+---
+
 ---
 
 ## 15d. Nachtrag vom 2026-10-07: keine Konformität erklärt (zu F12 und §9)
