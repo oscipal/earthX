@@ -99,6 +99,7 @@ class TestApiDescription:
             "/processing/processes",
             "/processing/processes/{process_id}",
             "/processing/processes/{process_id}/execution",
+            "/processing/processes/{process_id}/estimate",
             "/processing/jobs/{jobID}",
             "/processing/jobs/{jobID}/results",
             "/processing/jobs/{jobID}/results/{name}",
@@ -274,6 +275,10 @@ class TestWithoutAQueue:
 
     async def test_placing_a_job_says_so_too(self, docs_client: httpx.AsyncClient) -> None:
         response = await docs_client.post("/processing/processes/recipe/execution", json={"inputs": {}})
+        assert response.status_code == 503
+
+    async def test_estimating_an_order_says_so_too(self, docs_client: httpx.AsyncClient) -> None:
+        response = await docs_client.post("/processing/processes/recipe/estimate", json={"inputs": {}})
         assert response.status_code == 503
 
 
