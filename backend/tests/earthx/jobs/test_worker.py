@@ -9,6 +9,7 @@ signal, hang, or cooperate with a cancel. Times are short: a lease of 3 s, a hea
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import multiprocessing
 import os
@@ -32,7 +33,8 @@ from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, upload_result
 from tests.conftest import format_without_timestamp
-from tests.earthx.jobs.support import make_recipe, most_at_once, run_row, wait_until
+from tests.earthx.jobs.support import ATTACHMENTS, make_export, make_recipe, most_at_once, run_row, wait_until
+from tests.earthx.objectstore.conftest import BUCKET
 
 BACKEND = Path(__file__).resolve().parents[3]
 FAST: dict[str, Any] = {
@@ -264,6 +266,31 @@ class TestFailures:
         self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
     ) -> None:
         make_supervisor("done_without_files").start()
+        job_id = submit(db, make_recipe())
+        _wait_for(db, job_id, "failed")
+        assert run_row(db, _run_id(db), "error_kind") == ("unknown",)
+        assert _stored(store) == []
+
+
+class TestAnExport:
+    """M4-11a: the attachments reach the child, and only ``export.zip`` is uploaded."""
+
+    def test_the_child_gets_the_attachments_and_export_zip_is_uploaded(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("export").start()
+        job_id = submit(db, make_export(), attachments=ATTACHMENTS)
+        _wait_for(db, job_id, "successful")
+        status = job_status(db, job_id)
+        assert status is not None and status.result is not None and status.result["files"] == ["export.zip"]
+        assert _stored(store) == [f"results/{status.result_id}/export.zip"]
+        body = store.s3._internal.get_object(Bucket=BUCKET, Key=f"results/{status.result_id}/export.zip")
+        assert json.loads(body["Body"].read()) == ATTACHMENTS.to_json()
+
+    def test_a_child_naming_a_file_outside_the_two_sets_fails_and_uploads_nothing(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("name_a_foreign_file").start()
         job_id = submit(db, make_recipe())
         _wait_for(db, job_id, "failed")
         assert run_row(db, _run_id(db), "error_kind") == ("unknown",)

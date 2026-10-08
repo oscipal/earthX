@@ -10,9 +10,10 @@ from typing import Any
 
 import psycopg
 
+from earthx.processing.export import Attachments
 from earthx.processing.operators import REGISTRY
 from earthx.processing.recipe import Recipe, recipe_from_data
-from tests.earthx.processing.recipes import SQUARE, recipe_data, resolved
+from tests.earthx.processing.recipes import SQUARE, crop_data, recipe_data, resolved
 
 HOST = "store.example.invalid"
 
@@ -37,6 +38,22 @@ def make_recipe(
     if recipe_id is not None:
         data["recipe_id"] = recipe_id
     return recipe_from_data(data, REGISTRY)
+
+
+def make_export(groups: list[list[str]] | None = None, *, recipe_id: str | None = None) -> Recipe:
+    """An export recipe (M4-11a) of the real registry, read from `https://{HOST}/…`."""
+    data = crop_data(groups)
+    for entry in data["inputs"][0]["resolved"]:
+        entry["asset"]["href"] = entry["asset"]["href"].replace("store.example.invalid", HOST)
+    if recipe_id is not None:
+        data["recipe_id"] = recipe_id
+    return recipe_from_data(data, REGISTRY)
+
+
+ATTACHMENTS = Attachments(
+    files={"ATTRIBUTION.txt": "Synthetic\n", "citation.bib": "@misc{synthetic}\n", "aoi.geojson": "{}"},
+    attribution=("Synthetic",),
+)
 
 
 def add_run(

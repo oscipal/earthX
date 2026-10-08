@@ -8,8 +8,9 @@ loads psycopg or the supervisor. ``test_child.py`` starts one and reads ``sys.mo
 What goes over the pipe, child to supervisor:
 
 * ``("progress", done, total, peak_mb)`` after every block;
-* ``("done", info)`` when the run finished and ``result.tif`` and ``mask.tif`` lie in the
-  work directory; ``info`` is plain data about the result, never an address or a coordinate;
+* ``("done", info)`` when the run finished and its files lie in the work directory:
+  ``result.tif`` and ``mask.tif``, or ``export.zip`` for an export (M4-11a), named in
+  ``info["files"]``; ``info`` is plain data about the result, never an address or a coordinate;
 * ``("failed", kind)``, ``kind`` a short name from :func:`~earthx.processing.failure_kind`.
 
 And supervisor to child: ``"cancel"``, read between blocks. The callback then raises
@@ -27,8 +28,9 @@ from pathlib import Path
 from typing import Any
 
 from earthx.processing import RunCancelled, failure_kind, run, worker_environment
+from earthx.processing.export import ExportResult, read_attachments
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import parse_recipe
+from earthx.processing.recipe import CropOutput, parse_recipe
 
 __all__ = ["guard", "high_water_mb", "run_child"]
 
@@ -67,12 +69,18 @@ def _run(workdir: Path, conn: Any) -> None:
         if conn.poll() and conn.recv() == "cancel":
             raise RunCancelled()
 
+    attachments = read_attachments(workdir) if isinstance(recipe.output, CropOutput) else None
     with worker_environment():
-        result = run(recipe, workdir=workdir, progress=progress)
+        result = run(recipe, workdir=workdir, progress=progress, attachments=attachments)
+    if isinstance(result, ExportResult):
+        conn.send(("done", _export_info(result)))
+        conn.close()
+        return
     conn.send(
         (
             "done",
             {
+                "files": ["result.tif", "mask.tif"],
                 "properties": result.properties,
                 "scaling": [applied.model_dump(mode="json") for applied in result.scaling],
                 "blocks": result.blocks,
@@ -88,6 +96,23 @@ def _run(workdir: Path, conn: Any) -> None:
         )
     )
     conn.close()
+
+
+def _export_info(result: ExportResult) -> dict[str, Any]:
+    """What the job knows of an export: counts, sizes, versions and the times of the run."""
+    return {
+        "files": [result.path.name],
+        "members": list(result.members),
+        "groups": result.groups,
+        "assets": result.assets,
+        "blocks": result.blocks,
+        "engine": result.engine,
+        "scaling": [],
+        "started": result.started.isoformat(),
+        "finished": result.finished.isoformat(),
+        "bytes": result.path.stat().st_size,
+        "peak_mb": round(high_water_mb(), 1),
+    }
 
 
 def run_child(workdir: str, conn: Any) -> None:

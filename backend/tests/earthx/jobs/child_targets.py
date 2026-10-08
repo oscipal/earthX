@@ -158,3 +158,21 @@ def by_item(workdir: str, conn: Any) -> None:
     recipe = json.loads((Path(workdir) / "recipe.json").read_text())
     item = recipe["inputs"][0]["groups"][0][0]
     {"ITEM_OK": succeed, "ITEM_FAIL": fail, "ITEM_DIE": die_by_signal}[item](workdir, conn)
+
+
+def export(workdir: str, conn: Any) -> None:
+    """An export's child: it finds the attachments `jobs` wrote and leaves ``export.zip``."""
+    import json
+
+    attachments = json.loads((Path(workdir) / "attachments.json").read_text())
+    (Path(workdir) / "export.zip").write_bytes(json.dumps(attachments).encode())
+    conn.send(("done", {"files": ["export.zip"], "blocks": 3, "bytes": 1, "peak_mb": 1.0}))
+    conn.close()
+
+
+def name_a_foreign_file(workdir: str, conn: Any) -> None:
+    """Claims success with a file the supervisor may not upload."""
+    (Path(workdir) / "result.tif").write_bytes(b"x")
+    (Path(workdir) / "notes.txt").write_bytes(b"x")
+    conn.send(("done", {"files": ["result.tif", "notes.txt"], "blocks": 1}))
+    conn.close()

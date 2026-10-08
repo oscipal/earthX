@@ -101,7 +101,8 @@ SET status = 'running',
 FROM next
 WHERE r.run_id = next.run_id
 RETURNING r.run_id, r.attempt, r.max_seconds,
-          (SELECT body FROM public.earthx_recipe WHERE recipe_id = r.recipe_id)
+          (SELECT body FROM public.earthx_recipe WHERE recipe_id = r.recipe_id),
+          r.attachments
 """
 
 
@@ -113,6 +114,8 @@ class Claim:
     attempt: int
     max_seconds: int
     recipe: dict[str, Any]
+    #: What `api` built for an export (M4-11a), handed to the child unread; ``None`` otherwise.
+    attachments: dict[str, Any] | None = None
 
 
 def notify_progress(conn: psycopg.Connection, run_id: int, progress: int, status: str) -> None:
@@ -141,7 +144,7 @@ def claim(
         if row is None:
             return None
         notify_progress(conn, row[0], 0, "running")
-        return Claim(run_id=row[0], attempt=row[1], max_seconds=row[2], recipe=row[3])
+        return Claim(run_id=row[0], attempt=row[1], max_seconds=row[2], recipe=row[3], attachments=row[4])
 
 
 def heartbeat(conn: psycopg.Connection, run_id: int, attempt: int, lease_seconds: float) -> bool | None:

@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 import pytest
 
+from earthx.jobs import queue
 from earthx.jobs.submit import (
     MIN_RUNTIME_SECONDS,
     JobStatus,
@@ -28,7 +29,7 @@ from earthx.jobs.submit import (
 )
 from earthx.processing.errors import UnknownOperator
 from earthx.processing.recipe import cache_key, recipe_from_data, run_key
-from tests.earthx.jobs.support import HOST, add_run, make_recipe, run_row, status_of
+from tests.earthx.jobs.support import ATTACHMENTS, HOST, add_run, make_export, make_recipe, run_row, status_of
 from tests.earthx.processing.recipes import recipe_data
 from tests.earthx.processing.testops import OPERATORS
 
@@ -501,3 +502,45 @@ class TestDismiss:
         assert run_row(db, run_id, "cancel_requested") == (True,)
         submit(db, recipe)
         assert run_row(db, run_id, "cancel_requested") == (False,)
+
+
+class TestAnExportHasARunOfItsOwn:
+    """M4-11 F3: an export never shares a run and never comes from the cache; it carries what `api` built."""
+
+    def test_two_equal_exports_make_two_runs_that_are_not_cacheable(self, db: psycopg.Connection) -> None:
+        submit(db, make_export(), attachments=ATTACHMENTS)
+        submit(db, make_export(), attachments=ATTACHMENTS)
+        rows = db.execute("SELECT cacheable FROM public.earthx_run ORDER BY run_id").fetchall()
+        assert rows == [(False,), (False,)]
+
+    def test_a_finished_equal_export_is_no_hit(self, db: psycopg.Connection) -> None:
+        recipe = make_export(recipe_id="X" * 22)
+        add_run(db, status="successful", key=run_key(recipe), cacheable=True, expires_in="6 days", result_id="R" * 22)
+        submit(db, make_export(), attachments=ATTACHMENTS)
+        assert _count(db, "earthx_run") == 2
+
+    def test_a_raster_order_still_shares_its_run(self, db: psycopg.Connection) -> None:
+        submit(db, make_recipe())
+        submit(db, make_recipe())
+        assert _count(db, "earthx_run") == 1
+
+    def test_the_attachments_lie_with_the_run_and_reach_the_claim(self, db: psycopg.Connection) -> None:
+        submit(db, make_export(), attachments=ATTACHMENTS)
+        assert run_row(db, _run_of(db), "attachments") == (ATTACHMENTS.to_json(),)
+        claim = queue.claim(db, worker="test", lease_seconds=30)
+        assert claim is not None and claim.attachments == ATTACHMENTS.to_json()
+
+    def test_a_raster_run_has_none(self, db: psycopg.Connection) -> None:
+        submit(db, make_recipe())
+        claim = queue.claim(db, worker="test", lease_seconds=30)
+        assert claim is not None and claim.attachments is None
+
+    def test_an_export_without_attachments_is_refused_and_leaves_nothing(self, db: psycopg.Connection) -> None:
+        with pytest.raises(ValueError, match="attachments"):
+            submit(db, make_export())
+        assert _count(db, "earthx_recipe") == 0
+
+    def test_a_raster_order_with_attachments_is_refused(self, db: psycopg.Connection) -> None:
+        with pytest.raises(ValueError, match="attachments"):
+            submit(db, make_recipe(), attachments=ATTACHMENTS)
+        assert _count(db, "earthx_run") == 0

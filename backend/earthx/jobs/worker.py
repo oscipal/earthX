@@ -62,12 +62,16 @@ from earthx.jobs.entry import ChildTarget
 from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.results import Store, delete_result, new_result_id, upload_result
 
-__all__ = ["RESULT_FILES", "Supervisor"]
+__all__ = ["EXPORT_FILES", "RESULT_FILES", "Supervisor"]
 
 LOGGER = logging.getLogger("earthx.jobs")
 
 #: What a finished child leaves in its work directory and what is uploaded (plan M4-08a F4).
 RESULT_FILES = ("result.tif", "mask.tif")
+
+#: What an export leaves instead (M4-11a). The child names its files; only these sets pass.
+EXPORT_FILES = ("export.zip",)
+_UPLOADS = frozenset({RESULT_FILES, EXPORT_FILES})
 
 _RUN_DIRECTORY = re.compile(r"^\d+-\d+$")
 _SPAWN = multiprocessing.get_context("spawn")
@@ -265,6 +269,8 @@ class Supervisor:
         workdir.mkdir(parents=True)
         try:
             (workdir / "recipe.json").write_text(json.dumps(picked.recipe), encoding="utf-8")
+            if picked.attachments is not None:
+                (workdir / "attachments.json").write_text(json.dumps(picked.attachments), encoding="utf-8")
             process, pipe = self._start_child(workdir)
             try:
                 watched = self._watch(conn, picked, process, pipe, started)
@@ -424,10 +430,15 @@ class Supervisor:
         self, conn: psycopg.Connection, picked: queue.Claim, info: dict[str, Any], workdir: Path
     ) -> str:
         run_id, attempt = picked.run_id, picked.attempt
+        files = tuple(info.get("files") or RESULT_FILES)
+        if files not in _UPLOADS:
+            LOGGER.warning("child reported files it may not leave", extra={"run": run_id, "attempt": attempt})
+            queue.finish_failed(conn, run_id, attempt, "unknown", backoff_seconds=self.config.backoff_seconds)
+            return "unknown"
         result_id = new_result_id()
 
         def upload() -> None:
-            for name in RESULT_FILES:
+            for name in files:
                 upload_result(self.store, result_id, name, workdir / name)
 
         try:
