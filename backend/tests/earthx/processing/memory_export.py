@@ -24,6 +24,7 @@ def main(cog: Path, workdir: Path, size: int, items: int) -> None:
     import earthx.readers.cog as cog_reader
     from earthx.processing import run, worker_environment
     from earthx.processing.export import Attachments
+    from earthx.processing.plan import estimate
     from earthx.processing.recipe import recipe_from_data
     from tests.earthx.processing import sources
     from tests.earthx.processing.recipes import CROP
@@ -62,6 +63,7 @@ def main(cog: Path, workdir: Path, size: int, items: int) -> None:
         "output": CROP,
     }
     recipe = recipe_from_data(data, OPERATORS)
+    estimate_seconds = estimate(recipe, OPERATORS).seconds
     attachments = Attachments(
         files={"ATTRIBUTION.txt": "synthetic\n", "citation.bib": "@misc{synthetic}\n", "aoi.geojson": json.dumps(aoi)},
         attribution=(),
@@ -76,6 +78,7 @@ def main(cog: Path, workdir: Path, size: int, items: int) -> None:
                 "seconds": round(time.monotonic() - started, 2),
                 "blocks": result.blocks,
                 "zip_bytes": result.path.stat().st_size,
+                "estimate_seconds": round(estimate_seconds, 2),
             }
         )
     )

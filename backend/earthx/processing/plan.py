@@ -46,6 +46,7 @@ __all__ = [
     "EXPORT_FACTOR",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
+    "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
     "CostEstimate",
     "PlannedStep",
@@ -69,9 +70,14 @@ SECONDS_PER_ASSET = 1.0
 #: Units of a run without any step, the crop alone (adr/0014 §5.5, M3-18 §10.3).
 EXPORT_FACTOR = 0.9
 
-#: Seconds per MB of raw output for the crop alone, the upper end of the local
-#: measurement (adr/0014 §5.5: 0.041–0.046 s per MB, M3-18 §10.3).
-SECONDS_PER_EXPORT_MB = 0.046
+#: Seconds per MB of an export's output (data and mask, as ``PlannedOutput.total_bytes``
+#: counts) for writing, the COG, reading it back and packing, plus per item of the group for
+#: reading it — in a mosaic every item may be read for every block. Measured locally in
+#: M4-11a (``test_memory_export.py``, 160 MB planned, items read fully): one item 8.2–9.6 s,
+#: two 12.4–13.5 s, eight 36.6 s, so 0.030 + 0.025 per item. The network is not in it; the
+#: runtime limit's factor 2 is the reserve.
+SECONDS_PER_EXPORT_MB = 0.030
+SECONDS_PER_EXPORT_MB_PER_ITEM = 0.025
 
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
@@ -308,12 +314,17 @@ def _export_estimate(recipe: Recipe) -> CostEstimate:
             "Draw a smaller area or choose fewer assets."
         )
     assets = sum(len(entry.resolved) for entry in recipe.inputs)
+    items = [len(group) for entry in recipe.inputs for group in entry.groups for _ in entry.assets]
+    seconds = sum(
+        output.total_bytes / 1_000_000 * (SECONDS_PER_EXPORT_MB + SECONDS_PER_EXPORT_MB_PER_ITEM * count)
+        for output, count in zip(planned, items, strict=True)
+    )
     return CostEstimate(
         input_pixels=pixels,
         input_bytes=raw,
         assets=assets,
         output_pixels=pixels,
         output_bytes=total,
-        seconds=SECONDS_PER_EXPORT_MB * total / 1_000_000 + SECONDS_PER_ASSET * assets,
+        seconds=seconds + SECONDS_PER_ASSET * assets,
         units=pixels / 1_000_000 * EXPORT_FACTOR,
     )

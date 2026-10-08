@@ -9,9 +9,11 @@ group per file pair, also when the AOI reaches past one group's footprint.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import io
 import json
+import threading
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -367,3 +369,46 @@ def test_items_of_one_group_with_other_bands_are_no_mosaic(
     with pytest.raises(UnsupportedRecipe, match="differ in their bands"):
         _export([["ITEM_A", "ITEM_B"]], workdir, crop)
     assert list(workdir.iterdir()) == []
+
+
+@pytest.mark.usefixtures("served")
+def test_the_work_directory_holds_the_members_and_at_most_twice_the_largest_plain_file(tmp_path: Path) -> None:
+    """Plan M4-11 §3.10 "Platte", with the bound measured in review (§11 Punkt 8).
+
+    While one output is written the work directory holds the finished outputs before it,
+    its plain GeoTIFF — uncompressed, filled up to whole 1024 px tiles — the temporary file
+    of ``cog_translate`` (its overviews, smaller than the plain file) and the COG; while
+    packing, the ZIP grows as the files go. So the peak stays below the members of the ZIP
+    plus twice the largest plain file. Measured here: 4.8 MB against 0.1 MB of members.
+    """
+    groups = CASES["two groups"]
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip(groups, AOI)))
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    peak = 0
+    done = threading.Event()
+
+    def watch() -> None:
+        nonlocal peak
+        while not done.is_set():
+            size = 0
+            for path in workdir.iterdir():
+                with contextlib.suppress(OSError):
+                    size += path.stat().st_size
+            peak = max(peak, size)
+
+    watcher = threading.Thread(target=watch, daemon=True)
+    watcher.start()
+    try:
+        result = _export(groups, workdir, crop)
+    finally:
+        done.set()
+        watcher.join()
+    largest_plain = 0
+    with zipfile.ZipFile(result.path) as exported:
+        members = sum(info.file_size for info in exported.infolist())
+        for name in ("group-01/visual.tif", "group-02/visual.tif"):
+            with rasterio.open(io.BytesIO(exported.read(name))) as cog:
+                tiles = -(-cog.width // 1024) * -(-cog.height // 1024)
+                largest_plain = max(largest_plain, tiles * 1024 * 1024 * cog.count)
+    assert members < peak <= members + 2 * largest_plain
