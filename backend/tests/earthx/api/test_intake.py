@@ -1023,3 +1023,11 @@ class TestCropRecipeJson:
     def test_a_resolution_that_no_download_offers_is_refused(self) -> None:
         with pytest.raises(OrderRefused):
             crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=3, accepted_at=AT)
+
+    def test_every_item_brings_its_footprint_and_one_without_a_polygon_brings_none(self) -> None:
+        with_polygon = s2_item("S2_A")
+        without = {**s2_item("S2_B"), "geometry": {"type": "Point", "coordinates": [9.0, 47.0]}}
+        document = crop(S2, [[with_polygon, without]], ["red"])
+        footprints = document["inputs"][0]["footprints"]
+        assert footprints["S2_A"] == with_polygon["geometry"]
+        assert footprints["S2_B"] is None

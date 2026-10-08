@@ -558,6 +558,18 @@ def _resolved_json(target: _Target, version: InputVersion | None) -> dict[str, A
 # --- recipe.json of the synchronous crop (adr/0014 §10.1) --------------------
 
 
+def footprint_of(item: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The item's ``geometry`` for the recipe of a crop, or ``None`` where it is no polygon (M4-11a).
+
+    The crop's extent takes a footprint it cannot read as none (``compute_crop_region``);
+    a geometry of another type is no footprint either, so the recipe says ``null``.
+    """
+    geometry = item.get("geometry")
+    if isinstance(geometry, Mapping) and geometry.get("type") in ("Polygon", "MultiPolygon"):
+        return {"type": geometry["type"], "coordinates": geometry.get("coordinates")}
+    return None
+
+
 def crop_recipe_json(
     config: DatasetConfig,
     *,
@@ -598,6 +610,7 @@ def crop_recipe_json(
                 "groups": [[item["id"] for item in group] for group in groups],
                 "assets": list(assets),
                 "resolved": [_resolved_json(target, _version(target.item, target.item_asset)) for target in targets],
+                "footprints": {item["id"]: footprint_of(item) for group in groups for item in group},
             }
         ],
         # The geometry alone: a place-search AOI carries `properties` for the notice and
