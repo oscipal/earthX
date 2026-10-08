@@ -1091,6 +1091,16 @@ class TestAnExport:
         assert "S2_FAR" not in notice
         assert accepted.skipped_items == ("S2_FAR", "S2_GONE")
 
+    async def test_a_group_is_judged_by_the_footprints_the_recipe_carries(self) -> None:
+        """A footprint the recipe cannot carry (no polygon) does not keep a group the AOI misses: 422, not 500."""
+        odd = visual_item("S2_ODD")
+        odd["geometry"] = {"type": "GeometryCollection", "geometries": [_footprint(NEAR)]}
+        rotated = visual_item("S2_ROT")  # its bbox reaches the AOI, its footprint does not
+        rotated["geometry"] = _footprint(FAR)
+        source = Source((S2, odd), (S2, rotated))
+        error = await refused(export_order((("S2_ODD", "S2_ROT"),)), source)
+        assert error.status_code == 422 and error.stage == "aoi"
+
     async def test_an_export_with_steps_is_refused(self) -> None:
         error = await refused(export_order(steps=[SCALE_STEP]), Source((S2, visual_item("S2_A"))))
         assert error.status_code == 422 and "no steps" in error.detail

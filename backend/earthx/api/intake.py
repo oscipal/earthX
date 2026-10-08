@@ -74,7 +74,7 @@ from earthx.api.citation import citation_bib
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier, UnknownDatasetError
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
-from earthx.processing.errors import ExportTooLarge, RecipeInvalid, UnknownOperator
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, RecipeInvalid, UnknownOperator
 from earthx.processing.export import Attachments
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands, estimate
@@ -270,6 +270,8 @@ async def _accept(
         estimate(recipe, operators)
     except ExportTooLarge as error:
         raise OrderRefused(413, str(error), "size") from None
+    except AoiOutsideInputs as error:
+        raise OrderRefused(422, str(error), "aoi") from None
     kept = {item_id for group in groups for item_id in group}
     attachments = export_attachments(
         config,
@@ -397,8 +399,11 @@ def _groups_the_aoi_touches(
 
     Both the bbox of the item and, for the group as a whole, its real footprints
     count — a rotated scene whose bbox reaches the AOI but whose footprint does not
-    is the case ``compute_crop_region`` exists for (M3-18 §13).
+    is the case ``compute_crop_region`` exists for (M3-18 §13). An export judges by
+    the footprints its recipe will carry (:func:`footprint_of`), so that the core
+    never finds a group the AOI misses (review of M4-11a).
     """
+    export = isinstance(request.output, CropOutput)
     try:
         aoi = parse_aoi_geometry(request.aoi.model_dump(mode="json"))
     except InvalidAoi as error:
@@ -411,8 +416,9 @@ def _groups_the_aoi_touches(
         except (ValueError, TypeError):
             raise OrderRefused(502, "an item of the order carries a bbox that is not four numbers", "items") from None
         if matched:
+            judged = [{"geometry": footprint_of(item)} for item in matched] if export else matched
             try:
-                compute_crop_region(matched, aoi)
+                compute_crop_region(judged, aoi)
             except AoiOutsideItems:
                 matched = []
         touched = {item["id"] for item in matched}
