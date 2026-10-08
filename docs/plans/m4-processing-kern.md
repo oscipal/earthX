@@ -180,7 +180,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-08a-fix | Nachbesserung M4-08a: Logtests prüfen Nachricht und Felder, nicht den Zeitstempel | M4a | A | Sonnet (hoch) | M4-08a | PR (Entwurf) |
 | M4-07b-fix | Nachbesserung M4-07b: Logtests suchen in Nachricht und eigenen Feldern, nicht in den Standardattributen von `LogRecord` | M4a | A | Sonnet (hoch) | M4-07b, M4-08a-fix | PR #131 (Entwurf) |
 | M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | PR #132 (Entwurf) |
-| M4-11 | Export über dem Deckel als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | Plan (`plans/m4-11-export-job.md`) |
+| M4-11 | Export über dem Deckel als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | Plan (`plans/m4-11-export-job.md`), PR #133 (Entwurf) |
 | M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | offen |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | offen |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | PR #129 |
