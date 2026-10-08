@@ -69,7 +69,6 @@ from earthx.processing.errors import RecipeInvalid, UnknownOperator
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands
 from earthx.processing.recipe import (
-    AppliedScaling,
     Band,
     InputRequest,
     InputVersion,
@@ -78,8 +77,10 @@ from earthx.processing.recipe import (
     Recipe,
     RecipeRequest,
     cache_key,
+    document_bytes,
     engine_versions,
     input_version,
+    job_recipe_document,
     parse_request,
     recipe_from_data,
 )
@@ -634,12 +635,7 @@ def crop_recipe_json(
         **recipe.model_dump(mode="json", exclude={"recipe_id"}),
         "provenance": provenance.model_dump(mode="json"),
     }
-    return _document_bytes(document)
-
-
-def _document_bytes(document: Mapping[str, Any]) -> bytes:
-    """UTF-8, two spaces, keys sorted: the person's own file, no hash input."""
-    return (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+    return document_bytes(document)
 
 
 def job_recipe_json(
@@ -656,18 +652,11 @@ def job_recipe_json(
     a run but never a recipe, so this file never shows another order's identifier (M4-08a F4). No
     hash. ``provenance`` is the cloud run: the versions and the scaling the core reported
     (``result``), the times of the run that computed it — for a cache hit those of the first
-    order — and the attribution of the dataset, if the registry still knows it.
+    order — and the attribution of the dataset, if the registry still knows it. The document
+    itself is :func:`~earthx.processing.recipe.job_recipe_document`, which the export job also
+    writes into its ZIP.
     """
     attribution = attribution_text(config, year=(finished or started or datetime.now(UTC)).year) if config else None
-    provenance = Provenance(
-        execution="cloud",
-        kind="job",
-        runner_version=None,
-        self_attested=False,
-        engine=dict(result.get("engine") or {}),
-        scaling=[AppliedScaling.model_validate(entry) for entry in result.get("scaling") or []],
-        started=started,
-        finished=finished,
-        attribution=[attribution] if attribution else [],
+    return job_recipe_document(
+        body, attribution=[attribution] if attribution else [], result=result, started=started, finished=finished
     )
-    return _document_bytes({**body, "provenance": provenance.model_dump(mode="json")})

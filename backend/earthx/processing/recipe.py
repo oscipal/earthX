@@ -37,7 +37,7 @@ from typing import Annotated, Any, Literal, Protocol
 
 import numpy
 import rasterio
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_serializer, model_validator
 from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
@@ -52,6 +52,7 @@ __all__ = [
     "RECIPE_VERSION",
     "Band",
     "CropOutput",
+    "Footprint",
     "Input",
     "InputRequest",
     "InputVersion",
@@ -66,8 +67,10 @@ __all__ = [
     "Step",
     "cache_key",
     "canonical_bytes",
+    "document_bytes",
     "engine_versions",
     "input_version",
+    "job_recipe_document",
     "loads_i_json",
     "parse_recipe",
     "parse_request",
@@ -178,7 +181,7 @@ class RasterOutput(_Model):
 
 
 class CropOutput(_Model):
-    """The synchronous crop, described for its ``recipe.json`` (§10.1); never run by the core."""
+    """The crop (§10.1): described by the synchronous download, computed by the export job (M4-11a)."""
 
     kind: Literal["crop"]
     format: Literal["cog"]
@@ -279,10 +282,28 @@ class InputRequest(_Model):
         return self
 
 
+class Footprint(_Model):
+    """An item's footprint, its STAC ``geometry`` as the item gives it (M4-11a).
+
+    Only the type is checked: the crop takes a footprint it cannot read as no footprint
+    (``crop_rules.compute_crop_region``), and the export has to do the same.
+    """
+
+    type: Literal["Polygon", "MultiPolygon"]
+    coordinates: JsonValue
+
+
 class Input(InputRequest):
-    """An input of a recipe: the order's input plus one resolved entry per item and asset."""
+    """An input of a recipe: the order's input plus one resolved entry per item and asset.
+
+    ``footprints`` (M4-11a) holds every item's footprint, ``None`` for an item without a
+    usable one; the output ``crop`` needs them for its extent ``bbox(aoi ∩ footprints)``,
+    any other output carries none. Left out of the dump when unset, so neither the hash
+    nor the ``recipe.json`` of a raster recipe changes.
+    """
 
     resolved: list[ResolvedInput] = Field(min_length=1)
+    footprints: dict[str, Footprint | None] | None = None
 
     @model_validator(mode="after")
     def _complete(self) -> Input:
@@ -292,7 +313,16 @@ class Input(InputRequest):
             raise ValueError("resolved holds exactly one entry per item and asset")
         if any(entry.asset.dataset_id != self.dataset for entry in self.resolved):
             raise ValueError("a resolved asset belongs to another dataset")
+        if self.footprints is not None and set(self.footprints) != {item for group in self.groups for item in group}:
+            raise ValueError("footprints holds exactly one entry per item")
         return self
+
+    @model_serializer(mode="wrap")
+    def _without_unset_footprints(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("footprints") is None:
+            data.pop("footprints", None)
+        return data
 
 
 class _Common(_Model):
@@ -338,6 +368,9 @@ class Recipe(_Common):
     @model_validator(mode="after")
     def _names(self) -> Recipe:
         self._unique_inputs(self.inputs)
+        crop = isinstance(self.output, CropOutput)
+        if any((entry.footprints is not None) != crop for entry in self.inputs):
+            raise ValueError("a crop carries the footprints of its items, any other output none")
         return self
 
     def hrefs(self) -> list[str]:
@@ -576,3 +609,39 @@ def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = Non
     if isinstance(updated, str) and updated:
         return InputVersion(kind="updated", value=updated)
     return None
+
+
+# --- recipe.json of a job ------------------------------------------------------
+
+
+def document_bytes(document: Mapping[str, Any]) -> bytes:
+    """UTF-8, two spaces, keys sorted: ``recipe.json``, the person's own file, no hash input."""
+    return (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+
+
+def job_recipe_document(
+    body: Mapping[str, Any],
+    *,
+    attribution: Sequence[str],
+    result: Mapping[str, Any],
+    started: datetime | None,
+    finished: datetime | None,
+) -> bytes:
+    """``recipe.json`` of a job: its own recipe and the provenance of the cloud run (adr/0014 §10.1).
+
+    One function for both copies (M4-11 K4): the link `api` serves and the file the
+    export writes into its ZIP. ``body`` is the job's own recipe with its own
+    ``recipe_id``; ``result`` is what the run reported (engine versions, scaling).
+    """
+    provenance = Provenance(
+        execution="cloud",
+        kind="job",
+        runner_version=None,
+        self_attested=False,
+        engine=dict(result.get("engine") or {}),
+        scaling=[AppliedScaling.model_validate(entry) for entry in result.get("scaling") or []],
+        started=started,
+        finished=finished,
+        attribution=list(attribution),
+    )
+    return document_bytes({**body, "provenance": provenance.model_dump(mode="json")})
