@@ -134,13 +134,13 @@ Referenz). Ablauf:
   `PT12.3S`) heißen wie bei openEO (F2), die übrigen sind eigen.
 - **Abweisungen:** dieselben Stufen und Codes wie `execution` bis Stufe 6
   und für `check_scope`. Was erst Stufe 7 findet (ein Asset, das beim `HEAD`
-  fehlt, `404`/`410` → `422`; ein Fehler der Quelle → `502`), erkennt die
+  fehlt, `404`/`410` → `502`, Stufe `version`), erkennt die
   Schätzung **nicht**; dann scheitert der Start trotz Schätzung, und das Panel
   zeigt den Fehler des Starts. Kein `HEAD`, keine Zeile in der Queue, kein
   `recipe_id`.
-- Log: eine Zeile „order estimated“ mit Datensatz, Zahl der Items und Assets,
-  Operatoren und den gerundeten Zahlen; nie AOI, Adresse, Hash (`adr/0014`
-  §4.7).
+- Log: eine Zeile „order estimated“ mit Datensatz, Zahl der Items und Assets
+  und Operatoren; nie AOI, Adresse, Hash (`adr/0014` §4.7). Die Zahlen der
+  Schätzung stehen nur in der Antwort.
 - Die API-Beschreibung nennt die Route als Erweiterung außerhalb der OGC-Form
   („no conformance claimed“ gilt ohnehin, `adr/0014` §15d).
 
@@ -658,4 +658,71 @@ nur Englisch.
 **Schnitt (F7):** Die Teilaufgaben stehen als M4-13a bis M4-13c in
 `plans/m4-processing-kern.md` §3. M4-11b hängt an M4-13b.
 
-**M4-13a — Umsetzung:** siehe unten, nach dem Fertigmelden ergänzt.
+## 11. M4-13a — Umsetzung (08.10.2026)
+
+**Gebaut** (PR #134, Branch `claude/m4-13-verarbeitungsplan-gq3t3p`):
+- `api/intake.py`: `_accept` in `_prepare` (Stufen 1–6) und `_recipe_of` geteilt,
+  Reihenfolge der Prüfungen und Logs von `accept_order` unverändert. Neu
+  `estimate_order` und `EstimatedOrder`: Rezept ohne Fassungen und ohne
+  `recipe_id`, ohne Gateway.
+- `api/processing_route.py`: `POST /processing/processes/recipe/estimate`
+  (`Estimate`, `EstimateDocument`), `no-store`, dieselbe Hülle und dieselben
+  Abweisungen wie `execution` bis Stufe 6 und `check_scope`; ein
+  `RecipeInvalid` aus `plan.estimate` ist ein `422` der Stufe `applicable`.
+  Log „order estimated“ (Datensatz, Zahl der Items und Assets, Operatoren).
+- `api/processing_docs.py`: `x-earthx-tiers` und `x-earthx-kind` je
+  Schritt-Definition (K1); `x-earthx-variable-separator` an
+  `InputRequest.assets` für einen Zarr-Datensatz (F9).
+- `scripts/write-process-fixtures.py` (mit `--check`) und
+  `frontend/src/fixtures/processes/<datensatz>.json` (K3), dazu der
+  Gleichheitstest `tests/earthx/api/test_process_fixtures.py`.
+
+**Abweichungen vom Plan:**
+1. **`_targets` heißt `_prepare`** und liefert ein kleines Objekt mit Anfrage,
+   Eintrag, Datensatz, Gruppen, übersprungenen Items und Zielen. Statt `_accept`
+   unverändert zu lassen, ruft `_accept` jetzt `_prepare` und `_recipe_of`; das
+   Ergebnis ist dasselbe, und es gibt nur eine Stelle für die sechs Stufen.
+2. **Ein `HEAD`, der ein fehlendes Asset findet, ist ein `502`** der Stufe
+   `version` (nicht `422`, wie §3.1 zuerst schrieb); der Plan ist berichtigt.
+3. **Zusätzlicher Fund, behoben in einem eigenen Commit:** `execution` mit
+   einem Band, das das Item nicht beschreibt (Asset ohne `raster:bands`,
+   Ausdruck nennt `red_2`), endete als `500`, weil `submit` die Laufzeit mit
+   `estimate` rechnet und dessen `RecipeInvalid` nicht gefangen wurde. Jetzt
+   `422`, Stufe `applicable`, nichts in der Queue (Test in
+   `test_processing_route.py`). Das ist eine Verhaltensänderung von M4-08b
+   (`500` → `422`); der Commit lässt sich einzeln zurücknehmen.
+
+**Tests** (alle synthetisch, offline): `test_processing_estimate.py` (32:
+Antwort, Abgleich mit `plan.estimate`, kein `HEAD`, keine Zeile in der Queue,
+alle Abweisungen, Grenze der Schätzung, Logs), `test_intake.py` (6 neu, davon
+die Gleichheit der Abweisungen von `accept_order` und `estimate_order` über
+alle Stufen), `test_processing_docs.py` (7 neu für K1 und F9, dazu der Pfad der Schätzung und
+der `503` ohne Queue), `test_process_fixtures.py`
+(8, mit Gegenprobe). Gegenprobe im PR: Eine geänderte Beschreibung in
+`reproject.py` lässt vier Tests fallen (drei Dateien und `--check`); nach dem
+Zurücksetzen sind alle grün.
+
+**Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell 5.1; die
+Befehle konnte die Sitzung nicht ausführen, weil `pwsh` fehlt — die Route ist
+mit synthetischen Quellen getestet, nicht gegen die echte Quelle):
+
+```powershell
+docker compose up -d --build
+docker compose ps                                     # api, worker: healthy
+$base = "http://localhost:8000"
+$search = '{"collections":["sentinel-2-c1-l2a"],"bbox":[10.50,49.50,10.51,49.51],"datetime":"2025-07-01/2025-07-31","limit":1}'
+$item = (Invoke-RestMethod -Method Post -Uri "$base/stac/search" -ContentType "application/json" -Body $search).features[0].id
+$aoi = '{"type":"Polygon","coordinates":[[[10.500,49.500],[10.510,49.500],[10.510,49.510],[10.500,49.510],[10.500,49.500]]]}'
+function New-Order($expression) { '{"inputs":{"recipe":{"recipe_version":1,"inputs":[{"name":"scene","dataset":"sentinel-2-c1-l2a","groups":[["' + $item + '"]],"assets":["red","nir"]}],"aoi":' + $aoi + ',"steps":[{"op":"band_math","op_version":1,"params":{"expression":"' + $expression + '"}}],"output":{"kind":"raster","format":"cog","dtype":"float32"}}}}' }
+$uri = "$base/processing/processes/recipe/estimate"
+# 1. die Schätzung: size, duration (PT...S), outputPixels, inputPixels, inputBytes, assets 2, units
+Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body (New-Order "(nir - red) / (nir + red)") | ConvertTo-Json -Depth 5
+# 2. ein Band, das es nicht gibt: 422 mit Text
+try { Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body (New-Order "nir_2 + 1") } catch { $_.ErrorDetails.Message }
+# 3. kein Job, kein Zugriff auf die Dateien, keine Fläche im Log
+docker compose logs api | Select-String "order estimated"
+```
+
+Erwartet: Schritt 1 gibt `assets` 2 und ein `duration` wie `PT3.4S`; Schritt 2
+einen Problemtext mit `nir_2` (Typ `urn:earthx:order-refused:applicable`);
+Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
