@@ -161,8 +161,11 @@ def by_item(workdir: str, conn: Any) -> None:
 
 
 def export(workdir: str, conn: Any) -> None:
-    """An export's child: it finds the attachments `jobs` wrote and leaves ``export.zip``."""
+    """An export's child: it finds the attachments `jobs` wrote and leaves ``export.zip``; ``CHILD_MARKER`` says it ran."""
     import json
+
+    if os.environ.get("CHILD_MARKER"):
+        Path(os.environ["CHILD_MARKER"]).write_text("started")
 
     attachments = json.loads((Path(workdir) / "attachments.json").read_text())
     (Path(workdir) / "export.zip").write_bytes(json.dumps(attachments).encode())

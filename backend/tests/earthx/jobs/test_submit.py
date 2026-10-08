@@ -28,6 +28,8 @@ from earthx.jobs.submit import (
     submit,
 )
 from earthx.processing.errors import UnknownOperator
+from earthx.processing.operators import REGISTRY
+from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import cache_key, recipe_from_data, run_key
 from tests.earthx.jobs.support import ATTACHMENTS, HOST, add_run, make_export, make_recipe, run_row, status_of
 from tests.earthx.processing.recipes import recipe_data
@@ -544,3 +546,16 @@ class TestAnExportHasARunOfItsOwn:
         with pytest.raises(ValueError, match="attachments"):
             submit(db, make_recipe(), attachments=ATTACHMENTS)
         assert _count(db, "earthx_run") == 0
+
+
+class TestTheDiskARunNeeds:
+    """Otto, 08.10.2026: the run carries its estimated need, for the supervisor's check before it starts."""
+
+    def test_an_export_and_a_raster_run_carry_their_need(self, db: psycopg.Connection) -> None:
+        export = make_export()
+        submit(db, export, attachments=ATTACHMENTS)
+        raster = make_recipe()
+        submit(db, raster)
+        rows = db.execute("SELECT disk_bytes FROM public.earthx_run ORDER BY run_id").fetchall()
+        assert rows == [(disk_needed(export.model_copy(), REGISTRY),), (disk_needed(raster, REGISTRY),)]
+        assert all(need > DISK_RESERVE_BYTES for (need,) in rows)

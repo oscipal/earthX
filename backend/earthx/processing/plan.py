@@ -28,6 +28,7 @@ from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 
 from earthx.access.crop_rules import (
+    BLOCK_SIZE,
     FALLBACK_BYTES_PER_PIXEL,
     MAX_EXPORT_JOB_BYTES,
     MAX_OUTPUT_SIDE_PX,
@@ -48,11 +49,13 @@ __all__ = [
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
+    "DISK_RESERVE_BYTES",
     "CostEstimate",
     "PlannedStep",
     "Segment",
     "check_bands",
     "crop_window",
+    "disk_needed",
     "estimate",
     "export_outputs",
     "plan_steps",
@@ -328,3 +331,56 @@ def _export_estimate(recipe: Recipe) -> CostEstimate:
         seconds=seconds + SECONDS_PER_ASSET * assets,
         units=pixels / 1_000_000 * EXPORT_FACTOR,
     )
+
+
+#: What a run keeps free beyond its estimated need (Otto, 08.10.2026; a starting value [A]):
+#: the recipe and side files, GDAL's and rio-cogeo's small files, slack for a COG's header.
+DISK_RESERVE_BYTES = 256 * 1024 * 1024
+
+#: A COG's overviews add at most a third of its full resolution (each level a quarter of the one before).
+_WITH_OVERVIEWS = 4 / 3
+
+#: Bytes per value of the core's intermediate passes (``core._INTERMEDIATE_DTYPE``, float64).
+_PASS_BYTES = 8
+
+
+def _tiles_px(pixels: int) -> int:
+    """``pixels`` filled up to whole blocks: a tiled GeoTIFF stores every block in full."""
+    return -(-pixels // BLOCK_SIZE) * BLOCK_SIZE
+
+
+def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
+    """The bytes a run needs in its work directory, judged before it starts (Otto, 08.10.2026).
+
+    **Finished files + 2 × raw size of the largest output + reserve**, from the recipe alone:
+
+    * finished files: the planned output, data and mask, raw, with room for COG overviews
+      (× 4/3); deflate only makes the files smaller;
+    * the raw size of the largest output: its plain GeoTIFF, uncompressed and filled up to
+      whole 1024 px blocks — for an export the data file of one group and asset, for a raster
+      run the float64 pass over all bands; twice, because ``cog_translate`` keeps a temporary
+      file of the same order beside it (measured, plan m4-11 §11 Punkt 8);
+    * :data:`DISK_RESERVE_BYTES`.
+
+    An estimate like :func:`estimate`, conservative where it has to guess (``gsd`` missing,
+    data type unknown). Reads nothing.
+    """
+    if isinstance(recipe.output, CropOutput):
+        planned = export_outputs(recipe)
+        finished = sum(output.total_bytes for output in planned)
+        largest = max(
+            _tiles_px(output.width) * _tiles_px(output.height) * output.bytes_per_pixel for output in planned
+        )
+    else:
+        cost = estimate(recipe, operators)
+        finished = cost.output_bytes + cost.output_pixels
+        aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
+        largest = 0
+        for item in recipe.inputs:
+            for entry in item.resolved:
+                if entry.gsd is not None:
+                    rows, columns = estimate_output_dims(aoi, entry.gsd)
+                else:
+                    rows = columns = MAX_OUTPUT_SIDE_PX
+                largest += _tiles_px(rows) * _tiles_px(columns) * max(len(entry.bands), 1) * _PASS_BYTES
+    return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

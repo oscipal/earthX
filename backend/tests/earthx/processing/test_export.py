@@ -35,6 +35,7 @@ from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.processing import RunCancelled, run
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
+from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import recipe_from_data
 from earthx.readers import Policy
 from earthx.readers.cog import asset_path
@@ -412,3 +413,4 @@ def test_the_work_directory_holds_the_members_and_at_most_twice_the_largest_plai
                 tiles = -(-cog.width // 1024) * -(-cog.height // 1024)
                 largest_plain = max(largest_plain, tiles * 1024 * 1024 * cog.count)
     assert members < peak <= members + 2 * largest_plain
+    assert peak <= disk_needed(_recipe(groups), OPERATORS) - DISK_RESERVE_BYTES, "the supervisor's check holds"

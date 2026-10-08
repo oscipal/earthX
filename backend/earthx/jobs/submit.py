@@ -30,7 +30,7 @@ from earthx.jobs.queue import CACHE_MIN_REMAINING, WAKE_CHANNEL, notify_progress
 from earthx.objectstore.results import RESULT_TTL
 from earthx.processing.export import Attachments
 from earthx.processing.operators import REGISTRY, OperatorRegistry
-from earthx.processing.plan import estimate
+from earthx.processing.plan import disk_needed, estimate
 from earthx.processing.recipe import CropOutput, Recipe, cache_key, recipe_hosts, run_key
 
 __all__ = [
@@ -115,6 +115,7 @@ def submit(
     cacheable = not export and cache_key(stored) is not None
     hosts = list(recipe_hosts(stored))
     max_seconds = _runtime_limit(stored, operators)
+    disk_bytes = disk_needed(stored, operators)
     job_id = secrets.token_urlsafe(16)
     with conn.transaction():
         try:
@@ -127,7 +128,14 @@ def submit(
             # Not the database's text: it would name the identifier that was refused.
             raise RecipeIdTaken("a recipe with this recipe_id exists") from None
         run_id, created = _run_for(
-            conn, key, cacheable, recipe_id, hosts, max_seconds, None if attachments is None else attachments.to_json()
+            conn,
+            key,
+            cacheable,
+            recipe_id,
+            hosts,
+            max_seconds,
+            disk_bytes,
+            None if attachments is None else attachments.to_json(),
         )
         conn.execute(
             "INSERT INTO public.earthx_job (job_id, run_id, recipe_id) VALUES (%s, %s, %s)",
@@ -145,6 +153,7 @@ def _run_for(
     recipe_id: str,
     hosts: list[str],
     max_seconds: int,
+    disk_bytes: int,
     attachments: dict[str, Any] | None,
 ) -> tuple[int, bool]:
     """The run the new job hangs on, and whether this call created it."""
@@ -166,12 +175,21 @@ def _run_for(
         created = conn.execute(
             """
             INSERT INTO public.earthx_run
-                (cache_key, cacheable, recipe_id, status, hosts, max_seconds, expires_at, attachments)
-            VALUES (%s, %s, %s, 'accepted', %s, %s, clock_timestamp() + %s, %s)
+                (cache_key, cacheable, recipe_id, status, hosts, max_seconds, expires_at, disk_bytes, attachments)
+            VALUES (%s, %s, %s, 'accepted', %s, %s, clock_timestamp() + %s, %s, %s)
             ON CONFLICT (cache_key) WHERE status IN ('accepted', 'running') DO NOTHING
             RETURNING run_id
             """,
-            (key, cacheable, recipe_id, hosts, max_seconds, RESULT_TTL, None if attachments is None else Jsonb(attachments)),
+            (
+                key,
+                cacheable,
+                recipe_id,
+                hosts,
+                max_seconds,
+                RESULT_TTL,
+                disk_bytes,
+                None if attachments is None else Jsonb(attachments),
+            ),
         ).fetchone()
         if created is not None:
             return created[0], True

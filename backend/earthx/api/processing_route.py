@@ -103,6 +103,10 @@ _FAILURES: dict[str, tuple[int, str]] = {
     "child_crashed": (500, "The job's process ended unexpectedly"),
     "runtime_exceeded": (500, "The job took longer than allowed"),
     "upload_failed": (500, "The result could not be stored"),
+    "disk_space": (
+        500,
+        "The worker has too little disk space for this job; choose a smaller area or fewer assets, or try later",
+    ),
     "lease_lost": (500, "The worker of the job was lost"),
     "cancelled": (500, "The job was cancelled"),
     "unknown": (500, "The job failed"),

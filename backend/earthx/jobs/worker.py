@@ -62,12 +62,21 @@ from earthx.jobs.entry import ChildTarget
 from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.results import Store, delete_result, new_result_id, upload_result
 
-__all__ = ["EXPORT_FILES", "RESULT_FILES", "Supervisor"]
+__all__ = ["DISK_SPACE", "EXPORT_FILES", "RESULT_FILES", "Supervisor", "free_bytes"]
 
 LOGGER = logging.getLogger("earthx.jobs")
 
 #: What a finished child leaves in its work directory and what is uploaded (plan M4-08a F4).
 RESULT_FILES = ("result.tif", "mask.tif")
+
+#: The error kind of a run that would not fit on the worker's disk (M4-11a); never tried again.
+DISK_SPACE = "disk_space"
+
+
+def free_bytes(path: Path) -> int:
+    """Free bytes on the file system of ``path``; a seam of its own, so tests can set it."""
+    return shutil.disk_usage(path).free
+
 
 #: What an export leaves instead (M4-11a). The child names its files; a run with attachments is
 #: an export and uploads these, any other run the two above, and nothing else.
@@ -267,6 +276,22 @@ class Supervisor:
         started = time.monotonic()
         shutil.rmtree(workdir, ignore_errors=True)
         workdir.mkdir(parents=True)
+        free = free_bytes(workdir)
+        if free < picked.disk_bytes:
+            shutil.rmtree(workdir, ignore_errors=True)
+            # Before a child starts and without a second attempt (`disk_space` is not retryable):
+            # the same run would find the same disk (Otto, 08.10.2026).
+            queue.finish_failed(conn, run_id, attempt, DISK_SPACE, backoff_seconds=self.config.backoff_seconds)
+            LOGGER.warning(
+                "too little disk space for the run",
+                extra={
+                    "run": run_id,
+                    "attempt": attempt,
+                    "need_mb": round(picked.disk_bytes / 1e6),
+                    "free_mb": round(free / 1e6),
+                },
+            )
+            return
         try:
             (workdir / "recipe.json").write_text(json.dumps(picked.recipe), encoding="utf-8")
             if picked.attachments is not None:

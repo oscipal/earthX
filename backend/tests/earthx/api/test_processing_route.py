@@ -643,7 +643,8 @@ class TestResults:
             422: {"recipe_invalid", "unsupported_recipe", "scaling_mismatch", "grid_mismatch", "aoi_outside_inputs"},
             502: {"source_4xx", "source_429", "source_5xx", "source_unreachable", "rejected"},
             504: {"source_timeout"},
-            500: {"out_of_memory", "child_crashed", "runtime_exceeded", "upload_failed", "lease_lost", "cancelled", "unknown"},
+            500: {"out_of_memory", "child_crashed", "runtime_exceeded", "upload_failed", "lease_lost", "cancelled", "unknown",
+                  "disk_space"},
         }  # fmt: skip
         assert {code: {k for k, (c, _) in _FAILURES.items() if c == code} for code in expected} == expected
 

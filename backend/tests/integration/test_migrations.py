@@ -40,7 +40,7 @@ class TestDiscovery:
         """pgstac holds the collections; our own tables are the application caches
         (the search cache of M1-06/E4, the statistics cache of M2-04, adr/0006 §5),
         the materialize run log of M3-11b (plan §3.5), the place-search cache and
-        rate slot of M3-07a, the job queue of M4-08a (adr/0013 §5.1) and the side files of an export (M4-11a)."""
+        rate slot of M3-07a, the job queue of M4-08a (adr/0013 §5.1) the side files of an export and a run's disk need (M4-11a)."""
         assert [(m.version, m.name) for m in discover_migrations()] == [
             ("002", "search_cache"),
             ("003", "stats_cache"),
@@ -48,6 +48,7 @@ class TestDiscovery:
             ("005", "geocode"),
             ("006", "jobs"),
             ("007", "run_attachments"),
+            ("008", "run_disk"),
         ]
 
     def test_a_missing_directory_is_an_error_not_an_empty_run(self, tmp_path) -> None:
