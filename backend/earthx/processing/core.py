@@ -25,7 +25,8 @@ core removes every file it wrote and re-raises, as it does for any other failure
 **Scope (F2).** One input, one group, one item; several assets of that item when
 they share one grid or are nested (the coarser read onto the finest with ``nearest``,
 the result marked resampled; :mod:`earthx.processing.source`). More is
-:class:`UnsupportedRecipe` until M4-11 and M4-12.
+:class:`UnsupportedRecipe` until M4-12. The output ``crop`` is the export of M4-11a
+(:mod:`earthx.processing.export`): several groups and items, one after the other.
 """
 
 from __future__ import annotations
@@ -56,9 +57,10 @@ from rio_tiler.models import ImageData
 
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import UnsupportedRecipe
+from earthx.processing.export import Attachments, ExportResult, check_export, export
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
 from earthx.processing.plan import PlannedStep, Segment, crop_window, plan_steps, segments
-from earthx.processing.recipe import AppliedScaling, RasterOutput, Recipe, engine_versions
+from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
 from earthx.processing.source import Source, common_grid, merge_images
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
@@ -160,16 +162,18 @@ def _open_sources(recipe: Recipe, stack: ExitStack) -> list[Source]:
     return sources
 
 
-def check_scope(recipe: Recipe) -> RasterOutput:
-    """The raster output of a recipe this core can run, or :class:`UnsupportedRecipe`.
+def check_scope(recipe: Recipe) -> RasterOutput | CropOutput:
+    """The output of a recipe this core can run, or :class:`UnsupportedRecipe`.
 
     ``run`` calls it first; `api` calls it before a job is queued, so that a recipe the core
-    would turn away does not wait its turn first (M4-08b K3).
+    would turn away does not wait its turn first (M4-08b K3). A crop is an export
+    (:func:`~earthx.processing.export.check_export`) and may read several groups and items;
+    a raster output still reads exactly one item (M4-07a F2).
     """
-    if not isinstance(recipe.output, RasterOutput):
-        raise UnsupportedRecipe("the core computes a raster output; a crop is described, not run")
+    if isinstance(recipe.output, CropOutput):
+        return check_export(recipe)
     if len(recipe.inputs) != 1 or len(recipe.inputs[0].groups) != 1 or len(recipe.inputs[0].groups[0]) != 1:
-        raise UnsupportedRecipe("a run reads one item of one input; mosaics and several groups come with M4-11/M4-12")
+        raise UnsupportedRecipe("a raster run reads one item of one input; mosaics come with M4-12")
     return recipe.output
 
 
@@ -308,9 +312,24 @@ def _write_mask(state: _Run, meta: RasterMeta, aoi: dict) -> None:
             dst.write(inside, 1, window=window)
 
 
-def run(recipe: Recipe, *, workdir: Path, progress: Progress, operators: OperatorRegistry = REGISTRY) -> RunResult:
-    """Compute ``recipe`` into ``workdir`` and describe the result; a pure function of its inputs."""
+def run(
+    recipe: Recipe,
+    *,
+    workdir: Path,
+    progress: Progress,
+    operators: OperatorRegistry = REGISTRY,
+    attachments: Attachments | None = None,
+) -> RunResult | ExportResult:
+    """Compute ``recipe`` into ``workdir`` and describe the result; a pure function of its inputs.
+
+    The output ``crop`` is the export (:func:`~earthx.processing.export.export`): its groups
+    and items one after the other into ``export.zip``, with the ``attachments`` `api` built.
+    """
     output = check_scope(recipe)
+    if isinstance(output, CropOutput):
+        if attachments is None:
+            raise UnsupportedRecipe("an export needs the attachments api builds for it")
+        return export(recipe, workdir=workdir, progress=progress, attachments=attachments)
     planned = plan_steps(recipe.steps, operators)
     passes = segments(planned)
     state = _Run(workdir, progress)

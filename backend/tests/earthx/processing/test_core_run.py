@@ -19,7 +19,7 @@ from earthx.processing.recipe import recipe_from_data, recipe_hash
 from earthx.readers import AssetRejected
 from tests.conftest import own_log_text
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import CROP, resolved
 from tests.earthx.processing.testops import OPERATORS
 
 WIDTH, HEIGHT = 1300, 1100  # more than one 1024 block in each direction
@@ -223,17 +223,13 @@ class TestRefusals:
         with pytest.raises(UnsupportedRecipe, match="one item"):
             _run(data, tmp_path)
 
-    def test_a_crop_output_is_described_not_run(self, tmp_path: Path) -> None:
-        data = _recipe([])
-        data["output"] = {
-            "kind": "crop",
-            "format": "cog",
-            "resolution_factor": 1,
-            "extent": "bbox(aoi ∩ footprints)",
-            "mask": "file",
-        }
-        with pytest.raises(UnsupportedRecipe):
+    def test_a_crop_is_an_export_and_needs_its_attachments(self, tmp_path: Path) -> None:
+        data = _recipe([], assets=("red",), scale=None, offset=None)
+        data["output"] = dict(CROP)
+        data["inputs"][0]["footprints"] = {"ITEM_A": None}
+        with pytest.raises(UnsupportedRecipe, match="attachments"):
             _run(data, tmp_path)
+        assert list(tmp_path.iterdir()) == []
 
     def test_assets_on_different_grids(
         self, tmp_path: Path, bands: dict[str, Path], monkeypatch: pytest.MonkeyPatch
