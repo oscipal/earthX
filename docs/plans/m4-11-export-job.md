@@ -360,10 +360,56 @@ einen eigenen Weg und eine eigene Messung.
 
 ## 9. Prüfanleitung für Otto (M4-11a, nach dem Merge, PowerShell)
 
-Das Angebot im Dialog kommt mit M4-11b. Bis dahin geht der Export über die
-Job-Schnittstelle; die Anleitung im PR nennt die Befehle (Auftrag mit einer AOI
-über mehr als eine ganze Sentinel-2-Kachel, Status, `export.zip` herunterladen,
-Inhalt mit `gdalinfo` ansehen, Gegenprobe mit kleiner AOI über den Zuschnitt).
+Das Angebot im Dialog kommt mit M4-11b; bis dahin geht der Export über die
+Job-Schnittstelle. Die Fläche wählst du selbst: ein Rechteck von etwa 1 × 1 Grad
+(mehr als eine Sentinel-2-Kachel), die Werte unten sind Platzhalter.
+
+```powershell
+docker compose up -d --build
+docker compose ps        # api, tiler, worker, objectstore: healthy
+
+$W, $S, $E, $N = 10.0, 49.0, 11.0, 50.0          # Platzhalter: eigene Fläche eintragen
+$aoi = @{ type = 'Polygon'; coordinates = @(,@(@($W,$S), @($E,$S), @($E,$N), @($W,$N), @($W,$S))) }
+$search = @{ collections = @('sentinel-2-c1-l2a'); intersects = $aoi
+             datetime = '2025-07-01T00:00:00Z/2025-07-31T23:59:59Z'; limit = 100 } | ConvertTo-Json -Depth 10
+$items = (Invoke-RestMethod -Method Post -Uri http://localhost:8000/stac/search `
+          -ContentType application/json -Body $search).features
+$day = $items[0].properties.datetime.Substring(0, 10)          # ein Überflug
+$group = @($items | Where-Object { $_.properties.datetime.StartsWith($day) } | ForEach-Object id)
+$group.Count
+
+# 1) Der Zuschnitt sagt 413 und bietet den Job an
+$crop = @{ groups = @(,$group); assets = @('visual'); aoi = $aoi } | ConvertTo-Json -Depth 10
+[IO.File]::WriteAllText("$PWD\crop.json", $crop)       # UTF-8 ohne BOM
+curl.exe -s -i -X POST -H "Content-Type: application/json" --data-binary "@crop.json" `
+  http://localhost:8001/collections/sentinel-2-c1-l2a/download -o crop-answer.txt
+Get-Content crop-answer.txt -TotalCount 12        # HTTP 413, X-Export-Job: available, detail mit MB
+
+# 2) Derselbe Export als Job
+$order = @{ recipe_version = 1; aoi = $aoi; steps = @()
+            inputs = @(@{ name = 'input'; dataset = 'sentinel-2-c1-l2a'; groups = @(,$group); assets = @('visual') })
+            output = @{ kind = 'crop'; format = 'cog'; resolution_factor = 1
+                        extent = 'bbox(aoi ∩ footprints)'; mask = 'file' } }
+$body = @{ inputs = @{ recipe = $order } } | ConvertTo-Json -Depth 12
+$job = Invoke-RestMethod -Method Post -Uri http://localhost:8000/processing/processes/recipe/execution `
+       -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+do { Start-Sleep 5; $s = Invoke-RestMethod "http://localhost:8000/processing/jobs/$($job.jobID)"; "$($s.status) $($s.progress)" } `
+  while ($s.status -in 'accepted', 'running')
+
+# 3) Herunterladen, auspacken, ansehen
+Invoke-RestMethod "http://localhost:8000/processing/jobs/$($job.jobID)/results"
+Invoke-WebRequest "http://localhost:8000/processing/jobs/$($job.jobID)/results/export.zip" -OutFile export.zip
+Expand-Archive export.zip -DestinationPath export -Force; Get-ChildItem export -Recurse
+Get-Content export\ATTRIBUTION.txt              # die .tif-Dateien in QGIS öffnen: EPSG:4326, Maske daneben
+```
+
+Zu sehen: `413` mit `X-Export-Job: available`; der Job läuft mit Fortschritt
+bis `successful`; im ZIP je Asset Daten und Maske (bei mehreren Gruppen in
+`group-NN/`), `aoi.geojson`, `ATTRIBUTION.txt`, `recipe.json` (mit `recipe_id`,
+`provenance.kind = "job"`, `footprints`), `citation.bib`. Gegenprobe: dieselbe
+Auswahl mit einer kleinen Fläche (etwa 0,1 × 0,1 Grad) lädt direkt als ZIP, ohne
+Job, mit denselben Dateinamen. Ein abgebrochener Download des ZIP lässt sich im
+Browser fortsetzen (Range, §3.9).
 
 ---
 
@@ -397,3 +443,46 @@ Inhalt mit `gdalinfo` ansehen, Gegenprobe mit kleiner AOI über den Zuschnitt).
   Items nacheinander verarbeiten; für andere Ausgabeformen bleibt die
   Abweisung. Die Speichergrenze gilt je Item, belegt mit einem Test über zwei
   Items.
+
+
+---
+
+## 11. Umsetzung M4-11a (08.10.2026)
+
+**Gebaut** wie §3. Commits: Regeln nach `access/crop_rules.py`; Footprints und
+Provenienz-Dokument im Rezept; Schätzung und Deckel; Ausgabe `crop` im Kern;
+`jobs` (eigener Lauf, Begleitdateien, Migration `007`, Upload je Ausgabe);
+Annahme; Job-Schnittstelle; Kennung im `413`; Range im Smoke-Test; Doku.
+
+**Befunde und Auslegungen:**
+
+1. **Footprints im Rezept** (§3.3, `adr/0014` §15e): nicht in §8 gefragt, aber
+   nötig, damit der Kern die Ausdehnung des Zuschnitts kennt und das Rezept
+   vollständig bleibt. Nur für `crop`; Hash und `recipe.json` der
+   Raster-Rezepte unverändert (die festen Hashwerte aus M4-07a halten).
+2. **Lesecache je Item.** Gemessen (6144², drei Bänder `uint8`, eigener
+   Prozess): ein Item 353–357 MB, zwei Items zuerst 419–424 MB, drei 506 MB.
+   Ursache: `VSI_CACHE_SIZE` (64 MB, `readers.process_gdal_options`) gilt je
+   geöffneter Datei; der Zuschnitt öffnet die Items nacheinander, der Export
+   hält die einer Gruppe gleichzeitig offen. Der Warp-Puffer war es nicht
+   (gleiche Zahlen mit 8 MB `warp_mem_limit`), reines rasterio mit zwei
+   `WarpedVRT` kostete +7 MB. **Lösung:** Die Items einer Gruppe teilen sich das
+   Budget eines Items (64 MB / Zahl der Items, mindestens 1 MB). Danach: eins
+   355–357 MB, zwei 361–364 MB, acht 375 MB. Der Test über zwei Items erlaubt
+   höchstens +16 MB und 500 MB insgesamt.
+3. **Bitgleich**: Daten-COG und Maske gleichen dem Zuschnitt Byte für Byte, für
+   ein Item (dessen fensterweiser Weg), ein Mosaik aus zwei Items (der Weg über
+   `mosaic_reader`) und zwei Gruppen. Gegenprobe: mit vertauschter Reihenfolge
+   im Mosaik scheitern zwei der drei Fälle.
+4. **Mosaik ohne nodata:** Ein Item ohne nodata wird im Mosaik wie in
+   `rio_tiler.reader.read` über ein Alpha-Band maskiert, allein wie im
+   fensterweisen Weg des Zuschnitts. Im Test nicht belegt (alle synthetischen
+   Szenen haben nodata 0); betrifft etwa Kacheln des DEM, das heute je Kachel
+   eine Gruppe ist.
+5. **Notiz im ZIP:** Wie beim Zuschnitt nennt `ATTRIBUTION.txt` nur Gruppen, die
+   ganz wegfielen; einzelne Items, die in einer Gruppe wegfallen, nennt die
+   Antwort auf den Auftrag (`skippedItems`).
+6. **Abweichung von K3:** `aoi.geojson` ist eine dritte Begleitdatei, weil die
+   Herkunft aus `aoiProvenance` (F4) sonst nicht ins Kind käme.
+7. **Range (F2):** Der Beleg gegen Garage steht im Smoke-Test der CI
+   (`compose-topology`); in der Sitzung läuft kein Docker-Dienst.

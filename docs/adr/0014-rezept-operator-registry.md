@@ -1655,6 +1655,30 @@ nicht Teil von M4. Bis dahin erhebt die Plattform keinen Anspruch.
 
 ---
 
+## 15e. Nachtrag vom 2026-10-08: die Ausgabe `crop` im Kern (zu §4.2, §10.1; M4-11a)
+
+Otto hat M4-11 am 2026-10-08 freigegeben (`plans/m4-11-export-job.md` §10). Der
+Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Die Ausgabe `crop` wird gerechnet**, nicht nur beschrieben: Der Export-Job
+  läuft im Kern (`processing/export.py`), mit derselben Rasterregel wie der
+  synchrone Zuschnitt (`access/crop_rules.py`). Für dieselbe Auswahl sind Daten
+  und Masken bitgleich (Test). `run` verarbeitet für `crop` mehrere Gruppen und
+  Items nacheinander; für `raster` bleibt es bei einem Item (M4-07a F2).
+- **Footprints im Rezept (Auslegung, M4-11a):** Die Ausdehnung
+  `bbox(aoi ∩ footprints)` braucht die Footprints der Items; ohne sie wäre das
+  Rezept nicht vollständig (K2). Eine Eingabe mit der Ausgabe `crop` trägt
+  deshalb `footprints` (je Item die STAC-`geometry`, `null` ohne Polygon); jede
+  andere Ausgabe trägt keine. Ohne Footprints fällt das Feld aus der Ausgabe:
+  Hash und `recipe.json` der Raster-Rezepte ändern sich nicht. Auch die
+  `recipe.json` des synchronen Zuschnitts trägt sie.
+- **`recipe.json` eines Jobs** baut eine Funktion
+  (`processing.recipe.job_recipe_document`): `api` für den Link, das Kind für
+  das ZIP (K4).
+- **Deckel und Schätzung:** `estimate` rechnet einen Export wie
+  `plan_outputs` den Zuschnitt und weist über `MAX_EXPORT_JOB_BYTES` (5 GB, F5)
+  ab.
+
 ## 16. Quellen
 
 **Im Repo [P]**

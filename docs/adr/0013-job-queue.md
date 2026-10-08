@@ -1254,6 +1254,25 @@ Punkt 2).
 
 ---
 
+## 10b. Nachtrag vom 2026-10-08: ein Export hat immer einen eigenen Lauf (zu §5.1, §5.8; M4-11a)
+
+Otto hat M4-11 am 2026-10-08 freigegeben, F3 mit Option 1
+(`plans/m4-11-export-job.md` §10). Der Originaltext in §5.1 und §5.8 bleibt
+stehen; für Exporte gilt dieser Nachtrag.
+
+- Ein Auftrag mit der Ausgabe `crop` (Export) hängt sich nie an einen aktiven
+  Lauf und ist nie Cache-Treffer: Der Laufschlüssel enthält seine eigene
+  `recipe_id`, `cacheable` ist `false` (`jobs/submit.py`).
+- Grund: Das `export.zip` trägt die `recipe.json` dieses Auftrags (mit seiner
+  `recipe_id`), die Herkunft seiner Orts-AOI und sein Datum. Ein geteilter Lauf
+  zeigte sie einem zweiten Auftraggeber (`plans/m4-08a-jobs-queue.md` F4).
+- Der Lauf trägt die Begleitdateien, die `api` baut (`earthx_run.attachments`,
+  Migration `007`); `jobs` gibt sie ungelesen ans Kind. Das Kind meldet die
+  Dateien, die es hinterlässt (`result.tif` + `mask.tif` oder `export.zip`); der
+  Aufseher lädt nur diese beiden Formen hoch.
+- Kosten: Zwei gleiche Exporte rechnen doppelt. Raster-Aufträge teilen ihren
+  Lauf weiter wie in §5.1.
+
 ## 11. Quellen
 
 **Im Repo:**
