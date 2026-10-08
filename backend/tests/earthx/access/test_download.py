@@ -21,6 +21,7 @@ import rasterio
 from rio_tiler.errors import PointOutsideBounds
 from rio_tiler.models import ImageData
 
+from earthx.access import crop_rules
 from earthx.access import download as dl
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import LicenseInfo, LicenseTier
@@ -186,18 +187,18 @@ class TestAssetBytesPerPixel:
 
     def test_an_unknown_dtype_string_falls_back_conservatively(self) -> None:
         item = item_with(**{"raster:bands": [{"data_type": "int12-does-not-exist"}]})
-        assert dl._asset_bytes_per_pixel(item, "visual") == dl._FALLBACK_BYTES_PER_BAND
+        assert dl._asset_bytes_per_pixel(item, "visual") == crop_rules.FALLBACK_BYTES_PER_BAND
 
     def test_a_zarr_composite_key_is_counted_by_its_own_variables(self) -> None:
         """adr/0007 §12.11: `SR_10m:b04,b03,b02` names three variables in the key
         itself, even where — like every real EOPF item measured (plan §3) — the
         item carries no `raster:bands`/`bands` for it at all."""
         item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"SR_10m:b04,b03,b02": {}}}
-        assert dl._asset_bytes_per_pixel(item, "SR_10m:b04,b03,b02") == 3 * dl._FALLBACK_BYTES_PER_BAND
+        assert dl._asset_bytes_per_pixel(item, "SR_10m:b04,b03,b02") == 3 * crop_rules.FALLBACK_BYTES_PER_BAND
 
     def test_nothing_at_all_falls_back_to_the_conservative_band_count_too(self) -> None:
         item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"visual": {}}}
-        assert dl._asset_bytes_per_pixel(item, "visual") == dl._FALLBACK_BAND_COUNT * dl._FALLBACK_BYTES_PER_BAND
+        assert dl._asset_bytes_per_pixel(item, "visual") == crop_rules.FALLBACK_BYTES_PER_PIXEL
 
 
 class TestEstimateOutputDims:
@@ -260,7 +261,7 @@ class TestPlanOutputsAndCheckOutputSizeCap:
         planned = dl.plan_outputs([item], ["thumbnail"], aoi)
         assert planned[0].width == dl.MAX_OUTPUT_SIDE_PX
         assert planned[0].height == dl.MAX_OUTPUT_SIDE_PX
-        assert planned[0].bytes_per_pixel == dl._FALLBACK_BAND_COUNT * dl._FALLBACK_BYTES_PER_BAND
+        assert planned[0].bytes_per_pixel == crop_rules.FALLBACK_BYTES_PER_PIXEL
 
     def test_the_finest_gsd_among_several_items_is_used(self) -> None:
         """A mosaic is still one file (module docstring) — the size that matters is

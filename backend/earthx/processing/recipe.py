@@ -42,7 +42,7 @@ from shapely.errors import ShapelyError
 from shapely.geometry import shape as shapely_shape
 
 import earthx
-from earthx.access.download import RESOLUTION_FACTORS
+from earthx.access.crop_rules import RESOLUTION_FACTORS
 from earthx.access.resolve import ReaderKind, ResolvedAsset
 from earthx.processing.errors import RecipeInvalid, UnknownOperator
 from earthx.readers import hosts_for

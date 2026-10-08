@@ -9,7 +9,7 @@
   bounds)`` in the input's own grid, snapped outward to its pixels (approved F9;
   the raster bounds stand in for the footprints, which the core does not see).
 * :func:`estimate` — the cost shown before a run, from AOI, ``gsd`` and data
-  type, the same way ``access.download.plan_outputs`` estimates a crop (F8).
+  type, with the rules the crop uses (``access.crop_rules``, F8).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from rasterio.windows import Window
 from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 
-from earthx.access.download import MAX_OUTPUT_SIDE_PX, estimate_output_dims
+from earthx.access.crop_rules import MAX_OUTPUT_SIDE_PX, estimate_output_dims
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.recipe import Band, Recipe, Step
