@@ -488,7 +488,12 @@ Annahme; Job-Schnittstelle; Kennung im `413`; Range im Smoke-Test; Doku.
 6. **Abweichung von K3:** `aoi.geojson` ist eine dritte Begleitdatei, weil die
    Herkunft aus `aoiProvenance` (F4) sonst nicht ins Kind käme.
 7. **Range (F2):** Der Beleg gegen Garage steht im Smoke-Test der CI
-   (`compose-topology`); in der Sitzung läuft kein Docker-Dienst.
+   (`compose-topology`); in der Sitzung läuft kein Docker-Dienst. Belegt im
+   CI-Lauf: `Range: bytes=0-n` und `bytes=n-` geben `206` mit `Content-Range`,
+   beide Teile ergeben die Datei. Befund: Garage setzt
+   `response-content-disposition` nur auf die volle Antwort (`200`), nicht auf
+   `206`; der Browser behält beim Fortsetzen den Namen der ersten Antwort. Der
+   Smoke-Test gibt das als Info-Zeile aus.
 8. **Platte (Review):** „Summe + größte Datei“ aus §3.5 war zu knapp. Gemessen
    (zwei Gruppen, 0,1 MB fertige Dateien): 4,8 MB Spitze. Während ein Ausgang
    geschrieben wird, liegen dort das unkomprimierte GeoTIFF (auf volle
