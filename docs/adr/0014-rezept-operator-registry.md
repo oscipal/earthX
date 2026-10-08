@@ -1678,6 +1678,12 @@ Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.
 - **Deckel und Schätzung:** `estimate` rechnet einen Export wie
   `plan_outputs` den Zuschnitt und weist über `MAX_EXPORT_JOB_BYTES` (5 GB, F5)
   ab.
+- **Zu §4.3, Versionierung (Otto, 2026-10-08):** `recipe_version` bleibt 1.
+  `footprints` ist für `output.kind = "crop"` ab M4-11a (PR #133) Pflicht.
+  `recipe.json`-Dateien des Zuschnitts von davor gelten nicht als Rezept: Sie
+  entstanden vor der ersten Veröffentlichung (seit M4-14) und werden nirgends
+  gelesen. Die Regel „inkompatible Änderung erhöht die Version“ gilt ab hier
+  wieder ohne Ausnahme.
 
 ## 16. Quellen
 
