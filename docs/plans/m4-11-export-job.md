@@ -523,3 +523,33 @@ Annahme; Job-Schnittstelle; Kennung im `413`; Range im Smoke-Test; Doku.
     **Otto, 08.10.2026:** bei Version 1 bleiben; Nachtrag in `adr/0014` §15e.
     Die eigenen Festlegungen (Footprints, `aoi.geojson`, Laufzeit-Schätzung)
     sind angenommen.
+12. **Plattenprüfung vor dem Lauf (Otto, 08.10.2026).** `jobs/submit.py`
+    schätzt den Bedarf aus dem Rezept (`processing.plan.disk_needed`) und legt
+    ihn am Lauf ab (`earthx_run.disk_bytes`, Migration `008`). Der Aufseher
+    vergleicht ihn vor dem Start des Kindes mit dem freien Platz im
+    Arbeitsordner; reicht er nicht, endet der Lauf sofort mit `disk_space`, ohne
+    zweiten Versuch, Titel für den Nutzer: „The worker has too little disk space
+    for this job; choose a smaller area or fewer assets, or try later“ (`500`
+    nach M4-08b F5). Der Aufseher lädt dafür `processing` nicht (Test K3 von
+    M4-08a bleibt). Formel:
+
+    ```
+    Bedarf = ⌈4/3 × fertige Dateien⌉ + 2 × Rohgröße des größten Ausgangs + 256 MB
+    ```
+
+    - **fertige Dateien:** die geplante Ausgabe roh, Daten und Maske
+      (`PlannedOutput.total_bytes`), × 4/3 für die Übersichten eines COG;
+      deflate macht die Dateien nur kleiner;
+    - **Rohgröße des größten Ausgangs:** sein unkomprimiertes Zwischen-TIFF,
+      auf volle 1024er Blöcke aufgefüllt; beim Export die Datendatei einer
+      Gruppe und eines Assets, beim Raster-Lauf der float64-Pass über alle
+      Bänder; doppelt wegen der temporären Datei von `cog_translate`
+      (Punkt 8);
+    - **Reserve** 256 MB [A] (`DISK_RESERVE_BYTES`): Rezept, Begleitdateien,
+      kleine Dateien von GDAL und rio-cogeo.
+
+    Belegt: Die gemessene Spitze des Tests aus Punkt 8 liegt unter Bedarf minus
+    Reserve. Der Aufseher-Test hängt den freien Platz ein: ein Byte zu wenig →
+    `failed`/`disk_space`, Versuch 1, kein Kind, nichts hochgeladen; genau
+    genug → `successful`. Gegenprobe ohne die Prüfung: Die beiden Tests mit zu
+    wenig Platz scheitern.
