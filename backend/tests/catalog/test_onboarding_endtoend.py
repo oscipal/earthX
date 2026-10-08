@@ -1,8 +1,8 @@
-"""Onboarding checklist point 9, per registry entry: search → display → clipped download.
+"""Search → display → clipped download, per registry entry, against fixtures.
 
-Version v1 of the point (D4, 20.09.2026): until there is a processing step (M4),
-the chain that stands in for "at least one processing step tested end to end" is
-**search → display → clipped download**, against fixtures.
+This was onboarding checklist point 9 in version v1 (D4, 20.09.2026). Since M4-15 the
+point is version v2 and lives in ``test_onboarding_processing.py``; this chain stays
+because it is the one test of the clip.
 
 The depth is F4 (a) of the plan: the search runs through the entry's own adapter,
 display and download through the real routes on a ``TestClient``. ``/stac/search``
@@ -34,7 +34,6 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, ItemHolding, group_key
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain, UnsupportedFormat
-from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST
 
 pytestmark = pytest.mark.anyio
 
@@ -68,12 +67,6 @@ def client(chain: Chain) -> TestClient:
     app.state.earthx_resolver = synthetic_chain.mini_zarr.from_memory
     with TestClient(app) as test_client:
         yield test_client
-
-
-def test_this_module_is_the_one_the_checklist_points_at() -> None:
-    """Point 9 is checked here, and the checklist says so — in both directions."""
-    assert CHECKED_ELSEWHERE[9] == __name__
-    assert "Suche -> Anzeige -> Zuschnitt-Download" in CHECKLIST[9]
 
 
 # --------------------------------------------------------------------------------

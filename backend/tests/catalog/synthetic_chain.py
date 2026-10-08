@@ -111,7 +111,7 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     if config.source.item_holding is ItemHolding.MATERIALIZED:
         # M3-11b F9: link 1 is *creation*, not search — a materialized entry has
         # no search API to answer one. `_build_materialized` builds `chain.item`
-        # by hand, the same way `_stac_item` below does for a federated entry;
+        # by hand, the same way `stac_item` below does for a federated entry;
         # the real adapter (`adapters.cop_dem_bucket.materialize_items`) is
         # exercised separately, against a canned bucket of its own
         # (`test_onboarding_endtoend.py`'s replacement for link 1).
@@ -125,9 +125,9 @@ def build(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         raise UnsupportedFormat(f"no synthetic asset for format {config.format.value!r}")
 
     synthetic = replace(config, source=replace(config.source, asset_hosts=(HOST,)))
-    item = _stac_item(item_asset_key(config, render_asset), href, bounds, gsd)
-    gateway, searched = _gateway_answering_search(synthetic, item)
-    _resolve_from_memory(monkeypatch)
+    item = stac_item(item_asset_key(config, render_asset), href, bounds, gsd)
+    gateway, searched = gateway_answering_search(synthetic, item)
+    resolve_from_memory(monkeypatch)
 
     return Chain(
         config=synthetic,
@@ -169,7 +169,7 @@ def _zarr_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
     return href, bounds, mini_zarr_composite.RESOLUTION_M, lambda: [str(request.url) for request in requests]
 
 
-def _stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float) -> dict[str, Any]:
+def stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float) -> dict[str, Any]:
     """The item the synthetic source answers with.
 
     It carries a real footprint in WGS84, because the download route filters the
@@ -206,7 +206,7 @@ def _stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float)
     }
 
 
-def _gateway_answering_search(
+def gateway_answering_search(
     config: DatasetConfig, item: dict[str, Any]
 ) -> tuple[Gateway, list[httpx.Request]]:
     """A gateway that answers any search with one page holding ``item``."""
@@ -237,7 +237,7 @@ def _gateway_answering_search(
     )
 
 
-def _resolve_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+def resolve_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
     """Both readers resolve from memory. ``tests/conftest.py`` forbids a real lookup."""
     for module in ("earthx.readers.cog", "earthx.readers.zarr_reader"):
         monkeypatch.setattr(
@@ -248,10 +248,10 @@ def _resolve_from_memory(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _aoi(bounds: tuple[float, ...]) -> dict[str, Any]:
     """A small box in the middle of the data, as WGS84 GeoJSON."""
-    return _aoi_wgs84(transform_bounds(CRS, WGS84_CRS, *bounds))
+    return aoi_wgs84(transform_bounds(CRS, WGS84_CRS, *bounds))
 
 
-def _aoi_wgs84(bounds: tuple[float, float, float, float]) -> dict[str, Any]:
+def aoi_wgs84(bounds: tuple[float, float, float, float]) -> dict[str, Any]:
     """The same shrink-to-quarter box as :func:`_aoi`, for bounds already in WGS84
     (the DEM branch, whose nominal cell needs no transform, M3-11b F3)."""
     west, south, east, north = bounds
@@ -300,10 +300,10 @@ def _covering_tile_wgs84(bounds: tuple[float, float, float, float], viewer: View
 # --------------------------------------------------------------------------------
 
 
-def _dem_item(
+def dem_item(
     name: str, bbox: tuple[float, float, float, float], *, config: DatasetConfig, gsd: float
 ) -> dict[str, Any]:
-    """A DEM-shaped item, hand-built like :func:`_stac_item` is for a federated
+    """A DEM-shaped item, hand-built like :func:`stac_item` is for a federated
     entry: no `datetime`, a `start_/end_datetime` period instead (M3-11b F1), and
     its geometry the tile's own *nominal* cell (F3) — large enough to contain the
     synthetic COG's real footprint (`mini_dem.BOUNDS` is exactly that cell), which
@@ -332,7 +332,7 @@ def _dem_item(
     }
 
 
-def _gateway_answering_materialize(config: DatasetConfig, item: dict[str, Any]) -> tuple[Gateway, list[httpx.Request]]:
+def gateway_answering_materialize(config: DatasetConfig, item: dict[str, Any]) -> tuple[Gateway, list[httpx.Request]]:
     """A gateway that answers `tileList.txt`, `blacklist.txt` and the bucket
     listing with exactly the one tile `item` names — enough for
     `adapters.materialize_items` to build that same item for real."""
@@ -375,16 +375,16 @@ def _build_materialized(
     # (`config.source.endpoint`/`.tif`): `vsicurl_path` is monkeypatched above to
     # serve the local file regardless of the path it is asked for.
     synthetic = replace(config, source=replace(config.source, endpoint=f"https://{HOST}", asset_hosts=(HOST,)))
-    item = _dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
-    gateway, searched = _gateway_answering_materialize(synthetic, item)
-    _resolve_from_memory(monkeypatch)
+    item = dem_item(mini_dem.TILE_NAME, mini_dem.BOUNDS, config=synthetic, gsd=30.0)
+    gateway, searched = gateway_answering_materialize(synthetic, item)
+    resolve_from_memory(monkeypatch)
 
     return Chain(
         config=synthetic,
         registry=DatasetRegistry((synthetic,)),
         item=item,
         render_asset=render_asset,
-        aoi=_aoi_wgs84(mini_dem.BOUNDS),
+        aoi=aoi_wgs84(mini_dem.BOUNDS),
         tile=_covering_tile_wgs84(mini_dem.BOUNDS, config.viewer),
         gateway=gateway,
         searched=searched,

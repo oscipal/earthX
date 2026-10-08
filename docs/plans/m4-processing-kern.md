@@ -184,7 +184,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | offen |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | offen |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | PR #129 |
-| M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | offen |
+| M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | PR #135 (Entwurf) |
 | M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a | Umriss |
 | M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a | Umriss |
 | M4-18 | Operatoren Masking und Normalisierung | M4b | A | Sonnet (hoch) | M4-07a | Umriss |
