@@ -147,8 +147,9 @@ je Pixel der Items, Daten plus Maske. Über `MAX_EXPORT_JOB_BYTES` wirft es
   die Spitze wächst nicht mit der Zahl der Items (Test über zwei Items).
 - **ZIP:** `export.zip` mit den Namen des Zuschnitts, `.tif` als `ZIP_STORED`
   (F2), Textdateien deflate, ZIP64; jede Datei wird nach dem Hinzufügen
-  gelöscht (Spitze auf der Platte ≈ Summe + größte Datei); CRC-Prüfung zum
-  Schluss. `recipe.json` schreibt das Kind aus dem eigenen Rezept (mit
+  gelöscht; CRC-Prüfung zum Schluss. Spitze auf der Platte: die fertigen
+  Dateien plus höchstens das Doppelte der unkomprimierten, auf 1024er Kacheln
+  aufgefüllten Rohgröße des größten Ausgangs (§11 Punkt 8). `recipe.json` schreibt das Kind aus dem eigenen Rezept (mit
   `recipe_id`, F3) und der Provenienz des Laufs; `ATTRIBUTION.txt`,
   `citation.bib` und `aoi.geojson` kommen fertig von `api` (§3.6).
 - Fortschritt je Block über alle Gruppen und Assets, das Packen als letzter
@@ -204,7 +205,7 @@ zwei Teile ergeben das Ganze. In der Sitzung läuft kein Docker-Dienst.
 | Grenze | Schätzung genau 500 MB → Zuschnitt läuft; 500 MB + 1 Pixel → `413` mit `X-Export-Job: available`; über 5 GB → `413` ohne Kennung, und die Annahme weist denselben Auftrag mit `413` ab |
 | bitgleich | synthetische COGs, Deckel des Zuschnitts im Test gesenkt: ein Item, Mosaik aus zwei Items, zwei Gruppen, Orts-AOI. Synchrones ZIP gegen `export.zip`: Daten und Masken bytegleich, `aoi.geojson` und `citation.bib` gleich, `ATTRIBUTION.txt` gleich bis auf die Zeile `Generated` |
 | Speicher je Item | Export einer großen synthetischen COG im eigenen Prozess, einmal mit einem, einmal mit zwei Items: `VmHWM` unter der Grenze, und zwei Items brauchen nicht mehr als eins plus einen kleinen Rest |
-| Platte | Spitze im Arbeitsordner ≤ Summe der Dateien + größte Datei |
+| Platte | Spitze im Arbeitsordner ≤ fertige Dateien + 2 × aufgefüllte Rohgröße des größten Ausgangs (§11 Punkt 8) |
 | Abbruch | `RunCancelled` mitten im Mosaik → Arbeitsordner leer |
 | eigener Lauf | zwei gleiche Exporte → zwei Läufe, zwei `result_id`; ein Raster-Auftrag teilt weiter |
 | zweckfremd | Export mit Schritten, mit Faktor ≠ 1, Zarr, `aoiProvenance` zu einem Raster-Auftrag, falsche Herkunftsfelder, unbekannter Name in den Begleitdateien, `export.zip` eines Raster-Jobs → `400`/`404`/`422` |
@@ -257,8 +258,10 @@ und rund 900 Zeilen Tests. Commits, je eine Sache:
 - **Bitgleichheit im Mosaik:** `mosaic_reader` liest je Item mit `part()` in
   dessen eigenem Raster, der Kern auf dem Raster des ersten Items. Für Items mit
   gleicher Auflösung im Zielraster ist das dasselbe; der Test deckt es ab.
-- **Platte des Workers:** Der Arbeitsordner liegt im Container; zwei Slots mit
-  je einem Export am Deckel brauchen bis zu rund 2 × (5 GB + größte Datei).
+- **Platte des Workers:** Der Arbeitsordner liegt im Container. Ein Export
+  braucht seine fertigen Dateien plus bis zum Doppelten der Rohgröße seines
+  größten Ausgangs; liegt ein Export von 5 GB in einer einzigen Datei, sind das
+  im schlimmsten Fall rund 10 GB plus COG, je Slot (§11 Punkt 8).
 - **Slots:** Ein großer Export belegt einen Slot für Minuten.
 - **Speicherplatz im Objektspeicher:** 7 Tage × Exporte bis zum Deckel; ohne
   Konten keine Grenze je Absender (Q9, M6).
@@ -486,3 +489,29 @@ Annahme; Job-Schnittstelle; Kennung im `413`; Range im Smoke-Test; Doku.
    Herkunft aus `aoiProvenance` (F4) sonst nicht ins Kind käme.
 7. **Range (F2):** Der Beleg gegen Garage steht im Smoke-Test der CI
    (`compose-topology`); in der Sitzung läuft kein Docker-Dienst.
+8. **Platte (Review):** „Summe + größte Datei“ aus §3.5 war zu knapp. Gemessen
+   (zwei Gruppen, 0,1 MB fertige Dateien): 4,8 MB Spitze. Während ein Ausgang
+   geschrieben wird, liegen dort das unkomprimierte GeoTIFF (auf volle
+   1024er Kacheln aufgefüllt, wie beim Zuschnitt im Speicher) und die
+   temporäre Datei von `cog_translate` mit den Übersichten. Der Test hält die
+   Spitze unter fertige Dateien + 2 × aufgefüllte Rohgröße des größten Ausgangs.
+9. **Laufzeit (Review):** Die Zahl des Zuschnitts (0,046 s/MB) unterschätzte
+   Mosaike: gemessen ein Item 7,6–9,6 s, zwei 12,4–13,5 s, acht 36,6 s für
+   160 MB geplante Ausgabe (Items voll gelesen). Neu: 0,030 s/MB plus 0,025 s/MB
+   je Item der Gruppe, dazu 1 s je Asset; Schätzung damit 9,8 s bzw. 14,8 s.
+   Die Grenze ist weiter 2 × Schätzung, mindestens 10 min (`jobs/submit.py`);
+   das Netz ist nicht gemessen.
+10. **Weitere Befunde des Reviews, behoben:** ein einzelnes Surrogat in
+    `aoiProvenance` gab `500` (jetzt `400`, dazu Steuer- und Formatzeichen);
+    `outputs` wird gegen die Art des Auftrags geprüft; die Annahme filtert
+    Gruppen mit denselben Footprints, die ins Rezept gehen (sonst `500` im
+    Kern); der Link `recipe.json` eines Exports nimmt die Attribution aus dem
+    ZIP (vorher konnte sie sich über den Jahreswechsel unterscheiden);
+    hochgeladen wird nur, was zur Art des Laufs passt; doppelte Dateinamen und
+    Items mit anderen Bändern in einer Gruppe werden mit Namen abgewiesen.
+11. **Offen für Otto:** `footprints` ist für `crop` ein Pflichtfeld, bei
+    `recipe_version` 1. Nach `adr/0014` §4.3 erhöht eine inkompatible Änderung
+    die Version; eine `recipe.json` des Zuschnitts von vor diesem PR lässt sich
+    nicht mehr als Rezept lesen. Gelesen wird sie bisher nirgends (ein Auftrag
+    mit `resolved` wird abgewiesen), und sie gibt es erst seit M4-14
+    (07.10.2026). Vorschlag: bei Version 1 bleiben; sonst Version 2 für `crop`.
