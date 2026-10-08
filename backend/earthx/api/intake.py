@@ -67,6 +67,7 @@ from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier,
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import RecipeInvalid, UnknownOperator
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
+from earthx.processing.plan import check_bands
 from earthx.processing.recipe import (
     AppliedScaling,
     Band,
@@ -95,6 +96,7 @@ __all__ = [
     "accept_order",
     "check_recipe_hosts",
     "crop_recipe_json",
+    "describe_bands",
     "job_recipe_json",
 ]
 
@@ -224,6 +226,10 @@ async def _accept(
             502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}", "recipe"
         ) from None
     check_recipe_hosts(recipe, registry)
+    try:
+        check_bands(recipe, operators)
+    except RecipeInvalid as error:
+        raise OrderRefused(422, str(error), "applicable") from None
     return AcceptedOrder(recipe, cache_key(recipe) is not None, skipped)
 
 
@@ -462,6 +468,19 @@ def _scaling_of(target: _Target, bands: Sequence[Band]) -> str:
     if any(band.scaled for band in bands):
         return "item"
     return "store-cf" if target.ref.reader == "zarr" else "none"
+
+
+def describe_bands(item: Mapping[str, Any], config: DatasetConfig, ref: ResolvedAsset) -> tuple[list[Band], str]:
+    """The bands the item describes for ``ref`` and where their scaling comes from (``item``, ``store-cf``, ``none``).
+
+    The one reading of ``raster:bands`` the job and the tile share (adr/0014 §5.4,
+    F7): a tile that scaled differently from a job would break their agreement.
+    Raises :class:`OrderRefused` (502) for a description it cannot read.
+    """
+    separator = config.zarr.variable_separator if config.zarr is not None else None
+    target = _Target(item, ref, separator, Policy(allowed_hosts=frozenset(config.source.asset_hosts)))
+    bands = _bands_of(target)
+    return bands, _scaling_of(target, bands)
 
 
 def _usable_etag(value: str | None) -> str | None:

@@ -365,8 +365,13 @@ class DefaultRender:
     resampling: str
 
     def __post_init__(self) -> None:
-        if not self.assets and not self.expression:
-            raise ConfigError("default_render needs an asset or an expression")
+        if self.expression is not None:
+            # The tiler no longer takes a free `expression` (plan M4-09, F3): an expression is
+            # `op=band_math`, in physical values. Until M4-13 maps the standard visualisation
+            # onto `op`, a registry entry that carried one would be a visualisation that 400s.
+            raise ConfigError("default_render.expression is not served: the tiler takes op=band_math (M4-09)")
+        if not self.assets:
+            raise ConfigError("default_render needs an asset")
         for low, high in self.rescale or ():
             if low >= high:
                 raise ConfigError(f"default_render rescale ({low}, {high}) is empty or inverted")
