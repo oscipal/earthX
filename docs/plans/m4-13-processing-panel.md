@@ -20,7 +20,7 @@ B10, B11. Code auf `main` nach PR #132: `api/processing_route.py`,
 ## 1. Ergebnis in drei Sätzen
 
 Ein Panel baut aus dem Schema von `GET /processing/processes/recipe?dataset=…`
-für die aktuelle Auswahl (Datensatz, Überflüge, AOI) eine Schrittfolge aus den
+für die aktuelle Auswahl (Datensatz, eine Szene, AOI) eine Schrittfolge aus den
 Operatoren, die dieser Datensatz erlaubt, zeigt vor dem Start eine
 Kostenschätzung aus einer neuen Route und startet den Job über die
 vorhandene Job-API. Solange die Schritte einen Anfang mit T1-Operatoren haben,
@@ -56,34 +56,53 @@ Abfragen; ist er fertig, bietet das Panel `result.tif`, `mask.tif` und
   `properties` des Ergebnisses, darin `earthx:resampled`) und
   `GET /jobs/{jobID}/results/{name}` (`303` auf eine signierte URL, `410` nach
   Ablauf). Fehler sind `application/problem+json` mit `title` und `detail`.
+- **Ein Item je Job:** `processing.check_scope` (`core.py` Z. 171) nimmt nur
+  ein Item einer Gruppe einer Eingabe; mehr ist `422` („mosaics and several
+  groups come with M4-11/M4-12“), auch über `execution`
+  (`processing_route.py` Z. 498). Ein Überflug, dessen AOI zwei Kacheln
+  berührt, geht also heute nicht als Job (F8).
 - **Lücke 2:** Es gibt keine Route für die Schätzung vor dem Auftrag.
   `processing.plan.estimate(recipe, operators)` rechnet ohne Lesen aus AOI,
   `gsd` und Datentyp; `jobs/submit.py` nutzt es nur für den Laufzeitdeckel.
-  Es braucht ein angenommenes Rezept, also die Stufen 1–6 von `accept_order`
-  (Items holen, Assets auflösen); Stufe 7 (Fassung, bei COGs ohne Prüfsumme ein
-  `HEAD` je Asset) braucht die Schätzung nicht.
+  Es braucht ein Rezept, also die Stufen 1–6 von `accept_order` (Items holen,
+  Assets auflösen, Bänder lesen). Die Fassungen (Stufe 7, bei COGs ohne
+  Prüfsumme ein `HEAD` je Asset) braucht die Schätzung nicht; im Code laufen
+  sie aber **vor** dem Rezeptbau, `check_recipe_hosts` und `check_bands`
+  (`intake.py` Z. 200, 221, 228, 230).
 - Kachel-Route mit Operator (M4-09): `…/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=red&asset=nir&op=band_math&op_version=1&params=<JSON>`
   plus die üblichen `rescale`, `colormap_name`. `statistics`, `info`, `point`
   weisen `op` mit `400` ab. `tilejson.json` nennt die freigegebene Spanne aus
   `earthx:viewer`, nicht die native Ebene.
 - **Lücke 3:** Für Zarr-Datensätze ist der Asset-Schlüssel einer Variablen
   `<asset><Trenner><variable>` (`SR_10m:b04`); den Trenner
-  (`zarr.variable_separator`) gibt die Collection nicht heraus. Das Frontend
-  kennt ihn heute nur implizit aus `default_render.assets`.
+  (`zarr.variable_separator`) gibt keine Schnittstelle heraus (F9). Das
+  Frontend kennt ihn heute nur implizit aus `default_render.assets`.
+- **Bandangaben im Item:** Der EOPF-Adapter legt die Bandnamen nach
+  `eo:bands`, `raster:bands` trägt dann nur `nodata`, `data_type` und
+  `spatial_resolution` (`adapters/eopf_stac.py` Z. 257–269). Die Zahl der
+  Bänder eines COG steht in `raster:bands` bzw. `bands` (`intake.py`
+  Z. 404–418). Der Frontend-Typ `StacAsset` kennt keines dieser Felder
+  (`types.ts` Z. 8–22), nur `gsd`. `gsd` liest das Backend in der Reihenfolge
+  Asset-`gsd`, `raster:bands[0].spatial_resolution`, `properties.gsd`
+  (`access/download.py` Z. 409–424).
+- Alle drei Registry-Einträge haben die Lizenzstufe *processing* und erlauben
+  beide Operatoren (`catalog/datasets.py` Z. 109, 290, 488).
 
 **Frontend, vorhanden** (React 19, zustand, MapLibre, vitest mit jsdom, keine
 Testing Library; Komponententests mit `createRoot` und `act`):
 - Auswahl: `datasetId`, `groups`, `activeGroupIndex`, `selectedIds`, `aoi`
-  (`store.ts` Z. 539–680); `downloadRequestForSelection(dataset, groups, aoi)`
-  baut schon `groups` und `aoi` für den Zuschnitt. Der Auftrag braucht dieselben.
+  (`store.ts` Z. 539–680). `aoi` ist immer eine Fläche: Für einen Punkt hält
+  der Store das gepufferte Quadrat, `aoiPoint` nennt die Herkunft
+  (Z. 542–547). `downloadRequestForSelection(dataset, groups, aoi)`
+  (`download.ts` Z. 210) baut `groups` und `aoi` für den Zuschnitt.
 - Karte: `placeRaster` (`mapLayers.ts` Z. 176) legt Raster-Quellen an,
   `syncFocusRaster` (Z. 549) die Fokusansicht je Item; `mapZoom` und
   `viewportBbox` stehen im Store (`setMapViewport`, nur bei `moveend`).
 - Darstellung: `ViewerControls` mit Stretch, Colormap und „Apply“ (F18);
   „Auto stretch“ ruft `/statistics` — mit `op` wäre das ein `400`.
 - Lizenzstufe je Datensatz in `earthx:license_flags.tier` (`types.ts` Z. 137).
-- `api.ts`: `jsonOrThrow`, `HttpError` mit `retryAfter`; kein
-  `AbortController`. Kein Code zu `/processing`, `EventSource` oder `op=`.
+- `api.ts`: `jsonOrThrow` (nicht exportiert), `HttpError` mit `status`,
+  `detail`, `retryAfter`, ohne `title`; kein `AbortController`. Kein Code zu `/processing`, `EventSource` oder `op=`.
 - `vite.config.ts`: Proxy für `/stac`, `/coverage`, `/aoi`, `/geocode` (→ `api`)
   und `/collections` (→ `tiler`); `/processing` fehlt. Das Frontend läuft
   lokal über `npm run dev`; `docker-compose.yml` hat keinen Frontend-Dienst.
@@ -97,32 +116,41 @@ Testing Library; Komponententests mit `createRoot` und `act`):
 `POST /processing/processes/recipe/estimate`, Hülle und Grenzen wie
 `execution` (`_read_body`, `_unwrap`: 1 MiB, nur JSON, keine Eingabe per
 Referenz). Ablauf:
-- `intake.py`: `accept_order` wird in `prepare_order` (Stufen 1–6, ohne
-  `recipe_id` und ohne Fassung) und den Rest geteilt; `accept_order` ruft
-  `prepare_order` und hängt Stufe 7 an. Verhalten und Logs von `accept_order`
-  bleiben gleich (bestehende Tests grün).
-- Die Route ruft `prepare_order`, `check_recipe_hosts`, `check_scope` und
-  `plan.estimate` und antwortet `200`:
-  `{"estimate": {"inputPixels", "inputBytes", "assets", "outputPixels",
-  "outputBytes", "seconds", "units"}, "skippedItems": [...]}`.
-  Feldnamen nach F2 (1): `size` (Bytes der Ausgabe) und `duration` (ISO
-  8601) wie bei openEO, die übrigen eigen.
-  Abweisungen genau wie `execution` (gleiche Stufen, gleiche Codes); kein
-  `HEAD`, keine Zeile in der Queue, kein `recipe_id`.
+- `intake.py`: Die Stufen 1–6 (bis einschließlich `targets`) werden eine
+  eigene Funktion `_targets`, die `_accept` unverändert aufruft; Reihenfolge,
+  Abweisungen und Logs von `accept_order` bleiben gleich (bestehende Tests
+  grün). Neu daneben `estimate_order`: `_targets`, Rezept mit
+  `version: None` für jede Eingabe, ohne `recipe_id`, dann
+  `check_recipe_hosts` und `check_bands` wie in `_accept`.
+- Die Route ruft `estimate_order`, `check_scope` und `plan.estimate` und
+  antwortet `200` mit `Cache-Control: no-store` (die Zahlen hängen an der AOI):
+  `{"estimate": {"size", "duration", "outputPixels", "inputPixels",
+  "inputBytes", "assets", "units"}, "skippedItems": [...]}`.
+  `size` (Bytes der Ausgabe) und `duration` (ISO 8601, nur Sekunden,
+  `PT12.3S`) heißen wie bei openEO (F2), die übrigen sind eigen.
+- **Abweisungen:** dieselben Stufen und Codes wie `execution` bis Stufe 6
+  und für `check_scope`. Was erst Stufe 7 findet (ein Asset, das beim `HEAD`
+  fehlt, `404`/`410` → `422`; ein Fehler der Quelle → `502`), erkennt die
+  Schätzung **nicht**; dann scheitert der Start trotz Schätzung, und das Panel
+  zeigt den Fehler des Starts. Kein `HEAD`, keine Zeile in der Queue, kein
+  `recipe_id`.
 - Log: eine Zeile „order estimated“ mit Datensatz, Zahl der Items und Assets,
   Operatoren und den gerundeten Zahlen; nie AOI, Adresse, Hash (`adr/0014`
   §4.7).
 - Die API-Beschreibung nennt die Route als Erweiterung außerhalb der OGC-Form
   („no conformance claimed“ gilt ohnehin, `adr/0014` §15d).
 
-### 3.2 Backend: Angaben für das Panel (K1, K2, K3)
+### 3.2 Backend: Angaben für das Panel (K1, F9, K3)
 
 - **K1:** Jede Definition `step_<op>_v<n>` trägt zusätzlich
   `"x-earthx-tiers": ["T1", "T2"]` und `"x-earthx-kind": "pixel" | "grid"`.
   JSON Schema 2020-12 lässt unbekannte Schlüsselwörter als Anmerkung zu; die
   Prüfung in `parse_request` sieht sie nicht.
-- **K2:** Die Collection trägt `earthx:zarr` mit `variable_separator`, wenn
-  der Eintrag ein `zarr`-Feld hat, sonst `null` (B10: nichts geraten).
+- **Trenner der Zarr-Variablen nach F9 (1):** Mit `?dataset=` trägt
+  `InputRequest.assets` im Schema `"x-earthx-variable-separator": ":"`, wenn
+  der Eintrag ein `zarr`-Feld hat; sonst fehlt der Schlüssel (B10: nichts
+  geraten). Die Angabe gehört zum Auftrag, also in dessen Schema, nicht in
+  die Collection.
 - **K3:** Ein Backend-Test vergleicht `process_description` für jeden
   Registry-Eintrag mit einer Datei `frontend/src/fixtures/processes/<id>.json`;
   die Frontend-Tests bauen das Formular aus genau diesen Dateien. Ändert sich
@@ -134,9 +162,9 @@ Referenz). Ablauf:
 
 - `fetchProcess(datasetId)`, `estimateOrder(order)`, `placeJob(order)`,
   `fetchJob(jobId)`, `dismissJob(jobId)`, `fetchResults(jobId)`,
-  `resultUrl(jobId, name)`. Alle über `jsonOrThrow`; Problemdokumente werden
-  als `title` + `detail` gelesen (`errorDetail` kennt `detail` schon),
-  `Retry-After` geht in `HttpError.retryAfter`.
+  `resultUrl(jobId, name)`. Alle über `jsonOrThrow` (dafür exportiert);
+  `HttpError` bekommt `title` aus dem Problemdokument, `detail` liest
+  `errorDetail` schon, `Retry-After` geht in `HttpError.retryAfter`.
 - `AbortController` für Schätzung und Schema, damit ein Wechsel der Auswahl
   eine laufende Anfrage verwirft.
 - Der Auftrag:
@@ -172,9 +200,16 @@ Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
   `processing` ist (B11), keine Fläche als AOI gezeichnet ist (ein Punkt reicht
   nicht) oder nichts ausgewählt ist. Das Panel ist ein `Draggable` wie die
   `ViewerControls`, mit den vorhandenen HUD-Klassen.
+- **AOI:** wie beim Zuschnitt, also auch das gepufferte Quadrat eines Punkts
+  (K11).
+- **Ein Item (F8 (1)):** Der Auftrag nennt genau ein Item. Von den Items der
+  aktiven Gruppe kommen die in Frage, deren Footprint die AOI schneidet. Ist
+  es eines, wird es genommen; sind es mehrere, wählt der Nutzer eines aus, und
+  das Panel sagt „The result covers only this scene; several scenes in one job
+  come with a later version.“
 - **Inhalt, von oben nach unten:**
-  1. Auswahl in Worten: Datensatz, Zahl der Überflüge und Items (nie die AOI
-     als Zahlen).
+  1. Auswahl in Worten: Datensatz, Datum, gewählte Szene (nie die AOI als
+     Zahlen).
   2. **Bands:** Liste der Bandnamen, die die Auswahl bietet (K7), als Chips;
      ein Klick fügt den Namen in den Ausdruck ein. Die Assets des Auftrags sind
      die Bänder, die der Ausdruck nennt bzw. die der Nutzer ausgewählt hat
@@ -191,8 +226,13 @@ Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
   7. **Jobs:** je gestartetem Job eine Zeile mit Status, Fortschrittsbalken,
      „Cancel“ (`DELETE`), Ablaufzeit; fertig: Links „Result (COG)“, „Mask“,
      „Recipe“ und der Hinweis „Resampled to a common grid“, wenn
-     `earthx:resampled` gesetzt ist (Prinzip 2.9); gescheitert: `title` aus dem
-     Problemdokument.
+     `earthx:resampled` `true` ist (Prinzip 2.9; das Feld steht immer im
+     Ergebnis, `core.py` Z. 290); gescheitert: `title` aus dem
+     Problemdokument von `/results`.
+- **Download (K6):** einfache Links auf
+  `/processing/jobs/{jobID}/results/{name}`; der Browser folgt dem `303`. Ab
+  `expires` minus 60 s (`MIN_REMAINING`) zeigt die Zeile „Expired“ statt der
+  Links, weil ein Link einen `410` nur als JSON-Seite zeigen könnte.
 - **Store:** ein Teil `processing` mit Schema je Datensatz, Entwurf der
   Schritte, Schätzung, Jobs; Aktionen `openProcessing`, `addStep`,
   `updateStep`, `moveStep`, `removeStep`, `reviewOrder`, `startJob`,
@@ -202,38 +242,56 @@ Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
 
 `jobTracker.ts`:
 - `EventSource` auf `/processing/jobs/{jobID}/events`, Ereignis `status`,
-  Daten als `statusInfo` geprüft (unbekannte Form wird verworfen, nicht
-  angezeigt). Beim Endstatus `close()`, sonst verbände sich `EventSource`
-  von selbst neu.
-- **Rückfall auf Abfragen:** fehlt `EventSource`, oder meldet sie dreimal in
-  Folge einen Fehler, fragt der Tracker `GET /jobs/{jobID}` alle 2 s, mit
-  `Retry-After`, wenn der Server eines schickt. `404` heißt „gone“ (abgelaufen
-  oder verworfen) und beendet das Verfolgen.
+  Daten als `statusInfo` geprüft; eine unbekannte Form oder eine fremde
+  `jobID` wird verworfen, nicht angezeigt. Beim Endstatus `close()`, sonst
+  verbände sich `EventSource` von selbst neu.
+- **Rückfall auf Abfragen:** Weist der Server die Verbindung ab (`404`, `503`
+  bei zu vielen Verfolgern; beides vor dem Stream,
+  `processing_route.py` Z. 673–684), gibt `EventSource` ohne Neuverbindung
+  auf (`readyState === CLOSED`). Dann wechselt der Tracker **sofort** auf
+  Abfragen. Bei einem Abbruch mitten im Stream verbindet `EventSource` selbst
+  neu (`CONNECTING`); nach drei solchen Fehlern in Folge wechselt der Tracker
+  ebenfalls. Ohne `EventSource` fragt er von Anfang an. Abfragen:
+  `GET /jobs/{jobID}` alle 2 s, mit `Retry-After`, wenn der Server eines
+  schickt. `404` heißt „gone“ (abgelaufen oder verworfen) und beendet das
+  Verfolgen.
 - Jobs werden nach F5 (1) in `sessionStorage` gehalten: nur `jobID` und
   `expires`, kein Auftrag, keine AOI (Q8). Nach dem Neuladen nimmt der Tracker
   sie wieder auf; abgelaufene fallen weg; ein Eintrag, der nicht die Form einer
-  `jobID` hat, wird verworfen.
+  `jobID` hat, wird verworfen. Ist `sessionStorage` gesperrt (wirft), läuft
+  das Panel ohne Wiederaufnahme weiter.
 
 ### 3.7 Frontend: Vorschau auf der Karte (F3, F4)
 
 - **Planer** wie `adr/0014` §6.1: der längste Anfang der Schritte mit T1 in
   `x-earthx-tiers` und `x-earthx-kind = "pixel"`. Ist er leer, gibt es keine
-  Vorschau (Hinweis „No preview: the first step runs only as a job“).
+  Vorschau des Ergebnisses (Hinweis „No preview: the first step runs only as a
+  job“); die Karte zeigt weiter die Eingabe in der Fokusansicht, wie
+  `adr/0014` §6.1 es beschreibt.
 - In M4 ist der Anfang höchstens ein Schritt (`band_math`); mehrere T1-Schritte
   in einer Kachel nimmt die Kachel-Route heute nicht (ein `op` je URL). Hat der
   Anfang mehr als einen Schritt, zeigt die Vorschau nur den ersten und sagt es.
-- **URL:** je Item der Auswahl eine Raster-Quelle wie in der Fokusansicht, mit
+- **URL:** eine Raster-Quelle für das gewählte Item (F8), wie in der
+  Fokusansicht, mit
   `asset` je Band, `op`, `op_version`, `params` als **kanonisches JSON**
   (Schlüssel sortiert, keine Leerzeichen; `plans/m4-09-band-math.md` §6), dazu
   `rescale` und `colormap_name` aus F3. Zuschnitt auf die AOI wie die
   Fokusansicht.
 - **„Preview“-Kennzeichnung nach F4 (1):** sichtbar als Badge an der Karte und
-  im Panel, solange die Bodenauflösung einer Kachel bei der aktuellen Zoomstufe
-  gröber ist als das feinste `gsd` der gewählten Assets, gerechnet an der
-  Breite des Ausschnitts, die dem Äquator am nächsten liegt (dort ist die
-  Kachel am gröbsten). Ohne `gsd` steht das Badge immer.
-  Bodenauflösung: `156543.03392 · cos(φ) / 2^z` m je Pixel (Web Mercator,
-  256 px).
+  im Panel, solange die Bodenauflösung einer Kachel gröber ist als das feinste
+  `gsd` der gewählten Assets, gerechnet an der Breite des Ausschnitts, die dem
+  Äquator am nächsten liegt (dort ist die Kachel am gröbsten). Ohne `gsd`
+  steht das Badge immer.
+  - Bodenauflösung: `156543.03392 · cos(φ) / 2^z` m je Pixel (Web Mercator,
+    256 px).
+  - `z` ist die Stufe der **Kacheln**, nicht `mapZoom`: Die Quellen haben
+    `tileSize: 256` (`mapLayers.ts` Z. 189), MapLibre lädt dann Kacheln der
+    Stufe `round(mapZoom + 1)`, höchstens `max_zoom` aus `earthx:viewer`.
+  - `gsd` je Asset in derselben Reihenfolge wie `asset_gsd` im Backend:
+    Asset-`gsd`, `raster:bands[0].spatial_resolution`, `properties.gsd`.
+  - Wie die Bandnamen (K7) ist das eine Anzeigehilfe im Frontend, kein
+    Ergebnis; Prinzip 2.7 betrifft Ergebnisse, die nur das Panel liefern
+    könnte (F2).
 - „Auto stretch“ ist für die Vorschau deaktiviert (`/statistics` nimmt kein
   `op`), mit Grund im Tooltip.
 
@@ -243,17 +301,23 @@ Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
 `EventSource` sind gestubbt.
 
 **Backend** (`tests/earthx/api/test_processing_estimate.py`, Ergänzungen):
-- Schätzung: gültiger Auftrag → `200` mit allen Feldern; dieselben
-  Abweisungen wie `execution` (falsche Hülle, Referenz-Eingabe, 413, 415,
-  unbekannter Datensatz, Lizenz unter *processing* → `403`, nicht anwendbarer
-  Operator, Bandname, AOI außerhalb → `422`); **kein `HEAD`** über das Gateway
-  (gezählt), **keine Zeile** in der Queue, kein `recipe_id` in der Antwort;
-  kein Log mit AOI-Koordinaten oder Adresse (`own_log_text`).
-- `accept_order` nach der Teilung: bestehende Tests unverändert grün.
+- Schätzung: gültiger Auftrag → `200` mit allen Feldern und `no-store`;
+  dieselben Abweisungen wie `execution` bis Stufe 6 (falsche Hülle,
+  Referenz-Eingabe, 413, 415, ein Auftrag mit `resolved` oder `recipe_id` →
+  `400`, Ausgabe `crop` → `422`, unbekannter Datensatz, Lizenz unter
+  *processing* → `403`, nicht anwendbarer Operator, Bandname, AOI außerhalb
+  → `422`) und `check_scope` (zwei Items → `422`); **kein `HEAD`** über das
+  Gateway (gezählt), **keine Zeile** in der Queue, kein `recipe_id` in der
+  Antwort; kein Log mit AOI-Koordinaten oder Adresse (`own_log_text`).
+- Grenze der Schätzung: Ein Asset, das erst beim `HEAD` fehlt, besteht die
+  Schätzung und scheitert beim Start (Test belegt beides).
+- `accept_order` nach dem Herauslösen von `_targets`: bestehende Tests
+  unverändert grün.
 - K1: jede Schritt-Definition trägt `x-earthx-tiers` und `x-earthx-kind`
   passend zum Operator; `parse_request` weist einen Schritt mit diesen
   Schlüsseln weiter ab (`additionalProperties`).
-- K2: `earthx:zarr` für den Zarr-Eintrag, `null` für die COG-Einträge.
+- F9: `x-earthx-variable-separator` für den Zarr-Eintrag, fehlt bei den
+  COG-Einträgen und ohne `?dataset=`.
 - K3: Fixture-Dateien gleich `process_description`; Gegenprobe im PR: ein
   geändertes Parametermodell lässt den Test fallen.
 
@@ -261,24 +325,37 @@ Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
 - `schemaForm`: jeder unterstützte Typ, Pflichtfelder, Grenzen,
   `exclusiveMinimum`, `pattern`, `enum`, `default`; ein Schema mit `oneOf`
   oder Unterobjekt → „not supported“; alle Fixtures aus K3 voll unterstützt.
-- Auftrag: Hülle, Gruppen und AOI aus der Auswahl; Punkt-AOI → kein Auftrag;
-  mehr als 16 Assets oder Schritte → im Panel blockiert.
+- Auftrag: Hülle, ein Item und AOI aus der Auswahl; gepuffertes Quadrat eines
+  Punkts wie beim Zuschnitt; mehrere Items, die die AOI schneiden → Auswahl
+  einer Szene mit Hinweis (F8); mehr als 16 Assets oder Schritte → im Panel
+  blockiert.
+- Wechsel der Auswahl während einer Schätzung → die Anfrage wird abgebrochen
+  (`AbortController`), ihre Antwort nicht angezeigt.
 - Kanonisches JSON und Kachel-URL: Schlüsselreihenfolge, `&`, `#`, `+` und
   Nicht-ASCII im Ausdruck werden kodiert und landen nicht als eigener
   Parameter in der URL.
 - Bandnamen (K7): COG mit einem Band je Asset, COG mit mehreren Bändern
-  (`<asset>_<i>`), Zarr mit Trenner aus K2, Zarr ohne Trenner → keine
-  Bandliste.
-- Preview-Regel: Grenzfälle an Äquator und 60° N, ohne `gsd`, gemischte
+  (`<asset>_1` …), Zarr mit Namen aus `eo:bands` und Trenner aus F9, Zarr ohne
+  Trenner → keine Bandliste; Asset ohne Bandangaben → kein Chip.
+- Preview-Regel: Kachelstufe aus `mapZoom` und `max_zoom`; Grenzfälle an
+  Äquator und 60° N; `gsd` aus jeder der drei Quellen; ohne `gsd`; gemischte
   `gsd`.
 - Tracker: Folge von `status`-Ereignissen bis `successful` → `close()`;
-  Ereignis mit kaputtem JSON → verworfen; drei Fehler → Abfragen;
-  `Retry-After`; `404` → „gone“; keine `EventSource` → sofort Abfragen.
+  Ereignis mit kaputtem JSON oder fremder `jobID` → verworfen; Abweisung vor
+  dem Stream (`CLOSED`) → sofort Abfragen; drei Abbrüche (`CONNECTING`) →
+  Abfragen; `Retry-After`; `404` → „gone“; keine `EventSource` → sofort
+  Abfragen.
 - `sessionStorage`: Wiederaufnahme, abgelaufene und falsch geformte Einträge
-  verworfen; kein Auftrag und keine AOI im Speicher.
-- Panel (Komponente): Aufbau aus der Sentinel-2-Fixture; „Start job“ erst nach
-  „Review“; Änderung verwirft die Schätzung; `422`-Text am Schritt; `503` mit
-  Hinweis „try again“; Lizenzstufe *display* → Knopf deaktiviert mit Grund.
+  verworfen; gesperrter Speicher → keine Wiederaufnahme, kein Fehler; kein
+  Auftrag und keine AOI im Speicher.
+- Download: Links bis `expires` − 60 s, danach „Expired“; `earthx:resampled`
+  `false` → kein Hinweis.
+- Panel (Komponente): Aufbau aus der Sentinel-2-Fixture; ein Operator, den
+  eine synthetische Prozessbeschreibung nicht enthält, fehlt im Menü; „Start
+  job“ erst nach „Review“; Änderung verwirft die Schätzung; `422`-Text am
+  Schritt; erfolgreiche Schätzung, dann `502` beim Start → Fehler des Starts
+  sichtbar; `503` mit Hinweis „try again“; Lizenzstufe *display*
+  (synthetischer Datensatz) → Knopf deaktiviert mit Grund.
 
 ### 3.9 Doku und Log
 
@@ -293,7 +370,7 @@ Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
 
 | Punkt aus M4-13 | Beleg |
 |---|---|
-| Panel aus dem Schema, nur anwendbare Operatoren | Schema mit `?dataset=` (vorhanden); Frontend-Test baut das Panel aus den Fixtures aus K3; ein Operator, den der Datensatz nicht erlaubt, fehlt im Menü |
+| Panel aus dem Schema, nur anwendbare Operatoren | Schema mit `?dataset=` (vorhanden, filtert nach `applicable`); Frontend-Test baut das Panel aus den Fixtures aus K3; mit einer synthetischen Prozessbeschreibung ohne `reproject` fehlt der Operator im Menü (alle drei echten Einträge erlauben beide) |
 | Kostenschätzung vor dem Start | Route aus §3.1 mit Tests; „Start job“ erst nach „Review“ (Komponententest) |
 | T1-Vorschau, „Preview“ auf Übersichtsstufen | Planer- und URL-Tests; Preview-Regel mit Grenzfällen; Prüfanleitung Schritt 4 |
 | Job-Status per SSE mit Rückfall | Tracker-Tests (Ereignisse, Fehler, Abfragen, `404`) |
@@ -319,7 +396,7 @@ Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
 ## 6. Umfang und Commits
 
 Geschätzt [A]: Backend rund 150 Zeilen Code (Teilung von `accept_order` 40,
-Route 60, K1/K2 20, Fixture-Skript 30) und 250 Zeilen Tests; Frontend rund
+Route 60, K1/F9 20, Fixture-Skript 30) und 250 Zeilen Tests; Frontend rund
 950 Zeilen Code (`processing.ts` 120, `schemaForm.ts` 160, `StepForm.tsx`
 120, `ProcessingPanel.tsx` 260, `jobTracker.ts` 130, Store 120, Vorschau und
 Bandnamen 100, CSS 40) und 800 Zeilen Tests. Zusammen weit über dem Richtwert
@@ -328,7 +405,7 @@ von 400 Zeilen; Schnitt nach F7.
 Commits, je ein Thema (bei F7 (1) verteilt auf drei PRs):
 1. `api`: `prepare_order` aus `accept_order`, ohne Verhaltensänderung
 2. `api`: Route `…/estimate`
-3. `api`, `catalog`: `x-earthx-tiers`/`x-earthx-kind`, `earthx:zarr`
+3. `api`: `x-earthx-tiers`/`x-earthx-kind`, `x-earthx-variable-separator`
 4. Fixtures der Prozessbeschreibung und Gleichheitstest (K3)
 5. `frontend`: Client `processing.ts`, Proxy
 6. `frontend`: Formular aus dem Schema
@@ -346,8 +423,11 @@ Vor dem Fertigmelden: `main` holen; `ruff check backend`, `pytest`,
 ## 7. Risiken
 
 - **Schätzung kostet Abrufe:** Jede Schätzung holt die Items über die
-  Item-Quelle (bis 25). Deshalb nur auf „Review“, nicht bei jeder Eingabe
-  (K4). Ein Missbrauch bleibt bis M6 (Quotas) offen wie bei `execution`.
+  Item-Quelle (das Panel schickt eines, die Route nimmt wie `execution` bis
+  25). Deshalb nur auf „Review“, nicht bei jeder Eingabe (K4). Ein Missbrauch
+  bleibt bis M6 (Quotas) offen wie bei `execution`.
+- **Schätzung ohne Stufe 7:** Sie sagt nicht zu, dass der Start gelingt
+  (§3.1); das Panel sagt „An estimate, not a promise.“
 - **Kachel-Cache:** Nur kanonisch gebaute `params` treffen denselben
   Cache-Eintrag; ein anderer Client mit anderer Schreibweise verfehlt ihn, nie
   mit falschem Bild (`plans/m4-09-band-math.md` §6).
@@ -423,8 +503,9 @@ Befunde (Abruf 08.10.2026):
    Hülle wie `execution`; Stufen 1–6 der Annahme, kein `HEAD`, keine Zeile in
    der Queue. Wo die Bedeutung gleich ist, heißen die Felder wie bei openEO
    (`size` in Bytes, `duration` als ISO 8601), dazu die eigenen
-   (`outputPixels`, `units`, …). Damit ist ein späterer Wechsel zu Option 3
-   eine Umbenennung des Pfads **(Empfehlung)**
+   (`outputPixels`, `units`, …). Ein späterer Wechsel zu Option 3 behält
+   damit die Antwort; er braucht aber den neuen Zustand `created` in der
+   Queue **(Empfehlung)**
 2. Schätzung im Frontend aus AOI, `gsd`, Datentyp und Faktoren, die das
    Schema mitliefert. Verdoppelt `plan.estimate` und verstößt gegen
    Prinzip 2.7
@@ -465,38 +546,65 @@ Befunde (Abruf 08.10.2026):
    Registry-Felder ohne Vorgabe, B10) und die Standardansicht nutzt sie
 
 **F7 — Schnitt (§6)**
-1. Drei PRs: **M4-13a** Backend (Schätzroute, K1–K3) in dieser Session auf
-   diesem Branch; **M4-13b** Panel, Schätzung, Start, Job-Status, Download;
-   **M4-13c** Vorschau und „Preview“; b und c je eine eigene Session nach
-   diesem Plan, c nach b **(Empfehlung)**
+1. Drei PRs: **M4-13a** Backend (Schätzroute, K1, F9, K3) in dieser Session
+   auf diesem Branch; **M4-13b** Panel, Schätzung, Start, Job-Status,
+   Download; **M4-13c** Vorschau und „Preview“; b und c je eine eigene
+   Session nach diesem Plan, c nach b **(Empfehlung)**
 2. Ein PR über dem Richtwert (rund 1100 Zeilen Code, 1050 Tests)
 3. Zwei PRs: Backend mit Panel ohne Vorschau, dann Vorschau
+
+**F8 — Ein Item je Job (§2, §3.5; `core.py` Z. 171)**
+
+Der Kern rechnet heute genau ein Item; ein Überflug, dessen AOI zwei Kacheln
+berührt, ist als Job ein `422`. Mosaik ganzer Szenen kommt mit M4-12.
+1. Das Panel nimmt das eine Item der aktiven Gruppe, das die AOI schneidet;
+   sind es mehrere, wählt der Nutzer eines, und das Panel sagt, dass das
+   Ergebnis nur diese Szene abdeckt **(Empfehlung)**
+2. Das Panel sperrt „Start job“, solange mehr als ein Item die AOI schneidet,
+   mit dem Hinweis, die Fläche zu verkleinern
+3. M4-13b wartet auf M4-12; dann schickt das Panel die ganze Gruppe
+
+**F9 — Woher das Panel den Trenner der Zarr-Variablen kennt (§3.2)**
+
+Für Zarr ist der Asset-Schlüssel einer Variablen `<asset><Trenner><variable>`;
+der Trenner steht nur in der Registry.
+1. Im Schema des Auftrags mit `?dataset=`:
+   `InputRequest.assets` trägt `x-earthx-variable-separator`. Die Angabe
+   gehört zum Auftrag; keine neue Collection-Eigenschaft **(Empfehlung)**
+2. Neues Feld `earthx:zarr.variable_separator` in der Collection; das ist
+   eine Erweiterung der `earthx:`-Felder aus `architekturplan.md` 5.1, mit
+   Nachtrag dort und Log-Zeile
+3. Das Frontend liest ihn aus `default_render.assets`; bricht, sobald eine
+   Standardansicht keine Variable nennt
 
 **Kleinentscheidungen K1–K12** (gelten mit der Freigabe, wenn Otto nichts
 sagt):
 - **K1:** `x-earthx-tiers` und `x-earthx-kind` je Schritt-Definition im
   Schema (§3.2).
-- **K2:** `earthx:zarr.variable_separator` in der Collection, `null` ohne
-  Zarr (§3.2).
+- **K2:** entfällt (jetzt F9).
 - **K3:** Fixtures der Prozessbeschreibung im Frontend, Gleichheitstest im
   Backend, Skript zum Neuschreiben (§3.2).
 - **K4:** Schätzung nur auf „Review“, nicht bei jeder Eingabe; „Start job“
   erst nach einer Schätzung für genau diesen Auftrag (§3.5).
-- **K5:** SSE mit `close()` beim Endstatus; Rückfall auf Abfragen alle 2 s
-  nach drei Fehlern in Folge oder ohne `EventSource`; `Retry-After` gilt
+- **K5:** SSE mit `close()` beim Endstatus; Rückfall auf Abfragen alle 2 s,
+  sofort bei einer Abweisung vor dem Stream (`readyState === CLOSED`), nach
+  drei Abbrüchen in Folge oder ohne `EventSource`; `Retry-After` gilt
   (§3.6).
 - **K6:** Download als Links auf `/processing/jobs/{jobID}/results/{name}`;
-  der Browser folgt dem `303`. `410` → „Expired“.
+  der Browser folgt dem `303`. Ab `expires` − 60 s „Expired“ statt Links.
 - **K7:** Bandnamen im Frontend nach derselben Regel wie
   `processing.source.expected_band_names`: COG mit einem Band → Asset-Schlüssel,
-  mit mehreren → `<asset>_<i>`; Zarr → Variablen aus `bands[].name`, je Band
-  ein Asset `<asset><Trenner><variable>`. Nur Assets mit Rolle `data` oder
-  ohne Rolle, ohne `archive`/`metadata`. Verbindlich prüft der Server.
+  mit mehreren → `<asset>_1`, `<asset>_2` …; die Zahl der Bänder aus
+  `raster:bands` bzw. `bands`. Zarr → Namen aus `eo:bands[].name` (so legt
+  der EOPF-Adapter sie ab), je Band ein Asset `<asset><Trenner><variable>`.
+  Chips nur für Assets, die Bänder beschreiben; das ist eine Anzeigehilfe,
+  verbindlich prüft der Server. `StacAsset` bekommt dafür die drei Felder.
 - **K8:** Proxy `/processing` → `api` in `vite.config.ts`.
 - **K9:** `dtype` startet mit `float32`, wenn ein `band_math`-Schritt dabei
   ist, sonst mit dem Datentyp des ersten Bandes; änderbar.
 - **K10:** Eingabename im Auftrag fest `input`.
-- **K11:** Ein Punkt als AOI reicht nicht; das Panel verlangt eine Fläche.
+- **K11:** AOI wie beim Zuschnitt, also auch das gepufferte Quadrat eines
+  Punkts.
 - **K12:** Der Knopf „Process“ sitzt in der `ViewBar`; das Panel ist ein
   `Draggable`.
 
@@ -512,14 +620,15 @@ npm run dev
 ```
 
 Im Browser `http://localhost:5173`:
-1. Datensatz `sentinel-2-c1-l2a`, eine Fläche zeichnen, einen Überflug mit
-   wenig Wolken auswählen.
+1. Datensatz `sentinel-2-c1-l2a`, eine kleine Fläche zeichnen, die ganz in
+   einer Szene liegt, und einen Überflug mit wenig Wolken auswählen.
 2. „Process“ → „Add step“ → „Band math“; Bänder `nir` und `red` anklicken,
    Ausdruck `(nir - red) / (nir + red)`.
 3. Die Karte zeigt die Vorschau (−1 bis 1, `rdylgn`) mit dem Badge
    „Preview“.
-4. Hineinzoomen, bis das Badge verschwindet (bei 10 m etwa ab z14); die
-   Vorschau ist dort die native Ebene.
+4. Hineinzoomen, bis das Badge verschwindet (bei 10 m auf 48° N ab
+   Kachelstufe 14, also Kartenzoom etwa 12,5); die Vorschau liest dort die
+   native Ebene.
 5. „Review“ zeigt Größe, Dauer und Einheiten; „Start job“; die Zeile zeigt
    `accepted`, `running` mit Fortschritt, dann `successful`.
 6. „Result (COG)“ lädt eine `.tif`, „Recipe“ eine `_recipe.json`; die Datei
@@ -528,5 +637,9 @@ Im Browser `http://localhost:5173`:
    „Reproject“ (z. B. `EPSG:3035`, 30, `bilinear`): Die Karte zeigt keine
    Vorschau, das Panel sagt „No preview: the first step runs only as a job“;
    der Job läuft trotzdem.
-8. Gegenprobe Lizenz: Ein Datensatz unter der Stufe *processing* hat den
-   Knopf „Process“ deaktiviert, mit Grund.
+8. Gegenprobe mehrere Szenen: eine Fläche über einer Kachelgrenze zeichnen;
+   das Panel lässt eine Szene wählen und sagt, dass das Ergebnis nur diese
+   abdeckt (F8 (1)).
+
+Die Gegenprobe zur Lizenzstufe gibt es nur als Frontend-Test: Alle drei
+Einträge haben die Stufe *processing*.
