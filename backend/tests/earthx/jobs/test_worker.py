@@ -447,10 +447,14 @@ class TestShutdown:
         monkeypatch.setattr(queue, "claim", claim_and_stop)
         monkeypatch.setattr(supervisor, "_start_child", lambda *args: started.append(args))
         job_id = submit(db, make_recipe())
+        run_id = _run_id(db)
         supervisor.start()
-        wait_until(lambda: _state(db, job_id) == "accepted" and run_row(db, _run_id(db), "attempt")[0] == 1)
+        # Status and attempt in one statement: read apart, a pick-up between the two reads
+        # looks like "accepted, attempt 1" before the run was given back (plan M4-08a-fix2).
+        wait_until(lambda: run_row(db, run_id, "status", "attempt") == ("accepted", 1))
         assert started == [], "no child was started for it"
-        assert run_row(db, _run_id(db), "worker", "lease_until") == (None, None)
+        assert run_row(db, run_id, "worker", "lease_until") == (None, None)
+        assert _state(db, job_id) == "accepted"
 
     def test_a_stopped_supervisor_picks_up_nothing_more(
         self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor]
