@@ -195,3 +195,36 @@ dahin fertige Pakete gibt und Qwen3.5 eine neuere Laufzeit bräuchte.
   `LocalModel` liest beide als Aufruf. Ab und zu kündigt es eine Suche an, ohne
   sie aufzurufen; das fängt kein Parser ab.
 
+
+## 11. Lokales Modell einrichten (06.10.2026)
+
+Die Modelldatei kommt nicht ins Repo: Sie ist etwa 5 GB groß, und die
+Lizenz-Einstufung von Qwen3-8B durch Otto steht aus (§10). Jede Person lädt sie
+selbst. Einen lokalen Katalog-Index gibt es nicht: Das Modell liest den Katalog bei
+jeder Frage live über die drei Lesewerkzeuge und `gateway` aus der STAC-API in
+`EARTHX_CHATBOT_STAC_URL`; mit derselben URL sieht jeder Rechner dieselben Datensätze.
+
+1. `Qwen3-8B-Q4_K_M.gguf` aus dem Hugging-Face-Repo `Qwen/Qwen3-8B-GGUF` laden,
+   z. B. nach `%USERPROFILE%\models\`.
+2. In der `.venv` des Repos die Laufzeit installieren:
+   - nur CPU: `pip install llama-cpp-python==0.3.19` (eine Antwort mit zwei
+     Werkzeugrunden etwa 7 min);
+   - mit NVIDIA-GPU (adr/0011 §6): VS Build Tools 2022 und CUDA Toolkit 12.9
+     installieren, dann in PowerShell
+     `$env:CMAKE_ARGS="-DGGML_CUDA=on"; pip install llama-cpp-python==0.3.19 --no-cache-dir --force-reinstall`
+     (etwa 1–2 min pro Antwort mit `EARTHX_CHATBOT_GPU_LAYERS=20` auf 4 GB VRAM).
+3. Umgebung setzen und aus dem Repo-Wurzelverzeichnis starten (PowerShell):
+
+   ```powershell
+   $env:PYTHONPATH = "backend"
+   $env:EARTHX_CHATBOT_STAC_URL = "https://earth-search.aws.element84.com/v1"
+   $env:EARTHX_CHATBOT_LOCAL_MODEL = "$env:USERPROFILE\models\Qwen3-8B-Q4_K_M.gguf"
+   $env:EARTHX_CHATBOT_GPU_LAYERS = "20"   # nur mit CUDA-Build; -1 alle Schichten
+   .venv/Scripts/python.exe -m earthx.chatbot chat
+   ```
+
+   Findet der CUDA-Build seine DLLs nicht, vorher
+   `$env:PATH = "$env:CUDA_PATH\bin;$env:PATH"` setzen.
+
+Die Zeile `llama_context: n_ctx_seq (16384) < n_ctx_train (40960)` beim Laden ist
+nur ein Hinweis: `LocalModel` nutzt absichtlich 16k Token Kontext.
