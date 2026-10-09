@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import ChatbotDevPanel from './components/ChatbotDevPanel';
 import ControlPanel from './components/ControlPanel';
 import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
@@ -31,6 +32,8 @@ export default function App() {
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const projection = useAppStore((s) => s.projection);
   const toggleProjection = useAppStore((s) => s.toggleProjection);
+  // Throwaway, not part of the plan — see ChatbotDevPanel.tsx's own comment.
+  const [chatbotDevOpen, setChatbotDevOpen] = useState(false);
 
   useEffect(() => {
     loadDatasets();
@@ -90,11 +93,29 @@ export default function App() {
         >
           {theme === 'tech' ? '☀ Light' : '☾ Dark'}
         </button>
+        {/* Throwaway dev button, not part of the plan — see ChatbotDevPanel.tsx */}
+        <button
+          type="button"
+          className="panel zoom-btn"
+          onClick={() => setChatbotDevOpen((open) => !open)}
+          aria-pressed={chatbotDevOpen}
+          title="Try the M7a chatbot read tools directly (dev only, no LLM)"
+        >
+          💬 Chatbot (dev)
+        </button>
       </div>
 
       <div className="overlay layermgr">
         <LayerManager />
       </div>
+
+      {chatbotDevOpen && (
+        <div className="overlay chatbot-dev-dock">
+          <Draggable>
+            <ChatbotDevPanel />
+          </Draggable>
+        </div>
+      )}
 
       {!focusMode && hasGroups && (
         <div className={`overlay right results-dock${resultsPanelCollapsed ? ' collapsed' : ''}`}>

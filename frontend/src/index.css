@@ -1238,3 +1238,120 @@ input[type='date']:focus {
   text-transform: uppercase;
   color: #ffd166;
 }
+
+/* --- throwaway: chatbot dev panel (ChatbotDevPanel.tsx), not part of the plan --- */
+.chatbot-dev-dock {
+  top: 64px;
+  right: 16px;
+}
+.chatbot-dev {
+  width: 360px;
+  max-height: 70vh;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+.chatbot-dev-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  border: 1px dashed var(--accent-2);
+  border-radius: 4px;
+  padding: 3px 6px;
+  align-self: flex-start;
+}
+.chatbot-dev-tools {
+  display: flex;
+  gap: 6px;
+}
+.chatbot-dev-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.chatbot-dev-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chatbot-dev-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chatbot-dev-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chatbot-dev-log-tool {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  word-break: break-all;
+  margin-bottom: 3px;
+}
+.chatbot-dev-log pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.chatbot-dev-chat {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chatbot-dev-msg {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  padding: 6px 9px;
+  max-width: 90%;
+}
+.chatbot-dev-msg.user {
+  align-self: flex-end;
+  border: 1px solid var(--accent);
+}
+.chatbot-dev-msg.assistant {
+  align-self: flex-start;
+  background: rgba(0, 0, 0, 0.18);
+}
+.chatbot-dev-msg.error {
+  align-self: flex-start;
+  color: var(--accent-2);
+  border: 1px dashed var(--accent-2);
+}
+.chatbot-dev-msg-time {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  opacity: 0.6;
+}

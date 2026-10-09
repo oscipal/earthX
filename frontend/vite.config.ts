@@ -10,6 +10,11 @@ import { defineConfig } from 'vitest/config'
 // process's base app, outside /stac, so it shares apiTarget.
 const apiTarget = process.env.VITE_API_PROXY ?? 'http://localhost:8000'
 const tilerTarget = process.env.VITE_TILER_PROXY ?? 'http://localhost:8001'
+// Throwaway (scripts/chatbot-dev-server.py, not part of the M7a plan — see that
+// file's docstring): proxies the dev-only chatbot tool server so ChatbotDevPanel
+// can use a same-origin relative URL. Lives only on the branch
+// dev/chatbot-playground, which is never merged into main.
+const chatbotDevTarget = process.env.VITE_CHATBOT_DEV_PROXY ?? 'http://localhost:8010'
 
 export default defineConfig({
   plugins: [react()],
@@ -19,6 +24,7 @@ export default defineConfig({
       '/stac': { target: apiTarget, changeOrigin: true },
       '/coverage': { target: apiTarget, changeOrigin: true },
       '/collections': { target: tilerTarget, changeOrigin: true },
+      '/chatbot-dev': { target: chatbotDevTarget, changeOrigin: true, rewrite: (path) => path.replace(/^\/chatbot-dev/, '') },
     },
   },
   test: {
