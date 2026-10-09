@@ -4,6 +4,7 @@
 // and the components call these and do the drawing.
 
 import type { CoverageCell, CoverageCompleteness, CoverageResponse } from './api';
+import { bboxToPolygon } from './geoUtils';
 import type { Bbox } from './types';
 
 export class InvalidCellKey extends Error {}
@@ -131,6 +132,105 @@ export const FOOTPRINT_FETCH_LIMIT = 500;
 
 export function showFootprints(result: CoverageResponse | null, zoom: number): boolean {
   return !!result && result.footprints_advised && zoom >= FOOTPRINT_MIN_ZOOM;
+}
+
+// M3-12, F-07: a one-off product's coverage answer names its whole extent
+// instead of a density (ENTSCHEIDUNGEN §2, `adr/0009` §6) — `area`
+// (M3-11c's `local-sql` way, the union of the dataset's own item footprints)
+// or, without one, `extent` alone (a provider that has not built that path,
+// or an area that happens to come back empty). Either field being set is the
+// signal, never the dataset id.
+export function isAreaAnswer(result: CoverageResponse | null): boolean {
+  return !!result && (!!result.area || !!result.extent);
+}
+
+// The geometry to draw for an area answer, or `null` when there is truly
+// nothing to show (called only after `isAreaAnswer` is true, so this is a
+// defensive fallback, not an expected case).
+export function areaGeometry(result: CoverageResponse): GeoJSON.Geometry | null {
+  if (result.area && result.area.coordinates.length > 0) return result.area;
+  return result.extent ? bboxToPolygon(result.extent) : null;
+}
+
+// M3-19 (Otto, 23.09.2026, replacing adr/0010 answer 6a): without an AOI the
+// heatmap asks only for the visible map extent, and the cell level follows
+// the map's zoom so that roughly the same number of cells
+// (`TARGET_CELL_COUNT`) covers the screen at any zoom, instead of a level
+// derived from zoom alone asking for far fewer cells than the screen has
+// room for (zoom 1.6 asked for level 1 — four cells for the whole globe —
+// before a fixed z6 cap ever applied). See
+// `plans/m3-19-weltueberblick-ausschnitt.md` §1 for the derivation and §2 for
+// the measured cell counts/payload sizes it is chosen from. With an AOI nothing
+// changes: the request is a real spatial filter, and the map's zoom alone
+// still decides (`Math.floor`, in `store.ts`).
+//
+// A geotile cell of level `L` is `512 * 2^(mapZoom - L)` CSS pixels wide at
+// map zoom `mapZoom` (MapLibre draws the whole world at `512 * 2^mapZoom`
+// px), so a `width * height` px viewport holds
+// `(width * height) / (512 * 2^(mapZoom - L))²` cells — solved for `L` below.
+export const TARGET_CELL_COUNT = 2000;
+export const MIN_VIEWPORT_LEVEL = 4;
+
+export function levelForViewport(mapZoom: number, width: number, height: number): number {
+  if (!Number.isFinite(mapZoom) || !(width > 0) || !(height > 0)) return MIN_VIEWPORT_LEVEL;
+  const raw = mapZoom + Math.log2(512 * Math.sqrt(TARGET_CELL_COUNT / (width * height)));
+  return Math.max(MIN_VIEWPORT_LEVEL, Math.min(MAX_GEOTILE_LEVEL, Math.round(raw)));
+}
+
+// The grid the request bbox is rounded to before it goes out — blocks of
+// `2^VIEWPORT_ROUND_LEVELS` × `2^VIEWPORT_ROUND_LEVELS` cells (8×8) of the
+// requested level, so a small pan or zoom-and-back keeps asking the very same
+// question instead of a new one on every `moveend` (plan §3).
+export const VIEWPORT_ROUND_LEVELS = 3;
+
+// Inverse of `mercatorLatitude`: how far down the Web-Mercator square (0 at
+// the north edge the grid can draw, 1 at the south edge) a WGS84 latitude
+// falls. Clamped to the same ±85.0511° the grid itself is built on — a
+// latitude past it would not round-trip through `mercatorLatitude` either.
+const MAX_MERCATOR_LATITUDE = 85.0511287798066;
+
+function mercatorFraction(latitude: number): number {
+  const clamped = Math.max(-MAX_MERCATOR_LATITUDE, Math.min(MAX_MERCATOR_LATITUDE, latitude));
+  const radians = (clamped * Math.PI) / 180;
+  return (1 - Math.asinh(Math.tan(radians)) / Math.PI) / 2;
+}
+
+// Rounds a viewport extent outward to the geotile block grid of `level`
+// (plan §3): a small pan or zoom that stays inside the same block asks for
+// exactly the same `bbox` as before, which is what lets `refreshCoverage`
+// recognise it as already answered instead of firing a new request.
+export function roundBboxToGrid([west, south, east, north]: Bbox, level: number): Bbox {
+  const side = 2 ** Math.max(0, Math.floor(level));
+  const clampedWest = Math.max(-180, Math.min(180, west));
+  const clampedEast = Math.max(-180, Math.min(180, east));
+  const colWest = Math.floor(((clampedWest + 180) / 360) * side);
+  const colEast = Math.min(side, Math.max(colWest + 1, Math.ceil(((clampedEast + 180) / 360) * side)));
+  const rowNorth = Math.floor(mercatorFraction(north) * side);
+  const rowSouth = Math.min(side, Math.max(rowNorth + 1, Math.ceil(mercatorFraction(south) * side)));
+  return [
+    (colWest / side) * 360 - 180,
+    mercatorLatitude(rowSouth / side),
+    (colEast / side) * 360 - 180,
+    mercatorLatitude(rowNorth / side),
+  ];
+}
+
+// A viewport that crosses ±180° — the antimeridian itself, or a low-zoom view
+// repeating world copies (MapLibre pans across those rather than wrapping) —
+// is asked for as one band across the full -180..180 width, not a clamped
+// slice or two separate requests either of which would misdraw a footprint
+// whose centroid sits right at the wrap (plan §3).
+export function bandViewportBbox([west, south, east, north]: Bbox): Bbox {
+  if (west < -180 || east > 180) return [-180, south, 180, north];
+  return [west, south, east, north];
+}
+
+// Whether `outer` (a previously requested, rounded bbox) still covers
+// `inner` (the current raw viewport) — the reuse check of plan §3: a
+// pan/zoom that stays inside what was already asked for needs no new
+// request.
+export function bboxContains(outer: Bbox, inner: Bbox): boolean {
+  return outer[0] <= inner[0] && outer[2] >= inner[2] && outer[1] <= inner[1] && outer[3] >= inner[3];
 }
 
 // The legend's completeness line (`plans/m2-05-coverage.md` §3.5 table).

@@ -1,0 +1,27 @@
+[
+  {
+    "place_id": 777777,
+    "osm_type": "way",
+    "osm_id": 8888888,
+    "boundingbox": [
+      "49.00",
+      "49.10",
+      "8.00",
+      "8.10"
+    ],
+    "lat": "49.05",
+    "lon": "8.05",
+    "display_name": "Namenlos, Beispielland",
+    "category": "place",
+    "type": "hamlet",
+    "name": "",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.05,
+        49.05
+      ]
+    }
+  }
+]

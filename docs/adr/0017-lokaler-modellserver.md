@@ -1,4 +1,4 @@
-# ADR 0011 — Lokaler Modellserver für den Chatbot (Ollama über localhost)
+# ADR 0017 — Lokaler Modellserver für den Chatbot (Ollama über localhost)
 
 **Status:** Abgelehnt zugunsten von B (Víctor, 01.10.2026). Die Loopback-Ausnahme
 wird nicht beantragt; das Gateway bleibt unverändert.

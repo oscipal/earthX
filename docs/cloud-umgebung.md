@@ -18,7 +18,7 @@
 | Python | seit M3-03 **3.12** (Ubuntu-Paket im Image) im venv des Hooks; `python3` zeigt weiter auf 3.11.15; **kein** conda/mamba |
 | Node | 22.22.2 mit npm 10.9.7; `npx`, `yarn`, `pnpm` vorhanden |
 | Backend-Abhängigkeiten | installieren sich **vollständig per pip**, ohne System-GDAL |
-| Docker | Daemon startbar, **Images aber nicht ladbar** — praktisch unbrauchbar |
+| Docker | Daemon startbar; seit spätestens 2026-10-05 **`docker pull` möglich**, aber `docker build` scheitert am apt-Schritt (Debian-Spiegel `403`), siehe §4 |
 | Postgres | 16.13 vorinstalliert, gestoppt; startet; PostGIS 3.4 nachinstallierbar |
 | pgstac | 0.9.12 migriert erfolgreich in die lokale Datenbank |
 | EO-Datenquellen | **keine erreichbar** |
@@ -67,6 +67,9 @@ und CI geht denselben Weg — damit prüft CI, was die Sitzung benutzt.
 `adr/0008`; der pip-Weg ist seither überall der einzige. Die Tabelle oben ist
 eine Messung unter 3.11; unter 3.12 lösen mehrere Pakete neuer auf,
 `plans/m3-03-python-312.md` §2.3.)*
+*(Nachtrag 2026-10-02, M4-00b: CI, Image und Sitzung installieren seither aus
+den Lock-Dateien `backend/requirements.lock` und `backend/requirements-dev.lock`
+mit Hash-Prüfung, nicht mehr direkt aus den `.txt`-Dateien; siehe §7.)*
 
 ## 4. Docker: startbar, aber nutzlos
 
@@ -91,6 +94,20 @@ in der Cloud-Sitzung nicht verfügbar. Selbst gebaute Images aus einem
 `Dockerfile` scheitern am Basis-Image aus derselben Quelle. Das ist eine
 Netz-Policy-Frage, keine Rechtefrage: Otto könnte die beiden Blob-Hosts der
 Allowlist der Umgebung hinzufügen; ohne das bleibt Docker außen vor.
+
+> **Nachtrag 2026-10-05 (M4-05, `adr/0016`):** Der Abschnitt oben ist
+> überholt. Gemessen am 2026-10-05:
+> - Nach `sudo dockerd` lädt `docker pull` Images, etwa `python:3.12-slim`
+>   (Debian 13).
+> - `docker build` mit `backend/Dockerfile` scheitert trotzdem am Schritt
+>   `apt-get update`: `deb.debian.org` und `ftp.de.debian.org` antworten mit
+>   **403** (über HTTPS ohne Antwort).
+> - pip im Build erreicht PyPI, braucht dafür aber den CA-Bundle des Proxys im
+>   Image.
+> - Für eine Messung lässt sich das Image mit einer Kopie des `Dockerfile` im
+>   Kratzverzeichnis bauen (apt-Schritt ersetzt, CA-Bundle für pip;
+>   `adr/0016`, Methode). Für Tests, die das echte `Dockerfile` bauen, bleibt
+>   die CI der Ort (`compose-topology`).
 
 ## 5. Postgres, PostGIS, pgstac: ja
 
@@ -120,9 +137,10 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 | `pypi.org`, `files.pythonhosted.org` | `planetarycomputer.microsoft.com` |
 | `registry.npmjs.org` | `catalogue.dataspace.copernicus.eu` |
 | `earth-search.aws.element84.com` (seit dem 18.09.2026 freigegeben, in Sitzungen vom 19.09.2026 erreichbar und gemessen) | `stac.eopf.copernicus.eu` |
-| `api.github.com`, `github.com` | `nominatim.openstreetmap.org`, `tile.openstreetmap.org` |
+| `api.github.com`, `github.com` | `tile.openstreetmap.org` |
 | Ubuntu-Archiv (`apt`) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
-| `mcr.microsoft.com` | |
+| `mcr.microsoft.com` | `operations.osmfoundation.org`, `nominatim.org`, `osmfoundation.org`, `www.openstreetmap.org` (Doku-Seiten, Beleg `plans/m3-07a-ortssuche-backend.md` §2) |
+| `nominatim.openstreetmap.org` (seit dem 26.09.2026 freigegeben, für M3-07a gemessen, Beleg `plans/m3-07a-ortssuche-backend.md` §3) | |
 | `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` (tatsächlicher Asset-Host von `sentinel-2-c1-l2a`, Beleg `adr/0006`) | |
 | `objects.eodc.eu`, **`data.eodc.eu`**, `stac.core.eopf.eodc.eu` (Beleg `adr/0007` §3.1, §12.1) | `download.user.eopf.eodc.eu`, `stac.browser.user.eopf.eodc.eu` (Beleg `adr/0007` §12.1) |
 
@@ -163,8 +181,10 @@ Registry-Eintrag.
 **Die Fassung von PR #35 ist damit überholt.** Sie führte `data.eodc.eu` als
 gesperrt; das war der Stand **vor** der Freigabe aus `adr/0007` F1.
 
-Das ändert nichts an der Testaufteilung. **Kein Geocoder ist erreichbar**, und
-für CDSE gilt die Sperre unverändert. Die Annahme, auf der `projektplan.md` 2.4
+Das ändert nichts an der Testaufteilung. Seit dem 26.09.2026 ist
+`nominatim.openstreetmap.org` erreichbar, nur für gedrosselte Messungen per
+`curl` (M3-07a); Tests laufen weiter gegen synthetische Fixtures. Für CDSE gilt die Sperre
+unverändert. Die Annahme, auf der `projektplan.md` 2.4
 und `docs/adr/0002-testaufteilung.md` aufbauen — Tests laufen ohne Live-Quellen —,
 bleibt bestehen: Erreichbarkeit ist die Grundlage für Spikes und Messungen, nicht
 für Tests in CI oder PR-Läufen. Live-Zugriffe bleiben auf zeitgesteuerte
@@ -190,8 +210,8 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    (`.claude/settings.json`, Matcher `startup|resume`), wie in
    [Claude Code on the web](https://code.claude.com/docs/en/cloud-environments)
    beschrieben ("Install dependencies with a SessionStart hook"). Das Skript
-   legt das venv an, installiert Frontend-Pakete (jeweils nur, wenn noch
-   nicht vorhanden), startet Postgres per `service postgresql start` und
+   legt das venv an, installiert Frontend-Pakete (jeweils nur bei Bedarf,
+   siehe Nachtrag 2026-09-26), startet Postgres per `service postgresql start` und
    richtet Rolle, Datenbank und PostGIS-Extension idempotent ein. Es läuft
    nur bei `CLAUDE_CODE_REMOTE=true`, verwendet `sudo` nicht, wenn die
    Sitzung schon als root läuft, und endet immer mit Exit 0 — ein
@@ -229,11 +249,35 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    ohne die Backend-Pakete), ist das kein neuer Fehler, sondern dieser bereits
    bekannte Fall — mit `.venv/bin/pytest` arbeiten oder eine neue Sitzung
    starten.
+   **Nachtrag 2026-09-26 (M3-24):** Der Frontend-Teil prüfte bis dahin nur,
+   ob `frontend/node_modules` existiert — nicht, ob es zum aktuellen
+   `package-lock.json` passt. Ein `node_modules` aus einer älteren Sitzung
+   überlebte damit einen geänderten Lockfile unbemerkt; `polyclip-ts` fehlte
+   deshalb in zwei Sitzungen (M3-11c, M3-12). Der Hook vergleicht jetzt einen
+   Hash von `frontend/package-lock.json` gegen den Stand der letzten
+   erfolgreichen Installation (`frontend/node_modules/.package-lock.sha256`,
+   geschrieben nach `npm ci`) und installiert nur bei Abweichung neu — wie das
+   venv zu den Backend-Anforderungen. Die Vergleichslogik steht in
+   `scripts/lib/frontend-deps.sh`, getrennt vom Hook, damit sie ohne Postgres
+   und venv testbar ist (`backend/tests/test_frontend_deps_hook.py`).
+   **Nachtrag 2026-10-02 (M4-00b, `plans/m4-00b-lock-datei.md`):** Der Hook
+   installiert die Backend-Pakete aus `backend/requirements-dev.lock` mit
+   `--require-hashes`, wie die CI; das Image installiert aus
+   `backend/requirements.lock`. Die `.txt`-Dateien sind nur noch die Eingabe
+   für `scripts/lock-backend.sh` (mit `uv`, in der Sitzung unter
+   `/root/.local/bin/uv` vorhanden). Erneuern: `README.md` §2, „Backend-
+   Abhängigkeiten ändern oder erneuern“. Ein venv aus einer älteren Sitzung
+   wird beim nächsten Start auf die Versionen der Lock-Datei gebracht; Pakete,
+   die nicht mehr in der Lock-Datei stehen, bleiben darin liegen. In einer neu
+   gestarteten Sitzung am 2026-10-02 belegt (PR #113): `venv ok`, und das venv
+   stimmt mit der Lock-Datei überein, bis auf drei Pakete, die auf Linux per
+   Marker entfallen.
 2. **Testaufteilung:** `docs/adr/0002-testaufteilung.md`.
 3. **Offen für Otto:**
    - Sollen `production.cloudfront.docker.com` und
      `pkg-containers.githubusercontent.com` in die Allowlist der Umgebung, damit
      Docker in Sitzungen nutzbar wird? Empfehlung: **vorerst nein** — die
      Testaufteilung kommt ohne aus, und in CI gibt es Service-Container.
+     (Nachtrag 2026-10-05: `docker pull` geht inzwischen ohnehin, §4.)
    - Objektspeicher in Tests: `moto` im Prozess oder nur in CI? Empfehlung:
      **`moto`**, sobald der erste Test ihn braucht (nicht jetzt).

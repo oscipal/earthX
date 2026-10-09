@@ -46,16 +46,42 @@ beforeEach(() => {
   );
 });
 
+const CAPABILITIES = {
+  roi: true,
+  time_range: true,
+  band_math: true,
+  interpolation: true,
+  ml_processing: true,
+  quad_pol: false,
+  single_coverage_product: false,
+};
+
 const ZARR_LIKE: Collection = {
   id: 'sentinel-2-l2a-zarr3',
   title: 'Sentinel-2 L2A (Zarr3)',
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14 },
+  'earthx:capabilities': CAPABILITIES,
+  'earthx:viewer': {
+    group_by: ['datetime'],
+    min_zoom: 8,
+    max_zoom: 14,
+    browse: 'preview_tiles',
+    quicklook_nodata_max: null,
+    results_group_by: ['datetime'],
+  },
 };
 
 const COG_LIKE: Collection = {
   id: 'sentinel-2-c1-l2a',
   title: 'Sentinel-2 L2A',
-  'earthx:viewer': { group_by: ['datetime'], min_zoom: 0, max_zoom: 19 },
+  'earthx:capabilities': CAPABILITIES,
+  'earthx:viewer': {
+    group_by: ['datetime'],
+    min_zoom: 0,
+    max_zoom: 19,
+    browse: 'quicklook',
+    quicklook_nodata_max: 16,
+    results_group_by: ['datetime'],
+  },
 };
 
 let container: HTMLDivElement;

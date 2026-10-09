@@ -64,7 +64,17 @@ and run `pypgstac migrate` against it.
 # so that a migration whose table nobody drops fails the suite instead of leaving a
 # table behind that the next run reads as "already applied" — `earthx.catalog.load`
 # commits, so a full run really does leave them there.
-SHIPPED_TABLES = ("public.earthx_search_cache", "public.earthx_stats_cache")
+SHIPPED_TABLES = (
+    "public.earthx_search_cache",
+    "public.earthx_stats_cache",
+    "public.earthx_materialize_runs",
+    "public.earthx_geocode_cache",
+    "public.earthx_rate_slots",
+    "public.earthx_job",
+    "public.earthx_run",
+    "public.earthx_job_limits",
+    "public.earthx_recipe",
+)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -92,6 +102,26 @@ def require_postgres_env(_postgres_env: None) -> None:
     host = os.environ["PGHOST"]
     if not is_local_host(host):
         pytest.fail(_REMOTE_DB.format(host=host, allowed=", ".join(sorted(_LOCAL_HOSTS))), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _object_store_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Since M4-08b `api` signs result links, so its lifespan needs the object store's configuration.
+
+    Signing opens no connection (adr/0015 §3.2), so invented values are enough; the host is a
+    reserved name, so nothing here can reach a real store.
+    """
+    for name, value in {
+        "S3_ENDPOINT": "http://objectstore.invalid:3900",
+        "S3_PUBLIC_ENDPOINT": "http://localhost:3900",
+        "S3_REGION": "garage",
+        "S3_BUCKET": "earthx",
+        "S3_ACCESS_KEY": "GKtestaccesskey0001",
+        "S3_SECRET_KEY": "test-secret-key-0000000000000000",
+    }.items():
+        monkeypatch.setenv(name, value)
+    for name in ("S3_ACCESS_KEY_FILE", "S3_SECRET_KEY_FILE"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture

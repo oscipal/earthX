@@ -105,9 +105,28 @@ class TestACropOverTheSecondFormat:
             # The cleaned name, because `SR_20m:b04,b02.tif` is not a filename
             # every extractor can write (M2-10 §3.4).
             assert "SR_20m_b04_b02.tif" in names
-            with rasterio.open(BytesIO(archive.read("SR_20m_b04_b02.tif"))) as raster:
-                assert raster.count > 0
-                assert raster.width > 0 and raster.height > 0
+
+    def test_a_place_search_aoi_over_a_zarr_asset_still_names_openstreetmap(
+        self, served: list[httpx.Request]
+    ) -> None:
+        """M3-07b, Otto's second local check (26.09.2026): the Zarr crop path
+        (EOPF's own way through `build_download_zip`) is a distinct way to end
+        up with an ``ATTRIBUTION.txt`` from the COG path above — checked
+        separately rather than assumed to behave the same just because it
+        calls the same function."""
+        aoi = {
+            **aoi_over(),
+            "properties": {
+                "source": "OpenStreetMap / Nominatim",
+                "attribution": "© OpenStreetMap contributors",
+                "license": "ODbL-1.0",
+            },
+        }
+        zip_bytes = build([dl.AssetCrop(asset=ASSET_KEY, paths=(asset(),))], aoi)
+
+        with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
+            notice = archive.read(dl.NOTICE_FILENAME).decode("utf-8")
+        assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via OpenStreetMap / Nominatim)" in notice
 
     def test_both_variables_of_the_key_reach_the_image(self, served: list[httpx.Request]) -> None:
         """The composite of `ZarrReader._merged` survives the crop, not only the

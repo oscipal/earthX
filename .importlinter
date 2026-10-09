@@ -21,6 +21,9 @@
 ; `readers`/`catalog` gained content. `datasets-isolated` and
 ; `no-database-in-worker-core` keep counting chains: for KLAERUNGEN B9 the
 ; chain itself (e.g. `processing -> catalog -> psycopg`) is the violation.
+; M4-06 (adr/0015 §4.2): `objectstore` is a tenth module-boundary contract of
+; the same kind, and `no-object-store-in-worker-core` a third one that counts
+; chains.
 
 [importlinter]
 root_package = earthx
@@ -44,6 +47,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:catalog]
 name = catalog imports only gateway
@@ -62,6 +66,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:adapters]
 name = adapters import only gateway and catalog
@@ -79,6 +84,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:readers]
 name = readers import only gateway
@@ -97,6 +103,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:access]
 name = access imports only readers and catalog
@@ -114,6 +121,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:processing]
 name = processing imports only access, readers and catalog
@@ -130,9 +138,10 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:jobs]
-name = jobs import only processing
+name = jobs import only processing and objectstore
 type = forbidden
 allow_indirect_imports = True
 source_modules =
@@ -164,6 +173,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 [importlinter:contract:identity]
 name = identity imports nothing else
@@ -183,6 +193,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 
 ; docs/plans/m7a-chatbot-lesewerkzeuge.md section 3: the chatbot reaches the platform
 ; only through the public API over `gateway` (projektuebersicht.md, principle 7).
@@ -203,6 +214,27 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.objectstore
+
+[importlinter:contract:objectstore]
+name = objectstore imports nothing domain-specific
+type = forbidden
+allow_indirect_imports = True
+source_modules =
+    earthx.objectstore
+forbidden_modules =
+    earthx.gateway
+    earthx.catalog
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.processing
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
+    earthx.chatbot
 
 [importlinter:contract:datasets-isolated]
 name = nothing generic imports a dataset module
@@ -218,17 +250,35 @@ source_modules =
     earthx.discovery
     earthx.identity
     earthx.chatbot
+    earthx.objectstore
 forbidden_modules =
     earthx.datasets
 
 [importlinter:contract:no-database-in-worker-core]
-name = the worker core reaches no database (KLAERUNGEN B9)
+name = the worker core reaches no database (KLAERUNGEN B9, M4 Q4)
 type = forbidden
+; Only `processing` is the core (M4 Q4, adr/0013 §6.1): `jobs` is the shell with
+; the queue and the database and may import psycopg. The contract still counts
+; chains, so `processing -> ... -> psycopg` stays a violation. The two pool and
+; driver packages are listed because they sit beside `psycopg` in the venv.
 source_modules =
-    earthx.jobs
     earthx.processing
 forbidden_modules =
     psycopg
+    psycopg_pool
+    asyncpg
+
+[importlinter:contract:no-object-store-in-worker-core]
+name = the worker core reaches no object store (KLAERUNGEN B9, adr/0015 §4.2)
+type = forbidden
+; Its own contract, not a line in `no-database-in-worker-core` (M4 R2): `jobs` is
+; a source there and may import `objectstore`. Counts chains, like that one: for
+; B9 `processing -> ... -> earthx.objectstore` is the violation itself.
+source_modules =
+    earthx.processing
+forbidden_modules =
+    earthx.objectstore
+    botocore
 
 [importlinter:contract:http-only-in-gateway]
 name = HTTP and S3 clients live only in gateway (KLAERUNGEN B8)
@@ -243,9 +293,9 @@ type = forbidden
 ; tree of every module in backend/tests/earthx/test_no_outbound_outside_gateway.py,
 ; which also sees an import hidden inside a function.
 allow_indirect_imports = True
-; Source modules are the ten of 3.1 that are not `gateway`, PLUS every module
-; that lives directly in the package root. A root module is not one of the
-; eleven, but it is still code that must not fetch — `test_module_boundaries.py`
+; Source modules are the eleven of 3.1 that are not `gateway` (with
+; `objectstore` since M4-06), PLUS every module that lives directly in the
+; package root. A root module is not one of the twelve, but it is still code that must not fetch — `test_module_boundaries.py`
 ; reads the root modules from disk, so a new one fails the suite until it is
 ; listed here.
 source_modules =
@@ -261,6 +311,7 @@ source_modules =
     earthx.api
     earthx.datasets
     earthx.chatbot
+    earthx.objectstore
 ; `httpx2` and `obstore` joined the list in M2-04 (adr/0006 §5 "Zu Frage 6",
 ; Otto 20.09.2026): `rio-tiler` fetches STAC items over `httpx2`, and
 ; `titiler.xarray` would bring `obstore` with M2-09. Both are clients, so both
@@ -281,3 +332,17 @@ forbidden_modules =
     boto3
     obstore
     anthropic
+    botocore
+    urllib3
+    s3transfer
+    aiobotocore
+    aioboto3
+    minio
+; M4-06 (adr/0015 F2, KLAERUNGEN B8 Nachtrag 2026-10-05): the platform's own
+; object store is a platform service, not a way out. Its client is the one
+; exception to this contract, and it is one import, not one module: any other
+; module importing `botocore` — `earthx.objectstore` included — still breaks it.
+; The endpoint comes only from the configuration (earthx/objectstore/config.py).
+; `botocore` through `urllib3` and the other S3 clients joined the list with it.
+ignore_imports =
+    earthx.objectstore.client -> botocore

@@ -11,10 +11,11 @@ What is composed:
 * **the path dependency** — ``dataset`` and ``item`` from the path, ``asset``
   from the query, resolved through the registry and the adapter into an
   :class:`~earthx.readers.cog.AssetPath` or, where the registry says the dataset is
-  Zarr, a :class:`~earthx.readers.zarr_reader.ZarrAsset` (M2-09a). This is the only
-  place in the process where an address is built, the only place the format is
-  decided, and it cannot build either without ``check_url``. There is no free
-  ``url`` parameter anywhere in the schema; a test proves it.
+  Zarr, a :class:`~earthx.readers.zarr_reader.ZarrAsset` (M2-09a). The resolution
+  itself lives in :mod:`earthx.access.resolve` since M4-01a, where `processing` can
+  reach it too; this process hands it the policy and maps its refusals to HTTP. It
+  cannot build an address without ``check_url``. There is no free ``url``
+  parameter anywhere in the schema; a test proves it.
 * **the environment dependency** — ``gdal_options(policy)``, so the central GDAL
   configuration of M1-03 applies at every endpoint rather than wherever someone
   remembered it.
@@ -35,51 +36,80 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Annotated, Any
 
-import morecantile
-from fastapi import FastAPI, HTTPException, Path, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
-from rasterio.warp import transform_bounds
 from rio_tiler.errors import RioTilerError, TileOutsideBounds
+from rio_tiler.models import ImageData
+from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
+from titiler.core.dependencies import BidxParams
 
 from earthx.access.download import (
+    LARGE_DOWNLOAD_THRESHOLD_BYTES,
+    RESOLUTION_FACTORS,
     AoiOutsideItems,
     AoiTooLarge,
     AssetCrop,
+    CorruptOutput,
+    GroupCrop,
     InvalidAoi,
+    PlannedOutput,
     build_download_zip,
-    check_size_cap,
+    check_item_count_cap,
+    check_output_size_cap,
+    compute_crop_region,
     filter_items_intersecting_aoi,
     parse_aoi_geometry,
+    plan_outputs,
+)
+from earthx.access.resolve import (
+    AssetNotOnItem,
+    InvalidAssetKey,
+    MalformedItem,
+    NoReader,
+    ResolvedAsset,
+    open_asset_ref,
+    resolve_asset,
+    target_gsd_for,
 )
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.adapters import (
-    InvalidQuery,
-    UnknownCollection,
-    UnsupportedSource,
-    get_item,
+    ADAPTER_SPECS,
+    AdapterSpecs,
+    check_adapter_specs,
 )
+from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
+from earthx.api.item_source import (
+    OrderRefused,
+    build_item_source,
+    check_item_holdings,
+    fetch_item_or_refuse,
+    malformed_item_detail,
+)
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
-    DataFormat,
     DatasetConfig,
     DatasetRegistry,
     LicenseTier,
     UnknownDatasetError,
 )
-from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.catalog.stats_cache import PostgresStatsCache
-from earthx.gateway import CachingResolver, Gateway, GatewayError, UpstreamError, UpstreamTimeout, UrlRejected
+from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import gdal_options
-from earthx.readers.cog import AssetPath, asset_path
-from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, split_asset_key, zarr_asset
+from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
+from earthx.readers import AssetRejected
+from earthx.readers.cog import AssetPath
+from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
 
 LOGGER = logging.getLogger("earthx.api.tiler")
 
@@ -88,122 +118,31 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
 
-# The formats a reader exists for. `LEGACY` is the prototype's shape and has none
-# in the target path, so it is a 501 rather than an attempt (adr/0007 §6 point 2).
-_READABLE_FORMATS = frozenset({DataFormat.COG, DataFormat.ZARR})
-
 # The download route (M2-06) names only the dataset in its path — the item(s) and
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
 # polygon does not belong in a query string) — so it cannot share ROUTER_PREFIX.
 DOWNLOAD_ROUTE = "/collections/{dataset}/download"
 
-
-def _resolve_asset_href(item: dict[str, Any], asset: str) -> str:
-    """The address of one asset, or a 404 that says which of the two is missing."""
-    assets = item.get("assets")
-    entry = assets.get(asset) if isinstance(assets, dict) else None
-    href = entry.get("href") if isinstance(entry, dict) else None
-    if not isinstance(href, str):
-        raise HTTPException(status_code=404, detail=f"the item carries no asset {asset!r}")
-    return href
+# At most one download whose planned output reaches LARGE_DOWNLOAD_THRESHOLD_BYTES
+# runs at a time in this process (F10a, M3-18 §10): measured (plan §10.3/§10.4)
+# a single such crop can peak at several GB RSS in the same process that also
+# serves tiles, so two of them at once must not both run. Checked-then-acquired
+# with no `await` in between, which is race-free on asyncio's single-threaded
+# event loop (a second concurrent request cannot interleave between the check
+# and the `async with`).
+_LARGE_DOWNLOAD_LOCK = asyncio.Lock()
 
 
 async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
     """The item, or the ``HTTPException`` its absence or the source's failure maps to.
 
-    Shared by :func:`dataset_asset_path` and the download route of M2-06 — both
-    turn a ``dataset``/``item`` pair into a STAC item through the same cached
-    ``earthx_item_source``, and a source failure means the same thing to a tile
-    request and a crop request.
+    Shared by :func:`dataset_asset_path` and the download route of M2-06; what a
+    failure means is decided once, in :func:`earthx.api.item_source.fetch_item_or_refuse`.
     """
     try:
-        return await state.earthx_item_source(dataset, item)
-    except UnknownCollection:
-        raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
-    except UnsupportedSource as error:
-        raise HTTPException(status_code=501, detail=str(error)) from None
-    except InvalidQuery as error:
-        raise HTTPException(status_code=400, detail=str(error)) from None
-    except UpstreamError as error:
-        if error.status_code == 404:
-            raise HTTPException(status_code=404, detail=f"no item {item!r} in {dataset!r}") from None
-        # The source answered something we do not pass on. Its text is not repeated:
-        # it can carry the query, and the query can carry an AOI (projektplan.md 7).
-        raise HTTPException(status_code=502, detail="the source did not deliver the item") from None
-    except UpstreamTimeout:
-        raise HTTPException(status_code=504, detail="the source did not answer in time") from None
-    except GatewayError:
-        # Unreachable, too large, too many redirects: the source's side of the line.
-        # Broad on purpose — a gateway error that has no branch of its own is still an
-        # answer about the source, and a 500 would call it our mistake.
-        raise HTTPException(status_code=502, detail="the item could not be fetched") from None
-
-
-def _proj_code(stac_item: dict[str, Any]) -> str | None:
-    """The item's own CRS, in either spelling STAC has for it.
-
-    ``proj:code`` is the projection extension v2, ``proj:epsg`` the v1 field our own
-    API still emits (adr/0007 §6 point 4). A Zarr store may carry no CRS at all
-    (§3.4), and then this is the only place it can come from; where the store does
-    carry one, this stays the fallback.
-    """
-    properties = stac_item.get("properties")
-    if not isinstance(properties, dict):
-        return None
-    code = properties.get("proj:code")
-    if isinstance(code, str) and code:
-        return code
-    epsg = properties.get("proj:epsg")
-    return f"EPSG:{epsg}" if isinstance(epsg, int) else None
-
-
-# Forced onto the coarsest `multiscales` level there is: adr/0007 §12.11 point 8
-# measured the difference against a fine level at ~5% in `p98`, and the read stays
-# cheap regardless of where on the extent the item sits.
-_COARSEST_LEVEL = float("inf")
-
-
-def _target_gsd(request: Request, stac_item: dict[str, Any]) -> float | None:
-    """The ground sample distance a Zarr read should aim for, or ``None`` to leave
-    the level exactly as the asset names it.
-
-    Three cases, and only three — everything else reads the level the item's asset
-    already points at, unchanged since M2-09a:
-
-    * **``/statistics``** is answered on the coarsest level there is (§12.11 point 8).
-    * **a tile request** names ``z``/``x``/``y``/``tileMatrixSetId`` in its own route
-      (TiTiler's own path, matched here through ``request.path_params`` rather than
-      a parameter of this function, so nothing here has to repeat TiTiler's route
-      shape). The real ground resolution of that tile is computed from its own
-      bounds, reprojected into the item's CRS — not read off a fixed zoom table,
-      because a Web Mercator tile's real resolution scales with ``cos(latitude)``
-      (adr/0007 §12.10) and a table would pick the wrong level near either end of
-      this dataset's 34°–72° N extent.
-    * **anything else** (a preview, the AOI crop) computes nothing and returns
-      ``None`` — a crop wants the resolution its asset names, not the coarsest
-      level statistics settles for.
-    """
-    if request.url.path.endswith("/statistics"):
-        return _COARSEST_LEVEL
-    path_params = request.path_params
-    if not {"z", "x", "y", "tileMatrixSetId"} <= path_params.keys():
-        return None
-    crs = _proj_code(stac_item)
-    if crs is None:
-        return None
-    try:
-        tms = morecantile.tms.get(str(path_params["tileMatrixSetId"]))
-        z = int(path_params["z"])
-        west, south, east, north = tms.bounds(int(path_params["x"]), int(path_params["y"]), z)
-        item_west, _, item_east, _ = transform_bounds("EPSG:4326", crs, west, south, east, north)
-        tile_size = tms.matrix(z).tileWidth
-    except Exception:
-        # A resolution this cannot compute (an unknown TMS id, a CRS transform
-        # that fails) is not worth failing the tile over — it reads the level the
-        # asset names instead, the same as before this feature existed.
-        LOGGER.warning("could not compute a target resolution for the tile", exc_info=True)
-        return None
-    return abs(item_east - item_west) / tile_size
+        return await fetch_item_or_refuse(state.earthx_item_source, dataset, item)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
 
 
 def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
@@ -218,6 +157,26 @@ def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
         return registry.get(dataset)
     except UnknownDatasetError:
         raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
+
+
+def _check_display_allowed(config: DatasetConfig) -> None:
+    """Refuse a tile, statistics, info, point or tilejson read below licence tier
+    'display' (KLAERUNGEN B11, M3-02 K-03, Otto's answer of 23.09.2026).
+
+    A dataset at tier `catalog` is a link to the source, never something this
+    platform renders itself — the registry already refuses such an entry a
+    `viewer` field (`DatasetConfig._check_license_tier`), so without this check
+    `_check_zoom_released` below would answer it with a `501` ("names no released
+    zoom range") instead of the `403` this is about. Called first, and before any
+    item is fetched, for the same reason `_check_zoom_released` is: a refused
+    dataset costs no request to the source. The download route enforces the
+    stricter `processing` tier on its own (`download_crop`) and is unaffected.
+    """
+    if config.license.tier is LicenseTier.CATALOG:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{config.dataset_id!r}'s licence permits a catalogue entry only, no display (KLAERUNGEN B11)",
+        )
 
 
 def _check_zoom_released(request: Request, config: DatasetConfig) -> None:
@@ -292,6 +251,40 @@ def _viewer_zoom_range(request: Request) -> tuple[int, int]:
     return viewer.min_zoom, viewer.max_zoom
 
 
+def _resolve_ref(stac_item: dict[str, Any], *, config: DatasetConfig, item: str, asset: str) -> ResolvedAsset:
+    """``asset`` of ``stac_item`` resolved in `access`, or the ``HTTPException`` its refusal maps to.
+
+    ``item`` is the id the caller asked for; the resolved asset carries the item's own.
+    """
+    try:
+        return resolve_asset(stac_item, config, asset)
+    except NoReader as error:
+        raise HTTPException(status_code=501, detail=str(error)) from None
+    except InvalidAssetKey as error:
+        # The caller's own query parameter is shaped wrong — a 400, not the 502
+        # below, which is about what the *item* points at.
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except AssetNotOnItem as error:
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    except MalformedItem:
+        raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
+
+
+def _open_ref(
+    state: Any, ref: ResolvedAsset, *, target_gsd: float | None = None, decode_cf: bool = True
+) -> AssetPath | ZarrAsset:
+    """``ref`` cleared through the gateway policy, or the ``HTTPException`` its refusal maps to."""
+    try:
+        return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd, decode_cf=decode_cf)
+    except AssetRejected:
+        # An address the registry does not cover. This is the refusal adr/0006 §3.3
+        # describes, and it is the source's problem, not the caller's — hence 502.
+        raise HTTPException(
+            status_code=502,
+            detail="the item points at a host this dataset does not declare (asset_hosts)",
+        ) from None
+
+
 def _resolve_asset_path(
     state: Any,
     stac_item: dict[str, Any],
@@ -301,70 +294,159 @@ def _resolve_asset_path(
     asset: str,
     target_gsd: float | None = None,
 ) -> AssetPath | ZarrAsset:
-    """The href of ``asset`` on ``stac_item``, cleared through the gateway policy.
+    """``asset`` of ``stac_item``, resolved in `access` and cleared through the gateway
+    policy — or the ``HTTPException`` its refusal maps to.
 
-    **The registry's ``format`` picks the reader**, here and nowhere else: `access`
-    renders whatever it is handed and the client sends the same tile URL either way
-    (M2-09a). A format without a reader is refused rather than read as a COG — a
-    silent fallback would turn a registry mistake into a wrong picture.
-
-    For a Zarr dataset, ``asset`` may carry a variable after the registry's
-    ``ZarrInfo.variable_separator`` (adr/0007 §12.11, plan §10 F2) — split off
-    *before* the href is looked up, because the item only ever advertises the
-    group side of that key.
+    The resolution itself is :func:`~earthx.access.resolve.resolve_asset` and
+    :func:`~earthx.access.resolve.open_asset_ref`; what is left here is the HTTP
+    answer to each refusal.
     """
-    dataset = config.dataset_id
-    if config.format not in _READABLE_FORMATS:
-        raise HTTPException(
-            status_code=501,
-            detail=f"{dataset!r} is stored as {config.format.value}, which no reader opens",
-        )
-    if config.format is DataFormat.ZARR:
-        separator = config.zarr.variable_separator if config.zarr is not None else None
-        try:
-            item_asset, variable = split_asset_key(asset, separator)
-        except UrlRejected as error:
-            # The caller's own query parameter is shaped wrong — a 400, not the 502
-            # below, which is about what the *item* points at.
-            raise HTTPException(status_code=400, detail=str(error)) from None
-    try:
-        if config.format is DataFormat.ZARR:
-            href = _resolve_asset_href(stac_item, item_asset)
-            return zarr_asset(
-                href,
-                state.earthx_policy,
-                dataset_id=dataset,
-                item_id=item,
-                asset=asset,
-                crs=_proj_code(stac_item),
-                resolve=state.earthx_resolver,
-                variable=variable,
-                target_gsd=target_gsd,
+    ref = _resolve_ref(stac_item, config=config, item=item, asset=asset)
+    return _open_ref(state, ref, target_gsd=target_gsd)
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorInput:
+    """What the path of an operator tile stands for: its assets, the operator and its parameters.
+
+    Defined here and typed loosely on purpose: the tiler does not load the worker core when it
+    starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
+    object by its three attributes (``TileInputs``).
+    """
+
+    inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
+    operator: Any
+    params: Any
+
+
+def _operator_support() -> Any:
+    """The worker core's operator side, imported when the first operator tile needs it.
+
+    A start of the tiler stays light (``test_tiler_start_is_light``): `processing` brings numexpr
+    and the COG writer, which a tiler that never sees ``op`` has no use for.
+    """
+    from earthx.api.intake import describe_bands
+    from earthx.processing import operators, tile
+    from earthx.processing.errors import UnknownOperator
+    from earthx.processing.recipe import ResolvedAssetModel, ResolvedInput
+
+    return SimpleNamespace(
+        registry=operators.REGISTRY,
+        applicable=operators.applicable,
+        tier=operators.Tier,
+        unknown_operator=UnknownOperator,
+        resolved_input=ResolvedInput,
+        resolved_asset=ResolvedAssetModel,
+        reader=tile.OperatorTileReader,
+        describe_bands=describe_bands,
+    )
+
+
+# A tile URL that carries an operator names it, its version and its parameters, and
+# nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8).
+MAX_OPERATOR_ASSETS = 16
+MAX_OPERATOR_PARAMS_CHARS = 2048
+_OPERATOR_ROUTES = frozenset({"tile", "tilejson"})
+
+# TiTiler's free band-math and algorithm parameters. They computed on raw values with
+# every numexpr function, outside R5 and the scaling of adr/0014 §5.4; `op=band_math`
+# is the one way to ask for an expression (plan M4-09, F3).
+_FREE_PARAMETERS = ("expression", "algorithm", "algorithm_params")
+
+
+def _refuse_free_parameters(request: Request) -> None:
+    for name in _FREE_PARAMETERS:
+        if name in request.query_params:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name!r} is not accepted; ask for an expression with op=band_math&op_version=1&params=…",
             )
-        href = _resolve_asset_href(stac_item, asset)
-        return asset_path(
-            href,
-            state.earthx_policy,
-            dataset_id=dataset,
-            item_id=item,
-            asset=asset,
-            resolve=state.earthx_resolver,
+
+
+def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any] | None:
+    """``(operator, parameters)`` of an ``op`` in the query, or ``None`` when the URL names none.
+
+    ``400`` for a query that is malformed or whose parameters do not validate (R5
+    included); ``422`` for one that is well formed but not something this platform
+    does here — an operator it does not know, one that does not run as a tile, one the
+    dataset does not allow.
+    """
+    query = request.query_params
+    given = [name for name in ("op", "op_version", "params") if name in query]
+    if not given:
+        return None
+    support = _operator_support()
+    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
+    if len(given) != 3 or any(len(query.getlist(name)) != 1 for name in given):
+        raise HTTPException(status_code=400, detail="op, op_version and params go together, once each")
+    raw = query["params"]
+    if len(raw) > MAX_OPERATOR_PARAMS_CHARS:
+        raise HTTPException(status_code=400, detail=f"params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
+    try:
+        version = int(query["op_version"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="op_version is a whole number") from None
+    try:
+        operator = operators.operator(query["op"], version)
+    except support.unknown_operator as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
+        raise HTTPException(status_code=422, detail=f"{operator.op!r} does not run as a tile")
+    try:
+        params = operator.params.model_validate_json(raw, strict=True)
+    except ValidationError as error:
+        problems = "; ".join(
+            f"{'.'.join(map(str, entry['loc'])) or 'params'}: {entry['msg']}"
+            for entry in error.errors(include_url=False, include_input=False, include_context=False)
         )
-    except GatewayError:
-        # An address the registry does not cover. This is the refusal adr/0006 §3.3
-        # describes, and it is the source's problem, not the caller's — hence 502.
-        raise HTTPException(
-            status_code=502,
-            detail="the item points at a host this dataset does not declare (asset_hosts)",
-        ) from None
+        raise HTTPException(status_code=400, detail=f"params: {problems}") from None
+    reasons = support.applicable(operator, config, params)
+    if reasons:
+        raise HTTPException(status_code=422, detail=f"{operator.op!r} cannot run here: {'; '.join(reasons)}")
+    return operator, params
+
+
+def _operator_input(
+    state: Any,
+    stac_item: dict[str, Any],
+    *,
+    config: DatasetConfig,
+    item: str,
+    assets: list[str],
+    operator: Any,
+    params: Any,
+    target_gsd: float | None,
+) -> OperatorInput:
+    """The assets of an operator tile, each with the bands and scaling source the item describes."""
+    support = _operator_support()
+    inputs = []
+    for key in assets:
+        ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
+        try:
+            bands, scaling = support.describe_bands(stac_item, config, ref)
+            # Item scaling is applied by the core, so the reader reads raw; without it the
+            # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
+            target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=scaling == "store-cf")
+            entry = support.resolved_input(
+                asset=support.resolved_asset(**ref.to_json()), version=None, bands=bands, scaling=scaling, gsd=None
+            )
+        except OrderRefused as error:
+            raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+        except ValidationError:
+            raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
+        inputs.append((entry, target))
+    return OperatorInput(tuple(inputs), operator, params)
 
 
 async def dataset_asset_path(
     request: Request,
     dataset: Annotated[str, Path(description="dataset id of the registry")],
     item: Annotated[str, Path(description="item id at the source")],
-    asset: Annotated[str, Query(description="asset key of the item, e.g. `visual`")],
-) -> AssetPath | ZarrAsset:
+    asset: Annotated[
+        list[str],
+        Query(description="asset key of the item, e.g. `visual`; several only together with `op`"),
+    ],
+) -> AssetPath | ZarrAsset | OperatorInput:
     """Turn dataset, item and asset into something a reader may open — and nothing else.
 
     A tile also has to name a level this dataset is released for
@@ -376,13 +458,74 @@ async def dataset_asset_path(
     default that lives in the registry would make two releases of the platform answer
     the same URL with two pictures. The standard visualisation travels to the client
     on the collection (``earthx:default_render``), which is where it can be a default.
+
+    With ``op``, ``op_version`` and ``params`` the URL asks for an operator over one or
+    several assets of the item (M4-09, adr/0014 §6.2) — on a tile or its TileJSON only.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
     _check_zoom_released(request, config)
+    _refuse_free_parameters(request)
+    requested = _operator_request(request, config)
+    if requested is None:
+        if len(asset) != 1:
+            raise HTTPException(status_code=400, detail="name one asset, or several together with op")
+        stac_item = await _fetch_item(state, dataset, item)
+        target_gsd = target_gsd_for(request, stac_item)
+        return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset[0], target_gsd=target_gsd)
+    route = request.scope.get("route")
+    if getattr(route, "name", None) not in _OPERATOR_ROUTES:
+        raise HTTPException(status_code=400, detail="op is for tiles and their TileJSON only")
+    if len(asset) > MAX_OPERATOR_ASSETS or len(set(asset)) != len(asset):
+        raise HTTPException(
+            status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them"
+        )
     stac_item = await _fetch_item(state, dataset, item)
-    target_gsd = _target_gsd(request, stac_item)
-    return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset, target_gsd=target_gsd)
+    target_gsd = target_gsd_for(request, stac_item)
+    operator, params = requested
+    return _operator_input(
+        state,
+        stac_item,
+        config=config,
+        item=item,
+        assets=asset,
+        operator=operator,
+        params=params,
+        target_gsd=target_gsd,
+    )
+
+
+def operator_post_process(
+    src_path: Annotated[Any, Depends(dataset_asset_path)],
+    op: Annotated[str | None, Query(description="operator of a computed tile, such as `band_math`")] = None,
+    op_version: Annotated[int | None, Query(ge=1, description="version of the operator")] = None,
+    params: Annotated[
+        str | None, Query(max_length=MAX_OPERATOR_PARAMS_CHARS, description="its parameters, as JSON")
+    ] = None,
+) -> Callable[[ImageData], ImageData] | None:
+    """TiTiler's ``process_dependency`` for our tile: the operator's kernel, the one a job calls.
+
+    The path dependency has already validated ``op`` and built the inputs, so this only
+    hands its kernel to the factory. TiTiler's own ``algorithm`` parameters are gone
+    (plan M4-09, F3).
+    """
+    if not isinstance(src_path, OperatorInput):
+        return None
+    operator, parameters = src_path.operator, src_path.params
+    return lambda image: operator.run(image, parameters)
+
+
+def _open_reader(src_path: Any, **reader_params: Any) -> Any:
+    """The reader of the tile: ours for an operator's inputs, `access`'s for a single asset."""
+    if isinstance(src_path, OperatorInput):
+        return _operator_support().reader(src_path, **reader_params)
+    return open_asset(src_path, **reader_params)
+
+
+# The stages of `OrderRefused` at which a crop is refused rather than delivered without
+# its `recipe.json` (Otto, 07.10.2026): a foreign host, an input gone from its source.
+_RECIPE_ABORTS = frozenset({"hosts", "version"})
 
 
 class DownloadRequest(BaseModel):
@@ -391,13 +534,52 @@ class DownloadRequest(BaseModel):
     A POST body rather than URL parameters, unlike the tile path's Z4 rule: the
     tile URL has to be cache-stable and CDN-able, but a crop answers once and is
     never cached (D11), and an AOI polygon can be far larger than fits comfortably
-    in a query string. ``items`` carries more than one id only for a mosaic
-    (adr/0006 §4.2 Option M1) — a single item is simply a list of one.
+    in a query string.
+
+    ``groups`` (M3-17, replacing the flat ``items`` list of M2-06/M3-18):
+    item ids, grouped exactly as the results list groups them (the same
+    per-overpass grouping PR #84's group outline already draws on the map) —
+    "download folgt der Ansicht" (P19). Each group mosaics into its own
+    merged file; more than one group lands in the same ZIP as separate files
+    (:func:`~earthx.access.download.build_download_zip`). A single group is
+    simply a list of one, the M2-06 shape.
     """
 
-    items: list[str] = Field(min_length=1, max_length=64, description="item ids, one scene each")
+    groups: list[list[str]] = Field(
+        min_length=1,
+        max_length=64,
+        description="item ids per group, one merged file per group, as the results list groups them",
+    )
     assets: list[str] = Field(min_length=1, max_length=32, description="asset keys, e.g. `visual`")
     aoi: dict[str, Any] = Field(description="a GeoJSON Polygon or MultiPolygon, in WGS84")
+    resolution: int = Field(
+        default=1,
+        description=(
+            "how many times coarser than native resolution to read, one of "
+            f"{RESOLUTION_FACTORS} — 1 is native, the default (Otto, 23.09.2026, M3-18 §10). "
+            "Never chosen automatically; the caller (the download dialog) picks it explicitly."
+        ),
+    )
+
+    @field_validator("groups")
+    @classmethod
+    def _groups_are_nonempty_and_disjoint(cls, groups: list[list[str]]) -> list[list[str]]:
+        """Each group names at least one item, and no item id repeats across (or within) a group.
+
+        A repeat would either mosaic the same scene onto itself for no reason,
+        or — across two groups — write the same item into two merged files
+        without saying which one "really" contains it; refused up front (422)
+        rather than silently accepted (M3-17 plan §5).
+        """
+        if any(len(group) == 0 for group in groups):
+            raise ValueError("each group must name at least one item")
+        seen: set[str] = set()
+        for group in groups:
+            for item_id in group:
+                if item_id in seen:
+                    raise ValueError(f"item {item_id!r} is named more than once across the groups")
+                seen.add(item_id)
+        return groups
 
 
 async def download_crop(
@@ -410,7 +592,19 @@ async def download_crop(
     Every check that can run before an asset is opened runs first, in the order
     M2-06's acceptance criteria list the failures: unknown dataset, licence tier,
     a malformed AOI, an unknown item, an AOI that touches none of the given items,
-    then the size cap — only after all of that does anything reach `gateway`.
+    the item-count cap, then the output size cap (M3-18: built from the AOI and
+    the items' own metadata, not from how many items or assets were asked for)
+    — only after all of that does anything reach `gateway`.
+
+    **Per group, not per item (M3-17).** ``body.groups`` names one or more
+    groups; each is filtered and cropped on its own extent exactly as a
+    single-group request always was. A group that does not touch the AOI at
+    all is *dropped*, not a failure — the request only fails with a `400`
+    once every group has been dropped that way, the same threshold a
+    single-group request already had. The item-count and output-size caps
+    below cover the *whole* request, summed over every surviving group: two
+    groups that would each fit alone can still add up to more than one
+    download is allowed to cost.
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -429,64 +623,229 @@ async def download_crop(
     except InvalidAoi as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
 
-    items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in body.items))
-    matched = filter_items_intersecting_aoi(items, aoi)
-    if not matched:
-        raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
+    if body.resolution not in RESOLUTION_FACTORS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resolution must be one of {RESOLUTION_FACTORS}, not {body.resolution!r}",
+        )
 
-    try:
-        check_size_cap(item_count=len(matched), asset_count=len(set(body.assets)))
-    except AoiTooLarge as error:
-        raise HTTPException(status_code=413, detail=str(error)) from None
+    # One fetch per item id, even where two groups would otherwise ask for it
+    # twice — the request validator already refuses that, so this dict never
+    # loses an entry to a second fetch overwriting the first.
+    all_ids = [item_id for group in body.groups for item_id in group]
+    fetched_items = await asyncio.gather(*(_fetch_item(state, dataset, item_id) for item_id in all_ids))
+    items_by_id = dict(zip(all_ids, fetched_items, strict=True))
+
+    surviving_groups: list[tuple[list[dict[str, Any]], Any]] = []
+    skipped_item_ids: list[str] = []
+    for group_ids in body.groups:
+        group_items = [items_by_id[item_id] for item_id in group_ids]
+        matched = filter_items_intersecting_aoi(group_items, aoi)
+        if not matched:
+            skipped_item_ids.extend(group_ids)
+            continue
+        try:
+            # AOI ∩ union of this group's own item footprints (Otto,
+            # 23.09.2026, M3-18 §13) — the same geometry the frontend's group
+            # outline already shows before a download starts (PR #84,
+            # `groupOutline.ts`). Tighter than the bbox pre-filter above, so
+            # it also catches the case that filter passed on a bbox alone but
+            # the items' real, often rotated footprints do not actually reach
+            # (bug A, Otto's review of PR #86) — such a group is dropped the
+            # same way a group missing the bbox pre-filter already is.
+            region = compute_crop_region(matched, aoi)
+        except AoiOutsideItems:
+            skipped_item_ids.extend(group_ids)
+            continue
+        surviving_groups.append((matched, region))
+
+    if not surviving_groups:
+        raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
     # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
     # and two identical keys would otherwise write the same file name into the
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
     wanted = list(dict.fromkeys(body.assets))
-    crops = [
-        AssetCrop(
-            asset=asset,
-            paths=tuple(
-                _resolve_asset_path(
-                    state, matched_item, config=config, item=matched_item["id"], asset=asset
-                )
-                for matched_item in matched
-            ),
+
+    # Native is always planned too (F10c, M3-18 §10): even when the caller
+    # already chose a coarser resolution, a rejection still needs the smallest
+    # *native-relative* factor to suggest, not one relative to what was
+    # already asked for.
+    native_planned_by_group: list[list[PlannedOutput]] = [
+        plan_outputs(matched, wanted, region) for matched, region in surviving_groups
+    ]
+    planned_by_group: list[list[PlannedOutput]] = (
+        native_planned_by_group
+        if body.resolution == 1
+        else [
+            plan_outputs(matched, wanted, region, resolution_factor=body.resolution)
+            for matched, region in surviving_groups
+        ]
+    )
+    try:
+        check_item_count_cap(sum(len(matched) for matched, _ in surviving_groups))
+        check_output_size_cap(
+            [output for planned in planned_by_group for output in planned],
+            native_planned=[output for planned in native_planned_by_group for output in planned],
         )
-        for asset in wanted
+    except AoiTooLarge as error:
+        raise HTTPException(status_code=413, detail=str(error)) from None
+
+    def _crops_for(matched_items: list[dict[str, Any]], planned: list[PlannedOutput]) -> list[AssetCrop]:
+        planned_by_asset = {output.label: output for output in planned}
+        return [
+            AssetCrop(
+                asset=asset,
+                paths=tuple(
+                    _resolve_asset_path(
+                        state, matched_item, config=config, item=matched_item["id"], asset=asset
+                    )
+                    for matched_item in matched_items
+                ),
+                width=None if body.resolution == 1 else planned_by_asset[asset].width,
+                height=None if body.resolution == 1 else planned_by_asset[asset].height,
+            )
+            for asset in wanted
+        ]
+
+    first_matched, first_region = surviving_groups[0]
+    first_crops = _crops_for(first_matched, planned_by_group[0])
+    additional_groups = [
+        GroupCrop(
+            item_ids=[matched_item["id"] for matched_item in matched],
+            crops=_crops_for(matched, planned),
+            region_geometry=shapely_mapping(region),
+        )
+        for (matched, region), planned in zip(surviving_groups[1:], planned_by_group[1:], strict=True)
     ]
 
+    # The worker core stays out of the tiler's start (the intake imports it), so it is
+    # loaded when the first crop asks for its recipe.
+    from earthx.api.intake import crop_recipe_json
+
+    accepted_at = datetime.now(timezone.utc)
+    recipe_omitted_cause: str | None = None
     try:
-        zip_bytes = await run_in_threadpool(
+        recipe_json: bytes | None = crop_recipe_json(
+            config,
+            groups=[matched for matched, _ in surviving_groups],
+            assets=wanted,
+            aoi=body.aoi,
+            resolution_factor=body.resolution,
+            accepted_at=accepted_at,
+        )
+    except OrderRefused as refused:
+        # By cause (Otto, 07.10.2026): an address its dataset does not declare, or an
+        # input that is gone from its source, stops the download. Anything else the
+        # items' metadata does to the recipe costs the ZIP its `recipe.json` only.
+        if refused.stage in _RECIPE_ABORTS:
+            LOGGER.warning("crop recipe refused", extra={"dataset": dataset, "stage": refused.stage})
+            raise HTTPException(status_code=refused.status_code, detail=refused.detail) from None
+        LOGGER.warning("crop recipe omitted", extra={"dataset": dataset, "stage": refused.stage})
+        recipe_json = None
+        recipe_omitted_cause = refused.stage
+    bib = citation_bib(config, downloaded=accepted_at.date())
+
+    total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
+    large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
+    if large and _LARGE_DOWNLOAD_LOCK.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="another large download is running, try again shortly",
+            headers={"Retry-After": "30"},
+        )
+
+    async def _build_zip() -> bytes:
+        return await run_in_threadpool(
             build_download_zip,
             config=config,
             open_reader=open_asset,
-            crops=crops,
+            crops=first_crops,
             aoi_geometry=body.aoi,
-            item_ids=[matched_item["id"] for matched_item in matched],
+            region_geometry=shapely_mapping(first_region),
+            item_ids=[matched_item["id"] for matched_item in first_matched],
+            additional_groups=additional_groups,
+            skipped_item_ids=skipped_item_ids,
+            resolution_factor=body.resolution,
+            recipe_json=recipe_json,
+            citation_bib=bib,
+            recipe_omitted_cause=recipe_omitted_cause,
+            # The GDAL/VSI settings `gateway` also uses for the tile path
+            # (timeouts, the read cache, no directory listings on open) —
+            # missing here until M3-18 (F7 Nebenbefund), so a crop's reads
+            # were unbounded and uncached. `rasterio.Env` is thread-local
+            # (adr/0006's own `_read_statistics` follows the same pattern), so
+            # it has to be entered inside the threadpool call, not around it.
+            gdal_env=state.earthx_gdal_options,
         )
+
+    try:
+        if large:
+            async with _LARGE_DOWNLOAD_LOCK:
+                zip_bytes = await _build_zip()
+        else:
+            zip_bytes = await _build_zip()
     except AoiOutsideItems as error:
         # The bbox prefilter passed but the geometry itself misses every item's
         # actual footprint (a bbox is not the data — MGRS tiles are rotated).
         raise HTTPException(status_code=400, detail=str(error)) from None
     except RioTilerError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
-    except (RasterioError, GatewayError):
+    except (RasterioIOError, GatewayError):
+        # A genuine read failure only (Otto, 23.09.2026, PR #86 review): a bug in
+        # our own COG-writing code can just as easily raise a `RasterioError` that
+        # is *not* `RasterioIOError` (an invalid transform, a block-size
+        # constraint, a bad array shape — the same distinction the tile path's
+        # `_rasterio_error`/`_rasterio_io_error` handlers already draw). Catching
+        # the whole `RasterioError` hierarchy here used to relabel any of those as
+        # "could not be read from the source", which is false and hides a code
+        # bug behind the same message a real upstream failure gets. Anything that
+        # is not `RasterioIOError` is deliberately left to propagate: `build_app`
+        # already registers `_rasterio_error` for exactly this route, which logs
+        # the real exception (with the request id, `logging.py`'s formatter) and
+        # answers 500, never silently.
         raise HTTPException(status_code=502, detail="the asset could not be read from the source") from None
+    except CorruptOutput:
+        # Our own output failed its read-back twice (M3-22, F1): never hand it
+        # out. The request id is in the body too, so a user can quote it.
+        LOGGER.error("a generated download file did not pass verification", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "a generated file did not pass verification. Please try again; "
+                f"if it keeps failing, report request ID {get_request_id()}."
+            ),
+        ) from None
 
+    skipped_group_count = len(body.groups) - len(surviving_groups)
     LOGGER.info(
         "download answered",
         extra={
             "dataset": dataset,
-            "items": len(matched),
+            "groups": len(surviving_groups),
+            "skipped_groups": skipped_group_count,
+            "items": sum(len(matched) for matched, _ in surviving_groups),
             "assets": len(wanted),
             "bytes": len(zip_bytes),
+            "resolution": body.resolution,
         },
     )
     return StreamingResponse(
         iter([zip_bytes]),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{dataset}-crop.zip"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{dataset}-crop.zip"',
+            # A group dropped for not touching the AOI at all (above) is
+            # recorded inside the ZIP's ATTRIBUTION.txt (`skipped_item_ids`),
+            # but that only reaches the user after the file is already saved —
+            # these two headers let the download dialog say so *before* that,
+            # review finding 1: "der Nutzer muss das sehen". Counts only
+            # (`X-Skipped-Groups`/`X-Total-Groups`), never item ids or
+            # anything geometry-shaped, so the CLAUDE.md rule against AOI/query
+            # data in a header still holds.
+            "X-Total-Groups": str(len(body.groups)),
+            "X-Skipped-Groups": str(skipped_group_count),
+        },
     )
 
 
@@ -509,24 +868,6 @@ async def statistics_cache(request: Request) -> AsyncIterator[PostgresStatsCache
         yield PostgresStatsCache(conn)
 
 
-def build_item_source(registry: DatasetRegistry, gateway: Gateway, pool: Any):
-    """How the tiler gets an item: through the adapter, the gateway and the item cache.
-
-    A closure rather than a dependency of its own, so that a test can put a recorded
-    item in its place without a database and without a network (adr/0002 §2).
-    """
-
-    async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
-        if pool is None:
-            return await get_item(dataset_id, item_id, gateway=gateway, registry=registry)
-        async with pool.connection() as conn:
-            return await get_item(
-                dataset_id, item_id, gateway=gateway, registry=registry, cache=PostgresSearchCache(conn)
-            )
-
-    return item_source
-
-
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with (
@@ -534,19 +875,39 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         Gateway(app.state.earthx_policy, resolve=app.state.earthx_resolver) as gateway,
     ):
         app.state.earthx_cache_pool = pool
-        app.state.earthx_item_source = build_item_source(REGISTRY, gateway, pool)
+        # Only with a pool: without a database this process still starts and serves
+        # federated datasets as before (E5); a materialized item is then a 503.
+        if pool is not None:
+            async with pool.connection() as conn:
+                await check_item_holdings(app.state.earthx_registry, conn)
+        # The registry `build_app` was actually given, not the module-wide default
+        # (M3-11a §2.2): before this field existed the two never diverged in a test,
+        # because nothing here read from pgstac at all — a materialized item does.
+        app.state.earthx_item_source = build_item_source(
+            app.state.earthx_registry, app.state.earthx_adapters, gateway, pool
+        )
         yield
 
 
-def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> FastAPI:
+def build_app(
+    registry: DatasetRegistry = REGISTRY, *, adapters: AdapterSpecs = ADAPTER_SPECS, lifespan=_lifespan
+) -> FastAPI:
     """The tiler application, with everything the factory needs hung on it.
 
-    ``registry`` and ``lifespan`` are arguments so that a test can build the same app
-    against a registry of its own and without a database — not so that a deployment
-    can: the process entrypoint below takes neither.
+    ``registry``, ``adapters`` and ``lifespan`` are arguments so that a test can build
+    the same app against a registry of its own and without a database — not so that
+    a deployment can: the process entrypoint below takes none of them. A registry
+    entry that asks an adapter for something ``adapters`` lacks stops the build
+    (M4-01b F1).
     """
+    check_adapter_specs(registry, adapters)
+    # M3-16: this process's own JSON logging, before anything can log a line
+    # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
+    # `RequestIdMiddleware` below is this process's only access log.
+    configure_logging()
     policy = policy_from_registry(registry)
     app = FastAPI(title="earthx-tiler", lifespan=lifespan)
+    app.add_middleware(RequestIdMiddleware)
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
@@ -560,9 +921,14 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     # The download route (M2-06) needs the dataset's licence, title and terms —
     # nothing the path dependency above already carries.
     app.state.earthx_registry = registry
+    # The item source fetches federated items through this table (adr/0011 F1).
+    app.state.earthx_adapters = adapters
 
     factory = EarthxTilerFactory(
         path_dependency=dataset_asset_path,
+        layer_dependency=BidxParams,
+        process_dependency=operator_post_process,
+        reader=_open_reader,
         environment_dependency=gdal_environment,
         stats_cache_dependency=statistics_cache,
         viewer_zoom_dependency=_viewer_zoom_range,
@@ -585,7 +951,8 @@ def build_app(registry: DatasetRegistry = REGISTRY, *, lifespan=_lifespan) -> Fa
     async def _rio_tiler_error(request: Request, error: RioTilerError):
         # Band names, expressions, colormaps: what the caller asked for cannot be
         # rendered from this asset. The message is rio-tiler's own and names no address.
-        return _problem(400, str(error))
+        # An operator tile's refusals (`processing.tile.TileRefused`) carry their own status.
+        return _problem(getattr(error, "status_code", 400), str(error))
 
     # Module-level, not a closure like the others above: a test builds its own
     # bare app around `EarthxTilerFactory` (`access.tiles`, no registry, no

@@ -11,10 +11,10 @@ What is specific to Earth Search lives here; what is not is
 §4.2), starting with the shape of our own page marker (rule III) and the input
 checks of ``SearchParams`` (rule V). What stays here:
 
-* **Rule I** — ``resolve_dataset`` looks the collection up in our own catalogue
-  *first*. Earth Search answers an unknown collection with ``200`` and an empty
-  result (§3.5), which would turn "there is no such dataset" into "there is
-  nothing in it".
+* **Rule I** — the caller hands in our own registry entry, looked up *first* by
+  ``adapters.dataset_config``. Earth Search answers an unknown collection with
+  ``200`` and an empty result (§3.5), which would turn "there is no such dataset"
+  into "there is nothing in it".
 * **Rule III, continued** — reading the ``next`` link out of Earth Search's own
   answer shape (``_next_marker``) and building the search body it expects
   (``_search_body``) — both source-specific, per M1-07 (docs/plans/
@@ -32,16 +32,13 @@ import logging
 from typing import Any
 
 from earthx.adapters.cache import CacheValue, SearchCache
+from earthx.adapters.errors import InvalidQuery, UpstreamShapeError
 from earthx.adapters.federated_search import (
     ITEM_ID,
     SORTBY,
     TTL_ITEM_S,
-    InvalidQuery,
     ItemPage,
     SearchParams,
-    UnknownCollection,
-    UnsupportedSource,
-    UpstreamShapeError,
     cache_get,
     cache_set,
     decode_page_token,
@@ -49,25 +46,24 @@ from earthx.adapters.federated_search import (
     item_cache_key,
     matched_count,
     page_from_stored,
+    require_adapter,
     require_feature_list,
     search_cache_key,
     search_fingerprint,
     stac_interval,
     ttl_for_window,
 )
-from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import AdapterKind, DatasetConfig, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Gateway
 
 LOGGER = logging.getLogger("earthx.adapters.earth_search")
 
 
 async def search_items(
-    dataset_id: str,
+    config: DatasetConfig,
     params: SearchParams | None = None,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> ItemPage:
     """Search items of one federated collection.
@@ -75,11 +71,12 @@ async def search_items(
     ``cache=None`` is a valid call: without a cache this is slower, never wrong (E5).
     """
     params = params or SearchParams()
-    config = resolve_dataset(dataset_id, registry)
+    require_adapter(config, AdapterKind.EARTH_SEARCH_V1)
+    dataset_id = config.dataset_id
     fingerprint = search_fingerprint(dataset_id, params)
     marker = None if params.page_token is None else decode_page_token(params.page_token, dataset_id, fingerprint)
 
-    key = search_cache_key(fingerprint, marker)
+    key = search_cache_key(fingerprint, marker, params.limit)
     cached = await cache_get(cache, key)
     if cached is not None and isinstance(cached.get("features"), list):
         return page_from_stored(dataset_id, fingerprint, cached, from_cache=True)
@@ -97,11 +94,10 @@ async def search_items(
 
 
 async def get_item(
-    dataset_id: str,
+    config: DatasetConfig,
     item_id: str,
     *,
     gateway: Gateway,
-    registry: DatasetRegistry = REGISTRY,
     cache: SearchCache | None = None,
 ) -> dict[str, Any]:
     """One item by id, without a search in front of it (adr/0001 Z1).
@@ -109,7 +105,8 @@ async def get_item(
     A missing item stays the source's ``404``: the gateway carries the status code
     through unchanged, which is exactly what ``pystac_client`` would have lost.
     """
-    config = resolve_dataset(dataset_id, registry)
+    require_adapter(config, AdapterKind.EARTH_SEARCH_V1)
+    dataset_id = config.dataset_id
     if not ITEM_ID.match(item_id):
         raise InvalidQuery("item id contains characters we do not put into a URL path")
 
@@ -128,17 +125,6 @@ async def get_item(
     return item
 
 
-def resolve_dataset(dataset_id: str, registry: DatasetRegistry) -> DatasetConfig:
-    """Our own catalogue decides whether a collection exists (adr/0005 rule I)."""
-    try:
-        config = registry.get(dataset_id)
-    except UnknownDatasetError:
-        raise UnknownCollection(dataset_id) from None
-    if config.source.adapter is not AdapterKind.EARTH_SEARCH_V1:
-        raise UnsupportedSource(f"{dataset_id} is served by {config.source.adapter}, not Earth Search v1")
-    return config
-
-
 def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None) -> dict[str, Any]:
     body: dict[str, Any] = {
         "collections": [config.source.source_collection_id],
@@ -147,6 +133,13 @@ def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None
     }
     if params.bbox is not None:
         body["bbox"] = [float(value) for value in params.bbox]
+    if params.intersects is not None:
+        body["intersects"] = params.intersects
+    if params.ids is not None:
+        # Measured (M3-08 plan §2.1): `ids` is AND-combined with a spatial or time
+        # filter by this source, not a shortcut around them — a caller who narrows
+        # both gets the intersection, not just the ids.
+        body["ids"] = list(params.ids)
     window = stac_interval(params.start, params.end)
     if window is not None:
         body["datetime"] = window

@@ -24,11 +24,12 @@ ALLOWED_IMPORTS = {
     "readers": {"gateway"},
     "access": {"readers", "catalog"},
     "processing": {"access", "readers", "catalog"},
-    "jobs": {"processing"},
+    "jobs": {"processing", "objectstore"},
     "discovery": {"adapters", "catalog", "gateway"},
     "identity": set(),
     # plan m7a §3: the chatbot reads the platform only through its public API.
     "chatbot": {"gateway"},
+    "objectstore": set(),
 }
 ALL_MODULES = set(ALLOWED_IMPORTS) | {"api", "datasets"}
 
@@ -102,14 +103,16 @@ def test_module_boundary_contracts_only_count_direct_imports(
     assert config.getboolean(f"importlinter:contract:{module}", "allow_indirect_imports") is True
 
 
-@pytest.mark.parametrize("contract", ["datasets-isolated", "no-database-in-worker-core"])
-def test_the_two_chain_sensitive_contracts_keep_counting_chains(
+@pytest.mark.parametrize(
+    "contract", ["datasets-isolated", "no-database-in-worker-core", "no-object-store-in-worker-core"]
+)
+def test_the_chain_sensitive_contracts_keep_counting_chains(
     config: configparser.ConfigParser, contract: str
 ) -> None:
     """KLAERUNGEN B9: for the worker-core and dataset-isolation rules the chain
 
     itself is the violation (e.g. `processing -> catalog -> psycopg`), so
-    these two contracts must NOT set `allow_indirect_imports`.
+    these contracts must NOT set `allow_indirect_imports`.
     """
     assert not config.has_option(f"importlinter:contract:{contract}", "allow_indirect_imports")
 
@@ -118,19 +121,47 @@ def test_http_clients_are_confined_to_gateway(config: configparser.ConfigParser)
     section = "importlinter:contract:http-only-in-gateway"
     assert _modules(config, section, "source_modules") == (ALL_MODULES - {"gateway"}) | _root_modules()
     forbidden = _modules(config, section, "forbidden_modules")
-    for client in {"httpx", "requests", "urllib", "pystac_client", "aiohttp"}:
+    for client in {"httpx", "requests", "urllib", "pystac_client", "aiohttp", "botocore", "urllib3"}:
         assert client in forbidden
+
+
+def test_the_one_exception_to_the_client_contract_is_one_import(config: configparser.ConfigParser) -> None:
+    """adr/0015 F2: the object store's client, and nothing else, may import `botocore`.
+
+    An exception for a module rather than an import would let a second file in
+    `objectstore` open connections unseen (measured, adr/0015 §3.5).
+    """
+    section = "importlinter:contract:http-only-in-gateway"
+    lines = [line.strip() for line in config.get(section, "ignore_imports").splitlines() if line.strip()]
+    assert lines == ["earthx.objectstore.client -> botocore"]
+    for contract in config.sections():
+        if contract != section:
+            assert not config.has_option(contract, "ignore_imports"), contract
 
 
 def test_the_worker_core_reaches_no_database(config: configparser.ConfigParser) -> None:
     """KLAERUNGEN B9: no database, queue, object store or internal API in the core.
 
     Guarded rather than only stated since M1-04b, which is when psycopg became a real
-    dependency. Reading the data sources through `gateway` stays allowed.
+    dependency. Reading the data sources through `gateway` stays allowed. Since M4-08a
+    only `processing` is the core: `jobs` is the shell with the queue and may use
+    psycopg (M4 Q4, adr/0013 §6.1), and the contract names the pool and the async
+    driver as well.
     """
     section = "importlinter:contract:no-database-in-worker-core"
-    assert _modules(config, section, "source_modules") == {"jobs", "processing"}
-    assert "psycopg" in _modules(config, section, "forbidden_modules")
+    assert _modules(config, section, "source_modules") == {"processing"}
+    assert _modules(config, section, "forbidden_modules") == {"psycopg", "psycopg_pool", "asyncpg"}
+
+
+def test_the_worker_core_reaches_no_object_store(config: configparser.ConfigParser) -> None:
+    """KLAERUNGEN B9, adr/0015 §4.2 point 4, M4 R2: a contract of its own for `processing`.
+
+    `jobs` may import `objectstore`, so it cannot be a source here, and the rule is
+    not folded into `no-database-in-worker-core`, where `jobs` is one.
+    """
+    section = "importlinter:contract:no-object-store-in-worker-core"
+    assert _modules(config, section, "source_modules") == {"processing"}
+    assert _modules(config, section, "forbidden_modules") == {"objectstore", "botocore"}
 
 
 def test_every_module_exists_as_a_package() -> None:

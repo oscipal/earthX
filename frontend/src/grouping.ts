@@ -1,6 +1,14 @@
 // Group STAC items into time steps, using the grouping key the registry
-// names for the dataset (`earthx:viewer.group_by`, architekturplan.md 5.1)
-// instead of BIOMASS-specific knowledge.
+// names for the dataset instead of BIOMASS-specific knowledge. The key that
+// heads the *results list* and the download route's per-group merge (P19) is
+// `earthx:viewer.results_group_by` (M3-12, `datasets.ts::resultsGroupByOf`) —
+// callers pass it straight to `buildGroups` below, with no fallback logic
+// here: the registry states the key that always applies for a dataset, the
+// way `group_by` always did, and a genuinely missing property on an item
+// still surfaces as `MissingProperty`, same as it always has. Before M3-12
+// this file also carried `displayGroupBy`, a runtime fallback from a
+// hardcoded `s2:datatake_id` to the registry's own `group_by` — replaced by
+// `results_group_by` being a real registry field for every dataset now.
 //
 // `groupKey` mirrors `earthx.catalog.registry.group_key` part for part
 // (docs/plans/m2-07a-frontend-api-suche-quicklooks-zeitleiste.md §5): the
@@ -81,32 +89,28 @@ export function buildGroups(items: StacItem[], groupBy: readonly string[]): Time
   });
 }
 
-// The property that names a Sentinel-2 overpass: all tiles of one datatake
-// share one value, unlike `grid:code`, which names the individual MGRS tile.
-const DATATAKE_PROPERTY = 's2:datatake_id';
-
-// V-4: the visible grouping in the results list clusters same-overpass
-// tiles under one heading (day + datatake) instead of one heading per MGRS
-// tile. This is purely how the list is headed — it never touches the
-// registry's `group_by` (D19, used to keep `grouping.ts` and
-// `catalog.registry.group_key` in sync) and it never changes which scenes
-// exist or what each one renders (D11): `buildGroups` still lists every
-// item individually inside its group, each with its own quicklook and its
-// own tile URL.
-//
-// Falls back to the registry's own key (day + tile) when an item in the
-// current result set does not carry the property, rather than deciding per
-// item — a mixed fallback would put some tiles of the same overpass under a
-// datatake heading and others under a tile heading, which is worse than
-// keeping the one grouping the search results already carried consistently.
-export function displayGroupBy(items: readonly StacItem[], fallback: readonly string[]): string[] {
-  const hasDatatake =
-    items.length > 0 && items.every((it) => it.properties && DATATAKE_PROPERTY in it.properties);
-  return hasDatatake ? ['datetime', DATATAKE_PROPERTY] : [...fallback];
-}
-
 export function groupIndexOfItem(groups: TimeStepGroup[], itemId: string): number {
   return groups.findIndex((g) => g.items.some((it) => it.id === itemId));
+}
+
+// `itemIds`, split back into the groups they came from (M3-17: "download
+// folgt der Ansicht" needs one merged file per group, P19) — exactly the
+// split `store.ts::addCurrentToLayers` (PR #84, F5) already draws for a
+// pinned layer, reused here rather than a second, download-specific
+// grouping. Buckets keep the order their first member was encountered in
+// `itemIds`; an id `groupIndexOfItem` cannot place in any group (should not
+// happen for a live search result, but never assumed) shares one bucket with
+// every other such id rather than silently joining a group it does not
+// belong to.
+export function groupItemIdsFor(itemIds: readonly string[], groups: readonly TimeStepGroup[]): string[][] {
+  const byGroupIndex = new Map<number, string[]>();
+  for (const itemId of itemIds) {
+    const idx = groupIndexOfItem(groups as TimeStepGroup[], itemId);
+    const bucket = byGroupIndex.get(idx);
+    if (bucket) bucket.push(itemId);
+    else byGroupIndex.set(idx, [itemId]);
+  }
+  return [...byGroupIndex.values()];
 }
 
 // What the map should show: the expanded-in-the-list group's items, plus any

@@ -8,10 +8,9 @@ page marker.
 
 What lives here, and why it does not vary by source:
 
-* **Rule I** groundwork — :class:`UnknownCollection` and :class:`UnsupportedSource`
-  are the vocabulary every adapter's ``resolve_dataset`` raises; the lookup itself
-  stays with the adapter, because it is the one place that knows its own
-  :class:`~earthx.catalog.registry.AdapterKind`.
+* **Rule I** is not here: ``adapters.dataset_config`` looks the entry up, once,
+  and every adapter takes the entry itself (adr/0011 F3). What stays is
+  :func:`require_adapter`, the check that an adapter was handed an entry it serves.
 * **Rule III** — the page marker we hand out is ours, one shape (:data:`TOKEN_VERSION`)
   regardless of which source it points into. Splitting the token format per source
   would mean a client's marker only works against the source it was minted for,
@@ -32,13 +31,19 @@ import binascii
 import hashlib
 import json
 import logging
+import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from shapely.errors import ShapelyError
+from shapely.geometry import shape as shapely_shape
+
 from earthx.adapters.cache import CacheValue, SearchCache
-from earthx.catalog.registry import DatasetConfig
+from earthx.adapters.errors import InvalidQuery, UnsupportedSource, UpstreamShapeError
+from earthx.catalog.registry import AdapterKind, DatasetConfig
 
 LOGGER = logging.getLogger("earthx.adapters.federated_search")
 
@@ -61,7 +66,13 @@ TTL_ITEM_S = 24 * 60 * 60
 # or by a version that changed SORTBY, is refused rather than misread — one counter
 # for every adapter, because the marker's shape does not depend on which source it
 # was minted against.
-TOKEN_VERSION = 1
+#
+# 1 -> 2 (M3-13): the fingerprint this marker embeds no longer includes ``limit``
+# (below), so a marker minted under version 1 must not be read as a version-2 one —
+# only the version bump keeps that honest. A marker in flight when this deploys is
+# refused with `InvalidQuery`, the same as any other broken marker (adr/0005 rule
+# III); the caller starts a fresh search.
+TOKEN_VERSION = 2
 
 # M1-06 sent no ``sortby`` and rode on Earth Search's undocumented default order
 # (adr/0005 §8 point 5); M1-07 fixed one instead (docs/plans/m1-07-stac-api.md §7).
@@ -85,21 +96,26 @@ SORTBY: tuple[dict[str, str], ...] = (
 # would pass and then appear both in a URL path and as a second cache key.
 ITEM_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._:-]{0,254}\Z")
 
+# M3-08 F1a: neither source caps the vertex count of `intersects` (measured up to
+# 20 000 points / 454 kB going through both without a word, plan §2.1). Above this,
+# a caller is rejected and falls back to the bounding box on its own side (F2a) —
+# reducing it for them here would make a STAC answer look complete when it is not
+# (the same "silently something else" adr/0004 §3.4's simplification avoids by
+# flagging `truncated`, which a plain item search answer has no field for).
+MAX_INTERSECTS_POINTS = 1000
 
-class InvalidQuery(ValueError):
-    """The request breaks one of our own rules, before anything is sent upstream."""
+# M3-08 F3a: equal to MAX_LIMIT, so every requested id fits on a single page and a
+# caller never has to wonder which of more ids than that got dropped.
+MAX_IDS = MAX_LIMIT
 
+# A closed ring needs at least this many positions (three distinct corners plus the
+# repeated first/last one) to be an outline at all.
+MIN_RING_POINTS = 4
 
-class UnknownCollection(LookupError):
-    """No such collection in our catalogue (adr/0005 rule I) — the caller's 404."""
-
-
-class UnsupportedSource(LookupError):
-    """The collection exists, but another adapter serves it. A dispatch mistake."""
-
-
-class UpstreamShapeError(RuntimeError):
-    """The source answered something that is not a STAC item collection."""
+_GEOMETRY_TYPES = frozenset(
+    {"Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "GeometryCollection"}
+)
+_POLYGONAL_TYPES = frozenset({"Polygon", "MultiPolygon"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +128,8 @@ class SearchParams:
     """
 
     bbox: tuple[float, float, float, float] | None = None
+    intersects: Mapping[str, Any] | None = None
+    ids: tuple[str, ...] | None = None
     start: datetime | None = None
     end: datetime | None = None
     limit: int = DEFAULT_LIMIT
@@ -120,6 +138,8 @@ class SearchParams:
     def __post_init__(self) -> None:
         self._check_limit()
         self._check_bbox()
+        self._check_intersects()
+        self._check_ids()
         self._check_time()
 
     def _check_limit(self) -> None:
@@ -131,6 +151,8 @@ class SearchParams:
     def _check_bbox(self) -> None:
         if self.bbox is None:
             return
+        if self.intersects is not None:
+            raise InvalidQuery("bbox and intersects ask two different questions; send one")
         if len(self.bbox) != 4:
             raise InvalidQuery("bbox needs four values: west, south, east, north")
         west, south, east, north = self.bbox
@@ -148,12 +170,127 @@ class SearchParams:
         # that crosses the antimeridian, and both sources read it that way too. Only
         # the latitudes have an order that can be wrong.
 
+    def _check_intersects(self) -> None:
+        """M3-08 F6a: every GeoJSON geometry type `item-search`'s own conformance
+        class promises (K8), checked on our side rather than left to the source —
+        both sources take a latitude of 999 or a self-intersecting ring without a
+        word, or otherwise answer with their own internals in the error text
+        (adr/0005 rule III; M3-08 plan §2.2)."""
+        if self.intersects is None:
+            return
+        points = _check_geometry(self.intersects)
+        if points > MAX_INTERSECTS_POINTS:
+            raise InvalidQuery(
+                f"intersects has more than {MAX_INTERSECTS_POINTS} positions "
+                "(M3-08 F1a — search its bounding box instead)"
+            )
+
+    def _check_ids(self) -> None:
+        if self.ids is None:
+            return
+        if not self.ids:
+            raise InvalidQuery("ids is empty; omit it instead of asking for nothing")
+        if len(self.ids) > MAX_IDS:
+            raise InvalidQuery(f"ids has more than {MAX_IDS} entries (M3-08 F3a)")
+        if not all(ITEM_ID.match(item_id) for item_id in self.ids):
+            raise InvalidQuery("ids contains a value that is not a scene id we would put into a URL path")
+
     def _check_time(self) -> None:
         for name, value in (("start", self.start), ("end", self.end)):
             if value is not None and value.tzinfo is None:
                 raise InvalidQuery(f"{name} has no timezone; STAC instants carry one")
         if self.start is not None and self.end is not None and self.start > self.end:
             raise InvalidQuery("time window ends before it starts")
+
+
+def _check_geometry(geometry: Any, *, _nested: bool = False) -> int:
+    """Enough of a GeoJSON check that nothing shapeless, out of bounds, or invalid
+    reaches a source — returns the number of positions found, so the caller can
+    enforce the point budget (F1a) without a second walk.
+
+    Not a full GeoJSON validator, same posture as `catalog.coverage`'s own check for
+    the coverage AOI: this refuses what would otherwise be serialised into a request
+    body without anyone having looked at it. No message here names a coordinate
+    (projektplan.md 7, point 6).
+    """
+    if not isinstance(geometry, Mapping):
+        raise InvalidQuery("intersects is not a GeoJSON object")
+    kind = geometry.get("type")
+    if kind == "GeometryCollection":
+        if _nested:
+            raise InvalidQuery("intersects must not nest a GeometryCollection inside another")
+        members = geometry.get("geometries")
+        if not isinstance(members, list) or not members:
+            raise InvalidQuery("intersects carries no geometries")
+        return sum(_check_geometry(member, _nested=True) for member in members)
+    if kind not in _GEOMETRY_TYPES:
+        raise InvalidQuery("intersects is not a GeoJSON geometry type we recognise")
+    coordinates = geometry.get("coordinates")
+    if not isinstance(coordinates, list) or not coordinates:
+        raise InvalidQuery("intersects carries no coordinates")
+    if kind in _POLYGONAL_TYPES:
+        for ring in _rings_of(kind, coordinates):
+            if len(ring) < MIN_RING_POINTS or ring[0] != ring[-1]:
+                raise InvalidQuery("intersects has a ring that is not closed or has too few positions")
+    points = _check_positions(coordinates)
+    if kind in _POLYGONAL_TYPES:
+        # Cheapest check first: a polygon far over the point budget is rejected
+        # before shapely is asked to validate it, not after.
+        if points > MAX_INTERSECTS_POINTS:
+            raise InvalidQuery(
+                f"intersects has more than {MAX_INTERSECTS_POINTS} positions "
+                "(M3-08 F1a — search its bounding box instead)"
+            )
+        _check_polygon_validity(geometry)
+    return points
+
+
+def _rings_of(kind: str, coordinates: list[Any]) -> list[list[Any]]:
+    if kind == "Polygon":
+        return [ring for ring in coordinates if isinstance(ring, list)]
+    return [ring for polygon in coordinates if isinstance(polygon, list) for ring in polygon if isinstance(ring, list)]
+
+
+def _check_positions(coordinates: Any) -> int:
+    """Walks a (possibly nested) coordinates array; returns the number of positions.
+
+    A position is the first list this recursion meets whose own entries are numbers
+    rather than further lists — that works for every GeoJSON geometry type, since
+    they differ only in how many list layers wrap the positions.
+    """
+    if isinstance(coordinates, list) and coordinates and all(_is_number(value) for value in coordinates):
+        if len(coordinates) < 2:
+            raise InvalidQuery("intersects has a position with fewer than two numbers")
+        longitude, latitude = coordinates[0], coordinates[1]
+        if not -180.0 <= float(longitude) <= 180.0:
+            raise InvalidQuery("intersects longitude is outside ±180")
+        if not -90.0 <= float(latitude) <= 90.0:
+            raise InvalidQuery("intersects latitude is outside ±90")
+        return 1
+    if not isinstance(coordinates, list) or not coordinates:
+        raise InvalidQuery("intersects carries no coordinates")
+    return sum(_check_positions(item) for item in coordinates)
+
+
+def _is_number(value: Any) -> bool:
+    """A coordinate, and not a bool — ``True`` is an ``int`` and would pass otherwise,
+    and not NaN/±inf, which JSON cannot spell but a caller inside this process can
+    still hand us as a Python float."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _check_polygon_validity(geometry: Mapping[str, Any]) -> None:
+    """Refuses a polygon whose rings self-intersect or otherwise fail the OGC
+    simple-feature rules — both sources take one without complaint and answer a
+    plausible-looking, silently wrong result (M3-08 plan §2.2: a self-intersecting
+    "bowtie" polygon against Earth Search returned 229 matches, none of them
+    checked against the shape actually asked for)."""
+    try:
+        shape = shapely_shape(geometry)
+    except (ShapelyError, ValueError, TypeError, KeyError, AttributeError):
+        raise InvalidQuery("intersects is not a usable GeoJSON geometry") from None
+    if not shape.is_valid:
+        raise InvalidQuery("intersects is not a valid polygon (rings must not self-intersect)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,31 +323,49 @@ def stac_interval(start: datetime | None, end: datetime | None) -> str | None:
 
 
 def search_fingerprint(dataset_id: str, params: SearchParams) -> str:
-    """A hash of the search itself — without the page marker, which points into it.
+    """A hash of the search itself — without the page marker, which points into it,
+    and without ``limit`` (M3-13): the mixed search (``api/mixed_search.py``) hands
+    each source a different, page-by-page share of the requested page size, so the
+    *same* search continued at a different ``limit`` must still read back as one
+    search. ``search_cache_key`` below folds ``limit`` back in on its own, because a
+    cached page's *contents* still depend on how big it was asked to be.
 
     Numbers go in as floats and instants as their UTC text, so that ``47`` and ``47.0``,
     or the same moment written in two offsets, are one search and not two.
+
+    ``intersects``/``ids`` are added to the payload only when set (M3-08): a search
+    that uses neither hashes exactly as it did when this field was introduced.
     """
-    payload = json.dumps(
-        {
-            "dataset": dataset_id,
-            "bbox": None if params.bbox is None else [float(value) for value in params.bbox],
-            "datetime": stac_interval(params.start, params.end),
-            "limit": params.limit,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    payload: dict[str, Any] = {
+        "dataset": dataset_id,
+        "bbox": None if params.bbox is None else [float(value) for value in params.bbox],
+        "datetime": stac_interval(params.start, params.end),
+    }
+    if params.intersects is not None:
+        # Serialised to its own normalised JSON text first (sorted keys, no
+        # whitespace) rather than embedded as a nested object: two geometries that
+        # differ only in key order or float spelling become one fingerprint.
+        payload["intersects"] = json.dumps(params.intersects, separators=(",", ":"), sort_keys=True)
+    if params.ids is not None:
+        # Sorted and de-duplicated: the same set of ids asked for in a different
+        # order, or with a repeated id, is one search.
+        payload["ids"] = sorted(set(params.ids))
+    return hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
-def search_cache_key(fingerprint: str, marker: str | None) -> str:
+def search_cache_key(fingerprint: str, marker: str | None, limit: int) -> str:
     """The search plus the page it is on.
 
     Keyed on the decoded marker rather than on the token text: the same page, asked
     for with a token that lost or regained its base64 padding, is one entry.
+
+    ``limit`` is folded in here, not into ``fingerprint`` (M3-13): a page's stored
+    ``features`` depend on how many were asked for, even when the marker that reached
+    it is otherwise the same continuing search.
     """
-    return hashlib.sha256(f"search:{fingerprint}:{marker or ''}".encode()).hexdigest()
+    return hashlib.sha256(f"search:{fingerprint}:{limit}:{marker or ''}".encode()).hexdigest()
 
 
 def item_cache_key(dataset_id: str, item_id: str) -> str:
@@ -246,6 +401,12 @@ def decode_page_token(token: str, dataset_id: str, fingerprint: str) -> str:
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
     except (ValueError, binascii.Error) as error:
         raise InvalidQuery("page token is not readable") from error
+    if isinstance(payload, dict) and payload.get("k") == "mixed":
+        # M3-13: a mixed-search token (`api/mixed_search.py`) has its own shape and
+        # is never valid here, even though it happens to be readable JSON — this
+        # collection is being searched alone this time, so the caller must start a
+        # fresh search rather than have this quietly misread as an adapter marker.
+        raise InvalidQuery("page token is for a mixed search, not a single collection")
     if not isinstance(payload, dict) or payload.get("v") != TOKEN_VERSION:
         raise InvalidQuery("page token has a shape this version does not read")
     if payload.get("d") != dataset_id or payload.get("h") != fingerprint:
@@ -282,6 +443,17 @@ def matched_count(payload: dict[str, Any]) -> int | None:
         context = payload.get("context")
         value = context.get("matched") if isinstance(context, dict) else None
     return value if isinstance(value, int) else None
+
+
+def require_adapter(config: DatasetConfig, kind: AdapterKind) -> None:
+    """Refuse an entry another adapter serves, before any request is built.
+
+    The dispatch never hands one over (``adapters.spec``); this guards a direct call
+    with the wrong entry, which would otherwise ask a source about a collection it
+    does not hold.
+    """
+    if config.source.adapter is not kind:
+        raise UnsupportedSource(f"{config.dataset_id} is served by {config.source.adapter}, not {kind}")
 
 
 def endpoint_of(config: DatasetConfig) -> str:

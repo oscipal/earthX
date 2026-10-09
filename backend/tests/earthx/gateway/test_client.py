@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import secrets
 from collections.abc import AsyncIterator, Callable
 
 import httpx
 import pytest
 
-from earthx.gateway import AddressRejected, Policy, UrlRejected, UrlTooLong
+from earthx.gateway import AddressRejected, Policy, UrlRejected, UrlTooLong, client
 from earthx.gateway.client import Gateway, GatewayResponse
 from earthx.gateway.errors import ResponseTooLarge, TooManyRedirects, UpstreamError, UpstreamTimeout
+from tests.conftest import own_log_text
 
 HOST = "earth-search.aws.element84.com"
 OTHER = "cdn.example.org"
@@ -129,6 +132,17 @@ async def test_retry_after_is_obeyed_but_capped() -> None:
     async with gateway:
         await gateway.get(URL)
     assert delays == [10.0]
+
+
+async def test_a_get_the_caller_marks_unsafe_to_repeat_is_not_retried() -> None:
+    """M3-07a: a caller with its own request budget (the shared rate slot) can opt a
+    GET out of the retry every other GET gets by default."""
+    handler, seen = replies(httpx.Response(503))
+    gateway, delays = build(handler)
+    async with gateway:
+        with pytest.raises(UpstreamError):
+            await gateway.get(URL, retry=False)
+    assert (len(seen), len(delays)) == (1, 0)
 
 
 async def test_a_post_is_not_repeated_unless_the_caller_allows_it() -> None:
@@ -288,11 +302,53 @@ async def test_the_aoi_never_reaches_the_log(caplog: pytest.LogCaptureFixture) -
         async with gateway:
             await gateway.get(f"https://{HOST}/v1/aggregate", params={"intersects": "POINT(7.1234 51.5678)"})
 
-    written = " ".join(str(value) for record in caplog.records for value in vars(record).values())
+    written = " ".join(own_log_text(record) for record in caplog.records)
     assert "51.5678" not in written
     assert "7.1234" not in written
     assert caplog.records[0].gateway_host == HOST
     assert caplog.records[0].gateway_query_sha
+
+
+class TestQueryDigestIsKeyedNotAPlainHash:
+    """Review of PR #85: a bbox's four floats come off a map UI with limited
+    precision over a bounded range — small enough that a plain, unsalted hash of
+    the query string can be brute-forced by recomputing it over candidate bboxes.
+    `_query_digest` must be an HMAC keyed with a secret that never leaves the
+    process, not `sha256(query)` on its own.
+    """
+
+    def test_the_digest_is_not_a_plain_sha256_of_the_query_string(self) -> None:
+        query = b"bbox=5.1,45.2,15.3,55.4"
+        url = f"https://{HOST}/v1/aggregate?{query.decode()}"
+        assert client._query_digest(url) != hashlib.sha256(query).hexdigest()[:12]
+
+    def test_the_same_query_digests_the_same_way_within_one_process(self) -> None:
+        url = f"https://{HOST}/v1/aggregate?bbox=5.1,45.2,15.3,55.4"
+        assert client._query_digest(url) == client._query_digest(url)
+
+    def test_a_different_process_key_changes_the_digest_for_the_same_query(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        url = f"https://{HOST}/v1/aggregate?bbox=5.1,45.2,15.3,55.4"
+        before = client._query_digest(url)
+        monkeypatch.setattr(client, "_QUERY_DIGEST_KEY", secrets.token_bytes(32))
+        after = client._query_digest(url)
+        assert before != after
+
+    def test_the_key_is_generated_fresh_and_long_enough_to_resist_guessing(self) -> None:
+        assert isinstance(client._QUERY_DIGEST_KEY, bytes)
+        assert len(client._QUERY_DIGEST_KEY) >= 32
+
+    async def test_the_key_never_appears_in_a_log_line(self, caplog: pytest.LogCaptureFixture) -> None:
+        handler, _ = replies(httpx.Response(200, json={}))
+        gateway, _ = build(handler)
+        with caplog.at_level(logging.INFO, logger="earthx.gateway"):
+            async with gateway:
+                await gateway.get(f"https://{HOST}/v1/aggregate", params={"bbox": "5.1,45.2,15.3,55.4"})
+        key_hex = client._QUERY_DIGEST_KEY.hex()
+        written = " ".join(own_log_text(record) for record in caplog.records)
+        assert key_hex not in written
+        assert str(client._QUERY_DIGEST_KEY) not in written
 
 
 class TestTheQueryStringStaysOurRefusal:

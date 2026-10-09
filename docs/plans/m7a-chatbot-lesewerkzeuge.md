@@ -209,7 +209,7 @@ jeder Frage live über die drei Lesewerkzeuge und `gateway` aus der STAC-API in
 2. In der `.venv` des Repos die Laufzeit installieren:
    - nur CPU: `pip install llama-cpp-python==0.3.19` (eine Antwort mit zwei
      Werkzeugrunden etwa 7 min);
-   - mit NVIDIA-GPU (adr/0011 §6): VS Build Tools 2022 und CUDA Toolkit 12.9
+   - mit NVIDIA-GPU (adr/0017 §6): VS Build Tools 2022 und CUDA Toolkit 12.9
      installieren, dann in PowerShell
      `$env:CMAKE_ARGS="-DGGML_CUDA=on"; pip install llama-cpp-python==0.3.19 --no-cache-dir --force-reinstall`
      (etwa 1–2 min pro Antwort mit `EARTHX_CHATBOT_GPU_LAYERS=20` auf 4 GB VRAM).

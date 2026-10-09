@@ -1,0 +1,126 @@
+[
+  {
+    "place_id": 555555,
+    "osm_type": "way",
+    "osm_id": 6666666,
+    "boundingbox": [
+      "49.0",
+      "49.1",
+      "8.0"
+    ],
+    "lat": "49.05",
+    "lon": "8.05",
+    "display_name": "Kaputtbox Eins, Beispielland",
+    "category": "place",
+    "type": "hamlet",
+    "name": "Kaputtbox Eins",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.05,
+        49.05
+      ]
+    }
+  },
+  {
+    "place_id": 555556,
+    "osm_type": "way",
+    "osm_id": 6666667,
+    "boundingbox": [
+      "49.0",
+      "49.1",
+      "not-a-number",
+      "8.1"
+    ],
+    "lat": "49.05",
+    "lon": "8.05",
+    "display_name": "Kaputtbox Zwei, Beispielland",
+    "category": "place",
+    "type": "hamlet",
+    "name": "Kaputtbox Zwei",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.05,
+        49.05
+      ]
+    }
+  },
+  {
+    "place_id": 555557,
+    "osm_type": "way",
+    "osm_id": 6666668,
+    "boundingbox": [
+      "49.1",
+      "49.0",
+      "8.0",
+      "8.1"
+    ],
+    "lat": "49.05",
+    "lon": "8.05",
+    "display_name": "Kaputtbox Drei, Beispielland",
+    "category": "place",
+    "type": "hamlet",
+    "name": "Kaputtbox Drei",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.05,
+        49.05
+      ]
+    }
+  },
+  {
+    "place_id": 555558,
+    "osm_type": "way",
+    "osm_id": 6666669,
+    "boundingbox": [
+      "49.0",
+      "49.1",
+      "8.1",
+      "8.0"
+    ],
+    "lat": "49.05",
+    "lon": "8.05",
+    "display_name": "Kaputtbox Vier, Beispielland",
+    "category": "place",
+    "type": "hamlet",
+    "name": "Kaputtbox Vier",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.05,
+        49.05
+      ]
+    }
+  },
+  {
+    "place_id": 555559,
+    "osm_type": "way",
+    "osm_id": 6666670,
+    "boundingbox": [
+      "49.00",
+      "49.10",
+      "8.00",
+      "8.10"
+    ],
+    "lat": "49.05",
+    "lon": "8.05",
+    "display_name": "Gute Box, Beispielland",
+    "category": "place",
+    "type": "hamlet",
+    "name": "Gute Box",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.05,
+        49.05
+      ]
+    }
+  }
+]

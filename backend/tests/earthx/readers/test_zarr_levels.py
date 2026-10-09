@@ -43,7 +43,7 @@ def requests(store_root: Path, monkeypatch: pytest.MonkeyPatch) -> list[httpx.Re
 
 def asset(target_gsd: float | None, *, anchor: str = "r10m"):
     """The asset an item would advertise: the finest level's own group, plus the
-    resolution the caller wants — exactly what `api.tiler._target_gsd` computes."""
+    resolution the caller wants — exactly what `access.resolve.target_gsd_for` computes."""
     return zarr_asset(
         f"{BASE_URL}/{PARENT_GROUP}/{anchor}",
         POLICY,

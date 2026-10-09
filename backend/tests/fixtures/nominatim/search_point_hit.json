@@ -1,0 +1,28 @@
+[
+  {
+    "place_id": 333333,
+    "osm_type": "node",
+    "osm_id": 4444444,
+    "boundingbox": [
+      "49.0090",
+      "49.0110",
+      "8.3990",
+      "8.4010"
+    ],
+    "lat": "49.01",
+    "lon": "8.40",
+    "display_name": "Musterbahnhof, Musterstadt, Beispielland",
+    "category": "railway",
+    "type": "station",
+    "importance": 0.3,
+    "name": "Musterbahnhof",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "Point",
+      "coordinates": [
+        8.4,
+        49.01
+      ]
+    }
+  }
+]

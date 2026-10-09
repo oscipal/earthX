@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { CoverageCell, CoverageResponse } from './api';
 import {
+  areaGeometry,
+  bandViewportBbox,
+  bboxContains,
   cellBbox,
   cellsToFeatureCollection,
   clampBboxLongitude,
@@ -9,6 +12,10 @@ import {
   coverageFillColorExpression,
   FOOTPRINT_MIN_ZOOM,
   InvalidCellKey,
+  isAreaAnswer,
+  levelForViewport,
+  MIN_VIEWPORT_LEVEL,
+  roundBboxToGrid,
   showFootprints,
 } from './coverage';
 
@@ -131,6 +138,8 @@ function response(overrides: Partial<CoverageResponse> = {}): CoverageResponse {
     footprints_advised: false,
     from_cache: false,
     extent: null,
+    area: null,
+    ignored_filters: [],
     ...overrides,
   };
 }
@@ -155,6 +164,140 @@ describe('showFootprints', () => {
   it('stays false for a declared sample with no checked total, whatever the zoom', () => {
     const sample = response({ completeness: 'sample', total_count: null, footprints_advised: false });
     expect(showFootprints(sample, 20)).toBe(false);
+  });
+});
+
+// M3-12, F-07: a one-off product's answer (ENTSCHEIDUNGEN §2) — the union of
+// its own item footprints where the local-sql way built one, its plain
+// extent otherwise, never a density.
+describe('isAreaAnswer', () => {
+  it('is false without a result', () => {
+    expect(isAreaAnswer(null)).toBe(false);
+  });
+
+  it('is false for an ordinary density answer', () => {
+    expect(isAreaAnswer(response())).toBe(false);
+  });
+
+  it('is true when the answer names an area', () => {
+    const area: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] };
+    expect(isAreaAnswer(response({ area }))).toBe(true);
+  });
+
+  it('is true when the answer names only an extent, no area', () => {
+    expect(isAreaAnswer(response({ extent: [0, 0, 1, 1] }))).toBe(true);
+  });
+});
+
+describe('areaGeometry', () => {
+  it('prefers the area (the footprint union) when one is set', () => {
+    const area: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] };
+    expect(areaGeometry(response({ area, extent: [0, 0, 1, 1] }))).toEqual(area);
+  });
+
+  it('falls back to the extent as a rectangle when the area is empty', () => {
+    const empty: GeoJSON.MultiPolygon = { type: 'MultiPolygon', coordinates: [] };
+    const geometry = areaGeometry(response({ area: empty, extent: [-10, -5, 10, 5] }));
+    expect(geometry).toEqual({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-10, -5],
+          [10, -5],
+          [10, 5],
+          [-10, 5],
+          [-10, -5],
+        ],
+      ],
+    });
+  });
+
+  it('is null when neither is set', () => {
+    expect(areaGeometry(response())).toBeNull();
+  });
+});
+
+// M3-19: without an AOI the world overview always asks for z6, whatever the
+// map's own zoom is (adr/0010 Option B). With an AOI it still follows the
+// map's zoom, as before.
+// M3-19 (Otto, 23.09.2026): without an AOI, the level follows the map zoom
+// and the viewport size so roughly TARGET_CELL_COUNT cells cover the screen.
+// Expected values from plans/m3-19-weltueberblick-ausschnitt.md §1 (1920×1080:
+// L ≈ Z + 4; 2560×1440: L ≈ Z + 3.6).
+describe('levelForViewport', () => {
+  it('is roughly zoom + 4 on a 1920×1080 viewport', () => {
+    expect(levelForViewport(1.6, 1920, 1080)).toBe(6);
+    expect(levelForViewport(3, 1920, 1080)).toBe(7);
+    expect(levelForViewport(3.5, 1920, 1080)).toBe(7);
+  });
+
+  it('needs a slightly finer step on a smaller (2560×1440) viewport', () => {
+    expect(levelForViewport(1.6, 2560, 1440)).toBe(5);
+  });
+
+  it('never falls below MIN_VIEWPORT_LEVEL, however far zoomed out', () => {
+    expect(levelForViewport(0, 1920, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+    expect(levelForViewport(-5, 1920, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+  });
+
+  it('is capped at the grid maximum (29), however far zoomed in', () => {
+    expect(levelForViewport(40, 1920, 1080)).toBe(29);
+  });
+
+  it('falls back to the floor rather than NaN/Infinity on a bad viewport size', () => {
+    expect(levelForViewport(8, 0, 0)).toBe(MIN_VIEWPORT_LEVEL);
+    expect(levelForViewport(8, -100, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+    expect(levelForViewport(Number.NaN, 1920, 1080)).toBe(MIN_VIEWPORT_LEVEL);
+  });
+});
+
+describe('roundBboxToGrid', () => {
+  it('rounds outward to the block grid, not to the nearest cell', () => {
+    expect(roundBboxToGrid([1, 1, 5, 5], 2)).toEqual([0, 0, 90, 66.51326044311186]);
+  });
+
+  it('gives two nearby viewports the same rounded block', () => {
+    const a = roundBboxToGrid([10, 10, 60, 60], 1);
+    const b = roundBboxToGrid([15, 15, 55, 55], 1);
+    expect(a).toEqual(b);
+    expect(a[0]).toBe(0);
+    expect(a[1]).toBe(0);
+    expect(a[2]).toBe(180);
+    expect(a[3]).toBeCloseTo(85.0511287798, 9);
+  });
+
+  it('gives a viewport in a different block a different rounded bbox', () => {
+    const a = roundBboxToGrid([10, 10, 60, 60], 1);
+    const b = roundBboxToGrid([-5, 10, 60, 60], 1);
+    expect(a).not.toEqual(b);
+  });
+});
+
+describe('bandViewportBbox', () => {
+  it('leaves an ordinary viewport unchanged', () => {
+    expect(bandViewportBbox([5, 45, 15, 55])).toEqual([5, 45, 15, 55]);
+  });
+
+  it('replaces a viewport crossing ±180° with the full-width band', () => {
+    expect(bandViewportBbox([-200, 10, -170, 20])).toEqual([-180, 10, 180, 20]);
+    expect(bandViewportBbox([170, 10, 210, 20])).toEqual([-180, 10, 180, 20]);
+  });
+});
+
+describe('bboxContains', () => {
+  it('is true when the inner bbox lies within the outer one', () => {
+    expect(bboxContains([0, 0, 180, 85], [10, 10, 60, 60])).toBe(true);
+  });
+
+  it('is true for an identical bbox', () => {
+    expect(bboxContains([0, 0, 180, 85], [0, 0, 180, 85])).toBe(true);
+  });
+
+  it('is false once the inner bbox reaches past any one edge', () => {
+    expect(bboxContains([0, 0, 180, 85], [-1, 10, 60, 60])).toBe(false);
+    expect(bboxContains([0, 0, 180, 85], [10, 10, 181, 60])).toBe(false);
+    expect(bboxContains([0, 0, 180, 85], [10, -1, 60, 60])).toBe(false);
+    expect(bboxContains([0, 0, 180, 85], [10, 10, 60, 86])).toBe(false);
   });
 });
 

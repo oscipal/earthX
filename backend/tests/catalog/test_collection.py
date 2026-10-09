@@ -1,13 +1,14 @@
 """The mapping onto a STAC Collection.
 
-Two things matter: the result is a valid STAC Collection, and it carries all ten
-``earthx:`` fields of architekturplan.md 5.1 even where they are still empty.
+Two things matter: the result is a valid STAC Collection, and it carries all
+eleven ``earthx:`` fields of architekturplan.md 5.1 even where they are still
+empty.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pystac
 import pytest
@@ -18,7 +19,8 @@ from earthx.catalog.collection import (
     _stac_license,
     to_stac_collection,
 )
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.registry import Capabilities
 
 EARTHX_FIELDS = (
     "earthx:data_class",
@@ -31,6 +33,7 @@ EARTHX_FIELDS = (
     "earthx:viewer",
     "earthx:source",
     "earthx:maturity",
+    "earthx:format",
 )
 
 
@@ -42,6 +45,12 @@ def collection() -> dict:
 @pytest.mark.parametrize("field", EARTHX_FIELDS)
 def test_every_earthx_field_of_5_1_is_present(collection: dict, field: str) -> None:
     assert field in collection
+
+
+def test_every_capability_flag_is_published(collection: dict) -> None:
+    published = collection["earthx:capabilities"]
+    assert set(published) == {field.name for field in fields(Capabilities)}
+    assert published["reprojection"] is True
 
 
 def test_the_coverage_fields_stay_out_of_the_collection(collection: dict) -> None:
@@ -77,12 +86,25 @@ def test_source_carries_what_adr_0005_branches_on(collection: dict) -> None:
     source = collection["earthx:source"]
     assert source["adapter"] == "earth-search-v1"
     assert source["source_collection_id"] == "sentinel-2-c1-l2a"
+    # M3-11a K-05: what `FederatingCoreCrudClient._holding_of` reads back off this
+    # very document to decide federated vs. materialized.
+    assert source["item_holding"] == "federated"
+    # adr/0011 F5: runs live in `earthx_materialize_runs`, not in the document.
+    assert "harvest_run" not in source
 
 
 def test_maturity_is_the_registry_entrys_own_value(collection: dict) -> None:
     """adr/0007 §12.11 point 14: a mapping, not a guess — whatever the entry
     decided travels through unchanged."""
     assert collection["earthx:maturity"] == "stable"
+
+
+def test_format_is_the_registry_entrys_own_value(collection: dict) -> None:
+    """M3-17: the frontend tells a COG scene (linkable straight from the source)
+    from a Zarr store (no single file to link) by this field, never by a
+    dataset-specific branch."""
+    assert collection["earthx:format"] == "cog"
+    assert to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:format"] == "zarr"
 
 
 def test_the_temporal_extent_is_the_one_the_source_reports(collection: dict) -> None:
@@ -131,7 +153,28 @@ def test_the_standard_visualisation_travels_in_the_field_names_of_the_render_ext
 
 def test_a_dataset_with_a_doi_declares_the_scientific_extension(collection: dict) -> None:
     assert collection["stac_extensions"] == [SCIENTIFIC_EXTENSION]
-    assert collection["sci:doi"] == SENTINEL_2_L2A.doi
+    assert collection["sci:doi"] == "10.5270/S2_-742ikth"
+
+
+@pytest.mark.parametrize("config", list(REGISTRY), ids=lambda config: config.dataset_id)
+def test_a_doi_is_the_name_and_comes_with_a_cite_as_link(config) -> None:
+    """adr/0014 §10.2 (M4-14): `sci:doi` is the DOI name, the URL is the `cite-as` link."""
+    built = to_stac_collection(config)
+    name = built["sci:doi"]
+    assert name.startswith("10.")
+    assert "://" not in name
+    assert {"rel": "cite-as", "href": f"https://doi.org/{name}"} in built["links"]
+
+
+def test_a_dataset_without_a_doi_has_no_cite_as_link(valid_config) -> None:
+    bare = to_stac_collection(replace(valid_config, doi=None, citation=None))
+    assert [link["rel"] for link in bare["links"]] == ["license"]
+
+
+def test_a_blank_doi_is_no_doi(valid_config) -> None:
+    blank = to_stac_collection(replace(valid_config, doi="  ", citation=None))
+    assert "sci:doi" not in blank
+    assert blank["stac_extensions"] == []
 
 
 def test_a_dataset_without_a_doi_declares_no_scientific_extension(valid_config) -> None:
@@ -225,9 +268,18 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
     """M2-10: the levels reach the client on the collection, because that is the one
     place the viewer can read them without a branch on the dataset id."""
 
-    def test_all_three_fields_travel(self, collection: dict) -> None:
+    def test_all_fields_travel(self, collection: dict) -> None:
         viewer = collection["earthx:viewer"]
-        assert viewer == {"group_by": ["datetime", "grid:code"], "min_zoom": 0, "max_zoom": 19}
+        assert viewer == {
+            "group_by": ["datetime", "grid:code"],
+            "min_zoom": 0,
+            "max_zoom": 19,
+            # M3-12: what the browse view shows, its freistellung threshold, and
+            # the results-list/download grouping key (`registry.ViewerInfo`).
+            "browse": "quicklook",
+            "quicklook_nodata_max": 16,
+            "results_group_by": ["datetime", "s2:datatake_id"],
+        }
 
     def test_the_second_dataset_carries_its_own_range(self) -> None:
         viewer = to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:viewer"]
@@ -237,3 +289,14 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
         """No guessed range for an entry that names none — the same nothing-guessed
         rule `group_by` already follows (KLAERUNGEN B10)."""
         assert to_stac_collection(vary(viewer=None))["earthx:viewer"] is None
+
+
+class TestKeywords:
+    """M3-10: published as the STAC core field, for the viewer's dataset filter."""
+
+    def test_the_collection_carries_the_entrys_keywords_as_a_list(self, collection: dict) -> None:
+        assert collection["keywords"] == list(SENTINEL_2_L2A.keywords)
+
+    def test_a_changed_list_cannot_reach_back_into_the_entry(self, collection: dict) -> None:
+        collection["keywords"].append("extra")
+        assert "extra" not in SENTINEL_2_L2A.keywords

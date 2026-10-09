@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { buildTileUrl, syncFocusRaster, syncMosaic, syncSelectionHighlight } from './mapLayers';
-import type { AppliedRender, DownloadedInfo, StacItem } from './types';
+import {
+  buildTileUrl,
+  setCoverageDisplay,
+  syncFocusRaster,
+  syncHighlight,
+  syncLayers,
+  syncMosaic,
+  syncSelectionHighlight,
+} from './mapLayers';
+import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
   return {
@@ -75,12 +83,30 @@ function fakeMap() {
   return { map, sources, layers, data, removedSources, removedLayers };
 }
 
+const CAPABILITIES = {
+  roi: true,
+  time_range: true,
+  band_math: true,
+  interpolation: true,
+  ml_processing: true,
+  quad_pol: false,
+  single_coverage_product: false,
+};
+
 function zarrLikeDataset() {
   const [dataset] = datasetsFrom([
     {
       id: 'sentinel-2-l2a-zarr3',
       title: 'Sentinel-2 L2A (Zarr3)',
-      'earthx:viewer': { group_by: ['datetime'], min_zoom: 8, max_zoom: 14 },
+      'earthx:capabilities': CAPABILITIES,
+      'earthx:viewer': {
+        group_by: ['datetime'],
+        min_zoom: 8,
+        max_zoom: 14,
+        browse: 'preview_tiles',
+        quicklook_nodata_max: null,
+        results_group_by: ['datetime'],
+      },
       'earthx:default_render': {
         title: 'True colour',
         assets: ['SR_10m:b04,b03,b02'],
@@ -202,6 +228,8 @@ describe('syncFocusRaster', () => {
       downloaded: { [scene.id]: info() },
       render: { rescale: '0,3000' },
       showDownloaded: true,
+      items: [scene],
+      dataset: null,
     });
     const [source] = sources.filter((s) => s.spec.type === 'raster');
     expect(source.spec.bounds).toEqual(info().bounds);
@@ -211,8 +239,77 @@ describe('syncFocusRaster', () => {
 
   it('renders nothing while the image is hidden', () => {
     const { map, sources } = fakeMap();
-    syncFocusRaster(map as never, { downloaded: { [scene.id]: info() }, render: {}, showDownloaded: false });
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: false,
+      items: [scene],
+      dataset: null,
+    });
     expect(sources).toHaveLength(0);
+  });
+
+  // M3-09 finding: the map used to stack overlapping scenes in *selection*
+  // order (last-selected on top), the opposite of the download's mosaic
+  // (`access/download.py::crop_asset`, rio_tiler's `FirstMethod`: the
+  // *first* item wins). `downloaded`'s key order is selection order (it is
+  // built by `store.ts::enterFocus` iterating the selected items in that
+  // order), so the fixture below relies on the same thing.
+  it('draws the first-selected scene last, so it ends up on top — matching the download mosaic order', () => {
+    const { map, sources, layers } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: {
+        S2A_first: info({ bounds: [10, 47, 11, 48] }),
+        S2A_second: info({ bounds: [20, 47, 21, 48] }),
+      },
+      render: {},
+      showDownloaded: true,
+      items: [],
+      dataset: null,
+    });
+    const rasterSources = sources.filter((s) => s.spec.type === 'raster');
+    expect(rasterSources).toHaveLength(2);
+    expect(rasterSources[0].spec.bounds).toEqual([20, 47, 21, 48]); // bottom: second-selected
+    expect(rasterSources[1].spec.bounds).toEqual([10, 47, 11, 48]); // top: first-selected
+    // `placeRaster` always inserts right below the AOI layer, so whatever is
+    // added last ends up drawn on top (see `beforeAoi`).
+    expect(layers[layers.length - 1]).toBe(rasterSources[1].id.replace('src', 'lyr'));
+  });
+
+  it('routes tiles through the AOI-clip protocol when the view is cropped, with no AOI coordinate in the URL', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      aoi: {
+        type: 'Polygon',
+        coordinates: [[[10.987654, 47.123456], [11, 47], [11, 48], [10, 48], [10.987654, 47.123456]]],
+      },
+      cropToAoi: true,
+      items: [scene],
+      dataset: null,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    const url = (source.spec.tiles as string[])[0];
+    expect(url.startsWith('earthx-clip://')).toBe(true);
+    expect(url).not.toContain('10.987654');
+    expect(url).not.toContain('47.123456');
+  });
+
+  it('does not clip when the view shows the whole selection, even with an AOI drawn', () => {
+    const { map, sources } = fakeMap();
+    syncFocusRaster(map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      aoi: { type: 'Polygon', coordinates: [[[10, 47], [11, 47], [11, 48], [10, 48], [10, 47]]] },
+      cropToAoi: false,
+      items: [scene],
+      dataset: null,
+    });
+    const [source] = sources.filter((s) => s.spec.type === 'raster');
+    expect((source.spec.tiles as string[])[0].startsWith('earthx-clip://')).toBe(false);
   });
 });
 
@@ -230,6 +327,8 @@ describe('syncSelectionHighlight: no layer churn', () => {
       downloaded: { [scene.id]: info() },
       render: {},
       showDownloaded: true,
+      items: [scene],
+      dataset: null,
     });
     const sourcesAfterRaster = sources.length;
     const layersAfterRaster = layers.length;
@@ -240,5 +339,173 @@ describe('syncSelectionHighlight: no layer churn', () => {
     expect(sources).toHaveLength(sourcesAfterRaster);
     expect(layers).toHaveLength(layersAfterRaster);
     expect((data['mosaicsel-src'] as GeoJSON.FeatureCollection).features).toHaveLength(1);
+  });
+});
+
+// M3-09 §10: in a cropped focus view, the yellow outline switches from one
+// ring per scene to one per group.
+describe('syncHighlight', () => {
+  const AOI: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 40],
+        [20, 40],
+        [20, 55],
+        [0, 55],
+        [0, 40],
+      ],
+    ],
+  };
+  const groupA: TimeStepGroup = {
+    key: ['a'],
+    label: 'a',
+    items: [
+      { id: 'S1', bbox: [1, 47, 2, 48], properties: {}, assets: {} },
+      { id: 'S2', bbox: [1.5, 47, 2.5, 48], properties: {}, assets: {} },
+    ],
+  };
+  const groupB: TimeStepGroup = {
+    key: ['b'],
+    label: 'b',
+    items: [{ id: 'S3', bbox: [10, 47, 11, 48], properties: {}, assets: {} }],
+  };
+
+  it('draws one ring per group when the view is cropped', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [],
+      selectedIds: [],
+      focusMode: true,
+      cropToAoi: true,
+      aoi: AOI,
+      downloaded: { S1: info(), S2: info(), S3: info() },
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(2);
+  });
+
+  it('falls back to the per-scene highlight when the view is not cropped', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [groupA.items[0]],
+      selectedIds: ['S1'],
+      focusMode: true,
+      cropToAoi: false,
+      aoi: AOI,
+      downloaded: { S1: info() },
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].properties?.id).toBe('S1');
+  });
+
+  it('falls back to the per-scene highlight while browsing (not in focus mode)', () => {
+    const { map, data } = fakeMap();
+    syncHighlight(map as never, {
+      items: [groupA.items[0]],
+      selectedIds: ['S1'],
+      focusMode: false,
+      cropToAoi: false,
+      aoi: null,
+      downloaded: {},
+      groups: [groupA, groupB],
+    });
+    const fc = data['mosaicsel-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
+  });
+});
+
+// M3-12, F-07: a one-off product's coverage answer draws its extent, not a
+// density (ENTSCHEIDUNGEN §2) — only one of the three coverage sources ever
+// carries data at once.
+describe('setCoverageDisplay: area mode', () => {
+  const AREA: GeoJSON.Polygon = {
+    type: 'Polygon',
+    coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+  };
+
+  it('publishes the area geometry on its own source', () => {
+    const { map, data } = fakeMap();
+    setCoverageDisplay(map as never, { mode: 'area', cells: [], maxCount: 0, footprints: null, area: AREA });
+    const fc = data['coverage-area-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].geometry).toEqual(AREA);
+  });
+
+  it('clears the area source in every other mode', () => {
+    const { map, data } = fakeMap();
+    setCoverageDisplay(map as never, { mode: 'density', cells: [], maxCount: 0, footprints: null, area: AREA });
+    const fc = data['coverage-area-src'] as GeoJSON.FeatureCollection;
+    expect(fc.features).toHaveLength(0);
+  });
+
+  it('clears the density and footprints sources while showing an area', () => {
+    const { map, data } = fakeMap();
+    setCoverageDisplay(map as never, {
+      mode: 'area',
+      cells: [{ k: '4/1/1', n: 3 }],
+      maxCount: 3,
+      footprints: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: AREA }] },
+      area: AREA,
+    });
+    expect((data['coverage-src'] as GeoJSON.FeatureCollection).features).toHaveLength(0);
+    expect((data['coverage-footprints-src'] as GeoJSON.FeatureCollection).features).toHaveLength(0);
+  });
+});
+
+// M3-10 F4 (Otto, 30.09.2026): pinned layers of different datasets are drawn
+// together — the map keeps no notion of "the open dataset" for them.
+describe('syncLayers: pinned layers of several datasets', () => {
+  function stackMap() {
+    const sources = new Map<string, Record<string, unknown>>();
+    const layers = new Map<string, { source: string; paint: Record<string, unknown> }>();
+    const map = {
+      getSource: (id: string) => sources.get(id),
+      getLayer: (id: string) => layers.get(id),
+      removeLayer: (id: string) => layers.delete(id),
+      removeSource: (id: string) => sources.delete(id),
+      addSource: (id: string, spec: Record<string, unknown>) => sources.set(id, spec),
+      addLayer: (layer: { id: string; source: string; paint: Record<string, unknown> }) => layers.set(layer.id, layer),
+    };
+    return { map, sources, layers };
+  }
+
+  function pinned(id: string, datasetId: string, url: string, visible = true) {
+    return {
+      id,
+      name: id,
+      visible,
+      opacity: 0.8,
+      overlays: [{ kind: 'raster' as const, tileUrl: url, bounds: [0, 0, 1, 1] as [number, number, number, number], minZoom: 0, maxZoom: 12 }],
+      restore: { datasetId } as never,
+    };
+  }
+
+  it('draws a layer of each dataset, bottom of the list first', () => {
+    const { map, sources, layers } = stackMap();
+    syncLayers(map as never, [
+      pinned('top', 'dem', 'https://t/dem/{z}/{x}/{y}'),
+      pinned('bottom', 'optical', 'https://t/optical/{z}/{x}/{y}'),
+    ]);
+    const urls = [...sources.values()].map((s) => (s.tiles as string[])[0]);
+    expect(urls).toEqual(['https://t/optical/{z}/{x}/{y}', 'https://t/dem/{z}/{x}/{y}']);
+    expect(layers.size).toBe(2);
+  });
+
+  it('draws the same layers on the next sync, whatever else changed in between', () => {
+    const { map, sources } = stackMap();
+    const list = [pinned('a', 'dem', 'https://t/a'), pinned('b', 'optical', 'https://t/b')];
+    syncLayers(map as never, list);
+    syncLayers(map as never, list);
+    expect(sources.size).toBe(2);
+  });
+
+  it('leaves out only the layer that is switched off', () => {
+    const { map, sources } = stackMap();
+    syncLayers(map as never, [pinned('a', 'dem', 'https://t/a', false), pinned('b', 'optical', 'https://t/b')]);
+    expect([...sources.values()].map((s) => (s.tiles as string[])[0])).toEqual(['https://t/b']);
   });
 });
