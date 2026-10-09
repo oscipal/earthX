@@ -127,7 +127,7 @@ class TestTheRegistryPicksTheReader:
         self, client: TestClient, dataset: str, expected: type
     ) -> None:
         built = await dataset_asset_path(
-            _RequestWithApp(client.app), dataset=dataset, item=ITEM, asset=ASSET
+            _RequestWithApp(client.app), dataset=dataset, item=ITEM, asset=[ASSET]
         )
         assert isinstance(built, expected)
 
@@ -191,3 +191,5 @@ class _RequestWithApp:
         self.app = app
         self.url = SimpleNamespace(path="")
         self.path_params: dict[str, Any] = {}
+        self.query_params: dict[str, str] = {}
+        self.scope: dict[str, Any] = {}

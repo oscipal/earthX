@@ -99,7 +99,7 @@ Markierungen: *(neu)* = ergänzt, *(geändert)* = gegenüber der Ursprungsversio
 6. Anonymer Zugriffs-Check bestanden (HTTP 200 statt 401/403).
 7. Datentyp-Klasse und Capability-Flags gesetzt.
 8. Standard-Visualisierung definiert (Bänder, Stretch, Colormap).
-9. Mindestens ein Processing-Schritt End-to-End getestet (Suche → Verarbeitung → Download). **Fassung v1 (D4, 2026-09-20):** Solange es in M2 noch keinen Processing-Schritt gibt, gilt als End-to-End-Test die Kette **Suche → Anzeige → Zuschnitt-Download** gegen Fixtures; der echte Processing-Schritt löst diese Fassung mit M4 ab.
+9. Mindestens ein Processing-Schritt End-to-End getestet (Suche → Verarbeitung → Download). **Fassung v1 (D4, 2026-09-20):** Solange es in M2 noch keinen Processing-Schritt gibt, gilt als End-to-End-Test die Kette **Suche → Anzeige → Zuschnitt-Download** gegen Fixtures; der echte Processing-Schritt löst diese Fassung mit M4 ab. **Fassung v2 (M4 Q14, 2026-10-02):** je Datensatz ein Operator-Lauf gegen Fixtures — Band-Math für `sentinel-2-c1-l2a` und `sentinel-2-l2a-zarr3`, Reprojektion für `cop-dem-glo-30`. Sie gilt ab dem Merge von M4-15 und ersetzt dann Fassung v1; bis dahin gilt Fassung v1.
 10. "Zuletzt erfolgreich geprüft" ist gesetzt und sichtbar (KLAERUNGEN B12). ~~**Fassung v1 (D4, 2026-09-20):** Bis eigene Health-Checks kommen (M5), ist das der Zeitpunkt des letzten grünen T-D-Smoke-Laufs.~~ **Fassung v1.1 (Otto, 2026-09-22, ersetzt die Fassung v1):** In M2 heißt der Punkt **„der Datensatz ist vom T-D-Smoke abgedeckt"**, geprüft über den Marker in `backend/tests_live/`. Ein sichtbares Prüfdatum zeigt die Plattform in M2 **nicht**; es kommt mit den eigenen Health-Checks in M5. Grund: den Zeitpunkt des letzten grünen Laufs aus GitHub Actions in die laufende Plattform zu bringen, geht weder ohne Secret noch ohne laufende Handarbeit (M2-08 Plan §4.4). Das heutige `earthx:health.last_checked_ok` ist das Datum des Onboarding-Checks und darf nirgends als „zuletzt geprüft" erscheinen.
 
 ---
@@ -241,7 +241,7 @@ Vorschlag zur Registrierungspflicht (Entscheidung offen, siehe Abschnitt 16): an
 
 **Skalierbarkeit & Cloud-Portabilität** *(neu, konkretisiert Prinzip 2.16)*
 - Zustandsloses Backend: kein Nutzer- oder Sitzungszustand im Prozessspeicher oder auf der lokalen Platte. Jede Anfrage kann von jeder Instanz beantwortet werden, damit horizontal skaliert werden kann.
-- Zustand liegt nur in austauschbaren Diensten: Datenbank (Postgres), Cache (z. B. Redis), Objektspeicher (S3-kompatibel) für flüchtige Ergebnisse. Lokal durch leichte Entsprechungen ersetzt (z. B. MinIO, lokaler Redis), hinter derselben Schnittstelle.
+- Zustand liegt nur in austauschbaren Diensten: Datenbank (Postgres), Cache (z. B. Redis), Objektspeicher (S3-kompatibel) für flüchtige Ergebnisse. Lokal durch leichte Entsprechungen ersetzt (z. B. Garage, lokaler Redis), hinter derselben Schnittstelle.
 - Schwere Arbeit nie im Request: Processing läuft über eine Job-Queue mit getrennten Workern, die unabhängig vom Web-Backend skaliert werden. Lokal ein Worker, in der Cloud viele.
 - Alles containerisiert (Docker), Konfiguration ausschließlich über Umgebungsvariablen, keine hardcodierten Pfade oder Hosts.
 - Anbieter-Neutralität: nur portable Bausteine verwenden (Container, Postgres, S3-API, Standard-Queue). Proprietäre Cloud-Dienste nur hinter einer eigenen Abstraktionsschicht, damit die Anbieterwahl offen bleibt.

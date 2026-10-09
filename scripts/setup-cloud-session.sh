@@ -16,6 +16,10 @@ set -uo pipefail
 log() { printf '\n== %s\n' "$*"; }
 warn() { printf '\n!! %s\n' "$*" >&2; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/frontend-deps.sh
+source "${SCRIPT_DIR}/lib/frontend-deps.sh"
+
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
@@ -49,6 +53,8 @@ fi
 # backend/requirements.txt weniger Pakete listete (z. B. vor `titiler.core`
 # in M2-04), und pip überspringt bereits erfüllte Anforderungen ohnehin
 # schnell (M2-13, mehrere Sessions mussten sonst von Hand nachinstallieren).
+# Seit M4-00b aus der Lock-Datei, mit Hash-Prüfung: dieselben Versionen wie in
+# der CI. Optionen und ihre Reihenfolge erklärt scripts/lock-backend.sh.
 venv_minor() { "${VENV}/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null; }
 
 # Ein venv mit anderer Version oder ohne pip wird ersetzt, nicht weiterbenutzt:
@@ -73,9 +79,11 @@ else
 fi
 
 if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
-  log "Backend-Abhängigkeiten installieren (backend/requirements-dev.txt)"
+  log "Backend-Abhängigkeiten installieren (backend/requirements-dev.lock)"
   "${VENV}/bin/pip" install --upgrade --quiet pip \
-    && "${VENV}/bin/pip" install --quiet -r "${REPO_ROOT}/backend/requirements-dev.txt" \
+    && "${VENV}/bin/pip" install --quiet --require-hashes \
+      --only-binary :all: --no-binary version-parser \
+      -r "${REPO_ROOT}/backend/requirements-dev.lock" \
     || warn "pip-Installation fehlgeschlagen"
 
   # Damit ein nacktes `pytest` in der Sitzung das des venv ist und nicht das
@@ -94,11 +102,23 @@ if [ -x "${VENV}/bin/python" ] && [ "$(venv_minor)" = "${PYTHON_MINOR}" ]; then
 fi
 
 # --- Node -----------------------------------------------------------------
-if [ -d "${REPO_ROOT}/frontend/node_modules" ]; then
-  log "Frontend-Abhängigkeiten existieren bereits"
+# Ein bloßes "node_modules existiert" übersieht ein geändertes
+# package-lock.json (M3-24: polyclip-ts fehlte in zwei Sitzungen, M3-11c und
+# M3-12, weil node_modules aus einer älteren Sitzung stammte). Verglichen wird
+# deshalb ein Hash der Lockfile gegen den Stand der letzten Installation.
+FRONTEND="${REPO_ROOT}/frontend"
+FRONTEND_LOCKFILE="${FRONTEND}/package-lock.json"
+FRONTEND_LOCK_HASH_FILE="${FRONTEND}/node_modules/.package-lock.sha256"
+
+if [ ! -f "${FRONTEND_LOCKFILE}" ]; then
+  warn "frontend/package-lock.json fehlt; keine Frontend-Abhängigkeiten installiert"
+elif frontend_deps_current "${FRONTEND_LOCKFILE}" "${FRONTEND}/node_modules" "${FRONTEND_LOCK_HASH_FILE}"; then
+  log "Frontend-Abhängigkeiten aktuell (package-lock.json unverändert)"
 else
-  log "Frontend-Abhängigkeiten installieren"
-  (cd "${REPO_ROOT}/frontend" && npm ci --no-audit --no-fund) || warn "npm ci fehlgeschlagen"
+  log "Frontend-Abhängigkeiten installieren (npm ci)"
+  (cd "${FRONTEND}" && npm ci --no-audit --no-fund \
+    && frontend_lock_hash "${FRONTEND_LOCKFILE}" > "${FRONTEND_LOCK_HASH_FILE}") \
+    || warn "npm ci fehlgeschlagen"
 fi
 
 # --- Postgres + PostGIS -----------------------------------------------------

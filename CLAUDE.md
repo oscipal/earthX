@@ -17,7 +17,7 @@ Die Datei ist nur noch Beschreibung des Code-Stands vom 13.08.2026.
 ## Unverrückbar
 
 - Modulgrenzen laut `docs/architekturplan.md` 3.1; Importregeln nie lockern.
-- Ausgehende Requests nur über `gateway` (KLAERUNGEN B8).
+- Ausgehende Requests nur über `gateway`; einzige Ausnahme ist der eigene Objektspeicher über earthx.objectstore (KLAERUNGEN B8, Nachtrag, adr/0015).
 - Worker-Kern zustandslos und ohne Plattformdienste — keine Datenbank, Queue,
   Objektspeicher oder interne API (KLAERUNGEN B9). Lesen der Datenquellen über
   `gateway` ist erlaubt.
@@ -78,7 +78,7 @@ Branch-Namen und PR-Titel auf **Englisch**.
 Backend (aus dem Repo-Wurzelverzeichnis, laut `adr/0002` §6 und `.github/workflows/ci.yml`; aus `backend/` sammelt `pytest` auch `tests_live` ein und geht ins Netz):
 - Lint: `ruff check backend`
 - Tests: `pytest`
-- Importregeln: `lint-imports --config .importlinter`
+- Importregeln: `lint-imports --config .importlinter` (aus der Repo-Wurzel mit `PYTHONPATH=backend`, wie in der CI)
 
 Frontend (aus `frontend/`, laut `frontend/package.json`):
 - Lint: `npm run lint` (oxlint)

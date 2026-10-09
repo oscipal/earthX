@@ -32,10 +32,15 @@ echte Quelle auf z8 antwortet. Die Vollständigkeitsprobe (Regel V, `adr/0004` �
 das erkennen, ohne `overflow` anzusehen.
 ## `item_asset_hosts.json`
 
-Ebenfalls von Hand geschrieben, für den Lesepfad aus M2-04. Echt ist daran genau
-**ein** Wert: der Asset-Host `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`,
+Ebenfalls von Hand geschrieben, für den Lesepfad aus M2-04. Echt sind daran zwei
+Dinge: der Asset-Host `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`,
 den `docs/adr/0006-kachel-pfad.md` §3.7 an der Quelle gemessen und im Dokument
-festgehalten hat. Item-ID, Pfad, Zeit und Ausdehnung sind erfunden.
+festgehalten hat, und seit M3-18 `gsd`/`raster:bands` an `visual` (3 x `uint8`)
+und `red` (1 x `uint16`) — die Form, die eine echte Earth-Search-Antwort am
+24.09.2026 für dieselben zwei Assets trug (Plan `m3-18-download-deckel-maske.md`
+§3), damit die Ausgabegrößen-Schätzung des Downloads (`access/download.py`,
+F1/F2) hier nicht auf ihren Rückfallwert zurückfällt. Item-ID, Pfad, Zeit und
+Ausdehnung sind erfunden.
 
 Der Asset `elsewhere` zeigt bewusst auf `sentinel-cogs…amazonaws.com` — den Host der
 **älteren** Collection (§3.7). Er steht nicht in der Registry und muss deshalb an
@@ -51,3 +56,17 @@ zeigen, statt leer zu sein wie in den übrigen Dateien hier. Beweist zwei Dinge 
 einmal: dass `numberMatched` in der Antwort fehlt, statt aus der Seitengröße
 geraten zu werden, und dass jedes Item seine eigenen `self`/`parent`/`root`-Links
 bekommt, statt die der Quelle zu behalten.
+
+## Form einer echten Antwort (M4-08b, `search_real_shape.json`)
+
+Von Hand geschrieben, **nicht aufgezeichnet**: Der Satz der Schlüssel und die Typen
+stammen aus einer Antwort, die am 07.10.2026 einmal von
+`POST /v1/search` gelesen wurde (`sentinel-2-c1-l2a`, `limit` 2; Kopf
+`content-type: application/geo+json; charset=utf-8`; oben `context`,
+`numberMatched`, `numberReturned`, `features`, `links` mit `next` als POST-Link
+mit Rumpf; ein Item mit den Schlüsseln `type`, `stac_version`, `id`,
+`properties`, `geometry`, `links`, `assets`, `bbox`, `stac_extensions`,
+`collection`, 23 Assets). Alle Werte sind erfunden (ID `SYNTH_…`, Zeiten, Zahlen,
+Geometrie, Prüfsumme); nichts davon ist ein echtes Metadatum. Der Test
+`tests/integration/test_try_job_search.py` prüft, dass Schlüssel und Assets mit
+dieser Form übereinstimmen, soweit das Skript `scripts/try-job.ps1` sie liest.

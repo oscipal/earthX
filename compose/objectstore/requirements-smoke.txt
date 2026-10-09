@@ -1,0 +1,7 @@
+# Only for the CI step `Object store smoke` (M3-23, adr/0012 §9; M4-06, adr/0015 §12).
+# No versions here: scripts/lock-backend.sh writes requirements-smoke.lock with
+# backend/requirements.lock as a constraint, so the smoke runs the same botocore,
+# rasterio and numpy the image ships (plan M4-06 F1, M4 R4).
+botocore
+rasterio
+numpy

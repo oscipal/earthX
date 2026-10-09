@@ -1,37 +1,75 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildSearchUrl, buildStatisticsUrl, buildTileTemplate, errorDetail, fetchItem, HttpError, nextTokenFrom } from './api';
+import {
+  buildSearchBody,
+  buildStatisticsUrl,
+  buildTileTemplate,
+  downloadCrop,
+  errorDetail,
+  fetchItem,
+  HttpError,
+  nextTokenFrom,
+  searchAllPages,
+  searchItems,
+  uploadAoi,
+} from './api';
 
-describe('buildSearchUrl', () => {
-  it('carries the collection, bbox, datetime range, limit and token', () => {
-    const url = buildSearchUrl({
-      collection: 'sentinel-2-c1-l2a',
+describe('buildSearchBody', () => {
+  it('carries the collections, bbox, datetime range, limit and token', () => {
+    const body = buildSearchBody({
+      collections: ['sentinel-2-c1-l2a'],
       bbox: [10, 47, 11, 48],
       datetime: '2026-07-01T00:00:00Z/2026-07-31T23:59:59Z',
       limit: 100,
       token: 'next:abc',
     });
-    const params = new URL(url, 'http://localhost').searchParams;
-    expect(params.get('collections')).toBe('sentinel-2-c1-l2a');
-    // bbox stays in the order it was given: [minx, miny, maxx, maxy].
-    expect(params.get('bbox')).toBe('10,47,11,48');
-    expect(params.get('datetime')).toBe('2026-07-01T00:00:00Z/2026-07-31T23:59:59Z');
-    expect(params.get('limit')).toBe('100');
-    expect(params.get('token')).toBe('next:abc');
+    expect(body).toEqual({
+      collections: ['sentinel-2-c1-l2a'],
+      bbox: [10, 47, 11, 48],
+      datetime: '2026-07-01T00:00:00Z/2026-07-31T23:59:59Z',
+      limit: 100,
+      token: 'next:abc',
+    });
   });
 
-  it('omits optional params entirely rather than sending them empty', () => {
-    const url = buildSearchUrl({ collection: 'sentinel-2-c1-l2a' });
-    const params = new URL(url, 'http://localhost').searchParams;
-    expect(params.has('bbox')).toBe(false);
-    expect(params.has('datetime')).toBe(false);
-    expect(params.has('limit')).toBe(false);
-    expect(params.has('token')).toBe(false);
+  it('carries more than one collection at once (M3-13 — the backend now answers a mixed page)', () => {
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a', 'cop-dem-glo-30'] });
+    expect(body.collections).toEqual(['sentinel-2-c1-l2a', 'cop-dem-glo-30']);
+  });
+
+  it('carries intersects instead of bbox for a point or polygon AOI (M3-08)', () => {
+    const point: GeoJSON.Point = { type: 'Point', coordinates: [10, 49] };
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'], intersects: point });
+    expect(body.intersects).toBe(point);
+    expect(body.bbox).toBeUndefined();
+  });
+
+  it('omits optional fields entirely rather than sending them empty', () => {
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'] });
+    expect(Object.keys(body)).toEqual(['collections']);
+  });
+
+  it('never sends the disabled query/fields extensions (M3-13 F5)', () => {
+    // Measured against the real API (M3-13 plan §2.2): both are silently
+    // dropped on a federated collection, so the backend now refuses them by
+    // name (`_DISALLOWED_QUERY_KEYS`) — `SearchQuery` has no field for either
+    // in the first place, so `buildSearchBody` structurally cannot send them.
+    const body = buildSearchBody({ collections: ['sentinel-2-c1-l2a'] });
+    expect(body).not.toHaveProperty('query');
+    expect(body).not.toHaveProperty('fields');
   });
 });
 
 describe('nextTokenFrom', () => {
-  it('reads the token out of the rel=next link', () => {
+  it('reads the token out of a POST-shaped next links body (M3-08 — every search goes over POST now)', () => {
+    const links = [
+      { rel: 'self', href: 'https://example.test/stac/search' },
+      { rel: 'next', href: 'https://example.test/stac/search', method: 'POST', body: { collections: ['x'], token: 'next:abc' } },
+    ];
+    expect(nextTokenFrom(links)).toBe('next:abc');
+  });
+
+  it('falls back to a GET-shaped hrefs query string', () => {
     const links = [
       { rel: 'self', href: 'https://example.test/stac/search?collections=x' },
       { rel: 'next', href: 'https://example.test/stac/search?collections=x&token=next%3Aabc' },
@@ -42,6 +80,32 @@ describe('nextTokenFrom', () => {
   it('is null when there is no next link', () => {
     expect(nextTokenFrom([{ rel: 'self', href: 'https://example.test/stac/search' }])).toBeNull();
     expect(nextTokenFrom(undefined)).toBeNull();
+  });
+});
+
+describe('searchItems', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the search as a POST body, not a GET query string (M3-08 F7a)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(200, { features: [], numberReturned: 0 })),
+    );
+    const polygon: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[8, 47], [12, 47], [8, 51], [8, 47]]] };
+    await searchItems({ collections: ['sentinel-2-c1-l2a'], intersects: polygon });
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('/stac/search');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      collections: ['sentinel-2-c1-l2a'],
+      intersects: polygon,
+    });
   });
 });
 
@@ -136,5 +200,344 @@ describe('fetchItem', () => {
       message: 'invalid characters',
     });
     await expect(fetchItem('sentinel-2-c1-l2a', 'bad name')).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+// M3-18 F8: the backend formulates the download's error text (size cap, item
+// cap); this client only has to pass it through unchanged, the same way it
+// already does for every other route.
+describe('downloadCrop', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: 'x', json: async () => body } as Response;
+  }
+
+  function noJsonResponse(status: number, statusText: string): Response {
+    return {
+      ok: false,
+      status,
+      statusText,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    } as unknown as Response;
+  }
+
+  function blobResponse(headers: Record<string, string> = {}): Response {
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(headers),
+      blob: async () => new Blob(['x']),
+    } as unknown as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const request = {
+    datasetId: 'sentinel-2-c1-l2a',
+    groups: [['ITEM1']],
+    assets: ['visual'],
+    aoi: { type: 'Polygon' as const, coordinates: [] },
+  };
+
+  it('a 413 over the output size cap surfaces the backend detail unchanged', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(413, {
+          detail: 'This download would be about 403 MB, more than the 200 MB limit. Draw a smaller area or download fewer layers.',
+        }),
+      ),
+    );
+    await expect(downloadCrop(request)).rejects.toThrow(
+      'This download would be about 403 MB, more than the 200 MB limit. Draw a smaller area or download fewer layers.',
+    );
+  });
+
+  it('a 413 over the item cap surfaces the backend detail unchanged', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(413, { detail: 'This download covers 26 scenes; at most 25 fit in one download.' }),
+      ),
+    );
+    await expect(downloadCrop(request)).rejects.toThrow('This download covers 26 scenes; at most 25 fit in one download.');
+  });
+
+  it('an error response with no JSON body still reads as a plain, English message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(noJsonResponse(503, 'Service Unavailable')));
+    await expect(downloadCrop(request)).rejects.toThrow('503 Service Unavailable');
+  });
+
+  // Review finding 1: a dropped group has to be visible before the file is
+  // even opened — these two headers are how `store.confirmDownload` finds out.
+  it('reads X-Total-Groups/X-Skipped-Groups off a successful response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(blobResponse({ 'X-Total-Groups': '3', 'X-Skipped-Groups': '1' })),
+    );
+    const result = await downloadCrop(request);
+    expect(result.totalGroups).toBe(3);
+    expect(result.skippedGroups).toBe(1);
+    expect(result.blob).toBeInstanceOf(Blob);
+  });
+
+  it('treats a missing or malformed count header as 0, never NaN', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(blobResponse()));
+    expect(await downloadCrop(request)).toMatchObject({ totalGroups: 0, skippedGroups: 0 });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(blobResponse({ 'X-Total-Groups': 'not-a-number', 'X-Skipped-Groups': '-1' })),
+    );
+    expect(await downloadCrop(request)).toMatchObject({ totalGroups: 0, skippedGroups: 0 });
+  });
+});
+
+// M3-06b: `POST /aoi/upload` (M3-06a) is called with the file's own bytes as the
+// raw request body — never `FormData` (plan §6: Starlette's multipart parser
+// spools any file part over 1 MiB to disk, `max_part_size` or not).
+describe('uploadAoi', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('POSTs the file itself as the body and the name as a ?filename= query parameter', async () => {
+    const square: GeoJSON.Polygon = {
+      type: 'Polygon',
+      coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, square)));
+    const file = new File(['{}'], 'aoi.geojson');
+
+    const geometry = await uploadAoi(file, file.name);
+
+    expect(geometry).toEqual(square);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('/aoi/upload?filename=aoi.geojson');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(file); // the Blob itself, not a FormData wrapper
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream');
+  });
+
+  it('percent-encodes spaces and reserved characters in the filename', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { type: 'Point', coordinates: [0, 0] })));
+    const name = 'a b&c#d.kml';
+
+    await uploadAoi(new File([], name), name);
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe(`/aoi/upload?filename=${encodeURIComponent(name)}`);
+  });
+
+  it('rejects with an HttpError carrying the route detail on a 400', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(400, { detail: 'not valid JSON' })));
+
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({
+      status: 400,
+      detail: 'not valid JSON',
+    });
+  });
+
+  it('leaves detail undefined for a non-JSON error body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: async () => {
+          throw new Error('not json');
+        },
+      } as unknown as Response),
+    );
+
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({
+      status: 400,
+      detail: undefined,
+    });
+  });
+});
+
+// M3-07b: `jsonOrThrow`'s `HttpError` carries the raw `Retry-After` header,
+// which `placeSearch.ts` uses to tell a briefly-busy 503 apart from one that
+// means place search is simply not enabled. Exercised through `uploadAoi`
+// (any `jsonOrThrow` caller does) rather than duplicating a whole request —
+// the header handling lives in `jsonOrThrow` itself, not per-route.
+describe('HttpError.retryAfter', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is set from a Retry-After response header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Headers({ 'Retry-After': '5' }),
+        json: async () => ({ detail: 'place search is not available' }),
+      } as unknown as Response),
+    );
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: '5' });
+  });
+
+  it('is undefined when the response has no such header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Headers(),
+        json: async () => ({ detail: 'place search is not available' }),
+      } as unknown as Response),
+    );
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: undefined });
+  });
+
+  it('is undefined when the mocked response carries no headers object at all (older test doubles)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({}),
+      } as unknown as Response),
+    );
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: undefined });
+  });
+});
+
+describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () => {
+  function jsonResponse(body: unknown): Response {
+    return { ok: true, status: 200, statusText: '', json: async () => body } as Response;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the per-collection breakdown next to the flat list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          features: [],
+          numberReturned: 0,
+          ignored_filters: ['datetime'],
+          ignored_filters_by_collection: { 'cop-dem-glo-30': ['datetime'] },
+        }),
+      ),
+    );
+    const page = await searchItems({ collections: ['a', 'cop-dem-glo-30'] });
+    expect(page.ignoredFilters).toEqual(['datetime']);
+    expect(page.ignoredFiltersByCollection).toEqual({ 'cop-dem-glo-30': ['datetime'] });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['a list', ['datetime']],
+    ['a string', 'datetime'],
+  ])('reads it as empty when it is %s', async (_case, value) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ features: [], numberReturned: 0, ignored_filters_by_collection: value })),
+    );
+    expect((await searchItems({ collections: ['a'] })).ignoredFiltersByCollection).toEqual({});
+  });
+
+  it('skips entries whose value is not a list of strings', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          features: [],
+          numberReturned: 0,
+          ignored_filters_by_collection: { good: ['datetime', 7], bad: 'datetime', worse: { a: 1 }, none: [7] },
+        }),
+      ),
+    );
+    expect((await searchItems({ collections: ['a'] })).ignoredFiltersByCollection).toEqual({ good: ['datetime'] });
+  });
+
+  it('collects the breakdown across pages; the first page naming a collection wins', async () => {
+    const pages = [
+      {
+        features: [{ id: 'a' }],
+        numberReturned: 1,
+        links: [{ rel: 'next', href: '/stac/search', body: { token: 't2' } }],
+        ignored_filters_by_collection: { dem: ['datetime'] },
+        incomplete_collections: [{ collection: 'eopf', reason: 'timeout' }],
+      },
+      {
+        features: [{ id: 'b' }],
+        numberReturned: 1,
+        ignored_filters_by_collection: { dem: ['other'], later: ['datetime'] },
+        incomplete_collections: [{ collection: 'eopf', reason: 'unreachable' }],
+      },
+    ];
+    const fetchMock = vi.fn();
+    for (const page of pages) fetchMock.mockResolvedValueOnce(jsonResponse(page));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await searchAllPages({ collections: ['dem', 'later', 'eopf'] }, 300);
+    expect(result.features).toHaveLength(2);
+    expect(result.ignoredFiltersByCollection).toEqual({ dem: ['datetime'], later: ['datetime'] });
+    expect(result.incompleteCollections).toEqual([{ collection: 'eopf', reason: 'timeout' }]);
+  });
+
+  // M3-10b: "Load more" continues a walk with the token the last one left over.
+  it('starts from a given token and hands back the one left once maxItems stopped it', async () => {
+    const page = (ids: string[], token: string | null) => ({
+      features: ids.map((id) => ({ id })),
+      numberReturned: ids.length,
+      links: token ? [{ rel: 'next', href: '/stac/search', body: { token } }] : [],
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(page(['a', 'b'], 't3')))
+      .mockResolvedValueOnce(jsonResponse(page(['c', 'd'], 't4')));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await searchAllPages({ collections: ['x', 'y'], bbox: [1, 2, 3, 4] }, 3, 't2');
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies.map((b) => b.token)).toEqual(['t2', 't3']);
+    expect(bodies[0]).toMatchObject({ collections: ['x', 'y'], bbox: [1, 2, 3, 4] });
+    expect(result.features.map((f) => f.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(result.nextToken).toBe('t4');
+  });
+
+  it("hands back the last page's open collections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ features: [{ id: 'a' }], numberReturned: 1, links: [{ rel: 'next', href: '/stac/search', body: { token: 't2' } }], open_collections: ['x', 'y'] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ features: [{ id: 'b' }], numberReturned: 1, open_collections: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await searchAllPages({ collections: ['x', 'y'] }, 300)).openCollections).toEqual([]);
+  });
+
+  it.each([
+    ['missing', undefined, null],
+    ['not a list', 'x', null],
+    ['a list with other things in it', ['x', 7, null], ['x']],
+  ])('reads open_collections %s', async (_case, value, expected) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [], numberReturned: 0, open_collections: value })));
+    expect((await searchItems({ collections: ['x'] })).openCollections).toEqual(expected);
+  });
+
+  it('hands back no token once the result is complete', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [{ id: 'a' }], numberReturned: 1 })));
+    expect((await searchAllPages({ collections: ['x'] }, 300)).nextToken).toBeNull();
   });
 });

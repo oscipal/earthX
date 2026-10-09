@@ -564,6 +564,14 @@ jeweils unter der Frage.
    (b) nein, zusammen mit dem Würfel.
    → **(a) angenommen:** als M3-19 im M3-Plan, Stufe A.
 
+**Nachtrag 2026-09-23 zu F6 (Otto):** Antwort 6a ist ersetzt. Ohne AOI fragt die
+Heatmap den sichtbaren Kartenausschnitt ab, nicht fest z6. Die Zellstufe folgt
+dem Kartenzoom, sodass auf dem Bildschirm ungefähr gleich viele Zellen liegen;
+mit AOI bleibt es wie bisher. M3-19 wird damit Stufe B. Plan und Messung:
+`plans/m3-19-weltueberblick-ausschnitt.md`; Log-Zeile vom 23.09.2026. Die
+Folge für den Würfel (Option D, §7): Anfragen ohne AOI tragen künftig den
+Ausschnitt als `bbox`; wie der Würfel sie erkennt, klärt die Bauaufgabe in M5.
+
 ## 10. Was offen blieb
 
 1. **Offenes Risiko zu Regel V: das fehlende Item im Juni 2020** (§3.3). Die

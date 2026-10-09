@@ -16,12 +16,14 @@ import pytest
 
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import (
+    BrowseMode,
     Capabilities,
     ConfigError,
     CoverageProvider,
     DatasetConfig,
     DatasetRegistry,
     DefaultRender,
+    ItemHolding,
     LicenseTier,
     SourceInfo,
     SpatialExtent,
@@ -43,6 +45,7 @@ class TestCapabilitiesAreExplicit:
             "time_range",
             "band_math",
             "interpolation",
+            "reprojection",
             "ml_processing",
             "quad_pol",
             "single_coverage_product",
@@ -54,6 +57,7 @@ class TestCapabilitiesAreExplicit:
             "time_range": True,
             "band_math": True,
             "interpolation": True,
+            "reprojection": True,
             "ml_processing": False,
             "quad_pol": False,
             "single_coverage_product": False,
@@ -65,6 +69,35 @@ class TestCapabilitiesAreExplicit:
     def test_a_flag_cannot_be_changed_after_the_fact(self, valid_config) -> None:
         with pytest.raises(AttributeError):
             valid_config.capabilities.quad_pol = True
+
+    @pytest.mark.parametrize("entry", list(REGISTRY), ids=lambda entry: entry.dataset_id)
+    def test_every_entry_switches_reprojection_on_itself(self, entry) -> None:
+        # M4 R3 (Otto, 05.10.2026): all three entries set the flag explicitly.
+        assert entry.capabilities.reprojection is True
+
+
+class TestKeywords:
+    """M3-10: the viewer's dataset filter reads them, so an entry names at least one."""
+
+    def test_an_entry_without_keywords_is_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="keywords"):
+            vary(keywords=())
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t"])
+    def test_a_blank_keyword_is_rejected(self, vary, blank) -> None:
+        with pytest.raises(ConfigError, match="non-blank"):
+            vary(keywords=("elevation", blank))
+
+    def test_a_single_string_is_not_a_list_of_keywords(self, vary) -> None:
+        with pytest.raises(ConfigError, match="tuple"):
+            vary(keywords="dem")
+
+    def test_a_keyword_that_is_not_a_string_is_rejected(self, vary) -> None:
+        with pytest.raises(ConfigError, match="non-blank"):
+            vary(keywords=("elevation", 3))
+
+    def test_every_registered_dataset_names_keywords(self) -> None:
+        assert all(config.keywords for config in REGISTRY)
 
 
 class TestLicenseTier:
@@ -78,7 +111,9 @@ class TestLicenseTier:
 
     def test_no_derivatives_is_fine_as_a_catalog_entry(self, valid_config, vary) -> None:
         license_info = replace(valid_config.license, derivatives=False, tier=LicenseTier.CATALOG)
-        assert vary(license=license_info).license.tier is LicenseTier.CATALOG
+        # A catalog-tier entry names no viewer (M3-11a K-05) — unrelated to what
+        # this test is about, so it just clears the fixture's default.
+        assert vary(license=license_info, viewer=None).license.tier is LicenseTier.CATALOG
 
     @pytest.mark.parametrize("tier", [LicenseTier.DISPLAY, LicenseTier.PROCESSING])
     def test_no_distribution_above_catalog_is_rejected(self, valid_config, vary, tier) -> None:
@@ -154,6 +189,78 @@ class TestCoverage:
         assert max_geotile_level_for(110.0) == 8
 
 
+class TestItemHolding:
+    """M3-11a K-05: which coverage and harvest fields make sense follows from where
+    the items live (`DatasetConfig._check_item_holding`)."""
+
+    def test_a_catalog_tier_entry_names_no_viewer(self, valid_config, vary) -> None:
+        """M3-02 K-03, Otto's answer of 23.09.2026: a dataset never displayed here
+        has nothing for `viewer` to say."""
+        license_info = replace(
+            valid_config.license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        with pytest.raises(ConfigError, match="viewer"):
+            vary(license=license_info)
+
+    def test_a_catalog_tier_entry_without_a_viewer_is_fine(self, valid_config, vary) -> None:
+        license_info = replace(
+            valid_config.license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        assert vary(license=license_info, viewer=None).viewer is None
+
+    def test_materialized_items_need_local_sql_coverage(self, valid_config, vary) -> None:
+        source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+        with pytest.raises(ConfigError, match="local-sql"):
+            vary(source=source)
+
+    def test_materialized_items_with_local_sql_coverage_are_fine(self, valid_config, vary) -> None:
+        source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+        assert vary(source=source, coverage=coverage).source.item_holding is ItemHolding.MATERIALIZED
+
+    def test_federated_items_cannot_use_local_sql_coverage(self, valid_config, vary) -> None:
+        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+        with pytest.raises(ConfigError, match="local-sql"):
+            vary(coverage=coverage)
+
+    def test_an_entry_names_no_harvest_run(self, valid_config) -> None:
+        """adr/0011 F5: materialize runs are logged in `earthx_materialize_runs`;
+        an entry in code cannot record one, so the field is gone, not left empty."""
+        with pytest.raises(TypeError, match="harvest_run"):
+            replace(valid_config.source, harvest_run=None)
+
+
+class TestBrowseCors:
+    """M3-12, F-11: a quicklook a browser keys transparent on its own canvas needs
+    cross-origin access to the asset host."""
+
+    def test_quicklook_without_cors_is_rejected(self, valid_config, vary) -> None:
+        viewer = replace(valid_config.viewer, browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16)
+        access = replace(valid_config.access, cors=False)
+        with pytest.raises(ConfigError, match="access.cors"):
+            vary(viewer=viewer, access=access)
+
+    def test_quicklook_with_cors_unmeasured_is_also_rejected(self, valid_config, vary) -> None:
+        """``cors=None`` (unmeasured) is not a claim of support either."""
+        viewer = replace(valid_config.viewer, browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16)
+        access = replace(valid_config.access, cors=None)
+        with pytest.raises(ConfigError, match="access.cors"):
+            vary(viewer=viewer, access=access)
+
+    def test_quicklook_with_cors_is_fine(self, valid_config, vary) -> None:
+        viewer = replace(valid_config.viewer, browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16)
+        access = replace(valid_config.access, cors=True)
+        assert vary(viewer=viewer, access=access).viewer.browse is BrowseMode.QUICKLOOK
+
+    def test_a_dataset_without_a_viewer_needs_no_cors_either(self, valid_config, vary) -> None:
+        """A catalog-tier entry (no viewer at all) has no browse mode to check."""
+        license_info = replace(
+            valid_config.license, tier=LicenseTier.CATALOG, distribution=False, derivatives=False
+        )
+        access = replace(valid_config.access, cors=False)
+        assert vary(license=license_info, viewer=None, access=access).viewer is None
+
+
 class TestLookup:
     """adr/0005 rule I: an unknown collection is a 404, never an empty result."""
 
@@ -185,6 +292,22 @@ def render(**overrides) -> DefaultRender:
         "resampling": "nearest",
     }
     return DefaultRender(**{**fields, **overrides})
+
+
+def full_viewer(**overrides) -> ViewerInfo:
+    """A valid ``ViewerInfo`` with one field group replaced (mirrors ``render``
+    above) — ``FULL_RESOLUTION``/``None`` is the least constrained ``browse``
+    combination, so a case about grouping or zoom does not also have to
+    satisfy ``QUICKLOOK``'s cross-field rule."""
+    fields = {
+        "group_by": ("datetime",),
+        "min_zoom": 0,
+        "max_zoom": 19,
+        "browse": BrowseMode.FULL_RESOLUTION,
+        "quicklook_nodata_max": None,
+        "results_group_by": ("datetime",),
+    }
+    return ViewerInfo(**{**fields, **overrides})
 
 
 class TestMalformedInput:
@@ -219,8 +342,8 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="rescale"):
             render(rescale=rescale)
 
-    def test_a_visualisation_without_an_asset_or_an_expression_is_rejected(self) -> None:
-        with pytest.raises(ConfigError, match="asset or an expression"):
+    def test_a_visualisation_without_an_asset_is_rejected(self) -> None:
+        with pytest.raises(ConfigError, match="needs an asset"):
             render(assets=())
 
     def test_a_colormap_on_several_assets_is_rejected(self) -> None:
@@ -228,9 +351,11 @@ class TestMalformedInput:
         with pytest.raises(ConfigError, match="colormap"):
             render(assets=("red", "green", "blue"), colormap_name="viridis")
 
-    def test_an_expression_alone_is_enough(self) -> None:
-        """Band math has no asset list, and adr/0006 §5 keeps the render-extension field."""
-        assert render(assets=(), expression="(nir-red)/(nir+red)").expression
+    @pytest.mark.parametrize("assets", [(), ("red", "nir")])
+    def test_an_expression_is_not_served_until_the_panel_maps_it_to_an_operator(self, assets) -> None:
+        """The tiler refuses a free `expression` with a 400 (plan M4-09, F3); an entry may not carry one."""
+        with pytest.raises(ConfigError, match="op=band_math"):
+            render(assets=assets, expression="(nir-red)/(nir+red)")
 
     def test_terms_without_an_english_text_are_rejected(self) -> None:
         """The UI is English (D25); a German-only notice cannot be shown."""
@@ -296,7 +421,23 @@ class TestMalformedInput:
         """M2-07a reads this field and implements nothing of its own, so a key that
         needs interpreting is a bug in the viewer nobody would trace back to here."""
         with pytest.raises(ConfigError, match="group_by"):
-            ViewerInfo(group_by=group_by, min_zoom=0, max_zoom=19)
+            full_viewer(group_by=group_by)
+
+    @pytest.mark.parametrize(
+        "results_group_by",
+        [
+            (),  # no key at all
+            ("start_datetime", "start_datetime"),  # the same property twice
+            ("properties.start_datetime",),  # the prefix is implied
+            ("",),
+            (" start_datetime",),
+        ],
+    )
+    def test_a_results_grouping_key_that_cannot_be_read_is_rejected(self, results_group_by) -> None:
+        """M3-12: the same rule as `group_by` (`_check_property_names` is shared),
+        checked again by name so a broken entry fails as this field, not that one."""
+        with pytest.raises(ConfigError, match="results_group_by"):
+            full_viewer(results_group_by=results_group_by)
 
     @pytest.mark.parametrize(
         ("min_zoom", "max_zoom", "match"),
@@ -315,14 +456,24 @@ class TestMalformedInput:
         that is empty or nonsensical would turn every tile of the dataset into a 400
         and the cause would be looked for anywhere but in the registry."""
         with pytest.raises(ConfigError, match=match):
-            ViewerInfo(group_by=("datetime",), min_zoom=min_zoom, max_zoom=max_zoom)
+            full_viewer(min_zoom=min_zoom, max_zoom=max_zoom)
 
-    @pytest.mark.parametrize("missing", ["min_zoom", "max_zoom"])
-    def test_the_zoom_levels_are_not_optional(self, missing) -> None:
+    @pytest.mark.parametrize(
+        "missing", ["min_zoom", "max_zoom", "browse", "quicklook_nodata_max", "results_group_by"]
+    )
+    def test_the_zoom_and_browse_fields_are_not_optional(self, missing) -> None:
         """KLAERUNGEN B10 again: a dataset nobody measured has no released range, and
         a default here would let a client ask for a tile that costs a hundred times
-        what the source can add to it (M2-10, Otto 22.09.2026)."""
-        fields = {"group_by": ("datetime",), "min_zoom": 0, "max_zoom": 19}
+        what the source can add to it (M2-10, Otto 22.09.2026) — the same reasoning
+        M3-12 applies to `browse`, `quicklook_nodata_max` and `results_group_by`."""
+        fields: dict[str, object] = {
+            "group_by": ("datetime",),
+            "min_zoom": 0,
+            "max_zoom": 19,
+            "browse": BrowseMode.FULL_RESOLUTION,
+            "quicklook_nodata_max": None,
+            "results_group_by": ("datetime",),
+        }
         del fields[missing]
         with pytest.raises(TypeError):
             ViewerInfo(**fields)
@@ -330,7 +481,27 @@ class TestMalformedInput:
     def test_a_single_released_level_is_allowed(self) -> None:
         """min == max is the browse-mode preview of M2-10: exactly one level is read
         and everything above it is overzoomed, which is what a quicklook is."""
-        assert ViewerInfo(group_by=("datetime",), min_zoom=8, max_zoom=8).max_zoom == 8
+        assert full_viewer(min_zoom=8, max_zoom=8).max_zoom == 8
+
+    def test_quicklook_nodata_max_may_be_a_number_under_quicklook(self) -> None:
+        assert full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=16).quicklook_nodata_max == 16
+
+    def test_quicklook_nodata_max_may_be_none_under_quicklook(self) -> None:
+        """A quicklook that needs no freistellung at all — not every source has
+        Sentinel-2's black padding."""
+        assert full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=None).quicklook_nodata_max is None
+
+    @pytest.mark.parametrize("browse", [BrowseMode.PREVIEW_TILES, BrowseMode.FULL_RESOLUTION])
+    def test_quicklook_nodata_max_must_be_none_without_quicklook(self, browse) -> None:
+        """A dataset with no browsable quicklook has nothing for this threshold to
+        apply to (M3-12)."""
+        with pytest.raises(ConfigError, match="quicklook_nodata_max"):
+            full_viewer(browse=browse, quicklook_nodata_max=16)
+
+    @pytest.mark.parametrize("value", [-1, 256, 8.5, True])
+    def test_quicklook_nodata_max_out_of_range_is_rejected(self, value) -> None:
+        with pytest.raises(ConfigError, match="quicklook_nodata_max"):
+            full_viewer(browse=BrowseMode.QUICKLOOK, quicklook_nodata_max=value)
 
     def test_an_asset_host_is_not_optional(self, valid_config) -> None:
         """KLAERUNGEN B10: a field with a default is a field nobody decided about."""
@@ -339,7 +510,17 @@ class TestMalformedInput:
                 adapter=valid_config.source.adapter,
                 endpoint=valid_config.source.endpoint,
                 source_collection_id=valid_config.source.source_collection_id,
-                harvest_run=None,
+                item_holding=valid_config.source.item_holding,
+            )
+
+    def test_item_holding_is_not_optional(self, valid_config) -> None:
+        """M3-11a K-05: the same rule as every other flag KLAERUNGEN B10 covers."""
+        with pytest.raises(TypeError):
+            SourceInfo(
+                adapter=valid_config.source.adapter,
+                endpoint=valid_config.source.endpoint,
+                source_collection_id=valid_config.source.source_collection_id,
+                asset_hosts=valid_config.source.asset_hosts,
             )
 
 
@@ -369,3 +550,32 @@ class TestEveryEntry:
 
     def test_the_id_is_the_one_it_is_filed_under(self, entry: DatasetConfig) -> None:
         assert REGISTRY.get(entry.dataset_id) is entry
+
+    def test_item_holding_is_one_of_the_two_known_values(self, entry: DatasetConfig) -> None:
+        """M3-11a K-05: enforced at construction already (`ConfigError` at import
+        time, `TestItemHolding` above), pinned again here as a named, per-entry
+        test — Otto, freeing M3-11a: a broken entry is meant to fail in CI by name,
+        not only as a collection error somewhere that happens to import the
+        registry."""
+        assert entry.source.item_holding in (ItemHolding.FEDERATED, ItemHolding.MATERIALIZED)
+
+    def test_item_holding_matches_the_coverage_provider(self, entry: DatasetConfig) -> None:
+        if entry.source.item_holding is ItemHolding.MATERIALIZED:
+            assert entry.coverage.provider is CoverageProvider.LOCAL_SQL
+        else:
+            assert entry.coverage.provider is not CoverageProvider.LOCAL_SQL
+
+    def test_a_catalog_tier_entry_names_no_viewer(self, entry: DatasetConfig) -> None:
+        if entry.license.tier is LicenseTier.CATALOG:
+            assert entry.viewer is None
+
+    def test_a_quicklook_dataset_has_measured_cors(self, entry: DatasetConfig) -> None:
+        """M3-12, F-11: enforced at construction (`TestBrowseCors`), pinned again
+        here by name, the same reasoning as `test_item_holding_is_one_of_the_two_
+        known_values` above."""
+        if entry.viewer is not None and entry.viewer.browse is BrowseMode.QUICKLOOK:
+            assert entry.access.cors is True
+
+    def test_results_group_by_is_set_wherever_group_by_is(self, entry: DatasetConfig) -> None:
+        if entry.viewer is not None:
+            assert entry.viewer.results_group_by

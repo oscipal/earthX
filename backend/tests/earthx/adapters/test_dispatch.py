@@ -2,6 +2,10 @@
 ``earthx:source.adapter``, not by which module the caller happens to import (M2-09b
 plan §4.2 — the federating client and the tiler's item source both call these, and
 neither should know which adapter a dataset uses).
+
+The table is handed in (``adapters=``, M4-01b F1): the real one, or a table of the
+test's own, built from :class:`~earthx.adapters.spec.AdapterSpec` entries instead of
+patching a private dispatch dict (adr/0011 B7).
 """
 
 from __future__ import annotations
@@ -14,9 +18,19 @@ from typing import Any
 import httpx
 import pytest
 
-from earthx.adapters import SearchParams, UnknownCollection, UnsupportedSource, get_item, search_items
+from earthx.adapters import (
+    ADAPTER_SPECS,
+    SearchParams,
+    UnknownCollection,
+    UnsupportedFilter,
+    UnsupportedSource,
+    dataset_config,
+    get_item,
+    search_items,
+)
+from earthx.adapters.spec import AdapterSpec, FilterSupport, spec_table
 from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
-from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
 
@@ -52,32 +66,77 @@ def gateway_for(response: httpx.Response) -> tuple[Gateway, list[httpx.Request]]
 REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3))
 
 
+def _earth_search_with(filters: FilterSupport):
+    """The real table, with Earth Search's filter support replaced."""
+    stub = replace(ADAPTER_SPECS[AdapterKind.EARTH_SEARCH_V1], filters=filters)
+    return spec_table(stub, *(spec for kind, spec in ADAPTER_SPECS.items() if kind is not stub.kind))
+
+
+class TestDatasetConfig:
+    """adr/0005 rule I in one place (adr/0011 F3, M4-01b F2): the caller looks the
+    entry up once; an unknown id never becomes an entry, so no adapter is asked."""
+
+    def test_a_known_dataset_is_its_registry_entry(self) -> None:
+        assert dataset_config(REGISTRY, SENTINEL_2_L2A.dataset_id) is SENTINEL_2_L2A
+
+    def test_an_unknown_dataset_is_unknown_collection(self) -> None:
+        with pytest.raises(UnknownCollection, match="no-such-dataset"):
+            dataset_config(REGISTRY, "no-such-dataset")
+
+    def test_only_the_registry_handed_in_counts(self) -> None:
+        with pytest.raises(UnknownCollection):
+            dataset_config(DatasetRegistry((SENTINEL_2_L2A,)), SENTINEL_2_L2A_ZARR3.dataset_id)
+
+
 class TestSearchDispatchesByAdapter:
     async def test_a_cog_dataset_goes_to_earth_search(self) -> None:
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
         async with gateway:
-            await search_items(SENTINEL_2_L2A.dataset_id, gateway=gateway, registry=REGISTRY)
+            await search_items(SENTINEL_2_L2A, adapters=ADAPTER_SPECS, gateway=gateway)
         assert seen[0].headers["host"] == "earth-search.aws.element84.com"
 
     async def test_a_zarr_dataset_goes_to_eopf_stac(self) -> None:
         gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "search_empty")))
         async with gateway:
-            await search_items(SENTINEL_2_L2A_ZARR3.dataset_id, gateway=gateway, registry=REGISTRY)
+            await search_items(SENTINEL_2_L2A_ZARR3, adapters=ADAPTER_SPECS, gateway=gateway)
         assert seen[0].headers["host"] == "stac.core.eopf.eodc.eu"
-
-    async def test_an_unknown_dataset_is_the_same_error_either_adapter_raises(self) -> None:
-        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
-        async with gateway:
-            with pytest.raises(UnknownCollection):
-                await search_items("no-such-dataset", gateway=gateway, registry=REGISTRY)
-        assert seen == []
 
     async def test_a_dataset_under_an_adapter_kind_nothing_dispatches_to_is_refused(self) -> None:
         other = replace(SENTINEL_2_L2A, source=replace(SENTINEL_2_L2A.source, adapter="some-other-protocol"))
         gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
         async with gateway:
             with pytest.raises(UnsupportedSource, match="some-other-protocol"):
-                await search_items(other.dataset_id, gateway=gateway, registry=DatasetRegistry((other,)))
+                await search_items(other, adapters=ADAPTER_SPECS, gateway=gateway)
+        assert seen == []
+
+    async def test_a_kind_whose_spec_offers_no_search_is_refused(self) -> None:
+        """adr/0011 §5.2: ``None`` means "explicitly not offered", refused by name."""
+        no_search = AdapterSpec(
+            kind=AdapterKind.EARTH_SEARCH_V1, search=None, fetch=None, materialize=None, coverage={}, filters=None
+        )
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="offers no search"):
+                await search_items(SENTINEL_2_L2A, adapters=spec_table(no_search), gateway=gateway)
+            with pytest.raises(UnsupportedSource, match="offers no search"):
+                await get_item(SENTINEL_2_L2A, "some-item", adapters=spec_table(no_search), gateway=gateway)
+        assert seen == []
+
+    async def test_a_materialized_dataset_is_refused_before_any_adapter_is_asked(self) -> None:
+        """M3-11a K-05: a materialized dataset's items live in pgstac, not at a live
+        source — this dispatch is the federating client's and the tiler's own
+        fallback (both call it), so a caller that reaches it anyway for such a
+        dataset is a dispatch mistake, refused the same way an unknown
+        ``AdapterKind`` is."""
+        materialized = replace(
+            SENTINEL_2_L2A,
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+        )
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="materialized"):
+                await search_items(materialized, adapters=ADAPTER_SPECS, gateway=gateway)
         assert seen == []
 
 
@@ -86,15 +145,27 @@ class TestGetItemDispatchesByAdapter:
         gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "item")))
         async with gateway:
             item = await get_item(
-                SENTINEL_2_L2A_ZARR3.dataset_id,
-                "SYNTH_S2A_MSIL2A_20260921T141821_T26WME",
-                gateway=gateway,
-                registry=REGISTRY,
+                SENTINEL_2_L2A_ZARR3, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", adapters=ADAPTER_SPECS, gateway=gateway
             )
         assert seen[0].headers["host"] == "stac.core.eopf.eodc.eu"
         # Normalised by the eopf_stac adapter, not left at the source's own version —
         # proof the dispatcher called the right module, not just the right host.
         assert item["stac_version"] == "1.0.0"
+
+    async def test_a_materialized_datasets_item_is_refused_here_too(self) -> None:
+        """The tiler's own item source dispatches on ``item_holding`` before it ever
+        reaches this function (M3-11a §3.3) — this is the safety net for a caller
+        that does not."""
+        materialized = replace(
+            SENTINEL_2_L2A,
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
+        )
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "item")))
+        async with gateway:
+            with pytest.raises(UnsupportedSource, match="materialized"):
+                await get_item(materialized, "some-item", adapters=ADAPTER_SPECS, gateway=gateway)
+        assert seen == []
 
 
 class TestSearchParamsIsSharedAcrossAdapters:
@@ -105,3 +176,53 @@ class TestSearchParamsIsSharedAcrossAdapters:
 
         with pytest.raises(InvalidQuery):
             SearchParams(limit=101)
+
+
+class TestFilterCapabilities:
+    """M3-08 F4a: a filter a dataset's own source cannot honour is refused by name
+    here, before an adapter ever builds a request for it — no real adapter lacks
+    either capability today (measured, M3-08 plan §2.1), so both cases below hand in
+    a table whose Earth Search entry has one filter turned off."""
+
+    async def test_intersects_is_refused_when_the_adapter_does_not_support_it(self) -> None:
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedFilter, match="intersects"):
+                await search_items(
+                    SENTINEL_2_L2A,
+                    SearchParams(intersects={"type": "Point", "coordinates": [10.0, 49.0]}),
+                    adapters=_earth_search_with(FilterSupport(intersects=False, ids=True, cql2=False)),
+                    gateway=gateway,
+                )
+        assert seen == []  # refused before the adapter (or anything else) was asked
+
+    async def test_ids_is_refused_when_the_adapter_does_not_support_it(self) -> None:
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            with pytest.raises(UnsupportedFilter, match="ids"):
+                await search_items(
+                    SENTINEL_2_L2A,
+                    SearchParams(ids=("known-id",)),
+                    adapters=_earth_search_with(FilterSupport(intersects=True, ids=False, cql2=False)),
+                    gateway=gateway,
+                )
+        assert seen == []
+
+    async def test_a_search_without_either_filter_never_calls_the_capability_check_in_vain(self) -> None:
+        """`params=None`/plain `SearchParams()` must not need either flag set."""
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
+        async with gateway:
+            await search_items(SENTINEL_2_L2A, adapters=ADAPTER_SPECS, gateway=gateway)
+        assert seen[0].headers["host"] == "earth-search.aws.element84.com"
+
+    def test_every_known_adapter_supports_both_filters(self) -> None:
+        """K8: the landing page's ``item-search`` conformance class (adr/0005 rule
+        VI, `docs/plans/m1-07-stac-api.md` §6) only holds true while every adapter
+        this platform dispatches to can honour both `intersects` and `ids` — this
+        turns the day that stops being so into a failing test here, not a landing
+        page silently promising more than the weakest adapter can do."""
+        for kind, spec in ADAPTER_SPECS.items():
+            if spec.search is None:
+                continue
+            assert spec.filters.intersects, f"{kind} does not support intersects"
+            assert spec.filters.ids, f"{kind} does not support ids"

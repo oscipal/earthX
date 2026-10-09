@@ -1,81 +1,64 @@
-// Parse an uploaded GeoJSON or KML file into a single AOI geometry.
-// Minimal, dependency-free KML support (Polygon / Point / LineString).
+// Reads an uploaded AOI file via the backend's `POST /aoi/upload` (M3-06a/b),
+// which checks and returns the geometry — GeoJSON, KML and zipped Shapefile all
+// go through it. Replaces this file's former in-browser GeoJSON/KML parser
+// (`prototyp-inventar.md` F3): that parser had no size, point-count or validity
+// checks and took "first usable geometry wins" for a file with several — the
+// route is stricter (docs/plans/m3-06a-aoi-upload-backend.md §§7–9) and is now
+// the only place any of that logic lives.
 
-function geomFromGeoJSON(obj: unknown): GeoJSON.Geometry | null {
-  if (!obj || typeof obj !== 'object') return null;
-  const o = obj as { type?: string; features?: unknown[]; geometry?: GeoJSON.Geometry };
-  if (o.type === 'FeatureCollection') {
-    for (const f of o.features ?? []) {
-      const g = geomFromGeoJSON(f);
-      if (g) return g;
-    }
-    return null;
-  }
-  if (o.type === 'Feature') return o.geometry ?? null;
-  if (
-    o.type === 'Polygon' ||
-    o.type === 'MultiPolygon' ||
-    o.type === 'Point' ||
-    o.type === 'LineString'
-  ) {
-    return obj as GeoJSON.Geometry;
-  }
-  return null;
+import { HttpError, uploadAoi } from './api';
+
+// = backend/earthx/access/aoi_upload.py::MAX_UPLOAD_BYTES. Kept in sync by hand
+// (no config endpoint exists any more, `store.ts`'s `config` comment) — change
+// both together. Checked here, before the request goes out, because a browser
+// tends to report a response that lands before its own upload has finished
+// sending as a network error rather than as the `413` it actually is (plan §6);
+// the `413` branch below stays as the route's own, authoritative cap.
+export const AOI_UPLOAD_MAX_BYTES = 1_048_576;
+
+const USABLE_TYPES = new Set(['Point', 'Polygon', 'MultiPolygon']);
+
+function isUsableGeometry(value: unknown): value is GeoJSON.Geometry {
+  return !!value && typeof value === 'object' && USABLE_TYPES.has((value as { type?: unknown }).type as string);
 }
 
-function parseCoords(text: string): number[][] {
-  return text
-    .trim()
-    .split(/\s+/)
-    .map((t) => {
-      const [lon, lat] = t.split(',').map(Number);
-      return [lon, lat];
-    })
-    .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+// Ends a route-supplied detail with exactly one full stop, never two (plan §5).
+function withFullStop(text: string): string {
+  return text.endsWith('.') ? text : `${text}.`;
 }
 
-function firstTag(root: Document | Element, tag: string): Element | null {
-  const els = root.getElementsByTagName(tag);
-  return els.length ? els[0] : null;
+export interface AoiFileResult {
+  geometry?: GeoJSON.Geometry;
+  error?: string;
 }
 
-function geomFromKML(text: string): GeoJSON.Geometry | null {
-  const doc = new DOMParser().parseFromString(text, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) return null;
-
-  const poly = firstTag(doc, 'Polygon');
-  if (poly) {
-    const c = firstTag(poly, 'coordinates'); // first = outer boundary
-    if (c?.textContent) {
-      let ring = parseCoords(c.textContent);
-      if (ring.length >= 3) {
-        const a = ring[0];
-        const b = ring[ring.length - 1];
-        if (a[0] !== b[0] || a[1] !== b[1]) ring = [...ring, a];
-        return { type: 'Polygon', coordinates: [ring] };
-      }
-    }
+// Never throws — every failure comes back as `{ error }` for the caller
+// (`ControlPanel.tsx`'s `AoiExtras`) to show as-is in the shared error line.
+export async function readAoiFile(file: File): Promise<AoiFileResult> {
+  if (file.size > AOI_UPLOAD_MAX_BYTES) {
+    return { error: `"${file.name}" is too large for an AOI (max. 1 MB).` };
   }
-  const line = firstTag(doc, 'LineString');
-  if (line) {
-    const c = firstTag(line, 'coordinates');
-    const pts = c?.textContent ? parseCoords(c.textContent) : [];
-    if (pts.length >= 2) return { type: 'LineString', coordinates: pts };
-  }
-  const point = firstTag(doc, 'Point');
-  if (point) {
-    const c = firstTag(point, 'coordinates');
-    const pts = c?.textContent ? parseCoords(c.textContent) : [];
-    if (pts.length) return { type: 'Point', coordinates: pts[0] };
-  }
-  return null;
-}
-
-export function parseAoiFile(name: string, text: string): GeoJSON.Geometry | null {
-  if (name.toLowerCase().endsWith('.kml')) return geomFromKML(text);
+  let geometry: GeoJSON.Geometry;
   try {
-    return geomFromGeoJSON(JSON.parse(text));
-  } catch {
-    return geomFromKML(text); // maybe KML with a .txt/.xml name
+    geometry = await uploadAoi(file, file.name);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      if (err.status === 413) {
+        return { error: `"${file.name}" is too large for an AOI (max. 1 MB).` };
+      }
+      if (err.status === 400) {
+        return {
+          error: err.detail
+            ? `Could not use "${file.name}" as an AOI: ${withFullStop(err.detail)}`
+            : `Could not use "${file.name}" as an AOI.`,
+        };
+      }
+      return { error: `Uploading "${file.name}" failed (${err.status}). Please try again.` };
+    }
+    return { error: `Could not reach the server to read "${file.name}".` };
   }
+  if (!isUsableGeometry(geometry)) {
+    return { error: `The server returned no usable AOI for "${file.name}".` };
+  }
+  return { geometry };
 }

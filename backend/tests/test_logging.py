@@ -1,13 +1,19 @@
-"""Tests for earthx.logging (M1-01): JSON format, request ID, geometry redaction."""
+"""Tests for earthx.logging (M1-01, M3-16): JSON format, request ID, geometry
+redaction, and the one access-log line `RequestIdMiddleware` writes per request."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import json
 import logging
 import re
+from datetime import datetime, timezone
 
+import httpx
 import pytest
+import uvicorn
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -18,10 +24,12 @@ from earthx.logging import (
     JsonFormatter,
     RequestIdMiddleware,
     bind_request_id,
+    configure_logging,
     get_request_id,
     reset_request_id,
     summarize_geometry,
 )
+from tests.conftest import format_without_timestamp, log_line_without_timestamp, own_log_fields, own_log_text
 
 # A distinctive, high-precision coordinate pair. If this exact value (or its
 # repr as a bare float) ever shows up in a log line, the redaction failed.
@@ -56,6 +64,135 @@ def _make_record(message: str, **extra: object) -> logging.LogRecord:
     return record
 
 
+class TestConfigureLogging:
+    """M3-16: turning the root logger to INFO must not turn on a third-party
+    library's own "HTTP Request: <url>" line — `httpx`/`httpx2` log the full URL,
+    query string included, which is exactly where an AOI travels."""
+
+    @pytest.mark.parametrize("level", [logging.INFO, logging.DEBUG])
+    def test_the_client_libraries_are_raised_to_warning(self, level: int) -> None:
+        """`botocore`/`urllib3` since M4-06: key id and signature at DEBUG (adr/0015 §9.2)."""
+        names = ("httpx", "httpx2", "botocore", "urllib3")
+        root = logging.getLogger()
+        previous = root.level
+        for name in names:
+            logging.getLogger(name).setLevel(logging.NOTSET)
+        try:
+            configure_logging(level)
+            for name in names:
+                assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING
+        finally:
+            root.setLevel(previous)
+            for name in names:
+                logging.getLogger(name).setLevel(logging.NOTSET)
+
+
+class TestUvicornAccessLogIsDisabledInCode:
+    """M3-16 review: the guarantee must not depend on `--no-access-log` on the
+    command line — a process started any other way (a bare `uvicorn earthx.jobs
+    .main:app`, following the README without the flag) has to be exactly as
+    safe, because the code closes it, not the invocation.
+    """
+
+    def test_a_live_server_started_without_the_flag_still_logs_no_query_string(self) -> None:
+        from earthx.jobs.main import app
+
+        async def run_request() -> tuple[int, bytes]:
+            # Reproduces uvicorn's own startup order: `Config.__init__` runs uvicorn's
+            # own `configure_logging()` — giving `uvicorn.access` its own handler,
+            # exactly as it would be left *without* `--no-access-log` (`access_log=True`
+            # is the default) — before `Config.load()` imports the ASGI app string and
+            # this module's own `configure_logging()` gets its turn. `earthx.jobs.main`
+            # is typically already imported by the time this test runs, so that second
+            # call is reproduced explicitly, in the same order.
+            # `lifespan="off"`: since M4-06 the worker's start checks the object store
+            # (tests/earthx/jobs/test_startup.py); this test is about the access log.
+            config = uvicorn.Config(
+                app, host="127.0.0.1", port=0, access_log=True, log_level="info", lifespan="off"
+            )
+            configure_logging()
+            server = uvicorn.Server(config)
+            task = asyncio.create_task(server.serve())
+            try:
+                while not server.started:
+                    await asyncio.sleep(0.01)
+                port = server.servers[0].sockets[0].getsockname()[1]
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"http://127.0.0.1:{port}/health",
+                        params={"bbox": f"{_EXACT_LON},{_EXACT_LAT},1,2"},
+                    )
+            finally:
+                server.should_exit = True
+                await task
+            return response.status_code, response.content
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            status_code, _ = asyncio.run(run_request())
+        assert status_code == 200
+
+        output = buffer.getvalue()
+        assert "?" not in output
+        assert str(_EXACT_LON) not in output
+        assert str(_EXACT_LAT) not in output
+
+        lines = [line for line in output.splitlines() if line.strip()]
+        assert len(lines) == 1  # not two: uvicorn's own access-log line never joins it
+        payload = json.loads(lines[0])
+        assert payload["logger"] == "earthx.request"
+        assert payload["path"] == "/health"
+        assert payload["status"] == 200
+
+
+class TestFormatWithoutTimestamp:
+    def _record_at_a_time_containing(self, digits: str, message: str, **extra: object) -> logging.LogRecord:
+        record = _make_record(message, **extra)
+        record.created = datetime(2026, 10, 7, 13, 26, 39, 3729, tzinfo=timezone.utc).timestamp()
+        assert digits in JsonFormatter().format(record)  # the raw line matches by chance
+        return record
+
+    def test_digits_that_only_the_timestamp_holds_are_not_in_the_rendered_line(self) -> None:
+        record = self._record_at_a_time_containing("9.0", "run ended", run="r1")
+        assert "9.0" not in format_without_timestamp(record)
+
+    def test_a_coordinate_in_the_message_is_still_in_the_rendered_line(self) -> None:
+        record = self._record_at_a_time_containing("9.0", "read window at 47.0,9.0")
+        assert "9.0" in format_without_timestamp(record)
+
+    def test_a_coordinate_in_an_extra_field_is_still_in_the_rendered_line(self) -> None:
+        record = self._record_at_a_time_containing("9.0", "run ended", bbox="9.0,47.0")
+        assert "47.0" in format_without_timestamp(record)
+
+    def test_a_line_without_a_timestamp_is_refused_rather_than_passed_on(self) -> None:
+        with pytest.raises(KeyError):
+            log_line_without_timestamp(json.dumps({"message": "no time"}))
+
+
+class TestOwnLogText:
+    def _record(self, message: str, **extra: object) -> logging.LogRecord:
+        record = _make_record(message, **extra)
+        record.relativeCreated = 25239.017
+        record.msecs = 9.01
+        assert "9.01" in str(record.__dict__)  # the standard attributes match by chance
+        return record
+
+    def test_digits_that_only_a_standard_attribute_holds_are_not_in_the_text(self) -> None:
+        assert "9.01" not in own_log_text(self._record("run ended", run="r1"))
+
+    def test_a_coordinate_in_the_message_is_still_in_the_text(self) -> None:
+        assert "9.01" in own_log_text(self._record("read window at 47.01,9.01"))
+
+    def test_a_coordinate_in_an_own_field_is_still_in_the_text(self) -> None:
+        assert "9.01" in own_log_text(self._record("run ended", bbox="9.01,47.01"))
+
+    def test_only_the_callers_fields_are_listed(self) -> None:
+        assert own_log_fields(self._record("run ended", run="r1", count=2)) == {"run": "r1", "count": 2}
+
+    def test_a_value_that_is_not_json_is_written_out_not_dropped(self) -> None:
+        assert "9.01" in own_log_text(self._record("run ended", where=(9.01, 47.01), when=datetime(2026, 1, 1)))
+
+
 class TestJsonFormatter:
     def test_output_is_one_json_object_with_the_expected_fields(self) -> None:
         token = bind_request_id("req-abc123")
@@ -86,7 +223,7 @@ class TestJsonFormatter:
         # Guards against a future caller bypassing summarize_geometry and
         # logging a raw geometry directly as an extra field.
         record = _make_record("aoi received", aoi=summarize_geometry(_VALID_POLYGON))
-        line = JsonFormatter().format(record)
+        line = format_without_timestamp(record)
         assert str(_EXACT_LON) not in line
         assert str(_EXACT_LAT) not in line
 
@@ -223,6 +360,45 @@ class TestRequestIdMiddleware:
         assert get_request_id() is None
 
 
+class TestAccessLogLine:
+    """M3-16 (K-01/K-02): one access-log line per request, never a query string."""
+
+    def test_a_request_with_a_query_string_writes_one_line_without_it(
+        self, access_log_lines: list[str]
+    ) -> None:
+        client = TestClient(RequestIdMiddleware(_echo_app()))
+        response = client.get(f"/echo?bbox={_EXACT_LON},{_EXACT_LAT},1,2")
+        assert response.status_code == 200
+
+        assert len(access_log_lines) == 1
+        line = access_log_lines[0]
+        assert str(_EXACT_LON) not in line
+        assert str(_EXACT_LAT) not in line
+        assert "?" not in line
+
+        payload = json.loads(line)
+        assert payload["path"] == "/echo"
+        assert payload["method"] == "GET"
+        assert payload["status"] == 200
+        assert isinstance(payload["duration_ms"], int | float)
+        assert payload["duration_ms"] >= 0
+        assert payload["request_id"] == response.headers[REQUEST_ID_HEADER]
+
+    def test_a_failing_request_still_writes_one_line(self, access_log_lines: list[str]) -> None:
+        async def broken(request):
+            raise ValueError("boom")
+
+        app = Starlette(routes=[Route("/broken", broken)])
+        client = TestClient(RequestIdMiddleware(app), raise_server_exceptions=False)
+        response = client.get("/broken")
+        assert response.status_code == 500
+
+        assert len(access_log_lines) == 1
+        payload = json.loads(access_log_lines[0])
+        assert payload["status"] == 500
+        assert payload["path"] == "/broken"
+
+
 class TestEndToEndGeometryLogging:
     """A request carrying a polygon must never put its coordinates in the log."""
 
@@ -244,9 +420,8 @@ class TestEndToEndGeometryLogging:
             response = client.post("/aoi", json={"aoi": malformed_aoi})
 
         assert response.status_code == 200
-        formatter = JsonFormatter()
         for record in caplog.records:
-            line = formatter.format(record)
+            line = format_without_timestamp(record)
             assert str(_EXACT_LON) not in line
 
     def test_a_valid_aoi_in_a_request_does_not_leak_coordinates_into_the_log(
@@ -266,8 +441,72 @@ class TestEndToEndGeometryLogging:
             response = client.post("/aoi", json={"aoi": _VALID_POLYGON})
 
         assert response.status_code == 200
-        formatter = JsonFormatter()
         for record in caplog.records:
-            line = formatter.format(record)
+            line = format_without_timestamp(record)
             assert str(_EXACT_LON) not in line
             assert str(_EXACT_LAT) not in line
+
+
+class TestProcessEntrypointsWireTheMiddleware:
+    """M3-16 (K-02): each of the four HTTP processes calls `configure_logging` and
+    wires `RequestIdMiddleware` in, not only `test_logging.py`'s own bare apps."""
+
+    def test_api(self) -> None:
+        from earthx.api.main import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+    def test_tiler(self) -> None:
+        from earthx.api.tiler import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+    def test_worker(self) -> None:
+        from earthx.jobs.main import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+    def test_harvester(self) -> None:
+        from earthx.discovery.main import app
+
+        assert RequestIdMiddleware in [middleware.cls for middleware in app.user_middleware]
+
+
+class TestAJobIdentifierIsNotLogged:
+    """M4-08b F6: `/processing/jobs/{jobID}` is the way to a job's result; the log names the route, not the job."""
+
+    @pytest.mark.parametrize(
+        ("path", "logged"),
+        [
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA", "/processing/jobs/{jobID}"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results", "/processing/jobs/{jobID}/results"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results/result.tif", "/processing/jobs/{jobID}/results/result.tif"),
+            ("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/events", "/processing/jobs/{jobID}/events"),
+            ("/processing/jobs/not-an-identifier-but-secret/results", "/processing/jobs/{jobID}/results"),
+            ("/earthx/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results", "/earthx/processing/jobs/{jobID}/results"),
+            ("/processing/jobs//AAAAAAAAAAAAAAAAAAAAAA", "/processing/jobs/{jobID}"),
+            ("/processing/jobs///AAAAAAAAAAAAAAAAAAAAAA/events", "/processing/jobs/{jobID}/events"),
+            ("/processing/jobs/", "/processing/jobs/"),
+            ("/processing/jobs", "/processing/jobs"),
+            ("/processing/processes/recipe", "/processing/processes/recipe"),
+            ("/stac/collections/x/items/AAAAAAAAAAAAAAAAAAAAAA", "/stac/collections/x/items/AAAAAAAAAAAAAAAAAAAAAA"),
+            ("/health", "/health"),
+            ("", ""),
+            (None, None),
+        ],
+    )  # fmt: skip
+    def test_the_path_as_the_access_log_writes_it(self, path: str | None, logged: str | None) -> None:
+        from earthx.logging import loggable_path
+
+        assert loggable_path(path) == logged
+
+    def test_the_middleware_writes_it_so(self, access_log_lines: list[str]) -> None:
+        async def endpoint(request):
+            return JSONResponse({})
+
+        app = Starlette(routes=[Route("/processing/jobs/{job_id}/results", endpoint)])
+        client = TestClient(RequestIdMiddleware(app))
+        assert client.get("/processing/jobs/AAAAAAAAAAAAAAAAAAAAAA/results").status_code == 200
+        (line,) = access_log_lines
+        assert json.loads(line)["path"] == "/processing/jobs/{jobID}/results"
+        assert "AAAAAAAAAAAAAAAAAAAAAA" not in line

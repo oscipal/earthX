@@ -9,6 +9,10 @@ const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 interface StacLink {
   rel: string;
   href: string;
+  method?: string;
+  // Present on a `POST`-shaped link (M3-08, `PagingLinks.link_next` on the
+  // backend): the whole next request body, our own page token under `token`.
+  body?: Record<string, unknown>;
 }
 
 interface StacErrorBody {
@@ -35,11 +39,27 @@ export function errorDetail(body: unknown, status: number, statusText: string): 
 // re-parse `.message` to get it back.
 export class HttpError extends Error {
   readonly status: number;
+  // The raw `detail` field of a JSON error body, when there was one and it was
+  // a string — `undefined` for a non-JSON body, a missing `detail`, or a
+  // `detail` that wasn't a string (M3-06b: lets a caller (`aoiFile.ts`) tell "the
+  // route gave an actual reason" apart from `message`'s status-line fallback,
+  // which `errorDetail` also uses when there is no real detail to show).
+  readonly detail?: string;
+  // The raw `Retry-After` response header, if the route sent one (M3-07b:
+  // `placeSearch.ts` uses its presence to tell a `503` that is only briefly
+  // busy — the shared rate slot, a cache/Postgres hiccup — apart from a `503`
+  // that means place search is not enabled on this server at all, which never
+  // carries this header). Not parsed into seconds: the value can be `5` or
+  // `30` depending on which of those it is, and showing either as a promised
+  // countdown would claim more than the next attempt actually holds.
+  readonly retryAfter?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: string, retryAfter?: string) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
+    this.detail = detail;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -51,7 +71,15 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     } catch {
       /* non-JSON error body — errorDetail falls back to the status line */
     }
-    throw new HttpError(res.status, errorDetail(body, res.status, res.statusText));
+    const detail = typeof (body as StacErrorBody | undefined)?.detail === 'string'
+      ? ((body as StacErrorBody).detail as string)
+      : undefined;
+    throw new HttpError(
+      res.status,
+      errorDetail(body, res.status, res.statusText),
+      detail,
+      res.headers?.get('Retry-After') ?? undefined,
+    );
   }
   return (await res.json()) as T;
 }
@@ -63,12 +91,80 @@ export async function fetchCollections(): Promise<Collection[]> {
   return data.collections;
 }
 
+// M3-06b: `POST /aoi/upload` (M3-06a, `backend/earthx/api/aoi_upload_route.py`)
+// checks an uploaded GeoJSON/KML/Shapefile-ZIP file and returns the geometry it
+// found, in EPSG:4326. No `multipart/form-data` (the route's plan §6 measured
+// that Starlette spools any file part over 1 MiB to disk regardless of a size
+// cap, which the "never on disk" upload is built to avoid): the file goes as
+// the raw request body, its name as a query parameter. `jsonOrThrow` turns a
+// `400`/`413`/other error into an `HttpError` the caller (`aoiFile.ts`) maps to
+// a message; a successful response is the bare geometry object, no envelope.
+export async function uploadAoi(file: Blob, filename: string): Promise<GeoJSON.Geometry> {
+  return jsonOrThrow<GeoJSON.Geometry>(
+    await fetch(`${BASE}/aoi/upload?filename=${encodeURIComponent(filename)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    }),
+  );
+}
+
+// M3-07b: `POST /geocode` (M3-07a, `backend/earthx/api/geocode_route.py`) — a
+// place name resolved to an outline and a bounding box via Nominatim, over the
+// backend's own gateway. `outline` is `Polygon`/`MultiPolygon` or `null` (a
+// point/line hit, or an outline that stayed too large even simplified);
+// `bbox` is always `[west, south, east, north]` and already sanity-checked by
+// the route. `attribution`/`attribution_url`/`license` come on every answer,
+// even an empty `results: []` (the plan's placeSearch.ts shows them either way).
+export interface PlaceResult {
+  name: string;
+  display_name: string;
+  kind: string;
+  bbox: [number, number, number, number];
+  outline: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  outline_simplified: boolean;
+}
+
+export interface PlaceSearchResponse {
+  results: PlaceResult[];
+  attribution: string;
+  attribution_url: string;
+  license: string;
+}
+
+export async function geocodePlace(q: string): Promise<PlaceSearchResponse> {
+  return jsonOrThrow<PlaceSearchResponse>(
+    await fetch(`${BASE}/geocode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q }),
+    }),
+  );
+}
+
 export interface SearchQuery {
-  collection: string;
+  // M3-13: a list, not one dataset — the backend answers a search naming more
+  // than one collection with a genuine mixed page (`api/mixed_search.py`); the
+  // viewer sends every dataset ticked in the control panel (M3-10).
+  collections: string[];
   bbox?: Bbox;
+  // M3-08: a polygon or point AOI searches by its true shape instead of its bbox
+  // (`geoUtils.ts::searchArea` decides which of the two a caller sends — never
+  // both, the backend rejects that combination). Never sent as a `GET` query
+  // parameter, only in the `POST` body below.
+  intersects?: GeoJSON.Geometry;
   datetime?: string;
   limit?: number;
   token?: string;
+}
+
+// One collection a mixed search could not reach on a given page (M3-13,
+// `api/mixed_search.py::IncompleteSource`) — `reason` is one of `timeout`,
+// `unreachable`, `upstream_error`, `unrecognised_answer`. Not shown in the UI
+// in the results list's section head (M3-10).
+export interface IncompleteCollection {
+  collection: string;
+  reason: string;
 }
 
 export interface ItemPage {
@@ -76,26 +172,69 @@ export interface ItemPage {
   numberMatched: number | null;
   numberReturned: number;
   nextToken: string | null;
+  // M3-12: filters the backend could not honour for at least one searched
+  // collection and dropped rather than silently applying — `datetime` for a
+  // dataset with `capabilities.time_range=False`. Empty when nothing was
+  // dropped. Mirrors the coverage route's own `ignored_filters`
+  // (`api/coverage_route.py`).
+  ignoredFilters: string[];
+  // M3-13 F4: the same, broken down per collection — what a mixed search's
+  // results list needs to say which dataset a note belongs to (M3-10). Empty
+  // where the backend names none (a search over a single source may not).
+  ignoredFiltersByCollection: Record<string, string[]>;
+  // M3-13: collections a mixed search could not reach on this page. Empty for
+  // a single-collection search, which never partially fails this way.
+  incompleteCollections: IncompleteCollection[];
+  // M3-10b: the collections whose source still has pages after this one
+  // (collections sharing a source are open together). `null` where the answer
+  // does not say — the caller then cannot rule out more for any of them.
+  openCollections: string[] | null;
 }
 
-// The `token` query parameter carried by the response's `rel=next` link, not
-// a guessed format — `PagingLinks` on the backend is free to change its shape.
-// The base is a placeholder only, for parsing a relative `href`; it is never
-// used to reach a server (no DOM/`window` in the test environment, F2 = a).
+function openCollectionsFrom(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((c): c is string => typeof c === 'string');
+}
+
+// A body field that should be `{collection: [filter, …]}`; anything else —
+// including entries of the wrong type — reads as "nothing named", never as a
+// crash: a note is only ever a hint, it must not take the results list down.
+function ignoredByCollectionFrom(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, string[]> = Object.create(null);
+  for (const [collection, filters] of Object.entries(value)) {
+    if (!Array.isArray(filters)) continue;
+    const names = filters.filter((f): f is string => typeof f === 'string');
+    if (names.length > 0) result[collection] = names;
+  }
+  return result;
+}
+
+// M3-08: every search goes over `POST` now (F7a — keeps an AOI out of the access
+// log, which a `GET` query string cannot avoid), so the response's `next` link is
+// always the `POST`-shaped one: the token sits in `body.token`, not in `href`'s
+// query string (`PagingLinks.link_next` on the backend). The `href`-based reading
+// is kept as a fallback for a link this client did not itself ask for.
 export function nextTokenFrom(links: StacLink[] | undefined): string | null {
   const next = links?.find((l) => l.rel === 'next');
   if (!next) return null;
+  const fromBody = next.body?.token;
+  if (typeof fromBody === 'string') return fromBody;
   const url = new URL(next.href, 'http://localhost');
   return url.searchParams.get('token');
 }
 
-export function buildSearchUrl(q: SearchQuery): string {
-  const params = new URLSearchParams({ collections: q.collection });
-  if (q.bbox) params.set('bbox', q.bbox.join(','));
-  if (q.datetime) params.set('datetime', q.datetime);
-  if (q.limit) params.set('limit', String(q.limit));
-  if (q.token) params.set('token', q.token);
-  return `${BASE}/stac/search?${params.toString()}`;
+// The `POST /stac/search` body, in the same field names as `SearchParams`
+// (`backend/earthx/adapters/federated_search.py`) — `bbox`/`intersects` are
+// mutually exclusive there, so a caller sends at most one (`geoUtils.searchArea`).
+export function buildSearchBody(q: SearchQuery): Record<string, unknown> {
+  const body: Record<string, unknown> = { collections: q.collections };
+  if (q.bbox) body.bbox = q.bbox;
+  if (q.intersects) body.intersects = q.intersects;
+  if (q.datetime) body.datetime = q.datetime;
+  if (q.limit) body.limit = q.limit;
+  if (q.token) body.token = q.token;
+  return body;
 }
 
 export async function searchItems(q: SearchQuery): Promise<ItemPage> {
@@ -104,12 +243,26 @@ export async function searchItems(q: SearchQuery): Promise<ItemPage> {
     numberMatched?: number;
     numberReturned: number;
     links?: StacLink[];
-  }>(await fetch(buildSearchUrl(q)));
+    ignored_filters?: string[];
+    ignored_filters_by_collection?: unknown;
+    incomplete_collections?: IncompleteCollection[];
+    open_collections?: unknown;
+  }>(
+    await fetch(`${BASE}/stac/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildSearchBody(q)),
+    }),
+  );
   return {
     features: body.features,
     numberMatched: body.numberMatched ?? null,
     numberReturned: body.numberReturned,
     nextToken: nextTokenFrom(body.links),
+    ignoredFilters: body.ignored_filters ?? [],
+    ignoredFiltersByCollection: ignoredByCollectionFrom(body.ignored_filters_by_collection),
+    incompleteCollections: body.incomplete_collections ?? [],
+    openCollections: openCollectionsFrom(body.open_collections),
   };
 }
 
@@ -169,21 +322,61 @@ export async function fetchStatistics(
 // Pages through `nextToken` until the result is complete or `maxItems` is
 // reached — the API never sorts (D8, `earthx.api.main`), so both "the nearest
 // date" (runSearch) and "the footprints for a coverage cell" (M2-07c) have to
-// walk every page rather than trust the first one.
+// walk every page rather than trust the first one. `startToken` continues an
+// earlier walk ("Load more", M3-10b); `nextToken` is what is left once
+// `maxItems` stopped it, `null` when the result is complete.
 export async function searchAllPages(
   q: Omit<SearchQuery, 'limit' | 'token'>,
   maxItems: number,
-): Promise<{ features: StacItem[]; numberMatched: number | null }> {
-  let token: string | undefined;
+  startToken?: string,
+): Promise<{
+  features: StacItem[];
+  numberMatched: number | null;
+  ignoredFilters: string[];
+  ignoredFiltersByCollection: Record<string, string[]>;
+  incompleteCollections: IncompleteCollection[];
+  nextToken: string | null;
+  openCollections: string[] | null;
+}> {
+  let token = startToken;
+  // The last page's: it says where the walk stopped.
+  let openCollections: string[] | null = null;
   const features: StacItem[] = [];
   let numberMatched: number | null = null;
+  // Every page of one search drops the same filter for the same reason, so
+  // the first page's answer already speaks for the whole set.
+  let ignoredFilters: string[] = [];
+  const ignoredFiltersByCollection: Record<string, string[]> = {};
+  // Unlike `ignoredFilters`, a mixed search's own failing source can change
+  // from page to page (M3-13: it stops being asked again once it fails, but a
+  // *different* source could still fail later) — collected across every page,
+  // deduplicated by collection so a repeated notice does not pile up.
+  const incompleteByCollection = new Map<string, IncompleteCollection>();
   do {
     const page: ItemPage = await searchItems({ ...q, limit: 100, token });
     features.push(...page.features);
     if (numberMatched === null) numberMatched = page.numberMatched;
+    if (ignoredFilters.length === 0) ignoredFilters = page.ignoredFilters;
+    // Kept per collection like the flat list: the first page that names a
+    // collection speaks for the whole search.
+    for (const [collection, filters] of Object.entries(page.ignoredFiltersByCollection)) {
+      if (!Object.hasOwn(ignoredFiltersByCollection, collection)) ignoredFiltersByCollection[collection] = filters;
+    }
+    for (const entry of page.incompleteCollections) {
+      if (!incompleteByCollection.has(entry.collection)) incompleteByCollection.set(entry.collection, entry);
+    }
     token = page.nextToken ?? undefined;
+    openCollections = page.openCollections;
   } while (token && features.length < maxItems);
-  return { features, numberMatched };
+  return {
+    features,
+    numberMatched,
+    ignoredFilters,
+    ignoredFiltersByCollection,
+    incompleteCollections: [...incompleteByCollection.values()],
+    nextToken: token ?? null,
+    openCollections,
+  };
 }
 
 // The coverage route (`GET /coverage/{dataset_id}`, M2-05b) lives on the
@@ -217,6 +410,14 @@ export interface CoverageResponse {
   footprints_advised: boolean;
   from_cache: boolean;
   extent: Bbox | null;
+  // Set only by the `local-sql` area way (M3-11c): the union of a materialized
+  // one-off product's own item footprints, as a GeoJSON MultiPolygon. `null`
+  // everywhere else. Drawing it is M3-12 (M3-02 F-07); not read yet.
+  area: GeoJSON.MultiPolygon | null;
+  // Filters the request carried that this dataset could not honour and this
+  // answer silently dropped rather than reject, e.g. `["datetime"]` for a
+  // dataset without a time axis. Not surfaced in the UI yet (M3-12).
+  ignored_filters: string[];
 }
 
 export interface CoverageParams {
@@ -241,25 +442,53 @@ export async function fetchCoverage(p: CoverageParams): Promise<CoverageResponse
 
 // POST /collections/{dataset}/download (M2-06): the AOI crop as a ZIP, streamed
 // synchronously and never cached (D3, D11). The body mirrors `DownloadRequest`
-// in `api/tiler.py`; `language` picks the notice file's text (M2-07d requests
-// `en`, matching the rest of the — English since 2026-09-20 — interface).
+// in `api/tiler.py`.
+// One of `RESOLUTION_FACTORS` in `access/download.py` (F10c, M3-18 §10):
+// how many times coarser than native to read. Native (`1`) is the default and
+// is never chosen automatically — the dialog always shows the choice.
+export const RESOLUTION_FACTORS = [1, 2, 4, 10] as const;
+export type ResolutionFactor = (typeof RESOLUTION_FACTORS)[number];
+
+// `groups` (M3-17, replacing the flat `items` list): item ids per group,
+// mirroring `DownloadRequest.groups` in `api/tiler.py` — one merged file per
+// group, separate groups as separate files in the same ZIP (P19). A single
+// group is simply a list of one, the shape every download had before M3-17.
 export interface DownloadCropRequest {
   datasetId: string;
-  items: string[];
+  groups: string[][];
   assets: string[];
   aoi: GeoJSON.Geometry;
-  language?: string;
+  resolution?: ResolutionFactor;
 }
 
-export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
+// `totalGroups`/`skippedGroups` (M3-17, review finding 1): `X-Total-Groups`/
+// `X-Skipped-Groups` off the response — a group dropped for never touching
+// the AOI is otherwise only named inside the ZIP's ATTRIBUTION.txt, which the
+// user only sees after the file is already saved. Counts only, read here
+// before the dialog's own notice ever mentions them (`store.confirmDownload`).
+export interface DownloadCropResult {
+  blob: Blob;
+  totalGroups: number;
+  skippedGroups: number;
+}
+
+// A missing/non-numeric header is `0`, never `NaN` propagating into a user
+// message — an older or misconfigured backend that does not send the header
+// at all just means "nothing to report", not "something is wrong here".
+function headerCount(res: Response, name: string): number {
+  const value = Number(res.headers.get(name));
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCropResult> {
   const res = await fetch(`${BASE}/collections/${encodeURIComponent(req.datasetId)}/download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      items: req.items,
+      groups: req.groups,
       assets: req.assets,
       aoi: req.aoi,
-      language: req.language ?? 'en',
+      resolution: req.resolution ?? 1,
     }),
   });
   if (!res.ok) {
@@ -271,5 +500,7 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<Blob> {
     }
     throw new Error(errorDetail(body, res.status, res.statusText));
   }
-  return await res.blob();
+  const totalGroups = headerCount(res, 'X-Total-Groups');
+  const skippedGroups = headerCount(res, 'X-Skipped-Groups');
+  return { blob: await res.blob(), totalGroups, skippedGroups };
 }

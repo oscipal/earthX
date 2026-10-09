@@ -12,7 +12,14 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from earthx.api.federating_client import _datetime_bounds, _reject_disallowed_keys, _strip_forward_token
+from earthx.api.federating_client import (
+    _datetime_bounds,
+    _dump_intersects,
+    _parse_intersects_param,
+    _reject_disallowed_keys,
+    _reject_items_endpoint_keys,
+    _strip_forward_token,
+)
 
 
 class TestRejectDisallowedKeys:
@@ -33,15 +40,65 @@ class TestRejectDisallowedKeys:
         assert "sortby" in excinfo.value.detail
 
     @pytest.mark.parametrize("key", ["ids", "intersects"])
-    def test_ids_and_intersects_are_refused_too(self, key: str) -> None:
-        """M2-17: both federated sources honour these, but `_dispatch_search` does
-        not forward either — measured as a silent `200` with an unfiltered page
-        before this check existed (docs/plans/m2-format-und-viewer.md M2-17)."""
+    def test_ids_and_intersects_now_pass_here(self, key: str) -> None:
+        """M3-08: `/search` forwards both now; only `item_collection` still says no
+        (`TestRejectItemsEndpointKeys` below) — M2-17's blanket rejection of either
+        parameter on every federated route is gone."""
+        _reject_disallowed_keys({"collections", key})
+
+
+class TestRejectItemsEndpointKeys:
+    """M3-08: `GET /collections/{id}/items` never had `ids`/`intersects` — unlike
+    `/search`, which forwards both from M3-08 on."""
+
+    def test_a_plain_items_request_passes(self) -> None:
+        _reject_items_endpoint_keys({"bbox", "limit", "token"})
+
+    @pytest.mark.parametrize("key", ["ids", "intersects"])
+    def test_each_key_is_refused(self, key: str) -> None:
         with pytest.raises(HTTPException) as excinfo:
-            _reject_disallowed_keys({"collections", key})
+            _reject_items_endpoint_keys({key})
         assert excinfo.value.status_code == 400
         assert key in excinfo.value.detail
-        assert "M2-17" in excinfo.value.detail
+        assert "M3-08" in excinfo.value.detail
+
+
+class TestParseIntersectsParam:
+    def test_none_is_none(self) -> None:
+        assert _parse_intersects_param(None) is None
+
+    def test_valid_json_becomes_a_dict(self) -> None:
+        assert _parse_intersects_param('{"type": "Point", "coordinates": [10.0, 49.0]}') == {
+            "type": "Point",
+            "coordinates": [10.0, 49.0],
+        }
+
+    def test_broken_json_is_refused(self) -> None:
+        with pytest.raises(HTTPException) as excinfo:
+            _parse_intersects_param("{not json")
+        assert excinfo.value.status_code == 400
+
+    def test_a_json_array_is_refused_as_not_an_object(self) -> None:
+        with pytest.raises(HTTPException) as excinfo:
+            _parse_intersects_param("[1, 2]")
+        assert excinfo.value.status_code == 400
+
+
+class TestDumpIntersects:
+    def test_none_is_none(self) -> None:
+        assert _dump_intersects(None) is None
+
+    def test_a_plain_mapping_passes_through(self) -> None:
+        geometry = {"type": "Point", "coordinates": [10.0, 49.0]}
+        assert _dump_intersects(geometry) == geometry
+
+    def test_a_geojson_pydantic_model_is_dumped_to_a_plain_mapping(self) -> None:
+        from geojson_pydantic.geometries import Point
+
+        model = Point(type="Point", coordinates=(10.0, 49.0))
+        dumped = _dump_intersects(model)
+        assert dumped == {"type": "Point", "coordinates": [10.0, 49.0]}
+        assert isinstance(dumped, dict)
 
 
 class TestStripForwardToken:

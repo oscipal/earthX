@@ -15,6 +15,10 @@ export interface StacAsset {
   // `proj:bbox` of its own.
   'proj:transform'?: number[];
   'proj:shape'?: number[];
+  // Ground sample distance in metres/pixel (STAC `gsd`, adr/0003 §3): read for
+  // the download dialog's resolution choice (F10c, M3-18 §10) — how many
+  // metres each `RESOLUTION_FACTORS` step actually means for this asset.
+  gsd?: number | null;
 }
 
 // A STAC Item as `/stac` returns it. `properties` is where a real STAC item
@@ -38,15 +42,66 @@ export interface CollectionAccess {
   cors: boolean | null;
 }
 
+// The reader dispatch format (`DataFormat`, architekturplan.md 6.2), read only
+// to tell a whole scene the viewer may link straight to the source (a COG, one
+// file) from one it may not (a Zarr store has no single file, M3-17) —
+// without a dataset-specific branch anywhere. A value this union does not
+// name is treated like `'zarr'` (download.ts): unknown is never assumed to be
+// a linkable single file.
+export type DatasetFormat = 'cog' | 'zarr' | 'legacy';
+
+// `earthx:source` (architekturplan.md 5.1). `asset_hosts` is what M3-17's
+// original-file download checks a `href` against before ever showing it as a
+// link — the same hosts the tile path already trusts (D12), read here for the
+// first time by the frontend.
+export interface EarthxSource {
+  asset_hosts: string[];
+}
+
+// What the browse view shows right after a search, before any tile is requested
+// (M3-12, registry `BrowseMode`): a published quicklook the browser crops on its
+// own canvas, a coarse tile over one item standing in for one, or the AOI crop in
+// full resolution straight away, for a dataset with neither.
+export type BrowseMode = 'quicklook' | 'preview_tiles' | 'full_resolution';
+
 export interface EarthxViewer {
   group_by: string[];
   // The tile levels this dataset is released for (M2-10, registry `ViewerInfo`).
   // Below `min_zoom` one tile shows several scenes, which is the coverage map's
   // job; above `max_zoom` the source has nothing finer, so the last level is
   // overzoomed. The tile route enforces both — asking outside the range is a 400,
-  // not a slow tile.
+  // not a slow tile. (For a dataset released from tiles already clipped to their
+  // own item's extent — every tile URL is per-item since M3-09 — `min_zoom` is a
+  // cost floor on how many tiles a viewport can ask for at once instead: the DEM
+  // sets it to 0, M3-12 plan step §3.)
   min_zoom: number;
   max_zoom: number;
+  browse: BrowseMode;
+  // For `browse: 'quicklook'` only: a quicklook pixel at or below this value in
+  // every band is keyed transparent (`mapLayers.ts`), so dark padding around an
+  // irregular scene does not paint over the basemap. `null` where the quicklook
+  // needs no such freistellung, and always `null` for the other two `browse`
+  // values.
+  quicklook_nodata_max: number | null;
+  // The key the results list heads its groups by (V-4/D30) and the download
+  // route reuses as its per-group merge (P19, M3-17) — separate from `group_by`
+  // because a dataset may head its display by a property `group_by` deliberately
+  // does not use (M3-02 F-01).
+  results_group_by: string[];
+}
+
+// `earthx:capabilities` (architekturplan.md 5.1). Only `time_range` is read by
+// the viewer today (M3-12, F-06): whether a search with a chosen time window
+// answers differently from one without. The others travel with the collection
+// but have no reader here yet.
+export interface EarthxCapabilities {
+  roi: boolean;
+  time_range: boolean;
+  band_math: boolean;
+  interpolation: boolean;
+  ml_processing: boolean;
+  quad_pol: boolean;
+  single_coverage_product: boolean;
 }
 
 // How settled the *source* is, not a measurement (`earthx:maturity`,
@@ -86,16 +141,31 @@ export interface LicenseFlags {
   terms_notice: Record<string, string> | null;
 }
 
+// The one part of the STAC `extent` block the viewer reads (M3-12, F-06): the
+// acquisition period of a dataset with no time axis, shown in place of a date
+// filter that would answer the same regardless of the range chosen.
+export interface StacTemporalExtent {
+  interval: (string | null)[][];
+}
+
 export interface Collection {
   id: string;
   title?: string | null;
   description?: string | null;
+  // STAC core `keywords` (M3-10): kept for the dataset browser that comes after M3
+  // (looking through all datasets with their descriptions); the viewer does not read
+  // them yet. Optional — a collection served by an older backend carries none.
+  keywords?: string[] | null;
   license?: string | null;
+  extent?: { temporal?: StacTemporalExtent };
   'earthx:access'?: CollectionAccess;
   'earthx:viewer'?: EarthxViewer | null;
+  'earthx:capabilities'?: EarthxCapabilities;
   'earthx:maturity'?: Maturity | string | null;
   'earthx:default_render'?: EarthxDefaultRender | null;
   'earthx:license_flags'?: LicenseFlags | null;
+  'earthx:format'?: DatasetFormat | string | null;
+  'earthx:source'?: EarthxSource | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).

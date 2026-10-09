@@ -16,6 +16,7 @@ from earthx.catalog.registry import (
     CoverageProvider,
     DataClass,
     DataFormat,
+    ItemHolding,
     LicenseTier,
     Maturity,
 )
@@ -40,7 +41,7 @@ def test_our_id_is_the_upstream_ones_and_the_only_one_taken() -> None:
 
 def test_items_are_federated_not_harvested() -> None:
     """architekturplan.md 5.2: the source has a search API, so nothing is copied."""
-    assert SENTINEL_2_L2A_ZARR3.source.harvest_run is None
+    assert SENTINEL_2_L2A_ZARR3.source.item_holding is ItemHolding.FEDERATED
 
 
 def test_the_asset_host_is_the_open_one_not_the_older_collections() -> None:

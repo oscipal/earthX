@@ -14,6 +14,7 @@ import pytest
 from earthx.catalog.registry import (
     AccessInfo,
     AdapterKind,
+    BrowseMode,
     Capabilities,
     CoverageInfo,
     CoverageProvider,
@@ -23,6 +24,7 @@ from earthx.catalog.registry import (
     DefaultRender,
     HealthInfo,
     HealthStatus,
+    ItemHolding,
     LicenseInfo,
     LicenseTier,
     Maturity,
@@ -40,6 +42,7 @@ def valid_config() -> DatasetConfig:
         dataset_id="test-dataset",
         title="Test dataset",
         description="Synthetic entry, used only by the tests.",
+        keywords=("synthetic", "test"),
         doi="10.5555/test",
         citation="Test publisher (2026): Test dataset, version 1.",
         data_class=DataClass.RASTER_TIME_SERIES,
@@ -54,6 +57,7 @@ def valid_config() -> DatasetConfig:
             time_range=True,
             band_math=True,
             interpolation=True,
+            reprojection=True,
             ml_processing=False,
             quad_pol=False,
             single_coverage_product=False,
@@ -85,7 +89,7 @@ def valid_config() -> DatasetConfig:
             endpoint="https://example.invalid/v1",
             source_collection_id="test-collection",
             asset_hosts=("assets.example.invalid",),
-            harvest_run=None,
+            item_holding=ItemHolding.FEDERATED,
         ),
         coverage=CoverageInfo(
             provider=CoverageProvider.UPSTREAM_AGGREGATION,
@@ -100,7 +104,18 @@ def valid_config() -> DatasetConfig:
             expression=None,
             resampling="nearest",
         ),
-        viewer=ViewerInfo(group_by=("datetime",), min_zoom=0, max_zoom=19),
+        viewer=ViewerInfo(
+            group_by=("datetime",),
+            min_zoom=0,
+            max_zoom=19,
+            # FULL_RESOLUTION needs no `access.cors=True` and no freistellung
+            # threshold — the least constrained combination, so a test that
+            # varies something unrelated to browse/grouping does not also
+            # have to satisfy QUICKLOOK's cross-field rule.
+            browse=BrowseMode.FULL_RESOLUTION,
+            quicklook_nodata_max=None,
+            results_group_by=("datetime",),
+        ),
         health=HealthInfo(status=HealthStatus.OK),
         maturity=Maturity.STABLE,
         zarr=None,

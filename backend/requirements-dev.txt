@@ -10,3 +10,12 @@ import-linter>=2.0
 # A direct test dependency: pystac-client happens to pull it in today, but that
 # package is excluded from the target path (KLAERUNGEN B8, adr/0005 rule IV).
 pystac>=1.10
+# test_backend_lock.py (M4-00b) reads requirement specifiers with `packaging` and
+# the workflows with `yaml`. Both are already pulled in (by pytest and by
+# uvicorn[standard]); listed directly because the test imports them.
+packaging>=24
+pyyaml>=6
+# S3 in-process for the objectstore tests (M4-06, adr/0015 §5, §12 point 5). Brings
+# `boto3` into the dev environment only; the image never has it
+# (test_objectstore_boundary.py checks backend/requirements.lock).
+moto[s3]>=5.1

@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import random
+import secrets
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -37,7 +39,7 @@ from earthx.gateway.errors import (
     UrlRejected,
     UrlTooLong,
 )
-from earthx.gateway.policy import Policy
+from earthx.gateway.policy import Policy, inspect_url
 from earthx.gateway.resolver import resolve_host
 
 LOGGER = logging.getLogger("earthx.gateway")
@@ -67,10 +69,21 @@ def _dumps(payload: Any) -> bytes:
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
+# Generated fresh on every process start, never logged and never persisted anywhere
+# (review of PR #85, following up on PR #76): a plain, unsalted hash of the query
+# string is not enough — a bbox's four floats come from a map UI with limited
+# precision over a bounded range, small enough that someone who can see the digest
+# can guess candidate bboxes and recompute `sha256(query)` until one matches. Keyed
+# with a secret that dies with the process closes that: a guess can no longer be
+# checked against the observed digest without it.
+_QUERY_DIGEST_KEY = secrets.token_bytes(32)
+
+
 def _query_digest(url: str) -> str:
-    """A short hash of the query string, because the AOI must not reach a log."""
+    """An HMAC of the query string, keyed per process start — the AOI must not
+    reach a log, and an unkeyed hash of it is guessable (see `_QUERY_DIGEST_KEY`)."""
     query = httpx.URL(url).query
-    return hashlib.sha256(query).hexdigest()[:12] if query else ""
+    return hmac.new(_QUERY_DIGEST_KEY, query, hashlib.sha256).hexdigest()[:12] if query else ""
 
 
 class Gateway:
@@ -116,14 +129,42 @@ class Gateway:
         *,
         params: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
+        retry: bool = True,
     ) -> GatewayResponse:
         """Fetch a URL, assembling the query string here.
 
         ``/aggregate`` at Earth Search takes no POST (adr/0004 §3.1), so an AOI
         has to survive as a query parameter — up to the length limit, which
         ``check_url`` enforces before anything is sent.
+
+        ``retry=True`` by default, unlike ``post_json``: a plain GET is always
+        safe to repeat. ``retry=False`` exists for a caller with its own budget
+        for the request itself (M3-07a: the shared rate slot allows one send,
+        not a retried one).
         """
-        return await self._send("GET", url, params=params, headers=headers)
+        return await self._send("GET", url, params=params, headers=headers, retry=retry)
+
+    async def head(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        retry: bool = True,
+        within: Policy | None = None,
+    ) -> GatewayResponse:
+        """``HEAD`` a URL: the headers only, ``content`` stays empty (M4-07b).
+
+        The same road as :meth:`get` — ``check_url`` on every hop, the per-host cap,
+        redirects followed here, a status from 400 up raised as
+        :class:`UpstreamError`. The size limit of a body does not apply, because
+        there is none: a ``Content-Length`` of a whole COG is what a ``HEAD`` is for.
+
+        ``within`` narrows, never widens: every hop has to pass this policy's
+        allowlist as well. The process's own policy names every dataset's hosts, and a
+        caller that asks about one dataset's object must not take its answer from
+        another's host after a redirect.
+        """
+        return await self._send("HEAD", url, headers=headers, retry=retry, within=within)
 
     async def post_json(
         self,
@@ -147,10 +188,13 @@ class Gateway:
         headers: Mapping[str, str] | None = None,
         content: bytes | None = None,
         retry: bool = True,
+        within: Policy | None = None,
     ) -> GatewayResponse:
         target = self._assemble(url, params)
         redirects = 0
         while True:
+            if within is not None:
+                inspect_url(target, within)  # before anything is resolved
             checked = check_url(target, self._policy, resolve=self._resolve)
             async with self._semaphore(checked.host):
                 response = await self._attempt(
@@ -215,7 +259,9 @@ class Gateway:
         retry: bool,
         redirects: int,
     ) -> GatewayResponse:
-        may_retry = method == "GET" or retry
+        # `get()` defaults `retry` to True and `post_json()` to False — this is no
+        # longer a per-method rule (M3-07a): the caller's flag decides for both.
+        may_retry = retry
         for attempt in range(1, MAX_ATTEMPTS + 1):
             started = time.monotonic()
             last = attempt == MAX_ATTEMPTS
@@ -258,7 +304,7 @@ class Gateway:
         )
         response = await self._client.send(request, stream=True)
         try:
-            body = await self._read(response)
+            body = b"" if method == "HEAD" else await self._read(response)
         finally:
             await response.aclose()
         return GatewayResponse(

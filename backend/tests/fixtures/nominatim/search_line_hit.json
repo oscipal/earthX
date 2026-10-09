@@ -1,0 +1,34 @@
+[
+  {
+    "place_id": 444444,
+    "osm_type": "way",
+    "osm_id": 5555555,
+    "boundingbox": [
+      "49.000",
+      "49.010",
+      "8.400",
+      "8.410"
+    ],
+    "lat": "49.005",
+    "lon": "8.405",
+    "display_name": "Musterstra\u00dfe, Musterstadt, Beispielland",
+    "category": "highway",
+    "type": "residential",
+    "importance": 0.2,
+    "name": "Musterstra\u00dfe",
+    "licence": "Data \u00a9 OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "geojson": {
+      "type": "LineString",
+      "coordinates": [
+        [
+          8.4,
+          49.0
+        ],
+        [
+          8.41,
+          49.01
+        ]
+      ]
+    }
+  }
+]

@@ -12,6 +12,7 @@ later on.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -58,6 +59,29 @@ class AdapterKind(Enum):
 
     EARTH_SEARCH_V1 = "earth-search-v1"
     EOPF_STAC_V1 = "eopf-stac-v1"
+    # M3-11b: this one only *materializes* items (adapters.materialize_items), it
+    # never searches or answers a single-item request — its `AdapterSpec` in
+    # `adapters/spec.py` offers `materialize` alone. A `SourceInfo` naming this
+    # kind always carries `item_holding=MATERIALIZED` (checked by
+    # `DatasetConfig._check_item_holding` only indirectly, through the
+    # coverage-provider pairing — nothing here ties an `AdapterKind` to an
+    # `ItemHolding` value, by design, per M3-11a K-05).
+    COP_DEM_BUCKET = "cop-dem-bucket"
+
+
+class ItemHolding(Enum):
+    """Where the items of a dataset live (architekturplan.md 5.2, M3-11a K-05).
+
+    A separate question from :class:`AdapterKind`: the adapter names *which*
+    protocol produces the items, this names *where they end up*. Before M3-11a a
+    collection counted as materialized whenever its ``adapter`` was one this
+    dispatch did not know — a coincidence, not a decision, and a typo in the
+    adapter value would have quietly fallen into that case too (adr/0009 §11,
+    M3-02 K-05). Every entry sets this explicitly (KLAERUNGEN B10).
+    """
+
+    FEDERATED = "federated"
+    MATERIALIZED = "materialized"
 
 
 class CoverageProvider(Enum):
@@ -77,6 +101,31 @@ class HealthStatus(Enum):
     UNKNOWN = "unknown"
 
 
+class BrowseMode(Enum):
+    """What the viewer shows right after a search, before any tile is requested
+    (M3-12, Otto 26.09.2026 Nachtrag 2 / M3-11b F11).
+
+    ``QUICKLOOK`` — the source publishes a quicklook a browser can load
+    cross-origin and crop on its own canvas (Sentinel-2 COG). ``PREVIEW_TILES``
+    — no quicklook, but the dataset is released from a zoom level coarse
+    enough that one tile over an item stands in for one (the Zarr dataset,
+    which has no thumbnail/overview/preview/visual asset anywhere, adr/0007
+    §12.7). ``FULL_RESOLUTION`` — neither: the viewer shows the AOI crop in
+    full resolution straight after the search, the way the DEM does, because
+    it has no browsable quicklook and is not meaningfully previewable at a
+    coarse tile level either.
+
+    No default (KLAERUNGEN B10): before this field, the frontend guessed this
+    from whether an item happened to carry a thumbnail asset (``datasets.ts``
+    ``quicklookPlan``) — a source-specific fact the registry now states
+    outright instead.
+    """
+
+    QUICKLOOK = "quicklook"
+    PREVIEW_TILES = "preview_tiles"
+    FULL_RESOLUTION = "full_resolution"
+
+
 class Maturity(Enum):
     """How settled the *source* itself is — not a measurement like ``HealthStatus``,
     a fact about the dataset that belongs with licence and attribution
@@ -94,6 +143,30 @@ class Maturity(Enum):
 
 class ConfigError(ValueError):
     """A registry entry contradicts a rule from docs/."""
+
+
+_DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
+_DOI_NAME = re.compile(r"10\.\d{4,9}/[^\s{}]+")
+
+
+def doi_name(doi: str | None) -> str | None:
+    """The DOI name (``10.5270/...``) of a registry ``doi``, which may be a resolver URL.
+
+    The entries keep the URL the source's ``cite-as`` link gives (adr/0014 §10.2);
+    STAC's ``sci:doi`` and BibTeX's ``doi`` want the name. ``None`` for a missing or
+    blank value; anything else that is no DOI name is a :class:`ConfigError`, so a
+    typo fails here rather than ending up as a wrong citation.
+    """
+    if doi is None or not doi.strip():
+        return None
+    text = doi.strip()
+    for prefix in _DOI_PREFIXES:
+        if text.lower().startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    if not _DOI_NAME.fullmatch(text):
+        raise ConfigError(f"{doi!r} is no DOI name or DOI resolver URL")
+    return text
 
 
 class UnknownDatasetError(LookupError):
@@ -116,6 +189,9 @@ class Capabilities:
     time_range: bool
     band_math: bool
     interpolation: bool
+    #: Reprojection and resampling to another grid (adr/0014 §5.3, F6; R3). A
+    #: method other than ``nearest`` needs ``interpolation`` as well.
+    reprojection: bool
     ml_processing: bool
     quad_pol: bool
     single_coverage_product: bool
@@ -204,13 +280,20 @@ class SourceInfo:
     builds its allowlist from both, and without the asset hosts every read of a COG
     is refused while the search still works. Hosts, not URLs — one entry per name,
     exactly as it appears in an asset href.
+
+    ``item_holding`` decides whether ``/stac/search`` federates a live request to
+    ``endpoint`` (``FEDERATED``) or answers from this platform's own pgstac
+    (``MATERIALIZED``, M3-11a) — see :class:`ItemHolding`. ``adapter`` stays set
+    either way: for a federated dataset it is asked at search and item-fetch time,
+    for a materialized one it is the adapter the one-off load in ``discovery`` used
+    to build the items in the first place (M3-11b).
     """
 
     adapter: AdapterKind
     endpoint: str
     source_collection_id: str
     asset_hosts: tuple[str, ...]
-    harvest_run: str | None
+    item_holding: ItemHolding
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,14 +365,36 @@ class DefaultRender:
     resampling: str
 
     def __post_init__(self) -> None:
-        if not self.assets and not self.expression:
-            raise ConfigError("default_render needs an asset or an expression")
+        if self.expression is not None:
+            # The tiler no longer takes a free `expression` (plan M4-09, F3): an expression is
+            # `op=band_math`, in physical values. Until M4-13 maps the standard visualisation
+            # onto `op`, a registry entry that carried one would be a visualisation that 400s.
+            raise ConfigError("default_render.expression is not served: the tiler takes op=band_math (M4-09)")
+        if not self.assets:
+            raise ConfigError("default_render needs an asset")
         for low, high in self.rescale or ():
             if low >= high:
                 raise ConfigError(f"default_render rescale ({low}, {high}) is empty or inverted")
         if self.colormap_name is not None and len(self.assets) > 1:
             raise ConfigError(
                 "default_render: a colormap paints one band, so it cannot go with several assets"
+            )
+
+
+def _check_property_names(field_name: str, values: tuple[str, ...]) -> None:
+    """The one rule ``group_by`` and ``results_group_by`` (M3-12) share: at least
+    one property, no repeats, and no ``properties.`` prefix (the prefix is
+    implied, ``ViewerInfo`` reads a bare name)."""
+    if not values:
+        raise ConfigError(f"viewer.{field_name} needs at least one property (KLAERUNGEN B10)")
+    if len(set(values)) != len(values):
+        raise ConfigError(f"viewer.{field_name} repeats a property: {values}")
+    for name in values:
+        if not name or name != name.strip():
+            raise ConfigError(f"viewer.{field_name} entry {name!r} is not a property name")
+        if name.startswith("properties."):
+            raise ConfigError(
+                f"viewer.{field_name} entry {name!r} carries the `properties.` prefix, which is implied"
             )
 
 
@@ -331,28 +436,75 @@ class ViewerInfo:
 
     For Sentinel-2 the key is the acquisition day plus the MGRS tile:
     ``("datetime", "grid:code")``.
+
+    M3-12 adds three more fields, all still without a default (B10):
+
+    **``browse``** — see :class:`BrowseMode`.
+
+    **``quicklook_nodata_max``** — for ``browse=QUICKLOOK`` only: a quicklook
+    pixel with every band at or below this value is keyed transparent, so the
+    dark padding around an irregular scene does not paint over the basemap
+    (Sentinel-2's JPEGs are ``16``). ``None`` where the quicklook needs no such
+    freistellung. Must be ``None`` for the other two ``browse`` values — a
+    dataset that shows no quicklook has nothing for this to apply to.
+
+    **``results_group_by``** — the grouping key the *results list* heads its
+    groups by (V-4/D30) and the download route reuses as its per-group merge
+    (P19, M3-17): the same rule as ``group_by`` above, but a second field
+    because it may name a property ``group_by`` deliberately does not (M3-02
+    F-01) — Sentinel-2 COG groups its tile-and-day key display by day and
+    overpass instead (``s2:datatake_id``), the Zarr dataset by day and
+    overpass under its own vocabulary (``eopf:datatake_id``), and the DEM has
+    only one group for the whole dataset (``start_datetime``, every tile
+    shares the one acquisition period, M3-11b F7). Unlike the pre-M3-12
+    ``displayGroupBy`` in the frontend, there is no runtime fallback to
+    ``group_by`` when an item happens to lack the property: the registry
+    states the key that always applies, and a genuinely broken item still
+    surfaces as ``MissingProperty``, the same way a broken ``group_by`` item
+    always has.
+
+    A note on ``min_zoom`` for a dataset released from tiles that are already
+    clipped to their own item's extent (M3-09 onward: every tile URL is
+    per-item, never a mosaic): the reasoning above ("below it one tile shows
+    several scenes") does not hold there — an item's own tile costs the same
+    at every zoom down to where it stops touching its neighbours (measured for
+    the DEM, M3-12 plan step §3: z0 through z8 read the same overview block).
+    ``min_zoom`` is then a cost floor on how many tiles a viewport can ask for
+    at once, not a resolution floor; the DEM sets it to ``0`` on that basis.
     """
 
     group_by: tuple[str, ...]
     min_zoom: int
     max_zoom: int
+    browse: BrowseMode
+    quicklook_nodata_max: int | None
+    results_group_by: tuple[str, ...]
 
     def __post_init__(self) -> None:
         self._check_group_by()
         self._check_zoom()
+        self._check_results_group_by()
+        self._check_browse()
 
     def _check_group_by(self) -> None:
-        if not self.group_by:
-            raise ConfigError("viewer.group_by needs at least one property (KLAERUNGEN B10)")
-        if len(set(self.group_by)) != len(self.group_by):
-            raise ConfigError(f"viewer.group_by repeats a property: {self.group_by}")
-        for name in self.group_by:
-            if not name or name != name.strip():
-                raise ConfigError(f"viewer.group_by entry {name!r} is not a property name")
-            if name.startswith("properties."):
-                raise ConfigError(
-                    f"viewer.group_by entry {name!r} carries the `properties.` prefix, which is implied"
-                )
+        _check_property_names("group_by", self.group_by)
+
+    def _check_results_group_by(self) -> None:
+        _check_property_names("results_group_by", self.results_group_by)
+
+    def _check_browse(self) -> None:
+        if self.browse is BrowseMode.QUICKLOOK:
+            value = self.quicklook_nodata_max
+            if value is not None:
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ConfigError("viewer.quicklook_nodata_max must be a whole number 0..255, or None")
+                if not 0 <= value <= 255:
+                    raise ConfigError(f"viewer.quicklook_nodata_max {value} lies outside 0..255")
+        elif self.quicklook_nodata_max is not None:
+            raise ConfigError(
+                f"viewer.quicklook_nodata_max is set but browse is {self.browse.value}, not quicklook "
+                "(a dataset without a browsable quicklook has nothing for it to key transparent)"
+            )
 
     def _check_zoom(self) -> None:
         for name, level in (("min_zoom", self.min_zoom), ("max_zoom", self.max_zoom)):
@@ -482,6 +634,10 @@ class DatasetConfig:
     dataset_id: str
     title: str
     description: str
+    # What the viewer's dataset filter matches besides title and description (M3-10,
+    # published as STAC `keywords`). No default (KLAERUNGEN B10): an entry names them
+    # on purpose, at least one.
+    keywords: tuple[str, ...]
     # Onboarding checklist, point 3: a DOI where one exists, otherwise a persistent
     # citation. Both None means the point is still open for this dataset.
     doi: str | None
@@ -511,12 +667,36 @@ class DatasetConfig:
     zarr: ZarrInfo | None
 
     def __post_init__(self) -> None:
+        self._check_keywords()
+        self._check_doi()
         self._check_license_is_identifiable()
         self._check_license_tier()
         self._check_attribution()
         self._check_coverage()
         self._check_source()
+        self._check_item_holding()
         self._check_zarr()
+        self._check_browse_cors()
+
+    def _check_keywords(self) -> None:
+        """At least one keyword, each a non-blank string (M3-10): the viewer's filter
+        reads them, and a blank one would match every search word it is a part of."""
+        if not isinstance(self.keywords, tuple):
+            raise ConfigError(f"{self.dataset_id}: keywords must be a tuple of strings, not one string")
+        if not self.keywords:
+            raise ConfigError(f"{self.dataset_id}: keywords names no keyword")
+        if not all(isinstance(word, str) and word.strip() for word in self.keywords):
+            raise ConfigError(f"{self.dataset_id}: every keyword must be a non-blank string")
+
+    def _check_doi(self) -> None:
+        """A DOI that is no DOI stops the start (M4-14, Otto 07.10.2026), not the first citation.
+
+        A blank one is left to onboarding checklist point 3, which names it as a finding.
+        """
+        try:
+            doi_name(self.doi)
+        except ConfigError as error:
+            raise ConfigError(f"{self.dataset_id}: {error}") from None
 
     def _check_license_is_identifiable(self) -> None:
         """An SPDX identifier, or else name and URL (projektuebersicht.md §5)."""
@@ -528,8 +708,18 @@ class DatasetConfig:
             )
 
     def _check_license_tier(self) -> None:
-        """KLAERUNGEN B11: display and processing need distribution and modification."""
+        """KLAERUNGEN B11: display and processing need distribution and modification;
+        a catalogue-only entry names no viewer (M3-02 K-03, Otto's answer of
+        23.09.2026, closed by M3-11a) — nothing at that tier is ever rendered by
+        this platform, so a ``viewer`` field on it would name a grouping and a zoom
+        range for a tile route that refuses every request anyway (K-26).
+        """
         if self.license.tier is LicenseTier.CATALOG:
+            if self.viewer is not None:
+                raise ConfigError(
+                    f"{self.dataset_id}: tier catalog names a viewer, but a catalogue "
+                    "entry is never displayed here (KLAERUNGEN B11, M3-02 K-03)"
+                )
             return
         missing = [
             name
@@ -595,6 +785,39 @@ class DatasetConfig:
         if self.zarr is not None and self.format is not DataFormat.ZARR:
             raise ConfigError(
                 f"{self.dataset_id}: zarr info is set but format is {self.format.value}, not zarr"
+            )
+
+    def _check_browse_cors(self) -> None:
+        """M3-12, F-11: a quicklook the browser keys transparent on its own canvas
+        needs to load cross-origin from the asset host — without
+        ``Access-Control-Allow-Origin`` the canvas read throws (`mapLayers.ts`
+        ``keyBlackToTransparent``). A dataset that has not measured CORS on its
+        asset host cannot claim a browsable quicklook."""
+        if self.viewer is not None and self.viewer.browse is BrowseMode.QUICKLOOK and not self.access.cors:
+            raise ConfigError(
+                f"{self.dataset_id}: viewer.browse=quicklook needs access.cors=True "
+                "(a canvas cannot key a cross-origin quicklook transparent without it)"
+            )
+
+    def _check_item_holding(self) -> None:
+        """M3-11a K-05: which coverage provider makes sense follows from where the
+        items live, not the other way around.
+
+        A materialized dataset has no search API to aggregate at and nothing to
+        sample (adr/0009 §7) — its coverage can only come from its own items
+        (``local-sql``, M3-11c). A federated one is the reverse: ``local-sql``
+        would count rows nobody ever wrote for it.
+        """
+        if self.source.item_holding is ItemHolding.MATERIALIZED:
+            if self.coverage.provider is not CoverageProvider.LOCAL_SQL:
+                raise ConfigError(
+                    f"{self.dataset_id}: materialized items need coverage.provider=local-sql "
+                    "(adr/0009 §7 — no search API to aggregate at or sample)"
+                )
+        elif self.coverage.provider is CoverageProvider.LOCAL_SQL:
+            raise ConfigError(
+                f"{self.dataset_id}: federated items cannot use coverage.provider=local-sql "
+                "(no items of this dataset are held in our own pgstac)"
             )
 
 

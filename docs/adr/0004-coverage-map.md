@@ -213,6 +213,11 @@ nichts, weil `total_count` in derselben Antwort mitgeliefert wird.
 > Beide Deckel werden **geklemmt, nicht abgelehnt**: eine zu feine Stufe
 > liefert die gröbere Karte mit ausgewiesener Stufe, keinen Fehler.
 
+**Nachtrag 2026-09-26 (M3-21):** Seit M3-19 (P22) schickt der Weltüberblick
+ohne AOI den sichtbaren Kartenausschnitt als räumlichen Filter mit; der
+z6-Deckel oben gilt seither nur noch für Anfragen ganz ohne Bounding Box.
+Originaltext oben unverändert.
+
 **Falle 2: Eine Aufnahme zählt in genau eine Zelle.** In allen ungekappten
 Messungen ist die Summe der Zählwerte exakt gleich `total_count` — auch bei
 Geohash p12, wo die Zellen zentimetergroß sind und 3848 Aufnahmen auf 2568
@@ -495,6 +500,25 @@ spezifikationskonform in `extent.spatial.bbox` der Collection **[S]** und liegt
 für jede Collection im eigenen pgstac. Welcher Fall vorliegt, sagt ein
 Capability-Flag im Registry-Eintrag (B10: jeder Datensatz schaltet jede
 Fähigkeit ausdrücklich frei), keine Heuristik.
+
+> **Nachtrag vom 26.09.2026 (M3-11c, `adr/0009` §6 F5).** Für ein Einmal-Produkt
+> **mit eigenen Items in pgstac** (`local-sql`, materialisiert) gilt die
+> `extent.spatial.bbox` der Collection nicht mehr: Sie wäre für den Copernicus
+> DEM falsch, weil sie Meere und die Lücke über dem Südkaukasus als abgedeckt
+> zeigte. Stattdessen liefert `catalog.local_coverage.area_coverage` die
+> **Vereinigung der Item-Footprints** als GeoJSON-`MultiPolygon` (neues Feld
+> `area` der Coverage-Antwort), zugeschnitten auf einen räumlichen Filter der
+> Anfrage, ohne Toleranz-Vereinfachung. Gemessen an der echten DEM-Kachelliste
+> (26 450 Kacheln, `plans/m3-11c-coverage-eigene-items.md` §3): die Fläche der
+> ganzen Welt bleibt mit 35–89 kB weit unter der 500-kB-Schwelle dieses ADR,
+> die Berechnung dauert dabei rund 1 s; ein Kartenausschnitt kostet einstellige
+> bis niedrige zweistellige Millisekunden. Der Weg über `extent.spatial.bbox`
+> bleibt für jedes andere Einmal-Produkt (föderiert oder ohne eigene Items)
+> unverändert. Ein Filter, den der Datensatz strukturell nicht beantworten
+> kann (`max_cloud_cover` auf diesem Weg; `datetime` bei
+> `capabilities.time_range=False`), wird stillschweigend fallengelassen und in
+> einem neuen Feld `ignored_filters` benannt, statt eine engere Antwort zu
+> geben, als gefragt wurde.
 
 **Zeit-Histogramm: derselbe Anbieter, derselbe Filter.** Föderiert über
 `datetime_frequency` (0,50 s für 133 Monate, §3.2), lokal über `date_trunc`

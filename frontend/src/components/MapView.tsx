@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
+import { addProtocol, Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   TerraDraw,
@@ -9,7 +9,8 @@ import {
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
-import { showFootprints } from '../coverage';
+import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
+import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { itemsForMap } from '../grouping';
 import type { CoverageDisplay } from '../mapLayers';
@@ -19,33 +20,53 @@ import {
   setCoverageDisplay,
   syncBrowseMosaic,
   syncFocusRaster,
+  syncHighlight,
   syncLayers,
   syncMosaic,
-  syncSelectionHighlight,
 } from '../mapLayers';
-import { baseMapStyle } from '../mapStyles';
+import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles';
+import { layersOnMap } from '../searchLayers';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
 
-// Only one of density/footprints is ever drawn (mapLayers.ts): footprints
-// once the backend advises it *and* the zoom brake agrees (coverage.ts), a
-// density fill otherwise. Turned off in focus mode so a full-resolution
-// raster is never obscured by a leftover coverage layer underneath it.
+// Only one of density/footprints/area is ever drawn (mapLayers.ts): a one-off
+// product's extent (`area`, M3-12 F-07, ENTSCHEIDUNGEN §2) whenever the
+// answer names one, footprints once the backend advises them *and* the zoom
+// brake agrees (coverage.ts) for a time series, a density fill otherwise.
+// Turned off in focus mode so a full-resolution raster is never obscured by a
+// leftover coverage layer underneath it.
 function coverageDisplayFor(st: ReturnType<typeof useAppStore.getState>, zoom: number): CoverageDisplay {
-  if (!st.showCoverage || st.focusMode || !st.coverage) {
-    return { mode: 'off', cells: [], maxCount: 0, footprints: null };
+  const off: CoverageDisplay = { mode: 'off', cells: [], maxCount: 0, footprints: null, area: null };
+  if (!st.showCoverage || st.focusMode || !st.coverage) return off;
+  if (isAreaAnswer(st.coverage)) {
+    return { ...off, mode: 'area', area: areaGeometry(st.coverage) };
   }
   // Falls back to the density it already has rather than an empty layer
   // while the footprints request is still in flight or failed
   // (store.ts::refreshCoverage leaves `coverageFootprints` at `null` then).
   if (showFootprints(st.coverage, zoom) && st.coverageFootprints) {
-    return { mode: 'footprints', cells: [], maxCount: 0, footprints: st.coverageFootprints };
+    return { ...off, mode: 'footprints', footprints: st.coverageFootprints };
   }
-  return { mode: 'density', cells: st.coverage.cells, maxCount: st.coverage.max_count, footprints: null };
+  return { ...off, mode: 'density', cells: st.coverage.cells, maxCount: st.coverage.max_count };
 }
 
 function applyToolMode(draw: TerraDraw, mode: ToolMode): void {
   draw.setMode(mode === 'none' ? 'static' : mode);
+}
+
+// M3-19: the current map extent and its on-screen size, both of which
+// `store.ts::refreshCoverage` needs (only for the no-AOI request) to derive
+// the geotile level and the request bbox — read here, at the one place that
+// has a live `Map` instance, rather than threaded through as separate state.
+function reportViewport(map: MapLibreMap): void {
+  const b = map.getBounds();
+  const el = map.getContainer();
+  useAppStore
+    .getState()
+    .setMapViewport(map.getZoom(), [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], {
+      width: el.clientWidth,
+      height: el.clientHeight,
+    });
 }
 
 // Which group's items the map should treat as "current" (V-11): the
@@ -59,6 +80,11 @@ function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; e
   return st.focusMode ? st.activeGroupIndex : st.expandedGroupIndex;
 }
 
+// Registered once for the whole page, not per map instance — `addProtocol`
+// is a maplibre-gl-wide registration (M3-09), so re-mounting `MapView` gains
+// nothing from repeating it (and `addProtocol` is idempotent either way).
+addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
+
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -69,6 +95,7 @@ export default function MapView() {
   const toolMode = useAppStore((s) => s.toolMode);
   const aoi = useAppStore((s) => s.aoi);
   const groups = useAppStore((s) => s.groups);
+  const items = useAppStore((s) => s.items);
   const datasets = useAppStore((s) => s.datasets);
   const datasetId = useAppStore((s) => s.datasetId);
   const activeGroupIndex = useAppStore((s) => s.activeGroupIndex);
@@ -78,20 +105,24 @@ export default function MapView() {
   const flyToBbox = useAppStore((s) => s.flyToBbox);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
+  const cropToAoi = useAppStore((s) => s.cropToAoi);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const showCoverage = useAppStore((s) => s.showCoverage);
   const coverage = useAppStore((s) => s.coverage);
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const searchCrops = useAppStore((s) => s.searchCrops);
+  const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
+  const theme = useAppStore((s) => s.theme);
 
   // --- create the map once ---
   useEffect(() => {
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: baseMapStyle(),
+      style: baseMapStyle(mapBackgroundOf(containerRef.current)),
       center: [10, 20],
       zoom: 1.6,
       attributionControl: { compact: true },
@@ -144,12 +175,17 @@ export default function MapView() {
         if (!feat) return;
         const store = useAppStore.getState();
         let geom = feat.geometry as GeoJSON.Geometry;
+        // M3-08 F5a: the point itself is kept for `runSearch` to search by
+        // (`store.setAoi`'s second argument) — `geom` still becomes the buffer
+        // square that stays the display AOI and the download crop.
+        let point: GeoJSON.Point | null = null;
         if (geom.type === 'Point') {
-          const [lon, lat] = (geom as GeoJSON.Point).coordinates;
+          point = geom as GeoJSON.Point;
+          const [lon, lat] = point.coordinates;
           const buffer = store.config?.point_buffer_deg ?? 0.05;
           geom = bufferPointToPolygon(lon, lat, buffer);
         }
-        store.setAoi(geom);
+        store.setAoi(geom, point);
         // Zoom the map into the freshly drawn area.
         const bb = polygonBbox(geom);
         if (bb) store.flyTo(bb);
@@ -171,7 +207,7 @@ export default function MapView() {
       map.setProjection({ type: st.projection });
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
-      syncLayers(map, st.layers);
+      syncLayers(map, layersOnMap(st.layers, st.searchCrops, st.openSectionId));
       syncMosaic(map, {
         items: itemsForMap(st.groups, visibleGroupIndex(st), st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
@@ -180,22 +216,25 @@ export default function MapView() {
         render: st.appliedRender,
         focusMode: st.focusMode,
         showDownloaded: st.showDownloaded,
+        aoi: st.aoi,
+        cropToAoi: st.cropToAoi,
+        groups: st.groups,
       });
       initDraw();
       readyRef.current = true;
-      // The store needs an initial zoom before the first `moveend` (which
-      // only fires once the user pans/zooms) so a coverage fetch can pick a
-      // sensible geotile level from the very first render.
-      useAppStore.getState().setMapZoom(map.getZoom());
+      // The store needs an initial viewport before the first `moveend`
+      // (which only fires once the user pans/zooms) so a coverage fetch can
+      // pick a sensible geotile level and bbox from the very first render.
+      reportViewport(map);
     };
     map.on('style.load', onStyleLoad);
 
-    // Coverage (M2-07c) reacts to the map's zoom — its geotile *level*, per
-    // adr/0004 §6.3 — never to the pan viewport as a spatial filter (see the
-    // long comment on `refreshCoverage` in store.ts). Registered once on the
-    // map itself (unlike the custom layers, listeners survive a style reload).
+    // Coverage (M2-07c/M3-19) reacts to the map's zoom and, without an AOI,
+    // its visible extent (`refreshCoverage` in store.ts). Registered once on
+    // the map itself (unlike the custom layers, listeners survive a style
+    // reload).
     map.on('moveend', () => {
-      useAppStore.getState().setMapZoom(map.getZoom());
+      reportViewport(map);
     });
 
     // Clicking the displayed imagery toggles that scene's download selection
@@ -232,6 +271,14 @@ export default function MapView() {
     if (drawRef.current && readyRef.current) applyToolMode(drawRef.current, toolMode);
   }, [toolMode]);
 
+  // --- backdrop colour: the theme token, into the style's own background layer
+  // and the globe's sky, on every theme switch ---
+  useEffect(() => {
+    const map = mapRef.current;
+    const colour = mapBackgroundOf(containerRef.current);
+    if (map && readyRef.current && colour) applyMapBackground(map, colour);
+  }, [theme]);
+
   // --- globe / flat map (V-1) — a display-only switch (D27); backend and
   // tile URLs are unaffected, `setProjection` just re-renders the same layers.
   useEffect(() => {
@@ -253,21 +300,26 @@ export default function MapView() {
     }
   }, [showCoverage, coverage, coverageFootprints, mapZoom, focusMode]);
 
-  // --- pinned layers (layer manager) ---
+  // --- pinned layers (layer manager), and under them the AOI crops of the
+  // dataset chosen in the results dropdown (M3-10): the map shows that dataset
+  // only, plus whatever the user pinned. ---
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncLayers(map, layers);
-  }, [layers]);
+    if (map && readyRef.current) syncLayers(map, layersOnMap(layers, searchCrops, openSectionId));
+  }, [layers, searchCrops, openSectionId]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
-  // them, only change the highlight (the effect below handles that). ---
+  // them, only change the highlight (the effect below handles that). Keyed on
+  // `aoi` too (M3-09): redrawing the AOI while "Crop to AOI" is active must
+  // re-clip the tiles already on screen. ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current && focusMode) {
-      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded });
+      const dataset = datasets.find((d) => d.id === datasetId) ?? null;
+      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded, aoi, cropToAoi, items, dataset });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, aoi, cropToAoi, items, datasets, datasetId]);
 
   // --- browse-mode preview overlays (quicklooks / preview tiles) — these do
   // react to `selectedIds`, since a cross-group selection can pin a scene
@@ -283,14 +335,24 @@ export default function MapView() {
   }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
-  // (potentially expensive) overlay rebuilds above. ---
+  // (potentially expensive) overlay rebuilds above. In a cropped focus view
+  // ("Crop & merge to AOI", M3-09 §10) this draws one ring per group instead
+  // of one per scene (`syncHighlight` picks between the two). ---
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const idx = focusMode ? activeGroupIndex : expandedGroupIndex;
-      syncSelectionHighlight(map, itemsForMap(groups, idx, selectedIds), selectedIds);
+      syncHighlight(map, {
+        items: itemsForMap(groups, idx, selectedIds),
+        selectedIds,
+        focusMode,
+        cropToAoi,
+        aoi,
+        downloaded,
+        groups,
+      });
     }
-  }, [groups, focusMode, activeGroupIndex, expandedGroupIndex, selectedIds]);
+  }, [groups, focusMode, cropToAoi, aoi, downloaded, activeGroupIndex, expandedGroupIndex, selectedIds]);
 
   // --- fly to a geocoded place ---
   useEffect(() => {

@@ -132,20 +132,61 @@ flowchart TB
 
 | Modul | Zuständig für | Darf importieren |
 |---|---|---|
-| `gateway` | Alle ausgehenden HTTP/S3-Zugriffe | nichts Fachliches |
+| `gateway` | Alle ausgehenden Zugriffe auf Datenquellen; der eigene Objektspeicher über `objectstore` | nichts Fachliches |
 | `catalog` | STAC-Modell, pgstac, Suche, Lizenz- und Capability-Felder | `gateway` |
-| `adapters` | Protokolle der Quellen: Discovery, Suche, Zugriffsauflösung | `gateway`, `catalog` (nur Modelle) |
+| `adapters` | Protokolle der Quellen: Discovery, Suche, Einzelabruf, Materialisierung, Aggregation; liefern Items mit lesbaren hrefs (6.1) | `gateway`, `catalog` (nur Modelle) |
 | `readers` | Formate: `cog.py`, `zarr_reader.py`, später virtuelle Stores | `gateway` |
-| `access` | Tiles, Quicklooks, Statistik, Download-Vermittlung | `readers`, `catalog` |
+| `access` | Zugriffsauflösung (Asset → Reader und geprüfte Adresse, 6.1), Tiles, Quicklooks, Statistik, Download-Vermittlung | `readers`, `catalog` |
 | `processing` | Rezepte, Operator-Registry, Kostenmodell, Provenienz | `access`, `readers`, `catalog` |
-| `jobs` | Queue, Worker, Fortschritt, Ergebnisse | `processing` |
+| `jobs` | Queue, Aufseher und Kindprozesse der Worker, Fortschritt, Abbruch, Ablauf, Ergebnisse | `processing`, `objectstore`; psycopg (Q4, `adr/0013`) |
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
 | `identity` | Konten, API-Keys, Quotas, Audit | — |
 | `chatbot` | Lesewerkzeuge und Dialog des Katalog-Chatbots (8.3), nur über die öffentliche API | `gateway` |
+| `objectstore` | Zugang zum eigenen Objektspeicher: Upload, signierte URLs, Löschen, Prüfen der Ablaufregel; ein Endpunkt aus der Konfiguration (`adr/0015`) | nichts Fachliches |
 | `api` | HTTP-Routen, setzt alles zusammen | alle |
 | `datasets/<id>` | Datensatzspezifika, die kein generischer Operator abdeckt | bleibt isoliert, wird von nichts Generischem importiert |
 
 Die Importregeln werden automatisch geprüft (z. B. import-linter in der CI). So bleibt der Monolith teilbar: Jedes Modul kann später ein eigener Dienst werden, ohne dass Code entflochten werden muss.
+
+**Nachtrag 2026-10-02 (M4 Q4, Q5):** `jobs` darf die Datenbank (psycopg) und ist
+die Hülle mit Queue und Datenbank; `processing` bleibt der Worker-Kern ohne
+Datenbank, Queue, Objektspeicher und interne API (`no-database-in-worker-core`
+bleibt für `processing`). Die Vertragsform schlägt `adr/0013` vor. Ein eigenes
+Modul für Plattformdienste (Objektspeicher) kommt mit `adr/0015`; nur `jobs` und
+`api` dürfen es importieren, `gateway` bleibt unverändert.
+
+**Nachtrag 2026-10-05 (`adr/0015`, angenommen):** Neue Zeile `objectstore` —
+zuständig für den Zugang zum eigenen Objektspeicher (Upload, signierte URLs,
+Löschen, Prüfen der Ablaufregel) über einen Endpunkt ausschließlich aus der
+Konfiguration; darf nichts Fachliches importieren. `jobs` darf zusätzlich
+`objectstore` importieren, `api` ohnehin alles. Die Zeile `gateway` heißt damit:
+alle ausgehenden Zugriffe auf **Datenquellen**; der eigene Objektspeicher läuft
+über `objectstore` (KLAERUNGEN B8, Nachtrag 2026-10-05). Die einzige Ausnahme vom
+Client-Verbot ist der Import `earthx.objectstore.client -> botocore`.
+Mit M4-06 (06.10.2026) in die Tabelle oben übernommen.
+
+**Nachtrag 2026-10-07 (M4-07b):** `api` nimmt Aufträge an (`api/intake.py`): aus
+einem Auftrag ohne Adressen wird ein Rezept mit Fassung je Eingabe, Bandangaben
+und Skalierungsquelle; jeder Host liegt in `asset_hosts` des eigenen
+Datensatzes. `gateway` bekommt dafür `head()` (nur Köpfe, dieselben Prüfungen
+wie `get`). Keine Importregel ändert sich.
+
+**Nachtrag 2026-10-07 (M4-08a, `adr/0013` §6.1):** Zeile `jobs` jetzt mit Aufseher
+und Kindprozessen, Abbruch und Ablauf, und mit psycopg in der dritten Spalte
+(Q4). Der Vertrag `no-database-in-worker-core` gilt nur noch für `processing` und
+verbietet dort `psycopg`, `psycopg_pool` und `asyncpg`; er zählt weiter Ketten.
+Originaltext der Zeile: „Queue, Worker, Fortschritt, Ergebnisse | `processing`,
+`objectstore`“.
+
+**Nachtrag 2026-10-07 (M4-08b, `adr/0014` §15d):** `api` trägt die Job-Schnittstelle
+unter `/processing` (`api/processing_route.py`, `processing_docs.py`,
+`job_events.py`): ein Prozess `recipe`, nur asynchron, Status, Ergebnis-Links
+mit `303` auf eine frisch signierte URL, `recipe.json` je Job, Fortschritt per
+SSE aus genau einer `LISTEN`-Verbindung je Prozess. Sie folgt der Form von OGC
+API – Processes und erklärt **keine Konformität** (`/conformance` leer; Eingaben
+per Referenz sind mit B8 unvereinbar und werden mit `400` abgewiesen). `api`
+öffnet dafür den Objektspeicher (Leseschlüssel, nur Signieren) und startet nicht
+ohne dessen Konfiguration. Keine Importregel ändert sich.
 
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
@@ -234,16 +275,18 @@ Jeder Datensatz ist eine STAC Collection, jede Szene ein STAC Item. Genutzte Ext
 
 | Feld | Inhalt |
 |---|---|
+| `keywords` (STAC-Kernfeld, ohne Präfix) | Schlagworte des Datensatzes, mindestens eines, ohne Vorgabewert (B10). Der Datensatz-Filter der Suchkachel (M3-10) sucht im Client über Titel, Beschreibung und diese Liste |
 | `earthx:data_class` | Datentyp-Klasse (Raster-Zeitreihe, statisches Raster, ...) |
-| `earthx:capabilities` | Flags: ROI, Zeitraum, Band-Math, Interpolation erlaubt, ML geeignet, ... |
+| `earthx:capabilities` | Flags: ROI, Zeitraum, Band-Math, Interpolation erlaubt, Reprojektion (M4 R3, `adr/0014` F6; Methoden außer `nearest` brauchen zusätzlich Interpolation), ML geeignet, ... `time_range=False` (bisher nur der DEM) heißt: kein Datensatz mit Aufnahmeachse, ein gewählter Zeitraum ändert die Antwort nicht. Sowohl `/coverage` (M3-11c) als auch `/stac/search` (M3-12) verwerfen `datetime` dann vor jeder Anfrage und nennen das in `ignored_filters` der Antwort, statt den Filter still anzuwenden oder eine Suche wegen eines Zeitraums leer zu melden, der ohnehin nichts bedeutet |
 | `earthx:license_flags` | `commercial_use`, `derivatives`, `share_alike`, `attribution_required` + SPDX-Kennung |
 | `earthx:access` | token-frei geprüft am, Methode, CORS vorhanden |
 | `earthx:distributions` | Fundorte/Spiegel mit Format, Region, Präferenz |
 | `earthx:health` | Status. Kein Prüfdatum (M2-08-3, 2026-09-23): das frühere Feld trug das Datum des Onboarding-Checks, nicht das einer Prüfung — ein echtes Prüfdatum kommt mit den Health-Checks in M5, auf einem eigenen Feld |
 | `earthx:default_render` | Standard-Visualisierung in den Feldnamen der STAC-`render`-Extension (`title`, `assets`, `rescale`, `colormap_name`, `expression`, `resampling`) |
-| `earthx:viewer` | Was der Viewer aus dem Katalog nimmt statt aus eigenem Code. In M2 drei Felder. `group_by`, der Gruppierungsschlüssel der Zeitleiste — Item-Eigenschaften in Schlüsselreihenfolge, `properties.` ist impliziert; eine Eigenschaft mit einem STAC-Zeitpunkt geht als ihr **UTC-Datum** in den Schlüssel ein. Für Sentinel-2: `["datetime", "grid:code"]`. Dazu `min_zoom` und `max_zoom`, die für diesen Datensatz freigegebenen Kachelstufen (M2-10): unterhalb zeigt eine Kachel mehrere Szenen — Sache der Coverage-Karte, nicht des Kachelpfads —, oberhalb hat die Quelle nichts Feineres und der Client überzoomt die letzte Stufe. Alle drei ohne Vorgabewert (B10); die Kachelroute weist eine Stufe außerhalb der Spanne mit `400` ab, das Feld ist also die Grenze des Kachelpfads und keine Empfehlung an einen gutwilligen Client |
-| `earthx:source` | Adapter-Typ, Quell-ID, Harvest-Lauf |
+| `earthx:viewer` | Was der Viewer aus dem Katalog nimmt statt aus eigenem Code. `group_by`, der Gruppierungsschlüssel der Zeitleiste — Item-Eigenschaften in Schlüsselreihenfolge, `properties.` ist impliziert; eine Eigenschaft mit einem STAC-Zeitpunkt geht als ihr **UTC-Datum** in den Schlüssel ein. Für Sentinel-2: `["datetime", "grid:code"]`. Dazu `min_zoom` und `max_zoom`, die für diesen Datensatz freigegebenen Kachelstufen (M2-10): unterhalb zeigt eine Kachel mehrere Szenen — Sache der Coverage-Karte, nicht des Kachelpfads —, oberhalb hat die Quelle nichts Feineres und der Client überzoomt die letzte Stufe. Für einen Datensatz mit per-Item-Kacheln, die schon auf ihre Szene begrenzt sind (M3-09), ist `min_zoom` stattdessen eine Kostengrenze, keine Auflösungsgrenze: der DEM setzt ihn auf `0`, weil eine Kachel auf jeder Stufe bis z8 denselben Overview-Block liest (M3-12 Plan-Schritt §3). M3-12 ergänzt drei Felder: `browse` (`quicklook`, `preview_tiles` oder `full_resolution`) sagt, was die Ansicht direkt nach einer Suche zeigt; `quicklook_nodata_max` ist die Freistellungsschwelle eines Quicklooks (nur bei `browse=quicklook`, sonst `null`); `results_group_by` ist der Gruppierungsschlüssel der Trefferliste und des Downloads (P19) — eigenständig, weil ein Datensatz seine Anzeige nach einer Eigenschaft gruppieren kann, die `group_by` bewusst nicht nutzt (Sentinel-2 COG: Tag+MGRS-Kachel für `group_by`, Tag+Überflug für `results_group_by`). Alle sechs ohne Vorgabewert (B10); die Kachelroute weist eine Stufe außerhalb der Spanne mit `400` ab, das Feld ist also die Grenze des Kachelpfads und keine Empfehlung an einen gutwilligen Client |
+| `earthx:source` | Adapter-Typ, **Item-Haltung** (`federated` oder `materialized` — entscheidet, ob `/stac/search` föderiert oder aus dem eigenen pgstac antwortet, M3-11a K-05), Quell-ID, Harvest-Lauf |
 | `earthx:maturity` | Wie vorläufig die Quelle selbst ist (`stable`, `staging`, `experimental`), ohne Vorgabewert — Teil der Wahrheit über den Datensatz wie Lizenz und Attribution, keine Messung wie `earthx:health` |
+| `earthx:format` | Speicherformat, wie `readers` es zum Dispatch nutzt (`DatasetConfig.format`, `DataFormat`-Enum, 6.2): `zarr`, `cog` oder `legacy`, ohne Vorgabewert (B10) und keine Interpretation hier — nur die Abbildung des ohnehin vorhandenen Registry-Felds, dieselbe Art Zeile wie `earthx:maturity`. Zweck: Das Frontend unterscheidet eine ganze Szene, die es direkt von der Quelle verlinken darf (`cog`, eine Datei), von einem Speicher, der es nicht ist (`zarr`, `legacy`), ohne eine datensatzspezifische Stelle (M3-17, `download.ts::isCogFormat`) |
 
 Nicht-STAC-Quellen (CKAN, Zenodo/OAI-PMH, DCAT, Buckets) werden beim Einlesen übersetzt. Für reine Forschungsdaten-Records ohne Szenenstruktur gilt: eine Collection mit wenigen Items (die Dateien).
 
@@ -280,7 +323,25 @@ sequenceDiagram
 | Warum | Lizenz-Flags, Capabilities, Embeddings, Health gibt es nur bei uns | Frische, keine Synchronisation, keine Speicherkosten |
 | Ausnahme | — | Quellen ohne Such-API (statische Buckets, Zenodo-Dateien, Tile-adressierte Quellen): Items werden einmalig erzeugt und im eigenen pgstac materialisiert; für große statische Bestände alternativ stac-geoparquet |
 
-Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern dieselbe STAC-Antwort. Das Fallback "nächstgelegenes Datum" und die Verfügbarkeits-Zeitleiste sind Abfragen auf dieser Schicht (Aggregation über `datetime`), nicht Logik im Frontend.
+Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern dieselbe STAC-Antwort. Die Verfügbarkeits-Zeitleiste ist eine Abfrage auf dieser Schicht (Aggregation über `datetime`), nicht Logik im Frontend.
+
+**Datums-Fallback im Frontend (entschieden mit M2-07a am 20.09.2026, bestätigt am 23.09.2026, M3-15).** Das Fallback „nächstgelegenes Datum“ läuft nicht auf dieser Schicht, sondern im Frontend (`dateFallback.ts`): Bleibt eine Suche im gewählten Zeitraum leer, sucht der Viewer in drei Stufen (±7, ±30, ±90 Tage) mit einer Probe je Stufe das nächstgelegene Datum mit Treffern und fragt danach dieses Datum voll ab; er kennzeichnet ihn als Fallback in der Oberfläche. Datensätze ohne Zeitachse (`capabilities.time_range=False`) werden nie nach Datum gefiltert und haben deshalb keinen Fallback. **Neubewertung mit der Verfügbarkeits-Zeitleiste in M5.**
+
+**Gemischte Suche (M3-13, `adr/0005` Regel I).** Eine Suche kann beide Zeilen der
+Tabelle zugleich treffen — eigene Collections und mehr als eine föderierte. Jede
+beteiligte Quelle wird dann parallel gefragt, mit einem Anteil an der
+angeforderten Seitengröße, der sich auf jeder Seite neu verteilt (`api/mixed_search.py`).
+Scheitert eine föderierte Quelle, kommen die übrigen trotzdem, mit einer
+Kennzeichnung der fehlenden; ein Fehler des eigenen pgstac scheitert die ganze
+Anfrage, weil es dafür keine Teilantwort gibt. Die Konformitätsklassen der
+eigenen Landing Page (5.3) richten sich nach der schwächsten beteiligten Quelle.
+Jede Antwort der Suche nennt neben `ignored_filters`, `ignored_filters_by_collection`
+und `incomplete_collections` auch **`open_collections`**: die Collections, deren
+Quelle noch weitere Seiten hat (Otto, 30.09.2026, M3-10b). Teilen sich mehrere
+Collections eine Quelle, sind alle offen, solange die Quelle offen ist; eine
+gescheiterte Quelle ist nicht offen; bei einer Suche über eine Quelle sind deren
+Collections offen, solange die Antwort eine nächste Seite verlinkt. Die
+Seitenmarke bleibt dabei undurchsichtig (`adr/0005` Regel III).
 
 ### 5.3 Bausteine
 
@@ -293,20 +354,30 @@ Für den Nutzer und die API ist der Unterschied unsichtbar: Beide Wege liefern d
 
 ## 6. Zugriffs-Ebene
 
-### 6.1 Adapter-Nahtstellen (ohne Signaturen)
+### 6.1 Adapter-Nahtstellen
 
-Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt mehrere **getrennte** Fähigkeiten ab; nicht jede Quelle braucht alle, und die Liste ist **nicht abschließend** — sie wächst mit den realen Quellen:
+Vorbild ist die Plugin-Trennung von EODAG. Ein Adapter deckt mehrere **getrennte** Fähigkeiten ab; nicht jede Quelle braucht alle. Die Fähigkeiten stammen aus den drei realen Quellen (Earth Search, EOPF, Copernicus-DEM-Bucket) und sind in `adr/0011` (angenommen am 30.09.2026) begründet. Jede Quelle meldet, was sie kann; was sie nicht kann, ist ausdrücklich abwesend und wird abgewiesen, nie still ersetzt.
 
-| Fähigkeit | Frage, die sie beantwortet | Genutzt von |
-|---|---|---|
-| Discovery | Welche Datensätze gibt es bei dieser Quelle, mit welchen Metadaten? | `discovery` |
-| Suche | Welche Szenen gibt es für AOI und Zeitraum? | `catalog` (Föderation) |
-| Zugriffsauflösung | Welche lesbare Adresse und welcher Reader gehören zu diesem Asset? | `access`, `processing` |
-| Aggregation (optional) | Wie viele Aufnahmen liegen je Rasterzelle und je Zeitschritt unter Filter F? | `catalog` (Coverage Map) |
+| Fähigkeit | Frage, die sie beantwortet | Bietet | Genutzt von |
+|---|---|---|---|
+| Discovery (ab M5) | Welche Datensätze gibt es bei dieser Quelle, mit welchen Metadaten? | Adapter mit Collection-Protokoll | `discovery` |
+| Suche | Welche Items gibt es für AOI, Zeitraum, `ids`? | Adapter einer föderierten Quelle; bei materialisierter Haltung pgstac | `api` |
+| Einzelabruf | Welches Item hat diese Kennung? | wie Suche | `api` (Item-Quelle für Kachel, Download, Job-Annahme) |
+| Materialisierung | Welche Items bietet die Quelle an, einmal gebaut und gegen die Quelle geprüft? | Adapter einer materialisierten Quelle | `discovery` |
+| Aggregation (optional) | Wie viele Aufnahmen liegen je Rasterzelle und je Zeitschritt unter Filter F? | Adapter (Aggregation der Quelle oder Stichprobe) oder `catalog` (SQL über eigene Items) | `api` (Coverage Map) |
+| Zugriffsauflösung | Welcher Reader und welche geprüfte Adresse gehören zu diesem Asset? | `access`, generisch; Adapter liefern dafür Items mit lesbaren hrefs | `api`, `processing` |
 
-Aggregation ist die vierte Fähigkeit, entschieden am 19.09.2026 mit `adr/0004`. Sie ist **optional**: Bringt eine Quelle sie nicht mit (Earth Search tut es über die STAC-Aggregation-Extension, andere nicht), ist die Rückfallebene eine **ausgewiesene Stichprobe** — die Antwort trägt dann sichtbar den Wert `stichprobe`, statt Vollständigkeit vorzutäuschen (`adr/0004` §5, Regel V). Das quellenspezifische Protokollwissen liegt in `adapters`, die Nahtstelle und das SQL für eigene Items in `catalog`.
+`catalog` ruft keinen Adapter auf (3.1). Im Code setzt `api` die Fähigkeiten zusammen; die Materialisierung ruft `discovery` auf.
 
-Auth ist bewusst eine spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden. Die konkreten Signaturen entstehen, wie beschlossen, aus den ersten zwei bis drei realen Quellen. Damit das Interface nicht STAC-förmig wird, muss darunter eine Nicht-STAC-Quelle sein.
+**Form.** Je Quelle ein deklarierter Eintrag (`AdapterSpec`) mit einer Funktion je Fähigkeit oder `None`, dazu die Filter-Fähigkeiten der Quelle als Daten. Signaturen nehmen den Registry-Eintrag (`DatasetConfig`) statt einer Kennung mit Vorgabe-Registry; die Tabelle reicht der Aufrufer herein, und eine App startet nicht, wenn ihre Registry etwas verlangt, das die Tabelle nicht hat. Umgesetzt mit M4-01b in `adapters/spec.py` (`adr/0011` §5).
+
+**Item-Vertrag.** Jedes Item, das ein Adapter liefert, ist STAC 1.0 und trägt `https`-Adressen; Übersetzungen wie `s3://` → `https` und das Weglassen nicht anzubietender Assets geschehen im Adapter, nicht im Reader (`adr/0011` §5.3).
+
+**Zugriffsauflösung** ist kein Adapterthema, sondern generisch: eine reine, serialisierbare Auflösung (`ResolvedAsset`) plus Öffnen mit geprüfter Adresse, beides in `access`; das Item besorgt `api`. Aus `access` fließt nichts aus `gateway`; Fehler übersetzt `readers`. Das ist der erste Schritt von M4 (M4-01a, `adr/0011` §6).
+
+Aggregation ist die vierte der ursprünglich genannten Fähigkeiten, entschieden am 19.09.2026 mit `adr/0004`. Sie ist **optional**: Bringt eine Quelle sie nicht mit (Earth Search tut es über die STAC-Aggregation-Extension, andere nicht), ist die Rückfallebene eine **ausgewiesene Stichprobe** — die Antwort trägt dann sichtbar den Wert `stichprobe`, statt Vollständigkeit vorzutäuschen (`adr/0004` §5, Regel V). Das quellenspezifische Protokollwissen liegt in `adapters`, die Nahtstelle und das SQL für eigene Items in `catalog`.
+
+Auth ist bewusst eine spätere Fähigkeit (Token pro Connector) und in der Zielarchitektur zunächst nicht vorhanden.
 
 ### 6.2 Reader und erweiterte Format-Hierarchie
 
@@ -343,6 +414,10 @@ Begleitdatei. Ausgeliefert wird ein ZIP aus COG und Textdatei mit Attribution,
 Lesen. Objektspeicher mit Ablauf, signierte URLs und das Rezept als
 Begleitdatei für Downloads bleiben M4.
 
+**Nachtrag 2026-10-02 (M4 Q13):** Das ZIP des synchronen Zuschnitts bekommt in M4
+zusätzlich `recipe.json` und `citation.bib`; den Inhalt legt `adr/0014` fest, die
+Umsetzung ist M4-14.
+
 ### 6.5 Fetch-Gateway
 
 Einziger Weg nach außen für `adapters`, `readers`, `discovery` und Health-Checks:
@@ -354,6 +429,11 @@ Einziger Weg nach außen für `adapters`, `readers`, `discovery` und Health-Chec
 - Metriken pro Host: Latenz, Fehlerquote, Volumen. Das ist zugleich die Datengrundlage für den Health-Status.
 
 Dieses eine Modul setzt drei Prinzipien gleichzeitig um: Security by Design, Rücksicht auf die Quellen, Kostenbewusstsein.
+
+**Nachtrag 2026-10-02 (M4 Q5):** Maßgeblich ist „nur `https`“ (M1-03 F4); `s3`
+für bekannte Buckets entfällt. Der eigene Objektspeicher läuft nicht über
+`gateway`, sondern über das Modul für Plattformdienste (`adr/0015`) mit festem
+Endpunkt aus der Konfiguration.
 
 ---
 
@@ -396,6 +476,13 @@ Aus diesem einen Objekt folgt:
 | Lizenzprüfung | Kombination der `license_flags` aller Eingaben wird vor Ausführung geprüft |
 
 Das Rezept lehnt sich konzeptionell an openEO-Prozessgraphen an (benannte Prozesse mit Parametern, gerichtete Abfolge). Eine Übersetzung Rezept → openEO-Prozessgraph ist damit später machbar, ohne jetzt die volle openEO-API zu implementieren.
+
+**Nachtrag 2026-10-02 (M4 Q8, Q11):** Der Hash des kanonischen Rezepts ist nur
+intern der Cache-Schlüssel. Nach außen (URLs, Job-IDs, Permalinks) gehen nur
+zufällige Kennungen, weil der Hash aus der AOI zurückrechenbar wäre. Ein
+Cache-Treffer gilt nur, wenn alle Eingaben eine Fassung tragen (ETag des Assets
+oder `updated` am Item); sonst wird neu gerechnet. Rezepte mit AOI gelten als
+personenbezogen.
 
 ### 7.2 Operator-Registry
 
@@ -496,6 +583,13 @@ Festlegungen:
 
 Abgrenzung: T0 (Browser) bleibt auf Anzeige und leichte Operatoren beschränkt, weil dort eine zweite Implementierung der Operatoren nötig wäre. T2L nutzt denselben Code wie die Cloud und liefert deshalb gleichwertige Ergebnisse.
 
+**Nachtrag 2026-10-02 (M4 Q12):** In M4 gibt es nur den Modus „Offline mit
+Rezeptdatei“. Das Image wird lokal mit festem Tag gebaut und nicht in einer
+Registry veröffentlicht (das Beispiel `ghcr.io/earthx/runner` oben ist Zielbild).
+Ergebnisse sind `self_attested` und kommen nie in den gemeinsamen Cache; ein
+Vergleichstest Cloud gegen lokal läuft in der CI. Einmalbefehl mit Rezept-ID und
+verbundener Runner folgen später (7f).
+
 ---
 
 ## 8. Erlebnis-Ebene
@@ -570,7 +664,16 @@ Regeln: Migrationen versioniert (Alembic); jede Komponente hat eine eigene DB-Ro
 
 ### 12.1 Topologie
 
-Lokal (docker compose) und Cloud sind identisch aufgebaut: `api`, `tiler`, `worker`, `harvester`, Postgres, S3-kompatibler Objektspeicher (lokal MinIO), optional Redis als Cache. Konfiguration nur über Umgebungsvariablen. Für die Cloud: Container-Plattform oder Kubernetes, verwaltetes Postgres, CDN vor dem Tiler.
+Lokal (docker compose) und Cloud sind identisch aufgebaut: `api`, `tiler`, `worker`, `harvester`, Postgres, S3-kompatibler Objektspeicher (lokal Garage, Dienst `objectstore`, `adr/0012`), optional Redis als Cache. Konfiguration nur über Umgebungsvariablen. Für die Cloud: Container-Plattform oder Kubernetes, verwaltetes Postgres, CDN vor dem Tiler.
+
+**Nachtrag 2026-09-26 (M3-21):** Die offiziellen MinIO-Images sind seit dem
+24.09.2026 nicht mehr öffentlich ziehbar; Übergang mit `bitnamilegacy/minio`
+per Digest, nur CI und lokal. Ein Ersatz für MinIO wird vor M4 per Spike
+neu bewertet (P23, `plans/m3-dritte-quelle-und-interface.md` M3-20,
+`adr/0012`).
+
+**Nachtrag 2026-09-26 (M3-23):** Garage ersetzt MinIO in `docker-compose.yml`
+und CI (`adr/0012`, angenommen); Details unter `plans/m3-23-garage.md`.
 
 Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für eine mögliche selbst gehostete Ausgabe für Institute oder Behörden, die Flächen und Ergebnisse nicht aus dem Haus geben dürfen. Das ist kein Ziel, aber eine Option, die die Architektur ohne Mehraufwand offen hält. Für einzelne Nutzer ist der Runner (7.7) der richtige Weg, nicht die ganze Plattform.
 
@@ -586,6 +689,11 @@ Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für
 | Anwendung | föderierte Item-Suchen, Such-IDs für Mosaike, Header-Infos von COGs | Redis oder Postgres |
 | Ergebnis | Job-Ergebnisse per Rezept-Hash | Objektspeicher mit Ablaufdatum |
 | Pipeline | Rohantworten der Quellen per Inhalts-Hash | Postgres |
+
+**Nachtrag 2026-10-02 (M4 Q10, Q11):** Die Zeile „Ergebnis“ gilt nur für
+Eingaben mit Fassung (ETag oder `updated`); lokal erzeugte Ergebnisse kommen nie
+hinein. Ablauffrist: 7 Tage als Startwert, auch für gespeicherte Rezepte,
+belegt durch einen Test des Ablaufs (`adr/0012` §9 Punkt 5).
 
 ### 12.4 Beobachtbarkeit
 
@@ -637,6 +745,10 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 | 6 | Identität, Quotas, Cloud-Migration, CDN, Lasttest | Mehrnutzerbetrieb |
 | 7 | Chatbot + MCP, Discovery-Stufen 2 und 3, virtuelle Zarr-Stores, Container-Modelle, externe Engines, verbundener Runner mit Auswahl in der Oberfläche, Rendering im Browser | Ausbau |
 
+**Nachtrag 2026-10-02 (M4 Q6):** Die ersten Operatoren in Inkrement 4 sind
+Band-Math (T1 und T2) und Reprojektion/Resampling (T2); Masking und
+Normalisierung folgen je als eigene Aufgabe (`plans/m4-processing-kern.md`).
+
 ### 15.2 Spikes (kurz, zeitlich begrenzt, mit klarer Frage)
 
 | Spike | Frage |
@@ -645,7 +757,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 | Föderierte Item-Suche | Latenz und Limits realer Upstream-STAC-APIs; welcher Cache-TTL ist vertretbar? |
 | Job-Queue | Erfüllt eine Postgres-Queue die Anforderungen aus 7.5, inklusive Fairness und Fortschritts-Events? |
 | VirtualiZarr + Icechunk | Funktioniert ein virtueller Store über ein reales NetCDF- oder TIFF-Archiv einer Kandidatenquelle, anonym und performant? |
-| EODAG | Spart EODAG als Bibliothek Adapter-Arbeit für token-freie Anbieter, oder dominiert der Konfigurationsaufwand? |
+| EODAG | Spart EODAG als Bibliothek Adapter-Arbeit für token-freie Anbieter, oder dominiert der Konfigurationsaufwand? Beantwortet mit `adr/0011` §9: nicht als Bibliothek, weil es am `gateway` vorbei holt |
 | Lokaler Runner | Liefert derselbe Kern lokal und in der Cloud bitgleiche (oder innerhalb definierter Toleranz gleiche) Ergebnisse? Erlauben gängige Browser den Zugriff von der https-Oberfläche auf einen Tile-Server auf localhost? |
 | Hybrid-Suche | Reicht pgvector + Volltext mit RRF auf einem Testkatalog für die Bewertungs-Anfragen? |
 
@@ -667,7 +779,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 |---|---|
 | Junge Bausteine (zarr-layer vor 1.0, async-geotiff neu, GeoZarr-Spezifikation in Bewegung, stac-fastapi-eodag nicht produktionsreif) | Nur hinter eigenen Nahtstellen einsetzen; Kernpfad auf reifen Bausteinen (pgstac, stac-fastapi, rio-tiler/TiTiler, xarray/zarr) |
 | Quellen drosseln oder sperren bei vielen Nutzern | Fetch-Gateway mit Limits pro Host, Caching, Bündelung; Kontakt zu Betreibern, eigener User-Agent |
-| Föderierte Suche ist so langsam wie die langsamste Quelle | Timeouts pro Quelle, Teilergebnisse mit Kennzeichnung, Cache, für kritische Quellen Items doch materialisieren |
+| Föderierte Suche ist so langsam wie die langsamste Quelle | Timeouts pro Quelle, Teilergebnisse mit Kennzeichnung, Cache, für kritische Quellen Items doch materialisieren — für die gemischte Suche umgesetzt (M3-13, 10 s je Quelle, `incomplete_collections`) |
 | Fehlende CORS-Header verhindern Rendering im Browser | T0 ist Option, nie Voraussetzung; Tiler bleibt der Standardweg |
 | Überarchitektur für ein kleines Team | Modularer Monolith, eine Datenbank, Git als Review-Queue, Standards nur in der Form übernehmen, nicht in voller Breite implementieren |
 | Interface wird STAC-förmig | Nicht-STAC-Quelle in Inkrement 3, vor der Interface-Reflexion |

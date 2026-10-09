@@ -6,7 +6,12 @@ import type { Coords4 } from './geoUtils';
 import type { AppliedRender, Bbox, DownloadedInfo } from './types';
 
 export type LayerOverlay =
-  | { kind: 'image'; url: string; coords: Coords4 } // a (transparent-nodata) quicklook
+  // A (transparent-nodata) quicklook. `nodataMax` is the registry's
+  // freistellung threshold at the time this was pinned (M3-12) — captured
+  // here for the same reason `minZoom`/`maxZoom` are captured on the raster
+  // variant below: the live dataset selection can move on while the layer
+  // stays pinned.
+  | { kind: 'image'; url: string; coords: Coords4; nodataMax: number | null }
   // Tiles: full resolution, a stitch, a decomposition — or the browse preview of a
   // source that publishes no quicklook, which is the same thing pinned to a single
   // level (M2-10). The range travels with the overlay so a pinned layer still knows
@@ -28,7 +33,22 @@ export interface LayerRestore {
   // may have skipped a few of those as map overlays for missing geometry,
   // but a crop only needs the item id, the dataset and the AOI).
   itemIds: string[];
+  // `itemIds`, split back into the groups the results list drew them from
+  // (M3-17, `grouping.ts::groupItemIdsFor`) — one merged file per group on
+  // download (P19), reusing PR #84's own per-overpass grouping rather than a
+  // second, download-specific one. Empty for a layer pinned before M3-17;
+  // `download.ts::downloadRequestFor` then falls back to one group of
+  // everything, the flat shape every download had before.
+  groupItemIds: string[][];
   aoi: GeoJSON.Geometry | null;
+  // Whether the full-resolution view this layer was pinned from was cropped
+  // to `aoi` ("Crop to AOI") or showed the whole selection uncropped ("View
+  // full selection", M3-09) — meaningless while `focusMode` is false, where a
+  // quicklook-only layer's download always needs `aoi` regardless of it.
+  // Drives both the map (was the pinned overlay's tile URL clipped) and the
+  // download (`download.ts::downloadRequestFor`: what "download follows the
+  // view" means for this layer, P19).
+  cropToAoi: boolean;
   // The dataset the layer was pinned from (M2-07d): the current selection
   // (`store.datasetId`) can move on to a different dataset while the layer
   // stays pinned, and a download has to name the dataset the pinned items

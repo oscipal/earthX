@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from earthx.catalog.registry import DatasetConfig, LicenseInfo
+from earthx.catalog.registry import DatasetConfig, LicenseInfo, doi_name
 
 # STAC 1.0 for now, because that is what pgstac and Earth Search speak. The licence
 # value below is tied to it: STAC 1.1 dropped "proprietary" in favour of "other",
@@ -55,6 +55,7 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
         "time_range": caps.time_range,
         "band_math": caps.band_math,
         "interpolation": caps.interpolation,
+        "reprojection": caps.reprojection,
         "ml_processing": caps.ml_processing,
         "quad_pol": caps.quad_pol,
         "single_coverage_product": caps.single_coverage_product,
@@ -83,11 +84,22 @@ def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
 def _scientific(config: DatasetConfig) -> dict[str, object]:
     """DOI and citation, left out entirely where the dataset has neither."""
     fields: dict[str, object] = {}
-    if config.doi:
-        fields["sci:doi"] = config.doi
+    name = doi_name(config.doi)
+    if name:
+        # The DOI name, as the extension defines the field (adr/0014 §10.2); the
+        # registry keeps the URL the source's own `cite-as` link gave.
+        fields["sci:doi"] = name
     if config.citation:
         fields["sci:citation"] = config.citation
     return fields
+
+
+def _links(config: DatasetConfig) -> list[dict[str, str]]:
+    links = [{"rel": "license", "href": config.license.url, "title": config.license.name}]
+    name = doi_name(config.doi)
+    if name:
+        links.append({"rel": "cite-as", "href": f"https://doi.org/{name}"})
+    return links
 
 
 def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
@@ -104,6 +116,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "id": config.dataset_id,
         "title": config.title,
         "description": config.description,
+        "keywords": list(config.keywords),
         "license": _stac_license(config.license),
         "extent": {
             "spatial": {"bbox": [list(config.spatial_extent.bbox)]},
@@ -117,8 +130,13 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             },
         },
         # The licence link is the primary source of the texts above (adr/0003 §11.2).
-        "links": [{"rel": "license", "href": config.license.url, "title": config.license.name}],
+        "links": _links(config),
         "earthx:data_class": config.data_class.value,
+        # architekturplan.md 6.2's reader dispatch (`cog`, `zarr`, `legacy`) —
+        # published so the frontend can tell a whole scene it may link straight
+        # to the source (a COG) from one it may not (a Zarr store has no single
+        # file to link, M3-17) without a dataset-specific branch anywhere.
+        "earthx:format": config.format.value,
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
@@ -155,7 +173,13 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # holding an instant enters the key as its UTC date (registry.ViewerInfo).
         # `min_zoom`/`max_zoom` are the tile levels this dataset is released for
         # (M2-10) — read by the viewer and enforced by the tile route, so a client
-        # that ignores them gets a 400 rather than an expensive read.
+        # that ignores them gets a 400 rather than an expensive read. `browse`,
+        # `quicklook_nodata_max` and `results_group_by` are M3-12's addition
+        # (registry.ViewerInfo, registry.BrowseMode): what the browse view shows
+        # right after a search, its quicklook freistellung threshold if any, and
+        # the key the results list and the download route group by (P19) —
+        # separate from `group_by` because a dataset may head its results
+        # display by a property `group_by` deliberately does not use (M3-02 F-01).
         "earthx:viewer": (
             None
             if config.viewer is None
@@ -163,6 +187,9 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
                 "group_by": list(config.viewer.group_by),
                 "min_zoom": config.viewer.min_zoom,
                 "max_zoom": config.viewer.max_zoom,
+                "browse": config.viewer.browse.value,
+                "quicklook_nodata_max": config.viewer.quicklook_nodata_max,
+                "results_group_by": list(config.viewer.results_group_by),
             }
         ),
         "earthx:source": {
@@ -170,7 +197,10 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
             "endpoint": config.source.endpoint,
             "source_collection_id": config.source.source_collection_id,
             "asset_hosts": list(config.source.asset_hosts),
-            "harvest_run": config.source.harvest_run,
+            # M3-11a (K-05): federated or materialized — what `FederatingCoreCrudClient`
+            # branches search and item-fetch on, read back off this very document
+            # (`api/federating_client.py::_holding_of`).
+            "item_holding": config.source.item_holding.value,
         },
         # architekturplan.md 5.1, tenth row (adr/0007 §12.11 point 14): how settled
         # the source itself is, not a measurement like earthx:health. No default on

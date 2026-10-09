@@ -59,13 +59,14 @@ from zarr.core.buffer import Buffer, BufferPrototype, default_buffer_prototype
 
 from earthx.gateway import (
     Gateway,
+    GatewayError,
     Policy,
     Resolver,
     UpstreamError,
-    UrlRejected,
     check_url,
     resolve_host,
 )
+from earthx.readers.errors import AssetRejected
 
 LOGGER = logging.getLogger("earthx.readers.zarr")
 
@@ -339,6 +340,12 @@ class ZarrAsset:
     coarsest ``multiscales`` level whose resolution is still at least that fine,
     or the finest level there is if none is (adr/0007 §12.10, §12.11 point 2).
     Read by the reader, not by this module — see ``readers.zarr_reader._open_group``.
+
+    ``decode_cf`` says whether the CF attributes of the store (``scale_factor``,
+    ``add_offset``, ``_FillValue``) are applied on reading, as xarray does by
+    default. ``False`` reads the stored values as they are and leaves the attributes
+    on the variable, for a caller that applies a scaling of its own (adr/0014 §5.4,
+    F7a). A generic switch, never a decision per dataset.
     """
 
     store_url: str
@@ -351,6 +358,7 @@ class ZarrAsset:
     item_id: str
     asset: str
     target_gsd: float | None = None
+    decode_cf: bool = True
 
 
 def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, str, str]:
@@ -386,7 +394,7 @@ def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, st
         for index in range(len(segments) - 1, -1, -1):
             if segments[index].endswith(STORE_SUFFIX):
                 return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), variable
-        raise UrlRejected(
+        raise AssetRejected(
             f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}"
         )
     head, _, tail_variable = href.rstrip("/").rpartition("/")
@@ -394,7 +402,7 @@ def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, st
     for index in range(len(segments) - 1, -1, -1):
         if segments[index].endswith(STORE_SUFFIX):
             return "/".join(segments[: index + 1]), "/".join(segments[index + 1 :]), tail_variable
-    raise UrlRejected(
+    raise AssetRejected(
         f"a Zarr asset address names its store with a path segment ending in {STORE_SUFFIX!r}, "
         "and its variable as the last segment"
     )
@@ -417,7 +425,7 @@ def split_asset_key(asset_key: str, separator: str | None) -> tuple[str, str | N
         return asset_key, None
     item_asset, sep, variable = asset_key.partition(separator)
     if not sep or not item_asset or not variable:
-        raise UrlRejected(
+        raise AssetRejected(
             f"asset {asset_key!r} does not name a variable; this dataset addresses a group "
             f"asset as '<asset>{separator}<variable>'"
         )
@@ -435,22 +443,27 @@ def zarr_asset(
     resolve: Resolver = resolve_host,
     variable: str | None = None,
     target_gsd: float | None = None,
+    decode_cf: bool = True,
 ) -> ZarrAsset:
     """Clear an asset address and return what the reader opens, or raise the reason why not.
 
-    Raises whatever :func:`earthx.gateway.check_url` raises, and
-    :class:`~earthx.gateway.UrlRejected` for an address
-    :func:`split_asset_href` cannot read. The refusal happens here and not at the
+    Raises :class:`~earthx.readers.errors.AssetRejected` for whatever
+    :func:`earthx.gateway.check_url` refuses (its refusal stays attached as
+    ``__cause__``) and for an address :func:`split_asset_href` cannot read. The refusal happens here and not at the
     first chunk, so an address on a host the registry does not name costs no request
     at all.
 
-    ``variable`` and ``target_gsd`` pass straight through to :func:`split_asset_href`
-    and :class:`ZarrAsset` — see there for what each one changes.
+    ``variable``, ``target_gsd`` and ``decode_cf`` pass straight through to
+    :func:`split_asset_href` and :class:`ZarrAsset` — see there for what each one
+    changes.
     """
     store_url, group, resolved_variable = split_asset_href(href, variable=variable)
     if not resolved_variable:
-        raise UrlRejected("a Zarr asset address ends in the name of the variable to read")
-    check_url(store_url, policy, resolve=resolve)
+        raise AssetRejected("a Zarr asset address ends in the name of the variable to read")
+    try:
+        check_url(store_url, policy, resolve=resolve)
+    except GatewayError as error:
+        raise AssetRejected(str(error)) from error
     return ZarrAsset(
         store_url=store_url,
         group=group,
@@ -462,6 +475,7 @@ def zarr_asset(
         item_id=item_id,
         asset=asset,
         target_gsd=target_gsd,
+        decode_cf=decode_cf,
     )
 
 
@@ -483,8 +497,8 @@ class ZarrReader(XarrayReader):
     keeps ``self.input`` as the *first* variable, exactly like the single-variable
     case, and holds one extra :class:`~rio_tiler.io.xarray.XarrayReader` per
     additional variable — sharing this reader's already-open group and gateway, not
-    opening it again. ``tile``, ``preview`` and ``feature`` are overridden to read
-    every band and merge the results with :meth:`~rio_tiler.models.ImageData.create_from_list`,
+    opening it again. ``tile``, ``preview``, ``feature`` and ``part`` are overridden
+    to read every band and merge the results with :meth:`~rio_tiler.models.ImageData.create_from_list`,
     in the order the variables were named, so band 1 is always the first one asked
     for. Nothing else is overridden: an ``/info`` or ``/point`` request against a
     several-variable asset answers for the first variable alone, which is the
@@ -509,6 +523,14 @@ class ZarrReader(XarrayReader):
     #: (projektplan.md 7): what a tile cost the source, without saying where the
     #: source is.
     _log_context: dict[str, str] = attr.ib(init=False, factory=dict)
+    #: Set while `_merged` is computing `self`'s own contribution to a
+    #: `tile`/`feature` merge (below) — `XarrayReader.tile`/`feature` read their
+    #: data via `self.part(...)` internally, and without this guard that call
+    #: would resolve to `part` below and merge in every extra band a second
+    #: time, on top of the merge `_merged` already does for `tile`/`feature`
+    #: itself (found as a 5-band tile for a 3-variable composite: 2*3-1, the
+    #: double-merged first variable plus one real read per extra band).
+    _suppress_part_merge: bool = attr.ib(init=False, default=False)
 
     def __attrs_post_init__(self) -> None:
         asset = self.input
@@ -537,6 +559,15 @@ class ZarrReader(XarrayReader):
         super().__attrs_post_init__()
         self._extra_bands = tuple(XarrayReader(array, tms=self.tms, options=self.options) for array in arrays[1:])
 
+    @property
+    def arrays(self) -> tuple[xarray.DataArray, ...]:
+        """Every variable this reader reads, in the order named — the first is ``self.input``.
+
+        For a caller that needs what each variable says about itself, such as its CF
+        attributes when the store was opened with ``decode_cf=False`` (adr/0014 §5.4).
+        """
+        return (self.input, *(reader.input for reader in self._extra_bands))
+
     def tile(self, *args: Any, **kwargs: Any) -> ImageData:
         return self._merged(XarrayReader.tile, *args, **kwargs)
 
@@ -546,6 +577,21 @@ class ZarrReader(XarrayReader):
     def feature(self, *args: Any, **kwargs: Any) -> ImageData:
         return self._merged(XarrayReader.feature, *args, **kwargs)
 
+    def part(self, *args: Any, **kwargs: Any) -> ImageData:
+        """The bbox composite across every variable (M3-18 §3: the download crop
+        reads a bounding box, not a cutline, so it needs this where `feature`
+        used to be enough on its own).
+
+        Only merges when called from the outside: while `tile`/`feature`
+        above are themselves merging (`_suppress_part_merge`), their own
+        internal `self.part(...)` call reads `self.input` (the first variable)
+        alone, exactly as it would without this override — see
+        `_suppress_part_merge`'s docstring for why.
+        """
+        if self._suppress_part_merge:
+            return XarrayReader.part(self, *args, **kwargs)
+        return self._merged(XarrayReader.part, *args, **kwargs)
+
     def _merged(self, method: Any, *args: Any, expression: str | None = None, **kwargs: Any) -> ImageData:
         """One band from ``self`` (the first variable) plus one from each of
         ``self._extra_bands`` — same as the single-variable case when there are
@@ -553,9 +599,23 @@ class ZarrReader(XarrayReader):
         bands (``b1/b2``, …), so it runs once, after the merge, never per variable —
         the same order :class:`~titiler.core.factory.MultiBaseReader` applies it in.
         """
-        images = [method(self, *args, **kwargs)]
-        images.extend(method(reader, *args, **kwargs) for reader in self._extra_bands)
-        image = images[0] if len(images) == 1 else ImageData.create_from_list(images)
+        self._suppress_part_merge = True
+        try:
+            images = [method(self, *args, **kwargs)]
+            images.extend(method(reader, *args, **kwargs) for reader in self._extra_bands)
+        finally:
+            self._suppress_part_merge = False
+        if len(images) == 1:
+            image = images[0]
+        else:
+            image = ImageData.create_from_list(images)
+            # `create_from_list` drops `nodata` outright (checked against its
+            # own source, bug B, PR #86 review) — every variable of one asset
+            # shares the same nodata by construction (`_variable_names`/
+            # `_select_variable` all read it off the same group), so the first
+            # variable's own value speaks for the merged image too.
+            if image.nodata is None:
+                image.nodata = images[0].nodata
         return image.apply_expression(expression) if expression else image
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
@@ -600,6 +660,7 @@ def _open_group(store: GatewayStore, asset: ZarrAsset) -> xarray.Dataset:
             consolidated=True,
             zarr_format=ZARR_FORMAT,
             decode_coords="all",
+            mask_and_scale=asset.decode_cf,
             chunks=None,
         )
     except (KeyError, FileNotFoundError):

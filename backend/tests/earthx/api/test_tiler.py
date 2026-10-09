@@ -25,11 +25,15 @@ from fastapi.testclient import TestClient
 from rasterio.errors import RasterioError, RasterioIOError
 from rio_tiler.errors import InvalidBandName, TileOutsideBounds
 
-from earthx.adapters.earth_search import UnknownCollection
+from earthx.adapters.errors import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
-from earthx.api.tiler import DOWNLOAD_ROUTE, ROUTER_PREFIX, build_app
+from earthx.api.tiler import (
+    DOWNLOAD_ROUTE,
+    ROUTER_PREFIX,
+    build_app,
+)
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
-from earthx.catalog.registry import DatasetRegistry, ViewerInfo
+from earthx.catalog.registry import DatasetRegistry, LicenseTier, ViewerInfo
 from earthx.gateway import (
     CachingResolver,
     UpstreamError,
@@ -464,3 +468,63 @@ class TestOnlyReleasedZoomLevels:
         assert response.status_code == 501, response.text
         assert fetched == []
         assert opened == []
+
+
+class TestDisplayLicenceTier:
+    """M3-02 K-03, K-26: a tile — and everything sharing its path dependency,
+    statistics among them — needs at least licence tier 'display' (KLAERUNGEN B11).
+    A dataset at tier 'catalog' is a link to the source, never something this
+    platform renders itself. The download route enforces the stricter 'processing'
+    tier on its own (`test_download_route.py::test_a_dataset_without_processing_tier_licence_is_refused`)
+    and is unaffected by this check.
+    """
+
+    @pytest.fixture
+    def catalog_tier_client(self, client: TestClient) -> TestClient:
+        """The same entry, licence lowered to 'catalog' and its viewer cleared — the
+        registry itself refuses a 'catalog' entry that still names one
+        (`DatasetConfig._check_license_tier`, M3-11a)."""
+        catalog_tier = replace(
+            SENTINEL_2_L2A,
+            license=replace(SENTINEL_2_L2A.license, tier=LicenseTier.CATALOG),
+            viewer=None,
+        )
+        registry = DatasetRegistry((catalog_tier,))
+        app = build_app(registry)
+        app.state.earthx_item_source = client.app.state.earthx_item_source
+        app.state.earthx_cache_pool = None
+        return TestClient(app)
+
+    def test_a_tile_is_refused(self, catalog_tier_client: TestClient, fetched: list[str]) -> None:
+        response = catalog_tier_client.get(f"{BASE}/tiles/WebMercatorQuad/8/1/1", params={"asset": "visual"})
+
+        assert response.status_code == 403, response.text
+        assert "KLAERUNGEN B11" in response.json()["detail"]
+        assert fetched == []  # refused before any item was fetched — same as the zoom check
+
+    def test_statistics_are_refused(self, catalog_tier_client: TestClient, fetched: list[str]) -> None:
+        response = catalog_tier_client.get(f"{BASE}/statistics", params={"asset": "visual"})
+
+        assert response.status_code == 403, response.text
+        assert fetched == []
+
+    def test_the_refusal_comes_before_the_missing_zoom_range_would(
+        self, catalog_tier_client: TestClient
+    ) -> None:
+        """Without this check first, a 'catalog' entry's cleared ``viewer`` would
+        answer 501 ('names no released zoom range') instead of 403 — the same 501
+        `TestOnlyReleasedZoomLevels.test_a_dataset_that_names_no_range_serves_no_tiles`
+        gives a dataset that simply never had a range released."""
+        response = catalog_tier_client.get(f"{BASE}/tiles/WebMercatorQuad/8/1/1", params={"asset": "visual"})
+
+        assert response.status_code == 403, response.text
+
+    def test_a_display_tier_dataset_is_unaffected(self, client: TestClient, fetched: list[str]) -> None:
+        """The first dataset is tier 'processing', above 'display' — proves this
+        check does not accidentally reject what already worked. Not a full render
+        (this fixture opens no real asset, per the module docstring): the item was
+        fetched and the answer is not the 403 this class is about."""
+        response = client.get(f"{BASE}/tiles/WebMercatorQuad/8/1/1", params={"asset": "visual"})
+
+        assert response.status_code != 403, response.text
+        assert fetched == [ITEM]

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGroups, displayGroupBy, groupKey, itemsForMap, MissingProperty } from './grouping';
-import type { StacItem } from './types';
+import { buildGroups, groupItemIdsFor, groupKey, itemsForMap, MissingProperty } from './grouping';
+import type { StacItem, TimeStepGroup } from './types';
 
 function item(properties: Record<string, unknown>): StacItem {
   return { id: 'an-item', properties, assets: {} };
@@ -114,38 +114,21 @@ describe('buildGroups', () => {
   });
 });
 
-// V-4: the results list heads groups by day + overpass (`s2:datatake_id`)
-// instead of day + MGRS tile, when the search results carry the property —
-// a display-only change, never affecting which scenes exist (D11) or the
-// registry's own `group_by` (D19).
-describe('displayGroupBy', () => {
-  it('prefers day + datatake when every item carries it', () => {
-    const a = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
-    const b = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS', 's2:datatake_id': 'GS2A_1' });
-    expect(displayGroupBy([a, b], SENTINEL_2_GROUP_BY)).toEqual(['datetime', 's2:datatake_id']);
-  });
-
+// V-4: the results list heads groups by day + overpass (`s2:datatake_id` for
+// the COG dataset, `eopf:datatake_id` for the Zarr one) instead of day + MGRS
+// tile — a display-only change, never affecting which scenes exist (D11).
+// Before M3-12 this was `displayGroupBy`, a runtime fallback from a hardcoded
+// property name to the registry's `group_by`; the key is now a real registry
+// field (`earthx:viewer.results_group_by`, `datasets.ts::resultsGroupByOf`),
+// so no fallback logic is left to test here — `buildGroups` groups by
+// whichever key its caller passes, day-and-overpass included.
+describe('buildGroups with a day-and-overpass key', () => {
   it('two tiles of the same overpass land in one group', () => {
     const a = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
     const b = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS', 's2:datatake_id': 'GS2A_1' });
-    const groups = buildGroups([a, b], displayGroupBy([a, b], SENTINEL_2_GROUP_BY));
+    const groups = buildGroups([a, b], ['datetime', 's2:datatake_id']);
     expect(groups).toHaveLength(1);
     expect(groups[0].items.map((it) => it.id)).toEqual(['an-item', 'an-item']);
-  });
-
-  it('falls back to the registry key when an item lacks the property', () => {
-    const withDatatake = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS', 's2:datatake_id': 'GS2A_1' });
-    const without = item({ datetime: '2026-07-24T10:01:00Z', 'grid:code': 'MGRS-32TNS' });
-    expect(displayGroupBy([withDatatake, without], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
-  });
-
-  it('falls back to the registry key when no item carries the property', () => {
-    const scene = item({ datetime: '2026-07-24T10:00:00Z', 'grid:code': 'MGRS-32TMS' });
-    expect(displayGroupBy([scene], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
-  });
-
-  it('falls back to the registry key for an empty result set', () => {
-    expect(displayGroupBy([], SENTINEL_2_GROUP_BY)).toEqual(SENTINEL_2_GROUP_BY);
   });
 });
 
@@ -206,5 +189,34 @@ describe('itemsForMap', () => {
       expect(ids).not.toContain('a1');
       expect(ids).not.toContain('b1');
     });
+  });
+});
+
+// M3-17: "download folgt der Ansicht" reuses this same per-overpass grouping
+// (PR #84) rather than a second, download-specific one.
+describe('groupItemIdsFor', () => {
+  const GROUPS: TimeStepGroup[] = [
+    { key: ['a'], label: 'Overpass A', items: [taggedItem('S1', '2026-07-24T10:00:00Z'), taggedItem('S2', '2026-07-24T10:00:01Z')] },
+    { key: ['b'], label: 'Overpass B', items: [taggedItem('S3', '2026-07-25T10:00:00Z')] },
+  ];
+
+  it('splits ids back into the groups they came from', () => {
+    expect(groupItemIdsFor(['S1', 'S2', 'S3'], GROUPS)).toEqual([['S1', 'S2'], ['S3']]);
+  });
+
+  it('keeps the order the first member of each group was encountered in', () => {
+    expect(groupItemIdsFor(['S3', 'S1', 'S2'], GROUPS)).toEqual([['S3'], ['S1', 'S2']]);
+  });
+
+  it('a subset of ids only produces the groups it actually touches', () => {
+    expect(groupItemIdsFor(['S1'], GROUPS)).toEqual([['S1']]);
+  });
+
+  it('an id no group contains shares one bucket with every other such id', () => {
+    expect(groupItemIdsFor(['S1', 'nope1', 'nope2'], GROUPS)).toEqual([['S1'], ['nope1', 'nope2']]);
+  });
+
+  it('an empty id list is an empty result', () => {
+    expect(groupItemIdsFor([], GROUPS)).toEqual([]);
   });
 });

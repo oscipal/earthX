@@ -71,9 +71,13 @@ Der M1-Test "kein Request außerhalb des Gateways" besteht deshalb aus: (a) stat
 
 **Nachtrag 19.09.2026:** Im Zielpfad kommt `pystac_client` nicht mehr vor — `adr/0005` Regel IV schließt es aus (es folgt Redirects ungeprüft und verstößt damit gegen diese Auflösung) und setzt einen eigenen schmalen `httpx`-Client in `gateway`. Von den beiden Fremdbibliotheken oben bleibt damit GDAL/rasterio. Die Importregel nennt `pystac_client` weiterhin, damit es nicht durch die Hintertür zurückkommt.
 
+**Nachtrag 2026-10-05 (`adr/0015`, F2):** Der eigene Objektspeicher ist ein Plattformdienst, kein Weg nach außen. Sein Client liegt im Modul `objectstore`; die einzige Ausnahme vom Client-Verbot ist der Import `earthx.objectstore.client -> botocore` (eine Zeile `ignore_imports` im Vertrag `http-only-in-gateway`). Der Endpunkt kommt ausschließlich aus der Konfiguration, nie aus Rezept, Anfrage oder Datenbank. Die Verbotsliste wird dabei um `botocore`, `urllib3` und weitere S3-Clients verschärft. Für Datenquellen gilt diese Auflösung unverändert.
+
 ### B9. "Reine Funktion" trotz I/O; lokaler Runner — *Festgelegt (Begriff präzisiert)*
 
 Gemeint ist: Der Worker-Kern ist **plattformunabhängig und zustandslos**. Er hat keinen Zugriff auf Plattformdienste (Datenbank, Queue, Objektspeicher, interne APIs) und hält keinen Zustand zwischen Aufrufen. Lesender Zugriff auf die **Datenquellen** ist erlaubt und nötig, und zwar über die Bibliothek `gateway`, die deshalb auch im lokalen Runner mitläuft. Die Allowlist ergibt sich dort aus den aufgelösten Asset-Adressen des Rezepts. "Umgeht das Fetch-Gateway" im Architekturplan 7.7 meint nur: Die Zugriffe kommen von der IP des Nutzers statt von der Plattform.
+
+**Nachtrag 02.10.2026:** Der Worker-Kern ist `processing`; `jobs` ist die Hülle mit Queue und Datenbank (Q4, 02.10.2026).
 
 ### B10. Capability-Flags und generische Operatoren — *Vorschlag (Auslegung)*
 

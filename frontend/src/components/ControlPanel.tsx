@@ -1,11 +1,16 @@
-import { useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
-import type { CoverageHistogramPoint } from '../api';
-import { parseAoiFile } from '../aoiFile';
+import type { CoverageHistogramPoint, PlaceResult } from '../api';
+import { readAoiFile } from '../aoiFile';
 import { completenessNote } from '../coverage';
-import { maturityLabel, maturityNote } from '../datasets';
+import { acquisitionNote, maturityLabel, maturityNote } from '../datasets';
 import { bufferPointToPolygon, polygonBbox } from '../geoUtils';
+import { PLACE_SEARCH_PROVENANCE, placeAoi, searchPlaces } from '../placeSearch';
+import { focusFirstItem } from '../popover';
+import { totalItems } from '../sections';
 import { useAppStore } from '../store';
+import ClearableInput from './ClearableInput';
+import Popover from './Popover';
 import Toolbar from './Toolbar';
 
 // A date input plus a transparent button covering its calendar icon
@@ -20,10 +25,12 @@ function DateField({
   value,
   onChange,
   label,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
+  disabled?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
@@ -34,12 +41,14 @@ function DateField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
+        disabled={disabled}
       />
       <button
         type="button"
         className="date-icon-btn"
         tabIndex={-1}
         aria-label={`Open the ${label.toLowerCase()} calendar`}
+        disabled={disabled}
         onClick={() => {
           const input = ref.current;
           if (!input) return;
@@ -51,6 +60,173 @@ function DateField({
   );
 }
 
+// M3-12, F6 (Otto, 26.09.2026): a dataset without a time axis
+// (`capabilities.time_range=False`, the DEM) answers a search the same for
+// any chosen window — the fields stay visible and keep their values (the next
+// dataset picked may well have a time axis), but are locked rather than
+// bedienbar, with the acquisition period underneath explaining why a filter
+// would not narrow anything.
+//
+// M3-10: with several datasets ticked the window still means something for those
+// that have a time axis, so the fields lock only when *none* of the ticked ones
+// has one; each one without says so under the fields, named by title.
+function AcquisitionDateFields() {
+  const datasets = useAppStore((s) => s.datasets);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const dateFrom = useAppStore((s) => s.dateFrom);
+  const dateTo = useAppStore((s) => s.dateTo);
+  const setDateFrom = useAppStore((s) => s.setDateFrom);
+  const setDateTo = useAppStore((s) => s.setDateTo);
+  const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+  const withoutTimeAxis = ticked.filter((d) => d.viewable && !d.hasTimeAxis);
+  const locked = ticked.length > 0 && withoutTimeAxis.length === ticked.length;
+  const notes = withoutTimeAxis.flatMap((d) => {
+    const note = acquisitionNote(d.collection);
+    if (!note) return [];
+    return [{ id: d.id, text: ticked.length > 1 ? `${d.title}: ${note}` : note }];
+  });
+  return (
+    <>
+      <label className="field-label">Acquisition date</label>
+      <div className="date-row">
+        <DateField value={dateFrom} onChange={setDateFrom} label="From date" disabled={locked} />
+        <span>→</span>
+        <DateField value={dateTo} onChange={setDateTo} label="To date" disabled={locked} />
+      </div>
+      {notes.map((n) => (
+        <p key={n.id} className="hint-text">
+          {n.text}
+        </p>
+      ))}
+    </>
+  );
+}
+
+// M3-07b: a place name resolved to an AOI via `POST /geocode` (M3-07a). Search
+// only fires on Enter/"Find" — Nominatim's usage policy forbids an
+// autocomplete-style client (M3-07a §2.1), so there is deliberately no
+// on-keystroke suggestion here, unlike a typical search box.
+function PlaceSearchField() {
+  const setAoi = useAppStore((s) => s.setAoi);
+  const flyTo = useAppStore((s) => s.flyTo);
+  const currentAoi = useAppStore((s) => s.aoi);
+  const setError = useAppStore((s) => s.setError);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<PlaceResult[]>([]);
+  const [attribution, setAttribution] = useState<{ text: string; url?: string } | null>(null);
+  const [picked, setPicked] = useState<{ name: string; geometry: GeoJSON.Geometry } | null>(null);
+  // Guards against an earlier, slower request overwriting the list a newer
+  // one already filled in (plan §4: "eine noch laufende ältere Anfrage, die
+  // später ankommt, wird verworfen").
+  const requestRef = useRef(0);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const closeResults = useCallback(() => setShowResults(false), []);
+
+  const runSearch = async () => {
+    const q = query.trim();
+    if (!q || searching) return;
+    const requestId = ++requestRef.current;
+    setSearching(true);
+    const outcome = await searchPlaces(q);
+    if (requestId !== requestRef.current) return;
+    setSearching(false);
+    if (outcome.error) {
+      setShowResults(false);
+      setResults([]);
+      setAttribution(null);
+      setError(outcome.error);
+      return;
+    }
+    setResults(outcome.results ?? []);
+    setAttribution(outcome.attribution ? { text: outcome.attribution, url: outcome.attributionUrl } : null);
+    setShowResults(true);
+  };
+
+  const choose = (result: PlaceResult) => {
+    const geometry = placeAoi(result);
+    setAoi(geometry);
+    setPicked({ name: result.name, geometry });
+    setShowResults(false);
+    flyTo(result.bbox);
+  };
+
+  // The "picked from here" line only holds while the store's AOI is still
+  // (by identity) the geometry this field handed to `setAoi` — a redraw, an
+  // upload or "Clear" replaces that object, so the line disappears without
+  // this field having to know why the AOI changed.
+  const stillActive = !!picked && currentAoi === picked.geometry;
+
+  return (
+    <div className="place-search">
+      <div className="place-search-row" ref={rowRef}>
+        <ClearableInput
+          value={query}
+          onChange={setQuery}
+          onClear={closeResults}
+          clearLabel="Clear place name"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void runSearch();
+            if (e.key === 'Escape') setShowResults(false);
+            if (e.key === 'ArrowDown' && showResults) {
+              e.preventDefault();
+              focusFirstItem(resultsRef.current);
+            }
+          }}
+          placeholder="Place name"
+          aria-label="Place"
+          maxLength={200}
+        />
+        <button
+          type="button"
+          className="tool-btn ghost"
+          aria-busy={searching}
+          disabled={searching || !query.trim()}
+          onClick={() => void runSearch()}
+        >
+          {searching ? 'Finding…' : 'Find'}
+        </button>
+      </div>
+      <Popover anchorRef={rowRef} open={showResults} onClose={closeResults} className="place-results" ariaLabel="Places found">
+        <div ref={resultsRef}>
+          {results.length === 0 && <p className="hint-text">No place found.</p>}
+          {results.map((r, i) => (
+            <button
+              key={`${r.display_name}-${i}`}
+              type="button"
+              className="place-result"
+              title={r.outline_simplified ? 'Outline simplified' : undefined}
+              onClick={() => choose(r)}
+            >
+              <span className="place-result-name">{r.name}</span>
+              <span className="place-result-kind">{r.kind.split('/')[0]}</span>
+              <span className="place-result-display">{r.display_name}</span>
+            </button>
+          ))}
+          {attribution && (
+            <p className="hint-text place-attribution">
+              {attribution.url?.startsWith('https://') ? (
+                <a href={attribution.url} target="_blank" rel="noopener noreferrer">
+                  {attribution.text}
+                </a>
+              ) : (
+                attribution.text
+              )}
+            </p>
+          )}
+        </div>
+      </Popover>
+      {stillActive && picked && (
+        <p className="hint-text place-attribution">
+          {picked.name} · {PLACE_SEARCH_PROVENANCE.attribution}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function AoiExtras() {
   const setAoi = useAppStore((s) => s.setAoi);
   const flyTo = useAppStore((s) => s.flyTo);
@@ -58,39 +234,54 @@ function AoiExtras() {
   const lastAoi = useAppStore((s) => s.lastAoi);
   const config = useAppStore((s) => s.config);
   const setError = useAppStore((s) => s.setError);
+  // M3-06b: the request to the backend (M3-06a's `POST /aoi/upload`) takes
+  // longer than the old in-browser parse; this locks the control against a
+  // double-click firing two uploads while one is in flight.
+  const [uploading, setUploading] = useState(false);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
+    setUploading(true);
     try {
-      let geom = parseAoiFile(file.name, await file.text());
-      if (!geom) {
-        setError(`Could not read an AOI geometry from "${file.name}".`);
+      const { geometry, error } = await readAoiFile(file);
+      if (error) {
+        setError(error);
         return;
       }
+      let geom = geometry as GeoJSON.Geometry;
+      // M3-08 F5a: same split as the draw tool (MapView.tsx) — the point itself
+      // is what a search asks with, the buffer square is what stays on screen.
+      let point: GeoJSON.Point | null = null;
       if (geom.type === 'Point') {
+        point = geom;
         const [lon, lat] = geom.coordinates;
         geom = bufferPointToPolygon(lon, lat, config?.point_buffer_deg ?? 0.05);
       }
-      setAoi(geom);
+      setAoi(geom, point);
       const bb = polygonBbox(geom);
       if (bb) flyTo(bb);
-    } catch (err) {
-      setError(`Failed to load AOI file: ${(err as Error).message}`);
+    } finally {
+      setUploading(false);
     }
   };
 
   return (
     <div className="aoi-extras">
-      <label className="tool-btn ghost" title="Upload a KML or GeoJSON to use as the AOI">
+      <label
+        className="tool-btn ghost"
+        aria-busy={uploading}
+        title="Upload a GeoJSON, KML or zipped Shapefile (max. 1 MB) as the AOI"
+      >
         <input
           type="file"
-          accept=".kml,.json,.geojson,application/json,application/vnd.google-earth.kml+xml"
+          accept=".geojson,.json,.kml,.zip"
           onChange={onFile}
+          disabled={uploading}
           hidden
         />
-        <span>⤒ Upload KML/JSON</span>
+        <span>⤒ {uploading ? 'Reading…' : 'Upload AOI'}</span>
       </label>
       <button
         type="button"
@@ -105,7 +296,7 @@ function AoiExtras() {
   );
 }
 
-// How settled the source of the selected dataset is (D23: "staging" must not be
+// How settled the source of each ticked dataset is (D23: "staging" must not be
 // something a user finds out only once the source disappears).
 //
 // No "last checked" date is shown next to it: `earthx:health` carries only
@@ -115,22 +306,28 @@ function AoiExtras() {
 // checks in M5.
 function DatasetNotes() {
   const datasets = useAppStore((s) => s.datasets);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const dataset = datasets.find((d) => d.id === datasetId);
-  if (!dataset) return null;
-  const maturity = maturityNote(dataset.collection);
-  if (!maturity) return null;
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const ticked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+  const notes = ticked.flatMap((d) => {
+    const maturity = maturityNote(d.collection);
+    return maturity ? [{ id: d.id, text: ticked.length > 1 ? `${d.title}: ${maturity}` : maturity }] : [];
+  });
+  if (notes.length === 0) return null;
   return (
     <div className="dataset-notes">
-      <p className="hint-text warn">{maturity}</p>
+      {notes.map((n) => (
+        <p key={n.id} className="hint-text warn">
+          {n.text}
+        </p>
+      ))}
     </div>
   );
 }
 
 // Not a heuristic bolted onto a generic search box: the scene-name syntax
-// differs per dataset, and there is nothing else a free-text field here could
-// mean today (location search is hidden until M3, F1) — so no guessing which
-// one the user typed (M2-17). One field, no button of its own — the single
+// differs per dataset, and a place name has its own field now
+// (`PlaceSearchField`, M3-07b) — so no guessing which one the user typed
+// (M2-17). One field, no button of its own — the single
 // "Search" button below decides which of the two lookups to run (M2-17,
 // Otto's redesign 23.09.2026: merged into the ordinary search action instead
 // of a separate "Find").
@@ -142,12 +339,12 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
       <label className="field-label" htmlFor="scene-name-input">
         Scene name
       </label>
-      <input
+      <ClearableInput
         id="scene-name-input"
-        type="text"
         value={query}
         placeholder="e.g. S2C_T32TNT_20260920T103025_L2A"
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={setQuery}
+        clearLabel="Clear scene name"
         onKeyDown={(e) => {
           if (e.key === 'Enter') onSubmit();
         }}
@@ -156,27 +353,38 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
   );
 }
 
-function DatasetSelector() {
+// The dataset choice (M3-10): one toggle button per dataset from
+// `/stac/collections`, any number at once — a click picks a dataset (drawn
+// highlighted), another click drops it again. Every picked dataset is searched
+// together. Four rows are visible; with more the list scrolls. A dataset that
+// cannot be shown stays listed, disabled, with the reason.
+function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
-  const datasetId = useAppStore((s) => s.datasetId);
-  const setDatasetId = useAppStore((s) => s.setDatasetId);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const toggle = useAppStore((s) => s.toggleDatasetSelected);
+  const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   if (datasets.length === 0) return null;
   return (
-    <div className="level-select" role="group" aria-label="Dataset">
+    <div className="dataset-list" role="group" aria-label="Datasets">
       {datasets.map((d) => {
+        const picked = selectedDatasetIds.includes(d.id);
         const maturity = d.viewable ? maturityNote(d.collection) : null;
         const label = d.viewable ? maturityLabel(d.collection) : null;
         return (
           <button
             key={d.id}
             type="button"
-            className={`level-btn${datasetId === d.id ? ' active' : ''}`}
-            title={d.viewable ? (maturity ? `${d.title} — ${maturity}` : d.title) : `${d.title} — not viewable: ${d.reason}`}
-            aria-pressed={datasetId === d.id}
-            disabled={!d.viewable}
-            onClick={() => setDatasetId(d.id)}
+            className={`dataset-toggle${picked ? ' active' : ''}`}
+            title={
+              d.viewable
+                ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
+                : `${d.title} — not viewable: ${d.reason}`
+            }
+            aria-pressed={picked}
+            disabled={!d.viewable || busy}
+            onClick={() => toggle(d.id)}
           >
-            {d.title}
+            <span className="dataset-toggle-title">{d.title}</span>
             {label && <span className="maturity-chip">{label}</span>}
           </button>
         );
@@ -219,22 +427,22 @@ function CoverageHistogram({
   );
 }
 
-// Off by default, switched on from the layer manager ("Layers" button) —
-// the legend/histogram here only ever appear once that toggle is on.
-function CoverageControls() {
+// The legend and histogram of the coverage map, in the scrolling part of the
+// panel; the "Coverage" button that switches it on is `CoverageButton` below.
+function CoverageLegend() {
   const showCoverage = useAppStore((s) => s.showCoverage);
   const coverage = useAppStore((s) => s.coverage);
   const coverageLoading = useAppStore((s) => s.coverageLoading);
   const coverageError = useAppStore((s) => s.coverageError);
   const dateFrom = useAppStore((s) => s.dateFrom);
   const dateTo = useAppStore((s) => s.dateTo);
-  const datasetId = useAppStore((s) => s.datasetId);
-  if (!datasetId || !showCoverage) return null;
+  const title = useAppStore((s) => s.datasets.find((d) => d.id === s.coverageDatasetId)?.title ?? s.coverageDatasetId);
+  if (!showCoverage) return null;
 
   const note = coverage ? completenessNote(coverage) : null;
-
   return (
     <div className="coverage-controls">
+      <p className="hint-text coverage-dataset-name">Coverage · {title}</p>
       {coverageLoading && <p className="hint-text">Loading coverage…</p>}
       {coverageError && <p className="hint-text error">{coverageError}</p>}
       {coverage && (
@@ -259,18 +467,124 @@ function CoverageControls() {
   );
 }
 
+// The "Coverage" button (M3-10, Otto 30.09.2026): right under the grid of dataset
+// buttons, outside it so it stays in view however that grid scrolls, and set
+// apart from them. One dataset picked: a click shows its coverage (or hides it
+// again). Several picked: the click first offers the choice of which dataset,
+// lying over what is below — nothing is drawn until one is chosen. Beside it
+// "Clear coverage", on only while a coverage map is shown; the two fill the
+// panel's width. Off by default (M2-07c).
+function CoverageButton() {
+  const datasets = useAppStore((s) => s.datasets);
+  const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
+  const showCoverage = useAppStore((s) => s.showCoverage);
+  const coverageDatasetId = useAppStore((s) => s.coverageDatasetId);
+  const showCoverageFor = useAppStore((s) => s.showCoverageFor);
+  const hideCoverage = useAppStore((s) => s.hideCoverage);
+  const [choosing, setChoosing] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setChoosing(false), []);
+  const picked = datasets.filter((d) => selectedDatasetIds.includes(d.id));
+
+  const onClick = () => {
+    if (picked.length === 0) return;
+    if (picked.length > 1) {
+      setChoosing((v) => !v);
+      return;
+    }
+    if (showCoverage) hideCoverage();
+    else showCoverageFor(picked[0].id);
+  };
+  const chosen = (act: () => void) => {
+    act();
+    setChoosing(false);
+    buttonRef.current?.focus();
+  };
+
+  return (
+    <div className="coverage-button-wrap" ref={rowRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`coverage-btn${showCoverage ? ' active' : ''}`}
+        aria-pressed={showCoverage}
+        aria-haspopup={picked.length > 1 ? 'menu' : undefined}
+        aria-expanded={picked.length > 1 ? choosing : undefined}
+        disabled={picked.length === 0}
+        title={
+          picked.length === 0
+            ? 'Pick a dataset to see its coverage'
+            : showCoverage
+              ? 'Coverage map on — click to change or hide it'
+              : 'Show how densely a dataset covers the world'
+        }
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (picked.length > 1 && e.key === 'ArrowDown') {
+            e.preventDefault();
+            setChoosing(true);
+          }
+        }}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+          <rect x="2" y="2" width="5" height="5" />
+          <rect x="9" y="2" width="5" height="5" fill="currentColor" fillOpacity="0.45" />
+          <rect x="2" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.2" />
+          <rect x="9" y="9" width="5" height="5" fill="currentColor" fillOpacity="0.75" />
+        </svg>
+        <span>Coverage</span>
+      </button>
+      <button
+        type="button"
+        className="coverage-btn coverage-clear-btn"
+        disabled={!showCoverage}
+        title={showCoverage ? 'Hide the coverage map' : 'No coverage map is shown'}
+        onClick={() => hideCoverage()}
+      >
+        Clear coverage
+      </button>
+      <Popover
+        anchorRef={rowRef}
+        triggerRef={buttonRef}
+        open={choosing && picked.length > 1}
+        onClose={close}
+        className="coverage-choice"
+        role="menu"
+        ariaLabel="Coverage of which dataset"
+        focusOnOpen
+      >
+        {picked.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            role="menuitemradio"
+            aria-checked={showCoverage && coverageDatasetId === d.id}
+            className={`coverage-choice-item${showCoverage && coverageDatasetId === d.id ? ' active' : ''}`}
+            onClick={() => chosen(() => showCoverageFor(d.id))}
+          >
+            {d.title}
+          </button>
+        ))}
+        {showCoverage && (
+          <button type="button" role="menuitem" className="coverage-choice-item off" onClick={() => chosen(hideCoverage)}>
+            Hide coverage
+          </button>
+        )}
+      </Popover>
+    </div>
+  );
+}
+
 export default function ControlPanel() {
   const aoi = useAppStore((s) => s.aoi);
-  const dateFrom = useAppStore((s) => s.dateFrom);
-  const dateTo = useAppStore((s) => s.dateTo);
-  const setDateFrom = useAppStore((s) => s.setDateFrom);
-  const setDateTo = useAppStore((s) => s.setDateTo);
   const searching = useAppStore((s) => s.searching);
   const sceneLookupLoading = useAppStore((s) => s.sceneLookupLoading);
   const runSearch = useAppStore((s) => s.runSearch);
   const findSceneByName = useAppStore((s) => s.findSceneByName);
   const sceneNameQuery = useAppStore((s) => s.sceneNameQuery);
-  const count = useAppStore((s) => s.items.length);
+  const count = useAppStore((s) => totalItems(s.sections));
+  const selectedCount = useAppStore((s) => s.selectedDatasetIds.length);
   const datasetId = useAppStore((s) => s.datasetId);
 
   // One button for both lookups (M2-17, Otto's redesign): a scene name in the
@@ -280,7 +594,8 @@ export default function ControlPanel() {
   // since the name lookup needs neither AOI nor date range (adr/0001 Z1).
   const hasSceneName = sceneNameQuery.trim().length > 0;
   const busy = searching || sceneLookupLoading;
-  const canSearch = !busy && !!datasetId && (hasSceneName || !!aoi);
+  // The scene-name lookup and the search both ask every ticked dataset.
+  const canSearch = !busy && !!datasetId && selectedCount > 0 && (hasSceneName || !!aoi);
   const search = () => {
     if (!canSearch) return;
     if (hasSceneName) void findSceneByName();
@@ -289,39 +604,45 @@ export default function ControlPanel() {
 
   return (
     <div className="panel control-panel">
-      <div className="brand">
-        <span className="brand-mark" />
-        <div>
-          <h1>EarthX</h1>
-          <p>Geo and satellite data viewer</p>
+      <div className="control-scroll">
+        <div className="brand">
+          <span className="brand-mark" />
+          <div>
+            <h1>EarthX</h1>
+            <p>Geo and satellite data viewer</p>
+          </div>
         </div>
+
+        <SceneNameField onSubmit={search} />
+
+        <label className="field-label">Area of interest</label>
+        <PlaceSearchField />
+        <Toolbar />
+        <AoiExtras />
+
+        <label className="field-label">
+          Datasets
+          {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
+        </label>
+        <DatasetPicker />
+        <CoverageButton />
+        <DatasetNotes />
+
+        <CoverageLegend />
+
+        <AcquisitionDateFields />
       </div>
 
-      <SceneNameField onSubmit={search} />
+      {/* Outside the scrolling part, so "Search" is on screen at any window height. */}
+      <div className="control-footer">
+        <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
+          {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
+        </button>
 
-      <label className="field-label">Area of interest</label>
-      <Toolbar />
-      <AoiExtras />
-
-      <label className="field-label">Dataset</label>
-      <DatasetSelector />
-      <DatasetNotes />
-
-      <CoverageControls />
-
-      <label className="field-label">Acquisition date</label>
-      <div className="date-row">
-        <DateField value={dateFrom} onChange={setDateFrom} label="From date" />
-        <span>→</span>
-        <DateField value={dateTo} onChange={setDateTo} label="To date" />
+        {count > 0 && <p className="result-count">{count} scene(s) found</p>}
+        {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}
+        {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
       </div>
-
-      <button type="button" className="primary-btn" disabled={!canSearch} onClick={search}>
-        {sceneLookupLoading ? 'Finding…' : searching ? 'Searching…' : 'Search'}
-      </button>
-
-      {count > 0 && <p className="result-count">{count} scene(s) found</p>}
-      {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
     </div>
   );
 }
