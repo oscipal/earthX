@@ -426,6 +426,39 @@ wenn zwei Zonen beteiligt sind. Ein zweiter gleicher Auftrag ist sofort fertig
 
 ---
 
-## 10. Recherche (Stand der Technik)
+## 10. Recherche (Stand der Technik, 10.10.2026)
 
-*(folgt im nächsten Commit)*
+Belegstufen wie `adr/0009`: [M] gemessen, [P] am Primärdokument gelesen,
+[S] Zusammenfassung, [A] eigene Ableitung. Aus der Sitzung erreichbar waren nur
+GitHub und Earth Search; ESA-, Sentinel-Hub- und GDAL-Seiten nicht, deshalb
+stehen deren Aussagen auf [S].
+
+| Befund | Beleg | Stufe | Folge hier |
+|---|---|---|---|
+| rio-tiler: `mosaic_reader` nimmt standardmäßig `FirstMethod` (füllt nur maskierte Pixel), sortiert nicht selbst | [`rio_tiler/mosaic/reader.py`](https://github.com/cogeotiff/rio-tiler/blob/main/rio_tiler/mosaic/reader.py), `methods/defaults.py` | P | F3: erstes gültiges Pixel wie Zuschnitt und Export |
+| odc-stac: die Fusion kopiert nur, wo noch kein gültiges Pixel liegt; Reihenfolge `time, id`, auf Wunsch die der Eingabe | [`odc/stac/_stac_load.py`](https://github.com/opendatacube/odc-stac/blob/develop/odc/stac/_stac_load.py) | P | dieselbe Regel; die Reihenfolge ist eine Wahl |
+| stackstac `mosaic()`: Standard `reverse=False`, das letzte Element gewinnt | [`stackstac/ops.py`](https://github.com/gjoseph92/stackstac/blob/main/stackstac/ops.py) | P | „first“ ist verbreitet, aber nicht allgemein |
+| gdalbuildvrt: die zuletzt gelistete Datei gewinnt, nodata fällt auf frühere zurück | [`gdalbuildvrt.rst`](https://github.com/OSGeo/gdal/blob/master/doc/source/programs/gdalbuildvrt.rst) | P | wie stackstac |
+| openEO `merge_cubes`: ohne `overlap_resolver` bei Überlappung ein Fehler | [`merge_cubes.json`](https://github.com/Open-EO/openeo-processes/blob/draft/merge_cubes.json) | P | die Regel gehört ausdrücklich beschrieben (K5, Nachtrag `adr/0014`) |
+| Sentinel Hub: `mosaickingOrder` mostRecent (Standard), leastRecent, leastCC | Sentinel-Hub-Doku, Forum | S | Kriterien über mehrere Tage; hier nicht nötig (ein Überflug) |
+| odc-stac: ohne `crs` das häufigste (CRS, Auflösung, Anker) der Items | [`odc/stac/_mdtools.py`](https://github.com/opendatacube/odc-stac/blob/develop/odc/stac/_mdtools.py) | P | stützt F4 Option 1 |
+| stackstac: ohne `epsg` müssen alle Items dasselbe `proj:epsg` haben | [`stackstac/stack.py`](https://github.com/gjoseph92/stackstac/blob/main/stackstac/stack.py) | P | Gegenmodell F4 Option 3 |
+| `nearest` ist Standard in gdalwarp, rio-tiler (`reproject_method`), stackstac, openEO `resample_spatial` | Quellen wie oben, [`gdalwarp.rst`](https://github.com/OSGeo/gdal/blob/master/doc/source/programs/gdalwarp.rst) | P | stützt K1; dass `nearest` für L2A beim Zonenwechsel „üblich“ ist, ist nicht belegt |
+| Ein Datatake über zwei Zonen: `GS2C_20261010T123131_010947_N05.13`, 4 Items in EPSG:32625, 2 in EPSG:32626 | Earth Search `/v1/search`, Subagent, eine Anfrage | P | zweiter Fall neben der Stichprobe in §7 |
+| Ursprünge der Kacheln einer Zone sind Vielfache von 60 m (6 Items) | dieselbe Anfrage | P (Regel: A) | stützt „auf dem Raster“ in §3.3 |
+| Kachel rund 110 km bei 100 km Gitterschritt, Überlappung in einer Zone rund 5 km | ESA Product Types, NASA HLS Tiling | S | Überlappungen sind schmal; an Zonengrenzen breiter |
+| L2A-Werte benachbarter Kacheln eines Datatakes können in der Überlappung abweichen (Aerosol je Kachel geschätzt) | [STEP-Forum 33178](https://forum.step.esa.int/t/sen2cor-intensity-differences-between-adjacent-tiles-of-same-acquisition/33178) | S | §7: Nähte möglich; F3 macht das Ergebnis eindeutig |
+| Earth Search: nodata 0, `offset` aus `raster:bands` vor dem Fusionieren beachten | [`docs/collections/sentinel-2-l2a.md`](https://github.com/Element84/earth-search/blob/main/docs/collections/sentinel-2-l2a.md) | P | Gültigkeit nach der Skalierung wie `Source.read` (§3.3) |
+
+**Abweichungen von der Recherche-Empfehlung:**
+- Gleichstand im Ziel-CRS: die Recherche schlägt die kleinere EPSG-Zahl vor,
+  F4 das CRS des ersten Items. Beides ist deterministisch; das erste Item gibt
+  dem Auftrag die Wahl, ohne ein Feld dafür. Otto kann in F4 die EPSG-Regel
+  wählen.
+- Reihenfolge der Überlappung: die Recherche schlägt eine feste Sortierung nach
+  Kachel-ID vor; F3 bleibt bei der Reihenfolge des Auftrags (wie Zuschnitt und
+  Export), die im Rezept und damit im Hash steht.
+
+**Nebenbefund (nicht Teil dieser Aufgabe):** Laut Earth-Search-Doku wird
+`sentinel-2-c1-l2a` in Earth Search v2 durch `sentinel-2-l2a` ersetzt [P].
+Eine eigene Log-Zeile schlage ich vor, sobald es einen Termin gibt.
