@@ -726,3 +726,100 @@ docker compose logs api | Select-String "order estimated"
 Erwartet: Schritt 1 gibt `assets` 2 und ein `duration` wie `PT3.4S`; Schritt 2
 einen Problemtext mit `nir_2` (Typ `urn:earthx:order-refused:applicable`);
 Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
+
+## 12. M4-13b — Umsetzung (10.10.2026)
+
+**Gebaut** (Branch `claude/m4-13b-processing-kern-fivakj`, nur `frontend/`):
+- `processing.ts`: Client für `/processing` (Beschreibung, Schätzung, Start,
+  Status, `DELETE`, Ergebnisse, Ergebnis-Links), `canonicalJson`,
+  `parseStatusInfo` (verwirft fremde `jobID`, unbekannte Zustände, fehlende
+  Felder), `isJobId` (Form von `token_urlsafe(16)`; nichts anderes kommt in
+  eine URL). `api.ts`: `jsonOrThrow` exportiert, `HttpError.title`.
+  `vite.config.ts`: `/processing` → `api` (K8).
+- `schemaForm.ts`, `components/StepForm.tsx`: Formular aus dem
+  Parameterschema nach §3.4 mit Wächter („not supported by this panel: …“).
+- `processingOrder.ts`: Operatoren, Grenzen, Datentypen und Trenner aus dem
+  Schema; Bandnamen (K7); Szenen, deren Footprint die AOI schneidet (F8);
+  Bau des Auftrags (K9, K10, K11); Zuordnung einer Abweisung zum Schritt
+  („step <n>“ im Text des Servers).
+- `jobTracker.ts`: SSE mit `close()` beim Endstatus, Rückfall auf Abfragen
+  nach K5, `Retry-After`, `404` → „gone“; `sessionStorage` nach F5 (nur
+  `jobID` und `expires`).
+- `processingStore.ts`, `components/ProcessingPanel.tsx`,
+  `components/JobList.tsx`: Panel nach §3.5; Knopf „Process“ in der `ViewBar`
+  (K12); Jobzeilen mit Status, Fortschritt, „Cancel“, Ablauf, Links
+  „Result (COG)“, „Mask“, „Recipe“ bis `expires` − 60 s, danach „Expired“;
+  Hinweis „Resampled to a common grid“. `JobRow` ist für M4-11b exportiert.
+
+**Abweichungen vom Plan** (Vorschlag, gilt bis Otto widerspricht):
+1. **Eigener Store** `processingStore.ts` statt eines Teils in `store.ts`
+   (dort schon rund 1800 Zeilen). Er liest die Auswahl aus `store.ts` und
+   schreibt nie hinein; `store.ts` exportiert dafür nur `selectionItemsFrom`
+   und den Typ `AppState`.
+2. **Asset ohne Bandangaben:** K7 sagt „kein Chip“. Dann wäre der Auftrag für
+   `cop-dem-glo-30` nicht bedienbar (sein Asset `data` trägt weder
+   `raster:bands` noch `bands`; Prüfanleitung Schritt 7). Das Panel zeigt
+   solche Assets als Chip mit dem Asset-Schlüssel, der das Asset nur in den
+   Auftrag nimmt und keinen Namen einfügt (Tooltip sagt es). Bänder mit
+   Namen bleiben, wie K7 sie beschreibt.
+3. **Knopf „Jobs (n)“ oben rechts**, solange Jobs in diesem Tab bestehen und
+   das Panel zu ist. Ohne ihn wären wiederaufgenommene Jobs (F5) nach dem
+   Neuladen erst nach einer neuen Auswahl sichtbar.
+4. **Einfügen per Chip** hängt den Namen an den Ausdruck des zuletzt
+   bearbeiteten Band-Math-Schritts an (nicht an der Schreibmarke). Ohne
+   Band-Math-Schritt schaltet der Chip das Band im Auftrag an oder aus.
+5. **Gleicher Bandname in zwei Assets** (bei Zarr möglich, z. B. `b04` in zwei
+   Auflösungsgruppen): Der Chip zeigt den vollen Asset-Schlüssel und fügt
+   nichts ein; ein solcher Name im Ausdruck wählt kein Asset von selbst. Ob
+   die echten Items das tun, ist nicht gemessen (kein Zugriff auf die Quelle
+   aus der Sitzung).
+6. **Hinweise der Formularprüfung** erscheinen an einem Feld, sobald es Text
+   hat, an leeren Pflichtfeldern erst nach „Review“.
+
+**Tests** (vitest, `fetch` und `EventSource` gestubbt, alles synthetisch):
+`processing.test.ts` (kanonisches JSON, Statusdokument, Hülle, Problem-Titel,
+`Retry-After`, keine fremde `jobID` in URLs), `schemaForm.test.ts` (jeder Typ,
+Grenzen, `pattern`, `enum`, `default`, Wächter), `processingOrder.test.ts`
+(Fixtures aus K3 voll unterstützt, Bandnamen für COG mit einem und mehreren
+Bändern, Zarr mit und ohne Trenner, Asset ohne Bandangaben, Szenen und AOI,
+gepuffertes Quadrat eines Punkts, mehr als 16 Assets oder Schritte),
+`jobTracker.test.ts` (Ereignisfolge bis `close()`, kaputtes JSON und fremde
+`jobID`, `CLOSED` → sofort Abfragen, drei Abbrüche, `Retry-After`, `404`,
+ohne `EventSource`, `sessionStorage` mit Wiederaufnahme, abgelaufenen und
+falsch geformten Einträgen, gesperrtem Speicher),
+`components/ProcessingPanel.test.tsx` (Aufbau aus der Sentinel-2-Fixture,
+Operator fehlt im Menü, „Start job“ erst nach „Review“, Änderung verwirft die
+Schätzung, Abweisung am Schritt, `502` beim Start nach guter Schätzung, `503`
+mit „try again“, Abbruch der Schätzung beim Wechsel der Auswahl, Auswahl einer
+Szene mit Hinweis, Start bis zu den Links, gescheiterter Job mit Titel,
+„Expired“, Hinweis „Resampled“, Knopf „Process“ bei Stufe *display* und ohne
+AOI). Gegenprobe in der Sitzung: Ohne die Bindung der Schätzung an den Auftrag
+und ohne den Abbruch fallen die zwei zugehörigen Komponententests.
+
+**Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell; die Sitzung
+hat das Panel nur in Tests gesehen, nicht im Browser gegen die echte Quelle):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. Datensatz `sentinel-2-c1-l2a`, eine kleine Fläche zeichnen, die ganz in
+   einer Szene liegt, suchen und einen Überflug mit wenig Wolken auswählen.
+2. „⚙ Process“ → „＋ Band math“; Chips `nir` und `red` anklicken und den
+   Ausdruck zu `(nir - red) / (nir + red)` ergänzen.
+3. „Review“ zeigt Pixel, Größe, Dauer und Einheiten; „Start job“; die Zeile
+   zeigt „Waiting for a worker“, „Running · n %“, dann „Finished“.
+4. „Result (COG)“ lädt eine `.tif`, „Recipe“ eine `_recipe.json`; die Datei
+   öffnet sich in QGIS mit Werten zwischen −1 und 1.
+5. Seite neu laden: „⚙ Jobs (1)“ oben rechts öffnet das Panel mit dem Job.
+6. Datensatz `cop-dem-glo-30`: Chip `data` anklicken, „＋ Reproject and
+   resample“ (`EPSG:3035`, `30`, `bilinear`), „Review“, „Start job“; der Job
+   läuft.
+7. Fläche über einer Kachelgrenze zeichnen: Das Panel lässt eine Szene
+   wählen und sagt, dass das Ergebnis nur diese abdeckt (F8).
+
+Vorschau und „Preview“ (§9 Schritte 3 und 4) kommen mit M4-13c.
