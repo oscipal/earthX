@@ -125,8 +125,9 @@ function isGeoTiff(asset: StacAsset): boolean {
 
 // What the item offers for an order. A COG asset: one band named like the asset,
 // or `<asset>_1` … per band. A Zarr asset: one order asset per variable named
-// in `eo:bands`, as `<asset><separator><variable>` — none without a separator
-// (F9: nothing guessed).
+// in the STAC core field `bands`, as `<asset><separator><variable>` — none
+// without a separator (F9) and none for an asset that names no variables
+// (nothing guessed; Otto 10.10.2026).
 export function bandSources(item: StacItem, format: string | null | undefined, separator: string | null): BandSource[] {
   const sources: BandSource[] = [];
   for (const [key, asset] of Object.entries(item.assets ?? {})) {
@@ -136,7 +137,7 @@ export function bandSources(item: StacItem, format: string | null | undefined, s
       const names = count === null ? [] : count === 1 ? [key] : Array.from({ length: count }, (_, i) => `${key}_${i + 1}`);
       sources.push({ asset: key, names, dataType: firstDataType(asset) });
     } else if (format === 'zarr') {
-      const bands = asset['eo:bands'];
+      const bands = asset.bands;
       if (!separator || !Array.isArray(bands)) continue;
       const dataType = firstDataType(asset);
       for (const band of bands) {

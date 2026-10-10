@@ -35,7 +35,7 @@ function Bands({ view }: { view: OrderView }) {
     return (
       <section className="pp-section" aria-label="Bands">
         <h3 className="pp-heading">Bands</h3>
-        <p className="hint-text">This scene lists no band the panel can offer.</p>
+        <p className="hint-text">This dataset does not list band names yet.</p>
       </section>
     );
   }

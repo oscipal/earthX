@@ -19,13 +19,13 @@ export interface StacAsset {
   // the download dialog's resolution choice (F10c, M3-18 §10) — how many
   // metres each `RESOLUTION_FACTORS` step actually means for this asset.
   gsd?: number | null;
-  // The band descriptions (M4-13 K7), read only to name the bands an
-  // expression can use and to start the output data type: `raster:bands` (or
-  // STAC 1.1 `bands`) says how many bands a COG asset has, `eo:bands` names the
-  // variables of a Zarr group (the EOPF adapter puts them there).
+  // The band descriptions (M4-13 K7, Otto 10.10.2026), read only to name the
+  // bands an expression can use and to start the output data type:
+  // `raster:bands` (or the STAC 1.1 core field `bands`) says how many bands a
+  // COG asset has, and `bands[].name` names the variables of a Zarr group. The
+  // frontend reads no extension prefix of one source (M3-12).
   'raster:bands'?: StacBand[] | null;
   bands?: StacBand[] | null;
-  'eo:bands'?: StacBand[] | null;
 }
 
 export interface StacBand {

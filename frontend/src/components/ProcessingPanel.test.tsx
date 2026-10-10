@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
+import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from '../geoUtils';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
@@ -41,9 +42,9 @@ function scene(id: string, bbox: [number, number, number, number] = [10, 50, 11,
   };
 }
 
-function dataset(tier: string): DatasetOption {
+function dataset(tier: string, id = 'sentinel-2-c1-l2a', format = 'cog'): DatasetOption {
   return {
-    id: 'sentinel-2-c1-l2a',
+    id,
     title: 'Sentinel-2 L2A',
     viewable: true,
     groupBy: ['datetime'],
@@ -53,17 +54,17 @@ function dataset(tier: string): DatasetOption {
     resultsGroupBy: ['datetime'],
     hasTimeAxis: true,
     collection: {
-      id: 'sentinel-2-c1-l2a',
-      'earthx:format': 'cog',
+      id,
+      'earthx:format': format,
       'earthx:license_flags': { tier },
     } as unknown as Collection,
   };
 }
 
-function select(items: StacItem[], tier = 'processing') {
+function select(items: StacItem[], tier = 'processing', option: DatasetOption = dataset(tier)) {
   useAppStore.setState({
-    datasets: [dataset(tier)],
-    datasetId: 'sentinel-2-c1-l2a',
+    datasets: [option],
+    datasetId: option.id,
     items,
     groups: [{ key: ['2026-07-01'], label: '2026-07-01', items }],
     activeGroupIndex: 0,
@@ -400,6 +401,64 @@ describe('the process description', () => {
     click(button('Retry'));
     await flush();
     expect(button('＋ Band math').disabled).toBe(false);
+  });
+});
+
+describe('a COG asset without band descriptions (K7, Otto 10.10.2026)', () => {
+  it('gets a chip with the asset name, which puts the asset into the order', async () => {
+    const dem: StacItem = {
+      ...scene('DEM_A'),
+      assets: { data: { href: 'https://example.org/dem.tif', type: COG } },
+    };
+    select([dem]);
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['data']);
+    click(button('data'));
+    expect(button('data').getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
+  const ID = 'sentinel-2-l2a-zarr3';
+
+  function zarrScene(bands: { name: string }[] | undefined): StacItem {
+    return {
+      ...scene('S2_Z'),
+      assets: {
+        SR_10m: {
+          href: 'https://example.org/r10m',
+          type: 'application/vnd+zarr',
+          ...(bands ? { bands } : {}),
+          // an extension field the panel must not read
+          ...({ 'eo:bands': [{ name: 'b99' }] } as object),
+        },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    routes[`GET /processing/processes/recipe?dataset=${ID}`] = () => json(zarr);
+  });
+
+  it('offers one chip per variable named in bands, as <asset>:<variable>', async () => {
+    select([zarrScene([{ name: 'b04' }, { name: 'b08' }])], 'processing', dataset('processing', ID, 'zarr'));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['b04', 'b08']);
+    click(button('＋ Band math'));
+    click(button('b08'));
+    click(button('b04'));
+    typeInto(container.querySelector('input[id$="-expression"]')!, 'b08 - b04');
+    await review();
+    const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
+    expect(body.inputs.recipe.inputs[0].assets).toEqual(['SR_10m:b04', 'SR_10m:b08']);
+  });
+
+  it('offers no chip and says so when the asset lists no band names, whatever an extension field says', async () => {
+    select([zarrScene(undefined)], 'processing', dataset('processing', ID, 'zarr'));
+    await openPanel();
+    expect(container.querySelector('.pp-chip')).toBeNull();
+    expect(container.textContent).toContain('This dataset does not list band names yet.');
+    expect(container.textContent).not.toContain('b99');
   });
 });
 

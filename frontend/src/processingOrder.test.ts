@@ -89,9 +89,9 @@ describe('bandSources (K7)', () => {
     expect(bandSources(dem, 'cog', null)).toEqual([{ asset: 'data', names: [], dataType: null }]);
   });
 
-  it('names Zarr variables from eo:bands, one order asset per variable', () => {
+  it('names Zarr variables from the core field bands, one order asset per variable', () => {
     const z = item('z', {
-      SR_10m: { href: 'x', type: 'application/vnd+zarr', 'eo:bands': [{ name: 'b04' }, { name: 'b08' }] },
+      SR_10m: { href: 'x', type: 'application/vnd+zarr', bands: [{ name: 'b04' }, { name: 'b08' }] },
       product: { href: 'y', type: 'application/vnd+zarr' },
     });
     expect(bandSources(z, 'zarr', ':')).toEqual([
@@ -101,8 +101,16 @@ describe('bandSources (K7)', () => {
   });
 
   it('offers nothing for Zarr without a separator', () => {
-    const z = item('z', { SR_10m: { href: 'x', 'eo:bands': [{ name: 'b04' }] } });
+    const z = item('z', { SR_10m: { href: 'x', bands: [{ name: 'b04' }] } });
     expect(bandSources(z, 'zarr', null)).toEqual([]);
+  });
+
+  it('offers nothing for a Zarr asset that lists no band names, also if an extension field names them', () => {
+    const z = item('z', {
+      SR_10m: { href: 'x', 'eo:bands': [{ name: 'b04' }] } as never,
+      SR_20m: { href: 'y', bands: [{}, { name: '' }] },
+    });
+    expect(bandSources(z, 'zarr', ':')).toEqual([]);
   });
 });
 
