@@ -767,7 +767,9 @@ Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
    Neuladen erst nach einer neuen Auswahl sichtbar.
 4. **Einfügen per Chip** hängt den Namen an den Ausdruck des zuletzt
    bearbeiteten Band-Math-Schritts an (nicht an der Schreibmarke). Ohne
-   Band-Math-Schritt schaltet der Chip das Band im Auftrag an oder aus.
+   Band-Math-Schritt schaltet der Chip das Band im Auftrag an oder aus; ein
+   von Hand gewähltes Band, das kein Ausdruck nennt, lässt sich auch mit
+   Band-Math-Schritt per Klick wieder abwählen.
 5. **Gleicher Bandname in zwei Assets** (bei Zarr möglich, z. B. `b04` in zwei
    Auflösungsgruppen): Der Chip zeigt den vollen Asset-Schlüssel und fügt
    nichts ein; ein solcher Name im Ausdruck wählt kein Asset von selbst. Ob
@@ -775,6 +777,24 @@ Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
    aus der Sitzung).
 6. **Hinweise der Formularprüfung** erscheinen an einem Feld, sobald es Text
    hat, an leeren Pflichtfeldern erst nach „Review“.
+
+7. **Eine Schätzung, ein Job:** Nach einem erfolgreichen Start verfällt die
+   Schätzung; ein zweiter gleicher Job braucht ein neues „Review“. Macht der
+   Nutzer eine Änderung rückgängig, erscheint die Schätzung desselben
+   Auftrags wieder (sie gehört zum Auftrag, nicht zum Zeitpunkt).
+
+**Befunde des Reviewers, behoben:** Schätzung unbekannter Form (`{}` von
+einem Proxy) brachte das Panel im Render zum Absturz → `parseEstimate`;
+eine unlesbare Prozessbeschreibung blieb für immer „loading“ → Fehler mit
+„Retry“; eine Abweisung, die nach einer Änderung ankam, stand am geänderten
+Schritt → Abweisungen tragen den Schlüssel ihres Auftrags; `onopen` setzte
+den Zähler der Abbrüche zurück, sodass ein puffernder Proxy nie auf Abfragen
+fiel → nur ein gültiges Ereignis setzt zurück; leeres `raster:bands` fiel
+nicht auf `bands` zurück wie in `api/intake.py`; „expression names unknown
+band(s)“ und „steps.<n>“ landeten nicht am Schritt; das Panel abonnierte
+den ganzen Store (jetzt nur die Auswahl) und hinterließ geschlossen einen
+leeren Ziehgriff; Panel und `ViewBar` zählten „nichts gewählt“ verschieden
+(beide jetzt die von Hand gewählten Szenen).
 
 **Tests** (vitest, `fetch` und `EventSource` gestubbt, alles synthetisch):
 `processing.test.ts` (kanonisches JSON, Statusdokument, Hülle, Problem-Titel,
@@ -793,7 +813,11 @@ Schätzung, Abweisung am Schritt, `502` beim Start nach guter Schätzung, `503`
 mit „try again“, Abbruch der Schätzung beim Wechsel der Auswahl, Auswahl einer
 Szene mit Hinweis, Start bis zu den Links, gescheiterter Job mit Titel,
 „Expired“, Hinweis „Resampled“, Knopf „Process“ bei Stufe *display* und ohne
-AOI). Gegenprobe in der Sitzung: Ohne die Bindung der Schätzung an den Auftrag
+AOI; dazu nach dem Review: „Cancel“ mit `DELETE`, `404` und `503`, „Gone“
+beim Abfragen, SSE durch den Store bis zu den Links, kaputte Schätzung und
+Beschreibung, veraltete Abweisung, Grenze von 16 Schritten, Abbruch der
+Schätzung bei neuer AOI und beim Schließen). Frontend gesamt: 821 Tests grün,
+`tsc` und `oxlint` ohne Befund. Gegenprobe in der Sitzung: Ohne die Bindung der Schätzung an den Auftrag
 und ohne den Abbruch fallen die zwei zugehörigen Komponententests.
 
 **Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell; die Sitzung
