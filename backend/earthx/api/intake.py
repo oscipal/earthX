@@ -89,7 +89,7 @@ from earthx.catalog.registry import (
     group_key,
 )
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
-from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator
+from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
 from earthx.processing.export import Attachments
 from earthx.processing.mosaic import mosaic_order
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
@@ -324,9 +324,10 @@ async def _accept(
         raise OrderRefused(413, str(error), "size") from None
     except AoiOutsideInputs as error:
         raise OrderRefused(422, str(error), "aoi") from None
-    except RecipeInvalid:
-        # A band name the item does not describe: the file may well have it, and the queue's own
-        # estimate (`submit`) is where it fails, as it did before this stage looked at the size.
+    except (RecipeInvalid, UnsupportedRecipe):
+        # Anything else the estimate cannot do (a band name the item does not describe, a grid in
+        # degrees for a reprojection): not this stage's business, which is the size alone. The queue's
+        # own estimate (`submit`) and the core meet it where they always did.
         pass
     if not isinstance(recipe.output, CropOutput):
         return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped)
