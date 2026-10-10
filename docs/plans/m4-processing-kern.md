@@ -181,9 +181,12 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-07b-fix | Nachbesserung M4-07b: Logtests suchen in Nachricht und eigenen Feldern, nicht in den Standardattributen von `LogRecord` | M4a | A | Sonnet (hoch) | M4-07b, M4-08a-fix | PR #131 (Entwurf) |
 | M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | PR #132 (Entwurf) |
 | M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | PR #133 (`plans/m4-11-export-job.md`) |
-| M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13 (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Sonnet (hoch) | M4-11a, M4-13 | offen |
+| M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Sonnet (hoch) | M4-11a, M4-13b | offen |
 | M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | offen |
-| M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | offen |
+| M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (PR #134); Umsetzung in a bis c |
+| M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | PR #134 (Entwurf), wartet auf Review |
+| M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | offen (neue Session nach dem Merge von M4-13a) |
+| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung | M4a | B | Sonnet (hoch) | M4-13b | offen (neue Session nach dem Merge von M4-13b) |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | PR #129 |
 | M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | PR #135 (Entwurf) |
 | M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a | Umriss |
@@ -194,7 +197,7 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 
 **Wellen (Fassung 2).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben. Die Reihenfolge folgt dem kritischen Pfad
-M4-07a → M4-08a → M4-08b → M4-13.
+M4-07a → M4-08a → M4-08b → M4-13a → M4-13b → M4-13c.
 
 1. **Sofort:** M4-07a und M4-06 (die zwei B-Plätze); daneben M4-05 (C).
 2. **Wird ein B-Platz frei:** M4-01b, danach M4-08a (braucht M4-06 und
@@ -832,8 +835,9 @@ anwendbare Operatoren; Kostenschätzung vor dem Start; T1-Vorschau auf der
 Karte, auf Übersichtsstufen sichtbar als „Preview“ gekennzeichnet; Job-Status
 per SSE mit Rückfall auf Abfragen; Ergebnis-Download. Oberflächentexte nur
 Englisch.
-**Im Plan-Schritt zu entscheiden:** eigener Formularbau oder eine Bibliothek
-für JSON Schema (mit Recherche zu Größe und Pflege).
+**Im Plan-Schritt entschieden (08.10.2026):** eigener Formularbau, keine
+Bibliothek. Der Plan `plans/m4-13-processing-panel.md` teilt die Aufgabe in
+drei PRs: **M4-13a** Backend, **M4-13b** Panel und Jobs, **M4-13c** Vorschau.
 **Abnahme:** Frontend-Tests; Prüfanleitung für Otto (NDVI auf Sentinel-2,
 Vorschau, Start, Fortschritt, Download).
 

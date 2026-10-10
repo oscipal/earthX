@@ -216,6 +216,11 @@ def _step_schemas(operators: OperatorRegistry, chosen: Iterable[Operator]) -> tu
             "description": operator.description,
             "additionalProperties": False,
             "required": ["op", "op_version", "params"],
+            # Annotations for the panel (M4-13 K1): the planner cuts the steps that can be a tile
+            # (`adr/0014` §6.1) at the first one that is not a T1 pixel step. Unknown keywords are
+            # annotations in JSON Schema 2020-12, and `additionalProperties` guards the step.
+            "x-earthx-tiers": sorted(tier.value for tier in operator.tiers),
+            "x-earthx-kind": operator.kind,
             "properties": {
                 "op": {"const": operator.op},
                 "op_version": {"const": operator.op_version},
@@ -258,4 +263,8 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
         entry["properties"]["assets"]["maxItems"] = MAX_ORDER_ASSETS
         if config is not None:
             entry["properties"]["dataset"] = {"const": config.dataset_id, "title": "Dataset"}
+            # A Zarr asset is addressed per variable, `<asset><separator><variable>`; the panel
+            # needs the separator to name the bands (M4-13 F9). Absent where there is none.
+            if config.zarr is not None and config.zarr.variable_separator is not None:
+                entry["properties"]["assets"]["x-earthx-variable-separator"] = config.zarr.variable_separator
     return {"$schema": JSON_SCHEMA_DIALECT, **schema}

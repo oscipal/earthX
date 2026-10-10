@@ -17,6 +17,10 @@ What each route turns away, and how (all errors are ``application/problem+json``
 * **Placing a job** is asynchronous only (``201`` and ``Location``); an input by reference,
   a qualified value, a ``response`` other than ``document`` and anything else outside the
   envelope is ``400``. The order itself goes through :func:`earthx.api.intake.accept_order`.
+* **An estimate** (M4-13a, outside OGC) is the order's first six stages and the cost the plan
+  computes from it: no ``HEAD``, no row in the queue, no ``recipe_id``. It sees what an order
+  placed a moment later sees, except what only the version of an input shows (an asset the
+  source no longer has): that is refused when the job is placed. ``no-store``.
 * **A result link** answers ``303`` with a URL signed just now for 15 minutes and never past
   the result's expiry, ``Cache-Control: no-store``. ``recipe.json`` is built here from the
   job's own recipe; it does not lie in the object store.
@@ -47,7 +51,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from earthx.api import processing_docs as docs
-from earthx.api.intake import OrderRefused, accept_order, check_recipe_hosts, job_recipe_json
+from earthx.api.intake import OrderRefused, accept_order, check_recipe_hosts, estimate_order, job_recipe_json
 from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
 from earthx.catalog.registry import DatasetRegistry, UnknownDatasetError
@@ -56,8 +60,9 @@ from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, jo
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring
 from earthx.objectstore.results import MIN_REMAINING, RESULT_NAMES, Store, signed_download
 from earthx.processing import check_scope
-from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import OperatorRegistry
+from earthx.processing.plan import estimate
 from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
 
 LOGGER = logging.getLogger("earthx.api.processing")
@@ -186,7 +191,7 @@ class _JobRoute(APIRoute):
                 )
                 response = Problem(400, f"the request does not match the interface: {reasons}").response()
             path = request.url.path
-            if "/jobs/" in path or path.endswith("/execution"):
+            if "/jobs/" in path or path.endswith(("/execution", "/estimate")):
                 response.headers["Cache-Control"] = "no-store"
             return response
 
@@ -259,6 +264,31 @@ class StatusInfo(BaseModel):
 
 class PlacedJob(StatusInfo):
     #: Items of the order the area of interest does not touch; the recipe leaves them out (M4-07b F4).
+    skipped_items: list[str] = Field(default_factory=list, alias="skippedItems")
+
+
+class Estimate(BaseModel):
+    """What a job is expected to cost; ``size`` and ``duration`` are named as in openEO's ``estimate`` (F2)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    #: Bytes of the result.
+    size: int = Field(ge=0)
+    #: ISO 8601 duration in seconds. An "about", from measurements on local files (adr/0014 §5.5).
+    duration: str = Field(pattern=r"^PT[0-9]+(\.[0-9])?S$")
+    output_pixels: int = Field(ge=0, alias="outputPixels")
+    input_pixels: int = Field(ge=0, alias="inputPixels")
+    input_bytes: int = Field(ge=0, alias="inputBytes")
+    assets: int = Field(ge=0)
+    #: Megapixels of the output times the factors of the steps (adr/0014 §5.5).
+    units: float = Field(ge=0)
+
+
+class EstimateDocument(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    estimate: Estimate
+    #: As for a placed job: items of the order the area of interest does not touch.
     skipped_items: list[str] = Field(default_factory=list, alias="skippedItems")
 
 
@@ -505,6 +535,21 @@ def _refused(error: OrderRefused) -> Problem:
     return Problem(error.status_code, error.detail, type_=f"{_ORDER_TYPE}{error.stage}")
 
 
+_ORDER_BODY = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "description": '{"inputs": {"recipe": <the order>}}; the order\'s schema is in the process.',
+                }
+            }
+        },
+    }
+}
+
+
 @router.post(
     "/processes/{process_id}/execution",
     summary="Place a job (asynchronous only)",
@@ -512,19 +557,7 @@ def _refused(error: OrderRefused) -> Problem:
     response_model=PlacedJob,
     response_model_by_alias=True,
     responses=_PROBLEMS,
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "object",
-                        "description": '{"inputs": {"recipe": <the order>}}; the order\'s schema is in the process.',
-                    }
-                }
-            },
-        }
-    },
+    openapi_extra=_ORDER_BODY,
 )
 async def execute(request: Request, process_id: str, api: Api) -> Response:
     if process_id != docs.PROCESS_ID:
@@ -552,6 +585,10 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
             lambda conn, recipe: submit(conn, recipe, operators=api.operators, attachments=accepted.attachments),
             accepted.recipe,
         )
+    except RecipeInvalid as error:
+        # `submit` estimates the run to set its time limit, and that is the first place a band name the
+        # item does not describe can fail: the check at acceptance could not tell (the same as the estimate).
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}applicable") from None
     except RecipeIdTaken:
         # Cannot happen (a recipe_id is new for every order); if it does, it is ours, and the text names no value.
         raise Problem(500, "the job could not be placed") from None
@@ -570,6 +607,61 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
         headers["Preference-Applied"] = "respond-async"
     body = _status_info(_root(request), status, skipped=accepted.skipped_items)
     return JSONResponse(_dump(body), status_code=201, headers=headers)
+
+
+def _duration(seconds: float) -> str:
+    return f"PT{seconds:.1f}S"
+
+
+@router.post(
+    "/processes/{process_id}/estimate",
+    summary="Estimate the cost of an order before placing it (outside OGC API – Processes)",
+    response_model=EstimateDocument,
+    response_model_by_alias=True,
+    responses=_PROBLEMS,
+    openapi_extra=_ORDER_BODY,
+)
+async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Response:
+    if process_id != docs.PROCESS_ID:
+        raise Problem(404, "there is no such process", type_=NO_SUCH_PROCESS, title="No such process")
+    order, provenance = _unwrap(await _read_body(request))
+    try:
+        estimated = await estimate_order(
+            order,
+            registry=api.registry,
+            operators=api.operators,
+            item_source=api.item_source,
+            aoi_provenance=provenance,
+        )
+    except OrderRefused as error:
+        raise _refused(error) from None
+    try:
+        check_scope(estimated.recipe)
+    except ExportTooLarge as error:
+        # As placing the export would answer (M4-11 F5): over the cap is a 413, not a 422.
+        raise Problem(413, str(error), type_=f"{_ORDER_TYPE}size") from None
+    except AoiOutsideInputs as error:
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}aoi") from None
+    except UnsupportedRecipe as error:
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
+    try:
+        cost = estimate(estimated.recipe, api.operators)
+    except RecipeInvalid as error:
+        # A band name the item does not describe is found here where the check before could not tell.
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}applicable") from None
+    body = EstimateDocument(
+        estimate=Estimate(
+            size=cost.output_bytes,
+            duration=_duration(cost.seconds),
+            output_pixels=cost.output_pixels,
+            input_pixels=cost.input_pixels,
+            input_bytes=cost.input_bytes,
+            assets=cost.assets,
+            units=cost.units,
+        ),
+        skipped_items=list(estimated.skipped_items),
+    )
+    return JSONResponse(_dump(body))
 
 
 # --- one job -------------------------------------------------------------------

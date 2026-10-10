@@ -26,7 +26,9 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
+from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.recipe import job_recipe_document
+from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig, build_app
 from tests.earthx.api.test_intake import (
     CROP,
@@ -432,6 +434,19 @@ class TestWhatTheOrderMayNotBe:
     async def test_a_refusal_never_repeats_the_area(self, rig: Rig) -> None:
         response = await place(rig, order(assets=("no_such_asset",)))
         assert "47.01" not in response.text and "9.01" not in response.text
+
+    async def test_a_band_the_item_does_not_describe_is_a_422_and_not_in_the_queue(self, rig: Rig) -> None:
+        # The check at acceptance cannot tell where an asset has no band description; the time limit of
+        # the run is the first place that can, and it used to end as a 500.
+        item = s2_item()
+        item["assets"]["red"].pop("raster:bands")
+        rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
+        step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(EXECUTION, json=envelope(order(assets=("red",), steps=[step])))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:applicable" and "red_2" in body["detail"]
+        assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
 
 
 def replace_api(api: JobApi, **changes: Any) -> JobApi:
@@ -917,7 +932,7 @@ class TestWhatLogsAndHeadersCarry:
         # and full URLs at lower levels, to WARNING (earthx.logging, adr/0015 §9.2).
         with caplog.at_level(logging.DEBUG, logger="earthx"):
             job_id, result_id = await self.lifecycle(rig)
-        text = "\n".join(f"{record.getMessage()} {record.__dict__}" for record in caplog.records)
+        text = "\n".join(own_log_text(record) for record in caplog.records)
         assert caplog.records
         for forbidden in (job_id, result_id, "9.01", "47.01", S2_HOST, "c1:", "1220S2_A", "secret"):
             assert forbidden not in text, forbidden
@@ -928,7 +943,7 @@ class TestWhatLogsAndHeadersCarry:
         with caplog.at_level(logging.INFO, logger="earthx.api.processing"):
             body = (await place(rig)).json()
         record = next(r for r in caplog.records if r.getMessage() == "job placed")
-        assert record.order_recipe_id == body["recipeID"] and body["jobID"] not in str(record.__dict__)
+        assert record.order_recipe_id == body["recipeID"] and body["jobID"] not in own_log_text(record)
 
     @pytest.mark.parametrize(
         "path",

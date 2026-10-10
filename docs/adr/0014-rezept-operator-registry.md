@@ -1655,7 +1655,18 @@ nicht Teil von M4. Bis dahin erhebt die Plattform keinen Anspruch.
 
 ---
 
-## 15e. Nachtrag vom 2026-10-08: die Ausgabe `crop` im Kern (zu §4.2, §10.1; M4-11a)
+## 15e. Nachtrag vom 2026-10-08: Schätzroute und Anmerkungen im Schema (zu §5.5, §9; M4-13a)
+
+Otto hat M4-13 am 2026-10-08 freigegeben (F2 Option 1, F9 Option 1). Der
+Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
+
+| Stelle hier | Was dort steht | Was gilt jetzt | Beleg |
+|---|---|---|---|
+| §9, Tabelle der Routen | keine Route für die Kosten vor dem Auftrag; §5.5: „Die Schätzung liefert nur die Zahl“ | **`POST /processing/processes/recipe/estimate`**, außerhalb der OGC-Form wie die ganze Schnittstelle ohne Konformitätsanspruch (§15d). Derselbe Umschlag wie `execution`, Antwort `{"estimate": {size, duration, outputPixels, inputPixels, inputBytes, assets, units}, "skippedItems": […]}`; `size` und `duration` (ISO 8601) heißen wie bei openEO `estimate`. Sie führt die Stufen 1–6 der Annahme aus, kein `HEAD`, keine Zeile in der Queue, kein `recipe_id`; was erst die Fassung findet (ein Asset, das die Quelle nicht mehr hat), zeigt sich erst beim Start | `plans/m4-13-processing-panel.md` §3.1, F2 |
+| §9, Schema des Auftrags (K8) | `steps` als `oneOf` über die Operatoren | jede Schritt-Definition trägt zusätzlich `x-earthx-tiers` und `x-earthx-kind` (Anmerkungen nach JSON Schema 2020-12), damit der Planer des Panels (§6.1) die T1-Schritte am Anfang erkennt | M4-13 K1 |
+| §9, Schema des Auftrags | – | mit `?dataset=` trägt `InputRequest.assets` bei einem Zarr-Datensatz `x-earthx-variable-separator`, sonst nichts; die Angabe gehört zum Auftrag, nicht zur Collection | M4-13 F9 |
+
+## 15f. Nachtrag vom 2026-10-08: die Ausgabe `crop` im Kern (zu §4.2, §10.1; M4-11a)
 
 Otto hat M4-11 am 2026-10-08 freigegeben (`plans/m4-11-export-job.md` §10). Der
 Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.

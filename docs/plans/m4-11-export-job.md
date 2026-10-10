@@ -459,7 +459,7 @@ Annahme; Job-Schnittstelle; Kennung im `413`; Range im Smoke-Test; Doku.
 
 **Befunde und Auslegungen:**
 
-1. **Footprints im Rezept** (§3.3, `adr/0014` §15e): nicht in §8 gefragt, aber
+1. **Footprints im Rezept** (§3.3, `adr/0014` §15f): nicht in §8 gefragt, aber
    nötig, damit der Kern die Ausdehnung des Zuschnitts kennt und das Rezept
    vollständig bleibt. Nur für `crop`; Hash und `recipe.json` der
    Raster-Rezepte unverändert (die festen Hashwerte aus M4-07a halten).
@@ -520,7 +520,7 @@ Annahme; Job-Schnittstelle; Kennung im `413`; Range im Smoke-Test; Doku.
     nicht mehr als Rezept lesen. Gelesen wird sie bisher nirgends (ein Auftrag
     mit `resolved` wird abgewiesen), und sie gibt es erst seit M4-14
     (07.10.2026). Vorschlag: bei Version 1 bleiben; sonst Version 2 für `crop`.
-    **Otto, 08.10.2026:** bei Version 1 bleiben; Nachtrag in `adr/0014` §15e.
+    **Otto, 08.10.2026:** bei Version 1 bleiben; Nachtrag in `adr/0014` §15f.
     Die eigenen Festlegungen (Footprints, `aoi.geojson`, Laufzeit-Schätzung)
     sind angenommen.
 12. **Plattenprüfung vor dem Lauf (Otto, 08.10.2026).** `jobs/submit.py`

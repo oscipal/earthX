@@ -30,6 +30,10 @@ next one costs anything (the status in brackets):
    the cost estimate (413, F5) and for a Zarr dataset (422, F6), and gets the side
    files of its ZIP (:func:`export_attachments`).
 
+:func:`estimate_order` stops after stage 6: the cost estimate needs the recipe, not the
+versions, so it makes no ``HEAD`` and gives the recipe no ``recipe_id`` (M4-13a). What only
+stage 7 finds — an asset the source no longer has — is therefore not found by an estimate.
+
 Nothing here logs an AOI, an address or a hash (adr/0014 §4.7); the texts of
 :class:`OrderRefused` name fields, datasets, items and operators only.
 """
@@ -104,11 +108,13 @@ __all__ = [
     "MAX_ORDER_ITEMS",
     "MAX_ORDER_STEPS",
     "AcceptedOrder",
+    "EstimatedOrder",
     "OrderRefused",
     "accept_order",
     "check_recipe_hosts",
     "crop_recipe_json",
     "describe_bands",
+    "estimate_order",
     "export_attachments",
     "footprint_of",
     "job_recipe_json",
@@ -145,6 +151,26 @@ class AcceptedOrder:
     attachments: Attachments | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class EstimatedOrder:
+    """An order as far as the estimate needs it: a recipe with no versions and no ``recipe_id``."""
+
+    recipe: Recipe
+    skipped_items: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _Prepared:
+    """Stages 1 to 6: the checked order, its dataset and one target per item and asset."""
+
+    request: RecipeRequest
+    entry: InputRequest
+    config: DatasetConfig
+    groups: list[list[str]]
+    skipped: tuple[str, ...]
+    targets: list[_Target]
+
+
 async def accept_order(
     raw: bytes | str,
     *,
@@ -163,10 +189,7 @@ async def accept_order(
     try:
         accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance)
     except OrderRefused as refused:
-        LOGGER.info(
-            "order refused",
-            extra={"order_stage": refused.stage, "order_status": refused.status_code, "order_reason": refused.detail},
-        )
+        _log_refused(refused)
         raise
     recipe = accepted.recipe
     LOGGER.info(
@@ -183,14 +206,52 @@ async def accept_order(
     return accepted
 
 
-async def _accept(
+def _log_refused(refused: OrderRefused) -> None:
+    LOGGER.info(
+        "order refused",
+        extra={"order_stage": refused.stage, "order_status": refused.status_code, "order_reason": refused.detail},
+    )
+
+
+async def estimate_order(
+    raw: bytes | str,
+    *,
+    registry: DatasetRegistry,
+    operators: OperatorRegistry,
+    item_source: ItemSource,
+    aoi_provenance: Mapping[str, str] | None = None,
+) -> EstimatedOrder:
+    """The order as a recipe for the cost estimate — or an :class:`OrderRefused` (module docstring).
+
+    Stages 1 to 6 of :func:`accept_order`, then the same checks of hosts and band names
+    on a recipe without versions. No request to an asset is made. ``aoi_provenance`` is
+    only checked (an export's alone, M4-11 F4); an estimate builds no side files.
+    """
+    try:
+        prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
+        recipe = _recipe_of(prepared, [None] * len(prepared.targets), None, registry, operators)
+    except OrderRefused as refused:
+        _log_refused(refused)
+        raise
+    LOGGER.info(
+        "order estimated",
+        extra={
+            "order_dataset": recipe.inputs[0].dataset,
+            "order_items": sum(len(group) for group in recipe.inputs[0].groups),
+            "order_assets": len(recipe.inputs[0].assets),
+            "order_operators": [step.op for step in recipe.steps],
+        },
+    )
+    return EstimatedOrder(recipe, prepared.skipped)
+
+
+async def _prepare(
     raw: bytes | str,
     registry: DatasetRegistry,
     operators: OperatorRegistry,
     item_source: ItemSource,
-    gateway: Gateway,
-    aoi_provenance: Mapping[str, str] | None,
-) -> AcceptedOrder:
+    aoi_provenance: Mapping[str, str] | None = None,
+) -> _Prepared:
     _refuse_a_recipe(raw)
     try:
         request = parse_request(raw, operators)
@@ -226,22 +287,62 @@ async def _accept(
         for item_id in group
         for asset in entry.assets
     ]
-    versions = await _gather(_version_of(target, gateway) for target in targets)
+    return _Prepared(request, entry, config, groups, skipped, targets)
 
+
+async def _accept(
+    raw: bytes | str,
+    registry: DatasetRegistry,
+    operators: OperatorRegistry,
+    item_source: ItemSource,
+    gateway: Gateway,
+    aoi_provenance: Mapping[str, str] | None = None,
+) -> AcceptedOrder:
+    prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
+    versions = await _gather(_version_of(target, gateway) for target in prepared.targets)
+    recipe = _recipe_of(prepared, versions, secrets.token_urlsafe(16), registry, operators)
+    if not isinstance(recipe.output, CropOutput):
+        return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped)
+    try:
+        estimate(recipe, operators)
+    except ExportTooLarge as error:
+        raise OrderRefused(413, str(error), "size") from None
+    except AoiOutsideInputs as error:
+        raise OrderRefused(422, str(error), "aoi") from None
+    kept = {item_id for group in prepared.groups for item_id in group}
+    attachments = export_attachments(
+        prepared.config,
+        recipe,
+        dropped=[item_id for group in prepared.entry.groups if kept.isdisjoint(group) for item_id in group],
+        aoi_provenance=aoi_provenance,
+        accepted_at=datetime.now(UTC),
+    )
+    return AcceptedOrder(recipe, False, prepared.skipped, attachments)
+
+
+def _recipe_of(
+    prepared: _Prepared,
+    versions: Sequence[InputVersion | None],
+    recipe_id: str | None,
+    registry: DatasetRegistry,
+    operators: OperatorRegistry,
+) -> Recipe:
+    """The recipe of a prepared order, with its hosts and band names checked."""
+    request, entry = prepared.request, prepared.entry
     data = {
         "recipe_version": request.recipe_version,
         "inputs": [
             {
                 "name": entry.name,
                 "dataset": entry.dataset,
-                "groups": groups,
+                "groups": prepared.groups,
                 "assets": entry.assets,
                 "resolved": [
-                    _resolved_json(target, version) for target, version in zip(targets, versions, strict=True)
+                    _resolved_json(target, version) for target, version in zip(prepared.targets, versions, strict=True)
                 ],
                 **(
-                    {"footprints": {item_id: footprint_of(items[item_id]) for group in groups for item_id in group}}
-                    if export
+                    {"footprints": {target.item["id"]: footprint_of(target.item) for target in prepared.targets}}
+                    if isinstance(request.output, CropOutput)
                     else {}
                 ),
             }
@@ -249,38 +350,23 @@ async def _accept(
         "aoi": request.aoi.model_dump(mode="json"),
         "steps": [step.model_dump(mode="json") for step in request.steps],
         "output": request.output.model_dump(mode="json"),
-        "recipe_id": secrets.token_urlsafe(16),
     }
+    if recipe_id is not None:
+        data["recipe_id"] = recipe_id
     try:
         recipe = recipe_from_data(data, operators)
     except RecipeInvalid as error:
         # Only reachable when an item breaks a rule the recipe models state (a CRS
         # field of the wrong kind, say) — the source's mistake, not the caller's.
         raise OrderRefused(
-            502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}", "recipe"
+            502, f"the items of {prepared.config.dataset_id!r} do not make a valid recipe: {error}", "recipe"
         ) from None
     check_recipe_hosts(recipe, registry)
     try:
         check_bands(recipe, operators)
     except RecipeInvalid as error:
         raise OrderRefused(422, str(error), "applicable") from None
-    if not export:
-        return AcceptedOrder(recipe, cache_key(recipe) is not None, skipped)
-    try:
-        estimate(recipe, operators)
-    except ExportTooLarge as error:
-        raise OrderRefused(413, str(error), "size") from None
-    except AoiOutsideInputs as error:
-        raise OrderRefused(422, str(error), "aoi") from None
-    kept = {item_id for group in groups for item_id in group}
-    attachments = export_attachments(
-        config,
-        recipe,
-        dropped=[item_id for group in entry.groups if kept.isdisjoint(group) for item_id in group],
-        aoi_provenance=aoi_provenance,
-        accepted_at=datetime.now(UTC),
-    )
-    return AcceptedOrder(recipe, False, skipped, attachments)
+    return recipe
 
 
 def export_attachments(

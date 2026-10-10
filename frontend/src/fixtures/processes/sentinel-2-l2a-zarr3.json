@@ -1,0 +1,398 @@
+{
+  "description": "Computes a recipe — datasets, items, assets, an area of interest, steps and an output — into a Cloud Optimized GeoTIFF. Asynchronous only. It follows the form of OGC API – Processes, no conformance claimed.",
+  "id": "recipe",
+  "inputs": {
+    "recipe": {
+      "description": "The order itself, inline. It carries no address: the platform resolves items and assets. An input given by reference is refused.",
+      "maxOccurs": 1,
+      "minOccurs": 1,
+      "schema": {
+        "$defs": {
+          "InputRequest": {
+            "additionalProperties": false,
+            "description": "One input of an order: a dataset, its items in groups, and the asset keys to read.",
+            "properties": {
+              "assets": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Assets",
+                "type": "array",
+                "x-earthx-variable-separator": ":"
+              },
+              "dataset": {
+                "const": "sentinel-2-l2a-zarr3",
+                "title": "Dataset"
+              },
+              "groups": {
+                "items": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "minItems": 1,
+                "title": "Groups",
+                "type": "array"
+              },
+              "name": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "dataset",
+              "groups",
+              "assets"
+            ],
+            "title": "InputRequest",
+            "type": "object"
+          },
+          "MultiPolygon": {
+            "additionalProperties": false,
+            "properties": {
+              "coordinates": {
+                "items": {
+                  "items": {
+                    "items": {
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "prefixItems": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "minItems": 1,
+                "title": "Coordinates",
+                "type": "array"
+              },
+              "type": {
+                "const": "MultiPolygon",
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "title": "MultiPolygon",
+            "type": "object"
+          },
+          "Polygon": {
+            "additionalProperties": false,
+            "properties": {
+              "coordinates": {
+                "items": {
+                  "items": {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "minItems": 1,
+                "title": "Coordinates",
+                "type": "array"
+              },
+              "type": {
+                "const": "Polygon",
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "title": "Polygon",
+            "type": "object"
+          },
+          "RasterOutput": {
+            "additionalProperties": false,
+            "description": "A job's result: one COG.",
+            "properties": {
+              "dtype": {
+                "enum": [
+                  "uint8",
+                  "uint16",
+                  "int16",
+                  "uint32",
+                  "int32",
+                  "float32",
+                  "float64"
+                ],
+                "title": "Dtype",
+                "type": "string"
+              },
+              "format": {
+                "const": "cog",
+                "title": "Format",
+                "type": "string"
+              },
+              "kind": {
+                "const": "raster",
+                "title": "Kind",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "format",
+              "dtype"
+            ],
+            "title": "RasterOutput",
+            "type": "object"
+          },
+          "step_band_math_v1": {
+            "additionalProperties": false,
+            "description": "Compute one band from an expression over the bands, in physical values.",
+            "properties": {
+              "op": {
+                "const": "band_math"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): one expression over the bands, in physical values.",
+                "properties": {
+                  "expression": {
+                    "description": "Band names, numbers, + - * / **, comparisons, & | ~ on comparisons, and where(c, a, b), abs, minimum, maximum, sqrt. Evaluated on physical values.",
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "title": "Expression",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expression"
+                ],
+                "title": "BandMathParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Band math",
+            "type": "object",
+            "x-earthx-kind": "pixel",
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
+          },
+          "step_reproject_v2": {
+            "additionalProperties": false,
+            "description": "Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
+            "properties": {
+              "op": {
+                "const": "reproject"
+              },
+              "op_version": {
+                "const": 2
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8); names follow openEO ``resample_spatial``.",
+                "properties": {
+                  "align": {
+                    "default": false,
+                    "description": "Snap the target grid to whole multiples of the resolution in the target CRS.",
+                    "title": "Align",
+                    "type": "boolean"
+                  },
+                  "crs": {
+                    "description": "Target CRS as an EPSG code, e.g. EPSG:3035.",
+                    "pattern": "^EPSG:[0-9]{4,6}$",
+                    "title": "Crs",
+                    "type": "string"
+                  },
+                  "resampling": {
+                    "description": "No default: the choice changes the values. Anything but nearest interpolates.",
+                    "enum": [
+                      "nearest",
+                      "bilinear",
+                      "cubic"
+                    ],
+                    "title": "Resampling",
+                    "type": "string"
+                  },
+                  "resolution": {
+                    "description": "Pixel size in the units of the target CRS, square pixels.",
+                    "exclusiveMinimum": 0,
+                    "title": "Resolution",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "crs",
+                  "resolution",
+                  "resampling"
+                ],
+                "title": "ReprojectParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Reproject and resample",
+            "type": "object",
+            "x-earthx-kind": "grid",
+            "x-earthx-tiers": [
+              "T2"
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "The order (§4.1): what someone asks for, without any address.",
+        "properties": {
+          "aoi": {
+            "discriminator": {
+              "mapping": {
+                "MultiPolygon": "#/$defs/MultiPolygon",
+                "Polygon": "#/$defs/Polygon"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Polygon"
+              },
+              {
+                "$ref": "#/$defs/MultiPolygon"
+              }
+            ],
+            "title": "Aoi"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/InputRequest"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Inputs",
+            "type": "array"
+          },
+          "output": {
+            "$ref": "#/$defs/RasterOutput"
+          },
+          "recipe_version": {
+            "title": "Recipe Version",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "discriminator": {
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/step_band_math_v1"
+                },
+                {
+                  "$ref": "#/$defs/step_reproject_v2"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recipe_version",
+          "aoi",
+          "steps",
+          "output",
+          "inputs"
+        ],
+        "title": "RecipeRequest",
+        "type": "object"
+      },
+      "title": "Order"
+    }
+  },
+  "jobControlOptions": [
+    "async-execute",
+    "dismiss"
+  ],
+  "links": [
+    {
+      "href": "/processing/processes/recipe",
+      "rel": "self",
+      "title": "This document",
+      "type": "application/json"
+    },
+    {
+      "href": "/processing/processes/recipe/execution",
+      "rel": "http://www.opengis.net/def/rel/ogc/1.0/execute",
+      "title": "Place a job",
+      "type": "application/json"
+    }
+  ],
+  "outputTransmission": [
+    "reference"
+  ],
+  "outputs": {
+    "mask": {
+      "schema": {
+        "contentMediaType": "image/tiff; application=geotiff",
+        "type": "string"
+      },
+      "title": "Mask of the area of interest"
+    },
+    "recipe": {
+      "schema": {
+        "contentMediaType": "application/json",
+        "type": "string"
+      },
+      "title": "The recipe the job ran, with its provenance"
+    },
+    "result": {
+      "schema": {
+        "contentMediaType": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "type": "string"
+      },
+      "title": "Result raster (Cloud Optimized GeoTIFF)"
+    }
+  },
+  "title": "Recipe",
+  "version": "1"
+}

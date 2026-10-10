@@ -29,6 +29,7 @@ from earthx.api.intake import (
     accept_order,
     check_recipe_hosts,
     crop_recipe_json,
+    estimate_order,
 )
 from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, Stage, fetch_item_or_refuse
 from earthx.catalog.datasets import REGISTRY
@@ -934,6 +935,63 @@ class TestFetchItem:
 
 
 # --- recipe.json of the crop (adr/0014 §10.1) ----------------------------------------
+
+
+class TestEstimateOrder:
+    """M4-13a: stages 1 to 6 of intake and a recipe without versions, for the cost estimate."""
+
+    @staticmethod
+    async def estimate(document: dict[str, Any] | str | bytes, source: Source, **kw: Any):
+        raw = document if isinstance(document, (str, bytes)) else json.dumps(document)
+        kw.setdefault("registry", REGISTRY)
+        kw.setdefault("operators", OPERATORS)
+        return await estimate_order(raw, item_source=source, **kw)
+
+    async def test_the_recipe_has_neither_a_version_nor_an_identifier(self) -> None:
+        estimated = await self.estimate(order(), Source((S2, s2_item())))
+        assert estimated.recipe.recipe_id is None
+        resolved = estimated.recipe.inputs[0].resolved
+        assert len(resolved) == 2 and all(entry.version is None for entry in resolved)
+        assert estimated.skipped_items == ()
+
+    async def test_the_rest_of_the_recipe_is_the_one_an_order_becomes(self) -> None:
+        source = Source((S2, s2_item()))
+        estimated = await self.estimate(order(), source)
+        accepted = await accept(order(), source)
+        unversioned = [entry.model_copy(update={"version": None}) for entry in accepted.recipe.inputs[0].resolved]
+        assert estimated.recipe.inputs[0].resolved == unversioned
+        assert estimated.recipe.steps == accepted.recipe.steps and estimated.recipe.aoi == accepted.recipe.aoi
+
+    async def test_items_the_area_does_not_touch_are_named(self) -> None:
+        source = Source((S2, s2_item()), (S2, s2_item("S2_FAR", FAR)))
+        estimated = await self.estimate(order(groups=(("S2_A", "S2_FAR"),)), source)
+        assert estimated.skipped_items == ("S2_FAR",)
+        assert estimated.recipe.inputs[0].groups == [["S2_A"]]
+
+    async def test_it_refuses_where_accepting_refuses_with_the_same_status_and_stage(self) -> None:
+        for stage, (document, source, kw) in (await TestStages._cases()).items():
+            expected = await refused(document, source, **kw)
+            with pytest.raises(OrderRefused) as error:
+                await self.estimate(document, source, **kw)
+            assert (error.value.status_code, error.value.stage, error.value.detail) == (
+                expected.status_code,
+                expected.stage,
+                expected.detail,
+            ), stage
+
+    async def test_a_version_is_never_asked_for(self) -> None:
+        item = s2_item()
+        for asset in ("red", "nir"):
+            item["assets"][asset].pop("file:checksum")
+        item["properties"].pop("updated")
+        # There is no gateway to pass: whatever the source would say about the assets is not heard.
+        estimated = await self.estimate(order(), Source((S2, item)))
+        assert all(entry.version is None for entry in estimated.recipe.inputs[0].resolved)
+
+    async def test_an_order_with_a_recipe_id_is_turned_away_as_for_a_job(self) -> None:
+        with pytest.raises(OrderRefused) as error:
+            await self.estimate(order(recipe_id="A" * 22), Source((S2, s2_item())))
+        assert (error.value.status_code, error.value.stage) == (400, "order")
 
 
 AT = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
