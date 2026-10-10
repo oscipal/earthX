@@ -53,7 +53,7 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.crop_rules import MAX_EXPORT_JOB_BYTES
+from earthx.access.crop_rules import MAX_JOB_BYTES
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
     RESOLUTION_FACTORS,
@@ -700,7 +700,7 @@ async def download_crop(
         # Over the synchronous cap, the same selection may still run as an export job (M4-11 K5):
         # native resolution only (K1), COG only (F6), under the job's own cap (F5). A word, no
         # number and no geometry, like `X-Skipped-Groups` below.
-        fits = body.resolution == 1 and config.zarr is None and native_total <= MAX_EXPORT_JOB_BYTES
+        fits = body.resolution == 1 and config.zarr is None and native_total <= MAX_JOB_BYTES
         headers = {EXPORT_JOB_HEADER: "available"} if fits else None
         raise HTTPException(status_code=413, detail=str(error), headers=headers) from None
 

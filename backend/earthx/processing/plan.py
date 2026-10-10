@@ -30,7 +30,7 @@ from shapely.geometry import shape as shapely_shape
 from earthx.access.crop_rules import (
     BLOCK_SIZE,
     FALLBACK_BYTES_PER_PIXEL,
-    MAX_EXPORT_JOB_BYTES,
+    MAX_JOB_BYTES,
     MAX_OUTPUT_SIDE_PX,
     AoiOutsideItems,
     PlannedOutput,
@@ -38,7 +38,7 @@ from earthx.access.crop_rules import (
     compute_crop_region,
     estimate_output_dims,
 )
-from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names
@@ -248,7 +248,8 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing.
 
     An export (output ``crop``) is estimated as the crop estimates itself and refused
-    with :class:`ExportTooLarge` above ``MAX_EXPORT_JOB_BYTES`` (M4-11 F5).
+    with :class:`ExportTooLarge` above ``MAX_JOB_BYTES`` (M4-11 F5); a raster job is refused
+    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7).
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
@@ -275,6 +276,11 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)
     output_bytes = output_pixels * len(meta.bands) * _value_bytes(dtype)
+    if output_bytes + output_pixels > MAX_JOB_BYTES:
+        raise JobTooLarge(
+            f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
+            f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
+        )
     factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else EXPORT_FACTOR
     return CostEstimate(
         input_pixels=input_pixels,
@@ -326,10 +332,10 @@ def _export_estimate(recipe: Recipe) -> CostEstimate:
     pixels = sum(output.width * output.height for output in planned)
     raw = sum(output.width * output.height * output.bytes_per_pixel for output in planned)
     total = sum(output.total_bytes for output in planned)
-    if total > MAX_EXPORT_JOB_BYTES:
+    if total > MAX_JOB_BYTES:
         raise ExportTooLarge(
             f"This export would be about {total / 1_000_000:.0f} MB, more than the "
-            f"{MAX_EXPORT_JOB_BYTES / 1_000_000:.0f} MB an export job may write. "
+            f"{MAX_JOB_BYTES / 1_000_000:.0f} MB an export job may write. "
             "Draw a smaller area or choose fewer assets."
         )
     assets = sum(len(entry.resolved) for entry in recipe.inputs)

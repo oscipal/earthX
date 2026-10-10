@@ -39,7 +39,7 @@ __all__ = [
     "CITATION_FILENAME",
     "COG_PROFILE",
     "FALLBACK_BYTES_PER_PIXEL",
-    "MAX_EXPORT_JOB_BYTES",
+    "MAX_JOB_BYTES",
     "MAX_OUTPUT_SIDE_PX",
     "NOTICE_FILENAME",
     "RECIPE_FILENAME",
@@ -101,14 +101,14 @@ FALLBACK_BYTES_PER_BAND = 8
 FALLBACK_BAND_COUNT = 4
 
 
-# The most raw output one export job may write, data and masks, counted as
-# `PlannedOutput.total_bytes` counts it (Otto, 08.10.2026, M4-11 F5): ten times the
-# synchronous crop's 500 MB. A starting value [A]: at 0.041–0.046 s per MB locally
-# (m3-18 §10.3) 5 GB are about four minutes without the network, well inside a job's
-# runtime limit; the work directory needs up to about twice this per slot while the
-# ZIP is packed. The one place this number lives: the cost estimate refuses above
-# it, and the crop route offers a job only below it.
-MAX_EXPORT_JOB_BYTES = 5_000_000_000
+# The most raw output one job may write, data and masks (Otto, 08.10.2026, M4-11 F5; for a
+# raster job 10.10.2026, M4-12 F7): ten times the synchronous crop's 500 MB. An export counts
+# it as `PlannedOutput.total_bytes` counts it, a raster job as its output plus its mask. A
+# starting value [A]: at 0.041–0.046 s per MB locally (m3-18 §10.3) 5 GB are about four
+# minutes without the network, well inside a job's runtime limit; the work directory needs
+# up to about twice this per slot while the result is written. The one place this number
+# lives: the cost estimate refuses above it, and the crop route offers a job only below it.
+MAX_JOB_BYTES = 5_000_000_000
 
 # Block size of the windowed writes, as in the processing core (adr/0014 §7.2) and the
 # windowed crop (M3-18 §10.3).

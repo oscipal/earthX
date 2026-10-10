@@ -162,7 +162,7 @@ class TestWhatItTurnsAway:
         self, rig: Rig, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """M4-11 F5: the estimate of an export refuses above the cap, with the status of placing it."""
-        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", 1)
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", 1)
         body = await self.refused(rig, order(assets=("red",), steps=[], output=CROP), 413, "size")
         assert "an export job may write" in body["detail"]
 

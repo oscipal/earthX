@@ -1205,7 +1205,7 @@ class TestTheJobsCapMatchesTheCropsEstimate:
     async def test_the_cap_holds_to_the_byte(self, monkeypatch: pytest.MonkeyPatch) -> None:
         total = self._crop_total([visual_item("S2_A")])
         source = Source((S2, visual_item("S2_A")))
-        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", total)
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", total)
         assert (await accept(export_order(), source)).attachments is not None
-        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", total - 1)
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", total - 1)
         assert (await refused(export_order(), source)).status_code == 413
