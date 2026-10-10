@@ -2,6 +2,34 @@
   "description": "Computes a recipe — datasets, items, assets, an area of interest, steps and an output — into a Cloud Optimized GeoTIFF. Asynchronous only. It follows the form of OGC API – Processes, no conformance claimed.",
   "id": "recipe",
   "inputs": {
+    "aoiProvenance": {
+      "description": "For an export (output crop) only: where a place-search AOI came from, written into ATTRIBUTION.txt and aoi.geojson of the export. Not part of the recipe. Each field is one line of plain text: no leading or trailing space, no control or format characters.",
+      "maxOccurs": 1,
+      "minOccurs": 0,
+      "schema": {
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "attribution": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "license": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "title": "Origin of the area of interest"
+    },
     "recipe": {
       "description": "The order itself, inline. It carries no address: the platform resolves items and assets. An input given by reference is refused.",
       "maxOccurs": 1,
@@ -370,6 +398,13 @@
     "reference"
   ],
   "outputs": {
+    "export": {
+      "schema": {
+        "contentMediaType": "application/zip",
+        "type": "string"
+      },
+      "title": "Export: per group and asset the data and its mask, with notice, recipe and citation"
+    },
     "mask": {
       "schema": {
         "contentMediaType": "image/tiff; application=geotiff",
