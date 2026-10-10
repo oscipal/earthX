@@ -45,6 +45,9 @@ export type Description =
   | { state: 'error'; message: string };
 
 export interface Refusal {
+  // The order it refused (canonical JSON); shown only while the draft is
+  // still that order.
+  key: string;
   message: string;
   // The step the server named (0-based), shown at that step; `null` for the
   // order as a whole.
@@ -79,6 +82,8 @@ interface ProcessingState {
   picked: string[];
   dtype: string | null;
   activeStep: number | null;
+  // "Review" was asked for this draft: empty required fields show their hint.
+  reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
   reviewing: boolean;
   reviewError: Refusal | null;
@@ -124,7 +129,7 @@ export interface OrderView {
 // is the one costly part of the view, so the last answer is kept.
 let lastCandidates: { inputs: unknown[]; result: StacItem[] } | null = null;
 
-function candidatesOf(app: AppState): StacItem[] {
+function candidatesOf(app: SelectionState): StacItem[] {
   const inputs = [app.items, app.selectedIds, app.groups, app.activeGroupIndex, app.aoi];
   if (lastCandidates && lastCandidates.inputs.every((value, i) => value === inputs[i])) return lastCandidates.result;
   const result = app.aoi ? candidateItems(selectionItemsFrom(app), app.aoi) : [];
@@ -138,7 +143,19 @@ export function bandMathExpressions(steps: readonly DraftStep[]): string[] {
     .map((step) => step.values.expression as string);
 }
 
-export function orderView(app: AppState, p: ProcessingState): OrderView {
+// What the panel reads from the selection; a selector on these keeps the
+// panel from rendering on every map move.
+export type SelectionState = Pick<
+  AppState,
+  'datasets' | 'datasetId' | 'items' | 'selectedIds' | 'groups' | 'activeGroupIndex' | 'aoi'
+>;
+
+export function selectionState(s: AppState): SelectionState {
+  const { datasets, datasetId, items, selectedIds, groups, activeGroupIndex, aoi } = s;
+  return { datasets, datasetId, items, selectedIds, groups, activeGroupIndex, aoi };
+}
+
+export function orderView(app: SelectionState, p: ProcessingState): OrderView {
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
@@ -173,13 +190,13 @@ function abortEstimate(): void {
   estimating = null;
 }
 
-function refusalOf(error: unknown): Refusal {
+function refusalOf(error: unknown, key: string, steps: readonly DraftStep[]): Refusal {
   if (error instanceof HttpError) {
     const text = error.detail ?? error.message;
     const hint = error.status === 503 && !/try again/iu.test(text) ? ' Try again in a moment.' : '';
-    return { message: `${text}${hint}`, step: stepOfRefusal(text) };
+    return { key, message: `${text}${hint}`, step: stepOfRefusal(text, steps) };
   }
-  return { message: error instanceof Error ? error.message : String(error), step: null };
+  return { key, message: error instanceof Error ? error.message : String(error), step: null };
 }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
@@ -209,6 +226,7 @@ const EMPTY_DRAFT = {
   picked: [] as string[],
   dtype: null,
   activeStep: null,
+  reviewAsked: false,
   estimate: null,
   reviewing: false,
   reviewError: null,
@@ -318,12 +336,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const controller = new AbortController();
       describing = controller;
       set((s) => ({ descriptions: { ...s.descriptions, [datasetId]: { state: 'loading' } } }));
-      fetchProcess(datasetId, controller.signal).then(
-        (description) => {
-          if (controller.signal.aborted) return;
-          set((s) => ({ descriptions: { ...s.descriptions, [datasetId]: { state: 'ready', info: processInfo(description) } } }));
-        },
-        (error: unknown) => {
+      fetchProcess(datasetId, controller.signal)
+        .then((description) => {
+          const info = processInfo(description);
+          set((s) => ({ descriptions: { ...s.descriptions, [datasetId]: { state: 'ready', info } } }));
+        })
+        .catch((error: unknown) => {
           const rest = { ...get().descriptions };
           delete rest[datasetId];
           if (controller.signal.aborted || isAbort(error)) {
@@ -332,8 +350,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           }
           const message = error instanceof Error ? error.message : String(error);
           set({ descriptions: { ...rest, [datasetId]: { state: 'error', message } } });
-        },
-      );
+        });
     },
     resetDraft: () => {
       abortEstimate();
@@ -399,6 +416,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
       const order = view.built?.order;
+      set({ reviewAsked: true });
       if (!order || !view.key) return;
       abortEstimate();
       const controller = new AbortController();
@@ -407,11 +425,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ reviewing: true, reviewError: null, startError: null, estimate: null });
       try {
         const doc = await estimateOrder(order, controller.signal);
-        if (controller.signal.aborted) return;
         set({ estimate: { key, doc }, reviewing: false });
       } catch (error) {
         if (controller.signal.aborted || isAbort(error)) return;
-        set({ reviewing: false, reviewError: refusalOf(error) });
+        set({ reviewing: false, reviewError: refusalOf(error, key, get().steps) });
       } finally {
         if (estimating === controller) estimating = null;
       }
@@ -425,10 +442,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ starting: true, startError: null });
       try {
         const status = await placeJob(order);
-        set({ starting: false });
+        // One estimate, one job: a second identical job needs its own review.
+        set({ starting: false, estimate: null });
         addJob(status.jobID, status.expires, status);
       } catch (error) {
-        set({ starting: false, startError: refusalOf(error) });
+        set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
     },
 

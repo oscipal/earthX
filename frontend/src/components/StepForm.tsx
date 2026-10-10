@@ -20,7 +20,7 @@ function FieldInput({
   onChange: (value: FieldValue) => void;
   onFocus: () => void;
 }) {
-  const describedBy = field.description || error ? `${inputId}-help` : undefined;
+  const describedBy = field.description ? `${inputId}-help` : undefined;
   const help = (
     <>
       {field.description && (

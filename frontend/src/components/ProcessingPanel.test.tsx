@@ -264,13 +264,37 @@ describe('review before start (K4)', () => {
 
   it('shows a refusal of a step at that step', async () => {
     routes['POST /processing/processes/recipe/estimate'] = () =>
-      problem(400, 'the order is not valid: parameters of step 0 (band_math): the expression names nir_2');
+      problem(422, 'expression names unknown band(s): nir_2; the input has: red, nir');
     select([scene('S2B_A')]);
     await openPanel();
     await ndvi();
     await review();
     const step = container.querySelector('.pp-step')!;
-    expect(step.textContent).toContain('the expression names nir_2');
+    expect(step.textContent).toContain('expression names unknown band(s): nir_2');
+    expect(button('Start job').disabled).toBe(true);
+  });
+
+  it('hides a refusal once the order changed, also one that arrives after the change', async () => {
+    let answer!: (r: Response) => void;
+    routes['POST /processing/processes/recipe/estimate'] = () => new Promise((resolve) => (answer = resolve));
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    click(button('Review'));
+    await flush();
+    typeInto(container.querySelector('input[id$="-expression"]')!, 'nir / red');
+    answer(problem(422, 'expression names unknown band(s): nir_2; the input has: red, nir'));
+    await flush();
+    expect(container.textContent).not.toContain('unknown band');
+  });
+
+  it('shows an error, not a crash, for an estimate it cannot read', async () => {
+    routes['POST /processing/processes/recipe/estimate'] = () => json({});
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    await review();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('cannot read');
     expect(button('Start job').disabled).toBe(true);
   });
 
@@ -282,6 +306,26 @@ describe('review before start (K4)', () => {
     await ndvi();
     await review();
     expect(container.textContent).toContain('the job API is not available Try again in a moment.');
+  });
+
+  it('disables adding a step once the schema maximum is reached', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    for (let i = 0; i < 16; i++) click(button('＋ Band math'));
+    expect(button('＋ Band math').disabled).toBe(true);
+    expect(button('＋ Band math').title).toBe('At most 16 steps');
+    expect(container.querySelectorAll('.pp-step')).toHaveLength(16);
+  });
+
+  it('a band picked before the band-math step can be left out again', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('red'));
+    expect(button('red').getAttribute('aria-pressed')).toBe('true');
+    click(button('＋ Band math'));
+    click(button('red'));
+    expect(button('red').getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelector<HTMLInputElement>('input[id$="-expression"]')!.value).toBe('');
   });
 
   it('blocks review with a message while the order is incomplete', async () => {
@@ -316,12 +360,46 @@ describe('review before start (K4)', () => {
     expect(button('Review').disabled).toBe(false);
   });
 
+  it.each([
+    ['the AOI changes', () => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) })],
+    ['the panel closes', () => useProcessingStore.getState().closeProcessing()],
+  ])('aborts an estimate on its way when %s', async (_, change) => {
+    routes['POST /processing/processes/recipe/estimate'] = (init) =>
+      new Promise((_resolve, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))),
+      );
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    click(button('Review'));
+    await flush();
+    const signal = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].signal as AbortSignal;
+    act(() => change());
+    expect(signal.aborted).toBe(true);
+  });
+
   it('drops the draft when the AOI changes', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     await ndvi();
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
     expect(container.querySelector('.pp-step')).toBeNull();
+  });
+});
+
+describe('the process description', () => {
+  it.each([
+    ['cannot be loaded', () => problem(503, 'the job API is not available')],
+    ['cannot be read', () => json(null)],
+  ])('shows an error with Retry when it %s', async (_, failing) => {
+    routes['GET /processing/processes/recipe?dataset=sentinel-2-c1-l2a'] = failing;
+    select([scene('S2B_A')]);
+    await openPanel();
+    expect(container.textContent).toContain('The operators could not be loaded');
+    routes['GET /processing/processes/recipe?dataset=sentinel-2-c1-l2a'] = () => json(s2);
+    click(button('Retry'));
+    await flush();
+    expect(button('＋ Band math').disabled).toBe(false);
   });
 });
 
@@ -387,6 +465,62 @@ describe('starting and following a job', () => {
     const stored = sessionStorage.getItem('earthx.processing.jobs')!;
     expect(JSON.parse(stored)).toEqual([{ jobID: JOB, expires: expect.any(String) }]);
     expect(stored).not.toContain('10.4');
+  });
+
+  it('needs a new review for a second job of the same order', async () => {
+    routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+    routes[`GET /processing/jobs/${JOB}`] = () => json(statusDoc('running', 10));
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    await review();
+    click(button('Start job'));
+    await flush();
+    expect(useProcessingStore.getState().jobs).toHaveLength(1);
+    expect(button('Start job').disabled).toBe(true);
+  });
+
+  it('follows a job by server-sent events through the store', async () => {
+    const sources: { url: string; emit: (data: unknown) => void; closed: boolean }[] = [];
+    class Source {
+      readyState = 1;
+      onerror = null;
+      closed = false;
+      private listener: ((e: { data: string }) => void) | null = null;
+      readonly url: string;
+      constructor(url: string) {
+        this.url = url;
+        sources.push(this);
+      }
+      addEventListener(_type: string, listener: (e: { data: string }) => void) {
+        this.listener = listener;
+      }
+      close() {
+        this.closed = true;
+      }
+      emit(data: unknown) {
+        act(() => this.listener?.({ data: JSON.stringify(data) }));
+      }
+    }
+    setTrackerOptions({ EventSource: Source as never });
+    routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+    routes[`GET /processing/jobs/${JOB}/results`] = () =>
+      json({ result: { href: `/processing/jobs/${JOB}/results/result.tif`, properties: { 'earthx:resampled': false } } });
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    await review();
+    click(button('Start job'));
+    await flush();
+    expect(sources[0].url).toBe(`/processing/jobs/${JOB}/events`);
+    sources[0].emit(statusDoc('running', 70));
+    expect(container.textContent).toContain('Running · 70%');
+    sources[0].emit(statusDoc('successful', 100));
+    await flush();
+    expect(sources[0].closed).toBe(true);
+    expect(container.querySelector('.pp-links a')?.textContent).toBe('Result (COG)');
+    expect(container.textContent).not.toContain('Resampled');
+    expect(fetchMock.mock.calls.some(([u]) => String(u) === `/processing/jobs/${JOB}`)).toBe(false);
   });
 
   it('shows the title of a failed job', async () => {
@@ -465,5 +599,58 @@ describe('the Process button (B11, K12)', () => {
     showBar();
     click(button(/Process/));
     expect(useProcessingStore.getState().open).toBe(true);
+  });
+});
+
+describe('cancelling and losing a job', () => {
+  function resume() {
+    sessionStorage.setItem(
+      'earthx.processing.jobs',
+      JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
+    );
+    act(() => root.render(<ProcessingPanel />));
+    act(() => {
+      useProcessingStore.getState().resumeJobs();
+      useProcessingStore.setState({ open: true });
+    });
+  }
+
+  beforeEach(() => {
+    setTrackerOptions({ pollMs: 60_000 });
+    routes[`GET /processing/jobs/${JOB}`] = () => json(statusDoc('running', 20));
+  });
+
+  it('cancels with DELETE and drops the job from sessionStorage', async () => {
+    routes[`DELETE /processing/jobs/${JOB}`] = () => json(statusDoc('dismissed'));
+    resume();
+    await waitFor(() => container.textContent?.includes('Running · 20%') ?? false);
+    click(button('Cancel'));
+    await waitFor(() => container.textContent?.includes('Cancelled') ?? false);
+    expect(sessionStorage.getItem('earthx.processing.jobs')).toBeNull();
+  });
+
+  it('says "Gone" when the job is no longer there at cancel', async () => {
+    routes[`DELETE /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
+    resume();
+    await waitFor(() => container.textContent?.includes('Running') ?? false);
+    click(button('Cancel'));
+    await waitFor(() => container.textContent?.includes('Gone') ?? false);
+  });
+
+  it('keeps the job and shows the error when cancel fails', async () => {
+    routes[`DELETE /processing/jobs/${JOB}`] = () => problem(503, 'the job queue is not reachable; try again');
+    resume();
+    await waitFor(() => container.textContent?.includes('Running') ?? false);
+    click(button('Cancel'));
+    await waitFor(() => container.textContent?.includes('not reachable') ?? false);
+    expect(button('Cancel').disabled).toBe(false);
+    expect(sessionStorage.getItem('earthx.processing.jobs')).toContain(JOB);
+  });
+
+  it('says "Gone" and forgets the job when polling finds it no more', async () => {
+    routes[`GET /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
+    resume();
+    await waitFor(() => container.textContent?.includes('Gone (expired or dismissed)') ?? false);
+    expect(sessionStorage.getItem('earthx.processing.jobs')).toBeNull();
   });
 });

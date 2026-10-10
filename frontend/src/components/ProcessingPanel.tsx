@@ -4,25 +4,32 @@
 // the schema of `/processing/processes/recipe?dataset=…`, nothing per dataset
 // here. The map preview of the steps comes with M4-13c.
 
-import { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 
 import { groupIndexOfItem } from '../grouping';
-import { formatBytes, formatDuration, formatMegapixels, processBlockReason, uniqueNames } from '../processingOrder';
-import { orderView, useProcessingStore } from '../processingStore';
-import { selectionItemsFrom, useAppStore } from '../store';
+import {
+  formatBytes,
+  formatDuration,
+  formatMegapixels,
+  namesInExpression,
+  processBlockReason,
+  uniqueNames,
+} from '../processingOrder';
+import { bandMathExpressions, orderView, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import { useAppStore } from '../store';
 import JobList from './JobList';
 import StepForm from './StepForm';
 
 const SCENE_NOTE = 'The result covers only this scene; several scenes in one job come with a later version.';
 
-function Bands() {
-  const app = useAppStore();
-  const p = useProcessingStore();
-  const view = orderView(app, p);
+function Bands({ view }: { view: OrderView }) {
+  const steps = useProcessingStore((s) => s.steps);
+  const picked = useProcessingStore((s) => s.picked);
   const togglePick = useProcessingStore((s) => s.togglePick);
   const insertBand = useProcessingStore((s) => s.insertBand);
   const unique = uniqueNames(view.sources);
-  const hasBandMath = p.steps.some((s) => s.op === 'band_math');
+  const hasBandMath = steps.some((s) => s.op === 'band_math');
+  const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
   if (!view.item) return null;
   if (view.sources.length === 0) {
     return (
@@ -52,8 +59,11 @@ function Bands() {
               </button>,
             ];
           }
+          // With a band-math step a click inserts the name, except on a band
+          // picked by hand that no expression names: that click leaves it out.
+          const pickedOnly = picked.includes(source.asset) && !source.names.some((n) => named.has(n));
           return source.names.map((name) => {
-            const insertable = unique.get(name) === source.asset;
+            const insertable = unique.get(name) === source.asset && !pickedOnly;
             return (
               <button
                 key={`${source.asset}/${name}`}
@@ -84,28 +94,24 @@ function Bands() {
 export default function ProcessingPanel() {
   const open = useProcessingStore((s) => s.open);
   const close = useProcessingStore((s) => s.closeProcessing);
-  const app = useAppStore();
+  const app = useAppStore(useShallow(selectionState));
   const p = useProcessingStore();
-  const [attempted, setAttempted] = useState(false);
   if (!open) return null;
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
-  const reason = processBlockReason(dataset, app.aoi, selectionItemsFrom(app).length);
+  // The same rule as the button in the ViewBar: scenes picked by hand.
+  const reason = processBlockReason(dataset, app.aoi, app.selectedIds.length);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const view = orderView(app, p);
   const info = view.info;
   const built = view.built;
   const estimate = p.estimate && p.estimate.key === view.key ? p.estimate.doc : null;
-  const showErrors = attempted;
+  const showErrors = p.reviewAsked;
   const group = view.item ? app.groups[groupIndexOfItem(app.groups, view.item.id)] : undefined;
-  const refusalAt = (index: number) =>
-    [p.reviewError, p.startError].find((r) => r && r.step === index)?.message ?? null;
-  const orderRefusals = [p.reviewError, p.startError].filter((r) => r && r.step === null);
-
-  const review = () => {
-    setAttempted(true);
-    void p.reviewOrder();
-  };
+  // A refusal belongs to the order it refused; a changed draft hides it.
+  const refusals = [p.reviewError, p.startError].filter((r) => r !== null && r.key === view.key);
+  const refusalAt = (index: number) => refusals.find((r) => r!.step === index)?.message ?? null;
+  const orderRefusals = refusals.filter((r) => r!.step === null);
 
   return (
     <div className="panel processing-panel" role="dialog" aria-label="Processing">
@@ -155,7 +161,7 @@ export default function ProcessingPanel() {
 
           {info && (
             <>
-              <Bands />
+              <Bands view={view} />
 
               <section className="pp-section" aria-label="Steps">
                 <h3 className="pp-heading">Steps</h3>
@@ -243,7 +249,7 @@ export default function ProcessingPanel() {
                     className="ghost-btn"
                     disabled={p.reviewing}
                     title="Ask the server what this job is expected to cost"
-                    onClick={review}
+                    onClick={() => void p.reviewOrder()}
                   >
                     {p.reviewing ? 'Reviewing…' : 'Review'}
                   </button>
@@ -269,8 +275,8 @@ export default function ProcessingPanel() {
                     <p className="pp-help">An estimate, not a promise.</p>
                   </div>
                 )}
-                {orderRefusals.map((refusal) => (
-                  <p key={refusal!.message} className="hint-text error" role="alert">
+                {orderRefusals.map((refusal, index) => (
+                  <p key={index} className="hint-text error" role="alert">
                     {refusal!.message}
                   </p>
                 ))}

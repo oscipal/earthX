@@ -156,11 +156,13 @@ export default function App() {
         )}
       </div>
 
-      <div className="overlay processing-dock">
-        <Draggable>
-          <ProcessingPanel />
-        </Draggable>
-      </div>
+      {processingOpen && (
+        <div className="overlay processing-dock">
+          <Draggable>
+            <ProcessingPanel />
+          </Draggable>
+        </div>
+      )}
 
       <div className="overlay status">
         <StatusBar />

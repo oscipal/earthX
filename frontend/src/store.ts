@@ -61,7 +61,7 @@ const COVERAGE_DEBOUNCE_MS = 400;
 // Shared so `openDownloadForSelection`/`confirmDownload` (V-4) build the same
 // set `addCurrentToLayers` already did, and so the processing panel (M4-13b)
 // offers its scenes from that same set.
-export function selectionItemsFrom(s: AppState): StacItem[] {
+export function selectionItemsFrom(s: Pick<AppState, 'groups' | 'activeGroupIndex' | 'selectedIds' | 'items'>): StacItem[] {
   const group = s.groups[s.activeGroupIndex];
   return s.selectedIds.length ? s.items.filter((it) => s.selectedIds.includes(it.id)) : (group?.items ?? []);
 }
