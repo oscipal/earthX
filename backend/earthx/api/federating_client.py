@@ -793,6 +793,7 @@ class FederatingCoreCrudClient(CoreCrudClient):
             UpstreamError,
             UpstreamTimeout,
             UpstreamUnreachable,
+            UpstreamShapeError,
         ) as error:
             raise _adapter_error_to_http(error) from error
         return await self._to_item_collection(page, request, collection_id=collection_id)
