@@ -73,6 +73,21 @@ eine Wahl braucht.
 | R5 | **Band-Math-Ausdrücke:** erlaubt sind nur die Bandnamen des Rezepts, Zahlen, die Operatoren `+ - * / **`, Vergleiche, Klammern und eine feste Liste von numexpr-Funktionen; höchstens 256 Zeichen. Geprüft wird im Parametermodell, bevor numexpr den Ausdruck sieht. Die Funktionsliste schlägt M4-09 im Plan-Schritt vor. **Eingeengt am 2026-10-06 (`adr/0016` F8, `adr/0014` §15c):** In M4 erlaubt Band-Math nur bitstabile Funktionen: Grundrechenarten, Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt` und ganzzahlige Potenzen mit \|n\| ≤ 50, ausgewertet mit `optimization="aggressive"`. `log`, `exp`, Winkelfunktionen und gebrochene Potenzen folgen später mit eigener Toleranz. **Erweitert am 2026-10-07 (Otto, M4-09 F4):** `&`, `\|` und `~` sind erlaubt, aber nur auf Wahrheitswerten (Vergleiche und ihre Verknüpfungen); auf Zahlen weist die R5-Prüfung sie ab, nie ein Fehler aus numexpr | M4-09 |
 | R6 | **Doppelzeile im Log:** Die Zeile „`adr/0014` §5.4, Auslegung zu F7a“ steht nach dem Merge von #114 und #115 zweimal. Die erste („Vorschlag“) bekommt in der Statusspalte den Verweis auf die zweite („fest am 2026-10-05“); gelöscht wird nichts | `ENTSCHEIDUNGSLOG.md` |
 
+### 1.1c Entscheidungen zu M4-12 (Otto, 10.10.2026)
+
+Grundlage ist `plans/m4-12-mosaik-ueberflug.md` §8 und §11. Wo diese Tabelle und
+der Plan sich widersprechen, gilt die Tabelle.
+
+| # | Entscheidung | wirkt auf |
+|---|---|---|
+| S1 | **Weg und Flag:** Das Mosaik ist ein Raster-Lauf des Kerns im UTM-Raster; Szenen anderer Zonen laufen über den Warp aus M4-10. Kein eigenes Capability-Flag, jedes Mosaik verlangt `reprojection` | M4-12a |
+| S2 | **Ziel-CRS:** das CRS der meisten Szenen, bei Gleichstand die kleinere EPSG-Zahl, unabhängig von der Reihenfolge im Auftrag | M4-12a |
+| S3 | **Ganze Szenen:** Auftrag ohne `aoi`, `api` setzt die Vereinigung der Footprints; `api` prüft den Überflug (`results_group_by`), eine Gruppe je Auftrag | M4-12a |
+| S4 | **Deckel und Zarr:** 5 GB roh als **eine** Konstante gemeinsam mit dem Export, die Plattenprüfung aus M4-11a gilt auch hier; Zarr-Mosaik nur in einem CRS | M4-12a |
+| S5 | **Überlappung (F3 angepasst):** Der Kern nutzt dieselbe Mosaikregel wie der Export-Job (erstes gültiges Pixel in der Reihenfolge der Liste, gemeinsame Funktion in `access/crop_rules.py`), keine zweite Regel. Die Bevorzugung von Szenen ohne Warp entsteht, weil `api` die Liste sortiert: zuerst Szenen im Ziel-CRS, danach die übrigen, je nach Item-ID | M4-12a |
+
+---
+
 ### 1.2 Was in allen Aufgaben gilt
 
 `CLAUDE.md` gilt vollständig: ein Branch, ein Draft-PR, Tests für Fehlerfälle
@@ -182,7 +197,8 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | PR #132 (Entwurf) |
 | M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | PR #133 (`plans/m4-11-export-job.md`) |
 | M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Sonnet (hoch) | M4-11a, M4-13b | offen |
-| M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | Plan im PR #136 (`plans/m4-12-mosaik-ueberflug.md`), wartet auf Freigabe |
+| M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | PR #136 (`plans/m4-12-mosaik-ueberflug.md`), Plan freigegeben am 10.10.2026 |
+| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | offen (neue Session nach dem Merge von M4-13b) |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (PR #134); Umsetzung in a bis c |
 | M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | PR #134 (Entwurf), wartet auf Review |
 | M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | offen (neue Session nach dem Merge von M4-13a) |
@@ -825,6 +841,10 @@ mosaikiert die Szenen eines Überflugs, bei mehreren UTM-Zonen über die
 Reprojektion aus M4-10.
 **Im Plan-Schritt zu entscheiden:** ob das Mosaik ein eigenes Capability-Flag
 braucht (B10), und die Regel für Überlappungen.
+**Im Plan-Schritt entschieden (10.10.2026):** kein eigenes Capability-Flag, die
+Regel für Überlappungen ist die des Export-Jobs, `api` sortiert die Liste
+(§1.1c, S1–S5). Der Plan `plans/m4-12-mosaik-ueberflug.md` teilt die Aufgabe in
+**M4-12a** (Backend) und **M4-12b** (Frontend, nach M4-13b).
 **Abnahme:** Test mit synthetischen Szenen über zwei Zonen; Prüfanleitung.
 
 ### M4-13 — Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status

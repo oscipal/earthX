@@ -102,7 +102,7 @@ def _recipe(items: list[str], *, steps: list | None = None, scale: float | None 
     entries = []
     for item in items:
         entry = resolved(item, "red", href=sources.url(f"{item}_red"), scale=scale, offset=sources.OFFSET if scale else None)
-        entry["asset"]["crs"] = GEOMETRY[item][0]
+        entry["asset"]["crs"] = GEOMETRY.get(item, (ZONE_32,))[0]
         entries.append(entry)
     data = {
         "recipe_version": 1,
@@ -273,6 +273,50 @@ def _bounds_4326(item: str) -> tuple[float, float, float, float]:
     left, bottom = to_4326.transform(x + 5, y - height * 10 + 5)
     right, top = to_4326.transform(x + width * 10 - 5, y - 5)
     return left, bottom, right, top
+
+
+@pytest.mark.usefixtures("served")
+@pytest.mark.usefixtures("served")
+class TestScenesInOneCrsOffTheGrid:
+    """A DEM tile has the pixel width of its latitude: the same CRS as its neighbour is no grid with it."""
+
+    @staticmethod
+    def _degrees(path: Path, west: float, north: float, width: int, px: float, base: int) -> Path:
+        rows, cols = numpy.indices((200, width))
+        data = (base + (3 * rows + cols) % 500).astype("uint16")
+        plain = path.with_suffix(".plain.tif")
+        profile = {
+            "driver": "GTiff", "dtype": "uint16", "count": 1, "height": 200, "width": width, "crs": "EPSG:4326",
+            "transform": from_origin(west, north, px, 0.001), "nodata": 0,
+        }  # fmt: skip
+        with rasterio.open(plain, "w", **profile) as destination:
+            destination.write(data, 1)
+        cog_translate(plain, path, cog_profiles.get("deflate"), quiet=True)
+        plain.unlink()
+        return path
+
+    def test_the_tile_of_another_pixel_width_is_warped_with_nearest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = self._degrees(tmp_path / "p.tif", 9.0, 47.2, 300, 0.001, 1000)  # 9.000–9.300
+        second = self._degrees(tmp_path / "q.tif", 9.2, 47.2, 200, 0.0015, 20000)  # 9.200–9.500, wider pixels
+        sources.serve({sources.url("P_red"): first, sources.url("Q_red"): second}, monkeypatch)
+        data = _recipe(["P", "Q"], scale=None)
+        data["aoi"] = mapping(box(9.0, 47.0, 9.5, 47.2))
+        for entry in data["inputs"][0]["resolved"]:
+            entry["asset"]["crs"] = "EPSG:4326"
+        (tmp_path / "work").mkdir()
+        result = _run(data, tmp_path / "work")
+        assert result.meta.crs == "EPSG:4326" and result.properties["earthx:resampled"] is True
+        with rasterio.open(result.path) as dataset:
+            values = dataset.read(1, masked=True)
+            assert dataset.transform.a == pytest.approx(0.001)
+            west_only = dataset.index(9.1, 47.1)
+            overlap = dataset.index(9.25, 47.1)
+            east_only = dataset.index(9.4, 47.1)
+        assert 1000 <= values[west_only] < 1500  # P, copied
+        assert 1000 <= values[overlap] < 1500  # P first in the list
+        assert 20000 <= values[east_only] < 20500  # Q, a value Q has (nearest)
 
 
 @pytest.mark.usefixtures("served")
