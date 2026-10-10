@@ -145,12 +145,16 @@ class TestProcesses:
         assert response.status_code == 400
         assert problem(response)["type"] == "about:blank"
 
-    async def test_the_description_has_the_order_as_its_one_input_and_three_outputs(
+    async def test_the_description_has_the_order_and_the_origin_of_an_aoi_as_inputs_and_its_outputs(
         self, docs_client: httpx.AsyncClient
     ) -> None:
         body = (await docs_client.get("/processing/processes/recipe")).json()
-        assert list(body["inputs"]) == ["recipe"]
+        assert list(body["inputs"]) == ["recipe", "aoiProvenance"]
         assert body["inputs"]["recipe"]["minOccurs"] == body["inputs"]["recipe"]["maxOccurs"] == 1
+        origin = body["inputs"]["aoiProvenance"]
+        assert (origin["minOccurs"], origin["maxOccurs"]) == (0, 1)
+        assert set(origin["schema"]["properties"]) == {"attribution", "license", "source"}
+        assert origin["schema"]["additionalProperties"] is False
         assert list(body["outputs"]) == list(OUTPUTS)
         assert FORM_NOTE in body["description"]
         assert "refused" in body["inputs"]["recipe"]["description"], "an input by reference is named as refused"

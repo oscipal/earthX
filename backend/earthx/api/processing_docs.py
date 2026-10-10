@@ -22,11 +22,16 @@ from earthx.processing.operators import JSON_SCHEMA_DIALECT, Operator, OperatorR
 from earthx.processing.recipe import RECIPE_VERSION, RecipeRequest
 
 __all__ = [
+    "AOI_PROVENANCE",
+    "AOI_PROVENANCE_FIELDS",
+    "AOI_PROVENANCE_MAX_CHARS",
+    "EXPORT_OUTPUTS",
     "FORM_NOTE",
     "INLINE_ONLY",
     "OUTPUTS",
     "PREFIX",
     "PROCESS_ID",
+    "RASTER_OUTPUTS",
     "conformance",
     "landing_page",
     "order_schema",
@@ -55,8 +60,18 @@ _REL = "http://www.opengis.net/def/rel/ogc/1.0/"
 OUTPUTS: dict[str, tuple[str, str]] = {
     "result": ("result.tif", "Result raster (Cloud Optimized GeoTIFF)"),
     "mask": ("mask.tif", "Mask of the area of interest"),
+    "export": ("export.zip", "Export: per group and asset the data and its mask, with notice, recipe and citation"),
     "recipe": ("recipe.json", "The recipe the job ran, with its provenance"),
 }
+
+#: The outputs of a job with the output ``raster`` and of an export (output ``crop``, M4-11a).
+RASTER_OUTPUTS = ("result", "mask", "recipe")
+EXPORT_OUTPUTS = ("export", "recipe")
+
+#: The second, optional input (M4-11 F4): where a place-search AOI came from.
+AOI_PROVENANCE = "aoiProvenance"
+AOI_PROVENANCE_FIELDS = ("attribution", "license", "source")
+AOI_PROVENANCE_MAX_CHARS = 200
 
 
 def _link(root: str, path: str, rel: str, type_: str | None = _JSON, title: str | None = None) -> dict[str, str]:
@@ -122,7 +137,26 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
                 "minOccurs": 1,
                 "maxOccurs": 1,
                 "schema": order_schema(operators, config),
-            }
+            },
+            AOI_PROVENANCE: {
+                "title": "Origin of the area of interest",
+                "description": (
+                    "For an export (output crop) only: where a place-search AOI came from, written into "
+                    "ATTRIBUTION.txt and aoi.geojson of the export. Not part of the recipe. Each field is one "
+                    "line of plain text: no leading or trailing space, no control or format characters."
+                ),
+                "minOccurs": 0,
+                "maxOccurs": 1,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        name: {"type": "string", "minLength": 1, "maxLength": AOI_PROVENANCE_MAX_CHARS}
+                        for name in AOI_PROVENANCE_FIELDS
+                    },
+                    "additionalProperties": False,
+                    "minProperties": 1,
+                },
+            },
         },
         "outputs": {
             name: {

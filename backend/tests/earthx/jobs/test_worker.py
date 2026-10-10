@@ -9,6 +9,7 @@ signal, hang, or cooperate with a cancel. Times are short: a lease of 3 s, a hea
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import multiprocessing
 import os
@@ -32,7 +33,8 @@ from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, upload_result
 from tests.conftest import format_without_timestamp
-from tests.earthx.jobs.support import make_recipe, most_at_once, run_row, wait_until
+from tests.earthx.jobs.support import ATTACHMENTS, make_export, make_recipe, most_at_once, run_row, wait_until
+from tests.earthx.objectstore.conftest import BUCKET
 
 BACKEND = Path(__file__).resolve().parents[3]
 FAST: dict[str, Any] = {
@@ -268,6 +270,95 @@ class TestFailures:
         _wait_for(db, job_id, "failed")
         assert run_row(db, _run_id(db), "error_kind") == ("unknown",)
         assert _stored(store) == []
+
+
+class TestAnExport:
+    """M4-11a: the attachments reach the child, and only ``export.zip`` is uploaded."""
+
+    def test_the_child_gets_the_attachments_and_export_zip_is_uploaded(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("export").start()
+        job_id = submit(db, make_export(), attachments=ATTACHMENTS)
+        _wait_for(db, job_id, "successful")
+        status = job_status(db, job_id)
+        assert status is not None and status.result is not None and status.result["files"] == ["export.zip"]
+        assert _stored(store) == [f"results/{status.result_id}/export.zip"]
+        body = store.s3._internal.get_object(Bucket=BUCKET, Key=f"results/{status.result_id}/export.zip")
+        assert json.loads(body["Body"].read()) == ATTACHMENTS.to_json()
+
+    def test_a_raster_child_that_reports_an_export_zip_fails_and_uploads_nothing(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("export_without_attachments").start()
+        job_id = submit(db, make_recipe())
+        _wait_for(db, job_id, "failed")
+        assert run_row(db, _run_id(db), "error_kind") == ("unknown",)
+        assert _stored(store) == []
+
+    def test_a_child_naming_a_file_outside_the_two_sets_fails_and_uploads_nothing(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("name_a_foreign_file").start()
+        job_id = submit(db, make_recipe())
+        _wait_for(db, job_id, "failed")
+        assert run_row(db, _run_id(db), "error_kind") == ("unknown",)
+        assert _stored(store) == []
+
+
+class TestDiskSpace:
+    """Otto, 08.10.2026: a run that would not fit on the worker's disk ends before its child starts."""
+
+    def test_too_little_free_space_fails_the_run_at_once_without_a_second_attempt(
+        self,
+        db: psycopg.Connection,
+        store: Store,
+        make_supervisor: Callable[..., Supervisor],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        need = run_need(db, submit(db, make_export(), attachments=ATTACHMENTS))
+        monkeypatch.setattr("earthx.jobs.worker.free_bytes", lambda path: need - 1)
+        marker = tmp_path / "child-started"
+        monkeypatch.setenv("CHILD_MARKER", str(marker))
+        make_supervisor("export").start()
+        wait_until(lambda: run_row(db, _run_id(db), "status")[0] == "failed")
+        assert run_row(db, _run_id(db), "error_kind", "attempt") == ("disk_space", 1)
+        assert _stored(store) == []
+        assert not marker.exists(), "no child was started"
+        wait_until(lambda: list((tmp_path / "work0").iterdir()) == [])
+
+    def test_exactly_enough_free_space_runs(
+        self,
+        db: psycopg.Connection,
+        store: Store,
+        make_supervisor: Callable[..., Supervisor],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        job_id = submit(db, make_export(), attachments=ATTACHMENTS)
+        need = run_need(db, job_id)
+        monkeypatch.setattr("earthx.jobs.worker.free_bytes", lambda path: need)
+        make_supervisor("export").start()
+        _wait_for(db, job_id, "successful")
+
+    def test_the_failure_says_what_to_do_and_names_no_number(
+        self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        job_id = submit(db, make_recipe())
+        monkeypatch.setattr("earthx.jobs.worker.free_bytes", lambda path: 0)
+        make_supervisor("succeed").start()
+        _wait_for(db, job_id, "failed")
+        status = job_status(db, job_id)
+        assert status is not None and status.error_kind == "disk_space"
+
+
+def run_need(db: psycopg.Connection, job_id: str) -> int:
+    row = db.execute(
+        "SELECT r.disk_bytes FROM public.earthx_run r JOIN public.earthx_job j USING (run_id) WHERE j.job_id = %s",
+        (job_id,),
+    ).fetchone()
+    assert row is not None and row[0] > 0
+    return row[0]
 
 
 class TestCancel:

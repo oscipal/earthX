@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 import pytest
 
+from earthx.access.download import compute_crop_region, parse_aoi_geometry, plan_outputs
 from earthx.api.intake import accept_order
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
@@ -23,7 +24,7 @@ from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.plan import estimate
 from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig
-from tests.earthx.api.test_intake import NEAR, S2_HOST, dem_item, order, s2_item
+from tests.earthx.api.test_intake import CROP, NEAR, PLACE, S2_HOST, SQUARE, dem_item, order, s2_item
 from tests.earthx.api.test_processing_route import (
     EXECUTION,
     client_for,
@@ -154,15 +155,21 @@ class TestWhatItTurnsAway:
             asked = await self.refused(rig, document, status, stage)
             assert asked["type"] == placed["type"] and asked["detail"] == placed["detail"]
 
-    async def test_a_crop_is_not_a_job(self, rig: Rig) -> None:
-        crop = {
-            "kind": "crop",
-            "format": "cog",
-            "resolution_factor": 1,
-            "extent": "bbox(aoi ∩ footprints)",
-            "mask": "file",
-        }
-        await self.refused(rig, order(steps=[], output=crop), 422, "order")
+    async def test_an_export_with_steps_is_refused_as_placing_it_would_be(self, rig: Rig) -> None:
+        await self.refused(rig, order(output=CROP), 422, "order")
+
+    async def test_an_export_over_the_cap_is_a_413_as_placing_it_would_be(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """M4-11 F5: the estimate of an export refuses above the cap, with the status of placing it."""
+        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", 1)
+        body = await self.refused(rig, order(assets=("red",), steps=[], output=CROP), 413, "size")
+        assert "an export job may write" in body["detail"]
+
+    async def test_aoi_provenance_with_a_raster_order_is_a_400(self, rig: Rig) -> None:
+        response = await rig.client.post(ESTIMATE, json={"inputs": {"recipe": order(), "aoiProvenance": PLACE}})
+        assert problem(response, 400)["type"].endswith(":order")
+        assert rig.source.calls == []
 
     async def test_an_order_that_carries_addresses_or_an_identifier_is_a_400(self, rig: Rig) -> None:
         recipe_id = "A" * 22
@@ -320,3 +327,17 @@ class TestPlacingStillWorks:
         assert response.status_code == 201
         assert len(rig.heads.requests) == 2, "one HEAD per asset"
         assert re.match(r"^[A-Za-z0-9_-]{22}$", response.json()["recipeID"])
+
+
+class TestAnExport:
+    """M4-11a: an export (output crop) is estimated as the crop counts itself."""
+
+    async def test_its_size_is_what_the_crop_would_plan(self, rig: Rig) -> None:
+        response = await ask(rig, order(assets=("red",), steps=[], output=CROP))
+        assert response.status_code == 200, response.text
+        size = response.json()["estimate"]["size"]
+        item = s2_item()
+        aoi = parse_aoi_geometry(SQUARE)
+        region = compute_crop_region([item], aoi)
+        assert size == sum(output.total_bytes for output in plan_outputs([item], ["red"], region))
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0)

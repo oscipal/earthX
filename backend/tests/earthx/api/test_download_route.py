@@ -748,7 +748,8 @@ class TestRecipeAndCitation:
         assert "recipe.json" not in names
         assert {"visual.tif", "visual_mask.tif", "aoi.geojson", "citation.bib"} <= names
         assert f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})." in notice
-        assert "7.1" not in notice
+        # Not in the "Generated:" line: its timestamp holds "7.1" by chance (…14:25:17.100083Z).
+        assert "7.1" not in _without_generated(notice)
         omitted = [record for record in caplog.records if record.getMessage() == "crop recipe omitted"]
         assert [record.stage for record in omitted] == [stage]
         assert "7.1" not in caplog.text
@@ -769,3 +770,88 @@ class TestRecipeAndCitation:
     def test_a_zip_with_its_recipe_says_nothing_about_a_missing_one(self, client: TestClient) -> None:
         with _zip_of(_download(client)) as archive:
             assert "is not included" not in archive.read("ATTRIBUTION.txt").decode("utf-8")
+
+
+class TestOverTheCapAnExportJob:
+    """M4-11 K5: a crop over 500 MB says whether the same selection fits an export job."""
+
+    @staticmethod
+    def _native_total(item: dict[str, Any]) -> int:
+        aoi = download_module.parse_aoi_geometry(GOOD_AOI)
+        region = download_module.compute_crop_region([item], aoi)
+        return sum(output.total_bytes for output in download_module.plan_outputs([item], ["visual"], region))
+
+    @staticmethod
+    def _caps(monkeypatch: pytest.MonkeyPatch, crop: int, job: int) -> None:
+        monkeypatch.setattr(
+            "earthx.api.tiler.check_output_size_cap",
+            lambda planned, native_planned=None: download_module.check_output_size_cap(
+                planned, max_bytes=crop, native_planned=native_planned
+            ),
+        )
+        monkeypatch.setattr("earthx.api.tiler.MAX_EXPORT_JOB_BYTES", job)
+
+    def test_exactly_at_the_cap_the_crop_runs(
+        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        total = self._native_total(item)
+        self._caps(monkeypatch, crop=total, job=10 * total)
+        response = _download(client)
+        assert response.status_code == 200
+        assert "X-Export-Job" not in response.headers
+
+    def test_one_byte_over_it_is_a_413_that_offers_the_job(
+        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        total = self._native_total(item)
+        self._caps(monkeypatch, crop=total - 1, job=total)
+        response = _download(client)
+        assert response.status_code == 413
+        assert response.headers["X-Export-Job"] == "available"
+
+    def test_over_the_jobs_cap_too_no_job_is_offered(
+        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        total = self._native_total(item)
+        self._caps(monkeypatch, crop=total - 1, job=total - 1)
+        response = _download(client)
+        assert response.status_code == 413
+        assert "X-Export-Job" not in response.headers
+
+    def test_a_coarser_factor_over_the_cap_is_offered_no_job(
+        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._caps(monkeypatch, crop=1, job=10 * self._native_total(item))
+        response = _download(client, resolution=2)
+        assert response.status_code == 413
+        assert "X-Export-Job" not in response.headers
+
+    def test_too_many_scenes_is_offered_no_job(self, client: TestClient) -> None:
+        response = _download(client, groups=[[f"{ITEM_ID}#{i}"] for i in range(26)])
+        assert response.status_code == 413
+        assert "X-Export-Job" not in response.headers
+
+    def test_a_zarr_dataset_is_offered_no_job(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """F6: the export job reads COG only; the crop route is asked with a Zarr entry in its place."""
+        zarr = REGISTRY.get("sentinel-2-l2a-zarr3").zarr
+
+        class AsZarr:
+            def __getattr__(self, name: str) -> Any:
+                return zarr if name == "zarr" else getattr(SENTINEL_2_L2A, name)
+
+        monkeypatch.setattr("earthx.api.tiler._dataset_config", lambda state, dataset: AsZarr())
+        self._caps(monkeypatch, crop=1, job=10**12)
+        response = _download(client)
+        assert response.status_code == 413
+        assert "X-Export-Job" not in response.headers
+
+
+def _without_generated(notice: str) -> str:
+    """The notice without its "Generated:" line, whose timestamp a digit marker can match by chance."""
+    return "\n".join(line for line in notice.splitlines() if not line.startswith("Generated: "))
+
+
+def test_the_search_without_the_timestamp_still_finds_a_real_coordinate() -> None:
+    notice = "Sentinel-2 L2A\n\nItems: at 7.1,46.1\n\nGenerated: 2026-10-10T14:25:17.100083Z\n"
+    assert "7.1" in _without_generated(notice)
+    assert "7.1" not in _without_generated("Sentinel-2 L2A\n\nGenerated: 2026-10-10T14:25:17.100083Z\n")

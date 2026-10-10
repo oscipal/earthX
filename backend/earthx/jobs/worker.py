@@ -62,12 +62,25 @@ from earthx.jobs.entry import ChildTarget
 from earthx.objectstore.errors import ObjectStoreError
 from earthx.objectstore.results import Store, delete_result, new_result_id, upload_result
 
-__all__ = ["RESULT_FILES", "Supervisor"]
+__all__ = ["DISK_SPACE", "EXPORT_FILES", "RESULT_FILES", "Supervisor", "free_bytes"]
 
 LOGGER = logging.getLogger("earthx.jobs")
 
 #: What a finished child leaves in its work directory and what is uploaded (plan M4-08a F4).
 RESULT_FILES = ("result.tif", "mask.tif")
+
+#: The error kind of a run that would not fit on the worker's disk (M4-11a); never tried again.
+DISK_SPACE = "disk_space"
+
+
+def free_bytes(path: Path) -> int:
+    """Free bytes on the file system of ``path``; a seam of its own, so tests can set it."""
+    return shutil.disk_usage(path).free
+
+
+#: What an export leaves instead (M4-11a). The child names its files; a run with attachments is
+#: an export and uploads these, any other run the two above, and nothing else.
+EXPORT_FILES = ("export.zip",)
 
 _RUN_DIRECTORY = re.compile(r"^\d+-\d+$")
 _SPAWN = multiprocessing.get_context("spawn")
@@ -263,8 +276,26 @@ class Supervisor:
         started = time.monotonic()
         shutil.rmtree(workdir, ignore_errors=True)
         workdir.mkdir(parents=True)
+        free = free_bytes(workdir)
+        if free < picked.disk_bytes:
+            shutil.rmtree(workdir, ignore_errors=True)
+            # Before a child starts and without a second attempt (`disk_space` is not retryable):
+            # the same run would find the same disk (Otto, 08.10.2026).
+            queue.finish_failed(conn, run_id, attempt, DISK_SPACE, backoff_seconds=self.config.backoff_seconds)
+            LOGGER.warning(
+                "too little disk space for the run",
+                extra={
+                    "run": run_id,
+                    "attempt": attempt,
+                    "need_mb": round(picked.disk_bytes / 1e6),
+                    "free_mb": round(free / 1e6),
+                },
+            )
+            return
         try:
             (workdir / "recipe.json").write_text(json.dumps(picked.recipe), encoding="utf-8")
+            if picked.attachments is not None:
+                (workdir / "attachments.json").write_text(json.dumps(picked.attachments), encoding="utf-8")
             process, pipe = self._start_child(workdir)
             try:
                 watched = self._watch(conn, picked, process, pipe, started)
@@ -424,10 +455,16 @@ class Supervisor:
         self, conn: psycopg.Connection, picked: queue.Claim, info: dict[str, Any], workdir: Path
     ) -> str:
         run_id, attempt = picked.run_id, picked.attempt
+        files = tuple(info.get("files") or RESULT_FILES)
+        expected = EXPORT_FILES if picked.attachments is not None else RESULT_FILES
+        if files != expected:
+            LOGGER.warning("child reported files it may not leave", extra={"run": run_id, "attempt": attempt})
+            queue.finish_failed(conn, run_id, attempt, "unknown", backoff_seconds=self.config.backoff_seconds)
+            return "unknown"
         result_id = new_result_id()
 
         def upload() -> None:
-            for name in RESULT_FILES:
+            for name in files:
                 upload_result(self.store, result_id, name, workdir / name)
 
         try:

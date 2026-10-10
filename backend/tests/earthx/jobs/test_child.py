@@ -9,8 +9,10 @@ from __future__ import annotations
 import json
 import multiprocessing
 import warnings
+import zipfile
 from collections.abc import Callable
 from contextlib import nullcontext
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -21,9 +23,11 @@ from rio_cogeo.cogeo import cog_validate
 import earthx.jobs as jobs_package
 from earthx.jobs import child
 from earthx.jobs.child import high_water_mb
+from earthx.processing.operators import REGISTRY
+from earthx.processing.recipe import job_recipe_document, parse_recipe
 from tests.earthx.jobs import child_targets
 from tests.earthx.processing import sources
-from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.recipes import CROP, resolved
 
 FORBIDDEN = ("psycopg", "psycopg_pool", "asyncpg", "botocore", "boto3", "earthx.objectstore")
 SIZE = 512
@@ -61,6 +65,7 @@ class TestWhatTheChildLoads:
         assert "earthx.jobs.child" in loaded and "earthx.processing.core" in loaded
         offenders = [name for name in loaded if name.split(".")[0] in FORBIDDEN or name.startswith(FORBIDDEN)]
         assert offenders == []
+        assert "earthx.access.download" not in loaded, "the export uses access.crop_rules, never the crop (M4-11 F1)"
         supervisor = [
             name
             for name in loaded
@@ -150,7 +155,7 @@ class TestTheReportOfADoneRun:
             )
             sent: list[Any] = []
             conn = SimpleNamespace(send=sent.append, poll=lambda: False, close=lambda: None)
-            monkeypatch.setattr(child, "parse_recipe", lambda raw, registry: None)
+            monkeypatch.setattr(child, "parse_recipe", lambda raw, registry: SimpleNamespace(output=None))
             monkeypatch.setattr(child, "run", lambda recipe, _result=result, **_: _result)
             monkeypatch.setattr(child, "worker_environment", nullcontext)
             child._run(tmp_path, conn)
@@ -228,3 +233,82 @@ class TestEveryFailureIsNamedAndNothingElseLeaves:
         process, parent = _start("spawn", child_targets.run_out_of_memory, str(tmp_path))
         assert _messages(process, parent) == [("progress", 1, 2, 1.0), ("failed", "out_of_memory")]
         assert process.exitcode == 0, "the child reported it and ended by itself; nothing was killed"
+
+
+# --- an export (M4-11a) ------------------------------------------------------------
+
+
+def _export_json(groups: list[list[str]]) -> str:
+    items = [item for group in groups for item in group]
+    entries = [resolved(item, "big", href=sources.url(item.lower()), scale=None, offset=None) for item in items]
+    aoi = sources.whole(SIZE, SIZE)
+    data = {
+        "recipe_version": 1,
+        "inputs": [
+            {
+                "name": "input", "dataset": "synthetic", "groups": groups, "assets": ["big"], "resolved": entries,
+                "footprints": {item: aoi for item in items},
+            }
+        ],
+        "aoi": aoi,
+        "steps": [],
+        "output": dict(CROP),
+        "recipe_id": "E" * 22,
+    }  # fmt: skip
+    return json.dumps(data)
+
+
+ATTACHMENTS = {
+    "files": {"ATTRIBUTION.txt": "Synthetic\n", "citation.bib": "@misc{synthetic}\n", "aoi.geojson": "{}"},
+    "attribution": ["Synthetic"],
+}
+
+
+class TestARealExport:
+    def _run(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, attachments: bool = True):
+        workdir = tmp_path / "run"
+        workdir.mkdir()
+        (workdir / "recipe.json").write_text(_export_json([["ITEM_A", "ITEM_B"], ["ITEM_C"]]))
+        if attachments:
+            (workdir / "attachments.json").write_text(json.dumps(ATTACHMENTS))
+        monkeypatch.setenv("CHILD_COG", str(_scene(tmp_path)))
+        process, parent = _start("spawn", child_targets.end_to_end, str(workdir))
+        return _messages(process, parent), workdir
+
+    def test_the_child_leaves_export_zip_and_names_it(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        messages, workdir = self._run(tmp_path, monkeypatch)
+        kind, done = messages[-1]
+        assert kind == "done"
+        assert done["files"] == ["export.zip"] and done["groups"] == 2 and done["assets"] == 1
+        assert sorted(path.name for path in workdir.iterdir()) == ["attachments.json", "export.zip", "recipe.json"]
+        with zipfile.ZipFile(workdir / "export.zip") as archive:
+            assert archive.namelist() == done["members"]
+            assert archive.read("ATTRIBUTION.txt") == b"Synthetic\n"
+            assert json.loads(archive.read("recipe.json"))["recipe_id"] == "E" * 22
+            in_zip = archive.read("recipe.json")
+        body = parse_recipe((workdir / "recipe.json").read_bytes(), REGISTRY).model_dump(mode="json")
+        served = job_recipe_document(
+            body,
+            attribution=done["attribution"],
+            result=done,
+            started=datetime.fromisoformat(done["started"]),
+            finished=datetime.fromisoformat(done["finished"]),
+        )
+        assert in_zip == served, "the link of api and the file in the ZIP are one file (K4)"
+        assert done["bytes"] == (workdir / "export.zip").stat().st_size
+        assert 0 < done["peak_mb"] < 500
+
+    def test_what_it_reports_names_no_address_and_no_coordinate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        messages, _ = self._run(tmp_path, monkeypatch)
+        text = json.dumps(messages[-1][1])
+        assert sources.HOST not in text and "https://" not in text and "coordinates" not in text
+        assert "ITEM_A" not in text
+
+    def test_without_its_attachments_it_fails_and_writes_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        messages, workdir = self._run(tmp_path, monkeypatch, attachments=False)
+        assert messages == [("failed", "unknown")]
+        assert sorted(path.name for path in workdir.iterdir()) == ["recipe.json"]

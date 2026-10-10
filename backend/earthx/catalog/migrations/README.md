@@ -16,6 +16,13 @@ anfasst; sie liegen hier, weil `jobs` `catalog` nicht importieren darf und die
 Buchführung des Läufers eine einzige sein soll. Jeder Fremdschlüssel ist
 `RESTRICT` und hat einen Index.
 
+`007_run_attachments.sql` — die Spalte `earthx_run.attachments` aus M4-11a: die
+Begleitdateien eines Export-Jobs (`ATTRIBUTION.txt`, `citation.bib`, `aoi.geojson`), die
+`api` baut und `jobs` ungelesen an den Lauf weitergibt.
+
+`008_run_disk.sql` — die Spalte `earthx_run.disk_bytes` aus M4-11a: der geschätzte
+Platzbedarf eines Laufs im Arbeitsordner, den der Aufseher vor dem Start prüft.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

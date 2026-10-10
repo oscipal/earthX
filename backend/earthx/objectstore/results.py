@@ -39,14 +39,15 @@ MIN_REMAINING = timedelta(seconds=60)
 MULTIPART_THRESHOLD = 8 * 1024 * 1024
 PART_SIZE = 8 * 1024 * 1024
 
-# What a job writes next to its result (adr/0015 §8.1, adr/0014 §10); grows with
-# M4-11/M4-12 when a job writes further files.
+# What a job writes next to its result (adr/0015 §8.1, adr/0014 §10); an export
+# writes `export.zip` alone (M4-11a). Grows with M4-12 when a job writes further files.
 RESULT_NAMES: Mapping[str, str] = {
     "result.tif": "image/tiff; application=geotiff; profile=cloud-optimized",
     "mask.tif": "image/tiff; application=geotiff",
     "recipe.json": "application/json",
     "citation.bib": "application/x-bibtex",
     "attribution.txt": "text/plain; charset=utf-8",
+    "export.zip": "application/zip",
 }
 
 # The shape of `secrets.token_urlsafe(16)`: 128 bits, 22 characters.

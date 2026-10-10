@@ -28,9 +28,10 @@ from psycopg.types.json import Jsonb
 
 from earthx.jobs.queue import CACHE_MIN_REMAINING, WAKE_CHANNEL, notify_progress
 from earthx.objectstore.results import RESULT_TTL
+from earthx.processing.export import Attachments
 from earthx.processing.operators import REGISTRY, OperatorRegistry
-from earthx.processing.plan import estimate
-from earthx.processing.recipe import Recipe, cache_key, recipe_hosts, run_key
+from earthx.processing.plan import disk_needed, estimate
+from earthx.processing.recipe import CropOutput, Recipe, cache_key, recipe_hosts, run_key
 
 __all__ = [
     "MIN_RUNTIME_SECONDS",
@@ -85,7 +86,13 @@ def _runtime_limit(recipe: Recipe, operators: OperatorRegistry) -> int:
     return max(MIN_RUNTIME_SECONDS, math.ceil(seconds))
 
 
-def submit(conn: psycopg.Connection, recipe: Recipe, *, operators: OperatorRegistry = REGISTRY) -> str:
+def submit(
+    conn: psycopg.Connection,
+    recipe: Recipe,
+    *,
+    operators: OperatorRegistry = REGISTRY,
+    attachments: Attachments | None = None,
+) -> str:
     """Place the order and return its ``job_id``.
 
     In one transaction: the recipe row, then a job on a finished run of the same cache key
@@ -93,13 +100,22 @@ def submit(conn: psycopg.Connection, recipe: Recipe, *, operators: OperatorRegis
     active run of the same key, else on a new run. A recipe without a ``recipe_id`` gets a
     new one; every order has its own (adr/0013 §9 point 2). ``operators`` is the registry the
     runtime limit is estimated with: the one the recipe was validated with (`api` hands it in).
+
+    **An export (output ``crop``) always gets a run of its own** (M4-11 F3): its key holds
+    its own ``recipe_id``, it is never ``cacheable``, nothing attaches to it, and it carries
+    the ``attachments`` `api` built for it — its ZIP holds this order's ``recipe_id`` and the
+    origin of its AOI, which no other order may see. Every other order comes without.
     """
+    export = isinstance(recipe.output, CropOutput)
+    if export != (attachments is not None):
+        raise ValueError("an export comes with its attachments, any other order without")
     recipe_id = recipe.recipe_id or secrets.token_urlsafe(16)
     stored = recipe.model_copy(update={"recipe_id": recipe_id})
-    key = run_key(stored)
-    cacheable = cache_key(stored) is not None
+    key = f"{run_key(stored)}:{recipe_id}" if export else run_key(stored)
+    cacheable = not export and cache_key(stored) is not None
     hosts = list(recipe_hosts(stored))
     max_seconds = _runtime_limit(stored, operators)
+    disk_bytes = disk_needed(stored, operators)
     job_id = secrets.token_urlsafe(16)
     with conn.transaction():
         try:
@@ -111,7 +127,16 @@ def submit(conn: psycopg.Connection, recipe: Recipe, *, operators: OperatorRegis
         except psycopg.errors.UniqueViolation:
             # Not the database's text: it would name the identifier that was refused.
             raise RecipeIdTaken("a recipe with this recipe_id exists") from None
-        run_id, created = _run_for(conn, key, cacheable, recipe_id, hosts, max_seconds)
+        run_id, created = _run_for(
+            conn,
+            key,
+            cacheable,
+            recipe_id,
+            hosts,
+            max_seconds,
+            disk_bytes,
+            None if attachments is None else attachments.to_json(),
+        )
         conn.execute(
             "INSERT INTO public.earthx_job (job_id, run_id, recipe_id) VALUES (%s, %s, %s)",
             (job_id, run_id, recipe_id),
@@ -122,7 +147,14 @@ def submit(conn: psycopg.Connection, recipe: Recipe, *, operators: OperatorRegis
 
 
 def _run_for(
-    conn: psycopg.Connection, key: str, cacheable: bool, recipe_id: str, hosts: list[str], max_seconds: int
+    conn: psycopg.Connection,
+    key: str,
+    cacheable: bool,
+    recipe_id: str,
+    hosts: list[str],
+    max_seconds: int,
+    disk_bytes: int,
+    attachments: dict[str, Any] | None,
 ) -> tuple[int, bool]:
     """The run the new job hangs on, and whether this call created it."""
     # A concurrent order may finish the active run between the two looks; a second round finds
@@ -142,12 +174,22 @@ def _run_for(
                 return hit[0], False
         created = conn.execute(
             """
-            INSERT INTO public.earthx_run (cache_key, cacheable, recipe_id, status, hosts, max_seconds, expires_at)
-            VALUES (%s, %s, %s, 'accepted', %s, %s, clock_timestamp() + %s)
+            INSERT INTO public.earthx_run
+                (cache_key, cacheable, recipe_id, status, hosts, max_seconds, expires_at, disk_bytes, attachments)
+            VALUES (%s, %s, %s, 'accepted', %s, %s, clock_timestamp() + %s, %s, %s)
             ON CONFLICT (cache_key) WHERE status IN ('accepted', 'running') DO NOTHING
             RETURNING run_id
             """,
-            (key, cacheable, recipe_id, hosts, max_seconds, RESULT_TTL),
+            (
+                key,
+                cacheable,
+                recipe_id,
+                hosts,
+                max_seconds,
+                RESULT_TTL,
+                disk_bytes,
+                None if attachments is None else Jsonb(attachments),
+            ),
         ).fetchone()
         if created is not None:
             return created[0], True

@@ -9,7 +9,7 @@
   bounds)`` in the input's own grid, snapped outward to its pixels (approved F9;
   the raster bounds stand in for the footprints, which the core does not see).
 * :func:`estimate` — the cost shown before a run, from AOI, ``gsd`` and data
-  type, the same way ``access.download.plan_outputs`` estimates a crop (F8).
+  type, with the rules the crop uses (``access.crop_rules``, F8).
 """
 
 from __future__ import annotations
@@ -27,22 +27,37 @@ from rasterio.windows import Window
 from shapely.geometry import box
 from shapely.geometry import shape as shapely_shape
 
-from earthx.access.download import MAX_OUTPUT_SIDE_PX, estimate_output_dims
-from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
+from earthx.access.crop_rules import (
+    BLOCK_SIZE,
+    FALLBACK_BYTES_PER_PIXEL,
+    MAX_EXPORT_JOB_BYTES,
+    MAX_OUTPUT_SIDE_PX,
+    AoiOutsideItems,
+    PlannedOutput,
+    bytes_per_pixel,
+    compute_crop_region,
+    estimate_output_dims,
+)
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
-from earthx.processing.recipe import Band, Recipe, Step
+from earthx.processing.recipe import Band, CropOutput, Recipe, Step
 from earthx.processing.source import expected_band_names
 
 __all__ = [
     "EXPORT_FACTOR",
     "SECONDS_PER_ASSET",
+    "SECONDS_PER_EXPORT_MB",
+    "SECONDS_PER_EXPORT_MB_PER_ITEM",
     "SECONDS_PER_INPUT_MB",
+    "DISK_RESERVE_BYTES",
     "CostEstimate",
     "PlannedStep",
     "Segment",
     "check_bands",
     "crop_window",
+    "disk_needed",
     "estimate",
+    "export_outputs",
     "plan_steps",
     "segments",
     "split_tiers",
@@ -57,6 +72,15 @@ SECONDS_PER_ASSET = 1.0
 
 #: Units of a run without any step, the crop alone (adr/0014 §5.5, M3-18 §10.3).
 EXPORT_FACTOR = 0.9
+
+#: Seconds per MB of an export's output (data and mask, as ``PlannedOutput.total_bytes``
+#: counts) for writing, the COG, reading it back and packing, plus per item of the group for
+#: reading it — in a mosaic every item may be read for every block. Measured locally in
+#: M4-11a (``test_memory_export.py``, 160 MB planned, items read fully): one item 8.2–9.6 s,
+#: two 12.4–13.5 s, eight 36.6 s, so 0.030 + 0.025 per item. The network is not in it; the
+#: runtime limit's factor 2 is the reserve.
+SECONDS_PER_EXPORT_MB = 0.030
+SECONDS_PER_EXPORT_MB_PER_ITEM = 0.025
 
 #: Bytes per value where an item names no data type, as the download estimate assumes.
 _FALLBACK_BYTES_PER_VALUE = 8
@@ -205,7 +229,13 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
 
 
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
-    """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing."""
+    """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing.
+
+    An export (output ``crop``) is estimated as the crop estimates itself and refused
+    with :class:`ExportTooLarge` above ``MAX_EXPORT_JOB_BYTES`` (M4-11 F5).
+    """
+    if isinstance(recipe.output, CropOutput):
+        return _export_estimate(recipe)
     aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
     input_pixels = input_bytes = assets = 0
     width = height = 0
@@ -239,3 +269,118 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
         seconds=SECONDS_PER_INPUT_MB * input_bytes / 1_000_000 + SECONDS_PER_ASSET * assets,
         units=output_pixels / 1_000_000 * factor,
     )
+
+
+def export_outputs(recipe: Recipe) -> list[PlannedOutput]:
+    """The files an export writes, per group and asset, as ``access.download.plan_outputs`` plans a crop.
+
+    The region of a group is AOI ∩ its footprints (``compute_crop_region``); per asset the
+    finest ``gsd`` and the largest bytes per pixel of the group's items, both read off the
+    item at acceptance. Reads nothing.
+    """
+    aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
+    planned = []
+    for entry in recipe.inputs:
+        footprints = entry.footprints or {}
+        resolved = {(item.asset.item_id, item.asset.asset): item for item in entry.resolved}
+        for group in entry.groups:
+            geometries = [footprints.get(item_id) for item_id in group]
+            items = [{"geometry": None if g is None else g.model_dump(mode="json")} for g in geometries]
+            try:
+                region = compute_crop_region(items, aoi)
+            except AoiOutsideItems:
+                raise AoiOutsideInputs("the AOI does not touch the footprint of a group") from None
+            for asset in entry.assets:
+                entries = [resolved[(item_id, asset)] for item_id in group]
+                gsds = [item.gsd for item in entries if item.gsd is not None]
+                if gsds:
+                    height, width = estimate_output_dims(region, min(gsds))
+                else:
+                    height = width = MAX_OUTPUT_SIDE_PX
+                per_pixel = max(
+                    (bytes_per_pixel([band.data_type for band in item.bands], asset) for item in entries),
+                    default=FALLBACK_BYTES_PER_PIXEL,
+                )
+                planned.append(PlannedOutput(label=asset, width=width, height=height, bytes_per_pixel=per_pixel))
+    return planned
+
+
+def _export_estimate(recipe: Recipe) -> CostEstimate:
+    planned = export_outputs(recipe)
+    pixels = sum(output.width * output.height for output in planned)
+    raw = sum(output.width * output.height * output.bytes_per_pixel for output in planned)
+    total = sum(output.total_bytes for output in planned)
+    if total > MAX_EXPORT_JOB_BYTES:
+        raise ExportTooLarge(
+            f"This export would be about {total / 1_000_000:.0f} MB, more than the "
+            f"{MAX_EXPORT_JOB_BYTES / 1_000_000:.0f} MB an export job may write. "
+            "Draw a smaller area or choose fewer assets."
+        )
+    assets = sum(len(entry.resolved) for entry in recipe.inputs)
+    items = [len(group) for entry in recipe.inputs for group in entry.groups for _ in entry.assets]
+    seconds = sum(
+        output.total_bytes / 1_000_000 * (SECONDS_PER_EXPORT_MB + SECONDS_PER_EXPORT_MB_PER_ITEM * count)
+        for output, count in zip(planned, items, strict=True)
+    )
+    return CostEstimate(
+        input_pixels=pixels,
+        input_bytes=raw,
+        assets=assets,
+        output_pixels=pixels,
+        output_bytes=total,
+        seconds=seconds + SECONDS_PER_ASSET * assets,
+        units=pixels / 1_000_000 * EXPORT_FACTOR,
+    )
+
+
+#: What a run keeps free beyond its estimated need (Otto, 08.10.2026; a starting value [A]):
+#: the recipe and side files, GDAL's and rio-cogeo's small files, slack for a COG's header.
+DISK_RESERVE_BYTES = 256 * 1024 * 1024
+
+#: A COG's overviews add at most a third of its full resolution (each level a quarter of the one before).
+_WITH_OVERVIEWS = 4 / 3
+
+#: Bytes per value of the core's intermediate passes (``core._INTERMEDIATE_DTYPE``, float64).
+_PASS_BYTES = 8
+
+
+def _tiles_px(pixels: int) -> int:
+    """``pixels`` filled up to whole blocks: a tiled GeoTIFF stores every block in full."""
+    return -(-pixels // BLOCK_SIZE) * BLOCK_SIZE
+
+
+def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
+    """The bytes a run needs in its work directory, judged before it starts (Otto, 08.10.2026).
+
+    **Finished files + 2 × raw size of the largest output + reserve**, from the recipe alone:
+
+    * finished files: the planned output, data and mask, raw, with room for COG overviews
+      (× 4/3); deflate only makes the files smaller;
+    * the raw size of the largest output: its plain GeoTIFF, uncompressed and filled up to
+      whole 1024 px blocks — for an export the data file of one group and asset, for a raster
+      run the float64 pass over all bands; twice, because ``cog_translate`` keeps a temporary
+      file of the same order beside it (measured, plan m4-11 §11 Punkt 8);
+    * :data:`DISK_RESERVE_BYTES`.
+
+    An estimate like :func:`estimate`, conservative where it has to guess (``gsd`` missing,
+    data type unknown). Reads nothing.
+    """
+    if isinstance(recipe.output, CropOutput):
+        planned = export_outputs(recipe)
+        finished = sum(output.total_bytes for output in planned)
+        largest = max(
+            _tiles_px(output.width) * _tiles_px(output.height) * output.bytes_per_pixel for output in planned
+        )
+    else:
+        cost = estimate(recipe, operators)
+        finished = cost.output_bytes + cost.output_pixels
+        aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
+        largest = 0
+        for item in recipe.inputs:
+            for entry in item.resolved:
+                if entry.gsd is not None:
+                    rows, columns = estimate_output_dims(aoi, entry.gsd)
+                else:
+                    rows = columns = MAX_OUTPUT_SIDE_PX
+                largest += _tiles_px(rows) * _tiles_px(columns) * max(len(entry.bands), 1) * _PASS_BYTES
+    return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

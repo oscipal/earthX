@@ -71,3 +71,34 @@ def request_data() -> dict[str, Any]:
     for entry in data["inputs"]:
         del entry["resolved"]
     return data
+
+
+CROP = {
+    "kind": "crop",
+    "format": "cog",
+    "resolution_factor": 1,
+    "extent": "bbox(aoi ∩ footprints)",
+    "mask": "file",
+}
+
+
+def crop_data(groups: list[list[str]] | None = None, assets: tuple[str, ...] = ("visual",)) -> dict[str, Any]:
+    """An export recipe (M4-11a): the crop output, no steps, a footprint per item (the AOI's square)."""
+    groups = copy.deepcopy(groups or [["ITEM_A"]])
+    items = [item for group in groups for item in group]
+    return recipe_data(
+        inputs=[
+            {
+                "name": "input",
+                "dataset": "synthetic",
+                "groups": groups,
+                "assets": list(assets),
+                "resolved": [
+                    resolved(item, asset, scale=None, offset=None) for item in items for asset in assets
+                ],
+                "footprints": {item: copy.deepcopy(SQUARE) for item in items},
+            }
+        ],
+        steps=[],
+        output=dict(CROP),
+    )

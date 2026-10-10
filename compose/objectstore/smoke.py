@@ -7,7 +7,8 @@ GDAL range-read all work. Since M4-06 it also confirms what `earthx.objectstore`
 relies on (adr/0015 §12 point 4): the lifecycle rule for `results/` that
 `objectstore-init` sets is there, the `api` key can read and sign but neither
 write nor delete, a URL signed for the public endpoint works, and one signed
-for the internal endpoint does not work over another host.
+for the internal endpoint does not work over another host. Since M4-11a: such a
+signed link answers range requests, so a large export resumes (F2).
 
 It only *reads* the lifecycle configuration. Writing one replaces the whole
 configuration, and the worker does not start without the `results/` rule.
@@ -266,6 +267,8 @@ def run_service_key_suite(jobs, api, api_internal_signer, bucket: str, endpoint:
         headers is not None and headers.get("Content-Disposition") == 'attachment; filename="earthx-smoke.tif"',
     )
 
+    run_export_range_suite(jobs, api, bucket)
+
     internal_url = api_internal_signer.generate_presigned_url(
         "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=60
     )
@@ -273,6 +276,53 @@ def run_service_key_suite(jobs, api, api_internal_signer, bucket: str, endpoint:
     check("URL signed for the internal endpoint rejected over another host (403)", status == 403)
 
     check("jobs key deletes", _status(lambda: jobs.delete_object(Bucket=bucket, Key=key)) == 200)
+
+
+def _ranged(url: str, first: int, last: int | None = None) -> tuple[int, Message | None, bytes]:
+    """Status, headers and body of a GET with ``Range: bytes=first-last`` (``last`` open when ``None``)."""
+    request = urllib.request.Request(url, headers={"Range": f"bytes={first}-{'' if last is None else last}"})
+    try:
+        with urllib.request.urlopen(request) as resp:
+            return resp.status, resp.headers, resp.read()
+    except HTTPError as exc:
+        return exc.code, None, b""
+
+
+def run_export_range_suite(jobs, api, bucket: str) -> None:
+    """M4-11 F2: a signed link to an export resumes where a broken download stopped.
+
+    The URL is built as `earthx.objectstore.results.signed_download` builds it: signed with
+    the api key for the public endpoint, with `response-content-disposition`. The body is
+    larger than one multipart part, so the range crosses part boundaries, as it does for an
+    export of several GB.
+    """
+    key = f"{RESULTS_PREFIX}smoke-{secrets.token_urlsafe(8)}/export.zip"
+    body = os.urandom(9 * 1024 * 1024 + 123)
+    jobs.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/zip")
+    url = api.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": bucket,
+            "Key": key,
+            "ResponseContentDisposition": 'attachment; filename="smoke_export_20261008.zip"',
+        },
+        ExpiresIn=60,
+    )
+    cut = 5 * 1024 * 1024 + 7
+    status, headers, head = _ranged(url, 0, cut - 1)
+    check("Signed export link: first range -> 206", status == 206 and head == body[:cut])
+    status, headers, tail = _ranged(url, cut)
+    check("Signed export link: resumed open range -> 206", status == 206)
+    check(
+        "Signed export link: Content-Range names the rest",
+        headers is not None and headers.get("Content-Range") == f"bytes {cut}-{len(body) - 1}/{len(body)}",
+    )
+    check("Signed export link: both parts make the whole file", head + tail == body)
+    # Not a check: Garage leaves Content-Disposition off a 206 (seen in the CI of M4-11a). A
+    # browser that resumes keeps the name of the first answer, which carries it (above).
+    disposition = headers.get("Content-Disposition") if headers is not None else None
+    print(f"[info] Content-Disposition on a 206: {'absent' if disposition is None else 'present'}")
+    jobs.delete_object(Bucket=bucket, Key=key)
 
 
 def write_persisted_marker(s3, bucket: str) -> None:

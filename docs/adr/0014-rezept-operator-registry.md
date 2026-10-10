@@ -1666,6 +1666,36 @@ Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
 | §9, Schema des Auftrags (K8) | `steps` als `oneOf` über die Operatoren | jede Schritt-Definition trägt zusätzlich `x-earthx-tiers` und `x-earthx-kind` (Anmerkungen nach JSON Schema 2020-12), damit der Planer des Panels (§6.1) die T1-Schritte am Anfang erkennt | M4-13 K1 |
 | §9, Schema des Auftrags | – | mit `?dataset=` trägt `InputRequest.assets` bei einem Zarr-Datensatz `x-earthx-variable-separator`, sonst nichts; die Angabe gehört zum Auftrag, nicht zur Collection | M4-13 F9 |
 
+## 15f. Nachtrag vom 2026-10-08: die Ausgabe `crop` im Kern (zu §4.2, §10.1; M4-11a)
+
+Otto hat M4-11 am 2026-10-08 freigegeben (`plans/m4-11-export-job.md` §10). Der
+Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Die Ausgabe `crop` wird gerechnet**, nicht nur beschrieben: Der Export-Job
+  läuft im Kern (`processing/export.py`), mit derselben Rasterregel wie der
+  synchrone Zuschnitt (`access/crop_rules.py`). Für dieselbe Auswahl sind Daten
+  und Masken bitgleich (Test). `run` verarbeitet für `crop` mehrere Gruppen und
+  Items nacheinander; für `raster` bleibt es bei einem Item (M4-07a F2).
+- **Footprints im Rezept (Auslegung, M4-11a):** Die Ausdehnung
+  `bbox(aoi ∩ footprints)` braucht die Footprints der Items; ohne sie wäre das
+  Rezept nicht vollständig (K2). Eine Eingabe mit der Ausgabe `crop` trägt
+  deshalb `footprints` (je Item die STAC-`geometry`, `null` ohne Polygon); jede
+  andere Ausgabe trägt keine. Ohne Footprints fällt das Feld aus der Ausgabe:
+  Hash und `recipe.json` der Raster-Rezepte ändern sich nicht. Auch die
+  `recipe.json` des synchronen Zuschnitts trägt sie.
+- **`recipe.json` eines Jobs** baut eine Funktion
+  (`processing.recipe.job_recipe_document`): `api` für den Link, das Kind für
+  das ZIP (K4).
+- **Deckel und Schätzung:** `estimate` rechnet einen Export wie
+  `plan_outputs` den Zuschnitt und weist über `MAX_EXPORT_JOB_BYTES` (5 GB, F5)
+  ab.
+- **Zu §4.3, Versionierung (Otto, 2026-10-08):** `recipe_version` bleibt 1.
+  `footprints` ist für `output.kind = "crop"` ab M4-11a (PR #133) Pflicht.
+  `recipe.json`-Dateien des Zuschnitts von davor gelten nicht als Rezept: Sie
+  entstanden vor der ersten Veröffentlichung (seit M4-14) und werden nirgends
+  gelesen. Die Regel „inkompatible Änderung erhöht die Version“ gilt ab hier
+  wieder ohne Ausnahme.
+
 ## 16. Quellen
 
 **Im Repo [P]**
