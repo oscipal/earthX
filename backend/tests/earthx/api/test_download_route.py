@@ -748,7 +748,8 @@ class TestRecipeAndCitation:
         assert "recipe.json" not in names
         assert {"visual.tif", "visual_mask.tif", "aoi.geojson", "citation.bib"} <= names
         assert f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})." in notice
-        assert "7.1" not in notice
+        # Not in the "Generated:" line: its timestamp holds "7.1" by chance (…14:25:17.100083Z).
+        assert "7.1" not in _without_generated(notice)
         omitted = [record for record in caplog.records if record.getMessage() == "crop recipe omitted"]
         assert [record.stage for record in omitted] == [stage]
         assert "7.1" not in caplog.text
@@ -843,3 +844,14 @@ class TestOverTheCapAnExportJob:
         response = _download(client)
         assert response.status_code == 413
         assert "X-Export-Job" not in response.headers
+
+
+def _without_generated(notice: str) -> str:
+    """The notice without its "Generated:" line, whose timestamp a digit marker can match by chance."""
+    return "\n".join(line for line in notice.splitlines() if not line.startswith("Generated: "))
+
+
+def test_the_search_without_the_timestamp_still_finds_a_real_coordinate() -> None:
+    notice = "Sentinel-2 L2A\n\nItems: at 7.1,46.1\n\nGenerated: 2026-10-10T14:25:17.100083Z\n"
+    assert "7.1" in _without_generated(notice)
+    assert "7.1" not in _without_generated("Sentinel-2 L2A\n\nGenerated: 2026-10-10T14:25:17.100083Z\n")
