@@ -131,6 +131,19 @@ describe('trackJob over server-sent events', () => {
     expect(fetchJob).not.toHaveBeenCalled();
   });
 
+  it('polls also when every reconnect opens and breaks without an event (a buffering proxy)', async () => {
+    const fetchJob = vi.fn(async () => status('running'));
+    trackJob(JOB, { onStatus: vi.fn(), onGone: vi.fn() }, options(fetchJob));
+    const source = FakeSource.last!;
+    for (let i = 0; i < MAX_STREAM_ERRORS; i++) {
+      source.readyState = 1;
+      source.onopen?.();
+      source.fail(0);
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchJob).toHaveBeenCalledTimes(1);
+  });
+
   it('calls nothing after stop', () => {
     const onStatus = vi.fn();
     const stop = trackJob(JOB, { onStatus, onGone: vi.fn() }, options(vi.fn()));

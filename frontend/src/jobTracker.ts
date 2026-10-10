@@ -8,8 +8,10 @@
 //   connect again on its own.
 // - A refusal before the stream (`404`, `503` with too many followers) leaves
 //   `EventSource` `CLOSED`: polling starts at once. A stream that breaks off
-//   reconnects by itself (`CONNECTING`); after three such errors in a row the
-//   tracker polls instead. Without `EventSource` it polls from the start.
+//   reconnects by itself (`CONNECTING`); after three such errors with no valid
+//   event in between the tracker polls instead — also when each reconnect
+//   opens and then breaks without an event (a buffering proxy). Without
+//   `EventSource` it polls from the start.
 // - Polling honours `Retry-After`; a `404` means the job is gone (expired or
 //   dismissed) and ends the tracking.
 //
@@ -32,7 +34,6 @@ export interface TrackerHandlers {
 
 type EventSourceLike = Pick<EventSource, 'addEventListener' | 'close' | 'readyState'> & {
   onerror: ((this: EventSource, ev: Event) => unknown) | null;
-  onopen: ((this: EventSource, ev: Event) => unknown) | null;
 };
 
 export interface TrackerOptions {
@@ -117,9 +118,6 @@ export function trackJob(jobId: string, handlers: TrackerHandlers, options: Trac
     errors = 0;
     deliver(status);
   });
-  stream.onopen = () => {
-    errors = 0;
-  };
   stream.onerror = () => {
     if (stopped || source !== stream) return;
     // `EventSource.CLOSED` is 2; read off the number so a stub needs no constants.
