@@ -245,6 +245,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c | offen |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | offen |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | offen |
+| M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
@@ -1085,6 +1086,33 @@ Zeilenenden (`git diff --ignore-all-space --stat` zeigt keine inhaltliche
 
 **Nicht anfassen:** das Verhalten der Routen außer Punkt 2.
 **Abnahme:** je Punkt ein Test mit Gegenprobe; Pflicht-CI grün.
+
+### M4-23 — Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3`
+
+**Ziel:** Das Frontend liest Bandnamen aus dem STAC-1.1-Kernfeld `bands`, nicht
+aus `eo:bands` (Anlass: M4-13b F1, PR #138).
+**Stufe A.**
+**Umfang:** `adapters/eopf_stac.py::_normalize_asset` behält `bands` und schreibt
+es neben `eo:bands`; beide Felder haben denselben Inhalt (`name` und die
+Angaben, die `eo:bands` schon liefert, ohne `eo:`-Präfix), je als eigene Liste.
+Keine neue Anfrage an die Quelle. Ein Asset ohne Bandliste (fehlt oder ist keine
+Liste) bekommt weder `bands` noch `eo:bands`, wie bisher.
+**Die anderen zwei Datensätze:** `cop-dem-glo-30` braucht es nicht, das Item
+(`cop_dem_bucket._item`) hat ein Asset `data` ohne Bandangaben. Bei
+`sentinel-2-c1-l2a` gibt der Adapter die Items unverändert weiter; die Fixtures
+und die Pläne zeigen dort nur `raster:bands` (ohne Namen), kein `eo:bands`. Ob
+die echten Assets `eo:bands` tragen, lässt sich aus der Cloud-Sitzung nicht
+prüfen (kein Live-Zugang). Deshalb bleibt c1 unverändert und steht Otto als
+Frage im PR.
+**Wirkung auf die Annahme:** keine. `api/intake.py::_entries` liest zuerst
+`raster:bands`; ein EOPF-Asset mit `nodata`/`data_type` behält dessen einen
+Eintrag, ein Asset ohne beides liefert über `bands` nur Namen und damit dieselbe
+leere Beschreibung wie vorher (Test).
+**Nicht anfassen:** Frontend, Wächtertest aus M3-12, Registry-Felder.
+**Abnahme:** Test je Datensatz mit synthetischem Item; ein Test über alle
+Registry-Einträge (`test_asset_bands.py`), dass jedes Asset mit `eo:bands` auch
+`bands` trägt, mit Gegenprobe (das Prüfstück erkennt ein Asset ohne `bands`) und
+mit Prüfung, dass ein neuer Registry-Eintrag den Test erst nach Eintrag besteht.
 
 ### M4-20 — M4-Abnahme und README
 
