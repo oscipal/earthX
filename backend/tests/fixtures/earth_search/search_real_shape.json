@@ -65,7 +65,7 @@
         "platform": "synthetic",
         "constellation": "synthetic",
         "instruments": [
-          0.0
+          "synthetic"
         ],
         "eo:cloud_cover": 0,
         "proj:epsg": 32632,

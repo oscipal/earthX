@@ -475,6 +475,56 @@ class TestFederatedSearch:
         assert response.status_code == 502
 
 
+SOURCE_TEXT = "text-only-the-source-wrote"
+_UNREADABLE_ANSWERS = {
+    "not an object": [SOURCE_TEXT],
+    "no feature list": {"features": SOURCE_TEXT},
+}
+
+
+class TestAnUnreadableAnswerOfOneFederatedSource:
+    """M4-22 (finding of M4-01b): a lone federated search answered with our own `500`
+    when the source's answer was not a search answer, because `_federated_page` did
+    not catch `UpstreamShapeError`. Like every other disagreement of the source it is
+    a `502` now, with a fixed text — what the source wrote does not travel on."""
+
+    @pytest.mark.parametrize("dataset_id", [DATASET_ID, ZARR3_DATASET_ID])
+    @pytest.mark.parametrize("answer", list(_UNREADABLE_ANSWERS))
+    @pytest.mark.parametrize("route", ["get_search", "post_search", "item_collection"])
+    async def test_is_502_with_nothing_the_source_wrote(
+        self, require_catalog_loaded: None, dataset_id: str, answer: str, route: str
+    ) -> None:
+        handler, seen = _answering(httpx.Response(200, json=_UNREADABLE_ANSWERS[answer]))
+        async with _client(handler, policy=MIXED_POLICY) as client:
+            if route == "get_search":
+                response = await client.get("/stac/search", params={"collections": dataset_id})
+            elif route == "post_search":
+                response = await client.post("/stac/search", json={"collections": [dataset_id]})
+            else:
+                response = await client.get(f"/stac/collections/{dataset_id}/items")
+        assert seen, "the source was never asked, so nothing was read"
+        assert response.status_code == 502
+        assert SOURCE_TEXT not in response.text
+
+    async def test_a_mixed_search_still_names_the_source_instead_of_failing(self, require_catalog_loaded: None) -> None:
+        """The other branch is unchanged: with a second source to answer, the
+        unreadable one becomes an `incomplete_collections` entry (M3-13)."""
+        handler, _ = _answering_by_host(
+            {
+                HOST: httpx.Response(200, json=[SOURCE_TEXT]),
+                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_page_1")),
+            }
+        )
+        async with _client(handler, policy=MIXED_POLICY) as client:
+            response = await client.get(
+                "/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}", "limit": 10}
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert [entry["collection"] for entry in body["incomplete_collections"]] == [DATASET_ID]
+        assert SOURCE_TEXT not in response.text
+
+
 class TestNoCoordinatesReachAnyLog:
     """M3-08 follow-up (Otto, 24.09.2026): does `intersects`/`bbox` ever reach a
     log written by `gateway` or an adapter — the request URL, an upstream error's
