@@ -30,7 +30,6 @@ import {
   orderAssets,
   processInfo,
   stepOfRefusal,
-  uniqueNames,
   type BandSource,
   type BuiltOrder,
   type DraftStep,
@@ -384,19 +383,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         reviewError: null,
         startError: null,
       })),
-    // A chip click: the name goes at the end of the band-math expression last
-    // worked on (or the first one); with no band-math step it picks the band's
-    // asset instead.
+    // A chip click with a band-math step: the name goes at the end of the
+    // expression last worked on, or of the first one.
     insertBand: (name) => {
       const s = get();
       const bandMath = s.steps.filter((step) => step.op === 'band_math');
       const target = bandMath.find((step) => step.key === s.activeStep) ?? bandMath[0];
-      if (!target) {
-        const view = orderView(useAppStore.getState(), s);
-        const asset = uniqueNames(view.sources).get(name);
-        if (asset) s.togglePick(asset);
-        return;
-      }
+      if (!target) return;
       const current = typeof target.values.expression === 'string' ? target.values.expression : '';
       const joiner = current === '' || /[\s(]$/u.test(current) ? '' : ' ';
       s.updateStep(target.key, 'expression', `${current}${joiner}${name}`);
