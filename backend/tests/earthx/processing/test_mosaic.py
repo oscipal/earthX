@@ -8,7 +8,9 @@ read off its value. Everything is served through the real `readers` (``sources.s
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import threading
 from pathlib import Path
 
 import numpy
@@ -24,6 +26,7 @@ from earthx.processing import RunCancelled, run
 from earthx.processing import core as core_module
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.mosaic import mosaic_order, target_crs
+from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import recipe_from_data
 from earthx.processing.source import Source
 from tests.conftest import own_log_text
@@ -355,6 +358,39 @@ class TestTheOrderOfAnOverpass:
     def test_no_crs_at_all_is_a_plain_order_by_id(self) -> None:
         assert target_crs({"B": None, "A": None}) is None
         assert mosaic_order({"B": None, "A": None}) == ["A", "B"]
+
+
+@pytest.mark.usefixtures("served")
+def test_the_work_directory_stays_within_what_the_supervisor_checked(tmp_path: Path) -> None:
+    """The disk check of M4-11a (``disk_needed``) holds for a mosaic: the peak is below need minus reserve."""
+    data = _recipe(["A", "B", "C"])
+    recipe = recipe_from_data(data, OPERATORS)
+    peak = 0
+    done = threading.Event()
+
+    def watch() -> None:
+        nonlocal peak
+        while not done.is_set():
+            size = 0
+            for path in tmp_path.iterdir():
+                with contextlib.suppress(OSError):
+                    size += path.stat().st_size
+            peak = max(peak, size)
+
+    watcher = threading.Thread(target=watch, daemon=True)
+    watcher.start()
+    try:
+        run(recipe, workdir=tmp_path, progress=lambda done_, total: None, operators=OPERATORS)
+    finally:
+        done.set()
+        watcher.join()
+    assert 0 < peak <= disk_needed(recipe, OPERATORS) - DISK_RESERVE_BYTES
+
+
+def test_the_need_does_not_grow_with_the_scenes_but_with_the_area() -> None:
+    one = disk_needed(recipe_from_data(_recipe(["A"]), OPERATORS), OPERATORS)
+    three = disk_needed(recipe_from_data(_recipe(["A", "B", "C"]), OPERATORS), OPERATORS)
+    assert one == three  # the same AOI and the same bands: the same output
 
 
 class TestTheRuleOfTheExport:

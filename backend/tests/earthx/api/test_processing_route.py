@@ -41,6 +41,7 @@ from tests.earthx.api.test_intake import (
     order,
     s2_item,
 )
+from tests.earthx.api.test_intake_mosaic import scene
 
 pytestmark = pytest.mark.anyio
 
@@ -1209,3 +1210,74 @@ class TestAnExport:
         )
         assert served == written
         assert json.loads(served)["provenance"]["attribution"] == ["Contains modified Copernicus Sentinel data 2025"]
+
+
+class TestAMosaic:
+    """The scenes of one overpass as one job (M4-12a): placed, shared, bounded."""
+
+    @staticmethod
+    def overpass(rig: Rig, *ids: str, **properties: Any) -> None:
+        bboxes = {"S2_A": NEAR, "S2_B": (9.0, 46.9, 9.2, 47.1), "S2_C": (9.1, 46.9, 9.3, 47.1)}
+        for item_id in ids:
+            rig.source.items[("sentinel-2-c1-l2a", item_id)] = scene(item_id, bboxes[item_id], **properties)
+
+    @staticmethod
+    def whole(*ids: str) -> dict[str, Any]:
+        document = order(groups=(tuple(ids),), steps=[])
+        del document["aoi"]
+        return document
+
+    async def test_whole_scenes_are_placed_in_the_order_the_core_reads_them(self, rig: Rig) -> None:
+        self.overpass(rig, "S2_A", "S2_B", "S2_C")
+        body = (await place(rig, self.whole("S2_C", "S2_A", "S2_B"))).json()
+        stored = rig.db.execute("SELECT body FROM public.earthx_recipe WHERE recipe_id = %s", (body["recipeID"],))
+        recipe = stored.fetchone()[0]
+        assert recipe["inputs"][0]["groups"] == [["S2_A", "S2_B", "S2_C"]]
+        assert recipe["aoi"]["type"] == "Polygon" and "recipe_id" in recipe
+        assert body["skippedItems"] == []
+
+    async def test_the_same_overpass_in_another_order_shares_the_run(self, rig: Rig) -> None:
+        self.overpass(rig, "S2_A", "S2_B", "S2_C")
+        first, second = await place(rig, self.whole("S2_A", "S2_B", "S2_C")), await place(
+            rig, self.whole("S2_C", "S2_B", "S2_A")
+        )
+        assert first.status_code == second.status_code == 201
+        assert first.json()["jobID"] != second.json()["jobID"]
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (1, 2)
+
+    async def test_one_scene_more_is_another_run(self, rig: Rig) -> None:
+        self.overpass(rig, "S2_A", "S2_B", "S2_C")
+        await place(rig, self.whole("S2_A", "S2_B"))
+        await place(rig, self.whole("S2_A", "S2_B", "S2_C"))
+        assert count(rig.db, "earthx_run") == 2
+
+    async def test_scenes_of_two_overpasses_are_a_422_that_names_them_and_queues_nothing(self, rig: Rig) -> None:
+        self.overpass(rig, "S2_A", "S2_B")
+        self.overpass(rig, "S2_C", take="GS2A_other")
+        response = await place(rig, self.whole("S2_A", "S2_B", "S2_C"))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:items" and "S2_C" in body["detail"]
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0)
+
+    async def test_a_mosaic_over_the_cap_is_a_413_and_waits_for_nobody(self, rig: Rig) -> None:
+        rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = scene("S2_A", (0.0, 40.0, 10.0, 50.0))
+        rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = scene("S2_B", (10.0, 40.0, 20.0, 50.0))
+        body = problem(await place(rig, self.whole("S2_A", "S2_B")), 413)
+        assert body["type"] == "urn:earthx:order-refused:size" and "5000 MB" in body["detail"]
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0)
+
+    async def test_the_estimate_takes_whole_scenes_and_says_the_same(self, rig: Rig) -> None:
+        self.overpass(rig, "S2_A", "S2_B")
+        response = await rig.client.post(
+            "/processing/processes/recipe/estimate", json=envelope(self.whole("S2_B", "S2_A"))
+        )
+        assert response.status_code == 200
+        estimate = response.json()["estimate"]
+        assert estimate["size"] > 0 and estimate["assets"] == 4
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0)
+
+    async def test_the_estimate_of_a_mosaic_over_the_cap_is_a_413_too(self, rig: Rig) -> None:
+        rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = scene("S2_A", (0.0, 40.0, 10.0, 50.0))
+        rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = scene("S2_B", (10.0, 40.0, 20.0, 50.0))
+        response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(self.whole("S2_A", "S2_B")))
+        assert problem(response, 413)["type"] == "urn:earthx:order-refused:size"
