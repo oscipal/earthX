@@ -1,22 +1,25 @@
 # M4 — Processing-Kern mit lokalem Runner: Aufgabenschnitt
 
-**Status:** Fassung 2 vom 05.10.2026. Fassung 1 (02.10.2026) hat M4-00 bis
-M4-05 beschrieben; nach der Annahme von `adr/0013`, `adr/0014` und `adr/0015`
-schneidet Fassung 2 die Umsetzungsaufgaben von M4a (M4-06 bis M4-15) aus und
-trifft dafür die Entscheidungen R1–R6 (§1.1b). M4b (M4-16 bis M4-19) bleibt im
-Umriss bis nach `adr/0016`. Wo eine erledigte Aufgabe anders umgesetzt wird als
-hier beschrieben, gilt das Log.
+**Status:** Fassung 3 vom 10.10.2026. Fassung 1 (02.10.2026) hat M4-00 bis
+M4-05 beschrieben; Fassung 2 (05.10.2026) hat nach der Annahme von `adr/0013`,
+`adr/0014` und `adr/0015` die Umsetzungsaufgaben von M4a geschnitten (R1–R6,
+§1.1b). Fassung 3 schneidet nach der Annahme von `adr/0016` die Aufgaben von
+M4b (M4-16 bis M4-19) aus, nimmt die gesammelten kleinen Aufgaben auf (M4-21,
+M4-22), zieht den Stand in §3 nach und legt fest, was nach M4 wartet
+(S1–S6, §1.1c). Wo eine erledigte Aufgabe anders umgesetzt wurde als hier
+beschrieben, gilt das Log und der Plan der Aufgabe (`plans/m4-xx-*.md`).
 **Ort im Repo:** `docs/plans/m4-processing-kern.md`
 **Grundlagen:** `projektplan.md` 4 (M4), 6.1, 10; `architekturplan.md` 3.1,
 3.2, 6.1, 6.3, 6.4, 6.5, 7, 12.1, 12.3, 15.1, 15.2; `adr/0001` §9.2 (Ablauf),
 `adr/0002` (Tests), `adr/0006` (Kachel-Pfad, Mosaik), `adr/0011`
 (Adapter-Interface, §6, §7, §8.1), `adr/0012` (Objektspeicher, §7.3, §9, F3, F5), `adr/0013` (Job-Queue),
-`adr/0014` (Rezept und Operator-Registry), `adr/0015` (Weg zum Objektspeicher);
+`adr/0014` (Rezept und Operator-Registry), `adr/0015` (Weg zum Objektspeicher),
+`adr/0016` (lokaler Runner);
 `KLAERUNGEN.md` B8–B13; `projektuebersicht.md` §5 (Onboarding-Checkliste);
 `plans/m3-dritte-quelle-und-interface.md` (P11, P19, P20, „Nicht in M3“);
 `plans/m3-15-abnahme.md` §12 („Nach M3 vorgemerkt“); `ENTSCHEIDUNGSLOG.md`, Zeilen
-ab dem 30.09.2026, besonders „M4 Q2“ bis „M4 Q16“ vom 02.10.2026 und „M4 Fassung 2“ vom
-05.10.2026.
+ab dem 30.09.2026, besonders „M4 Q2“ bis „M4 Q16“ vom 02.10.2026, „M4 Fassung 2“ vom
+05.10.2026 und „M4 Fassung 3“ vom 10.10.2026.
 
 Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M4-xx aus
 `docs/plans/m4-processing-kern.md` aus.“ Jede Aufgabe ist ohne das
@@ -73,20 +76,20 @@ eine Wahl braucht.
 | R5 | **Band-Math-Ausdrücke:** erlaubt sind nur die Bandnamen des Rezepts, Zahlen, die Operatoren `+ - * / **`, Vergleiche, Klammern und eine feste Liste von numexpr-Funktionen; höchstens 256 Zeichen. Geprüft wird im Parametermodell, bevor numexpr den Ausdruck sieht. Die Funktionsliste schlägt M4-09 im Plan-Schritt vor. **Eingeengt am 2026-10-06 (`adr/0016` F8, `adr/0014` §15c):** In M4 erlaubt Band-Math nur bitstabile Funktionen: Grundrechenarten, Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt` und ganzzahlige Potenzen mit \|n\| ≤ 50, ausgewertet mit `optimization="aggressive"`. `log`, `exp`, Winkelfunktionen und gebrochene Potenzen folgen später mit eigener Toleranz. **Erweitert am 2026-10-07 (Otto, M4-09 F4):** `&`, `\|` und `~` sind erlaubt, aber nur auf Wahrheitswerten (Vergleiche und ihre Verknüpfungen); auf Zahlen weist die R5-Prüfung sie ab, nie ein Fehler aus numexpr | M4-09 |
 | R6 | **Doppelzeile im Log:** Die Zeile „`adr/0014` §5.4, Auslegung zu F7a“ steht nach dem Merge von #114 und #115 zweimal. Die erste („Vorschlag“) bekommt in der Statusspalte den Verweis auf die zweite („fest am 2026-10-05“); gelöscht wird nichts | `ENTSCHEIDUNGSLOG.md` |
 
-### 1.1c Entscheidungen zu M4-12 (Otto, 10.10.2026)
+### 1.1c Entscheidungen zu Fassung 3 (Otto, 10.10.2026)
 
-Grundlage ist `plans/m4-12-mosaik-ueberflug.md` §8 und §11. Wo diese Tabelle und
-der Plan sich widersprechen, gilt die Tabelle.
+Grundlage sind `adr/0016` (angenommen 06.10.2026) und die offenen Zeilen im Log
+bis zum 10.10.2026. Wo diese Tabelle und ein früherer Planstand sich
+widersprechen, gilt die Tabelle.
 
 | # | Entscheidung | wirkt auf |
 |---|---|---|
-| S1 | **Weg und Flag:** Das Mosaik ist ein Raster-Lauf des Kerns im UTM-Raster; Szenen anderer Zonen laufen über den Warp aus M4-10. Kein eigenes Capability-Flag, jedes Mosaik verlangt `reprojection` | M4-12a |
-| S2 | **Ziel-CRS:** das CRS der meisten Szenen, bei Gleichstand die kleinere EPSG-Zahl, unabhängig von der Reihenfolge im Auftrag | M4-12a |
-| S3 | **Ganze Szenen:** Auftrag ohne `aoi`, `api` setzt die Vereinigung der Footprints; `api` prüft den Überflug (`results_group_by`), eine Gruppe je Auftrag | M4-12a |
-| S4 | **Deckel und Zarr:** 5 GB roh als **eine** Konstante gemeinsam mit dem Export, die Plattenprüfung aus M4-11a gilt auch hier; Zarr-Mosaik nur in einem CRS | M4-12a |
-| S5 | **Überlappung (F3 angepasst):** Der Kern nutzt dieselbe Mosaikregel wie der Export-Job (erstes gültiges Pixel in der Reihenfolge der Liste, gemeinsame Funktion in `access/crop_rules.py`), keine zweite Regel. Die Bevorzugung von Szenen ohne Warp entsteht, weil `api` die Liste sortiert: zuerst Szenen im Ziel-CRS, danach die übrigen, je nach Item-ID | M4-12a |
-
----
+| S1 | **Neue Aufgaben:** M4-21 vereinheitlicht die Zeilenenden per `.gitattributes` (Anlass: vier Sessions haben `m4-processing-kern.md` versehentlich von CRLF auf LF umgestellt). M4-22 schließt drei Testlücken an einer Stelle: Vertragstest der Items je Adapter (Log 06.10.2026), `500` statt `502` bei unlesbarer Antwort einer föderierten Einzelsuche (Fund aus M4-01b), der Geocode-Logtest, der nichts prüft (Log 07.10.2026, M4-07b-fix offen (1)) | §3, M4-21, M4-22 |
+| S2 | **Zeilenenden:** Im Repo und in jedem Checkout gilt LF für alle Textdateien (`* text=auto eol=lf`), CRLF nur für `*.bat` und `*.cmd`, Binärformate ausdrücklich `binary`. Die Normalisierung kommt einmal, als eigener PR, zwischen zwei Wellen, wenn keine andere Session offen ist | M4-21, §1.3 |
+| S3 | **Nach M4 vorgemerkt, nicht in M4:** Export-Job für Zarr blockweise; weitere Resampling-Methoden für `reproject`; schnelleres COG-Profil; Laufzeitdeckel an echten Läufen kalibrieren; Zähler der Verbindungen je Lauf; Job-Schnittstelle in eigenem Prozess (Gewicht von `api`); Eingaben per Referenz; Datei-Cache des Runners. Die Log-Zeilen bleiben „offen“; M4-20 führt sie unter „Nach M4 vorgemerkt“ | M4-20 |
+| S4 | **M4-18 ist Stufe B statt A:** Masking braucht je Datensatz eine Angabe, woher die Maske kommt (etwa eine Klassifikationsschicht), also ein neues Registry-Feld ohne Vorgabewert (B10); die Form legt der Plan-Schritt vor | M4-18 |
+| S5 | **M4-17 hängt an M4-12:** Das Mosaik im Kachel-Pfad nutzt dieselbe Mosaikregel (Reihenfolge, Überlappung) wie der Export-Job (M4-11a) und der Mosaik-Job (M4-12), damit Vorschau und Job nicht verschieden mosaikieren | M4-17 |
+| S6 | **M4-19 nach M4-13c,** Teilung im Plan-Schritt; die Frist für Rezepte hinter Permalinks (Log 05.10.2026) entscheidet Otto dort | M4-19 |
 
 ### 1.2 Was in allen Aufgaben gilt
 
@@ -121,6 +124,19 @@ Dazu für M4:
   Punkt 7).
 - **ADR-Belegstufen** wie in `adr/0009`: [M] gemessen, [P] am Primärdokument
   gelesen, [S] Zusammenfassung, [A] eigene Ableitung.
+- **Logtests** suchen nur in der Nachricht und den eigenen Feldern, nie im
+  Zeitstempel oder in den Standardattributen von `LogRecord`; dafür gibt es
+  `own_log_text`/`own_log_fields` und `format_without_timestamp` in
+  `backend/tests/conftest.py` (M4-08a-fix, M4-07b-fix). Jeder Logtest prüft
+  zuerst, dass überhaupt Zeilen geloggt wurden.
+- **Zeilenenden:** Dateien mit ihren bestehenden Zeilenenden schreiben; ein PR,
+  der ganze Dateien nur durch Zeilenenden ändert, wird zurückgewiesen (bis
+  M4-21 gemergt ist; danach erledigt das `.gitattributes`).
+- **Prüfanleitungen für Otto** in Windows PowerShell 5.1: `Invoke-RestMethod`
+  bzw. `Invoke-WebRequest`, `${var}` statt `$var`, wenn direkt ein `?` folgt,
+  Zeitangaben für `/stac/search` im vollen Format
+  (`2025-07-01T00:00:00Z/2025-07-31T23:59:59Z`). Vor dem Eintragen im
+  Plan-Schritt einmal gegen die Antwortform prüfen.
 
 **Stufe B heißt hier:** Der Plan liegt als `docs/plans/m4-xx-<kurzname>.md` im
 Draft-PR, die Session hält an, Otto gibt frei, dann wird in derselben Session
@@ -143,6 +159,19 @@ umgesetzt.
 - **Nach M4-06 und nach M4-08a:** lokal `docker compose up -d --build`; die
   Prüfanleitung steht im jeweiligen PR. Nach M4-06 kommen neue
   Dienstschlüssel und Variablen hinzu, `.env` bleibt wie es ist.
+- **Vor M4-21 (Fassung 3):** M4-21 erst starten, wenn kein anderer PR offen
+  ist (Welle 2 in §3). Startet trotzdem eine Session davor, holt sie nach dem
+  Merge von M4-21 `main` und normalisiert ihren Branch mit
+  `git add --renormalize .`.
+- **Nach M4-21:** lokal `git pull`. Zeigt `git status` danach geänderte
+  Dateien, obwohl du nichts geändert hast, einmal
+  `git rm --cached -r . ; git reset --hard` (verwirft lokale Änderungen, also
+  nur auf sauberem Stand).
+- **Vor M4-16:** Kann eine Session das Image nicht bauen (Debian-Spiegel
+  `deb.debian.org`, `security.debian.org` gesperrt, `cloud-umgebung.md` §4),
+  entweder beide Hosts in die Allowlist der Cloud-Umgebung aufnehmen (gilt nur
+  für neue Sessions) oder den Bau der CI überlassen; die Session meldet das im
+  Plan-Schritt.
 
 ---
 
@@ -161,6 +190,9 @@ Zuschnitt-ZIP; Checkliste Punkt 9 Fassung v2.
 in der CI; Mosaik im Kachel-Pfad; Masking und Normalisierung; Permalinks,
 Methodentext, automatische Skalierung und Einheiten, „Parameter übernehmen“.
 
+**Querschnitt (Fassung 3):** Zeilenenden per `.gitattributes` (M4-21);
+Testlücken und `502` bei der föderierten Einzelsuche (M4-22).
+
 **Nicht in M4:** Datacube (bleibt M6, `projektplan.md` M6); Login, Quotas und
 Ratenbegrenzung je Nutzer oder IP (M6, D6); verbundener Runner und
 Runner-Auswahl in der Oberfläche (7f); Veröffentlichen des Runner-Images (Q12);
@@ -168,7 +200,10 @@ Container-Stufe T3 und externe Engines (M7); Bug-Report Stufe 2 und 3 (Q15);
 Health-Checks, Harvester, Zählwürfel, STAC-API-Dialekt (M5, `adr/0011` F6);
 COG-Header-Cache (Log offen); Uvicorn-Worker des `tiler` (M5); Registrieren des
 Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
-öffentlichen Deployment (AGPL §13, Nutzungsbedingungen).
+öffentlichen Deployment (AGPL §13, Nutzungsbedingungen); die Punkte aus S3
+(Export-Job für Zarr, weitere Resampling-Methoden, COG-Profil, Kalibrierung des
+Laufzeitdeckels, Verbindungszähler, Job-Schnittstelle in eigenem Prozess,
+Eingaben per Referenz, Datei-Cache des Runners).
 
 ---
 
@@ -179,73 +214,71 @@ Quad-Pol-Operators aus `decomp.py` (ruht, ENTSCHEIDUNGEN §3); alles zum ersten
 | M4-00 | Doku nachziehen | M4a | A | Sonnet (mittel) | — | erledigt (#111) |
 | M4-00b | Lock-Datei für die Backend-Pakete | M4a | B | Opus Plan, Sonnet (hoch) | — | erledigt (#113) |
 | M4-01a | Zugriffsauflösung nach `access`, eine Item-Quelle in `api` | M4a | B | Opus Plan, Sonnet (hoch) | — | erledigt (#112) |
-| M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a | PR #122 |
+| M4-01b | `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen | M4a | B | Opus Plan, Sonnet (hoch) | M4-01a | erledigt (#122) |
 | M4-02 | Spike Job-Queue → `adr/0013` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#116) |
 | M4-03 | Rezept und Operator-Registry → `adr/0014` | M4a | C | Opus (xhigh) | — | erledigt, angenommen (#114) |
 | M4-04 | Weg zum Objektspeicher → `adr/0015` | M4a | C | Opus (hoch) | — | erledigt, angenommen (#115) |
 | M4-05 | Lokaler Runner → `adr/0016` | M4b | C | Opus (hoch) | `adr/0014` | erledigt, angenommen (#121) |
-| M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | in Arbeit (PR #119) |
-| M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | PR #120 |
-| M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | PR #123 |
-| M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | PR #124 |
-| M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | PR #128 |
-| M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | PR #127 |
+| M4-06 | Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0015` | erledigt (#119) |
+| M4-07a | Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0014` | erledigt (#120) |
+| M4-07b | Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a, M4-01b | erledigt (#123) |
+| M4-08a | Queue und Worker-Hülle in `jobs` | M4a | B | Opus Plan, Sonnet (hoch) | `adr/0013`, M4-06, M4-07a | erledigt (#124) |
+| M4-08b | Job-API (OGC-Form), Ergebnis-Links, SSE | M4a | B | Opus Plan, Sonnet (hoch) | M4-07b, M4-08a | erledigt (#128) |
+| M4-09 | Operator Band-Math (T1, T2) | M4a | B | Opus Plan, Sonnet (hoch) | M4-07a | erledigt (#127) |
 | M4-10 | Operator Reprojektion/Resampling (T2) | M4a | A | Sonnet (hoch) | M4-07a | erledigt (#125) |
-| M4-10b | Nachbesserung M4-10: Spitzenspeicher von `reproject` unter 500 MB | M4a | A | Opus (hoch) | M4-10 | PR #126 (Entwurf) |
-| M4-08a-fix | Nachbesserung M4-08a: Logtests prüfen Nachricht und Felder, nicht den Zeitstempel | M4a | A | Sonnet (hoch) | M4-08a | PR (Entwurf) |
-| M4-07b-fix | Nachbesserung M4-07b: Logtests suchen in Nachricht und eigenen Feldern, nicht in den Standardattributen von `LogRecord` | M4a | A | Sonnet (hoch) | M4-07b, M4-08a-fix | PR #131 (Entwurf) |
-| M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | PR #132 (Entwurf) |
-| M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | PR #133 (`plans/m4-11-export-job.md`) |
-| M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Sonnet (hoch) | M4-11a, M4-13b | offen |
+| M4-10b | Nachbesserung M4-10: Spitzenspeicher von `reproject` unter 500 MB | M4a | A | Opus (hoch) | M4-10 | erledigt (#126) |
+| M4-08a-fix | Nachbesserung M4-08a: Logtests prüfen Nachricht und Felder, nicht den Zeitstempel | M4a | A | Sonnet (hoch) | M4-08a | erledigt (#130) |
+| M4-07b-fix | Nachbesserung M4-07b: Logtests suchen in Nachricht und eigenen Feldern, nicht in den Standardattributen von `LogRecord` | M4a | A | Sonnet (hoch) | M4-07b, M4-08a-fix | erledigt (#131) |
+| M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | erledigt (#132) |
+| M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | erledigt (#133, `plans/m4-11-export-job.md`) |
+| M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a, M4-13b | offen |
 | M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | PR #136 (`plans/m4-12-mosaik-ueberflug.md`), Plan freigegeben am 10.10.2026 |
-| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | offen (neue Session nach dem Merge von M4-13b) |
-| M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (PR #134); Umsetzung in a bis c |
-| M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | PR #134 (Entwurf), wartet auf Review |
-| M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | offen (neue Session nach dem Merge von M4-13a) |
+| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | offen |
+| M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (#134); Umsetzung in a bis c |
+| M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | erledigt (#134) |
+| M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | offen |
 | M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung | M4a | B | Sonnet (hoch) | M4-13b | offen (neue Session nach dem Merge von M4-13b) |
-| M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | PR #129 |
-| M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | PR #135 (Entwurf) |
-| M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a | Umriss |
-| M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a | Umriss |
-| M4-18 | Operatoren Masking und Normalisierung | M4b | A | Sonnet (hoch) | M4-07a | Umriss |
-| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13 | Umriss |
+| M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | erledigt (#129) |
+| M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | erledigt (#135) |
+| M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | offen |
+| M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | offen |
+| M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
+| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c | offen |
+| M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | offen |
+| M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | offen |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
-**Wellen (Fassung 2).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
-und C laufen daneben. Die Reihenfolge folgt dem kritischen Pfad
-M4-07a → M4-08a → M4-08b → M4-13a → M4-13b → M4-13c.
+**Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
+und C laufen daneben. Kritischer Pfad für die Abnahme:
+M4-13b → M4-13c und M4-16 (Kriterium 1), M4-11b und M4-12 (Kriterium 5),
+M4-17 (Kriterium 7).
 
-1. **Sofort:** M4-07a und M4-06 (die zwei B-Plätze); daneben M4-05 (C).
-2. **Wird ein B-Platz frei:** M4-01b, danach M4-08a (braucht M4-06 und
-   M4-07a). M4-10 (A) läuft, sobald M4-07a gemergt ist.
-3. **Danach:** M4-07b (nach M4-01b) und M4-09; M4-14 (A) nach M4-07b.
-4. **Danach:** M4-08b; dann M4-13, M4-11, M4-12; M4-15 (A), sobald M4-07b,
-   M4-09 und M4-10 gemergt sind.
-5. **M4b:** M4-16 nach Annahme von `adr/0016`; M4-17, M4-18 und M4-19 sobald
-   B-Plätze frei sind. Ihr Zuschnitt wird nach `adr/0016` in Fassung 3
-   geschärft.
+1. **Jetzt:** M4-13b und M4-12 (die zwei B-Plätze); daneben M4-22 (A).
+2. **Sind M4-13b, M4-12 und M4-22 gemergt:** M4-21 allein, kein anderer PR
+   offen (S2, §1.3). Dauert eine kurze Session.
+3. **Nach M4-21:** M4-13c und M4-11b (B).
+4. **Danach:** M4-16 und M4-17 (B).
+5. **Danach:** M4-18 und M4-19 (B; M4-19 nach M4-13c).
+6. **Zuletzt:** M4-20.
 
 **Dateikonflikte:**
-- **Lock-Dateien:** M4-06 (`botocore`) und M4-07a (falls es eine direkte
-  Abhängigkeit wie `rio-cogeo` braucht) ändern beide `requirements*.txt` und
-  die Lock-Dateien. Wer als Zweiter gemergt wird, holt `main` und erzeugt die
-  Lock-Dateien mit `scripts/lock-backend.sh` neu, statt Konflikte von Hand zu
-  lösen.
-- **`.importlinter` und `test_module_boundaries.py`:** M4-06 (Modul
-  `objectstore`, R2) und M4-08a (Vertrag `no-database-in-worker-core`) ändern
-  beide; M4-08a hängt an M4-06, also nacheinander.
-- **`jobs/main.py`:** M4-06 (Prüfung der Ablaufregel beim Start) vor M4-08a
-  (Aufseher).
-- **`api`:** M4-01b, M4-07b, M4-08b und M4-09 (`api/tiler.py`) berühren
-  `api`; die Abhängigkeiten oben ordnen sie. M4-09 und M4-07b berühren
-  verschiedene Dateien und dürfen parallel laufen.
-- **`architekturplan.md` 3.1:** M4-06 (Zeile `objectstore`) und M4-08a (Zeile
-  `jobs`); nacheinander.
+- **Frontend:** M4-13b, M4-13c und M4-11b ändern das Frontend; M4-11b nutzt die
+  Statusanzeige aus M4-13b und darf erst danach starten. M4-13c und M4-11b
+  berühren verschiedene Komponenten (Karte bzw. Download-Dialog); wer als
+  Zweiter fertig wird, holt `main`.
+- **Mosaikregel:** M4-12 und M4-17 nutzen dieselbe Regel; M4-17 übernimmt sie
+  aus M4-12 und ändert sie nicht (S5).
+- **Registry:** M4-18 fügt ein Feld hinzu; läuft parallel nichts, das die
+  Registry ändert.
+- **`ENTSCHEIDUNGSLOG.md` und §3:** jede Session holt vor dem Fertigmelden
+  `main` und erhält alle Zeilen; ihre eigene steht am Ende.
+- **M4-21** ändert fast jede Textdatei; deshalb allein (Welle 2).
 
 **Feste ADR-Nummern**, damit parallele Sessions nicht kollidieren:
 `adr/0013-job-queue.md` (M4-02), `adr/0014-rezept-operator-registry.md`
 (M4-03), `adr/0015-objektspeicher-zugang.md` (M4-04),
-`adr/0016-lokaler-runner.md` (M4-05).
+`adr/0016-lokaler-runner.md` (M4-05). Braucht eine Aufgabe in M4b ein ADR
+(etwa M4-17), nimmt sie `adr/0017`.
 
 ---
 
@@ -503,11 +536,11 @@ Offline-Betrieb (Q12).
 **Abnahme:** `adr/0016-lokaler-runner.md` mit Empfehlung und nummerierten
 Fragen an Otto.
 
-### Gemeinsam für M4-06 bis M4-15
+### Gemeinsam für M4-06 bis M4-22
 
 - **Maßgeblich sind die angenommenen ADRs** samt ihren Auflagen (§10a bzw.
-  §14a bzw. §15a/§15b) und R1–R6 in §1.1b. Wo ein ADR eine Skizze zeigt, ist
-  sie ein Vorschlag; Abweichungen nennt der Plan-Schritt.
+  §14a bzw. §15a/§15b) und R1–R6 in §1.1b, S1–S6 in §1.1c. Wo ein ADR eine
+  Skizze zeigt, ist sie ein Vorschlag; Abweichungen nennt der Plan-Schritt.
 - **Was ein ADR ausdrücklich als Test verlangt** („Was M4-08 belegen muss“,
   „Was M4-06 bauen und die CI belegen muss“, „für die Umsetzung vorgesehen“),
   gehört in die jeweilige Aufgabe; der PR nennt je Punkt den Test.
@@ -828,23 +861,48 @@ dort zusätzliche mmap-Aufrufe und Seitenfehler [A].
 mit `steps: []`, Ausgabe wie der synchrone Zuschnitt in voller Auflösung);
 gleiche Hinweisdateien, Maske, `recipe.json` und `citation.bib`; Ergebnis über
 den Link aus M4-08b.
-**Im Plan-Schritt zu entscheiden:** ZIP wie beim synchronen Zuschnitt oder
-einzelne Dateien.
-**Abnahme:** Test über die Grenze; Prüfanleitung für Otto mit einer großen
-AOI.
+**Im Plan-Schritt entschieden (08.10.2026, `plans/m4-11-export-job.md`):** ein
+`export.zip` wie beim Zuschnitt (Rasterdateien ohne erneute Kompression), jeder
+Export rechnet für sich und kommt nie aus dem Cache, je berührter Gruppe eine
+Datei samt Maske, Deckel 5 GB, Zarr vorerst `422`, Plattenprüfung vor dem
+Lauf. Geteilt in **M4-11a** (Backend, erledigt #133) und **M4-11b**.
+
+#### M4-11b — Angebot im Download-Dialog
+
+**Stufe B.** Neue Session nach dem Merge von M4-13b. Grundlage
+`plans/m4-11-export-job.md` (F7, F8), die Statusanzeige aus M4-13b.
+**Umfang:**
+- Der Download-Dialog erkennt den `413` mit `X-Export-Job: available` und
+  bietet „Export as job“ an; ohne die Kopfzeile bleibt der heutige Hinweis.
+- Vor dem Start die Schätzung aus `POST /processing/processes/recipe/estimate`
+  (Größe, Dauer); über 5 GB ist der Knopf gesperrt, mit Begründung.
+- Status, Abbruch und Download über die Komponente aus M4-13b (SSE mit
+  Rückfall auf Abfragen), keine eigene Abfrage-Schleife.
+- Herkunft einer Orts-AOI als `aoiProvenance` mitgeben (M4-11 F4).
+- Fehlerfälle als verständlicher englischer Text: `disk_space`, Zarr (`422`),
+  Laufzeitgrenze, abgelaufenes Ergebnis (`410`).
+
+**Abnahme:** Frontend-Tests für Angebot, Sperre über 5 GB, Status und Fehler;
+Prüfanleitung für Otto: Zuschnitt über 500 MB im Viewer, Job starten,
+`export.zip` laden und öffnen.
 
 ### M4-12 — Mosaik ganzer Szenen je Überflug als Job
 
 **Stufe B.** Grundlage P19, `adr/0011` §8.1.
 **Umfang:** Die Suche als Eingabe läuft in `api`, nie im Worker; der Job
 mosaikiert die Szenen eines Überflugs, bei mehreren UTM-Zonen über die
-Reprojektion aus M4-10.
+Reprojektion aus M4-10. Die Mosaikregel (Reihenfolge, Überlappung) ist
+dieselbe wie im Export-Job (M4-11a, `access/crop_rules.py`); M4-17 übernimmt
+sie (S5).
 **Im Plan-Schritt zu entscheiden:** ob das Mosaik ein eigenes Capability-Flag
-braucht (B10), und die Regel für Überlappungen.
-**Im Plan-Schritt entschieden (10.10.2026):** kein eigenes Capability-Flag, die
-Regel für Überlappungen ist die des Export-Jobs, `api` sortiert die Liste
-(§1.1c, S1–S5). Der Plan `plans/m4-12-mosaik-ueberflug.md` teilt die Aufgabe in
-**M4-12a** (Backend) und **M4-12b** (Frontend, nach M4-13b).
+braucht (B10), die Regel für Überlappungen und wo der Viewer den Job anbietet
+(Processing-Panel aus M4-13b oder eigener Knopf); zählt die Grenze
+`MAX_ORDER_ITEMS` (M4-07b F5) für einen Überflug nicht aus, sie mit Begründung
+anheben.
+**Im Plan-Schritt entschieden (10.10.2026):** kein eigenes Capability-Flag, die Regel für
+Überlappungen ist die des Export-Jobs und `api` sortiert die Liste (S5); der Plan
+`plans/m4-12-mosaik-ueberflug.md` teilt die Aufgabe in **M4-12a** (Backend) und
+**M4-12b** (Frontend, nach M4-13b).
 **Abnahme:** Test mit synthetischen Szenen über zwei Zonen; Prüfanleitung.
 
 ### M4-13 — Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status
@@ -858,6 +916,9 @@ Englisch.
 **Im Plan-Schritt entschieden (08.10.2026):** eigener Formularbau, keine
 Bibliothek. Der Plan `plans/m4-13-processing-panel.md` teilt die Aufgabe in
 drei PRs: **M4-13a** Backend, **M4-13b** Panel und Jobs, **M4-13c** Vorschau.
+M4-13b und M4-13c starten je als neue Session mit „Führe Aufgabe M4-13b (bzw.
+M4-13c) aus `docs/plans/m4-processing-kern.md` aus (Plan:
+`docs/plans/m4-13-processing-panel.md`).“
 **Abnahme:** Frontend-Tests; Prüfanleitung für Otto (NDVI auf Sentinel-2,
 Vorschau, Start, Fortschritt, Download).
 
@@ -880,32 +941,166 @@ das neue Modul; die Kette aus v1 bleibt als eigener Test.
 **Abnahme:** grün für alle drei Einträge; der Wächtertest fällt mit einem
 vierten Eintrag ohne Zuordnung (Gegenprobe im PR).
 
-### Umriss M4b (Fassung 3 schärft nach `adr/0016`)
+### M4-16 — Lokaler Runner offline, Vergleichstest in der CI
 
-- **M4-16 Lokaler Runner** offline nach `adr/0016`, Vergleich T2 ↔ T2L
-  bitgleich in der CI (`adr/0014` §6.3, §6.4); Änderung an `.github/` dann
-  ausdrücklich erlaubt.
-  Der Einstieg des Runners ruft im Hauptthread
-  `processing.worker_environment()` auf, nicht nur `rasterio.Env`: Es setzt
-  auch die feste mmap-Schwelle aus M4-10b (`adr/0014` §7.2, §7.3 Punkt 2).
-- **M4-17 Mosaik im Kachel-Pfad** (P11): zustandslos (`adr/0001`), keine
-  exakte AOI in der Kachel-URL; Optionen aus `adr/0006` §3 und
-  `architekturplan.md` 6.3 (Such-ID mit kurzem Cache in Postgres, E4);
-  Recherche mit Quellen im Plan-Schritt, weil rechenrelevant (gemessen bisher
-  2,7 MB je Mosaik-Kachel).
-- **M4-18 Masking, Normalisierung,** je eine Stufe-A-Session.
-- **M4-19 Permalinks, Methodentext, Skalierung und Einheiten, „Parameter
-  übernehmen“;** mit der offenen Frage der Rezeptfrist für Permalinks
-  (`adr/0015` §13, Log 05.10.2026).
+**Ziel:** Ein Nutzer rechnet eine `recipe.json` aus einem Ergebnis der
+Plattform auf dem eigenen Rechner nach und bekommt dasselbe Ergebnis, als
+„selbst bezeugt“ gekennzeichnet (Q12).
+**Stufe B.** Grundlage `adr/0016` (alle Entscheidungen F1–F11 und Auflagen,
+Log 06.10.2026), `adr/0014` §6.3, §6.4, §7.2, §7.3 Punkt 2, §15c, §15d.
+**Umfang:**
+- **Image:** eigene Build-Stufe `runner` im bestehenden `backend/Dockerfile`,
+  Nicht-Root, Basis-Image per Digest (F1, F11). Tag `earthx-runner:<version>`
+  aus `earthx.__version__` plus Commit (F10), nie `latest`, kein
+  Veröffentlichen (Q12).
+- **Modul `earthx.runner`:** darf nur `processing` und `catalog.datasets`
+  importieren, mit Kettenvertrag wie `processing` (kein `psycopg`,
+  `psycopg_pool`, `asyncpg`, `earthx.objectstore`, `botocore`) und einem Test,
+  dass der Import des Runners keins davon lädt (F2 mit Auflage).
+- **Einstieg:** ruft im Hauptthread `processing.worker_environment()` auf (auch
+  die feste mmap-Schwelle aus M4-10b), nicht nur `rasterio.Env`.
+- **Rezeptdatei:** nur eine vorhandene `recipe.json` aus einem Ergebnis
+  (Job oder Zuschnitt), kein neuer Endpunkt (F3). Eine `recipe.json` ohne
+  `resolved` oder in fremder Version wird abgewiesen.
+- **Allowlist:** die Hosts aus dem Rezept, zusätzlich gegen `asset_hosts` der
+  Registry im Image geprüft; ein fremdes Rezept schickt den Runner nicht an
+  beliebige Server (F4).
+- **Ausgabe:** ein neuer Ordner je Lauf mit Ergebnis, Maske und
+  `provenance.json` (`execution: local`, `runner_version`,
+  `self_attested: true`) (F5); kein Cache-Volume (F6, S3).
+- **Vergleichstest (F7):** `pytest` mit zwei Einstiegen im selben Lauf (Job-Kind
+  und Runner) auf synthetischen Fixtures, bitgleich T2 ↔ T2L nach `adr/0014`
+  §15d; dazu im Compose-Job der CI eine Prüfung, dass die Stufe `runner` baut
+  und ein Rezept offline rechnet. **Die nötige Änderung an
+  `.github/workflows/ci.yml` ist für diese Aufgabe ausdrücklich erlaubt.**
+- **Plattform:** x86_64; auf ARM nativ gebaut liegt außerhalb der
+  Bitgleich-Zusage (F9), das sagt die Anleitung.
+- **Anleitung** für Windows/PowerShell im README: Image bauen, `recipe.json`
+  aus dem Download nehmen, Runner mit Ausgabeordner starten.
+
+**Im Plan-Schritt vorschlagen:** wie die Session baut und misst, wenn
+`docker build` in der Session scheitert (§1.3, `cloud-umgebung.md` §4); welche
+Ausgabeform (`raster`, `crop`) der Runner in M4 kann.
+**Nicht anfassen:** `jobs`, `api`, die Verträge anderer Module.
+**Abnahme:** Vergleichstest grün in der CI; Gegenprobe im PR (ein verändertes
+Rezept bricht die Bitgleichheit); Abweisung eines Rezepts mit fremdem Host
+(Test); `provenance.json` mit `self_attested: true`; Prüfanleitung für Otto
+mit dem Ergebnis aus `scripts/try-job.ps1`.
+
+### M4-17 — Mosaik im Kachel-Pfad
+
+**Ziel:** Mehrere Szenen eines Überflugs erscheinen auf der Karte als eine
+Fläche, ohne Zustand im `tiler` und ohne exakte AOI in der Kachel-URL (P11).
+**Stufe B.** Grundlage `adr/0001`, `adr/0006` §3, `architekturplan.md` 6.3,
+E4; S5.
+**Umfang:**
+- Optionen aus `adr/0006` §3 und `architekturplan.md` 6.3 (Such-ID mit kurzem
+  Cache in Postgres, E4) gegen mindestens eine weitere; Recherche mit Quellen
+  im Plan-Schritt, weil rechenrelevant (gemessen bisher 2,7 MB je
+  Mosaik-Kachel). Braucht es eine Grundsatzentscheidung, schreibt die Session
+  `adr/0017` (Stufe C im selben PR) und hält an.
+- Die Mosaikregel aus M4-12 unverändert übernehmen (S5).
+- Grenze je Kachel (Zahl der Szenen, gelesene Bytes) mit Begründung.
+
+**Abnahme:** Kachel-Tests mit synthetischen Szenen über eine Szenengrenze; kein
+Zustand im `tiler` außer kurzlebigem Cache; keine exakte AOI in URLs oder Logs;
+Prüfanleitung für Otto (ein Überflug über zwei Kacheln als eine Fläche).
+
+### M4-18 — Operatoren Masking und Normalisierung
+
+**Ziel:** Wolken und andere ungültige Pixel lassen sich ausblenden, und Werte
+lassen sich auf einen festen Bereich bringen.
+**Stufe B (S4).** Grundlage `adr/0014` §5, §6.3, §15c; Q6, R5.
+**Umfang:**
+- **Masking:** Operator `mask`, Quelle der Maske je Datensatz aus einem neuen
+  Registry-Feld ohne Vorgabewert (B10), etwa eine Klassifikationsschicht und
+  die Klassen, die ungültig sind; Datensätze ohne Quelle weisen den Operator ab
+  (Capability).
+- **Normalisierung:** Operator `normalize` auf einen festen Bereich mit
+  Parametern aus dem Rezept (keine Statistik der Szene in T1, sonst wäre die
+  Vorschau nicht bitgleich).
+- Beide bitstabil nach R5; T1 und T2, wo möglich, mit Vergleichstest.
+
+**Im Plan-Schritt vorschlagen:** Form des Registry-Felds und Werte für die drei
+Einträge; was „Normalisierung“ genau umfasst (fester Bereich, Perzentile nur
+in T2); `op_version` je Operator.
+**Abnahme:** Tests je Operator mit synthetischen Daten, Abweisung ohne
+Capability, Vergleich T1 ↔ T2; Checkliste v2 bleibt grün.
+
+### M4-19 — Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“
+
+**Ziel:** Ein Ergebnis lässt sich teilen, beschreiben und wieder öffnen.
+**Stufe B (S6).** Neue Session nach dem Merge von M4-13c. Grundlage Q8, Q10,
+`adr/0015` §13, Log 05.10.2026 („Frist für Permalinks“).
+**Umfang:**
+- **Permalink:** zufällige Kennung, nie der Rezept-Hash (Q8); die Frist für
+  Rezepte hinter einem Permalink entscheidet Otto im Plan-Schritt.
+- **Methodentext:** englischer Text aus dem Rezept (Datensatz, Operatoren,
+  Parameter, Version), für Paper-Methodenteile.
+- **Skalierung und Einheiten:** automatische Farbskala für die Vorschau und die
+  Einheit je Band, wo die Registry oder das Item sie trägt.
+- **„Parameter übernehmen“:** eine `recipe.json` lädt das Panel aus M4-13b vor.
+
+**Im Plan-Schritt vorschlagen:** Teilung in mehrere PRs; Frist der Permalinks
+mit Optionen.
+**Abnahme:** Frontend- und Backend-Tests je Teil; Prüfanleitung für Otto.
+
+### M4-21 — Zeilenenden per `.gitattributes` vereinheitlichen
+
+**Ziel:** Keine Session stellt mehr versehentlich ganze Dateien auf andere
+Zeilenenden um (S1, S2).
+**Stufe A.** Neue Session, wenn kein anderer PR offen ist (§1.3, Welle 2).
+**Umfang:**
+- `.gitattributes` an der Wurzel: `* text=auto eol=lf`; `*.bat` und `*.cmd`
+  mit `eol=crlf`; Binärformate ausdrücklich `binary` (mindestens `*.tif`,
+  `*.tiff`, `*.png`, `*.jpg`, `*.zip`, `*.gz`, `*.ico`, `*.woff2` und die
+  Endungen von Zarr-Chunks in den Fixtures); vor dem Schreiben im Repo nachsehen, welche
+  Binärendungen vorkommen.
+- Einmal `git add --renormalize .` und ein eigener Commit nur dafür.
+- Ein Test prüft, dass keine eingecheckte Textdatei CRLF trägt (außer `*.bat`,
+  `*.cmd`) und dass `.gitattributes` die Binärendungen nennt, die im Repo
+  vorkommen.
+- `CLAUDE.md` nicht anfassen; in `cloud-umgebung.md` und im README ein Absatz,
+  was Otto nach dem Pull tut (§1.3).
+
+**Abnahme:** Pflicht-CI grün; Diff des Normalisierungs-Commits enthält nur
+Zeilenenden (`git diff --ignore-all-space --stat` zeigt keine inhaltliche
+Änderung, im PR belegt); Test mit Gegenprobe.
+
+### M4-22 — Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest
+
+**Ziel:** drei bekannte Lücken an einer Stelle schließen (S1).
+**Stufe A.** Grundlage `adr/0011` §5.3; Log 06.10.2026 (Vertragstest),
+07.10.2026 (M4-07b-fix offen (1)); Fund aus M4-01b (PR #122).
+**Umfang:**
+1. **Vertragstest Items je Adapter:** je Eintrag der Adapter-Tabelle prüft ein
+   Test mit synthetischen Fixtures, dass jedes gelieferte Item STAC 1.0 ist und
+   nur `https`-hrefs trägt (`adr/0011` §5.3); ein Wächtertest fällt, wenn ein
+   Adapter ohne Fixture dazukommt.
+2. **`502` statt `500`:** Eine einzelne föderierte Suche antwortet auf eine
+   unlesbare Antwort der Quelle heute mit `500`. Wie bei den übrigen
+   Widersprüchen der Quelle wird daraus `502` mit geschwärztem Text; Test je
+   föderierter Quelle.
+3. **Geocode-Logtest:**
+   `test_geocode_route::test_no_search_text_or_result_name_reaches_the_log`
+   prüft nichts, weil `caplog.records` leer ist. Der Test muss die Zeilen
+   sehen, die die Route wirklich loggt (Logger, Stufe), dann
+   `assert caplog.records`; Gegenprobe im PR, dass ein Suchtext im Log den Test
+   fallen lässt.
+
+**Nicht anfassen:** das Verhalten der Routen außer Punkt 2.
+**Abnahme:** je Punkt ein Test mit Gegenprobe; Pflicht-CI grün.
 
 ### M4-20 — M4-Abnahme und README
 
 **Ziel:** Otto kann M4 anhand eines Berichts abnehmen, ohne Code zu lesen.
 **Stufe A.** Muster: `plans/m3-15-abnahme.md`.
 **Umfang:** Belege je Kriterium aus §5; eine kurze lokale Prüfanleitung
-(Windows/PowerShell, `docker compose up -d --build`); ein Abschnitt „Nach M4
-vorgemerkt“ mit allen offenen Punkten aus Log und Plan; Stand aller
-M4-Aufgaben in §3; README nachziehen; keine Codeänderung.
+(Windows/PowerShell, `docker compose up -d --build`, `scripts/try-job.ps1`);
+ein Abschnitt „Nach M4 vorgemerkt“ mit allen offenen Punkten aus Log und Plan,
+mindestens den Punkten aus S3; Stand aller M4-Aufgaben in §3; README
+nachziehen; keine Codeänderung. Dazu die Frage an Otto, ob die Arbeitsweise
+nach M4 wechselt (Projekte in Claude Code, nicht entschieden).
 **Abnahme:** Bericht `plans/m4-20-abnahme.md` im PR.
 
 ---
@@ -920,7 +1115,8 @@ M4-Aufgaben in §3; README nachziehen; keine Codeänderung.
    und die Formel stimmt überall; T2 ↔ T2L bleibt bitgleich (`adr/0014` §15d,
    Log vom 2026-10-07).
 2. Ein zweiter identischer Auftrag kommt aus dem Cache, wenn alle Eingaben eine
-   Fassung tragen (Q11); lokale Ergebnisse kommen nie in den Cache.
+   Fassung tragen (Q11); lokale Ergebnisse kommen nie in den Cache. Ausnahme:
+   Export-Jobs rechnen immer neu (M4-11 F3).
 3. `processing` ist ohne Datenbank, Queue, Objektspeicher und `gateway`;
    `jobs` und `api` nutzen das Modul für Plattformdienste; `gateway` ist dafür
    nicht gelockert. Importregeln grün.
@@ -936,6 +1132,8 @@ M4-Aufgaben in §3; README nachziehen; keine Codeänderung.
 8. Onboarding-Checkliste Fassung v2 grün für jeden Datensatz.
 9. M4-01a und M4-01b sind umgesetzt; Pflicht-CI grün mit Installation aus der
    Lock-Datei.
+10. Masking und Normalisierung sind registriert (M4-18); Permalink und
+    Methodentext funktionieren (M4-19).
 
 ---
 
@@ -951,10 +1149,14 @@ M4-Aufgaben in §3; README nachziehen; keine Codeänderung.
 | Föderierte Eingaben ohne Fassung verhindern Cache-Treffer | ehrlich neu rechnen (Q11); das Abnahmekriterium 2 wird mit einer Eingabe belegt, die ein ETag trägt |
 | Rezepte enthalten die AOI | personenbezogen, Frist 7 Tage, nie in Logs oder URLs (Q8, Q10) |
 | Die Lock-Datei bricht die Installation in der Session | Beleg in einer neu gestarteten Session (M4-00b) |
-| M4 ist zu groß (XL) | Teilung M4a/M4b, Fassung 2 erst nach den ADRs |
+| M4 ist zu groß (XL) | Teilung M4a/M4b, Fassung 2 erst nach den ADRs; Fassung 3 schiebt die Punkte aus S3 nach M4 |
 | `sentinel-2-l2a-zarr3` („staging“) fällt weg | Checkliste v2 läuft gegen Fixtures; die Abnahme hängt nicht am Fortbestand der Quelle (wie D24) |
 | Zwei PRs erzeugen die Lock-Dateien gleichzeitig neu | wer als Zweiter gemergt wird, holt `main` und erzeugt sie mit `scripts/lock-backend.sh` neu (§3) |
 | `boto3` gerät über eine Abhängigkeit ins Image, rasterio fragt dann den Metadatendienst | Wächtertest auf die Lock-Datei, `AWS_EC2_METADATA_DISABLED=true` (M4-06) |
 | Ein Band-Math-Ausdruck wird zweckfremd genutzt | Prüfung im Parametermodell vor numexpr (R5, M4-09) |
 | Der Deckel für Jobs hält unter Last nicht | Sperre in eigener Anweisung vor dem Zählen, Gegentest gegen die Variante in einer Anweisung (`adr/0013` §8 Punkt 1) |
 | Mehrere PRs ändern `ENTSCHEIDUNGSLOG.md` am Ende | vor dem Fertigmelden `main` holen, alle Zeilen erhalten, eigene ans Ende |
+| Logtests scheitern zufällig an Zeitstempeln oder Standardfeldern von `LogRecord` | `own_log_text`/`format_without_timestamp` (§1.2); bei einem roten Lauf ohne Bezug erst Re-run, dann Fix-Aufgabe |
+| Die Normalisierung der Zeilenenden kollidiert mit offenen PRs | M4-21 nur ohne offenen PR; sonst `git add --renormalize .` im Branch (§1.3) |
+| Die Session kann das Runner-Image nicht bauen (Debian-Spiegel gesperrt) | Allowlist für neue Sessions oder Bau in der CI (§1.3, M4-16) |
+| Ein Export füllt die Platte des Workers | Plattenprüfung vor dem Lauf, `error_kind` `disk_space` (M4-11a) |
