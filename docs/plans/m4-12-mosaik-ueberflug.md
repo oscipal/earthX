@@ -324,8 +324,10 @@ M4-12b (Frontend) rund 250 Zeilen mit Tests.
 **F4 — Ziel-CRS bei mehreren Zonen (§3.3)**
 1. Das CRS der meisten Items, bei Gleichstand das des ersten Items; vom Kern
    aus dem Rezept bestimmt **(Empfehlung)**
-2. Das CRS des ersten Items im Auftrag
-3. Der Auftrag nennt das CRS, Pflicht bei mehreren Zonen
+2. Das CRS der meisten Items, bei Gleichstand die kleinere EPSG-Zahl
+   (unabhängig von der Reihenfolge, §10)
+3. Das CRS des ersten Items im Auftrag
+4. Der Auftrag nennt das CRS, Pflicht bei mehreren Zonen (wie stackstac)
 
 **F5 — Wie kommt „ganze Szenen“ in den Auftrag? (§3.2)**
 1. Der Auftrag lässt `aoi` weg; `api` setzt die Vereinigung der Footprints ins
