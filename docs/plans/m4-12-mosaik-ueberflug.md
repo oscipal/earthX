@@ -145,8 +145,8 @@ als Eingabe der Schritte.
 - **Items ohne Warp:** Ein Item liegt *auf dem Raster*, wenn CRS und
   Pixelgröße gleich sind und sein Ursprung um ganze Pixel vom Anker abweicht
   (Toleranz wie `source._GRID_TOLERANCE`). Es wird mit `Source.read` ohne Warp
-  gelesen. Für Sentinel-2 gilt das für alle Kacheln einer Zone (§7, Beleg im
-  PR an synthetischen und an den Metadaten echter Items).
+  gelesen. Für Sentinel-2 gilt das für alle Kacheln einer Zone (§7,
+  Stichprobe).
 - **Items mit Warp (K1):** jedes andere Item, über `WarpedVRT` auf der
   geöffneten COG-Datei in das Mosaikraster, mit `nearest` und denselben
   Konstanten wie `reproject` (`TOLERANCE`, `WARP_MEM_LIMIT_MB`, aus dem
@@ -270,10 +270,14 @@ M4-12b (Frontend) rund 250 Zeilen mit Tests.
 
 ## 7. Risiken
 
-- **Pixelraster der Sentinel-2-Kacheln:** Die Annahme „alle Kacheln einer Zone
-  auf einem Raster“ belegt der PR an den `proj:transform` echter Items einer
-  Zone (Metadaten, eine gedrosselte Suche). Fällt sie, werden die Items
-  gewarpt (`nearest`, ganze Pixel), nur langsamer.
+- **Pixelraster der Sentinel-2-Kacheln:** Stichprobe [M] (eine Anfrage an Earth
+  Search, Fläche 3° × 1,5° um 12° O, ein Tag, 10.07.2025): drei
+  Kacheln desselben Datatakes in EPSG:32632 und EPSG:32633; in Zone 33 liegen
+  die Ursprünge (300 000 / 5 300 040 und 300 000 / 5 400 000) um 9 996 Pixel
+  zu 10 m auseinander, auch ganzzahlig für 20 m und 60 m. Ein Überflug über
+  zwei Zonen ist also der Normalfall am Zonenrand, und Kacheln einer Zone
+  liegen auf einem Raster. Fällt die Annahme für ein Item, wird es gewarpt
+  (`nearest`), nur langsamer.
 - **Werte in der Überlappung:** Benachbarte Kacheln eines Überflugs können sich
   in der Überlappung unterscheiden (Atmosphärenkorrektur je Kachel, siehe
   Recherche in §10); die Regel F3 macht das Ergebnis eindeutig, nicht
