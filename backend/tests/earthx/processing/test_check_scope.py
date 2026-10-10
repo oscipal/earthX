@@ -18,14 +18,36 @@ def test_a_raster_of_one_item_is_in_scope() -> None:
     assert isinstance(check_scope(recipe), RasterOutput)
 
 
-@pytest.mark.parametrize("groups", [[["ITEM_A", "ITEM_B"]], [["ITEM_A"], ["ITEM_B"]]])
-def test_a_raster_run_still_reads_one_item(groups: list[list[str]]) -> None:
+def _two_scenes(groups: list[list[str]]) -> dict:
     data = recipe_data()
     data["inputs"][0]["groups"] = copy.deepcopy(groups)
     data["inputs"][0]["resolved"] += [resolved("ITEM_B", "red"), resolved("ITEM_B", "nir")]
-    recipe = recipe_from_data(data, OPERATORS)
-    with pytest.raises(UnsupportedRecipe, match="one item"):
+    return data
+
+
+def test_a_raster_of_the_scenes_of_one_overpass_is_in_scope() -> None:
+    """One group of several items is a mosaic (M4-12a)."""
+    recipe = recipe_from_data(_two_scenes([["ITEM_A", "ITEM_B"]]), OPERATORS)
+    assert isinstance(check_scope(recipe), RasterOutput)
+
+
+def test_a_raster_run_still_reads_one_group() -> None:
+    recipe = recipe_from_data(_two_scenes([["ITEM_A"], ["ITEM_B"]]), OPERATORS)
+    with pytest.raises(UnsupportedRecipe, match="one group"):
         check_scope(recipe)
+
+
+def test_a_zarr_mosaic_in_one_crs_is_in_scope_and_over_two_crs_is_refused() -> None:
+    data = _two_scenes([["ITEM_A", "ITEM_B"]])
+    for entry in data["inputs"][0]["resolved"]:
+        entry["asset"]["reader"] = "zarr"
+        entry["asset"]["variable"] = entry["asset"]["asset"]
+        entry["scaling"] = "item"
+    assert isinstance(check_scope(recipe_from_data(copy.deepcopy(data), OPERATORS)), RasterOutput)
+    data["inputs"][0]["resolved"][2]["asset"]["crs"] = "EPSG:32633"
+    data["inputs"][0]["resolved"][3]["asset"]["crs"] = "EPSG:32633"
+    with pytest.raises(UnsupportedRecipe, match="one CRS"):
+        check_scope(recipe_from_data(data, OPERATORS))
 
 
 @pytest.mark.parametrize("groups", [[["ITEM_A"]], [["ITEM_A", "ITEM_B"]], [["ITEM_A"], ["ITEM_B", "ITEM_C"]]])

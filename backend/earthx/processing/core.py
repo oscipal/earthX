@@ -22,11 +22,13 @@ over ``bbox(AOI ∩ raster bounds)`` that keeps every value inside that box, and
 To stop, the callback raises :class:`~earthx.processing.errors.RunCancelled`; the
 core removes every file it wrote and re-raises, as it does for any other failure.
 
-**Scope (F2).** One input, one group, one item; several assets of that item when
-they share one grid or are nested (the coarser read onto the finest with ``nearest``,
-the result marked resampled; :mod:`earthx.processing.source`). More is
-:class:`UnsupportedRecipe` until M4-12. The output ``crop`` is the export of M4-11a
-(:mod:`earthx.processing.export`): several groups and items, one after the other.
+**Scope (F2).** One input and one group; several assets of an item when they share one
+grid or are nested (the coarser read onto the finest with ``nearest``, the result marked
+resampled; :mod:`earthx.processing.source`). A group of several items is the mosaic of one
+overpass (M4-12a, :mod:`earthx.processing.mosaic`): the same passes over one raster in the
+CRS most scenes share. Several groups are :class:`UnsupportedRecipe`. The output ``crop`` is
+the export of M4-11a (:mod:`earthx.processing.export`): several groups and items, one after
+the other.
 """
 
 from __future__ import annotations
@@ -58,6 +60,7 @@ from rio_tiler.models import ImageData
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.export import Attachments, ExportResult, check_export, export
+from earthx.processing.mosaic import open_mosaic
 from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, RasterMeta
 from earthx.processing.plan import PlannedStep, Segment, crop_window, plan_steps, segments
 from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
@@ -151,7 +154,13 @@ def _block_count(meta: RasterMeta) -> int:
     return -(-meta.width // BLOCK_SIZE) * -(-meta.height // BLOCK_SIZE)
 
 
+def _scenes(recipe: Recipe) -> int:
+    return len(recipe.inputs[0].groups[0])
+
+
 def _open_sources(recipe: Recipe, stack: ExitStack) -> list[Source]:
+    if _scenes(recipe) > 1:
+        return open_mosaic(recipe, stack)
     access = read_access_for(recipe.hrefs())
     sources = []
     for entry in recipe.inputs[0].resolved:
@@ -172,8 +181,12 @@ def check_scope(recipe: Recipe) -> RasterOutput | CropOutput:
     """
     if isinstance(recipe.output, CropOutput):
         return check_export(recipe)
-    if len(recipe.inputs) != 1 or len(recipe.inputs[0].groups) != 1 or len(recipe.inputs[0].groups[0]) != 1:
-        raise UnsupportedRecipe("a raster run reads one item of one input; mosaics come with M4-12")
+    if len(recipe.inputs) != 1 or len(recipe.inputs[0].groups) != 1:
+        raise UnsupportedRecipe("a raster run reads one group of one input: one scene, or the scenes of one overpass")
+    entry = recipe.inputs[0]
+    if len(entry.groups[0]) > 1 and any(asset.asset.reader == "zarr" for asset in entry.resolved):
+        if len({asset.asset.crs for asset in entry.resolved}) > 1:
+            raise UnsupportedRecipe("a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet")
     return recipe.output
 
 
@@ -270,7 +283,7 @@ def _source_meta(
     )
 
 
-def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, str]) -> dict[str, Any]:
+def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, str], scenes: int) -> dict[str, Any]:
     """The STAC properties of the result (§5.6): projection, bands, software, lineage, honesty flag."""
     crs = CRS.from_user_input(meta.crs)
     epsg = crs.to_epsg()
@@ -286,7 +299,9 @@ def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, 
         for band in meta.bands
     ]
     properties["processing:software"] = {name: engine[name] for name in ("earthx", "gdal", "rasterio", "numexpr")}
-    properties["processing:lineage"] = "; ".join(step.operator.lineage(step.params) for step in planned) or "crop"
+    lineage = [f"mosaic of {scenes} scenes"] if scenes > 1 else []
+    lineage += [step.operator.lineage(step.params) for step in planned]
+    properties["processing:lineage"] = "; ".join(lineage) or "crop"
     added = [step.operator.properties(step.params) for step in planned]
     for key in sorted({key for entry in added for key in entry}):
         values = [entry[key] for entry in added if key in entry]
@@ -335,12 +350,16 @@ def run(
     state = _Run(workdir, progress)
     started = time.monotonic()
     dataset = recipe.inputs[0].dataset
-    LOGGER.info("processing run started", extra={"dataset": dataset, "operators": [s.operator.op for s in planned]})
+    LOGGER.info(
+        "processing run started",
+        extra={"dataset": dataset, "operators": [s.operator.op for s in planned], "scenes": _scenes(recipe)},
+    )
     try:
         with ExitStack() as stack:
             stack.enter_context(rasterio.Env(**process_gdal_options()))
             sources = _open_sources(recipe, stack)
             finest, resampled = common_grid(sources)
+            resampled = resampled or any(source.warps for source in sources)
             window, transform = crop_window(
                 recipe.aoi.model_dump(mode="json"), finest.crs.to_string(), finest.transform, finest.width, finest.height
             )
@@ -411,7 +430,7 @@ def run(
         path=workfile_path(workdir, RESULT_NAME),
         mask_path=workfile_path(workdir, MASK_NAME),
         meta=final,
-        properties=_properties(final, planned, engine),
+        properties=_properties(final, planned, engine, _scenes(recipe)),
         scaling=scaling,
         blocks=state.done,
         valid_pixels=state.valid_pixels,

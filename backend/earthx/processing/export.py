@@ -70,7 +70,7 @@ from earthx.processing.errors import AoiOutsideInputs, ProcessingError, Unsuppor
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import CropOutput, Recipe, ResolvedInput, engine_versions, job_recipe_document
-from earthx.processing.warped import WarpedItem
+from earthx.processing.warped import WarpedItem, cache_per_item
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
 from earthx.readers.cog import AssetPath, CogReader
@@ -105,9 +105,6 @@ ATTACHMENT_LIMITS: Mapping[str, int] = {
 }
 _ATTRIBUTION_ENTRIES = 8
 
-#: The least read cache an open item keeps (:func:`_cache_per_item`): a COG block of
-#: 1024² ``uint16`` is 2 MB uncompressed, deflated about half of that.
-_MIN_CACHE_PER_ITEM = 1024 * 1024
 _ATTRIBUTION_CHARS = 1024
 
 Progress = Callable[[int, int], None]
@@ -283,7 +280,7 @@ class _Export:
         any_valid = False
         with ExitStack() as stack:
             alone = len(output.entries) == 1
-            with rasterio.Env(VSI_CACHE_SIZE=str(_cache_per_item(len(output.entries)))):
+            with rasterio.Env(VSI_CACHE_SIZE=str(cache_per_item(len(output.entries)))):
                 datasets = [self.open_dataset(entry, stack) for entry in output.entries]
             items = [
                 WarpedItem(dataset, output.transform, output.width, output.height, alone=alone, stack=stack)
@@ -352,19 +349,6 @@ class _Export:
         if broken is not None:
             raise OutputUnreadable("an entry of the export ZIP fails its CRC check")
         return path
-
-
-def _cache_per_item(items: int) -> int:
-    """The share of ``VSI_CACHE_SIZE`` each open item of a group gets, so that a group costs what one item costs.
-
-    GDAL gives every open file a read cache of its own of ``VSI_CACHE_SIZE`` (64 MB for a
-    worker, `readers.process_gdal_options`), taken when the file is opened. The crop opens
-    the items of a mosaic one after the other; the export keeps them open together, so the
-    one item's budget is split between them (Otto, 08.10.2026: the limit holds per item;
-    measured +64 MB per further item before this). A cache changes no value read.
-    """
-    budget = int(process_gdal_options()["VSI_CACHE_SIZE"])
-    return max(_MIN_CACHE_PER_ITEM, budget // items)
 
 
 def _geometry(footprint: Any) -> dict[str, Any] | None:

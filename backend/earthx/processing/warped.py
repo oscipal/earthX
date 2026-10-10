@@ -23,7 +23,26 @@ from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 from rio_tiler.constants import WGS84_CRS
 
-__all__ = ["WarpedItem"]
+from earthx.readers import process_gdal_options
+
+__all__ = ["WarpedItem", "cache_per_item"]
+
+#: The least read cache an open item keeps (:func:`cache_per_item`): a COG block of
+#: 1024² ``uint16`` is 2 MB uncompressed, deflated about half of that.
+_MIN_CACHE_PER_ITEM = 1024 * 1024
+
+
+def cache_per_item(items: int) -> int:
+    """The share of ``VSI_CACHE_SIZE`` each open item of a group gets, so that a group costs what one item costs.
+
+    GDAL gives every open file a read cache of its own of ``VSI_CACHE_SIZE`` (64 MB for a
+    worker, `readers.process_gdal_options`), taken when the file is opened. The crop opens
+    the items of a mosaic one after the other; the export and the mosaic job keep them open together, so the
+    one item's budget is split between them (Otto, 08.10.2026: the limit holds per item;
+    measured +64 MB per further item before this). A cache changes no value read.
+    """
+    budget = int(process_gdal_options()["VSI_CACHE_SIZE"])
+    return max(_MIN_CACHE_PER_ITEM, budget // items)
 
 
 class WarpedItem:
