@@ -9,7 +9,7 @@ import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import type { JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
 import { paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
-import type { Collection, StacAsset, StacItem } from './types';
+import type { Collection, StacAsset, StacBand, StacItem } from './types';
 
 // K10: the one input of an order is always called this.
 export const INPUT_NAME = 'input';
@@ -101,14 +101,20 @@ export interface BandSource {
   dataType: string | null;
 }
 
+// `raster:bands`, or STAC 1.1 `bands` where that is missing or empty — the
+// order `api/intake.py` reads them in.
+function bandsOf(asset: StacAsset): StacBand[] | null {
+  const raster = asset['raster:bands'];
+  if (Array.isArray(raster) && raster.length > 0) return raster;
+  return Array.isArray(asset.bands) && asset.bands.length > 0 ? asset.bands : null;
+}
+
 function bandCount(asset: StacAsset): number | null {
-  const bands = asset['raster:bands'] ?? asset.bands;
-  return Array.isArray(bands) && bands.length > 0 ? bands.length : null;
+  return bandsOf(asset)?.length ?? null;
 }
 
 function firstDataType(asset: StacAsset): string | null {
-  const bands = asset['raster:bands'] ?? asset.bands;
-  const first = Array.isArray(bands) ? bands[0] : undefined;
+  const first = bandsOf(asset)?.[0];
   return first && typeof first.data_type === 'string' ? first.data_type : null;
 }
 
@@ -309,11 +315,16 @@ export function buildOrder(args: {
   };
 }
 
-// The step a refusal is about: the server names it as "step <n>" (0-based,
-// `processing/recipe.py`, `api/intake.py`), else the order as a whole.
-export function stepOfRefusal(detail: string): number | null {
-  const match = /\bstep (\d+)\b/u.exec(detail);
-  return match ? Number(match[1]) : null;
+// The step a refusal is about: the server names it as "step <n>" or
+// "steps.<n>" (0-based, `processing/recipe.py`, `api/intake.py`). A text about
+// the expression that names no step (band math's "expression names unknown
+// band(s)") belongs to the band-math step when there is exactly one; anything
+// else is about the order as a whole.
+export function stepOfRefusal(detail: string, steps: readonly Pick<DraftStep, 'op'>[] = []): number | null {
+  const match = /\bsteps?[ .](\d+)\b/u.exec(detail);
+  if (match) return Number(match[1]);
+  const bandMath = steps.flatMap((step, index) => (step.op === 'band_math' ? [index] : []));
+  return bandMath.length === 1 && /\bexpression\b/u.test(detail) ? bandMath[0] : null;
 }
 
 // --- numbers for the review (K4) ---------------------------------------------

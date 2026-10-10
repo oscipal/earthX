@@ -79,6 +79,11 @@ describe('bandSources (K7)', () => {
     expect(bandSources(it1, 'cog', null)[0].names).toEqual(['visual_1', 'visual_2', 'visual_3']);
   });
 
+  it('reads bands where raster:bands is there but empty, as the backend does', () => {
+    const it1 = item('a', { visual: { href: 'x', type: COG, 'raster:bands': [], bands: [{ data_type: 'uint8' }, {}] } });
+    expect(bandSources(it1, 'cog', null)[0]).toEqual({ asset: 'visual', names: ['visual_1', 'visual_2'], dataType: 'uint8' });
+  });
+
   it('offers a COG asset without band descriptions with no name to insert', () => {
     const dem = item('d', { data: { href: 'x', type: 'image/tiff; application=geotiff' } });
     expect(bandSources(dem, 'cog', null)).toEqual([{ asset: 'data', names: [], dataType: null }]);
@@ -226,7 +231,11 @@ describe('small rules', () => {
   it('finds the step a refusal names', () => {
     expect(stepOfRefusal('the order is not valid: parameters of step 1 (reproject): crs')).toBe(1);
     expect(stepOfRefusal("step 0: 'band_math' cannot run here")).toBe(0);
+    expect(stepOfRefusal('invalid order: steps.2.params.expression: string_too_long')).toBe(2);
     expect(stepOfRefusal('the AOI does not touch any of the given items')).toBeNull();
+    const bm = [{ op: 'reproject' }, { op: 'band_math' }];
+    expect(stepOfRefusal('expression names unknown band(s): nir_2; the input has: red, nir', bm)).toBe(1);
+    expect(stepOfRefusal('expression names unknown band(s): x', [...bm, { op: 'band_math' }])).toBeNull();
   });
 
   it('formats the estimate', () => {
