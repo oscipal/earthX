@@ -20,11 +20,12 @@ from earthx.api.processing_docs import FORM_NOTE, OUTPUTS, order_schema
 from earthx.api.processing_route import router
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
+from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.recipe import parse_request
 from tests.earthx.api.conftest import build_app
-from tests.earthx.api.test_intake import order
+from tests.earthx.api.test_intake import SCALE_STEP, order
 from tests.earthx.processing.testops import COARSEN, OPERATORS, SCALE
 
 pytestmark = pytest.mark.anyio
@@ -99,6 +100,7 @@ class TestApiDescription:
             "/processing/processes",
             "/processing/processes/{process_id}",
             "/processing/processes/{process_id}/execution",
+            "/processing/processes/{process_id}/estimate",
             "/processing/jobs/{jobID}",
             "/processing/jobs/{jobID}/results",
             "/processing/jobs/{jobID}/results/{name}",
@@ -236,6 +238,48 @@ class TestOrderSchema:
         assert order_schema(OPERATORS) == full
 
 
+class TestWhatThePanelReads:
+    """M4-13a: the schema says which steps can be a tile, and how the variables of a Zarr asset are named."""
+
+    def test_every_step_names_its_tiers_and_kind_as_the_operator_has_them(self) -> None:
+        schema = order_schema(REAL_OPERATORS)
+        for _, operator in sorted(REAL_OPERATORS.items()):
+            definition = schema["$defs"][f"step_{operator.op}_v{operator.op_version}"]
+            assert definition["x-earthx-tiers"] == sorted(tier.value for tier in operator.tiers)
+            assert definition["x-earthx-kind"] == operator.kind
+
+    def test_the_real_operators_are_what_the_planner_expects(self) -> None:
+        schema = order_schema(REAL_OPERATORS)
+        assert schema["$defs"]["step_band_math_v1"]["x-earthx-tiers"] == ["T1", "T2"]
+        assert schema["$defs"]["step_band_math_v1"]["x-earthx-kind"] == "pixel"
+        assert schema["$defs"]["step_reproject_v2"]["x-earthx-tiers"] == ["T2"]
+        assert schema["$defs"]["step_reproject_v2"]["x-earthx-kind"] == "grid"
+
+    def test_an_order_cannot_use_the_annotations_as_parameters(self) -> None:
+        step = {**SCALE_STEP, "x-earthx-tiers": ["T1"]}
+        with pytest.raises(RecipeInvalid):
+            parse_request(json.dumps(order(steps=[step])), OPERATORS)
+
+    def test_the_separator_of_a_zarr_dataset_is_in_the_schema_of_its_assets(self) -> None:
+        eopf = REGISTRY.get("sentinel-2-l2a-zarr3")
+        assets = order_schema(OPERATORS, eopf)["$defs"]["InputRequest"]["properties"]["assets"]
+        assert assets["x-earthx-variable-separator"] == eopf.zarr.variable_separator != ""
+
+    def test_a_cog_dataset_has_no_separator_and_nothing_is_guessed(self) -> None:
+        for dataset in ("sentinel-2-c1-l2a", "cop-dem-glo-30"):
+            assets = order_schema(OPERATORS, REGISTRY.get(dataset))["$defs"]["InputRequest"]["properties"]["assets"]
+            assert "x-earthx-variable-separator" not in assets
+
+    def test_without_a_dataset_there_is_no_separator(self) -> None:
+        assets = order_schema(OPERATORS)["$defs"]["InputRequest"]["properties"]["assets"]
+        assert "x-earthx-variable-separator" not in assets
+
+    def test_the_separator_of_a_dataset_never_changes_the_schema_of_another(self) -> None:
+        order_schema(OPERATORS, REGISTRY.get("sentinel-2-l2a-zarr3"))
+        assets = order_schema(OPERATORS, S2)["$defs"]["InputRequest"]["properties"]["assets"]
+        assert "x-earthx-variable-separator" not in assets
+
+
 class TestProcessPerDataset:
     async def test_the_filter_names_the_dataset(self, docs_client: httpx.AsyncClient) -> None:
         body = (await docs_client.get("/processing/processes/recipe", params={"dataset": S2.dataset_id})).json()
@@ -274,6 +318,10 @@ class TestWithoutAQueue:
 
     async def test_placing_a_job_says_so_too(self, docs_client: httpx.AsyncClient) -> None:
         response = await docs_client.post("/processing/processes/recipe/execution", json={"inputs": {}})
+        assert response.status_code == 503
+
+    async def test_estimating_an_order_says_so_too(self, docs_client: httpx.AsyncClient) -> None:
+        response = await docs_client.post("/processing/processes/recipe/estimate", json={"inputs": {}})
         assert response.status_code == 503
 
 
