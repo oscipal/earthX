@@ -26,6 +26,16 @@ const ORDER: Order = {
   output: { kind: 'raster', format: 'cog', dtype: 'float32' },
 };
 
+const ESTIMATE = {
+  size: 1,
+  duration: 'PT1.0S',
+  outputPixels: 1,
+  inputPixels: 1,
+  inputBytes: 1,
+  assets: 1,
+  units: 0.1,
+};
+
 function status(extra: Record<string, unknown> = {}) {
   return {
     processID: 'recipe',
@@ -103,9 +113,7 @@ describe('the job API client', () => {
   });
 
   it('wraps the order for the estimate as the execution does', async () => {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-      respond({ estimate: { size: 1, duration: 'PT1.0S' }, skippedItems: ['x'] }),
-    );
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond({ estimate: ESTIMATE, skippedItems: ['x'] }));
     vi.stubGlobal('fetch', fetchMock);
     const doc = await estimateOrder(ORDER);
     const [url, init] = fetchMock.mock.calls[0];
@@ -113,6 +121,16 @@ describe('the job API client', () => {
     expect(init?.method).toBe('POST');
     expect(JSON.parse(init?.body as string)).toEqual({ inputs: { recipe: ORDER } });
     expect(doc.skippedItems).toEqual(['x']);
+  });
+
+  it.each([
+    ['an empty body', {}],
+    ['a page of another shape', '<html>'],
+    ['a number that is no number', { estimate: { ...ESTIMATE, units: 'many' } }],
+    ['no duration', { estimate: { ...ESTIMATE, duration: 3 } }],
+  ])('refuses an estimate with %s instead of showing it', async (_, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(body)));
+    await expect(estimateOrder(ORDER)).rejects.toThrow('cannot read');
   });
 
   it('places a job and reads its status', async () => {

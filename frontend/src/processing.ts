@@ -144,16 +144,36 @@ export async function fetchProcess(datasetId: string, signal?: AbortSignal): Pro
   );
 }
 
+const ESTIMATE_NUMBERS = ['size', 'outputPixels', 'inputPixels', 'inputBytes', 'assets', 'units'] as const;
+
+// An estimate as the route writes it, or `null` for anything else (a proxy's
+// page, a body of another shape): the panel shows an error then, not numbers.
+export function parseEstimate(value: unknown): EstimateDocument | null {
+  if (!value || typeof value !== 'object') return null;
+  const { estimate, skippedItems } = value as Record<string, unknown>;
+  if (!estimate || typeof estimate !== 'object') return null;
+  const e = estimate as Record<string, unknown>;
+  if (typeof e.duration !== 'string') return null;
+  if (!ESTIMATE_NUMBERS.every((key) => typeof e[key] === 'number' && Number.isFinite(e[key]))) return null;
+  return {
+    estimate: e as unknown as Estimate,
+    skippedItems: Array.isArray(skippedItems) ? skippedItems.filter((x) => typeof x === 'string') : [],
+  };
+}
+
 export async function estimateOrder(order: Order, signal?: AbortSignal): Promise<EstimateDocument> {
-  const doc = await jsonOrThrow<EstimateDocument>(
-    await fetch(`${PREFIX}/processes/recipe/estimate`, {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: orderBody(order),
-      signal,
-    }),
+  const doc = parseEstimate(
+    await jsonOrThrow<unknown>(
+      await fetch(`${PREFIX}/processes/recipe/estimate`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: orderBody(order),
+        signal,
+      }),
+    ),
   );
-  return { estimate: doc.estimate, skippedItems: doc.skippedItems ?? [] };
+  if (!doc) throw new Error('the server answered with an estimate the panel cannot read');
+  return doc;
 }
 
 export async function placeJob(order: Order): Promise<StatusInfo> {
