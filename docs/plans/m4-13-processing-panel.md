@@ -758,10 +758,10 @@ Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
    und den Typ `AppState`.
 2. **Asset ohne Bandangaben:** K7 sagt „kein Chip“. Dann wäre der Auftrag für
    `cop-dem-glo-30` nicht bedienbar (sein Asset `data` trägt weder
-   `raster:bands` noch `bands`; Prüfanleitung Schritt 7). Das Panel zeigt
+   `raster:bands` noch `bands`; Prüfanleitung Schritt 6). Das Panel zeigt
    solche Assets als Chip mit dem Asset-Schlüssel, der das Asset nur in den
-   Auftrag nimmt und keinen Namen einfügt (Tooltip sagt es). Bänder mit
-   Namen bleiben, wie K7 sie beschreibt.
+   Auftrag nimmt und keinen Namen einfügt (Tooltip sagt es). Von Otto am
+   10.10.2026 angenommen. Bänder mit Namen bleiben, wie K7 sie beschreibt.
 3. **Knopf „Jobs (n)“ oben rechts**, solange Jobs in diesem Tab bestehen und
    das Panel zu ist. Ohne ihn wären wiederaufgenommene Jobs (F5) nach dem
    Neuladen erst nach einer neuen Auswahl sichtbar.
@@ -847,3 +847,14 @@ Im Browser `http://localhost:5173`:
    wählen und sagt, dass das Ergebnis nur diese abdeckt (F8).
 
 Vorschau und „Preview“ (§9 Schritte 3 und 4) kommen mit M4-13c.
+
+**F1 (Otto, 10.10.2026): Bandnamen eines Zarr-Assets.** Das Frontend liest sie
+nur aus dem STAC-Kernfeld `bands[].name` des Assets (STAC 1.1), nie aus
+`eo:bands`; der Wächtertest `test_frontend_no_dataset_literals.py` bleibt
+unverändert und trifft `bands` nicht. Fehlt `bands`, gibt es keine
+Band-Chips und das Panel sagt „This dataset does not list band names yet.“
+Der EOPF-Adapter wird in M4-23 angepasst (parallel); bis dahin ist
+`sentinel-2-l2a-zarr3` im Panel ohne Bandnamen. Das ersetzt die Regel „Zarr →
+Namen aus `eo:bands[].name`“ in K7. Frontend-Tests mit und ohne `bands`
+(`processingOrder.test.ts`, `ProcessingPanel.test.tsx`), dazu eines, das
+zeigt, dass ein `eo:bands` am Asset nichts bewirkt.
