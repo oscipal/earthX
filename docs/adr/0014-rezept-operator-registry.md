@@ -1696,6 +1696,40 @@ Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.
   gelesen. Die Regel „inkompatible Änderung erhöht die Version“ gilt ab hier
   wieder ohne Ausnahme.
 
+## 15g. Nachtrag vom 2026-10-10: das Mosaik eines Überflugs im Kern (zu §4.2, §6.3; M4-12a)
+
+Otto hat M4-12 am 2026-10-10 freigegeben (`plans/m4-12-mosaik-ueberflug.md`
+§11). Der Originaltext in §4.2 (`groups`) bleibt stehen; maßgeblich ist dieser
+Nachtrag.
+
+- **Ein Raster-Job liest eine Gruppe von einer oder mehreren Szenen.** Mehrere
+  Szenen sind das Mosaik eines Überflugs; mehrere Gruppen bleiben
+  `UnsupportedRecipe`. `recipe_version` bleibt 1: der Auftrag wird nachgiebiger
+  (Gruppe mit mehreren Items, `aoi` darf fehlen), das Rezept selbst trägt wie
+  immer eine AOI.
+- **Eine Regel für die Überlappung, in der Liste.** Je Band und Pixel gewinnt
+  das erste gültige Element in der Reihenfolge der Liste
+  (`access.crop_rules.merge_first_valid`, dieselbe Funktion wie im Export-Job
+  und die Regel von `rio_tiler.mosaic_reader`). Der Kern sortiert nicht. Die
+  Reihenfolge der Liste gehört zum Rezept und damit zum Hash.
+- **`api` sortiert die Liste** (`processing.mosaic.mosaic_order`): zuerst die
+  Szenen im Ziel-CRS (das CRS, das die meisten Szenen tragen, bei Gleichstand
+  die kleinere EPSG-Zahl), danach die übrigen, innerhalb beider Teile nach
+  Item-ID. Dieselbe Auswahl gibt so unabhängig von der Reihenfolge im Auftrag
+  dasselbe Rezept, denselben Hash und denselben Lauf.
+- **Das Raster des Mosaiks** ist das der ersten Szene (ihr feinstes Asset) über
+  die Vereinigung aller Szenen. Szenen, die darauf liegen (gleiches CRS, gleiche
+  Pixelgröße, Ursprung um ganze Pixel versetzt), werden ohne Warp gelesen; jede
+  andere über ein `WarpedVRT` mit `nearest`, `tolerance` und `warp_mem_limit`
+  des Operators `reproject` (`op_version` 2). Das Ergebnis trägt
+  `earthx:resampled = true`. Eine Änderung dieser Regeln erhöht
+  `earthx.__version__` (K5, wie `BLOCK_SIZE` in §3.4).
+- **Capability:** kein eigenes Flag. Ein Mosaik verlangt `reprojection` am
+  Datensatz (B10). Zarr-Mosaike nur in einem CRS.
+- **Ein Deckel für jeden Job:** `MAX_JOB_BYTES` (5 GB, vorher
+  `MAX_EXPORT_JOB_BYTES`) gilt für Export und Raster-Job; darüber
+  `JobTooLarge` (Oberklasse von `ExportTooLarge`).
+
 ## 16. Quellen
 
 **Im Repo [P]**

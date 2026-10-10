@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,7 +39,7 @@ __all__ = [
     "CITATION_FILENAME",
     "COG_PROFILE",
     "FALLBACK_BYTES_PER_PIXEL",
-    "MAX_EXPORT_JOB_BYTES",
+    "MAX_JOB_BYTES",
     "MAX_OUTPUT_SIDE_PX",
     "NOTICE_FILENAME",
     "RECIPE_FILENAME",
@@ -54,6 +54,7 @@ __all__ = [
     "group_dirname",
     "mask_filename",
     "mask_profile",
+    "merge_first_valid",
     "native_crop_grid",
     "rasterize_aoi",
 ]
@@ -100,14 +101,14 @@ FALLBACK_BYTES_PER_BAND = 8
 FALLBACK_BAND_COUNT = 4
 
 
-# The most raw output one export job may write, data and masks, counted as
-# `PlannedOutput.total_bytes` counts it (Otto, 08.10.2026, M4-11 F5): ten times the
-# synchronous crop's 500 MB. A starting value [A]: at 0.041–0.046 s per MB locally
-# (m3-18 §10.3) 5 GB are about four minutes without the network, well inside a job's
-# runtime limit; the work directory needs up to about twice this per slot while the
-# ZIP is packed. The one place this number lives: the cost estimate refuses above
-# it, and the crop route offers a job only below it.
-MAX_EXPORT_JOB_BYTES = 5_000_000_000
+# The most raw output one job may write, data and masks (Otto, 08.10.2026, M4-11 F5; for a
+# raster job 10.10.2026, M4-12 F7): ten times the synchronous crop's 500 MB. An export counts
+# it as `PlannedOutput.total_bytes` counts it, a raster job as its output plus its mask. A
+# starting value [A]: at 0.041–0.046 s per MB locally (m3-18 §10.3) 5 GB are about four
+# minutes without the network, well inside a job's runtime limit; the work directory needs
+# up to about twice this per slot while the result is written. The one place this number
+# lives: the cost estimate refuses above it, and the crop route offers a job only below it.
+MAX_JOB_BYTES = 5_000_000_000
 
 # Block size of the windowed writes, as in the processing core (adr/0014 §7.2) and the
 # windowed crop (M3-18 §10.3).
@@ -395,3 +396,27 @@ def group_dirname(index: int, group_count: int) -> str:
         return ""
     width = max(2, len(str(group_count)))
     return f"group-{index + 1:0{width}d}/"
+
+
+def merge_first_valid(blocks: Iterable[numpy.ma.MaskedArray]) -> numpy.ma.MaskedArray:
+    """The mosaic rule: per band and pixel the first valid element, block by block (``FirstMethod``).
+
+    ``blocks`` are the same window of each item in the order of the list, and a lazy iterable
+    is read only as far as it is needed: once every element is filled, the remaining items are
+    not read. The one place the rule lives: the synchronous crop reads its mosaic through
+    ``rio_tiler.mosaic_reader``, whose default is the same rule; the export job (M4-11a) and
+    the mosaic job (M4-12a) both call this.
+    """
+    mosaic: numpy.ma.MaskedArray | None = None
+    for block in blocks:
+        if mosaic is None:
+            mosaic = numpy.ma.MaskedArray(block.data.copy(), mask=numpy.ma.getmaskarray(block).copy())
+        else:
+            fill = mosaic.mask & ~numpy.ma.getmaskarray(block)
+            mosaic.data[fill] = block.data[fill]
+            mosaic.mask[fill] = False
+        if not mosaic.mask.any():
+            break
+    if mosaic is None:
+        raise ValueError("a mosaic has at least one block")
+    return mosaic

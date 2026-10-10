@@ -41,6 +41,9 @@ _GRID_TOLERANCE = 1e-6
 class Source:
     """One input asset, opened once: its grid, its scaling, its blocks and tiles in physical values."""
 
+    #: Whether reading this source warps anything onto its grid; only a mosaic does (M4-12a).
+    warps = False
+
     def __init__(self, entry: ResolvedInput, reader: CogReader | ZarrReader) -> None:
         self.entry = entry
         self.reader = reader
@@ -79,7 +82,8 @@ class Source:
             and (self.width, self.height) == (other.width, other.height)
         )
 
-    def _named(self, image: ImageData) -> ImageData:
+    def physical(self, image: ImageData) -> ImageData:
+        """``image`` read raw from this asset, in physical values and with this asset's band names."""
         image = apply_scaling(image, self.scaling)
         if len(self.names) == image.count:
             image.band_names = list(self.names)
@@ -103,11 +107,11 @@ class Source:
             height=int(window.height),
             max_size=None,
         )
-        return self._named(image)
+        return self.physical(image)
 
     def read_tile(self, x: int, y: int, z: int, **options: Any) -> ImageData:
         """One map tile, in physical values; ``options`` are the reader's own (``tilesize`` and the like)."""
-        return self._named(self.reader.tile(x, y, z, **options))
+        return self.physical(self.reader.tile(x, y, z, **options))
 
 
 def expected_band_names(entry: ResolvedInput) -> list[str] | None:

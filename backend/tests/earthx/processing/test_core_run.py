@@ -213,15 +213,14 @@ class TestExtentAndMask:
 
 @pytest.mark.usefixtures("served")
 class TestRefusals:
-    def test_more_than_one_item_is_not_run_yet(self, tmp_path: Path) -> None:
+    def test_more_than_one_group_is_not_run(self, tmp_path: Path) -> None:
+        """The scenes of one overpass are a mosaic (test_mosaic.py); two groups are two overpasses."""
         data = _recipe([SCALE_2], assets=("red",))
-        data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]
-        data["inputs"][0]["resolved"].append(resolved("ITEM_B", "red", href=sources.url("red")))
-        with pytest.raises(UnsupportedRecipe, match="one item"):
-            _run(data, tmp_path)
         data["inputs"][0]["groups"] = [["ITEM_A"], ["ITEM_B"]]
-        with pytest.raises(UnsupportedRecipe, match="one item"):
+        data["inputs"][0]["resolved"].append(resolved("ITEM_B", "red", href=sources.url("red")))
+        with pytest.raises(UnsupportedRecipe, match="one group"):
             _run(data, tmp_path)
+        assert list(tmp_path.iterdir()) == []
 
     def test_a_crop_is_an_export_and_needs_its_attachments(self, tmp_path: Path) -> None:
         data = _recipe([], assets=("red",), scale=None, offset=None)
