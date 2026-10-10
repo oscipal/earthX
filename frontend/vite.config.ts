@@ -8,7 +8,8 @@ import { defineConfig } from 'vitest/config'
 // routes are rooted at /collections/{dataset}/items/{item}/... (adr/0006).
 // Override with VITE_TILER_PROXY. /coverage (M2-05b), /aoi (M3-06a/b) and
 // /geocode (M3-07a/b) all sit on the `api` process's base app, outside /stac,
-// so they share apiTarget.
+// so they share apiTarget, and so does the job API under /processing (M4-08b,
+// M4-13b K8).
 const apiTarget = process.env.VITE_API_PROXY ?? 'http://localhost:8000'
 const tilerTarget = process.env.VITE_TILER_PROXY ?? 'http://localhost:8001'
 
@@ -21,6 +22,7 @@ export default defineConfig({
       '/coverage': { target: apiTarget, changeOrigin: true },
       '/aoi': { target: apiTarget, changeOrigin: true },
       '/geocode': { target: apiTarget, changeOrigin: true },
+      '/processing': { target: apiTarget, changeOrigin: true },
       '/collections': { target: tilerTarget, changeOrigin: true },
     },
   },
