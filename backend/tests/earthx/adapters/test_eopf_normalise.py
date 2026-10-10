@@ -7,7 +7,12 @@ fixture would hide the very fields this module maps, unmaps or leaves alone.
 
 from __future__ import annotations
 
+import pytest
+
+from earthx.access.resolve import ResolvedAsset
 from earthx.adapters.eopf_stac import normalize_item
+from earthx.api.intake import describe_bands
+from earthx.catalog.datasets import SENTINEL_2_L2A_ZARR3
 
 
 def item(**overrides: object) -> dict[str, object]:
@@ -97,10 +102,51 @@ def test_asset_bands_becomes_eo_bands_with_the_eo_prefix_stripped() -> None:
         ],
     }
     normalized = normalize_item(item(assets={"SR_10m": asset}))["assets"]["SR_10m"]
-    assert "bands" not in normalized
     assert normalized["eo:bands"] == [
         {"name": "b04", "description": "Red (band 4)", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}
     ]
+
+
+def test_asset_keeps_the_stac_1_1_core_field_bands_beside_eo_bands() -> None:
+    """M4-23: the frontend reads `bands[].name`, not an extension field; `eo:bands` stays."""
+    asset = {
+        "href": "https://data.eodc.eu/.../r10m",
+        "bands": [{"name": "b04", "eo:common_name": "red"}, {"name": "b08"}],
+    }
+    normalized = normalize_item(item(assets={"SR_10m": asset}))["assets"]["SR_10m"]
+    assert [band["name"] for band in normalized["bands"]] == ["b04", "b08"]
+    assert normalized["bands"] == normalized["eo:bands"]
+    assert normalized["bands"] is not normalized["eo:bands"]
+
+
+@pytest.mark.parametrize("bands", [None, "b04", {"name": "b04"}, 7])
+def test_an_asset_without_a_band_list_gets_neither_bands_nor_eo_bands(bands: object) -> None:
+    asset: dict[str, object] = {"href": "https://data.eodc.eu/.../r10m"}
+    if bands is not None:
+        asset["bands"] = bands
+    normalized = normalize_item(item(assets={"SR_10m": asset}))["assets"]["SR_10m"]
+    assert "bands" not in normalized
+    assert "eo:bands" not in normalized
+
+
+def test_an_empty_band_list_stays_an_empty_list_in_both_fields() -> None:
+    normalized = normalize_item(item(assets={"SR_10m": {"href": "https://data.eodc.eu/.../r10m", "bands": []}}))
+    assert normalized["assets"]["SR_10m"]["bands"] == []
+    assert normalized["assets"]["SR_10m"]["eo:bands"] == []
+
+
+def test_bands_do_not_change_what_the_order_intake_reads_off_the_asset() -> None:
+    """`raster:bands` wins over `bands` in the intake; with or without the new field, the same bands result."""
+    asset = {
+        "href": "https://data.eodc.eu/zarr/EOPF_A/measurements/r10m",
+        "nodata": 0,
+        "data_type": "uint16",
+        "bands": [{"name": "b04"}, {"name": "b08"}],
+    }
+    with_bands = normalize_item(item(assets={"SR_10m": asset}))
+    without_bands = normalize_item(item(assets={"SR_10m": {k: v for k, v in asset.items() if k != "bands"}}))
+    ref = ResolvedAsset("sentinel-2-l2a-zarr3", "S2A_MSIL2A_TEST", "SR_10m:b04,b08", "zarr", asset["href"], "b04,b08", None)
+    assert describe_bands(with_bands, SENTINEL_2_L2A_ZARR3, ref) == describe_bands(without_bands, SENTINEL_2_L2A_ZARR3, ref)
 
 
 def test_asset_raster_fields_move_into_raster_bands() -> None:

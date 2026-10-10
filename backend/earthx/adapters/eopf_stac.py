@@ -256,7 +256,10 @@ def _normalize_asset(asset: Any) -> Any:
     normalized = dict(asset)
     bands = normalized.pop("bands", None)
     if isinstance(bands, list):
+        # Both spellings, as separate lists: `eo:bands` for our 1.0 readers, the STAC 1.1
+        # core field `bands` so the frontend need not read an extension field (M4-23).
         normalized["eo:bands"] = [_normalize_band(band) for band in bands]
+        normalized["bands"] = [_normalize_band(band) for band in bands]
     raster_band: dict[str, Any] = {}
     for source_key, target_key in (
         ("nodata", "nodata"),
