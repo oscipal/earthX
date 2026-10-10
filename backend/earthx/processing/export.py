@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import time
 import zipfile
 import zlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,10 +40,7 @@ from typing import Any
 
 import numpy
 import rasterio
-from rasterio.dtypes import dtype_ranges
-from rasterio.enums import ColorInterp, Resampling
 from rasterio.errors import RasterioError
-from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 from rasterio.windows import transform as window_transform
 from rio_cogeo.cogeo import cog_translate
@@ -65,6 +61,7 @@ from earthx.access.crop_rules import (
     group_dirname,
     mask_filename,
     mask_profile,
+    merge_first_valid,
     native_crop_grid,
     rasterize_aoi,
 )
@@ -73,6 +70,7 @@ from earthx.processing.errors import AoiOutsideInputs, ProcessingError, Unsuppor
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import CropOutput, Recipe, ResolvedInput, engine_versions, job_recipe_document
+from earthx.processing.warped import WarpedItem
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
 from earthx.readers.cog import AssetPath, CogReader
@@ -202,83 +200,6 @@ def check_export(recipe: Recipe) -> CropOutput:
 # --- reading ------------------------------------------------------------------
 
 
-class _Item:
-    """One item's asset warped onto the output grid, read block by block."""
-
-    def __init__(self, dataset: Any, transform: Any, width: int, height: int, *, alone: bool, stack: ExitStack):
-        self.alpha: int | None = None
-        if alone:
-            # The crop's windowed path (`_write_native_windowed_cog`): a plain warp.
-            self.vrt = stack.enter_context(
-                WarpedVRT(
-                    dataset, crs=WGS84_CRS, transform=transform, width=width, height=height,
-                    resampling=Resampling.nearest,
-                )
-            )
-            self.nodata = self.vrt.nodata
-            self.indexes = list(range(1, self.vrt.count + 1))
-            self.mosaic = False
-            return
-        # As `rio_tiler.reader.read` warps one item of a mosaic (`Reader.part`).
-        self.mosaic = True
-        nodata = dataset.nodata
-        params: dict[str, Any] = {
-            "crs": WGS84_CRS, "add_alpha": True, "resampling": Resampling.nearest, "dtype": dataset.dtypes[0],
-        }  # fmt: skip
-        if nodata is not None:
-            params.update({"nodata": nodata, "add_alpha": False, "src_nodata": nodata})
-        source_alpha = ColorInterp.alpha in dataset.colorinterp
-        if source_alpha:
-            params["add_alpha"] = False
-        self.vrt = stack.enter_context(
-            WarpedVRT(dataset, transform=transform, width=width, height=height, **params)
-        )
-        self.nodata = nodata
-        interp = self.vrt.colorinterp
-        self.indexes = [i + 1 for i, colour in enumerate(interp) if colour != ColorInterp.alpha]
-        if ColorInterp.alpha in interp and nodata is None:
-            self.alpha = interp.index(ColorInterp.alpha) + 1
-        self._source_alpha = source_alpha
-
-    @property
-    def dtype(self) -> str:
-        return self.vrt.dtypes[self.indexes[0] - 1]
-
-    def read(self, window: Window) -> numpy.ma.MaskedArray:
-        if not self.mosaic:
-            return self.vrt.read(window=window, masked=True)
-        if self.alpha is not None:
-            values = self.vrt.read(indexes=[*self.indexes, self.alpha], window=window)
-            values, alpha = values[:-1], values[-1]
-            _, opaque = dtype_ranges[str(values.dtype)]
-            if not self._source_alpha and alpha.max() == 255:
-                opaque = 255
-            data = numpy.ma.MaskedArray(values)
-            data.mask = numpy.broadcast_to(alpha != opaque, values.shape).copy()
-            return data
-        data = self.vrt.read(indexes=self.indexes, window=window, masked=True, fill_value=self.nodata)
-        if self.nodata is not None:
-            data.mask = numpy.isnan(data.data) if math.isnan(self.nodata) else data.data == self.nodata
-        return data
-
-
-def _first_valid(items: Sequence[_Item], window: Window) -> numpy.ma.MaskedArray:
-    """The block of a group: the first valid element per band and pixel, item by item (``FirstMethod``)."""
-    mosaic: numpy.ma.MaskedArray | None = None
-    for item in items:
-        block = item.read(window)
-        if mosaic is None:
-            mosaic = numpy.ma.MaskedArray(block.data.copy(), mask=numpy.ma.getmaskarray(block).copy())
-        else:
-            fill = mosaic.mask & ~numpy.ma.getmaskarray(block)
-            mosaic.data[fill] = block.data[fill]
-            mosaic.mask[fill] = False
-        if not mosaic.mask.any():
-            break
-    assert mosaic is not None
-    return mosaic
-
-
 def _blocks(width: int, height: int) -> Iterator[Window]:
     for row in range(0, height, BLOCK_SIZE):
         for col in range(0, width, BLOCK_SIZE):
@@ -365,7 +286,7 @@ class _Export:
             with rasterio.Env(VSI_CACHE_SIZE=str(_cache_per_item(len(output.entries)))):
                 datasets = [self.open_dataset(entry, stack) for entry in output.entries]
             items = [
-                _Item(dataset, output.transform, output.width, output.height, alone=alone, stack=stack)
+                WarpedItem(dataset, output.transform, output.width, output.height, alone=alone, stack=stack)
                 for dataset in datasets
             ]
             if len({(len(item.indexes), item.dtype) for item in items}) != 1:
@@ -393,7 +314,7 @@ class _Export:
                 open_workfile(self.workdir, mask_name, "w", **masks) as mask_dst,
             ):
                 for window in _blocks(output.width, output.height):
-                    block = _first_valid(items, window)
+                    block = merge_first_valid(item.read(window) for item in items)
                     inside = rasterize_aoi(
                         self.aoi,
                         height=int(window.height),

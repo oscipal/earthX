@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,6 +54,7 @@ __all__ = [
     "group_dirname",
     "mask_filename",
     "mask_profile",
+    "merge_first_valid",
     "native_crop_grid",
     "rasterize_aoi",
 ]
@@ -395,3 +396,27 @@ def group_dirname(index: int, group_count: int) -> str:
         return ""
     width = max(2, len(str(group_count)))
     return f"group-{index + 1:0{width}d}/"
+
+
+def merge_first_valid(blocks: Iterable[numpy.ma.MaskedArray]) -> numpy.ma.MaskedArray:
+    """The mosaic rule: per band and pixel the first valid element, block by block (``FirstMethod``).
+
+    ``blocks`` are the same window of each item in the order of the list, and a lazy iterable
+    is read only as far as it is needed: once every element is filled, the remaining items are
+    not read. The one place the rule lives: the synchronous crop reads its mosaic through
+    ``rio_tiler.mosaic_reader``, whose default is the same rule; the export job (M4-11a) and
+    the mosaic job (M4-12a) both call this.
+    """
+    mosaic: numpy.ma.MaskedArray | None = None
+    for block in blocks:
+        if mosaic is None:
+            mosaic = numpy.ma.MaskedArray(block.data.copy(), mask=numpy.ma.getmaskarray(block).copy())
+        else:
+            fill = mosaic.mask & ~numpy.ma.getmaskarray(block)
+            mosaic.data[fill] = block.data[fill]
+            mosaic.mask[fill] = False
+        if not mosaic.mask.any():
+            break
+    if mosaic is None:
+        raise ValueError("a mosaic has at least one block")
+    return mosaic
