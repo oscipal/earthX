@@ -6,15 +6,17 @@ here rather than in ``earthx/catalog/`` — architekturplan.md 5.1 stays as it i
 
 The wordings that apply to the last two points:
 
-* point 9, version v1 (D4, 20.09.2026): the chain search → display → clipped
-  download, against fixtures;
+* point 9, version v2 (M4 Q14, 02.10.2026, in force with M4-15): one operator run per
+  dataset against fixtures — band math for the two Sentinel-2 entries, reprojection
+  for the DEM. It replaces version v1 (D4, 20.09.2026), the chain search → display →
+  clipped download, which stays as its own test of the clip;
 * point 10, version v1.1 (Otto, 22.09.2026, narrowing D4): the dataset is
   covered by the T-D smoke. A visible check date waits for M5's own health
   checks, because none of the ways to carry the last green run's timestamp into
   the running platform worked without a secret or recurring manual work.
 
 Point 9 needs a running chain rather than a look at the entry, so it lives in
-``test_onboarding_endtoend.py``. Point 10 needs a look at a different directory
+``test_onboarding_processing.py``. Point 10 needs a look at a different directory
 rather than at the entry: whether ``backend/tests_live/`` carries a module marked
 ``@pytest.mark.live_dataset(<its id>)`` for it (Fassung v1.1, Otto 22.09.2026,
 M2-08 plan §4.4). Both live in :data:`CHECKED_ELSEWHERE`, which says where.
@@ -67,13 +69,13 @@ CHECKLIST = {
     6: "Anonymer Zugriffs-Check bestanden.",
     7: "Datentyp-Klasse und Capability-Flags gesetzt.",
     8: "Standard-Visualisierung definiert (Baender, Stretch, Colormap).",
-    9: "Mindestens ein Processing-Schritt End-to-End getestet; Fassung v1: Suche -> Anzeige -> Zuschnitt-Download.",
+    9: "Mindestens ein Processing-Schritt End-to-End getestet; Fassung v2: je Datensatz ein Operator-Lauf gegen Fixtures.",
     10: "'Zuletzt erfolgreich geprueft' ist gesetzt und sichtbar; Fassung v1.1: vom T-D-Smoke abgedeckt.",
 }
 
 # Points that are checked, but not by looking at the entry.
 CHECKED_ELSEWHERE = {
-    9: "tests.catalog.test_onboarding_endtoend",
+    9: "tests.catalog.test_onboarding_processing",
     10: "test_every_registry_entry_is_covered_by_the_live_smoke, below — the "
     "live_dataset marker in backend/tests_live/",
 }
