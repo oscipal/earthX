@@ -5,11 +5,13 @@ import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
+import ProcessingPanel from './components/ProcessingPanel';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
 import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
+import { useProcessingStore } from './processingStore';
 import { hasResultsPanel } from './sections';
 import { useAppStore } from './store';
 
@@ -33,10 +35,19 @@ export default function App() {
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const projection = useAppStore((s) => s.projection);
   const toggleProjection = useAppStore((s) => s.toggleProjection);
+  const processingOpen = useProcessingStore((s) => s.open);
+  const openProcessing = useProcessingStore((s) => s.openProcessing);
+  const jobCount = useProcessingStore((s) => s.jobs.length);
+  const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
   useEffect(() => {
     loadDatasets();
   }, [loadDatasets]);
+
+  // The jobs of this tab, kept across a reload (M4-13 F5 (1)).
+  useEffect(() => {
+    resumeJobs();
+  }, [resumeJobs]);
 
   return (
     <div className="app" data-theme={theme}>
@@ -74,6 +85,16 @@ export default function App() {
         >
           ☰ Layers{layerCount ? ` (${layerCount})` : ''}
         </button>
+        {jobCount > 0 && !processingOpen && (
+          <button
+            type="button"
+            className="panel zoom-btn"
+            onClick={() => openProcessing()}
+            title="Show the processing panel with the jobs of this tab"
+          >
+            ⚙ Jobs ({jobCount})
+          </button>
+        )}
         <button
           type="button"
           className="panel zoom-btn"
@@ -133,6 +154,12 @@ export default function App() {
             )}
           </>
         )}
+      </div>
+
+      <div className="overlay processing-dock">
+        <Draggable>
+          <ProcessingPanel />
+        </Draggable>
       </div>
 
       <div className="overlay status">

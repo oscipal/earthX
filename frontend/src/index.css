@@ -1603,3 +1603,141 @@ input[type='date']:focus {
   color: var(--accent);
   outline: none;
 }
+
+/* --- processing panel (M4-13b) --- */
+/* Right edge below the top buttons, above the results dock; draggable like the
+   other floating panels. */
+.processing-dock {
+  top: 64px;
+  right: 16px;
+  z-index: 12;
+}
+.processing-panel {
+  width: 360px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pp-heading {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pp-summary {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+}
+.pp-help {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pp-field {
+  gap: 4px;
+}
+.pp-field input,
+.pp-field select {
+  width: 100%;
+  box-sizing: border-box;
+}
+.pp-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+}
+.pp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pp-chip {
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.pp-chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pp-steps,
+.pp-jobs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pp-step,
+.pp-job {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+.pp-step-head,
+.pp-job-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.pp-step-title,
+.pp-job-state {
+  font-size: 11px;
+  color: var(--accent);
+}
+.pp-step-actions {
+  display: flex;
+  gap: 8px;
+}
+.pp-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.pp-add-btn {
+  padding: 5px 10px;
+}
+.pp-estimate p {
+  margin: 0;
+  font-size: 11px;
+}
+.pp-progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.pp-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+}
+.pp-links a {
+  color: var(--accent);
+}

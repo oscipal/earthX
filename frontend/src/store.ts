@@ -59,8 +59,9 @@ const COVERAGE_DEBOUNCE_MS = 400;
 // The items a selection-wide action (download, "add to layers") applies to:
 // the picked scenes, or — with nothing picked — the whole active time step.
 // Shared so `openDownloadForSelection`/`confirmDownload` (V-4) build the same
-// set `addCurrentToLayers` already did.
-function selectionItemsFrom(s: AppState): StacItem[] {
+// set `addCurrentToLayers` already did, and so the processing panel (M4-13b)
+// offers its scenes from that same set.
+export function selectionItemsFrom(s: AppState): StacItem[] {
   const group = s.groups[s.activeGroupIndex];
   return s.selectedIds.length ? s.items.filter((it) => s.selectedIds.includes(it.id)) : (group?.items ?? []);
 }
@@ -536,7 +537,7 @@ function forgetSearch() {
   return { searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetIds: [] };
 }
 
-interface AppState {
+export interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
   aoi: GeoJSON.Geometry | null;
