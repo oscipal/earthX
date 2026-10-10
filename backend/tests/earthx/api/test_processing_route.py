@@ -415,11 +415,11 @@ class TestWhatTheOrderMayNotBe:
             response = await client.post(EXECUTION, json=envelope())
         assert problem(response, 403)["type"] == "urn:earthx:order-refused:license"
 
-    async def test_several_items_are_not_run_yet_and_do_not_wait_in_the_queue(self, rig: Rig) -> None:
+    async def test_several_groups_are_not_a_raster_job_and_do_not_wait_in_the_queue(self, rig: Rig) -> None:
         rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = s2_item("S2_B", NEAR)
         response = await place(rig, order(groups=(("S2_A",), ("S2_B",))))
         body = problem(response, 422)
-        assert body["type"] == "urn:earthx:order-refused:scope" and "one item" in body["detail"]
+        assert body["type"] == "urn:earthx:order-refused:order" and "one group" in body["detail"]
         assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0)
 
     async def test_an_item_of_the_source_that_points_elsewhere_is_a_502_without_the_address(self, rig: Rig) -> None:

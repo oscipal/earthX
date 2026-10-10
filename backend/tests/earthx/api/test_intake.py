@@ -124,14 +124,20 @@ def eopf_item(item_id: str = "EOPF_A", bbox: tuple[float, float, float, float] =
 def dem_item(
     name: str = "DEM_N47_E009", bbox: tuple[float, float, float, float] = (9.0 - 0.5, 46.5, 9.5, 47.5)
 ) -> dict[str, Any]:
-    """As ``cop_dem_bucket._item`` builds it: one ``data`` asset, no bands, no checksum, no ``updated``."""
+    """As ``cop_dem_bucket._item`` builds it: one ``data`` asset, the period of the product, no bands, no checksum, no ``updated``."""
     return {
         "type": "Feature",
         "stac_version": "1.0.0",
         "id": name,
         "bbox": list(bbox),
         "geometry": _footprint(bbox),
-        "properties": {"datetime": None, "gsd": 30.0, "proj:code": "EPSG:4326"},
+        "properties": {
+            "datetime": None,
+            "start_datetime": "2011-01-01T00:00:00Z",
+            "end_datetime": "2015-12-31T23:59:59Z",
+            "gsd": 30.0,
+            "proj:code": "EPSG:4326",
+        },
         "assets": {"data": {"href": f"https://{DEM_HOST}/{name}/{name}.tif"}},
     }
 
@@ -322,7 +328,7 @@ class TestEopfZarr:
 
 
 class TestCopernicusDem:
-    TILES = (("DEM_N47_E009",), ("DEM_N47_E010",))
+    TILES = (("DEM_N47_E009", "DEM_N47_E010"),)
 
     def source(self) -> Source:
         return Source(
@@ -650,9 +656,9 @@ class TestRefusals:
 
     async def test_exactly_at_the_cap_is_fine(self) -> None:
         ids = [f"S2_{i}" for i in range(MAX_ORDER_ITEMS)]
-        source = Source(*((S2, s2_item(item_id)) for item_id in ids))
-        accepted = await accept(order(groups=tuple((i,) for i in ids)), source)
-        assert len(accepted.recipe.inputs[0].resolved) == MAX_ORDER_ITEMS * 2
+        source = Source(*((S2, visual_item(item_id)) for item_id in ids))
+        accepted = await accept(export_order(groups=tuple((i,) for i in ids)), source)
+        assert len(accepted.recipe.inputs[0].resolved) == MAX_ORDER_ITEMS
 
     async def test_an_item_the_source_does_not_have(self) -> None:
         error = await refused(order(), Source())
@@ -859,8 +865,8 @@ class TestGroups:
         assert accepted.skipped_items == ("S2_FAR",)
 
     async def test_two_surviving_groups_keep_their_order(self) -> None:
-        source = Source((S2, s2_item("S2_B")), (S2, s2_item("S2_A")))
-        accepted = await accept(order(groups=(("S2_B",), ("S2_A",))), source)
+        source = Source((S2, visual_item("S2_B")), (S2, visual_item("S2_A")))
+        accepted = await accept(export_order(groups=(("S2_B",), ("S2_A",))), source)
         assert accepted.recipe.inputs[0].groups == [["S2_B"], ["S2_A"]]
 
 

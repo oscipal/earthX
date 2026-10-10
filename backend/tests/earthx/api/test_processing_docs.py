@@ -221,7 +221,8 @@ class TestOrderSchema:
 
     def test_it_asks_for_what_the_order_models_ask_for(self) -> None:
         schema = order_schema(OPERATORS)
-        assert set(schema["required"]) == {"recipe_version", "inputs", "aoi", "steps", "output"}
+        assert set(schema["required"]) == {"recipe_version", "inputs", "steps", "output"}
+        assert "aoi" in schema["properties"]  # optional: left out, the order asks for the whole scenes (M4-12)
         assert schema["additionalProperties"] is False
         parse_request(json.dumps(order()), OPERATORS)  # the order the schema is for is one the intake reads
 

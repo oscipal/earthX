@@ -51,6 +51,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
+from shapely.errors import ShapelyError
+from shapely.geometry import box, mapping
+from shapely.geometry import shape as shapely_shape
+from shapely.ops import unary_union
 
 from earthx.access.download import (
     AOI_FILENAME,
@@ -76,10 +80,18 @@ from earthx.access.resolve import (
 from earthx.adapters import UnknownCollection, dataset_config
 from earthx.api.citation import citation_bib
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier, UnknownDatasetError
+from earthx.catalog.registry import (
+    DatasetConfig,
+    DatasetRegistry,
+    LicenseTier,
+    MissingProperty,
+    UnknownDatasetError,
+    group_key,
+)
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
-from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, RecipeInvalid, UnknownOperator
+from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator
 from earthx.processing.export import Attachments
+from earthx.processing.mosaic import mosaic_order
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands, estimate
 from earthx.processing.recipe import (
@@ -169,6 +181,8 @@ class _Prepared:
     groups: list[list[str]]
     skipped: tuple[str, ...]
     targets: list[_Target]
+    #: The AOI of the recipe: the order's own, or the union of the scenes' footprints (M4-12).
+    aoi: dict[str, Any]
 
 
 async def accept_order(
@@ -277,17 +291,20 @@ async def _prepare(
     ids = [item for group in entry.groups for item in group]
     fetched = await _gather(fetch_item_or_refuse(item_source, entry.dataset, item, not_found=422) for item in ids)
     items = dict(zip(ids, fetched, strict=True))
-    groups, skipped = _groups_the_aoi_touches(entry.groups, items, request)
+    aoi = request.aoi.model_dump(mode="json") if request.aoi is not None else _whole_scenes_aoi(list(items.values()))
+    groups, skipped = _groups_the_aoi_touches(entry.groups, items, aoi, export)
 
     policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
     separator = config.zarr.variable_separator if config.zarr is not None else None
+    if not export:
+        groups = _one_overpass(groups, items, config, entry.assets[0], policy)
     targets = [
         _Target(items[item_id], _resolve_checked(items[item_id], config, asset, policy), separator, policy)
         for group in groups
         for item_id in group
         for asset in entry.assets
     ]
-    return _Prepared(request, entry, config, groups, skipped, targets)
+    return _Prepared(request, entry, config, groups, skipped, targets, aoi)
 
 
 async def _accept(
@@ -301,14 +318,18 @@ async def _accept(
     prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
     versions = await _gather(_version_of(target, gateway) for target in prepared.targets)
     recipe = _recipe_of(prepared, versions, secrets.token_urlsafe(16), registry, operators)
-    if not isinstance(recipe.output, CropOutput):
-        return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped)
     try:
         estimate(recipe, operators)
-    except ExportTooLarge as error:
+    except JobTooLarge as error:
         raise OrderRefused(413, str(error), "size") from None
     except AoiOutsideInputs as error:
         raise OrderRefused(422, str(error), "aoi") from None
+    except RecipeInvalid:
+        # A band name the item does not describe: the file may well have it, and the queue's own
+        # estimate (`submit`) is where it fails, as it did before this stage looked at the size.
+        pass
+    if not isinstance(recipe.output, CropOutput):
+        return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped)
     kept = {item_id for group in prepared.groups for item_id in group}
     attachments = export_attachments(
         prepared.config,
@@ -347,7 +368,7 @@ def _recipe_of(
                 ),
             }
         ],
-        "aoi": request.aoi.model_dump(mode="json"),
+        "aoi": prepared.aoi,
         "steps": [step.model_dump(mode="json") for step in request.steps],
         "output": request.output.model_dump(mode="json"),
     }
@@ -438,6 +459,8 @@ def _check_scope(request: RecipeRequest) -> InputRequest:
         raise OrderRefused(422, "an order has exactly one input", "order")
     if isinstance(request.output, CropOutput):
         # An export (M4-11a): the source's own values at native resolution (K1).
+        if request.aoi is None:
+            raise OrderRefused(422, "an export needs an AOI: it is the area that is cut out", "order")
         if request.steps:
             raise OrderRefused(422, "an export has no steps; it delivers the source's own values", "order")
         if request.output.resolution_factor != 1:
@@ -479,7 +502,7 @@ async def _gather[T](awaitables: Iterable[Awaitable[T]]) -> list[T]:
 
 
 def _groups_the_aoi_touches(
-    groups: Sequence[Sequence[str]], items: Mapping[str, dict[str, Any]], request: RecipeRequest
+    groups: Sequence[Sequence[str]], items: Mapping[str, dict[str, Any]], aoi_json: Mapping[str, Any], export: bool
 ) -> tuple[list[list[str]], tuple[str, ...]]:
     """As the crop does (M3-17, F4): items the AOI does not touch drop out, a group with none drops entirely.
 
@@ -489,9 +512,8 @@ def _groups_the_aoi_touches(
     the footprints its recipe will carry (:func:`footprint_of`), so that the core
     never finds a group the AOI misses (review of M4-11a).
     """
-    export = isinstance(request.output, CropOutput)
     try:
-        aoi = parse_aoi_geometry(request.aoi.model_dump(mode="json"))
+        aoi = parse_aoi_geometry(aoi_json)
     except InvalidAoi as error:
         raise OrderRefused(422, str(error), "aoi") from None
     kept: list[list[str]] = []
@@ -514,6 +536,86 @@ def _groups_the_aoi_touches(
     if not kept:
         raise OrderRefused(422, "the AOI does not touch any of the given items", "aoi")
     return kept, tuple(skipped)
+
+
+def _whole_scenes_aoi(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The AOI of an order that names whole scenes: the union of their footprints (M4-12 F5).
+
+    An item without a usable footprint counts with its ``bbox``. The recipe carries this as
+    its AOI, so that the core, the hash and the cost estimate see an order like any other.
+    """
+    shapes = []
+    for item in items:
+        footprint = footprint_of(item)
+        try:
+            if footprint is not None:
+                shapes.append(shapely_shape(footprint))
+                continue
+            bbox = item.get("bbox")
+            if isinstance(bbox, Sequence) and len(bbox) in (4, 6):
+                west, south, east, north = (float(bbox[i]) for i in ((0, 1, 2, 3) if len(bbox) == 4 else (0, 1, 3, 4)))
+                shapes.append(box(west, south, east, north))
+                continue
+        except (ShapelyError, ValueError, TypeError):
+            pass
+        raise OrderRefused(502, "an item of the order carries neither a footprint nor a bbox that can be read", "items")
+    union = unary_union(shapes)
+    polygons = [part for part in getattr(union, "geoms", [union]) if part.geom_type in ("Polygon", "MultiPolygon")]
+    if not polygons or union.is_empty:
+        raise OrderRefused(422, "the scenes of the order have no area", "aoi")
+    union = unary_union(polygons)
+    west, _, east, _ = union.bounds
+    if east - west > 180:
+        raise OrderRefused(422, "the scenes of the order lie on both sides of the antimeridian", "aoi")
+    return json.loads(json.dumps(mapping(union)))
+
+
+def _one_overpass(
+    groups: list[list[str]],
+    items: Mapping[str, dict[str, Any]],
+    config: DatasetConfig,
+    asset: str,
+    policy: Policy,
+) -> list[list[str]]:
+    """A raster job with several scenes is the mosaic of one overpass, in the order the core reads (M4-12).
+
+    The scenes share the overpass key of the registry (``results_group_by``, P19), the dataset
+    offers reprojection (a scene off the grid is warped), and a Zarr store lies in one CRS. The
+    list is then sorted by :func:`~earthx.processing.mosaic.mosaic_order`, so that the same
+    overpass gives the same recipe however the order named its scenes. A group of one scene
+    is left alone; more than one group is not a raster job.
+    """
+    if len(groups) != 1:
+        raise OrderRefused(422, "a raster job takes one group: one scene, or the scenes of one overpass", "order")
+    ids = groups[0]
+    if len(ids) == 1:
+        return groups
+    if config.viewer is None:
+        raise OrderRefused(422, f"{config.dataset_id!r} names no overpass, so its scenes are not mosaicked", "applicable")
+    if not config.capabilities.reprojection:
+        raise OrderRefused(
+            422, f"{config.dataset_id!r} does not allow reprojection, which a mosaic of scenes may need", "applicable"
+        )
+    keys: dict[str, tuple[str, ...]] = {}
+    for item_id in ids:
+        try:
+            keys[item_id] = group_key(items[item_id], config.viewer, config.viewer.results_group_by)
+        except MissingProperty as error:
+            raise OrderRefused(502, f"item {item_id!r} lacks {error}, which names its overpass", "items") from None
+    if len(set(keys.values())) > 1:
+        first = keys[ids[0]]
+        apart = [item_id for item_id in ids if keys[item_id] != first]
+        raise OrderRefused(
+            422,
+            f"the scenes of a mosaic belong to one overpass; {', '.join(apart[:10])} differ from {ids[0]}",
+            "items",
+        )
+    crs_by_item = {item_id: _resolve_checked(items[item_id], config, asset, policy).crs for item_id in ids}
+    if config.zarr is not None and len(set(crs_by_item.values())) > 1:
+        raise OrderRefused(
+            422, "a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet", "applicable"
+        )
+    return [mosaic_order(crs_by_item)]
 
 
 @dataclass(frozen=True, slots=True)

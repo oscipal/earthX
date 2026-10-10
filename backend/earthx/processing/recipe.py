@@ -345,9 +345,20 @@ class _Common(_Model):
 
 
 class RecipeRequest(_Common):
-    """The order (§4.1): what someone asks for, without any address."""
+    """The order (§4.1): what someone asks for, without any address.
+
+    ``aoi`` may be left out for a raster job: the order then asks for the whole scenes it
+    names, and `api` puts the union of their footprints into the recipe (M4-12); an export
+    needs the area it cuts out, which `api` checks. The recipe itself always carries an AOI,
+    so the core and the hash do not change.
+    """
 
     inputs: list[InputRequest] = Field(min_length=1)
+    aoi: Aoi | None = Field(
+        default=None,
+        description="The area to cut out, a Polygon or MultiPolygon in EPSG:4326. Left out, a raster job covers the "
+        "whole scenes it names (the union of their footprints); an export needs it.",
+    )
 
     @model_validator(mode="after")
     def _names(self) -> RecipeRequest:
