@@ -253,3 +253,44 @@ class TestSingleItem:
             with pytest.raises(InvalidQuery, match="URL path"):
                 await get_item(config, item_id, gateway=gateway)
         assert seen == []
+
+
+class TestCoreBands:
+    """M4-23: ``bands`` is mirrored from ``eo:bands``; the item stays STAC 1.0 and nothing more is asked."""
+
+    async def test_a_searched_band_asset_carries_bands_beside_eo_bands(self, config: DatasetConfig) -> None:
+        gateway, seen = answering(httpx.Response(200, json=load("search_page_1")))
+        async with gateway:
+            page = await search_items(config, gateway=gateway)
+        for item in page.items:
+            red = item["assets"]["red"]
+            assert red["bands"] == red["eo:bands"]
+            assert red["bands"][0]["name"] == "B04"
+            assert red["bands"][0]["common_name"] == "red"
+            assert item["stac_version"] == "1.0.0"
+        assert len(seen) == 1
+
+    async def test_a_fetched_item_carries_bands_too(self, config: DatasetConfig) -> None:
+        gateway, seen = answering(httpx.Response(200, json=load("item")))
+        async with gateway:
+            item = await get_item(config, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway)
+        assert item["assets"]["red"]["bands"] == [
+            {"name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}
+        ]
+        assert item["assets"]["red"]["eo:bands"] == item["assets"]["red"]["bands"]
+        assert item["stac_version"] == "1.0.0"
+        assert len(seen) == 1
+
+    async def test_an_asset_without_eo_bands_gets_no_bands(self, config: DatasetConfig) -> None:
+        gateway, _ = answering(httpx.Response(200, json=load("item")))
+        async with gateway:
+            item = await get_item(config, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway)
+        assert "bands" not in item["assets"]["thumbnail"]
+        assert "eo:bands" not in item["assets"]["thumbnail"]
+
+    async def test_an_item_without_assets_passes_unchanged(self, config: DatasetConfig) -> None:
+        payload = {k: v for k, v in load("item").items() if k != "assets"}
+        gateway, _ = answering(httpx.Response(200, json=payload))
+        async with gateway:
+            item = await get_item(config, "SYNTH_T00AAA_20240601T100000_L2A", gateway=gateway)
+        assert "assets" not in item

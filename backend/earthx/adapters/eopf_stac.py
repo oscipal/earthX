@@ -53,6 +53,7 @@ from earthx.adapters.federated_search import (
     search_fingerprint,
     stac_interval,
     ttl_for_window,
+    with_core_bands,
 )
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Gateway
@@ -256,10 +257,7 @@ def _normalize_asset(asset: Any) -> Any:
     normalized = dict(asset)
     bands = normalized.pop("bands", None)
     if isinstance(bands, list):
-        # Both spellings, as separate lists: `eo:bands` for our 1.0 readers, the STAC 1.1
-        # core field `bands` so the frontend need not read an extension field (M4-23).
         normalized["eo:bands"] = [_normalize_band(band) for band in bands]
-        normalized["bands"] = [_normalize_band(band) for band in bands]
     raster_band: dict[str, Any] = {}
     for source_key, target_key in (
         ("nodata", "nodata"),
@@ -270,7 +268,8 @@ def _normalize_asset(asset: Any) -> Any:
             raster_band[target_key] = normalized.pop(source_key)
     if raster_band:
         normalized["raster:bands"] = [raster_band]
-    return normalized
+    # M4-23: `bands` beside `eo:bands`, the one mapping every federated adapter shares.
+    return with_core_bands(normalized)
 
 
 def _normalize_band(band: Any) -> Any:

@@ -231,20 +231,19 @@ class TestTheContractCatchesABrokenItem:
 
     def test_a_band_list_without_eo_bands_on_an_asset_is_caught(self) -> None:
         item = copy.deepcopy(load("item", fixtures=EARTH_SEARCH_FIXTURES))
+        del item["assets"]["red"]["eo:bands"]
         item["assets"]["red"]["bands"] = [{"name": "B04"}]
         assert any("without eo:bands" in problem for problem in violations_of(item))
 
     def test_bands_beside_eo_bands_is_allowed(self) -> None:
         item = copy.deepcopy(load("item", fixtures=EARTH_SEARCH_FIXTURES))
         item["assets"]["red"]["bands"] = [{"name": "B04"}]
-        item["assets"]["red"]["eo:bands"] = [{"name": "B04"}]
         assert violations_of(item) == []
 
     @pytest.mark.parametrize("bands", ["B04", {"name": "B04"}, ["B04"], 3])
     def test_bands_that_is_not_a_list_of_objects_is_caught(self, bands: object) -> None:
         item = copy.deepcopy(load("item", fixtures=EARTH_SEARCH_FIXTURES))
         item["assets"]["red"]["bands"] = bands
-        item["assets"]["red"]["eo:bands"] = [{"name": "B04"}]
         assert any("not a list of objects" in problem for problem in violations_of(item))
 
     @pytest.mark.parametrize("not_an_item", [None, "item", ["item"], 3])

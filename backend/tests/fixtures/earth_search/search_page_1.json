@@ -15,7 +15,7 @@
       "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 12.3, "platform": "synthetic-2a"},
       "assets": {
         "thumbnail": {"href": "https://example.invalid/synth/1/thumb.jpg", "type": "image/jpeg"},
-        "red": {"href": "https://example.invalid/synth/1/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized"}
+        "red": {"href": "https://example.invalid/synth/1/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized", "eo:bands": [{"name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}]}
       },
       "links": []
     },
@@ -29,7 +29,7 @@
       "properties": {"datetime": "2024-06-02T10:00:00Z", "eo:cloud_cover": 3.1, "platform": "synthetic-2a"},
       "assets": {
         "thumbnail": {"href": "https://example.invalid/synth/2/thumb.jpg", "type": "image/jpeg"},
-        "red": {"href": "https://example.invalid/synth/2/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized"}
+        "red": {"href": "https://example.invalid/synth/2/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized", "eo:bands": [{"name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}]}
       },
       "links": []
     }

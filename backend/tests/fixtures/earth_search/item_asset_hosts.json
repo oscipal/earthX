@@ -25,7 +25,8 @@
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "roles": ["data", "reflectance"],
       "gsd": 10,
-      "raster:bands": [{"data_type": "uint16", "nodata": 0}]
+      "raster:bands": [{"data_type": "uint16", "nodata": 0}],
+      "eo:bands": [{"name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}]
     },
     "thumbnail": {
       "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/00/A/AA/2026/7/SYNTH_T00AAA_20260724T100000_L2A/L2A_PVI.jpg",

@@ -8,7 +8,7 @@
   "properties": {"datetime": "2024-06-01T10:00:00Z", "eo:cloud_cover": 12.3, "platform": "synthetic-2a"},
   "assets": {
     "thumbnail": {"href": "https://example.invalid/synth/1/thumb.jpg", "type": "image/jpeg"},
-    "red": {"href": "https://example.invalid/synth/1/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized"}
+    "red": {"href": "https://example.invalid/synth/1/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized", "eo:bands": [{"name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}]}
   },
   "links": [
     {"rel": "self", "href": "https://earth-search.invalid/v1/collections/sentinel-2-c1-l2a/items/SYNTH_T00AAA_20240601T100000_L2A"}

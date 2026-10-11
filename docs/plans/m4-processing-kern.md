@@ -1099,11 +1099,17 @@ Keine neue Anfrage an die Quelle. Ein Asset ohne Bandliste (fehlt oder ist keine
 Liste) bekommt weder `bands` noch `eo:bands`, wie bisher.
 **Die anderen zwei Datensätze:** `cop-dem-glo-30` braucht es nicht, das Item
 (`cop_dem_bucket._item`) hat ein Asset `data` ohne Bandangaben. Bei
-`sentinel-2-c1-l2a` gibt der Adapter die Items unverändert weiter; die Fixtures
-und die Pläne zeigen dort nur `raster:bands` (ohne Namen), kein `eo:bands`. Ob
-die echten Assets `eo:bands` tragen, lässt sich aus der Cloud-Sitzung nicht
-prüfen (kein Live-Zugang). Deshalb bleibt c1 unverändert und steht Otto als
-Frage im PR.
+`sentinel-2-c1-l2a` hat Otto am 11.10.2026 ein echtes Item geprüft (Earth Search
+v1, eine Anfrage): `stac_version` 1.0.0, `assets.red` trägt `eo:bands` mit einem
+Eintrag (`name` `B04`, `common_name`, `center_wavelength`,
+`full_width_half_max`), `bands` fehlt. Deshalb spiegelt auch dieser Adapter:
+`earth_search.normalize_item` (für Suche und Einzelabruf, vor dem Cache) ruft
+dieselbe Hilfsfunktion wie EOPF auf, `federated_search.with_core_bands`. Sie
+kopiert `eo:bands` nach `bands`, wenn `bands` fehlt und `eo:bands` eine Liste ist;
+`eo:bands` und `stac_version` bleiben, es gibt keine neue Anfrage. Cache-Einträge
+aus der Zeit davor tragen `bands` erst nach ihrem Ablauf. Die Fixtures
+(`tests/fixtures/earth_search`) tragen `eo:bands` in dieser Form, mit
+synthetischen Werten bzw. den öffentlichen Bandangaben von Sentinel-2.
 **Wirkung auf die Annahme:** keine. `api/intake.py::_entries` liest zuerst
 `raster:bands`; ein EOPF-Asset mit `nodata`/`data_type` behält dessen einen
 Eintrag, ein Asset ohne beides liefert über `bands` nur Namen und damit dieselbe
@@ -1114,7 +1120,7 @@ Objekten); `bands` ohne `eo:bands` bleibt ein Verstoß. Die Items bleiben STAC 1
 **Nicht anfassen:** Frontend, Wächtertest aus M3-12, Registry-Felder.
 **Abnahme:** Test je Datensatz mit synthetischem Item; ein Test über alle
 Registry-Einträge (`test_asset_bands.py`), dass jedes Asset mit `eo:bands` auch
-`bands` trägt, mit Gegenprobe (das Prüfstück erkennt ein Asset ohne `bands`) und
+`bands` trägt (EOPF und c1 mit echten Bandnamen, DEM ohne Bandangaben), mit Gegenprobe (das Prüfstück erkennt ein Asset ohne `bands`) und
 mit Prüfung, dass ein neuer Registry-Eintrag den Test erst nach Eintrag besteht.
 
 ### M4-20 — M4-Abnahme und README

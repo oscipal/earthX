@@ -15,7 +15,7 @@
       "properties": {"datetime": "2024-06-03T10:00:00Z", "eo:cloud_cover": 44.0, "platform": "synthetic-2a"},
       "assets": {
         "thumbnail": {"href": "https://example.invalid/synth/3/thumb.jpg", "type": "image/jpeg"},
-        "red": {"href": "https://example.invalid/synth/3/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized"}
+        "red": {"href": "https://example.invalid/synth/3/B04.tif", "type": "image/tiff; application=geotiff; profile=cloud-optimized", "eo:bands": [{"name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038}]}
       },
       "links": []
     }

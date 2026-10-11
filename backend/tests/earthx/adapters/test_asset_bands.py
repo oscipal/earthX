@@ -17,6 +17,7 @@ import pytest
 from earthx.adapters.cop_dem_bucket import _item as dem_item
 from earthx.adapters.earth_search import get_item as earth_search_item
 from earthx.adapters.eopf_stac import normalize_item
+from earthx.adapters.federated_search import with_core_bands
 from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 
 from .conftest import answering, load
@@ -78,6 +79,28 @@ async def test_the_zarr_item_does_name_its_bands_so_the_check_is_not_vacuous() -
     item = (await items_by_dataset())[SENTINEL_2_L2A_ZARR3.dataset_id]
     assert [band["name"] for band in item["assets"]["SR_10m"]["bands"]] == ["b04", "b08"]
     assert "bands" not in item["assets"]["product_metadata"]
+
+
+async def test_the_earth_search_item_names_its_bands_too() -> None:
+    item = (await items_by_dataset())[SENTINEL_2_L2A.dataset_id]
+    assert [band["name"] for band in item["assets"]["red"]["bands"]] == ["B04"]
+    assert "bands" not in item["assets"]["thumbnail"]
+
+
+def test_core_bands_are_a_copy_that_leaves_the_input_alone() -> None:
+    asset = {"href": "https://x.invalid/a", "eo:bands": [{"name": "B04"}]}
+    mirrored = with_core_bands(asset)
+    assert mirrored["bands"] == [{"name": "B04"}]
+    assert mirrored["bands"] is not mirrored["eo:bands"]
+    assert "bands" not in asset
+
+
+def test_core_bands_leave_an_existing_bands_and_a_missing_or_odd_eo_bands_alone() -> None:
+    with_both = {"bands": [{"name": "b04"}], "eo:bands": [{"name": "B04"}]}
+    assert with_core_bands(with_both) is with_both
+    for odd in ({}, {"eo:bands": None}, {"eo:bands": "B04"}, {"eo:bands": {"name": "B04"}}):
+        assert with_core_bands(odd) is odd
+    assert with_core_bands("asset") == "asset"
 
 
 def test_the_check_notices_an_asset_that_lost_its_bands() -> None:

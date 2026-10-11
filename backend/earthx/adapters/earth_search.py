@@ -52,6 +52,7 @@ from earthx.adapters.federated_search import (
     search_fingerprint,
     stac_interval,
     ttl_for_window,
+    with_core_bands,
 )
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Gateway
@@ -121,8 +122,21 @@ async def get_item(
         # Same reason as for a search answer: what is not an item must not become one
         # by being passed on, and must not be cached as one either.
         raise UpstreamShapeError("item answer is not a JSON object")
+    item = normalize_item(item)
     await cache_set(cache, key, {"item": item}, ttl_s=TTL_ITEM_S, dataset_id=dataset_id)
     return item
+
+
+def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
+    """The item with the core field ``bands`` mirrored from ``eo:bands`` on every asset (M4-23).
+
+    The source speaks STAC 1.0 already, so this is the only change: ``eo:bands`` stays,
+    ``stac_version`` stays, nothing is asked of the source.
+    """
+    assets = item.get("assets")
+    if not isinstance(assets, dict):
+        return item
+    return {**item, "assets": {key: with_core_bands(asset) for key, asset in assets.items()}}
 
 
 def _search_body(config: DatasetConfig, params: SearchParams, marker: str | None) -> dict[str, Any]:
@@ -156,7 +170,9 @@ def _storable(payload: Any) -> CacheValue:
     Reduced here rather than at the cache, so that a cache hit and a live answer go
     through exactly the same translation afterwards.
     """
-    features = require_feature_list(payload)
+    features = [
+        normalize_item(feature) if isinstance(feature, dict) else feature for feature in require_feature_list(payload)
+    ]
     return {"features": features, "matched": matched_count(payload), "marker": _next_marker(payload)}
 
 
