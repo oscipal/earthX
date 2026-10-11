@@ -244,7 +244,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
 | M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c | offen |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | offen |
-| M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | offen |
+| M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
 | M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
@@ -1108,6 +1108,9 @@ Frage im PR.
 `raster:bands`; ein EOPF-Asset mit `nodata`/`data_type` behält dessen einen
 Eintrag, ein Asset ohne beides liefert über `bands` nur Namen und damit dieselbe
 leere Beschreibung wie vorher (Test).
+**Vertragstest aus M4-22:** `test_item_contract.py` ließ `bands` an Assets bisher
+nicht zu. Er lässt es jetzt als zusätzliches Feld neben `eo:bands` zu (Liste von
+Objekten); `bands` ohne `eo:bands` bleibt ein Verstoß. Die Items bleiben STAC 1.0.
 **Nicht anfassen:** Frontend, Wächtertest aus M3-12, Registry-Felder.
 **Abnahme:** Test je Datensatz mit synthetischem Item; ein Test über alle
 Registry-Einträge (`test_asset_bands.py`), dass jedes Asset mit `eo:bands` auch
