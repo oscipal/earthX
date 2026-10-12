@@ -211,7 +211,6 @@ export default function ProcessingPanel() {
                           unsupported={problem?.unsupported}
                           showErrors={showErrors}
                           refusal={refusalAt(index)}
-                          recommended={view.recommended[step.key]}
                           onChange={(name, value) => p.updateStep(step.key, name, value)}
                           onMove={(direction) => p.moveStep(step.key, direction)}
                           onRemove={() => p.removeStep(step.key)}
@@ -255,31 +254,34 @@ export default function ProcessingPanel() {
 
               <section className="pp-section" aria-label="Output">
                 <h3 className="pp-heading">Output</h3>
-                <label className="vc-field pp-field">
-                  Data type
-                  <select
-                    value={view.dtype}
-                    aria-describedby="pp-dtype-help"
-                    onChange={(e) => p.setDtype(e.target.value)}
-                  >
-                    {view.dtypeOptions.map((option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                        disabled={option.disabledReason !== null}
-                        title={option.disabledReason ?? undefined}
-                      >
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <span id="pp-dtype-help" className="pp-help">
-                  {view.dtypeRecommendation &&
-                    `Recommended: ${view.dtypeRecommendation.value}. ${view.dtypeRecommendation.reason}`}
-                  {view.dtypeOptions.some((o) => o.disabledReason) && ` ${AFTER_BAND_MATH} These types are not offered.`}
-                </span>
+                <p className="pp-summary" aria-label="Data type">
+                  Data type: <strong>{view.dtype}</strong>
+                  {view.dtypeChosen ? ' (your choice)' : ' (chosen automatically)'}
+                </p>
+                {view.dtypeAutomatic && !view.dtypeChosen && <span className="pp-help">{view.dtypeAutomatic.reason}</span>}
                 {view.dtypeNote && <p className="hint-text warn">{view.dtypeNote}</p>}
+                <details className="pp-details">
+                  <summary>Change the data type</summary>
+                  <label className="vc-field pp-field">
+                    Data type
+                    <select value={view.dtypeChosen ? view.dtype : ''} onChange={(e) => p.setDtype(e.target.value)}>
+                      <option value="">Automatic{view.dtypeAutomatic ? `: ${view.dtypeAutomatic.value}` : ''}</option>
+                      {view.dtypeOptions.map((option) => (
+                        <option
+                          key={option.value}
+                          value={option.value}
+                          disabled={option.disabledReason !== null}
+                          title={option.disabledReason ?? undefined}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {view.dtypeOptions.some((o) => o.disabledReason) && (
+                    <span className="pp-help">{AFTER_BAND_MATH} These types are not offered.</span>
+                  )}
+                </details>
               </section>
 
               <section className="pp-section" aria-label="Review">

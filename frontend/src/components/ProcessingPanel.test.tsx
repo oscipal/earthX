@@ -521,10 +521,10 @@ describe('the process description', () => {
   });
 });
 
-describe('recommended values (Otto, 12.10.2026)', () => {
+describe('resampling and data type (Otto, 12.10.2026)', () => {
   const resampling = () => container.querySelector<HTMLSelectElement>('select[id$="-resampling"]')!;
-  const dtype = () => container.querySelector<HTMLSelectElement>('section[aria-label="Output"] select')!;
-  const optionLabels = (select: HTMLSelectElement) => [...select.options].map((o) => o.textContent);
+  const dtypeSelect = () => container.querySelector<HTMLSelectElement>('section[aria-label="Output"] select')!;
+  const dtypeLine = () => container.querySelector('section[aria-label="Output"] [aria-label="Data type"]')!.textContent;
 
   function choose(element: HTMLSelectElement, value: string) {
     act(() => {
@@ -541,104 +541,104 @@ describe('recommended values (Otto, 12.10.2026)', () => {
   const dem = (): StacItem => ({ ...scene('DEM_A'), assets: { data: asset() } });
   const sent = () => JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body).inputs.recipe;
 
-  async function reprojectDem(option?: DatasetOption, item: StacItem = dem()) {
-    select([item], 'processing', option);
+  async function reprojectDem() {
+    select([dem()]);
     await openPanel();
-    click(button(item.assets.data ? 'data' : 'red'));
+    click(button('data'));
     click(button('＋ Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
   }
 
-  it('the DEM: bilinear and float32 are pre-selected and marked, and sent explicitly', async () => {
+  it('the resampling method is nobody\'s recommendation: nothing is pre-selected, the user chooses', async () => {
     await reprojectDem();
-    expect(resampling().value).toBe('bilinear');
-    expect(optionLabels(resampling())).toEqual(['nearest', 'bilinear (recommended)', 'cubic']);
-    expect(dtype().value).toBe('float32');
-    expect(optionLabels(dtype())).toContain('float32 (recommended)');
-    expect(container.textContent).toContain('Recommended: bilinear. The bands hold continuous values.');
-    expect(container.textContent).toContain('Recommended: float32.');
+    expect(resampling().value).toBe('');
+    expect(container.textContent).not.toContain('recommended');
     await review();
-    const recipe = sent();
-    expect(recipe.steps[0].params).toMatchObject({ crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' });
-    expect(recipe.output.dtype).toBe('float32');
-    expect(container.textContent).toContain('An estimate, not a promise.');
-  });
-
-  it('nearest for a dataset without interpolation, and the order says so', async () => {
-    await reprojectDem(dataset('processing', 'sentinel-2-c1-l2a', 'cog', false));
-    expect(resampling().value).toBe('nearest');
-    expect(optionLabels(resampling())).toContain('nearest (recommended)');
-    expect(container.textContent).toContain('This dataset does not allow interpolation.');
+    expect(container.querySelector('.pp-step')!.textContent).toContain('Required.');
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+    choose(resampling(), 'bilinear');
     await review();
-    expect(sent().steps[0].params.resampling).toBe('nearest');
+    expect(sent().steps[0].params).toMatchObject({ crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' });
   });
 
-  it('follows the bands: continuous ones give bilinear, a class band added gives nearest', async () => {
-    const item = scene('S2B_A');
-    item.assets.scl = asset({ 'raster:bands': [{ data_type: 'uint8', nodata: 0 }], 'classification:classes': [{ value: 4 }] });
-    select([item]);
-    await openPanel();
-    click(button('red'));
-    click(button('＋ Reproject and resample'));
-    expect(resampling().value).toBe('bilinear');
-    click(button('scl'));
-    expect(resampling().value).toBe('nearest');
-    expect(container.textContent).toContain('holds classes or bit fields');
-    click(button('scl'));
-    expect(resampling().value).toBe('bilinear');
+  it('the data type is chosen by the panel and said so, with the reason; it is sent explicitly', async () => {
+    await reprojectDem();
+    choose(resampling(), 'bilinear');
+    expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
+    expect(container.textContent).toContain('Interpolating gives fractional values, which an integer type would cut off.');
+    await review();
+    expect(sent().output.dtype).toBe('float32');
   });
 
-  it('keeps what the user chose, also when the bands change', async () => {
-    const item = scene('S2B_A');
-    item.assets.scl = asset({ 'raster:bands': [{ data_type: 'uint8' }], 'classification:classes': [{ value: 4 }] });
-    select([item]);
-    await openPanel();
-    click(button('red'));
-    click(button('＋ Reproject and resample'));
-    choose(resampling(), 'cubic');
-    click(button('scl'));
-    expect(resampling().value).toBe('cubic');
-  });
-
-  it('band math: float32 recommended, integer types not offered, a chosen one given up', async () => {
-    const item = scene('S2B_A');
-    select([item]);
-    await openPanel();
-    click(button('red'));
-    choose(dtype(), 'uint16');
-    expect(dtype().value).toBe('uint16');
-    click(button('＋ Band math'));
-    expect(dtype().value).toBe('float32');
-    const disabled = [...dtype().options].filter((o) => o.disabled).map((o) => o.value);
-    expect(disabled).toEqual(['uint8', 'uint16', 'int16', 'uint32', 'int32']);
-    expect(container.textContent).toContain('Band math ends in float32 with NaN as nodata');
-    expect(container.textContent).toContain('These types are not offered.');
-  });
-
-  it('nearest on integers whose nodata the item states: the input type is recommended and sent', async () => {
+  it('the same type as the source for nearest on integers whose nodata the item states', async () => {
     const item: StacItem = {
       ...scene('LC_A'),
       assets: { lc: asset({ 'raster:bands': [{ data_type: 'uint8', nodata: 255 }] }) },
     };
-    select([item], 'processing', dataset('processing', 'sentinel-2-c1-l2a', 'cog', false));
+    select([item]);
     await openPanel();
     click(button('lc'));
     click(button('＋ Reproject and resample'));
     fill('crs', 'EPSG:3035');
     fill('resolution', '30');
-    expect(dtype().value).toBe('uint8');
-    expect(optionLabels(dtype())).toContain('uint8 (recommended)');
-    expect(container.textContent).not.toContain('needs a nodata value');
+    expect(dtypeLine()).toContain('float32'); // no resampling chosen yet
+    choose(resampling(), 'nearest');
+    expect(dtypeLine()).toBe('Data type: uint8 (chosen automatically)');
+    expect(container.textContent).toContain('Same type as the source data (uint8)');
+    choose(resampling(), 'bilinear');
+    expect(dtypeLine()).toContain('float32');
+    choose(resampling(), 'nearest');
     await review();
     expect(sent().output.dtype).toBe('uint8');
   });
 
+  it('a float source keeps its type, also interpolated', async () => {
+    const item: StacItem = {
+      ...scene('DEM_B'),
+      assets: { data: asset({ 'raster:bands': [{ data_type: 'float64' }] }) },
+    };
+    select([item]);
+    await openPanel();
+    click(button('data'));
+    click(button('＋ Reproject and resample'));
+    choose(resampling(), 'bilinear');
+    expect(dtypeLine()).toBe('Data type: float64 (chosen automatically)');
+  });
+
+  it('band math: float32, integer types not offered, a type chosen before is given up', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('red'));
+    const details = container.querySelector('details')!;
+    act(() => details.setAttribute('open', ''));
+    choose(dtypeSelect(), 'uint16');
+    expect(dtypeLine()).toBe('Data type: uint16 (your choice)');
+    click(button('＋ Band math'));
+    expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
+    const disabled = [...dtypeSelect().options].filter((o) => o.disabled).map((o) => o.value);
+    expect(disabled).toEqual(['uint8', 'uint16', 'int16', 'uint32', 'int32']);
+    expect(container.textContent).toContain('Band math ends in float32 with NaN as nodata');
+    expect(container.textContent).toContain('These types are not offered.');
+  });
+
+  it('the user can change the type and go back to the automatic one', async () => {
+    await reprojectDem();
+    choose(resampling(), 'bilinear');
+    choose(dtypeSelect(), 'float64');
+    expect(dtypeLine()).toBe('Data type: float64 (your choice)');
+    await review();
+    expect(sent().output.dtype).toBe('float64');
+    choose(dtypeSelect(), '');
+    expect(dtypeLine()).toBe('Data type: float32 (chosen automatically)');
+    expect([...dtypeSelect().options][0].textContent).toBe('Automatic: float32');
+  });
+
   it('warns for an integer type on a source that states no nodata (the DEM with uint16)', async () => {
     await reprojectDem();
-    choose(dtype(), 'uint16');
+    choose(dtypeSelect(), 'uint16');
     expect(container.textContent).toContain('uint16 needs a nodata value that the source file states for every band');
-    choose(dtype(), 'float32');
+    choose(dtypeSelect(), 'float32');
     expect(container.textContent).not.toContain('needs a nodata value');
   });
 });

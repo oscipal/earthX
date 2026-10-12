@@ -26,11 +26,6 @@ export interface StacAsset {
   // frontend reads no extension prefix of one source (M3-12).
   'raster:bands'?: StacBand[] | null;
   bands?: StacBand[] | null;
-  // STAC classification extension 2.0: classes or bit fields of a single-band
-  // raster asset; for several bands they sit in each band object. Read to tell
-  // a class or mask band from continuous values (the resampling to recommend).
-  'classification:classes'?: unknown[] | null;
-  'classification:bitfields'?: unknown[] | null;
 }
 
 export interface StacBand {
@@ -40,8 +35,6 @@ export interface StacBand {
   spatial_resolution?: number | null;
   scale?: number | null;
   offset?: number | null;
-  'classification:classes'?: unknown[] | null;
-  'classification:bitfields'?: unknown[] | null;
 }
 
 // A STAC Item as `/stac` returns it. `properties` is where a real STAC item

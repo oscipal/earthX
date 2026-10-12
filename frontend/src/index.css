@@ -1741,3 +1741,11 @@ input[type='date']:focus {
 .pp-links a {
   color: var(--accent);
 }
+.pp-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--accent);
+}
+.pp-details[open] summary {
+  margin-bottom: 6px;
+}

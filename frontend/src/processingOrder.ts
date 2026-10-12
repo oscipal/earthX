@@ -99,14 +99,11 @@ export interface BandSource {
   asset: string;
   names: string[];
   dataType: string | null;
-  // What the item says about the values, for the recommendations in
+  // What the item says about the values, for the output type in
   // `processingDefaults.ts`; `false`/`null` mean "the item does not say".
-  //  - `classified`: the asset or one of its bands carries `classification:classes`
-  //    or `classification:bitfields` (a class or mask band).
   //  - `scaled`: some band has a `scale` other than 1 or an `offset` other than 0
   //    (the core applies it, and the values are no longer the stored integers).
   //  - `nodata`: the one finite nodata value all its bands state, if they do.
-  classified: boolean;
   scaled: boolean;
   nodata: number | null;
 }
@@ -123,20 +120,12 @@ function bandCount(asset: StacAsset): number | null {
   return bandsOf(asset)?.length ?? null;
 }
 
-function filled(value: unknown): boolean {
-  return Array.isArray(value) && value.length > 0;
-}
-
-function bandFacts(asset: StacAsset): Pick<BandSource, 'classified' | 'scaled' | 'nodata'> {
+function bandFacts(asset: StacAsset): Pick<BandSource, 'scaled' | 'nodata'> {
   const bands = bandsOf(asset) ?? [];
-  const classified =
-    filled(asset['classification:classes']) ||
-    filled(asset['classification:bitfields']) ||
-    bands.some((b) => filled(b['classification:classes']) || filled(b['classification:bitfields']));
   const scaled = bands.some((b) => (b.scale != null && b.scale !== 1) || (b.offset != null && b.offset !== 0));
   const values = new Set(bands.map((b) => (typeof b.nodata === 'number' && Number.isFinite(b.nodata) ? b.nodata : null)));
   const nodata = values.size === 1 ? [...values][0] : null;
-  return { classified, scaled, nodata };
+  return { scaled, nodata };
 }
 
 function firstDataType(asset: StacAsset): string | null {
