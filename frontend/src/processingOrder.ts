@@ -224,6 +224,19 @@ export function isArea(aoi: GeoJSON.Geometry | null): aoi is GeoJSON.Polygon | G
   return !!aoi && (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon');
 }
 
+// The AOI as the order's schema takes it: `type` and `coordinates`, nothing
+// else, every position as `[lon, lat]`. The AOI in the store can carry more — a
+// place-search outline has `properties` for the provenance of a download's
+// `aoi.geojson` (F3 of M3-07), a GeoJSON geometry may have a `bbox`, a
+// position an altitude — and the job API forbids every member it does not
+// name (`extra_forbidden`). Whether the shape is valid the server decides.
+export function orderAoi(aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon): GeoJSON.Polygon | GeoJSON.MultiPolygon {
+  const position = (p: GeoJSON.Position): GeoJSON.Position => [p[0], p[1]];
+  const ring = (r: GeoJSON.Position[]) => r.map(position);
+  if (aoi.type === 'Polygon') return { type: 'Polygon', coordinates: aoi.coordinates.map(ring) };
+  return { type: 'MultiPolygon', coordinates: aoi.coordinates.map((polygon) => polygon.map(ring)) };
+}
+
 // B11: a job hands out derived data of the source; only the tier *processing*
 // allows it. The server refuses below that (`403`) as well.
 export function processingAllowed(collection: Collection | undefined): boolean {
@@ -307,7 +320,7 @@ export function buildOrder(args: {
     order: {
       recipe_version: 1,
       inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [[itemId]], assets: [...assets] }],
-      aoi,
+      aoi: orderAoi(aoi),
       steps: built,
       output: { kind: 'raster', format: 'cog', dtype },
     },

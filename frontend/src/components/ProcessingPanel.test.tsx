@@ -12,6 +12,7 @@ import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from '../geoUtils';
+import { placeAoi } from '../placeSearch';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
@@ -261,6 +262,17 @@ describe('review before start (K4)', () => {
     typeInto(container.querySelector('input[id$="-expression"]')!, 'nir / red');
     expect(container.textContent).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(true);
+  });
+
+  it('sends the AOI of a place search as a bare geometry, without its properties', async () => {
+    select([scene('S2B_A')]);
+    useAppStore.setState({ aoi: placeAoi({ name: 'x', display_name: 'x', kind: 'x', bbox: [10.4, 50.4, 10.6, 50.6], outline: AOI, outline_simplified: false }) });
+    await openPanel();
+    await ndvi();
+    await review();
+    const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
+    expect(Object.keys(body.inputs.recipe.aoi).sort()).toEqual(['coordinates', 'type']);
+    expect(useAppStore.getState().aoi).toHaveProperty('properties');
   });
 
   it('shows a refusal of a step at that step', async () => {
