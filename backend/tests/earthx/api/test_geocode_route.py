@@ -22,6 +22,7 @@ from tests.earthx.adapters.conftest import NOMINATIM_HOST, NOMINATIM_POLICY, ans
 
 BASE_URL = f"https://{NOMINATIM_HOST}"
 USER_AGENT = "EarthX-test/0.0 (+https://example.invalid)"
+RESULT_NAME = "Musterstadt"  # the place `search_hit_with_outline.json` answers with
 
 
 class FakeCache:
@@ -220,17 +221,23 @@ def test_no_search_text_or_result_name_reaches_the_log(monkeypatch: pytest.Monke
     secret_query = "Geheimburg-Gasse-12345"
     gateway, _ = gateway_answering(httpx.Response(200, json=load_nominatim("search_hit_with_outline")))
     client = build_client(gateway=gateway, monkeypatch=monkeypatch)
-    caplog.set_level(logging.DEBUG)
     # M3-16 (earthx/logging.py): httpx's own "HTTP Request: ..." line carries the
     # full URL, query string included — `configure_logging()` raises it to WARNING
     # in every real process; this test does the same two lines without touching
-    # the root logger's handlers, which `caplog` needs for itself.
+    # the root logger's handlers, which `caplog` needs for itself. They come first:
+    # `caplog.set_level` also sets the level of the capturing handler, so a later
+    # call with WARNING would drop the route's own INFO line and leave nothing to check.
     caplog.set_level(logging.WARNING, logger="httpx")
     caplog.set_level(logging.WARNING, logger="httpx2")
+    caplog.set_level(logging.DEBUG)
     response = client.post("/geocode", json={"q": secret_query})
     assert response.status_code == 200
+    assert caplog.records
+    assert "geocode answered" in [record.getMessage() for record in caplog.records]
     for record in caplog.records:
-        assert secret_query not in own_log_text(record)
+        logged = own_log_text(record)
+        assert secret_query not in logged
+        assert RESULT_NAME not in logged
 
 
 def test_a_cache_hit_answers_without_a_new_gateway_request(monkeypatch: pytest.MonkeyPatch) -> None:
