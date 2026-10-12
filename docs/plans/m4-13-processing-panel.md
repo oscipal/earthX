@@ -849,9 +849,11 @@ Im Browser `http://localhost:5173`:
    öffnet sich in QGIS mit Werten zwischen −1 und 1.
 5. Seite neu laden: „⚙ Jobs (1)“ oben rechts öffnet das Panel mit dem Job.
 6. Datensatz `cop-dem-glo-30`: Chip `data` anklicken, „＋ Reproject and
-   resample“ (`EPSG:3035`, `30`, `bilinear`), unter „Output“ den Datentyp
-   wählen (das DEM nennt keinen; `float32`), „Review“, „Start job“; der Job
-   läuft.
+   resample“, `crs` `EPSG:3035`, `resolution` `30`. Das Resampling steht auf
+   „bilinear (recommended)“ (ein Satz darunter sagt warum), unter „Output“
+   auf „float32 (recommended)“. „Review“, „Start job“; der Job läuft. (Wählt
+   man `uint16`, steht darunter, dass dafür die Quelldatei einen
+   nodata-Wert nennen muss; nennt sie keinen, scheitert der Job.)
 7. Fläche über einer Kachelgrenze zeichnen: Das Panel lässt eine Szene
    wählen und sagt, dass das Ergebnis nur diese abdeckt (F8).
 
@@ -913,3 +915,111 @@ setzte die Pixelgröße des Platzhalters gleich `gsd` in Einheiten des KBS, also
 Commit, einzeln zurücknehmbar; Regressionstest in `test_plan.py` (fällt ohne
 die Änderung). Das betrifft nur die Schätzung und die Laufzeitgrenze, die aus
 ihr folgt; der Lauf liest die Werte aus der Datei.
+
+## 13. Empfohlene Werte für Resampling und Datentyp (Otto, 12.10.2026)
+
+**Anlass.** Im Browsertest zeigte „Data type“ beim DEM keine Empfehlung; mit
+`uint16` endete der Job mit „Failed: The recipe asks for what the platform does
+not run yet“, mit `float32` lief derselbe Auftrag. Ursache (gelesen, `processing/core.py`
+`_nodata_for`): Ein ganzzahliger Typ geht nur, wenn jedes Band des Ergebnisses
+einen endlichen nodata-Wert trägt, denselben für alle; nach Band-Math ist es
+immer `float32` mit NaN, und eine Reprojektion behält das nodata ihrer Eingabe,
+das die **Quelldatei** nennt (`processing/source.py`), nicht das Item. Das DEM
+nennt keines.
+
+Das ersetzt K9 („`dtype` startet mit `float32`, wenn ein Band-Math-Schritt dabei
+ist, sonst mit dem Datentyp des ersten Bandes“).
+
+**Eine Stelle:** `frontend/src/processingDefaults.ts`, getestet in
+`processingDefaults.test.ts` und im Panel (`ProcessingPanel.test.tsx`). Beide
+Auswahlen sind vorbelegt, die empfohlene Option trägt „(recommended)“, darunter
+steht der Grund. API und Rezept lassen `resampling` und `dtype` ohne Vorgabe
+(B10); das Panel schickt beide immer ausdrücklich mit. Hat der Nutzer
+gewählt, bleibt die Wahl, auch wenn sich die Bänder ändern; sonst folgt die
+Empfehlung den Bändern und Schritten.
+
+**Resampling** (je Schritt, ein Verfahren für alle Bänder des Auftrags):
+1. Datensatz ohne Capability `interpolation` → `nearest`.
+2. Ein Band im Auftrag, das das Item als Klassen oder Bitmaske kennzeichnet
+   (`classification:classes` oder `classification:bitfields` am Asset oder an
+   einem Bandobjekt) → `nearest`.
+3. Sonst → `bilinear`.
+
+**Datentyp:**
+1. Band-Math im Auftrag → `float32`; ganzzahlige Typen werden dann **nicht
+   angeboten** (in der Auswahl deaktiviert, mit Grund), weil der Lauf sie sicher
+   abweist. Eine zuvor gewählte ganzzahlige Wahl fällt auf die Empfehlung.
+2. Reprojektion mit einem anderen Verfahren als `nearest` → `float32`
+   (Interpolation macht Brüche).
+3. Nur `nearest`, alle Bänder mit demselben ganzzahligen Typ, ohne
+   `scale`/`offset` am Item (sonst rechnet der Kern auf `float32`), und das
+   Item nennt für alle Bänder denselben endlichen nodata-Wert → der Eingabetyp.
+4. Sonst → `float32` (DEM, Zarr, jedes Item ohne Bandangaben).
+Wählt der Nutzer einen ganzzahligen Typ, obwohl das Item kein nodata nennt,
+sagt ein Hinweis, dass der Job scheitert, wenn die Quelldatei keines nennt; ob
+sie eines nennt, weiß nur der Lauf.
+
+**Belege.** [P] am Primärdokument gelesen, [S] aus einer Zusammenfassung,
+[M] gemessen:
+- [P] GDAL `gdalwarp` (`doc/source/programs/gdalwarp.rst`, `-r`): „near: nearest
+  neighbour resampling (default for non-COG drivers, fastest algorithm, worst
+  interpolation quality)“; `bilinear`, `cubic` (Standard des COG-Treibers),
+  `mode`: „selects the value which appears most often of all the sampled
+  points“. `gdaladdo.rst`: „The default is nearest, which is generally not
+  appropriate if sub-pixel accuracy is desired.“ GDAL sagt dort nichts zu
+  kategorischen Daten. `gdal.org` ist aus der Sitzung nicht erreichbar
+  (`ENOTFOUND`); gelesen ist der Quelltext der Dokumentation auf GitHub.
+- [P] rasterio (`docs/topics/resampling.rst`): Das Standardverfahren
+  `nearest` „may not be suitable for continuous data“, `bilinear` und `cubic`
+  sind dafür „better suited“.
+- [P] STAC-Erweiterung *classification* v2.0.0 (README): `classification:classes`
+  und `classification:bitfields` stehen „in a raster Asset object if single
+  band“ und bei mehreren Bändern im Bandobjekt unter `raster:bands`; die
+  Erweiterung ist als *Pilot* gekennzeichnet.
+- [S] Esri (ArcGIS-Dokumentation „Resampling Method“) und USDA NRCS
+  („Raster Mastery“, Heft 2): `nearest` für diskrete oder kategorische Daten,
+  weil es keine neuen Werte erzeugt; `bilinear` und `cubic` für kontinuierliche
+  Flächen wie Höhenmodelle; `nearest` auf kontinuierlichen Flächen erzeugt
+  Artefakte, die in alle Folgeprodukte eingehen. Die Seiten selbst waren aus der
+  Sitzung nicht erreichbar (`desktop.arcgis.com`, `pro.arcgis.com`,
+  `nrcs.usda.gov`: `ENOTFOUND`); die Aussage stammt aus den Suchergebnissen.
+- [P] Backend: `core.py::_nodata_for` (Regel für ganzzahlige Typen),
+  `operators/band_math.py` (Ausgabe `float32`, nodata NaN),
+  `operators/reproject.py` (Eingabe-nodata bleibt), `source.py` (nodata aus der
+  Datei).
+- [M] Je ein echtes Item, zwei Anfragen am 12.10.2026 (1 je Quelle,
+  `earth-search.aws.element84.com`, `stac.core.eopf.eodc.eu`).
+
+**Was die Items zum Erkennen nicht hergeben.**
+- `sentinel-2-c1-l2a`: Das Item trägt keine Klassifikationserweiterung. `scl`
+  (Szenenklassifikation), `cloud` und `snow` (8 Bit, nodata 0) sind nicht als
+  Klassen oder Wahrscheinlichkeiten gekennzeichnet; `visual` ist `uint8` und
+  kontinuierlich. Das Panel empfiehlt für `scl` deshalb `bilinear`, richtig wäre
+  `nearest`. Die Farbbänder tragen `scale` 0,0001 und `offset` −0,1.
+- `sentinel-2-l2a-zarr3`: Die echten Items tragen `bands` nur mit Namen und
+  `eo:`-Feldern, kein `data_type`, kein nodata; `SCL_20m` trägt nur
+  `raster:scale` und `raster:offset`. **Für M4-23 zu beachten:** Die Namen dort
+  sind `B04` (groß), die Variablen im Store und in der Registry `b04` (klein);
+  liest das Panel die Namen aus `bands`, schickt es `SR_10m:B04`, und der Store kennt nur `b04`.
+- `cop-dem-glo-30`: kontinuierlich, `data` ohne Bandangaben; hier reicht die Regel.
+Soll `scl` (und `SCL_20m`) erkannt werden, muss der Adapter
+`classification:classes` setzen oder die Registry die Klassen-Assets je
+Datensatz nennen (ohne Vorgabe, B10); das hat Otto zu entscheiden. Bis dahin
+steht unter dem Resampling der Grund der Empfehlung, und der Nutzer kann
+`nearest` wählen.
+
+**Fehlermeldung eines gescheiterten Jobs.** Das Panel zeigt den `title` des
+Problemdokuments von `/results` (Englisch, ohne AOI, Hash, href). Einen
+konkreten Grund liefert die API für einen **gescheiterten Lauf nicht**: Die
+Queue speichert nur `error_kind` (`catalog/migrations/006_jobs.sql`,
+`jobs/queue.py`), `processing/failures.py::failure_kind` reduziert die Ausnahme
+darauf, und `api/processing_route.py::_failed` antwortet mit dem festen Titel
+(„The recipe asks for what the platform does not run yet“) und dem festen
+Detail „the job failed; no result exists“. Der Text der Ausnahme („an integer
+output needs one nodata value shared by every band“) geht verloren; das ist
+Absicht (kein Text einer Ausnahme in die Datenbank, `adr/0014` §4.7). Anders
+bei „Review“ und „Start job“: Dort kommt der `detail` der Antwort ins Panel.
+Vorschlag für Otto: je Fehlerart einen **festen** Satz zum Titel, den die
+API aus `error_kind` und einem kleinen Unterschlüssel ableitet (hier etwa
+`integer_nodata`), ohne Werte; das ändert Worker, Queue und API und gehört in
+eine eigene Aufgabe.
