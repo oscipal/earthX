@@ -1,0 +1,63 @@
+{
+  "inputs": {
+    "recipe": {
+      "recipe_version": 1,
+      "inputs": [
+        {
+          "name": "input",
+          "dataset": "sentinel-2-c1-l2a",
+          "groups": [
+            [
+              "ITEM_A"
+            ]
+          ],
+          "assets": [
+            "red",
+            "nir"
+          ]
+        }
+      ],
+      "aoi": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              9,
+              47
+            ],
+            [
+              9.05,
+              47
+            ],
+            [
+              9.05,
+              47.05
+            ],
+            [
+              9,
+              47.05
+            ],
+            [
+              9,
+              47
+            ]
+          ]
+        ]
+      },
+      "steps": [
+        {
+          "op": "band_math",
+          "op_version": 1,
+          "params": {
+            "expression": "(nir - red) / (nir + red)"
+          }
+        }
+      ],
+      "output": {
+        "kind": "raster",
+        "format": "cog",
+        "dtype": "float32"
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "inputs": {
+    "recipe": {
+      "recipe_version": 1,
+      "inputs": [
+        {
+          "name": "input",
+          "dataset": "sentinel-2-l2a-zarr3",
+          "groups": [
+            [
+              "ITEM_A"
+            ]
+          ],
+          "assets": [
+            "SR_10m:b04",
+            "SR_10m:b08"
+          ]
+        }
+      ],
+      "aoi": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              9,
+              47
+            ],
+            [
+              9.05,
+              47
+            ],
+            [
+              9.05,
+              47.05
+            ],
+            [
+              9,
+              47.05
+            ],
+            [
+              9,
+              47
+            ]
+          ]
+        ]
+      },
+      "steps": [
+        {
+          "op": "band_math",
+          "op_version": 1,
+          "params": {
+            "expression": "(b08 - b04) / (b08 + b04)"
+          }
+        }
+      ],
+      "output": {
+        "kind": "raster",
+        "format": "cog",
+        "dtype": "float32"
+      }
+    }
+  }
+}
