@@ -244,7 +244,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | offen |
 | M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
 | M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c | offen |
-| M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | offen |
+| M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
 | M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |

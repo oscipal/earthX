@@ -281,3 +281,10 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
      (Nachtrag 2026-10-05: `docker pull` geht inzwischen ohnehin, §4.)
    - Objektspeicher in Tests: `moto` im Prozess oder nur in CI? Empfehlung:
      **`moto`**, sobald der erste Test ihn braucht (nicht jetzt).
+4. **Zeilenenden (M4-21):** `.gitattributes` erzwingt LF für alle Textdateien
+   (`* text=auto eol=lf`), CRLF nur für `*.bat` und `*.cmd`. Nach dem Pull des
+   Normalisierungs-Commits zeigt ein bestehender Checkout unter Umständen
+   geänderte Dateien, obwohl nichts geändert wurde. Dann auf sauberem Stand
+   einmal `git rm --cached -r . ; git reset --hard` (verwirft lokale
+   Änderungen). Eine Sitzung mit einem Branch von vor dem Merge holt `main` und
+   normalisiert ihn mit `git add --renormalize .`.
