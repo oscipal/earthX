@@ -917,6 +917,10 @@ setzte die Pixelgröße des Platzhalters gleich `gsd` in Einheiten des KBS, also
 Commit, einzeln zurücknehmbar; Regressionstest in `test_plan.py` (fällt ohne
 die Änderung). Das betrifft nur die Schätzung und die Laufzeitgrenze, die aus
 ihr folgt; der Lauf liest die Werte aus der Datei.
+**Nach dem Merge von `main` (M4-12a, PR #136):** Dort ist derselbe Fehler als offene Aufgabe M4-25
+beschrieben, mit strikten `xfail`-Tests (`test_plan.TestTheEstimateOnAGeographicGrid`,
+`test_processing_route.TestAnOrderOnAGeographicGrid`). Diese Tests laufen mit dem Fix von
+selbst durch (XPASS); die Markierungen sind hier entfernt (Log „M4-25 ist mit M4-13b behoben“).
 
 ## 13. Resampling und Datentyp (Otto, 12.10.2026, zweite Fassung)
 

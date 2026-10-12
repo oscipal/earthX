@@ -6,7 +6,13 @@ import pytest
 from rasterio.transform import Affine, from_origin
 from rasterio.warp import transform_geom
 
-from earthx.processing.errors import AoiOutsideInputs, RecipeInvalid, UnknownOperator, UnsupportedRecipe
+from earthx.processing.errors import (
+    AoiOutsideInputs,
+    JobTooLarge,
+    RecipeInvalid,
+    UnknownOperator,
+    UnsupportedRecipe,
+)
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import (
     EXPORT_FACTOR,
@@ -157,6 +163,118 @@ class TestEstimate:
         for entry in data["inputs"][0]["resolved"]:
             entry["bands"], entry["scaling"] = [], "none"
         assert estimate(recipe_from_data(data, REGISTRY), REGISTRY).output_pixels > 0
+
+
+class TestTheCapOfARasterJob:
+    """A raster job writes at most ``MAX_JOB_BYTES``, its output and its mask (M4-12 F7)."""
+
+    BIG = {"type": "Polygon", "coordinates": [[[5.0, 45.0], [10.0, 45.0], [10.0, 50.0], [5.0, 50.0], [5.0, 45.0]]]}
+
+    def test_a_job_over_the_cap_is_refused_with_the_size(self) -> None:
+        recipe = recipe_from_data(recipe_data(aoi=self.BIG), OPERATORS)
+        with pytest.raises(JobTooLarge, match="more than the 5000 MB a job may write"):
+            estimate(recipe, OPERATORS)
+
+    def test_the_cap_holds_to_the_byte(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        recipe = recipe_from_data(recipe_data(), OPERATORS)
+        cost = estimate(recipe, OPERATORS)
+        total = cost.output_bytes + cost.output_pixels
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", total)
+        estimate(recipe, OPERATORS)
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", total - 1)
+        with pytest.raises(JobTooLarge):
+            estimate(recipe, OPERATORS)
+
+    def test_the_size_that_counts_is_the_output_after_the_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A coarser grid makes the job smaller, so what is refused as it stands may pass with a step."""
+        steps = [{"op": "coarsen", "op_version": 1, "params": {"factor": 16}}]
+        plain = estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", (plain.output_bytes + plain.output_pixels) // 2)
+        with pytest.raises(JobTooLarge):
+            estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
+        assert estimate(recipe_from_data(recipe_data(steps=steps), OPERATORS), OPERATORS).output_pixels > 0
+
+    def test_an_export_keeps_its_own_error_class(self) -> None:
+        from earthx.processing.errors import ExportTooLarge
+
+        assert issubclass(ExportTooLarge, JobTooLarge)
+
+
+class TestAMosaicIsEstimatedOnce:
+    def test_the_assets_of_the_scenes_count_once_in_the_bands_and_pixels_and_all_in_the_opens(self) -> None:
+        from tests.earthx.processing.recipes import resolved
+
+        one = estimate(recipe_from_data(recipe_data(), OPERATORS), OPERATORS)
+        data = recipe_data()
+        data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]
+        data["inputs"][0]["resolved"] += [resolved("ITEM_B", "red"), resolved("ITEM_B", "nir")]
+        two = estimate(recipe_from_data(data, OPERATORS), OPERATORS)
+        assert two.input_pixels == one.input_pixels and two.input_bytes == one.input_bytes
+        assert two.output_pixels == one.output_pixels and two.output_bytes == one.output_bytes
+        assert two.assets == 2 * one.assets
+        assert two.seconds > one.seconds  # every scene is opened
+
+    def test_the_bands_of_a_mosaic_are_the_bands_of_one_scene(self) -> None:
+        from tests.earthx.processing.recipes import resolved
+
+        data = recipe_data(
+            steps=[{"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}]
+        )
+        data["inputs"][0]["groups"] = [["ITEM_A", "ITEM_B"]]
+        data["inputs"][0]["resolved"] += [resolved("ITEM_B", "red"), resolved("ITEM_B", "nir")]
+        check_bands(recipe_from_data(data, REGISTRY), REGISTRY)  # no `red_2`: the names are one scene's
+
+
+class TestTheEstimateOnAGeographicGrid:
+    """Known fault, not fixed here (own task; open line of 2026-10-12 in ENTSCHEIDUNGSLOG.md).
+
+    ``_input_meta`` stands for the raster the first pass would read with ``Affine(gsd, 0, 0, 0, -gsd, 0)``
+    in the CRS of the asset, ``gsd`` being metres. In a metric CRS that is a box of the right size in
+    the wrong place, and a ``reproject`` step sizes its target grid right to within about 10 %. In a
+    geographic CRS (the DEM, EPSG:4326) it is a box of thousands of degrees, latitudes beyond ±90, and
+    the target grid comes out at tens or hundreds of thousands of pixels a side, whatever the AOI:
+    ``UnsupportedRecipe`` above 32 768 px, and a wrong size below.
+    """
+
+    @staticmethod
+    def _recipe(crs_of_asset: str, gsd: float, aoi_degrees: float, target: str, resolution: float):
+        half = aoi_degrees / 2
+        ring = [[10.5 - half, 47.5 - half], [10.5 + half, 47.5 - half], [10.5 + half, 47.5 + half],
+                [10.5 - half, 47.5 + half], [10.5 - half, 47.5 - half]]  # fmt: skip
+        entry = {
+            "asset": {"dataset_id": "synthetic", "item_id": "T", "asset": "data", "reader": "cog",
+                      "href": "https://store.example.invalid/T.tif", "variable": None, "crs": crs_of_asset},
+            "version": None, "bands": [], "scaling": "none", "gsd": gsd,
+        }  # fmt: skip
+        step = {"op": "reproject", "op_version": 2, "params": {"crs": target, "resolution": resolution, "resampling": "bilinear"}}
+        return recipe_from_data(
+            {
+                "recipe_version": 1,
+                "inputs": [{"name": "dem", "dataset": "synthetic", "groups": [["T"]], "assets": ["data"], "resolved": [entry]}],
+                "aoi": {"type": "Polygon", "coordinates": [ring]},
+                "steps": [step],
+                "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
+            },
+            REGISTRY,
+        )
+
+    @staticmethod
+    def _true_pixels(aoi_degrees: float, resolution: float) -> float:
+        import math
+
+        return aoi_degrees * 111_320 * math.cos(math.radians(47.5)) * aoi_degrees * 111_700 / resolution**2
+
+    @pytest.mark.parametrize("aoi", [0.02, 0.1, 0.5])
+    def test_a_metric_asset_is_estimated_within_a_fifth(self, aoi: float) -> None:
+        """The case that works (Sentinel-2 in UTM): the contrast to the xfail below."""
+        out = estimate(self._recipe("EPSG:32632", 10.0, aoi, "EPSG:3035", 10.0), REGISTRY).output_pixels
+        assert 0.8 < out / self._true_pixels(aoi, 10.0) < 1.2
+
+    @pytest.mark.parametrize(("resolution", "aoi"), [(30.0, 0.1), (30.0, 0.5), (100.0, 0.25), (1000.0, 0.5)])
+    def test_a_geographic_asset_is_estimated_within_a_fifth(self, resolution: float, aoi: float) -> None:
+        """Was an ``UnsupportedRecipe`` for 30 m and 100 m and 8 million pixels for 1 000 m (gsd in metres taken as degrees)."""
+        out = estimate(self._recipe("EPSG:4326", 30.0, aoi, "EPSG:3035", resolution), REGISTRY).output_pixels
+        assert 0.8 < out / self._true_pixels(aoi, resolution) < 1.2
 
 
 class TestCheckBands:

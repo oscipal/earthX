@@ -11,6 +11,7 @@ __all__ = [
     "AoiOutsideInputs",
     "ExportTooLarge",
     "GridMismatch",
+    "JobTooLarge",
     "ProcessingError",
     "RecipeInvalid",
     "RunCancelled",
@@ -37,8 +38,12 @@ class UnsupportedRecipe(ProcessingError):
     """A valid recipe asks for something this core does not run yet (plan M4-07a §8, F2)."""
 
 
-class ExportTooLarge(UnsupportedRecipe):
-    """An export would write more than ``crop_rules.MAX_EXPORT_JOB_BYTES`` (M4-11 F5)."""
+class JobTooLarge(UnsupportedRecipe):
+    """A job would write more than ``crop_rules.MAX_JOB_BYTES`` (M4-11 F5, M4-12 F7)."""
+
+
+class ExportTooLarge(JobTooLarge):
+    """An export would write more than ``crop_rules.MAX_JOB_BYTES``."""
 
 
 class ScalingMismatch(ProcessingError):
