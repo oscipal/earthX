@@ -126,8 +126,10 @@ als Eingabe der Schritte.
 - **Zarr (F8):** Ein Mosaik aus Zarr-Items ist nur zulässig, wenn alle Items
   dasselbe CRS tragen (`ResolvedAssetModel.crs`, geprüft in `check_scope`, also
   vor dem Einreihen); sonst `422` mit Hinweis. Liegt ein Zarr-Item im selben
-  CRS nicht auf dem Raster, scheitert der Lauf mit `UnsupportedRecipe`. Über
-  Zonen hinweg folgt Zarr mit der offenen Zeile „Export-Job für Zarr
+  CRS nachweislich nicht auf dem Raster der ersten Szene (aus `proj:bbox` und
+  `gsd` der Items, §12 Punkt 10), weist `api` es mit `422` und Grund ab; wo die
+  Items es nicht erkennen lassen, scheitert der Lauf mit `UnsupportedRecipe`.
+  Über Zonen hinweg folgt Zarr mit der offenen Zeile „Export-Job für Zarr
   blockweise“.
 - **Flags (F2):** Jedes Mosaik (mehr als ein Item) verlangt `reprojection` am
   Datensatz (`422` sonst), weil es Items warpen kann, wie ein
@@ -609,12 +611,13 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
    Dass das die Regel aus F4 ist, garantiert `mosaic_order` in `api`. Ein
    Rezept, das nicht über `api` kam (der lokale Runner mit einer Rezeptdatei,
    M4-16), läuft mit seiner Liste; die Reihenfolge ist Teil des Hashes.
-4. **Die Szenen müssen gleich beschaffen sein** (Auslegung): je Asset dieselben
-   Bandnamen, derselbe Datentyp, nodata und dieselbe Skalierung, sonst
-   `UnsupportedRecipe` mit dem Asset. Verschiedene Skalierungen würden zwar
-   physikalisch richtig gemischt, der Bericht (`scaling`) nennt aber nur die
-   der ersten Szene; lieber ablehnen als halb berichten. Bei Sentinel-2
-   desselben Überflugs gilt dieselbe Prozessierungsbasis.
+4. **Die Szenen müssen gleich beschaffen sein** (Auslegung, **von Otto am
+   12.10.2026 angenommen**): je Asset dieselben Bandnamen, derselbe Datentyp,
+   nodata und dieselbe Skalierung, sonst `UnsupportedRecipe` mit dem Asset.
+   Verschiedene Skalierungen würden zwar physikalisch richtig gemischt, der
+   Bericht (`scaling`) nennt aber nur die der ersten Szene; lieber ablehnen
+   als halb berichten. Bei Sentinel-2 desselben Überflugs gilt dieselbe
+   Prozessierungsbasis.
 5. **Lockerung gegenüber §3.5:** `estimate` zählt in Pixeln und Bytes je Asset
    die Einträge der ersten Szene und in `assets` alle geöffneten; so wächst der
    Bedarf an Platte nicht mit der Zahl der Szenen (Test), die Laufzeit wohl.
@@ -650,7 +653,108 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
    es; der Helfer ist angeglichen. Kacheln des DEM desselben CRS mit anderer
    Pixelbreite liegen nicht auf dem Raster des ersten und werden gewarpt
    (Test `TestScenesInOneCrsOffTheGrid`).
-10. **Offen für Otto:** ein Mosaik von Zarr-Szenen in einem CRS, die nicht auf
-    einem Raster liegen, scheitert im Lauf mit `UnsupportedRecipe` (Zarr wird
-    nicht gewarpt, wie beim Export); die offene Zeile „Export-Job für Zarr
-    blockweise“ deckt auch das ab.
+10. **Zarr-Szenen in einem CRS, die nicht auf einem Raster liegen** (Otto,
+    12.10.2026: wo die Items es erkennen lassen, `422` bei der Annahme).
+    Die Items tragen dafür **weder `proj:transform` noch `proj:shape`**
+    (EOPF-Item, `tests/fixtures/eopf_stac/item.json`, `adr/0007` §3.4), wohl
+    aber `proj:bbox` (die Box des Rasters, in Metern in der Collection
+    `sentinel-2-l2a-zarr3`) und `gsd` am Asset. Daraus kann `api` eine Szene
+    als **nachweislich neben dem Raster** erkennen: Es wendet dieselbe Regel
+    an wie der Kern (`processing.mosaic.lies_on_grid`: gleiche Pixelgröße,
+    Ursprung um ganze Pixel versetzt) auf Ursprung (links, oben) und `gsd`
+    jeder Szene gegen die erste der sortierten Liste und weist die Szenen mit
+    `422`, ihren IDs und dem Grund ab („another pixel size, or an origin that
+    is no whole number of pixels away; warping Zarr is not done yet“). Die
+    Gegenrichtung beweist ein Item nicht: Fehlt `proj:bbox` oder `gsd`, oder
+    steht dort eine Box in Grad (der ältere Bestand, `adr/0007` §3.4), sagt
+    das Item nichts, und die Szene bleibt dem Lauf überlassen, der den Store
+    öffnet und sie mit denselben Worten abweist (`UnsupportedRecipe`). Ob
+    `proj:bbox` genau die Zellgrenzen des Stores trifft, habe ich an keinem
+    echten Store geprüft (die Fixtures sind synthetisch) [A]; die Prüfung
+    weist deshalb nur ab, was die Items als verschoben ausweisen. Tests:
+    `test_intake_mosaic.py::TestZarrScenesOffTheGrid` (Gegenprobe: ohne die
+    Prüfung scheitern vier). Die offene Zeile „Export-Job für Zarr
+    blockweise“ deckt weiter das Warpen von Zarr ab.
+11. **Auslegung zu `adr/0014` §4.3: ein optionales `aoi` bei `recipe_version`
+    1.** Steht im freigegebenen Plan (§8 F5, Option 1; §11 „F5, F6, F8:
+    Option 1“); dass es mit dem Satz „Felder kommen nur mit Version hinzu“
+    zusammenstößt, benannte der Plan nicht, F5 sagte nur „das Rezept bleibt
+    Version 1“. **Zur Bestätigung durch Otto.**
+    - *Was sich ändert:* Auf der Seite des Auftrags (`RecipeRequest`) wird
+      `aoi` von Pflicht zu optional; die Beschreibung des Prozesses
+      (`/processing/processes/recipe`) nennt es nicht mehr unter `required`.
+      Ein Feld kommt nicht hinzu. Das **Rezept** ändert sich nicht: `Recipe.aoi`
+      ist weiter Pflicht und trägt die Vereinigung der Footprints; Hash,
+      `recipe.json`, gespeicherte Rezepte und der Kern sehen keinen
+      Unterschied (feste Hashwerte der Tests unverändert).
+    - *Warum das mit dem Zweck von §4.3 verträglich ist:* Die Regel soll
+      verhindern, dass dieselbe Version von zwei Plattformen verschieden
+      gelesen wird und dass Unbekanntes still hingenommen wird. (a) Jeder
+      Auftrag, der vorher gültig war, ist es mit gleicher Bedeutung. (b) Ein
+      Auftrag ohne `aoi` an eine Plattform vor diesem PR wird laut mit `422`
+      abgewiesen (Pflichtfeld fehlt), nicht anders gelesen. (c) `extra="forbid"`
+      bleibt; kein unbekanntes Feld wird hingenommen.
+    - *Was dagegen spricht:* Dem Buchstaben nach ändert sich das Schema der
+      Auftragsseite ohne neue Version; ein Client kann an der Version nicht
+      ablesen, ob die Plattform einen Auftrag ohne `aoi` kennt. Die Plattform
+      ist noch nirgends öffentlich bereitgestellt, es gibt keine Clients
+      außer dem eigenen.
+    - *Optionen:* **1.** Bei Version 1 bleiben, als Lockerung (Pflicht →
+      optional) in `adr/0014` §15g festgehalten, wie gebaut **(Empfehlung)**.
+      **2.** `recipe_version` 2 für Aufträge ohne `aoi`: der Kern und `api`
+      nehmen 1 und 2 an, das Rezept bleibt unverändert; Preis: eine zweite
+      Version im Modell für eine Lockerung. **3.** F5 Option 2: Das Frontend
+      schickt die Vereinigung der Footprints als `aoi` (`polyclip-ts` ist
+      vorhanden); der Auftrag bleibt wie er ist, `api` bekommt keine neue
+      Eingangsform, und ein Auftrag ohne `aoi` bleibt `422`. Preis: die
+      Geometrie im Browser (M4-12b) und kein „ganze Szenen“ für Skripte ohne
+      Geometrie-Bibliothek. Bei Option 2 oder 3 baue ich den Teil in `api`
+      und `RecipeRequest` um; die Prüfanleitung (§9) ändert sich bei 3.
+12. **Bekannter Fehler, nicht in diesem PR behoben: die Kostenschätzung für
+    ein geografisches Raster mit `reproject`** (Otto, 12.10.2026: genau
+    beschreiben, `xfail`-Tests, Log-Zeile „offen“, eigene Aufgabe).
+    - *Ursache:* `processing.plan._input_meta` stellt das Raster des ersten
+      Durchgangs als `Affine(gsd, 0, 0, 0, -gsd, 0)` im CRS des Assets dar,
+      `gsd` in Metern. In einem metrischen CRS (Sentinel-2 in UTM) ist das
+      eine Box der richtigen Größe am falschen Ort, und `reproject` bemisst
+      sein Zielraster daraus auf etwa 10 % genau (Test `…test_a_metric_asset_
+      is_estimated_within_a_fifth`). Im geografischen CRS des DEM (EPSG:4326,
+      `gsd` 30) sind die 30 „Meter“ Grad: eine Box mit Breiten bis −55 860°,
+      und das Zielraster fällt entsprechend aus.
+    - *Bedingung:* Ein Auftrag mit einem **`reproject`-Schritt** auf einem Asset
+      in einem **geografischen CRS** (heute nur `cop-dem-glo-30`). Ohne
+      `reproject` (kein Schritt, `band_math`) rechnet die Schätzung richtig.
+    - *Gemessen* (DEM-Kachel, Mitte 10,5° O / 47,5° N, `reproject` mit
+      `bilinear`, AOI als Quadrat von 0,001° bis 1,0° Kantenlänge):
+      Ziel EPSG:3035 mit 30 m und Ziel EPSG:32632 mit 100 m geben **für jede
+      AOI** `UnsupportedRecipe` („the target grid would be 41145 x 217865 px;
+      the longest side is 32768“, bei 0,5° und 1,0°; weitere Größen bis
+      349 762 × 362 300 px). Ziel EPSG:3035 mit 1000 m löst nichts aus, gibt
+      aber 8,07 Mio. Pixel statt rund 2 000 (AOI 0,5°). Eine AOI von 1,0°
+      ist der Fall „ohne AOI“ (die Vereinigung der Footprints einer
+      DEM-Kachel). `gsd` fehlend, 30 oder 90 ändert nichts.
+    - *Wo es auftritt:* in `plan.estimate`, also (1) in `jobs.submit`
+      (`_runtime_limit`, `disk_needed`): der Auftrag kommt nicht in die Queue,
+      die Ausnahme verlässt `execute` (die Antwort ist ein `500`); (2) in der
+      Schätzroute `POST …/estimate` (`500`); (3) bei der Annahme seit diesem PR:
+      `_accept` fragt die Schätzung nur nach dem Deckel und lässt andere
+      Fehler durch, damit die Annahme nicht schlechter wird als vorher; der
+      Auftrag scheitert dann in (1). **Im Lauf nicht:** Der Kern ruft die
+      Schätzung für einen Raster-Job nicht; ein DEM → EPSG:3035, 30 m,
+      bilinear auf einer synthetischen COG in EPSG:4326 lief in der Sitzung
+      durch (502 × 485 px).
+    - *Kein Fehler dieses PR:* Dasselbe Ergebnis auf `main` (Worktree bei
+      `fc97fb5`, dieselben Aufrufe).
+    - *Widerspruch zu Ottos lokalem Lauf:* Dass lokal ein Job
+      `cop-dem-glo-30` → EPSG:3035, 30 m, bilinear, `float32` mit gezeichneter
+      AOI fertig wurde, kann ich mit diesem Stand nicht erklären: Jede
+      Kombination, die ich versucht habe, scheitert in `submit`. Zu prüfen
+      wäre am lokalen Job, ob `recipe.json` den Schritt `reproject` auf dem
+      DEM-Asset enthält (`steps`, `resolved[0].asset.crs`, `resolved[0].gsd`)
+      und wie alt das gebaute Image ist.
+    - *Tests:* `test_plan.py::TestTheEstimateOnAGeographicGrid` (vier `xfail`,
+      `strict`, dazu die drei metrischen Fälle als Gegenstück) und
+      `test_processing_route.py::TestAnOrderOnAGeographicGrid` (zwei `xfail`:
+      Auftrag und Schätzroute). Wird der Fehler behoben, schlagen die `strict`
+      `xfail` fehl und verlangen, die Markierung zu entfernen. Log: Zeile
+      „Kostenschätzung für DEM mit reproject“ vom 12.10.2026, offen.

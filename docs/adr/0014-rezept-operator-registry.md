@@ -1707,6 +1707,14 @@ Nachtrag.
   `UnsupportedRecipe`. `recipe_version` bleibt 1: der Auftrag wird nachgiebiger
   (Gruppe mit mehreren Items, `aoi` darf fehlen), das Rezept selbst trägt wie
   immer eine AOI.
+  - **Auslegung zu §4.3 („Felder kommen nur mit Version hinzu“):** Es kommt kein
+    Feld hinzu; `aoi` wird auf der Seite des Auftrags von Pflicht zu optional.
+    Jeder bisher gültige Auftrag gilt mit gleicher Bedeutung, ein Auftrag ohne
+    `aoi` an eine ältere Plattform wird laut abgewiesen, `extra="forbid"` bleibt.
+    Dem Buchstaben nach ändert sich das Schema der Auftragsseite ohne neue
+    Version; **zur Bestätigung durch Otto** mit den Optionen in
+    `plans/m4-12-mosaik-ueberflug.md` §12 Punkt 11 (bei Version 1 bleiben /
+    Version 2 für Aufträge ohne `aoi` / das Frontend schickt die Vereinigung).
 - **Eine Regel für die Überlappung, in der Liste.** Je Band und Pixel gewinnt
   das erste gültige Element in der Reihenfolge der Liste
   (`access.crop_rules.merge_first_valid`, dieselbe Funktion wie im Export-Job
@@ -1725,7 +1733,8 @@ Nachtrag.
   `earthx:resampled = true`. Eine Änderung dieser Regeln erhöht
   `earthx.__version__` (K5, wie `BLOCK_SIZE` in §3.4).
 - **Capability:** kein eigenes Flag. Ein Mosaik verlangt `reprojection` am
-  Datensatz (B10). Zarr-Mosaike nur in einem CRS.
+  Datensatz (B10). Zarr-Mosaike nur in einem CRS und, soweit die Items es
+  erkennen lassen (`proj:bbox`, `gsd`), auf einem Raster; sonst `422`.
 - **Ein Deckel für jeden Job:** `MAX_JOB_BYTES` (5 GB, vorher
   `MAX_EXPORT_JOB_BYTES`) gilt für Export und Raster-Job; darüber
   `JobTooLarge` (Oberklasse von `ExportTooLarge`).
