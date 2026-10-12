@@ -91,7 +91,7 @@ from earthx.catalog.registry import (
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
 from earthx.processing.export import Attachments
-from earthx.processing.mosaic import mosaic_order
+from earthx.processing.mosaic import lies_on_grid, mosaic_order
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands, estimate
 from earthx.processing.recipe import (
@@ -612,11 +612,59 @@ def _one_overpass(
             "items",
         )
     crs_by_item = {item_id: _resolve_checked(items[item_id], config, asset, policy).crs for item_id in ids}
-    if config.zarr is not None and len(set(crs_by_item.values())) > 1:
-        raise OrderRefused(
-            422, "a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet", "applicable"
-        )
-    return [mosaic_order(crs_by_item)]
+    ordered = mosaic_order(crs_by_item)
+    if config.zarr is not None:
+        if len(set(crs_by_item.values())) > 1:
+            raise OrderRefused(
+                422, "a mosaic of Zarr scenes needs all scenes in one CRS; warping Zarr is not done yet", "applicable"
+            )
+        apart = _zarr_scenes_off_the_grid(ordered, items, asset, config.zarr.variable_separator)
+        if apart:
+            raise OrderRefused(
+                422,
+                f"the Zarr scenes {', '.join(apart[:10])} do not lie on the pixel grid of {ordered[0]} "
+                "(another pixel size, or an origin that is no whole number of pixels away); "
+                "warping Zarr is not done yet, so they cannot be mosaicked",
+                "applicable",
+            )
+    return [ordered]
+
+
+def _zarr_scenes_off_the_grid(
+    ordered: Sequence[str], items: Mapping[str, dict[str, Any]], asset: str, separator: str | None
+) -> list[str]:
+    """The scenes whose own metadata proves that they are not on the grid of the first (M4-12a).
+
+    A Zarr item carries neither ``proj:transform`` nor ``proj:shape``; it does carry the extent of its
+    raster as ``proj:bbox`` (metres, for the zarr3 collection) and the pixel size as ``gsd`` of its asset.
+    That is enough to *prove* a scene off the grid with the rule of the core (``lies_on_grid``), not to
+    prove it on: a scene without a usable ``proj:bbox`` or ``gsd`` is left to the run, which opens the
+    store and refuses a scene off the grid with the same words.
+    """
+    group = split_asset_key(asset, separator)[0]
+
+    def raster(item_id: str) -> tuple[float, float, float, float] | None:
+        properties = items[item_id].get("properties")
+        bbox = properties.get("proj:bbox") if isinstance(properties, Mapping) else None
+        gsd = asset_gsd(items[item_id], group)
+        if gsd is None or not isinstance(bbox, Sequence) or len(bbox) != 4:
+            return None
+        try:
+            west, _, _, north = (float(value) for value in bbox)
+        except (TypeError, ValueError):
+            return None
+        if not all(math.isfinite(value) for value in (west, north)) or max(abs(west), abs(north)) <= 360:
+            return None  # not metres: the older collection's degrees (adr/0007 §3.4) say nothing about the grid
+        return west, north, gsd, gsd
+
+    anchor = raster(ordered[0])
+    if anchor is None:
+        return []
+    return [
+        item_id
+        for item_id in ordered[1:]
+        if (other := raster(item_id)) is not None and not lies_on_grid(anchor, other)
+    ]
 
 
 @dataclass(frozen=True, slots=True)

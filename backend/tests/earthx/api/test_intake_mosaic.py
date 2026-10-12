@@ -247,6 +247,76 @@ class TestOtherDatasets:
         assert error.status_code == 422 and "one CRS" in error.detail
 
 
+class TestZarrScenesOffTheGrid:
+    """What a Zarr item says of its raster (``proj:bbox`` in metres, ``gsd`` of the asset) can prove it off the grid."""
+
+    LEFT, TOP = 399960.0, 8000040.0
+
+    @staticmethod
+    def zarr_scene(item_id: str, *, left: float | None, top: float = TOP, gsd: float = 10, degrees: bool = False):
+        item = eopf_item(item_id)
+        item["properties"]["eopf:datatake_id"] = TAKE
+        item["assets"]["SR_10m"]["gsd"] = gsd
+        if degrees:
+            item["properties"]["proj:bbox"] = [10.4, 50.4, 11.2, 51.2]
+        elif left is not None:
+            item["properties"]["proj:bbox"] = [left, top - 109800, left + 109800, top]
+        return item
+
+    async def order_of(self, *scenes: dict[str, Any]):
+        document = order("sentinel-2-l2a-zarr3", (tuple(s["id"] for s in scenes),), ("SR_10m:b04",), steps=[])
+        del document["aoi"]
+        return await accept(document, Source(*((EOPF, scene) for scene in scenes)))
+
+    async def refused_order_of(self, *scenes: dict[str, Any]):
+        document = order("sentinel-2-l2a-zarr3", (tuple(s["id"] for s in scenes),), ("SR_10m:b04",), steps=[])
+        del document["aoi"]
+        return await refused(document, Source(*((EOPF, scene) for scene in scenes)))
+
+    async def test_scenes_a_whole_number_of_pixels_apart_are_accepted(self) -> None:
+        accepted = await self.order_of(
+            self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=self.LEFT + 100_000.0)
+        )
+        assert accepted.recipe.inputs[0].groups == [["EOPF_A", "EOPF_B"]]
+
+    async def test_a_scene_half_a_pixel_off_is_a_422_that_names_it_and_the_grid(self) -> None:
+        error = await self.refused_order_of(
+            self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=self.LEFT + 100_005.0)
+        )
+        assert error.status_code == 422 and error.stage == "applicable"
+        assert "EOPF_B" in error.detail and "EOPF_A" not in error.detail.split("grid of")[0]
+        assert "pixel grid of EOPF_A" in error.detail and "warping Zarr is not done yet" in error.detail
+
+    async def test_a_scene_off_in_the_other_direction_is_refused_too(self) -> None:
+        error = await self.refused_order_of(
+            self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=self.LEFT, top=self.TOP - 3.0)
+        )
+        assert error.status_code == 422 and "EOPF_B" in error.detail
+
+    async def test_another_pixel_size_is_refused(self) -> None:
+        error = await self.refused_order_of(
+            self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=self.LEFT, gsd=20)
+        )
+        assert error.status_code == 422 and "EOPF_B" in error.detail
+
+    async def test_the_order_asked_for_does_not_decide_which_scene_is_the_grid(self) -> None:
+        scenes = [self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=self.LEFT + 100_005.0)]
+        forward = await self.refused_order_of(*scenes)
+        backward = await self.refused_order_of(*reversed(scenes))
+        assert forward.detail == backward.detail
+
+    async def test_a_scene_without_a_bbox_is_left_to_the_run(self) -> None:
+        accepted = await self.order_of(self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=None))
+        assert accepted.recipe.inputs[0].groups == [["EOPF_A", "EOPF_B"]]
+
+    async def test_a_bbox_in_degrees_says_nothing_about_the_grid(self) -> None:
+        """The older collection's bbox in degrees under a UTM code (adr/0007 §3.4) is no evidence either way."""
+        accepted = await self.order_of(
+            self.zarr_scene("EOPF_A", left=self.LEFT), self.zarr_scene("EOPF_B", left=None, degrees=True)
+        )
+        assert accepted.recipe.inputs[0].groups == [["EOPF_A", "EOPF_B"]]
+
+
 class TestTheCapOfAJob:
     async def test_a_mosaic_over_the_cap_is_a_413_before_the_queue(self) -> None:
         source = overpass(scene("S2_A", (0.0, 40.0, 10.0, 50.0)), scene("S2_B", (10.0, 40.0, 20.0, 50.0)))

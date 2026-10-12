@@ -53,7 +53,7 @@ from earthx.processing.warped import WarpedItem, cache_per_item
 from earthx.readers import read_access_for
 from earthx.readers.cog import CogReader
 
-__all__ = ["MosaicSource", "mosaic_order", "open_mosaic", "target_crs"]
+__all__ = ["MosaicSource", "lies_on_grid", "mosaic_order", "open_mosaic", "target_crs"]
 
 #: A pixel offset or size counts as a whole number within this (of a pixel).
 _PIXEL_TOLERANCE = 1e-3
@@ -94,15 +94,32 @@ def _north_up(source: Source) -> bool:
     return t.b == 0 and t.d == 0 and t.a > 0 and t.e < 0
 
 
+def lies_on_grid(
+    anchor: tuple[float, float, float, float], other: tuple[float, float, float, float]
+) -> bool:
+    """Whether a raster lies on the pixel grid of another: the same pixel size, an origin whole pixels away.
+
+    Each is ``(left, top, pixel width, pixel height)`` in the units of one CRS. The one rule of the core
+    (:func:`_on_grid`) and of `api`, which applies it to what an item says of its raster before the
+    order is queued.
+    """
+    left, top, width, height = anchor
+    other_left, other_top, other_width, other_height = other
+    if not (
+        math.isclose(other_width, width, rel_tol=_SIZE_TOLERANCE)
+        and math.isclose(other_height, height, rel_tol=_SIZE_TOLERANCE)
+    ):
+        return False
+    columns, rows = (other_left - left) / width, (top - other_top) / height
+    return abs(columns - round(columns)) < _PIXEL_TOLERANCE and abs(rows - round(rows)) < _PIXEL_TOLERANCE
+
+
 def _on_grid(anchor: Source, source: Source) -> bool:
-    """Whether ``source`` lies on the pixel grid of ``anchor``: same CRS and pixel size, an origin whole pixels away."""
+    """Whether ``source`` lies on the pixel grid of ``anchor``: same CRS, and :func:`lies_on_grid`."""
     if source.crs != anchor.crs:
         return False
     t, u = source.transform, anchor.transform
-    if not (math.isclose(t.a, u.a, rel_tol=_SIZE_TOLERANCE) and math.isclose(t.e, u.e, rel_tol=_SIZE_TOLERANCE)):
-        return False
-    columns, rows = (t.c - u.c) / u.a, (u.f - t.f) / -u.e
-    return abs(columns - round(columns)) < _PIXEL_TOLERANCE and abs(rows - round(rows)) < _PIXEL_TOLERANCE
+    return lies_on_grid((u.c, u.f, u.a, -u.e), (t.c, t.f, t.a, -t.e))
 
 
 def _bounds_in(source: Source, crs: CRS) -> tuple[float, float, float, float]:
