@@ -74,6 +74,7 @@ class TestSearch:
         assert first["stac_version"] == "1.0.0"
         assert first["properties"]["proj:epsg"] == 32626
         assert first["assets"]["SR_10m"]["eo:bands"][0]["common_name"] == "red"
+        assert first["assets"]["SR_10m"]["bands"][0]["name"] == "b04"
         assert first["assets"]["SR_10m"]["raster:bands"] == [{"nodata": 0, "data_type": "uint16", "spatial_resolution": 10}]
 
     async def test_there_is_never_a_matched_count(self) -> None:

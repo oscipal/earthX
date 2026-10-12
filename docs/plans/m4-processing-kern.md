@@ -246,6 +246,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c | offen |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | offen |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
+| M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
@@ -1090,6 +1091,42 @@ Zeilenenden (`git diff --ignore-all-space --stat` zeigt keine inhaltliche
 
 **Nicht anfassen:** das Verhalten der Routen außer Punkt 2.
 **Abnahme:** je Punkt ein Test mit Gegenprobe; Pflicht-CI grün.
+
+### M4-23 — Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3`
+
+**Ziel:** Das Frontend liest Bandnamen aus dem STAC-1.1-Kernfeld `bands`, nicht
+aus `eo:bands` (Anlass: M4-13b F1, PR #138).
+**Stufe A.**
+**Umfang:** `adapters/eopf_stac.py::_normalize_asset` behält `bands` und schreibt
+es neben `eo:bands`; beide Felder haben denselben Inhalt (`name` und die
+Angaben, die `eo:bands` schon liefert, ohne `eo:`-Präfix), je als eigene Liste.
+Keine neue Anfrage an die Quelle. Ein Asset ohne Bandliste (fehlt oder ist keine
+Liste) bekommt weder `bands` noch `eo:bands`, wie bisher.
+**Die anderen zwei Datensätze:** `cop-dem-glo-30` braucht es nicht, das Item
+(`cop_dem_bucket._item`) hat ein Asset `data` ohne Bandangaben. Bei
+`sentinel-2-c1-l2a` hat Otto am 11.10.2026 ein echtes Item geprüft (Earth Search
+v1, eine Anfrage): `stac_version` 1.0.0, `assets.red` trägt `eo:bands` mit einem
+Eintrag (`name` `B04`, `common_name`, `center_wavelength`,
+`full_width_half_max`), `bands` fehlt. Deshalb spiegelt auch dieser Adapter:
+`earth_search.normalize_item` (für Suche und Einzelabruf, vor dem Cache) ruft
+dieselbe Hilfsfunktion wie EOPF auf, `federated_search.with_core_bands`. Sie
+kopiert `eo:bands` nach `bands`, wenn `bands` fehlt und `eo:bands` eine Liste ist;
+`eo:bands` und `stac_version` bleiben, es gibt keine neue Anfrage. Cache-Einträge
+aus der Zeit davor tragen `bands` erst nach ihrem Ablauf. Die Fixtures
+(`tests/fixtures/earth_search`) tragen `eo:bands` in dieser Form, mit
+synthetischen Werten bzw. den öffentlichen Bandangaben von Sentinel-2.
+**Wirkung auf die Annahme:** keine. `api/intake.py::_entries` liest zuerst
+`raster:bands`; ein EOPF-Asset mit `nodata`/`data_type` behält dessen einen
+Eintrag, ein Asset ohne beides liefert über `bands` nur Namen und damit dieselbe
+leere Beschreibung wie vorher (Test).
+**Vertragstest aus M4-22:** `test_item_contract.py` ließ `bands` an Assets bisher
+nicht zu. Er lässt es jetzt als zusätzliches Feld neben `eo:bands` zu (Liste von
+Objekten); `bands` ohne `eo:bands` bleibt ein Verstoß. Die Items bleiben STAC 1.0.
+**Nicht anfassen:** Frontend, Wächtertest aus M3-12, Registry-Felder.
+**Abnahme:** Test je Datensatz mit synthetischem Item; ein Test über alle
+Registry-Einträge (`test_asset_bands.py`), dass jedes Asset mit `eo:bands` auch
+`bands` trägt (EOPF und c1 mit echten Bandnamen, DEM ohne Bandangaben), mit Gegenprobe (das Prüfstück erkennt ein Asset ohne `bands`) und
+mit Prüfung, dass ein neuer Registry-Eintrag den Test erst nach Eintrag besteht.
 
 ### M4-20 — M4-Abnahme und README
 

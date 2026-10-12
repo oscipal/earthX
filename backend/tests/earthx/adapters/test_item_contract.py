@@ -64,8 +64,12 @@ def violations_of(item: object) -> list[str]:
         if not isinstance(asset, Mapping):
             problems.append(f"asset {key!r} is not an object")
             continue
+        # M4-23: `bands` is allowed as an additional field beside `eo:bands`, never instead of it.
         if "bands" in asset:
-            problems.append(f"asset {key!r} carries 'bands', which is STAC 1.1 (1.0 says eo:bands)")
+            if not isinstance(asset["bands"], list) or not all(isinstance(band, Mapping) for band in asset["bands"]):
+                problems.append(f"asset {key!r} has 'bands' that is not a list of objects")
+            if "eo:bands" not in asset:
+                problems.append(f"asset {key!r} carries 'bands' without eo:bands (1.0 says eo:bands)")
         href = asset.get("href")
         parts = urlsplit(href) if isinstance(href, str) else None
         if parts is None or parts.scheme != "https" or not parts.netloc:
@@ -225,10 +229,22 @@ class TestTheContractCatchesABrokenItem:
         mutation(item)
         assert violations_of(item) != []
 
-    def test_a_stac_1_1_band_list_on_an_asset_is_caught(self) -> None:
+    def test_a_band_list_without_eo_bands_on_an_asset_is_caught(self) -> None:
+        item = copy.deepcopy(load("item", fixtures=EARTH_SEARCH_FIXTURES))
+        del item["assets"]["red"]["eo:bands"]
+        item["assets"]["red"]["bands"] = [{"name": "B04"}]
+        assert any("without eo:bands" in problem for problem in violations_of(item))
+
+    def test_bands_beside_eo_bands_is_allowed(self) -> None:
         item = copy.deepcopy(load("item", fixtures=EARTH_SEARCH_FIXTURES))
         item["assets"]["red"]["bands"] = [{"name": "B04"}]
-        assert any("'bands'" in problem for problem in violations_of(item))
+        assert violations_of(item) == []
+
+    @pytest.mark.parametrize("bands", ["B04", {"name": "B04"}, ["B04"], 3])
+    def test_bands_that_is_not_a_list_of_objects_is_caught(self, bands: object) -> None:
+        item = copy.deepcopy(load("item", fixtures=EARTH_SEARCH_FIXTURES))
+        item["assets"]["red"]["bands"] = bands
+        assert any("not a list of objects" in problem for problem in violations_of(item))
 
     @pytest.mark.parametrize("not_an_item", [None, "item", ["item"], 3])
     def test_something_that_is_not_an_object_is_caught(self, not_an_item: object) -> None:

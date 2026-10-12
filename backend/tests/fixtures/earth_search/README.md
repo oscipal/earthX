@@ -70,3 +70,10 @@ mit Rumpf; ein Item mit den Schlüsseln `type`, `stac_version`, `id`,
 Geometrie, Prüfsumme); nichts davon ist ein echtes Metadatum. Der Test
 `tests/integration/test_try_job_search.py` prüft, dass Schlüssel und Assets mit
 dieser Form übereinstimmen, soweit das Skript `scripts/try-job.ps1` sie liest.
+
+## `eo:bands` an den Band-Assets (M4-23)
+
+Die Band-Assets (`red`, in `search_real_shape.json` auch `green`, `blue`, `nir`) tragen
+`eo:bands` mit einem Eintrag in der Form, die ein echtes Earth-Search-v1-Item am
+11.10.2026 zeigte (`name`, `common_name`, `center_wavelength`, `full_width_half_max`).
+Die Werte sind die öffentlichen Bandangaben von Sentinel-2, kein kopiertes Item.

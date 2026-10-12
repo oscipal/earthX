@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import copy
 import hashlib
 import json
 import logging
@@ -291,6 +292,18 @@ def _check_polygon_validity(geometry: Mapping[str, Any]) -> None:
         raise InvalidQuery("intersects is not a usable GeoJSON geometry") from None
     if not shape.is_valid:
         raise InvalidQuery("intersects is not a valid polygon (rings must not self-intersect)")
+
+
+def with_core_bands(asset: Any) -> Any:
+    """The asset with the STAC 1.1 core field ``bands`` beside its ``eo:bands`` (M4-23).
+
+    ``bands`` is a copy of ``eo:bands``, so the frontend reads band names without an
+    extension field. An asset that already carries ``bands``, or has no ``eo:bands``
+    list, comes back unchanged; the input is never modified.
+    """
+    if not isinstance(asset, Mapping) or "bands" in asset or not isinstance(asset.get("eo:bands"), list):
+        return asset
+    return {**asset, "bands": copy.deepcopy(asset["eo:bands"])}
 
 
 @dataclass(frozen=True, slots=True)

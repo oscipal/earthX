@@ -115,6 +115,14 @@
           "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/synthetic/SYNTH_T00AAA_20250729T100000_L2A/red.tif",
           "type": "image/tiff; application=geotiff; profile=cloud-optimized",
           "title": "red",
+          "eo:bands": [
+            {
+              "name": "B04",
+              "common_name": "red",
+              "center_wavelength": 0.665,
+              "full_width_half_max": 0.038
+            }
+          ],
           "gsd": 10,
           "proj:shape": [
             10980,
@@ -148,6 +156,14 @@
           "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/synthetic/SYNTH_T00AAA_20250729T100000_L2A/green.tif",
           "type": "image/tiff; application=geotiff; profile=cloud-optimized",
           "title": "green",
+          "eo:bands": [
+            {
+              "name": "B03",
+              "common_name": "green",
+              "center_wavelength": 0.56,
+              "full_width_half_max": 0.045
+            }
+          ],
           "gsd": 10,
           "proj:shape": [
             10980,
@@ -181,6 +197,14 @@
           "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/synthetic/SYNTH_T00AAA_20250729T100000_L2A/blue.tif",
           "type": "image/tiff; application=geotiff; profile=cloud-optimized",
           "title": "blue",
+          "eo:bands": [
+            {
+              "name": "B02",
+              "common_name": "blue",
+              "center_wavelength": 0.49,
+              "full_width_half_max": 0.098
+            }
+          ],
           "gsd": 10,
           "proj:shape": [
             10980,
@@ -222,6 +246,14 @@
           "href": "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/synthetic/SYNTH_T00AAA_20250729T100000_L2A/nir.tif",
           "type": "image/tiff; application=geotiff; profile=cloud-optimized",
           "title": "nir",
+          "eo:bands": [
+            {
+              "name": "B08",
+              "common_name": "nir",
+              "center_wavelength": 0.842,
+              "full_width_half_max": 0.145
+            }
+          ],
           "gsd": 10,
           "proj:shape": [
             10980,

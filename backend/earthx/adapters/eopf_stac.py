@@ -53,6 +53,7 @@ from earthx.adapters.federated_search import (
     search_fingerprint,
     stac_interval,
     ttl_for_window,
+    with_core_bands,
 )
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Gateway
@@ -267,7 +268,8 @@ def _normalize_asset(asset: Any) -> Any:
             raster_band[target_key] = normalized.pop(source_key)
     if raster_band:
         normalized["raster:bands"] = [raster_band]
-    return normalized
+    # M4-23: `bands` beside `eo:bands`, the one mapping every federated adapter shares.
+    return with_core_bands(normalized)
 
 
 def _normalize_band(band: Any) -> Any:
