@@ -765,11 +765,17 @@ Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
 3. **Knopf „Jobs (n)“ oben rechts**, solange Jobs in diesem Tab bestehen und
    das Panel zu ist. Ohne ihn wären wiederaufgenommene Jobs (F5) nach dem
    Neuladen erst nach einer neuen Auswahl sichtbar.
-4. **Einfügen per Chip** hängt den Namen an den Ausdruck des zuletzt
-   bearbeiteten Band-Math-Schritts an (nicht an der Schreibmarke). Ohne
-   Band-Math-Schritt schaltet der Chip das Band im Auftrag an oder aus; ein
-   von Hand gewähltes Band, das kein Ausdruck nennt, lässt sich auch mit
-   Band-Math-Schritt per Klick wieder abwählen.
+4. **Einfügen per Chip (Otto, 12.10.2026):** Ein Klick auf einen Band-Chip
+   fügt den Namen nur ein, wenn gerade das Ausdrucksfeld eines Band-Math-Schritts
+   den Cursor hat; er steht dann an der Cursorstelle (eine Markierung wird
+   ersetzt), mit Leerzeichen, wo er sonst an Nachbarn klebte, und der Cursor
+   bleibt dahinter. Dafür behält der Chip beim Drücken den Fokus
+   (`mousedown` ohne Standardwirkung). Sonst nimmt der Klick das Band nur in
+   den Auftrag auf oder entfernt es und ändert keinen Ausdruck. Ein Band, das
+   ein Ausdruck nennt, ist gedrückt und lässt sich nicht abwählen (der Tooltip
+   sagt, den Namen dort zu entfernen). Der Hinweis unter den Chips sagt es auf
+   Englisch. Das ersetzt „hängt an den zuletzt bearbeiteten Ausdruck an“ aus
+   der ersten Fassung; der Entwurf kennt keinen „aktiven Schritt“ mehr.
 5. **Gleicher Bandname in zwei Assets** (bei Zarr möglich, z. B. `b04` in zwei
    Auflösungsgruppen): Der Chip zeigt den vollen Asset-Schlüssel und fügt
    nichts ein; ein solcher Name im Ausdruck wählt kein Asset von selbst. Ob
@@ -833,8 +839,10 @@ npm run dev
 Im Browser `http://localhost:5173`:
 1. Datensatz `sentinel-2-c1-l2a`, eine kleine Fläche zeichnen, die ganz in
    einer Szene liegt, suchen und einen Überflug mit wenig Wolken auswählen.
-2. „⚙ Process“ → „＋ Band math“; Chips `nir` und `red` anklicken und den
-   Ausdruck zu `(nir - red) / (nir + red)` ergänzen.
+2. „⚙ Process“ → „＋ Band math“; in das Ausdrucksfeld klicken, dann die Chips
+   `nir` und `red` anklicken: Sie fügen ihre Namen an der Cursorstelle ein.
+   Den Ausdruck zu `(nir - red) / (nir + red)` ergänzen. (Ein Chip ohne Cursor
+   im Feld nimmt das Band nur in den Auftrag auf.)
 3. „Review“ zeigt Pixel, Größe, Dauer und Einheiten; „Start job“; die Zeile
    zeigt „Waiting for a worker“, „Running · n %“, dann „Finished“.
 4. „Result (COG)“ lädt eine `.tif`, „Recipe“ eine `_recipe.json`; die Datei
