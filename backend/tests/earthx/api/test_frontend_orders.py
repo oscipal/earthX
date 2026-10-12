@@ -1,0 +1,120 @@
+"""The orders the panel sends, held against the backend's own schema (M4-13b; plans/m4-13-processing-panel.md §12).
+
+``frontend/src/processingContract.test.ts`` builds orders the way the panel does, sends them through the
+real client with ``fetch`` recorded, and writes what it would have sent to ``frontend/src/fixtures/orders/``.
+This is the other half: every one of those files goes through the same validation and the same routes a
+browser reaches. A panel that sends a member the schema forbids (the first version sent the ``properties`` of
+a place-search outline in the AOI: ``aoi.Polygon.properties: extra_forbidden``) fails here, not at Otto's.
+
+The routes run on the real operators with synthetic items that cover each file's area.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import pytest
+from shapely.geometry import shape
+
+from earthx.processing.operators import REGISTRY as REAL_OPERATORS
+from earthx.processing.recipe import parse_request
+from tests.earthx.api.conftest import Rig
+from tests.earthx.api.test_intake import dem_item, eopf_item, s2_item
+from tests.earthx.api.test_processing_route import EXECUTION, client_for, replace_api
+
+pytestmark = pytest.mark.anyio
+
+ESTIMATE = "/processing/processes/recipe/estimate"
+ORDERS = Path(__file__).resolve().parents[4] / "frontend" / "src" / "fixtures" / "orders"
+FILES = sorted(ORDERS.glob("*.json"))
+
+
+def test_there_are_orders_to_check() -> None:
+    """A glob that finds nothing would pass for the wrong reason."""
+    assert len(FILES) >= 4
+    assert {json.loads(f.read_text("utf-8"))["inputs"]["recipe"]["inputs"][0]["dataset"] for f in FILES} == {
+        "sentinel-2-c1-l2a",
+        "cop-dem-glo-30",
+        "sentinel-2-l2a-zarr3",
+    }
+
+
+def recipe_of(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text("utf-8"))["inputs"]["recipe"]
+
+
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
+def test_the_schema_takes_the_order(path: Path) -> None:
+    parse_request(json.dumps(recipe_of(path)), REAL_OPERATORS)
+
+
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
+def test_the_order_has_exactly_the_members_of_the_schema(path: Path) -> None:
+    recipe = recipe_of(path)
+    assert set(recipe) == {"recipe_version", "inputs", "aoi", "steps", "output"}
+    assert set(recipe["aoi"]) == {"type", "coordinates"}
+    assert set(recipe["inputs"][0]) == {"name", "dataset", "groups", "assets"}
+    assert all(set(step) == {"op", "op_version", "params"} for step in recipe["steps"])
+
+
+def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
+    """Make the item the order names, covering the area of the order."""
+    entry = recipe["inputs"][0]
+    west, south, east, north = shape(recipe["aoi"]).bounds
+    box = (west - 0.1, south - 0.1, east + 0.1, north + 0.1)
+    item_id = entry["groups"][0][0]
+    make = {"sentinel-2-c1-l2a": s2_item, "cop-dem-glo-30": dem_item, "sentinel-2-l2a-zarr3": eopf_item}
+    rig.source.items[(entry["dataset"], item_id)] = make[entry["dataset"]](item_id, box)
+
+
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
+async def test_the_estimate_route_takes_the_body(rig: Rig, path: Path) -> None:
+    body = json.loads(path.read_text("utf-8"))
+    with_item(rig, body["inputs"]["recipe"])
+    async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+        response = await client.post(ESTIMATE, json=body)
+    assert response.status_code == 200, response.text
+    # What `processing.ts::parseEstimate` reads of the answer.
+    body = response.json()
+    assert set(body["estimate"]) == {"size", "duration", "outputPixels", "inputPixels", "inputBytes", "assets", "units"}
+    assert body["estimate"]["size"] > 0 and isinstance(body["skippedItems"], list)
+
+
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
+async def test_the_execution_route_takes_the_body(rig: Rig, path: Path) -> None:
+    body = json.loads(path.read_text("utf-8"))
+    with_item(rig, body["inputs"]["recipe"])
+    async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+        response = await client.post(EXECUTION, json=body, headers={"Prefer": "respond-async"})
+    assert response.status_code == 201, response.text
+    # What `processing.ts::parseStatusInfo` reads of the answer.
+    status = response.json()
+    assert re.fullmatch(r"[A-Za-z0-9_-]{22}", status["jobID"])
+    assert status["status"] in {"accepted", "running", "successful", "failed", "dismissed"}
+    assert isinstance(status["progress"], int) and isinstance(status["message"], str)
+    assert datetime.fromisoformat(status["expires"]).tzinfo is not None
+
+
+class TestTheCheckWouldHaveFoundTheFirstBug:
+    """The same files with the member the first panel sent: the routes and the schema turn them away."""
+
+    @pytest.fixture
+    def body(self) -> dict[str, Any]:
+        return json.loads((ORDERS / "ndvi-with-place-search-aoi.json").read_text("utf-8"))
+
+    def test_the_schema_refuses_properties_in_the_aoi(self, body: dict[str, Any]) -> None:
+        body["inputs"]["recipe"]["aoi"]["properties"] = {"source": "OpenStreetMap / Nominatim"}
+        with pytest.raises(Exception, match="extra_forbidden"):
+            parse_request(json.dumps(body["inputs"]["recipe"]), REAL_OPERATORS)
+
+    async def test_the_estimate_route_refuses_them_with_a_400(self, rig: Rig, body: dict[str, Any]) -> None:
+        with_item(rig, body["inputs"]["recipe"])
+        body["inputs"]["recipe"]["aoi"]["properties"] = {"source": "x"}
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(ESTIMATE, json=body)
+        assert response.status_code in (400, 422)
+        assert "extra_forbidden" in response.json()["detail"]

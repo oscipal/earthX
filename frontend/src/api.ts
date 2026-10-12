@@ -19,6 +19,9 @@ interface StacErrorBody {
   detail?: unknown;
   code?: string;
   description?: string;
+  // An RFC 9457 problem document (`/processing`, M4-08b) carries a short
+  // `title` next to its `detail`.
+  title?: unknown;
 }
 
 // The STAC error body carries either FastAPI's `{detail}` or the OGC API
@@ -53,17 +56,21 @@ export class HttpError extends Error {
   // `30` depending on which of those it is, and showing either as a promised
   // countdown would claim more than the next attempt actually holds.
   readonly retryAfter?: string;
+  // The `title` of a problem document (M4-13b: a failed job's `/results` names
+  // its failure there, e.g. "The source failed"), when it was a string.
+  readonly title?: string;
 
-  constructor(status: number, message: string, detail?: string, retryAfter?: string) {
+  constructor(status: number, message: string, detail?: string, retryAfter?: string, title?: string) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
     this.detail = detail;
     this.retryAfter = retryAfter;
+    this.title = title;
   }
 }
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
+export async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let body: unknown;
     try {
@@ -74,11 +81,15 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     const detail = typeof (body as StacErrorBody | undefined)?.detail === 'string'
       ? ((body as StacErrorBody).detail as string)
       : undefined;
+    const title = typeof (body as StacErrorBody | undefined)?.title === 'string'
+      ? ((body as StacErrorBody).title as string)
+      : undefined;
     throw new HttpError(
       res.status,
       errorDetail(body, res.status, res.statusText),
       detail,
       res.headers?.get('Retry-After') ?? undefined,
+      title,
     );
   }
   return (await res.json()) as T;

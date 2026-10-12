@@ -26,7 +26,6 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
-from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.recipe import job_recipe_document
 from tests.conftest import own_log_text
@@ -1285,21 +1284,14 @@ class TestAMosaic:
 
 
 class TestAnOrderOnAGeographicGrid:
-    """Known fault, not fixed here (own task): the cost estimate takes ``gsd`` (metres) for the unit of the raster.
+    """A DEM tile lies in EPSG:4326, in degrees (the fault found with M4-12a, fixed with M4-13b).
 
-    A DEM tile lies in EPSG:4326, in degrees. ``processing.plan._input_meta`` builds the raster the
-    first pass would read as ``Affine(gsd, 0, 0, 0, -gsd, 0)`` in the CRS of the asset, so for the DEM it is
-    a box of thousands of degrees, and the ``reproject`` step then sizes its target grid from that
-    (``test_plan.TestTheEstimateOnAGeographicGrid``). The estimate is run by the queue to set the time
-    limit of a run (`jobs.submit`), so the order never gets into the queue.
+    The estimate once took ``gsd`` (metres) for the unit of the raster: ``processing.plan._input_meta``
+    built the raster the first pass would read as a box of thousands of degrees, and the ``reproject``
+    step sized its target grid from that (``test_plan.TestTheEstimateOnAGeographicGrid``). The estimate is
+    run by the queue to set the time limit of a run (`jobs.submit`), so the order never got into the queue.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=UnsupportedRecipe,
-        reason="the estimate sizes a reprojection of a geographic raster from gsd in degrees; "
-        "open line of 2026-10-12 in ENTSCHEIDUNGSLOG.md, own task",
-    )
     async def test_a_dem_order_with_a_reprojection_is_placed(self, rig: Rig) -> None:
         rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
         step = {
@@ -1312,11 +1304,6 @@ class TestAnOrderOnAGeographicGrid:
             response = await client.post(EXECUTION, json=envelope(document))
         assert response.status_code == 201, response.status_code
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=UnsupportedRecipe,
-        reason="the same fault in the estimate route; open line of 2026-10-12 in ENTSCHEIDUNGSLOG.md, own task",
-    )
     async def test_the_estimate_of_a_dem_order_with_a_reprojection_is_given(self, rig: Rig) -> None:
         rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
         step = {

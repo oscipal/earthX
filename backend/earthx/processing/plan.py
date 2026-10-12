@@ -21,6 +21,8 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy
+from rasterio.crs import CRS
+from rasterio.errors import CRSError
 from rasterio.transform import Affine
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
@@ -191,6 +193,19 @@ def _band_bytes(bands: Sequence[Band]) -> int:
     return sum(_value_bytes(band.data_type) for band in bands) or _FALLBACK_BYTES_PER_VALUE
 
 
+#: Metres a degree is worth, only to size the placeholder raster of an estimate (no promise).
+_METRES_PER_DEGREE = 111_320.0
+
+
+def _pixel_size(crs: str, gsd: float) -> float:
+    """``gsd`` (metres) in the units of ``crs``: degrees where the CRS is geographic, the metres themselves otherwise."""
+    try:
+        geographic = CRS.from_user_input(crs).is_geographic
+    except CRSError:
+        return gsd
+    return gsd / _METRES_PER_DEGREE if geographic else gsd
+
+
 def _asset_entries(recipe: Recipe) -> list[ResolvedInput]:
     """One resolved entry per asset of each input: the first item's.
 
@@ -214,7 +229,8 @@ def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
     asset's names are only in the file, ``names_known`` decides: ``False`` falls back to
     the asset key (an estimate does not care), ``True`` gives up and returns ``None``
     (a check against the names would reject what the file may well offer). CRS, pixel
-    size and extent are those of the first asset; the size is set by the caller.
+    size (``gsd`` in metres; in degrees for a geographic CRS) and extent are those of
+    the first asset; the size is set by the caller.
     """
     bands: list[BandMeta] = []
     resolved = _asset_entries(recipe)
@@ -227,8 +243,9 @@ def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
         types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
         bands.extend(BandMeta(name, data_type or "float64", None) for name, data_type in zip(names, types, strict=True))
     first = resolved[0]
-    gsd = first.gsd or 1.0
-    return RasterMeta(first.asset.crs or "EPSG:4326", Affine(gsd, 0, 0, 0, -gsd, 0), 1, 1, tuple(bands))
+    crs = first.asset.crs or "EPSG:4326"
+    size = _pixel_size(crs, first.gsd or 1.0)
+    return RasterMeta(crs, Affine(size, 0, 0, 0, -size, 0), 1, 1, tuple(bands))
 
 
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:

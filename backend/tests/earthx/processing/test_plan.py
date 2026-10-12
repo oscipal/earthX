@@ -142,6 +142,21 @@ class TestEstimate:
         assert cost.output_bytes == cost.output_pixels * 4
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
 
+    def test_a_geographic_source_is_sized_in_degrees_not_in_metres_as_degrees(self) -> None:
+        """The DEM is EPSG:4326 at 30 m: a reprojection of it was once 30 degrees per pixel, an UnsupportedRecipe."""
+        step = {
+            "op": "reproject",
+            "op_version": 2,
+            "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "bilinear", "align": False},
+        }
+        data = recipe_data(steps=[step])
+        for entry in data["inputs"][0]["resolved"]:
+            entry["asset"]["crs"], entry["gsd"] = "EPSG:4326", 30.0
+        cost = estimate(recipe_from_data(data, REGISTRY), REGISTRY)
+        # Same ground, same pixel size: about as many pixels out as in one asset's grid, not thousands of times more.
+        one_asset = cost.input_pixels // 2
+        assert one_asset / 2 < cost.output_pixels < one_asset * 2
+
     def test_the_estimate_does_not_reject_a_name_it_cannot_know(self) -> None:
         """An estimate falls back to the asset key for an asset whose bands only the file names."""
         data = recipe_data(steps=[{"op": "band_math", "op_version": 1, "params": {"expression": "red + nir"}}])
@@ -255,13 +270,9 @@ class TestTheEstimateOnAGeographicGrid:
         out = estimate(self._recipe("EPSG:32632", 10.0, aoi, "EPSG:3035", 10.0), REGISTRY).output_pixels
         assert 0.8 < out / self._true_pixels(aoi, 10.0) < 1.2
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="gsd in metres is taken for degrees on a geographic raster; open line of 2026-10-12, own task",
-    )
     @pytest.mark.parametrize(("resolution", "aoi"), [(30.0, 0.1), (30.0, 0.5), (100.0, 0.25), (1000.0, 0.5)])
     def test_a_geographic_asset_is_estimated_within_a_fifth(self, resolution: float, aoi: float) -> None:
-        """Fails now: ``UnsupportedRecipe`` for 30 m and 100 m, 8 million pixels instead of about 2 000 for 1 000 m."""
+        """Was an ``UnsupportedRecipe`` for 30 m and 100 m and 8 million pixels for 1 000 m (gsd in metres taken as degrees)."""
         out = estimate(self._recipe("EPSG:4326", 30.0, aoi, "EPSG:3035", resolution), REGISTRY).output_pixels
         assert 0.8 < out / self._true_pixels(aoi, resolution) < 1.2
 
