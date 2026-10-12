@@ -1712,9 +1712,12 @@ Nachtrag.
     Jeder bisher gültige Auftrag gilt mit gleicher Bedeutung, ein Auftrag ohne
     `aoi` an eine ältere Plattform wird laut abgewiesen, `extra="forbid"` bleibt.
     Dem Buchstaben nach ändert sich das Schema der Auftragsseite ohne neue
-    Version; **zur Bestätigung durch Otto** mit den Optionen in
-    `plans/m4-12-mosaik-ueberflug.md` §12 Punkt 11 (bei Version 1 bleiben /
-    Version 2 für Aufträge ohne `aoi` / das Frontend schickt die Vereinigung).
+    Version. **Entschieden von Otto am 2026-10-12 (Option 1):** `aoi` bleibt
+    bei `recipe_version` 1 optional, als Lockerung (Pflicht → optional) und
+    nicht als neues Feld. Die verworfenen Optionen (Version 2 für Aufträge
+    ohne `aoi`; das Frontend schickt die Vereinigung) stehen in
+    `plans/m4-12-mosaik-ueberflug.md` §12 Punkt 11. Die Regel „Felder kommen
+    nur mit Version hinzu“ gilt weiter für jedes neue Feld.
 - **Eine Regel für die Überlappung, in der Liste.** Je Band und Pixel gewinnt
   das erste gültige Element in der Reihenfolge der Liste
   (`access.crop_rules.merge_first_valid`, dieselbe Funktion wie im Export-Job

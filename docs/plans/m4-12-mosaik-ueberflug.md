@@ -679,7 +679,9 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
     1.** Steht im freigegebenen Plan (§8 F5, Option 1; §11 „F5, F6, F8:
     Option 1“); dass es mit dem Satz „Felder kommen nur mit Version hinzu“
     zusammenstößt, benannte der Plan nicht, F5 sagte nur „das Rezept bleibt
-    Version 1“. **Zur Bestätigung durch Otto.**
+    Version 1“. **Entschieden von Otto am 12.10.2026: Option 1.** `aoi` bleibt
+    bei `recipe_version` 1 optional, festgehalten als Lockerung in `adr/0014`
+    §15g. Die Optionen 2 und 3 unten bleiben als Wortlaut stehen.
     - *Was sich ändert:* Auf der Seite des Auftrags (`RecipeRequest`) wird
       `aoi` von Pflicht zu optional; die Beschreibung des Prozesses
       (`/processing/processes/recipe`) nennt es nicht mehr unter `required`.
@@ -700,7 +702,8 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
       ist noch nirgends öffentlich bereitgestellt, es gibt keine Clients
       außer dem eigenen.
     - *Optionen:* **1.** Bei Version 1 bleiben, als Lockerung (Pflicht →
-      optional) in `adr/0014` §15g festgehalten, wie gebaut **(Empfehlung)**.
+      optional) in `adr/0014` §15g festgehalten, wie gebaut **(Empfehlung,
+      von Otto gewählt)**.
       **2.** `recipe_version` 2 für Aufträge ohne `aoi`: der Kern und `api`
       nehmen 1 und 2 an, das Rezept bleibt unverändert; Preis: eine zweite
       Version im Modell für eine Lockerung. **3.** F5 Option 2: Das Frontend
@@ -712,7 +715,10 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
       und `RecipeRequest` um; die Prüfanleitung (§9) ändert sich bei 3.
 12. **Bekannter Fehler, nicht in diesem PR behoben: die Kostenschätzung für
     ein geografisches Raster mit `reproject`** (Otto, 12.10.2026: genau
-    beschreiben, `xfail`-Tests, Log-Zeile „offen“, eigene Aufgabe).
+    beschreiben, `xfail`-Tests, Log-Zeile „offen“, eigene Aufgabe). **Wird
+    Aufgabe M4-25** (`plans/m4-25-schaetzung-geografisch.md`, der Plan entsteht
+    in der Aufgabe); die `xfail`-Tests bleiben, wie sie sind. Den Widerspruch
+    zu Ottos lokalem Lauf klärt Otto.
     - *Ursache:* `processing.plan._input_meta` stellt das Raster des ersten
       Durchgangs als `Affine(gsd, 0, 0, 0, -gsd, 0)` im CRS des Assets dar,
       `gsd` in Metern. In einem metrischen CRS (Sentinel-2 in UTM) ist das
