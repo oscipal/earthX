@@ -841,7 +841,8 @@ Im Browser `http://localhost:5173`:
    öffnet sich in QGIS mit Werten zwischen −1 und 1.
 5. Seite neu laden: „⚙ Jobs (1)“ oben rechts öffnet das Panel mit dem Job.
 6. Datensatz `cop-dem-glo-30`: Chip `data` anklicken, „＋ Reproject and
-   resample“ (`EPSG:3035`, `30`, `bilinear`), „Review“, „Start job“; der Job
+   resample“ (`EPSG:3035`, `30`, `bilinear`), unter „Output“ den Datentyp
+   wählen (das DEM nennt keinen; `float32`), „Review“, „Start job“; der Job
    läuft.
 7. Fläche über einer Kachelgrenze zeichnen: Das Panel lässt eine Szene
    wählen und sagt, dass das Ergebnis nur diese abdeckt (F8).
@@ -858,3 +859,49 @@ Der EOPF-Adapter wird in M4-23 angepasst (parallel); bis dahin ist
 Namen aus `eo:bands[].name`“ in K7. Frontend-Tests mit und ohne `bands`
 (`processingOrder.test.ts`, `ProcessingPanel.test.tsx`), dazu eines, das
 zeigt, dass ein `eo:bands` am Asset nichts bewirkt.
+
+**Vertrag Frontend ↔ Backend (Fund im Browsertest, 12.10.2026).** Beim ersten
+Browsertest antwortete „Start job“ mit `invalid order: aoi.Polygon.properties:
+extra_forbidden`: Die AOI einer Ortssuche trägt in `properties` die Herkunft
+(F3 aus M3-07, für `aoi.geojson` des Zuschnitts), und `buildOrder` reichte sie
+unverändert in den Auftrag. Das Schema des Auftrags verbietet jedes Mitglied,
+das es nicht nennt (`extra="forbid"`); es bleibt unverändert. Kein Test hatte
+es gefunden, weil kein Frontend-Test eine AOI mit `properties` und kein
+Backend-Test eine Payload des Frontends kannte. Behoben:
+- `orderAoi` (`processingOrder.ts`) baut die AOI des Auftrags nur aus `type`
+  und `coordinates`, jede Position als `[lon, lat]` (kein `properties`, kein
+  `bbox`, keine Höhe). Die AOI im Store bleibt, wie sie ist: Der Zuschnitt
+  braucht die Herkunft weiter.
+- **Wie die zwei Tests zusammenhängen:** `src/processingContract.test.ts` baut
+  Aufträge wie das Panel (`buildOrder` aus den Prozess-Fixtures aus K3 und den
+  Werten eines Entwurfs), schickt sie durch den echten Client (`estimateOrder`,
+  `placeJob`) mit aufgezeichnetem `fetch` und hält den gesendeten Körper in
+  `frontend/src/fixtures/orders/*.json` fest (`toMatchFileSnapshot`). Vier
+  Fälle: NDVI mit Orts-AOI, Reprojektion des DEM, MultiPolygon mit Höhen und
+  `bbox` mit zwei Schritten, Band-Math auf Zarr-Variablen. Ändert sich, was das
+  Panel sendet, fällt der Test, bis die Dateien neu geschrieben sind
+  (`npx vitest run -u src/processingContract.test.ts`; in der CI schreibt
+  vitest nie). `backend/tests/earthx/api/test_frontend_orders.py` nimmt
+  genau diese Dateien: `parse_request` mit den echten Operatoren, dieselben
+  Mitglieder wie das Schema, und beide Routen (`…/estimate`, `…/execution`)
+  mit synthetischen Items, die die AOI der Datei abdecken, gegen die echten
+  Operatoren. Dazu die Gegenprobe: Dieselbe Datei mit `aoi.properties` wird
+  mit `extra_forbidden` abgewiesen. Nur zusammen halten die beiden Tests die
+  Form: Der erste sagt, was das Panel sendet, der zweite, ob das Backend es
+  nimmt. Ein neuer Fall im Frontend braucht eine Zeile in `CASES` und die
+  geschriebene Datei; der Backend-Test findet jede Datei im Ordner selbst.
+- Die Gegenrichtung (was das Frontend aus Antworten liest) prüft derselbe
+  Backend-Test für Status (`jobID`-Form, Zustand, `progress`, `expires`) und
+  Schätzung (die sieben Felder); die Ergebnis-Links deckt
+  `test_processing_route.py` (`result.tif`, `mask.tif`, `recipe.json`).
+
+**Zweiter Fund durch denselben Test: Schätzung für ein Quell-KBS in Grad.**
+Die Reprojektion des DEM (`EPSG:4326`, `gsd` 30 m) scheiterte in `Review` und
+beim Start mit einer ungefangenen `UnsupportedRecipe` (`500`): `_input_meta`
+setzte die Pixelgröße des Platzhalters gleich `gsd` in Einheiten des KBS, also
+30 Grad je Pixel („the target grid would be 318934 x 754738 px“). Jetzt rechnet
+`plan._pixel_size` das `gsd` für ein geografisches KBS in Grad um
+(111 320 m je Grad); für projizierte KBS bleibt es, wie es war. Eigener
+Commit, einzeln zurücknehmbar; Regressionstest in `test_plan.py` (fällt ohne
+die Änderung). Das betrifft nur die Schätzung und die Laufzeitgrenze, die aus
+ihr folgt; der Lauf liest die Werte aus der Datei.
