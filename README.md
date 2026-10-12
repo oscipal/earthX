@@ -446,6 +446,14 @@ Objektspeichers.
   löschen, um mit den `.env`-Werten neu zu beginnen (löscht nur
   Zugangsdaten, keine Objekte).
 
+### Zeilenenden (seit M4-21)
+
+Im Repo und in jedem Checkout gelten LF-Zeilenenden; `.gitattributes` legt das
+fest (nur `*.bat` und `*.cmd` behalten CRLF). Nach dem ersten `git pull` mit
+dieser Datei: Zeigt `git status` geänderte Dateien, obwohl du nichts geändert
+hast, einmal `git rm --cached -r . ; git reset --hard` ausführen. Das verwirft
+lokale Änderungen, also nur auf sauberem Stand.
+
 ---
 
 ## 3. Attribution
