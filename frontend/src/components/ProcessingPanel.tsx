@@ -163,8 +163,8 @@ export default function ProcessingPanel() {
             <>
               <Bands view={view} />
 
-              <section className="pp-section" aria-label="Steps">
-                <h3 className="pp-heading">Steps</h3>
+              <section className="pp-section" aria-label="Processing steps">
+                <h3 className="pp-heading">Processing steps</h3>
                 {p.steps.length > 0 && (
                   <ol className="pp-steps">
                     {p.steps.map((step, index) => {

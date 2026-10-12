@@ -218,7 +218,7 @@ Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
      ein Klick fügt den Namen in den Ausdruck ein. Die Assets des Auftrags sind
      die Bänder, die der Ausdruck nennt bzw. die der Nutzer ausgewählt hat
      (höchstens 16).
-  3. **Steps:** geordnete Liste; „Add step“ mit den Operatoren aus dem
+  3. **Processing steps:** geordnete Liste; „Add step“ mit den Operatoren aus dem
      Schema; je Schritt das Formular aus 3.4, „Remove“, „Up“/„Down“; höchstens
      `maxItems` (16).
   4. **Output:** `dtype` (K9).

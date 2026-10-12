@@ -214,6 +214,15 @@ describe('the panel built from the schema', () => {
     expect(container.textContent).toContain('Sentinel-2 L2A · 2026-07-01 · S2B_A');
   });
 
+  it('heads the list of steps "Processing steps"', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    const headings = [...container.querySelectorAll('h3')].map((h) => h.textContent);
+    expect(headings).toContain('Processing steps');
+    expect(headings).not.toContain('Steps');
+    expect(container.querySelector('section[aria-label="Processing steps"]')).not.toBeNull();
+  });
+
   it('leaves out an operator the description does not list', async () => {
     const onlyBandMath = structuredClone(s2) as typeof s2;
     onlyBandMath.inputs.recipe.schema.properties.steps.items.oneOf = [{ $ref: '#/$defs/step_band_math_v1' }];
