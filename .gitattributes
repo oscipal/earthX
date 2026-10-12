@@ -1,0 +1,17 @@
+# Line endings (M4-21, S2): LF in the repo and in every checkout.
+* text=auto eol=lf
+
+# Windows scripts that cmd.exe needs with CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary formats; git must never touch their bytes.
+*.tif binary
+*.tiff binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.zip binary
+*.gz binary
+*.ico binary
+*.woff2 binary
