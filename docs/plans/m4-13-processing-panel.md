@@ -218,7 +218,7 @@ Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
      ein Klick fügt den Namen in den Ausdruck ein. Die Assets des Auftrags sind
      die Bänder, die der Ausdruck nennt bzw. die der Nutzer ausgewählt hat
      (höchstens 16).
-  3. **Steps:** geordnete Liste; „Add step“ mit den Operatoren aus dem
+  3. **Processing steps:** geordnete Liste; „Add step“ mit den Operatoren aus dem
      Schema; je Schritt das Formular aus 3.4, „Remove“, „Up“/„Down“; höchstens
      `maxItems` (16).
   4. **Output:** `dtype` (K9).
@@ -726,3 +726,294 @@ docker compose logs api | Select-String "order estimated"
 Erwartet: Schritt 1 gibt `assets` 2 und ein `duration` wie `PT3.4S`; Schritt 2
 einen Problemtext mit `nir_2` (Typ `urn:earthx:order-refused:applicable`);
 Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
+
+## 12. M4-13b — Umsetzung (10.10.2026)
+
+**Gebaut** (Branch `claude/m4-13b-processing-kern-fivakj`, nur `frontend/`):
+- `processing.ts`: Client für `/processing` (Beschreibung, Schätzung, Start,
+  Status, `DELETE`, Ergebnisse, Ergebnis-Links), `canonicalJson`,
+  `parseStatusInfo` (verwirft fremde `jobID`, unbekannte Zustände, fehlende
+  Felder), `isJobId` (Form von `token_urlsafe(16)`; nichts anderes kommt in
+  eine URL). `api.ts`: `jsonOrThrow` exportiert, `HttpError.title`.
+  `vite.config.ts`: `/processing` → `api` (K8).
+- `schemaForm.ts`, `components/StepForm.tsx`: Formular aus dem
+  Parameterschema nach §3.4 mit Wächter („not supported by this panel: …“).
+- `processingOrder.ts`: Operatoren, Grenzen, Datentypen und Trenner aus dem
+  Schema; Bandnamen (K7); Szenen, deren Footprint die AOI schneidet (F8);
+  Bau des Auftrags (K9, K10, K11); Zuordnung einer Abweisung zum Schritt
+  („step <n>“ im Text des Servers).
+- `jobTracker.ts`: SSE mit `close()` beim Endstatus, Rückfall auf Abfragen
+  nach K5, `Retry-After`, `404` → „gone“; `sessionStorage` nach F5 (nur
+  `jobID` und `expires`).
+- `processingStore.ts`, `components/ProcessingPanel.tsx`,
+  `components/JobList.tsx`: Panel nach §3.5; Knopf „Process“ in der `ViewBar`
+  (K12); Jobzeilen mit Status, Fortschritt, „Cancel“, Ablauf, Links
+  „Result (COG)“, „Mask“, „Recipe“ bis `expires` − 60 s, danach „Expired“;
+  Hinweis „Resampled to a common grid“. `JobRow` ist für M4-11b exportiert.
+
+**Abweichungen vom Plan** (Vorschlag, gilt bis Otto widerspricht):
+1. **Eigener Store** `processingStore.ts` statt eines Teils in `store.ts`
+   (dort schon rund 1800 Zeilen). Er liest die Auswahl aus `store.ts` und
+   schreibt nie hinein; `store.ts` exportiert dafür nur `selectionItemsFrom`
+   und den Typ `AppState`.
+2. **Asset ohne Bandangaben:** K7 sagt „kein Chip“. Dann wäre der Auftrag für
+   `cop-dem-glo-30` nicht bedienbar (sein Asset `data` trägt weder
+   `raster:bands` noch `bands`; Prüfanleitung Schritt 6). Das Panel zeigt
+   solche Assets als Chip mit dem Asset-Schlüssel, der das Asset nur in den
+   Auftrag nimmt und keinen Namen einfügt (Tooltip sagt es). Von Otto am
+   10.10.2026 angenommen. Bänder mit Namen bleiben, wie K7 sie beschreibt.
+3. **Knopf „Jobs (n)“ oben rechts**, solange Jobs in diesem Tab bestehen und
+   das Panel zu ist. Ohne ihn wären wiederaufgenommene Jobs (F5) nach dem
+   Neuladen erst nach einer neuen Auswahl sichtbar.
+4. **Einfügen per Chip (Otto, 12.10.2026):** Ein Klick auf einen Band-Chip
+   fügt den Namen nur ein, wenn gerade das Ausdrucksfeld eines Band-Math-Schritts
+   den Cursor hat; er steht dann an der Cursorstelle (eine Markierung wird
+   ersetzt), mit Leerzeichen, wo er sonst an Nachbarn klebte, und der Cursor
+   bleibt dahinter. Dafür behält der Chip beim Drücken den Fokus
+   (`mousedown` ohne Standardwirkung). Sonst nimmt der Klick das Band nur in
+   den Auftrag auf oder entfernt es und ändert keinen Ausdruck. Ein Band, das
+   ein Ausdruck nennt, ist gedrückt und lässt sich nicht abwählen (der Tooltip
+   sagt, den Namen dort zu entfernen). Der Hinweis unter den Chips sagt es auf
+   Englisch. Das ersetzt „hängt an den zuletzt bearbeiteten Ausdruck an“ aus
+   der ersten Fassung; der Entwurf kennt keinen „aktiven Schritt“ mehr.
+5. **Gleicher Bandname in zwei Assets** (bei Zarr möglich, z. B. `b04` in zwei
+   Auflösungsgruppen): Der Chip zeigt den vollen Asset-Schlüssel und fügt
+   nichts ein; ein solcher Name im Ausdruck wählt kein Asset von selbst. Ob
+   die echten Items das tun, ist nicht gemessen (kein Zugriff auf die Quelle
+   aus der Sitzung).
+6. **Hinweise der Formularprüfung** erscheinen an einem Feld, sobald es Text
+   hat, an leeren Pflichtfeldern erst nach „Review“.
+
+7. **Eine Schätzung, ein Job:** Nach einem erfolgreichen Start verfällt die
+   Schätzung; ein zweiter gleicher Job braucht ein neues „Review“. Macht der
+   Nutzer eine Änderung rückgängig, erscheint die Schätzung desselben
+   Auftrags wieder (sie gehört zum Auftrag, nicht zum Zeitpunkt).
+
+**Befunde des Reviewers, behoben:** Schätzung unbekannter Form (`{}` von
+einem Proxy) brachte das Panel im Render zum Absturz → `parseEstimate`;
+eine unlesbare Prozessbeschreibung blieb für immer „loading“ → Fehler mit
+„Retry“; eine Abweisung, die nach einer Änderung ankam, stand am geänderten
+Schritt → Abweisungen tragen den Schlüssel ihres Auftrags; `onopen` setzte
+den Zähler der Abbrüche zurück, sodass ein puffernder Proxy nie auf Abfragen
+fiel → nur ein gültiges Ereignis setzt zurück; leeres `raster:bands` fiel
+nicht auf `bands` zurück wie in `api/intake.py`; „expression names unknown
+band(s)“ und „steps.<n>“ landeten nicht am Schritt; das Panel abonnierte
+den ganzen Store (jetzt nur die Auswahl) und hinterließ geschlossen einen
+leeren Ziehgriff; Panel und `ViewBar` zählten „nichts gewählt“ verschieden
+(beide jetzt die von Hand gewählten Szenen).
+
+**Tests** (vitest, `fetch` und `EventSource` gestubbt, alles synthetisch):
+`processing.test.ts` (kanonisches JSON, Statusdokument, Hülle, Problem-Titel,
+`Retry-After`, keine fremde `jobID` in URLs), `schemaForm.test.ts` (jeder Typ,
+Grenzen, `pattern`, `enum`, `default`, Wächter), `processingOrder.test.ts`
+(Fixtures aus K3 voll unterstützt, Bandnamen für COG mit einem und mehreren
+Bändern, Zarr mit und ohne Trenner, Asset ohne Bandangaben, Szenen und AOI,
+gepuffertes Quadrat eines Punkts, mehr als 16 Assets oder Schritte),
+`jobTracker.test.ts` (Ereignisfolge bis `close()`, kaputtes JSON und fremde
+`jobID`, `CLOSED` → sofort Abfragen, drei Abbrüche, `Retry-After`, `404`,
+ohne `EventSource`, `sessionStorage` mit Wiederaufnahme, abgelaufenen und
+falsch geformten Einträgen, gesperrtem Speicher),
+`components/ProcessingPanel.test.tsx` (Aufbau aus der Sentinel-2-Fixture,
+Operator fehlt im Menü, „Start job“ erst nach „Review“, Änderung verwirft die
+Schätzung, Abweisung am Schritt, `502` beim Start nach guter Schätzung, `503`
+mit „try again“, Abbruch der Schätzung beim Wechsel der Auswahl, Auswahl einer
+Szene mit Hinweis, Start bis zu den Links, gescheiterter Job mit Titel,
+„Expired“, Hinweis „Resampled“, Knopf „Process“ bei Stufe *display* und ohne
+AOI; dazu nach dem Review: „Cancel“ mit `DELETE`, `404` und `503`, „Gone“
+beim Abfragen, SSE durch den Store bis zu den Links, kaputte Schätzung und
+Beschreibung, veraltete Abweisung, Grenze von 16 Schritten, Abbruch der
+Schätzung bei neuer AOI und beim Schließen). Frontend gesamt: 821 Tests grün,
+`tsc` und `oxlint` ohne Befund. Gegenprobe in der Sitzung: Ohne die Bindung der Schätzung an den Auftrag
+und ohne den Abbruch fallen die zwei zugehörigen Komponententests.
+
+**Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell; die Sitzung
+hat das Panel nur in Tests gesehen, nicht im Browser gegen die echte Quelle):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. Datensatz `sentinel-2-c1-l2a`, eine kleine Fläche zeichnen, die ganz in
+   einer Szene liegt, suchen und einen Überflug mit wenig Wolken auswählen.
+2. „⚙ Process“ → „＋ Band math“; in das Ausdrucksfeld klicken, dann die Chips
+   `nir` und `red` anklicken: Sie fügen ihre Namen an der Cursorstelle ein.
+   Den Ausdruck zu `(nir - red) / (nir + red)` ergänzen. (Ein Chip ohne Cursor
+   im Feld nimmt das Band nur in den Auftrag auf.)
+3. „Review“ zeigt Pixel, Größe, Dauer und Einheiten; „Start job“; die Zeile
+   zeigt „Waiting for a worker“, „Running · n %“, dann „Finished“.
+4. „Result (COG)“ lädt eine `.tif`, „Recipe“ eine `_recipe.json`; die Datei
+   öffnet sich in QGIS mit Werten zwischen −1 und 1.
+5. Seite neu laden: „⚙ Jobs (1)“ oben rechts öffnet das Panel mit dem Job.
+6. Datensatz `cop-dem-glo-30`: Chip `data` anklicken, „＋ Reproject and
+   resample“, `crs` `EPSG:3035`, `resolution` `30`, unter „Resampling“
+   `bilinear` wählen (das Panel empfiehlt kein Verfahren; ohne Wahl meldet
+   „Review“ „Required.“). Unter „Output“ steht „Data type: float32 (chosen
+   automatically)“ mit dem Grund. „Review“, „Start job“; der Job läuft. (Der
+   Typ lässt sich unter „Change the data type“ ändern; wählt man `uint16`,
+   steht dort, dass der Job scheitert, wenn die Quelldatei keinen nodata-Wert
+   nennt.)
+7. Fläche über einer Kachelgrenze zeichnen: Das Panel lässt eine Szene
+   wählen und sagt, dass das Ergebnis nur diese abdeckt (F8).
+
+Vorschau und „Preview“ (§9 Schritte 3 und 4) kommen mit M4-13c.
+
+**F1 (Otto, 10.10.2026): Bandnamen eines Zarr-Assets.** Das Frontend liest sie
+nur aus dem STAC-Kernfeld `bands[].name` des Assets (STAC 1.1), nie aus
+`eo:bands`; der Wächtertest `test_frontend_no_dataset_literals.py` bleibt
+unverändert und trifft `bands` nicht. Fehlt `bands`, gibt es keine
+Band-Chips und das Panel sagt „This dataset does not list band names yet.“
+Der EOPF-Adapter wird in M4-23 angepasst (parallel); bis dahin ist
+`sentinel-2-l2a-zarr3` im Panel ohne Bandnamen. Das ersetzt die Regel „Zarr →
+Namen aus `eo:bands[].name`“ in K7. Frontend-Tests mit und ohne `bands`
+(`processingOrder.test.ts`, `ProcessingPanel.test.tsx`), dazu eines, das
+zeigt, dass ein `eo:bands` am Asset nichts bewirkt.
+
+**Vertrag Frontend ↔ Backend (Fund im Browsertest, 12.10.2026).** Beim ersten
+Browsertest antwortete „Start job“ mit `invalid order: aoi.Polygon.properties:
+extra_forbidden`: Die AOI einer Ortssuche trägt in `properties` die Herkunft
+(F3 aus M3-07, für `aoi.geojson` des Zuschnitts), und `buildOrder` reichte sie
+unverändert in den Auftrag. Das Schema des Auftrags verbietet jedes Mitglied,
+das es nicht nennt (`extra="forbid"`); es bleibt unverändert. Kein Test hatte
+es gefunden, weil kein Frontend-Test eine AOI mit `properties` und kein
+Backend-Test eine Payload des Frontends kannte. Behoben:
+- `orderAoi` (`processingOrder.ts`) baut die AOI des Auftrags nur aus `type`
+  und `coordinates`, jede Position als `[lon, lat]` (kein `properties`, kein
+  `bbox`, keine Höhe). Die AOI im Store bleibt, wie sie ist: Der Zuschnitt
+  braucht die Herkunft weiter.
+- **Wie die zwei Tests zusammenhängen:** `src/processingContract.test.ts` baut
+  Aufträge wie das Panel (`buildOrder` aus den Prozess-Fixtures aus K3 und den
+  Werten eines Entwurfs), schickt sie durch den echten Client (`estimateOrder`,
+  `placeJob`) mit aufgezeichnetem `fetch` und hält den gesendeten Körper in
+  `frontend/src/fixtures/orders/*.json` fest (`toMatchFileSnapshot`). Vier
+  Fälle: NDVI mit Orts-AOI, Reprojektion des DEM, MultiPolygon mit Höhen und
+  `bbox` mit zwei Schritten, Band-Math auf Zarr-Variablen. Ändert sich, was das
+  Panel sendet, fällt der Test, bis die Dateien neu geschrieben sind
+  (`npx vitest run -u src/processingContract.test.ts`; in der CI schreibt
+  vitest nie). `backend/tests/earthx/api/test_frontend_orders.py` nimmt
+  genau diese Dateien: `parse_request` mit den echten Operatoren, dieselben
+  Mitglieder wie das Schema, und beide Routen (`…/estimate`, `…/execution`)
+  mit synthetischen Items, die die AOI der Datei abdecken, gegen die echten
+  Operatoren. Dazu die Gegenprobe: Dieselbe Datei mit `aoi.properties` wird
+  mit `extra_forbidden` abgewiesen. Nur zusammen halten die beiden Tests die
+  Form: Der erste sagt, was das Panel sendet, der zweite, ob das Backend es
+  nimmt. Ein neuer Fall im Frontend braucht eine Zeile in `CASES` und die
+  geschriebene Datei; der Backend-Test findet jede Datei im Ordner selbst.
+- Die Gegenrichtung (was das Frontend aus Antworten liest) prüft derselbe
+  Backend-Test für Status (`jobID`-Form, Zustand, `progress`, `expires`) und
+  Schätzung (die sieben Felder); die Ergebnis-Links deckt
+  `test_processing_route.py` (`result.tif`, `mask.tif`, `recipe.json`).
+
+**Zweiter Fund durch denselben Test: Schätzung für ein Quell-KBS in Grad.**
+Die Reprojektion des DEM (`EPSG:4326`, `gsd` 30 m) scheiterte in `Review` und
+beim Start mit einer ungefangenen `UnsupportedRecipe` (`500`): `_input_meta`
+setzte die Pixelgröße des Platzhalters gleich `gsd` in Einheiten des KBS, also
+30 Grad je Pixel („the target grid would be 318934 x 754738 px“). Jetzt rechnet
+`plan._pixel_size` das `gsd` für ein geografisches KBS in Grad um
+(111 320 m je Grad); für projizierte KBS bleibt es, wie es war. Eigener
+Commit, einzeln zurücknehmbar; Regressionstest in `test_plan.py` (fällt ohne
+die Änderung). Das betrifft nur die Schätzung und die Laufzeitgrenze, die aus
+ihr folgt; der Lauf liest die Werte aus der Datei.
+**Nach dem Merge von `main` (M4-12a, PR #136):** Dort ist derselbe Fehler als offene Aufgabe M4-25
+beschrieben, mit strikten `xfail`-Tests (`test_plan.TestTheEstimateOnAGeographicGrid`,
+`test_processing_route.TestAnOrderOnAGeographicGrid`). Diese Tests laufen mit dem Fix von
+selbst durch (XPASS); die Markierungen sind hier entfernt (Log „M4-25 ist mit M4-13b behoben“).
+
+## 13. Resampling und Datentyp (Otto, 12.10.2026, zweite Fassung)
+
+**Anlass.** Im Browsertest zeigte „Data type“ beim DEM keine Empfehlung; mit
+`uint16` endete der Job mit „Failed: The recipe asks for what the platform does
+not run yet“, mit `float32` lief derselbe Auftrag. Ursache (gelesen,
+`processing/core.py::_nodata_for`): Ein ganzzahliger Typ geht nur, wenn jedes
+Band des Ergebnisses einen endlichen nodata-Wert trägt, denselben für alle;
+nach Band-Math ist es immer `float32` mit NaN, und eine Reprojektion behält das
+nodata ihrer Eingabe, das die **Quelldatei** nennt (`processing/source.py`),
+nicht das Item. Das DEM nennt keines.
+
+**Entscheidung.** Die erste Fassung vom selben Tag (beide Felder vorbelegt und
+als „(recommended)“ gekennzeichnet) ist ersetzt:
+- **Resampling:** keine Empfehlung, nichts vorbelegt. Das Verfahren ändert die
+  Werte; der Nutzer wählt es (B10), ohne Wahl meldet „Review“ „Required.“. Die
+  Erkennung von Klassenbändern aus der ersten Fassung (`classification:*`)
+  ist damit entfallen.
+- **Datentyp:** Das Panel nimmt den bestmöglichen selbst, den **Typ der
+  Ursprungsdaten, wo die Plattform ihn schreiben kann**, zeigt ihn als Zeile
+  „Data type: float32 (chosen automatically)“ mit dem Grund und sendet ihn
+  ausdrücklich mit. Ändern lässt er sich unter „Change the data type“ (mit der
+  Auswahl „Automatic: …“ zurück). Das ersetzt K9.
+
+**Regel** (`frontend/src/processingDefaults.ts::chooseDtype`, getestet in
+`processingDefaults.test.ts` und `ProcessingPanel.test.tsx`):
+1. Band-Math im Auftrag → `float32`; ganzzahlige Typen werden dann **nicht
+   angeboten** (deaktiviert, mit Grund), weil der Lauf sie sicher abweist. Ein
+   zuvor gewählter ganzzahliger Typ fällt auf den automatischen.
+2. Eine Quelle mit Gleitkommatyp (`float32`, `float64`) ohne Skalierung → ihr
+   eigener Typ, mit oder ohne Interpolation.
+3. Eine Reprojektion, deren Resampling nicht `nearest` ist oder noch fehlt →
+   `float32` (der Kern schneidet den Bruch beim Schreiben einer Ganzzahl ab).
+4. `nearest`, alle Bänder derselben ganzzahligen Typ ohne `scale`/`offset` am
+   Item (sonst rechnet der Kern auf `float32`), und das Item nennt für alle
+   Bänder denselben endlichen nodata-Wert → der Eingabetyp.
+5. Sonst → `float32` (DEM, Zarr, jedes Item ohne Bandangaben).
+Wählt der Nutzer eine Ganzzahl, obwohl das Item kein nodata nennt, sagt ein
+Hinweis, dass der Job scheitert, wenn die Quelldatei keines nennt; ob sie eines
+nennt, weiß nur der Lauf.
+
+**Wie andere Programme es machen** (gelesen am 12.10.2026, Quelltext der
+GDAL-Doku auf GitHub; `gdal.org` ist aus der Sitzung nicht erreichbar):
+- [P] `gdal_calc.py`: Ohne `--type` ist der Ausgabetyp die Vereinigung der
+  Eingabetypen (GDAL ≥ 3.5). Ohne `--NoDataValue` nimmt es ein **festes nodata
+  je Datentyp**: Byte 255, UInt16 65535, Int16 −32768, UInt32 4294967293,
+  Int32 −2147483647, Float32 3,4·10³⁸ (`DefaultNDVLookup`). Es greift also
+  immer auf einen Wert zurück.
+- [P] `gdalwarp`: Ohne `-dstnodata` „nodata values will be copied from the
+  source dataset“; mit `-dstnodata` werden neue Dateien damit initialisiert und
+  der Wert wird, wenn möglich, in der Datei vermerkt. Den Standard für `-ot`
+  nennt die gelesene Seite nicht (`options/ot.rst`: „Force the output image
+  bands to have a specific data type“); dass er der Typ der Quelle ist, ist
+  hier **nicht belegt**. Was `gdalwarp` ohne Quell-nodata für Pixel außerhalb
+  der Quelle einsetzt, steht ebenfalls nicht auf der Seite.
+- QGIS-Dokumentation (Warp): Die Seite nennt als Standard für Datentyp und
+  Resampling den ersten Eintrag der Liste, die Einträge selbst standen nicht
+  im gelesenen Text; nicht belegt.
+
+**Was die Plattform dafür ändern müsste (offen).** „Der gleiche Typ wie die
+Ursprungsdaten“ ist heute nur möglich, wenn die Quelle ein nodata nennt, weil
+`core._nodata_for` sonst ablehnt. Wie `gdal_calc.py` könnte der Kern für einen
+ganzzahligen Typ **ohne** gemeinsames Quell-nodata ein festes nodata je Typ
+nehmen und in die Datei schreiben, dazu beim Schreiben **runden** statt
+abschneiden (heute `astype(dtype, casting="unsafe")`) und prüfen, dass kein
+gültiger Pixelwert dem nodata gleicht (sonst ablehnen). Dann entfielen im
+Panel die Bedingungen „Item nennt nodata“ und „nicht interpoliert“, und jede
+unskalierte Ganzzahl-Quelle behielte ihren Typ. Das ändert den Kern, das
+Ergebnis und `adr/0014`; die Entscheidung liegt bei Otto.
+
+**Was die Items hergeben.** Das echte Item von `sentinel-2-c1-l2a` (eine
+Anfrage, 12.10.2026) nennt für die Farbbänder `uint16`, nodata 0, `scale`
+0,0001, `offset` −0,1 (der Kern rechnet auf `float32`: Ergebnis `float32`);
+`scl`, `cloud`, `snow` und `visual` sind `uint8` mit nodata 0 ohne Skalierung
+(bei `nearest`: `uint8`). `sentinel-2-l2a-zarr3`: `bands` trägt nur Namen und
+`eo:`-Felder, kein `data_type`, kein nodata (Ergebnis: `float32`). Für M4-23
+zu beachten: Die Namen dort sind `B04` (groß), die Variablen im Store und in
+der Registry `b04` (klein); liest das Panel die Namen aus `bands`, schickt es
+`SR_10m:B04`, und der Store kennt nur `b04`. `cop-dem-glo-30`: `data` ohne
+Bandangaben (Ergebnis: `float32`).
+
+**Fehlermeldung eines gescheiterten Jobs.** Das Panel zeigt den `title` des
+Problemdokuments von `/results` (Englisch, ohne AOI, Hash, href). Einen
+konkreten Grund liefert die API für einen **gescheiterten Lauf nicht**: Die
+Queue speichert nur `error_kind` (`catalog/migrations/006_jobs.sql`,
+`jobs/queue.py`), `processing/failures.py::failure_kind` reduziert die Ausnahme
+darauf, und `api/processing_route.py::_failed` antwortet mit dem festen Titel
+(„The recipe asks for what the platform does not run yet“) und dem festen
+Detail „the job failed; no result exists“. Der Text der Ausnahme geht verloren;
+das ist Absicht (kein Text einer Ausnahme in die Datenbank, `adr/0014` §4.7).
+Bei „Review“ und „Start job“ kommt der `detail` der Antwort ins Panel.
+Vorschlag für Otto: je Fehlerart einen **festen** Satz zum Titel, den die API
+aus `error_kind` und einem kleinen Unterschlüssel ableitet (hier etwa
+`integer_nodata`), ohne Werte; das ändert Worker, Queue und API und gehört in
+eine eigene Aufgabe. Den häufigsten Fall (ein ganzzahliger Typ ohne nodata)
+verhindert das Panel jetzt vorher.

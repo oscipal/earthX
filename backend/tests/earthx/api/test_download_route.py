@@ -789,7 +789,7 @@ class TestOverTheCapAnExportJob:
                 planned, max_bytes=crop, native_planned=native_planned
             ),
         )
-        monkeypatch.setattr("earthx.api.tiler.MAX_EXPORT_JOB_BYTES", job)
+        monkeypatch.setattr("earthx.api.tiler.MAX_JOB_BYTES", job)
 
     def test_exactly_at_the_cap_the_crop_runs(
         self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch

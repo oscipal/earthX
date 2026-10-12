@@ -1,0 +1,102 @@
+// The output type of an order (Otto, 12.10.2026): the panel takes the best one
+// itself, as the tools of GDAL do — the type of the source data wherever the
+// platform can write it — and says which and why. The resampling method is no
+// recommendation: it changes the values, the user chooses it (B10).
+//
+// What a run accepts (`processing/core.py::_nodata_for`): a float type always
+// (NaN is its nodata); an integer type only when every band of the result
+// carries one finite nodata value. Band math ends in float32 with NaN, so an
+// integer type after it is refused for sure and not offered. A reprojection
+// keeps the nodata of its input, which the source *file* states and the item
+// may; `nearest` on integer bands keeps their values, any interpolation does
+// not (the core truncates a fraction when it writes an integer).
+
+import type { BandSource } from './processingOrder';
+
+export interface Choice {
+  value: string;
+  // One English sentence for the form, saying why.
+  reason: string;
+}
+
+export const INTEGER_TYPES: readonly string[] = ['uint8', 'uint16', 'int16', 'uint32', 'int32'];
+export const FLOAT_TYPES: readonly string[] = ['float32', 'float64'];
+
+export const isIntegerType = (dtype: string): boolean => INTEGER_TYPES.includes(dtype);
+
+export interface StepChoice {
+  op: string;
+  // The resampling the step will be sent with, where it has one; empty while the user has chosen none.
+  resampling?: string;
+}
+
+export const AFTER_BAND_MATH =
+  'Band math ends in float32 with NaN as nodata, which an integer type cannot hold.';
+
+// The type the order is sent with unless the user changes it.
+export function chooseDtype(args: {
+  steps: readonly StepChoice[];
+  bands: readonly BandSource[];
+  allowed: readonly string[];
+}): Choice {
+  const { steps, bands, allowed } = args;
+  const float32 = (reason: string): Choice => ({
+    value: allowed.includes('float32') ? 'float32' : (allowed[0] ?? ''),
+    reason,
+  });
+  if (steps.some((s) => s.op === 'band_math')) return float32('Band math gives fractions.');
+  const types = new Set(bands.map((band) => band.dataType));
+  const type = types.size === 1 ? [...types][0] : null;
+  const interpolating = steps.some((s) => s.op === 'reproject' && s.resampling !== 'nearest');
+  const scaled = bands.some((band) => band.scaled);
+  // A float source stays what it is, interpolated or not.
+  if (type !== null && FLOAT_TYPES.includes(type) && allowed.includes(type) && !scaled) {
+    return { value: type, reason: `Same type as the source data (${type}).` };
+  }
+  if (interpolating) return float32('Interpolating gives fractional values, which an integer type would cut off.');
+  const nodata = new Set(bands.map((band) => band.nodata));
+  const keeps =
+    steps.length > 0 &&
+    bands.length > 0 &&
+    type !== null &&
+    isIntegerType(type) &&
+    allowed.includes(type) &&
+    !scaled &&
+    nodata.size === 1 &&
+    !nodata.has(null);
+  if (keeps && type) return { value: type, reason: `Same type as the source data (${type}); the item states its nodata value.` };
+  return float32('The item does not tell that the source can stay an integer type; float32 always works.');
+}
+
+export interface DtypeOption {
+  value: string;
+  label: string;
+  // Why it cannot be chosen; the option is shown, disabled, with this text.
+  disabledReason: string | null;
+}
+
+// The types of the schema as options; those a run refuses for sure disabled with the reason.
+export function dtypeOptions(args: { dtypes: readonly string[]; steps: readonly StepChoice[] }): DtypeOption[] {
+  const afterBandMath = args.steps.some((s) => s.op === 'band_math');
+  return args.dtypes.map((value) => {
+    const disabledReason = afterBandMath && isIntegerType(value) ? AFTER_BAND_MATH : null;
+    return { value, label: disabledReason ? `${value} (not after band math)` : value, disabledReason };
+  });
+}
+
+// The type the order is sent with: the user's choice while a run does not
+// refuse it for sure, else the automatic one.
+export function effectiveDtype(chosen: string | null, options: readonly DtypeOption[], automatic: Choice): string {
+  const option = options.find((o) => o.value === chosen);
+  return option && !option.disabledReason ? option.value : automatic.value;
+}
+
+// A note for an integer type that is not surely taken: the run needs one nodata
+// value that every band states (`core._nodata_for`), which only the source file
+// knows for sure.
+export function integerNote(dtype: string, steps: readonly StepChoice[], bands: readonly BandSource[]): string | null {
+  if (!isIntegerType(dtype) || steps.some((s) => s.op === 'band_math')) return null;
+  const nodata = new Set(bands.map((band) => band.nodata));
+  if (bands.length > 0 && nodata.size === 1 && !nodata.has(null)) return null;
+  return `${dtype} needs a nodata value that the source file states for every band; the job fails otherwise. float32 always works.`;
+}

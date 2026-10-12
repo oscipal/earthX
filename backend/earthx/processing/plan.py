@@ -21,6 +21,8 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 import numpy
+from rasterio.crs import CRS
+from rasterio.errors import CRSError
 from rasterio.transform import Affine
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
@@ -30,7 +32,7 @@ from shapely.geometry import shape as shapely_shape
 from earthx.access.crop_rules import (
     BLOCK_SIZE,
     FALLBACK_BYTES_PER_PIXEL,
-    MAX_EXPORT_JOB_BYTES,
+    MAX_JOB_BYTES,
     MAX_OUTPUT_SIDE_PX,
     AoiOutsideItems,
     PlannedOutput,
@@ -38,9 +40,9 @@ from earthx.access.crop_rules import (
     compute_crop_region,
     estimate_output_dims,
 )
-from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
-from earthx.processing.recipe import Band, CropOutput, Recipe, Step
+from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names
 
 __all__ = [
@@ -191,6 +193,35 @@ def _band_bytes(bands: Sequence[Band]) -> int:
     return sum(_value_bytes(band.data_type) for band in bands) or _FALLBACK_BYTES_PER_VALUE
 
 
+#: Metres a degree is worth, only to size the placeholder raster of an estimate (no promise).
+_METRES_PER_DEGREE = 111_320.0
+
+
+def _pixel_size(crs: str, gsd: float) -> float:
+    """``gsd`` (metres) in the units of ``crs``: degrees where the CRS is geographic, the metres themselves otherwise."""
+    try:
+        geographic = CRS.from_user_input(crs).is_geographic
+    except CRSError:
+        return gsd
+    return gsd / _METRES_PER_DEGREE if geographic else gsd
+
+
+def _asset_entries(recipe: Recipe) -> list[ResolvedInput]:
+    """One resolved entry per asset of each input: the first item's.
+
+    The scenes of a mosaic (M4-12a) carry the same bands; the raster they make has them once.
+    For an input of one item these are all its entries.
+    """
+    entries: list[ResolvedInput] = []
+    for item in recipe.inputs:
+        seen: set[str] = set()
+        for entry in item.resolved:
+            if entry.asset.asset not in seen:
+                seen.add(entry.asset.asset)
+                entries.append(entry)
+    return entries
+
+
 def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
     """The raster the first pass would read, as far as the recipe says (no read).
 
@@ -198,10 +229,11 @@ def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
     asset's names are only in the file, ``names_known`` decides: ``False`` falls back to
     the asset key (an estimate does not care), ``True`` gives up and returns ``None``
     (a check against the names would reject what the file may well offer). CRS, pixel
-    size and extent are those of the first asset; the size is set by the caller.
+    size (``gsd`` in metres; in degrees for a geographic CRS) and extent are those of
+    the first asset; the size is set by the caller.
     """
     bands: list[BandMeta] = []
-    resolved = [entry for item in recipe.inputs for entry in item.resolved]
+    resolved = _asset_entries(recipe)
     for entry in resolved:
         names = expected_band_names(entry)
         if names is None:
@@ -211,8 +243,9 @@ def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
         types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
         bands.extend(BandMeta(name, data_type or "float64", None) for name, data_type in zip(names, types, strict=True))
     first = resolved[0]
-    gsd = first.gsd or 1.0
-    return RasterMeta(first.asset.crs or "EPSG:4326", Affine(gsd, 0, 0, 0, -gsd, 0), 1, 1, tuple(bands))
+    crs = first.asset.crs or "EPSG:4326"
+    size = _pixel_size(crs, first.gsd or 1.0)
+    return RasterMeta(crs, Affine(size, 0, 0, 0, -size, 0), 1, 1, tuple(bands))
 
 
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
@@ -232,24 +265,25 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     """The cost of a job from AOI, ``gsd`` and data types (§5.5); reads nothing.
 
     An export (output ``crop``) is estimated as the crop estimates itself and refused
-    with :class:`ExportTooLarge` above ``MAX_EXPORT_JOB_BYTES`` (M4-11 F5).
+    with :class:`ExportTooLarge` above ``MAX_JOB_BYTES`` (M4-11 F5); a raster job is refused
+    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7).
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
     aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
-    input_pixels = input_bytes = assets = 0
+    input_pixels = input_bytes = 0
     width = height = 0
-    for item in recipe.inputs:
-        for entry in item.resolved:
-            assets += 1
-            if entry.gsd is not None:
-                rows, columns = estimate_output_dims(aoi, entry.gsd)
-            else:
-                rows = columns = MAX_OUTPUT_SIDE_PX
-            if not width:
-                height, width = rows, columns
-            input_pixels += rows * columns
-            input_bytes += rows * columns * _band_bytes(entry.bands)
+    #: Every scene of a mosaic is opened, but each output pixel comes from about one of them.
+    assets = sum(len(item.resolved) for item in recipe.inputs)
+    for entry in _asset_entries(recipe):
+        if entry.gsd is not None:
+            rows, columns = estimate_output_dims(aoi, entry.gsd)
+        else:
+            rows = columns = MAX_OUTPUT_SIDE_PX
+        if not width:
+            height, width = rows, columns
+        input_pixels += rows * columns
+        input_bytes += rows * columns * _band_bytes(entry.bands)
     meta = _input_meta(recipe, names_known=False)
     assert meta is not None  # a recipe has at least one resolved input
     meta = replace(meta, width=width, height=height)
@@ -259,6 +293,11 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
     output_pixels = meta.width * meta.height
     dtype = getattr(recipe.output, "dtype", None)
     output_bytes = output_pixels * len(meta.bands) * _value_bytes(dtype)
+    if output_bytes + output_pixels > MAX_JOB_BYTES:
+        raise JobTooLarge(
+            f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
+            f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
+        )
     factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else EXPORT_FACTOR
     return CostEstimate(
         input_pixels=input_pixels,
@@ -310,10 +349,10 @@ def _export_estimate(recipe: Recipe) -> CostEstimate:
     pixels = sum(output.width * output.height for output in planned)
     raw = sum(output.width * output.height * output.bytes_per_pixel for output in planned)
     total = sum(output.total_bytes for output in planned)
-    if total > MAX_EXPORT_JOB_BYTES:
+    if total > MAX_JOB_BYTES:
         raise ExportTooLarge(
             f"This export would be about {total / 1_000_000:.0f} MB, more than the "
-            f"{MAX_EXPORT_JOB_BYTES / 1_000_000:.0f} MB an export job may write. "
+            f"{MAX_JOB_BYTES / 1_000_000:.0f} MB an export job may write. "
             "Draw a smaller area or choose fewer assets."
         )
     assets = sum(len(entry.resolved) for entry in recipe.inputs)
@@ -376,11 +415,10 @@ def disk_needed(recipe: Recipe, operators: OperatorRegistry) -> int:
         finished = cost.output_bytes + cost.output_pixels
         aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
         largest = 0
-        for item in recipe.inputs:
-            for entry in item.resolved:
-                if entry.gsd is not None:
-                    rows, columns = estimate_output_dims(aoi, entry.gsd)
-                else:
-                    rows = columns = MAX_OUTPUT_SIDE_PX
-                largest += _tiles_px(rows) * _tiles_px(columns) * max(len(entry.bands), 1) * _PASS_BYTES
+        for entry in _asset_entries(recipe):
+            if entry.gsd is not None:
+                rows, columns = estimate_output_dims(aoi, entry.gsd)
+            else:
+                rows = columns = MAX_OUTPUT_SIDE_PX
+            largest += _tiles_px(rows) * _tiles_px(columns) * max(len(entry.bands), 1) * _PASS_BYTES
     return math.ceil(finished * _WITH_OVERVIEWS) + 2 * largest + DISK_RESERVE_BYTES

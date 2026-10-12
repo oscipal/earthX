@@ -16,6 +16,8 @@
 // per-group outline and layer split, held for approval).
 
 import { decideDownloadOutcome, isCogFormat } from '../download';
+import { processBlockReason } from '../processingOrder';
+import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 
 export default function ViewBar() {
@@ -27,6 +29,7 @@ export default function ViewBar() {
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
   const openDownloadForSelection = useAppStore((s) => s.openDownloadForSelection);
   const dataset = useAppStore((s) => s.datasets.find((d) => d.id === s.datasetId));
+  const openProcessing = useProcessingStore((s) => s.openProcessing);
 
   if (selectedIds.length === 0) return null;
 
@@ -35,6 +38,9 @@ export default function ViewBar() {
   // viewing): no "Crop & merge"/"View full selection" choice to read, so the
   // decision (M3-17 plan §4) falls back to whether an AOI is drawn.
   const downloadOutcome = decideDownloadOutcome({ cropToAoi: null, hasAoi: !!aoi, isCog: isCogFormat(dataset) });
+  // M4-13b K12: a job for the selection, next to "Download"; the reason it
+  // cannot start (licence tier, no area) is the button's own title.
+  const processBlocked = processBlockReason(dataset, aoi, selectedIds.length);
 
   return (
     <div className="panel download-bar">
@@ -88,6 +94,15 @@ export default function ViewBar() {
         onClick={() => openDownloadForSelection()}
       >
         ⇩ Download
+      </button>
+      <button
+        type="button"
+        className="ghost-btn"
+        disabled={processBlocked !== null}
+        title={processBlocked ?? 'Build a processing job for the selected scene, cut to your AOI'}
+        onClick={() => openProcessing()}
+      >
+        ⚙ Process
       </button>
       <button type="button" className="ghost-btn" disabled={focusLoading} onClick={() => clearSelection()}>
         Clear

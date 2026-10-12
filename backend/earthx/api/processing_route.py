@@ -60,7 +60,7 @@ from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, jo
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring
 from earthx.objectstore.results import MIN_REMAINING, RESULT_NAMES, Store, signed_download
 from earthx.processing import check_scope
-from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, RecipeInvalid, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import OperatorRegistry
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
@@ -637,8 +637,8 @@ async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Re
         raise _refused(error) from None
     try:
         check_scope(estimated.recipe)
-    except ExportTooLarge as error:
-        # As placing the export would answer (M4-11 F5): over the cap is a 413, not a 422.
+    except JobTooLarge as error:
+        # As placing the job would answer (M4-11 F5, M4-12 F7): over the cap is a 413, not a 422.
         raise Problem(413, str(error), type_=f"{_ORDER_TYPE}size") from None
     except AoiOutsideInputs as error:
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}aoi") from None
@@ -646,6 +646,8 @@ async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Re
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
     try:
         cost = estimate(estimated.recipe, api.operators)
+    except JobTooLarge as error:
+        raise Problem(413, str(error), type_=f"{_ORDER_TYPE}size") from None
     except RecipeInvalid as error:
         # A band name the item does not describe is found here where the check before could not tell.
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}applicable") from None
