@@ -81,7 +81,6 @@ interface ProcessingState {
   steps: DraftStep[];
   picked: string[];
   dtype: string | null;
-  activeStep: number | null;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
@@ -100,9 +99,7 @@ interface ProcessingState {
   updateStep: (key: number, name: string, value: FieldValue) => void;
   moveStep: (key: number, direction: -1 | 1) => void;
   removeStep: (key: number) => void;
-  setActiveStep: (key: number) => void;
   togglePick: (asset: string) => void;
-  insertBand: (name: string) => void;
   setDtype: (dtype: string) => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
@@ -225,7 +222,6 @@ const EMPTY_DRAFT = {
   steps: [] as DraftStep[],
   picked: [] as string[],
   dtype: null,
-  activeStep: null,
   reviewAsked: false,
   estimate: null,
   reviewing: false,
@@ -366,7 +362,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const key = nextStepKey++;
       set((s) => ({
         steps: [...s.steps, { key, op, opVersion, values: initialValues(operator.form.supported ? operator.form.fields : []) }],
-        activeStep: op === 'band_math' ? key : s.activeStep,
         reviewError: null,
         startError: null,
       }));
@@ -389,28 +384,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     removeStep: (key) =>
       set((s) => ({
         steps: s.steps.filter((step) => step.key !== key),
-        activeStep: s.activeStep === key ? null : s.activeStep,
         reviewError: null,
         startError: null,
       })),
-    setActiveStep: (activeStep) => set({ activeStep }),
     togglePick: (asset) =>
       set((s) => ({
         picked: s.picked.includes(asset) ? s.picked.filter((a) => a !== asset) : [...s.picked, asset],
         reviewError: null,
         startError: null,
       })),
-    // A chip click with a band-math step: the name goes at the end of the
-    // expression last worked on, or of the first one.
-    insertBand: (name) => {
-      const s = get();
-      const bandMath = s.steps.filter((step) => step.op === 'band_math');
-      const target = bandMath.find((step) => step.key === s.activeStep) ?? bandMath[0];
-      if (!target) return;
-      const current = typeof target.values.expression === 'string' ? target.values.expression : '';
-      const joiner = current === '' || /[\s(]$/u.test(current) ? '' : ' ';
-      s.updateStep(target.key, 'expression', `${current}${joiner}${name}`);
-    },
     setDtype: (dtype) => set({ dtype, reviewError: null, startError: null }),
 
     reviewOrder: async () => {

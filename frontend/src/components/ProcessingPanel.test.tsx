@@ -233,15 +233,110 @@ describe('the panel built from the schema', () => {
     expect(container.textContent).not.toContain('Reproject');
   });
 
-  it('a chip inserts its name into the expression and the bands follow it', async () => {
-    select([scene('S2B_A')]);
-    await openPanel();
-    click(button('＋ Band math'));
-    click(button('nir'));
-    const input = container.querySelector<HTMLInputElement>('input[id$="-expression"]')!;
-    expect(input.value).toBe('nir');
-    expect(button('nir').getAttribute('aria-pressed')).toBe('true');
-    expect(button('red').getAttribute('aria-pressed')).toBe('false');
+  describe('a band chip (Otto, 12.10.2026)', () => {
+    const expression = () => container.querySelector<HTMLInputElement>('input[id$="-expression"]')!;
+    const pressed = (name: string) => button(name).getAttribute('aria-pressed');
+
+    function focusExpression(value: string, caret: number, end = caret) {
+      typeInto(expression(), value);
+      act(() => {
+        expression().focus();
+        expression().setSelectionRange(caret, end);
+      });
+    }
+
+    async function withBandMath() {
+      select([scene('S2B_A')]);
+      await openPanel();
+      click(button('＋ Band math'));
+    }
+
+    it('inserts its name where the cursor is in an expression, and the bands follow the expression', async () => {
+      await withBandMath();
+      focusExpression('(  - red)', 2);
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      act(() => {
+        button('nir').dispatchEvent(press);
+      });
+      expect(press.defaultPrevented).toBe(true); // the click does not take the cursor away
+      click(button('nir'));
+      expect(expression().value).toBe('( nir - red)');
+      expect(document.activeElement).toBe(expression());
+      expect(expression().selectionStart).toBe(5); // behind the name
+      expect([pressed('nir'), pressed('red')]).toEqual(['true', 'true']);
+    });
+
+    it('puts a space where the name would run into its neighbours', async () => {
+      await withBandMath();
+      focusExpression('a+b', 2);
+      click(button('red'));
+      expect(expression().value).toBe('a+ red b');
+    });
+
+    it('replaces what is selected in the expression', async () => {
+      await withBandMath();
+      focusExpression('x + y', 4, 5);
+      click(button('nir'));
+      expect(expression().value).toBe('x + nir');
+    });
+
+    it('only adds the band to the order, and changes no expression, without the cursor in one', async () => {
+      await withBandMath();
+      typeInto(expression(), 'red * 2');
+      act(() => expression().blur());
+      click(button('nir'));
+      expect(expression().value).toBe('red * 2');
+      expect(pressed('nir')).toBe('true');
+      click(button('nir'));
+      expect(expression().value).toBe('red * 2');
+      expect(pressed('nir')).toBe('false');
+    });
+
+    it('does not insert while the cursor is in another field', async () => {
+      select([scene('S2B_A')]);
+      await openPanel();
+      click(button('＋ Band math'));
+      click(button('＋ Reproject and resample'));
+      const resolution = container.querySelector<HTMLInputElement>('input[id$="-resolution"]')!;
+      act(() => resolution.focus());
+      click(button('nir'));
+      expect(resolution.value).toBe('');
+      expect(expression().value).toBe('');
+      expect(pressed('nir')).toBe('true');
+    });
+
+    it('leaves a band out only where no expression names it', async () => {
+      await withBandMath();
+      typeInto(expression(), 'red + nir');
+      act(() => expression().blur());
+      const before = useProcessingStore.getState().picked;
+      click(button('red'));
+      expect(pressed('red')).toBe('true');
+      expect(useProcessingStore.getState().picked).toBe(before);
+      expect(expression().value).toBe('red + nir');
+      expect(button('red').title).toContain('named in an expression');
+    });
+
+    it('works without a band-math step: a click adds or leaves out', async () => {
+      select([scene('S2B_A')]);
+      await openPanel();
+      click(button('red'));
+      expect(pressed('red')).toBe('true');
+      click(button('red'));
+      expect(pressed('red')).toBe('false');
+    });
+
+    it('says under the chips what a click does', async () => {
+      select([scene('S2B_A')]);
+      await openPanel();
+      const hint = () => container.querySelector('section[aria-label="Bands"] .pp-help')!.textContent;
+      expect(hint()).toContain('A click adds a band to the order or leaves it out.');
+      expect(hint()).not.toContain('cursor');
+      click(button('＋ Band math'));
+      expect(hint()).toContain(
+        "with the cursor in a band-math expression, it inserts the band's name there instead and changes nothing else",
+      );
+    });
   });
 
   it('shows only a reason when nothing is selected', async () => {

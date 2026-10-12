@@ -10,15 +10,17 @@ function FieldInput({
   value,
   error,
   inputId,
+  bandTarget,
   onChange,
-  onFocus,
 }: {
   field: Field;
   value: FieldValue | undefined;
   error: string | undefined;
   inputId: string;
+  // Set on the expression of a band-math step: the key of its step. A band chip
+  // inserts its name only into the field that has the cursor and carries this.
+  bandTarget?: number;
   onChange: (value: FieldValue) => void;
-  onFocus: () => void;
 }) {
   const describedBy = field.description ? `${inputId}-help` : undefined;
   const help = (
@@ -40,7 +42,6 @@ function FieldInput({
           checked={value === true}
           aria-describedby={describedBy}
           onChange={(e) => onChange(e.target.checked)}
-          onFocus={onFocus}
         />
         {field.title}
         {help}
@@ -59,7 +60,6 @@ function FieldInput({
           aria-describedby={describedBy}
           aria-invalid={!!error}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={onFocus}
         >
           <option value="">— choose —</option>
           {field.options?.map((option) => (
@@ -78,8 +78,8 @@ function FieldInput({
           spellCheck={false}
           aria-describedby={describedBy}
           aria-invalid={!!error}
+          data-band-target={bandTarget}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={onFocus}
         />
       )}
       {help}
@@ -98,7 +98,6 @@ export default function StepForm({
   unsupported,
   refusal,
   onChange,
-  onFocus,
   onMove,
   onRemove,
 }: {
@@ -114,7 +113,6 @@ export default function StepForm({
   unsupported?: string;
   refusal: string | null;
   onChange: (name: string, value: FieldValue) => void;
-  onFocus: () => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
 }) {
@@ -154,8 +152,8 @@ export default function StepForm({
             value={value}
             error={showErrors || touched ? errors[field.name] : undefined}
             inputId={`pp-step-${stepKey}-${field.name}`}
+            bandTarget={operator?.op === 'band_math' && field.name === 'expression' ? stepKey : undefined}
             onChange={(v) => onChange(field.name, v)}
-            onFocus={onFocus}
           />
         );
       })}

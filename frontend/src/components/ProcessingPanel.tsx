@@ -4,6 +4,7 @@
 // the schema of `/processing/processes/recipe?dataset=…`, nothing per dataset
 // here. The map preview of the steps comes with M4-13c.
 
+import { useLayoutEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { groupIndexOfItem } from '../grouping';
@@ -11,9 +12,11 @@ import {
   formatBytes,
   formatDuration,
   formatMegapixels,
+  insertName,
   namesInExpression,
   processBlockReason,
   uniqueNames,
+  type BandSource,
 } from '../processingOrder';
 import { bandMathExpressions, orderView, selectionState, useProcessingStore, type OrderView } from '../processingStore';
 import { useAppStore } from '../store';
@@ -22,11 +25,26 @@ import StepForm from './StepForm';
 
 const SCENE_NOTE = 'The result covers only this scene; several scenes in one job come with a later version.';
 
+// The expression field that has the cursor, if one has: only into that field a
+// band chip inserts its name (Otto, 12.10.2026).
+function focusedExpression(): HTMLInputElement | null {
+  const active = document.activeElement;
+  return active instanceof HTMLInputElement && active.dataset.bandTarget !== undefined ? active : null;
+}
+
 function Bands({ view }: { view: OrderView }) {
   const steps = useProcessingStore((s) => s.steps);
   const picked = useProcessingStore((s) => s.picked);
   const togglePick = useProcessingStore((s) => s.togglePick);
-  const insertBand = useProcessingStore((s) => s.insertBand);
+  const updateStep = useProcessingStore((s) => s.updateStep);
+  // Where the cursor goes once the expression has its new text: a controlled
+  // field moves it to the end when its value changes, so it is set after the commit.
+  const caret = useRef<{ field: HTMLInputElement; at: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = caret.current;
+    caret.current = null;
+    if (pending?.field.isConnected) pending.field.setSelectionRange(pending.at, pending.at);
+  });
   const unique = uniqueNames(view.sources);
   const hasBandMath = steps.some((s) => s.op === 'band_math');
   const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
@@ -39,53 +57,63 @@ function Bands({ view }: { view: OrderView }) {
       </section>
     );
   }
+
+  // A click with the cursor in an expression inserts the name there; any other
+  // click adds the band to the order or leaves it out and changes no expression.
+  const click = (source: BandSource, name: string | null) => {
+    const field = name !== null && unique.get(name) === source.asset ? focusedExpression() : null;
+    if (field && name !== null) {
+      const start = field.selectionStart ?? field.value.length;
+      const inserted = insertName(field.value, start, field.selectionEnd ?? start, name);
+      caret.current = { field, at: inserted.caret };
+      updateStep(Number(field.dataset.bandTarget), 'expression', inserted.text);
+      return;
+    }
+    const byExpression = source.names.some((n) => named.has(n)) && !picked.includes(source.asset);
+    if (!byExpression) togglePick(source.asset);
+  };
+
+  const chip = (source: BandSource, name: string | null) => {
+    const pressed = view.assets.includes(source.asset);
+    const byExpression = pressed && !picked.includes(source.asset);
+    const label = name !== null && unique.get(name) === source.asset ? name : source.asset;
+    return (
+      <button
+        key={`${source.asset}/${name ?? ''}`}
+        type="button"
+        className={`pp-chip${pressed ? ' on' : ''}`}
+        aria-pressed={pressed}
+        title={
+          byExpression
+            ? `${source.asset} is named in an expression: take the name out there to leave it out`
+            : name === null
+              ? `${pressed ? 'Leave out' : 'Add'} ${source.asset} (it describes no band names to insert)`
+              : `${pressed ? 'Leave out' : 'Add'} ${source.asset}`
+        }
+        // Keep the cursor where it is: a click on a button would take the focus,
+        // and with it the field a name is inserted into.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => click(source, name)}
+      >
+        {label}
+      </button>
+    );
+  };
+
   return (
     <section className="pp-section" aria-label="Bands">
       <h3 className="pp-heading">Bands</h3>
       <div className="pp-chips">
-        {view.sources.flatMap((source) => {
-          const pressed = view.assets.includes(source.asset);
-          if (source.names.length === 0) {
-            return [
-              <button
-                key={source.asset}
-                type="button"
-                className={`pp-chip${pressed ? ' on' : ''}`}
-                aria-pressed={pressed}
-                title="This asset does not describe its bands: it goes into the order, but offers no name to insert"
-                onClick={() => togglePick(source.asset)}
-              >
-                {source.asset}
-              </button>,
-            ];
-          }
-          // With a band-math step a click inserts the name, except on a band
-          // picked by hand that no expression names: that click leaves it out.
-          const pickedOnly = picked.includes(source.asset) && !source.names.some((n) => named.has(n));
-          return source.names.map((name) => {
-            const insertable = unique.get(name) === source.asset && !pickedOnly;
-            return (
-              <button
-                key={`${source.asset}/${name}`}
-                type="button"
-                className={`pp-chip${pressed ? ' on' : ''}`}
-                aria-pressed={pressed}
-                title={
-                  hasBandMath && insertable
-                    ? `Insert ${name} into the expression`
-                    : `${pressed ? 'Leave out' : 'Use'} ${source.asset}`
-                }
-                onClick={() => (hasBandMath && insertable ? insertBand(name) : togglePick(source.asset))}
-              >
-                {insertable ? name : source.asset}
-              </button>
-            );
-          });
-        })}
+        {view.sources.flatMap((source) =>
+          source.names.length === 0 ? [chip(source, null)] : source.names.map((name) => chip(source, name)),
+        )}
       </div>
       <p className="pp-help">
-        {view.assets.length} of at most {view.info?.maxAssets ?? 16} bands in the order
-        {hasBandMath ? '; a click inserts the name into the expression.' : '.'}
+        {view.assets.length} of at most {view.info?.maxAssets ?? 16} bands in the order. A click adds a band to the
+        order or leaves it out
+        {hasBandMath
+          ? "; with the cursor in a band-math expression, it inserts the band's name there instead and changes nothing else."
+          : '.'}
       </p>
     </section>
   );
@@ -183,7 +211,6 @@ export default function ProcessingPanel() {
                           showErrors={showErrors}
                           refusal={refusalAt(index)}
                           onChange={(name, value) => p.updateStep(step.key, name, value)}
-                          onFocus={() => p.setActiveStep(step.key)}
                           onMove={(direction) => p.moveStep(step.key, direction)}
                           onRemove={() => p.removeStep(step.key)}
                         />

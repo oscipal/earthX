@@ -159,6 +159,16 @@ export function namesInExpression(expression: string): Set<string> {
   return names;
 }
 
+// `name` put into `value` over the selection `start`–`end`, with a space where
+// the neighbours would otherwise run into it; and where the caret goes after.
+export function insertName(value: string, start: number, end: number, name: string): { text: string; caret: number } {
+  const before = value.slice(0, start);
+  const after = value.slice(end);
+  const lead = before === '' || /[\s(]$/u.test(before) ? '' : ' ';
+  const trail = after === '' || /^[\s),]/u.test(after) ? '' : ' ';
+  return { text: `${before}${lead}${name}${trail}${after}`, caret: before.length + lead.length + name.length };
+}
+
 // A name maps to an asset only if exactly one source carries it (two Zarr
 // groups can both carry `b04`; the panel does not choose for the user).
 export function uniqueNames(sources: readonly BandSource[]): Map<string, string> {
