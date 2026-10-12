@@ -26,7 +26,6 @@ import {
   bandSources,
   buildOrder,
   candidateItems,
-  defaultDtype,
   orderAssets,
   processInfo,
   stepOfRefusal,
@@ -35,6 +34,15 @@ import {
   type DraftStep,
   type ProcessInfo,
 } from './processingOrder';
+import {
+  dtypeOptions,
+  effectiveDtype,
+  integerNote,
+  recommendDtype,
+  recommendResampling,
+  type DtypeOption,
+  type Recommendation,
+} from './processingDefaults';
 import { initialValues, type FieldValue } from './schemaForm';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import type { StacItem } from './types';
@@ -117,7 +125,13 @@ export interface OrderView {
   item: StacItem | null;
   sources: BandSource[];
   assets: string[];
+  // The type the order is sent with, and the options and notes around the choice.
   dtype: string;
+  dtypeOptions: DtypeOption[];
+  dtypeRecommendation: Recommendation | null;
+  dtypeNote: string | null;
+  // Per step key and field name: what the form pre-selects where the user chose nothing.
+  recommended: Record<number, Record<string, Recommendation>>;
   built: BuiltOrder | null;
   key: string | null;
 }
@@ -161,12 +175,48 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
   const format = dataset?.collection['earthx:format'] ?? null;
   const sources = item ? bandSources(item, format, info?.variableSeparator ?? null) : [];
   const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps));
-  const dtype = p.dtype ?? (info ? defaultDtype(p.steps, sources, assets, info.dtypes) : '');
+  // The recommendations (Otto, 12.10.2026): a reprojection without a chosen
+  // resampling is sent with the recommended one, and the output type follows
+  // the steps as they will be sent.
+  const inOrder = sources.filter((s) => assets.includes(s.asset));
+  const resampling = recommendResampling({
+    interpolation: dataset?.collection['earthx:capabilities']?.interpolation,
+    bands: inOrder,
+  });
+  const recommended: OrderView['recommended'] = {};
+  const steps = p.steps.map((step) => {
+    if (step.op !== 'reproject') return step;
+    recommended[step.key] = { resampling };
+    const chosen = typeof step.values.resampling === 'string' ? step.values.resampling : '';
+    return chosen ? step : { ...step, values: { ...step.values, resampling: resampling.value } };
+  });
+  const choices = steps.map((step) => ({
+    op: step.op,
+    ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
+  }));
+  const dtypes = info?.dtypes ?? [];
+  const dtypeRecommendation = info ? recommendDtype({ steps: choices, bands: inOrder, allowed: dtypes }) : null;
+  const options = dtypeRecommendation ? dtypeOptions({ dtypes, steps: choices, recommended: dtypeRecommendation }) : [];
+  const dtype = dtypeRecommendation ? effectiveDtype(p.dtype, options, dtypeRecommendation) : '';
   const built =
     info && dataset
-      ? buildOrder({ datasetId: dataset.id, itemId: item?.id ?? null, aoi: app.aoi, steps: p.steps, assets, dtype, info })
+      ? buildOrder({ datasetId: dataset.id, itemId: item?.id ?? null, aoi: app.aoi, steps, assets, dtype, info })
       : null;
-  return { dataset, info, candidates, item, sources, assets, dtype, built, key: built?.order ? canonicalJson(built.order) : null };
+  return {
+    dataset,
+    info,
+    candidates,
+    item,
+    sources,
+    assets,
+    dtype,
+    dtypeOptions: options,
+    dtypeRecommendation,
+    dtypeNote: integerNote(dtype, choices, inOrder),
+    recommended,
+    built,
+    key: built?.order ? canonicalJson(built.order) : null,
+  };
 }
 
 // --- requests that a change of the selection drops ----------------------------

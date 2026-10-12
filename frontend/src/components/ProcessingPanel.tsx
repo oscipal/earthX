@@ -8,6 +8,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { groupIndexOfItem } from '../grouping';
+import { AFTER_BAND_MATH } from '../processingDefaults';
 import {
   formatBytes,
   formatDuration,
@@ -210,6 +211,7 @@ export default function ProcessingPanel() {
                           unsupported={problem?.unsupported}
                           showErrors={showErrors}
                           refusal={refusalAt(index)}
+                          recommended={view.recommended[step.key]}
                           onChange={(name, value) => p.updateStep(step.key, name, value)}
                           onMove={(direction) => p.moveStep(step.key, direction)}
                           onRemove={() => p.removeStep(step.key)}
@@ -255,15 +257,29 @@ export default function ProcessingPanel() {
                 <h3 className="pp-heading">Output</h3>
                 <label className="vc-field pp-field">
                   Data type
-                  <select value={view.dtype} onChange={(e) => p.setDtype(e.target.value)}>
-                    <option value="">— choose —</option>
-                    {info.dtypes.map((dtype) => (
-                      <option key={dtype} value={dtype}>
-                        {dtype}
+                  <select
+                    value={view.dtype}
+                    aria-describedby="pp-dtype-help"
+                    onChange={(e) => p.setDtype(e.target.value)}
+                  >
+                    {view.dtypeOptions.map((option) => (
+                      <option
+                        key={option.value}
+                        value={option.value}
+                        disabled={option.disabledReason !== null}
+                        title={option.disabledReason ?? undefined}
+                      >
+                        {option.label}
                       </option>
                     ))}
                   </select>
                 </label>
+                <span id="pp-dtype-help" className="pp-help">
+                  {view.dtypeRecommendation &&
+                    `Recommended: ${view.dtypeRecommendation.value}. ${view.dtypeRecommendation.reason}`}
+                  {view.dtypeOptions.some((o) => o.disabledReason) && ` ${AFTER_BAND_MATH} These types are not offered.`}
+                </span>
+                {view.dtypeNote && <p className="hint-text warn">{view.dtypeNote}</p>}
               </section>
 
               <section className="pp-section" aria-label="Review">

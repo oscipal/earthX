@@ -99,6 +99,16 @@ export interface BandSource {
   asset: string;
   names: string[];
   dataType: string | null;
+  // What the item says about the values, for the recommendations in
+  // `processingDefaults.ts`; `false`/`null` mean "the item does not say".
+  //  - `classified`: the asset or one of its bands carries `classification:classes`
+  //    or `classification:bitfields` (a class or mask band).
+  //  - `scaled`: some band has a `scale` other than 1 or an `offset` other than 0
+  //    (the core applies it, and the values are no longer the stored integers).
+  //  - `nodata`: the one finite nodata value all its bands state, if they do.
+  classified: boolean;
+  scaled: boolean;
+  nodata: number | null;
 }
 
 // `raster:bands`, or STAC 1.1 `bands` where that is missing or empty — the
@@ -111,6 +121,22 @@ function bandsOf(asset: StacAsset): StacBand[] | null {
 
 function bandCount(asset: StacAsset): number | null {
   return bandsOf(asset)?.length ?? null;
+}
+
+function filled(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function bandFacts(asset: StacAsset): Pick<BandSource, 'classified' | 'scaled' | 'nodata'> {
+  const bands = bandsOf(asset) ?? [];
+  const classified =
+    filled(asset['classification:classes']) ||
+    filled(asset['classification:bitfields']) ||
+    bands.some((b) => filled(b['classification:classes']) || filled(b['classification:bitfields']));
+  const scaled = bands.some((b) => (b.scale != null && b.scale !== 1) || (b.offset != null && b.offset !== 0));
+  const values = new Set(bands.map((b) => (typeof b.nodata === 'number' && Number.isFinite(b.nodata) ? b.nodata : null)));
+  const nodata = values.size === 1 ? [...values][0] : null;
+  return { classified, scaled, nodata };
 }
 
 function firstDataType(asset: StacAsset): string | null {
@@ -135,14 +161,19 @@ export function bandSources(item: StacItem, format: string | null | undefined, s
       if (!isGeoTiff(asset)) continue;
       const count = bandCount(asset);
       const names = count === null ? [] : count === 1 ? [key] : Array.from({ length: count }, (_, i) => `${key}_${i + 1}`);
-      sources.push({ asset: key, names, dataType: firstDataType(asset) });
+      sources.push({ asset: key, names, dataType: firstDataType(asset), ...bandFacts(asset) });
     } else if (format === 'zarr') {
       const bands = asset.bands;
       if (!separator || !Array.isArray(bands)) continue;
       const dataType = firstDataType(asset);
       for (const band of bands) {
         if (band && typeof band.name === 'string' && band.name) {
-          sources.push({ asset: `${key}${separator}${band.name}`, names: [band.name], dataType });
+          sources.push({
+            asset: `${key}${separator}${band.name}`,
+            names: [band.name],
+            dataType,
+            ...bandFacts(asset),
+          });
         }
       }
     }
@@ -287,14 +318,6 @@ export interface BuiltOrder {
   order: Order | null;
   stepProblems: StepProblem[];
   problems: string[];
-}
-
-// K9: `float32` once a band-math step is there (a ratio is a fraction), else
-// the data type of the first band; empty where nothing tells it.
-export function defaultDtype(steps: readonly DraftStep[], sources: readonly BandSource[], assets: readonly string[], dtypes: readonly string[]): string {
-  if (steps.some((s) => s.op === 'band_math') && dtypes.includes('float32')) return 'float32';
-  const first = sources.find((s) => s.asset === assets[0]);
-  return first?.dataType && dtypes.includes(first.dataType) ? first.dataType : '';
 }
 
 export function buildOrder(args: {

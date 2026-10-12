@@ -9,7 +9,6 @@ import {
   bandSources,
   buildOrder,
   candidateItems,
-  defaultDtype,
   formatBytes,
   formatDuration,
   namesInExpression,
@@ -69,7 +68,9 @@ describe('bandSources (K7)', () => {
       red: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
       thumbnail: { href: 'y', type: 'image/jpeg', roles: ['thumbnail'] },
     });
-    expect(bandSources(it1, 'cog', null)).toEqual([{ asset: 'red', names: ['red'], dataType: 'uint16' }]);
+    expect(bandSources(it1, 'cog', null)).toEqual([
+      { asset: 'red', names: ['red'], dataType: 'uint16', classified: false, scaled: false, nodata: null },
+    ]);
   });
 
   it('names the bands of a multi-band COG asset <asset>_1 … from raster:bands or bands', () => {
@@ -81,12 +82,35 @@ describe('bandSources (K7)', () => {
 
   it('reads bands where raster:bands is there but empty, as the backend does', () => {
     const it1 = item('a', { visual: { href: 'x', type: COG, 'raster:bands': [], bands: [{ data_type: 'uint8' }, {}] } });
-    expect(bandSources(it1, 'cog', null)[0]).toEqual({ asset: 'visual', names: ['visual_1', 'visual_2'], dataType: 'uint8' });
+    expect(bandSources(it1, 'cog', null)[0]).toMatchObject({ asset: 'visual', names: ['visual_1', 'visual_2'], dataType: 'uint8' });
+  });
+
+  it('reads what the item says about classes, scaling and nodata', () => {
+    const it1 = item('a', {
+      // as the real Sentinel-2 item has it: scaled, with a nodata value
+      red: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint16', nodata: 0, scale: 0.0001, offset: -0.1 }] },
+      // a class band, as the classification extension marks it (asset level)
+      scl: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint8', nodata: 0 }], 'classification:classes': [{ value: 4 }] },
+      // classes in the band object of a multiband asset
+      multi: { href: 'x', type: COG, bands: [{ data_type: 'uint8', nodata: 255 }, { 'classification:bitfields': [{ offset: 0 }] }] },
+      // two bands that disagree on nodata
+      odd: { href: 'x', type: COG, bands: [{ nodata: 0 }, { nodata: 1 }] },
+      // nodata NaN is no value an integer type can hold
+      flt: { href: 'x', type: COG, bands: [{ data_type: 'float32', nodata: 'nan' }] },
+    });
+    const by = Object.fromEntries(bandSources(it1, 'cog', null).map((b) => [b.asset, b]));
+    expect(by.red).toMatchObject({ classified: false, scaled: true, nodata: 0 });
+    expect(by.scl).toMatchObject({ classified: true, scaled: false, nodata: 0 });
+    expect(by.multi).toMatchObject({ classified: true, nodata: null });
+    expect(by.odd.nodata).toBeNull();
+    expect(by.flt.nodata).toBeNull();
   });
 
   it('offers a COG asset without band descriptions with no name to insert', () => {
     const dem = item('d', { data: { href: 'x', type: 'image/tiff; application=geotiff' } });
-    expect(bandSources(dem, 'cog', null)).toEqual([{ asset: 'data', names: [], dataType: null }]);
+    expect(bandSources(dem, 'cog', null)).toEqual([
+      { asset: 'data', names: [], dataType: null, classified: false, scaled: false, nodata: null },
+    ]);
   });
 
   it('names Zarr variables from the core field bands, one order asset per variable', () => {
@@ -95,8 +119,8 @@ describe('bandSources (K7)', () => {
       product: { href: 'y', type: 'application/vnd+zarr' },
     });
     expect(bandSources(z, 'zarr', ':')).toEqual([
-      { asset: 'SR_10m:b04', names: ['b04'], dataType: null },
-      { asset: 'SR_10m:b08', names: ['b08'], dataType: null },
+      { asset: 'SR_10m:b04', names: ['b04'], dataType: null, classified: false, scaled: false, nodata: null },
+      { asset: 'SR_10m:b08', names: ['b08'], dataType: null, classified: false, scaled: false, nodata: null },
     ]);
   });
 
@@ -115,12 +139,13 @@ describe('bandSources (K7)', () => {
 });
 
 describe('the assets of the order', () => {
+  const plain = { dataType: null, classified: false, scaled: false, nodata: null };
   const sources = [
-    { asset: 'red', names: ['red'], dataType: null },
-    { asset: 'nir', names: ['nir'], dataType: null },
-    { asset: 'scl', names: ['scl'], dataType: null },
-    { asset: 'A:b04', names: ['b04'], dataType: null },
-    { asset: 'B:b04', names: ['b04'], dataType: null },
+    { asset: 'red', names: ['red'], ...plain },
+    { asset: 'nir', names: ['nir'], ...plain },
+    { asset: 'scl', names: ['scl'], ...plain },
+    { asset: 'A:b04', names: ['b04'], ...plain },
+    { asset: 'B:b04', names: ['b04'], ...plain },
   ];
 
   it('finds the names of an expression, not its functions', () => {
@@ -227,15 +252,6 @@ describe('buildOrder', () => {
 });
 
 describe('small rules', () => {
-  it('starts the data type with float32 for band math, else from the first band (K9)', () => {
-    const sources = [{ asset: 'data', names: ['data'], dataType: 'int16' }];
-    const bm: DraftStep[] = [{ key: 1, op: 'band_math', opVersion: 1, values: {} }];
-    expect(defaultDtype(bm, sources, ['data'], S2.dtypes)).toBe('float32');
-    expect(defaultDtype([], sources, ['data'], S2.dtypes)).toBe('int16');
-    expect(defaultDtype([], [{ asset: 'data', names: [], dataType: null }], ['data'], S2.dtypes)).toBe('');
-    expect(defaultDtype([], [{ asset: 'data', names: [], dataType: 'complex64' }], ['data'], S2.dtypes)).toBe('');
-  });
-
   it('finds the step a refusal names', () => {
     expect(stepOfRefusal('the order is not valid: parameters of step 1 (reproject): crs')).toBe(1);
     expect(stepOfRefusal("step 0: 'band_math' cannot run here")).toBe(0);

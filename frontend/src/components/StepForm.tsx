@@ -2,6 +2,7 @@
 // parameter schema (`schemaForm.ts`). A help while typing; the server's own
 // refusal of this step is shown below it.
 
+import type { Recommendation } from '../processingDefaults';
 import type { Operator } from '../processingOrder';
 import type { Field, FieldValue } from '../schemaForm';
 
@@ -11,6 +12,7 @@ function FieldInput({
   error,
   inputId,
   bandTarget,
+  recommended,
   onChange,
 }: {
   field: Field;
@@ -20,6 +22,9 @@ function FieldInput({
   // Set on the expression of a band-math step: the key of its step. A band chip
   // inserts its name only into the field that has the cursor and carries this.
   bandTarget?: number;
+  // What the panel recommends for this field: pre-selected while the user has
+  // chosen nothing, marked "(recommended)", with its reason below (Otto, 12.10.2026).
+  recommended?: Recommendation;
   onChange: (value: FieldValue) => void;
 }) {
   const describedBy = field.description ? `${inputId}-help` : undefined;
@@ -28,6 +33,11 @@ function FieldInput({
       {field.description && (
         <span id={describedBy} className="pp-help">
           {field.description}
+        </span>
+      )}
+      {recommended && (
+        <span className="pp-help">
+          Recommended: {recommended.value}. {recommended.reason}
         </span>
       )}
       {error && <span className="hint-text error">{error}</span>}
@@ -48,7 +58,7 @@ function FieldInput({
       </label>
     );
   }
-  const text = typeof value === 'string' ? value : '';
+  const text = (typeof value === 'string' && value) || recommended?.value || '';
   return (
     <label className="vc-field pp-field" htmlFor={inputId}>
       {field.title}
@@ -61,10 +71,10 @@ function FieldInput({
           aria-invalid={!!error}
           onChange={(e) => onChange(e.target.value)}
         >
-          <option value="">— choose —</option>
+          {!recommended && <option value="">— choose —</option>}
           {field.options?.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {option === recommended?.value ? `${option} (recommended)` : option}
             </option>
           ))}
         </select>
@@ -97,6 +107,7 @@ export default function StepForm({
   showErrors,
   unsupported,
   refusal,
+  recommended,
   onChange,
   onMove,
   onRemove,
@@ -112,6 +123,7 @@ export default function StepForm({
   showErrors: boolean;
   unsupported?: string;
   refusal: string | null;
+  recommended?: Record<string, Recommendation>;
   onChange: (name: string, value: FieldValue) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -153,6 +165,7 @@ export default function StepForm({
             error={showErrors || touched ? errors[field.name] : undefined}
             inputId={`pp-step-${stepKey}-${field.name}`}
             bandTarget={operator?.op === 'band_math' && field.name === 'expression' ? stepKey : undefined}
+            recommended={recommended?.[field.name]}
             onChange={(v) => onChange(field.name, v)}
           />
         );
