@@ -162,7 +162,7 @@ class TestWhatItTurnsAway:
         self, rig: Rig, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """M4-11 F5: the estimate of an export refuses above the cap, with the status of placing it."""
-        monkeypatch.setattr("earthx.processing.plan.MAX_EXPORT_JOB_BYTES", 1)
+        monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", 1)
         body = await self.refused(rig, order(assets=("red",), steps=[], output=CROP), 413, "size")
         assert "an export job may write" in body["detail"]
 
@@ -219,11 +219,11 @@ class TestWhatItTurnsAway:
         problem(response, 502)
         assert "secret.invalid" not in response.text
 
-    async def test_several_items_are_not_run_yet_so_not_estimated(self, rig: Rig) -> None:
+    async def test_several_groups_are_not_a_raster_job_so_not_estimated(self, rig: Rig) -> None:
         rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = s2_item("S2_B", NEAR)
         response = await ask(rig, order(groups=(("S2_A",), ("S2_B",))))
         body = problem(response, 422)
-        assert body["type"] == "urn:earthx:order-refused:scope" and "one item" in body["detail"]
+        assert body["type"] == "urn:earthx:order-refused:order" and "one group" in body["detail"]
         untouched_queue = (count(rig.db, "earthx_run"), count(rig.db, "earthx_job"))
         assert untouched_queue == (0, 0)
 

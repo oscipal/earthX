@@ -232,7 +232,8 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | erledigt (#132) |
 | M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | erledigt (#133, `plans/m4-11-export-job.md`) |
 | M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a, M4-13b | offen |
-| M4-12 | Mosaik ganzer Szenen je Überflug als Job | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | offen |
+| M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | PR #136 (`plans/m4-12-mosaik-ueberflug.md`), Plan freigegeben am 10.10.2026 |
+| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | offen |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (#134); Umsetzung in a bis c |
 | M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | erledigt (#134) |
 | M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | offen |
@@ -898,6 +899,10 @@ braucht (B10), die Regel für Überlappungen und wo der Viewer den Job anbietet
 (Processing-Panel aus M4-13b oder eigener Knopf); zählt die Grenze
 `MAX_ORDER_ITEMS` (M4-07b F5) für einen Überflug nicht aus, sie mit Begründung
 anheben.
+**Im Plan-Schritt entschieden (10.10.2026):** kein eigenes Capability-Flag, die Regel für
+Überlappungen ist die des Export-Jobs und `api` sortiert die Liste (S5); der Plan
+`plans/m4-12-mosaik-ueberflug.md` teilt die Aufgabe in **M4-12a** (Backend) und
+**M4-12b** (Frontend, nach M4-13b).
 **Abnahme:** Test mit synthetischen Szenen über zwei Zonen; Prüfanleitung.
 
 ### M4-13 — Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status

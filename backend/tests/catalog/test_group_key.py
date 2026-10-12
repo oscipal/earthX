@@ -116,3 +116,35 @@ def test_the_key_of_the_registered_dataset_is_the_acquisition_day_per_tile() -> 
     assert viewer is not None
     scene = item(datetime="2026-07-24T10:38:17.453000Z", **{"grid:code": "MGRS-32TMS"})
     assert group_key(scene, viewer) == ("2026-07-24", "MGRS-32TMS")
+
+
+class TestTheOverpassKey:
+    """``fields`` names the other key of the registry: the overpass a mosaic job covers (M4-12)."""
+
+    def test_the_named_fields_replace_group_by(self) -> None:
+        both = ViewerInfo(
+            group_by=("datetime", "grid:code"),
+            min_zoom=0,
+            max_zoom=19,
+            browse=BrowseMode.FULL_RESOLUTION,
+            quicklook_nodata_max=None,
+            results_group_by=("datetime", "s2:datatake_id"),
+        )
+        scene = item(datetime="2026-07-24T10:38:17Z", **{"grid:code": "MGRS-32TMS", "s2:datatake_id": "GS2B_1"})
+        assert group_key(scene, both) == ("2026-07-24", "MGRS-32TMS")
+        assert group_key(scene, both, both.results_group_by) == ("2026-07-24", "GS2B_1")
+
+    def test_two_tiles_of_one_overpass_share_the_key_and_the_next_day_does_not(self) -> None:
+        keys = [
+            group_key(item(datetime=day, **{"s2:datatake_id": take}), viewer(group_by=("datetime", "s2:datatake_id")))
+            for day, take in (
+                ("2026-07-24T10:38:17Z", "GS2B_1"),
+                ("2026-07-24T10:38:19Z", "GS2B_1"),
+                ("2026-07-25T10:38:17Z", "GS2B_1"),
+            )
+        ]
+        assert keys[0] == keys[1] != keys[2]
+
+    def test_a_missing_overpass_property_is_an_error_too(self) -> None:
+        with pytest.raises(MissingProperty, match="s2:datatake_id"):
+            group_key(item(datetime="2026-07-24T10:00:00Z"), SENTINEL_2, ("datetime", "s2:datatake_id"))

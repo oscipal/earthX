@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
@@ -529,18 +529,22 @@ class MissingProperty(LookupError):
     """
 
 
-def group_key(item: Mapping[str, object], viewer: ViewerInfo) -> tuple[str, ...]:
+def group_key(
+    item: Mapping[str, object], viewer: ViewerInfo, fields: Sequence[str] | None = None
+) -> tuple[str, ...]:
     """The grouping key of one item, following the rule of :class:`ViewerInfo`.
 
-    Each entry of ``group_by`` becomes one part of the key: a STAC instant as its
+    Each entry of ``fields`` becomes one part of the key: a STAC instant as its
     UTC date (``YYYY-MM-DD``), anything else as its own text. The parts stay in the
-    order the registry names them, because the key is read by people too.
+    order the registry names them, because the key is read by people too. ``fields``
+    is ``group_by`` unless the caller names the other key of the registry,
+    ``results_group_by`` — the overpass (P19, M4-12), which one mosaic job covers.
     """
     properties = item.get("properties")
     if not isinstance(properties, Mapping):
         raise MissingProperty("the item carries no properties")
     key: list[str] = []
-    for name in viewer.group_by:
+    for name in viewer.group_by if fields is None else fields:
         if name not in properties:
             raise MissingProperty(name)
         key.append(_key_part(properties[name]))

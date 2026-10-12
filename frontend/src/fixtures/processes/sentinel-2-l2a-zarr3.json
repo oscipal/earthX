@@ -309,24 +309,33 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "The order (§4.1): what someone asks for, without any address.",
+        "description": "The order (§4.1): what someone asks for, without any address.\n\n``aoi`` may be left out for a raster job: the order then asks for the whole scenes it\nnames, and `api` puts the union of their footprints into the recipe (M4-12); an export\nneeds the area it cuts out, which `api` checks. The recipe itself always carries an AOI,\nso the core and the hash do not change.",
         "properties": {
           "aoi": {
-            "discriminator": {
-              "mapping": {
-                "MultiPolygon": "#/$defs/MultiPolygon",
-                "Polygon": "#/$defs/Polygon"
-              },
-              "propertyName": "type"
-            },
-            "oneOf": [
+            "anyOf": [
               {
-                "$ref": "#/$defs/Polygon"
+                "discriminator": {
+                  "mapping": {
+                    "MultiPolygon": "#/$defs/MultiPolygon",
+                    "Polygon": "#/$defs/Polygon"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/Polygon"
+                  },
+                  {
+                    "$ref": "#/$defs/MultiPolygon"
+                  }
+                ]
               },
               {
-                "$ref": "#/$defs/MultiPolygon"
+                "type": "null"
               }
             ],
+            "default": null,
+            "description": "The area to cut out, a Polygon or MultiPolygon in EPSG:4326. Left out, a raster job covers the whole scenes it names (the union of their footprints); an export needs it.",
             "title": "Aoi"
           },
           "inputs": {
@@ -366,7 +375,6 @@
         },
         "required": [
           "recipe_version",
-          "aoi",
           "steps",
           "output",
           "inputs"
