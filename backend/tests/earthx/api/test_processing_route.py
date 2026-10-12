@@ -26,6 +26,7 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
+from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.recipe import job_recipe_document
 from tests.conftest import own_log_text
@@ -1281,3 +1282,49 @@ class TestAMosaic:
         rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = scene("S2_B", (10.0, 40.0, 20.0, 50.0))
         response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(self.whole("S2_A", "S2_B")))
         assert problem(response, 413)["type"] == "urn:earthx:order-refused:size"
+
+
+class TestAnOrderOnAGeographicGrid:
+    """Known fault, not fixed here (own task): the cost estimate takes ``gsd`` (metres) for the unit of the raster.
+
+    A DEM tile lies in EPSG:4326, in degrees. ``processing.plan._input_meta`` builds the raster the
+    first pass would read as ``Affine(gsd, 0, 0, 0, -gsd, 0)`` in the CRS of the asset, so for the DEM it is
+    a box of thousands of degrees, and the ``reproject`` step then sizes its target grid from that
+    (``test_plan.TestTheEstimateOnAGeographicGrid``). The estimate is run by the queue to set the time
+    limit of a run (`jobs.submit`), so the order never gets into the queue.
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        raises=UnsupportedRecipe,
+        reason="the estimate sizes a reprojection of a geographic raster from gsd in degrees; "
+        "open line of 2026-10-12 in ENTSCHEIDUNGSLOG.md, own task",
+    )
+    async def test_a_dem_order_with_a_reprojection_is_placed(self, rig: Rig) -> None:
+        rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
+        step = {
+            "op": "reproject",
+            "op_version": 2,
+            "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "bilinear"},
+        }
+        document = order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",), steps=[step])
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(EXECUTION, json=envelope(document))
+        assert response.status_code == 201, response.status_code
+
+    @pytest.mark.xfail(
+        strict=True,
+        raises=UnsupportedRecipe,
+        reason="the same fault in the estimate route; open line of 2026-10-12 in ENTSCHEIDUNGSLOG.md, own task",
+    )
+    async def test_the_estimate_of_a_dem_order_with_a_reprojection_is_given(self, rig: Rig) -> None:
+        rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
+        step = {
+            "op": "reproject",
+            "op_version": 2,
+            "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "bilinear"},
+        }
+        document = order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",), steps=[step])
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post("/processing/processes/recipe/estimate", json=envelope(document))
+        assert response.status_code == 200, response.status_code
