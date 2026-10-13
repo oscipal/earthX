@@ -248,6 +248,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
 | M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |
+| M4-27 | Live-Smoke auf die Signaturen von M4-01b bringen; Trockenlauf mit Transport-Double im normalen `pytest` (`plans/m4-27-live-smoke-reparieren.md`) | Quer | A | Sonnet (mittel) | M4-21 | PR (Entwurf) |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
