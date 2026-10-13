@@ -3,6 +3,9 @@
 // store of its own next to `store.ts`; it reads the selection (dataset,
 // scenes, AOI) from there and never writes to it.
 //
+// An order names the scenes of one pass (M4-12b); the pass is the one the
+// selection has in the AOI, or the one the user picks.
+//
 // The draft belongs to one dataset and one AOI: a change of either drops it.
 // An estimate belongs to exactly one order (K4): any change to the order makes
 // it disappear, and "Start job" waits for a new one.
@@ -20,6 +23,7 @@ import {
   fetchResults,
   placeJob,
   type EstimateDocument,
+  type Order,
   type StatusInfo,
 } from './processing';
 import {
@@ -27,11 +31,13 @@ import {
   buildOrder,
   candidateItems,
   orderAssets,
+  passesOf,
   processInfo,
   stepOfRefusal,
   type BandSource,
   type BuiltOrder,
   type DraftStep,
+  type Pass,
   type ProcessInfo,
 } from './processingOrder';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
@@ -77,7 +83,8 @@ export interface JobEntry {
 interface ProcessingState {
   open: boolean;
   descriptions: Record<string, Description>;
-  itemId: string | null;
+  // `Pass.key` of the pass the user picked; `null` until then (a lone pass needs no pick).
+  passKey: string | null;
   steps: DraftStep[];
   picked: string[];
   dtype: string | null;
@@ -94,7 +101,7 @@ interface ProcessingState {
   closeProcessing: () => void;
   ensureDescription: (datasetId: string) => void;
   resetDraft: () => void;
-  chooseItem: (itemId: string) => void;
+  choosePass: (passKey: string) => void;
   addStep: (op: string, opVersion: number) => void;
   updateStep: (key: number, name: string, value: FieldValue) => void;
   moveStep: (key: number, direction: -1 | 1) => void;
@@ -103,6 +110,7 @@ interface ProcessingState {
   setDtype: (dtype: string) => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
+  placeMosaic: (order: Order) => Promise<{ jobID: string } | { message: string }>;
   cancelJob: (jobID: string) => Promise<void>;
   removeJob: (jobID: string) => void;
   resumeJobs: () => void;
@@ -113,8 +121,10 @@ interface ProcessingState {
 export interface OrderView {
   dataset: DatasetOption | undefined;
   info: ProcessInfo | null;
+  // The selected scenes the AOI meets, split into passes, and the pass the order is for.
   candidates: StacItem[];
-  item: StacItem | null;
+  passes: Pass[];
+  pass: Pass | null;
   sources: BandSource[];
   assets: string[];
   // The type the order is sent with, and the options and notes around the choice.
@@ -130,12 +140,13 @@ export interface OrderView {
 
 // The candidates only change with the selection and the AOI; the intersection
 // is the one costly part of the view, so the last answer is kept.
-let lastCandidates: { inputs: unknown[]; result: StacItem[] } | null = null;
+let lastCandidates: { inputs: unknown[]; result: { items: StacItem[]; passes: Pass[] } } | null = null;
 
-function candidatesOf(app: SelectionState): StacItem[] {
+function candidatesOf(app: SelectionState): { items: StacItem[]; passes: Pass[] } {
   const inputs = [app.items, app.selectedIds, app.groups, app.activeGroupIndex, app.aoi];
   if (lastCandidates && lastCandidates.inputs.every((value, i) => value === inputs[i])) return lastCandidates.result;
-  const result = app.aoi ? candidateItems(selectionItemsFrom(app), app.aoi) : [];
+  const items = app.aoi ? candidateItems(selectionItemsFrom(app), app.aoi) : [];
+  const result = { items, passes: passesOf(items, app.groups) };
   lastCandidates = { inputs, result };
   return result;
 }
@@ -162,10 +173,11 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
-  const candidates = candidatesOf(app);
-  const item = candidates.find((c) => c.id === p.itemId) ?? (candidates.length === 1 ? candidates[0] : null);
+  const { items: candidates, passes } = candidatesOf(app);
+  const pass = passes.find((c) => c.key === p.passKey) ?? (passes.length === 1 ? passes[0] : null);
   const format = dataset?.collection['earthx:format'] ?? null;
-  const sources = item ? bandSources(item, format, info?.variableSeparator ?? null) : [];
+  // The scenes of a pass agree on the assets and bands (the server checks it, M4-12a).
+  const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null) : [];
   const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps));
   // The output type follows the data and the steps as they will be sent (Otto,
   // 12.10.2026); the resampling is the user's own choice and recommended nowhere.
@@ -180,13 +192,22 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
   const dtype = automatic ? effectiveDtype(p.dtype, options, automatic) : '';
   const built =
     info && dataset
-      ? buildOrder({ datasetId: dataset.id, itemId: item?.id ?? null, aoi: app.aoi, steps: p.steps, assets, dtype, info })
+      ? buildOrder({
+          datasetId: dataset.id,
+          itemIds: pass?.items.map((i) => i.id) ?? [],
+          aoi: app.aoi,
+          steps: p.steps,
+          assets,
+          dtype,
+          info,
+        })
       : null;
   return {
     dataset,
     info,
     candidates,
-    item,
+    passes,
+    pass,
     sources,
     assets,
     dtype,
@@ -248,7 +269,7 @@ function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile[] {
 }
 
 const EMPTY_DRAFT = {
-  itemId: null,
+  passKey: null,
   steps: [] as DraftStep[],
   picked: [] as string[],
   dtype: null,
@@ -382,7 +403,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       abortEstimate();
       set({ ...EMPTY_DRAFT });
     },
-    chooseItem: (itemId) => set({ itemId, picked: [], reviewError: null, startError: null }),
+    choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null }),
     addStep: (op, opVersion) => {
       const datasetId = useAppStore.getState().datasetId;
       const description = datasetId ? get().descriptions[datasetId] : undefined;
@@ -459,6 +480,18 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         addJob(status.jobID, status.expires, status);
       } catch (error) {
         set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
+      }
+    },
+
+    // A job the download dialog starts (M4-12b): the order is built there, with no
+    // draft and no review; a refusal comes back as text, the job as a row in the list.
+    placeMosaic: async (order) => {
+      try {
+        const status = await placeJob(order);
+        addJob(status.jobID, status.expires, status);
+        return { jobID: status.jobID };
+      } catch (error) {
+        return { message: refusalOf(error, '', []).message };
       }
     },
 

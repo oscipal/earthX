@@ -122,7 +122,7 @@ describe('the order the panel sends', () => {
   it.each(CASES)('$name: the same body to the estimate and to the execution, as in the file', async (c) => {
     const built = buildOrder({
       datasetId: c.datasetId,
-      itemId: 'ITEM_A',
+      itemIds: ['ITEM_A'],
       aoi: c.aoi,
       steps: c.steps,
       assets: c.assets,
@@ -145,14 +145,14 @@ describe('the order the panel sends', () => {
   it.each(CASES)('$name: the AOI is a bare 2D geometry', (c) => {
     const built = buildOrder({
       datasetId: c.datasetId,
-      itemId: 'ITEM_A',
+      itemIds: ['ITEM_A'],
       aoi: c.aoi,
       steps: c.steps,
       assets: c.assets,
       dtype: c.dtype,
       info: processInfo(c.description as ProcessDescription),
     });
-    const aoi = built.order!.aoi;
+    const aoi = built.order!.aoi!;
     expect(Object.keys(aoi).sort()).toEqual(['coordinates', 'type']);
     const positions = JSON.stringify(aoi.coordinates).match(/\[[^[\]]*\]/g)!;
     expect(positions.every((p) => p.split(',').length === 2)).toBe(true);
@@ -163,7 +163,7 @@ describe('the order the panel sends', () => {
     const before = JSON.stringify(aoi);
     buildOrder({
       datasetId: CASES[0].datasetId,
-      itemId: 'ITEM_A',
+      itemIds: ['ITEM_A'],
       aoi,
       steps: CASES[0].steps,
       assets: CASES[0].assets,

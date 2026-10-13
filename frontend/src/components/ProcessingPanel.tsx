@@ -1,13 +1,13 @@
-// The processing panel (M4-13b): an order for the current selection — one
-// scene, the AOI, steps from the operators the dataset allows — reviewed with
-// an estimate before it starts as a job; then the jobs of this tab. Built from
+// The processing panel (M4-13b): an order for the current selection — the
+// scenes of one pass the AOI meets (a mosaic when there are several, M4-12b),
+// the AOI, steps from the operators the dataset allows — reviewed with an
+// estimate before it starts as a job; then the jobs of this tab. Built from
 // the schema of `/processing/processes/recipe?dataset=…`, nothing per dataset
 // here. The map preview of the steps comes with M4-13c.
 
 import { useLayoutEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
-import { groupIndexOfItem } from '../grouping';
 import { AFTER_BAND_MATH } from '../processingDefaults';
 import {
   formatBytes,
@@ -24,7 +24,7 @@ import { useAppStore } from '../store';
 import JobList from './JobList';
 import StepForm from './StepForm';
 
-const SCENE_NOTE = 'The result covers only this scene; several scenes in one job come with a later version.';
+const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
 
 // The expression field that has the cursor, if one has: only into that field a
 // band chip inserts its name (Otto, 12.10.2026).
@@ -49,7 +49,7 @@ function Bands({ view }: { view: OrderView }) {
   const unique = uniqueNames(view.sources);
   const hasBandMath = steps.some((s) => s.op === 'band_math');
   const named = new Set(bandMathExpressions(steps).flatMap((e) => [...namesInExpression(e)]));
-  if (!view.item) return null;
+  if (!view.pass) return null;
   if (view.sources.length === 0) {
     return (
       <section className="pp-section" aria-label="Bands">
@@ -136,7 +136,7 @@ export default function ProcessingPanel() {
   const built = view.built;
   const estimate = p.estimate && p.estimate.key === view.key ? p.estimate.doc : null;
   const showErrors = p.reviewAsked;
-  const group = view.item ? app.groups[groupIndexOfItem(app.groups, view.item.id)] : undefined;
+  const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
   const refusals = [p.reviewError, p.startError].filter((r) => r !== null && r.key === view.key);
   const refusalAt = (index: number) => refusals.find((r) => r!.step === index)?.message ?? null;
@@ -157,23 +157,36 @@ export default function ProcessingPanel() {
         <>
           <section className="pp-section" aria-label="Selection">
             <p className="pp-summary">
-              {[dataset?.title ?? app.datasetId, group?.label, view.item?.id].filter(Boolean).join(' · ')}
+              {[
+                dataset?.title ?? app.datasetId,
+                view.pass?.label,
+                view.pass && (sceneCount === 1 ? view.pass.items[0].id : `${sceneCount} scenes`),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </p>
             {view.candidates.length === 0 && <p className="hint-text error">No selected scene meets the AOI.</p>}
-            {view.candidates.length > 1 && (
+            {view.pass && sceneCount > 1 && (
+              <p className="pp-help" title={view.pass.items.map((i) => i.id).join(', ')}>
+                The scenes are merged into one mosaic first; the steps run on the mosaic.
+              </p>
+            )}
+            {view.passes.length > 1 && (
               <>
                 <label className="vc-field pp-field">
-                  Scene
-                  <select value={view.item?.id ?? ''} onChange={(e) => p.chooseItem(e.target.value)}>
-                    <option value="">— choose one scene —</option>
-                    {view.candidates.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.id}
+                  Pass
+                  <select value={view.pass?.key ?? ''} onChange={(e) => p.choosePass(e.target.value)}>
+                    <option value="" disabled>
+                      — choose one pass —
+                    </option>
+                    {view.passes.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label} ({c.items.length} scene{c.items.length === 1 ? '' : 's'})
                       </option>
                     ))}
                   </select>
                 </label>
-                <p className="hint-text warn">{SCENE_NOTE}</p>
+                <p className="hint-text warn">{PASS_NOTE}</p>
               </>
             )}
           </section>
