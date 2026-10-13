@@ -585,6 +585,13 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
             lambda conn, recipe: submit(conn, recipe, operators=api.operators, attachments=accepted.attachments),
             accepted.recipe,
         )
+    except JobTooLarge as error:
+        raise Problem(413, str(error), type_=f"{_ORDER_TYPE}size") from None
+    except AoiOutsideInputs as error:
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}aoi") from None
+    except UnsupportedRecipe as error:
+        # What the estimate cannot size (no pixel size, a target grid over the core's side): never a 500 (M4-25).
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
     except RecipeInvalid as error:
         # `submit` estimates the run to set its time limit, and that is the first place a band name the
         # item does not describe can fail: the check at acceptance could not tell (the same as the estimate).
@@ -648,6 +655,10 @@ async def estimate_order_cost(request: Request, process_id: str, api: Api) -> Re
         cost = estimate(estimated.recipe, api.operators)
     except JobTooLarge as error:
         raise Problem(413, str(error), type_=f"{_ORDER_TYPE}size") from None
+    except AoiOutsideInputs as error:
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}aoi") from None
+    except UnsupportedRecipe as error:
+        raise Problem(422, str(error), type_=f"{_ORDER_TYPE}scope") from None
     except RecipeInvalid as error:
         # A band name the item does not describe is found here where the check before could not tell.
         raise Problem(422, str(error), type_=f"{_ORDER_TYPE}applicable") from None

@@ -26,6 +26,7 @@ from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.jobs.submit import RecipeIdTaken
 from earthx.objectstore.errors import StoreUnavailable
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.recipe import job_recipe_document
 from tests.conftest import own_log_text
@@ -441,6 +442,7 @@ class TestWhatTheOrderMayNotBe:
         # the run is the first place that can, and it used to end as a 500.
         item = s2_item()
         item["assets"]["red"].pop("raster:bands")
+        item["assets"]["red"]["gsd"] = 10  # the pixel size was in the band description; the estimate needs it
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
         step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
@@ -1315,3 +1317,88 @@ class TestAnOrderOnAGeographicGrid:
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
             response = await client.post("/processing/processes/recipe/estimate", json=envelope(document))
         assert response.status_code == 200, response.status_code
+
+
+def _reprojection_of_a_dem(rig: Rig, *, gsd: bool = True) -> dict[str, Any]:
+    item = dem_item()
+    if not gsd:
+        item["properties"].pop("gsd")
+    rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = item
+    step = {"op": "reproject", "op_version": 2, "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "bilinear"}}
+    return order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",), steps=[step])
+
+
+class TestAnAssetWithoutAPixelSize:
+    """No ``gsd``, no estimate: the answer says so (M4-25), a ``422``, and nothing is queued."""
+
+    async def test_the_estimate_is_a_422_with_the_reason(self, rig: Rig) -> None:
+        document = _reprojection_of_a_dem(rig, gsd=False)
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post("/processing/processes/recipe/estimate", json=envelope(document))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:scope"
+        assert "pixel size of asset 'data'" in body["detail"]
+
+    async def test_the_acceptance_is_a_422_with_the_reason(self, rig: Rig) -> None:
+        document = _reprojection_of_a_dem(rig, gsd=False)
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(EXECUTION, json=envelope(document))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:scope"
+        assert "pixel size of asset 'data'" in body["detail"]
+        assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
+
+
+class TestNoEstimateIsA500:
+    """Whatever ``plan.estimate`` raises is a definite answer in each of its three places (M4-25).
+
+    The places: the acceptance (``intake._accept``), the queue (``jobs.submit`` sets the time limit
+    from it) and the estimate route. ``JobTooLarge`` is a ``413``; every other refusal of the plan a ``422``.
+    """
+
+    ERRORS = [
+        (JobTooLarge("over the cap"), 413, "size"),
+        (ExportTooLarge("over the cap"), 413, "size"),
+        (UnsupportedRecipe("not run yet"), 422, "scope"),
+        (AoiOutsideInputs("outside"), 422, "aoi"),
+    ]
+
+    @staticmethod
+    def _raising(error: Exception):
+        def estimate(*args: Any, **kwargs: Any) -> None:
+            raise error
+
+        return estimate
+
+    @pytest.mark.parametrize(("error", "status", "stage"), ERRORS, ids=lambda value: type(value).__name__)
+    @pytest.mark.parametrize("place_of_the_estimate", ["earthx.api.intake.estimate", "earthx.jobs.submit.estimate"])
+    async def test_placing_an_order(
+        self,
+        rig: Rig,
+        monkeypatch: pytest.MonkeyPatch,
+        place_of_the_estimate: str,
+        error: Exception,
+        status: int,
+        stage: str,
+    ) -> None:
+        monkeypatch.setattr(place_of_the_estimate, self._raising(error))
+        response = await place(rig, order())
+        assert problem(response, status)["type"] == f"urn:earthx:order-refused:{stage}"
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0)
+
+    @pytest.mark.parametrize(("error", "status", "stage"), ERRORS, ids=lambda value: type(value).__name__)
+    async def test_the_estimate_route(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch, error: Exception, status: int, stage: str
+    ) -> None:
+        monkeypatch.setattr("earthx.api.processing_route.estimate", self._raising(error))
+        response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(order()))
+        assert problem(response, status)["type"] == f"urn:earthx:order-refused:{stage}"
+
+    async def test_a_band_the_item_does_not_describe_is_a_422_in_both_places_the_queue_and_the_route(
+        self, rig: Rig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("earthx.jobs.submit.estimate", self._raising(RecipeInvalid("no band red_9")))
+        assert problem(await place(rig, order()), 422)["type"] == "urn:earthx:order-refused:applicable"
+        monkeypatch.setattr("earthx.api.processing_route.estimate", self._raising(RecipeInvalid("no band red_9")))
+        response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(order()))
+        assert problem(response, 422)["type"] == "urn:earthx:order-refused:applicable"
