@@ -1742,6 +1742,48 @@ Nachtrag.
   `MAX_EXPORT_JOB_BYTES`) gilt für Export und Raster-Job; darüber
   `JobTooLarge` (Oberklasse von `ExportTooLarge`).
 
+## 15h. Nachtrag vom 2026-10-13: Gleitkomma in eine Ganzzahl-Ausgabe runden (zu §3.2, §3.4; M4-26)
+
+Otto hat am 2026-10-12 entschieden: Schreibt der Kern Gleitkomma in einen
+ganzzahligen Ausgabetyp, wird gerundet statt abgeschnitten (`plans/m4-26-runden-ganzzahl.md`).
+Bisher schnitt `astype(dtype, casting="unsafe")` den Bruchteil ab: 1234,7 wurde
+1234, im Mittel ein halbes Bit zu wenig.
+
+- **Regel** (`processing.core._cast`, die eine Stelle, an der der Kern in den
+  Ausgabetyp umwandelt; Export und Mosaik wandeln nicht um):
+  - Betrag plus 0,5, Bruch weg, Vorzeichen zurück: x,5 geht **weg von null**
+    (0,5 → 1; −0,5 → −1 in `int16`, 0 in `uint8` und `uint16`), nicht zur geraden Zahl.
+  - Danach klemmen auf den Wertebereich des Typs; `±inf` und Werte außerhalb
+    landen an der Grenze, nichts läuft über.
+  - NaN bleibt, was es ist: ein maskiertes Pixel, das als `nodata` geschrieben
+    und nicht als gültig gezählt wird.
+  - Ganzzahl nach Ganzzahl und jedes Ziel mit Gleitkomma ändern sich nicht.
+- **Quelle [P]:** `GDALCopyWords` in `gcore/gdal_priv_templates.hpp`
+  (`https://raw.githubusercontent.com/OSGeo/gdal/master/gcore/gdal_priv_templates.hpp`,
+  gelesen am 2026-10-13, Z. 433–479 und 607–712): vorzeichenlose Ziele rechnen
+  `x + 0.5`, vorzeichenbehaftete `x >= 0 ? x + 0.5 : x - 0.5`, beide klemmen auf
+  den Wertebereich und schneiden den Rest ab, das ist Runden weg von null.
+  Die Doku-Seiten von `gdal_translate -ot` und `gdalwarp -ot` (gleicher Stand)
+  nennen keine Rundungsregel; dass beide diese Kopierfunktion nutzen, ist hier
+  **nicht belegt**, die Regel stammt aus `GDALCopyWords` selbst.
+  - **Abweichung 1:** GDAL schreibt für NaN eine 0. Der Kern behält NaN als
+    maskiert, weil 0 ein gültiger Wert wäre.
+  - **Abweichung 2:** GDAL addiert in `float32` für `float32`-Eingang. Der Kern
+    addiert in `float64`, wo jedes `float32` exakt ist; ein Wert knapp unter x,5
+    wird so nicht auf x+1 gehoben.
+- **Version:** Dasselbe Rezept liefert mit einem ganzzahligen `output.dtype` und
+  einer Quelle mit Bruchteilen ein anderes Ergebnis, sonst nicht. Das deckt
+  `earthx.__version__` im Block `engine` des Cache-Schlüssels (§4.5, K5, wie
+  `BLOCK_SIZE`): 0.4.0 → 0.4.1. `recipe_version` und `op_version` bleiben, weil
+  kein Operator und kein Feld sich ändert.
+  Ergebnisse unter 0.4.0 bleiben im Cache unter ihrem alten Schlüssel stehen
+  und werden nicht mehr getroffen. Gleitkomma-Ausgaben sind Byte für Byte
+  gleich geblieben.
+- **Kollision mit `nodata`:** Nach dem Klemmen kann ein gültiger Wert den
+  `nodata`-Wert treffen (zum Beispiel 0,3 oder −2 in `uint16` mit `nodata` 0).
+  Das war beim Abschneiden genauso und wird weiter nicht geprüft. Ein festes
+  `nodata` je Ganzzahltyp bleibt offen (Log, 2026-10-12).
+
 ## 16. Quellen
 
 **Im Repo [P]**
