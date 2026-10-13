@@ -24,6 +24,7 @@ import {
   downloadRequestForSelection,
   isCogFormat,
   originalFileLinks,
+  type DownloadPass,
   type OriginalFileLink,
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
@@ -619,6 +620,9 @@ export interface AppState {
   // still loading; an empty list is a real, valid answer ("no asset on this
   // dataset's own registered hosts").
   downloadOriginalLinks: OriginalFileLink[] | null;
+  // The scenes behind those links, by group (M4-12b): what the dialog offers a
+  // merged mosaic job for. Set together with the links, `null` otherwise.
+  downloadPasses: DownloadPass[] | null;
   // Set once a crop download has actually answered with at least one group
   // dropped for not touching the AOI at all (review finding on M3-17: the
   // user has to see this, not just find fewer files than requested in the
@@ -775,6 +779,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadResolution: 1,
   downloadOutcome: null,
   downloadOriginalLinks: null,
+  downloadPasses: null,
   downloadSkippedGroupsNotice: null,
 
   appliedRender: {},
@@ -1175,6 +1180,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadResolution: 1,
       downloadOutcome: null,
       downloadOriginalLinks: null,
+      downloadPasses: null,
       downloadSkippedGroupsNotice: null,
       error: null,
     });
@@ -1203,7 +1209,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Still the dialog open for this same layer? The user may have closed
       // it, or opened another one, while the fetch was in flight.
       if (get().downloadDialogLayerId === id) {
-        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts) });
+        set({ downloadOriginalLinks: originalFileLinks(groups, [asset], hosts), downloadPasses: groups });
       }
     } catch (e) {
       if (get().downloadDialogLayerId === id) {
@@ -1240,6 +1246,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloadResolution: 1,
         downloadOutcome: 'crop',
         downloadOriginalLinks: null,
+        downloadPasses: null,
         downloadSkippedGroupsNotice: null,
         error: null,
       });
@@ -1262,6 +1269,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadResolution: 1,
       downloadOutcome: 'originals',
       downloadOriginalLinks: links,
+      downloadPasses: groups,
       downloadSkippedGroupsNotice: null,
       error: null,
     });
@@ -1272,6 +1280,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadSelection: false,
       downloadOutcome: null,
       downloadOriginalLinks: null,
+      downloadPasses: null,
       downloadSkippedGroupsNotice: null,
     }),
   setDownloadResolution: (factor) => set({ downloadResolution: factor }),
