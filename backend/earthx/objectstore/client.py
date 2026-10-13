@@ -79,6 +79,26 @@ def _create(config: StoreConfig, endpoint: str) -> Any:
     )
 
 
+class ObjectRange:
+    """A byte range of one object, read in pieces; ``close`` ends the request early.
+
+    Reading can fail on the wire after the request was answered, so the translation of
+    `botocore` exceptions happens here too (no other module may name them).
+    """
+
+    def __init__(self, body: Any) -> None:
+        self._body = body
+
+    def read(self, size: int) -> bytes:
+        try:
+            return bytes(self._body.read(size))
+        except BotoCoreError as exc:
+            raise StoreUnavailable(f"object store GetObject failed ({type(exc).__name__})") from None
+
+    def close(self) -> None:
+        self._body.close()
+
+
 @dataclass(frozen=True)
 class S3:
     """The few S3 operations the platform needs, against the one configured bucket."""
@@ -181,6 +201,19 @@ class S3:
             raise StoreUnavailable(
                 self._redact(f"object store DeleteObjects failed for {len(errors)} keys ({', '.join(codes)})")
             )
+
+    def head_size(self, key: str) -> int:
+        """Size in bytes of one object; :class:`ResultNotFound` if there is none."""
+        response = self._call("HeadObject", lambda: self._internal.head_object(Bucket=self._config.bucket, Key=key))
+        return int(response["ContentLength"])
+
+    def get_range(self, key: str, start: int, end: int) -> ObjectRange:
+        """Bytes ``start`` to ``end``, both included, of one object, as a stream the caller closes."""
+        response = self._call(
+            "GetObject",
+            lambda: self._internal.get_object(Bucket=self._config.bucket, Key=key, Range=f"bytes={start}-{end}"),
+        )
+        return ObjectRange(response["Body"])
 
     def lifecycle_rules(self) -> list[dict[str, Any]]:
         response = self._call(
