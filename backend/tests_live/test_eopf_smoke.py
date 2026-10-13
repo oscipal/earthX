@@ -20,12 +20,14 @@ what this test asks for again on every scheduled run.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import httpx
 import pytest
 
-from earthx.adapters import SearchParams, get_item, search_items
+from earthx.adapters import ADAPTER_SPECS, SearchParams, get_item, search_items
 from earthx.catalog.datasets import SENTINEL_2_L2A_ZARR3
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
@@ -39,11 +41,17 @@ BBOX = (12.0, 48.0, 12.5, 48.3)
 WINDOW = (datetime(2026, 7, 16, tzinfo=timezone.utc), datetime(2026, 7, 31, 23, 59, 59, tzinfo=timezone.utc))
 
 
-@pytest.fixture
-async def gateway():
+@asynccontextmanager
+async def open_gateway() -> AsyncIterator[Gateway]:
     """The real gateway against the real host, with the allowlist from the registry."""
     host = httpx.URL(SENTINEL_2_L2A_ZARR3.source.endpoint).host
     async with Gateway(Policy(allowed_hosts=frozenset({host}))) as gateway:
+        yield gateway
+
+
+@pytest.fixture
+async def gateway() -> AsyncIterator[Gateway]:
+    async with open_gateway() as gateway:
         yield gateway
 
 
@@ -58,14 +66,15 @@ async def test_the_source_still_answers_the_way_our_fixtures_say(gateway: Gatewa
     on every run, not just when something moved.
     """
     page = await search_items(
-        SENTINEL_2_L2A_ZARR3.dataset_id,
+        SENTINEL_2_L2A_ZARR3,
         SearchParams(bbox=BBOX, start=WINDOW[0], end=WINDOW[1], limit=2),
+        adapters=ADAPTER_SPECS,
         gateway=gateway,
     )
 
     assert page.items, "no item in the archive's opening fortnight over the measured scene"
     assert page.matched is None, "numberMatched appeared — the fixtures no longer match this source's shape"
 
-    item = await get_item(SENTINEL_2_L2A_ZARR3.dataset_id, page.items[0]["id"], gateway=gateway)
+    item = await get_item(SENTINEL_2_L2A_ZARR3, page.items[0]["id"], adapters=ADAPTER_SPECS, gateway=gateway)
     assert item["id"] == page.items[0]["id"]
     assert item["collection"] == SENTINEL_2_L2A_ZARR3.source.source_collection_id

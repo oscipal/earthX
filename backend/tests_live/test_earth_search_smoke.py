@@ -14,12 +14,14 @@ a code path nobody uses would prove the wrong thing.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import httpx
 import pytest
 
-from earthx.adapters import SearchParams, get_item, search_items
+from earthx.adapters import ADAPTER_SPECS, SearchParams, get_item, search_items
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
@@ -32,11 +34,17 @@ BBOX = (9.0, 48.0, 10.0, 49.0)
 WINDOW = (datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 6, 30, tzinfo=timezone.utc))
 
 
-@pytest.fixture
-async def gateway():
+@asynccontextmanager
+async def open_gateway() -> AsyncIterator[Gateway]:
     """The real gateway against the real host, with the allowlist from the registry."""
     host = httpx.URL(SENTINEL_2_L2A.source.endpoint).host
     async with Gateway(Policy(allowed_hosts=frozenset({host}))) as gateway:
+        yield gateway
+
+
+@pytest.fixture
+async def gateway() -> AsyncIterator[Gateway]:
+    async with open_gateway() as gateway:
         yield gateway
 
 
@@ -49,8 +57,9 @@ async def test_the_source_still_answers_the_way_our_fixtures_say(gateway: Gatewa
     ``backend/tests/fixtures/earth_search/`` are describing a source that has moved.
     """
     page = await search_items(
-        SENTINEL_2_L2A.dataset_id,
+        SENTINEL_2_L2A,
         SearchParams(bbox=BBOX, start=WINDOW[0], end=WINDOW[1], limit=2),
+        adapters=ADAPTER_SPECS,
         gateway=gateway,
     )
 
@@ -58,6 +67,6 @@ async def test_the_source_still_answers_the_way_our_fixtures_say(gateway: Gatewa
     assert isinstance(page.matched, int), "the match count is gone or is no longer a number"
     assert page.next_page_token, "no next page, although the window holds more than two items"
 
-    item = await get_item(SENTINEL_2_L2A.dataset_id, page.items[0]["id"], gateway=gateway)
+    item = await get_item(SENTINEL_2_L2A, page.items[0]["id"], adapters=ADAPTER_SPECS, gateway=gateway)
     assert item["id"] == page.items[0]["id"]
     assert item["collection"] == SENTINEL_2_L2A.source.source_collection_id
