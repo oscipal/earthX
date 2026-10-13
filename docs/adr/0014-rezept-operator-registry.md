@@ -1742,6 +1742,31 @@ Nachtrag.
   `MAX_EXPORT_JOB_BYTES`) gilt für Export und Raster-Job; darüber
   `JobTooLarge` (Oberklasse von `ExportTooLarge`).
 
+## 15h. Nachtrag vom 2026-10-13: die Schätzung bemisst das Eingaberaster aus der Lage (zu §5.5; M4-25)
+
+Otto hat M4-25 am 2026-10-12 beauftragt (`plans/m4-25-schaetzung-geografisch.md`).
+Der Originaltext in §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Das Eingaberaster der Schätzung** liegt dort, wo der erste Durchgang liest:
+  die Bounds der AOI im CRS des ersten Assets, nicht der Ursprung dieses CRS.
+  Die Pixelzahl je Seite folgt aus `gsd`, umgerechnet in die Einheit des CRS;
+  bei einem geografischen CRS in Grad, und zwar in Ost-West-Richtung mit dem
+  Kosinus der Breite der AOI-Mitte. Ein `reproject`-Schritt bemisst sein
+  Zielraster aus dieser Box (`plan._input_grid`).
+- **Ohne `gsd` wird nicht geschätzt.** Ein Raster-Job ohne `gsd` an einem Asset
+  war bisher die konservative Obergrenze (32 768 px je Seite); jetzt gibt die
+  Schätzung `UnsupportedRecipe` mit Grund, und Annahme und Schätzroute antworten
+  `422` (`urn:earthx:order-refused:scope`). Der Export (`crop`) behält seine
+  Obergrenze.
+- **Jede Ausnahme der Schätzung ist eine bestimmte Antwort:** `JobTooLarge` ist
+  `413`, `UnsupportedRecipe` und `AoiOutsideInputs` sind `422`, in der Annahme,
+  in `jobs.submit` (Zeitlimit) und in der Schätzroute. Vorher fing die Annahme
+  `UnsupportedRecipe` ab und ließ es durch; `submit` und die Schätzroute gaben
+  `500`.
+- **Offen:** `proj:transform` als erste Quelle der Pixelgröße (Plan §3 Punkt 1)
+  braucht ein neues Feld in `ResolvedInput` und damit nach §4.3 eine neue
+  Version des Rezepts. Siehe Log vom 2026-10-13; bis dahin gilt `gsd`.
+
 ## 16. Quellen
 
 **Im Repo [P]**
