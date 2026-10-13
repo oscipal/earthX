@@ -95,9 +95,7 @@ def client(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> Iterator[Te
     yield from _client_for(REGISTRY, item, monkeypatch)
 
 
-def _client_for(
-    registry: DatasetRegistry, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
+def _client_for(registry: DatasetRegistry, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
         # `ITEM_ID#n` (M3-17): a distinct id sharing the fixture's own bbox and
         # geometry, so a test can name several "different" items — for the
@@ -168,7 +166,9 @@ class TestAcceptanceCriteria:
         assert response.status_code == 413
         assert "26 scenes" in response.json()["detail"]
 
-    def test_an_asset_without_size_metadata_falls_back_to_the_worst_case_and_is_413(self, client: TestClient) -> None:
+    def test_an_asset_without_size_metadata_falls_back_to_the_worst_case_and_is_413(
+        self, client: TestClient
+    ) -> None:
         """`thumbnail` has neither `gsd` nor `raster:bands` on this item (F1/F2): the
         estimate falls back to the conservative worst case M2-06 used for the whole
         request — big enough on its own to trip the 500 MB cap."""
@@ -176,14 +176,18 @@ class TestAcceptanceCriteria:
         assert response.status_code == 413
         assert "MB" in response.json()["detail"]
 
-    def test_over_the_cap_the_message_never_shrinks_the_request_itself(self, client: TestClient) -> None:
+    def test_over_the_cap_the_message_never_shrinks_the_request_itself(
+        self, client: TestClient
+    ) -> None:
         """Otto, 23.09.2026 (M3-18 §10): over the cap is always a refusal, never a
         silent downscale — no zip is ever returned, whatever the message suggests."""
         response = _download(client, assets=["thumbnail"])
         assert response.status_code == 413
         assert response.headers["content-type"] != "application/zip"
 
-    def test_over_the_cap_names_the_smallest_fitting_resolution_factor(self, client: TestClient) -> None:
+    def test_over_the_cap_names_the_smallest_fitting_resolution_factor(
+        self, client: TestClient
+    ) -> None:
         """F10c (M3-18 §10): the rejection suggests a factor from
         `RESOLUTION_FACTORS` that would bring this same request under the cap,
         not just "smaller area or fewer layers"."""
@@ -195,7 +199,9 @@ class TestAcceptanceCriteria:
         response = _download(client, resolution=3)
         assert response.status_code == 422
 
-    def test_an_explicit_resolution_factor_is_honored_in_the_filename_and_notice(self, client: TestClient) -> None:
+    def test_an_explicit_resolution_factor_is_honored_in_the_filename_and_notice(
+        self, client: TestClient
+    ) -> None:
         """F10c (M3-18 §10): an explicitly coarser resolution travels into the
         archive — the filename and the notice both name it, never silently."""
         response = _download(client, resolution=2)
@@ -254,8 +260,8 @@ class TestAcceptanceCriteria:
         monkeypatch.setattr(
             "earthx.readers.cog.check_url",
             # `**_` swallows the resolver `asset_path` hands on (M2-14): these tests
-            # answer from memory whatever the caller would have resolved with.
-            lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
+        # answer from memory whatever the caller would have resolved with.
+        lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)),
         )
         monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: FakeReader(src_path))
         app = build_app(registry, lifespan=lifespan)
@@ -313,7 +319,9 @@ class TestAcceptanceCriteria:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "AOI geometry" not in notice
 
-    def test_two_groups_with_a_place_search_aoi_still_name_openstreetmap_once(self, client: TestClient) -> None:
+    def test_two_groups_with_a_place_search_aoi_still_name_openstreetmap_once(
+        self, client: TestClient
+    ) -> None:
         """M3-17's multi-group path (`additional_groups`) writes the notice the
         same way the single-group path does — a second way through
         `build_download_zip` that could, in principle, have forwarded a
@@ -328,7 +336,9 @@ class TestAcceptanceCriteria:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0" in notice
 
-    def test_an_explicit_resolution_factor_with_a_place_search_aoi_still_names_it(self, client: TestClient) -> None:
+    def test_an_explicit_resolution_factor_with_a_place_search_aoi_still_names_it(
+        self, client: TestClient
+    ) -> None:
         """M3-18's windowed/coarser-resolution path (F10c, `resolution != 1`)
         plans different `width`/`height` per crop but calls the same
         `build_download_zip` — checked so a resolution-factor request is not a
@@ -374,7 +384,9 @@ class TestAcceptanceCriteria:
                 "citation.bib",
             }
 
-    def test_a_group_that_misses_the_aoi_is_dropped_the_others_still_download(self, client: TestClient) -> None:
+    def test_a_group_that_misses_the_aoi_is_dropped_the_others_still_download(
+        self, client: TestClient
+    ) -> None:
         """M3-17 plan §5: a group is dropped, not a failure, as long as another survives."""
         response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}~outside"]])
         assert response.status_code == 200
@@ -396,24 +408,32 @@ class TestAcceptanceCriteria:
         assert response.headers["X-Total-Groups"] == "2"
         assert response.headers["X-Skipped-Groups"] == "1"
 
-    def test_a_successful_download_with_no_dropped_group_names_zero_skipped(self, client: TestClient) -> None:
+    def test_a_successful_download_with_no_dropped_group_names_zero_skipped(
+        self, client: TestClient
+    ) -> None:
         response = _download(client, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])
         assert response.status_code == 200
         assert response.headers["X-Total-Groups"] == "2"
         assert response.headers["X-Skipped-Groups"] == "0"
 
-    def test_every_group_missing_the_aoi_is_the_same_400_as_a_single_group_always_was(self, client: TestClient) -> None:
+    def test_every_group_missing_the_aoi_is_the_same_400_as_a_single_group_always_was(
+        self, client: TestClient
+    ) -> None:
         response = _download(client, groups=[[f"{ITEM_ID}~outside"]])
         assert response.status_code == 400
         assert "does not touch" in response.json()["detail"]
 
-    def test_a_language_field_in_the_body_is_ignored_the_notice_stays_english(self, client: TestClient) -> None:
+    def test_a_language_field_in_the_body_is_ignored_the_notice_stays_english(
+        self, client: TestClient
+    ) -> None:
         """Otto, 22.09.2026: the route offers no language choice at all."""
         response = _download(client, language="de")
         assert response.status_code == 200
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
-        notice_en = SENTINEL_2_L2A.license.terms.notice["en"].format(terms_url=SENTINEL_2_L2A.license.terms.url)
+        notice_en = SENTINEL_2_L2A.license.terms.notice["en"].format(
+            terms_url=SENTINEL_2_L2A.license.terms.url
+        )
         assert notice_en in notice
 
     def test_the_same_asset_asked_for_twice_is_one_file(self, client: TestClient) -> None:
@@ -438,7 +458,9 @@ class TestAcceptanceCriteria:
         response = _download(client, groups=[[ITEM_ID], [ITEM_ID]])
         assert response.status_code == 422
 
-    def test_no_aoi_coordinate_reaches_the_log(self, client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    def test_no_aoi_coordinate_reaches_the_log(
+        self, client: TestClient, caplog: pytest.LogCaptureFixture
+    ) -> None:
         with caplog.at_level(logging.INFO, logger="earthx.api.tiler"):
             response = _download(client)
         assert response.status_code == 200
@@ -499,7 +521,9 @@ class TestAcceptanceCriteria:
         assert response.headers["retry-after"] == "30"
         assert "another large download is running" in response.json()["detail"]
 
-    def test_a_small_download_is_never_refused_by_the_concurrency_gate(self, client: TestClient) -> None:
+    def test_a_small_download_is_never_refused_by_the_concurrency_gate(
+        self, client: TestClient
+    ) -> None:
         """The concurrency gate only applies once the process-wide lock is
         actually held — an ordinary small request always goes through."""
         response = _download(client)
@@ -510,7 +534,9 @@ class TestAcceptanceCriteria:
     ) -> None:
         """Otto, 23.09.2026 (PR #86 review, bug A): only `RasterioIOError` — GDAL
         genuinely could not get bytes from the source — earns this message."""
-        monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: SourceReadFailureReader(src_path))
+        monkeypatch.setattr(
+            "earthx.api.tiler.open_asset", lambda src_path, **_: SourceReadFailureReader(src_path)
+        )
         response = _download(client)
         assert response.status_code == 502
         assert response.json()["detail"] == "the asset could not be read from the source"
@@ -526,7 +552,9 @@ class TestAcceptanceCriteria:
         a 500 with a different message, and the real exception must reach the
         tiler's own log — `build_app`'s `_rasterio_error` handler, not the route's
         local `except`, is what has to catch it now."""
-        monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: InternalBugReader(src_path))
+        monkeypatch.setattr(
+            "earthx.api.tiler.open_asset", lambda src_path, **_: InternalBugReader(src_path)
+        )
         with caplog.at_level(logging.ERROR, logger="earthx.api.tiler"):
             response = _download(client)
         assert response.status_code == 500
@@ -719,10 +747,7 @@ class TestRecipeAndCitation:
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
         assert "recipe.json" not in names
         assert {"visual.tif", "visual_mask.tif", "aoi.geojson", "citation.bib"} <= names
-        assert (
-            f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})."
-            in notice
-        )
+        assert f"recipe.json is not included: the recipe could not be built from the source's item metadata (cause: {stage})." in notice
         # Not in the "Generated:" line: its timestamp holds "7.1" by chance (…14:25:17.100083Z).
         assert "7.1" not in _without_generated(notice)
         omitted = [record for record in caplog.records if record.getMessage() == "crop recipe omitted"]

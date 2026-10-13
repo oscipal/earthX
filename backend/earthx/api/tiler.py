@@ -276,9 +276,7 @@ def _open_ref(
 ) -> AssetPath | ZarrAsset:
     """``ref`` cleared through the gateway policy, or the ``HTTPException`` its refusal maps to."""
     try:
-        return open_asset_ref(
-            ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd, decode_cf=decode_cf
-        )
+        return open_asset_ref(ref, state.earthx_policy, state.earthx_resolver, target_gsd=target_gsd, decode_cf=decode_cf)
     except AssetRejected:
         # An address the registry does not cover. This is the refusal adr/0006 §3.3
         # describes, and it is the source's problem, not the caller's — hence 502.
@@ -481,7 +479,9 @@ async def dataset_asset_path(
     if getattr(route, "name", None) not in _OPERATOR_ROUTES:
         raise HTTPException(status_code=400, detail="op is for tiles and their TileJSON only")
     if len(asset) > MAX_OPERATOR_ASSETS or len(set(asset)) != len(asset):
-        raise HTTPException(status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them")
+        raise HTTPException(
+            status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them"
+        )
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = target_gsd_for(request, stac_item)
     operator, params = requested
@@ -717,7 +717,9 @@ async def download_crop(
             AssetCrop(
                 asset=asset,
                 paths=tuple(
-                    _resolve_asset_path(state, matched_item, config=config, item=matched_item["id"], asset=asset)
+                    _resolve_asset_path(
+                        state, matched_item, config=config, item=matched_item["id"], asset=asset
+                    )
                     for matched_item in matched_items
                 ),
                 width=None if body.resolution == 1 else planned_by_asset[asset].width,

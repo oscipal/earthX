@@ -498,16 +498,13 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
             400, f"the request has members this API does not take: {', '.join(repr(k[:32]) for k in unknown[:5])}"
         )
     inputs = document.get("inputs")
-    if (
-        not isinstance(inputs, dict)
-        or docs.PROCESS_ID not in inputs
-        or set(inputs)
-        - {
-            docs.PROCESS_ID,
-            docs.AOI_PROVENANCE,
-        }
-    ):
-        raise Problem(400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an export, {docs.AOI_PROVENANCE!r}")
+    if not isinstance(inputs, dict) or docs.PROCESS_ID not in inputs or set(inputs) - {
+        docs.PROCESS_ID,
+        docs.AOI_PROVENANCE,
+    }:
+        raise Problem(
+            400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an export, {docs.AOI_PROVENANCE!r}"
+        )
     provenance = _aoi_provenance(inputs[docs.AOI_PROVENANCE]) if docs.AOI_PROVENANCE in inputs else None
     order = inputs[docs.PROCESS_ID]
     if (isinstance(order, dict) and "href" in order) or isinstance(order, str):

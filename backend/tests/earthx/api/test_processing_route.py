@@ -1105,7 +1105,9 @@ class TestAnExport:
             assert set(attachments["files"]) == {"ATTRIBUTION.txt", "citation.bib", "aoi.geojson"}
 
     async def test_the_origin_of_a_place_aoi_goes_into_the_side_files(self, rig: Rig) -> None:
-        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": PLACE}})
+        response = await rig.client.post(
+            EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": PLACE}}
+        )
         assert response.status_code == 201, response.text
         (attachments,) = rig.db.execute("SELECT attachments FROM public.earthx_run").fetchone()  # type: ignore[misc]
         assert "AOI geometry: © OpenStreetMap contributors" in attachments["files"]["ATTRIBUTION.txt"]
@@ -1240,9 +1242,8 @@ class TestAMosaic:
 
     async def test_the_same_overpass_in_another_order_shares_the_run(self, rig: Rig) -> None:
         self.overpass(rig, "S2_A", "S2_B", "S2_C")
-        first, second = (
-            await place(rig, self.whole("S2_A", "S2_B", "S2_C")),
-            await place(rig, self.whole("S2_C", "S2_B", "S2_A")),
+        first, second = await place(rig, self.whole("S2_A", "S2_B", "S2_C")), await place(
+            rig, self.whole("S2_C", "S2_B", "S2_A")
         )
         assert first.status_code == second.status_code == 201
         assert first.json()["jobID"] != second.json()["jobID"]
@@ -1282,9 +1283,7 @@ class TestAMosaic:
     async def test_the_estimate_of_a_mosaic_over_the_cap_is_a_413_too(self, rig: Rig) -> None:
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = scene("S2_A", (0.0, 40.0, 10.0, 50.0))
         rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = scene("S2_B", (10.0, 40.0, 20.0, 50.0))
-        response = await rig.client.post(
-            "/processing/processes/recipe/estimate", json=envelope(self.whole("S2_A", "S2_B"))
-        )
+        response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(self.whole("S2_A", "S2_B")))
         assert problem(response, 413)["type"] == "urn:earthx:order-refused:size"
 
 
