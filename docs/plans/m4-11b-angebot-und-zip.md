@@ -92,7 +92,7 @@ bauen. Belegstufen wie `adr/0009`.
 | Weg | Was die Quelle sagt | Folge für uns |
 |---|---|---|
 | **nginx `mod_zip`** (Evan Miller) | Das Backend liefert eine Liste „CRC-32, Größe, Ort, Name“ je Datei, der Server baut das ZIP im Strom und holt die Teile selbst. Fortsetzen über `Range` und `If-Range` gehe, „although these feature require the server to know the file checksums (CRC-32's) in advance“; mit `-` statt der CRC „mod_zip will disable support for the `Range` header“. Ein Fehler bei einem Teil breche den Download ab. Ein `Last-Modified` des Backends brauche `If-Range`, derselbe Zeitstempel gelte für alle Einträge, damit das Archiv bei jeder Anfrage byte-gleich sei **[S]** — README, <https://github.com/evanmiller/mod_zip> | Das ist unser Muster: CRC und Größe vorher, ein Zeitstempel, byte-gleiches ZIP je Anfrage. Wir brauchen kein nginx, weil `api` den Strom ohnehin liefert (siehe unten) |
-| **`zipstream-ng`** | „Can calculate the total size of the resulting zip file before generation even begins“, wenn nichts komprimiert wird; verfolgt `last_modified`; „Automatically uses Zip64 extensions, but only if they are required“ **[S]** — README, <https://github.com/pR0Ps/zipstream-ng>. Zu `Range` und zur Herkunft der CRC sagt die README nichts | Größe vorab ja; einen Byte-Bereich mitten im ZIP kann die Bibliothek nach ihrer README nicht liefern. Eine neue Abhängigkeit braucht eine erneuerte Lock-Datei (`CLAUDE.md`) |
+| **`zipstream-ng`** | „Can calculate the total size of the resulting zip file before generation even begins“, wenn nichts komprimiert wird; verfolgt `last_modified`; „Automatically uses Zip64 extensions, but only if they are required“ **[S]** — README, <https://github.com/pR0Ps/zipstream-ng>. Zu `Range` und zur Herkunft der CRC sagt die README nichts | Größe vorab ja; einen Byte-Bereich mitten im ZIP erwähnt die README nicht. Eine neue Abhängigkeit braucht eine erneuerte Lock-Datei (`CLAUDE.md`) |
 | **`stream-zip`** (uktrade) | „Creates both Zip32/2.0/Legacy and Zip64 files“, ohne das ganze ZIP im Speicher oder auf der Platte zu halten **[S]** — README, <https://github.com/uktrade/stream-zip>. Dass unkomprimierte Einträge ganz gepuffert werden und das Format vorab gewählt werden muss, steht in Zusammenfassungen der Dokumentation, die in der Sitzung nicht erreichbar war **[S]** | Für Rasterdateien bis 5 GB ungeeignet, falls das stimmt; belegt ist es nicht |
 | **`zipfile` der Standardbibliothek** | schreibt in einen Strom mit Datendeskriptoren; die CRC rechnet es aus den Daten, nicht aus einer Vorgabe; `ZIP64_LIMIT = (1 << 31) - 1`; die ZIP64-Erweiterung enthält erst die Größe, dann die gepackte Größe, im Zentralverzeichnis zuletzt den Versatz; ZIP64-Ende, wenn die Zahl der Einträge, der Versatz oder die Größe des Zentralverzeichnisses die Grenze überschreitet **[P]** — `/usr/lib/python3.12/zipfile/__init__.py` des Projekt-Python 3.12.3, Z. 52 (`ZIP64_LIMIT`), 168–174 (Strukturen), 486–493, 2037–2043 | als Leser im Test ideal, als Schreiber für ein ZIP mit vorab bekannten CRC nicht |
 | **Presigned URLs** (unser Weg bei `export.zip` und den Einzelfiles) | `303` auf eine signierte URL, Range ohne Zutun **[M]** (`plans/m4-11-export-job.md` §11 Punkt 7) | gilt weiter für alle Einzeldateien; ein ZIP aus mehreren Objekten und einem Dokument je Job lässt sich so nicht liefern |
@@ -206,13 +206,14 @@ der festen Menge; kein Endpunkt, keine URL. `.importlinter` bleibt unverändert.
   des Laufendes>)` (K2). Kennt die Registry den Datensatz nicht mehr, entfällt
   `citation.bib` (wie `recipe.json` dann ohne Attribution kommt).
 - **Ergebnisdokument:** Ausgang `bundle` → `result.zip` („Result, mask, recipe
-  and citation in one ZIP“, `application/zip`, mit `length`), nur wenn
-  `files_meta` beide Dateien nennt. Die Prozessbeschreibung nennt den Ausgang
+  and citation in one ZIP“, `application/zip`, ohne `length`: die Länge steht erst
+  fest, wenn `recipe.json` und `citation.bib` gebaut sind, und kommt als
+  `Content-Length` der Antwort), nur wenn `files_meta` beide Dateien nennt. Die Prozessbeschreibung nennt den Ausgang
   immer, und die frontend-Fixtures der Prozessbeschreibungen werden mit dem
   Skript neu geschrieben.
 
-**Speicher und Bandbreite [A], gemessen im PR (§11):** je Download 1–2 MiB Puffer,
-bei 4 gleichzeitigen unter 10 MB. Jedes Byte geht zweimal durch `api` (vom
+**Speicher und Bandbreite, gemessen im PR (§11):** je Download rund +3 MB bei 1 GB,
+bei 4 gleichzeitigen +17 MB (der Block ist 1 MiB). Jedes Byte geht zweimal durch `api` (vom
 Speicher herein, zum Browser hinaus); lokal im selben Netz unkritisch, in
 Produktion trägt `api` den Ausgang statt des S3-Anbieters. Ein Download von
 5 GB hält einen der vier Plätze für seine Dauer.
@@ -427,9 +428,67 @@ nicht ohne Weiteres.
 
 ---
 
-## 9. Prüfanleitung für Otto (M4-11b-1, nach der Umsetzung)
+## 9. Prüfanleitung für Otto (M4-11b-1, nach dem Merge, PowerShell 5.1)
 
-Wird mit der Umsetzung geschrieben (§11).
+Das Angebot im Dialog und „Download (ZIP)“ im Panel kommen mit M4-11b-2; bis dahin
+geht der Raster-Job über die Job-Schnittstelle. Die Fläche wählst du selbst; die
+Werte sind Platzhalter (etwa 0,1 × 0,1 Grad, eine Szene). Die Auftragsform ist
+einmal gegen `parse_request` geprüft.
+
+```powershell
+docker compose up -d --build
+docker compose ps        # api, tiler, worker, objectstore: healthy
+
+$W, $S, $E, $N = 10.0, 49.0, 10.1, 49.1          # Platzhalter: eigene Fläche eintragen
+$aoi = @{ type = 'Polygon'; coordinates = @(,@(@($W,$S), @($E,$S), @($E,$N), @($W,$N), @($W,$S))) }
+$search = @{ collections = @('sentinel-2-c1-l2a'); intersects = $aoi
+             datetime = '2025-07-01T00:00:00Z/2025-07-31T23:59:59Z'; limit = 10 } | ConvertTo-Json -Depth 10
+$items = (Invoke-RestMethod -Method Post -Uri http://localhost:8000/stac/search `
+          -ContentType application/json -Body $search).features
+$item = $items[0].id
+
+# 1) NDVI als Raster-Job
+$order = @{ recipe_version = 1; aoi = $aoi
+            inputs = @(@{ name = 'input'; dataset = 'sentinel-2-c1-l2a'; groups = @(,@($item)); assets = @('red', 'nir') })
+            steps = @(@{ op = 'band_math'; op_version = 1; params = @{ expression = '(nir - red) / (nir + red)' } })
+            output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
+$body = @{ inputs = @{ recipe = $order } } | ConvertTo-Json -Depth 12
+$job = Invoke-RestMethod -Method Post -Uri http://localhost:8000/processing/processes/recipe/execution `
+       -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+do { Start-Sleep 3; $st = Invoke-RestMethod "http://localhost:8000/processing/jobs/$($job.jobID)"; "$($st.status) $($st.progress)" } `
+  while ($st.status -in 'accepted', 'running')
+
+# 2) Das Ergebnisdokument nennt das ZIP, dann laden und auspacken
+$base = "http://localhost:8000/processing/jobs/$($job.jobID)/results"
+Invoke-RestMethod $base                          # result, mask, recipe und bundle
+curl.exe -s -D headers.txt -o result.zip "$base/result.zip"
+Get-Content headers.txt -TotalCount 12           # HTTP 200, Accept-Ranges: bytes, Content-Length, ETag, Last-Modified
+(Get-Item result.zip).Length                     # gleich dem Content-Length
+Expand-Archive result.zip -DestinationPath out -Force; Get-ChildItem out -Recurse
+
+# 3) Fortsetzen: zwei Teile ergeben dieselbe Datei
+curl.exe -s -D - -o part1.bin -r 0-1023 "$base/result.zip"     # HTTP 206, Content-Range: bytes 0-1023/...
+curl.exe -s -o part2.bin -r 1024- "$base/result.zip"
+cmd /c copy /b part1.bin+part2.bin joined.zip
+Get-FileHash result.zip, joined.zip              # beide Hashwerte gleich
+
+# 4) Die Einzellinks gibt es weiter
+curl.exe -s -i "$base/result.tif" | Select-String "HTTP/", "Location"    # 303 auf die signierte URL
+```
+
+Zu sehen: im ZIP ein Ordner `sentinel-2-c1-l2a_band_math_JJJJMMTT` mit
+`result.tif`, `mask.tif`, `recipe.json` und `citation.bib`; die `.tif` in QGIS
+wie die Einzeldateien; `recipe.json` gleich dem Einzellink
+(`Invoke-RestMethod "$base/recipe.json"`); `Expand-Archive` von Windows läuft ohne
+Fehler. Ein Download eines großen Ergebnisses, den du im Browser abbrichst, lässt
+sich fortsetzen, sofern der Browser `Range` mit `If-Range` sendet (nicht
+gemessen). Nach Ablauf der 7 Tage (oder mit einer Restlaufzeit unter 60 s) gibt
+dieselbe Adresse `410`.
+
+Für den Zuschnitt über 5 GB: ein Zuschnitt mit sehr vielen Assets und Szenen
+antwortet `413` mit der Kopfzeile `X-Export-Job: too-large`, bis 5 GB mit
+`available` (`curl.exe -s -i -X POST …/collections/sentinel-2-c1-l2a/download`, wie in
+`plans/m4-11-export-job.md` §9).
 
 ---
 
@@ -453,3 +512,74 @@ Wird mit der Umsetzung geschrieben (§11).
   M4-Plans.
 - **K1–K9** angenommen.
 - **Log:** Die Zeile zu M4-21 steht von „Vorschlag“ auf „fest“.
+
+
+---
+
+## 11. Umsetzung M4-11b-1 (13.10.2026)
+
+**Gebaut** wie §3.1. Commits: Plan und Antworten; Größe und Byte-Bereich im
+Objektspeicher; `files_meta` im Aufseher; `result_zip.py`; Route und Ausgang
+`bundle`; `X-Export-Job: too-large`; Doku.
+
+**Gemessen (Sitzung, Loopback, Stand-in für den Speicher; nicht das Netz von
+Produktion):**
+
+- **CRC-32 und Größe beim Hochladen:** 0,47 s für 1,07 GB (drei Läufe 0,45 bis
+  0,49 s, Datei im Seitencache); auf kalter Platte bestimmt deren Lesegeschwindigkeit
+  die Zeit. Unter dem Herzschlag des Aufsehers, also ohne Folgen für die Lease.
+- **Speicher von `api` je Download:** ein Download von 1,07 GB: Spitze von
+  `api` +3 MB (`VmHWM` 189 → 192 MB); vier gleichzeitige: +17 MB (189 → 206 MB).
+  Gemessen wird `_archive_bytes` mit dem echten botocore-Client gegen einen
+  HTTP-Stand-in, der `HeadObject` und `GetObject` mit `Range` beantwortet
+  (`mod_zip`-artig: Blöcke zu 1 MiB, ein Thread-Wechsel je Block). Das ist die
+  Zahl für §3.1.5 („unter 10 MB“ war zu knapp geschätzt: vier gleichzeitige
+  kosten rund 17 MB).
+- **Bandbreite und CPU:** ein Download rund 1 000 MB/s bei 0,5 s CPU je GB
+  (50 % eines Kerns); vier gleichzeitige zusammen rund 2 000 MB/s bei 128 % eines
+  Kerns. Jedes Byte geht durch `api` (herein und hinaus); in Produktion begrenzt
+  das Netz, nicht `api`. Der Lesepuffer ist der Block von 1 MiB.
+- **ZIP64 gegen einen unabhängigen Leser:** ein echtes ZIP mit einem Eintrag von
+  4,5 GB (Nullbytes), 4 500 003 487 Bytes, geschrieben aus `Layout`; Info-ZIP
+  `unzip -t` (UnZip 6.00, Debian) meldet für alle drei Einträge „OK“ und „No errors
+  detected“ [M]. Der CI-Test liest dieselbe Anordnung mit `zipfile` ohne Platte (§3.4).
+  Gegenprobe: Ohne die ZIP64-Erweiterung im lokalen Kopf, ohne den Versatz im
+  Zentralverzeichnis oder ohne die ZIP64-Endsätze scheitern jeweils zwei bis drei
+  der fünf ZIP64-Tests.
+
+**Befunde und Auslegungen:**
+
+1. **Namenskonflikt `Literal`:** Das Segment „feste Bytes“ heißt in `result_zip.py`
+   `Literal`; `processing_route.py` benutzt `typing.Literal`. Dort steht darum
+   `result_zip.Literal`.
+2. **Der Strom endet nicht von selbst.** Beim Abbruch des Clients lässt
+   Starlette den Generator hängen, bis er eingesammelt wird: Der Lesestrom zum
+   Speicher blieb offen. Die Gegenprobe im Test zeigte es; `_SlotResponse.__call__`
+   schließt den Generator jetzt selbst (`aclose`) und gibt den Platz frei, auch
+   bei Fehlern.
+3. **Unter einem echten `uvicorn`** (Test mit `uvicorn.Server` in einem Thread,
+   Speicher `moto`): `Content-Length` stimmt mit den gesendeten Bytes überein, es
+   gibt kein `Transfer-Encoding`, ein Fortsetzen mit `Range` und `If-Range` ergibt
+   das Ganze; endet der Speicher zu früh, sieht der Client einen Fehler
+   (`RemoteProtocolError`), nie ein kürzeres, scheinbar fertiges ZIP.
+4. **Kein `length` im Ergebnisdokument** für `bundle` (§3.1.5): die Länge steht
+   erst nach dem Bau von `recipe.json` und `citation.bib` fest und kommt als
+   `Content-Length` der Antwort.
+5. **Der Pfad im Zugriffslog** ist die Vorlage (`/processing/jobs/{jobID}/results/result.zip`),
+   nicht die Kennung (bestehende Eigenschaft von `RequestIdMiddleware`); der Test
+   bestätigt es für die neue Route.
+6. **Fixtures der Prozessbeschreibung:** Der neue Ausgang `bundle` steht in der
+   Prozessbeschreibung; die drei Dateien unter `frontend/src/fixtures/processes/`
+   sind mit dem Skript neu geschrieben (der Test `test_process_fixtures` verlangt es).
+   Das ist die einzige Änderung unter `frontend/` in diesem PR.
+7. **Unbekannter Datensatz:** Kennt die Registry den Datensatz eines Jobs nicht
+   mehr, hat das ZIP kein `citation.bib` (und `recipe.json` keine Attribution, wie
+   der Einzellink).
+8. **Ungültige Bereiche:** Ein `Range`, das der Syntax nicht folgt, mehrere
+   Bereiche, eine andere Einheit und ein Ende vor dem Anfang geben `200` ganz
+   (RFC 9110 erlaubt es); ein Anfang hinter dem Ende oder `-0` gibt `416`.
+9. **Platte des Aufsehers:** `files_meta` kostet einen weiteren Lesedurchgang,
+   keine zusätzliche Platte. Die Formel der Plattenprüfung (M4-11a Punkt 12) bleibt.
+10. **Offen für M4-11b-2:** Das Frontend liest `X-Export-Job` nur über die Antwort
+    des Zuschnitts (same-origin, kein CORS); `too-large` ist ein dritter Wert neben
+    `available` und „keine Kopfzeile“.

@@ -35,7 +35,7 @@
 - **Betroffen:**
   - M4-06 (Modul, signierte URLs, Ablauf, AST-Test), M4-08 (Job-API, Cache,
     Aufräumen der Zeilen), M4-11 und M4-12 (Ergebnisse), M4-13 (Download im
-    Panel).
+    Panel); M4-11b (Nachtrag §14b: ZIP eines Raster-Jobs).
   - `.importlinter`, `backend/tests/test_module_boundaries.py`,
     `backend/tests/earthx/test_no_outbound_outside_gateway.py`,
     `backend/earthx/logging.py`.
@@ -602,6 +602,10 @@ nach OGC bleibt. Die Kennung `jobID` ist ohnehin der Zugang (Q9, 128 Bit,
 `adr/0014` §9); der Redirect gibt nichts heraus, was der Halter der `jobID`
 nicht schon darf **[A]**. Die Antwort trägt `Cache-Control: no-store`, damit
 kein Zwischenspeicher eine signierte URL aufhebt **[A]**.
+
+**Nachtrag 2026-10-13 (M4-11b-1):** Für das ZIP `result.zip` eines Raster-Jobs
+gilt R3: `api` streamt es. Alle Dateien im Speicher bleiben bei R1. Begründung
+und Grenzen in §14b.
 
 ### 6.2 Lebensdauer
 
@@ -1215,6 +1219,62 @@ Wortlaut da. Die Auflagen stehen in §14a.
   Frist neu entschieden; offener Punkt in §13.
 
 ---
+
+## 14b. Nachtrag vom 2026-10-13: `api` streamt das ZIP eines Raster-Jobs (zu §6.1, F4; M4-11b-1)
+
+**Entscheidung (Otto, 13.10.2026, M4-11b F1 Option 1):** Das Ergebnis eines
+Raster-Jobs gibt es als ein ZIP (`result.tif`, `mask.tif`, `recipe.json`,
+`citation.bib` in einem Ordner). `api` setzt es beim Abruf aus den Objekten im
+Speicher zusammen und liefert es selbst, mit `Content-Length` und `Range`. Das
+ist die Option R3 aus §6.1, die F4 verworfen hatte („`api` streamt das Ergebnis
+selbst“; Einwand: es widerspreche 6.4 und belaste `api` mit Hunderten MB). Sie
+gilt **nur für diese eine Datei**. `result.tif`, `mask.tif` und `export.zip`
+bleiben beim `303` auf eine signierte URL (R1, §6.2: 15 Minuten).
+
+**Warum für dieses ZIP.**
+
+- Es enthält, was im Speicher nicht liegt: `recipe.json` ist je Job (eigene
+  `recipe_id`, `adr/0014` §10, M4-08a F4) und `citation.bib` trägt den Tag des
+  Laufes. Das Raster dagegen teilen gleiche Aufträge (Q11).
+- Die Alternativen tragen weniger: Legt der Worker das ZIP fertig ab, verliert
+  `recipe.json` die eigene `recipe_id` (gegen Zusatz §1 vom 12.10.2026). Baut der
+  Browser das ZIP, hält er bis zu 5 GB im Speicher und braucht eine CORS-Regel am
+  Bucket (§6.3).
+- Der Entwurf ist der von nginx `mod_zip`: eine Liste „CRC-32, Größe, Ort, Name“,
+  ein Zeitstempel für alle Einträge, Fortsetzen über `Range` und `If-Range`
+  *nur*, wenn die CRC vorab bekannt sind **[S]** (README,
+  <https://github.com/evanmiller/mod_zip>). Die Bibliotheken `zipstream-ng` und
+  `stream-zip` erwähnen in ihren READMEs keine Byte-Bereiche mitten im ZIP
+  **[S]**; ein eigener Schreiber (`api/result_zip.py`, rund 150 Zeilen, gegen
+  `zipfile` und Info-ZIP getestet) braucht keine neue Abhängigkeit.
+
+**Was die Last begrenzt, die R3 fürchtete.** Kein Zwischenspeichern, kein
+Komprimieren, keine CRC im Abruf (sie kommt vom Aufseher beim Hochladen,
+`earthx_run.result["files_meta"]`); ein Lesepuffer von 1 MiB; höchstens
+4 gleichzeitige Downloads je Prozess, der fünfte bekommt `503` mit
+`Retry-After`. Die 60-Sekunden-Regel aus §6.2 gilt bei **jeder** Anfrage, auch bei
+einer fortgesetzten (`410` ab `expires_at − 60 s`).
+
+**Speicher je Download [M]** (Loopback, echter botocore-Client gegen einen
+HTTP-Stand-in für `HeadObject`/`GetObject` mit `Range`, `plans/m4-11b-angebot-und-zip.md`
+§11): ein Download von 1,07 GB erhöht die Spitze von `api` um 3 MB, vier
+gleichzeitige um 17 MB.
+
+**Bandbreite.** Jedes Byte geht zweimal durch `api` (vom Speicher herein, zum
+Client hinaus). Lokal gemessen rund 1 GB/s bei 0,5 s CPU je GB **[M]**; in
+Produktion begrenzt das Netz. Dort zahlt `api` den Ausgang, den bisher der
+Speicheranbieter trug; die Kosten sind nicht gemessen und davon abhängig, ob der
+Speicher im selben Netz liegt **[A]**.
+
+**Zugang.** Das ZIP hat keine signierte URL; sein Zugang ist die `jobID` wie bei
+`recipe.json` (Q9, 128 Bit). Die Antwort trägt `Cache-Control: no-store`.
+
+**Grenzen und Ausweg.** Die Grenze von 4 gilt je Prozess; mehrere Prozesse
+multiplizieren sie. Wird `api` dadurch zum Engpass, gibt es zwei Wege, die den
+Entwurf unverändert tragen: die Job-Schnittstelle in einen eigenen Prozess legen
+(Log 2026-10-10, „nach M4 vorgemerkt“) oder die Liste der Teile einem
+Reverse-Proxy mit `mod_zip` (`X-Archive-Files`) geben. Beides ist nicht Teil von
+M4-11b.
 
 ## 15. Quellen
 
