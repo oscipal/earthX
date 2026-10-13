@@ -30,6 +30,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from earthx.objectstore.results import FILES_META
+
 __all__ = [
     "FileFacts",
     "Layout",
@@ -74,7 +76,7 @@ def reported_files(result: Mapping[str, Any] | None, names: Sequence[str]) -> di
     A run from before the facts were kept, an export and a document of another shape all give
     ``None``: there is no ZIP for them.
     """
-    meta = (result or {}).get("files_meta")
+    meta = (result or {}).get(FILES_META)
     if not isinstance(meta, Mapping):
         return None
     found: dict[str, FileFacts] = {}
@@ -194,7 +196,7 @@ class Layout:
             position += len(header)
             if member.size:
                 parts.append(
-                    Literal(member.data) if member.data is not None else Stored(member.source or "", 0, member.size)
+                    Literal(member.data) if member.data is not None else Stored(str(member.source), 0, member.size)
                 )
                 position += member.size
         directory = b"".join(
@@ -231,9 +233,13 @@ def _length(part: Segment) -> int:
     return len(part.data) if isinstance(part, Literal) else part.end - part.begin
 
 
+#: Raised when the way the archive is written changes, so that no validator of the old form matches.
+FORMAT = 1
+
+
 def _etag(members: Sequence[Member], date: int, time: int) -> str:
-    """A strong validator over everything that decides the bytes: names, sizes, CRCs, the time stamp."""
-    digest = hashlib.sha256(f"{date}:{time}".encode())
+    """A strong validator over everything that decides the bytes: names, sizes, CRCs, the time stamp, the format."""
+    digest = hashlib.sha256(f"{FORMAT}:{date}:{time}".encode())
     for member in members:
         digest.update(f"\0{member.name}\0{member.size}\0{member.crc32}".encode())
     return f'"{digest.hexdigest()[:32]}"'

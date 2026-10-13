@@ -106,7 +106,7 @@ class TestTheWholeZip:
         assert headers["content-disposition"] == f'attachment; filename="{FOLDER}.zip"'
         assert headers["etag"].startswith('"') and headers["last-modified"] == "Thu, 05 Mar 2026 10:00:00 GMT"
 
-    async def test_the_name_and_the_bytes_carry_no_area_hash_or_job(self, mocked: Store, rig: Rig) -> None:
+    async def test_the_name_of_the_file_and_of_its_entries_carry_no_area_hash_or_job(self, mocked: Store, rig: Rig) -> None:
         job_id, result_id, url = await zipped(rig)
         response = await rig.client.get(url)
         text = response.headers["content-disposition"] + "".join(opened(response.content).namelist())
@@ -182,15 +182,17 @@ class TestByteRanges:
         assert response.status_code == 200 and "content-range" not in response.headers
         assert opened(response.content).testzip() is None
 
-    async def test_if_range_with_the_etag_or_the_date_keeps_the_range_and_anything_else_drops_it(
+    async def test_if_range_with_the_etag_keeps_the_range_and_anything_else_even_the_date_drops_it(
         self, mocked: Store, rig: Rig
     ) -> None:
         _, _, url = await zipped(rig)
         base = await rig.client.get(url)
         etag, date = base.headers["etag"], base.headers["last-modified"]
+        # The date of the run does not move when the registry's attribution or citation does, and with
+        # them recipe.json and citation.bib: it is no validator for these exact bytes (review of M4-11b-1).
         for condition, status in {
             etag: 206,
-            date: 206,
+            date: 200,
             '"0123456789abcdef0123456789abcdef"': 200,
             f"W/{etag}": 200,
             "Wed, 04 Mar 2026 10:00:00 GMT": 200,

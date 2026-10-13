@@ -24,6 +24,11 @@ What each route turns away, and how (all errors are ``application/problem+json``
 * **A result link** answers ``303`` with a URL signed just now for 15 minutes and never past
   the result's expiry, ``Cache-Control: no-store``. ``recipe.json`` is built here from the
   job's own recipe; it does not lie in the object store.
+* **``result.zip``** (M4-11b-1) is the exception to the redirect: ``api`` lays out one ZIP of result,
+  mask, recipe and citation and streams it from the store, ``200``, or ``206`` for one range
+  (``416`` behind the end), ``500`` if the stored files are not what the job reported, ``503``
+  if the store does not answer or four downloads are already running. The checks of the other
+  links (``404``, ``410``) run on every request, a resumed one included.
 
 Every answer under ``/jobs/`` and the placing of a job carry ``Cache-Control: no-store``.
 """
@@ -333,8 +338,11 @@ class ProblemDocument(BaseModel):
 
 
 _PROBLEMS: dict[int | str, dict[str, Any]] = {
-    code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase}
-    for code in (400, 404, 410, 413, 416, 422, 500, 503)
+    code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (400, 404, 410, 413, 422, 503)
+}
+#: What only the ZIP of a result adds: a range behind its end, and files that are not what was reported.
+_ZIP_PROBLEMS: dict[int | str, dict[str, Any]] = {
+    code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (416, 500)
 }
 
 
@@ -827,6 +835,7 @@ _SUFFIXES = {
     summary="A result file: a redirect to a signed URL, recipe.json, or the ZIP of the result",
     responses={
         **_PROBLEMS,
+        **_ZIP_PROBLEMS,
         200: {"description": "recipe.json, or all of result.zip", "content": {"application/zip": {}}},
         206: {"description": "Partial Content: one range of result.zip"},
         303: {"description": "See Other: the signed URL, valid for 15 minutes"},
@@ -982,14 +991,16 @@ async def _check_stored(api: JobApi, result_id: str, sizes: dict[str, int]) -> N
         raise Problem(503, "the result store is not available; try again", headers={"Retry-After": "5"}) from None
 
 
-def _requested_range(request: Request, layout: Layout, last_modified: str) -> tuple[int, int] | None:
+def _requested_range(request: Request, layout: Layout) -> tuple[int, int] | None:
     """The one range to send, or ``None`` for the whole archive; ``416`` if the range lies behind the end.
 
-    ``If-Range`` makes the range depend on the archive still being the one the client began with:
-    the strong validator of the layout, or the date of the run; anything else is the whole.
+    ``If-Range`` makes the range depend on the archive still being the one the client began with.
+    Only the strong validator of the layout counts: the date of the run does not change when the
+    registry's attribution or citation does, and with them ``recipe.json`` and ``citation.bib``
+    (RFC 9110 §13.1.5 wants a date to stand for the exact bytes). A date, or anything else, is the whole.
     """
     condition = request.headers.get("if-range")
-    if condition is not None and condition.strip() not in (layout.etag, last_modified):
+    if condition is not None and condition.strip() != layout.etag:
         return None
     try:
         return byte_range(request.headers.get("range"), layout.total)
@@ -1022,7 +1033,7 @@ async def _bundle_response(
     await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
 
     last_modified = format_datetime(finished, usegmt=True)
-    chosen = _requested_range(request, layout, last_modified)
+    chosen = _requested_range(request, layout)
     first, last = chosen if chosen is not None else (0, layout.total - 1)
     headers = {
         "Accept-Ranges": "bytes",

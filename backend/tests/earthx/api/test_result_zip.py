@@ -189,6 +189,7 @@ class TestAMemberOrANameThatIsRefused:
 
 ZEROS = bytes(1 << 20)
 BIG = 4_500_000_000
+LIMIT_MINUS_ONE = 0xFFFFFFFE
 
 
 class _Zeros(io.RawIOBase):
@@ -268,13 +269,29 @@ class TestZip64:
     def _local_header(size: int) -> tuple[int, int, int, int]:
         member = Member.stored("x/result.tif", "result.tif", FileFacts(size, 0))
         layout = Layout([member], modified=MODIFIED)
-        header = (
-            build(layout, {"result.tif": b""}, 0, 30)
-            if size == 0
-            else b"".join(s.data for s in layout.segments(0, 30) if isinstance(s, Literal))
-        )
+        header = b"".join(s.data for s in layout.segments(0, 30) if isinstance(s, Literal))
         _, version, _, _, _, _, _, _, csize, usize, _, extra = struct.unpack("<4sBBHHHHLLLHH", header)
         return version, csize, usize, extra
+
+    def test_the_zip64_end_begins_with_a_directory_at_ffffffff_not_before(self) -> None:
+        """The directory starts where the one entry ends: header of 33 bytes, then the data."""
+        name_header = 30 + len("x/a")
+        for size, zip64_end in ((LIMIT_MINUS_ONE - name_header, False), (0xFFFFFFFF - name_header, True)):
+            layout = Layout([Member.stored("x/a", "a", FileFacts(size, 0))], modified=MODIFIED)
+            tail = b"".join(s.data for s in layout.segments(layout.total - 22 - 20 - 56, layout.total) if isinstance(s, Literal))
+            assert (b"PK\x06\x06" in tail) is zip64_end, size
+
+    def test_the_zip64_end_begins_with_the_65535th_entry_not_before(self) -> None:
+        for count, zip64_end in ((0xFFFE, False), (0xFFFF, True)):
+            layout = Layout([Member.of_bytes(f"x/{i}", b"") for i in range(count)], modified=MODIFIED)
+            archive = zipfile.ZipFile(io.BytesIO(build(layout)))
+            assert len(archive.namelist()) == count
+            assert (b"PK\x06\x06" in build(layout, start=layout.total - 100)) is zip64_end, count
+
+    def test_the_format_is_part_of_the_validator(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        before = Layout(members(), modified=MODIFIED).etag
+        monkeypatch.setattr("earthx.api.result_zip.FORMAT", 2)
+        assert Layout(members(), modified=MODIFIED).etag != before
 
     def test_the_limit_is_ffffffff_not_before(self) -> None:
         assert self._local_header(0xFFFFFFFE) == (20, 0xFFFFFFFE, 0xFFFFFFFE, 0)

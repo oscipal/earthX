@@ -819,14 +819,14 @@ class TestOverTheCapAnExportJob:
         assert response.status_code == 413
         assert response.headers["X-Export-Job"] == "too-large"
 
-    def test_the_header_names_no_size_and_no_geometry(
+    def test_the_header_is_one_of_two_words_and_names_no_size(
         self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         total = self._native_total(item)
         for job in (total, total - 1):
             self._caps(monkeypatch, crop=total - 1, job=job)
             value = _download(client).headers["X-Export-Job"]
-            assert value in {"available", "too-large"} and not any(char.isdigit() for char in value)
+            assert value in {"available", "too-large"}
 
     def test_a_coarser_factor_over_the_cap_is_offered_no_job(
         self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
