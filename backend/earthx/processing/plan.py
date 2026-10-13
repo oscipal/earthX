@@ -17,12 +17,12 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy
 from rasterio.crs import CRS
-from rasterio.errors import CRSError
+from rasterio.errors import CRSError, RasterioError
 from rasterio.transform import Affine
 from rasterio.warp import transform_geom
 from rasterio.windows import Window
@@ -193,17 +193,59 @@ def _band_bytes(bands: Sequence[Band]) -> int:
     return sum(_value_bytes(band.data_type) for band in bands) or _FALLBACK_BYTES_PER_VALUE
 
 
-#: Metres a degree is worth, only to size the placeholder raster of an estimate (no promise).
+#: Metres a degree of latitude is worth, only to size the placeholder raster of an estimate (no promise).
 _METRES_PER_DEGREE = 111_320.0
 
+#: Floor for the cosine of the latitude, so that a pole does not divide by zero.
+_MIN_COSINE = 0.01
 
-def _pixel_size(crs: str, gsd: float) -> float:
-    """``gsd`` (metres) in the units of ``crs``: degrees where the CRS is geographic, the metres themselves otherwise."""
+
+def _pixel_size(crs: str, gsd: float, latitude: float) -> tuple[float, float]:
+    """``gsd`` (metres) as ``(x, y)`` pixel size in the units of ``crs``.
+
+    A projected CRS gives the metres in its own unit. A geographic CRS gives degrees, the
+    east-west one stretched by the cosine of ``latitude``: a degree of longitude is that much shorter.
+    """
     try:
-        geographic = CRS.from_user_input(crs).is_geographic
+        parsed = CRS.from_user_input(crs)
+        if not parsed.is_geographic:
+            size = gsd / parsed.linear_units_factor[1]
+            return size, size
     except CRSError:
-        return gsd
-    return gsd / _METRES_PER_DEGREE if geographic else gsd
+        raise UnsupportedRecipe(f"the CRS {crs!r} of the input is not one this platform can size a raster in") from None
+    y = gsd / _METRES_PER_DEGREE
+    return y / max(math.cos(math.radians(latitude)), _MIN_COSINE), y
+
+
+def _no_pixel_size(entry: ResolvedInput) -> UnsupportedRecipe:
+    return UnsupportedRecipe(
+        f"the item does not give the pixel size of asset {entry.asset.asset!r} (no gsd), so the job cannot be estimated"
+    )
+
+
+def _input_grid(recipe: Recipe, first: ResolvedInput) -> tuple[Affine, int, int]:
+    """The box of the AOI in the CRS of ``first``'s asset, with the pixel size of its ``gsd``: ``(transform, width, height)``.
+
+    The box is where the first pass would read, the AOI's bounds in the CRS of the asset, not the
+    origin of that CRS; the pixel size is ``gsd`` in the units of the CRS, a geographic one at the
+    latitude of the middle of the AOI. A missing ``gsd`` is not guessed: the estimate is refused
+    with the reason (``UnsupportedRecipe``, a ``422``).
+    """
+    if first.gsd is None:
+        raise _no_pixel_size(first)
+    crs = first.asset.crs or "EPSG:4326"
+    aoi = recipe.aoi.model_dump(mode="json")
+    try:
+        _, south, _, north = shapely_shape(aoi).bounds
+        left, bottom, right, top = shapely_shape(transform_geom("EPSG:4326", crs, aoi)).bounds
+    except (CRSError, RasterioError, ValueError, TypeError):
+        raise UnsupportedRecipe(f"the AOI cannot be placed in the CRS {crs!r} of the input") from None
+    if not all(math.isfinite(value) for value in (left, bottom, right, top)):
+        raise UnsupportedRecipe(f"the AOI has no finite extent in the CRS {crs!r} of the input")
+    size_x, size_y = _pixel_size(crs, first.gsd, (south + north) / 2)
+    width = max(1, math.ceil((right - left) / size_x))
+    height = max(1, math.ceil((top - bottom) / size_y))
+    return Affine(size_x, 0, left, 0, -size_y, top), width, height
 
 
 def _asset_entries(recipe: Recipe) -> list[ResolvedInput]:
@@ -222,15 +264,17 @@ def _asset_entries(recipe: Recipe) -> list[ResolvedInput]:
     return entries
 
 
-def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
+def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta | None:
     """The raster the first pass would read, as far as the recipe says (no read).
 
     The bands of every input asset, in order, named as the core names them. Where an
     asset's names are only in the file, ``names_known`` decides: ``False`` falls back to
     the asset key (an estimate does not care), ``True`` gives up and returns ``None``
-    (a check against the names would reject what the file may well offer). CRS, pixel
-    size (``gsd`` in metres; in degrees for a geographic CRS) and extent are those of
-    the first asset; the size is set by the caller.
+    (a check against the names would reject what the file may well offer). CRS and pixel
+    size are those of the first asset. With ``sized`` the raster is the AOI's box in that CRS
+    at that pixel size (:func:`_input_grid`, which refuses a missing ``gsd``); without it, one
+    pixel at the corner of that box, or at the origin where the size is not known: the names
+    are all a check wants.
     """
     bands: list[BandMeta] = []
     resolved = _asset_entries(recipe)
@@ -244,8 +288,15 @@ def _input_meta(recipe: Recipe, *, names_known: bool) -> RasterMeta | None:
         bands.extend(BandMeta(name, data_type or "float64", None) for name, data_type in zip(names, types, strict=True))
     first = resolved[0]
     crs = first.asset.crs or "EPSG:4326"
-    size = _pixel_size(crs, first.gsd or 1.0)
-    return RasterMeta(crs, Affine(size, 0, 0, 0, -size, 0), 1, 1, tuple(bands))
+    if sized:
+        transform, width, height = _input_grid(recipe, first)
+    else:
+        try:
+            transform, _, _ = _input_grid(recipe, first)
+        except UnsupportedRecipe:
+            transform = Affine(1, 0, 0, 0, -1, 0)
+        width = height = 1
+    return RasterMeta(crs, transform, width, height, tuple(bands))
 
 
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
@@ -254,7 +305,7 @@ def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     Where the item does not say how many bands an asset has, the file does, and the
     core checks again before it reads the first block (plan M4-09 §3.3). Nothing is read.
     """
-    meta = _input_meta(recipe, names_known=True)
+    meta = _input_meta(recipe, names_known=True, sized=False)
     if meta is None:
         return
     for step in plan_steps(recipe.steps, operators):
@@ -266,27 +317,23 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
 
     An export (output ``crop``) is estimated as the crop estimates itself and refused
     with :class:`ExportTooLarge` above ``MAX_JOB_BYTES`` (M4-11 F5); a raster job is refused
-    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7).
+    with :class:`JobTooLarge` above it, counting its output and its mask (M4-12 F7). A raster job
+    needs the pixel size of every asset (``gsd``); without it :class:`UnsupportedRecipe` says so (M4-25).
     """
     if isinstance(recipe.output, CropOutput):
         return _export_estimate(recipe)
     aoi = shapely_shape(recipe.aoi.model_dump(mode="json"))
     input_pixels = input_bytes = 0
-    width = height = 0
     #: Every scene of a mosaic is opened, but each output pixel comes from about one of them.
     assets = sum(len(item.resolved) for item in recipe.inputs)
     for entry in _asset_entries(recipe):
-        if entry.gsd is not None:
-            rows, columns = estimate_output_dims(aoi, entry.gsd)
-        else:
-            rows = columns = MAX_OUTPUT_SIDE_PX
-        if not width:
-            height, width = rows, columns
+        if entry.gsd is None:
+            raise _no_pixel_size(entry)
+        rows, columns = estimate_output_dims(aoi, entry.gsd)
         input_pixels += rows * columns
         input_bytes += rows * columns * _band_bytes(entry.bands)
-    meta = _input_meta(recipe, names_known=False)
+    meta = _input_meta(recipe, names_known=False, sized=True)
     assert meta is not None  # a recipe has at least one resolved input
-    meta = replace(meta, width=width, height=height)
     planned = plan_steps(recipe.steps, operators)
     for step in planned:
         meta = step.operator.transform(meta, step.params)
