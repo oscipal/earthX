@@ -15,6 +15,8 @@ filtered aggregation over a historic window, the same corner of the archive
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import httpx
@@ -36,10 +38,16 @@ WINDOW = (datetime(2024, 1, 1, tzinfo=timezone.utc), datetime(2024, 12, 31, 23, 
 LATENCY_TARGET_S = 1.0
 
 
-@pytest.fixture
-async def gateway():
+@asynccontextmanager
+async def open_gateway() -> AsyncIterator[Gateway]:
     host = httpx.URL(SENTINEL_2_L2A.source.endpoint).host
     async with Gateway(Policy(allowed_hosts=frozenset({host}))) as gateway:
+        yield gateway
+
+
+@pytest.fixture
+async def gateway() -> AsyncIterator[Gateway]:
+    async with open_gateway() as gateway:
         yield gateway
 
 

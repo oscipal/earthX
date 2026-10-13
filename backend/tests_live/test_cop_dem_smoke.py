@@ -23,6 +23,9 @@ materialize run does.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
 
@@ -40,10 +43,16 @@ KNOWN_TILE_LIST_ETAG = '"637fe75ddf7615ba853dd83caf05cd82"'
 KNOWN_TILE = "Copernicus_DSM_COG_10_N00_00_E006_00_DEM"
 
 
-@pytest.fixture
-async def gateway():
+@asynccontextmanager
+async def open_gateway() -> AsyncIterator[Gateway]:
     host = httpx.URL(COP_DEM_GLO_30.source.endpoint).host
     async with Gateway(Policy(allowed_hosts=frozenset({host}))) as gateway:
+        yield gateway
+
+
+@pytest.fixture
+async def gateway() -> AsyncIterator[Gateway]:
+    async with open_gateway() as gateway:
         yield gateway
 
 
