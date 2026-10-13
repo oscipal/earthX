@@ -169,7 +169,9 @@ class TestPlacing:
 
     async def test_the_outputs_of_the_process_may_be_asked_for_by_reference(self, rig: Rig) -> None:
         response = await place(
-            rig, outputs={"result": {"transmissionMode": "reference"}, "mask": {}, "recipe": {}}, response="document"
+            rig,
+            outputs={"result": {"transmissionMode": "reference"}, "mask": {}, "recipe": {}, "bundle": {}},
+            response="document",
         )
         assert response.status_code == 201
 
@@ -692,7 +694,7 @@ class TestResults:
             assert forbidden not in response.text
 
     async def test_the_links_name_what_the_store_holds_and_what_api_builds(self) -> None:
-        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "recipe.json")
+        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")
 
 
 def signed(response: httpx.Response) -> tuple[str, dict[str, list[str]]]:
@@ -1103,9 +1105,7 @@ class TestAnExport:
             assert set(attachments["files"]) == {"ATTRIBUTION.txt", "citation.bib", "aoi.geojson"}
 
     async def test_the_origin_of_a_place_aoi_goes_into_the_side_files(self, rig: Rig) -> None:
-        response = await rig.client.post(
-            EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": PLACE}}
-        )
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": export_order(), "aoiProvenance": PLACE}})
         assert response.status_code == 201, response.text
         (attachments,) = rig.db.execute("SELECT attachments FROM public.earthx_run").fetchone()  # type: ignore[misc]
         assert "AOI geometry: © OpenStreetMap contributors" in attachments["files"]["ATTRIBUTION.txt"]
@@ -1137,7 +1137,9 @@ class TestAnExport:
         problem(response, 400)
         untouched(rig)
 
-    @pytest.mark.parametrize(("document", "name"), [("export", "result"), ("export", "mask"), ("raster", "export")])
+    @pytest.mark.parametrize(
+        ("document", "name"), [("export", "result"), ("export", "mask"), ("export", "bundle"), ("raster", "export")]
+    )
     async def test_outputs_name_only_what_a_job_of_this_kind_has(self, rig: Rig, document: str, name: str) -> None:
         recipe = export_order() if document == "export" else order()
         response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": recipe}, "outputs": {name: {}}})
@@ -1238,8 +1240,9 @@ class TestAMosaic:
 
     async def test_the_same_overpass_in_another_order_shares_the_run(self, rig: Rig) -> None:
         self.overpass(rig, "S2_A", "S2_B", "S2_C")
-        first, second = await place(rig, self.whole("S2_A", "S2_B", "S2_C")), await place(
-            rig, self.whole("S2_C", "S2_B", "S2_A")
+        first, second = (
+            await place(rig, self.whole("S2_A", "S2_B", "S2_C")),
+            await place(rig, self.whole("S2_C", "S2_B", "S2_A")),
         )
         assert first.status_code == second.status_code == 201
         assert first.json()["jobID"] != second.json()["jobID"]
@@ -1279,7 +1282,9 @@ class TestAMosaic:
     async def test_the_estimate_of_a_mosaic_over_the_cap_is_a_413_too(self, rig: Rig) -> None:
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = scene("S2_A", (0.0, 40.0, 10.0, 50.0))
         rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = scene("S2_B", (10.0, 40.0, 20.0, 50.0))
-        response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(self.whole("S2_A", "S2_B")))
+        response = await rig.client.post(
+            "/processing/processes/recipe/estimate", json=envelope(self.whole("S2_A", "S2_B"))
+        )
         assert problem(response, 413)["type"] == "urn:earthx:order-refused:size"
 
 
