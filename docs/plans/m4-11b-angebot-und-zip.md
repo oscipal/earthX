@@ -115,7 +115,7 @@ Zwischenspeichern, kein Neuberechnen (kein Komprimieren, keine CRC im Abruf),
 höchstens 4 Downloads gleichzeitig je Prozess. Nachtrag in `adr/0015` §14b (d).
 
 **Eigener Schreiber, keine neue Abhängigkeit.** Das Format mit vorab bekannten
-Größen und CRC (keine Datendeskriptoren) ist knapp 150 Zeilen; die einzige
+Größen und CRC (keine Datendeskriptoren) braucht rund 350 Zeilen mit Kommentaren, Prüfungen und der Bereichsauswertung; die einzige
 Bibliothek, die Byte-Bereiche mitten im ZIP könnte, ist `mod_zip`, und das ist
 ein nginx-Modul. Als Gegenprobe liest `zipfile` das Ergebnis im Test.
 
@@ -186,7 +186,9 @@ der festen Menge; kein Endpunkt, keine URL. `.importlinter` bleibt unverändert.
   `Content-Length`, `Content-Range` bei `206`, `ETag` (starker Hash über Namen,
   Größen, CRC und Zeitstempel der Einträge, 128 Bit; er enthält weder
   `result_id` noch Rezeptwerte), `Last-Modified` (Ende des Laufs),
-  `If-Range` mit `ETag` oder genau diesem Datum, `Cache-Control: no-store`,
+  `If-Range` nur mit dem `ETag` (das Datum des Laufs bewegt sich nicht, wenn sich die
+  Attribution oder Zitation der Registry und damit `recipe.json` und `citation.bib`
+  ändern; RFC 9110 §13.1.5), `Cache-Control: no-store`,
   `Content-Disposition: attachment; filename="…"` mit dem Namen der Einzellinks
   (`{dataset}_{operatoren}_{YYYYMMDD}.zip`).
 - **Vor dem Strom** (`HeadObject` auf beide Dateien): fehlt eine oder weicht die
@@ -281,7 +283,7 @@ Downloads ab, kann der Strom abbrechen; ein neuer Versuch bekommt `410`.
 | ZIP64 (b) | ein Stub ohne Platte: Eintrag von 4,5 GB Nullbytes mit bekannter Größe und CRC, dahinter ein kleiner Eintrag (Versatz und Zentralverzeichnis hinter 4 GiB). Eine Datei, die `Layout` byteweise liest, ohne das ZIP zu bauen; `zipfile` liest Größen, `header_offset` des zweiten Eintrags über `2**32` und Inhalt und CRC beider Einträge. Grenzfälle: Größe `0xFFFFFFFE` ohne ZIP64-Erweiterung, `0xFFFFFFFF` mit; ZIP64-Ende erst, wo das Zentralverzeichnis hinter `0xFFFFFFFF` beginnt |
 | CRC und Größe (c) | der Aufseher meldet `files_meta` mit der CRC der hochgeladenen Bytes (gegen `zlib.crc32` des Objekts im Speicher); kein `files_meta` bei einem Export; ein Cache-Treffer erbt es; ein Lauf von vor der Änderung hat kein `bundle` |
 | Speicher | `head_size`, `get_range` gegen `moto`: Bereich, Suffix, außerhalb, fehlendes Objekt (`ResultNotFound`), kein Schlüssel und keine Adresse in den Fehlertexten |
-| Route | `200`; `206` für `a-b`, `a-`, `-n`; `416`; mehrere Bereiche, falsche Syntax und vertauschte Bereiche → `200` ganz; `If-Range` mit eigenem ETag → `206`, mit fremdem → `200`; `ETag` gleich bei jedem Abruf, anders bei einem anderen Ergebnis; `Content-Length` gleich der Summe der Bytes; die Bytes gleich `Layout`; `recipe.json` im ZIP gleich dem Einzellink |
+| Route | `200`; `206` für `a-b`, `a-`, `-n`; `416`; mehrere Bereiche, falsche Syntax und vertauschte Bereiche → `200` ganz; `If-Range` mit eigenem ETag → `206`, mit fremdem oder mit dem Datum → `200`; `ETag` gleich bei jedem Abruf, anders bei einem anderen Ergebnis; `Content-Length` gleich der Summe der Bytes; die Bytes gleich `Layout`; `recipe.json` im ZIP gleich dem Einzellink |
 | 410 (F2) | ab `expires_at − 60 s` `410` für den ganzen Abruf und für eine Range-Anfrage danach; ein Abruf kurz davor geht, derselbe eine Minute später nicht (Ablauf mit der Zeit des Tests) |
 | Namen | Export, Ergebnis ohne `files_meta`, nicht fertig, gescheitert, unbekannt oder verworfen → die Antworten der Einzellinks (`404` bzw. Problem); der Ordner und der Dateiname tragen nie AOI, Hash oder `jobID` |
 | Speicher abweichend | Größe im Speicher ≠ Bericht, Objekt fehlt, Speicher antwortet nicht → `500`, `500`, `503`; liefert der Speicher mitten im Strom weniger, bricht die Antwort ab (Client sieht einen Fehler, kein kürzeres ZIP) |
@@ -583,3 +585,11 @@ Produktion):**
 10. **Offen für M4-11b-2:** Das Frontend liest `X-Export-Job` nur über die Antwort
     des Zuschnitts (same-origin, kein CORS); `too-large` ist ein dritter Wert neben
     `available` und „keine Kopfzeile“.
+11. **Durchsicht vor dem PR** (Agent `reviewer`): keine blockierenden Befunde. Behoben:
+    `If-Range` mit dem Datum des Laufs konnte nach einer Änderung der Registry (Attribution,
+    Zitation) ein anderes Archiv fortsetzen; es zählt jetzt nur der `ETag` (Test geändert);
+    das Format steht im `ETag` (`FORMAT`); `files_meta` wird über die Konstante gelesen;
+    `416` und `500` stehen nur an der Route des ZIP in der API-Beschreibung; Grenztests
+    für das ZIP64-Ende (Zentralverzeichnis bei `0xFFFFFFFE`/`0xFFFFFFFF`, 65 534/65 535
+    Einträge); Zeilenangabe des Schreibers korrigiert. Nicht getestet bleibt eine
+    Zentralverzeichnis-Größe von `0xFFFFFFFF` (bräuchte Millionen Einträge).

@@ -1245,7 +1245,7 @@ bleiben beim `303` auf eine signierte URL (R1, §6.2: 15 Minuten).
   *nur*, wenn die CRC vorab bekannt sind **[S]** (README,
   <https://github.com/evanmiller/mod_zip>). Die Bibliotheken `zipstream-ng` und
   `stream-zip` erwähnen in ihren READMEs keine Byte-Bereiche mitten im ZIP
-  **[S]**; ein eigener Schreiber (`api/result_zip.py`, rund 150 Zeilen, gegen
+  **[S]**; ein eigener Schreiber (`api/result_zip.py`, rund 350 Zeilen, gegen
   `zipfile` und Info-ZIP getestet) braucht keine neue Abhängigkeit.
 
 **Was die Last begrenzt, die R3 fürchtete.** Kein Zwischenspeichern, kein
