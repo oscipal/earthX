@@ -1017,3 +1017,8 @@ aus `error_kind` und einem kleinen Unterschlüssel ableitet (hier etwa
 `integer_nodata`), ohne Werte; das ändert Worker, Queue und API und gehört in
 eine eigene Aufgabe. Den häufigsten Fall (ein ganzzahliger Typ ohne nodata)
 verhindert das Panel jetzt vorher.
+
+**Nachtrag M4-12b (13.10.2026):** F8 ist aufgehoben. Das Panel schickt seit M4-12b die
+Szenen eines Überflugs als eine Gruppe und lässt bei mehreren Überflügen einen
+wählen (`plans/m4-12-mosaik-ueberflug.md` §13). Die Stellen oben, die „eine Szene“
+beschreiben, sind der Stand von M4-13b.

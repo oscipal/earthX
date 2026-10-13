@@ -764,3 +764,106 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
       Auftrag und Schätzroute). Wird der Fehler behoben, schlagen die `strict`
       `xfail` fehl und verlangen, die Markierung zu entfernen. Log: Zeile
       „Kostenschätzung für DEM mit reproject“ vom 12.10.2026, offen.
+
+---
+
+## 13. Umsetzung M4-12b (13.10.2026)
+
+**Gebaut** (nur `frontend/`, dazu ein Vertragstest im Backend): Das Panel schickt die
+Szenen eines Überflugs als eine Gruppe, und der Download-Dialog bietet je Überflug
+mit mehreren Szenen „Merge scenes of this pass (job)“ an. Commits: Panel (Auftrag
+mit allen Szenen eines Überflugs), Dialog, Vertragsdateien samt Backend-Test, Doku.
+
+**Panel (hebt M4-13 F8 auf):**
+- `candidateItems` bleibt (Szenen der Auswahl, die die AOI trifft). Neu ist
+  `passesOf`: Teilt sie nach den Gruppen der Trefferliste (`results_group_by`, dieselbe
+  Gruppierung wie die Liste, `grouping.ts`) in Überflüge.
+- Liegt alles in einem Überflug, geht er ohne Auswahl in den Auftrag (eine Gruppe,
+  alle Szenen). Das Panel nennt „N scenes“ und, dass die Schritte auf dem Mosaik laufen.
+  Bei einer Szene steht wie bisher ihre ID.
+- Liegen die Szenen in mehreren Überflügen, wählt der Nutzer einen („Pass“ statt
+  „Scene“). Der Hinweis lautet „One job covers the scenes of one pass; the scenes
+  of another pass need a job of their own.“ (M4-12 F6: ein Überflug je Auftrag.)
+- Die Item-IDs gehen sortiert in den Auftrag: dieselbe Auswahl gibt denselben
+  Auftragstext, die Schätzung bleibt an ihn gebunden (K4). Die Reihenfolge für die
+  Überlappung bestimmt weiter `api` (`mosaic_order`).
+- Die Bänder kommen aus der ersten Szene des Überflugs. Dass alle Szenen je
+  Asset gleich beschaffen sind, prüft der Server (M4-12a, `UnsupportedRecipe`).
+- Die AOI bleibt im Auftrag; „Whole scene / AOI only“ ist M4-13c
+  (`m4-zusaetze-2026-10-12.md` §2) und steht nicht hier.
+
+**Download-Dialog:**
+- Das Angebot erscheint nur im Fall `originals` (Einzeldateien, nur COG) und nur
+  für Gruppen mit mindestens zwei Szenen. Mit gezeichneter AOI mosaikiert der Zuschnitt
+  schon selbst.
+- Die Szenen je Gruppe hält der Store neben den Links (`downloadPasses`), für den
+  Weg über das Layer-Fenster wie für die Auswahl.
+- Der Auftrag ist der aus §3.1: `steps: []`, kein `aoi`, ein Asset (das der
+  Standardansicht, wie die Links), `dtype` aus den Bändern des Items. Der Typ der
+  Quelle bleibt, wenn das Item für alle Bänder dasselbe nodata nennt und nichts
+  skaliert ist (z. B. `visual`: `uint8`), sonst `float32`.
+- Start ohne eigene Schätzung: Ist der Auftrag über dem Deckel (`MAX_JOB_BYTES`,
+  5 GB), steht das `413` des Servers mit seinem Text im Dialog. Die Statusanzeige ist
+  `JobRow` aus M4-13b (SSE mit Rückfall); der Job steht auch in der Jobliste des Panels.
+- Unter der Lizenzstufe *processing* ist der Knopf gesperrt, mit Grund, ohne Anfrage.
+  Der Dialog zeigt dort die Zuschreibung für veränderte Daten, weil ein Mosaik
+  abgeleitete Daten sind (wie beim Zuschnitt).
+
+**Auslegungen** (Vorschlag, gilt bis Otto widerspricht; Log vom 13.10.2026):
+1. Mehrere Überflüge in der Auswahl: Auswahl eines Überflugs im Panel statt
+   mehrerer Jobs auf einmal. Ein Job je Überflug bleibt F6.
+2. Der Dialog startet ohne vorherige Schätzung. Eine Schätzung vor dem Start
+   (wie im Panel) wäre ein Aufruf je Überflug beim Öffnen des Dialogs; der
+   Zusatz zu M4-13c verlangt sie für das Panel („Whole scene“), nicht für den
+   Dialog.
+3. `chooseDtype` behält einen ganzzahligen Typ jetzt auch ohne Schritte. Vorher stand
+   `steps.length > 0` in der Bedingung. Für das Panel ändert sich nur die Anzeige
+   bei null Schritten (der Auftrag ist dort ohnehin gesperrt: „Add a step“).
+4. Der Dialog bietet das Mosaik nur für COG an. Das ist die Grenze des Falls
+   `originals` (Zarr hat keine Einzeldatei zum Verlinken), nicht die des Mosaiks;
+   Zarr-Mosaike bleiben F8.
+
+**Tests** (vitest, `fetch` gestubbt, alles synthetisch): `processingOrder.test.ts`
+(`passesOf`, sortierte Gruppe, `buildMosaicOrder` ohne `aoi`),
+`processingDefaults.test.ts` (Typ ohne Schritte), `ProcessingPanel.test.tsx`
+(alle Szenen in einer Gruppe, gleicher Text bei anderer Auswahl, Wahl eines
+Überflugs, kein „Review“ ohne Wahl, Abweisung des Servers am Auftrag),
+`MosaicJobs.test.tsx` (Angebot nur ab zwei Szenen, nicht bei Zuschnitt, warten
+auf die Prozessbeschreibung, Fehler beim Laden, gesperrt unter *processing*, Auftrag
+im Wortlaut, `float32` ohne nodata, Jobzeile, `413`/`422`/`403` und Netzfehler,
+erneut bestellen nach Entfernen der Zeile), `store.test.ts` (`downloadPasses` für
+Auswahl und Layer, leer bei Zuschnitt und nach dem Schließen),
+`processingContract.test.ts` (zwei neue Vertragsdateien). Backend:
+`test_frontend_orders.py` prüft beide Dateien gegen Schema und Routen (ein Auftrag
+ohne `aoi` ist erlaubt, eine Szene eines anderen Überflugs gibt `422` mit ihrer ID).
+Gegenprobe in der Sitzung: ohne das Sortieren der IDs fallen vier Tests.
+
+**Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell; die Sitzung hat die
+Oberfläche nur in Tests gesehen, nicht im Browser gegen die echte Quelle):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. Datensatz `sentinel-2-c1-l2a`, Zeitraum und Gebiet wählen, in dem ein Überflug
+   mehrere Kacheln hat (am besten über der Zonengrenze bei 12° O, Suche wie in §9),
+   suchen. **Keine AOI zeichnen.**
+2. Die Szenen eines Überflugs auswählen, oben „Download“. Der Dialog „Download
+   original files“ listet die Dateien; darunter „Merged mosaic of a pass“ mit dem
+   Knopf „Merge scenes of this pass (job)“ für Überflüge mit mehr als einer Szene.
+3. Knopf drücken: Die Zeile zeigt „Waiting for a worker“, „Running · n %“, dann
+   „Finished“ mit den Links „Result (COG)“, „Mask“, „Recipe“; bei zwei Zonen steht
+   „Resampled to a common grid“. In QGIS liegt das Ergebnis ohne Naht über der Grenze.
+4. Den Dialog schließen und „⚙ Jobs (1)“ oben rechts öffnen: derselbe Job steht dort.
+5. Wieder eine Fläche zeichnen, die zwei Kacheln desselben Überflugs berührt, die
+   Szenen wählen, „⚙ Process“: Das Panel nennt „2 scenes“ und sagt, dass die Schritte auf dem
+   Mosaik laufen; ein NDVI-Auftrag mit „Review“ und „Start job“ liefert ein Ergebnis
+   über beide Kacheln (vorher: Auswahl einer Szene).
+6. Szenen zweier Überflüge wählen: Das Panel verlangt die Wahl eines Überflugs
+   („Pass“).
+7. Einen sehr langen Überflug (mehr als etwa zehn Kacheln `visual`): Der Dialog
+   zeigt das `413` des Servers mit der Größe; kein Job entsteht.
