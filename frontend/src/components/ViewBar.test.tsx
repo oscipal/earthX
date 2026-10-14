@@ -103,7 +103,7 @@ describe('the download buttons', () => {
     show();
     expect(button('⇩ Download crop')).toBeDefined();
     expect(button('⇩ Download originals')).toBeDefined();
-    expect(container.textContent).not.toMatch(/⇩ Download\s*$/u);
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('⇩ Download');
   });
 
   it('crop: disabled without an AOI, with the reason', () => {

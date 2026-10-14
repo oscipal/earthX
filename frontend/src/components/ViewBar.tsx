@@ -37,7 +37,7 @@ export default function ViewBar() {
   // Two buttons whatever the AOI (Zusatz 1a, Otto 14.10.2026): the crop to the
   // AOI, and the whole original files, which an AOI does not change.
   const originalsAllowed = isCogFormat(dataset);
-  // M4-13b K12: a job for the selection, next to "Download"; the reason it
+  // M4-13b K12: a job for the selection, next to the download buttons; the reason it
   // cannot start (licence tier, no area) is the button's own title.
   const processBlocked = processBlockReason(dataset, aoi, selectedIds.length);
 

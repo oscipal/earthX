@@ -39,13 +39,18 @@ export function noOriginalsReason(dataset: DatasetOption | undefined): string {
   return `${dataset?.title ?? 'This dataset'} has no single original file per scene. Use Download crop.`;
 }
 
+export function noProcessingLicence(dataset: DatasetOption): string {
+  return `${dataset.title}’s licence does not permit processing.`;
+}
+
 // "Merged per pass (job)" takes at most this many scenes per job
 // (`api/intake.py::MAX_ORDER_ITEMS`, M4-07b F5).
 export const MAX_JOB_SCENES = 25;
 
 // The text file of "Save link list": one address per line, built from the
 // links the dialog already shows (https, on the dataset's own hosts), nothing
-// else — no AOI, no scene names.
+// else — no AOI. (The addresses themselves are the source's and may name the
+// scene.)
 export function linkListText(links: readonly OriginalFileLink[]): string {
   return [...new Set(links.map((link) => link.href))].map((href) => `${href}\n`).join('');
 }
@@ -57,11 +62,12 @@ export function linkListText(links: readonly OriginalFileLink[]): string {
 // counts as the latter — an unset or unrecognised value is never assumed
 // linkable).
 //
-// `cropToAoi` is `null` outside full-resolution viewing (browsing the results
-// list, or a layer pinned straight from a quicklook, M2-07d's "quicklook-only
-// layer") — there is no "Crop & merge"/"View full selection" choice to read,
-// so it falls back to whether an AOI happens to be drawn, same as P19's rule
-// for a whole scene with no full-resolution view entered at all.
+// `cropToAoi` is `null` outside full-resolution viewing (a layer pinned
+// straight from a quicklook, M2-07d's "quicklook-only layer") — there is no
+// "Crop & merge"/"View full selection" choice to read, so it falls back to
+// whether an AOI happens to be drawn, same as P19's rule for a whole scene with
+// no full-resolution view entered at all. The results view no longer asks this
+// function: it has a button for each outcome (Zusatz 1a).
 export function decideDownloadOutcome(params: {
   cropToAoi: boolean | null;
   hasAoi: boolean;
@@ -242,9 +248,8 @@ export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): bo
 //
 // `groups` (M3-17): item ids per group (`grouping.ts::groupItemIdsFor`,
 // built by the caller from the results list's own grouping — no new,
-// download-specific grouping here). Only ever called once
-// `decideDownloadOutcome` has already said the selection's download follows
-// the crop; browsing with no AOI at all is the *originals* outcome instead.
+// download-specific grouping here). Only ever called for "Download crop";
+// "Download originals" builds its links from the items instead.
 export function downloadRequestForSelection(
   dataset: DatasetOption | undefined,
   groups: string[][],

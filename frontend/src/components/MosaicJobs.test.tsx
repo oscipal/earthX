@@ -158,7 +158,6 @@ async function show() {
   await flush();
 }
 
-
 const buttons = (label: string) =>
   [...container.querySelectorAll('button')].filter((b) => b.textContent?.trim() === label) as HTMLButtonElement[];
 
@@ -239,6 +238,23 @@ describe('the choice (Zusatz 1a)', () => {
     expect(placed()).toHaveLength(1);
   });
 
+  it('starts afresh when the dialog is opened again: the question is back and no job row is left', async () => {
+    open();
+    await showMerged();
+    await press(START);
+    expect(container.querySelector('.dialog-mosaics .pp-job')).not.toBeNull();
+    act(() => useAppStore.getState().closeDownloadDialog());
+    await flush();
+    expect(container.querySelector('.dialog-originals')).toBeNull();
+    useAppStore.getState().openDownloadForSelection('originals');
+    await flush();
+    expect(buttons(EACH)).toHaveLength(1);
+    expect(container.querySelector('.dialog-mosaics')).toBeNull();
+    await press(MERGED);
+    expect(container.querySelector('.dialog-mosaics .pp-job')).toBeNull();
+    expect(buttons(START)[0].disabled).toBe(false);
+  });
+
   it('keeps "Each scene separately" below the licence tier processing, and says why the merge is not offered', async () => {
     open('catalog');
     await show();
@@ -294,27 +310,36 @@ describe('Save link list', () => {
 
   it('leaves a link on a host the dataset does not name out of the file and the list', async () => {
     open();
-    const stray = scene('S2_X');
-    stray.assets.visual.href = 'https://elsewhere.invalid/x.tif';
-    useAppStore.setState({
-      downloadOriginalLinks: [
-        { itemId: 'S2_A', groupLabel: 'a', asset: 'visual', href: 'https://data.test/S2_A.tif' },
-        { itemId: 'S2_B', groupLabel: 'a', asset: 'visual', href: 'https://data.test/S2_B.tif' },
-      ],
-    });
+    const stray = useAppStore.getState().items.find((i) => i.id === 'S2_B');
+    stray!.assets.visual.href = 'https://elsewhere.invalid/S2_B.tif';
+    useAppStore.getState().openDownloadForSelection('originals');
     await show();
     await press(EACH);
+    expect(linksShown()).toEqual(['S2_A · visual', 'S2_C · visual', 'S2_D · visual']);
     await press('Save link list');
-    expect(await blobs[0].text()).toBe('https://data.test/S2_A.tif\nhttps://data.test/S2_B.tif\n');
+    const text = await blobs[0].text();
+    expect(text).not.toContain('elsewhere.invalid');
+    expect(text.split('\n').slice(0, -1)).toHaveLength(3);
   });
 
-  it('is not offered with nothing, or one file, to save', async () => {
+  it('is not offered with nothing to save', async () => {
     open();
     useAppStore.setState({ downloadOriginalLinks: [] });
     await show();
     await press(EACH);
     expect(buttons('Save link list')).toHaveLength(0);
     expect(container.textContent).toContain('No original file of this selection could be linked');
+  });
+
+  it('is not offered for one file to save, however many scenes were chosen', async () => {
+    open();
+    useAppStore.setState({
+      downloadOriginalLinks: [{ itemId: 'S2_A', groupLabel: 'a', asset: 'visual', href: 'https://data.test/S2_A.tif' }],
+    });
+    await show();
+    await press(EACH);
+    expect(linksShown()).toEqual(['S2_A · visual']);
+    expect(buttons('Save link list')).toHaveLength(0);
   });
 });
 

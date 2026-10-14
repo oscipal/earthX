@@ -1,7 +1,13 @@
 import { useState } from 'react';
 
 import type { DatasetOption } from '../datasets';
-import { canExportLicense, linkListText, type DownloadPass, type OriginalFileLink } from '../download';
+import {
+  canExportLicense,
+  linkListText,
+  noProcessingLicence,
+  type DownloadPass,
+  type OriginalFileLink,
+} from '../download';
 import MosaicJobs, { type Started } from './MosaicJobs';
 
 // The original files of a selection (M3-17, Zusatz 1a): one scene is its link;
@@ -38,7 +44,7 @@ export default function OriginalFiles({ dataset, links, passes }: Props) {
   const asks = scenes > 1;
   const shown = asks ? mode : 'each';
   const mergeAllowed = canExportLicense(dataset?.collection['earthx:license_flags']);
-  const noMerge = `${dataset?.title ?? 'This dataset'}’s licence does not permit processing.`;
+  const noMerge = dataset ? noProcessingLicence(dataset) : 'This dataset’s licence does not permit processing.';
 
   const byGroup = new Map<string, OriginalFileLink[]>();
   for (const link of links) byGroup.set(link.groupLabel, [...(byGroup.get(link.groupLabel) ?? []), link]);

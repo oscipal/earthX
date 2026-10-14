@@ -883,7 +883,7 @@ cd frontend; npm run dev        # Viewer unter http://localhost:5173
 1. **Angebot:**
    - Wähle `sentinel-2-c1-l2a`, zeichne eine große AOI (einige Zehntel Grad) und
      wähle zwei oder drei Szenen eines Überflugs.
-   - Klicke auf „⇩ Download“ und dann im Dialog auf „Download“ (Native).
+   - Klicke auf „⇩ Download crop“ und dann im Dialog auf „Download“ (Native).
    - Erwartet: Statt „Download failed“ erscheint „Too large for a direct download“.
      Darunter stehen der Text des Servers und „About … GB · about … min“.
 2. **Export starten:**
@@ -951,12 +951,22 @@ Doku.
    unverändert, F7).
 2. „Save link list“ erscheint ab zwei Links; bei einem einzelnen wäre die Datei nur
    ein Umweg.
-3. Die Zuschreibung für unveränderte Daten steht oben im Dialog, die für veränderte
+3. `noOriginalsReason` nennt kein „(Zarr)“, weil alles außer `cog` (auch ein fehlender
+   oder unbekannter `earthx:format`) keine Datei je Szene hat.
+4. Mehrere Szenen in lauter Überflügen mit je einer Szene fragen trotzdem; „Merged
+   per pass (job)“ zeigt dann nur die Links und ist ohne Lizenzstufe `processing`
+   gesperrt. Das folgt dem Wortlaut von §12.2; **Otto bitte bestätigen** oder die
+   Frage erst ab einem Überflug mit mindestens zwei Szenen stellen.
+5. Die Zuschreibung für unveränderte Daten steht oben im Dialog, die für veränderte
    Daten (Mosaik) zusätzlich unter „Merged per pass (job)“, wie bisher.
 
-**Prüfungen:** `npx tsc -b --pretty false`, `npm run lint`, `npx vitest run`
-(Tests zu Knöpfen, Frage, Linkliste, 25-Szenen-Grenze, Lizenz, Start ohne `aoi` auch
-mit gezeichneter AOI) und die Backend-Suite siehe PR.
+**Prüfungen:** `npx tsc -b --pretty false`, `npm run lint` und `npx vitest run`
+(973 Tests, darunter Knöpfe, Frage, Linkliste mit fremdem Host, 25-Szenen-Grenze,
+Lizenz, erneutes Öffnen, Start ohne `aoi` auch mit gezeichneter AOI) sind grün;
+`pytest` (4 589 bestanden, 8 übersprungen), `ruff check backend` und `lint-imports`
+(14 Verträge) ebenfalls. **Durchsicht** (Agent `reviewer`): keine Blocker; behoben
+sind der Test zum fremden Host, der Fall eines einzelnen Links, das erneute Öffnen,
+veraltete Kommentare, die Prüfung der Sperren im Start selbst und die Prüfanleitung.
 
 ### 13.3 Prüfanleitung für Otto: Zusatz §1a (nach dem Merge)
 

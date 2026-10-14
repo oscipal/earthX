@@ -765,10 +765,10 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
 });
 
 // M3-17: download follows the view — the crop/originals/disabled decision
-// (`download.ts::decideDownloadOutcome`) as the store wires it up for the
-// current selection (`openDownloadForSelection`) and a pinned layer
-// (`openDownloadDialog`, which alone needs a fetch: a layer's `restore`
-// carries tile info, not the STAC items' own asset `href`s).
+// (`download.ts::decideDownloadOutcome`) for a pinned layer (`openDownloadDialog`,
+// which alone needs a fetch: a layer's `restore` carries tile info, not the STAC
+// items' own asset `href`s); the current selection has a button for each outcome
+// (`openDownloadForSelection`, Zusatz 1a).
 describe('download outcome (M3-17 plan §4)', () => {
   const AOI: GeoJSON.Polygon = {
     type: 'Polygon',

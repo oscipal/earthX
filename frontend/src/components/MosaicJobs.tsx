@@ -2,7 +2,14 @@ import { useEffect } from 'react';
 
 import type { DatasetOption } from '../datasets';
 import { defaultRenderOf } from '../datasets';
-import { attributionText, canExportLicense, MAX_JOB_SCENES, type DownloadPass, type OriginalFileLink } from '../download';
+import {
+  attributionText,
+  canExportLicense,
+  MAX_JOB_SCENES,
+  noProcessingLicence,
+  type DownloadPass,
+  type OriginalFileLink,
+} from '../download';
 import { chooseDtype } from '../processingDefaults';
 import { bandSources, buildMosaicOrder } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
@@ -50,8 +57,16 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
   // A mosaic is derived data: the text for modified data, as for a crop.
   const attribution = allowed && hasJobs ? attributionText(flags, new Date().getFullYear()) : null;
 
+  const why = !allowed
+    ? noProcessingLicence(dataset)
+    : description?.state === 'error'
+      ? 'The platform could not be asked what a job takes.'
+      : !info
+        ? 'Loading what a job takes…'
+        : null;
+
   const start = async (index: number, pass: DownloadPass) => {
-    if (!info) return;
+    if (!info || why || pass.items.length > MAX_JOB_SCENES || started[index]?.state === 'starting') return;
     const bands = bandSources(pass.items[0], dataset.collection['earthx:format'] ?? null, null).filter(
       (source) => source.asset === asset,
     );
@@ -60,16 +75,11 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
     const answer = await placeOrder(
       buildMosaicOrder({ datasetId: dataset.id, itemIds: pass.items.map((i) => i.id), assets: [asset], dtype }),
     );
-    onStarted(index, 'jobID' in answer ? { state: 'placed', jobID: answer.jobID } : { state: 'refused', message: answer.message });
+    onStarted(
+      index,
+      'jobID' in answer ? { state: 'placed', jobID: answer.jobID } : { state: 'refused', message: answer.message },
+    );
   };
-
-  const why = !allowed
-    ? `${dataset.title}’s licence does not permit processing.`
-    : description?.state === 'error'
-      ? 'The platform could not be asked what a job takes.'
-      : !info
-        ? 'Loading what a job takes…'
-        : null;
 
   return (
     <section className="dialog-mosaics" aria-label="Mosaic jobs">
@@ -97,7 +107,13 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
                   <span className="hint-text">No direct link to this scene’s file.</span>
                 ) : (
                   own.map((link) => (
-                    <a key={`${link.itemId}:${link.asset}`} href={link.href} download rel="noopener noreferrer" target="_blank">
+                    <a
+                      key={`${link.itemId}:${link.asset}`}
+                      href={link.href}
+                      download
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
                       {link.itemId} · {link.asset}
                     </a>
                   ))

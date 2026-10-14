@@ -12,11 +12,11 @@ import {
   downloadRequestForSelection,
   isCogFormat,
   isDirectDownloadHref,
+  linkListText,
+  noOriginalsReason,
   originalFileLinks,
   resolutionOptionLabel,
   termsNoticeText,
-  linkListText,
-  noOriginalsReason,
 } from './download';
 import type { LayerRestore, MapLayer } from './layers';
 import type { Collection, LicenseFlags, StacItem } from './types';
@@ -486,9 +486,9 @@ describe('linkListText (Save link list)', () => {
     ).toBe('https://h.test/a.tif\nhttps://h.test/b.tif\n');
   });
 
-  it('is empty for no links, and carries no scene name', () => {
+  it('is empty for no links, and holds nothing but the addresses', () => {
     expect(linkListText([])).toBe('');
-    expect(linkListText([link('SCENE-ID', 'https://h.test/a.tif')])).not.toContain('SCENE-ID');
+    expect(linkListText([link('SCENE-ID', 'https://h.test/a.tif')])).toBe('https://h.test/a.tif\n');
   });
 });
 
