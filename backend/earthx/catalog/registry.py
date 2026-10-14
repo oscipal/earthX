@@ -551,6 +551,30 @@ def group_key(
     return tuple(key)
 
 
+#: The STAC instant of a scene's acquisition; where the overpass key names it, the dataset has a day of acquisition.
+ACQUISITION_INSTANT = "datetime"
+
+
+def acquisition_day(item: Mapping[str, object], viewer: ViewerInfo) -> date | None:
+    """The UTC day a scene was acquired — the day of its overpass — or ``None`` if the dataset has none.
+
+    The one rule for "which day is this scene's" (Otto, 14.10.2026), taken from the overpass key
+    (``results_group_by``): where it holds the STAC instant ``datetime``, that part of the key is the
+    day, turned into the UTC date by :func:`group_key` — for that part alone, so an item that lacks
+    another part of the key (the datatake) still has its day. A dataset whose key holds no such
+    instant has no single day of acquisition: the DEM's key is ``start_datetime``, the start of one
+    acquisition period shared by every tile. An item that lacks the property, or holds no instant
+    there, has none either: a name is no reason to refuse the item.
+    """
+    if ACQUISITION_INSTANT not in viewer.results_group_by:
+        return None
+    try:
+        (day,) = group_key(item, viewer, (ACQUISITION_INSTANT,))
+        return date.fromisoformat(day)
+    except (MissingProperty, ValueError):
+        return None
+
+
 def _key_part(value: object) -> str:
     """A STAC instant as its UTC date, everything else as its own text."""
     if isinstance(value, datetime):

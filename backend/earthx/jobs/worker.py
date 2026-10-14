@@ -60,7 +60,7 @@ from earthx.jobs.cleanup import cleanup
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.entry import ChildTarget
 from earthx.objectstore.errors import ObjectStoreError
-from earthx.objectstore.results import Store, delete_result, new_result_id, upload_result
+from earthx.objectstore.results import FILES_META, Store, delete_result, file_facts, new_result_id, upload_result
 
 __all__ = ["DISK_SPACE", "EXPORT_FILES", "RESULT_FILES", "Supervisor", "free_bytes"]
 
@@ -462,9 +462,14 @@ class Supervisor:
             queue.finish_failed(conn, run_id, attempt, "unknown", backoff_seconds=self.config.backoff_seconds)
             return "unknown"
         result_id = new_result_id()
+        facts: dict[str, dict[str, int]] = {}
 
         def upload() -> None:
             for name in files:
+                if files == RESULT_FILES:
+                    # Size and CRC of the bytes about to go up: `api` builds the ZIP of the result
+                    # from them (M4-11b-1). Read here, under the heartbeat, not by the child (B9).
+                    facts[name] = file_facts(workdir / name)
                 upload_result(self.store, result_id, name, workdir / name)
 
         try:
@@ -484,7 +489,9 @@ class Supervisor:
             self._forget(result_id)
             raise
         try:
-            finished = queue.finish_successful(conn, run_id, attempt, result_id, info)
+            finished = queue.finish_successful(
+                conn, run_id, attempt, result_id, {**info, FILES_META: facts} if facts else info
+            )
         except psycopg.Error:
             self._forget(result_id)
             raise

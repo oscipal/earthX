@@ -211,6 +211,24 @@ class TestStatus:
         assert (status.status, status.progress, status.started_at, status.finished_at) == ("accepted", 0, None, None)
         assert status.error_kind is None and status.result_id is None and status.result is None
 
+    def test_the_day_of_the_scenes_is_kept_with_the_job_and_handed_back_untouched(self, db: psycopg.Connection) -> None:
+        """M4-11b-1 (Otto, 14.10.2026): `jobs` stores what `api` found out and never reads it."""
+        from datetime import date
+
+        status = job_status(db, submit(db, make_recipe(), acquired_on=date(2025, 7, 5)))
+        assert status is not None and status.acquired_on == date(2025, 7, 5)
+
+    def test_without_a_day_the_job_has_none_and_two_orders_on_one_run_keep_their_own(self, db: psycopg.Connection) -> None:
+        from datetime import date
+
+        none = job_status(db, submit(db, make_recipe()))
+        first = job_status(db, submit(db, make_recipe(), acquired_on=date(2025, 7, 5)))
+        second = job_status(db, submit(db, make_recipe(), acquired_on=date(2025, 7, 6)))
+        assert none is not None and first is not None and second is not None
+        assert none.acquired_on is None
+        assert (first.acquired_on, second.acquired_on) == (date(2025, 7, 5), date(2025, 7, 6))
+        assert db.execute("SELECT count(DISTINCT run_id) FROM public.earthx_job").fetchone() == (1,)
+
     def test_a_running_job_shows_its_progress(self, db: psycopg.Connection) -> None:
         run_id, (job_id,) = add_run(db, status="running")
         db.execute("UPDATE public.earthx_run SET progress = 42 WHERE run_id = %s", (run_id,))
@@ -297,6 +315,7 @@ class TestStatus:
             "error_kind",
             "result_id",
             "result",
+            "acquired_on",
         }
         text = repr(status)
         assert "c1:" not in text and HOST not in text and "run_id" not in text

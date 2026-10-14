@@ -170,7 +170,9 @@ class TestPlacing:
 
     async def test_the_outputs_of_the_process_may_be_asked_for_by_reference(self, rig: Rig) -> None:
         response = await place(
-            rig, outputs={"result": {"transmissionMode": "reference"}, "mask": {}, "recipe": {}}, response="document"
+            rig,
+            outputs={"result": {"transmissionMode": "reference"}, "mask": {}, "recipe": {}, "bundle": {}},
+            response="document",
         )
         assert response.status_code == 201
 
@@ -694,7 +696,7 @@ class TestResults:
             assert forbidden not in response.text
 
     async def test_the_links_name_what_the_store_holds_and_what_api_builds(self) -> None:
-        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "recipe.json")
+        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")
 
 
 def signed(response: httpx.Response) -> tuple[str, dict[str, list[str]]]:
@@ -713,7 +715,7 @@ class TestResultLinks:
         assert response.headers["location"].startswith("http://localhost:3900/earthx/results/")
         assert path == f"/earthx/results/{result_id}/result.tif"
         assert int(query["X-Amz-Expires"][0]) == 900
-        assert "sentinel-2-c1-l2a_scale_20260305.tif" in query["response-content-disposition"][0]
+        assert "sentinel-2-c1-l2a_scale_20260601.tif" in query["response-content-disposition"][0]
         again = await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif")
         assert again.status_code == 303, "the link stays good, and each call signs afresh"
 
@@ -722,7 +724,7 @@ class TestResultLinks:
         result_id = finish(rig.db, job_id)
         path, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/mask.tif"))
         assert path == f"/earthx/results/{result_id}/mask.tif"
-        assert "sentinel-2-c1-l2a_scale_20260305_mask.tif" in query["response-content-disposition"][0]
+        assert "sentinel-2-c1-l2a_scale_20260601_mask.tif" in query["response-content-disposition"][0]
 
     async def test_the_url_never_lives_past_the_end_of_the_result(self, rig: Rig) -> None:
         job_id = await placed(rig)
@@ -768,8 +770,8 @@ class TestResultLinks:
         finish(rig.db, plain)
         finish(rig.db, scaled)
         for job_id, expected in (
-            (plain, "sentinel-2-c1-l2a_export_20260305.tif"),
-            (scaled, "sentinel-2-c1-l2a_scale_20260305.tif"),
+            (plain, "sentinel-2-c1-l2a_export_20260601.tif"),
+            (scaled, "sentinel-2-c1-l2a_scale_20260601.tif"),
         ):
             _, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif"))
             assert query["response-content-disposition"] == [f'attachment; filename="{expected}"']
@@ -807,7 +809,7 @@ class TestRecipeJson:
         assert response.headers["cache-control"] == "no-store"
         assert (
             response.headers["content-disposition"]
-            == 'attachment; filename="sentinel-2-c1-l2a_scale_20260305_recipe.json"'
+            == 'attachment; filename="sentinel-2-c1-l2a_scale_20260601_recipe.json"'
         )
         assert document["recipe_id"] == recipe_id
         assert document["steps"] == [SCALE_STEP | {"params": {"factor": 2.0, "label": None}}]
@@ -969,7 +971,54 @@ class TestOtherDatasets:
         job_id = await placed(rig, order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)))
         finish(rig.db, job_id)
         _, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif"))
-        assert "cop-dem-glo-30_scale_20260305.tif" in query["response-content-disposition"][0]
+        assert "cop-dem-glo-30_scale_run20260305.tif" in query["response-content-disposition"][0]
+
+
+class TestTheDayInTheName:
+    """Otto, 14.10.2026: the scenes' day of acquisition, else the day of the run marked ``run``."""
+
+    async def test_a_sentinel_job_is_named_by_the_day_of_its_scene_not_the_day_of_its_run(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id)  # the run ended on 2026-03-05, the scene is of 2026-06-01
+        base = f"/processing/jobs/{job_id}/results"
+        names = {}
+        for link in ("result.tif", "mask.tif"):
+            _, query = signed(await rig.client.get(f"{base}/{link}"))
+            names[link] = query["response-content-disposition"][0]
+        recipe = (await rig.client.get(f"{base}/recipe.json")).headers["content-disposition"]
+        assert "sentinel-2-c1-l2a_scale_20260601.tif" in names["result.tif"]
+        assert "sentinel-2-c1-l2a_scale_20260601_mask.tif" in names["mask.tif"]
+        assert "sentinel-2-c1-l2a_scale_20260601_recipe.json" in recipe
+        assert "run" not in recipe and "20260305" not in recipe
+
+    async def test_a_dem_job_has_no_day_of_a_scene_and_is_named_by_its_run(self, rig: Rig) -> None:
+        rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
+        job_id = await placed(rig, order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)))
+        finish(rig.db, job_id)
+        _, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif"))
+        assert "cop-dem-glo-30_scale_run20260305.tif" in query["response-content-disposition"][0]
+
+    async def test_the_day_of_the_scenes_is_kept_with_the_job_in_the_queue(self, rig: Rig) -> None:
+        first = await placed(rig)
+        finish(rig.db, first)
+        row = rig.db.execute("SELECT acquired_on FROM public.earthx_job WHERE job_id = %s", (first,)).fetchone()
+        assert row is not None and str(row[0]) == "2026-06-01"
+
+    async def test_a_job_from_before_the_day_was_kept_is_named_by_its_run(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        rig.db.execute("UPDATE public.earthx_job SET acquired_on = NULL WHERE job_id = %s", (job_id,))
+        _, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif"))
+        assert "sentinel-2-c1-l2a_scale_run20260305.tif" in query["response-content-disposition"][0]
+
+    async def test_an_export_over_two_days_is_named_by_its_run(self, rig: Rig) -> None:
+        later = s2_item("S2_B")
+        later["properties"]["datetime"] = "2026-06-08T10:00:00Z"
+        rig.source.items[("sentinel-2-c1-l2a", "S2_B")] = later
+        job_id = await placed(rig, order(groups=(("S2_A",), ("S2_B",)), assets=("red",), steps=[], output=CROP))
+        finish(rig.db, job_id, result=EXPORT_RESULT)
+        _, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/export.zip"))
+        assert "sentinel-2-c1-l2a_export_run20260305.zip" in query["response-content-disposition"][0]
 
 
 class TestWhatGoesWrongInside:
@@ -1053,7 +1102,37 @@ class TestTheNameOfADownload:
     def test_a_recipe_of_another_shape_gives_the_plain_name_of_the_day(self, body: Any) -> None:
         from earthx.api.processing_route import _download_name
 
-        assert _download_name(body, self.status(), ".tif") == "result_export_20260102.tif"
+        assert _download_name(body, self.status(), ".tif") == "result_export_run20260102.tif"
+
+    @pytest.mark.parametrize(
+        ("suffix", "expected"),
+        [(".tif", "d_scale_20250705.tif"), ("_mask.tif", "d_scale_20250705_mask.tif"), (".zip", "d_scale_20250705.zip"),
+         ("_recipe.json", "d_scale_20250705_recipe.json")],
+    )  # fmt: skip
+    def test_the_day_of_the_scenes_is_the_day_in_every_name_whatever_day_the_run_ended(
+        self, suffix: str, expected: str
+    ) -> None:
+        """Otto, 14.10.2026: the overpass, not the run — and no ``run`` in front of it."""
+        from dataclasses import replace
+        from datetime import date
+
+        from earthx.api.processing_route import _download_name
+
+        body = {"inputs": [{"dataset": "d"}], "steps": [{"op": "scale"}]}
+        status = replace(
+            self.status(), acquired_on=date(2025, 7, 5), finished_at=datetime(2026, 3, 5, 23, 30, tzinfo=UTC)
+        )
+        assert _download_name(body, status, suffix) == expected
+
+    def test_without_a_day_of_the_scenes_the_day_of_the_run_comes_marked_run(self) -> None:
+        """The DEM, scenes on several days and a job from before the day was kept: ``run20261014``."""
+        from dataclasses import replace
+
+        from earthx.api.processing_route import _download_name
+
+        body = {"inputs": [{"dataset": "cop-dem-glo-30"}], "steps": [{"op": "reproject"}]}
+        status = replace(self.status(), finished_at=datetime(2026, 10, 14, 8, 0, tzinfo=UTC))
+        assert _download_name(body, status, ".zip") == "cop-dem-glo-30_reproject_run20261014.zip"
 
     def test_the_day_is_the_runs_end_in_utc_else_the_jobs_creation(self) -> None:
         from dataclasses import replace
@@ -1062,7 +1141,7 @@ class TestTheNameOfADownload:
 
         body = {"inputs": [{"dataset": "d"}], "steps": []}
         late = replace(self.status(), finished_at=datetime(2026, 3, 5, 23, 30, tzinfo=timezone(timedelta(hours=-5))))
-        assert _download_name(body, late, ".tif") == "d_export_20260306.tif"
+        assert _download_name(body, late, ".tif") == "d_export_run20260306.tif"
 
     def test_a_dataset_name_that_the_store_would_refuse_is_cleaned_and_many_steps_are_counted(self) -> None:
         from earthx.api.processing_route import _download_name
@@ -1071,7 +1150,7 @@ class TestTheNameOfADownload:
         body = {"inputs": [{"dataset": "we ird/na\u00efme" + "x" * 200}], "steps": [{"op": "a" * 30}, {"op": "b" * 30}]}
         name = _download_name(body, self.status(), "_recipe.json")
         _check_filename(name)  # the store's own rule
-        assert "2-steps" in name and name.endswith("_20260102_recipe.json")
+        assert "2-steps" in name and name.endswith("_run20260102_recipe.json")
 
 
 # --- an export (M4-11a) ------------------------------------------------------------
@@ -1139,7 +1218,9 @@ class TestAnExport:
         problem(response, 400)
         untouched(rig)
 
-    @pytest.mark.parametrize(("document", "name"), [("export", "result"), ("export", "mask"), ("raster", "export")])
+    @pytest.mark.parametrize(
+        ("document", "name"), [("export", "result"), ("export", "mask"), ("export", "bundle"), ("raster", "export")]
+    )
     async def test_outputs_name_only_what_a_job_of_this_kind_has(self, rig: Rig, document: str, name: str) -> None:
         recipe = export_order() if document == "export" else order()
         response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": recipe}, "outputs": {name: {}}})
@@ -1175,7 +1256,7 @@ class TestAnExport:
         result_id = finish(rig.db, job_id, result=EXPORT_RESULT)
         path, query = signed(await rig.client.get(f"/processing/jobs/{job_id}/results/export.zip"))
         assert path == f"/earthx/results/{result_id}/export.zip"
-        assert "sentinel-2-c1-l2a_export_20260305.zip" in query["response-content-disposition"][0]
+        assert "sentinel-2-c1-l2a_export_20260601.zip" in query["response-content-disposition"][0]
 
     async def test_a_name_of_the_other_output_is_a_404_either_way(self, rig: Rig) -> None:
         export_job = await placed(rig, export_order())

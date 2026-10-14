@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import contextlib
 import secrets
+import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from earthx.objectstore.client import S3, build_clients
+from earthx.objectstore.client import S3, ObjectRange, build_clients
 from earthx.objectstore.config import StoreConfig
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring
 
@@ -49,6 +50,11 @@ RESULT_NAMES: Mapping[str, str] = {
     "attribution.txt": "text/plain; charset=utf-8",
     "export.zip": "application/zip",
 }
+
+#: Key in a raster run's result document under which the supervisor reports, for each file it
+#: uploaded, its size and CRC-32 (M4-11b-1): the facts `api` builds the ZIP of a result from.
+FILES_META = "files_meta"
+_CRC_BLOCK = 1024 * 1024
 
 # The shape of `secrets.token_urlsafe(16)`: 128 bits, 22 characters.
 _RESULT_ID_LENGTH = 22
@@ -94,6 +100,29 @@ def upload_result(store: Store, result_id: str, name: str, path: Path) -> None:
             with contextlib.suppress(ObjectStoreError):
                 store.s3.abort_multipart_upload(key, upload_id)
             raise
+
+
+def file_facts(path: Path) -> dict[str, int]:
+    """Size and CRC-32 of the file, in one pass over its bytes: what ``upload_result`` will send."""
+    crc = 0
+    size = 0
+    with path.open("rb") as body:
+        while block := body.read(_CRC_BLOCK):
+            crc = zlib.crc32(block, crc)
+            size += len(block)
+    return {"bytes": size, "crc32": crc}
+
+
+def result_size(store: Store, result_id: str, name: str) -> int:
+    """Size of one result file in the store; :class:`ResultNotFound` if it is not there."""
+    return store.s3.head_size(_key(result_id, name))
+
+
+def open_result_range(store: Store, result_id: str, name: str, start: int, end: int) -> ObjectRange:
+    """Bytes ``start`` to ``end`` (both included) of one result file; the caller closes the stream."""
+    if not 0 <= start <= end:
+        raise ValueError("start and end must satisfy 0 <= start <= end")
+    return store.s3.get_range(_key(result_id, name), start, end)
 
 
 def signed_download(

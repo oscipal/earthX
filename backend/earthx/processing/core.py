@@ -216,6 +216,25 @@ def _profile(meta: RasterMeta, dtype: str, nodata: float) -> dict[str, Any]:
     }
 
 
+def _cast(data: numpy.ma.MaskedArray, dtype: str) -> numpy.ma.MaskedArray:
+    """``data`` as ``dtype``; a float written to an integer type is rounded and clamped, not cut off.
+
+    The rule of GDAL's ``GDALCopyWords`` (gdal_priv_templates.hpp): add 0.5 to the magnitude and drop the
+    fraction, so x.5 goes away from zero, then clamp to the range of the type. Unlike GDAL, which turns NaN
+    into 0, NaN stays what it marks, a masked pixel, and ends up as nodata. The sum is taken in float64,
+    where every float32 is exact, so no value just below x.5 is pushed over it.
+    """
+    target = numpy.dtype(dtype)
+    if not (numpy.issubdtype(target, numpy.integer) and numpy.issubdtype(data.dtype, numpy.floating)):
+        return data.astype(target, casting="unsafe")
+    values = numpy.ma.getdata(data).astype("float64")
+    nan = numpy.isnan(values)
+    rounded = numpy.sign(values) * numpy.floor(numpy.abs(values) + 0.5)
+    limits = numpy.iinfo(target)
+    clamped = numpy.clip(numpy.where(nan, 0.0, rounded), limits.min, limits.max)
+    return numpy.ma.MaskedArray(clamped.astype(target), mask=numpy.ma.getmaskarray(data) | nan)
+
+
 class _Run:
     """The state of one run: the files it wrote, the blocks done, the valid pixels counted."""
 
@@ -251,10 +270,10 @@ class _Run:
     ) -> None:
         with open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata)) as dst:
             for window in _blocks(meta.width, meta.height):
-                data = block(window)
+                data = _cast(block(window), dtype)
                 if count_valid:
                     self.valid_pixels += int((~numpy.ma.getmaskarray(data)).any(axis=0).sum())
-                dst.write(numpy.ma.filled(data.astype(dtype, casting="unsafe"), nodata), window=window)
+                dst.write(numpy.ma.filled(data, nodata), window=window)
                 self.tick()
 
 

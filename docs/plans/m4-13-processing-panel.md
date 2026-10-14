@@ -953,7 +953,9 @@ als „(recommended)“ gekennzeichnet) ist ersetzt:
 2. Eine Quelle mit Gleitkommatyp (`float32`, `float64`) ohne Skalierung → ihr
    eigener Typ, mit oder ohne Interpolation.
 3. Eine Reprojektion, deren Resampling nicht `nearest` ist oder noch fehlt →
-   `float32` (der Kern schneidet den Bruch beim Schreiben einer Ganzzahl ab).
+   `float32` (der Kern rundet seit M4-26 beim Schreiben einer Ganzzahl: Regel wie
+   `GDALCopyWords`, x,5 weg von null, dann Klemmen auf den Wertebereich; NaN wird
+   `nodata`; `adr/0014` §15h).
 4. `nearest`, alle Bänder derselben ganzzahligen Typ ohne `scale`/`offset` am
    Item (sonst rechnet der Kern auf `float32`), und das Item nennt für alle
    Bänder denselben endlichen nodata-Wert → der Eingabetyp.

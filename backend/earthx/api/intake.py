@@ -47,7 +47,7 @@ import math
 import secrets
 from collections.abc import Awaitable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -86,6 +86,7 @@ from earthx.catalog.registry import (
     LicenseTier,
     MissingProperty,
     UnknownDatasetError,
+    acquisition_day,
     group_key,
 )
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
@@ -161,6 +162,9 @@ class AcceptedOrder:
     #: For an export only (M4-11a): the side files of its ZIP, built here because only `api`
     #: reads the registry and sees the origin of the AOI.
     attachments: Attachments | None = None
+    #: The UTC day of acquisition of the scenes of the recipe, if they all share one (Otto, 14.10.2026);
+    #: the date in the name of every download of the job. See :func:`_acquired_on`.
+    acquired_on: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,8 +335,9 @@ async def _accept(
         # A band name the item does not describe: not this stage's business, which is the size
         # alone. The queue's own estimate (`submit`) and the core meet it where they always did.
         pass
+    acquired_on = _acquired_on(prepared)
     if not isinstance(recipe.output, CropOutput):
-        return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped)
+        return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped, acquired_on=acquired_on)
     kept = {item_id for group in prepared.groups for item_id in group}
     attachments = export_attachments(
         prepared.config,
@@ -341,7 +346,21 @@ async def _accept(
         aoi_provenance=aoi_provenance,
         accepted_at=datetime.now(UTC),
     )
-    return AcceptedOrder(recipe, False, prepared.skipped, attachments)
+    return AcceptedOrder(recipe, False, prepared.skipped, attachments, acquired_on)
+
+
+def _acquired_on(prepared: _Prepared) -> date | None:
+    """The day of acquisition all the scenes of the recipe share, else ``None`` (Otto, 14.10.2026).
+
+    The rule for one scene is :func:`~earthx.catalog.registry.acquisition_day`. An order whose scenes
+    lie on several days (an export over a month) or whose dataset has no single day (the DEM) has none,
+    and its downloads are named by the day of the run, marked ``run``.
+    """
+    viewer = prepared.config.viewer
+    if viewer is None:
+        return None
+    days = {acquisition_day(target.item, viewer) for target in prepared.targets}
+    return days.pop() if len(days) == 1 else None
 
 
 def _recipe_of(

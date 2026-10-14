@@ -148,3 +148,78 @@ class TestTheOverpassKey:
     def test_a_missing_overpass_property_is_an_error_too(self) -> None:
         with pytest.raises(MissingProperty, match="s2:datatake_id"):
             group_key(item(datetime="2026-07-24T10:00:00Z"), SENTINEL_2, ("datetime", "s2:datatake_id"))
+
+
+class TestTheDayOfAcquisition:
+    """Otto, 14.10.2026: the day in a download's name is the day of the overpass, where the dataset has one."""
+
+    S2 = ViewerInfo(
+        group_by=("datetime", "grid:code"),
+        min_zoom=0,
+        max_zoom=19,
+        browse=BrowseMode.FULL_RESOLUTION,
+        quicklook_nodata_max=None,
+        results_group_by=("datetime", "datatake"),
+    )
+    PERIOD = ViewerInfo(
+        group_by=("start_datetime",),
+        min_zoom=0,
+        max_zoom=19,
+        browse=BrowseMode.FULL_RESOLUTION,
+        quicklook_nodata_max=None,
+        results_group_by=("start_datetime",),
+    )
+
+    def test_the_instant_of_the_key_is_the_utc_day_not_the_day_of_the_offset(self) -> None:
+        from datetime import date
+
+        from earthx.catalog.registry import acquisition_day
+
+        late = item(datetime="2025-07-05T23:30:00-05:00", datatake="G1")
+        assert acquisition_day(late, self.S2) == date(2025, 7, 6)
+        assert acquisition_day(item(datetime="2025-07-05T10:20:30.123Z", datatake="G1"), self.S2) == date(2025, 7, 5)
+
+    def test_an_item_that_lacks_another_part_of_the_key_still_has_its_day(self) -> None:
+        from datetime import date
+
+        from earthx.catalog.registry import acquisition_day
+
+        assert acquisition_day(item(datetime="2025-07-05T10:20:30Z"), self.S2) == date(2025, 7, 5)
+
+    def test_the_part_may_stand_anywhere_in_the_key(self) -> None:
+        from datetime import date
+
+        from earthx.catalog.registry import acquisition_day
+
+        key = viewer(group_by=("platform", "datetime"))
+        assert acquisition_day(item(platform="a", datetime="2025-07-05T10:00:00Z"), key) == date(2025, 7, 5)
+
+    def test_a_dataset_whose_key_is_a_period_has_no_day(self) -> None:
+        from earthx.catalog.registry import acquisition_day
+
+        dem = item(start_datetime="2010-12-01T00:00:00Z", datetime="2021-04-22T00:00:00Z")
+        assert acquisition_day(dem, self.PERIOD) is None, "the instant of the item is not in the key: the key rules"
+
+    @pytest.mark.parametrize(
+        "properties",
+        [{"datatake": "G1"}, {"datetime": None, "datatake": "G1"}, {"datetime": "not a time", "datatake": "G1"}, {}],
+    )
+    def test_an_item_without_an_instant_has_no_day_and_is_not_refused(self, properties: dict[str, object]) -> None:
+        from earthx.catalog.registry import acquisition_day
+
+        assert acquisition_day(item(**properties), self.S2) is None
+
+    def test_an_item_without_properties_has_no_day(self) -> None:
+        from earthx.catalog.registry import acquisition_day
+
+        assert acquisition_day({"id": "x"}, self.S2) is None
+
+    def test_the_registry_has_a_day_for_the_two_sentinel_datasets_and_none_for_the_dem(self) -> None:
+        from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A_ZARR3
+
+        assert ACQ in SENTINEL_2_L2A.viewer.results_group_by  # type: ignore[union-attr]
+        assert ACQ in SENTINEL_2_L2A_ZARR3.viewer.results_group_by  # type: ignore[union-attr]
+        assert ACQ not in COP_DEM_GLO_30.viewer.results_group_by  # type: ignore[union-attr]
+
+
+ACQ = "datetime"

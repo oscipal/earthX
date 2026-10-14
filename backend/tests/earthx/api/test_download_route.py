@@ -809,14 +809,24 @@ class TestOverTheCapAnExportJob:
         assert response.status_code == 413
         assert response.headers["X-Export-Job"] == "available"
 
-    def test_over_the_jobs_cap_too_no_job_is_offered(
+    def test_over_the_jobs_cap_too_no_job_is_offered_and_the_header_says_why(
         self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """M4-11b K9: native resolution and COG, but over the job's cap: ``too-large``, not silence."""
         total = self._native_total(item)
         self._caps(monkeypatch, crop=total - 1, job=total - 1)
         response = _download(client)
         assert response.status_code == 413
-        assert "X-Export-Job" not in response.headers
+        assert response.headers["X-Export-Job"] == "too-large"
+
+    def test_the_header_is_one_of_two_words_and_names_no_size(
+        self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        total = self._native_total(item)
+        for job in (total, total - 1):
+            self._caps(monkeypatch, crop=total - 1, job=job)
+            value = _download(client).headers["X-Export-Job"]
+            assert value in {"available", "too-large"}
 
     def test_a_coarser_factor_over_the_cap_is_offered_no_job(
         self, client: TestClient, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
