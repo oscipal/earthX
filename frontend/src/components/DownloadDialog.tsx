@@ -260,7 +260,7 @@ export default function DownloadDialog() {
             </p>
           )}
 
-          {exportOffer && <ExportJobOffer key={exportOffer.message + exportOffer.exportJob} offer={exportOffer} />}
+          {exportOffer && <ExportJobOffer key={exportOffer.id} offer={exportOffer} />}
         </div>
         <div className="dialog-actions">
           <button type="button" className="lm-btn" onClick={close} disabled={downloading}>

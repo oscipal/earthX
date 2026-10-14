@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { HttpError } from '../api';
 import type { ExportOffer } from '../download';
@@ -12,7 +12,7 @@ import { JobRow } from './JobList';
 // selection fits an export job. The estimate is asked once when the offer
 // appears (K6); the job is followed by the row of the processing panel and
 // stays in the panel's list when the dialog closes (K7). The dialog mounts one
-// per offer (`key`), so a new refusal starts afresh.
+// per offer (`key` is `ExportOffer.id`), so a new refusal starts afresh.
 
 export const TOO_LARGE_FOR_A_JOB = 'An export job may write at most 5 GB. Draw a smaller area or choose fewer assets.';
 
@@ -36,7 +36,9 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
     if (tooLarge) return undefined;
     const controller = new AbortController();
     estimateOrder(buildExportOrder(offer.request), controller.signal)
-      .then((doc) => setEstimate({ state: 'ready', doc }))
+      .then((doc) => {
+        if (!controller.signal.aborted) setEstimate({ state: 'ready', doc });
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof HttpError && error.status === 413) setEstimate({ state: 'too-large' });
@@ -45,14 +47,20 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
     return () => controller.abort();
   }, [offer, tooLarge, attempt]);
 
-  const start = useCallback(async () => {
+  const job = started?.state === 'placed' ? jobs.find((j) => j.jobID === started.jobID) : undefined;
+  const blocked = estimate.state !== 'ready' || started?.state === 'starting' || !!job;
+
+  const start = async () => {
+    if (blocked) return;
     setStarted({ state: 'starting' });
     const answer = await placeOrder(buildExportOrder(offer.request), { aoiProvenance: aoiProvenanceOf(offer.request.aoi) });
     setStarted('jobID' in answer ? { state: 'placed', jobID: answer.jobID } : { state: 'refused', message: answer.message });
-  }, [offer, placeOrder]);
+  };
 
-  const job = started?.state === 'placed' ? jobs.find((j) => j.jobID === started.jobID) : undefined;
-  const blocked = estimate.state !== 'ready' || started?.state === 'starting' || !!job;
+  const retry = () => {
+    setEstimate({ state: 'estimating' });
+    setAttempt((n) => n + 1);
+  };
 
   return (
     <section className="dialog-export-job" aria-label="Export as job">
@@ -68,10 +76,7 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
       {estimate.state === 'error' && (
         <p className="hint-text error" role="alert">
           {estimate.message}{' '}
-          <button type="button" className="link-btn" onClick={() => {
-              setEstimate({ state: 'estimating' });
-              setAttempt((n) => n + 1);
-            }}>
+          <button type="button" className="link-btn" onClick={retry}>
             Try again
           </button>
         </p>

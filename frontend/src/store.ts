@@ -49,6 +49,9 @@ import { fullResolutionLayers } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
+
+// Numbers the export offers of the download dialog (`ExportOffer.id`).
+let exportOffers = 0;
 // The prototype's own richtwert (`max_search_items`); there is no server config
 // endpoint to read it from any more (M2-07a scope — the prototype's `/api/config`
 // is gone), so it stays a constant here until a task actually needs it tunable.
@@ -1358,7 +1361,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         s.downloadResolution === 1 &&
         (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
       ) {
-        set({ downloadExportOffer: { request: { ...req, aoi }, message: e.message, exportJob: e.exportJob } });
+        set({
+          downloadExportOffer: { id: ++exportOffers, request: { ...req, aoi }, message: e.message, exportJob: e.exportJob },
+        });
       } else {
         set({ error: `Download failed: ${(e as Error).message}` });
       }

@@ -108,8 +108,10 @@ export interface OriginalFileLink {
 // A crop refused as too large for a direct download, whose `413` named an
 // export job (M4-11b-2): the request to export instead, the server's text, and
 // whether the job is possible (`available`) or over 5 GB too (`too-large`).
-// Only an area can be exported; a point AOI never gets an offer.
+// Only an area can be exported; a point AOI never gets an offer. `id` tells
+// two refusals apart, so the dialog starts each offer afresh.
 export interface ExportOffer {
+  id: number;
   request: DownloadRequestInfo & { aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon };
   message: string;
   exportJob: ExportJobHint;

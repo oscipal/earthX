@@ -77,8 +77,11 @@ const DATASET: DatasetOption = {
   } as unknown as Collection,
 };
 
+let offers = 0;
+
 function offer(exportJob: ExportOffer['exportJob'] = 'available', aoi: GeoJSON.Polygon = AOI): ExportOffer {
   return {
+    id: ++offers,
     request: { datasetId: DATASET.id, groups: [['S2_A', 'S2_B']], assets: ['visual'], aoi },
     message: MESSAGE,
     exportJob,
@@ -269,6 +272,35 @@ describe('the offer', () => {
     expect(button(EXPORT)?.disabled).toBe(false);
   });
 
+  it('drops an estimate still on its way when the dialog closes', async () => {
+    let answer!: (r: Response) => void;
+    routes['POST /processing/processes/recipe/estimate'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    open();
+    await show();
+    const signal = calls('/processing/processes/recipe/estimate')[0][1].signal;
+    act(() => useAppStore.getState().closeDownloadDialog());
+    await flush();
+    expect(signal?.aborted).toBe(true);
+    answer(json(ESTIMATE));
+    await flush();
+    expect(container.textContent).toBe('');
+  });
+
+  it('starts afresh for a new offer: its own estimate, no job of the last one', async () => {
+    open();
+    await show();
+    await click(EXPORT);
+    expect(button(EXPORT)?.disabled).toBe(true);
+    act(() => useAppStore.setState({ downloadExportOffer: offer() }));
+    await flush();
+    expect(calls('/processing/processes/recipe/estimate')).toHaveLength(2);
+    expect(section()?.querySelector('.pp-job')).toBeNull();
+    expect(button(EXPORT)?.disabled).toBe(false);
+  });
+
   it("shows a Zarr dataset's 422 as the backend words it", async () => {
     const detail = 'an export job reads COG assets only; sentinel-2-l2a-zarr3 is a Zarr store';
     routes['POST /processing/processes/recipe/estimate'] = () => problem(422, detail, 'urn:earthx:order-refused:scope');
@@ -311,6 +343,27 @@ describe('starting the export', () => {
     expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
     act(() => useAppStore.getState().closeDownloadDialog());
     expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
+  });
+
+  it('places one job for a double click while it is starting', async () => {
+    let answer!: (r: Response) => void;
+    routes['POST /processing/processes/recipe/execution'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    open();
+    await show();
+    act(() => {
+      button(EXPORT)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    act(() => {
+      button('Starting…')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(button('Starting…')?.disabled).toBe(true);
+    answer(json(statusDoc('accepted'), 201));
+    await flush();
+    expect(placed()).toHaveLength(1);
+    expect(useProcessingStore.getState().jobs).toHaveLength(1);
   });
 
   it('shows a refusal of the start as the server words it and adds no job', async () => {

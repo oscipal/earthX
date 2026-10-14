@@ -233,6 +233,7 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
     expect(s.downloading).toBe(false);
     expect(s.downloadSelection).toBe(true);
     expect(s.downloadExportOffer).toEqual({
+      id: expect.any(Number),
       request: { datasetId: COG_DATASET.id, groups: [['S1', 'S2']], assets: ['visual'], aoi: AOI },
       message: DETAIL,
       exportJob: hint,

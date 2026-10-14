@@ -78,7 +78,7 @@ export function JobRow({ job }: { job: JobEntry }) {
       {active && (
         <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />
       )}
-      {job.phase !== 'gone' && job.phase !== 'dismissed' && (
+      {job.phase !== 'gone' && job.phase !== 'dismissed' && !job.expired && (
         <span className="pp-help">Kept until {formatTime(job.expires)}</span>
       )}
       {job.phase === 'successful' && expired && <span className="hint-text warn">{EXPIRED_TEXT}</span>}
