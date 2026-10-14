@@ -3,7 +3,7 @@
 **Aufgabe:** M4-13c aus `docs/plans/m4-processing-kern.md` §3 (Plan des Ganzen:
 `plans/m4-13-processing-panel.md` §3.7, F3, F4) mit dem Zusatz
 `plans/m4-zusaetze-2026-10-12.md` §2 (Punkte 1–7).
-**Stufe B:** Dieser Plan liegt im Draft-PR; Code erst nach Ottos Freigabe.
+**Stufe B:** Plan im Draft-PR #152, **freigegeben von Otto am 15.10.2026** (§10).
 **Stand:** 14.10.2026, `main` nach PR #148 (M4-12b und M4-11b-1 gemergt).
 **Ort im Repo:** `docs/plans/m4-13c-vorschau-und-viewer.md`
 
@@ -178,34 +178,65 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
   es nur „As a new layer“.
 - **Ersetzen** heißt: der Quell-Layer wird ausgeblendet (nicht gelöscht), der neue
   Layer steht an seiner Stelle in der Liste. Zurück über das Auge des Quell-Layers.
-- **Weg der Kacheln eines Job-Ergebnisses** — F2, Empfehlung (a): der `tiler`
-  liest das Ergebnis über `objectstore`.
-  - Neue Route im `tiler`: `/results/{jobID}/tiles/WebMercatorQuad/{z}/{x}/{y}`
-    und `/results/{jobID}/tilejson.json` (`rescale`, `colormap_name`, `bidx`;
-    kein `expression`, kein `op`). Proxy `/results` → `tiler` in `vite.config.ts`.
-  - `api/tiler.py` liest den Job aus der Queue-Tabelle (Status, Schlüssel des
-    Ergebnisses, `expires_at`), lässt sich von `objectstore` eine für den
-    **internen** Endpunkt signierte URL geben und öffnet sie mit GDAL; `access`
-    bekommt nur den geöffneten Pfad wie heute (es importiert kein `objectstore`).
-    Die Antwort aus der Queue hält der Prozess höchstens 60 s im Speicher
-    (kurzlebiger Cache, kein Zustand).
-  - Ablauf: ab `expires_at` − 60 s antwortet die Route `410`; der Layer zeigt
-    „Expired“ und keine Kacheln mehr. Unbekannte `jobID` und fremde Form → `404`
-    ohne Unterschied (wie die Job-API).
-  - Die 15 Minuten der signierten URL betreffen den Browser nicht: der `tiler`
-    signiert selbst neu, bevor eine URL abläuft.
+- **Weg der Kacheln eines Job-Ergebnisses** — F2 (a), freigegeben mit Auflage
+  (§10): der `tiler` liest das Ergebnis über `objectstore`, **ohne Datenbank**.
+  - **Welche Datei:** Die Datei eines Ergebnisses liegt unter
+    `results/{result_id}/result.tif`; `result_id` ist zufällig, nie die `jobID`
+    oder ein Hash (`objectstore/results.py` Kopf, `adr/0015` §8.1). Die Zuordnung
+    `jobID` → `result_id` kennt nur die Queue. Deshalb gibt sie `api` heraus: Das
+    Ergebnisdokument `GET /processing/jobs/{jobID}/results` bekommt für ein
+    Raster-Ergebnis einen Link `tiles` auf
+    `/results/{result_id}/tilejson.json` (Prinzip 2.7: auch die API kann es).
+    `result_id` steht schon heute im Pfad jeder signierten URL (`Location` des
+    `303`); der Link gibt also nichts heraus, was der Browser nicht schon sieht.
+  - **Neue Routen im `tiler`:** `/results/{result_id}/tilejson.json` und
+    `/results/{result_id}/tiles/WebMercatorQuad/{z}/{x}/{y}` (`rescale`,
+    `colormap_name`, `bidx`; kein `expression`, kein `op`). Proxy `/results` →
+    `tiler` in `vite.config.ts`. Ein `result_id`, der nicht die Form von
+    `token_urlsafe(16)` hat, gibt `404`, bevor etwas gelesen wird.
+  - **Woher der `tiler` das Ablaufdatum kennt:** aus dem Objektspeicher selbst.
+    Ein `HEAD` auf `result.tif` (über `objectstore`, mit dem eigenen
+    Leseschlüssel) liefert `Last-Modified`; das Ablaufdatum ist
+    `Last-Modified + RESULT_TTL` (7 Tage). Das ist dieselbe Regel, nach der die
+    Bucket-Regel das Objekt löscht (`adr/0015` §7.3; `lifecycle_ok` prüft, dass
+    beide gleich sind). Der Aufseher lädt hoch, **bevor** er den Lauf
+    abschließt, und setzt dann `expires_at = Abschluss + 7 Tage`
+    (`jobs/queue.py::finish_successful`); deshalb gilt
+    `Last-Modified + 7 Tage ≤ expires_at`: der `tiler` hört nie nach dem Ablauf
+    der API auf, höchstens um die Dauer des Hochladens früher. Ab diesem Datum
+    minus 60 s (`MIN_REMAINING`) antwortet er `410`; fehlt das Objekt (gelöscht),
+    `404`. Das Ergebnis des `HEAD` hält der Prozess höchstens 60 s (kurzlebiger
+    Cache, kein Zustand). Neu in `objectstore`: `result_modified(store,
+    result_id, name)` neben `result_size`.
+  - **Lesen:** `objectstore` gibt dem `tiler` eine für den **internen**
+    Endpunkt (`S3_ENDPOINT`) signierte URL mit höchstens 15 min Gültigkeit; GDAL
+    öffnet sie, `access` bekommt nur den geöffneten Pfad wie heute (es importiert
+    kein `objectstore`). Der `tiler` signiert neu, bevor eine URL abläuft; die 15
+    Minuten betreffen den Browser nicht. In c-5 zu prüfen: dass die
+    GDAL-Optionen des `gateway` (`gdal_options(policy)`) den internen Endpunkt
+    nicht sperren, und wenn doch, wie die Ausnahme auf `objectstore` begrenzt
+    bleibt.
+  - **Eigener Leseschlüssel (Auflage):** `compose/objectstore/bootstrap.py`
+    legt einen dritten Dienstschlüssel `earthx-tiler` an, nur `read`
+    (wie `earthx-api`, nicht der Schlüssel des Workers mit `write`); eigenes
+    Volume `objectstore-key-tiler`, `S3_*` für den Dienst `tiler`. Nachtrag
+    `adr/0015` (dritter Dienst mit Schlüssel, nur lesen; GDAL-Abruf über eine von
+    `objectstore` signierte URL als Fall der Ausnahme B8) und
+    `architekturplan.md` 3.1. Keine neue Importregel: `.importlinter` erlaubt
+    `api → objectstore` schon.
+  - **Grenze:** Ein verworfener Job (`DELETE`) beendet die Kacheln nicht, solange
+    die Datei liegt (ein Lauf kann mehreren Jobs gehören, M4-08b Cache); wer den
+    Link hat, sieht die Kacheln bis zum Ablauf, so wie eine schon geladene Datei.
   - Kennzeichnung: Layer „Result · <Operator>“; Badge „Overview“, solange die
     Kachel gröber ist als die Auflösung des Ergebnisses (dieselbe Regel wie §3.3,
     `gsd` aus den Eigenschaften oder bei geografischem CRS aus `tilejson`
     `bounds` und Breite). „Resampled to a common grid“ steht wie in der Jobzeile
-    auch am Layer (Prinzip 2.9).
+    auch am Layer (Prinzip 2.9). Das Frontend zeigt ab `expires` − 60 s
+    „Expired“ und lädt keine Kacheln mehr; der `410` des `tiler` ist die Sperre
+    dahinter.
   - Kosten: Kacheln lesen über das interne Netz aus dem eigenen Speicher, kein
     Egress zur Quelle; ein Ergebnis-COG hat Übersichten [A] (`plan.py` Z. 380
-    rechnet sie mit 4/3 ein; in der Umsetzung zu prüfen).
-  - Ändert `docker-compose.yml` (Leseschlüssel und `S3_*` für `tiler`) und
-    braucht einen Nachtrag zu `adr/0015` (ein dritter Dienst mit Schlüssel, nur
-    lesen); keine neue Importregel, `.importlinter` erlaubt `api → objectstore`
-    schon. `architekturplan.md` 3.1 bekommt dazu einen Nachtrag.
+    rechnet sie mit 4/3 ein; in c-5 zu prüfen).
 
 ### 3.5 Einstiege (Zusatz Punkt 4, F3)
 
@@ -256,8 +287,16 @@ das Panel; das Panel liest wie heute nur die Auswahl.
   (`toBase` = Faktor auf Meter bzw. Grad, aus `pyproj` `unit_conversion_factor`).
   Dieselbe Prüfung wie `reproject` (`pattern`, `CRS`), sonst `422`; ein CRS ohne
   Einheit an den Achsen → `422` „the CRS names no unit for its axes“.
-  `Cache-Control: public, max-age=86400`; kein Netz (`pyproj` ohne
-  `PROJ_NETWORK`).
+  `Cache-Control: public, max-age=86400`.
+- **Kein Netz (Auflage):** `api` schaltet beim Start das PROJ-Netz ab
+  (`pyproj.network.set_network_enabled(False)`), unabhängig von
+  `PROJ_NETWORK` in der Umgebung; die Route lädt keine Gitter und keine
+  Definitionen nach. Ein Test setzt `PROJ_NETWORK=ON`, sperrt jeden
+  Socket-Aufbau und zeigt, dass alle Fälle der Route trotzdem antworten und
+  `pyproj.network.is_network_enabled()` falsch ist.
+- **Unbekannter Code:** `422` mit Grund, z. B. „EPSG:99999 is not a CRS this
+  platform knows“; ein Code außerhalb des Musters „not an EPSG code like
+  EPSG:3035“.
 - Das Feld zeigt unter `resolution`, sobald `crs` gültig ist (Abfrage 300 ms
   nach der letzten Eingabe, verwerfbar):
   - linear in Meter: „Cell size: 10 m × 10 m“;
@@ -303,20 +342,22 @@ Frontend (vitest, `fetch`/`EventSource` gestubbt, synthetisch):
   sie von selbst.
 
 Backend (pytest, synthetisch):
-- `/processing/crs/{code}`: projiziert, geografisch, Fuß, kaputter Code `422`,
-  CRS ohne Einheit `422`, Cache-Kopf, kein Log mit mehr als dem Code.
-- Ergebnis-Kacheln: Kachel eines fertigen Jobs aus einem Objektspeicher-Double,
-  `410` ab `expires_at` − 60 s, `404` für unbekannte und falsch geformte
-  `jobID`, laufender Job `404`, kein `op`, keine `jobID` im Log; Importregeln
-  grün.
+- `/processing/crs/{code}`: projiziert, geografisch, Fuß, unbekannter und
+  kaputter Code `422` mit Grund, CRS ohne Einheit `422`, Cache-Kopf, kein Log
+  mit mehr als dem Code; kein Netz trotz `PROJ_NETWORK=ON` (Sockets gesperrt).
+- Ergebnis-Kacheln: Kachel aus einem Objektspeicher-Double, `410` ab
+  `Last-Modified` + 7 Tage − 60 s, `404` für fehlendes Objekt und falsch geformte
+  `result_id`, kein `op`, kein `result_id` im Log, keine Datenbank im Pfad
+  (Route läuft ohne Pool); `tiles`-Link im Ergebnisdokument; Schlüssel des
+  `tiler` nur `read` (Test über `bootstrap.py`); Importregeln grün.
 
 ### 3.9 Doku und Log
 
 - `ENTSCHEIDUNGSLOG.md`: Plan-Schritt (diese Zeile), später Freigabe und
   Umsetzung.
 - `plans/m4-processing-kern.md` §3: Zeile M4-13c und Teilung nach F7.
-- Nach F2 (a): Nachtrag `adr/0015` und `architekturplan.md` 3.1 (`tiler` liest
-  Ergebnisse über `objectstore`).
+- Mit c-5: Nachtrag `adr/0015` und `architekturplan.md` 3.1 (`tiler` liest
+  Ergebnisse über `objectstore` mit eigenem Leseschlüssel, ohne Datenbank).
 
 ---
 
@@ -385,10 +426,10 @@ Vor jedem „fertig“: `main` holen; `ruff check backend`, `pytest`,
   je einen `HEAD` je Asset. Die Begrenzung auf 4 gleichzeitige Schätzungen und
   den Start nacheinander hält die Last bei der heutigen eines Nutzers mal vier.
   Quoten kommen mit M6.
-- **Ergebnis-Kacheln:** Die `jobID` steht in der Kachel-URL; sie ist der
-  Schlüssel zum Ergebnis (Q9). Sie steht nicht im Log (`--no-access-log`, Test),
-  aber im Verlauf der Entwicklerwerkzeuge des Browsers, wie heute die
-  Ergebnis-Links.
+- **Ergebnis-Kacheln:** Die `result_id` steht in der Kachel-URL; sie steht
+  schon heute im Pfad jeder signierten URL. Nicht im Log (`--no-access-log`,
+  Test), aber im Verlauf der Entwicklerwerkzeuge des Browsers. Ein verworfener
+  Job beendet die Kacheln nicht (§3.4 „Grenze“).
 - **Vorschau ≠ Ergebnis bei Überlappung** (§3.3), bis M4-17.
 - **Bodengröße bei Grad ist eine Näherung** (WGS84-Reihe, Fehler unter 0,1 %
   [A]); das „≈“ steht immer davor.
@@ -497,3 +538,34 @@ Im Browser `http://localhost:5173`:
    „N jobs“ und die Summe; „Start N jobs“; die Jobliste zeigt „… · 1/N“ usw.
 9. Im Layer-Manager „⚙“ an einem Layer aus „Crop & merge to AOI“: das Panel
    öffnet mit „AOI only“.
+
+---
+
+## 10. Freigabe (Otto, 15.10.2026)
+
+**F1–F7 je Option 1, K1–K7 angenommen.** Zwei Auflagen, oben eingearbeitet:
+- **F2:** Nach `expires_at` liefert der `tiler` für ein Ergebnis keine Kacheln
+  mehr (`410`). Er kennt das Ablaufdatum ohne Datenbank: aus `Last-Modified`
+  des Objekts plus 7 Tage, der Regel der Bucket-Löschung (§3.4). Eigener
+  Leseschlüssel nur zum Lesen für den `tiler`, nicht der Schlüssel des Workers;
+  Nachtrag `adr/0015`.
+- **F6:** Die Route lädt nichts aus dem Netz (PROJ-Netz aus, auch wenn
+  `PROJ_NETWORK=ON` gesetzt ist); ein Test belegt es. Unbekannter Code → `422`
+  mit Grund (§3.7).
+
+**Teilung (F7):** c-1 in dieser Session (Branch `claude/dreamy-brown-nwdzid`,
+PR #152). c-2 bis c-5 je als neue Session nach dem Merge des vorigen, in dieser
+Reihenfolge, mit diesen Startsätzen:
+- „Führe Aufgabe M4-13c-2 aus `docs/plans/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.3, §3.4 erster und zweiter Punkt
+  ohne Job-Ergebnis, §3.5).“
+- „Führe Aufgabe M4-13c-3 aus `docs/plans/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.7 mit der Auflage aus §10).“
+- „Führe Aufgabe M4-13c-4 aus `docs/plans/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.6).“
+- „Führe Aufgabe M4-13c-5 aus `docs/plans/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.4 Job-Ergebnis mit der Auflage
+  aus §10).“
+
+Jede Session liest diesen Plan ganz, schreibt ihren Stand als eigenen
+Abschnitt ans Ende und eine Log-Zeile.
