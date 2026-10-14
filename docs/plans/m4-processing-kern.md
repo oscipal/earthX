@@ -241,7 +241,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (#134); Umsetzung in a bis c |
 | M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | erledigt (#134) |
 | M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | PR (Entwurf), `plans/m4-13-processing-panel.md` §12 |
-| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung | M4a | B | Sonnet (hoch) | M4-13b | offen (neue Session nach dem Merge von M4-13b) |
+| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung; dazu Zusatz §2 aus `plans/m4-zusaetze-2026-10-12.md` (Fenster, Whole scene / AOI only, Ergebnis im Viewer, Einstiege, Einheit der Auflösung, Batch) | M4a | B | Opus Plan, Sonnet (hoch) | M4-13b, M4-12b | Plan im PR (Entwurf), `plans/m4-13c-vorschau-und-viewer.md`; Teilung in c-1 bis c-5 vorgeschlagen (F7) |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | erledigt (#129) |
 | M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | erledigt (#135) |
 | M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | offen |
