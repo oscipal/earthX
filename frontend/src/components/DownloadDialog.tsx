@@ -11,6 +11,7 @@ import {
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
 import { useAppStore } from '../store';
+import ExportJobOffer from './ExportJobOffer';
 import MosaicJobs from './MosaicJobs';
 
 // Confirmation before a download leaves the platform (M2-07d, M3-17):
@@ -30,7 +31,9 @@ import MosaicJobs from './MosaicJobs';
 // as one request the way M2-06 always did, or the **originals**, a plain
 // list of links to click — no confirm step, no CORS, no big in-browser
 // download (plan §6, F2 option 1). Under the links, a pass of several scenes
-// can be merged into one file as a job (`MosaicJobs`, M4-12b).
+// can be merged into one file as a job (`MosaicJobs`, M4-12b). A crop too
+// large for a direct download is offered as an export job (`ExportJobOffer`,
+// M4-11b-2) when the server's `413` says it fits one.
 export default function DownloadDialog() {
   const layerId = useAppStore((s) => s.downloadDialogLayerId);
   const selectionMode = useAppStore((s) => s.downloadSelection);
@@ -65,6 +68,7 @@ export default function DownloadDialog() {
   const originalLinks = useAppStore((s) => s.downloadOriginalLinks);
   const passes = useAppStore((s) => s.downloadPasses);
   const skippedGroupsNotice = useAppStore((s) => s.downloadSkippedGroupsNotice);
+  const exportOffer = useAppStore((s) => s.downloadExportOffer);
 
   if (!layerId && !selectionMode) return null;
 
@@ -255,6 +259,8 @@ export default function DownloadDialog() {
               {selectionMode ? 'Nothing left to crop.' : 'This layer has nothing left to crop.'}
             </p>
           )}
+
+          {exportOffer && <ExportJobOffer key={exportOffer.message + exportOffer.exportJob} offer={exportOffer} />}
         </div>
         <div className="dialog-actions">
           <button type="button" className="lm-btn" onClick={close} disabled={downloading}>

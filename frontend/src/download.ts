@@ -5,7 +5,7 @@
 // text shown before either one starts (adr/0003 §11.2: the notice belongs on
 // the download, not only in a footer).
 
-import type { ResolutionFactor } from './api';
+import type { ExportJobHint, ResolutionFactor } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
@@ -103,6 +103,16 @@ export interface OriginalFileLink {
   groupLabel: string;
   asset: string;
   href: string;
+}
+
+// A crop refused as too large for a direct download, whose `413` named an
+// export job (M4-11b-2): the request to export instead, the server's text, and
+// whether the job is possible (`available`) or over 5 GB too (`too-large`).
+// Only an area can be exported; a point AOI never gets an offer.
+export interface ExportOffer {
+  request: DownloadRequestInfo & { aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon };
+  message: string;
+  exportJob: ExportJobHint;
 }
 
 // The scenes of one group of a download, as the dialog holds them: what a

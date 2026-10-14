@@ -22,6 +22,7 @@ import {
   fetchProcess,
   fetchResults,
   placeJob,
+  type AoiProvenance,
   type EstimateDocument,
   type Order,
   type StatusInfo,
@@ -110,7 +111,7 @@ interface ProcessingState {
   setDtype: (dtype: string) => void;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
-  placeMosaic: (order: Order) => Promise<{ jobID: string } | { message: string }>;
+  placeOrder: (order: Order, options?: { aoiProvenance?: AoiProvenance }) => Promise<{ jobID: string } | { message: string }>;
   cancelJob: (jobID: string) => Promise<void>;
   removeJob: (jobID: string) => void;
   resumeJobs: () => void;
@@ -245,6 +246,11 @@ function refusalOf(error: unknown, key: string, steps: readonly DraftStep[]): Re
     return { key, message: `${text}${hint}`, step: stepOfRefusal(text, steps) };
   }
   return { key, message: error instanceof Error ? error.message : String(error), step: null };
+}
+
+// The text of a refusal outside the panel's draft (the download dialog's jobs).
+export function refusalMessage(error: unknown): string {
+  return refusalOf(error, '', []).message;
 }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
@@ -483,15 +489,16 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
     },
 
-    // A job the download dialog starts (M4-12b): the order is built there, with no
-    // draft and no review; a refusal comes back as text, the job as a row in the list.
-    placeMosaic: async (order) => {
+    // A job the download dialog starts (a mosaic, M4-12b; an export, M4-11b-2):
+    // the order is built there, with no draft and no review; a refusal comes back
+    // as text, the job as a row in the list.
+    placeOrder: async (order, options) => {
       try {
-        const status = await placeJob(order);
+        const status = await placeJob(order, options);
         addJob(status.jobID, status.expires, status);
         return { jobID: status.jobID };
       } catch (error) {
-        return { message: refusalOf(error, '', []).message };
+        return { message: refusalMessage(error) };
       }
     },
 

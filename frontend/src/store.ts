@@ -25,6 +25,7 @@ import {
   isCogFormat,
   originalFileLinks,
   type DownloadPass,
+  type ExportOffer,
   type OriginalFileLink,
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
@@ -630,6 +631,10 @@ export interface AppState {
   // sentence instead of closing on a successful download, same as any other
   // outcome the user needs to read before moving on. `null` otherwise.
   downloadSkippedGroupsNotice: string | null;
+  // The crop was too large for a direct download and its `413` offers an
+  // export job (M4-11b-2); the dialog shows the offer instead of an error.
+  // Dropped with the dialog and with any change of the resolution.
+  downloadExportOffer: ExportOffer | null;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -781,6 +786,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadOriginalLinks: null,
   downloadPasses: null,
   downloadSkippedGroupsNotice: null,
+  downloadExportOffer: null,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -1182,6 +1188,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadOriginalLinks: null,
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
       error: null,
     });
     const s = get();
@@ -1248,6 +1255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloadOriginalLinks: null,
         downloadPasses: null,
         downloadSkippedGroupsNotice: null,
+        downloadExportOffer: null,
         error: null,
       });
       return;
@@ -1271,6 +1279,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadOriginalLinks: links,
       downloadPasses: groups,
       downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
       error: null,
     });
   },
@@ -1282,8 +1291,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadOriginalLinks: null,
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
     }),
-  setDownloadResolution: (factor) => set({ downloadResolution: factor }),
+  setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
   // `POST /collections/{dataset}/download`, M2-07d; V-4 added the selection
@@ -1307,7 +1317,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null });
       return;
     }
-    set({ downloading: true, error: null });
+    set({ downloading: true, error: null, downloadExportOffer: null });
     try {
       const result = await api.downloadCrop({
         datasetId: req.datasetId,
@@ -1341,7 +1351,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
     } catch (e) {
-      set({ error: `Download failed: ${(e as Error).message}` });
+      const { aoi } = req;
+      if (
+        e instanceof api.HttpError &&
+        e.exportJob &&
+        s.downloadResolution === 1 &&
+        (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
+      ) {
+        set({ downloadExportOffer: { request: { ...req, aoi }, message: e.message, exportJob: e.exportJob } });
+      } else {
+        set({ error: `Download failed: ${(e as Error).message}` });
+      }
     } finally {
       set({ downloading: false });
     }

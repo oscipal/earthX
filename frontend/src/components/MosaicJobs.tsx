@@ -20,7 +20,7 @@ export default function MosaicJobs({ dataset, passes }: { dataset: DatasetOption
   const datasetId = dataset?.id;
   const description = useProcessingStore((s) => (datasetId ? s.descriptions[datasetId] : undefined));
   const ensureDescription = useProcessingStore((s) => s.ensureDescription);
-  const placeMosaic = useProcessingStore((s) => s.placeMosaic);
+  const placeOrder = useProcessingStore((s) => s.placeOrder);
   const jobs = useProcessingStore((s) => s.jobs);
   const [started, setStarted] = useState<Record<number, Started>>({});
 
@@ -45,7 +45,7 @@ export default function MosaicJobs({ dataset, passes }: { dataset: DatasetOption
     );
     const dtype = chooseDtype({ steps: [], bands, allowed: info.dtypes }).value;
     setStarted((s) => ({ ...s, [index]: { state: 'starting' } }));
-    const answer = await placeMosaic(
+    const answer = await placeOrder(
       buildMosaicOrder({ datasetId: dataset.id, itemIds: pass.items.map((i) => i.id), assets: [asset], dtype }),
     );
     setStarted((s) => ({

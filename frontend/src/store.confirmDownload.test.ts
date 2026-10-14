@@ -188,3 +188,95 @@ describe('confirmDownload — the skipped-groups notice (review finding on M3-17
     expect(s.downloadSelection).toBe(true); // dialog stays open to show the error
   });
 });
+
+describe('confirmDownload — a crop too large for a direct download (M4-11b-2)', () => {
+  const DETAIL = 'This download would be about 1.8 GB, more than the 500 MB limit.';
+
+  function refused(status: number, headers: Record<string, string> = {}): Response {
+    return new Response(JSON.stringify({ detail: DETAIL }), {
+      status,
+      headers: { 'Content-Type': 'application/json', ...headers },
+    });
+  }
+
+  beforeEach(() => {
+    const items = [cogScene('S1'), cogScene('S2')];
+    useAppStore.setState({
+      datasets: datasetsFrom([COG_DATASET]),
+      datasetId: COG_DATASET.id,
+      items,
+      groups: [{ key: ['a'], label: 'Overpass A', items }],
+      activeGroupIndex: 0,
+      selectedIds: ['S1', 'S2'],
+      aoi: AOI,
+      downloadDialogLayerId: null,
+      downloadSelection: false,
+      downloadOutcome: null,
+      downloadExportOffer: null,
+      downloading: false,
+      error: null,
+      notice: null,
+    });
+    useAppStore.getState().openDownloadForSelection();
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each(['available', 'too-large'] as const)('a 413 with X-Export-Job: %s becomes the offer, not an error', async (hint) => {
+    vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': hint }));
+    await useAppStore.getState().confirmDownload();
+    const s = useAppStore.getState();
+    expect(s.error).toBeNull();
+    expect(s.downloading).toBe(false);
+    expect(s.downloadSelection).toBe(true);
+    expect(s.downloadExportOffer).toEqual({
+      request: { datasetId: COG_DATASET.id, groups: [['S1', 'S2']], assets: ['visual'], aoi: AOI },
+      message: DETAIL,
+      exportJob: hint,
+    });
+  });
+
+  it('a 413 without the header keeps the text of today, with no offer', async () => {
+    vi.mocked(fetch).mockImplementation(async () => refused(413));
+    await useAppStore.getState().confirmDownload();
+    const s = useAppStore.getState();
+    expect(s.error).toBe(`Download failed: ${DETAIL}`);
+    expect(s.downloadExportOffer).toBeNull();
+  });
+
+  it('a 413 at a coarser factor is no offer: a job exports at factor 1 only', async () => {
+    useAppStore.getState().setDownloadResolution(2);
+    vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
+    await useAppStore.getState().confirmDownload();
+    expect(useAppStore.getState().downloadExportOffer).toBeNull();
+    expect(useAppStore.getState().error).toContain('Download failed');
+  });
+
+  it('a point AOI is no offer: only an area can be exported', async () => {
+    useAppStore.setState({ aoi: { type: 'Point', coordinates: [10, 50] } });
+    vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
+    await useAppStore.getState().confirmDownload();
+    expect(useAppStore.getState().downloadExportOffer).toBeNull();
+  });
+
+  it('the offer goes with a change of the resolution, with the dialog, and with the next attempt', async () => {
+    vi.mocked(fetch).mockImplementation(async () => refused(413, { 'X-Export-Job': 'available' }));
+    await useAppStore.getState().confirmDownload();
+    useAppStore.getState().setDownloadResolution(2);
+    expect(useAppStore.getState().downloadExportOffer).toBeNull();
+
+    useAppStore.getState().setDownloadResolution(1);
+    await useAppStore.getState().confirmDownload();
+    useAppStore.getState().closeDownloadDialog();
+    expect(useAppStore.getState().downloadExportOffer).toBeNull();
+
+    useAppStore.getState().openDownloadForSelection();
+    await useAppStore.getState().confirmDownload();
+    vi.mocked(fetch).mockImplementation(async () => refused(502));
+    await useAppStore.getState().confirmDownload();
+    expect(useAppStore.getState().downloadExportOffer).toBeNull();
+  });
+});
