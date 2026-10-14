@@ -569,3 +569,71 @@ Reihenfolge, mit diesen Startsätzen:
 
 Jede Session liest diesen Plan ganz, schreibt ihren Stand als eigenen
 Abschnitt ans Ende und eine Log-Zeile.
+
+## 11. M4-13c-1 — Umsetzung (15.10.2026)
+
+**Gebaut** (nur `frontend/`, Branch `claude/dreamy-brown-nwdzid`, PR #152):
+- **Seitenleiste (§3.1):** `ProcessingPanel.tsx` steht fest am rechten Rand
+  (`.processing-sheet`, Breite `clamp(420px, 36vw, 600px)`), mit festem Kopf
+  (Titel, Auswahl in Worten, „Area“), scrollender Mitte (Szenen und Überflug,
+  Bänder, Schritte, Ausgabe) und festem Fuß („Review“, „Start job“, Schätzung,
+  Abweisungen). Unter 900 px ein Blatt von unten, höchstens 60 % der Höhe, mit
+  Griff „▾/▴“ zum Einklappen. Die Trefferliste ist eingeklappt, solange die Leiste
+  offen ist (ihr Umschalter fehlt dann). Der Band-Math-Ausdruck ist ein
+  `textarea`, das umbricht und einzeilig bleibt (Enter fügt nichts ein, ein
+  eingefügter Zeilenumbruch wird ein Leerzeichen); Chips fügen weiter an der
+  Cursorstelle ein.
+- **Jobliste (§3.1):** `JobList.tsx` ist ein eigenes kleines Fenster
+  (`Draggable`, 360 px), links neben der Leiste, solange beide offen sind.
+  „⚙ Jobs (n)“ öffnet es (vorher: das Panel); „Start job“ öffnet es auch.
+- **„Area: Whole scene | AOI only“ (§3.2):** Vorgabe „Whole scene“. Dann nimmt
+  der Auftrag alle gewählten Szenen des Überflugs ohne AOI-Filter und schickt kein
+  `aoi` (`buildOrder` mit `area`). „AOI only“ wie bisher, ohne AOI deaktiviert;
+  verschwindet die AOI danach, sagt das Panel „Draw an AOI first, or choose
+  “Whole scene”.“ und sperrt „Review“. K1: „⚙ Process“ braucht keine AOI
+  (`processBlockReason` ohne AOI). K2: `413` bei „Review“ unter „Whole scene“ →
+  Text des Servers und „The whole scene is too large for one job. Try “AOI
+  only”.“ mit Knopf „Use AOI only“, ohne AOI „Draw an AOI to process a part of the
+  scene.“ K3: Ein neuer AOI verwirft nur eine laufende Schätzung; die Schritte
+  bleiben, eine gezeigte Schätzung bleibt, solange der Auftragstext gleich ist
+  (bei „Whole scene“ also ja). K4: Hinweis „The result covers the whole scene;
+  the mask marks where they have data.“
+- **Punkt 5:** bestätigt, dass getippte Bandnamen ohne Chip in den Auftrag
+  kommen; eigener Test.
+
+**Tests** (vitest, synthetisch): `ProcessingPanel.test.tsx` (Area: Vorgabe ohne
+`aoi`, „AOI only“ mit `aoi`, ohne AOI bedienbar, AOI weg unter „AOI only“; `413`
+mit Umschalten, ohne AOI, unter „AOI only“ kein Vorschlag; neue AOI behält die
+Schritte, verwirft die Schätzung von „AOI only“, behält die von „Whole scene“;
+neuer Datensatz verwirft den Entwurf; Bänder aus dem Ausdruck; einzeiliger
+Ausdruck; Jobliste öffnet beim Start, Panel ohne Jobzeilen; Einklappen),
+`AppTopBar.test.tsx` („⚙ Jobs (n)“ öffnet die Jobliste, Leiste und Jobliste
+nebeneinander), `processingOrder.test.ts` (`area`), Vertragsdatei
+`ndvi-on-whole-scenes-without-aoi.json` (der Backend-Test
+`test_frontend_orders.py` nimmt sie; grün). Gegenprobe in der Sitzung: Mit
+„AOI only“ als Vorgabe fallen sechs Komponententests.
+
+**Ergebnis der Prüfungen:** Frontend 921 Tests grün, `tsc` und `oxlint` ohne
+Befund; Backend `ruff` ohne Befund, `pytest` 4589 grün (8 übersprungen: `pwsh`
+fehlt in der Sitzung), Importregeln 14 eingehalten.
+
+**Prüfanleitung für Otto** (Windows PowerShell; die Sitzung hat die Oberfläche
+nur in Tests gesehen):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. `sentinel-2-c1-l2a`, Fläche zeichnen, suchen, eine Szene wählen, „⚙ Process“:
+   die Leiste steht rechts über die ganze Höhe, die Trefferliste ist eingeklappt.
+   Das Fenster schmaler als 900 px ziehen: ein Blatt von unten mit „▾“.
+2. „Area“ steht auf „Whole scene“. „＋ Band math“, `(nir - red) / (nir + red)`
+   tippen, ohne Chip; „Review“ zeigt die Größe der ganzen Szene.
+3. „AOI only“, „Review“: die Größe der Fläche. Eine neue Fläche zeichnen: der
+   Schritt bleibt, „Start job“ wartet auf ein neues „Review“.
+4. „Start job“: die Jobliste öffnet links neben der Leiste.
+5. Die AOI löschen: „⚙ Process“ bleibt aktiv, „AOI only“ ist grau.
