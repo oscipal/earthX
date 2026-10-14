@@ -8,7 +8,7 @@ import type { Geom } from 'polyclip-ts';
 import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
-import type { JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
+import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
 import { paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
@@ -400,6 +400,39 @@ export function buildMosaicOrder(args: {
     steps: [],
     output: { kind: 'raster', format: 'cog', dtype },
   };
+}
+
+// The crop of the download dialog as an export job (M4-11 §3.1): the same
+// groups, assets and AOI as the refused request, no steps, factor 1 (only that
+// factor is offered as a job, M4-11 K5).
+export function buildExportOrder(args: {
+  datasetId: string;
+  groups: readonly (readonly string[])[];
+  assets: readonly string[];
+  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+}): Order {
+  const { datasetId, groups, assets, aoi } = args;
+  return {
+    recipe_version: 1,
+    inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: groups.map((g) => [...g]), assets: [...assets] }],
+    aoi: orderAoi(aoi),
+    steps: [],
+    output: { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' },
+  };
+}
+
+// The provenance of a place-search AOI (`placeSearch.ts`, M4-11 F4): the three
+// fields as the AOI carries them, strings only; `undefined` for a drawn or
+// uploaded AOI, which carries none.
+export function aoiProvenanceOf(aoi: GeoJSON.Geometry | null): AoiProvenance | undefined {
+  const properties = (aoi as { properties?: unknown } | null)?.properties;
+  if (!properties || typeof properties !== 'object') return undefined;
+  const provenance: AoiProvenance = {};
+  for (const key of ['source', 'attribution', 'license'] as const) {
+    const value = (properties as Record<string, unknown>)[key];
+    if (typeof value === 'string') provenance[key] = value;
+  }
+  return Object.keys(provenance).length > 0 ? provenance : undefined;
 }
 
 // The step a refusal is about: the server names it as "step <n>" or

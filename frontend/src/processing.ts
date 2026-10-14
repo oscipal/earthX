@@ -42,7 +42,30 @@ export interface Order {
   inputs: OrderInput[];
   aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   steps: OrderStep[];
-  output: { kind: 'raster'; format: 'cog'; dtype: string };
+  output: RasterOutput | CropOutput;
+}
+
+export interface RasterOutput {
+  kind: 'raster';
+  format: 'cog';
+  dtype: string;
+}
+
+// An export (M4-11 §3.1): the crop of the download dialog, computed as a job.
+export interface CropOutput {
+  kind: 'crop';
+  format: 'cog';
+  resolution_factor: 1;
+  extent: 'bbox(aoi ∩ footprints)';
+  mask: 'file';
+}
+
+// Where a place-search AOI came from (M4-11 F4): sent next to an export's
+// order, never part of the recipe or its hash.
+export interface AoiProvenance {
+  source?: string;
+  attribution?: string;
+  license?: string;
 }
 
 export interface Estimate {
@@ -133,8 +156,8 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function orderBody(order: Order): string {
-  return JSON.stringify({ inputs: { recipe: order } });
+function orderBody(order: Order, aoiProvenance?: AoiProvenance): string {
+  return JSON.stringify({ inputs: aoiProvenance ? { recipe: order, aoiProvenance } : { recipe: order } });
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -177,13 +200,13 @@ export async function estimateOrder(order: Order, signal?: AbortSignal): Promise
   return doc;
 }
 
-export async function placeJob(order: Order): Promise<StatusInfo> {
+export async function placeJob(order: Order, options: { aoiProvenance?: AoiProvenance } = {}): Promise<StatusInfo> {
   const status = parseStatusInfo(
     await jsonOrThrow<unknown>(
       await fetch(`${PREFIX}/processes/recipe/execution`, {
         method: 'POST',
         headers: { ...JSON_HEADERS, Prefer: 'respond-async' },
-        body: orderBody(order),
+        body: orderBody(order, options.aoiProvenance),
       }),
     ),
   );
@@ -214,8 +237,9 @@ export function eventsUrl(jobId: string): string {
   return `${jobUrl(jobId)}/events`;
 }
 
-// A result file (`result.tif`, `mask.tif`, `recipe.json`): the route answers
-// with a `303` to a signed URL, which a plain link follows (K6).
+// A result file (`result.tif`, `mask.tif`, `recipe.json`, `export.zip`): the
+// route answers with a `303` to a signed URL, which a plain link follows (K6);
+// `result.zip` it serves itself (M4-11b-1).
 export function resultUrl(jobId: string, name: string): string {
   return `${jobUrl(jobId)}/results/${encodeURIComponent(name)}`;
 }

@@ -138,6 +138,16 @@ describe('the job API client', () => {
     await expect(placeJob(ORDER)).resolves.toMatchObject({ jobID: JOB, status: 'accepted' });
   });
 
+  it('sends aoiProvenance next to the recipe when given, and nothing else otherwise', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(status({ status: 'accepted' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const aoiProvenance = { source: 'OpenStreetMap / Nominatim', license: 'ODbL-1.0' };
+    await placeJob(ORDER, { aoiProvenance });
+    await placeJob(ORDER);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toEqual({ inputs: { recipe: ORDER, aoiProvenance } });
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({ inputs: { recipe: ORDER } });
+  });
+
   it('turns a problem document into an HttpError with title, detail and Retry-After', async () => {
     vi.stubGlobal(
       'fetch',
