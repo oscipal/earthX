@@ -19,9 +19,6 @@ interface StacErrorBody {
   detail?: unknown;
   code?: string;
   description?: string;
-  // An RFC 9457 problem document (`/processing`, M4-08b) carries a short
-  // `title` next to its `detail`.
-  title?: unknown;
 }
 
 // The STAC error body carries either FastAPI's `{detail}` or the OGC API
@@ -59,39 +56,63 @@ export class HttpError extends Error {
   // The `title` of a problem document (M4-13b: a failed job's `/results` names
   // its failure there, e.g. "The source failed"), when it was a string.
   readonly title?: string;
+  // The `type` of a problem document (M4-11b-2: a failed job names its kind as
+  // `urn:earthx:job-failed:<kind>`, which picks the text the panel shows).
+  readonly type?: string;
+  // `X-Export-Job` of a crop's `413` (M4-11 K5, M4-11b K9): the same selection
+  // fits an export job, or is too large for one as well; unset for every other
+  // answer and for any other value of the header.
+  readonly exportJob?: ExportJobHint;
 
-  constructor(status: number, message: string, detail?: string, retryAfter?: string, title?: string) {
+  constructor(
+    status: number,
+    message: string,
+    detail?: string,
+    retryAfter?: string,
+    title?: string,
+    extra: { type?: string; exportJob?: ExportJobHint } = {},
+  ) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
     this.detail = detail;
     this.retryAfter = retryAfter;
     this.title = title;
+    this.type = extra.type;
+    this.exportJob = extra.exportJob;
   }
 }
 
-export async function jsonOrThrow<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      /* non-JSON error body — errorDetail falls back to the status line */
-    }
-    const detail = typeof (body as StacErrorBody | undefined)?.detail === 'string'
-      ? ((body as StacErrorBody).detail as string)
-      : undefined;
-    const title = typeof (body as StacErrorBody | undefined)?.title === 'string'
-      ? ((body as StacErrorBody).title as string)
-      : undefined;
-    throw new HttpError(
-      res.status,
-      errorDetail(body, res.status, res.statusText),
-      detail,
-      res.headers?.get('Retry-After') ?? undefined,
-      title,
-    );
+export type ExportJobHint = 'available' | 'too-large';
+
+function exportJobHint(res: Response): ExportJobHint | undefined {
+  const value = res.headers?.get('X-Export-Job');
+  return value === 'available' || value === 'too-large' ? value : undefined;
+}
+
+async function httpErrorOf(res: Response, extra: { exportJob?: ExportJobHint } = {}): Promise<HttpError> {
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    /* non-JSON error body — errorDetail falls back to the status line */
   }
+  const field = (name: 'detail' | 'title' | 'type') => {
+    const value = (body as Record<string, unknown> | undefined)?.[name];
+    return typeof value === 'string' ? value : undefined;
+  };
+  return new HttpError(
+    res.status,
+    errorDetail(body, res.status, res.statusText),
+    field('detail'),
+    res.headers?.get('Retry-After') ?? undefined,
+    field('title'),
+    { type: field('type'), ...extra },
+  );
+}
+
+export async function jsonOrThrow<T>(res: Response): Promise<T> {
+  if (!res.ok) throw await httpErrorOf(res);
   return (await res.json()) as T;
 }
 
@@ -491,6 +512,7 @@ function headerCount(res: Response, name: string): number {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
+// A refusal throws an `HttpError`; a `413` carries `exportJob` (M4-11b-2).
 export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCropResult> {
   const res = await fetch(`${BASE}/collections/${encodeURIComponent(req.datasetId)}/download`, {
     method: 'POST',
@@ -502,15 +524,7 @@ export async function downloadCrop(req: DownloadCropRequest): Promise<DownloadCr
       resolution: req.resolution ?? 1,
     }),
   });
-  if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      /* non-JSON error body — errorDetail falls back to the status line */
-    }
-    throw new Error(errorDetail(body, res.status, res.statusText));
-  }
+  if (!res.ok) throw await httpErrorOf(res, { exportJob: res.status === 413 ? exportJobHint(res) : undefined });
   const totalGroups = headerCount(res, 'X-Total-Groups');
   const skippedGroups = headerCount(res, 'X-Skipped-Groups');
   return { blob: await res.blob(), totalGroups, skippedGroups };
