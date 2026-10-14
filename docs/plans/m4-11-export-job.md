@@ -351,7 +351,7 @@ einen eigenen Weg und eine eigene Messung.
   und das Kind rufen dieselbe Funktion.
 - **K5** Kennung im `413` als Kopfzeile `X-Export-Job: available`; kein
   geändertes Format des Fehlertexts.
-- **K6** Dateiname der ZIP `{dataset}_export_{YYYYMMDD}.zip`; im ZIP die Namen
+- **K6** Dateiname der ZIP `{dataset}_export_{YYYYMMDD}.zip` (Nachtrag 14.10.2026: der Tag nach `plans/m4-11b-angebot-und-zip.md` §3.1.7); im ZIP die Namen
   des Zuschnitts.
 - **K7** Die `jobID` lebt im Frontend nur im Zustand der Seite; kein
   `localStorage` (eine `jobID` ist ohne Konten der einzige Schlüssel zum

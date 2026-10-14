@@ -667,6 +667,12 @@ Dateinamen aus Datensatz, Operator und Datum, nie mit AOI oder Hash. Garage
 Browser-Verlauf; deshalb dieselben Regeln wie für Logs (`adr/0014` §4.7)
 **[A]**.
 
+**Nachtrag 2026-10-14 (M4-11b-1, Otto):** Das „Datum“ ist der UTC-Tag der
+Aufnahme der Szene (Überflug), wo der Datensatz einen einzelnen hat; sonst der Tag
+des Laufs mit Präfix `run` (`cop-dem-glo-30_reproject_run20261014.zip`). Bis dahin
+war es immer der Tag, an dem der Lauf endete. Die Regel und ihre Stellen:
+`plans/m4-11b-angebot-und-zip.md` §3.1.7.
+
 ### 6.6 `400` statt `403`
 
 Garage weist abgelaufene URLs mit `400 InvalidRequest` ab **[M]**; AWS

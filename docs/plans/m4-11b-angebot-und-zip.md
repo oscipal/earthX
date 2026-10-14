@@ -159,7 +159,7 @@ der festen Menge; kein Endpunkt, keine URL. `.importlinter` bleibt unverändert.
 #### 3.1.4 Aufbau des ZIP (`api/result_zip.py`, neu)
 
 - **Inhalt** (F3, Otto): ein Ordner mit dem Namensstamm der ZIP-Datei
-  (`{dataset}_{operatoren}_{YYYYMMDD}`), darin `result.tif`, `mask.tif`,
+  (`{dataset}_{operatoren}_{Tag}`, Tag nach §3.1.7), darin `result.tif`, `mask.tif`,
   `recipe.json`, `citation.bib` in dieser Reihenfolge. Ein Eintrag für den Ordner
   selbst gibt es nicht (jeder Entpacker legt ihn aus den Pfaden an).
 - **Alle Einträge `ZIP_STORED`** (K1), ohne Datendeskriptor (Größe und CRC stehen
@@ -206,7 +206,7 @@ der festen Menge; kein Endpunkt, keine URL. `.importlinter` bleibt unverändert.
   Attribution oder Zitation der Registry und damit `recipe.json` und `citation.bib`
   ändern; RFC 9110 §13.1.5), `Cache-Control: no-store`,
   `Content-Disposition: attachment; filename="…"` mit dem Namen der Einzellinks
-  (`{dataset}_{operatoren}_{YYYYMMDD}.zip`).
+  (`{dataset}_{operatoren}_{Tag}.zip`, Tag nach §3.1.7).
 - **Vor dem Strom** (`HeadObject` auf beide Dateien): fehlt eine oder weicht die
   Größe vom Bericht ab → `500` mit festem Text, ein Logeintrag ohne Schlüssel
   und Adresse. Ein Speicher, der nicht antwortet → `503` mit `Retry-After: 5`
@@ -249,6 +249,54 @@ Downloads ab, kann der Strom abbrechen; ein neuer Versuch bekommt `410`.
 `X-Export-Job: too-large`; nur so kann der Dialog (M4-11b-2) die Sperre über
 5 GB von einem Zarr-Datensatz oder einem gröberen Faktor unterscheiden. Der Wert
 `available` bleibt, wie er ist; ohne Kopfzeile bleibt es für alles andere.
+
+#### 3.1.7 Das Datum im Dateinamen (Otto, 14.10.2026)
+
+**Entscheidung.** Das Datum im Namen jedes Downloads eines Jobs (ZIP, `result.tif`,
+`mask.tif`, `recipe.json`, `export.zip`) ist das **Aufnahmedatum der Szene**: der
+UTC-Tag des Überflugs, aus dem Schlüssel nach `results_group_by`. Hat der Datensatz
+kein einzelnes Aufnahmedatum (DEM), gilt der Tag des Laufs mit Präfix `run`:
+`cop-dem-glo-30_reproject_run20261014.zip`.
+
+**Was bisher galt.** `{dataset}_{operatoren}_{YYYYMMDD}` mit dem UTC-Tag, an dem der
+Lauf endete (`finished_at`, sonst `created_at` des Jobs), ohne Präfix; festgelegt in
+`plans/m4-08b-job-api.md` K6 (Einzellinks), für den Export in `plans/m4-11-export-job.md`
+K6, ohne Datum der Szene; `adr/0015` §6.5 nennt nur „Datum“. Der Tag eines Laufs sagt
+nichts über die Daten und wechselt bei einem Cache-Treffer (7 Tage später) nicht
+mit dem Auftrag.
+
+**Die Regel an zwei Stellen, je einer.**
+
+| Frage | Stelle |
+|---|---|
+| Welchen Tag hat eine Szene? | `catalog.registry.acquisition_day(item, viewer)`: enthält `results_group_by` den STAC-Zeitpunkt `datetime`, ist dessen UTC-Tag der Tag der Szene (derselbe Schritt wie `group_key`, nur für diesen Teil des Schlüssels: fehlt der Item etwas anderes im Schlüssel, etwa den Datatake, hat er den Tag trotzdem). Sonst, bei fehlender Eigenschaft oder wenn sie kein Zeitpunkt ist: kein Tag, der Auftrag wird deswegen nicht abgewiesen |
+| Welchen Tag hat ein Auftrag? | `api.intake._acquired_on`: alle Szenen, die im Rezept bleiben (die vom AOI nicht berührten fallen vorher weg), haben denselben Tag → er; sonst keiner |
+| Was steht im Namen? | `api.processing_route._day_of_name(status)`: `YYYYMMDD` des Tages, sonst `run` + Tag des Laufs; `_download_name` benutzt nur sie, für alle Namen |
+
+**Fälle.** Sentinel-2 (COG und Zarr): `results_group_by = (datetime, …)` → Tag des
+Überflugs; ein Mosaik ganzer Szenen liegt nach `_one_overpass` ohnehin in einem
+Überflug. DEM: `results_group_by = (start_datetime,)` → kein Tag (sein `datetime` ist
+`null`, die Kachel gehört einem Zeitraum): `run…`. **Auslegung, Otto bitte
+bestätigen:** Ein Export über Szenen verschiedener Tage hat keinen einzelnen Tag und
+bekommt `run…` (Ottos Satz nennt nur den Fall „Datensatz ohne Aufnahmedatum“);
+liegen alle Szenen eines Exports auf einem Tag, ist es dieser. Ebenso `run…` für Jobs
+von vor dieser Änderung, bei denen der Tag fehlt.
+
+**Wo der Tag liegt.** Spalte `earthx_job.acquired_on date` (Migration `009`), von
+`api` bei der Annahme gesetzt und von `jobs` nur gespeichert und zurückgegeben
+(`JobStatus.acquired_on`). Verworfen: im Rezept (jedes neue Feld wäre Teil von Hash
+und `recipe.json`, `adr/0014` §4.3), aus der Quelle beim Abruf des Links (eine
+Anfrage an die Quelle je Link, und der Link ginge nicht, wenn die Quelle nicht
+antwortet), aus der Item-Kennung (dafür gibt es keine datensatzübergreifende Regel).
+Je Job und nicht je Lauf: gleiche Aufträge teilen einen Lauf, aber jeder nennt seine
+Szenen selbst.
+
+**Folgen.** Die Namen laufender Links ändern sich (das Datum des Laufs wird zum Tag
+der Szene bzw. zu `run…`); gespeichert ist kein Name, jeder Link baut ihn je Abruf
+neu. Ein laufender Download behält den Namen seiner ersten Antwort, ein fortgesetzter
+mit `If-Range` ist vom Namen nicht berührt. Im Namen stehen weiter nur Datensatz,
+Operatoren und ein Tag, nie AOI, Hash oder `jobID`; der Tag einer Szene sagt, welche
+Daten verarbeitet wurden, nicht wo.
 
 ### 3.2 Frontend: Angebot im Download-Dialog (M4-11b-2, nicht in diesem PR)
 
@@ -496,7 +544,7 @@ Get-FileHash result.zip, joined.zip              # beide Hashwerte gleich
 curl.exe -s -i "$base/result.tif" | Select-String "HTTP/", "Location"    # 303 auf die signierte URL
 ```
 
-Zu sehen: im ZIP ein Ordner `sentinel-2-c1-l2a_band_math_JJJJMMTT` mit
+Zu sehen: im ZIP ein Ordner `sentinel-2-c1-l2a_band_math_JJJJMMTT` (der Tag der Szene, nicht von heute) mit
 `result.tif`, `mask.tif`, `recipe.json` und `citation.bib`; die `.tif` in QGIS
 wie die Einzeldateien; `recipe.json` gleich dem Einzellink
 (`Invoke-RestMethod "$base/recipe.json"`); `Expand-Archive` von Windows läuft ohne
@@ -619,3 +667,14 @@ Produktion):**
     (nicht fertig, gescheitert), vor dem Namensvergleich; ein Export bleibt `404`.
     Getestet mit einem Ergebnis ohne `files_meta`, einem mit nur einer Datei, einem mit
     falsch geformten Zahlen und einem knapp vor dem Ablauf.
+13. **Datum im Dateinamen (Otto, 14.10.2026, §3.1.7).** Der Tag im Namen ist jetzt der
+    Tag der Szene, sonst `run` + Tag des Laufs. Neu: `catalog.registry.acquisition_day`,
+    `api.intake._acquired_on`, `api.processing_route._day_of_name`, Migration `009`
+    (`earthx_job.acquired_on`), `submit(…, acquired_on=)` und `JobStatus.acquired_on`.
+    Getestet: die Regel je Item (UTC-Tag am Zeitzonenrand, Teil irgendwo im Schlüssel,
+    fehlender Datatake, Zeitraum statt Zeitpunkt, fehlende Eigenschaft); die Annahme
+    (eine Szene, Mosaik, Export an einem und an zwei Tagen, nicht berührte Szene, DEM,
+    Item ohne Zeitpunkt); das Speichern und Zurückgeben im Queue; die Namen für alle
+    vier Endungen und `run20261014`; Sentinel- und DEM-ZIP samt Ordner; Jobs von vor der
+    Änderung. Die bestehenden Erwartungen mit dem Tag des Laufs sind auf den Tag der
+    Szene (`20260601`) bzw. `run20260305` umgestellt.
