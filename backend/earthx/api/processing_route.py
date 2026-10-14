@@ -24,18 +24,26 @@ What each route turns away, and how (all errors are ``application/problem+json``
 * **A result link** answers ``303`` with a URL signed just now for 15 minutes and never past
   the result's expiry, ``Cache-Control: no-store``. ``recipe.json`` is built here from the
   job's own recipe; it does not lie in the object store.
+* **``result.zip``** (M4-11b-1) is the exception to the redirect: ``api`` lays out one ZIP of result,
+  mask, recipe and citation and streams it from the store, ``200``, or ``206`` for one range
+  (``416`` behind the end), ``409`` for a result made before the files were measured, ``500`` if the
+  stored files are not what the job reported, ``503`` if the store does not answer or four downloads
+  are already running. The checks of the other
+  links (``404``, ``410``) run on every request, a resumed one included.
 
 Every answer under ``/jobs/`` and the placing of a job carry ``Cache-Control: no-store``.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from email.utils import format_datetime
 from functools import lru_cache
 from http import HTTPStatus
 from typing import Annotated, Any, Literal, TypeVar
@@ -43,7 +51,7 @@ from typing import Annotated, Any, Literal, TypeVar
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from psycopg_pool import ConnectionPool, PoolTimeout
@@ -51,14 +59,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from earthx.api import processing_docs as docs
+from earthx.api import result_zip
+from earthx.api.citation import citation_bib
 from earthx.api.intake import OrderRefused, accept_order, check_recipe_hosts, estimate_order, job_recipe_json
 from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
-from earthx.catalog.registry import DatasetRegistry, UnknownDatasetError
+from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
+from earthx.catalog.registry import DatasetConfig, DatasetRegistry, UnknownDatasetError
 from earthx.gateway import Gateway
 from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
-from earthx.objectstore.errors import ObjectStoreError, ResultExpiring
-from earthx.objectstore.results import MIN_REMAINING, RESULT_NAMES, Store, signed_download
+from earthx.objectstore.errors import ObjectStoreError, ResultExpiring, ResultNotFound, StoreUnavailable
+from earthx.objectstore.results import MIN_REMAINING, Store, open_result_range, result_size, signed_download
 from earthx.processing import check_scope
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import OperatorRegistry
@@ -76,12 +87,23 @@ _TYPE_BASE = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/"
 NO_SUCH_JOB = f"{_TYPE_BASE}no-such-job"
 NO_SUCH_PROCESS = f"{_TYPE_BASE}no-such-process"
 RESULT_NOT_READY = f"{_TYPE_BASE}result-not-ready"
+NO_BUNDLE = "urn:earthx:no-bundle"
 _FAILED_TYPE = "urn:earthx:job-failed:"
 _ORDER_TYPE = "urn:earthx:order-refused:"
 
 #: What a link under ``/results`` may name. `result.tif`, `mask.tif` and `export.zip` lie in the store,
-#: `recipe.json` is built. A job has the names of its own output only (:func:`_names_of`).
-LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "recipe.json")
+#: `recipe.json` is built, `result.zip` is laid out from the stored files and the documents `api`
+#: builds (M4-11b-1). A job has the names of its own output only (:func:`_names_of`).
+LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")
+
+BUNDLE = "result.zip"
+#: The files of a raster result the ZIP carries from the store, in the order of the archive.
+BUNDLE_FILES = ("result.tif", "mask.tif")
+#: How many ZIP downloads one process serves at once (M4-11b K4): each holds a connection to the store
+#: and one block of memory for as long as the download lasts. The next one is a ``503``.
+MAX_BUNDLE_DOWNLOADS = 4
+#: What is read from the store, and sent, at a time.
+BUNDLE_BLOCK = 1024 * 1024
 
 _ENVELOPE_KEYS = frozenset({"inputs", "outputs", "response"})
 
@@ -128,6 +150,23 @@ _MESSAGES = {
 # --- what a route needs ------------------------------------------------------
 
 
+class DownloadSlots:
+    """The places for ZIP downloads of one process: taken before the answer starts, freed when it ends."""
+
+    def __init__(self, limit: int = MAX_BUNDLE_DOWNLOADS) -> None:
+        self.limit = limit
+        self.busy = 0
+
+    def take(self) -> bool:
+        if self.busy >= self.limit:
+            return False
+        self.busy += 1
+        return True
+
+    def free(self) -> None:
+        self.busy = max(self.busy - 1, 0)
+
+
 @dataclass(frozen=True)
 class JobApi:
     """What the job routes need besides the request; set on ``app.state.earthx_job_api`` by the lifespan."""
@@ -139,6 +178,7 @@ class JobApi:
     store: Store
     pool: ConnectionPool
     events: JobEvents
+    bundles: DownloadSlots = field(default_factory=DownloadSlots)
 
 
 class Problem(Exception):
@@ -301,6 +341,10 @@ class ProblemDocument(BaseModel):
 
 _PROBLEMS: dict[int | str, dict[str, Any]] = {
     code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (400, 404, 410, 413, 422, 503)
+}
+#: What only the ZIP of a result adds: no ZIP for an old result, a range behind its end, and files that are not what was reported.
+_ZIP_PROBLEMS: dict[int | str, dict[str, Any]] = {
+    code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (409, 416, 500)
 }
 
 
@@ -582,7 +626,13 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
     try:
         job_id = await _db(
             api,
-            lambda conn, recipe: submit(conn, recipe, operators=api.operators, attachments=accepted.attachments),
+            lambda conn, recipe: submit(
+                conn,
+                recipe,
+                operators=api.operators,
+                attachments=accepted.attachments,
+                acquired_on=accepted.acquired_on,
+            ),
             accepted.recipe,
         )
     except RecipeInvalid as error:
@@ -717,19 +767,30 @@ def _is_export(status: JobStatus) -> bool:
     return (status.result or {}).get("files") == ["export.zip"]
 
 
+def _bundle_possible(status: JobStatus) -> bool:
+    """Whether the supervisor reported size and CRC of both rasters: only then is there a ZIP (M4-11b K5)."""
+    return not _is_export(status) and reported_files(status.result, BUNDLE_FILES) is not None
+
+
+def _outputs_of(status: JobStatus) -> tuple[str, ...]:
+    """The outputs this job has: those of its kind, and the ZIP only where it can be laid out."""
+    if _is_export(status):
+        return docs.EXPORT_OUTPUTS
+    return tuple(name for name in docs.RASTER_OUTPUTS if name != "bundle" or _bundle_possible(status))
+
+
 def _names_of(status: JobStatus) -> tuple[str, ...]:
     """The files under ``/results`` of this job: those of its own output, and ``recipe.json``."""
-    outputs = docs.EXPORT_OUTPUTS if _is_export(status) else docs.RASTER_OUTPUTS
-    return tuple(docs.OUTPUTS[name][0] for name in outputs)
+    return tuple(docs.OUTPUTS[name][0] for name in _outputs_of(status))
 
 
 def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
     base = f"{root}{docs.PREFIX}/jobs/{status.job_id}/results"
     result = status.result or {}
     document: dict[str, Any] = {}
-    for name in docs.EXPORT_OUTPUTS if _is_export(status) else docs.RASTER_OUTPUTS:
+    for name in _outputs_of(status):
         file, title = docs.OUTPUTS[name]
-        link: dict[str, Any] = {"href": f"{base}/{file}", "type": RESULT_NAMES[file], "title": title}
+        link: dict[str, Any] = {"href": f"{base}/{file}", "type": docs.MEDIA_TYPES[file], "title": title}
         if name == "result":
             for key, member in (("bytes", "length"), ("width", "width"), ("height", "height"), ("bands", "bands")):
                 if key in result:
@@ -748,19 +809,32 @@ async def job_results(request: Request, jobID: str, api: Api) -> dict[str, Any]:
     return _results_document(_root(request), status)
 
 
+def _day_of_name(status: JobStatus) -> str:
+    """The date in the name of every download of a job: the one place of the rule (Otto, 14.10.2026).
+
+    The UTC day the scene was acquired, ``YYYYMMDD``, where the job's scenes share one (the overpass,
+    found at acceptance, ``catalog.registry.acquisition_day``). Where they do not — a dataset without a
+    single day such as the DEM, scenes on several days, a job from before the day was kept — the UTC
+    day the run ended (else the job was placed), ``run`` in front: ``run20261014``. Before 14.10.2026
+    this was always the day of the run, without the prefix.
+    """
+    if status.acquired_on is not None:
+        return status.acquired_on.strftime("%Y%m%d")
+    return "run" + (status.finished_at or status.created_at).astimezone(UTC).strftime("%Y%m%d")
+
+
 def _download_name(body: dict[str, Any] | None, status: JobStatus, suffix: str) -> str:
-    """Dataset, operators and date of the run — never an AOI, a hash, a ``jobID`` (adr/0015 §6.5, M4-08b K6)."""
+    """Dataset, operators and day (:func:`_day_of_name`) — never an AOI, a hash, a ``jobID`` (adr/0015 §6.5, M4-08b K6)."""
     try:
         dataset = str(body["inputs"][0]["dataset"])  # type: ignore[index]
         operators = [str(step["op"]) for step in body["steps"]]  # type: ignore[index]
     except (KeyError, IndexError, TypeError):
         dataset, operators = "result", []
-    day = (status.finished_at or status.created_at).astimezone(UTC).strftime("%Y%m%d")
     clean = _ascii(dataset)[:64] or "result"
     steps = "-".join(_ascii(op) for op in operators) or "export"
     if len(steps) > 40:
         steps = f"{len(operators)}-steps"
-    return f"{clean}_{steps}_{day}{suffix}"
+    return f"{clean}_{steps}_{_day_of_name(status)}{suffix}"
 
 
 def _ascii(text: str) -> str:
@@ -768,13 +842,25 @@ def _ascii(text: str) -> str:
     return "".join(c if c.isascii() and (c.isalnum() or c in "-_") else "-" for c in text)
 
 
-_SUFFIXES = {"result.tif": ".tif", "mask.tif": "_mask.tif", "export.zip": ".zip", "recipe.json": "_recipe.json"}
+_SUFFIXES = {
+    "result.tif": ".tif",
+    "mask.tif": "_mask.tif",
+    "export.zip": ".zip",
+    BUNDLE: ".zip",
+    "recipe.json": "_recipe.json",
+}
 
 
 @router.get(
     "/jobs/{jobID}/results/{name}",
-    summary="A result file: a redirect to a signed URL, or recipe.json",
-    responses={**_PROBLEMS, 303: {"description": "See Other: the signed URL, valid for 15 minutes"}},
+    summary="A result file: a redirect to a signed URL, recipe.json, or the ZIP of the result",
+    responses={
+        **_PROBLEMS,
+        **_ZIP_PROBLEMS,
+        200: {"description": "recipe.json, or all of result.zip", "content": {"application/zip": {}}},
+        206: {"description": "Partial Content: one range of result.zip"},
+        303: {"description": "See Other: the signed URL, valid for 15 minutes"},
+    },
 )
 async def job_result(request: Request, jobID: str, name: str, api: Api) -> Response:
     if name not in LINK_NAMES:
@@ -787,6 +873,16 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     if status.expires_at - datetime.now(UTC) < MIN_REMAINING:
         raise Problem(410, "the result has expired", type_="urn:earthx:gone", title="Gone")
     status = _ready(status)
+    if name == BUNDLE and not _is_export(status) and not _bundle_possible(status):
+        # A result made before the supervisor measured its files (up to 7 days old, a cache hit
+        # included): not computed afterwards, which would read gigabytes in a request and write to the
+        # queue from `api`. It says so, and the single links still work (M4-11b-1, plan §3.1.2).
+        raise Problem(
+            409,
+            "this result was created before bundles existed; use the single links (result.tif, mask.tif, recipe.json)",
+            type_=NO_BUNDLE,
+            title="No bundle",
+        )
     if name not in _names_of(status):
         raise Problem(404, "there is no such result", type_="urn:earthx:no-such-result", title="No such result")
     body = await _db(api, job_recipe, jobID)
@@ -794,6 +890,8 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     if name == "recipe.json":
         return _recipe_document(api, body, status, filename)
     assert status.result_id is not None
+    if name == BUNDLE:
+        return await _bundle_response(request, api, body, status, filename)
     try:
         url = signed_download(api.store, status.result_id, name, not_after=status.expires_at, filename=filename)
     except ResultExpiring:
@@ -804,31 +902,37 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     return Response(status_code=303, headers={"Location": url})
 
 
-def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str) -> Response:
-    if body is None:
-        raise _no_such_job()
+def _config_of(api: JobApi, body: dict[str, Any]) -> DatasetConfig | None:
+    """The registry entry of the job's dataset; ``None`` if the registry no longer knows it."""
     dataset = (body.get("inputs") or [{}])[0].get("dataset")
     try:
-        config = api.registry.get(dataset) if isinstance(dataset, str) else None
+        return api.registry.get(dataset) if isinstance(dataset, str) else None
     except UnknownDatasetError:
-        config = None
+        return None
+
+
+def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
+    """``recipe.json`` of the job: the file of its link, and the entry of its ZIP."""
+    config = _config_of(api, body)
     result = status.result or {}
     if _is_export(status) and isinstance(result.get("attribution"), list):
         # The times and the attribution the export wrote into its own recipe.json, so that both
         # copies are one file (M4-11 K4) — also across a new year or a changed registry.
-        content = job_recipe_document(
+        return job_recipe_document(
             body,
             attribution=[str(entry) for entry in result["attribution"]],
             result=result,
             started=_instant(result.get("started")) or status.started_at,
             finished=_instant(result.get("finished")) or status.finished_at,
         )
-    else:
-        content = job_recipe_json(
-            body, config=config, result=result, started=status.started_at, finished=status.finished_at
-        )
+    return job_recipe_json(body, config=config, result=result, started=status.started_at, finished=status.finished_at)
+
+
+def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str) -> Response:
+    if body is None:
+        raise _no_such_job()
     return Response(
-        content,
+        _recipe_bytes(api, body, status),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -839,6 +943,147 @@ def _instant(value: Any) -> datetime | None:
         return datetime.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:
         return None
+
+
+# --- the ZIP of a raster result ----------------------------------------------
+
+
+class _SlotResponse(StreamingResponse):
+    """A streamed answer that gives its place back when it ends, however it ends.
+
+    ``__call__`` is the one place that sees a client leaving, an error in the stream and a normal
+    end alike; a generator that was never started has no ``finally`` to run.
+    """
+
+    def __init__(self, content: AsyncIterator[bytes], slots: DownloadSlots, **kwargs: Any) -> None:
+        super().__init__(content, **kwargs)
+        self._slots = slots
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._slots.free()
+            # Not left to the garbage collector: the stream to the store is closed now, whether the
+            # client left, the stream failed or it ended. A generator still running (it is being
+            # cancelled) closes its own stream.
+            with contextlib.suppress(Exception):
+                await self.body_iterator.aclose()  # type: ignore[attr-defined]
+
+
+async def _archive_bytes(api: JobApi, result_id: str, layout: Layout, first: int, last: int) -> AsyncIterator[bytes]:
+    """Bytes ``first`` to ``last`` (both included) of the archive: documents from memory, rasters from the store.
+
+    A raster is read in blocks of :data:`BUNDLE_BLOCK` in a thread; the stream to the store is closed when this
+    generator ends or is dropped, so a client that leaves frees the connection. If the store answers with less
+    than the report promised, the error ends the response before it is complete: the client sees a broken
+    download, never a shorter archive that looks whole.
+    """
+    for segment in layout.segments(first, last + 1):
+        if isinstance(segment, result_zip.Literal):
+            yield segment.data
+            continue
+        remaining = segment.end - segment.begin
+        try:
+            stream = await run_in_threadpool(
+                open_result_range, api.store, result_id, segment.source, segment.begin, segment.end - 1
+            )
+        except ObjectStoreError:
+            LOGGER.warning("a result file could not be opened while the ZIP was sent")
+            raise
+        try:
+            while remaining:
+                block = await run_in_threadpool(stream.read, min(BUNDLE_BLOCK, remaining))
+                if not block:
+                    LOGGER.warning("the store ended a result file before the end of its report")
+                    raise StoreUnavailable("the store ended a result file early")
+                remaining -= len(block)
+                yield block
+        except ObjectStoreError:
+            LOGGER.warning("a result file could not be read while the ZIP was sent")
+            raise
+        finally:
+            with contextlib.suppress(Exception):
+                stream.close()
+
+
+async def _check_stored(api: JobApi, result_id: str, sizes: dict[str, int]) -> None:
+    """Both rasters lie in the store with the size the supervisor reported, or the answer is an error."""
+    try:
+        for name, expected in sizes.items():
+            if await run_in_threadpool(result_size, api.store, result_id, name) != expected:
+                LOGGER.warning("a result file differs in size from its report", extra={"result_file": name})
+                raise Problem(500, "the stored result is not what the job reported")
+    except ResultNotFound:
+        LOGGER.warning("a result file of a finished job is not in the store")
+        raise Problem(500, "the stored result is not what the job reported") from None
+    except ObjectStoreError:
+        LOGGER.warning("the result store could not be asked for a size")
+        raise Problem(503, "the result store is not available; try again", headers={"Retry-After": "5"}) from None
+
+
+def _requested_range(request: Request, layout: Layout) -> tuple[int, int] | None:
+    """The one range to send, or ``None`` for the whole archive; ``416`` if the range lies behind the end.
+
+    ``If-Range`` makes the range depend on the archive still being the one the client began with.
+    Only the strong validator of the layout counts: the date of the run does not change when the
+    registry's attribution or citation does, and with them ``recipe.json`` and ``citation.bib``
+    (RFC 9110 §13.1.5 wants a date to stand for the exact bytes). A date, or anything else, is the whole.
+    """
+    condition = request.headers.get("if-range")
+    if condition is not None and condition.strip() != layout.etag:
+        return None
+    try:
+        return byte_range(request.headers.get("range"), layout.total)
+    except RangeNotSatisfiable:
+        raise Problem(
+            416, "the range begins behind the end of the ZIP", headers={"Content-Range": f"bytes */{layout.total}"}
+        ) from None
+
+
+async def _bundle_response(
+    request: Request, api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str
+) -> Response:
+    """``result.zip`` (M4-11b-1): a folder with result, mask, recipe and citation, one range of it or all.
+
+    Answered by `api` itself, not by a redirect: ``recipe.json`` belongs to this job, the rasters to a run
+    that other orders share. The same checks as for every link run before (``404``, ``410`` from 60 s
+    before the end of the result's life), so a resumed download after the end is a ``410`` too.
+    """
+    facts = reported_files(status.result, BUNDLE_FILES)
+    if body is None or facts is None or status.result_id is None:
+        raise _no_such_job()
+    finished = (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
+    stem = filename.removesuffix(".zip")
+    members = [Member.stored(f"{stem}/{name}", name, facts[name]) for name in BUNDLE_FILES]
+    members.append(Member.of_bytes(f"{stem}/recipe.json", _recipe_bytes(api, body, status)))
+    config = _config_of(api, body)
+    if config is not None:
+        members.append(Member.of_bytes(f"{stem}/citation.bib", citation_bib(config, downloaded=finished.date())))
+    layout = Layout(members, modified=finished)
+    await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
+
+    last_modified = format_datetime(finished, usegmt=True)
+    chosen = _requested_range(request, layout)
+    first, last = chosen if chosen is not None else (0, layout.total - 1)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(last - first + 1),
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "ETag": layout.etag,
+        "Last-Modified": last_modified,
+    }
+    if chosen is not None:
+        headers["Content-Range"] = f"bytes {first}-{last}/{layout.total}"
+    if not api.bundles.take():
+        raise Problem(503, "this server sends as many ZIP files as it can; try again", headers={"Retry-After": "5"})
+    return _SlotResponse(
+        _archive_bytes(api, status.result_id, layout, first, last),
+        api.bundles,
+        status_code=206 if chosen is not None else 200,
+        media_type=docs.MEDIA_TYPES[BUNDLE],
+        headers=headers,
+    )
 
 
 # --- progress ----------------------------------------------------------------

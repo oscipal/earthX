@@ -491,6 +491,8 @@ OGC verlangt einen Code „that corresponds to the reason of the failure“.
   Dateideskriptoren des Prozesses.
 - **K6** Dateiname `{dataset}_{ops}_{YYYYMMDD}` mit dem Datum des
   Abschlusses (UTC); `export` ohne Schritte.
+  **Nachtrag 14.10.2026 (Otto):** das Datum ist der Aufnahmetag der Szene, sonst
+  `run` + Tag des Abschlusses; `plans/m4-11b-angebot-und-zip.md` §3.1.7.
 - **K7** Hrefs, `Location` und Links relativ zum Wurzelpfad
   (`/processing/…`), damit sie hinter dem Proxy des Frontends stimmen.
 - **K8** Eine abgelaufene `jobID` (`expires_at` vorbei) ist auf den Job-Routen

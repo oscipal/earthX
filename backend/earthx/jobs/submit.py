@@ -20,7 +20,7 @@ import re
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 import psycopg
@@ -79,6 +79,8 @@ class JobStatus:
     #: Only for a successful, not dismissed job: where the result lies and what is known about it.
     result_id: str | None
     result: dict[str, Any] | None
+    #: The UTC day of acquisition of the order's scenes, if they share one (Otto, 14.10.2026); `api` names downloads by it.
+    acquired_on: date | None = None
 
 
 def _runtime_limit(recipe: Recipe, operators: OperatorRegistry) -> int:
@@ -92,6 +94,7 @@ def submit(
     *,
     operators: OperatorRegistry = REGISTRY,
     attachments: Attachments | None = None,
+    acquired_on: date | None = None,
 ) -> str:
     """Place the order and return its ``job_id``.
 
@@ -105,6 +108,9 @@ def submit(
     its own ``recipe_id``, it is never ``cacheable``, nothing attaches to it, and it carries
     the ``attachments`` `api` built for it — its ZIP holds this order's ``recipe_id`` and the
     origin of its AOI, which no other order may see. Every other order comes without.
+
+    ``acquired_on`` is the day of acquisition of the order's scenes, as `api` found it (Otto,
+    14.10.2026): kept on the job and handed back by :func:`job_status`, never read here.
     """
     export = isinstance(recipe.output, CropOutput)
     if export != (attachments is not None):
@@ -138,8 +144,8 @@ def submit(
             None if attachments is None else attachments.to_json(),
         )
         conn.execute(
-            "INSERT INTO public.earthx_job (job_id, run_id, recipe_id) VALUES (%s, %s, %s)",
-            (job_id, run_id, recipe_id),
+            "INSERT INTO public.earthx_job (job_id, run_id, recipe_id, acquired_on) VALUES (%s, %s, %s, %s)",
+            (job_id, run_id, recipe_id, acquired_on),
         )
         if created:
             conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
@@ -209,7 +215,8 @@ def _run_for(
 
 _STATUS_SQL = """
 SELECT j.job_id, j.recipe_id, j.dismissed, j.created_at,
-       r.status, r.progress, r.started_at, r.finished_at, r.expires_at, r.error_kind, r.result_id, r.result
+       r.status, r.progress, r.started_at, r.finished_at, r.expires_at, r.error_kind, r.result_id, r.result,
+       j.acquired_on
 FROM public.earthx_job j
 JOIN public.earthx_run r ON r.run_id = j.run_id
 WHERE j.job_id = %s
@@ -217,9 +224,21 @@ WHERE j.job_id = %s
 
 
 def _status(row: tuple[Any, ...]) -> JobStatus:
-    job_id, recipe_id, dismissed, created_at, status, progress, started, finished, expires, kind, result_id, result = (
-        row
-    )
+    (
+        job_id,
+        recipe_id,
+        dismissed,
+        created_at,
+        status,
+        progress,
+        started,
+        finished,
+        expires,
+        kind,
+        result_id,
+        result,
+        day,
+    ) = row
     if dismissed:
         status = "dismissed"
     visible = status == "successful"
@@ -235,6 +254,7 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         error_kind=kind if status == "failed" else None,
         result_id=result_id if visible else None,
         result=result if visible else None,
+        acquired_on=day,
     )
 
 

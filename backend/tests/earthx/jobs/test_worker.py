@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,7 @@ from earthx.jobs.entry import ChildTarget
 from earthx.jobs.submit import dismiss, job_status, submit
 from earthx.jobs.worker import Supervisor
 from earthx.objectstore.errors import StoreUnavailable
-from earthx.objectstore.results import Store, upload_result
+from earthx.objectstore.results import Store, file_facts, upload_result
 from tests.conftest import format_without_timestamp
 from tests.earthx.jobs.support import ATTACHMENTS, make_export, make_recipe, most_at_once, run_row, wait_until
 from tests.earthx.objectstore.conftest import BUCKET
@@ -108,6 +109,53 @@ class TestASuccessfulRun:
         assert status.result and status.result["blocks"] == 2
         assert _stored(store) == [f"results/{status.result_id}/mask.tif", f"results/{status.result_id}/result.tif"]
         assert run_row(db, _run_id(db), "attempt", "worker", "lease_until", "error_kind") == (1, None, None, None)
+
+    def test_the_result_carries_size_and_crc_of_the_bytes_that_went_up(
+        self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        """M4-11b-1: ``files_meta`` is the fact `api` builds the ZIP from, read from the uploaded objects."""
+        make_supervisor("succeed").start()
+        job_id = submit(db, make_recipe())
+        _wait_for(db, job_id, "successful")
+        status = job_status(db, job_id)
+        assert status is not None and status.result is not None
+        assert set(status.result["files_meta"]) == {"result.tif", "mask.tif"}
+        for name, facts in status.result["files_meta"].items():
+            stored = store.s3._internal.get_object(Bucket=BUCKET, Key=f"results/{status.result_id}/{name}")
+            content = stored["Body"].read()
+            assert facts == {"bytes": len(content), "crc32": zlib.crc32(content)}, name
+        assert status.result["files_meta"]["result.tif"] == {"bytes": 12, "crc32": zlib.crc32(b"result-bytes")}
+
+    def test_an_order_that_attaches_to_the_finished_run_has_the_same_facts(
+        self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor]
+    ) -> None:
+        make_supervisor("succeed").start()
+        first = submit(db, make_recipe())
+        _wait_for(db, first, "successful")
+        second = submit(db, make_recipe())
+        one, other = job_status(db, first), job_status(db, second)
+        assert one is not None and other is not None and one.result_id == other.result_id
+        assert one.result is not None and other.result is not None
+        assert one.result["files_meta"] == other.result["files_meta"]
+
+    def test_a_file_that_cannot_be_read_fails_the_run_and_leaves_nothing_in_the_store(
+        self,
+        db: psycopg.Connection,
+        store: Store,
+        make_supervisor: Callable[..., Supervisor],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def unreadable(path: Path) -> dict[str, int]:
+            if path.name == "mask.tif":
+                raise PermissionError("unreadable")
+            return file_facts(path)
+
+        monkeypatch.setattr("earthx.jobs.worker.file_facts", unreadable)
+        make_supervisor("succeed").start()
+        job_id = submit(db, make_recipe())
+        _wait_for(db, job_id, "failed")
+        assert run_row(db, _run_id(db), "error_kind") == ("unknown",)
+        assert _stored(store) == []
 
     def test_the_work_directory_is_gone_afterwards(
         self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor], tmp_path: Path
@@ -286,6 +334,7 @@ class TestAnExport:
         assert _stored(store) == [f"results/{status.result_id}/export.zip"]
         body = store.s3._internal.get_object(Bucket=BUCKET, Key=f"results/{status.result_id}/export.zip")
         assert json.loads(body["Body"].read()) == ATTACHMENTS.to_json()
+        assert "files_meta" not in status.result, "an export is one file the ZIP of nothing is built from"
 
     def test_a_raster_child_that_reports_an_export_zip_fails_and_uploads_nothing(
         self, db: psycopg.Connection, store: Store, make_supervisor: Callable[..., Supervisor]
