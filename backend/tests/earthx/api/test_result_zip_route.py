@@ -26,6 +26,7 @@ from earthx.objectstore.errors import StoreUnavailable
 from earthx.objectstore.results import Store, open_result_range
 from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig
+from tests.earthx.api.test_intake import dem_item, order
 from tests.earthx.api.test_processing_route import (
     EXPORT_RESULT,
     RESULT,
@@ -38,7 +39,7 @@ from tests.earthx.objectstore.conftest import BUCKET, store  # noqa: F401 - fixt
 
 pytestmark = pytest.mark.anyio
 
-FOLDER = "sentinel-2-c1-l2a_scale_20260305"
+FOLDER = "sentinel-2-c1-l2a_scale_20260601"
 RASTER = random.Random(11).randbytes(5_000)
 MASK = random.Random(12).randbytes(700)
 
@@ -137,6 +138,38 @@ class TestTheWholeZip:
         job_id, _, _ = await zipped(rig)
         for name in ("result.tif", "mask.tif"):
             assert (await rig.client.get(f"/processing/jobs/{job_id}/results/{name}")).status_code == 303
+
+
+class TestTheNameOfTheZip:
+    """Otto, 14.10.2026: the day of the scenes, else the day of the run marked ``run``; the folder has the same stem."""
+
+    async def test_a_sentinel_zip_carries_the_day_of_its_scene_in_its_name_and_in_its_folder(
+        self, mocked: Store, rig: Rig
+    ) -> None:
+        _, _, url = await zipped(rig)  # the run ended on 2026-03-05, the scene is of 2026-06-01
+        response = await rig.client.get(url)
+        assert response.headers["content-disposition"] == 'attachment; filename="sentinel-2-c1-l2a_scale_20260601.zip"'
+        assert {name.split("/")[0] for name in opened(response.content).namelist()} == {
+            "sentinel-2-c1-l2a_scale_20260601"
+        }
+
+    async def test_a_dem_zip_is_named_by_the_day_of_its_run_marked_run(self, mocked: Store, rig: Rig) -> None:
+        rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
+        job_id = await placed(rig, order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)))
+        result = {**RESULT, "files_meta": {"result.tif": facts(RASTER), "mask.tif": facts(MASK)}}
+        result_id = finish(rig.db, job_id, result=result)
+        put(rig, result_id, "result.tif", RASTER)
+        put(rig, result_id, "mask.tif", MASK)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results/result.zip")
+        assert response.headers["content-disposition"] == 'attachment; filename="cop-dem-glo-30_scale_run20260305.zip"'
+        names = opened(response.content).namelist()
+        assert names[0] == "cop-dem-glo-30_scale_run20260305/result.tif" and len(names) == 4
+
+    async def test_the_zip_and_the_single_links_of_a_job_carry_the_same_day(self, mocked: Store, rig: Rig) -> None:
+        job_id, _, url = await zipped(rig)
+        zip_name = (await rig.client.get(url)).headers["content-disposition"]
+        recipe_name = (await rig.client.get(url.replace("result.zip", "recipe.json"))).headers["content-disposition"]
+        assert "_20260601.zip" in zip_name and "_20260601_recipe.json" in recipe_name
 
 
 class TestByteRanges:

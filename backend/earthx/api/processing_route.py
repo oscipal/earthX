@@ -626,7 +626,13 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
     try:
         job_id = await _db(
             api,
-            lambda conn, recipe: submit(conn, recipe, operators=api.operators, attachments=accepted.attachments),
+            lambda conn, recipe: submit(
+                conn,
+                recipe,
+                operators=api.operators,
+                attachments=accepted.attachments,
+                acquired_on=accepted.acquired_on,
+            ),
             accepted.recipe,
         )
     except RecipeInvalid as error:
@@ -803,19 +809,32 @@ async def job_results(request: Request, jobID: str, api: Api) -> dict[str, Any]:
     return _results_document(_root(request), status)
 
 
+def _day_of_name(status: JobStatus) -> str:
+    """The date in the name of every download of a job: the one place of the rule (Otto, 14.10.2026).
+
+    The UTC day the scene was acquired, ``YYYYMMDD``, where the job's scenes share one (the overpass,
+    found at acceptance, ``catalog.registry.acquisition_day``). Where they do not — a dataset without a
+    single day such as the DEM, scenes on several days, a job from before the day was kept — the UTC
+    day the run ended (else the job was placed), ``run`` in front: ``run20261014``. Before 14.10.2026
+    this was always the day of the run, without the prefix.
+    """
+    if status.acquired_on is not None:
+        return status.acquired_on.strftime("%Y%m%d")
+    return "run" + (status.finished_at or status.created_at).astimezone(UTC).strftime("%Y%m%d")
+
+
 def _download_name(body: dict[str, Any] | None, status: JobStatus, suffix: str) -> str:
-    """Dataset, operators and date of the run — never an AOI, a hash, a ``jobID`` (adr/0015 §6.5, M4-08b K6)."""
+    """Dataset, operators and day (:func:`_day_of_name`) — never an AOI, a hash, a ``jobID`` (adr/0015 §6.5, M4-08b K6)."""
     try:
         dataset = str(body["inputs"][0]["dataset"])  # type: ignore[index]
         operators = [str(step["op"]) for step in body["steps"]]  # type: ignore[index]
     except (KeyError, IndexError, TypeError):
         dataset, operators = "result", []
-    day = (status.finished_at or status.created_at).astimezone(UTC).strftime("%Y%m%d")
     clean = _ascii(dataset)[:64] or "result"
     steps = "-".join(_ascii(op) for op in operators) or "export"
     if len(steps) > 40:
         steps = f"{len(operators)}-steps"
-    return f"{clean}_{steps}_{day}{suffix}"
+    return f"{clean}_{steps}_{_day_of_name(status)}{suffix}"
 
 
 def _ascii(text: str) -> str:
