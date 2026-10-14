@@ -70,7 +70,9 @@ async def zipped(
     job_id = await placed(rig)
     result = dict(RESULT)
     if meta:
-        result["files_meta"] = reported or {"result.tif": facts(raster), "mask.tif": facts(mask)}
+        result["files_meta"] = (
+            reported if reported is not None else {"result.tif": facts(raster), "mask.tif": facts(mask)}
+        )
     result_id = finish(rig.db, job_id, result=result, expires=expires)
     put(rig, result_id, "result.tif", raster)
     put(rig, result_id, "mask.tif", mask)
@@ -241,15 +243,11 @@ class TestTheSameRulesAsTheOtherLinks:
         )
         problem(await rig.client.get(url, headers={"Range": "bytes=100-", "If-Range": first.headers["etag"]}), 410)
 
-    async def test_the_names_of_the_other_kind_of_job_and_of_a_job_without_facts_are_a_404(
-        self, mocked: Store, rig: Rig
-    ) -> None:
+    async def test_the_zip_of_an_export_is_a_404_its_zip_is_export_zip(self, mocked: Store, rig: Rig) -> None:
         export = await placed(rig, export_order())
         finish(rig.db, export, result=EXPORT_RESULT)
-        old, _, _ = await zipped(rig, meta=False)
-        for job_id in (export, old):
-            response = await rig.client.get(f"/processing/jobs/{job_id}/results/result.zip")
-            assert problem(response, 404)["type"] == "urn:earthx:no-such-result"
+        response = await rig.client.get(f"/processing/jobs/{export}/results/result.zip")
+        assert problem(response, 404)["type"] == "urn:earthx:no-such-result"
 
     async def test_a_job_that_has_not_finished_or_failed_or_is_unknown_answers_as_the_other_links_do(
         self, mocked: Store, rig: Rig
@@ -273,6 +271,77 @@ class TestTheSameRulesAsTheOtherLinks:
     async def test_the_zip_is_not_a_name_for_a_post(self, mocked: Store, rig: Rig) -> None:
         _, _, url = await zipped(rig)
         assert (await rig.client.post(url)).status_code == 405
+
+
+class TestAResultFromBeforeBundlesExisted:
+    """Otto, 14.10.2026: a result without ``files_meta`` is told so (``409``), not turned away as unknown."""
+
+    REASON = "created before bundles existed; use the single links"
+
+    @staticmethod
+    def stored_result(rig: Rig, job_id: str) -> Any:
+        return rig.db.execute(
+            "SELECT result FROM public.earthx_run WHERE run_id = (SELECT run_id FROM public.earthx_job WHERE job_id = %s)",
+            (job_id,),
+        ).fetchone()[0]
+
+    async def test_it_is_a_409_with_the_reason_and_the_single_links_still_work(self, mocked: Store, rig: Rig) -> None:
+        job_id, _, url = await zipped(rig, meta=False)
+        response = await rig.client.get(url)
+        body = problem(response, 409)
+        assert body["type"] == "urn:earthx:no-bundle" and body["title"] == "No bundle"
+        assert self.REASON in body["detail"] and "result.tif" in body["detail"]
+        assert response.headers["cache-control"] == "no-store" and "location" not in response.headers
+        base = f"/processing/jobs/{job_id}/results"
+        assert "bundle" not in (await rig.client.get(base)).json()
+        for name in ("result.tif", "mask.tif"):
+            assert (await rig.client.get(f"{base}/{name}")).status_code == 303
+        assert (await rig.client.get(f"{base}/recipe.json")).status_code == 200
+
+    async def test_a_range_request_gets_the_same_answer_and_nothing_is_taken_or_written(
+        self, mocked: Store, rig: Rig
+    ) -> None:
+        job_id, _, url = await zipped(rig, meta=False)
+        before = self.stored_result(rig, job_id)
+        for headers in ({}, {"Range": "bytes=0-9"}, {"Range": "bytes=10-", "If-Range": '"x"'}):
+            assert problem(await rig.client.get(url, headers=headers), 409)["type"] == "urn:earthx:no-bundle"
+        assert rig.api.bundles.busy == 0
+        assert self.stored_result(rig, job_id) == before, "api reads the report, it never writes it"
+        assert "files_meta" not in self.stored_result(rig, job_id)
+
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            {"result.tif": facts(RASTER)},
+            {"result.tif": facts(RASTER), "mask.tif": {"bytes": "700", "crc32": 1}},
+            {"result.tif": facts(RASTER), "mask.tif": {"bytes": -1, "crc32": 1}},
+            {"result.tif": facts(RASTER), "mask.tif": {"bytes": 1, "crc32": 2**32}},
+            {},
+        ],
+    )
+    async def test_a_report_that_cannot_be_read_as_both_files_is_the_same_409(
+        self, mocked: Store, rig: Rig, meta: dict[str, Any]
+    ) -> None:
+        _, _, url = await zipped(rig, reported=meta)
+        assert problem(await rig.client.get(url), 409)["type"] == "urn:earthx:no-bundle"
+
+    async def test_a_result_that_is_nearly_over_is_a_410_first(self, mocked: Store, rig: Rig) -> None:
+        _, _, url = await zipped(rig, meta=False, expires="30 seconds")
+        assert problem(await rig.client.get(url), 410)["type"] == "urn:earthx:gone"
+
+    async def test_a_job_that_is_not_finished_or_failed_is_not_told_about_bundles(self, mocked: Store, rig: Rig) -> None:
+        waiting = await placed(rig)
+        failed = await placed(rig)
+        finish(rig.db, failed, status="failed", kind="source_5xx")
+        for job_id in (waiting, failed):
+            response = await rig.client.get(f"/processing/jobs/{job_id}/results/result.zip")
+            assert response.status_code != 409 and "bundles existed" not in response.text
+
+    async def test_the_reason_names_no_job_no_result_and_no_area(self, mocked: Store, rig: Rig) -> None:
+        job_id, result_id, url = await zipped(rig, meta=False)
+        text = (await rig.client.get(url)).text
+        for forbidden in (job_id, result_id, "9.01", "47.01", "objectstore", "earthx/results"):
+            assert forbidden not in text
 
 
 class TestWhenTheStoreDisagrees:

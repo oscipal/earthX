@@ -26,8 +26,9 @@ What each route turns away, and how (all errors are ``application/problem+json``
   job's own recipe; it does not lie in the object store.
 * **``result.zip``** (M4-11b-1) is the exception to the redirect: ``api`` lays out one ZIP of result,
   mask, recipe and citation and streams it from the store, ``200``, or ``206`` for one range
-  (``416`` behind the end), ``500`` if the stored files are not what the job reported, ``503``
-  if the store does not answer or four downloads are already running. The checks of the other
+  (``416`` behind the end), ``409`` for a result made before the files were measured, ``500`` if the
+  stored files are not what the job reported, ``503`` if the store does not answer or four downloads
+  are already running. The checks of the other
   links (``404``, ``410``) run on every request, a resumed one included.
 
 Every answer under ``/jobs/`` and the placing of a job carry ``Cache-Control: no-store``.
@@ -86,6 +87,7 @@ _TYPE_BASE = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/"
 NO_SUCH_JOB = f"{_TYPE_BASE}no-such-job"
 NO_SUCH_PROCESS = f"{_TYPE_BASE}no-such-process"
 RESULT_NOT_READY = f"{_TYPE_BASE}result-not-ready"
+NO_BUNDLE = "urn:earthx:no-bundle"
 _FAILED_TYPE = "urn:earthx:job-failed:"
 _ORDER_TYPE = "urn:earthx:order-refused:"
 
@@ -340,9 +342,9 @@ class ProblemDocument(BaseModel):
 _PROBLEMS: dict[int | str, dict[str, Any]] = {
     code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (400, 404, 410, 413, 422, 503)
 }
-#: What only the ZIP of a result adds: a range behind its end, and files that are not what was reported.
+#: What only the ZIP of a result adds: no ZIP for an old result, a range behind its end, and files that are not what was reported.
 _ZIP_PROBLEMS: dict[int | str, dict[str, Any]] = {
-    code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (416, 500)
+    code: {"model": ProblemDocument, "description": HTTPStatus(code).phrase} for code in (409, 416, 500)
 }
 
 
@@ -852,6 +854,16 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     if status.expires_at - datetime.now(UTC) < MIN_REMAINING:
         raise Problem(410, "the result has expired", type_="urn:earthx:gone", title="Gone")
     status = _ready(status)
+    if name == BUNDLE and not _is_export(status) and not _bundle_possible(status):
+        # A result made before the supervisor measured its files (up to 7 days old, a cache hit
+        # included): not computed afterwards, which would read gigabytes in a request and write to the
+        # queue from `api`. It says so, and the single links still work (M4-11b-1, plan §3.1.2).
+        raise Problem(
+            409,
+            "this result was created before bundles existed; use the single links (result.tif, mask.tif, recipe.json)",
+            type_=NO_BUNDLE,
+            title="No bundle",
+        )
     if name not in _names_of(status):
         raise Problem(404, "there is no such result", type_="urn:earthx:no-such-result", title="No such result")
     body = await _db(api, job_recipe, jobID)
