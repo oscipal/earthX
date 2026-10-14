@@ -302,10 +302,10 @@ export function processingAllowed(collection: Collection | undefined): boolean {
   return collection?.['earthx:license_flags']?.tier === 'processing';
 }
 
-// Why "Process" cannot open for this selection, or `null` when it can.
+// Why "Process" cannot open for this selection, or `null` when it can. No AOI
+// is needed: "Whole scene" sends none (M4-13c K1).
 export function processBlockReason(
   dataset: { viewable: boolean; collection: Collection } | undefined,
-  aoi: GeoJSON.Geometry | null,
   sceneCount: number,
 ): string | null {
   if (!dataset?.viewable) return 'Pick a dataset first.';
@@ -313,10 +313,13 @@ export function processBlockReason(
     const tier = dataset.collection['earthx:license_flags']?.tier ?? 'unknown';
     return `The licence of this dataset does not allow processing (tier: ${tier}).`;
   }
-  if (!isArea(aoi)) return 'Draw an AOI first: a job needs an area.';
   if (sceneCount === 0) return 'Select a scene first.';
   return null;
 }
+
+// What an order covers (M4-13c §3.2): the whole scenes, without `aoi` (the
+// server takes the union of their footprints), or only the drawn AOI.
+export type Area = 'scene' | 'aoi';
 
 // --- steps and the order -------------------------------------------------------
 
@@ -346,13 +349,14 @@ const orderedIds = (ids: readonly string[]): string[] => [...ids].sort();
 export function buildOrder(args: {
   datasetId: string;
   itemIds: readonly string[];
+  area: Area;
   aoi: GeoJSON.Geometry | null;
   steps: readonly DraftStep[];
   assets: readonly string[];
   dtype: string;
   info: ProcessInfo;
 }): BuiltOrder {
-  const { datasetId, itemIds, aoi, steps, assets, dtype, info } = args;
+  const { datasetId, itemIds, area, aoi, steps, assets, dtype, info } = args;
   const problems: string[] = [];
   const built: OrderStep[] = [];
   const stepProblems: StepProblem[] = steps.map((step) => {
@@ -364,19 +368,19 @@ export function buildOrder(args: {
     return { errors };
   });
   if (itemIds.length === 0) problems.push('Pick a pass.');
-  if (!isArea(aoi)) problems.push('Draw an area as AOI.');
+  if (area === 'aoi' && !isArea(aoi)) problems.push('Draw an area as AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
   if (assets.length === 0) problems.push('Pick at least one band.');
   if (assets.length > info.maxAssets) problems.push(`At most ${info.maxAssets} bands.`);
   if (!dtype) problems.push('Pick an output data type.');
   const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0);
-  if (problems.length > 0 || !stepsOk || !isArea(aoi)) return { order: null, stepProblems, problems };
+  if (problems.length > 0 || !stepsOk) return { order: null, stepProblems, problems };
   return {
     order: {
       recipe_version: 1,
       inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)], assets: [...assets] }],
-      aoi: orderAoi(aoi),
+      ...(area === 'aoi' && isArea(aoi) ? { aoi: orderAoi(aoi) } : {}),
       steps: built,
       output: { kind: 'raster', format: 'cog', dtype },
     },

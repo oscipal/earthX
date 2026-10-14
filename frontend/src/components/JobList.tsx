@@ -97,17 +97,30 @@ export function JobRow({ job }: { job: JobEntry }) {
   );
 }
 
+// A small window of its own, apart from the panel that builds an order
+// (M4-13c §3.1), until UI-01 brings the processing manager.
 export default function JobList() {
+  const open = useProcessingStore((s) => s.jobsOpen);
+  const close = useProcessingStore((s) => s.closeJobs);
   const jobs = useProcessingStore((s) => s.jobs);
-  if (jobs.length === 0) return null;
+  if (!open) return null;
   return (
-    <section className="pp-section" aria-label="Jobs">
-      <h3 className="pp-heading">Jobs</h3>
-      <ul className="pp-jobs">
-        {jobs.map((job) => (
-          <JobRow key={job.jobID} job={job} />
-        ))}
-      </ul>
-    </section>
+    <div className="panel jobs-panel" role="dialog" aria-label="Jobs">
+      <div className="vc-head">
+        <span className="vc-title">JOBS</span>
+        <button type="button" className="link-btn" title="Close the list of jobs" onClick={close}>
+          ✕
+        </button>
+      </div>
+      {jobs.length === 0 ? (
+        <p className="hint-text">No jobs in this tab.</p>
+      ) : (
+        <ul className="pp-jobs">
+          {jobs.map((job) => (
+            <JobRow key={job.jobID} job={job} />
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

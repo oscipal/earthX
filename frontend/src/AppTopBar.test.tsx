@@ -16,6 +16,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
+import { useProcessingStore, type JobEntry } from './processingStore';
 import { useAppStore } from './store';
 import type { StacItem } from './types';
 
@@ -165,5 +166,53 @@ describe('the selection bar', () => {
     expect(btn(bar as HTMLElement, 'Crop & merge to AOI')).not.toBeNull();
     expect(btn(bar as HTMLElement, 'View full selection')).not.toBeNull();
     expect(btn(bar as HTMLElement, 'Add to layers')).not.toBeNull();
+  });
+});
+
+// M4-13c §3.1: the panel that builds an order is a side bar; the jobs have a
+// window of their own, opened by "⚙ Jobs (n)".
+describe('the processing side bar and the window of the jobs', () => {
+  const JOB: JobEntry = {
+    jobID: 'AbCdEfGhIjKlMnOpQrSt_-',
+    expires: new Date(Date.now() + 86_400_000).toISOString(),
+    status: null,
+    phase: 'active',
+    files: null,
+    resampled: null,
+    failure: null,
+    error: null,
+    cancelling: false,
+  };
+
+  beforeEach(() => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    useAppStore.setState({ groups: [], items: [], selectedIds: [], focusMode: false });
+    useProcessingStore.setState({ open: false, jobsOpen: false, jobs: [JOB] });
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    useProcessingStore.setState({ open: false, jobsOpen: false, jobs: [] });
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the jobs, not the panel, from "⚙ Jobs (n)"', () => {
+    const view = mount();
+    act(() => btn(view, 'Jobs (1)')!.click());
+    expect(useProcessingStore.getState().jobsOpen).toBe(true);
+    expect(useProcessingStore.getState().open).toBe(false);
+    expect(view.querySelector('.jobs-dock [aria-label="Jobs"]')).not.toBeNull();
+    expect(btn(view, 'Jobs (1)')).toBeNull();
+  });
+
+  it('puts the panel in the side bar and the jobs beside it', () => {
+    useProcessingStore.setState({ open: true, jobsOpen: true });
+    const view = mount();
+    expect(view.querySelector('.processing-sheet [aria-label="Processing"]')).not.toBeNull();
+    expect(view.querySelector('.jobs-dock.beside-sheet')).not.toBeNull();
   });
 });

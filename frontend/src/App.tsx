@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
+import JobList from './components/JobList';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import ProcessingPanel from './components/ProcessingPanel';
@@ -36,7 +37,8 @@ export default function App() {
   const projection = useAppStore((s) => s.projection);
   const toggleProjection = useAppStore((s) => s.toggleProjection);
   const processingOpen = useProcessingStore((s) => s.open);
-  const openProcessing = useProcessingStore((s) => s.openProcessing);
+  const jobsOpen = useProcessingStore((s) => s.jobsOpen);
+  const openJobs = useProcessingStore((s) => s.openJobs);
   const jobCount = useProcessingStore((s) => s.jobs.length);
   const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
@@ -85,12 +87,12 @@ export default function App() {
         >
           ☰ Layers{layerCount ? ` (${layerCount})` : ''}
         </button>
-        {jobCount > 0 && !processingOpen && (
+        {jobCount > 0 && !jobsOpen && (
           <button
             type="button"
             className="panel zoom-btn"
-            onClick={() => openProcessing()}
-            title="Show the processing panel with the jobs of this tab"
+            onClick={() => openJobs()}
+            title="Show the jobs of this tab"
           >
             ⚙ Jobs ({jobCount})
           </button>
@@ -119,19 +121,22 @@ export default function App() {
         <LayerManager />
       </div>
 
+      {/* The processing side bar lies over the results list: folded away while it is open. */}
       {!focusMode && hasResults && (
-        <div className={`overlay right results-dock${resultsPanelCollapsed ? ' collapsed' : ''}`}>
+        <div className={`overlay right results-dock${resultsPanelCollapsed || processingOpen ? ' collapsed' : ''}`}>
           <ResultsPanel />
-          <button
-            type="button"
-            className="results-toggle"
-            onClick={() => toggleResultsPanel()}
-            title={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
-            aria-label={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
-            aria-expanded={!resultsPanelCollapsed}
-          >
-            {resultsPanelCollapsed ? '‹' : '›'}
-          </button>
+          {!processingOpen && (
+            <button
+              type="button"
+              className="results-toggle"
+              onClick={() => toggleResultsPanel()}
+              title={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
+              aria-label={resultsPanelCollapsed ? 'Show results' : 'Hide results'}
+              aria-expanded={!resultsPanelCollapsed}
+            >
+              {resultsPanelCollapsed ? '‹' : '›'}
+            </button>
+          )}
         </div>
       )}
 
@@ -157,9 +162,15 @@ export default function App() {
       </div>
 
       {processingOpen && (
-        <div className="overlay processing-dock">
+        <div className="overlay processing-sheet">
+          <ProcessingPanel />
+        </div>
+      )}
+
+      {jobsOpen && (
+        <div className={`overlay jobs-dock${processingOpen ? ' beside-sheet' : ''}`}>
           <Draggable>
-            <ProcessingPanel />
+            <JobList />
           </Draggable>
         </div>
       )}
