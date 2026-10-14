@@ -109,7 +109,9 @@ class TestEstimate:
         cost = estimate(recipe_from_data(recipe_data(), OPERATORS), OPERATORS)
         assert cost.assets == 2
         assert cost.input_bytes == cost.input_pixels * 2  # uint16
-        assert cost.output_pixels == cost.input_pixels // 2  # one asset's grid
+        # One asset's grid: the input is counted by the conservative rule of the crops, the output by the
+        # AOI's box in the CRS of the asset, a little smaller.
+        assert cost.output_pixels == pytest.approx(cost.input_pixels / 2, rel=0.05)
         assert cost.output_bytes == cost.output_pixels * 4 * 2  # two float32 bands, as the core writes them
         assert cost.seconds >= 2 * SECONDS_PER_ASSET
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
@@ -128,13 +130,13 @@ class TestEstimate:
         cost = estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * EXPORT_FACTOR)
 
-    def test_without_gsd_the_estimate_is_the_conservative_bound(self) -> None:
+    @pytest.mark.parametrize("unknown", [[0, 1], [0], [1]])
+    def test_without_gsd_the_estimate_says_so_and_does_not_guess(self, unknown: list[int]) -> None:
         data = recipe_data()
-        known = estimate(recipe_from_data(data, OPERATORS), OPERATORS)
-        for entry in data["inputs"][0]["resolved"]:
-            entry["gsd"] = None
-        unknown = estimate(recipe_from_data(data, OPERATORS), OPERATORS)
-        assert unknown.input_pixels > known.input_pixels
+        for index in unknown:
+            data["inputs"][0]["resolved"][index]["gsd"] = None
+        with pytest.raises(UnsupportedRecipe, match=r"pixel size of asset '(red|nir)'.*no gsd"):
+            estimate(recipe_from_data(data, OPERATORS), OPERATORS)
 
     def test_band_math_has_one_float_band_whatever_the_inputs_are(self) -> None:
         step = {"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}
@@ -226,14 +228,12 @@ class TestAMosaicIsEstimatedOnce:
 
 
 class TestTheEstimateOnAGeographicGrid:
-    """Known fault, not fixed here (own task; open line of 2026-10-12 in ENTSCHEIDUNGSLOG.md).
+    """The raster the first pass would read is the AOI's box in the CRS of the asset (M4-25).
 
-    ``_input_meta`` stands for the raster the first pass would read with ``Affine(gsd, 0, 0, 0, -gsd, 0)``
-    in the CRS of the asset, ``gsd`` being metres. In a metric CRS that is a box of the right size in
-    the wrong place, and a ``reproject`` step sizes its target grid right to within about 10 %. In a
-    geographic CRS (the DEM, EPSG:4326) it is a box of thousands of degrees, latitudes beyond ±90, and
-    the target grid comes out at tens or hundreds of thousands of pixels a side, whatever the AOI:
-    ``UnsupportedRecipe`` above 32 768 px, and a wrong size below.
+    ``gsd`` is metres; in a geographic CRS (the DEM, EPSG:4326) the pixel size is that in degrees. The
+    estimate once took the metres for degrees and put the box at the origin of the CRS: a ``reproject``
+    step then sized its target grid at tens of thousands of pixels a side, whatever the AOI. The run
+    itself is the yardstick in ``test_estimate_geographic.py``.
     """
 
     @staticmethod
@@ -266,13 +266,13 @@ class TestTheEstimateOnAGeographicGrid:
 
     @pytest.mark.parametrize("aoi", [0.02, 0.1, 0.5])
     def test_a_metric_asset_is_estimated_within_a_fifth(self, aoi: float) -> None:
-        """The case that works (Sentinel-2 in UTM): the contrast to the xfail below."""
+        """Sentinel-2 in UTM: the box was always of the right size there."""
         out = estimate(self._recipe("EPSG:32632", 10.0, aoi, "EPSG:3035", 10.0), REGISTRY).output_pixels
         assert 0.8 < out / self._true_pixels(aoi, 10.0) < 1.2
 
     @pytest.mark.parametrize(("resolution", "aoi"), [(30.0, 0.1), (30.0, 0.5), (100.0, 0.25), (1000.0, 0.5)])
     def test_a_geographic_asset_is_estimated_within_a_fifth(self, resolution: float, aoi: float) -> None:
-        """Was an ``UnsupportedRecipe`` for 30 m and 100 m and 8 million pixels for 1 000 m (gsd in metres taken as degrees)."""
+        """Was an ``UnsupportedRecipe`` for 30 m and 100 m and 8 million pixels for 1 000 m (metres taken as degrees)."""
         out = estimate(self._recipe("EPSG:4326", 30.0, aoi, "EPSG:3035", resolution), REGISTRY).output_pixels
         assert 0.8 < out / self._true_pixels(aoi, resolution) < 1.2
 
