@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
 import { useProcessingStore, type JobEntry } from './processingStore';
+import type { ResultSection } from './sections';
 import { useAppStore } from './store';
 import type { StacItem } from './types';
 
@@ -197,6 +198,7 @@ describe('the processing side bar and the window of the jobs', () => {
     act(() => root.unmount());
     container.remove();
     useProcessingStore.setState({ open: false, jobsOpen: false, jobs: [] });
+    useAppStore.setState({ sections: [] });
     vi.unstubAllGlobals();
   });
 
@@ -207,6 +209,28 @@ describe('the processing side bar and the window of the jobs', () => {
     expect(useProcessingStore.getState().open).toBe(false);
     expect(view.querySelector('.jobs-dock [aria-label="Jobs"]')).not.toBeNull();
     expect(btn(view, 'Jobs (1)')).toBeNull();
+  });
+
+  it('folds the results list away under the side bar, without its toggle, and centres the bottom bar beside it', () => {
+    const item = { id: 'S2B_1', bbox: [10, 47, 11, 48], properties: {}, assets: {} } as unknown as StacItem;
+    const section: ResultSection = {
+      datasetId: 'x',
+      items: [item],
+      groups: [{ key: ['2026-07-24'], label: '2026-07-24', items: [item] }],
+      notes: [],
+      groupingError: null,
+      origin: 'search',
+      incomplete: false,
+    };
+    useAppStore.setState({ sections: [section], resultsPanelCollapsed: false });
+    const view = mount();
+    expect(view.querySelector('.results-dock.collapsed')).toBeNull();
+    expect(view.querySelector('.results-toggle')).not.toBeNull();
+    act(() => useProcessingStore.setState({ open: true }));
+    expect(view.querySelector('.results-dock.collapsed')).not.toBeNull();
+    expect(view.querySelector('.results-toggle')).toBeNull();
+    expect(view.querySelector('.overlay.bottom.beside-sheet')).not.toBeNull();
+    expect(useAppStore.getState().resultsPanelCollapsed).toBe(false);
   });
 
   it('puts the panel in the side bar and the jobs beside it', () => {

@@ -547,17 +547,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   };
 });
 
-// A new dataset drops the draft; any other change of the selection, the AOI
-// included (K3), drops only an estimate still on its way (its answer would
-// belong to another order). One already shown stays only while the order is
-// the same text, e.g. for "Whole scene", which does not send the AOI.
+// A new dataset drops the draft; any other change of the selection drops only
+// an estimate still on its way (its answer would belong to another order). A
+// new AOI does so only for "AOI only" (K3): "Whole scene" does not send it, the
+// order stays the same text, and so does an estimate already shown.
 useAppStore.subscribe((s, prev) => {
   const processing = useProcessingStore.getState();
   if (s.datasetId !== prev.datasetId) {
     processing.resetDraft();
     if (s.datasetId && processing.open) processing.ensureDescription(s.datasetId);
   } else if (
-    s.aoi !== prev.aoi ||
+    (s.aoi !== prev.aoi && processing.area === 'aoi') ||
     s.selectedIds !== prev.selectedIds ||
     s.items !== prev.items ||
     s.groups !== prev.groups ||

@@ -81,7 +81,7 @@ function FieldInput({
           aria-invalid={!!error}
           data-band-target={bandTarget}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.preventDefault();
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.preventDefault();
           }}
           onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/gu, ' '))}
         />

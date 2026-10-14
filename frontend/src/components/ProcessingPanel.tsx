@@ -213,6 +213,7 @@ export default function ProcessingPanel() {
           type="button"
           className="pp-grip"
           aria-expanded={!folded}
+          aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
           title={folded ? 'Show the panel' : 'Fold the panel down'}
           onClick={() => setFolded(!folded)}
         >

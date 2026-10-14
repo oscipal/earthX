@@ -487,22 +487,36 @@ describe('review before start (K4)', () => {
     expect(button('Review').disabled).toBe(false);
   });
 
-  it.each([
-    ['the AOI changes', () => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) })],
-    ['the panel closes', () => useProcessingStore.getState().closeProcessing()],
-  ])('aborts an estimate on its way when %s', async (_, change) => {
+  const newAoi = () => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) });
+
+  async function estimateOnItsWay(area: 'scene' | 'aoi'): Promise<AbortSignal> {
     routes['POST /processing/processes/recipe/estimate'] = (init) =>
       new Promise((_resolve, reject) =>
         init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))),
       );
     select([scene('S2B_A')]);
     await openPanel();
+    if (area === 'aoi') click(button('AOI only'));
     await ndvi();
     click(button('Review'));
     await flush();
-    const signal = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].signal as AbortSignal;
+    return fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].signal as AbortSignal;
+  }
+
+  it.each([
+    ['the AOI of "AOI only" changes', 'aoi', newAoi],
+    ['the panel closes', 'scene', () => useProcessingStore.getState().closeProcessing()],
+  ] as const)('aborts an estimate on its way when %s', async (_, area, change) => {
+    const signal = await estimateOnItsWay(area);
     act(() => change());
     expect(signal.aborted).toBe(true);
+  });
+
+  it('lets an estimate of "Whole scene" finish when the AOI changes: the order is the same', async () => {
+    const signal = await estimateOnItsWay('scene');
+    act(() => newAoi());
+    expect(signal.aborted).toBe(false);
+    expect(button('Reviewing…').disabled).toBe(true);
   });
 
   it('keeps the steps when the AOI changes, and drops the estimate of "AOI only" (M4-13c K3)', async () => {

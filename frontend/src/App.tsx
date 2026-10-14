@@ -140,7 +140,8 @@ export default function App() {
         </div>
       )}
 
-      <div className="overlay bottom">
+      {/* Beside the processing side bar, not under it: the time slider picks the pass of an order. */}
+      <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
         {focusMode ? (
           <Draggable>
             <ViewerControls />
