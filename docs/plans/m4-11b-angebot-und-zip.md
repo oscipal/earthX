@@ -7,7 +7,7 @@ F1 (Recherche, ZIP64-Test, CRC-Herkunft, Nachtrag `adr/0015`). Geschnitten in
 **M4-11b-1** (Backend, dieser PR) und **M4-11b-2** (Frontend, neue Session nach
 dem Merge). §3 beschreibt die freigegebene Fassung; §8 bleibt als Wortlaut der
 Fragen stehen. **M4-11b-2** mit dem Zusatz `plans/m4-zusaetze-2026-10-12.md` §1a:
-§12 (Plan zu §1a, wartet auf Otto).
+§12 (Plan zu §1a, von Otto am 15.10.2026 beantwortet, §12.7) und §13.2 (Umsetzung).
 **Ort im Repo:** `docs/plans/m4-11b-angebot-und-zip.md`
 **Grundlagen:** `plans/m4-11-export-job.md` (F2, F4, F7, F8, K5–K7, §11
 Punkt 7); `plans/m4-13-processing-panel.md` §12; `plans/m4-08b-job-api.md`
@@ -682,12 +682,11 @@ Produktion):**
 
 ---
 
-## 12. M4-11b-2: Plan zu Zusatz §1a (Vorschlag, 14.10.2026, wartet auf Otto)
+## 12. M4-11b-2: Plan zu Zusatz §1a (Vorschlag 14.10.2026, beantwortet 15.10.2026)
 
 **Aufgabe:** M4-11b-2 (§3.2 bis §3.4, freigegeben) mit dem Zusatz
-`plans/m4-zusaetze-2026-10-12.md` §1a (Otto, 14.10.2026). §3.2 bis §3.4 setzt diese
-Session gleich um; die Punkte aus §1a liegen hier zuerst als Plan vor und werden
-erst nach Ottos Antwort gebaut (Stufe B).
+`plans/m4-zusaetze-2026-10-12.md` §1a (Otto, 14.10.2026). Die Punkte aus §1a lagen
+hier zuerst als Plan vor (Stufe B) und wurden nach Ottos Antwort (§12.7) gebaut.
 
 ### 12.1 Stand (gelesen am 14.10.2026, `main` = `cc584e1`)
 
@@ -905,3 +904,69 @@ cd frontend; npm run dev        # Viewer unter http://localhost:5173
      enthält einen Ordner mit `result.tif`, `mask.tif`, `recipe.json` und
      `citation.bib`.
    - Ein Ergebnis von vor M4-11b-1 zeigt weiter die Einzellinks.
+
+### 12.7 Antworten (Otto, 15.10.2026)
+
+- **F5:** Option 1, Einzellinks direkt zur Quelle. Ein ZIP der Originale über die
+  Plattform ist **nicht** Teil dieser Aufgabe; im Log steht es als offen („Bandbreite
+  und Weitergabe über die Plattform, nicht fortsetzbar“).
+- **F6:** Option 1, Liste ohne Obergrenze mit „Save link list“ (Textdatei); „Merged
+  per pass“ je Überflug ein Knopf, über 25 Szenen gesperrt mit Grund.
+- **F7:** Option 1, der Layer-Manager bleibt unverändert (Umbau mit UI-01).
+- **F8:** Option 1, §1a im selben PR.
+- **K10 bis K14** angenommen. Der Ablauftext „Expired: results are kept for 7 days.
+  Start the job again.“ (§13 Punkt 1) ist bestätigt.
+
+### 13.2 Umsetzung Zusatz §1a (15.10.2026)
+
+**Gebaut** wie §12.2 bis §12.4 mit den Antworten aus §12.7. Commits: Log der
+Antworten; zwei Knöpfe in der Trefferansicht; Frage und Linkliste bei den Originalen;
+Doku.
+
+- `ViewBar.tsx`: „⇩ Download crop“ (ohne AOI gesperrt, `DRAW_AOI_TO_CROP`) und
+  „⇩ Download originals“ (bei Zarr gesperrt, `noOriginalsReason`), immer beide.
+  `store.openDownloadForSelection(kind)` nimmt, welcher gedrückt wurde; die
+  Originale gehen auch mit gezeichneter AOI (Ganzszenen, die AOI spielt keine Rolle).
+  `decideDownloadOutcome` entscheidet in der Trefferansicht nichts mehr, der
+  Layer-Manager benutzt es unverändert (F7).
+- `components/OriginalFiles.tsx` (neu): bei einer Szene die Links wie bisher; bei
+  mehreren die Frage „How do you want the original files?“ ohne Vorauswahl (K12).
+  „Each scene separately“ zeigt die Links nach Überflug in einem Bereich mit
+  eigener Bildlaufleiste (`.dialog-original-links`) und „Save link list“
+  (`linkListText`: eine Adresse je Zeile, nur die geprüften Links, im Browser
+  erzeugt, Dateiname `{dataset}-original-links.txt`). „Change“ führt zur Frage
+  zurück; gestartete Jobs bleiben in Sicht und im Panel.
+- `components/MosaicJobs.tsx`: der Abschnitt „Merged mosaic of a pass“ mit seinem
+  eigenen Knopf entfällt; „Merged per pass (job)“ zeigt je Überflug „Start job“
+  (Auftrag wie M4-12b: ganze Szenen, kein `aoi`, keine Schritte), bei einer Szene
+  den Link auf ihre Datei (K11), über 25 Szenen (`MAX_JOB_SCENES`, gleich
+  `api/intake.py::MAX_ORDER_ITEMS`) gesperrt mit dem Grund. Ohne Lizenzstufe
+  `processing` ist die Wahl „Merged per pass (job)“ gesperrt und nennt den Grund;
+  „Each scene separately“ geht weiter (K14).
+
+**Auslegungen:**
+
+1. Die Frage erscheint auch im Dialog, der aus dem Layer-Manager kommt, wenn dessen
+   Ergebnis die Originale sind: Es ist derselbe Dialog (der Knopf selbst bleibt
+   unverändert, F7).
+2. „Save link list“ erscheint ab zwei Links; bei einem einzelnen wäre die Datei nur
+   ein Umweg.
+3. Die Zuschreibung für unveränderte Daten steht oben im Dialog, die für veränderte
+   Daten (Mosaik) zusätzlich unter „Merged per pass (job)“, wie bisher.
+
+**Prüfungen:** `npx tsc -b --pretty false`, `npm run lint`, `npx vitest run`
+(Tests zu Knöpfen, Frage, Linkliste, 25-Szenen-Grenze, Lizenz, Start ohne `aoi` auch
+mit gezeichneter AOI) und die Backend-Suite siehe PR.
+
+### 13.3 Prüfanleitung für Otto: Zusatz §1a (nach dem Merge)
+
+1. Wähle mehrere Szenen von `sentinel-2-c1-l2a` aus zwei Überflügen. Erwartet: In der
+   Leiste stehen „⇩ Download crop“ und „⇩ Download originals“. Ohne AOI ist der
+   Zuschnitt gesperrt (Hinweis beim Überfahren), mit AOI sind beide offen.
+2. Bei einem Zarr-Datensatz ist „⇩ Download originals“ gesperrt und nennt den Grund.
+3. „⇩ Download originals“ (mit und ohne AOI): Der Dialog fragt „How do you want the
+   original files?“. „Each scene separately“ zeigt alle Links; „Save link list“
+   speichert eine `.txt` mit einer Adresse je Zeile.
+4. „Merged per pass (job)“: je Überflug mit mindestens zwei Szenen „Start job“, bei
+   einer Szene deren Link. Der Job läuft ohne Zuschnitt, auch mit gezeichneter AOI.
+5. Bei einer Auswahl von nur einer Szene fragt der Dialog nicht.
