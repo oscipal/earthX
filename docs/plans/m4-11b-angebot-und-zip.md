@@ -813,3 +813,95 @@ die Bandbreite und die fehlende Fortsetzung nicht auf. Für viele Szenen siehe F
 | Dialog | eine Szene → Links ohne Frage; mehrere → Frage, nichts geladen; „Each scene separately“ → Links; „Merged per pass“ → Knopf je Überflug mit ≥ 2 Szenen, Link bei einer Szene, gesperrt über 25 Szenen; Auftrag ohne `aoi` auch mit gezeichneter AOI; Lizenz ohne Processing → nur „Each scene separately“; „Change“ zurück zur Frage |
 | Linkliste | eine URL je Zeile, nur geprüfte Links (`isDirectDownloadHref`), keine AOI im Inhalt |
 | Layer-Manager | unverändert (F7 Option 1) |
+
+---
+
+## 13. Umsetzung M4-11b-2, §3.2 bis §3.4 (14.10.2026)
+
+**Gebaut** wie §3.2 und §3.3. Zusatz §1a (§12) ist **nicht** gebaut und wartet auf
+Otto. Commits: Plan zu §1a; `HttpError` mit `type` und `exportJob`; Auftrag des
+Exports und `aoiProvenance`; Angebot im Dialog; ein ZIP-Link und Texte im Panel;
+Befunde der Durchsicht.
+
+**Wo es steht:**
+
+- `api.ts`: Alle Fehler gehen über eine Stelle (`httpErrorOf`). `HttpError` trägt
+  jetzt `type` (der `type` des Problems) und `exportJob`. `downloadCrop` wirft
+  `HttpError` und liest `X-Export-Job` nur bei einem `413`. Andere Werte als
+  `available` und `too-large` gelten als „keine Kopfzeile“.
+- `processingOrder.ts`: `buildExportOrder` (M4-11 §3.1, Faktor 1, AOI über
+  `orderAoi`) und `aoiProvenanceOf` (die drei Felder einer Orts-AOI, nur Strings).
+  `processing.ts`: `Order.output` ist Raster oder Zuschnitt;
+  `placeJob(order, {aoiProvenance})`.
+- `store.ts`: Ein `413` mit `exportJob` setzt bei Faktor 1 und einer Fläche
+  `downloadExportOffer` statt der Fehlerzeile. Das Angebot entfällt beim Schließen,
+  bei einem anderen Faktor und beim nächsten Versuch.
+- `components/ExportJobOffer.tsx` (neu): der Text des `413`, die Schätzung (einmal,
+  K6), die Sperre mit Grund, „Try again“, „Export as job“ und danach `JobRow`.
+  `processingStore.placeOrder` (vorher `placeMosaic`) legt den Job in denselben
+  Store und Tracker wie das Panel (K7).
+- `processingStore.ts`: `resultFiles` wählt `export.zip` oder `result.zip` als
+  einen Link „Download (ZIP)“, sonst die Einzellinks. `failureText` gibt Texte je
+  Fehlerart (K8). Ein `410` von `/results` setzt `expired`.
+
+**Befunde und Auslegungen:**
+
+1. **Text bei Ablauf.** §3.3 nennt „Expired: results are kept for 7 days. Start the
+   export again.“ Dieselbe `JobRow` zeigt auch Raster- und Mosaik-Jobs, deshalb
+   steht dort „… Start the job again.“ (`JobList.tsx::EXPIRED_TEXT`). Eine
+   Unterscheidung je Art des Jobs bräuchte die Art im Store, auch für Jobs, die aus
+   `sessionStorage` zurückkommen. **Otto bitte bestätigen.**
+2. **`disk_space`** zeigt weiter den Titel des Backends. Ein eigener Text gilt nur für
+   `runtime_exceeded`. Zarr-`422` und andere Ablehnungen zeigen den `detail` des
+   Backends.
+3. **Jeder `413` der Schätzung** gilt als „über 5 GB“ und sperrt mit dem festen Satz.
+   Der Server antwortet dort mit `413` nur bei der Größe des Exports und bei einem
+   zu großen Body, den der Dialog nicht schicken kann.
+4. **„Download“ bleibt im Dialog** neben dem Angebot. Bei Faktor 1 bekommt er wieder
+   denselben `413`; mit einem gröberen Faktor kann der Zuschnitt direkt gehen. Ein
+   anderer Faktor nimmt das Angebot weg, weil ein Export nur mit Faktor 1 läuft.
+5. **Durchsicht** (Agent `reviewer`): keine Blocker. Behoben:
+   - Zwei Angebote mit gleichem Text teilten den `key` der Komponente; jetzt hat
+     jedes Angebot eine eigene `id`.
+   - Eine Schätzung nach einem Abbruch wird verworfen.
+   - Der Start prüft die Sperre selbst.
+   - Nach einem `410` fehlt „Kept until …“.
+   - Neue Tests: Schließen während der Schätzung, ein neues Angebot, Doppelklick.
+6. **Umfang:** rund 320 Zeilen Code und 710 Zeilen Tests, ohne den Plan zu §1a.
+
+**Prüfungen:** `npx tsc -b --pretty false`, `npm run lint` und `npx vitest run`
+(947 Tests) sind grün. `pytest` (4 587 bestanden, 8 übersprungen), `ruff check
+backend` und `lint-imports` (14 Verträge) sind ebenfalls grün. Das Backend ist
+unverändert.
+
+### 13.1 Prüfanleitung für Otto (M4-11b-2, nach dem Merge)
+
+```powershell
+docker compose up -d --build
+cd frontend; npm run dev        # Viewer unter http://localhost:5173
+```
+
+1. **Angebot:**
+   - Wähle `sentinel-2-c1-l2a`, zeichne eine große AOI (einige Zehntel Grad) und
+     wähle zwei oder drei Szenen eines Überflugs.
+   - Klicke auf „⇩ Download“ und dann im Dialog auf „Download“ (Native).
+   - Erwartet: Statt „Download failed“ erscheint „Too large for a direct download“.
+     Darunter stehen der Text des Servers und „About … GB · about … min“.
+2. **Export starten:**
+   - Klicke auf „Export as job“.
+   - Erwartet: Die Zeile zeigt „Waiting for a worker“ bzw. „Running · n%“, dann
+     „Finished“ mit einem Link „Download (ZIP)“.
+   - Der Job steht auch im Processing-Panel unter „Jobs“ und bleibt dort, wenn du
+     den Dialog schließt.
+3. **ZIP:** Lade das ZIP und öffne es. Darin liegen je Überflug das Raster und die
+   Maske, dazu `recipe.json`, `citation.bib`, `ATTRIBUTION.txt` und `aoi.geojson`.
+4. **Ortssuche:** Wiederhole Schritt 1 und 2 mit einer AOI aus der Ortssuche.
+   `aoi.geojson` im ZIP nennt dann OpenStreetMap als Quelle.
+5. **Über 5 GB:** Wähle eine sehr große AOI mit vielen Szenen.
+   - Erwartet: Das Angebot ist gesperrt mit „An export job may write at most 5 GB.
+     Draw a smaller area or choose fewer assets.“
+6. **Panel:** Starte einen NDVI-Job im Processing-Panel.
+   - Erwartet: Fertig zeigt er nur „Download (ZIP)“, und das ZIP (`result.zip`)
+     enthält einen Ordner mit `result.tif`, `mask.tif`, `recipe.json` und
+     `citation.bib`.
+   - Ein Ergebnis von vor M4-11b-1 zeigt weiter die Einzellinks.
