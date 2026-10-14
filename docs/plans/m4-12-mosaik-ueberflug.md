@@ -794,8 +794,12 @@ mit allen Szenen eines Überflugs), Dialog, Vertragsdateien samt Backend-Test, D
 
 **Download-Dialog:**
 - Das Angebot erscheint nur im Fall `originals` (Einzeldateien, nur COG) und nur
-  für Gruppen mit mindestens zwei Szenen. Mit gezeichneter AOI mosaikiert der Zuschnitt
-  schon selbst.
+  für Gruppen mit mindestens zwei Szenen. Bei einer Auswahl aus der Trefferliste
+  ist das nur ohne gezeichnete AOI der Fall; mit AOI öffnet „Download“ den
+  Zuschnitt, der selbst mosaikiert. Ein Layer, der mit „View full selection“
+  angelegt wurde, öffnet auch mit AOI den Fall `originals` (M3-17); das
+  Angebot erscheint dort also auch mit AOI. Dieser Weg ist durch die Tests
+  des Stores gedeckt, aber nicht im Browser versucht.
 - Die Szenen je Gruppe hält der Store neben den Links (`downloadPasses`), für den
   Weg über das Layer-Fenster wie für die Auswahl.
 - Der Auftrag ist der aus §3.1: `steps: []`, kein `aoi`, ein Asset (das der
@@ -849,21 +853,45 @@ npm run dev
 ```
 
 Im Browser `http://localhost:5173`:
-1. Datensatz `sentinel-2-c1-l2a`, Zeitraum und Gebiet wählen, in dem ein Überflug
-   mehrere Kacheln hat (am besten über der Zonengrenze bei 12° O, Suche wie in §9),
-   suchen. **Keine AOI zeichnen.**
-2. Die Szenen eines Überflugs auswählen, oben „Download“. Der Dialog „Download
-   original files“ listet die Dateien; darunter „Merged mosaic of a pass“ mit dem
-   Knopf „Merge scenes of this pass (job)“ für Überflüge mit mehr als einer Szene.
-3. Knopf drücken: Die Zeile zeigt „Waiting for a worker“, „Running · n %“, dann
-   „Finished“ mit den Links „Result (COG)“, „Mask“, „Recipe“; bei zwei Zonen steht
-   „Resampled to a common grid“. In QGIS liegt das Ergebnis ohne Naht über der Grenze.
-4. Den Dialog schließen und „⚙ Jobs (1)“ oben rechts öffnen: derselbe Job steht dort.
-5. Wieder eine Fläche zeichnen, die zwei Kacheln desselben Überflugs berührt, die
-   Szenen wählen, „⚙ Process“: Das Panel nennt „2 scenes“ und sagt, dass die Schritte auf dem
+**Vorab:** Die Suche verlangt immer eine AOI (oder einen Szenennamen, der genau
+eine Szene findet). „Suchen ohne AOI“ gibt es nicht. Das Mosaik-Angebot kommt
+im Dialog „Download original files“, und den gibt es für eine Auswahl nur,
+wenn **keine AOI mehr gezeichnet ist** (mit AOI öffnet „Download“ den
+Zuschnitt, der selbst mosaikiert). Also: mit AOI suchen, die AOI danach
+entfernen, die Ergebnisse bleiben.
+
+1. **Suchen (mit AOI).** Links im Bedienfeld unter „Area of interest“ mit
+   „Rectangle“ ein Rechteck über der Zonengrenze bei 12° O aufziehen (groß
+   genug, dass mehrere Kacheln eines Überflugs darin liegen, z. B. 2° × 1°).
+   Unter „Datasets“ den Sentinel-2-Datensatz (`sentinel-2-c1-l2a`) anklicken, unter „Acquisition date“ „From date“ und „To date“ auf einen
+   Sommermonat setzen, „Search“ drücken. Fehlt das Bedienfeld, öffnet der
+   Pfeil „›“ am linken Rand es wieder.
+2. **Szenen eines Überflugs wählen.** Rechts im Fenster „Results“ die
+   Gruppen (Datum, bei Sentinel-2 mit Datatake) aufklappen und in einer
+   Gruppe mit mehreren Szenen bei mindestens zwei Szenen je das Kästchen
+   „Select this scene“ ankreuzen (es gibt kein „alle wählen“). Unten erscheint die Leiste „N scenes
+   selected“. (Szenen anderer Gruppen nicht mitwählen: Ein Job ist ein
+   Überflug; das Angebot erscheint dann je Gruppe.)
+3. **AOI entfernen, ohne die Ergebnisse zu verlieren.** Links im Bedienfeld
+   in der Werkzeugleiste unter „Area of interest“ auf **„Clear“** klicken
+   (löscht nur die AOI). **Nicht** „Clear all“ im Fenster „Results“, das
+   löscht auch Suche und Auswahl. Danach „⇩ Download“ in der unteren Leiste:
+   Der Dialog heißt „Download original files“ und zeigt unter den Links
+   „Merged mosaic of a pass“ mit dem Knopf „Merge scenes of this pass (job)“
+   je Gruppe mit mindestens zwei gewählten Szenen. Mit AOI hieße der Dialog
+   „Download crop“ und hätte keinen solchen Knopf.
+4. **Job starten.** Knopf drücken: Die Zeile zeigt „Waiting for a worker“,
+   „Running · n %“, dann „Finished“ mit den Links „Result (COG)“, „Mask“,
+   „Recipe“; bei zwei Zonen steht „Resampled to a common grid“. In QGIS liegt
+   das Ergebnis ohne Naht über der Grenze. Danach den Dialog schließen und
+   „⚙ Jobs (1)“ oben rechts öffnen: derselbe Job steht dort.
+5. Mit „Rectangle“ eine neue Fläche zeichnen, die zwei Kacheln desselben
+   Überflugs berührt (Ergebnisse und Auswahl bleiben, die Auswahl bleibt
+   gewählt), „⚙ Process“ in der unteren Leiste: Das Panel nennt „2 scenes“ und sagt, dass die Schritte auf dem
    Mosaik laufen; ein NDVI-Auftrag mit „Review“ und „Start job“ liefert ein Ergebnis
    über beide Kacheln (vorher: Auswahl einer Szene).
-6. Szenen zweier Überflüge wählen: Das Panel verlangt die Wahl eines Überflugs
+6. Zusätzlich Szenen eines zweiten Überflugs ankreuzen, die dieselbe Fläche
+   berühren: Das Panel verlangt die Wahl eines Überflugs
    („Pass“).
-7. Einen sehr langen Überflug (mehr als etwa zehn Kacheln `visual`): Der Dialog
-   zeigt das `413` des Servers mit der Größe; kein Job entsteht.
+7. Einen sehr langen Überflug wählen (mehr als etwa zehn Kacheln `visual`),
+   die AOI wieder mit „Clear“ entfernen, „⇩ Download“: Der Dialog zeigt das `413` des Servers mit der Größe; kein Job entsteht.
