@@ -608,12 +608,23 @@ Schritte, verwirft die Schätzung von „AOI only“, behält die von „Whole s
 neuer Datensatz verwirft den Entwurf; Bänder aus dem Ausdruck; einzeiliger
 Ausdruck; Jobliste öffnet beim Start, Panel ohne Jobzeilen; Einklappen),
 `AppTopBar.test.tsx` („⚙ Jobs (n)“ öffnet die Jobliste, Leiste und Jobliste
-nebeneinander), `processingOrder.test.ts` (`area`), Vertragsdatei
+nebeneinander, Trefferliste eingeklappt ohne Umschalter, untere Leiste daneben), `processingOrder.test.ts` (`area`), Vertragsdatei
 `ndvi-on-whole-scenes-without-aoi.json` (der Backend-Test
 `test_frontend_orders.py` nimmt sie; grün). Gegenprobe in der Sitzung: Mit
 „AOI only“ als Vorgabe fallen sechs Komponententests.
 
-**Ergebnis der Prüfungen:** Frontend 921 Tests grün, `tsc` und `oxlint` ohne
+**Befunde des Reviewers, behoben:** Die Seitenleiste lag über der unteren Leiste
+(Auswahl, Zeitleiste, die den Überflug wählt) → sie steht, solange die Leiste
+offen ist, mittig in der freien Karte links davon, auf schmalen Bildschirmen über
+dem Blatt (Abweichung von §3.1, das es nicht regelte); die Jobliste deckte auf
+schmalen Bildschirmen den Fuß des Blatts → sie endet darüber; ein neuer AOI brach
+auch bei „Whole scene“ eine laufende Schätzung ab → nur noch bei „AOI only“; der
+Griff des Blatts hat einen Namen für Screenreader; Enter während einer
+IME-Eingabe bleibt unberührt. Offen gelassen (Hinweise): Die Jobliste verliert
+beim Schließen ihre Zugposition; zwischen 900 und 1000 px Breite liegt sie über
+dem Control-Panel (ziehbar).
+
+**Ergebnis der Prüfungen:** Frontend 923 Tests grün, `tsc` und `oxlint` ohne
 Befund; Backend `ruff` ohne Befund, `pytest` 4589 grün (8 übersprungen: `pwsh`
 fehlt in der Sitzung), Importregeln 14 eingehalten.
 
