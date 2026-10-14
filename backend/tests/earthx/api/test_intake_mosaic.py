@@ -345,3 +345,65 @@ class TestTheCapOfAJob:
         two = await accept(whole("S2_A", "S2_B"), source)
         assert estimate(two.recipe, OPERATORS).input_bytes == estimate(one.recipe, OPERATORS).input_bytes
         assert estimate(two.recipe, OPERATORS).assets == 2 * estimate(one.recipe, OPERATORS).assets
+
+
+class TestTheDayOfAcquisition:
+    """Otto, 14.10.2026: the day in the name of a download is the day of the scenes' overpass, if they share one."""
+
+    @staticmethod
+    def day_of(item: dict[str, Any], day: str) -> dict[str, Any]:
+        item["properties"]["datetime"] = day
+        return item
+
+    async def test_one_scene_has_the_utc_day_of_its_instant(self) -> None:
+        from datetime import date
+
+        late = self.day_of(s2_item("S2_A"), "2026-06-01T23:30:00-05:00")
+        accepted = await accept(order(), Source((S2, late)))
+        assert accepted.acquired_on == date(2026, 6, 2), "the UTC day, not the day of the offset"
+
+    async def test_the_scenes_of_a_mosaic_share_the_day_of_their_overpass(self) -> None:
+        from datetime import date
+
+        source = overpass(scene("S2_A"), scene("S2_B", day="2026-06-01T10:00:09Z"))
+        accepted = await accept(whole("S2_A", "S2_B"), source)
+        assert accepted.acquired_on == date(2026, 6, 1)
+
+    async def test_an_export_over_scenes_of_one_day_has_that_day(self) -> None:
+        from datetime import date
+
+        from tests.earthx.api.test_intake import CROP
+
+        source = overpass(scene("S2_A"), scene("S2_B"))
+        document = order(groups=(("S2_A",), ("S2_B",)), assets=("red",), steps=[], output=CROP)
+        assert (await accept(document, source)).acquired_on == date(2026, 6, 1)
+
+    async def test_an_export_over_scenes_of_two_days_has_none(self) -> None:
+        from tests.earthx.api.test_intake import CROP
+
+        source = overpass(scene("S2_A"), scene("S2_B", day="2026-06-06T10:00:00Z"))
+        document = order(groups=(("S2_A",), ("S2_B",)), assets=("red",), steps=[], output=CROP)
+        assert (await accept(document, source)).acquired_on is None
+
+    async def test_a_scene_the_aoi_does_not_touch_does_not_count(self) -> None:
+        """Only the scenes that stay in the recipe name the day (F4 leaves the others out)."""
+        from datetime import date
+
+        from tests.earthx.api.test_intake import CROP, FAR
+
+        source = overpass(scene("S2_A"), scene("S2_FAR", FAR, day="2026-06-09T10:00:00Z"))
+        document = order(groups=(("S2_A",), ("S2_FAR",)), assets=("red",), steps=[], output=CROP)
+        accepted = await accept(document, source)
+        assert accepted.skipped_items == ("S2_FAR",) and accepted.acquired_on == date(2026, 6, 1)
+
+    async def test_the_dem_has_no_day(self) -> None:
+        accepted = await accept(
+            order(DEM.dataset_id, (("DEM_N47_E009",),), ("data",)), Source((DEM, dem_item()))
+        )
+        assert accepted.acquired_on is None
+
+    async def test_an_item_without_an_instant_is_not_refused_for_it(self) -> None:
+        item = s2_item("S2_A")
+        del item["properties"]["datetime"]
+        accepted = await accept(order(), Source((S2, item)))
+        assert accepted.acquired_on is None

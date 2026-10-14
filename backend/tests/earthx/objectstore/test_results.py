@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+import zlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from earthx.objectstore import results
-from earthx.objectstore.errors import ResultExpiring, StoreUnavailable
+from earthx.objectstore.errors import ResultExpiring, ResultNotFound, StoreUnavailable
 from earthx.objectstore.results import (
     Store,
     delete_result,
@@ -266,3 +267,109 @@ def test_the_rule_shapes_garage_and_aws_return(rule: dict, ok: bool) -> None:
 
 def test_nothing_in_the_store_names_the_access_key_outside_signed_urls(store: Store) -> None:
     assert ACCESS_KEY not in repr(store)
+
+
+# --- size and CRC of a file; size and byte range of an object (M4-11b-1) ----------
+
+
+def _stored(store: Store, tmp_path: Path, size: int, name: str = "result.tif") -> tuple[str, bytes]:
+    result_id = new_result_id()
+    path = _file(tmp_path, size)
+    upload_result(store, result_id, name, path)
+    return result_id, path.read_bytes()
+
+
+@pytest.mark.parametrize("size", [0, 1, 1024, results._CRC_BLOCK, results._CRC_BLOCK + 7, 3 * results._CRC_BLOCK + 11])
+def test_file_facts_are_the_size_and_crc_of_the_bytes(tmp_path: Path, size: int) -> None:
+    path = _file(tmp_path, size)
+    assert results.file_facts(path) == {"bytes": size, "crc32": zlib.crc32(path.read_bytes())}
+
+
+def test_file_facts_of_a_missing_file_raise_instead_of_describing_nothing(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        results.file_facts(tmp_path / "gone.tif")
+
+
+def test_the_facts_of_an_uploaded_file_are_those_of_the_object_in_the_store(store: Store, tmp_path: Path) -> None:
+    result_id, content = _stored(store, tmp_path, 2 * results.PART_SIZE + 99)
+    body = store.s3._internal.get_object(Bucket=BUCKET, Key=f"results/{result_id}/result.tif")["Body"].read()
+    assert body == content
+    assert results.file_facts(tmp_path / f"payload-{len(content)}")["crc32"] == zlib.crc32(body)
+    assert results.result_size(store, result_id, "result.tif") == len(content)
+
+
+def test_the_size_of_a_missing_result_is_not_found_and_names_nothing(store: Store) -> None:
+    result_id = new_result_id()
+    with pytest.raises(ResultNotFound) as caught:
+        results.result_size(store, result_id, "mask.tif")
+    assert result_id not in str(caught.value) and "mask.tif" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"), [(0, 0), (0, 99), (5, 5), (100, 2999), (2999, 2999), (0, 2999), (1500, 2999)]
+)
+def test_a_byte_range_is_read_in_pieces(store: Store, tmp_path: Path, start: int, end: int) -> None:
+    result_id, content = _stored(store, tmp_path, 3000)
+    stream = results.open_result_range(store, result_id, "result.tif", start, end)
+    try:
+        pieces = []
+        while piece := stream.read(700):
+            pieces.append(piece)
+    finally:
+        stream.close()
+    assert b"".join(pieces) == content[start : end + 1]
+    assert all(len(piece) <= 700 for piece in pieces)
+
+
+def test_the_end_of_a_range_beyond_the_object_is_cut_at_its_end(store: Store, tmp_path: Path) -> None:
+    result_id, content = _stored(store, tmp_path, 1000)
+    stream = results.open_result_range(store, result_id, "result.tif", 900, 5000)
+    try:
+        assert stream.read(10_000) == content[900:]
+    finally:
+        stream.close()
+
+
+def test_a_range_that_starts_beyond_the_object_is_an_error_without_key_or_endpoint(
+    store: Store, tmp_path: Path
+) -> None:
+    result_id, _ = _stored(store, tmp_path, 1000)
+    with pytest.raises(StoreUnavailable) as caught:
+        results.open_result_range(store, result_id, "result.tif", 1000, 2000)
+    for secret in (result_id, "objectstore", ACCESS_KEY, SECRET_KEY):
+        assert secret not in str(caught.value)
+
+
+@pytest.mark.parametrize(("start", "end"), [(-1, 5), (5, 4), (-5, -1)])
+def test_a_range_of_the_wrong_shape_is_refused_before_a_request(store: Store, start: int, end: int) -> None:
+    with pytest.raises(ValueError, match="start and end"):
+        results.open_result_range(store, new_result_id(), "result.tif", start, end)
+
+
+def test_a_range_of_a_missing_object_is_not_found(store: Store) -> None:
+    with pytest.raises(ResultNotFound):
+        results.open_result_range(store, new_result_id(), "mask.tif", 0, 10)
+
+
+def test_a_range_of_a_name_outside_the_fixed_set_is_refused(store: Store) -> None:
+    with pytest.raises(ValueError, match="file name"):
+        results.open_result_range(store, new_result_id(), "other.tif", 0, 10)
+    with pytest.raises(ValueError, match="file name"):
+        results.result_size(store, new_result_id(), "other.tif")
+
+
+def test_a_read_that_fails_on_the_wire_is_translated_without_its_text() -> None:
+    from botocore.exceptions import ReadTimeoutError
+
+    from earthx.objectstore.client import ObjectRange
+
+    class Broken:
+        def read(self, size: int) -> bytes:
+            raise ReadTimeoutError(endpoint_url="http://objectstore:3900/earthx/results/x")
+
+        def close(self) -> None:
+            pass
+
+    with pytest.raises(StoreUnavailable) as caught:
+        ObjectRange(Broken()).read(10)
+    assert "objectstore" not in str(caught.value) and "ReadTimeoutError" in str(caught.value)

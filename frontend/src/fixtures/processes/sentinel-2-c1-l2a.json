@@ -406,6 +406,13 @@
     "reference"
   ],
   "outputs": {
+    "bundle": {
+      "schema": {
+        "contentMediaType": "application/zip",
+        "type": "string"
+      },
+      "title": "Result, mask, recipe and citation in one ZIP"
+    },
     "export": {
       "schema": {
         "contentMediaType": "application/zip",

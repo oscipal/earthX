@@ -234,6 +234,10 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a, M4-13b | offen |
 | M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | erledigt (#136, `plans/m4-12-mosaik-ueberflug.md`) |
 | M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | PR (Entwurf), `plans/m4-12-mosaik-ueberflug.md` §13 |
+| M4-11b-1 | Export über dem Deckel als Job: das Ergebnis eines Raster-Jobs als ein ZIP (Backend: CRC und Größe beim Hochladen, Strom aus dem Objektspeicher mit Range, Ausgang `bundle`, `X-Export-Job: too-large`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a | PR #145 (Entwurf), `plans/m4-11b-angebot-und-zip.md`, Plan freigegeben am 13.10.2026, umgesetzt |
+| M4-11b-2 | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife; Panel zeigt „Download (ZIP)“ | M4a | B | Sonnet (hoch) | M4-11b-1, M4-13b | offen (neue Session nach dem Merge von M4-11b-1) |
+| M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | PR #136 (`plans/m4-12-mosaik-ueberflug.md`), Plan freigegeben am 10.10.2026 |
+| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | offen |
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (#134); Umsetzung in a bis c |
 | M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | erledigt (#134) |
 | M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | PR (Entwurf), `plans/m4-13-processing-panel.md` §12 |
@@ -247,6 +251,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
 | M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |
+| M4-26 | Gleitkomma beim Schreiben einer Ganzzahl-Ausgabe runden statt abschneiden (Anlass: M4-13b; `plans/m4-26-runden-ganzzahl.md`) | Quer | A | Sonnet (hoch) | M4-21 | PR (Entwurf) |
 | M4-27 | Live-Smoke auf die Signaturen von M4-01b bringen; Trockenlauf mit Transport-Double im normalen `pytest` (`plans/m4-27-live-smoke-reparieren.md`) | Quer | A | Sonnet (mittel) | M4-21 | PR (Entwurf) |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
@@ -873,6 +878,12 @@ Lauf. Geteilt in **M4-11a** (Backend, erledigt #133) und **M4-11b**.
 
 **Stufe B.** Neue Session nach dem Merge von M4-13b. Grundlage
 `plans/m4-11-export-job.md` (F7, F8), die Statusanzeige aus M4-13b.
+**Im Plan-Schritt entschieden (13.10.2026, `plans/m4-11b-angebot-und-zip.md`):** geteilt
+in **M4-11b-1** (Backend, erster PR: das Ergebnis eines Raster-Jobs als ein ZIP
+mit Ordner, `api` streamt es aus den Objekten im Speicher mit Range, 60-s-Regel,
+CRC und Größe beim Hochladen, `X-Export-Job: too-large`) und **M4-11b-2**
+(Frontend, neue Session nach dem Merge). Der Umfang unten gilt für M4-11b-2, soweit
+er das Frontend betrifft.
 **Umfang:**
 - Der Download-Dialog erkennt den `413` mit `X-Export-Job: available` und
   bietet „Export as job“ an; ohne die Kopfzeile bleibt der heutige Hinweis.
