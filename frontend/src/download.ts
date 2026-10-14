@@ -29,7 +29,26 @@ export interface DownloadRequestInfo {
 // (M3-09's "Crop & merge to AOI" already has this pattern for a missing AOI).
 export type DownloadOutcomeKind = 'crop' | 'originals' | 'disabled';
 
-export const DRAW_AOI_TO_DOWNLOAD = 'Draw an AOI to download';
+// The two buttons of the results view (M4-11b-2, Zusatz 1a): "Download crop"
+// needs an AOI, "Download originals" a dataset with one file per scene. Each
+// says why it is disabled; `ViewBar` shows it as the title and the store as the
+// error should the action be reached anyway.
+export const DRAW_AOI_TO_CROP = 'Draw an AOI to download a crop';
+
+export function noOriginalsReason(dataset: DatasetOption | undefined): string {
+  return `${dataset?.title ?? 'This dataset'} has no single original file per scene. Use Download crop.`;
+}
+
+// "Merged per pass (job)" takes at most this many scenes per job
+// (`api/intake.py::MAX_ORDER_ITEMS`, M4-07b F5).
+export const MAX_JOB_SCENES = 25;
+
+// The text file of "Save link list": one address per line, built from the
+// links the dialog already shows (https, on the dataset's own hosts), nothing
+// else — no AOI, no scene names.
+export function linkListText(links: readonly OriginalFileLink[]): string {
+  return [...new Set(links.map((link) => link.href))].map((href) => `${href}\n`).join('');
+}
 
 // The single decision table of M3-17 plan §4, as one pure function: what a
 // download follows depends on which full-resolution view (if any) is active,

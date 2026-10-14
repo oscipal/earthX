@@ -18,11 +18,12 @@ import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedA
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
-  decideDownloadOutcome,
   decideDownloadOutcomeForLayer,
   downloadRequestFor,
   downloadRequestForSelection,
+  DRAW_AOI_TO_CROP,
   isCogFormat,
+  noOriginalsReason,
   originalFileLinks,
   type DownloadPass,
   type ExportOffer,
@@ -717,7 +718,7 @@ export interface AppState {
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
   openDownloadDialog: (id: string) => Promise<void>;
-  openDownloadForSelection: () => void;
+  openDownloadForSelection: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
@@ -1231,12 +1232,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the original files, without first "View full resolution" or "Add to
   // layers". Items are already loaded (`store.items`), so the originals
   // outcome needs no fetch here, unlike a pinned layer's.
-  openDownloadForSelection: () => {
+  openDownloadForSelection: (kind) => {
     const s = get();
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    const outcome = decideDownloadOutcome({ cropToAoi: null, hasAoi: !!s.aoi, isCog: isCogFormat(dataset) });
-    if (outcome === 'disabled') {
-      set({ error: 'Draw an AOI to download this dataset.' });
+    if (kind === 'crop' && !s.aoi) {
+      set({ error: DRAW_AOI_TO_CROP });
+      return;
+    }
+    if (kind === 'originals' && !isCogFormat(dataset)) {
+      set({ error: noOriginalsReason(dataset) });
       return;
     }
     const items = selectionItemsFrom(s);
@@ -1244,7 +1248,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Nothing to download — pick a time step or select scenes first.' });
       return;
     }
-    if (outcome === 'crop') {
+    if (kind === 'crop') {
       const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi);
       if (!req) {
         set({ error: 'Nothing to download — pick a time step or select scenes first.' });
@@ -1263,7 +1267,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return;
     }
-    // 'originals': the dataset's default asset, straight from the source.
+    // Originals: the dataset's default asset, straight from the source — also
+    // with an AOI drawn (the AOI plays no part), Zusatz 1a.
     const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
     const groupItemIds = groupItemIdsFor(
       items.map((it) => it.id),

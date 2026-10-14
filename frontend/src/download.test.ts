@@ -15,6 +15,8 @@ import {
   originalFileLinks,
   resolutionOptionLabel,
   termsNoticeText,
+  linkListText,
+  noOriginalsReason,
 } from './download';
 import type { LayerRestore, MapLayer } from './layers';
 import type { Collection, LicenseFlags, StacItem } from './types';
@@ -472,5 +474,29 @@ describe('resolutionOptionLabel', () => {
 
   it('falls back to the factor alone when no item names this asset', () => {
     expect(resolutionOptionLabel([item()], 'thumbnail', 1)).toBe('Native');
+  });
+});
+
+describe('linkListText (Save link list)', () => {
+  const link = (itemId: string, href: string) => ({ itemId, groupLabel: 'g', asset: 'visual', href });
+
+  it('is one address per line, each once, in the order of the links', () => {
+    expect(
+      linkListText([link('A', 'https://h.test/a.tif'), link('B', 'https://h.test/b.tif'), link('A2', 'https://h.test/a.tif')]),
+    ).toBe('https://h.test/a.tif\nhttps://h.test/b.tif\n');
+  });
+
+  it('is empty for no links, and carries no scene name', () => {
+    expect(linkListText([])).toBe('');
+    expect(linkListText([link('SCENE-ID', 'https://h.test/a.tif')])).not.toContain('SCENE-ID');
+  });
+});
+
+describe('noOriginalsReason', () => {
+  it('names the dataset and the way out, or speaks of "This dataset" where there is none', () => {
+    expect(noOriginalsReason({ title: 'Some Zarr store' } as DatasetOption)).toBe(
+      'Some Zarr store has no single original file per scene. Use Download crop.',
+    );
+    expect(noOriginalsReason(undefined)).toMatch(/^This dataset has no single original file/);
   });
 });

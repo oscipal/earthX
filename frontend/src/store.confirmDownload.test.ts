@@ -119,7 +119,7 @@ describe('confirmDownload — the skipped-groups notice (review finding on M3-17
       error: null,
       notice: null,
     });
-    useAppStore.getState().openDownloadForSelection();
+    useAppStore.getState().openDownloadForSelection('crop');
     vi.stubGlobal('fetch', vi.fn());
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }));
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -217,7 +217,7 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
       error: null,
       notice: null,
     });
-    useAppStore.getState().openDownloadForSelection();
+    useAppStore.getState().openDownloadForSelection('crop');
     vi.stubGlobal('fetch', vi.fn());
   });
 
@@ -274,7 +274,7 @@ describe('confirmDownload — a crop too large for a direct download (M4-11b-2)'
     useAppStore.getState().closeDownloadDialog();
     expect(useAppStore.getState().downloadExportOffer).toBeNull();
 
-    useAppStore.getState().openDownloadForSelection();
+    useAppStore.getState().openDownloadForSelection('crop');
     await useAppStore.getState().confirmDownload();
     vi.mocked(fetch).mockImplementation(async () => refused(502));
     await useAppStore.getState().confirmDownload();

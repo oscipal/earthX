@@ -15,7 +15,7 @@
 // itself does not merge anything yet (see the M3-09 plan's proposal for the
 // per-group outline and layer split, held for approval).
 
-import { decideDownloadOutcome, isCogFormat } from '../download';
+import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
 import { processBlockReason } from '../processingOrder';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
@@ -34,10 +34,9 @@ export default function ViewBar() {
   if (selectedIds.length === 0) return null;
 
   const plural = selectedIds.length > 1;
-  // Browsing the results list (this bar never shows in full-resolution
-  // viewing): no "Crop & merge"/"View full selection" choice to read, so the
-  // decision (M3-17 plan §4) falls back to whether an AOI is drawn.
-  const downloadOutcome = decideDownloadOutcome({ cropToAoi: null, hasAoi: !!aoi, isCog: isCogFormat(dataset) });
+  // Two buttons whatever the AOI (Zusatz 1a, Otto 14.10.2026): the crop to the
+  // AOI, and the whole original files, which an AOI does not change.
+  const originalsAllowed = isCogFormat(dataset);
   // M4-13b K12: a job for the selection, next to "Download"; the reason it
   // cannot start (licence tier, no area) is the button's own title.
   const processBlocked = processBlockReason(dataset, aoi, selectedIds.length);
@@ -83,17 +82,24 @@ export default function ViewBar() {
       <button
         type="button"
         className="ghost-btn"
-        disabled={downloadOutcome === 'disabled'}
-        title={
-          downloadOutcome === 'disabled'
-            ? 'Draw an AOI to download this dataset'
-            : downloadOutcome === 'originals'
-              ? 'Download the original files for the selected scenes, straight from the source'
-              : 'Download the selected scenes as the AOI crop, one file per group'
-        }
-        onClick={() => openDownloadForSelection()}
+        disabled={!aoi}
+        title={aoi ? 'Download the selected scenes as the AOI crop, one file per group' : DRAW_AOI_TO_CROP}
+        onClick={() => openDownloadForSelection('crop')}
       >
-        ⇩ Download
+        ⇩ Download crop
+      </button>
+      <button
+        type="button"
+        className="ghost-btn"
+        disabled={!originalsAllowed}
+        title={
+          originalsAllowed
+            ? 'Download the whole original files of the selected scenes, straight from the source'
+            : noOriginalsReason(dataset)
+        }
+        onClick={() => openDownloadForSelection('originals')}
+      >
+        ⇩ Download originals
       </button>
       <button
         type="button"
