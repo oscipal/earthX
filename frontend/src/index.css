@@ -1749,3 +1749,10 @@ input[type='date']:focus {
 .pp-details[open] summary {
   margin-bottom: 6px;
 }
+
+/* The links to the original files: many scenes scroll in their own area (Zusatz 1a). */
+.dialog-original-links {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0 0 10px;
+}
