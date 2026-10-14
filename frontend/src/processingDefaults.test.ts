@@ -36,6 +36,17 @@ describe('chooseDtype (Otto, 12.10.2026): the type of the source data wherever t
     expect(choose(NEAREST, [COUNTS, band({ asset: 'b', dataType: 'uint16', nodata: 0 })])).toBe('uint16');
   });
 
+  it('keeps the integer type of the source for a mosaic without steps, when the item states one nodata value', () => {
+    expect(choose([], [COUNTS])).toBe('uint16');
+    expect(choose([], [band({ dataType: 'uint8', nodata: 0 })])).toBe('uint8');
+  });
+
+  it('is float32 for a mosaic without steps where the item states no nodata value or the values are scaled', () => {
+    expect(choose([], [band({ dataType: 'uint16' })])).toBe('float32');
+    expect(choose([], [band({ dataType: 'uint16', nodata: 0, scaled: true })])).toBe('float32');
+    expect(choose([], [])).toBe('float32');
+  });
+
   it('is float32 for integers while the resampling is interpolating or not chosen yet', () => {
     expect(choose(BILINEAR, [COUNTS])).toBe('float32');
     expect(choose([{ op: 'reproject', resampling: 'cubic' }], [COUNTS])).toBe('float32');

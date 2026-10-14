@@ -891,6 +891,43 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(fetch).not.toHaveBeenCalled();
     });
 
+    it('no AOI, a COG dataset: keeps the scenes of each group for a mosaic job (M4-12b)', () => {
+      const a = [cogScene('S1'), cogScene('S2')];
+      const b = [cogScene('S3')];
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items: [...a, ...b],
+        groups: [
+          { key: ['a'], label: 'Overpass A', items: a },
+          { key: ['b'], label: 'Overpass B', items: b },
+        ],
+        selectedIds: ['S1', 'S2', 'S3'],
+        aoi: null,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      const passes = useAppStore.getState().downloadPasses;
+      expect(passes?.map((p) => [p.label, p.items.map((i) => i.id)])).toEqual([
+        ['Overpass A', ['S1', 'S2']],
+        ['Overpass B', ['S3']],
+      ]);
+      useAppStore.getState().closeDownloadDialog();
+      expect(useAppStore.getState().downloadPasses).toBeNull();
+    });
+
+    it('an AOI drawn: no passes, the crop merges by itself', () => {
+      const items = [cogScene('S1'), cogScene('S2')];
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items,
+        groups: [{ key: ['a'], label: 'Overpass A', items }],
+        aoi: AOI,
+      });
+      useAppStore.getState().openDownloadForSelection();
+      expect(useAppStore.getState().downloadPasses).toBeNull();
+    });
+
     it('no AOI, a Zarr dataset: disabled, an error naming the reason, dialog not opened', () => {
       const items = [scene({ id: 'S1' })];
       useAppStore.setState({
@@ -994,6 +1031,10 @@ describe('download outcome (M3-17 plan §4)', () => {
       expect(s.downloadOriginalLinks).toEqual([
         { itemId: 'S1', groupLabel: 'Group 1', asset: 'visual', href: 'https://data.test/S1.tif' },
         { itemId: 'S2', groupLabel: 'Group 2', asset: 'visual', href: 'https://data.test/S2.tif' },
+      ]);
+      expect(s.downloadPasses?.map((p) => [p.label, p.items.map((i) => i.id)])).toEqual([
+        ['Group 1', ['S1']],
+        ['Group 2', ['S2']],
       ]);
     });
 

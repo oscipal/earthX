@@ -33,7 +33,9 @@ export interface StepChoice {
 export const AFTER_BAND_MATH =
   'Band math ends in float32 with NaN as nodata, which an integer type cannot hold.';
 
-// The type the order is sent with unless the user changes it.
+// The type the order is sent with unless the user changes it. An order without
+// steps — the mosaic of whole scenes (M4-12b) — copies the source values, so it
+// keeps an integer type under the same condition as `nearest` does.
 export function chooseDtype(args: {
   steps: readonly StepChoice[];
   bands: readonly BandSource[];
@@ -56,7 +58,6 @@ export function chooseDtype(args: {
   if (interpolating) return float32('Interpolating gives fractional values, which an integer type would cut off.');
   const nodata = new Set(bands.map((band) => band.nodata));
   const keeps =
-    steps.length > 0 &&
     bands.length > 0 &&
     type !== null &&
     isIntegerType(type) &&

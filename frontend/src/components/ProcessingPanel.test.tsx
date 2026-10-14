@@ -701,19 +701,90 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
   });
 });
 
-describe('one scene per job (F8)', () => {
-  it('asks for one scene when several meet the AOI, and says the result covers only it', async () => {
-    select([scene('S2B_A'), scene('S2B_B', [10.5, 50.5, 11.5, 51.5])]);
+describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
+  const NEAR = [10.2, 50.2, 10.8, 50.8] as [number, number, number, number];
+
+  // Passes as the results list groups them: one group per label.
+  function selectPasses(passes: Record<string, StacItem[]>) {
+    const items = Object.values(passes).flat();
+    select(items);
+    useAppStore.setState({
+      groups: Object.entries(passes).map(([label, group]) => ({ key: [label], label, items: group })),
+    });
+  }
+
+  const passPicker = () =>
+    [...container.querySelectorAll('label')].find((l) => l.textContent?.startsWith('Pass'))?.querySelector('select') ?? null;
+
+  async function estimateBody() {
+    await ndvi();
+    await review();
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))!;
+    return JSON.parse(call[1].body).inputs.recipe;
+  }
+
+  it('sends every scene the AOI meets in one group, and asks for no pick', async () => {
+    select([scene('S2B_B', NEAR), scene('S2B_A', [10, 50, 11, 51]), scene('S2B_FAR', [12, 50, 13, 51])]);
     await openPanel();
-    expect(container.textContent).toContain('The result covers only this scene');
+    expect(container.textContent).toContain('2 scenes');
+    expect(container.textContent).toContain('merged into one mosaic');
+    expect(passPicker()).toBeNull();
+    const recipe = await estimateBody();
+    expect(recipe.inputs[0].groups).toEqual([['S2B_A', 'S2B_B']]);
+    expect(recipe.aoi.type).toBe('Polygon');
+  });
+
+  it('sends the same text however the scenes were selected', async () => {
+    select([scene('S2B_B', NEAR), scene('S2B_A')]);
+    await openPanel();
+    const forward = await estimateBody();
+    act(() => useAppStore.setState({ selectedIds: ['S2B_A', 'S2B_B'] }));
+    await review();
+    const call = fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)!;
+    expect(JSON.parse(call[1].body).inputs.recipe).toEqual(forward);
+  });
+
+  it('asks for a pass when the selection has scenes of two, and says one job covers one', async () => {
+    selectPasses({
+      '2026-07-02': [scene('S2B_C', NEAR)],
+      '2026-07-01': [scene('S2B_A'), scene('S2B_B', NEAR)],
+    });
+    await openPanel();
+    expect(container.textContent).toContain('One job covers the scenes of one pass');
     expect(container.querySelector('.pp-chip')).toBeNull();
-    const picker = container.querySelector<HTMLSelectElement>('select')!;
+    expect([...passPicker()!.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      '— choose one pass —',
+      '2026-07-02 (1 scene)',
+      '2026-07-01 (2 scenes)',
+    ]);
+    const picker = passPicker()!;
     act(() => {
-      picker.value = 'S2B_B';
+      picker.value = '2026-07-01';
       picker.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    expect(container.textContent).toContain('S2B_B');
     expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red', 'nir']);
+    expect(container.textContent).toContain('2 scenes');
+    const recipe = await estimateBody();
+    expect(recipe.inputs[0].groups).toEqual([['S2B_A', 'S2B_B']]);
+  });
+
+  it('does not review while no pass is picked', async () => {
+    selectPasses({ '2026-07-02': [scene('S2B_C', NEAR)], '2026-07-01': [scene('S2B_A')] });
+    await openPanel();
+    click(button('Review'));
+    await flush();
+    expect(container.textContent).toContain('Pick a pass.');
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+  });
+
+  it('shows the refusal of a mosaic the server turns away', async () => {
+    routes['POST /processing/processes/recipe/estimate'] = () =>
+      problem(422, 'scenes of another pass: S2B_B; a mosaic is made of one pass');
+    select([scene('S2B_A'), scene('S2B_B', NEAR)]);
+    await openPanel();
+    await ndvi();
+    await review();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('scenes of another pass: S2B_B');
   });
 });
 

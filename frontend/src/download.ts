@@ -105,6 +105,13 @@ export interface OriginalFileLink {
   href: string;
 }
 
+// The scenes of one group of a download, as the dialog holds them: what a
+// merged mosaic job (M4-12b) is ordered for, next to the links to the files.
+export interface DownloadPass {
+  label: string;
+  items: StacItem[];
+}
+
 // Built straight from already-fetched STAC items (never triggers a fetch
 // itself, V-4/M2-07d's own rule of keeping this module pure) — `groups`
 // carries a label per group (the results list's own group label, or a plain
