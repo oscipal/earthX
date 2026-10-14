@@ -1,7 +1,7 @@
 // The jobs of this tab (M4-13 §3.5 point 7, K6): state, progress, "Cancel",
 // when it expires; once finished, links to the files, and whether the result
-// was resampled to a common grid (Prinzip 2.9). M4-11b shows its export job
-// with the same row.
+// was resampled to a common grid (Prinzip 2.9). The download dialog shows its
+// export and mosaic jobs with the same row (M4-11b-2, M4-12b).
 
 import { useEffect, useState } from 'react';
 
@@ -10,8 +10,10 @@ import { useProcessingStore, type JobEntry } from '../processingStore';
 
 // `MIN_REMAINING` of the job API (`objectstore/results.py`): from a minute
 // before `expires`, a result link answers `410`, which a plain link could only
-// show as a JSON page — the row says "Expired" instead.
+// show as a JSON page — the row says so instead.
 export const MIN_REMAINING_MS = 60_000;
+
+export const EXPIRED_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 
 // The current time, refreshed when `deadline` passes.
 function useNowUntil(deadline: number): number {
@@ -51,7 +53,7 @@ export function JobRow({ job }: { job: JobEntry }) {
   const removeJob = useProcessingStore((s) => s.removeJob);
   const linksUntil = Date.parse(job.expires) - MIN_REMAINING_MS;
   const now = useNowUntil(linksUntil);
-  const expired = !(now < linksUntil);
+  const expired = job.expired || !(now < linksUntil);
   const active = job.phase === 'active';
   return (
     <li className="pp-job" aria-label={`Job ${job.jobID.slice(0, 8)}`}>
@@ -79,7 +81,7 @@ export function JobRow({ job }: { job: JobEntry }) {
       {job.phase !== 'gone' && job.phase !== 'dismissed' && (
         <span className="pp-help">Kept until {formatTime(job.expires)}</span>
       )}
-      {job.phase === 'successful' && expired && <span className="hint-text warn">Expired</span>}
+      {job.phase === 'successful' && expired && <span className="hint-text warn">{EXPIRED_TEXT}</span>}
       {job.phase === 'successful' && !expired && job.files && (
         <span className="pp-links">
           {job.files.map((f) => (

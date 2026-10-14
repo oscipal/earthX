@@ -79,6 +79,8 @@ export interface JobEntry {
   failure: string | null;
   error: string | null;
   cancelling: boolean;
+  // `/results` answered `410`: the result is gone before the row's own clock says so.
+  expired: boolean;
 }
 
 interface ProcessingState {
@@ -259,19 +261,39 @@ const FILE_LABELS: Record<string, string> = {
   'result.tif': 'Result (COG)',
   'mask.tif': 'Mask',
   'recipe.json': 'Recipe',
-  'export.zip': 'Export (ZIP)',
 };
 
+// The one archive of a result (M4-11b-2): an export's `export.zip`, or a raster
+// job's `result.zip` (output `bundle`, M4-11b-1).
+const ZIP_FILES = ['export.zip', 'result.zip'];
+export const ZIP_LABEL = 'Download (ZIP)';
+
 // The files of a results document, by the last segment of each link — only
-// the names the job API serves (`/results/{name}`), each once.
-function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile[] {
-  const files: ResultFile[] = [];
+// the names the job API serves (`/results/{name}`), each once. Where the
+// document names an archive, that is the one link (Zusatz §1); a result from
+// before archives existed keeps its single links.
+export function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile[] {
+  const names: string[] = [];
   for (const link of Object.values(doc)) {
     if (!link || typeof link.href !== 'string') continue;
     const file = decodeURIComponent(link.href.split('/').pop() ?? '');
-    if (FILE_LABELS[file] && !files.some((f) => f.file === file)) files.push({ file, label: FILE_LABELS[file] });
+    if (!names.includes(file)) names.push(file);
   }
-  return files;
+  const zip = ZIP_FILES.find((file) => names.includes(file));
+  if (zip) return [{ file: zip, label: ZIP_LABEL }];
+  return names.filter((file) => FILE_LABELS[file]).map((file) => ({ file, label: FILE_LABELS[file] }));
+}
+
+// What a failed job's row says (K8): the backend's fixed title, except where a
+// shorter hint of what to do helps; the kind is the end of the problem's `type`.
+const FAILURE_TEXTS: Record<string, string> = {
+  runtime_exceeded: 'The job took longer than allowed. Choose a smaller area or fewer assets.',
+};
+
+export function failureText(error: unknown, fallback: string): string {
+  if (!(error instanceof HttpError)) return fallback;
+  const kind = error.type?.startsWith('urn:earthx:job-failed:') ? error.type.slice('urn:earthx:job-failed:'.length) : '';
+  return FAILURE_TEXTS[kind] ?? error.title ?? fallback;
 }
 
 const EMPTY_DRAFT = {
@@ -309,8 +331,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         resampled: properties ? properties['earthx:resampled'] === true : null,
       });
     } catch (error) {
-      if (status.status === 'failed') {
-        updateJob(jobID, { failure: (error instanceof HttpError && error.title) || status.message || 'The job failed' });
+      if (error instanceof HttpError && error.status === 410) {
+        updateJob(jobID, { expired: true });
+      } else if (status.status === 'failed') {
+        updateJob(jobID, { failure: failureText(error, status.message || 'The job failed') });
       } else {
         updateJob(jobID, { error: error instanceof Error ? error.message : String(error) });
       }
@@ -361,6 +385,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       failure: null,
       error: null,
       cancelling: false,
+      expired: false,
     };
     set((s) => ({ jobs: [entry, ...s.jobs] }));
     persist();
