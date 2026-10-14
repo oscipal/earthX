@@ -78,6 +78,7 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
             item["properties"]["s2:datatake_id"] = "GS2B_20260601T100031_000000_N05.11"
             item["assets"]["visual"] = {
                 **item["assets"]["red"],
+                "gsd": 10,  # the pixel size was in the band description, which this asset replaces
                 "raster:bands": [{"nodata": 0, "data_type": "uint8"}] * 3,
             }
         rig.source.items[(entry["dataset"], item_id)] = item

@@ -232,6 +232,7 @@ class TestWhatItTurnsAway:
     ) -> None:
         item = s2_item()
         item["assets"]["red"].pop("raster:bands")
+        item["assets"]["red"]["gsd"] = 10  # the pixel size was in the band description; the estimate needs it
         rig.source.items[("sentinel-2-c1-l2a", "S2_A")] = item
         step = {"op": "band_math", "op_version": 1, "params": {"expression": "red_2 + 1"}}
         async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:

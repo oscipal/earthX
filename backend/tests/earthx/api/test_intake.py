@@ -265,12 +265,14 @@ class TestEarthSearchSentinel2:
         item = s2_item()
         for asset in ("red", "nir"):
             item["assets"][asset]["raster:bands"] = [{"nodata": 0, "data_type": "uint16"}]
+            item["assets"][asset]["gsd"] = 10  # the pixel size was in the band description
         accepted = await accept(order(), Source((S2, item)))
         assert {resolved.scaling for resolved in accepted.recipe.inputs[0].resolved} == {"none"}
 
     async def test_stac_11_band_fields_count_as_well(self) -> None:
         item = s2_item()
         item["assets"]["red"].pop("raster:bands")
+        item["assets"]["red"]["gsd"] = 10  # the pixel size was in the band description
         item["assets"]["red"]["bands"] = [
             {"name": "red", "raster:scale": 0.0001, "raster:offset": -0.1, "nodata": 0, "data_type": "uint16"}
         ]
