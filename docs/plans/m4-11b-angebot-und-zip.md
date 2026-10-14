@@ -131,8 +131,17 @@ ein nginx-Modul. Als Gegenprobe liest `zipfile` das Ergebnis im Test.
   **Keine Migration**; `result` ist schon ein freies Dokument. Nur Raster-Läufe;
   `export.zip` braucht es nicht.
 - **Cache-Treffer:** teilen den Lauf und damit `files_meta`. Ergebnisse von vor
-  dieser Änderung (höchstens 7 Tage alt) haben es nicht und damit kein `bundle`
-  (K5).
+  dieser Änderung (höchstens 7 Tage alt) haben es nicht und damit kein `bundle`;
+  ihr ZIP-Link antwortet `409` mit Grund (K5, unten).
+- **Warum `409` und kein Nachrechnen** (Otto, 14.10.2026, die einfachere Wahl):
+  Nachrechnen hieße, beim ersten ZIP-Abruf bis zu 5 GB aus dem Speicher zu lesen
+  (rund 0,5 s je GB nur für die CRC, dazu die Übertragung) und aus `api` in die
+  Tabelle der Queue zu schreiben, die bisher nur der Aufseher beschreibt; dazu ein
+  Rennen zweier Abrufe und ein Weg, wie die Zahl zurück in den Lauf kommt, den
+  mehrere Aufträge teilen. Das alles für ein Ergebnis, das höchstens 7 Tage lebt,
+  nur einmal pro alter Lauf gebraucht wird und dessen Einzellinks (`303`, `recipe.json`)
+  weiter gehen. Die Lücke schließt sich von selbst: sieben Tage nach dem Merge hat
+  jedes lebende Ergebnis `files_meta`.
 - **Hilfsfunktion** `file_facts(path)` neben `upload_result` in
   `objectstore/results.py` (dort ist sie neutral und `jobs` darf sie nutzen);
   der Schlüsselname steht dort als Konstante, `api` liest ihn gegen dieselbe.
@@ -176,7 +185,14 @@ der festen Menge; kein Endpunkt, keine URL. `.importlinter` bleibt unverändert.
   verworfen → `404`; ab `expires_at − 60 s` bis zum Löschen der Zeilen `410`,
   **bei jeder Anfrage, auch jeder Range-Anfrage**; ein fortgesetzter Download
   nach dem Ablauf gibt also `410`. Nicht fertig → `404`, gescheitert → Problem
-  der Fehlerart, ein Export oder ein Ergebnis ohne `files_meta` → `404`.
+  der Fehlerart, ein Export → `404` (sein ZIP heißt `export.zip`). Ein Raster-Ergebnis
+  **ohne `files_meta`** (vor dieser Änderung gemacht, oder ein Eintrag, den
+  `reported_files` nicht als beide Dateien mit Größe und CRC lesen kann) → **`409`**,
+  Typ `urn:earthx:no-bundle`, Titel „No bundle“, Text „this result was created
+  before bundles existed; use the single links (result.tif, mask.tif, recipe.json)“.
+  Die Reihenfolge der Prüfungen: `410` vor `404` (nicht fertig) vor Problem
+  (gescheitert) vor `409`; das Ergebnisdokument nennt `bundle` für ein solches
+  Ergebnis nicht, die Einzellinks gehen.
 - **Antwort:** `200` mit dem ganzen ZIP oder `206` für genau **einen** Bereich
   (`bytes=a-b`, `bytes=a-`, `bytes=-n`). Mehrere Bereiche, ein anderer
   Einheitenname oder ein Bereich, der nicht der Syntax folgt oder dessen Ende vor
@@ -285,7 +301,8 @@ Downloads ab, kann der Strom abbrechen; ein neuer Versuch bekommt `410`.
 | Speicher | `head_size`, `get_range` gegen `moto`: Bereich, Suffix, außerhalb, fehlendes Objekt (`ResultNotFound`), kein Schlüssel und keine Adresse in den Fehlertexten |
 | Route | `200`; `206` für `a-b`, `a-`, `-n`; `416`; mehrere Bereiche, falsche Syntax und vertauschte Bereiche → `200` ganz; `If-Range` mit eigenem ETag → `206`, mit fremdem oder mit dem Datum → `200`; `ETag` gleich bei jedem Abruf, anders bei einem anderen Ergebnis; `Content-Length` gleich der Summe der Bytes; die Bytes gleich `Layout`; `recipe.json` im ZIP gleich dem Einzellink |
 | 410 (F2) | ab `expires_at − 60 s` `410` für den ganzen Abruf und für eine Range-Anfrage danach; ein Abruf kurz davor geht, derselbe eine Minute später nicht (Ablauf mit der Zeit des Tests) |
-| Namen | Export, Ergebnis ohne `files_meta`, nicht fertig, gescheitert, unbekannt oder verworfen → die Antworten der Einzellinks (`404` bzw. Problem); der Ordner und der Dateiname tragen nie AOI, Hash oder `jobID` |
+| Alte Ergebnisse (Otto, 14.10.) | Raster-Ergebnis ohne `files_meta`, mit zu wenig oder falsch geformtem `files_meta` → `409` mit Typ `urn:earthx:no-bundle` und dem Grund; die Einzellinks (`303`, `recipe.json`) und das Ergebnisdokument (ohne `bundle`) gehen weiter; `410` und `404` (nicht fertig) haben Vorrang; ein Export bleibt `404`; nichts wird geschrieben (die Zeile in der Queue bleibt, wie sie war) |
+| Namen | Export, nicht fertig, gescheitert, unbekannt oder verworfen → die Antworten der Einzellinks (`404` bzw. Problem); der Ordner und der Dateiname tragen nie AOI, Hash oder `jobID` |
 | Speicher abweichend | Größe im Speicher ≠ Bericht, Objekt fehlt, Speicher antwortet nicht → `500`, `500`, `503`; liefert der Speicher mitten im Strom weniger, bricht die Antwort ab (Client sieht einen Fehler, kein kürzeres ZIP) |
 | Grenze (K4) | der fünfte gleichzeitige Download → `503` mit `Retry-After`; ein Platz wird frei nach dem Ende, nach einem Abbruch des Clients und nach einem Fehler im Strom; der Lesestrom wird geschlossen |
 | Beschreibung | Prozessbeschreibung und Ergebnisdokument nennen `bundle` nur, wo es das ZIP gibt; `outputs` mit `bundle` bei einem Raster-Auftrag geht, bei einem Export `400` |
@@ -417,8 +434,9 @@ nicht ohne Weiteres.
 - **K3** Der neue Ausgang heißt `bundle`, die Datei `result.zip`.
 - **K4** Höchstens 4 gleichzeitige ZIP-Downloads je `api`-Prozess, Konstante an
   einer Stelle; darüber `503` mit `Retry-After`.
-- **K5** Ergebnisse ohne `files_meta` (vor dieser Änderung) haben kein ZIP; das
-  Panel zeigt dann die Einzellinks.
+- **K5** Ergebnisse ohne `files_meta` (vor dieser Änderung) haben kein ZIP: der
+  Link antwortet `409` mit Grund (Otto, 14.10.2026); das Panel zeigt dann die
+  Einzellinks, weil das Ergebnisdokument `bundle` nicht nennt.
 - **K6** Die Schätzung im Dialog wird beim Erscheinen des Angebots einmal
   abgefragt, nicht erst auf Knopfdruck.
 - **K7** Der Export-Job des Dialogs erscheint auch in der Jobliste des Panels
@@ -593,3 +611,11 @@ Produktion):**
     für das ZIP64-Ende (Zentralverzeichnis bei `0xFFFFFFFE`/`0xFFFFFFFF`, 65 534/65 535
     Einträge); Zeilenangabe des Schreibers korrigiert. Nicht getestet bleibt eine
     Zentralverzeichnis-Größe von `0xFFFFFFFF` (bräuchte Millionen Einträge).
+12. **Alte Ergebnisse (Frage von Otto vor dem Merge, 14.10.2026).** Der Link `result.zip`
+    eines Raster-Ergebnisses ohne `files_meta` antwortete `404 "there is no such result"`,
+    ohne Grund. Jetzt `409` mit Typ `urn:earthx:no-bundle` und dem Satz „this result was
+    created before bundles existed; use the single links (result.tif, mask.tif,
+    recipe.json)“ (§3.1.2, Begründung dort). Die Prüfung steht hinter `410` und `404`
+    (nicht fertig, gescheitert), vor dem Namensvergleich; ein Export bleibt `404`.
+    Getestet mit einem Ergebnis ohne `files_meta`, einem mit nur einer Datei, einem mit
+    falsch geformten Zahlen und einem knapp vor dem Ablauf.
