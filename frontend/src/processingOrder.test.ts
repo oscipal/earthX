@@ -7,18 +7,20 @@ import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
 import type { ProcessDescription } from './processing';
 import {
   bandSources,
+  buildMosaicOrder,
   buildOrder,
   candidateItems,
   formatBytes,
   formatDuration,
   namesInExpression,
   orderAssets,
+  passesOf,
   processBlockReason,
   processInfo,
   stepOfRefusal,
   type DraftStep,
 } from './processingOrder';
-import type { Collection, StacItem } from './types';
+import type { Collection, StacItem, TimeStepGroup } from './types';
 
 const S2 = processInfo(s2 as unknown as ProcessDescription);
 const ZARR = processInfo(zarr as unknown as ProcessDescription);
@@ -193,12 +195,46 @@ describe('candidateItems (F8)', () => {
   });
 });
 
+describe('passesOf (M4-12b)', () => {
+  const group = (label: string, items: StacItem[]): TimeStepGroup => ({ key: [label], label, items });
+  const a = item('a', {});
+  const b = item('b', {});
+  const c = item('c', {});
+
+  it('splits the scenes by the group of the results list, in the order of the list', () => {
+    const groups = [group('2026-07-02', [c]), group('2026-07-01', [a, b])];
+    const passes = passesOf([b, c, a], groups);
+    expect(passes.map((p) => [p.label, p.items.map((i) => i.id)])).toEqual([
+      ['2026-07-02', ['c']],
+      ['2026-07-01', ['b', 'a']],
+    ]);
+  });
+
+  it('gives each pass its own key', () => {
+    const groups = [group('x', [a]), group('y', [b])];
+    const keys = passesOf([a, b], groups).map((p) => p.key);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('puts a scene the list does not know into a pass of its own, last', () => {
+    const passes = passesOf([c, a], [group('2026-07-01', [a])]);
+    expect(passes.map((p) => [p.label, p.items.map((i) => i.id)])).toEqual([
+      ['2026-07-01', ['a']],
+      ['Other scenes', ['c']],
+    ]);
+  });
+
+  it('is empty without scenes', () => {
+    expect(passesOf([], [group('x', [a])])).toEqual([]);
+  });
+});
+
 describe('buildOrder', () => {
   const step = (op: string, opVersion: number, values: DraftStep['values']): DraftStep => ({ key: 1, op, opVersion, values });
   const aoi = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
   const base = {
     datasetId: 'sentinel-2-c1-l2a',
-    itemId: 'S2B_X',
+    itemIds: ['S2B_X'],
     aoi,
     steps: [step('band_math', 1, { expression: '(nir - red) / (nir + red)' })],
     assets: ['red', 'nir'],
@@ -216,6 +252,13 @@ describe('buildOrder', () => {
     });
   });
 
+  it('puts all scenes of the pass into one group, sorted, so the same scenes are the same order', () => {
+    const forward = buildOrder({ ...base, itemIds: ['S2B_B', 'S2B_A', 'S2B_C'] }).order;
+    const backward = buildOrder({ ...base, itemIds: ['S2B_C', 'S2B_A', 'S2B_B'] }).order;
+    expect(forward?.inputs[0].groups).toEqual([['S2B_A', 'S2B_B', 'S2B_C']]);
+    expect(backward).toEqual(forward);
+  });
+
   it('turns reprojection numbers into numbers and keeps the boolean', () => {
     const order = buildOrder({
       ...base,
@@ -225,7 +268,7 @@ describe('buildOrder', () => {
   });
 
   it.each([
-    ['no scene', { itemId: null }, 'Pick a scene.'],
+    ['no scene', { itemIds: [] }, 'Pick a pass.'],
     ['a line as AOI', { aoi: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }, 'Draw an area as AOI.'],
     ['no step', { steps: [] }, 'Add a step.'],
     ['17 steps', { steps: Array.from({ length: 17 }, () => base.steps[0]) }, 'At most 16 steps.'],
@@ -248,6 +291,24 @@ describe('buildOrder', () => {
     const built = buildOrder({ ...base, steps: [step('decomp', 1, {})] });
     expect(built.order).toBeNull();
     expect(built.stepProblems[0].unsupported).toMatch(/not available/);
+  });
+});
+
+describe('buildMosaicOrder (M4-12 §3.1)', () => {
+  it('names the whole scenes of one pass: one group, no AOI, no steps', () => {
+    expect(
+      buildMosaicOrder({ datasetId: 'sentinel-2-c1-l2a', itemIds: ['B', 'A'], assets: ['visual'], dtype: 'uint8' }),
+    ).toEqual({
+      recipe_version: 1,
+      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['A', 'B']], assets: ['visual'] }],
+      steps: [],
+      output: { kind: 'raster', format: 'cog', dtype: 'uint8' },
+    });
+  });
+
+  it('carries no aoi member at all', () => {
+    const order = buildMosaicOrder({ datasetId: 'd', itemIds: ['A'], assets: ['visual'], dtype: 'uint8' });
+    expect('aoi' in order).toBe(false);
   });
 });
 

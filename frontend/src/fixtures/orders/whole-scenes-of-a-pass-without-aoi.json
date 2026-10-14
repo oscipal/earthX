@@ -1,0 +1,28 @@
+{
+  "inputs": {
+    "recipe": {
+      "recipe_version": 1,
+      "inputs": [
+        {
+          "name": "input",
+          "dataset": "sentinel-2-c1-l2a",
+          "groups": [
+            [
+              "ITEM_A",
+              "ITEM_B"
+            ]
+          ],
+          "assets": [
+            "visual"
+          ]
+        }
+      ],
+      "steps": [],
+      "output": {
+        "kind": "raster",
+        "format": "cog",
+        "dtype": "uint8"
+      }
+    }
+  }
+}

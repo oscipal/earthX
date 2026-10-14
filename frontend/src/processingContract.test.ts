@@ -18,7 +18,7 @@ import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { placeAoi } from './placeSearch';
 import { estimateOrder, placeJob, type ProcessDescription } from './processing';
-import { buildOrder, processInfo, type DraftStep } from './processingOrder';
+import { buildMosaicOrder, buildOrder, processInfo, type DraftStep } from './processingOrder';
 import { initialValues, type FieldValue } from './schemaForm';
 
 
@@ -39,6 +39,8 @@ const REPROJECT = { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear' }
 
 interface Case {
   name: string;
+  // The scenes of the order; one by default.
+  itemIds?: string[];
   datasetId: string;
   description: unknown;
   assets: string[];
@@ -100,6 +102,17 @@ const CASES: Case[] = [
     steps: [draft(zarr, 'band_math', { expression: '(b08 - b04) / (b08 + b04)' })],
     dtype: 'float32',
   },
+  {
+    // The scenes of one pass (M4-12b): one group, the AOI of the selection.
+    name: 'ndvi-on-a-mosaic-of-three-scenes',
+    itemIds: ['ITEM_C', 'ITEM_A', 'ITEM_B'],
+    datasetId: 'sentinel-2-c1-l2a',
+    description: s2,
+    assets: ['red', 'nir'],
+    aoi: SQUARE,
+    steps: [draft(s2, 'band_math', NDVI)],
+    dtype: 'float32',
+  },
 ];
 
 afterEach(() => {
@@ -118,11 +131,14 @@ function recorder() {
   return bodies;
 }
 
+// The order of the download dialog's mosaic job: whole scenes, no AOI, no steps.
+const MOSAIC_FILE = 'whole-scenes-of-a-pass-without-aoi';
+
 describe('the order the panel sends', () => {
   it.each(CASES)('$name: the same body to the estimate and to the execution, as in the file', async (c) => {
     const built = buildOrder({
       datasetId: c.datasetId,
-      itemId: 'ITEM_A',
+      itemIds: c.itemIds ?? ['ITEM_A'],
       aoi: c.aoi,
       steps: c.steps,
       assets: c.assets,
@@ -145,14 +161,14 @@ describe('the order the panel sends', () => {
   it.each(CASES)('$name: the AOI is a bare 2D geometry', (c) => {
     const built = buildOrder({
       datasetId: c.datasetId,
-      itemId: 'ITEM_A',
+      itemIds: c.itemIds ?? ['ITEM_A'],
       aoi: c.aoi,
       steps: c.steps,
       assets: c.assets,
       dtype: c.dtype,
       info: processInfo(c.description as ProcessDescription),
     });
-    const aoi = built.order!.aoi;
+    const aoi = built.order!.aoi!;
     expect(Object.keys(aoi).sort()).toEqual(['coordinates', 'type']);
     const positions = JSON.stringify(aoi.coordinates).match(/\[[^[\]]*\]/g)!;
     expect(positions.every((p) => p.split(',').length === 2)).toBe(true);
@@ -163,7 +179,7 @@ describe('the order the panel sends', () => {
     const before = JSON.stringify(aoi);
     buildOrder({
       datasetId: CASES[0].datasetId,
-      itemId: 'ITEM_A',
+      itemIds: ['ITEM_A'],
       aoi,
       steps: CASES[0].steps,
       assets: CASES[0].assets,
@@ -174,3 +190,26 @@ describe('the order the panel sends', () => {
     expect(aoi.properties).toBeDefined();
   });
 });
+
+describe('the order the download dialog sends for the whole scenes of a pass', () => {
+  const order = () =>
+    buildMosaicOrder({
+      datasetId: 'sentinel-2-c1-l2a',
+      itemIds: ['ITEM_B', 'ITEM_A'],
+      assets: ['visual'],
+      dtype: 'uint8',
+    });
+
+  it('goes as the same body to the execution, as in the file', async () => {
+    const bodies = recorder();
+    await placeJob(order()).catch(() => undefined);
+    expect(bodies.map((b) => b.url)).toEqual(['/processing/processes/recipe/execution']);
+    await expect(`${JSON.stringify(bodies[0].body, null, 2)}\n`).toMatchFileSnapshot(`./fixtures/orders/${MOSAIC_FILE}.json`);
+  });
+
+  it('has no aoi member and no steps', () => {
+    expect(Object.keys(order()).sort()).toEqual(['inputs', 'output', 'recipe_version', 'steps']);
+    expect(order().steps).toEqual([]);
+  });
+});
+

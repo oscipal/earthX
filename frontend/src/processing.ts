@@ -35,11 +35,12 @@ export interface OrderStep {
 }
 
 // The order (`RecipeRequest`, adr/0014 §4.1): what someone asks for, without
-// any address.
+// any address. Without `aoi` a raster job covers the whole scenes it names
+// (M4-12: `api` puts the union of their footprints into the recipe).
 export interface Order {
   recipe_version: 1;
   inputs: OrderInput[];
-  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  aoi?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   steps: OrderStep[];
   output: { kind: 'raster'; format: 'cog'; dtype: string };
 }

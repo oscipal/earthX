@@ -35,7 +35,7 @@ FILES = sorted(ORDERS.glob("*.json"))
 
 def test_there_are_orders_to_check() -> None:
     """A glob that finds nothing would pass for the wrong reason."""
-    assert len(FILES) >= 4
+    assert len(FILES) >= 6
     assert {json.loads(f.read_text("utf-8"))["inputs"]["recipe"]["inputs"][0]["dataset"] for f in FILES} == {
         "sentinel-2-c1-l2a",
         "cop-dem-glo-30",
@@ -55,20 +55,32 @@ def test_the_schema_takes_the_order(path: Path) -> None:
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
 def test_the_order_has_exactly_the_members_of_the_schema(path: Path) -> None:
     recipe = recipe_of(path)
-    assert set(recipe) == {"recipe_version", "inputs", "aoi", "steps", "output"}
-    assert set(recipe["aoi"]) == {"type", "coordinates"}
+    # The AOI may be left out for the whole scenes of a pass (M4-12); where it is there, it is bare.
+    assert set(recipe) - {"aoi"} == {"recipe_version", "inputs", "steps", "output"}
+    assert set(recipe.get("aoi", {"type": 0, "coordinates": 0})) == {"type", "coordinates"}
     assert set(recipe["inputs"][0]) == {"name", "dataset", "groups", "assets"}
     assert all(set(step) == {"op", "op_version", "params"} for step in recipe["steps"])
 
 
 def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
-    """Make the item the order names, covering the area of the order."""
+    """Make the items the order names, covering the area of the order (or a shared one without an AOI).
+
+    The scenes of a group are one overpass: they carry the same day and datatake, the key of ``results_group_by``.
+    """
     entry = recipe["inputs"][0]
-    west, south, east, north = shape(recipe["aoi"]).bounds
+    area = recipe["aoi"] if "aoi" in recipe else None
+    west, south, east, north = shape(area).bounds if area else (8.9, 46.9, 9.1, 47.1)
     box = (west - 0.1, south - 0.1, east + 0.1, north + 0.1)
-    item_id = entry["groups"][0][0]
     make = {"sentinel-2-c1-l2a": s2_item, "cop-dem-glo-30": dem_item, "sentinel-2-l2a-zarr3": eopf_item}
-    rig.source.items[(entry["dataset"], item_id)] = make[entry["dataset"]](item_id, box)
+    for item_id in entry["groups"][0]:
+        item = make[entry["dataset"]](item_id, box)
+        if entry["dataset"] == "sentinel-2-c1-l2a":
+            item["properties"]["s2:datatake_id"] = "GS2B_20260601T100031_000000_N05.11"
+            item["assets"]["visual"] = {
+                **item["assets"]["red"],
+                "raster:bands": [{"nodata": 0, "data_type": "uint8"}] * 3,
+            }
+        rig.source.items[(entry["dataset"], item_id)] = item
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
@@ -118,3 +130,34 @@ class TestTheCheckWouldHaveFoundTheFirstBug:
             response = await client.post(ESTIMATE, json=body)
         assert response.status_code in (400, 422)
         assert "extra_forbidden" in response.json()["detail"]
+
+
+class TestTheOrdersOfAMosaic:
+    """The orders of M4-12b: the scenes of a pass in one group, and the dialog's order with no AOI at all."""
+
+    DIALOG = ORDERS / "whole-scenes-of-a-pass-without-aoi.json"
+    PANEL = ORDERS / "ndvi-on-a-mosaic-of-three-scenes.json"
+
+    def test_the_files_are_there_and_name_several_scenes(self) -> None:
+        assert [len(recipe_of(f)["inputs"][0]["groups"][0]) for f in (self.DIALOG, self.PANEL)] == [2, 3]
+        assert "aoi" not in recipe_of(self.DIALOG) and recipe_of(self.DIALOG)["steps"] == []
+
+    @pytest.mark.parametrize("file", [DIALOG, PANEL], ids=lambda p: p.stem)
+    async def test_a_scene_of_another_pass_is_refused_with_its_id(self, rig: Rig, file: Path) -> None:
+        body = json.loads(file.read_text("utf-8"))
+        with_item(rig, body["inputs"]["recipe"])
+        odd = body["inputs"]["recipe"]["inputs"][0]["groups"][0][-1]
+        rig.source.items[("sentinel-2-c1-l2a", odd)]["properties"]["s2:datatake_id"] = (
+            "GS2B_20260602T100031_000000_N05.11"
+        )
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(EXECUTION, json=body, headers={"Prefer": "respond-async"})
+        assert response.status_code == 422 and odd in response.json()["detail"], response.text
+
+    async def test_the_estimate_of_the_dialog_order_is_taken(self, rig: Rig) -> None:
+        body = json.loads(self.DIALOG.read_text("utf-8"))
+        with_item(rig, body["inputs"]["recipe"])
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(ESTIMATE, json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["skippedItems"] == []

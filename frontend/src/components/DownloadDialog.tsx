@@ -11,6 +11,7 @@ import {
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
 import { useAppStore } from '../store';
+import MosaicJobs from './MosaicJobs';
 
 // Confirmation before a download leaves the platform (M2-07d, M3-17):
 // attribution and the source's terms notice have to be visible before it
@@ -28,7 +29,8 @@ import { useAppStore } from '../store';
 // (`store.downloadOutcome`, M3-17 plan §4): the AOI **crop**, confirmed here
 // as one request the way M2-06 always did, or the **originals**, a plain
 // list of links to click — no confirm step, no CORS, no big in-browser
-// download (plan §6, F2 option 1).
+// download (plan §6, F2 option 1). Under the links, a pass of several scenes
+// can be merged into one file as a job (`MosaicJobs`, M4-12b).
 export default function DownloadDialog() {
   const layerId = useAppStore((s) => s.downloadDialogLayerId);
   const selectionMode = useAppStore((s) => s.downloadSelection);
@@ -61,6 +63,7 @@ export default function DownloadDialog() {
   const setResolution = useAppStore((s) => s.setDownloadResolution);
   const outcome = useAppStore((s) => s.downloadOutcome);
   const originalLinks = useAppStore((s) => s.downloadOriginalLinks);
+  const passes = useAppStore((s) => s.downloadPasses);
   const skippedGroupsNotice = useAppStore((s) => s.downloadSkippedGroupsNotice);
 
   if (!layerId && !selectionMode) return null;
@@ -127,6 +130,7 @@ export default function DownloadDialog() {
                 ))}
               </ul>
             )}
+            <MosaicJobs dataset={dataset} passes={passes ?? []} />
           </div>
           <div className="dialog-actions">
             <button type="button" className="lm-btn" onClick={close}>

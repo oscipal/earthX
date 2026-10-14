@@ -7,9 +7,10 @@ import type { Geom } from 'polyclip-ts';
 
 import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
+import { groupIndexOfItem } from './grouping';
 import type { JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
 import { paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
-import type { Collection, StacAsset, StacBand, StacItem } from './types';
+import type { Collection, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
 // K10: the one input of an order is always called this.
 export const INPUT_NAME = 'input';
@@ -219,7 +220,7 @@ export function orderAssets(
   return sources.map((s) => s.asset).filter((asset) => wanted.has(asset));
 }
 
-// --- item (F8) -----------------------------------------------------------------
+// --- scenes and passes (F8, M4-12b) ---------------------------------------------
 
 function toGeom(geometry: GeoJSON.Geometry): Geom | null {
   if (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon') return geometry.coordinates as unknown as Geom;
@@ -248,6 +249,34 @@ export function touchesAoi(item: StacItem, aoi: GeoJSON.Geometry): boolean {
 // The scenes one job can be ordered for: those of the selection the AOI meets.
 export function candidateItems(items: readonly StacItem[], aoi: GeoJSON.Geometry): StacItem[] {
   return items.filter((item) => touchesAoi(item, aoi));
+}
+
+// The scenes of one pass: a group of the results list (`results_group_by`), the
+// unit a mosaic job takes (M4-12 F6: one pass, one group, one job).
+export interface Pass {
+  key: string;
+  label: string;
+  items: StacItem[];
+}
+
+const OTHER_SCENES = 'Other scenes';
+
+// `items` split by the pass of the results list they belong to, in the order of
+// the list (newest first). A scene the list does not know — should not happen
+// for a live result — shares one pass with the others of its kind, last.
+export function passesOf(items: readonly StacItem[], groups: readonly TimeStepGroup[]): Pass[] {
+  const byIndex = new Map<number, StacItem[]>();
+  for (const item of items) {
+    const index = groupIndexOfItem(groups as TimeStepGroup[], item.id);
+    byIndex.set(index, [...(byIndex.get(index) ?? []), item]);
+  }
+  return [...byIndex.entries()]
+    .sort(([a], [b]) => (a < 0 ? Infinity : a) - (b < 0 ? Infinity : b))
+    .map(([index, passItems]) =>
+      index < 0
+        ? { key: '', label: OTHER_SCENES, items: passItems }
+        : { key: groups[index].key.join('\u0000'), label: groups[index].label, items: passItems },
+    );
 }
 
 export function isArea(aoi: GeoJSON.Geometry | null): aoi is GeoJSON.Polygon | GeoJSON.MultiPolygon {
@@ -309,16 +338,21 @@ export interface BuiltOrder {
   problems: string[];
 }
 
+// The scenes of a group in one fixed order, so that the same selection is the
+// same order text (an estimate belongs to exactly one order, K4). The server
+// sorts the list for the mosaic itself (`mosaic_order`).
+const orderedIds = (ids: readonly string[]): string[] => [...ids].sort();
+
 export function buildOrder(args: {
   datasetId: string;
-  itemId: string | null;
+  itemIds: readonly string[];
   aoi: GeoJSON.Geometry | null;
   steps: readonly DraftStep[];
   assets: readonly string[];
   dtype: string;
   info: ProcessInfo;
 }): BuiltOrder {
-  const { datasetId, itemId, aoi, steps, assets, dtype, info } = args;
+  const { datasetId, itemIds, aoi, steps, assets, dtype, info } = args;
   const problems: string[] = [];
   const built: OrderStep[] = [];
   const stepProblems: StepProblem[] = steps.map((step) => {
@@ -329,7 +363,7 @@ export function buildOrder(args: {
     built.push({ op: step.op, op_version: step.opVersion, params });
     return { errors };
   });
-  if (!itemId) problems.push('Pick a scene.');
+  if (itemIds.length === 0) problems.push('Pick a pass.');
   if (!isArea(aoi)) problems.push('Draw an area as AOI.');
   if (steps.length === 0) problems.push('Add a step.');
   if (steps.length > info.maxSteps) problems.push(`At most ${info.maxSteps} steps.`);
@@ -337,17 +371,34 @@ export function buildOrder(args: {
   if (assets.length > info.maxAssets) problems.push(`At most ${info.maxAssets} bands.`);
   if (!dtype) problems.push('Pick an output data type.');
   const stepsOk = stepProblems.every((p) => !p.unsupported && Object.keys(p.errors).length === 0);
-  if (problems.length > 0 || !stepsOk || !isArea(aoi) || !itemId) return { order: null, stepProblems, problems };
+  if (problems.length > 0 || !stepsOk || !isArea(aoi)) return { order: null, stepProblems, problems };
   return {
     order: {
       recipe_version: 1,
-      inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [[itemId]], assets: [...assets] }],
+      inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)], assets: [...assets] }],
       aoi: orderAoi(aoi),
       steps: built,
       output: { kind: 'raster', format: 'cog', dtype },
     },
     stepProblems,
     problems,
+  };
+}
+
+// A mosaic of the whole scenes of one pass, no steps and no AOI (M4-12 §3.1):
+// `api` takes the union of the footprints as the area.
+export function buildMosaicOrder(args: {
+  datasetId: string;
+  itemIds: readonly string[];
+  assets: readonly string[];
+  dtype: string;
+}): Order {
+  const { datasetId, itemIds, assets, dtype } = args;
+  return {
+    recipe_version: 1,
+    inputs: [{ name: INPUT_NAME, dataset: datasetId, groups: [orderedIds(itemIds)], assets: [...assets] }],
+    steps: [],
+    output: { kind: 'raster', format: 'cog', dtype },
   };
 }
 
