@@ -264,6 +264,23 @@ class TestRefusals:
         assert list(work.iterdir()) == []
 
 
+def test_an_integer_output_rounds_a_fraction_half_away_from_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = sources.ramp(64, 64, 100)
+    bare = sources.build_band_cog(tmp_path / "bare.tif", raw, scale=None, offset=None)
+    sources.serve({sources.url("bare"): bare}, monkeypatch)
+    work = tmp_path / "work"
+    work.mkdir()
+    halve = {"op": "scale", "op_version": 1, "params": {"factor": 0.5}}
+    data = _recipe([halve], assets=("bare",), dtype="uint16", aoi=sources.whole(64, 64), scale=None, offset=None)
+    result = _read(_run(data, work).path)[0]
+    valid = raw != sources.NODATA
+    assert valid.sum() > 0 and (raw[valid] % 2 == 1).any()
+    numpy.testing.assert_array_equal(result.mask, ~valid)
+    numpy.testing.assert_array_equal(result.compressed(), (raw[valid] + 1) // 2)
+
+
 @pytest.mark.usefixtures("served")
 def test_logs_name_no_address_no_aoi_and_no_hash(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     data = _recipe([SCALE_2])
