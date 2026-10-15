@@ -235,6 +235,7 @@ describe('buildOrder', () => {
   const base = {
     datasetId: 'sentinel-2-c1-l2a',
     itemIds: ['S2B_X'],
+    area: 'aoi' as const,
     aoi,
     steps: [step('band_math', 1, { expression: '(nir - red) / (nir + red)' })],
     assets: ['red', 'nir'],
@@ -250,6 +251,19 @@ describe('buildOrder', () => {
       steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
       output: { kind: 'raster', format: 'cog', dtype: 'float32' },
     });
+  });
+
+  it('sends no AOI for "Whole scene", and needs none (M4-13c §3.2)', () => {
+    const order = buildOrder({ ...base, area: 'scene', aoi: null }).order;
+    expect(order).not.toBeNull();
+    expect(order).not.toHaveProperty('aoi');
+    expect(buildOrder({ ...base, area: 'scene' }).order).toEqual(order);
+  });
+
+  it('needs an area for "AOI only"', () => {
+    const built = buildOrder({ ...base, aoi: null });
+    expect(built.order).toBeNull();
+    expect(built.problems).toContain('Draw an area as AOI.');
   });
 
   it('puts all scenes of the pass into one group, sorted, so the same scenes are the same order', () => {
@@ -276,7 +290,7 @@ describe('buildOrder', () => {
     ['17 bands', { assets: Array.from({ length: 17 }, (_, i) => `b${i}`) }, 'At most 16 bands.'],
     ['no data type', { dtype: '' }, 'Pick an output data type.'],
   ])('blocks %s', (_, change, problem) => {
-    const built = buildOrder({ ...base, ...change } as typeof base);
+    const built = buildOrder({ ...base, ...change } as Parameters<typeof buildOrder>[0]);
     expect(built.order).toBeNull();
     expect(built.problems).toContain(problem);
   });
@@ -331,13 +345,11 @@ describe('small rules', () => {
     expect(formatDuration('P1D')).toBe('P1D');
   });
 
-  it('says why Process cannot open', () => {
+  it('says why Process cannot open; no AOI needed (M4-13c K1)', () => {
     const collection = (tier: string) => ({ id: 'x', 'earthx:license_flags': { tier } }) as unknown as Collection;
-    const aoi = bboxToPolygon([0, 0, 1, 1]);
-    expect(processBlockReason({ viewable: true, collection: collection('processing') }, aoi, 1)).toBeNull();
-    expect(processBlockReason({ viewable: true, collection: collection('display') }, aoi, 1)).toMatch(/tier: display/);
-    expect(processBlockReason({ viewable: true, collection: collection('processing') }, null, 1)).toMatch(/AOI/);
-    expect(processBlockReason({ viewable: true, collection: collection('processing') }, aoi, 0)).toMatch(/scene/);
-    expect(processBlockReason(undefined, aoi, 1)).toMatch(/dataset/);
+    expect(processBlockReason({ viewable: true, collection: collection('processing') }, 1)).toBeNull();
+    expect(processBlockReason({ viewable: true, collection: collection('display') }, 1)).toMatch(/tier: display/);
+    expect(processBlockReason({ viewable: true, collection: collection('processing') }, 0)).toMatch(/scene/);
+    expect(processBlockReason(undefined, 1)).toMatch(/dataset/);
   });
 });

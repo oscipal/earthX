@@ -4,11 +4,13 @@
 // scenes, AOI) from there and never writes to it.
 //
 // An order names the scenes of one pass (M4-12b); the pass is the one the
-// selection has in the AOI, or the one the user picks.
+// selection has (in the AOI, for "AOI only"), or the one the user picks. It
+// covers the whole scenes by default, or only the AOI (M4-13c §3.2).
 //
-// The draft belongs to one dataset and one AOI: a change of either drops it.
-// An estimate belongs to exactly one order (K4): any change to the order makes
-// it disappear, and "Start job" waits for a new one.
+// The draft belongs to one dataset: a new dataset drops it. A new AOI drops
+// nothing but the estimate (M4-13c K3). An estimate belongs to exactly one
+// order (K4): any change to the order makes it disappear, and "Start job"
+// waits for a new one.
 
 import { create } from 'zustand';
 
@@ -30,10 +32,12 @@ import {
   bandSources,
   buildOrder,
   candidateItems,
+  isArea,
   orderAssets,
   passesOf,
   processInfo,
   stepOfRefusal,
+  type Area,
   type BandSource,
   type BuiltOrder,
   type DraftStep,
@@ -58,6 +62,9 @@ export interface Refusal {
   // The step the server named (0-based), shown at that step; `null` for the
   // order as a whole.
   step: number | null;
+  // The HTTP status of the refusal (a `413` suggests "AOI only", K2); `null`
+  // when there was no answer.
+  status: number | null;
 }
 
 export type JobPhase = 'active' | 'successful' | 'failed' | 'dismissed' | 'gone';
@@ -82,9 +89,12 @@ export interface JobEntry {
 
 interface ProcessingState {
   open: boolean;
+  // The window of the jobs of this tab (M4-13c §3.1), apart from the panel.
+  jobsOpen: boolean;
   descriptions: Record<string, Description>;
   // `Pass.key` of the pass the user picked; `null` until then (a lone pass needs no pick).
   passKey: string | null;
+  area: Area;
   steps: DraftStep[];
   picked: string[];
   dtype: string | null;
@@ -99,9 +109,12 @@ interface ProcessingState {
 
   openProcessing: () => void;
   closeProcessing: () => void;
+  openJobs: () => void;
+  closeJobs: () => void;
   ensureDescription: (datasetId: string) => void;
   resetDraft: () => void;
   choosePass: (passKey: string) => void;
+  setArea: (area: Area) => void;
   addStep: (op: string, opVersion: number) => void;
   updateStep: (key: number, name: string, value: FieldValue) => void;
   moveStep: (key: number, direction: -1 | 1) => void;
@@ -121,7 +134,8 @@ interface ProcessingState {
 export interface OrderView {
   dataset: DatasetOption | undefined;
   info: ProcessInfo | null;
-  // The selected scenes the AOI meets, split into passes, and the pass the order is for.
+  // The scenes the order can be for — all selected ones, or those the AOI meets
+  // for "AOI only" — split into passes, and the pass the order is for.
   candidates: StacItem[];
   passes: Pass[];
   pass: Pass | null;
@@ -142,10 +156,11 @@ export interface OrderView {
 // is the one costly part of the view, so the last answer is kept.
 let lastCandidates: { inputs: unknown[]; result: { items: StacItem[]; passes: Pass[] } } | null = null;
 
-function candidatesOf(app: SelectionState): { items: StacItem[]; passes: Pass[] } {
-  const inputs = [app.items, app.selectedIds, app.groups, app.activeGroupIndex, app.aoi];
+function candidatesOf(app: SelectionState, area: Area): { items: StacItem[]; passes: Pass[] } {
+  const inputs = [app.items, app.selectedIds, app.groups, app.activeGroupIndex, app.aoi, area];
   if (lastCandidates && lastCandidates.inputs.every((value, i) => value === inputs[i])) return lastCandidates.result;
-  const items = app.aoi ? candidateItems(selectionItemsFrom(app), app.aoi) : [];
+  const selected = selectionItemsFrom(app);
+  const items = area === 'scene' ? selected : isArea(app.aoi) ? candidateItems(selected, app.aoi) : [];
   const result = { items, passes: passesOf(items, app.groups) };
   lastCandidates = { inputs, result };
   return result;
@@ -173,7 +188,7 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
-  const { items: candidates, passes } = candidatesOf(app);
+  const { items: candidates, passes } = candidatesOf(app, p.area);
   const pass = passes.find((c) => c.key === p.passKey) ?? (passes.length === 1 ? passes[0] : null);
   const format = dataset?.collection['earthx:format'] ?? null;
   // The scenes of a pass agree on the assets and bands (the server checks it, M4-12a).
@@ -195,6 +210,7 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
       ? buildOrder({
           datasetId: dataset.id,
           itemIds: pass?.items.map((i) => i.id) ?? [],
+          area: p.area,
           aoi: app.aoi,
           steps: p.steps,
           assets,
@@ -242,9 +258,9 @@ function refusalOf(error: unknown, key: string, steps: readonly DraftStep[]): Re
   if (error instanceof HttpError) {
     const text = error.detail ?? error.message;
     const hint = error.status === 503 && !/try again/iu.test(text) ? ' Try again in a moment.' : '';
-    return { key, message: `${text}${hint}`, step: stepOfRefusal(text, steps) };
+    return { key, message: `${text}${hint}`, step: stepOfRefusal(text, steps), status: error.status };
   }
-  return { key, message: error instanceof Error ? error.message : String(error), step: null };
+  return { key, message: error instanceof Error ? error.message : String(error), step: null, status: null };
 }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
@@ -270,6 +286,8 @@ function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile[] {
 
 const EMPTY_DRAFT = {
   passKey: null,
+  // "Whole scene" first (Otto, 12.10.2026).
+  area: 'scene' as Area,
   steps: [] as DraftStep[],
   picked: [] as string[],
   dtype: null,
@@ -363,6 +381,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 
   return {
     open: false,
+    jobsOpen: false,
     descriptions: {},
     ...EMPTY_DRAFT,
     jobs: [],
@@ -376,6 +395,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       abortEstimate();
       set({ open: false, reviewing: false });
     },
+    openJobs: () => set({ jobsOpen: true }),
+    closeJobs: () => set({ jobsOpen: false }),
     ensureDescription: (datasetId) => {
       const known = get().descriptions[datasetId];
       if (known && known.state !== 'error') return;
@@ -404,6 +425,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null }),
+    setArea: (area) => set({ area, reviewError: null, startError: null }),
     addStep: (op, opVersion) => {
       const datasetId = useAppStore.getState().datasetId;
       const description = datasetId ? get().descriptions[datasetId] : undefined;
@@ -476,7 +498,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       try {
         const status = await placeJob(order);
         // One estimate, one job: a second identical job needs its own review.
-        set({ starting: false, estimate: null });
+        set({ starting: false, estimate: null, jobsOpen: true });
         addJob(status.jobID, status.expires, status);
       } catch (error) {
         set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
@@ -525,14 +547,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   };
 });
 
-// A new dataset or AOI drops the draft; any change of the selection drops an
-// estimate still on its way (its answer would belong to another order).
+// A new dataset drops the draft; any other change of the selection drops only
+// an estimate still on its way (its answer would belong to another order). A
+// new AOI does so only for "AOI only" (K3): "Whole scene" does not send it, the
+// order stays the same text, and so does an estimate already shown.
 useAppStore.subscribe((s, prev) => {
   const processing = useProcessingStore.getState();
-  if (s.datasetId !== prev.datasetId || s.aoi !== prev.aoi) {
+  if (s.datasetId !== prev.datasetId) {
     processing.resetDraft();
     if (s.datasetId && processing.open) processing.ensureDescription(s.datasetId);
   } else if (
+    (s.aoi !== prev.aoi && processing.area === 'aoi') ||
     s.selectedIds !== prev.selectedIds ||
     s.items !== prev.items ||
     s.groups !== prev.groups ||

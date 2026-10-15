@@ -241,13 +241,18 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | Plan freigegeben (#134); Umsetzung in a bis c |
 | M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | erledigt (#134) |
 | M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | PR (Entwurf), `plans/m4-13-processing-panel.md` §12 |
-| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung | M4a | B | Sonnet (hoch) | M4-13b | offen (neue Session nach dem Merge von M4-13b) |
+| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung; dazu Zusatz §2 aus `plans/m4-zusaetze-2026-10-12.md` (Fenster, Whole scene / AOI only, Ergebnis im Viewer, Einstiege, Einheit der Auflösung, Batch) | M4a | B | Opus Plan, Sonnet (hoch) | M4-13b, M4-12b | Plan freigegeben am 15.10.2026 (#152, `plans/m4-13c-vorschau-und-viewer.md`); Umsetzung in c-1 bis c-5 |
+| M4-13c-1 | Frontend: Seitenleiste zum Zusammenstellen, Jobliste getrennt, „Whole scene / AOI only“ (K1–K4), Test Bänder aus dem Ausdruck | M4a | B | Sonnet (hoch) | M4-13c (Plan) | PR #152 (Entwurf), umgesetzt, `plans/m4-13c-vorschau-und-viewer.md` §11 |
+| M4-13c-2 | Frontend: T1-Vorschau, „Preview“, Vorschau als Layer (anheften, ersetzen), Einstiege aus Layer-Manager und Vollauflösung | M4a | B | Sonnet (hoch) | M4-13c-1 | offen (neue Session nach dem Merge von c-1) |
+| M4-13c-3 | Auflösung mit Einheit: Route `GET /processing/crs/{code}` (`pyproj`, ohne Netz) und Anzeige im Panel | M4a | B | Sonnet (hoch) | M4-13c-2 | offen (neue Session nach dem Merge von c-2) |
+| M4-13c-4 | Frontend: Batch „One job per pass“/„One job per scene“, höchstens 25, Schätzung als Summe | M4a | B | Sonnet (hoch) | M4-13c-3 | offen (neue Session nach dem Merge von c-3) |
+| M4-13c-5 | Job-Ergebnis als Layer: Kachel-Route im `tiler` über `objectstore` ohne Datenbank, eigener Leseschlüssel, Nachtrag `adr/0015` | M4a | B | Opus (hoch) | M4-13c-4 | offen (neue Session nach dem Merge von c-4) |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | erledigt (#129) |
 | M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | erledigt (#135) |
 | M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | offen |
 | M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | offen |
 | M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
-| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c | offen |
+| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | offen |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
 | M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | in Arbeit |

@@ -68,6 +68,23 @@ function FieldInput({
             </option>
           ))}
         </select>
+      ) : bandTarget !== undefined ? (
+        // A band-math expression: wraps in the wide panel (M4-13c §3.1), but stays
+        // one line — Enter adds none, and a pasted line break becomes a space.
+        <textarea
+          id={inputId}
+          rows={2}
+          value={text}
+          maxLength={field.maxLength}
+          spellCheck={false}
+          aria-describedby={describedBy}
+          aria-invalid={!!error}
+          data-band-target={bandTarget}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.preventDefault();
+          }}
+          onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/gu, ' '))}
+        />
       ) : (
         <input
           id={inputId}
@@ -78,7 +95,6 @@ function FieldInput({
           spellCheck={false}
           aria-describedby={describedBy}
           aria-invalid={!!error}
-          data-band-target={bandTarget}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
