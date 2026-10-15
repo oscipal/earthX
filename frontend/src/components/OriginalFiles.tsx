@@ -10,11 +10,12 @@ import {
 } from '../download';
 import MosaicJobs, { type Started } from './MosaicJobs';
 
-// The original files of a selection (M3-17, Zusatz 1a): one scene is its link;
-// several scenes ask first how they are loaded — each scene as the file the
-// source holds ("Each scene separately": the links, nothing passes through the
-// platform), or merged per pass as a job on the platform. No choice is
-// preselected (K12).
+// The original files of a selection (M3-17, Zusatz 1a): the links, unless a
+// pass holds two or more scenes — only then there is something to merge, and the
+// dialog asks first how they are loaded: each scene as the file the source holds
+// ("Each scene separately": the links, nothing passes through the platform), or
+// merged per pass as a job on the platform. No choice is preselected (K12).
+// Scenes that are all alone in their pass (Otto, 15.10.2026) show the links.
 
 type Mode = 'each' | 'merged';
 
@@ -40,8 +41,7 @@ export default function OriginalFiles({ dataset, links, passes }: Props) {
 
   if (links === null) return <p className="hint-text">Loading the original files…</p>;
 
-  const scenes = (passes ?? []).reduce((sum, pass) => sum + pass.items.length, 0);
-  const asks = scenes > 1;
+  const asks = (passes ?? []).some((pass) => pass.items.length > 1);
   const shown = asks ? mode : 'each';
   const mergeAllowed = canExportLicense(dataset?.collection['earthx:license_flags']);
   const noMerge = dataset ? noProcessingLicence(dataset) : 'This dataset’s licence does not permit processing.';

@@ -198,6 +198,42 @@ describe('the choice (Zusatz 1a)', () => {
     expect(container.textContent).not.toContain('Save link list');
   });
 
+  it('does not ask when every pass is one scene: there is nothing to merge, the links are shown', async () => {
+    open();
+    const lone = [scene('S2_A'), scene('S2_B'), scene('S2_C')];
+    useAppStore.setState({
+      downloadPasses: lone.map((item, i) => ({ label: `2026-07-0${i + 1}`, items: [item] })),
+      downloadOriginalLinks: lone.map((item, i) => ({
+        itemId: item.id,
+        groupLabel: `2026-07-0${i + 1}`,
+        asset: 'visual',
+        href: `https://data.test/${item.id}.tif`,
+      })),
+    });
+    await show();
+    expect(buttons(EACH)).toHaveLength(0);
+    expect(buttons(MERGED)).toHaveLength(0);
+    expect(linksShown()).toEqual(['S2_A · visual', 'S2_B · visual', 'S2_C · visual']);
+    expect(buttons('Save link list')).toHaveLength(1);
+    expect(placed()).toHaveLength(0);
+  });
+
+  it('asks as soon as one pass holds two scenes, however many lone passes surround it', async () => {
+    open();
+    const pair = [scene('S2_A'), scene('S2_B')];
+    useAppStore.setState({
+      downloadPasses: [
+        { label: 'one', items: [scene('S2_C')] },
+        { label: 'two', items: pair },
+        { label: 'three', items: [scene('S2_D')] },
+      ],
+    });
+    await show();
+    expect(buttons(EACH)).toHaveLength(1);
+    expect(buttons(MERGED)).toHaveLength(1);
+    expect(container.querySelector('.dialog-original-links')).toBeNull();
+  });
+
   it('asks with an AOI drawn too: the originals do not depend on it', async () => {
     open('processing', undefined, bboxToPolygon([10.2, 50.2, 10.4, 50.4]));
     await show();

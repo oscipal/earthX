@@ -796,7 +796,7 @@ die Bandbreite und die fehlende Fortsetzung nicht auf. Für viele Szenen siehe F
 
 **Kleinentscheidungen** (gelten, wenn Otto nicht widerspricht):
 
-- **K10** Bei einer Szene fragt „Download originals“ nicht, sondern zeigt die Links.
+- **K10** Bei einer Szene fragt „Download originals“ nicht, sondern zeigt die Links; ebenso, wenn jeder Überflug nur eine Szene hat (Otto, 15.10.2026, §12.7).
 - **K11** „Merged per pass (job)“: ein Überflug mit einer Szene bekommt den Link auf
   die Originaldatei statt eines Jobs.
 - **K12** Die Frage hat keine Vorauswahl; erst ein Klick lädt Links oder bietet Jobs an.
@@ -914,6 +914,8 @@ cd frontend; npm run dev        # Viewer unter http://localhost:5173
   per pass“ je Überflug ein Knopf, über 25 Szenen gesperrt mit Grund.
 - **F7:** Option 1, der Layer-Manager bleibt unverändert (Umbau mit UI-01).
 - **F8:** Option 1, §1a im selben PR.
+- **§13.2 Punkt 4 (15.10.2026):** Die Frage nur, wenn mindestens ein Überflug zwei
+  oder mehr Szenen hat; sonst gleich die Links.
 - **K10 bis K14** angenommen. Der Ablauftext „Expired: results are kept for 7 days.
   Start the job again.“ (§13 Punkt 1) ist bestätigt.
 
@@ -953,10 +955,10 @@ Doku.
    ein Umweg.
 3. `noOriginalsReason` nennt kein „(Zarr)“, weil alles außer `cog` (auch ein fehlender
    oder unbekannter `earthx:format`) keine Datei je Szene hat.
-4. Mehrere Szenen in lauter Überflügen mit je einer Szene fragen trotzdem; „Merged
-   per pass (job)“ zeigt dann nur die Links und ist ohne Lizenzstufe `processing`
-   gesperrt. Das folgt dem Wortlaut von §12.2; **Otto bitte bestätigen** oder die
-   Frage erst ab einem Überflug mit mindestens zwei Szenen stellen.
+4. Die Frage kommt nur, wenn mindestens ein Überflug zwei oder mehr Szenen hat
+   (Otto, 15.10.2026; §12.2 sagte „mehrere Szenen“). Besteht jede Gruppe aus einer
+   Szene, zeigt der Dialog gleich die Links, auch bei mehreren Gruppen; „Save link
+   list“ gibt es ab zwei Links.
 5. Die Zuschreibung für unveränderte Daten steht oben im Dialog, die für veränderte
    Daten (Mosaik) zusätzlich unter „Merged per pass (job)“, wie bisher.
 
@@ -979,4 +981,5 @@ veraltete Kommentare, die Prüfung der Sperren im Start selbst und die Prüfanle
    speichert eine `.txt` mit einer Adresse je Zeile.
 4. „Merged per pass (job)“: je Überflug mit mindestens zwei Szenen „Start job“, bei
    einer Szene deren Link. Der Job läuft ohne Zuschnitt, auch mit gezeichneter AOI.
-5. Bei einer Auswahl von nur einer Szene fragt der Dialog nicht.
+5. Bei einer Auswahl, in der jeder Überflug nur eine Szene hat (auch eine einzelne
+   Szene), fragt der Dialog nicht, sondern zeigt die Links.
