@@ -38,8 +38,8 @@ export default function ViewBar() {
   // AOI, and the whole original files, which an AOI does not change.
   const originalsAllowed = isCogFormat(dataset);
   // M4-13b K12: a job for the selection, next to the download buttons; the reason it
-  // cannot start (licence tier, no area) is the button's own title.
-  const processBlocked = processBlockReason(dataset, aoi, selectedIds.length);
+  // cannot start (licence tier) is the button's own title. No AOI needed (M4-13c K1).
+  const processBlocked = processBlockReason(dataset, selectedIds.length);
 
   return (
     <div className="panel download-bar">
@@ -105,7 +105,7 @@ export default function ViewBar() {
         type="button"
         className="ghost-btn"
         disabled={processBlocked !== null}
-        title={processBlocked ?? 'Build a processing job for the selected scene, cut to your AOI'}
+        title={processBlocked ?? `Build a processing job for the selected scene${plural ? 's' : ''}`}
         onClick={() => openProcessing()}
       >
         ⚙ Process

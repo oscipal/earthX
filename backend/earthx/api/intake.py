@@ -328,10 +328,12 @@ async def _accept(
         raise OrderRefused(413, str(error), "size") from None
     except AoiOutsideInputs as error:
         raise OrderRefused(422, str(error), "aoi") from None
-    except (RecipeInvalid, UnsupportedRecipe):
-        # Anything else the estimate cannot do (a band name the item does not describe, a grid in
-        # degrees for a reprojection): not this stage's business, which is the size alone. The queue's
-        # own estimate (`submit`) and the core meet it where they always did.
+    except UnsupportedRecipe as error:
+        # No pixel size to estimate from, or a target grid over the side the core allows (M4-25).
+        raise OrderRefused(422, str(error), "scope") from None
+    except RecipeInvalid:
+        # A band name the item does not describe: not this stage's business, which is the size
+        # alone. The queue's own estimate (`submit`) and the core meet it where they always did.
         pass
     acquired_on = _acquired_on(prepared)
     if not isinstance(recipe.output, CropOutput):

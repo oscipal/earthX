@@ -16,7 +16,7 @@ import { placeAoi } from '../placeSearch';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
-import { EXPIRED_TEXT, JobRow, MIN_REMAINING_MS } from './JobList';
+import JobList, { EXPIRED_TEXT, JobRow, MIN_REMAINING_MS } from './JobList';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 
@@ -135,7 +135,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, descriptions: {}, jobs: [] });
+  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [] });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -169,13 +169,20 @@ async function flush() {
 }
 
 async function openPanel() {
-  act(() => root.render(<ProcessingPanel />));
+  act(() =>
+    root.render(
+      <>
+        <ProcessingPanel />
+        <JobList />
+      </>,
+    ),
+  );
   act(() => useProcessingStore.getState().openProcessing());
   await flush();
 }
 
-function button(label: string | RegExp): HTMLButtonElement {
-  const found = [...container.querySelectorAll('button')].find((b) =>
+function button(label: string | RegExp, within: Element = container): HTMLButtonElement {
+  const found = [...within.querySelectorAll('button')].find((b) =>
     typeof label === 'string' ? b.textContent?.trim() === label : label.test(b.textContent ?? ''),
   );
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
@@ -186,8 +193,9 @@ function click(element: HTMLElement) {
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 }
 
-function typeInto(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = input instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')!.set!;
   act(() => {
     setter.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -196,7 +204,7 @@ function typeInto(input: HTMLInputElement, value: string) {
 
 async function ndvi() {
   click(button('＋ Band math'));
-  typeInto(container.querySelector('input[id$="-expression"]')!, '(nir - red) / (nir + red)');
+  typeInto(container.querySelector('textarea[id$="-expression"]')!, '(nir - red) / (nir + red)');
 }
 
 async function review() {
@@ -235,7 +243,7 @@ describe('the panel built from the schema', () => {
   });
 
   describe('a band chip (Otto, 12.10.2026)', () => {
-    const expression = () => container.querySelector<HTMLInputElement>('input[id$="-expression"]')!;
+    const expression = () => container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
     const pressed = (name: string) => button(name).getAttribute('aria-pressed');
 
     function focusExpression(value: string, caret: number, end = caret) {
@@ -364,7 +372,7 @@ describe('review before start (K4)', () => {
     ]);
     expect(body.inputs.recipe.output).toEqual({ kind: 'raster', format: 'cog', dtype: 'float32' });
 
-    typeInto(container.querySelector('input[id$="-expression"]')!, 'nir / red');
+    typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir / red');
     expect(container.textContent).not.toContain('An estimate, not a promise.');
     expect(button('Start job').disabled).toBe(true);
   });
@@ -373,6 +381,7 @@ describe('review before start (K4)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ aoi: placeAoi({ name: 'x', display_name: 'x', kind: 'x', bbox: [10.4, 50.4, 10.6, 50.6], outline: AOI, outline_simplified: false }) });
     await openPanel();
+    click(button('AOI only'));
     await ndvi();
     await review();
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
@@ -400,7 +409,7 @@ describe('review before start (K4)', () => {
     await ndvi();
     click(button('Review'));
     await flush();
-    typeInto(container.querySelector('input[id$="-expression"]')!, 'nir / red');
+    typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir / red');
     answer(problem(422, 'expression names unknown band(s): nir_2; the input has: red, nir'));
     await flush();
     expect(container.textContent).not.toContain('unknown band');
@@ -443,7 +452,7 @@ describe('review before start (K4)', () => {
     click(button('＋ Band math'));
     click(button('red'));
     expect(button('red').getAttribute('aria-pressed')).toBe('false');
-    expect(container.querySelector<HTMLInputElement>('input[id$="-expression"]')!.value).toBe('');
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!.value).toBe('');
   });
 
   it('blocks review with a message while the order is incomplete', async () => {
@@ -478,30 +487,67 @@ describe('review before start (K4)', () => {
     expect(button('Review').disabled).toBe(false);
   });
 
-  it.each([
-    ['the AOI changes', () => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) })],
-    ['the panel closes', () => useProcessingStore.getState().closeProcessing()],
-  ])('aborts an estimate on its way when %s', async (_, change) => {
+  const newAoi = () => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) });
+
+  async function estimateOnItsWay(area: 'scene' | 'aoi'): Promise<AbortSignal> {
     routes['POST /processing/processes/recipe/estimate'] = (init) =>
       new Promise((_resolve, reject) =>
         init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))),
       );
     select([scene('S2B_A')]);
     await openPanel();
+    if (area === 'aoi') click(button('AOI only'));
     await ndvi();
     click(button('Review'));
     await flush();
-    const signal = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].signal as AbortSignal;
+    return fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].signal as AbortSignal;
+  }
+
+  it.each([
+    ['the AOI of "AOI only" changes', 'aoi', newAoi],
+    ['the panel closes', 'scene', () => useProcessingStore.getState().closeProcessing()],
+  ] as const)('aborts an estimate on its way when %s', async (_, area, change) => {
+    const signal = await estimateOnItsWay(area);
     act(() => change());
     expect(signal.aborted).toBe(true);
   });
 
-  it('drops the draft when the AOI changes', async () => {
+  it('lets an estimate of "Whole scene" finish when the AOI changes: the order is the same', async () => {
+    const signal = await estimateOnItsWay('scene');
+    act(() => newAoi());
+    expect(signal.aborted).toBe(false);
+    expect(button('Reviewing…').disabled).toBe(true);
+  });
+
+  it('keeps the steps when the AOI changes, and drops the estimate of "AOI only" (M4-13c K3)', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('AOI only'));
+    await ndvi();
+    await review();
+    expect(button('Start job').disabled).toBe(false);
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
+    expect(container.querySelector('.pp-step')).not.toBeNull();
+    expect(container.textContent).not.toContain('An estimate, not a promise.');
+    expect(button('Start job').disabled).toBe(true);
+  });
+
+  it('keeps the estimate of "Whole scene" when the AOI changes: the order is the same text', async () => {
     select([scene('S2B_A')]);
     await openPanel();
     await ndvi();
+    await review();
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.45, 50.45, 10.55, 50.55]) }));
-    expect(container.querySelector('.pp-step')).toBeNull();
+    expect(container.textContent).toContain('An estimate, not a promise.');
+    expect(button('Start job').disabled).toBe(false);
+  });
+
+  it('drops the draft when the dataset changes', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    act(() => useAppStore.setState({ datasetId: null }));
+    expect(useProcessingStore.getState().steps).toEqual([]);
   });
 });
 
@@ -686,7 +732,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
     click(button('＋ Band math'));
     click(button('b08'));
     click(button('b04'));
-    typeInto(container.querySelector('input[id$="-expression"]')!, 'b08 - b04');
+    typeInto(container.querySelector('textarea[id$="-expression"]')!, 'b08 - b04');
     await review();
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
     expect(body.inputs.recipe.inputs[0].assets).toEqual(['SR_10m:b04', 'SR_10m:b08']);
@@ -723,9 +769,19 @@ describe('the scenes of one pass are one mosaic (M4-12b, lifting F8)', () => {
     return JSON.parse(call[1].body).inputs.recipe;
   }
 
-  it('sends every scene the AOI meets in one group, and asks for no pick', async () => {
+  it('sends every selected scene of the pass for "Whole scene", without an AOI', async () => {
     select([scene('S2B_B', NEAR), scene('S2B_A', [10, 50, 11, 51]), scene('S2B_FAR', [12, 50, 13, 51])]);
     await openPanel();
+    expect(container.textContent).toContain('3 scenes');
+    const recipe = await estimateBody();
+    expect(recipe.inputs[0].groups).toEqual([['S2B_A', 'S2B_B', 'S2B_FAR']]);
+    expect(recipe).not.toHaveProperty('aoi');
+  });
+
+  it('sends every scene the AOI meets in one group for "AOI only", and asks for no pick', async () => {
+    select([scene('S2B_B', NEAR), scene('S2B_A', [10, 50, 11, 51]), scene('S2B_FAR', [12, 50, 13, 51])]);
+    await openPanel();
+    click(button('AOI only'));
     expect(container.textContent).toContain('2 scenes');
     expect(container.textContent).toContain('merged into one mosaic');
     expect(passPicker()).toBeNull();
@@ -900,10 +956,10 @@ describe('starting and following a job', () => {
       'earthx.processing.jobs',
       JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
     );
-    act(() => root.render(<ProcessingPanel />));
+    act(() => root.render(<JobList />));
     act(() => {
       useProcessingStore.getState().resumeJobs();
-      useProcessingStore.setState({ open: true });
+      useProcessingStore.getState().openJobs();
     });
     await waitFor(() => container.textContent?.includes('Failed: The source failed') ?? false);
   });
@@ -916,10 +972,10 @@ describe('starting and following a job', () => {
       'earthx.processing.jobs',
       JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
     );
-    act(() => root.render(<ProcessingPanel />));
+    act(() => root.render(<JobList />));
     act(() => {
       useProcessingStore.getState().resumeJobs();
-      useProcessingStore.setState({ open: true });
+      useProcessingStore.getState().openJobs();
     });
   }
 
@@ -1014,11 +1070,11 @@ describe('the Process button (B11, K12)', () => {
     expect(process.title).toContain('tier: display');
   });
 
-  it('is disabled without an AOI', () => {
+  it('needs no AOI: "Whole scene" sends none (M4-13c K1)', () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ aoi: null });
     showBar();
-    expect(button(/Process/).disabled).toBe(true);
+    expect(button(/Process/).disabled).toBe(false);
   });
 
   it('opens the panel', () => {
@@ -1035,10 +1091,10 @@ describe('cancelling and losing a job', () => {
       'earthx.processing.jobs',
       JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
     );
-    act(() => root.render(<ProcessingPanel />));
+    act(() => root.render(<JobList />));
     act(() => {
       useProcessingStore.getState().resumeJobs();
-      useProcessingStore.setState({ open: true });
+      useProcessingStore.getState().openJobs();
     });
   }
 
@@ -1079,5 +1135,158 @@ describe('cancelling and losing a job', () => {
     resume();
     await waitFor(() => container.textContent?.includes('Gone (expired or dismissed)') ?? false);
     expect(sessionStorage.getItem('earthx.processing.jobs')).toBeNull();
+  });
+});
+
+describe('the area of the order (M4-13c §3.2)', () => {
+  const recipeOf = (call: unknown[]) => JSON.parse((call[1] as RequestInit).body as string).inputs.recipe;
+  const lastEstimate = () => recipeOf(fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)!);
+
+  it('starts on "Whole scene", sends no AOI and says what the mask covers', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    expect(button('Whole scene').getAttribute('aria-pressed')).toBe('true');
+    expect(container.textContent).toContain('The result covers the whole scene; the mask marks where they have data.');
+    await ndvi();
+    await review();
+    expect(lastEstimate()).not.toHaveProperty('aoi');
+  });
+
+  it('sends the AOI for "AOI only"', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('AOI only'));
+    await ndvi();
+    await review();
+    expect(lastEstimate().aoi).toEqual(AOI);
+  });
+
+  it('works without an AOI, and offers "AOI only" only with one', async () => {
+    select([scene('S2B_A')]);
+    useAppStore.setState({ aoi: null });
+    await openPanel();
+    expect(button('AOI only').disabled).toBe(true);
+    expect(button('AOI only').title).toBe('Draw an AOI first');
+    await ndvi();
+    await review();
+    expect(button('Start job').disabled).toBe(false);
+  });
+
+  it('blocks "AOI only" once the AOI is gone, and says so', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('AOI only'));
+    await ndvi();
+    act(() => useAppStore.setState({ aoi: null }));
+    expect(container.textContent).toContain('Draw an AOI first, or choose “Whole scene”.');
+    await review();
+    expect(container.textContent).toContain('Draw an area as AOI.');
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+  });
+
+  describe('a whole scene over the cap of one job (K2)', () => {
+    beforeEach(() => {
+      routes['POST /processing/processes/recipe/estimate'] = () =>
+        problem(413, 'the job would write 6200 MB; 5000 MB a job may write');
+    });
+
+    it('shows the reason and switches to "AOI only" on request', async () => {
+      select([scene('S2B_A')]);
+      await openPanel();
+      await ndvi();
+      await review();
+      expect(container.textContent).toContain('5000 MB a job may write');
+      expect(container.textContent).toContain('The whole scene is too large for one job. Try “AOI only”.');
+      click(button('Use AOI only'));
+      expect(useProcessingStore.getState().area).toBe('aoi');
+      expect(container.textContent).not.toContain('too large for one job');
+    });
+
+    it('asks for an AOI when there is none', async () => {
+      select([scene('S2B_A')]);
+      useAppStore.setState({ aoi: null });
+      await openPanel();
+      await ndvi();
+      await review();
+      expect(container.textContent).toContain('Draw an AOI to process a part of the scene.');
+      expect([...container.querySelectorAll('button')].some((b) => b.textContent === 'Use AOI only')).toBe(false);
+    });
+
+    it('suggests nothing for "AOI only": the server says what is too large', async () => {
+      select([scene('S2B_A')]);
+      await openPanel();
+      click(button('AOI only'));
+      await ndvi();
+      await review();
+      expect(container.textContent).toContain('5000 MB a job may write');
+      expect(container.textContent).not.toContain('too large for one job');
+    });
+  });
+});
+
+describe('bands named in an expression go into the order by themselves (M4-13c point 5)', () => {
+  const sentAssets = () =>
+    JSON.parse(fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/estimate')).at(-1)![1].body).inputs.recipe
+      .inputs[0].assets;
+
+  it('takes the bands of a typed expression, without a click on a chip, and drops one taken out', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('＋ Band math'));
+    const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
+    typeInto(field, 'nir * 2');
+    await review();
+    expect(sentAssets()).toEqual(['nir']);
+    typeInto(field, '(nir - red) / (nir + red)');
+    await review();
+    expect(sentAssets()).toEqual(['red', 'nir']);
+    typeInto(field, 'red + 1');
+    await review();
+    expect(sentAssets()).toEqual(['red']);
+  });
+});
+
+describe('the expression field (M4-13c §3.1)', () => {
+  it('stays one line: Enter adds none, a pasted line break becomes a space', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(button('＋ Band math'));
+    const field = container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    act(() => field.dispatchEvent(enter));
+    expect(enter.defaultPrevented).toBe(true);
+    typeInto(field, 'nir -\nred');
+    expect(useProcessingStore.getState().steps[0].values.expression).toBe('nir - red');
+  });
+});
+
+describe('the panel and the window of the jobs (M4-13c §3.1)', () => {
+  it('opens the window of the jobs when a job starts; the panel holds no job rows', async () => {
+    routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+    routes[`GET /processing/jobs/${JOB}`] = () => json(statusDoc('running', 5));
+    setTrackerOptions({ pollMs: 60_000 });
+    select([scene('S2B_A')]);
+    await openPanel();
+    expect(container.querySelector('[aria-label="Jobs"]')).toBeNull();
+    await ndvi();
+    await review();
+    click(button('Start job'));
+    await flush();
+    expect(useProcessingStore.getState().jobsOpen).toBe(true);
+    const jobs = container.querySelector('[aria-label="Jobs"]')!;
+    expect(jobs.querySelector('.pp-job')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Processing"] .pp-job')).toBeNull();
+    click(button('✕', jobs));
+    expect(container.querySelector('[aria-label="Jobs"]')).toBeNull();
+  });
+
+  it('folds the sheet down to its head and opens it again (narrow screens)', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    const panel = container.querySelector('.processing-panel')!;
+    click(button('▾'));
+    expect(panel.classList.contains('folded')).toBe(true);
+    click(button('▴'));
+    expect(panel.classList.contains('folded')).toBe(false);
   });
 });

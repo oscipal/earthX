@@ -18,7 +18,7 @@ import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { placeAoi } from './placeSearch';
 import { estimateOrder, placeJob, type ProcessDescription } from './processing';
-import { buildMosaicOrder, buildOrder, processInfo, type DraftStep } from './processingOrder';
+import { buildMosaicOrder, buildOrder, processInfo, type Area, type DraftStep } from './processingOrder';
 import { initialValues, type FieldValue } from './schemaForm';
 
 
@@ -44,7 +44,8 @@ interface Case {
   datasetId: string;
   description: unknown;
   assets: string[];
-  aoi: GeoJSON.Geometry;
+  // `null`: "Whole scene" (M4-13c §3.2), the order names no AOI.
+  aoi: GeoJSON.Geometry | null;
   steps: DraftStep[];
   dtype: string;
 }
@@ -113,7 +114,20 @@ const CASES: Case[] = [
     steps: [draft(s2, 'band_math', NDVI)],
     dtype: 'float32',
   },
+  {
+    // "Whole scene" with steps (M4-13c §3.2): the scenes of a pass, no AOI.
+    name: 'ndvi-on-whole-scenes-without-aoi',
+    itemIds: ['ITEM_B', 'ITEM_A'],
+    datasetId: 'sentinel-2-c1-l2a',
+    description: s2,
+    assets: ['red', 'nir'],
+    aoi: null,
+    steps: [draft(s2, 'band_math', NDVI)],
+    dtype: 'float32',
+  },
 ];
+
+const area = (c: Case): Area => (c.aoi ? 'aoi' : 'scene');
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -139,6 +153,7 @@ describe('the order the panel sends', () => {
     const built = buildOrder({
       datasetId: c.datasetId,
       itemIds: c.itemIds ?? ['ITEM_A'],
+      area: area(c),
       aoi: c.aoi,
       steps: c.steps,
       assets: c.assets,
@@ -158,10 +173,11 @@ describe('the order the panel sends', () => {
     await expect(`${JSON.stringify(bodies[0].body, null, 2)}\n`).toMatchFileSnapshot(`./fixtures/orders/${c.name}.json`);
   });
 
-  it.each(CASES)('$name: the AOI is a bare 2D geometry', (c) => {
+  it.each(CASES.filter((c) => c.aoi))('$name: the AOI is a bare 2D geometry', (c) => {
     const built = buildOrder({
       datasetId: c.datasetId,
       itemIds: c.itemIds ?? ['ITEM_A'],
+      area: area(c),
       aoi: c.aoi,
       steps: c.steps,
       assets: c.assets,
@@ -180,6 +196,7 @@ describe('the order the panel sends', () => {
     buildOrder({
       datasetId: CASES[0].datasetId,
       itemIds: ['ITEM_A'],
+      area: 'aoi',
       aoi,
       steps: CASES[0].steps,
       assets: CASES[0].assets,

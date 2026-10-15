@@ -1,0 +1,37 @@
+{
+  "inputs": {
+    "recipe": {
+      "recipe_version": 1,
+      "inputs": [
+        {
+          "name": "input",
+          "dataset": "sentinel-2-c1-l2a",
+          "groups": [
+            [
+              "ITEM_A",
+              "ITEM_B"
+            ]
+          ],
+          "assets": [
+            "red",
+            "nir"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "op": "band_math",
+          "op_version": 1,
+          "params": {
+            "expression": "(nir - red) / (nir + red)"
+          }
+        }
+      ],
+      "output": {
+        "kind": "raster",
+        "format": "cog",
+        "dtype": "float32"
+      }
+    }
+  }
+}
