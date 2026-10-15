@@ -1,4 +1,5 @@
 import { canDownloadLayer, decideDownloadOutcomeForLayer } from '../download';
+import { layerProcessBlock, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import Draggable from './Draggable';
 
@@ -14,6 +15,7 @@ export default function LayerManager() {
   const select = useAppStore((s) => s.selectLayer);
   const openDownload = useAppStore((s) => s.openDownloadDialog);
   const datasets = useAppStore((s) => s.datasets);
+  const processLayer = useProcessingStore((s) => s.processLayer);
 
   // `Draggable` stays mounted regardless of `open` and is only hidden with
   // CSS: unmounting it (the previous `if (!open) return null`) threw away
@@ -48,6 +50,7 @@ export default function LayerManager() {
           <ul className="layer-list">
             {layers.map((l, i) => {
               const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
+              const processBlock = layerProcessBlock(l, datasets);
               return (
               <li key={l.id} className="layer-row">
                 <button
@@ -94,7 +97,16 @@ export default function LayerManager() {
                 >
                   ▼
                 </button>
-                {l.restore.itemIds.length > 0 && (
+                <button
+                  type="button"
+                  className="lm-btn"
+                  disabled={processBlock !== null}
+                  title={processBlock ?? 'Process this layer'}
+                  onClick={() => processLayer(l.id)}
+                >
+                  ⚙
+                </button>
+                {!l.derived && l.restore.itemIds.length > 0 && (
                   <button
                     type="button"
                     className="lm-btn"

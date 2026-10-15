@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { addProtocol, Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
@@ -23,8 +23,11 @@ import {
   syncHighlight,
   syncLayers,
   syncMosaic,
+  syncPreview,
 } from '../mapLayers';
 import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles';
+import { previewOverlays } from '../processingPreview';
+import { useProcessingStore } from '../processingStore';
 import { layersOnMap } from '../searchLayers';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
@@ -116,6 +119,12 @@ export default function MapView() {
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const theme = useAppStore((s) => s.theme);
+  const preview = useProcessingStore((s) => s.preview);
+  // Cut to the AOI only for "AOI only": a new AOI leaves the others alone.
+  const clipAoi = preview?.clipToAoi ? aoi : null;
+  const previewTiles = useMemo(() => (preview ? previewOverlays(preview, clipAoi) : []), [preview, clipAoi]);
+  const previewTilesRef = useRef(previewTiles);
+  previewTilesRef.current = previewTiles;
 
   // --- create the map once ---
   useEffect(() => {
@@ -220,6 +229,7 @@ export default function MapView() {
         cropToAoi: st.cropToAoi,
         groups: st.groups,
       });
+      syncPreview(map, previewTilesRef.current);
       initDraw();
       readyRef.current = true;
       // The store needs an initial viewport before the first `moveend`
@@ -320,6 +330,13 @@ export default function MapView() {
       syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded, aoi, cropToAoi, items, dataset });
     }
   }, [focusMode, downloaded, appliedRender, showDownloaded, aoi, cropToAoi, items, datasets, datasetId]);
+
+  // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
+  // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) syncPreview(map, previewTiles);
+  }, [previewTiles]);
 
   // --- browse-mode preview overlays (quicklooks / preview tiles) — these do
   // react to `selectedIds`, since a cross-group selection can pin a scene

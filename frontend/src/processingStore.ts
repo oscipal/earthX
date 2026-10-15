@@ -7,6 +7,9 @@
 // selection has (in the AOI, for "AOI only"), or the one the user picks. It
 // covers the whole scenes by default, or only the AOI (M4-13c §3.2).
 //
+// The map preview of the first step (M4-13c-2) is computed from the draft and
+// the selection; it follows 400 ms after the last change (K7).
+//
 // The draft belongs to one dataset: a new dataset drops it. A new AOI drops
 // nothing but the estimate (M4-13c K3). An estimate belongs to exactly one
 // order (K4): any change to the order makes it disappear, and "Start job"
@@ -35,6 +38,7 @@ import {
   isArea,
   orderAssets,
   passesOf,
+  processBlockReason,
   processInfo,
   stepOfRefusal,
   type Area,
@@ -44,10 +48,31 @@ import {
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
+import {
+  DEFAULT_RANGE,
+  planPreview,
+  previewOverlays,
+  previewSpec,
+  rescaleOf,
+  type PreviewRange,
+  type PreviewSpec,
+} from './processingPreview';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
 import { initialValues, type FieldValue } from './schemaForm';
+import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import type { StacItem } from './types';
+
+// Where a panel opens from: the "Area" it starts with, and the layer it was
+// opened for (its source layer, §3.4).
+export interface ProcessingEntry {
+  area?: Area;
+  sourceLayerId?: string | null;
+}
+
+// What "Replace source layer" replaces (M4-13c §3.4): the layer the panel was
+// opened for, else the full-resolution view that is on screen.
+export type PreviewSource = { kind: 'layer'; id: string; name: string } | { kind: 'focus' } | null;
 
 export type Description =
   | { state: 'loading' }
@@ -95,9 +120,17 @@ interface ProcessingState {
   // `Pass.key` of the pass the user picked; `null` until then (a lone pass needs no pick).
   passKey: string | null;
   area: Area;
+  // The layer the panel was opened for (§3.5); `null` when it was opened from the
+  // selection or the full-resolution view.
+  sourceLayerId: string | null;
   steps: DraftStep[];
   picked: string[];
   dtype: string | null;
+  // The range and colormap of the map preview: applied, and as edited (F3 (1)).
+  range: PreviewRange;
+  rangeDraft: PreviewRange;
+  // What the map shows of the first step; `null` for none.
+  preview: PreviewSpec | null;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
@@ -107,7 +140,12 @@ interface ProcessingState {
   startError: Refusal | null;
   jobs: JobEntry[];
 
-  openProcessing: () => void;
+  openProcessing: (entry?: ProcessingEntry) => void;
+  processLayer: (layerId: string) => void;
+  processFocusView: () => void;
+  setRangeDraft: (patch: Partial<PreviewRange>) => void;
+  applyRange: () => void;
+  pinPreview: (replaceSource: boolean) => void;
   closeProcessing: () => void;
   openJobs: () => void;
   closeJobs: () => void;
@@ -236,6 +274,36 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
   };
 }
 
+// --- source layer and entries (M4-13c-2) ------------------------------------
+
+export function previewSource(sourceLayerId: string | null, app: Pick<AppState, 'layers' | 'focusMode'>): PreviewSource {
+  const layer = app.layers.find((l) => l.id === sourceLayerId);
+  if (layer) return { kind: 'layer', id: layer.id, name: layer.name };
+  return app.focusMode ? { kind: 'focus' } : null;
+}
+
+// Why a layer cannot be the start of an order, or `null`. A picture made from
+// scenes is no scene; the licence is the dataset's, as for the selection.
+export function layerProcessBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
+  if (layer.derived) return 'A result cannot be processed further yet.';
+  const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
+  return processBlockReason(dataset, layer.restore.itemIds.length);
+}
+
+// The scenes of the entry become the selection the panel reads. They must be in
+// the results on screen: only those are known to the panel as scenes.
+function selectScenes(ids: readonly string[], whose: string): boolean {
+  const app = useAppStore.getState();
+  if (ids.length === 0 || !ids.every((id) => app.items.some((item) => item.id === id))) {
+    useAppStore.setState({
+      error: `The scenes of ${whose} are not in the results on screen. Search again to process them.`,
+    });
+    return false;
+  }
+  useAppStore.setState({ selectedIds: [...ids] });
+  return true;
+}
+
 // --- requests that a change of the selection drops ----------------------------
 
 let describing: AbortController | null = null;
@@ -288,9 +356,13 @@ const EMPTY_DRAFT = {
   passKey: null,
   // "Whole scene" first (Otto, 12.10.2026).
   area: 'scene' as Area,
+  sourceLayerId: null as string | null,
   steps: [] as DraftStep[],
   picked: [] as string[],
   dtype: null,
+  range: DEFAULT_RANGE,
+  rangeDraft: DEFAULT_RANGE,
+  preview: null as PreviewSpec | null,
   reviewAsked: false,
   estimate: null,
   reviewing: false,
@@ -386,10 +458,53 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     ...EMPTY_DRAFT,
     jobs: [],
 
-    openProcessing: () => {
-      set({ open: true });
+    // Opened from the selection (`ViewBar`), a layer or the full-resolution view:
+    // the entry says the area and the layer it starts with; without one, the
+    // area stays and there is no source layer.
+    openProcessing: (entry = {}) => {
+      set({ open: true, sourceLayerId: entry.sourceLayerId ?? null, ...(entry.area ? { area: entry.area } : {}) });
       const datasetId = useAppStore.getState().datasetId;
       if (datasetId) get().ensureDescription(datasetId);
+    },
+    // F3 (1): the selection is made again from the layer, then the panel opens and
+    // reads the selection as ever. "AOI only" if the layer was cut to its AOI.
+    processLayer: (layerId) => {
+      const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
+      if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
+      useAppStore.getState().selectLayer(layerId);
+      if (!selectScenes(layer.restore.itemIds, 'this layer')) return;
+      get().openProcessing({
+        area: layer.restore.cropToAoi && isArea(layer.restore.aoi) ? 'aoi' : 'scene',
+        sourceLayerId: layerId,
+      });
+    },
+    processFocusView: () => {
+      const app = useAppStore.getState();
+      if (!selectScenes(Object.keys(app.downloaded), 'this view')) return;
+      get().openProcessing({ area: app.cropToAoi && isArea(app.aoi) ? 'aoi' : 'scene' });
+    },
+    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch } })),
+    applyRange: () => {
+      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft }));
+    },
+    // The preview on screen becomes a layer; with `replaceSource` it takes the
+    // place of the source layer, or hides the full-resolution view.
+    pinPreview: (replaceSource) => {
+      const { preview, sourceLayerId } = get();
+      const app = useAppStore.getState();
+      if (!preview) return;
+      const source = replaceSource ? previewSource(sourceLayerId, app) : null;
+      app.pinDerivedLayer(
+        {
+          name: `Preview · ${preview.title}`,
+          derived: 'preview',
+          overlays: previewOverlays(preview, app.aoi),
+          itemIds: preview.scenes.map((scene) => scene.id),
+          cropToAoi: preview.clipToAoi,
+        },
+        source?.kind === 'layer' ? source.id : null,
+      );
+      if (source?.kind === 'focus' && app.showDownloaded) app.toggleDownloaded();
     },
     closeProcessing: () => {
       abortEstimate();
@@ -567,5 +682,64 @@ useAppStore.subscribe((s, prev) => {
       abortEstimate();
       useProcessingStore.setState({ reviewing: false });
     }
+  }
+});
+
+// --- the map preview (K7) ----------------------------------------------------
+
+const PREVIEW_DELAY_MS = 400;
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+
+// What the map should show now: the first step of the draft on the scenes of the
+// order, while the panel is open and the step is complete.
+function wantedPreview(): PreviewSpec | null {
+  const p = useProcessingStore.getState();
+  if (!p.open) return null;
+  const app = useAppStore.getState();
+  const view = orderView(app, p);
+  if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
+  const plan = planPreview(p.steps, view.info);
+  if (plan.state !== 'ready') return null;
+  return previewSpec({ dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, range: p.range, area: p.area });
+}
+
+// A preview that goes away goes at once; a new or changed one 400 ms after the
+// last change, so typing an expression asks for no tile per key.
+function refreshPreview(): void {
+  clearTimeout(previewTimer);
+  const wanted = wantedPreview();
+  if (wanted?.key === useProcessingStore.getState().preview?.key) return;
+  if (wanted === null) {
+    useProcessingStore.setState({ preview: null });
+    return;
+  }
+  previewTimer = setTimeout(() => useProcessingStore.setState({ preview: wantedPreview() }), PREVIEW_DELAY_MS);
+}
+
+useProcessingStore.subscribe((s, prev) => {
+  if (
+    s.open !== prev.open ||
+    s.descriptions !== prev.descriptions ||
+    s.passKey !== prev.passKey ||
+    s.area !== prev.area ||
+    s.steps !== prev.steps ||
+    s.picked !== prev.picked ||
+    s.range !== prev.range
+  ) {
+    refreshPreview();
+  }
+});
+
+useAppStore.subscribe((s, prev) => {
+  if (
+    s.datasets !== prev.datasets ||
+    s.datasetId !== prev.datasetId ||
+    s.items !== prev.items ||
+    s.groups !== prev.groups ||
+    s.activeGroupIndex !== prev.activeGroupIndex ||
+    s.selectedIds !== prev.selectedIds ||
+    (s.aoi !== prev.aoi && useProcessingStore.getState().area === 'aoi')
+  ) {
+    refreshPreview();
   }
 });

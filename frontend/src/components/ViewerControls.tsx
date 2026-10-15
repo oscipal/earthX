@@ -3,24 +3,10 @@
 // prototype's ViewerControls, there is no polarization/decomposition UI here —
 // that was product-specific (products.ts, removed with M2-07a).
 
+import { processBlockReason } from '../processingOrder';
+import { useProcessingStore } from '../processingStore';
+import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
-
-// Named colormaps rio-tiler/matplotlib ship — generic, not tied to any dataset.
-const COLORMAPS = [
-  'viridis',
-  'plasma',
-  'inferno',
-  'magma',
-  'cividis',
-  'turbo',
-  'greens',
-  'ylgn',
-  'rdylgn',
-  'spectral',
-  'terrain',
-  'gist_earth',
-  'greys',
-];
 
 export default function ViewerControls() {
   const pendingColormapName = useAppStore((s) => s.pendingColormapName);
@@ -39,6 +25,13 @@ export default function ViewerControls() {
   const count = useAppStore((s) => Object.keys(s.downloaded).length);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const toggleDownloaded = useAppStore((s) => s.toggleDownloaded);
+  const processBlock = useAppStore((s) =>
+    processBlockReason(
+      s.datasets.find((d) => d.id === s.datasetId),
+      Object.keys(s.downloaded).length,
+    ),
+  );
+  const processFocusView = useProcessingStore((s) => s.processFocusView);
   const datasetTitle = useAppStore(
     (s) => s.datasets.find((d) => d.id === s.datasetId)?.title ?? s.datasetId ?? '',
   );
@@ -117,6 +110,15 @@ export default function ViewerControls() {
           onClick={() => addCurrentToLayers()}
         >
           ＋ Add to layers
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          disabled={processBlock !== null}
+          title={processBlock ?? 'Build a processing job for the scenes of this view'}
+          onClick={() => processFocusView()}
+        >
+          ⚙ Process
         </button>
         <button type="button" className="ghost-btn" onClick={() => exitFocus()}>
           ‹ Choose a different image

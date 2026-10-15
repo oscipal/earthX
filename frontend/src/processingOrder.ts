@@ -111,7 +111,7 @@ export interface BandSource {
 
 // `raster:bands`, or STAC 1.1 `bands` where that is missing or empty — the
 // order `api/intake.py` reads them in.
-function bandsOf(asset: StacAsset): StacBand[] | null {
+export function bandsOf(asset: StacAsset): StacBand[] | null {
   const raster = asset['raster:bands'];
   if (Array.isArray(raster) && raster.length > 0) return raster;
   return Array.isArray(asset.bands) && asset.bands.length > 0 ? asset.bands : null;
