@@ -224,6 +224,30 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
     `objectstore` signierte URL als Fall der Ausnahme B8) und
     `architekturplan.md` 3.1. Keine neue Importregel: `.importlinter` erlaubt
     `api → objectstore` schon.
+  - **Bestehende Installation (Otto, 15.10.2026):** Eine lokale Installation mit
+    vorhandenem Volume `objectstore-secrets` bekommt den Schlüssel beim nächsten
+    `docker compose up -d --build`, ohne Datenverlust und ohne Handarbeit. Das
+    trägt der Weg, über den M4-06 die Schlüssel `jobs` und `api` in die Volumes
+    aus M3-23 brachte (`plans/m4-06-objectstore.md` §7 „Bestehende Volumes“):
+    - `SERVICE_KEYS` in `bootstrap.py` bekommt den dritten Eintrag (`tiler`,
+      `earthx-tiler`, `OBJECTSTORE_TILER_KEY_DIR`, `/keys/tiler`, nur `read`).
+      Das neue Volume `objectstore-key-tiler` hängt beschreibbar an
+      `objectstore-secrets` und nur lesend an `objectstore-init` und `tiler`.
+      `tiler` wartet wie heute auf `objectstore-init`
+      (`service_completed_successfully`).
+    - Beim nächsten `up` legt Compose das leere Volume an und baut die beiden
+      Einmal-Dienste neu, weil sich ihre Mounts ändern; beide laufen wieder.
+    - `secrets` schreibt nur, was fehlt (`_ensure_service_key`: vorhandene
+      Dateien bleiben, „already present, unchanged“). Also nur den Schlüssel
+      des `tiler`. RPC-Secret, Admin-Token, S3-Schlüssel, Bucket-Name und die
+      Schlüssel `jobs` und `api` bleiben unverändert.
+    - `init` importiert nur den neuen Schlüssel und gibt ihm `read` am Bucket.
+      Bucket, Objekte und Regel bleiben.
+    - Kein `down -v`, kein Löschen eines Volumes, kein Schritt von Hand. Ergebnisse
+      der letzten 7 Tage bleiben abrufbar.
+    - Belegt durch Tests (§3.8) und Schritt 10 der Prüfanleitung (§9).
+      Scheitert der Weg in der Umsetzung, schreibt c-5 die genauen Schritte für
+      Otto in die Prüfanleitung, statt ihn stillschweigend zu ändern.
   - **Grenze:** Ein verworfener Job (`DELETE`) beendet die Kacheln nicht, solange
     die Datei liegt (ein Lauf kann mehreren Jobs gehören, M4-08b Cache); wer den
     Link hat, sieht die Kacheln bis zum Ablauf, so wie eine schon geladene Datei.
@@ -350,6 +374,14 @@ Backend (pytest, synthetisch):
   `result_id`, kein `op`, kein `result_id` im Log, keine Datenbank im Pfad
   (Route läuft ohne Pool); `tiles`-Link im Ergebnisdokument; Schlüssel des
   `tiler` nur `read` (Test über `bootstrap.py`); Importregeln grün.
+- Bestehende Installation (`tests/compose/test_objectstore_bootstrap.py`,
+  `test_compose_objectstore_wiring.py`): Ein Geheimnis-Ordner mit den Dateien
+  aus M4-06 (ohne `tiler`) → `secrets` legt nur den Schlüssel des `tiler` an,
+  alle übrigen Dateien bleiben byte-gleich. `init` gegen die nachgebildete
+  Admin-API importiert nur `earthx-tiler`, nur mit `read`, legt keinen Bucket
+  an und setzt die Regel unverändert. Ein zweiter Lauf ändert nichts. Die
+  Compose-Datei hängt `objectstore-key-tiler` an genau die drei Dienste,
+  beschreibbar nur an `objectstore-secrets`.
 
 ### 3.9 Doku und Log
 
@@ -538,6 +570,13 @@ Im Browser `http://localhost:5173`:
    „N jobs“ und die Summe; „Start N jobs“; die Jobliste zeigt „… · 1/N“ usw.
 9. Im Layer-Manager „⚙“ an einem Layer aus „Crop & merge to AOI“: das Panel
    öffnet mit „AOI only“.
+10. (c-5) Bestehende Installation: Vor dem Update einen Job laufen lassen und
+    seinen „Result (COG)“-Link merken. Dann den Branch holen und nur
+    `docker compose up -d --build` ausführen, ohne `down` und ohne `-v`.
+    `docker compose logs objectstore-secrets objectstore-init` zeigt „service key
+    for tiler created“ bzw. „… imported“, für `jobs` und `api` „already present,
+    unchanged“ bzw. „already imported“. Der alte Link lädt weiter, und sein
+    Ergebnis lässt sich als Layer zeigen.
 
 ---
 
