@@ -240,6 +240,17 @@ function foundNotice(
   return base;
 }
 
+// A layer the processing panel pins (M4-13c-2): a picture made from scenes, not
+// the scenes themselves.
+export interface DerivedLayer {
+  name: string;
+  derived: NonNullable<MapLayer['derived']>;
+  overlays: LayerOverlay[];
+  // The scenes the picture was made from.
+  itemIds: string[];
+  cropToAoi: boolean;
+}
+
 // A layer id prefix, unique per call: the clock alone gives two pins within one
 // millisecond the same id, and a layer is found again by that id.
 let batchSeq = 0;
@@ -703,6 +714,7 @@ export interface AppState {
   clearAll: () => void;
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
+  pinDerivedLayer: (layer: DerivedLayer, replaceLayerId: string | null) => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
@@ -1119,6 +1131,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       0,
     );
     set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
+  },
+  // Pins a derived picture at the top of the list. With `replaceLayerId` it takes
+  // that layer's place instead, right above it, and the layer it replaces is
+  // hidden, not removed: its eye brings it back (M4-13c §3.4).
+  pinDerivedLayer: (input, replaceLayerId) => {
+    const s = get();
+    const layer: MapLayer = {
+      id: `P${nextBatchId()}0`,
+      name: input.name,
+      visible: true,
+      opacity: 1,
+      overlays: input.overlays,
+      derived: input.derived,
+      restore: {
+        focusMode: false,
+        downloaded: {},
+        appliedRender: {},
+        activeGroupIndex: s.activeGroupIndex,
+        selectedIds: [...input.itemIds],
+        itemIds: input.itemIds,
+        groupItemIds: groupItemIdsFor(input.itemIds, s.groups),
+        aoi: s.aoi,
+        cropToAoi: input.cropToAoi,
+        datasetId: s.datasetId,
+      },
+    };
+    const at = replaceLayerId === null ? -1 : s.layers.findIndex((l) => l.id === replaceLayerId);
+    const layers =
+      at < 0
+        ? [layer, ...s.layers]
+        : [...s.layers.slice(0, at), layer, ...s.layers.slice(at).map((l) => (l.id === replaceLayerId ? { ...l, visible: false } : l))];
+    set({ layers, layerManagerOpen: true, notice: `Added "${input.name}" to layers.` });
   },
   removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
   toggleLayerVisible: (id) =>

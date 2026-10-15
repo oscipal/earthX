@@ -1867,3 +1867,32 @@ input[type='date']:focus {
 .pp-details[open] summary {
   margin-bottom: 6px;
 }
+
+/* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
+   of the preview section in the processing panel. */
+.preview-badge-dock {
+  left: 16px;
+  bottom: 20px;
+  z-index: 11;
+}
+.preview-badge,
+.pp-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--accent-2);
+  border-radius: 10px;
+  color: var(--accent-2);
+  background: var(--panel-bg);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.pp-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.pp-range .vc-num {
+  width: 72px;
+}

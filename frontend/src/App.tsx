@@ -6,6 +6,7 @@ import DownloadDialog from './components/DownloadDialog';
 import JobList from './components/JobList';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
+import PreviewBadge from './components/PreviewBadge';
 import ProcessingPanel from './components/ProcessingPanel';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
@@ -175,6 +176,8 @@ export default function App() {
           </Draggable>
         </div>
       )}
+
+      <PreviewBadge />
 
       <div className="overlay status">
         <StatusBar />
