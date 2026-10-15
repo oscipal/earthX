@@ -6,7 +6,8 @@ aus `docs/plans/m4-zusaetze-2026-10-12.md` §1.
 F1 (Recherche, ZIP64-Test, CRC-Herkunft, Nachtrag `adr/0015`). Geschnitten in
 **M4-11b-1** (Backend, dieser PR) und **M4-11b-2** (Frontend, neue Session nach
 dem Merge). §3 beschreibt die freigegebene Fassung; §8 bleibt als Wortlaut der
-Fragen stehen.
+Fragen stehen. **M4-11b-2** mit dem Zusatz `plans/m4-zusaetze-2026-10-12.md` §1a:
+§12 (Plan zu §1a, von Otto am 15.10.2026 beantwortet, §12.7) und §13.2 (Umsetzung).
 **Ort im Repo:** `docs/plans/m4-11b-angebot-und-zip.md`
 **Grundlagen:** `plans/m4-11-export-job.md` (F2, F4, F7, F8, K5–K7, §11
 Punkt 7); `plans/m4-13-processing-panel.md` §12; `plans/m4-08b-job-api.md`
@@ -678,3 +679,307 @@ Produktion):**
     vier Endungen und `run20261014`; Sentinel- und DEM-ZIP samt Ordner; Jobs von vor der
     Änderung. Die bestehenden Erwartungen mit dem Tag des Laufs sind auf den Tag der
     Szene (`20260601`) bzw. `run20260305` umgestellt.
+
+---
+
+## 12. M4-11b-2: Plan zu Zusatz §1a (Vorschlag 14.10.2026, beantwortet 15.10.2026)
+
+**Aufgabe:** M4-11b-2 (§3.2 bis §3.4, freigegeben) mit dem Zusatz
+`plans/m4-zusaetze-2026-10-12.md` §1a (Otto, 14.10.2026). Die Punkte aus §1a lagen
+hier zuerst als Plan vor (Stufe B) und wurden nach Ottos Antwort (§12.7) gebaut.
+
+### 12.1 Stand (gelesen am 14.10.2026, `main` = `cc584e1`)
+
+- **Trefferansicht** (`components/ViewBar.tsx`, erscheint bei gewählten Szenen): ein
+  Knopf „⇩ Download“. Was er tut, entscheidet `download.ts::decideDownloadOutcome`
+  (M3-17 §4) aus AOI und Format: mit AOI immer `crop`, ohne AOI bei COG `originals`,
+  ohne AOI bei Zarr gesperrt. Mit AOI gibt es also keine Originale.
+- **Originale** (`DownloadDialog.tsx`, Fall `originals`): eine Liste von Links direkt
+  zur Quelle (`<a href download>`), nach Gruppe (Überflug) geordnet, nur das
+  Standard-Asset der Ansicht (`defaultRenderOf(...).assets[0]`), nur `https` auf
+  Hosts der Registry (`earthx:source.asset_hosts`, D12). Kein CORS, kein Byte über
+  die Plattform. Darunter `MosaicJobs.tsx` (M4-12b): je Überflug mit mindestens zwei
+  Szenen ein Knopf „Merge scenes of this pass (job)“, Auftrag ohne `aoi`.
+- **Layer-Manager** (`LayerManager.tsx`): ein Download-Knopf je Ebene; das Ergebnis
+  folgt der Ansicht, aus der die Ebene stammt (`decideDownloadOutcomeForLayer`).
+- **Grenzen:** eine Suchseite hat 100 Treffer (`store.ts::PAGE_LIMIT`), gewählt
+  werden kann über mehrere Seiten; ein Auftrag nennt höchstens 25 Szenen
+  (`api/intake.py::MAX_ORDER_ITEMS`); die Queue rechnet 4 Jobs gleichzeitig, 2 je
+  Host (M4-08a), die übrigen warten.
+- **Lizenz** (KLAERUNGEN B11): ein Link zur Quelle ist schon auf der Stufe
+  „Katalogeintrag“ erlaubt; Zuschnitt und Mosaik brauchen die Stufe `processing`.
+
+### 12.2 Vorschlag
+
+**Trefferansicht.** „⇩ Download“ wird zu zwei Knöpfen:
+
+| Knopf | gesperrt, wenn | Begründung im `title` |
+|---|---|---|
+| „Download crop“ | keine AOI | „Draw an AOI to download a crop“ |
+| „Download originals“ | Datensatz nicht `earthx:format = cog` | „{Datensatz} has no single original file per scene (Zarr). Use Download crop.“ |
+
+„Download crop“ öffnet den heutigen Dialog des Zuschnitts (mit dem Angebot „Export
+as job“ aus §3.2). „Download originals“ öffnet den Dialog der Originale, unabhängig
+davon, ob eine AOI gezeichnet ist. `decideDownloadOutcome` entscheidet in der
+Trefferansicht nichts mehr; der Layer-Manager behält es (F7).
+
+**Dialog „Download original files“.**
+
+- **Eine Szene:** keine Wahl, die Links wie heute.
+- **Mehrere Szenen:** oben die Frage „How do you want the original files?“ mit zwei
+  Knöpfen; vorher wird nichts geladen und nichts gestartet:
+  - „Each scene separately“ → die Liste der Links wie heute, nach Überflug geordnet.
+  - „Merged per pass (job)“ → je Überflug eine Zeile: Überflüge mit mindestens zwei
+    Szenen bekommen den Knopf „Start job“ (Auftrag wie M4-12b: ganze Szenen, kein
+    `aoi`, keine Schritte), Überflüge mit einer Szene den Link auf ihre Datei (ein
+    Mosaik aus einer Szene ist das Original, K11). Status über `JobRow` wie heute.
+  - Ein Link „Change“ führt zur Frage zurück; gestartete Jobs bleiben im Panel.
+- Die Wahl „Merged per pass (job)“ ist gesperrt, wenn die Lizenz kein Processing
+  erlaubt (Grund wie heute in `MosaicJobs`); „Each scene separately“ bleibt dann
+  möglich (B11).
+- Der Abschnitt „Merged mosaic of a pass“ mit seinem eigenen Knopf entfällt; sein
+  Inhalt (Hinweis auf UTM-Zonen, Zuschreibung veränderter Daten) steht unter
+  „Merged per pass (job)“.
+
+### 12.3 Originale: Einzellinks oder ZIP? (F5)
+
+| | Einzellinks zur Quelle (heute) | ZIP über die Plattform | ZIP im Browser |
+|---|---|---|---|
+| Bandbreite der Plattform | keine | jedes Byte zweimal durch `api`/`gateway` (herein von der Quelle, hinaus zum Browser) | keine |
+| Fortsetzen | der Browser setzt jeden Link selbst fort (Range an der Quelle) | nur mit Größe und CRC-32 vorab; die Quelle nennt keine CRC, also Datendeskriptoren (§3.1.1), ohne `Content-Length` und ohne Range; ein Abbruch beginnt von vorn | nein |
+| Lizenz | Katalogeintrag reicht (B11) | die Plattform gibt Originaldaten weiter: braucht Weitergabe, also mindestens die Stufe „Anzeige“; eigener Entscheid | wie Einzellinks |
+| Voraussetzungen | keine | neue Route, Grenze gleichzeitiger Downloads, Last für `gateway` (Grenzen je Host), Nachtrag zu `adr/0015` F4 | CORS an jeder Quelle (nicht in unserer Hand), bis zu mehreren GB im Speicher des Browsers |
+
+**Empfehlung: Einzellinks wie heute.** Ein ZIP über die Plattform wäre ein eigener
+Entscheid (Otto) mit eigenem Plan; der Nutzen (eine Datei statt mehrerer) wiegt
+die Bandbreite und die fehlende Fortsetzung nicht auf. Für viele Szenen siehe F6.
+
+### 12.4 Viele Szenen (F6)
+
+- **„Each scene separately“:** Die Liste zeigt alle Links, nach Überflug geordnet,
+  in einem Bereich mit eigener Bildlaufleiste. Dazu ein Knopf „Save link list“: eine
+  Textdatei mit einer URL je Zeile, im Browser erzeugt (kein Byte über die
+  Plattform), für einen Download-Manager oder `curl`/`wget`. Keine Obergrenze: Die
+  Links kosten die Plattform nichts.
+- **„Merged per pass (job)“:** je Überflug ein eigener Knopf, kein „Start all“. Ein
+  Überflug mit mehr als 25 Szenen ist gesperrt mit Grund („A job takes at most 25
+  scenes; select fewer scenes of this pass.“), statt erst den `400` des Servers zu
+  zeigen. Wer zehn Überflüge startet, sieht zehn Zeilen; die Queue rechnet vier
+  gleichzeitig, die übrigen zeigen „Waiting for a worker“.
+
+### 12.5 Fragen an Otto
+
+**F5 — Originale: Einzellinks oder ZIP?**
+1. Einzellinks direkt zur Quelle wie heute **(Empfehlung)**
+2. Ein ZIP, das `api` über `gateway` aus der Quelle streamt (ohne Fortsetzen; eigener
+   Plan, Nachtrag `adr/0015`, Lizenzstufe mindestens „Anzeige“)
+3. Ein ZIP, das der Browser baut (CORS an der Quelle, Speicher des Browsers)
+
+**F6 — Viele Szenen**
+1. Liste ohne Obergrenze mit eigener Bildlaufleiste und „Save link list“ (`.txt`);
+   bei „Merged per pass“ je Überflug ein Knopf, über 25 Szenen gesperrt mit Grund
+   **(Empfehlung)**
+2. Wie 1, aber ohne „Save link list“
+3. Wie 1, dazu „Start all“ für alle Überflüge auf einmal (höchstens 10 Jobs)
+
+**F7 — Layer-Manager**
+1. Bleibt wie heute: ein Knopf, das Ergebnis folgt der Ansicht der Ebene (M3-17);
+   §1a nennt nur die Trefferansicht **(Empfehlung)**
+2. Auch dort zwei Knöpfe „Download crop“ und „Download originals“
+
+**F8 — Schnitt**
+1. §1a im selben PR nach deiner Antwort, als eigene Commits; der PR wächst auf rund
+   1 100 geänderte Zeilen mit Tests (über dem Richtwert von 400) **(Empfehlung:
+   Dialog und Tests werden ohnehin zusammen umgebaut)**
+2. Dieser PR nur §3.2 bis §3.4; §1a als M4-11b-3 in einer neuen Session nach dem
+   Merge
+
+**Kleinentscheidungen** (gelten, wenn Otto nicht widerspricht):
+
+- **K10** Bei einer Szene fragt „Download originals“ nicht, sondern zeigt die Links; ebenso, wenn jeder Überflug nur eine Szene hat (Otto, 15.10.2026, §12.7).
+- **K11** „Merged per pass (job)“: ein Überflug mit einer Szene bekommt den Link auf
+  die Originaldatei statt eines Jobs.
+- **K12** Die Frage hat keine Vorauswahl; erst ein Klick lädt Links oder bietet Jobs an.
+- **K13** Gesperrte Knöpfe nennen den Grund im `title` (wie heute).
+- **K14** „Merged per pass (job)“ ist nur gesperrt, wenn die Lizenz kein Processing
+  erlaubt; „Each scene separately“ braucht nur den Link (B11).
+
+### 12.6 Tests (nach Freigabe)
+
+| Was | Test |
+|---|---|
+| Trefferansicht | zwei Knöpfe in allen Fällen; „Download crop“ ohne AOI gesperrt mit Grund; „Download originals“ bei Zarr gesperrt mit Grund, bei COG mit und ohne AOI offen |
+| Dialog | eine Szene → Links ohne Frage; mehrere → Frage, nichts geladen; „Each scene separately“ → Links; „Merged per pass“ → Knopf je Überflug mit ≥ 2 Szenen, Link bei einer Szene, gesperrt über 25 Szenen; Auftrag ohne `aoi` auch mit gezeichneter AOI; Lizenz ohne Processing → nur „Each scene separately“; „Change“ zurück zur Frage |
+| Linkliste | eine URL je Zeile, nur geprüfte Links (`isDirectDownloadHref`), keine AOI im Inhalt |
+| Layer-Manager | unverändert (F7 Option 1) |
+
+---
+
+## 13. Umsetzung M4-11b-2, §3.2 bis §3.4 (14.10.2026)
+
+**Gebaut** wie §3.2 und §3.3. Zusatz §1a (§12) ist **nicht** gebaut und wartet auf
+Otto. Commits: Plan zu §1a; `HttpError` mit `type` und `exportJob`; Auftrag des
+Exports und `aoiProvenance`; Angebot im Dialog; ein ZIP-Link und Texte im Panel;
+Befunde der Durchsicht.
+
+**Wo es steht:**
+
+- `api.ts`: Alle Fehler gehen über eine Stelle (`httpErrorOf`). `HttpError` trägt
+  jetzt `type` (der `type` des Problems) und `exportJob`. `downloadCrop` wirft
+  `HttpError` und liest `X-Export-Job` nur bei einem `413`. Andere Werte als
+  `available` und `too-large` gelten als „keine Kopfzeile“.
+- `processingOrder.ts`: `buildExportOrder` (M4-11 §3.1, Faktor 1, AOI über
+  `orderAoi`) und `aoiProvenanceOf` (die drei Felder einer Orts-AOI, nur Strings).
+  `processing.ts`: `Order.output` ist Raster oder Zuschnitt;
+  `placeJob(order, {aoiProvenance})`.
+- `store.ts`: Ein `413` mit `exportJob` setzt bei Faktor 1 und einer Fläche
+  `downloadExportOffer` statt der Fehlerzeile. Das Angebot entfällt beim Schließen,
+  bei einem anderen Faktor und beim nächsten Versuch.
+- `components/ExportJobOffer.tsx` (neu): der Text des `413`, die Schätzung (einmal,
+  K6), die Sperre mit Grund, „Try again“, „Export as job“ und danach `JobRow`.
+  `processingStore.placeOrder` (vorher `placeMosaic`) legt den Job in denselben
+  Store und Tracker wie das Panel (K7).
+- `processingStore.ts`: `resultFiles` wählt `export.zip` oder `result.zip` als
+  einen Link „Download (ZIP)“, sonst die Einzellinks. `failureText` gibt Texte je
+  Fehlerart (K8). Ein `410` von `/results` setzt `expired`.
+
+**Befunde und Auslegungen:**
+
+1. **Text bei Ablauf.** §3.3 nennt „Expired: results are kept for 7 days. Start the
+   export again.“ Dieselbe `JobRow` zeigt auch Raster- und Mosaik-Jobs, deshalb
+   steht dort „… Start the job again.“ (`JobList.tsx::EXPIRED_TEXT`). Eine
+   Unterscheidung je Art des Jobs bräuchte die Art im Store, auch für Jobs, die aus
+   `sessionStorage` zurückkommen. **Otto bitte bestätigen.**
+2. **`disk_space`** zeigt weiter den Titel des Backends. Ein eigener Text gilt nur für
+   `runtime_exceeded`. Zarr-`422` und andere Ablehnungen zeigen den `detail` des
+   Backends.
+3. **Jeder `413` der Schätzung** gilt als „über 5 GB“ und sperrt mit dem festen Satz.
+   Der Server antwortet dort mit `413` nur bei der Größe des Exports und bei einem
+   zu großen Body, den der Dialog nicht schicken kann.
+4. **„Download“ bleibt im Dialog** neben dem Angebot. Bei Faktor 1 bekommt er wieder
+   denselben `413`; mit einem gröberen Faktor kann der Zuschnitt direkt gehen. Ein
+   anderer Faktor nimmt das Angebot weg, weil ein Export nur mit Faktor 1 läuft.
+5. **Durchsicht** (Agent `reviewer`): keine Blocker. Behoben:
+   - Zwei Angebote mit gleichem Text teilten den `key` der Komponente; jetzt hat
+     jedes Angebot eine eigene `id`.
+   - Eine Schätzung nach einem Abbruch wird verworfen.
+   - Der Start prüft die Sperre selbst.
+   - Nach einem `410` fehlt „Kept until …“.
+   - Neue Tests: Schließen während der Schätzung, ein neues Angebot, Doppelklick.
+6. **Umfang:** rund 320 Zeilen Code und 710 Zeilen Tests, ohne den Plan zu §1a.
+
+**Prüfungen:** `npx tsc -b --pretty false`, `npm run lint` und `npx vitest run`
+(947 Tests) sind grün. `pytest` (4 587 bestanden, 8 übersprungen), `ruff check
+backend` und `lint-imports` (14 Verträge) sind ebenfalls grün. Das Backend ist
+unverändert.
+
+### 13.1 Prüfanleitung für Otto (M4-11b-2, nach dem Merge)
+
+```powershell
+docker compose up -d --build
+cd frontend; npm run dev        # Viewer unter http://localhost:5173
+```
+
+1. **Angebot:**
+   - Wähle `sentinel-2-c1-l2a`, zeichne eine große AOI (einige Zehntel Grad) und
+     wähle zwei oder drei Szenen eines Überflugs.
+   - Klicke auf „⇩ Download crop“ und dann im Dialog auf „Download“ (Native).
+   - Erwartet: Statt „Download failed“ erscheint „Too large for a direct download“.
+     Darunter stehen der Text des Servers und „About … GB · about … min“.
+2. **Export starten:**
+   - Klicke auf „Export as job“.
+   - Erwartet: Die Zeile zeigt „Waiting for a worker“ bzw. „Running · n%“, dann
+     „Finished“ mit einem Link „Download (ZIP)“.
+   - Der Job steht auch im Processing-Panel unter „Jobs“ und bleibt dort, wenn du
+     den Dialog schließt.
+3. **ZIP:** Lade das ZIP und öffne es. Darin liegen je Überflug das Raster und die
+   Maske, dazu `recipe.json`, `citation.bib`, `ATTRIBUTION.txt` und `aoi.geojson`.
+4. **Ortssuche:** Wiederhole Schritt 1 und 2 mit einer AOI aus der Ortssuche.
+   `aoi.geojson` im ZIP nennt dann OpenStreetMap als Quelle.
+5. **Über 5 GB:** Wähle eine sehr große AOI mit vielen Szenen.
+   - Erwartet: Das Angebot ist gesperrt mit „An export job may write at most 5 GB.
+     Draw a smaller area or choose fewer assets.“
+6. **Panel:** Starte einen NDVI-Job im Processing-Panel.
+   - Erwartet: Fertig zeigt er nur „Download (ZIP)“, und das ZIP (`result.zip`)
+     enthält einen Ordner mit `result.tif`, `mask.tif`, `recipe.json` und
+     `citation.bib`.
+   - Ein Ergebnis von vor M4-11b-1 zeigt weiter die Einzellinks.
+
+### 12.7 Antworten (Otto, 15.10.2026)
+
+- **F5:** Option 1, Einzellinks direkt zur Quelle. Ein ZIP der Originale über die
+  Plattform ist **nicht** Teil dieser Aufgabe; im Log steht es als offen („Bandbreite
+  und Weitergabe über die Plattform, nicht fortsetzbar“).
+- **F6:** Option 1, Liste ohne Obergrenze mit „Save link list“ (Textdatei); „Merged
+  per pass“ je Überflug ein Knopf, über 25 Szenen gesperrt mit Grund.
+- **F7:** Option 1, der Layer-Manager bleibt unverändert (Umbau mit UI-01).
+- **F8:** Option 1, §1a im selben PR.
+- **§13.2 Punkt 4 (15.10.2026):** Die Frage nur, wenn mindestens ein Überflug zwei
+  oder mehr Szenen hat; sonst gleich die Links.
+- **K10 bis K14** angenommen. Der Ablauftext „Expired: results are kept for 7 days.
+  Start the job again.“ (§13 Punkt 1) ist bestätigt.
+
+### 13.2 Umsetzung Zusatz §1a (15.10.2026)
+
+**Gebaut** wie §12.2 bis §12.4 mit den Antworten aus §12.7. Commits: Log der
+Antworten; zwei Knöpfe in der Trefferansicht; Frage und Linkliste bei den Originalen;
+Doku.
+
+- `ViewBar.tsx`: „⇩ Download crop“ (ohne AOI gesperrt, `DRAW_AOI_TO_CROP`) und
+  „⇩ Download originals“ (bei Zarr gesperrt, `noOriginalsReason`), immer beide.
+  `store.openDownloadForSelection(kind)` nimmt, welcher gedrückt wurde; die
+  Originale gehen auch mit gezeichneter AOI (Ganzszenen, die AOI spielt keine Rolle).
+  `decideDownloadOutcome` entscheidet in der Trefferansicht nichts mehr, der
+  Layer-Manager benutzt es unverändert (F7).
+- `components/OriginalFiles.tsx` (neu): bei einer Szene die Links wie bisher; bei
+  mehreren die Frage „How do you want the original files?“ ohne Vorauswahl (K12).
+  „Each scene separately“ zeigt die Links nach Überflug in einem Bereich mit
+  eigener Bildlaufleiste (`.dialog-original-links`) und „Save link list“
+  (`linkListText`: eine Adresse je Zeile, nur die geprüften Links, im Browser
+  erzeugt, Dateiname `{dataset}-original-links.txt`). „Change“ führt zur Frage
+  zurück; gestartete Jobs bleiben in Sicht und im Panel.
+- `components/MosaicJobs.tsx`: der Abschnitt „Merged mosaic of a pass“ mit seinem
+  eigenen Knopf entfällt; „Merged per pass (job)“ zeigt je Überflug „Start job“
+  (Auftrag wie M4-12b: ganze Szenen, kein `aoi`, keine Schritte), bei einer Szene
+  den Link auf ihre Datei (K11), über 25 Szenen (`MAX_JOB_SCENES`, gleich
+  `api/intake.py::MAX_ORDER_ITEMS`) gesperrt mit dem Grund. Ohne Lizenzstufe
+  `processing` ist die Wahl „Merged per pass (job)“ gesperrt und nennt den Grund;
+  „Each scene separately“ geht weiter (K14).
+
+**Auslegungen:**
+
+1. Die Frage erscheint auch im Dialog, der aus dem Layer-Manager kommt, wenn dessen
+   Ergebnis die Originale sind: Es ist derselbe Dialog (der Knopf selbst bleibt
+   unverändert, F7).
+2. „Save link list“ erscheint ab zwei Links; bei einem einzelnen wäre die Datei nur
+   ein Umweg.
+3. `noOriginalsReason` nennt kein „(Zarr)“, weil alles außer `cog` (auch ein fehlender
+   oder unbekannter `earthx:format`) keine Datei je Szene hat.
+4. Die Frage kommt nur, wenn mindestens ein Überflug zwei oder mehr Szenen hat
+   (Otto, 15.10.2026; §12.2 sagte „mehrere Szenen“). Besteht jede Gruppe aus einer
+   Szene, zeigt der Dialog gleich die Links, auch bei mehreren Gruppen; „Save link
+   list“ gibt es ab zwei Links.
+5. Die Zuschreibung für unveränderte Daten steht oben im Dialog, die für veränderte
+   Daten (Mosaik) zusätzlich unter „Merged per pass (job)“, wie bisher.
+
+**Prüfungen:** `npx tsc -b --pretty false`, `npm run lint` und `npx vitest run`
+(973 Tests, darunter Knöpfe, Frage, Linkliste mit fremdem Host, 25-Szenen-Grenze,
+Lizenz, erneutes Öffnen, Start ohne `aoi` auch mit gezeichneter AOI) sind grün;
+`pytest` (4 589 bestanden, 8 übersprungen), `ruff check backend` und `lint-imports`
+(14 Verträge) ebenfalls. **Durchsicht** (Agent `reviewer`): keine Blocker; behoben
+sind der Test zum fremden Host, der Fall eines einzelnen Links, das erneute Öffnen,
+veraltete Kommentare, die Prüfung der Sperren im Start selbst und die Prüfanleitung.
+
+### 13.3 Prüfanleitung für Otto: Zusatz §1a (nach dem Merge)
+
+1. Wähle mehrere Szenen von `sentinel-2-c1-l2a` aus zwei Überflügen. Erwartet: In der
+   Leiste stehen „⇩ Download crop“ und „⇩ Download originals“. Ohne AOI ist der
+   Zuschnitt gesperrt (Hinweis beim Überfahren), mit AOI sind beide offen.
+2. Bei einem Zarr-Datensatz ist „⇩ Download originals“ gesperrt und nennt den Grund.
+3. „⇩ Download originals“ (mit und ohne AOI): Der Dialog fragt „How do you want the
+   original files?“. „Each scene separately“ zeigt alle Links; „Save link list“
+   speichert eine `.txt` mit einer Adresse je Zeile.
+4. „Merged per pass (job)“: je Überflug mit mindestens zwei Szenen „Start job“, bei
+   einer Szene deren Link. Der Job läuft ohne Zuschnitt, auch mit gezeichneter AOI.
+5. Bei einer Auswahl, in der jeder Überflug nur eine Szene hat (auch eine einzelne
+   Szene), fragt der Dialog nicht, sondern zeigt die Links.

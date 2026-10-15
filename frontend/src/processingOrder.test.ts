@@ -4,9 +4,12 @@ import cop from './fixtures/processes/cop-dem-glo-30.json';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
+import { placeAoi } from './placeSearch';
 import type { ProcessDescription } from './processing';
 import {
+  aoiProvenanceOf,
   bandSources,
+  buildExportOrder,
   buildMosaicOrder,
   buildOrder,
   candidateItems,
@@ -323,6 +326,57 @@ describe('buildMosaicOrder (M4-12 §3.1)', () => {
   it('carries no aoi member at all', () => {
     const order = buildMosaicOrder({ datasetId: 'd', itemIds: ['A'], assets: ['visual'], dtype: 'uint8' });
     expect('aoi' in order).toBe(false);
+  });
+});
+
+const PLACE = {
+  name: 'Somewhere',
+  display_name: 'Somewhere',
+  kind: 'city',
+  bbox: [10, 50, 11, 51] as [number, number, number, number],
+  outline: null,
+  outline_simplified: false,
+};
+
+describe('buildExportOrder (M4-11 §3.1)', () => {
+  const aoi = bboxToPolygon([10, 50, 11, 51]);
+
+  it('is the crop as a job: the groups, assets and AOI of the request, no steps, factor 1', () => {
+    expect(buildExportOrder({ datasetId: 'sentinel-2-c1-l2a', groups: [['B', 'A'], ['C']], assets: ['visual'], aoi })).toEqual({
+      recipe_version: 1,
+      inputs: [{ name: 'input', dataset: 'sentinel-2-c1-l2a', groups: [['B', 'A'], ['C']], assets: ['visual'] }],
+      aoi,
+      steps: [],
+      output: { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' },
+    });
+  });
+
+  it('sends only type and coordinates of a place-search AOI, never its properties', () => {
+    const place = placeAoi(PLACE) as GeoJSON.Polygon;
+    const order = buildExportOrder({ datasetId: 'd', groups: [['A']], assets: ['visual'], aoi: place });
+    expect(order.aoi).toEqual({ type: 'Polygon', coordinates: aoi.coordinates });
+  });
+});
+
+describe('aoiProvenanceOf (M4-11 F4)', () => {
+  it('is the three fields of a place-search AOI as they are', () => {
+    expect(aoiProvenanceOf(placeAoi(PLACE))).toEqual({
+      source: 'OpenStreetMap / Nominatim',
+      attribution: '© OpenStreetMap contributors',
+      license: 'ODbL-1.0',
+    });
+  });
+
+  it('is undefined for a drawn AOI, no AOI, or properties with nothing to send', () => {
+    expect(aoiProvenanceOf(bboxToPolygon([10, 50, 11, 51]))).toBeUndefined();
+    expect(aoiProvenanceOf(null)).toBeUndefined();
+    const odd = { ...bboxToPolygon([10, 50, 11, 51]), properties: { source: 7, name: 'x' } } as GeoJSON.Geometry;
+    expect(aoiProvenanceOf(odd)).toBeUndefined();
+  });
+
+  it('keeps the string fields and drops the rest', () => {
+    const some = { ...bboxToPolygon([10, 50, 11, 51]), properties: { license: 'ODbL-1.0', source: null } } as GeoJSON.Geometry;
+    expect(aoiProvenanceOf(some)).toEqual({ license: 'ODbL-1.0' });
   });
 });
 

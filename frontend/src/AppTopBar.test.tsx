@@ -183,6 +183,7 @@ describe('the processing side bar and the window of the jobs', () => {
     failure: null,
     error: null,
     cancelling: false,
+    expired: false,
   };
 
   beforeEach(() => {

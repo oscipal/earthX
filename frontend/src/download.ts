@@ -5,7 +5,7 @@
 // text shown before either one starts (adr/0003 §11.2: the notice belongs on
 // the download, not only in a footer).
 
-import type { ResolutionFactor } from './api';
+import type { ExportJobHint, ResolutionFactor } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { MapLayer } from './layers';
@@ -29,7 +29,31 @@ export interface DownloadRequestInfo {
 // (M3-09's "Crop & merge to AOI" already has this pattern for a missing AOI).
 export type DownloadOutcomeKind = 'crop' | 'originals' | 'disabled';
 
-export const DRAW_AOI_TO_DOWNLOAD = 'Draw an AOI to download';
+// The two buttons of the results view (M4-11b-2, Zusatz 1a): "Download crop"
+// needs an AOI, "Download originals" a dataset with one file per scene. Each
+// says why it is disabled; `ViewBar` shows it as the title and the store as the
+// error should the action be reached anyway.
+export const DRAW_AOI_TO_CROP = 'Draw an AOI to download a crop';
+
+export function noOriginalsReason(dataset: DatasetOption | undefined): string {
+  return `${dataset?.title ?? 'This dataset'} has no single original file per scene. Use Download crop.`;
+}
+
+export function noProcessingLicence(dataset: DatasetOption): string {
+  return `${dataset.title}’s licence does not permit processing.`;
+}
+
+// "Merged per pass (job)" takes at most this many scenes per job
+// (`api/intake.py::MAX_ORDER_ITEMS`, M4-07b F5).
+export const MAX_JOB_SCENES = 25;
+
+// The text file of "Save link list": one address per line, built from the
+// links the dialog already shows (https, on the dataset's own hosts), nothing
+// else — no AOI. (The addresses themselves are the source's and may name the
+// scene.)
+export function linkListText(links: readonly OriginalFileLink[]): string {
+  return [...new Set(links.map((link) => link.href))].map((href) => `${href}\n`).join('');
+}
 
 // The single decision table of M3-17 plan §4, as one pure function: what a
 // download follows depends on which full-resolution view (if any) is active,
@@ -38,11 +62,12 @@ export const DRAW_AOI_TO_DOWNLOAD = 'Draw an AOI to download';
 // counts as the latter — an unset or unrecognised value is never assumed
 // linkable).
 //
-// `cropToAoi` is `null` outside full-resolution viewing (browsing the results
-// list, or a layer pinned straight from a quicklook, M2-07d's "quicklook-only
-// layer") — there is no "Crop & merge"/"View full selection" choice to read,
-// so it falls back to whether an AOI happens to be drawn, same as P19's rule
-// for a whole scene with no full-resolution view entered at all.
+// `cropToAoi` is `null` outside full-resolution viewing (a layer pinned
+// straight from a quicklook, M2-07d's "quicklook-only layer") — there is no
+// "Crop & merge"/"View full selection" choice to read, so it falls back to
+// whether an AOI happens to be drawn, same as P19's rule for a whole scene with
+// no full-resolution view entered at all. The results view no longer asks this
+// function: it has a button for each outcome (Zusatz 1a).
 export function decideDownloadOutcome(params: {
   cropToAoi: boolean | null;
   hasAoi: boolean;
@@ -103,6 +128,18 @@ export interface OriginalFileLink {
   groupLabel: string;
   asset: string;
   href: string;
+}
+
+// A crop refused as too large for a direct download, whose `413` named an
+// export job (M4-11b-2): the request to export instead, the server's text, and
+// whether the job is possible (`available`) or over 5 GB too (`too-large`).
+// Only an area can be exported; a point AOI never gets an offer. `id` tells
+// two refusals apart, so the dialog starts each offer afresh.
+export interface ExportOffer {
+  id: number;
+  request: DownloadRequestInfo & { aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon };
+  message: string;
+  exportJob: ExportJobHint;
 }
 
 // The scenes of one group of a download, as the dialog holds them: what a
@@ -211,9 +248,8 @@ export function canDownloadLayer(layer: MapLayer, datasets: DatasetOption[]): bo
 //
 // `groups` (M3-17): item ids per group (`grouping.ts::groupItemIdsFor`,
 // built by the caller from the results list's own grouping — no new,
-// download-specific grouping here). Only ever called once
-// `decideDownloadOutcome` has already said the selection's download follows
-// the crop; browsing with no AOI at all is the *originals* outcome instead.
+// download-specific grouping here). Only ever called for "Download crop";
+// "Download originals" builds its links from the items instead.
 export function downloadRequestForSelection(
   dataset: DatasetOption | undefined,
   groups: string[][],

@@ -765,10 +765,10 @@ describe('refreshCoverage without an AOI (M3-19)', () => {
 });
 
 // M3-17: download follows the view — the crop/originals/disabled decision
-// (`download.ts::decideDownloadOutcome`) as the store wires it up for the
-// current selection (`openDownloadForSelection`) and a pinned layer
-// (`openDownloadDialog`, which alone needs a fetch: a layer's `restore`
-// carries tile info, not the STAC items' own asset `href`s).
+// (`download.ts::decideDownloadOutcome`) for a pinned layer (`openDownloadDialog`,
+// which alone needs a fetch: a layer's `restore` carries tile info, not the STAC
+// items' own asset `href`s); the current selection has a button for each outcome
+// (`openDownloadForSelection`, Zusatz 1a).
 describe('download outcome (M3-17 plan §4)', () => {
   const AOI: GeoJSON.Polygon = {
     type: 'Polygon',
@@ -864,7 +864,7 @@ describe('download outcome (M3-17 plan §4)', () => {
         groups: [{ key: ['a'], label: 'Overpass A', items }],
         aoi: AOI,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('crop');
       const s = useAppStore.getState();
       expect(s.downloadSelection).toBe(true);
       expect(s.downloadOutcome).toBe('crop');
@@ -881,7 +881,7 @@ describe('download outcome (M3-17 plan §4)', () => {
         groups: [{ key: ['a'], label: 'Overpass A', items }],
         aoi: null,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('originals');
       const s = useAppStore.getState();
       expect(s.downloadSelection).toBe(true);
       expect(s.downloadOutcome).toBe('originals');
@@ -905,7 +905,7 @@ describe('download outcome (M3-17 plan §4)', () => {
         selectedIds: ['S1', 'S2', 'S3'],
         aoi: null,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('originals');
       const passes = useAppStore.getState().downloadPasses;
       expect(passes?.map((p) => [p.label, p.items.map((i) => i.id)])).toEqual([
         ['Overpass A', ['S1', 'S2']],
@@ -924,23 +924,60 @@ describe('download outcome (M3-17 plan §4)', () => {
         groups: [{ key: ['a'], label: 'Overpass A', items }],
         aoi: AOI,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('crop');
       expect(useAppStore.getState().downloadPasses).toBeNull();
     });
 
-    it('no AOI, a Zarr dataset: disabled, an error naming the reason, dialog not opened', () => {
+    it('a Zarr dataset: no originals, an error naming the reason, dialog not opened — with or without an AOI', () => {
       const items = [scene({ id: 'S1' })];
+      for (const aoi of [null, AOI]) {
+        useAppStore.setState({
+          datasets: datasetsFrom([ZARR_DATASET]),
+          datasetId: ZARR_DATASET.id,
+          items,
+          groups: [{ key: ['a'], label: 'Overpass A', items }],
+          aoi,
+          error: null,
+        });
+        useAppStore.getState().openDownloadForSelection('originals');
+        const s = useAppStore.getState();
+        expect(s.downloadSelection).toBe(false);
+        expect(s.error).toMatch(/no single original file per scene/);
+      }
+    });
+
+    it('no AOI: no crop, an error asking for one, dialog not opened', () => {
+      const items = [cogScene('S1')];
       useAppStore.setState({
-        datasets: datasetsFrom([ZARR_DATASET]),
-        datasetId: ZARR_DATASET.id,
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
         items,
         groups: [{ key: ['a'], label: 'Overpass A', items }],
         aoi: null,
+        error: null,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('crop');
       const s = useAppStore.getState();
       expect(s.downloadSelection).toBe(false);
-      expect(s.error).toMatch(/Draw an AOI/);
+      expect(s.error).toBe('Draw an AOI to download a crop');
+    });
+
+    it('an AOI drawn, a COG dataset: the originals all the same, whole scenes, the AOI plays no part (Zusatz 1a)', () => {
+      const a = [cogScene('S1'), cogScene('S2')];
+      useAppStore.setState({
+        datasets: datasetsFrom([COG_DATASET]),
+        datasetId: COG_DATASET.id,
+        items: a,
+        groups: [{ key: ['a'], label: 'Overpass A', items: a }],
+        selectedIds: ['S1', 'S2'],
+        aoi: AOI,
+        error: null,
+      });
+      useAppStore.getState().openDownloadForSelection('originals');
+      const s = useAppStore.getState();
+      expect(s.downloadOutcome).toBe('originals');
+      expect(s.downloadOriginalLinks?.map((l) => l.itemId)).toEqual(['S1', 'S2']);
+      expect(s.downloadPasses?.[0].items).toHaveLength(2);
     });
 
     it('nothing picked and no active time step: a defined error, not a crash', () => {
@@ -951,7 +988,7 @@ describe('download outcome (M3-17 plan §4)', () => {
         groups: [],
         aoi: AOI,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('crop');
       expect(useAppStore.getState().error).toMatch(/Nothing to download/);
     });
 
@@ -964,7 +1001,7 @@ describe('download outcome (M3-17 plan §4)', () => {
         groups: [{ key: ['a'], label: 'Overpass A', items }],
         aoi: null,
       });
-      useAppStore.getState().openDownloadForSelection();
+      useAppStore.getState().openDownloadForSelection('originals');
       expect(useAppStore.getState().downloadOriginalLinks).toEqual([]);
     });
   });
