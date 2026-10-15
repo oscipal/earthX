@@ -687,3 +687,93 @@ Im Browser `http://localhost:5173`:
    Schritt bleibt, „Start job“ wartet auf ein neues „Review“.
 4. „Start job“: die Jobliste öffnet links neben der Leiste.
 5. Die AOI löschen: „⚙ Process“ bleibt aktiv, „AOI only“ ist grau.
+
+## 12. M4-13c-2 — Umsetzung (15.10.2026)
+
+**Gebaut** (nur `frontend/`, Branch `claude/jolly-cori-d0mda9`):
+- **Planer und Kachel-URL (§3.3):** `processingPreview.ts`. Die Vorschau ist der
+  erste Schritt, wenn er `T1` und `pixel` ist und seine Felder vollständig sind;
+  sonst steht „No preview: the first step runs only as a job.“ bzw. „Complete the
+  step to see the preview.“ Weitere Schritte (T1 oder nicht) zeigt die Karte nicht;
+  das Panel sagt es. Je Szene des Auftrags (höchstens 40) eine Raster-Quelle mit
+  `asset` je Band, `op`, `op_version`, `params` als kanonischem JSON, `rescale` und
+  `colormap_name`; bei „AOI only“ über `clipTileUrl` im Browser zugeschnitten, die
+  AOI steht nie in einer URL. Szenen ohne `bbox` fallen heraus.
+- **Zeitpunkt (K7):** `processingStore.ts` hält `preview`; eine Änderung am Entwurf
+  oder an der Auswahl erneuert es 400 ms nach der letzten Eingabe, eine wegfallende
+  Vorschau (Panel zu, Schritt leer oder ungültig) sofort. Ein Wechsel des
+  Datensatzes verwirft sie mit dem Entwurf.
+- **Darstellung (F3 (1)):** Abschnitt „Preview on the map“ mit Wertebereich
+  (Start −1 bis 1), Colormap (`rdylgn`) und „Apply“ wie in der Vollauflösung;
+  „Auto stretch“ gesperrt mit Grund. Ein Bereich, der keiner ist, sperrt „Apply“
+  und lässt das gezeigte Bild stehen.
+- **„Preview“ (F4 (1)):** `isCoarserThanData` wie im Plan: `156543.03392·cos φ /
+  2^z`, φ die äquatornächste Breite der Kartenansicht, `z = min(round(Zoom + 1),
+  max_zoom)`, gegen das feinste `gsd` der Assets (Asset, `raster:bands[0]`, Item);
+  ohne `gsd` immer. Badge an der Karte (unten links) und im Abschnitt; es steht
+  auch für eine angeheftete Vorschau, solange ihr Layer eingeschaltet ist.
+- **Karte:** `mapLayers.ts::syncPreview` legt die Quellen über alle Raster und
+  unter die AOI-Linie; Raster, die später ankommen (Quicklooks), landen darunter
+  (`beforeAoi`).
+- **Als Layer (§3.4):** „＋ Add preview to layers“ heftet „Preview · <Operator>“
+  oben an; „Replace source layer“ setzt ihn direkt über den Quell-Layer und blendet
+  diesen aus (das Auge bringt ihn zurück). Quell-Layer ist der Layer, aus dem das
+  Panel geöffnet wurde, sonst die Fokusansicht (dort wird das Bild ausgeblendet);
+  aus der Auswahl heraus gibt es nur „Add“. Ein Layer trägt `derived: 'preview'`
+  und seine Overlays `preview: { gsd }`; der Download-Knopf fehlt bei ihm.
+- **Einstiege (§3.5):** „⚙“ je Layer und „⚙ Process“ in der Vollauflösung stellen
+  die Auswahl her (`selectLayer`, Szenen des Layers bzw. der Ansicht), setzen „Area“
+  (zugeschnitten und AOI da → „AOI only“, sonst „Whole scene“) und öffnen das
+  Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
+  yet.“), Datensätze unter *processing*.
+
+**Tests** (vitest, synthetisch, 68 neue): `processingPreview.test.ts` (Planer mit
+leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
+und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
+Regel für „Preview“ am Äquator, bei 47° N, 60° N, über den Äquator, mit
+`max_zoom`, ohne `gsd`), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
+Wertebereich, Badge, Anheften, Ersetzen aus Layer und Fokusansicht, Einstiege,
+Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
+Sitzung: Zuschnitt immer aus, Ersetzen ohne Ausblenden, `beforeAoi` ohne Vorschau
+und umgedrehte Regel lassen je Tests fallen.
+
+**Offen, Frage an Otto (1):** `selectLayer` stellt die Auswahl her, aber nicht die
+Trefferliste. Liegen die Szenen eines Layers nicht mehr in den Treffern auf dem
+Bildschirm (neue Suche), öffnet „⚙“ das Panel nicht und sagt „The scenes of this
+layer are not in the results on screen. Search again to process them.“ Der Plan
+(§3.5) setzt voraus, dass die Szenen da sind.
+1. So lassen; wer neu sucht, kann verarbeiten **(Empfehlung, kein neuer Code)**
+2. Das Panel holt die fehlenden Szenen mit `fetchItem` nach und hält sie neben der
+   Auswahl; die Überflüge kämen aus den `groupItemIds` des Layers (rund 80 Zeilen,
+   berührt `orderView`)
+
+**Geprüft:** siehe unten (Ergebnis der Läufe); die Oberfläche selbst nur in Tests,
+nicht im Browser.
+
+**Prüfanleitung für Otto** (Windows PowerShell):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. `sentinel-2-c1-l2a`, Fläche zeichnen, suchen, einen Überflug mit wenig Wolken
+   wählen, „⚙ Process“, „＋ Band math“, `(nir - red) / (nir + red)` tippen: nach
+   einem Moment liegt die Vorschau (−1 bis 1, `rdylgn`) auf den Szenen, dazu
+   „Preview“ unten links und im Abschnitt „Preview on the map“.
+2. Hineinzoomen bis etwa Kartenzoom 12,5 (10 m auf 48° N): „Preview“ verschwindet.
+   Wieder herauszoomen: es kommt zurück.
+3. „AOI only“: die Vorschau ist auf die Fläche zugeschnitten. Wertebereich ändern:
+   erst nach „Apply“ ändert sich das Bild.
+4. „＋ Add preview to layers“: der Layer „Preview · Band math“ steht im
+   Layer-Manager, ohne „⇩“, mit gesperrtem „⚙“. Das Auge schaltet „Preview“ mit ihm
+   ab.
+5. Einen Layer aus „Crop & merge to AOI“ anlegen, im Layer-Manager dessen „⚙“: das
+   Panel öffnet mit „AOI only“. Vorschau schreiben, „Replace source layer“: der
+   neue Layer steht über dem alten, der alte ist ausgeblendet; sein Auge holt ihn
+   zurück.
+6. In der Vollauflösung „⚙ Process“: das Panel öffnet für die Szenen der Ansicht;
+   „Replace source layer“ blendet das Bild der Ansicht aus.
