@@ -263,6 +263,76 @@ describe('the preview section', () => {
     expect(store().steps).toEqual([]);
   });
 
+  it('does not draw a picture that was still due when the panel closes or the dataset changes', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir / red');
+    act(() => store().closeProcessing());
+    afterDebounce();
+    expect(store().preview).toBeNull();
+
+    act(() => store().openProcessing());
+    typeInto(expression(), 'nir / red');
+    act(() => useAppStore.setState({ datasetId: 'other' }));
+    afterDebounce();
+    expect(store().preview).toBeNull();
+  });
+
+  it('keeps the picture it has when the input comes back to it within 400 ms', async () => {
+    await withNdvi();
+    const before = store().preview;
+    typeInto(expression(), 'nir / red');
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    typeInto(expression(), '(nir - red) / (nir + red)');
+    afterDebounce();
+    expect(store().preview).toBe(before);
+  });
+
+  it('takes the picture away at once when the AOI of "AOI only" goes, and leaves it for "Whole scene"', async () => {
+    await withNdvi();
+    const before = store().preview;
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([10.1, 50.1, 10.2, 50.2]) }));
+    afterDebounce();
+    expect(store().preview).toBe(before); // "Whole scene" does not read the AOI
+    click(button('AOI only'));
+    afterDebounce();
+    expect(store().preview!.clipToAoi).toBe(true);
+    act(() => useAppStore.setState({ aoi: null }));
+    expect(store().preview).toBeNull();
+  });
+
+  it('says why there is no picture for more bands than the map takes', async () => {
+    const wide = scene('S2B_A');
+    for (let i = 1; i <= 17; i++) wide.assets[`b${i}`] = { href: 'https://example.org/b.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] };
+    select([wide]);
+    await openPanel();
+    click(button('＋ Band math'));
+    typeInto(expression(), Array.from({ length: 17 }, (_, i) => `b${i + 1}`).join(' + '));
+    expect(section().textContent).toContain('No preview: the map takes at most 16 bands.');
+    expect(store().preview).toBeNull();
+  });
+
+  it('asks for a pass while the scenes belong to several', async () => {
+    const a = scene('S2B_A');
+    const b = scene('S2B_B');
+    select([a, b]);
+    useAppStore.setState({
+      groups: [
+        { key: ['2026-07-02'], label: '2026-07-02', items: [b] },
+        { key: ['2026-07-01'], label: '2026-07-01', items: [a] },
+      ],
+    });
+    await openPanel();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir / red');
+    expect(section().textContent).toContain('Choose a pass to see the preview.');
+    expect(store().preview).toBeNull();
+  });
+
   it('shows a reason, no controls and no picture when the first step runs only as a job', async () => {
     select([scene('S2B_A')]);
     await openPanel();
@@ -598,6 +668,16 @@ describe('the ways into the panel (§3.5)', () => {
     click(button('⚙'));
     expect(store().open).toBe(false);
     expect(useAppStore.getState().error).toContain('not in the results on screen');
+  });
+
+  it('says "view", not "layer", when the full-resolution view has scenes that left the results', () => {
+    select([scene('S2B_A')]);
+    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    useAppStore.setState({ focusMode: true, downloaded: { GONE: tile } });
+    mount(<ViewerControls />);
+    click(button('⚙ Process'));
+    expect(store().open).toBe(false);
+    expect(useAppStore.getState().error).toBe('The scenes of this view are not in the results on screen. Search again to process them.');
   });
 
   it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {

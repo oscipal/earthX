@@ -1736,6 +1736,10 @@ input[type='date']:focus {
     width: min(760px, 92vw);
     bottom: calc(60vh + 12px);
   }
+  /* The sheet lies over the lower edge: the badge sits above it, left. */
+  .preview-badge-dock {
+    bottom: calc(60vh + 12px);
+  }
 }
 .pp-section {
   display: flex;

@@ -16,7 +16,7 @@ import type { Bbox, StacItem } from './types';
 // As many scenes as the full-resolution view draws (`mapLayers.ts`).
 export const MAX_PREVIEW_SCENES = 40;
 // The tile route takes at most this many assets with an operator (`api/tiler.py`).
-const MAX_PREVIEW_ASSETS = 16;
+export const MAX_PREVIEW_ASSETS = 16;
 
 export const PREVIEW_BADGE_TITLE =
   'Calculated from coarser tiles than the data: zoom in for the full resolution. A job always uses the full resolution.';

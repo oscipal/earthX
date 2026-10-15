@@ -25,6 +25,7 @@ import {
 import {
   AUTO_STRETCH_REASON,
   isCoarserThanData,
+  MAX_PREVIEW_ASSETS,
   planPreview,
   PREVIEW_BADGE_TITLE,
   rescaleOf,
@@ -240,6 +241,10 @@ function PreviewSection({ view }: { view: OrderView }) {
           {view.assets.length === 0 && (
             <p className="hint-text">Pick a band, or name it in the expression, to see the preview.</p>
           )}
+          {view.assets.length > MAX_PREVIEW_ASSETS && (
+            <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
+          )}
+          {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
           {plan.further && <p className="pp-help">The map shows the first step; the job runs all steps.</p>}
           {sceneCount > 1 && (
             <p className="pp-help">

@@ -382,8 +382,12 @@ function clearPreview(map: MapLibreMap): void {
 // calls it when the overlays change, or after a style reload.
 export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[]): void {
   clearPreview(map);
-  overlays
+  // Drawn from the last scene to the first, so the first ends up topmost: the
+  // order of the full-resolution view (`syncFocusRaster`). The lowest layer is
+  // `preview-lyr-0`, which `beforeAoi` keeps later rasters under.
+  [...overlays]
     .slice(0, MAX_MOSAIC_LAYERS)
+    .reverse()
     .forEach((overlay, i) => {
       if (overlay.kind !== 'raster') return;
       const srcId = `${PREVIEW_SRC}${i}`;

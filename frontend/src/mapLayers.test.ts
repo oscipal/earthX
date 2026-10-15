@@ -548,7 +548,9 @@ describe('syncPreview', () => {
     const tiles = previewTiles(2);
     syncPreview(map as never, tiles);
     expect(stack).toEqual(['m-tiles-lyr-0', 'preview-lyr-0', 'preview-lyr-1', 'aoi-fill', 'aoi-line']);
-    expect(sources.get('preview-src-1')).toMatchObject({
+    // The first scene is on top, as in the full-resolution view: it is drawn last.
+    expect((sources.get('preview-src-1') as { tiles: string[] }).tiles).toEqual([(tiles[0] as { tileUrl: string }).tileUrl]);
+    expect(sources.get('preview-src-0')).toMatchObject({
       type: 'raster',
       tiles: [(tiles[1] as { tileUrl: string }).tileUrl],
       tileSize: 256,

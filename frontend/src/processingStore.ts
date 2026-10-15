@@ -292,11 +292,11 @@ export function layerProcessBlock(layer: MapLayer, datasets: readonly DatasetOpt
 
 // The scenes of the entry become the selection the panel reads. They must be in
 // the results on screen: only those are known to the panel as scenes.
-function selectScenes(ids: readonly string[]): boolean {
+function selectScenes(ids: readonly string[], whose: string): boolean {
   const app = useAppStore.getState();
   if (ids.length === 0 || !ids.every((id) => app.items.some((item) => item.id === id))) {
     useAppStore.setState({
-      error: 'The scenes of this layer are not in the results on screen. Search again to process them.',
+      error: `The scenes of ${whose} are not in the results on screen. Search again to process them.`,
     });
     return false;
   }
@@ -472,7 +472,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
       useAppStore.getState().selectLayer(layerId);
-      if (!selectScenes(layer.restore.itemIds)) return;
+      if (!selectScenes(layer.restore.itemIds, 'this layer')) return;
       get().openProcessing({
         area: layer.restore.cropToAoi && isArea(layer.restore.aoi) ? 'aoi' : 'scene',
         sourceLayerId: layerId,
@@ -480,7 +480,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     processFocusView: () => {
       const app = useAppStore.getState();
-      if (!selectScenes(Object.keys(app.downloaded))) return;
+      if (!selectScenes(Object.keys(app.downloaded), 'this view')) return;
       get().openProcessing({ area: app.cropToAoi && isArea(app.aoi) ? 'aoi' : 'scene' });
     },
     setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch } })),

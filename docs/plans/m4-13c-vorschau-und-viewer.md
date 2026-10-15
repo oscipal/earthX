@@ -727,7 +727,7 @@ Im Browser `http://localhost:5173`:
   Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
   yet.“), Datensätze unter *processing*.
 
-**Tests** (vitest, synthetisch, 68 neue): `processingPreview.test.ts` (Planer mit
+**Tests** (vitest, synthetisch, 74 neue): `processingPreview.test.ts` (Planer mit
 leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
 und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
 Regel für „Preview“ am Äquator, bei 47° N, 60° N, über den Äquator, mit
@@ -747,8 +747,21 @@ layer are not in the results on screen. Search again to process them.“ Der Pla
    Auswahl; die Überflüge kämen aus den `groupItemIds` des Layers (rund 80 Zeilen,
    berührt `orderView`)
 
-**Geprüft:** siehe unten (Ergebnis der Läufe); die Oberfläche selbst nur in Tests,
-nicht im Browser.
+**Befunde des Reviewers, behoben:** Die Vorschau stapelte die Szenen umgekehrt zur
+Fokusansicht (jetzt die erste oben, wie `syncFocusRaster`); das Badge lag auf
+schmalen Bildschirmen unter dem Blatt (jetzt darüber); bei mehr als 16 Bändern und
+ohne gewählten Überflug blieb die Vorschau ohne Grund aus (jetzt mit Text); der
+Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer“;
+Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
+A → B → A), zur AOI und zu den neuen Gründen. Bewusst so gelassen (Hinweise):
+„Area“ behält nach einem Einstieg aus einem Layer ihren Wert, wenn das Panel danach
+aus der Auswahl geöffnet wird (vorher stellte nur der Nutzer sie um); „Replace
+source layer“ blendet bei einem Layer aus der Vollauflösung nur den Listen-Layer
+aus, nicht die Fokusansicht derselben Szenen. Beides ist Ottos Entscheidung.
+
+**Ergebnis der Prüfungen:** Frontend 997 Tests grün, `tsc` und `oxlint` ohne Befund;
+Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
+(keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
 
 **Prüfanleitung für Otto** (Windows PowerShell):
 
