@@ -807,6 +807,7 @@ input[type='date']:focus {
   margin: 0;
   padding: 6px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 .result-row {
   display: flex;
@@ -1185,7 +1186,9 @@ input[type='date']:focus {
 }
 .rg-select {
   flex: none;
-  margin: 0 0 0 8px;
+  width: 12px;
+  height: 12px;
+  margin: 0 0 0 6px;
   cursor: pointer;
 }
 .select-all-box {
@@ -1198,6 +1201,8 @@ input[type='date']:focus {
   cursor: pointer;
 }
 .select-all-box input {
+  width: 12px;
+  height: 12px;
   margin: 0;
 }
 .results-list-head {
@@ -1213,7 +1218,8 @@ input[type='date']:focus {
   gap: 8px;
 }
 .result-group-head {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
