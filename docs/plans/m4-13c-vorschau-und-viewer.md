@@ -727,25 +727,38 @@ Im Browser `http://localhost:5173`:
   Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
   yet.“), Datensätze unter *processing*.
 
-**Tests** (vitest, synthetisch, 74 neue): `processingPreview.test.ts` (Planer mit
+**Tests** (vitest, synthetisch, 87 neue): `processingPreview.test.ts` (Planer mit
 leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
 und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
 Regel für „Preview“ am Äquator, bei 47° N, 60° N, über den Äquator, mit
 `max_zoom`, ohne `gsd`), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
 Wertebereich, Badge, Anheften, Ersetzen aus Layer und Fokusansicht, Einstiege,
 Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
-Sitzung: Zuschnitt immer aus, Ersetzen ohne Ausblenden, `beforeAoi` ohne Vorschau
-und umgedrehte Regel lassen je Tests fallen.
+Sitzung: Zuschnitt immer aus, Ersetzen ohne Ausblenden, `beforeAoi` ohne Vorschau,
+umgedrehte Regel, „Area“ ohne Vorgabe beim Einstieg, ein veralteter Einstieg, der
+nicht verworfen wird, Fehler beim Nachladen verschluckt und „Replace“ ohne die
+Fokusansicht lassen je Tests fallen.
 
-**Offen, Frage an Otto (1):** `selectLayer` stellt die Auswahl her, aber nicht die
-Trefferliste. Liegen die Szenen eines Layers nicht mehr in den Treffern auf dem
-Bildschirm (neue Suche), öffnet „⚙“ das Panel nicht und sagt „The scenes of this
-layer are not in the results on screen. Search again to process them.“ Der Plan
-(§3.5) setzt voraus, dass die Szenen da sind.
-1. So lassen; wer neu sucht, kann verarbeiten **(Empfehlung, kein neuer Code)**
-2. Das Panel holt die fehlenden Szenen mit `fetchItem` nach und hält sie neben der
-   Auswahl; die Überflüge kämen aus den `groupItemIds` des Layers (rund 80 Zeilen,
-   berührt `orderView`)
+**Entschieden von Otto am 19.10.2026, umgesetzt:**
+1. *Szenen, die in den Treffern fehlen (Option 2):* „⚙“ am Layer und „⚙ Process“ der
+   Vollauflösung holen fehlende Szenen einzeln mit `fetchItem` (kein neuer Suchlauf)
+   und öffnen dann das Panel. Die Treffer bleiben unverändert; die geholten Szenen
+   liegen als `extraScenes` im Processing-Store, `orderView` liest sie neben den
+   Treffern. Ihre Überflüge bildet `buildGroups` mit dem `results_group_by` des
+   Datensatzes: Gehört eine Szene zu einem Überflug, den die Treffer schon haben,
+   kommt sie dorthin, sonst bekommt sie einen eigenen. Schlägt ein Abruf fehl (nicht
+   im Katalog, Dienst nicht erreichbar), öffnet nichts, und die Meldung nennt die
+   Szene und den Grund („Could not load the scenes of this layer. <id>: …“). Ein
+   neuerer Einstieg macht einen noch wartenden unwirksam. Ein Wechsel des Datensatzes
+   verwirft die Szenen mit dem Entwurf.
+2. *„Area“ (2a):* Jeder Einstieg setzt „Area“; das Panel aus der Auswahl (`ViewBar`)
+   startet immer auf „Whole scene“, auch wenn ein Layer-Einstieg vorher „AOI only“
+   gesetzt hatte.
+3. *„Replace source layer“ (2b):* Zeigt die Vollauflösung genau die Szenen des
+   Quell-Layers, blendet „Replace“ sie mit dem Layer aus (`hidesFocusView` am Layer);
+   das Auge des Quell-Layers bringt beides zurück. Zeigt sie andere Szenen oder hatte
+   der Nutzer sie selbst ausgeblendet, bleibt sie, und das Auge schaltet sie nicht
+   ein.
 
 **Befunde des Reviewers, behoben:** Die Vorschau stapelte die Szenen umgekehrt zur
 Fokusansicht (jetzt die erste oben, wie `syncFocusRaster`); das Badge lag auf
@@ -753,13 +766,9 @@ schmalen Bildschirmen unter dem Blatt (jetzt darüber); bei mehr als 16 Bändern
 ohne gewählten Überflug blieb die Vorschau ohne Grund aus (jetzt mit Text); der
 Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer“;
 Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
-A → B → A), zur AOI und zu den neuen Gründen. Bewusst so gelassen (Hinweise):
-„Area“ behält nach einem Einstieg aus einem Layer ihren Wert, wenn das Panel danach
-aus der Auswahl geöffnet wird (vorher stellte nur der Nutzer sie um); „Replace
-source layer“ blendet bei einem Layer aus der Vollauflösung nur den Listen-Layer
-aus, nicht die Fokusansicht derselben Szenen. Beides ist Ottos Entscheidung.
+A → B → A), zur AOI und zu den neuen Gründen.
 
-**Ergebnis der Prüfungen:** Frontend 997 Tests grün, `tsc` und `oxlint` ohne Befund;
+**Ergebnis der Prüfungen:** Frontend 1010 Tests grün, `tsc` und `oxlint` ohne Befund;
 Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
 (keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
 
@@ -790,3 +799,10 @@ Im Browser `http://localhost:5173`:
    zurück.
 6. In der Vollauflösung „⚙ Process“: das Panel öffnet für die Szenen der Ansicht;
    „Replace source layer“ blendet das Bild der Ansicht aus.
+7. Eine neue Suche starten (andere Szenen in den Treffern), im Layer-Manager „⚙“ an
+   einem älteren Layer: das Panel öffnet nach einem Moment mit den Szenen des Layers,
+   ohne dass die Treffer sich ändern.
+8. Nach „⚙“ an einem zugeschnittenen Layer das Panel schließen und aus der Auswahl
+   „⚙ Process“ öffnen: „Area“ steht auf „Whole scene“. Bei einem Layer aus der
+   Vollauflösung „Replace source layer“: Layer und Bild der Ansicht sind aus; das Auge
+   des alten Layers bringt beide zurück.
