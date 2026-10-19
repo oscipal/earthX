@@ -119,15 +119,27 @@ function GroupBlock({
   expanded: boolean;
   onToggle: (index: number) => void;
 }) {
+  const allSelected = useAppStore((s) => group.items.every((it) => s.selectedIds.includes(it.id)));
+  const toggleGroupSelected = useAppStore((s) => s.toggleGroupSelected);
   return (
     <div className={`result-group${expanded ? ' active' : ''}`}>
-      <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
-        <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
-        <span className="rg-label" title={group.label}>
-          {group.label}
-        </span>
-        <span className="rg-count">{group.items.length}</span>
-      </button>
+      <div className="result-group-row">
+        <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
+          <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
+          <span className="rg-label" title={group.label}>
+            {group.label}
+          </span>
+          <span className="rg-count">{group.items.length}</span>
+        </button>
+        <button
+          type="button"
+          className="link-btn rg-select"
+          title={`${allSelected ? 'Deselect' : 'Select'} the scenes of ${group.label}`}
+          onClick={() => toggleGroupSelected(index)}
+        >
+          {allSelected ? 'Deselect all' : 'Select all'}
+        </button>
+      </div>
       {expanded && (
         <ul className="rg-items">
           {group.items.map((it) => (
@@ -276,6 +288,34 @@ function LoadMore() {
   );
 }
 
+// "Select all" and "Clear selection" (M4-29). "Select all" takes the scenes
+// loaded so far and says so when the source reports more; it never loads pages.
+function SelectionRow() {
+  const loaded = useAppStore((s) => s.items.length);
+  const selectedCount = useAppStore((s) => s.selectedIds.length);
+  const matched = useAppStore((s) => s.searchContext?.numberMatched ?? null);
+  const loadedAll = useAppStore((s) => totalItems(s.sections));
+  const several = useAppStore((s) => s.sections.length > 1);
+  const selectAllLoaded = useAppStore((s) => s.selectAllLoaded);
+  const clearSelection = useAppStore((s) => s.clearSelection);
+  const more = matched !== null && matched > loadedAll;
+  const label = !more
+    ? `Select all ${loaded}`
+    : several
+      ? `Select all ${loaded} loaded (more matched in total)`
+      : `Select all ${loaded} loaded (of ${matched})`;
+  return (
+    <div className="selection-row">
+      <button type="button" className="link-btn" disabled={loaded === 0} onClick={() => selectAllLoaded()}>
+        {label}
+      </button>
+      <button type="button" className="link-btn" disabled={selectedCount === 0} onClick={() => clearSelection()}>
+        Clear selection
+      </button>
+    </div>
+  );
+}
+
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
   // The dataset shown is the one whose scenes `groups`/`items` hold
@@ -311,6 +351,7 @@ export default function ResultsPanel() {
       <DatasetDropdown sections={sections} openId={openSectionId} />
       <CropRow openId={openSectionId} />
       <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
+      <SelectionRow />
       <div className="results-list">
         {groups.map((g, i) => (
           <GroupBlock

@@ -353,43 +353,58 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
   );
 }
 
-// The dataset choice (M3-10): one toggle button per dataset from
-// `/stac/collections`, any number at once — a click picks a dataset (drawn
-// highlighted), another click drops it again. Every picked dataset is searched
-// together. Four rows are visible; with more the list scrolls. A dataset that
-// cannot be shown stays listed, disabled, with the reason.
+// The dataset choice (M3-10, M4-29): one button per dataset from
+// `/stac/collections`. Nothing is picked at the start; a click picks exactly that
+// dataset (drawn highlighted) and drops the one before. Only with "Select
+// multiple datasets" on does a click switch a dataset on or off, and then every
+// picked dataset is searched together. With more rows than fit the list scrolls.
+// A dataset that cannot be shown stays listed, disabled, with the reason.
 function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
+  const multiSelect = useAppStore((s) => s.multiSelect);
+  const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   if (datasets.length === 0) return null;
   return (
-    <div className="dataset-list" role="group" aria-label="Datasets">
-      {datasets.map((d) => {
-        const picked = selectedDatasetIds.includes(d.id);
-        const maturity = d.viewable ? maturityNote(d.collection) : null;
-        const label = d.viewable ? maturityLabel(d.collection) : null;
-        return (
-          <button
-            key={d.id}
-            type="button"
-            className={`dataset-toggle${picked ? ' active' : ''}`}
-            title={
-              d.viewable
-                ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
-                : `${d.title} — not viewable: ${d.reason}`
-            }
-            aria-pressed={picked}
-            disabled={!d.viewable || busy}
-            onClick={() => toggle(d.id)}
-          >
-            <span className="dataset-toggle-title">{d.title}</span>
-            {label && <span className="maturity-chip">{label}</span>}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <button
+        type="button"
+        className={`ghost-btn multi-select-btn${multiSelect ? ' active' : ''}`}
+        aria-pressed={multiSelect}
+        disabled={busy}
+        title={multiSelect ? 'Go back to one dataset at a time' : 'Pick several datasets and search them together'}
+        onClick={() => setMultiSelect(!multiSelect)}
+      >
+        Select multiple datasets
+      </button>
+      <div className="dataset-list" role="group" aria-label="Datasets">
+        {datasets.map((d) => {
+          const picked = selectedDatasetIds.includes(d.id);
+          const maturity = d.viewable ? maturityNote(d.collection) : null;
+          const label = d.viewable ? maturityLabel(d.collection) : null;
+          return (
+            <button
+              key={d.id}
+              type="button"
+              className={`dataset-toggle${picked ? ' active' : ''}`}
+              title={
+                d.viewable
+                  ? [d.title, maturity, d.collection.description].filter(Boolean).join(' — ')
+                  : `${d.title} — not viewable: ${d.reason}`
+              }
+              aria-pressed={picked}
+              disabled={!d.viewable || busy}
+              onClick={() => toggle(d.id)}
+            >
+              <span className="dataset-toggle-title">{d.title}</span>
+              {label && <span className="maturity-chip">{label}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -640,7 +655,7 @@ export default function ControlPanel() {
         </button>
 
         {count > 0 && <p className="result-count">{count} scene(s) found</p>}
-        {selectedCount === 0 && <p className="hint-text">Select at least one dataset.</p>}
+        {selectedCount === 0 && <p className="hint-text">Choose a dataset to search.</p>}
         {!aoi && !hasSceneName && <p className="hint-text">Pick a tool to define an area of interest, or enter a scene name above.</p>}
       </div>
     </div>

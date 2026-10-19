@@ -389,3 +389,59 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
     expect(text(box())).not.toContain('No scenes for this area.');
   });
 });
+
+describe('"Select all" and "Clear selection" (M4-29)', () => {
+  const TWO_STEPS = [
+    scene('o1', 'optical', { datetime: '2026-07-24T10:00:00Z' }),
+    scene('o2', 'optical', { datetime: '2026-07-24T10:00:05Z' }),
+    scene('o3', 'optical', { datetime: '2026-07-25T10:00:00Z' }),
+  ];
+  const selected = () => useAppStore.getState().selectedIds.slice().sort();
+  const selectionButtons = () => [...container.querySelectorAll('.selection-row button')] as HTMLButtonElement[];
+  const groupButtons = () => [...container.querySelectorAll('.rg-select')] as HTMLButtonElement[];
+  const withMatched = (numberMatched: number | null) =>
+    useAppStore.setState({ searchContext: { numberMatched, nextToken: null } as never });
+
+  it('selects every loaded scene and clears the selection again', () => {
+    load(TWO_STEPS);
+    expect(selectionButtons()[1].disabled).toBe(true);
+    act(() => selectionButtons()[0].click());
+    expect(selected()).toEqual(['o1', 'o2', 'o3']);
+    act(() => selectionButtons()[1].click());
+    expect(selected()).toEqual([]);
+  });
+
+  it('selects the scenes of one group only; a second click deselects them', () => {
+    load(TWO_STEPS);
+    const groupIds = useAppStore.getState().groups.map((g) => g.items.map((it) => it.id));
+    act(() => groupButtons()[0].click());
+    expect(selected()).toEqual([...groupIds[0]].sort());
+    expect(text(groupButtons()[0])).toBe('Deselect all');
+    act(() => groupButtons()[0].click());
+    expect(selected()).toEqual([]);
+  });
+
+  it('names the total when the source reports more scenes than are loaded', () => {
+    load(TWO_STEPS);
+    useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
+    withMatched(135);
+    act(() => root.render(<ResultsPanel />));
+    expect(text(selectionButtons()[0])).toBe('Select all 3 loaded (of 135)');
+  });
+
+  it('says nothing about a total when everything is loaded', () => {
+    load(TWO_STEPS);
+    useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
+    withMatched(3);
+    act(() => root.render(<ResultsPanel />));
+    expect(text(selectionButtons()[0])).toBe('Select all 3');
+  });
+
+  it('does not claim a single total over several datasets', () => {
+    load(MIXED);
+    withMatched(40);
+    act(() => root.render(<ResultsPanel />));
+    expect(text(selectionButtons()[0])).not.toContain('(of 40)');
+    expect(text(selectionButtons()[0])).toContain('more matched in total');
+  });
+});

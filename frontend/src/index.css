@@ -1169,6 +1169,30 @@ input[type='date']:focus {
 .result-group {
   border-bottom: 1px solid var(--panel-border);
 }
+.result-group-row {
+  display: flex;
+  align-items: center;
+}
+.rg-select {
+  flex: none;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.selection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 14px;
+}
+.multi-select-btn {
+  width: 100%;
+  margin-bottom: 6px;
+}
+.multi-select-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .result-group-head {
   width: 100%;
   display: flex;

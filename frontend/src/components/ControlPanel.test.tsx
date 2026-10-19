@@ -575,6 +575,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     useAppStore.setState({
       datasets: datasetsFrom([OPTICAL, DEM, BROKEN]),
       selectedDatasetIds: selected,
+      multiSelect: false,
+      lastPickedDatasetId: null,
       datasetId: selected[0] ?? null,
       sections: [],
       openSectionId: null,
@@ -590,6 +592,9 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
 
   function buttons(): HTMLButtonElement[] {
     return [...container.querySelectorAll('.dataset-list .dataset-toggle')] as HTMLButtonElement[];
+  }
+  function multiButton(): HTMLButtonElement {
+    return container.querySelector('.multi-select-btn') as HTMLButtonElement;
   }
   function titles(): string[] {
     return buttons().map((b) => b.querySelector('.dataset-toggle-title')!.textContent ?? '');
@@ -613,8 +618,39 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(container.querySelector('[aria-label="Filter datasets"]')).toBeNull();
   });
 
+  it('starts with nothing chosen and the switch off', () => {
+    setUp([]);
+    expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false']);
+    expect(multiButton().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('a click chooses that dataset, a second click on another replaces it', () => {
+    setUp([]);
+    act(() => buttons()[0].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical']);
+    act(() => buttons()[1].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
+    expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);
+  });
+
+  it('"Select multiple datasets" lets clicks switch datasets on and off; ending it keeps the last one', () => {
+    setUp([]);
+    act(() => multiButton().click());
+    act(() => buttons()[0].click());
+    act(() => buttons()[1].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'dem']);
+    act(() => buttons()[0].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
+    act(() => buttons()[0].click());
+    act(() => multiButton().click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical']);
+    expect(multiButton().getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('a click picks a dataset, another click drops it again — any number at once', () => {
     setUp(['optical']);
+    useAppStore.setState({ multiSelect: true });
+    act(() => root.render(<ControlPanel />));
     act(() => buttons()[1].click());
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'dem']);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false']);
@@ -658,7 +694,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     setUp([]);
     useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).toContain('Select at least one dataset.');
+    expect(container.textContent).toContain('Choose a dataset to search.');
     expect(searchButton().disabled).toBe(true);
   });
 
@@ -666,7 +702,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     setUp(['optical']);
     useAppStore.setState({ aoi: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } });
     act(() => root.render(<ControlPanel />));
-    expect(container.textContent).not.toContain('Select at least one dataset.');
+    expect(container.textContent).not.toContain('Choose a dataset to search.');
     expect(searchButton().disabled).toBe(false);
   });
 
