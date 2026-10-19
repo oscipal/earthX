@@ -77,8 +77,4 @@ export interface MapLayer {
   // preview of the processing panel. It cannot be processed or downloaded as
   // scenes (the buttons of the layer manager skip it).
   derived?: 'preview';
-  // Set on a layer that a preview replaced while it had the full-resolution view
-  // of the same scenes on screen: the preview hid that view too, and this layer's
-  // eye brings it back with the layer.
-  hidesFocusView?: boolean;
 }

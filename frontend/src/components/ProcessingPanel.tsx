@@ -33,7 +33,6 @@ import {
 import {
   bandMathExpressions,
   orderView,
-  previewSource,
   selectionState,
   useProcessingStore,
   type OrderView,
@@ -182,20 +181,15 @@ function PreviewSection({ view }: { view: OrderView }) {
   const steps = useProcessingStore((s) => s.steps);
   const preview = useProcessingStore((s) => s.preview);
   const rangeDraft = useProcessingStore((s) => s.rangeDraft);
-  const sourceLayerId = useProcessingStore((s) => s.sourceLayerId);
   const setRangeDraft = useProcessingStore((s) => s.setRangeDraft);
   const applyRange = useProcessingStore((s) => s.applyRange);
   const pinPreview = useProcessingStore((s) => s.pinPreview);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const viewport = useAppStore((s) => s.viewportBbox);
-  const layers = useAppStore((s) => s.layers);
-  const focusMode = useAppStore((s) => s.focusMode);
-  const source = previewSource(sourceLayerId, { layers, focusMode });
   const plan = planPreview(steps, view.info);
   const range = rescaleOf(rangeDraft);
   const coarse = !!preview && isCoarserThanData({ mapZoom, viewport, maxZoom: preview.maxZoom, gsd: preview.gsd });
   const sceneCount = view.pass?.items.length ?? 0;
-  const noSource = 'There is no source layer: open the panel from a layer or from the full-resolution view.';
   return (
     <section className="pp-section" aria-label="Preview on the map">
       <h3 className="pp-heading">
@@ -258,24 +252,9 @@ function PreviewSection({ view }: { view: OrderView }) {
               className="ghost-btn"
               disabled={!preview}
               title="Pin this preview into the layer manager"
-              onClick={() => pinPreview(false)}
+              onClick={() => pinPreview()}
             >
               ＋ Add preview to layers
-            </button>
-            <button
-              type="button"
-              className="ghost-btn"
-              disabled={!preview || !source}
-              title={
-                !source
-                  ? noSource
-                  : source.kind === 'layer'
-                    ? `Hide “${source.name}” and put the preview in its place`
-                    : 'Hide the full-resolution image and pin the preview'
-              }
-              onClick={() => pinPreview(true)}
-            >
-              Replace source layer
             </button>
           </div>
         </>

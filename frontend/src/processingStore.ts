@@ -64,11 +64,10 @@ import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
 import type { StacItem, TimeStepGroup } from './types';
 
-// Where a panel opens from: the "Area" it starts with, and the layer it was
-// opened for (its source layer, §3.4).
+// Where a panel opens from: the "Area" it starts with, and the scenes the
+// results on screen lack.
 export interface ProcessingEntry {
   area?: Area;
-  sourceLayerId?: string | null;
   // Scenes of the entry that the results on screen do not hold (see `ExtraScenes`);
   // `null` drops those of an earlier entry. Left out: they stay.
   extraScenes?: ExtraScenes | null;
@@ -82,10 +81,6 @@ export interface ExtraScenes {
   items: StacItem[];
   groups: TimeStepGroup[];
 }
-
-// What "Replace source layer" replaces (M4-13c §3.4): the layer the panel was
-// opened for, else the full-resolution view that is on screen.
-export type PreviewSource = { kind: 'layer'; id: string; name: string } | { kind: 'focus' } | null;
 
 export type Description =
   | { state: 'loading' }
@@ -133,9 +128,6 @@ interface ProcessingState {
   // `Pass.key` of the pass the user picked; `null` until then (a lone pass needs no pick).
   passKey: string | null;
   area: Area;
-  // The layer the panel was opened for (§3.5); `null` when it was opened from the
-  // selection or the full-resolution view.
-  sourceLayerId: string | null;
   extraScenes: ExtraScenes | null;
   steps: DraftStep[];
   picked: string[];
@@ -159,7 +151,7 @@ interface ProcessingState {
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
-  pinPreview: (replaceSource: boolean) => void;
+  pinPreview: () => void;
   closeProcessing: () => void;
   openJobs: () => void;
   closeJobs: () => void;
@@ -291,12 +283,6 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
 
 // --- source layer and entries (M4-13c-2) ------------------------------------
 
-export function previewSource(sourceLayerId: string | null, app: Pick<AppState, 'layers' | 'focusMode'>): PreviewSource {
-  const layer = app.layers.find((l) => l.id === sourceLayerId);
-  if (layer) return { kind: 'layer', id: layer.id, name: layer.name };
-  return app.focusMode ? { kind: 'focus' } : null;
-}
-
 // Why a layer cannot be the start of an order, or `null`. A picture made from
 // scenes is no scene; the licence is the dataset's, as for the selection.
 export function layerProcessBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
@@ -424,7 +410,6 @@ const EMPTY_DRAFT = {
   passKey: null,
   // "Whole scene" first (Otto, 12.10.2026).
   area: 'scene' as Area,
-  sourceLayerId: null as string | null,
   extraScenes: null as ExtraScenes | null,
   steps: [] as DraftStep[],
   picked: [] as string[],
@@ -529,12 +514,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 
     // Opened from the selection (`ViewBar`), a layer or the full-resolution view.
     // Every entry sets the area: "Whole scene" unless the entry says otherwise
-    // (Otto 19.10.2026), and the layer it starts from, if any.
+    // (Otto 19.10.2026).
     openProcessing: (entry = {}) => {
       set({
         open: true,
         area: entry.area ?? 'scene',
-        sourceLayerId: entry.sourceLayerId ?? null,
         ...(entry.extraScenes !== undefined ? { extraScenes: entry.extraScenes } : {}),
       });
       const datasetId = useAppStore.getState().datasetId;
@@ -551,7 +535,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!extraScenes) return;
       get().openProcessing({
         area: layer.restore.cropToAoi && isArea(layer.restore.aoi) ? 'aoi' : 'scene',
-        sourceLayerId: layerId,
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
       });
     },
@@ -568,24 +551,18 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     applyRange: () => {
       if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft }));
     },
-    // The preview on screen becomes a layer; with `replaceSource` it takes the
-    // place of the source layer, or hides the full-resolution view.
-    pinPreview: (replaceSource) => {
-      const { preview, sourceLayerId } = get();
+    // The preview on screen becomes a layer of its own.
+    pinPreview: () => {
+      const { preview } = get();
       const app = useAppStore.getState();
       if (!preview) return;
-      const source = replaceSource ? previewSource(sourceLayerId, app) : null;
-      app.pinDerivedLayer(
-        {
-          name: `Preview · ${preview.title}`,
-          derived: 'preview',
-          overlays: previewOverlays(preview, app.aoi),
-          itemIds: preview.scenes.map((scene) => scene.id),
-          cropToAoi: preview.clipToAoi,
-        },
-        source?.kind === 'layer' ? source.id : null,
-      );
-      if (source?.kind === 'focus' && app.showDownloaded) app.toggleDownloaded();
+      app.pinDerivedLayer({
+        name: `Preview · ${preview.title}`,
+        derived: 'preview',
+        overlays: previewOverlays(preview, app.aoi),
+        itemIds: preview.scenes.map((scene) => scene.id),
+        cropToAoi: preview.clipToAoi,
+      });
     },
     closeProcessing: () => {
       abortEstimate();

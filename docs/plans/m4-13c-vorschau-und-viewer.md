@@ -168,6 +168,8 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
 
 ### 3.4 Ergebnis direkt im Viewer (Zusatz Punkt 3, F2)
 
+- **[Geändert am 19.10.2026 (Otto): „Replace source layer“ entfällt bei der T1-Vorschau,
+  siehe §12.]**
 - **Band-Math (T1):** „＋ Add preview to layers“ und „Replace source layer“ im
   Abschnitt „Preview on the map“. Der Layer hält die Kachel-URL mit
   `op`/`params` (Overlay `raster`, wie heute) und heißt „Preview · <Operator>“;
@@ -716,28 +718,25 @@ Im Browser `http://localhost:5173`:
   unter die AOI-Linie; Raster, die später ankommen (Quicklooks), landen darunter
   (`beforeAoi`).
 - **Als Layer (§3.4):** „＋ Add preview to layers“ heftet „Preview · <Operator>“
-  oben an; „Replace source layer“ setzt ihn direkt über den Quell-Layer und blendet
-  diesen aus (das Auge bringt ihn zurück). Quell-Layer ist der Layer, aus dem das
-  Panel geöffnet wurde, sonst die Fokusansicht (dort wird das Bild ausgeblendet);
-  aus der Auswahl heraus gibt es nur „Add“. Ein Layer trägt `derived: 'preview'`
-  und seine Overlays `preview: { gsd }`; der Download-Knopf fehlt bei ihm.
+  oben an. **„Replace source layer“ gibt es nicht** (Otto, 19.10.2026: den Knopf will
+  er nicht): Weder Quell-Layer noch Ausblenden von Layer oder Fokusansicht. Ein Layer
+  trägt `derived: 'preview'` und seine Overlays `preview: { gsd }`; der Download-Knopf
+  fehlt bei ihm.
 - **Einstiege (§3.5):** „⚙“ je Layer und „⚙ Process“ in der Vollauflösung stellen
   die Auswahl her (`selectLayer`, Szenen des Layers bzw. der Ansicht), setzen „Area“
   (zugeschnitten und AOI da → „AOI only“, sonst „Whole scene“) und öffnen das
   Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
   yet.“), Datensätze unter *processing*.
 
-**Tests** (vitest, synthetisch, 87 neue): `processingPreview.test.ts` (Planer mit
+**Tests** (vitest, synthetisch, 78 neue): `processingPreview.test.ts` (Planer mit
 leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
 und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
 Regel für „Preview“ am Äquator, bei 47° N, 60° N, über den Äquator, mit
 `max_zoom`, ohne `gsd`), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
-Wertebereich, Badge, Anheften, Ersetzen aus Layer und Fokusansicht, Einstiege,
-Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
-Sitzung: Zuschnitt immer aus, Ersetzen ohne Ausblenden, `beforeAoi` ohne Vorschau,
+Wertebereich, Badge, Anheften, Einstiege, Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
+Sitzung: Zuschnitt immer aus, `beforeAoi` ohne Vorschau,
 umgedrehte Regel, „Area“ ohne Vorgabe beim Einstieg, ein veralteter Einstieg, der
-nicht verworfen wird, Fehler beim Nachladen verschluckt und „Replace“ ohne die
-Fokusansicht lassen je Tests fallen.
+nicht verworfen wird und Fehler beim Nachladen verschluckt lassen je Tests fallen.
 
 **Entschieden von Otto am 19.10.2026, umgesetzt:**
 1. *Szenen, die in den Treffern fehlen (Option 2):* „⚙“ am Layer und „⚙ Process“ der
@@ -754,11 +753,13 @@ Fokusansicht lassen je Tests fallen.
 2. *„Area“ (2a):* Jeder Einstieg setzt „Area“; das Panel aus der Auswahl (`ViewBar`)
    startet immer auf „Whole scene“, auch wenn ein Layer-Einstieg vorher „AOI only“
    gesetzt hatte.
-3. *„Replace source layer“ (2b):* Zeigt die Vollauflösung genau die Szenen des
-   Quell-Layers, blendet „Replace“ sie mit dem Layer aus (`hidesFocusView` am Layer);
-   das Auge des Quell-Layers bringt beides zurück. Zeigt sie andere Szenen oder hatte
-   der Nutzer sie selbst ausgeblendet, bleibt sie, und das Auge schaltet sie nicht
-   ein.
+3. *„Replace source layer“ (2b):* Entfällt mit dem Knopf (siehe oben, Otto,
+   19.10.2026). Die Entscheidung 2b, auch die Fokusansicht auszublenden, hat damit
+   keinen Gegenstand mehr.
+
+**Für c-5 offen:** §3.4 sieht „Replace source layer“ auch für Job-Ergebnisse vor
+(„Show on map“ mit „As a new layer“ und „Replace source layer“). Ob der Knopf dort
+bleibt, ist nicht gesagt; c-5 fragt, bevor sie ihn baut.
 
 **Befunde des Reviewers, behoben:** Die Vorschau stapelte die Szenen umgekehrt zur
 Fokusansicht (jetzt die erste oben, wie `syncFocusRaster`); das Badge lag auf
@@ -768,7 +769,7 @@ Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer�
 Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
 A → B → A), zur AOI und zu den neuen Gründen.
 
-**Ergebnis der Prüfungen:** Frontend 1010 Tests grün, `tsc` und `oxlint` ohne Befund;
+**Ergebnis der Prüfungen:** Frontend 1001 Tests grün, `tsc` und `oxlint` ohne Befund;
 Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
 (keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
 
@@ -792,17 +793,12 @@ Im Browser `http://localhost:5173`:
    erst nach „Apply“ ändert sich das Bild.
 4. „＋ Add preview to layers“: der Layer „Preview · Band math“ steht im
    Layer-Manager, ohne „⇩“, mit gesperrtem „⚙“. Das Auge schaltet „Preview“ mit ihm
-   ab.
+   ab. Einen Knopf „Replace source layer“ gibt es nicht.
 5. Einen Layer aus „Crop & merge to AOI“ anlegen, im Layer-Manager dessen „⚙“: das
-   Panel öffnet mit „AOI only“. Vorschau schreiben, „Replace source layer“: der
-   neue Layer steht über dem alten, der alte ist ausgeblendet; sein Auge holt ihn
-   zurück.
-6. In der Vollauflösung „⚙ Process“: das Panel öffnet für die Szenen der Ansicht;
-   „Replace source layer“ blendet das Bild der Ansicht aus.
+   Panel öffnet mit „AOI only“.
+6. In der Vollauflösung „⚙ Process“: das Panel öffnet für die Szenen der Ansicht.
 7. Eine neue Suche starten (andere Szenen in den Treffern), im Layer-Manager „⚙“ an
    einem älteren Layer: das Panel öffnet nach einem Moment mit den Szenen des Layers,
    ohne dass die Treffer sich ändern.
 8. Nach „⚙“ an einem zugeschnittenen Layer das Panel schließen und aus der Auswahl
-   „⚙ Process“ öffnen: „Area“ steht auf „Whole scene“. Bei einem Layer aus der
-   Vollauflösung „Replace source layer“: Layer und Bild der Ansicht sind aus; das Auge
-   des alten Layers bringt beide zurück.
+   „⚙ Process“ öffnen: „Area“ steht auf „Whole scene“.

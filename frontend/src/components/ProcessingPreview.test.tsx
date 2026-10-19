@@ -525,157 +525,31 @@ describe('the preview as a layer (§3.4)', () => {
     typeInto(expression(), 'nir / red');
     // The step is complete, the picture follows in 400 ms.
     expect(button('＋ Add preview to layers').disabled).toBe(true);
-    expect(button('Replace source layer').disabled).toBe(true);
     afterDebounce();
     expect(button('＋ Add preview to layers').disabled).toBe(false);
   });
 
-  it('"Replace source layer" has nothing to replace when opened from the selection', async () => {
-    await withNdvi();
-    const replace = button('Replace source layer');
-    expect(replace.disabled).toBe(true);
-    expect(replace.title).toContain('There is no source layer');
-  });
-
-  describe('opened from a layer', () => {
-    async function fromLayer(layer: MapLayer) {
-      select([scene('S2B_A')]);
-      useAppStore.setState({ layers: [pinned('L0'), layer, pinned('L2')] });
-      mount(
-        <>
-          <ProcessingPanel />
-          <LayerManager />
-        </>,
-      );
-      click(button('⚙', container.querySelectorAll('.layer-row')[1] as HTMLElement));
-      await flush();
-      vi.useFakeTimers();
-      click(button('＋ Band math'));
-      typeInto(expression(), '(nir - red) / (nir + red)');
-      afterDebounce();
-    }
-
-    it('puts the preview in its place in the list and hides the source, which stays', async () => {
-      await fromLayer(pinned('L1'));
-      expect(button('Replace source layer').title).toBe('Hide “Layer L1” and put the preview in its place');
-      click(button('Replace source layer'));
-      const layers = useAppStore.getState().layers;
-      expect(layers.map((l) => [l.id.startsWith('P') ? 'preview' : l.id, l.visible])).toEqual([
-        ['L0', true],
-        ['preview', true],
-        ['L1', false],
-        ['L2', true],
-      ]);
-      // Back through the eye of the source layer.
-      act(() => useAppStore.getState().toggleLayerVisible('L1'));
-      expect(useAppStore.getState().layers.find((l) => l.id === 'L1')!.visible).toBe(true);
-    });
-
-    it('"＋ Add preview to layers" leaves the source as it is', async () => {
-      await fromLayer(pinned('L1'));
-      click(button('＋ Add preview to layers'));
-      expect(useAppStore.getState().layers.map((l) => [l.id.startsWith('P') ? 'preview' : l.id, l.visible])).toEqual([
-        ['preview', true],
-        ['L0', true],
-        ['L1', true],
-        ['L2', true],
-      ]);
-    });
-
-    it('does not find the source any more once the layer is removed', async () => {
-      await fromLayer(pinned('L1'));
-      act(() => useAppStore.getState().removeLayer('L1'));
-      expect(button('Replace source layer').disabled).toBe(true);
-    });
-  });
-
-  it('hides the full-resolution image when that is the source', async () => {
+  it('leaves the other layers as they are, also when the panel was opened from one of them', async () => {
     select([scene('S2B_A')]);
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
-    useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile }, showDownloaded: true });
-    mount(
-      <>
-        <ProcessingPanel />
-        <ViewerControls />
-      </>,
-    );
-    click(button('⚙ Process'));
-    await flush();
-    vi.useFakeTimers();
-    click(button('＋ Band math'));
-    typeInto(expression(), 'nir / red');
-    afterDebounce();
-    expect(button('Replace source layer').title).toBe('Hide the full-resolution image and pin the preview');
-    click(button('Replace source layer'));
-    const state = useAppStore.getState();
-    expect(state.showDownloaded).toBe(false);
-    expect(state.layers).toHaveLength(1);
-    expect(state.layers[0].derived).toBe('preview');
-  });
-});
-
-describe('"Replace source layer" and the full-resolution view of the same scenes (Otto, 19.10.2026)', () => {
-  const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
-
-  async function replaceFromLayer(layer: MapLayer, shown: Record<string, DownloadedInfo>) {
-    select([scene('S2B_A')]);
-    useAppStore.setState({ layers: [layer] });
+    useAppStore.setState({ layers: [pinned('L0'), pinned('L1')] });
     mount(
       <>
         <ProcessingPanel />
         <LayerManager />
       </>,
     );
-    click(button('⚙'));
+    click(button('⚙', container.querySelectorAll('.layer-row')[1] as HTMLElement));
     await flush();
-    // The layer's view is on screen; `shown` is what it shows now.
-    useAppStore.setState({ focusMode: true, downloaded: shown, showDownloaded: true });
     vi.useFakeTimers();
     click(button('＋ Band math'));
-    typeInto(expression(), 'nir / red');
+    typeInto(expression(), '(nir - red) / (nir + red)');
     afterDebounce();
-    click(button('Replace source layer'));
-  }
-
-  const focusLayer = () => pinned('L1', { focusMode: true, downloaded: { S2B_A: tile } });
-
-  it('hides the view of the same scenes with the layer, and the eye of the layer brings both back', async () => {
-    await replaceFromLayer(focusLayer(), { S2B_A: tile });
-    const state = () => useAppStore.getState();
-    expect(state().showDownloaded).toBe(false);
-    expect(state().layers.find((l) => l.id === 'L1')).toMatchObject({ visible: false, hidesFocusView: true });
-    act(() => state().toggleLayerVisible('L1'));
-    expect(state().layers.find((l) => l.id === 'L1')).toMatchObject({ visible: true, hidesFocusView: false });
-    expect(state().showDownloaded).toBe(true);
-  });
-
-  it('leaves the view alone when it shows other scenes than the layer', async () => {
-    await replaceFromLayer(focusLayer(), { OTHER: tile });
-    expect(useAppStore.getState().showDownloaded).toBe(true);
-    expect(useAppStore.getState().layers.find((l) => l.id === 'L1')!.hidesFocusView).toBeUndefined();
-  });
-
-  it('leaves the view alone when the user had hidden it, and the eye does not show it', async () => {
-    select([scene('S2B_A')]);
-    useAppStore.setState({ layers: [focusLayer()], focusMode: true, downloaded: { S2B_A: tile }, showDownloaded: false });
-    mount(<ProcessingPanel />);
-    act(() => useAppStore.getState().pinDerivedLayer({ name: 'p', derived: 'preview', overlays: [], itemIds: ['S2B_A'], cropToAoi: false }, 'L1'));
-    expect(useAppStore.getState().showDownloaded).toBe(false);
-    act(() => useAppStore.getState().toggleLayerVisible('L1'));
-    expect(useAppStore.getState().showDownloaded).toBe(false);
-  });
-
-  it('does not show the view with the eye of a layer that did not hide it', () => {
-    useAppStore.setState({ layers: [pinned('L1')], focusMode: true, downloaded: { S2B_A: tile }, showDownloaded: false });
-    act(() => useAppStore.getState().toggleLayerVisible('L1')); // hides
-    act(() => useAppStore.getState().toggleLayerVisible('L1')); // shows
-    expect(useAppStore.getState().showDownloaded).toBe(false);
-  });
-
-  it('leaves a layer of the list that is not in the list alone', () => {
-    useAppStore.setState({ layers: [pinned('L1')] });
-    act(() => useAppStore.getState().toggleLayerVisible('nope'));
-    expect(useAppStore.getState().layers[0].visible).toBe(true);
+    click(button('＋ Add preview to layers'));
+    expect(useAppStore.getState().layers.map((l) => [l.id.startsWith('P') ? 'preview' : l.id, l.visible])).toEqual([
+      ['preview', true],
+      ['L0', true],
+      ['L1', true],
+    ]);
   });
 });
 
@@ -694,7 +568,7 @@ describe('the ways into the panel (§3.5)', () => {
     await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
     expect(useAppStore.getState().aoi).toBe(AOI);
-    expect(store()).toMatchObject({ open: true, area: 'scene', sourceLayerId: 'L1' });
+    expect(store()).toMatchObject({ open: true, area: 'scene' });
     expect(container.textContent).toContain('S2B_B');
   });
 
@@ -704,7 +578,7 @@ describe('the ways into the panel (§3.5)', () => {
     mount(<LayerManager />);
     click(button('⚙'));
     await flush();
-    expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: 'L1' });
+    expect(store()).toMatchObject({ open: true, area: 'aoi' });
   });
 
   it('starts on "Whole scene" for a layer cropped with no AOI left to it', async () => {
@@ -762,7 +636,7 @@ describe('the ways into the panel (§3.5)', () => {
       await flush();
       expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
       expect(useAppStore.getState().selectedIds).toEqual(['S2B_A', 'GONE']);
-      expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: 'L1' });
+      expect(store()).toMatchObject({ open: true, area: 'aoi' });
       expect(store().extraScenes!.items.map((i) => i.id)).toEqual(['GONE']);
       // The results on screen stay as they are.
       expect(useAppStore.getState().items.map((i) => i.id)).toEqual(['S2B_A']);
@@ -845,10 +719,12 @@ describe('the ways into the panel (§3.5)', () => {
       await flush();
       click(gears()[1]);
       await flush();
-      expect(store()).toMatchObject({ open: true, sourceLayerId: 'L2', extraScenes: null });
+      expect(store()).toMatchObject({ open: true, extraScenes: null });
+      expect(useAppStore.getState().selectedIds).toEqual(['S2B_A']);
       answer(json(scene('SLOW')));
       await flush();
-      expect(store()).toMatchObject({ sourceLayerId: 'L2', extraScenes: null });
+      expect(store().extraScenes).toBeNull();
+      expect(useAppStore.getState().selectedIds).toEqual(['S2B_A']);
     });
 
     it('does the same for the full-resolution view, and says "view"', async () => {
@@ -895,11 +771,11 @@ describe('the ways into the panel (§3.5)', () => {
     );
     click(button('⚙', container.querySelector('.layer-row') as HTMLElement));
     await flush();
-    expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: 'L1' });
+    expect(store()).toMatchObject({ open: true, area: 'aoi' });
 
     act(() => store().closeProcessing());
     click(button('⚙ Process'));
-    expect(store()).toMatchObject({ open: true, area: 'scene', sourceLayerId: null });
+    expect(store()).toMatchObject({ open: true, area: 'scene' });
 
     // Also while the panel stays open: every entry sets the area.
     click(button('AOI only'));
@@ -916,7 +792,7 @@ describe('the ways into the panel (§3.5)', () => {
     click(button('⚙ Process'));
     await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
-    expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: null });
+    expect(store()).toMatchObject({ open: true, area: 'aoi' });
 
     act(() => store().closeProcessing());
     useAppStore.setState({ cropToAoi: false });
