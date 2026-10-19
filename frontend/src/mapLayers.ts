@@ -36,9 +36,11 @@ let dynSourceIds: string[] = [];
 // Bumped on each syncMosaic so slow async quicklook processing can tell whether
 // it has been superseded before it touches the map.
 let syncGen = 0;
-// Bumped on each syncLayers (the layer manager) for the same reason.
-let layerGen = 0;
 const MAX_LAYER_OVERLAYS = 200;
+// Where the layer manager's rasters end: a hidden background layer right under
+// the AOI. Every pinned layer is stacked directly under it, so the active view
+// (browse mosaic, full-resolution tiles: `beforeAoi`) is always above them.
+const LAYERS_TOP = 'layers-top';
 // Cache of processed quicklook data URLs, keyed by URL + the parameters that
 // change what gets drawn (freistellung threshold, AOI clip) so the same
 // source image loaded plain (browse mode, a pinned layer) and clipped to an
@@ -151,6 +153,7 @@ function placeImage(
   // in `aoiClip.ts` for why), and `paint` itself accepts one loosely already
   // (`coverage-heat`'s `fill-color` above).
   opacity: number | unknown[],
+  before: string | undefined = beforeAoi(map),
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, { type: 'image', url: dataUrl, coordinates: coords });
@@ -161,7 +164,7 @@ function placeImage(
       source: srcId,
       paint: { 'raster-opacity': opacity as never, 'raster-fade-duration': 0 },
     },
-    beforeAoi(map),
+    before,
   );
 }
 
@@ -185,6 +188,7 @@ function placeRaster(
   bounds: [number, number, number, number],
   opacity: number,
   zoom: RasterZoom,
+  before: string | undefined = beforeAoi(map),
 ): void {
   if (map.getSource(srcId)) return;
   map.addSource(srcId, {
@@ -197,7 +201,7 @@ function placeRaster(
   });
   map.addLayer(
     { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
-    beforeAoi(map),
+    before,
   );
 }
 
@@ -219,6 +223,7 @@ export function buildTileUrl(template: string, render: AppliedRender): string {
 export function ensureBaseLayers(map: MapLibreMap): void {
   if (!map.getSource(AOI_SRC)) {
     map.addSource(AOI_SRC, { type: 'geojson', data: EMPTY_FC });
+    map.addLayer({ id: LAYERS_TOP, type: 'background', layout: { visibility: 'none' } });
     map.addLayer({
       id: 'aoi-fill',
       type: 'fill',
@@ -523,39 +528,157 @@ function addTiles(
 }
 
 // --- layer manager rendering (pinned overlays, independent of the active view) ---
-function clearLayerOverlays(map: MapLibreMap): void {
-  for (let i = 0; i < MAX_LAYER_OVERLAYS; i++) {
-    if (map.getLayer(`layer-lyr-${i}`)) map.removeLayer(`layer-lyr-${i}`);
-    if (map.getSource(`layer-src-${i}`)) map.removeSource(`layer-src-${i}`);
+//
+// The map is brought to the list, not rebuilt from it: a source and its layer
+// are added once per overlay and keep the id of the pinned layer they belong to
+// (`layer-lyr-<layer id>-<n>`), so switching a layer on or off only changes its
+// `visibility`, a slider only its opacity, a move only the stacking order — none
+// of them reloads a tile (M4-28; before, every call removed and re-added every
+// source, and the ids counted the visible overlays, not the layers).
+
+interface WantedOverlay {
+  srcId: string;
+  lyrId: string;
+  overlay: LayerOverlay;
+  visible: boolean;
+  opacity: number;
+  // Everything the source is built from; a different one means a different source.
+  sig: string;
+}
+
+interface PlacedOverlay {
+  srcId: string;
+  sig: string;
+  visible: boolean;
+  opacity: number;
+}
+
+const placedOverlays = new Map<string, PlacedOverlay>();
+// The pinned layers' overlays, bottom to top, as of the last `syncLayers`; the
+// quicklooks that arrive later read their place from here.
+let wantedOverlays: WantedOverlay[] = [];
+// The order the map holds them in, to move layers only where the list changed.
+let stackedOrder: string[] = [];
+
+function overlaySignature(ov: LayerOverlay): string {
+  return ov.kind === 'raster'
+    ? JSON.stringify([ov.kind, ov.tileUrl, ov.bounds, ov.minZoom, ov.maxZoom])
+    : JSON.stringify([ov.kind, ov.url, ov.coords, ov.nodataMax]);
+}
+
+// Bottom to top: `layers[0]` is the top of the list, so it comes last.
+function wantedOverlaysOf(layers: MapLayer[]): WantedOverlay[] {
+  const wanted: WantedOverlay[] = [];
+  for (const layer of [...layers].reverse()) {
+    layer.overlays.forEach((overlay, n) => {
+      if (wanted.length >= MAX_LAYER_OVERLAYS) return;
+      wanted.push({
+        srcId: `layer-src-${layer.id}-${n}`,
+        lyrId: `layer-lyr-${layer.id}-${n}`,
+        overlay,
+        visible: layer.visible,
+        opacity: layer.opacity,
+        sig: overlaySignature(overlay),
+      });
+    });
   }
+  return wanted;
+}
+
+function isPlaced(map: MapLibreMap, w: WantedOverlay): boolean {
+  return !!map.getLayer(w.lyrId) && placedOverlays.get(w.lyrId)?.sig === w.sig;
+}
+
+function removePlaced(map: MapLibreMap, lyrId: string, placed: PlacedOverlay): void {
+  if (map.getLayer(lyrId)) map.removeLayer(lyrId);
+  if (map.getSource(placed.srcId)) map.removeSource(placed.srcId);
+  placedOverlays.delete(lyrId);
+}
+
+// The layer right above `index` that is on the map, or the top of the manager's
+// stack: what a new layer goes under.
+function layerAbove(map: MapLibreMap, wanted: readonly WantedOverlay[], index: number): string | undefined {
+  for (let j = index + 1; j < wanted.length; j++) {
+    if (isPlaced(map, wanted[j])) return wanted[j].lyrId;
+  }
+  return map.getLayer(LAYERS_TOP) ? LAYERS_TOP : aboveAll(map);
+}
+
+function placeWanted(map: MapLibreMap, wanted: readonly WantedOverlay[], index: number, dataUrl?: string): void {
+  const w = wanted[index];
+  const before = layerAbove(map, wanted, index);
+  if (w.overlay.kind === 'raster') {
+    placeRaster(map, w.srcId, w.lyrId, w.overlay.tileUrl, w.overlay.bounds, w.opacity, w.overlay, before);
+  } else if (dataUrl !== undefined) {
+    placeImage(map, w.srcId, w.lyrId, dataUrl, w.overlay.coords, w.opacity, before);
+  } else {
+    return;
+  }
+  if (!w.visible) setVisibility(map, w.lyrId, false);
+  placedOverlays.set(w.lyrId, { srcId: w.srcId, sig: w.sig, visible: w.visible, opacity: w.opacity });
+}
+
+function placedOrder(map: MapLibreMap, wanted: readonly WantedOverlay[]): string[] {
+  return wanted.filter((w) => isPlaced(map, w)).map((w) => w.lyrId);
+}
+
+// After a move in the list: lay the layers out again in the list's order, each
+// right under the one above it. Nothing is reloaded by that.
+function restack(map: MapLibreMap, wanted: readonly WantedOverlay[]): void {
+  const order = placedOrder(map, wanted);
+  const kept = new Set(order);
+  const before = stackedOrder.filter((id) => kept.has(id));
+  const known = new Set(before);
+  const now = order.filter((id) => known.has(id));
+  if (before.length !== now.length || before.some((id, i) => id !== now[i])) {
+    let above = map.getLayer(LAYERS_TOP) ? LAYERS_TOP : aboveAll(map);
+    for (let i = order.length - 1; i >= 0; i--) {
+      map.moveLayer(order[i], above);
+      above = order[i];
+    }
+  }
+  stackedOrder = order;
 }
 
 export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
-  const gen = ++layerGen;
-  clearLayerOverlays(map);
-  // Render bottom-to-top: layers[0] is the top of the list, so draw it last.
-  let idx = 0;
-  for (const layer of [...layers].reverse()) {
-    if (!layer.visible) continue;
-    for (const ov of layer.overlays) {
-      if (idx >= MAX_LAYER_OVERLAYS) break;
-      const srcId = `layer-src-${idx}`;
-      const lyrId = `layer-lyr-${idx}`;
-      idx += 1;
-      if (ov.kind === 'raster') {
-        placeRaster(map, srcId, lyrId, ov.tileUrl, ov.bounds, layer.opacity, ov);
-      } else {
-        loadProcessed(ov.url, ov.nodataMax, null, (dataUrl) => {
-          if (gen !== layerGen) return;
-          try {
-            placeImage(map, srcId, lyrId, dataUrl, ov.coords, layer.opacity);
-          } catch {
-            /* superseded / map gone */
-          }
-        });
-      }
+  const wanted = wantedOverlaysOf(layers);
+  wantedOverlays = wanted;
+  const known = new Map(wanted.map((w) => [w.lyrId, w]));
+  // Gone from the list, or built from something else now: out.
+  for (const [lyrId, placed] of [...placedOverlays]) {
+    if (known.get(lyrId)?.sig === placed.sig) continue;
+    removePlaced(map, lyrId, placed);
+  }
+  // Top to bottom, so every new layer finds the one above it on the map already.
+  for (let i = wanted.length - 1; i >= 0; i--) {
+    const w = wanted[i];
+    if (isPlaced(map, w)) continue;
+    if (w.overlay.kind === 'raster') {
+      placeWanted(map, wanted, i);
+    } else if (w.visible) {
+      // A hidden quicklook is not even fetched; it is the next sync that finds it missing.
+      const ov = w.overlay;
+      loadProcessed(ov.url, ov.nodataMax, null, (dataUrl) => {
+        const index = wantedOverlays.findIndex((x) => x.lyrId === w.lyrId && x.sig === w.sig);
+        if (index < 0) return; // gone from the list, or a newer one took its place
+        try {
+          if (!isPlaced(map, wantedOverlays[index])) placeWanted(map, wantedOverlays, index, dataUrl);
+          restack(map, wantedOverlays);
+        } catch {
+          /* map/style went away while loading */
+        }
+      });
     }
   }
+  for (const w of wanted) {
+    const placed = placedOverlays.get(w.lyrId);
+    if (!placed || !map.getLayer(w.lyrId)) continue;
+    if (placed.visible !== w.visible) setVisibility(map, w.lyrId, w.visible);
+    if (placed.opacity !== w.opacity) map.setPaintProperty(w.lyrId, 'raster-opacity', w.opacity);
+    placed.visible = w.visible;
+    placed.opacity = w.opacity;
+  }
+  restack(map, wanted);
 }
 
 export interface MosaicState {
