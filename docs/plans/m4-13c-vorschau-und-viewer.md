@@ -720,8 +720,9 @@ Im Browser `http://localhost:5173`:
   (6 m). Das Badge hängt daher nicht mehr am Zoom: Es steht an der Karte (unten
   links) und im Abschnitt, solange eine Vorschau da ist, auch für eine angeheftete,
   solange ihr Layer eingeschaltet ist. Nennt kein Asset, Band und Item ein `gsd`,
-  gibt es keine Vorschau („No preview: the data names no pixel size, …“), weil keine
-  Stufe festgelegt werden kann. Damit entfällt die Regel `round(Zoom + 1)` aus
+  kann keine Stufe festgelegt werden: Die Vorschau wird dann wie bisher bis zur
+  letzten freigegebenen Stufe gerechnet, das Badge steht bei jeder Zoomstufe, und das
+  Panel sagt es („The data names no pixel size, …“) (Otto, 19.10.2026). Damit entfällt die Regel `round(Zoom + 1)` aus
   M4-13 §3.7 und die Prüfung gegen Kartenzoom und Ansicht.
 - **Karte:** `mapLayers.ts::syncPreview` legt die Quellen über alle Raster und
   unter die AOI-Linie; Raster, die später ankommen (Quicklooks), landen darunter
@@ -737,11 +738,11 @@ Im Browser `http://localhost:5173`:
   Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
   yet.“), Datensätze unter *processing*.
 
-**Tests** (vitest, synthetisch, 85 neue): `processingPreview.test.ts` (Planer mit
+**Tests** (vitest, synthetisch, 86 neue): `processingPreview.test.ts` (Planer mit
 leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
 und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
 `previewMaxZoom`: 10 m bei 51° N, Äquator, 30 m, 1 m, 300 m, Süden, Pol, mehrere
-Szenen, freigegebene Stufen; ohne `gsd` keine Vorschau), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
+Szenen, freigegebene Stufen; ohne `gsd` letzte freigegebene Stufe und Badge überall), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
 Wertebereich, Badge, Anheften, Einstiege, Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
 Sitzung: Zuschnitt immer aus, `beforeAoi` ohne Vorschau,
 umgedrehte Regel, „Area“ ohne Vorgabe beim Einstieg, ein veralteter Einstieg, der
@@ -778,7 +779,7 @@ Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer�
 Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
 A → B → A), zur AOI und zu den neuen Gründen.
 
-**Ergebnis der Prüfungen:** Frontend 1008 Tests grün, `tsc` und `oxlint` ohne Befund;
+**Ergebnis der Prüfungen:** Frontend 1009 Tests grün, `tsc` und `oxlint` ohne Befund;
 Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
 (keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
 

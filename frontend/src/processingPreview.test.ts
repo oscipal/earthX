@@ -195,8 +195,10 @@ describe('previewSpec', () => {
     expect(previewSpec({ ...base, plan, items: [{ ...items[0], bbox: null }] })).toBeNull();
   });
 
-  it('draws nothing when the data names no pixel size, since no level could be held under it', () => {
-    expect(previewSpec({ ...base, plan: ready([bandMath('red')]), items: [item('S2_A'), item('S2_B')] })).toBeNull();
+  it('draws as before, up to the last released level, when the data names no pixel size', () => {
+    const spec = previewSpec({ ...base, plan: ready([bandMath('red')]), items: [item('S2_A'), item('S2_B')] })!;
+    expect(spec).toMatchObject({ minZoom: 8, maxZoom: 14 });
+    expect(spec.scenes).toHaveLength(2);
   });
 
   it('takes the scenes without a footprint out and no more than the full-resolution view draws', () => {

@@ -1,8 +1,8 @@
 // "Preview" (M4-13c-2): shown over the map while a preview is on it — the one of
 // the open processing panel, or a pinned preview layer that is switched on. A
-// preview is always coarser than the data (Otto, 19.10.2026; its tiles stop short
-// of the data's pixel size, `processingPreview.ts::previewMaxZoom`), so the badge
-// does not depend on the zoom.
+// preview is held coarser than the data (Otto, 19.10.2026; its tiles stop short of
+// the data's pixel size, `processingPreview.ts::previewMaxZoom`), or, where the
+// data names no pixel size, marked at every zoom: the badge never depends on the zoom.
 
 import { PREVIEW_BADGE_TITLE } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';

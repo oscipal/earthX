@@ -19,7 +19,7 @@ export const MAX_PREVIEW_SCENES = 40;
 export const MAX_PREVIEW_ASSETS = 16;
 
 export const PREVIEW_BADGE_TITLE =
-  'A preview is always coarser than the data: zooming in only makes it blurrier, not finer. A job uses the full resolution.';
+  'This is a preview, not the result. A job uses the full resolution of the data.';
 
 export const NO_PREVIEW = 'No preview: the first step runs only as a job.';
 
@@ -153,11 +153,11 @@ export function previewSpec(args: {
     });
   }
   if (scenes.length === 0) return null;
-  // Without a pixel size there is no level the preview could be held under (Otto,
-  // 19.10.2026: never as fine as the data); the panel says so.
+  // Without a pixel size there is no level to hold the preview under: it is drawn
+  // as before, up to the last released level, and "Preview" says what it is (Otto,
+  // 19.10.2026).
   const gsd = finestGsd(items, assets, info.variableSeparator);
-  if (gsd === null) return null;
-  const maxZoom = previewMaxZoom(scenes.map((s) => s.bbox), gsd, dataset.zoom);
+  const maxZoom = gsd === null ? dataset.zoom.max : previewMaxZoom(scenes.map((s) => s.bbox), gsd, dataset.zoom);
   const clipToAoi = area === 'aoi';
   return {
     key: canonicalJson({ urls: scenes.map((s) => s.url), minZoom: dataset.zoom.min, maxZoom, clipToAoi }),
@@ -190,7 +190,7 @@ export function tileResolution(latitude: number, zoom: number): number {
 }
 
 export const NO_PIXEL_SIZE =
-  'No preview: the data names no pixel size, so the preview cannot be kept coarser than the data.';
+  'The data names no pixel size, so the preview cannot be held coarser than the data. It is marked Preview at every zoom.';
 
 // The last tile level the preview asks for. A tile is the finest where the scene
 // lies farthest from the equator, so the level is chosen there: every tile is

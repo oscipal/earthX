@@ -238,7 +238,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           )}
           {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
           {view.pass && view.assets.length > 0 && finestGsd(view.pass.items, view.assets, view.info?.variableSeparator ?? null) === null && (
-            <p className="hint-text">{NO_PIXEL_SIZE}</p>
+            <p className="pp-help">{NO_PIXEL_SIZE}</p>
           )}
           {plan.further && <p className="pp-help">The map shows the first step; the job runs all steps.</p>}
           {sceneCount > 1 && (
