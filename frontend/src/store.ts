@@ -240,6 +240,36 @@ function foundNotice(
   return base;
 }
 
+// A layer the processing panel pins (M4-13c-2): a picture made from scenes, not
+// the scenes themselves.
+export interface DerivedLayer {
+  name: string;
+  derived: NonNullable<MapLayer['derived']>;
+  overlays: LayerOverlay[];
+  // The scenes the picture was made from.
+  itemIds: string[];
+  cropToAoi: boolean;
+}
+
+// A layer belongs to the dataset it was pinned from (F4): choosing it makes that
+// dataset the active one — and opens its section, if the last search has one — so
+// the list and the controls speak of the layer's own scenes. A dataset that is not
+// ticked (any more) is ticked by this, without touching the results, so the active
+// dataset stays one of the ticked ones.
+function layerDatasetState(s: AppState, r: LayerRestore) {
+  const section = r.datasetId ? s.sections.find((x) => x.datasetId === r.datasetId) : undefined;
+  const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
+  const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
+  const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
+  return {
+    ...(tickable
+      ? { selectedDatasetIds: s.datasets.filter((d) => d.id === dataset.id || s.selectedDatasetIds.includes(d.id)).map((d) => d.id) }
+      : {}),
+    ...(section ? openSectionState(section) : becomesActive && becomesActive !== s.datasetId ? openSectionState(null) : {}),
+    ...(becomesActive ? { datasetId: becomesActive } : {}),
+  };
+}
+
 // A layer id prefix, unique per call: the clock alone gives two pins within one
 // millisecond the same id, and a layer is found again by that id.
 let batchSeq = 0;
@@ -703,11 +733,13 @@ export interface AppState {
   clearAll: () => void;
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
+  pinDerivedLayer: (layer: DerivedLayer) => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
   moveLayer: (id: string, dir: 'up' | 'down') => void;
   selectLayer: (id: string) => void;
+  activateLayerContext: (id: string) => void;
   openDownloadDialog: (id: string) => Promise<void>;
   openDownloadForSelection: () => void;
   closeDownloadDialog: () => void;
@@ -1120,6 +1152,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
     set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
   },
+  // Pins a derived picture at the top of the list.
+  pinDerivedLayer: (input) => {
+    const s = get();
+    const layer: MapLayer = {
+      id: `P${nextBatchId()}0`,
+      name: input.name,
+      visible: true,
+      opacity: 1,
+      overlays: input.overlays,
+      derived: input.derived,
+      restore: {
+        focusMode: false,
+        downloaded: {},
+        appliedRender: {},
+        activeGroupIndex: s.activeGroupIndex,
+        selectedIds: [...input.itemIds],
+        itemIds: input.itemIds,
+        groupItemIds: groupItemIdsFor(input.itemIds, s.groups),
+        aoi: s.aoi,
+        cropToAoi: input.cropToAoi,
+        datasetId: s.datasetId,
+      },
+    };
+    set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${input.name}" to layers.` });
+  },
   removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
@@ -1134,27 +1191,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       [arr[i], arr[j]] = [arr[j], arr[i]];
       return { layers: arr };
     }),
+  // Only what the processing panel needs of a layer (M4-13c-2, Otto 19.10.2026):
+  // its dataset, if it is not the active one, and — for a layer cut to its AOI,
+  // which "AOI only" sends — that AOI. The view stays as it is: the full-
+  // resolution view of the layer is not entered, the results list not hidden. The
+  // scenes are the panel's own business (`processingStore`).
+  activateLayerContext: (id) => {
+    const s = get();
+    const l = s.layers.find((x) => x.id === id);
+    if (!l) return;
+    const r = l.restore;
+    const aoi = r.cropToAoi && r.aoi ? r.aoi : s.aoi;
+    if (aoi !== s.aoi) dropPageToken(set, get);
+    set({ ...(r.datasetId && r.datasetId !== s.datasetId ? layerDatasetState(s, r) : {}), aoi });
+  },
   selectLayer: (id) => {
     const s = get();
     const l = s.layers.find((x) => x.id === id);
     if (!l) return;
     const r = l.restore;
-    // A layer belongs to the dataset it was pinned from (F4): choosing it makes
-    // that dataset the active one — and opens its section, if the last search
-    // has one — so the list and the controls speak of the layer's own scenes. A
-    // dataset that is not ticked (any more) is ticked by this, without touching
-    // the results, so the active dataset stays one of the ticked ones.
-    const section = r.datasetId ? s.sections.find((x) => x.datasetId === r.datasetId) : undefined;
-    const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
-    const tickable = !!dataset?.viewable && !s.selectedDatasetIds.includes(dataset.id);
-    const becomesActive = dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? dataset.id : null;
     if (r.aoi !== s.aoi) dropPageToken(set, get);
     set({
-      ...(tickable
-        ? { selectedDatasetIds: s.datasets.filter((d) => d.id === dataset.id || s.selectedDatasetIds.includes(d.id)).map((d) => d.id) }
-        : {}),
-      ...(section ? openSectionState(section) : becomesActive && becomesActive !== s.datasetId ? openSectionState(null) : {}),
-      ...(becomesActive ? { datasetId: becomesActive } : {}),
+      ...layerDatasetState(s, r),
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,

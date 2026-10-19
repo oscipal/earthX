@@ -4,8 +4,8 @@
 // with an estimate before it starts as a job. Built from the schema of
 // `/processing/processes/recipe?dataset=…`, nothing per dataset here. A side
 // bar at the right edge, a sheet from below on narrow screens (M4-13c §3.1);
-// the jobs of this tab have a window of their own (`JobList.tsx`). The map
-// preview of the steps comes with M4-13c-2.
+// the jobs of this tab have a window of their own (`JobList.tsx`). The first
+// step shows on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -22,7 +22,20 @@ import {
   uniqueNames,
   type BandSource,
 } from '../processingOrder';
-import { bandMathExpressions, orderView, selectionState, useProcessingStore, type OrderView } from '../processingStore';
+import {
+  AUTO_STRETCH_REASON,
+  MAX_PREVIEW_ASSETS,
+  planPreview,
+  rescaleOf,
+} from '../processingPreview';
+import {
+  bandMathExpressions,
+  orderView,
+  selectionState,
+  useProcessingStore,
+  type OrderView,
+} from '../processingStore';
+import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import StepForm from './StepForm';
 
@@ -157,6 +170,91 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
         !hasAoi && <p className="hint-text error">Draw an AOI first, or choose “Whole scene”.</p>
       )}
     </div>
+  );
+}
+
+// "Preview on the map" (M4-13c-2): the first step as tiles, with the range and
+// colormap by hand (F3 (1)), and the preview as a layer of its own.
+function PreviewSection({ view }: { view: OrderView }) {
+  const steps = useProcessingStore((s) => s.steps);
+  const preview = useProcessingStore((s) => s.preview);
+  const rangeDraft = useProcessingStore((s) => s.rangeDraft);
+  const setRangeDraft = useProcessingStore((s) => s.setRangeDraft);
+  const applyRange = useProcessingStore((s) => s.applyRange);
+  const pinPreview = useProcessingStore((s) => s.pinPreview);
+  const plan = planPreview(steps, view.info);
+  const range = rescaleOf(rangeDraft);
+  const sceneCount = view.pass?.items.length ?? 0;
+  return (
+    <section className="pp-section" aria-label="Preview on the map">
+      <h3 className="pp-heading">
+        Preview on the map{' '}
+        {preview && (
+          <span className="pp-badge">
+            Preview
+          </span>
+        )}
+      </h3>
+      {plan.state === 'off' ? (
+        plan.reason && <p className="hint-text">{plan.reason}</p>
+      ) : (
+        <>
+          <div className="pp-range" role="group" aria-label="Range and colormap">
+            <label className="vc-field vc-num">
+              <span>min</span>
+              <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
+            </label>
+            <label className="vc-field vc-num">
+              <span>max</span>
+              <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
+            </label>
+            <label className="vc-field">
+              <span>Colormap</span>
+              <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
+                <option value="">— none —</option>
+                {COLORMAPS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
+              Apply
+            </button>
+            <button type="button" className="link-btn" disabled title={AUTO_STRETCH_REASON}>
+              Auto stretch
+            </button>
+          </div>
+          {'problem' in range && <p className="hint-text error">{range.problem}</p>}
+          {view.assets.length === 0 && (
+            <p className="hint-text">Pick a band, or name it in the expression, to see the preview.</p>
+          )}
+          {view.assets.length > MAX_PREVIEW_ASSETS && (
+            <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
+          )}
+          {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
+          {plan.further && <p className="pp-help">The map shows the first step; the job runs all steps.</p>}
+          {sceneCount > 1 && (
+            <p className="pp-help">
+              Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of
+              the server.
+            </p>
+          )}
+          <div className="vc-actions">
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={!preview}
+              title="Pin this preview into the layer manager"
+              onClick={() => pinPreview()}
+            >
+              ＋ Add preview to layers
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -386,6 +484,8 @@ export default function ProcessingPanel() {
                     )}
                   </details>
                 </section>
+
+                <PreviewSection view={view} />
               </>
             )}
           </>

@@ -7,6 +7,23 @@
 import type { BandStatistics } from './api';
 import type { AppliedRender, EarthxDefaultRender } from './types';
 
+// Named colormaps rio-tiler/matplotlib ship — generic, not tied to any dataset.
+export const COLORMAPS = [
+  'viridis',
+  'plasma',
+  'inferno',
+  'magma',
+  'cividis',
+  'turbo',
+  'greens',
+  'ylgn',
+  'rdylgn',
+  'spectral',
+  'terrain',
+  'gist_earth',
+  'greys',
+];
+
 export function autoRescale(stats: Record<string, BandStatistics>): [number, number] | null {
   const bands = Object.values(stats);
   const los = bands.map((b) => b.percentile_2).filter((v) => typeof v === 'number' && Number.isFinite(v));

@@ -7,6 +7,9 @@
 // selection has (in the AOI, for "AOI only"), or the one the user picks. It
 // covers the whole scenes by default, or only the AOI (M4-13c §3.2).
 //
+// The map preview of the first step (M4-13c-2) is computed from the draft and
+// the selection; it follows 400 ms after the last change (K7).
+//
 // The draft belongs to one dataset: a new dataset drops it. A new AOI drops
 // nothing but the estimate (M4-13c K3). An estimate belongs to exactly one
 // order (K4): any change to the order makes it disappear, and "Start job"
@@ -14,7 +17,7 @@
 
 import { create } from 'zustand';
 
-import { HttpError } from './api';
+import { fetchItem, HttpError } from './api';
 import type { DatasetOption } from './datasets';
 import { loadStoredJobs, saveStoredJobs, trackJob, type TrackerOptions } from './jobTracker';
 import {
@@ -35,6 +38,7 @@ import {
   isArea,
   orderAssets,
   passesOf,
+  processBlockReason,
   processInfo,
   stepOfRefusal,
   type Area,
@@ -44,10 +48,39 @@ import {
   type Pass,
   type ProcessInfo,
 } from './processingOrder';
+import {
+  DEFAULT_RANGE,
+  planPreview,
+  previewOverlays,
+  previewSpec,
+  rescaleOf,
+  type PreviewRange,
+  type PreviewSpec,
+} from './processingPreview';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
 import { initialValues, type FieldValue } from './schemaForm';
+import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
-import type { StacItem } from './types';
+import { buildGroups } from './grouping';
+import type { StacItem, TimeStepGroup } from './types';
+
+// Where a panel opens from: the "Area" it starts with, and the scenes the
+// results on screen lack.
+export interface ProcessingEntry {
+  area?: Area;
+  // Scenes of the entry that the results on screen do not hold (see `ExtraScenes`);
+  // `null` drops those of an earlier entry. Left out: they stay.
+  extraScenes?: ExtraScenes | null;
+}
+
+// Scenes fetched one by one because a layer or the full-resolution view names them
+// but the results on screen do not (M4-13c-2, Otto 19.10.2026), with the passes
+// the results list would have put them in. `orderView` reads them next to the
+// results; nothing else does.
+export interface ExtraScenes {
+  items: StacItem[];
+  groups: TimeStepGroup[];
+}
 
 export type Description =
   | { state: 'loading' }
@@ -95,9 +128,15 @@ interface ProcessingState {
   // `Pass.key` of the pass the user picked; `null` until then (a lone pass needs no pick).
   passKey: string | null;
   area: Area;
+  extraScenes: ExtraScenes | null;
   steps: DraftStep[];
   picked: string[];
   dtype: string | null;
+  // The range and colormap of the map preview: applied, and as edited (F3 (1)).
+  range: PreviewRange;
+  rangeDraft: PreviewRange;
+  // What the map shows of the first step; `null` for none.
+  preview: PreviewSpec | null;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
@@ -107,7 +146,12 @@ interface ProcessingState {
   startError: Refusal | null;
   jobs: JobEntry[];
 
-  openProcessing: () => void;
+  openProcessing: (entry?: ProcessingEntry) => void;
+  processLayer: (layerId: string) => Promise<void>;
+  processFocusView: () => Promise<void>;
+  setRangeDraft: (patch: Partial<PreviewRange>) => void;
+  applyRange: () => void;
+  pinPreview: () => void;
   closeProcessing: () => void;
   openJobs: () => void;
   closeJobs: () => void;
@@ -184,7 +228,8 @@ export function selectionState(s: AppState): SelectionState {
   return { datasets, datasetId, items, selectedIds, groups, activeGroupIndex, aoi };
 }
 
-export function orderView(app: SelectionState, p: ProcessingState): OrderView {
+export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
+  const app = withExtraScenes(selection, p.extraScenes);
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   const description = app.datasetId ? p.descriptions[app.datasetId] : undefined;
   const info = description?.state === 'ready' ? description.info : null;
@@ -234,6 +279,83 @@ export function orderView(app: SelectionState, p: ProcessingState): OrderView {
     built,
     key: built?.order ? canonicalJson(built.order) : null,
   };
+}
+
+// --- source layer and entries (M4-13c-2) ------------------------------------
+
+// Why a layer cannot be the start of an order, or `null`. A picture made from
+// scenes is no scene; the licence is the dataset's, as for the selection.
+export function layerProcessBlock(layer: MapLayer, datasets: readonly DatasetOption[]): string | null {
+  if (layer.derived) return 'A result cannot be processed further yet.';
+  const dataset = datasets.find((d) => d.id === layer.restore.datasetId);
+  return processBlockReason(dataset, layer.restore.itemIds.length);
+}
+
+// The latest entry that is fetching scenes: an older one that answers late
+// finds itself superseded and does nothing.
+let entryGeneration = 0;
+
+// The scenes of the entry become the selection the panel reads. Those the results
+// on screen lack are fetched one by one from the catalog (no new search, Otto
+// 19.10.2026); they come back as the extra scenes of the entry. `null` when it
+// cannot go on — the reason is in `error` — or when a newer entry took over.
+async function selectScenes(ids: readonly string[], whose: string): Promise<ExtraScenes | null> {
+  const generation = ++entryGeneration;
+  const app = useAppStore.getState();
+  const fail = (message: string) => {
+    if (generation === entryGeneration) useAppStore.setState({ error: message });
+    return null;
+  };
+  if (ids.length === 0) return fail(`There are no scenes in ${whose}.`);
+  const missing = ids.filter((id) => !app.items.some((item) => item.id === id));
+  let extra: ExtraScenes = { items: [], groups: [] };
+  if (missing.length > 0) {
+    const dataset = app.datasets.find((d) => d.id === app.datasetId);
+    if (!app.datasetId || !dataset?.viewable) return fail('Pick a dataset first.');
+    const datasetId = app.datasetId;
+    const answers = await Promise.allSettled(missing.map((id) => fetchItem(datasetId, id)));
+    if (generation !== entryGeneration) return null;
+    const problems = answers.flatMap((answer, i) =>
+      answer.status === 'rejected'
+        ? [`${missing[i]}: ${answer.reason instanceof Error ? answer.reason.message : String(answer.reason)}`]
+        : answer.value === undefined
+          ? [`${missing[i]}: not found in the catalog`]
+          : [],
+    );
+    if (problems.length > 0) return fail(`Could not load the scenes of ${whose}. ${problems.join('; ')}`);
+    const items = answers.flatMap((answer) => (answer.status === 'fulfilled' && answer.value ? [answer.value] : []));
+    try {
+      extra = { items, groups: buildGroups(items, dataset.resultsGroupBy) };
+    } catch (error) {
+      return fail(`Could not group the scenes of ${whose}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  useAppStore.setState({ selectedIds: [...ids] });
+  return extra;
+}
+
+// The results on screen with the extra scenes beside them: a scene whose pass
+// the results already hold joins that pass, any other pass is added at the end.
+// The same arrays for the same inputs, so the candidates stay cached.
+let lastWithScenes: { items: StacItem[]; groups: TimeStepGroup[]; extra: ExtraScenes; result: SelectionState } | null = null;
+
+function withExtraScenes(app: SelectionState, extra: ExtraScenes | null): SelectionState {
+  if (!extra) return app;
+  if (lastWithScenes && lastWithScenes.items === app.items && lastWithScenes.groups === app.groups && lastWithScenes.extra === extra) {
+    return { ...app, items: lastWithScenes.result.items, groups: lastWithScenes.result.groups };
+  }
+  const keyOf = (group: TimeStepGroup) => group.key.join('\u0000');
+  const joined = new Map(extra.groups.map((group) => [keyOf(group), group]));
+  const groups = [
+    ...app.groups.map((group) => {
+      const more = joined.get(keyOf(group));
+      return more ? { ...group, items: [...group.items, ...more.items] } : group;
+    }),
+    ...extra.groups.filter((group) => !app.groups.some((g) => keyOf(g) === keyOf(group))),
+  ];
+  const result = { ...app, items: [...app.items, ...extra.items], groups };
+  lastWithScenes = { items: app.items, groups: app.groups, extra, result };
+  return result;
 }
 
 // --- requests that a change of the selection drops ----------------------------
@@ -288,9 +410,13 @@ const EMPTY_DRAFT = {
   passKey: null,
   // "Whole scene" first (Otto, 12.10.2026).
   area: 'scene' as Area,
+  extraScenes: null as ExtraScenes | null,
   steps: [] as DraftStep[],
   picked: [] as string[],
   dtype: null,
+  range: DEFAULT_RANGE,
+  rangeDraft: DEFAULT_RANGE,
+  preview: null as PreviewSpec | null,
   reviewAsked: false,
   estimate: null,
   reviewing: false,
@@ -386,10 +512,59 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     ...EMPTY_DRAFT,
     jobs: [],
 
-    openProcessing: () => {
-      set({ open: true });
+    // Opened from the selection (`ViewBar`), a layer or the full-resolution view.
+    // Every entry sets the area: "Whole scene" unless the entry says otherwise
+    // (Otto 19.10.2026).
+    openProcessing: (entry = {}) => {
+      set({
+        open: true,
+        area: entry.area ?? 'scene',
+        ...(entry.extraScenes !== undefined ? { extraScenes: entry.extraScenes } : {}),
+      });
       const datasetId = useAppStore.getState().datasetId;
       if (datasetId) get().ensureDescription(datasetId);
+    },
+    // F3 (1): the selection is made again from the layer, then the panel opens and
+    // reads the selection as ever. "AOI only" if the layer was cut to its AOI.
+    // The view stays as it is (Otto 19.10.2026): no full-resolution view of the
+    // layer, the results list stays. Scenes the results on screen lack are fetched
+    // first, one by one.
+    processLayer: async (layerId) => {
+      const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
+      if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
+      useAppStore.getState().activateLayerContext(layerId);
+      const extraScenes = await selectScenes(layer.restore.itemIds, 'this layer');
+      if (!extraScenes) return;
+      get().openProcessing({
+        area: layer.restore.cropToAoi && isArea(layer.restore.aoi) ? 'aoi' : 'scene',
+        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+      });
+    },
+    processFocusView: async () => {
+      const app = useAppStore.getState();
+      const extraScenes = await selectScenes(Object.keys(app.downloaded), 'this view');
+      if (!extraScenes) return;
+      get().openProcessing({
+        area: app.cropToAoi && isArea(app.aoi) ? 'aoi' : 'scene',
+        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+      });
+    },
+    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch } })),
+    applyRange: () => {
+      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft }));
+    },
+    // The preview on screen becomes a layer of its own.
+    pinPreview: () => {
+      const { preview } = get();
+      const app = useAppStore.getState();
+      if (!preview) return;
+      app.pinDerivedLayer({
+        name: `Preview · ${preview.title}`,
+        derived: 'preview',
+        overlays: previewOverlays(preview, app.aoi),
+        itemIds: preview.scenes.map((scene) => scene.id),
+        cropToAoi: preview.clipToAoi,
+      });
     },
     closeProcessing: () => {
       abortEstimate();
@@ -567,5 +742,64 @@ useAppStore.subscribe((s, prev) => {
       abortEstimate();
       useProcessingStore.setState({ reviewing: false });
     }
+  }
+});
+
+// --- the map preview (K7) ----------------------------------------------------
+
+const PREVIEW_DELAY_MS = 400;
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+
+// What the map should show now: the first step of the draft on the scenes of the
+// order, while the panel is open and the step is complete.
+function wantedPreview(): PreviewSpec | null {
+  const p = useProcessingStore.getState();
+  if (!p.open) return null;
+  const app = useAppStore.getState();
+  const view = orderView(app, p);
+  if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
+  const plan = planPreview(p.steps, view.info);
+  if (plan.state !== 'ready') return null;
+  return previewSpec({ dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, range: p.range, area: p.area });
+}
+
+// A preview that goes away goes at once; a new or changed one 400 ms after the
+// last change, so typing an expression asks for no tile per key.
+function refreshPreview(): void {
+  clearTimeout(previewTimer);
+  const wanted = wantedPreview();
+  if (wanted?.key === useProcessingStore.getState().preview?.key) return;
+  if (wanted === null) {
+    useProcessingStore.setState({ preview: null });
+    return;
+  }
+  previewTimer = setTimeout(() => useProcessingStore.setState({ preview: wantedPreview() }), PREVIEW_DELAY_MS);
+}
+
+useProcessingStore.subscribe((s, prev) => {
+  if (
+    s.open !== prev.open ||
+    s.descriptions !== prev.descriptions ||
+    s.passKey !== prev.passKey ||
+    s.area !== prev.area ||
+    s.steps !== prev.steps ||
+    s.picked !== prev.picked ||
+    s.range !== prev.range
+  ) {
+    refreshPreview();
+  }
+});
+
+useAppStore.subscribe((s, prev) => {
+  if (
+    s.datasets !== prev.datasets ||
+    s.datasetId !== prev.datasetId ||
+    s.items !== prev.items ||
+    s.groups !== prev.groups ||
+    s.activeGroupIndex !== prev.activeGroupIndex ||
+    s.selectedIds !== prev.selectedIds ||
+    (s.aoi !== prev.aoi && useProcessingStore.getState().area === 'aoi')
+  ) {
+    refreshPreview();
   }
 });

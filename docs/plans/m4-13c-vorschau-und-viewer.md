@@ -155,6 +155,7 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
   und erneuert sich mit 400 ms Verzögerung nach der letzten Eingabe.
 - Abschnitt „Preview on the map“ im Panel: Wertebereich, Colormap, „Apply“
   (Startwerte −1 bis 1, `rdylgn`; F3 (1)), „Auto stretch“ gesperrt mit Grund.
+- **[Geändert am 19.10.2026 (Otto): Die Vorschau ist immer gröber als die Daten, die Kachelstufe ist gedeckelt, das Badge steht immer; siehe §12. Die Regel unten gilt nicht mehr.]**
 - **Badge „Preview“** an der Karte und im Panel nach F4 (1):
   `156543.03392 · cos(φ) / 2^z` m je Pixel an der äquatornächsten Breite des
   Ausschnitts, `z = min(round(mapZoom + 1), max_zoom)`, gegen das feinste `gsd`
@@ -168,6 +169,8 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
 
 ### 3.4 Ergebnis direkt im Viewer (Zusatz Punkt 3, F2)
 
+- **[Geändert am 19.10.2026 (Otto): „Replace source layer“ entfällt bei der T1-Vorschau,
+  siehe §12.]**
 - **Band-Math (T1):** „＋ Add preview to layers“ und „Replace source layer“ im
   Abschnitt „Preview on the map“. Der Layer hält die Kachel-URL mit
   `op`/`params` (Overlay `raster`, wie heute) und heißt „Preview · <Operator>“;
@@ -264,6 +267,7 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
 
 ### 3.5 Einstiege (Zusatz Punkt 4, F3)
 
+**[Geändert am 19.10.2026 (Otto): „⚙“ am Layer stellt nur Datensatz, AOI und Szenen her und wechselt nicht die Ansicht, siehe §12.]**
 Empfehlung F3 (1): Beide Einstiege stellen zuerst die Auswahl her, dann öffnet
 das Panel; das Panel liest wie heute nur die Auswahl.
 - **Layer-Manager:** je Layer ein Knopf „⚙“ („Process this layer“).
@@ -687,3 +691,130 @@ Im Browser `http://localhost:5173`:
    Schritt bleibt, „Start job“ wartet auf ein neues „Review“.
 4. „Start job“: die Jobliste öffnet links neben der Leiste.
 5. Die AOI löschen: „⚙ Process“ bleibt aktiv, „AOI only“ ist grau.
+
+## 12. M4-13c-2 — Umsetzung (15.10.2026)
+
+**Gebaut** (nur `frontend/`, Branch `claude/jolly-cori-d0mda9`):
+- **Planer und Kachel-URL (§3.3):** `processingPreview.ts`. Die Vorschau ist der
+  erste Schritt, wenn er `T1` und `pixel` ist und seine Felder vollständig sind;
+  sonst steht „No preview: the first step runs only as a job.“ bzw. „Complete the
+  step to see the preview.“ Weitere Schritte (T1 oder nicht) zeigt die Karte nicht;
+  das Panel sagt es. Je Szene des Auftrags (höchstens 40) eine Raster-Quelle mit
+  `asset` je Band, `op`, `op_version`, `params` als kanonischem JSON, `rescale` und
+  `colormap_name`; bei „AOI only“ über `clipTileUrl` im Browser zugeschnitten, die
+  AOI steht nie in einer URL. Szenen ohne `bbox` fallen heraus.
+- **Zeitpunkt (K7):** `processingStore.ts` hält `preview`; eine Änderung am Entwurf
+  oder an der Auswahl erneuert es 400 ms nach der letzten Eingabe, eine wegfallende
+  Vorschau (Panel zu, Schritt leer oder ungültig) sofort. Ein Wechsel des
+  Datensatzes verwirft sie mit dem Entwurf.
+- **Darstellung (F3 (1)):** Abschnitt „Preview on the map“ mit Wertebereich
+  (Start −1 bis 1), Colormap (`rdylgn`) und „Apply“ wie in der Vollauflösung;
+  „Auto stretch“ gesperrt mit Grund. Ein Bereich, der keiner ist, sperrt „Apply“
+  und lässt das gezeigte Bild stehen.
+- **„Preview“ — immer gröber als die Daten (Otto, 19.10.2026, ersetzt F4 (1)):**
+  Die Vorschau erreicht nie die Auflösung der Originaldaten. `previewMaxZoom` deckelt
+  die Kachelstufe der Quelle: Es ist die letzte Stufe, deren Kacheln noch gröber als
+  das feinste `gsd` der Assets sind (Asset, `raster:bands[0]`, Item), gerechnet an der
+  Breite der Szenen, die am weitesten vom Äquator liegt (dort ist die Kachel am
+  feinsten). Darüber streckt die Karte die letzte Stufe: Hineinzoomen macht das Bild
+  unschärfer, nie feiner. Beispiel 10 m bei 51° N: Stufe 13 (12 m je Pixel), nicht 14
+  (6 m). Das Badge hängt daher nicht mehr am Zoom: Es steht an der Karte (unten
+  links) und im Abschnitt, solange eine Vorschau da ist, auch für eine angeheftete,
+  solange ihr Layer eingeschaltet ist. Nennt kein Asset, Band und Item ein `gsd`,
+  kann keine Stufe festgelegt werden: Die Vorschau wird dann wie bisher bis zur
+  letzten freigegebenen Stufe gerechnet, das Badge steht bei jeder Zoomstufe. Das
+  Frontend zeigt dazu keinen Text (Otto, 19.10.2026). Damit entfällt die Regel `round(Zoom + 1)` aus
+  M4-13 §3.7 und die Prüfung gegen Kartenzoom und Ansicht.
+- **Karte:** `mapLayers.ts::syncPreview` legt die Quellen über alle Raster und
+  unter die AOI-Linie; Raster, die später ankommen (Quicklooks), landen darunter
+  (`beforeAoi`).
+- **Als Layer (§3.4):** „＋ Add preview to layers“ heftet „Preview · <Operator>“
+  oben an. **„Replace source layer“ gibt es nicht** (Otto, 19.10.2026: den Knopf will
+  er nicht): Weder Quell-Layer noch Ausblenden von Layer oder Fokusansicht. Ein Layer
+  trägt `derived: 'preview'` und seine Overlays `preview: true`; der Download-Knopf
+  fehlt bei ihm.
+- **Einstiege (§3.5):** „⚙“ je Layer und „⚙ Process“ in der Vollauflösung machen die
+  Szenen zur Auswahl, setzen „Area“ (zugeschnitten und AOI da → „AOI only“, sonst
+  „Whole scene“) und öffnen das Panel. **Die Ansicht bleibt, wie sie ist** (Otto,
+  19.10.2026, ändert F3 (1) in diesem Punkt): „⚙“ am Layer ruft nicht `selectLayer`
+  auf, sondern `activateLayerContext`. Das setzt nur den Datensatz des Layers, falls er
+  nicht der aktive ist, und bei einem zugeschnittenen Layer dessen AOI. Die
+  Vollauflösung des Layers wird nicht betreten, die Trefferliste bleibt, eine offene
+  Vollauflösung bleibt. Gesperrt mit Grund: Vorschau-Layer („A result cannot be
+  processed further yet.“), Datensätze unter *processing*.
+
+**Tests** (vitest, synthetisch, 89 neue): `processingPreview.test.ts` (Planer mit
+leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
+und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
+`previewMaxZoom`: 10 m bei 51° N, Äquator, 30 m, 1 m, 300 m, Süden, Pol, mehrere
+Szenen, freigegebene Stufen; ohne `gsd` letzte freigegebene Stufe und Badge überall), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
+Wertebereich, Badge, Anheften, Einstiege, Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
+Sitzung: Zuschnitt immer aus, `beforeAoi` ohne Vorschau,
+umgedrehte Regel, „Area“ ohne Vorgabe beim Einstieg, ein veralteter Einstieg, der
+nicht verworfen wird und Fehler beim Nachladen verschluckt lassen je Tests fallen.
+
+**Entschieden von Otto am 19.10.2026, umgesetzt:**
+1. *Szenen, die in den Treffern fehlen (Option 2):* „⚙“ am Layer und „⚙ Process“ der
+   Vollauflösung holen fehlende Szenen einzeln mit `fetchItem` (kein neuer Suchlauf)
+   und öffnen dann das Panel. Die Treffer bleiben unverändert; die geholten Szenen
+   liegen als `extraScenes` im Processing-Store, `orderView` liest sie neben den
+   Treffern. Ihre Überflüge bildet `buildGroups` mit dem `results_group_by` des
+   Datensatzes: Gehört eine Szene zu einem Überflug, den die Treffer schon haben,
+   kommt sie dorthin, sonst bekommt sie einen eigenen. Schlägt ein Abruf fehl (nicht
+   im Katalog, Dienst nicht erreichbar), öffnet nichts, und die Meldung nennt die
+   Szene und den Grund („Could not load the scenes of this layer. <id>: …“). Ein
+   neuerer Einstieg macht einen noch wartenden unwirksam. Ein Wechsel des Datensatzes
+   verwirft die Szenen mit dem Entwurf.
+2. *„Area“ (2a):* Jeder Einstieg setzt „Area“; das Panel aus der Auswahl (`ViewBar`)
+   startet immer auf „Whole scene“, auch wenn ein Layer-Einstieg vorher „AOI only“
+   gesetzt hatte.
+3. *„Replace source layer“ (2b):* Entfällt mit dem Knopf (siehe oben, Otto,
+   19.10.2026). Die Entscheidung 2b, auch die Fokusansicht auszublenden, hat damit
+   keinen Gegenstand mehr.
+
+**Für c-5 offen:** §3.4 sieht „Replace source layer“ auch für Job-Ergebnisse vor
+(„Show on map“ mit „As a new layer“ und „Replace source layer“). Ob der Knopf dort
+bleibt, ist nicht gesagt; c-5 fragt, bevor sie ihn baut.
+
+**Befunde des Reviewers, behoben:** Die Vorschau stapelte die Szenen umgekehrt zur
+Fokusansicht (jetzt die erste oben, wie `syncFocusRaster`); das Badge lag auf
+schmalen Bildschirmen unter dem Blatt (jetzt darüber); bei mehr als 16 Bändern und
+ohne gewählten Überflug blieb die Vorschau ohne Grund aus (jetzt mit Text); der
+Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer“;
+Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
+A → B → A), zur AOI und zu den neuen Gründen.
+
+**Ergebnis der Prüfungen:** Frontend 1012 Tests grün, `tsc` und `oxlint` ohne Befund;
+Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
+(keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
+
+**Prüfanleitung für Otto** (Windows PowerShell):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. `sentinel-2-c1-l2a`, Fläche zeichnen, suchen, einen Überflug mit wenig Wolken
+   wählen, „⚙ Process“, „＋ Band math“, `(nir - red) / (nir + red)` tippen: nach
+   einem Moment liegt die Vorschau (−1 bis 1, `rdylgn`) auf den Szenen, dazu
+   „Preview“ unten links und im Abschnitt „Preview on the map“.
+2. Weit hineinzoomen (über Kartenzoom 14): „Preview“ bleibt, das Bild wird
+   unschärfer, nicht feiner. Der Job liefert die volle Auflösung.
+3. „AOI only“: die Vorschau ist auf die Fläche zugeschnitten. Wertebereich ändern:
+   erst nach „Apply“ ändert sich das Bild.
+4. „＋ Add preview to layers“: der Layer „Preview · Band math“ steht im
+   Layer-Manager, ohne „⇩“, mit gesperrtem „⚙“. Das Auge schaltet „Preview“ mit ihm
+   ab. Einen Knopf „Replace source layer“ gibt es nicht.
+5. Einen Layer aus „Crop & merge to AOI“ anlegen, im Layer-Manager dessen „⚙“: das
+   Panel öffnet mit „AOI only“.
+6. In der Vollauflösung „⚙ Process“: das Panel öffnet für die Szenen der Ansicht.
+7. Eine neue Suche starten (andere Szenen in den Treffern), im Layer-Manager „⚙“ an
+   einem älteren Layer, auch an einem zugeschnittenen: das Panel öffnet nach einem
+   Moment mit den Szenen des Layers. Die Trefferliste und die Karte bleiben, wie sie
+   sind; die Vollauflösung des Layers wird nicht betreten.
+8. Nach „⚙“ an einem zugeschnittenen Layer das Panel schließen und aus der Auswahl
+   „⚙ Process“ öffnen: „Area“ steht auf „Whole scene“.
