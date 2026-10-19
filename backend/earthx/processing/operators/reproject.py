@@ -8,7 +8,7 @@ the previous pass's file in the work directory (approved F3), through a
 (the core's ``BLOCK_SIZE``), the approximation threshold ``tolerance`` and
 ``warp_mem_limit`` (§3.4); the number of threads changes nothing. So the two are
 constants here, not parameters, and a change to either raises ``op_version`` (E2,
-§6.3 row 1): :data:`TOLERANCE` and :data:`WARP_MEM_LIMIT_MB` belong to version 2.
+§6.3 row 1): :data:`TOLERANCE` and :data:`WARP_MEM_LIMIT_MB` belong to versions 2 and 3.
 
 **One warp per block (version 2, M4-10b).** A pixel is masked where the warp left
 NaN. Version 1 read with ``masked=True``: GDAL then derived the mask from a second
@@ -16,19 +16,24 @@ read of the warped band, which did not always agree with the first and masked a
 few pixels at the edge of the data that had values (3 per band of 4.3 million at
 2048²). The second read cost time and buffers of its own.
 
+**Version 3 (M4-24)** adds ``cubicspline``, ``lanczos``, ``average`` and ``mode``, each
+measured against §6.3 (plan M4-24 §7). The block plan and the three methods of
+version 2 are unchanged, so version 2 is still accepted for them and gives the same
+bytes; only version 3 is listed (Otto, 20.10.2026).
+
 **What the caller has to allow.** ``reprojection`` always (R3); ``interpolation``
-for every resampling except ``nearest`` (§5.3, F6). The resampling has no default
-(B10): the order names it. Only the methods measured against §6.3 are offered; more
-follow with their own measurement.
+for every resampling that makes values the source does not have, all but ``nearest``
+and ``mode`` (§5.3, F6). The resampling has no default (B10): the order names it.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, field_validator
 from rasterio.crs import CRS
 from rasterio.enums import Resampling
 from rasterio.errors import CRSError
@@ -41,7 +46,15 @@ from earthx.catalog.registry import LicenseTier
 from earthx.processing.errors import UnsupportedRecipe
 from earthx.processing.operators.base import BandMeta, Operator, RasterMeta, Requirement, Tier
 
-__all__ = ["MAX_SIDE_PX", "REPROJECT", "TOLERANCE", "WARP_MEM_LIMIT_MB", "ReprojectParams"]
+__all__ = [
+    "MAX_SIDE_PX",
+    "REPROJECT",
+    "REPROJECT_V2",
+    "TOLERANCE",
+    "WARP_MEM_LIMIT_MB",
+    "ReprojectParams",
+    "ReprojectParamsV2",
+]
 
 #: Approximation threshold of the warp, in source pixels; GDAL's own default and what
 #: the measurements of §3.4 used. ``WarpedVRT`` refuses ``0``.
@@ -54,14 +67,30 @@ WARP_MEM_LIMIT_MB = 64.0
 #: against a resolution that would make the plan itself the problem.
 MAX_SIDE_PX = 32768
 
-_RESAMPLING = {
-    "nearest": Resampling.nearest,
-    "bilinear": Resampling.bilinear,
-    "cubic": Resampling.cubic,
+#: Each method with GDAL's resampling, its cost factor relative to band math (§5.5;
+#: the four of M4-24 relative to ``bilinear``, plan §7.4) and the panel's one sentence.
+_METHODS = {
+    "nearest": (Resampling.nearest, 0.4, "Value of the nearest source pixel; for class data and masks."),
+    "bilinear": (Resampling.bilinear, 1.0, "Distance-weighted mean of the 2x2 nearest pixels; for continuous data."),
+    "cubic": (Resampling.cubic, 1.1, "Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data."),
+    "cubicspline": (Resampling.cubic_spline, 1.6, "Cubic B-spline over 4x4 pixels; smoothest, for continuous data."),
+    "lanczos": (Resampling.lanczos, 2.2, "Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges."),
+    "average": (Resampling.average, 1.2, "Mean of all source pixels per target pixel; for coarsening continuous data."),
+    "mode": (Resampling.mode, 1.1, "Most frequent source value per target pixel; for class data."),
 }
 
-#: Starting values relative to band math (§5.5), calibrated against real runs with M4-08.
-_COST = {"nearest": 0.4, "bilinear": 1.0, "cubic": 1.1}
+#: The methods that only ever pick a value of the source, and so need no ``interpolation``.
+_PICKING = frozenset({"nearest", "mode"})
+
+_Method = Annotated[
+    Literal["nearest", "bilinear", "cubic", "cubicspline", "lanczos", "average", "mode"],
+    WithJsonSchema(
+        {
+            "type": "string",
+            "oneOf": [{"const": name, "title": name, "description": text} for name, (_, _, text) in _METHODS.items()],
+        }
+    ),
+]
 
 
 class ReprojectParams(BaseModel):
@@ -73,8 +102,8 @@ class ReprojectParams(BaseModel):
     resolution: float = Field(
         gt=0, allow_inf_nan=False, description="Pixel size in the units of the target CRS, square pixels."
     )
-    resampling: Literal["nearest", "bilinear", "cubic"] = Field(
-        description="No default: the choice changes the values. Anything but nearest interpolates."
+    resampling: _Method = Field(
+        description="No default: the choice changes the values. Anything but nearest and mode interpolates."
     )
     align: bool = Field(
         default=False, description="Snap the target grid to whole multiples of the resolution in the target CRS."
@@ -90,9 +119,17 @@ class ReprojectParams(BaseModel):
         return value
 
 
+class ReprojectParamsV2(ReprojectParams):
+    """Version 2: the three methods before M4-24, which version 3 computes the same way."""
+
+    resampling: Literal["nearest", "bilinear", "cubic"] = Field(
+        description="No default: the choice changes the values. Anything but nearest interpolates."
+    )
+
+
 def _extra_requirements(params: BaseModel) -> frozenset[str]:
     assert isinstance(params, ReprojectParams)
-    return frozenset() if params.resampling == "nearest" else frozenset({"interpolation"})
+    return frozenset() if params.resampling in _PICKING else frozenset({"interpolation"})
 
 
 def _target_grid(meta: RasterMeta, params: ReprojectParams) -> tuple[Affine, int, int]:
@@ -126,7 +163,7 @@ def _run(source, target: RasterMeta, window: Window, params: BaseModel) -> numpy
         transform=target.transform,
         width=target.width,
         height=target.height,
-        resampling=_RESAMPLING[params.resampling],
+        resampling=_METHODS[params.resampling][0],
         tolerance=TOLERANCE,
         warp_mem_limit=WARP_MEM_LIMIT_MB,
         src_nodata=math.nan,
@@ -143,7 +180,7 @@ def _lineage(params: BaseModel) -> str:
 
 REPROJECT = Operator(
     op="reproject",
-    op_version=2,
+    op_version=3,
     category="geometry",
     title="Reproject and resample",
     description="Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
@@ -154,9 +191,12 @@ REPROJECT = Operator(
     ),
     tiers=frozenset({Tier.T2}),
     kind="grid",
-    cost_factor=lambda params: _COST[params.resampling],
+    cost_factor=lambda params: _METHODS[params.resampling][1],
     transform=_transform,
     run=_run,
     lineage=_lineage,
     extra_requirements=_extra_requirements,
 )
+
+#: Accepted for recipes written before M4-24, not listed (Otto, 20.10.2026).
+REPROJECT_V2 = dataclasses.replace(REPROJECT, op_version=2, params=ReprojectParamsV2)
