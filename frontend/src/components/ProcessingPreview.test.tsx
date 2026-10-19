@@ -12,13 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import type { MapLayer } from '../layers';
-import { layerProcessBlock, useProcessingStore } from '../processingStore';
+import { layerProcessBlock, orderView, useProcessingStore } from '../processingStore';
 import { bboxToPolygon } from '../geoUtils';
 import { useAppStore } from '../store';
 import type { Collection, DownloadedInfo, StacItem } from '../types';
 import LayerManager from './LayerManager';
 import PreviewBadge from './PreviewBadge';
 import ProcessingPanel from './ProcessingPanel';
+import ViewBar from './ViewBar';
 import ViewerControls from './ViewerControls';
 
 declare global {
@@ -110,18 +111,32 @@ function json(body: unknown) {
 
 let container: HTMLDivElement;
 let root: Root;
+// The catalog behind `/stac/.../items/<id>`: a scene, or the status it answers with.
+let catalog: Record<string, StacItem | number>;
+// Requests held back until a test answers them.
+let pending: Record<string, Promise<Response> | undefined>;
+let fetchMock: ReturnType<typeof vi.fn>;
+const ITEM_URL = '/stac/collections/sentinel-2-c1-l2a/items/';
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url: string) =>
-      url === '/processing/processes/recipe?dataset=sentinel-2-c1-l2a'
-        ? json(s2)
-        : new Response('{}', { status: 404, headers: { 'Content-Type': 'application/problem+json' } }),
-    ),
-  );
+  catalog = {};
+  pending = {};
+  fetchMock = vi.fn(async (url: string) => {
+    if (url === '/processing/processes/recipe?dataset=sentinel-2-c1-l2a') return json(s2);
+    if (pending[url]) return pending[url];
+    if (url.startsWith(ITEM_URL)) {
+      const entry = catalog[decodeURIComponent(url.slice(ITEM_URL.length))];
+      if (typeof entry === 'object') return json(entry);
+      return new Response(JSON.stringify({ title: 'Refused', detail: 'the catalog is down' }), {
+        status: entry ?? 404,
+        headers: { 'Content-Type': 'application/problem+json' },
+      });
+    }
+    return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/problem+json' } });
+  });
+  vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
   useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [], preview: null });
   useAppStore.setState({ mapZoom: 1.6, viewportBbox: null, layers: [], layerManagerOpen: false });
@@ -599,6 +614,71 @@ describe('the preview as a layer (§3.4)', () => {
   });
 });
 
+describe('"Replace source layer" and the full-resolution view of the same scenes (Otto, 19.10.2026)', () => {
+  const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+
+  async function replaceFromLayer(layer: MapLayer, shown: Record<string, DownloadedInfo>) {
+    select([scene('S2B_A')]);
+    useAppStore.setState({ layers: [layer] });
+    mount(
+      <>
+        <ProcessingPanel />
+        <LayerManager />
+      </>,
+    );
+    click(button('⚙'));
+    await flush();
+    // The layer's view is on screen; `shown` is what it shows now.
+    useAppStore.setState({ focusMode: true, downloaded: shown, showDownloaded: true });
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir / red');
+    afterDebounce();
+    click(button('Replace source layer'));
+  }
+
+  const focusLayer = () => pinned('L1', { focusMode: true, downloaded: { S2B_A: tile } });
+
+  it('hides the view of the same scenes with the layer, and the eye of the layer brings both back', async () => {
+    await replaceFromLayer(focusLayer(), { S2B_A: tile });
+    const state = () => useAppStore.getState();
+    expect(state().showDownloaded).toBe(false);
+    expect(state().layers.find((l) => l.id === 'L1')).toMatchObject({ visible: false, hidesFocusView: true });
+    act(() => state().toggleLayerVisible('L1'));
+    expect(state().layers.find((l) => l.id === 'L1')).toMatchObject({ visible: true, hidesFocusView: false });
+    expect(state().showDownloaded).toBe(true);
+  });
+
+  it('leaves the view alone when it shows other scenes than the layer', async () => {
+    await replaceFromLayer(focusLayer(), { OTHER: tile });
+    expect(useAppStore.getState().showDownloaded).toBe(true);
+    expect(useAppStore.getState().layers.find((l) => l.id === 'L1')!.hidesFocusView).toBeUndefined();
+  });
+
+  it('leaves the view alone when the user had hidden it, and the eye does not show it', async () => {
+    select([scene('S2B_A')]);
+    useAppStore.setState({ layers: [focusLayer()], focusMode: true, downloaded: { S2B_A: tile }, showDownloaded: false });
+    mount(<ProcessingPanel />);
+    act(() => useAppStore.getState().pinDerivedLayer({ name: 'p', derived: 'preview', overlays: [], itemIds: ['S2B_A'], cropToAoi: false }, 'L1'));
+    expect(useAppStore.getState().showDownloaded).toBe(false);
+    act(() => useAppStore.getState().toggleLayerVisible('L1'));
+    expect(useAppStore.getState().showDownloaded).toBe(false);
+  });
+
+  it('does not show the view with the eye of a layer that did not hide it', () => {
+    useAppStore.setState({ layers: [pinned('L1')], focusMode: true, downloaded: { S2B_A: tile }, showDownloaded: false });
+    act(() => useAppStore.getState().toggleLayerVisible('L1')); // hides
+    act(() => useAppStore.getState().toggleLayerVisible('L1')); // shows
+    expect(useAppStore.getState().showDownloaded).toBe(false);
+  });
+
+  it('leaves a layer of the list that is not in the list alone', () => {
+    useAppStore.setState({ layers: [pinned('L1')] });
+    act(() => useAppStore.getState().toggleLayerVisible('nope'));
+    expect(useAppStore.getState().layers[0].visible).toBe(true);
+  });
+});
+
 describe('the ways into the panel (§3.5)', () => {
   it('"⚙" at a layer makes its selection again, then opens the panel on "Whole scene"', async () => {
     select([scene('S2B_A'), scene('S2B_B')]);
@@ -623,14 +703,16 @@ describe('the ways into the panel (§3.5)', () => {
     useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, focusMode: true })] });
     mount(<LayerManager />);
     click(button('⚙'));
+    await flush();
     expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: 'L1' });
   });
 
-  it('starts on "Whole scene" for a layer cropped with no AOI left to it', () => {
+  it('starts on "Whole scene" for a layer cropped with no AOI left to it', async () => {
     select([scene('S2B_A')]);
     useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, aoi: null })] });
     mount(<LayerManager />);
     click(button('⚙'));
+    await flush();
     expect(store().area).toBe('scene');
   });
 
@@ -661,23 +743,169 @@ describe('the ways into the panel (§3.5)', () => {
     expect(rows.map((row) => [...row.querySelectorAll('button')].some((b) => b.textContent === '⇩'))).toEqual([true, false]);
   });
 
-  it('does not open when the scenes of the layer are not in the results on screen, and says so', () => {
-    select([scene('S2B_A')]);
-    useAppStore.setState({ layers: [pinned('L1', { itemIds: ['S2B_A', 'GONE'], selectedIds: ['S2B_A', 'GONE'] })] });
-    mount(<LayerManager />);
-    click(button('⚙'));
-    expect(store().open).toBe(false);
-    expect(useAppStore.getState().error).toContain('not in the results on screen');
+  describe('scenes the results on screen lack (Otto, 19.10.2026)', () => {
+    const itemRequests = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/stac'));
+    const layerOf = (...ids: string[]) =>
+      pinned('L1', { itemIds: ids, selectedIds: ids, groupItemIds: [ids], cropToAoi: true, focusMode: true });
+
+    it('fetches them one by one, with no search, and then opens the panel', async () => {
+      select([scene('S2B_A')]);
+      catalog.GONE = scene('GONE');
+      useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
+      mount(
+        <>
+          <LayerManager />
+          <ProcessingPanel />
+        </>,
+      );
+      click(button('⚙'));
+      await flush();
+      expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
+      expect(useAppStore.getState().selectedIds).toEqual(['S2B_A', 'GONE']);
+      expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: 'L1' });
+      expect(store().extraScenes!.items.map((i) => i.id)).toEqual(['GONE']);
+      // The results on screen stay as they are.
+      expect(useAppStore.getState().items.map((i) => i.id)).toEqual(['S2B_A']);
+      expect(container.textContent).toContain('2 scenes');
+    });
+
+    it('puts a fetched scene of a pass the results hold into that pass, and another one into a pass of its own', async () => {
+      select([scene('S2B_A')]);
+      catalog.SAME_DAY = scene('SAME_DAY');
+      catalog.OTHER_DAY = { ...scene('OTHER_DAY'), properties: { datetime: '2026-06-01T10:00:00Z' } };
+      useAppStore.setState({ layers: [pinned('L1', { itemIds: ['S2B_A', 'SAME_DAY'], selectedIds: ['S2B_A', 'SAME_DAY'] })] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      const view = orderView(useAppStore.getState(), store());
+      expect(view.passes.map((p) => p.items.map((i) => i.id))).toEqual([['S2B_A', 'SAME_DAY']]);
+
+      act(() =>
+        useAppStore.setState({ layers: [pinned('L2', { itemIds: ['S2B_A', 'OTHER_DAY'], selectedIds: ['S2B_A', 'OTHER_DAY'] })] }),
+      );
+      click(button('⚙'));
+      await flush();
+      const second = orderView(useAppStore.getState(), store());
+      expect(second.passes.map((p) => p.items.map((i) => i.id))).toEqual([['S2B_A'], ['OTHER_DAY']]);
+    });
+
+    it('asks only for the scenes it lacks', async () => {
+      select([scene('S2B_A'), scene('S2B_B')]);
+      catalog.GONE = scene('GONE');
+      useAppStore.setState({ layers: [layerOf('S2B_A', 'S2B_B', 'GONE')] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
+    });
+
+    it('asks for nothing when the results hold every scene', async () => {
+      select([scene('S2B_A')]);
+      useAppStore.setState({ layers: [layerOf('S2B_A')] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(itemRequests()).toEqual([]);
+      expect(store().extraScenes).toBeNull();
+    });
+
+    it('names the scene the catalog no longer has, and does not open the panel', async () => {
+      select([scene('S2B_A')]);
+      useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(store().open).toBe(false);
+      expect(useAppStore.getState().error).toBe('Could not load the scenes of this layer. GONE: not found in the catalog');
+    });
+
+    it('gives the reason when the catalog cannot be reached, and opens nothing', async () => {
+      select([scene('S2B_A')]);
+      catalog.GONE = 502;
+      catalog.ALSO = scene('ALSO');
+      useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE', 'ALSO')] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(store().open).toBe(false);
+      expect(store().extraScenes).toBeNull();
+      expect(useAppStore.getState().error).toContain('Could not load the scenes of this layer. GONE:');
+      expect(useAppStore.getState().error).toContain('the catalog is down');
+      expect(useAppStore.getState().error).not.toContain('ALSO');
+    });
+
+    it('lets a newer entry win over one still waiting for the catalog', async () => {
+      select([scene('S2B_A')]);
+      let answer!: (r: Response) => void;
+      pending[`${ITEM_URL}SLOW`] = new Promise<Response>((resolve) => (answer = resolve));
+      useAppStore.setState({ layers: [layerOf('S2B_A', 'SLOW'), { ...layerOf('S2B_A'), id: 'L2' }] });
+      mount(<LayerManager />);
+      const gears = () => [...container.querySelectorAll<HTMLButtonElement>('.layer-row button')].filter((b) => b.textContent === '⚙');
+      click(gears()[0]);
+      await flush();
+      click(gears()[1]);
+      await flush();
+      expect(store()).toMatchObject({ open: true, sourceLayerId: 'L2', extraScenes: null });
+      answer(json(scene('SLOW')));
+      await flush();
+      expect(store()).toMatchObject({ sourceLayerId: 'L2', extraScenes: null });
+    });
+
+    it('does the same for the full-resolution view, and says "view"', async () => {
+      select([scene('S2B_A')]);
+      catalog.GONE = scene('GONE');
+      const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+      useAppStore.setState({ focusMode: true, downloaded: { S2B_A: tile, GONE: tile } });
+      mount(<ViewerControls />);
+      click(button('⚙ Process'));
+      await flush();
+      expect(itemRequests()).toEqual([`${ITEM_URL}GONE`]);
+      expect(store().open).toBe(true);
+
+      act(() => store().closeProcessing());
+      delete catalog.GONE;
+      click(button('⚙ Process'));
+      await flush();
+      expect(store().open).toBe(false);
+      expect(useAppStore.getState().error).toBe('Could not load the scenes of this view. GONE: not found in the catalog');
+    });
+
+    it('lets the scenes of the entry go with the draft when the dataset changes', async () => {
+      select([scene('S2B_A')]);
+      catalog.GONE = scene('GONE');
+      useAppStore.setState({ layers: [layerOf('S2B_A', 'GONE')] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(store().extraScenes).not.toBeNull();
+      act(() => useAppStore.setState({ datasetId: 'other' }));
+      expect(store().extraScenes).toBeNull();
+    });
   });
 
-  it('says "view", not "layer", when the full-resolution view has scenes that left the results', () => {
+  it('starts on "Whole scene" from the selection, whatever an entry from a layer chose before (Otto, 19.10.2026)', async () => {
     select([scene('S2B_A')]);
-    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
-    useAppStore.setState({ focusMode: true, downloaded: { GONE: tile } });
-    mount(<ViewerControls />);
+    useAppStore.setState({ layers: [pinned('L1', { cropToAoi: true, focusMode: true })] });
+    mount(
+      <>
+        <LayerManager />
+        <ProcessingPanel />
+        <ViewBar />
+      </>,
+    );
+    click(button('⚙', container.querySelector('.layer-row') as HTMLElement));
+    await flush();
+    expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: 'L1' });
+
+    act(() => store().closeProcessing());
     click(button('⚙ Process'));
-    expect(store().open).toBe(false);
-    expect(useAppStore.getState().error).toBe('The scenes of this view are not in the results on screen. Search again to process them.');
+    expect(store()).toMatchObject({ open: true, area: 'scene', sourceLayerId: null });
+
+    // Also while the panel stays open: every entry sets the area.
+    click(button('AOI only'));
+    expect(store().area).toBe('aoi');
+    click(button('⚙ Process'));
+    expect(store().area).toBe('scene');
   });
 
   it('"⚙ Process" of the full-resolution view takes the scenes of the view, cropped or whole', async () => {
@@ -686,12 +914,14 @@ describe('the ways into the panel (§3.5)', () => {
     useAppStore.setState({ focusMode: true, cropToAoi: true, downloaded: { S2B_B: tile }, selectedIds: ['S2B_A', 'S2B_B'] });
     mount(<ViewerControls />);
     click(button('⚙ Process'));
+    await flush();
     expect(useAppStore.getState().selectedIds).toEqual(['S2B_B']);
     expect(store()).toMatchObject({ open: true, area: 'aoi', sourceLayerId: null });
 
     act(() => store().closeProcessing());
     useAppStore.setState({ cropToAoi: false });
     click(button('⚙ Process'));
+    await flush();
     expect(store().area).toBe('scene');
   });
 

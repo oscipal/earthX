@@ -116,7 +116,7 @@ export default function ViewerControls() {
           className="ghost-btn"
           disabled={processBlock !== null}
           title={processBlock ?? 'Build a processing job for the scenes of this view'}
-          onClick={() => processFocusView()}
+          onClick={() => void processFocusView()}
         >
           ⚙ Process
         </button>

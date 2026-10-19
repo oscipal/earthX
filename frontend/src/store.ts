@@ -1134,7 +1134,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   // Pins a derived picture at the top of the list. With `replaceLayerId` it takes
   // that layer's place instead, right above it, and the layer it replaces is
-  // hidden, not removed: its eye brings it back (M4-13c §3.4).
+  // hidden, not removed: its eye brings it back (M4-13c §3.4). If the full-
+  // resolution view on screen shows the very scenes of that layer, the view is
+  // hidden with it (Otto 19.10.2026), and the same eye shows both again.
   pinDerivedLayer: (input, replaceLayerId) => {
     const s = get();
     const layer: MapLayer = {
@@ -1158,15 +1160,36 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     };
     const at = replaceLayerId === null ? -1 : s.layers.findIndex((l) => l.id === replaceLayerId);
+    const replaced = at < 0 ? undefined : s.layers[at];
+    const sameScenes = (ids: readonly string[]) => {
+      const shown = Object.keys(s.downloaded);
+      return shown.length === ids.length && shown.every((id) => ids.includes(id));
+    };
+    const hidesView = !!replaced && s.focusMode && s.showDownloaded && sameScenes(replaced.restore.itemIds);
     const layers =
       at < 0
         ? [layer, ...s.layers]
-        : [...s.layers.slice(0, at), layer, ...s.layers.slice(at).map((l) => (l.id === replaceLayerId ? { ...l, visible: false } : l))];
-    set({ layers, layerManagerOpen: true, notice: `Added "${input.name}" to layers.` });
+        : [
+            ...s.layers.slice(0, at),
+            layer,
+            ...s.layers
+              .slice(at)
+              .map((l) => (l.id === replaceLayerId ? { ...l, visible: false, ...(hidesView ? { hidesFocusView: true } : {}) } : l)),
+          ];
+    set({ layers, layerManagerOpen: true, notice: `Added "${input.name}" to layers.`, ...(hidesView ? { showDownloaded: false } : {}) });
   },
   removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
   toggleLayerVisible: (id) =>
-    set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
+    set((s) => {
+      const layer = s.layers.find((l) => l.id === id);
+      if (!layer) return {};
+      const shows = !layer.visible;
+      // The eye of a layer a preview replaced brings back the view it hid with it.
+      return {
+        layers: s.layers.map((l) => (l.id === id ? { ...l, visible: shows, ...(shows ? { hidesFocusView: false } : {}) } : l)),
+        ...(shows && layer.hidesFocusView && s.focusMode ? { showDownloaded: true } : {}),
+      };
+    }),
   setLayerOpacity: (id, opacity) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) })),
   moveLayer: (id, dir) =>

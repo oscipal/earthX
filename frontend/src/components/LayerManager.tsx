@@ -102,7 +102,7 @@ export default function LayerManager() {
                   className="lm-btn"
                   disabled={processBlock !== null}
                   title={processBlock ?? 'Process this layer'}
-                  onClick={() => processLayer(l.id)}
+                  onClick={() => void processLayer(l.id)}
                 >
                   ⚙
                 </button>
