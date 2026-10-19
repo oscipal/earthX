@@ -331,7 +331,9 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
 
 describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
   type Context = NonNullable<ReturnType<typeof useAppStore.getState>['searchContext']>;
-  const withToken = (nextToken: string | null) => ({ searchContext: { nextToken } as Context });
+  const withToken = (nextToken: string | null, openCollections: string[] | null = null) => ({
+    searchContext: { nextToken, openCollections } as Context,
+  });
   const loadMoreRow = () => container.querySelector('.load-more');
   const loadMoreButton = () => loadMoreRow()?.querySelector('button') as HTMLButtonElement | null;
   const original = useAppStore.getState().loadMore;
@@ -351,21 +353,33 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
     expect(loadMore).toHaveBeenCalledTimes(1);
   });
 
-  it('stays below whichever dataset is chosen', () => {
-    useAppStore.setState(withToken('p4'));
+  it('belongs to the dataset whose source has pages: another dataset does not offer it', () => {
+    useAppStore.setState(withToken('p4', ['optical']));
     load(MIXED);
+    expect(useAppStore.getState().openSectionId).toBe('optical');
+    expect(loadMoreButton()).not.toBeNull();
     openList();
     act(() => options()[2].click());
     expect(useAppStore.getState().openSectionId).toBe('dem');
-    expect(loadMoreButton()).not.toBeNull();
+    expect(loadMoreRow()).toBeNull();
+  });
+
+  it('tells the dataset without pages that there is nothing more once "Load more" was used', () => {
+    useAppStore.setState({ ...withToken('p4', ['optical']), loadMoreUsed: true });
+    load(MIXED);
+    openList();
+    act(() => options()[2].click());
+    expect(text(loadMoreRow())).toBe('No more results available.');
+    expect(loadMoreButton()).toBeNull();
+    useAppStore.setState({ loadMoreUsed: false });
   });
 
   it('says there is nothing more after "Load more" found the end, with no button left', () => {
     load(MIXED);
-    act(() => useAppStore.setState({ ...withToken(null), loadMoreExhausted: true }));
+    act(() => useAppStore.setState({ ...withToken(null), loadMoreUsed: true }));
     expect(text(loadMoreRow())).toBe('No more results available.');
     expect(loadMoreButton()).toBeNull();
-    useAppStore.setState({ loadMoreExhausted: false });
+    useAppStore.setState({ loadMoreUsed: false });
   });
 
   it('is locked while loading', () => {

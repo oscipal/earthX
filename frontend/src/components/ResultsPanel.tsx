@@ -289,18 +289,21 @@ function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; open
   );
 }
 
-// "Load more" (M3-10 F1) continues the whole search, whichever dataset the
-// dropdown shows: the page token spans every dataset asked and cannot be split
-// per dataset, so the sentence names none of them as the one with more.
-function LoadMore() {
-  const canLoad = useAppStore((s) => s.searchContext?.nextToken != null);
+// "Load more" (M3-10 F1) continues the whole search with one page token, but
+// the row belongs to the dataset the dropdown shows: only a dataset whose source
+// still has pages offers the button (`openCollections`); another one says there
+// is nothing more once "Load more" has been used, and otherwise stays silent.
+function LoadMore({ openId }: { openId: string | null }) {
+  const canLoad = useAppStore((s) => {
+    const ctx = s.searchContext;
+    return ctx?.nextToken != null && (openId === null || (ctx.openCollections?.includes(openId) ?? true));
+  });
+  const used = useAppStore((s) => s.loadMoreUsed);
   const loading = useAppStore((s) => s.loadingMore);
   const failed = useAppStore((s) => s.loadMoreError);
-  const exhausted = useAppStore((s) => s.loadMoreExhausted);
   const loadMore = useAppStore((s) => s.loadMore);
   if (failed) return <p className="hint-text load-more">{failed}</p>;
-  if (exhausted && !canLoad) return <p className="hint-text load-more">No more results available.</p>;
-  if (!canLoad) return null;
+  if (!canLoad) return used ? <p className="hint-text load-more">No more results available.</p> : null;
   return (
     <div className="load-more">
       <span className="hint-text">More scenes may be available.</span>
@@ -389,7 +392,7 @@ export default function ResultsPanel() {
           />
         ))}
       </div>
-      <LoadMore />
+      <LoadMore openId={openSectionId} />
     </div>
   );
 }

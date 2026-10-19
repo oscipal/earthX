@@ -127,7 +127,7 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
     searchContext: null,
     loadingMore: false,
     loadMoreError: null,
-    loadMoreExhausted: false,
+    loadMoreUsed: false,
     fallbackDatasetIds: [],
     sceneNameQuery: '',
     sceneLookupLoading: false,
@@ -941,16 +941,16 @@ describe('"Load more" (M3-10 F1)', () => {
     await loadMore();
     expect(useAppStore.getState().searchContext?.nextToken).toBeNull();
     expect(useAppStore.getState().loadMoreError).toBeNull();
-    expect(useAppStore.getState().loadMoreExhausted).toBe(true);
+    expect(useAppStore.getState().loadMoreUsed).toBe(true);
   });
 
   it('does not call the end before "Load more" was pressed, and forgets it with the next search', async () => {
     vi.stubGlobal('fetch', routed(byToken));
     await search();
-    expect(useAppStore.getState().loadMoreExhausted).toBe(false);
+    expect(useAppStore.getState().loadMoreUsed).toBe(false);
     await loadMore();
     await search();
-    expect(useAppStore.getState().loadMoreExhausted).toBe(false);
+    expect(useAppStore.getState().loadMoreUsed).toBe(false);
   });
 
   it('continues the same search with the token and puts each new scene in its own dataset', async () => {
