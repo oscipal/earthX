@@ -296,8 +296,10 @@ function LoadMore() {
   const canLoad = useAppStore((s) => s.searchContext?.nextToken != null);
   const loading = useAppStore((s) => s.loadingMore);
   const failed = useAppStore((s) => s.loadMoreError);
+  const exhausted = useAppStore((s) => s.loadMoreExhausted);
   const loadMore = useAppStore((s) => s.loadMore);
   if (failed) return <p className="hint-text load-more">{failed}</p>;
+  if (exhausted && !canLoad) return <p className="hint-text load-more">No more results available.</p>;
   if (!canLoad) return null;
   return (
     <div className="load-more">

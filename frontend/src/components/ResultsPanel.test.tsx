@@ -360,6 +360,14 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
     expect(loadMoreButton()).not.toBeNull();
   });
 
+  it('says there is nothing more after "Load more" found the end, with no button left', () => {
+    load(MIXED);
+    act(() => useAppStore.setState({ ...withToken(null), loadMoreExhausted: true }));
+    expect(text(loadMoreRow())).toBe('No more results available.');
+    expect(loadMoreButton()).toBeNull();
+    useAppStore.setState({ loadMoreExhausted: false });
+  });
+
   it('is locked while loading', () => {
     useAppStore.setState({ ...withToken('p4'), loadingMore: true });
     load(MIXED);

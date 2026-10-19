@@ -603,7 +603,7 @@ function dropPageToken(set: SetState, get: GetState): void {
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
-  return { searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetIds: [] };
+  return { searchContext: null, loadingMore: false, loadMoreError: null, loadMoreExhausted: false, fallbackDatasetIds: [] };
 }
 
 export interface AppState {
@@ -731,6 +731,8 @@ export interface AppState {
   // "Load more" (M3-10b): running, and why it last failed.
   loadingMore: boolean;
   loadMoreError: string | null;
+  // "Load more" was pressed and the source has nothing further.
+  loadMoreExhausted: boolean;
   // The datasets whose ±90-day fallback is running.
   fallbackDatasetIds: string[];
   items: StacItem[];
@@ -880,6 +882,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchContext: null,
   loadingMore: false,
   loadMoreError: null,
+  loadMoreExhausted: false,
   fallbackDatasetIds: [],
   items: [],
   groups: [],
@@ -1834,6 +1837,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         true,
       );
+      set({ loadMoreExhausted: get().searchContext?.nextToken == null });
       // The chosen dataset may have been waiting on its source, which is done now.
       const { openSectionId } = get();
       if (openSectionId) void runFallback(set, get, openSectionId, false);
