@@ -223,11 +223,12 @@ describe('one dataset at a time, several only on request (M4-29)', () => {
     expect(state().datasetId).toBe('dem');
   });
 
-  it('a second click on the chosen dataset keeps it', () => {
+  it('a second click on the chosen dataset drops it', () => {
     useAppStore.setState({ multiSelect: false });
     state().toggleDatasetSelected('dem');
     state().toggleDatasetSelected('dem');
-    expect(state().selectedDatasetIds).toEqual(['dem']);
+    expect(state().selectedDatasetIds).toEqual([]);
+    expect(state().datasetId).toBeNull();
   });
 
   it('with the switch on, clicks switch each dataset on and off', () => {

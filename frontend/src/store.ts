@@ -910,7 +910,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   // The dataset buttons (M3-10, M4-29). Nothing is ticked at the start. A click
-  // picks exactly that dataset and drops the one before; only with "Select
+  // picks exactly that dataset and drops the one before, a click on the chosen one drops it; only with "Select
   // multiple datasets" on does a click switch its dataset on or off. A dataset
   // that cannot be shown is never ticked. Whatever the last search found no
   // longer matches the new selection, so the results go; pinned layers stay (they
@@ -923,12 +923,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const dataset = s.datasets.find((d) => d.id === id);
     const ticked = s.selectedDatasetIds.includes(id);
     if (!dataset || (!ticked && !dataset.viewable)) return;
-    if (!s.multiSelect && ticked && s.selectedDatasetIds.length === 1) return;
     const keep = s.multiSelect ? s.selectedDatasetIds : [];
     const selectedDatasetIds = s.datasets
-      .filter((d) => (d.id === id ? !ticked || !s.multiSelect : keep.includes(d.id)))
+      .filter((d) => (d.id === id ? !ticked : keep.includes(d.id)))
       .map((d) => d.id);
-    applyDatasetSelection(set, get, selectedDatasetIds, ticked && s.multiSelect ? s.lastPickedDatasetId : id);
+    applyDatasetSelection(set, get, selectedDatasetIds, ticked ? s.lastPickedDatasetId : id);
   },
   // "Select multiple datasets" (M4-29). Switching it off keeps only the dataset
   // ticked last (or, if that one was switched off again, the active one) and

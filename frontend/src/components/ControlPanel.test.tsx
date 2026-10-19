@@ -593,8 +593,8 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
   function buttons(): HTMLButtonElement[] {
     return [...container.querySelectorAll('.dataset-list .dataset-toggle')] as HTMLButtonElement[];
   }
-  function multiButton(): HTMLButtonElement {
-    return container.querySelector('.multi-select-btn') as HTMLButtonElement;
+  function multiButton(): HTMLInputElement {
+    return container.querySelector('.multi-select-toggle input') as HTMLInputElement;
   }
   function titles(): string[] {
     return buttons().map((b) => b.querySelector('.dataset-toggle-title')!.textContent ?? '');
@@ -608,12 +608,12 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     expect(titles()).toEqual(['Optical imagery', 'Elevation model', 'Broken data']);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
     expect(buttons()[0].classList.contains('active')).toBe(true);
-    expect(container.textContent).toContain('1 selected');
+    expect(container.textContent).not.toContain('selected');
   });
 
-  it('has no tick boxes and no text filter', () => {
+  it('has no tick boxes per dataset (only the multiple-datasets one) and no text filter', () => {
     setUp(['optical']);
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(container.querySelectorAll('.dataset-list input[type="checkbox"]')).toHaveLength(0);
     expect(container.querySelector('input[type="search"]')).toBeNull();
     expect(container.querySelector('[aria-label="Filter datasets"]')).toBeNull();
   });
@@ -621,7 +621,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
   it('starts with nothing chosen and the switch off', () => {
     setUp([]);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false']);
-    expect(multiButton().getAttribute('aria-pressed')).toBe('false');
+    expect(multiButton().checked).toBe(false);
   });
 
   it('a click chooses that dataset, a second click on another replaces it', () => {
@@ -631,6 +631,19 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     act(() => buttons()[1].click());
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);
+  });
+
+  it('a click on the chosen dataset drops it again', () => {
+    setUp(['optical']);
+    act(() => buttons()[0].click());
+    expect(useAppStore.getState().selectedDatasetIds).toEqual([]);
+    expect(useAppStore.getState().datasetId).toBeNull();
+  });
+
+  it('shows "Select multiple datasets" as a small check box beside the label', () => {
+    setUp([]);
+    expect(multiButton().type).toBe('checkbox');
+    expect(container.querySelector('.dataset-label')?.textContent).toContain('Select multiple datasets');
   });
 
   it('"Select multiple datasets" lets clicks switch datasets on and off; ending it keeps the last one', () => {
@@ -644,7 +657,7 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     act(() => buttons()[0].click());
     act(() => multiButton().click());
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical']);
-    expect(multiButton().getAttribute('aria-pressed')).toBe('false');
+    expect(multiButton().checked).toBe(false);
   });
 
   it('a click picks a dataset, another click drops it again — any number at once', () => {
@@ -654,7 +667,6 @@ describe('DatasetPicker: choosing datasets (M3-10)', () => {
     act(() => buttons()[1].click());
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['optical', 'dem']);
     expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false']);
-    expect(container.textContent).toContain('2 selected');
     act(() => buttons()[0].click());
     expect(useAppStore.getState().selectedDatasetIds).toEqual(['dem']);
     act(() => buttons()[1].click());

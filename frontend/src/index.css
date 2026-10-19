@@ -1185,13 +1185,22 @@ input[type='date']:focus {
   gap: 8px;
   padding: 4px 14px;
 }
-.multi-select-btn {
-  width: 100%;
-  margin-bottom: 6px;
+.dataset-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
-.multi-select-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
+.multi-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+.multi-select-toggle input {
+  margin: 0;
 }
 .result-group-head {
   width: 100%;

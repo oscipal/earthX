@@ -353,32 +353,33 @@ function SceneNameField({ onSubmit }: { onSubmit: () => void }) {
   );
 }
 
+// The small "Select multiple datasets" check box beside the "Datasets" label (M4-29).
+function MultiSelectToggle() {
+  const multiSelect = useAppStore((s) => s.multiSelect);
+  const setMultiSelect = useAppStore((s) => s.setMultiSelect);
+  const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
+  return (
+    <label className="multi-select-toggle" title="Pick several datasets and search them together">
+      <input type="checkbox" checked={multiSelect} disabled={busy} onChange={(e) => setMultiSelect(e.target.checked)} />
+      Select multiple datasets
+    </label>
+  );
+}
+
 // The dataset choice (M3-10, M4-29): one button per dataset from
 // `/stac/collections`. Nothing is picked at the start; a click picks exactly that
-// dataset (drawn highlighted) and drops the one before. Only with "Select
-// multiple datasets" on does a click switch a dataset on or off, and then every
-// picked dataset is searched together. With more rows than fit the list scrolls.
+// dataset (drawn highlighted) and drops the one before; a click on the chosen one
+// drops it. Only with "Select multiple datasets" on can several be picked, and
+// then every picked dataset is searched together. With more rows than fit the list scrolls.
 // A dataset that cannot be shown stays listed, disabled, with the reason.
 function DatasetPicker() {
   const datasets = useAppStore((s) => s.datasets);
   const selectedDatasetIds = useAppStore((s) => s.selectedDatasetIds);
   const toggle = useAppStore((s) => s.toggleDatasetSelected);
-  const multiSelect = useAppStore((s) => s.multiSelect);
-  const setMultiSelect = useAppStore((s) => s.setMultiSelect);
   const busy = useAppStore((s) => s.searching || s.sceneLookupLoading);
   if (datasets.length === 0) return null;
   return (
     <>
-      <button
-        type="button"
-        className={`ghost-btn multi-select-btn${multiSelect ? ' active' : ''}`}
-        aria-pressed={multiSelect}
-        disabled={busy}
-        title={multiSelect ? 'Go back to one dataset at a time' : 'Pick several datasets and search them together'}
-        onClick={() => setMultiSelect(!multiSelect)}
-      >
-        Select multiple datasets
-      </button>
       <div className="dataset-list" role="group" aria-label="Datasets">
         {datasets.map((d) => {
           const picked = selectedDatasetIds.includes(d.id);
@@ -635,10 +636,10 @@ export default function ControlPanel() {
         <Toolbar />
         <AoiExtras />
 
-        <label className="field-label">
-          Datasets
-          {selectedCount > 0 && <span className="field-label-aside">{selectedCount} selected</span>}
-        </label>
+        <div className="field-label dataset-label">
+          <span>Datasets</span>
+          <MultiSelectToggle />
+        </div>
         <DatasetPicker />
         <CoverageButton />
         <DatasetNotes />
