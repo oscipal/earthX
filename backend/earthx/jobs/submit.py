@@ -81,6 +81,8 @@ class JobStatus:
     result: dict[str, Any] | None
     #: The UTC day of acquisition of the order's scenes, if they share one (Otto, 14.10.2026); `api` names downloads by it.
     acquired_on: date | None = None
+    #: The order named whole scenes and no area: the AOI of its recipe is the union of their footprints (M4-30).
+    scene_aoi: bool = False
 
 
 def _runtime_limit(recipe: Recipe, operators: OperatorRegistry) -> int:
@@ -95,6 +97,7 @@ def submit(
     operators: OperatorRegistry = REGISTRY,
     attachments: Attachments | None = None,
     acquired_on: date | None = None,
+    scene_aoi: bool = False,
 ) -> str:
     """Place the order and return its ``job_id``.
 
@@ -110,7 +113,8 @@ def submit(
     origin of its AOI, which no other order may see. Every other order comes without.
 
     ``acquired_on`` is the day of acquisition of the order's scenes, as `api` found it (Otto,
-    14.10.2026): kept on the job and handed back by :func:`job_status`, never read here.
+    14.10.2026): kept on the job and handed back by :func:`job_status`, never read here. So is
+    ``scene_aoi``, whether the order named whole scenes and no area (M4-30).
     """
     export = isinstance(recipe.output, CropOutput)
     if export != (attachments is not None):
@@ -144,8 +148,8 @@ def submit(
             None if attachments is None else attachments.to_json(),
         )
         conn.execute(
-            "INSERT INTO public.earthx_job (job_id, run_id, recipe_id, acquired_on) VALUES (%s, %s, %s, %s)",
-            (job_id, run_id, recipe_id, acquired_on),
+            "INSERT INTO public.earthx_job (job_id, run_id, recipe_id, acquired_on, scene_aoi) VALUES (%s, %s, %s, %s, %s)",
+            (job_id, run_id, recipe_id, acquired_on, scene_aoi),
         )
         if created:
             conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
@@ -216,7 +220,7 @@ def _run_for(
 _STATUS_SQL = """
 SELECT j.job_id, j.recipe_id, j.dismissed, j.created_at,
        r.status, r.progress, r.started_at, r.finished_at, r.expires_at, r.error_kind, r.result_id, r.result,
-       j.acquired_on
+       j.acquired_on, j.scene_aoi
 FROM public.earthx_job j
 JOIN public.earthx_run r ON r.run_id = j.run_id
 WHERE j.job_id = %s
@@ -238,6 +242,7 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         result_id,
         result,
         day,
+        scene_aoi,
     ) = row
     if dismissed:
         status = "dismissed"
@@ -255,6 +260,7 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         result_id=result_id if visible else None,
         result=result if visible else None,
         acquired_on=day,
+        scene_aoi=scene_aoi,
     )
 
 

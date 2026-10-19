@@ -23,6 +23,10 @@ Begleitdateien eines Export-Jobs (`ATTRIBUTION.txt`, `citation.bib`, `aoi.geojso
 `008_run_disk.sql` — die Spalte `earthx_run.disk_bytes` aus M4-11a: der geschätzte
 Platzbedarf eines Laufs im Arbeitsordner, den der Aufseher vor dem Start prüft.
 
+`010_job_scene_aoi.sql` — die Spalte `earthx_job.scene_aoi` aus M4-30: ob ein Auftrag ganze
+Szenen ohne Fläche nannte, sein Rezept also die Vereinigung der Footprints als AOI trägt.
+`aoi.geojson` im ZIP des Jobs sagt es; `api` findet es bei der Annahme, `jobs` speichert es ungelesen.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.
