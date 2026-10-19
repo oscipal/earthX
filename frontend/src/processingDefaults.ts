@@ -8,8 +8,9 @@
 // carries one finite nodata value. Band math ends in float32 with NaN, so an
 // integer type after it is refused for sure and not offered. A reprojection
 // keeps the nodata of its input, which the source *file* states and the item
-// may; `nearest` on integer bands keeps their values, any interpolation does
-// not (the core truncates a fraction when it writes an integer).
+// may; `nearest` and `mode` on integer bands keep their values (they only pick
+// one), any interpolation does not (the core rounds a fraction when it writes an
+// integer).
 
 import type { BandSource } from './processingOrder';
 
@@ -23,6 +24,9 @@ export const INTEGER_TYPES: readonly string[] = ['uint8', 'uint16', 'int16', 'ui
 export const FLOAT_TYPES: readonly string[] = ['float32', 'float64'];
 
 export const isIntegerType = (dtype: string): boolean => INTEGER_TYPES.includes(dtype);
+
+// The resampling methods that only pick a source value (M4-24, Otto 20.10.2026).
+const PICKING: readonly string[] = ['nearest', 'mode'];
 
 export interface StepChoice {
   op: string;
@@ -49,7 +53,7 @@ export function chooseDtype(args: {
   if (steps.some((s) => s.op === 'band_math')) return float32('Band math gives fractions.');
   const types = new Set(bands.map((band) => band.dataType));
   const type = types.size === 1 ? [...types][0] : null;
-  const interpolating = steps.some((s) => s.op === 'reproject' && s.resampling !== 'nearest');
+  const interpolating = steps.some((s) => s.op === 'reproject' && !PICKING.includes(s.resampling ?? ''));
   const scaled = bands.some((band) => band.scaled);
   // A float source stays what it is, interpolated or not.
   if (type !== null && FLOAT_TYPES.includes(type) && allowed.includes(type) && !scaled) {

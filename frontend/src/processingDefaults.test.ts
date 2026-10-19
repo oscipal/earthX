@@ -47,9 +47,16 @@ describe('chooseDtype (Otto, 12.10.2026): the type of the source data wherever t
     expect(choose([], [])).toBe('float32');
   });
 
+  it('keeps the integer type for mode as for nearest: both only pick a source value (M4-24)', () => {
+    expect(choose([{ op: 'reproject', resampling: 'mode' }], [COUNTS])).toBe('uint16');
+    expect(choose([{ op: 'reproject', resampling: 'mode' }], [band({ dataType: 'uint16' })])).toBe('float32');
+  });
+
   it('is float32 for integers while the resampling is interpolating or not chosen yet', () => {
     expect(choose(BILINEAR, [COUNTS])).toBe('float32');
-    expect(choose([{ op: 'reproject', resampling: 'cubic' }], [COUNTS])).toBe('float32');
+    for (const resampling of ['cubic', 'cubicspline', 'lanczos', 'average']) {
+      expect(choose([{ op: 'reproject', resampling }], [COUNTS])).toBe('float32');
+    }
     expect(choose(UNCHOSEN, [COUNTS])).toBe('float32');
     expect(choose([...NEAREST, ...BILINEAR], [COUNTS])).toBe('float32');
   });

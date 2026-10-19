@@ -44,8 +44,33 @@ describe('paramsForm', () => {
     expect(f[0]).toMatchObject({ name: 'x', kind: 'number' });
   });
 
+  it('reads a oneOf of documented text constants as a choice with one sentence per option (M4-24)', () => {
+    const f = fields({
+      type: 'object',
+      properties: {
+        how: {
+          type: 'string',
+          description: 'No default.',
+          oneOf: [
+            { const: 'near', title: 'near', description: 'Nearest pixel.' },
+            { const: 'far', title: 'far' },
+          ],
+        },
+      },
+      required: ['how'],
+    });
+    expect(f[0]).toMatchObject({ kind: 'enum', options: ['near', 'far'], optionHelp: { near: 'Nearest pixel.' } });
+    expect(f[0].description).toBe('No default.');
+    expect(paramsFrom(f, { how: 'far' })).toEqual({ params: { how: 'far' }, errors: {} });
+    expect(paramsFrom(f, { how: 'other' }).errors).toEqual({ how: 'Pick one of the options.' });
+  });
+
   it.each([
     ['oneOf', { type: 'object', properties: { x: { oneOf: [{ type: 'string' }, { type: 'number' }] } } }],
+    ['a oneOf of numbers', { type: 'object', properties: { x: { oneOf: [{ const: 1 }, { const: 2 }] } } }],
+    ['a oneOf with more than constants', { type: 'object', properties: { x: { oneOf: [{ const: 'a', pattern: 'a' }] } } }],
+    ['an empty oneOf', { type: 'object', properties: { x: { oneOf: [] } } }],
+    ['a oneOf of type number', { type: 'object', properties: { x: { type: 'number', oneOf: [{ const: 'a' }] } } }],
     ['a nested object', { type: 'object', properties: { x: { type: 'object', properties: {} } } }],
     ['an array', { type: 'object', properties: { x: { type: 'array', items: { type: 'number' } } } }],
     ['a keyword on the object', { type: 'object', properties: {}, if: {} }],
