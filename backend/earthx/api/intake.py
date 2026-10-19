@@ -131,6 +131,7 @@ __all__ = [
     "export_attachments",
     "footprint_of",
     "job_recipe_json",
+    "job_side_files",
 ]
 
 # The starting values of an order's size (Otto, M4-07b F5). One input per order until
@@ -165,6 +166,9 @@ class AcceptedOrder:
     #: The UTC day of acquisition of the scenes of the recipe, if they all share one (Otto, 14.10.2026);
     #: the date in the name of every download of the job. See :func:`_acquired_on`.
     acquired_on: date | None = None
+    #: The order named whole scenes and no area, so the AOI of its recipe is the union of their
+    #: footprints (M4-30). Kept with the job: the recipe cannot tell it from an area somebody drew.
+    scene_aoi: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +191,8 @@ class _Prepared:
     targets: list[_Target]
     #: The AOI of the recipe: the order's own, or the union of the scenes' footprints (M4-12).
     aoi: dict[str, Any]
+    #: Whether that is the union, because the order had none of its own (M4-30).
+    scene_aoi: bool = False
 
 
 async def accept_order(
@@ -308,7 +314,7 @@ async def _prepare(
         for item_id in group
         for asset in entry.assets
     ]
-    return _Prepared(request, entry, config, groups, skipped, targets, aoi)
+    return _Prepared(request, entry, config, groups, skipped, targets, aoi, scene_aoi=request.aoi is None)
 
 
 async def _accept(
@@ -337,7 +343,13 @@ async def _accept(
         pass
     acquired_on = _acquired_on(prepared)
     if not isinstance(recipe.output, CropOutput):
-        return AcceptedOrder(recipe, cache_key(recipe) is not None, prepared.skipped, acquired_on=acquired_on)
+        return AcceptedOrder(
+            recipe,
+            cache_key(recipe) is not None,
+            prepared.skipped,
+            acquired_on=acquired_on,
+            scene_aoi=prepared.scene_aoi,
+        )
     kept = {item_id for group in prepared.groups for item_id in group}
     attachments = export_attachments(
         prepared.config,
@@ -412,6 +424,41 @@ def _recipe_of(
     return recipe
 
 
+def side_files(
+    config: DatasetConfig,
+    *,
+    groups: Sequence[Sequence[str]],
+    assets: Sequence[str],
+    aoi: Mapping[str, Any],
+    dropped: Sequence[str],
+    accepted_at: datetime,
+    at: datetime | None = None,
+    raster_result: bool = False,
+) -> dict[str, str]:
+    """``ATTRIBUTION.txt``, ``citation.bib`` and ``aoi.geojson`` as the synchronous crop writes them.
+
+    The one place that builds them for a job's ZIP, the export's (:func:`export_attachments`) and
+    the raster job's (:func:`job_side_files`); the crop itself has them from ``build_download_zip``
+    with the same functions. ``aoi`` is the geometry with the ``properties`` that go into the file.
+    ``at`` and ``raster_result`` are those of :func:`~earthx.access.download.build_notice_text`.
+    """
+    notice = build_notice_text(
+        config,
+        item_ids=[item_id for group in groups for item_id in group],
+        assets=list(assets),
+        group_item_ids=[list(group) for group in groups] if len(groups) > 1 else None,
+        skipped_item_ids=list(dropped),
+        aoi_geometry=aoi,
+        at=at,
+        raster_result=raster_result,
+    )
+    return {
+        NOTICE_FILENAME: notice,
+        CITATION_FILENAME: citation_bib(config, downloaded=accepted_at.date()).decode("utf-8"),
+        AOI_FILENAME: json.dumps(aoi),
+    }
+
+
 def export_attachments(
     config: DatasetConfig,
     recipe: Recipe,
@@ -432,23 +479,47 @@ def export_attachments(
     aoi = recipe.aoi.model_dump(mode="json")
     if aoi_provenance:
         aoi = {**aoi, "properties": dict(aoi_provenance)}
-    groups = [list(group) for group in entry.groups]
-    notice = build_notice_text(
-        config,
-        item_ids=[item_id for group in groups for item_id in group],
-        assets=list(entry.assets),
-        group_item_ids=groups if len(groups) > 1 else None,
-        skipped_item_ids=list(dropped),
-        aoi_geometry=aoi,
-    )
     attribution = attribution_text(config, year=accepted_at.year)
     return Attachments(
-        files={
-            NOTICE_FILENAME: notice,
-            CITATION_FILENAME: citation_bib(config, downloaded=accepted_at.date()).decode("utf-8"),
-            AOI_FILENAME: json.dumps(aoi),
-        },
+        files=side_files(
+            config, groups=entry.groups, assets=entry.assets, aoi=aoi, dropped=dropped, accepted_at=accepted_at
+        ),
         attribution=(attribution,) if attribution else (),
+    )
+
+
+#: ``properties`` of ``aoi.geojson`` where the order named whole scenes and no area (M4-30).
+SCENE_AOI_PROPERTIES = {"earthx:aoi": "union of the footprints of the scenes; the order named no area"}
+
+
+def job_side_files(
+    config: DatasetConfig | None, body: Mapping[str, Any], *, finished: datetime, scene_aoi: bool
+) -> dict[str, str]:
+    """The side files of a raster job's ZIP, built at the download from the job's own recipe (M4-30).
+
+    The same three files and the same functions as the export and the crop (:func:`side_files`), not
+    stored: a result is shared between orders, the ZIP of each is its own. Built from ``finished``
+    alone, so that two requests give the same bytes and the ETag of the ZIP holds. ``scene_aoi``
+    marks ``aoi.geojson`` as the union of the scenes' footprints where the recipe's area is that.
+    What the recipe does not keep — the groups the AOI did not touch, which the answer to the order
+    named once — is not in the notice. A dataset the registry no longer knows has no notice and no
+    citation to build: the area is all there is.
+    """
+    entry = body["inputs"][0]
+    aoi = dict(body["aoi"])
+    if scene_aoi:
+        aoi["properties"] = dict(SCENE_AOI_PROPERTIES)
+    if config is None:
+        return {AOI_FILENAME: json.dumps(aoi)}
+    return side_files(
+        config,
+        groups=entry["groups"],
+        assets=entry["assets"],
+        aoi=aoi,
+        dropped=(),
+        accepted_at=finished,
+        at=finished,
+        raster_result=True,
     )
 
 

@@ -58,10 +58,17 @@ from psycopg_pool import ConnectionPool, PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
+from earthx.access.crop_rules import AOI_FILENAME, CITATION_FILENAME, NOTICE_FILENAME, RECIPE_FILENAME
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
-from earthx.api.citation import citation_bib
-from earthx.api.intake import OrderRefused, accept_order, check_recipe_hosts, estimate_order, job_recipe_json
+from earthx.api.intake import (
+    OrderRefused,
+    accept_order,
+    check_recipe_hosts,
+    estimate_order,
+    job_recipe_json,
+    job_side_files,
+)
 from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
 from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
@@ -632,6 +639,7 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
                 operators=api.operators,
                 attachments=accepted.attachments,
                 acquired_on=accepted.acquired_on,
+                scene_aoi=accepted.scene_aoi,
             ),
             accepted.recipe,
         )
@@ -1067,10 +1075,20 @@ async def _bundle_response(
     finished = (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
     stem = filename.removesuffix(".zip")
     members = [Member.stored(f"{stem}/{name}", name, facts[name]) for name in BUNDLE_FILES]
-    members.append(Member.of_bytes(f"{stem}/recipe.json", _recipe_bytes(api, body, status)))
-    config = _config_of(api, body)
-    if config is not None:
-        members.append(Member.of_bytes(f"{stem}/citation.bib", citation_bib(config, downloaded=finished.date())))
+    documents = {
+        name: text.encode("utf-8")
+        for name, text in job_side_files(
+            _config_of(api, body), body, finished=finished, scene_aoi=status.scene_aoi
+        ).items()
+    }
+    documents[RECIPE_FILENAME] = _recipe_bytes(api, body, status)
+    # The files of the crop's ZIP beside its rasters, in its order; the registry no longer knowing the
+    # dataset leaves out the citation and the notice, as it left out the citation before.
+    members.extend(
+        Member.of_bytes(f"{stem}/{name}", documents[name])
+        for name in (AOI_FILENAME, RECIPE_FILENAME, CITATION_FILENAME, NOTICE_FILENAME)
+        if name in documents
+    )
     layout = Layout(members, modified=finished)
     await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
 
