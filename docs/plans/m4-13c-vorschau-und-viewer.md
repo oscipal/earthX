@@ -267,6 +267,7 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
 
 ### 3.5 Einstiege (Zusatz Punkt 4, F3)
 
+**[Geändert am 19.10.2026 (Otto): „⚙“ am Layer stellt nur Datensatz, AOI und Szenen her und wechselt nicht die Ansicht, siehe §12.]**
 Empfehlung F3 (1): Beide Einstiege stellen zuerst die Auswahl her, dann öffnet
 das Panel; das Panel liest wie heute nur die Auswahl.
 - **Layer-Manager:** je Layer ein Knopf „⚙“ („Process this layer“).
@@ -732,13 +733,17 @@ Im Browser `http://localhost:5173`:
   er nicht): Weder Quell-Layer noch Ausblenden von Layer oder Fokusansicht. Ein Layer
   trägt `derived: 'preview'` und seine Overlays `preview: true`; der Download-Knopf
   fehlt bei ihm.
-- **Einstiege (§3.5):** „⚙“ je Layer und „⚙ Process“ in der Vollauflösung stellen
-  die Auswahl her (`selectLayer`, Szenen des Layers bzw. der Ansicht), setzen „Area“
-  (zugeschnitten und AOI da → „AOI only“, sonst „Whole scene“) und öffnen das
-  Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
-  yet.“), Datensätze unter *processing*.
+- **Einstiege (§3.5):** „⚙“ je Layer und „⚙ Process“ in der Vollauflösung machen die
+  Szenen zur Auswahl, setzen „Area“ (zugeschnitten und AOI da → „AOI only“, sonst
+  „Whole scene“) und öffnen das Panel. **Die Ansicht bleibt, wie sie ist** (Otto,
+  19.10.2026, ändert F3 (1) in diesem Punkt): „⚙“ am Layer ruft nicht `selectLayer`
+  auf, sondern `activateLayerContext`. Das setzt nur den Datensatz des Layers, falls er
+  nicht der aktive ist, und bei einem zugeschnittenen Layer dessen AOI. Die
+  Vollauflösung des Layers wird nicht betreten, die Trefferliste bleibt, eine offene
+  Vollauflösung bleibt. Gesperrt mit Grund: Vorschau-Layer („A result cannot be
+  processed further yet.“), Datensätze unter *processing*.
 
-**Tests** (vitest, synthetisch, 85 neue): `processingPreview.test.ts` (Planer mit
+**Tests** (vitest, synthetisch, 89 neue): `processingPreview.test.ts` (Planer mit
 leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
 und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
 `previewMaxZoom`: 10 m bei 51° N, Äquator, 30 m, 1 m, 300 m, Süden, Pol, mehrere
@@ -779,7 +784,7 @@ Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer�
 Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
 A → B → A), zur AOI und zu den neuen Gründen.
 
-**Ergebnis der Prüfungen:** Frontend 1008 Tests grün, `tsc` und `oxlint` ohne Befund;
+**Ergebnis der Prüfungen:** Frontend 1012 Tests grün, `tsc` und `oxlint` ohne Befund;
 Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
 (keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
 
@@ -808,7 +813,8 @@ Im Browser `http://localhost:5173`:
    Panel öffnet mit „AOI only“.
 6. In der Vollauflösung „⚙ Process“: das Panel öffnet für die Szenen der Ansicht.
 7. Eine neue Suche starten (andere Szenen in den Treffern), im Layer-Manager „⚙“ an
-   einem älteren Layer: das Panel öffnet nach einem Moment mit den Szenen des Layers,
-   ohne dass die Treffer sich ändern.
+   einem älteren Layer, auch an einem zugeschnittenen: das Panel öffnet nach einem
+   Moment mit den Szenen des Layers. Die Trefferliste und die Karte bleiben, wie sie
+   sind; die Vollauflösung des Layers wird nicht betreten.
 8. Nach „⚙“ an einem zugeschnittenen Layer das Panel schließen und aus der Auswahl
    „⚙ Process“ öffnen: „Area“ steht auf „Whole scene“.

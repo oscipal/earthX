@@ -526,11 +526,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     // F3 (1): the selection is made again from the layer, then the panel opens and
     // reads the selection as ever. "AOI only" if the layer was cut to its AOI.
-    // Scenes the results on screen lack are fetched first, one by one.
+    // The view stays as it is (Otto 19.10.2026): no full-resolution view of the
+    // layer, the results list stays. Scenes the results on screen lack are fetched
+    // first, one by one.
     processLayer: async (layerId) => {
       const layer = useAppStore.getState().layers.find((l) => l.id === layerId);
       if (!layer || layerProcessBlock(layer, useAppStore.getState().datasets) !== null) return;
-      useAppStore.getState().selectLayer(layerId);
+      useAppStore.getState().activateLayerContext(layerId);
       const extraScenes = await selectScenes(layer.restore.itemIds, 'this layer');
       if (!extraScenes) return;
       get().openProcessing({

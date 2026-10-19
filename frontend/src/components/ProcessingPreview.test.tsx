@@ -634,6 +634,84 @@ describe('the ways into the panel (§3.5)', () => {
     expect(rows.map((row) => [...row.querySelectorAll('button')].some((b) => b.textContent === '⇩'))).toEqual([true, false]);
   });
 
+  describe('the view stays as it is (Otto, 19.10.2026)', () => {
+    const tile: DownloadedInfo = { tileUrl: 'u', bounds: [10, 50, 11, 51], asset: 'visual', minZoom: 8, maxZoom: 14 };
+    const OTHER_AOI = bboxToPolygon([10.1, 50.1, 10.2, 50.2]);
+
+    it('does not enter the full-resolution view of a layer, and keeps the results list', async () => {
+      select([scene('S2B_A'), scene('S2B_B')]);
+      const before = useAppStore.getState();
+      const cropped = pinned('L1', {
+        focusMode: true,
+        cropToAoi: true,
+        downloaded: { S2B_B: tile },
+        itemIds: ['S2B_B'],
+        selectedIds: ['S2B_B'],
+        aoi: OTHER_AOI,
+        appliedRender: { rescale: '0,1' },
+      });
+      useAppStore.setState({ layers: [cropped] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      const after = useAppStore.getState();
+      expect(store()).toMatchObject({ open: true, area: 'aoi' });
+      expect(after.focusMode).toBe(false);
+      expect(after.downloaded).toBe(before.downloaded);
+      expect(after.appliedRender).toBe(before.appliedRender);
+      expect(after.cropToAoi).toBe(before.cropToAoi);
+      expect(after.items).toBe(before.items);
+      expect(after.groups).toBe(before.groups);
+      expect(after.activeGroupIndex).toBe(before.activeGroupIndex);
+      expect(after.selectedIds).toEqual(['S2B_B']);
+      // "AOI only" sends the AOI of the layer.
+      expect(after.aoi).toBe(OTHER_AOI);
+    });
+
+    it('leaves the AOI the user drew when the layer is processed whole', async () => {
+      select([scene('S2B_A')]);
+      useAppStore.setState({ layers: [pinned('L1', { aoi: OTHER_AOI, cropToAoi: false })] });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(store().area).toBe('scene');
+      expect(useAppStore.getState().aoi).toBe(AOI);
+    });
+
+    it('leaves a full-resolution view that is open as it is', async () => {
+      select([scene('S2B_A'), scene('S2B_B')]);
+      useAppStore.setState({
+        focusMode: true,
+        downloaded: { S2B_B: tile },
+        showDownloaded: true,
+        layers: [pinned('L1', { focusMode: true, downloaded: { S2B_A: tile } })],
+      });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      const after = useAppStore.getState();
+      expect(after.focusMode).toBe(true);
+      expect(Object.keys(after.downloaded)).toEqual(['S2B_B']);
+      expect(after.selectedIds).toEqual(['S2B_A']);
+    });
+
+    it('makes the dataset of the layer the active one, and only that', async () => {
+      const other = { ...dataset(), id: 'other-ds', title: 'Other' } as DatasetOption;
+      select([scene('S2B_A')]);
+      useAppStore.setState({
+        datasets: [dataset(), other],
+        datasetId: 'other-ds',
+        selectedDatasetIds: ['sentinel-2-c1-l2a', 'other-ds'],
+        layers: [pinned('L1', { focusMode: true })],
+      });
+      mount(<LayerManager />);
+      click(button('⚙'));
+      await flush();
+      expect(useAppStore.getState().datasetId).toBe('sentinel-2-c1-l2a');
+      expect(useAppStore.getState().focusMode).toBe(false);
+    });
+  });
+
   describe('scenes the results on screen lack (Otto, 19.10.2026)', () => {
     const itemRequests = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/stac'));
     const layerOf = (...ids: string[]) =>
