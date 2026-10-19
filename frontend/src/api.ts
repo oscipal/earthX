@@ -327,6 +327,26 @@ export function buildTileTemplate(datasetId: string, itemId: string, asset: stri
   return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
 }
 
+// The tile template of an operator (T1, adr/0014 §6.2): the assets the operator
+// reads — one `asset` each, in the order of the order — and `op`, `op_version`
+// and `params` as the tiler takes them. `paramsJson` is canonical JSON
+// (`processing.ts::canonicalJson`), so equal parameters are one URL, one cache entry.
+export function buildOperatorTileTemplate(
+  datasetId: string,
+  itemId: string,
+  assets: readonly string[],
+  op: string,
+  opVersion: number,
+  paramsJson: string,
+): string {
+  const params = new URLSearchParams();
+  for (const asset of assets) params.append('asset', asset);
+  params.set('op', op);
+  params.set('op_version', String(opVersion));
+  params.set('params', paramsJson);
+  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
+}
+
 export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {
   const params = new URLSearchParams({ asset });
   return `${itemBase(datasetId, itemId)}/statistics?${params.toString()}`;

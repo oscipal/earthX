@@ -13,7 +13,7 @@ import type { DatasetOption } from './datasets';
 import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
-import type { MapLayer } from './layers';
+import type { LayerOverlay, MapLayer } from './layers';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
@@ -24,6 +24,10 @@ const COVERAGE_AREA_SRC = 'coverage-area-src'; // a one-off product's extent (M3
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const MAX_MOSAIC_LAYERS = 40;
+// The preview of the processing panel (M4-13c-2): above every raster the map
+// draws, under the AOI outline.
+const PREVIEW_SRC = 'preview-src-';
+const PREVIEW_LYR = 'preview-lyr-';
 
 // Dynamic per-frame overlay ids created by syncMosaic (variable count).
 let dynLayerIds: string[] = [];
@@ -358,8 +362,50 @@ function clearDynamicMosaic(map: MapLibreMap): void {
   dynSourceIds = [];
 }
 
+const aboveAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
+
+// Where a new raster goes: below the preview, which stays on top of whatever
+// loads after it (a quicklook is placed when its image has arrived).
 const beforeAoi = (map: MapLibreMap): string | undefined =>
-  map.getLayer('aoi-fill') ? 'aoi-fill' : undefined;
+  map.getLayer(`${PREVIEW_LYR}0`) ? `${PREVIEW_LYR}0` : aboveAll(map);
+
+function clearPreview(map: MapLibreMap): void {
+  for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
+    if (map.getLayer(`${PREVIEW_LYR}${i}`)) map.removeLayer(`${PREVIEW_LYR}${i}`);
+    if (map.getSource(`${PREVIEW_SRC}${i}`)) map.removeSource(`${PREVIEW_SRC}${i}`);
+  }
+}
+
+// The preview of the first step on the scenes of the order: one raster source
+// per overlay (`processingPreview.ts::previewOverlays`, already cut to the AOI
+// for "AOI only"). Torn down and built again whenever it is called — the caller
+// calls it when the overlays change, or after a style reload.
+export function syncPreview(map: MapLibreMap, overlays: readonly LayerOverlay[]): void {
+  clearPreview(map);
+  // Drawn from the last scene to the first, so the first ends up topmost: the
+  // order of the full-resolution view (`syncFocusRaster`). The lowest layer is
+  // `preview-lyr-0`, which `beforeAoi` keeps later rasters under.
+  [...overlays]
+    .slice(0, MAX_MOSAIC_LAYERS)
+    .reverse()
+    .forEach((overlay, i) => {
+      if (overlay.kind !== 'raster') return;
+      const srcId = `${PREVIEW_SRC}${i}`;
+      const lyrId = `${PREVIEW_LYR}${i}`;
+      map.addSource(srcId, {
+        type: 'raster',
+        tiles: [overlay.tileUrl],
+        tileSize: 256,
+        bounds: overlay.bounds,
+        minzoom: overlay.minZoom,
+        maxzoom: overlay.maxZoom,
+      });
+      map.addLayer(
+        { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+        aboveAll(map),
+      );
+    });
+}
 
 // Exported for M2-07c: the same footprint-or-bbox fallback the mosaic
 // selection highlight uses, reused to draw real scene footprints once the

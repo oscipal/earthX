@@ -8,8 +8,10 @@ import {
   syncHighlight,
   syncLayers,
   syncMosaic,
+  syncPreview,
   syncSelectionHighlight,
 } from './mapLayers';
+import type { LayerOverlay } from './layers';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
@@ -507,5 +509,82 @@ describe('syncLayers: pinned layers of several datasets', () => {
     const { map, sources } = stackMap();
     syncLayers(map as never, [pinned('a', 'dem', 'https://t/a', false), pinned('b', 'optical', 'https://t/b')]);
     expect([...sources.values()].map((s) => (s.tiles as string[])[0])).toEqual(['https://t/b']);
+  });
+});
+
+// --- the preview of the processing panel (M4-13c-2) ---
+
+// A map that remembers its layers in order, as MapLibre stacks them: a layer
+// added `before` another goes right under it.
+function stackedMap(initial: string[]) {
+  const stack = [...initial];
+  const sources = new Map<string, Record<string, unknown>>();
+  const map = {
+    getLayer: (id: string) => (stack.includes(id) ? { id } : undefined),
+    getSource: (id: string) => sources.get(id),
+    removeLayer: (id: string) => stack.splice(stack.indexOf(id), 1),
+    removeSource: (id: string) => sources.delete(id),
+    addSource: (id: string, spec: Record<string, unknown>) => sources.set(id, spec),
+    addLayer: (layer: { id: string }, before?: string) => {
+      stack.splice(before ? stack.indexOf(before) : stack.length, 0, layer.id);
+    },
+  };
+  return { map, stack, sources };
+}
+
+const previewTiles = (n: number): LayerOverlay[] =>
+  Array.from({ length: n }, (_, i) => ({
+    kind: 'raster' as const,
+    tileUrl: `/collections/c/items/S${i}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=red&op=band_math`,
+    bounds: [10, 47, 11, 48] as [number, number, number, number],
+    minZoom: 8,
+    maxZoom: 14,
+    preview: true as const,
+  }));
+
+describe('syncPreview', () => {
+  it('adds one raster source per scene, within the released levels, under the AOI outline', () => {
+    const { map, stack, sources } = stackedMap(['m-tiles-lyr-0', 'aoi-fill', 'aoi-line']);
+    const tiles = previewTiles(2);
+    syncPreview(map as never, tiles);
+    expect(stack).toEqual(['m-tiles-lyr-0', 'preview-lyr-0', 'preview-lyr-1', 'aoi-fill', 'aoi-line']);
+    // The first scene is on top, as in the full-resolution view: it is drawn last.
+    expect((sources.get('preview-src-1') as { tiles: string[] }).tiles).toEqual([(tiles[0] as { tileUrl: string }).tileUrl]);
+    expect(sources.get('preview-src-0')).toMatchObject({
+      type: 'raster',
+      tiles: [(tiles[1] as { tileUrl: string }).tileUrl],
+      tileSize: 256,
+      bounds: [10, 47, 11, 48],
+      minzoom: 8,
+      maxzoom: 14,
+    });
+  });
+
+  it('builds the picture anew each time, and leaves nothing behind for none', () => {
+    const { map, stack, sources } = stackedMap(['aoi-fill']);
+    syncPreview(map as never, previewTiles(3));
+    syncPreview(map as never, previewTiles(1));
+    expect(stack).toEqual(['preview-lyr-0', 'aoi-fill']);
+    expect([...sources.keys()]).toEqual(['preview-src-0']);
+    syncPreview(map as never, []);
+    expect(stack).toEqual(['aoi-fill']);
+    expect(sources.size).toBe(0);
+  });
+
+  it('keeps the preview on top of a quicklook that arrives after it', () => {
+    const { map, stack } = stackedMap(['aoi-fill']);
+    syncPreview(map as never, previewTiles(1));
+    // The browse view places its tiles as it is synced: below the preview, not above.
+    syncMosaic(map as never, {
+      items: [scene],
+      dataset: zarrLikeDataset(),
+      downloaded: {},
+      selectedIds: [],
+      render: {},
+      focusMode: false,
+      showDownloaded: true,
+    });
+    expect(stack.indexOf('m-tiles-lyr-0')).toBeLessThan(stack.indexOf('preview-lyr-0'));
+    expect(stack.indexOf('preview-lyr-0')).toBeLessThan(stack.indexOf('aoi-fill'));
   });
 });
