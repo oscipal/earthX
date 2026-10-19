@@ -458,7 +458,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     expect(store().preview!.maxZoom).toBeLessThan(14);
   });
 
-  it('draws as before, with the badge at every zoom, when the data names no pixel size, and says so', async () => {
+  it('draws as before, with the badge at every zoom, when the data names no pixel size', async () => {
     mount(
       <>
         <ProcessingPanel />
@@ -473,17 +473,12 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     typeInto(expression(), 'nir / red');
     afterDebounce();
     expect(store().preview).toMatchObject({ minZoom: 8, maxZoom: 14 });
-    expect(section().textContent).toContain('The data names no pixel size');
+    expect(container.textContent).not.toContain('pixel size');
     for (const zoom of [3, 12.5, 22]) {
       act(() => useAppStore.setState({ mapZoom: zoom }));
       expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
       expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
     }
-  });
-
-  it('does not say it where the data does name a pixel size', async () => {
-    await withNdvi([scene('S2B_A', 10)]);
-    expect(section().textContent).not.toContain('names no pixel size');
   });
 
   it('stands for a pinned preview that is switched on, and not for one that is hidden', () => {

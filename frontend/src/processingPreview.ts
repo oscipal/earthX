@@ -189,9 +189,6 @@ export function tileResolution(latitude: number, zoom: number): number {
   return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
 }
 
-export const NO_PIXEL_SIZE =
-  'The data names no pixel size, so the preview cannot be held coarser than the data. It is marked Preview at every zoom.';
-
 // The last tile level the preview asks for. A tile is the finest where the scene
 // lies farthest from the equator, so the level is chosen there: every tile is
 // coarser than `gsd` (strictly), everywhere in the scenes. Above it the map

@@ -24,9 +24,7 @@ import {
 } from '../processingOrder';
 import {
   AUTO_STRETCH_REASON,
-  finestGsd,
   MAX_PREVIEW_ASSETS,
-  NO_PIXEL_SIZE,
   planPreview,
   PREVIEW_BADGE_TITLE,
   rescaleOf,
@@ -237,9 +235,6 @@ function PreviewSection({ view }: { view: OrderView }) {
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
           {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
-          {view.pass && view.assets.length > 0 && finestGsd(view.pass.items, view.assets, view.info?.variableSeparator ?? null) === null && (
-            <p className="pp-help">{NO_PIXEL_SIZE}</p>
-          )}
           {plan.further && <p className="pp-help">The map shows the first step; the job runs all steps.</p>}
           {sceneCount > 1 && (
             <p className="pp-help">
