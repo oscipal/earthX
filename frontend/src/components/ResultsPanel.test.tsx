@@ -276,19 +276,14 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(container.querySelector('.results-panel')).toBeNull();
   });
 
-  it('offers to pin the crop of a dataset drawn as one, only while that dataset is chosen', () => {
+  it('has no "Pin to layers" row for a dataset drawn as a crop', () => {
     load(MIXED);
-    expect(container.querySelector('.crop-row')).toBeNull();
     const crop = { id: 'c', name: 'Elevation model · x', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'dem' } } as never;
     useAppStore.setState({ searchCrops: [crop] });
-    act(() => root.render(<ResultsPanel />));
-    expect(container.querySelector('.crop-row')).toBeNull(); // optical is chosen
     openList();
     act(() => options()[2].click());
-    expect(container.querySelector('.crop-row')?.textContent).toContain('Full-resolution crop is on the map.');
-    act(() => (container.querySelector('.crop-row .link-btn') as HTMLButtonElement).click());
-    expect(useAppStore.getState().layers).toHaveLength(1);
-    useAppStore.setState({ searchCrops: [], layers: [] });
+    expect(container.textContent).not.toContain('Pin to layers');
+    useAppStore.setState({ searchCrops: [] });
   });
 
   it('"Clear all" empties the list', () => {
@@ -390,58 +385,79 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
   });
 });
 
-describe('"Select all" and "Clear selection" (M4-29)', () => {
+describe('"Select all" boxes and "Clear selection" (M4-29)', () => {
   const TWO_STEPS = [
     scene('o1', 'optical', { datetime: '2026-07-24T10:00:00Z' }),
     scene('o2', 'optical', { datetime: '2026-07-24T10:00:05Z' }),
     scene('o3', 'optical', { datetime: '2026-07-25T10:00:00Z' }),
   ];
   const selected = () => useAppStore.getState().selectedIds.slice().sort();
-  const selectionButtons = () => [...container.querySelectorAll('.selection-row button')] as HTMLButtonElement[];
-  const groupButtons = () => [...container.querySelectorAll('.rg-select')] as HTMLButtonElement[];
+  const allBox = () => container.querySelector('.selection-row input') as HTMLInputElement;
+  const groupBox = () => container.querySelector('.rg-select input') as HTMLInputElement;
+  const clearButton = () => container.querySelector('.selection-row .link-btn') as HTMLButtonElement | null;
+  const onlyOptical = () =>
+    useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
   const withMatched = (numberMatched: number | null) =>
     useAppStore.setState({ searchContext: { numberMatched, nextToken: null } as never });
 
-  it('selects every loaded scene and clears the selection again', () => {
+  it('ticking the box selects every loaded scene, unticking deselects them', () => {
     load(TWO_STEPS);
-    expect(selectionButtons()[1].disabled).toBe(true);
-    act(() => selectionButtons()[0].click());
+    expect(allBox().checked).toBe(false);
+    act(() => allBox().click());
     expect(selected()).toEqual(['o1', 'o2', 'o3']);
-    act(() => selectionButtons()[1].click());
+    expect(allBox().checked).toBe(true);
+    act(() => allBox().click());
     expect(selected()).toEqual([]);
   });
 
-  it('selects the scenes of one group only; a second click deselects them', () => {
+  it('shows the box in between while only some scenes are selected', () => {
     load(TWO_STEPS);
-    const groupIds = useAppStore.getState().groups.map((g) => g.items.map((it) => it.id));
-    act(() => groupButtons()[0].click());
-    expect(selected()).toEqual([...groupIds[0]].sort());
-    expect(text(groupButtons()[0])).toBe('Deselect all');
-    act(() => groupButtons()[0].click());
+    act(() => useAppStore.getState().toggleSelected('o1'));
+    expect(allBox().checked).toBe(false);
+    expect(allBox().indeterminate).toBe(true);
+  });
+
+  it('puts the box of a group under its name, only while it is open, and it acts on that group', () => {
+    load(TWO_STEPS);
+    expect(container.querySelectorAll('.rg-select')).toHaveLength(1);
+    const open = useAppStore.getState().groups[0].items.map((it) => it.id).sort();
+    act(() => groupBox().click());
+    expect(selected()).toEqual(open);
+    expect(groupBox().checked).toBe(true);
+    act(() => groupBox().click());
+    expect(selected()).toEqual([]);
+  });
+
+  it('"Clear selection" is there only with a selection, and empties it', () => {
+    load(TWO_STEPS);
+    expect(clearButton()).toBeNull();
+    act(() => allBox().click());
+    act(() => clearButton()!.click());
     expect(selected()).toEqual([]);
   });
 
   it('names the total when the source reports more scenes than are loaded', () => {
     load(TWO_STEPS);
-    useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
+    onlyOptical();
     withMatched(135);
     act(() => root.render(<ResultsPanel />));
-    expect(text(selectionButtons()[0])).toBe('Select all 3 loaded (of 135)');
+    expect(text(container.querySelector('.selection-row label'))).toBe('Select all 3 loaded (of 135)');
   });
 
   it('says nothing about a total when everything is loaded', () => {
     load(TWO_STEPS);
-    useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
+    onlyOptical();
     withMatched(3);
     act(() => root.render(<ResultsPanel />));
-    expect(text(selectionButtons()[0])).toBe('Select all 3');
+    expect(text(container.querySelector('.selection-row label'))).toBe('Select all 3');
   });
 
   it('does not claim a single total over several datasets', () => {
     load(MIXED);
     withMatched(40);
     act(() => root.render(<ResultsPanel />));
-    expect(text(selectionButtons()[0])).not.toContain('(of 40)');
-    expect(text(selectionButtons()[0])).toContain('more matched in total');
+    const label = text(container.querySelector('.selection-row label'));
+    expect(label).not.toContain('(of 40)');
+    expect(label).toContain('more matched in total');
   });
 });

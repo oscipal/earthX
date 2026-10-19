@@ -108,6 +108,45 @@ function Row({ item }: { item: StacItem }) {
   );
 }
 
+// A check box tri-state for a set of scenes: ticked when all are selected, empty
+// when none is; ticking selects them all, unticking deselects them all.
+function SelectBox({
+  checked,
+  partial,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  partial: boolean;
+  label: string;
+  onChange: () => void;
+}) {
+  return (
+    <label className="select-all-box">
+      <input
+        type="checkbox"
+        checked={checked}
+        ref={(el) => {
+          if (el) el.indeterminate = partial;
+        }}
+        onChange={onChange}
+      />
+      {label}
+    </label>
+  );
+}
+
+function GroupSelectBox({ group, index }: { group: TimeStepGroup; index: number }) {
+  const count = useAppStore((s) => group.items.filter((it) => s.selectedIds.includes(it.id)).length);
+  const toggleGroupSelected = useAppStore((s) => s.toggleGroupSelected);
+  const all = count === group.items.length;
+  return (
+    <div className="rg-select">
+      <SelectBox checked={all} partial={count > 0 && !all} label="Select all" onChange={() => toggleGroupSelected(index)} />
+    </div>
+  );
+}
+
 function GroupBlock({
   group,
   index,
@@ -119,27 +158,16 @@ function GroupBlock({
   expanded: boolean;
   onToggle: (index: number) => void;
 }) {
-  const allSelected = useAppStore((s) => group.items.every((it) => s.selectedIds.includes(it.id)));
-  const toggleGroupSelected = useAppStore((s) => s.toggleGroupSelected);
   return (
     <div className={`result-group${expanded ? ' active' : ''}`}>
-      <div className="result-group-row">
-        <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
-          <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
-          <span className="rg-label" title={group.label}>
-            {group.label}
-          </span>
-          <span className="rg-count">{group.items.length}</span>
-        </button>
-        <button
-          type="button"
-          className="link-btn rg-select"
-          title={`${allSelected ? 'Deselect' : 'Select'} the scenes of ${group.label}`}
-          onClick={() => toggleGroupSelected(index)}
-        >
-          {allSelected ? 'Deselect all' : 'Select all'}
-        </button>
-      </div>
+      <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
+        <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
+        <span className="rg-label" title={group.label}>
+          {group.label}
+        </span>
+        <span className="rg-count">{group.items.length}</span>
+      </button>
+      {expanded && <GroupSelectBox group={group} index={index} />}
       {expanded && (
         <ul className="rg-items">
           {group.items.map((it) => (
@@ -251,23 +279,6 @@ function DatasetDropdown({ sections, openId }: { sections: ResultSection[]; open
   );
 }
 
-// A dataset with no browsable preview (the DEM) is drawn on the map as its AOI crop
-// as soon as it is the chosen dataset (`store.ts::searchCrops`). It is part of the
-// results, so it leaves the map with them; pinning is the user's own step.
-function CropRow({ openId }: { openId: string | null }) {
-  const hasCrop = useAppStore((s) => s.searchCrops.some((c) => c.restore.datasetId === openId));
-  const pin = useAppStore((s) => s.pinSearchCrops);
-  if (!hasCrop) return null;
-  return (
-    <div className="crop-row">
-      <span className="hint-text">Full-resolution crop is on the map.</span>
-      <button type="button" className="link-btn" title="Keep it on the map when another dataset is chosen" onClick={() => pin()}>
-        ＋ Pin to layers
-      </button>
-    </div>
-  );
-}
-
 // "Load more" (M3-10 F1) continues the whole search, whichever dataset the
 // dropdown shows: the page token spans every dataset asked and cannot be split
 // per dataset, so the sentence names none of them as the one with more.
@@ -288,11 +299,12 @@ function LoadMore() {
   );
 }
 
-// "Select all" and "Clear selection" (M4-29). "Select all" takes the scenes
-// loaded so far and says so when the source reports more; it never loads pages.
+// "Select all" and "Clear selection" (M4-29), on the line of the list's heading so
+// the list loses no height. The box takes the scenes loaded so far and says so when
+// the source reports more; it never loads pages.
 function SelectionRow() {
   const loaded = useAppStore((s) => s.items.length);
-  const selectedCount = useAppStore((s) => s.selectedIds.length);
+  const selectedCount = useAppStore((s) => s.items.filter((it) => s.selectedIds.includes(it.id)).length);
   const matched = useAppStore((s) => s.searchContext?.numberMatched ?? null);
   const loadedAll = useAppStore((s) => totalItems(s.sections));
   const several = useAppStore((s) => s.sections.length > 1);
@@ -304,14 +316,20 @@ function SelectionRow() {
     : several
       ? `Select all ${loaded} loaded (more matched in total)`
       : `Select all ${loaded} loaded (of ${matched})`;
+  const all = loaded > 0 && selectedCount === loaded;
   return (
     <div className="selection-row">
-      <button type="button" className="link-btn" disabled={loaded === 0} onClick={() => selectAllLoaded()}>
-        {label}
-      </button>
-      <button type="button" className="link-btn" disabled={selectedCount === 0} onClick={() => clearSelection()}>
-        Clear selection
-      </button>
+      <SelectBox
+        checked={all}
+        partial={selectedCount > 0 && !all}
+        label={label}
+        onChange={() => (all ? clearSelection() : selectAllLoaded())}
+      />
+      {selectedCount > 0 && (
+        <button type="button" className="link-btn" onClick={() => clearSelection()}>
+          Clear selection
+        </button>
+      )}
     </div>
   );
 }
@@ -349,9 +367,10 @@ export default function ResultsPanel() {
         </div>
       </div>
       <DatasetDropdown sections={sections} openId={openSectionId} />
-      <CropRow openId={openSectionId} />
-      <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
-      <SelectionRow />
+      <div className="results-list-head">
+        <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
+        <SelectionRow />
+      </div>
       <div className="results-list">
         {groups.map((g, i) => (
           <GroupBlock

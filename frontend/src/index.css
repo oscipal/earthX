@@ -1076,13 +1076,6 @@ input[type='date']:focus {
 .results-list-eyebrow {
   padding: 10px 14px 0;
 }
-.crop-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 14px 0;
-}
 .load-more {
   display: flex;
   align-items: center;
@@ -1169,38 +1162,30 @@ input[type='date']:focus {
 .result-group {
   border-bottom: 1px solid var(--panel-border);
 }
-.result-group-row {
-  display: flex;
-  align-items: center;
-}
 .rg-select {
-  flex: none;
-  padding: 0 8px;
-  white-space: nowrap;
+  padding: 2px 8px 4px 26px;
+}
+.select-all-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.select-all-box input {
+  margin: 0;
+}
+.results-list-head {
+  padding: 10px 14px 4px;
+}
+.results-list-head .results-list-eyebrow {
+  padding: 0 0 4px;
 }
 .selection-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 14px;
-}
-.dataset-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.multi-select-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 11px;
-  cursor: pointer;
-}
-.multi-select-toggle input {
-  margin: 0;
 }
 .result-group-head {
   width: 100%;
