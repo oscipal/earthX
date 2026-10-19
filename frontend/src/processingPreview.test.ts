@@ -11,8 +11,8 @@ import {
   assetGsd,
   DEFAULT_RANGE,
   finestGsd,
-  isCoarserThanData,
   MAX_PREVIEW_SCENES,
+  previewMaxZoom,
   NO_PREVIEW,
   planPreview,
   previewOverlays,
@@ -138,7 +138,7 @@ describe('previewSpec', () => {
     expect(url.searchParams.get('params')).toBe('{"expression":"(nir - red) / (nir + red)"}');
     expect(url.searchParams.get('rescale')).toBe('-1,1');
     expect(url.searchParams.get('colormap_name')).toBe('rdylgn');
-    expect(spec).toMatchObject({ title: 'Band math', minZoom: 8, maxZoom: 14, gsd: 10, clipToAoi: false });
+    expect(spec).toMatchObject({ title: 'Band math', minZoom: 8, maxZoom: 13, clipToAoi: false });
   });
 
   it('keeps the placeholders of the tile grid and survives characters of a URL in the expression', () => {
@@ -179,9 +179,10 @@ describe('previewSpec', () => {
     expect(JSON.stringify(cut)).not.toContain('10.2');
   });
 
-  it('marks its overlays as a preview with the pixel size of the data', () => {
+  it('marks its overlays as a preview, held under the pixel size of the data', () => {
     const spec = previewSpec({ ...base, plan: ready([bandMath('red')]) })!;
-    expect(previewOverlays(spec, null)[0]).toMatchObject({ kind: 'raster', bounds: [10, 50, 11, 51], preview: { gsd: 10 } });
+    expect(tileResolution(51, spec.maxZoom)).toBeGreaterThan(10);
+    expect(previewOverlays(spec, null)[0]).toMatchObject({ kind: 'raster', bounds: [10, 50, 11, 51], preview: true });
   });
 
   it('shows nothing it cannot draw', () => {
@@ -194,9 +195,13 @@ describe('previewSpec', () => {
     expect(previewSpec({ ...base, plan, items: [{ ...items[0], bbox: null }] })).toBeNull();
   });
 
+  it('draws nothing when the data names no pixel size, since no level could be held under it', () => {
+    expect(previewSpec({ ...base, plan: ready([bandMath('red')]), items: [item('S2_A'), item('S2_B')] })).toBeNull();
+  });
+
   it('takes the scenes without a footprint out and no more than the full-resolution view draws', () => {
     const plan = ready([bandMath('red')]);
-    const many = Array.from({ length: MAX_PREVIEW_SCENES + 5 }, (_, i) => item(`S${i}`));
+    const many = Array.from({ length: MAX_PREVIEW_SCENES + 5 }, (_, i) => item(`S${i}`, { gsd: 10 }));
     expect(previewSpec({ ...base, plan, items: many })!.scenes).toHaveLength(MAX_PREVIEW_SCENES);
     const spec = previewSpec({ ...base, plan, items: [{ ...items[0], bbox: null }, items[1]] })!;
     expect(spec.scenes.map((s) => s.id)).toEqual(['S2_B']);
@@ -233,9 +238,8 @@ describe('the pixel size of the data (F4)', () => {
   });
 });
 
-describe('"Preview" while a tile is coarser than the data (F4 (1))', () => {
-  const equator = [10, -1, 11, 1] as [number, number, number, number];
-  const at48 = [10, 47, 11, 49] as [number, number, number, number];
+describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
+  const at51 = [[10, 50, 11, 51]] as [number, number, number, number][];
 
   it('computes metres per pixel of a 256-pixel Web Mercator tile', () => {
     expect(tileResolution(0, 0)).toBeCloseTo(156543.03392, 4);
@@ -243,36 +247,49 @@ describe('"Preview" while a tile is coarser than the data (F4 (1))', () => {
     expect(tileResolution(60, 14)).toBeCloseTo(4.7773, 3);
   });
 
-  it('is on until the tile level reaches the data, at the equator', () => {
-    // 10 m: level 13 is 19.1 m per pixel, level 14 is 9.55 m.
-    expect(isCoarserThanData({ mapZoom: 12.4, viewport: equator, maxZoom: 14, gsd: 10 })).toBe(true);
-    expect(isCoarserThanData({ mapZoom: 12.5, viewport: equator, maxZoom: 14, gsd: 10 })).toBe(false);
+  it('stops at the last level whose tiles are coarser than the data, where the scene is farthest from the equator', () => {
+    // 10 m at 51° N: level 13 is 12.0 m per pixel, level 14 is 6.0 m.
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 22 })).toBe(13);
+    expect(tileResolution(51, 13)).toBeGreaterThan(10);
+    expect(tileResolution(51, 14)).toBeLessThan(10);
+    // At the equator level 13 is 19.1 m, level 14 is 9.55 m: the same level, as 9.55 < 10.
+    expect(previewMaxZoom([[10, -1, 11, 1]], 10, { min: 8, max: 22 })).toBe(13);
+    // 30 m (a DEM): level 12 is 38 m at the equator, level 13 is 19 m.
+    expect(previewMaxZoom([[10, -1, 11, 1]], 30, { min: 0, max: 22 })).toBe(12);
   });
 
-  it('measures at the latitude of the view nearest to the equator, where tiles are coarsest', () => {
-    // 47° N: level 13 is 13.0 m, level 14 is 6.5 m.
-    expect(isCoarserThanData({ mapZoom: 12.4, viewport: at48, maxZoom: 14, gsd: 10 })).toBe(true);
-    expect(isCoarserThanData({ mapZoom: 12.5, viewport: at48, maxZoom: 14, gsd: 10 })).toBe(false);
-    // A view across the equator counts as the equator, however far north it reaches.
-    expect(isCoarserThanData({ mapZoom: 12.5, viewport: [10, -1, 11, 60], maxZoom: 14, gsd: 10 })).toBe(false);
-    expect(isCoarserThanData({ mapZoom: 12.4, viewport: [10, -1, 11, 60], maxZoom: 14, gsd: 10 })).toBe(true);
-    // The southern view is as far from the equator as the northern one.
-    expect(isCoarserThanData({ mapZoom: 12.5, viewport: [10, -49, 11, -47], maxZoom: 14, gsd: 10 })).toBe(false);
+  it('uses a level while it is coarser than the data and not once it is as fine', () => {
+    const level13 = tileResolution(0, 13);
+    const equator = [[10, -1, 11, 1]] as [number, number, number, number][];
+    expect(previewMaxZoom(equator, level13 * 0.999, { min: 0, max: 22 })).toBe(13);
+    expect(previewMaxZoom(equator, level13 * 1.001, { min: 0, max: 22 })).toBe(12);
   });
 
-  it('is on at 60° N where it would be off at the equator, for a finer pixel size', () => {
-    // 5 m data: level 14 is 4.78 m at 60° N, 9.55 m at the equator.
-    expect(isCoarserThanData({ mapZoom: 13, viewport: [10, 60, 11, 61], maxZoom: 14, gsd: 5 })).toBe(false);
-    expect(isCoarserThanData({ mapZoom: 13, viewport: equator, maxZoom: 14, gsd: 5 })).toBe(true);
+  it.each([
+    ['10 m', 10, [10, 50, 11, 51]],
+    ['1 m', 1, [10, 50, 11, 51]],
+    ['300 m', 300, [10, 50, 11, 51]],
+    ['10 m in the south', 10, [10, -52, 11, -51]],
+    ['5 m near the pole', 5, [10, 78, 11, 80]],
+  ] as const)('holds every tile under the pixel size at its farthest latitude (%s)', (_, gsd, bbox) => {
+    const level = previewMaxZoom([bbox as unknown as [number, number, number, number]], gsd, { min: 0, max: 22 });
+    const farthest = Math.max(Math.abs(bbox[1]), Math.abs(bbox[3]));
+    expect(tileResolution(farthest, level)).toBeGreaterThan(gsd);
+    expect(tileResolution(farthest, level + 1)).toBeLessThanOrEqual(gsd);
   });
 
-  it('never asks for a level beyond the last released one', () => {
-    expect(isCoarserThanData({ mapZoom: 20, viewport: equator, maxZoom: 12, gsd: 10 })).toBe(true);
-    expect(isCoarserThanData({ mapZoom: 20, viewport: equator, maxZoom: 14, gsd: 10 })).toBe(false);
+  it('takes the scene farthest from the equator when there are several', () => {
+    expect(previewMaxZoom([[10, 0, 11, 1], [10, 70, 11, 71]], 10, { min: 0, max: 22 })).toBe(
+      previewMaxZoom([[10, 70, 11, 71]], 10, { min: 0, max: 22 }),
+    );
   });
 
-  it('is always on without a pixel size, and takes the equator without a view', () => {
-    expect(isCoarserThanData({ mapZoom: 22, viewport: at48, maxZoom: 22, gsd: null })).toBe(true);
-    expect(isCoarserThanData({ mapZoom: 12.5, viewport: null, maxZoom: 14, gsd: 10 })).toBe(false);
+  it('keeps within the released levels', () => {
+    expect(previewMaxZoom(at51, 10, { min: 8, max: 11 })).toBe(11);
+    expect(previewMaxZoom(at51, 10000, { min: 8, max: 22 })).toBe(8); // coarser data than the lowest level
+  });
+
+  it('is never above the data at the pole either', () => {
+    expect(previewMaxZoom([[10, 89, 11, 90]], 10, { min: 0, max: 22 })).toBeLessThanOrEqual(22);
   });
 });

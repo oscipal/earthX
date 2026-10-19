@@ -19,7 +19,7 @@ export const MAX_PREVIEW_SCENES = 40;
 export const MAX_PREVIEW_ASSETS = 16;
 
 export const PREVIEW_BADGE_TITLE =
-  'Calculated from coarser tiles than the data: zoom in for the full resolution. A job always uses the full resolution.';
+  'A preview is always coarser than the data: zooming in only makes it blurrier, not finer. A job uses the full resolution.';
 
 export const NO_PREVIEW = 'No preview: the first step runs only as a job.';
 
@@ -92,9 +92,8 @@ export interface PreviewSpec {
   title: string;
   scenes: PreviewScene[];
   minZoom: number;
+  // Capped so that no tile is as fine as the data (`previewMaxZoom`).
   maxZoom: number;
-  // The pixel size of the data in metres, `null` where the items name none.
-  gsd: number | null;
   // "AOI only": the tiles are cut to the AOI in the browser (`aoiClip.ts`).
   clipToAoi: boolean;
 }
@@ -154,15 +153,18 @@ export function previewSpec(args: {
     });
   }
   if (scenes.length === 0) return null;
+  // Without a pixel size there is no level the preview could be held under (Otto,
+  // 19.10.2026: never as fine as the data); the panel says so.
   const gsd = finestGsd(items, assets, info.variableSeparator);
+  if (gsd === null) return null;
+  const maxZoom = previewMaxZoom(scenes.map((s) => s.bbox), gsd, dataset.zoom);
   const clipToAoi = area === 'aoi';
   return {
-    key: canonicalJson({ urls: scenes.map((s) => s.url), zoom: dataset.zoom, gsd, clipToAoi }),
+    key: canonicalJson({ urls: scenes.map((s) => s.url), minZoom: dataset.zoom.min, maxZoom, clipToAoi }),
     title: plan.operator.title,
     scenes,
     minZoom: dataset.zoom.min,
-    maxZoom: dataset.zoom.max,
-    gsd,
+    maxZoom,
     clipToAoi,
   };
 }
@@ -176,35 +178,30 @@ export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null)
     bounds: scene.bbox,
     minZoom: spec.minZoom,
     maxZoom: spec.maxZoom,
-    preview: { gsd: spec.gsd },
+    preview: true as const,
   }));
 }
 
-// --- "Preview" (F4 (1)) -----------------------------------------------------
+// --- never as fine as the data (Otto, 19.10.2026) ---------------------------
 
 // Metres per pixel of a 256-pixel Web Mercator tile at `latitude`.
 export function tileResolution(latitude: number, zoom: number): number {
   return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
 }
 
-// The latitude of the view that lies nearest to the equator: there a tile is
-// coarsest, so it is where the rule is most careful. Without a view, the equator.
-function nearestToEquator(viewport: Bbox | null): number {
-  if (!viewport) return 0;
-  const [, south, , north] = viewport;
-  return south <= 0 && north >= 0 ? 0 : Math.min(Math.abs(south), Math.abs(north));
-}
+export const NO_PIXEL_SIZE =
+  'No preview: the data names no pixel size, so the preview cannot be kept coarser than the data.';
 
-// Whether the tiles on screen are coarser than the data (a careful rule, not a
-// measurement): MapLibre loads 256-pixel tiles of level `round(zoom + 1)`, at
-// most the last released one. Without a pixel size, always.
-export function isCoarserThanData(args: {
-  mapZoom: number;
-  viewport: Bbox | null;
-  maxZoom: number;
-  gsd: number | null;
-}): boolean {
-  if (args.gsd === null) return true;
-  const level = Math.min(Math.round(args.mapZoom + 1), args.maxZoom);
-  return tileResolution(nearestToEquator(args.viewport), level) > args.gsd;
+// The last tile level the preview asks for. A tile is the finest where the scene
+// lies farthest from the equator, so the level is chosen there: every tile is
+// coarser than `gsd` (strictly), everywhere in the scenes. Above it the map
+// stretches the last level, the picture gets blurry and no finer. Held within the
+// released levels; a dataset whose lowest level is already finer than the data
+// cannot be held under it, and keeps that level.
+export function previewMaxZoom(bboxes: readonly Bbox[], gsd: number, zoom: { min: number; max: number }): number {
+  const farthest = Math.max(0, ...bboxes.flatMap(([, south, , north]) => [Math.abs(south), Math.abs(north)]));
+  const coarsest = (156543.03392 * Math.cos((Math.min(farthest, 89) * Math.PI) / 180)) / gsd;
+  // The largest whole level below log2(coarsest): its tiles are still coarser than `gsd`.
+  const level = Math.ceil(Math.log2(coarsest)) - 1;
+  return Math.max(zoom.min, Math.min(zoom.max, level));
 }

@@ -16,16 +16,15 @@ export type LayerOverlay =
   // source that publishes no quicklook, which is the same thing pinned to a single
   // level (M2-10). The range travels with the overlay so a pinned layer still knows
   // it after `setStyle()` wipes every source.
-  // `preview` marks a tile preview of an operator (M4-13c-2): the map shows
-  // "Preview" over it while a tile is coarser than `gsd`, the pixel size of its
-  // data in metres (`null`: not known, so always).
+  // `preview` marks a tile preview of an operator (M4-13c-2): always coarser than
+  // the data, and the map says "Preview" while one is switched on.
   | {
       kind: 'raster';
       tileUrl: string;
       bounds: Bbox;
       minZoom: number;
       maxZoom: number;
-      preview?: { gsd: number | null };
+      preview?: true;
     };
 
 // Enough of the working state to bring a layer back into the active view.

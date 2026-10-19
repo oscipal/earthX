@@ -24,8 +24,9 @@ import {
 } from '../processingOrder';
 import {
   AUTO_STRETCH_REASON,
-  isCoarserThanData,
+  finestGsd,
   MAX_PREVIEW_ASSETS,
+  NO_PIXEL_SIZE,
   planPreview,
   PREVIEW_BADGE_TITLE,
   rescaleOf,
@@ -184,17 +185,14 @@ function PreviewSection({ view }: { view: OrderView }) {
   const setRangeDraft = useProcessingStore((s) => s.setRangeDraft);
   const applyRange = useProcessingStore((s) => s.applyRange);
   const pinPreview = useProcessingStore((s) => s.pinPreview);
-  const mapZoom = useAppStore((s) => s.mapZoom);
-  const viewport = useAppStore((s) => s.viewportBbox);
   const plan = planPreview(steps, view.info);
   const range = rescaleOf(rangeDraft);
-  const coarse = !!preview && isCoarserThanData({ mapZoom, viewport, maxZoom: preview.maxZoom, gsd: preview.gsd });
   const sceneCount = view.pass?.items.length ?? 0;
   return (
     <section className="pp-section" aria-label="Preview on the map">
       <h3 className="pp-heading">
         Preview on the map{' '}
-        {coarse && (
+        {preview && (
           <span className="pp-badge" title={PREVIEW_BADGE_TITLE}>
             Preview
           </span>
@@ -239,6 +237,9 @@ function PreviewSection({ view }: { view: OrderView }) {
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
           {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
+          {view.pass && view.assets.length > 0 && finestGsd(view.pass.items, view.assets, view.info?.variableSeparator ?? null) === null && (
+            <p className="hint-text">{NO_PIXEL_SIZE}</p>
+          )}
           {plan.further && <p className="pp-help">The map shows the first step; the job runs all steps.</p>}
           {sceneCount > 1 && (
             <p className="pp-help">

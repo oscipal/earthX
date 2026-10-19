@@ -155,6 +155,7 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
   und erneuert sich mit 400 ms Verzögerung nach der letzten Eingabe.
 - Abschnitt „Preview on the map“ im Panel: Wertebereich, Colormap, „Apply“
   (Startwerte −1 bis 1, `rdylgn`; F3 (1)), „Auto stretch“ gesperrt mit Grund.
+- **[Geändert am 19.10.2026 (Otto): Die Vorschau ist immer gröber als die Daten, die Kachelstufe ist gedeckelt, das Badge steht immer; siehe §12. Die Regel unten gilt nicht mehr.]**
 - **Badge „Preview“** an der Karte und im Panel nach F4 (1):
   `156543.03392 · cos(φ) / 2^z` m je Pixel an der äquatornächsten Breite des
   Ausschnitts, `z = min(round(mapZoom + 1), max_zoom)`, gegen das feinste `gsd`
@@ -709,18 +710,26 @@ Im Browser `http://localhost:5173`:
   (Start −1 bis 1), Colormap (`rdylgn`) und „Apply“ wie in der Vollauflösung;
   „Auto stretch“ gesperrt mit Grund. Ein Bereich, der keiner ist, sperrt „Apply“
   und lässt das gezeigte Bild stehen.
-- **„Preview“ (F4 (1)):** `isCoarserThanData` wie im Plan: `156543.03392·cos φ /
-  2^z`, φ die äquatornächste Breite der Kartenansicht, `z = min(round(Zoom + 1),
-  max_zoom)`, gegen das feinste `gsd` der Assets (Asset, `raster:bands[0]`, Item);
-  ohne `gsd` immer. Badge an der Karte (unten links) und im Abschnitt; es steht
-  auch für eine angeheftete Vorschau, solange ihr Layer eingeschaltet ist.
+- **„Preview“ — immer gröber als die Daten (Otto, 19.10.2026, ersetzt F4 (1)):**
+  Die Vorschau erreicht nie die Auflösung der Originaldaten. `previewMaxZoom` deckelt
+  die Kachelstufe der Quelle: Es ist die letzte Stufe, deren Kacheln noch gröber als
+  das feinste `gsd` der Assets sind (Asset, `raster:bands[0]`, Item), gerechnet an der
+  Breite der Szenen, die am weitesten vom Äquator liegt (dort ist die Kachel am
+  feinsten). Darüber streckt die Karte die letzte Stufe: Hineinzoomen macht das Bild
+  unschärfer, nie feiner. Beispiel 10 m bei 51° N: Stufe 13 (12 m je Pixel), nicht 14
+  (6 m). Das Badge hängt daher nicht mehr am Zoom: Es steht an der Karte (unten
+  links) und im Abschnitt, solange eine Vorschau da ist, auch für eine angeheftete,
+  solange ihr Layer eingeschaltet ist. Nennt kein Asset, Band und Item ein `gsd`,
+  gibt es keine Vorschau („No preview: the data names no pixel size, …“), weil keine
+  Stufe festgelegt werden kann. Damit entfällt die Regel `round(Zoom + 1)` aus
+  M4-13 §3.7 und die Prüfung gegen Kartenzoom und Ansicht.
 - **Karte:** `mapLayers.ts::syncPreview` legt die Quellen über alle Raster und
   unter die AOI-Linie; Raster, die später ankommen (Quicklooks), landen darunter
   (`beforeAoi`).
 - **Als Layer (§3.4):** „＋ Add preview to layers“ heftet „Preview · <Operator>“
   oben an. **„Replace source layer“ gibt es nicht** (Otto, 19.10.2026: den Knopf will
   er nicht): Weder Quell-Layer noch Ausblenden von Layer oder Fokusansicht. Ein Layer
-  trägt `derived: 'preview'` und seine Overlays `preview: { gsd }`; der Download-Knopf
+  trägt `derived: 'preview'` und seine Overlays `preview: true`; der Download-Knopf
   fehlt bei ihm.
 - **Einstiege (§3.5):** „⚙“ je Layer und „⚙ Process“ in der Vollauflösung stellen
   die Auswahl her (`selectLayer`, Szenen des Layers bzw. der Ansicht), setzen „Area“
@@ -728,11 +737,11 @@ Im Browser `http://localhost:5173`:
   Panel. Gesperrt mit Grund: Vorschau-Layer („A result cannot be processed further
   yet.“), Datensätze unter *processing*.
 
-**Tests** (vitest, synthetisch, 78 neue): `processingPreview.test.ts` (Planer mit
+**Tests** (vitest, synthetisch, 85 neue): `processingPreview.test.ts` (Planer mit
 leer/ein/zwei Schritten, nicht-T1 zuerst, unvollständig; URL mit kanonischem JSON
 und Sonderzeichen; Zuschnitt nur bei „AOI only“; `gsd` aus drei Quellen und Zarr;
-Regel für „Preview“ am Äquator, bei 47° N, 60° N, über den Äquator, mit
-`max_zoom`, ohne `gsd`), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
+`previewMaxZoom`: 10 m bei 51° N, Äquator, 30 m, 1 m, 300 m, Süden, Pol, mehrere
+Szenen, freigegebene Stufen; ohne `gsd` keine Vorschau), `ProcessingPreview.test.tsx` (Abschnitt, Verzögerung,
 Wertebereich, Badge, Anheften, Einstiege, Sperren), `mapLayers.test.ts` (`syncPreview`, Reihenfolge). Gegenprobe in der
 Sitzung: Zuschnitt immer aus, `beforeAoi` ohne Vorschau,
 umgedrehte Regel, „Area“ ohne Vorgabe beim Einstieg, ein veralteter Einstieg, der
@@ -769,7 +778,7 @@ Fehlertext beim Einstieg aus der Vollauflösung sagt „view“ statt „layer�
 Fehlerfall-Tests zur Verzögerung (Panel zu oder Datensatz neu, solange sie läuft;
 A → B → A), zur AOI und zu den neuen Gründen.
 
-**Ergebnis der Prüfungen:** Frontend 1001 Tests grün, `tsc` und `oxlint` ohne Befund;
+**Ergebnis der Prüfungen:** Frontend 1008 Tests grün, `tsc` und `oxlint` ohne Befund;
 Backend `ruff` ohne Befund, Importregeln 14 eingehalten, `pytest` siehe PR-Text
 (keine Backend-Änderung). Die Oberfläche selbst nur in Tests, nicht im Browser.
 
@@ -787,8 +796,8 @@ Im Browser `http://localhost:5173`:
    wählen, „⚙ Process“, „＋ Band math“, `(nir - red) / (nir + red)` tippen: nach
    einem Moment liegt die Vorschau (−1 bis 1, `rdylgn`) auf den Szenen, dazu
    „Preview“ unten links und im Abschnitt „Preview on the map“.
-2. Hineinzoomen bis etwa Kartenzoom 12,5 (10 m auf 48° N): „Preview“ verschwindet.
-   Wieder herauszoomen: es kommt zurück.
+2. Weit hineinzoomen (über Kartenzoom 14): „Preview“ bleibt, das Bild wird
+   unschärfer, nicht feiner. Der Job liefert die volle Auflösung.
 3. „AOI only“: die Vorschau ist auf die Fläche zugeschnitten. Wertebereich ändern:
    erst nach „Apply“ ändert sich das Bild.
 4. „＋ Add preview to layers“: der Layer „Preview · Band math“ steht im

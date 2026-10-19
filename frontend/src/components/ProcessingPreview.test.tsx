@@ -426,9 +426,8 @@ describe('the preview section', () => {
   });
 });
 
-describe('"Preview" (F4 (1))', () => {
-  it('stands in the panel and over the map while the tiles are coarser than the data, and goes when they are not', async () => {
-    useAppStore.setState({ mapZoom: 8, viewportBbox: [10, 50, 11, 51] });
+describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
+  it('stands in the panel and over the map whenever there is a preview, whatever the zoom', async () => {
     mount(
       <>
         <ProcessingPanel />
@@ -438,28 +437,37 @@ describe('"Preview" (F4 (1))', () => {
     select([scene('S2B_A', 10)]);
     act(() => store().openProcessing());
     await flush();
+    expect(container.querySelector('.preview-badge')).toBeNull();
     vi.useFakeTimers();
     click(button('＋ Band math'));
     typeInto(expression(), 'nir / red');
     afterDebounce();
-    expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
-    expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
-    act(() => useAppStore.setState({ mapZoom: 16 }));
-    expect(section().querySelector('.pp-badge')).toBeNull();
+    for (const zoom of [3, 12.5, 18, 22]) {
+      act(() => useAppStore.setState({ mapZoom: zoom, viewportBbox: [10, 50, 11, 51] }));
+      expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
+      expect(container.querySelector('.preview-badge')?.textContent).toBe('Preview');
+    }
+    act(() => store().closeProcessing());
     expect(container.querySelector('.preview-badge')).toBeNull();
   });
 
-  it('always stands for data that names no pixel size', async () => {
-    useAppStore.setState({ mapZoom: 18, viewportBbox: [10, 50, 11, 51] });
-    mount(<PreviewBadge />);
-    await withNdvi([scene('S2B_A', null)]);
-    mount(
-      <>
-        <ProcessingPanel />
-        <PreviewBadge />
-      </>,
-    );
-    expect(container.querySelector('.preview-badge')).not.toBeNull();
+  it('holds the tiles of the preview under the pixel size of the data', async () => {
+    await withNdvi([scene('S2B_A', 10)]);
+    // 10 m at 51° N: level 13 is the last, and the released levels reach 14.
+    expect(store().preview!.maxZoom).toBe(13);
+    expect(store().preview!.maxZoom).toBeLessThan(14);
+  });
+
+  it('draws nothing, and says why, when the data names no pixel size', async () => {
+    select([scene('S2B_A', null)]);
+    await openPanel();
+    vi.useFakeTimers();
+    click(button('＋ Band math'));
+    typeInto(expression(), 'nir / red');
+    afterDebounce();
+    expect(store().preview).toBeNull();
+    expect(section().textContent).toContain('No preview: the data names no pixel size');
+    expect(container.querySelector('.pp-badge')).toBeNull();
   });
 
   it('stands for a pinned preview that is switched on, and not for one that is hidden', () => {
@@ -467,21 +475,19 @@ describe('"Preview" (F4 (1))', () => {
       ...pinned(id),
       visible,
       derived: 'preview',
-      overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 14, preview: { gsd: 10 } }],
+      overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 13, preview: true }],
     });
-    useAppStore.setState({ mapZoom: 8, viewportBbox: [10, 50, 11, 51], layers: [layer('P1', false)] });
+    useAppStore.setState({ layers: [layer('P1', false)] });
     mount(<PreviewBadge />);
     expect(container.querySelector('.preview-badge')).toBeNull();
     act(() => useAppStore.setState({ layers: [layer('P1', true)] }));
     expect(container.querySelector('.preview-badge')).not.toBeNull();
-    act(() => useAppStore.setState({ mapZoom: 16 }));
-    expect(container.querySelector('.preview-badge')).toBeNull();
+    act(() => useAppStore.setState({ mapZoom: 20 }));
+    expect(container.querySelector('.preview-badge')).not.toBeNull();
   });
 
   it('does not stand for an ordinary layer', () => {
     useAppStore.setState({
-      mapZoom: 8,
-      viewportBbox: [10, 50, 11, 51],
       layers: [{ ...pinned('L1'), overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 14 }] }],
     });
     mount(<PreviewBadge />);
@@ -499,7 +505,7 @@ describe('the preview as a layer (§3.4)', () => {
     expect(other.visible).toBe(true);
     expect(layer).toMatchObject({ name: 'Preview · Band math', derived: 'preview', visible: true, opacity: 1 });
     expect(layer.overlays).toHaveLength(2);
-    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', minZoom: 8, maxZoom: 14, preview: { gsd: 10 } });
+    expect(layer.overlays[0]).toMatchObject({ kind: 'raster', minZoom: 8, maxZoom: 13, preview: true });
     expect(layer.restore).toMatchObject({ itemIds: ['S2B_A', 'S2B_B'], datasetId: 'sentinel-2-c1-l2a', focusMode: false });
     expect(useAppStore.getState().layerManagerOpen).toBe(true);
   });

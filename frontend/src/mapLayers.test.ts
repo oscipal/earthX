@@ -539,7 +539,7 @@ const previewTiles = (n: number): LayerOverlay[] =>
     bounds: [10, 47, 11, 48] as [number, number, number, number],
     minZoom: 8,
     maxZoom: 14,
-    preview: { gsd: 10 },
+    preview: true as const,
   }));
 
 describe('syncPreview', () => {
