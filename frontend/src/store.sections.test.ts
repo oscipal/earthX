@@ -654,9 +654,16 @@ describe('pinned layers of several datasets stay', () => {
       useAppStore.getState().setOpenSection(open);
       expect(new Set(drawn())).toEqual(new Set(['optical', 'optical-zarr', 'dem']));
     }
-    // the search crop of the chosen DEM is on top of that, not instead of it
+    // The DEM crop was pinned: its pinned copy is drawn, the search crop is not
+    // drawn a second time (Otto, 20.10.2026) — hidden copy included.
     useAppStore.getState().setOpenSection('dem');
-    expect(drawn().filter((d) => d === 'dem').length).toBe(2); // the pinned copy + the crop
+    expect(drawn().filter((d) => d === 'dem').length).toBe(1);
+    const copy = useAppStore.getState().layers.find((l) => l.restore.datasetId === 'dem')!;
+    useAppStore.getState().toggleLayerVisible(copy.id);
+    expect(drawn().filter((d) => d === 'dem').length).toBe(0);
+    // Without the copy the search crop shows again.
+    useAppStore.getState().removeLayer(copy.id);
+    expect(drawn().filter((d) => d === 'dem').length).toBe(1);
   });
 
   it('gives every pinned layer its own id, also when several are pinned within one millisecond', async () => {
