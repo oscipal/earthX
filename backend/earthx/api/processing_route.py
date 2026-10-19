@@ -31,6 +31,10 @@ What each route turns away, and how (all errors are ``application/problem+json``
   are already running. The checks of the other
   links (``404``, ``410``) run on every request, a resumed one included.
 
+``/crs/{code}`` (M4-13c-3, outside OGC) gives the unit of a target CRS from the EPSG database that ships
+with ``pyproj``, so the panel can say what a cell size means: ``422`` for a code that is no EPSG code, is
+unknown, or names no unit. It reads nothing from the network (:mod:`crs_info`).
+
 Every answer under ``/jobs/`` and the placing of a job carry ``Cache-Control: no-store``.
 """
 
@@ -61,6 +65,7 @@ from starlette.concurrency import run_in_threadpool
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
 from earthx.api.citation import citation_bib
+from earthx.api.crs_info import CrsRefused, crs_description
 from earthx.api.intake import OrderRefused, accept_order, check_recipe_hosts, estimate_order, job_recipe_json
 from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
@@ -465,6 +470,16 @@ async def process(request: Request, process_id: str, dataset: str | None = None)
         except UnknownDatasetError:
             raise Problem(400, f"no dataset {dataset[:64]!r}") from None
     return docs.process_description(_root(request), _operators(request), config)
+
+
+@router.get("/crs/{code}", summary="The unit of a target CRS", responses=_PROBLEMS)
+async def crs_unit(code: str) -> JSONResponse:
+    """What ``reproject``'s ``resolution`` is measured in for this target CRS (M4-13c-3); asks no one."""
+    try:
+        description = crs_description(code)
+    except CrsRefused as error:
+        raise Problem(422, str(error)) from None
+    return JSONResponse(description, headers={"Cache-Control": "public, max-age=86400"})
 
 
 # --- placing a job -----------------------------------------------------------
