@@ -107,6 +107,28 @@ describe('LayerManager', () => {
       expect(flags()).toEqual(['one:1', 'two:1', 'three:0', 'four:0', 'five:1']);
     });
 
+    it('on the name chooses the layer for the view and leaves the order of the list alone', () => {
+      const restore = {
+        focusMode: true,
+        downloaded: {},
+        appliedRender: {},
+        activeGroupIndex: 0,
+        selectedIds: [],
+        itemIds: [],
+        groupItemIds: [],
+        aoi: null,
+        cropToAoi: false,
+        datasetId: null,
+      };
+      useAppStore.setState({ layers: useAppStore.getState().layers.map((l) => ({ ...l, restore })) });
+      click(rows()[3].querySelector('.lm-name'));
+      expect(useAppStore.getState().viewLayerId).toBe('four');
+      expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['one', 'two', 'three', 'four', 'five']);
+      click(rows()[1].querySelector('.lm-name'));
+      expect(useAppStore.getState().viewLayerId).toBe('two');
+      expect(useAppStore.getState().layers.map((l) => l.id)).toEqual(['one', 'two', 'three', 'four', 'five']);
+    });
+
     it('sets the opacity of that row only', () => {
       const slider = rows()[1].querySelector('input.lm-opacity') as HTMLInputElement;
       const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;

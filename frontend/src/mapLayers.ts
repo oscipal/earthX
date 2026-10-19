@@ -704,6 +704,9 @@ export interface MosaicState {
   // (`syncHighlight`). Optional like `aoi`/`cropToAoi` above, for the same
   // reason: most call sites never draw a cropped view.
   groups?: TimeStepGroup[];
+  // A pinned layer draws the view's tiles (`viewLayer.ts`): at its place in the
+  // list, with its eye. The view then adds only what the layer does not have.
+  tilesInLayer?: boolean;
 }
 
 // Full-resolution raster tiles (M2-07b). Tearing the existing layers down and
@@ -717,7 +720,7 @@ export interface MosaicState {
 // click on a full-resolution image reloads it".
 export function syncFocusRaster(
   map: MapLibreMap,
-  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset'>,
+  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset' | 'tilesInLayer'>,
 ): void {
   clearDynamicMosaic(map);
   if (!s.showDownloaded) return;
@@ -738,7 +741,7 @@ export function syncFocusRaster(
       const item = s.items.find((it) => it.id === itemId);
       if (item) addQuicklookUnderlay(map, item, dataset, i, clip);
     }
-    addTiles(map, info, i, s.render, clip);
+    if (!s.tilesInLayer) addTiles(map, info, i, s.render, clip);
   });
 }
 
