@@ -54,3 +54,35 @@
   - Alle vier Pflicht-Checks der CI sind grün.
   - Die Prüfanleitung ist im PR.
   - Vor „fertig“ ist main geholt.
+
+## 6. Umsetzung (19.10.2026)
+
+**Hinweis zum Plan:** „Replace source layer“ und das Auge zum Wiederherstellen gibt es seit M4-13c-2 nicht mehr (Otto, 19.10.2026, Log). Mitgeprüft sind die angeheftete Vorschau (`derived: 'preview'`, Overlays mit `preview: true`; sie läuft über denselben Abgleich wie jeder Layer, Test „orders a layer with several overlays as one block“ und die Tests zum Schalten) und die Fokusansicht (liegt über den Layern, siehe Befund 2).
+
+### 6.1 Diagnose (Beleg am Code und im Browser)
+
+Geprüft mit echtem MapLibre in Chromium (Prüfstand außerhalb des Repos: lokaler Kachelserver mit 120 ms Verzögerung, der Anfragen je Layer zählt; `syncLayers` und der Store unverändert eingebunden; zusätzlich die echte App mit eingesetzten Layern).
+
+1. **Langsam — `mapLayers.ts::syncLayers`.** Jeder Aufruf rief `clearLayerOverlays` und legte danach alle Quellen neu an. `MapView` ruft `syncLayers` bei jeder Änderung an `layers` auf, also auch bei Deckkraft und Verschieben. Gemessen (5 Layer, je 9 Kacheln): Ausschalten 36, Einschalten 45, Verschieben 45, sechsmal schnell schalten 45, Deckkraft-Regler 45 Kachelanfragen, bis zum ruhigen Bild 1,1–1,4 s.
+2. **Reihenfolge — `mapLayers.ts::placeImage/placeRaster` mit `beforeAoi`.** Jeder neue Layer kam an die Spitze, ohne Bezug zur Liste. Das stimmt nur, solange alle Overlays gleichzeitig ankommen: Ein Quicklook wird erst nach dem Laden des Bildes gesetzt und lag dann über allen Kacheln, auch über Layern weiter oben in der Liste (Browser: Liste `A` (Kacheln) über `B` (Quicklook, 600 ms) zeigte beim Anlegen `B`, nach Aus- und Einschalten von `A` dann `A`). Dazu kam die Ansicht (`syncFocusRaster`, `syncBrowseMosaic`): Sie wird ebenfalls „unter die AOI“ gesetzt, lag also je nach letzter Aktion über oder unter den Layern.
+3. **Falscher Layer.** Der Klickweg ist in Ordnung: `LayerManager` schlüsselt und handelt nach `layer.id`, `toggleLayerVisible`/`moveLayer` suchen nach der ID, die IDs sind eindeutig (`nextBatchId` mit Zähler). Tests dazu bestehen auch mit dem alten Code und bleiben als Schutz. Was den Eindruck macht: (a) die Karten-IDs hießen `layer-lyr-<laufende Nummer der sichtbaren Overlays>` und gehörten nach jedem Schalten zu einem anderen Layer; (b) durch Befund 1 verschwanden und erschienen beim Schalten alle Layer, nicht nur der angeklickte; (c) Bilder, die der Layer-Manager nicht schaltet (siehe die Fragen unten). Einen Rennfall zwischen zwei Aufrufen von `syncLayers` (Quicklook kommt nach dem nächsten Aufruf) gab es nicht: der alte Code verwarf ihn über einen Zähler; im neuen Code prüft der Rückruf, ob der Layer noch in der Liste steht.
+
+### 6.2 Behebung
+
+- `syncLayers` gleicht ab: Quelle und Layer werden einmal angelegt und danach nur geändert — Sichtbarkeit (`visibility`), Deckkraft (`raster-opacity`), Reihenfolge (`moveLayer`, nur wenn sich die Reihenfolge der Liste geändert hat). Neu angelegt wird nur, was neu ist oder woraus es gebaut ist (Signatur aus URL, Grenzen, Stufen) sich ändert. Ein ausgeblendeter Quicklook wird nicht geladen; er wird beim Einblenden geholt. Die Ausnahme „Quelle neu anlegen“ gilt nur bei geänderter Signatur.
+- IDs der Karte: `layer-src-<Layer-ID>-<n>` und `layer-lyr-<Layer-ID>-<n>`.
+- Reihenfolge: ein unsichtbarer Marker `layers-top` (Hintergrundebene, `visibility: none`) direkt unter der AOI; jeder Layer wird unter den nächsten sichtbar gesetzten Nachbarn darüber gelegt, ein spät eintreffender Quicklook ebenso. Die Ansicht (Vorschau-Mosaik, Vollauflösung) liegt damit immer über den angehefteten Layern, wie beim Laden der Seite; die Live-Vorschau des Panels bleibt ganz oben.
+
+### 6.3 Tests
+
+`mapLayers.test.ts` (neu gefasst, Karte mit Reihenfolge, Quellenprotokoll und gesetzten Eigenschaften): Schalten ohne neue oder entfernte Quelle, Deckkraft an Ort und Stelle, ein ausgeschalteter Layer startet erst beim Einschalten, IDs hängen am Layer, Zwillinge mit gleichem Namen und Bild, neuer oder entfernter Layer, Reihenfolge nach Hinzufügen oben/mittig/unten, Entfernen, Ersetzen, Ausschalten, Verschieben, Layer mit mehreren Overlays, Neuladen des Stils, Ansicht über den Layern, `ensureBaseLayers`; späte Quicklooks (Reihenfolge, entfernter Layer, in der Zwischenzeit ausgeblendet, nur einmal gesetzt). `LayerManager.test.tsx`: Klick auf Auge, Verschieben, Entfernen und Deckkraft treffen die Zeile, auch bei fünf gleichnamigen Layern. Gegenprobe: 22 der neuen Fälle in `mapLayers.test.ts` scheitern am alten `mapLayers.ts` (zusätzlich scheiterte „keeps the active view above …“ allein an der Reihenfolge); die Klick-Tests laufen mit beiden Ständen, sie sind der Schutz für Befund 3.
+
+### 6.4 Messung
+
+Wie in 6.1, vorher → nachher, fünf Layer, 120 ms je Kachel: Ausschalten 36 → 0 Kachelanfragen, 1,08 s → 0,33 s; Einschalten 45 → 0, 1,32 s → 0,39 s; Verschieben 45 → 0, 1,36 s → 0,31 s; sechsmal schnell schalten 45 → 0, 1,35 s → 0,47 s; Deckkraft-Regler 45 → 0, 1,35 s → 0,62 s. Die Zeiten sind „Klick bis die Karte ruhig ist“ in einem Chromium ohne GPU (Software-GL) und nur untereinander vergleichbar. Das Anlegen der Layer lädt unverändert alle Kacheln einmal.
+
+### 6.5 Fragen an Otto (nicht entschieden, nichts geraten)
+
+1. **Pin-Kopie und Such-Zuschnitt werden doppelt gezeichnet.** Nach „Pin to layers“ bleibt der Such-Zuschnitt (`searchCrops`) auf der Karte, solange sein Datensatz gewählt ist, und liegt unter der angehefteten Kopie. Das Auge der Kopie blendet das Bild dann nicht aus (der Test in `store.sections.test.ts` hält das ausdrücklich so fest). Optionen: (1) Zuschnitte, die schon angeheftet sind, nicht mehr zeichnen (Empfehlung); (2) so lassen. 
+2. **Layer in der Ansicht gewählt („view this layer“).** Klick auf den Namen legt die Szenen des Layers in die Vollauflösungs-Ansicht, die über allen Layern liegt. Das Auge des Layers schaltet nur seine angeheftete Kopie, nicht die Ansicht; „Hide image“ in der Ansicht schaltet die Ansicht. Optionen: (1) so lassen (Empfehlung für diesen PR); (2) die Ansicht unter die Layer legen; (3) das Auge schaltet auch die Ansicht des gewählten Layers.
+
