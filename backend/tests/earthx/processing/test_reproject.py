@@ -1,4 +1,8 @@
-"""The ``reproject`` operator (adr/0014 §3.4, §5.2, §5.3, §6.3 row 4; plan M4-10)."""
+"""The ``reproject`` operator (adr/0014 §3.4, §5.2, §5.3; plans M4-10, M4-24).
+
+The plausibility against one whole ``reproject`` per method and case (§6.3 row 4,
+§15j) is in ``test_reproject_tolerance.py``.
+"""
 
 from __future__ import annotations
 
@@ -18,15 +22,27 @@ from rio_tiler.io import Reader
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.processing import run
-from earthx.processing.errors import UnknownOperator, UnsupportedRecipe
-from earthx.processing.operators import REGISTRY, REPROJECT, BandMeta, RasterMeta, ReprojectParams, applicable
+from earthx.processing.errors import RecipeInvalid, UnknownOperator, UnsupportedRecipe
+from earthx.processing.operators import (
+    REGISTRY,
+    REPROJECT,
+    REPROJECT_V2,
+    BandMeta,
+    RasterMeta,
+    ReprojectParams,
+    applicable,
+)
 from earthx.processing.operators import reproject as reproject_module
 from earthx.processing.recipe import recipe_from_data
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
+from tests.earthx.processing.test_reproject_tolerance import Measured, row
 from tests.earthx.processing.testops import OPERATORS
 
 WIDTH, HEIGHT = 1300, 1100
+
+METHODS = ("nearest", "bilinear", "cubic", "cubicspline", "lanczos", "average", "mode")
+OLD_METHODS = ("nearest", "bilinear", "cubic")
 
 
 def _params(**overrides) -> ReprojectParams:
@@ -36,7 +52,7 @@ def _params(**overrides) -> ReprojectParams:
 
 def _step(**overrides) -> dict:
     params = {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "nearest", **overrides}
-    return {"op": "reproject", "op_version": 2, "params": params}
+    return {"op": "reproject", "op_version": 3, "params": params}
 
 
 class TestParameters:
@@ -61,9 +77,10 @@ class TestParameters:
             {"resolution": "10"},
             {"resampling": "magic"},
             {"resampling": "near"},
-            {"resampling": "lanczos"},
-            {"resampling": "cubicspline"},
-            {"resampling": "average"},
+            {"resampling": "cubic_spline"},
+            {"resampling": "gauss"},
+            {"resampling": "sum"},
+            {"resampling": "Mode"},
             {"align": "yes"},
             {"tolerance": 0},
             {"warp_mem_limit": 1},
@@ -83,15 +100,27 @@ class TestParameters:
             )
 
     def test_the_parameters_are_a_json_schema(self) -> None:
-        schema = REGISTRY.params_schema("reproject", 2)
+        schema = REGISTRY.params_schema("reproject", 3)
         assert schema["required"] == ["crs", "resolution", "resampling"]
         assert schema["additionalProperties"] is False
+
+    def test_each_method_is_described_in_one_sentence_and_none_is_the_default(self) -> None:
+        resampling = REGISTRY.params_schema("reproject", 3)["properties"]["resampling"]
+        assert "default" not in resampling and "enum" not in resampling
+        assert [choice["const"] for choice in resampling["oneOf"]] == list(METHODS)
+        for choice in resampling["oneOf"]:
+            assert choice["title"] == choice["const"]
+            assert choice["description"].endswith(".") and choice["description"].count(". ") == 0
+
+    @pytest.mark.parametrize("method", METHODS)
+    def test_every_method_is_accepted(self, method: str) -> None:
+        assert _params(resampling=method).resampling == method
 
 
 class TestWhereItApplies:
     @pytest.mark.parametrize("config", list(DATASETS), ids=lambda config: config.dataset_id)
     def test_every_registry_entry_allows_it(self, config) -> None:
-        for resampling in ("nearest", "bilinear", "cubic"):
+        for resampling in METHODS:
             assert applicable(REPROJECT, config, _params(resampling=resampling)) == []
 
     def test_without_the_reprojection_flag(self) -> None:
@@ -102,12 +131,13 @@ class TestWhereItApplies:
                 REPROJECT, config, _params(resampling=resampling)
             )
 
-    def test_nearest_does_not_need_interpolation(self) -> None:
+    @pytest.mark.parametrize("resampling", ["nearest", "mode"])
+    def test_a_method_that_picks_a_source_value_does_not_need_interpolation(self, resampling: str) -> None:
         config = next(iter(DATASETS))
         config = replace(config, capabilities=replace(config.capabilities, interpolation=False))
-        assert applicable(REPROJECT, config, _params(resampling="nearest")) == []
+        assert applicable(REPROJECT, config, _params(resampling=resampling)) == []
 
-    @pytest.mark.parametrize("resampling", ["bilinear", "cubic"])
+    @pytest.mark.parametrize("resampling", ["bilinear", "cubic", "cubicspline", "lanczos", "average"])
     def test_every_other_method_needs_interpolation(self, resampling: str) -> None:
         config = next(iter(DATASETS))
         config = replace(config, capabilities=replace(config.capabilities, interpolation=False))
@@ -153,19 +183,43 @@ class TestTheTargetGrid:
             REPROJECT.transform(_meta(), _params(resolution=0.01))
 
     def test_the_cost_depends_on_the_method(self) -> None:
-        costs = {name: REPROJECT.cost_factor(_params(resampling=name)) for name in ("nearest", "bilinear", "cubic")}
-        assert costs == {"nearest": 0.4, "bilinear": 1.0, "cubic": 1.1}
+        costs = {name: REPROJECT.cost_factor(_params(resampling=name)) for name in METHODS}
+        assert costs == {  # adr/0014 §5.5 and §15j (plan M4-24 §7.4)
+            "nearest": 0.4,
+            "bilinear": 1.0,
+            "cubic": 1.1,
+            "cubicspline": 1.6,
+            "lanczos": 2.2,
+            "average": 1.2,
+            "mode": 1.1,
+        }
 
     def test_the_lineage_says_what_happened(self) -> None:
         assert REPROJECT.lineage(_params(resampling="cubic")) == "reprojected to EPSG:3035 at 10 (cubic)"
 
     def test_the_block_plan_is_part_of_the_version_not_of_the_order(self) -> None:
         assert (reproject_module.TOLERANCE, reproject_module.WARP_MEM_LIMIT_MB) == (0.125, 64.0)
-        assert REPROJECT.op_version == 2
+        assert (REPROJECT.op_version, REPROJECT_V2.op_version) == (3, 2)
 
     def test_a_recipe_of_version_1_is_refused(self) -> None:
         with pytest.raises(UnknownOperator):
             recipe_from_data(_recipe({**_step(), "op_version": 1}), REGISTRY)
+
+    @pytest.mark.parametrize("method", ["cubicspline", "lanczos", "average", "mode"])
+    def test_version_2_does_not_know_the_methods_of_version_3(self, method: str) -> None:
+        with pytest.raises(RecipeInvalid, match="resampling"):
+            recipe_from_data(_recipe({**_step(resampling=method), "op_version": 2}), REGISTRY)
+
+    def test_version_2_is_the_same_operator_with_the_old_methods(self) -> None:
+        assert (REPROJECT_V2.run, REPROJECT_V2.transform, REPROJECT_V2.requires) == (
+            REPROJECT.run,
+            REPROJECT.transform,
+            REPROJECT.requires,
+        )
+        for method in OLD_METHODS:
+            params = REPROJECT_V2.params.model_validate_json(json.dumps(_step(resampling=method)["params"]), strict=True)
+            assert REPROJECT_V2.cost_factor(params) == REPROJECT.cost_factor(_params(resampling=method))
+            assert REPROJECT_V2.extra_requirements(params) == REPROJECT.extra_requirements(_params(resampling=method))
 
 
 def _work_file(path: Path, size: int) -> Path:
@@ -193,7 +247,7 @@ def _work_file(path: Path, size: int) -> Path:
     return path
 
 
-@pytest.mark.parametrize("resampling", ["nearest", "bilinear", "cubic"])
+@pytest.mark.parametrize("resampling", METHODS)
 def test_a_block_is_masked_exactly_where_the_warp_left_no_value(tmp_path: Path, resampling: str) -> None:
     """Version 1 took the mask from a second warp and masked values the first one had (M4-10b)."""
     params = _params(resampling=resampling)
@@ -270,20 +324,21 @@ def _compare(result, reference: numpy.ndarray) -> tuple[float, float, float]:
 
 @pytest.mark.usefixtures("served")
 class TestAWholeRun:
-    def test_nearest_is_plausible_against_one_whole_reproject(self, tmp_path: Path, band: Path) -> None:
-        result = _run(tmp_path, _step(resampling="nearest"))
-        identical, _, _ = _compare(result, _reference(band, result, Resampling.nearest))
-        assert identical >= 0.97
+    @pytest.mark.parametrize("method", METHODS)
+    def test_a_whole_run_stays_inside_the_row_of_its_method(self, tmp_path: Path, band: Path, method: str) -> None:
+        """The whole core, unscaling included, on a ramp of reflectance: unit-less like NDVI (§6.3, §15j)."""
+        result = _run(tmp_path, _step(resampling=method, resolution=15.0))
+        identical, p99, worst = _compare(result, _reference(band, result, reproject_module._METHODS[method][0]))
+        row(method, "ndvi", "same").check(Measured(identical, p99, worst))
 
-    @pytest.mark.parametrize(
-        ("name", "method"), [("bilinear", Resampling.bilinear), ("cubic", Resampling.cubic)], ids=str
-    )
-    def test_interpolation_stays_inside_the_documented_bounds(
-        self, tmp_path: Path, band: Path, name: str, method: Resampling
-    ) -> None:
-        result = _run(tmp_path, _step(resampling=name, resolution=15.0))
-        _, p99, worst = _compare(result, _reference(band, result, method))
-        assert p99 <= 0.01 and worst <= 0.05  # a smooth ramp of reflectance, no sharp edges
+    def test_v2_and_v3_give_the_same_bytes_for_the_methods_of_version_2(self, tmp_path: Path) -> None:
+        for method in OLD_METHODS:
+            (tmp_path / f"{method}-2").mkdir()
+            (tmp_path / f"{method}-3").mkdir()
+            two = _run(tmp_path / f"{method}-2", {**_step(resampling=method), "op_version": 2})
+            three = _run(tmp_path / f"{method}-3", _step(resampling=method))
+            assert _read(two.path).tobytes() == _read(three.path).tobytes()
+            assert numpy.array_equal(_read(two.path).mask, _read(three.path).mask)
 
     def test_the_result_is_in_the_new_grid_and_says_so(self, tmp_path: Path) -> None:
         result = _run(tmp_path, _step(resampling="bilinear"))
@@ -300,7 +355,7 @@ class TestAWholeRun:
         data = _read(result.path)
         assert data.mask.any() and not data.mask.all()
 
-    @pytest.mark.parametrize("resampling", ["nearest", "bilinear", "cubic"])
+    @pytest.mark.parametrize("resampling", METHODS)
     def test_two_runs_are_bit_identical(self, tmp_path: Path, resampling: str) -> None:
         (tmp_path / "a").mkdir()
         (tmp_path / "b").mkdir()
