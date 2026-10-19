@@ -1162,6 +1162,23 @@ input[type='date']:focus {
 .result-group {
   border-bottom: 1px solid var(--panel-border);
 }
+.dataset-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.multi-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+.multi-select-toggle input {
+  margin: 0;
+}
 .rg-select {
   padding: 2px 8px 4px 26px;
 }
