@@ -4,7 +4,6 @@
 // the data's pixel size, `processingPreview.ts::previewMaxZoom`), or, where the
 // data names no pixel size, marked at every zoom: the badge never depends on the zoom.
 
-import { PREVIEW_BADGE_TITLE } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 
@@ -14,7 +13,7 @@ export default function PreviewBadge() {
   if (!draft && !pinned) return null;
   return (
     <div className="overlay preview-badge-dock">
-      <span className="preview-badge" title={PREVIEW_BADGE_TITLE}>
+      <span className="preview-badge">
         Preview
       </span>
     </div>

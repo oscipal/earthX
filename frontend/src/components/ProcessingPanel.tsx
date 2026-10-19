@@ -26,7 +26,6 @@ import {
   AUTO_STRETCH_REASON,
   MAX_PREVIEW_ASSETS,
   planPreview,
-  PREVIEW_BADGE_TITLE,
   rescaleOf,
 } from '../processingPreview';
 import {
@@ -191,7 +190,7 @@ function PreviewSection({ view }: { view: OrderView }) {
       <h3 className="pp-heading">
         Preview on the map{' '}
         {preview && (
-          <span className="pp-badge" title={PREVIEW_BADGE_TITLE}>
+          <span className="pp-badge">
             Preview
           </span>
         )}

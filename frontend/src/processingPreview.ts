@@ -18,9 +18,6 @@ export const MAX_PREVIEW_SCENES = 40;
 // The tile route takes at most this many assets with an operator (`api/tiler.py`).
 export const MAX_PREVIEW_ASSETS = 16;
 
-export const PREVIEW_BADGE_TITLE =
-  'This is a preview, not the result. A job uses the full resolution of the data.';
-
 export const NO_PREVIEW = 'No preview: the first step runs only as a job.';
 
 // --- range and colormap ------------------------------------------------------
