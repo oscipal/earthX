@@ -1,14 +1,17 @@
 """``GET /processing/crs/{code}`` (M4-13c-3): the unit of a target CRS, from the local EPSG database.
 
 Built with ``api.main.build_app`` itself, without its lifespan: the route needs no database, no
-gateway and no job API. Every test that reaches the route runs with the sockets shut, so an answer
-that depended on PROJ's network could not come.
+gateway and no job API. The Python sockets are shut for every test here. That keeps Python code from
+opening a connection, but PROJ fetches with its own libcurl, which no patch of ``socket`` reaches: what
+shows that PROJ is kept from the network is :func:`pyproj.network.is_network_enabled` being false,
+in the thread that answers as well.
 """
 
 from __future__ import annotations
 
 import logging
 import socket
+import threading
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
@@ -33,13 +36,13 @@ def shut_sockets(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    crs_info.crs_description.cache_clear()
+    crs_info._describe.cache_clear()
     was = pyproj.network.is_network_enabled()
     try:
         yield TestClient(build_app())
     finally:
         pyproj.network.set_network_enabled(was)
-        crs_info.crs_description.cache_clear()
+        crs_info._describe.cache_clear()
 
 
 def ask(client: TestClient, code: str):
@@ -152,20 +155,33 @@ class TestWhatItRefuses:
 
 
 class TestNoNetwork:
-    @pytest.mark.parametrize("code", ["EPSG:3035", "EPSG:4326", "EPSG:2227", "EPSG:7415", "EPSG:99999", "EPSG:12"])
-    def test_every_case_answers_with_proj_network_on_and_the_sockets_shut(
+    ANSWERS = {
+        "EPSG:3035": (200, "metre"),
+        "EPSG:4326": (200, "degree"),
+        "EPSG:2227": (200, "US survey foot"),
+        "EPSG:7415": (200, "metre"),
+        "EPSG:99999": (422, None),
+        "EPSG:12": (422, None),
+    }
+
+    @pytest.mark.parametrize("code", list(ANSWERS))
+    def test_every_case_answers_as_it_should_with_proj_network_on(
         self, monkeypatch: pytest.MonkeyPatch, code: str
     ) -> None:
         monkeypatch.setenv("PROJ_NETWORK", "ON")
         pyproj.network.set_network_enabled(True)
-        crs_info.crs_description.cache_clear()
+        crs_info._describe.cache_clear()
         try:
             client = TestClient(build_app())
             assert pyproj.network.is_network_enabled() is False
-            assert ask(client, code).status_code in {200, 422}
+            response = ask(client, code)
+            status, unit = self.ANSWERS[code]
+            assert response.status_code == status
+            if unit is not None:
+                assert response.json()["unit"]["name"] == unit
         finally:
             pyproj.network.set_network_enabled(False)
-            crs_info.crs_description.cache_clear()
+            crs_info._describe.cache_clear()
 
     def test_the_start_switches_the_network_off_whatever_was_set_before(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PROJ_NETWORK", "ON")
@@ -176,10 +192,37 @@ class TestNoNetwork:
         finally:
             pyproj.network.set_network_enabled(False)
 
+    def test_the_network_is_off_in_a_thread_of_its_own_too(self, client: TestClient) -> None:
+        seen: list[bool] = []
+        thread = threading.Thread(target=lambda: seen.append(pyproj.network.is_network_enabled()))
+        thread.start()
+        thread.join()
+        assert seen == [False]
+
+
+class TestRefusalsAreCached:
+    def test_an_unknown_code_is_looked_up_once(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[str] = []
+        real = pyproj.CRS.from_user_input
+
+        def counting(code: str) -> pyproj.CRS:
+            calls.append(code)
+            return real(code)
+
+        monkeypatch.setattr(crs_info.pyproj.CRS, "from_user_input", counting)
+        for _ in range(3):
+            assert ask(client, "EPSG:99999").status_code == 422
+        assert calls == ["EPSG:99999"]
+
+    def test_the_caller_cannot_change_what_the_next_one_gets(self) -> None:
+        crs_info.crs_description("EPSG:3035")["unit"]["name"] = "furlong"
+        assert crs_info.crs_description("EPSG:3035")["unit"]["name"] == "metre"
+
 
 def test_nothing_but_the_code_is_logged(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.DEBUG):
         for code in ("EPSG:3035", "EPSG:99999", "epsg:3035"):
             ask(client, code)
     text = " ".join(own_log_text(record) for record in caplog.records)
+    assert "/processing/crs/EPSG:3035" in text, "the access line is there, so the search below looks at something"
     assert "LAEA" not in text and "ETRS89" not in text and "metre" not in text

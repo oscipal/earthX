@@ -5,12 +5,14 @@ means (10 m, 0.0003° ≈ 33 m) before the order is sent; this module answers fr
 bundled EPSG database.
 
 **It reads nothing from the network.** PROJ may fetch grids and definitions on demand when
-``PROJ_NETWORK=ON``; :func:`switch_off_proj_network` turns that off for the process at start, whatever
-the environment says (approved F6, 15.10.2026). A code the local database lacks is unknown here.
+``PROJ_NETWORK=ON``; :func:`switch_off_proj_network` turns that off for the PROJ of ``pyproj`` at start,
+whatever the environment says (approved F6, 15.10.2026). The PROJ inside ``rasterio`` is another
+library and is not touched. A code the local database lacks is unknown here.
 """
 
 from __future__ import annotations
 
+import copy
 import math
 import re
 from functools import lru_cache
@@ -54,18 +56,14 @@ def _unit_of(axes: list[Any]) -> tuple[str, float]:
 
 
 @lru_cache(maxsize=512)
-def crs_description(code: str) -> dict[str, Any]:
-    """``{"code", "name", "kind", "unit": {"name", "kind", "toBase"}}`` for an EPSG code.
-
-    ``toBase`` is the factor to metres for a linear unit and to degrees for an angular one.
-    Of a compound CRS the horizontal part counts: its cells are laid out there.
-    """
+def _describe(code: str) -> tuple[dict[str, Any] | None, str | None]:
+    """The description or the reason for a refusal; both are cached, so a run of unknown codes costs once each."""
     if not _CODE.fullmatch(code):
-        raise CrsRefused("not an EPSG code like EPSG:3035")
+        return None, "not an EPSG code like EPSG:3035"
     try:
         crs = pyproj.CRS.from_user_input(code)
     except CRSError:
-        raise CrsRefused(f"{code} is not a CRS this platform knows") from None
+        return None, f"{code} is not a CRS this platform knows"
     horizontal = crs.sub_crs_list[0] if crs.is_compound and crs.sub_crs_list else crs
     if horizontal.is_geographic:
         kind, unit_kind = "geographic", "angular"
@@ -77,12 +75,28 @@ def crs_description(code: str) -> dict[str, Any]:
         # Vertical and geocentric CRS: no EPSG entry of either has an angular axis.
         kind, unit_kind = "other", "linear"
         axes = list(horizontal.axis_info)
-    unit_name, factor = _unit_of(axes)
+    try:
+        unit_name, factor = _unit_of(axes)
+    except CrsRefused as refused:
+        return None, str(refused)
     # pyproj gives an angle in radians; the panel speaks degrees.
     to_base = factor / _DEGREE_IN_RADIANS if unit_kind == "angular" else factor
-    return {
+    description = {
         "code": code,
         "name": crs.name,
         "kind": kind,
         "unit": {"name": unit_name, "kind": unit_kind, "toBase": to_base},
     }
+    return description, None
+
+
+def crs_description(code: str) -> dict[str, Any]:
+    """``{"code", "name", "kind", "unit": {"name", "kind", "toBase"}}`` for an EPSG code.
+
+    ``toBase`` is the factor to metres for a linear unit and to degrees for an angular one.
+    Of a compound CRS the horizontal part counts: its cells are laid out there.
+    """
+    description, reason = _describe(code)
+    if description is None:
+        raise CrsRefused(reason or "unknown")
+    return copy.deepcopy(description)

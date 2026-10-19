@@ -838,12 +838,19 @@ Im Browser `http://localhost:5173`:
   - **`toBase`:** `pyproj` gibt Winkel im Bogenmaß an; die Route rechnet auf Grad um
     (Grad = 1, Gon = 0,9). Linear: Faktor auf Meter (US survey foot = 1200/3937).
 - **Kein Netz (Auflage F6):** `api.main.build_app` ruft `switch_off_proj_network()`
-  (`pyproj.network.set_network_enabled(False)`) vor allem anderen auf. Der Test setzt
-  `PROJ_NETWORK=ON`, schaltet das Netz in `pyproj` ausdrücklich an, baut die App und
-  zeigt, dass es danach aus ist; sechs Codes (drei Einheiten, zusammengesetzt, unbekannt,
-  zu kurz) antworten mit gesperrten Sockets (`connect` und `getaddrinfo` werfen). Im Log
-  steht nur, was `RequestIdMiddleware` ohnehin schreibt (Pfad mit dem Code); ein Test
-  sucht in allen Zeilen nach Namen und Einheit des CRS.
+  (`pyproj.network.set_network_enabled(False)`) gleich nach `configure_logging()` auf. Das
+  gilt für das PROJ von `pyproj`, nicht für das eigene PROJ von `rasterio`, das die Schätzung
+  nutzt. Der Test setzt `PROJ_NETWORK=ON`, schaltet das Netz in `pyproj` ausdrücklich an, baut
+  die App und zeigt, dass es danach aus ist, auch in einem neuen Thread; sechs Codes (drei
+  Einheiten, zusammengesetzt, unbekannt, zu kurz) antworten mit dem erwarteten Status und
+  Einheitennamen. Die Python-Sockets sind gesperrt, das hält Python-Code vom Netz ab; PROJ
+  holt aber mit seiner eigenen `libcurl`, die kein Patch von `socket` erreicht. Der Beleg
+  dafür, dass PROJ nichts holt, ist das Flag, nicht die Sperre. Im Log steht nur, was
+  `RequestIdMiddleware` ohnehin schreibt (Pfad mit dem Code); ein Test sucht in allen Zeilen
+  nach Namen und Einheit des CRS und prüft, dass die Zeile mit dem Pfad da ist.
+- **Zwischenspeicher:** Antworten und Abweisungen werden zwischengespeichert (512 Codes), eine
+  Folge unbekannter Codes kostet je Code einmal rund 7 ms; die Route ist `def`, läuft also im
+  Threadpool und hält die Schleife von `api` nicht an. Jeder Treffer gibt eine Kopie zurück.
 - **Anzeige (§3.7):** Abschnitt „Processing steps“, Schritt `reproject`. `useCrsLookup`
   fragt 300 ms nach der letzten Eingabe, sobald `crs` dem Muster entspricht; weitertippen
   bricht die Abfrage ab (`AbortController`). Der Store (`crs`) hält Antworten und
@@ -874,13 +881,13 @@ Im Browser `http://localhost:5173`:
   des PROJ, das jeweils mitgeliefert ist. Weicht ein Code je ab, entscheidet der Server beim
   Start, wie bisher.
 
-**Tests:** Backend `test_crs_route.py` (37: projiziert, geografisch, Fuß, 3D, zusammengesetzt,
+**Tests:** Backend `test_crs_route.py` (40: projiziert, geografisch, Fuß, 3D, zusammengesetzt,
 Höhe in Fuß, maskierter Doppelpunkt, Cache-Kopf; 13 falsch geformte Codes, unbekannt,
 kein Cache bei `422`, nur `GET`, fünf Einheiten-Fehler, kein Netz bei `PROJ_NETWORK=ON`,
-nichts außer dem Code im Log). Frontend `crsUnit.test.ts` (37: Muster, Reihen,
+nichts außer dem Code im Log). Frontend `crsUnit.test.ts` (38: Muster, Reihen,
 Breite, Wortlaut je Einheit, Randfälle, Sperrgrund), `processing.test.ts` (`fetchCrs`: URL,
-`422`, sechs unlesbare Antworten), `ProcessingPanel.test.tsx` (18: Meter, Fuß, Grad auf
-beiden Breiten, Wechsel der Fläche ohne neue Abfrage, neue AOI, AOI weg, Weitertippen, schon
+`422`, sechs unlesbare Antworten), `ProcessingPanel.test.tsx` (19: Meter, Fuß, Grad auf
+beiden Breiten, abgebrochene Abfrage, Wechsel der Fläche ohne neue Abfrage, neue AOI, AOI weg, Weitertippen, schon
 bekannter Code, `422` mit Sperre und direktem Aufruf, Entsperren, Nicht-Reproject, nicht
 erreichbar, neue Abfrage nach Fehler, Auftrag unverändert, kein Reproject). Gegenproben in
 der Sitzung: ohne die Sperre in `reviewOrder`, ohne die Ruhezeit, mit der Breite nur aus den

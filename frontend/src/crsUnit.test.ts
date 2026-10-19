@@ -27,7 +27,7 @@ describe('the pattern of a target CRS', () => {
     expect(CRS_PATTERN.test(code)).toBe(true);
   });
 
-  it.each(['epsg:3035', 'EPSG:303', 'EPSG:3035000', 'EPSG:3035\n', ' EPSG:3035', 'EPSG:30 35', '3035', 'EPSG:'])(
+  it.each(['epsg:3035', 'EPSG:303', 'EPSG:3035000', 'EPSG:3035\n', ' EPSG:3035', 'EPSG:30 35', '3035', 'EPSG:', 'EPSG:３０３５'])(
     'turns away %j',
     (code) => {
       expect(CRS_PATTERN.test(code)).toBe(false);
@@ -157,13 +157,12 @@ describe('what holds the review back', () => {
     expect(crsBlockReason([step('reproject', undefined)], { 'EPSG:99999': refused })).toBeNull();
   });
 
-  it('is the reason of the first refused step', () => {
-    const other: CrsEntry = { state: 'refused', message: 'second' };
-    expect(
-      crsBlockReason([step('reproject', 'EPSG:3035'), step('reproject', 'EPSG:12345')], {
-        'EPSG:3035': ready,
-        'EPSG:12345': other,
-      }),
-    ).toBe('second');
+  it('is the reason of the first refused step, whatever comes after', () => {
+    const second: CrsEntry = { state: 'refused', message: 'second' };
+    const codes = { 'EPSG:3035': ready, 'EPSG:12345': second, 'EPSG:99999': refused };
+    expect(crsBlockReason([step('reproject', 'EPSG:3035'), step('reproject', 'EPSG:12345')], codes)).toBe('second');
+    expect(crsBlockReason([step('reproject', 'EPSG:99999'), step('reproject', 'EPSG:12345')], codes)).toBe(
+      refused.message,
+    );
   });
 });

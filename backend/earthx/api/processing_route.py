@@ -473,7 +473,7 @@ async def process(request: Request, process_id: str, dataset: str | None = None)
 
 
 @router.get("/crs/{code}", summary="The unit of a target CRS", responses=_PROBLEMS)
-async def crs_unit(code: str) -> JSONResponse:
+def crs_unit(code: str) -> JSONResponse:
     """What ``reproject``'s ``resolution`` is measured in for this target CRS (M4-13c-3); asks no one."""
     try:
         description = crs_description(code)

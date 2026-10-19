@@ -42,7 +42,7 @@ export function CellSize({
   const typed = typeof resolution === 'string' && resolution.trim() !== '';
   const text = typed ? cellSizeText(entry.info, Number(resolution), latitude) : null;
   return (
-    <p className="pp-help" aria-label="Cell size">
+    <p className="pp-help" role="status" aria-label="Cell size">
       {text ?? `The resolution is in ${entry.info.unit.name}.`}
     </p>
   );

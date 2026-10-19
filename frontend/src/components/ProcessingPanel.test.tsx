@@ -1428,6 +1428,24 @@ describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () 
     expect(crsCalls()).toEqual(['/processing/crs/EPSG%3A3035']);
   });
 
+  it('an answer to a question given up is not kept: the store holds the new code only', async () => {
+    let askedFor2227 = false;
+    routes['GET /processing/crs/EPSG%3A2227'] = (init) =>
+      new Promise<Response>((_, reject) => {
+        askedFor2227 = true;
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    await openStep();
+    typeInto(input('crs'), 'EPSG:2227');
+    typeInto(input('resolution'), '10');
+    await waitFor(() => askedFor2227);
+    typeInto(input('crs'), 'EPSG:3035');
+    await answered('Cell size: 10 m × 10 m');
+    await flush();
+    expect(Object.keys(useProcessingStore.getState().crs)).toEqual(['EPSG:3035']);
+    expect(container.textContent).not.toContain('could not be looked up');
+  });
+
   it('a code already known is not asked again', async () => {
     await openStep();
     typeInto(input('crs'), 'EPSG:3035');
