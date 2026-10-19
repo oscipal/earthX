@@ -818,3 +818,94 @@ Im Browser `http://localhost:5173`:
    sind; die Vollauflösung des Layers wird nicht betreten.
 8. Nach „⚙“ an einem zugeschnittenen Layer das Panel schließen und aus der Auswahl
    „⚙ Process“ öffnen: „Area“ steht auf „Whole scene“.
+
+## 13. M4-13c-3 — Umsetzung (19.10.2026)
+
+**Gebaut** (Backend und Frontend, Branch `claude/charming-faraday-gb3d78`):
+- **Route (§3.7):** `GET /processing/crs/{code}` in `api/processing_route.py`, die
+  Auskunft in `api/crs_info.py` (`pyproj`, `lru_cache` für 512 Codes; Fehler werden
+  nicht zwischengespeichert). Antwort `{"code", "name", "kind", "unit": {"name", "kind", "toBase"}}`
+  mit `Cache-Control: public, max-age=86400`; `422` als Problem-Dokument mit dem Grund:
+  „not an EPSG code like EPSG:3035“ (Muster `EPSG:[0-9]{4,6}`, mit `fullmatch`, damit
+  ein Zeilenumbruch am Ende nicht durchrutscht), „EPSG:99999 is not a CRS this platform
+  knows“, „the CRS names no unit for its axes“ (Einheit leer, `unknown`, Faktor nicht
+  endlich oder nicht positiv), „the axes of the CRS have different units“.
+  - **Art:** `geographic` und `projected` nach `pyproj`; ein zusammengesetztes CRS zählt
+    mit seinem horizontalen Teil. Alles andere (Höhen-, geozentrische CRS) ist `other`
+    mit linearer Einheit. Belegt an der EPSG-Datenbank von `pyproj` 3.8: unter den
+    Codes mit vier bis sechs Stellen hat kein CRS außer den geografischen eine
+    Winkelachse; die Höhen-CRS in Fuß (z. B. `EPSG:5702`) kommen vor.
+  - **`toBase`:** `pyproj` gibt Winkel im Bogenmaß an; die Route rechnet auf Grad um
+    (Grad = 1, Gon = 0,9). Linear: Faktor auf Meter (US survey foot = 1200/3937).
+- **Kein Netz (Auflage F6):** `api.main.build_app` ruft `switch_off_proj_network()`
+  (`pyproj.network.set_network_enabled(False)`) vor allem anderen auf. Der Test setzt
+  `PROJ_NETWORK=ON`, schaltet das Netz in `pyproj` ausdrücklich an, baut die App und
+  zeigt, dass es danach aus ist; sechs Codes (drei Einheiten, zusammengesetzt, unbekannt,
+  zu kurz) antworten mit gesperrten Sockets (`connect` und `getaddrinfo` werfen). Im Log
+  steht nur, was `RequestIdMiddleware` ohnehin schreibt (Pfad mit dem Code); ein Test
+  sucht in allen Zeilen nach Namen und Einheit des CRS.
+- **Anzeige (§3.7):** Abschnitt „Processing steps“, Schritt `reproject`. `useCrsLookup`
+  fragt 300 ms nach der letzten Eingabe, sobald `crs` dem Muster entspricht; weitertippen
+  bricht die Abfrage ab (`AbortController`). Der Store (`crs`) hält Antworten und
+  Abweisungen über Entwürfe hinweg (ein Code bedeutet für jeden Datensatz dasselbe); eine
+  Antwort, die nicht kam, wird beim nächsten Eingeben desselben Codes neu gefragt.
+  - Unter `resolution`: „Cell size: 10 m × 10 m“; andere lineare Einheit „Cell size: 10 US
+    survey foot × 10 US survey foot (≈ 3.05 m)“; Grad „Cell size: 0.0003° × 0.0003° ≈ 33 m
+    (N–S) × 23 m (E–W) at 47.3° N“ mit den Reihen aus §3.7; ohne brauchbaren Faktor der Name
+    der Einheit aus der Antwort.
+  - `422`: Der Grund steht als `role="alert"` unter `crs`; „Review“ und „Start job“ sind
+    gesperrt (Titel = Grund), und `reviewOrder` und `startJob` senden nichts. Ein
+    abgewiesener Code in einem Schritt, der kein `reproject` ist, sperrt nichts.
+  - Breite φ: bei „AOI only“ die Mitte der AOI-`bbox`, bei „Whole scene“ die Mitte der
+    `bbox` aller Szenen des Überflugs; neu berechnet bei jeder Änderung (Bereich, AOI,
+    Auswahl), ohne neue Abfrage.
+
+**Kleinigkeiten, die der Plan nicht regelt** (Vorschläge; Otto darf widersprechen):
+- Ohne Breite (keine Szene mit `bbox`, „AOI only“ ohne AOI) bleibt Grad bei Grad, ohne
+  Hinweistext.
+- Bodengrößen: unter 10 m auf den Zentimeter, darüber auf den Meter gerundet (3.048 m →
+  „3.05 m“, 33,35 m → „33 m“). Das trifft beide Beispiele des Plans.
+- Während der Abfrage steht „Looking up the unit of EPSG:3035…“; kam keine Antwort, ein
+  Hinweis „The unit of EPSG:3035 could not be looked up: …“, der „Review“ nicht sperrt.
+  Ist die Auflösung leer, steht „The resolution is in metre.“.
+- Die Route sagt, was die Einheit ist, nicht, ob `reproject` in dieses CRS rechnen kann
+  (K6): Ein Höhen-CRS bekommt eine Einheit, der Operator weist es später ab.
+- Die Route prüft mit `pyproj`, der Operator mit `rasterio`; beide lesen die EPSG-Datenbank
+  des PROJ, das jeweils mitgeliefert ist. Weicht ein Code je ab, entscheidet der Server beim
+  Start, wie bisher.
+
+**Tests:** Backend `test_crs_route.py` (37: projiziert, geografisch, Fuß, 3D, zusammengesetzt,
+Höhe in Fuß, maskierter Doppelpunkt, Cache-Kopf; 13 falsch geformte Codes, unbekannt,
+kein Cache bei `422`, nur `GET`, fünf Einheiten-Fehler, kein Netz bei `PROJ_NETWORK=ON`,
+nichts außer dem Code im Log). Frontend `crsUnit.test.ts` (37: Muster, Reihen,
+Breite, Wortlaut je Einheit, Randfälle, Sperrgrund), `processing.test.ts` (`fetchCrs`: URL,
+`422`, sechs unlesbare Antworten), `ProcessingPanel.test.tsx` (18: Meter, Fuß, Grad auf
+beiden Breiten, Wechsel der Fläche ohne neue Abfrage, neue AOI, AOI weg, Weitertippen, schon
+bekannter Code, `422` mit Sperre und direktem Aufruf, Entsperren, Nicht-Reproject, nicht
+erreichbar, neue Abfrage nach Fehler, Auftrag unverändert, kein Reproject). Gegenproben in
+der Sitzung: ohne die Sperre in `reviewOrder`, ohne die Ruhezeit, mit der Breite nur aus den
+Szenen und ohne gesperrten „Review“ fällt je ein Test (zwei bei der Breite).
+
+**Ergebnis der Prüfungen:** siehe PR-Text.
+
+**Prüfanleitung für Otto** (Windows PowerShell; die Sitzung hat die Oberfläche nur in Tests
+gesehen):
+
+```powershell
+docker compose up -d --build
+$api = 'http://localhost:8000'
+Invoke-RestMethod "${api}/processing/crs/EPSG:3035"                # metre, projected
+Invoke-RestMethod "${api}/processing/crs/EPSG:4326"                # degree, angular, toBase 1
+Invoke-RestMethod "${api}/processing/crs/EPSG:2227"                # US survey foot
+try { Invoke-RestMethod "${api}/processing/crs/EPSG:99999" } catch { $_.ErrorDetails.Message }   # 422
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a` (oder `cop-dem-glo-30`), Szene wählen,
+„⚙ Process“, „＋ Reproject and resample“:
+1. `crs` `EPSG:3035`, `resolution` `10`: nach einem Moment „Cell size: 10 m × 10 m“.
+2. `crs` `EPSG:4326`, `resolution` `0.0003`: „… ≈ 33 m (N–S) × … m (E–W) at …° N“. Mit „AOI only“
+   (AOI an anderer Breite) ändert sich die Zahl der Ost–West-Seite sofort.
+3. `crs` `EPSG:99999`: der Grund steht unter dem Feld, „Review“ ist grau; `EPSG:3035` heilt es.
