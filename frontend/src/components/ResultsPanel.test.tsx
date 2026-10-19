@@ -276,19 +276,14 @@ describe('ResultsPanel dataset dropdown', () => {
     expect(container.querySelector('.results-panel')).toBeNull();
   });
 
-  it('offers to pin the crop of a dataset drawn as one, only while that dataset is chosen', () => {
+  it('has no "Pin to layers" row for a dataset drawn as a crop', () => {
     load(MIXED);
-    expect(container.querySelector('.crop-row')).toBeNull();
     const crop = { id: 'c', name: 'Elevation model · x', visible: true, opacity: 1, overlays: [], restore: { datasetId: 'dem' } } as never;
     useAppStore.setState({ searchCrops: [crop] });
-    act(() => root.render(<ResultsPanel />));
-    expect(container.querySelector('.crop-row')).toBeNull(); // optical is chosen
     openList();
     act(() => options()[2].click());
-    expect(container.querySelector('.crop-row')?.textContent).toContain('Full-resolution crop is on the map.');
-    act(() => (container.querySelector('.crop-row .link-btn') as HTMLButtonElement).click());
-    expect(useAppStore.getState().layers).toHaveLength(1);
-    useAppStore.setState({ searchCrops: [], layers: [] });
+    expect(container.textContent).not.toContain('Pin to layers');
+    useAppStore.setState({ searchCrops: [] });
   });
 
   it('"Clear all" empties the list', () => {
@@ -336,7 +331,9 @@ describe('the dataset dropdown lies over the scenes (Otto, 30.09.2026)', () => {
 
 describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
   type Context = NonNullable<ReturnType<typeof useAppStore.getState>['searchContext']>;
-  const withToken = (nextToken: string | null) => ({ searchContext: { nextToken } as Context });
+  const withToken = (nextToken: string | null, openCollections: string[] | null = null) => ({
+    searchContext: { nextToken, openCollections } as Context,
+  });
   const loadMoreRow = () => container.querySelector('.load-more');
   const loadMoreButton = () => loadMoreRow()?.querySelector('button') as HTMLButtonElement | null;
   const original = useAppStore.getState().loadMore;
@@ -356,13 +353,33 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
     expect(loadMore).toHaveBeenCalledTimes(1);
   });
 
-  it('stays below whichever dataset is chosen', () => {
-    useAppStore.setState(withToken('p4'));
+  it('belongs to the dataset whose source has pages: another dataset does not offer it', () => {
+    useAppStore.setState(withToken('p4', ['optical']));
     load(MIXED);
+    expect(useAppStore.getState().openSectionId).toBe('optical');
+    expect(loadMoreButton()).not.toBeNull();
     openList();
     act(() => options()[2].click());
     expect(useAppStore.getState().openSectionId).toBe('dem');
-    expect(loadMoreButton()).not.toBeNull();
+    expect(loadMoreRow()).toBeNull();
+  });
+
+  it('tells the dataset without pages that there is nothing more once "Load more" was used', () => {
+    useAppStore.setState({ ...withToken('p4', ['optical']), loadMoreUsed: true });
+    load(MIXED);
+    openList();
+    act(() => options()[2].click());
+    expect(text(loadMoreRow())).toBe('No more results available.');
+    expect(loadMoreButton()).toBeNull();
+    useAppStore.setState({ loadMoreUsed: false });
+  });
+
+  it('says there is nothing more after "Load more" found the end, with no button left', () => {
+    load(MIXED);
+    act(() => useAppStore.setState({ ...withToken(null), loadMoreUsed: true }));
+    expect(text(loadMoreRow())).toBe('No more results available.');
+    expect(loadMoreButton()).toBeNull();
+    useAppStore.setState({ loadMoreUsed: false });
   });
 
   it('is locked while loading', () => {
@@ -387,5 +404,80 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
     act(() => useAppStore.setState({ fallbackDatasetIds: ['optical'] }));
     expect(text(box())).toContain('Looking for the nearest date with scenes…');
     expect(text(box())).not.toContain('No scenes for this area.');
+  });
+});
+
+describe('"Select all" boxes (M4-29)', () => {
+  const TWO_STEPS = [
+    scene('o1', 'optical', { datetime: '2026-07-24T10:00:00Z' }),
+    scene('o2', 'optical', { datetime: '2026-07-24T10:00:05Z' }),
+    scene('o3', 'optical', { datetime: '2026-07-25T10:00:00Z' }),
+  ];
+  const selected = () => useAppStore.getState().selectedIds.slice().sort();
+  const allBox = () => container.querySelector('.selection-row input') as HTMLInputElement;
+  const groupBox = () => container.querySelector('.result-group-row .rg-select') as HTMLInputElement;
+  const onlyOptical = () =>
+    useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
+  const withMatched = (numberMatched: number | null) =>
+    useAppStore.setState({ searchContext: { numberMatched, nextToken: null } as never });
+
+  it('ticking the box selects every loaded scene, unticking deselects them', () => {
+    load(TWO_STEPS);
+    expect(allBox().checked).toBe(false);
+    act(() => allBox().click());
+    expect(selected()).toEqual(['o1', 'o2', 'o3']);
+    expect(allBox().checked).toBe(true);
+    act(() => allBox().click());
+    expect(selected()).toEqual([]);
+  });
+
+  it('shows the box in between while only some scenes are selected', () => {
+    load(TWO_STEPS);
+    act(() => useAppStore.getState().toggleSelected('o1'));
+    expect(allBox().checked).toBe(false);
+    expect(allBox().indeterminate).toBe(true);
+  });
+
+  it('puts a small box left of each group name, acting on that group', () => {
+    load(TWO_STEPS);
+    expect(container.querySelectorAll('.result-group-row > .rg-select')).toHaveLength(2);
+    expect(groupBox().nextElementSibling?.classList.contains('result-group-head')).toBe(true);
+    const open = useAppStore.getState().groups[0].items.map((it) => it.id).sort();
+    act(() => groupBox().click());
+    expect(selected()).toEqual(open);
+    expect(groupBox().checked).toBe(true);
+    act(() => groupBox().click());
+    expect(selected()).toEqual([]);
+  });
+
+  it('has no clickable "Clear selection" in the list', () => {
+    load(TWO_STEPS);
+    act(() => allBox().click());
+    expect(container.textContent).not.toContain('Clear selection');
+  });
+
+  it('names the total when the source reports more scenes than are loaded', () => {
+    load(TWO_STEPS);
+    onlyOptical();
+    withMatched(135);
+    act(() => root.render(<ResultsPanel />));
+    expect(text(container.querySelector('.selection-row label'))).toBe('Select all 3 loaded (of 135)');
+  });
+
+  it('says nothing about a total when everything is loaded', () => {
+    load(TWO_STEPS);
+    onlyOptical();
+    withMatched(3);
+    act(() => root.render(<ResultsPanel />));
+    expect(text(container.querySelector('.selection-row label'))).toBe('Select all 3');
+  });
+
+  it('does not claim a single total over several datasets', () => {
+    load(MIXED);
+    withMatched(40);
+    act(() => root.render(<ResultsPanel />));
+    const label = text(container.querySelector('.selection-row label'));
+    expect(label).not.toContain('(of 40)');
+    expect(label).toContain('more matched in total');
   });
 });

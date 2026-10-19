@@ -487,6 +487,39 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
   });
 }
 
+// A new set of ticked datasets (M4-29): the results of the last search go, the
+// active dataset stays if it is still ticked, pinned layers are untouched.
+function applyDatasetSelection(
+  set: SetState,
+  get: GetState,
+  selectedDatasetIds: string[],
+  lastPickedDatasetId: string | null,
+): void {
+  const s = get();
+  const datasetId =
+    s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null);
+  set({
+    selectedDatasetIds,
+    lastPickedDatasetId: lastPickedDatasetId && selectedDatasetIds.includes(lastPickedDatasetId) ? lastPickedDatasetId : null,
+    datasetId,
+    sections: [],
+    openSectionId: null,
+    ...forgetSearch(),
+    items: [],
+    groups: [],
+    activeGroupIndex: 0,
+    expandedGroupIndex: 0,
+    selectedIds: [],
+    error: null,
+    notice: null,
+    playing: false,
+    ...LEAVE_FOCUS,
+    searchCrops: [],
+  });
+  // The coverage map is for a dataset that is picked; dropping that one drops it.
+  if (s.coverageDatasetId && !selectedDatasetIds.includes(s.coverageDatasetId)) get().hideCoverage();
+}
+
 // The ±90-day fallback for one dataset of the search (M3-10 F7, Otto
 // 30.09.2026): asks only that dataset around the searched date range and puts
 // the nearest day's scenes, or that there are none, in its section. With one
@@ -570,7 +603,7 @@ function dropPageToken(set: SetState, get: GetState): void {
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
-  return { searchContext: null, loadingMore: false, loadMoreError: null, fallbackDatasetIds: [] };
+  return { searchContext: null, loadingMore: false, loadMoreError: null, loadMoreUsed: false, fallbackDatasetIds: [] };
 }
 
 export interface AppState {
@@ -682,6 +715,10 @@ export interface AppState {
   datasets: DatasetOption[];
   // M3-10: what the dataset filter has ticked — a search asks all of them at once.
   selectedDatasetIds: string[];
+  // M4-29: more than one dataset may be ticked only while this switch is on.
+  multiSelect: boolean;
+  // The dataset ticked last; "Select multiple datasets" ending keeps this one.
+  lastPickedDatasetId: string | null;
   // The *active* dataset: the one the map, time slider, heatmap, full-resolution
   // view and download follow. It is the open results section's dataset, or the
   // one picked in the heatmap legend; always one of `selectedDatasetIds`.
@@ -694,6 +731,8 @@ export interface AppState {
   // "Load more" (M3-10b): running, and why it last failed.
   loadingMore: boolean;
   loadMoreError: string | null;
+  // "Load more" has been pressed in this search (its notes then say which dataset has nothing further).
+  loadMoreUsed: boolean;
   // The datasets whose ±90-day fallback is running.
   fallbackDatasetIds: string[];
   items: StacItem[];
@@ -729,6 +768,7 @@ export interface AppState {
   // --- actions ---
   loadDatasets: () => Promise<void>;
   toggleDatasetSelected: (id: string) => void;
+  setMultiSelect: (on: boolean) => void;
   setOpenSection: (id: string) => void;
   setToolMode: (m: ToolMode) => void;
   setAoi: (g: GeoJSON.Geometry | null, point?: GeoJSON.Point | null) => void;
@@ -768,6 +808,8 @@ export interface AppState {
   focusItem: (id: string) => void;
   toggleSelected: (id: string) => void;
   selectAllInActiveGroup: () => void;
+  selectAllLoaded: () => void;
+  toggleGroupSelected: (index: number) => void;
   clearSelection: () => void;
   setDateFrom: (v: string) => void;
   setDateTo: (v: string) => void;
@@ -832,12 +874,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   config: null,
   datasets: [],
   selectedDatasetIds: [],
+  multiSelect: false,
+  lastPickedDatasetId: null,
   datasetId: null,
   sections: [],
   openSectionId: null,
   searchContext: null,
   loadingMore: false,
   loadMoreError: null,
+  loadMoreUsed: false,
   fallbackDatasetIds: [],
   items: [],
   groups: [],
@@ -862,20 +907,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const collections = await api.fetchCollections();
       const datasets = datasetsFrom(collections);
-      const firstViewable = datasets.find((d) => d.viewable);
-      set({
-        datasets,
-        selectedDatasetIds: firstViewable ? [firstViewable.id] : [],
-        datasetId: firstViewable?.id ?? null,
-      });
+      set({ datasets, selectedDatasetIds: [], lastPickedDatasetId: null, datasetId: null });
     } catch (e) {
       set({ error: `Backend not reachable: ${(e as Error).message}` });
     }
   },
-  // The filter's tick box (M3-10). A dataset that cannot be shown is never
-  // ticked. Whatever the last search found no longer matches the new selection,
-  // so the results go, as they did when a single dataset was switched; pinned
-  // layers stay (they carry their own dataset).
+  // The dataset buttons (M3-10, M4-29). Nothing is ticked at the start. A click
+  // picks exactly that dataset and drops the one before, a click on the chosen one drops it; only with "Select
+  // multiple datasets" on does a click switch its dataset on or off. A dataset
+  // that cannot be shown is never ticked. Whatever the last search found no
+  // longer matches the new selection, so the results go; pinned layers stay (they
+  // carry their own dataset).
   toggleDatasetSelected: (id) => {
     const s = get();
     // Not while a search or a lookup is running: its answer would land on a
@@ -884,30 +926,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     const dataset = s.datasets.find((d) => d.id === id);
     const ticked = s.selectedDatasetIds.includes(id);
     if (!dataset || (!ticked && !dataset.viewable)) return;
+    const keep = s.multiSelect ? s.selectedDatasetIds : [];
     const selectedDatasetIds = s.datasets
-      .filter((d) => (d.id === id ? !ticked : s.selectedDatasetIds.includes(d.id)))
+      .filter((d) => (d.id === id ? !ticked : keep.includes(d.id)))
       .map((d) => d.id);
-    const datasetId =
-      s.datasetId && selectedDatasetIds.includes(s.datasetId) ? s.datasetId : (selectedDatasetIds[0] ?? null);
-    set({
-      selectedDatasetIds,
-      datasetId,
-      sections: [],
-      openSectionId: null,
-      ...forgetSearch(),
-      items: [],
-      groups: [],
-      activeGroupIndex: 0,
-      expandedGroupIndex: 0,
-      selectedIds: [],
-      error: null,
-      notice: null,
-      playing: false,
-      ...LEAVE_FOCUS,
-      searchCrops: [],
-    });
-    // The coverage map is for a dataset that is picked; dropping that one drops it.
-    if (s.coverageDatasetId && !selectedDatasetIds.includes(s.coverageDatasetId)) get().hideCoverage();
+    applyDatasetSelection(set, get, selectedDatasetIds, ticked ? s.lastPickedDatasetId : id);
+  },
+  // "Select multiple datasets" (M4-29). Switching it off keeps only the dataset
+  // ticked last (or, if that one was switched off again, the active one) and
+  // drops the rest; with nothing ticked nothing stays ticked.
+  setMultiSelect: (on) => {
+    const s = get();
+    if (s.searching || s.sceneLookupLoading || on === s.multiSelect) return;
+    if (on || s.selectedDatasetIds.length <= 1) {
+      set({ multiSelect: on });
+      return;
+    }
+    const keepId =
+      s.lastPickedDatasetId && s.selectedDatasetIds.includes(s.lastPickedDatasetId)
+        ? s.lastPickedDatasetId
+        : s.datasetId && s.selectedDatasetIds.includes(s.datasetId)
+          ? s.datasetId
+          : s.selectedDatasetIds[0];
+    set({ multiSelect: false });
+    applyDatasetSelection(set, get, [keepId], keepId);
   },
   // Shows one dataset's results — the dropdown of the results panel (M3-10) — and
   // makes that dataset the active one. Exactly one is shown while a search has
@@ -1460,7 +1502,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     if (!dataset || !dataset.viewable) {
-      set({ error: 'Pick a dataset first.' });
+      set({ error: 'Choose a dataset to search.' });
       return;
     }
     const render = defaultRenderOf(dataset.collection);
@@ -1596,6 +1638,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       const merged = new Set([...s.selectedIds, ...group.items.map((it) => it.id)]);
       return { selectedIds: [...merged] };
     }),
+  // M4-29: "Select all" takes the loaded scenes only — never more pages — and
+  // the limits (merge, job size, batch) still answer where they always did.
+  selectAllLoaded: () => set((s) => ({ selectedIds: s.items.map((it) => it.id) })),
+  toggleGroupSelected: (index) =>
+    set((s) => {
+      const ids = s.groups[index]?.items.map((it) => it.id) ?? [];
+      if (ids.length === 0) return {};
+      const all = ids.every((id) => s.selectedIds.includes(id));
+      return {
+        selectedIds: all
+          ? s.selectedIds.filter((id) => !ids.includes(id))
+          : [...s.selectedIds, ...ids.filter((id) => !s.selectedIds.includes(id))],
+      };
+    }),
   clearSelection: () => set({ selectedIds: [] }),
   setDateFrom: (dateFrom) => {
     set({ dateFrom });
@@ -1676,7 +1732,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const chosen = viewableDatasets(datasets, selectedDatasetIds);
     if (chosen.length === 0) {
       const blocked = datasets.find((d) => selectedDatasetIds.includes(d.id));
-      set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Pick a dataset first.' });
+      set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
     // M3-08 F2a/F5a: a point AOI searches by the point itself, a polygon by its
@@ -1781,6 +1837,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         true,
       );
+      set({ loadMoreUsed: true });
       // The chosen dataset may have been waiting on its source, which is done now.
       const { openSectionId } = get();
       if (openSectionId) void runFallback(set, get, openSectionId, false);
@@ -1811,7 +1868,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const chosen = viewableDatasets(datasets, selectedDatasetIds);
     if (chosen.length === 0) {
       const blocked = datasets.find((d) => selectedDatasetIds.includes(d.id));
-      set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Pick a dataset first.' });
+      set({ error: blocked && !blocked.viewable ? `This dataset cannot be shown yet: ${blocked.reason}` : 'Choose a dataset to search.' });
       return;
     }
     set({ sceneLookupLoading: true, error: null });
