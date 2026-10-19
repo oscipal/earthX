@@ -141,9 +141,17 @@ function GroupSelectBox({ group, index }: { group: TimeStepGroup; index: number 
   const toggleGroupSelected = useAppStore((s) => s.toggleGroupSelected);
   const all = count === group.items.length;
   return (
-    <div className="rg-select">
-      <SelectBox checked={all} partial={count > 0 && !all} label="Select all" onChange={() => toggleGroupSelected(index)} />
-    </div>
+    <input
+      type="checkbox"
+      className="rg-select"
+      checked={all}
+      ref={(el) => {
+        if (el) el.indeterminate = count > 0 && !all;
+      }}
+      title={`Select all scenes of ${group.label}`}
+      aria-label={`Select all scenes of ${group.label}`}
+      onChange={() => toggleGroupSelected(index)}
+    />
   );
 }
 
@@ -160,14 +168,16 @@ function GroupBlock({
 }) {
   return (
     <div className={`result-group${expanded ? ' active' : ''}`}>
-      <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
-        <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
-        <span className="rg-label" title={group.label}>
-          {group.label}
-        </span>
-        <span className="rg-count">{group.items.length}</span>
-      </button>
-      {expanded && <GroupSelectBox group={group} index={index} />}
+      <div className="result-group-row">
+        <GroupSelectBox group={group} index={index} />
+        <button type="button" className="result-group-head" onClick={() => onToggle(index)}>
+          <span className="rg-caret">{expanded ? '▾' : '▸'}</span>
+          <span className="rg-label" title={group.label}>
+            {group.label}
+          </span>
+          <span className="rg-count">{group.items.length}</span>
+        </button>
+      </div>
       {expanded && (
         <ul className="rg-items">
           {group.items.map((it) => (
@@ -299,7 +309,7 @@ function LoadMore() {
   );
 }
 
-// "Select all" and "Clear selection" (M4-29), on the line of the list's heading so
+// "Select all" (M4-29), on the line of the list's heading so
 // the list loses no height. The box takes the scenes loaded so far and says so when
 // the source reports more; it never loads pages.
 function SelectionRow() {
@@ -325,11 +335,6 @@ function SelectionRow() {
         label={label}
         onChange={() => (all ? clearSelection() : selectAllLoaded())}
       />
-      {selectedCount > 0 && (
-        <button type="button" className="link-btn" onClick={() => clearSelection()}>
-          Clear selection
-        </button>
-      )}
     </div>
   );
 }

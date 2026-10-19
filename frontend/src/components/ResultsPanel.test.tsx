@@ -385,7 +385,7 @@ describe('ResultsPanel "Load more" and the fallback (M3-10b)', () => {
   });
 });
 
-describe('"Select all" boxes and "Clear selection" (M4-29)', () => {
+describe('"Select all" boxes (M4-29)', () => {
   const TWO_STEPS = [
     scene('o1', 'optical', { datetime: '2026-07-24T10:00:00Z' }),
     scene('o2', 'optical', { datetime: '2026-07-24T10:00:05Z' }),
@@ -393,8 +393,7 @@ describe('"Select all" boxes and "Clear selection" (M4-29)', () => {
   ];
   const selected = () => useAppStore.getState().selectedIds.slice().sort();
   const allBox = () => container.querySelector('.selection-row input') as HTMLInputElement;
-  const groupBox = () => container.querySelector('.rg-select input') as HTMLInputElement;
-  const clearButton = () => container.querySelector('.selection-row .link-btn') as HTMLButtonElement | null;
+  const groupBox = () => container.querySelector('.result-group-row .rg-select') as HTMLInputElement;
   const onlyOptical = () =>
     useAppStore.setState({ sections: useAppStore.getState().sections.filter((x) => x.datasetId === 'optical') });
   const withMatched = (numberMatched: number | null) =>
@@ -417,9 +416,10 @@ describe('"Select all" boxes and "Clear selection" (M4-29)', () => {
     expect(allBox().indeterminate).toBe(true);
   });
 
-  it('puts the box of a group under its name, only while it is open, and it acts on that group', () => {
+  it('puts a small box left of each group name, acting on that group', () => {
     load(TWO_STEPS);
-    expect(container.querySelectorAll('.rg-select')).toHaveLength(1);
+    expect(container.querySelectorAll('.result-group-row > .rg-select')).toHaveLength(2);
+    expect(groupBox().nextElementSibling?.classList.contains('result-group-head')).toBe(true);
     const open = useAppStore.getState().groups[0].items.map((it) => it.id).sort();
     act(() => groupBox().click());
     expect(selected()).toEqual(open);
@@ -428,12 +428,10 @@ describe('"Select all" boxes and "Clear selection" (M4-29)', () => {
     expect(selected()).toEqual([]);
   });
 
-  it('"Clear selection" is there only with a selection, and empties it', () => {
+  it('has no clickable "Clear selection" in the list', () => {
     load(TWO_STEPS);
-    expect(clearButton()).toBeNull();
     act(() => allBox().click());
-    act(() => clearButton()!.click());
-    expect(selected()).toEqual([]);
+    expect(container.textContent).not.toContain('Clear selection');
   });
 
   it('names the total when the source reports more scenes than are loaded', () => {
