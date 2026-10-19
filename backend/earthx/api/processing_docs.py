@@ -180,11 +180,20 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
 
 
 def _jobs_of(operators: OperatorRegistry, config: DatasetConfig | None) -> list[Operator]:
-    """The operators a job can run: in tier T2, and for ``config`` those it is applicable to."""
+    """The operators a job can run: in tier T2, and for ``config`` those it is applicable to.
+
+    Only the highest version of each operator is listed; an older one the registry still
+    holds is accepted in a recipe but not offered (M4-24, Otto 20.10.2026).
+    """
+    latest: dict[str, int] = {}
+    for op, version in operators:
+        latest[op] = max(version, latest.get(op, version))
     chosen = [
         operator
         for _, operator in sorted(operators.items())
-        if Tier.T2 in operator.tiers and (config is None or not applicable(operator, config))
+        if operator.op_version == latest[operator.op]
+        and Tier.T2 in operator.tiers
+        and (config is None or not applicable(operator, config))
     ]
     return chosen
 
