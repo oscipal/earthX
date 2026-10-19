@@ -1872,6 +1872,13 @@ input[type='date']:focus {
   margin-bottom: 6px;
 }
 
+/* The links to the original files: many scenes scroll in their own area (Zusatz 1a). */
+.dialog-original-links {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0 0 10px;
+}
+
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {

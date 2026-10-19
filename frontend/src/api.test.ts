@@ -267,6 +267,32 @@ describe('downloadCrop', () => {
     await expect(downloadCrop(request)).rejects.toThrow('This download covers 26 scenes; at most 25 fit in one download.');
   });
 
+  // M4-11b-2: the dialog offers an export job from the status and the header.
+  function refusal(status: number, headers: Record<string, string>): Response {
+    return new Response(JSON.stringify({ detail: 'This download would be about 2 GB.' }), {
+      status,
+      headers: { 'Content-Type': 'application/json', ...headers },
+    });
+  }
+
+  it.each([
+    ['available', 'available'],
+    ['too-large', 'too-large'],
+    ['maybe', undefined],
+    [null, undefined],
+  ])('a 413 with X-Export-Job %s throws an HttpError with exportJob %s and the detail', async (header, expected) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(refusal(413, header === null ? {} : { 'X-Export-Job': header })));
+    const error = await downloadCrop(request).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 413, detail: 'This download would be about 2 GB.', exportJob: expected });
+  });
+
+  it('reads X-Export-Job only on a 413', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(refusal(400, { 'X-Export-Job': 'available' })));
+    const error = await downloadCrop(request).catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 400, exportJob: undefined });
+  });
+
   it('an error response with no JSON body still reads as a plain, English message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(noJsonResponse(503, 'Service Unavailable')));
     await expect(downloadCrop(request)).rejects.toThrow('503 Service Unavailable');
@@ -415,6 +441,36 @@ describe('HttpError.retryAfter', () => {
       } as unknown as Response),
     );
     await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ retryAfter: undefined });
+  });
+});
+
+// M4-11b-2: the `type` of a problem document picks the text of a failed job.
+describe('HttpError.type', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function answer(body: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(body), { status: 500, headers: { 'Content-Type': 'application/problem+json' } }),
+      ),
+    );
+  }
+
+  it('is the type and title of a problem document', async () => {
+    answer({ type: 'urn:earthx:job-failed:runtime_exceeded', title: 'The job took longer than allowed', detail: 'x' });
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({
+      type: 'urn:earthx:job-failed:runtime_exceeded',
+      title: 'The job took longer than allowed',
+      exportJob: undefined,
+    });
+  });
+
+  it('is undefined when the body has no type, or one that is not a string', async () => {
+    answer({ type: 7, detail: 'x' });
+    await expect(uploadAoi(new File([], 'x.geojson'), 'x.geojson')).rejects.toMatchObject({ type: undefined });
   });
 });
 

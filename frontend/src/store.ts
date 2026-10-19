@@ -18,13 +18,15 @@ import { acquisitionNote, datasetsFrom, defaultRenderOf, preferredGeoreferencedA
 import { fallbackNotice, findFallback, fullDayRange, NO_FALLBACK_MESSAGE } from './dateFallback';
 import {
   assetHostsOf,
-  decideDownloadOutcome,
   decideDownloadOutcomeForLayer,
   downloadRequestFor,
   downloadRequestForSelection,
+  DRAW_AOI_TO_CROP,
   isCogFormat,
+  noOriginalsReason,
   originalFileLinks,
   type DownloadPass,
+  type ExportOffer,
   type OriginalFileLink,
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
@@ -48,6 +50,9 @@ import { fullResolutionLayers } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
+
+// Numbers the export offers of the download dialog (`ExportOffer.id`).
+let exportOffers = 0;
 // The prototype's own richtwert (`max_search_items`); there is no server config
 // endpoint to read it from any more (M2-07a scope — the prototype's `/api/config`
 // is gone), so it stays a constant here until a task actually needs it tunable.
@@ -660,6 +665,10 @@ export interface AppState {
   // sentence instead of closing on a successful download, same as any other
   // outcome the user needs to read before moving on. `null` otherwise.
   downloadSkippedGroupsNotice: string | null;
+  // The crop was too large for a direct download and its `413` offers an
+  // export job (M4-11b-2); the dialog shows the offer instead of an error.
+  // Dropped with the dialog and with any change of the resolution.
+  downloadExportOffer: ExportOffer | null;
 
   // --- render params for a full-res raster, committed via "Apply" (F18) ---
   appliedRender: AppliedRender;
@@ -741,7 +750,7 @@ export interface AppState {
   selectLayer: (id: string) => void;
   activateLayerContext: (id: string) => void;
   openDownloadDialog: (id: string) => Promise<void>;
-  openDownloadForSelection: () => void;
+  openDownloadForSelection: (kind: 'crop' | 'originals') => void;
   closeDownloadDialog: () => void;
   setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
@@ -813,6 +822,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   downloadOriginalLinks: null,
   downloadPasses: null,
   downloadSkippedGroupsNotice: null,
+  downloadExportOffer: null,
 
   appliedRender: {},
   pendingColormapName: '',
@@ -1240,6 +1250,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadOriginalLinks: null,
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
       error: null,
     });
     const s = get();
@@ -1279,12 +1290,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   // the original files, without first "View full resolution" or "Add to
   // layers". Items are already loaded (`store.items`), so the originals
   // outcome needs no fetch here, unlike a pinned layer's.
-  openDownloadForSelection: () => {
+  openDownloadForSelection: (kind) => {
     const s = get();
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
-    const outcome = decideDownloadOutcome({ cropToAoi: null, hasAoi: !!s.aoi, isCog: isCogFormat(dataset) });
-    if (outcome === 'disabled') {
-      set({ error: 'Draw an AOI to download this dataset.' });
+    if (kind === 'crop' && !s.aoi) {
+      set({ error: DRAW_AOI_TO_CROP });
+      return;
+    }
+    if (kind === 'originals' && !isCogFormat(dataset)) {
+      set({ error: noOriginalsReason(dataset) });
       return;
     }
     const items = selectionItemsFrom(s);
@@ -1292,7 +1306,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: 'Nothing to download — pick a time step or select scenes first.' });
       return;
     }
-    if (outcome === 'crop') {
+    if (kind === 'crop') {
       const req = downloadRequestForSelection(dataset, groupItemIdsFor(items.map((it) => it.id), s.groups), s.aoi);
       if (!req) {
         set({ error: 'Nothing to download — pick a time step or select scenes first.' });
@@ -1306,11 +1320,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         downloadOriginalLinks: null,
         downloadPasses: null,
         downloadSkippedGroupsNotice: null,
+        downloadExportOffer: null,
         error: null,
       });
       return;
     }
-    // 'originals': the dataset's default asset, straight from the source.
+    // Originals: the dataset's default asset, straight from the source — also
+    // with an AOI drawn (the AOI plays no part), Zusatz 1a.
     const asset = dataset?.viewable ? defaultRenderOf(dataset.collection)?.assets[0] : undefined;
     const groupItemIds = groupItemIdsFor(
       items.map((it) => it.id),
@@ -1329,6 +1345,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadOriginalLinks: links,
       downloadPasses: groups,
       downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
       error: null,
     });
   },
@@ -1340,8 +1357,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       downloadOriginalLinks: null,
       downloadPasses: null,
       downloadSkippedGroupsNotice: null,
+      downloadExportOffer: null,
     }),
-  setDownloadResolution: (factor) => set({ downloadResolution: factor }),
+  setDownloadResolution: (factor) => set({ downloadResolution: factor, downloadExportOffer: null }),
 
   // Download the AOI crop for whatever the dialog is open for (M2-06's
   // `POST /collections/{dataset}/download`, M2-07d; V-4 added the selection
@@ -1365,7 +1383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ downloadDialogLayerId: null, downloadSelection: false, downloadOutcome: null });
       return;
     }
-    set({ downloading: true, error: null });
+    set({ downloading: true, error: null, downloadExportOffer: null });
     try {
       const result = await api.downloadCrop({
         datasetId: req.datasetId,
@@ -1399,7 +1417,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
     } catch (e) {
-      set({ error: `Download failed: ${(e as Error).message}` });
+      const { aoi } = req;
+      if (
+        e instanceof api.HttpError &&
+        e.exportJob &&
+        s.downloadResolution === 1 &&
+        (aoi.type === 'Polygon' || aoi.type === 'MultiPolygon')
+      ) {
+        set({
+          downloadExportOffer: { id: ++exportOffers, request: { ...req, aoi }, message: e.message, exportJob: e.exportJob },
+        });
+      } else {
+        set({ error: `Download failed: ${(e as Error).message}` });
+      }
     } finally {
       set({ downloading: false });
     }

@@ -11,7 +11,8 @@ import {
 } from '../download';
 import { groupItemIdsFor } from '../grouping';
 import { useAppStore } from '../store';
-import MosaicJobs from './MosaicJobs';
+import ExportJobOffer from './ExportJobOffer';
+import OriginalFiles from './OriginalFiles';
 
 // Confirmation before a download leaves the platform (M2-07d, M3-17):
 // attribution and the source's terms notice have to be visible before it
@@ -29,8 +30,10 @@ import MosaicJobs from './MosaicJobs';
 // (`store.downloadOutcome`, M3-17 plan §4): the AOI **crop**, confirmed here
 // as one request the way M2-06 always did, or the **originals**, a plain
 // list of links to click — no confirm step, no CORS, no big in-browser
-// download (plan §6, F2 option 1). Under the links, a pass of several scenes
-// can be merged into one file as a job (`MosaicJobs`, M4-12b).
+// download (plan §6, F2 option 1); several scenes ask first whether they are
+// loaded one by one or merged per pass as a job (`OriginalFiles`, Zusatz 1a). A crop too
+// large for a direct download is offered as an export job (`ExportJobOffer`,
+// M4-11b-2) when the server's `413` says it fits one.
 export default function DownloadDialog() {
   const layerId = useAppStore((s) => s.downloadDialogLayerId);
   const selectionMode = useAppStore((s) => s.downloadSelection);
@@ -65,6 +68,7 @@ export default function DownloadDialog() {
   const originalLinks = useAppStore((s) => s.downloadOriginalLinks);
   const passes = useAppStore((s) => s.downloadPasses);
   const skippedGroupsNotice = useAppStore((s) => s.downloadSkippedGroupsNotice);
+  const exportOffer = useAppStore((s) => s.downloadExportOffer);
 
   if (!layerId && !selectionMode) return null;
 
@@ -80,10 +84,6 @@ export default function DownloadDialog() {
     // unlike the crop below).
     const attribution = attributionText(flags, new Date().getFullYear(), false);
     const terms = termsNoticeText(flags, 'en');
-    const byGroup = new Map<string, typeof originalLinks>();
-    for (const link of originalLinks ?? []) {
-      byGroup.set(link.groupLabel, [...(byGroup.get(link.groupLabel) ?? []), link]);
-    }
     return (
       <div className="dialog-backdrop" onClick={close}>
         <div className="panel dialog-panel" onClick={(e) => e.stopPropagation()}>
@@ -106,31 +106,7 @@ export default function DownloadDialog() {
                 </a>
               </p>
             )}
-            {originalLinks === null && <p className="hint-text">Loading the original files…</p>}
-            {originalLinks !== null && originalLinks.length === 0 && (
-              <p className="hint-text">
-                No original file of this selection could be linked directly from the source.
-              </p>
-            )}
-            {originalLinks !== null && originalLinks.length > 0 && (
-              <ul className="dialog-original-links">
-                {[...byGroup.entries()].map(([groupLabel, links]) => (
-                  <li key={groupLabel}>
-                    <span className="dialog-original-group">{groupLabel}</span>
-                    <ul>
-                      {(links ?? []).map((link) => (
-                        <li key={`${link.itemId}:${link.asset}`}>
-                          <a href={link.href} download rel="noopener noreferrer" target="_blank">
-                            {link.itemId} · {link.asset}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <MosaicJobs dataset={dataset} passes={passes ?? []} />
+            <OriginalFiles dataset={dataset} links={originalLinks} passes={passes} />
           </div>
           <div className="dialog-actions">
             <button type="button" className="lm-btn" onClick={close}>
@@ -255,6 +231,8 @@ export default function DownloadDialog() {
               {selectionMode ? 'Nothing left to crop.' : 'This layer has nothing left to crop.'}
             </p>
           )}
+
+          {exportOffer && <ExportJobOffer key={exportOffer.id} offer={exportOffer} />}
         </div>
         <div className="dialog-actions">
           <button type="button" className="lm-btn" onClick={close} disabled={downloading}>

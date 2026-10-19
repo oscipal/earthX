@@ -16,7 +16,7 @@ import { placeAoi } from '../placeSearch';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
-import JobList, { JobRow, MIN_REMAINING_MS } from './JobList';
+import JobList, { EXPIRED_TEXT, JobRow, MIN_REMAINING_MS } from './JobList';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 
@@ -963,6 +963,63 @@ describe('starting and following a job', () => {
     });
     await waitFor(() => container.textContent?.includes('Failed: The source failed') ?? false);
   });
+
+  // M4-11b-2 (plan §3.3): one archive where the result has one; the wording of failures and expiry.
+  async function resume(results: () => Response, state = 'successful') {
+    routes[`GET /processing/jobs/${JOB}`] = () => json(statusDoc(state, 100));
+    routes[`GET /processing/jobs/${JOB}/results`] = results;
+    sessionStorage.setItem(
+      'earthx.processing.jobs',
+      JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
+    );
+    act(() => root.render(<JobList />));
+    act(() => {
+      useProcessingStore.getState().resumeJobs();
+      useProcessingStore.getState().openJobs();
+    });
+  }
+
+  const link = (name: string) => ({ href: `/processing/jobs/${JOB}/results/${name}`, type: 'application/octet-stream' });
+
+  it.each([
+    ['a raster job', { result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json'), bundle: link('result.zip') }, 'result.zip'],
+    ['an export', { export: link('export.zip'), recipe: link('recipe.json') }, 'export.zip'],
+  ])('offers %s as one link "Download (ZIP)"', async (_, doc, file) => {
+    await resume(() => json(doc));
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    const links = [...container.querySelectorAll('.pp-links a')] as HTMLAnchorElement[];
+    expect(links.map((a) => a.textContent)).toEqual(['Download (ZIP)']);
+    expect(links[0].getAttribute('href')).toBe(`/processing/jobs/${JOB}/results/${file}`);
+  });
+
+  it('keeps the single links of a result from before archives existed', async () => {
+    await resume(() => json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json') }));
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual([
+      'Result (COG)',
+      'Mask',
+      'Recipe',
+    ]);
+  });
+
+  it.each([
+    ['runtime_exceeded', 'The job took longer than allowed', 'The job took longer than allowed. Choose a smaller area or fewer assets.'],
+    [
+      'disk_space',
+      'The worker has too little disk space for this job; choose a smaller area or fewer assets, or try later',
+      'The worker has too little disk space for this job; choose a smaller area or fewer assets, or try later',
+    ],
+  ])('words a failure of kind %s for the user', async (kind, title, text) => {
+    await resume(() => json({ type: `urn:earthx:job-failed:${kind}`, title, status: 500, detail: 'x' }, 500), 'failed');
+    await waitFor(() => container.textContent?.includes(`Failed: ${text}`) ?? false);
+  });
+
+  it('says the result expired when /results answers 410, before the row\'s own clock does', async () => {
+    await resume(() => json({ type: 'urn:earthx:gone', title: 'Gone', status: 410, detail: 'the result has expired' }, 410));
+    await waitFor(() => container.textContent?.includes(EXPIRED_TEXT) ?? false);
+    expect(container.querySelector('.pp-links a')).toBeNull();
+    expect(container.querySelector('.hint-text.error')).toBeNull();
+  });
 });
 
 describe('a finished job row (K6)', () => {
@@ -977,6 +1034,7 @@ describe('a finished job row (K6)', () => {
       failure: null,
       error: null,
       cancelling: false,
+      expired: false,
     };
   }
 
@@ -989,7 +1047,7 @@ describe('a finished job row (K6)', () => {
       vi.advanceTimersByTime(5100);
     });
     expect(container.querySelector('.pp-links a')).toBeNull();
-    expect(container.textContent).toContain('Expired');
+    expect(container.textContent).toContain(EXPIRED_TEXT);
   });
 
   it('shows "Expired" at once inside the last minute', () => {
