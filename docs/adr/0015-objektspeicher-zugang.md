@@ -1306,7 +1306,7 @@ nie ihr Wert.
 **Wie GDAL die Datei bekommt.** `objectstore.results.signed_read` gibt eine für
 den **internen** Endpunkt signierte GET-URL (höchstens 15 Minuten, nie über das
 Ende des Ergebnisses hinaus, nicht unter 60 Sekunden Rest). Der `tiler` öffnet sie
-mit `/vsicurl/`. Sie ist **keine** Adresse einer Datenquelle und läuft nicht durch
+mit `/vsicurl/` (für `result.tif` und `mask.tif` je eine). Sie ist **keine** Adresse einer Datenquelle und läuft nicht durch
 `gateway`: Sie stammt aus `objectstore`, der Endpunkt nur aus der Konfiguration.
 Das ist ein Fall der Ausnahme vom Nachtrag zu B8 (2026-10-05). `.importlinter`
 ändert sich nicht (`api` darf `objectstore` schon; `botocore` bleibt allein in
@@ -1324,6 +1324,13 @@ Das ist ein Fall der Ausnahme vom Nachtrag zu B8 (2026-10-05). `.importlinter`
   10 Minuten (GDALs Lesecache hängt an der URL; eine neue Signatur je Kachel
   öffnete die Datei jedes Mal neu). Beides je höchstens 128 Ergebnisse. Kein
   Zustand, den eine zweite Instanz vermisst.
+
+**Die Maske (Otto, 20.10.2026).** Auf der Karte erscheint das Ergebnis auf die Fläche des Jobs zugeschnitten, im
+Download bleibt `result.tif` das ganze Rechteck mit `mask.tif`. Der `tiler` liest deshalb zu jeder Kachel dieselbe Kachel
+von `mask.tif` (gleiches Raster, `nearest`) und macht durchsichtig, wo sie 0 ist. Beide Dateien liegen schon unter
+`results/{result_id}/`; dasselbe Objekt, derselbe Schlüssel, dieselben Prüfungen, und eine zweite signierte URL für
+`mask.tif`. Ein Ergebnis ohne Maske wird nicht ausgeliefert (`404`). Gemessen: die Maske hat keine Übersichten, die
+untersten Stufen kosten 0,9 s (10 980²) bis 3,1 s (30 000²) je Kachel, `plans/m4-13c-vorschau-und-viewer.md` §15.
 
 **Das Ende der Kacheln.** Der `tiler` kennt `expires_at` nicht (keine
 Datenbank). Er leitet es aus dem Objekt ab: `Last-Modified + RESULT_TTL` (7 Tage)

@@ -176,6 +176,7 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
   `op`/`params` (Overlay `raster`, wie heute) und heißt „Preview · <Operator>“;
   er trägt das Badge-Recht weiter (Overlay bekommt `gsd`).
 - **[Geändert am 20.10.2026 (Otto, Option 1): „Replace source layer“ entfällt auch für Job-Ergebnisse, siehe §15.]**
+- **[Geändert am 20.10.2026 (Otto): ein Knopf „Add to layers“ statt „Show on map“ → „As a new layer“; das Ergebnis erscheint auf der Karte auf die AOI zugeschnitten (die `mask.tif`, vom `tiler` angewandt), siehe §15.]**
 - **Job-Ergebnis (T2):** In der Jobzeile eines fertigen Jobs „Show on map“ mit
   „As a new layer“ und ~~„Replace source layer“~~. „Source layer“ ist der Layer, aus
   dem das Panel geöffnet wurde (§3.5), sonst die Fokusansicht; ohne beides gibt
@@ -566,7 +567,7 @@ Im Browser `http://localhost:5173`:
 4. Hineinzoomen bis etwa Kartenzoom 12,5 (10 m auf 48° N): „Preview“
    verschwindet. „＋ Add preview to layers“: der Layer steht im Layer-Manager.
 5. „AOI only“: Vorschau und Auftrag auf die Fläche zugeschnitten.
-6. „Start job“; fertig: „Show on map“ → „As a new layer“; der Layer heißt
+6. „Start job“; fertig: „Add to layers“ (seit 20.10.2026, vorher „Show on map“ → „As a new layer“); der Layer heißt
    „Result · band_math“, beim Herauszoomen mit „Overview“.
 7. `cop-dem-glo-30`, „＋ Reproject“, `crs` `EPSG:4326`, `resolution` `0.0003`:
    unter dem Feld „≈ 33 m (N–S) × 23 m (E–W) at …“; `EPSG:3035`, `30`:
@@ -1066,7 +1067,7 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suche
 - **Log:** GDAL schreibt die signierte URL in seine Warnung. `JsonFormatter` ersetzt jeden Wert eines `X-Amz-…`
   und jede `result_id` hinter `/results/`; der Zugriffslog zeigt `/results/{resultID}/…`; ein Lesefehler an
   einem Ergebnis schreibt keinen Traceback.
-- **Frontend:** `resultLayer.ts` (reine Logik), „Show on map“ → „As a new layer“ in `JobRow`
+- **Frontend:** `resultLayer.ts` (reine Logik), „Add to layers“ (ein Knopf, kein Untermenü) in `JobRow`
   (`processingStore.ts::showResultOnMap`), Layer „Result · <Operator>“ (`derived: 'result'`, `result:
   { jobID, expires, gsd, resampled, expired }`), Badge „Overview“ (`PreviewBadge.tsx`) nach der Regel von F4 (1)
   (Stufe `round(Zoom + 1)`, gedeckelt auf die feinste Stufe des Ergebnisses, an der äquatornächsten Breite des
@@ -1096,13 +1097,12 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suche
 3. *Darstellung eines Ergebnisses:* Ein Gleitkomma-Ergebnis (ein Index wie NDVI) bekommt den Wertebereich und die
    Colormap der vorangehenden Vorschau (Vorgabe −1 bis 1, `rdylgn`), jedes andere wird unverändert gezeichnet. Der
    Plan sagt dazu nichts; ohne Bereich wäre ein `float32`-Bild grau.
-4. *Ein Layer je Job:* Ein zweiter Klick auf „Show on map“ blendet den Layer ein, falls er aus ist, und legt
+4. *Ein Layer je Job:* Ein zweiter Klick auf „Add to layers“ blendet den Layer ein, falls er aus ist, und legt
    keinen zweiten an.
 5. *Pixelgröße für „Overview“:* `gsd` der Eigenschaften (nur bei projiziertem CRS); sonst Breite der `bounds`
    des TileJSON über die Spaltenzahl des Ergebnisses, am Meter je Grad der mittleren Breite. Ohne beides kein
    „Overview“.
-6. *Das Fenster der Jobliste* zeigt „Show on map“ als Knopf, der „As a new layer“ aufklappt (die Form aus §3.4); mit
-   nur einem Eintrag ist das ein Klick mehr, bis Frage 1 unten entschieden ist.
+6. *(Überholt am 20.10.2026, siehe „Zwei Änderungen“ unten: ein Knopf „Add to layers“.)*
 
 **Antworten von Otto (20.10.2026):** (1) „Replace source layer“: Option 1, entfällt auch für Job-Ergebnisse (er hat den Knopf bewusst entfernt). (2) Die Abweichungen 1 und 2 unten sind angenommen, ebenso der relative Link `tiles`; die absolute URL bleibt offen bis M6. (3) Die Farbskala der Ergebnisse bleibt in diesem PR wie gebaut; die Vorgabe aus einer Statistik je Ergebnis kommt mit M4-32 (`plans/m4-32-ergebnis-statistik.md`).
 
@@ -1154,11 +1154,11 @@ npm run dev
 
 Im Browser `http://localhost:5173`:
 1. `sentinel-2-c1-l2a`, Fläche zeichnen, suchen, einen Überflug wählen, „⚙ Process“, „＋ Band math“,
-   `(nir - red) / (nir + red)`, „Start job“; wenn der Job fertig ist: in der Jobzeile „Show on map“ → „As a new layer“.
+   `(nir - red) / (nir + red)`, „Start job“; wenn der Job fertig ist: in der Jobzeile „Add to layers“.
    Ein Layer „Result · Band math“ steht im Layer-Manager, mit „Resampled to a common grid“ nur, wenn der Job es
    sagt, und die Karte zeigt das Ergebnis (−1 bis 1, `rdylgn`). Beim Herauszoomen steht unten links „Overview“;
    beim Hineinzoomen bis zur Pixelgröße des Ergebnisses verschwindet es.
-2. Das Auge des Layers blendet ihn aus, „Show on map“ ein zweites Mal blendet ihn wieder ein, es gibt keinen
+2. Das Auge des Layers blendet ihn aus, „Add to layers“ ein zweites Mal blendet ihn wieder ein, es gibt keinen
    zweiten Layer.
 3. In den Entwicklerwerkzeugen des Browsers: die Kachel-Anfragen gehen an `/results/…/tiles/…` (Port 5173, vom
    Proxy an `tiler`), keine an `localhost:3900`.
@@ -1188,3 +1188,51 @@ Ausnahme). Der Traceback-Schutz im `tiler` greift auch hinter einem Pfadpräfix.
   reiner API-Client ohne den gemeinsamen Proxy findet den `tiler` so nicht.
 - Restrisiko im Log: Ein `CPLE_*`, das nicht als `RasterioError` ankommt, ginge über den Handler von uvicorn, nicht über
   `JsonFormatter`; nicht belegt.
+
+**Zwei Änderungen von Otto (20.10.2026), in diesem PR:**
+1. *Ein Knopf „Add to layers“* statt „Show on map“ → „As a new layer“, kein Untermenü (`JobRow`,
+   `showResultOnMap` bleibt der Name der Aktion im Store). Verhalten sonst wie oben: ein Layer je Job, „Expired“,
+   Fehler in der Zeile.
+2. *Das Ergebnis erscheint auf der Karte auf die AOI zugeschnitten* (außerhalb durchsichtig); die heruntergeladene
+   `result.tif` bleibt unverändert (Bounding Box, dazu `mask.tif`). Bei „Whole scene“ ohne `aoi` gilt die Maske des
+   Jobs, also die Vereinigung der Footprints.
+
+   **Gewählter Weg: der `tiler` wendet die `mask.tif` des Ergebnisses an** (Empfehlung Ottos). Gründe:
+   - Die Maske ist dieselbe wie im Download (rasterisiert aus der `aoi` des Rezepts mit `all_touched`, auf dem Raster
+     des Ergebnisses; ohne `aoi` die Vereinigung der Footprints, `intake.py::_whole_scenes_aoi`). Karte und Datei
+     können nicht auseinanderlaufen.
+   - Es braucht keinen Zustand im Browser. Die AOI ist nicht Teil des Jobeintrags (K5: nur `jobID`, `expires`, Titel
+     liegen im `sessionStorage`) und wäre nach einem Neuladen weg; die Footprints der Szenen eines Jobs kennt der
+     Layer ebenfalls nicht. Der Zuschnitt im Browser wie bei der Vorschau (`clipTileUrl`, c-2) hängt dagegen am
+     Zustand der Auswahl und der AOI des Tabs; er wäre nur gleichwertig, solange beides unverändert vorliegt, und für
+     „Whole scene“ bräuchte er die Footprints der Szenen aus der Auswahl, die der Job genommen hat.
+   - Ein API-Client, der den Link `tiles` nimmt, bekommt dieselben Kacheln.
+   - Kein zweiter Weg zur Ablage: `mask.tif` liegt schon unter `results/{result_id}/`; der `tiler` liest sie mit
+     demselben Schlüssel (`earthx-tiler`, nur `read`), derselben Prüfung der `result_id` (`404` vor jedem Zugriff),
+     derselben Frist (`410` ab `Last-Modified` von `result.tif` + 7 Tage − 60 s; ein Ergebnis ohne Maske ist `404`)
+     und demselben Log (`{resultID}`, Signatur geschwärzt). Beide Dateien teilen sich einen `HEAD`-Takt (60 s) und eine
+     Signatur-Runde (10 min).
+
+   *Umsetzung:* `api/result_tiles.py::ResultReader` liest die Kachel des Ergebnisses und dieselbe Kachel der Maske
+   (`nearest`, `indexes=1`) und maskiert, wo die Maske 0 ist. `ResultPath` trägt die Pfade beider Dateien. Das
+   TileJSON ändert sich nicht (Grenzen des Ergebnisses). Der Zuschnitt gilt für jede Darstellung gleich
+   (`rescale`, `colormap_name`, `bidx`).
+
+   *Kosten, gemessen* (synthetische Maske, deflate, 512er Blöcke, **ohne Übersichten**, wie sie der Worker schreibt):
+   Eine Kachel auf den untersten Stufen (ein Kachel deckt das ganze Raster) muss die Maske ganz lesen: 0,9 s bei
+   10 980² Pixeln (eine Sentinel-2-Szene), 3,1 s bei 30 000²; schon zwei Stufen darüber 0,03 s bzw. 0,11 s. Der Browser
+   fragt diese Stufen einmal je Ansicht an. Wer es schneller will, lässt den Worker die Maske als COG mit Übersichten
+   schreiben (Änderung in `processing`, das ändert die heruntergeladene `mask.tif`: nicht in diesem PR, nur Vorschlag).
+
+   *Nicht geändert:* `result.tif` und `mask.tif` im Speicher und im Download; ein Test liest beide Objekte vor und nach
+   einer Kachel und vergleicht die Bytes, und dass kein Pixel von `result.tif` maskiert ist.
+
+   *Tests:* `test_result_tiles.py` (nur die Pixel der Maske sind sichtbar für „links“ und „L-Form“ — die Vereinigung
+   eines „Whole scene“ —, die Maske nimmt nur weg; eine leere Maske gibt eine unsichtbare Kachel; dieselbe Maske für
+   jede Darstellung; ein Ergebnis ohne Maske ist `404` ohne Zugriff; beide URLs sind für den internen Endpunkt
+   signiert; Cache und Frist für beide Dateien; Gegenprobe ohne Maskierung: drei Tests fallen), `ProcessingResultLayer.test.tsx`
+   (ein Knopf ohne Menü; der Layer ist mit AOI, ohne AOI und nach einem Neuladen derselbe, ohne Zuschnitt im Browser).
+
+*Prüfanleitung, geändert:* Schritt 1 oben: in der Jobzeile „Add to layers“; das Ergebnis liegt nur über der Fläche
+(bei „AOI only“ die AOI, bei „Whole scene“ die Szenen) und ist außerhalb durchsichtig; die heruntergeladene
+`result.tif` ist weiter das ganze Rechteck.
