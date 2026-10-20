@@ -19,7 +19,7 @@ import pytest
 from earthx.catalog.registry import DatasetRegistry
 from earthx.runner import output
 from earthx.runner.cli import EXIT_HOST, EXIT_OK, EXIT_OTHER, EXIT_RECIPE, EXIT_SOURCE, exit_code, main
-from earthx.runner.recipe_file import MAX_RECIPE_BYTES
+from earthx.runner.recipe_file import MAX_RECIPE_BYTES, HostRefused, check_hosts, load_recipe
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import crop_data
 from tests.earthx.runner import support, targets
@@ -146,6 +146,17 @@ class TestARun:
         (folder,) = out.iterdir()
         assert list(folder.iterdir()) == []
 
+    def test_a_folder_that_cannot_be_finished_is_named_and_left_without_provenance(
+        self, tmp_path: Path, out: Path, served: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def full(*args: object, **kwargs: object) -> None:
+            raise OSError("no space left on device")
+
+        monkeypatch.setattr(output, "provenance_document", full)
+        assert _main("run", _file(tmp_path, support.band_math_recipe()), "--out", str(out)) == EXIT_OTHER
+        (folder,) = out.iterdir()
+        assert sorted(path.name for path in folder.iterdir()) == ["mask.tif", "recipe.json", "result.tif"]
+
 
 class TestRefusedBeforeReading:
     def test_check_names_the_hosts_and_reads_nothing(
@@ -181,7 +192,42 @@ class TestRefusedBeforeReading:
             entry["asset"]["dataset_id"] = "other"
         recipe["inputs"].append(second)
         registry = DatasetRegistry((synthetic, other))
-        assert _main("check", _file(tmp_path, recipe), registry=registry) == EXIT_HOST
+        loaded = load_recipe(support.recipe_file(recipe))  # two inputs: the core refuses it later, the hosts first
+        with pytest.raises(HostRefused, match="'other'"):
+            check_hosts(loaded.recipe, registry)
+        assert check_hosts(loaded.recipe, DatasetRegistry((synthetic, replace(other, source=synthetic.source)))) == (
+            support.HOST,
+        )
+
+    @pytest.mark.parametrize(
+        "href",
+        [
+            f"http://{support.HOST}/products/nir.tif",
+            f"https://{support.HOST}:8443/products/nir.tif",
+            f"https://user:secret@{support.HOST}/products/nir.tif",
+        ],
+        ids=["http", "port", "credentials"],
+    )
+    def test_an_address_on_a_declared_host_that_api_would_refuse(
+        self, tmp_path: Path, out: Path, served: list[str], capsys: pytest.CaptureFixture[str], href: str
+    ) -> None:
+        """The same check as at acceptance in `api`: scheme, credentials and port too, before any read."""
+        recipe = support.band_math_recipe()
+        recipe["inputs"][0]["resolved"][1]["asset"]["href"] = href
+        assert _main("run", _file(tmp_path, recipe), "--out", str(out)) == EXIT_HOST
+        assert served == [] and list(out.iterdir()) == []
+        assert "secret" not in capsys.readouterr().err
+
+    def test_a_recipe_the_core_does_not_run_is_refused_before_any_folder(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        recipe = support.band_math_recipe()
+        second = json.loads(json.dumps(recipe["inputs"][0]))
+        second["name"] = "b"
+        recipe["inputs"].append(second)
+        assert _main("check", _file(tmp_path, recipe)) == EXIT_RECIPE
+        assert _main("run", _file(tmp_path, recipe), "--out", str(out)) == EXIT_RECIPE
+        assert served == [] and list(out.iterdir()) == []
 
 
 class TestARecipeFileThatIsNotOne:
@@ -274,7 +320,8 @@ class TestTheProvenanceBlock:
         assert (
             _main("check", _file(tmp_path, support.recipe_file(support.band_math_recipe(), engine=engine))) == EXIT_OK
         )
-        assert "earthx 0.0.1 ->" in capsys.readouterr().err
+        error = capsys.readouterr().err
+        assert "other versions of earthx" in error and "0.0.1" not in error
 
 
 class TestReadingFails:

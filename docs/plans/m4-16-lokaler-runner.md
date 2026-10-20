@@ -563,3 +563,16 @@ und hält an (`CLAUDE.md`, „Fehlt der Zugang …“).
   Abweichung von §5: Es gibt keine eigene `test_import.py`; der Import-Test
   steht in `test_cli.py`.
 - **Doku:** `adr/0016` §12b, Log-Zeilen, §3 von `m4-processing-kern.md`.
+- **Nach dem Review (Subagent `reviewer`):**
+  - Die Hostprüfung ist jetzt dieselbe wie bei der Annahme in `api`:
+    `inspect_url` gegen `asset_hosts` prüft Schema, Zugangsdaten, Port und Host.
+    Dafür bekommt `readers` die Funktion `check_hrefs`; `processing.recipe.input_hosts`
+    ruft sie. Abweichung von §2.5 und §5: Zuvor verglich der Runner nur Hostnamen,
+    und eine `http`-Adresse auf einem erlaubten Host wäre erst beim Lesen mit 4
+    statt vor dem Lesen mit 3 abgewiesen worden.
+  - `check_scope` läuft vor dem Lesen und vor dem Laufordner (§3.2 Schritt 5).
+  - Ein Fehler beim Abschließen des Ordners endet mit 5, nicht mit einem
+    Traceback.
+  - Die Warnung zu anderen Versionen (K1) und die Meldung zu einem unbekannten
+    Datensatz geben keine Werte aus der Datei wieder.
+  - Die Gegenproben prüfen die Vergleichsfunktion selbst.

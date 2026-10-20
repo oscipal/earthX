@@ -94,8 +94,8 @@ def test_forbidden_modules_are_the_complement_of_the_allowed_ones(
     assert forbidden == expected
 
 
-def test_the_runner_reaches_only_datasets_and_registry_of_catalog() -> None:
-    """adr/0016 F2: a new module of `catalog` is forbidden to the runner until it is listed."""
+def test_the_two_catalog_modules_the_runner_may_import_exist() -> None:
+    """adr/0016 F2: the complement above forbids every other module of `catalog`, a new one included."""
     assert RUNNER_CATALOG_MODULES <= _catalog_submodules()
 
 

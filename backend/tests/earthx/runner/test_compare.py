@@ -143,13 +143,10 @@ class TestTheCounterTest:
 
     def test_another_constant_in_the_expression(self, tmp_path: Path) -> None:
         job, folder = _both(tmp_path, support.band_math_recipe(), support.band_math_recipe(support.EXPRESSION + " + 1"))
-        assert not numpy.array_equal(
-            _raster(job["workdir"] / "result.tif")[0], _raster(folder / "result.tif")[0], equal_nan=True
-        )
-        assert _sha256(job["workdir"] / "result.tif") != _sha256(folder / "result.tif")
+        with pytest.raises(AssertionError):
+            _assert_same(job, folder)
 
     def test_another_resampling(self, tmp_path: Path) -> None:
         job, folder = _both(tmp_path, support.reproject_recipe("bilinear"), support.reproject_recipe("nearest"))
-        assert not numpy.array_equal(
-            _raster(job["workdir"] / "result.tif")[0], _raster(folder / "result.tif")[0], equal_nan=True
-        )
+        with pytest.raises(AssertionError):
+            _assert_same(job, folder)

@@ -6,8 +6,9 @@ checked with :class:`~earthx.processing.recipe.Provenance`; it must say ``cloud`
 (adr/0016 §12b). The rest goes through the same strict models as in `api`, the
 expressions of band math through the parameter model of R5 before numexpr sees them.
 
-**The hosts (F4).** Every host an input reads lies on the ``asset_hosts`` of its dataset
-in the registry of this image, the check `api` makes at acceptance. A recipe from a third
+**The hosts (F4).** Every address of an input passes ``inspect_url`` against the
+``asset_hosts`` of its dataset in the registry of this image (scheme, credentials, port,
+host), the check `api` makes at acceptance. A recipe from a third
 party cannot send the runner to an arbitrary server, whose files GDAL would then parse on
 the user's machine (architekturplan 11).
 
@@ -84,20 +85,22 @@ def _cloud_provenance(block: Any) -> Provenance:
 
 
 def check_hosts(recipe: Recipe, registry: DatasetRegistry = DATASETS) -> tuple[str, ...]:
-    """The hosts the recipe reads, sorted, once each lies on its dataset's ``asset_hosts``; else :class:`HostRefused`."""
+    """The hosts the recipe reads, sorted, once each address passes against its dataset's ``asset_hosts``.
+
+    :class:`HostRefused` otherwise. A dataset is named only once the registry knows it,
+    so the text never repeats a value of the file.
+    """
     hosts: set[str] = set()
     for entry in recipe.inputs:
         try:
             config = registry.get(entry.dataset)
         except UnknownDatasetError:
-            raise HostRefused(f"dataset {entry.dataset!r} is not known to this runner") from None
+            raise HostRefused("a dataset of the recipe is not known to this runner") from None
         try:
-            named = input_hosts(entry)
+            named = input_hosts(entry, config.source.asset_hosts)
         except Exception as error:
             if failure_kind(error) != "rejected":
                 raise
-            raise HostRefused(f"an address of dataset {entry.dataset!r} names no valid host") from None
-        if not set(named) <= set(config.source.asset_hosts):
-            raise HostRefused(f"the recipe reads a host dataset {entry.dataset!r} does not declare")
+            raise HostRefused(f"the recipe reads an address dataset {config.dataset_id!r} does not declare") from None
         hosts.update(named)
     return tuple(sorted(hosts))

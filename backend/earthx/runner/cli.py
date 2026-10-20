@@ -30,8 +30,8 @@ from pathlib import Path
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.catalog.registry import DatasetRegistry
-from earthx.processing import RunResult, failure_kind, run, worker_environment
-from earthx.processing.errors import RecipeInvalid
+from earthx.processing import RunResult, check_scope, failure_kind, run, worker_environment
+from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
 from earthx.processing.recipe import RECIPE_VERSION, CropOutput, Recipe, engine_versions
 from earthx.runner.output import RunFolder, platform_info, runner_version
 from earthx.runner.recipe_file import HostRefused, RecipeFile, check_hosts, read_recipe_file
@@ -105,7 +105,8 @@ def _checked(path: Path, registry: DatasetRegistry) -> tuple[RecipeFile, tuple[s
     try:
         loaded = read_recipe_file(path)
         _raster_only(loaded.recipe)
-    except RecipeInvalid as error:
+        check_scope(loaded.recipe)
+    except (RecipeInvalid, UnsupportedRecipe) as error:
         _say(f"recipe refused: {error}")
         _say(f"this runner is {runner_version()} and runs recipe_version {RECIPE_VERSION}")
         return EXIT_RECIPE
@@ -124,13 +125,20 @@ def _raster_only(recipe: Recipe) -> None:
 
 
 def _compare_engine(loaded: RecipeFile) -> None:
-    """K1: another version of the core is named, not refused; equal bits are then not promised."""
+    """K1: another version of the core is named, not refused; equal bits are then not promised.
+
+    Only the names of what differs and this runner's own versions are printed, never a value
+    of the file.
+    """
     here = engine_versions()
     there = loaded.provenance.engine
-    differing = sorted(name for name in set(here) | set(there) if here.get(name) != there.get(name))
+    differing = sorted(name for name in here if here[name] != there.get(name))
     if differing:
-        changes = ", ".join(f"{name} {there.get(name, '-')} -> {here.get(name, '-')}" for name in differing)
-        _say(f"warning: the platform ran other versions ({changes}); the result may differ in its last bits")
+        mine = ", ".join(f"{name} {here[name]}" for name in differing)
+        _say(
+            f"warning: the platform ran other versions of {', '.join(differing)} (this runner: {mine}); "
+            "the result may differ in its last bits"
+        )
 
 
 def _run(loaded: RecipeFile, out: Path) -> int:
@@ -152,6 +160,11 @@ def _run(loaded: RecipeFile, out: Path) -> int:
     try:
         with worker_environment():
             result = run(loaded.recipe, workdir=folder.workdir, progress=progress)
+        if not isinstance(result, RunResult):
+            raise UnsupportedRecipe("an export is not run here")
+        folder.finish(
+            result, recipe_raw=loaded.raw, source=loaded.provenance, started=started, finished=datetime.now(UTC)
+        )
     except Exception as error:  # noqa: BLE001 - the runner's edge: every failure is named by its kind only
         folder.remove_workdir()
         kind = failure_kind(error)
@@ -160,10 +173,5 @@ def _run(loaded: RecipeFile, out: Path) -> int:
     except BaseException:
         folder.remove_workdir()
         raise
-    if not isinstance(result, RunResult):
-        folder.remove_workdir()
-        _say("run failed: unsupported_recipe")
-        return EXIT_RECIPE
-    folder.finish(result, recipe_raw=loaded.raw, source=loaded.provenance, started=started, finished=datetime.now(UTC))
     print(folder.path)
     return EXIT_OK

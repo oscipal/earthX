@@ -7,6 +7,7 @@ into a new folder, marked ``self_attested`` (Q12). It reaches no database, no qu
 object store and no internal API (KLAERUNGEN B9); nothing it computes goes back to the
 platform or into its cache (Q11).
 
-It imports only `processing` and `catalog.datasets` (adr/0016 F2, `.importlinter`); this
-file imports nothing, so that importing the package loads nothing else.
+It imports only `processing`, `catalog.datasets` and `catalog.registry` (adr/0016 F2,
+`.importlinter`); this file imports nothing, so that importing the package loads nothing
+else.
 """
