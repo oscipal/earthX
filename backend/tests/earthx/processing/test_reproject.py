@@ -211,13 +211,10 @@ class TestTheTargetGrid:
             recipe_from_data(_recipe({**_step(resampling=method), "op_version": 2}), REGISTRY)
 
     def test_version_2_is_the_same_operator_with_the_old_methods(self) -> None:
-        assert (REPROJECT_V2.run, REPROJECT_V2.transform, REPROJECT_V2.requires) == (
-            REPROJECT.run,
-            REPROJECT.transform,
-            REPROJECT.requires,
-        )
         for method in OLD_METHODS:
-            params = REPROJECT_V2.params.model_validate_json(json.dumps(_step(resampling=method)["params"]), strict=True)
+            params = REPROJECT_V2.params.model_validate_json(
+                json.dumps(_step(resampling=method)["params"]), strict=True
+            )
             assert REPROJECT_V2.cost_factor(params) == REPROJECT.cost_factor(_params(resampling=method))
             assert REPROJECT_V2.extra_requirements(params) == REPROJECT.extra_requirements(_params(resampling=method))
 

@@ -15,6 +15,7 @@ from the small scene to the large one: memory follows the block size, not the sc
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -83,6 +84,7 @@ def test_a_reprojection_stays_below_the_limit_and_does_not_follow_the_scene_size
             assert result.crs.to_epsg() == 3035
             assert result.count == 2
             assert result.width >= side * 0.99 and result.height >= side * 0.99
-        assert measured[size]["blocks"] >= (size // 1024) ** 2 + 1  # a pixel pass and a warp pass
+        # A pixel pass over the scene and a warp pass over the target grid.
+        assert measured[size]["blocks"] >= (size // 1024) ** 2 + math.ceil(side * 0.99 / 1024) ** 2
     assert measured[LARGE]["peak_mb"] < PEAK_LIMIT_MB
     assert growth <= growth_limit

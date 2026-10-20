@@ -26,7 +26,13 @@ class TestRegistry:
         assert set(REGISTRY) == {("band_math", 1), ("reproject", 2), ("reproject", 3)}
 
     def test_adding_operators_leaves_the_original_alone(self) -> None:
-        assert set(TEST_REGISTRY) == {("band_math", 1), ("reproject", 2), ("reproject", 3), ("scale", 1), ("coarsen", 1)}
+        assert set(TEST_REGISTRY) == {
+            ("band_math", 1),
+            ("reproject", 2),
+            ("reproject", 3),
+            ("scale", 1),
+            ("coarsen", 1),
+        }
         assert ("scale", 1) not in REGISTRY
 
     def test_it_cannot_be_changed_in_place(self) -> None:

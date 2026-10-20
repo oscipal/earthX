@@ -251,7 +251,7 @@ def order_schema(operators: OperatorRegistry, config: DatasetConfig | None = Non
     """The order as JSON Schema 2020-12, with the steps as a union over the operators (K8, adr/0014 §9).
 
     Built from the models the order is validated with, so the schema cannot promise what
-    ``parse_request`` refuses. ``steps`` takes one definition per registered operator in one
+    ``parse_request`` refuses. ``steps`` takes one definition per registered operator, in its highest
     version, ``op`` and ``op_version`` fixed, ``params`` the operator's own schema; with
     ``config`` only the operators applicable to that dataset, and the dataset fixed.
     """
