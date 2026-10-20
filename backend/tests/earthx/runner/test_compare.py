@@ -95,12 +95,14 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _raster(path: Path) -> tuple[numpy.ndarray, dict[str, Any], dict[str, str], list[int]]:
+def _raster(path: Path) -> tuple[numpy.ndarray, dict[str, Any], list[dict[str, str]], list[int]]:
+    """Pixels, profile, the tags of the dataset and of each band (the statistics, M4-32), overviews."""
     with rasterio.open(path) as dataset:
         profile = dict(dataset.profile)
         if isinstance(profile.get("nodata"), float) and math.isnan(profile["nodata"]):
             profile["nodata"] = "nan"  # NaN is unequal to itself, and the comparison is of the profile
-        return dataset.read(), profile, dataset.tags(), dataset.overviews(1)
+        tags = [dataset.tags(), *(dataset.tags(index) for index in dataset.indexes)]
+        return dataset.read(), profile, tags, dataset.overviews(1)
 
 
 def _assert_same(job: dict, folder: Path) -> None:
@@ -112,6 +114,7 @@ def _assert_same(job: dict, folder: Path) -> None:
         assert (job_profile, job_tags, job_overviews) == (local_profile, local_tags, local_overviews), name
         assert _sha256(job["workdir"] / name) == _sha256(folder / name), name
     assert provenance["properties"] == job["properties"]
+    assert all(band["statistics"]["count"] > 0 for band in job["properties"]["bands"])
     assert provenance["scaling"] == job["scaling"]
     assert provenance["engine"] == job["engine"]
 
