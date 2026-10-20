@@ -247,7 +247,6 @@ export interface OrderView {
 export interface OrderPart {
   unit: BatchUnit;
   order: Order | null;
-  key: string | null;
 }
 
 // The candidates only change with the selection and the AOI; the intersection
@@ -316,17 +315,12 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   };
   const builtParts = units.map((unit) => ({ unit, built: buildFor(unit.items.map((i) => i.id)) }));
   const built = builtParts[0]?.built ?? buildFor([]);
-  const parts: OrderPart[] = builtParts.map(({ unit, built: b }) => ({
-    unit,
-    order: b?.order ?? null,
-    key: b?.order ? canonicalJson(b.order) : null,
-  }));
+  const parts: OrderPart[] = builtParts.map(({ unit, built: b }) => ({ unit, order: b?.order ?? null }));
+  // The text of the order, or of all orders of a batch: one serialisation either way.
   const key =
-    runAs === 'one'
-      ? (parts[0]?.key ?? null)
-      : parts.length > 0 && parts.every((part) => part.order)
-        ? canonicalJson(parts.map((part) => part.order))
-        : null;
+    parts.length > 0 && parts.every((part) => part.order)
+      ? canonicalJson(runAs === 'one' ? parts[0].order : parts.map((part) => part.order))
+      : null;
   return {
     dataset,
     info,
@@ -429,6 +423,8 @@ function withExtraScenes(app: SelectionState, extra: ExtraScenes | null): Select
 
 let describing: AbortController | null = null;
 let estimating: AbortController | null = null;
+// The latest start; a start that finds another has taken over leaves the state alone.
+let startGeneration = 0;
 const trackers = new Map<string, () => void>();
 let nextStepKey = 1;
 let trackerOptions: TrackerOptions = {};
@@ -441,6 +437,14 @@ export function setTrackerOptions(options: TrackerOptions): void {
 function abortEstimate(): void {
   estimating?.abort();
   estimating = null;
+}
+
+// A change of the draft drops the review on its way: the answers would belong to
+// another order, and a batch would go on asking the source for them.
+function dropReview(): { reviewing: false } | Record<string, never> {
+  if (!estimating) return {};
+  abortEstimate();
+  return { reviewing: false };
 }
 
 function refusalOf(error: unknown, key: string, steps: readonly DraftStep[]): Refusal {
@@ -529,7 +533,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     saveStoredJobs(
       get()
         .jobs.filter((j) => j.phase !== 'gone' && j.phase !== 'dismissed')
-        .map(({ jobID, expires, title }) => ({ jobID, expires, ...(title ? { title } : {}) })),
+        .map(({ jobID, expires, title }) => ({ jobID, expires, title: title ?? undefined })),
     );
   };
 
@@ -605,9 +609,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   };
 
   // "<operators> · <dataset>", with the place in the batch for one of many.
-  const titleOf = (view: OrderView, position?: { index: number; total: number }): string => {
-    const operators = get().steps.map((step) => view.info?.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion)?.title ?? step.op);
-    return jobTitle({ operators, dataset: view.dataset?.title ?? view.dataset?.id ?? '', position });
+  // Made before the first job is placed: the draft may change while they are.
+  const titler = (view: OrderView) => {
+    const operators = get().steps.map(
+      (step) => view.info?.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion)?.title ?? step.op,
+    );
+    const dataset = view.dataset?.title ?? view.dataset?.id ?? '';
+    return (position?: { index: number; total: number }) => jobTitle({ operators, dataset, position });
   };
 
   // The jobs of the reviewed batch the server took in; one after the other, and a
@@ -617,19 +625,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     const batch = get().batch;
     if (!view.key || batch?.key !== view.key) return;
     const total = view.parts.length;
+    const titleOf = titler(view);
+    const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
+    let opened = false;
     const refusals: { label: string; message: string }[] = [];
     for (const [index, outcome] of batch.parts.entries()) {
       const part = view.parts[index];
       if (!outcome.doc || !part?.order) continue;
       try {
         const status = await placeJob(part.order);
-        set({ jobsOpen: true });
-        addJob(status.jobID, status.expires, status, titleOf(view, { index, total }));
+        if (!opened) set({ jobsOpen: true });
+        opened = true;
+        addJob(status.jobID, status.expires, status, titleOf({ index, total }));
       } catch (error) {
         refusals.push({ label: part.unit.label, message: refusalMessage(error) });
       }
     }
+    // A draft dropped meanwhile (`resetDraft`) has its own state by now.
+    if (mine !== startGeneration) return;
     // One review, these jobs: starting again needs a new review.
     set({ starting: false, batch: null, batchStartRefusals: refusals.length > 0 ? { key: view.key, refusals } : null });
   };
@@ -746,11 +760,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     resetDraft: () => {
       abortEstimate();
+      startGeneration += 1;
       set({ ...EMPTY_DRAFT });
     },
-    choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null }),
-    setArea: (area) => set({ area, reviewError: null, startError: null }),
-    setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null }),
+    choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null, ...dropReview() }),
+    setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
+    setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null, ...dropReview() }),
     addStep: (op, opVersion) => {
       const datasetId = useAppStore.getState().datasetId;
       const description = datasetId ? get().descriptions[datasetId] : undefined;
@@ -762,6 +777,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         steps: [...s.steps, { key, op, opVersion, values: initialValues(operator.form.supported ? operator.form.fields : []) }],
         reviewError: null,
         startError: null,
+        ...dropReview(),
       }));
     },
     updateStep: (key, name, value) =>
@@ -769,6 +785,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         steps: s.steps.map((step) => (step.key === key ? { ...step, values: { ...step.values, [name]: value } } : step)),
         reviewError: null,
         startError: null,
+        ...dropReview(),
       })),
     moveStep: (key, direction) =>
       set((s) => {
@@ -777,27 +794,29 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         if (index < 0 || target < 0 || target >= s.steps.length) return {};
         const steps = [...s.steps];
         [steps[index], steps[target]] = [steps[target], steps[index]];
-        return { steps, reviewError: null, startError: null };
+        return { steps, reviewError: null, startError: null, ...dropReview() };
       }),
     removeStep: (key) =>
       set((s) => ({
         steps: s.steps.filter((step) => step.key !== key),
         reviewError: null,
         startError: null,
+        ...dropReview(),
       })),
     togglePick: (asset) =>
       set((s) => ({
         picked: s.picked.includes(asset) ? s.picked.filter((a) => a !== asset) : [...s.picked, asset],
         reviewError: null,
         startError: null,
+        ...dropReview(),
       })),
-    setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null }),
+    setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
 
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
       const order = view.built?.order;
       set({ reviewAsked: true });
-      if (!order || !view.key || crsBlockReason(get().steps, get().crs)) return;
+      if (!order || !view.key || get().starting || crsBlockReason(get().steps, get().crs)) return;
       abortEstimate();
       const controller = new AbortController();
       estimating = controller;
@@ -818,7 +837,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             return { unit: part.unit, doc: await estimateOrder(part.order, controller.signal), refusal: null };
           } catch (error) {
             if (controller.signal.aborted || isAbort(error)) throw error;
-            return { unit: part.unit, doc: null, refusal: refusalOf(error, part.key ?? '', steps) };
+            return { unit: part.unit, doc: null, refusal: refusalOf(error, key, steps) };
           }
         });
         if (controller.signal.aborted) return;
@@ -841,14 +860,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         return;
       }
       if (s.estimate?.key !== view.key) return;
+      const title = titler(view)();
+      const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
         const status = await placeJob(order);
         // One estimate, one job: a second identical job needs its own review.
-        set({ starting: false, estimate: null, jobsOpen: true });
-        addJob(status.jobID, status.expires, status, titleOf(view));
+        if (mine === startGeneration) set({ starting: false, estimate: null });
+        set({ jobsOpen: true });
+        addJob(status.jobID, status.expires, status, title);
       } catch (error) {
-        set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
+        if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
     },
 

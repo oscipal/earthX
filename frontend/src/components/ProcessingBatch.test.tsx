@@ -255,6 +255,8 @@ describe('what "Run as" offers', () => {
     const perScene = button('One job per scene (26)');
     expect(perScene.disabled).toBe(true);
     expect(perScene.title).toBe('At most 25 jobs at once');
+    // not only in the tooltip: a touch screen has none
+    expect(text()).toContain('At most 25 jobs at once.');
   });
 
   it('takes 25 jobs', async () => {
@@ -375,7 +377,7 @@ describe('reviewing a batch', () => {
     await ndvi();
     click(button('One job per scene (2)'));
     await review();
-    expect(button('Start 2 jobs').disabled).toBe(true);
+    expect(button('Start 0 of 2 jobs').disabled).toBe(true);
     expect([...container.querySelectorAll('[role="alert"]')]).toHaveLength(2);
   });
 
@@ -386,7 +388,8 @@ describe('reviewing a batch', () => {
     await ndvi();
     click(button('One job per scene (2)'));
     await review();
-    expect(text()).toContain('Left out (the AOI misses them): S2, S2');
+    expect(text()).toContain('Left out (the AOI misses them): S2');
+    expect(text()).not.toContain('S2, S2');
   });
 
   it('drops the sum when a step changes, and asks again', async () => {
@@ -519,7 +522,10 @@ describe('starting a batch', () => {
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.1, 50.1, 10.2, 50.2]) }));
     await flush();
     expect(button(/^Start 2 jobs$/).disabled).toBe(true);
-    await start(/^Start 2 jobs$/);
+    // the button is shut, but the store must hold the line on its own
+    await act(async () => {
+      await useProcessingStore.getState().startJob();
+    });
     expect(placed).toHaveLength(0);
   });
 });
@@ -584,6 +590,179 @@ describe('the title of a job (K5)', () => {
     await review();
     await start('Start job');
     expect(useProcessingStore.getState().jobs.map((j) => j.title)).toEqual(['Band math · Sentinel-2 L2A']);
+  });
+});
+
+describe('a draft that changes while the batch is on its way', () => {
+  it('names the jobs after the order that was started, not the draft as it is by then', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    placeFor = async (_ids, n) => {
+      if (n === 1) await held;
+      return json(statusDoc(`Job${String(n).padStart(19, '0')}`));
+    };
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    click(button('Start 2 jobs'));
+    await flush();
+    click(button('＋ Reproject and resample'));
+    release();
+    await flush();
+    expect(useProcessingStore.getState().jobs.map((j) => j.title).sort()).toEqual([
+      'Band math · Sentinel-2 L2A · 1/2',
+      'Band math · Sentinel-2 L2A · 2/2',
+    ]);
+  });
+
+  it('does not review while the jobs are being started', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    placeFor = async (_ids, n) => {
+      if (n === 1) await held;
+      return json(statusDoc(`Job${String(n).padStart(19, '0')}`));
+    };
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    const before = estimates.length;
+    click(button('Start 2 jobs'));
+    await flush();
+    expect(button('Review').disabled).toBe(true);
+    await act(async () => {
+      await useProcessingStore.getState().reviewOrder();
+    });
+    expect(estimates).toHaveLength(before);
+    release();
+    await flush();
+  });
+
+  it('lets a start that was overtaken by a new draft leave the new draft alone', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    placeFor = async (_ids, n) => {
+      if (n === 1) await held;
+      return json(statusDoc(`Job${String(n).padStart(19, '0')}`));
+    };
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    click(button('Start 2 jobs'));
+    await flush();
+    act(() => useProcessingStore.getState().resetDraft());
+    expect(useProcessingStore.getState().starting).toBe(false);
+    act(() => useProcessingStore.setState({ starting: true }));
+    release();
+    await flush();
+    // the old start ended; the flag of the draft that began meanwhile is not its to clear
+    expect(useProcessingStore.getState().starting).toBe(true);
+  });
+
+  it('stops asking for estimates when a step changes', async () => {
+    let calls = 0;
+    estimateFor = async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return json(estimateOf());
+    };
+    selectPasses([sceneIds(12)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (12)'));
+    click(button('Review'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir - red');
+    const seen = calls;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(calls).toBeLessThanOrEqual(seen + 4);
+    expect(calls).toBeLessThan(12);
+    expect(useProcessingStore.getState().reviewing).toBe(false);
+    expect(useProcessingStore.getState().batch).toBeNull();
+  });
+
+  it('stops asking for estimates when "Run as" changes', async () => {
+    estimateFor = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return json(estimateOf());
+    };
+    selectPasses([sceneIds(12)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (12)'));
+    click(button('Review'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    click(button('One job'));
+    expect(useProcessingStore.getState().reviewing).toBe(false);
+  });
+
+  it('drops a batch review when the dataset changes', async () => {
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    expect(useProcessingStore.getState().batch).not.toBeNull();
+    act(() => useAppStore.setState({ datasetId: 'cop-dem-glo-30' }));
+    expect(useProcessingStore.getState().batch).toBeNull();
+    expect(useProcessingStore.getState().runAs).toBe('one');
+  });
+
+  it('shows a part that could not be reached as a line of its own and starts the rest', async () => {
+    estimateFor = (ids) => {
+      if (ids[0] === 'S2') throw new TypeError('Failed to fetch');
+      return json(estimateOf());
+    };
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    await review();
+    const alerts = [...container.querySelectorAll('[role="alert"]')].map((a) => a.textContent);
+    expect(alerts).toEqual(['S2: Failed to fetch']);
+    expect(button('Start 2 of 3 jobs').disabled).toBe(false);
+  });
+});
+
+describe('the buttons of a reviewed batch', () => {
+  it('says that the server refused every job, with the count on the button', async () => {
+    estimateFor = () => problem(422, 'no good');
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    const startButton = button('Start 0 of 2 jobs');
+    expect(startButton.disabled).toBe(true);
+    expect(startButton.title).toBe('The server refused every job');
+  });
+
+  it('opens the list of jobs once, however many jobs are started', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    await review();
+    let opened = 0;
+    const unsubscribe = useProcessingStore.subscribe((s, prev) => {
+      if (s.jobsOpen && !prev.jobsOpen) opened += 1;
+      if (s.jobsOpen && s.jobs.length === 1 && prev.jobs.length === 0) act(() => useProcessingStore.getState().closeJobs());
+    });
+    await start('Start 3 jobs');
+    unsubscribe();
+    expect(placed).toHaveLength(3);
+    expect(opened).toBe(1);
   });
 });
 

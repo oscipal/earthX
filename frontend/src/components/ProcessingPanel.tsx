@@ -195,30 +195,39 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
 function RunAsChoice({ view }: { view: OrderView }) {
   const setRunAs = useProcessingStore((s) => s.setRunAs);
   if (view.runChoices.length < 2) return null;
+  const limits = [...new Set(view.runChoices.flatMap((choice) => (choice.disabled ? [choice.disabled] : [])))];
   return (
-    <div className="pp-toggle" role="group" aria-label="Run as">
-      <span className="pp-help">Run as:</span>
-      {view.runChoices.map((choice) => (
-        <button
-          key={choice.value}
-          type="button"
-          className={`pp-seg${view.runAs === choice.value ? ' on' : ''}`}
-          aria-pressed={view.runAs === choice.value}
-          disabled={choice.disabled !== null}
-          title={choice.disabled ?? undefined}
-          onClick={() => setRunAs(choice.value)}
-        >
-          {choice.label}
-        </button>
+    <>
+      <div className="pp-toggle" role="group" aria-label="Run as">
+        <span className="pp-help">Run as:</span>
+        {view.runChoices.map((choice) => (
+          <button
+            key={choice.value}
+            type="button"
+            className={`pp-seg${view.runAs === choice.value ? ' on' : ''}`}
+            aria-pressed={view.runAs === choice.value}
+            disabled={choice.disabled !== null}
+            title={choice.disabled ?? undefined}
+            onClick={() => setRunAs(choice.value)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+      {limits.map((limit) => (
+        <p key={limit} className="pp-help">
+          {limit}.
+        </p>
       ))}
-    </div>
+    </>
   );
 }
 
 // The review of a batch: the sum over the jobs the server took, and a line for each it refused.
-function BatchEstimate({ parts, skipped }: { parts: readonly PartOutcome[]; skipped: readonly string[] }) {
+function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
   const taken = parts.flatMap((part) => (part.doc ? [part.doc] : []));
   const refused = parts.filter((part) => part.refusal);
+  const skipped = [...new Set(taken.flatMap((doc) => doc.skippedItems))];
   const total = totalOf(taken);
   return (
     <div className="pp-estimate" aria-label="Estimate">
@@ -228,7 +237,7 @@ function BatchEstimate({ parts, skipped }: { parts: readonly PartOutcome[]; skip
             {total.jobs} job{total.jobs === 1 ? '' : 's'} · about {formatMegapixels(total.outputPixels)},{' '}
             {formatBytes(total.size)}, {total.units.toFixed(1)} units in total
           </p>
-          <p>{formatDuration(total.duration)} of work</p>
+          {total.duration && <p>{formatDuration(total.duration)} of work</p>}
           <p className="pp-help">Jobs run 2 at a time per source; the rest wait.</p>
         </>
       )}
@@ -373,8 +382,15 @@ export default function ProcessingPanel() {
     ? 'Starting…'
     : view.runAs === 'one'
       ? 'Start job'
-      : `Start ${taken > 0 && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
+      : `Start ${batch && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
   const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
+  const startTitle = startReady
+    ? view.runAs === 'one'
+      ? 'Start this order as a job'
+      : 'Start the jobs the server took'
+    : batch
+      ? 'The server refused every job'
+      : 'Review the order first';
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
@@ -592,7 +608,7 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="ghost-btn"
-              disabled={p.reviewing || !!crsBlock}
+              disabled={p.reviewing || p.starting || !!crsBlock}
               title={crsBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
@@ -602,7 +618,7 @@ export default function ProcessingPanel() {
               type="button"
               className="primary-btn"
               disabled={!startReady || p.starting || !!crsBlock}
-              title={crsBlock ?? (startReady ? 'Start this order as a job' : 'Review the order first')}
+              title={crsBlock ?? startTitle}
               onClick={() => void p.startJob()}
             >
               {startLabel}
@@ -620,9 +636,7 @@ export default function ProcessingPanel() {
               <p className="pp-help">An estimate, not a promise.</p>
             </div>
           )}
-          {batch && (
-            <BatchEstimate parts={batch} skipped={batch.flatMap((part) => part.doc?.skippedItems ?? [])} />
-          )}
+          {batch && <BatchEstimate parts={batch} />}
           {startRefusals.map((refusal) => (
             <p key={refusal.label} className="hint-text error" role="alert">
               {refusal.label}: {refusal.message}

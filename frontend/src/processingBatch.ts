@@ -94,8 +94,9 @@ export interface EstimateTotal {
   outputPixels: number;
   size: number;
   units: number;
-  // `PT<seconds>S`, the form the route writes.
-  duration: string;
+  // `PT<seconds>S`, the form the route writes; `null` when a job names its
+  // duration in another form (the sum would be a guess).
+  duration: string | null;
 }
 
 // `PT12.3S` → 12.3; anything else is `null`.
@@ -105,14 +106,15 @@ export function secondsOf(duration: string): number | null {
 }
 
 export function totalOf(docs: readonly EstimateDocument[]): EstimateTotal {
-  let seconds = 0;
-  for (const doc of docs) seconds += secondsOf(doc.estimate.duration) ?? 0;
+  const seconds = docs.map((doc) => secondsOf(doc.estimate.duration));
+  const known = seconds.every((value): value is number => value !== null);
+  const sum = known ? seconds.reduce((a, b) => a + b, 0) : 0;
   return {
     jobs: docs.length,
     outputPixels: docs.reduce((sum, doc) => sum + doc.estimate.outputPixels, 0),
     size: docs.reduce((sum, doc) => sum + doc.estimate.size, 0),
     units: docs.reduce((sum, doc) => sum + doc.estimate.units, 0),
-    duration: `PT${Math.round(seconds * 10) / 10}S`,
+    duration: known ? `PT${Math.round(sum * 10) / 10}S` : null,
   };
 }
 

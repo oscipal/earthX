@@ -142,8 +142,8 @@ describe('the estimate as a sum', () => {
     expect(totalOf([])).toEqual({ jobs: 0, outputPixels: 0, size: 0, units: 0, duration: 'PT0S' });
   });
 
-  it('counts a duration in a form it does not know as no work, instead of NaN', () => {
-    expect(totalOf([doc('P1D', 1, 1, 1), doc('PT2S', 1, 1, 1)]).duration).toBe('PT2S');
+  it('names no sum of work when a duration has a form it does not know', () => {
+    expect(totalOf([doc('PT1M30S', 1, 1, 1), doc('PT2S', 1, 1, 1)]).duration).toBeNull();
     expect(secondsOf('P1D')).toBeNull();
     expect(secondsOf('PT12.5S')).toBe(12.5);
   });

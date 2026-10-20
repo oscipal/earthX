@@ -143,6 +143,9 @@ export interface StoredJob {
 
 const MAX_TITLE_LENGTH = 200;
 
+const keptTitle = (title: unknown): { title: string } | Record<string, never> =>
+  typeof title === 'string' && title !== '' && title.length <= MAX_TITLE_LENGTH ? { title } : {};
+
 function storage(): Storage | null {
   try {
     return globalThis.sessionStorage ?? null;
@@ -166,8 +169,7 @@ export function loadStoredJobs(now: number = Date.now()): StoredJob[] {
       const end = Date.parse(expires);
       if (Number.isNaN(end) || end <= now) continue;
       if (jobs.some((j) => j.jobID === jobID)) continue;
-      const named = typeof title === 'string' && title !== '' && title.length <= MAX_TITLE_LENGTH;
-      jobs.push({ jobID, expires, ...(named ? { title } : {}) });
+      jobs.push({ jobID, expires, ...keptTitle(title) });
     }
     return jobs;
   } catch {
@@ -181,7 +183,7 @@ export function saveStoredJobs(jobs: readonly StoredJob[]): void {
     if (!target) return;
     if (jobs.length === 0) target.removeItem(JOBS_STORAGE_KEY);
     else {
-      const kept = jobs.map(({ jobID, expires, title }) => ({ jobID, expires, ...(title ? { title } : {}) }));
+      const kept = jobs.map(({ jobID, expires, title }) => ({ jobID, expires, ...keptTitle(title) }));
       target.setItem(JOBS_STORAGE_KEY, JSON.stringify(kept));
     }
   } catch {
