@@ -1853,7 +1853,7 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
 - **T2 ↔ T2L (§6.3 Zeile 1):** Für alle vier neuen Methoden sind 1 und 4 Threads bitgleich, ganz wie blockweise, und die Wiederholung ist bitgleich (Plan §7.3).
 - **Speicher (§3.5, M4-10b):**
   - Bei 4096² liegt jede neue Methode gleichauf mit `bilinear`.
-  - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image.
+  - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
 ## 16. Quellen
