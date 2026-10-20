@@ -9,6 +9,10 @@ the names inside the ZIP. `access.download` builds the crop in memory from them;
 without loading `access.download` — so the two cannot drift apart, and the child of
 a job imports nothing it does not run.
 
+The order of a mosaic (:func:`target_crs`, :func:`mosaic_order`) sits next to its rule
+(:func:`merge_first_valid`) since M4-17a: the mosaic job sorts with it in `api`, and the mosaic
+tile of the tiler reads in the same order without loading the worker core (S5, KE4).
+
 Cut out of `access/download.py` (M4-11a); that module still offers every name here.
 """
 
@@ -16,12 +20,15 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import numpy
 import rasterio
+from rasterio.crs import CRS
+from rasterio.errors import CRSError
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds as transform_from_bounds
 from rasterio.warp import calculate_default_transform
@@ -55,8 +62,10 @@ __all__ = [
     "mask_filename",
     "mask_profile",
     "merge_first_valid",
+    "mosaic_order",
     "native_crop_grid",
     "rasterize_aoi",
+    "target_crs",
 ]
 
 # Conservative fallback pixel dimension used only when an asset's `gsd` cannot
@@ -420,3 +429,31 @@ def merge_first_valid(blocks: Iterable[numpy.ma.MaskedArray]) -> numpy.ma.Masked
     if mosaic is None:
         raise ValueError("a mosaic has at least one block")
     return mosaic
+
+
+_NO_EPSG = 1 << 30
+
+
+def _epsg(crs: str) -> int:
+    try:
+        return CRS.from_user_input(crs).to_epsg() or _NO_EPSG
+    except CRSError:
+        return _NO_EPSG
+
+
+def target_crs(crs_by_item: Mapping[str, str | None]) -> str | None:
+    """The CRS most items are in; a tie goes to the smaller EPSG number (F4), whatever the order.
+
+    ``None`` when no item names its CRS (a DEM tile without ``proj:code``): the core then
+    takes the CRS of the first file.
+    """
+    counts = Counter(crs for crs in crs_by_item.values() if crs is not None)
+    if not counts:
+        return None
+    return min(counts, key=lambda crs: (-counts[crs], _epsg(crs), crs))
+
+
+def mosaic_order(crs_by_item: Mapping[str, str | None]) -> list[str]:
+    """The items in the order the mosaic reads them: those in the target CRS first, each part by id (F3)."""
+    target = target_crs(crs_by_item)
+    return sorted(crs_by_item, key=lambda item_id: (crs_by_item[item_id] != target, item_id))
