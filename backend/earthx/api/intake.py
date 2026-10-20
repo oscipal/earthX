@@ -56,6 +56,7 @@ from shapely.geometry import box, mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 
+from earthx.access.crop_rules import mosaic_order
 from earthx.access.download import (
     AOI_FILENAME,
     CITATION_FILENAME,
@@ -92,7 +93,7 @@ from earthx.catalog.registry import (
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
 from earthx.processing.export import Attachments
-from earthx.processing.mosaic import lies_on_grid, mosaic_order
+from earthx.processing.mosaic import lies_on_grid
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands, estimate
 from earthx.processing.recipe import (
@@ -690,7 +691,7 @@ def _one_overpass(
 
     The scenes share the overpass key of the registry (``results_group_by``, P19), the dataset
     offers reprojection (a scene off the grid is warped), and a Zarr store lies in one CRS. The
-    list is then sorted by :func:`~earthx.processing.mosaic.mosaic_order`, so that the same
+    list is then sorted by :func:`~earthx.access.crop_rules.mosaic_order`, so that the same
     overpass gives the same recipe however the order named its scenes. A group of one scene
     is left alone; more than one group is not a raster job.
     """

@@ -9,8 +9,10 @@ read off its value. Everything is served through the real `readers` (``sources.s
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import threading
+import zipfile
 from pathlib import Path
 
 import numpy
@@ -22,10 +24,10 @@ from rio_cogeo.cogeo import cog_translate, cog_validate
 from rio_cogeo.profiles import cog_profiles
 from shapely.geometry import box, mapping
 
+from earthx.access.crop_rules import mosaic_order, target_crs
 from earthx.processing import RunCancelled, run
 from earthx.processing import core as core_module
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
-from earthx.processing.mosaic import mosaic_order, target_crs
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import recipe_from_data
 from earthx.processing.source import Source
@@ -481,10 +483,8 @@ class TestTheRuleOfTheExport:
             "recipe_version": 1, "inputs": [entry], "aoi": aoi, "steps": [], "output": output,
         }  # fmt: skip
 
-    @pytest.mark.parametrize("items", [["A", "B"], ["B", "A"]])
-    def test_the_same_scene_wins_at_the_same_places(
-        self, items: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def _outputs(self, items: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+        """The mosaic job's raster and the export's ``red.tif``, both over ``items`` in that order."""
         from earthx.processing.export import Attachments
         from tests.earthx.processing.recipes import CROP
 
@@ -508,14 +508,19 @@ class TestTheRuleOfTheExport:
             recipe_from_data(self._recipes(items, dict(CROP), footprints=True) | {"recipe_id": "R" * 22}, OPERATORS),
             workdir=export_dir, progress=lambda done, total: None, operators=OPERATORS, attachments=attachments,
         )  # fmt: skip
-        import zipfile
-
         with zipfile.ZipFile(export.path) as archive:
             (export_dir / "red.tif").write_bytes(archive.read("red.tif"))
+        return {"mosaic": mosaic.path, "export": export_dir / "red.tif"}
+
+    @pytest.mark.parametrize("items", [["A", "B"], ["B", "A"]])
+    def test_the_same_scene_wins_at_the_same_places(
+        self, items: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        outputs = self._outputs(items, tmp_path, monkeypatch)
         # points of a zone-32 line: A alone, in A's gap that B fills, in A ∩ B where A has data, B alone
         probes = {"a-only": 601000.0, "gap": 603250.0, "overlap": 603750.0, "b-only": 606000.0}
         winners = {}
-        for name, path in (("mosaic", mosaic.path), ("export", export_dir / "red.tif")):
+        for name, path in outputs.items():
             with rasterio.open(path) as dataset:
                 data = dataset.read(1)
                 for label, x in probes.items():
@@ -531,3 +536,26 @@ class TestTheRuleOfTheExport:
         assert winners["mosaic", "gap"] == 222
         assert winners["mosaic", "overlap"] == {"A": 111, "B": 222}[items[0]]
         assert winners["mosaic", "b-only"] == 222
+
+    #: SHA-256 over CRS, transform, values and mask of each output, recorded before `target_crs` and
+    #: `mosaic_order` moved from `processing.mosaic` to `access.crop_rules` (M4-17a, KE4).
+    DIGESTS = {
+        "mosaic": "99039f1f59bdcd0cf7983a98d490fa5fa1674272cec8d9c1899511e1ed0d3daa",
+        "export": "91bf9ecd5f6b016256ff9a9f5812868535df49e108a019959234f4f4960cd2c0",
+    }
+
+    @pytest.mark.parametrize("asked", [{"B": ZONE_32, "A": ZONE_32}, {"A": ZONE_32, "B": ZONE_32}])
+    def test_both_compute_the_same_bytes_as_before_the_order_moved(
+        self, asked: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        outputs = self._outputs(mosaic_order(asked), tmp_path, monkeypatch)
+        assert {name: _digest(path) for name, path in outputs.items()} == self.DIGESTS
+
+
+def _digest(path: Path) -> str:
+    with rasterio.open(path) as dataset:
+        data = dataset.read(masked=True)
+        digest = hashlib.sha256(f"{dataset.crs}|{tuple(dataset.transform)}|{data.dtype}|{data.shape}".encode())
+    digest.update(data.data.tobytes())
+    digest.update(numpy.ma.getmaskarray(data).tobytes())
+    return digest.hexdigest()
