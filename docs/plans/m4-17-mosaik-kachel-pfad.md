@@ -786,15 +786,19 @@ keine Route im `tiler`, das Frontend unverändert.
     ersten Szene.
   - `EarthxMosaicTilerFactory` — nur `tile` und `tilejson` von
     `EarthxTilerFactory` (dieselbe Zoomprüfung des TileJSON).
-- **Befund bei der Umsetzung [M]:** `rasterio.Env` gilt nur in dem Thread, der
-  es betritt; die Lese-Threads von `mosaic_reader` sehen es nicht (die
-  GDAL-Optionen selbst sind global gesetzt und damit sichtbar, rasterios
-  eigenes Env aber nicht). Die Umgebung des Threads zu kopieren scheitert,
-  sobald sie AWS-Optionen enthält („GDAL's AWS config options can not be
-  directly set“). Deshalb reicht die Fabrik dem Reader genau die
-  `environment_dependency` der Route weiter (`MosaicReaderParams`), und jede
-  Szene wird unter `rasterio.Env(**gdal_config)` gelesen. Ein Test prüft das
-  in den Threads.
+- **Befund bei der Umsetzung [M], berichtigt nach dem Review:** Die Lese-Threads
+  von `mosaic_reader` sehen die Konfiguration der Route nicht. Die Route läuft im
+  Threadpool von Starlette, und dort setzt rasterio 1.5.2 die Optionen nur für
+  den eigenen Thread (`CPLSetThreadLocalConfigOption`, `rasterio/_env.pyx`);
+  ohne erneutes `rasterio.Env` fehlten in den Lese-Threads also auch die
+  GDAL-Optionen aus `gateway.gdal_options` (Timeouts, erlaubte Endungen u. a.,
+  B8). Die Umgebung des Threads zu kopieren scheitert, sobald sie AWS-Optionen
+  enthält („GDAL's AWS config options can not be directly set“). Deshalb reicht
+  die Fabrik dem Reader genau die `environment_dependency` der Route weiter
+  (`MosaicReaderParams`), und jede Szene wird unter `rasterio.Env(**gdal_config)`
+  gelesen. Ein Test prüft in den Lese-Threads beides: rasterios Env und GDAL
+  selbst (`get_gdal_config`). Eine übergebene `reader_dependency` lehnt die
+  Fabrik ab, weil sie diese Weitergabe ersetzen würde.
 - **Tests** (`tests/earthx/access/test_mosaic_tiles.py`, synthetische Szenen
   von Zone 32, kein Netz): Naht ohne Lücke (§4.8 Test 1); Überlappung nach
   Listenreihenfolge; Szene außerhalb der Kachel stört nicht, keine Szene →
@@ -802,7 +806,17 @@ keine Route im `tiler`, das Frontend unverändert.
   (Test 4); GDAL-Konfiguration in jedem Lese-Thread; nur zwei Routen, kein
   Parameter `url`/`aoi`/`bbox`/`geometry`/`intersects` (Test 9, Teil);
   TileJSON mit Lage aller Szenen und freigegebenen Stufen; zwei frische Apps,
-  gleiche Bytes (Test 8); `MosaicScenes` und Reader weisen anderes ab.
+  gleiche Bytes (Test 8); `MosaicScenes` und Reader weisen anderes ab. Nach
+  dem Review dazu: Eine unlesbare Szene lässt die Kachel scheitern, statt eine
+  andere gewinnen zu lassen; ein Mosaik aus zwei Zarr-Szenen (KE1); der
+  Leichtstart-Test prüft, dass `access.mosaic_tiles` und `access.crop_rules`
+  den Worker-Kern nicht laden (KE4).
+- **Grenzen des Vergleichstests:** Er vergleicht Daten und Maske, nicht die
+  Datei, und beide Reihenfolgen der Eingabe liegen in Zone 32; die
+  CRS-Vorrangregel von `target_crs` decken die Einheitstests in
+  `test_mosaic.py` (`TestTheOrderOfAnOverpass`) ab. Ein Wechsel von GDAL oder
+  PROJ kann die Prüfsummen ändern, ohne dass sich fachlich etwas ändert; dann
+  sind sie neu aufzunehmen, mit Begründung im PR.
   Test 3 (Vorfilter) gehört zur Pfad-Abhängigkeit und kommt mit M4-17b.
 - **Doku:** `architekturplan.md` 6.3 berichtigt, Nachtrag in `adr/0006` §5
   („Zu Frage 4“), Folge 1 dort als erledigt markiert; Log-Zeilen (Freigabe,
@@ -831,6 +845,14 @@ aus.“ Grundlage ist dieser Plan: §4.1–§4.4, §4.7, §4.8 (Tests 2, 3, 5–
   liegen (§4.3 Punkt 5); Messung im PR.
 - Docstring von `ViewerInfo` nachziehen (KE8); Prüfanleitung A (§9) gegen den
   laufenden `tiler` prüfen und eintragen.
+- Aus dem Review von M4-17a, für die Fabrik im `tiler`: eine eigene
+  `path_dependency` setzen (die Vorgabe von TiTiler führt `url`); als
+  `layer_dependency` `BidxParams` wie die Einzelkachel, damit `expression` nicht
+  durchgeht (§4.8 Test 7); verschiedene Bandzahlen der Szenen enden in
+  rio-tiler mit `AssertionError` — vorher prüfen und mit Grund ablehnen, nie
+  `500`; eine eingebettete Farbtabelle einer Szene trägt der Mosaik-Reader
+  nicht (`colormap`), heute folgenlos, weil die Registry nur `colormap_name`
+  setzt.
 
 **M4-17c — Frontend.** Neue Session nach dem Merge von M4-17b.
 **Startsatz:** „Führe Aufgabe M4-17c aus `docs/plans/m4-processing-kern.md`

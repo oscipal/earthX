@@ -573,8 +573,8 @@ Item-Liste in der URL (M1), wie oben empfohlen; Such-ID und Inhaltsadresse
 (`plans/m4-17-mosaik-kachel-pfad.md` §3). Abweichend von oben:
 
 - **Grenzen** gemessen statt übernommen: höchstens **64** Items je URL (ein
-  Überflug über einer landesgroßen Fläche hat bis 60 Szenen, die 22 oben galten
-  einem kleineren Rechteck), höchstens **12** Szenen je Kachel nach dem
+  Überflug über 5–16° O, 45–55° N hat bis 60 Szenen; die 22 oben galten einem
+  kleineren landesgroßen Rechteck), höchstens **12** Szenen je Kachel nach dem
   Vorfilter über den Footprint, Mosaik-Kacheln erst ab **z8**, je Portion
   **4** Szenen parallel (Plan §2.2, §5).
 - **Reihenfolge** wie der Mosaik-Job (M4-12 F3/F4): Der Server sortiert mit

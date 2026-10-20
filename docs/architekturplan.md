@@ -404,10 +404,10 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 - Der `tiler`-Prozess liefert Tiles, Quicklooks, Punktabfragen, Zeitreihen am Punkt und Statistik pro Polygon.
 - Empfehlung: neue Endpunkte auf den **TiTiler-Fabriken** aufbauen (gleiche Basis wie das vorhandene rio-tiler, ebenfalls FastAPI). Das bringt Ausdrücke/Band-Math, Colormaps, Rescaling, Algorithmen und OGC-konforme Tile-Endpunkte mit, statt sie einzeln nachzubauen.
 - Mosaike über mehrere Szenen: Die Kachel-URL trägt die Szenen eines Überflugs als Item-Liste (`item=` je Szene, höchstens 64); der `tiler` prüft, filtert je Kachel über den Footprint, sortiert wie der Mosaik-Job und mischt nach dem ersten gültigen Pixel. Keine Such-ID: Eine ID, deren Eintrag ablaufen kann, nähme der URL genau die Eigenschaft, das Bild vollständig zu bestimmen, um derentwillen sie CDN-fähig ist (`adr/0006` §5, Nachtrag M4-17; `plans/m4-17-mosaik-kachel-pfad.md`).
-
-**Nachtrag 2026-10-20 (M4-17, `adr/0006` §6 Folge 1):** Der frühere Satz „Suchergebnis wird unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind“ ist durch die Item-Liste in der URL ersetzt; die Berichtigung war seit dem 20.09.2026 fällig.
 - Tile-URLs enthalten alle Parameter (oder eine Rezept-ID) und sind damit vollständig per HTTP cachebar.
 - GDAL-Konfiguration für Fernzugriff zentral setzen (kein Directory-Listing beim Öffnen, Zusammenfassen benachbarter Ranges, HTTP/2-Multiplexing, Header-Cache).
+
+**Nachtrag 2026-10-20 (M4-17, `adr/0006` §6 Folge 1):** Der frühere Satz „Suchergebnis wird unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind“ ist durch die Item-Liste in der URL ersetzt; die Berichtigung war seit dem 20.09.2026 fällig.
 
 ### 6.4 Download-Vermittlung
 
