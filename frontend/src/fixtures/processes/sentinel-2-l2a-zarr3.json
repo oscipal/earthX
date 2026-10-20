@@ -242,7 +242,7 @@
               "T2"
             ]
           },
-          "step_reproject_v2": {
+          "step_reproject_v3": {
             "additionalProperties": false,
             "description": "Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
             "properties": {
@@ -250,7 +250,7 @@
                 "const": "reproject"
               },
               "op_version": {
-                "const": 2
+                "const": 3
               },
               "params": {
                 "additionalProperties": false,
@@ -269,11 +269,43 @@
                     "type": "string"
                   },
                   "resampling": {
-                    "description": "No default: the choice changes the values. Anything but nearest interpolates.",
-                    "enum": [
-                      "nearest",
-                      "bilinear",
-                      "cubic"
+                    "description": "No default: the choice changes the values. Anything but nearest and mode interpolates.",
+                    "oneOf": [
+                      {
+                        "const": "nearest",
+                        "description": "Value of the nearest source pixel; for class data and masks.",
+                        "title": "nearest"
+                      },
+                      {
+                        "const": "bilinear",
+                        "description": "Distance-weighted mean of the 2x2 nearest pixels; for continuous data.",
+                        "title": "bilinear"
+                      },
+                      {
+                        "const": "cubic",
+                        "description": "Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data.",
+                        "title": "cubic"
+                      },
+                      {
+                        "const": "cubicspline",
+                        "description": "Cubic B-spline over 4x4 pixels; smoothest, for continuous data.",
+                        "title": "cubicspline"
+                      },
+                      {
+                        "const": "lanczos",
+                        "description": "Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges.",
+                        "title": "lanczos"
+                      },
+                      {
+                        "const": "average",
+                        "description": "Mean of all source pixels per target pixel; for coarsening continuous data.",
+                        "title": "average"
+                      },
+                      {
+                        "const": "mode",
+                        "description": "Most frequent source value per target pixel; for class data.",
+                        "title": "mode"
+                      }
                     ],
                     "title": "Resampling",
                     "type": "string"
@@ -364,7 +396,7 @@
                   "$ref": "#/$defs/step_band_math_v1"
                 },
                 {
-                  "$ref": "#/$defs/step_reproject_v2"
+                  "$ref": "#/$defs/step_reproject_v3"
                 }
               ]
             },

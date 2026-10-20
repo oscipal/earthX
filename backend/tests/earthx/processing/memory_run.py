@@ -6,7 +6,8 @@ square scene in pixels. It puts the COG behind the same two
 seams the tests use — ``vsicurl_path`` and the resolver — enters
 ``worker_environment()`` in its main thread as a `jobs` child does (adr/0013 §5.3),
 runs one step over both bands — the test operator ``scale``, or with ``step`` set to
-``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` — and prints one JSON line: peak
+``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` at 10 m, with
+``reproject-lanczos`` with ``lanczos`` at 30 m — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
 
@@ -42,8 +43,14 @@ STEPS = {
     "scale": {"op": "scale", "op_version": 1, "params": {"factor": 2.0}},
     "reproject": {
         "op": "reproject",
-        "op_version": 2,
+        "op_version": 3,
         "params": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
+    },
+    # The highest peak of plan M4-24 §7.5: lanczos, coarsening by 3.
+    "reproject-lanczos": {
+        "op": "reproject",
+        "op_version": 3,
+        "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "lanczos"},
     },
 }
 

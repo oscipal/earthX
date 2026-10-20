@@ -1810,6 +1810,52 @@ Der Originaltext in §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
   und damit nach §4.3 eine neue Version des Rezepts; heute genügt `gsd` für
   alle drei Datensätze. Es bleibt bei `gsd`.
 
+## 15j. Nachtrag vom 2026-10-20: weitere Resampling-Methoden für `reproject` (zu §5.2, §5.3, §5.5, §6.3; M4-24)
+
+Otto hat den Plan von M4-24 am 2026-10-20 freigegeben, Fragen 1–7 je wie
+empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
+§5.2, §5.3, §5.5 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Methoden und Version (§5.2):**
+  - `reproject` hat jetzt `op_version` 3 mit `nearest`, `bilinear`, `cubic`, `cubicspline`, `lanczos`, `average` und `mode`. Die Namen sind die von openEO `resample_spatial`; `cubicspline` ist `Resampling.cubic_spline` in rasterio.
+  - Der Blockplan bleibt unverändert: `tolerance` 0,125, `warp_mem_limit` 64 MB, Blöcke 1024 px.
+  - Version 2 bleibt registriert, mit `nearest`, `bilinear` und `cubic`. Sie liefert Byte für Byte dasselbe wie Version 3 (Test). `/processing/processes` listet je Operator nur die höchste Version.
+- **Capabilities (§5.3):** `interpolation` verlangen alle Methoden außer `nearest` und `mode`; diese beiden wählen immer einen Quellwert. `reprojection` bleibt immer Pflicht.
+- **Faktoren (§5.5)**, gegenüber `bilinear` = 1,0, gemessen blockweise mit 1 Thread bei etwa gleicher Pixelgröße, der größere Wert aus DEM und NDVI, aufgerundet auf eine Nachkommastelle (Plan §7.4). Für `cubicspline` (gemessen 1,62) hatte der Plan 1,6 vorgeschlagen; Otto hat am 2026-10-20 nach dieser Regel 1,7 festgelegt:
+
+| Operator | Faktor |
+|---|---|
+| Reprojektion `cubicspline` | 1,7 |
+| Reprojektion `lanczos` | 2,2 |
+| Reprojektion `average` | 1,2 |
+| Reprojektion `mode` | 1,1 |
+
+- **Toleranzen (§6.3, Zeile „T2 ↔ unabhängige Referenz (ganzes `reproject`)“).**
+  - Die Fälle sind die aus Plan §7.2: Vergröbern (Ziel etwa 3-mal so grob), etwa gleiche Pixelgröße und Verfeinern (Ziel etwa halb so groß).
+  - Ein Test prüft jede Methode, alt und neu, in allen drei Fällen gegen ihre Zeile; eine zu enge Zeile lässt ihn scheitern (Auflage Otto, 2026-10-20; `tests/earthx/processing/test_reproject_tolerance.py`).
+  - Für Höhen:
+    - **Antwort von Otto zu Frage 8 (2026-10-20, Option 1):** p99 ≤ 0,6 m und max ≤ 4 m für `bilinear`, `cubic`, `cubicspline`, `lanczos` und `average`, solange das Ziel nicht feiner ist als die Quelle. `average` beim Verfeinern: p99 ≤ 1 m, max ≤ 4 m.
+    - **Die bisherigen Grenzen für Höhen werden damit ersetzt:** p99 ≤ 0,3 m und max ≤ 1 m für `bilinear` und `cubic` aus §6.3 Zeile 4. Ebenso entfallen die Werte, die Plan M4-24 §7.6 für `cubicspline`, `lanczos` und `average` vorgeschlagen hatte, und die Zeile für `cubic` beim Verfeinern (Antwort 7). Die Zeile in §6.3 bleibt als Text stehen; es gilt dieser Nachtrag.
+    - **Begründung [M]:** Die Referenz ist ein ganzes `reproject`. GDAL teilt es je nach Rastergröße in andere Abschnitte und rechnet den Maßstab des Kernels je Abschnitt (§3.4; `gdalwarpkernel.cpp` Z. 1038–1068 im Tag `v3.12.2`). Wie weit sie vom blockweisen Ergebnis abweicht, hängt deshalb von der Größe des Rasters ab. Der Operator selbst bleibt bitgleich: 1 gegen 4 Threads, ganz wie blockweise, und bei Wiederholung (§6.3 Zeile 1).
+    - Die alten Grenzen waren an einem einzigen 3600²-DEM gemessen (§3.4). Gemessen über 13 Größen des synthetischen DEM von Plan M4-24 §7.2 (Vergröbern 1100×4600, 1500×5000, 2200×6600, 3600²; etwa gleich 1100×1600, 1500×2000, 2200×3200, 3000², 3600²; Verfeinern 600×800, 800×1000, 1000×1300, 1200²), schlechtester Wert je Fall als p99 / max in m, in Klammern die Zahl der Größen:
+
+| Methode | Vergröbern | etwa gleich | Verfeinern |
+|---|---|---|---|
+| `bilinear` | 0,20 / 2,75 (4) | 0,41 / 3,47 (5) | 0,37 / 1,31 (4) |
+| `cubic` | 0,18 / 2,50 (4) | 0,46 / 3,24 (5) | 0,46 / 1,75 (4) |
+| `cubicspline` | 0,18 / 3,12 (4) | 0,27 / 1,44 (5) | 0,20 / 0,60 (4) |
+| `lanczos` | 0,19 / 2,78 (4) | 0,57 / 3,63 (5) | 0,49 / 1,74 (4) |
+| `average` | 0,18 / 0,38 (4) | 0,23 / 0,70 (5) | **0,92 / 3,74** (4) |
+
+    - Die Höchstwerte betreffen wenige Pixel; p99 liegt jeweils weit darunter. Ein grober Fehler, etwa ein um ein Pixel versetztes Raster, läge auf diesem Gelände bei Zehnermetern und fiele weiter auf [A].
+  - Für NDVI (ohne Einheit) gilt p99 ≤ 0,01 bei `bilinear`, `cubic`, `cubicspline`, `lanczos` und `average`, in jedem Fall. Gemessen über 12 Rastergrößen: höchstens 0,006.
+  - `nearest` und `mode` auf stetigen Daten: ≥ 97 % identisch. `mode` auf Klassen: ≥ 99,9 % identisch, gemessen 99,99–100 %.
+- **T2 ↔ T2L (§6.3 Zeile 1):** Für alle vier neuen Methoden sind 1 und 4 Threads bitgleich, ganz wie blockweise, und die Wiederholung ist bitgleich (Plan §7.3).
+- **Speicher (§3.5, M4-10b):**
+  - Bei 4096² liegt jede neue Methode gleichauf mit `bilinear`.
+  - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
+  - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
+
 ## 16. Quellen
 
 **Im Repo [P]**
