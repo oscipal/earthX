@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The result of a finished job as a layer (M4-13c-5): "Show on map" in the job row,
+// The result of a finished job as a layer (M4-13c-5): "Add to layers" in the job row,
 // the layer it makes, "Overview" and "Expired". No backend: `fetch` answers the
 // TileJSON of the tiler only; the tiles are never requested (the map is not here).
 
@@ -101,26 +101,26 @@ const layers = () => useAppStore.getState().layers;
 
 async function showOnMap() {
   act(() => root.render(<JobList />));
-  click(button('Show on map'));
-  click(button('As a new layer'));
+  click(button('Add to layers'));
   await flush();
 }
 
-describe('"Show on map" in the row of a finished job', () => {
-  it('offers one way: as a new layer — there is no "Replace source layer"', () => {
+describe('"Add to layers" in the row of a finished job', () => {
+  it('is one button, with no menu behind it', () => {
     act(() => root.render(<JobList />));
-    const show = button('Show on map');
-    expect(show).toBeDefined();
-    expect(button('As a new layer')).toBeUndefined();
-    click(show);
-    expect(button('As a new layer')).toBeDefined();
+    const add = button('Add to layers');
+    expect(add).toBeDefined();
+    expect(add?.hasAttribute('aria-expanded')).toBe(false);
+    click(add);
+    expect(container.textContent).not.toContain('As a new layer');
+    expect(container.textContent).not.toContain('Show on map');
     expect(container.textContent).not.toContain('Replace');
   });
 
   it('is not offered for a job without tiles (an export, a result from before the link)', () => {
     useProcessingStore.setState({ jobs: [entry({ tiles: null })] });
     act(() => root.render(<JobList />));
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
   });
 
   it.each([
@@ -132,18 +132,18 @@ describe('"Show on map" in the row of a finished job', () => {
   ])('is not offered for a job that is %s', (_, over) => {
     useProcessingStore.setState({ jobs: [entry(over)] });
     act(() => root.render(<JobList />));
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
   });
 
   it('is gone from a minute before the results go, and the row says "Expired"', () => {
     vi.useFakeTimers();
     useProcessingStore.setState({ jobs: [entry({ expires: new Date(Date.now() + MIN_REMAINING_MS + 5000).toISOString() })] });
     act(() => root.render(<JobRow job={useProcessingStore.getState().jobs[0]} />));
-    expect(button('Show on map')).toBeDefined();
+    expect(button('Add to layers')).toBeDefined();
     act(() => {
       vi.advanceTimersByTime(5100);
     });
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
     expect(container.textContent).toContain(EXPIRED_TEXT);
   });
 });
@@ -193,6 +193,17 @@ describe('the layer a result becomes', () => {
     expect(layers()[0].restore.itemIds).toEqual([]);
   });
 
+  it('is cut to the area by the tiler, not by the browser: the layer is the same with an AOI, without one, and after a reload', async () => {
+    await showOnMap();
+    const plain = layers()[0].overlays;
+    act(() => useAppStore.setState({ layers: [], aoi: { type: 'Polygon', coordinates: [[[10.1, 50.1], [10.2, 50.1], [10.2, 50.2], [10.1, 50.1]]] }, cropToAoi: true }));
+    useProcessingStore.setState({ jobs: [entry()] });
+    await showOnMap();
+    expect(layers()[0].overlays).toEqual(plain);
+    expect(layers()[0].restore.cropToAoi).toBe(false);
+    expect(JSON.stringify(layers()[0].overlays)).not.toMatch(/clip|aoi|polygon/i);
+  });
+
   it('works out the pixel size of a geographic result from the columns', async () => {
     useProcessingStore.setState({ jobs: [entry({ tiles: { href: HREF, width: 1000, gsd: null } })] });
     tileJson = () => json({ ...TILE_JSON, bounds: [0, -0.5, 1, 0.5] });
@@ -204,8 +215,7 @@ describe('the layer a result becomes', () => {
     await showOnMap();
     act(() => useAppStore.getState().toggleLayerVisible(layers()[0].id));
     expect(layers()[0].visible).toBe(false);
-    click(button('Show on map'));
-    click(button('As a new layer'));
+    click(button('Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(layers()[0].visible).toBe(true);
@@ -218,8 +228,7 @@ describe('the layer a result becomes', () => {
     tileJson = () => gate.then((response) => response.clone());
     act(() => root.render(<JobList />));
     for (let i = 0; i < 2; i++) {
-      click(button('Show on map'));
-      click(button('As a new layer'));
+      click(button('Add to layers'));
     }
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
@@ -254,7 +263,7 @@ describe('when the result cannot be shown', () => {
     expect(useProcessingStore.getState().jobs[0].expired).toBe(true);
     act(() => root.render(<JobList />));
     expect(container.textContent).toContain(EXPIRED_TEXT);
-    expect(button('Show on map')).toBeUndefined();
+    expect(button('Add to layers')).toBeUndefined();
   });
 
   it.each([
@@ -275,8 +284,7 @@ describe('when the result cannot be shown', () => {
     await showOnMap();
     expect(container.querySelector('.hint-text.error')).not.toBeNull();
     tileJson = () => json(TILE_JSON);
-    click(button('Show on map'));
-    click(button('As a new layer'));
+    click(button('Add to layers'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(container.querySelector('.hint-text.error')).toBeNull();

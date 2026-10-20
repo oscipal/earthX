@@ -1096,7 +1096,7 @@ describe('starting and following a job', () => {
     await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
     expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Download (ZIP)']);
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show on map');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Add to layers');
   });
 
   it('keeps the single links of an old result next to its tiles', async () => {
@@ -1112,11 +1112,11 @@ describe('starting and following a job', () => {
     ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
     ['a link of another shape', { result: link('result.tif'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
     ['a link to a file of the job API', { result: link('result.tif'), tiles: link('result.tif') }],
-  ])('offers no "Show on map" for %s', async (_, doc) => {
+  ])('offers no "Add to layers" for %s', async (_, doc) => {
     await resume(() => json(doc));
     await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Show on map');
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Add to layers');
   });
 
   it.each([

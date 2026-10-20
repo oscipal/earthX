@@ -52,8 +52,7 @@ function formatTime(iso: string): string {
 export function JobRow({ job }: { job: JobEntry }) {
   const cancelJob = useProcessingStore((s) => s.cancelJob);
   const removeJob = useProcessingStore((s) => s.removeJob);
-  const showResult = useProcessingStore((s) => s.showResultOnMap);
-  const [choosing, setChoosing] = useState(false);
+  const addToLayers = useProcessingStore((s) => s.showResultOnMap);
   const linksUntil = Date.parse(job.expires) - MIN_REMAINING_MS;
   const now = useNowUntil(linksUntil);
   const expired = job.expired || !(now < linksUntil);
@@ -91,24 +90,11 @@ export function JobRow({ job }: { job: JobEntry }) {
           <button
             type="button"
             className="link-btn"
-            aria-expanded={choosing}
-            title="Draw the result on the map, read from the platform"
-            onClick={() => setChoosing((open) => !open)}
+            title="Draw the result on the map, cut to the area of the job, as a layer"
+            onClick={() => void addToLayers(job.jobID)}
           >
-            Show on map
+            Add to layers
           </button>
-          {choosing && (
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => {
-                setChoosing(false);
-                void showResult(job.jobID);
-              }}
-            >
-              As a new layer
-            </button>
-          )}
         </span>
       )}
       {job.phase === 'successful' && !expired && job.files && (
