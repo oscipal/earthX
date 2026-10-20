@@ -1869,6 +1869,8 @@ Otto hat den Plan von M4-32 am 2026-10-20 freigegeben (`plans/m4-32-ergebnis-sta
   - Min, Max, Anzahl und Mittelwert sind exakt; der Mittelwert ist einmal gerundet, aus ganzzahligen Summen über die Bitmuster.
   - `stddev` wie GDAL: Welford je Block, Chan über die Blöcke.
   - Die Perzentile kommen aus einem festen Histogramm mit 65 536 Fächern je Band: Ganzzahl bis 16 bit exakt, sonst höchstens 2⁻⁷ des Betrags, nach außen gerundet.
+  - Werte vom Typ `int32`, `uint32` und `float64` kommen abgerundet nach `float32`. Das 98-%-Perzentil geht danach einen `float32`-Schritt nach oben. Jenseits des `float32`-Bereichs gilt Minimum bzw. Maximum. So bleibt `[p2, p98]` auch dort außen.
+  - **Kollision mit `nodata` (§15h):** Ein gültiger Wert, der beim Runden auf das `nodata` einer Ganzzahl-Ausgabe fällt, liest sich in der Datei als `nodata`. Die Statistik zählt ihn deshalb nicht mit, sie folgt der Datei. `valid_pixels` in der Meldung des Kindes zählt ihn weiter mit, wie vor M4-32.
 - **Bitgleichheit (§6.3, §15c):** unverändert. Die Statistik hängt nicht von der Reihenfolge der Werte ab, nur von der festen Blockung (`stddev`). Gemessen sind die Bytes von `result.tif` gleich über die numpy-SIMD-Stufen X86_V4, X86_V3, X86_V2 (Plan §6.4). `runner/test_compare.py` vergleicht zusätzlich die Band-Tags von Job-Kind und Runner.
 - **Version (§4.5):** Die Tags ändern die Bytes jeder `result.tif`. Deshalb geht `earthx.__version__` von 0.4.1 auf 0.4.2. `recipe_version` und `op_version` bleiben. Ergebnisse unter 0.4.1 bleiben unter ihrem alten Schlüssel stehen und werden nicht mehr getroffen.
 - **Kosten (§3.5, §5.5) [M]:**

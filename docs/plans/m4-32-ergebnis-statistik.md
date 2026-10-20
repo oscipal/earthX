@@ -400,6 +400,17 @@ NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR python simd.py   # 
 - **`runner/test_compare.py`:** Vergleicht jetzt auch die Band-Tags. Die Statistik ist bei Job-Kind und Runner gleich.
 - **Gegenprobe:** Mit dem alten Kern und dem neuen Modul scheitern 9 der neuen und geänderten Tests: alle Kern- und Runner-Prüfungen der Statistik sowie die zwei Faktortests. Nur „zweimal gleiche Bytes“ besteht auch alt, und so soll es sein.
 
+**Nach dem Review (Subagent `reviewer`):**
+- **Blocker, behoben:** Bei Ganzzahl-Ausgabe zählte die Statistik gültige Werte mit, die beim Runden auf `nodata` fallen. In der Datei lesen sie sich als `nodata`.
+  - Nachgestellt mit `uint16`, nodata 0 und `scale` 0,001: `count` 89 936 statt 64 950, `STATISTICS_MINIMUM` 0.
+  - Jetzt folgt die Statistik der Datei. Test: `test_a_value_rounded_onto_nodata_is_not_counted`.
+  - `valid_pixels` bleibt unverändert, wie vor M4-32 (Log 2026-10-12, offene Zeile „festes nodata je Ganzzahltyp“).
+- **Behoben:** Für `int32`, `uint32` und `float64` konnten die Perzentile nach innen rutschen, bis `p2 > p98` bei einem konstanten Band.
+  - Jetzt wird nach `float32` abgerundet, das 98-%-Perzentil geht einen Schritt nach oben, und jenseits des `float32`-Bereichs gelten Minimum und Maximum.
+  - Tests: `TestOutwardsAcrossTypes`. Die Gegenprobe gegen den Stand vor dem Fix lässt 7 Tests scheitern.
+- **Kleinigkeiten:** kein `-0.0` aus einer Fachkante, die exakte Summe auf einer gemeinsamen ganzzahligen Skala statt einer `Fraction` je Fach, Docstring zu `stddev` richtiggestellt.
+- Die Bytes von `float32`-Ergebnissen ändern sich durch diese Fixes nicht, außer wo ein Perzentil vorher `-0.0` war.
+
 **Prüfanleitung für Otto (a):**
 - Einen beliebigen Raster-Job rechnen und `result.tif` herunterladen.
 - `gdalinfo -stats result.tif` (oder `gdalinfo result.tif`) zeigt je Band `STATISTICS_MINIMUM` … `STATISTICS_VALID_PERCENT` und `EARTHX_PERCENTILE_2`/`_98`, ohne neu zu rechnen.
