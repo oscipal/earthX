@@ -1,6 +1,6 @@
 # M4-19 — Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“: Plan
 
-**Stand:** 20.10.2026, Plan zur Freigabe durch Otto (§7). Kein Produktivcode geändert.
+**Stand:** 20.10.2026, Plan freigegeben (§9); M4-19a wird umgesetzt, b bis e folgen je in einer neuen Session.
 **Stufe B (S6):** Der Plan liegt im Draft-PR, die Session hält an, Otto gibt frei. Danach
 setzen die Sessions aus Frage 10 um.
 **Modell:** Opus für den Plan, Sonnet (Effort mittel) für die Umsetzung (§3 der Übersicht).
@@ -524,3 +524,23 @@ Kurz beantwortbar: je Frage eine Nummer.
   Übersicht), geprüft gegen die Antwortform. Der Teil e etwa: Permalink mit
   `Invoke-RestMethod -Method Post` anlegen, im zweiten Browser öffnen, löschen,
   `404` sehen.
+
+---
+
+## 9. Freigabe (Otto, 20.10.2026)
+
+Fragen 1–12 je Option 1. Frage 12: Der Code bleibt; F13 in `adr/0015` wird per Nachtrag
+angeglichen, mit der Begründung aus §2.1 (die Regel am Bucket zählt ab dem Schreiben).
+
+**Auflagen:**
+- **`methods.txt` gehört zur einen Definition der Download-Inhalte aus M4-30** (Zuschnitt,
+  Export, Job-ZIP, Runner), kein zweiter Weg. Ein Test prüft gegen diese Definition, nicht
+  gegen eine zweite Liste.
+- **Permalink (M4-19e):** Die AOI steht nie in einer URL oder einem Log, der Löschschlüssel
+  nie in einem Log. Nach 30 Tagen ist der Eintrag vollständig gelöscht (Test). Im Log ist der
+  Permalink als personenbezogen vermerkt.
+- **Farbskala der Vorschau (M4-19c):** höchstens eine Messung je Vorschau-Zustand, gecacht,
+  innerhalb der Grenzen von `gateway` (Test).
+
+**Schnitt und Start:** M4-19a ist umgesetzt (§10). M4-19b bis M4-19e starten je als neue Session
+nach §4 und der Reihenfolge dort.
