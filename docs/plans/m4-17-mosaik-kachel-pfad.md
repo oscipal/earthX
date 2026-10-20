@@ -167,7 +167,29 @@ trotzdem nach, weil die Aufgabe sie verlangt.
 
 ### 2.7 Stand der Technik
 
-<!-- RESEARCH -->
+Recherche vom 20.10.2026 über einen Subagenten. Erreichbar waren GitHub (Rohdateien)
+und Suchmaschinen; die Doku-Seiten von Development Seed, Planetary Computer, AWS,
+nginx, Sentinel Hub und Earth Engine nicht. [P] heißt hier: Rohdatei aus dem
+Repository gelesen, über die Zusammenfassung des Abrufwerkzeugs, nicht Zeile für
+Zeile geprüft.
+
+| Befund | Beleg | Stufe | Folge hier |
+|---|---|---|---|
+| titiler-pgstac registriert eine Suche per `POST /searches/register`; die ID ist ein Hash über die Suche (`hash text PRIMARY KEY` der Tabelle `searches`), die Kachel-URL trägt nur die ID | [`004_search.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/004_search.sql), [`searches_endpoints.md`](https://raw.githubusercontent.com/stac-utils/titiler-pgstac/main/docs/src/endpoints/searches_endpoints.md) | P | das Muster von O2/O3 |
+| Die Einträge in `searches` haben keinen Ablauf (nur `lastused`, `usecount`); „retention-driven GC“ steht erst unter „Unreleased“ | [pgstac `CHANGELOG.md`](https://raw.githubusercontent.com/stac-utils/pgstac/main/CHANGELOG.md) | P | eine „kurzlebige“ Such-ID ist dort gerade nicht gelöst; mit Ablauf entsteht das Problem toter URLs aus §3 O2 |
+| Grenzen je Kachel bei titiler-pgstac: `items_limit` 100, `time_limit` 5 s, `exitwhenfull` und `skipcovered` an | [`settings.py`](https://raw.githubusercontent.com/stac-utils/titiler-pgstac/main/titiler/pgstac/settings.py), [`006_tilesearch.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/006_tilesearch.sql) | P | „aufhören, sobald voll“ ist Praxis (§4.4) |
+| Planetary Computer: Mosaik über `searchid` (titiler-pgstac), **höchstens 10 Items je Kachel** (`DEFAULT_MAX_ITEMS_PER_TILE`), `minzoom` je Collection, darunter keine Items | [`pctiler/config.py`](https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/config.py), [`pctiler/reader.py`](https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/reader.py) | P | stützt Szenen- und Zoomgrenze in §5 (dort 12 und z8, gemessen statt übernommen) |
+| Beispiel des Planetary Computer für ein Sentinel-2-Mosaik: `minZoom: 9`, ohne Begründung | [Quickstart-Notebook](https://raw.githubusercontent.com/microsoft/PlanetaryComputerExamples/main/quickstarts/using-the-data-api.ipynb) | P | Größenordnung wie z8 |
+| `mosaic_reader`: `FirstMethod` mit `exit_when_filled`; Portionen (`chunk_size`) parallel, innerhalb einer Portion läuft alles zu Ende, danach Abbruch, wenn voll | [`rio_tiler/mosaic/reader.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/mosaic/reader.py), [`tasks.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/tasks.py), [`methods/defaults.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/mosaic/methods/defaults.py); im venv nachgelesen (§2.5) | P | Frage 5 |
+| Ein eigenes Mosaik-Backend ist vorgesehen: rio-tilers `BaseBackend` verlangt `assets_for_tile`, `assets_for_point`, `assets_for_bbox`; `titiler.mosaic`s `MosaicTilerFactory` nimmt ein solches Backend, Threads über `MOSAIC_CONCURRENCY` | [`rio_tiler/mosaic/backend.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/mosaic/backend.py) (im venv vorhanden), [`titiler/mosaic/factory.py`](https://raw.githubusercontent.com/developmentseed/titiler/main/src/titiler/mosaic/titiler/mosaic/factory.py) | P | O1 geht mit `BaseBackend` aus rio-tiler; `titiler.mosaic` ist nicht installiert und wäre ein neues Paket (§4.1) |
+| titiler, Diskussion zu Mosaiken bei niedrigem Zoom (rund 950 COGs): z10 4–10 s, z8 8–16 s, z7 35–60 s, z6 Timeout; Rat der Maintainer: Mosaik erst ab einem Mindestzoom | [titiler Discussion #287](https://github.com/developmentseed/titiler/discussions/287) | P | Mindestzoom in §5 |
+| titiler-stacapi sucht je Kachel bei der STAC-API und warnt selbst, dass so jede Kachel eine Suche kostet | [`titiler/stacapi/backend.py`](https://raw.githubusercontent.com/developmentseed/titiler-stacapi/main/titiler/stacapi/backend.py) | P | O4 verworfen |
+| MosaicJSON: Quadkey → Liste von Asset-URLs; `cogeo-mosaic` liest die Datei über `httpx2` bzw. `boto3` | [`backends/web.py`](https://raw.githubusercontent.com/developmentseed/cogeo-mosaic/main/cogeo_mosaic/backends/web.py), [`backends/s3.py`](https://raw.githubusercontent.com/developmentseed/cogeo-mosaic/main/cogeo_mosaic/backends/s3.py) | P | O5 verworfen (B8), wie `adr/0006` |
+| Reihenfolge anderswo: pgstac ohne `sortby` `datetime DESC, id DESC`; Sentinel Hub `mostRecent`/`leastCC`; Earth Engine „letztes oben“ | [`002d_keyset.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/002d_keyset.sql); Forum, Earth-Engine-Guide | P/S | keine allgemeine Regel; S5 legt sie fest |
+| URL-Längen: Uvicorn/h11 16 384 Byte bis zum Ende der Kopfzeilen; nginx `large_client_header_buffers` 8 kB für die Anfragezeile; CloudFront und Fastly 8 kB, Cloudflare 16–32 kB, AWS ALB 16 kB; Browser weit darüber | [uvicorn `settings.md`](https://raw.githubusercontent.com/encode/uvicorn/master/docs/settings.md), [nginx `ngx_http_core_module.xml`](https://raw.githubusercontent.com/nginx/nginx.org/master/xml/en/docs/http/ngx_http_core_module.xml) [P]; CloudFront-, Fastly-, Cloudflare-, ALB-Quotas [S] | P/S | engste Grenze 8 kB; 64 IDs ≈ 2,4 bzw. 4,3 kB (§5) |
+
+Für Sentinel-2-COGs über HTTP gibt es keine veröffentlichten Kosten je
+Mosaik-Kachel; die Zahlen dazu sind die eigenen aus `adr/0006` (§2.3).
 
 ---
 
@@ -219,8 +241,11 @@ GET /collections/{dataset}/mosaic/{tileMatrixSetId}/tilejson.json?item=…&asset
 **Wie gebaut:** eigene schlanke Fabrik in `access/tiles.py`
 (`EarthxMosaicTilerFactory`, nur `tile` und `tilejson`) auf `titiler.core`'s
 `BaseFactory` und `rio_tiler.mosaic.mosaic_reader`. **Nicht** `titiler.mosaic`:
-das wäre ein neues Paket samt Lock-Datei, und seine Fabrik erwartet ein
-`BaseBackend`, dessen Mosaik-Definition wir nicht haben (§2.7). Ob das
+es ist nicht installiert und wäre ein neues Paket samt Lock-Datei; seine
+Fabrik bringt Routen mit (`/info`, `/point`, `/bbox`, Assets je Kachel), die
+hier wieder abgeschaltet oder geprüft werden müssten. Das `BaseBackend` aus
+rio-tiler (im venv vorhanden) kann die Umsetzung nutzen, wenn es den Code
+kürzer macht (§2.7). Ob das
 Erben von `BaseFactory` oder zwei eigene Routen mit den Abhängigkeiten der
 Fabrik weniger Code ist, entscheidet die Umsetzung; das Verhalten ist dasselbe.
 
