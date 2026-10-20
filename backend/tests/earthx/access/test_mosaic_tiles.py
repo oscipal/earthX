@@ -21,14 +21,17 @@ import rasterio.env
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pyproj import Transformer
+from rasterio.errors import EnvError, RasterioIOError
 from rasterio.transform import from_origin
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 
 from earthx.access import mosaic_tiles
-from earthx.access.mosaic_tiles import MOSAIC_THREADS, EarthxMosaicTilerFactory, MosaicScenes
+from earthx.access.mosaic_tiles import MOSAIC_THREADS, EarthxMosaicTilerFactory, MosaicScenes, MosaicTileReader
 from earthx.readers.cog import AssetPath
+from earthx.readers.zarr_reader import zarr_asset
+from tests.earthx.readers import mini_zarr
 
 ZONE_32 = "EPSG:32632"
 TMS = morecantile.tms.get("WebMercatorQuad")
@@ -109,7 +112,7 @@ def _at(tile: numpy.ndarray, x: float, y: float = SEAM_Y) -> int | None:
 
 @pytest.fixture
 def opened(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
-    """Each scene the mosaic opens, with the probe option its thread sees in ``rasterio.Env``."""
+    """Each scene the mosaic opens, with the probe option its thread sees — in ``rasterio.Env`` and in GDAL."""
     seen: list[tuple[str, str | None]] = []
     lock = threading.Lock()
     original = mosaic_tiles.open_asset
@@ -117,10 +120,11 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
     def recording(scene: Any, **options: Any) -> Any:
         try:
             probe = rasterio.env.getenv().get(PROBE)
-        except rasterio.errors.EnvError:
+        except EnvError:
             probe = None
+        gdal = rasterio.env.get_gdal_config(PROBE)
         with lock:
-            seen.append((scene.item_id, probe))
+            seen.append((scene.item_id, probe if probe == gdal else f"{probe} / {gdal}"))
         return original(scene, **options)
 
     monkeypatch.setattr(mosaic_tiles, "open_asset", recording)
@@ -135,7 +139,11 @@ class TestOneSurfaceOverASceneBoundary:
         assert _at(tile, SEAM_X - 500.0) == 100
         assert _at(tile, SEAM_X + 500.0) == 200
         left, _, right, _ = TMS.xy_bounds(TILE)
-        line = [x for x in numpy.arange(SEAM_X - 3900.0, SEAM_X + 3900.0, 20.0) if left < TO_3857.transform(x, SEAM_Y)[0] < right]
+        line = [
+            x
+            for x in numpy.arange(SEAM_X - 3900.0, SEAM_X + 3900.0, 20.0)
+            if left < TO_3857.transform(x, SEAM_Y)[0] < right
+        ]
         assert len(line) > 20
         assert all(_at(tile, x) is not None for x in line)
 
@@ -157,6 +165,47 @@ class TestOneSurfaceOverASceneBoundary:
         away = _scene(tmp_path / "away.tif", SEAM_X + 50_000.0, 4000.0, 200)
         assert _client([away]).get(TILE_URL).status_code == 404
 
+    def test_a_scene_that_cannot_be_read_fails_the_tile_rather_than_letting_another_win(self, tmp_path: Path) -> None:
+        missing = AssetPath(str(tmp_path / "missing.tif"), dataset_id="synthetic", item_id="missing", asset="red")
+        here = _scene(tmp_path / "here.tif", SEAM_X - 4000.0, 8000.0, 100)
+        scenes = MosaicScenes("synthetic", (missing, here), _bounds([here]))
+        with MosaicTileReader(scenes, tms=TMS) as reader, pytest.raises(RasterioIOError):
+            reader.tile(TILE.x, TILE.y, TILE.z)
+
+
+class TestZarrScenes:
+    def test_zarr_scenes_make_a_mosaic_too_and_the_first_wins(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mini_zarr.serve_store(mini_zarr.build_mini_zarr(tmp_path / "mini.zarr"), monkeypatch)
+
+        def scene(variable: str) -> Any:
+            return zarr_asset(
+                f"{mini_zarr.BASE_URL}/r10m", mini_zarr.POLICY, dataset_id="synthetic", item_id=variable,
+                asset="reflectance", crs=mini_zarr.ITEM_CRS, resolve=mini_zarr.from_memory, variable=variable,
+            )  # fmt: skip
+
+        left, bottom, right, top = mini_zarr.store_bounds()
+        to_4326 = Transformer.from_crs(mini_zarr.ITEM_CRS, "EPSG:4326", always_xy=True)
+        west, south = to_4326.transform(left, bottom)
+        east, north = to_4326.transform(right, top)
+        tile = TMS.tile(*to_4326.transform((left + right) / 2, (bottom + top) / 2), 16)
+
+        def read(*variables: str) -> numpy.ndarray:
+            mosaic = MosaicScenes("synthetic", tuple(scene(v) for v in variables), (west, south, east, north))
+            factory = EarthxMosaicTilerFactory(
+                path_dependency=lambda: mosaic, environment_dependency=lambda: {}, name="mosaic"
+            )
+            app = FastAPI()
+            app.include_router(factory.router)
+            response = TestClient(app).get(f"/tiles/WebMercatorQuad/{tile.z}/{tile.x}/{tile.y}.npy")
+            assert response.status_code == 200, response.text
+            return numpy.load(io.BytesIO(response.content))
+
+        both, b04, b02 = read("b04", "b02"), read("b04"), read("b02")
+        assert numpy.array_equal(both, b04)
+        assert not numpy.array_equal(both, b02)
+
 
 class TestReadingInPortions:
     def test_a_tile_the_first_portion_fills_opens_no_further_scene(
@@ -174,8 +223,7 @@ class TestReadingInPortions:
         self, tmp_path: Path, opened: list[tuple[str, str | None]]
     ) -> None:
         wests = [
-            _scene(tmp_path / f"w{index}.tif", SEAM_X - 5000.0, 5000.0, 10 + index)
-            for index in range(MOSAIC_THREADS)
+            _scene(tmp_path / f"w{index}.tif", SEAM_X - 5000.0, 5000.0, 10 + index) for index in range(MOSAIC_THREADS)
         ]
         east = _scene(tmp_path / "east.tif", SEAM_X, 5000.0, 200)
         tile = _tile(_client([*wests, east]))
@@ -186,7 +234,9 @@ class TestReadingInPortions:
     def test_every_scene_is_read_under_the_gdal_configuration_of_the_route(
         self, tmp_path: Path, opened: list[tuple[str, str | None]]
     ) -> None:
-        scenes = [_scene(tmp_path / f"s{index}.tif", SEAM_X - 4000.0 + index * 2000.0, 4000.0, 50) for index in range(3)]
+        scenes = [
+            _scene(tmp_path / f"s{index}.tif", SEAM_X - 4000.0 + index * 2000.0, 4000.0, 50) for index in range(3)
+        ]
         _tile(_client(scenes))
         assert len(opened) == 3
         assert {probe for _, probe in opened} == {"on"}
@@ -230,6 +280,12 @@ class TestTheRoutes:
 
 
 class TestTheScenes:
+    def test_the_factory_refuses_a_reader_dependency_of_its_own(self) -> None:
+        with pytest.raises(TypeError, match="reader_dependency"):
+            EarthxMosaicTilerFactory(
+                path_dependency=lambda: None, reader_dependency=lambda: None, name="mosaic"
+            )  # fmt: skip
+
     def test_a_mosaic_has_a_scene(self) -> None:
         with pytest.raises(ValueError, match="at least one scene"):
             MosaicScenes("synthetic", (), (0.0, 0.0, 1.0, 1.0))
@@ -240,4 +296,4 @@ class TestTheScenes:
 
     def test_the_reader_takes_nothing_but_mosaic_scenes(self) -> None:
         with pytest.raises(TypeError, match="MosaicScenes"):
-            mosaic_tiles.MosaicTileReader("/vsicurl/https://anywhere.example.invalid/x.tif")  # type: ignore[arg-type]
+            MosaicTileReader("/vsicurl/https://anywhere.example.invalid/x.tif")  # type: ignore[arg-type]

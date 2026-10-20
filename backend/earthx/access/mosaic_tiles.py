@@ -35,6 +35,7 @@ from rio_tiler.errors import EmptyMosaicError, TileOutsideBounds
 from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.defaults import FirstMethod
+from titiler.core.dependencies import DefaultDependency
 
 from earthx.access.tiles import EarthxTilerFactory, open_asset
 from earthx.readers.cog import AssetPath
@@ -126,7 +127,12 @@ class MosaicTileReader:
             return reader.info()
 
     def tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> ImageData:
-        """The tile, scene by scene in the order of the list, the first valid pixel winning."""
+        """The tile, scene by scene in the order of the list, the first valid pixel winning.
+
+        Only ``TileOutsideBounds`` skips a scene. Any other failure fails the tile: a scene left
+        out silently would let another one win where they overlap.
+        """
+
         def read(scene: AssetPath | ZarrAsset, x: int, y: int, z: int, **options: Any) -> ImageData:
             with rasterio.Env(**self.gdal_config), open_asset(scene, tms=self.tms, **self.options) as reader:
                 return reader.tile(x, y, z, **options)
@@ -160,11 +166,16 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
 
     No ``/info``, ``/statistics``, ``/point`` or ``/tilesets``: the viewer measures the stretch
     on one scene as before (plan M4-17 §6), and a route nobody needs is a route nobody secures.
+
+    The reader's parameters are the GDAL configuration of the route (:class:`MosaicReaderParams`);
+    a ``reader_dependency`` handed in would replace it silently, so it is refused.
     """
 
     reader: Any = open_mosaic
 
     def __attrs_post_init__(self) -> None:
+        if self.reader_dependency is not DefaultDependency:
+            raise TypeError("the mosaic factory sets its own reader_dependency (the GDAL configuration of the route)")
         environment = self.environment_dependency
 
         def mosaic_reader_params(env: dict[str, Any] = Depends(environment)) -> MosaicReaderParams:  # noqa: B008
