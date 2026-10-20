@@ -62,7 +62,7 @@ from psycopg_pool import ConnectionPool, PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from earthx.access.crop_rules import AOI_FILENAME, CITATION_FILENAME, NOTICE_FILENAME, RECIPE_FILENAME
+from earthx.access.crop_rules import METHODS_FILENAME, RECIPE_FILENAME, TEXT_FILES
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
 from earthx.api.crs_info import CrsRefused, crs_description
@@ -73,6 +73,7 @@ from earthx.api.intake import (
     estimate_order,
     job_recipe_json,
     job_side_files,
+    methods_bytes,
 )
 from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
@@ -106,7 +107,7 @@ _ORDER_TYPE = "urn:earthx:order-refused:"
 #: What a link under ``/results`` may name. `result.tif`, `mask.tif` and `export.zip` lie in the store,
 #: `recipe.json` is built, `result.zip` is laid out from the stored files and the documents `api`
 #: builds (M4-11b-1). A job has the names of its own output only (:func:`_names_of`).
-LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")
+LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json", "methods.txt")
 
 BUNDLE = "result.zip"
 #: The files of a raster result the ZIP carries from the store, in the order of the archive.
@@ -888,6 +889,7 @@ _SUFFIXES = {
     "export.zip": ".zip",
     BUNDLE: ".zip",
     "recipe.json": "_recipe.json",
+    "methods.txt": "_methods.txt",
 }
 
 
@@ -929,6 +931,8 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     filename = _download_name(body, status, _SUFFIXES[name])
     if name == "recipe.json":
         return _recipe_document(api, body, status, filename)
+    if name == METHODS_FILENAME:
+        return _methods_document(api, body, status, filename)
     assert status.result_id is not None
     if name == BUNDLE:
         return await _bundle_response(request, api, body, status, filename)
@@ -976,6 +980,21 @@ def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _methods_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str) -> Response:
+    if body is None:
+        raise _no_such_job()
+    return Response(
+        _methods_bytes(api, body, status),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _methods_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
+    """``methods.txt`` of the job, built from the ``recipe.json`` it would serve: the two never disagree."""
+    return methods_bytes(_recipe_bytes(api, body, status), _config_of(api, body), api.operators)
 
 
 def _instant(value: Any) -> datetime | None:
@@ -1107,12 +1126,12 @@ async def _bundle_response(
         ).items()
     }
     documents[RECIPE_FILENAME] = _recipe_bytes(api, body, status)
-    # The files of the crop's ZIP beside its rasters, in its order; the registry no longer knowing the
-    # dataset leaves out the citation and the notice, as it left out the citation before.
+    documents[METHODS_FILENAME] = _methods_bytes(api, body, status)
+    # The files of the crop's ZIP beside its rasters, in its order (`TEXT_FILES`, the one definition);
+    # the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
+    # the citation before.
     members.extend(
-        Member.of_bytes(f"{stem}/{name}", documents[name])
-        for name in (AOI_FILENAME, RECIPE_FILENAME, CITATION_FILENAME, NOTICE_FILENAME)
-        if name in documents
+        Member.of_bytes(f"{stem}/{name}", documents[name]) for name in TEXT_FILES if name in documents
     )
     layout = Layout(members, modified=finished)
     await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})

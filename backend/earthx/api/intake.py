@@ -93,6 +93,7 @@ from earthx.catalog.registry import (
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
 from earthx.processing.export import Attachments
+from earthx.processing.methods import DatasetFacts, methods_text
 from earthx.processing.mosaic import lies_on_grid
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands, estimate
@@ -133,6 +134,7 @@ __all__ = [
     "footprint_of",
     "job_recipe_json",
     "job_side_files",
+    "methods_bytes",
 ]
 
 # The starting values of an order's size (Otto, M4-07b F5). One input per order until
@@ -493,6 +495,7 @@ def export_attachments(
             config, groups=entry.groups, assets=entry.assets, aoi=aoi, dropped=dropped, accepted_at=accepted_at
         ),
         attribution=(attribution,) if attribution else (),
+        dataset=DatasetFacts.of(config),
     )
 
 
@@ -1094,6 +1097,21 @@ def crop_recipe_json(
         "provenance": provenance.model_dump(mode="json"),
     }
     return document_bytes(document)
+
+
+def methods_bytes(
+    recipe_json: bytes, config: DatasetConfig | None, operators: OperatorRegistry | None = None
+) -> bytes:
+    """``methods.txt`` for a ``recipe.json``, as bytes (M4-19a): the one function every download calls.
+
+    The crop's ZIP, the job's link and ZIP and the export's own copy all build it from the
+    ``recipe.json`` they carry, so the file says what its neighbour says. A dataset the registry no
+    longer knows is named by its identifier only. ``operators`` is the registry the recipe was
+    validated with, the platform's own where none is given.
+    """
+    dataset = DatasetFacts.of(config) if config is not None else None
+    registry = {} if operators is None else {"operators": operators}
+    return methods_text(recipe_json, dataset=dataset, **registry).encode("utf-8")
 
 
 def job_recipe_json(

@@ -53,6 +53,7 @@ from earthx.access.crop_rules import (
     BLOCK_SIZE,
     CITATION_FILENAME,
     COG_PROFILE,
+    METHODS_FILENAME,
     NOTICE_FILENAME,
     RECIPE_FILENAME,
     AoiOutsideItems,
@@ -67,6 +68,7 @@ from earthx.access.crop_rules import (
 )
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import AoiOutsideInputs, ProcessingError, UnsupportedRecipe
+from earthx.processing.methods import DatasetFacts, methods_text
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import CropOutput, Recipe, ResolvedInput, engine_versions, job_recipe_document
@@ -124,6 +126,9 @@ class Attachments:
 
     files: Mapping[str, str]
     attribution: tuple[str, ...]
+    #: What the methods text says of the dataset beside its identifier; ``None`` for attachments written
+    #: before M4-19a, whose methods text then names the dataset by its identifier only.
+    dataset: DatasetFacts | None = None
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -141,16 +146,23 @@ class Attachments:
             raise AttachmentsInvalid("the attribution is a short list of short texts")
 
     def to_json(self) -> dict[str, Any]:
-        return {"files": dict(self.files), "attribution": list(self.attribution)}
+        data: dict[str, Any] = {"files": dict(self.files), "attribution": list(self.attribution)}
+        if self.dataset is not None:
+            data["dataset"] = self.dataset.to_json()
+        return data
 
     @classmethod
     def from_json(cls, data: Any) -> Attachments:
-        if not isinstance(data, Mapping) or set(data) != {"files", "attribution"}:
+        if not isinstance(data, Mapping) or set(data) not in ({"files", "attribution"}, {"files", "attribution", "dataset"}):
             raise AttachmentsInvalid("the attachments hold files and attribution")
         files, attribution = data["files"], data["attribution"]
         if not isinstance(files, Mapping) or not isinstance(attribution, list):
             raise AttachmentsInvalid("the attachments hold files and attribution")
-        return cls(dict(files), tuple(attribution))
+        try:
+            dataset = DatasetFacts.from_json(data["dataset"]) if "dataset" in data else None
+        except ValueError:
+            raise AttachmentsInvalid("the attachments hold files and attribution") from None
+        return cls(dict(files), tuple(attribution), dataset)
 
 
 @dataclass(frozen=True, slots=True)
@@ -417,6 +429,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (RECIPE_FILENAME, document),
                 (CITATION_FILENAME, attachments.files[CITATION_FILENAME].encode("utf-8")),
                 (NOTICE_FILENAME, attachments.files[NOTICE_FILENAME].encode("utf-8")),
+                (METHODS_FILENAME, methods_text(document, dataset=attachments.dataset).encode("utf-8")),
             ]
             path = state.pack(files, texts)
             state.tick()
