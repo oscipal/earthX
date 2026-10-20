@@ -10,6 +10,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
+import { crsBlockReason, midLatitude } from '../crsUnit';
+import { polygonBbox } from '../geoUtils';
 import { AFTER_BAND_MATH } from '../processingDefaults';
 import {
   formatBytes,
@@ -20,6 +22,7 @@ import {
   namesInExpression,
   processBlockReason,
   uniqueNames,
+  type Area,
   type BandSource,
 } from '../processingOrder';
 import {
@@ -37,6 +40,7 @@ import {
 } from '../processingStore';
 import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
+import type { StacItem } from '../types';
 import StepForm from './StepForm';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
@@ -133,6 +137,16 @@ function Bands({ view }: { view: OrderView }) {
       </p>
     </section>
   );
+}
+
+// The middle latitude of what the order covers: the AOI for "AOI only", else the
+// scenes of the pass (M4-13c-3); `null` without either.
+function areaLatitude(area: Area, aoi: GeoJSON.Geometry | null, scenes: readonly StacItem[]): number | null {
+  if (area === 'aoi') {
+    const box = aoi ? polygonBbox(aoi) : null;
+    return box ? midLatitude([box]) : null;
+  }
+  return midLatitude(scenes.flatMap((scene) => (scene.bbox ? [scene.bbox] : [])));
 }
 
 // "Whole scene" or "AOI only" (M4-13c §3.2, K1, K4).
@@ -303,6 +317,9 @@ export default function ProcessingPanel() {
   const refusalAt = (index: number) => refusals.find((r) => r!.step === index)?.message ?? null;
   const orderRefusals = refusals.filter((r) => r!.step === null);
   const tooLarge = p.area === 'scene' && refusals.some((r) => r!.status === 413);
+  // A target CRS the server turned away holds the review back (M4-13c-3).
+  const crsBlock = crsBlockReason(p.steps, p.crs);
+  const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
 
   return (
     <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Processing">
@@ -410,6 +427,7 @@ export default function ProcessingPanel() {
                             unsupported={problem?.unsupported}
                             showErrors={showErrors}
                             refusal={refusalAt(index)}
+                            latitude={latitude}
                             onChange={(name, value) => p.updateStep(step.key, name, value)}
                             onMove={(direction) => p.moveStep(step.key, direction)}
                             onRemove={() => p.removeStep(step.key)}
@@ -501,8 +519,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="ghost-btn"
-              disabled={p.reviewing}
-              title="Ask the server what this job is expected to cost"
+              disabled={p.reviewing || !!crsBlock}
+              title={crsBlock ?? 'Ask the server what this job is expected to cost'}
               onClick={() => void p.reviewOrder()}
             >
               {p.reviewing ? 'Reviewing…' : 'Review'}
@@ -510,8 +528,8 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="primary-btn"
-              disabled={!estimate || p.starting}
-              title={estimate ? 'Start this order as a job' : 'Review the order first'}
+              disabled={!estimate || p.starting || !!crsBlock}
+              title={crsBlock ?? (estimate ? 'Start this order as a job' : 'Review the order first')}
               onClick={() => void p.startJob()}
             >
               {p.starting ? 'Starting…' : 'Start job'}
