@@ -570,6 +570,8 @@ function overlaySignature(ov: LayerOverlay): string {
 function wantedOverlaysOf(layers: MapLayer[]): WantedOverlay[] {
   const wanted: WantedOverlay[] = [];
   for (const layer of [...layers].reverse()) {
+    // A result whose job's results are going: no more tiles (M4-13c-5).
+    if (layer.result?.expired) continue;
     layer.overlays.forEach((overlay, n) => {
       if (wanted.length >= MAX_LAYER_OVERLAYS) return;
       wanted.push({

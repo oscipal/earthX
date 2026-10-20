@@ -9,7 +9,7 @@ same network the healthchecks already reach with `curl` — never to a data
 source, so it does not fall under `gateway` (KLAERUNGEN B8: that rule covers
 how the *application* reaches data sources). How the application itself will
 reach the object store is `earthx.objectstore` (M4-06, adr/0015); this
-script only prepares the store for it: the keys `api` and `worker` use, and the
+script only prepares the store for it: the keys `api`, `tiler` and `worker` use, and the
 bucket rule the worker checks before it starts.
 
 Garage's image is `FROM scratch` (no shell, no curl), so this script cannot
@@ -18,15 +18,17 @@ from the backend image, before and after Garage starts:
 
   secrets   Generate the RPC secret, admin token and (unless given via env)
             the S3 access key/secret, as 0600 files in a shared volume; and
-            the two service keys (M4-06, adr/0015 §6.4), each into a volume of
-            its own. Idempotent: existing files are never overwritten.
+            the three service keys (M4-06, adr/0015 §6.4; the tiler's since
+            M4-13c-5), each into a volume of its own. Idempotent: existing
+            files are never overwritten, so a volume from before a key existed
+            gets that key and nothing else.
   init      Against Garage's already-running admin API, import the S3 key
             and create the bucket if missing, then grant the key full
             access; import the service keys with their own rights (`jobs`
-            reads and writes, `api` only reads) and set the lifecycle rule
-            for `results/` (adr/0015 §7.3). Idempotent.
+            reads and writes, `api` and `tiler` only read) and set the
+            lifecycle rule for `results/` (adr/0015 §7.3). Idempotent.
   show      Print the S3 access key id and secret from the secrets volume,
-            and the two service keys, for a person to use locally (e.g. with
+            and the service keys, for a person to use locally (e.g. with
             the `aws` CLI) and for the CI smoke step, which masks them. Never
             written to a log by the other subcommands.
 
@@ -91,6 +93,15 @@ SERVICE_KEYS = (
     # `api` only signs GET URLs: a URL signed with it can neither write nor delete (§3.3).
     ServiceKey(
         "api", "earthx-api", "OBJECTSTORE_API_KEY_DIR", "/keys/api", {"read": True, "write": False, "owner": False}
+    ),
+    # `tiler` reads job results to render their tiles (M4-13c-5, adr/0015 Nachtrag 2026-10-20): the
+    # same rights as `api`, a key of its own, so that neither process can use the other's.
+    ServiceKey(
+        "tiler",
+        "earthx-tiler",
+        "OBJECTSTORE_TILER_KEY_DIR",
+        "/keys/tiler",
+        {"read": True, "write": False, "owner": False},
     ),
 )
 
@@ -465,7 +476,7 @@ def _set_lifecycle_rule(base_url: str, admin_token: str, bucket_id: str, error_t
 
 
 def cmd_show(_: argparse.Namespace) -> None:
-    """Print the S3 access key and secret, and the two service keys."""
+    """Print the S3 access key and secret, and the service keys."""
     directory = _secrets_dir()
     access_key = _read_secret_file(directory / "s3_access_key")
     secret_key = _read_secret_file(directory / "s3_secret_key")

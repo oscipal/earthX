@@ -481,6 +481,31 @@ describe('syncLayers: pinned layers of several datasets', () => {
   });
 });
 
+// M4-13c-5: a result layer whose job's results are about to go loads no more tiles.
+describe('syncLayers: a result layer that expired', () => {
+  const result = (id: string, expired: boolean) =>
+    pinned(id, `https://t/${id}`, {
+      derived: 'result',
+      result: { jobID: 'J', expires: '2026-10-27T10:00:00Z', gsd: 10, resampled: null, expired },
+    });
+
+  it('has no source on the map, and the other layers keep theirs', () => {
+    const { map, sources } = liveMap();
+    syncLayers(map as never, [result('gone', true), pinned('kept', 'https://t/kept'), result('live', false)]);
+    expect(sources.size).toBe(2);
+    expect([...sources.keys()].some((id) => id.includes('gone'))).toBe(false);
+  });
+
+  it('is taken off the map when it expires, source and layer together', () => {
+    const { map, sources, visible } = liveMap();
+    syncLayers(map as never, [result('r', false)]);
+    expect(sources.size).toBe(1);
+    expect(visible(lyr('r'))).toBe(true);
+    syncLayers(map as never, [result('r', true)]);
+    expect(sources.size).toBe(0);
+  });
+});
+
 // M4-28: the layer manager is quick and truthful. Each case here failed against
 // the code that removed and re-added every source on every call and named the map
 // layers after their position among the visible ones.

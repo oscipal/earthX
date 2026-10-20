@@ -1408,6 +1408,14 @@ input[type='date']:focus {
   padding: 5px 4px;
   border-bottom: 1px solid var(--panel-border);
 }
+/* A line of its own under the controls of a layer: "Expired", "Resampled …" (M4-13c-5). */
+.layer-row-noted {
+  flex-wrap: wrap;
+}
+.lm-note {
+  flex: 1 0 100%;
+  margin: 0 0 0 22px;
+}
 .lm-eye,
 .lm-btn {
   background: none;
@@ -1954,6 +1962,9 @@ input[type='date']:focus {
   font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+.preview-badge + .preview-badge {
+  margin-left: 6px;
 }
 .pp-range {
   display: flex;

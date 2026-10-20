@@ -43,12 +43,23 @@ import {
   fetchCrs,
   fetchProcess,
   fetchResults,
+  fetchResultTileJson,
   placeJob,
   type AoiProvenance,
   type EstimateDocument,
   type Order,
+  type ResultTileJson,
   type StatusInfo,
 } from './processing';
+import {
+  isResultExpired,
+  positive,
+  resultGsd,
+  resultLayerName,
+  resultRender,
+  resultTileTemplate,
+  tilesHref,
+} from './resultLayer';
 import {
   aoiProvenanceFor,
   bandSources,
@@ -77,6 +88,7 @@ import {
   type PreviewSpec,
 } from './processingPreview';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
+import { buildTileUrl } from './mapLayers';
 import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
@@ -143,6 +155,18 @@ export interface JobEntry {
   expired: boolean;
   // What the panel called the job (K5); `null` for a job of the download dialog.
   title: string | null;
+  // The tiles of a raster result (the link `tiles` of the results document, M4-13c-5);
+  // `null` until the results are read, for an export, and for a result before this link existed.
+  tiles: JobTiles | null;
+}
+
+export interface JobTiles {
+  // `/results/{result_id}/WebMercatorQuad/tilejson.json`, already checked (`resultLayer.ts::tilesHref`).
+  href: string;
+  // The columns of the raster and its stated pixel size in metres (projected CRS only):
+  // what "Overview" needs to know about the data.
+  width: number | null;
+  gsd: number | null;
 }
 
 // What the review made of one job of a batch: its estimate, or the reason the
@@ -195,6 +219,8 @@ interface ProcessingState {
   applyRange: () => void;
   pinPreview: () => void;
   closeProcessing: () => void;
+  // A finished job's result as a layer of its own on the map (M4-13c-5, plan §3.4).
+  showResultOnMap: (jobID: string) => Promise<void>;
   openJobs: () => void;
   closeJobs: () => void;
   ensureDescription: (datasetId: string) => void;
@@ -548,9 +574,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     try {
       const doc = await fetchResults(jobID);
       const properties = doc.result?.properties;
+      const href = tilesHref(doc);
       updateJob(jobID, {
         files: resultFiles(doc),
         resampled: properties ? properties['earthx:resampled'] === true : null,
+        tiles: href
+          ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
+          : null,
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -609,6 +639,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       cancelling: false,
       expired: false,
       title,
+      tiles: null,
     };
     set((s) => ({ jobs: [entry, ...s.jobs] }));
     persist();
@@ -720,6 +751,65 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     closeProcessing: () => {
       abortEstimate();
       set({ open: false, reviewing: false });
+    },
+    // The layer reads the tiles from the tiler, which knows nothing of the job: the link
+    // of the results document is all there is (plan §3.4). Once the job's results are
+    // about to go there are no tiles any more, and no layer is made of them.
+    showResultOnMap: async (jobID) => {
+      const job = get().jobs.find((j) => j.jobID === jobID);
+      const app = useAppStore.getState();
+      if (!job?.tiles || job.phase !== 'successful' || job.expired) return;
+      if (isResultExpired(job.expires, Date.now())) {
+        updateJob(jobID, { expired: true });
+        return;
+      }
+      const shown = (layers: MapLayer[]) => layers.find((l) => l.result?.jobID === jobID);
+      const already = shown(app.layers);
+      if (already) {
+        if (!already.visible) app.toggleLayerVisible(already.id);
+        return;
+      }
+      const { href, width, gsd } = job.tiles;
+      let tileJson: ResultTileJson;
+      try {
+        updateJob(jobID, { error: null });
+        tileJson = await fetchResultTileJson(href);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 410) {
+          updateJob(jobID, { expired: true });
+        } else {
+          const reason = error instanceof Error ? error.message : String(error);
+          updateJob(jobID, { error: `The result could not be shown on the map. ${reason}` });
+        }
+        return;
+      }
+      // A second click while the TileJSON was coming: one layer.
+      if (shown(useAppStore.getState().layers)) return;
+      useAppStore.getState().pinDerivedLayer({
+        name: resultLayerName(job.title),
+        derived: 'result',
+        result: {
+          jobID,
+          expires: job.expires,
+          gsd: resultGsd(gsd, width, tileJson.bounds),
+          resampled: job.resampled,
+          expired: false,
+        },
+        overlays: [
+          {
+            kind: 'raster',
+            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range)),
+            bounds: tileJson.bounds,
+            minZoom: tileJson.minZoom,
+            // rio-tiler's `maxzoom` is the level nearest the data's pixel size, and often the coarser
+            // one (10 m at 48° N: level 13, 12.8 m). One level more lets the map ask for the data
+            // itself; the tiler reads the file at any level.
+            maxZoom: tileJson.maxZoom + 1,
+          },
+        ],
+        itemIds: [],
+        cropToAoi: false,
+      });
     },
     openJobs: () => set({ jobsOpen: true }),
     closeJobs: () => set({ jobsOpen: false }),

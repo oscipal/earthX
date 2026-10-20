@@ -33,6 +33,7 @@
     (Nachbesserung: keine Zugangsdaten in Logs).
   - Entscheidungslog bis 02.10.2026, besonders „M4 Q4“ bis „M4 Q11“.
 - **Betroffen:**
+  - M4-13c-5 (Nachtrag §14c: der `tiler` liest Ergebnisse, dritter Dienstschlüssel)
   - M4-06 (Modul, signierte URLs, Ablauf, AST-Test), M4-08 (Job-API, Cache,
     Aufräumen der Zeilen), M4-11 und M4-12 (Ergebnisse), M4-13 (Download im
     Panel); M4-11b (Nachtrag §14b: ZIP eines Raster-Jobs).
@@ -1281,6 +1282,99 @@ Entwurf unverändert tragen: die Job-Schnittstelle in einen eigenen Prozess lege
 (Log 2026-10-10, „nach M4 vorgemerkt“) oder die Liste der Teile einem
 Reverse-Proxy mit `mod_zip` (`X-Archive-Files`) geben. Beides ist nicht Teil von
 M4-11b.
+
+## 14c. Nachtrag vom 2026-10-20: der `tiler` liest Ergebnisse über `objectstore` (zu §4.2, §6.4, B8; M4-13c-5)
+
+**Entscheidung (Otto, 15.10.2026, M4-13c F2 (a) mit Auflage):** Die Kacheln eines
+fertigen Raster-Jobs liefert der `tiler`, nicht der Browser und nicht `api`. Er
+liest `results/{result_id}/result.tif` aus dem Objektspeicher, **ohne
+Datenbank**. Das ist ein dritter Prozess, der den Speicher öffnet (neben `jobs`
+und `api`); es gilt weiter §4.1: keine Funktion in `objectstore` nimmt eine URL,
+einen Host oder einen Bucket an.
+
+**Dritter Dienstschlüssel (zu §6.4).** `earthx-tiler`, **nur Lesen** (wie
+`earthx-api`: `read`, nicht `write`, nicht `owner`), in einem Volume
+`objectstore-key-tiler`, das nur `tiler` liest (`/run/secrets/objectstore`,
+`:ro`); `objectstore-secrets` schreibt es, `objectstore-init` liest es. Nicht der
+Schlüssel des Workers: Wer die Kacheln liest, darf nichts schreiben und die
+Ablaufregel nicht löschen (§3.3). Der `tiler` bekommt `S3_ENDPOINT`,
+`S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET` und die zwei `_FILE`-Angaben, keine
+`AWS_*`-Namen (§3.1). Fehlen die Angaben, startet der `tiler` trotzdem (alle
+Quellen laufen) und beantwortet `/results` mit `503`; im Log steht die Variable,
+nie ihr Wert.
+
+**Wie GDAL die Datei bekommt.** `objectstore.results.signed_read` gibt eine für
+den **internen** Endpunkt signierte GET-URL (höchstens 15 Minuten, nie über das
+Ende des Ergebnisses hinaus, nicht unter 60 Sekunden Rest). Der `tiler` öffnet sie
+mit `/vsicurl/` (für `result.tif` und `mask.tif` je eine). Sie ist **keine** Adresse einer Datenquelle und läuft nicht durch
+`gateway`: Sie stammt aus `objectstore`, der Endpunkt nur aus der Konfiguration.
+Das ist ein Fall der Ausnahme vom Nachtrag zu B8 (2026-10-05). `.importlinter`
+ändert sich nicht (`api` darf `objectstore` schon; `botocore` bleibt allein in
+`client.py`).
+
+- **`gateway.gdal.gdal_options` sperrt den internen Endpunkt nicht [M]:** Die
+  Optionen kennen keinen Host; die Liste der Endungen (`.tif`, …) wird vor dem `?`
+  geprüft, und die signierte URL endet dort auf `result.tif`. Gemessen mit einem
+  lokalen Server, der nur GET mit gültiger Signatur beantwortet.
+- **`CPL_VSIL_CURL_USE_HEAD=NO` für diese Öffnung [M]:** Eine für GET signierte
+  URL beantwortet der Speicher auf `HEAD` mit `403`. GDAL fällt darauf zurück und
+  holt einmal ohne `Range`; die Option spart diese Anfrage. Sie steht in
+  `api/result_tiles.py`, nicht in `gateway` (dessen Optionen gelten für Quellen).
+- **Cache des Prozesses:** die Antwort des `HEAD` 60 Sekunden, die signierte URL
+  10 Minuten (GDALs Lesecache hängt an der URL; eine neue Signatur je Kachel
+  öffnete die Datei jedes Mal neu). Beides je höchstens 128 Ergebnisse. Kein
+  Zustand, den eine zweite Instanz vermisst.
+
+**Die Maske (Otto, 20.10.2026).** Auf der Karte erscheint das Ergebnis auf die Fläche des Jobs zugeschnitten, im
+Download bleibt `result.tif` das ganze Rechteck mit `mask.tif`. Der `tiler` liest deshalb zu jeder Kachel dieselbe Kachel
+von `mask.tif` (gleiches Raster, `nearest`) und macht durchsichtig, wo sie 0 ist. Beide Dateien liegen schon unter
+`results/{result_id}/`; dasselbe Objekt, derselbe Schlüssel, dieselben Prüfungen, und eine zweite signierte URL für
+`mask.tif`. Ein Ergebnis ohne Maske wird nicht ausgeliefert (`404`). Gemessen: die Maske hat keine Übersichten, die
+untersten Stufen kosten 0,9 s (10 980²) bis 3,1 s (30 000²) je Kachel, `plans/m4-13c-vorschau-und-viewer.md` §15.
+
+**Das Ende der Kacheln.** Der `tiler` kennt `expires_at` nicht (keine
+Datenbank). Er leitet es aus dem Objekt ab: `Last-Modified + RESULT_TTL` (7 Tage)
+ist der Tag, an dem die Bucket-Regel (§7.3) die Datei löscht. Der Aufseher lädt
+hoch, **bevor** er den Lauf abschließt und `expires_at = Abschluss + 7 Tage`
+setzt; also gilt `Last-Modified + 7 Tage ≤ expires_at`, der `tiler` hört nie nach
+der API auf. Ab diesem Datum minus 60 Sekunden (`MIN_REMAINING`) antwortet er
+`410`, für ein fehlendes Objekt `404`, für eine `result_id` anderer Gestalt als
+`token_urlsafe(16)` `404` **vor** jedem Zugriff auf den Speicher. Die Zuordnung
+`jobID` → `result_id` kennt nur die Queue; das Ergebnisdokument
+(`GET /processing/jobs/{jobID}/results`) trägt dafür den Link `tiles`
+(`/results/{result_id}/WebMercatorQuad/tilejson.json`). Die `result_id` steht damit
+im Ergebnisdokument und in jeder Kachel-URL; sie stand schon im Pfad jeder
+signierten URL (§8.1) und im `303`.
+
+**Logs (§9.2).** GDAL schreibt den Pfad, den es nicht lesen konnte, in eine eigene
+Warnung (`HTTP response code on <URL>`); rasterio reicht sie ans Logging weiter
+[M]. Bei einem Ergebnis ist das die signierte URL mit `result_id`, Schlüssel-ID und
+Signatur. `JsonFormatter` ersetzt in jeder Zeile jeden Wert eines `X-Amz-…` und
+jede `result_id` hinter `/results/`; der Zugriffslog zeigt `/results/{resultID}/…`
+(wie `{jobID}`); und der `tiler` schreibt für einen Lesefehler an einem Ergebnis
+keinen Traceback. Das Muster war vorher nicht nötig, weil Quellen öffentliche
+Adressen haben.
+
+**Grenze.** Ein verworfener Job (`DELETE`) beendet die Kacheln nicht, solange die
+Datei liegt (ein Lauf kann mehreren Jobs gehören, Cache Q11): Wer den Link hat,
+sieht die Kacheln bis zum Ablauf, wie eine schon geladene Datei.
+
+**Bestehende Installation (Otto, 15.10.2026).** Ein vorhandenes Volume
+`objectstore-secrets` bekommt den Schlüssel beim nächsten
+`docker compose up -d --build`, ohne Datenverlust und ohne Handarbeit: `secrets`
+schreibt nur, was fehlt (die Schlüssel von `jobs` und `api` bleiben, „already
+present, unchanged“); `init` importiert nur `earthx-tiler`, nur mit `read`, legt
+keinen Bucket an und setzt die Regel unverändert. Belegt durch Tests gegen ein
+Geheimnis-Verzeichnis im Stand von M4-06 und die nachgebildete Admin-API
+(`backend/tests/compose/test_objectstore_bootstrap.py`).
+
+**Nicht belegt.** Docker läuft in der Cloud-Sitzung nicht (`cloud-umgebung.md` §4):
+Der Weg Garage → signierte URL → GDAL im `tiler` ist hier gegen `moto` und einen
+lokalen Server geprüft, nicht gegen das offizielle Image. Der Smoke der CI
+(`compose/objectstore/smoke.py`) kennt den Schlüssel des `tiler` nicht; ihn dort
+einzubinden brauchte `S3_TILER_*` in `.github/workflows/ci.yml` und ist eine
+Änderung, die Otto freigeben müsste. Prüfanleitung Schritt 6 und 10 in
+`plans/m4-13c-vorschau-und-viewer.md` §9.
 
 ## 15. Quellen
 

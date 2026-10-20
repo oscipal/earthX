@@ -87,6 +87,10 @@ class CogReader(Reader):
     Everything it can do — ``tile``, ``part``, ``feature``, ``preview``,
     ``statistics`` — is rio-tiler's partial read over HTTP range requests. The
     only thing added here is the refusal.
+
+    One exception to "every path comes from ``asset_path``", agreed in adr/0015 §14c:
+    ``api/result_tiles.py`` builds the path of a job result from a URL that
+    ``earthx.objectstore`` signed. A test lists the places that build an ``AssetPath``.
     """
 
     def __attrs_post_init__(self) -> None:
