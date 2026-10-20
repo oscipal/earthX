@@ -576,3 +576,31 @@ und hält an (`CLAUDE.md`, „Fehlt der Zugang …“).
   - Die Warnung zu anderen Versionen (K1) und die Meldung zu einem unbekannten
     Datensatz geben keine Werte aus der Datei wieder.
   - Die Gegenproben prüfen die Vergleichsfunktion selbst.
+
+## 10. M4-16b umgesetzt (20.10.2026)
+
+- **Image** (`backend/Dockerfile`): Basis `python:3.12-slim` per Digest des
+  Multi-Arch-Index (§2.7), die bisherige Stufe heißt `app`, dazu die Stufe
+  `runner` (`EARTHX_COMMIT`, `USER 10001:10001`, `ENTRYPOINT`). Alle neun
+  `build:` in `docker-compose.yml` nennen `target: app`. Ein Test
+  (`tests/test_runner_image_definition.py`) hält Digest, Stufen und `target`
+  fest, weil der Bau in der Session nicht durchläuft.
+- **Compose-Job** (`.github/workflows/ci.yml`, ausdrücklich Teil der Aufgabe):
+  Stufe bauen, UID `10001`, `versions` unter `--network none` gleich dem Block
+  `engine` des Dienstes `worker`, `check` auf
+  `tests/fixtures/runner/recipe-ci.json` nennt genau einen Host, `run` ohne
+  Netz endet mit 4 und lässt keine Datei zurück. Die Datei ist synthetisch
+  (echter Datensatz, erfundene Item-ID, Quadrat bei 0°/0°); die Fassung des
+  Kerns entspricht dem Stand der Lock-Datei und muss bei einer Änderung der
+  Versionen neu geschrieben werden, sonst warnt `run` nur (K1).
+- **README:** Abschnitt „Lokaler Runner (seit M4-16)“.
+- **Prüfung in der Session [M]:** `apt` ist mit der Allowlist durchgelaufen
+  (Schicht `apt-get install curl libexpat1` gebaut). `pip install` im Bau
+  scheitert dort an der TLS-Kette des Session-Proxys (`self-signed certificate
+  in certificate chain`); das Image enthält dessen CA nicht. Das ist eine Frage
+  des Zugangs der Session, nicht des `Dockerfile`. Deshalb **nicht in der
+  Session geprüft:** Bau der Stufe, `versions`, UID, `check`, `run` unter
+  `--network none`. Maßgeblich ist der Compose-Job der CI.
+  Ohne Image geprüft: `check` auf `recipe-ci.json` gibt genau den einen Host
+  aus (Exit 0), `ruff`, die Tests des Runners und der Bau-Definition laufen.
+- **Prüfanleitung für Otto** (Windows PowerShell 5.1): im PR.
