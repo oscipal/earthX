@@ -8,7 +8,7 @@ setzt dieselbe Session um (oder die Sessions aus Frage 6).
 **Grundlage:**
 - `plans/m4-processing-kern.md` M4-17, S5 (§1.1c), §1.2, Abnahme 7 (§5).
 - `adr/0006` §2 (K1–K8), §3.4, §3.5, §4.2 (M1–M4), §5 „Zu Frage 4“, §6 Folge 1.
-- `adr/0001` Z4, E4/E5 (`plans/m1-fundament.md` §1), `architekturplan.md` 6.3,
+- `adr/0001` Z4; E4/E5 (`plans/m1-fundament.md` §1); `architekturplan.md` 6.3,
   12.1, 12.3.
 - `plans/m4-12-mosaik-ueberflug.md` §8 F3/F4, §11, §12 (Mosaikregel, Reihenfolge).
 - `plans/m3-dritte-quelle-und-interface.md` P11.
@@ -18,21 +18,24 @@ Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung.
 
 **Kurzfassung.**
 
-- Der `tiler` bekommt eine Mosaik-Kachel: dieselben Routen wie heute für eine
-  Szene (Kachel und TileJSON), aber über die Szenen **eines Überflugs**, die
-  als Item-Liste in der URL stehen (`adr/0006` §4.2, M1). Keine Such-ID, kein
-  neuer Zustand, keine neue Tabelle, keine neue Abhängigkeit (§3, §4).
-- Die Reihenfolge ist die des Mosaik-Jobs (`processing.mosaic.mosaic_order`),
-  die Regel `FirstMethod` bzw. `merge_first_valid` — unverändert (S5). Der
-  Server sortiert, die Reihenfolge in der URL zählt nicht.
-- Grenzen: höchstens 64 Szenen je URL, höchstens 12 gelesene Szenen je Kachel
-  (nach dem Vorfilter über den Footprint), Mosaik-Kacheln ab z8 (§5). Gemessen:
-  ein Überflug über Mitteleuropa hat bis 60 Szenen, eine z8-Kachel berührt
-  davon höchstens 9 (§2.2).
+- Der `tiler` bekommt eine Mosaik-Kachel: Kachel und TileJSON wie heute für
+  eine Szene, aber über die Szenen **eines Überflugs**, die als Item-Liste in
+  der URL stehen (`adr/0006` §4.2, M1). Keine Such-ID, keine neue Tabelle,
+  kein neues Paket (§3, §4).
+- Die Reihenfolge ist die des Mosaik-Jobs (`mosaic_order`), die Regel
+  `FirstMethod` bzw. `merge_first_valid` — unverändert (S5). Der Server
+  sortiert; die Reihenfolge in der URL zählt nicht.
+- Grenzen: höchstens 64 Szenen je URL, höchstens 12 gelesene Szenen je Kachel,
+  Mosaik-Kacheln ab z8 (§5). Gemessen: Ein Überflug über einer landesgroßen
+  Fläche hat bis 60 Szenen, eine z8-Kachel berührt davon höchstens 9 (§2.2).
+- Neu gegenüber `adr/0006`: Jede Mosaik-Kachel braucht die Metadaten **aller**
+  Items der URL (Vorfilter, Reihenfolge), und die Suche füllt den Item-Cache
+  nicht (§2.8). Ohne Gegenmittel holt ein kalter Kartenausschnitt dieselben
+  Items vielfach von der Quelle. Vorschlag in §4.3, Frage 8.
 - Befund: Die Karte mosaikiert schon heute — als Stapel einzelner Layer in der
-  **Auswahlreihenfolge**. Das ist die Regel des Zuschnitts, nicht die des
-  Mosaik-Jobs (§2.1). Daraus folgt Frage 2.
-- Sieben Fragen an Otto (§7); `adr/0017` halte ich nicht für nötig, weil
+  **Auswahlreihenfolge**, der Regel des Zuschnitts, nicht der des Mosaik-Jobs
+  (§2.1). Daraus folgt Frage 2.
+- Acht Fragen an Otto (§7); `adr/0017` halte ich nicht für nötig, weil
   `adr/0006` die Grundsatzfrage schon entschieden hat (Frage 1).
 
 ---
@@ -44,11 +47,11 @@ Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung.
 | `adr/0006` §5 „Zu Frage 4“ | Mosaik im Kachel-Pfad, wenn es kommt, „als Item-Liste in der URL (M1), nie als Such-ID“; höchstens 25 Items je URL; Vorfilter über die Item-`bbox` | Option O1 (§3); die 25 werden mit Messung neu begründet (§5) |
 | `adr/0006` §6 Folge 1 | Der Satz zur Such-ID in `architekturplan.md` 6.3 „kehrt seine eigene Begründung um und ist zu ersetzen“ | nie nachgezogen: 6.3 nennt die Such-ID heute noch (§2.6) |
 | `adr/0006` §7 Frage 1, P11, Q7 | Mosaik im Kachel-Pfad erst in M4b | diese Aufgabe |
-| S5 | dieselbe Mosaikregel (Reihenfolge, Überlappung) wie Export-Job und Mosaik-Job; M4-17 ändert sie nicht | §4.3 |
-| M4-12 F3, F4 | erstes gültiges Pixel in der Reihenfolge der Liste; `api` sortiert die Liste eines Mosaik-Jobs: zuerst die Szenen im Ziel-CRS, dann die übrigen, je nach Item-ID; Ziel-CRS = das der meisten Szenen, bei Gleichstand die kleinere EPSG-Zahl | §4.3 |
-| `adr/0001` Z4, K3 | die Kachel-URL bestimmt das Bild vollständig | §4.1 |
-| E4, E5 | Anwendungs-Cache in Postgres; ein Ausfall macht nur langsamer | Option O2 (§3) |
-| Q8, §1.2 | keine AOI und kein Rezept-Hash nach außen, nicht in URLs, nicht in Logs | §4.6 |
+| S5 | dieselbe Mosaikregel (Reihenfolge, Überlappung) wie Export-Job und Mosaik-Job; M4-17 ändert sie nicht | §4.4, Frage 2 |
+| M4-12 F3, F4 | erstes gültiges Pixel in der Reihenfolge der Liste; `api` sortiert die Liste eines Mosaik-Jobs: zuerst die Szenen im Ziel-CRS, dann die übrigen, je nach Item-ID; Ziel-CRS = das der meisten Szenen, bei Gleichstand die kleinere EPSG-Zahl | §4.4 |
+| `adr/0001` Z4; `adr/0006` K3 | die Kachel-URL bestimmt das Bild vollständig | §4.1 |
+| E4, E5 | Anwendungs-Cache in Postgres; ein Ausfall macht nur langsamer | Option O2 (§3); Frage 8 |
+| Q8, §1.2 | keine AOI und kein Rezept-Hash nach außen, nicht in URLs, nicht in Logs | §4.7 |
 | KLAERUNGEN B8 | jede Adresse passiert `check_url`, bevor GDAL sie sieht | §4.2: dieselbe Auflösung wie die Einzelkachel |
 | KLAERUNGEN B11 | Anzeige ab Lizenzstufe `display` | §4.2: dieselbe Prüfung wie die Einzelkachel |
 
@@ -62,17 +65,18 @@ Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung.
   (`frontend/src/mapLayers.ts` `syncFocusRaster`, `addTiles`; Vorlage
   `api.ts` `buildTileTemplate`). Je Kartenkachel fragt der Browser so viele
   Kacheln an, wie Szenen sie berühren; der `tiler` liest jede für sich.
-- Die Stapelung ist „zuerst gewählte Szene oben“ (Kommentar in
-  `syncFocusRaster`), also erstes gültiges Pixel **in der Auswahlreihenfolge**.
-  Das ist die Reihenfolge des synchronen Zuschnitts und des Export-Jobs (beide
-  nehmen die Liste, wie der Client sie schickt; `access/download.py`
+- Die Stapelung ist „zuerst gewählte Szene oben“ (`syncFocusRaster`, seit dem
+  Befund aus M3-09), also erstes gültiges Pixel **in der Auswahlreihenfolge**.
+  Das ist die Reihenfolge des synchronen Zuschnitts und des Export-Jobs: Beide
+  nehmen die Liste, wie der Client sie schickt (`access/download.py`
   `crop_asset`, `processing/export.py`). Der Mosaik-Job sortiert dagegen in
-  `api` (`api/intake.py` `_one_overpass` → `mosaic_order`).
+  `api` (`api/intake.py` `_one_overpass` → `mosaic_order`). Heute stimmen
+  Karte und Zuschnitt an Überlappungen überein, Karte und Mosaik-Job nicht.
 - Die Vorschau eines Operators (`processingPreview.ts`) stapelt ebenso je
   Szene, in der Reihenfolge der Auswahl; der Job, dessen Vorschau sie ist,
-  rechnet in der sortierten Reihenfolge. Wo sich zwei Szenen mit
+  rechnet als Mosaik in der sortierten Reihenfolge. Wo sich zwei Szenen mit
   verschiedenen Werten überlappen, zeigen Vorschau und Job heute verschiedene
-  Szenen — genau das, was S5 ausschließen will.
+  Szenen.
 - Obergrenzen im Frontend: `MAX_MOSAIC_LAYERS = 40`, `MAX_PREVIEW_SCENES = 40`;
   darüber werden Szenen ohne Hinweis weggelassen.
 - Die AOI erreicht nie eine Kachel-URL: Der Zuschnitt auf der Karte maskiert
@@ -110,17 +114,17 @@ Zwei Dinge daraus:
    ein Mosaik am nützlichsten.
 
 Rechenweg: `scratchpad`-Skript mit `morecantile` und `shapely` über die
-gespeicherten Antworten, offline (§10).
+gespeicherten Antworten, offline (§10.1).
 
-### 2.3 Was eine Mosaik-Kachel kostet [M aus `adr/0006`, A]
+### 2.3 Was eine Mosaik-Kachel an Pixeln kostet [M aus `adr/0006`, A]
 
 `adr/0006` §3.4 und §3.5 (gemessen gegen dieselbe Quelle):
 
-| Zoom | gelesen je Szene, kalt | Zeit je Szene, kalt | warm |
+| Zoom | gelesen je Szene, kalt | Zeit je Szene, kalt | warm, je Kachel |
 |---|---|---|---|
 | z8 | 96 kB (+ 32 kB Kopf) | ~1,0 s | — |
 | z10 | 160 kB | ~0,7 s | 115–193 ms |
-| z12 | 1164 kB | ~1,2 s | |
+| z12 | 1164 kB | ~1,2 s | — |
 | z14–z18 | 2016 kB | ~1,0–1,2 s | 54 ms |
 
 Eine Mosaik-Kachel an einer Naht (2 Szenen, z11): 2,7 MB, 1,1–1,9 s.
@@ -128,30 +132,37 @@ Eine Mosaik-Kachel an einer Naht (2 Szenen, z11): 2,7 MB, 1,1–1,9 s.
 **[A]** Der Browser fragt heute je Kartenkachel jede berührende Szene einzeln
 an (§2.1). Die Mosaik-Kachel liest dieselben Szenen — höchstens; mit
 `FirstMethod` und Lesen in Portionen hört sie auf, sobald jedes Pixel gefüllt
-ist (§4.4). Für die Quelle wird es also nicht teurer, eher billiger; für den
-Browser sind es N-mal weniger Anfragen. Die 2,7 MB von `adr/0006` sind kein
-Aufschlag des Mosaiks, sondern zweimal der Preis einer Szene ab z12.
+ist (§4.5). An Pixeln wird es für die Quelle also nicht teurer, eher billiger;
+für den Browser sind es N-mal weniger Anfragen. Die 2,7 MB von `adr/0006` sind
+kein Aufschlag des Mosaiks, sondern zweimal der Preis einer Szene ab z12. Was
+neu dazukommt, sind die Item-Abrufe (§2.8).
 
 ### 2.4 Die Mosaikregel liegt an zwei Stellen, die `access` nicht beide erreicht [P]
 
 - `access/crop_rules.py` `merge_first_valid` und rio-tilers `FirstMethod`
   (im Zuschnitt über `mosaic_reader`) sind dieselbe Regel; die Docstrings
-  sagen es, ein Test von M4-12a belegt es.
+  sagen es, `tests/earthx/processing/test_export.py` belegt es (Zuschnitt
+  gegen Export bitgleich, M4-11a), `test_mosaic.py` den Vergleich Mosaik-Job
+  gegen Export (M4-12a).
 - Die **Reihenfolge** des Mosaik-Jobs liegt in `processing/mosaic.py`
   (`target_crs`, `mosaic_order`). `access` darf `processing` nicht importieren
   (`.importlinter`, Vertrag `access`); `api` darf es und tut es schon
-  (`api/intake.py`). Der `tiler` lädt `processing` erst bei Bedarf
-  (`_operator_support`, Test `test_tiler_start_is_light`).
-- Folge: Das Sortieren gehört in `api/tiler.py` (Pfad-Abhängigkeit, verzögerter
-  Import), das Lesen und Mischen in `access` (§4.2). Die Regel wandert nicht.
+  (`api/intake.py`).
+- Der `tiler` lädt `processing` erst bei Bedarf (`_operator_support`); der Test
+  `tests/earthx/api/test_tiler_start_is_light.py` hält das fest. Ein Import von
+  `earthx.processing.mosaic` lädt über `processing/__init__.py` den ganzen
+  Worker-Kern.
+- Die beiden Funktionen der Reihenfolge sind rein (Zählen, Sortieren, EPSG aus
+  `rasterio.crs`). Folge: Kleinentscheidung KE4 (§7).
 
 ### 2.5 `mosaic_reader` hält die Reihenfolge, auch mit Threads [P]
 
-`rio_tiler` 9.4.6, `mosaic/reader.py` und `tasks.py`: Die Liste wird in
+`rio_tiler` 9.4.6 im venv, `mosaic/reader.py` und `tasks.py`: Die Liste wird in
 Portionen (`chunk_size`, Vorgabe = `threads`) gelesen; innerhalb einer Portion
-parallel, das Ergebnis aber in der Reihenfolge der Liste gemischt
-(`filter_tasks` iteriert die Futures der Reihe nach). Nach jeder Portion prüft
-er `pixel_selection.is_done` und hört auf. Mit `threads=1` liest er Szene für
+parallel und vollständig (der `ThreadPoolExecutor` wartet auf alle), das
+Ergebnis aber in der Reihenfolge der Liste gemischt (`filter_tasks` iteriert
+die Futures der Reihe nach). Nach jeder Portion prüft er
+`pixel_selection.is_done` und hört auf. Mit `threads=1` liest er Szene für
 Szene und hört nach der ersten auf, die alles füllt (so der synchrone Zuschnitt,
 M3-18 F4). `allowed_exceptions` lässt `TileOutsideBounds` durch, ohne
 abzubrechen.
@@ -163,33 +174,69 @@ kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind“; die Aufgabe M4-17
 nennt diese Option deshalb ausdrücklich. `adr/0006` (angenommen) hat sie am
 20.09.2026 verworfen und die Berichtigung von 6.3 als Folge 1 genannt; sie ist
 nie geschehen. Nach der Rangfolge gilt das ADR. Die Abwägung in §3 holt sie
-trotzdem nach, weil die Aufgabe sie verlangt.
+trotzdem nach, weil die Aufgabe sie verlangt. Ebenso überholt wäre nach dieser
+Aufgabe der Docstring von `ViewerInfo` („every tile URL is per-item, never a
+mosaic“, `catalog/registry.py`).
 
 ### 2.7 Stand der Technik
 
-Recherche vom 20.10.2026 über einen Subagenten. Erreichbar waren GitHub (Rohdateien)
-und Suchmaschinen; die Doku-Seiten von Development Seed, Planetary Computer, AWS,
-nginx, Sentinel Hub und Earth Engine nicht. [P] heißt hier: Rohdatei aus dem
-Repository gelesen, über die Zusammenfassung des Abrufwerkzeugs, nicht Zeile für
-Zeile geprüft.
+Recherche vom 20.10.2026. Erreichbar waren GitHub-Rohdateien und
+Suchmaschinen, die Doku-Seiten von Development Seed, Planetary Computer, AWS,
+Sentinel Hub und Earth Engine nicht. **[P]** steht nur, wo ich die Datei selbst
+gelesen habe (rio-tiler im venv; fünf Rohdateien per `curl`, §10.2); was ein
+Subagent über die Zusammenfassung seines Abrufwerkzeugs gelesen hat, steht auf
+**[S]**.
 
 | Befund | Beleg | Stufe | Folge hier |
 |---|---|---|---|
-| titiler-pgstac registriert eine Suche per `POST /searches/register`; die ID ist ein Hash über die Suche (`hash text PRIMARY KEY` der Tabelle `searches`), die Kachel-URL trägt nur die ID | [`004_search.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/004_search.sql), [`searches_endpoints.md`](https://raw.githubusercontent.com/stac-utils/titiler-pgstac/main/docs/src/endpoints/searches_endpoints.md) | P | das Muster von O2/O3 |
-| Die Einträge in `searches` haben keinen Ablauf (nur `lastused`, `usecount`); „retention-driven GC“ steht erst unter „Unreleased“ | [pgstac `CHANGELOG.md`](https://raw.githubusercontent.com/stac-utils/pgstac/main/CHANGELOG.md) | P | eine „kurzlebige“ Such-ID ist dort gerade nicht gelöst; mit Ablauf entsteht das Problem toter URLs aus §3 O2 |
-| Grenzen je Kachel bei titiler-pgstac: `items_limit` 100, `time_limit` 5 s, `exitwhenfull` und `skipcovered` an | [`settings.py`](https://raw.githubusercontent.com/stac-utils/titiler-pgstac/main/titiler/pgstac/settings.py), [`006_tilesearch.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/006_tilesearch.sql) | P | „aufhören, sobald voll“ ist Praxis (§4.4) |
-| Planetary Computer: Mosaik über `searchid` (titiler-pgstac), **höchstens 10 Items je Kachel** (`DEFAULT_MAX_ITEMS_PER_TILE`), `minzoom` je Collection, darunter keine Items | [`pctiler/config.py`](https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/config.py), [`pctiler/reader.py`](https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/reader.py) | P | stützt Szenen- und Zoomgrenze in §5 (dort 12 und z8, gemessen statt übernommen) |
-| Beispiel des Planetary Computer für ein Sentinel-2-Mosaik: `minZoom: 9`, ohne Begründung | [Quickstart-Notebook](https://raw.githubusercontent.com/microsoft/PlanetaryComputerExamples/main/quickstarts/using-the-data-api.ipynb) | P | Größenordnung wie z8 |
-| `mosaic_reader`: `FirstMethod` mit `exit_when_filled`; Portionen (`chunk_size`) parallel, innerhalb einer Portion läuft alles zu Ende, danach Abbruch, wenn voll | [`rio_tiler/mosaic/reader.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/mosaic/reader.py), [`tasks.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/tasks.py), [`methods/defaults.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/mosaic/methods/defaults.py); im venv nachgelesen (§2.5) | P | Frage 5 |
-| Ein eigenes Mosaik-Backend ist vorgesehen: rio-tilers `BaseBackend` verlangt `assets_for_tile`, `assets_for_point`, `assets_for_bbox`; `titiler.mosaic`s `MosaicTilerFactory` nimmt ein solches Backend, Threads über `MOSAIC_CONCURRENCY` | [`rio_tiler/mosaic/backend.py`](https://raw.githubusercontent.com/cogeotiff/rio-tiler/main/rio_tiler/mosaic/backend.py) (im venv vorhanden), [`titiler/mosaic/factory.py`](https://raw.githubusercontent.com/developmentseed/titiler/main/src/titiler/mosaic/titiler/mosaic/factory.py) | P | O1 geht mit `BaseBackend` aus rio-tiler; `titiler.mosaic` ist nicht installiert und wäre ein neues Paket (§4.1) |
-| titiler, Diskussion zu Mosaiken bei niedrigem Zoom (rund 950 COGs): z10 4–10 s, z8 8–16 s, z7 35–60 s, z6 Timeout; Rat der Maintainer: Mosaik erst ab einem Mindestzoom | [titiler Discussion #287](https://github.com/developmentseed/titiler/discussions/287) | P | Mindestzoom in §5 |
-| titiler-stacapi sucht je Kachel bei der STAC-API und warnt selbst, dass so jede Kachel eine Suche kostet | [`titiler/stacapi/backend.py`](https://raw.githubusercontent.com/developmentseed/titiler-stacapi/main/titiler/stacapi/backend.py) | P | O4 verworfen |
-| MosaicJSON: Quadkey → Liste von Asset-URLs; `cogeo-mosaic` liest die Datei über `httpx2` bzw. `boto3` | [`backends/web.py`](https://raw.githubusercontent.com/developmentseed/cogeo-mosaic/main/cogeo_mosaic/backends/web.py), [`backends/s3.py`](https://raw.githubusercontent.com/developmentseed/cogeo-mosaic/main/cogeo_mosaic/backends/s3.py) | P | O5 verworfen (B8), wie `adr/0006` |
-| Reihenfolge anderswo: pgstac ohne `sortby` `datetime DESC, id DESC`; Sentinel Hub `mostRecent`/`leastCC`; Earth Engine „letztes oben“ | [`002d_keyset.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/002d_keyset.sql); Forum, Earth-Engine-Guide | P/S | keine allgemeine Regel; S5 legt sie fest |
-| URL-Längen: Uvicorn/h11 16 384 Byte bis zum Ende der Kopfzeilen; nginx `large_client_header_buffers` 8 kB für die Anfragezeile; CloudFront und Fastly 8 kB, Cloudflare 16–32 kB, AWS ALB 16 kB; Browser weit darüber | [uvicorn `settings.md`](https://raw.githubusercontent.com/encode/uvicorn/master/docs/settings.md), [nginx `ngx_http_core_module.xml`](https://raw.githubusercontent.com/nginx/nginx.org/master/xml/en/docs/http/ngx_http_core_module.xml) [P]; CloudFront-, Fastly-, Cloudflare-, ALB-Quotas [S] | P/S | engste Grenze 8 kB; 64 IDs ≈ 2,4 bzw. 4,3 kB (§5) |
+| pgstac speichert eine registrierte Suche in `searches` mit `hash text PRIMARY KEY` (SHA-256 über WHERE-Klausel und Metadaten), dazu `lastused`, `usecount`; im SQL gibt es kein Löschen | [`004_search.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/004_search.sql) | P | das Muster von O2/O3: eine inhaltsadressierte ID, die ohne Eintrag nichts bedeutet |
+| „retention-driven GC“ für `searches` steht im Changelog erst unter „Unreleased“ | [pgstac `CHANGELOG.md`](https://raw.githubusercontent.com/stac-utils/pgstac/main/CHANGELOG.md) | S | eine *kurzlebige* Such-ID ist dort nicht gelöst |
+| titiler-pgstac: Kachel-Grenzen `scan_limit` 10000, `items_limit` 100, `time_limit` 5 s, `exitwhenfull` und `skipcovered` an | [`titiler/pgstac/settings.py`](https://raw.githubusercontent.com/stac-utils/titiler-pgstac/main/titiler/pgstac/settings.py) | P | „aufhören, sobald voll“ ist Praxis (§4.5) |
+| Planetary Computer: **höchstens 10 Items je Kachel** als Vorgabe (`default_max_items_per_tile`) | [`pctiler/config.py`](https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/config.py) | P | Größenordnung der Grenze in §5 (dort 12, gemessen begründet) |
+| Planetary Computer: `minzoom` und `max_items_per_tile` je Collection; Beispiel-Mosaik Sentinel-2 mit `minZoom: 9` | [`pctiler/reader.py`](https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/reader.py), [Quickstart-Notebook](https://raw.githubusercontent.com/microsoft/PlanetaryComputerExamples/main/quickstarts/using-the-data-api.ipynb) | S | Mindestzoom wie in §5 |
+| `mosaic_reader`, `FirstMethod` (`exit_when_filled`), Portionen | rio-tiler 9.4.6 im venv (§2.5) | P | §4.5, Frage 5 |
+| Ein eigenes Mosaik-Backend ist vorgesehen: `rio_tiler.mosaic.backend.BaseBackend` mit `assets_for_tile`, `assets_for_point`, `assets_for_bbox` und `tile()` | rio-tiler 9.4.6 im venv | P | O1 geht ohne neues Paket |
+| `titiler.mosaic`s `MosaicTilerFactory` nimmt ein solches Backend; Threads über `MOSAIC_CONCURRENCY` | [`titiler/mosaic/factory.py`](https://raw.githubusercontent.com/developmentseed/titiler/main/src/titiler/mosaic/titiler/mosaic/factory.py) | S | nicht installiert, wäre ein neues Paket (§4.1) |
+| titiler, Diskussion zu Mosaiken bei niedrigem Zoom (rund 950 COGs): z8 8–16 s, z7 35–60 s, z6 Timeout; Rat der Maintainer: Mosaik erst ab einem Mindestzoom | [titiler Discussion #287](https://github.com/developmentseed/titiler/discussions/287) | S | Mindestzoom in §5 |
+| titiler-stacapi sucht je Kachel bei der STAC-API; die Doku warnt, dass jede Kachel eine Suche kostet | [`titiler/stacapi/backend.py`](https://raw.githubusercontent.com/developmentseed/titiler-stacapi/main/titiler/stacapi/backend.py) | S | O4 verworfen |
+| MosaicJSON: Quadkey → Asset-URLs; `cogeo-mosaic` liest die Datei über `httpx2` bzw. `boto3` | [`backends/web.py`](https://raw.githubusercontent.com/developmentseed/cogeo-mosaic/main/cogeo_mosaic/backends/web.py), [`backends/s3.py`](https://raw.githubusercontent.com/developmentseed/cogeo-mosaic/main/cogeo_mosaic/backends/s3.py) | S | O5 verworfen (B8), wie `adr/0006` §3.2 |
+| Reihenfolge anderswo: pgstac ohne `sortby` `datetime DESC, id DESC`; Sentinel Hub `mostRecent`/`leastCC`; Earth Engine „letztes oben“ | [`002d_keyset.sql`](https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/002d_keyset.sql); Forum, Earth-Engine-Guide | S | keine allgemeine Regel; S5 legt sie fest |
+| uvicorn mit `h11`: 16 384 Byte für ein unvollständiges Ereignis (Anfragezeile und Kopfzeilen) | [uvicorn `docs/settings.md`](https://raw.githubusercontent.com/encode/uvicorn/master/docs/settings.md) | P | weit über der URL von O1 |
+| Im Image ist auch `httptools` installiert (`requirements.lock`), das uvicorn dann vorzieht; seine Grenze ist nicht dokumentiert | Lock-Datei | P | ein Test mit einer 64-Item-URL gegen den echten Server (§4.8 Test 10) |
+| nginx `large_client_header_buffers` Vorgabe `4 8k`, Anfragezeile über 8 kB → `414` | [`ngx_http_core_module.xml`](https://raw.githubusercontent.com/nginx/nginx.org/master/xml/en/docs/http/ngx_http_core_module.xml) | P | engste Grenze für einen späteren Proxy |
+| CloudFront und Fastly 8 kB je URL, Cloudflare 16–32 kB, AWS ALB 16 kB; Browser weit darüber | Quotas-Seiten der Anbieter | S | engste Grenze 8 kB; 64 IDs ≈ 2,4 bzw. 4,3 kB (§5) |
 
 Für Sentinel-2-COGs über HTTP gibt es keine veröffentlichten Kosten je
 Mosaik-Kachel; die Zahlen dazu sind die eigenen aus `adr/0006` (§2.3).
+
+### 2.8 Jede Mosaik-Kachel braucht alle Items — und die Suche füllt deren Cache nicht [P, A]
+
+- Der Item-Cache (24 h, Postgres) wird nur von `get_item` gefüllt
+  (`adapters/earth_search.py`, `adapters/eopf_stac.py`), **nicht** von der
+  Suche. Der Satz in `adr/0006` §3.5 „die vorangegangene Suche hat die Items
+  ohnehin schon geliefert“ trifft für den Cache nicht zu.
+- Für Vorfilter und Reihenfolge braucht jede Mosaik-Kachel Footprint und CRS
+  **aller** Items der URL, nicht nur der berührten.
+- `item_source` hält während eines Abrufs bei der Quelle eine Verbindung aus
+  dem Pool (`api/item_source.py`); der Pool hat höchstens 5
+  (`api/dependencies.py`), `gateway` höchstens 6 Verbindungen je Host
+  (`gateway/policy.py`). Gleichzeitige Abrufe desselben Items werden nicht
+  zusammengelegt.
+- Ohne Postgres-Pool gibt es keinen Item-Cache: jede Kachel holt jedes Item
+  von der Quelle.
+
+**[A] Folge ohne Gegenmittel:** Ein kalter Kartenausschnitt mit sechs
+gleichzeitigen Kachelanfragen (Annahme: sechs Verbindungen je Host im Browser) über einen Überflug aus 60 Szenen holt bis zu
+6 × 60 = 360 Items von der Quelle, bis der Cache warm ist; heute (eine Quelle
+je Szene) ist es höchstens eine Anfrage je Szene und Kachel, die die Szene
+berührt. Ohne Pool wäre es 60 Anfragen **je Kachel**. Eine einzige Anfrage mit
+64 gültigen IDs verstärkt die Last auf die Quelle um das 64-Fache — das ist
+auch eine zweckfremde Nutzung, gegen die der Entwurf etwas braucht (§4.3).
+
+**[A] Mit Gegenmittel (§4.3):** einmal je Item und 24 h, also so viele Anfragen
+an die Quelle wie heute. Zeit für das erste Bild eines kalten Überflugs aus 60
+Szenen: 60 × 0,42–0,47 s (Item-GET, `adr/0006` §3.5 [M]) bei 6 Verbindungen
+≈ 5 s; danach Cache-Treffer.
 
 ---
 
@@ -200,17 +247,17 @@ Mosaik-Job und Export (S5) und **K10** keine exakte AOI in URL oder Log (Q8).
 
 | | Option | K3 URL bestimmt Bild | K5 kein Zustand | K6 Quelle | K7 Teile | K9 | K10 | Bewertung |
 |---|---|---|---|---|---|---|---|---|
-| **O1** | **Item-Liste in der URL**, Server sortiert und mischt | ja | ja, nur die vorhandenen Caches | wie heute, eher weniger (§2.3) | eine Route mehr, keine Tabelle, kein Paket | ja | ja (Item-IDs, keine Fläche) | **Empfehlung** |
-| O2 | Such-ID: `POST` registriert die Liste, Postgres-Tabelle mit kurzer Frist, Kachel-URL trägt nur die ID (6.3, E4; Muster von titiler-pgstac) | nein: ist der Eintrag weg, ist die URL tot oder zeigt nach erneuter Registrierung anderes | Zustand in Postgres, den der Tiler zum Rendern **braucht** — ein Ausfall macht falsch bzw. leer, nicht langsamer (verletzt E5) | gleich | Tabelle, Migration, Kehraus, Registrier-Route, Wiederholung im Client | ja | ja | verworfen wie in `adr/0006` |
-| O3 | Inhaltsadresse: ID = Hash der sortierten Liste, Liste im Cache; fehlt der Eintrag, `404` und der Client registriert neu | ja, solange der Eintrag lebt | wie O2 | gleich | wie O2 | ja | ja | kürzere URL als einziger Vorteil; die URL von O1 passt (§5) |
-| O4 | Überflug-Schlüssel in der URL (`datatake`), der Tiler sucht die Szenen je Kachel selbst | nein: hängt am Stand der Quelle | Suche je Kachel oder Cache je Überflug | **schlecht**: eine föderierte Suche je neuer Kachelfläche | Suche im Tiler, Filter nach Property in jedem Adapter | ja | ja | verworfen (Prinzip 10, „Suche läuft in `api`“) |
+| **O1** | **Item-Liste in der URL**, Server sortiert und mischt | ja | ja, nur die vorhandenen Caches | Pixel wie heute oder weniger (§2.3); Items einmal je 24 h nur mit dem Gegenmittel aus §4.3 | eine Route mehr, keine Tabelle, kein Paket | ja | ja (Item-IDs, keine Fläche) | **Empfehlung** |
+| O2 | Such-ID: `POST` registriert die Liste, Postgres-Tabelle mit kurzer Frist, Kachel-URL trägt nur die ID (6.3, E4; Muster von titiler-pgstac) | nein: ist der Eintrag weg, ist die URL tot oder zeigt nach erneuter Registrierung anderes | Zustand in Postgres, den der Tiler zum Rendern **braucht** — ein Ausfall macht leer, nicht langsamer (verletzt E5) | wie O1; die Liste der Items läge schon beim Registrieren vor | Tabelle, Migration, Kehraus, Registrier-Route, Wiederholung im Client | ja | ja | verworfen wie in `adr/0006` |
+| O3 | Inhaltsadresse: ID = Hash der sortierten Liste, Liste im Cache; fehlt der Eintrag, `404` und der Client registriert neu | ja, solange der Eintrag lebt | wie O2 | wie O2 | wie O2 | ja | ja | kürzere URL als einziger Vorteil; die URL von O1 passt (§5) |
+| O4 | Überflug-Schlüssel in der URL (`datatake`), der Tiler sucht die Szenen je Kachel selbst | nein: hängt am Stand der Quelle | Suche je Kachel oder Cache je Überflug | **schlecht**: eine föderierte Suche je neuer Kachelfläche (titiler-stacapi warnt selbst) | Suche im Tiler, Filter nach Property in jedem Adapter | ja | ja | verworfen (Prinzip 10, „Suche läuft in `api`“) |
 | O5 | MosaicJSON (`cogeo-mosaic`) | ja | Datei je Mosaik nötig | gleich | neues Paket, liest die Datei selbst über eigenen HTTP-Client | ja | ja | verworfen (B8, `adr/0006` §4.2 M3) |
 
 **Warum O1 trotz längerer URL:** 64 Item-IDs von Sentinel-2 (30 Zeichen) sind
 mit `item=` rund 2,4 kB, von `sentinel-2-l2a-zarr3` (rund 60 Zeichen) rund
-4,3 kB (§5). Das liegt unter den belegten Grenzen von Browsern, CDNs und
-Uvicorn (§2.7). Ein CDN steht erst mit M6 vor dem Tiler; bis dahin zählt die
-URL-Länge nur für Browser und Server.
+4,3 kB (§5). Das liegt unter der engsten belegten Grenze von 8 kB (§2.7). Ein
+CDN steht erst mit M6 vor dem Tiler; bis dahin zählt die URL-Länge nur für
+Browser und Server.
 
 ---
 
@@ -226,136 +273,179 @@ GET /collections/{dataset}/mosaic/tiles/{tileMatrixSetId}/{z}/{x}/{y}[@{scale}x]
 GET /collections/{dataset}/mosaic/{tileMatrixSetId}/tilejson.json?item=…&asset=…
 ```
 
-- `item` wiederholt, 2 bis 64 verschiedene IDs; `asset` genau eines (wie die
-  Einzelkachel ohne `op`, Frage 4 zu `op`).
+- `item` wiederholt (wie `asset` bei den Operator-Kacheln), 2 bis 64
+  verschiedene IDs; `asset` genau eines.
 - Dieselben Darstellungsparameter wie die Einzelkachel (`rescale`,
-  `colormap_name`, `bidx`, Format), dieselben Verbote (`expression`,
-  `algorithm`, kein `url`; ein Test prüft das OpenAPI-Schema wie heute).
-- Kein Parameter für Fläche, Box oder Geometrie.
-- Die Reihenfolge der `item` in der URL ändert das Bild nicht (§4.3). Der
-  Client schickt sie nach ID sortiert, damit dieselbe Auswahl dieselbe URL hat
-  (Cache).
-- TileJSON: `bounds` = Vereinigung der Item-`bbox`, `minzoom` =
-  max(`viewer.min_zoom`, 8), `maxzoom` = `viewer.max_zoom` (§5).
+  `colormap_name`, `bidx`, Format).
+- **Ausdrücklich mit `400` abgewiesen:** `expression`, `algorithm`,
+  `algorithm_params` (wie heute), dazu `op`, `op_version`, `params` (Frage 4)
+  und jeder Parameter, der eine Fläche tragen könnte: `bbox`, `aoi`,
+  `geometry`, `intersects`, `url`. Ein Test prüft außerdem das OpenAPI-Schema
+  wie heute.
+- Die Reihenfolge der `item` in der URL ändert das Bild nicht (§4.4). Der
+  Client schickt sie nach ID sortiert, damit dieselbe Auswahl dieselbe URL hat.
+- **TileJSON:** `bounds` = Vereinigung der Item-`bbox`, `minzoom` =
+  max(`viewer.min_zoom`, 8), `maxzoom` = `viewer.max_zoom` (§5), dazu
+  `earthx:order` — die Item-IDs in der Reihenfolge, in der die Kachel sie
+  liest. Der Client lädt das TileJSON zuerst (§4.3) und stapelt mit
+  `earthx:order` auch den Rückfall unter z8 gleich (§4.6).
 
-**Wie gebaut:** eigene schlanke Fabrik in `access/tiles.py`
-(`EarthxMosaicTilerFactory`, nur `tile` und `tilejson`) auf `titiler.core`'s
-`BaseFactory` und `rio_tiler.mosaic.mosaic_reader`. **Nicht** `titiler.mosaic`:
-es ist nicht installiert und wäre ein neues Paket samt Lock-Datei; seine
-Fabrik bringt Routen mit (`/info`, `/point`, `/bbox`, Assets je Kachel), die
-hier wieder abgeschaltet oder geprüft werden müssten. Das `BaseBackend` aus
-rio-tiler (im venv vorhanden) kann die Umsetzung nutzen, wenn es den Code
-kürzer macht (§2.7). Ob das
-Erben von `BaseFactory` oder zwei eigene Routen mit den Abhängigkeiten der
-Fabrik weniger Code ist, entscheidet die Umsetzung; das Verhalten ist dasselbe.
+**Wie gebaut:** eine schlanke Fabrik in `access/tiles.py` (nur `tile` und
+`tilejson`) auf `titiler.core`'s `BaseFactory` und `rio_tiler.mosaic`, wahlweise
+über rio-tilers `BaseBackend` (im venv vorhanden). **Nicht** `titiler.mosaic`:
+es ist nicht installiert und wäre ein neues Paket samt Lock-Datei. Welche der
+beiden Formen weniger Code ist, entscheidet die Umsetzung; das Verhalten ist
+dasselbe.
 
 ### 4.2 Pfad-Abhängigkeit (`api/tiler.py`)
 
 Wie `dataset_asset_path`, nur für eine Liste:
 
-1. `_dataset_config`, `_check_display_allowed`, `_check_zoom_released` — gleich.
-2. Zahl der Items, Doppelte, Länge je ID prüfen (`400`).
-3. Alle Items über die vorhandene Item-Quelle holen (24-h-Cache, nebenläufig
-   mit `asyncio.gather`); ein fehlendes Item ist `404` wie heute.
-4. **Ein Überflug:** Schlüssel `results_group_by` je Item, wie `_one_overpass`
-   in `api/intake.py` (dieselbe Funktion `group_key`); verschiedene Überflüge
-   `422` mit derselben Begründung wie der Job.
-5. **Vorfilter:** nur die Items, deren Footprint (`geometry`) die Kachel
+1. `_dataset_config`, `_check_display_allowed`, `_check_zoom_released` wie
+   heute; ein Datensatz ohne `viewer` ist `501` wie heute. **Dazu:** Eine
+   Mosaik-Kachel unter z8 ist `400` („mosaic tiles start at z8“). Alles vor
+   dem ersten Item-Abruf.
+2. Freie und flächenhafte Parameter (§4.1) → `400`.
+3. Zahl der Items (2–64), Doppelte, und jede ID gegen dieselbe Zeichenregel
+   wie föderierte Items (`ITEM_ID` in `adapters/federated_search.py`), für alle
+   Datensätze, auch materialisierte → `400`.
+4. Alle Items holen, wie in §4.3 beschrieben; ein fehlendes Item ist `404` wie
+   heute.
+5. **Ein Überflug:** Schlüssel `results_group_by` je Item mit `group_key`
+   (`catalog/registry.py`), wie `_one_overpass`; verschiedene Überflüge → `422`
+   mit derselben Begründung wie der Job. Bei `cop-dem-glo-30` ist der Schlüssel
+   `start_datetime` und damit für alle Kacheln gleich: Ein DEM-Mosaik ist das
+   nahtlose Höhenmodell über bis zu 64 Kacheln — gewollt.
+6. **CRS je Item** über `resolve_asset(...).crs` (`access/resolve.py`), wie
+   `_one_overpass`, für **alle** Items der URL (das Ziel-CRS kommt aus der
+   ganzen Liste, §4.4).
+7. **Vorfilter:** nur die Items, deren Footprint (`geometry`) die Kachel
    schneidet (Grenzen aus der TMS). Keine → `404` „the tile does not touch
    these items“, wie heute `TileOutsideBounds`. Mehr als 12 → `422` mit „zoom
    in“ (§5).
-6. **Reihenfolge:** `mosaic_order` über das CRS je Item (§4.3), verzögert
-   importiert wie `_operator_support`.
-7. Jede verbliebene Szene über `_resolve_asset_path` (Registry, `check_url`,
-   `target_gsd_for`) — dieselbe Auflösung wie die Einzelkachel, keine neue
-   Adresse ohne `check_url`.
+8. **Reihenfolge** `mosaic_order` (§4.4).
+9. Jede verbliebene Szene über `_resolve_asset_path` (Registry, `check_url`,
+   `target_gsd_for`) — dieselbe Auflösung wie die Einzelkachel, keine Adresse
+   ohne `check_url`.
 
 Ergebnis ist eine geordnete Liste von `AssetPath`/`ZarrAsset`; `access` liest
-sie mit `mosaic_reader` über `open_asset`.
+sie über `open_asset`.
 
-### 4.3 Reihenfolge und Regel (S5)
+Ohne Capability-Prüfung `reprojection`: Die Einzelkachel prüft sie auch nicht,
+jede Kachel wird nach `WebMercatorQuad` gewarpt, und Anzeige mit Reprojektion
+ist durch Lizenzstufe `display` gedeckt (B11). Der Job prüft sie, weil er ein
+neues Raster schreibt (KE7).
+
+### 4.3 Item-Abrufe (Gegenmittel zu §2.8)
+
+1. **Zusammenlegen im Prozess:** Gleichzeitige Abrufe desselben Items teilen
+   sich einen Abruf (ein `dict` laufender Futures, Eintrag fällt mit dem Ende
+   des Abrufs weg). Kein Zustand über die Anfrage hinaus.
+2. **Gedrosselt je Anfrage:** höchstens 4 Item-Abrufe einer Kachel oder eines
+   TileJSON gleichzeitig (Pool 5, `gateway` 6 je Host).
+3. **Vorwärmen über das TileJSON:** Der Client lädt für jeden Mosaik-Layer
+   zuerst das TileJSON (MapLibre tut das für eine Quelle mit `url` ohnehin);
+   es holt alle Items einmal und füllt den 24-h-Cache. Die Kacheln danach sind
+   Cache-Treffer.
+4. **Ohne Postgres-Pool:** Für föderierte Datensätze antwortet die Mosaik-Route
+   `503` („mosaic tiles need the item cache“); die Einzelkachel bleibt wie
+   heute. Das weicht von E5 ab (Ausfall macht hier nicht nur langsamer, sondern
+   die Mosaik-Kachel fällt aus) — deshalb Frage 8.
+5. **Kosten der Cache-Lookups:** 64 Lookups je Kachel misst die Umsetzung
+   lokal; liegen sie über 50 ms je Kachel, kommt eine gebündelte Abfrage
+   (`get_many` am Such-Cache in `catalog`, eine Verbindung je Kachel).
+
+### 4.4 Reihenfolge und Regel (S5)
 
 - Die Szenen werden **wie im Mosaik-Job** sortiert: zuerst die im Ziel-CRS
   (dem CRS der meisten Szenen **der ganzen URL**, nicht nur der Kachel), dann
-  die übrigen, je Teil nach Item-ID (`processing.mosaic.mosaic_order`, F3/F4
-  von M4-12). Weil das Ziel-CRS aus der ganzen Liste kommt, wählt jede Kachel
-  an einer Überlappung dieselbe Szene wie der Job — auch eine Kachel, die nur
-  Szenen der anderen Zone berührt.
+  die übrigen, je Teil nach Item-ID (`mosaic_order`, F3/F4 von M4-12). Weil das
+  Ziel-CRS aus der ganzen Liste kommt, wählt jede Kachel an einer Überlappung
+  dieselbe Szene wie ein Mosaik-Job **über dieselbe Liste** — auch eine Kachel,
+  die nur Szenen der anderen Zone berührt. Eine andere Liste (etwa ein Job über
+  einen Teil der Szenen) kann ein anderes Ziel-CRS ergeben.
 - Die Regel ist `FirstMethod` (`mosaic_reader`), dieselbe wie
   `merge_first_valid` (§2.4). Kein zweiter Code für die Regel.
-- Ein Test belegt S5: synthetische Szenen mit verschiedenen Konstanten in der
-  Überlappung, zwei Zonen; die Mosaik-Kachel zeigt in der Überlappung den Wert
-  derselben Szene, die der Mosaik-Job (`processing.mosaic`) für dieselben Items
-  wählt, für jede Reihenfolge der `item` in der URL.
+- Ein Test belegt S5 (§4.8 Test 2).
 
 Frage 2 klärt, ob das so bleibt, obwohl Zuschnitt und Export die
 Auswahlreihenfolge nehmen (§2.1).
 
-### 4.4 Lesen (`access`)
+### 4.5 Lesen (`access`)
 
 - `mosaic_reader(paths, read_tile, x, y, z, threads=T, chunk_size=T,
   allowed_exceptions=(TileOutsideBounds,))`, je Szene `open_asset(...).tile(...)`.
 - `T = 4` (Frage 5): je Portion höchstens vier Szenen parallel, danach prüft
-  `FirstMethod`, ob die Kachel voll ist. Ein Überflug aus 12 Szenen wird so in
-  höchstens drei Portionen gelesen; eine voll gedeckte Kachel meist in einer.
+  `FirstMethod`, ob die Kachel voll ist. Zwölf Szenen werden so in höchstens
+  drei Portionen gelesen; eine voll gedeckte Kachel meist in einer.
 - Das Ergebnis geht durch dieselbe Darstellung wie die Einzelkachel
-  (`rescale`, `colormap_name`, Format, nodata wie in `crop_asset`).
-- Zarr-Szenen: Die Kachel warpt jede Szene ohnehin nach `WebMercatorQuad`, also
-  geht hier auch ein Zarr-Mosaik über zwei CRS. Der Job lehnt das ab (M4-12 F8);
-  für die Anzeige gibt es keinen Grund dazu (K1).
+  (`rescale`, `colormap_name`, Format; nodata wie in `crop_asset`).
+- Zarr-Szenen: Die Kachel warpt jede Szene ohnehin nach `WebMercatorQuad`,
+  also geht hier auch ein Zarr-Mosaik über zwei CRS. Der Job lehnt das ab
+  (M4-12 F8); für die Anzeige gibt es keinen Grund dazu (KE1).
 
-### 4.5 Frontend
+### 4.6 Frontend
 
-- Ein Überflug in voller Auflösung wird **ein** Overlay mit der Mosaik-URL
-  statt eines je Szene (`syncFocusRaster`, `searchLayers.ts`,
-  `fullResolutionLayers`); `bounds` = Vereinigung der `bbox`. Eine einzelne
-  Szene bleibt bei der heutigen URL.
-- Unter z8 (TileJSON-`minzoom`) zeigt der Layer die Einzelszenen wie heute
-  (Frage 3).
-- Mehr als 64 Szenen in einer Gruppe: wie heute Einzelszenen, mit dem
-  vorhandenen Hinweistext über weggelassene Szenen ergänzt (Frage 3).
+- Ein Überflug in voller Auflösung wird **ein** Layer mit der Mosaik-URL statt
+  eines je Szene (`syncFocusRaster`, `searchLayers.ts` `fullResolutionLayers`),
+  als MapLibre-Quelle mit `url` auf das TileJSON (§4.3); `bounds` aus dem
+  TileJSON. Eine einzelne Szene bleibt bei der heutigen URL.
+- Unter z8 zeigt die Karte die Einzelszenen, gestapelt nach `earthx:order` aus
+  dem TileJSON, also ebenfalls in der Reihenfolge des Mosaiks (Frage 3). So
+  wechselt die sichtbare Szene an einer Überlappung beim Zoomen über z8 nicht.
+- Mehr als 64 Szenen in einer Gruppe: Einzelszenen wie heute (Auswahlreihenfolge,
+  höchstens 40, `MAX_MOSAIC_LAYERS`), dazu ein **neuer** Hinweis, dass die
+  Gruppe zu groß für ein Mosaik ist und wie viele Szenen nicht gezeigt werden.
 - Der Zuschnitt auf der Karte (`aoiClip.ts`) umhüllt die Mosaik-URL wie jede
-  andere; keine Änderung.
+  andere.
 - Die Vorschau eines Operators bleibt in dieser Aufgabe je Szene (Frage 4).
 
-### 4.6 Logs, URLs, Datenschutz
+### 4.7 Logs, URLs, Datenschutz
 
 - Die URL trägt Datensatz, Item-IDs, Asset und Darstellung — dieselben Angaben,
   die die Einzelkacheln heute einzeln tragen. Item-IDs nennen Szenen von rund
   110 km, keine AOI.
 - Fehlermeldungen nennen höchstens die Zahl der Items und die ersten IDs, nie
   eine Adresse (wie heute).
-- Kein neuer Logeintrag mit Geometrie; ein Logtest prüft, dass die Kachel-
-  Grenzen nicht als Koordinaten im Log stehen (Regel aus §1.2: erst prüfen,
-  dass Zeilen geloggt wurden).
+- Kein neuer Logeintrag mit Geometrie; ein Logtest prüft, dass weder
+  Kachelgrenzen noch Footprints als Koordinaten im Log stehen (§1.2: zuerst
+  prüfen, dass Zeilen geloggt wurden).
 
-### 4.7 Tests
+### 4.8 Tests
 
 Backend (`pytest`, synthetische COGs, kein Netz):
 
 1. Zwei Szenen über eine Szenengrenze (Abnahme): Eine Kachel über der Naht ist
    eine Fläche; links die Werte der einen, rechts die der anderen Szene.
-2. Überlappung, zwei UTM-Zonen: die gewählte Szene ist die des Mosaik-Jobs
-   (S5, §4.3), für beide Reihenfolgen in der URL; Bytes beider Antworten
-   gleich.
+2. Überlappung, zwei UTM-Zonen, verschiedene Konstanten: die gewählte Szene ist
+   die des Mosaik-Jobs über dieselbe Liste (`processing.mosaic`), für beide
+   Reihenfolgen in der URL; Bytes beider Antworten gleich (S5).
 3. Vorfilter: eine dritte Szene weit weg wird nicht geöffnet (Zähler am Reader).
 4. Frühes Ende: Eine voll gedeckte Kachel öffnet die zweite Portion nicht.
-5. Fehlerfälle: 1 oder 65 Items, doppelte ID, überlange ID, fehlendes Item
-   (`404`), Items zweier Überflüge (`422`), mehr als 12 Szenen in der Kachel
-   (`422`), Kachel ohne Szene (`404`), Zoom unter 8 oder außerhalb des
-   freigegebenen Bereichs (`400`), Datensatz unter Lizenzstufe `display`
-   (`403`), `expression`/`url`/`bbox` als Parameter (`400` bzw. nicht im
-   Schema), Asset fehlt in einer Szene (`404`).
-6. Zweckfremd: `item` mit Pfadzeichen oder einer URL als Wert (`400`, keine
-   Anfrage nach außen); eine Item-ID eines anderen Datensatzes (`404`).
-7. Zustandslos: zwei frisch gebaute Apps liefern für dieselbe URL dieselben
-   Bytes; ohne Postgres-Pool rendert der Tiler weiter (E5).
-8. OpenAPI: kein Parameter `url`, `aoi`, `bbox`, `geometry`, `intersects`.
-9. Logtest wie §4.6.
+5. Item-Abrufe: Sechs gleichzeitige Kacheln über dieselben 10 Items holen jedes
+   Item genau einmal von der (gedoubelten) Quelle; nie mehr als 4 Abrufe einer
+   Anfrage gleichzeitig; ohne Pool `503` für föderierte Datensätze, Einzelkachel
+   unverändert `200`.
+6. Fehlerfälle: 1 oder 65 Items, doppelte ID (`400`); fehlendes Item (`404`);
+   Items zweier Überflüge (`422`); mehr als 12 Szenen in der Kachel (`422`);
+   Kachel ohne Szene (`404`); z7 (`400`, ohne Item-Abruf); Zoom außerhalb des
+   freigegebenen Bereichs (`400`); Datensatz ohne `viewer` (`501`); unter
+   Lizenzstufe `display` (`403`); Asset fehlt in einer Szene (`404`).
+7. Zweckfremd: `item` mit Pfadzeichen, Leerzeichen oder einer URL als Wert
+   (`400`, auch für einen materialisierten Datensatz, keine Anfrage nach außen);
+   `bbox`, `aoi`, `geometry`, `intersects`, `url`, `expression`, `op` (`400`);
+   eine Item-ID eines anderen Datensatzes (`404`).
+8. Zustandslos: Zwei frisch gebaute Apps liefern für dieselbe URL dieselben
+   Bytes.
+9. OpenAPI: kein Parameter `url`, `aoi`, `bbox`, `geometry`, `intersects`;
+   `test_tiler_start_is_light` bleibt grün (KE4).
+10. URL-Länge: eine Mosaik-URL mit 64 IDs zu je 60 Zeichen geht durch den
+    `tiler` unter uvicorn (wie im compose-Befehl) ohne `414`/`431`.
+11. Logtest wie §4.7.
 
-Frontend (`vitest`): Überflug → ein Overlay mit sortierten `item`; eine Szene →
-alte URL; über 64 → Einzelszenen mit Hinweis; AOI-Clip umhüllt die
-Mosaik-URL.
+Frontend (`vitest`): Überflug → ein Layer mit TileJSON-URL und sortierten
+`item`; eine Szene → alte URL; unter z8 Einzelszenen in `earthx:order`; über 64
+→ Einzelszenen mit Hinweis; AOI-Clip umhüllt die Mosaik-URL.
 
 ---
 
@@ -363,16 +453,21 @@ Mosaik-URL.
 
 | Grenze | Wert | Begründung |
 |---|---|---|
-| Items je URL | **64** | §2.2: Überflüge bis 60 Szenen über einer landesgroßen Fläche [M]; Länge der URL bei 64 IDs ≈ 2,4 kB (Sentinel-2) bzw. ≈ 4,3 kB (Zarr, ≈ 60 Zeichen je ID), unter den Grenzen in §2.7. Die Item-Abfragen je Kachel gehen an den 24-h-Cache, nicht an die Quelle |
-| Szenen je Kachel nach dem Vorfilter | **12** | §2.2: höchstens 9 bei z8 in sechs Überflügen [M]; Reserve für niedrigere Breiten, wo eine z8-Kachel bis 157 km misst und bis zu drei MGRS-Reihen und -Spalten plus Zonenüberlappung fasst [A]. Bytes: ≤ 12 × (96 + 32) kB ≈ 1,5 MB bei z8; ab z12 ≤ 8 Szenen [M] × 2 MB = 16 MB im ungünstigsten Fall, mit frühem Ende meist 1–2 Szenen |
-| Mindestzoom der Mosaik-Kachel | **8** | Unter z8 berührt eine Kachel bis 13 (z7) bzw. 27 (z6) Szenen [M]; das ist Übersicht, die Aufgabe der Quicklooks und der Coverage Map (`ViewerInfo` „below `min_zoom` one tile shows several scenes“). `sentinel-2-l2a-zarr3` beginnt ohnehin bei z8 |
+| Items je URL | **64** | §2.2: Überflüge bis 60 Szenen über einer landesgroßen Fläche [M]; URL bei 64 IDs ≈ 2,4 kB (Sentinel-2) bzw. ≈ 4,3 kB (Zarr), unter 8 kB (§2.7). Kosten an der Quelle: einmal je Item und 24 h mit §4.3 [A]; ≈ 5 s bis zum ersten Bild bei kaltem Cache (§2.8) |
+| Szenen je Kachel nach dem Vorfilter | **12** | §2.2: höchstens 9 bei z8 in sechs Überflügen [M]; Reserve für niedrigere Breiten, wo eine z8-Kachel bis 157 km misst und bis zu drei MGRS-Reihen und -Spalten plus Zonenüberlappung fasst [A]; Planetary Computer setzt 10 [P]. Bytes: ≤ 12 × (96 + 32) kB ≈ 1,5 MB bei z8; ab z12 ≤ 8 Szenen [M] × 2 MB = 16 MB im ungünstigsten Fall, mit frühem Ende meist 1–2 Szenen |
+| Mindestzoom der Mosaik-Kachel | **8** | Unter z8 berührt eine Kachel bis 13 (z7) bzw. 27 (z6) Szenen [M]; das ist Übersicht, die Aufgabe der Quicklooks und der Coverage Map (`ViewerInfo`: „below `min_zoom` one tile shows several scenes“). Praxis: Mindestzoom je Collection beim Planetary Computer, Rat in titiler #287 [S]. `sentinel-2-l2a-zarr3` beginnt ohnehin bei z8 |
 | Parallel gelesene Szenen | **4** je Portion | Frage 5 |
+| Gleichzeitige Item-Abrufe je Anfrage | **4** | §4.3: unter Pool (5) und `gateway` (6 je Host) |
+
+Alle fünf als Konstanten im Code, nicht als Registry-Feld (KE6): Sie hängen am
+Kachelschema und an der Quelle, nicht am Datensatz; ein Datensatz mit anderen
+Szenengrößen bekommt sie, wenn es ihn gibt.
 
 **Gelesene Bytes** lassen sich vor dem Lesen nicht deckeln: GDAL holt die
 Bereiche selbst, `gateway` sieht nur die Adresse (B8). Die Byte-Grenze ergibt
-sich deshalb aus Szenenzahl × Bytes je Szene (§2.3), also aus den drei Grenzen
-oben. Ein eigener Byte-Zähler je Kachel wäre ein GDAL-Logging-Hook im
-Lesepfad; das schlage ich nicht vor.
+sich aus Szenenzahl × Bytes je Szene (§2.3), also aus den Grenzen oben. Ein
+eigener Byte-Zähler je Kachel wäre ein GDAL-Logging-Hook im Lesepfad; das
+schlage ich nicht vor.
 
 ---
 
@@ -380,7 +475,9 @@ Lesepfad; das schlage ich nicht vor.
 
 - Zuschnitt und Export sortieren weiter in Auswahlreihenfolge (Frage 2).
 - Mosaik mit Operator (`op`) im Kachel-Pfad (Frage 4).
-- Statistik über ein Mosaik: der Client misst den Streckbereich wie heute an
+- Die Suche füllt den Item-Cache nicht (§2.8); das zu ändern beträfe jede Suche
+  in `adapters` und gehört nicht hierher (Frage 8, Option 3).
+- Statistik über ein Mosaik: Der Client misst den Streckbereich wie heute an
   der ersten Szene (`autoStretch`); die Mosaik-Kachel nimmt `rescale` an.
 - CDN, `Cache-Control` (M6, `adr/0006` §8 Punkt 3); COG-Header-Cache (Log offen).
 - Mosaik über mehrere Tage oder Überflüge (Zeitreihe, nicht Mosaik).
@@ -392,26 +489,33 @@ Lesepfad; das schlage ich nicht vor.
 **Frage 1 — Verfahren und ADR**
 1. **O1, Item-Liste in der URL, wie `adr/0006` §5 schon entschieden; kein
    `adr/0017`, sondern ein Nachtrag in `adr/0006` (Grenzen aus §5, Reihenfolge
-   aus §4.3) und die seit dem 20.09.2026 fällige Berichtigung von
-   `architekturplan.md` 6.3 (Empfehlung).**
+   aus §4.4, Item-Abrufe aus §4.3) und die seit dem 20.09.2026 fällige
+   Berichtigung von `architekturplan.md` 6.3 (Empfehlung).**
 2. O2, Such-ID mit Postgres-Cache nach 6.3; dann schreibe ich `adr/0017`
    (Stufe C) und halte an, weil es `adr/0006` umkehrt.
 3. O3, Hash der Liste als ID mit Cache und Neu-Registrieren im Client.
 
 **Frage 2 — Reihenfolge der Szenen (S5)**
+
+S5 verlangt dieselbe Regel wie Export-Job **und** Mosaik-Job; heute sortieren
+die beiden verschieden (§2.1). Keine Option erfüllt S5 ganz, ohne den
+Zuschnitt zu ändern.
 1. **Wie der Mosaik-Job: Der Server sortiert nach `mosaic_order`, die
-   Reihenfolge in der URL zählt nicht. Zuschnitt und Export bleiben in der
-   Auswahlreihenfolge; dass alle vier gleich sortieren, schlage ich als eigene
-   kleine Aufgabe vor (offene Log-Zeile) (Empfehlung).**
-2. Wie Zuschnitt und Export: die Reihenfolge der URL gilt (Auswahl). Die Karte
-   bleibt dann gleich wie der Zuschnitt, aber verschieden vom Mosaik-Job, und
-   zwei Reihenfolgen derselben Szenen sind zwei Bilder und zwei Cache-Einträge.
-3. Wie 1, und Zuschnitt und Export sortieren in dieser Aufgabe mit (größerer PR,
-   ändert das Ergebnis des Zuschnitts an Überlappungen).
+   Reihenfolge in der URL zählt nicht (Empfehlung).** Folgen: Die Karte stimmt
+   an Überlappungen mit dem Mosaik-Job überein, aber nicht mehr mit Zuschnitt
+   und Export — der Abgleich aus M3-09 („Ansicht = Download“) geht für
+   Überlappungen verloren. Dass alle vier gleich sortieren, schlage ich als
+   eigene kleine Aufgabe vor (offene Log-Zeile).
+2. Wie Zuschnitt und Export: Die Reihenfolge der URL gilt (Auswahl). Die Karte
+   bleibt gleich wie der Zuschnitt, aber verschieden vom Mosaik-Job; zwei
+   Reihenfolgen derselben Szenen sind zwei Bilder und zwei Cache-Einträge.
+3. Wie 1, und Zuschnitt und Export sortieren in dieser Aufgabe mit. Erfüllt S5
+   ganz; größerer PR, ändert das Ergebnis des Zuschnitts an Überlappungen.
 
 **Frage 3 — Was die Karte jenseits der Grenzen zeigt**
-1. **Unter z8 und bei mehr als 64 Szenen in der Gruppe die Einzelszenen wie
-   heute; über 64 zusätzlich ein Hinweis (Empfehlung).**
+1. **Unter z8 die Einzelszenen, gestapelt nach `earthx:order` (gleiche Szene
+   oben wie im Mosaik); über 64 Szenen die Einzelszenen wie heute mit neuem
+   Hinweis (Empfehlung).**
 2. Unter z8 nichts (die Quicklooks der Trefferansicht bleiben), über 64 die
    ersten 64 in Mosaik-Reihenfolge mit Hinweis.
 3. Grenzen anders setzen (bitte Werte nennen).
@@ -422,66 +526,96 @@ Lesepfad; das schlage ich nicht vor.
    Aufgabe nach M4-17 (Empfehlung).** Grund: Der Job mischt zuerst die Bänder
    und rechnet dann; eine Kachel müsste das genauso tun (Mosaik je Asset, dann
    der Operator), das ist ein Umbau von `processing/tile.py` und etwa
-   300 Zeilen mehr.
-2. In M4-17, als zweiter PR (M4-17b).
+   300 Zeilen mehr. `op` auf der Mosaik-Route ist bis dahin `400`.
+2. In M4-17, als weiterer PR.
 
 **Frage 5 — Parallel gelesene Szenen je Portion**
 1. **4: höchstens vier Szenen gleichzeitig, danach Prüfung auf „voll“
    (Empfehlung).**
 2. 1 wie der Zuschnitt: am wenigsten Bytes, aber bei 9 Szenen kalt rund 9 s.
-3. alle Szenen der Kachel gleichzeitig (rio-tiler-Vorgabe): am schnellsten,
+3. Alle Szenen der Kachel gleichzeitig (rio-tiler-Vorgabe): am schnellsten,
    liest immer alle.
 
-**Frage 6 — Schnitt**
-Schätzung: Backend etwa 250 Zeilen, Backend-Tests etwa 300, Frontend etwa 120,
-Frontend-Tests etwa 100, Doku etwa 60.
-1. **Zwei PRs: M4-17a Backend mit Tests und Doku (etwa 600) in dieser Session,
-   M4-17b Frontend in einer neuen Session nach dem Merge (Empfehlung).**
-2. Ein PR mit etwa 830 Zeilen.
+**Frage 6 — Schnitt (Richtwert 400 Zeilen)**
+Schätzung: `access` etwa 120 Zeilen und 160 Tests; `api` etwa 220 und 260
+Tests; Frontend etwa 150 und 120 Tests; Doku etwa 80.
+1. **Drei PRs: M4-17a `access` (Fabrik, Lesen, Verschieben der Reihenfolge,
+   KE4; etwa 300) in dieser Session; M4-17b `api` (Routen, Prüfungen,
+   Item-Abrufe, Doku; etwa 560, darüber wegen der Fehlerfälle); M4-17c Frontend
+   (etwa 270). b und c je in einer neuen Session nach dem Merge des
+   Vorgängers (Empfehlung).**
+2. Zwei PRs: Backend (etwa 840) und Frontend (etwa 270).
+3. Ein PR mit etwa 1100 Zeilen.
 
 **Frage 7 — Grenzen aus §5**
 1. **64 Items je URL, 12 Szenen je Kachel, ab z8 (Empfehlung).**
-2. 25 Items je URL wie `adr/0006` (dann sind die gemessenen Überflüge über
-   landesgroßen Flächen zu groß für eine URL und fallen auf Einzelszenen zurück).
+2. 25 Items je URL wie `adr/0006`; die gemessenen Überflüge über landesgroßen
+   Flächen fallen dann auf Einzelszenen zurück.
+3. 10 Szenen je Kachel wie der Planetary Computer; an Zonengrenzen bei z8 dann
+   selten `422`.
+
+**Frage 8 — Item-Abrufe und Ausfall des Caches (§2.8, §4.3)**
+1. **Zusammenlegen, Drosseln auf 4, Vorwärmen über das TileJSON; ohne Pool
+   `503` für föderierte Mosaike, Einzelkacheln unverändert (Empfehlung).**
+2. Wie 1, aber ohne Pool rendern wie sonst auch (E5 wörtlich): dann holt jede
+   Mosaik-Kachel bis zu 64 Items von der Quelle.
+3. Wie 1, und zusätzlich schreibt jede Suche in `adapters` ihre Items in den
+   Item-Cache (warm, bevor der Nutzer die Karte öffnet; ändert alle Suchen und
+   den Speicherbedarf in Postgres, etwa 17 kB je gefundenem Item für 24 h).
 
 **Kleinentscheidungen** (gelten, sofern du nicht widersprichst):
-- **K1:** Zarr-Szenen in zwei CRS sind in der Mosaik-Kachel erlaubt (§4.4).
-- **K2:** Der Vorfilter nimmt den Footprint (`geometry`), nicht nur die `bbox`.
-- **K3:** Mehr als 12 Szenen in einer Kachel ist `422` mit „zoom in“, kein
+- **KE1:** Zarr-Szenen in zwei CRS sind in der Mosaik-Kachel erlaubt (§4.5).
+- **KE2:** Der Vorfilter nimmt den Footprint (`geometry`), nicht nur die `bbox`.
+- **KE3:** Mehr als 12 Szenen in einer Kachel ist `422` mit „zoom in“, kein
   Teilbild.
-- **K4:** `mosaic_order` wird verzögert importiert und nicht nach `access`
-  verschoben (S5: die Regel bleibt, wo sie ist).
-- **K5:** Der Client sortiert die `item` nach ID (Cache); der Server nimmt jede
-  Reihenfolge an.
+- **KE4:** `target_crs` und `mosaic_order` ziehen unverändert von
+  `processing/mosaic.py` nach `access/crop_rules.py`, neben `merge_first_valid`;
+  `processing.mosaic` und `api.intake` importieren sie von dort. Die Regel
+  liegt dann an einer Stelle, und der `tiler` muss für eine Mosaik-Kachel den
+  Worker-Kern nicht laden (§2.4). Gegenvorschlag: verzögerter Import aus
+  `processing` wie `_operator_support`; dann lädt die erste Mosaik-Kachel den
+  ganzen Kern.
+- **KE5:** Der Client sortiert die `item` nach ID (Cache); der Server nimmt
+  jede Reihenfolge an.
+- **KE6:** Routenform `/collections/{dataset}/mosaic/…`, `item` wiederholt
+  (nicht `items=` mit Kommas wie in `adr/0006` §3.5, damit es zu `asset`
+  passt), Grenzen als Konstanten im Code.
+- **KE7:** Keine Prüfung der Capability `reprojection` an der Mosaik-Kachel
+  (§4.2).
+- **KE8:** Der Docstring von `ViewerInfo` und `architekturplan.md` 6.3 werden
+  nachgezogen (§2.6).
 
 ---
 
 ## 8. Umsetzung nach Freigabe
 
 Annahme: die Empfehlungen. Bei anderen Antworten passe ich den Plan vor dem
-Code an. Commits in dieser Reihenfolge (M4-17a):
+Code an.
 
-1. `access/tiles.py`: Mosaik-Fabrik (Lesen, Mischen, Darstellung) mit Tests auf
-   einer nackten App.
-2. `api/tiler.py`: Pfad-Abhängigkeit (Prüfungen, Überflug, Vorfilter,
-   Reihenfolge), Einhängen der Routen; Tests 1–9.
-3. Doku: Nachtrag `adr/0006`, Berichtigung `architekturplan.md` 6.3, Zeile in
-   §3 des M4-Plans, Log.
+**M4-17a (`access`):** KE4 als eigener Commit (reines Verschieben, Tests von
+M4-12 grün); dann die Mosaik-Fabrik mit Lesen in Portionen, Tests 1, 3, 4, 8
+auf einer nackten App.
 
-M4-17b (Frontend) nach dem Merge: Overlay je Überflug, Rückfall, Tests;
-Prüfanleitung.
+**M4-17b (`api`):** Pfad-Abhängigkeit (Prüfungen, Überflug, Vorfilter,
+Reihenfolge), Item-Abrufe (§4.3), Routen, TileJSON mit `earthx:order`; Tests 2,
+5–7, 9–11; Doku (Nachtrag `adr/0006`, `architekturplan.md` 6.3, Docstring
+`ViewerInfo`, §3 des M4-Plans, Log).
+
+**M4-17c (Frontend):** Layer je Überflug über das TileJSON, Rückfall, Hinweis,
+`vitest`; Prüfanleitung B.
 
 ---
 
-## 9. Prüfanleitung für Otto (nach M4-17b, PowerShell 5.1)
+## 9. Prüfanleitung für Otto (PowerShell 5.1)
 
 Entwurf; die Antwortform prüfe ich nach der Umsetzung gegen den laufenden
 `tiler`, bevor ich sie als fertig melde.
 
-**A — Backend allein (nach M4-17a).** Sucht einen Überflug über zwei Zonen
-(Zonengrenze bei 12° O) und holt eine Kachel über der Naht einmal als Mosaik,
-einmal mit umgekehrter Reihenfolge der Items. Das Suchrechteck ist eine
-Messfläche, keine AOI.
+**A — Backend (nach M4-17b).** Sucht einen Überflug über zwei Zonen
+(Zonengrenze bei 12° O), wählt zwei Szenen verschiedener Zonen, deren Rahmen
+sich überlappen, und holt eine Kachel in der Mitte der Überlappung — einmal mit
+den Items in der einen, einmal in der umgekehrten Reihenfolge. Das
+Suchrechteck ist eine Messfläche, keine AOI.
 
 ```powershell
 docker compose up -d --build
@@ -491,45 +625,65 @@ $search = @{ collections = @('sentinel-2-c1-l2a'); bbox = @(10.5, 47.0, 13.5, 48
              datetime = '2025-07-01T00:00:00Z/2025-07-31T23:59:59Z'; limit = 100 } | ConvertTo-Json -Depth 10
 $items = (Invoke-RestMethod -Method Post -Uri "${api}/stac/search" `
           -ContentType application/json -Body $search).features
-$pass = $items | Group-Object { $_.properties.'s2:datatake_id' } |
-        Sort-Object Count -Descending | Select-Object -First 1
-$ids = @($pass.Group | ForEach-Object { $_.id } | Sort-Object)
-'{0} Szenen im Überflug' -f $ids.Count
-
-# Kachel z10 über der Mitte des Überflugs
-$w = ($pass.Group | ForEach-Object { $_.bbox[0] } | Measure-Object -Minimum).Minimum
-$e = ($pass.Group | ForEach-Object { $_.bbox[2] } | Measure-Object -Maximum).Maximum
-$s = ($pass.Group | ForEach-Object { $_.bbox[1] } | Measure-Object -Minimum).Minimum
-$n = ($pass.Group | ForEach-Object { $_.bbox[3] } | Measure-Object -Maximum).Maximum
-$lon = ($w + $e) / 2; $lat = ($s + $n) / 2; $z = 10
-$x = [Math]::Floor(($lon + 180) / 360 * [Math]::Pow(2, $z))
-$r = $lat * [Math]::PI / 180
-$y = [Math]::Floor((1 - [Math]::Log([Math]::Tan($r) + 1 / [Math]::Cos($r)) / [Math]::PI) / 2 * [Math]::Pow(2, $z))
-
-function Get-MosaicTile($list, $file) {
-    $q = ($list | ForEach-Object { 'item=' + $_ }) -join '&'
-    Invoke-WebRequest -UseBasicParsing -OutFile $file `
-        -Uri "${tiler}/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/${z}/${x}/${y}.png?${q}&asset=visual"
+function Get-Epsg($feature) {
+    $p = $feature.properties
+    if ($p.'proj:epsg') { return [int]$p.'proj:epsg' }
+    return [int](([string]$p.'proj:code') -replace 'EPSG:', '')
 }
-Get-MosaicTile $ids 'mosaic.png'
-[Array]::Reverse($ids); Get-MosaicTile $ids 'mosaic-reverse.png'
+$pass = $items | Group-Object { $_.properties.'s2:datatake_id' } |
+        Where-Object { @($_.Group | ForEach-Object { Get-Epsg $_ } | Select-Object -Unique).Count -ge 2 } |
+        Select-Object -First 1
+$scenes = @($pass.Group)
+'{0} Szenen im Überflug' -f $scenes.Count
+
+# zwei Szenen verschiedener Zonen mit überlappendem Rahmen; Mitte der Überlappung
+$pair = $null
+foreach ($a in $scenes) { foreach ($b in $scenes) {
+    if ($pair -or (Get-Epsg $a) -ge (Get-Epsg $b)) { continue }
+    $west = [Math]::Max($a.bbox[0], $b.bbox[0]); $south = [Math]::Max($a.bbox[1], $b.bbox[1])
+    $east = [Math]::Min($a.bbox[2], $b.bbox[2]); $north = [Math]::Min($a.bbox[3], $b.bbox[3])
+    if ($west -lt $east -and $south -lt $north) { $pair = @($a, $b); $lon = ($west + $east) / 2; $lat = ($south + $north) / 2 }
+} }
+$ids = @($scenes | ForEach-Object { $_.id } | Sort-Object)
+
+function Get-TileXY($lon, $lat, $z) {
+    $n = [Math]::Pow(2, $z); $r = $lat * [Math]::PI / 180
+    @([Math]::Floor(($lon + 180) / 360 * $n),
+      [Math]::Floor((1 - [Math]::Log([Math]::Tan($r) + 1 / [Math]::Cos($r)) / [Math]::PI) / 2 * $n))
+}
+function Get-MosaicTile($list, $z, $extra, $file) {
+    $xy = Get-TileXY $lon $lat $z
+    $q = (($list | ForEach-Object { 'item=' + $_ }) -join '&') + '&asset=visual' + $extra
+    $uri = "${tiler}/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/${z}/$($xy[0])/$($xy[1]).png?${q}"
+    try { Invoke-WebRequest -UseBasicParsing -OutFile $file -Uri $uri | Out-Null; 200 }
+    catch { $_.Exception.Response.StatusCode.value__ }
+}
+
+Get-MosaicTile $ids 10 '' 'mosaic.png'                          # 200
+$reversed = @($ids); [Array]::Reverse($reversed)
+Get-MosaicTile $reversed 10 '' 'mosaic-reverse.png'             # 200
 (Get-FileHash mosaic.png).Hash -eq (Get-FileHash mosaic-reverse.png).Hash   # True: Reihenfolge egal
-Start-Process mosaic.png                                                     # eine Fläche, keine Lücke an der Naht
+Start-Process mosaic.png                                        # eine Fläche über der Naht
+
+# Gegenproben
+Get-MosaicTile $ids 7 '' 'z7.png'                               # 400: Mosaik erst ab z8
+Get-MosaicTile $ids 10 '&bbox=1,2,3,4' 'bbox.png'               # 400: keine Fläche in der URL
+$other = ($items | Where-Object { $_.properties.'s2:datatake_id' -ne $pass.Name } | Select-Object -First 1).id
+Get-MosaicTile ($ids + $other) 10 '' 'two-passes.png'           # 422: zwei Überflüge
 ```
 
-Gegenproben: dieselbe URL mit `z=7` → `400`; mit einer Szene eines anderen
-Tages zusätzlich → `422`; mit `&bbox=1,2,3,4` → `400`.
-
-**B — im Viewer (nach M4-17b).** Einen Überflug über zwei Kacheln in voller
+**B — im Viewer (nach M4-17c).** Einen Überflug über zwei Kacheln in voller
 Auflösung öffnen: Die Szenen erscheinen als eine Fläche, im Layer-Manager ein
 Eintrag; die Netzwerkansicht des Browsers zeigt je Kartenkachel **eine**
 Anfrage an `…/mosaic/tiles/…` statt einer je Szene, und keine URL enthält
-Koordinaten der AOI.
+Koordinaten der AOI. Beim Herauszoomen unter z8 bleibt an Überlappungen
+dieselbe Szene oben.
 
 ---
 
 ## 10. Messanhang
 
+### 10.1 Szenen je Kachel (§2.2)
 Zu §2.2. Zwei Anfragen an Earth Search, 2 s Abstand, nur Metadaten; das
 Rechteck ist eine Messfläche, keine AOI eines Nutzers:
 
@@ -562,3 +716,23 @@ for items in overpasses:                     # gruppiert nach s2:datatake_id
 Doppelte Kachelnamen je Datatake: `Counter(item["properties"]["grid:code"])`;
 14.08.: 3 Paare unter 53 Szenen, 03.09.: 10 Paare unter 60, beide mit
 verschiedenen Aufnahmezeiten im Item-ID (`…T104743…`/`…T104037…`).
+
+### 10.2 Selbst gelesene Quellen (§2.7)
+
+Je eine Anfrage per `curl`, 1,2 s Abstand:
+
+```bash
+curl -sS https://raw.githubusercontent.com/microsoft/planetary-computer-apis/main/pctiler/pctiler/config.py
+#   default_max_items_per_tile: int = Field(default=10, …)
+curl -sS https://raw.githubusercontent.com/stac-utils/titiler-pgstac/main/titiler/pgstac/settings.py
+#   scan_limit: int = 10000 / items_limit: int = 100 / time_limit: int = 5
+#   exitwhenfull: bool = True / skipcovered: bool = True
+curl -sS https://raw.githubusercontent.com/stac-utils/pgstac/main/src/pgstac/sql/004_search.sql
+#   CREATE TABLE IF NOT EXISTS searches(hash text PRIMARY KEY, search jsonb NOT NULL, …,
+#     lastused timestamptz DEFAULT now(), usecount bigint DEFAULT 0, …)
+#   pgstac_hash: encode(sha256(…), 'hex'); kein DELETE FROM searches
+curl -sS https://raw.githubusercontent.com/encode/uvicorn/master/docs/settings.md
+#   --h11-max-incomplete-event-size … Default: 16384 (16 KB)
+curl -sS https://raw.githubusercontent.com/nginx/nginx.org/master/xml/en/docs/http/ngx_http_core_module.xml
+#   large_client_header_buffers … default 4 8k; 414 Request-URI Too Large
+```
