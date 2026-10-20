@@ -178,7 +178,7 @@ class TestOrderSchema:
         assert refs == [
             "#/$defs/step_band_math_v1",
             "#/$defs/step_coarsen_v1",
-            "#/$defs/step_reproject_v2",
+            "#/$defs/step_reproject_v3",
             "#/$defs/step_scale_v1",
         ]
         step = schema["$defs"]["step_scale_v1"]
@@ -197,9 +197,25 @@ class TestOrderSchema:
 
     def test_the_real_registry_offers_reproject(self) -> None:
         schema = order_schema(REAL_OPERATORS)
-        assert "step_reproject_v2" in schema["$defs"]
-        params = schema["$defs"]["step_reproject_v2"]["properties"]["params"]
+        assert "step_reproject_v3" in schema["$defs"]
+        params = schema["$defs"]["step_reproject_v3"]["properties"]["params"]
         assert set(params["required"]) == {"crs", "resolution", "resampling"}
+
+    def test_only_the_highest_version_of_an_operator_is_offered(self) -> None:
+        """Version 2 of reproject is still accepted, but not listed (M4-24, Otto 20.10.2026)."""
+        assert ("reproject", 2) in REAL_OPERATORS
+        schema = order_schema(REAL_OPERATORS)
+        steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
+        assert steps == ["step_band_math_v1", "step_reproject_v3"]
+        assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
+
+    def test_an_older_version_alone_is_offered(self) -> None:
+        older = replace(SCALE, op_version=1)
+        newer = replace(SCALE, op_version=2)
+        names = {key for key in order_schema(OperatorRegistry([older, newer]))["$defs"] if key.startswith("step_")}
+        assert names == {"step_scale_v2"}
+        names = {key for key in order_schema(OperatorRegistry([older]))["$defs"] if key.startswith("step_")}
+        assert names == {"step_scale_v1"}
 
     def test_every_reference_resolves_and_nothing_stays_unused(self) -> None:
         for registry in (OPERATORS, REAL_OPERATORS):
@@ -248,7 +264,10 @@ class TestWhatThePanelReads:
 
     def test_every_step_names_its_tiers_and_kind_as_the_operator_has_them(self) -> None:
         schema = order_schema(REAL_OPERATORS)
-        for _, operator in sorted(REAL_OPERATORS.items()):
+        latest = {op: max(version for name, version in REAL_OPERATORS if name == op) for op, _ in REAL_OPERATORS}
+        for (op, version), operator in sorted(REAL_OPERATORS.items()):
+            if version != latest[op]:
+                continue  # accepted, not offered
             definition = schema["$defs"][f"step_{operator.op}_v{operator.op_version}"]
             assert definition["x-earthx-tiers"] == sorted(tier.value for tier in operator.tiers)
             assert definition["x-earthx-kind"] == operator.kind
@@ -257,8 +276,8 @@ class TestWhatThePanelReads:
         schema = order_schema(REAL_OPERATORS)
         assert schema["$defs"]["step_band_math_v1"]["x-earthx-tiers"] == ["T1", "T2"]
         assert schema["$defs"]["step_band_math_v1"]["x-earthx-kind"] == "pixel"
-        assert schema["$defs"]["step_reproject_v2"]["x-earthx-tiers"] == ["T2"]
-        assert schema["$defs"]["step_reproject_v2"]["x-earthx-kind"] == "grid"
+        assert schema["$defs"]["step_reproject_v3"]["x-earthx-tiers"] == ["T2"]
+        assert schema["$defs"]["step_reproject_v3"]["x-earthx-kind"] == "grid"
 
     def test_an_order_cannot_use_the_annotations_as_parameters(self) -> None:
         step = {**SCALE_STEP, "x-earthx-tiers": ["T1"]}

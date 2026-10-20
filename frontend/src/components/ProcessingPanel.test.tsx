@@ -608,6 +608,27 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(sent().steps[0].params).toMatchObject({ crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' });
   });
 
+  it('offers every method of the schema, each with its sentence under the field, none recommended (M4-24)', async () => {
+    await reprojectDem();
+    const options = [...resampling().options].map((o) => o.value);
+    expect(options).toEqual(['', 'nearest', 'bilinear', 'cubic', 'cubicspline', 'lanczos', 'average', 'mode']);
+    const help = container.querySelector<HTMLUListElement>('ul.pp-options')!;
+    expect([...help.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'nearest: Value of the nearest source pixel; for class data and masks.',
+      'bilinear: Distance-weighted mean of the 2x2 nearest pixels; for continuous data.',
+      'cubic: Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data.',
+      'cubicspline: Cubic B-spline over 4x4 pixels; smoothest, for continuous data.',
+      'lanczos: Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges.',
+      'average: Mean of all source pixels per target pixel; for coarsening continuous data.',
+      'mode: Most frequent source value per target pixel; for class data.',
+    ]);
+    expect(resampling().getAttribute('aria-describedby')).toContain(help.id);
+    expect(resampling().value).toBe('');
+    choose(resampling(), 'lanczos');
+    await review();
+    expect(sent().steps[0]).toMatchObject({ op: 'reproject', op_version: 3, params: { resampling: 'lanczos' } });
+  });
+
   it('the data type is chosen by the panel and said so, with the reason; it is sent explicitly', async () => {
     await reprojectDem();
     choose(resampling(), 'bilinear');
@@ -633,6 +654,10 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
     expect(dtypeLine()).toBe('Data type: uint8 (chosen automatically)');
     expect(container.textContent).toContain('Same type as the source data (uint8)');
     choose(resampling(), 'bilinear');
+    expect(dtypeLine()).toContain('float32');
+    choose(resampling(), 'mode'); // picks a source value like nearest (M4-24)
+    expect(dtypeLine()).toBe('Data type: uint8 (chosen automatically)');
+    choose(resampling(), 'average');
     expect(dtypeLine()).toContain('float32');
     choose(resampling(), 'nearest');
     await review();

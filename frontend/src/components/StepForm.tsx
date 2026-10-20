@@ -26,13 +26,27 @@ function FieldInput({
   bandTarget?: number;
   onChange: (value: FieldValue) => void;
 }) {
-  const describedBy = field.description ? `${inputId}-help` : undefined;
+  const helpId = field.description ? `${inputId}-help` : undefined;
+  const optionsId = field.optionHelp ? `${inputId}-options` : undefined;
+  const describedBy = [helpId, optionsId].filter(Boolean).join(' ') || undefined;
   const help = (
     <>
       {field.description && (
-        <span id={describedBy} className="pp-help">
+        <span id={helpId} className="pp-help">
           {field.description}
         </span>
+      )}
+      {field.optionHelp && (
+        // One sentence per option, from the operator's schema (M4-24); no option is recommended.
+        <ul id={optionsId} className="pp-help pp-options">
+          {field.options
+            ?.filter((option) => field.optionHelp?.[option])
+            .map((option) => (
+              <li key={option}>
+                <strong>{option}</strong>: {field.optionHelp?.[option]}
+              </li>
+            ))}
+        </ul>
       )}
       {error && <span className="hint-text error">{error}</span>}
     </>
