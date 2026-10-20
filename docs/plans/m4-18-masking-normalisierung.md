@@ -1,8 +1,10 @@
 # M4-18 — Operatoren Masking und Normalisierung: Plan
 
 **Aufgabe:** M4-18 aus `docs/plans/m4-processing-kern.md` §4.
-**Stufe B (S4).** Dieser Plan liegt im Draft-PR. Die Session hält an, bis Otto
-ihn freigibt; umgesetzt wird danach in derselben Session.
+**Stufe B (S4) — von Otto am 20.10.2026 freigegeben:** F1–F6 und F8 je
+Option 1, K1–K8 angenommen, F7 mit Beleg [P] und Auflagen (§8). Umgesetzt wird
+in derselben Session nur **M4-18a**; M4-18b und M4-18c sind je eine neue Session
+nach dem Merge. Wo §3 und §8 sich widersprechen, gilt §8.
 **Ort im Repo:** `docs/plans/m4-18-masking-normalisierung.md`
 **Grundlagen:** `adr/0014` §5.1–§5.7, §6.1–§6.4, §15c, §15d; `adr/0016` §3.3,
 §12a; `plans/m4-processing-kern.md` §1.1b (R3, R5), §1.1c (S4), §1.2, M4-18;
@@ -68,12 +70,12 @@ AOI; Rohdaten im Scratchpad der Sitzung):
 | EOPF, `scl/zarr.json` des Items | `uint8`, `fill_value` 0, Attribute `scale_factor` 1, `add_offset` 0, `_FillValue` 0, `valid_min` 1; **kein** `flag_values`/`flag_meanings` |
 | `cop-dem-glo-30` | ein Asset `data`, keine Klassifikationsschicht im Bucket (`adr/0009`) |
 
-**Nicht erreicht:** Die Klassentabelle der SCL steht in keiner Quellenantwort.
-Die Primärdokumente liegen auf gesperrten Hosts: `sentiwiki.copernicus.eu`
-(Proxy `403`; über WebFetch: Name nicht auflösbar), `step.esa.int` (`403`, dort
-das Sen2Cor-Handbuch), `documentation.dataspace.copernicus.eu` (`403`).
-Die Tabelle in §3.1 ist deshalb **[S]**, aus Kenntnis, nicht am Primärdokument
-gelesen; Frage F7.
+**Nicht erreicht aus der Sitzung:** Die Klassentabelle der SCL steht in keiner
+Quellenantwort. Die Primärdokumente liegen auf gesperrten Hosts:
+`sentiwiki.copernicus.eu` (Proxy `403`; über WebFetch: Name nicht auflösbar),
+`step.esa.int` (`403`), `documentation.dataspace.copernicus.eu` (`403`). Otto hat
+die Tabelle am 20.10.2026 im Chat am Primärdokument gelesen und den Beleg
+nachgereicht (F7, §8): jetzt **[P]**.
 
 ---
 
@@ -116,19 +118,21 @@ wenn `mask` gesetzt ist; Werte eindeutig, aufsteigend, `suggested ⊆ classes`;
 | `sentinel-2-l2a-zarr3` | `True` | `True` | `asset="SCL_20m:scl"`, `band="scl"`, dieselbe Tabelle, dieselbe Auswahl |
 | `cop-dem-glo-30` | `False` | `True` | `None` |
 
-**Tabelle SCL [S]** (Sen2Cor, Verarbeitungsstand ab 04.00; beide Quellen
-liefern heute 05.xx): 0 no data, 1 saturated or defective, 2 topographic
-shadow (bis 03.xx „dark area pixels“), 3 cloud shadow, 4 vegetation, 5 not
-vegetated, 6 water, 7 unclassified, 8 cloud (medium probability), 9 cloud
-(high probability), 10 thin cirrus, 11 snow or ice. `suggested` folgt dem
+**Tabelle SCL [P]** (SentiWiki „S2 Processing“, L2A Algorithms → Scene
+Classification → Table 3 „Scene classification values“, gelesen von Otto am
+20.10.2026): 0 NO_DATA, 1 SATURATED_OR_DEFECTIVE, 2 CAST_SHADOWS, 3
+CLOUD_SHADOWS, 4 VEGETATION, 5 NOT_VEGETATED, 6 WATER, 7 UNCLASSIFIED, 8
+CLOUD_MEDIUM_PROBABILITY, 9 CLOUD_HIGH_PROBABILITY, 10 THIN_CIRRUS, 11 SNOW or
+ICE. Ältere Darstellungen benennen 2 und 7 anders („Dark Area Pixels“, „Clouds
+Low Probability / Unclassified“); die Werte sind gleich. `suggested` folgt dem
 Beispiel in `architekturplan.md` 7.1 (`[3, 8, 9, 10]`); `0` ist ohnehin
-nodata und damit maskiert (§3.2).
+nodata und damit maskiert (§3.2). `reference` ist die SentiWiki-Seite.
 
 `SCL_20m`, nicht `SCL_60m`: Die 20-m-Schicht passt verschachtelt auf das
 10-m-Raster (`source.py`, F2 von M4-09) wie `scl` bei Earth Search.
 
 **Nach außen:** Die Collection trägt `earthx:mask` (Asset, Band, Klassen mit
-Label, `suggested`), damit das Panel die Klassen mit Namen zeigen kann
+Label, `suggested`, `reference`, `note`), damit das Panel die Klassen mit Namen zeigen kann
 (`catalog/collection.py`, wie `earthx:default_render`).
 
 ### 3.2 Operator `mask` (`processing/operators/mask.py`)
@@ -305,11 +309,13 @@ Vor dem Fertigmelden: `main` holen, `pytest`, `ruff check backend`,
 
 ## 6. Risiken
 
-- **Klassentabelle nur [S]:** Ein falsches Label zeigt dem Nutzer eine falsche
-  Klasse. Werte und Labels gehen erst mit Beleg [P] in die Registry (F7).
-- **Wechsel des Verarbeitungsstands:** Klasse 2 hieß bis 03.xx anders. Beide
-  Quellen liefern heute 05.xx; ältere Szenen bei Earth Search Collection 1
-  gibt es nicht (ab 5.0, `adr/0003` §6). Für EOPF ist das nicht geprüft.
+- **Klassentabelle:** Beleg [P] von Otto aus dem Chat; die Session hat das
+  Dokument nicht selbst gelesen. Die Namen in der Registry stehen wörtlich so
+  wie in §3.1.
+- **Wechsel des Verarbeitungsstands:** Ältere Prozessierungsbasen benennen
+  manche Klassen (2, 7) anders, die Werte sind gleich. Earth Search Collection 1
+  beginnt mit Baseline 5.0 (`adr/0003` §6); für EOPF ist der Bestand nicht
+  geprüft. Der Hilfetext sagt es (§8).
 - **Maske aus 20 m auf 10 m:** Die Maske ist blockig (2 × 2), und das Ergebnis
   trägt `earthx:resampled=true`, auch wenn nur die Maske verdoppelt wurde.
   Ehrlich, aber für Nutzer erklärungsbedürftig.
@@ -390,3 +396,26 @@ Vor dem Fertigmelden: `main` holen, `pytest`, `ruff check backend`,
 - **K7:** Die Collection trägt `earthx:mask`; ohne Maske fehlt das Feld.
 - **K8:** `cost_factor` beider Operatoren wird in der Umsetzung gemessen; bis
   dahin 0,2 [A].
+
+---
+
+## 8. Freigabe (Otto, 20.10.2026)
+
+F1 (1), F2 (1), F3 (1), F4 (1), F5 (1), F6 (1), F8 (1); K1–K8 angenommen.
+**F7:** keine Änderung der Host-Freigabe. Beleg [P], von Otto im Chat am
+Primärdokument gelesen: SentiWiki „S2 Processing“
+(`https://sentiwiki.copernicus.eu/web/s2-processing`), Abschnitt L2A Algorithms
+→ Scene Classification → Table 3 „Scene classification values“; die Namen
+stehen in §3.1. Registry und Plan nehmen diese Namen und diese Quelle.
+
+**Auflagen:**
+- **Raster der Maske:** `scl` (20 m) wird nur mit `nearest` auf das Bandraster
+  gebracht, es entstehen keine neuen Werte; das Ergebnis trägt
+  `earthx:resampled`. Dazu ein Test.
+- **Hilfetext:** Er weist darauf hin, dass ältere Prozessierungsbasen manche
+  Klassen anders benennen (`MaskSource.note`, `earthx:mask.note`).
+
+**Schnitt (F8 (1)):** M4-18a (Registry, beide Operatoren, Tests, Kachel mit einem
+Operator) in dieser Session; M4-18b (Kette in der Kachel, Vorschau des
+T1-Anfangs, F1) und M4-18c (Panel, F6) je als neue Session nach dem Merge von
+M4-18a.
