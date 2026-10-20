@@ -419,3 +419,78 @@ stehen in §3.1. Registry und Plan nehmen diese Namen und diese Quelle.
 Operator) in dieser Session; M4-18b (Kette in der Kachel, Vorschau des
 T1-Anfangs, F1) und M4-18c (Panel, F6) je als neue Session nach dem Merge von
 M4-18a.
+
+---
+
+## 9. Umsetzung von M4-18a (20.10.2026)
+
+Umgesetzt wie freigegeben, in thematischen Commits im selben Draft-PR. Keine neue
+Abhängigkeit, keine Lock-Datei geändert; `.github/`, `.claude/`, `CLAUDE.md` und
+`.importlinter` unberührt, `lint-imports` hält alle 16 Verträge.
+
+**Geliefert:**
+- **Registry:** `Capabilities.masking` und `.normalization`, `DatasetConfig.mask`
+  (`MaskSource`, `MaskClass`), Prüfungen beim Laden, die drei Einträge nach §3.1,
+  `earthx:mask` in der Collection. `MaskSource.note` trägt den Hinweis auf die
+  abweichenden Namen älterer Prozessierungsbasen (Auflage).
+- **Operatoren:** `mask` v1 und `normalize` v1, `Operator.dataset_check`, von
+  `applicable` aufgerufen. `mask` lässt die Schicht aus dem Ergebnis weg (K2);
+  an einer maskierten Stelle behalten die Bänder ihren Wert, nur die Maske wächst
+  (anders als bei Band-Math, das dort NaN schreibt).
+- **Kachel mit einem Operator:** keine Änderung am `tiler` nötig; `mask` und
+  `normalize` laufen über denselben Weg wie `band_math`. Die Kette (F1) ist
+  M4-18b.
+- **Frontend:** nur die erzeugten Prozess-Fixtures (`scripts/write-process-fixtures.py`)
+  und drei Erwartungen in `processingOrder.test.ts`. Das Panel zeigt `normalize`
+  mit seinem Formular und `mask` als „not supported by this panel“, bis M4-18c die
+  Klassenauswahl bringt; auf dem DEM bietet es `mask` gar nicht an.
+
+**Faktoren (§3.2, K8), gemessen:** Kern auf einem Block von 1024² (kleinster Wert
+aus 15 Läufen, zwei Durchgänge, x86_64): Band-Math NDVI 14,6–15,5 ms, `mask` mit
+zwei Bändern und der Schicht 5,3–7,1 ms, `normalize` mit zwei Bändern 27,1–29,3 ms.
+Gegen 146 ms je Megapixel für einen ganzen Band-Math-Lauf (`adr/0014` §3.5)
+ergibt das aufgerundet **0,1** für `mask` und **0,2** für `normalize`. Das Skript
+liegt im Scratchpad der Sitzung; es liest keine Datenquelle.
+
+**Tests (neu):**
+- `tests/catalog/test_mask_source.py`: Namen und Werte der SCL, beide Assets, der
+  Hinweistext, das DEM ohne Schicht, jeder Widerspruch im Eintrag, die Collection.
+- `tests/earthx/processing/test_mask.py`: Parameter (18 abgewiesene Formen),
+  Kern (Klassen, nodata der Schicht, Float-Schicht wie aus Zarr, fehlende Schicht),
+  Metadaten, `applicable` (Aufklärung zu `red`, Klasse 12, DEM, Display-Stufe) und
+  Läufe über eine 20-m-Schicht.
+- `tests/earthx/processing/test_normalize.py`: Parameter, Kern gegen die Formel,
+  Umkehr, `clip`, Überlauf, kein Blick auf Nachbarpixel, Lauf gegen die Formel,
+  Bitstabilität unter den Einstellungen A und D (`GLIBC_TUNABLES` wirkt in der
+  Sitzung, der Test lief also, ohne Überspringen).
+- `tests/earthx/api/test_tiler_mask_normalize.py`: Kachel gleich Job auf der
+  nativen Ebene (COG, vier Fälle, jeweils mit der Maske des Jobs), Abweisungen
+  (`422` für Schicht und Klassen, fehlende Fähigkeit, Display-Stufe; `400` für
+  Parameter; kein Abruf des Items vor einer Abweisung).
+- **Auflage Raster der Maske:** `test_the_layer_is_repeated_with_nearest_…` liest
+  eine 20-m-Schicht zu einem 10-m-Band, prüft, dass die Menge der Werte der
+  verdoppelten Schicht die der Schicht ist, dass die Maske des Ergebnisses genau
+  die Formel aus den verdoppelten Klassen und dem nodata beider Quellen ist, und
+  dass `earthx:resampled` im Ergebnis und in `meta` gesetzt ist.
+
+**Abweichungen und Befunde:**
+1. **Mini-Zarr nicht mit `mask` verglichen.** §3.6 nannte den Vergleich T1 ↔ T2
+   auch für einen Mini-Zarr mit CF-Attributen. Der Test deckt COG ab; der
+   vorhandene Mini-Zarr hat keine Klassenschicht. Die Maske selbst ist exakt und
+   nimmt nichts von der Näherung der Warps (`adr/0014` §15d), aber der Beleg
+   fehlt; das Lesen einer Zarr-Schicht ist durch den Test mit Float-Werten im
+   Kern nur nachgestellt. Als offene Zeile im Log.
+2. **Kachel unter einer Maske hat keine NaN unter der Maske.** Wo die Maske etwas
+   ausblendet, behält die Kachel den Wert des Bands, die Alpha-Schicht der Kachel
+   trägt die Maske. Der Hilfsbau `_decode` in `test_tiler_operator.py` verlangt
+   NaN unter der Maske und gilt nur für Band-Math; der neue Test hat einen eigenen.
+3. **Bestehende Tests angepasst:** Die Liste der Operatoren in vier Tests
+   (`test_operators.py`, `test_processing_docs.py`) und drei Erwartungen im
+   Frontend; Fixtures neu erzeugt.
+
+**Nicht gemessen:** Speicher von `mask` und `normalize` gegen die Grenze von
+500 MB; beide laufen im selben Durchgang wie das Lesen und halten einen Block,
+aber eine Messung wie bei `reproject` (M4-10b) gibt es nicht.
+
+**Offen für M4-18b und M4-18c:** Kette in der Kachel (F1), Vorschau des
+T1-Anfangs, Formular „Classes to hide“, Asset der Maske im Auftrag.
