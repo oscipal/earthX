@@ -1,11 +1,18 @@
-# Single image for all four earthx processes (architekturplan.md 3.2, 12.1).
-# Each docker-compose service picks its own `command:`; this file sets no
-# CMD/ENTRYPOINT on purpose ("ein Image, vier Startbefehle").
+# One image for all four earthx processes (architekturplan.md 3.2, 12.1), plus
+# the local runner as a second stage on top of it (adr/0016 F1).
+#
+# Stage `app` sets no CMD/ENTRYPOINT on purpose ("ein Image, vier Startbefehle"):
+# each docker-compose service picks its own `command:`, and docker-compose.yml
+# builds `target: app`. Stage `runner` adds only the entrypoint and a non-root
+# user; the last stage is what a plain `docker build` produces, so every build
+# for the services names its target.
 #
 # python:3.12-slim matches the Python that CI and the cloud session run on
 # (M3-03); as there, the pip wheels for rasterio/rio-tiler bring their own GDAL
-# (docs/cloud-umgebung.md §3).
-FROM python:3.12-slim
+# (docs/cloud-umgebung.md §3). The digest is the multi-arch index, so an ARM
+# machine builds natively (adr/0016 F9, F11); it is renewed in a PR of its own,
+# like the lock file.
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS app
 
 WORKDIR /app
 
@@ -43,3 +50,12 @@ RUN pip install --no-cache-dir --require-hashes \
 ENV AWS_EC2_METADATA_DISABLED=true
 
 COPY earthx ./earthx
+
+# The local runner (adr/0016 F1, F10): the same code and the same locked
+# dependencies as the services, run as an unprivileged user. EARTHX_COMMIT ends
+# up in `runner_version` (earthx.runner.output).
+FROM app AS runner
+ARG EARTHX_COMMIT=unknown
+ENV EARTHX_COMMIT=${EARTHX_COMMIT}
+USER 10001:10001
+ENTRYPOINT ["python", "-m", "earthx.runner"]

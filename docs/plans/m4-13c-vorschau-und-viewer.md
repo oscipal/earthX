@@ -175,8 +175,9 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
   Abschnitt „Preview on the map“. Der Layer hält die Kachel-URL mit
   `op`/`params` (Overlay `raster`, wie heute) und heißt „Preview · <Operator>“;
   er trägt das Badge-Recht weiter (Overlay bekommt `gsd`).
+- **[Geändert am 20.10.2026 (Otto, Option 1): „Replace source layer“ entfällt auch für Job-Ergebnisse, siehe §15.]**
 - **Job-Ergebnis (T2):** In der Jobzeile eines fertigen Jobs „Show on map“ mit
-  „As a new layer“ und „Replace source layer“. „Source layer“ ist der Layer, aus
+  „As a new layer“ und ~~„Replace source layer“~~. „Source layer“ ist der Layer, aus
   dem das Panel geöffnet wurde (§3.5), sonst die Fokusansicht; ohne beides gibt
   es nur „As a new layer“.
 - **Ersetzen** heißt: der Quell-Layer wird ausgeblendet (nicht gelöscht), der neue
@@ -1103,7 +1104,9 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suche
 6. *Das Fenster der Jobliste* zeigt „Show on map“ als Knopf, der „As a new layer“ aufklappt (die Form aus §3.4); mit
    nur einem Eintrag ist das ein Klick mehr, bis Frage 1 unten entschieden ist.
 
-**Frage an Otto: „Replace source layer“ für Job-Ergebnisse.** §3.4 sieht „Show on map“ mit „As a new layer“ und
+**Antworten von Otto (20.10.2026):** (1) „Replace source layer“: Option 1, entfällt auch für Job-Ergebnisse (er hat den Knopf bewusst entfernt). (2) Die Abweichungen 1 und 2 unten sind angenommen, ebenso der relative Link `tiles`; die absolute URL bleibt offen bis M6. (3) Die Farbskala der Ergebnisse bleibt in diesem PR wie gebaut; die Vorgabe aus einer Statistik je Ergebnis kommt mit M4-32 (`plans/m4-32-ergebnis-statistik.md`).
+
+**Frage an Otto (beantwortet, siehe oben): „Replace source layer“ für Job-Ergebnisse.** §3.4 sieht „Show on map“ mit „As a new layer“ und
 „Replace source layer“ vor. Für die Vorschau hast du den Knopf am 19.10.2026 gestrichen (§12); c-2 hat dazu
 offen gelassen, ob er bei Job-Ergebnissen bleibt, und c-5 sollte vor dem Bauen fragen. **Nicht gebaut.**
 1. Entfällt auch hier; „Show on map“ legt nur einen neuen Layer an und wird ein einfacher Knopf **(Empfehlung:
@@ -1178,7 +1181,7 @@ trägt wie das TileJSON `VITE_API_BASE`. `_names_of` zählt `tiles` nicht als Da
 Ausnahme). Der Traceback-Schutz im `tiler` greift auch hinter einem Pfadpräfix.
 
 **Offen für Otto (neben „Replace source layer“):**
-- Darstellung eines Ergebnisses: heute der Wertebereich des Panels (Vorgabe −1 bis 1, `rdylgn`) für Gleitkomma, nichts
+- Darstellung eines Ergebnisses (**M4-32**, Otto 20.10.2026): heute der Wertebereich des Panels (Vorgabe −1 bis 1, `rdylgn`) für Gleitkomma, nichts
   für Ganzzahlen. Ein Höhenmodell (`float32`, Meter) käme einfarbig, eine Reflektanz (`uint16`) dunkel. Ein Bereich je
   Job (aus den Statistiken des Ergebnisses) wäre eine eigene Aufgabe.
 - Der Link `tiles` ist relativ zum Host (`/results/…`), anders als die übrigen Links des Ergebnisdokuments; ein

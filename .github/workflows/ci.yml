@@ -152,6 +152,84 @@ jobs:
       - name: Build images
         run: docker compose build
 
+      # M4-16b (adr/0016 F7 Teil 2, §12b): the runner stage of backend/Dockerfile
+      # on the layers the build above left in the cache. The checks run with the
+      # hardening the README names for users: read-only root, no capabilities,
+      # no network.
+      - name: Build the runner image
+        run: |
+          docker build --target runner \
+            --build-arg "EARTHX_COMMIT=${GITHUB_SHA::7}" \
+            -t earthx-runner:ci backend
+
+      - name: Runner runs as UID 10001
+        run: |
+          uid="$(docker run --rm --entrypoint id earthx-runner:ci -u)"
+          [ "$uid" = "10001" ] || { echo "runner user is $uid, expected 10001"; exit 1; }
+
+      - name: Runner and worker report the same engine versions
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --network none \
+            earthx-runner:ci versions > runner-versions.json
+          docker compose run -T --rm --no-deps worker python -c \
+            'import json; from earthx.processing.recipe import engine_versions; print(json.dumps(engine_versions(), sort_keys=True))' \
+            > worker-engine.json
+          python3 - <<'EOF'
+          import json, os
+          runner = json.load(open("runner-versions.json"))
+          worker = json.load(open("worker-engine.json"))
+          print("runner:", runner["engine"])
+          print("worker:", worker)
+          assert runner["engine"] == worker, "engine versions differ"
+          assert runner["runner_version"].endswith("+g" + os.environ["COMMIT"][:7]), runner["runner_version"]
+          assert runner["platform"]["machine"] == "x86_64", runner["platform"]
+          EOF
+
+      # The runner stage adds only ENV, USER and ENTRYPOINT: its layers must be
+      # exactly those of the worker image, so what the pytest comparison proves
+      # about the code (tests/earthx/runner/test_compare.py) holds for the files
+      # in this image. A run on a local input cannot go through the image: the
+      # gateway clears only public https addresses of declared hosts, and the
+      # seams the comparison uses exist only in pytest (docs/plans/m4-16-lokaler-runner.md §10).
+      - name: Runner image carries the same layers as the worker image
+        run: |
+          worker_image="$(docker compose config --images | grep -E -- '-worker$')"
+          [ "$(echo "$worker_image" | wc -l)" = "1" ] || { echo "no unique worker image: $worker_image"; exit 1; }
+          layers() { docker inspect --format '{{json .RootFS.Layers}}' "$1"; }
+          echo "worker: $(layers "$worker_image")"
+          echo "runner: $(layers earthx-runner:ci)"
+          [ "$(layers "$worker_image")" = "$(layers earthx-runner:ci)" ] || { echo "layers differ"; exit 1; }
+
+      - name: Runner checks the synthetic recipe and names its one host
+        run: |
+          hosts="$(docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --network none \
+            -v "$GITHUB_WORKSPACE/backend/tests/fixtures/runner:/in:ro" \
+            earthx-runner:ci check /in/recipe-ci.json)"
+          [ "$hosts" = "e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com" ] \
+            || { echo "unexpected hosts: $hosts"; exit 1; }
+
+      - name: Runner without a network ends with exit code 4 and no result
+        run: |
+          out="$RUNNER_TEMP/runner-out"
+          mkdir "$out"
+          chmod 777 "$out"
+          code=0
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --network none \
+            -v "$GITHUB_WORKSPACE/backend/tests/fixtures/runner:/in:ro" \
+            -v "$out:/out" \
+            earthx-runner:ci run /in/recipe-ci.json || code=$?
+          [ "$code" = "4" ] || { echo "expected exit code 4, got $code"; exit 1; }
+          if find "$out" -type f | grep -q .; then
+            echo "a failed run left files behind:"
+            find "$out" -type f
+            exit 1
+          fi
+
       - name: Start topology
         run: docker compose up -d
 

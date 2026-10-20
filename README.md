@@ -408,6 +408,69 @@ Zeitlimit Variablen oben im Skript. Es braucht laufende Dienste `api` und
 `worker` und für den Download den veröffentlichten Port 3900 des
 Objektspeichers.
 
+### Lokaler Runner (seit M4-16)
+
+Der Runner rechnet die `recipe.json` eines Ergebnisses noch einmal auf dem
+eigenen Rechner (`docs/adr/0016-lokaler-runner.md`). Er liest die Daten selbst
+bei der Quelle, von der eigenen IP-Adresse, und schickt nichts an die
+Plattform. Er rechnet in M4 nur Ergebnisse der Ausgabe `raster` (auch das
+Mosaik eines Überflugs); ein Zuschnitt (`crop`) kommt von der Plattform.
+
+**Einmal bauen** (im Wurzelverzeichnis des Repos; der Tag ist die Version, nie
+`latest`; es gibt kein `docker push`):
+
+```bash
+docker build --target runner --build-arg EARTHX_COMMIT=$(git rev-parse --short HEAD) -t earthx-runner:0.4.1 backend
+```
+
+**Rechnen.** Die `recipe.json` stammt aus dem Download eines Ergebnisses (sie
+liegt neben `result.tif`); sie liegt hier in `./in`, das Ergebnis kommt nach
+`./out`. Eine Zeile, damit PowerShell sie nicht anders liest:
+
+```bash
+docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" -v "$PWD/in:/in:ro" -v "$PWD/out:/out" earthx-runner:0.4.1 run /in/recipe.json
+```
+
+In PowerShell ohne `--user` und mit `${PWD}\in:/in:ro` bzw. `${PWD}\out:/out`.
+`--user` braucht nur Linux mit nativem Docker, damit `./out` beschreibbar ist;
+das Image läuft sonst als UID 10001.
+
+Weitere Unterbefehle, gleiche Optionen ohne `-v ...:/out`:
+
+- `check /in/recipe.json` prüft das Rezept, nennt die Hosts, von denen es
+  lesen würde (einer je Zeile), und liest nichts.
+- `versions` gibt die Versionen aus, die ein Ergebnis bestimmen (GDAL,
+  rasterio, numpy, numexpr), die Version des Runners und die Plattform.
+
+**Ergebnis.** Jeder Lauf legt einen neuen Ordner `out/<zufälliger Name>/` an und
+überschreibt nie etwas: `result.tif`, `mask.tif`, `recipe.json` (unverändert)
+und `provenance.json` mit `"execution": "local"` und `"self_attested": true`.
+Eine `citation.bib` liegt nicht dabei; sie stammt aus dem Download. Bricht ein
+Lauf ab, bleibt ein Ordner ohne `provenance.json` zurück.
+
+**Exit-Codes:**
+
+| Code | Bedeutung |
+|---|---|
+| 0 | fertig |
+| 2 | Rezept ungültig oder nicht von diesem Runner gerechnet (Version, Ausdruck, `crop`) |
+| 3 | vor dem Lesen abgewiesen: Datensatz oder Host steht nicht in der Registry des Images |
+| 4 | beim Lesen gescheitert: Quelle nicht erreichbar, Zeitüberschreitung, Fehler der Quelle, auch ohne Netz |
+| 5 | alles andere, auch ein Ausgabeordner, der nicht beschreibbar ist |
+
+**Gleiche Bits** sagt das Projekt zu, wenn Image und Maschine dieselben sind
+wie beim Rechnen in der Cloud; auf einem anderen Prozessor kann sich das letzte
+Bit unterscheiden. Auf ARM baut das Image nativ (`python:3.12-slim` ist ein
+Multi-Arch-Digest), liegt aber außerhalb dieser Zusage.
+
+**Umgebungen.**
+
+- *Windows:* Docker Desktop mit WSL2. Pfade im Windows-Dateisystem schreibt WSL2
+  langsamer als solche im Linux-Dateisystem. Docker Desktop hat Lizenzschwellen
+  für größere Organisationen; wer darüber liegt, nimmt ein Abonnement oder
+  Podman. Das ist keine Lizenzeinstufung des Projekts.
+- *Podman:* derselbe Befehl mit `podman` statt `docker`; nicht geprüft.
+
 ### Fehlersuche
 
 - **Port belegt** (`address already in use`): Ein anderer Prozess nutzt
