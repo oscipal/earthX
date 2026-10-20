@@ -916,3 +916,95 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a` (oder `cop-dem-glo-30`),
 2. `crs` `EPSG:4326`, `resolution` `0.0003`: „… ≈ 33 m (N–S) × … m (E–W) at …° N“. Mit „AOI only“
    (AOI an anderer Breite) ändert sich die Zahl der Ost–West-Seite sofort.
 3. `crs` `EPSG:99999`: der Grund steht unter dem Feld, „Review“ ist grau; `EPSG:3035` heilt es.
+
+## 14. M4-13c-4 — Umsetzung (20.10.2026)
+
+**Gebaut** (nur `frontend/`, kein Backend-Code; Branch `claude/tender-ride-vta2qt`):
+- **Reine Logik (§3.6):** `processingBatch.ts`. `runChoices` bietet „One job“, „One job per
+  pass (N)“ und „One job per scene (N)“; ein Eintrag mit N = 1 fehlt, über 25 ist er
+  deaktiviert mit „At most 25 jobs at once“ (genau 25 geht). `effectiveRunAs` fällt auf „One
+  job“ zurück, wenn die gewählte Einheit nicht mehr angeboten wird (Auswahl schrumpft,
+  Grenze überschritten). `unitsOf` bildet die Einheiten: der gewählte Überflug, je Überflug,
+  je Szene; Grundlage sind die Kandidaten von heute, bei „AOI only“ also nur Szenen, die
+  die AOI trifft. `totalOf` summiert Pixel, Bytes, Einheiten und die Rechenzeit der
+  Schätzungen; `runPool` führt höchstens 4 Anfragen gleichzeitig aus und hört nach einem
+  `abort` auf, neue zu vergeben.
+- **Auftragsbau (`processingStore.ts::orderView`):** Je Einheit ein Auftrag mit denselben
+  Schritten, Bändern und demselben Datentyp (Bänder und Datentyp folgen der ersten Einheit;
+  der Server prüft je Auftrag, ob die Szenen dazu passen). Der Schlüssel des Batches ist der
+  kanonische Text aller Aufträge: Jede Änderung an Schritten, Bändern, Fläche oder Auswahl
+  blendet die Schätzung aus, wie bei einem Auftrag (K4 aus M4-13). **Ein Datensatz:**
+  trägt eine Szene eine andere `collection` als der Datensatz des Auftrags, entsteht kein
+  Auftrag, und der Grund steht im Panel („The selection holds scenes of another dataset
+  (…); a job takes one dataset.“); das gilt auch für einen einzelnen Auftrag.
+- **Schätzung:** `reviewOrder` schätzt jeden Auftrag einzeln (höchstens 4 gleichzeitig, ein
+  `AbortController` für alle). Gezeigt wird die Summe der angenommenen Teile „N jobs · about
+  X MP, Y GB, Z units in total“, darunter „about N min of work“ und „Jobs run 2 at a time per
+  source; the rest wait.“ Was der Server abweist (etwa `413`), steht als eigene Zeile mit
+  dem Namen der Einheit und dem Grund; ein `413` unter „Whole scene“ löst den Vorschlag
+  „AOI only“ von K2 aus. Ein neuer Auswahl- oder AOI-Stand bricht eine laufende Schätzung
+  ab, eine späte Antwort setzt nichts mehr.
+- **Start:** „Start N jobs“ startet die geschätzten Teile nacheinander. Ein Teil, den schon
+  die Schätzung abwies, wird nicht gestartet, und der Knopf sagt es („Start 23 of 25 jobs“).
+  Weist der Server einen Start ab, laufen die übrigen weiter; der Grund steht mit dem Namen
+  der Einheit im Fuß. Nach dem Start ist die Schätzung verbraucht: ein weiterer Start
+  braucht ein neues „Review“ (wie bei einem Auftrag). „Start“ öffnet die Jobliste.
+- **Titel (K5):** `JobEntry.title`; „<Operatoren> · <Datensatz>“, im Batch „… · 3/25“. Die
+  Jobzeile zeigt ihn; mit `jobID` und `expires` liegt er im `sessionStorage`
+  (`StoredJob.title`, höchstens 200 Zeichen, sonst verworfen), nie AOI oder Auftrag. Jobs
+  des Download-Dialogs haben keinen Titel.
+
+**Kleinigkeiten, die der Plan nicht regelt** (Vorschläge; Otto darf widersprechen):
+- „Run as“ erscheint nur, wenn es etwas zu wählen gibt (mindestens eine Einheit mit N > 1);
+  die Wahl gilt für den Entwurf und fällt mit ihm (Datensatzwechsel, „resetDraft“).
+- Die Nummer im Titel ist der Platz der Einheit im Batch, nicht die Zahl der gestarteten
+  Jobs: Wies die Schätzung Teil 2 von 3 ab, heißen die beiden Jobs „1/3“ und „3/3“.
+- Die Summe zählt nur die angenommenen Teile; abgewiesene stehen einzeln darunter.
+- Bei mehreren Jobs liest das Panel Bänder, Zusammenfassung, Vorschau und die Breite für
+  die Zellgröße (§3.7) aus allen Szenen des Batches zusammen (die Vorschau zeigt höchstens
+  40 Szenen wie bisher). Das Pass-Auswahlfeld und der Mosaik-Hinweis entfallen,
+  stattdessen steht dort „Every pass gets a job of its own with the same steps, bands and
+  data type.“ bzw. „… scene …“.
+- Die Rechenzeit ist die Summe der geschätzten Zeiten, nicht die Dauer des Batches.
+
+**Tests** (vitest, synthetisch, 55 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
+Rückfall, Einheiten je Überflug und Szene, fremde Szenen, Summe samt unbekannter Dauer,
+Titel, Pool mit Grenze und Abbruch), `ProcessingBatch.test.tsx` (30: „Run as“ je Auswahl,
+Aufträge je Szene und je Überflug mit gleichen Schritten, Summe, höchstens 4 gleichzeitige
+Schätzungen, `413` einzeln mit Vorschlag, alle abgewiesen, übersprungene Szenen, Schätzung
+fällt bei neuem Schritt und bei neuem „Run as“, späte Antwort nach Abbruch, „AOI only“ mit
+Szenen außerhalb, Start nacheinander, abgewiesene Teile nicht gestartet, ein abgewiesener
+Start hält die übrigen nicht an, AOI-Wechsel zwischen Review und Start, Titel in Liste und
+Speicher ohne AOI, Titel nach Platz, Titel nach Neuladen, fremder Datensatz im Batch und im
+Einzelauftrag), `jobTracker.test.ts` (Titel mit `jobID` und `expires`, unbrauchbarer Titel),
+Vertragsdatei `ndvi-on-one-scene-of-a-batch.json` (der Backend-Test `test_frontend_orders.py`
+nimmt sie). Gegenproben in der Sitzung: Start auch abgewiesener Teile, Abbruch beim ersten
+abgewiesenen Start, acht statt vier Anfragen, keine Prüfung des Datensatzes, Titel ab 0,
+`413` aus dem Batch ohne Vorschlag, Grenze 26 lassen je Tests fallen. Zwei bestehende Tests
+mussten sich ändern: Der `sessionStorage`-Test erwartet jetzt den Titel (K5), und die
+Zarr-Szene des Panel-Tests trug die `collection` des COG-Datensatzes (jetzt die eigene).
+
+**Ergebnis der Prüfungen:** siehe PR-Text.
+
+**Prüfanleitung für Otto** (Windows PowerShell; die Sitzung hat die Oberfläche nur in Tests
+gesehen):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suchen, zwei
+Überflüge mit je einer bis zwei Szenen wählen, „⚙ Process“, „＋ Band math“,
+`(nir - red) / (nir + red)`:
+1. Im Kopf steht „Run as: One job | One job per pass (2) | One job per scene (N)“. Mit einer
+   einzigen Szene fehlt „Run as“.
+2. „One job per scene (N)“, „Review“: „N jobs · about … in total“, „about … of work“ und der
+   Satz zur Queue. Ein Auftrag über 5 GB steht einzeln mit Grund da (mit „Whole scene“ und
+   dem Vorschlag „AOI only“); der Knopf heißt dann „Start N-1 of N jobs“.
+3. „AOI only“: nur Szenen, die die AOI trifft, werden Aufträge.
+4. „Start N jobs“: die Jobliste öffnet; jede Zeile trägt „Band math · Sentinel-2 L2A · 1/N“
+   usw. Seite neu laden: die Titel bleiben.
+5. Mehr als 25 Szenen wählen: „One job per scene“ ist grau („At most 25 jobs at once“).
