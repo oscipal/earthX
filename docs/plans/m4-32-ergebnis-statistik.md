@@ -341,3 +341,23 @@ python measure.py data/scene-4096.tif <workdir> 4096 scale|reproject 0|1   # aus
 NPY_DISABLE_CPU_FEATURES=X86_V4,AVX512_ICL,AVX512_SPR python simd.py          # B
 NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR python simd.py   # nur X86_V2
 ```
+
+## 7. Antworten von Otto (20.10.2026)
+
+- **Fragen 1, 3, 4, 5, 6 und 7:** wie empfohlen. Gilt auch für Version 0.4.2.
+- **Schnitt:** M4-32a (Backend) und M4-32b (Frontend).
+- **Frage 2, angepasst:**
+  - Die GDAL-Tags in `result.tif` gelten für die ganze Datei, so wie `gdalinfo -stats` sie rechnet.
+  - `statistics` im Ergebnisdokument gilt nur für die Pixel innerhalb der Maske (AOI). Beide entstehen im selben Durchgang.
+  - Das Frontend nimmt die Farbskala aus der Statistik der AOI.
+  - Bei „Whole scene“ ohne `aoi` sind beide gleich.
+  - Ein Test braucht eine AOI, deren Bounding Box deutlich andere Werte enthält.
+- **Frage 8, mit Auflage:**
+  - Die Zusatzzeit wird in der Umsetzung gemessen.
+  - Liegt sie bei Band-Math über 10 %, wird der Faktor nach der Regel „aufrunden“ angehoben. Das gilt für Code und Nachtrag in `adr/0014`.
+
+**Folgen für §6:**
+- In §6.2, §6.3 und §6.7 meint „Statistik“ im Ergebnisdokument und im Frontend die Statistik der AOI. Die Tags beschreiben die ganze Datei.
+- Die Maske entsteht vor dem letzten Durchgang. Dieser liest sie blockweise mit und führt beide Zähler nebeneinander.
+
+**Startsatz M4-32b** (neue Session nach dem Merge von M4-32a, Sonnet, Effort hoch): „Führe Aufgabe M4-32b aus `docs/plans/m4-32-ergebnis-statistik.md` aus (§6.7, §6.10 Frontend, §7).“
