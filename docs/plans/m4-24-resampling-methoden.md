@@ -358,3 +358,43 @@ Die Skripte liegen nicht im Repo. Wie in `adr/0014` §17 sind sie hier beschrieb
   - `https://raw.githubusercontent.com/Open-EO/openeo-processes/master/resample_spatial.json` [P]
   - `https://raw.githubusercontent.com/rasterio/rasterio/1.5.2/rasterio/enums.py` [P]
   - Issues [S]: `https://github.com/OSGeo/gdal/issues/2810`, `…/13539`, `…/2665`
+
+---
+
+## 8. Umsetzung (20.10.2026)
+
+**Freigabe:** Otto, 20.10.2026: Fragen 1–7 je wie empfohlen (§7.7). Dazu die Auflage zu den Tests: Jede Methode, alt und neu, wird in allen drei Fällen gegen ihre eigene Zeile geprüft, und eine zu enge Zeile lässt den Test scheitern.
+
+**Frage 8 (aus der Umsetzung), Toleranzen für Höhen.**
+- **Befund [M]:** Mit kleineren Testrastern rissen `bilinear`, `cubic` und `lanczos` auf dem DEM ihre Zeile. `bilinear` lag bei p99 0,41 m gegen die Grenze von 0,3 m.
+- **Gegenprüfung:** 13 DEM-Größen über die drei Fälle. Der Abstand von ganz zu blockweise hängt von der Größe des Rasters ab, weil das ganze `reproject` als Referenz je nach Größe andere Abschnitte mit eigenem Maßstab rechnet (§7.1). Der Operator selbst bleibt bitgleich.
+- **Schlechtester Wert:** p99 0,57 m (`lanczos`) und 0,92 m (`average` beim Verfeinern), max 3,74 m.
+- **NDVI** hält p99 ≤ 0,01 in allen 12 geprüften Größen (höchstens 0,006).
+- **Antwort Otto (20.10.2026), Option 1:** Höhen p99 ≤ 0,6 m und max ≤ 4 m für `bilinear`, `cubic`, `cubicspline`, `lanczos` und `average` (Ziel nicht feiner); `average` beim Verfeinern p99 ≤ 1 m, max ≤ 4 m. Die bisherigen 0,3 m und 1 m für `bilinear`/`cubic` sind damit ersetzt. Die Werte über alle 13 Größen und die Begründung stehen in `adr/0014` §15j.
+- **Damit überholt:** die Höhenzeilen in §7.6 und Antwort 7, also die Zeile für `cubic` beim Verfeinern.
+
+**Was gebaut ist:**
+
+| Teil | Dateien |
+|---|---|
+| `reproject` `op_version` 3 mit sieben Methoden, je Faktor und Hilfetext im Schema (`oneOf` mit `const`, `title`, `description`); `interpolation` außer bei `nearest` und `mode`; Version 2 bleibt registriert (nur die drei alten Methoden, gleiches Ergebnis) | `processing/operators/reproject.py`, `registry.py`, `__init__.py` |
+| Das Auftragsschema listet je Operator nur die höchste Version | `api/processing_docs.py` |
+| Panel: `oneOf` mit Texten als Auswahl, ein Satz je Methode unter dem Feld, keine Vorbelegung; `mode` behält wie `nearest` einen ganzzahligen Typ | `frontend/src/schemaForm.ts`, `components/StepForm.tsx`, `processingDefaults.ts`, `index.css` |
+| Fixtures der Prozessbeschreibung und der Aufträge neu geschrieben (`scripts/write-process-fixtures.py`, `vitest -u`) | `frontend/src/fixtures/` |
+
+**Tests:**
+- `test_reproject_tolerance.py`:
+  - je Methode und Fall, auf Höhen, NDVI und Klassen (`mode`, `nearest`), gegen die eigene Zeile: 48 Fälle;
+  - dazu je Fall die Gegenprobe mit einer Zeile, die halb so weit reicht wie gemessen: 48 Fälle;
+  - jeder Fall spannt mehr als einen Block des Kerns.
+- `test_reproject.py`:
+  - ein ganzer Lauf je Methode gegen die eigene Zeile;
+  - zwei Läufe bitgleich je Methode, Maske je Methode;
+  - Version 2 gleich Version 3 für die alten Methoden, Version 2 weist die neuen ab;
+  - `interpolation` und `mode`, Faktoren, Schema mit einem Satz je Methode.
+- `test_processing_docs.py`: Nur die höchste Version wird gelistet; der Diskriminator bleibt.
+- `test_memory_reproject.py`: zusätzlich `lanczos` bei 30 m mit 2048² und 4096². Gemessen 302 / 437 MB, Wachstum 135 MB, Grenze 180 MB.
+- Frontend:
+  - `schemaForm` liest dokumentiertes `oneOf` und weist anderes `oneOf` ab;
+  - das Panel zeigt sieben Methoden mit ihrem Satz und schickt `op_version` 3;
+  - Datentyp bei `mode` und `average`.
