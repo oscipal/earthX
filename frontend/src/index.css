@@ -1882,6 +1882,10 @@ input[type='date']:focus {
   font-size: 11px;
   color: var(--accent);
 }
+.pp-job-title {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .pp-step-actions {
   display: flex;
   gap: 8px;

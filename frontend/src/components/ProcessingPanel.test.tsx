@@ -709,6 +709,7 @@ describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
   function zarrScene(bands: { name: string }[] | undefined): StacItem {
     return {
       ...scene('S2_Z'),
+      collection: ID,
       assets: {
         SR_10m: {
           href: 'https://example.org/r10m',
@@ -888,7 +889,8 @@ describe('starting and following a job', () => {
     ]);
     expect(container.textContent).toContain('Resampled to a common grid');
     const stored = sessionStorage.getItem('earthx.processing.jobs')!;
-    expect(JSON.parse(stored)).toEqual([{ jobID: JOB, expires: expect.any(String) }]);
+    // The title (K5) is kept with the id and the expiry; the order and the AOI never.
+    expect(JSON.parse(stored)).toEqual([{ jobID: JOB, expires: expect.any(String), title: 'Band math · Sentinel-2 L2A' }]);
     expect(stored).not.toContain('10.4');
   });
 
@@ -1035,6 +1037,7 @@ describe('a finished job row (K6)', () => {
       error: null,
       cancelling: false,
       expired: false,
+      title: null,
     };
   }
 

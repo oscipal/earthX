@@ -57,6 +57,7 @@ export function JobRow({ job }: { job: JobEntry }) {
   const active = job.phase === 'active';
   return (
     <li className="pp-job" aria-label={`Job ${job.jobID.slice(0, 8)}`}>
+      {job.title && <span className="pp-job-title">{job.title}</span>}
       <div className="pp-job-head">
         <span className="pp-job-state">{stateText(job)}</span>
         {active ? (

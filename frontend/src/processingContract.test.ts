@@ -125,6 +125,18 @@ const CASES: Case[] = [
     steps: [draft(s2, 'band_math', NDVI)],
     dtype: 'float32',
   },
+  {
+    // One job of a batch "per scene" (M4-13c-4): the steps of the draft on one
+    // scene of the selection, no AOI.
+    name: 'ndvi-on-one-scene-of-a-batch',
+    itemIds: ['ITEM_B'],
+    datasetId: 'sentinel-2-c1-l2a',
+    description: s2,
+    assets: ['red', 'nir'],
+    aoi: null,
+    steps: [draft(s2, 'band_math', NDVI)],
+    dtype: 'float32',
+  },
 ];
 
 const area = (c: Case): Area => (c.aoi ? 'aoi' : 'scene');

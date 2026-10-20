@@ -1,7 +1,8 @@
 // The processing panel (M4-13b): an order for the current selection — the
 // scenes of one pass (a mosaic when there are several, M4-12b), whole or cut to
 // the AOI (M4-13c §3.2), steps from the operators the dataset allows — reviewed
-// with an estimate before it starts as a job. Built from the schema of
+// with an estimate before it starts as a job. The same steps can make one job per
+// pass or per scene (M4-13c-4). Built from the schema of
 // `/processing/processes/recipe?dataset=…`, nothing per dataset here. A side
 // bar at the right edge, a sheet from below on narrow screens (M4-13c §3.1);
 // the jobs of this tab have a window of their own (`JobList.tsx`). The first
@@ -13,6 +14,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
 import { AFTER_BAND_MATH } from '../processingDefaults';
+import { totalOf } from '../processingBatch';
 import {
   formatBytes,
   formatDuration,
@@ -34,6 +36,7 @@ import {
 import {
   bandMathExpressions,
   orderView,
+  type PartOutcome,
   selectionState,
   useProcessingStore,
   type OrderView,
@@ -187,6 +190,59 @@ function AreaChoice({ view, hasAoi }: { view: OrderView; hasAoi: boolean }) {
   );
 }
 
+// "Run as": one job, or one per pass or scene (M4-13c-4). Only offered where it
+// makes a choice; a choice over the limit is greyed out with the reason.
+function RunAsChoice({ view }: { view: OrderView }) {
+  const setRunAs = useProcessingStore((s) => s.setRunAs);
+  if (view.runChoices.length < 2) return null;
+  return (
+    <div className="pp-toggle" role="group" aria-label="Run as">
+      <span className="pp-help">Run as:</span>
+      {view.runChoices.map((choice) => (
+        <button
+          key={choice.value}
+          type="button"
+          className={`pp-seg${view.runAs === choice.value ? ' on' : ''}`}
+          aria-pressed={view.runAs === choice.value}
+          disabled={choice.disabled !== null}
+          title={choice.disabled ?? undefined}
+          onClick={() => setRunAs(choice.value)}
+        >
+          {choice.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// The review of a batch: the sum over the jobs the server took, and a line for each it refused.
+function BatchEstimate({ parts, skipped }: { parts: readonly PartOutcome[]; skipped: readonly string[] }) {
+  const taken = parts.flatMap((part) => (part.doc ? [part.doc] : []));
+  const refused = parts.filter((part) => part.refusal);
+  const total = totalOf(taken);
+  return (
+    <div className="pp-estimate" aria-label="Estimate">
+      {taken.length > 0 && (
+        <>
+          <p>
+            {total.jobs} job{total.jobs === 1 ? '' : 's'} · about {formatMegapixels(total.outputPixels)},{' '}
+            {formatBytes(total.size)}, {total.units.toFixed(1)} units in total
+          </p>
+          <p>{formatDuration(total.duration)} of work</p>
+          <p className="pp-help">Jobs run 2 at a time per source; the rest wait.</p>
+        </>
+      )}
+      {skipped.length > 0 && <p className="hint-text warn">Left out (the AOI misses them): {skipped.join(', ')}</p>}
+      {refused.map((part) => (
+        <p key={part.unit.key} className="hint-text error" role="alert">
+          {part.unit.label}: {part.refusal!.message}
+        </p>
+      ))}
+      <p className="pp-help">An estimate, not a promise.</p>
+    </div>
+  );
+}
+
 // "Preview on the map" (M4-13c-2): the first step as tiles, with the range and
 // colormap by hand (F3 (1)), and the preview as a layer of its own.
 function PreviewSection({ view }: { view: OrderView }) {
@@ -309,14 +365,25 @@ export default function ProcessingPanel() {
   const info = view.info;
   const built = view.built;
   const hasAoi = isArea(app.aoi);
-  const estimate = p.estimate && p.estimate.key === view.key ? p.estimate.doc : null;
+  const batch = view.runAs !== 'one' && p.batch && p.batch.key === view.key ? p.batch.parts : null;
+  const estimate = view.runAs === 'one' && p.estimate && p.estimate.key === view.key ? p.estimate.doc : null;
+  const taken = batch ? batch.filter((part) => part.doc).length : 0;
+  const startRefusals = p.batchStartRefusals?.key === view.key ? p.batchStartRefusals.refusals : [];
+  const startLabel = p.starting
+    ? 'Starting…'
+    : view.runAs === 'one'
+      ? 'Start job'
+      : `Start ${taken > 0 && taken < view.parts.length ? `${taken} of ${view.parts.length}` : view.parts.length} jobs`;
+  const startReady = view.runAs === 'one' ? !!estimate : taken > 0;
   const showErrors = p.reviewAsked;
   const sceneCount = view.pass?.items.length ?? 0;
   // A refusal belongs to the order it refused; a changed draft hides it.
   const refusals = [p.reviewError, p.startError].filter((r) => r !== null && r.key === view.key);
   const refusalAt = (index: number) => refusals.find((r) => r!.step === index)?.message ?? null;
   const orderRefusals = refusals.filter((r) => r!.step === null);
-  const tooLarge = p.area === 'scene' && refusals.some((r) => r!.status === 413);
+  const tooLarge =
+    p.area === 'scene' &&
+    (refusals.some((r) => r!.status === 413) || (batch?.some((part) => part.refusal?.status === 413) ?? false));
   // A target CRS the server turned away holds the review back (M4-13c-3).
   const crsBlock = crsBlockReason(p.steps, p.crs);
   const latitude = areaLatitude(p.area, hasAoi ? app.aoi : null, view.pass?.items ?? []);
@@ -352,6 +419,7 @@ export default function ProcessingPanel() {
                 .join(' · ')}
             </p>
             <AreaChoice view={view} hasAoi={hasAoi} />
+            <RunAsChoice view={view} />
           </section>
         )}
       </div>
@@ -365,12 +433,17 @@ export default function ProcessingPanel() {
               {p.area === 'aoi' && hasAoi && view.candidates.length === 0 && (
                 <p className="hint-text error">No selected scene meets the AOI.</p>
               )}
-              {view.pass && sceneCount > 1 && (
+              {view.runAs !== 'one' && (
+                <p className="pp-help" title={view.pass?.items.map((i) => i.id).join(', ')}>
+                  Every {view.runAs} gets a job of its own with the same steps, bands and data type.
+                </p>
+              )}
+              {view.runAs === 'one' && view.pass && sceneCount > 1 && (
                 <p className="pp-help" title={view.pass.items.map((i) => i.id).join(', ')}>
                   The scenes are merged into one mosaic first; the steps run on the mosaic.
                 </p>
               )}
-              {view.passes.length > 1 && (
+              {view.runAs === 'one' && view.passes.length > 1 && (
                 <>
                   <label className="vc-field pp-field">
                     Pass
@@ -528,11 +601,11 @@ export default function ProcessingPanel() {
             <button
               type="button"
               className="primary-btn"
-              disabled={!estimate || p.starting || !!crsBlock}
-              title={crsBlock ?? (estimate ? 'Start this order as a job' : 'Review the order first')}
+              disabled={!startReady || p.starting || !!crsBlock}
+              title={crsBlock ?? (startReady ? 'Start this order as a job' : 'Review the order first')}
               onClick={() => void p.startJob()}
             >
-              {p.starting ? 'Starting…' : 'Start job'}
+              {startLabel}
             </button>
           </div>
           {estimate && (
@@ -547,6 +620,14 @@ export default function ProcessingPanel() {
               <p className="pp-help">An estimate, not a promise.</p>
             </div>
           )}
+          {batch && (
+            <BatchEstimate parts={batch} skipped={batch.flatMap((part) => part.doc?.skippedItems ?? [])} />
+          )}
+          {startRefusals.map((refusal) => (
+            <p key={refusal.label} className="hint-text error" role="alert">
+              {refusal.label}: {refusal.message}
+            </p>
+          ))}
           {orderRefusals.map((refusal, index) => (
             <p key={index} className="hint-text error" role="alert">
               {refusal!.message}
