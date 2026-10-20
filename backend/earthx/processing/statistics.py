@@ -9,15 +9,18 @@ whole file come from the same summaries, without reading anything twice
 * ``mean`` is the exact mean, rounded once: the sum is taken in integers over the bit
   patterns, per sign and exponent, so it depends on neither the order of the values nor
   the machine.
-* ``stddev`` is GDAL's way (``GDALRasterBand::ComputeStatistics``): Welford within a
-  block, Chan's parallel formula across blocks, divided by ``count``. Deterministic for a
-  fixed order of blocks, not exact. GDAL reads stored statistics only with it (plan §6.1).
+* ``stddev`` merges blocks as GDAL does (``GDALRasterBand::ComputeStatistics``): within a
+  block the mean, then the sum of squared deviations (numpy's pairwise sums); across blocks
+  Chan's parallel formula; divided by ``count``. Deterministic for a fixed order of blocks,
+  not exact. GDAL reads stored statistics only with it (plan §6.1).
 * ``percentile_2`` and ``percentile_98`` come from a fixed histogram: one bin per value
   for integers of up to 16 bits (exact), otherwise the upper 16 bits of the
   order-preserving pattern of the ``float32`` value — 65 536 bins of relative width
   2⁻⁷. The rank is the nearest rank; the 2 % value is the lower edge of its bin, the
   98 % value the upper edge, both clamped to the range, so ``[p2, p98]`` holds the true
-  values. Integers of 32 bits round outwards to whole numbers.
+  values. Values of other types reach float32 rounded down, and the 98 % value moves one
+  float32 step up, so this holds for them too; integers of 32 bits round outwards to whole
+  numbers.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ PERCENTILES = (2, 98)
 _KEY_BITS = 16
 _KEY_SHIFT = numpy.uint32(32 - _KEY_BITS)
 _SIGN32 = numpy.uint32(0x80000000)
+_FLOAT32_MAX = numpy.finfo(numpy.float32).max
 
 #: Values per exact partial sum: a significand below 2²⁶ times 2²⁰ values stays below
 #: 2⁴⁶, which float64 (the type of ``bincount``'s weighted sums) holds exactly.
@@ -81,10 +85,16 @@ def _histogram_size(dtype: numpy.dtype) -> int:
 
 
 def _float_keys(values: numpy.ndarray) -> numpy.ndarray:
-    """The bin of each value: its float32 pattern made order-preserving (negatives flipped), upper 16 bits."""
+    """The bin of each value: its float32 pattern made order-preserving (negatives flipped), upper 16 bits.
+
+    A value of another type becomes the largest float32 not above it, so its bin's lower edge is never
+    above it; below the float32 range that is ``-inf``, whose bin lies under every finite one.
+    """
     if values.dtype != numpy.float32:
-        limit = float(numpy.finfo(numpy.float32).max)
-        values = numpy.clip(values, -limit, limit).astype(numpy.float32)
+        wide = values.astype(numpy.float64)
+        with numpy.errstate(over="ignore"):  # below the float32 range nextafter gives -inf, on purpose
+            narrow = numpy.clip(wide, -_FLOAT32_MAX, _FLOAT32_MAX).astype(numpy.float32)
+            values = numpy.where(narrow > wide, numpy.nextafter(narrow, numpy.float32(-numpy.inf)), narrow)
     bits = values.view(numpy.uint32)
     flip = (values.view(numpy.int32) >> 31).view(numpy.uint32) | _SIGN32
     return ((bits ^ flip) >> _KEY_SHIFT).astype(numpy.intp)
@@ -105,12 +115,12 @@ def _float32_sum(total: numpy.ndarray, histogram: numpy.ndarray) -> Fraction:
     keys = numpy.flatnonzero(histogram)
     upper = numpy.where(keys >= 1 << (_KEY_BITS - 1), keys & 0x7FFF, ~keys & 0xFFFF)  # the pattern's upper 16 bits
     exponents = (upper >> 7) & 0xFF
-    exact = Fraction(0)
+    scaled = 0  # the sum times 2¹⁴⁹, the smallest float32 step, so every term is an integer
     for key, sign_bit, exponent in zip(keys.tolist(), (upper >> 15).tolist(), exponents.tolist(), strict=True):
         implicit = 1 << 23 if exponent else 0
         significands = int(histogram[key]) * implicit + int(total[key])
-        exact += (-1 if sign_bit else 1) * significands * Fraction(2) ** (max(exponent, 1) - 150)
-    return exact
+        scaled += (-1 if sign_bit else 1) * (significands << (max(exponent, 1) - 1))
+    return Fraction(scaled, 1 << 149)
 
 
 def _float_total(values: numpy.ndarray) -> dict[int, int]:
@@ -134,12 +144,12 @@ def _float_total(values: numpy.ndarray) -> dict[int, int]:
 
 def _float_sum(total: dict[int, int], dtype: numpy.dtype) -> Fraction:
     _, fraction_bits, exponent_bits, bias = _FLOAT_LAYOUT[dtype]
-    exact = Fraction(0)
+    scaled = 0  # the sum times the smallest step of the type, so every term is an integer
     for key, significands in total.items():
         exponent = key & ((1 << exponent_bits) - 1)
         sign = -1 if key >> exponent_bits else 1
-        exact += sign * significands * Fraction(2) ** (max(exponent, 1) - bias - fraction_bits)
-    return exact
+        scaled += sign * (significands << (max(exponent, 1) - 1))
+    return Fraction(scaled, 1 << (bias + fraction_bits - 1))
 
 
 def summarize(values: numpy.ndarray) -> BlockSummary:
@@ -188,10 +198,15 @@ def _empty_total(dtype: numpy.dtype) -> Any:
     return {} if dtype in _FLOAT_LAYOUT else 0
 
 
-def _unkey(key: int) -> float:
+def _unkey(key: int) -> numpy.float32:
     """The float32 whose order-preserving pattern is ``key`` (32 bits)."""
     bits = key & 0x7FFFFFFF if key & 0x80000000 else ~key & 0xFFFFFFFF
-    return float(numpy.array([bits], dtype=numpy.uint32).view(numpy.float32)[0])
+    return numpy.array([bits], dtype=numpy.uint32).view(numpy.float32)[0]
+
+
+#: The bins of the most negative and the most positive finite float32.
+_LOWEST_BIN = int(_float_keys(numpy.array([-_FLOAT32_MAX], dtype=numpy.float32))[0])
+_HIGHEST_BIN = int(_float_keys(numpy.array([_FLOAT32_MAX], dtype=numpy.float32))[0])
 
 
 class BandStatistics:
@@ -237,9 +252,17 @@ class BandStatistics:
         if self._kind == "small":
             return index + int(numpy.iinfo(self.dtype).min)
         upper = percent > 50
+        # At the ends of the float32 range (a float64 beyond it) the bin says nothing: the range does.
+        if upper and index >= _HIGHEST_BIN:
+            return maximum
+        if not upper and index <= _LOWEST_BIN:
+            return minimum
         edge = _unkey((((index + 1) << (32 - _KEY_BITS)) - 1) if upper else (index << (32 - _KEY_BITS)))
+        if upper and self.dtype != numpy.float32:
+            edge = numpy.nextafter(edge, numpy.float32(numpy.inf))  # the value may lie just above its float32
         if self._kind == "int":
-            edge = math.ceil(edge) if upper else math.floor(edge)
+            return min(math.ceil(edge), maximum) if upper else max(math.floor(edge), minimum)
+        edge = float(edge) + 0.0  # no -0.0 from a bin edge
         return min(edge, maximum) if upper else max(edge, minimum)
 
     def summary(self, pixels: int) -> dict[str, Any]:

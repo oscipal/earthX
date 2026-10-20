@@ -95,11 +95,11 @@ class TestAgainstAnIndependentComputation:
         exact = info is not None and numpy.dtype(dtype).itemsize <= 2
         if dtype in ("uint32", "int32"):
             # Through float32 on the way into the histogram, then outwards to whole numbers (plan §6.2).
-            for percent in (2, 98):
+            for percent, outward in ((2, -1), (98, 1)):
                 true = float(numpy.percentile(values.astype(numpy.float64), percent, method="inverted_cdf"))
                 reported = summary[f"percentile_{percent}"]
                 assert isinstance(reported, int)
-                assert abs(reported - true) <= abs(true) * BIN * 1.01
+                assert 0 <= (reported - true) * outward <= abs(true) * BIN * 1.01
             summary = {key: value for key, value in summary.items() if not key.startswith("percentile")}
             assert summary["mean"] == _exact_mean(values) and summary["count"] == values.size
         else:
@@ -132,6 +132,42 @@ class TestDeterminism:
         assert merged.summary(values.size) == _gathered(values, block=values.size).summary(values.size) | {
             "stddev": merged.summary(values.size)["stddev"]
         }
+
+
+class TestOutwardsAcrossTypes:
+    """Through float32 on the way into the histogram, nothing may move inwards (review M4-32a)."""
+
+    @pytest.mark.parametrize(
+        ("dtype", "value"),
+        [
+            ("int32", 2**25 - 1),  # rounds up to 2^25, the lower edge of a bin
+            ("uint32", 2**32 - 1),
+            ("float64", 2 - 2**-40),  # rounds up to 2.0
+            ("float64", 1e300),  # beyond float32
+            ("float64", -1e300),
+            ("float64", -(2 - 2**-40)),
+        ],
+    )
+    def test_a_constant_band_has_p2_equal_to_p98_equal_to_the_value(self, dtype: str, value: float) -> None:
+        summary = _gathered(numpy.full(1000, value, dtype=dtype)).summary(1000)
+        assert summary["percentile_2"] == summary["percentile_98"] == summary["minimum"] == value
+
+    @pytest.mark.parametrize("dtype", ["int32", "uint32", "float64"])
+    def test_values_near_bin_edges_stay_inside_the_reported_range(self, dtype: str) -> None:
+        if dtype == "float64":
+            edges = 2.0 ** RNG.integers(-20, 40, 2000)
+            values = (edges * (1 + RNG.choice([-1, 1], 2000) * 2.0**-35)).astype("float64")
+        else:
+            edges = 2 ** RNG.integers(25, 31, 2000)
+            values = (edges + RNG.integers(-3, 4, 2000)).astype(dtype)
+        summary = _gathered(values).summary(values.size)
+        low = float(numpy.percentile(values.astype(numpy.float64), 2, method="inverted_cdf"))
+        high = float(numpy.percentile(values.astype(numpy.float64), 98, method="inverted_cdf"))
+        assert summary["percentile_2"] <= low <= high <= summary["percentile_98"]
+
+    def test_no_negative_zero_from_a_bin_edge(self) -> None:
+        summary = _gathered(numpy.array([-1e-30, 0.0, 0.0], dtype="float32")).summary(3)
+        assert math.copysign(1.0, summary["percentile_98"]) == 1.0
 
 
 class TestEdges:
