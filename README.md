@@ -111,7 +111,8 @@ und kein Token. Alles läuft in Containern.
    (richtet das STAC-Schema in Postgres ein), `catalog-load` (schreibt die
    Sentinel-2-Collection und die Cache-Tabelle hinein), `objectstore-secrets`
    (legt beim ersten Start Zugangsdaten für den Objektspeicher an, seit M4-06
-   auch je einen Schlüssel für `worker` und `api` in eigenen Volumes) und
+   auch je einen Schlüssel für `worker` und `api`, seit M4-13c-5 auch für
+   `tiler`, in eigenen Volumes) und
    `objectstore-init` (legt darüber die Schlüssel und den Bucket an und setzt
    die Ablaufregel für `results/`: 7 Tage, offene Multipart-Uploads nach
    1 Tag). Das ist normal — nur die sechs Dienste oben sollen dauerhaft
@@ -135,17 +136,17 @@ und kein Token. Alles läuft in Containern.
    docker compose down
    ```
    um die Container zu entfernen (die Daten in den Volumes `postgres-data`,
-   `objectstore-data`, `objectstore-secrets`, `objectstore-key-jobs` und
-   `objectstore-key-api` bleiben dabei erhalten; `docker compose down -v`
-   löscht auch sie).
+   `objectstore-data`, `objectstore-secrets`, `objectstore-key-jobs`,
+   `objectstore-key-api` und `objectstore-key-tiler` bleiben dabei erhalten;
+   `docker compose down -v` löscht auch sie).
 6. **Zugangsdaten des Objektspeichers auslesen** (z. B. für die `aws`-CLI),
    ohne die Topologie neu zu starten:
    ```bash
    docker compose run --rm --no-deps objectstore-secrets show
    ```
    Gibt `S3_ACCESS_KEY`, `S3_SECRET_KEY` und `S3_BUCKET` auf dem eigenen
-   Terminal aus, sonst nirgends; dazu die zwei Dienstschlüssel
-   (`S3_JOBS_*`, `S3_API_*`). `.env` legt nur den ersten fest, die
+   Terminal aus, sonst nirgends; dazu die drei Dienstschlüssel
+   (`S3_JOBS_*`, `S3_API_*`, `S3_TILER_*`). `.env` legt nur den ersten fest, die
    Dienstschlüssel werden immer erzeugt.
 7. **Ablaufregel prüfen** (M4-06):
    ```bash
@@ -423,6 +424,19 @@ Objektspeichers.
   (seit M4-08b):** `api` signiert die Ergebnis-Links der Job-Schnittstelle und
   braucht dafür die `S3_*`-Angaben des Objektspeichers (in `docker-compose.yml`
   gesetzt, Schlüssel nur lesend). Die Meldung nennt die Variable, nie ihren Wert.
+- **Update einer bestehenden Installation auf M4-13c-5:** Der `tiler` liest die
+  Ergebnisse der Jobs mit einem eigenen Schlüssel (`earthx-tiler`, nur lesen).
+  Ein vorhandenes Volume `objectstore-secrets` bekommt ihn beim nächsten
+  `docker compose up -d --build` von selbst: kein `down`, kein `-v`, kein
+  Handgriff; Bucket, Objekte, die übrigen Schlüssel und die Ablaufregel bleiben.
+  `docker compose logs objectstore-secrets objectstore-init` zeigt dazu
+  `service key for tiler created` und `imported service key for tiler`, für
+  `jobs` und `api` `already present, unchanged` und `already imported`. Ergebnisse
+  der letzten 7 Tage bleiben abrufbar und lassen sich als Layer zeigen.
+- **`tiler` zeigt Ergebnisse nicht, im Log steht „job results are not served:
+  S3_… is not set“:** Dem Prozess fehlen die `S3_*`-Angaben des Objektspeichers
+  (in `docker-compose.yml` gesetzt). Alle Quellen laufen ohne sie weiter; die
+  Routen unter `/results` antworten dann mit `503`.
 - **`worker` wird nicht `healthy`, im Log steht „worker not started: the
   bucket has no enabled lifecycle rule …“:** Die Regel für `results/` fehlt
   oder wurde geändert (z. B. mit der `aws`-CLI und dem Besitzerschlüssel).

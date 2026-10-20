@@ -99,10 +99,12 @@ services:
   # set — the S3 key) as 0600 files into the objectstore-secrets volume.
   # Idempotent: never overwrites an existing file.
   #
-  # M4-06 (adr/0015 §6.4, §9.1): also the two service keys — `earthx-jobs` for
-  # `worker` (read, write) and `earthx-api` for `api` (read only) — each in a
-  # volume of its own, so each process sees only its own key and neither sees
-  # the admin token. Always generated; `.env` pins only the owner key above.
+  # M4-06 (adr/0015 §6.4, §9.1): also the service keys — `earthx-jobs` for
+  # `worker` (read, write), `earthx-api` for `api` and, since M4-13c-5,
+  # `earthx-tiler` for `tiler` (both read only) — each in a volume of its own,
+  # so each process sees only its own key and none sees the admin token. Always
+  # generated; `.env` pins only the owner key above. An installation from before
+  # a key existed gets that key at the next `up`; the others stay as they are.
   objectstore-secrets:
     build:
       context: ./backend
@@ -117,6 +119,7 @@ services:
       - objectstore-secrets:/secrets
       - objectstore-key-jobs:/keys/jobs
       - objectstore-key-api:/keys/api
+      - objectstore-key-tiler:/keys/tiler
     restart: "no"
 
   objectstore:
@@ -152,7 +155,7 @@ services:
 
   # One-shot: imports the S3 key and creates the bucket over Garage's admin
   # API (port 3903, not published — compose-internal only), then grants the
-  # key access. Since M4-06 also imports the two service keys with their own
+  # key access. Since M4-06 also imports the service keys with their own
   # rights and sets the lifecycle rule for `results/` (7 days, open multipart
   # uploads after 1 day; adr/0015 §7.3), which `worker` checks before it
   # starts. Idempotent.
@@ -166,6 +169,7 @@ services:
       - objectstore-secrets:/secrets:ro
       - objectstore-key-jobs:/keys/jobs:ro
       - objectstore-key-api:/keys/api:ro
+      - objectstore-key-tiler:/keys/tiler:ro
     depends_on:
       objectstore:
         condition: service_healthy
@@ -255,6 +259,16 @@ services:
       PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
+      # M4-13c-5 (adr/0015, Nachtrag 2026-10-20): the object store, read-only key of its own. The
+      # tiler reads job results from it, without the database, to render their tiles.
+      S3_ENDPOINT: http://objectstore:3900
+      S3_PUBLIC_ENDPOINT: http://localhost:3900
+      S3_REGION: garage
+      S3_BUCKET: ${S3_BUCKET:-earthx}
+      S3_ACCESS_KEY_FILE: /run/secrets/objectstore/access_key
+      S3_SECRET_KEY_FILE: /run/secrets/objectstore/secret_key
+    volumes:
+      - objectstore-key-tiler:/run/secrets/objectstore:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -349,3 +363,4 @@ volumes:
   # M4-06: one volume per service key, mounted only by its own process.
   objectstore-key-jobs:
   objectstore-key-api:
+  objectstore-key-tiler:
