@@ -500,3 +500,66 @@ Vor dem Fertigmelden: `main` holen; `pytest`, `ruff check backend`,
 | Abweisung eines Rezepts mit fremdem Host (Test) | §3.7 |
 | `provenance.json` mit `self_attested: true` | §3.4, Test |
 | Prüfanleitung mit dem Ergebnis aus `scripts/try-job.ps1` | §3.9 |
+
+---
+
+## 7. Freigabe (Otto, 20.10.2026)
+
+| Frage | Antwort |
+|---|---|
+| 1 Bau in der Session | **Option 2:** Allowlist für den Debian-Spiegel; gilt ab der neuen Session für M4-16b. Der Bau braucht nur `deb.debian.org` (§8) |
+| 2 Ausgabe | Option 1: nur `raster`, `crop` → Exit-Code 2 |
+| 3 `provenance` in der Eingabe | Option 1: abtrennen und als `Provenance` mit `execution: "cloud"` prüfen |
+| 4 `citation.bib` | Option 1: keine im Laufordner |
+| 5 Schnitt | Option 1: M4-16a jetzt, M4-16b in einer neuen Session nach dem Merge von a |
+| 6 Exit-Code ohne Netz | Option 1: 3 nur vor dem Lesen, beim Lesen immer 4 |
+| K1–K6 | angenommen |
+
+**Auflage:** Nachtrag in `adr/0016` zu den vier Abweichungen
+(`provenance`, `citation.bib`, `crop`, Exit-Code ohne Netz); das Original
+bleibt stehen. Erledigt als `adr/0016` §12b.
+
+## 8. M4-16b — Image, Compose-Job, Anleitung
+
+**Startsatz:** „Führe Aufgabe M4-16b aus `docs/plans/m4-16-lokaler-runner.md` aus.“
+**Stufe B, Plan freigegeben** (§4 bis §7); die Session setzt direkt um.
+**Voraussetzungen:** M4-16a ist gemergt. Die Session ist neu gestartet, nachdem
+Otto `deb.debian.org` in die Allowlist der Cloud-Umgebung aufgenommen hat.
+
+**Hosts für den Bau [M]:** Das gepinnte Basis-Image holt `apt`-Pakete nur von
+`deb.debian.org`, über HTTP (Port 80), unter `/debian` (Suiten `trixie`,
+`trixie-updates`) und `/debian-security` (Suite `trixie-security`). So steht es
+in `/etc/apt/sources.list.d/debian.sources` im Image.
+`security.debian.org` kommt dort nicht vor. Das Basis-Image selbst und die
+Python-Pakete (`pip` aus der Lock-Datei) lädt die Session schon heute.
+
+**Umfang:** Commits 6 bis 8 aus §5, also §3.5, §3.8 und §3.9:
+- `backend/Dockerfile` mit dem Digest aus §2.7 und der Stufe `runner`;
+- `target: app` an allen neun `build:` in `docker-compose.yml`;
+- die Schritte im Compose-Job und `backend/tests/fixtures/runner/recipe-ci.json`;
+- der README-Abschnitt und die Prüfanleitung im PR.
+
+Die Exit-Codes und Dateien gelten nach `adr/0016` §12b: `run` ohne Netz endet
+mit 4, und der Laufordner enthält keine `citation.bib`.
+
+**Zuerst prüfen:** `docker build --target runner backend` gelingt in der
+Session. Scheitert `apt` trotz Allowlist, nennt die Session Host und Antwort
+und hält an (`CLAUDE.md`, „Fehlt der Zugang …“).
+
+## 9. M4-16a umgesetzt (20.10.2026)
+
+- **Modul** `backend/earthx/runner/` mit `__init__.py`, `__main__.py`,
+  `cli.py`, `recipe_file.py` und `output.py`, wie in §3.1 bis §3.4 und nach §7.
+  `processing.recipe.input_hosts` ist neu (§2.5).
+- **Importregeln:** Verträge `runner` und `no-platform-services-in-runner`.
+  `earthx.runner` steht in den Verbotslisten aller anderen Modulverträge und
+  als Quelle in `http-only-in-gateway` und `datasets-isolated`.
+  `test_module_boundaries.py` gleicht die `catalog`-Untermodule mit der Platte
+  ab. Dazu die Zeile in `architekturplan.md` 3.1.
+- **Tests** in `backend/tests/earthx/runner/`:
+  - `test_compare.py`: Job-Kind ↔ Runner, bitgleich, mit zwei Gegenproben;
+  - `test_cli.py`: Fehler, zweckfremde Nutzung, `versions`, Import im frischen
+    Prozess.
+  Abweichung von §5: Es gibt keine eigene `test_import.py`; der Import-Test
+  steht in `test_cli.py`.
+- **Doku:** `adr/0016` §12b, Log-Zeilen, §3 von `m4-processing-kern.md`.
