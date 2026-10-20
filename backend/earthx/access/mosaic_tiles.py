@@ -21,6 +21,7 @@ policy, M1-03), and :meth:`MosaicTileReader.tile` enters it again around every s
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -31,7 +32,7 @@ from attrs import define
 from fastapi import Depends
 from rasterio.warp import transform_bounds
 from rio_tiler.constants import WGS84_CRS
-from rio_tiler.errors import EmptyMosaicError, TileOutsideBounds
+from rio_tiler.errors import EmptyMosaicError, RioTilerError, TileOutsideBounds
 from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.defaults import FirstMethod
@@ -44,6 +45,7 @@ from earthx.readers.zarr_reader import ZarrAsset
 __all__ = [
     "MOSAIC_THREADS",
     "EarthxMosaicTilerFactory",
+    "MosaicBandsDiffer",
     "MosaicReaderParams",
     "MosaicScenes",
     "MosaicTileReader",
@@ -52,6 +54,12 @@ __all__ = [
 
 #: Scenes read at the same time, and the size of the portion after which the tile is checked for full.
 MOSAIC_THREADS = 4
+
+
+class MosaicBandsDiffer(RioTilerError):
+    """The scenes of one mosaic do not have the same number of bands: a ``422``, not a crash in rio-tiler's ``assert``."""
+
+    status_code = 422
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +124,11 @@ class MosaicTileReader:
     def maxzoom(self) -> int:
         return self.tms.maxzoom
 
+    @property
+    def order(self) -> tuple[str, ...]:
+        """The item ids in the order the tile reads them."""
+        return tuple(scene.item_id for scene in self.source.scenes)
+
     def get_geographic_bounds(self, crs: Any) -> tuple[float, float, float, float]:
         if crs == WGS84_CRS:
             return self.source.bounds
@@ -133,9 +146,17 @@ class MosaicTileReader:
         out silently would let another one win where they overlap.
         """
 
+        band_counts: set[int] = set()
+        lock = threading.Lock()
+
         def read(scene: AssetPath | ZarrAsset, x: int, y: int, z: int, **options: Any) -> ImageData:
             with rasterio.Env(**self.gdal_config), open_asset(scene, tms=self.tms, **self.options) as reader:
-                return reader.tile(x, y, z, **options)
+                image = reader.tile(x, y, z, **options)
+            with lock:
+                band_counts.add(image.count)
+                if len(band_counts) > 1:
+                    raise MosaicBandsDiffer("the scenes of a mosaic have to have the same number of bands")
+            return image
 
         try:
             image, _ = mosaic_reader(
@@ -183,6 +204,11 @@ class EarthxMosaicTilerFactory(EarthxTilerFactory):
 
         self.reader_dependency = mosaic_reader_params
         super().__attrs_post_init__()
+
+    def tilejson_extras(self, src_dst: Any) -> dict[str, Any]:
+        """``earthx:order``: the scenes in the order a tile reads them, so a client below the mosaic's
+        first zoom level can stack single scenes the same way (plan M4-17 §4.1, §4.6)."""
+        return {"earthx:order": list(src_dst.order)}
 
     def register_routes(self) -> None:
         self.tile()
