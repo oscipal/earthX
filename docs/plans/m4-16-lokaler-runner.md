@@ -603,4 +603,35 @@ und hält an (`CLAUDE.md`, „Fehlt der Zugang …“).
   `--network none`. Maßgeblich ist der Compose-Job der CI.
   Ohne Image geprüft: `check` auf `recipe-ci.json` gibt genau den einen Host
   aus (Exit 0), `ruff`, die Tests des Runners und der Bau-Definition laufen.
-- **Prüfanleitung für Otto** (Windows PowerShell 5.1): im PR.
+- **Prüfanleitung für Otto** (Windows PowerShell 5.1): im PR. Zum Vergleich Cloud ↔ Runner siehe §10.1.
+
+### 10.1 Antwort von Otto und der Vergleichstest (20.10.2026)
+
+- **Bau:** Der Image-Bau bleibt in der CI (und lokal bei Otto). Keine CA des
+  Session-Proxys im Image.
+- **Wo steht der Vergleich Cloud ↔ Runner (M4-Abnahme, Kriterium 1)?** In
+  `backend/tests/earthx/runner/test_compare.py`, Backend-Job der CI: Job-Kind
+  (`earthx.jobs.child.run_child`) und Runner (`earthx.runner.cli.main`) in je einem
+  `spawn`-Prozess, gleiches Rezept, `result.tif` und `mask.tif` pixelgleich und
+  als Datei mit gleichem SHA-256, dazu zwei Gegenproben. Das ist der Kern gegen
+  den Runner, nicht das Image.
+- **Warum nicht zusätzlich im Image mit lokaler Eingabe:** `gateway` lässt nur
+  `https`-Adressen zu, die öffentlich auflösen und auf einem erklärten Host
+  liegen (`check_url`, `asset_hosts`). Eine lokale Eingabe ginge nur über eine
+  Naht, die das ersetzt. Solche Nähte (`vsicurl_path`, `resolve_host`) gibt es
+  nur in `pytest` (`tests/earthx/processing/sources.py::serve`). Sie ins Image
+  zu legen hieße, eine Ausnahme in Produktivcode einzubauen oder die Prüfung
+  zu umgehen; beides ist ausgeschlossen (B8, B9). Das Image enthält außerdem
+  weder `pytest` noch `rio-cogeo` zum Bauen der Eingaben.
+- **Was stattdessen trägt:**
+  1. der `pytest`-Vergleich am Kern (oben);
+  2. im Compose-Job: dieselben Engine-Versionen wie `worker`, und **dieselben
+     Schichten** wie das Image von `worker` (die Stufe `runner` fügt nur `ENV`,
+     `USER` und `ENTRYPOINT` hinzu). Was der Vergleich für den Code zeigt, gilt
+     also für die Dateien im Image;
+  3. `check` und `run` im Container unter Härtung und ohne Netz (Grenze,
+     Exit-Codes, kein Ergebnis);
+  4. der Hashvergleich gegen einen echten Cloud-Job in Ottos Prüfanleitung (§3.9,
+     PR): Er braucht eine echte Quelle und gehört nicht in die CI (`adr/0002`).
+- **Offen:** Ein Hash im Image gegen den Kern aus derselben CI ist damit nicht
+  nachgewiesen, nur geschlossen über Schichten und Versionen.

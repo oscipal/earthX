@@ -188,6 +188,21 @@ jobs:
           assert runner["platform"]["machine"] == "x86_64", runner["platform"]
           EOF
 
+      # The runner stage adds only ENV, USER and ENTRYPOINT: its layers must be
+      # exactly those of the worker image, so what the pytest comparison proves
+      # about the code (tests/earthx/runner/test_compare.py) holds for the files
+      # in this image. A run on a local input cannot go through the image: the
+      # gateway clears only public https addresses of declared hosts, and the
+      # seams the comparison uses exist only in pytest (docs/plans/m4-16-lokaler-runner.md §10).
+      - name: Runner image carries the same layers as the worker image
+        run: |
+          worker_image="$(docker compose config --images | grep -E -- '-worker$')"
+          [ "$(echo "$worker_image" | wc -l)" = "1" ] || { echo "no unique worker image: $worker_image"; exit 1; }
+          layers() { docker inspect --format '{{json .RootFS.Layers}}' "$1"; }
+          echo "worker: $(layers "$worker_image")"
+          echo "runner: $(layers earthx-runner:ci)"
+          [ "$(layers "$worker_image")" = "$(layers earthx-runner:ci)" ] || { echo "layers differ"; exit 1; }
+
       - name: Runner checks the synthetic recipe and names its one host
         run: |
           hosts="$(docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
