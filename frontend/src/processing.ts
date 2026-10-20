@@ -6,6 +6,7 @@
 // Nothing here logs or stores an order: it carries the AOI (Q8).
 
 import { jsonOrThrow } from './api';
+import type { Bbox } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 const PREFIX = `${BASE}/processing`;
@@ -102,6 +103,8 @@ export interface ResultLink {
   href: string;
   type?: string;
   title?: string;
+  // Of the link `result` (the raster): its columns, for the pixel size of a geographic CRS.
+  width?: number;
   properties?: Record<string, unknown>;
 }
 
@@ -269,6 +272,39 @@ export async function dismissJob(jobId: string): Promise<void> {
 
 export async function fetchResults(jobId: string): Promise<ResultsDocument> {
   return jsonOrThrow<ResultsDocument>(await fetch(`${jobUrl(jobId)}/results`));
+}
+
+// What `GET …/tilejson.json` says that the layer needs.
+export interface ResultTileJson {
+  bounds: Bbox;
+  minZoom: number;
+  maxZoom: number;
+  // `float32`, `uint16` …; `null` if the tiler did not say.
+  dataType: string | null;
+}
+
+const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+export function parseTileJson(value: unknown): ResultTileJson | null {
+  if (!value || typeof value !== 'object') return null;
+  const { bounds, minzoom, maxzoom, data_type: dataType } = value as Record<string, unknown>;
+  if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(isNumber)) return null;
+  if (!isNumber(minzoom) || !isNumber(maxzoom) || minzoom > maxzoom) return null;
+  return {
+    bounds: bounds as Bbox,
+    minZoom: minzoom,
+    maxZoom: maxzoom,
+    dataType: typeof dataType === 'string' ? dataType : null,
+  };
+}
+
+// The TileJSON of a result (`GET /results/{result_id}/WebMercatorQuad/tilejson.json`,
+// served by the tiler, M4-13c-5): where it lies and which levels it has. `410` once
+// the result is gone, `404` if it never was.
+export async function fetchResultTileJson(href: string, signal?: AbortSignal): Promise<ResultTileJson> {
+  const tileJson = parseTileJson(await jsonOrThrow<unknown>(await fetch(`${BASE}${href}`, { signal })));
+  if (!tileJson) throw new Error('the tiler answered with a TileJSON the map cannot read');
+  return tileJson;
 }
 
 export function eventsUrl(jobId: string): string {

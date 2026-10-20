@@ -7,11 +7,12 @@ import { useEffect, useState } from 'react';
 
 import { resultUrl } from '../processing';
 import { useProcessingStore, type JobEntry } from '../processingStore';
+import { MIN_REMAINING_MS } from '../resultLayer';
 
 // `MIN_REMAINING` of the job API (`objectstore/results.py`): from a minute
 // before `expires`, a result link answers `410`, which a plain link could only
 // show as a JSON page — the row says so instead.
-export const MIN_REMAINING_MS = 60_000;
+export { MIN_REMAINING_MS };
 
 export const EXPIRED_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 
@@ -51,6 +52,8 @@ function formatTime(iso: string): string {
 export function JobRow({ job }: { job: JobEntry }) {
   const cancelJob = useProcessingStore((s) => s.cancelJob);
   const removeJob = useProcessingStore((s) => s.removeJob);
+  const showResult = useProcessingStore((s) => s.showResultOnMap);
+  const [choosing, setChoosing] = useState(false);
   const linksUntil = Date.parse(job.expires) - MIN_REMAINING_MS;
   const now = useNowUntil(linksUntil);
   const expired = job.expired || !(now < linksUntil);
@@ -83,6 +86,31 @@ export function JobRow({ job }: { job: JobEntry }) {
         <span className="pp-help">Kept until {formatTime(job.expires)}</span>
       )}
       {job.phase === 'successful' && expired && <span className="hint-text warn">{EXPIRED_TEXT}</span>}
+      {job.phase === 'successful' && !expired && job.tiles && (
+        <span className="pp-links">
+          <button
+            type="button"
+            className="link-btn"
+            aria-expanded={choosing}
+            title="Draw the result on the map, read from the platform"
+            onClick={() => setChoosing((open) => !open)}
+          >
+            Show on map
+          </button>
+          {choosing && (
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                setChoosing(false);
+                void showResult(job.jobID);
+              }}
+            >
+              As a new layer
+            </button>
+          )}
+        </span>
+      )}
       {job.phase === 'successful' && !expired && job.files && (
         <span className="pp-links">
           {job.files.map((f) => (

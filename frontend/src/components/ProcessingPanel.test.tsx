@@ -1080,6 +1080,45 @@ describe('starting and following a job', () => {
     ]);
   });
 
+  // M4-13c-5: the link `tiles` of a raster result leads to the tiler, not to a file to download.
+  const TILES = `/results/${JOB}/WebMercatorQuad/tilejson.json`;
+
+  it('keeps the link to the tiles of a raster result, apart from the files, with what "Overview" needs', async () => {
+    await resume(() =>
+      json({
+        result: { ...link('result.tif'), width: 1000, properties: { gsd: 10, 'earthx:resampled': false } },
+        mask: link('mask.tif'),
+        recipe: link('recipe.json'),
+        bundle: link('result.zip'),
+        tiles: { href: TILES, type: 'application/json' },
+      }),
+    );
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
+    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Download (ZIP)']);
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show on map');
+  });
+
+  it('keeps the single links of an old result next to its tiles', async () => {
+    await resume(() =>
+      json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json'), tiles: { href: TILES } }),
+    );
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Result (COG)', 'Mask', 'Recipe']);
+    expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: null, gsd: null });
+  });
+
+  it.each([
+    ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
+    ['a link of another shape', { result: link('result.tif'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
+    ['a link to a file of the job API', { result: link('result.tif'), tiles: link('result.tif') }],
+  ])('offers no "Show on map" for %s', async (_, doc) => {
+    await resume(() => json(doc));
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Show on map');
+  });
+
   it.each([
     ['runtime_exceeded', 'The job took longer than allowed', 'The job took longer than allowed. Choose a smaller area or fewer assets.'],
     [
@@ -1113,6 +1152,7 @@ describe('a finished job row (K6)', () => {
       error: null,
       cancelling: false,
       expired: false,
+      tiles: null,
       title: null,
     };
   }

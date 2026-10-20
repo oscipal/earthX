@@ -31,7 +31,8 @@ import {
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
-import type { LayerOverlay, LayerRestore, MapLayer } from './layers';
+import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
+import { isResultExpired } from './resultLayer';
 import { buildTileUrl, footprintsFC } from './mapLayers';
 import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
@@ -250,6 +251,7 @@ function foundNotice(
 export interface DerivedLayer {
   name: string;
   derived: NonNullable<MapLayer['derived']>;
+  result?: ResultLayerInfo;
   overlays: LayerOverlay[];
   // The scenes the picture was made from.
   itemIds: string[];
@@ -788,6 +790,8 @@ export interface AppState {
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
   pinDerivedLayer: (layer: DerivedLayer) => void;
+  // Marks the result layers whose job's results are about to go (M4-13c-5).
+  expireResultLayers: (now: number) => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
@@ -1220,6 +1224,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...(input.result ? { result: input.result } : {}),
       restore: {
         focusMode: false,
         downloaded: {},
@@ -1235,6 +1240,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${input.name}" to layers.` });
   },
+  expireResultLayers: (now) =>
+    set((s) => {
+      const due = (l: MapLayer) => l.result && !l.result.expired && isResultExpired(l.result.expires, now);
+      if (!s.layers.some(due)) return {};
+      return { layers: s.layers.map((l) => (due(l) && l.result ? { ...l, result: { ...l.result, expired: true } } : l)) };
+    }),
   removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
