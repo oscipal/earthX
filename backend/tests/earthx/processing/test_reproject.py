@@ -188,7 +188,7 @@ class TestTheTargetGrid:
             "nearest": 0.4,
             "bilinear": 1.0,
             "cubic": 1.1,
-            "cubicspline": 1.6,
+            "cubicspline": 1.7,
             "lanczos": 2.2,
             "average": 1.2,
             "mode": 1.1,

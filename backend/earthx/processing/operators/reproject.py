@@ -73,7 +73,7 @@ _METHODS = {
     "nearest": (Resampling.nearest, 0.4, "Value of the nearest source pixel; for class data and masks."),
     "bilinear": (Resampling.bilinear, 1.0, "Distance-weighted mean of the 2x2 nearest pixels; for continuous data."),
     "cubic": (Resampling.cubic, 1.1, "Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data."),
-    "cubicspline": (Resampling.cubic_spline, 1.6, "Cubic B-spline over 4x4 pixels; smoothest, for continuous data."),
+    "cubicspline": (Resampling.cubic_spline, 1.7, "Cubic B-spline over 4x4 pixels; smoothest, for continuous data."),
     "lanczos": (Resampling.lanczos, 2.2, "Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges."),
     "average": (Resampling.average, 1.2, "Mean of all source pixels per target pixel; for coarsening continuous data."),
     "mode": (Resampling.mode, 1.1, "Most frequent source value per target pixel; for class data."),
