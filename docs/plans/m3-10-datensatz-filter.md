@@ -317,7 +317,9 @@ immer zu sehen und liegen übereinander.
   Datensatz gewählt ist, und geht mit den Ergebnissen (neue Suche, Auswahl
   geändert, „Clear all“). Anheften kann ihn der Nutzer selbst („＋ Pin to
   layers“ unter dem Dropdown, `pinSearchCrops`); die Kopie bleibt dann, egal
-  welcher Datensatz gewählt ist. Die Zeichenreihenfolge „unter den Quicklooks“
+  welcher Datensatz gewählt ist. **[Geändert am 20.10.2026 (Otto, M4-28):
+  Ein angehefteter Zuschnitt wird nicht zusätzlich als Such-Zuschnitt gezeichnet,
+  `searchLayers.ts::layersOnMap`.]** Die Zeichenreihenfolge „unter den Quicklooks“
   ist damit gegenstandslos (Quicklooks und Zuschnitt gehören nie zum selben
   Datensatz), die Markierungsebene dafür ist entfernt. Die Vollauflösungs-Ansicht
   mit Stretch-Steuerung (`focusMode`) bleibt dem, was der Nutzer selbst startet.

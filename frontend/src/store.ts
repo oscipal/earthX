@@ -293,6 +293,7 @@ const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incom
 // What leaving the full-resolution view resets — the same set `exitFocus` clears.
 const LEAVE_FOCUS = {
   focusMode: false,
+  viewLayerId: null,
   cropToAoi: false,
   downloaded: {},
   appliedRender: {},
@@ -661,6 +662,10 @@ export interface AppState {
 
   // --- layer manager ---
   layers: MapLayer[]; // pinned images (top of list = top of map)
+  // The layer whose scenes `selectLayer` put into the full-resolution view. While
+  // the view still shows exactly what it pinned (`viewLayer.ts::viewLayerOf`), that
+  // layer draws the picture, at its place in the list and with its eye.
+  viewLayerId: string | null;
   // The AOI crops a search draws by itself for a dataset with no browsable preview
   // (`browse: 'full_resolution'`): part of that dataset's results, on the map only
   // while that dataset is the one chosen in the results dropdown. Not in `layers`;
@@ -855,6 +860,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   cropToAoi: false,
 
   layers: [],
+  viewLayerId: null,
   searchCrops: [],
   layerManagerOpen: false,
   downloadDialogLayerId: null,
@@ -1274,6 +1280,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       aoi: r.aoi,
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
+      viewLayerId: id,
     });
   },
 
@@ -1543,6 +1550,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   exitFocus: () =>
     set({
       focusMode: false,
+      viewLayerId: null,
       cropToAoi: false,
       downloaded: {},
       appliedRender: {},
