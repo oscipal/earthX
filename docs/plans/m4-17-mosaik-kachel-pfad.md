@@ -892,13 +892,21 @@ das Frontend bleibt unverändert (M4-17c).
    4 je Anfrage“ folgt aus der Prozessgrenze. Der Preis: Zwei kalte Überflüge warten aufeinander.
 2. **Ohne Pool `503` für jeden Datensatz**, auch den materialisierten (§4.3 Punkt 4 nannte nur die
    föderierten): Dessen Item-Quelle ist ohnehin der Pool. Ein Pool, der Fehler gibt
-   (`OperationalError`, `InterfaceError`, auch ein Pool-Timeout), ist ebenfalls `503`, Meldung „mosaic
+   (auch ein Pool-Timeout), ist ebenfalls `503`, Meldung „mosaic
    tiles need the item cache, and it is not reachable“. Jeder andere Fehler bleibt sichtbar.
 3. **Datensatz mit `max_zoom` unter z8:** `400` vor jedem Abruf. Heute trifft das keinen Eintrag (S2
    0–19, Zarr 8–14, DEM 0–15).
 4. **Bandzahl:** Die Prüfung vergleicht die Szenen, die die Kachel liest. Füllt die erste Portion die
    Kachel, werden die übrigen weder gelesen noch verglichen.
-5. **Fehlermeldungen** nennen nie den Wert, der abgewiesen wurde (eine ungültige Item-ID kommt nicht
+5. **Erlaubt sind nur die Parameter, die die Route erklärt** (Positivliste aus ihrer Abhängigkeit),
+   nicht eine Sperrliste: Jeder andere Name ist `400`, auch `filter`, `bbox ` oder `URL`. Sonst hätte
+   das TileJSON einen Flächenparameter in die Kachel-URLs kopiert.
+6. **Das TileJSON-`bounds` kommt aus den Footprints** (bei fehlender `geometry` aus der `bbox`), nicht
+   aus der `bbox` allein wie in §4.1; fachlich gleich. Ein Item mit leerer oder nicht endlicher
+   Geometrie ist `502`.
+7. **Jeder Fehler der Datenbank** (`psycopg.Error`, auch eine fehlende Cache-Tabelle) ist `503`; das Log
+   nennt nur die Art des Fehlers, nie den Text des Treibers.
+8. **Fehlermeldungen** nennen nie den Wert, der abgewiesen wurde (eine ungültige Item-ID kommt nicht
    zurück); nur die Zahl der Items und die ersten IDs eines Überflug-Konflikts.
 
 **Gebündelte Cache-Abfrage (§4.3 Punkt 5): nicht gebaut.** Gemessen [M]: lokale Postgres 16, Pool
@@ -942,8 +950,7 @@ lassen; die Suche ging direkt an Earth Search, weil der `api`-Prozess ohne Objek
 - **Nicht belegt:** `200` mit einer Fläche über der Naht, gleiche Datei bei umgekehrter
   Reihenfolge, `422` bei zwei Überflügen, das TileJSON gegen die echte Quelle. Grund: Der Abruf der
   Items scheitert im `gateway` der Sitzung. Er verbindet sich mit der aufgelösten IP, und der
-  Egress-Proxy der Sitzung lehnt `CONNECT` auf eine IP mit `403` ab (`connect_rejected`, Host
-  `18.64.183.101:443`); ein einfacher `httpx`-Abruf derselben Adresse über den Namen ist `200`.
+  Egress-Proxy der Sitzung lehnt `CONNECT` auf eine IP mit `403` ab (`connect_rejected`); ein einfacher `httpx`-Abruf derselben Adresse über den Namen ist `200`.
   Das liegt an der Sitzung, nicht an M4-17b. Was fehlt: ein Lauf von `tiler` und Prüfskript dort, wo
   das `gateway` die Quelle erreicht (Ottos Rechner mit `docker compose`, wie in §9 beschrieben).
 

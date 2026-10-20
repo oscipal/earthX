@@ -37,7 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -542,6 +542,18 @@ def _no_post_process() -> None:
     return None
 
 
+def _declared_query(request: Request) -> set[str]:
+    """The query parameters the matched route declares, its own and those of its dependencies."""
+
+    def names(dependant: Any) -> Iterator[str]:
+        yield from (parameter.alias for parameter in dependant.query_params)
+        for sub in dependant.dependencies:
+            yield from names(sub)
+
+    route = request.scope.get("route")
+    return set(names(route.dependant)) if route is not None else set()
+
+
 def _mosaic_zooms(config: DatasetConfig) -> tuple[int, int]:
     """The levels a mosaic tile of this dataset serves: the released range, from z8 up (plan M4-17 §5).
 
@@ -595,7 +607,7 @@ async def mosaic_scenes(
     assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
     try:
         grid = mosaic_tiles.mosaic_tile(request.path_params)
-        ids = mosaic_tiles.check_query(request.query_params, item, asset)
+        ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset)
         if getattr(state, "earthx_cache_pool", None) is None:
             raise OrderRefused(
                 503, "mosaic tiles need the item cache, and the catalogue database is not reachable", "items"

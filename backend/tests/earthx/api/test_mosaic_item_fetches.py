@@ -140,7 +140,7 @@ class TestItemFetches:
     async def test_the_first_failure_in_id_order_is_the_one_reported(self) -> None:
         source = Counter(_items(3), fail={"I00", "I02"})
         with pytest.raises(ConnectionResetError, match="I00"):
-            await mosaic_tiles.fetch_items(mosaic_tiles.ItemFetches(), source, DATASET, ["I02", "I01", "I00"][::-1])
+            await mosaic_tiles.fetch_items(mosaic_tiles.ItemFetches(), source, DATASET, ["I00", "I01", "I02"])
 
     async def test_what_belongs_to_another_event_loop_is_left_behind(self) -> None:
         """A process has one loop; a test client that runs one per request must not wait on a dead one's fetch."""

@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping, Sequence
+import math
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 import morecantile
@@ -71,29 +72,27 @@ MIN_MOSAIC_ZOOM = 8
 #: cache pool (`api.dependencies`) and the six per host of the gateway (`gateway.policy`).
 MAX_ITEM_FETCHES = 4
 
-# What can carry an area, an operator or an address. FastAPI drops a query parameter a route does not
-# declare without a word, so each one is refused here by name: a mosaic that quietly ignored `bbox`
-# would look like an answer to a question it never heard (Q8, plan §4.1).
-_REFUSED_PARAMETERS = frozenset(
-    {"expression", "algorithm", "algorithm_params", "op", "op_version", "params"}
-    | {"bbox", "aoi", "geometry", "intersects", "url"}
-)
-
-#: Failures of the item cache itself: the database went away or the pool had no connection to give
-#: (``PoolTimeout`` and ``PoolClosed`` are ``OperationalError``s).
-_CACHE_FAILURES = (psycopg.OperationalError, psycopg.InterfaceError)
+#: Failures of the item cache itself: the database went away, the pool had no connection to give
+#: (``PoolTimeout`` and ``PoolClosed`` are ``OperationalError``s) or the table is missing.
+_CACHE_FAILURES = (psycopg.Error,)
 
 
-def check_query(query: Mapping[str, Any] | Any, items: Sequence[str], assets: Sequence[str]) -> list[str]:
+def check_query(query: Mapping[str, Any] | Any, declared: Collection[str], items: Sequence[str], assets: Sequence[str]) -> list[str]:
     """The item ids of the URL, sorted, or the ``400`` the query earns.
 
-    ``query`` is the request's query parameters: their names are checked, case-blind, against the
-    parameters a mosaic does not take. Sorting makes the answer to an error independent of the order
-    the client wrote its ids in; the order of the pixels never depends on it either (§4.4).
+    ``query`` is the request's query parameters and ``declared`` the names the route declares (its own
+    and those of its dependencies). A name outside them is refused instead of dropped: FastAPI drops a
+    parameter a route does not declare without a word, and a mosaic that quietly ignored ``bbox``, a
+    ``filter`` or ``BBOX `` would look like an answer to a question it never heard — and the TileJSON
+    would copy it into the tile URLs it hands out (Q8, plan §4.1). The list of what is allowed, not of
+    what is forbidden: no spelling of an area gets past it.
+
+    Sorting makes the answer to an error independent of the order the client wrote its ids in; the
+    order of the pixels never depends on it either (§4.4).
     """
     for name in query:
-        if str(name).lower() in _REFUSED_PARAMETERS:
-            raise OrderRefused(400, f"{name!r} is not accepted on a mosaic tile", "order")
+        if name not in declared:
+            raise OrderRefused(400, "a mosaic tile takes item, asset and the parameters of its display only", "order")
     if len(assets) != 1:
         raise OrderRefused(400, "name one asset", "order")
     if not MIN_MOSAIC_ITEMS <= len(items) <= MAX_MOSAIC_ITEMS:
@@ -187,7 +186,8 @@ async def fetch_items(
     fetched: dict[str, dict[str, Any]] = {}
     for item_id, result in zip(item_ids, results, strict=True):
         if isinstance(result, _CACHE_FAILURES):
-            LOGGER.warning("the item cache failed under a mosaic tile", exc_info=result)
+            # The kind of failure only: the driver's text can name the host and the user.
+            LOGGER.warning("the item cache failed under a mosaic tile: %s", type(result).__name__)
             raise OrderRefused(503, "mosaic tiles need the item cache, and it is not reachable", "items")
         if isinstance(result, BaseException):
             raise result
@@ -226,13 +226,22 @@ def footprints_of(items: Mapping[str, dict[str, Any]]) -> dict[str, BaseGeometry
     for item_id, item in items.items():
         try:
             if item.get("geometry"):
-                outlines[item_id] = shapely_shape(item["geometry"])
+                outline = shapely_shape(item["geometry"])
             else:
-                west, south, *rest = item["bbox"]  # [w, s, e, n], or [w, s, z, e, n, z] with heights
-                east, north = rest if len(rest) == 2 else rest[1:3]
-                outlines[item_id] = box(west, south, east, north)
+                bbox = item["bbox"]
+                if len(bbox) == 4:
+                    west, south, east, north = bbox
+                elif len(bbox) == 6:  # with heights: [w, s, z, e, n, z]
+                    west, south, _, east, north, _ = bbox
+                else:
+                    raise ValueError("a bbox has four or six numbers")
+                outline = box(west, south, east, north)
+            # An empty outline, or one with a NaN, would end as a hole in the mosaic or a NaN extent.
+            if outline.is_empty or not all(map(math.isfinite, outline.bounds)):
+                raise ValueError("no usable outline")
         except (KeyError, IndexError, TypeError, ValueError, AttributeError, ShapelyError):
             raise OrderRefused(502, malformed_item_detail(item_id), "items") from None
+        outlines[item_id] = outline
     return outlines
 
 

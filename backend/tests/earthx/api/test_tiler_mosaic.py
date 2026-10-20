@@ -283,6 +283,23 @@ class TestTheOrderIsTheMosaicJobs:
         assert 1 not in numpy.unique(tile[0][tile[-1] != 0])
 
 
+class TestTheTargetZoneComesFromTheWholeList:
+    def test_a_tile_that_touches_only_some_scenes_still_uses_the_target_zone_of_all(self, scenes: Scenes, client) -> None:
+        """Two zone-32 scenes far away make zone 32 the target; X (32) and Y, Z (33) lie at the tile.
+
+        Over the whole list zone 32 is the target and X wins where it has data. Computed from the scenes of
+        the tile alone, zone 33 would be the target and Y would win there (plan §4.4)."""
+        x33, y33 = Transformer.from_crs(ZONE_32, ZONE_33, always_xy=True).transform(SEAM_X, SEAM_Y)
+        scenes.add("F1", ZONE_32, SEAM_X + 60_000.0, 4000.0, 9)
+        scenes.add("F2", ZONE_32, SEAM_X + 70_000.0, 4000.0, 9)
+        scenes.add("X", ZONE_32, SEAM_X - 5000.0, 5000.0, 1)
+        scenes.add("Y", ZONE_33, x33 - 5000.0, 10_000.0, 2, top=y33 + 5000.0)
+        scenes.add("Z", ZONE_33, x33 - 5000.0, 10_000.0, 3, top=y33 + 5000.0)
+        tile = _array(client().get(_tile_path(), params=_query(["F1", "F2", "X", "Y", "Z"])))
+        assert value_at(tile, SEAM_X - 1000.0) == 1
+        assert value_at(tile, SEAM_X + 1000.0) == 2
+
+
 class TestTheRuleOfTheMosaicJob:
     """S5: the tile picks the scene the mosaic job picks over the same list — on its own scenes and zones."""
 
@@ -462,6 +479,25 @@ class TestAnswersToWrongRequests:
         assert api.get(f"{path}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).status_code == 501
         assert scenes.fetched == []
 
+    def test_a_dataset_released_only_below_z8_has_no_mosaic(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        api.app.state.earthx_registry = DatasetRegistry(
+            (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=2, max_zoom=7)),)
+        )
+        for path in (_tile_path(), f"{BASE}/WebMercatorQuad/tilejson.json"):
+            assert api.get(path, params=_query(["WEST", "EAST"])).status_code == 400, path
+        assert scenes.fetched == []
+
+    def test_a_dataset_released_from_a_higher_level_starts_its_mosaic_there(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        api = client()
+        api.app.state.earthx_registry = DatasetRegistry(
+            (replace(SYNTHETIC, viewer=replace(SYNTHETIC.viewer, min_zoom=10, max_zoom=14)),)
+        )
+        body = api.get(f"{BASE}/WebMercatorQuad/tilejson.json", params=_query(["WEST", "EAST"])).json()
+        assert (body["minzoom"], body["maxzoom"]) == (10, 14)
+
     def test_a_dataset_below_licence_tier_display_is_a_403(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         response = client().get(
@@ -501,6 +537,43 @@ class TestAnswersToWrongRequests:
         assert "number of bands" in response.json()["detail"]
 
 
+class TestWhatTheItemsCarry:
+    @pytest.mark.parametrize(
+        "geometry",
+        [{"type": "Polygon", "coordinates": []}, {"type": "GeometryCollection", "geometries": []}, {"type": "Nope"}],
+    )
+    def test_an_item_with_an_empty_or_broken_outline_is_the_sources_502(
+        self, scenes: Scenes, client, geometry: dict[str, Any]
+    ) -> None:
+        _seam(scenes)
+        scenes.items["EAST"]["geometry"] = geometry
+        for path in (_tile_path(), f"{BASE}/WebMercatorQuad/tilejson.json"):
+            assert client().get(path, params=_query(["WEST", "EAST"])).status_code == 502, path
+
+    @pytest.mark.parametrize("heights", [False, True])
+    def test_without_a_geometry_the_bbox_is_the_outline_with_four_or_six_numbers(
+        self, scenes: Scenes, client, heights: bool
+    ) -> None:
+        _seam(scenes)
+        for name in ("WEST", "EAST"):
+            west, south, east, north = scenes.items[name]["bbox"]
+            scenes.items[name]["geometry"] = None
+            scenes.items[name]["bbox"] = [west, south, 0, east, north, 100] if heights else [west, south, east, north]
+        assert _array(client().get(_tile_path(), params=_query(["WEST", "EAST"])))[0].any()
+
+    def test_a_bbox_of_five_numbers_is_the_sources_502(self, scenes: Scenes, client) -> None:
+        _seam(scenes)
+        scenes.items["EAST"]["geometry"] = None
+        scenes.items["EAST"]["bbox"] = [0, 0, 1, 1, 2]
+        assert client().get(_tile_path(), params=_query(["WEST", "EAST"])).status_code == 502
+
+    def test_a_band_chosen_with_bidx_makes_scenes_of_other_band_counts_a_mosaic(self, scenes: Scenes, client) -> None:
+        scenes.add("ONE", ZONE_32, SEAM_X - 4000.0, 4000.0, 100)
+        scenes.add("TWO", ZONE_32, SEAM_X, 4000.0, 200, bands=2)
+        response = client().get(_tile_path(), params=_query(["ONE", "TWO"], bidx="1"))
+        assert response.status_code == 200, response.text
+
+
 class TestWhatTheUrlMayCarry:
     """Plan §4.1, §4.8 test 7: ids and one asset, and nothing that could name an area, an operator or an address."""
 
@@ -513,6 +586,10 @@ class TestWhatTheUrlMayCarry:
             {"intersects": "{}"},
             {"url": "https://attacker.example.invalid/x.tif"},
             {"URL": "https://attacker.example.invalid/x.tif"},
+            {"filter": "S_INTERSECTS(geometry,POLYGON((10.5 51.4,10.6 51.4,10.6 51.5,10.5 51.4)))"},
+            {"bbox ": "1,2,3,4"},
+            {"bbox-crs": "x"},
+            {"anything": "else"},
             {"expression": "b1+b2"},
             {"algorithm": "hillshade"},
             {"algorithm_params": "{}"},
@@ -601,13 +678,27 @@ class TestWithoutTheItemCache:
         )
         assert single.status_code == 200, single.text
 
+    def test_a_materialized_dataset_without_a_pool_is_a_503_too(self, scenes: Scenes, client) -> None:
+        response = client(pool=None).get(
+            f"/collections/{DEM}/mosaic/tiles/WebMercatorQuad/10/1/1.png", params=_query(["A", "B"])
+        )
+        assert response.status_code == 503 and "item cache" in response.json()["detail"]
+
     def test_a_wrong_request_is_still_a_400_without_a_pool(self, scenes: Scenes, client) -> None:
         _seam(scenes)
         assert client(pool=None).get(_tile_path(), params=_query(["WEST"])).status_code == 400
 
-    @pytest.mark.parametrize("failure", [psycopg.OperationalError("connection refused"), TimeoutError()])
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            psycopg.OperationalError("connection to server at db.internal.example failed for user secret"),
+            psycopg.InterfaceError("the connection is closed"),
+            psycopg.errors.UndefinedTable('relation "public.earthx_search_cache" does not exist'),
+            TimeoutError(),
+        ],
+    )
     def test_an_item_cache_that_fails_is_a_503_and_another_failure_is_not_hidden(
-        self, scenes: Scenes, client, failure: Exception
+        self, scenes: Scenes, client, failure: Exception, caplog: pytest.LogCaptureFixture
     ) -> None:
         _seam(scenes)
 
@@ -616,12 +707,20 @@ class TestWithoutTheItemCache:
 
         api = client()
         api.app.state.earthx_item_source = failing
-        if isinstance(failure, psycopg.OperationalError):
-            response = api.get(_tile_path(), params=_query(["WEST", "EAST"]))
-            assert response.status_code == 503 and "item cache" in response.json()["detail"]
-        else:
-            with pytest.raises(TimeoutError):
-                api.get(_tile_path(), params=_query(["WEST", "EAST"]))
+        root = logging.getLogger()
+        root.addHandler(caplog.handler)
+        try:
+            if isinstance(failure, psycopg.Error):
+                response = api.get(_tile_path(), params=_query(["WEST", "EAST"]))
+                assert response.status_code == 503 and "item cache" in response.json()["detail"]
+                text = " ".join(own_log_text(record) + str(record.exc_info) for record in caplog.records)
+                assert type(failure).__name__ in text  # a line was logged
+                assert "internal.example" not in text and "secret" not in text and "earthx_search_cache" not in text
+            else:
+                with pytest.raises(TimeoutError):
+                    api.get(_tile_path(), params=_query(["WEST", "EAST"]))
+        finally:
+            root.removeHandler(caplog.handler)
 
 
 class TestTheLog:
