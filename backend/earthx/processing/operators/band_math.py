@@ -241,6 +241,14 @@ def _lineage(params: BaseModel) -> str:
     return f"band math: {params.expression}"
 
 
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, BandMathParams)
+    return (
+        f"One band was computed per pixel from the expression {params.expression!r} "
+        "on physical values, in 32-bit floating point."
+    )
+
+
 def _properties(params: BaseModel) -> dict[str, Any]:
     assert isinstance(params, BandMathParams)
     return {"processing:expression": {"format": "numexpr", "expression": params.expression}}
@@ -263,5 +271,6 @@ BAND_MATH = Operator(
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
     properties=_properties,
 )
