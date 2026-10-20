@@ -265,6 +265,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-28 | Layer-Manager reparieren: Tempo beim Schalten, Reihenfolge Liste = Karte, Klick trifft den gewählten Layer (`plans/m4-28-layer-manager-reparieren.md`) | Quer | A | Sonnet (hoch) | M4-13c-2 | PR (Entwurf) |
 | M4-29 | Frontend: Datensatzwahl ohne Vorauswahl, einzeln per Klick, mehrere nur mit „Select multiple datasets“; „Select all“ je Gruppe und für alle geladenen Treffer, „Clear selection“ (`plans/m4-29-datensatzwahl.md`) | M4 | A | Sonnet (mittel) | M4-13c-2 | PR (Entwurf) |
 | M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export; dazu die Herkunft einer Orts-AOI (OSM) auch bei Raster-Jobs, Backend und Frontend (`plans/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | PR (Entwurf) |
+| M4-32 | Statistik je Raster-Ergebnis (min, max, Mittel, `stddev`, 2-/98-Perzentil, Anteil gültiger Pixel) in `result.tif` und Ergebnisdokument, Vorgabe für die Farbskala im Frontend (`plans/m4-32-ergebnis-statistik.md`) | M4 | B | Opus Plan, Sonnet (hoch) | M4-13c-5 | Plan im Entwurfs-PR, wartet auf Freigabe (`plans/m4-32-ergebnis-statistik.md` §6) |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
