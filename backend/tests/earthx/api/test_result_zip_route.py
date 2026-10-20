@@ -66,9 +66,10 @@ async def zipped(
     meta: bool = True,
     expires: str = "7 days",
     reported: dict[str, dict[str, int]] | None = None,
+    document: dict[str, Any] | None = None,
 ) -> tuple[str, str, str]:
     """A finished raster job whose result lies in the bucket; returns ``(job_id, result_id, url)``."""
-    job_id = await placed(rig)
+    job_id = await placed(rig, document)
     result = dict(RESULT)
     if meta:
         result["files_meta"] = (
@@ -85,14 +86,15 @@ def opened(content: bytes) -> zipfile.ZipFile:
 
 
 class TestTheWholeZip:
-    async def test_it_is_a_zip_with_a_folder_and_the_four_files(self, mocked: Store, rig: Rig) -> None:
+    async def test_it_is_a_zip_with_a_folder_and_the_six_files(self, mocked: Store, rig: Rig) -> None:
         job_id, _, url = await zipped(rig)
         response = await rig.client.get(url)
         assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
         archive = opened(response.content)
         assert archive.testzip() is None
         assert archive.namelist() == [
-            f"{FOLDER}/{n}" for n in ("result.tif", "mask.tif", "recipe.json", "citation.bib")
+            f"{FOLDER}/{n}"
+            for n in ("result.tif", "mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt")
         ]
         assert archive.read(f"{FOLDER}/result.tif") == RASTER and archive.read(f"{FOLDER}/mask.tif") == MASK
         assert all(info.compress_type == zipfile.ZIP_STORED for info in archive.infolist())
@@ -163,7 +165,7 @@ class TestTheNameOfTheZip:
         response = await rig.client.get(f"/processing/jobs/{job_id}/results/result.zip")
         assert response.headers["content-disposition"] == 'attachment; filename="cop-dem-glo-30_scale_run20260305.zip"'
         names = opened(response.content).namelist()
-        assert names[0] == "cop-dem-glo-30_scale_run20260305/result.tif" and len(names) == 4
+        assert names[0] == "cop-dem-glo-30_scale_run20260305/result.tif" and len(names) == 6
 
     async def test_the_zip_and_the_single_links_of_a_job_carry_the_same_day(self, mocked: Store, rig: Rig) -> None:
         job_id, _, url = await zipped(rig)

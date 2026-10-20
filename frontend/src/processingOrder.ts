@@ -439,6 +439,14 @@ export function aoiProvenanceOf(aoi: GeoJSON.Geometry | null): AoiProvenance | u
   return Object.keys(provenance).length > 0 ? provenance : undefined;
 }
 
+// The origin to send with an order (M4-30): that of the AOI, but only where the
+// order carries an area. "Whole scene" and a merged pass have none (the server
+// takes the union of the footprints, no place-search geometry is in the result),
+// and the server refuses an origin without one.
+export function aoiProvenanceFor(order: Order, aoi: GeoJSON.Geometry | null): AoiProvenance | undefined {
+  return order.aoi ? aoiProvenanceOf(aoi) : undefined;
+}
+
 // The step a refusal is about: the server names it as "step <n>" or
 // "steps.<n>" (0-based, `processing/recipe.py`, `api/intake.py`). A text about
 // the expression that names no step (band math's "expression names unknown

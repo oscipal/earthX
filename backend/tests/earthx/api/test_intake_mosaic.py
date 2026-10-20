@@ -362,6 +362,11 @@ class TestTheDayOfAcquisition:
         accepted = await accept(order(), Source((S2, late)))
         assert accepted.acquired_on == date(2026, 6, 2), "the UTC day, not the day of the offset"
 
+    async def test_only_an_order_without_an_area_is_marked_as_whole_scenes(self) -> None:
+        source = overpass(scene("S2_A"), scene("S2_B"))
+        assert (await accept(whole("S2_A", "S2_B"), source)).scene_aoi is True
+        assert (await accept(order(groups=(("S2_A", "S2_B"),)), source)).scene_aoi is False
+
     async def test_the_scenes_of_a_mosaic_share_the_day_of_their_overpass(self) -> None:
         from datetime import date
 

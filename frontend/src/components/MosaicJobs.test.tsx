@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetOption } from '../datasets';
 import { bboxToPolygon } from '../geoUtils';
+import { placeAoi } from '../placeSearch';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import { setTrackerOptions, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
@@ -464,6 +465,15 @@ describe('starting the job', () => {
         },
       },
     });
+  });
+
+  it('sends no origin of the area, even for an AOI of a place search: the pass is merged whole, the result holds none of its geometry (M4-30)', async () => {
+    open('processing', undefined, placeAoi({ name: 'x', display_name: 'x', kind: 'x', bbox: [10, 50, 11, 51], outline: null, outline_simplified: false }) as GeoJSON.Polygon);
+    await showMerged();
+    await press(START);
+    const inputs = JSON.parse(placed()[0][1].body).inputs;
+    expect(Object.keys(inputs)).toEqual(['recipe']);
+    expect(inputs.recipe).not.toHaveProperty('aoi');
   });
 
   it('asks for float32 where the item does not state a nodata value', async () => {

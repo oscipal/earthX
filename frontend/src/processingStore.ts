@@ -50,6 +50,7 @@ import {
   type StatusInfo,
 } from './processing';
 import {
+  aoiProvenanceFor,
   bandSources,
   buildOrder,
   candidateItems,
@@ -870,7 +871,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
-        const status = await placeJob(order);
+        const status = await placeJob(order, {
+          aoiProvenance: aoiProvenanceFor(order, useAppStore.getState().aoi),
+        });
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
         set({ jobsOpen: true });
