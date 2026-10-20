@@ -969,7 +969,7 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a` (oder `cop-dem-glo-30`),
   data type.“ bzw. „… scene …“.
 - Die Rechenzeit ist die Summe der geschätzten Zeiten, nicht die Dauer des Batches.
 
-**Tests** (vitest, synthetisch, 73 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
+**Tests** (vitest, synthetisch, 72 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
 Rückfall, Einheiten je Überflug und Szene, fremde Szenen, Summe samt unbekannter Dauer,
 Titel, Pool mit Grenze und Abbruch), `ProcessingBatch.test.tsx` (30: „Run as“ je Auswahl,
 Aufträge je Szene und je Überflug mit gleichen Schritten, Summe, höchstens 4 gleichzeitige
