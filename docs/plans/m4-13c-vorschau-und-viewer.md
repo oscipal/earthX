@@ -967,7 +967,7 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a` (oder `cop-dem-glo-30`),
   data type.“ bzw. „… scene …“.
 - Die Rechenzeit ist die Summe der geschätzten Zeiten, nicht die Dauer des Batches.
 
-**Tests** (vitest, synthetisch, 55 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
+**Tests** (vitest, synthetisch, 64 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
 Rückfall, Einheiten je Überflug und Szene, fremde Szenen, Summe samt unbekannter Dauer,
 Titel, Pool mit Grenze und Abbruch), `ProcessingBatch.test.tsx` (30: „Run as“ je Auswahl,
 Aufträge je Szene und je Überflug mit gleichen Schritten, Summe, höchstens 4 gleichzeitige
@@ -980,9 +980,42 @@ Einzelauftrag), `jobTracker.test.ts` (Titel mit `jobID` und `expires`, unbrauchb
 Vertragsdatei `ndvi-on-one-scene-of-a-batch.json` (der Backend-Test `test_frontend_orders.py`
 nimmt sie). Gegenproben in der Sitzung: Start auch abgewiesener Teile, Abbruch beim ersten
 abgewiesenen Start, acht statt vier Anfragen, keine Prüfung des Datensatzes, Titel ab 0,
-`413` aus dem Batch ohne Vorschlag, Grenze 26 lassen je Tests fallen. Zwei bestehende Tests
+`413` aus dem Batch ohne Vorschlag, Grenze 26, keine Abbrüche der Schätzung, keine Sperre von
+„Review“ während des Starts, Titel aus dem laufenden Entwurf, Liste bei jedem Job neu geöffnet
+lassen je Tests fallen. Zwei bestehende Tests
 mussten sich ändern: Der `sessionStorage`-Test erwartet jetzt den Titel (K5), und die
 Zarr-Szene des Panel-Tests trug die `collection` des COG-Datensatzes (jetzt die eigene).
+
+**Befunde des Reviewers, behoben:** Die Titel entstanden nach dem `await` aus dem
+laufenden Entwurf (jetzt vor dem ersten Start); ein Start überschrieb am Ende den Zustand
+eines neueren Entwurfs (jetzt eine Generation je Start, `resetDraft` zählt sie hoch) und
+„Review“ ist während des Starts gesperrt; eine laufende Schätzung wurde bei Änderungen an
+Schritten, Bändern, Fläche, Datentyp, „Run as“ oder Überflug nicht abgebrochen (jetzt
+schon, sonst fragt der Pool die Quelle für einen verworfenen Entwurf weiter); der Test zu
+„AOI wechselt zwischen Review und Start“ klickte einen deaktivierten Knopf (jetzt ruft er
+`startJob` im Store auf und fällt ohne die Schlüsselprüfung); der Grund der Grenze steht als
+Text unter „Run as“, nicht nur als Tooltip; sind alle Teile abgewiesen, heißt der Knopf
+„Start 0 of N jobs“ mit dem Grund; „Left out“ nennt jede Szene einmal; die Jobliste öffnet
+beim Start einmal, nicht bei jedem Job; eine Dauer in unbekannter Form lässt die Zeile
+„of work“ weg, statt 0 zu zählen; der Schlüssel eines Batches wird einmal serialisiert; die
+Regel für den Titel im `sessionStorage` steht an einer Stelle und gilt auch beim Speichern.
+
+**Offen, für Otto:**
+- *Nach einem Start mit abgewiesenen Teilen* gibt es keinen Weg, nur diese erneut zu starten:
+  ein neues „Review“ und „Start“ startet auch die schon angenommenen Teile noch einmal. Der
+  Plan regelt es nicht. Vorschlag: nicht bauen, bis ein Anwender es braucht; wer die
+  angenommenen Teile nicht doppelt will, wählt nur die abgewiesenen Szenen neu.
+- *Prüfung auf fremde Datensätze* vergleicht `item.collection` mit der `id` des Datensatzes.
+  Das stimmt heute für alle drei Datensätze. Bekäme ein föderierter Datensatz eine andere
+  `collection` im Item als seine Plattform-`id`, sperrte die Prüfung jeden Auftrag, auch
+  den einzelnen. Dann gehört die Prüfung auf `source_collection_id` oder eine Zuordnung im
+  Katalog.
+- *Die Wahl kehrt still zurück:* Schrumpft die Auswahl, bis „Run as“ nicht mehr angeboten
+  wird, fällt der Auftrag auf „One job“ zurück; wächst sie wieder, gilt die frühere Wahl
+  ohne Klick wieder (sichtbar an der gedrückten Taste).
+- *Umfang:* mit Tests und Dokumentation rund 1700 Zeilen, Code ohne Tests rund 450; der
+  Plan (§6) schätzte den Batch auf 300 Zeilen Code. Über dem Richtwert von 400, aber nicht
+  teilbar, ohne Auftragsbau, Schätzung und Start auseinanderzureißen.
 
 **Ergebnis der Prüfungen:** siehe PR-Text.
 
