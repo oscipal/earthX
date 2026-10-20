@@ -20,7 +20,8 @@ Deviations from the sketch in §5.2: ``cost_factor`` instead of a full ``estimat
 (the estimate itself is computed once, in :mod:`earthx.processing.plan`),
 ``extra_requirements`` for flags that depend on the parameters (``interpolation`` for
 a resampling other than ``nearest``, §5.3; plan M4-07a §3.2), and ``properties`` for
-what a step adds to the result's STAC properties (plan M4-09, §5.6).
+what a step adds to the result's STAC properties (plan M4-09, §5.6), and ``dataset_check``
+for what the parameters must agree with in the entry itself, such as the layer ``mask`` reads (plan M4-18, adr/0014 §15k).
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 from rasterio.transform import Affine
 
-from earthx.catalog.registry import Capabilities, DataClass, LicenseTier
+from earthx.catalog.registry import Capabilities, DataClass, DatasetConfig, LicenseTier
 
 __all__ = ["BandMeta", "Operator", "RasterMeta", "Requirement", "Tier"]
 
@@ -111,6 +112,10 @@ def _no_properties(params: BaseModel) -> dict[str, Any]:
     return {}
 
 
+def _no_dataset_reasons(config: DatasetConfig, params: BaseModel) -> list[str]:
+    return []
+
+
 @dataclass(frozen=True, slots=True)
 class Operator:
     """One registered operator in one version."""
@@ -132,6 +137,8 @@ class Operator:
     extra_requirements: Callable[[BaseModel], frozenset[str]] = field(default=_no_extra_requirements)
     #: STAC properties this step adds to the result, such as ``processing:expression`` (§5.6).
     properties: Callable[[BaseModel], dict[str, Any]] = field(default=_no_properties)
+    #: Why these parameters do not fit this entry (empty means they do); only :func:`applicable` calls it.
+    dataset_check: Callable[[DatasetConfig, BaseModel], list[str]] = field(default=_no_dataset_reasons)
 
     def __post_init__(self) -> None:
         if not _OP_NAME.match(self.op):
