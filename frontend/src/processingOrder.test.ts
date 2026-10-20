@@ -7,6 +7,7 @@ import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
 import { placeAoi } from './placeSearch';
 import type { ProcessDescription } from './processing';
 import {
+  aoiProvenanceFor,
   aoiProvenanceOf,
   bandSources,
   buildExportOrder,
@@ -355,6 +356,25 @@ describe('buildExportOrder (M4-11 §3.1)', () => {
     const place = placeAoi(PLACE) as GeoJSON.Polygon;
     const order = buildExportOrder({ datasetId: 'd', groups: [['A']], assets: ['visual'], aoi: place });
     expect(order.aoi).toEqual({ type: 'Polygon', coordinates: aoi.coordinates });
+  });
+});
+
+describe('aoiProvenanceFor (M4-30)', () => {
+  const place = placeAoi(PLACE);
+  const withArea = buildExportOrder({ datasetId: 'd', groups: [['A']], assets: ['visual'], aoi: bboxToPolygon([10, 50, 11, 51]) });
+  const mosaic = buildMosaicOrder({ datasetId: 'd', itemIds: ['A', 'B'], assets: ['visual'], dtype: 'uint8' });
+
+  it('is that of the AOI for an order that carries an area', () => {
+    expect(aoiProvenanceFor(withArea, place)).toEqual(aoiProvenanceOf(place));
+  });
+
+  it('is nothing for an order without an area, however the AOI came about', () => {
+    expect(aoiProvenanceFor(mosaic, place)).toBeUndefined();
+  });
+
+  it('is nothing for a drawn AOI or none', () => {
+    expect(aoiProvenanceFor(withArea, bboxToPolygon([10, 50, 11, 51]))).toBeUndefined();
+    expect(aoiProvenanceFor(withArea, null)).toBeUndefined();
   });
 });
 

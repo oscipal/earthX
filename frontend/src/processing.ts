@@ -60,8 +60,8 @@ export interface CropOutput {
   mask: 'file';
 }
 
-// Where a place-search AOI came from (M4-11 F4): sent next to an export's
-// order, never part of the recipe or its hash.
+// Where a place-search AOI came from (M4-11 F4, M4-30): sent next to the order
+// of an export or of a job with an area, never part of the recipe or its hash.
 export interface AoiProvenance {
   source?: string;
   attribution?: string;

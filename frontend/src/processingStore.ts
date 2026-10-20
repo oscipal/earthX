@@ -33,6 +33,7 @@ import {
   type StatusInfo,
 } from './processing';
 import {
+  aoiProvenanceFor,
   bandSources,
   buildOrder,
   candidateItems,
@@ -702,7 +703,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!order || !view.key || s.estimate?.key !== view.key || s.starting) return;
       set({ starting: true, startError: null });
       try {
-        const status = await placeJob(order);
+        const status = await placeJob(order, {
+          aoiProvenance: aoiProvenanceFor(order, useAppStore.getState().aoi),
+        });
         // One estimate, one job: a second identical job needs its own review.
         set({ starting: false, estimate: null, jobsOpen: true });
         addJob(status.jobID, status.expires, status);

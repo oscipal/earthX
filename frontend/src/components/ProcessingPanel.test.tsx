@@ -12,7 +12,7 @@ import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from '../geoUtils';
-import { placeAoi } from '../placeSearch';
+import { PLACE_SEARCH_PROVENANCE, placeAoi } from '../placeSearch';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
@@ -387,6 +387,57 @@ describe('review before start (K4)', () => {
     const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
     expect(Object.keys(body.inputs.recipe.aoi).sort()).toEqual(['coordinates', 'type']);
     expect(useAppStore.getState().aoi).toHaveProperty('properties');
+  });
+
+  describe('the origin of the area of a place search (M4-30)', () => {
+    const place = () =>
+      placeAoi({ name: 'x', display_name: 'x', kind: 'x', bbox: [10.4, 50.4, 10.6, 50.6], outline: AOI, outline_simplified: false });
+    const execution = () => fetchMock.mock.calls.filter(([u, init]) => String(u).endsWith('/execution') && init?.method === 'POST');
+
+    async function start(area: 'aoi' | 'scene', aoi?: GeoJSON.Geometry) {
+      routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+      select([scene('S2B_A')]);
+      if (aoi) useAppStore.setState({ aoi });
+      await openPanel();
+      if (area === 'aoi') click(button('AOI only'));
+      await ndvi();
+      await review();
+      click(button('Start job'));
+      await flush();
+      expect(execution()).toHaveLength(1);
+      return JSON.parse(execution()[0][1].body).inputs;
+    }
+
+    it('goes with the order for "AOI only", next to the recipe', async () => {
+      const inputs = await start('aoi', place());
+      expect(inputs.aoiProvenance).toEqual(PLACE_SEARCH_PROVENANCE);
+      expect(Object.keys(inputs.recipe.aoi).sort()).toEqual(['coordinates', 'type']);
+      expect(JSON.stringify(inputs.recipe)).not.toContain('OpenStreetMap');
+    });
+
+    it('does not go with the estimate: it is checked when the job is placed', async () => {
+      await start('aoi', place());
+      const estimate = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))!;
+      expect(JSON.parse(estimate[1].body).inputs).not.toHaveProperty('aoiProvenance');
+    });
+
+    it('does not go with "Whole scene": the order has no area, and the server would refuse it', async () => {
+      const inputs = await start('scene', place());
+      expect(inputs).not.toHaveProperty('aoiProvenance');
+      expect(inputs.recipe).not.toHaveProperty('aoi');
+    });
+
+    it('does not go with a drawn or uploaded area', async () => {
+      const inputs = await start('aoi');
+      expect(inputs).not.toHaveProperty('aoiProvenance');
+      expect(inputs.recipe.aoi).toEqual(AOI);
+    });
+
+    it('does not go with an area drawn after the search: it is a new geometry without the origin', async () => {
+      useAppStore.setState({ aoi: place() });
+      const inputs = await start('aoi', bboxToPolygon([10.45, 50.45, 10.55, 50.55]));
+      expect(inputs).not.toHaveProperty('aoiProvenance');
+    });
   });
 
   it('shows a refusal of a step at that step', async () => {
