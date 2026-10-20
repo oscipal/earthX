@@ -96,6 +96,8 @@ export interface ProcessingEntry {
 // the results list would have put them in. `orderView` reads them next to the
 // results; nothing else does.
 export interface ExtraScenes {
+  // The dataset they were fetched under.
+  datasetId: string | null;
   items: StacItem[];
   groups: TimeStepGroup[];
 }
@@ -273,12 +275,12 @@ export function bandMathExpressions(steps: readonly DraftStep[]): string[] {
 // panel from rendering on every map move.
 export type SelectionState = Pick<
   AppState,
-  'datasets' | 'datasetId' | 'items' | 'selectedIds' | 'groups' | 'activeGroupIndex' | 'aoi'
+  'datasets' | 'datasetId' | 'openSectionId' | 'items' | 'selectedIds' | 'groups' | 'activeGroupIndex' | 'aoi'
 >;
 
 export function selectionState(s: AppState): SelectionState {
-  const { datasets, datasetId, items, selectedIds, groups, activeGroupIndex, aoi } = s;
-  return { datasets, datasetId, items, selectedIds, groups, activeGroupIndex, aoi };
+  const { datasets, datasetId, openSectionId, items, selectedIds, groups, activeGroupIndex, aoi } = s;
+  return { datasets, datasetId, openSectionId, items, selectedIds, groups, activeGroupIndex, aoi };
 }
 
 export function orderView(selection: SelectionState, p: ProcessingState): OrderView {
@@ -307,7 +309,11 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const automatic = info ? chooseDtype({ steps: choices, bands: inOrder, allowed: dtypes }) : null;
   const options = automatic ? dtypeOptions({ dtypes, steps: choices }) : [];
   const dtype = automatic ? effectiveDtype(p.dtype, options, automatic) : '';
-  const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? []) : [];
+  // The results on screen are those of the open section; the extra scenes were fetched under the active dataset.
+  const extraIds = new Set(p.extraScenes?.items.map((item) => item.id));
+  const foundUnder = (item: StacItem) =>
+    extraIds.has(item.id) ? (p.extraScenes?.datasetId ?? null) : (selection.openSectionId ?? selection.datasetId);
+  const foreign = dataset ? foreignScenes(dataset.id, pass?.items ?? [], foundUnder) : [];
   const buildFor = (itemIds: string[]): BuiltOrder | null => {
     if (!info || !dataset) return null;
     const result = buildOrder({ datasetId: dataset.id, itemIds, area: p.area, aoi: app.aoi, steps: p.steps, assets, dtype, info });
@@ -369,7 +375,7 @@ async function selectScenes(ids: readonly string[], whose: string): Promise<Extr
   };
   if (ids.length === 0) return fail(`There are no scenes in ${whose}.`);
   const missing = ids.filter((id) => !app.items.some((item) => item.id === id));
-  let extra: ExtraScenes = { items: [], groups: [] };
+  let extra: ExtraScenes = { datasetId: app.datasetId, items: [], groups: [] };
   if (missing.length > 0) {
     const dataset = app.datasets.find((d) => d.id === app.datasetId);
     if (!app.datasetId || !dataset?.viewable) return fail('Pick a dataset first.');
@@ -386,7 +392,7 @@ async function selectScenes(ids: readonly string[], whose: string): Promise<Extr
     if (problems.length > 0) return fail(`Could not load the scenes of ${whose}. ${problems.join('; ')}`);
     const items = answers.flatMap((answer) => (answer.status === 'fulfilled' && answer.value ? [answer.value] : []));
     try {
-      extra = { items, groups: buildGroups(items, dataset.resultsGroupBy) };
+      extra = { datasetId, items, groups: buildGroups(items, dataset.resultsGroupBy) };
     } catch (error) {
       return fail(`Could not group the scenes of ${whose}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -918,9 +924,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 });
 
 // A new dataset drops the draft; any other change of the selection drops only
-// an estimate still on its way (its answer would belong to another order). A
-// new AOI does so only for "AOI only" (K3): "Whole scene" does not send it, the
-// order stays the same text, and so does an estimate already shown.
+// an estimate still on its way (its answer would belong to another order) and
+// sends "Run as" back to one job. A new AOI does so only for "AOI only" (K3):
+// "Whole scene" does not send it, the order stays the same text, and so does an
+// estimate already shown.
 useAppStore.subscribe((s, prev) => {
   const processing = useProcessingStore.getState();
   if (s.datasetId !== prev.datasetId) {
@@ -937,6 +944,8 @@ useAppStore.subscribe((s, prev) => {
       abortEstimate();
       useProcessingStore.setState({ reviewing: false });
     }
+    // Another selection, another set of jobs: "Run as" starts from one job again (Otto, 20.10.2026).
+    if (processing.runAs !== 'one') useProcessingStore.setState({ runAs: 'one' });
   }
 });
 

@@ -110,14 +110,25 @@ describe('the jobs of a batch', () => {
 });
 
 describe('scenes of another dataset', () => {
-  it('finds the scenes whose collection is not the dataset', () => {
-    const items = [item('S1', 'sentinel-2-c1-l2a'), item('S2', 'cop-dem-glo-30'), item('S3')];
-    expect(foreignScenes('sentinel-2-c1-l2a', items).map((i) => i.id)).toEqual(['S2']);
+  const sections: Record<string, string> = { S1: 'sentinel-2-c1-l2a', S2: 'cop-dem-glo-30' };
+  const foundUnder = (i: StacItem) => sections[i.id] ?? null;
+
+  it('finds the scenes that were found under another dataset', () => {
+    const items = [item('S1'), item('S2'), item('S3')];
+    expect(foreignScenes('sentinel-2-c1-l2a', items, foundUnder).map((i) => i.id)).toEqual(['S2']);
   });
 
-  it('lets a scene pass that names no collection, and an empty selection', () => {
-    expect(foreignScenes('x', [item('S1')])).toEqual([]);
-    expect(foreignScenes('x', [])).toEqual([]);
+  it('goes by where the scene was found, not by its collection', () => {
+    // a federated source names its collection otherwise than the platform names the dataset
+    const upstream = item('S1', 'upstream-collection-name');
+    expect(foreignScenes('sentinel-2-c1-l2a', [upstream], foundUnder)).toEqual([]);
+    const other = item('S2', 'sentinel-2-c1-l2a');
+    expect(foreignScenes('sentinel-2-c1-l2a', [other], foundUnder).map((i) => i.id)).toEqual(['S2']);
+  });
+
+  it('lets a scene pass whose context is not known, and an empty selection', () => {
+    expect(foreignScenes('x', [item('S3')], foundUnder)).toEqual([]);
+    expect(foreignScenes('x', [], foundUnder)).toEqual([]);
   });
 
   it('names the scenes in the reason', () => {

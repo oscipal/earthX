@@ -512,7 +512,7 @@ describe('starting a batch', () => {
     expect(alerts).toEqual(['S2: the queue is full Try again in a moment.']);
   });
 
-  it('starts nothing when the AOI changes the order between review and start', async () => {
+  it('starts nothing when a new AOI sends the batch back to one job after the review', async () => {
     selectPasses([[scene('IN1'), scene('IN2')]]);
     await openPanel();
     await ndvi();
@@ -521,7 +521,21 @@ describe('starting a batch', () => {
     await review();
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.1, 50.1, 10.2, 50.2]) }));
     await flush();
-    expect(button(/^Start 2 jobs$/).disabled).toBe(true);
+    expect(button('Start job').disabled).toBe(true);
+    await act(async () => {
+      await useProcessingStore.getState().startJob();
+    });
+    expect(placed).toHaveLength(0);
+  });
+
+  it('starts nothing when the order changes between review and start, even when the store is asked directly', async () => {
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    typeInto(container.querySelector('textarea[id$="-expression"]')!, 'nir - red');
+    expect(button('Start 2 jobs').disabled).toBe(true);
     // the button is shut, but the store must hold the line on its own
     await act(async () => {
       await useProcessingStore.getState().startJob();
@@ -767,8 +781,19 @@ describe('the buttons of a reviewed batch', () => {
 });
 
 describe('one dataset', () => {
-  it('refuses a batch with a scene of another dataset, with the reason, and sends nothing', async () => {
-    selectPasses([[scene('S1'), scene('S2', NEAR, 'cop-dem-glo-30'), scene('S3')]]);
+  // The scenes of the results on screen were found under the open section; the
+  // extra scenes of a layer entry under the dataset they were fetched for.
+  function withExtraFrom(datasetId: string | null) {
+    selectPasses([[scene('S1'), scene('S3')]]);
+    const extra = scene('S2');
+    useProcessingStore.setState({
+      extraScenes: { datasetId, items: [extra], groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: [extra] }] },
+    });
+    useAppStore.setState({ selectedIds: ['S1', 'S2', 'S3'] });
+  }
+
+  it('refuses a batch with a scene that was found under another dataset, with the reason, and sends nothing', async () => {
+    withExtraFrom('cop-dem-glo-30');
     await openPanel();
     await ndvi();
     click(button('One job per scene (3)'));
@@ -778,12 +803,76 @@ describe('one dataset', () => {
     expect(button('Start 3 jobs').disabled).toBe(true);
   });
 
-  it('refuses a single job with a scene of another dataset, too', async () => {
-    selectPasses([[scene('S1'), scene('S2', NEAR, 'cop-dem-glo-30')]]);
+  it('refuses a single job with scenes of another open section, too', async () => {
+    selectPasses([[scene('S1'), scene('S2')]]);
+    useAppStore.setState({ openSectionId: 'cop-dem-glo-30' });
     await openPanel();
     await ndvi();
     await review();
     expect(estimates).toHaveLength(0);
-    expect(text()).toContain('another dataset (S2)');
+    expect(text()).toContain('another dataset (S1, S2)');
+  });
+
+  it('takes scenes whose collection is not the id of the dataset when they were found under it', async () => {
+    selectPasses([[scene('S1', NEAR, 'upstream-collection'), scene('S2', NEAR, 'other-upstream-name')]]);
+    useAppStore.setState({ openSectionId: DATASET.id });
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    expect(estimates.map(idsOf)).toEqual([['S1'], ['S2']]);
+    expect(text()).not.toContain('another dataset');
+    expect(button('Start 2 jobs').disabled).toBe(false);
+  });
+
+  it('takes the extra scenes of a layer when they were fetched under the dataset of the order', async () => {
+    withExtraFrom(DATASET.id);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    await review();
+    expect(estimates.map(idsOf).sort()).toEqual([['S1'], ['S2'], ['S3']]);
+  });
+});
+
+describe('"Run as" and the selection (Otto, 20.10.2026)', () => {
+  it('goes back to one job as soon as the selection changes, and stays there', async () => {
+    selectPasses([sceneIds(5)]);
+    await openPanel();
+    click(button('One job per scene (5)'));
+    expect(useProcessingStore.getState().runAs).toBe('scene');
+    act(() => useAppStore.setState({ selectedIds: ['S1', 'S2', 'S3', 'S4'] }));
+    expect(useProcessingStore.getState().runAs).toBe('one');
+    act(() => useAppStore.setState({ selectedIds: ['S1', 'S2', 'S3', 'S4', 'S5'] }));
+    expect(button('One job').getAttribute('aria-pressed')).toBe('true');
+    expect(button('One job per scene (5)').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('goes back to one job when the scenes of the results change', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    click(button('One job per scene (3)'));
+    const more = sceneIds(3);
+    act(() => useAppStore.setState({ items: more, groups: [{ key: ['2026-07-01'], label: '2026-07-01', items: more }] }));
+    expect(useProcessingStore.getState().runAs).toBe('one');
+  });
+
+  it('goes back to one job when the AOI changes under "AOI only", not under "Whole scene"', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    click(button('One job per scene (3)'));
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([10.1, 50.1, 10.2, 50.2]) }));
+    expect(useProcessingStore.getState().runAs).toBe('scene');
+    click(button('AOI only'));
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([10.3, 50.3, 10.4, 50.4]) }));
+    expect(useProcessingStore.getState().runAs).toBe('one');
+  });
+
+  it('keeps the choice when something else changes', async () => {
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    click(button('One job per scene (3)'));
+    await ndvi();
+    expect(useProcessingStore.getState().runAs).toBe('scene');
   });
 });

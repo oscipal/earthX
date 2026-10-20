@@ -77,10 +77,20 @@ export function batchPass(runAs: RunAs, units: readonly BatchUnit[]): Pass | nul
   };
 }
 
-// The scenes that belong to another dataset than the order's. The selection has
-// one dataset today; the order refuses a stranger all the same.
-export function foreignScenes(datasetId: string, items: readonly StacItem[]): StacItem[] {
-  return items.filter((item) => typeof item.collection === 'string' && item.collection !== datasetId);
+// The scenes that were found under another dataset than the order's. Where a
+// scene was found is the context of the search (the results section it is in, or
+// the dataset it was fetched under), not its `collection`: a federated source may
+// name its collection otherwise than the platform names the dataset. The
+// selection has one dataset today; the order refuses a stranger all the same.
+export function foreignScenes(
+  datasetId: string,
+  items: readonly StacItem[],
+  foundUnder: (item: StacItem) => string | null,
+): StacItem[] {
+  return items.filter((item) => {
+    const found = foundUnder(item);
+    return found !== null && found !== datasetId;
+  });
 }
 
 export function foreignReason(foreign: readonly StacItem[]): string {
