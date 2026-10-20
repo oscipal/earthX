@@ -21,6 +21,7 @@ import numpy
 import pytest
 import rasterio
 from fastapi.testclient import TestClient
+from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
 from rio_cogeo.cogeo import cog_translate
@@ -51,6 +52,12 @@ BOUNDS = transform_bounds(
 )
 _MIDDLE = WEB_MERCATOR_TMS.tile((BOUNDS[0] + BOUNDS[2]) / 2, (BOUNDS[1] + BOUNDS[3]) / 2, ZOOM)
 TILE = (_MIDDLE.z, _MIDDLE.x, _MIDDLE.y)
+# A tile that holds the whole raster, for the tests of the mask: its left half is the left half of the picture.
+_WIDE = WEB_MERCATOR_TMS.tile((BOUNDS[0] + BOUNDS[2]) / 2, (BOUNDS[1] + BOUNDS[3]) / 2, 11)
+_WIDE_BOUNDS = WEB_MERCATOR_TMS.bounds(_WIDE)
+assert _WIDE_BOUNDS.left < BOUNDS[0] and BOUNDS[2] < _WIDE_BOUNDS.right, "choose another level"
+assert _WIDE_BOUNDS.bottom < BOUNDS[1] and BOUNDS[3] < _WIDE_BOUNDS.top, "choose another level"
+WIDE = (_WIDE.z, _WIDE.x, _WIDE.y)
 
 
 @pytest.fixture(scope="module")
@@ -75,6 +82,47 @@ def result_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
     target = root / "result.tif"
     cog_translate(str(plain), str(target), cog_profiles.get("deflate"), quiet=True)
     return target
+
+
+def _mask_file(root: Path, name: str, inside) -> Path:
+    """A ``mask.tif`` as the job writes it: 1 inside the area, 0 outside, on the grid of the result."""
+    rows, cols = numpy.indices((SIZE, SIZE))
+    data = inside(rows, cols).astype("uint8")
+    path = root / f"{name}.tif"
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=SIZE,
+        height=SIZE,
+        count=1,
+        dtype="uint8",
+        crs=sources.CRS,
+        transform=from_origin(sources.ORIGIN_X, sources.ORIGIN_Y, sources.RESOLUTION, sources.RESOLUTION),
+        tiled=True,
+        blockxsize=128,
+        blockysize=128,
+        compress="deflate",
+    ) as destination:
+        destination.write(data, 1)
+    return path
+
+
+# The shapes of an area: all of it, nothing, the left half, everything but the top right quarter (the union
+# of footprints of a "Whole scene" is such an L).
+MASKS = {
+    "all": lambda rows, cols: numpy.ones_like(rows),
+    "none": lambda rows, cols: numpy.zeros_like(rows),
+    "left": lambda rows, cols: cols < SIZE // 2,
+    "ell": lambda rows, cols: ~((rows < SIZE // 2) & (cols >= SIZE // 2)),
+}
+SHARE = {"all": 1.0, "none": 0.0, "left": 0.5, "ell": 0.75}
+
+
+@pytest.fixture(scope="module")
+def mask_files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    root = tmp_path_factory.mktemp("result-masks")
+    return {name: _mask_file(root, name, inside) for name, inside in MASKS.items()}
 
 
 class Clock:
@@ -107,26 +155,36 @@ class Rig:
         self.heads = heads  # the keys the store was asked the age of
         self.signed: list[int] = []  # one entry (the lifetime in seconds) per URL signed for GDAL
 
-    def tile_url(self, result_id: str, query: str = "") -> str:
-        z, x, y = TILE
-        return f"/results/{result_id}/tiles/WebMercatorQuad/{z}/{x}/{y}.png?rescale=-1,1&colormap_name=rdylgn{query}"
+        self.masks: dict[str, Path] = {}  # the mask GDAL is given for a result id, if not the whole raster
+
+    def tile_url(self, result_id: str, query: str = "", ext: str = "png", tile: tuple[int, int, int] = TILE) -> str:
+        z, x, y = tile
+        return f"/results/{result_id}/tiles/WebMercatorQuad/{z}/{x}/{y}.{ext}?rescale=-1,1&colormap_name=rdylgn{query}"
 
 
 @pytest.fixture
-def uploaded(store: Store, result_file: Path) -> str:  # noqa: F811
+def uploaded(store: Store, result_file: Path, mask_files: dict[str, Path]) -> str:  # noqa: F811
     result_id = new_result_id()
     upload_result(store, result_id, "result.tif", result_file)
+    upload_result(store, result_id, "mask.tif", mask_files["all"])
     return result_id
 
 
 @pytest.fixture
-def rig(store: Store, result_file: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Rig]:  # noqa: F811
+def rig(
+    store: Store,  # noqa: F811
+    result_file: Path,
+    mask_files: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[Rig]:
     """The real tiler app on a registry-less lifespan: no pool, no item source — only the result routes."""
     opened: list[str] = []
+    masks: dict[str, Path] = {}
 
     def local(url: str) -> str:
         opened.append(url)
-        return str(result_file)
+        _, result_id, name = urlsplit(url).path.rsplit("/", 2)
+        return str(masks.get(result_id, mask_files["all"])) if name == "mask.tif" else str(result_file)
 
     monkeypatch.setattr(result_tiles, "gdal_path", local)
     # The object was written "now" by moto; the clock starts a minute later.
@@ -157,6 +215,7 @@ def rig(store: Store, result_file: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     with TestClient(app) as client:
         made = Rig(client, store, clock, opened, heads)
         made.signed = signed
+        made.masks = masks
         yield made
 
 
@@ -170,16 +229,22 @@ def test_a_tile_is_rendered_from_the_stored_result(rig: Rig, uploaded: str) -> N
     assert response.content.startswith(b"\x89PNG")
 
 
-def test_gdal_is_given_a_url_signed_for_the_internal_endpoint_and_read_only(rig: Rig, uploaded: str) -> None:
+def test_gdal_is_given_urls_signed_for_the_internal_endpoint_for_the_result_and_its_mask(
+    rig: Rig, uploaded: str
+) -> None:
     rig.client.get(rig.tile_url(uploaded))
-    (url,) = set(rig.opened)
-    parts = urlsplit(url)
-    query = parse_qs(parts.query)
-    assert f"{parts.scheme}://{parts.netloc}" == ENDPOINT
-    assert parts.path == f"/earthx/results/{uploaded}/result.tif"
-    assert int(query["X-Amz-Expires"][0]) <= 15 * 60
-    # Nothing in it asks for a download name: this URL is for GDAL, not for a person.
-    assert "response-content-disposition" not in query
+    urls = set(rig.opened)
+    assert {urlsplit(url).path for url in urls} == {
+        f"/earthx/results/{uploaded}/result.tif",
+        f"/earthx/results/{uploaded}/mask.tif",
+    }
+    for url in urls:
+        parts = urlsplit(url)
+        query = parse_qs(parts.query)
+        assert f"{parts.scheme}://{parts.netloc}" == ENDPOINT
+        assert int(query["X-Amz-Expires"][0]) <= 15 * 60
+        # Nothing in it asks for a download name: this URL is for GDAL, not for a person.
+        assert "response-content-disposition" not in query
 
 
 def test_the_tilejson_describes_the_result_and_its_tiles(rig: Rig, uploaded: str) -> None:
@@ -203,6 +268,86 @@ def test_the_route_runs_without_a_database(rig: Rig, uploaded: str) -> None:
     app = rig.client.app
     assert getattr(app.state, "earthx_cache_pool", None) is None
     assert rig.client.get(rig.tile_url(uploaded)).status_code == 200
+
+
+# --- the shape on the map: the mask of the result (Otto, 20.10.2026) ---------------------------------
+
+
+def _opaque(response) -> numpy.ndarray:
+    """The pixels of a tile that are drawn: the alpha band of the GeoTIFF the tile route gives."""
+    assert response.status_code == 200, response.text
+    with MemoryFile(response.content) as memory, memory.open() as dataset:
+        return dataset.read(dataset.count) > 0
+
+
+def _masked_result(rig: Rig, store: Store, mask_files: dict[str, Path], result_file: Path, kind: str) -> str:  # noqa: F811
+    result_id = new_result_id()
+    upload_result(store, result_id, "result.tif", result_file)
+    upload_result(store, result_id, "mask.tif", mask_files[kind])
+    rig.masks[result_id] = mask_files[kind]
+    return result_id
+
+
+@pytest.fixture
+def whole(rig: Rig, uploaded: str) -> numpy.ndarray:
+    """What is drawn of the result with a mask that marks all of it: the raster's own extent in the tile."""
+    drawn = _opaque(rig.client.get(rig.tile_url(uploaded, ext="tif", tile=WIDE)))
+    assert drawn.any(), "the tile lies over the raster"
+    return drawn
+
+
+@pytest.mark.parametrize("kind", ["left", "ell"])
+def test_the_tile_shows_only_what_the_mask_marks(
+    rig: Rig, store: Store, mask_files: dict[str, Path], result_file: Path, whole: numpy.ndarray, kind: str  # noqa: F811
+) -> None:
+    result_id = _masked_result(rig, store, mask_files, result_file, kind)
+    drawn = _opaque(rig.client.get(rig.tile_url(result_id, ext="tif", tile=WIDE)))
+    assert not (drawn & ~whole).any(), "the mask only takes pixels away, it adds none"
+    assert drawn.sum() / whole.sum() == pytest.approx(SHARE[kind], abs=0.08)
+    assert drawn.sum() < whole.sum()
+
+
+def test_a_mask_that_marks_nothing_leaves_a_tile_nobody_sees(
+    rig: Rig, store: Store, mask_files: dict[str, Path], result_file: Path, whole: numpy.ndarray  # noqa: F811
+) -> None:
+    result_id = _masked_result(rig, store, mask_files, result_file, "none")
+    response = rig.client.get(rig.tile_url(result_id, ext="tif"))
+    assert not _opaque(response).any()
+    png = rig.client.get(rig.tile_url(result_id))
+    assert png.status_code == 200 and png.headers["content-type"] == "image/png"
+
+
+def test_the_same_mask_cuts_every_style(
+    rig: Rig, store: Store, mask_files: dict[str, Path], result_file: Path, whole: numpy.ndarray  # noqa: F811
+) -> None:
+    result_id = _masked_result(rig, store, mask_files, result_file, "left")
+    plain = _opaque(rig.client.get(rig.tile_url(result_id, ext="tif", tile=WIDE)))
+    other = _opaque(rig.client.get(rig.tile_url(result_id, "&bidx=1", ext="tif", tile=WIDE).replace("rdylgn", "viridis")))
+    assert (plain == other).all()
+
+
+def test_the_files_in_the_store_stay_what_the_job_wrote(
+    rig: Rig, store: Store, mask_files: dict[str, Path], result_file: Path  # noqa: F811
+) -> None:
+    """The download is the bounding box with its mask: the tiler reads, and changes nothing."""
+    result_id = _masked_result(rig, store, mask_files, result_file, "left")
+    keys = {"result.tif": result_file, "mask.tif": mask_files["left"]}
+    before = {name: store.s3._internal.get_object(Bucket="earthx", Key=f"results/{result_id}/{name}")["Body"].read() for name in keys}
+    assert rig.client.get(rig.tile_url(result_id, ext="tif")).status_code == 200
+    for name, path in keys.items():
+        stored = store.s3._internal.get_object(Bucket="earthx", Key=f"results/{result_id}/{name}")["Body"].read()
+        assert stored == before[name] == path.read_bytes(), name
+    with rasterio.open(result_file) as raster:
+        assert not numpy.ma.getmaskarray(raster.read(1, masked=True)).any(), "no pixel of result.tif is taken away"
+
+
+def test_a_result_without_its_mask_is_not_served(rig: Rig, store: Store, result_file: Path) -> None:  # noqa: F811
+    result_id = new_result_id()
+    upload_result(store, result_id, "result.tif", result_file)
+    response = rig.client.get(rig.tile_url(result_id))
+    assert response.status_code == 404
+    assert response.json() == {"detail": "there is no such result"}
+    assert rig.opened == []
 
 
 # --- what is refused --------------------------------------------------------------------------------
@@ -292,25 +437,26 @@ def test_the_end_is_the_day_it_was_written_plus_seven_days(rig: Rig, uploaded: s
 def test_the_head_answer_is_believed_for_60_seconds_and_the_url_for_10_minutes(rig: Rig, uploaded: str) -> None:
     for _ in range(3):
         assert rig.client.get(rig.tile_url(uploaded)).status_code == 200
-    assert len(rig.heads) == 1
-    assert len(rig.signed) == 1
+    assert len(rig.heads) == 2, "one head for the result, one for its mask"
+    assert len(rig.signed) == 2
 
     rig.clock.advance(seconds=HEAD_KEPT.total_seconds() + 1)
     assert rig.client.get(rig.tile_url(uploaded)).status_code == 200
-    assert len(rig.heads) == 2
-    assert len(rig.signed) == 1, "the same URL: GDAL's read cache is keyed by it"
+    assert len(rig.heads) == 4
+    assert len(rig.signed) == 2, "the same URLs: GDAL's read cache is keyed by them"
 
     rig.clock.advance(seconds=URL_REUSED.total_seconds())
     assert rig.client.get(rig.tile_url(uploaded)).status_code == 200
-    assert len(rig.signed) == 2, "signed again before the first one ran out"
+    assert len(rig.signed) == 4, "signed again before the first ones ran out"
 
 
-def test_the_memory_is_bounded(rig: Rig, store: Store, result_file: Path) -> None:  # noqa: F811
+def test_the_memory_is_bounded(rig: Rig, store: Store, result_file: Path, mask_files: dict[str, Path]) -> None:  # noqa: F811
     sources_ = rig.client.app.state.earthx_results
     ids = [new_result_id() for _ in range(result_tiles.CACHE_SIZE + 5)]
     for result_id in ids:
         upload_result(store, result_id, "result.tif", result_file)
-        sources_.url(result_id)
+        upload_result(store, result_id, "mask.tif", mask_files["all"])
+        sources_.urls(result_id)
     assert len(sources_._entries) == result_tiles.CACHE_SIZE
 
 
