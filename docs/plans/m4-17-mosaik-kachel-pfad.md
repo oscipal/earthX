@@ -1,6 +1,6 @@
 # M4-17 — Mosaik im Kachel-Pfad: Plan
 
-**Stand:** 20.10.2026, Plan freigegeben (§11); M4-17a umgesetzt (§12), M4-17b und M4-17c folgen je in einer neuen Session (§13).
+**Stand:** 20.10.2026, Plan freigegeben (§11); M4-17a umgesetzt (§12), M4-17b umgesetzt (§14), M4-17c folgt in einer neuen Session (§13).
 **Stufe B:** Bis zur Freigabe ist kein Produktivcode geändert. Nach der Freigabe
 setzt dieselbe Session um (oder die Sessions aus Frage 6).
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -609,8 +609,8 @@ M4-17a.
 
 ## 9. Prüfanleitung für Otto (PowerShell 5.1)
 
-Entwurf; die Antwortform prüfe ich nach der Umsetzung gegen den laufenden
-`tiler`, bevor ich sie als fertig melde.
+Entwurf; die Antwortform ist in M4-17b nur zum Teil gegen einen laufenden
+`tiler` geprüft (Stand in §14, „Prüfanleitung A“).
 
 **A — Backend (nach M4-17b).** Sucht einen Überflug über zwei Zonen
 (Zonengrenze bei 12° O), wählt zwei Szenen verschiedener Zonen, deren Rahmen
@@ -827,7 +827,7 @@ keine Route im `tiler`, das Frontend unverändert.
 ## 13. Folgesessions
 
 **M4-17b — `api`: Routen, Prüfungen, Item-Abrufe.** Neue Session nach dem
-Merge von M4-17a.
+Merge von M4-17a. *Umgesetzt, siehe §14.*
 **Startsatz:** „Führe Aufgabe M4-17b aus `docs/plans/m4-processing-kern.md`
 aus.“ Grundlage ist dieser Plan: §4.1–§4.4, §4.7, §4.8 (Tests 2, 3, 5–7, 9–11),
 §5, §11 Auflage 3, KE5–KE8.
@@ -862,4 +862,88 @@ aus.“ Grundlage: §4.6, §4.8 (Frontend), §7 Frage 3, §9 B.
 - Unter z8 die Einzelszenen in `earthx:order`; über 64 Szenen Einzelszenen wie
   heute mit neuem Hinweis; AOI-Clip unverändert.
 - `vitest`, `npm run lint`, `npm run build`; Prüfanleitung B.
+
+---
+
+## 14. Umsetzung M4-17b (20.10.2026)
+
+**Umfang wie §13:** die Mosaik-Routen im `tiler` mit Pfad-Abhängigkeit, Item-Abrufen und TileJSON;
+das Frontend bleibt unverändert (M4-17c).
+
+- **Aufbau.** `api/mosaic_tiles.py` hält, was weder die Anfrage noch die HTTP-Abbildung braucht:
+  die Grenzen aus §5 als Konstanten, die Form der Abfrage (`check_query`), die Kachel (`mosaic_tile`,
+  z8 vor jedem Abruf), die Item-Abrufe (`ItemFetches`, `fetch_items`), den Überflug
+  (`check_one_overpass`) und die Footprints (`footprints_of`, `scenes_touching`). `api/tiler.py`
+  verdrahtet das in `mosaic_scenes` (Reihenfolge der Schritte wie §4.2) und bildet jede Abweisung auf
+  ihren Status ab. In `access` kamen der Haken `tilejson_extras` (für `earthx:order`) und die
+  Fehlerklasse `MosaicBandsDiffer` dazu.
+- **Item-Abrufe.** Gleichzeitige Abrufe desselben Items teilen sich einen Abruf; der Eintrag fällt mit
+  dem Ende des Abrufs weg. Eine Anfrage, die aufgibt, bricht den Abruf der anderen nicht ab
+  (`asyncio.shield`). Der TileJSON-Abruf holt alle Items einmal und füllt damit den 24-h-Cache.
+- **Aus dem Review von M4-17a erledigt.** Eigene `path_dependency` ohne `url`; `BidxParams` als
+  `layer_dependency`, `process_dependency` leer (sonst stünden `algorithm` und `algorithm_params` im
+  Schema); verschiedene Bandzahlen der Szenen enden mit `422` und Grund statt im `assert` von
+  rio-tiler.
+
+**Abweichungen vom Plan und Auslegungen** (gelten, sofern Otto nicht widerspricht; Log vom 20.10.2026):
+
+1. **Die Grenze von 4 Abrufen gilt im ganzen Prozess, nicht je Anfrage.** Je Anfrage hätten sechs
+   Kacheln mit verschiedenen Items bis zu 24 Abrufe gestartet, mehr als der Pool (5) fasst; „höchstens
+   4 je Anfrage“ folgt aus der Prozessgrenze. Der Preis: Zwei kalte Überflüge warten aufeinander.
+2. **Ohne Pool `503` für jeden Datensatz**, auch den materialisierten (§4.3 Punkt 4 nannte nur die
+   föderierten): Dessen Item-Quelle ist ohnehin der Pool. Ein Pool, der Fehler gibt
+   (`OperationalError`, `InterfaceError`, auch ein Pool-Timeout), ist ebenfalls `503`, Meldung „mosaic
+   tiles need the item cache, and it is not reachable“. Jeder andere Fehler bleibt sichtbar.
+3. **Datensatz mit `max_zoom` unter z8:** `400` vor jedem Abruf. Heute trifft das keinen Eintrag (S2
+   0–19, Zarr 8–14, DEM 0–15).
+4. **Bandzahl:** Die Prüfung vergleicht die Szenen, die die Kachel liest. Füllt die erste Portion die
+   Kachel, werden die übrigen weder gelesen noch verglichen.
+5. **Fehlermeldungen** nennen nie den Wert, der abgewiesen wurde (eine ungültige Item-ID kommt nicht
+   zurück); nur die Zahl der Items und die ersten IDs eines Überflug-Konflikts.
+
+**Gebündelte Cache-Abfrage (§4.3 Punkt 5): nicht gebaut.** Gemessen [M]: lokale Postgres 16, Pool
+mit 5 Verbindungen, 64 Treffer von rund 16,8 kB, alle über `ItemFetches` (4 gleichzeitig), acht
+Durchläufe: Median **42 ms** je Kachel, größter Wert 56 ms, der erste Durchlauf mit kaltem Pool
+88 ms. Die Schwelle von 50 ms (§4.3) wird im Mittel nicht erreicht. Die Messung gilt für eine
+Datenbank im selben Rechner; mit der Datenbank im Netz wächst jeder der 64 Abrufe um die Umlaufzeit,
+dann ist die Frage neu zu stellen (M6).
+
+**Tests** (`tests/earthx/api/test_tiler_mosaic.py`, `test_mosaic_item_fetches.py`; kein Netz):
+
+- Plan-Test 1 und 8 auf der echten App: Naht ohne Lücke, gleiche Bytes bei umgekehrter URL-Reihenfolge,
+  zwei frische Apps.
+- Plan-Test 2: Die gewählte Szene an fünf Stellen über zwei UTM-Zonen ist die des Mosaik-Jobs
+  (`processing.run` über dieselbe Liste, dieselben Szenen wie `test_mosaic.py`), für beide
+  Reihenfolgen der URL; dazu ein Test, in dem die Szene der Nachbarzone die kleinste ID hat und
+  trotzdem nicht gewinnt. Gegenprobe: Mit `sorted(ids)` statt `mosaic_order` scheitern dieser Test und der der TileJSON-Reihenfolge.
+- Plan-Test 3 und 4: Szene weit weg wird weder freigegeben noch geöffnet; eine Kachel, die die erste
+  Portion füllt, öffnet genau vier Szenen.
+- Plan-Test 5: Sechs gleichzeitige Kacheln über dieselben zehn Items holen jedes Item genau einmal,
+  nie mehr als vier gleichzeitig; mit dem echten `Gateway` auf einem Transport-Double halten sechs
+  Kacheln über 48 verschiedene Items die Verbindungen bei höchstens vier (Grenze des `gateway`: 6).
+  Ohne Pool `503`, die Einzelkachel bleibt `200`; ein Pool-Fehler ist `503`.
+- Plan-Test 6 und 7: alle Fehlerfälle der Liste in §4.8, dazu jeder abgewiesene Parameter einzeln
+  (auch in Großschreibung), ungültige Item-IDs für einen föderierten und einen materialisierten
+  Datensatz.
+- Plan-Test 9: Das Schema der Mosaik-Routen kennt weder `url` noch `aoi`, `bbox`, `geometry`,
+  `intersects`, `expression`, `algorithm`, `op`, `params`; es gibt genau drei Pfade.
+- Plan-Test 10: Eine Anfrage mit 64 IDs zu je 60 Zeichen (über 4 kB) geht unter uvicorn mit
+  Vorgaben — wie `docker-compose.yml` ihn startet — mit `200` durch. Gesendet per Socket, weil die
+  Sperre der Testsuite jede Namensauflösung verbietet, auch die von `127.0.0.1`.
+- Plan-Test 11: Das Log nennt die Zahl der gelesenen Szenen und keine Koordinate der Footprints oder
+  der Kachel (zuerst geprüft, dass Zeilen geloggt wurden).
+
+**Prüfanleitung A: nur zum Teil geprüft.** PowerShell fehlt in der Sitzung, deshalb habe ich den
+Ablauf in Python nachgebaut und gegen einen lokalen `tiler` (uvicorn, lokale Postgres) laufen
+lassen; die Suche ging direkt an Earth Search, weil der `api`-Prozess ohne Objektspeicher
+(`S3_ENDPOINT`) nicht startet.
+
+- Beobachtet [M]: z7 → `400`; `bbox` in der URL → `400`; Item nicht abrufbar → `502`, nicht `500`.
+- **Nicht belegt:** `200` mit einer Fläche über der Naht, gleiche Datei bei umgekehrter
+  Reihenfolge, `422` bei zwei Überflügen, das TileJSON gegen die echte Quelle. Grund: Der Abruf der
+  Items scheitert im `gateway` der Sitzung. Er verbindet sich mit der aufgelösten IP, und der
+  Egress-Proxy der Sitzung lehnt `CONNECT` auf eine IP mit `403` ab (`connect_rejected`, Host
+  `18.64.183.101:443`); ein einfacher `httpx`-Abruf derselben Adresse über den Namen ist `200`.
+  Das liegt an der Sitzung, nicht an M4-17b. Was fehlt: ein Lauf von `tiler` und Prüfskript dort, wo
+  das `gateway` die Quelle erreicht (Ottos Rechner mit `docker compose`, wie in §9 beschrieben).
 

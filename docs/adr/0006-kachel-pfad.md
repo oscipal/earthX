@@ -588,6 +588,11 @@ Item-Liste in der URL (M1), wie oben empfohlen; Such-ID und Inhaltsadresse
   Item-Cache antwortet die Mosaik-Kachel mit klarer Meldung und Grund, nie mit
   `500`, und die Abrufe bei der Quelle bleiben in den Grenzen je Host aus
   `gateway` (Auflage Otto, Plan §11).
+
+**Nachtrag M4-17b (2026-10-20):** Umgesetzt in `api/mosaic_tiles.py` und
+`api/tiler.py`. Die Drosselung der Item-Abrufe gilt im ganzen Prozess (vier
+gleichzeitig), nicht je Anfrage; je Anfrage ≤ 4 folgt daraus. Ohne Pool und bei
+einem Pool-Fehler antwortet die Mosaik-Kachel mit `503` und Grund (Plan §14).
 - **Form:** `item` wiederholt statt `items=` mit Kommas, wie `asset`.
 
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
