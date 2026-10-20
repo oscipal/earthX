@@ -68,7 +68,8 @@ class BlockSummary:
     count: int
     minimum: Any
     maximum: Any
-    #: Exact sum: an int for integer types, otherwise int partial sums keyed by sign and exponent.
+    #: Exact sum: an int for integer types; for float32 the fraction sums per histogram bin (int64), for
+    #: float64 int partial sums keyed by sign and exponent.
     total: Any
     mean: float
     m2: float
@@ -89,8 +90,31 @@ def _float_keys(values: numpy.ndarray) -> numpy.ndarray:
     return ((bits ^ flip) >> _KEY_SHIFT).astype(numpy.intp)
 
 
+def _float32_total(values: numpy.ndarray, keys: numpy.ndarray) -> numpy.ndarray:
+    """The fraction bits summed per histogram bin: sign and exponent are the bin's upper bits (:func:`_float32_sum`)."""
+    fractions = values.view(numpy.uint32) & numpy.uint32((1 << 23) - 1)
+    total = numpy.zeros(1 << _KEY_BITS, dtype=numpy.int64)
+    for start in range(0, values.size, _CHUNK):
+        part = numpy.bincount(keys[start : start + _CHUNK], weights=fractions[start : start + _CHUNK], minlength=total.size)
+        total += part.astype(numpy.int64)
+    return total
+
+
+def _float32_sum(total: numpy.ndarray, histogram: numpy.ndarray) -> Fraction:
+    """The exact sum from the bins: each bin holds one sign and one exponent, the implicit bit counts once a value."""
+    keys = numpy.flatnonzero(histogram)
+    upper = numpy.where(keys >= 1 << (_KEY_BITS - 1), keys & 0x7FFF, ~keys & 0xFFFF)  # the pattern's upper 16 bits
+    exponents = (upper >> 7) & 0xFF
+    exact = Fraction(0)
+    for key, sign_bit, exponent in zip(keys.tolist(), (upper >> 15).tolist(), exponents.tolist(), strict=True):
+        implicit = 1 << 23 if exponent else 0
+        significands = int(histogram[key]) * implicit + int(total[key])
+        exact += (-1 if sign_bit else 1) * significands * Fraction(2) ** (max(exponent, 1) - 150)
+    return exact
+
+
 def _float_total(values: numpy.ndarray) -> dict[int, int]:
-    """The exact sum, as integer significand sums keyed by ``sign << exponent bits | exponent``."""
+    """The exact sum of float64 values, as integer significand sums keyed by ``sign << 11 | exponent``."""
     unsigned, fraction_bits, exponent_bits, _ = _FLOAT_LAYOUT[values.dtype]
     total: dict[int, int] = {}
     for start in range(0, values.size, _CHUNK):
@@ -129,24 +153,37 @@ def summarize(values: numpy.ndarray) -> BlockSummary:
     dtype = values.dtype
     kind = _kind(dtype)
     if kind == "float":
-        values = values[numpy.isfinite(values)]
-    histogram = numpy.zeros(_histogram_size(dtype), dtype=numpy.int64)
+        finite = numpy.isfinite(values)
+        if not finite.all():
+            values = values[finite]
     if values.size == 0:
-        return BlockSummary(dtype, 0, None, None, {} if kind == "float" else 0, 0.0, 0.0, histogram)
+        histogram = numpy.zeros(_histogram_size(dtype), dtype=numpy.int64)
+        return BlockSummary(dtype, 0, None, None, _empty_total(dtype), 0.0, 0.0, histogram)
     wide = values.astype(numpy.float64)
     with numpy.errstate(over="ignore", invalid="ignore"):  # near the float64 limits: no stddev (summary())
         mean = float(wide.sum()) / values.size
         deviation = wide - mean
         m2 = float((deviation * deviation).sum())
+    size = _histogram_size(dtype)
     if kind == "small":
-        histogram += numpy.bincount(values.astype(numpy.intp) - int(numpy.iinfo(dtype).min), minlength=histogram.size)
+        histogram = numpy.bincount(values.astype(numpy.intp) - int(numpy.iinfo(dtype).min), minlength=size)
     else:
-        histogram += numpy.bincount(_float_keys(values), minlength=histogram.size)
-    if kind == "float":
-        total: Any = _float_total(values)
+        keys = _float_keys(values)
+        histogram = numpy.bincount(keys, minlength=size)
+    total: Any
+    if dtype == numpy.float32:
+        total = _float32_total(values, keys)
+    elif kind == "float":
+        total = _float_total(values)
     else:
         total = sum(int(values[start : start + _CHUNK].sum(dtype=numpy.int64)) for start in range(0, values.size, _CHUNK))
-    return BlockSummary(dtype, int(values.size), values.min(), values.max(), total, mean, m2, histogram)
+    return BlockSummary(dtype, int(values.size), values.min(), values.max(), total, mean, m2, histogram.astype(numpy.int64))
+
+
+def _empty_total(dtype: numpy.dtype) -> Any:
+    if dtype == numpy.float32:
+        return numpy.zeros(1 << _KEY_BITS, dtype=numpy.int64)
+    return {} if dtype in _FLOAT_LAYOUT else 0
 
 
 def _unkey(key: int) -> float:
@@ -164,7 +201,7 @@ class BandStatistics:
         self.count = 0
         self._minimum: Any = None
         self._maximum: Any = None
-        self._total: Any = {} if self._kind == "float" else 0
+        self._total: Any = _empty_total(self.dtype)
         self._mean = 0.0
         self._m2 = 0.0
         self._histogram = numpy.zeros(_histogram_size(self.dtype), dtype=numpy.int64)
@@ -185,7 +222,7 @@ class BandStatistics:
         self.count = count
         self._minimum = block.minimum if self._minimum is None else min(self._minimum, block.minimum)
         self._maximum = block.maximum if self._maximum is None else max(self._maximum, block.maximum)
-        if self._kind == "float":
+        if isinstance(self._total, dict):
             for key, part in block.total.items():
                 self._total[key] = self._total.get(key, 0) + part
         else:
@@ -214,7 +251,12 @@ class BandStatistics:
             return {"count": 0, "valid_percent": valid_percent}
         if self._kind == "float":
             minimum, maximum = float(self._minimum), float(self._maximum)
-            mean = float(_float_sum(self._total, self.dtype) / self.count)
+            exact = (
+                _float32_sum(self._total, self._histogram)
+                if self.dtype == numpy.float32
+                else _float_sum(self._total, self.dtype)
+            )
+            mean = float(exact / self.count)
         else:
             minimum, maximum = int(self._minimum), int(self._maximum)
             mean = float(Fraction(self._total, self.count))
