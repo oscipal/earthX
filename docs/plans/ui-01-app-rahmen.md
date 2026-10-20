@@ -26,6 +26,17 @@
 
    Im Backend bleiben es einzelne Jobs: ein Raster je Job, Cache je Teil, Fehler je Teil getrennt, parallel in der Queue (M4-12 §5).
 7. **„Download all (ZIP)“ (20.10.2026).** Je Batch gibt es ein ZIP mit allen fertigen Teilergebnissen, je Teil ein Ordner mit dem Inhalt des Job-ZIP (Sollliste aus M4-30). Teile, die abgelaufen oder gescheitert sind, fehlen; welche das sind, steht in einer kurzen Liste im ZIP.
+8. **Gleiche Breite der Layer-Zeilen (20.10.2026).** Alle Einträge im Layer-Manager sind gleich breit. Die Knöpfe stehen immer an derselben Stelle, auch wenn bei einem Layer ein Knopf fehlt, etwa „Download“. Ein fehlender Knopf lässt einen leeren Platz, statt die anderen zu verschieben.
+9. **Ergebnisse aus dem Layer-Manager laden (20.10.2026).** Ein Ergebnis-Layer (Job-Ergebnis, M4-13c-5) hat einen Download-Knopf. Er lädt dasselbe Job-ZIP wie das Panel (Sollliste aus M4-30), ohne zweiten Weg. Ist das Ergebnis abgelaufen, ist der Knopf gesperrt und nennt den Grund.
+10. **Reihenfolge greift immer (20.10.2026).**
+    - **Befund:** Auch nach M4-28 ändert sich auf der Karte manchmal nichts, wenn man die Reihenfolge der Layer ändert.
+    - **Vorgehen:** Zuerst die Ursache finden, mit einem Test, der am Code vor UI-01 scheitert. Otto liefert beim Start die Schritte, mit denen es auftritt.
+    - **Ort der Behebung:** in der gemeinsamen Layer-Logik (`mapLayers`, Store), nicht nur in der neuen Optik.
+    - **Prüfung:** nach jedem Umsortieren mit allen Layer-Arten (Quicklook, Vollauflösung, Vorschau, Ergebnis, Mosaik aus M4-17).
+11. **Klick auf einen Ergebnis-Layer (20.10.2026).**
+    - **Heute:** Es erscheinen die Suchergebnisse.
+    - **Soll:** Es erscheint dieselbe Ansicht wie bei anderen Layern, bezogen auf das Ergebnis: Wertebereich (vmin, vmax), Colormap und Deckkraft, mit der Vorgabe aus der Statistik (M4-32).
+    - **Nicht in UI-01:** Processing auf einem Ergebnis, also ein Ergebnis als Eingabe eines neuen Rezepts. Das braucht vorher eine Entscheidungsvorlage (Stufe C, siehe `claude/nach-m4-backlog.md`). Bis dahin ist der Processing-Knopf bei Ergebnis-Layern gesperrt und nennt den Grund.
 
 ## 2. Stand vor der Aufgabe
 
@@ -73,7 +84,11 @@
 - Tests sind grün für:
   - Leiste, Manager, Archiv, Gruppen, Filter, Umbenennen und Neuladen mit gespeicherten Jobs,
   - Batch als ein Eintrag mit Aufklappen und Gesamtfortschritt,
-  - „Download all (ZIP)“ mit allen Teilen, mit abgelaufenen bzw. gescheiterten Teilen und über der Grenze.
+  - „Download all (ZIP)“ mit allen Teilen, mit abgelaufenen bzw. gescheiterten Teilen und über der Grenze,
+  - gleiche Breite und feste Knopfpositionen der Layer-Zeilen, auch ohne Download-Knopf,
+  - Download eines Ergebnis-Layers, auch im abgelaufenen Zustand,
+  - Reihenfolge nach jedem Umsortieren mit allen Layer-Arten; der Test zum Befund aus Punkt 10 scheitert am alten Code,
+  - Klick auf einen Ergebnis-Layer öffnet die Ansicht für Darstellung (vmin, vmax, Colormap), nicht die Suchergebnisse.
 - Alle vier Pflicht-Checks der CI sind grün.
 - Im PR liegt eine Prüfanleitung für Otto (Browser und PowerShell).
 - Log-Zeilen für Ottos Antworten.
