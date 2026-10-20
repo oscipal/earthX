@@ -1815,6 +1815,10 @@ input[type='date']:focus {
   text-transform: none;
   letter-spacing: 0;
 }
+.pp-options {
+  margin: 0;
+  padding-left: 14px;
+}
 .pp-field {
   gap: 4px;
 }

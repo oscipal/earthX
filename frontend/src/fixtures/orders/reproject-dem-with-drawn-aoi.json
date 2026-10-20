@@ -46,7 +46,7 @@
       "steps": [
         {
           "op": "reproject",
-          "op_version": 2,
+          "op_version": 3,
           "params": {
             "align": false,
             "crs": "EPSG:3035",

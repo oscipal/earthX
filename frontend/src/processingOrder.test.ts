@@ -39,7 +39,7 @@ describe('processInfo from the fixtures (K3)', () => {
   it('lists the operators with tiers and kind, and the limits of the order', () => {
     expect(S2.operators.map((o) => [o.op, o.opVersion, o.tiers, o.kind])).toEqual([
       ['band_math', 1, ['T1', 'T2'], 'pixel'],
-      ['reproject', 2, ['T2'], 'grid'],
+      ['reproject', 3, ['T2'], 'grid'],
     ]);
     expect(S2).toMatchObject({ maxSteps: 16, maxAssets: 16, variableSeparator: null });
     expect(S2.dtypes).toContain('float32');
@@ -62,7 +62,7 @@ describe('processInfo from the fixtures (K3)', () => {
   it('leaves out a step variant it cannot read instead of guessing', () => {
     const broken = structuredClone(s2) as unknown as ProcessDescription;
     const schema = broken.inputs.recipe.schema as { $defs: Record<string, { properties: Record<string, unknown> }> };
-    delete schema.$defs.step_reproject_v2.properties.op;
+    delete schema.$defs.step_reproject_v3.properties.op;
     expect(processInfo(broken).operators.map((o) => o.op)).toEqual(['band_math']);
   });
 });
@@ -279,7 +279,7 @@ describe('buildOrder', () => {
   it('turns reprojection numbers into numbers and keeps the boolean', () => {
     const order = buildOrder({
       ...base,
-      steps: [step('reproject', 2, { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear', align: false })],
+      steps: [step('reproject', 3, { crs: 'EPSG:3035', resolution: '30', resampling: 'bilinear', align: false })],
     }).order;
     expect(order?.steps[0].params).toEqual({ crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear', align: false });
   });
