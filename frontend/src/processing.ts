@@ -168,6 +168,44 @@ export async function fetchProcess(datasetId: string, signal?: AbortSignal): Pro
   );
 }
 
+// The unit of a target CRS (`GET /processing/crs/{code}`, M4-13c-3): what the
+// resolution of `reproject` is measured in. `toBase` is the factor to metres for
+// a linear unit and to degrees for an angular one.
+export interface CrsUnit {
+  name: string;
+  kind: 'linear' | 'angular';
+  toBase: number;
+}
+
+export interface CrsInfo {
+  code: string;
+  name: string;
+  kind: 'projected' | 'geographic' | 'other';
+  unit: CrsUnit;
+}
+
+// The answer of the route, or `null` for anything else (a proxy's page).
+export function parseCrsInfo(value: unknown): CrsInfo | null {
+  if (!value || typeof value !== 'object') return null;
+  const { code, name, kind, unit } = value as Record<string, unknown>;
+  if (typeof code !== 'string' || typeof name !== 'string') return null;
+  if (kind !== 'projected' && kind !== 'geographic' && kind !== 'other') return null;
+  if (!unit || typeof unit !== 'object') return null;
+  const u = unit as Record<string, unknown>;
+  if (typeof u.name !== 'string' || (u.kind !== 'linear' && u.kind !== 'angular') || typeof u.toBase !== 'number') {
+    return null;
+  }
+  return { code, name, kind, unit: { name: u.name, kind: u.kind, toBase: u.toBase } };
+}
+
+// A `422` carries the reason in `detail`: not a code, unknown, or no unit.
+export async function fetchCrs(code: string, signal?: AbortSignal): Promise<CrsInfo> {
+  const body = await jsonOrThrow<unknown>(await fetch(`${PREFIX}/crs/${encodeURIComponent(code)}`, { signal }));
+  const info = parseCrsInfo(body);
+  if (!info) throw new Error('The answer about the CRS could not be read.');
+  return info;
+}
+
 const ESTIMATE_NUMBERS = ['size', 'outputPixels', 'inputPixels', 'inputBytes', 'assets', 'units'] as const;
 
 // An estimate as the route writes it, or `null` for anything else (a proxy's

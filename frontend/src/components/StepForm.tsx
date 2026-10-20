@@ -2,8 +2,12 @@
 // parameter schema (`schemaForm.ts`). A help while typing; the server's own
 // refusal of this step is shown below it.
 
+import { Fragment } from 'react';
+
 import type { Operator } from '../processingOrder';
 import type { Field, FieldValue } from '../schemaForm';
+import { CellSize, CrsRefusal } from './CellSize';
+import { useCrsLookup } from './useCrsLookup';
 
 function FieldInput({
   field,
@@ -127,6 +131,7 @@ export default function StepForm({
   showErrors,
   unsupported,
   refusal,
+  latitude,
   onChange,
   onMove,
   onRemove,
@@ -142,11 +147,16 @@ export default function StepForm({
   showErrors: boolean;
   unsupported?: string;
   refusal: string | null;
+  // The middle latitude of the area the order covers, for the size of a cell in degrees.
+  latitude: number | null;
   onChange: (name: string, value: FieldValue) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
 }) {
   const fields = operator?.form.supported ? operator.form.fields.filter((f) => f.kind !== 'const') : [];
+  // `reproject` (M4-13c-3): what the target CRS and the resolution mean.
+  const reprojects = operator?.op === 'reproject';
+  useCrsLookup(reprojects ? values.crs : undefined);
   return (
     <li className="pp-step" aria-label={`Step ${index + 1}: ${operator?.title ?? 'unknown operator'}`}>
       <div className="pp-step-head">
@@ -176,15 +186,20 @@ export default function StepForm({
         const value = values[field.name];
         const touched = typeof value === 'string' && value !== '';
         return (
-          <FieldInput
-            key={field.name}
-            field={field}
-            value={value}
-            error={showErrors || touched ? errors[field.name] : undefined}
-            inputId={`pp-step-${stepKey}-${field.name}`}
-            bandTarget={operator?.op === 'band_math' && field.name === 'expression' ? stepKey : undefined}
-            onChange={(v) => onChange(field.name, v)}
-          />
+          <Fragment key={field.name}>
+            <FieldInput
+              field={field}
+              value={value}
+              error={showErrors || touched ? errors[field.name] : undefined}
+              inputId={`pp-step-${stepKey}-${field.name}`}
+              bandTarget={operator?.op === 'band_math' && field.name === 'expression' ? stepKey : undefined}
+              onChange={(v) => onChange(field.name, v)}
+            />
+            {reprojects && field.name === 'crs' && <CrsRefusal code={values.crs} />}
+            {reprojects && field.name === 'resolution' && (
+              <CellSize code={values.crs} resolution={values.resolution} latitude={latitude} />
+            )}
+          </Fragment>
         );
       })}
       {refusal && (

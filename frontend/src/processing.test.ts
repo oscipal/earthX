@@ -6,6 +6,7 @@ import {
   dismissJob,
   estimateOrder,
   eventsUrl,
+  fetchCrs,
   fetchJob,
   fetchProcess,
   fetchResults,
@@ -194,5 +195,50 @@ describe('the job API client', () => {
     expect(resultUrl(JOB, 'result.tif')).toBe(`/processing/jobs/${JOB}/results/result.tif`);
     expect(resultUrl(JOB, 'a b')).toBe(`/processing/jobs/${JOB}/results/a%20b`);
     expect(isJobId(JOB)).toBe(true);
+  });
+});
+
+describe('the unit of a target CRS', () => {
+  const ANSWER = {
+    code: 'EPSG:3035',
+    name: 'ETRS89-extended / LAEA Europe',
+    kind: 'projected',
+    unit: { name: 'metre', kind: 'linear', toBase: 1 },
+  };
+
+  it('asks the route for one code, the colon escaped, and hands the signal on', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(ANSWER));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    expect(await fetchCrs('EPSG:3035', controller.signal)).toEqual(ANSWER);
+    expect(fetchMock.mock.calls[0]).toEqual(['/processing/crs/EPSG%3A3035', { signal: controller.signal }]);
+  });
+
+  it('throws the reason of a 422 with its status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        respond(
+          { title: 'Unprocessable Content', status: 422, detail: 'EPSG:99999 is not a CRS this platform knows' },
+          { status: 422 },
+        ),
+      ),
+    );
+    const error = await fetchCrs('EPSG:99999').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).status).toBe(422);
+    expect((error as HttpError).detail).toBe('EPSG:99999 is not a CRS this platform knows');
+  });
+
+  it.each([
+    ['a page of another shape', '<html>'],
+    ['no unit', { ...ANSWER, unit: undefined }],
+    ['a unit of another kind', { ...ANSWER, unit: { name: 'metre', kind: 'cubic', toBase: 1 } }],
+    ['a factor that is no number', { ...ANSWER, unit: { name: 'metre', kind: 'linear', toBase: '1' } }],
+    ['a kind it does not know', { ...ANSWER, kind: 'flat' }],
+    ['no name', { ...ANSWER, name: 3 }],
+  ])('refuses an answer with %s instead of showing it', async (_, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(body)));
+    await expect(fetchCrs('EPSG:3035')).rejects.toThrow('could not be read');
   });
 });

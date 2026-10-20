@@ -135,7 +135,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [] });
+  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, crs: {}, jobs: [] });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -1313,5 +1313,259 @@ describe('the panel and the window of the jobs (M4-13c §3.1)', () => {
     expect(panel.classList.contains('folded')).toBe(true);
     click(button('▴'));
     expect(panel.classList.contains('folded')).toBe(false);
+  });
+});
+
+describe('the target CRS and the resolution of a reproject step (M4-13c-3)', () => {
+  const crsDoc = (code: string, unit: Record<string, unknown>, kind = 'projected') => ({
+    code,
+    name: `CRS ${code}`,
+    kind,
+    unit,
+  });
+  const METRE = { name: 'metre', kind: 'linear', toBase: 1 };
+  const FOOT = { name: 'US survey foot', kind: 'linear', toBase: 1200 / 3937 };
+  const DEGREE = { name: 'degree', kind: 'angular', toBase: 1 };
+  const UNKNOWN = 'EPSG:99999 is not a CRS this platform knows';
+
+  // A scene at 46.8–47.8° N (middle 47.3); the AOI of the suite lies at 50.4–50.6° N.
+  const southern = (): StacItem => ({
+    ...scene('DEM_S', [10, 46.8, 11, 47.8]),
+    assets: { data: { href: 'https://example.org/a.tif', type: COG } },
+  });
+
+  const crsCalls = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/processing/crs/'));
+  const cellSize = () => container.querySelector('[aria-label="Cell size"]')?.textContent ?? null;
+  const input = (name: string) => container.querySelector<HTMLInputElement>(`input[id$="-${name}"]`)!;
+
+  async function openStep(items: StacItem[] = [southern()]) {
+    select(items);
+    await openPanel();
+    click(button('data'));
+    click(button('＋ Reproject and resample'));
+  }
+
+  // Past the rest of the field (300 ms) and the answer.
+  async function answered(text: string) {
+    await waitFor(() => container.textContent?.includes(text) ?? false);
+  }
+
+  function chooseResampling(value: string) {
+    const element = container.querySelector<HTMLSelectElement>('select[id$="-resampling"]')!;
+    act(() => {
+      element.value = value;
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  beforeEach(() => {
+    routes['GET /processing/crs/EPSG%3A3035'] = () => json(crsDoc('EPSG:3035', METRE));
+    routes['GET /processing/crs/EPSG%3A2227'] = () => json(crsDoc('EPSG:2227', FOOT));
+    routes['GET /processing/crs/EPSG%3A4326'] = () => json(crsDoc('EPSG:4326', DEGREE, 'geographic'));
+    routes['GET /processing/crs/EPSG%3A99999'] = () => problem(422, UNKNOWN);
+  });
+
+  it('shows nothing about a unit before the CRS is a code', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:30');
+    typeInto(input('resolution'), '10');
+    await flush();
+    expect(cellSize()).toBeNull();
+    expect(container.textContent).not.toContain('Looking up');
+    expect(crsCalls()).toEqual([]);
+  });
+
+  it('metres: "Cell size: 10 m × 10 m", after the field has rested', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:3035');
+    typeInto(input('resolution'), '10');
+    expect(container.textContent).toContain('Looking up the unit of EPSG:3035…');
+    expect(crsCalls()).toEqual([]);
+    await answered('Cell size: 10 m × 10 m');
+    expect(crsCalls()).toEqual(['/processing/crs/EPSG%3A3035']);
+  });
+
+  it('follows the resolution as it is typed, without asking again', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:3035');
+    typeInto(input('resolution'), '10');
+    await answered('Cell size: 10 m');
+    typeInto(input('resolution'), '30');
+    expect(cellSize()).toBe('Cell size: 30 m × 30 m');
+    typeInto(input('resolution'), '');
+    expect(cellSize()).toBe('The resolution is in metre.');
+    expect(crsCalls()).toHaveLength(1);
+  });
+
+  it('another linear unit: its name and the metres', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:2227');
+    typeInto(input('resolution'), '10');
+    await answered('Cell size: 10 US survey foot × 10 US survey foot (≈ 3.05 m)');
+  });
+
+  it('degrees: the size on the ground at the middle latitude of the scenes (Whole scene)', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:4326');
+    typeInto(input('resolution'), '0.0003');
+    await answered('Cell size: 0.0003° × 0.0003° ≈ 33 m (N–S) × 23 m (E–W) at 47.3° N');
+  });
+
+  it('recalculates at once when the area changes, with no new question', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:4326');
+    typeInto(input('resolution'), '0.0003');
+    await answered('at 47.3° N');
+    click(button('AOI only'));
+    expect(cellSize()).toBe('Cell size: 0.0003° × 0.0003° ≈ 33 m (N–S) × 21 m (E–W) at 50.5° N');
+    click(button('Whole scene'));
+    expect(cellSize()).toContain('at 47.3° N');
+    expect(crsCalls()).toHaveLength(1);
+  });
+
+  it('a new AOI moves the latitude under "AOI only"', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:4326');
+    typeInto(input('resolution'), '0.0003');
+    click(button('AOI only'));
+    await answered('at 50.5° N');
+    act(() => useAppStore.setState({ aoi: bboxToPolygon([10.4, 40.0, 10.6, 40.2]) }));
+    expect(cellSize()).toContain('at 40.1° N');
+  });
+
+  it('without an AOI under "AOI only" the degrees stay degrees', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:4326');
+    typeInto(input('resolution'), '0.0003');
+    click(button('AOI only'));
+    await answered('Cell size');
+    act(() => useAppStore.setState({ aoi: null }));
+    expect(cellSize()).toBe('Cell size: 0.0003° × 0.0003°');
+  });
+
+  it('typing on drops the question: only the code it rests on is asked for', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:2227');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    typeInto(input('crs'), 'EPSG:3035');
+    typeInto(input('resolution'), '10');
+    await answered('Cell size: 10 m');
+    expect(crsCalls()).toEqual(['/processing/crs/EPSG%3A3035']);
+  });
+
+  it('an answer to a question given up is not kept: the store holds the new code only', async () => {
+    let askedFor2227 = false;
+    routes['GET /processing/crs/EPSG%3A2227'] = (init) =>
+      new Promise<Response>((_, reject) => {
+        askedFor2227 = true;
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    await openStep();
+    typeInto(input('crs'), 'EPSG:2227');
+    typeInto(input('resolution'), '10');
+    await waitFor(() => askedFor2227);
+    typeInto(input('crs'), 'EPSG:3035');
+    await answered('Cell size: 10 m × 10 m');
+    await flush();
+    expect(Object.keys(useProcessingStore.getState().crs)).toEqual(['EPSG:3035']);
+    expect(container.textContent).not.toContain('could not be looked up');
+  });
+
+  it('a code already known is not asked again', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:3035');
+    typeInto(input('resolution'), '10');
+    await answered('Cell size: 10 m');
+    typeInto(input('crs'), 'EPSG:2227');
+    await answered('US survey foot');
+    typeInto(input('crs'), 'EPSG:3035');
+    expect(cellSize()).toBe('Cell size: 10 m × 10 m');
+    await flush();
+    expect(crsCalls()).toHaveLength(2);
+  });
+
+  describe('a code the server turns away (422)', () => {
+    async function refused() {
+      await openStep();
+      typeInto(input('crs'), 'EPSG:99999');
+      typeInto(input('resolution'), '10');
+      chooseResampling('bilinear');
+      await answered(UNKNOWN);
+    }
+
+    it('says why at the field, shows no cell size, and holds the review back', async () => {
+      await refused();
+      const alert = [...container.querySelectorAll('[role="alert"]')].map((e) => e.textContent);
+      expect(alert).toContain(UNKNOWN);
+      expect(cellSize()).toBeNull();
+      expect(button('Review').disabled).toBe(true);
+      expect(button('Review').title).toBe(UNKNOWN);
+      expect(button('Start job').disabled).toBe(true);
+    });
+
+    it('sends no estimate even when asked directly', async () => {
+      await refused();
+      await act(async () => useProcessingStore.getState().reviewOrder());
+      expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(false);
+    });
+
+    it('lets the review go on once the code is another', async () => {
+      await refused();
+      typeInto(input('crs'), 'EPSG:3035');
+      await answered('Cell size: 10 m');
+      expect(button('Review').disabled).toBe(false);
+      await review();
+      expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/estimate'))).toBe(true);
+    });
+
+    it('does not hold back a step that is not a reproject', async () => {
+      await refused();
+      click(button(/Remove/, container.querySelector('.pp-step')!));
+      await ndvi();
+      expect(button('Review').disabled).toBe(false);
+    });
+  });
+
+  it('an answer that cannot be fetched is a hint, and the review is not held back', async () => {
+    routes['GET /processing/crs/EPSG%3A3035'] = () => problem(503, 'the service is busy');
+    await openStep();
+    typeInto(input('crs'), 'EPSG:3035');
+    typeInto(input('resolution'), '10');
+    chooseResampling('bilinear');
+    await answered('The unit of EPSG:3035 could not be looked up: the service is busy');
+    expect(cellSize()).toBeNull();
+    expect(button('Review').disabled).toBe(false);
+  });
+
+  it('asks again after a failure when the code is typed anew', async () => {
+    let calls = 0;
+    routes['GET /processing/crs/EPSG%3A3035'] = () => (++calls === 1 ? problem(503, 'busy') : json(crsDoc('EPSG:3035', METRE)));
+    await openStep();
+    typeInto(input('crs'), 'EPSG:3035');
+    typeInto(input('resolution'), '10');
+    await answered('could not be looked up');
+    typeInto(input('crs'), 'EPSG:303');
+    typeInto(input('crs'), 'EPSG:3035');
+    await answered('Cell size: 10 m × 10 m');
+    expect(calls).toBe(2);
+  });
+
+  it('leaves the order as it was: the resolution is still a plain number in the unit of the CRS', async () => {
+    await openStep();
+    typeInto(input('crs'), 'EPSG:4326');
+    typeInto(input('resolution'), '0.0003');
+    chooseResampling('bilinear');
+    await answered('Cell size');
+    await review();
+    const body = JSON.parse(fetchMock.mock.calls.find(([u]) => String(u).endsWith('/estimate'))![1].body);
+    expect(body.inputs.recipe.steps[0].params).toMatchObject({ crs: 'EPSG:4326', resolution: 0.0003, resampling: 'bilinear' });
+  });
+
+  it('a step that is no reproject asks nothing', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(crsCalls()).toEqual([]);
   });
 });
