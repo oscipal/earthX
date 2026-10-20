@@ -249,7 +249,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-13c-5 | Job-Ergebnis als Layer: Kachel-Route im `tiler` über `objectstore` ohne Datenbank, eigener Leseschlüssel, Nachtrag `adr/0015` | M4a | B | Opus (hoch) | M4-13c-4 | offen (neue Session nach dem Merge von c-4) |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | erledigt (#129) |
 | M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | erledigt (#135) |
-| M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | offen |
+| M4-16 | Lokaler Runner offline, Vergleichstest in der CI | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | PR (Entwurf), Plan `plans/m4-16-lokaler-runner.md` zur Freigabe |
 | M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | offen |
 | M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
 | M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | offen |
