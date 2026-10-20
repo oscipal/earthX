@@ -109,6 +109,13 @@ Allowlist der Umgebung hinzufügen; ohne das bleibt Docker außen vor.
 >   `adr/0016`, Methode). Für Tests, die das echte `Dockerfile` bauen, bleibt
 >   die CI der Ort (`compose-topology`).
 
+> **Nachtrag 2026-10-20 (M4-16b):** Mit `deb.debian.org` in der Allowlist
+> läuft der `apt`-Schritt des `Dockerfile` durch [M]. Der Bau bricht jetzt beim
+> `pip install` ab: `self-signed certificate in certificate chain`, weil das
+> Image die CA des Session-Proxys nicht enthält. Das `Dockerfile` bleibt, wie
+> es ist; für den Bau in einer Session fehlt der Zugang, nicht eine Zeile im
+> Repo. Der Compose-Job der CI bleibt der Ort, der das Image baut.
+
 ## 5. Postgres, PostGIS, pgstac: ja
 
 Vollständig geprüft, in dieser Reihenfolge:

@@ -576,3 +576,62 @@ und hält an (`CLAUDE.md`, „Fehlt der Zugang …“).
   - Die Warnung zu anderen Versionen (K1) und die Meldung zu einem unbekannten
     Datensatz geben keine Werte aus der Datei wieder.
   - Die Gegenproben prüfen die Vergleichsfunktion selbst.
+
+## 10. M4-16b umgesetzt (20.10.2026)
+
+- **Image** (`backend/Dockerfile`): Basis `python:3.12-slim` per Digest des
+  Multi-Arch-Index (§2.7), die bisherige Stufe heißt `app`, dazu die Stufe
+  `runner` (`EARTHX_COMMIT`, `USER 10001:10001`, `ENTRYPOINT`). Alle neun
+  `build:` in `docker-compose.yml` nennen `target: app`. Ein Test
+  (`tests/test_runner_image_definition.py`) hält Digest, Stufen und `target`
+  fest, weil der Bau in der Session nicht durchläuft.
+- **Compose-Job** (`.github/workflows/ci.yml`, ausdrücklich Teil der Aufgabe):
+  Stufe bauen, UID `10001`, `versions` unter `--network none` gleich dem Block
+  `engine` des Dienstes `worker`, `check` auf
+  `tests/fixtures/runner/recipe-ci.json` nennt genau einen Host, `run` ohne
+  Netz endet mit 4 und lässt keine Datei zurück. Die Datei ist synthetisch
+  (echter Datensatz, erfundene Item-ID, Quadrat bei 0°/0°); die Fassung des
+  Kerns entspricht dem Stand der Lock-Datei und muss bei einer Änderung der
+  Versionen neu geschrieben werden, sonst warnt `run` nur (K1).
+- **README:** Abschnitt „Lokaler Runner (seit M4-16)“.
+- **Prüfung in der Session [M]:** `apt` ist mit der Allowlist durchgelaufen
+  (Schicht `apt-get install curl libexpat1` gebaut). `pip install` im Bau
+  scheitert dort an der TLS-Kette des Session-Proxys (`self-signed certificate
+  in certificate chain`); das Image enthält dessen CA nicht. Das ist eine Frage
+  des Zugangs der Session, nicht des `Dockerfile`. Deshalb **nicht in der
+  Session geprüft:** Bau der Stufe, `versions`, UID, `check`, `run` unter
+  `--network none`. Maßgeblich ist der Compose-Job der CI.
+  Ohne Image geprüft: `check` auf `recipe-ci.json` gibt genau den einen Host
+  aus (Exit 0), `ruff`, die Tests des Runners und der Bau-Definition laufen.
+- **Prüfanleitung für Otto** (Windows PowerShell 5.1): im PR. Zum Vergleich Cloud ↔ Runner siehe §10.1.
+
+### 10.1 Antwort von Otto und der Vergleichstest (20.10.2026)
+
+- **Bau:** Der Image-Bau bleibt in der CI (und lokal bei Otto). Keine CA des
+  Session-Proxys im Image.
+- **Wo steht der Vergleich Cloud ↔ Runner (M4-Abnahme, Kriterium 1)?** In
+  `backend/tests/earthx/runner/test_compare.py`, Backend-Job der CI: Job-Kind
+  (`earthx.jobs.child.run_child`) und Runner (`earthx.runner.cli.main`) in je einem
+  `spawn`-Prozess, gleiches Rezept, `result.tif` und `mask.tif` pixelgleich und
+  als Datei mit gleichem SHA-256, dazu zwei Gegenproben. Das ist der Kern gegen
+  den Runner, nicht das Image.
+- **Warum nicht zusätzlich im Image mit lokaler Eingabe:** `gateway` lässt nur
+  `https`-Adressen zu, die öffentlich auflösen und auf einem erklärten Host
+  liegen (`check_url`, `asset_hosts`). Eine lokale Eingabe ginge nur über eine
+  Naht, die das ersetzt. Solche Nähte (`vsicurl_path`, `resolve_host`) gibt es
+  nur in `pytest` (`tests/earthx/processing/sources.py::serve`). Sie ins Image
+  zu legen hieße, eine Ausnahme in Produktivcode einzubauen oder die Prüfung
+  zu umgehen; beides ist ausgeschlossen (B8, B9). Das Image enthält außerdem
+  weder `pytest` noch `rio-cogeo` zum Bauen der Eingaben.
+- **Was stattdessen trägt:**
+  1. der `pytest`-Vergleich am Kern (oben);
+  2. im Compose-Job: dieselben Engine-Versionen wie `worker`, und **dieselben
+     Schichten** wie das Image von `worker` (die Stufe `runner` fügt nur `ENV`,
+     `USER` und `ENTRYPOINT` hinzu). Was der Vergleich für den Code zeigt, gilt
+     also für die Dateien im Image;
+  3. `check` und `run` im Container unter Härtung und ohne Netz (Grenze,
+     Exit-Codes, kein Ergebnis);
+  4. der Hashvergleich gegen einen echten Cloud-Job in Ottos Prüfanleitung (§3.9,
+     PR): Er braucht eine echte Quelle und gehört nicht in die CI (`adr/0002`).
+- **Offen:** Ein Hash im Image gegen den Kern aus derselben CI ist damit nicht
+  nachgewiesen, nur geschlossen über Schichten und Versionen.
