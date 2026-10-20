@@ -252,7 +252,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-16 | Lokaler Runner offline, Vergleichstest in der CI — geteilt in M4-16a und M4-16b (`plans/m4-16-lokaler-runner.md` Frage 5) | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | Plan freigegeben am 20.10.2026 (#160) |
 | M4-16a | Lokaler Runner: Modul `earthx.runner`, Importregeln, Tests mit dem Vergleich Job ↔ Runner | M4b | B | Sonnet (hoch) | M4-16 (Plan) | PR #160 (Entwurf), umgesetzt (`plans/m4-16-lokaler-runner.md` §9) |
 | M4-16b | Lokaler Runner: Stufe `runner` im `Dockerfile`, Basis-Image per Digest, `target: app`, Prüfung im Compose-Job der CI, Anleitung und Prüfanleitung (`plans/m4-16-lokaler-runner.md` §8) | M4b | B | Sonnet (hoch) | M4-16a; `deb.debian.org` in der Allowlist | offen (neue Session nach dem Merge von a) |
-| M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | offen |
+| M4-17 | Mosaik im Kachel-Pfad | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | Plan zur Freigabe (`plans/m4-17-mosaik-kachel-pfad.md`), PR (Entwurf) |
 | M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
 | M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | offen |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
