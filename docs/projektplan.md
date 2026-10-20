@@ -2,7 +2,7 @@
 
 > **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
 
-Stand: 2026-10-02 · Version 1.5 (M4-Schnitt nach `plans/m4-processing-kern.md` Q1–Q16 nachgezogen; M3 abgenommen am 30.09.2026; M2 abgenommen)
+Stand: 2026-10-20 · Version 1.5 (Viewer-Strang um VP3 ergänzt: UI-01 App-Rahmen und Processing-Manager, UI-02 Basemap und Projektion, direkt nach M4; Otto 12.10. und 20.10.2026). Vorher 1.4: M3 abgenommen am 30.09.2026; M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
 
@@ -231,7 +231,7 @@ Reihenfolge und Inhalt folgen den Architektur-Inkrementen (Architekturplan 15.1)
 | M6 | Mehrnutzerbetrieb in der Cloud | XL | 4 bis 6 Wochen |
 | M7 | Ausbau in Paketen | offen | laufend |
 
-Parallel ab M2 läuft ein **Viewer-Strang** (VP1, VP2) mit reinen Frontend-Aufgaben, die vom Kern unabhängig sind und sich gut für parallele Sitzungen eignen.
+Parallel ab M2 läuft ein **Viewer-Strang** (VP1, VP2, VP3) mit Frontend-Aufgaben, die vom Kern weitgehend unabhängig sind und sich gut für parallele Sitzungen eignen. **VP3 kommt direkt nach der M4-Abnahme und vor M5** (Otto, 20.10.2026); M5 und M6 behalten ihre Nummern.
 
 ### M0 — Projekt-Setup
 
@@ -295,11 +295,10 @@ Health-Status je Quelle ist **nicht** Teil von M3, sondern kommt mit M5.
 | | |
 |---|---|
 | Ziel | Rezept und Operator-Registry tragen Vorschau, Job, Cache, Provenienz und lokale Ausführung |
-| Maßgeblich | `plans/m4-processing-kern.md` (Fassung 1 vom 02.10.2026). **Teilung (Q2):** M4a ist der Kern (M4-00 bis M4-15), M4b der Ausbau (M4-16 bis M4-19: lokaler Runner, Mosaik im Kachel-Pfad, Masking und Normalisierung, Permalinks, Methodentext, Skalierung); die Abnahme kommt einmal am Ende (M4-20) |
-| Inhalt | **Erste Schritte (`adr/0011`, Otto 30.09.2026):** M4-01a Zugriffsauflösung nach `access` und gemeinsame Stelle für Items; M4-01b `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen. Danach: Rezept-Schema mit kanonischem Hash; Operator-Registry mit JSON-Schema, Kostenmodell, Metadaten-Transformation; Worker-Kern als reine Funktion; Stufen T1 und T2; Job-Queue (vorher Spike); Weg zum Objektspeicher als eigenes Modul für Plattformdienste mit signierten URLs (`adr/0015`); Export über dem synchronen Deckel als Job; Mosaik ganzer Szenen je Überflug als Job; Mosaik im Kachel-Pfad; Ergebnis-Cache; Ablaufdatum (7 Tage als Startwert); lokaler Runner offline mit Rezeptdatei, lokal gebautes Image mit festem Tag (Q12); Vergleichstest Cloud gegen lokal |
-| Funktionen | Operatoren: zuerst Band-Math und Reprojektion/Resampling (Q6), weitere danach (Masking, Normalisierung, Auflösung, Ausgabeformat); automatische Skalierung und Einheiten; aus Schemas generiertes Processing-Panel; "Parameter von Datensatz übernehmen"; Kostenschätzung vor Start; Download mit Attribution, Zitat (BibTeX) und Rezept; Methodentext-Generator; Permalinks |
+| Inhalt | **Erste Schritte (`adr/0011`, Otto 30.09.2026):** M4-01a Zugriffsauflösung nach `access` und gemeinsame Stelle für Items; M4-01b `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen. Danach: Rezept-Schema mit kanonischem Hash; Operator-Registry mit JSON-Schema, Kostenmodell, Metadaten-Transformation; Worker-Kern als reine Funktion; Stufen T1 und T2; Job-Queue (vorher Spike); Ergebnis-Cache; Ablaufdatum; lokaler Runner als Einmalbefehl mit festem Image-Tag; Vergleichstest Cloud gegen lokal |
+| Funktionen | Operatoren: Band-Math, Reprojektion/Resampling/Auflösung, Masking, Normalisierung, Ausgabeformat; automatische Skalierung und Einheiten; aus Schemas generiertes Processing-Panel; "Parameter von Datensatz übernehmen"; Kostenschätzung vor Start; Download mit Attribution, Zitat (BibTeX) und Rezept; Methodentext-Generator; Permalinks |
 | Abnahme | Dasselbe Rezept liefert als Vorschau, als Job und im lokalen Runner übereinstimmende Ergebnisse (Toleranz definiert); zweiter identischer Auftrag kommt aus dem Cache |
-| Deine Entscheidungen | `adr/0013` Job-Queue, `adr/0014` Rezept und Operator-Registry, `adr/0015` Weg zum Objektspeicher, `adr/0016` lokaler Runner; Operatoren (Q6) und Status lokaler Ergebnisse (Q12) sind entschieden |
+| Deine Entscheidungen | ADR Job-Queue; welche Operatoren zuerst; Status lokaler Ergebnisse |
 | Modelle | Rezept- und Registry-Design `architect` (Opus, xhigh); Operatoren einzeln als Stufe-A-Issues mit Sonnet, gut parallelisierbar |
 
 ### M5 — Discovery und Suche (Inkrement 5)
@@ -343,15 +342,17 @@ Reihenfolge nach Nutzen und Abhängigkeit; jedes Paket ist ein eigener kleiner M
 
 ### Viewer-Strang (parallel ab M2)
 
-Die Pakete heißen **VP1** und **VP2** (Namenskollision mit den `V-n`-Aufgaben
+Die Pakete heißen **VP1**, **VP2** und **VP3** (Namenskollision mit den `V-n`-Aufgaben
 des Viewer-Strangs aufgelöst, M3-00). „V-n" bezeichnet einzelne Aufgaben des
-Viewer-Strangs (z. B. V-1, V-2 …), „VPn" ein ganzes Paket.
+Viewer-Strangs (z. B. V-1, V-2 …), „VPn" ein ganzes Paket. Die Aufgaben in VP3
+heißen UI-01 und UI-02.
 
 | Paket | Inhalt |
 |---|---|
 | V-1 | Theme-Umschalter zwischen dunkler und heller HUD-Palette; die Basiskarte bleibt Esri World Imagery, **ohne** helle Basiskarte (D10, 2026-09-20) — die folgt erst, wenn Esri-Bedingungen und Alternativen geklärt sind |
 | VP1 | Swipe-/Split-Vergleich mit synchronisierten Karten; "Layer auf Ansicht zuschneiden"; Pixel-Inspektor; Zeitreihe am Punkt mit CSV-Export |
 | VP2 | Schlanker Kartenexport (PNG/SVG, Titel, Colorbar, Maßstab, Attribution, optional ohne Hintergrundkarte) + generiertes matplotlib-Snippet; Wolkenfilter; Feinschliff Bedienbarkeit |
+| VP3 | **Direkt nach M4 (nach M4-20), vor M5.** UI-01 (`docs/plans/ui-01-app-rahmen.md`): schmale linke Leiste mit Control-Menü, Layer-Manager (fest am linken Rand) und Processing-Manager; Jobs mit umbenennbarem Titel, Fortschritt und Ablaufdatum, nicht löschbar, nur archivierbar und in eigene Gruppen einordenbar, Filter „Active / All“; Batch als ein Eintrag mit „Download all (ZIP)“. UI-02 (`docs/plans/ui-02-basemap-projektion.md`): Basemap-Menü statt Mercator-Schalter (Satellit, Straße, nur Umrisse, weitere nach Recherche) und Projektion (Mercator, Globus, Equal Earth nach Machbarkeit); klärt dabei die in V-1 offen gelassene Frage nach Bedingungen und Alternativen zur Basiskarte (D10). Beide Stufe B, nicht gleichzeitig |
 
 ---
 
@@ -369,10 +370,11 @@ Viewer-Strangs (z. B. V-1, V-2 …), „VPn" ein ganzes Paket.
 | Login, Quotas, API, Python-Snippet, QGIS über Standards, Datacube, Mehrfach-Download | Sammlung | M6 |
 | Python-Client mit Notebook-Export, Download-Skript | Vorschläge | M6 |
 | Swipe-Vergleich, Pixel-Inspektor, Kartenexport, Wolkenfilter | Bewertung | VP1, VP2 |
+| Linke Leiste, fester Layer-Manager, Processing-Manager (Titel, Archiv, Gruppen, Batch, Download all), Basemap-Menü und Projektion | Otto (12.10. und 20.10.2026) | VP3 |
 | Chatbot, Discovery-Agent, Modell-Registry, externe Engines, Client-Side Computing | Sammlung | M7 |
 | Komposit, Vorher/Nachher, Stapelverarbeitung, Qualitäts-Overlay, Trainingsdatensatz-Baukasten | Vorschläge | M7 |
 | Arbeitsbereiche, DOI für Rezepte, Benachrichtigungen, eigene Daten per URL, Anbieter-Statistik, Ähnlichkeitssuche | Vorschläge | M7 |
-| Bug-Report mit automatischer Triage und Behebung durch Claude | Gespräch | M0 (Stufe 1), Stufe 2 und 3 vertagt bis zur Deployment-Frage (D9, Q15), M4 liefert nur die Rezept-ID, M6 |
+| Bug-Report mit automatischer Triage und Behebung durch Claude | Gespräch | M0 (Stufe 1), Stufe 2 vertagt bis zur Deployment-Frage (D9), M4, M6 |
 | Verworfen/ersetzt: Layer frei skalieren, voller Plot-Editor, 3D, DOI als Ausschlusskriterium | Bewertung | — |
 
 ---
@@ -444,7 +446,7 @@ flowchart TD
 |---|---|---|
 | 1 | GitHub-Issue-Vorlage "Bug" mit den strukturierten Feldern; Triage-Routine auf neue Issues mit Label `bug-report`; Fix als PR. Reicht, solange du und wenige Tester die einzigen Nutzer seid. | M0 |
 | 2 | Knopf "Fehler melden" im Viewer, Backend erzeugt das bereinigte Issue; automatischer Kontext (Version, Datensätze, Frontend-Fehler) | vertagt bis zur Frage nach dem Deployment (D9, 2026-09-20): braucht ein GitHub-Schreibrecht und damit ein Secret |
-| 3 | Rezept/Permalink und Trace-ID als Kontext; Reproduktion über das Rezept | vertagt zusammen mit Stufe 2 (Q15, 02.10.2026); M4 liefert nur die Rezept-ID als Grundlage |
+| 3 | Rezept/Permalink und Trace-ID als Kontext; Reproduktion über das Rezept | M4 |
 | 4 | Status für den Melder (eingegangen, in Prüfung, bestätigt, behoben in Version X), Missbrauchsschutz über Login und Quotas, `ux-friction`-Auswertung | M6 |
 
 Technischer Auslöser: Routinen lassen sich laut Dokumentation per Zeitplan, API-Aufruf oder GitHub-Ereignis starten. Ob "Issue erstellt/gelabelt" als Ereignis direkt unterstützt wird, ist in M0 zu prüfen; sicherer Rückfallweg ist ein kleiner GitHub-Actions-Workflow auf `issues: labeled`, der die Routine per API-Aufruf startet.
@@ -508,10 +510,10 @@ Ein PR ist fertig, wenn:
 | TiTiler-Basis ja/nein | M2 | **entschieden:** `titiler.core` nach Spike (`ENTSCHEIDUNGSLOG.md`, 2026-09-19/20; `adr/0006`) |
 | ESA-only oder Quellenbreite | M3 | **entschieden:** Quellenbreite (`ENTSCHEIDUNGSLOG.md`, 2026-09-23) |
 | Welche Nicht-STAC-Quelle | M3 | **entschieden:** Copernicus DEM GLO-30 direkt aus dem Bucket, zugleich dritter Datensatz (`ENTSCHEIDUNGSLOG.md`, 2026-09-23; `adr/0009`) |
-| Adapter-Interface (ADR) | Ende M3 | **entschieden:** `adr/0011` (30.09.2026) |
+| Adapter-Interface (ADR) | Ende M3 | aus drei realen Quellen ableiten |
 | MinIO-Ersatz | vor M4 | **entschieden:** Garage ersetzt MinIO (`adr/0012`, M3-20, M3-23) |
-| Job-Queue | M4 | Postgres-gestützt; wird mit `adr/0013` entschieden (M4-02) |
-| Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | **entschieden:** `self_attested`, nie im gemeinsamen Cache (Q12, 02.10.2026) |
+| Job-Queue | M4 | Postgres-gestützt, nach Spike |
+| Status lokaler Ergebnisse (teilbar? cachebar?) | M4 | zunächst "selbst bezeugt", nicht im gemeinsamen Cache |
 | Register und Portale für den Harvester | M5 | STAC Index/Atlas zuerst |
 | Cloud-Anbieter, Identity-Provider | M6 | nach Datennähe, Egress, EU/CH, kein Lock-in |
 | Registrierungspflicht für alles oder anonymes Ansehen | M6 | anonym ansehen, Login ab Jobs/Downloads/API |
