@@ -1,0 +1,392 @@
+# M4-18 — Operatoren Masking und Normalisierung: Plan
+
+**Aufgabe:** M4-18 aus `docs/plans/m4-processing-kern.md` §4.
+**Stufe B (S4).** Dieser Plan liegt im Draft-PR. Die Session hält an, bis Otto
+ihn freigibt; umgesetzt wird danach in derselben Session.
+**Ort im Repo:** `docs/plans/m4-18-masking-normalisierung.md`
+**Grundlagen:** `adr/0014` §5.1–§5.7, §6.1–§6.4, §15c, §15d; `adr/0016` §3.3,
+§12a; `plans/m4-processing-kern.md` §1.1b (R3, R5), §1.1c (S4), §1.2, M4-18;
+`plans/m4-09-band-math.md` §3, §9, §10; `plans/m4-13-processing-panel.md` §13;
+`architekturplan.md` 7.1; `KLAERUNGEN.md` B9, B10, B11. Code in
+`processing/operators/` (`base.py`, `registry.py`, `band_math.py`),
+`processing/source.py`, `processing/tile.py`, `processing/plan.py`,
+`api/tiler.py`, `api/intake.py`, `catalog/registry.py`, `catalog/datasets.py`,
+`frontend/src/processingPreview.ts`, `frontend/src/schemaForm.ts`.
+
+---
+
+## 1. Ergebnis in drei Sätzen
+
+Ein neues Registry-Feld `mask` nennt je Datensatz die Klassifikationsschicht
+(Asset, Bandname, Tabelle der Klassen), dazu kommen die Flags `masking` und
+`normalization` in `Capabilities`, beide ohne Vorgabewert (B10); das DEM setzt
+keine Maske und lehnt `mask` deshalb ab. Der Operator `mask` (`op_version` 1,
+`pixel`, T1 und T2) blendet alle Bänder dort aus, wo die Schicht eine der im
+Rezept genannten Klassen trägt, und lässt die Schicht selbst weg; `normalize`
+(`op_version` 1, `pixel`, T1 und T2) bildet einen Wertebereich aus dem Rezept
+linear auf einen Zielbereich aus dem Rezept ab, ohne Statistik der Szene. Beide
+rechnen nur mit Vergleichen und Grundrechenarten, sind damit bitstabil im Sinn
+von R5 und `adr/0014` §15c, und ein Vergleichstest zeigt T1 gegen T2 wie bei
+Band-Math (COG bitgleich, Zarr nach §15d).
+
+---
+
+## 2. Stand vor dieser Aufgabe (gelesen am 20.10.2026, `main` = `f17de87`)
+
+**Code:**
+- **Operatoren:** `REGISTRY` hält `band_math` (v1) und `reproject` (v2, v3).
+  `Operator` hat `requires` (Flags, Datenklassen, Lizenzstufe),
+  `extra_requirements(params)` und `properties(params)`; eine Prüfung gegen
+  Felder des Eintrags außer den Flags gibt es nicht. `applicable` prüft nur
+  Flags, Datenklasse und Lizenzstufe (`registry.py`).
+- **Bänder im Kern:** Ein `pixel`-Schritt bekommt ein `ImageData` mit allen
+  Bändern aller Assets des Auftrags, in physikalischen Werten und mit Namen
+  (COG: Asset-Schlüssel; Zarr: Variable). Assets verschiedener Auflösung
+  liest der Kern nach M4-09 F2 mit `nearest` auf das feinste Raster und setzt
+  `earthx:resampled` (`source.py`, `common_grid`).
+- **Kachel-Pfad:** Eine Kachel-URL trägt genau einen Operator (`op`,
+  `op_version`, `params`, je einmal; `api/tiler.py::_operator_request`). Das
+  Panel zeigt als Vorschau nur den ersten Schritt
+  (`processingPreview.ts::planPreview`, „the tile route takes one operator“).
+  `adr/0014` §6.1 sieht dagegen den **längsten Anfang** aus T1-`pixel`-Schritten
+  als Kachelparameter vor.
+- **Panel-Formulare:** `schemaForm.ts` kennt `string`, `number`, `integer`,
+  `boolean`, `enum` und `const`; ein Feld vom Typ Liste ist „not supported by
+  this panel“.
+- **Ganzzahlige Ausgabe:** `core._nodata_for` verlangt dafür ein gemeinsames,
+  endliches nodata aller Bänder; ein Band mit NaN-nodata (Band-Math) macht
+  jede Ganzzahl-Ausgabe unmöglich (`plans/m4-13-processing-panel.md` §13).
+
+**Quellen [M]** (5 Anfragen an Datenquellen, je mindestens 1 s Abstand, keine
+AOI; Rohdaten im Scratchpad der Sitzung):
+
+| Was | Ergebnis |
+|---|---|
+| Earth Search, Item von `sentinel-2-c1-l2a` (das aus M4-09 §10) | Asset `scl`, Titel „Scene classification map (SCL)“, `gsd` 20, `raster:bands` `[{"nodata": 0, "data_type": "uint8", "spatial_resolution": 20}]`, **keine** `classification:classes`, kein `scale`/`offset`. Daneben `cloud` und `snow` (Wahrscheinlichkeiten, `uint8`, nodata 0) |
+| Earth Search, Collection `sentinel-2-c1-l2a` | `item_assets.scl` wie oben, ohne Klassentabelle; `classification` nicht unter den Erweiterungen |
+| EOPF, Collection `sentinel-2-l2a-zarr3` und das neueste Item | Assets `SCL_20m` (`…/conditions/mask/l2a_classification/r20m`) und `SCL_60m`, Rollen `data`, `mask`, Band `scl`, `uint8`, nodata 0; keine Klassentabelle |
+| EOPF, `scl/zarr.json` des Items | `uint8`, `fill_value` 0, Attribute `scale_factor` 1, `add_offset` 0, `_FillValue` 0, `valid_min` 1; **kein** `flag_values`/`flag_meanings` |
+| `cop-dem-glo-30` | ein Asset `data`, keine Klassifikationsschicht im Bucket (`adr/0009`) |
+
+**Nicht erreicht:** Die Klassentabelle der SCL steht in keiner Quellenantwort.
+Die Primärdokumente liegen auf gesperrten Hosts: `sentiwiki.copernicus.eu`
+(Proxy `403`; über WebFetch: Name nicht auflösbar), `step.esa.int` (`403`, dort
+das Sen2Cor-Handbuch), `documentation.dataspace.copernicus.eu` (`403`).
+Die Tabelle in §3.1 ist deshalb **[S]**, aus Kenntnis, nicht am Primärdokument
+gelesen; Frage F7.
+
+---
+
+## 3. Umsetzung
+
+### 3.1 Registry (`catalog/registry.py`, `catalog/datasets.py`)
+
+**Neue Flags in `Capabilities`** (B10, ohne Vorgabe, nach dem Muster von R3):
+- `masking: bool` — der Datensatz trägt eine Schicht, aus der `mask` liest.
+- `normalization: bool` — `normalize` ist freigeschaltet (generisch wie
+  Band-Math, aber nach B10 ausdrücklich je Eintrag, F2).
+
+**Neues Feld `DatasetConfig.mask: MaskSource | None`**, ohne Vorgabe:
+
+```python
+@dataclass(frozen=True, slots=True)
+class MaskClass:
+    value: int          # 0..65535
+    label: str          # English, shown in the panel
+
+@dataclass(frozen=True, slots=True)
+class MaskSource:
+    asset: str                       # the order's asset key: "scl", "SCL_20m:scl"
+    band: str                        # the band name the kernel sees: "scl"
+    classes: tuple[MaskClass, ...]   # every class the layer knows, ascending
+    suggested: frozenset[int]        # what the panel ticks first; never applied without the recipe naming it
+    reference: str                   # where the table comes from (https URL of the primary document)
+```
+
+**Prüfungen beim Laden (Registry-Test, B10):** `masking` genau dann `True`,
+wenn `mask` gesetzt ist; Werte eindeutig, aufsteigend, `suggested ⊆ classes`;
+`asset` ist ein Asset, das der Eintrag kennt (bei Zarr mit Trenner `:` und
+`band` = Variable); `reference` ist `https`.
+
+**Werte der drei Einträge (Vorschlag):**
+
+| Eintrag | `masking` | `normalization` | `mask` |
+|---|---|---|---|
+| `sentinel-2-c1-l2a` | `True` | `True` | `asset="scl"`, `band="scl"`, Tabelle SCL, `suggested={3, 8, 9, 10}` |
+| `sentinel-2-l2a-zarr3` | `True` | `True` | `asset="SCL_20m:scl"`, `band="scl"`, dieselbe Tabelle, dieselbe Auswahl |
+| `cop-dem-glo-30` | `False` | `True` | `None` |
+
+**Tabelle SCL [S]** (Sen2Cor, Verarbeitungsstand ab 04.00; beide Quellen
+liefern heute 05.xx): 0 no data, 1 saturated or defective, 2 topographic
+shadow (bis 03.xx „dark area pixels“), 3 cloud shadow, 4 vegetation, 5 not
+vegetated, 6 water, 7 unclassified, 8 cloud (medium probability), 9 cloud
+(high probability), 10 thin cirrus, 11 snow or ice. `suggested` folgt dem
+Beispiel in `architekturplan.md` 7.1 (`[3, 8, 9, 10]`); `0` ist ohnehin
+nodata und damit maskiert (§3.2).
+
+`SCL_20m`, nicht `SCL_60m`: Die 20-m-Schicht passt verschachtelt auf das
+10-m-Raster (`source.py`, F2 von M4-09) wie `scl` bei Earth Search.
+
+**Nach außen:** Die Collection trägt `earthx:mask` (Asset, Band, Klassen mit
+Label, `suggested`), damit das Panel die Klassen mit Namen zeigen kann
+(`catalog/collection.py`, wie `earthx:default_render`).
+
+### 3.2 Operator `mask` (`processing/operators/mask.py`)
+
+**Parameter (`MaskParams`, strikt, `extra="forbid"`, eingefroren, alles
+Pflicht):**
+- `source: str` — der Bandname der Schicht (`scl`), 1–64 Zeichen ASCII.
+- `classes: list[int]` — 1 bis 64 Werte, je 0..65535, **aufsteigend und ohne
+  Doppel** (sonst `ValueError`: zwei Schreibweisen derselben Maske gäben zwei
+  Rezept-Hashes, K3).
+
+**Kern (`run(image, params)`):**
+- Ein Pixel fällt in allen übrigen Bändern aus, wo `source` eine der Klassen
+  trägt **oder** selbst maskiert ist (nodata 0 bzw. CF-Füllwert; F3).
+- Vergleich exakt: `numpy.isin` auf den Werten der Schicht, wie gelesen
+  (`uint8` beim COG; `float32`/`float64` nach CF-Dekodierung beim Zarr, ganze
+  Zahlen bleiben dort exakt).
+- Das Band `source` fällt aus dem Ergebnis; die übrigen Bänder behalten Namen,
+  Werte und Datentyp, nur die Maske wächst. Bleibt kein Band → `RecipeInvalid`.
+
+**Weitere Felder:**
+- `requires`: `masking`, alle Datenklassen, Lizenzstufe *Processing*.
+- **Neu im Operator:** `dataset_check(config, params) -> list[str]`, mit
+  Vorgabe „nichts“ wie `extra_requirements`; `applicable` ruft es mit `params`
+  auf. Für `mask`: `source == config.mask.band` und
+  `classes ⊆ config.mask.classes`, sonst Gründe → `422` in Annahme und Kachel.
+  `processing` liest dafür nur die übergebene `DatasetConfig` aus
+  `catalog.registry` (§5.3, `adr/0011` §6.2); der Kern selbst ruft es nie.
+- `transform`: `source` muss unter den Bändern sein (`RecipeInvalid` vor dem
+  ersten Block, wie Band-Math); Ergebnis ohne das Band, `resampled` bleibt.
+- `lineage`: „mask: scl classes 3, 8, 9, 10“.
+- `properties`: `earthx:mask` = `{"source": …, "classes": […]}`.
+- `cost_factor`: Startwert 0,2 **[A]**, in der Umsetzung gegen den Kern von
+  Band-Math je Megapixel gemessen und im PR belegt (`projektplan.md` 7
+  Punkt 7).
+
+**Wie die Schicht in den Auftrag kommt:** Das Rezept nennt `scl` (bzw.
+`SCL_20m:scl`) unter `assets`, wie jedes andere Asset. Nichts wird still
+ergänzt („Ehrlichkeit“, `architekturplan.md` 7.1). Die Annahme prüft mit dem
+vorhandenen `check_bands`, dass `source` unter den Bändern ist.
+
+### 3.3 Operator `normalize` (`processing/operators/normalize.py`)
+
+**Parameter (`NormalizeParams`, strikt, alles Pflicht, B10):**
+- `in_min`, `in_max: float` — endlich, `in_min < in_max`.
+- `out_min`, `out_max: float` — endlich, verschieden (`out_min > out_max`
+  kehrt um, erlaubt).
+- `clip: bool` — Werte außerhalb von `[in_min, in_max]` auf den Zielbereich
+  begrenzen oder linear fortsetzen.
+
+**Kern:** je Band, in float64, in fester Reihenfolge
+`(x − in_min) / (in_max − in_min) * (out_max − out_min) + out_min`, mit
+`clip` danach `numpy.clip` auf den Zielbereich, Ergebnis float32, nodata NaN.
+Getrennte numpy-Ufuncs, kein numexpr, keine Zusammenziehung zu FMA. Ein
+Bereich für alle Bänder (F4). Maske unverändert; nicht endliche Ergebnisse
+werden maskiert (kann nur bei Überlauf auftreten).
+
+**Weitere Felder:** `requires`: `normalization`, Lizenzstufe *Processing*;
+`transform`: alle Bänder float32, NaN; `lineage`: „normalize: [a, b] → [c, d],
+clipped“; `properties`: keine; `cost_factor` wie bei `mask` gemessen.
+
+**Was „Normalisierung“ hier nicht ist (F5):** keine Perzentile, keine
+Statistik der Szene oder der AOI, kein z-Score. Das Panel darf die Zahlen aus
+einer Statistik **vorschlagen** (heute `/statistics` je Asset, mit M4-32 die
+Statistik eines Ergebnisses); im Rezept stehen dann feste Zahlen, und T1 und T2
+rechnen dasselbe.
+
+### 3.4 Kachel-Pfad (T1)
+
+- **Ein Operator je Kachel geht ohne Änderung:** `mask` und `normalize` sind
+  T1-`pixel`-Operatoren und laufen über `_operator_request` und
+  `OperatorTileReader` wie Band-Math. Mit `mask` liest die Kachel `scl`
+  (20 m) verschachtelt auf das 10-m-Raster (M4-09 F2).
+- **Kette in der Kachel (F1):** Masking ist erst mit einem Folgeschritt
+  nützlich (maskiertes NDVI). Vorschlag: `op`, `op_version` und `params`
+  dürfen wiederholt werden, gleich oft, höchstens 4, in Reihenfolge der
+  Schritte; jeder Schritt muss T1 und `pixel` sein, `applicable` gilt je
+  Schritt, `transform` läuft die Kette vor dem ersten Pixel ab. Die heutige
+  Form mit einem Operator ist der Fall n = 1 und bleibt gültig. Das Panel
+  zeigt dann den längsten Anfang aus T1-Schritten (`adr/0014` §6.1) statt nur
+  den ersten.
+- `params` je Schritt höchstens 2048 Zeichen wie heute.
+
+### 3.5 Panel (Frontend, F6)
+
+- `normalize`: Zahlen und Wahrheitswert, das Formular kann das heute.
+- `mask`: `classes` ist eine Liste, die `schemaForm.ts` nicht kennt. Neu ein
+  Feld „Classes to hide“ mit Kästchen und Labels aus `earthx:mask` der
+  Collection, vorbelegt mit `suggested`; `source` ist kein Eingabefeld, sondern
+  kommt aus `earthx:mask.band`. Das Asset `earthx:mask.asset` nimmt das Panel
+  in den Auftrag auf, sichtbar in „Review“.
+
+### 3.6 Tests
+
+Fixtures nur synthetisch (`tests/earthx/processing/sources.py`,
+`readers/mini_zarr*.py`); externe Quellen nur über `tests/fixtures`.
+
+- **Registry:** jedes Flag gesetzt (vorhandene Prüfung); `masking` ⇔ `mask`;
+  Klassen eindeutig und aufsteigend, `suggested ⊆ classes`, `asset` bekannt,
+  `reference` https; je ein Eintrag mit Widerspruch wird beim Laden abgewiesen.
+- **`mask`:** synthetische SCL-Rampe (alle 12 Klassen) gegen eine Formel;
+  nodata der Schicht maskiert; Schicht fällt aus dem Ergebnis; nur Schicht im
+  Auftrag → `RecipeInvalid`; `source` nicht unter den Bändern → Fehler vor dem
+  ersten Block; Parameter abgewiesen: leer, unsortiert, doppelt, negativ,
+  > 65535, `bool`, Text, 65 Werte, Zusatzfelder.
+- **Zweckfremd:** `source` auf ein Reflexionsband (`red`) → `422` aus
+  `dataset_check` in Annahme und Kachel, ohne Abruf des Items; Klasse 12 → `422`;
+  `mask` auf dem DEM → `422` (`masking=False`); `normalize` auf einem Eintrag
+  mit `normalization=False` → `422`.
+- **`normalize`:** Werte gegen die Formel, mit und ohne `clip`, umgekehrter
+  Zielbereich; abgewiesen: `in_min == in_max`, `in_min > in_max`,
+  `out_min == out_max`, `inf`, `nan`, Text statt Zahl, fehlendes Feld,
+  Zusatzfelder.
+- **T1 ↔ T2 (Abnahme):** COG-Paar `red` 10 m + `scl` 20 m mit
+  Skalierung am `red` (Rampen aus `sources.py`): Kachel über die echte Route
+  gegen den Job, `nearest`, native Ebene, `numpy.array_equal` über gültige
+  Pixel und gleiche Masken — für `mask`, für `normalize` und mit F1 für die
+  Kette `mask → band_math`. Mini-Zarr mit CF-Attributen nach der Regel von
+  `adr/0014` §15d (Grenzpixel).
+- **Bitstabilität über CPU-Stufen:** der Kindprozess aus M4-09
+  (`adr/0016` §12a, Einstellungen A und D) rechnet beide Kerne; gleiche
+  SHA-256 verlangt, sonst Überspringen nur mit Grund.
+- **T2 ↔ T2L:** ein Rezept `mask → normalize` im vorhandenen Vergleich
+  Kern gegen Runner.
+- **Checkliste v2** (`test_onboarding_processing.py`, Q14) bleibt grün und
+  unverändert.
+- **Frontend (mit F6):** Formular für `classes`, Vorbelegung aus `suggested`,
+  das Asset der Maske im Auftrag, Vorschau des längsten T1-Anfangs.
+
+### 3.7 Doku und Log
+
+- `ENTSCHEIDUNGSLOG.md`: Freigabe und je Teil die Umsetzung, am Ende.
+- `adr/0014`: Nachtrag `§15k` zu §5.2/§5.3 (neue Operatoren, `dataset_check`,
+  Flags) und §6.3 (Zeilen für `mask`, `normalize`).
+- `plans/m4-processing-kern.md` §3: Stand von M4-18.
+
+---
+
+## 4. Nicht in dieser Aufgabe
+
+- Maske aus einer Wahrscheinlichkeit mit Schwelle (`cloud`, `snow` bei Earth
+  Search) oder aus einem Wertebereich eines Bands (etwa Höhen unter 0 m); das
+  wäre eine zweite Art von `MaskSource` mit eigener `op_version`.
+- Maske über mehrere Aufnahmen (Komposit), Puffer um Wolken, Morphologie.
+- Perzentile, z-Score, Statistik der Szene (F5).
+- Bereich je Band bei `normalize` (F4).
+- Ganzzahlige Ausgabe nach `normalize` (nodata NaN, `core._nodata_for`; offene
+  Frage aus `plans/m4-13-processing-panel.md` §13).
+- `decomp.py`, `gateway`, `jobs`, `objectstore`, `.importlinter`, `.github/`.
+
+---
+
+## 5. Umfang und Schnitt
+
+Geschätzt [A]: Registry und Collection 70 Zeilen, `mask.py` 130,
+`normalize.py` 100, `dataset_check` 20; Kette im `tiler` 60, Panel 150;
+Tests rund 600. Zusammen deutlich über dem Richtwert von 400 Zeilen. Schnitt
+nach F8. Commits je Thema, etwa:
+
+1. `catalog`: Flags `masking`, `normalization` und Feld `mask`, drei Einträge
+2. `processing`: `dataset_check` im Operator und in `applicable`
+3. `processing`: Operator `mask`
+4. `processing`: Operator `normalize`
+5. Tests: T1 ↔ T2, CPU-Stufen, T2 ↔ T2L
+6. `api`, Frontend: Kette in der Kachel, Vorschau des T1-Anfangs (F1)
+7. Frontend: Formular der Maske (F6)
+8. Doku, ADR-Nachtrag, Log
+
+Vor dem Fertigmelden: `main` holen, `pytest`, `ruff check backend`,
+`PYTHONPATH=backend lint-imports --config .importlinter`, im Frontend
+`npm run lint`, `npx tsc -b --pretty false` und die Tests; Ergebnisse im PR.
+
+---
+
+## 6. Risiken
+
+- **Klassentabelle nur [S]:** Ein falsches Label zeigt dem Nutzer eine falsche
+  Klasse. Werte und Labels gehen erst mit Beleg [P] in die Registry (F7).
+- **Wechsel des Verarbeitungsstands:** Klasse 2 hieß bis 03.xx anders. Beide
+  Quellen liefern heute 05.xx; ältere Szenen bei Earth Search Collection 1
+  gibt es nicht (ab 5.0, `adr/0003` §6). Für EOPF ist das nicht geprüft.
+- **Maske aus 20 m auf 10 m:** Die Maske ist blockig (2 × 2), und das Ergebnis
+  trägt `earthx:resampled=true`, auch wenn nur die Maske verdoppelt wurde.
+  Ehrlich, aber für Nutzer erklärungsbedürftig.
+- **Kette in der Kachel (F1):** Wiederholte Query-Parameter sind schwerer zu
+  lesen als ein JSON; dafür bleibt die Ein-Schritt-Form gültig, und das
+  Frontend baut die URL ohnehin kanonisch.
+- **Leere Kachel:** Bei 100 % Wolken liefert die Kachel nur Maske; das ist
+  richtig, sieht aber wie ein Fehler aus.
+
+---
+
+## 7. Fragen an Otto
+
+**F1 — Kette von Operatoren in der Kachel (§3.4)**
+1. `op`, `op_version`, `params` wiederholbar, gleich oft, höchstens 4; das
+   Panel zeigt den längsten T1-Anfang (`adr/0014` §6.1). Maskiertes NDVI hat
+   dann eine Vorschau **(Empfehlung)**
+2. Ein Operator je Kachel bleibt; maskiertes NDVI gibt es nur als Job, die
+   Vorschau zeigt nur die Maske
+3. Ein neuer Parameter `steps` mit JSON-Liste statt der drei Parameter
+
+**F2 — Flag für `normalize` (§3.1)**
+1. Eigenes Flag `normalization`, alle drei Einträge `True` (B10, wie R3)
+   **(Empfehlung)**
+2. Kein eigenes Flag, nur Lizenzstufe *Processing*
+3. Unter `band_math`
+
+**F3 — Was mit Pixeln ohne Klasse passiert (§3.2)**
+1. Wo die Schicht selbst nodata ist, fällt der Pixel immer aus **(Empfehlung)**
+2. Nur, wenn das Rezept `0` unter `classes` nennt
+
+**F4 — Bereich bei `normalize` (§3.3)**
+1. Ein Bereich für alle Bänder in `op_version` 1; je Band später mit
+   `op_version` 2 **(Empfehlung)**
+2. Je Band ein Bereich schon jetzt (Liste je Band; braucht ein neues
+   Formularfeld)
+
+**F5 — Perzentile (§3.3)**
+1. Nicht in M4. Das Panel schlägt `in_min`/`in_max` aus einer vorhandenen
+   Statistik vor, im Rezept stehen feste Zahlen; T1 und T2 bleiben bitgleich
+   **(Empfehlung)**
+2. Perzentile nur in T2 als eigene Art von Schritt mit zweitem Lesedurchgang
+   über die AOI (neuer Kernpfad, eigene Messung zu Speicher und Zeit)
+
+**F6 — Frontend in M4-18 (§3.5)**
+1. Ja: Formular „Classes to hide“ mit Labels, `source` und Asset aus
+   `earthx:mask`, dazu die Vorschau des T1-Anfangs nach F1 **(Empfehlung)**
+2. Nein: nur Backend; das Panel zeigt `mask` als „not supported by this panel“
+   bis nach M4
+
+**F7 — Beleg der SCL-Tabelle (§2, §3.1)**
+1. Otto gibt einen der Hosts für diese Session frei
+   (`sentiwiki.copernicus.eu` oder `step.esa.int`); die Session liest die
+   Tabelle dort und setzt `reference` auf diese Seite **(Empfehlung)**
+2. Otto nennt Dokument und Seite; die Session übernimmt die Tabelle von dort
+3. Werte ohne Labels in die Registry (nur Zahlen im Panel), Labels später
+
+**F8 — Schnitt in PRs (§5)**
+1. Drei PRs: M4-18a Registry, beide Operatoren, Tests (T1 mit einem Operator);
+   M4-18b Kette in der Kachel und Vorschau des T1-Anfangs (F1); M4-18c Panel
+   für die Maske (F6). b und c nach a, b und c unabhängig voneinander
+   **(Empfehlung)**
+2. Ein PR über dem Richtwert
+3. Zwei PRs: Backend (a und der `tiler`-Teil von b) und Frontend
+
+**Kleinentscheidungen** (gelten mit der Freigabe, wenn Otto nichts sagt):
+- **K1:** `op_version` 1 für `mask` und für `normalize`.
+- **K2:** `mask` lässt das Band der Schicht im Ergebnis weg; wer es braucht,
+  liest es ohne Maske.
+- **K3:** `classes` aufsteigend und ohne Doppel, sonst abgewiesen (ein Rezept,
+  ein Hash); 1 bis 64 Werte, je 0..65535.
+- **K4:** Der Name in den Parametern ist `source` wie in `architekturplan.md`
+  7.1 und meint den Bandnamen, nicht den Asset-Schlüssel.
+- **K5:** `dataset_check` ist ein neues Feld von `Operator` mit Vorgabe
+  „keine Gründe“; nur `applicable` ruft es, nie der Kern.
+- **K6:** `suggested` ist kein Vorgabewert im Sinn von B10: Das Rezept nennt
+  die Klassen immer selbst, das Panel kreuzt sie nur vor.
+- **K7:** Die Collection trägt `earthx:mask`; ohne Maske fehlt das Feld.
+- **K8:** `cost_factor` beider Operatoren wird in der Umsetzung gemessen; bis
+  dahin 0,2 [A].
