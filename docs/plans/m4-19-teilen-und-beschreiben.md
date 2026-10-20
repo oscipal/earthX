@@ -544,3 +544,22 @@ angeglichen, mit der Begründung aus §2.1 (die Regel am Bucket zählt ab dem Sc
 
 **Schnitt und Start:** M4-19a ist umgesetzt (§10). M4-19b bis M4-19e starten je als neue Session
 nach §4 und der Reihenfolge dort.
+
+---
+
+## 10. Umsetzung M4-19a (20.10.2026)
+
+- **Methodentext:** `processing/methods.py` (`methods_text`, `DatasetFacts`), `Operator.method` für
+  `band_math` und `reproject` (Version 2 erbt von 3), Nachtrag `adr/0014` §15k.
+- **Eine Definition:** `access/crop_rules.py::TEXT_FILES` und `METHODS_FILENAME`. Zuschnitt
+  (`build_download_zip(methods_text=…)`), Export (Worker, `Attachments.dataset`), Job-ZIP und
+  -Link (`api/processing_route.py`) und Runner (`runner/output.py`) schreiben `methods.txt`; jeder
+  hat einen Test gegen `TEXT_FILES`.
+- **Link:** `methods.txt` unter `/jobs/{jobID}/results` (Ausgang `methods`, `text/plain`), ein
+  Eintrag in `LINK_NAMES`; Prozessbeschreibungen der Fixtures neu geschrieben.
+- **Frontend:** „Methods“ in der Jobliste (auch neben dem ZIP) mit „Copy“.
+- **Abweichung vom Plan:** Der Tag der Aufnahme (§3.1) steht nicht im Text. Das Rezept kennt ihn
+  nicht, und er gehört dem Job, nicht dem Lauf; der Text nennt den Tag des Laufs.
+- **Fund:** Die Registry hält die Adresse des DOI (`https://doi.org/…`); der Text nimmt
+  `doi_name`, wie `citation.bib`.
+- **Version:** Die Ergebnis-Bytes ändern sich nicht, `earthx.__version__` bleibt.

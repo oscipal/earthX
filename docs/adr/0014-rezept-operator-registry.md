@@ -1856,6 +1856,50 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
+## 15k. Nachtrag vom 2026-10-20: `methods.txt`, der Methodentext (zu §5.6, §10; M4-19a)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben (`plans/m4-19-teilen-und-beschreiben.md`
+§9). Der Originaltext in §5.6 („der Methodentext in voller Länge ist M4-19“) und §10 bleibt
+stehen; maßgeblich ist dieser Nachtrag.
+
+- **Eine Funktion, ein Eingang:** `processing/methods.py::methods_text` liest ein `recipe.json`
+  (Rezept mit `provenance`) und gibt einen englischen Absatz aus. Zuschnitt, Export, Job und
+  lokaler Runner bauen den Text aus dem `recipe.json`, das sie ohnehin tragen. So sagt die
+  Datei, was ihr Nachbar sagt.
+- **Je Operator ein Satz:** `Operator.method` (neues Pflichtfeld, wie `lineage`). Ein
+  Wächtertest verlangt für jeden registrierten Operator einen Satz ohne Platzhalter; M4-18 muss
+  ihn mitbringen.
+- **Eine Definition der Download-Inhalte (Auflage Otto):** `access/crop_rules.py::TEXT_FILES`
+  nennt die Textdateien in ihrer Reihenfolge: `aoi.geojson`, `recipe.json`, `citation.bib`,
+  `ATTRIBUTION.txt`, `methods.txt`. Zuschnitt-Route, Export, Job-ZIP und Job-Link richten sich
+  danach; jeder hat einen Test, der gegen diese Tuple prüft, nicht gegen eine eigene Liste. Der
+  Runner schreibt davon nur `recipe.json` und `methods.txt` (`adr/0016` §12b: keine Zitierung,
+  keine Hinweisdatei); ein Test hält das fest.
+- **Wer baut, wo:**
+
+| Weg | Gebaut von | aus |
+|---|---|---|
+| synchroner Zuschnitt | `api` (`methods_bytes`) | dem `recipe.json` des Zuschnitts, an `build_download_zip` als Bytes |
+| Export | der Worker, im Kern | dem `recipe.json`, das er selbst schreibt, und `Attachments.dataset` |
+| Job-Link und Job-ZIP | `api` je Download | dem `recipe.json`, das der Link ausgibt |
+| lokaler Runner | der Runner | dem Rezept der Eingabe mit der Provenienz des lokalen Laufs |
+
+- **Titel und DOI:** Der Worker-Kern liest keine Registry. `api` gibt sie dem Export als
+  `Attachments.dataset` (`DatasetFacts`: Titel und DOI-Name, nicht die Adresse) mit. Alte Zeilen
+  ohne diesen Schlüssel lesen weiter; der Text nennt den Datensatz dann nur mit seiner Kennung.
+  Der Runner nimmt sie aus der Registry seines Images.
+- **Was im Text steht:** Datensatz und Szenen, Skalierung nach `provenance.scaling`, je Schritt
+  ein Satz, Ausgabe, Größe der Fläche in km², Software, Ort und Tag des Laufs, Attribution.
+  **Nie:** Hash, `recipe_id`, `jobID`, Adressen, Koordinaten (Frage 6).
+- **Link und Cache:** `GET /processing/jobs/{jobID}/results/methods.txt` (`text/plain`) ist ein
+  Ausgang `methods` der Prozessbeschreibung. Der Text steht nicht im Objektspeicher und ändert
+  weder Ergebnis-Bytes noch Cache-Schlüssel; die ETag des Job-ZIP ändert sich, weil sein Inhalt
+  sich ändert (ein begonnener Download startet neu, wie bei M4-30).
+- **Tests:** `tests/earthx/processing/test_methods.py` (Wortlaut, Fehlerfälle, Wächter),
+  `test_export.py` (Reihenfolge nach `TEXT_FILES`, Herkunft des Textes, alte Anhänge),
+  `test_download_route.py`, `test_result_zip_files.py` (Zuschnitt, Link, ZIP, Export),
+  `runner/test_cli.py`.
+
 ## 16. Quellen
 
 **Im Repo [P]**
