@@ -246,7 +246,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-13c-2 | Frontend: T1-Vorschau, „Preview“, Vorschau als Layer (anheften; „Replace source layer“ entfällt), Einstiege aus Layer-Manager und Vollauflösung | M4a | B | Sonnet (hoch) | M4-13c-1 | PR #153, gemergt, `plans/m4-13c-vorschau-und-viewer.md` §12 |
 | M4-13c-3 | Auflösung mit Einheit: Route `GET /processing/crs/{code}` (`pyproj`, ohne Netz) und Anzeige im Panel | M4a | B | Sonnet (hoch) | M4-13c-2 | PR #157, gemergt, `plans/m4-13c-vorschau-und-viewer.md` §13 |
 | M4-13c-4 | Frontend: Batch „One job per pass“/„One job per scene“, höchstens 25, Schätzung als Summe | M4a | B | Sonnet (hoch) | M4-13c-3 | Entwurfs-PR, umgesetzt, `plans/m4-13c-vorschau-und-viewer.md` §14 |
-| M4-13c-5 | Job-Ergebnis als Layer: Kachel-Route im `tiler` über `objectstore` ohne Datenbank, eigener Leseschlüssel, Nachtrag `adr/0015` | M4a | B | Opus (hoch) | M4-13c-4 | offen (neue Session nach dem Merge von c-4) |
+| M4-13c-5 | Job-Ergebnis als Layer: Kachel-Route im `tiler` über `objectstore` ohne Datenbank, eigener Leseschlüssel, Nachtrag `adr/0015` | M4a | B | Opus (hoch) | M4-13c-4 | Entwurfs-PR, umgesetzt bis auf „Replace source layer“ (Frage an Otto), `plans/m4-13c-vorschau-und-viewer.md` §15 |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | erledigt (#129) |
 | M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | erledigt (#135) |
 | M4-16 | Lokaler Runner offline, Vergleichstest in der CI — geteilt in M4-16a und M4-16b (`plans/m4-16-lokaler-runner.md` Frage 5) | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | Plan freigegeben am 20.10.2026 (#160) |
