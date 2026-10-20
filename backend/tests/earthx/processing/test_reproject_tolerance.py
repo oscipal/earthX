@@ -72,11 +72,11 @@ class Row:
         )
 
 
-#: Heights in m: §6.3 row 4 for bilinear and cubic, measured at about the same pixel size.
-HEIGHTS = Row(p99=0.3, worst=1.0)
-#: Heights, §15j: lanczos in every case, cubic when refining (Otto, answer 7).
-HEIGHTS_SHARP = Row(p99=0.4, worst=1.5)
-#: Heights, §15j: average when the target is finer than the source (Otto, answer 4).
+#: Heights in m, §15j (Otto, answer 8): every interpolating method, average when the
+#: target is not finer. Replaces §6.3's 0.3 m and 1 m: the whole reproject the block
+#: plan is compared with splits the raster by its size, measured over 13 sizes.
+HEIGHTS = Row(p99=0.6, worst=4.0)
+#: Heights, §15j: average when the target is finer than the source (Otto, answers 4 and 8).
 HEIGHTS_AVERAGE_FINE = Row(p99=1.0, worst=4.0)
 NDVI = Row(p99=0.01)
 PICKING = Row(min_identical=0.97)
@@ -91,8 +91,6 @@ def row(method: str, dataset: str, case: str) -> Row:
         return PICKING
     if dataset == "ndvi":
         return NDVI
-    if method == "lanczos" or (method == "cubic" and case == "fine"):
-        return HEIGHTS_SHARP
     if method == "average" and case == "fine":
         return HEIGHTS_AVERAGE_FINE
     return HEIGHTS
