@@ -63,7 +63,7 @@ OUTPUTS: dict[str, tuple[str, str]] = {
     "mask": ("mask.tif", "Mask of the area of interest"),
     "export": ("export.zip", "Export: per group and asset the data and its mask, with notice, recipe and citation"),
     "recipe": ("recipe.json", "The recipe the job ran, with its provenance"),
-    "bundle": ("result.zip", "Result, mask, recipe and citation in one ZIP"),
+    "bundle": ("result.zip", "Result, mask, area, recipe, citation and attribution in one ZIP"),
 }
 
 #: The media type of each file a link under ``/results`` serves. `result.zip` is not in the store:
@@ -148,8 +148,9 @@ def process_description(root: str, operators: OperatorRegistry, config: DatasetC
             AOI_PROVENANCE: {
                 "title": "Origin of the area of interest",
                 "description": (
-                    "For an export (output crop) only: where a place-search AOI came from, written into "
-                    "ATTRIBUTION.txt and aoi.geojson of the export. Not part of the recipe. Each field is one "
+                    "For an order with an area (aoi) only: where a place-search AOI came from, written into "
+                    "ATTRIBUTION.txt and aoi.geojson of the export or of the ZIP of the job. Not part of the "
+                    "recipe, its hash or the cache. Each field is one "
                     "line of plain text: no leading or trailing space, no control or format characters."
                 ),
                 "minOccurs": 0,

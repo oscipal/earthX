@@ -953,6 +953,8 @@ def build_notice_text(
     skipped_item_ids: Sequence[str] = (),
     aoi_geometry: Mapping[str, Any] | None = None,
     recipe_omitted_cause: str | None = None,
+    at: datetime | None = None,
+    raster_result: bool = False,
 ) -> str:
     """Attribution, the source's terms and a citation, as one plain-text file.
 
@@ -989,11 +991,22 @@ def build_notice_text(
     fixed code (a lower-case word such as ``bands``), never by anything the request or
     the item contained — no AOI, address or query. Anything else than such a code is
     refused rather than written into the file.
+
+    ``at`` (M4-30): the moment the notice is "generated" and whose year the attribution
+    names. Left out it is now, as it always was. A file that must be the same bytes each
+    time it is asked for — the notice in the ZIP of a job, whose ETag is built from it —
+    passes the end of the job.
+
+    ``raster_result`` (M4-30): the notice is for the ZIP of a processing job, whose rasters
+    are ``result.tif`` and ``mask.tif``. The lines that describe a crop's own files (its
+    assets, the native resolution, the mask beside each data file) are left out, as they
+    would describe files that are not in it; a job's steps can change the resolution.
     """
     if recipe_omitted_cause is not None and not _CAUSE_CODE.fullmatch(recipe_omitted_cause):
         raise ValueError("recipe_omitted_cause is a short lower-case code")
     license_ = config.license
-    year = datetime.now(timezone.utc).year
+    moment = at if at is not None else datetime.now(timezone.utc)
+    year = moment.year
     lines = [config.title]
 
     attribution = attribution_text(config, year=year)
@@ -1015,7 +1028,7 @@ def build_notice_text(
         lines.append("Items: " + ", ".join(item_ids))
     if skipped_item_ids:
         lines.append("Not covered by the AOI, left out: " + ", ".join(skipped_item_ids))
-    if assets:
+    if assets and not raster_result:
         # The file names in the archive are cleaned (`crop_filename`), so the keys
         # they came from are written out here — otherwise a Zarr crop's bands
         # could not be traced back to what was asked for.
@@ -1027,20 +1040,23 @@ def build_notice_text(
                 for asset in assets
             )
         )
-    lines.append(
-        "Resolution: native"
-        if resolution_factor == 1
-        else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
-    )
-    # Mask instead of nodata (Otto, 23.09.2026, M3-18 §3): every pixel in a data
-    # file keeps its bounding-box value regardless of the AOI polygon's shape;
-    # each asset's own mask file (above) is where the polygon actually lives —
-    # `AOI_FILENAME` is the polygon itself, once per ZIP, so the mask files need
-    # no further explanation than a pointer to it.
-    lines.append(
-        f"Mask: {AOI_FILENAME} carries the requested area; each asset's own mask "
-        "file is 1 inside it, 0 outside — the data files are not cropped to it."
-    )
+    if raster_result:
+        lines.append(f"Mask: {AOI_FILENAME} carries the area; mask.tif is 1 inside it, 0 outside.")
+    else:
+        lines.append(
+            "Resolution: native"
+            if resolution_factor == 1
+            else f"Resolution: {resolution_factor}x coarser than native (chosen explicitly)"
+        )
+        # Mask instead of nodata (Otto, 23.09.2026, M3-18 §3): every pixel in a data
+        # file keeps its bounding-box value regardless of the AOI polygon's shape;
+        # each asset's own mask file (above) is where the polygon actually lives —
+        # `AOI_FILENAME` is the polygon itself, once per ZIP, so the mask files need
+        # no further explanation than a pointer to it.
+        lines.append(
+            f"Mask: {AOI_FILENAME} carries the requested area; each asset's own mask "
+            "file is 1 inside it, 0 outside — the data files are not cropped to it."
+        )
     if aoi_geometry is not None:
         provenance_line = _aoi_provenance_line(aoi_geometry)
         if provenance_line:
@@ -1050,7 +1066,7 @@ def build_notice_text(
             f"{RECIPE_FILENAME} is not included: the recipe could not be built from the "
             f"source's item metadata (cause: {recipe_omitted_cause})."
         )
-    lines.append("Generated: " + datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+    lines.append("Generated: " + moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))
     return "\n\n".join(lines) + "\n"
 
 
