@@ -216,6 +216,35 @@ describe('jobs in sessionStorage', () => {
     ]);
   });
 
+  it('keeps the title next to the id and the expiry, and nothing else of the job (K5)', () => {
+    saveStoredJobs([
+      { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Band math · Sentinel-2 · 3/25', aoi: [1, 2] } as never,
+    ]);
+    const stored = sessionStorage.getItem(JOBS_STORAGE_KEY)!;
+    expect(JSON.parse(stored)).toEqual([
+      { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Band math · Sentinel-2 · 3/25' },
+    ]);
+    expect(loadStoredJobs(now)).toEqual([
+      { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Band math · Sentinel-2 · 3/25' },
+    ]);
+  });
+
+  it('drops a title that is no text, empty or too long, and keeps the job', () => {
+    sessionStorage.setItem(
+      JOBS_STORAGE_KEY,
+      JSON.stringify([
+        { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: { html: '<b>x</b>' } },
+        { jobID: OTHER, expires: '2026-10-17T12:00:00Z', title: 'x'.repeat(201) },
+        { jobID: 'ABCDEFGHIJKLMNOPQRSTUV', expires: '2026-10-17T12:00:00Z', title: '' },
+      ]),
+    );
+    expect(loadStoredJobs(now)).toEqual([
+      { jobID: JOB, expires: '2026-10-17T12:00:00Z' },
+      { jobID: OTHER, expires: '2026-10-17T12:00:00Z' },
+      { jobID: 'ABCDEFGHIJKLMNOPQRSTUV', expires: '2026-10-17T12:00:00Z' },
+    ]);
+  });
+
   it('takes the jobs up again and drops expired, malformed and repeated ones', () => {
     sessionStorage.setItem(
       JOBS_STORAGE_KEY,

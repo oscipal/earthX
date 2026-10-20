@@ -15,8 +15,8 @@
 // - Polling honours `Retry-After`; a `404` means the job is gone (expired or
 //   dismissed) and ends the tracking.
 //
-// Jobs survive a reload in `sessionStorage` (F5 (1)): only `jobID` and
-// `expires`, never the order or the AOI (Q8).
+// Jobs survive a reload in `sessionStorage` (F5 (1)): `jobID`, `expires` and the
+// title the panel gave the job (M4-13c K5), never the order or the AOI (Q8).
 
 import { HttpError } from './api';
 import { eventsUrl, fetchJob, isJobId, parseStatusInfo, TERMINAL_STATES, type StatusInfo } from './processing';
@@ -138,7 +138,10 @@ export const JOBS_STORAGE_KEY = 'earthx.processing.jobs';
 export interface StoredJob {
   jobID: string;
   expires: string;
+  title?: string;
 }
+
+const MAX_TITLE_LENGTH = 200;
 
 function storage(): Storage | null {
   try {
@@ -158,11 +161,13 @@ export function loadStoredJobs(now: number = Date.now()): StoredJob[] {
     const jobs: StoredJob[] = [];
     for (const entry of parsed) {
       if (!entry || typeof entry !== 'object') continue;
-      const { jobID, expires } = entry as Record<string, unknown>;
+      const { jobID, expires, title } = entry as Record<string, unknown>;
       if (!isJobId(jobID) || typeof expires !== 'string') continue;
       const end = Date.parse(expires);
       if (Number.isNaN(end) || end <= now) continue;
-      if (!jobs.some((j) => j.jobID === jobID)) jobs.push({ jobID, expires });
+      if (jobs.some((j) => j.jobID === jobID)) continue;
+      const named = typeof title === 'string' && title !== '' && title.length <= MAX_TITLE_LENGTH;
+      jobs.push({ jobID, expires, ...(named ? { title } : {}) });
     }
     return jobs;
   } catch {
@@ -175,7 +180,10 @@ export function saveStoredJobs(jobs: readonly StoredJob[]): void {
     const target = storage();
     if (!target) return;
     if (jobs.length === 0) target.removeItem(JOBS_STORAGE_KEY);
-    else target.setItem(JOBS_STORAGE_KEY, JSON.stringify(jobs.map(({ jobID, expires }) => ({ jobID, expires }))));
+    else {
+      const kept = jobs.map(({ jobID, expires, title }) => ({ jobID, expires, ...(title ? { title } : {}) }));
+      target.setItem(JOBS_STORAGE_KEY, JSON.stringify(kept));
+    }
   } catch {
     /* blocked or full: the panel works on without resuming after a reload */
   }
