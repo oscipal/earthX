@@ -69,6 +69,7 @@ __all__ = [
     "canonical_bytes",
     "document_bytes",
     "engine_versions",
+    "input_hosts",
     "input_version",
     "job_recipe_document",
     "loads_i_json",
@@ -600,6 +601,14 @@ def recipe_hosts(recipe: Recipe) -> tuple[str, ...]:
     :class:`~earthx.readers.errors.AssetRejected` when an address names no host.
     """
     return tuple(sorted(hosts_for(recipe.hrefs())))
+
+
+def input_hosts(entry: Input) -> tuple[str, ...]:
+    """The hosts one input reads, sorted: what the local runner checks against its dataset (adr/0016 F4).
+
+    :class:`~earthx.readers.errors.AssetRejected` when an address names no host.
+    """
+    return tuple(sorted(hosts_for(resolved.asset.href for resolved in entry.resolved)))
 
 
 def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = None) -> InputVersion | None:
