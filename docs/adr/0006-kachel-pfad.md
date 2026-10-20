@@ -567,6 +567,29 @@ Kacheln wandern nach M3, zusammen mit dem CDN.
 `plans/m3-dritte-quelle-und-interface.md`); der Satz oben bleibt als
 ursprüngliche Einschätzung stehen.
 
+**Nachtrag M4-17 (2026-10-20, Otto):** Das Mosaik im Kachel-Pfad kommt als
+Item-Liste in der URL (M1), wie oben empfohlen; Such-ID und Inhaltsadresse
+(O2, O3) sind erneut abgewogen und verworfen
+(`plans/m4-17-mosaik-kachel-pfad.md` §3). Abweichend von oben:
+
+- **Grenzen** gemessen statt übernommen: höchstens **64** Items je URL (ein
+  Überflug über einer landesgroßen Fläche hat bis 60 Szenen, die 22 oben galten
+  einem kleineren Rechteck), höchstens **12** Szenen je Kachel nach dem
+  Vorfilter über den Footprint, Mosaik-Kacheln erst ab **z8**, je Portion
+  **4** Szenen parallel (Plan §2.2, §5).
+- **Reihenfolge** wie der Mosaik-Job (M4-12 F3/F4): Der Server sortiert mit
+  `mosaic_order`, die Regel ist `FirstMethod` (S5). Reihenfolge und Regel
+  liegen seit M4-17a beide in `access/crop_rules.py`.
+- **Item-Abrufe:** Der Satz in §3.5, die vorangegangene Suche habe die Items
+  „ohnehin schon geliefert“, trifft für den Item-Cache nicht zu — er wird nur
+  von `get_item` gefüllt, nicht von der Suche (Plan §2.8). Die Mosaik-Kachel
+  braucht aber alle Items der URL. Deshalb: gleichzeitige Abrufe desselben Items
+  zusammengelegt, je Anfrage gedrosselt, Vorwärmen über das TileJSON; ohne
+  Item-Cache antwortet die Mosaik-Kachel mit klarer Meldung und Grund, nie mit
+  `500`, und die Abrufe bei der Quelle bleiben in den Grenzen je Host aus
+  `gateway` (Auflage Otto, Plan §11).
+- **Form:** `item` wiederholt statt `items=` mit Kommas, wie `asset`.
+
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
 F15 fällt mit dem Token weg. Die Registry bekommt dafür zwei Felder: den
@@ -655,7 +678,8 @@ Cache ist kein Zustand — sein Ausfall macht langsamer, nie falsch (E5, K5).
    `titiler.core` mit ersetzter Pfad-Abhängigkeit; Mosaike laufen über eine
    Item-Liste in der URL, nicht über eine Such-ID — der Satz „Suchergebnis wird
    unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind"
-   kehrt seine eigene Begründung um und ist zu ersetzen.
+   kehrt seine eigene Begründung um und ist zu ersetzen. *Erledigt mit M4-17a
+   (2026-10-20).*
 2. **Die Registry wächst um drei Felder:** `asset_hosts` an `SourceInfo`
    (Allowlist), Quicklook-Asset samt Nodata-Schwelle, und `DefaultRender` wird
    gefüllt. Alle drei ohne Vorgabewert, wie B10 es verlangt. Dazu wird

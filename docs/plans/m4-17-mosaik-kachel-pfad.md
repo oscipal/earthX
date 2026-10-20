@@ -1,6 +1,6 @@
 # M4-17 — Mosaik im Kachel-Pfad: Plan
 
-**Stand:** 20.10.2026, Plan zur Freigabe durch Otto.
+**Stand:** 20.10.2026, Plan freigegeben (§11); M4-17a umgesetzt (§12), M4-17b und M4-17c folgen je in einer neuen Session (§13).
 **Stufe B:** Bis zur Freigabe ist kein Produktivcode geändert. Nach der Freigabe
 setzt dieselbe Session um (oder die Sessions aus Frage 6).
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -598,8 +598,9 @@ auf einer nackten App.
 
 **M4-17b (`api`):** Pfad-Abhängigkeit (Prüfungen, Überflug, Vorfilter,
 Reihenfolge), Item-Abrufe (§4.3), Routen, TileJSON mit `earthx:order`; Tests 2,
-5–7, 9–11; Doku (Nachtrag `adr/0006`, `architekturplan.md` 6.3, Docstring
-`ViewerInfo`, §3 des M4-Plans, Log).
+5–7, 9–11; Doku (Docstring `ViewerInfo`, §3 des M4-Plans, Log). Nachtrag
+`adr/0006` und `architekturplan.md` 6.3 kommen nach Auflage 1 (§11) schon mit
+M4-17a.
 
 **M4-17c (Frontend):** Layer je Überflug über das TileJSON, Rückfall, Hinweis,
 `vitest`; Prüfanleitung B.
@@ -736,3 +737,107 @@ curl -sS https://raw.githubusercontent.com/encode/uvicorn/master/docs/settings.m
 curl -sS https://raw.githubusercontent.com/nginx/nginx.org/master/xml/en/docs/http/ngx_http_core_module.xml
 #   large_client_header_buffers … default 4 8k; 414 Request-URI Too Large
 ```
+
+---
+
+## 11. Freigabe (Otto, 20.10.2026)
+
+Fragen 1–8 je Option 1, KE1–KE8 angenommen. Auflagen:
+
+1. Die Berichtigung von `architekturplan.md` 6.3 (Item-Liste in der URL statt
+   Such-ID) und der Nachtrag in `adr/0006` kommen im **ersten** PR (M4-17a),
+   nicht erst mit den Routen.
+2. **KE4:** Die Sortierfunktionen ziehen unverändert um; ein Test zeigt, dass
+   Mosaik-Job und Export danach bytegleich rechnen.
+3. **Frage 8:** Ohne Item-Cache antwortet die Mosaik-Kachel mit klarer Meldung
+   und Grund, **nie mit `500`**; die Abrufe bei der Quelle bleiben in den
+   Grenzen je Host aus `gateway`, mit Test. Gilt für M4-17b.
+
+Frage 2 (Zuschnitt und Export sortieren wie der Mosaik-Job) und Frage 4
+(Mosaik mit Operator) sind als offene Punkte nach M4 vorgemerkt, je eine
+Log-Zeile „offen, nach M4“.
+
+---
+
+## 12. Umsetzung M4-17a (20.10.2026)
+
+**Umfang wie §8, Frage 6 Option 1:** nur `access` und die Doku-Auflage; noch
+keine Route im `tiler`, das Frontend unverändert.
+
+- **Vergleichstest vor dem Umzug** (Auflage 2):
+  `TestTheRuleOfTheExport.test_both_compute_the_same_bytes_as_before_the_order_moved`
+  in `tests/earthx/processing/test_mosaic.py`. SHA-256 über CRS, Transformation,
+  Werte und Maske des Mosaik-Jobs und des Exports, die Liste aus `mosaic_order`
+  für beide Reihenfolgen der Eingabe; die Werte sind auf dem Code **vor** dem
+  Umzug aufgenommen (eigener Commit) und gelten danach unverändert [M].
+  Bytegleich heißt hier: gleiche Daten und Maske je Ausgabe; die Datei selbst
+  wird nicht verglichen, weil ihre Metadaten mit der GDAL-Version wechseln
+  können [A].
+- **KE4:** `target_crs`, `mosaic_order` (samt `_epsg`, `_NO_EPSG`) Zeile für
+  Zeile nach `access/crop_rules.py`; `processing/mosaic.py` und `api/intake.py`
+  verweisen dorthin. `test_tiler_start_is_light` bleibt grün.
+- **`access/mosaic_tiles.py` (neu):**
+  - `MosaicScenes` — die Szenen einer Kachel in Lesereihenfolge und die Lage
+    aller Szenen der URL; nimmt nur `AssetPath`/`ZarrAsset` (B8).
+  - `MosaicTileReader` — `tile` über `mosaic_reader` mit `FirstMethod`, in
+    Portionen von `MOSAIC_THREADS = 4` (Frage 5), `TileOutsideBounds` je Szene
+    erlaubt, keine Szene in der Kachel → `TileOutsideBounds` (`404` im
+    `tiler`); `get_geographic_bounds` aus `MosaicScenes.bounds`; `info` der
+    ersten Szene.
+  - `EarthxMosaicTilerFactory` — nur `tile` und `tilejson` von
+    `EarthxTilerFactory` (dieselbe Zoomprüfung des TileJSON).
+- **Befund bei der Umsetzung [M]:** `rasterio.Env` gilt nur in dem Thread, der
+  es betritt; die Lese-Threads von `mosaic_reader` sehen es nicht (die
+  GDAL-Optionen selbst sind global gesetzt und damit sichtbar, rasterios
+  eigenes Env aber nicht). Die Umgebung des Threads zu kopieren scheitert,
+  sobald sie AWS-Optionen enthält („GDAL's AWS config options can not be
+  directly set“). Deshalb reicht die Fabrik dem Reader genau die
+  `environment_dependency` der Route weiter (`MosaicReaderParams`), und jede
+  Szene wird unter `rasterio.Env(**gdal_config)` gelesen. Ein Test prüft das
+  in den Threads.
+- **Tests** (`tests/earthx/access/test_mosaic_tiles.py`, synthetische Szenen
+  von Zone 32, kein Netz): Naht ohne Lücke (§4.8 Test 1); Überlappung nach
+  Listenreihenfolge; Szene außerhalb der Kachel stört nicht, keine Szene →
+  `404`; frühes Ende nach der ersten Portion und Füllen aus der zweiten
+  (Test 4); GDAL-Konfiguration in jedem Lese-Thread; nur zwei Routen, kein
+  Parameter `url`/`aoi`/`bbox`/`geometry`/`intersects` (Test 9, Teil);
+  TileJSON mit Lage aller Szenen und freigegebenen Stufen; zwei frische Apps,
+  gleiche Bytes (Test 8); `MosaicScenes` und Reader weisen anderes ab.
+  Test 3 (Vorfilter) gehört zur Pfad-Abhängigkeit und kommt mit M4-17b.
+- **Doku:** `architekturplan.md` 6.3 berichtigt, Nachtrag in `adr/0006` §5
+  („Zu Frage 4“), Folge 1 dort als erledigt markiert; Log-Zeilen (Freigabe,
+  zwei offene Punkte nach M4, Umsetzung).
+
+---
+
+## 13. Folgesessions
+
+**M4-17b — `api`: Routen, Prüfungen, Item-Abrufe.** Neue Session nach dem
+Merge von M4-17a.
+**Startsatz:** „Führe Aufgabe M4-17b aus `docs/plans/m4-processing-kern.md`
+aus.“ Grundlage ist dieser Plan: §4.1–§4.4, §4.7, §4.8 (Tests 2, 3, 5–7, 9–11),
+§5, §11 Auflage 3, KE5–KE8.
+- Pfad-Abhängigkeit in `api/tiler.py` nach §4.2 (z8 vor jedem Item-Abruf,
+  abgewiesene Parameter, `ITEM_ID`-Regel, ein Überflug, CRS aller Items,
+  Vorfilter über den Footprint, `mosaic_order` aus `access/crop_rules.py`),
+  liefert `MosaicScenes` an die Fabrik aus M4-17a; Routen unter
+  `/collections/{dataset}/mosaic`.
+- Item-Abrufe nach §4.3: zusammengelegt im Prozess, höchstens 4 je Anfrage,
+  TileJSON wärmt vor und trägt `earthx:order`; ohne Item-Cache für föderierte
+  Datensätze eine klare Meldung mit Grund (`503`), **nie `500`**, mit Test;
+  ein Test zeigt, dass gleichzeitige Kacheln die Grenze je Host aus `gateway`
+  (`max_connections_per_host`) bei der Quelle nicht überschreiten.
+- Gebündelte Cache-Abfrage nur, wenn 64 Lookups je Kachel lokal über 50 ms
+  liegen (§4.3 Punkt 5); Messung im PR.
+- Docstring von `ViewerInfo` nachziehen (KE8); Prüfanleitung A (§9) gegen den
+  laufenden `tiler` prüfen und eintragen.
+
+**M4-17c — Frontend.** Neue Session nach dem Merge von M4-17b.
+**Startsatz:** „Führe Aufgabe M4-17c aus `docs/plans/m4-processing-kern.md`
+aus.“ Grundlage: §4.6, §4.8 (Frontend), §7 Frage 3, §9 B.
+- Ein Layer je Überflug als MapLibre-Quelle mit `url` auf das Mosaik-TileJSON,
+  `item` nach ID sortiert (KE5); eine Szene bleibt bei der heutigen URL.
+- Unter z8 die Einzelszenen in `earthx:order`; über 64 Szenen Einzelszenen wie
+  heute mit neuem Hinweis; AOI-Clip unverändert.
+- `vitest`, `npm run lint`, `npm run build`; Prüfanleitung B.
+
