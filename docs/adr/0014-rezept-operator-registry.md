@@ -1856,6 +1856,26 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
+## 15k. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize` (zu §5.2, §5.3, §5.5, §6.3; M4-18a)
+
+Otto hat den Plan von M4-18 am 2026-10-20 freigegeben, F1–F6 und F8 je mit
+Option 1 (`plans/m4-18-masking-normalisierung.md` §8). Der Originaltext in §5.2,
+§5.3, §5.5 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist
+M4-18a; die Kette in der Kachel (F1) folgt mit M4-18b, das Panel (F6) mit M4-18c.
+
+- **Registry (§5.3, B10):**
+  - Neue Flags `masking` und `normalization` in `Capabilities`, ohne Vorgabe. Alle drei Einträge setzen `normalization` auf `True`; `masking` ist genau dort `True`, wo `DatasetConfig.mask` die Schicht beschreibt (das prüft der Eintrag beim Laden).
+  - Neues Feld `DatasetConfig.mask: MaskSource | None`, ohne Vorgabe: Asset (so, wie ein Auftrag es nennt), Bandname, Klassen mit Namen (aufsteigend, je einmal, 0 bis 65535), vorgekreuzte Klassen, Beleg (`https`) und ein Hinweis zu den Namen.
+  - `sentinel-2-c1-l2a`: `scl`. `sentinel-2-l2a-zarr3`: `SCL_20m:scl`. `cop-dem-glo-30`: keine Schicht, `masking=False`.
+  - Die Collection veröffentlicht es als `earthx:mask`.
+- **Klassen der SCL [P]:** SentiWiki „S2 Processing“, L2A Algorithms → Scene Classification → Table 3, von Otto am 2026-10-20 gelesen: 0 NO_DATA, 1 SATURATED_OR_DEFECTIVE, 2 CAST_SHADOWS, 3 CLOUD_SHADOWS, 4 VEGETATION, 5 NOT_VEGETATED, 6 WATER, 7 UNCLASSIFIED, 8 CLOUD_MEDIUM_PROBABILITY, 9 CLOUD_HIGH_PROBABILITY, 10 THIN_CIRRUS, 11 SNOW or ICE. Ältere Darstellungen benennen 2 und 7 anders; die Werte sind gleich. Der Hinweis steht im Hilfetext (`MaskSource.note`).
+- **`mask` v1 (§5.2):** `pixel`, `{T1, T2}`. Parameter `source` (Bandname der Schicht) und `classes` (aufsteigend, je einmal, 1 bis 64 Werte). Ein Pixel fällt in allen übrigen Bändern aus, wo die Schicht eine der Klassen trägt oder selbst maskiert ist (nodata, F3); die Schicht verlässt das Ergebnis. Der Vergleich ist exakt (`numpy.isin`), es gibt keine Gleitkommarechnung. Das Ergebnis trägt `earthx:mask` (`source`, `classes`).
+- **`normalize` v1 (§5.2):** `pixel`, `{T1, T2}`. Parameter `in_min`, `in_max`, `out_min`, `out_max`, `clip`, alle Pflicht. Je Band in `float64` in fester Reihenfolge `(x − in_min) / (in_max − in_min) · (out_max − out_min) + out_min`, mit `clip` danach auf den Zielbereich begrenzt; Ergebnis `float32` mit NaN. Ein Bereich für alle Bänder (F4), keine Statistik der Szene (F5).
+- **Anwendbarkeit (§5.3):** `Operator.dataset_check(config, params)` ist neu, mit Vorgabe „keine Gründe“. `applicable` ruft es mit Parametern auf und nur, wenn die Flags und die Lizenzstufe schon passen. Für `mask` verlangt es, dass `source` das Band der Schicht ist und die Klassen unter den Klassen der Schicht liegen. Ein Rezept, das mit `red` maskiert oder Klasse 12 nennt, wird so mit `422` abgewiesen, in der Annahme wie in der Kachel.
+- **Raster der Schicht (Auflage Otto):** Die 20-m-Schicht kommt über die Regel der verschachtelten Raster (M4-09 F2) mit `nearest` auf das Raster der Bänder. Es entstehen keine neuen Werte; das Ergebnis trägt `earthx:resampled=true`. Beides prüft ein Test.
+- **Faktoren (§5.5):** siehe Plan M4-18a §9, gemessen.
+- **Toleranz (§6.3):** Beide Operatoren sind bitstabil im Sinn von §15c: `mask` rechnet nicht in Gleitkomma, `normalize` nur mit Grundrechenarten und Vergleichen in getrennten numpy-Schritten. Ein Test rechnet beide unter den Einstellungen A und D von `adr/0016` §3.3 und verlangt gleiche SHA-256. Die Kachel gleicht dem Job auf der nativen Ebene bitgleich (COG).
+
 ## 16. Quellen
 
 **Im Repo [P]**
