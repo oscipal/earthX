@@ -162,8 +162,10 @@ def summarize(values: numpy.ndarray) -> BlockSummary:
     wide = values.astype(numpy.float64)
     with numpy.errstate(over="ignore", invalid="ignore"):  # near the float64 limits: no stddev (summary())
         mean = float(wide.sum()) / values.size
-        deviation = wide - mean
-        m2 = float((deviation * deviation).sum())
+        # In place, so a block costs one float64 copy of its values, not three.
+        wide -= mean
+        numpy.multiply(wide, wide, out=wide)
+        m2 = float(wide.sum())
     size = _histogram_size(dtype)
     if kind == "small":
         histogram = numpy.bincount(values.astype(numpy.intp) - int(numpy.iinfo(dtype).min), minlength=size)
