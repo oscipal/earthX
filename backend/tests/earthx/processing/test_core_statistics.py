@@ -29,7 +29,7 @@ CORNER = 55000
 BIN = 2.0**-7
 
 
-def _recipe(aoi: dict, *, dtype: str = "float32", **entry_options) -> dict:
+def _recipe(aoi: dict, *, dtype: str = "float32", step: dict = SCALE_2, **entry_options) -> dict:
     return {
         "recipe_version": 1,
         "inputs": [
@@ -42,7 +42,7 @@ def _recipe(aoi: dict, *, dtype: str = "float32", **entry_options) -> dict:
             }
         ],
         "aoi": aoi,
-        "steps": [SCALE_2],
+        "steps": [step],
         "output": {"kind": "raster", "format": "cog", "dtype": dtype},
     }
 
@@ -163,3 +163,19 @@ def test_an_integer_output_with_nodata_has_exact_percentiles(tmp_path: Path, mon
     _assert_matches(area, data.compressed(), data.size, exact=True)
     assert isinstance(area["percentile_2"], int)
     assert tags["STATISTICS_MINIMUM"] == repr(area["minimum"])
+
+
+def test_a_value_rounded_onto_nodata_is_not_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``uint16`` with nodata 0: a scaled value below 0.5 is written as 0 and reads back as nodata (review M4-32a)."""
+    raw = sources.ramp(300, 300, 100)
+    bare = sources.build_band_cog(tmp_path / "bare.tif", raw, scale=None, offset=None)
+    sources.serve({sources.url("band"): bare}, monkeypatch)
+    shrink = {"op": "scale", "op_version": 1, "params": {"factor": 0.001}}
+    data = _recipe(sources.whole(300, 300), dtype="uint16", step=shrink, scale=None, offset=None)
+    result = _run(data, tmp_path / "work")
+    written, _, tags = _files(result)
+    assert 0 < written.count() < raw.size - 64 - 1000  # many valid inputs became nodata on the way out
+    area = result.properties["bands"][0]["statistics"]
+    _assert_matches(area, written.compressed(), written.size, exact=True)
+    assert area["minimum"] >= 1 and float(tags["STATISTICS_MINIMUM"]) >= 1
+    assert tags == gdal_tags(area)

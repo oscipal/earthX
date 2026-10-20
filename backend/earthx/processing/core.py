@@ -292,7 +292,11 @@ class _Run:
                     self.valid_pixels += int(valid.any(axis=0).sum())
                     inside = mask.read(1, window=window) == 1
                     inside_pixels += int(inside.sum())
-                    _count(numpy.ma.getdata(data), valid, inside, whole, area)
+                    values = numpy.ma.getdata(data)
+                    # A valid value rounded onto an integer nodata reads back as nodata: the statistics count
+                    # what the file says (adr/0014 §15h, "Kollision mit nodata").
+                    written = valid if math.isnan(nodata) else valid & (values != nodata)
+                    _count(values, written, inside, whole, area)
                 dst.write(numpy.ma.filled(data, nodata), window=window)
                 self.tick()
             if mask is not None:
