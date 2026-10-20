@@ -97,6 +97,8 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
   useAppStore.setState({
     datasets,
     selectedDatasetIds: selected,
+    multiSelect: true,
+    lastPickedDatasetId: null,
     datasetId: selected[0] ?? null,
     sections: [],
     openSectionId: null,
@@ -125,6 +127,7 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
     searchContext: null,
     loadingMore: false,
     loadMoreError: null,
+    loadMoreUsed: false,
     fallbackDatasetIds: [],
     sceneNameQuery: '',
     sceneLookupLoading: false,
@@ -198,6 +201,131 @@ describe('toggleDatasetSelected', () => {
   });
 });
 
+describe('one dataset at a time, several only on request (M4-29)', () => {
+  beforeEach(() => reset([]));
+  const state = () => useAppStore.getState();
+
+  it('starts with nothing chosen after loading the catalogue', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ collections: [OPTICAL, DEM] }) })));
+    useAppStore.setState({ datasets: [], multiSelect: false });
+    await state().loadDatasets();
+    expect(state().datasets.length).toBeGreaterThan(0);
+    expect(state().selectedDatasetIds).toEqual([]);
+    expect(state().datasetId).toBeNull();
+  });
+
+  it('a click picks exactly that dataset, the next click replaces it', () => {
+    useAppStore.setState({ multiSelect: false });
+    state().toggleDatasetSelected('optical');
+    expect(state().selectedDatasetIds).toEqual(['optical']);
+    expect(state().datasetId).toBe('optical');
+    state().toggleDatasetSelected('dem');
+    expect(state().selectedDatasetIds).toEqual(['dem']);
+    expect(state().datasetId).toBe('dem');
+  });
+
+  it('a second click on the chosen dataset drops it', () => {
+    useAppStore.setState({ multiSelect: false });
+    state().toggleDatasetSelected('dem');
+    state().toggleDatasetSelected('dem');
+    expect(state().selectedDatasetIds).toEqual([]);
+    expect(state().datasetId).toBeNull();
+  });
+
+  it('with the switch on, clicks switch each dataset on and off', () => {
+    state().setMultiSelect(true);
+    state().toggleDatasetSelected('optical');
+    state().toggleDatasetSelected('dem');
+    expect(state().selectedDatasetIds).toEqual(['optical', 'dem']);
+    state().toggleDatasetSelected('optical');
+    expect(state().selectedDatasetIds).toEqual(['dem']);
+  });
+
+  it('ending the multiple choice keeps the dataset clicked last', () => {
+    state().setMultiSelect(true);
+    state().toggleDatasetSelected('dem');
+    state().toggleDatasetSelected('optical');
+    state().setMultiSelect(false);
+    expect(state().multiSelect).toBe(false);
+    expect(state().selectedDatasetIds).toEqual(['optical']);
+    expect(state().datasetId).toBe('optical');
+  });
+
+  it('ending it after the last-clicked one was switched off keeps the active one', () => {
+    state().setMultiSelect(true);
+    state().toggleDatasetSelected('optical');
+    state().toggleDatasetSelected('dem');
+    state().toggleDatasetSelected('dem');
+    state().setMultiSelect(false);
+    expect(state().selectedDatasetIds).toEqual(['optical']);
+  });
+
+  it('ending it with nothing chosen leaves nothing chosen and the results alone', () => {
+    state().setMultiSelect(true);
+    state().setMultiSelect(false);
+    expect(state().selectedDatasetIds).toEqual([]);
+    expect(state().datasetId).toBeNull();
+  });
+
+  it('ending it with one chosen keeps the results', () => {
+    state().setMultiSelect(true);
+    state().toggleDatasetSelected('optical');
+    useAppStore.setState({ notice: 'x' });
+    state().setMultiSelect(false);
+    expect(state().notice).toBe('x');
+  });
+
+  it('does not search without a dataset and says why', async () => {
+    await state().runSearch();
+    expect(state().error).toBe('Choose a dataset to search.');
+    expect(state().searching).toBe(false);
+  });
+});
+
+describe('"Select all" and "Clear selection" (M4-29)', () => {
+  const item = (id: string) => ({ id, bbox: null, properties: {}, assets: {} }) as StacItem;
+  const groups = [
+    { key: ['a'], label: 'A', items: [item('a1'), item('a2')] },
+    { key: ['b'], label: 'B', items: [item('b1')] },
+  ] as never;
+  beforeEach(() => {
+    reset(['optical']);
+    useAppStore.setState({ items: [item('a1'), item('a2'), item('b1')], groups });
+  });
+  const state = () => useAppStore.getState();
+
+  it('selects every loaded scene', () => {
+    state().selectAllLoaded();
+    expect(state().selectedIds).toEqual(['a1', 'a2', 'b1']);
+  });
+
+  it('selects exactly one group, and a second call deselects it again', () => {
+    state().toggleGroupSelected(1);
+    expect(state().selectedIds).toEqual(['b1']);
+    state().toggleGroupSelected(0);
+    expect(state().selectedIds).toEqual(['b1', 'a1', 'a2']);
+    state().toggleGroupSelected(0);
+    expect(state().selectedIds).toEqual(['b1']);
+  });
+
+  it('completes a half-selected group instead of clearing it', () => {
+    state().toggleSelected('a1');
+    state().toggleGroupSelected(0);
+    expect(state().selectedIds.sort()).toEqual(['a1', 'a2']);
+  });
+
+  it('ignores a group that does not exist', () => {
+    state().toggleGroupSelected(9);
+    expect(state().selectedIds).toEqual([]);
+  });
+
+  it('clears the selection', () => {
+    state().selectAllLoaded();
+    state().clearSelection();
+    expect(state().selectedIds).toEqual([]);
+  });
+});
+
 describe('runSearch over several datasets', () => {
   it('asks every ticked dataset in one request', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([]))));
@@ -217,7 +345,7 @@ describe('runSearch over several datasets', () => {
     reset([]);
     vi.stubGlobal('fetch', vi.fn());
     await useAppStore.getState().runSearch();
-    expect(useAppStore.getState().error).toBe('Pick a dataset first.');
+    expect(useAppStore.getState().error).toBe('Choose a dataset to search.');
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -820,6 +948,16 @@ describe('"Load more" (M3-10 F1)', () => {
     await loadMore();
     expect(useAppStore.getState().searchContext?.nextToken).toBeNull();
     expect(useAppStore.getState().loadMoreError).toBeNull();
+    expect(useAppStore.getState().loadMoreUsed).toBe(true);
+  });
+
+  it('does not call the end before "Load more" was pressed, and forgets it with the next search', async () => {
+    vi.stubGlobal('fetch', routed(byToken));
+    await search();
+    expect(useAppStore.getState().loadMoreUsed).toBe(false);
+    await loadMore();
+    await search();
+    expect(useAppStore.getState().loadMoreUsed).toBe(false);
   });
 
   it('continues the same search with the token and puts each new scene in its own dataset', async () => {
