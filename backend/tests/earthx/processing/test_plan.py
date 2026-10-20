@@ -142,7 +142,7 @@ class TestEstimate:
         step = {"op": "band_math", "op_version": 1, "params": {"expression": "(nir - red) / (nir + red)"}}
         cost = estimate(recipe_from_data(recipe_data(steps=[step]), REGISTRY), REGISTRY)
         assert cost.output_bytes == cost.output_pixels * 4
-        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.0)
+        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * 1.2)  # band math's factor (adr/0014 §15k)
 
     def test_a_geographic_source_is_sized_in_degrees_not_in_metres_as_degrees(self) -> None:
         """The DEM is EPSG:4326 at 30 m: a reprojection of it was once 30 degrees per pixel, an UnsupportedRecipe."""
