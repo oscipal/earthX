@@ -151,6 +151,9 @@ class TestMetadata:
         assert MASK.lineage(_params(3, 8)) == "mask: scl classes 3, 8"
         assert MASK.properties(_params(3, 8)) == {"earthx:mask": {"source": "scl", "classes": [3, 8]}}
 
+    def test_the_cost_factor_is_the_measured_one(self) -> None:
+        assert MASK.cost_factor(_params(3)) == 0.1
+
     def test_it_runs_as_a_tile_and_as_a_job(self) -> None:
         assert {tier.value for tier in MASK.tiers} == {"T1", "T2"} and MASK.kind == "pixel"
 

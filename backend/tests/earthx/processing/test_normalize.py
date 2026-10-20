@@ -133,6 +133,9 @@ class TestMetadata:
         assert [(b.name, b.data_type) for b in result.bands] == [("a", "float32"), ("b", "float32")]
         assert all(numpy.isnan(b.nodata) for b in result.bands) and result.resampled is True
 
+    def test_the_cost_factor_is_the_measured_one(self) -> None:
+        assert NORMALIZE.cost_factor(_params()) == 0.2
+
     def test_lineage(self) -> None:
         assert NORMALIZE.lineage(_params(-1, 1, 0, 255)) == "normalize: [-1, 1] to [0, 255], clipped"
         assert NORMALIZE.lineage(_params(clip=False)) == "normalize: [0, 1] to [0, 255]"

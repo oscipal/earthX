@@ -134,7 +134,7 @@ MASK = Operator(
     ),
     tiers=frozenset({Tier.T1, Tier.T2}),
     kind="pixel",
-    cost_factor=lambda params: 0.2,
+    cost_factor=lambda params: 0.1,
     transform=_transform,
     run=_run,
     lineage=_lineage,
