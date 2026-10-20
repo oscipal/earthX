@@ -63,6 +63,9 @@ describe('paramsForm', () => {
     expect(f[0].description).toBe('No default.');
     expect(paramsFrom(f, { how: 'far' })).toEqual({ params: { how: 'far' }, errors: {} });
     expect(paramsFrom(f, { how: 'other' }).errors).toEqual({ how: 'Pick one of the options.' });
+    const bare = fields({ type: 'object', properties: { how: { oneOf: [{ const: 'a' }, { const: 'b' }] } } });
+    expect(bare[0]).toMatchObject({ kind: 'enum', options: ['a', 'b'] });
+    expect(bare[0].optionHelp).toBeUndefined();
   });
 
   it.each([
@@ -70,6 +73,8 @@ describe('paramsForm', () => {
     ['a oneOf of numbers', { type: 'object', properties: { x: { oneOf: [{ const: 1 }, { const: 2 }] } } }],
     ['a oneOf with more than constants', { type: 'object', properties: { x: { oneOf: [{ const: 'a', pattern: 'a' }] } } }],
     ['an empty oneOf', { type: 'object', properties: { x: { oneOf: [] } } }],
+    ['a oneOf naming a constant twice', { type: 'object', properties: { x: { oneOf: [{ const: 'a' }, { const: 'a' }] } } }],
+    ['a oneOf next to an enum', { type: 'object', properties: { x: { enum: ['a'], oneOf: [{ const: 'a' }] } } }],
     ['a oneOf of type number', { type: 'object', properties: { x: { type: 'number', oneOf: [{ const: 'a' }] } } }],
     ['a nested object', { type: 'object', properties: { x: { type: 'object', properties: {} } } }],
     ['an array', { type: 'object', properties: { x: { type: 'array', items: { type: 'number' } } } }],

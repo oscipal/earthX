@@ -131,6 +131,7 @@ const OPTION_KEYWORDS = new Set(['const', 'title', 'description']);
 function documentedChoice(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>): Field | string {
   const variants = schema.oneOf;
   if (schema.type !== undefined && schema.type !== 'string') return `oneOf of type ${String(schema.type)}`;
+  if ('enum' in schema) return `enum next to oneOf in ${name}`;
   if (!Array.isArray(variants) || variants.length === 0) return `oneOf of ${name} is not a list of constants`;
   const options: string[] = [];
   const optionHelp: Record<string, string> = {};
@@ -143,10 +144,11 @@ function documentedChoice(name: string, schema: JsonSchema, base: Omit<Field, 'k
     ) {
       return `oneOf of ${name} is not a list of text constants`;
     }
+    if (options.includes(variant.const)) return `oneOf of ${name} names ${variant.const} twice`;
     options.push(variant.const);
     if (typeof variant.description === 'string') optionHelp[variant.const] = variant.description;
   }
-  return { ...base, kind: 'enum', options, optionHelp };
+  return { ...base, kind: 'enum', options, ...(Object.keys(optionHelp).length > 0 ? { optionHelp } : {}) };
 }
 
 // The form for one step's `params` schema, `defs` being the `$defs` of the
