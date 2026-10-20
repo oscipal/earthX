@@ -22,7 +22,16 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from earthx.gateway import CachingResolver, Policy, Resolver, UrlRejected, host_of, resolve_host
+from earthx.gateway import (
+    CachingResolver,
+    Policy,
+    Resolver,
+    UrlRejected,
+    UrlTooLong,
+    host_of,
+    inspect_url,
+    resolve_host,
+)
 from earthx.gateway.gdal import gdal_options
 from earthx.readers.errors import AssetRejected
 
@@ -67,6 +76,23 @@ def hosts_for(hrefs: Iterable[str]) -> frozenset[str]:
     if not hosts:
         raise AssetRejected("a run needs at least one input address")
     return frozenset(hosts)
+
+
+def check_hrefs(hrefs: Iterable[str], allowed_hosts: Iterable[str]) -> None:
+    """Every address passes ``inspect_url`` against ``allowed_hosts``, the check `api` makes at acceptance (adr/0014 §8).
+
+    For whoever takes a recipe from outside the platform (the local runner, adr/0016 F4).
+    Raises :class:`~earthx.readers.errors.AssetRejected`; the text names the reason, never
+    the address. Nothing is resolved or fetched.
+    """
+    policy = Policy(allowed_hosts=frozenset(allowed_hosts))
+    for href in hrefs:
+        try:
+            inspect_url(href, policy)
+        except UrlRejected as error:
+            raise AssetRejected(f"an input address is not allowed ({error.reason})") from None
+        except UrlTooLong:
+            raise AssetRejected("an input address is too long") from None
 
 
 def read_access_for(hrefs: Iterable[str]) -> ReadAccess:

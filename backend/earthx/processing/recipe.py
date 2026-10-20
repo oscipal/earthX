@@ -45,7 +45,7 @@ import earthx
 from earthx.access.crop_rules import RESOLUTION_FACTORS
 from earthx.access.resolve import ReaderKind, ResolvedAsset
 from earthx.processing.errors import RecipeInvalid, UnknownOperator
-from earthx.readers import hosts_for
+from earthx.readers import check_hrefs, hosts_for
 
 __all__ = [
     "HASH_METHOD",
@@ -69,6 +69,7 @@ __all__ = [
     "canonical_bytes",
     "document_bytes",
     "engine_versions",
+    "input_hosts",
     "input_version",
     "job_recipe_document",
     "loads_i_json",
@@ -600,6 +601,18 @@ def recipe_hosts(recipe: Recipe) -> tuple[str, ...]:
     :class:`~earthx.readers.errors.AssetRejected` when an address names no host.
     """
     return tuple(sorted(hosts_for(recipe.hrefs())))
+
+
+def input_hosts(entry: Input, allowed_hosts: Sequence[str]) -> tuple[str, ...]:
+    """The hosts one input reads, sorted, once every address passes the check `api` makes (adr/0016 F4).
+
+    Scheme, credentials, port and host against ``allowed_hosts``, the ``asset_hosts`` of
+    the input's dataset; :class:`~earthx.readers.errors.AssetRejected` for an address
+    that does not pass. For the local runner, which takes a recipe from outside.
+    """
+    hrefs = [resolved.asset.href for resolved in entry.resolved]
+    check_hrefs(hrefs, allowed_hosts)
+    return tuple(sorted(hosts_for(hrefs)))
 
 
 def input_version(item: Mapping[str, Any], asset: str, *, etag: str | None = None) -> InputVersion | None:

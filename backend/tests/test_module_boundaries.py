@@ -28,8 +28,12 @@ ALLOWED_IMPORTS = {
     "discovery": {"adapters", "catalog", "gateway"},
     "identity": set(),
     "objectstore": set(),
+    "runner": {"processing", "catalog"},
 }
 ALL_MODULES = set(ALLOWED_IMPORTS) | {"api", "datasets"}
+
+#: adr/0016 F2: of `catalog`, the runner reaches only these two.
+RUNNER_CATALOG_MODULES = {"datasets", "registry"}
 
 
 @pytest.fixture(scope="module")
@@ -49,6 +53,14 @@ def _root_modules() -> set[str]:
     """
     root = CONFIG.parent / "backend" / "earthx"
     return {path.stem for path in root.glob("*.py") if path.stem != "__init__"}
+
+
+def _catalog_submodules() -> set[str]:
+    """Every module and package of `catalog`, read from disk like :func:`_root_modules`."""
+    root = CONFIG.parent / "backend" / "earthx" / "catalog"
+    files = {path.stem for path in root.glob("*.py") if path.stem != "__init__"}
+    packages = {path.parent.name for path in root.glob("*/__init__.py")}
+    return files | packages
 
 
 def _modules(parser: configparser.ConfigParser, section: str, option: str) -> set[str]:
@@ -77,7 +89,14 @@ def test_forbidden_modules_are_the_complement_of_the_allowed_ones(
 ) -> None:
     forbidden = _modules(config, f"importlinter:contract:{module}", "forbidden_modules")
     expected = ALL_MODULES - ALLOWED_IMPORTS[module] - {module}
+    if module == "runner":
+        expected |= {f"catalog.{name}" for name in _catalog_submodules() - RUNNER_CATALOG_MODULES}
     assert forbidden == expected
+
+
+def test_the_two_catalog_modules_the_runner_may_import_exist() -> None:
+    """adr/0016 F2: the complement above forbids every other module of `catalog`, a new one included."""
+    assert RUNNER_CATALOG_MODULES <= _catalog_submodules()
 
 
 def test_datasets_stay_isolated(config: configparser.ConfigParser) -> None:
@@ -102,7 +121,13 @@ def test_module_boundary_contracts_only_count_direct_imports(
 
 
 @pytest.mark.parametrize(
-    "contract", ["datasets-isolated", "no-database-in-worker-core", "no-object-store-in-worker-core"]
+    "contract",
+    [
+        "datasets-isolated",
+        "no-database-in-worker-core",
+        "no-object-store-in-worker-core",
+        "no-platform-services-in-runner",
+    ],
 )
 def test_the_chain_sensitive_contracts_keep_counting_chains(
     config: configparser.ConfigParser, contract: str
@@ -160,6 +185,19 @@ def test_the_worker_core_reaches_no_object_store(config: configparser.ConfigPars
     section = "importlinter:contract:no-object-store-in-worker-core"
     assert _modules(config, section, "source_modules") == {"processing"}
     assert _modules(config, section, "forbidden_modules") == {"objectstore", "botocore"}
+
+
+def test_the_local_runner_reaches_no_database_and_no_object_store(config: configparser.ConfigParser) -> None:
+    """adr/0016 F2 with its condition: the chain rule of the core, in a contract of its own (M4 R2)."""
+    section = "importlinter:contract:no-platform-services-in-runner"
+    assert _modules(config, section, "source_modules") == {"runner"}
+    assert _modules(config, section, "forbidden_modules") == {
+        "psycopg",
+        "psycopg_pool",
+        "asyncpg",
+        "objectstore",
+        "botocore",
+    }
 
 
 def test_every_module_exists_as_a_package() -> None:

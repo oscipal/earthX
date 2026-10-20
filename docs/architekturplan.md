@@ -142,6 +142,7 @@ flowchart TB
 | `discovery` | Harvester, Normalisierung, Verifikation, Review | `adapters`, `catalog`, `gateway` |
 | `identity` | Konten, API-Keys, Quotas, Audit | — |
 | `objectstore` | Zugang zum eigenen Objektspeicher: Upload, signierte URLs, Löschen, Prüfen der Ablaufregel; ein Endpunkt aus der Konfiguration (`adr/0015`) | nichts Fachliches |
+| `runner` | Lokaler Runner offline: Rezeptdatei lesen und prüfen, Hosts nennen, Kern ausführen, Ergebnis und Provenienz in einen lokalen Ordner schreiben (`adr/0016`) | `processing`; aus `catalog` nur `datasets` und `registry` (Hosts der Registry, F4); kein psycopg, kein `objectstore` |
 | `api` | HTTP-Routen, setzt alles zusammen | alle |
 | `datasets/<id>` | Datensatzspezifika, die kein generischer Operator abdeckt | bleibt isoliert, wird von nichts Generischem importiert |
 
@@ -186,6 +187,13 @@ API – Processes und erklärt **keine Konformität** (`/conformance` leer; Eing
 per Referenz sind mit B8 unvereinbar und werden mit `400` abgewiesen). `api`
 öffnet dafür den Objektspeicher (Leseschlüssel, nur Signieren) und startet nicht
 ohne dessen Konfiguration. Keine Importregel ändert sich.
+
+**Nachtrag 2026-10-20 (M4-16a, `adr/0016` F2):** Neue Zeile `runner`, die dritte
+Hülle um den Kern neben `jobs` und dem `tiler`. Sie darf `processing` und aus
+`catalog` nur `datasets` und `registry` importieren; der Kettenvertrag
+`no-platform-services-in-runner` schließt psycopg, `psycopg_pool`, `asyncpg`,
+`objectstore` und `botocore` aus, auch über Ketten. Die Verträge der übrigen
+Module verbieten den Import von `runner`. Keine bestehende Regel wird gelockert.
 
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 

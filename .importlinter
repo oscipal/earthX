@@ -24,6 +24,8 @@
 ; M4-06 (adr/0015 §4.2): `objectstore` is a tenth module-boundary contract of
 ; the same kind, and `no-object-store-in-worker-core` a third one that counts
 ; chains.
+; M4-16a (adr/0016 F2): `runner` is an eleventh module-boundary contract, and
+; `no-platform-services-in-runner` a fourth one that counts chains.
 
 [importlinter]
 root_package = earthx
@@ -47,6 +49,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:catalog]
 name = catalog imports only gateway
@@ -65,6 +68,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:adapters]
 name = adapters import only gateway and catalog
@@ -82,6 +86,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:readers]
 name = readers import only gateway
@@ -100,6 +105,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:access]
 name = access imports only readers and catalog
@@ -117,6 +123,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:processing]
 name = processing imports only access, readers and catalog
@@ -133,6 +140,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:jobs]
 name = jobs import only processing and objectstore
@@ -150,6 +158,7 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.runner
 
 [importlinter:contract:discovery]
 name = discovery imports only adapters, catalog and gateway
@@ -166,6 +175,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:identity]
 name = identity imports nothing else
@@ -185,6 +195,7 @@ forbidden_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 
 [importlinter:contract:objectstore]
 name = objectstore imports nothing domain-specific
@@ -204,6 +215,38 @@ forbidden_modules =
     earthx.identity
     earthx.api
     earthx.datasets
+    earthx.runner
+
+[importlinter:contract:runner]
+name = runner imports only processing, catalog.datasets and catalog.registry
+type = forbidden
+allow_indirect_imports = True
+; adr/0016 F2: the local runner wraps the core like `jobs` does, and reads the
+; registry of its own image for the hosts of a recipe (F4). import-linter has no
+; "only these submodules", so every other module of `catalog` is named here;
+; test_module_boundaries.py checks the list against the files on disk.
+source_modules =
+    earthx.runner
+forbidden_modules =
+    earthx.gateway
+    earthx.adapters
+    earthx.readers
+    earthx.access
+    earthx.jobs
+    earthx.discovery
+    earthx.identity
+    earthx.api
+    earthx.datasets
+    earthx.objectstore
+    earthx.catalog.collection
+    earthx.catalog.coverage
+    earthx.catalog.geocode_cache
+    earthx.catalog.load
+    earthx.catalog.local_coverage
+    earthx.catalog.pgstac
+    earthx.catalog.schema
+    earthx.catalog.search_cache
+    earthx.catalog.stats_cache
 
 [importlinter:contract:datasets-isolated]
 name = nothing generic imports a dataset module
@@ -219,6 +262,7 @@ source_modules =
     earthx.discovery
     earthx.identity
     earthx.objectstore
+    earthx.runner
 forbidden_modules =
     earthx.datasets
 
@@ -245,6 +289,21 @@ type = forbidden
 source_modules =
     earthx.processing
 forbidden_modules =
+    earthx.objectstore
+    botocore
+
+[importlinter:contract:no-platform-services-in-runner]
+name = the local runner reaches no database and no object store (adr/0016 F2)
+type = forbidden
+; The condition on F2: the same chain rule as for `processing`, in a contract of
+; its own, since the two above are named for the core (M4 R2 keeps concerns apart).
+; Counts chains: `runner -> catalog.datasets -> ... -> psycopg` is the violation.
+source_modules =
+    earthx.runner
+forbidden_modules =
+    psycopg
+    psycopg_pool
+    asyncpg
     earthx.objectstore
     botocore
 
@@ -279,6 +338,7 @@ source_modules =
     earthx.api
     earthx.datasets
     earthx.objectstore
+    earthx.runner
 ; `httpx2` and `obstore` joined the list in M2-04 (adr/0006 §5 "Zu Frage 6",
 ; Otto 20.09.2026): `rio-tiler` fetches STAC items over `httpx2`, and
 ; `titiler.xarray` would bring `obstore` with M2-09. Both are clients, so both

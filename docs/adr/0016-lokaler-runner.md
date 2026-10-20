@@ -5,6 +5,8 @@
     Option 1); die Kleinentscheidungen gelten.
   - Dazu Auflagen zu F2, F8 und F10 und die Korrektur eines Nebenfunds. Sie
     stehen in §12a und sind in §0, §5, §7.2 und §10 eingearbeitet.
+  - **Nachtrag §12b (2026-10-20, M4-16):** vier Abweichungen beim Umsetzen,
+    von Otto entschieden; der Text oben bleibt stehen, maßgeblich ist §12b.
 - **Datum:** 2026-10-05
 - **Aufgabe:** M4-05 laut `docs/plans/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode und keine Änderung an
@@ -947,6 +949,33 @@ von Docker Desktop in der Anleitung. **Angenommen.**
   wirken lässt.
 
 ---
+
+## 12b. Nachtrag vom 2026-10-20: vier Abweichungen beim Umsetzen (M4-16)
+
+Otto hat den Plan von M4-16 am 2026-10-20 freigegeben
+(`plans/m4-16-lokaler-runner.md` §4, §7). Der Code hatte sich seit diesem ADR
+an vier Stellen anders entwickelt (M4-08b, M4-11a, M4-14). Der Originaltext in
+§0, §4.2, §6.1, §6.3 und §7.2 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+| Stelle hier | Was dort steht | Was gilt jetzt | Grund [P] |
+|---|---|---|---|
+| §6.1, §7.2: „Felder der Provenienz in der Eingabe werden abgewiesen“ | jede Provenienz in der Eingabe → Exit-Code 2 | **Genau ein Block `provenance` auf oberster Ebene wird abgetrennt und mit dem Modell `Provenance` geprüft; er muss `execution: "cloud"` tragen.** Fehlt er, ist er ungültig oder sagt er `local`, endet der Lauf mit Exit-Code 2; ebenso Felder der Provenienz (`execution`, `runner_version`, `self_attested`) neben dem Rezept. Der Block liefert nur die Attribution und die Versionen der Cloud zum Vergleich (K1 von M4-16) | Jede `recipe.json` eines Ergebnisses trägt den Block (`processing.recipe.job_recipe_document`, `adr/0014` §10.1); wörtlich genommen nähme der Runner keine echte Datei an (Frage 3) |
+| §0 Punkt 5, §6.3, F5: „dieselben Dateien wie in der Cloud“ mit `citation.bib` und `attribution.txt` | `result.tif`, `recipe.json`, `citation.bib`, `attribution.txt`, `provenance.json` | **`result.tif`, `mask.tif`, `recipe.json` (die Bytes der Eingabe) und `provenance.json`; keine `citation.bib`, keine `attribution.txt`.** Die Attribution steht in `provenance.json`; `citation.bib` stammt aus dem Download | Der Kern schreibt bei einem Raster-Job nur `result.tif` und `mask.tif`; `recipe.json` und `citation.bib` baut `api` aus der Registry, und der Runner darf `api` nicht importieren (F2) (Frage 4) |
+| §6.1, Tabelle „Herkunft in M4“: auch das Zuschnitt-ZIP | Rezepte von Job und Zuschnitt | **In M4 rechnet der Runner nur die Ausgabe `raster`** (auch das Mosaik eines Überflugs). Ein Rezept mit `crop` (Export-Job, synchroner Zuschnitt) endet mit Exit-Code 2: Ein Zuschnitt kommt von der Plattform | `crop` braucht Beilagen, die `api` baut (`processing/export.py`, `Attachments`); im Runner kämen sie ungeprüft vom Nutzer (Frage 2) |
+| §4.2 Exit-Codes, §7.2 Teil 2: `run` ohne Netz → 4 | 3 „Host abgewiesen“, 4 „Quelle nicht erreichbar oder fehlerhaft“ | **3 nur für die Prüfung vor dem Lesen** (Datensatz unbekannt, Host nicht in `asset_hosts`, Adresse ohne Host). **Alles beim Lesen ist 4**, auch jede Ablehnung durch `gateway`. Der Compose-Job erwartet unter `--network none` weiter 4 | Ohne Netz scheitert zuerst die Namensauflösung: `gateway.resolve_host` wirft `AddressRejected`, `failure_kind` nennt das `rejected`; der Runner sieht nur diesen Namen, weil er `gateway` nicht importieren darf (Frage 6) |
+
+Dazu gelten die Kleinentscheidungen K1–K6 von M4-16 (Plan §4). Daraus für dieses
+ADR: Eine abweichende Version des Kerns in der Datei wird genannt, nicht
+abgewiesen (K1); `provenance.json` trägt `kind: "job"` (K2), den Block
+`source_engine` und die STAC-Properties des Ergebnisses; eigener Kettenvertrag
+`no-platform-services-in-runner` statt einer Quelle mehr in den Verträgen des
+Kerns (K5, Form nach §5).
+
+**Hosts für den Bau in einer Session (zu §3.1, Frage 1, Option 2):** Das
+Basis-Image `python:3.12-slim` (Digest aus M4-16) holt `apt`-Pakete nur von
+`deb.debian.org`, auch die Sicherheitsupdates (Pfad `/debian-security`, Suite
+`trixie-security`) [M, `/etc/apt/sources.list.d/debian.sources` im Image].
+`security.debian.org` kommt in den Quellen dieses Images nicht vor.
 
 ## 13. Quellen
 
