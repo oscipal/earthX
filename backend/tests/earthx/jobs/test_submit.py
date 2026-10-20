@@ -239,6 +239,22 @@ class TestStatus:
         assert (plain.scene_aoi, scenes.scene_aoi) == (False, True)
         assert db.execute("SELECT count(DISTINCT run_id) FROM public.earthx_job").fetchone() == (1,)
 
+    def test_the_origin_of_the_area_is_kept_with_the_job_and_two_orders_on_one_run_keep_their_own(
+        self, db: psycopg.Connection
+    ) -> None:
+        """M4-30: stored, never read, never part of the run or its key."""
+        place = {"attribution": "© OpenStreetMap contributors", "source": "Nominatim"}
+        none = job_status(db, submit(db, make_recipe()))
+        placed = job_status(db, submit(db, make_recipe(), aoi_provenance=place))
+        assert none is not None and placed is not None
+        assert (none.aoi_provenance, placed.aoi_provenance) == (None, place)
+        assert db.execute("SELECT count(DISTINCT run_id) FROM public.earthx_job").fetchone() == (1,)
+        assert "OpenStreetMap" not in str(db.execute("SELECT to_jsonb(r) FROM public.earthx_run r").fetchone())
+
+    def test_an_export_keeps_its_origin_in_its_attachments_not_here(self, db: psycopg.Connection) -> None:
+        with pytest.raises(ValueError, match="attachments"):
+            submit(db, make_export(), attachments=ATTACHMENTS, aoi_provenance={"source": "x"})
+
     def test_a_running_job_shows_its_progress(self, db: psycopg.Connection) -> None:
         run_id, (job_id,) = add_run(db, status="running")
         db.execute("UPDATE public.earthx_run SET progress = 42 WHERE run_id = %s", (run_id,))
@@ -327,6 +343,7 @@ class TestStatus:
             "result",
             "acquired_on",
             "scene_aoi",
+            "aoi_provenance",
         }
         text = repr(status)
         assert "c1:" not in text and HOST not in text and "run_id" not in text

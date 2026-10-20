@@ -166,9 +166,17 @@ class TestWhatItTurnsAway:
         body = await self.refused(rig, order(assets=("red",), steps=[], output=CROP), 413, "size")
         assert "an export job may write" in body["detail"]
 
-    async def test_aoi_provenance_with_a_raster_order_is_a_400(self, rig: Rig) -> None:
+    async def test_aoi_provenance_with_a_raster_order_with_an_area_is_checked_and_taken(self, rig: Rig) -> None:
+        """M4-30: the origin of the area goes with a raster order too; an estimate only checks it."""
         response = await rig.client.post(ESTIMATE, json={"inputs": {"recipe": order(), "aoiProvenance": PLACE}})
-        assert problem(response, 400)["type"].endswith(":order")
+        assert response.status_code == 200, response.text
+
+    async def test_aoi_provenance_with_a_raster_order_without_an_area_is_a_400_that_says_why(self, rig: Rig) -> None:
+        whole = order(steps=[])
+        del whole["aoi"]
+        response = await rig.client.post(ESTIMATE, json={"inputs": {"recipe": whole, "aoiProvenance": PLACE}})
+        body = problem(response, 400)
+        assert body["type"].endswith(":order") and "without aoi" in body["detail"]
         assert rig.source.calls == []
 
     async def test_an_order_that_carries_addresses_or_an_identifier_is_a_400(self, rig: Rig) -> None:

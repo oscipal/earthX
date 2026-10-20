@@ -501,7 +501,8 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
 
     Only the part of the envelope the platform can honour is taken. An input given by
     reference is the part it cannot (F4, B8): nothing is fetched for it. Beside the order,
-    an export may carry ``aoiProvenance`` (M4-11 F4), returned checked as the second value.
+    an export or a raster job with an area may carry ``aoiProvenance`` (M4-11 F4, M4-30), returned
+    checked as the second value.
     """
     try:
         document = loads_i_json(raw)
@@ -520,7 +521,7 @@ def _unwrap(raw: bytes) -> tuple[bytes, dict[str, str] | None]:
         docs.AOI_PROVENANCE,
     }:
         raise Problem(
-            400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an export, {docs.AOI_PROVENANCE!r}"
+            400, f"inputs holds the input {docs.PROCESS_ID!r} and, for an order with an area, {docs.AOI_PROVENANCE!r}"
         )
     provenance = _aoi_provenance(inputs[docs.AOI_PROVENANCE]) if docs.AOI_PROVENANCE in inputs else None
     order = inputs[docs.PROCESS_ID]
@@ -640,6 +641,7 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
                 attachments=accepted.attachments,
                 acquired_on=accepted.acquired_on,
                 scene_aoi=accepted.scene_aoi,
+                aoi_provenance=accepted.aoi_provenance,
             ),
             accepted.recipe,
         )
@@ -1078,7 +1080,11 @@ async def _bundle_response(
     documents = {
         name: text.encode("utf-8")
         for name, text in job_side_files(
-            _config_of(api, body), body, finished=finished, scene_aoi=status.scene_aoi
+            _config_of(api, body),
+            body,
+            finished=finished,
+            scene_aoi=status.scene_aoi,
+            aoi_provenance=status.aoi_provenance,
         ).items()
     }
     documents[RECIPE_FILENAME] = _recipe_bytes(api, body, status)

@@ -29,16 +29,21 @@ from tests.earthx.access.test_download import GOOD_AOI, FakeReader, path
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import NEAR, PLACE, S2, SQUARE, Source, accept, export_order, order, visual_item
 from tests.earthx.api.test_processing_route import (
+    EXECUTION,
+    RESULT,
     TestAMosaic,
     client_for,
+    finish,
     replace_api,
 )
 from tests.earthx.api.test_result_zip_route import (
     FOLDER,
     MASK,
     RASTER,
+    facts,
     mocked,  # noqa: F401 - fixture
     opened,
+    put,
     zipped,
 )
 from tests.earthx.objectstore.conftest import store  # noqa: F401 - fixture
@@ -205,6 +210,82 @@ class TestWholeScenes:
 def _box(bbox: tuple[float, float, float, float]) -> dict[str, Any]:
     west, south, east, north = bbox
     return {"type": "Polygon", "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]}
+
+
+class TestTheOriginOfAPlaceSearchArea:
+    """M4-30 (Otto, 20.10.2026): the line and the properties of the export, from the one function, only with an origin."""
+
+    LINE = "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via Nominatim)"
+
+    @staticmethod
+    async def job(rig: Rig, *, origin: bool) -> str:
+        """A job placed with or without the origin of its area; the run behind it is finished and in the bucket."""
+        inputs: dict[str, Any] = {"recipe": order()}
+        if origin:
+            inputs["aoiProvenance"] = PLACE
+        response = await rig.client.post(EXECUTION, json={"inputs": inputs})
+        assert response.status_code == 201, response.text
+        job_id = response.json()["jobID"]
+        result = {**RESULT, "files_meta": {"result.tif": facts(RASTER), "mask.tif": facts(MASK)}}
+        result_id = finish(rig.db, job_id, result=result)
+        put(rig, result_id, "result.tif", RASTER)
+        put(rig, result_id, "mask.tif", MASK)
+        return job_id
+
+    async def test_with_an_origin_the_notice_names_it_and_the_area_carries_it(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        archive = await zip_of(rig, await self.job(rig, origin=True))
+        assert self.LINE in member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+        area = json.loads(member(archive, dl.AOI_FILENAME))
+        assert area["properties"] == PLACE
+        assert {key: area[key] for key in ("type", "coordinates")} == SQUARE
+        assert "properties" not in json.loads(member(archive, dl.RECIPE_FILENAME))["aoi"]
+
+    async def test_it_is_the_line_and_the_properties_an_export_writes(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        source = Source((S2, visual_item("S2_A")))
+        exported = await accept(export_order(), source, aoi_provenance=PLACE)
+        assert exported.attachments is not None
+        archive = await zip_of(rig, await self.job(rig, origin=True))
+        export_notice = exported.attachments.files[dl.NOTICE_FILENAME]
+        job_notice = member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+        line = next(line for line in export_notice.split("\n\n") if line.startswith("AOI geometry:"))
+        assert line in job_notice.split("\n\n")
+        assert json.loads(exported.attachments.files[dl.AOI_FILENAME])["properties"] == json.loads(
+            member(archive, dl.AOI_FILENAME)
+        )["properties"]
+
+    async def test_without_an_origin_neither_the_line_nor_the_properties_are_there(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        archive = await zip_of(rig, await self.job(rig, origin=False))
+        assert "AOI geometry" not in member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+        assert member(archive, dl.AOI_FILENAME).decode("utf-8") == json.dumps(SQUARE)
+
+    async def test_two_jobs_on_one_run_each_get_their_own_attribution(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        with_origin = await self.job(rig, origin=True)
+        # The same order without the origin attaches to the finished run of the first; nothing is put again.
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": order()}})
+        without = response.json()["jobID"]
+        assert rig.db.execute("SELECT count(*) FROM public.earthx_run").fetchone() == (1,)
+        first, second = await zip_of(rig, with_origin), await zip_of(rig, without)
+        assert self.LINE in member(first, dl.NOTICE_FILENAME).decode("utf-8")
+        assert "AOI geometry" not in member(second, dl.NOTICE_FILENAME).decode("utf-8")
+        assert "properties" in json.loads(member(first, dl.AOI_FILENAME))
+        assert "properties" not in json.loads(member(second, dl.AOI_FILENAME))
+
+    async def test_the_etag_differs_with_and_without_the_origin_and_holds_for_each(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        with_origin = await self.job(rig, origin=True)
+        without = (await rig.client.post(EXECUTION, json={"inputs": {"recipe": order()}})).json()["jobID"]
+        etags = {}
+        for name, job_id in (("with", with_origin), ("without", without)):
+            url = f"/processing/jobs/{job_id}/results/result.zip"
+            first, again = await rig.client.get(url), await rig.client.get(url)
+            assert first.headers["etag"] == again.headers["etag"] and first.content == again.content
+            etags[name] = first.headers["etag"]
+        assert etags["with"] != etags["without"]
 
 
 class TestAnUnfinishedDownload:

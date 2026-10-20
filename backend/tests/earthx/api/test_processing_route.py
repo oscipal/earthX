@@ -1240,9 +1240,13 @@ class TestAnExport:
         problem(response, 400)
         untouched(rig)
 
-    async def test_an_origin_with_a_raster_order_is_a_400(self, rig: Rig) -> None:
-        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": order(), "aoiProvenance": PLACE}})
-        assert problem(response, 400)["type"].endswith(":order")
+    async def test_an_origin_with_a_raster_order_without_an_area_is_a_400_that_says_why(self, rig: Rig) -> None:
+        whole = order(steps=[])
+        del whole["aoi"]
+        response = await rig.client.post(EXECUTION, json={"inputs": {"recipe": whole, "aoiProvenance": PLACE}})
+        body = problem(response, 400)
+        assert body["type"].endswith(":order") and "without aoi" in body["detail"]
+        untouched(rig)
 
     async def test_the_results_are_the_zip_and_the_recipe(self, rig: Rig) -> None:
         job_id = await placed(rig, export_order())
@@ -1483,3 +1487,56 @@ class TestNoEstimateIsA500:
         monkeypatch.setattr("earthx.api.processing_route.estimate", self._raising(RecipeInvalid("no band red_9")))
         response = await rig.client.post("/processing/processes/recipe/estimate", json=envelope(order()))
         assert problem(response, 422)["type"] == "urn:earthx:order-refused:applicable"
+
+
+class TestTheOriginOfTheAreaOfARasterJob:
+    """M4-30 (Otto, 20.10.2026): kept with the job, never with the run, the recipe or the cache key."""
+
+    @staticmethod
+    async def post(rig: Rig, provenance: Any = None, document: dict[str, Any] | None = None) -> httpx.Response:
+        inputs: dict[str, Any] = {"recipe": order() if document is None else document}
+        if provenance is not None:
+            inputs["aoiProvenance"] = provenance
+        return await rig.client.post(EXECUTION, json={"inputs": inputs})
+
+    async def test_it_is_taken_and_kept_with_the_job_only(self, rig: Rig) -> None:
+        response = await self.post(rig, PLACE)
+        assert response.status_code == 201, response.text
+        job_id = response.json()["jobID"]
+        (provenance,) = rig.db.execute(
+            "SELECT aoi_provenance FROM public.earthx_job WHERE job_id = %s", (job_id,)
+        ).fetchone()  # type: ignore[misc]
+        assert provenance == PLACE
+        (body,) = rig.db.execute("SELECT body FROM public.earthx_recipe").fetchone()  # type: ignore[misc]
+        assert "properties" not in body["aoi"] and "OpenStreetMap" not in json.dumps(body)
+        (run,) = rig.db.execute("SELECT to_jsonb(r) FROM public.earthx_run r").fetchone()  # type: ignore[misc]
+        assert "OpenStreetMap" not in json.dumps(run), "not with the run"
+
+    async def test_without_it_the_job_has_none(self, rig: Rig) -> None:
+        job_id = (await self.post(rig)).json()["jobID"]
+        row = rig.db.execute("SELECT aoi_provenance FROM public.earthx_job WHERE job_id = %s", (job_id,)).fetchone()
+        assert row == (None,)
+
+    async def test_equal_orders_with_and_without_it_share_one_run_and_each_job_keeps_its_own(self, rig: Rig) -> None:
+        with_origin = (await self.post(rig, PLACE)).json()["jobID"]
+        without = (await self.post(rig)).json()["jobID"]
+        other = (await self.post(rig, {"source": "Somewhere"})).json()["jobID"]
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (1, 3), "the cache key is the same"
+        rows = dict(rig.db.execute("SELECT job_id, aoi_provenance FROM public.earthx_job").fetchall())
+        assert rows == {with_origin: PLACE, without: None, other: {"source": "Somewhere"}}
+        bodies = [row[0] for row in rig.db.execute("SELECT body - 'recipe_id' FROM public.earthx_recipe").fetchall()]
+        assert len(bodies) == 3 and bodies[0] == bodies[1] == bodies[2], "the recipe, and with it the hash, is the same"
+
+    @pytest.mark.parametrize("provenance", [{}, {"other": "x"}, {"source": "two\nlines"}, {"source": 7}, "OSM"])
+    async def test_a_malformed_origin_is_a_400_and_nothing_is_fetched(self, rig: Rig, provenance: Any) -> None:
+        response = await rig.client.post(
+            EXECUTION, json={"inputs": {"recipe": order(), "aoiProvenance": provenance}}
+        )
+        problem(response, 400)
+        untouched(rig)
+
+    async def test_the_estimate_of_the_panel_needs_none(self, rig: Rig) -> None:
+        response = await rig.client.post(
+            "/processing/processes/recipe/estimate", json={"inputs": {"recipe": order()}}
+        )
+        assert response.status_code == 200

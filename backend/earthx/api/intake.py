@@ -169,6 +169,9 @@ class AcceptedOrder:
     #: The order named whole scenes and no area, so the AOI of its recipe is the union of their
     #: footprints (M4-30). Kept with the job: the recipe cannot tell it from an area somebody drew.
     scene_aoi: bool = False
+    #: Where the area of a raster order came from, if the person said (M4-30). Like ``attachments`` for an
+    #: export, it is kept with the job and named in the files of its ZIP; never in the recipe or its hash.
+    aoi_provenance: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,9 +209,9 @@ async def accept_order(
 ) -> AcceptedOrder:
     """The order as a recipe with a ``recipe_id`` — or an :class:`OrderRefused` (module docstring).
 
-    ``aoi_provenance`` (M4-11 F4) is where a place-search AOI came from (``attribution``,
-    ``license``, ``source``), checked by the caller; it only goes into the side files of
-    an export, never into the recipe or its hash.
+    ``aoi_provenance`` (M4-11 F4, M4-30) is where a place-search AOI came from (``attribution``,
+    ``license``, ``source``), checked by the caller; it only goes into the side files of an export
+    or of a raster job's ZIP, never into the recipe or its hash.
     """
     try:
         accepted = await _accept(raw, registry, operators, item_source, gateway, aoi_provenance)
@@ -249,7 +252,7 @@ async def estimate_order(
 
     Stages 1 to 6 of :func:`accept_order`, then the same checks of hosts and band names
     on a recipe without versions. No request to an asset is made. ``aoi_provenance`` is
-    only checked (an export's alone, M4-11 F4); an estimate builds no side files.
+    only checked (M4-11 F4, M4-30); an estimate builds no side files.
     """
     try:
         prepared = await _prepare(raw, registry, operators, item_source, aoi_provenance)
@@ -283,8 +286,11 @@ async def _prepare(
         raise OrderRefused(422, str(error), "order") from None
     entry = _check_scope(request)
     export = isinstance(request.output, CropOutput)
-    if aoi_provenance is not None and not export:
-        raise OrderRefused(400, "aoiProvenance belongs to an export (the output crop) only", "order")
+    if aoi_provenance is not None and request.aoi is None:
+        # Whole scenes have no area to attribute: the file is the union of their footprints (M4-30).
+        raise OrderRefused(
+            400, "aoiProvenance says where the area of the order came from; an order without aoi has none", "order"
+        )
 
     try:
         config = dataset_config(registry, entry.dataset)
@@ -349,6 +355,7 @@ async def _accept(
             prepared.skipped,
             acquired_on=acquired_on,
             scene_aoi=prepared.scene_aoi,
+            aoi_provenance=dict(aoi_provenance) if aoi_provenance else None,
         )
     kept = {item_id for group in prepared.groups for item_id in group}
     attachments = export_attachments(
@@ -493,14 +500,21 @@ SCENE_AOI_PROPERTIES = {"earthx:aoi": "union of the footprints of the scenes; th
 
 
 def job_side_files(
-    config: DatasetConfig | None, body: Mapping[str, Any], *, finished: datetime, scene_aoi: bool
+    config: DatasetConfig | None,
+    body: Mapping[str, Any],
+    *,
+    finished: datetime,
+    scene_aoi: bool,
+    aoi_provenance: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """The side files of a raster job's ZIP, built at the download from the job's own recipe (M4-30).
 
     The same three files and the same functions as the export and the crop (:func:`side_files`), not
     stored: a result is shared between orders, the ZIP of each is its own. Built from ``finished``
     alone, so that two requests give the same bytes and the ETag of the ZIP holds. ``scene_aoi``
-    marks ``aoi.geojson`` as the union of the scenes' footprints where the recipe's area is that.
+    marks ``aoi.geojson`` as the union of the scenes' footprints where the recipe's area is that;
+    ``aoi_provenance`` is the origin of a place-search area, which goes into the same ``properties``
+    and the same line of the notice as in an export. An order has the one or the other.
     What the recipe does not keep — the groups the AOI did not touch, which the answer to the order
     named once — is not in the notice. A dataset the registry no longer knows has no notice and no
     citation to build: the area is all there is.
@@ -509,6 +523,8 @@ def job_side_files(
     aoi = dict(body["aoi"])
     if scene_aoi:
         aoi["properties"] = dict(SCENE_AOI_PROPERTIES)
+    elif aoi_provenance:
+        aoi["properties"] = dict(aoi_provenance)
     if config is None:
         return {AOI_FILENAME: json.dumps(aoi)}
     return side_files(
