@@ -934,9 +934,11 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a` (oder `cop-dem-glo-30`),
   der Server prüft je Auftrag, ob die Szenen dazu passen). Der Schlüssel des Batches ist der
   kanonische Text aller Aufträge: Jede Änderung an Schritten, Bändern, Fläche oder Auswahl
   blendet die Schätzung aus, wie bei einem Auftrag (K4 aus M4-13). **Ein Datensatz:**
-  trägt eine Szene eine andere `collection` als der Datensatz des Auftrags, entsteht kein
+  wurde eine Szene unter einem anderen Datensatz gefunden als dem des Auftrags, entsteht kein
   Auftrag, und der Grund steht im Panel („The selection holds scenes of another dataset
-  (…); a job takes one dataset.“); das gilt auch für einen einzelnen Auftrag.
+  (…); a job takes one dataset.“); das gilt auch für einen einzelnen Auftrag. Maßgeblich
+  ist der Suchkontext (Otto, 20.10.2026), nicht `item.collection`: die geöffnete Sektion der
+  Treffer (`openSectionId`) bzw. der Datensatz, unter dem `ExtraScenes` nachgeladen wurden.
 - **Schätzung:** `reviewOrder` schätzt jeden Auftrag einzeln (höchstens 4 gleichzeitig, ein
   `AbortController` für alle). Gezeigt wird die Summe der angenommenen Teile „N jobs · about
   X MP, Y GB, Z units in total“, darunter „about N min of work“ und „Jobs run 2 at a time per
@@ -967,7 +969,7 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a` (oder `cop-dem-glo-30`),
   data type.“ bzw. „… scene …“.
 - Die Rechenzeit ist die Summe der geschätzten Zeiten, nicht die Dauer des Batches.
 
-**Tests** (vitest, synthetisch, 64 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
+**Tests** (vitest, synthetisch, 73 neue): `processingBatch.test.ts` (Auswahl und Grenze 25/26,
 Rückfall, Einheiten je Überflug und Szene, fremde Szenen, Summe samt unbekannter Dauer,
 Titel, Pool mit Grenze und Abbruch), `ProcessingBatch.test.tsx` (30: „Run as“ je Auswahl,
 Aufträge je Szene und je Überflug mit gleichen Schritten, Summe, höchstens 4 gleichzeitige
@@ -984,7 +986,8 @@ abgewiesenen Start, acht statt vier Anfragen, keine Prüfung des Datensatzes, Ti
 „Review“ während des Starts, Titel aus dem laufenden Entwurf, Liste bei jedem Job neu geöffnet
 lassen je Tests fallen. Zwei bestehende Tests
 mussten sich ändern: Der `sessionStorage`-Test erwartet jetzt den Titel (K5), und die
-Zarr-Szene des Panel-Tests trug die `collection` des COG-Datensatzes (jetzt die eigene).
+Zarr-Szene des Panel-Tests trug die `collection` des COG-Datensatzes (jetzt die eigene; die
+Prüfung geht seit dem 20.10.2026 nach dem Suchkontext, die Änderung am Test bleibt sinnvoll).
 
 **Befunde des Reviewers, behoben:** Die Titel entstanden nach dem `await` aus dem
 laufenden Entwurf (jetzt vor dem ersten Start); ein Start überschrieb am Ende den Zustand
@@ -1000,22 +1003,17 @@ beim Start einmal, nicht bei jedem Job; eine Dauer in unbekannter Form lässt di
 „of work“ weg, statt 0 zu zählen; der Schlüssel eines Batches wird einmal serialisiert; die
 Regel für den Titel im `sessionStorage` steht an einer Stelle und gilt auch beim Speichern.
 
-**Offen, für Otto:**
-- *Nach einem Start mit abgewiesenen Teilen* gibt es keinen Weg, nur diese erneut zu starten:
-  ein neues „Review“ und „Start“ startet auch die schon angenommenen Teile noch einmal. Der
-  Plan regelt es nicht. Vorschlag: nicht bauen, bis ein Anwender es braucht; wer die
-  angenommenen Teile nicht doppelt will, wählt nur die abgewiesenen Szenen neu.
-- *Prüfung auf fremde Datensätze* vergleicht `item.collection` mit der `id` des Datensatzes.
-  Das stimmt heute für alle drei Datensätze. Bekäme ein föderierter Datensatz eine andere
-  `collection` im Item als seine Plattform-`id`, sperrte die Prüfung jeden Auftrag, auch
-  den einzelnen. Dann gehört die Prüfung auf `source_collection_id` oder eine Zuordnung im
-  Katalog.
-- *Die Wahl kehrt still zurück:* Schrumpft die Auswahl, bis „Run as“ nicht mehr angeboten
-  wird, fällt der Auftrag auf „One job“ zurück; wächst sie wieder, gilt die frühere Wahl
-  ohne Klick wieder (sichtbar an der gedrückten Taste).
-- *Umfang:* mit Tests und Dokumentation rund 1700 Zeilen, Code ohne Tests rund 450; der
-  Plan (§6) schätzte den Batch auf 300 Zeilen Code. Über dem Richtwert von 400, aber nicht
-  teilbar, ohne Auftragsbau, Schätzung und Start auseinanderzureißen.
+**Entschieden von Otto am 20.10.2026, umgesetzt:**
+1. *Erneuter Start nach abgewiesenen Teilen:* wird nicht gebaut. Der Cache teilt den Lauf, ein
+   erneuter Start kostet keine zweite Rechnung.
+2. *Datensatzprüfung:* nimmt den Datensatz, unter dem die Szene gesucht bzw. gewählt wurde
+   (Suchkontext), nicht `item.collection`. Test mit Szenen, deren `collection` von der
+   Datensatz-ID abweicht (sie werden angenommen), und mit Szenen aus einer anderen Sektion
+   bzw. einem anderen Nachladen (sie werden abgewiesen).
+3. *„Run as“* springt auf „One job“ zurück, sobald sich die Auswahl ändert (gewählte Szenen,
+   Treffer, Überflug-Reihenfolge, bei „AOI only“ auch die AOI) und bleibt dort, auch wenn die
+   Auswahl wieder wächst. Eine Änderung der Schritte oder der Fläche berührt es nicht.
+4. *Umfang* (rund 1650 Zeilen, Code ohne Tests rund 450): in Ordnung.
 
 **Ergebnis der Prüfungen:** siehe PR-Text.
 
