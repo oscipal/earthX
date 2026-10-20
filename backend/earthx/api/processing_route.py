@@ -826,7 +826,8 @@ def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
     document: dict[str, Any] = {}
     for name in _outputs_of(status):
         file, title = docs.OUTPUTS[name]
-        link: dict[str, Any] = {"href": f"{base}/{file}", "type": docs.MEDIA_TYPES[file], "title": title}
+        href = docs.TILES_HREF.format(result_id=status.result_id) if name == "tiles" else f"{base}/{file}"
+        link: dict[str, Any] = {"href": href, "type": docs.MEDIA_TYPES[file], "title": title}
         if name == "result":
             for key, member in (("bytes", "length"), ("width", "width"), ("height", "height"), ("bands", "bands")):
                 if key in result:

@@ -130,7 +130,7 @@ class TestTheWholeZip:
     async def test_the_results_document_names_the_zip_only_where_it_can_be_made(self, mocked: Store, rig: Rig) -> None:
         job_id, _, _ = await zipped(rig)
         document = (await rig.client.get(f"/processing/jobs/{job_id}/results")).json()
-        assert list(document) == ["result", "mask", "recipe", "bundle"]
+        assert list(document) == ["result", "mask", "recipe", "bundle", "tiles"]
         assert document["bundle"]["href"] == f"/processing/jobs/{job_id}/results/result.zip"
         assert document["bundle"]["type"] == "application/zip"
         old, _, _ = await zipped(rig, meta=False)
