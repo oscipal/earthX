@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
 import {
   buildTileUrl,
+  ensureBaseLayers,
   setCoverageDisplay,
   syncFocusRaster,
   syncHighlight,
@@ -11,7 +12,8 @@ import {
   syncPreview,
   syncSelectionHighlight,
 } from './mapLayers';
-import type { LayerOverlay } from './layers';
+import type { LayerOverlay, MapLayer } from './layers';
+import { liveMap, lyr, pinned } from './fixtures/liveMap';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 function info(overrides: Partial<DownloadedInfo> = {}): DownloadedInfo {
@@ -461,54 +463,281 @@ describe('setCoverageDisplay: area mode', () => {
 // M3-10 F4 (Otto, 30.09.2026): pinned layers of different datasets are drawn
 // together — the map keeps no notion of "the open dataset" for them.
 describe('syncLayers: pinned layers of several datasets', () => {
-  function stackMap() {
-    const sources = new Map<string, Record<string, unknown>>();
-    const layers = new Map<string, { source: string; paint: Record<string, unknown> }>();
-    const map = {
-      getSource: (id: string) => sources.get(id),
-      getLayer: (id: string) => layers.get(id),
-      removeLayer: (id: string) => layers.delete(id),
-      removeSource: (id: string) => sources.delete(id),
-      addSource: (id: string, spec: Record<string, unknown>) => sources.set(id, spec),
-      addLayer: (layer: { id: string; source: string; paint: Record<string, unknown> }) => layers.set(layer.id, layer),
-    };
-    return { map, sources, layers };
-  }
-
-  function pinned(id: string, datasetId: string, url: string, visible = true) {
-    return {
-      id,
-      name: id,
-      visible,
-      opacity: 0.8,
-      overlays: [{ kind: 'raster' as const, tileUrl: url, bounds: [0, 0, 1, 1] as [number, number, number, number], minZoom: 0, maxZoom: 12 }],
-      restore: { datasetId } as never,
-    };
-  }
-
   it('draws a layer of each dataset, bottom of the list first', () => {
-    const { map, sources, layers } = stackMap();
+    const { map, sources, pinnedOrder } = liveMap();
     syncLayers(map as never, [
-      pinned('top', 'dem', 'https://t/dem/{z}/{x}/{y}'),
-      pinned('bottom', 'optical', 'https://t/optical/{z}/{x}/{y}'),
+      pinned('top', 'https://t/dem/{z}/{x}/{y}'),
+      pinned('bottom', 'https://t/optical/{z}/{x}/{y}'),
     ]);
-    const urls = [...sources.values()].map((s) => (s.tiles as string[])[0]);
-    expect(urls).toEqual(['https://t/optical/{z}/{x}/{y}', 'https://t/dem/{z}/{x}/{y}']);
-    expect(layers.size).toBe(2);
-  });
-
-  it('draws the same layers on the next sync, whatever else changed in between', () => {
-    const { map, sources } = stackMap();
-    const list = [pinned('a', 'dem', 'https://t/a'), pinned('b', 'optical', 'https://t/b')];
-    syncLayers(map as never, list);
-    syncLayers(map as never, list);
+    expect(pinnedOrder()).toEqual([lyr('bottom'), lyr('top')]);
     expect(sources.size).toBe(2);
   });
 
-  it('leaves out only the layer that is switched off', () => {
-    const { map, sources } = stackMap();
-    syncLayers(map as never, [pinned('a', 'dem', 'https://t/a', false), pinned('b', 'optical', 'https://t/b')]);
-    expect([...sources.values()].map((s) => (s.tiles as string[])[0])).toEqual(['https://t/b']);
+  it('leaves a layer that is switched off out of sight, and only that one', () => {
+    const { map, visible } = liveMap();
+    syncLayers(map as never, [pinned('a', 'https://t/a', { visible: false }), pinned('b', 'https://t/b')]);
+    expect(visible(lyr('a'))).toBe(false);
+    expect(visible(lyr('b'))).toBe(true);
+  });
+});
+
+// M4-28: the layer manager is quick and truthful. Each case here failed against
+// the code that removed and re-added every source on every call and named the map
+// layers after their position among the visible ones.
+describe('syncLayers: switching, opacity and order change the map, not its sources', () => {
+  const list = () => [pinned('a', 'https://t/a'), pinned('b', 'https://t/b'), pinned('c', 'https://t/c')];
+
+  it('switches a layer by its visibility, without adding or removing a source', () => {
+    const { map, log, visible } = liveMap();
+    syncLayers(map as never, list());
+    const added = log.sourcesAdded.length;
+    syncLayers(map as never, list().map((l) => (l.id === 'b' ? { ...l, visible: false } : l)));
+    expect(visible(lyr('b'))).toBe(false);
+    syncLayers(map as never, list());
+    expect(visible(lyr('b'))).toBe(true);
+    expect(log.sourcesAdded).toHaveLength(added);
+    expect(log.sourcesRemoved).toEqual([]);
+  });
+
+  it('keeps the source of every other layer when one is switched', () => {
+    const { map, sources } = liveMap();
+    syncLayers(map as never, list());
+    const before = new Map(sources);
+    syncLayers(map as never, list().map((l) => (l.id === 'a' ? { ...l, visible: false } : l)));
+    for (const [id, spec] of before) expect(sources.get(id)).toBe(spec);
+  });
+
+  it('changes the opacity of a layer in place', () => {
+    const { map, layers, log } = liveMap();
+    syncLayers(map as never, list());
+    syncLayers(map as never, list().map((l) => (l.id === 'c' ? { ...l, opacity: 0.2 } : l)));
+    expect(layers.get(lyr('c'))!.paint['raster-opacity']).toBe(0.2);
+    expect(layers.get(lyr('a'))!.paint['raster-opacity']).toBe(0.8);
+    expect(log.sourcesRemoved).toEqual([]);
+  });
+
+  it('draws a layer switched off from the start only once it is switched on', () => {
+    const { map, visible } = liveMap();
+    syncLayers(map as never, [pinned('a', 'https://t/a', { visible: false })]);
+    expect(visible(lyr('a'))).toBe(false);
+    syncLayers(map as never, [pinned('a', 'https://t/a')]);
+    expect(visible(lyr('a'))).toBe(true);
+  });
+
+  it('names the map layers after the pinned layer, whatever else is on or off', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, list());
+    syncLayers(map as never, list().map((l) => (l.id === 'a' ? { ...l, visible: false } : l)));
+    expect(pinnedOrder()).toEqual([lyr('c'), lyr('b'), lyr('a')]);
+  });
+
+  it('switches exactly the layer asked for among layers of one name and one picture', () => {
+    const { map, visible } = liveMap();
+    const twins = ['x', 'y', 'z'].map((id) => pinned(id, 'https://t/same'));
+    syncLayers(map as never, twins);
+    syncLayers(map as never, twins.map((l) => (l.id === 'y' ? { ...l, visible: false } : l)));
+    expect([visible(lyr('x')), visible(lyr('y')), visible(lyr('z'))]).toEqual([true, false, true]);
+  });
+
+  it('adds a source for a layer that is new, and drops that of one that is gone', () => {
+    const { map, sources, log } = liveMap();
+    syncLayers(map as never, list());
+    syncLayers(map as never, [pinned('d', 'https://t/d'), ...list().filter((l) => l.id !== 'b')]);
+    expect(sources.has('layer-src-d-0')).toBe(true);
+    expect(sources.has('layer-src-b-0')).toBe(false);
+    expect(log.sourcesAdded.filter((id) => id !== 'layer-src-d-0' && !'abc'.includes(id.split('-')[2]))).toEqual([]);
+    expect(log.sourcesRemoved).toEqual(['layer-src-b-0']);
+  });
+
+  it('builds a layer anew when what it shows changes', () => {
+    const { map, sources } = liveMap();
+    syncLayers(map as never, [pinned('a', 'https://t/a/v1')]);
+    syncLayers(map as never, [pinned('a', 'https://t/a/v2')]);
+    expect((sources.get('layer-src-a-0') as { tiles: string[] }).tiles).toEqual(['https://t/a/v2']);
+  });
+});
+
+describe('syncLayers: the map follows the order of the list', () => {
+  const ids = ['a', 'b', 'c', 'd'];
+  const list = (order: string[] = ids) => order.map((id) => pinned(id, `https://t/${id}`));
+  // The list's top is the map's top: the reverse of the list.
+  const expectedOrder = (order: string[]) => [...order].reverse().map((id) => lyr(id));
+
+  it('stacks the first of the list on top', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, list());
+    expect(pinnedOrder()).toEqual(expectedOrder(ids));
+  });
+
+  it('follows a move up and a move down, with no source touched', () => {
+    const { map, pinnedOrder, log } = liveMap();
+    syncLayers(map as never, list());
+    for (const order of [['a', 'c', 'b', 'd'], ['c', 'a', 'b', 'd'], ['c', 'a', 'd', 'b'], ['b', 'd', 'a', 'c']]) {
+      syncLayers(map as never, list(order));
+      expect(pinnedOrder()).toEqual(expectedOrder(order));
+    }
+    expect(log.sourcesRemoved).toEqual([]);
+    expect(log.sourcesAdded).toHaveLength(4);
+  });
+
+  it('puts a layer added at the top, in the middle or at the bottom where the list has it', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, [pinned('b', 'https://t/b'), pinned('c', 'https://t/c')]);
+    for (const order of [['a', 'b', 'c'], ['a', 'b', 'x', 'c'], ['a', 'b', 'x', 'c', 'y']]) {
+      syncLayers(map as never, list(order));
+      expect(pinnedOrder()).toEqual(expectedOrder(order));
+    }
+  });
+
+  it('keeps the order when a layer is removed, replaced or switched off', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, list());
+    syncLayers(map as never, list(['a', 'c', 'd']));
+    expect(pinnedOrder()).toEqual(expectedOrder(['a', 'c', 'd']));
+    syncLayers(map as never, [pinned('n', 'https://t/n'), ...list(['a', 'c', 'd']).slice(1)]);
+    expect(pinnedOrder()).toEqual(expectedOrder(['n', 'c', 'd']));
+    syncLayers(map as never, [{ ...pinned('n', 'https://t/n'), visible: false }, ...list(['c', 'd'])]);
+    expect(pinnedOrder()).toEqual(expectedOrder(['n', 'c', 'd']));
+  });
+
+  it('orders a layer with several overlays as one block', () => {
+    const { map, pinnedOrder } = liveMap();
+    const two = pinned('two', 'https://t/two/0', {
+      overlays: [0, 1].map((n) => ({ kind: 'raster' as const, tileUrl: `https://t/two/${n}`, bounds: [0, 0, 1, 1] as [number, number, number, number], minZoom: 0, maxZoom: 12 })),
+    });
+    syncLayers(map as never, [pinned('a', 'https://t/a'), two, pinned('c', 'https://t/c')]);
+    expect(pinnedOrder()).toEqual([lyr('c'), lyr('two', 0), lyr('two', 1), lyr('a')]);
+    syncLayers(map as never, [two, pinned('a', 'https://t/a'), pinned('c', 'https://t/c')]);
+    expect(pinnedOrder()).toEqual([lyr('c'), lyr('a'), lyr('two', 0), lyr('two', 1)]);
+  });
+
+  it('draws them again, in order, on a map whose style was reloaded', () => {
+    const first = liveMap();
+    syncLayers(first.map as never, list());
+    const second = liveMap(); // setStyle() wiped everything
+    syncLayers(second.map as never, list(['b', 'a', 'c', 'd']));
+    expect(second.pinnedOrder()).toEqual(expectedOrder(['b', 'a', 'c', 'd']));
+    expect(second.sources.size).toBe(4);
+  });
+
+  it('keeps the active view above the pinned layers whichever was synced last', () => {
+    const { map, stack, pinnedOrder } = liveMap();
+    const dataset = zarrLikeDataset();
+    const view = () =>
+      syncMosaic(map as never, { items: [scene], dataset, downloaded: {}, selectedIds: [], render: {}, focusMode: false, showDownloaded: true });
+    const viewAbovePinned = () => {
+      expect(pinnedOrder()).toHaveLength(2);
+      const top = Math.max(...pinnedOrder().map((id) => stack.indexOf(id)));
+      expect(stack.indexOf('m-tiles-lyr-0')).toBeGreaterThan(top);
+      expect(stack.indexOf('m-tiles-lyr-0')).toBeLessThan(stack.indexOf('aoi-fill'));
+    };
+    view();
+    syncLayers(map as never, [pinned('a', 'https://t/a'), pinned('b', 'https://t/b')]);
+    viewAbovePinned();
+    syncLayers(map as never, [pinned('b', 'https://t/b'), pinned('a', 'https://t/a')]);
+    viewAbovePinned();
+    view();
+    syncLayers(map as never, [pinned('b', 'https://t/b', { visible: false }), pinned('a', 'https://t/a')]);
+    viewAbovePinned();
+  });
+});
+
+describe('ensureBaseLayers', () => {
+  it('lays the end of the layer manager right under the AOI, once', () => {
+    const { map, stack } = liveMap(['bg']);
+    ensureBaseLayers(map as never);
+    ensureBaseLayers(map as never);
+    expect(stack.slice(0, 3)).toEqual(['bg', 'layers-top', 'aoi-fill']);
+    expect(stack.filter((id) => id === 'layers-top')).toHaveLength(1);
+  });
+});
+
+// Quicklooks arrive when their image has loaded, in any order — the place in the
+// stack is the list's, not that of the arrival.
+describe('syncLayers: quicklooks that arrive late', () => {
+  class FakeImage {
+    static all: FakeImage[] = [];
+    crossOrigin = '';
+    naturalWidth = 4;
+    naturalHeight = 4;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    private target = '';
+    constructor() {
+      FakeImage.all.push(this);
+    }
+    set src(v: string) {
+      this.target = v;
+    }
+    get src() {
+      return this.target;
+    }
+    arrive() {
+      this.onload?.();
+    }
+  }
+  const image = (id: string, url: string, over: Partial<MapLayer> = {}): MapLayer => ({
+    ...pinned(id, ''),
+    overlays: [{ kind: 'image', url, coords: [[0, 1], [1, 1], [1, 0], [0, 0]], nodataMax: null }],
+    ...over,
+  });
+  const loading = (url: string) => FakeImage.all.filter((i) => i.src === url);
+
+  beforeEach(() => {
+    FakeImage.all = [];
+    vi.stubGlobal('Image', FakeImage);
+    // No 2D context: the quicklook is handed on as it is (`processQuicklook`).
+    vi.stubGlobal('document', { createElement: () => ({ getContext: () => null }) });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('places a quicklook that arrives last under the tiles above it in the list', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, [pinned('top', 'https://t/top'), image('low', 'https://q/late-1.png'), pinned('bottom', 'https://t/bottom')]);
+    expect(pinnedOrder()).toEqual([lyr('bottom'), lyr('top')]);
+    loading('https://q/late-1.png').forEach((i) => i.arrive());
+    expect(pinnedOrder()).toEqual([lyr('bottom'), lyr('low'), lyr('top')]);
+  });
+
+  it('places quicklooks in the list order whichever arrives first', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, [image('one', 'https://q/late-2a.png'), image('two', 'https://q/late-2b.png'), image('three', 'https://q/late-2c.png')]);
+    for (const url of ['late-2b', 'late-2c', 'late-2a']) loading(`https://q/${url}.png`).forEach((i) => i.arrive());
+    expect(pinnedOrder()).toEqual([lyr('three', 0), lyr('two', 0), lyr('one', 0)]);
+  });
+
+  it('does not place a quicklook whose layer was removed while it loaded', () => {
+    const { map, pinnedOrder } = liveMap();
+    syncLayers(map as never, [image('gone', 'https://q/late-3.png'), pinned('a', 'https://t/a')]);
+    syncLayers(map as never, [pinned('a', 'https://t/a')]);
+    loading('https://q/late-3.png').forEach((i) => i.arrive());
+    expect(pinnedOrder()).toEqual([lyr('a')]);
+  });
+
+  it('places a quicklook hidden while it loaded as hidden, with the opacity it has now', () => {
+    const { map, visible, layers } = liveMap();
+    syncLayers(map as never, [image('q', 'https://q/late-4.png')]);
+    syncLayers(map as never, [image('q', 'https://q/late-4.png', { visible: false, opacity: 0.3 })]);
+    loading('https://q/late-4.png').forEach((i) => i.arrive());
+    expect(visible(lyr('q'))).toBe(false);
+    expect(layers.get(lyr('q'))!.paint['raster-opacity']).toBe(0.3);
+  });
+
+  it('does not fetch the quicklook of a layer that is switched off', () => {
+    const { map } = liveMap();
+    syncLayers(map as never, [image('q', 'https://q/late-5.png', { visible: false })]);
+    expect(loading('https://q/late-5.png')).toHaveLength(0);
+    syncLayers(map as never, [image('q', 'https://q/late-5.png')]);
+    expect(loading('https://q/late-5.png')).toHaveLength(1);
+  });
+
+  it('places it once, however often the layers were synced while it loaded', () => {
+    const { map, log } = liveMap();
+    const layers = [image('q', 'https://q/late-6.png')];
+    syncLayers(map as never, layers);
+    syncLayers(map as never, layers);
+    loading('https://q/late-6.png').forEach((i) => i.arrive());
+    expect(log.sourcesAdded).toEqual(['layer-src-q-0']);
   });
 });
 

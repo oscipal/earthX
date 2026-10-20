@@ -131,6 +131,35 @@ describe('layersOnMap', () => {
     expect(layersOnMap(pinned, crops, null).map((l) => l.id)).toEqual(['p1', 'p2']);
   });
 
+  describe('a crop that is pinned already', () => {
+    const raster = (url: string) => [
+      { kind: 'raster' as const, tileUrl: url, bounds: [0, 0, 1, 1] as [number, number, number, number], minZoom: 0, maxZoom: 12 },
+    ];
+    const withPicture = (id: string, url: string, visible = true) => ({ ...layer(id, 'dem'), overlays: raster(url), visible });
+
+    it('is not drawn a second time', () => {
+      const copy = withPicture('pinned', 'https://t/dem/1');
+      const crop = withPicture('crop', 'https://t/dem/1');
+      expect(layersOnMap([copy], [crop], 'dem').map((l) => l.id)).toEqual(['pinned']);
+    });
+
+    it('is not drawn either when the pinned copy is switched off', () => {
+      const copy = withPicture('pinned', 'https://t/dem/1', false);
+      expect(layersOnMap([copy], [withPicture('crop', 'https://t/dem/1')], 'dem').map((l) => l.id)).toEqual(['pinned']);
+    });
+
+    it('is drawn again once its copy is gone', () => {
+      expect(layersOnMap([], [withPicture('crop', 'https://t/dem/1')], 'dem').map((l) => l.id)).toEqual(['crop']);
+    });
+
+    it('stays when what is pinned is another picture, or only part of it', () => {
+      const crops = [withPicture('crop', 'https://t/dem/1')];
+      expect(layersOnMap([withPicture('other', 'https://t/dem/2')], crops, 'dem').map((l) => l.id)).toEqual(['other', 'crop']);
+      const two = { ...withPicture('two', 'https://t/dem/1'), overlays: [...raster('https://t/dem/1'), ...raster('https://t/dem/2')] };
+      expect(layersOnMap([two], crops, 'dem').map((l) => l.id)).toEqual(['two', 'crop']);
+    });
+  });
+
   it('copes with nothing pinned and nothing cropped', () => {
     expect(layersOnMap([], [], 'dem')).toEqual([]);
   });
