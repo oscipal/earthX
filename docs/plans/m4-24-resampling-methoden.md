@@ -373,6 +373,8 @@ Die Skripte liegen nicht im Repo. Wie in `adr/0014` §17 sind sie hier beschrieb
 - **Antwort Otto (20.10.2026), Option 1:** Höhen p99 ≤ 0,6 m und max ≤ 4 m für `bilinear`, `cubic`, `cubicspline`, `lanczos` und `average` (Ziel nicht feiner); `average` beim Verfeinern p99 ≤ 1 m, max ≤ 4 m. Die bisherigen 0,3 m und 1 m für `bilinear`/`cubic` sind damit ersetzt. Die Werte über alle 13 Größen und die Begründung stehen in `adr/0014` §15j.
 - **Damit überholt:** die Höhenzeilen in §7.6 und Antwort 7, also die Zeile für `cubic` beim Verfeinern.
 
+**Faktor für `cubicspline` (Otto, 20.10.2026, nach dem Review):** 1,7 statt 1,6. Gemessen waren 1,62 (NDVI, etwa gleich); die Regel von §7.4 rundet auf, 1,6 war ein Rundungsfehler im Vorschlag. Die Zahlen in §7 bleiben als Vorschlag stehen.
+
 **Was gebaut ist:**
 
 | Teil | Dateien |

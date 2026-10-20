@@ -1821,11 +1821,11 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Der Blockplan bleibt unverändert: `tolerance` 0,125, `warp_mem_limit` 64 MB, Blöcke 1024 px.
   - Version 2 bleibt registriert, mit `nearest`, `bilinear` und `cubic`. Sie liefert Byte für Byte dasselbe wie Version 3 (Test). `/processing/processes` listet je Operator nur die höchste Version.
 - **Capabilities (§5.3):** `interpolation` verlangen alle Methoden außer `nearest` und `mode`; diese beiden wählen immer einen Quellwert. `reprojection` bleibt immer Pflicht.
-- **Faktoren (§5.5)**, gegenüber `bilinear` = 1,0, gemessen blockweise mit 1 Thread bei etwa gleicher Pixelgröße (Plan §7.4):
+- **Faktoren (§5.5)**, gegenüber `bilinear` = 1,0, gemessen blockweise mit 1 Thread bei etwa gleicher Pixelgröße, der größere Wert aus DEM und NDVI, aufgerundet auf eine Nachkommastelle (Plan §7.4). Für `cubicspline` (gemessen 1,62) hatte der Plan 1,6 vorgeschlagen; Otto hat am 2026-10-20 nach dieser Regel 1,7 festgelegt:
 
 | Operator | Faktor |
 |---|---|
-| Reprojektion `cubicspline` | 1,6 |
+| Reprojektion `cubicspline` | 1,7 |
 | Reprojektion `lanczos` | 2,2 |
 | Reprojektion `average` | 1,2 |
 | Reprojektion `mode` | 1,1 |
