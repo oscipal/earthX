@@ -34,6 +34,7 @@ from stac_fastapi.pgstac.models.extensions import Extensions
 from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import build_router as build_coverage_router
+from earthx.api.crs_info import switch_off_proj_network
 from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
@@ -150,6 +151,9 @@ def build_app(
     # (K-01/K-02) — the compose command starts it with `--no-access-log`, so
     # `RequestIdMiddleware` below is this process's only access log.
     configure_logging()
+    # M4-13c-3: the CRS route answers from the local EPSG database; PROJ fetches nothing, whatever
+    # `PROJ_NETWORK` says in the environment.
+    switch_off_proj_network()
     settings = Settings(enabled_extensions=_ENABLED_EXTENSIONS, prefix_path=_PREFIX_PATH)
     # `Extensions()` on its own would build a *second*, default-constructed
     # `Settings()` that never sees `_ENABLED_EXTENSIONS` — passing `settings` here

@@ -29,6 +29,7 @@ import { applyMapBackground, baseMapStyle, mapBackgroundOf } from '../mapStyles'
 import { previewOverlays } from '../processingPreview';
 import { useProcessingStore } from '../processingStore';
 import { layersOnMap } from '../searchLayers';
+import { layersForMap, viewLayerOf, viewShown } from '../viewLayer';
 import { useAppStore } from '../store';
 import type { ToolMode } from '../types';
 
@@ -115,6 +116,7 @@ export default function MapView() {
   const coverageFootprints = useAppStore((s) => s.coverageFootprints);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const layers = useAppStore((s) => s.layers);
+  const viewLayerId = useAppStore((s) => s.viewLayerId);
   const searchCrops = useAppStore((s) => s.searchCrops);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
@@ -216,7 +218,8 @@ export default function MapView() {
       map.setProjection({ type: st.projection });
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
-      syncLayers(map, layersOnMap(st.layers, st.searchCrops, st.openSectionId));
+      const viewLayer = viewLayerOf(st.layers, st);
+      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId), viewLayer, st.showDownloaded));
       syncMosaic(map, {
         items: itemsForMap(st.groups, visibleGroupIndex(st), st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
@@ -224,7 +227,8 @@ export default function MapView() {
         selectedIds: st.selectedIds,
         render: st.appliedRender,
         focusMode: st.focusMode,
-        showDownloaded: st.showDownloaded,
+        showDownloaded: viewShown(viewLayer, st.showDownloaded),
+        tilesInLayer: viewLayer !== null,
         aoi: st.aoi,
         cropToAoi: st.cropToAoi,
         groups: st.groups,
@@ -313,10 +317,18 @@ export default function MapView() {
   // --- pinned layers (layer manager), and under them the AOI crops of the
   // dataset chosen in the results dropdown (M3-10): the map shows that dataset
   // only, plus whatever the user pinned. ---
+  // The layer that is the full-resolution view (`viewLayer.ts`) draws it at its
+  // place, with its eye.
+  const viewLayer = useMemo(
+    () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded }),
+    [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded],
+  );
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current) syncLayers(map, layersOnMap(layers, searchCrops, openSectionId));
-  }, [layers, searchCrops, openSectionId]);
+    if (map && readyRef.current) {
+      syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId), viewLayer, showDownloaded));
+    }
+  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
@@ -327,9 +339,18 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current && focusMode) {
       const dataset = datasets.find((d) => d.id === datasetId) ?? null;
-      syncFocusRaster(map, { downloaded, render: appliedRender, showDownloaded, aoi, cropToAoi, items, dataset });
+      syncFocusRaster(map, {
+        downloaded,
+        render: appliedRender,
+        showDownloaded: viewShown(viewLayer, showDownloaded),
+        tilesInLayer: viewLayer !== null,
+        aoi,
+        cropToAoi,
+        items,
+        dataset,
+      });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, aoi, cropToAoi, items, datasets, datasetId]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, items, datasets, datasetId]);
 
   // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
   // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---

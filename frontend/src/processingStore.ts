@@ -18,12 +18,14 @@
 import { create } from 'zustand';
 
 import { fetchItem, HttpError } from './api';
+import { crsBlockReason, type CrsEntry } from './crsUnit';
 import type { DatasetOption } from './datasets';
 import { loadStoredJobs, saveStoredJobs, trackJob, type TrackerOptions } from './jobTracker';
 import {
   canonicalJson,
   dismissJob,
   estimateOrder,
+  fetchCrs,
   fetchProcess,
   fetchResults,
   placeJob,
@@ -129,6 +131,9 @@ interface ProcessingState {
   // The window of the jobs of this tab (M4-13c §3.1), apart from the panel.
   jobsOpen: boolean;
   descriptions: Record<string, Description>;
+  // What the server said about the target CRS codes typed so far (M4-13c-3); kept
+  // across drafts, since a code means the same for every dataset.
+  crs: Record<string, CrsEntry>;
   // `Pass.key` of the pass the user picked; `null` until then (a lone pass needs no pick).
   passKey: string | null;
   area: Area;
@@ -160,6 +165,7 @@ interface ProcessingState {
   openJobs: () => void;
   closeJobs: () => void;
   ensureDescription: (datasetId: string) => void;
+  lookupCrs: (code: string, signal: AbortSignal) => Promise<void>;
   resetDraft: () => void;
   choosePass: (passKey: string) => void;
   setArea: (area: Area) => void;
@@ -541,6 +547,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     open: false,
     jobsOpen: false,
     descriptions: {},
+    crs: {},
     ...EMPTY_DRAFT,
     jobs: [],
 
@@ -604,6 +611,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     openJobs: () => set({ jobsOpen: true }),
     closeJobs: () => set({ jobsOpen: false }),
+    // The unit of a target CRS (M4-13c-3). A refusal and an answer stay; an answer that
+    // could not be fetched is asked again. A lookup the caller abandons leaves nothing.
+    lookupCrs: async (code, signal) => {
+      const known = get().crs[code];
+      if (known && known.state !== 'error') return;
+      const entryOf = async (): Promise<CrsEntry | null> => {
+        try {
+          return { state: 'ready', info: await fetchCrs(code, signal) };
+        } catch (error) {
+          if (signal.aborted || isAbort(error)) return null;
+          if (error instanceof HttpError && error.status === 422) {
+            return { state: 'refused', message: error.detail ?? error.message };
+          }
+          return { state: 'error', message: error instanceof Error ? error.message : String(error) };
+        }
+      };
+      const entry = await entryOf();
+      if (entry) set((s) => ({ crs: { ...s.crs, [code]: entry } }));
+    },
     ensureDescription: (datasetId) => {
       const known = get().descriptions[datasetId];
       if (known && known.state !== 'error') return;
@@ -679,7 +705,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const view = orderView(useAppStore.getState(), get());
       const order = view.built?.order;
       set({ reviewAsked: true });
-      if (!order || !view.key) return;
+      if (!order || !view.key || crsBlockReason(get().steps, get().crs)) return;
       abortEstimate();
       const controller = new AbortController();
       estimating = controller;
@@ -700,7 +726,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const s = get();
       const view = orderView(useAppStore.getState(), s);
       const order = view.built?.order;
-      if (!order || !view.key || s.estimate?.key !== view.key || s.starting) return;
+      if (!order || !view.key || s.estimate?.key !== view.key || s.starting || crsBlockReason(s.steps, s.crs)) return;
       set({ starting: true, startError: null });
       try {
         const status = await placeJob(order, {
