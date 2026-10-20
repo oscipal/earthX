@@ -1189,11 +1189,24 @@ class TestAnExport:
         assert error.status_code == 413 and error.stage == "size"
         assert "5000 MB" in error.detail
 
-    async def test_aoi_provenance_belongs_to_an_export_only(self) -> None:
+    async def test_aoi_provenance_goes_with_a_raster_order_that_has_an_area_and_never_into_its_recipe(self) -> None:
+        """M4-30: kept with the job by the caller; the recipe and its hash are the same with or without it."""
         source = Source((S2, s2_item()))
+        plain = await accept(order(), source)
+        placed = await accept(order(), source, aoi_provenance=PLACE)
+        assert plain.aoi_provenance is None and placed.aoi_provenance == PLACE
+        assert placed.attachments is None, "an export keeps its origin in the attachments, a raster job with the job"
+        assert recipe_hash(placed.recipe) == recipe_hash(plain.recipe)
+        assert "properties" not in placed.recipe.aoi.model_dump(mode="json")
+
+    async def test_aoi_provenance_with_whole_scenes_is_a_400_before_anything_is_fetched(self) -> None:
+        source = Source((S2, s2_item()))
+        whole = order(steps=[])
+        del whole["aoi"]
         with pytest.raises(OrderRefused) as caught:
-            await accept(order(), source, aoi_provenance=PLACE)
-        assert caught.value.status_code == 400 and source.calls == []
+            await accept(whole, source, aoi_provenance=PLACE)
+        assert caught.value.status_code == 400 and "without aoi" in caught.value.detail
+        assert source.calls == []
 
 
 class TestTheJobsCapMatchesTheCropsEstimate:
