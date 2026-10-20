@@ -44,6 +44,9 @@ def _load_bootstrap():
 
 bootstrap = _load_bootstrap()
 
+# The service keys, one volume each (adr/0015 §6.4; `tiler` since M4-13c-5).
+LABELS = ("jobs", "api", "tiler")
+
 
 @pytest.fixture
 def secrets_dir(tmp_path, monkeypatch):
@@ -52,6 +55,7 @@ def secrets_dir(tmp_path, monkeypatch):
     # M4-06: the service keys live in volumes of their own.
     monkeypatch.setenv("OBJECTSTORE_JOBS_KEY_DIR", str(tmp_path / "keys-jobs"))
     monkeypatch.setenv("OBJECTSTORE_API_KEY_DIR", str(tmp_path / "keys-api"))
+    monkeypatch.setenv("OBJECTSTORE_TILER_KEY_DIR", str(tmp_path / "keys-tiler"))
     for var in ("S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_BUCKET"):
         monkeypatch.delenv(var, raising=False)
     return directory
@@ -162,7 +166,7 @@ def _write_secrets_for_init(secrets_dir: Path, secret_key: str = "a-sixteen-char
     (secrets_dir / "s3_access_key").write_text("a-valid-access-key")
     (secrets_dir / "s3_secret_key").write_text(secret_key)
     (secrets_dir / "s3_bucket").write_text("earthx")
-    for label in ("jobs", "api"):
+    for label in LABELS:
         directory = secrets_dir.parent / f"keys-{label}"
         directory.mkdir(exist_ok=True)
         (directory / "access_key").write_text(f"GK{label}servicekey0001")
@@ -264,9 +268,9 @@ def test_init_imports_key_creates_bucket_and_grants_access(secrets_dir, fake_adm
 
     bootstrap.cmd_init(init_args())
 
-    assert fake_admin.import_calls == 3
+    assert fake_admin.import_calls == 4
     assert fake_admin.create_calls == 1
-    assert fake_admin.allow_calls == 3
+    assert fake_admin.allow_calls == 4
     assert fake_admin.keys["a-valid-access-key"] == "a-sixteen-char-secret"
     assert "earthx" in fake_admin.buckets
 
@@ -277,9 +281,9 @@ def test_init_second_run_does_not_recreate_key_or_bucket(secrets_dir, fake_admin
     bootstrap.cmd_init(init_args())
     bootstrap.cmd_init(init_args())
 
-    assert fake_admin.import_calls == 3
+    assert fake_admin.import_calls == 4
     assert fake_admin.create_calls == 1
-    assert fake_admin.allow_calls == 6  # granted again each run; idempotent on Garage's side
+    assert fake_admin.allow_calls == 8  # granted again each run; idempotent on Garage's side
 
 
 def test_init_rejects_key_that_exists_with_a_different_secret(secrets_dir, fake_admin):
@@ -411,11 +415,11 @@ def _service_key(secrets_dir: Path, label: str, name: str = "access_key") -> str
     return (secrets_dir.parent / f"keys-{label}" / name).read_text().strip()
 
 
-def test_secrets_creates_both_service_keys_in_their_own_directories(secrets_dir):
+def test_secrets_creates_every_service_key_in_its_own_directory(secrets_dir):
     assert bootstrap.main(["secrets"]) == 0
 
     seen = set()
-    for label in ("jobs", "api"):
+    for label in LABELS:
         directory = secrets_dir.parent / f"keys-{label}"
         assert stat.S_IMODE(directory.stat().st_mode) == 0o700
         assert sorted(p.name for p in directory.iterdir()) == ["access_key", "secret_key"]
@@ -426,14 +430,14 @@ def test_secrets_creates_both_service_keys_in_their_own_directories(secrets_dir)
         assert re.match(r"^[0-9a-f]{64}$", _service_key(secrets_dir, label, "secret_key"))
         seen.add(access_key)
     seen.add((secrets_dir / "s3_access_key").read_text().strip())
-    assert len(seen) == 3
+    assert len(seen) == 4
 
 
 def test_secrets_second_run_keeps_the_service_keys(secrets_dir):
     assert bootstrap.main(["secrets"]) == 0
-    before = {label: _service_key(secrets_dir, label, "secret_key") for label in ("jobs", "api")}
+    before = {label: _service_key(secrets_dir, label, "secret_key") for label in LABELS}
     assert bootstrap.main(["secrets"]) == 0
-    assert {label: _service_key(secrets_dir, label, "secret_key") for label in ("jobs", "api")} == before
+    assert {label: _service_key(secrets_dir, label, "secret_key") for label in LABELS} == before
 
 
 def test_the_service_keys_never_come_from_env(secrets_dir, monkeypatch):
@@ -441,7 +445,7 @@ def test_the_service_keys_never_come_from_env(secrets_dir, monkeypatch):
     monkeypatch.setenv("S3_ACCESS_KEY", "my-access-key")
     monkeypatch.setenv("S3_SECRET_KEY", "a-sixteen-char-secret")
     assert bootstrap.main(["secrets"]) == 0
-    for label in ("jobs", "api"):
+    for label in LABELS:
         assert _service_key(secrets_dir, label) != "my-access-key"
         assert _service_key(secrets_dir, label, "secret_key") != "a-sixteen-char-secret"
 
@@ -453,26 +457,109 @@ def test_secrets_refuses_half_a_service_key(secrets_dir, capsys):
     assert "api service key" in capsys.readouterr().err
 
 
+# --- M4-13c-5: an installation from before the tiler had a key (plan §3.4, "Bestehende Installation") --
+
+
+def _files(root: Path) -> dict[str, bytes]:
+    return {str(path.relative_to(root)): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+def _installation_from_m4_06(secrets_dir: Path, tmp_path: Path) -> dict[str, bytes]:
+    """The volumes as M4-06 left them: the secrets, and the keys of `jobs` and `api` — none for `tiler`."""
+    assert bootstrap.main(["secrets"]) == 0
+    for path in (tmp_path / "keys-tiler").iterdir():
+        path.unlink()
+    (tmp_path / "keys-tiler").rmdir()
+    return _files(tmp_path)
+
+
+def test_secrets_on_an_installation_without_the_tiler_key_adds_that_key_and_nothing_else(
+    secrets_dir, tmp_path, capsys
+):
+    before = _installation_from_m4_06(secrets_dir, tmp_path)
+    capsys.readouterr()
+
+    assert bootstrap.main(["secrets"]) == 0
+
+    after = _files(tmp_path)
+    added = set(after) - set(before)
+    assert added == {"keys-tiler/access_key", "keys-tiler/secret_key"}
+    assert {name: after[name] for name in before} == before, "every file that was there is byte for byte the same"
+    out = capsys.readouterr().out.splitlines()
+    assert "objectstore-secrets: service key for tiler created" in out
+    assert "objectstore-secrets: service key for jobs already present, unchanged" in out
+    assert "objectstore-secrets: service key for api already present, unchanged" in out
+    assert "objectstore-secrets: S3 key already present, unchanged" in out
+    assert stat.S_IMODE((tmp_path / "keys-tiler").stat().st_mode) == 0o700
+
+
+def test_init_on_an_installation_without_the_tiler_key_imports_only_that_key_read_only(
+    secrets_dir, tmp_path, fake_admin, capsys, monkeypatch
+):
+    _installation_from_m4_06(secrets_dir, tmp_path)
+    # Everything the earlier version of `init` did, done against the fake store: it knew two service keys.
+    with monkeypatch.context() as earlier:
+        earlier.setattr(bootstrap, "SERVICE_KEYS", tuple(key for key in bootstrap.SERVICE_KEYS if key.label != "tiler"))
+        bootstrap.cmd_init(init_args())
+    imported_before, created_before = fake_admin.import_calls, fake_admin.create_calls
+    rules_before = {bucket: list(rules) for bucket, rules in fake_admin.lifecycle_rules.items()}
+    assert bootstrap.main(["secrets"]) == 0
+    capsys.readouterr()
+
+    bootstrap.cmd_init(init_args())
+
+    assert fake_admin.import_calls - imported_before == 1
+    assert fake_admin.create_calls == created_before == 1, "no bucket is created for a second time"
+    assert fake_admin.lifecycle_rules == rules_before, "the rule is as it was"
+    tiler = _service_key(secrets_dir, "tiler")
+    assert fake_admin.key_names[tiler] == "earthx-tiler"
+    assert fake_admin.permissions[tiler] == {"read": True, "write": False, "owner": False}
+    out = capsys.readouterr().out.splitlines()
+    assert "objectstore-init: imported service key for tiler" in out
+    assert "objectstore-init: service key for jobs already imported" in out
+    assert "objectstore-init: service key for api already imported" in out
+    assert "objectstore-init: S3 key already imported" in out
+    assert "objectstore-init: service key for tiler may read" in out
+
+
+def test_a_second_run_after_the_tiler_key_was_added_changes_nothing(secrets_dir, tmp_path, fake_admin):
+    bootstrap.main(["secrets"])
+    bootstrap.cmd_init(init_args())
+    files = _files(tmp_path)
+    imported = fake_admin.import_calls
+    permissions = {key: dict(rights) for key, rights in fake_admin.permissions.items()}
+
+    assert bootstrap.main(["secrets"]) == 0
+    bootstrap.cmd_init(init_args())
+
+    assert _files(tmp_path) == files
+    assert fake_admin.import_calls == imported
+    assert fake_admin.permissions == permissions
+
+
 def test_init_gives_each_key_exactly_its_rights(secrets_dir, fake_admin):
     _write_secrets_for_init(secrets_dir)
     bootstrap.cmd_init(init_args())
 
-    jobs, api = _service_key(secrets_dir, "jobs"), _service_key(secrets_dir, "api")
+    jobs, api, tiler = (_service_key(secrets_dir, label) for label in LABELS)
     assert fake_admin.key_names[jobs] == "earthx-jobs"
     assert fake_admin.key_names[api] == "earthx-api"
+    assert fake_admin.key_names[tiler] == "earthx-tiler"
     assert fake_admin.permissions[jobs] == {"read": True, "write": True, "owner": False}
     assert fake_admin.permissions[api] == {"read": True, "write": False, "owner": False}
+    assert fake_admin.permissions[tiler] == {"read": True, "write": False, "owner": False}
     assert fake_admin.permissions["a-valid-access-key"] == {"read": True, "write": True, "owner": True}
 
 
-def test_init_takes_rights_away_from_an_api_key_that_had_more(secrets_dir, fake_admin):
+@pytest.mark.parametrize("label", ["api", "tiler"])
+def test_init_takes_rights_away_from_a_read_key_that_had_more(secrets_dir, fake_admin, label):
     _write_secrets_for_init(secrets_dir)
-    api = _service_key(secrets_dir, "api")
-    fake_admin.permissions[api] = {"read": True, "write": True, "owner": True}
+    key = _service_key(secrets_dir, label)
+    fake_admin.permissions[key] = {"read": True, "write": True, "owner": True}
 
     bootstrap.cmd_init(init_args())
 
-    assert fake_admin.permissions[api] == {"read": True, "write": False, "owner": False}
+    assert fake_admin.permissions[key] == {"read": True, "write": False, "owner": False}
 
 
 def test_init_sets_exactly_the_results_rule_and_says_so(secrets_dir, fake_admin, capsys):
@@ -503,7 +590,7 @@ def test_init_sets_the_rule_again_on_every_run(secrets_dir, fake_admin):
     bootstrap.cmd_init(init_args())
     bootstrap.cmd_init(init_args())
     assert fake_admin.update_calls == 2
-    assert fake_admin.import_calls == 3
+    assert fake_admin.import_calls == 4
 
 
 def test_init_fails_when_the_rule_does_not_read_back(secrets_dir, fake_admin):
@@ -513,7 +600,7 @@ def test_init_fails_when_the_rule_does_not_read_back(secrets_dir, fake_admin):
         bootstrap.cmd_init(init_args())
 
 
-@pytest.mark.parametrize("label", ["owner", "jobs", "api"])
+@pytest.mark.parametrize("label", ["owner", *LABELS])
 def test_a_key_with_a_different_secret_is_refused_without_naming_its_id(secrets_dir, fake_admin, label):
     _write_secrets_for_init(secrets_dir)
     key_id = "a-valid-access-key" if label == "owner" else _service_key(secrets_dir, label)
@@ -542,6 +629,6 @@ def test_show_prints_the_service_keys_under_their_own_names(secrets_dir, capsys)
     capsys.readouterr()
     assert bootstrap.main(["show"]) == 0
     out = capsys.readouterr().out
-    for label in ("jobs", "api"):
+    for label in LABELS:
         assert f"S3_{label.upper()}_ACCESS_KEY={_service_key(secrets_dir, label)}" in out
         assert f"S3_{label.upper()}_SECRET_KEY={_service_key(secrets_dir, label, 'secret_key')}" in out

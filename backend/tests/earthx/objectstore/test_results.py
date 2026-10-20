@@ -14,13 +14,15 @@ from earthx.objectstore.errors import ResultExpiring, ResultNotFound, StoreUnava
 from earthx.objectstore.results import (
     Store,
     delete_result,
+    is_result_id,
     lifecycle_ok,
     new_result_id,
     signed_download,
+    signed_read,
     upload_result,
 )
 
-from .conftest import ACCESS_KEY, BUCKET, RESULTS_RULE, SECRET_KEY, put_rules
+from .conftest import ACCESS_KEY, BUCKET, ENDPOINT, RESULTS_RULE, SECRET_KEY, put_rules
 
 NOW = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
 
@@ -175,6 +177,72 @@ def test_no_signed_url_with_less_than_a_minute_left(store: Store, left: timedelt
 def test_a_naive_expiry_is_refused(store: Store) -> None:
     with pytest.raises(ValueError, match="timezone"):
         signed_download(store, new_result_id(), "result.tif", not_after=datetime(2026, 10, 13), filename="r.tif")
+
+
+# --- reading from inside the network (the tiler's GDAL, plan M4-13c §3.4) ----------
+
+
+def test_a_url_to_read_is_signed_for_the_internal_endpoint_and_for_nothing_else(store: Store) -> None:
+    result_id = new_result_id()
+    url = signed_read(store, result_id, "result.tif", not_after=NOW + timedelta(days=7), now=NOW)
+    assert url.startswith(f"{ENDPOINT}/{BUCKET}/results/{result_id}/result.tif?")
+    assert "localhost" not in url
+    assert "X-Amz-Expires=900&" in url
+    assert "response-content-disposition" not in url, "nobody downloads this one"
+    assert SECRET_KEY not in url
+
+
+def test_a_url_to_read_never_outlives_the_result(store: Store) -> None:
+    url = signed_read(store, new_result_id(), "result.tif", not_after=NOW + timedelta(seconds=120), now=NOW)
+    assert "X-Amz-Expires=120&" in url
+
+
+@pytest.mark.parametrize("left", [timedelta(seconds=59), timedelta(0), timedelta(days=-1)])
+def test_no_url_to_read_with_less_than_a_minute_left(store: Store, left: timedelta) -> None:
+    with pytest.raises(ResultExpiring):
+        signed_read(store, new_result_id(), "result.tif", not_after=NOW + left, now=NOW)
+
+
+def test_a_url_to_read_needs_an_expiry_with_a_zone_and_a_known_name(store: Store) -> None:
+    with pytest.raises(ValueError, match="timezone"):
+        signed_read(store, new_result_id(), "result.tif", not_after=datetime(2026, 10, 13))
+    with pytest.raises(ValueError, match="one of"):
+        signed_read(store, new_result_id(), "../x", not_after=NOW + timedelta(days=1), now=NOW)
+    with pytest.raises(ValueError, match="token_urlsafe"):
+        signed_read(store, "short", "result.tif", not_after=NOW + timedelta(days=1), now=NOW)
+
+
+def test_the_age_of_a_result_is_when_it_was_written(store: Store, tmp_path: Path) -> None:
+    result_id = new_result_id()
+    before = datetime.now(UTC) - timedelta(seconds=2)
+    upload_result(store, result_id, "result.tif", _file(tmp_path, 100))
+    written = results.result_modified(store, result_id, "result.tif")
+    assert written.tzinfo is not None
+    assert before <= written <= datetime.now(UTC) + timedelta(seconds=2)
+
+
+def test_the_age_of_a_missing_result_is_not_found_and_names_nothing(store: Store) -> None:
+    result_id = new_result_id()
+    with pytest.raises(ResultNotFound) as caught:
+        results.result_modified(store, result_id, "result.tif")
+    assert result_id not in str(caught.value)
+
+
+def test_the_age_of_a_name_outside_the_fixed_set_is_refused(store: Store) -> None:
+    with pytest.raises(ValueError, match="one of"):
+        results.result_modified(store, new_result_id(), "../result.tif")
+
+
+@pytest.mark.parametrize("result_id", [new_result_id() for _ in range(3)])
+def test_the_shape_of_a_result_id_is_the_one_that_is_made(result_id: str) -> None:
+    assert is_result_id(result_id)
+
+
+@pytest.mark.parametrize(
+    "value", ["", "x", "a" * 21, "a" * 23, "a" * 21 + "/", "a" * 21 + ".", "a" * 21 + "\n", "ä" * 22, "../" + "a" * 19, "a" * 21 + " "]
+)
+def test_any_other_shape_is_not_a_result_id(value: str) -> None:
+    assert not is_result_id(value)
 
 
 @pytest.mark.parametrize(

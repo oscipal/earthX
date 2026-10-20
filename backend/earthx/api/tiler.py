@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -97,6 +98,8 @@ from earthx.api.item_source import (
     fetch_item_or_refuse,
     malformed_item_detail,
 )
+from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
+from earthx.api.result_tiles import ResultSources, build_result_factory
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
     DatasetConfig,
@@ -108,6 +111,8 @@ from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
+from earthx.objectstore.errors import StoreConfigError
+from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
@@ -118,6 +123,9 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # metadata of that very item. The tiler answers under its own port (docker-compose),
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
+
+# Where the tiles of a job result begin (`result_tiles.ROUTER_PREFIX` up to its identifier).
+RESULT_PATH_START = "/results/"
 
 # The download route (M2-06) names only the dataset in its path — the item(s) and
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
@@ -906,7 +914,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.earthx_item_source = build_item_source(
             app.state.earthx_registry, app.state.earthx_adapters, gateway, pool
         )
+        app.state.earthx_results = _result_sources()
         yield
+
+
+def _result_sources() -> ResultSources | None:
+    """The tiles of job results (M4-13c-5), or ``None`` when this process has no key for the store.
+
+    A tiler without the `S3_*` environment still serves every source; the result routes then answer
+    ``503``, with a line in the log that names the missing setting and never its value. Compose gives
+    this process the read-only key `earthx-tiler`.
+    """
+    try:
+        return ResultSources(Store.from_environ(), clock=time.monotonic)
+    except StoreConfigError as error:
+        LOGGER.warning("job results are not served: %s", error)
+        return None
 
 
 def build_app(
@@ -956,6 +979,9 @@ def build_app(
         name="tiles",
     )
     app.include_router(factory.router, prefix=ROUTER_PREFIX, tags=["Tiles"])
+    # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
+    app.state.earthx_results = None
+    app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
     app.add_api_route(
         DOWNLOAD_ROUTE,
         download_crop,
@@ -1001,6 +1027,15 @@ def _problem(status_code: int, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
+def _may_log_detail(request: Request) -> bool:
+    """Whether the traceback of a read error may go to the log.
+
+    Not for a result's tiles: GDAL's message names the path it opened, which for a result is the signed
+    URL — the `result_id`, the id of the tiler's key and a signature good for 15 minutes.
+    """
+    return RESULT_PATH_START not in request.url.path
+
+
 async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONResponse:
     """A genuine read failure: GDAL could not get bytes from the source.
 
@@ -1010,7 +1045,7 @@ async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONRe
     `RasterioIOError` is `rasterio.errors`' one subclass of `OSError`; every other
     `RasterioError` goes to :func:`_rasterio_error` below instead of here.
     """
-    LOGGER.warning("could not read the asset from the source", exc_info=True)
+    LOGGER.warning("could not read the asset from the source", exc_info=_may_log_detail(request))
     return _problem(502, "the asset could not be read from the source")
 
 
@@ -1025,7 +1060,7 @@ async def _rasterio_error(request: Request, error: RasterioError) -> JSONRespons
     This is our side of the line rather than the source's, hence `error`, not
     `warning`.
     """
-    LOGGER.error("the asset could not be processed", exc_info=True)
+    LOGGER.error("the asset could not be processed", exc_info=_may_log_detail(request))
     return _problem(500, "the asset could not be processed")
 
 

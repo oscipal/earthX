@@ -33,6 +33,7 @@ __all__ = [
     "PREFIX",
     "PROCESS_ID",
     "RASTER_OUTPUTS",
+    "TILES_HREF",
     "conformance",
     "landing_page",
     "order_schema",
@@ -64,15 +65,21 @@ OUTPUTS: dict[str, tuple[str, str]] = {
     "export": ("export.zip", "Export: per group and asset the data and its mask, with notice, recipe and citation"),
     "recipe": ("recipe.json", "The recipe the job ran, with its provenance"),
     "bundle": ("result.zip", "Result, mask, area, recipe, citation and attribution in one ZIP"),
+    "tiles": ("tilejson.json", "The result as map tiles (TileJSON), served by the tiler"),
 }
+
+#: Where the tiler serves the tiles of a result (`api/result_tiles.py`): not under `/processing`, and not
+#: a file in the store — the link of the output ``tiles`` names it. Relative to the host like the frontend's
+#: other tile URLs; the proxy that mounts `/processing` mounts `/results` (M4-13c-5).
+TILES_HREF = "/results/{result_id}/WebMercatorQuad/tilejson.json"
 
 #: The media type of each file a link under ``/results`` serves. `result.zip` is not in the store:
 #: `api` lays it out from the stored files and the documents it builds (M4-11b-1).
-MEDIA_TYPES: dict[str, str] = {**RESULT_NAMES, "result.zip": "application/zip"}
+MEDIA_TYPES: dict[str, str] = {**RESULT_NAMES, "result.zip": "application/zip", "tilejson.json": _JSON}
 
 #: The outputs of a job with the output ``raster`` and of an export (output ``crop``, M4-11a).
 #: ``bundle`` is only there for a result whose files the supervisor reported (M4-11b-1).
-RASTER_OUTPUTS = ("result", "mask", "recipe", "bundle")
+RASTER_OUTPUTS = ("result", "mask", "recipe", "bundle", "tiles")
 EXPORT_OUTPUTS = ("export", "recipe")
 
 #: The second, optional input (M4-11 F4): where a place-search AOI came from.

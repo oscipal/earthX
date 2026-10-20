@@ -816,8 +816,11 @@ def _outputs_of(status: JobStatus) -> tuple[str, ...]:
 
 
 def _names_of(status: JobStatus) -> tuple[str, ...]:
-    """The files under ``/results`` of this job: those of its own output, and ``recipe.json``."""
-    return tuple(docs.OUTPUTS[name][0] for name in _outputs_of(status))
+    """The files under ``/results`` of this job: those of its own output, and ``recipe.json``.
+
+    The output ``tiles`` is a link to the tiler, not a file here.
+    """
+    return tuple(docs.OUTPUTS[name][0] for name in _outputs_of(status) if name != "tiles")
 
 
 def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
@@ -826,7 +829,8 @@ def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
     document: dict[str, Any] = {}
     for name in _outputs_of(status):
         file, title = docs.OUTPUTS[name]
-        link: dict[str, Any] = {"href": f"{base}/{file}", "type": docs.MEDIA_TYPES[file], "title": title}
+        href = docs.TILES_HREF.format(result_id=status.result_id) if name == "tiles" else f"{base}/{file}"
+        link: dict[str, Any] = {"href": href, "type": docs.MEDIA_TYPES[file], "title": title}
         if name == "result":
             for key, member in (("bytes", "length"), ("width", "width"), ("height", "height"), ("bands", "bands")):
                 if key in result:

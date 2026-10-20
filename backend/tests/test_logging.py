@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import re
+import sys
 from datetime import datetime, timezone
 
 import httpx
@@ -510,3 +511,91 @@ class TestAJobIdentifierIsNotLogged:
         (line,) = access_log_lines
         assert json.loads(line)["path"] == "/processing/jobs/{jobID}/results"
         assert "AAAAAAAAAAAAAAAAAAAAAA" not in line
+
+
+class TestAResultIdentifierIsNotLogged:
+    """M4-13c-5: `/results/{result_id}` of the tiler is the way to a result's tiles, as the job's identifier is to its files."""
+
+    ID = "ZyXwVuTsRqPoNmLkJiHg_-"
+
+    @pytest.mark.parametrize(
+        ("path", "logged"),
+        [
+            (f"/results/{ID}/tiles/WebMercatorQuad/1/2/3", "/results/{resultID}/tiles/WebMercatorQuad/1/2/3"),
+            (f"/results/{ID}/WebMercatorQuad/tilejson.json", "/results/{resultID}/WebMercatorQuad/tilejson.json"),
+            (f"//results//{ID}/WebMercatorQuad/tilejson.json", "//results/{resultID}/WebMercatorQuad/tilejson.json"),
+            ("/results/not-an-identifier-but-secret/tiles/x", "/results/{resultID}/tiles/x"),
+            (f"/tiler/results/{ID}/tiles/x", "/tiler/results/{resultID}/tiles/x"),
+            (f"/processing/jobs/{ID}/results/result.tif", "/processing/jobs/{jobID}/results/result.tif"),
+            (f"/processing/jobs/{ID}/results", "/processing/jobs/{jobID}/results"),
+            ("/results/", "/results/"),
+            ("/results", "/results"),
+            ("/collections/a/items/b/tiles/WebMercatorQuad/1/2/3", "/collections/a/items/b/tiles/WebMercatorQuad/1/2/3"),
+        ],
+    )  # fmt: skip
+    def test_the_path_as_the_access_log_writes_it(self, path: str, logged: str) -> None:
+        from earthx.logging import loggable_path
+
+        assert loggable_path(path) == logged
+
+    def test_the_middleware_writes_it_so(self, access_log_lines: list[str]) -> None:
+        async def endpoint(request):
+            return JSONResponse({})
+
+        app = Starlette(routes=[Route("/results/{result_id}/tiles", endpoint)])
+        assert TestClient(RequestIdMiddleware(app)).get(f"/results/{self.ID}/tiles").status_code == 200
+        (line,) = access_log_lines
+        assert json.loads(line)["path"] == "/results/{resultID}/tiles"
+        assert self.ID not in line
+
+
+class TestASignedUrlIsNotLogged:
+    """M4-13c-5: GDAL names the URL it could not read in its own warning; for a result it is signed."""
+
+    ID = "ZyXwVuTsRqPoNmLkJiHg_-"
+    URL = (
+        f"http://objectstore:3900/earthx/results/{ID}/result.tif?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+        "&X-Amz-Credential=GKabc123%2F20261020%2Fgarage%2Fs3%2Faws4_request&X-Amz-Date=20261020T120000Z"
+        "&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=deadbeefdeadbeef"
+    )
+
+    def test_the_message_loses_the_values_of_the_signature_and_the_result_id(self) -> None:
+        payload = json.loads(JsonFormatter().format(_make_record(f"CPLE_AppDefined in HTTP response code on {self.URL}: 403")))
+        message = payload["message"]
+        for secret in ("deadbeefdeadbeef", "GKabc123", self.ID):
+            assert secret not in message
+        assert message.startswith("CPLE_AppDefined in HTTP response code on http://objectstore:3900/earthx/results/{resultID}/result.tif?")
+        assert message.endswith(": 403")
+        assert "X-Amz-Signature=<hidden>" in message
+
+    def test_a_traceback_loses_them_too(self) -> None:
+        try:
+            raise OSError(f"'/vsicurl/{self.URL}' not recognized")
+        except OSError:
+            record = logging.LogRecord("x", logging.WARNING, __file__, 1, "read failed", None, sys.exc_info())
+        payload = json.loads(JsonFormatter().format(record))
+        assert "deadbeefdeadbeef" not in payload["exc_info"] and self.ID not in payload["exc_info"]
+        assert "OSError" in payload["exc_info"]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "request handled",
+            "/results/ short",
+            "https://example.org/results/short/x?a=1&b=2",
+            "ordinary query ?x=y&X-Other=1",
+            "",
+        ],
+    )
+    def test_any_other_text_is_left_alone(self, text: str) -> None:
+        from earthx.logging import hide_signed_urls
+
+        assert hide_signed_urls(text) == text
+
+    def test_a_public_signed_url_of_a_download_is_hidden_the_same_way(self) -> None:
+        from earthx.logging import hide_signed_urls
+
+        url = f"http://localhost:3900/earthx/results/{self.ID}/result.tif?X-Amz-Signature=cafe&response-content-disposition=attachment"
+        hidden = hide_signed_urls(url)
+        assert "cafe" not in hidden and self.ID not in hidden
+        assert hidden.endswith("&response-content-disposition=attachment")

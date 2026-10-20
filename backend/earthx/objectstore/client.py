@@ -4,7 +4,8 @@
 botocore` and nothing else; a second module importing it breaks the contract.
 
 Two clients come out of one :class:`StoreConfig`: one for the internal endpoint
-(upload, delete, read the lifecycle rule) and one that only signs, for the
+(upload, delete, read the lifecycle rule, and sign reads for a process in the same
+network — the tiler's GDAL, adr/0015 §14c) and one that only signs, for the
 endpoint a browser reaches (§6.3). Signing opens no connection (§3.2).
 
 Every `botocore` exception is translated here, because no other module may name
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, BinaryIO, TypeVar
 
 import botocore.loaders
@@ -207,6 +209,11 @@ class S3:
         response = self._call("HeadObject", lambda: self._internal.head_object(Bucket=self._config.bucket, Key=key))
         return int(response["ContentLength"])
 
+    def head_modified(self, key: str) -> datetime:
+        """When the object was written (``Last-Modified``, timezone-aware); :class:`ResultNotFound` if there is none."""
+        response = self._call("HeadObject", lambda: self._internal.head_object(Bucket=self._config.bucket, Key=key))
+        return response["LastModified"]
+
     def get_range(self, key: str, start: int, end: int) -> ObjectRange:
         """Bytes ``start`` to ``end``, both included, of one object, as a stream the caller closes."""
         response = self._call(
@@ -222,6 +229,20 @@ class S3:
             absent_on=_NO_LIFECYCLE,
         )
         return [] if response is None else list(response.get("Rules", []))
+
+    def presign_read(self, key: str, expires_in: int) -> str:
+        """A GET URL for the internal endpoint, for a process in the same network (the tiler's GDAL).
+
+        Signed with the internal client, so it is good for ``S3_ENDPOINT`` only and never reaches a browser.
+        """
+        return self._call(
+            "PresignGetObject",
+            lambda: self._internal.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self._config.bucket, "Key": key},
+                ExpiresIn=expires_in,
+            ),
+        )
 
     def presign_get(self, key: str, expires_in: int, content_disposition: str) -> str:
         return self._call(

@@ -76,6 +76,11 @@ class Store:
         return cls(config, build_clients(config))
 
 
+def is_result_id(value: str) -> bool:
+    """Whether `value` has the shape of ``new_result_id()``: the check before anything is read for it."""
+    return len(value) == _RESULT_ID_LENGTH and set(value) <= _RESULT_ID_CHARS
+
+
 def new_result_id() -> str:
     return secrets.token_urlsafe(16)
 
@@ -118,6 +123,15 @@ def result_size(store: Store, result_id: str, name: str) -> int:
     return store.s3.head_size(_key(result_id, name))
 
 
+def result_modified(store: Store, result_id: str, name: str) -> datetime:
+    """When one result file was written; :class:`ResultNotFound` if it is not there.
+
+    The bucket rule deletes by this date (`RESULT_TTL`, §7.3), so `modified + RESULT_TTL` is the day the
+    store itself drops the file — what a process without a database can know of a result's life.
+    """
+    return store.s3.head_modified(_key(result_id, name))
+
+
 def open_result_range(store: Store, result_id: str, name: str, start: int, end: int) -> ObjectRange:
     """Bytes ``start`` to ``end`` (both included) of one result file; the caller closes the stream."""
     if not 0 <= start <= end:
@@ -150,6 +164,24 @@ def signed_download(
         raise ResultExpiring("the result expires in less than 60 seconds")
     expires_in = int(min(SIGNED_URL_TTL, remaining).total_seconds())
     return store.s3.presign_get(key, expires_in, f'attachment; filename="{filename}"')
+
+
+def signed_read(
+    store: Store, result_id: str, name: str, *, not_after: datetime, now: datetime | None = None
+) -> str:
+    """A GET URL signed for the *internal* endpoint, for the tiler's GDAL (plan M4-13c §3.4).
+
+    Valid for 15 minutes or until `not_after`, whichever comes first; with less than 60 seconds left it
+    raises :class:`ResultExpiring`. It names the internal host and is not for a browser: the tiler hands
+    it to GDAL and nothing else, the browser asks the tiler for tiles.
+    """
+    key = _key(result_id, name)
+    if not_after.tzinfo is None:
+        raise ValueError("not_after must be timezone-aware")
+    remaining = not_after - (now or datetime.now(UTC))
+    if remaining < MIN_REMAINING:
+        raise ResultExpiring("the result expires in less than 60 seconds")
+    return store.s3.presign_read(key, int(min(SIGNED_URL_TTL, remaining).total_seconds()))
 
 
 def delete_result(store: Store, result_id: str) -> None:
@@ -201,7 +233,7 @@ def _key(result_id: str, name: str) -> str:
 
 
 def _check_result_id(result_id: str) -> str:
-    if len(result_id) != _RESULT_ID_LENGTH or not set(result_id) <= _RESULT_ID_CHARS:
+    if not is_result_id(result_id):
         raise ValueError("result_id must have the form of secrets.token_urlsafe(16)")
     return result_id
 

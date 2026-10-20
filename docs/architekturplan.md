@@ -195,6 +195,15 @@ Hülle um den Kern neben `jobs` und dem `tiler`. Sie darf `processing` und aus
 `objectstore` und `botocore` aus, auch über Ketten. Die Verträge der übrigen
 Module verbieten den Import von `runner`. Keine bestehende Regel wird gelockert.
 
+**Nachtrag 2026-10-20 (M4-13c-5, `adr/0015` §14c):** Der `tiler` (Modul `api`)
+liest die Dateien fertiger Jobs über `objectstore`, ohne Datenbank: Routen unter
+`/results/{result_id}`, ein eigener Dienstschlüssel `earthx-tiler` nur zum Lesen
+(wie `api`, nicht der Schlüssel des Workers), GDAL öffnet eine von `objectstore`
+für den internen Endpunkt signierte URL. Der Fall liegt in der Ausnahme vom
+Nachtrag 2026-10-05: die Adresse stammt aus `objectstore`, nicht aus einer
+Datenquelle, und passiert `gateway` nicht. Keine Importregel ändert sich
+(`api` darf `objectstore` schon).
+
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
 | Prozess | Last | Skalierung | Zustand |

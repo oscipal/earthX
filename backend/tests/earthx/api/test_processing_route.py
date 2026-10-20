@@ -682,18 +682,41 @@ class TestResults:
 
     async def test_a_finished_job_has_links_to_api_and_never_to_the_store(self, rig: Rig) -> None:
         job_id = await placed(rig)
-        result_id = finish(rig.db, job_id)
+        finish(rig.db, job_id)
         response = await rig.client.get(f"/processing/jobs/{job_id}/results")
         assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
         body = response.json()
-        assert list(body) == ["result", "mask", "recipe"]
+        assert list(body) == ["result", "mask", "recipe", "tiles"]
         base = f"/processing/jobs/{job_id}/results/"
-        assert [body[key]["href"] for key in body] == [base + "result.tif", base + "mask.tif", base + "recipe.json"]
+        assert [body[key]["href"] for key in ("result", "mask", "recipe")] == [
+            base + "result.tif",
+            base + "mask.tif",
+            base + "recipe.json",
+        ]
         assert body["result"]["type"] == "image/tiff; application=geotiff; profile=cloud-optimized"
         assert (body["result"]["length"], body["result"]["width"], body["result"]["height"]) == (12345, 64, 48)
         assert body["result"]["properties"]["proj:code"] == "EPSG:32632"
-        for forbidden in (result_id, "localhost:3900", "objectstore", "X-Amz", "earthx/results", "c1:", "9.01"):
+        for forbidden in ("localhost:3900", "objectstore", "X-Amz", "earthx/results", "c1:", "9.01"):
             assert forbidden not in response.text
+
+    async def test_the_result_id_is_in_the_tiles_link_and_nowhere_else(self, rig: Rig) -> None:
+        """M4-13c-5: the tiler reads a result by its id alone, so the link that leads there names it."""
+        job_id = await placed(rig)
+        result_id = finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results")
+        tiles = response.json()["tiles"]
+        assert tiles == {
+            "href": f"/results/{result_id}/WebMercatorQuad/tilejson.json",
+            "type": "application/json",
+            "title": "The result as map tiles (TileJSON), served by the tiler",
+        }
+        assert response.text.count(result_id) == 1
+
+    async def test_the_tiles_link_is_not_a_file_to_fetch_from_here(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results/tilejson.json")
+        assert response.status_code == 404
 
     async def test_the_links_name_what_the_store_holds_and_what_api_builds(self) -> None:
         assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")

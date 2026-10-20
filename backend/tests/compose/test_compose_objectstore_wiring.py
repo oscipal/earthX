@@ -14,7 +14,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[3]
 SERVICES = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
 
-KEY_VOLUMES = {"api": "objectstore-key-api", "worker": "objectstore-key-jobs"}
+KEY_VOLUMES = {"api": "objectstore-key-api", "worker": "objectstore-key-jobs", "tiler": "objectstore-key-tiler"}
 
 
 def _volumes(service: str) -> list[str]:
@@ -26,7 +26,7 @@ def _environment(service: str) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("service", sorted(KEY_VOLUMES))
-def test_api_and_worker_get_the_store_and_their_own_key_only(service: str) -> None:
+def test_api_tiler_and_worker_get_the_store_and_their_own_key_only(service: str) -> None:
     env = _environment(service)
     assert env["S3_ENDPOINT"] == "http://objectstore:3900"
     assert env["S3_PUBLIC_ENDPOINT"] == "http://localhost:3900"
@@ -38,10 +38,26 @@ def test_api_and_worker_get_the_store_and_their_own_key_only(service: str) -> No
     assert all(entry.endswith(":ro") for entry in SERVICES[service]["volumes"])
 
 
-@pytest.mark.parametrize("service", ["tiler", "harvester"])
-def test_the_other_processes_get_no_store(service: str) -> None:
-    assert not [name for name in _environment(service) if name.startswith("S3_")]
-    assert not [v for v in _volumes(service) if v.startswith("objectstore-")]
+def test_the_harvester_gets_no_store() -> None:
+    assert not [name for name in _environment("harvester") if name.startswith("S3_")]
+    assert not [v for v in _volumes("harvester") if v.startswith("objectstore-")]
+
+
+def test_the_key_volumes_are_mounted_by_one_process_each_and_written_only_by_the_secrets_step() -> None:
+    """M4-13c-5: `tiler` reads with a key of its own, not with the worker's or the api's."""
+    for volume in KEY_VOLUMES.values():
+        readers = sorted(name for name in SERVICES if volume in _volumes(name))
+        service = next(name for name, own in KEY_VOLUMES.items() if own == volume)
+        assert readers == sorted([service, "objectstore-secrets", "objectstore-init"]), volume
+        mounts = {name: entry for name in readers for entry in SERVICES[name]["volumes"] if entry.startswith(volume)}
+        assert not mounts["objectstore-secrets"].endswith(":ro"), "the secrets step is the one that writes"
+        assert all(mount.endswith(":ro") for name, mount in mounts.items() if name != "objectstore-secrets")
+
+
+def test_the_tiler_waits_for_the_step_that_imports_its_key() -> None:
+    depends = SERVICES["tiler"]["depends_on"]
+    assert depends["objectstore-init"]["condition"] == "service_completed_successfully"
+    assert depends["objectstore"]["condition"] == "service_healthy"
 
 
 @pytest.mark.parametrize("service", sorted(SERVICES))
@@ -55,7 +71,7 @@ def test_only_the_one_shot_steps_see_the_admin_volume() -> None:
     assert with_admin == {"objectstore-secrets", "objectstore", "objectstore-init"}
 
 
-def test_the_bootstrap_steps_see_both_service_keys() -> None:
+def test_the_bootstrap_steps_see_every_service_key() -> None:
     assert set(KEY_VOLUMES.values()) <= set(_volumes("objectstore-secrets"))
     assert set(KEY_VOLUMES.values()) <= set(_volumes("objectstore-init"))
 

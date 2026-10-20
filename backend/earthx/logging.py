@@ -44,10 +44,23 @@ _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 # number of slashes in front of the segment.
 _JOB_PATH = re.compile(r"(/processing/jobs/)/*[^/]+")
 
+# M4-13c-5: the `result_id` in `/results/{result_id}/…` of the tiler is the way to a result's tiles, as
+# the `jobID` is the way to its files, and is kept out of the log the same way. The `results` segment
+# after a job (`/processing/jobs/{jobID}/results/result.tif`) is the name of a file, not an identifier.
+_RESULT_PATH = re.compile(r"(/results/)/*[^/]+")
+
+
+def _hide_result_id(match: re.Match[str]) -> str:
+    if match.string[: match.start()].endswith("{jobID}"):
+        return match.group(0)
+    return f"{match.group(1)}{{resultID}}"
+
 
 def loggable_path(path: str | None) -> str | None:
-    """``path`` as the access log writes it: a job's identifier replaced by ``{jobID}``."""
-    return _JOB_PATH.sub(r"\1{jobID}", path) if path else path
+    """``path`` as the access log writes it: a job's identifier replaced by ``{jobID}``, a result's by ``{resultID}``."""
+    if not path:
+        return path
+    return _RESULT_PATH.sub(_hide_result_id, _JOB_PATH.sub(r"\1{jobID}", path))
 
 
 # Coarse on purpose: a populated grid cell this size hides where inside it a
@@ -76,6 +89,21 @@ def new_request_id() -> str:
     return uuid.uuid4().hex
 
 
+# M4-13c-5: GDAL writes the URL it could not read into its own warning ("HTTP response code on
+# <url>"), and rasterio passes that on to the logging module. For a job result the URL is signed:
+# it holds the `result_id`, the id of the tiler's key and a signature good for 15 minutes. The
+# formatter hides all three wherever they stand, in the message and in a traceback.
+_SIGNED_QUERY = re.compile(r"(X-Amz-[A-Za-z0-9-]+)=[A-Za-z0-9%._~+/=-]*")
+_RESULT_ID_IN_TEXT = re.compile(r"(/results/)[A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])")
+
+
+def hide_signed_urls(text: str) -> str:
+    """``text`` without the parts of a signed result URL that open the file."""
+    if "X-Amz-" not in text and "/results/" not in text:
+        return text
+    return _RESULT_ID_IN_TEXT.sub(r"\1{resultID}", _SIGNED_QUERY.sub(r"\1=<hidden>", text))
+
+
 class JsonFormatter(logging.Formatter):
     """Renders each log record as one JSON object, one per line."""
 
@@ -84,14 +112,14 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": hide_signed_urls(record.getMessage()),
             "request_id": get_request_id(),
         }
         for key, value in record.__dict__.items():
             if key not in _RESERVED_LOG_RECORD_ATTRS and key not in payload:
                 payload[key] = value
         if record.exc_info:
-            payload["exc_info"] = self.formatException(record.exc_info)
+            payload["exc_info"] = hide_signed_urls(self.formatException(record.exc_info))
         return json.dumps(payload, default=str)
 
 

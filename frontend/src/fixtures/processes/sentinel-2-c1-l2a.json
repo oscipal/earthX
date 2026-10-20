@@ -472,6 +472,13 @@
         "type": "string"
       },
       "title": "Result raster (Cloud Optimized GeoTIFF)"
+    },
+    "tiles": {
+      "schema": {
+        "contentMediaType": "application/json",
+        "type": "string"
+      },
+      "title": "The result as map tiles (TileJSON), served by the tiler"
     }
   },
   "title": "Recipe",
