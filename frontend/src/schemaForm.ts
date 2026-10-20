@@ -19,6 +19,8 @@ export interface Field {
   required: boolean;
   default?: unknown;
   options?: string[];
+  // One sentence per option, from a `oneOf` of documented constants (M4-24).
+  optionHelp?: Record<string, string>;
   constValue?: unknown;
   minLength?: number;
   maxLength?: number;
@@ -42,6 +44,7 @@ const FIELD_KEYWORDS = new Set([
   'description',
   'default',
   'enum',
+  'oneOf',
   'const',
   'minLength',
   'maxLength',
@@ -85,6 +88,7 @@ function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | s
     ...('default' in schema ? { default: schema.default } : {}),
   };
   if ('const' in schema) return { ...base, kind: 'const', constValue: schema.const };
+  if ('oneOf' in schema) return documentedChoice(name, schema, base);
   if ('enum' in schema) {
     const options = schema.enum;
     if (!Array.isArray(options) || options.length === 0 || !options.every((o) => typeof o === 'string')) {
@@ -117,6 +121,34 @@ function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | s
     default:
       return `type ${JSON.stringify(schema.type ?? null)} of ${name}`;
   }
+}
+
+// A choice written as `oneOf` of constants, each with its own `title` and
+// `description` (JSON Schema 2020-12), as `reproject` describes its methods:
+// an enum whose options carry a sentence each. Any other `oneOf` is not supported.
+const OPTION_KEYWORDS = new Set(['const', 'title', 'description']);
+
+function documentedChoice(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>): Field | string {
+  const variants = schema.oneOf;
+  if (schema.type !== undefined && schema.type !== 'string') return `oneOf of type ${String(schema.type)}`;
+  if ('enum' in schema) return `enum next to oneOf in ${name}`;
+  if (!Array.isArray(variants) || variants.length === 0) return `oneOf of ${name} is not a list of constants`;
+  const options: string[] = [];
+  const optionHelp: Record<string, string> = {};
+  for (const variant of variants) {
+    if (
+      !isObject(variant) ||
+      typeof variant.const !== 'string' ||
+      Object.keys(variant).some((key) => !OPTION_KEYWORDS.has(key)) ||
+      (variant.description !== undefined && typeof variant.description !== 'string')
+    ) {
+      return `oneOf of ${name} is not a list of text constants`;
+    }
+    if (options.includes(variant.const)) return `oneOf of ${name} names ${variant.const} twice`;
+    options.push(variant.const);
+    if (typeof variant.description === 'string') optionHelp[variant.const] = variant.description;
+  }
+  return { ...base, kind: 'enum', options, ...(Object.keys(optionHelp).length > 0 ? { optionHelp } : {}) };
 }
 
 // The form for one step's `params` schema, `defs` being the `$defs` of the
