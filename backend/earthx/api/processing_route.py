@@ -816,8 +816,11 @@ def _outputs_of(status: JobStatus) -> tuple[str, ...]:
 
 
 def _names_of(status: JobStatus) -> tuple[str, ...]:
-    """The files under ``/results`` of this job: those of its own output, and ``recipe.json``."""
-    return tuple(docs.OUTPUTS[name][0] for name in _outputs_of(status))
+    """The files under ``/results`` of this job: those of its own output, and ``recipe.json``.
+
+    The output ``tiles`` is a link to the tiler, not a file here.
+    """
+    return tuple(docs.OUTPUTS[name][0] for name in _outputs_of(status) if name != "tiles")
 
 
 def _results_document(root: str, status: JobStatus) -> dict[str, Any]:

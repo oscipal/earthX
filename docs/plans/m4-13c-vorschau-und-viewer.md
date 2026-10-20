@@ -1057,7 +1057,7 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suche
 - **Ergebnisdokument:** Ausgabe `tiles` (`processing_docs.OUTPUTS`, also auch in der Prozessbeschreibung und in
   den Fixtures `frontend/src/fixtures/processes/*.json`, neu geschrieben mit
   `scripts/write-process-fixtures.py`): Link `/results/{result_id}/WebMercatorQuad/tilejson.json`, nur bei
-  einem Raster-Job. Die `result_id` steht damit nur in diesem Link.
+  einem Raster-Job. Im Ergebnisdokument steht die `result_id` damit nur in diesem Link (sonst in der signierten URL und im `303`, wie schon vorher).
 - **Eigener Leseschlüssel (Auflage):** `earthx-tiler`, nur `read`, Volume `objectstore-key-tiler`; `SERVICE_KEYS`
   in `compose/objectstore/bootstrap.py`, `docker-compose.yml` (`objectstore-secrets` schreibt, `objectstore-init`
   und `tiler` lesen), `S3_*` am `tiler`. Nachtrag `adr/0015` §14c und `architekturplan.md` 3.1; README.
@@ -1168,3 +1168,20 @@ Im Browser `http://localhost:5173`:
    `docker compose logs objectstore-secrets objectstore-init` zeigt `service key for tiler created` bzw.
    `imported service key for tiler`, für `jobs` und `api` `already present, unchanged` bzw. `already imported`.
    Der alte Link lädt weiter, und sein Ergebnis lässt sich als Layer zeigen.
+
+**Befunde des Reviewers, behoben:** `maxzoom` des TileJSON liegt bei 10 m und 48° N auf Stufe 13 (12,8 m je Pixel,
+gemessen), also gröber als die Daten; der Layer fragt jetzt eine Stufe mehr an, sonst wäre die volle Auflösung nie
+zu sehen und „Overview“ bliebe stehen. Der `tiler` bot auf den Ergebnis-Routen `algorithm` und `algorithm_params` im
+Schema an (TiTilers Vorgabe); jetzt keine Parameter außer Kachel, `rescale`, `colormap_name`, `bidx`. Die Kachel-URL
+trägt wie das TileJSON `VITE_API_BASE`. `_names_of` zählt `tiles` nicht als Datei. Ein Test begrenzt, wo ein
+`AssetPath` entstehen darf (`readers/cog.py` und `api/result_tiles.py`; der Docstring von `CogReader` nennt die
+Ausnahme). Der Traceback-Schutz im `tiler` greift auch hinter einem Pfadpräfix.
+
+**Offen für Otto (neben „Replace source layer“):**
+- Darstellung eines Ergebnisses: heute der Wertebereich des Panels (Vorgabe −1 bis 1, `rdylgn`) für Gleitkomma, nichts
+  für Ganzzahlen. Ein Höhenmodell (`float32`, Meter) käme einfarbig, eine Reflektanz (`uint16`) dunkel. Ein Bereich je
+  Job (aus den Statistiken des Ergebnisses) wäre eine eigene Aufgabe.
+- Der Link `tiles` ist relativ zum Host (`/results/…`), anders als die übrigen Links des Ergebnisdokuments; ein
+  reiner API-Client ohne den gemeinsamen Proxy findet den `tiler` so nicht.
+- Restrisiko im Log: Ein `CPLE_*`, das nicht als `RasterioError` ankommt, ginge über den Handler von uvicorn, nicht über
+  `JsonFormatter`; nicht belegt.

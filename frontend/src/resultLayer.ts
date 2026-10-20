@@ -19,11 +19,13 @@ export function tilesHref(doc: Record<string, { href?: unknown }>): string | nul
   return typeof href === 'string' && TILES_HREF.test(href) ? href : null;
 }
 
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+
 // The tile URL of a result without any style: the TileJSON's address with its last
 // two segments swapped for the tile route, 256-pixel tiles like every other source.
 export function resultTileTemplate(href: string): string {
   if (!TILES_HREF.test(href)) throw new Error('not the tiles of a result');
-  return `${href.replace(/WebMercatorQuad\/tilejson\.json$/, 'tiles/WebMercatorQuad/{z}/{x}/{y}')}?tilesize=256`;
+  return `${BASE}${href.replace(/WebMercatorQuad\/tilejson\.json$/, 'tiles/WebMercatorQuad/{z}/{x}/{y}')}?tilesize=256`;
 }
 
 // --- how it is drawn --------------------------------------------------------

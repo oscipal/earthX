@@ -164,7 +164,7 @@ describe('the layer a result becomes', () => {
         tileUrl: `/results/${RESULT}/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=256&colormap_name=rdylgn&rescale=-1%2C1`,
         bounds: [10, 50, 11, 51],
         minZoom: 8,
-        maxZoom: 14,
+        maxZoom: 15, // one level beyond the TileJSON's 14: its `maxzoom` can be coarser than the data
       },
     ]);
   });

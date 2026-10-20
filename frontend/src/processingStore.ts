@@ -801,7 +801,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range)),
             bounds: tileJson.bounds,
             minZoom: tileJson.minZoom,
-            maxZoom: tileJson.maxZoom,
+            // rio-tiler's `maxzoom` is the level nearest the data's pixel size, and often the coarser
+            // one (10 m at 48° N: level 13, 12.8 m). One level more lets the map ask for the data
+            // itself; the tiler reads the file at any level.
+            maxZoom: tileJson.maxZoom + 1,
           },
         ],
         itemIds: [],

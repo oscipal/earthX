@@ -1033,7 +1033,7 @@ def _may_log_detail(request: Request) -> bool:
     Not for a result's tiles: GDAL's message names the path it opened, which for a result is the signed
     URL — the `result_id`, the id of the tiler's key and a signature good for 15 minutes.
     """
-    return not request.url.path.startswith(RESULT_PATH_START)
+    return RESULT_PATH_START not in request.url.path
 
 
 async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONResponse:

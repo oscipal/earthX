@@ -23,7 +23,7 @@ function useResultExpiry(): void {
       expire(Date.now());
       return undefined;
     }
-    // A timer runs for 2^31 ms at most; a result lives 7 days, which is more.
+    // A timer holds 2^31 ms (about 25 days) at most, more than a result lives.
     const timer = setTimeout(() => expire(Date.now()), Math.min(wait + 50, 2 ** 31 - 1));
     return () => clearTimeout(timer);
   }, [layers, expire]);

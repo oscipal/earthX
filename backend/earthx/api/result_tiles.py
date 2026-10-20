@@ -160,11 +160,17 @@ def result_environment(request: Request) -> dict[str, str]:
     return {**request.app.state.earthx_gdal_options, **GDAL_OPTIONS}
 
 
+def _no_process() -> None:
+    return None
+
+
 def build_result_factory() -> ResultTilerFactory:
     return ResultTilerFactory(
         path_dependency=result_path,
         # `BidxParams`, not TiTiler's default: that one takes an `expression`.
         layer_dependency=BidxParams,
+        # No `algorithm`: TiTiler's default would put it into the schema (`_REFUSED_PARAMETERS` answers it).
+        process_dependency=_no_process,
         environment_dependency=result_environment,
         router_prefix=ROUTER_PREFIX,
         name="result-tiles",
