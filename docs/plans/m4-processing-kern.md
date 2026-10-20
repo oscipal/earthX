@@ -260,7 +260,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-26 | Gleitkomma beim Schreiben einer Ganzzahl-Ausgabe runden statt abschneiden (Anlass: M4-13b; `plans/m4-26-runden-ganzzahl.md`) | Quer | A | Sonnet (hoch) | M4-21 | PR (Entwurf) |
 | M4-27 | Live-Smoke auf die Signaturen von M4-01b bringen; Trockenlauf mit Transport-Double im normalen `pytest` (`plans/m4-27-live-smoke-reparieren.md`) | Quer | A | Sonnet (mittel) | M4-21 | PR (Entwurf) |
 | M4-29 | Frontend: Datensatzwahl ohne Vorauswahl, einzeln per Klick, mehrere nur mit „Select multiple datasets“; „Select all“ je Gruppe und für alle geladenen Treffer, „Clear selection“ (`plans/m4-29-datensatzwahl.md`) | M4 | A | Sonnet (mittel) | M4-13c-2 | PR (Entwurf) |
-| M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export (`plans/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | PR (Entwurf) |
+| M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export; dazu die Herkunft einer Orts-AOI (OSM) auch bei Raster-Jobs, Backend und Frontend (`plans/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | PR (Entwurf) |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
