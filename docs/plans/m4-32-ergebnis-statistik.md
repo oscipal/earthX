@@ -361,3 +361,47 @@ NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR python simd.py   # 
 - Die Maske entsteht vor dem letzten Durchgang. Dieser liest sie blockweise mit und führt beide Zähler nebeneinander.
 
 **Startsatz M4-32b** (neue Session nach dem Merge von M4-32a, Sonnet, Effort hoch): „Führe Aufgabe M4-32b aus `docs/plans/m4-32-ergebnis-statistik.md` aus (§6.7, §6.10 Frontend, §7).“
+
+## 8. Umsetzung M4-32a (20.10.2026)
+
+**Was sich geändert hat:**
+- **`processing/statistics.py`:** Neu. `summarize` fasst die gültigen Werte eines Blocks zusammen, `BandStatistics` führt die Zusammenfassungen in fester Folge zusammen, `gdal_tags` liefert die Band-Tags. Die Verfahren stehen in §6.2.
+  - Abweichung vom Plan: Für `float32` entstehen Vorzeichen und Exponent der exakten Summe aus den Fächern des Histogramms; die Anzahl je Fach liefert die impliziten Bits. Das ist ein gewichtetes `bincount` je Block statt drei, mit denselben Bytes. Der Weg über Exponent-Fächer bleibt für `float64`.
+- **`processing/core.py`:**
+  - `mask.tif` entsteht jetzt vor den Durchgängen, mit unverändertem Inhalt. Der letzte Durchgang liest sie blockweise mit.
+  - `_count` zerlegt jeden Block in innen und außen: Die Maske bekommt innen, die Datei beides (Frage 2, angepasst).
+  - Die Tags der ganzen Datei kommen auf die Datei des letzten Durchgangs, `cog_translate` mit `forward_band_tags=True`. Die Statistik der Maske steht als `statistics` an jedem Band der Eigenschaften. `valid_percent` bezieht sich dort auf die Pixel der Maske.
+- **Version 0.4.2:** `earthx/__init__.py`, `README.md` (Runner-Tag), `tests/fixtures/runner/recipe-ci.json`.
+- **Faktor Band-Math 1,0 → 1,2:** nach Ottos Auflage zu Frage 8 (`adr/0014` §15k).
+
+**Messung (Auflage zu Frage 8) [M]:** 4096², alter gegen neuen Kern, abwechselnd, je Lauf ein Kindprozess wie `memory_run.py`.
+- **Band-Math:** neun Paare, alt 6,38 s, neu 7,15 s im Mittel, also **+12,1 %**. Der Median der Paardifferenzen liegt bei +10,3 %.
+  - Sechs Paare liefen vor der Änderung „Abweichungen an Ort und Stelle quadrieren“ (gleiche Bytes, nur weniger Speicher), drei danach. Diese drei allein lagen bei +9,5 %.
+  - Das Mittel aller neun liegt über 10 %. Deshalb gilt der Faktor 1,2. Die Zusatzzeit liegt nahe an der Schwelle.
+- **`reproject` `bilinear`:** +7,7 % (drei Paare).
+- **Testoperator `scale`, zwei Bänder:** +18,5 %.
+- **Speicher (`VmHWM`):**
+  - `reproject` 4096²: 418 → 428 MB. Davon kommen etwa 4 MB vom früheren Schreiben und Mitlesen der Maske, der Rest von den Zwischenarrays der Zählung. Vor der Änderung an Ort und Stelle waren es 436 MB.
+  - Band-Math: 349 → 350 MB.
+  - `test_memory_*.py`: 8192² 394 MB, `reproject` 4096² 436 MB, `lanczos` 4096² 442 MB. Alles bleibt unter 500 MB, das Wachstum innerhalb der Grenzen.
+
+**Tests:**
+- **`test_statistics.py` (31):**
+  - Unabhängige Rechnung (`Fraction`, `numpy.percentile(method="inverted_cdf")`, `numpy.std`) für Gleitkomma mit NaN, `uint16` mit nodata, DEM-artig, NDVI-artig und jeden Ausgabetyp.
+  - Andere Blockung und Folge geben dieselben Werte, zweimal gerechnet dieselben Bits. Ein Mittelwert ist exakt, wo eine float64-Summe 0 ergibt.
+  - Ränder: leer, konstant, nur negativ, `±inf`, Subnormale, Überlauf ohne `inf` in JSON.
+  - Zweckfremde Nutzung: falscher Typ, 2-D, fremde Zusammenfassung, keine Pixel.
+- **`test_core_statistics.py` (6):**
+  - Die Bounding Box einer Dreiecks-AOI enthält in zwei Ecken Werte vom 55-fachen. Die Tags beschreiben die ganze Datei, `statistics` nur die Maske; beides ist unabhängig nachgerechnet.
+  - GDAL liest die Tags (`stats()`).
+  - Zweimal gerechnet gleiche Bytes.
+  - Ganze Szene: Tags gleich Eigenschaften.
+  - `uint16` mit nodata: exakte Perzentile.
+- **`runner/test_compare.py`:** Vergleicht jetzt auch die Band-Tags. Die Statistik ist bei Job-Kind und Runner gleich.
+- **Gegenprobe:** Mit dem alten Kern und dem neuen Modul scheitern 9 der neuen und geänderten Tests: alle Kern- und Runner-Prüfungen der Statistik sowie die zwei Faktortests. Nur „zweimal gleiche Bytes“ besteht auch alt, und so soll es sein.
+
+**Prüfanleitung für Otto (a):**
+- Einen beliebigen Raster-Job rechnen und `result.tif` herunterladen.
+- `gdalinfo -stats result.tif` (oder `gdalinfo result.tif`) zeigt je Band `STATISTICS_MINIMUM` … `STATISTICS_VALID_PERCENT` und `EARTHX_PERCENTILE_2`/`_98`, ohne neu zu rechnen.
+- `GET …/jobs/{jobID}/results` zeigt unter `result.properties.bands[].statistics` die Werte für die AOI.
+- Die Prüfung auf der Karte (DEM mit Relief, NDVI wie bisher) kommt mit M4-32b.

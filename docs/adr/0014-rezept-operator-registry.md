@@ -1856,6 +1856,35 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
+## 15k. Nachtrag vom 2026-10-20: Statistik je Ergebnis in `result.tif` und in den Eigenschaften (zu §4.5, §5.5, §5.6, §6.3; M4-32)
+
+Otto hat den Plan von M4-32 am 2026-10-20 freigegeben (`plans/m4-32-ergebnis-statistik.md` §6, §7). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Was der Kern schreibt (§5.6):**
+  - Der letzte Durchgang zählt jedes Band beim Schreiben (`processing/statistics.py`).
+  - Die ganze Datei geht in die Band-Tags von `result.tif`: `STATISTICS_MINIMUM`, `_MAXIMUM`, `_MEAN`, `_STDDEV`, `_VALID_PERCENT` (Namen von GDAL, wie `gdalinfo -stats`), dazu `EARTHX_PERCENTILE_2` und `_98`. Die Werte stehen als `repr` des `float` darin.
+  - Die Pixel der Maske gehen als STAC-1.1-`statistics` an jedes Band der Eigenschaften, erweitert um `percentile_2` und `percentile_98`. Das Ergebnisdokument und `provenance.json` tragen sie damit. Hat ein Band keinen gültigen Wert, steht dort nur `count` 0 und `valid_percent` 0.
+  - Beide entstehen aus denselben Teilsummen je Block, ohne zweiten Lesedurchgang. Deshalb schreibt der Kern `mask.tif` jetzt vor den Durchgängen; ihr Inhalt ist unverändert.
+- **Verfahren:**
+  - Min, Max, Anzahl und Mittelwert sind exakt; der Mittelwert ist einmal gerundet, aus ganzzahligen Summen über die Bitmuster.
+  - `stddev` wie GDAL: Welford je Block, Chan über die Blöcke.
+  - Die Perzentile kommen aus einem festen Histogramm mit 65 536 Fächern je Band: Ganzzahl bis 16 bit exakt, sonst höchstens 2⁻⁷ des Betrags, nach außen gerundet.
+- **Bitgleichheit (§6.3, §15c):** unverändert. Die Statistik hängt nicht von der Reihenfolge der Werte ab, nur von der festen Blockung (`stddev`). Gemessen sind die Bytes von `result.tif` gleich über die numpy-SIMD-Stufen X86_V4, X86_V3, X86_V2 (Plan §6.4). `runner/test_compare.py` vergleicht zusätzlich die Band-Tags von Job-Kind und Runner.
+- **Version (§4.5):** Die Tags ändern die Bytes jeder `result.tif`. Deshalb geht `earthx.__version__` von 0.4.1 auf 0.4.2. `recipe_version` und `op_version` bleiben. Ergebnisse unter 0.4.1 bleiben unter ihrem alten Schlüssel stehen und werden nicht mehr getroffen.
+- **Kosten (§3.5, §5.5) [M]:**
+
+Gemessen wurde mit `memory_run.py` (synthetisches COG 4096², zwei Bänder `uint16`, `GDAL_CACHEMAX` 64 MB, Kindprozess, `VmHWM`), alter Kern gegen neuen, abwechselnd.
+
+| Lauf | Paare | alt: Zeit (Mittel) / `VmHWM` | neu: Zeit (Mittel) / `VmHWM` | Zusatzzeit |
+|---|---|---|---|---|
+| Band-Math `(b2 - b1) / (b2 + b1)`, ein Band | 9 | 5,84–7,03 s (6,38) / 349 MB | 6,50–8,12 s (7,15) / 350 MB | **+12,1 %** (Median der Paardifferenzen +10,3 %) |
+| `reproject` EPSG:3035, 10 m, `bilinear`, zwei Bänder | 3 | 21,4–23,1 s (22,4) / 418 MB | 23,0–25,2 s (24,2) / 428 MB | +7,7 % |
+| Testoperator `scale`, zwei Bänder | 3 | 10,2–11,2 s (10,8) / 371 MB | 12,2–13,2 s (12,8) / 371 MB | +18,5 % |
+
+  - Je Block von 1024² und Band kostet die Statistik etwa 23 ms. Die Tests `test_memory_8192.py` und `test_memory_reproject.py` bleiben unter 500 MB; der höchste Wert ist `lanczos` 4096² mit 441,7 MB.
+  - **Faktor (Auflage Otto zu Frage 8):** Band-Math liegt über 10 %. Deshalb steigt der Faktor nach der Regel „aufrunden“ von 1,0 auf **1,2** (`operators/band_math.py`). Die letzten drei der neun Paare lagen bei +9,5 %; die Zusatzzeit liegt also nahe an der Schwelle.
+  - Die übrigen Faktoren der Tabelle in §5.5 und §15j bleiben. Die Auflage betrifft nur Band-Math. Gegenüber dem neuen Wert für Band-Math sind sie damit etwas zu niedrig, denn §5.5 nennt sie „relativ zu Band-Math“. Die Kalibrierung gegen echte Läufe steht weiter aus.
+
 ## 16. Quellen
 
 **Im Repo [P]**
