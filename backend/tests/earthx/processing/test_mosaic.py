@@ -24,10 +24,10 @@ from rio_cogeo.cogeo import cog_translate, cog_validate
 from rio_cogeo.profiles import cog_profiles
 from shapely.geometry import box, mapping
 
+from earthx.access.crop_rules import mosaic_order, target_crs
 from earthx.processing import RunCancelled, run
 from earthx.processing import core as core_module
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
-from earthx.processing.mosaic import mosaic_order, target_crs
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import recipe_from_data
 from earthx.processing.source import Source
