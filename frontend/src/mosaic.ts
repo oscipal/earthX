@@ -71,6 +71,27 @@ export function mosaicTemplateOf(datasetId: string, entries: SceneEntry[]): stri
   return isMosaicPass(entries) ? buildMosaicTileTemplate(datasetId, entries.map(([id]) => id), entries[0][1].asset) : null;
 }
 
+// Of all the mosaics known, those the passes of this view ask for: the view is drawn again when one of
+// those changes, not when the TileJSON of another view comes in.
+export function mosaicsOfView(
+  mosaics: Mosaics,
+  datasetId: string | null,
+  entries: SceneEntry[],
+  groups: readonly TimeStepGroup[] | undefined,
+): Mosaics {
+  const picked: Mosaics = {};
+  for (const pass of passesOf(entries, groups)) {
+    const template = datasetId ? mosaicTemplateOf(datasetId, pass) : null;
+    if (template && template in mosaics) picked[template] = mosaics[template];
+  }
+  return picked;
+}
+
+export function sameMosaics(a: Mosaics, b: Mosaics): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => k in b && a[k] === b[k]);
+}
+
 export function viewOfPass(datasetId: string | null, entries: SceneEntry[], mosaics: Mosaics | undefined): PassView {
   const template = datasetId && mosaics ? mosaicTemplateOf(datasetId, entries) : null;
   if (!template || !mosaics) return { kind: 'scenes' };

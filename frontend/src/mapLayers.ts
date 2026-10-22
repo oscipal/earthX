@@ -503,6 +503,7 @@ function addQuicklookUnderlay(
   dataset: DatasetOption & { viewable: true },
   i: number,
   clip: GeoJSON.Geometry | null,
+  gen: number,
 ): void {
   const asset = quicklookAsset(item);
   if (!asset?.href) return;
@@ -513,6 +514,7 @@ function addQuicklookUnderlay(
   const srcId = `m-img-src-${i}`;
   const lyrId = `m-img-lyr-${i}`;
   loadProcessed(asset.href, dataset.quicklookNodataMax, clipRings, (dataUrl) => {
+    if (gen !== syncGen) return; // a newer sync superseded this one
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, ['step', ['zoom'], 1, dataset.zoom.min, 0]);
       dynSourceIds.push(srcId);
@@ -744,6 +746,8 @@ export function syncFocusRaster(
     'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset' | 'tilesInLayer' | 'groups' | 'mosaics'
   >,
 ): void {
+  // A quicklook that arrives after this sync belongs to the one before it.
+  const gen = ++syncGen;
   clearDynamicMosaic(map);
   if (!s.showDownloaded) return;
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
@@ -766,24 +770,30 @@ export function syncFocusRaster(
   // agree between the view and the downloaded file. This used to draw in
   // selection order, putting the *last*-selected scene on top instead
   // (M3-09 finding). A mosaic applies that rule on the server.
+  // Short of ids, a mosaic gives up the single scenes under it before any mosaic is lost.
+  const wanted = drawn.reduce(
+    (sum, { entries, view }) => sum + (view.kind === 'mosaic' ? view.rasters.length : view.kind === 'scenes' ? entries.length : 0),
+    0,
+  );
   let tiles = 0;
   let underlays = 0;
+  const place = (raster: PlannedRaster) => {
+    if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
+  };
   for (const { entries, view } of [...drawn].reverse()) {
-    if (view.kind === 'pending') continue;
+    if (view.kind === 'pending' && !s.tilesInLayer) continue;
     [...entries].reverse().forEach(([itemId, info]) => {
       // O5: the underlay goes down first, so `addTiles` right after it ends up
       // on top (`beforeAoi` puts each newly added layer just below the AOI
       // layer, so whichever is added later of the two is the more on top).
       if (dataset?.viewable && dataset.browse === 'quicklook' && underlays < MAX_DYNAMIC_LAYERS) {
         const item = s.items.find((it) => it.id === itemId);
-        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip);
+        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip, gen);
       }
-      if (view.kind === 'scenes' && !s.tilesInLayer) addTiles(map, info, tiles++, s.render, clip);
+      if (view.kind === 'scenes' && !s.tilesInLayer) place(info);
     });
     if (view.kind === 'mosaic' && !s.tilesInLayer) {
-      for (const raster of view.rasters) {
-        if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
-      }
+      (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach(place);
     }
   }
 }

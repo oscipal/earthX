@@ -4,9 +4,11 @@ import { buildMosaicTileTemplate } from './api';
 import {
   isMosaicPass,
   MAX_MOSAIC_SCENES,
+  mosaicsOfView,
   mosaicTemplateOf,
   oversizeNote,
   passesOf,
+  sameMosaics,
   viewOfPass,
 } from './mosaic';
 import type { MosaicInfo, Mosaics, SceneEntry } from './mosaic';
@@ -148,5 +150,30 @@ describe('oversizeNote', () => {
       'A time step of 70 scenes is more than one mosaic takes (64); its scenes are drawn one by one, 30 of them not at all.',
     );
     expect(oversizeNote([pass(...ids(65))], 0)).not.toContain('not at all');
+  });
+});
+
+describe('the mosaics a view asks for', () => {
+  const view = pass('A', 'B');
+  const other = pass('C', 'D');
+  const known = { ...mosaicOf(view), ...mosaicOf(other) };
+
+  it('are those of its own time steps, not those of another view', () => {
+    const picked = mosaicsOfView(known, DATASET, view, [group('A', 'B')]);
+    expect(Object.keys(picked)).toEqual([mosaicTemplateOf(DATASET, view)]);
+  });
+
+  it('leaves out one that has not answered, and picks nothing without a dataset', () => {
+    expect(mosaicsOfView({}, DATASET, view, [group('A', 'B')])).toEqual({});
+    expect(mosaicsOfView(known, null, view, [group('A', 'B')])).toEqual({});
+  });
+
+  it('are the same while only another view\'s answer is new', () => {
+    const alone = mosaicOf(view);
+    const before = mosaicsOfView(alone, DATASET, view, [group('A', 'B')]);
+    const after = mosaicsOfView({ ...alone, ...mosaicOf(other) }, DATASET, view, [group('A', 'B')]);
+    expect(sameMosaics(before, after)).toBe(true);
+    expect(sameMosaics(before, {})).toBe(false);
+    expect(sameMosaics(before, mosaicOf(view, { order: ['B', 'A'] }))).toBe(false); // another answer for it
   });
 });

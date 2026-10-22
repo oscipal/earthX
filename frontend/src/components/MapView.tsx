@@ -13,6 +13,7 @@ import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
 import { itemsForMap } from '../grouping';
+import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
@@ -106,7 +107,7 @@ export default function MapView() {
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const downloaded = useAppStore((s) => s.downloaded);
-  const mosaics = useAppStore((s) => s.mosaics);
+  const allMosaics = useAppStore((s) => s.mosaics);
   const flyToBbox = useAppStore((s) => s.flyToBbox);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
@@ -318,6 +319,15 @@ export default function MapView() {
   // --- pinned layers (layer manager), and under them the AOI crops of the
   // dataset chosen in the results dropdown (M3-10): the map shows that dataset
   // only, plus whatever the user pinned. ---
+  // The mosaics this view asks for, the same object until one of them changes: another view's
+  // TileJSON arriving must not tear this view's tiles down.
+  const picked = useMemo(
+    () => mosaicsOfView(allMosaics, datasetId, Object.entries(downloaded), groups),
+    [allMosaics, datasetId, downloaded, groups],
+  );
+  const mosaicsRef = useRef(picked);
+  if (!sameMosaics(mosaicsRef.current, picked)) mosaicsRef.current = picked;
+  const mosaics = mosaicsRef.current;
   // The layer that is the full-resolution view (`viewLayer.ts`) draws it at its
   // place, with its eye.
   const viewLayer = useMemo(

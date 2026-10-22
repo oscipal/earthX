@@ -59,7 +59,7 @@ const TILEJSON = (order: string[]) => ({
   bounds: [9, 46, 12, 49],
   minzoom: 8,
   maxzoom: 19,
-  tiles: ['http://internal/tiles'],
+  tiles: ['http://tiler.test/tiles'],
   'earthx:order': order,
 });
 
@@ -296,13 +296,53 @@ describe('adding a mosaic to the layers', () => {
   });
 
   it.each([true, false])('does not pin half a picture while the mosaic is on its way (cropped: %s)', async (cropToAoi) => {
-    tiler(() => new Promise<Response>(() => {})); // never answers
-    void useAppStore.getState().enterFocus(cropToAoi);
+    let answerMosaic: (r: Response) => void = () => {};
+    tiler(() => new Promise<Response>((resolve) => (answerMosaic = resolve)));
+    const entering = useAppStore.getState().enterFocus(cropToAoi);
     await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
     useAppStore.getState().addCurrentToLayers();
     const s = useAppStore.getState();
     expect(s.layers).toEqual([]);
     expect(s.error).toMatch(/still loading/);
+    answerMosaic(json(TILEJSON(['A', 'B', 'C']))); // so that no request is left hanging for the next test
+    await entering;
+  });
+});
+
+describe('adding a part of the view to the layers', () => {
+  it.each([true, false])('asks for the mosaic of the picked scenes, and pins it on the next try (cropped: %s)', async (cropToAoi) => {
+    tiler(() => json(TILEJSON(['A', 'B', 'C'])));
+    await useAppStore.getState().enterFocus(cropToAoi);
+    useAppStore.setState({ selectedIds: ['A', 'B'] }); // a part of the three the view shows
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().layers).toEqual([]);
+    expect(useAppStore.getState().error).toMatch(/still loading/);
+    await vi.waitFor(() => expect(mosaicCalls().map(itemsOf)).toContainEqual(['A', 'B']));
+    await vi.waitFor(() => expect(Object.keys(useAppStore.getState().mosaics)).toHaveLength(2));
+
+    useAppStore.getState().addCurrentToLayers();
+    const { layers, error } = useAppStore.getState();
+    expect(error).toBeNull();
+    expect(layers).toHaveLength(1);
+    expect(layers[0].restore.itemIds).toEqual(['A', 'B']);
+    const urls = layers[0].overlays.map((o) => (o.kind === 'raster' ? o.tileUrl : ''));
+    expect(urls.filter((u) => u.includes('/mosaic/'))).toHaveLength(1);
+    expect(itemsOf(urls.find((u) => u.includes('/mosaic/')) as string)).toEqual(['A', 'B']);
+  });
+
+  it('pins scenes that no time step of the search holds one by one, never as a mosaic', async () => {
+    tiler();
+    useAppStore.setState({ focusMode: true, cropToAoi: true, groups: [], selectedIds: [] });
+    useAppStore.setState({
+      downloaded: Object.fromEntries(
+        ['X', 'Y'].map((id) => [id, { tileUrl: `/t/${id}`, bounds: [0, 0, 1, 1], asset: 'visual', minZoom: 0, maxZoom: 19 }]),
+      ),
+    });
+    useAppStore.getState().addCurrentToLayers();
+    expect(mosaicCalls()).toEqual([]);
+    const { layers, error } = useAppStore.getState();
+    expect(error).toBeNull();
+    expect(layers.flatMap((l) => l.overlays)).toHaveLength(2);
   });
 });
 
@@ -332,7 +372,9 @@ describe('opening a pinned layer again', () => {
     };
     useAppStore.setState({ layers: [layer as never] });
     useAppStore.getState().selectLayer('L');
+    expect(useAppStore.getState().focusLoading).toBe(true); // until the mosaic has answered
     await vi.waitFor(() => expect(mosaicCalls()).toHaveLength(1));
     expect(itemsOf(mosaicCalls()[0])).toEqual(['A', 'B']);
+    await vi.waitFor(() => expect(useAppStore.getState().focusLoading).toBe(false));
   });
 });

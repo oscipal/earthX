@@ -471,6 +471,21 @@ describe('syncFocusRaster with mosaics', () => {
     expect(rasters.map(tileUrlOf).some((u) => u.includes('/items/S40/'))).toBe(false);
   });
 
+  it('keeps every mosaic and leaves no layer behind when the ids run short', () => {
+    const passIds = (p: number) => Array.from({ length: 64 }, (_, i) => `P${p}S${String(i).padStart(2, '0')}`);
+    const all = [0, 1, 2, 3].map(passIds);
+    const downloaded = downloadedOf(...all.flat(), 'X');
+    const mosaics = all.reduce<Mosaics>((acc, ids) => ({ ...acc, ...loaded(downloadedOf(...ids), ids) }), {});
+    const fake = fakeMap();
+    const state = { downloaded, groups: all.map(group), mosaics, render: {}, showDownloaded: true, items: [], dataset: dataset() };
+    syncFocusRaster(fake.map as never, state);
+    const urls = fake.sources.filter((src) => src.spec.type === 'raster').map(tileUrlOf);
+    expect(urls.filter((u) => u.includes('/mosaic/'))).toHaveLength(4);
+    expect(urls).toHaveLength(5); // the single scenes under the mosaics were given up, X is one of its own
+    // every id it handed out is one the next sync clears (`clearDynamicMosaic` goes up to 199)
+    expect(fake.layers.every((id) => Number(id.split('-').pop()) < 200)).toBe(true);
+  });
+
   it('takes a time step of 64 scenes whole, with every scene under it', () => {
     const ids = Array.from({ length: 64 }, (_, i) => `S${String(i).padStart(2, '0')}`);
     const downloaded = downloadedOf(...ids);

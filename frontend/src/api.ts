@@ -356,6 +356,10 @@ export interface MosaicTileJson {
 
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
+// A cold mosaic of 64 scenes is about 5 s (plan §2.8); a time step waits for its TileJSON and draws
+// nothing meanwhile, so an answer that never comes must end in an error, not in a map that stays empty.
+export const MOSAIC_TILEJSON_TIMEOUT_MS = 60_000;
+
 // Loading it also fills the tiler's item cache with every scene of the mosaic once,
 // so the tiles that follow find them there (plan §4.3) — which is why the map asks
 // for it before it asks for a single tile.
@@ -365,7 +369,9 @@ export async function fetchMosaicTileJson(
   asset: string,
 ): Promise<MosaicTileJson> {
   const url = `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicQuery(itemIds, asset)}`;
-  const body = await jsonOrThrow<Record<string, unknown>>(await fetch(url));
+  const body = await jsonOrThrow<Record<string, unknown>>(
+    await fetch(url, { signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS) }),
+  );
   const { bounds, minzoom, maxzoom } = body;
   const order = body['earthx:order'];
   if (

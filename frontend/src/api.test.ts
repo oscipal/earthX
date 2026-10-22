@@ -644,6 +644,8 @@ describe('fetchMosaicTileJson', () => {
     const json = await fetchMosaicTileJson('sentinel-2-c1-l2a', ['B', 'A'], 'visual');
     const url = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(url).toBe('/collections/sentinel-2-c1-l2a/mosaic/WebMercatorQuad/tilejson.json?item=A&item=B&asset=visual');
+    const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal); // it ends on its own if the tiler never answers
     expect(json).toEqual({ bounds: [10, 47, 12, 48], minzoom: 8, maxzoom: 19, order: ['B', 'A'] });
   });
 

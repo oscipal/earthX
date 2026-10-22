@@ -406,6 +406,31 @@ function cropsForSearch(
 
 const MOSAIC_STILL_LOADING = 'The mosaic of this time step is still loading — add it to the layers in a moment.';
 
+// The overlays for these scenes, split by time step; `null` while the mosaic of one is not known. What is
+// not known is asked for then, so that the next try finds it: a part of the view's scenes (a selection) is
+// another mosaic than the one the view loaded.
+function overlaysOfEntries(
+  set: SetState,
+  get: GetState,
+  entries: SceneEntry[],
+  clip: GeoJSON.Geometry | null,
+): LayerOverlay[] | null {
+  const s = get();
+  const datasetId = s.datasetId ?? '';
+  const passes = passesOf(entries, s.groups);
+  const overlays = passes.map((pass) => overlaysOfPass(datasetId, pass, s.mosaics, s.appliedRender, clip));
+  if (overlays.some((o) => o === null)) {
+    void fetchMosaics(
+      set,
+      get,
+      passes.filter((_, i) => overlays[i] === null).map((pass) => ({ datasetId, entries: pass })),
+    );
+    set({ error: MOSAIC_STILL_LOADING });
+    return null;
+  }
+  return overlays.flatMap((o) => o ?? []);
+}
+
 // In flight, by the mosaic's template: two views that want one mosaic ask the tiler once.
 const mosaicLoads = new Map<string, Promise<void>>();
 
@@ -1155,12 +1180,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const perGroup = [...byGroupIndex.entries()].map(([idx, groupEntries]) => ({
           idx,
           groupEntries,
-          overlays: overlaysOfPass(s.datasetId ?? '', groupEntries, s.mosaics, s.appliedRender, aoi),
+          overlays: overlaysOfEntries(set, get, groupEntries, aoi),
         }));
-        if (perGroup.some((g) => g.overlays === null)) {
-          set({ error: MOSAIC_STILL_LOADING });
-          return;
-        }
+        if (perGroup.some((g) => g.overlays === null)) return;
         const newLayers = perGroup.map(({ idx, groupEntries, overlays }, i) => {
           const label = idx >= 0 ? s.groups[idx]?.label : activeGroup?.label;
           const itemIds = groupEntries.map(([id]) => id);
@@ -1188,19 +1210,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           layers: [...newLayers, ...s.layers],
           layerManagerOpen: true,
+          error: null,
           notice: `Added ${newLayers.length} layer${newLayers.length === 1 ? '' : 's'} (one per group).`,
         });
         return;
       }
       const itemIds = entries.map(([id]) => id);
-      const passOverlays = passesOf(entries, s.groups).map((pass) =>
-        overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, null),
-      );
-      if (passOverlays.some((o) => o === null)) {
-        set({ error: MOSAIC_STILL_LOADING });
-        return;
-      }
-      const overlays: LayerOverlay[] = passOverlays.flatMap((o) => o ?? []);
+      const overlays = overlaysOfEntries(set, get, entries, null);
+      if (overlays === null) return;
       const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${activeGroup?.label ?? ''}`;
       const layer = makeLayer(
         name,
@@ -1219,7 +1236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         0,
       );
-      set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
+      set({ layers: [layer, ...s.layers], layerManagerOpen: true, error: null, notice: `Added "${name}" to layers.` });
       return;
     }
 
@@ -1360,8 +1377,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
       viewLayerId: id,
+      focusLoading: true,
     });
-    void get().loadMosaics();
+    void get().loadMosaics().finally(() => set({ focusLoading: false }));
   },
 
   // Open the dialog for a pinned layer (M2-07d). The crop and disabled
