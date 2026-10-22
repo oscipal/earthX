@@ -567,3 +567,49 @@ bleiben stehen, §15m kommt hinter §15k und §15l.
 - **Speicher** mit dem Statistik-Durchgang neu gemessen (§10 Punkt 3a): unverändert unter den
   Grenzen.
 - **Frontend-Fixtures** nach dem Merge neu erzeugt: kein Unterschied.
+
+---
+
+## 12. Umsetzung von M4-18b (22.10.2026)
+
+Kette von Operatoren in der Kachel und Vorschau des längsten T1-Anfangs (F1, §3.4, §8); ohne das
+Formular der Maske (M4-18c). Keine neue Abhängigkeit, `.github/`, `.claude/`, `CLAUDE.md` und
+`.importlinter` unberührt.
+
+**Geliefert:**
+- **`api/tiler.py`:** `op`, `op_version` und `params` dürfen in der Kachel-URL wiederholt werden, gleich
+  oft und in der Reihenfolge der Schritte, höchstens 4 (`MAX_OPERATOR_STEPS`). Ungleich oft oder mehr als 4:
+  `400`. Jeder Schritt wird für sich geprüft (bekannte Version, `T1` und `pixel`, Parameter strikt,
+  `applicable` mit `dataset_check`), vor dem Abruf des Items; ab zwei Schritten beginnt die Meldung mit
+  „step n: “. Die Form mit einem Operator ist der Fall n = 1, ihre Meldungen sind unverändert.
+  `OperatorInput` trägt jetzt `steps` statt `operator` und `params`; `operator_post_process` ruft die
+  Kerne nacheinander.
+- **`processing/tile.py`:** Der Reader lässt `transform` der Reihe nach über die Bänder laufen, vor dem
+  ersten Pixel: ein Schritt, der ein Band nennt, das der vorige entfernt hat (die Schicht nach `mask`),
+  wird mit `422` abgewiesen, wie im Auftrag.
+- **Frontend:** `planPreview` plant den längsten Anfang aus Kachel-Schritten (höchstens 4, wie der
+  `tiler`); ein unvollständiger oder nicht zeichenbarer Schritt beendet ihn. Ist schon der erste nicht
+  zeichenbar, bleibt es bei „No preview: the first step runs only as a job.“, ist er unvollständig, bei
+  „Complete the step …“. `buildOperatorTileTemplate` nimmt eine Liste von Schritten; der Titel der Vorschau
+  verbindet die Titel („Band math → Normalize“); der Hinweis unter der Vorschau nennt die Zahl der gezeigten
+  Schritte (`furtherNote`).
+
+**Tests (neu):**
+- `tests/earthx/api/test_tiler_chain.py`: Kachel gleich Job auf der nativen Ebene für `mask → band_math`,
+  `mask → normalize`, `mask → band_math → normalize` und `normalize → band_math` (COG-Paar mit
+  20-m-Schicht; `numpy.array_equal` über die gültigen Pixel, gleiche Masken, alle Bänder); `mask → band_math`
+  auf dem CF-Mini-Zarr nach der Regel von `adr/0014` §15d (Kachel gegen die Formel auf dem nächsten
+  Quellpixel beider Raster; Job gegen Kachel überall außer innerhalb von 0,125 Quellpixel einer Grenze);
+  die Maske des ersten Schritts erreicht den Index des zweiten; die Reihenfolge der URL ist die der
+  Schritte. Abweisungen: fünf Schritte, ungleich oft, Schritt ohne Kachel (`reproject`), unbekannte
+  Version, Parameter eines späteren Schritts, zu lange Parameter, Datensatz ohne Maske und falsche
+  Schicht (beide ohne Abruf des Items), ein Band, das der erste Schritt entfernt hat, zweite Maske,
+  fehlende Schicht im Auftrag; TileJSON trägt die Kette; `statistics` und `info` weisen sie ab.
+- Frontend: `processingPreview.test.ts` (Anfang, Reihenfolge, Ende an einem unvollständigen und an einem
+  nicht zeichenbaren Schritt, Obergrenze, URL mit wiederholten Parametern, Schlüssel je Reihenfolge) und
+  `ProcessingPreview.test.tsx` (Kette in der Vorschau, Hinweis).
+
+**Nicht Teil von M4-18b** (bleibt M4-18c): Das Panel zeigt `mask` weiter als „not supported by this
+panel“, also kann es `mask` im Anfang nicht zeichnen. Die Kette `mask → band_math` ist auf der Route
+und im Vergleich belegt, aber im Panel erst mit dem Formular erreichbar; das Asset der Schicht kommt mit
+M4-18c in den Auftrag.
