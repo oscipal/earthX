@@ -1036,11 +1036,12 @@ Abrufe der Quelle zählt (ohne die Prüfung scheitern 11 davon).
 **Befund [P], nicht geändert.** Angeheftete Layer stapeln ihre Szenen in
 Auswahlreihenfolge mit der **zuletzt** gewählten oben (`overlays` in `wantedOverlaysOf`
 von unten nach oben), die Ansicht mit der **zuerst** gewählten oben (M3-09). Für ein
-Mosaik stimmt beides, weil der Server sortiert und die Einzelszenen darunter nach
-`earthx:order` gestapelt sind; für Einzelszenen ohne Mosaik bleibt der Unterschied
-bestehen (Log: offen).
+Mosaik stimmt beides **innerhalb eines Überflugs**, weil der Server sortiert und die
+Einzelszenen darunter nach `earthx:order` gestapelt sind. Zwischen Überflügen und für
+Einzelszenen ohne Mosaik bleibt der Unterschied bestehen: In der Ansicht liegt der zuerst
+gewählte Überflug oben, im Layer der zuletzt angeheftete (Log: offen).
 
-**Tests** (`vitest`, 1484 grün; `npx tsc -b`, `npm run lint` sauber):
+**Tests** (`vitest`, 1491 grün; `npx tsc -b`, `npm run lint` sauber):
 
 - `mosaic.test.ts`: Teilung nach Überflug, Grenzen 1/2/64/65, verschiedene Assets,
   Datensatz unter z8, gleiche Auswahl gleiche URL, die drei Zustände, Reihenfolge der
@@ -1059,6 +1060,30 @@ bestehen (Log: offen).
   wartend), `selectLayer`.
 - Gegenprobe: ohne die Umkehr der Stapelung, ohne den Zustand „wartet“ und ohne
   `maxzoom` am Layer scheitern 4, 4 und 3 Tests.
+
+**Review (`reviewer`, 22.10.2026) und was daraus wurde.** Ein Blocker und zwei Mängel sind behoben,
+je mit Test, der ohne die Änderung scheitert:
+
+- *Teilauswahl anheften.* Ein Mosaik aus einem Teil der Ansicht (Szenen abgehakt) ist eine andere URL
+  als das, was die Ansicht geladen hat; das Anheften blieb für immer bei „still loading“. Jetzt
+  fragt es das fehlende Mosaik an und gelingt beim nächsten Versuch; Szenen, die keine Gruppe der Suche
+  hält, werden einzeln gezeichnet statt als Mosaik; die Meldung verschwindet nach einem Erfolg.
+- *IDs über 200.* Bei sehr großen Auswahlen gaben Mosaike ihre Einzelszenen darunter ab, bevor eines
+  verloren geht; jede vergebene ID liegt im Löschbereich.
+- *Neuaufbau der Ansicht.* Sie hängt nur noch an den Mosaiken ihrer eigenen Überflüge
+  (`mosaicsOfView`); das TileJSON einer anderen Ansicht reißt ihre Kacheln nicht ab. Verspätete
+  Quicklook-Unterlagen eines früheren Aufbaus werden verworfen. `selectLayer` zeigt „Loading…“.
+- *Zeitlimit.* Das TileJSON bricht nach 60 s mit Fehler ab (sonst bliebe der Überflug „wartend“).
+
+**Bekannte Grenzen aus dem Review, nicht geändert:** (a) Ändern sich die Gruppen während der Ansicht so,
+dass ein Überflug anders geschnitten wird, wird dessen Mosaik nicht nachgeladen (er bleibt leer, bis die
+Ansicht neu geöffnet wird); selten, nur sichtbar, wenn die Ansicht vom Layer abweicht. (b) Meldungen
+überschreiben sich (ein Fehler des Mosaiks gegen die Suchmeldung, der Hinweis „über 64“ gegen die
+Streckungsmeldung). (c) Ein Fehler des Rückfalls ruft `upgradeCrops` nicht auf; die Zuschnitte bleiben
+Einzelszenen. (d) `expression` an der Mosaik-URL gäbe `400`; heute setzt kein Registry-Eintrag eine.
+(e) `passesOf` ordnet die Szenen nach Überflug, das ändert die Stapelung zwischen Überflügen und die
+ersten 40 gegenüber vorher. (f) Das Template nimmt den aktiven Datensatz, nicht den der Szenen; bei einem
+Layer eines Datensatzes, der nicht mehr im Katalog steht, gibt es eine überflüssige Anfrage mit `404`.
 
 **Prüfanleitung B: gegen eine echte Quelle nicht geprüft.** Wie in §14 erreicht das
 `gateway` der Sitzung Earth Search nicht. Geprüft ist stattdessen die Verdrahtung gegen
