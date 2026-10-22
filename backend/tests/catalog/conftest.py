@@ -58,6 +58,8 @@ def valid_config() -> DatasetConfig:
             band_math=True,
             interpolation=True,
             reprojection=True,
+            masking=False,
+            normalization=True,
             ml_processing=False,
             quad_pol=False,
             single_coverage_product=False,
@@ -119,6 +121,7 @@ def valid_config() -> DatasetConfig:
         health=HealthInfo(status=HealthStatus.OK),
         maturity=Maturity.STABLE,
         zarr=None,
+        mask=None,
     )
 
 

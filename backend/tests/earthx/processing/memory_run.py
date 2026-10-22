@@ -1,13 +1,15 @@
 """One T2 run in a process of its own, for the peak memory of adr/0014 §3.5 (plan M4-07a §3.8, F10).
 
 Called by ``test_memory_8192.py`` as ``python -m tests.earthx.processing.memory_run
-<cog> <workdir> <size> [<GDAL_CACHEMAX in MB> [<step>]]``, ``size`` being the side of the
+<cog> <workdir> <size> [<GDAL_CACHEMAX in MB> [<step> [<layer>]]]``, ``size`` being the side of the
 square scene in pixels. It puts the COG behind the same two
 seams the tests use — ``vsicurl_path`` and the resolver — enters
 ``worker_environment()`` in its main thread as a `jobs` child does (adr/0013 §5.3),
 runs one step over both bands — the test operator ``scale``, or with ``step`` set to
 ``reproject`` the platform's ``reproject`` to EPSG:3035 with ``bilinear`` at 10 m, with
-``reproject-lanczos`` with ``lanczos`` at 30 m — and prints one JSON line: peak
+``reproject-lanczos`` with ``lanczos`` at 30 m, with ``normalize`` the platform's
+``normalize`` over both bands, with ``mask`` its ``mask`` over both bands and the 20 m
+classification layer ``layer`` (a second COG, M4-18) — and prints one JSON line: peak
 resident memory in MB, the resident memory after the imports, seconds and blocks.
 Nothing here opens a socket.
 
@@ -52,10 +54,19 @@ STEPS = {
         "op_version": 3,
         "params": {"crs": "EPSG:3035", "resolution": 30.0, "resampling": "lanczos"},
     },
+    # M4-18: the two pixel operators, in the pass that reads the scene.
+    "normalize": {
+        "op": "normalize",
+        "op_version": 1,
+        "params": {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
+    },
+    "mask": {"op": "mask", "op_version": 1, "params": {"source": "scl", "classes": [3, 8, 9, 10]}},
 }
 
 
-def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str = "scale") -> None:
+def main(
+    cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str = "scale", layer: Path | None = None
+) -> None:
     # Imported here, after `boto3` is hidden (module docstring), not at the top.
     import earthx.readers.access as read_access
     import earthx.readers.cog as cog_reader
@@ -66,16 +77,24 @@ def main(cog: Path, workdir: Path, size: int, cachemax_mb: int | None, step: str
     from tests.earthx.processing.testops import OPERATORS
 
     address = sources.url("big")
-    cog_reader.vsicurl_path = lambda checked: str(cog)
+    layer_address = sources.url("scl")
+    files = {address: str(cog)} | ({layer_address: str(layer)} if layer is not None else {})
+    cog_reader.vsicurl_path = lambda checked: files[getattr(checked, "url", str(checked))]
     read_access.resolve_host = lambda host, port=443: ("93.184.216.34",)
     if cachemax_mb is not None:
         read_access.GDAL_CACHEMAX_BYTES = cachemax_mb * 1024 * 1024
     entry = resolved("ITEM_BIG", "big", href=address)
     entry["bands"] = entry["bands"] * 2
+    entries, assets = [entry], ["big"]
+    if layer is not None:
+        classes = resolved("ITEM_BIG", "scl", href=layer_address, scale=None, offset=None)
+        classes["bands"] = [{"data_type": "uint8", "nodata": 0, "scale": None, "offset": None}]
+        entries.append(classes)
+        assets.append("scl")
     data = {
         "recipe_version": 1,
         "inputs": [
-            {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": ["big"], "resolved": [entry]}
+            {"name": "s2", "dataset": "synthetic", "groups": [["ITEM_BIG"]], "assets": assets, "resolved": entries}
         ],
         "aoi": sources.whole(size, size),
         "steps": [STEPS[step]],
@@ -104,4 +123,5 @@ if __name__ == "__main__":
         int(sys.argv[3]),
         int(sys.argv[4]) if len(sys.argv) > 4 else None,
         sys.argv[5] if len(sys.argv) > 5 else "scale",
+        Path(sys.argv[6]) if len(sys.argv) > 6 else None,
     )

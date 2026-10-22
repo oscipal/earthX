@@ -178,6 +178,8 @@ class TestOrderSchema:
         assert refs == [
             "#/$defs/step_band_math_v1",
             "#/$defs/step_coarsen_v1",
+            "#/$defs/step_mask_v1",
+            "#/$defs/step_normalize_v1",
             "#/$defs/step_reproject_v3",
             "#/$defs/step_scale_v1",
         ]
@@ -206,7 +208,7 @@ class TestOrderSchema:
         assert ("reproject", 2) in REAL_OPERATORS
         schema = order_schema(REAL_OPERATORS)
         steps = sorted(key for key in schema["$defs"] if key.startswith("step_"))
-        assert steps == ["step_band_math_v1", "step_reproject_v3"]
+        assert steps == ["step_band_math_v1", "step_mask_v1", "step_normalize_v1", "step_reproject_v3"]
         assert schema["properties"]["steps"]["items"]["discriminator"] == {"propertyName": "op"}
 
     def test_an_older_version_alone_is_offered(self) -> None:

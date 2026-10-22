@@ -192,6 +192,12 @@ class Capabilities:
     #: Reprojection and resampling to another grid (adr/0014 §5.3, F6; R3). A
     #: method other than ``nearest`` needs ``interpolation`` as well.
     reprojection: bool
+    #: ``mask`` hides the classes a recipe names of the layer in ``DatasetConfig.mask``
+    #: (adr/0014 §15m); set exactly where that layer is described.
+    masking: bool
+    #: ``normalize``: a fixed range onto another (M4-18). Generic like band math, but
+    #: every entry switches it on by itself (B10).
+    normalization: bool
     ml_processing: bool
     quad_pol: bool
     single_coverage_product: bool
@@ -655,6 +661,37 @@ def max_geotile_level_for(typical_footprint_km: float) -> int:
     return math.floor(math.log2(EARTH_CIRCUMFERENCE_KM / typical_footprint_km))
 
 
+#: Largest class value a mask layer may carry (``uint16``).
+MAX_MASK_VALUE = 65535
+
+
+@dataclass(frozen=True, slots=True)
+class MaskClass:
+    """One class of a classification layer: the value in the pixels and the source's name for it."""
+
+    value: int
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class MaskSource:
+    """Where the operator ``mask`` reads its classes from for this dataset (M4-18, adr/0014 §15m).
+
+    ``asset`` is the key an order names (``scl``, ``SCL_20m:scl`` for a Zarr group),
+    ``band`` the name the layer carries in the core, which is what a recipe's ``source``
+    must equal. ``classes`` lists every class the layer knows, ascending, with the names
+    of ``reference``; ``suggested`` is what the panel ticks first and is never applied
+    unless a recipe names it (B10). ``note`` is the help text's remark on the names.
+    """
+
+    asset: str
+    band: str
+    classes: tuple[MaskClass, ...]
+    suggested: frozenset[int]
+    reference: str
+    note: str
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     """One dataset, everything the platform decides about it before asking the source."""
@@ -693,6 +730,10 @@ class DatasetConfig:
     # ZarrInfo). A dataset whose store needs anything more says so here, not with a
     # branch on `dataset_id` somewhere in `readers`.
     zarr: ZarrInfo | None
+    # The classification layer ``mask`` reads, or None where the dataset has none (the
+    # DEM). No default (KLAERUNGEN B10): an entry says so on purpose, and ``masking`` in
+    # its capabilities agrees with it.
+    mask: MaskSource | None
 
     def __post_init__(self) -> None:
         self._check_keywords()
@@ -705,6 +746,36 @@ class DatasetConfig:
         self._check_item_holding()
         self._check_zarr()
         self._check_browse_cors()
+        self._check_mask()
+
+    def _check_mask(self) -> None:
+        """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""
+        mask = self.mask
+        if mask is None:
+            if self.capabilities.masking:
+                raise ConfigError(f"{self.dataset_id}: masking is on, but the entry describes no mask layer")
+            return
+        if not self.capabilities.masking:
+            raise ConfigError(f"{self.dataset_id}: the entry describes a mask layer, but masking is off")
+        if not mask.asset or not mask.band or not mask.note.strip():
+            raise ConfigError(f"{self.dataset_id}: a mask layer names its asset, band and a note")
+        # A Zarr group is addressed as ``<asset>:<variable>`` (plan M4-13, ZarrInfo); a COG asset key holds no colon.
+        variable = mask.asset.rsplit(":", 1)[-1]
+        if variable != mask.band:
+            raise ConfigError(
+                f"{self.dataset_id}: mask band {mask.band!r} is not what asset {mask.asset!r} reads as {variable!r}"
+            )
+        if not mask.reference.startswith("https://"):
+            raise ConfigError(f"{self.dataset_id}: the source of the mask classes is not an https URL")
+        values = [entry.value for entry in mask.classes]
+        if not values or values != sorted(set(values)):
+            raise ConfigError(f"{self.dataset_id}: mask classes are listed ascending, each value once")
+        if not all(isinstance(value, int) and 0 <= value <= MAX_MASK_VALUE for value in values):
+            raise ConfigError(f"{self.dataset_id}: mask class values are whole numbers from 0 to {MAX_MASK_VALUE}")
+        if not all(entry.label.strip() for entry in mask.classes):
+            raise ConfigError(f"{self.dataset_id}: every mask class has a name")
+        if not mask.suggested <= set(values):
+            raise ConfigError(f"{self.dataset_id}: suggested mask classes are among the listed ones")
 
     def _check_keywords(self) -> None:
         """At least one keyword, each a non-blank string (M3-10): the viewer's filter

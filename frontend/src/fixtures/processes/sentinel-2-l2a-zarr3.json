@@ -242,6 +242,125 @@
               "T2"
             ]
           },
+          "step_mask_v1": {
+            "additionalProperties": false,
+            "description": "Hide the pixels that a classification layer assigns to the chosen classes, such as cloud.",
+            "properties": {
+              "op": {
+                "const": "mask"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): the layer's band name and the classes to hide, both always given (B10).",
+                "properties": {
+                  "classes": {
+                    "description": "Class values to hide, ascending and each once.",
+                    "items": {
+                      "maximum": 65535,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "title": "Classes",
+                    "type": "array"
+                  },
+                  "source": {
+                    "description": "Band name of the classification layer, as the registry names it.",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "title": "Source",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source",
+                  "classes"
+                ],
+                "title": "MaskParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Mask",
+            "type": "object",
+            "x-earthx-kind": "pixel",
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
+          },
+          "step_normalize_v1": {
+            "additionalProperties": false,
+            "description": "Map a fixed range of values linearly onto another range, for all bands alike.",
+            "properties": {
+              "op": {
+                "const": "normalize"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): both ranges and whether to clip, always given (B10).",
+                "properties": {
+                  "clip": {
+                    "description": "Limit the result to the target range instead of continuing the line.",
+                    "title": "Clip",
+                    "type": "boolean"
+                  },
+                  "in_max": {
+                    "description": "Value that becomes out_max; above in_min.",
+                    "title": "In Max",
+                    "type": "number"
+                  },
+                  "in_min": {
+                    "description": "Value that becomes out_min.",
+                    "title": "In Min",
+                    "type": "number"
+                  },
+                  "out_max": {
+                    "description": "End of the target range; below out_min reverses the values.",
+                    "title": "Out Max",
+                    "type": "number"
+                  },
+                  "out_min": {
+                    "description": "Start of the target range.",
+                    "title": "Out Min",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "in_min",
+                  "in_max",
+                  "out_min",
+                  "out_max",
+                  "clip"
+                ],
+                "title": "NormalizeParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Normalize",
+            "type": "object",
+            "x-earthx-kind": "pixel",
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
+          },
           "step_reproject_v3": {
             "additionalProperties": false,
             "description": "Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
@@ -394,6 +513,12 @@
               "oneOf": [
                 {
                   "$ref": "#/$defs/step_band_math_v1"
+                },
+                {
+                  "$ref": "#/$defs/step_mask_v1"
+                },
+                {
+                  "$ref": "#/$defs/step_normalize_v1"
                 },
                 {
                   "$ref": "#/$defs/step_reproject_v3"

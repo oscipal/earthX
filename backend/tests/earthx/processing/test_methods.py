@@ -206,6 +206,8 @@ class TestEveryOperatorSaysItsStep:
 
     SAMPLES = {
         "band_math": {"expression": "nir - red"},
+        "mask": {"source": "scl", "classes": [3, 8, 9, 10]},
+        "normalize": {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True},
         "reproject": {"crs": "EPSG:3035", "resolution": 10.0, "resampling": "bilinear"},
     }
 
