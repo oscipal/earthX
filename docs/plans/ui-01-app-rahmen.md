@@ -1,6 +1,6 @@
 # UI-01 — App-Rahmen mit linker Leiste und Processing-Manager
  
-**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4), beauftragt von Otto.
+**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4) und 22.10.2026 (§1 Punkte 10 und 12), beauftragt von Otto.
 **Meilenstein:** UI, direkt nach M4 (nach M4-20). Nummer und Name des Meilensteins stehen in `projektplan.md` noch aus.
 **Stufe B:** Erst kommt der Plan im Draft-PR, Otto gibt ihn frei, dann folgt der Code.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -32,6 +32,7 @@
     - **Vorgehen:** Zuerst die Ursache finden, mit einem Test, der am Code vor UI-01 scheitert. Otto liefert beim Start die Schritte, mit denen es auftritt.
     - **Ort der Behebung:** in der gemeinsamen Layer-Logik (`mapLayers`, Store), nicht nur in der neuen Optik.
     - **Prüfung:** nach jedem Umsortieren mit allen Layer-Arten (Quicklook, Vollauflösung, Vorschau, Ergebnis, Mosaik aus M4-17).
+    - **Stapelung zwischen Überflügen (22.10.2026):** Die offene Ansicht und die angehefteten Layer stapeln mehrere Überflüge heute verschieden (bekannte Grenze aus M4-17c, Plan §15). Soll: gleiche Auswahl, gleiche Reihenfolge, gleiches Bild; dazu ein Test, der am Code vor UI-01 scheitert.
 11. **Klick auf einen Ergebnis-Layer (20.10.2026).**
     - **Heute:** Es erscheinen die Suchergebnisse.
     - **Soll:** Es erscheint dieselbe Ansicht wie bei anderen Layern, bezogen auf das Ergebnis: Wertebereich (vmin, vmax), Colormap und Deckkraft, mit der Vorgabe aus der Statistik (M4-32).
@@ -88,6 +89,7 @@
   - gleiche Breite und feste Knopfpositionen der Layer-Zeilen, auch ohne Download-Knopf,
   - Download eines Ergebnis-Layers, auch im abgelaufenen Zustand,
   - Reihenfolge nach jedem Umsortieren mit allen Layer-Arten; der Test zum Befund aus Punkt 10 scheitert am alten Code,
+  - Ansicht und angeheftete Layer stapeln mehrere Überflüge gleich (Punkt 10),
   - Klick auf einen Ergebnis-Layer öffnet die Ansicht für Darstellung (vmin, vmax, Colormap), nicht die Suchergebnisse,
   - ein fertiger Job zeigt nur „Download (ZIP)“; kein „Methods“ und kein „Copy“ irgendwo im Frontend (Gegenprobe gegen den Stand nach M4-19a).
 - Alle vier Pflicht-Checks der CI sind grün.
