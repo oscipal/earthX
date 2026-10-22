@@ -3,7 +3,7 @@
 // when the map says "Overview", and when the layer is "Expired". Pure functions; the
 // state lives in `processingStore.ts` and `store.ts`.
 
-import { rescaleOf, type PreviewRange } from './processingPreview';
+import { DEFAULT_RANGE, rescaleOf, type PreviewRange } from './processingPreview';
 import type { AppliedRender, Bbox } from './types';
 
 // The link of the output `tiles` (`api/processing_docs.py::TILES_HREF`): a path on
@@ -32,16 +32,79 @@ export function resultTileTemplate(href: string): string {
 
 const FLOAT = /^float/;
 
-// A floating-point result (an index such as NDVI) needs a range and a colormap to
-// become a picture: it is drawn with the range of the preview, so the layer looks
-// like the preview it came from. Any other result is drawn as it is.
-export function resultRender(dataType: string | null, range: PreviewRange): AppliedRender {
+// What the results document says of one band, for the colour scale: the statistics of
+// the AOI (`properties.bands[].statistics`, M4-32a), the fields that are numbers.
+export interface BandStats {
+  minimum: number | null;
+  maximum: number | null;
+  percentile2: number | null;
+  percentile98: number | null;
+}
+
+export interface ResultStats {
+  bands: BandStats[];
+  // The result of a Band math step (`processing:expression`): what an index looks like is judged by the values.
+  expression: boolean;
+}
+
+const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// The statistics in the `properties` of the `result` link; `null` for a result from before
+// they were written, or for a document that does not carry them in this shape.
+export function resultStats(properties: Record<string, unknown> | undefined): ResultStats | null {
+  const bands = properties?.bands;
+  if (!Array.isArray(bands) || bands.length === 0) return null;
+  const read = bands.map((band): BandStats => {
+    const stats = (band as { statistics?: Record<string, unknown> } | null)?.statistics;
+    // `count` 0: the band has no valid pixel, and its statistics name no value.
+    const usable = stats !== null && typeof stats === 'object' && (finite(stats.count) ?? 0) > 0;
+    return {
+      minimum: usable ? finite(stats.minimum) : null,
+      maximum: usable ? finite(stats.maximum) : null,
+      percentile2: usable ? finite(stats.percentile_2) : null,
+      percentile98: usable ? finite(stats.percentile_98) : null,
+    };
+  });
+  if (read.every((band) => band.minimum === null && band.maximum === null)) return null;
+  return { bands: read, expression: properties?.['processing:expression'] != null };
+}
+
+const smallest = (values: Array<number | null>) => Math.min(...values.filter((v): v is number => v !== null));
+const largest = (values: Array<number | null>) => Math.max(...values.filter((v): v is number => v !== null));
+
+// The colormap of a result whose quantity is not known; `rdylgn` is for indices.
+export const RESULT_COLORMAP = 'viridis';
+
+const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
+
+// How a result is drawn (M4-32b, plan §6.7). A floating-point result needs a range and a
+// colormap to become a picture; an integer result is drawn as it is. For a float, in order:
+//  1. a range the user applied by hand in the panel holds (it differs from the default);
+//  2. an index (a Band math result whose values all lie in −1…1) keeps the default range
+//     and `rdylgn`, so that jobs can be compared with one another;
+//  3. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
+//  4. a result without statistics is drawn with the range of the panel, as before M4-32.
+export function resultRender(dataType: string | null, range: PreviewRange, stats: ResultStats | null = null): AppliedRender {
   if (dataType === null || !FLOAT.test(dataType)) return {};
-  const rescale = rescaleOf(range);
-  return {
-    ...('rescale' in rescale ? { rescale: rescale.rescale } : {}),
-    ...(range.colormap ? { colormapName: range.colormap } : {}),
+  const panel = (): AppliedRender => {
+    const rescale = rescaleOf(range);
+    return {
+      ...('rescale' in rescale ? { rescale: rescale.rescale } : {}),
+      ...(range.colormap ? { colormapName: range.colormap } : {}),
+    };
   };
+  if (!stats || !sameRange(range, DEFAULT_RANGE)) return panel();
+  const present = stats.bands.filter((band) => band.minimum !== null && band.maximum !== null);
+  if (present.length === 0) return panel();
+  if (stats.expression && present.every((band) => band.minimum! >= -1 && band.maximum! <= 1)) return panel();
+  let low = smallest(present.map((band) => band.percentile2));
+  let high = largest(present.map((band) => band.percentile98));
+  if (!(low < high)) {
+    low = smallest(present.map((band) => band.minimum));
+    high = largest(present.map((band) => band.maximum));
+  }
+  if (!(low < high)) return panel();
+  return { rescale: `${low},${high}`, colormapName: RESULT_COLORMAP };
 }
 
 // --- the pixel size of the result -------------------------------------------

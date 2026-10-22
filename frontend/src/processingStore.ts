@@ -57,6 +57,8 @@ import {
   resultGsd,
   resultLayerName,
   resultRender,
+  resultStats,
+  type ResultStats,
   resultTileTemplate,
   tilesHref,
 } from './resultLayer';
@@ -158,6 +160,9 @@ export interface JobEntry {
   // The tiles of a raster result (the link `tiles` of the results document, M4-13c-5);
   // `null` until the results are read, for an export, and for a result before this link existed.
   tiles: JobTiles | null;
+  // The statistics of the AOI per band, for the colour scale of the layer (M4-32b); `null` until the
+  // results are read, and for a result from before they were written.
+  statistics: ResultStats | null;
 }
 
 export interface JobTiles {
@@ -588,6 +593,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         tiles: href
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
           : null,
+        statistics: resultStats(properties),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -647,6 +653,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       expired: false,
       title,
       tiles: null,
+      statistics: null,
     };
     set((s) => ({ jobs: [entry, ...s.jobs] }));
     persist();
@@ -805,7 +812,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         overlays: [
           {
             kind: 'raster',
-            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range)),
+            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range, job.statistics)),
             bounds: tileJson.bounds,
             minZoom: tileJson.minZoom,
             // rio-tiler's `maxzoom` is the level nearest the data's pixel size, and often the coarser
