@@ -267,7 +267,8 @@ BAND_MATH = Operator(
     ),
     tiers=frozenset({Tier.T1, Tier.T2}),
     kind="pixel",
-    cost_factor=lambda params: 1.0,
+    # 1.0 until M4-32; the statistics of the result added 12 % (adr/0014 §15k), rounded up.
+    cost_factor=lambda params: 1.2,
     transform=_transform,
     run=_run,
     lineage=_lineage,
