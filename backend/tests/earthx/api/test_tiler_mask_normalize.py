@@ -1,7 +1,8 @@
 """``mask`` and ``normalize`` as tiles: the refusals and T1 against T2 (plan M4-18 §3.4, §3.6; adr/0014 §6.2-§6.4).
 
 One operator per tile, as ``band_math`` has it; the chain of several is M4-18b. The synthetic item carries a 10 m
-band (``red``) and a 20 m classification layer (``scl``), so a tile with ``mask`` also reads a nested grid.
+band (``red``) and a 20 m classification layer (``scl``), so a tile with ``mask`` also reads a nested grid; the CF
+Mini-Zarr carries the same pair (``b04`` and a ``scl`` group), for the comparison on Zarr.
 """
 
 from __future__ import annotations
@@ -18,27 +19,33 @@ import numpy
 import pytest
 from fastapi.testclient import TestClient
 from rasterio.io import MemoryFile
+from rasterio.warp import transform_bounds
+from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.recipe import recipe_from_data
-from tests.earthx.api.test_tiler_operator import HEIGHT, WIDTH, _job_tile, _tiles
+from tests.earthx.api.test_tiler_operator import HEIGHT, WIDTH, _job_tile, _source_position, _tiles
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.processing.test_mask import scl_layer
-from tests.earthx.readers import mini_zarr
+from tests.earthx.readers import mini_zarr, mini_zarr_cf
 
 ITEM = "ITEM_A"
 COG = "synthetic-cog"
+ZARR = "synthetic-zarr"
 MASK = {"source": "scl", "classes": [3, 8, 9, 10]}
 NORMALIZE = {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True}
 
 COG_DATASET = replace(
     SENTINEL_2_L2A, dataset_id=COG, source=replace(SENTINEL_2_L2A.source, asset_hosts=(sources.HOST,))
+)
+ZARR_DATASET = replace(
+    SENTINEL_2_L2A_ZARR3, dataset_id=ZARR, source=replace(SENTINEL_2_L2A_ZARR3.source, asset_hosts=(mini_zarr.HOST,))
 )
 NO_LAYER = replace(
     COG_DATASET,
@@ -54,7 +61,7 @@ NO_NORMALIZE = replace(
 DISPLAY_ONLY = replace(
     COG_DATASET, dataset_id="synthetic-display", license=replace(COG_DATASET.license, tier=LicenseTier.DISPLAY)
 )
-REGISTRY = DatasetRegistry((COG_DATASET, NO_LAYER, NO_NORMALIZE, DISPLAY_ONLY))
+REGISTRY = DatasetRegistry((COG_DATASET, ZARR_DATASET, NO_LAYER, NO_NORMALIZE, DISPLAY_ONLY))
 
 _BAND = {"data_type": "uint16", "nodata": 0, "raster:scale": sources.SCALE, "raster:offset": sources.OFFSET}
 ITEM_JSON = {
@@ -64,6 +71,8 @@ ITEM_JSON = {
     "assets": {
         "red": {"href": sources.url("red"), "raster:bands": [_BAND]},
         "scl": {"href": sources.url("scl"), "raster:bands": [{"data_type": "uint8", "nodata": 0}]},
+        "r10m": {"href": mini_zarr_cf.GROUP_URL},
+        "scl20m": {"href": mini_zarr_cf.SCL_URL},
     },
 }
 
@@ -79,12 +88,18 @@ def files(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     }
 
 
+@pytest.fixture(scope="module")
+def cf_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return mini_zarr_cf.build_mini_zarr_cf(tmp_path_factory.mktemp("mask-cf") / "mini.zarr")
+
+
 @pytest.fixture
-def client(files: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    sources.serve({sources.url(name): path for name, path in files.items()}, monkeypatch)
-    monkeypatch.setattr(
-        "earthx.readers.cog.check_url", lambda url, policy, **_: check_url(url, policy, resolve=mini_zarr.from_memory)
-    )
+def client(files: dict[str, Path], cf_store: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    sources.serve({sources.url(name): path for name, path in files.items()}, monkeypatch, zarr_root=cf_store)
+    for module in ("earthx.readers.cog", "earthx.readers.zarr_reader"):
+        monkeypatch.setattr(
+            f"{module}.check_url", lambda url, policy, **_: check_url(url, policy, resolve=mini_zarr.from_memory)
+        )
 
     async def item_source(dataset_id: str, item_id: str) -> dict[str, Any]:
         return ITEM_JSON
@@ -235,3 +250,89 @@ class TestRefusals:
     def test_an_operator_is_for_tiles_only(self, client: TestClient, route: str) -> None:
         query = f"asset=red&asset=scl&op=mask&op_version=1&params={quote(json.dumps(MASK))}"
         assert client.get(f"/collections/{COG}/items/{ITEM}/{route}?{query}").status_code == 400
+
+
+# --- the CF Mini-Zarr: a 10 m band and its 20 m classification layer -------------------------------------
+
+
+def _zarr_recipe() -> dict:
+    band = resolved(
+        "ITEM_Z", "r10m:b04", reader="zarr", scale=None, offset=None, href=mini_zarr_cf.GROUP_URL, variable="b04"
+    )
+    layer = resolved(
+        "ITEM_Z", "scl20m:scl", reader="zarr", scale=None, offset=None, href=mini_zarr_cf.SCL_URL, variable="scl"
+    )
+    layer["bands"] = [{"data_type": "uint8", "nodata": 0, "scale": None, "offset": None}]
+    return {
+        "recipe_version": 1,
+        "inputs": [
+            {
+                "name": "z",
+                "dataset": "synthetic",
+                "groups": [["ITEM_Z"]],
+                "assets": ["r10m:b04", "scl20m:scl"],
+                "resolved": [band, layer],
+            }
+        ],
+        "aoi": sources.whole(mini_zarr_cf.SIZE, mini_zarr_cf.SIZE, inset=0.0),
+        "steps": [{"op": "mask", "op_version": 1, "params": MASK}],
+        "output": {"kind": "raster", "format": "cog", "dtype": "float32"},
+    }
+
+
+def _hidden_classes() -> numpy.ndarray:
+    """Per 20 m pixel: is it hidden by ``MASK``? Class 0 is the layer's own fill value."""
+    raw = mini_zarr_cf.raw_classes()
+    return numpy.isin(raw, MASK["classes"]) | (raw == mini_zarr_cf.FILL)
+
+
+class TestTheTileEqualsTheJobOnZarr:
+    """§15d: on Zarr the tile and the job may pick different neighbours within GDAL's tolerance of a pixel boundary.
+
+    Two claims, as for band math. The tile is, in every pixel, what the formula says on the nearest source pixel
+    of each grid: the 10 m band and the 20 m layer. And the job's result read onto the same tile gives the same
+    values and the same mask wherever no pixel centre lies within 0.125 source pixel of a boundary of either grid.
+    """
+
+    def test_a_mask_over_a_20_m_layer_in_a_zarr_store(self, client: TestClient, tmp_path: Path) -> None:
+        west, south, east, north = transform_bounds(mini_zarr_cf.ITEM_CRS, WGS84_CRS, *mini_zarr_cf.store_bounds())
+        tile = WEB_MERCATOR_TMS.tile((west + east) / 2, (south + north) / 2, 14)
+        key = ("r10m:b04", "scl20m:scl")
+        result = run(recipe_from_data(_zarr_recipe(), OPERATORS), workdir=tmp_path, progress=lambda d, t: None)
+        assert result.meta.resampled is True and [band.name for band in result.meta.bands] == ["b04"]
+        response = client.get(_url((tile.z, tile.x, tile.y), "mask", MASK, dataset=ZARR, assets=key))
+        assert response.status_code == 200, response.text
+        from_tile = _decode(response.content)
+        from_job = _job_tile(result.path, (tile.z, tile.x, tile.y))
+
+        col, row = _source_position(tile)
+        size = mini_zarr_cf.SIZE
+        inside = (col >= 0) & (col < size) & (row >= 0) & (row < size)
+        fine_row = numpy.clip(numpy.floor(row).astype(int), 0, size - 1)
+        fine_col = numpy.clip(numpy.floor(col).astype(int), 0, size - 1)
+        coarse_row = numpy.clip(numpy.floor(row / 2).astype(int), 0, mini_zarr_cf.SCL_SIZE - 1)
+        coarse_col = numpy.clip(numpy.floor(col / 2).astype(int), 0, mini_zarr_cf.SCL_SIZE - 1)
+        band_fill = mini_zarr_cf.raw_band("b04")[fine_row, fine_col] == mini_zarr_cf.FILL
+        expected_hidden = _hidden_classes()[coarse_row, coarse_col] | band_fill
+        valid = inside & ~expected_hidden
+        assert valid.sum() > 200 and (inside & expected_hidden).sum() > 200  # both outcomes are in the tile
+        assert numpy.array_equal(~from_tile.mask, valid)
+        physical = mini_zarr_cf.raw_band("b04").astype("float64") * mini_zarr_cf.SCALE + mini_zarr_cf.OFFSET
+        numpy.testing.assert_allclose(from_tile.data[valid], physical[fine_row, fine_col][valid], rtol=1e-6)
+
+        def near(position: numpy.ndarray, scale: float) -> numpy.ndarray:
+            scaled = position / scale
+            return numpy.abs(scaled - numpy.round(scaled)) <= 0.125
+
+        near_a_boundary = near(col, 1) | near(row, 1) | near(col, 2) | near(row, 2)
+        job_mask = numpy.ma.getmaskarray(from_job)
+        # The tile hands back the decoded store as it is (float64), the job writes float32: compare as float32.
+        tile_values = from_tile.data.astype("float32")
+        differing = (from_tile.mask != job_mask) | (~from_tile.mask & ~job_mask & (tile_values != from_job.data))
+        assert not (differing & ~near_a_boundary).any()
+        assert differing.sum() < 0.05 * valid.sum()
+
+    def test_the_layer_alone_as_a_zarr_asset_is_a_422_for_the_wrong_source(self, client: TestClient) -> None:
+        assets = ("r10m:b04", "scl20m:scl")
+        response = client.get(_url((14, 1, 1), "mask", {"source": "b04", "classes": [3]}, dataset=ZARR, assets=assets))
+        assert response.status_code == 422 and "masks with its layer 'scl'" in response.json()["detail"]
