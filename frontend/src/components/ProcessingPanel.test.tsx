@@ -935,6 +935,43 @@ describe('starting and following a job', () => {
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
 
+  describe('keeps the range set by hand with the job (Otto, 22.10.2026)', () => {
+    const HAND = { vmin: '0', vmax: '0.5', colormap: 'greys' };
+
+    async function startOne() {
+      routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+      select([scene('S2B_A')]);
+      await openPanel();
+      await ndvi();
+      await review();
+      click(button('Start job'));
+      await flush();
+      return useProcessingStore.getState().jobs[0];
+    }
+
+    it('stores a range applied by hand at the job started under it', async () => {
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND });
+      expect((await startOne()).range).toEqual(HAND);
+    });
+
+    it('stores none where the range is the default, which nobody chose', async () => {
+      expect((await startOne()).range).toBeNull();
+    });
+
+    it('stores none for a range that is only typed and not applied', async () => {
+      useProcessingStore.setState({ rangeDraft: HAND });
+      expect((await startOne()).range).toBeNull();
+    });
+
+    it('does not change the range of a started job when the panel is changed after', async () => {
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND });
+      const job = await startOne();
+      useProcessingStore.setState({ range: { vmin: '2', vmax: '9', colormap: '' } });
+      expect(useProcessingStore.getState().jobs[0].range).toEqual(job.range);
+      expect(job.range).toEqual(HAND);
+    });
+  });
+
   it('starts, follows by polling and offers the files when the job is done', async () => {
     let polls = 0;
     routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
@@ -1153,6 +1190,8 @@ describe('a finished job row (K6)', () => {
       cancelling: false,
       expired: false,
       tiles: null,
+      statistics: null,
+      range: null,
       title: null,
     };
   }

@@ -8,9 +8,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { saveStoredJobs } from '../jobTracker';
 import type { MapLayer } from '../layers';
-import { layerProcessBlock, useProcessingStore, type JobEntry } from '../processingStore';
-import { MIN_REMAINING_MS } from '../resultLayer';
+import { layerProcessBlock, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
+import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
 import JobList, { EXPIRED_TEXT, JobRow } from './JobList';
 import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
@@ -40,6 +41,8 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     expired: false,
     title: 'Band math · Sentinel-2 L2A',
     tiles: { href: HREF, width: 1000, gsd: 10 },
+    statistics: null,
+    range: null,
     ...over,
   };
 }
@@ -174,6 +177,120 @@ describe('the layer a result becomes', () => {
     await showOnMap();
     expect(layers()[0].overlays[0]).toMatchObject({
       tileUrl: expect.stringContaining('colormap_name=viridis&rescale=0%2C0.5'),
+    });
+  });
+
+  describe('with the statistics of the result (M4-32b)', () => {
+    const DEM = { minimum: 100, maximum: 2400, mean: 900, count: 1000, valid_percent: 100, percentile_2: 180, percentile_98: 1900 };
+    const NDVI = { minimum: -0.3, maximum: 0.9, mean: 0.4, count: 1000, valid_percent: 90, percentile_2: -0.05, percentile_98: 0.8 };
+    const properties = (statistics: object, extra: object = {}) => ({ bands: [{ name: 'b', data_type: 'float32', statistics }], ...extra });
+    const EXPRESSION = { 'processing:expression': { format: 'numexpr', expression: '(a-b)/(a+b)' } };
+    const urlOfLayer = () => (layers()[0].overlays[0] as { tileUrl: string }).tileUrl;
+
+    it('is drawn with 2–98 % of the AOI in viridis for a DEM, not a single colour', async () => {
+      useProcessingStore.setState({ jobs: [entry({ statistics: resultStats(properties(DEM)) })] });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=viridis&rescale=180%2C1900');
+    });
+
+    it('is drawn like before for an index: −1…1 in rdylgn', async () => {
+      useProcessingStore.setState({ jobs: [entry({ statistics: resultStats(properties(NDVI, EXPRESSION)) })] });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
+    });
+
+    it('is drawn with the range the job was started with by hand, before the statistics', async () => {
+      const hand = { vmin: '0', vmax: '3000', colormap: 'terrain' };
+      useProcessingStore.setState({ jobs: [entry({ statistics: resultStats(properties(DEM)), range: hand })] });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=terrain&rescale=0%2C3000');
+    });
+
+    it('is drawn with its own statistics when the range of the panel was set by hand for another job', async () => {
+      // An NDVI preview with a range by hand; the DEM job before it was started without one.
+      useProcessingStore.setState({
+        range: { vmin: '0', vmax: '0.5', colormap: 'greys' },
+        jobs: [entry({ statistics: resultStats(properties(DEM)), range: null })],
+      });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=viridis&rescale=180%2C1900');
+    });
+
+    it('keeps the range of one job from the result of another', async () => {
+      const OTHER = 'QrStUvWxYzAbCdEfGhIjKl';
+      const OTHER_HREF = `/results/${OTHER}/WebMercatorQuad/tilejson.json`;
+      fetchMock.mockImplementation(async (url: string) => (url === HREF || url === OTHER_HREF ? tileJson() : json({}, 404)));
+      useProcessingStore.setState({
+        jobs: [
+          entry({ statistics: resultStats(properties(DEM)), range: { vmin: '0', vmax: '3000', colormap: 'terrain' } }),
+          entry({ jobID: 'ZZCdEfGhIjKlMnOpQrSt_-', tiles: { href: OTHER_HREF, width: 1000, gsd: 10 }, statistics: resultStats(properties(DEM)) }),
+        ],
+      });
+      await useProcessingStore.getState().showResultOnMap(JOB);
+      await useProcessingStore.getState().showResultOnMap('ZZCdEfGhIjKlMnOpQrSt_-');
+      const urls = layers().map((l) => (l.overlays[0] as { tileUrl: string }).tileUrl);
+      expect(urls.filter((u) => u.includes('terrain'))).toHaveLength(1);
+      expect(urls.filter((u) => u.includes('colormap_name=viridis&rescale=180%2C1900'))).toHaveLength(1);
+    });
+
+    it('is drawn with the range of the panel for a job without statistics', async () => {
+      useProcessingStore.setState({ jobs: [entry({ statistics: null })] });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
+    });
+
+    describe('read from the results document of a job', () => {
+      const STATUS = { jobID: JOB, status: 'successful', message: '', progress: 100, expires: new Date(Date.now() + 86_400_000).toISOString() };
+
+      afterEach(() => setTrackerOptions({}));
+
+      async function readJob(result: Record<string, unknown>) {
+        const document = { result: { href: `/processing/jobs/${JOB}/results/result.tif`, properties: result }, tiles: { href: HREF } };
+        fetchMock.mockImplementation(async (url: string) => {
+          if (url === HREF) return tileJson();
+          if (url === `/processing/jobs/${JOB}/results`) return json(document);
+          return json({ title: 'Not found' }, 404);
+        });
+        setTrackerOptions({ EventSource: null, fetchJob: async () => STATUS as never, pollMs: 60_000 });
+        useProcessingStore.setState({ jobs: [] });
+        // As a reload does: the tab remembers the job, the server says it is done, the results are read.
+        saveStoredJobs([{ jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM' }]);
+        act(() => useProcessingStore.getState().resumeJobs());
+        await flush();
+        return useProcessingStore.getState().jobs[0];
+      }
+
+      it('keeps the statistics of the AOI at the job, and draws the layer from them', async () => {
+        const job = await readJob(properties(DEM));
+        expect(job.statistics).toEqual({
+          bands: [{ minimum: 100, maximum: 2400, percentile2: 180, percentile98: 1900 }],
+          expression: false,
+        });
+        act(() => root.render(<JobList />));
+        click(button('Add to layers'));
+        await flush();
+        expect(urlOfLayer()).toContain('colormap_name=viridis&rescale=180%2C1900');
+      });
+
+      it('keeps the expression, so that an index is known by its values', async () => {
+        const job = await readJob(properties(NDVI, EXPRESSION));
+        expect(job.statistics?.expression).toBe(true);
+      });
+
+      it('has no range of its own once taken up again: the tab does not keep it', async () => {
+        const job = await readJob(properties(DEM));
+        expect(job.range).toBeNull();
+      });
+
+      it('has none for a document from before they were written, and the layer is drawn as before', async () => {
+        const job = await readJob({ bands: [{ name: 'b', data_type: 'float32' }], gsd: 10 });
+        expect(job.statistics).toBeNull();
+        expect(job.tiles).not.toBeNull();
+        act(() => root.render(<JobList />));
+        click(button('Add to layers'));
+        await flush();
+        expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
+      });
     });
   });
 

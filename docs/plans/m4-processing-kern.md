@@ -275,7 +275,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export; dazu die Herkunft einer Orts-AOI (OSM) auch bei Raster-Jobs, Backend und Frontend (`plans/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | PR (Entwurf) |
 | M4-32 | Statistik je Raster-Ergebnis (min, max, Mittel, `stddev`, 2-/98-Perzentil, Anteil gültiger Pixel) in `result.tif` und Ergebnisdokument, Vorgabe für die Farbskala im Frontend (`plans/m4-32-ergebnis-statistik.md`) | M4 | B | Opus Plan, Sonnet (hoch) | M4-13c-5 | Plan freigegeben am 20.10.2026 (§7), geteilt in a und b |
 | M4-32a | Backend: Statistik im Kern (Tags über die Datei, `statistics` über die Maske), Version 0.4.2, Faktoren mit Statistik-Durchgang (Band-Math 1,2, `reproject` +7,7 %, Raster ohne Schritt 1,0; Export unverändert), Nachtrag `adr/0014` §15k | M4 | B | Opus (hoch) | M4-32 (Plan) | Entwurfs-PR #168, umgesetzt (`plans/m4-32-ergebnis-statistik.md` §8, §9) |
-| M4-32b | Frontend: Farbskala eines Ergebnisses aus der AOI-Statistik (§6.7), Prüfanleitung | M4 | B | Sonnet (hoch) | M4-32a gemergt | offen (neue Session, Startsatz in §7) |
+| M4-32b | Frontend: Farbskala eines Ergebnisses aus der AOI-Statistik (§6.7), Prüfanleitung | M4 | B | Sonnet (hoch) | M4-32a gemergt | umgesetzt (`plans/m4-32-ergebnis-statistik.md` §10), Draft-PR |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A

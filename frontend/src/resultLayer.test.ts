@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
 import {
+  handRange,
   isOverview,
   isResultExpired,
   MIN_REMAINING_MS,
   resultGsd,
   resultLayerName,
   resultRender,
+  resultStats,
   resultTileTemplate,
   tilesHref,
 } from './resultLayer';
@@ -78,6 +80,154 @@ describe('how a result is drawn', () => {
 
   it('draws a float result without a range when the range is no range', () => {
     expect(resultRender('float32', { vmin: '1', vmax: '1', colormap: 'rdylgn' })).toEqual({ colormapName: 'rdylgn' });
+  });
+});
+
+// The statistics of the AOI as the results document carries them (`properties.bands[].statistics`, M4-32a).
+const band = (statistics: Record<string, unknown> | undefined) => ({ name: 'b', data_type: 'float32', statistics });
+const dem = { minimum: 100, maximum: 2400, mean: 900, count: 1000, valid_percent: 100, percentile_2: 180, percentile_98: 1900 };
+const ndvi = { minimum: -0.3, maximum: 0.9, mean: 0.4, count: 1000, valid_percent: 90, percentile_2: -0.05, percentile_98: 0.8 };
+const stats = (statistics: Record<string, unknown>, expression = false) =>
+  resultStats({ bands: [band(statistics)], ...(expression ? { 'processing:expression': { format: 'numexpr', expression: 'a' } } : {}) });
+
+describe('the statistics of a result', () => {
+  it('are read from the bands of the properties, with the 2nd and 98th percentile', () => {
+    expect(stats(dem)).toEqual({
+      bands: [{ minimum: 100, maximum: 2400, percentile2: 180, percentile98: 1900 }],
+      expression: false,
+    });
+  });
+
+  it('know a Band math result by its expression', () => {
+    expect(stats(ndvi, true)?.expression).toBe(true);
+  });
+
+  it.each([
+    ['no properties', undefined],
+    ['no bands', {}],
+    ['no bands in a list', { bands: [] }],
+    ['bands that are not a list', { bands: 'x' }],
+    ['a band without statistics (a result from before M4-32a)', { bands: [band(undefined)] }],
+    ['bands that are not objects', { bands: [null, 7] }],
+    ['a band without a valid pixel', { bands: [band({ count: 0, valid_percent: 0 })] }],
+    ['values that are not numbers', { bands: [band({ count: 5, minimum: 'a', maximum: null })] }],
+  ])('are nothing for %s', (_, properties) => {
+    expect(resultStats(properties as never)).toBeNull();
+  });
+
+  it('keep the band that has values where another has none', () => {
+    const read = resultStats({ bands: [band({ count: 0, valid_percent: 0 }), band(dem)] });
+    expect(read?.bands).toEqual([
+      { minimum: null, maximum: null, percentile2: null, percentile98: null },
+      { minimum: 100, maximum: 2400, percentile2: 180, percentile98: 1900 },
+    ]);
+  });
+});
+
+describe('the colour scale of a result (plan §6.7)', () => {
+  it('is 2–98 % of the statistics in viridis for a float result of an unknown quantity (rule 4)', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats(dem))).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
+  });
+
+  it('is the lowest 2nd and the highest 98th percentile over the bands', () => {
+    const two = resultStats({ bands: [band(dem), band({ ...dem, percentile_2: 50, percentile_98: 1500 })] });
+    expect(resultRender('float32', DEFAULT_RANGE, two)).toEqual({ rescale: '50,1900', colormapName: 'viridis' });
+  });
+
+  it('leaves an index at −1…1 in rdylgn, judged by its values (rule 3)', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true))).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+  });
+
+  it.each([
+    ['a value above 1', { ...ndvi, maximum: 1.2 }],
+    ['a value below −1', { ...ndvi, minimum: -1.5 }],
+  ])('does not call a Band math result an index with %s', (_, statistics) => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats(statistics, true))).toEqual({
+      rescale: '-0.05,0.8',
+      colormapName: 'viridis',
+    });
+  });
+
+  it('does not call a result an index by its values alone: a DEM scaled into 0…1 without an expression is not one', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, stats({ ...ndvi, minimum: 0, maximum: 1 }))).toEqual({
+      rescale: '-0.05,0.8',
+      colormapName: 'viridis',
+    });
+  });
+
+  it('takes an index from the bands that have values when another has none', () => {
+    const mixed = resultStats({
+      bands: [band({ count: 0, valid_percent: 0 }), band(ndvi)],
+      'processing:expression': { format: 'numexpr', expression: 'a' },
+    });
+    expect(resultRender('float32', DEFAULT_RANGE, mixed)).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+  });
+
+  it('holds the range the job was started with by hand, before the statistics (rule 2)', () => {
+    const hand = { vmin: '0', vmax: '3000', colormap: 'terrain' };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(dem), hand)).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true), { ...DEFAULT_RANGE, vmax: '2' })).toEqual({
+      rescale: '-1,2',
+      colormapName: 'rdylgn',
+    });
+    expect(resultRender('float32', DEFAULT_RANGE, null, hand)).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
+  });
+
+  it('does not take the range of the panel for a result with statistics: it is that of another job', () => {
+    const hand = { vmin: '0', vmax: '3000', colormap: 'terrain' };
+    expect(resultRender('float32', hand, stats(dem))).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
+    expect(resultRender('float32', hand, stats(ndvi, true))).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+    expect(resultRender('float32', hand, stats(dem), null)).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
+  });
+
+  it('draws an integer result as it is, with or without statistics (rule 1)', () => {
+    expect(resultRender('uint16', DEFAULT_RANGE, stats(dem))).toEqual({});
+    expect(resultRender('int32', { vmin: '0', vmax: '3', colormap: 'terrain' }, stats(dem), DEFAULT_RANGE)).toEqual({});
+  });
+
+  it('is the range of the panel without statistics (rule 5)', () => {
+    expect(resultRender('float32', DEFAULT_RANGE, null)).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+    expect(resultRender('float32', DEFAULT_RANGE)).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+  });
+
+  it('is minimum…maximum where the percentiles meet, and the panel where those meet too', () => {
+    const flat = { ...dem, percentile_2: 500, percentile_98: 500 };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(flat))).toEqual({ rescale: '100,2400', colormapName: 'viridis' });
+    const constant = { count: 9, valid_percent: 100, minimum: 7, maximum: 7, mean: 7, percentile_2: 7, percentile_98: 7 };
+    expect(resultRender('float32', DEFAULT_RANGE, stats(constant))).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+  });
+
+  it('is minimum…maximum where a statistics has no percentiles', () => {
+    const { percentile_2: _low, percentile_98: _high, ...bare } = dem;
+    expect(resultRender('float32', DEFAULT_RANGE, stats(bare))).toEqual({ rescale: '100,2400', colormapName: 'viridis' });
+  });
+
+  it('is never a range the tiler would refuse: no NaN, no infinity, low below high', () => {
+    for (const statistics of [{ ...dem, percentile_2: Infinity }, { ...dem, percentile_98: NaN }, { ...dem, minimum: NaN }]) {
+      const { rescale } = resultRender('float32', DEFAULT_RANGE, stats(statistics));
+      const [low, high] = (rescale ?? '').split(',').map(Number);
+      expect(Number.isFinite(low) && Number.isFinite(high) && low < high).toBe(true);
+    }
+  });
+
+  it('draws a result of an unknown data type as it is, statistics or not', () => {
+    expect(resultRender(null, DEFAULT_RANGE, stats(dem))).toEqual({});
+  });
+});
+
+describe('the range set by hand', () => {
+  it('is none for the default range, which is no choice of the user', () => {
+    expect(handRange(DEFAULT_RANGE)).toBeNull();
+    expect(handRange({ ...DEFAULT_RANGE })).toBeNull();
+  });
+
+  it.each([
+    ['the end of the range', { ...DEFAULT_RANGE, vmax: '2' }],
+    ['the start of the range', { ...DEFAULT_RANGE, vmin: '0' }],
+    ['the colormap', { ...DEFAULT_RANGE, colormap: 'viridis' }],
+    ['no colormap', { ...DEFAULT_RANGE, colormap: '' }],
+  ])('is the range once %s differs', (_, range) => {
+    expect(handRange(range)).toEqual(range);
   });
 });
 
