@@ -1012,8 +1012,12 @@ Abrufe der Quelle zählt (ohne die Prüfung scheitern 11 davon).
 2. **Ein Überflug zeichnet nichts, bis sein TileJSON da ist.** Hätte die Ansicht
    währenddessen die Einzelszenen gezeichnet, hätte jede ihre Kacheln geholt, die das
    Mosaik gleich ersetzt. Während des Wartens steht `focusLoading` („Loading…“ an den
-   Knöpfen). Anheften wird in dieser Zeit mit Hinweis abgewiesen, weil ein Layer ein
-   Bild ist und nicht aus der Hälfte eines Bildes gemacht werden soll. Das TileJSON
+   Knöpfen). „Add to layers“ weist in dieser Zeit nicht ab: Der Knopf der Ansicht zeigt
+   „Loading…“ und der Layer wird angeheftet, sobald das TileJSON da ist (Otto,
+   22.10.2026; vorher Abweisung mit Hinweis, weil ein Layer ein Bild ist und nicht
+   aus der Hälfte eines Bildes gemacht werden soll). Bei einem Fehler bleibt die
+   Meldung aus Nr. 5, und es wird nichts angeheftet; hat der Nutzer die Auswahl
+   inzwischen geändert, wird nichts angeheftet. Das TileJSON
    hat im Client kein eigenes Zeitlimit, es gilt das des Tilers.
 3. **`hideFrom` (MapLibre-`maxzoom` des Layers) ist 6,5, nicht 8.** Quelle `minzoom`
    und Layer `maxzoom` messen verschieden: Die erste zählt Kachelstufen, der zweite
@@ -1066,7 +1070,7 @@ je mit Test, der ohne die Änderung scheitert:
 
 - *Teilauswahl anheften.* Ein Mosaik aus einem Teil der Ansicht (Szenen abgehakt) ist eine andere URL
   als das, was die Ansicht geladen hat; das Anheften blieb für immer bei „still loading“. Jetzt
-  fragt es das fehlende Mosaik an und gelingt beim nächsten Versuch; Szenen, die keine Gruppe der Suche
+  fragt es das fehlende Mosaik an, wartet („Loading…“) und heftet selbst an; Szenen, die keine Gruppe der Suche
   hält, werden einzeln gezeichnet statt als Mosaik; die Meldung verschwindet nach einem Erfolg.
 - *IDs über 200.* Bei sehr großen Auswahlen gaben Mosaike ihre Einzelszenen darunter ab, bevor eines
   verloren geht; jede vergebene ID liegt im Löschbereich.
