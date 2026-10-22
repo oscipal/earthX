@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AFTER_BAND_MATH, chooseDtype, dtypeOptions, effectiveDtype, integerNote } from './processingDefaults';
+import { AFTER_BAND_MATH, AFTER_NORMALIZE, chooseDtype, dtypeOptions, effectiveDtype, integerNote } from './processingDefaults';
 import type { BandSource } from './processingOrder';
 
 const DTYPES = ['uint8', 'uint16', 'int16', 'uint32', 'int32', 'float32', 'float64'];
@@ -22,6 +22,18 @@ describe('chooseDtype (Otto, 12.10.2026): the type of the source data wherever t
   it('is float32 after band math, whatever the input is', () => {
     expect(choose([{ op: 'band_math' }], [COUNTS])).toBe('float32');
     expect(choose([{ op: 'reproject', resampling: 'nearest' }, { op: 'band_math' }], [COUNTS])).toBe('float32');
+  });
+
+  it('is float32 after normalize on integer bands that state their nodata and are not scaled (Otto, 22.10.2026)', () => {
+    // The run ends in float32 with NaN as nodata; the source type would be refused (`core._nodata_for`).
+    expect(choose([{ op: 'normalize' }], [COUNTS])).toBe('float32');
+    expect(choose([{ op: 'mask' }, { op: 'normalize' }], [COUNTS])).toBe('float32');
+    expect(choose([{ op: 'normalize' }, { op: 'reproject', resampling: 'nearest' }], [COUNTS])).toBe('float32');
+    expect(chooseDtype({ steps: [{ op: 'normalize' }], bands: [COUNTS], allowed: DTYPES }).reason).toBe('Normalize gives fractions.');
+  });
+
+  it('keeps the source type after a mask alone: it only hides pixels', () => {
+    expect(choose([{ op: 'mask' }], [COUNTS])).toBe('uint16');
   });
 
   it('keeps a float source type, interpolated or not', () => {
@@ -117,6 +129,22 @@ describe('dtypeOptions', () => {
   });
 });
 
+describe('dtypeOptions after normalize', () => {
+  it('does not offer an integer type, with the reason and the operator in the label', () => {
+    const options = dtypeOptions({ dtypes: DTYPES, steps: [{ op: 'normalize' }] });
+    const integers = options.filter((o) => o.disabledReason);
+    expect(integers.map((o) => o.value)).toEqual(['uint8', 'uint16', 'int16', 'uint32', 'int32']);
+    expect(integers.every((o) => o.disabledReason === AFTER_NORMALIZE)).toBe(true);
+    expect(integers[0].label).toBe('uint8 (not after normalize)');
+    expect(options.filter((o) => !o.disabledReason).map((o) => o.value)).toEqual(['float32', 'float64']);
+  });
+
+  it('names the operator that comes first when both are in the order', () => {
+    const options = dtypeOptions({ dtypes: DTYPES, steps: [{ op: 'normalize' }, { op: 'band_math' }] });
+    expect(options.find((o) => o.value === 'uint8')!.disabledReason).toBe(AFTER_NORMALIZE);
+  });
+});
+
 describe('effectiveDtype', () => {
   const automatic = { value: 'float32', reason: 'x.' };
   const options = dtypeOptions({ dtypes: DTYPES, steps: [{ op: 'band_math' }] });
@@ -145,5 +173,6 @@ describe('integerNote', () => {
     expect(integerNote('uint16', NEAREST, [COUNTS])).toBeNull();
     expect(integerNote('float32', NEAREST, [band()])).toBeNull();
     expect(integerNote('uint16', [{ op: 'band_math' }], [band()])).toBeNull();
+    expect(integerNote('uint16', [{ op: 'normalize' }], [band()])).toBeNull();
   });
 });

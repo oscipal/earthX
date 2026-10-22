@@ -10,7 +10,8 @@
 // keeps the nodata of its input, which the source *file* states and the item
 // may; `nearest` and `mode` on integer bands keep their values (they only pick
 // one), any interpolation does not (the core rounds a fraction when it writes an
-// integer).
+// integer). `normalize` ends in float32 with NaN like band math (Otto, 22.10.2026); the
+// process description does not state an operator's output type, so the two are named here.
 
 import type { BandSource } from './processingOrder';
 
@@ -36,6 +37,21 @@ export interface StepChoice {
 
 export const AFTER_BAND_MATH =
   'Band math ends in float32 with NaN as nodata, which an integer type cannot hold.';
+export const AFTER_NORMALIZE =
+  'Normalize ends in float32 with NaN as nodata, which an integer type cannot hold.';
+
+// The operators whose result is float32 with NaN as nodata, whatever goes in: what they give,
+// why no integer type is offered after them, and how the option is labelled.
+const FLOAT_RESULT: Record<string, { gives: string; after: string; label: string }> = {
+  band_math: { gives: 'Band math gives fractions.', after: AFTER_BAND_MATH, label: 'not after band math' },
+  normalize: { gives: 'Normalize gives fractions.', after: AFTER_NORMALIZE, label: 'not after normalize' },
+};
+
+// The first step of the order that ends in float32, or `undefined`.
+const floatResultOf = (steps: readonly StepChoice[]) => {
+  const found = steps.find((s) => s.op in FLOAT_RESULT);
+  return found ? FLOAT_RESULT[found.op] : undefined;
+};
 
 // The type the order is sent with unless the user changes it. An order without
 // steps — the mosaic of whole scenes (M4-12b) — copies the source values, so it
@@ -50,7 +66,8 @@ export function chooseDtype(args: {
     value: allowed.includes('float32') ? 'float32' : (allowed[0] ?? ''),
     reason,
   });
-  if (steps.some((s) => s.op === 'band_math')) return float32('Band math gives fractions.');
+  const floating = floatResultOf(steps);
+  if (floating) return float32(floating.gives);
   const types = new Set(bands.map((band) => band.dataType));
   const type = types.size === 1 ? [...types][0] : null;
   const interpolating = steps.some((s) => s.op === 'reproject' && !PICKING.includes(s.resampling ?? ''));
@@ -82,10 +99,10 @@ export interface DtypeOption {
 
 // The types of the schema as options; those a run refuses for sure disabled with the reason.
 export function dtypeOptions(args: { dtypes: readonly string[]; steps: readonly StepChoice[] }): DtypeOption[] {
-  const afterBandMath = args.steps.some((s) => s.op === 'band_math');
+  const floating = floatResultOf(args.steps);
   return args.dtypes.map((value) => {
-    const disabledReason = afterBandMath && isIntegerType(value) ? AFTER_BAND_MATH : null;
-    return { value, label: disabledReason ? `${value} (not after band math)` : value, disabledReason };
+    const disabledReason = floating && isIntegerType(value) ? floating.after : null;
+    return { value, label: floating && disabledReason ? `${value} (${floating.label})` : value, disabledReason };
   });
 }
 
@@ -100,7 +117,7 @@ export function effectiveDtype(chosen: string | null, options: readonly DtypeOpt
 // value that every band states (`core._nodata_for`), which only the source file
 // knows for sure.
 export function integerNote(dtype: string, steps: readonly StepChoice[], bands: readonly BandSource[]): string | null {
-  if (!isIntegerType(dtype) || steps.some((s) => s.op === 'band_math')) return null;
+  if (!isIntegerType(dtype) || floatResultOf(steps)) return null;
   const nodata = new Set(bands.map((band) => band.nodata));
   if (bands.length > 0 && nodata.size === 1 && !nodata.has(null)) return null;
   return `${dtype} needs a nodata value that the source file states for every band; the job fails otherwise. float32 always works.`;

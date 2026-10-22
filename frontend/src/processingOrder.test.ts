@@ -16,6 +16,9 @@ import {
   candidateItems,
   formatBytes,
   formatDuration,
+  maskAssetOf,
+  maskLayerOf,
+  maskStepValues,
   namesInExpression,
   orderAssets,
   passesOf,
@@ -59,9 +62,8 @@ describe('processInfo from the fixtures (K3)', () => {
     ['cop-dem-glo-30', DEM],
   ])('%s: every operator has a form the panel supports', (_, info) => {
     expect(info.operators.length).toBeGreaterThan(0);
-    // `mask` takes a list of classes, which the form does not know yet (M4-18c); the panel shows it as unsupported.
     for (const operator of info.operators) {
-      expect(operator.form, operator.op).toMatchObject({ supported: operator.op !== 'mask' });
+      expect(operator.form, operator.op).toMatchObject({ supported: true });
     }
   });
 
@@ -170,6 +172,82 @@ describe('the assets of the order', () => {
 
   it('leaves a name two assets carry to the user', () => {
     expect(orderAssets(sources, [], ['b04 * 2'])).toEqual([]);
+  });
+
+  it('adds what a step needs, once, in the item order, without picking it (M4-18c)', () => {
+    expect(orderAssets(sources, ['red'], [], ['scl'])).toEqual(['red', 'scl']);
+    expect(orderAssets(sources, ['scl', 'red'], [], ['scl'])).toEqual(['red', 'scl']);
+    expect(orderAssets(sources, [], ['nir / red'], ['scl'])).toEqual(['red', 'nir', 'scl']);
+  });
+
+  it('does not invent an asset the scene lacks', () => {
+    expect(orderAssets(sources, ['red'], [], ['SCL_20m:scl'])).toEqual(['red']);
+  });
+});
+
+describe('the layer a mask reads (M4-18c)', () => {
+  const layer = {
+    asset: 'SCL_20m:scl',
+    band: 'scl',
+    classes: [
+      { value: 3, label: 'CLOUD_SHADOWS' },
+      { value: 8, label: 'CLOUD_MEDIUM_PROBABILITY' },
+      { value: 10, label: 'THIN_CIRRUS' },
+    ],
+    suggested: [10, 3],
+    reference: 'https://sentiwiki.copernicus.eu/web/s2-processing',
+    note: 'Older baselines name some classes differently.',
+  };
+  const collection = (mask: unknown) => ({ id: 'x', 'earthx:mask': mask }) as unknown as Collection;
+
+  it('is read from the collection as the registry writes it', () => {
+    expect(maskLayerOf(collection(layer))).toEqual(layer);
+  });
+
+  it.each([
+    ['no field', undefined],
+    ['null, as a dataset without a layer serves it', null],
+    ['a text', 'scl'],
+    ['no asset', { ...layer, asset: '' }],
+    ['no band', { ...layer, band: undefined }],
+    ['no classes', { ...layer, classes: [] }],
+    ['a class without a label', { ...layer, classes: [{ value: 3 }] }],
+    ['a class value with a fraction', { ...layer, classes: [{ value: 3.5, label: 'x' }] }],
+  ])('has none for %s', (_, mask) => {
+    expect(maskLayerOf(collection(mask))).toBeNull();
+    expect(maskLayerOf(undefined)).toBeNull();
+  });
+
+  it('keeps no suggestion the table does not hold, and no link that is not https', () => {
+    const read = maskLayerOf(collection({ ...layer, suggested: [3, 99, 'x'], reference: 'javascript:alert(1)' }))!;
+    expect(read.suggested).toEqual([3]);
+    expect(read.reference).toBe('');
+    expect(maskLayerOf(collection({ ...layer, reference: 'http://example.org/' }))!.reference).toBe('');
+  });
+
+  it('starts a mask step with the layer band and the suggested classes ascending', () => {
+    expect(maskStepValues(layer)).toEqual({ source: 'scl', classes: '3, 10' });
+    expect(maskStepValues({ ...layer, suggested: [] })).toEqual({ source: 'scl', classes: '' });
+  });
+
+  it('is found among the variables of a Zarr item, as <asset>:<variable>', () => {
+    const zarrItem = {
+      id: 'z',
+      properties: {},
+      assets: {
+        SCL_20m: { href: 'https://example.org/scl20', type: 'application/vnd+zarr', bands: [{ name: 'scl' }] },
+        reflectance: { href: 'https://example.org/r', type: 'application/vnd+zarr', bands: [{ name: 'b04' }] },
+      },
+    } as unknown as StacItem;
+    const sources = bandSources(zarrItem, 'zarr', ':');
+    expect(sources.map((s) => s.asset)).toEqual(['SCL_20m:scl', 'reflectance:b04']);
+    expect(orderAssets(sources, ['reflectance:b04'], [], [layer.asset])).toEqual(['SCL_20m:scl', 'reflectance:b04']);
+  });
+
+  it('needs its asset only while a mask step is in the order', () => {
+    expect(maskAssetOf([{ op: 'band_math' }, { op: 'mask' }], layer)).toBe('SCL_20m:scl');
+    expect(maskAssetOf([{ op: 'band_math' }], layer)).toBeNull();
+    expect(maskAssetOf([{ op: 'mask' }], null)).toBeNull();
   });
 });
 

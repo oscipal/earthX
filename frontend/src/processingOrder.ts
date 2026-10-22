@@ -10,7 +10,7 @@ import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
 import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
 import { paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
-import type { Collection, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
+import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
 // K10: the one input of an order is always called this.
 export const INPUT_NAME = 'input';
@@ -202,15 +202,16 @@ export function uniqueNames(sources: readonly BandSource[]): Map<string, string>
   return unique;
 }
 
-// The assets of the order: those the user picked and those an expression
-// names, in the item's own order.
+// The assets of the order: those the user picked, those an expression names and
+// those a step needs (the layer of a mask), in the item's own order.
 export function orderAssets(
   sources: readonly BandSource[],
   picked: readonly string[],
   expressions: readonly string[],
+  needed: readonly string[] = [],
 ): string[] {
   const unique = uniqueNames(sources);
-  const wanted = new Set(picked);
+  const wanted = new Set([...picked, ...needed]);
   for (const expression of expressions) {
     for (const name of namesInExpression(expression)) {
       const asset = unique.get(name);
@@ -218,6 +219,45 @@ export function orderAssets(
     }
   }
   return sources.map((s) => s.asset).filter((asset) => wanted.has(asset));
+}
+
+// --- the layer a mask reads (M4-18c) ----------------------------------------------
+
+const isInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
+
+// `earthx:mask` of the collection, or `null` where the dataset has none or the field is
+// not what the registry writes. Only https references are kept: the panel links to it.
+export function maskLayerOf(collection: Collection | undefined): EarthxMask | null {
+  const raw: unknown = collection?.['earthx:mask'];
+  if (!isObject(raw)) return null;
+  const { asset, band, classes, suggested, reference, note } = raw;
+  if (typeof asset !== 'string' || !asset || typeof band !== 'string' || !band) return null;
+  if (!Array.isArray(classes) || classes.length === 0) return null;
+  const known = classes.flatMap((entry: unknown) =>
+    isObject(entry) && isInteger(entry.value) && typeof entry.label === 'string' ? [{ value: entry.value, label: entry.label }] : [],
+  );
+  if (known.length !== classes.length) return null;
+  const values = new Set(known.map((entry) => entry.value));
+  return {
+    asset,
+    band,
+    classes: known,
+    suggested: Array.isArray(suggested) ? suggested.filter((v): v is number => isInteger(v) && values.has(v)) : [],
+    reference: typeof reference === 'string' && reference.startsWith('https://') ? reference : '',
+    note: typeof note === 'string' ? note : '',
+  };
+}
+
+// What a new mask step starts with: the layer's band, which the recipe names but the user does
+// not type, and the classes the dataset suggests — ticked, not decided: the recipe lists exactly
+// the classes ticked when it is sent (K6).
+export function maskStepValues(layer: EarthxMask): Record<string, FieldValue> {
+  return { source: layer.band, classes: [...layer.suggested].sort((a, b) => a - b).join(', ') };
+}
+
+// The asset the order has to read for its mask steps, or `null` without one.
+export function maskAssetOf(steps: readonly Pick<DraftStep, 'op'>[], layer: EarthxMask | null): string | null {
+  return layer && steps.some((step) => step.op === 'mask') ? layer.asset : null;
 }
 
 // --- scenes and passes (F8, M4-12b) ---------------------------------------------
