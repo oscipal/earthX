@@ -14,6 +14,8 @@ import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoor
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
+import { passesOf, viewOfPass } from './mosaic';
+import type { Mosaics, PlannedRaster } from './mosaic';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
 const AOI_SRC = 'aoi-src';
@@ -23,7 +25,10 @@ const COVERAGE_FOOTPRINTS_SRC = 'coverage-footprints-src'; // real footprints on
 const COVERAGE_AREA_SRC = 'coverage-area-src'; // a one-off product's extent (M3-12, F-07)
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
-const MAX_MOSAIC_LAYERS = 40;
+export const MAX_MOSAIC_LAYERS = 40;
+// Every dynamic id the focus view and the browse preview hand out is below this; a mosaic
+// adds the scenes it stacks below its first level to its own layer (`mosaic.ts`).
+const MAX_DYNAMIC_LAYERS = 200;
 // The preview of the processing panel (M4-13c-2): above every raster the map
 // draws, under the AOI outline.
 const PREVIEW_SRC = 'preview-src-';
@@ -178,6 +183,9 @@ function placeImage(
 interface RasterZoom {
   minZoom: number;
   maxZoom: number;
+  // From this zoom up the layer is not drawn at all (MapLibre's layer `maxzoom`). A source's own
+  // `maxzoom` hides nothing, it overzooms — so a scene meant for the levels below a mosaic needs this.
+  hideFrom?: number;
 }
 
 function placeRaster(
@@ -200,7 +208,13 @@ function placeRaster(
     maxzoom: zoom.maxZoom,
   });
   map.addLayer(
-    { id: lyrId, type: 'raster', source: srcId, paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 } },
+    {
+      id: lyrId,
+      type: 'raster',
+      source: srcId,
+      ...(zoom.hideFrom === undefined ? {} : { maxzoom: zoom.hideFrom }),
+      paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 },
+    },
     before,
   );
 }
@@ -355,7 +369,7 @@ function clearDynamicMosaic(map: MapLibreMap): void {
   // Remove by deterministic id across the whole index range — not just the
   // tracked ids — so an overlay placed by a slow async quicklook load that
   // finished around a re-sync can't survive as an orphan.
-  for (let i = 0; i < MAX_MOSAIC_LAYERS; i++) {
+  for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
     for (const lyr of [`m-img-lyr-${i}`, `m-tiles-lyr-${i}`]) {
       if (map.getLayer(lyr)) map.removeLayer(lyr);
     }
@@ -515,7 +529,7 @@ function addQuicklookUnderlay(
 // place a raster overlay's tile URL is actually built.
 function addTiles(
   map: MapLibreMap,
-  info: DownloadedInfo,
+  info: PlannedRaster,
   i: number,
   render: AppliedRender,
   clip: GeoJSON.Geometry | null,
@@ -562,7 +576,7 @@ let stackedOrder: string[] = [];
 
 function overlaySignature(ov: LayerOverlay): string {
   return ov.kind === 'raster'
-    ? JSON.stringify([ov.kind, ov.tileUrl, ov.bounds, ov.minZoom, ov.maxZoom])
+    ? JSON.stringify([ov.kind, ov.tileUrl, ov.bounds, ov.minZoom, ov.maxZoom, ov.hideFrom])
     : JSON.stringify([ov.kind, ov.url, ov.coords, ov.nodataMax]);
 }
 
@@ -706,6 +720,9 @@ export interface MosaicState {
   // (`syncHighlight`). Optional like `aoi`/`cropToAoi` above, for the same
   // reason: most call sites never draw a cropped view.
   groups?: TimeStepGroup[];
+  // What the mosaics of the passes in `downloaded` look like (`mosaic.ts`). Left out, every scene
+  // is drawn by itself, as before M4-17.
+  mosaics?: Mosaics;
   // A pinned layer draws the view's tiles (`viewLayer.ts`): at its place in the
   // list, with its eye. The view then adds only what the layer does not have.
   tilesInLayer?: boolean;
@@ -722,29 +739,53 @@ export interface MosaicState {
 // click on a full-resolution image reloads it".
 export function syncFocusRaster(
   map: MapLibreMap,
-  s: Pick<MosaicState, 'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset' | 'tilesInLayer'>,
+  s: Pick<
+    MosaicState,
+    'downloaded' | 'render' | 'showDownloaded' | 'aoi' | 'cropToAoi' | 'items' | 'dataset' | 'tilesInLayer' | 'groups' | 'mosaics'
+  >,
 ): void {
   clearDynamicMosaic(map);
   if (!s.showDownloaded) return;
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
-  const entries = Object.entries(s.downloaded).slice(0, MAX_MOSAIC_LAYERS);
   const dataset = s.dataset;
+  // Each pass is a mosaic, scene by scene, or not yet known (`mosaic.ts`). The scenes drawn one by
+  // one are capped, first come first served, as they always were.
+  let single = 0;
+  const drawn = passesOf(Object.entries(s.downloaded), s.groups).map((entries) => {
+    const view = viewOfPass(dataset?.id ?? null, entries, s.mosaics);
+    if (view.kind === 'scenes') {
+      const own = entries.slice(0, Math.max(0, MAX_MOSAIC_LAYERS - single));
+      single += own.length;
+      return { entries: own, view };
+    }
+    return { entries, view };
+  });
   // Drawn in reverse selection order, so the *first*-selected scene ends up
   // topmost — the same "first valid pixel wins" rule the download's mosaic
   // uses (rio_tiler's `FirstMethod`, `adr/0006` §3.5), so overlapping scenes
   // agree between the view and the downloaded file. This used to draw in
   // selection order, putting the *last*-selected scene on top instead
-  // (M3-09 finding).
-  [...entries].reverse().forEach(([itemId, info], i) => {
-    // O5: the underlay goes down first, so `addTiles` right after it ends up
-    // on top (`beforeAoi` puts each newly added layer just below the AOI
-    // layer, so whichever is added later of the two is the more on top).
-    if (dataset?.viewable && dataset.browse === 'quicklook') {
-      const item = s.items.find((it) => it.id === itemId);
-      if (item) addQuicklookUnderlay(map, item, dataset, i, clip);
+  // (M3-09 finding). A mosaic applies that rule on the server.
+  let tiles = 0;
+  let underlays = 0;
+  for (const { entries, view } of [...drawn].reverse()) {
+    if (view.kind === 'pending') continue;
+    [...entries].reverse().forEach(([itemId, info]) => {
+      // O5: the underlay goes down first, so `addTiles` right after it ends up
+      // on top (`beforeAoi` puts each newly added layer just below the AOI
+      // layer, so whichever is added later of the two is the more on top).
+      if (dataset?.viewable && dataset.browse === 'quicklook' && underlays < MAX_DYNAMIC_LAYERS) {
+        const item = s.items.find((it) => it.id === itemId);
+        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip);
+      }
+      if (view.kind === 'scenes' && !s.tilesInLayer) addTiles(map, info, tiles++, s.render, clip);
+    });
+    if (view.kind === 'mosaic' && !s.tilesInLayer) {
+      for (const raster of view.rasters) {
+        if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
+      }
     }
-    if (!s.tilesInLayer) addTiles(map, info, i, s.render, clip);
-  });
+  }
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time

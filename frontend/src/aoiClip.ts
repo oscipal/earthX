@@ -1,9 +1,9 @@
 // M3-09: clip full-resolution raster tiles to the AOI entirely in the
 // browser, so the AOI geometry itself never crosses the network — not in a
 // tile URL, not in a request body, and therefore never in a server log
-// either (CLAUDE.md "keine exakten AOIs in Logs"; `adr/0006` "kein Mosaik im
-// Kachel-Pfad", `adr/0001` "zustandslos": nothing here is cached anywhere,
-// on either side).
+// either (CLAUDE.md "keine exakten AOIs in Logs"; `adr/0006` §5 "Zu Frage 4": a
+// mosaic tile names scenes in its URL, never an area; `adr/0001` "zustandslos":
+// nothing here is cached anywhere, on either side).
 //
 // MapLibre has no built-in way to mask a raster layer to a polygon
 // (https://github.com/maplibre/maplibre-gl-js/discussions/3237); the
