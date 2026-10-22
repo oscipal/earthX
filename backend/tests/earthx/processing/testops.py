@@ -86,6 +86,7 @@ SCALE = Operator(
     transform=_scale_meta,
     run=_scale,
     lineage=lambda params: f"scaled by {params.factor}",
+    method=lambda params: f"Every band was multiplied by {params.factor}.",
 )
 
 COARSEN = Operator(
@@ -105,6 +106,7 @@ COARSEN = Operator(
     transform=_coarsen_meta,
     run=_coarsen,
     lineage=lambda params: f"coarsened by {params.factor} (nearest)",
+    method=lambda params: f"The raster was coarsened by {params.factor} with nearest-neighbour resampling.",
 )
 
 #: The platform's registry plus both test operators.

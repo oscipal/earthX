@@ -18,6 +18,17 @@ describe('resultFiles', () => {
     ]);
   });
 
+  it('keeps the methods text beside the archive and among the single links', () => {
+    expect(resultFiles({ result: link('result.tif'), bundle: link('result.zip'), methods: link('methods.txt') })).toEqual([
+      { file: 'result.zip', label: ZIP_LABEL },
+      { file: 'methods.txt', label: 'Methods' },
+    ]);
+    expect(resultFiles({ result: link('result.tif'), methods: link('methods.txt') })).toEqual([
+      { file: 'result.tif', label: 'Result (COG)' },
+      { file: 'methods.txt', label: 'Methods' },
+    ]);
+  });
+
   it('is the single links, each once, without names the job API does not serve', () => {
     expect(
       resultFiles({

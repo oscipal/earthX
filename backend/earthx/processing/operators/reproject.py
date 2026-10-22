@@ -179,6 +179,17 @@ def _lineage(params: BaseModel) -> str:
     return f"reprojected to {params.crs} at {params.resolution:g} ({params.resampling})"
 
 
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, ReprojectParams)
+    aligned = " The target grid was snapped to whole multiples of the pixel size." if params.align else ""
+    what = _METHODS[params.resampling][2].rstrip(".")
+    return (
+        f"The raster was reprojected to {params.crs} with a pixel size of {params.resolution:g} "
+        f"in the units of the target CRS, using {params.resampling} resampling "
+        f"({what[0].lower()}{what[1:]}).{aligned}"
+    )
+
+
 REPROJECT = Operator(
     op="reproject",
     op_version=3,
@@ -196,6 +207,7 @@ REPROJECT = Operator(
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
     extra_requirements=_extra_requirements,
 )
 

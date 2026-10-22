@@ -6,16 +6,19 @@
       result.tif          from processing.run
       mask.tif            from processing.run
       recipe.json         the bytes of the input, unchanged
+      methods.txt         the paragraph for a methods section, from the recipe and this run (M4-19a)
       provenance.json     written last
       .work/              the work directory of processing.run, removed at the end
 
 A run that stopped leaves a folder without ``provenance.json``. There is no
 ``citation.bib``: `api` builds it from the registry, and it comes with the download
-(adr/0016 §12b). Nothing here holds a hash, a ``recipe_id`` or a mark of the machine.
+(adr/0016 §12b); ``methods.txt`` is the one text file of the downloads that the runner also writes,
+by the same function and under the same name (:data:`~earthx.processing.methods.METHODS_FILENAME`). Nothing here holds a hash, a ``recipe_id`` or a mark of the machine.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import re
@@ -28,6 +31,7 @@ from typing import Any
 
 import earthx
 from earthx.processing import RunResult
+from earthx.processing.methods import METHODS_FILENAME, DatasetFacts, methods_text
 from earthx.processing.recipe import Provenance, document_bytes
 
 __all__ = ["PROVENANCE_NAME", "RECIPE_NAME", "RunFolder", "numpy_dispatch", "platform_info", "runner_version"]
@@ -90,14 +94,25 @@ class RunFolder:
         source: Provenance,
         started: datetime,
         finished: datetime,
+        dataset: DatasetFacts | None = None,
     ) -> None:
-        """Move the result up, write the recipe as given, then the provenance; then drop the work directory."""
+        """Move the result up, write the recipe as given and the methods text, then the provenance; then drop the work directory."""
         for name in _RESULT_FILES:
             (self.workdir / name).replace(self.path / name)
         (self.path / RECIPE_NAME).write_bytes(recipe_raw)
         provenance = provenance_document(result, source=source, started=started, finished=finished)
+        (self.path / METHODS_FILENAME).write_text(
+            methods_text(_local_document(recipe_raw, provenance), dataset=dataset), encoding="utf-8"
+        )
         (self.path / PROVENANCE_NAME).write_bytes(document_bytes(provenance))
         self.remove_workdir()
+
+
+def _local_document(recipe_raw: bytes, provenance: dict[str, Any]) -> dict[str, Any]:
+    """The recipe of the input with the provenance of this run in place of the cloud run's: what the text is written from."""
+    document = json.loads(recipe_raw)
+    own = {name: provenance[name] for name in Provenance.model_fields}
+    return {**document, "provenance": own}
 
 
 def provenance_document(

@@ -29,9 +29,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
-from earthx.catalog.registry import DatasetRegistry
+from earthx.catalog.registry import DatasetRegistry, UnknownDatasetError
 from earthx.processing import RunResult, check_scope, failure_kind, run, worker_environment
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
+from earthx.processing.methods import DatasetFacts
 from earthx.processing.recipe import RECIPE_VERSION, CropOutput, Recipe, engine_versions
 from earthx.runner.output import RunFolder, platform_info, runner_version
 from earthx.runner.recipe_file import HostRefused, RecipeFile, check_hosts, read_recipe_file
@@ -141,6 +142,14 @@ def _compare_engine(loaded: RecipeFile) -> None:
         )
 
 
+def _facts_of(dataset_id: str) -> DatasetFacts | None:
+    """The title and DOI of the dataset in this image's registry; the text names it by its identifier if it is not there."""
+    try:
+        return DatasetFacts.of(DATASETS.get(dataset_id))
+    except UnknownDatasetError:
+        return None
+
+
 def _run(loaded: RecipeFile, out: Path) -> int:
     try:
         folder = RunFolder.create(out)
@@ -163,7 +172,12 @@ def _run(loaded: RecipeFile, out: Path) -> int:
         if not isinstance(result, RunResult):
             raise UnsupportedRecipe("an export is not run here")
         folder.finish(
-            result, recipe_raw=loaded.raw, source=loaded.provenance, started=started, finished=datetime.now(UTC)
+            result,
+            recipe_raw=loaded.raw,
+            source=loaded.provenance,
+            started=started,
+            finished=datetime.now(UTC),
+            dataset=_facts_of(loaded.recipe.inputs[0].dataset),
         )
     except Exception as error:  # noqa: BLE001 - the runner's edge: every failure is named by its kind only
         folder.remove_workdir()

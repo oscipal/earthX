@@ -129,6 +129,8 @@ class Operator:
     transform: Callable[[RasterMeta, BaseModel], RasterMeta]
     run: Callable[..., Any]
     lineage: Callable[[BaseModel], str]
+    #: One sentence of the methods text (M4-19a): what the step did, for a paper's methods section.
+    method: Callable[[BaseModel], str]
     extra_requirements: Callable[[BaseModel], frozenset[str]] = field(default=_no_extra_requirements)
     #: STAC properties this step adds to the result, such as ``processing:expression`` (§5.6).
     properties: Callable[[BaseModel], dict[str, Any]] = field(default=_no_properties)
