@@ -29,6 +29,7 @@ import {
 } from '../processingOrder';
 import {
   AUTO_STRETCH_REASON,
+  furtherNote,
   MAX_PREVIEW_ASSETS,
   planPreview,
   rescaleOf,
@@ -252,7 +253,7 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
   );
 }
 
-// "Preview on the map" (M4-13c-2): the first step as tiles, with the range and
+// "Preview on the map" (M4-13c-2): the longest start of the steps that runs as tiles, with the range and
 // colormap by hand (F3 (1)), and the preview as a layer of its own.
 function PreviewSection({ view }: { view: OrderView }) {
   const steps = useProcessingStore((s) => s.steps);
@@ -313,7 +314,7 @@ function PreviewSection({ view }: { view: OrderView }) {
             <p className="hint-text">No preview: the map takes at most {MAX_PREVIEW_ASSETS} bands.</p>
           )}
           {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
-          {plan.further && <p className="pp-help">The map shows the first step; the job runs all steps.</p>}
+          {plan.further && <p className="pp-help">{furtherNote(plan)}</p>}
           {sceneCount > 1 && (
             <p className="pp-help">
               Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of

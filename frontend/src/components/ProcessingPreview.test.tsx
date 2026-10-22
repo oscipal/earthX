@@ -369,6 +369,20 @@ describe('the preview section', () => {
     expect(store().preview!.title).toBe('Band math');
   });
 
+  it('draws a chain of tile steps and counts what the map leaves out', async () => {
+    await withNdvi();
+    const normalize = { key: 900, op: 'normalize', opVersion: 1, values: { in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
+    afterDebounce();
+    expect(store().preview!.title).toBe('Band math → Normalize');
+    const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('op')).toEqual(['band_math', 'normalize']);
+    expect(section().textContent).not.toContain('the job runs all steps');
+    click(button('＋ Band math'));
+    expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');
+    expect(store().preview!.title).toBe('Band math → Normalize');
+  });
+
   it('asks for a band when none is named', async () => {
     select([scene('S2B_A')]);
     await openPanel();

@@ -327,23 +327,32 @@ export function buildTileTemplate(datasetId: string, itemId: string, asset: stri
   return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
 }
 
-// The tile template of an operator (T1, adr/0014 §6.2): the assets the operator
-// reads — one `asset` each, in the order of the order — and `op`, `op_version`
-// and `params` as the tiler takes them. `paramsJson` is canonical JSON
-// (`processing.ts::canonicalJson`), so equal parameters are one URL, one cache entry.
+// One step of an operator tile: the operator, its version and its parameters as
+// canonical JSON (`processing.ts::canonicalJson`), so equal parameters are one URL,
+// one cache entry.
+export interface TileStep {
+  op: string;
+  opVersion: number;
+  paramsJson: string;
+}
+
+// The tile template of an operator or a chain of them (T1, adr/0014 §6.1, §6.2): the
+// assets the steps read — one `asset` each, in the order of the order — and `op`,
+// `op_version` and `params` once per step, in the order of the steps, as the tiler
+// takes them (`api/tiler.py`, at most four).
 export function buildOperatorTileTemplate(
   datasetId: string,
   itemId: string,
   assets: readonly string[],
-  op: string,
-  opVersion: number,
-  paramsJson: string,
+  steps: readonly TileStep[],
 ): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
-  params.set('op', op);
-  params.set('op_version', String(opVersion));
-  params.set('params', paramsJson);
+  for (const step of steps) {
+    params.append('op', step.op);
+    params.append('op_version', String(step.opVersion));
+    params.append('params', step.paramsJson);
+  }
   return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
 }
 

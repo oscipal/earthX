@@ -8,7 +8,7 @@
 // covers the whole scenes by default, or only the AOI (M4-13c §3.2). "Run as"
 // makes one order per pass or per scene instead (M4-13c-4, §3.6).
 //
-// The map preview of the first step (M4-13c-2) is computed from the draft and
+// The map preview of the first steps (M4-13c-2, M4-18b) is computed from the draft and
 // the selection; it follows 400 ms after the last change (K7).
 //
 // The draft belongs to one dataset: a new dataset drops it. A new AOI drops
@@ -197,7 +197,7 @@ interface ProcessingState {
   // The range and colormap of the map preview: applied, and as edited (F3 (1)).
   range: PreviewRange;
   rangeDraft: PreviewRange;
-  // What the map shows of the first step; `null` for none.
+  // What the map shows of the steps (their longest start that runs as tiles); `null` for none.
   preview: PreviewSpec | null;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
@@ -1054,8 +1054,8 @@ useAppStore.subscribe((s, prev) => {
 const PREVIEW_DELAY_MS = 400;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
-// What the map should show now: the first step of the draft on the scenes of the
-// order, while the panel is open and the step is complete.
+// What the map should show now: the longest start of the draft's steps that runs as
+// tiles, on the scenes of the order, while the panel is open and its steps are complete.
 function wantedPreview(): PreviewSpec | null {
   const p = useProcessingStore.getState();
   if (!p.open) return null;
