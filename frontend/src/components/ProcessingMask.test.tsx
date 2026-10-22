@@ -418,3 +418,41 @@ describe('the preview of a mask', () => {
     expect(section().textContent).not.toContain('only as a job');
   });
 });
+
+describe('the data type after normalize (Otto, 22.10.2026)', () => {
+  it('is float32 on integer bands with a stated nodata, and no integer type is offered', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    click(chip('red'));
+    // Without a step the source type is kept: uint16, nodata stated, no scaling.
+    expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('uint16');
+    click(button('＋ Normalize'));
+    expect(container.querySelector('[aria-label="Data type"]')!.textContent).toContain('float32');
+    const options = [...container.querySelectorAll('select option')].map((o) => o.textContent);
+    expect(options).toContain('uint16 (not after normalize)');
+    expect(container.textContent).toContain('Normalize ends in float32 with NaN as nodata');
+    expect(container.textContent).not.toContain('Band math ends in float32');
+  });
+});
+
+describe('a dataset without a classification layer', () => {
+  it('does not offer a mask and says why', async () => {
+    const withoutMask = structuredClone(s2) as typeof s2;
+    withoutMask.inputs.recipe.schema.properties.steps.items.oneOf = withoutMask.inputs.recipe.schema.properties.steps.items.oneOf.filter(
+      (variant) => !variant.$ref.includes('step_mask'),
+    );
+    fetchMock.mockImplementation(async (url: string) =>
+      url === DESCRIPTION ? json(withoutMask) : new Response('{}', { status: 404 }),
+    );
+    select([scene('S2B_A', false)], dataset(null));
+    await openPanel();
+    expect([...container.querySelectorAll('button')].some((b) => b.textContent === '＋ Mask')).toBe(false);
+    expect(container.textContent).toContain('Mask: this dataset has no classification layer to read.');
+  });
+
+  it('says nothing of the kind where the mask is offered', async () => {
+    select([scene('S2B_A')]);
+    await openPanel();
+    expect(container.textContent).not.toContain('no classification layer');
+  });
+});

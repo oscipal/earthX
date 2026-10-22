@@ -13,7 +13,6 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
 import { polygonBbox } from '../geoUtils';
-import { AFTER_BAND_MATH } from '../processingDefaults';
 import { totalOf } from '../processingBatch';
 import {
   formatBytes,
@@ -569,6 +568,9 @@ export default function ProcessingPanel() {
                       );
                     })}
                   </div>
+                  {!view.maskLayer && !info.operators.some((o) => o.op === 'mask') && (
+                    <p className="hint-text">Mask: this dataset has no classification layer to read.</p>
+                  )}
                   {info.operators.map((o) =>
                     o.form.supported ? null : (
                       <p key={`${o.op}/${o.opVersion}`} className="hint-text">
@@ -606,8 +608,10 @@ export default function ProcessingPanel() {
                         ))}
                       </select>
                     </label>
-                    {view.dtypeOptions.some((o) => o.disabledReason) && (
-                      <span className="pp-help">{AFTER_BAND_MATH} These types are not offered.</span>
+                    {view.dtypeOptions.find((o) => o.disabledReason) && (
+                      <span className="pp-help">
+                        {view.dtypeOptions.find((o) => o.disabledReason)!.disabledReason} These types are not offered.
+                      </span>
                     )}
                   </details>
                 </section>
