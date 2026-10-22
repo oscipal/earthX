@@ -186,6 +186,7 @@ describe('the processing side bar and the window of the jobs', () => {
     expired: false,
     tiles: null,
     statistics: null,
+    range: null,
     title: null,
   };
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
 import {
+  handRange,
   isOverview,
   isResultExpired,
   MIN_REMAINING_MS,
@@ -162,22 +163,26 @@ describe('the colour scale of a result (plan §6.7)', () => {
     expect(resultRender('float32', DEFAULT_RANGE, mixed)).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
   });
 
-  it('holds the range the user applied by hand, before the statistics (rule 2)', () => {
+  it('holds the range the job was started with by hand, before the statistics (rule 2)', () => {
     const hand = { vmin: '0', vmax: '3000', colormap: 'terrain' };
-    expect(resultRender('float32', hand, stats(dem))).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
-    expect(resultRender('float32', { ...DEFAULT_RANGE, colormap: 'viridis' }, stats(dem))).toEqual({
-      rescale: '-1,1',
-      colormapName: 'viridis',
-    });
-    expect(resultRender('float32', { ...DEFAULT_RANGE, vmax: '2' }, stats(ndvi, true))).toEqual({
+    expect(resultRender('float32', DEFAULT_RANGE, stats(dem), hand)).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
+    expect(resultRender('float32', DEFAULT_RANGE, stats(ndvi, true), { ...DEFAULT_RANGE, vmax: '2' })).toEqual({
       rescale: '-1,2',
       colormapName: 'rdylgn',
     });
+    expect(resultRender('float32', DEFAULT_RANGE, null, hand)).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
+  });
+
+  it('does not take the range of the panel for a result with statistics: it is that of another job', () => {
+    const hand = { vmin: '0', vmax: '3000', colormap: 'terrain' };
+    expect(resultRender('float32', hand, stats(dem))).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
+    expect(resultRender('float32', hand, stats(ndvi, true))).toEqual({ rescale: '-1,1', colormapName: 'rdylgn' });
+    expect(resultRender('float32', hand, stats(dem), null)).toEqual({ rescale: '180,1900', colormapName: 'viridis' });
   });
 
   it('draws an integer result as it is, with or without statistics (rule 1)', () => {
     expect(resultRender('uint16', DEFAULT_RANGE, stats(dem))).toEqual({});
-    expect(resultRender('int32', { vmin: '0', vmax: '3', colormap: 'terrain' }, stats(dem))).toEqual({});
+    expect(resultRender('int32', { vmin: '0', vmax: '3', colormap: 'terrain' }, stats(dem), DEFAULT_RANGE)).toEqual({});
   });
 
   it('is the range of the panel without statistics (rule 5)', () => {
@@ -207,6 +212,22 @@ describe('the colour scale of a result (plan §6.7)', () => {
 
   it('draws a result of an unknown data type as it is, statistics or not', () => {
     expect(resultRender(null, DEFAULT_RANGE, stats(dem))).toEqual({});
+  });
+});
+
+describe('the range set by hand', () => {
+  it('is none for the default range, which is no choice of the user', () => {
+    expect(handRange(DEFAULT_RANGE)).toBeNull();
+    expect(handRange({ ...DEFAULT_RANGE })).toBeNull();
+  });
+
+  it.each([
+    ['the end of the range', { ...DEFAULT_RANGE, vmax: '2' }],
+    ['the start of the range', { ...DEFAULT_RANGE, vmin: '0' }],
+    ['the colormap', { ...DEFAULT_RANGE, colormap: 'viridis' }],
+    ['no colormap', { ...DEFAULT_RANGE, colormap: '' }],
+  ])('is the range once %s differs', (_, range) => {
+    expect(handRange(range)).toEqual(range);
   });
 });
 
