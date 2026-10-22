@@ -79,6 +79,11 @@ def _earthx_mask(config: DatasetConfig) -> dict[str, object] | None:
     }
 
 
+def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
+    """The unit of each asset the entry names, ``None`` where it says the unit is unknown (M4-19b)."""
+    return dict(config.band_units)
+
+
 def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
     lic = config.license
     return {
@@ -156,6 +161,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:format": config.format.value,
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:mask": _earthx_mask(config),
+        "earthx:band_units": _earthx_band_units(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
             "token_free_checked_at": config.access.token_free_checked_at.isoformat(),
