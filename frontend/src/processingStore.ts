@@ -496,10 +496,14 @@ export function refusalMessage(error: unknown): string {
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
+// A paragraph for a methods section, written by the backend from the recipe (M4-19a).
+export const METHODS_FILE = 'methods.txt';
+
 const FILE_LABELS: Record<string, string> = {
   'result.tif': 'Result (COG)',
   'mask.tif': 'Mask',
   'recipe.json': 'Recipe',
+  [METHODS_FILE]: 'Methods',
 };
 
 // The one archive of a result (M4-11b-2): an export's `export.zip`, or a raster
@@ -519,7 +523,10 @@ export function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile
     if (!names.includes(file)) names.push(file);
   }
   const zip = ZIP_FILES.find((file) => names.includes(file));
-  if (zip) return [{ file: zip, label: ZIP_LABEL }];
+  if (zip) {
+    // The archive holds the text too; it stays a link of its own for the one who wants to paste it.
+    return [{ file: zip, label: ZIP_LABEL }, ...(names.includes(METHODS_FILE) ? [{ file: METHODS_FILE, label: 'Methods' }] : [])];
+  }
   return names.filter((file) => FILE_LABELS[file]).map((file) => ({ file, label: FILE_LABELS[file] }));
 }
 

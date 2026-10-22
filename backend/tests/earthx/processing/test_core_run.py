@@ -105,10 +105,11 @@ class TestAPixelRun:
         assert [band.name for band in result.meta.bands] == ["red", "nir"]
         assert result.properties["proj:code"] == "EPSG:32632"
         assert result.properties["gsd"] == sources.RESOLUTION
-        assert result.properties["bands"] == [
+        assert [{k: v for k, v in band.items() if k != "statistics"} for band in result.properties["bands"]] == [
             {"name": "red", "data_type": "float32", "nodata": "nan"},
             {"name": "nir", "data_type": "float32", "nodata": "nan"},
         ]
+        assert [band["statistics"]["count"] for band in result.properties["bands"]] == [WIDTH * HEIGHT - 64] * 2
         assert result.properties["processing:lineage"] == "scaled by 2.0"
         assert result.properties["earthx:resampled"] is False
         assert result.properties["processing:software"]["earthx"] == result.engine["earthx"]

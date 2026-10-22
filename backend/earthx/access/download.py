@@ -146,6 +146,7 @@ from earthx.access.crop_rules import (
     COG_PROFILE,
     FALLBACK_BYTES_PER_PIXEL,
     MAX_OUTPUT_SIDE_PX,
+    METHODS_FILENAME,
     NOTICE_FILENAME,
     RECIPE_FILENAME,
     RESOLUTION_FACTORS,
@@ -174,6 +175,7 @@ __all__ = [
     "MAX_DOWNLOAD_ITEMS",
     "MAX_OUTPUT_SIDE_PX",
     "MAX_TOTAL_OUTPUT_BYTES",
+    "METHODS_FILENAME",
     "RESOLUTION_FACTORS",
     "AoiOutsideItems",
     "AoiTooLarge",
@@ -1117,6 +1119,7 @@ def build_download_zip(
     gdal_env: Mapping[str, str] | None = None,
     recipe_json: bytes | None = None,
     citation_bib: bytes | None = None,
+    methods_text: bytes | None = None,
     recipe_omitted_cause: str | None = None,
 ) -> bytes:
     """The finished ZIP: a data COG and a mask file per requested asset, the AOI
@@ -1163,6 +1166,8 @@ def build_download_zip(
     ``recipe_json`` and ``citation_bib`` (adr/0014 §10, M4-14): finished files from
     `api`, written once at the root as :data:`RECIPE_FILENAME` and
     :data:`CITATION_FILENAME` regardless of the group count, as ``aoi.geojson`` is.
+    ``methods_text`` (M4-19a) is the same kind of file, built from that recipe, written at the root as
+    :data:`METHODS_FILENAME`; it comes and goes with the recipe.
     This function does not look inside them (`access` may not import `processing`);
     ``None`` leaves the file out; ``recipe_omitted_cause`` then says so in the notice
     (:func:`build_notice_text`).
@@ -1214,5 +1219,7 @@ def build_download_zip(
                     recipe_omitted_cause=recipe_omitted_cause,
                 ),
             )
+            if methods_text is not None:
+                archive.writestr(METHODS_FILENAME, methods_text)
         _verify_zip(buffer)
         return buffer.getvalue()

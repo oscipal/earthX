@@ -256,8 +256,13 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-17a | Mosaik im Kachel-Pfad: Reihenfolge nach `access/crop_rules.py` (KE4) mit Vergleichstest, Mosaik-Reader und -Fabrik in `access`, Berichtigung `architekturplan.md` 6.3, Nachtrag `adr/0006` | M4b | B | Sonnet (hoch) | M4-17 (Plan) | PR #167 (Entwurf), umgesetzt (`plans/m4-17-mosaik-kachel-pfad.md` §12) |
 | M4-17b | Mosaik im Kachel-Pfad: Routen und Pfad-Abhängigkeit im `tiler`, Item-Abrufe (zusammengelegt, gedrosselt, TileJSON wärmt vor), ohne Item-Cache klare Meldung statt `500` (`plans/m4-17-mosaik-kachel-pfad.md` §13) | M4b | B | Sonnet (hoch) | M4-17a | Entwurfs-PR, umgesetzt (`plans/m4-17-mosaik-kachel-pfad.md` §14) |
 | M4-17c | Mosaik im Kachel-Pfad: Frontend, ein Layer je Überflug, Rückfall unter z8 und über 64 Szenen (`plans/m4-17-mosaik-kachel-pfad.md` §13) | M4b | B | Sonnet (hoch) | M4-17b | offen (neue Session nach dem Merge von b) |
-| M4-18 | Operatoren Masking und Normalisierung | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | offen |
-| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | offen |
+| M4-18 | Operatoren Masking und Normalisierung (`plans/m4-18-masking-normalisierung.md`) | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | Plan freigegeben am 20.10.2026; M4-18a umgesetzt (PR (Entwurf)), M4-18b und M4-18c je neue Session nach dem Merge von M4-18a |
+| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | Plan freigegeben am 20.10.2026 (#171, `plans/m4-19-teilen-und-beschreiben.md`); Umsetzung in a bis e |
+| M4-19a | Methodentext: `processing/methods.py`, `Operator.method`, `methods.txt` in Zuschnitt, Export, Job-ZIP und Runner (eine Definition mit M4-30), Link und „Methods“ in der Jobliste | M4b | B | Sonnet (mittel) | M4-19 (Plan) | PR #171 (Entwurf), umgesetzt (`plans/m4-19-teilen-und-beschreiben.md` §10) |
+| M4-19b | Einheiten: Registry-Feld `band_units`, `Band.unit`, `bands[].unit`, Anzeige (§3.2) | M4b | B | Sonnet (mittel) | M4-19a; nicht parallel zu M4-18 | offen (neue Session) |
+| M4-19c | Farbskala der Vorschau: `/statistics` mit `op`, Regel mit M4-32 (§3.3) | M4b | B | Sonnet (mittel) | M4-32b | offen (neue Session) |
+| M4-19d | „Load recipe…“, `draftFromOrder` (§3.4) | M4b | B | Sonnet (mittel) | — | offen (neue Session) |
+| M4-19e | Permalink: Tabelle, Routen, Aufräumer, „Share“; Nachtrag `adr/0015` F13 (§3.5) | M4b | B | Sonnet (mittel) | M4-19d | offen (neue Session) |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
 | M4-24 | Weitere Resampling-Methoden für `reproject` (`average`, `mode`, `cubicspline`, `lanczos`) mit Messung gegen `adr/0014` §6.3 (`plans/m4-24-resampling-methoden.md`) | Quer | B | Opus Plan, Sonnet (hoch) | M4-21 | PR #158 (Entwurf), Plan freigegeben am 20.10.2026, umgesetzt (`plans/m4-24-resampling-methoden.md` §8) |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
@@ -268,6 +273,9 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-28 | Layer-Manager reparieren: Tempo beim Schalten, Reihenfolge Liste = Karte, Klick trifft den gewählten Layer (`plans/m4-28-layer-manager-reparieren.md`) | Quer | A | Sonnet (hoch) | M4-13c-2 | PR (Entwurf) |
 | M4-29 | Frontend: Datensatzwahl ohne Vorauswahl, einzeln per Klick, mehrere nur mit „Select multiple datasets“; „Select all“ je Gruppe und für alle geladenen Treffer, „Clear selection“ (`plans/m4-29-datensatzwahl.md`) | M4 | A | Sonnet (mittel) | M4-13c-2 | PR (Entwurf) |
 | M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export; dazu die Herkunft einer Orts-AOI (OSM) auch bei Raster-Jobs, Backend und Frontend (`plans/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | PR (Entwurf) |
+| M4-32 | Statistik je Raster-Ergebnis (min, max, Mittel, `stddev`, 2-/98-Perzentil, Anteil gültiger Pixel) in `result.tif` und Ergebnisdokument, Vorgabe für die Farbskala im Frontend (`plans/m4-32-ergebnis-statistik.md`) | M4 | B | Opus Plan, Sonnet (hoch) | M4-13c-5 | Plan freigegeben am 20.10.2026 (§7), geteilt in a und b |
+| M4-32a | Backend: Statistik im Kern (Tags über die Datei, `statistics` über die Maske), Version 0.4.2, Faktoren mit Statistik-Durchgang (Band-Math 1,2, `reproject` +7,7 %, Raster ohne Schritt 1,0; Export unverändert), Nachtrag `adr/0014` §15k | M4 | B | Opus (hoch) | M4-32 (Plan) | Entwurfs-PR #168, umgesetzt (`plans/m4-32-ergebnis-statistik.md` §8, §9) |
+| M4-32b | Frontend: Farbskala eines Ergebnisses aus der AOI-Statistik (§6.7), Prüfanleitung | M4 | B | Sonnet (hoch) | M4-32a gemergt | offen (neue Session, Startsatz in §7) |
 | M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | offen |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A

@@ -241,6 +241,14 @@ def _lineage(params: BaseModel) -> str:
     return f"band math: {params.expression}"
 
 
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, BandMathParams)
+    return (
+        f"One band was computed per pixel from the expression {params.expression!r} "
+        "on physical values, in 32-bit floating point."
+    )
+
+
 def _properties(params: BaseModel) -> dict[str, Any]:
     assert isinstance(params, BandMathParams)
     return {"processing:expression": {"format": "numexpr", "expression": params.expression}}
@@ -259,9 +267,11 @@ BAND_MATH = Operator(
     ),
     tiers=frozenset({Tier.T1, Tier.T2}),
     kind="pixel",
-    cost_factor=lambda params: 1.0,
+    # 1.0 until M4-32; the statistics of the result added 12 % (adr/0014 §15k), rounded up.
+    cost_factor=lambda params: 1.2,
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
     properties=_properties,
 )
