@@ -440,22 +440,31 @@ NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR python simd.py   # 
 **Was sich geändert hat** (nur Frontend, kein Backend, keine Version):
 - **`resultLayer.ts`:**
   - `resultStats(properties)` liest `properties.bands[].statistics` (AOI) und `processing:expression` des `result`-Links. Ein Band mit `count` 0 nennt keinen Wert. Ohne brauchbares Band, bei fehlenden oder falsch geformten `bands` ist das Ergebnis `null` (älteres Ergebnis).
-  - `resultRender(dataType, range, stats)` folgt §6.7 der Reihe nach: Ganzzahl `{}`; von Hand angewandter Bereich (weicht von `DEFAULT_RANGE` ab) gilt; Band-Math-Ergebnis mit allen Werten in −1…1 bleibt −1…1 mit `rdylgn`; sonst kleinstes `percentile_2` bis größtes `percentile_98` mit `viridis`; sind beide gleich, `minimum`…`maximum`; sonst und ohne Statistik der Bereich des Panels wie bisher.
-- **`processingStore.ts`:** `JobEntry.statistics`, gesetzt in `readResults` aus demselben Ergebnisdokument, keine neue Anfrage. `showResultOnMap` gibt sie an `resultRender`. Gespeichert wird sie nicht (`persist` nimmt nur Kennung, Frist, Titel); nach einem Neuladen liest `resumeJobs` das Dokument neu.
+  - `resultRender(dataType, panel, stats, own)` folgt §6.7 der Reihe nach: Ganzzahl `{}`; der Bereich, den der Nutzer beim Start des Jobs von Hand gesetzt hatte (`own`, siehe „Änderung“ unten), gilt für dieses Ergebnis; Band-Math-Ergebnis mit allen Werten in −1…1 bleibt −1…1 mit `rdylgn` (fest, nicht der Bereich des Panels); sonst kleinstes `percentile_2` bis größtes `percentile_98` mit `viridis`; sind beide gleich, `minimum`…`maximum`; sonst und ohne Statistik der Bereich des Panels wie bisher.
+  - `handRange(range)` gibt den Bereich zurück, wenn er von `DEFAULT_RANGE` abweicht, sonst `null`.
+- **`processingStore.ts`:** `JobEntry.statistics`, gesetzt in `readResults` aus demselben Ergebnisdokument, keine neue Anfrage. `JobEntry.range`, gesetzt beim Start (`startJob`, `startBatch`) aus `handRange(range)`. `showResultOnMap` gibt beide an `resultRender`. Gespeichert wird keines von beiden (`persist` nimmt nur Kennung, Frist, Titel); nach einem Neuladen liest `resumeJobs` das Dokument neu, und der Job hat dann keinen eigenen Bereich mehr, sein Ergebnis nimmt die Statistik.
 - Die T1-Vorschau (`processingPreview.ts`) und das Panel „Range and colormap“ sind unverändert; keine neuen Oberflächentexte.
 
+**Änderung (Otto, 22.10.2026), Regel 2 und Frage 7:**
+- Ein von Hand gesetzter Bereich im Panel gilt nicht mehr für jedes später hinzugefügte Ergebnis. Er wird beim Start eines Jobs mit diesem Job gespeichert, nur wenn er von Hand gesetzt ist (nicht der Vorgabewert, nicht nur getippt und nicht angewandt), und gilt nur für dessen Ergebnis. Jedes andere Ergebnis nimmt seine eigene Statistik (Regeln 3–5).
+- Das ersetzt Frage 7, Option 1. Ein Job des Download-Dialogs (`placeOrder`) hat keinen eigenen Bereich.
+- Bleibt wie vorher: Ein Ergebnis ohne Statistik (Regel 5) nimmt den Bereich des Panels, wie vor M4-32. Ein schon angelegter Layer ändert sich nicht.
+
 **Tests:**
-- `resultLayer.test.ts` (+23): Lesen der Statistik (Form, fehlende Teile, Band ohne gültigen Pixel, Nicht-Zahlen) und die Regeln 1–5, darunter Hand vor Statistik, Wert außerhalb −1…1, ein Ergebnis in 0…1 ohne Ausdruck, gleiche Perzentile, konstantes Band, `NaN`/`∞` in der Statistik (nie ein Bereich, den der `tiler` ablehnt).
-- `ProcessingResultLayer.test.tsx` (+7): Layer-URL für DEM (`viridis`, 180…1900), NDVI (`rdylgn`, −1…1), Hand-Bereich, Job ohne Statistik; Lesen aus dem Ergebnisdokument eines wiederaufgenommenen Jobs, mit und ohne Statistik.
-- **Gegenprobe:** Mit `resultLayer.ts` und `processingStore.ts` auf dem Stand von `main` scheitern 30 der neuen Tests.
-- `JobEntry` hat ein neues Pflichtfeld; die drei Testdateien mit eigenem `JobEntry` tragen `statistics: null`.
+- `resultLayer.test.ts` (+29): Lesen der Statistik (Form, fehlende Teile, Band ohne gültigen Pixel, Nicht-Zahlen) und die Regeln 1–5, darunter Hand vor Statistik, Wert außerhalb −1…1, ein Ergebnis in 0…1 ohne Ausdruck, gleiche Perzentile, konstantes Band, `NaN`/`∞` in der Statistik (nie ein Bereich, den der `tiler` ablehnt).
+- `ProcessingResultLayer.test.tsx` (+10): Layer-URL für DEM (`viridis`, 180…1900), NDVI (`rdylgn`, −1…1), Job mit Hand-Bereich (sein Ergebnis nimmt ihn), DEM-Ergebnis bei einem Hand-Bereich im Panel für eine NDVI-Vorschau (nimmt seine Statistik), zwei Jobs nebeneinander, Job ohne Statistik; Lesen aus dem Ergebnisdokument eines wiederaufgenommenen Jobs, mit und ohne Statistik.
+- `ProcessingPanel.test.tsx` (+4): Der Start speichert einen angewandten Hand-Bereich am Job, nichts bei Vorgabe oder nur getipptem Bereich, und eine spätere Änderung am Panel ändert den Job nicht.
+- **Gegenprobe:** Mit `resultLayer.ts` und `processingStore.ts` auf dem Stand von `main` scheitern 30 der Tests zur Statistik; mit dem Stand vor der Änderung vom 22.10.2026 (Hand-Bereich global) scheitern 15 der Tests zum Hand-Bereich.
+- `JobEntry` hat zwei neue Pflichtfelder; die drei Testdateien mit eigenem `JobEntry` tragen `statistics: null` und `range: null`.
 
 **Prüfung:** `npm run lint` sauber, `npx tsc -b` sauber, `vitest` 1446 von 1446.
 
 **Prüfanleitung für Otto:**
 - `cop-dem-glo-30`, `reproject` nach EPSG:3035, 30 m, `bilinear`, Ausgabe `float32`, dann „Add to layers“: Relief sichtbar in `viridis`.
 - Ein NDVI-Band-Math-Job auf `sentinel-2-c1-l2a`: erscheint wie bisher, −1…1 mit `rdylgn`.
-- Im Panel „Range and colormap“ einen anderen Bereich anwenden, dann ein DEM-Ergebnis hinzufügen: Der Bereich gilt (Frage 7). Ein schon angelegter Layer ändert sich nicht.
+- Einen NDVI-Job mit einem von Hand angewandten Bereich im Panel „Range and colormap“ starten (etwa 0…0.5, `greys`): Sein Ergebnis erscheint mit diesem Bereich.
+- Danach das DEM-Ergebnis aus dem ersten Punkt hinzufügen, während der Handbereich im Panel steht: Das DEM nimmt seine Statistik (`viridis`), nicht den Handbereich.
+- Nach einem Neuladen der Seite hat der NDVI-Job den Handbereich nicht mehr; sein Ergebnis erscheint dann nach Regel 3 (−1…1, `rdylgn`). Ein schon angelegter Layer ändert sich nie.
 - Ein Job, der vor dem Deployment von 0.4.2 fertig war, hat keine Statistik und erscheint wie bisher.
 
 **Bekannte Grenze (Frage 6):** Ein Band-Math-Ergebnis mit Werten in 0…1, das kein Index ist (etwa `B04 * 1`), bekommt `rdylgn` und −1…1.
