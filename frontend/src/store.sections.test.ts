@@ -115,6 +115,7 @@ function reset(selected: string[] = ['optical', 'optical-zarr', 'dem']) {
     focusMode: false,
     cropToAoi: false,
     downloaded: {},
+    mosaics: {},
     appliedRender: {},
     showCoverage: false,
     coverageDatasetId: null,
@@ -606,6 +607,65 @@ describe('setOpenSection: the dropdown of the results', () => {
     expect(state.downloaded).toEqual({});
     expect(state.appliedRender).toEqual({});
     expect(state.playing).toBe(false);
+  });
+});
+
+// M4-17c: the tiles of a group of several scenes are drawn as one mosaic. The crop appears at once,
+// scene by scene, and is drawn again when the TileJSON of its group has come.
+describe('the AOI crops as mosaics', () => {
+  const SAME_DAY = [demTile('d1'), demTile('d2')];
+  const TILEJSON = { bounds: [9, 46, 12, 49], minzoom: 8, maxzoom: 15, 'earthx:order': ['d2', 'd1'] };
+
+  function tilerWith(tilejson: () => Promise<Response>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => (String(url).includes('/mosaic/') ? tilejson() : jsonResponse(searchAnswer(SAME_DAY)))),
+    );
+  }
+  const overlayUrls = () =>
+    useAppStore.getState().searchCrops.flatMap((c) => c.overlays.map((o) => (o.kind === 'raster' ? o.tileUrl : '')));
+
+  beforeEach(() => reset(['dem']));
+
+  it('draws the group scene by scene first and as a mosaic once its TileJSON has come', async () => {
+    let answer: (r: Response) => void = () => {};
+    tilerWith(() => new Promise<Response>((resolve) => (answer = resolve)));
+    await useAppStore.getState().runSearch();
+    expect(overlayUrls()).toHaveLength(2);
+    expect(overlayUrls().every((u) => u.includes('/items/'))).toBe(true);
+
+    answer(jsonResponse(TILEJSON));
+    await vi.waitFor(() => expect(overlayUrls()).toHaveLength(3));
+    expect(overlayUrls().filter((u) => u.includes('/mosaic/tiles/'))).toHaveLength(1);
+    expect(overlayUrls().every((u) => u.startsWith('earthx-clip://'))).toBe(true);
+    expect(useAppStore.getState().searchCrops).toHaveLength(1);
+  });
+
+  it('stays as it is when the tiler refuses the mosaic', async () => {
+    tilerWith(async () => ({ ok: false, status: 422, statusText: '', json: async () => ({ detail: 'no' }) }) as Response);
+    await useAppStore.getState().runSearch();
+    await vi.waitFor(() => expect(useAppStore.getState().notice).toMatch(/Could not load the mosaic \(no\)/));
+    expect(overlayUrls()).toHaveLength(2);
+  });
+
+  it('does not put a mosaic on the map for a search that has been replaced meanwhile', async () => {
+    let answer: (r: Response) => void = () => {};
+    tilerWith(() => new Promise<Response>((resolve) => (answer = resolve)));
+    await useAppStore.getState().runSearch();
+    vi.mocked(fetch).mockImplementation(async (url) =>
+      String(url).includes('/mosaic/') ? new Promise<Response>(() => {}) : jsonResponse(searchAnswer([demTile('d9')])),
+    );
+    await useAppStore.getState().runSearch(); // one tile, no mosaic
+    answer(jsonResponse(TILEJSON));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(overlayUrls()).toHaveLength(1);
+    expect(overlayUrls()[0]).toContain('/items/d9/');
+  });
+
+  it('asks for no mosaic where every group is one scene', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(searchAnswer([demTile('d1'), demTile('d2', '2012-06-01T00:00:00Z')]))));
+    await useAppStore.getState().runSearch();
+    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes('/mosaic/'))).toBe(false);
   });
 });
 

@@ -106,6 +106,7 @@ export default function MapView() {
   const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
   const selectedIds = useAppStore((s) => s.selectedIds);
   const downloaded = useAppStore((s) => s.downloaded);
+  const mosaics = useAppStore((s) => s.mosaics);
   const flyToBbox = useAppStore((s) => s.flyToBbox);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
@@ -348,9 +349,11 @@ export default function MapView() {
         cropToAoi,
         items,
         dataset,
+        groups,
+        mosaics,
       });
     }
-  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, items, datasets, datasetId]);
+  }, [focusMode, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, items, datasets, datasetId, groups, mosaics]);
 
   // --- the preview of the processing panel (M4-13c-2). It keeps itself on top of
   // the rasters placed later (`mapLayers.ts::beforeAoi`); a new AOI cuts it again. ---
