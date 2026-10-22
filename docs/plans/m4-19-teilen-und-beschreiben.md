@@ -568,3 +568,22 @@ nach §4 und der Reihenfolge dort.
 - **Fund:** Die Registry hält die Adresse des DOI (`https://doi.org/…`); der Text nimmt
   `doi_name`, wie `citation.bib`.
 - **Version:** Die Ergebnis-Bytes ändern sich nicht, `earthx.__version__` bleibt.
+
+---
+
+## 11. Umsetzung M4-19d (22.10.2026)
+
+- **Lesen:** `recipeFile.ts::readRecipe` prüft die Datei im Browser (1 MB, JSON, `recipe_version`,
+  `inputs`/`steps`, ein Datensatz und ein Input, AOI als Polygon, bekannte Ausgabe). `resolved`,
+  `provenance` und `recipe_id` werden ignoriert.
+- **Umkehrung:** `processingOrder.ts::draftFromOrder` prüft Operator, Version und Parameter gegen die
+  Prozessbeschreibung (dieselbe Prüfung wie das Formular). Test: `buildOrder(draftFromOrder(x)) ≡ x` über
+  die sieben Auftrags-Fixtures mit Schritten; die mit `steps: []` ergeben einen Entwurf ohne Schritte.
+- **Store:** `loadRecipe(text, 'steps' | 'everything')`. Bei einem Fehler bleibt der Entwurf unverändert.
+  „Everything“ setzt Datensatz, Szenen (wie `processLayer`, fehlende werden einzeln geholt), AOI und Bereich;
+  ohne AOI im Rezept bleibt die AOI auf der Karte, der Bereich ist „Whole scene“.
+- **Zuschnitt-Rezept:** „Everything“ stellt die Auswahl her (ohne Schritte und Datentyp), „Steps only“ sagt
+  „This recipe has no steps.“
+- **Offen gelassen:** Mehrere Gruppen im Rezept (Export) wählen alle Szenen aus; den Durchgang wählt der
+  Nutzer. Nicht in der Planung festgelegt, Vorschlag.
+

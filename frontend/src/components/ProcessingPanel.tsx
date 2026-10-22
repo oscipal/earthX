@@ -8,7 +8,7 @@
 // the jobs of this tab have a window of their own (`JobList.tsx`). The first
 // step shows on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
@@ -42,6 +42,7 @@ import {
   useProcessingStore,
   type OrderView,
 } from '../processingStore';
+import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
@@ -54,6 +55,66 @@ const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another 
 function focusedExpression(): HTMLTextAreaElement | null {
   const active = document.activeElement;
   return active instanceof HTMLTextAreaElement && active.dataset.bandTarget !== undefined ? active : null;
+}
+
+// "Load recipe…" (M4-19d): a `recipe.json` of the user's own, taken up as the steps
+// on the current selection or as the whole order. The file is read here, nothing
+// leaves the browser.
+function RecipeLoader() {
+  const load = useProcessingStore((s) => s.loadRecipe);
+  const [text, setText] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const pick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    setText(null);
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Pick a .json file.' });
+    if (file.size > MAX_RECIPE_BYTES) return setOutcome({ ok: false, message: 'The file is larger than 1 MB.' });
+    setOutcome(null);
+    setText(await file.text());
+  };
+  const take = async (mode: 'steps' | 'everything') => {
+    if (text === null) return;
+    setBusy(true);
+    const result = await load(text, mode);
+    setBusy(false);
+    setText(null);
+    setOutcome(
+      result.ok
+        ? { ok: true, message: ['Recipe loaded.', ...result.notes].join(' ') }
+        : { ok: false, message: result.reason },
+    );
+  };
+
+  return (
+    <div className="pp-recipe">
+      <label className="link-btn" title="Take the steps or the whole order from a recipe.json">
+        Load recipe…
+        <input type="file" accept=".json,application/json" hidden onChange={(e) => void pick(e)} />
+      </label>
+      {text !== null && (
+        <span className="pp-recipe-modes">
+          <button type="button" className="link-btn" disabled={busy} title="Keep the selection, take the steps and the data type" onClick={() => void take('steps')}>
+            Steps only
+          </button>
+          <button type="button" className="link-btn" disabled={busy} title="Take dataset, scenes, area, steps and data type" onClick={() => void take('everything')}>
+            Everything
+          </button>
+          <button type="button" className="link-btn" disabled={busy} onClick={() => setText(null)}>
+            Cancel
+          </button>
+        </span>
+      )}
+      {outcome && (
+        <p className={outcome.ok ? 'pp-help' : 'hint-text error'} role="status">
+          {outcome.message}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function Bands({ view }: { view: OrderView }) {
@@ -426,6 +487,7 @@ export default function ProcessingPanel() {
             ✕
           </button>
         </div>
+        <RecipeLoader />
         {!reason && (
           <section className="pp-section" aria-label="Selection">
             <p className="pp-summary">

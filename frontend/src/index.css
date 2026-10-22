@@ -1823,6 +1823,21 @@ input[type='date']:focus {
   text-transform: none;
   letter-spacing: 0;
 }
+.pp-recipe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+.pp-recipe label.link-btn {
+  cursor: pointer;
+}
+.pp-recipe p {
+  flex-basis: 100%;
+  margin: 0;
+}
 .pp-options {
   margin: 0;
   padding-left: 14px;
