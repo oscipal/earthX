@@ -352,7 +352,9 @@ class TestCopernicusDem:
         assert [entry.version.kind for entry in resolved if entry.version] == ["etag", "etag"]
         assert len(heads.requests) == 2
         assert {request.method for request in heads.requests} == {"HEAD"}
+        # The item describes no band; the registry's unit is all the recipe knows of it (M4-19b).
         assert resolved[0].bands == []
+        assert resolved[0].unit == "m"
         assert resolved[0].scaling == "none"
         assert resolved[0].gsd == 30.0
         assert accepted.cacheable
@@ -449,6 +451,102 @@ class TestCopernicusDem:
 
 
 # --- the host check (adr/0014 §8) ------------------------------------------------
+
+
+class TestUnits:
+    """The unit of a band: the item's own first, else the registry's, else none (M4-19b, adr/0014 §15n)."""
+
+    async def test_the_registry_names_the_unit_of_a_reflectance_band_the_item_leaves_out(self) -> None:
+        accepted = await accept(order(), Source((S2, s2_item())))
+        assert [band.unit for resolved in accepted.recipe.inputs[0].resolved for band in resolved.bands] == ["1", "1"]
+
+    async def test_the_unit_of_the_item_goes_before_the_registrys(self) -> None:
+        item = s2_item()
+        item["assets"]["red"]["raster:bands"][0]["unit"] = "W m-2 sr-1 um-1"
+        accepted = await accept(order(), Source((S2, item)))
+        red, nir = accepted.recipe.inputs[0].resolved
+        assert (red.bands[0].unit, nir.bands[0].unit) == ("W m-2 sr-1 um-1", "1")
+
+    async def test_stac_11_bands_carry_a_unit_as_well(self) -> None:
+        item = s2_item()
+        item["assets"]["red"].pop("raster:bands")
+        item["assets"]["red"]["gsd"] = 10
+        item["assets"]["red"]["bands"] = [{"name": "red", "unit": "percent", "data_type": "uint16"}]
+        accepted = await accept(order(assets=("red",)), Source((S2, item)))
+        assert accepted.recipe.inputs[0].resolved[0].bands[0].unit == "percent"
+
+    async def test_an_asset_without_a_unit_in_the_registry_has_none(self) -> None:
+        item = s2_item(scl={"href": f"https://{S2_HOST}/tiles/S2_A/SCL.tif", "file:checksum": "1220scl", "gsd": 20})
+        accepted = await accept(order(assets=("scl",)), Source((S2, item)))
+        resolved = accepted.recipe.inputs[0].resolved[0]
+        assert (resolved.bands, resolved.unit) == ([], None)
+
+    async def test_an_asset_the_item_describes_without_a_unit_and_the_registry_does_not_list_has_none(self) -> None:
+        item = s2_item()
+        item["assets"]["aot"] = {
+            **item["assets"]["red"],
+            "raster:bands": [{"data_type": "uint16", "nodata": 0}],
+            "gsd": 20,
+        }
+        accepted = await accept(order(assets=("aot",)), Source((S2, item)))
+        assert accepted.recipe.inputs[0].resolved[0].bands[0].unit is None
+
+    async def test_the_dem_item_that_describes_no_band_has_metres_on_the_input_not_an_invented_band(self) -> None:
+        source = Source((DEM, dem_item()))
+        accepted = await accept(order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)), source)
+        resolved = accepted.recipe.inputs[0].resolved[0]
+        assert (resolved.bands, resolved.unit, resolved.scaling) == ([], "m", "none")
+
+    async def test_an_input_whose_bands_carry_their_units_has_none_of_its_own(self) -> None:
+        accepted = await accept(order(), Source((S2, s2_item())))
+        assert {resolved.unit for resolved in accepted.recipe.inputs[0].resolved} == {None}
+
+    async def test_a_zarr_variable_has_its_own_unit_by_key(self) -> None:
+        accepted = await accept(
+            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04,b08",)), Source((EOPF, eopf_item()))
+        )
+        assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "1"]
+
+    async def test_a_named_item_unit_is_matched_by_variable_name(self) -> None:
+        item = eopf_item()
+        item["assets"]["SR_10m"].pop("raster:bands")
+        item["assets"]["SR_10m"]["bands"] = [{"name": "b04", "unit": "percent"}, {"name": "b08"}]
+        accepted = await accept(
+            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b08,b04",)), Source((EOPF, item))
+        )
+        assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "percent"]
+
+    async def test_the_unit_is_part_of_the_hash(self) -> None:
+        plain = await accept(order(), Source((S2, s2_item())))
+        item = s2_item()
+        item["assets"]["red"]["raster:bands"][0]["unit"] = "percent"
+        other = await accept(order(), Source((S2, item)))
+        assert recipe_hash(plain.recipe) != recipe_hash(other.recipe)
+
+    async def test_the_recipe_with_units_reads_back(self) -> None:
+        accepted = await accept(order(), Source((S2, s2_item())))
+        again = recipe_from_data(accepted.recipe.model_dump(mode="json"), OPERATORS)
+        assert [band.unit for resolved in again.inputs[0].resolved for band in resolved.bands] == ["1", "1"]
+
+    @pytest.mark.parametrize("unit", [5, "", ["m"], {"symbol": "m"}, "x" * 300], ids=["number", "blank", "list", "object", "long"])
+    async def test_a_unit_that_is_no_usable_text_is_the_sources_mistake(self, unit: Any) -> None:
+        item = s2_item()
+        item["assets"]["red"]["raster:bands"][0]["unit"] = unit
+        error = await refused(order(assets=("red",)), Source((S2, item)))
+        assert error.status_code == 502
+        assert error.stage == "bands"
+
+    async def test_a_null_unit_is_no_unit_and_the_registry_stands_in(self) -> None:
+        item = s2_item()
+        item["assets"]["red"]["raster:bands"][0]["unit"] = None
+        accepted = await accept(order(assets=("red",)), Source((S2, item)))
+        assert accepted.recipe.inputs[0].resolved[0].bands[0].unit == "1"
+
+    def test_the_crop_recipe_names_the_same_units(self) -> None:
+        document = crop_recipe_json(
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT
+        )
+        assert json.loads(document)["inputs"][0]["resolved"][0]["bands"][0]["unit"] == "1"
 
 
 class TestHosts:

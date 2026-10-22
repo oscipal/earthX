@@ -466,12 +466,17 @@ def _operator_input(
     for key in assets:
         ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
         try:
-            bands, scaling = support.describe_bands(stac_item, config, ref)
+            bands, scaling, unit = support.describe_bands(stac_item, config, ref)
             # Item scaling is applied by the core, so the reader reads raw; without it the
             # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
             target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=scaling == "store-cf")
             entry = support.resolved_input(
-                asset=support.resolved_asset(**ref.to_json()), version=None, bands=bands, scaling=scaling, gsd=None
+                asset=support.resolved_asset(**ref.to_json()),
+                version=None,
+                bands=bands,
+                scaling=scaling,
+                unit=unit,
+                gsd=None,
             )
         except OrderRefused as error:
             raise HTTPException(status_code=error.status_code, detail=error.detail) from None
