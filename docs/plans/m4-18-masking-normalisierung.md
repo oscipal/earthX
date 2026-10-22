@@ -613,3 +613,17 @@ Formular der Maske (M4-18c). Keine neue Abhängigkeit, `.github/`, `.claude/`, `
 panel“, also kann es `mask` im Anfang nicht zeichnen. Die Kette `mask → band_math` ist auf der Route
 und im Vergleich belegt, aber im Panel erst mit dem Formular erreichbar; das Asset der Schicht kommt mit
 M4-18c in den Auftrag.
+
+**Bekannte Grenze (offen für Otto):** Der Anfang im Panel prüft jeden Schritt für sich, nicht die Bandnamen, die der vorige
+Schritt übrig lässt. Eine Folge wie `band_math` (Ergebnisband `band_math`), danach ein zweiter `band_math`, der `red` nennt,
+geht als Kette an die Kachel und wird dort mit `422` abgewiesen (das Band fehlt, wie im Job); die Vorschau bleibt dann leer,
+und das Panel meldet den Kachelfehler nirgends. Vorher zeigte die Vorschau den ersten Schritt. Möglich sind ein Hinweis im
+Panel bei abgewiesenen Kacheln oder ein Anfang, der nur bis zum ersten Schritt reicht, der Bandnamen nennt; das ist eine
+Entscheidung über das Verhalten des Panels und gehört zu M4-18c oder davor zu Otto.
+
+**Nach dem Review:** Ziffern anderer Schriften in `op_version` werden mit `400` abgewiesen, bevor das Item geholt wird (vorher
+las `int()` sie, und FastAPI wies sie danach mit `422` ab); `tests/earthx/api/test_tiler_chain.py` prüft das, leere Teile und die
+Reihenfolge der Schritte mit einer Kette, deren Reihenfolge die Werte ändert. Die Obergrenze 4 steht im Backend
+(`MAX_OPERATOR_STEPS`) und im Frontend (`MAX_PREVIEW_STEPS`) je einmal; kein Test bindet beide aneinander.
+`NO_PREVIEW` sagt für `mask` als ersten Schritt „runs only as a job“, bis M4-18c das Formular bringt.
+

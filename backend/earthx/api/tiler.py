@@ -375,22 +375,21 @@ def _refuse_free_parameters(request: Request) -> None:
 
 
 def _operator_step(
-    operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str
+    support: Any, operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str
 ) -> tuple[Any, Any]:
     """One step of the chain: its operator and validated parameters, or the ``HTTPException`` its refusal maps to.
 
     ``where`` prefixes every message of a chain of several steps (``"step 2: "``); a single step reads as it
     always did.
     """
-    support = _operator_support()
     if len(raw) > MAX_OPERATOR_PARAMS_CHARS:
         raise HTTPException(status_code=400, detail=f"{where}params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
+    # ASCII digits only: `int()` also reads other scripts' digits, which the query validation of
+    # `operator_post_process` refuses afterwards — after the item has been fetched.
+    if not (version.isascii() and version.isdecimal()):
+        raise HTTPException(status_code=400, detail=f"{where}op_version is a whole number")
     try:
-        number = int(version)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"{where}op_version is a whole number") from None
-    try:
-        operator = operators.operator(op, number)
+        operator = operators.operator(op, int(version))
     except support.unknown_operator as error:
         raise HTTPException(status_code=422, detail=f"{where}{error}") from None
     if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
@@ -436,7 +435,7 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
     chained = len(columns[0]) > 1
     return [
         _operator_step(
-            operators, config, op=op, version=version, raw=raw, where=f"step {number}: " if chained else ""
+            support, operators, config, op=op, version=version, raw=raw, where=f"step {number}: " if chained else ""
         )
         for number, (op, version, raw) in enumerate(zip(*columns, strict=True), start=1)
     ]
@@ -535,9 +534,14 @@ def operator_post_process(
     op: Annotated[
         list[str] | None, Query(description="operator of a computed tile, such as `band_math`; repeated for a chain")
     ] = None,
-    op_version: Annotated[list[int] | None, Query(description="version of the operator, once per `op`")] = None,
+    op_version: Annotated[
+        list[Annotated[int, Field(ge=1)]] | None, Query(description="version of the operator, once per `op`")
+    ] = None,
     params: Annotated[
-        list[str] | None, Query(description="its parameters, as JSON, once per `op`; at most 2048 characters each")
+        list[str] | None,
+        Query(
+            description=f"its parameters, as JSON, once per `op`; at most {MAX_OPERATOR_PARAMS_CHARS} characters each"
+        ),
     ] = None,
 ) -> Callable[[ImageData], ImageData] | None:
     """TiTiler's ``process_dependency`` for our tile: the operators' kernels, the ones a job calls.

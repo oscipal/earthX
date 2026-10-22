@@ -200,21 +200,26 @@ class TestTheChainEqualsTheJobOnTheNativeLevel:
         both = ~chained.mask
         assert numpy.array_equal(chained.data[both], plain.data[both])
 
-    def test_a_chain_of_one_is_the_url_of_one_operator(self, client: TestClient) -> None:
+    def test_a_single_step_keeps_its_messages(self, client: TestClient) -> None:
         tile = _tiles()[1]
-        assert client.get(_url(tile, [("mask", MASK)])).content == client.get(_url(tile, [("mask", MASK)])).content
+        assert client.get(_url(tile, [("mask", MASK)])).status_code == 200
+        response = client.get(_url(tile, [("mask", {"source": "red", "classes": [3]})]))
+        assert response.status_code == 422 and response.json()["detail"].startswith("'mask' cannot run here")
+        response = client.get(_url(tile, [("normalize", {**NORMALIZE, "in_min": 1.0})]))
+        assert response.status_code == 400 and response.json()["detail"].startswith("params: ")
 
     def test_the_order_of_the_steps_is_the_order_of_the_url(self, client: TestClient) -> None:
-        """``normalize → band_math`` is not ``band_math → normalize``; the second is a single band, the first not."""
+        """An offset before a quotient is not an offset after it, so the two orders give two pictures."""
         tile = _tiles()[1]
-        first = client.get(
-            _url(tile, [("normalize", HALVE), ("band_math", {"expression": "nir - red"})], assets=("red", "nir"))
-        )
-        second = client.get(
-            _url(tile, [("band_math", {"expression": "nir - red"}), ("normalize", HALVE)], assets=("red", "nir"))
-        )
-        assert first.status_code == second.status_code == 200
-        assert not numpy.array_equal(_decode(first.content).data, _decode(second.content).data)
+        shift = {"in_min": 0.0, "in_max": 1.0, "out_min": 1.0, "out_max": 2.0, "clip": False}
+        quotient = {"expression": "nir / red"}
+        assets = ("red", "nir")
+        first = _decode(client.get(_url(tile, [("normalize", shift), ("band_math", quotient)], assets=assets)).content)
+        second = _decode(client.get(_url(tile, [("band_math", quotient), ("normalize", shift)], assets=assets)).content)
+        valid = ~first.mask & ~second.mask
+        assert valid.sum() > 5_000
+        assert numpy.array_equal(first.mask, second.mask)
+        assert not numpy.allclose(first.data[valid], second.data[valid])
 
 
 # --- the CF Mini-Zarr -----------------------------------------------------------------------------------
@@ -355,8 +360,9 @@ class TestTheNumberOfSteps:
 
     def test_the_refusal_of_the_number_costs_no_request_to_the_source(self, client: TestClient) -> None:
         fetched = _fetches(client)
-        client.get(_url(_tiles()[0], [("normalize", HALVE)] * (MAX_OPERATOR_STEPS + 1), assets=("red",)))
-        client.get(f"/collections/{COG}/items/{ITEM}/tiles/WebMercatorQuad/14/1/1?asset=red&op=mask&op=mask")
+        too_many = client.get(_url(_tiles()[0], [("normalize", HALVE)] * (MAX_OPERATOR_STEPS + 1), assets=("red",)))
+        unequal = client.get(f"/collections/{COG}/items/{ITEM}/tiles/WebMercatorQuad/14/1/1?asset=red&op=mask&op=mask")
+        assert (too_many.status_code, unequal.status_code) == (400, 400)
         assert fetched == []
 
 
@@ -381,6 +387,34 @@ class TestEveryStepIsJudgedOnItsOwn:
         long = {"expression": "red + " * (MAX_OPERATOR_PARAMS_CHARS // 6) + "red"}
         response = client.get(_url(_tiles()[0], [("mask", MASK), ("band_math", long)]))
         assert response.status_code == 400 and response.json()["detail"].startswith("step 2: params are at most")
+
+    @pytest.mark.parametrize("version", ["x", "1.0", "", "-1", "\u0661", "\uff11"], ids=repr)
+    def test_a_version_that_is_not_a_whole_number_of_digits_is_a_400_before_any_request(
+        self, client: TestClient, version: str
+    ) -> None:
+        fetched = _fetches(client)
+        base = f"/collections/{COG}/items/{ITEM}/tiles/WebMercatorQuad/14/1/1?asset=red&asset=nir&asset=scl"
+        mask = f"op=mask&op_version=1&params={quote(json.dumps(MASK))}"
+        step = f"op=band_math&op_version={quote(version)}&params={quote(json.dumps(BAND_MATH))}"
+        for query in (step, f"{mask}&{step}"):
+            response = client.get(f"{base}&{query}")
+            assert response.status_code == 400, (version, response.text)
+            assert "op_version is a whole number" in response.json()["detail"]
+        assert response.json()["detail"].startswith("step 2: ")
+        assert fetched == []
+
+    def test_empty_parts_are_a_400_before_any_request(self, client: TestClient) -> None:
+        fetched = _fetches(client)
+        base = f"/collections/{COG}/items/{ITEM}/tiles/WebMercatorQuad/14/1/1?asset=red&asset=nir&asset=scl"
+        mask = f"op=mask&op_version=1&params={quote(json.dumps(MASK))}"
+        for query in (
+            "op=&op_version=&params=",
+            f"{mask}&op=&op_version=1&params={{}}",
+            f"{mask}&op=band_math&op_version=1&params=",
+        ):
+            response = client.get(f"{base}&{query}")
+            assert response.status_code in (400, 422), (query, response.text)
+        assert fetched == []
 
     def test_a_dataset_that_does_not_allow_the_first_step_is_a_422_before_any_request(self, client: TestClient) -> None:
         fetched = _fetches(client)
