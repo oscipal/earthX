@@ -53,6 +53,10 @@ class TestLookup:
         assert entry.band_unit("red") is None
         assert entry.band_unit("rededge1") == "1"
 
+    def test_patterns_that_do_not_overlap_may_stand_together(self, valid_config) -> None:
+        entry = replace(valid_config, band_units={"r*": "1", "g*": "2", "blue": "1"})
+        assert (entry.band_unit("red"), entry.band_unit("green")) == ("1", "2")
+
     def test_the_mapping_cannot_be_changed_through_the_entry(self, valid_config) -> None:
         assert isinstance(valid_config.band_units, MappingProxyType)
         with pytest.raises(TypeError):
@@ -92,6 +96,9 @@ class TestConsistency:
             ({"red": 1, "green": "1", "blue": "1"}, "non-blank text or None"),
             ({"red": "m" * 33, "green": "1", "blue": "1"}, "longer than 32"),
             ({}, "no entry for 'red'"),
+            ({"r?d": "1", "red": "1", "green": "1", "blue": "1"}, "wildcard other than"),
+            ({"r[a-e]d": "1", "red": "1", "green": "1", "blue": "1"}, "wildcard other than"),
+            ({"r*": "1", "re*": "1", "green": "1", "blue": "1"}, "overlap"),
         ],
     )
     def test_an_entry_that_contradicts_itself_is_refused(self, valid_config, units, match) -> None:

@@ -779,7 +779,7 @@ class DatasetConfig:
     def band_unit(self, asset: str) -> str | None:
         """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
 
-        The exact key goes first, then the keys with a ``*`` in the order the entry lists them.
+        The exact key goes first, then a key with a ``*`` (the entry allows no two that overlap).
         """
         if asset in self.band_units:
             return self.band_units[asset]
@@ -793,10 +793,20 @@ class DatasetConfig:
         for key, unit in self.band_units.items():
             if not isinstance(key, str) or not key.strip() or key != key.strip():
                 raise ConfigError(f"{self.dataset_id}: a band unit is keyed by an asset, not {key!r}")
+            # Only `*` is a wildcard; the viewer reads the keys the same way, and fnmatch would also read these.
+            if any(char in key for char in "?[]"):
+                raise ConfigError(f"{self.dataset_id}: the key {key!r} of a band unit uses a wildcard other than '*'")
             if unit is not None and (not isinstance(unit, str) or not unit.strip() or unit != unit.strip()):
                 raise ConfigError(f"{self.dataset_id}: the unit of {key!r} is a non-blank text or None")
             if unit is not None and len(unit) > MAX_UNIT_CHARS:
                 raise ConfigError(f"{self.dataset_id}: the unit of {key!r} is longer than {MAX_UNIT_CHARS} characters")
+        # The collection travels through JSONB, which does not keep the order of keys: two patterns that can both
+        # match one asset would be read in an order nobody chose.
+        patterns = [key for key in self.band_units if "*" in key]
+        for first in patterns:
+            for second in patterns:
+                if first != second and fnmatchcase(first, second):
+                    raise ConfigError(f"{self.dataset_id}: the patterns {second!r} and {first!r} of band_units overlap")
         separator = self.zarr.variable_separator if self.zarr is not None else None
         wanted = list(self.default_render.assets) if self.default_render is not None else []
         if self.mask is not None:
