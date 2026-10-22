@@ -689,14 +689,36 @@ bekam wie „nur als Job“. Sie nehmen v3 und prüfen beide Gründe getrennt.
   Schicht im Auftrag und ihr Chip, Hinweis bei fehlender Schicht, Datentyp ohne die Schicht (Gegenprobe: ohne die Ausnahme
   schlägt der Test fehl), Vorschau von `mask` und `mask → band_math` mit den Assets in der URL, Reproject bleibt „only as a job“.
 
-**Befunde, nicht in dieser Aufgabe:**
-1. **Ganzzahliger Ausgabetyp nach `normalize`.** `chooseDtype` und `dtypeOptions` kennen `normalize` nicht (nur `band_math`).
-   Auf ganzzahligen Bändern ohne Skalierung, die ein nodata nennen, schlägt das Panel den Quelltyp vor, `normalize` endet aber
-   in `float32` mit NaN (`core._nodata_for` verlangt für eine Ganzzahl ein endliches nodata). Aus dem Code gelesen, nicht gegen
-   den Server gelaufen; für die Sentinel-2-Einträge (skaliert, also `float32`) und das DEM (`float32`) tritt es nicht auf. Der Plan
-   führt die ganzzahlige Ausgabe nach `normalize` unter „Nicht in dieser Aufgabe“ (§4); eine Zeile in `processingDefaults.ts` und ihre
-   Tests wären der Weg, das braucht Ottos Entscheidung über den Umfang.
-2. **Nicht gegen echte Items geprüft.** Dass `SCL_20m:scl` aus einem echten EOPF-Item als Quelle entsteht, ist aus §2 [M]
-   (Asset `SCL_20m`, Band `scl`) und einem synthetischen Item belegt, nicht aus einem Abruf in dieser Sitzung.
-3. **Im Browser nicht gesehen.** Die Darstellung (`.pp-classes`) ist in jsdom getestet, nicht gerendert und angeschaut.
+**Datentyp nach `normalize` (Otto, 22.10.2026, in M4-18c behoben):** `chooseDtype`, `dtypeOptions` und `integerNote` kannten nur
+`band_math` als Schritt, der in `float32` mit NaN endet. Auf ganzzahligen, unskalierten Bändern mit nodata schlug das Panel
+deshalb für `normalize` den Quelltyp vor, den der Lauf ablehnt (`core._nodata_for`). Die Prozessbeschreibung liefert keinen
+Ausgabetyp je Operator (nur `x-earthx-tiers` und `x-earthx-kind`); deshalb steht `normalize` wie `band_math` in einer kleinen
+Tabelle in `processingDefaults.ts` (`FLOAT_RESULT`): Empfehlung `float32` („Normalize gives fractions.“), Ganzzahltypen nicht
+angeboten („not after normalize“), kein Hinweis zu nodata. Sind beide im Auftrag, nennt die Meldung den ersten. `mask` allein
+behält den Quelltyp. Der Test mit ganzzahligen, unskalierten Bändern mit nodata (`processingDefaults.test.ts`, dazu im Panel
+`ProcessingMask.test.tsx`) schlug vor der Änderung fehl (vier Tests). Ein Feld „Ausgabetyp“ in der Beschreibung wäre der
+saubere Weg, brauchte aber eine Änderung in `api/processing_docs.py`; sie ist nicht gemacht.
 
+**Grund, wenn `mask` nicht angeboten wird:** Das Panel zeigt unter den Schritten „Mask: this dataset has no classification layer
+to read.“, wenn der Datensatz keine Schicht (`earthx:mask`) hat und `mask` nicht in der Beschreibung steht (DEM). Vorher fehlte
+der Knopf ohne Text.
+
+**Prüfanleitung im Browser (Otto):** Die Darstellung ist nur in jsdom getestet. Zu prüfen, mit laufendem Stack (`docker compose up`):
+1. Sentinel-2 L2A (COG): eine Szene wählen, „Process“ öffnen, „＋ Mask“. Erwartet: „Classes to hide“ mit zwölf Klassen, 3, 8, 9
+   und 10 angekreuzt, Klassentabelle verlinkt, Hinweis zu älteren Prozessierungsbasen; Chip `scl` gedrückt und nicht abwählbar.
+2. „＋ Band math“, `(nir - red) / (nir + red)`. Erwartet: Vorschau auf der Karte mit „Mask → Band math“, Wolken, Schatten und
+   Zirrus als leere Stellen (nicht als Werte); bei Szenen ohne Wolken ist kein Unterschied zu sehen, dann eine bewölkte nehmen.
+   Dann Klasse 6 (Wasser) ankreuzen: Wasser wird leer.
+3. „Review“. Erwartet: „The order also reads the mask layer scl; it is not in the result.“ und eine Schätzung. „Start job“, das
+   Ergebnis hat keine Bänder `scl` und dieselben leeren Stellen wie die Vorschau (bis auf die Stellen aus §3.6, wo Kachel und Job
+   an Rastergrenzen abweichen dürfen).
+4. EOPF-Zarr, falls als Datensatz da (`sentinel-2-l2a-zarr3`): dasselbe mit dem Asset `SCL_20m:scl`; der Chip heißt so. Das ist die
+   offene Stelle aus Befund 2: Sie bestätigt, dass die Variable in echten Items so heißt.
+5. DEM (`cop-dem-glo-30`): kein „＋ Mask“, darunter der Satz „Mask: this dataset has no classification layer to read.“; „＋ Normalize“
+   und „＋ Band math“ sind da. Danach auf einer Szene „＋ Normalize“: Datentyp `float32`, Ganzzahltypen mit „(not after normalize)“.
+
+**Befunde, nicht in dieser Aufgabe:**
+1. **Nicht gegen echte Items geprüft.** Dass `SCL_20m:scl` aus einem echten EOPF-Item als Quelle entsteht, ist aus §2 [M]
+   (Asset `SCL_20m`, Band `scl`) und einem synthetischen Item belegt, nicht aus einem Abruf in dieser Sitzung.
+2. **Im Browser nicht gesehen.** Die Darstellung (`.pp-classes`) ist in jsdom getestet, nicht gerendert und angeschaut; die
+   Prüfanleitung oben und im PR ist dafür da.
