@@ -85,6 +85,7 @@ function Bands({ view }: { view: OrderView }) {
   // A click with the cursor in an expression inserts the name there; any other
   // click adds the band to the order or leaves it out and changes no expression.
   const click = (source: BandSource, name: string | null) => {
+    if (source.asset === view.maskAsset?.asset) return;
     const field = name !== null && unique.get(name) === source.asset ? focusedExpression() : null;
     if (field && name !== null) {
       const start = field.selectionStart ?? field.value.length;
@@ -99,7 +100,8 @@ function Bands({ view }: { view: OrderView }) {
 
   const chip = (source: BandSource, name: string | null) => {
     const pressed = view.assets.includes(source.asset);
-    const byExpression = pressed && !picked.includes(source.asset);
+    const byMask = pressed && source.asset === view.maskAsset?.asset;
+    const byExpression = pressed && !byMask && !picked.includes(source.asset);
     const label = name !== null && unique.get(name) === source.asset ? name : source.asset;
     return (
       <button
@@ -108,11 +110,13 @@ function Bands({ view }: { view: OrderView }) {
         className={`pp-chip${pressed ? ' on' : ''}`}
         aria-pressed={pressed}
         title={
-          byExpression
-            ? `${source.asset} is named in an expression: take the name out there to leave it out`
-            : name === null
-              ? `${pressed ? 'Leave out' : 'Add'} ${source.asset} (it describes no band names to insert)`
-              : `${pressed ? 'Leave out' : 'Add'} ${source.asset}`
+          byMask
+            ? `${source.asset} is the layer of the mask step: remove that step to leave it out`
+            : byExpression
+              ? `${source.asset} is named in an expression: take the name out there to leave it out`
+              : name === null
+                ? `${pressed ? 'Leave out' : 'Add'} ${source.asset} (it describes no band names to insert)`
+                : `${pressed ? 'Leave out' : 'Add'} ${source.asset}`
         }
         // Keep the cursor where it is: a click on a button would take the focus,
         // and with it the field a name is inserted into.
@@ -340,6 +344,18 @@ function PreviewSection({ view }: { view: OrderView }) {
   );
 }
 
+// The layer of a mask is part of the order without the user picking it (M4-18c); the review says so,
+// or says that the scene has none.
+function MaskLayerNote({ view }: { view: OrderView }) {
+  const mask = view.maskAsset;
+  if (!mask || !view.pass) return null;
+  return mask.inOrder ? (
+    <p className="pp-help">The order also reads the mask layer {mask.asset}; it is not in the result.</p>
+  ) : (
+    <p className="hint-text error">The scenes have no mask layer {mask.asset}: the job cannot hide anything.</p>
+  );
+}
+
 // K2: a whole scene over the cap of one job (`413`) — try the AOI instead.
 function TooLarge({ hasAoi }: { hasAoi: boolean }) {
   const setArea = useProcessingStore((s) => s.setArea);
@@ -520,6 +536,7 @@ export default function ProcessingPanel() {
                             showErrors={showErrors}
                             refusal={refusalAt(index)}
                             latitude={latitude}
+                            maskLayer={view.maskLayer}
                             onChange={(name, value) => p.updateStep(step.key, name, value)}
                             onMove={(direction) => p.moveStep(step.key, direction)}
                             onRemove={() => p.removeStep(step.key)}
@@ -607,6 +624,7 @@ export default function ProcessingPanel() {
           {showErrors && built && built.problems.length > 0 && (
             <p className="hint-text error">{built.problems.join(' ')}</p>
           )}
+          {view.maskAsset && <MaskLayerNote view={view} />}
           <div className="vc-actions">
             <button
               type="button"

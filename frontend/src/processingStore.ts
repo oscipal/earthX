@@ -69,6 +69,9 @@ import {
   buildOrder,
   candidateItems,
   isArea,
+  maskAssetOf,
+  maskLayerOf,
+  maskStepValues,
   orderAssets,
   passesOf,
   processBlockReason,
@@ -100,7 +103,7 @@ import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
-import type { StacItem, TimeStepGroup } from './types';
+import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
 // results on screen lack.
@@ -277,6 +280,11 @@ export interface OrderView {
   parts: OrderPart[];
   sources: BandSource[];
   assets: string[];
+  // The layer the mask steps read (`earthx:mask`), `null` for a dataset without one; and, once
+  // there is a mask step, whether the scene offers its asset — the order then reads it, apart
+  // from the bands the user picked, and the result leaves it out (M4-18c).
+  maskLayer: EarthxMask | null;
+  maskAsset: { asset: string; inOrder: boolean } | null;
   // The type the order is sent with, and the options and notes around the choice.
   dtype: string;
   dtypeOptions: DtypeOption[];
@@ -340,10 +348,13 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const format = dataset?.collection['earthx:format'] ?? null;
   // The scenes of a pass agree on the assets and bands (the server checks it, M4-12a).
   const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null) : [];
-  const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps));
+  const maskLayer = maskLayerOf(dataset?.collection);
+  const maskAsset = maskAssetOf(p.steps, maskLayer);
+  const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps), maskAsset ? [maskAsset] : []);
   // The output type follows the data and the steps as they will be sent (Otto,
   // 12.10.2026); the resampling is the user's own choice and recommended nowhere.
-  const inOrder = sources.filter((s) => assets.includes(s.asset));
+  // The layer of a mask is no band of the result, so it does not decide the type.
+  const inOrder = sources.filter((s) => assets.includes(s.asset) && s.asset !== maskAsset);
   const choices = p.steps.map((step) => ({
     op: step.op,
     ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
@@ -381,6 +392,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     parts,
     sources,
     assets,
+    maskLayer,
+    maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
     dtype,
     dtypeOptions: options,
     dtypeAutomatic: automatic,
@@ -898,14 +911,16 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
     setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null, ...dropReview() }),
     addStep: (op, opVersion) => {
-      const datasetId = useAppStore.getState().datasetId;
+      const { datasetId, datasets } = useAppStore.getState();
       const description = datasetId ? get().descriptions[datasetId] : undefined;
       if (description?.state !== 'ready') return;
       const operator = description.info.operators.find((o) => o.op === op && o.opVersion === opVersion);
       if (!operator?.form.supported || get().steps.length >= description.info.maxSteps) return;
+      const layer = op === 'mask' ? maskLayerOf(datasets.find((d) => d.id === datasetId)?.collection) : null;
+      const values = { ...initialValues(operator.form.fields), ...(layer ? maskStepValues(layer) : {}) };
       const key = nextStepKey++;
       set((s) => ({
-        steps: [...s.steps, { key, op, opVersion, values: initialValues(operator.form.supported ? operator.form.fields : []) }],
+        steps: [...s.steps, { key, op, opVersion, values }],
         reviewError: null,
         startError: null,
         ...dropReview(),
