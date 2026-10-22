@@ -584,6 +584,11 @@ nach §4 und der Reihenfolge dort.
   ohne AOI im Rezept bleibt die AOI auf der Karte, der Bereich ist „Whole scene“.
 - **Zuschnitt-Rezept:** „Everything“ stellt die Auswahl her (ohne Schritte und Datentyp), „Steps only“ sagt
   „This recipe has no steps.“
-- **Offen gelassen:** Mehrere Gruppen im Rezept (Export) wählen alle Szenen aus; den Durchgang wählt der
-  Nutzer. Nicht in der Planung festgelegt, Vorschlag.
-
+- **Festgelegt (Otto, 22.10.2026):** Mehrere Gruppen im Rezept (Export) wählen alle Szenen aus, den
+  Durchgang wählt der Nutzer; ohne AOI bleibt die Karten-AOI, der Bereich ist „Whole scene“; ein
+  Zuschnitt-Rezept ohne Schritte ist so angenommen.
+- **Ältere Fassung:** Die Prozessbeschreibung listet nur die höchste `op_version` (`_jobs_of`), das Backend
+  nimmt ältere weiter an (reproject v2). `draftFromOrder` lädt einen solchen Schritt als die gelistete
+  höhere Fassung, wenn seine Parameter deren Formular bestehen, und sagt es in einem Hinweis. Das ist
+  verlustfrei für reproject (v2 ist v3 mit engerer Methodenliste, `REPROJECT_V2`). Eine Fassung über der
+  gelisteten bleibt „not available“. Vor dieser Änderung wurde ein v2-Rezept abgewiesen.

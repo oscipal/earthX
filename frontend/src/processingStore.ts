@@ -984,9 +984,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       });
       if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
       const { info } = description;
-      const { draft, problems } = draftFromOrder(order, info, () => nextStepKey++);
+      const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
       if (problems.length > 0) return { ok: false, reason: problems.slice(0, 3).join(' ') };
-      const notes: string[] = [];
       if (draft.dtype !== null && !info.dtypes.includes(draft.dtype)) notes.push(`Data type ${draft.dtype} is not offered for this dataset.`);
       const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
       abortEstimate();

@@ -405,13 +405,25 @@ export interface Draft {
 // The order as a draft, and what in it the process description does not accept:
 // an operator it does not list for the dataset, a parameter its form does not
 // know or refuses. `nextKey` hands out the keys of the steps.
-export function draftFromOrder(order: Order, info: ProcessInfo, nextKey: () => number): { draft: Draft; problems: string[] } {
+export function draftFromOrder(
+  order: Order,
+  info: ProcessInfo,
+  nextKey: () => number,
+): { draft: Draft; problems: string[]; notes: string[] } {
   const problems: string[] = [];
+  const notes: string[] = [];
   const steps: DraftStep[] = [];
   order.steps.forEach((step, index) => {
     const where = `Step ${index + 1} (${step.op})`;
-    const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.op_version);
+    // The server still takes an older version of an operator but no longer lists it (M4-24):
+    // the step is taken as the listed one, whose form accepts what the older one did.
+    const operator =
+      info.operators.find((o) => o.op === step.op && o.opVersion === step.op_version) ??
+      info.operators.find((o) => o.op === step.op && o.opVersion > step.op_version);
     if (!operator) return void problems.push(`${where}: this operator is not available for this dataset.`);
+    if (operator.opVersion !== step.op_version) {
+      notes.push(`Step ${index + 1} (${step.op}): version ${step.op_version} is taken as version ${operator.opVersion}.`);
+    }
     if (!operator.form.supported) return void problems.push(`${where}: ${operator.form.reason}`);
     const { fields } = operator.form;
     for (const name of Object.keys(step.params)) {
@@ -426,7 +438,7 @@ export function draftFromOrder(order: Order, info: ProcessInfo, nextKey: () => n
       else problems.push(`${where}: ${field.name} has the wrong type.`);
     }
     for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
-    steps.push({ key: nextKey(), op: step.op, opVersion: step.op_version, values });
+    steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
   });
   const input = order.inputs[0];
   return {
@@ -439,6 +451,7 @@ export function draftFromOrder(order: Order, info: ProcessInfo, nextKey: () => n
       dtype: order.output.kind === 'raster' ? order.output.dtype : null,
     },
     problems,
+    notes,
   };
 }
 

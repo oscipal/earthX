@@ -100,4 +100,36 @@ describe('draftFromOrder', () => {
       'Step 1 (band_math): expression: Required.',
     ]);
   });
+
+  describe('an older version the server still takes (reproject v2)', () => {
+    const reproject = () => structuredClone(FIXTURES['./fixtures/orders/reproject-dem-with-drawn-aoi.json'].inputs.recipe);
+    const asV2 = (version: number) => {
+      const order = reproject();
+      order.steps[0] = { ...order.steps[0], op_version: version, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'cubic' } };
+      return order;
+    };
+
+    it('is taken as the listed version, with a note', () => {
+      const order = asV2(2);
+      const { draft, problems, notes } = draftFromOrder(order, infoOf(order.inputs[0].dataset), keys());
+      expect(problems).toEqual([]);
+      expect(notes).toEqual(['Step 1 (reproject): version 2 is taken as version 3.']);
+      expect(draft.steps.map((s) => [s.op, s.opVersion, s.values.resampling])).toEqual([['reproject', 3, 'cubic']]);
+      const rebuilt = roundTrip(order).built.order;
+      expect(rebuilt?.steps).toEqual([{ op: 'reproject', op_version: 3, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'cubic', align: false } }]);
+    });
+
+    it('has no note for the listed version, and refuses a version the server does not list or take', () => {
+      expect(draftFromOrder(asV2(3), infoOf('cop-dem-glo-30'), keys()).notes).toEqual([]);
+      expect(draftFromOrder(asV2(4), infoOf('cop-dem-glo-30'), keys()).problems).toEqual([
+        'Step 1 (reproject): this operator is not available for this dataset.',
+      ]);
+    });
+
+    it('still checks the parameters against the form', () => {
+      const order = asV2(2);
+      order.steps[0].params = { crs: 'EPSG:3035', resolution: 'x' };
+      expect(draftFromOrder(order, infoOf('cop-dem-glo-30'), keys()).problems.join(' ')).toMatch(/resolution/u);
+    });
+  });
 });

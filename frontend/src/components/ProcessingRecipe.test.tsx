@@ -128,6 +128,13 @@ describe('loadRecipe, steps only', () => {
     expect(draft().area).toBe('scene');
   });
 
+  it('loads a recipe with reproject v2, which the server still takes, as the listed version', async () => {
+    const step = { op: 'reproject', op_version: 2, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' } };
+    const result = await load(recipe({ steps: [step] }), 'steps');
+    expect(result).toEqual({ ok: true, notes: ['Step 1 (reproject): version 2 is taken as version 3.'] });
+    expect(draft().steps.map((s) => [s.op, s.opVersion, s.values.resampling])).toEqual([['reproject', 3, 'bilinear']]);
+  });
+
   it('replaces the steps that were there', async () => {
     await load(recipe(), 'steps');
     await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'nir' } }] }), 'steps');
