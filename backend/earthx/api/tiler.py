@@ -316,16 +316,15 @@ def _resolve_asset_path(
 
 @dataclass(frozen=True, slots=True)
 class OperatorInput:
-    """What the path of an operator tile stands for: its assets, the operator and its parameters.
+    """What the path of an operator tile stands for: its assets and the chain of steps, each an operator with its parameters.
 
     Defined here and typed loosely on purpose: the tiler does not load the worker core when it
     starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
-    object by its three attributes (``TileInputs``).
+    object by its two attributes (``TileInputs``).
     """
 
     inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
-    operator: Any
-    params: Any
+    steps: tuple[tuple[Any, Any], ...]
 
 
 def _operator_support() -> Any:
@@ -352,9 +351,12 @@ def _operator_support() -> Any:
 
 
 # A tile URL that carries an operator names it, its version and its parameters, and
-# nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8).
+# nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8). It may
+# repeat the three, equally often and in the order of the steps: the longest start of a
+# recipe that runs as a tile (§6.1, plan M4-18 F1).
 MAX_OPERATOR_ASSETS = 16
 MAX_OPERATOR_PARAMS_CHARS = 2048
+MAX_OPERATOR_STEPS = 4
 _OPERATOR_ROUTES = frozenset({"tile", "tilejson"})
 
 # TiTiler's free band-math and algorithm parameters. They computed on raw values with
@@ -372,35 +374,27 @@ def _refuse_free_parameters(request: Request) -> None:
             )
 
 
-def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any] | None:
-    """``(operator, parameters)`` of an ``op`` in the query, or ``None`` when the URL names none.
+def _operator_step(
+    operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str
+) -> tuple[Any, Any]:
+    """One step of the chain: its operator and validated parameters, or the ``HTTPException`` its refusal maps to.
 
-    ``400`` for a query that is malformed or whose parameters do not validate (R5
-    included); ``422`` for one that is well formed but not something this platform
-    does here — an operator it does not know, one that does not run as a tile, one the
-    dataset does not allow.
+    ``where`` prefixes every message of a chain of several steps (``"step 2: "``); a single step reads as it
+    always did.
     """
-    query = request.query_params
-    given = [name for name in ("op", "op_version", "params") if name in query]
-    if not given:
-        return None
     support = _operator_support()
-    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
-    if len(given) != 3 or any(len(query.getlist(name)) != 1 for name in given):
-        raise HTTPException(status_code=400, detail="op, op_version and params go together, once each")
-    raw = query["params"]
     if len(raw) > MAX_OPERATOR_PARAMS_CHARS:
-        raise HTTPException(status_code=400, detail=f"params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
+        raise HTTPException(status_code=400, detail=f"{where}params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
     try:
-        version = int(query["op_version"])
+        number = int(version)
     except ValueError:
-        raise HTTPException(status_code=400, detail="op_version is a whole number") from None
+        raise HTTPException(status_code=400, detail=f"{where}op_version is a whole number") from None
     try:
-        operator = operators.operator(query["op"], version)
+        operator = operators.operator(op, number)
     except support.unknown_operator as error:
-        raise HTTPException(status_code=422, detail=str(error)) from None
+        raise HTTPException(status_code=422, detail=f"{where}{error}") from None
     if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
-        raise HTTPException(status_code=422, detail=f"{operator.op!r} does not run as a tile")
+        raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} does not run as a tile")
     try:
         params = operator.params.model_validate_json(raw, strict=True)
     except ValidationError as error:
@@ -408,11 +402,44 @@ def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any
             f"{'.'.join(map(str, entry['loc'])) or 'params'}: {entry['msg']}"
             for entry in error.errors(include_url=False, include_input=False, include_context=False)
         )
-        raise HTTPException(status_code=400, detail=f"params: {problems}") from None
+        raise HTTPException(status_code=400, detail=f"{where}params: {problems}") from None
     reasons = support.applicable(operator, config, params)
     if reasons:
-        raise HTTPException(status_code=422, detail=f"{operator.op!r} cannot run here: {'; '.join(reasons)}")
+        raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} cannot run here: {'; '.join(reasons)}")
     return operator, params
+
+
+def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any, Any]] | None:
+    """The steps ``(operator, parameters)`` of the ``op`` in the query, or ``None`` when the URL names none.
+
+    ``op``, ``op_version`` and ``params`` come in threes: each as often as the others, at most
+    :data:`MAX_OPERATOR_STEPS` times, the first of each being the first step. Every step has to run as a tile
+    (``T1``, ``pixel``) and to apply to the dataset on its own; the bands each one leaves for the next are
+    judged by the reader, before the first pixel.
+
+    ``400`` for a query that is malformed or whose parameters do not validate (R5 included); ``422`` for one
+    that is well formed but not something this platform does here — an operator it does not know, one that
+    does not run as a tile, one the dataset does not allow.
+    """
+    query = request.query_params
+    names = ("op", "op_version", "params")
+    given = [name for name in names if name in query]
+    if not given:
+        return None
+    support = _operator_support()
+    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
+    columns = [query.getlist(name) for name in names]
+    if len(given) != 3 or len({len(column) for column in columns}) != 1:
+        raise HTTPException(status_code=400, detail="op, op_version and params go together, equally often")
+    if len(columns[0]) > MAX_OPERATOR_STEPS:
+        raise HTTPException(status_code=400, detail=f"a tile takes at most {MAX_OPERATOR_STEPS} steps")
+    chained = len(columns[0]) > 1
+    return [
+        _operator_step(
+            operators, config, op=op, version=version, raw=raw, where=f"step {number}: " if chained else ""
+        )
+        for number, (op, version, raw) in enumerate(zip(*columns, strict=True), start=1)
+    ]
 
 
 def _operator_input(
@@ -422,8 +449,7 @@ def _operator_input(
     config: DatasetConfig,
     item: str,
     assets: list[str],
-    operator: Any,
-    params: Any,
+    steps: list[tuple[Any, Any]],
     target_gsd: float | None,
 ) -> OperatorInput:
     """The assets of an operator tile, each with the bands and scaling source the item describes."""
@@ -444,7 +470,7 @@ def _operator_input(
         except ValidationError:
             raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
         inputs.append((entry, target))
-    return OperatorInput(tuple(inputs), operator, params)
+    return OperatorInput(tuple(inputs), tuple(steps))
 
 
 async def dataset_asset_path(
@@ -469,7 +495,8 @@ async def dataset_asset_path(
     on the collection (``earthx:default_render``), which is where it can be a default.
 
     With ``op``, ``op_version`` and ``params`` the URL asks for an operator over one or
-    several assets of the item (M4-09, adr/0014 §6.2) — on a tile or its TileJSON only.
+    several assets of the item (M4-09, adr/0014 §6.2) — on a tile or its TileJSON only. The three
+    may repeat, up to :data:`MAX_OPERATOR_STEPS` times, for a chain of steps (M4-18b).
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -492,37 +519,43 @@ async def dataset_asset_path(
         )
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = target_gsd_for(request, stac_item)
-    operator, params = requested
     return _operator_input(
         state,
         stac_item,
         config=config,
         item=item,
         assets=asset,
-        operator=operator,
-        params=params,
+        steps=requested,
         target_gsd=target_gsd,
     )
 
 
 def operator_post_process(
     src_path: Annotated[Any, Depends(dataset_asset_path)],
-    op: Annotated[str | None, Query(description="operator of a computed tile, such as `band_math`")] = None,
-    op_version: Annotated[int | None, Query(ge=1, description="version of the operator")] = None,
+    op: Annotated[
+        list[str] | None, Query(description="operator of a computed tile, such as `band_math`; repeated for a chain")
+    ] = None,
+    op_version: Annotated[list[int] | None, Query(description="version of the operator, once per `op`")] = None,
     params: Annotated[
-        str | None, Query(max_length=MAX_OPERATOR_PARAMS_CHARS, description="its parameters, as JSON")
+        list[str] | None, Query(description="its parameters, as JSON, once per `op`; at most 2048 characters each")
     ] = None,
 ) -> Callable[[ImageData], ImageData] | None:
-    """TiTiler's ``process_dependency`` for our tile: the operator's kernel, the one a job calls.
+    """TiTiler's ``process_dependency`` for our tile: the operators' kernels, the ones a job calls.
 
     The path dependency has already validated ``op`` and built the inputs, so this only
-    hands its kernel to the factory. TiTiler's own ``algorithm`` parameters are gone
-    (plan M4-09, F3).
+    hands the kernels, one after the other, to the factory. TiTiler's own ``algorithm``
+    parameters are gone (plan M4-09, F3).
     """
     if not isinstance(src_path, OperatorInput):
         return None
-    operator, parameters = src_path.operator, src_path.params
-    return lambda image: operator.run(image, parameters)
+    steps = src_path.steps
+
+    def chain(image: ImageData) -> ImageData:
+        for operator, parameters in steps:
+            image = operator.run(image, parameters)
+        return image
+
+    return chain
 
 
 def _open_reader(src_path: Any, **reader_params: Any) -> Any:

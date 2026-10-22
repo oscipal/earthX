@@ -1,12 +1,12 @@
-"""The tile of an operator (T1): the same inputs, scaling and kernel as the job (adr/0014 §6.2).
+"""The tile of an operator or of a chain of them (T1): the same inputs, scaling and kernels as the job (adr/0014 §6.2).
 
 `api` builds an :class:`OperatorInput` from the path of a tile URL — the assets named
 in it, already cleared through the gateway policy, with the bands and the scaling
 source the item describes — and TiTiler's factory opens :class:`OperatorTileReader` on
 it. The reader reads each asset's tile through :class:`~earthx.processing.source.Source`
 (physical values, named bands, the grid rule of the core) and merges them into one
-image; the operator's kernel then runs as TiTiler's ``process_dependency``, the very
-function a job calls on a block.
+image; the kernels of the chain then run as TiTiler's ``process_dependency``, one after the other, the very
+functions a job calls on a block.
 
 The tile is a *preview* below the native level: rio-tiler reads an overview there, and
 only on the native level is the tile bit-identical with the job (§6.3, F9).
@@ -43,11 +43,10 @@ class TileOptionRefused(TileRefused):
 
 
 class TileInputs(Protocol):
-    """What `api` hands the reader: the assets of the tile, the operator and its validated parameters."""
+    """What `api` hands the reader: the assets of the tile and the steps, each an operator with its validated parameters."""
 
     inputs: tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...]
-    operator: Operator
-    params: BaseModel
+    steps: tuple[tuple[Operator, BaseModel], ...]
 
 
 def _as_refusal(error: BaseException) -> BaseException:
@@ -79,8 +78,10 @@ class OperatorTileReader:
                 BandMeta(name, "float32", None) for source in self._sources for name in source.names
             )
             meta = RasterMeta(finest.crs.to_string(), finest.transform, finest.width, finest.height, bands, resampled)
-            # The names and the syntax are judged before the first pixel, as in a job.
-            self._input.operator.transform(meta, self._input.params)
+            # The names and the syntax are judged before the first pixel, as in a job: each step
+            # on the bands the one before leaves.
+            for operator, params in self._input.steps:
+                meta = operator.transform(meta, params)
         except BaseException as error:
             self._stack.close()
             raise _as_refusal(error) from error
