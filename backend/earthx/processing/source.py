@@ -32,7 +32,7 @@ from earthx.processing.scaling import Scaling, apply_scaling, scaling_for_cog, s
 from earthx.readers.cog import AssetPath, CogReader
 from earthx.readers.zarr_reader import VARIABLE_LIST_SEPARATOR, ZarrAsset, ZarrReader
 
-__all__ = ["Source", "common_grid", "expected_band_names", "merge_images"]
+__all__ = ["Source", "common_grid", "expected_band_names", "merge_images", "units_of"]
 
 #: Relative slack when comparing pixel sizes and extents of two rasters.
 _GRID_TOLERANCE = 1e-6
@@ -67,6 +67,7 @@ class Source:
             self.data_types = [str(array.dtype) for array in arrays]
             self.nodata = [array.rio.nodata for array in arrays]
         self.nodata = [None if value is None else float(value) for value in self.nodata]
+        self.units = units_of(entry, len(self.names))
 
     @classmethod
     def open(cls, entry: ResolvedInput, target: AssetPath | ZarrAsset, stack: ExitStack) -> Source:
@@ -112,6 +113,19 @@ class Source:
     def read_tile(self, x: int, y: int, z: int, **options: Any) -> ImageData:
         """One map tile, in physical values; ``options`` are the reader's own (``tilesize`` and the like)."""
         return self.physical(self.reader.tile(x, y, z, **options))
+
+
+def units_of(entry: ResolvedInput, count: int) -> list[str | None]:
+    """The unit of each of the ``count`` bands of this asset, ``None`` where the recipe names none.
+
+    Bands the item described are positional, so they are believed only if there are exactly as many as the file
+    has. An asset the item described with no band has its unit on the input, for every band alike.
+    """
+    if not entry.bands:
+        return [entry.unit] * count
+    if len(entry.bands) != count:
+        return [None] * count
+    return [band.unit for band in entry.bands]
 
 
 def expected_band_names(entry: ResolvedInput) -> list[str] | None:

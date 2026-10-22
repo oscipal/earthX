@@ -75,7 +75,9 @@ class OperatorTileReader:
             self._sources = [Source.open(entry, target, self._stack) for entry, target in self._input.inputs]
             finest, resampled = common_grid(self._sources)
             bands = tuple(
-                BandMeta(name, "float32", None) for source in self._sources for name in source.names
+                BandMeta(name, "float32", None, unit)
+                for source in self._sources
+                for name, unit in zip(source.names, source.units, strict=True)
             )
             meta = RasterMeta(finest.crs.to_string(), finest.transform, finest.width, finest.height, bands, resampled)
             # The names and the syntax are judged before the first pixel, as in a job: each step

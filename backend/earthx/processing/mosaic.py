@@ -143,6 +143,7 @@ class MosaicSource(Source):
         self.reader = anchor.reader
         self.crs = anchor.crs
         self.names, self.data_types, self.nodata, self.scaling = anchor.names, anchor.data_types, anchor.nodata, anchor.scaling
+        self.units = anchor.units
         left, bottom, right, top = extent
         self.transform = Affine(anchor.transform.a, 0, left, 0, anchor.transform.e, top)
         self.width = round((right - left) / anchor.transform.a)
@@ -229,8 +230,15 @@ def _chain(first: numpy.ma.MaskedArray, rest: Iterator[numpy.ma.MaskedArray]) ->
 def _check_alike(asset: str, members: Sequence[Source]) -> None:
     anchor = members[0]
     for other in members[1:]:
-        if (other.names, other.data_types, other.nodata) != (anchor.names, anchor.data_types, anchor.nodata):
-            raise UnsupportedRecipe(f"the scenes of the mosaic differ in the bands, data type or nodata of {asset!r}")
+        if (other.names, other.data_types, other.nodata, other.units) != (
+            anchor.names,
+            anchor.data_types,
+            anchor.nodata,
+            anchor.units,
+        ):
+            raise UnsupportedRecipe(
+                f"the scenes of the mosaic differ in the bands, data type, nodata or unit of {asset!r}"
+            )
         if other.scaling != anchor.scaling:
             raise UnsupportedRecipe(f"the scenes of the mosaic scale {asset!r} differently")
 
