@@ -1563,3 +1563,32 @@ class TestTheOriginOfTheAreaOfARasterJob:
             "/processing/processes/recipe/estimate", json={"inputs": {"recipe": order()}}
         )
         assert response.status_code == 200
+
+
+class TestAChainThatNamesABandAnEarlierStepRemoved:
+    """"Review" (the estimate) and "Start" (the execution) turn away what the tile of the same chain turns away (M4-18b).
+
+    The panel shows the steps before the refused one as a preview, from the answer of the tiler; the order itself
+    must never reach the queue. Both routes run the same check (`processing.plan.check_bands`) and name the step.
+    """
+
+    STEPS = [
+        {"op": "band_math", "op_version": 1, "params": {"expression": "nir - red"}},
+        {"op": "band_math", "op_version": 1, "params": {"expression": "red + 1"}},
+    ]
+
+    @pytest.mark.parametrize("path", [EXECUTION, "/processing/processes/recipe/estimate"], ids=["start", "review"])
+    async def test_the_order_is_a_422_that_names_the_step_and_the_band(self, rig: Rig, path: str) -> None:
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(path, json=envelope(order(steps=self.STEPS)))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:applicable"
+        assert body["detail"].startswith("step 1: ") and "red" in body["detail"]
+        assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
+
+    @pytest.mark.parametrize("path", [EXECUTION, "/processing/processes/recipe/estimate"], ids=["start", "review"])
+    async def test_the_same_steps_in_a_chain_that_keeps_the_band_are_accepted(self, rig: Rig, path: str) -> None:
+        steps = [self.STEPS[0], {**self.STEPS[1], "params": {"expression": "band_math + 1"}}]
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(path, json=envelope(order(steps=steps)))
+        assert response.status_code in (200, 201), response.text

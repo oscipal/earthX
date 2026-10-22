@@ -387,8 +387,9 @@ def _operator_step(
 ) -> tuple[Any, Any]:
     """One step of the chain: its operator and validated parameters, or the ``HTTPException`` its refusal maps to.
 
-    ``where`` prefixes every message of a chain of several steps (``"step 2: "``); a single step reads as it
-    always did.
+    ``where`` prefixes every message of a chain of several steps (``"step 1: "`` for the second): counted from
+    0 like the refusals of the recipe and the order (``processing/recipe.py``, ``api/intake.py``), which is how the
+    panel finds the step. A single step reads as it always did.
     """
     if len(raw) > MAX_OPERATOR_PARAMS_CHARS:
         raise HTTPException(status_code=400, detail=f"{where}params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
@@ -443,9 +444,9 @@ def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any
     chained = len(columns[0]) > 1
     return [
         _operator_step(
-            support, operators, config, op=op, version=version, raw=raw, where=f"step {number}: " if chained else ""
+            support, operators, config, op=op, version=version, raw=raw, where=f"step {index}: " if chained else ""
         )
-        for number, (op, version, raw) in enumerate(zip(*columns, strict=True), start=1)
+        for index, (op, version, raw) in enumerate(zip(*columns, strict=True))
     ]
 
 

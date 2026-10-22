@@ -40,7 +40,7 @@ from earthx.access.crop_rules import (
     compute_crop_region,
     estimate_output_dims,
 )
-from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
 from earthx.processing.source import expected_band_names
@@ -307,14 +307,22 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     """Run every step's ``transform`` on the bands the inputs will carry; ``RecipeInvalid`` for a wrong name.
 
+    With several steps the refusal begins with the place of the step (``step 1: …`` for the second, counted from 0 like the other refusals of an order), as the tile of a chain says it.
+
     Where the item does not say how many bands an asset has, the file does, and the
     core checks again before it reads the first block (plan M4-09 §3.3). Nothing is read.
     """
     meta = _input_meta(recipe, names_known=True, sized=False)
     if meta is None:
         return
-    for step in plan_steps(recipe.steps, operators):
-        meta = step.operator.transform(meta, step.params)
+    planned = plan_steps(recipe.steps, operators)
+    for index, step in enumerate(planned):
+        try:
+            meta = step.operator.transform(meta, step.params)
+        except RecipeInvalid as error:
+            if len(planned) == 1:
+                raise
+            raise RecipeInvalid(f"step {index}: {error}") from error
 
 
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:

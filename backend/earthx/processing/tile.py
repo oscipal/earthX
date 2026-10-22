@@ -79,9 +79,15 @@ class OperatorTileReader:
             )
             meta = RasterMeta(finest.crs.to_string(), finest.transform, finest.width, finest.height, bands, resampled)
             # The names and the syntax are judged before the first pixel, as in a job: each step
-            # on the bands the one before leaves.
-            for operator, params in self._input.steps:
-                meta = operator.transform(meta, params)
+            # on the bands the one before leaves. In a chain the refusal says which step it is, counted from 0 like the order's.
+            steps = self._input.steps
+            for index, (operator, params) in enumerate(steps):
+                try:
+                    meta = operator.transform(meta, params)
+                except RecipeInvalid as error:
+                    if len(steps) == 1:
+                        raise
+                    raise RecipeInvalid(f"step {index}: {error}") from error
         except BaseException as error:
             self._stack.close()
             raise _as_refusal(error) from error

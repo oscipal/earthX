@@ -372,21 +372,21 @@ class TestEveryStepIsJudgedOnItsOwn:
         response = client.get(_url(_tiles()[0], [("mask", MASK), ("reproject", reproject)], versions=(1, 2)))
         assert response.status_code == 422, response.text
         assert (
-            response.json()["detail"].startswith("step 2: ") and "does not run as a tile" in response.json()["detail"]
+            response.json()["detail"].startswith("step 1: ") and "does not run as a tile" in response.json()["detail"]
         )
 
     def test_an_unknown_version_names_its_place(self, client: TestClient) -> None:
         response = client.get(_url(_tiles()[0], CLOUDS_THEN_NDVI, versions=(1, 9)))
-        assert response.status_code == 422 and response.json()["detail"].startswith("step 2: ")
+        assert response.status_code == 422 and response.json()["detail"].startswith("step 1: ")
 
     def test_malformed_parameters_of_a_later_step_are_a_400(self, client: TestClient) -> None:
         response = client.get(_url(_tiles()[0], [("mask", MASK), ("normalize", {**NORMALIZE, "in_min": 1.0})]))
-        assert response.status_code == 400 and response.json()["detail"].startswith("step 2: params: ")
+        assert response.status_code == 400 and response.json()["detail"].startswith("step 1: params: ")
 
     def test_parameters_longer_than_the_limit_of_a_later_step_are_a_400(self, client: TestClient) -> None:
         long = {"expression": "red + " * (MAX_OPERATOR_PARAMS_CHARS // 6) + "red"}
         response = client.get(_url(_tiles()[0], [("mask", MASK), ("band_math", long)]))
-        assert response.status_code == 400 and response.json()["detail"].startswith("step 2: params are at most")
+        assert response.status_code == 400 and response.json()["detail"].startswith("step 1: params are at most")
 
     @pytest.mark.parametrize("version", ["x", "1.0", "", "-1", "\u0661", "\uff11"], ids=repr)
     def test_a_version_that_is_not_a_whole_number_of_digits_is_a_400_before_any_request(
@@ -400,7 +400,7 @@ class TestEveryStepIsJudgedOnItsOwn:
             response = client.get(f"{base}&{query}")
             assert response.status_code == 400, (version, response.text)
             assert "op_version is a whole number" in response.json()["detail"]
-        assert response.json()["detail"].startswith("step 2: ")
+        assert response.json()["detail"].startswith("step 1: ")
         assert fetched == []
 
     def test_empty_parts_are_a_400_before_any_request(self, client: TestClient) -> None:
@@ -419,7 +419,7 @@ class TestEveryStepIsJudgedOnItsOwn:
     def test_a_dataset_that_does_not_allow_the_first_step_is_a_422_before_any_request(self, client: TestClient) -> None:
         fetched = _fetches(client)
         response = client.get(_url(_tiles()[0], CLOUDS_THEN_NDVI, dataset=NO_LAYER.dataset_id))
-        assert response.status_code == 422 and response.json()["detail"].startswith("step 1: ")
+        assert response.status_code == 422 and response.json()["detail"].startswith("step 0: ")
         assert "masking" in response.json()["detail"]
         wrong_layer = client.get(
             _url(_tiles()[0], [("mask", {"source": "red", "classes": [3]}), ("band_math", BAND_MATH)])
@@ -455,3 +455,20 @@ class TestTilejson:
         for route in ("statistics", "info"):
             response = client.get(_url((14, 1, 1), CLOUDS_THEN_NDVI, route=route))
             assert response.status_code == 400 and "tiles and their TileJSON only" in response.json()["detail"]
+
+
+class TestABandAnEarlierStepRemoved:
+    """The panel asks the TileJSON of a chain which step the tiler refuses, and shows the steps before it (plan §12)."""
+
+    CHAIN = [("band_math", {"expression": "nir - red"}), ("band_math", {"expression": "red + 1"})]
+
+    @pytest.mark.parametrize("route", ["WebMercatorQuad/tilejson.json", "tiles/WebMercatorQuad/14/8667/5452.tif"])
+    def test_the_tile_and_its_tilejson_name_the_step_and_the_band(self, client: TestClient, route: str) -> None:
+        response = client.get(_url((14, 8667, 5452), self.CHAIN, assets=("red", "nir"), route=route))
+        assert response.status_code == 422, response.text
+        detail = response.json()["detail"]
+        assert detail.startswith("step 1: ") and "red" in detail, detail
+
+    def test_the_first_step_of_the_chain_is_fine_on_its_own(self, client: TestClient) -> None:
+        response = client.get(_url((14, 8667, 5452), self.CHAIN[:1], assets=("red", "nir"), route="WebMercatorQuad/tilejson.json"))
+        assert response.status_code == 200
