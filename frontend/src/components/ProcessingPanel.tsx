@@ -84,7 +84,7 @@ function RecipeLoader() {
   return (
     <div className="pp-recipe">
       <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps and the data type from a recipe.json, onto the current selection">
-        ⬆ Load recipe…
+        Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
       {outcome && (
@@ -466,7 +466,6 @@ export default function ProcessingPanel() {
             ✕
           </button>
         </div>
-        <RecipeLoader />
         {!reason && (
           <section className="pp-section" aria-label="Selection">
             <p className="pp-summary">
@@ -480,6 +479,7 @@ export default function ProcessingPanel() {
             </p>
             <AreaChoice view={view} hasAoi={hasAoi} />
             <RunAsChoice view={view} />
+            <RecipeLoader />
           </section>
         )}
       </div>
