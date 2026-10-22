@@ -416,3 +416,21 @@ NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR python simd.py   # 
 - `gdalinfo -stats result.tif` (oder `gdalinfo result.tif`) zeigt je Band `STATISTICS_MINIMUM` … `STATISTICS_VALID_PERCENT` und `EARTHX_PERCENTILE_2`/`_98`, ohne neu zu rechnen.
 - `GET …/jobs/{jobID}/results` zeigt unter `result.properties.bands[].statistics` die Werte für die AOI.
 - Die Prüfung auf der Karte (DEM mit Relief, NDVI wie bisher) kommt mit M4-32b.
+
+## 9. Antwort von Otto zu §15k und Umsetzung (22.10.2026)
+
+**Antwort:**
+- Die übrigen Faktoren bleiben nicht unverändert.
+- Für `reproject` gilt der gemessene Zuschlag von +7,7 %. Jeder der sieben Faktoren wird damit multipliziert und nach der Regel „aufrunden“ auf eine Nachkommastelle gesetzt.
+- Faktoren ohne Statistik-Durchgang ändern sich nur, wenn der Lauf den neuen Durchgang auch durchläuft. Der Nachtrag §15k nennt, welche betroffen sind.
+
+**Umgesetzt:**
+- `reproject`: `nearest` 0,5, `bilinear` 1,1, `cubic` 1,2, `cubicspline` 1,9, `lanczos` 2,4, `average` 1,3, `mode` 1,2. Version 2 nutzt dieselbe Tabelle.
+- **Raster-Lauf ohne Schritt:** Er lief in der Schätzung bisher unter `EXPORT_FACTOR`, durchläuft aber den Kern und damit den Statistik-Durchgang.
+  - Gemessen: 4096², sechs Paare. Ohne den Ausreißer des ersten alten Laufs ergeben die fünf übrigen Paare +9,3 %.
+  - Er bekommt deshalb einen eigenen Faktor `RASTER_WITHOUT_STEP_FACTOR` = 1,0, also 0,9 × 1,093, aufgerundet.
+- **Export (`crop`):** bleibt bei `EXPORT_FACTOR` 0,9, denn er schreibt ohne Kern und ohne Statistik.
+- **Tests:**
+  - `test_reproject.py`: die Tabelle der Faktoren.
+  - `test_plan.py`: Raster ohne Schritt 1,0. Neu: Der Export behält 0,9.
+  - `test_processing_estimate.py`: „mehr Schritte kosten mehr“ vergleicht jetzt einen mit zwei Schritten. Ohne Schritt kostet es jetzt so viel wie der Testoperator `scale`.

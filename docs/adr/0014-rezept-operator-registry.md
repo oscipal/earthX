@@ -1885,7 +1885,28 @@ Gemessen wurde mit `memory_run.py` (synthetisches COG 4096², zwei Bänder `uint
 
   - Je Block von 1024² und Band kostet die Statistik etwa 23 ms. Die Tests `test_memory_8192.py` und `test_memory_reproject.py` bleiben unter 500 MB; der höchste Wert ist `lanczos` 4096² mit 441,7 MB.
   - **Faktor (Auflage Otto zu Frage 8):** Band-Math liegt über 10 %. Deshalb steigt der Faktor nach der Regel „aufrunden“ von 1,0 auf **1,2** (`operators/band_math.py`). Die letzten drei der neun Paare lagen bei +9,5 %; die Zusatzzeit liegt also nahe an der Schwelle.
-  - Die übrigen Faktoren der Tabelle in §5.5 und §15j bleiben. Die Auflage betrifft nur Band-Math. Gegenüber dem neuen Wert für Band-Math sind sie damit etwas zu niedrig, denn §5.5 nennt sie „relativ zu Band-Math“. Die Kalibrierung gegen echte Läufe steht weiter aus.
+  - **Antwort von Otto (2026-10-22):** Die übrigen Faktoren bleiben nicht unverändert. Jeder Faktor eines Laufs, der den Statistik-Durchgang durchläuft, bekommt dessen gemessenen Zuschlag und wird nach der Regel „aufrunden“ auf eine Nachkommastelle gesetzt. Die Werte in §5.5 und §15j gelten damit nicht mehr; maßgeblich ist diese Tabelle:
+
+| Faktor | bisher | Zuschlag [M] | jetzt | Code |
+|---|---|---|---|---|
+| Band-Math | 1,0 | +12,1 % | 1,2 | `operators/band_math.py` |
+| Reprojektion `nearest` | 0,4 | +7,7 % | 0,5 | `operators/reproject.py` (`_METHODS`, gilt auch für Version 2) |
+| Reprojektion `bilinear` | 1,0 | +7,7 % | 1,1 | dito |
+| Reprojektion `cubic` | 1,1 | +7,7 % | 1,2 | dito |
+| Reprojektion `cubicspline` | 1,7 | +7,7 % | 1,9 | dito |
+| Reprojektion `lanczos` | 2,2 | +7,7 % | 2,4 | dito |
+| Reprojektion `average` | 1,2 | +7,7 % | 1,3 | dito |
+| Reprojektion `mode` | 1,1 | +7,7 % | 1,2 | dito |
+| Raster-Lauf ohne Schritt (etwa das Mosaik eines Überflugs ohne Operator) | 0,9 | +9,3 % | 1,0 | `plan.RASTER_WITHOUT_STEP_FACTOR` (neu) |
+| Export (`crop`) | 0,9 | — | 0,9 | `plan.EXPORT_FACTOR`, unverändert |
+
+  - **Zuschläge:**
+    - Für die Reprojektion gilt der für `bilinear` gemessene Zuschlag für alle sieben Methoden; so hat Otto es vorgegeben.
+    - Der Raster-Lauf ohne Schritt ist eigens gemessen: 4096², sechs Paare, alt gegen neu. Der erste alte Lauf war ein Ausreißer mit kaltem Cache (18,2 s); ohne ihn bleiben fünf Paare, alt 9,93 s, neu 10,86 s im Mittel. Mit ihm wäre der Median der Paardifferenzen +7,7 %. Das Ergebnis ist in beiden Fällen 1,0.
+  - **Betroffen sind** alle Läufe des Kerns mit Rasterausgabe, denn sie schreiben alle über den letzten Durchgang. Das schließt das Mosaik eines Überflugs ein, das die Faktoren seiner Schritte trägt oder den Faktor ohne Schritt.
+  - **Nicht betroffen ist** der Export (`crop`, `processing/export.py`). Er schreibt seine Rasterdateien ohne den Kern und ohne Statistik, deshalb bleibt `EXPORT_FACTOR` bei 0,9. Bisher teilten sich Export und Raster-Lauf ohne Schritt diesen Wert. Jetzt hat der Raster-Lauf einen eigenen.
+  - Die Testoperatoren `scale` und `coarsen` gibt es nur in den Tests. Sie bleiben unverändert.
+  - Die Kalibrierung gegen echte Läufe steht weiter aus.
 
 ## 16. Quellen
 
