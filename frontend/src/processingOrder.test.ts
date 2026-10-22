@@ -206,7 +206,7 @@ describe('the unit of a band (M4-19b)', () => {
 });
 
 describe('registryUnit', () => {
-  const units = { 'SR_*': '1', 'SR_20m:b05': 'x', 'a.b': 'dot', data: 'm', none: null };
+  const units = { 'SR_*': '1', 'SR_20m:b05': 'x', 'a.b*': 'dot', 'p(1)*': 'paren', data: 'm', none: null };
   const collection = { id: 'c', 'earthx:band_units': units } as unknown as Collection;
 
   it('takes the exact key before a pattern', () => {
@@ -216,8 +216,10 @@ describe('registryUnit', () => {
 
   it('matches a pattern over the whole key only, and its other characters literally', () => {
     expect(registryUnit(collection, 'xSR_10m:b04')).toBeNull();
-    expect(registryUnit(collection, 'a.b')).toBe('dot');
-    expect(registryUnit(collection, 'aXb')).toBeNull();
+    expect(registryUnit(collection, 'a.bc')).toBe('dot');
+    expect(registryUnit(collection, 'aXbc')).toBeNull();
+    expect(registryUnit(collection, 'p(1)x')).toBe('paren');
+    expect(registryUnit(collection, 'p1x')).toBeNull();
   });
 
   it('says null for an unknown key, an explicit unknown and a key of Object.prototype', () => {

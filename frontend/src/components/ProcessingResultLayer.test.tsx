@@ -365,12 +365,12 @@ describe('the layer a result becomes', () => {
     expect(button('⇩')).toBeUndefined();
   });
 
-  it('says in its row which unit the values of the result are in', async () => {
+  it('names in its row the unit of the values of the result', async () => {
     useProcessingStore.setState({ jobs: [entry({ unit: 'm' })] });
     await showOnMap();
     expect(layers()[0].result?.unit).toBe('m');
     act(() => root.render(<LayerManager />));
-    expect(container.querySelector('.lm-note')?.textContent).toBe('Values in m');
+    expect(container.querySelector('.lm-note')?.textContent).toBe('Unit: m');
     expect(container.querySelector('.layer-row-noted')).not.toBeNull();
   });
 
@@ -378,7 +378,7 @@ describe('the layer a result becomes', () => {
     await showOnMap();
     expect(layers()[0].result?.unit).toBeNull();
     act(() => root.render(<LayerManager />));
-    expect(container.textContent).not.toContain('Values in');
+    expect(container.textContent).not.toContain('Unit:');
     expect(container.querySelector('.layer-row-noted')).toBeNull();
   });
 

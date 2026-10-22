@@ -160,7 +160,7 @@ export default function LayerManager() {
                 </button>
                 {l.result?.expired && <span className="lm-note hint-text warn">{EXPIRED_LAYER_TEXT}</span>}
                 {l.result?.resampled === true && <span className="lm-note hint-text warn">{RESAMPLED_LAYER_TEXT}</span>}
-                {l.result?.unit && <span className="lm-note hint-text">Values in {l.result.unit}</span>}
+                {l.result?.unit && <span className="lm-note hint-text">Unit: {l.result.unit}</span>}
               </li>
               );
             })}
