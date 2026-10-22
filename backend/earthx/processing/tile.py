@@ -43,7 +43,7 @@ class TileOptionRefused(TileRefused):
 
 
 class TileInputs(Protocol):
-    """What `api` hands the reader: the assets of the tile and the steps, each an operator with its validated parameters."""
+    """What `api` hands the reader: the assets of the tile and the steps (operator, validated parameters)."""
 
     inputs: tuple[tuple[ResolvedInput, AssetPath | ZarrAsset], ...]
     steps: tuple[tuple[Operator, BaseModel], ...]

@@ -316,7 +316,7 @@ def _resolve_asset_path(
 
 @dataclass(frozen=True, slots=True)
 class OperatorInput:
-    """What the path of an operator tile stands for: its assets and the chain of steps, each an operator with its parameters.
+    """What the path of an operator tile stands for: its assets and the chain of steps (operator, parameters).
 
     Defined here and typed loosely on purpose: the tiler does not load the worker core when it
     starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
