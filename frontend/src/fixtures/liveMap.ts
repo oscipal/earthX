@@ -6,7 +6,10 @@ import type { MapLayer } from '../layers';
 export function liveMap(initial: string[] = ['layers-top', 'aoi-fill', 'aoi-line']) {
   const stack = [...initial];
   const sources = new Map<string, Record<string, unknown>>();
-  const layers = new Map<string, { id: string; source?: string; paint: Record<string, unknown>; layout: Record<string, unknown> }>();
+  const layers = new Map<
+    string,
+    { id: string; source?: string; maxzoom?: number; paint: Record<string, unknown>; layout: Record<string, unknown> }
+  >();
   const log = { sourcesAdded: [] as string[], sourcesRemoved: [] as string[], moved: [] as string[] };
   const place = (id: string, before?: string) => {
     stack.splice(before ? stack.indexOf(before) : stack.length, 0, id);
@@ -22,8 +25,11 @@ export function liveMap(initial: string[] = ['layers-top', 'aoi-fill', 'aoi-line
       sources.delete(id);
       log.sourcesRemoved.push(id);
     },
-    addLayer: (layer: { id: string; source?: string; paint?: Record<string, unknown>; layout?: Record<string, unknown> }, before?: string) => {
-      layers.set(layer.id, { id: layer.id, source: layer.source, paint: { ...layer.paint }, layout: { ...layer.layout } });
+    addLayer: (
+      layer: { id: string; source?: string; maxzoom?: number; paint?: Record<string, unknown>; layout?: Record<string, unknown> },
+      before?: string,
+    ) => {
+      layers.set(layer.id, { id: layer.id, source: layer.source, maxzoom: layer.maxzoom, paint: { ...layer.paint }, layout: { ...layer.layout } });
       place(layer.id, before);
     },
     removeLayer: (id: string) => {

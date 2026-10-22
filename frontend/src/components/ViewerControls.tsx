@@ -22,6 +22,7 @@ export default function ViewerControls() {
   const exitFocus = useAppStore((s) => s.exitFocus);
   const clearAll = useAppStore((s) => s.clearAll);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
+  const pinLoading = useAppStore((s) => s.pinLoading);
   const count = useAppStore((s) => Object.keys(s.downloaded).length);
   const showDownloaded = useAppStore((s) => s.showDownloaded);
   const toggleDownloaded = useAppStore((s) => s.toggleDownloaded);
@@ -107,9 +108,10 @@ export default function ViewerControls() {
           type="button"
           className="ghost-btn"
           title="Pin this image into the layer manager"
+          disabled={pinLoading}
           onClick={() => addCurrentToLayers()}
         >
-          ＋ Add to layers
+          {pinLoading ? 'Loading…' : '＋ Add to layers'}
         </button>
         <button
           type="button"

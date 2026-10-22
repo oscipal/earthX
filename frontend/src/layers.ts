@@ -24,6 +24,9 @@ export type LayerOverlay =
       bounds: Bbox;
       minZoom: number;
       maxZoom: number;
+      // From this zoom up the layer is not drawn (MapLibre's layer `maxzoom`): a scene stacked
+      // below the first level of a mosaic (`mosaic.ts`) steps aside for it.
+      hideFrom?: number;
       preview?: true;
     };
 
