@@ -77,33 +77,44 @@ export const RESULT_COLORMAP = 'viridis';
 
 const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
 
+// The range the user set by hand in the panel, to be kept with the job started under it
+// (Otto, 22.10.2026); `null` for the default, which is no choice of the user's.
+export const handRange = (range: PreviewRange): PreviewRange | null => (sameRange(range, DEFAULT_RANGE) ? null : range);
+
+function drawnWith(range: PreviewRange): AppliedRender {
+  const rescale = rescaleOf(range);
+  return {
+    ...('rescale' in rescale ? { rescale: rescale.rescale } : {}),
+    ...(range.colormap ? { colormapName: range.colormap } : {}),
+  };
+}
+
 // How a result is drawn (M4-32b, plan §6.7). A floating-point result needs a range and a
 // colormap to become a picture; an integer result is drawn as it is. For a float, in order:
-//  1. a range the user applied by hand in the panel holds (it differs from the default);
-//  2. an index (a Band math result whose values all lie in −1…1) keeps the default range
-//     and `rdylgn`, so that jobs can be compared with one another;
-//  3. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
-//  4. a result without statistics is drawn with the range of the panel, as before M4-32.
-export function resultRender(dataType: string | null, range: PreviewRange, stats: ResultStats | null = null): AppliedRender {
+//  1. an integer result is drawn as it is;
+//  2. the range the user had set by hand when the job started holds for this result only (`own`);
+//  3. an index (a Band math result whose values all lie in −1…1) is drawn at −1…1 in `rdylgn`,
+//     so that jobs can be compared with one another;
+//  4. otherwise the 2–98 % of the AOI from the statistics, in `viridis`;
+//  5. a result without statistics is drawn with the range of the panel, as before M4-32.
+export function resultRender(
+  dataType: string | null,
+  panel: PreviewRange,
+  stats: ResultStats | null = null,
+  own: PreviewRange | null = null,
+): AppliedRender {
   if (dataType === null || !FLOAT.test(dataType)) return {};
-  const panel = (): AppliedRender => {
-    const rescale = rescaleOf(range);
-    return {
-      ...('rescale' in rescale ? { rescale: rescale.rescale } : {}),
-      ...(range.colormap ? { colormapName: range.colormap } : {}),
-    };
-  };
-  if (!stats || !sameRange(range, DEFAULT_RANGE)) return panel();
-  const present = stats.bands.filter((band) => band.minimum !== null && band.maximum !== null);
-  if (present.length === 0) return panel();
-  if (stats.expression && present.every((band) => band.minimum! >= -1 && band.maximum! <= 1)) return panel();
+  if (own) return drawnWith(own);
+  const present = stats?.bands.filter((band) => band.minimum !== null && band.maximum !== null) ?? [];
+  if (!stats || present.length === 0) return drawnWith(panel);
+  if (stats.expression && present.every((band) => band.minimum! >= -1 && band.maximum! <= 1)) return drawnWith(DEFAULT_RANGE);
   let low = smallest(present.map((band) => band.percentile2));
   let high = largest(present.map((band) => band.percentile98));
   if (!(low < high)) {
     low = smallest(present.map((band) => band.minimum));
     high = largest(present.map((band) => band.maximum));
   }
-  if (!(low < high)) return panel();
+  if (!(low < high)) return drawnWith(panel);
   return { rescale: `${low},${high}`, colormapName: RESULT_COLORMAP };
 }
 

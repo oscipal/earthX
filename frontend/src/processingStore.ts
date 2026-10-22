@@ -52,6 +52,7 @@ import {
   type StatusInfo,
 } from './processing';
 import {
+  handRange,
   isResultExpired,
   positive,
   resultGsd,
@@ -163,6 +164,10 @@ export interface JobEntry {
   // The statistics of the AOI per band, for the colour scale of the layer (M4-32b); `null` until the
   // results are read, and for a result from before they were written.
   statistics: ResultStats | null;
+  // The range and colormap the user had set by hand in the panel when the job was started; its
+  // result is drawn with them and no other result is. `null` for the default range, for a job of
+  // the download dialog, and for one taken up again after a reload (it is not kept in the tab).
+  range: PreviewRange | null;
 }
 
 export interface JobTiles {
@@ -638,7 +643,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     trackers.set(jobID, stop);
   };
 
-  const addJob = (jobID: string, expires: string, status: StatusInfo | null, title: string | null = null) => {
+  const addJob = (
+    jobID: string,
+    expires: string,
+    status: StatusInfo | null,
+    title: string | null = null,
+    range: PreviewRange | null = null,
+  ) => {
     if (get().jobs.some((j) => j.jobID === jobID)) return;
     const entry: JobEntry = {
       jobID,
@@ -654,6 +665,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       title,
       tiles: null,
       statistics: null,
+      range,
     };
     set((s) => ({ jobs: [entry, ...s.jobs] }));
     persist();
@@ -678,6 +690,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     if (!view.key || batch?.key !== view.key) return;
     const total = view.parts.length;
     const titleOf = titler(view);
+    const own = handRange(get().range);
     const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
     let opened = false;
@@ -689,7 +702,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         const status = await placeJob(part.order);
         if (!opened) set({ jobsOpen: true });
         opened = true;
-        addJob(status.jobID, status.expires, status, titleOf({ index, total }));
+        addJob(status.jobID, status.expires, status, titleOf({ index, total }), own);
       } catch (error) {
         refusals.push({ label: part.unit.label, message: refusalMessage(error) });
       }
@@ -812,7 +825,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         overlays: [
           {
             kind: 'raster',
-            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range, job.statistics)),
+            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range, job.statistics, job.range)),
             bounds: tileJson.bounds,
             minZoom: tileJson.minZoom,
             // rio-tiler's `maxzoom` is the level nearest the data's pixel size, and often the coarser
@@ -972,6 +985,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       if (s.estimate?.key !== view.key) return;
       const title = titler(view)();
+      const own = handRange(s.range);
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
@@ -981,7 +995,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
         set({ jobsOpen: true });
-        addJob(status.jobID, status.expires, status, title);
+        addJob(status.jobID, status.expires, status, title, own);
       } catch (error) {
         if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
