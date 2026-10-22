@@ -1,6 +1,6 @@
 # M4-17 — Mosaik im Kachel-Pfad: Plan
 
-**Stand:** 20.10.2026, Plan freigegeben (§11); M4-17a umgesetzt (§12), M4-17b umgesetzt (§14), M4-17c folgt in einer neuen Session (§13).
+**Stand:** 22.10.2026, Plan freigegeben (§11); M4-17a umgesetzt (§12), M4-17b umgesetzt (§14), M4-17c umgesetzt (§15).
 **Stufe B:** Bis zur Freigabe ist kein Produktivcode geändert. Nach der Freigabe
 setzt dieselbe Session um (oder die Sessions aus Frage 6).
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -677,8 +677,15 @@ Get-MosaicTile ($ids + $other) 10 '' 'two-passes.png'           # 422: zwei Übe
 Auflösung öffnen: Die Szenen erscheinen als eine Fläche, im Layer-Manager ein
 Eintrag; die Netzwerkansicht des Browsers zeigt je Kartenkachel **eine**
 Anfrage an `…/mosaic/tiles/…` statt einer je Szene, und keine URL enthält
-Koordinaten der AOI. Beim Herauszoomen unter z8 bleibt an Überlappungen
-dieselbe Szene oben.
+Koordinaten der AOI. Vorher fragt die Seite einmal `…/mosaic/WebMercatorQuad/tilejson.json`;
+bis die Antwort da ist, steht an den Knöpfen „Loading…“ und die Karte zeigt
+diesen Überflug noch nicht. Beim Herauszoomen wechselt die Karte unter Kartenzoom
+6,5 (Kachelstufe 8 = gerundeter Kartenzoom + 1) auf die Einzelszenen; an
+Überlappungen bleibt dieselbe Szene oben (die erste in `earthx:order` des
+TileJSON). Gegenproben: ein Überflug mit einer einzigen Szene fragt nur
+`…/items/{item}/tiles/…`; ein Überflug mit mehr als 64 Szenen (Suchrechteck über
+mehrere Länder) fragt kein TileJSON, und die Meldung nennt, wie viele Szenen nicht
+gezeigt werden.
 
 ---
 
@@ -854,7 +861,7 @@ aus.“ Grundlage ist dieser Plan: §4.1–§4.4, §4.7, §4.8 (Tests 2, 3, 5–
   nicht (`colormap`), heute folgenlos, weil die Registry nur `colormap_name`
   setzt.
 
-**M4-17c — Frontend.** Neue Session nach dem Merge von M4-17b.
+**M4-17c — Frontend.** Neue Session nach dem Merge von M4-17b. *Umgesetzt, siehe §15.*
 **Startsatz:** „Führe Aufgabe M4-17c aus `docs/plans/m4-processing-kern.md`
 aus.“ Grundlage: §4.6, §4.8 (Frontend), §7 Frage 3, §9 B.
 - Ein Layer je Überflug als MapLibre-Quelle mit `url` auf das Mosaik-TileJSON,
@@ -964,3 +971,111 @@ Zoomgrenzen des TileJSON …) und antwortet bei einem Fehler wie FastAPI mit `42
 fällt an `TestNothingIsFetchedForARequestThatIsRefused` auf, der 14 ungültige Anfragen gegen die
 Abrufe der Quelle zählt (ohne die Prüfung scheitern 11 davon).
 
+---
+
+## 15. Umsetzung M4-17c (22.10.2026)
+
+**Umfang wie §13:** nur das Frontend; Backend und Routen unverändert. Neu ist
+`frontend/src/mosaic.ts` (die Planung), dazu Änderungen in `api.ts`, `mapLayers.ts`,
+`searchLayers.ts`, `store.ts` und `MapView.tsx`.
+
+- **Planung je Überflug (`mosaic.ts`).** Die Szenen einer Ansicht werden nach der
+  Gruppe der Ergebnisliste geteilt (das ist der Überflug, `results_group_by` wie in
+  `_one_overpass`); eine Szene, die keine Gruppe der aktuellen Suche hält, steht für
+  sich. Ein Überflug aus 2 bis 64 Szenen eines Assets, freigegeben mindestens bis z8,
+  ist ein Mosaik. Drei Zustände: *Einzelszenen* (eine Szene, zu groß, Datensatz unter
+  z8, oder das Mosaik wurde abgewiesen), *wartet* (TileJSON noch nicht da: es wird
+  nichts gezeichnet) und *Mosaik*.
+- **Mosaik.** Die Kachel-URL baut der Client selbst (`buildMosaicTileTemplate`, `item`
+  nach ID sortiert, KE5); das TileJSON (`fetchMosaicTileJson`) liefert Fläche, Stufen
+  und `earthx:order`. Unter dem Mosaik bleiben die Einzelszenen, gestapelt nach
+  `earthx:order` (die zuerst gelesene oben), mit `maxzoom` am MapLibre-Layer.
+- **Wo es wirkt.** Ansicht in voller Auflösung (`syncFocusRaster`), angeheftete Layer
+  (`addCurrentToLayers`: ein Layer je Überflug beim Zuschnitt, sonst einer für die
+  Auswahl mit je einem Mosaik je Überflug), AOI-Zuschnitte eines Datensatzes ohne
+  Vorschau (`fullResolutionLayers`, DEM). `selectLayer` lädt die Mosaike des Layers
+  nach, damit die Ansicht sie zeichnen kann, wenn sie vom Layer abweicht.
+- **Zuschnitt und Meldungen.** Der AOI-Zuschnitt umhüllt die Mosaik-URL wie jede
+  andere (`earthx-clip://…`), die URL trägt weiter nur Szenen-IDs. Ein Überflug über
+  64 Szenen wird nicht beim Tiler angefragt und scheibenweise wie bisher gezeichnet
+  (höchstens 40), mit neuer Meldung: „A time step of N scenes is more than one mosaic
+  takes (64); its scenes are drawn one by one, M of them not at all.“
+
+**Abweichungen vom Plan und Auslegungen** (gelten, sofern Otto nicht widerspricht):
+
+1. **Keine MapLibre-Quelle mit `url`, sondern mit `tiles`.** §4.6 nannte die Quelle
+   mit `url` auf das TileJSON. MapLibre kann die Kacheln einer `url`-Quelle aber
+   nicht in den AOI-Zuschnitt (`earthx-clip://`) umhüllen, und die `tiles`-URL des
+   TileJSON trägt den Host, unter dem der Tiler sich sieht. Der Client holt das
+   TileJSON deshalb selbst (das wärmt den Item-Cache wie geplant), nimmt `bounds`,
+   Stufen und `earthx:order` und baut die Kachel-URL aus der Gruppe.
+2. **Ein Überflug zeichnet nichts, bis sein TileJSON da ist.** Hätte die Ansicht
+   währenddessen die Einzelszenen gezeichnet, hätte jede ihre Kacheln geholt, die das
+   Mosaik gleich ersetzt. Während des Wartens steht `focusLoading` („Loading…“ an den
+   Knöpfen). Anheften wird in dieser Zeit mit Hinweis abgewiesen, weil ein Layer ein
+   Bild ist und nicht aus der Hälfte eines Bildes gemacht werden soll. Das TileJSON
+   hat im Client kein eigenes Zeitlimit, es gilt das des Tilers.
+3. **`hideFrom` (MapLibre-`maxzoom` des Layers) ist 6,5, nicht 8.** Quelle `minzoom`
+   und Layer `maxzoom` messen verschieden: Die erste zählt Kachelstufen, der zweite
+   Kartenzoom, und MapLibre rundet bei Raster-Quellen den Kartenzoom und fragt
+   256-px-Kacheln eine Stufe darüber an. Kachelstufe 8 beginnt damit bei Kartenzoom
+   6,5. Mit 8 hätten die Einzelszenen eineinhalb Zoomstufen lang parallel zum Mosaik
+   Kacheln geholt. [M, siehe unten]
+4. **AOI-Zuschnitte erst Einzelszenen, dann Mosaik.** `showSearchResults` und der
+   Rückfall bauen die Zuschnitte wie bisher sofort aus Einzelszenen; danach lädt
+   `upgradeCrops` die Mosaike der Gruppen und baut sie neu, sofern die Ergebnisse
+   dieselben geblieben sind. Wer in den ersten Sekunden anheftet, bekommt die Kopie
+   aus Einzelszenen.
+5. **Ein Mosaik-Fehler (`422`, `503`, Netz, unlesbares TileJSON) lässt den Überflug
+   einzeln zeichnen** und sagt den Grund der Quelle. Das Ergebnis `null` bleibt im
+   Zustand stehen; ein erneutes Öffnen der Ansicht fragt wieder.
+6. **Die IDs der dynamischen Layer reichen bis 200** (vorher 40), damit ein Mosaik
+   mit 64 Szenen darunter Platz hat. Die Obergrenze 40 gilt weiter für Szenen, die
+   einzeln gezeichnet werden.
+
+**Befund [P], nicht geändert.** Angeheftete Layer stapeln ihre Szenen in
+Auswahlreihenfolge mit der **zuletzt** gewählten oben (`overlays` in `wantedOverlaysOf`
+von unten nach oben), die Ansicht mit der **zuerst** gewählten oben (M3-09). Für ein
+Mosaik stimmt beides, weil der Server sortiert und die Einzelszenen darunter nach
+`earthx:order` gestapelt sind; für Einzelszenen ohne Mosaik bleibt der Unterschied
+bestehen (Log: offen).
+
+**Tests** (`vitest`, 1484 grün; `npx tsc -b`, `npm run lint` sauber):
+
+- `mosaic.test.ts`: Teilung nach Überflug, Grenzen 1/2/64/65, verschiedene Assets,
+  Datensatz unter z8, gleiche Auswahl gleiche URL, die drei Zustände, Reihenfolge der
+  Einzelszenen, Meldung über 64.
+- `api.test.ts`: URL (sortiert, ohne Fläche, maskiert), TileJSON (Antwort, `422`/`503`
+  mit Grund, sechs unlesbare Formen).
+- `mapLayers.test.ts`: Mosaik über den Einzelszenen mit `maxzoom` am Layer, Warten,
+  Abweisung, mehrere Überflüge, Datensatz ab z8, AOI-Zuschnitt ohne Koordinate in der
+  URL, Layer mit Kacheln, 70 Szenen (40), 64 Szenen (65 Layer); angeheftete Layer mit
+  `hideFrom`.
+- `searchLayers.test.ts`, `store.sections.test.ts`: Zuschnitte erst einzeln, dann
+  Mosaik; nicht bei abgewiesenem Mosaik und nicht für eine ersetzte Suche.
+- `store.mosaic.test.ts`: ein Abruf je Mosaik, gemeinsam mit der Streckung, ein Abruf bei
+  zwei gleichzeitigen Ansichten, Fehler (`422`, Netz, unlesbar), neue Anfrage nach
+  einem Fehler, 64 und 65 Szenen, Anheften (beschnitten, unbeschnitten, abgewiesen,
+  wartend), `selectLayer`.
+- Gegenprobe: ohne die Umkehr der Stapelung, ohne den Zustand „wartet“ und ohne
+  `maxzoom` am Layer scheitern 4, 4 und 3 Tests.
+
+**Prüfanleitung B: gegen eine echte Quelle nicht geprüft.** Wie in §14 erreicht das
+`gateway` der Sitzung Earth Search nicht. Geprüft ist stattdessen die Verdrahtung gegen
+eine echte MapLibre-Karte (maplibre-gl 5, Chromium ohne Fenster, Vite-Entwicklungsserver,
+Kacheln und TileJSON von Playwright mit einfarbigen PNG beantwortet; Aufbau
+nicht eingecheckt) [M]:
+
+| Kartenzoom | angefragt |
+|---|---|
+| 6,4 | Einzelszenen, Kachelstufe 7; sichtbar die Szene aus `earthx:order` oben |
+| 6,6 | nur das Mosaik, Kachelstufe 8; die Einzelszenen holen nichts |
+| 8,4 | nur das Mosaik, Kachelstufe 9 |
+
+Das erste Mal lag `hideFrom` bei 8; die Messung zeigte den Fehler (Abweichung 3). Was
+fehlt: Prüfanleitung A und B gegen Earth Search, dort wo das `gateway` die Quelle
+erreicht (Ottos Rechner mit `docker compose`).
+
+**Grenzen, die so bleiben.** Eine Kachel mit mehr als 12 Szenen (`422` „zoom in“) bleibt
+leer, ohne Meldung in der Oberfläche; bei z8 sind es höchstens 9 [M, §2.2]. Die Vorschau
+eines Operators bleibt je Szene (Frage 4, offene Log-Zeile).
