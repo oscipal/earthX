@@ -35,16 +35,19 @@ bytes, which is what makes the answers cacheable in front of the process.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi.dependencies.utils import solve_dependencies
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
@@ -554,6 +557,32 @@ def _declared_query(request: Request) -> set[str]:
     return set(names(route.dependant)) if route is not None else set()
 
 
+async def _validate_before_fetching(request: Request) -> None:
+    """Everything FastAPI would check of this request, before a single item is fetched.
+
+    FastAPI solves the dependencies of a route one after the other and checks the route's own path and
+    query parameters last, so the path dependency below would fetch up to 64 items for a request that is
+    refused afterwards for its format, its tile matrix set or a ``tilesize``. This runs the same solving
+    on the matched route without that dependency: the other dependencies (``bidx``, ``rescale``, the
+    zoom limits of a TileJSON …) and the route's own parameters are checked here, and a refusal is the
+    ``422`` FastAPI would have answered, with nothing asked of the source.
+    """
+    route = request.scope["route"]
+    dependant = dataclasses.replace(
+        route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call is not mosaic_scenes]
+    )
+    async with AsyncExitStack() as stack:
+        solved = await solve_dependencies(
+            request=request,
+            dependant=dependant,
+            dependency_overrides_provider=request.app,
+            async_exit_stack=stack,
+            embed_body_fields=False,
+        )
+    if solved.errors:
+        raise RequestValidationError(solved.errors)
+
+
 def _mosaic_zooms(config: DatasetConfig) -> tuple[int, int]:
     """The levels a mosaic tile of this dataset serves: the released range, from z8 up (plan M4-17 §5).
 
@@ -608,6 +637,7 @@ async def mosaic_scenes(
     try:
         grid = mosaic_tiles.mosaic_tile(request.path_params)
         ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset)
+        await _validate_before_fetching(request)
         if getattr(state, "earthx_cache_pool", None) is None:
             raise OrderRefused(
                 503, "mosaic tiles need the item cache, and the catalogue database is not reachable", "items"

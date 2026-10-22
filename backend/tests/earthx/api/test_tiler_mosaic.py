@@ -537,6 +537,43 @@ class TestAnswersToWrongRequests:
         assert "number of bands" in response.json()["detail"]
 
 
+class TestNothingIsFetchedForARequestThatIsRefused:
+    """Otto, 22.10.2026: the format, z/x/y, the tile matrix set and every other parameter come first."""
+
+    @pytest.mark.parametrize(
+        ("path", "extra"),
+        [
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.xyz", {}),
+            (f"{BASE}/tiles/NoSuchGrid/{TILE.z}/{TILE.x}/{TILE.y}.png", {}),
+            (f"{BASE}/tiles/WorldCRS84Quad/{TILE.z}/{TILE.x}/{TILE.y}.png", {}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/x/{TILE.y}.png", {}),
+            (f"{BASE}/tiles/WebMercatorQuad/abc/{TILE.x}/{TILE.y}.png", {}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "0"}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"tilesize": "big"}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"bidx": "first"}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"resampling": "magic"}),
+            (f"{BASE}/tiles/WebMercatorQuad/{TILE.z}/{TILE.x}/{TILE.y}.png", {"padding": "wide"}),
+            (f"{BASE}/NoSuchGrid/tilejson.json", {}),
+            (f"{BASE}/WebMercatorQuad/tilejson.json", {"minzoom": "low"}),
+            (f"{BASE}/WebMercatorQuad/tilejson.json", {"tilesize": "0"}),
+            (f"{BASE}/WebMercatorQuad/tilejson.json", {"tile_format": "gif"}),
+        ],
+    )
+    def test_an_invalid_request_is_a_400_or_422_and_asks_the_source_for_nothing(
+        self, scenes: Scenes, client, path: str, extra: dict[str, str]
+    ) -> None:
+        _seam(scenes)
+        response = client().get(path, params=_query(["WEST", "EAST"], **extra))
+        assert response.status_code in (400, 422), (path, extra, response.status_code)
+        assert scenes.fetched == []
+
+    def test_the_same_requests_without_the_fault_do_fetch(self, scenes: Scenes, client) -> None:
+        """The counter counts: a valid request does ask the source for its items."""
+        _seam(scenes)
+        assert client().get(_tile_path(), params=_query(["WEST", "EAST"], tilesize="256")).status_code == 200
+        assert sorted(scenes.fetched) == ["EAST", "WEST"]
+
+
 class TestWhatTheItemsCarry:
     @pytest.mark.parametrize(
         "geometry",

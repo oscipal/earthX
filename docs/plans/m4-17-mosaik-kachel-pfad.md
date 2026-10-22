@@ -885,7 +885,7 @@ das Frontend bleibt unverändert (M4-17c).
   Schema); verschiedene Bandzahlen der Szenen enden mit `422` und Grund statt im `assert` von
   rio-tiler.
 
-**Abweichungen vom Plan und Auslegungen** (gelten, sofern Otto nicht widerspricht; Log vom 20.10.2026):
+**Abweichungen vom Plan und Auslegungen** (Nr. 1 und 2 hat Otto am 22.10.2026 angenommen, das Log steht auf „fest“; die übrigen gelten, sofern er nicht widerspricht):
 
 1. **Die Grenze von 4 Abrufen gilt im ganzen Prozess, nicht je Anfrage.** Je Anfrage hätten sechs
    Kacheln mit verschiedenen Items bis zu 24 Abrufe gestartet, mehr als der Pool (5) fasst; „höchstens
@@ -953,4 +953,14 @@ lassen; die Suche ging direkt an Earth Search, weil der `api`-Prozess ohne Objek
   Egress-Proxy der Sitzung lehnt `CONNECT` auf eine IP mit `403` ab (`connect_rejected`); ein einfacher `httpx`-Abruf derselben Adresse über den Namen ist `200`.
   Das liegt an der Sitzung, nicht an M4-17b. Was fehlt: ein Lauf von `tiler` und Prüfskript dort, wo
   das `gateway` die Quelle erreicht (Ottos Rechner mit `docker compose`, wie in §9 beschrieben).
+
+**Prüfung vor dem ersten Abruf (Otto, 22.10.2026).** FastAPI löst die Abhängigkeiten einer Route der
+Reihe nach und prüft die eigenen Pfad- und Query-Parameter der Route zuletzt; `mosaic_scenes` hätte
+deshalb für eine Anfrage mit falschem Format oder unbekannter `tileMatrixSetId` bis zu 64 Items geholt
+und danach `422` geantwortet. `_validate_before_fetching` löst dieselbe Route mit
+`fastapi.dependencies.utils.solve_dependencies` ohne `mosaic_scenes` (Pfad, Query, `bidx`, `rescale`,
+Zoomgrenzen des TileJSON …) und antwortet bei einem Fehler wie FastAPI mit `422`, bevor
+`fetch_items` läuft. Das ist eine Funktion aus dem Inneren von FastAPI (0.142); ein Wechsel der Version
+fällt an `TestNothingIsFetchedForARequestThatIsRefused` auf, der 14 ungültige Anfragen gegen die
+Abrufe der Quelle zählt (ohne die Prüfung scheitern 11 davon).
 
