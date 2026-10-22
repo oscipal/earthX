@@ -146,6 +146,10 @@ class EarthxTilerFactory(TilerFactory):
     # It is also the only grid the client asks for (`frontend/src/api.ts`).
     supported_tms: TileMatrixSets = TileMatrixSets({"WebMercatorQuad": morecantile.tms.get("WebMercatorQuad")})
 
+    def tilejson_extras(self, src_dst: BaseReader) -> dict[str, Any]:
+        """Fields a factory adds to its TileJSON beyond TiTiler's; none for the tiles of one item."""
+        return {}
+
     def statistics(self) -> None:
         """Register ``GET /statistics`` — the same answer as TiTiler's, with a cache.
 
@@ -315,6 +319,7 @@ class EarthxTilerFactory(TilerFactory):
                     body["band_descriptions"] = getattr(info, "band_descriptions", None)
                     body["data_type"] = getattr(info, "dtype", None)
                     body["minmax"] = getattr(info, "minmax", None)
+                    body.update(self.tilejson_extras(src_dst))
 
             return body
 

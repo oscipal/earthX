@@ -28,7 +28,13 @@ from rio_cogeo.profiles import cog_profiles
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 
 from earthx.access import mosaic_tiles
-from earthx.access.mosaic_tiles import MOSAIC_THREADS, EarthxMosaicTilerFactory, MosaicScenes, MosaicTileReader
+from earthx.access.mosaic_tiles import (
+    MOSAIC_THREADS,
+    EarthxMosaicTilerFactory,
+    MosaicBandsDiffer,
+    MosaicScenes,
+    MosaicTileReader,
+)
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import zarr_asset
 from tests.earthx.readers import mini_zarr
@@ -173,6 +179,24 @@ class TestOneSurfaceOverASceneBoundary:
             reader.tile(TILE.x, TILE.y, TILE.z)
 
 
+class TestScenesWithAnotherNumberOfBands:
+    def test_they_fail_the_tile_with_a_reason_of_their_own_and_not_in_a_failed_assert(self, tmp_path: Path) -> None:
+        one = _scene(tmp_path / "one.tif", SEAM_X - 4000.0, 4000.0, 100)  # half the tile: the other half is read too
+        plain, path = tmp_path / "two.plain.tif", tmp_path / "two.tif"
+        profile = {
+            "driver": "GTiff", "dtype": "uint8", "count": 2, "height": ROWS, "width": 800, "crs": ZONE_32,
+            "transform": from_origin(SEAM_X - 4000.0, TOP, 10.0, 10.0), "nodata": 0,
+        }  # fmt: skip
+        with rasterio.open(plain, "w", **profile) as destination:
+            destination.write(numpy.full((2, ROWS, 800), 200, dtype="uint8"))
+        cog_translate(plain, path, cog_profiles.get("deflate"), quiet=True)
+        two = AssetPath(str(path), dataset_id="synthetic", item_id="two", asset="red")
+        scenes = MosaicScenes("synthetic", (one, two), _bounds([one]))
+        with MosaicTileReader(scenes, tms=TMS) as reader, pytest.raises(MosaicBandsDiffer) as refused:
+            reader.tile(TILE.x, TILE.y, TILE.z)
+        assert refused.value.status_code == 422
+
+
 class TestZarrScenes:
     def test_zarr_scenes_make_a_mosaic_too_and_the_first_wins(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -269,6 +293,7 @@ class TestTheRoutes:
         assert (body["minzoom"], body["maxzoom"]) == (8, 14)
         assert "/tiles/WebMercatorQuad/{z}/{x}/{y}" in body["tiles"][0]
         assert "asset=red" in body["tiles"][0]
+        assert body["earthx:order"] == [west.item_id, east.item_id]
 
     def test_two_fresh_apps_answer_the_same_url_with_the_same_bytes(self, tmp_path: Path) -> None:
         west = _scene(tmp_path / "west.tif", SEAM_X - 4000.0, 5000.0, 100)

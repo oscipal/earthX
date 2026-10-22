@@ -35,16 +35,19 @@ bytes, which is what makes the answers cacheable in front of the process.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi.dependencies.utils import solve_dependencies
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
@@ -54,7 +57,7 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.crop_rules import MAX_JOB_BYTES
+from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
     RESOLUTION_FACTORS,
@@ -73,6 +76,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -89,6 +93,7 @@ from earthx.adapters import (
     AdapterSpecs,
     check_adapter_specs,
 )
+from earthx.api import mosaic_tiles
 from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
@@ -123,6 +128,9 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # metadata of that very item. The tiler answers under its own port (docker-compose),
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
+
+# The tiles of the scenes of one overpass read as one (M4-17b); the item ids are query parameters.
+MOSAIC_ROUTER_PREFIX = mosaic_tiles.ROUTER_PREFIX
 
 # Where the tiles of a job result begin (`result_tiles.ROUTER_PREFIX` up to its identifier).
 RESULT_PATH_START = "/results/"
@@ -567,6 +575,122 @@ def _open_reader(src_path: Any, **reader_params: Any) -> Any:
     if isinstance(src_path, OperatorInput):
         return _operator_support().reader(src_path, **reader_params)
     return open_asset(src_path, **reader_params)
+
+
+def _no_post_process() -> None:
+    """The mosaic tile has no post-processing: TiTiler's own ``algorithm`` parameters stay out of its schema."""
+    return None
+
+
+def _declared_query(request: Request) -> set[str]:
+    """The query parameters the matched route declares, its own and those of its dependencies."""
+
+    def names(dependant: Any) -> Iterator[str]:
+        yield from (parameter.alias for parameter in dependant.query_params)
+        for sub in dependant.dependencies:
+            yield from names(sub)
+
+    route = request.scope.get("route")
+    return set(names(route.dependant)) if route is not None else set()
+
+
+async def _validate_before_fetching(request: Request) -> None:
+    """Everything FastAPI would check of this request, before a single item is fetched.
+
+    FastAPI solves the dependencies of a route one after the other and checks the route's own path and
+    query parameters last, so the path dependency below would fetch up to 64 items for a request that is
+    refused afterwards for its format, its tile matrix set or a ``tilesize``. This runs the same solving
+    on the matched route without that dependency: the other dependencies (``bidx``, ``rescale``, the
+    zoom limits of a TileJSON …) and the route's own parameters are checked here, and a refusal is the
+    ``422`` FastAPI would have answered, with nothing asked of the source.
+    """
+    route = request.scope["route"]
+    dependant = dataclasses.replace(
+        route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call is not mosaic_scenes]
+    )
+    async with AsyncExitStack() as stack:
+        solved = await solve_dependencies(
+            request=request,
+            dependant=dependant,
+            dependency_overrides_provider=request.app,
+            async_exit_stack=stack,
+            embed_body_fields=False,
+        )
+    if solved.errors:
+        raise RequestValidationError(solved.errors)
+
+
+def _mosaic_zooms(config: DatasetConfig) -> tuple[int, int]:
+    """The levels a mosaic tile of this dataset serves: the released range, from z8 up (plan M4-17 §5).
+
+    ``501`` without a released range, ``400`` for a dataset released only below the first level a
+    mosaic starts at — both before any item is fetched.
+    """
+    if config.viewer is None:
+        raise HTTPException(
+            status_code=501, detail=f"{config.dataset_id!r} names no released zoom range (earthx:viewer)"
+        )
+    low, high = config.viewer.min_zoom, config.viewer.max_zoom
+    if high < mosaic_tiles.MIN_MOSAIC_ZOOM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{config.dataset_id!r} is released up to z{high}; mosaic tiles start at z{mosaic_tiles.MIN_MOSAIC_ZOOM}",
+        )
+    return max(low, mosaic_tiles.MIN_MOSAIC_ZOOM), high
+
+
+def _mosaic_zoom_range(request: Request) -> tuple[int, int]:
+    """The zoom range of a mosaic's TileJSON: what :func:`_mosaic_zooms` says for the dataset in the path."""
+    return _mosaic_zooms(_dataset_config(request.app.state, str(request.path_params.get("dataset"))))
+
+
+async def mosaic_scenes(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    item: Annotated[
+        list[str],
+        Query(default_factory=list, description="item ids of one overpass, each once; 2 to 64 of them"),
+    ],
+    asset: Annotated[list[str], Query(default_factory=list, description="asset key every scene is read from")],
+) -> MosaicScenes:
+    """Turn dataset, item ids and asset into the scenes a mosaic tile reads, in the order it reads them.
+
+    The path dependency of the mosaic route, in the order of plan M4-17 §4.2: everything that costs
+    no request first (licence, level, the shape of the query), then the items, then the rules that
+    need them — one overpass, the CRS of each scene, the scenes the tile touches — and last the
+    address of each scene through the gateway policy, as for the tile of one item. The target CRS and
+    the order come from the **whole** list, so a tile that touches only some scenes still picks the
+    scene the mosaic job over the same list picks (S5, `access.crop_rules.mosaic_order`).
+
+    A TileJSON names no tile and gets every scene, in the order a tile reads them.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    _check_zoom_released(request, config)
+    _mosaic_zooms(config)
+    viewer = config.viewer
+    assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
+    try:
+        grid = mosaic_tiles.mosaic_tile(request.path_params)
+        ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset)
+        await _validate_before_fetching(request)
+        if getattr(state, "earthx_cache_pool", None) is None:
+            raise OrderRefused(
+                503, "mosaic tiles need the item cache, and the catalogue database is not reachable", "items"
+            )
+        items = await mosaic_tiles.fetch_items(state.earthx_item_fetches, state.earthx_item_source, dataset, ids)
+        mosaic_tiles.check_one_overpass(items, viewer)
+        refs = {item_id: _resolve_ref(items[item_id], config=config, item=item_id, asset=asset[0]) for item_id in ids}
+        outlines = mosaic_tiles.footprints_of(items)
+        order = mosaic_order({item_id: ref.crs for item_id, ref in refs.items()})
+        read = order if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    scenes = tuple(
+        _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in read
+    )
+    return MosaicScenes(dataset, scenes, mosaic_tiles.union_bounds(outlines))
 
 
 #: On a `413` of the crop: whether the same selection fits an export job (M4-11 K5); M4-11b-2 reads it.
@@ -1027,6 +1151,19 @@ def build_app(
         name="tiles",
     )
     app.include_router(factory.router, prefix=ROUTER_PREFIX, tags=["Tiles"])
+    # The scenes of one overpass as one tile (M4-17b): the ids travel in the URL, the process keeps
+    # nothing but the item fetches that are running.
+    app.state.earthx_item_fetches = mosaic_tiles.ItemFetches()
+    mosaic_factory = EarthxMosaicTilerFactory(
+        path_dependency=mosaic_scenes,
+        layer_dependency=BidxParams,
+        process_dependency=_no_post_process,
+        environment_dependency=gdal_environment,
+        viewer_zoom_dependency=_mosaic_zoom_range,
+        router_prefix=MOSAIC_ROUTER_PREFIX,
+        name="mosaic-tiles",
+    )
+    app.include_router(mosaic_factory.router, prefix=MOSAIC_ROUTER_PREFIX, tags=["Mosaic tiles"])
     # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
     app.state.earthx_results = None
     app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
@@ -1117,10 +1254,12 @@ app = build_app()
 
 __all__ = [
     "DOWNLOAD_ROUTE",
+    "MOSAIC_ROUTER_PREFIX",
     "ROUTER_PREFIX",
     "DownloadRequest",
     "app",
     "build_app",
     "dataset_asset_path",
     "download_crop",
+    "mosaic_scenes",
 ]
