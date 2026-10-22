@@ -57,31 +57,23 @@ function focusedExpression(): HTMLTextAreaElement | null {
   return active instanceof HTMLTextAreaElement && active.dataset.bandTarget !== undefined ? active : null;
 }
 
-// "Load recipe…" (M4-19d): a `recipe.json` of the user's own, taken up as the steps
-// on the current selection or as the whole order. The file is read here, nothing
-// leaves the browser.
+// "Load recipe…" (M4-19d): the steps and the data type of a `recipe.json` of the user's
+// own, onto the current selection. The file is read here, nothing leaves the browser.
 function RecipeLoader() {
   const load = useProcessingStore((s) => s.loadRecipe);
-  const [text, setText] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const pick = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    setText(null);
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Pick a .json file.' });
     if (file.size > MAX_RECIPE_BYTES) return setOutcome({ ok: false, message: 'The file is larger than 1 MB.' });
-    setOutcome(null);
-    setText(await file.text());
-  };
-  const take = async (mode: 'steps' | 'everything') => {
-    if (text === null) return;
     setBusy(true);
-    const result = await load(text, mode);
+    setOutcome(null);
+    const result = await load(await file.text());
     setBusy(false);
-    setText(null);
     setOutcome(
       result.ok
         ? { ok: true, message: ['Recipe loaded.', ...result.notes].join(' ') }
@@ -91,23 +83,10 @@ function RecipeLoader() {
 
   return (
     <div className="pp-recipe">
-      <label className="link-btn" title="Take the steps or the whole order from a recipe.json">
-        Load recipe…
-        <input type="file" accept=".json,application/json" hidden onChange={(e) => void pick(e)} />
+      <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps and the data type from a recipe.json, onto the current selection">
+        ⬆ Load recipe…
+        <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
-      {text !== null && (
-        <span className="pp-recipe-modes">
-          <button type="button" className="link-btn" disabled={busy} title="Keep the selection, take the steps and the data type" onClick={() => void take('steps')}>
-            Steps only
-          </button>
-          <button type="button" className="link-btn" disabled={busy} title="Take dataset, scenes, area, steps and data type" onClick={() => void take('everything')}>
-            Everything
-          </button>
-          <button type="button" className="link-btn" disabled={busy} onClick={() => setText(null)}>
-            Cancel
-          </button>
-        </span>
-      )}
       {outcome && (
         <p className={outcome.ok ? 'pp-help' : 'hint-text error'} role="status">
           {outcome.message}

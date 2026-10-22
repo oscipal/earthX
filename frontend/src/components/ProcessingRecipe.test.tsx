@@ -23,7 +23,6 @@ declare global {
 const DATASET = 'sentinel-2-c1-l2a';
 const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 const AOI = bboxToPolygon([10.4, 50.4, 10.6, 50.6]);
-const FILE_AOI = bboxToPolygon([9, 47, 9.05, 47.05]);
 
 function scene(id: string): StacItem {
   return {
@@ -61,7 +60,6 @@ const recipe = (patch: Record<string, unknown> = {}) =>
   JSON.stringify({
     recipe_version: 1,
     inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A']], assets: ['red', 'nir'] }],
-    aoi: FILE_AOI,
     steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
     output: { kind: 'raster', format: 'cog', dtype: 'float32' },
     ...patch,
@@ -113,13 +111,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const load = (text: string, mode: 'steps' | 'everything') =>
-  act(() => useProcessingStore.getState().loadRecipe(text, mode));
+const load = (text: string) => act(() => useProcessingStore.getState().loadRecipe(text));
 const draft = () => useProcessingStore.getState();
 
-describe('loadRecipe, steps only', () => {
+describe('loadRecipe', () => {
   it('takes the steps and the data type and leaves the selection and the AOI alone', async () => {
-    const result = await load(recipe(), 'steps');
+    const result = await load(recipe());
     expect(result).toEqual({ ok: true, notes: [] });
     expect(draft().steps.map((s) => [s.op, s.values.expression])).toEqual([['band_math', '(nir - red) / (nir + red)']]);
     expect(draft().dtype).toBe('float32');
@@ -130,27 +127,27 @@ describe('loadRecipe, steps only', () => {
 
   it('loads a recipe with reproject v2, which the server still takes, as the listed version', async () => {
     const step = { op: 'reproject', op_version: 2, params: { crs: 'EPSG:3035', resolution: 30, resampling: 'bilinear' } };
-    const result = await load(recipe({ steps: [step] }), 'steps');
+    const result = await load(recipe({ steps: [step] }));
     expect(result).toEqual({ ok: true, notes: ['Step 1 (reproject): version 2 is taken as version 3.'] });
     expect(draft().steps.map((s) => [s.op, s.opVersion, s.values.resampling])).toEqual([['reproject', 3, 'bilinear']]);
   });
 
   it('replaces the steps that were there', async () => {
-    await load(recipe(), 'steps');
-    await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'nir' } }] }), 'steps');
+    await load(recipe());
+    await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'nir' } }] }));
     expect(draft().steps.map((s) => s.values.expression)).toEqual(['nir']);
   });
 
   it('says a band is not in the selection and does not order anything around', async () => {
-    const result = await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'swir / nir' } }] }), 'steps');
+    const result = await load(recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: 'swir / nir' } }] }));
     expect(result).toEqual({ ok: true, notes: ['Band swir is not in this selection.'] });
     expect(draft().steps[0].values.expression).toBe('swir / nir');
   });
 
   it('says "no steps" for the recipe of a crop, and keeps the draft', async () => {
-    await load(recipe(), 'steps');
+    await load(recipe());
     const output = { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' };
-    expect(await load(recipe({ steps: [], output }), 'steps')).toEqual({ ok: false, reason: 'This recipe has no steps.' });
+    expect(await load(recipe({ steps: [], output }))).toEqual({ ok: false, reason: 'This recipe has no steps.' });
     expect(draft().steps).toHaveLength(1);
   });
 
@@ -162,62 +159,14 @@ describe('loadRecipe, steps only', () => {
     ['parameters the form refuses', recipe({ steps: [{ op: 'band_math', op_version: 1, params: { expression: '' } }] }), /Required/u],
   ])('refuses %s and changes nothing', async (_name, text, reason) => {
     const before = draft().steps;
-    const result = await load(text, 'steps');
+    const result = await load(text);
     expect(result.ok).toBe(false);
     expect(!result.ok && result.reason).toMatch(reason);
     expect(draft().steps).toBe(before);
   });
 });
 
-describe('loadRecipe, everything', () => {
-  it('takes scenes (fetched, as they are not on screen), area, steps and data type', async () => {
-    expect(await load(recipe(), 'everything')).toEqual({ ok: true, notes: [] });
-    expect(useAppStore.getState().selectedIds).toEqual(['NEW_A']);
-    expect(useAppStore.getState().aoi).toEqual(FILE_AOI);
-    expect(draft().area).toBe('aoi');
-    expect(draft().extraScenes?.items.map((i) => i.id)).toEqual(['NEW_A']);
-    expect(draft().picked).toEqual(['red', 'nir']);
-    expect(draft().steps).toHaveLength(1);
-  });
-
-  it('is "Whole scene" for a recipe without an AOI, and leaves the AOI on the map', async () => {
-    const { aoi: _aoi, ...rest } = JSON.parse(recipe());
-    await load(JSON.stringify(rest), 'everything');
-    expect(draft().area).toBe('scene');
-    expect(useAppStore.getState().aoi).toBe(AOI);
-  });
-
-  it('takes the scenes of a crop and no steps', async () => {
-    const output = { kind: 'crop', format: 'cog', resolution_factor: 1, extent: 'bbox(aoi ∩ footprints)', mask: 'file' };
-    expect(await load(recipe({ steps: [], output }), 'everything')).toEqual({ ok: true, notes: [] });
-    expect(draft().steps).toEqual([]);
-    expect(draft().dtype).toBeNull();
-  });
-
-  it('names the scenes the source lacks and changes nothing of the draft', async () => {
-    const text = recipe({ inputs: [{ name: 'input', dataset: DATASET, groups: [['NEW_A', 'GONE_B']], assets: ['red'] }] });
-    const result = await load(text, 'everything');
-    expect(!result.ok && result.reason).toMatch(/GONE_B: not found in the catalog/u);
-    expect(draft().steps).toEqual([]);
-    expect(useAppStore.getState().aoi).toBe(AOI);
-  });
-
-  it('refuses a dataset this site does not list', async () => {
-    const text = recipe({ inputs: [{ name: 'input', dataset: 'unknown-set', groups: [['A']], assets: ['red'] }] });
-    expect(await load(text, 'everything')).toEqual({ ok: false, reason: 'Pick a dataset first.' });
-  });
-
-  it('refuses a dataset whose licence does not allow processing', async () => {
-    useAppStore.setState({
-      datasets: [{ ...option, collection: { ...option.collection, 'earthx:license_flags': { tier: 'view' } } as unknown as Collection }],
-    });
-    const result = await load(recipe(), 'everything');
-    expect(!result.ok && result.reason).toMatch(/does not allow processing/u);
-  });
-});
-
 describe('the "Load recipe…" control', () => {
-  const buttons = () => [...container.querySelectorAll('button')].map((b) => b.textContent?.trim());
   const input = () => container.querySelector('input[type="file"]') as HTMLInputElement;
   const pick = async (file: File) => {
     Object.defineProperty(input(), 'files', { value: [file], configurable: true });
@@ -231,15 +180,12 @@ describe('the "Load recipe…" control', () => {
     return file;
   };
 
-  it('offers "Steps only" and "Everything" once a file is picked, then takes the steps', async () => {
-    expect(buttons()).not.toContain('Steps only');
+  it('takes the steps as soon as a file is picked, and leaves selection and AOI alone', async () => {
     await pick(text(recipe()));
-    expect(buttons()).toEqual(expect.arrayContaining(['Steps only', 'Everything', 'Cancel']));
-    const steps = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Steps only')!;
-    await act(async () => steps.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(draft().steps).toHaveLength(1);
     expect(container.textContent).toContain('Recipe loaded.');
-    expect(buttons()).not.toContain('Steps only');
+    expect(useAppStore.getState().aoi).toBe(AOI);
+    expect(useAppStore.getState().selectedIds).toEqual([stored.id]);
   });
 
   it('says why a file is turned away before reading it', async () => {
@@ -248,13 +194,12 @@ describe('the "Load recipe…" control', () => {
     const big = new File([new Uint8Array(1_048_577)], 'big.json');
     await pick(big);
     expect(container.textContent).toContain('The file is larger than 1 MB.');
-    expect(buttons()).not.toContain('Steps only');
   });
 
-  it('shows the reason a recipe is refused', async () => {
+  it('shows the reason a recipe is refused, and keeps the draft', async () => {
+    await pick(text(recipe()));
     await pick(text('{'));
-    const everything = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Everything')!;
-    await act(async () => everything.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(container.textContent).toContain('The file is not valid JSON.');
+    expect(draft().steps).toHaveLength(1);
   });
 });

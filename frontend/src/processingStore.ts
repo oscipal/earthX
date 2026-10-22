@@ -254,7 +254,7 @@ interface ProcessingState {
   removeStep: (key: number) => void;
   togglePick: (asset: string) => void;
   setDtype: (dtype: string) => void;
-  loadRecipe: (text: string, mode: LoadMode) => Promise<LoadResult>;
+  loadRecipe: (text: string) => Promise<LoadResult>;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (order: Order, options?: { aoiProvenance?: AoiProvenance }) => Promise<{ jobID: string } | { message: string }>;
@@ -263,8 +263,7 @@ interface ProcessingState {
   resumeJobs: () => void;
 }
 
-// "Load recipe…" (M4-19d): the steps on the current selection, or the whole recipe.
-export type LoadMode = 'steps' | 'everything';
+// "Load recipe…" (M4-19d): the steps of a recipe on the current selection.
 export type LoadResult = { ok: true; notes: string[] } | { ok: false; reason: string };
 
 // --- the order as the panel sees it --------------------------------------------
@@ -951,24 +950,17 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       })),
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
 
-    // "Load recipe…": a `recipe.json` becomes the draft. "Steps only" keeps the selection
-    // and takes the steps and the data type; "Everything" makes the recipe's dataset,
-    // scenes and area the selection first. Nothing is changed unless the recipe is taken
-    // up as a whole; what cannot be checked here (band names of another dataset) comes
-    // back as notes, the server decides on the order.
-    loadRecipe: async (text, mode) => {
+    // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
+    // current selection, which stays as it is. Nothing is changed unless the recipe is taken up
+    // as a whole; what cannot be checked here (band names of another dataset) comes back as
+    // notes, the server decides on the order.
+    loadRecipe: async (text) => {
       const read = readRecipe(text);
       if (!read.ok) return { ok: false, reason: read.reason };
       const { order } = read;
-      const app = useAppStore.getState();
-      const datasetId = mode === 'steps' ? app.datasetId : order.inputs[0].dataset;
+      const datasetId = useAppStore.getState().datasetId;
       if (!datasetId) return { ok: false, reason: 'Pick a dataset first.' };
-      if (mode === 'steps' && order.steps.length === 0) return { ok: false, reason: 'This recipe has no steps.' };
-      const dataset = app.datasets.find((d) => d.id === datasetId);
-      if (mode === 'everything') {
-        const block = processBlockReason(dataset, order.inputs[0].groups.flat().length);
-        if (block) return { ok: false, reason: block };
-      }
+      if (order.steps.length === 0) return { ok: false, reason: 'This recipe has no steps.' };
       get().ensureDescription(datasetId);
       const description = await new Promise<Description | undefined>((resolve) => {
         const settled = (s: ProcessingState) => (s.descriptions[datasetId]?.state === 'loading' ? undefined : s.descriptions[datasetId]);
@@ -990,28 +982,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
       abortEstimate();
       startGeneration += 1;
-      if (mode === 'steps') {
-        set({ steps: draft.steps, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
-        const known = new Set(orderView(selectionState(useAppStore.getState()), get()).sources.flatMap((source) => source.names));
-        const missing = new Set(
-          bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)].filter((name) => known.size > 0 && !known.has(name))),
-        );
-        for (const name of missing) notes.push(`Band ${name} is not in this selection.`);
-        return { ok: true, notes };
-      }
-      useAppStore.setState({ datasetId, selectedDatasetIds: [datasetId] });
-      const extraScenes = await selectScenes(draft.groups.flat(), 'this recipe');
-      if (!extraScenes) return { ok: false, reason: useAppStore.getState().error ?? 'The scenes could not be loaded.' };
-      if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
-      set({
-        ...EMPTY_DRAFT,
-        open: true,
-        area: draft.aoi ? 'aoi' : 'scene',
-        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
-        steps: draft.steps,
-        picked: draft.assets,
-        dtype,
-      });
+      set({ steps: draft.steps, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
+      const known = new Set(orderView(selectionState(useAppStore.getState()), get()).sources.flatMap((source) => source.names));
+      const missing = new Set(
+        bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)].filter((name) => known.size > 0 && !known.has(name))),
+      );
+      for (const name of missing) notes.push(`Band ${name} is not in this selection.`);
       return { ok: true, notes };
     },
 

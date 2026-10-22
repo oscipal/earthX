@@ -1825,18 +1825,25 @@ input[type='date']:focus {
 }
 .pp-recipe {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  padding: 2px 0;
-  font-size: 11px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
 }
-.pp-recipe label.link-btn {
-  cursor: pointer;
+.pp-recipe-btn {
+  display: block;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-color: var(--accent, var(--panel-border));
+}
+.pp-recipe-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .pp-recipe p {
-  flex-basis: 100%;
   margin: 0;
+  font-size: 11px;
 }
 .pp-options {
   margin: 0;

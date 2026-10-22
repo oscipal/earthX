@@ -592,3 +592,7 @@ nach §4 und der Reihenfolge dort.
   höhere Fassung, wenn seine Parameter deren Formular bestehen, und sagt es in einem Hinweis. Das ist
   verlustfrei für reproject (v2 ist v3 mit engerer Methodenliste, `REPROJECT_V2`). Eine Fassung über der
   gelisteten bleibt „not available“. Vor dieser Änderung wurde ein v2-Rezept abgewiesen.
+- **Nur „Steps only“ (Otto, 22.10.2026):** „Everything“ ist aus Panel und Store entfernt, weil es AOI, Auswahl
+  und Ergebnisliste auf der Karte ersetzte. „Load recipe…“ (große Schaltfläche) lädt nach der Dateiwahl sofort
+  die Schritte und den Datentyp. Die Festlegungen zu mehreren Gruppen und fehlender AOI betreffen damit nur
+  noch den Permalink (M4-19e); ein Zuschnitt-Rezept ohne Schritte meldet „This recipe has no steps.“
