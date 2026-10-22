@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { fullResolutionLayers, layersOnMap } from './searchLayers';
+import { mosaicTemplateOf } from './mosaic';
+import type { Mosaics } from './mosaic';
+import { cropPasses, fullResolutionLayers, layersOnMap } from './searchLayers';
 import { buildSections } from './sections';
 import type { Collection, StacItem } from './types';
 
@@ -99,6 +101,79 @@ describe('fullResolutionLayers', () => {
     const layers = fullResolutionLayers(dataset, section, AOI, 'x');
     expect(layers).toHaveLength(1);
     expect(layers[0].restore.itemIds).toEqual(['b']);
+  });
+
+  // M4-17c: the tiles of a group of several scenes (the DEM over an AOI) are one mosaic.
+  describe('with the mosaics of its groups', () => {
+    const SAME_DAY = '2011-01-01T00:00:00Z';
+    const twoTiles = () => sectionFor(DEM, [tile('a', SAME_DAY), tile('b', SAME_DAY)]);
+    const mosaicOf = (section: ReturnType<typeof sectionFor>['section'], order = ['a', 'b']): Mosaics => {
+      const entries = cropPasses([twoTiles().dataset], [section])[0].entries;
+      const tileUrl = mosaicTemplateOf('dem', entries) as string;
+      return { [tileUrl]: { tileUrl, bounds: [9, 46, 12, 49], minZoom: 8, maxZoom: 15, order } };
+    };
+    const rasters = (layer: { overlays: ReturnType<typeof fullResolutionLayers>[number]['overlays'] }) =>
+      layer.overlays.map((o) => {
+        if (o.kind !== 'raster') throw new Error('expected a raster overlay');
+        return o;
+      });
+
+    it('is one mosaic overlay under the two scenes that step aside from z8, all clipped', () => {
+      const { dataset, section } = twoTiles();
+      const [layer] = fullResolutionLayers(dataset, section, AOI, 'x', mosaicOf(section));
+      const overlays = rasters(layer);
+      expect(overlays).toHaveLength(3);
+      expect(overlays.every((o) => o.tileUrl.startsWith('earthx-clip://'))).toBe(true);
+      expect(overlays.slice(0, 2).map((o) => [o.maxZoom, o.hideFrom])).toEqual([[7, 6.5], [7, 6.5]]);
+      expect(overlays[2].tileUrl).toContain('/collections/dem/mosaic/tiles/');
+      expect(overlays[2].tileUrl).toContain('colormap_name=terrain');
+      expect([overlays[2].minZoom, overlays[2].maxZoom, overlays[2].hideFrom]).toEqual([8, 15, undefined]);
+      expect(layer.restore.itemIds.sort()).toEqual(['a', 'b']);
+    });
+
+    it('stacks the scenes in the order the mosaic reads them, the first on top', () => {
+      const { dataset, section } = twoTiles();
+      const [layer] = fullResolutionLayers(dataset, section, AOI, 'x', mosaicOf(section, ['b', 'a']));
+      const [bottom, top] = rasters(layer);
+      expect(bottom.tileUrl).toContain('/items/a/');
+      expect(top.tileUrl).toContain('/items/b/');
+    });
+
+    it('is drawn scene by scene until the mosaic has loaded, and when it was refused', () => {
+      const { dataset, section } = twoTiles();
+      for (const mosaics of [undefined, {}, Object.fromEntries(Object.keys(mosaicOf(section)).map((k) => [k, null]))]) {
+        const [layer] = fullResolutionLayers(dataset, section, AOI, 'x', mosaics);
+        const overlays = rasters(layer);
+        expect(overlays).toHaveLength(2);
+        expect(overlays.every((o) => o.hideFrom === undefined && o.tileUrl.includes('/items/'))).toBe(true);
+      }
+    });
+
+    it('leaves a group of one scene a scene', () => {
+      const { dataset, section } = sectionFor(DEM, [tile('a', SAME_DAY)]);
+      const [layer] = fullResolutionLayers(dataset, section, AOI, 'x', {});
+      expect(rasters(layer)).toHaveLength(1);
+    });
+  });
+
+  describe('cropPasses', () => {
+    it('names the scenes of each group of a dataset with no preview, by group', () => {
+      const { dataset, section } = sectionFor(DEM, [
+        tile('a', '2011-01-01T00:00:00Z'),
+        tile('b', '2011-01-01T00:00:00Z'),
+        tile('c', '2012-06-01T00:00:00Z'),
+      ]);
+      const passes = cropPasses([dataset], [section]);
+      expect(passes.map((p) => p.entries.map(([id]) => id).sort())).toEqual([['c'], ['a', 'b']]);
+      expect(passes.every((p) => p.datasetId === 'dem')).toBe(true);
+    });
+
+    it('names nothing for a dataset that has a quicklook to show first, or no standard visualisation', () => {
+      const quicklook = sectionFor({ ...DEM, 'earthx:viewer': { ...DEM['earthx:viewer']!, browse: 'quicklook' } }, [tile('a', '2011-01-01T00:00:00Z')]);
+      expect(cropPasses([quicklook.dataset], [quicklook.section])).toEqual([]);
+      const bare = sectionFor({ ...DEM, 'earthx:default_render': null }, [tile('a', '2011-01-01T00:00:00Z')]);
+      expect(cropPasses([bare.dataset], [bare.section])).toEqual([]);
+    });
   });
 
   it('pins nothing for a dataset that names no standard visualisation', () => {

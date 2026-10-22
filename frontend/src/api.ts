@@ -327,6 +327,67 @@ export function buildTileTemplate(datasetId: string, itemId: string, asset: stri
   return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
 }
 
+// One pass as a single surface (M4-17, `adr/0006` §5 "Zu Frage 4"): the scenes
+// stand in the URL, one `item` each and sorted by id, so the same selection is the
+// same URL (plan KE5). The order the tiler reads them in is its own (`mosaic_order`,
+// S5) and the URL's order does not count. Never a search id and never an AOI.
+function mosaicQuery(itemIds: readonly string[], asset: string): string {
+  const params = new URLSearchParams();
+  for (const id of [...itemIds].sort()) params.append('item', id);
+  params.set('asset', asset);
+  return params.toString();
+}
+
+const mosaicBase = (datasetId: string) => `${BASE}/collections/${encodeURIComponent(datasetId)}/mosaic`;
+
+export function buildMosaicTileTemplate(datasetId: string, itemIds: readonly string[], asset: string): string {
+  return `${mosaicBase(datasetId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${mosaicQuery(itemIds, asset)}`;
+}
+
+// What the client reads of a mosaic's TileJSON: the surface (`bounds`), the levels it
+// serves, and `earthx:order` — the scene ids in the order a tile reads them, which the
+// map below the first level stacks single scenes by.
+export interface MosaicTileJson {
+  bounds: Bbox;
+  minzoom: number;
+  maxzoom: number;
+  order: string[];
+}
+
+const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+// A cold mosaic of 64 scenes is about 5 s (plan §2.8); a time step waits for its TileJSON and draws
+// nothing meanwhile, so an answer that never comes must end in an error, not in a map that stays empty.
+export const MOSAIC_TILEJSON_TIMEOUT_MS = 60_000;
+
+// Loading it also fills the tiler's item cache with every scene of the mosaic once,
+// so the tiles that follow find them there (plan §4.3) — which is why the map asks
+// for it before it asks for a single tile.
+export async function fetchMosaicTileJson(
+  datasetId: string,
+  itemIds: readonly string[],
+  asset: string,
+): Promise<MosaicTileJson> {
+  const url = `${mosaicBase(datasetId)}/${TILE_MATRIX_SET}/tilejson.json?${mosaicQuery(itemIds, asset)}`;
+  const body = await jsonOrThrow<Record<string, unknown>>(
+    await fetch(url, { signal: AbortSignal.timeout(MOSAIC_TILEJSON_TIMEOUT_MS) }),
+  );
+  const { bounds, minzoom, maxzoom } = body;
+  const order = body['earthx:order'];
+  if (
+    !Array.isArray(bounds) ||
+    bounds.length !== 4 ||
+    !bounds.every(isNumber) ||
+    !isNumber(minzoom) ||
+    !isNumber(maxzoom) ||
+    !Array.isArray(order) ||
+    !order.every((id) => typeof id === 'string')
+  ) {
+    throw new Error('The tile server sent a mosaic description this page cannot read.');
+  }
+  return { bounds: bounds as Bbox, minzoom, maxzoom, order };
+}
+
 // The tile template of an operator (T1, adr/0014 §6.2): the assets the operator
 // reads — one `asset` each, in the order of the order — and `op`, `op_version`
 // and `params` as the tiler takes them. `paramsJson` is canonical JSON

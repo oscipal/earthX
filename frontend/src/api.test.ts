@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildMosaicTileTemplate,
   buildSearchBody,
   buildStatisticsUrl,
   buildTileTemplate,
   downloadCrop,
   errorDetail,
   fetchItem,
+  fetchMosaicTileJson,
   HttpError,
   nextTokenFrom,
   searchAllPages,
@@ -595,5 +597,75 @@ describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () 
   it('hands back no token once the result is complete', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ features: [{ id: 'a' }], numberReturned: 1 })));
     expect((await searchAllPages({ collections: ['x'] }, 300)).nextToken).toBeNull();
+  });
+});
+
+describe('the mosaic of a time step (M4-17)', () => {
+  it('names the scenes in the URL, sorted, with the asset and the tile placeholders', () => {
+    const template = buildMosaicTileTemplate('sentinel-2-c1-l2a', ['S2B_2', 'S2A_1', 'S2A_3'], 'visual');
+    expect(template.startsWith('/collections/sentinel-2-c1-l2a/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}?')).toBe(true);
+    const params = new URL(template, 'http://localhost').searchParams;
+    expect(params.getAll('item')).toEqual(['S2A_1', 'S2A_3', 'S2B_2']);
+    expect(params.getAll('asset')).toEqual(['visual']);
+  });
+
+  it('is one URL for one selection, whatever order it was made in', () => {
+    expect(buildMosaicTileTemplate('d', ['b', 'a'], 'x')).toBe(buildMosaicTileTemplate('d', ['a', 'b'], 'x'));
+  });
+
+  it('carries no area, and escapes what it is given', () => {
+    const template = buildMosaicTileTemplate('a b', ['x&y=1', 'z/../w'], 'SR_10m:b04,b03');
+    expect(template).toContain('/collections/a%20b/mosaic/');
+    const params = new URL(template, 'http://localhost').searchParams;
+    expect(params.getAll('item')).toEqual(['x&y=1', 'z/../w']);
+    expect([...params.keys()].sort()).toEqual(['asset', 'item', 'item']);
+  });
+});
+
+describe('fetchMosaicTileJson', () => {
+  function jsonResponse(status: number, body: unknown): Response {
+    return { ok: status >= 200 && status < 300, status, statusText: '', json: async () => body } as Response;
+  }
+
+  const TILEJSON = {
+    bounds: [10, 47, 12, 48],
+    minzoom: 8,
+    maxzoom: 19,
+    tiles: ['http://internal-host/tiles'],
+    'earthx:order': ['B', 'A'],
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('asks the TileJSON route with the same query as the tiles, and reads surface, levels and order', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, TILEJSON)));
+    const json = await fetchMosaicTileJson('sentinel-2-c1-l2a', ['B', 'A'], 'visual');
+    const url = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(url).toBe('/collections/sentinel-2-c1-l2a/mosaic/WebMercatorQuad/tilejson.json?item=A&item=B&asset=visual');
+    const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal); // it ends on its own if the tiler never answers
+    expect(json).toEqual({ bounds: [10, 47, 12, 48], minzoom: 8, maxzoom: 19, order: ['B', 'A'] });
+  });
+
+  it.each([
+    ['a refused mosaic', 422, { detail: 'the items are of different passes' }, 'the items are of different passes'],
+    ['a missing item cache', 503, { detail: 'mosaic tiles need the item cache' }, 'mosaic tiles need the item cache'],
+  ])('throws the tiler\'s reason for %s', async (_name, status, body, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(status, body)));
+    await expect(fetchMosaicTileJson('d', ['A', 'B'], 'visual')).rejects.toMatchObject({ status, message });
+  });
+
+  it.each([
+    ['no order', { ...TILEJSON, 'earthx:order': undefined }],
+    ['an order of numbers', { ...TILEJSON, 'earthx:order': [1, 2] }],
+    ['a short surface', { ...TILEJSON, bounds: [10, 47] }],
+    ['a surface of text', { ...TILEJSON, bounds: ['a', 'b', 'c', 'd'] }],
+    ['no first level', { ...TILEJSON, minzoom: undefined }],
+    ['an infinite last level', { ...TILEJSON, maxzoom: Number.POSITIVE_INFINITY }],
+  ])('refuses an answer with %s rather than drawing from it', async (_name, body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, body)));
+    await expect(fetchMosaicTileJson('d', ['A', 'B'], 'visual')).rejects.toThrow(/cannot read/);
   });
 });

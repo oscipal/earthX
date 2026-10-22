@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { buildMosaicTileTemplate } from './api';
 import { datasetsFrom } from './datasets';
 import { useAppStore } from './store';
 import type { Collection, StacItem } from './types';
@@ -160,6 +161,9 @@ describe('addCurrentToLayers while cropped in focus mode (M3-09 §10)', () => {
       cropToAoi: true,
       appliedRender: {},
       downloaded: { S1: focusedDownload('S1'), S2: focusedDownload('S2'), S3: focusedDownload('S3') },
+      // The tiler refused the mosaic of S1 and S2, so they are pinned scene by scene; what a
+      // loaded mosaic pins is in `store.mosaic.test.ts`.
+      mosaics: { [buildMosaicTileTemplate(COG_LIKE.id, ['S1', 'S2'], 'visual')]: null },
       layers: [],
       error: null,
       notice: null,

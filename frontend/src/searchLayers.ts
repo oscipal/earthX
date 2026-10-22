@@ -8,13 +8,73 @@ import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
-import type { MapLayer } from './layers';
+import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl } from './mapLayers';
+import { viewOfPass } from './mosaic';
+import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { appliedRenderFrom } from './render';
 import type { ResultSection } from './sections';
-import type { DownloadedInfo } from './types';
+import type { AppliedRender, TimeStepGroup } from './types';
 
 type ViewableDataset = Extract<DatasetOption, { viewable: true }>;
+
+const rasterOverlay = (raster: PlannedRaster, render: AppliedRender, clip: GeoJSON.Geometry | null): LayerOverlay => ({
+  kind: 'raster',
+  tileUrl: clipTileUrl(buildTileUrl(raster.tileUrl, render), clip),
+  bounds: raster.bounds,
+  minZoom: raster.minZoom,
+  maxZoom: raster.maxZoom,
+  ...(raster.hideFrom === undefined ? {} : { hideFrom: raster.hideFrom }),
+});
+
+// The overlays one pass is pinned or cropped as: its mosaic and the scenes below the mosaic's first
+// level, else one raster per scene (`mosaic.ts`). `null` while the pass's mosaic is on its way — a
+// pinned layer is a picture and is not made from half of one.
+export function overlaysOfPass(
+  datasetId: string,
+  entries: SceneEntry[],
+  mosaics: Mosaics | undefined,
+  render: AppliedRender,
+  clip: GeoJSON.Geometry | null,
+): LayerOverlay[] | null {
+  const view = viewOfPass(datasetId, entries, mosaics);
+  if (view.kind === 'pending') return null;
+  const rasters = view.kind === 'mosaic' ? view.rasters : entries.map(([, info]) => info);
+  return rasters.map((raster) => rasterOverlay(raster, render, clip));
+}
+
+// The scenes of a group the dataset can draw: those with a bounding box, in the tile URL of its
+// standard visualisation.
+function groupEntries(dataset: ViewableDataset, asset: string, group: TimeStepGroup): SceneEntry[] {
+  const entries: SceneEntry[] = [];
+  for (const item of group.items) {
+    if (!item.bbox) continue;
+    entries.push([
+      item.id,
+      {
+        tileUrl: buildTileTemplate(dataset.id, item.id, asset),
+        bounds: item.bbox,
+        asset,
+        minZoom: dataset.zoom.min,
+        maxZoom: dataset.zoom.max,
+      },
+    ]);
+  }
+  return entries;
+}
+
+// The passes of the AOI crops of these sections that a mosaic can draw, for the store to load.
+export function cropPasses(
+  datasets: readonly ViewableDataset[],
+  sections: readonly ResultSection[],
+): { datasetId: string; entries: SceneEntry[] }[] {
+  return datasets.flatMap((dataset) => {
+    const section = sections.find((x) => x.datasetId === dataset.id);
+    const asset = defaultRenderOf(dataset.collection)?.assets[0];
+    if (dataset.browse !== 'full_resolution' || !section || !asset) return [];
+    return section.groups.map((group) => ({ datasetId: dataset.id, entries: groupEntries(dataset, asset, group) }));
+  });
+}
 
 // One layer per time-step group of the section, like "Crop & merge to AOI" pins
 // them (M3-09 §10): each carries its own overlays and downloads as one file.
@@ -24,6 +84,8 @@ export function fullResolutionLayers(
   section: ResultSection,
   aoi: GeoJSON.Geometry,
   batchId: string,
+  // What the mosaics of its groups look like once they have loaded. Until then a group is drawn scene by scene.
+  mosaics?: Mosaics,
 ): MapLayer[] {
   const render = defaultRenderOf(dataset.collection);
   const asset = render?.assets[0];
@@ -31,31 +93,17 @@ export function fullResolutionLayers(
   const applied = appliedRenderFrom(render);
   const layers: MapLayer[] = [];
   section.groups.forEach((group, groupIndex) => {
-    const downloaded: Record<string, DownloadedInfo> = {};
-    for (const item of group.items) {
-      if (!item.bbox) continue;
-      downloaded[item.id] = {
-        tileUrl: buildTileTemplate(dataset.id, item.id, asset),
-        bounds: item.bbox,
-        asset,
-        minZoom: dataset.zoom.min,
-        maxZoom: dataset.zoom.max,
-      };
-    }
+    const entries = groupEntries(dataset, asset, group);
+    if (entries.length === 0) return;
+    const downloaded = Object.fromEntries(entries);
     const itemIds = Object.keys(downloaded);
-    if (itemIds.length === 0) return;
     layers.push({
       id: `S${batchId}${layers.length}-${dataset.id}`,
       name: `${dataset.title} · ${group.label}`,
       visible: true,
       opacity: 1,
-      overlays: Object.values(downloaded).map((info) => ({
-        kind: 'raster' as const,
-        tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, applied), aoi),
-        bounds: info.bounds,
-        minZoom: info.minZoom,
-        maxZoom: info.maxZoom,
-      })),
+      overlays:
+        overlaysOfPass(dataset.id, entries, mosaics, applied, aoi) ?? overlaysOfPass(dataset.id, entries, undefined, applied, aoi) ?? [],
       restore: {
         focusMode: true,
         downloaded,
