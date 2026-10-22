@@ -1903,6 +1903,10 @@ input[type='date']:focus {
   border-color: var(--accent);
   color: var(--accent);
 }
+/* The unit of a band after its name (M4-19b): present, but quieter than the name. */
+.pp-chip-unit {
+  opacity: 0.7;
+}
 .pp-steps,
 .pp-jobs {
   margin: 0;

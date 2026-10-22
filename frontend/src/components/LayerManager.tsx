@@ -79,7 +79,7 @@ export default function LayerManager() {
               const downloadOutcome = decideDownloadOutcomeForLayer(l, datasets);
               const processBlock = layerProcessBlock(l, datasets);
               return (
-              <li key={l.id} className={`layer-row${l.result?.expired || l.result?.resampled ? ' layer-row-noted' : ''}`}>
+              <li key={l.id} className={`layer-row${l.result?.expired || l.result?.resampled || l.result?.unit ? ' layer-row-noted' : ''}`}>
                 <button
                   type="button"
                   className={`lm-eye${l.visible ? '' : ' off'}`}
@@ -160,6 +160,7 @@ export default function LayerManager() {
                 </button>
                 {l.result?.expired && <span className="lm-note hint-text warn">{EXPIRED_LAYER_TEXT}</span>}
                 {l.result?.resampled === true && <span className="lm-note hint-text warn">{RESAMPLED_LAYER_TEXT}</span>}
+                {l.result?.unit && <span className="lm-note hint-text">Values in {l.result.unit}</span>}
               </li>
               );
             })}

@@ -12,6 +12,7 @@ import {
   resultRender,
   resultStats,
   resultTileTemplate,
+  resultUnit,
   tilesHref,
 } from './resultLayer';
 
@@ -121,6 +122,32 @@ describe('the statistics of a result', () => {
       { minimum: null, maximum: null, percentile2: null, percentile98: null },
       { minimum: 100, maximum: 2400, percentile2: 180, percentile98: 1900 },
     ]);
+  });
+});
+
+describe('the unit of a result (M4-19b)', () => {
+  const bands = (...units: unknown[]) => ({ bands: units.map((unit) => (unit === undefined ? { name: 'b' } : { name: 'b', unit })) });
+
+  it('is the unit its band states', () => {
+    expect(resultUnit(bands('m'))).toBe('m');
+  });
+
+  it('is the unit all bands state when they agree', () => {
+    expect(resultUnit(bands('1', '1', '1'))).toBe('1');
+  });
+
+  it('is none where the bands differ, or one of them states none', () => {
+    expect(resultUnit(bands('1', 'm'))).toBeNull();
+    expect(resultUnit(bands('1', undefined))).toBeNull();
+    expect(resultUnit(bands(undefined))).toBeNull();
+  });
+
+  it.each([5, '', ['m'], { symbol: 'm' }, null])('does not take %j for a unit', (unit) => {
+    expect(resultUnit(bands(unit))).toBeNull();
+  });
+
+  it.each([undefined, {}, { bands: [] }, { bands: 'm' }, { bands: [null] }])('has none from %j', (properties) => {
+    expect(resultUnit(properties as never)).toBeNull();
   });
 });
 

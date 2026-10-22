@@ -99,6 +99,10 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
 export interface BandSource {
   asset: string;
   names: string[];
+  // The unit of each of `names`, in step with them (the item's own, else the registry's); `unit` is the one of an
+  // asset with no names. `null` where nobody states one (M4-19b).
+  units: Array<string | null>;
+  unit: string | null;
   dataType: string | null;
   // What the item says about the values, for the output type in
   // `processingDefaults.ts`; `false`/`null` mean "the item does not say".
@@ -129,6 +133,26 @@ function bandFacts(asset: StacAsset): Pick<BandSource, 'scaled' | 'nodata'> {
   return { scaled, nodata };
 }
 
+// The registry's unit for an asset key (`earthx:band_units`): the exact key, else a key with a `*` that matches. The
+// same lookup as `DatasetConfig.band_unit`.
+export function registryUnit(collection: Collection | undefined, key: string): string | null {
+  const units = collection?.['earthx:band_units'];
+  if (!isObject(units)) return null;
+  const entry = (value: unknown) => (typeof value === 'string' && value ? value : null);
+  if (Object.hasOwn(units, key)) return entry(units[key]);
+  for (const [pattern, unit] of Object.entries(units)) {
+    if (!pattern.includes('*')) continue;
+    const parts = pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, '\\$&'));
+    if (new RegExp(`^${parts.join('.*')}$`, 'su').test(key)) return entry(unit);
+  }
+  return null;
+}
+
+// The unit an item states for one of its bands, if it does.
+function itemUnit(band: StacBand | undefined): string | null {
+  return band && typeof band.unit === 'string' && band.unit ? band.unit : null;
+}
+
 function firstDataType(asset: StacAsset): string | null {
   const first = bandsOf(asset)?.[0];
   return first && typeof first.data_type === 'string' ? first.data_type : null;
@@ -144,23 +168,34 @@ function isGeoTiff(asset: StacAsset): boolean {
 // in the STAC core field `bands`, as `<asset><separator><variable>` — none
 // without a separator (F9) and none for an asset that names no variables
 // (nothing guessed; Otto 10.10.2026).
-export function bandSources(item: StacItem, format: string | null | undefined, separator: string | null): BandSource[] {
+export function bandSources(
+  item: StacItem,
+  format: string | null | undefined,
+  separator: string | null,
+  collection?: Collection,
+): BandSource[] {
   const sources: BandSource[] = [];
   for (const [key, asset] of Object.entries(item.assets ?? {})) {
     if (format === 'cog') {
       if (!isGeoTiff(asset)) continue;
       const count = bandCount(asset);
       const names = count === null ? [] : count === 1 ? [key] : Array.from({ length: count }, (_, i) => `${key}_${i + 1}`);
-      sources.push({ asset: key, names, dataType: firstDataType(asset), ...bandFacts(asset) });
+      const registry = registryUnit(collection, key);
+      const described = bandsOf(asset);
+      const units = names.map((_, i) => itemUnit(described?.[i]) ?? registry);
+      sources.push({ asset: key, names, units, unit: registry, dataType: firstDataType(asset), ...bandFacts(asset) });
     } else if (format === 'zarr') {
       const bands = asset.bands;
       if (!separator || !Array.isArray(bands)) continue;
       const dataType = firstDataType(asset);
       for (const band of bands) {
         if (band && typeof band.name === 'string' && band.name) {
+          const unit = itemUnit(band) ?? registryUnit(collection, `${key}${separator}${band.name}`);
           sources.push({
             asset: `${key}${separator}${band.name}`,
             names: [band.name],
+            units: [unit],
+            unit,
             dataType,
             ...bandFacts(asset),
           });

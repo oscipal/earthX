@@ -42,6 +42,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     title: 'Band math · Sentinel-2 L2A',
     tiles: { href: HREF, width: 1000, gsd: 10 },
     statistics: null,
+    unit: null,
     range: null,
     ...over,
   };
@@ -160,7 +161,7 @@ describe('the layer a result becomes', () => {
     expect(layer.name).toBe('Result · Band math');
     expect(layer.derived).toBe('result');
     expect(layer.visible).toBe(true);
-    expect(layer.result).toEqual({ jobID: JOB, expires: expect.any(String), gsd: 10, resampled: false, expired: false });
+    expect(layer.result).toEqual({ jobID: JOB, expires: expect.any(String), gsd: 10, resampled: false, unit: null, expired: false });
     expect(layer.overlays).toEqual([
       {
         kind: 'raster',
@@ -362,6 +363,23 @@ describe('the layer a result becomes', () => {
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
     expect(button('⚙')?.disabled).toBe(true);
     expect(button('⇩')).toBeUndefined();
+  });
+
+  it('says in its row which unit the values of the result are in', async () => {
+    useProcessingStore.setState({ jobs: [entry({ unit: 'm' })] });
+    await showOnMap();
+    expect(layers()[0].result?.unit).toBe('m');
+    act(() => root.render(<LayerManager />));
+    expect(container.querySelector('.lm-note')?.textContent).toBe('Values in m');
+    expect(container.querySelector('.layer-row-noted')).not.toBeNull();
+  });
+
+  it('says nothing of a unit where the result states none', async () => {
+    await showOnMap();
+    expect(layers()[0].result?.unit).toBeNull();
+    act(() => root.render(<LayerManager />));
+    expect(container.textContent).not.toContain('Values in');
+    expect(container.querySelector('.layer-row-noted')).toBeNull();
   });
 
   it('says in its row that the result was resampled to a common grid', async () => {
