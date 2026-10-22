@@ -550,7 +550,7 @@ nach §4 und der Reihenfolge dort.
 ## 10. Umsetzung M4-19a (20.10.2026)
 
 - **Methodentext:** `processing/methods.py` (`methods_text`, `DatasetFacts`), `Operator.method` für
-  `band_math` und `reproject` (Version 2 erbt von 3), Nachtrag `adr/0014` §15k.
+  `band_math` und `reproject` (Version 2 erbt von 3), Nachtrag `adr/0014` §15l.
 - **Eine Definition:** `access/crop_rules.py::TEXT_FILES` und `METHODS_FILENAME`. Zuschnitt
   (`build_download_zip(methods_text=…)`), Export (Worker, `Attachments.dataset`), Job-ZIP und
   -Link (`api/processing_route.py`) und Runner (`runner/output.py`) schreiben `methods.txt`; jeder
@@ -558,8 +558,13 @@ nach §4 und der Reihenfolge dort.
 - **Link:** `methods.txt` unter `/jobs/{jobID}/results` (Ausgang `methods`, `text/plain`), ein
   Eintrag in `LINK_NAMES`; Prozessbeschreibungen der Fixtures neu geschrieben.
 - **Frontend:** „Methods“ in der Jobliste (auch neben dem ZIP) mit „Copy“.
-- **Abweichung vom Plan:** Der Tag der Aufnahme (§3.1) steht nicht im Text. Das Rezept kennt ihn
-  nicht, und er gehört dem Job, nicht dem Lauf; der Text nennt den Tag des Laufs.
+- **Aufnahmetag (Otto, 22.10.2026):** Der Text nennt den UTC-Tag des Überflugs aus derselben
+  Quelle wie der Dateiname seit M4-11b-1 (`acquired_on` des Jobs, gefunden von
+  `api.intake.acquired_day` nach `catalog.registry.acquisition_day`). Job-Link und Job-ZIP nehmen
+  `status.acquired_on`, der Export bekommt ihn als `Attachments.acquired_on`, der Zuschnitt rechnet
+  ihn über seine Szenen. Ohne einzelnen Aufnahmetag (DEM, Szenen mehrerer Tage) und im Runner, der
+  die Quelle nicht kennt, entfällt der Satz; der Tag des Laufs steht nie als Aufnahme, nur als
+  „processed on“. Tests für Sentinel-2 und DEM.
 - **Fund:** Die Registry hält die Adresse des DOI (`https://doi.org/…`); der Text nimmt
   `doi_name`, wie `citation.bib`.
 - **Version:** Die Ergebnis-Bytes ändern sich nicht, `earthx.__version__` bleibt.

@@ -1856,7 +1856,7 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
-## 15k. Nachtrag vom 2026-10-20: `methods.txt`, der Methodentext (zu §5.6, §10; M4-19a)
+## 15l. Nachtrag vom 2026-10-20: `methods.txt`, der Methodentext (zu §5.6, §10; M4-19a)
 
 Otto hat den Plan von M4-19 am 2026-10-20 freigegeben (`plans/m4-19-teilen-und-beschreiben.md`
 §9). Der Originaltext in §5.6 („der Methodentext in voller Länge ist M4-19“) und §10 bleibt
@@ -1884,6 +1884,12 @@ stehen; maßgeblich ist dieser Nachtrag.
 | Job-Link und Job-ZIP | `api` je Download | dem `recipe.json`, das der Link ausgibt |
 | lokaler Runner | der Runner | dem Rezept der Eingabe mit der Provenienz des lokalen Laufs |
 
+- **Aufnahmetag (Otto, 22.10.2026):** `methods_text(…, acquired_on=…)` nennt „The scenes were
+  acquired on YYYY-MM-DD (UTC).“ aus derselben Quelle wie der Dateiname eines Downloads
+  (`acquired_on` des Jobs, `api.intake.acquired_day`). Ein Datensatz ohne einzelnen Aufnahmetag
+  (DEM) und der Runner, der die Quelle nicht kennt, lassen den Satz weg; der Tag des Laufs steht nie
+  als Aufnahme, nur als „processed on“. Der Export bekommt den Tag als `Attachments.acquired_on`
+  (optional, alte Zeilen lesen weiter).
 - **Titel und DOI:** Der Worker-Kern liest keine Registry. `api` gibt sie dem Export als
   `Attachments.dataset` (`DatasetFacts`: Titel und DOI-Name, nicht die Adresse) mit. Alte Zeilen
   ohne diesen Schlüssel lesen weiter; der Text nennt den Datensatz dann nur mit seiner Kennung.
