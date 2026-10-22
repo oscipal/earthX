@@ -1153,6 +1153,7 @@ describe('a finished job row (K6)', () => {
       cancelling: false,
       expired: false,
       tiles: null,
+      statistics: null,
       title: null,
     };
   }
