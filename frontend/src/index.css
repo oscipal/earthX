@@ -1867,6 +1867,21 @@ input[type='date']:focus {
   font-size: 11px;
   color: var(--text);
 }
+.pp-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.pp-classes legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text);
+}
 .pp-chips {
   display: flex;
   flex-wrap: wrap;

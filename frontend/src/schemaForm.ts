@@ -9,7 +9,7 @@
 
 import type { JsonSchema } from './processing';
 
-export type FieldKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'const';
+export type FieldKind = 'string' | 'number' | 'integer' | 'integers' | 'boolean' | 'enum' | 'const';
 
 export interface Field {
   name: string;
@@ -29,6 +29,11 @@ export interface Field {
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
+  // `integers`: a list of whole numbers, with the bounds of the list and of each value.
+  minItems?: number;
+  maxItems?: number;
+  itemMinimum?: number;
+  itemMaximum?: number;
 }
 
 export type ParamsForm = { supported: true; fields: Field[] } | { supported: false; reason: string };
@@ -53,6 +58,9 @@ const FIELD_KEYWORDS = new Set([
   'maximum',
   'exclusiveMinimum',
   'exclusiveMaximum',
+  'items',
+  'minItems',
+  'maxItems',
 ]);
 
 const isObject = (value: unknown): value is JsonSchema =>
@@ -118,9 +126,37 @@ function fieldOf(name: string, schema: JsonSchema, required: boolean): Field | s
       };
     case 'boolean':
       return { ...base, kind: 'boolean' };
+    case 'array':
+      return integerList(name, schema, base);
     default:
       return `type ${JSON.stringify(schema.type ?? null)} of ${name}`;
   }
+}
+
+// A list of whole numbers, as `mask` takes its classes: `items` is an integer with bounds, nothing
+// else. It is edited as text, "3, 8, 9, 10".
+const ITEM_KEYWORDS = new Set(['type', 'minimum', 'maximum']);
+
+function integerList(name: string, schema: JsonSchema, base: Omit<Field, 'kind'>): Field | string {
+  const items = schema.items;
+  if (!isObject(items) || items.type !== 'integer' || Object.keys(items).some((key) => !ITEM_KEYWORDS.has(key))) {
+    return `items of ${name} are not whole numbers`;
+  }
+  return {
+    ...base,
+    kind: 'integers',
+    minItems: numberOrUndefined(schema.minItems),
+    maxItems: numberOrUndefined(schema.maxItems),
+    itemMinimum: numberOrUndefined(items.minimum),
+    itemMaximum: numberOrUndefined(items.maximum),
+  };
+}
+
+// The numbers of a list field's text, in the order typed; `null` where a part is not a whole number.
+export function integersIn(text: string): number[] | null {
+  const parts = text.split(/[\s,;]+/u).filter((part) => part !== '');
+  const numbers = parts.map((part) => (/^[+-]?\d+$/u.test(part) ? Number(part) : NaN));
+  return numbers.every(Number.isSafeInteger) ? numbers : null;
 }
 
 // A choice written as `oneOf` of constants, each with its own `title` and
@@ -183,6 +219,7 @@ export function initialValues(fields: readonly Field[]): Record<string, FieldVal
   for (const field of fields) {
     if (field.kind === 'boolean') values[field.name] = field.default === true;
     else if (field.kind === 'const') continue;
+    else if (Array.isArray(field.default)) values[field.name] = field.default.join(', ');
     else if (field.default !== undefined && field.default !== null) values[field.name] = String(field.default);
     else values[field.name] = '';
   }
@@ -226,6 +263,19 @@ function valueOf(field: Field, raw: FieldValue | undefined): { value?: unknown; 
     case 'integer': {
       const value = parseNumber(field, text);
       return typeof value === 'string' ? { error: value } : { value };
+    }
+    case 'integers': {
+      const numbers = integersIn(text);
+      if (numbers === null) return { error: 'Enter whole numbers separated by commas.' };
+      const out = numbers.find(
+        (n) => (field.itemMinimum !== undefined && n < field.itemMinimum) || (field.itemMaximum !== undefined && n > field.itemMaximum),
+      );
+      if (out !== undefined) return { error: `${out} is outside ${field.itemMinimum ?? '-∞'} to ${field.itemMaximum ?? '∞'}.` };
+      // One way to write a list: ascending, each value once (the server insists on it, K3 of M4-18).
+      const value = [...new Set(numbers)].sort((a, b) => a - b);
+      if (field.minItems !== undefined && value.length < field.minItems) return { error: `At least ${field.minItems} values.` };
+      if (field.maxItems !== undefined && value.length > field.maxItems) return { error: `At most ${field.maxItems} values.` };
+      return { value };
     }
     case 'string': {
       const length = [...text].length;

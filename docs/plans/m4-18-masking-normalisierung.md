@@ -4,7 +4,7 @@
 **Stufe B (S4) — von Otto am 20.10.2026 freigegeben:** F1–F6 und F8 je
 Option 1, K1–K8 angenommen, F7 mit Beleg [P] und Auflagen (§8). Umgesetzt wird
 in derselben Session nur **M4-18a**; M4-18b und M4-18c sind je eine neue Session
-nach dem Merge. Wo §3 und §8 sich widersprechen, gilt §8.
+nach dem Merge (M4-18c: §13). Wo §3 und §8 sich widersprechen, gilt §8.
 **Ort im Repo:** `docs/plans/m4-18-masking-normalisierung.md`
 **Grundlagen:** `adr/0014` §5.1–§5.7, §6.1–§6.4, §15c, §15d; `adr/0016` §3.3,
 §12a; `plans/m4-processing-kern.md` §1.1b (R3, R5), §1.1c (S4), §1.2, M4-18;
@@ -633,8 +633,92 @@ Kette stehen; ein Schritt allein wird nicht gefragt. Gemerkt wird nur eine Ableh
 las `int()` sie, und FastAPI wies sie danach mit `422` ab); `tests/earthx/api/test_tiler_chain.py` prüft das, leere Teile und die
 Reihenfolge der Schritte mit einer Kette, deren Reihenfolge die Werte ändert. Die Obergrenze 4 steht im Backend
 (`MAX_OPERATOR_STEPS`) und im Frontend (`MAX_PREVIEW_STEPS`) je einmal; kein Test bindet beide aneinander.
-`NO_PREVIEW` sagt für `mask` als ersten Schritt „runs only as a job“, bis M4-18c das Formular bringt.
+`NO_PREVIEW` sagt für `mask` als ersten Schritt „runs only as a job“, bis M4-18c das Formular bringt (behoben in M4-18c, §13).
 
 **Nummer des Schritts:** In den Meldungen der Kachel und der Annahme steht `step 0:` für den ersten Schritt; die erste
 Fassung dieses Abschnitts zählte ab 1 und hätte im Panel am falschen Schritt gehangen. Die Tests oben nennen die Zählung ab 0.
 
+---
+
+## 13. Umsetzung von M4-18c (22.10.2026)
+
+Panel für die Maske (F6, §3.5) und die Berichtigung der Vorschau-Meldung aus M4-18b. Nur Frontend; kein Backend,
+keine neue Abhängigkeit, `.github/`, `.claude/`, `CLAUDE.md` und `.importlinter` unberührt.
+
+**Geliefert:**
+- **Listenfeld im Schema-Formular (`schemaForm.ts`):** Ein Parameter vom Typ `array` mit ganzzahligen `items`
+  (`minimum`, `maximum`) und `minItems`/`maxItems` ist das Feld `integers`, bearbeitet als Text („3, 8, 9, 10“). Gesendet
+  wird aufsteigend und ohne Doppel, weil die Annahme jede andere Schreibweise derselben Liste abweist (K3). Jede andere
+  Form eines Arrays bleibt „not supported by this panel“.
+- **`earthx:mask` lesen (`processingOrder.ts::maskLayerOf`):** Nur ein vollständiger Eintrag zählt; Vorschläge, die nicht in
+  der Tabelle stehen, fallen weg, und `reference` bleibt nur bei `https://`, weil das Panel dorthin verlinkt.
+  Hat der Datensatz keine Schicht, bleibt das Schema-Formular (zwei Textfelder).
+- **Formular „Classes to hide“ (`StepForm.tsx`):** ein Kästchen je Klasse mit Wert und Name aus der Registry, die
+  vorgeschlagenen (`suggested`) bei „Add step“ angekreuzt und als „(suggested)“ gekennzeichnet; das Rezept nennt genau die
+  angekreuzten Klassen (K6). `source` ist kein Feld: Es kommt aus `earthx:mask.band` und steht im neuen Schritt. Unter den
+  Kästchen stehen der Hinweis der Registry zu älteren Prozessierungsbasen (Auflage in §8), der Verweis auf die Klassentabelle
+  und der Satz, dass die Schicht gelesen und nicht ins Ergebnis übernommen wird.
+- **Die Schicht im Auftrag:** Solange ein `mask`-Schritt im Auftrag steht, nimmt `orderView` das Asset aus
+  `earthx:mask.asset` in `assets` auf (`orderAssets`, vierter Parameter), ohne dass der Nutzer es wählt, und nur, wenn die
+  Szene es kennt. Der Chip der Schicht ist gedrückt und lässt sich nicht abwählen, solange der Schritt da ist; sein Hinweis
+  sagt warum. Bei „Review“ steht „The order also reads the mask layer scl; it is not in the result.“, oder, fehlt das Asset
+  in der Szene, ein Fehlertext (der Server weist den Auftrag auch dann ab, `check_bands`). Das Panel ergänzt sonst nichts.
+- **Ausgabetyp:** Die Schicht (`uint8`) geht nicht in die Wahl des Datentyps ein, weil das Ergebnis sie weglässt; sonst
+  hätte sie jede Maske auf `uint16`-Bändern auf `float32` gezwungen.
+- **Vorschau:** Ein `mask` als erster Schritt wird gezeichnet (T1, `pixel`, Formular da); `scl` steht in den `asset`-Parametern
+  der Kachel-URL. Die Kette `mask → band_math` ist damit im Panel erreichbar (M4-18b hatte sie nur auf der Route belegt).
+
+**Berichtigung aus M4-18b (#175), `NO_PREVIEW`:** Der Text „No preview: the first step runs only as a job.“ erschien für jeden
+ersten Schritt, den das Panel nicht zeichnen konnte, auch für `mask`, das als Kachel läuft und nur kein Formular hatte.
+`tileStep` nennt jetzt den Grund, und `planPreview` zeigt je Grund einen Text: `NO_PREVIEW` nur für Schritte, die wirklich
+nicht als Kachel laufen (nicht `T1` oder nicht `pixel`), `NO_PREVIEW_FORM` („this panel has no form for the first step yet“)
+für einen Kachel-Schritt ohne Formular, `NO_PREVIEW_UNLISTED` für einen Schritt, den der Datensatz nicht aufführt. Mit dem
+Formular wird `mask` ohnehin gezeichnet; die Texte bleiben für den nächsten Operator ohne Formular richtig. Die alten Tests
+nannten Reproject v2, das die Fixtures nicht aufführen (nur v3): Sie bestanden, weil „nicht aufgeführt“ denselben Text
+bekam wie „nur als Job“. Sie nehmen v3 und prüfen beide Gründe getrennt.
+
+**Tests (neu):**
+- `schemaForm.test.ts`: Listenfeld lesen, aufsteigend ohne Doppel, leer, Nicht-Zahlen (`1.5`, `1e2`, `0x10`, Ziffern anderer
+  Schriften), Grenzen je Wert und der Liste, zu große Zahl, Vorgabe, Formen, die nicht unterstützt bleiben.
+- `processingOrder.test.ts`: `maskLayerOf` (acht kaputte Formen, nur `https`, Vorschläge nur aus der Tabelle),
+  `maskStepValues`, `maskAssetOf`, `orderAssets` mit nötigem Asset, die Schicht unter den Variablen eines Zarr-Items.
+- `processingPreview.test.ts`: `mask` als erster Schritt mit Parametern, Reihenfolge der Klassen, unvollständige Maske,
+  die drei Gründe getrennt; die Fixtures-Prüfung verlangt jetzt für jeden Operator ein Formular.
+- `components/ProcessingMask.test.tsx` (20): Kästchen mit Namen und Vorbelegung, kein Feld für `source`, Hinweis und Link, die
+  angekreuzten Klassen im gesendeten Auftrag (aufsteigend), keine Klasse → kein Auftrag, Rückfall ohne `earthx:mask`, die
+  Schicht im Auftrag und ihr Chip, Hinweis bei fehlender Schicht, Datentyp ohne die Schicht (Gegenprobe: ohne die Ausnahme
+  schlägt der Test fehl), Vorschau von `mask` und `mask → band_math` mit den Assets in der URL, Reproject bleibt „only as a job“.
+
+**Datentyp nach `normalize` (Otto, 22.10.2026, in M4-18c behoben):** `chooseDtype`, `dtypeOptions` und `integerNote` kannten nur
+`band_math` als Schritt, der in `float32` mit NaN endet. Auf ganzzahligen, unskalierten Bändern mit nodata schlug das Panel
+deshalb für `normalize` den Quelltyp vor, den der Lauf ablehnt (`core._nodata_for`). Die Prozessbeschreibung liefert keinen
+Ausgabetyp je Operator (nur `x-earthx-tiers` und `x-earthx-kind`); deshalb steht `normalize` wie `band_math` in einer kleinen
+Tabelle in `processingDefaults.ts` (`FLOAT_RESULT`): Empfehlung `float32` („Normalize gives fractions.“), Ganzzahltypen nicht
+angeboten („not after normalize“), kein Hinweis zu nodata. Sind beide im Auftrag, nennt die Meldung den ersten. `mask` allein
+behält den Quelltyp. Der Test mit ganzzahligen, unskalierten Bändern mit nodata (`processingDefaults.test.ts`, dazu im Panel
+`ProcessingMask.test.tsx`) schlug vor der Änderung fehl (vier Tests). Ein Feld „Ausgabetyp“ in der Beschreibung wäre der
+saubere Weg, brauchte aber eine Änderung in `api/processing_docs.py`; sie ist nicht gemacht.
+
+**Grund, wenn `mask` nicht angeboten wird:** Das Panel zeigt unter den Schritten „Mask: this dataset has no classification layer
+to read.“, wenn der Datensatz keine Schicht (`earthx:mask`) hat und `mask` nicht in der Beschreibung steht (DEM). Vorher fehlte
+der Knopf ohne Text.
+
+**Prüfanleitung im Browser (Otto):** Die Darstellung ist nur in jsdom getestet. Zu prüfen, mit laufendem Stack (`docker compose up`):
+1. Sentinel-2 L2A (COG): eine Szene wählen, „Process“ öffnen, „＋ Mask“. Erwartet: „Classes to hide“ mit zwölf Klassen, 3, 8, 9
+   und 10 angekreuzt, Klassentabelle verlinkt, Hinweis zu älteren Prozessierungsbasen; Chip `scl` gedrückt und nicht abwählbar.
+2. „＋ Band math“, `(nir - red) / (nir + red)`. Erwartet: Vorschau auf der Karte mit „Mask → Band math“, Wolken, Schatten und
+   Zirrus als leere Stellen (nicht als Werte); bei Szenen ohne Wolken ist kein Unterschied zu sehen, dann eine bewölkte nehmen.
+   Dann Klasse 6 (Wasser) ankreuzen: Wasser wird leer.
+3. „Review“. Erwartet: „The order also reads the mask layer scl; it is not in the result.“ und eine Schätzung. „Start job“, das
+   Ergebnis hat keine Bänder `scl` und dieselben leeren Stellen wie die Vorschau (bis auf die Stellen aus §3.6, wo Kachel und Job
+   an Rastergrenzen abweichen dürfen).
+4. EOPF-Zarr, falls als Datensatz da (`sentinel-2-l2a-zarr3`): dasselbe mit dem Asset `SCL_20m:scl`; der Chip heißt so. Das ist die
+   offene Stelle aus Befund 2: Sie bestätigt, dass die Variable in echten Items so heißt.
+5. DEM (`cop-dem-glo-30`): kein „＋ Mask“, darunter der Satz „Mask: this dataset has no classification layer to read.“; „＋ Normalize“
+   und „＋ Band math“ sind da. Danach auf einer Szene „＋ Normalize“: Datentyp `float32`, Ganzzahltypen mit „(not after normalize)“.
+
+**Befunde, nicht in dieser Aufgabe:**
+1. **Nicht gegen echte Items geprüft.** Dass `SCL_20m:scl` aus einem echten EOPF-Item als Quelle entsteht, ist aus §2 [M]
+   (Asset `SCL_20m`, Band `scl`) und einem synthetischen Item belegt, nicht aus einem Abruf in dieser Sitzung.
+2. **Im Browser nicht gesehen.** Die Darstellung (`.pp-classes`) ist in jsdom getestet, nicht gerendert und angeschaut; die
+   Prüfanleitung oben und im PR ist dafür da.
