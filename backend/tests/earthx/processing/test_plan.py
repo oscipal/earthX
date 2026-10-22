@@ -16,6 +16,7 @@ from earthx.processing.errors import (
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import (
     EXPORT_FACTOR,
+    RASTER_WITHOUT_STEP_FACTOR,
     SECONDS_PER_ASSET,
     check_bands,
     crop_window,
@@ -25,7 +26,7 @@ from earthx.processing.plan import (
     split_tiers,
 )
 from earthx.processing.recipe import Step, recipe_from_data
-from tests.earthx.processing.recipes import recipe_data
+from tests.earthx.processing.recipes import crop_data, recipe_data
 from tests.earthx.processing.testops import OPERATORS
 
 SCALE = Step(op="scale", op_version=1, params={"factor": 2.0})
@@ -126,8 +127,14 @@ class TestEstimate:
         assert coarse.output_pixels < plain.output_pixels / 3
         assert coarse.units == pytest.approx(coarse.output_pixels / 1e6 * 1.4)
 
-    def test_no_step_is_an_export(self) -> None:
+    def test_a_raster_without_step_counts_the_statistics_pass(self) -> None:
         cost = estimate(recipe_from_data(recipe_data(steps=[]), OPERATORS), OPERATORS)
+        assert RASTER_WITHOUT_STEP_FACTOR == 1.0  # the crop's 0.9 with the statistics pass, adr/0014 §15k
+        assert cost.units == pytest.approx(cost.output_pixels / 1e6 * RASTER_WITHOUT_STEP_FACTOR)
+
+    def test_an_export_writes_no_statistics_and_keeps_its_factor(self) -> None:
+        cost = estimate(recipe_from_data(crop_data(), OPERATORS), OPERATORS)
+        assert EXPORT_FACTOR == 0.9
         assert cost.units == pytest.approx(cost.output_pixels / 1e6 * EXPORT_FACTOR)
 
     @pytest.mark.parametrize("unknown", [[0, 1], [0], [1]])

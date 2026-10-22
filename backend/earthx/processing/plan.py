@@ -47,6 +47,7 @@ from earthx.processing.source import expected_band_names
 
 __all__ = [
     "EXPORT_FACTOR",
+    "RASTER_WITHOUT_STEP_FACTOR",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
@@ -72,8 +73,12 @@ SECONDS_PER_INPUT_MB = 0.034
 #: First open of an asset over the network (adr/0006 §3.4).
 SECONDS_PER_ASSET = 1.0
 
-#: Units of a run without any step, the crop alone (adr/0014 §5.5, M3-18 §10.3).
+#: Units of an export, the crop alone (adr/0014 §5.5, M3-18 §10.3). It writes no statistics.
 EXPORT_FACTOR = 0.9
+
+#: Units of a raster run without any step: the crop as one pass of the core, which counts the
+#: statistics as it writes (M4-32, +9.3 % measured, rounded up; adr/0014 §15k).
+RASTER_WITHOUT_STEP_FACTOR = 1.0
 
 #: Seconds per MB of an export's output (data and mask, as ``PlannedOutput.total_bytes``
 #: counts) for writing, the COG, reading it back and packing, plus per item of the group for
@@ -345,7 +350,7 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
             f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
         )
-    factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else EXPORT_FACTOR
+    factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else RASTER_WITHOUT_STEP_FACTOR
     return CostEstimate(
         input_pixels=input_pixels,
         input_bytes=input_bytes,
