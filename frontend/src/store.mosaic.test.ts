@@ -93,6 +93,7 @@ function openGroup(groupIds: string[]) {
     downloaded: {},
     appliedRender: {},
     mosaics: {},
+    pinLoading: false,
     layers: [],
     viewLayerId: null,
     aoi: AOI,
@@ -295,39 +296,74 @@ describe('adding a mosaic to the layers', () => {
     expect(overlays.every((o) => o.kind === 'raster' && o.hideFrom === undefined)).toBe(true);
   });
 
-  it.each([true, false])('does not pin half a picture while the mosaic is on its way (cropped: %s)', async (cropToAoi) => {
+  it.each([true, false])('waits for a mosaic that is on its way and pins by itself when it is here (cropped: %s)', async (cropToAoi) => {
     let answerMosaic: (r: Response) => void = () => {};
     tiler(() => new Promise<Response>((resolve) => (answerMosaic = resolve)));
     const entering = useAppStore.getState().enterFocus(cropToAoi);
     await vi.waitFor(() => expect(useAppStore.getState().focusMode).toBe(true));
+
     useAppStore.getState().addCurrentToLayers();
-    const s = useAppStore.getState();
+    let s = useAppStore.getState();
+    expect(s.pinLoading).toBe(true); // the button says "Loading…"
+    expect(s.error).toBeNull();
     expect(s.layers).toEqual([]);
-    expect(s.error).toMatch(/still loading/);
-    answerMosaic(json(TILEJSON(['A', 'B', 'C']))); // so that no request is left hanging for the next test
+    useAppStore.getState().addCurrentToLayers(); // a second click while waiting adds nothing
+    expect(mosaicCalls()).toHaveLength(1);
+
+    answerMosaic(json(TILEJSON(['A', 'B', 'C'])));
     await entering;
+    await vi.waitFor(() => expect(useAppStore.getState().layers).toHaveLength(1));
+    s = useAppStore.getState();
+    expect(s.pinLoading).toBe(false);
+    expect(s.error).toBeNull();
+    expect(s.notice).toMatch(/^Added /);
+    expect(s.layers[0].overlays.filter((o) => o.kind === 'raster' && o.tileUrl.includes('/mosaic/'))).toHaveLength(1);
   });
 });
 
 describe('adding a part of the view to the layers', () => {
-  it.each([true, false])('asks for the mosaic of the picked scenes, and pins it on the next try (cropped: %s)', async (cropToAoi) => {
-    tiler(() => json(TILEJSON(['A', 'B', 'C'])));
+  const pickTwo = async (cropToAoi: boolean, mosaic: (url: string) => Response | Promise<Response>) => {
+    tiler(mosaic);
     await useAppStore.getState().enterFocus(cropToAoi);
     useAppStore.setState({ selectedIds: ['A', 'B'] }); // a part of the three the view shows
-    useAppStore.getState().addCurrentToLayers();
-    expect(useAppStore.getState().layers).toEqual([]);
-    expect(useAppStore.getState().error).toMatch(/still loading/);
-    await vi.waitFor(() => expect(mosaicCalls().map(itemsOf)).toContainEqual(['A', 'B']));
-    await vi.waitFor(() => expect(Object.keys(useAppStore.getState().mosaics)).toHaveLength(2));
+  };
 
+  it.each([true, false])('asks for the mosaic of the picked scenes and pins it when it is here (cropped: %s)', async (cropToAoi) => {
+    await pickTwo(cropToAoi, () => json(TILEJSON(['A', 'B'])));
     useAppStore.getState().addCurrentToLayers();
-    const { layers, error } = useAppStore.getState();
-    expect(error).toBeNull();
-    expect(layers).toHaveLength(1);
+    expect(useAppStore.getState().pinLoading).toBe(true);
+    expect(useAppStore.getState().layers).toEqual([]);
+
+    await vi.waitFor(() => expect(useAppStore.getState().layers).toHaveLength(1));
+    const { layers, error, pinLoading } = useAppStore.getState();
+    expect([error, pinLoading]).toEqual([null, false]);
+    expect(mosaicCalls().map(itemsOf)).toContainEqual(['A', 'B']);
     expect(layers[0].restore.itemIds).toEqual(['A', 'B']);
     const urls = layers[0].overlays.map((o) => (o.kind === 'raster' ? o.tileUrl : ''));
-    expect(urls.filter((u) => u.includes('/mosaic/'))).toHaveLength(1);
     expect(itemsOf(urls.find((u) => u.includes('/mosaic/')) as string)).toEqual(['A', 'B']);
+  });
+
+  it.each([true, false])('says why and pins nothing when the tiler cannot give it (cropped: %s)', async (cropToAoi) => {
+    await pickTwo(cropToAoi, (url) =>
+      itemsOf(url).length === 2 ? json({ detail: 'the items are of different passes' }, 422) : json(TILEJSON(['A', 'B', 'C'])),
+    );
+    useAppStore.getState().addCurrentToLayers();
+    await vi.waitFor(() => expect(useAppStore.getState().pinLoading).toBe(false));
+    const s = useAppStore.getState();
+    expect(s.layers).toEqual([]);
+    expect(s.notice).toBe('Could not load the mosaic (the items are of different passes); its scenes are drawn one by one.');
+  });
+
+  it('does not pin another selection than the one it was asked for', async () => {
+    let answerMosaic: (r: Response) => void = () => {};
+    await pickTwo(false, (url) =>
+      itemsOf(url).length === 2 ? new Promise<Response>((resolve) => (answerMosaic = resolve)) : json(TILEJSON(['A', 'B', 'C'])),
+    );
+    useAppStore.getState().addCurrentToLayers();
+    useAppStore.setState({ selectedIds: ['C'] }); // changed its mind meanwhile
+    answerMosaic(json(TILEJSON(['A', 'B'])));
+    await vi.waitFor(() => expect(useAppStore.getState().pinLoading).toBe(false));
+    expect(useAppStore.getState().layers).toEqual([]);
   });
 
   it('pins scenes that no time step of the search holds one by one, never as a mosaic', async () => {

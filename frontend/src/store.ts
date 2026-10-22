@@ -404,31 +404,38 @@ function cropsForSearch(
   return { crops, problems };
 }
 
-const MOSAIC_STILL_LOADING = 'The mosaic of this time step is still loading — add it to the layers in a moment.';
+// The overlays for these scenes, split by time step; `null` while the mosaic of one is not known.
+function overlaysOfEntries(s: AppState, entries: SceneEntry[], clip: GeoJSON.Geometry | null): LayerOverlay[] | null {
+  const overlays = passesOf(entries, s.groups).map((pass) =>
+    overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, clip),
+  );
+  return overlays.some((o) => o === null) ? null : overlays.flatMap((o) => o ?? []);
+}
 
-// The overlays for these scenes, split by time step; `null` while the mosaic of one is not known. What is
-// not known is asked for then, so that the next try finds it: a part of the view's scenes (a selection) is
-// another mosaic than the one the view loaded.
-function overlaysOfEntries(
-  set: SetState,
-  get: GetState,
-  entries: SceneEntry[],
-  clip: GeoJSON.Geometry | null,
-): LayerOverlay[] | null {
+// What a pin is made from, to tell on arrival whether the view is still the one it was asked in.
+const pinKey = (s: AppState) =>
+  JSON.stringify([s.datasetId, s.cropToAoi, s.selectedIds, Object.keys(s.downloaded), s.layers.length]);
+
+// A selection inside the view is another mosaic than the one the view loaded (a part of its scenes), and
+// one the view has not loaded yet is still on its way. Pinning waits for it ("Loading…") and then pins by
+// itself; if the tiler cannot give it, `fetchMosaics` has said why and nothing is pinned. A pin made
+// meanwhile from another selection, or another pin that changed the list, is not repeated.
+function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][]): void {
   const s = get();
   const datasetId = s.datasetId ?? '';
-  const passes = passesOf(entries, s.groups);
-  const overlays = passes.map((pass) => overlaysOfPass(datasetId, pass, s.mosaics, s.appliedRender, clip));
-  if (overlays.some((o) => o === null)) {
-    void fetchMosaics(
-      set,
-      get,
-      passes.filter((_, i) => overlays[i] === null).map((pass) => ({ datasetId, entries: pass })),
-    );
-    set({ error: MOSAIC_STILL_LOADING });
-    return null;
-  }
-  return overlays.flatMap((o) => o ?? []);
+  const key = pinKey(s);
+  const requests = lists.flatMap((entries) => passesOf(entries, s.groups).map((pass) => ({ datasetId, entries: pass })));
+  set({ pinLoading: true, error: null });
+  void fetchMosaics(set, get, requests).then(() => {
+    const now = get();
+    set({ pinLoading: false });
+    if (pinKey(now) !== key) return;
+    const failed = requests.some((r) => {
+      const template = mosaicTemplateOf(r.datasetId, r.entries);
+      return template !== null && !now.mosaics[template];
+    });
+    if (!failed) now.addCurrentToLayers();
+  });
 }
 
 // In flight, by the mosaic's template: two views that want one mosaic ask the tiler once.
@@ -844,6 +851,8 @@ export interface AppState {
   // What the mosaics of the time steps in view look like, by tile template (`mosaic.ts`). Kept for
   // the session: the same scenes are the same URL, so one answer serves a later view of them.
   mosaics: Mosaics;
+  // "Add to layers" is waiting for a mosaic (`pinWhenLoaded`).
+  pinLoading: boolean;
 
   // --- filters ---
   dateFrom: string;
@@ -990,6 +999,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedIds: [],
   downloaded: {},
   mosaics: {},
+  pinLoading: false,
 
   dateFrom: '',
   dateTo: '',
@@ -1148,6 +1158,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // selection, since there is nothing cropped to merge into groups.
   addCurrentToLayers: () => {
     const s = get();
+    if (s.pinLoading) return; // already waiting for a mosaic; it pins when it is here
     const activeGroup = s.groups[s.activeGroupIndex];
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const batchId = nextBatchId();
@@ -1180,9 +1191,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const perGroup = [...byGroupIndex.entries()].map(([idx, groupEntries]) => ({
           idx,
           groupEntries,
-          overlays: overlaysOfEntries(set, get, groupEntries, aoi),
+          overlays: overlaysOfEntries(s, groupEntries, aoi),
         }));
-        if (perGroup.some((g) => g.overlays === null)) return;
+        if (perGroup.some((g) => g.overlays === null)) {
+          pinWhenLoaded(set, get, perGroup.filter((g) => g.overlays === null).map((g) => g.groupEntries));
+          return;
+        }
         const newLayers = perGroup.map(({ idx, groupEntries, overlays }, i) => {
           const label = idx >= 0 ? s.groups[idx]?.label : activeGroup?.label;
           const itemIds = groupEntries.map(([id]) => id);
@@ -1216,8 +1230,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
       const itemIds = entries.map(([id]) => id);
-      const overlays = overlaysOfEntries(set, get, entries, null);
-      if (overlays === null) return;
+      const overlays = overlaysOfEntries(s, entries, null);
+      if (overlays === null) {
+        pinWhenLoaded(set, get, [entries]);
+        return;
+      }
       const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${activeGroup?.label ?? ''}`;
       const layer = makeLayer(
         name,
