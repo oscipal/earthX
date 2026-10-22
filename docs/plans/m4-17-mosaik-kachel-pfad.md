@@ -1085,6 +1085,11 @@ Einzelszenen. (d) `expression` an der Mosaik-URL gäbe `400`; heute setzt kein R
 ersten 40 gegenüber vorher. (f) Das Template nimmt den aktiven Datensatz, nicht den der Szenen; bei einem
 Layer eines Datensatzes, der nicht mehr im Katalog steht, gibt es eine überflüssige Anfrage mit `404`.
 
+**Entscheidung (Otto, 22.10.2026):** Diese Grenzen sind für M4 akzeptiert. Die Stapelung
+zwischen Überflügen (Ansicht: zuerst gewählter oben, Layer: zuletzt angehefteter oben) wird in
+UI-01 bei der Reihenfolge der Layer mitgeprüft (`plans/ui-01-app-rahmen.md`). Prüfanleitung B
+macht Otto lokal gegen Earth Search; die Schritte stehen im PR.
+
 **Prüfanleitung B: gegen eine echte Quelle nicht geprüft.** Wie in §14 erreicht das
 `gateway` der Sitzung Earth Search nicht. Geprüft ist stattdessen die Verdrahtung gegen
 eine echte MapLibre-Karte (maplibre-gl 5, Chromium ohne Fenster, Vite-Entwicklungsserver,
