@@ -615,7 +615,7 @@ nach §4 und der Reihenfolge dort.
   `test_recipe.py::EXPECTED` sind neu; jedes Rezept trägt `"unit":null` zweimal mehr. Die alten Werte stehen als
   `OLD`, ein Test leitet sie aus dem neuen Kern her (Schlüssel heraus, gleicher Hash). Nach dem Deployment gibt
   es einmal für alle gecachten Ergebnisse keinen Treffer.
-- **Anzeige:** Panel („red · 1“, „data · m“), Layer-Manager („Values in m“ am Ergebnis-Layer); die Collection gibt
+- **Anzeige:** Panel („red · 1“, „data · m“), Layer-Manager („Unit: m“ am Ergebnis-Layer); die Collection gibt
   `earthx:band_units` heraus.
 - **Nicht gebaut:** die Einheit in der Wertebereich-Zeile der Vorschau (siehe `adr/0014` §15n). Offen für Otto.
 
@@ -653,7 +653,7 @@ $results = Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)/results"
 $results.result.properties.bands | ConvertTo-Json -Depth 4     # "unit": "m" zwischen nodata und statistics
 
 # 3) Im Browser (http://localhost:5173): DEM-Szene wählen, "Process": der Chip heißt "data · m";
-#    den Job starten, "Add to layers": im Layer-Manager steht unter der Ebene "Values in m".
+#    den Job starten, "Add to layers": im Layer-Manager steht unter der Ebene "Unit: m".
 ```
 
 Aus dem Ergebnis eines Band-Math-Jobs (`(nir - red) / (nir + red)`) fehlt `unit` ganz; ein Ausdruck, der nur `red`

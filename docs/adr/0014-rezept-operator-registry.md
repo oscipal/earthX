@@ -1991,7 +1991,7 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   ein Auftrag ihn nennt (`red`, `SR_10m:b04`), auf eine Einheit als UCUM-Zeichen oder `None`.
   `None` heißt „unbekannt“, und ein Asset ohne Eintrag ist es auch; geraten wird nichts. Ein
   Schlüssel darf ein `*` tragen (`SR_*` für die Gruppen eines Zarr-Speichers); der genaue
-  Schlüssel geht vor, dann die Muster in der Reihenfolge des Eintrags. Der Eintrag prüft beim
+  Schlüssel geht vor, dann ein Muster; der Eintrag erlaubt nur `*` als Platzhalter und keine zwei Muster, die sich überlappen (die Collection geht durch JSONB, das die Reihenfolge der Schlüssel nicht hält). Der Eintrag prüft beim
   Laden: Schlüssel und Einheit sind Text ohne Rand und höchstens 32 Zeichen, und jedes Asset,
   das `default_render` oder die Maske lesen, hat einen Schlüssel (bei einer Zarr-Liste
   `SR_10m:b04,b03,b02` jede Variable für sich). Ein Eintrag für *alle* Assets, die ein Operator
@@ -2014,8 +2014,8 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   - Hat ein COG-Item keine Bandbeschreibung (das DEM), gäbe ein erfundenes Band eine Anzahl
     vor, die nur die Datei kennt, und `check_bands` wartete nicht mehr auf sie. Deshalb
     trägt dort `ResolvedInput.unit` die Einheit der Registry, für jedes Band des Assets. `bands`
-    bleibt leer. Das ist die eine Abweichung vom Wortlaut des Plans (§3.2: „`Band` bekommt
-    `unit`“).
+    bleibt leer. Das ist die erste von drei Abweichungen vom Wortlaut des Plans (§3.2: „`Band` bekommt
+    `unit`“); die anderen zwei stehen unter „Nicht gebaut“.
   - Die Einheit gehört zum Kern des Hashes (§4.5). Alle vier festen Hashwerte aus §4.4 Punkt 9
     sind **bewusst erneuert**: Jedes Rezept trägt zwei Schlüssel mehr (`"unit":null`), das
     Verfahren `c1` ist unverändert. Ein Test leitet die alten Werte aus dem neuen Kern her, indem
@@ -2034,9 +2034,9 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   Assets)`; die Kachel baut die `ResolvedInput` daraus, der Job aus `_resolved_json`.
 - **Collection:** `earthx:band_units` gibt die Zuordnung heraus, ein `None` bleibt als `null`.
 - **Frontend:** An jedem Band im Panel steht die Einheit („red · 1“, „data · m“). Im Layer-Manager
-  trägt ein Ergebnis-Layer „Values in m“, wo alle Bänder des Ergebnisses dieselbe Einheit nennen.
+  trägt ein Ergebnis-Layer „Unit: m“, wo alle Bänder des Ergebnisses dieselbe Einheit nennen.
   Die Einheit des Items geht auch dort vor, die Muster der Registry werden wie im Backend gesucht.
-- **Nicht gebaut:** die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
+- **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag, weil keine Quelle für ihre Einheit gelesen wurde. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
   Schritten kennt nur der Kern (Band-Math: keine; `mask`: die der übrigen Bänder; `normalize`:
   keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trägt
   sie nicht. Das bräuchte ein Feld im TileJSON (Frage an Otto im PR).
