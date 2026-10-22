@@ -409,6 +409,7 @@ describe('small rules', () => {
   it('finds the step a refusal names', () => {
     expect(stepOfRefusal('the order is not valid: parameters of step 1 (reproject): crs')).toBe(1);
     expect(stepOfRefusal("step 0: 'band_math' cannot run here")).toBe(0);
+    expect(stepOfRefusal('step 1: expression names unknown band(s): red; the input has: band_math')).toBe(1);
     expect(stepOfRefusal('invalid order: steps.2.params.expression: string_too_long')).toBe(2);
     expect(stepOfRefusal('the AOI does not touch any of the given items')).toBeNull();
     const bm = [{ op: 'reproject' }, { op: 'band_math' }];

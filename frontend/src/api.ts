@@ -388,24 +388,49 @@ export async function fetchMosaicTileJson(
   return { bounds: bounds as Bbox, minzoom, maxzoom, order };
 }
 
-// The tile template of an operator (T1, adr/0014 §6.2): the assets the operator
-// reads — one `asset` each, in the order of the order — and `op`, `op_version`
-// and `params` as the tiler takes them. `paramsJson` is canonical JSON
-// (`processing.ts::canonicalJson`), so equal parameters are one URL, one cache entry.
+// One step of an operator tile: the operator, its version and its parameters as
+// canonical JSON (`processing.ts::canonicalJson`), so equal parameters are one URL,
+// one cache entry.
+export interface TileStep {
+  op: string;
+  opVersion: number;
+  paramsJson: string;
+}
+
+// The tile template of an operator or a chain of them (T1, adr/0014 §6.1, §6.2): the
+// assets the steps read — one `asset` each, in the order of the order — and `op`,
+// `op_version` and `params` once per step, in the order of the steps, as the tiler
+// takes them (`api/tiler.py`, at most four).
 export function buildOperatorTileTemplate(
   datasetId: string,
   itemId: string,
   assets: readonly string[],
-  op: string,
-  opVersion: number,
-  paramsJson: string,
+  steps: readonly TileStep[],
 ): string {
+  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps)}`;
+}
+
+// The TileJSON of the same chain. The tiler opens the inputs and judges every step on
+// the bands the one before leaves, so a `422` of it says which step it refuses and why
+// (`api/tiler.py`, `processing/tile.py`) — the panel asks it instead of judging bands itself.
+export function buildOperatorTileJsonUrl(
+  datasetId: string,
+  itemId: string,
+  assets: readonly string[],
+  steps: readonly TileStep[],
+): string {
+  return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps)}`;
+}
+
+function operatorQuery(assets: readonly string[], steps: readonly TileStep[]): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
-  params.set('op', op);
-  params.set('op_version', String(opVersion));
-  params.set('params', paramsJson);
-  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
+  for (const step of steps) {
+    params.append('op', step.op);
+    params.append('op_version', String(step.opVersion));
+    params.append('params', step.paramsJson);
+  }
+  return params.toString();
 }
 
 export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {

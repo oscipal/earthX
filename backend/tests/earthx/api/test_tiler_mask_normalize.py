@@ -1,6 +1,6 @@
 """``mask`` and ``normalize`` as tiles: the refusals and T1 against T2 (plan M4-18 §3.4, §3.6; adr/0014 §6.2-§6.4).
 
-One operator per tile, as ``band_math`` has it; the chain of several is M4-18b. The synthetic item carries a 10 m
+One operator per tile, as ``band_math`` has it; the chain of several is in ``test_tiler_chain.py``. The synthetic item carries a 10 m
 band (``red``) and a 20 m classification layer (``scl``), so a tile with ``mask`` also reads a nested grid; the CF
 Mini-Zarr carries the same pair (``b04`` and a ``scl`` group), for the comparison on Zarr.
 """

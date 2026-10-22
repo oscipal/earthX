@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AOI_CLIP_PROTOCOL } from './aoiClip';
 import type { DatasetOption } from './datasets';
@@ -11,11 +11,17 @@ import {
   assetGsd,
   DEFAULT_RANGE,
   finestGsd,
+  furtherNote,
   MAX_PREVIEW_SCENES,
+  MAX_PREVIEW_STEPS,
   previewMaxZoom,
   NO_PREVIEW,
   planPreview,
   previewOverlays,
+  probeChain,
+  refusedNote,
+  refusedStepOf,
+  shortenPlan,
   previewSpec,
   rescaleOf,
   tileResolution,
@@ -30,6 +36,20 @@ const COG = 'image/tiff; application=geotiff; profile=cloud-optimized';
 
 function bandMath(expression: string, key = 1): DraftStep {
   return { key, op: 'band_math', opVersion: 1, values: { expression } };
+}
+
+function normalize(key = 5, values: Record<string, string | boolean> = {}): DraftStep {
+  return {
+    key,
+    op: 'normalize',
+    opVersion: 1,
+    values: { in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
+  };
+}
+
+// The panel has no form for `mask` until M4-18c: it cannot be drawn, so it ends the start.
+function mask(key = 6): DraftStep {
+  return { key, op: 'mask', opVersion: 1, values: {} };
 }
 
 function reproject(): DraftStep {
@@ -77,8 +97,9 @@ describe('planPreview (adr/0014 §6.1)', () => {
 
   it('previews a complete band-math step with its parameters', () => {
     const plan = ready([bandMath('(nir - red) / (nir + red)')]);
-    expect(plan.params).toEqual({ expression: '(nir - red) / (nir + red)' });
-    expect(plan.operator.op).toBe('band_math');
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0].params).toEqual({ expression: '(nir - red) / (nir + red)' });
+    expect(plan.steps[0].operator.op).toBe('band_math');
     expect(plan.further).toBe(false);
   });
 
@@ -91,10 +112,50 @@ describe('planPreview (adr/0014 §6.1)', () => {
     expect(planPreview([reproject(), bandMath('red')], S2)).toEqual({ state: 'off', reason: NO_PREVIEW });
   });
 
-  it('shows only the first of several steps and says there are more', () => {
-    const plan = ready([bandMath('red + nir'), bandMath('red', 3), reproject()]);
-    expect(plan.params).toEqual({ expression: 'red + nir' });
+  it('shows the longest start of tile steps, and says there are more', () => {
+    const plan = ready([bandMath('red + nir'), normalize(), reproject(), bandMath('red', 3)]);
+    expect(plan.steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
+    expect(plan.steps[1].params).toEqual({ in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
     expect(plan.further).toBe(true);
+  });
+
+  it('keeps the order of the steps', () => {
+    expect(ready([normalize(), bandMath('red')]).steps.map((s) => s.operator.op)).toEqual(['normalize', 'band_math']);
+    expect(ready([bandMath('red'), normalize()]).steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
+  });
+
+  it('ends the start at a step that is incomplete and shows what is before it', () => {
+    const plan = ready([normalize(), bandMath('', 3), bandMath('red', 4)]);
+    expect(plan.steps.map((s) => s.step.key)).toEqual([5]);
+    expect(plan.further).toBe(true);
+  });
+
+  it('ends the start at a step the panel cannot draw', () => {
+    const plan = ready([bandMath('red'), mask()]);
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.further).toBe(true);
+    expect(planPreview([mask(), bandMath('red')], S2)).toEqual({ state: 'off', reason: NO_PREVIEW });
+  });
+
+  it('takes no more steps than the tile route does', () => {
+    const many = Array.from({ length: MAX_PREVIEW_STEPS + 2 }, (_, i) => normalize(10 + i));
+    const plan = ready(many);
+    expect(plan.steps).toHaveLength(MAX_PREVIEW_STEPS);
+    expect(plan.further).toBe(true);
+  });
+
+  it('asks to complete the first step when it is the one that is incomplete', () => {
+    expect(planPreview([normalize(5, { in_max: '' }), bandMath('red')], S2)).toEqual({
+      state: 'off',
+      reason: 'Complete the step to see the preview.',
+    });
+  });
+
+  it('says how much of the job the map shows', () => {
+    expect(furtherNote(ready([bandMath('red'), reproject()]))).toBe('The map shows the first step; the job runs all steps.');
+    expect(furtherNote(ready([bandMath('red'), normalize(), reproject()]))).toBe(
+      'The map shows the first 2 steps; the job runs all steps.',
+    );
   });
 
   it('has no preview for an operator the dataset does not list', () => {
@@ -139,6 +200,28 @@ describe('previewSpec', () => {
     expect(url.searchParams.get('rescale')).toBe('-1,1');
     expect(url.searchParams.get('colormap_name')).toBe('rdylgn');
     expect(spec).toMatchObject({ title: 'Band math', minZoom: 8, maxZoom: 13, clipToAoi: false });
+  });
+
+  it('chains the steps in the URL: op, op_version and params once per step, in order', () => {
+    const plan = ready([normalize(), bandMath('red / 2', 3)]);
+    const spec = previewSpec({ ...base, plan })!;
+    const url = new URL(spec.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.getAll('op_version')).toEqual(['1', '1']);
+    expect(url.searchParams.getAll('params')).toEqual([
+      '{"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
+      '{"expression":"red / 2"}',
+    ]);
+    expect(spec.title).toBe('Normalize → Band math');
+    const order = [...url.search.matchAll(/(?:^|&|\?)(op|op_version|params)=/g)].map((m) => m[1]);
+    expect(order).toEqual(['op', 'op_version', 'params', 'op', 'op_version', 'params']);
+  });
+
+  it('has another key for the steps in another order', () => {
+    const a = previewSpec({ ...base, plan: ready([normalize(), bandMath('red', 3)]) })!;
+    const b = previewSpec({ ...base, plan: ready([bandMath('red', 3), normalize()]) })!;
+    expect(a.key).not.toBe(b.key);
   });
 
   it('keeps the placeholders of the tile grid and survives characters of a URL in the expression', () => {
@@ -293,5 +376,73 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
 
   it('is never above the data at the pole either', () => {
     expect(previewMaxZoom([[10, 89, 11, 90]], 10, { min: 0, max: 22 })).toBeLessThanOrEqual(22);
+  });
+});
+
+describe('a chain the tiler refuses', () => {
+  const answer = (status: number, body: unknown) => async () =>
+    new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
+
+  it('reads the step and the reason off the detail of the tiler', () => {
+    expect(refusedStepOf('step 1: expression names unknown band(s): red; the input has: band_math')).toEqual({
+      step: 1,
+      reason: 'expression names unknown band(s): red; the input has: band_math',
+    });
+    expect(refusedStepOf("step 12: 'mask' cannot run here: x\ny")).toEqual({ step: 12, reason: "'mask' cannot run here: x\ny" });
+  });
+
+  it.each([['params: expression: required'], ['step : x'], ['step 2:'], ['Step 2: x'], [' step 2: x'], [undefined], [422], [['step 2: x']], [null]])(
+    'names no step in %j',
+    (detail) => {
+      expect(refusedStepOf(detail)).toBeNull();
+    },
+  );
+
+  it('asks the TileJSON and returns what a refusal names', async () => {
+    const fetchImpl = vi.fn(answer(422, { detail: 'step 1: no band red' }));
+    expect(await probeChain('/tj?x=1', fetchImpl as unknown as typeof fetch)).toEqual({ step: 1, reason: 'no band red' });
+    expect(fetchImpl).toHaveBeenCalledWith('/tj?x=1');
+  });
+
+  it.each([
+    ['a chain the tiler takes', answer(200, { tilejson: '3.0.0' })],
+    ['a refusal without a step', answer(400, { detail: 'params: x' })],
+    ['a failure of the source', answer(502, { detail: 'step 1: the asset could not be read' })],
+    ['an answer that is not JSON', answer(422, 'not json')],
+    ['a network that fails', async () => Promise.reject(new TypeError('offline'))],
+  ])('names no step for %s', async (_, fetchImpl) => {
+    expect(await probeChain('/tj', fetchImpl as unknown as typeof fetch)).toBeNull();
+  });
+
+  it('cuts the plan to the steps before the refused one, and to none for the first', () => {
+    const plan = ready([normalize(), bandMath('red', 3), normalize(7)]);
+    expect(shortenPlan(plan, 2)!.steps.map((s) => s.step.key)).toEqual([5, 3]);
+    expect(shortenPlan(plan, 2)!.further).toBe(true);
+    expect(shortenPlan(plan, 0)).toBeNull();
+  });
+
+  it('writes the note the way the panel shows it', () => {
+    const refused = { step: 1, reason: 'band red is not available after step 1' };
+    expect(refusedNote(1, 2, refused)).toBe('Preview shows step 1 of 2. Step 2: band red is not available after step 1.');
+    expect(refusedNote(2, 4, { step: 2, reason: 'no band.' })).toBe('Preview shows steps 1 to 2 of 4. Step 3: no band.');
+    expect(refusedNote(0, 2, { step: 0, reason: 'no band' })).toBe('No preview. Step 1: no band.');
+  });
+
+  it('puts the chain into the TileJSON URL of the first scene', () => {
+    const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
+    const spec = previewSpec({
+      dataset: DATASET,
+      items,
+      assets: ['red', 'nir'],
+      info: S2,
+      range: DEFAULT_RANGE,
+      area: 'scene',
+      plan: ready([normalize(), bandMath('red', 3)]),
+    })!;
+    expect(spec.stepCount).toBe(2);
+    const url = new URL(spec.probe, 'http://localhost');
+    expect(url.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_A/WebMercatorQuad/tilejson.json');
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.has('rescale')).toBe(false);
   });
 });

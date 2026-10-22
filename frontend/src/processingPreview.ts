@@ -4,19 +4,21 @@
 // `processingStore.ts`.
 
 import { clipTileUrl } from './aoiClip';
-import { buildOperatorTileTemplate } from './api';
+import { buildOperatorTileJsonUrl, buildOperatorTileTemplate } from './api';
 import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl } from './mapLayers';
 import { canonicalJson } from './processing';
 import { bandsOf, type Area, type DraftStep, type Operator, type ProcessInfo } from './processingOrder';
-import { paramsFrom } from './schemaForm';
+import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
 // As many scenes as the full-resolution view draws (`mapLayers.ts`).
 export const MAX_PREVIEW_SCENES = 40;
 // The tile route takes at most this many assets with an operator (`api/tiler.py`).
 export const MAX_PREVIEW_ASSETS = 16;
+// And at most this many steps in a chain (`api/tiler.py::MAX_OPERATOR_STEPS`).
+export const MAX_PREVIEW_STEPS = 4;
 
 export const NO_PREVIEW = 'No preview: the first step runs only as a job.';
 
@@ -47,31 +49,103 @@ export function rescaleOf(range: PreviewRange): { rescale: string } | { problem:
 
 // --- the planner (adr/0014 §6.1) ---------------------------------------------
 
+// One step the map can draw: the draft, its operator and its complete parameters.
+export interface PlannedStep {
+  step: DraftStep;
+  operator: Operator;
+  params: Record<string, unknown>;
+}
+
 export type PreviewPlan =
   | { state: 'off'; reason: string | null }
   | {
       state: 'ready';
-      step: DraftStep;
-      operator: Operator;
-      params: Record<string, unknown>;
-      // Steps after the first: the tile route takes one operator, so the preview
-      // shows the first and the job runs them all.
+      // The longest start of the steps that runs as tiles, in order, at least one.
+      steps: PlannedStep[];
+      // Steps after that start: the map shows the start, the job runs them all.
       further: boolean;
     };
 
-// The preview is the first step if it runs as a tile (`T1`, a pixel operator)
-// and its fields are complete; nothing else is shown. Without steps there is
-// nothing to say.
+// The operator of a step that can be a tile and the fields of its form, or `null`:
+// the operator is not on the dataset's list, the panel has no form for it, or it does
+// not run as a tile (`T1`, `pixel`).
+function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[] } | null {
+  const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
+  if (!operator || !operator.form.supported || !operator.tiers.includes('T1') || operator.kind !== 'pixel') return null;
+  return { operator, fields: operator.form.fields };
+}
+
+// The preview is the longest start of the steps in which every one runs as a tile
+// (`T1`, a pixel operator) and has its fields complete, at most `MAX_PREVIEW_STEPS`
+// of them (adr/0014 §6.1); the tile URL takes the steps in that order. Nothing after
+// a step that cannot be drawn is shown. Without steps there is nothing to say.
 export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | null): PreviewPlan {
   const first = steps[0];
   if (!info || !first) return { state: 'off', reason: null };
-  const operator = info.operators.find((o) => o.op === first.op && o.opVersion === first.opVersion);
-  if (!operator || !operator.form.supported || !operator.tiers.includes('T1') || operator.kind !== 'pixel') {
-    return { state: 'off', reason: NO_PREVIEW };
+  const planned: PlannedStep[] = [];
+  for (const step of steps.slice(0, MAX_PREVIEW_STEPS)) {
+    const found = tileStep(step, info);
+    if (!found) break;
+    const { params, errors } = paramsFrom(found.fields, step.values);
+    if (Object.keys(errors).length > 0) break;
+    planned.push({ step, operator: found.operator, params });
   }
-  const { params, errors } = paramsFrom(operator.form.fields, first.values);
-  if (Object.keys(errors).length > 0) return { state: 'off', reason: 'Complete the step to see the preview.' };
-  return { state: 'ready', step: first, operator, params, further: steps.length > 1 };
+  if (planned.length === 0) {
+    return tileStep(first, info) === null
+      ? { state: 'off', reason: NO_PREVIEW }
+      : { state: 'off', reason: 'Complete the step to see the preview.' };
+  }
+  return { state: 'ready', steps: planned, further: planned.length < steps.length };
+}
+
+// What the panel says under the preview when the map shows less than the job runs.
+export function furtherNote(plan: Extract<PreviewPlan, { state: 'ready' }>): string {
+  const shown = plan.steps.length === 1 ? 'the first step' : `the first ${plan.steps.length} steps`;
+  return `The map shows ${shown}; the job runs all steps.`;
+}
+
+// --- a chain the tiler refuses (Otto, 22.10.2026) ------------------------------------
+
+// A chain can name a band that an earlier step removed. The panel does not know the bands
+// each operator leaves: it asks the tiler and shows the steps before the one it refuses.
+export interface RefusedStep {
+  // Counted from 0, as every refusal of an order is (`stepOfRefusal`); the first step is 0.
+  step: number;
+  reason: string;
+}
+
+// `step 1: expression names unknown band(s): red; …` → `{ step: 1, reason: '…' }`, the second step.
+export function refusedStepOf(detail: unknown): RefusedStep | null {
+  if (typeof detail !== 'string') return null;
+  const found = /^step (\d+): ([\s\S]+)$/.exec(detail);
+  return found ? { step: Number(found[1]), reason: found[2].trim() } : null;
+}
+
+// Asks the TileJSON of a chain. `null`: the tiler takes it, or the answer names no step
+// (an unreachable source, a refusal of the whole URL) — then the map is left as it is.
+export async function probeChain(url: string, fetchImpl: typeof fetch = fetch): Promise<RefusedStep | null> {
+  try {
+    const response = await fetchImpl(url);
+    if (response.ok || response.status >= 500) return null;
+    const body: unknown = await response.json();
+    return refusedStepOf((body as { detail?: unknown } | null)?.detail);
+  } catch {
+    return null;
+  }
+}
+
+// The plan cut to its first `count` steps, the ones before a refused step; `null` for none.
+export function shortenPlan(plan: Extract<PreviewPlan, { state: 'ready' }>, count: number): Extract<PreviewPlan, { state: 'ready' }> | null {
+  if (count < 1) return null;
+  return { state: 'ready', steps: plan.steps.slice(0, count), further: true };
+}
+
+// "Preview shows step 1 of 2. Step 2: band red is not available after step 1." — for people the first step is 1.
+export function refusedNote(shown: number, total: number, refused: RefusedStep): string {
+  const reason = `Step ${refused.step + 1}: ${refused.reason.replace(/\.?$/, '.')}`;
+  if (shown < 1) return `No preview. ${reason}`;
+  const which = shown === 1 ? 'step 1' : `steps 1 to ${shown}`;
+  return `Preview shows ${which} of ${total}. ${reason}`;
 }
 
 // --- what the map draws -----------------------------------------------------
@@ -87,6 +161,10 @@ export interface PreviewSpec {
   // Changes whenever the picture does; the map and the debounce compare it.
   key: string;
   title: string;
+  // How many steps the picture is made of.
+  stepCount: number;
+  // The TileJSON of the first scene with the same steps: what `probeChain` asks.
+  probe: string;
   scenes: PreviewScene[];
   minZoom: number;
   // Capped so that no tile is as fine as the data (`previewMaxZoom`).
@@ -138,16 +216,18 @@ export function previewSpec(args: {
   if (!dataset?.viewable || assets.length === 0 || assets.length > MAX_PREVIEW_ASSETS) return null;
   const rescale = rescaleOf(range);
   if ('problem' in rescale) return null;
-  const paramsJson = canonicalJson(plan.params);
+  const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
   const scenes: PreviewScene[] = [];
+  let probe = '';
   for (const item of items.slice(0, MAX_PREVIEW_SCENES)) {
     if (!item.bbox) continue;
-    const template = buildOperatorTileTemplate(dataset.id, item.id, assets, plan.step.op, plan.step.opVersion, paramsJson);
+    const template = buildOperatorTileTemplate(dataset.id, item.id, assets, chain);
     scenes.push({
       id: item.id,
       bbox: item.bbox,
       url: buildTileUrl(template, { rescale: rescale.rescale, colormapName: range.colormap || undefined }),
     });
+    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
   }
   if (scenes.length === 0) return null;
   // Without a pixel size there is no level to hold the preview under: it is drawn
@@ -158,7 +238,9 @@ export function previewSpec(args: {
   const clipToAoi = area === 'aoi';
   return {
     key: canonicalJson({ urls: scenes.map((s) => s.url), minZoom: dataset.zoom.min, maxZoom, clipToAoi }),
-    title: plan.operator.title,
+    title: plan.steps.map(({ operator }) => operator.title).join(' → '),
+    stepCount: plan.steps.length,
+    probe,
     scenes,
     minZoom: dataset.zoom.min,
     maxZoom,

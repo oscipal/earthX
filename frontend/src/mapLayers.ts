@@ -395,7 +395,7 @@ function clearPreview(map: MapLibreMap): void {
   }
 }
 
-// The preview of the first step on the scenes of the order: one raster source
+// The preview of the steps on the scenes of the order: one raster source
 // per overlay (`processingPreview.ts::previewOverlays`, already cut to the AOI
 // for "AOI only"). Torn down and built again whenever it is called — the caller
 // calls it when the overlays change, or after a style reload.

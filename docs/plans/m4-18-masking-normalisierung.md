@@ -567,3 +567,74 @@ bleiben stehen, §15m kommt hinter §15k und §15l.
 - **Speicher** mit dem Statistik-Durchgang neu gemessen (§10 Punkt 3a): unverändert unter den
   Grenzen.
 - **Frontend-Fixtures** nach dem Merge neu erzeugt: kein Unterschied.
+
+---
+
+## 12. Umsetzung von M4-18b (22.10.2026)
+
+Kette von Operatoren in der Kachel und Vorschau des längsten T1-Anfangs (F1, §3.4, §8); ohne das
+Formular der Maske (M4-18c). Keine neue Abhängigkeit, `.github/`, `.claude/`, `CLAUDE.md` und
+`.importlinter` unberührt.
+
+**Geliefert:**
+- **`api/tiler.py`:** `op`, `op_version` und `params` dürfen in der Kachel-URL wiederholt werden, gleich
+  oft und in der Reihenfolge der Schritte, höchstens 4 (`MAX_OPERATOR_STEPS`). Ungleich oft oder mehr als 4:
+  `400`. Jeder Schritt wird für sich geprüft (bekannte Version, `T1` und `pixel`, Parameter strikt,
+  `applicable` mit `dataset_check`), vor dem Abruf des Items; ab zwei Schritten beginnt die Meldung mit
+  „step n: “ (n ab 0, wie in der Annahme). Die Form mit einem Operator ist der Fall n = 1, ihre Meldungen sind unverändert.
+  `OperatorInput` trägt jetzt `steps` statt `operator` und `params`; `operator_post_process` ruft die
+  Kerne nacheinander.
+- **`processing/tile.py`:** Der Reader lässt `transform` der Reihe nach über die Bänder laufen, vor dem
+  ersten Pixel: ein Schritt, der ein Band nennt, das der vorige entfernt hat (die Schicht nach `mask`),
+  wird mit `422` abgewiesen, wie im Auftrag; die Meldung nennt den Schritt.
+- **Frontend:** `planPreview` plant den längsten Anfang aus Kachel-Schritten (höchstens 4, wie der
+  `tiler`); ein unvollständiger oder nicht zeichenbarer Schritt beendet ihn. Ist schon der erste nicht
+  zeichenbar, bleibt es bei „No preview: the first step runs only as a job.“, ist er unvollständig, bei
+  „Complete the step …“. `buildOperatorTileTemplate` nimmt eine Liste von Schritten; der Titel der Vorschau
+  verbindet die Titel („Band math → Normalize“); der Hinweis unter der Vorschau nennt die Zahl der gezeigten
+  Schritte (`furtherNote`).
+
+**Tests (neu):**
+- `tests/earthx/api/test_tiler_chain.py`: Kachel gleich Job auf der nativen Ebene für `mask → band_math`,
+  `mask → normalize`, `mask → band_math → normalize` und `normalize → band_math` (COG-Paar mit
+  20-m-Schicht; `numpy.array_equal` über die gültigen Pixel, gleiche Masken, alle Bänder); `mask → band_math`
+  auf dem CF-Mini-Zarr nach der Regel von `adr/0014` §15d (Kachel gegen die Formel auf dem nächsten
+  Quellpixel beider Raster; Job gegen Kachel überall außer innerhalb von 0,125 Quellpixel einer Grenze);
+  die Maske des ersten Schritts erreicht den Index des zweiten; die Reihenfolge der URL ist die der
+  Schritte. Abweisungen: fünf Schritte, ungleich oft, Schritt ohne Kachel (`reproject`), unbekannte
+  Version, Parameter eines späteren Schritts, zu lange Parameter, Datensatz ohne Maske und falsche
+  Schicht (beide ohne Abruf des Items), ein Band, das der erste Schritt entfernt hat, zweite Maske,
+  fehlende Schicht im Auftrag; TileJSON trägt die Kette; `statistics` und `info` weisen sie ab.
+- Frontend: `processingPreview.test.ts` (Anfang, Reihenfolge, Ende an einem unvollständigen und an einem
+  nicht zeichenbaren Schritt, Obergrenze, URL mit wiederholten Parametern, Schlüssel je Reihenfolge) und
+  `ProcessingPreview.test.tsx` (Kette in der Vorschau, Hinweis).
+
+**Nicht Teil von M4-18b** (bleibt M4-18c): Das Panel zeigt `mask` weiter als „not supported by this
+panel“, also kann es `mask` im Anfang nicht zeichnen. Die Kette `mask → band_math` ist auf der Route
+und im Vergleich belegt, aber im Panel erst mit dem Formular erreichbar; das Asset der Schicht kommt mit
+M4-18c in den Auftrag.
+
+**Kette mit einem Band, das ein früherer Schritt entfernt hat (Otto, 22.10.2026):** Das Panel baut die Bandlogik nicht
+nach. Hat die Vorschau mindestens zwei Schritte, fragt es das TileJSON derselben Kette der ersten Szene (`buildOperatorTileJsonUrl`,
+`probeChain`); der Reader des `tiler` prüft dort jeden Schritt auf den Bändern des vorigen und antwortet mit `422`, dessen Text
+mit `step <n>: ` beginnt (`processing/tile.py`). Das Panel zeigt dann die Schritte davor und den Grund aus der Antwort:
+„Preview shows step 1 of 2. Step 2: expression names unknown band(s): red; the input has: band_math.“ Trifft es den ersten
+Schritt, steht „No preview. Step 1: …“ und keine Karte. Eine Antwort ohne Schritt (Quelle nicht erreichbar, `5xx`) lässt die ganze
+Kette stehen; ein Schritt allein wird nicht gefragt. Gemerkt wird nur eine Ablehnung, bis das Panel nichts mehr zeigt.
+- **Zählung:** `step <n>` zählt wie alle Ablehnungen der Annahme ab 0 (`processing/recipe.py`, `api/intake.py`,
+  `stepOfRefusal`): der zweite Schritt heißt `step 1`. So findet das Panel den Schritt für „Review“; nur der Hinweistext
+  rechnet auf „Step 2“ um.
+- **Annahme:** `plan.check_bands` setzt dasselbe `step <n>: ` vor die Ablehnung, wenn der Auftrag mehr als einen Schritt hat. „Review“
+  (`/estimate`) und „Start“ (`/execution`) weisen denselben Auftrag mit `422` (`urn:earthx:order-refused:applicable`) und diesem
+  Grund ab; nichts kommt in die Warteschlange (`TestAChainThatNamesABandAnEarlierStepRemoved` in `test_processing_route.py`). Das Panel
+  zeigt die Ablehnung am Schritt und sperrt „Start job“ (`ProcessingPanel.test.tsx`).
+
+**Nach dem Review:** Ziffern anderer Schriften in `op_version` werden mit `400` abgewiesen, bevor das Item geholt wird (vorher
+las `int()` sie, und FastAPI wies sie danach mit `422` ab); `tests/earthx/api/test_tiler_chain.py` prüft das, leere Teile und die
+Reihenfolge der Schritte mit einer Kette, deren Reihenfolge die Werte ändert. Die Obergrenze 4 steht im Backend
+(`MAX_OPERATOR_STEPS`) und im Frontend (`MAX_PREVIEW_STEPS`) je einmal; kein Test bindet beide aneinander.
+`NO_PREVIEW` sagt für `mask` als ersten Schritt „runs only as a job“, bis M4-18c das Formular bringt.
+
+**Nummer des Schritts:** In den Meldungen der Kachel und der Annahme steht `step 0:` für den ersten Schritt; die erste
+Fassung dieses Abschnitts zählte ab 1 und hätte im Panel am falschen Schritt gehangen. Die Tests oben nennen die Zählung ab 0.
+

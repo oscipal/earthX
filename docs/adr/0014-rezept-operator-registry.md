@@ -1958,12 +1958,13 @@ stehen; maßgeblich ist dieser Nachtrag.
   `test_download_route.py`, `test_result_zip_files.py` (Zuschnitt, Link, ZIP, Export),
   `runner/test_cli.py`.
 
-## 15m. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize` (zu §5.2, §5.3, §5.5, §6.3; M4-18a)
+## 15m. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize`, die Kette in der Kachel (zu §5.2, §5.3, §5.5, §6.1, §6.2, §6.3; M4-18a, M4-18b)
 
 Otto hat den Plan von M4-18 am 2026-10-20 freigegeben, F1–F6 und F8 je mit
 Option 1 (`plans/m4-18-masking-normalisierung.md` §8). Der Originaltext in §5.2,
-§5.3, §5.5 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt ist
-M4-18a; die Kette in der Kachel (F1) folgt mit M4-18b, das Panel (F6) mit M4-18c.
+§5.3, §5.5, §6.1, §6.2 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt
+sind M4-18a (Registry, Operatoren) und M4-18b (Kette in der Kachel, F1); das Panel (F6) folgt
+mit M4-18c.
 
 - **Registry (§5.3, B10):**
   - Neue Flags `masking` und `normalization` in `Capabilities`, ohne Vorgabe. Alle drei Einträge setzen `normalization` auf `True`; `masking` ist genau dort `True`, wo `DatasetConfig.mask` die Schicht beschreibt (das prüft der Eintrag beim Laden).
@@ -1978,6 +1979,7 @@ M4-18a; die Kette in der Kachel (F1) folgt mit M4-18b, das Panel (F6) mit M4-18c
 - **Faktoren (§5.5):** `mask` 0,2 und `normalize` 0,3, relativ zu Band-Math = 1,0 vor dem Statistik-Durchgang (§15k). Gemessen wurde der Kern auf einem Block von 1024² (kleinster Wert aus 15 Läufen, zwei Durchgänge): Band-Math NDVI 14,6–15,5 ms, `mask` mit zwei Bändern und der Schicht 5,3–7,1 ms, `normalize` mit zwei Bändern 27,1–29,3 ms. Ein ganzer Band-Math-Lauf kostet 146 ms je Megapixel (§3.5); die Kerne laufen im selben Durchgang wie das Lesen, also zählt ihr Anteil daran, aufgerundet auf eine Nachkommastelle: 7 / 146 → 0,1 und 29 / 146 → 0,2. Beide laufen über den Statistik-Durchgang von M4-32a und bekommen nach Ottos Regel („aufrunden“, Zuschlag [M] +12,1 % wie Band-Math, derselbe Durchgang) den Zuschlag dazu: 0,1 · 1,121 → **0,2** und 0,2 · 1,121 → **0,3**. Die Messung lief auf der Sitzung (x86_64), nicht gegen echte Läufe; die Kalibrierung bleibt bei M4-08 (§5.5).
 - **Toleranz (§6.3):** Beide Operatoren sind bitstabil im Sinn von §15c: `mask` rechnet nicht in Gleitkomma, `normalize` nur mit Grundrechenarten und Vergleichen in getrennten numpy-Schritten. Ein Test rechnet beide unter den Einstellungen A und D von `adr/0016` §3.3 und verlangt gleiche SHA-256. Die Kachel gleicht dem Job auf der nativen Ebene bitgleich (COG); auf Zarr gilt die Regel von §15d, geprüft mit einer 20-m-Klassenschicht im Mini-Zarr (3 von 2236 gültigen Pixeln einer z14-Kachel mit anderer Maske, alle an einer Pixelgrenze).
 - **Speicher (§3.5, M4-10b):** Beide Operatoren laufen im Durchgang des Lesens. Gemessen im Kindprozess (`VmHWM`, `GDAL_CACHEMAX` 64 MB): `mask` 351 MB und `normalize` 370 MB bei 4096², Wachstum von 2048² auf 4096² 69 und 80 MB (mit dem Statistik-Durchgang von M4-32a); die Grenzen sind 500 MB und 100 MB (`test_memory_mask_normalize.py`).
+- **Kette in der Kachel (§6.1, §6.2; F1, M4-18b):** Eine Kachel-URL darf `op`, `op_version` und `params` wiederholen: gleich oft, in der Reihenfolge der Schritte, höchstens 4. Die Ein-Schritt-Form ist der Fall n = 1 und unverändert. Jeder Schritt muss `T1` und `pixel` sein und auf den Datensatz passen (`applicable`, je Schritt, vor dem Abruf des Items); eine Abweisung nennt ab zwei Schritten den Platz („step 1: …“ für den zweiten, ab 0 gezählt wie alle Ablehnungen des Auftrags). Der Reader prüft die Bänder, die jeder Schritt dem nächsten lässt (`transform` der Reihe nach), vor dem ersten Pixel, wie der Auftrag; `process_dependency` ruft die Kerne nacheinander, dieselben Funktionen wie ein Job auf einem Block. Das Panel zeigt den längsten Anfang aus Kachel-Schritten (höchstens 4); ein unvollständiger oder nicht zeichenbarer Schritt beendet ihn, und der Hinweis nennt, wie viele Schritte die Karte zeigt. Nennt ein Schritt ein Band, das ein früherer entfernt hat, fragt das Panel das TileJSON der Kette, zeigt die Schritte vor dem abgewiesenen und dessen Grund und baut die Bandlogik nicht nach; die Annahme (`check_bands`, „Review“ und „Start“) weist denselben Auftrag mit demselben Grund ab (Otto, 22.10.2026). Verglichen mit dem Job ist die Kette `mask → band_math` auf der nativen Ebene bitgleich (COG, Maske gleich); auf Zarr gilt die Regel von §15d.
 
 ## 16. Quellen
 

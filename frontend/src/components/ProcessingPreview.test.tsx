@@ -116,6 +116,8 @@ let catalog: Record<string, StacItem | number>;
 // Requests held back until a test answers them.
 let pending: Record<string, Promise<Response> | undefined>;
 let fetchMock: ReturnType<typeof vi.fn>;
+// What the tiler answers to the TileJSON of a chain (the question of `probeChain`): the chain is fine by default.
+let tilejson: (url: string) => Response;
 const ITEM_URL = '/stac/collections/sentinel-2-c1-l2a/items/';
 
 beforeEach(() => {
@@ -123,8 +125,10 @@ beforeEach(() => {
   sessionStorage.clear();
   catalog = {};
   pending = {};
+  tilejson = () => json({ tilejson: '3.0.0' });
   fetchMock = vi.fn(async (url: string) => {
     if (url === '/processing/processes/recipe?dataset=sentinel-2-c1-l2a') return json(s2);
+    if (url.includes('/tilejson.json')) return tilejson(url);
     if (pending[url]) return pending[url];
     if (url.startsWith(ITEM_URL)) {
       const entry = catalog[decodeURIComponent(url.slice(ITEM_URL.length))];
@@ -138,7 +142,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [], preview: null });
+  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
   useAppStore.setState({ mapZoom: 1.6, viewportBbox: null, layers: [], layerManagerOpen: false });
   container = document.createElement('div');
   document.body.append(container);
@@ -189,7 +193,7 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) 
   });
 }
 
-const expression = () => container.querySelector<HTMLTextAreaElement>('textarea[id$="-expression"]')!;
+const expression = (index = 0) => container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]')[index]!;
 const section = () => container.querySelector('section[aria-label="Preview on the map"]')!;
 const store = () => useProcessingStore.getState();
 
@@ -367,6 +371,82 @@ describe('the preview section', () => {
     click(button('＋ Band math'));
     expect(section().textContent).toContain('The map shows the first step; the job runs all steps.');
     expect(store().preview!.title).toBe('Band math');
+  });
+
+  async function chainOfTwo(): Promise<void> {
+    await withNdvi();
+    click(button('＋ Band math'));
+    typeInto(expression(1), 'red + 1');
+    afterDebounce();
+    await flush();
+  }
+
+  const refusal = (detail: string) => () =>
+    new Response(JSON.stringify({ detail }), { status: 422, headers: { 'Content-Type': 'application/json' } });
+
+  it('draws a chain of tile steps and counts what the map leaves out', async () => {
+    await withNdvi();
+    const normalize = { key: 900, op: 'normalize', opVersion: 1, values: { in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
+    act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
+    afterDebounce();
+    await flush();
+    expect(store().preview!.title).toBe('Band math → Normalize');
+    expect(store().previewNote).toBeNull();
+    const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('op')).toEqual(['band_math', 'normalize']);
+    expect(section().textContent).not.toContain('the job runs all steps');
+    click(button('＋ Band math'));
+    expect(section().textContent).toContain('The map shows the first 2 steps; the job runs all steps.');
+    expect(store().preview!.title).toBe('Band math → Normalize');
+  });
+
+  it('asks the tiler about a chain of several steps with the TileJSON of the same chain, and about one step not at all', async () => {
+    await withNdvi();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/tilejson.json'))).toBe(false);
+    await chainOfTwo();
+    const asked = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/tilejson.json'));
+    expect(asked).toHaveLength(1);
+    const query = new URL(asked[0], 'http://localhost').searchParams;
+    expect(query.getAll('op')).toEqual(['band_math', 'band_math']);
+    expect(query.getAll('params')).toHaveLength(2);
+    expect(store().preview!.stepCount).toBe(2);
+  });
+
+  it('shows the steps before the one the tiler refuses, and its reason', async () => {
+    tilejson = refusal('step 1: expression names unknown band(s): red; the input has: band_math');
+    await chainOfTwo();
+    expect(store().preview!.stepCount).toBe(1);
+    expect(store().previewNote).toBe(
+      'Preview shows step 1 of 2. Step 2: expression names unknown band(s): red; the input has: band_math.',
+    );
+    expect(section().textContent).toContain('Preview shows step 1 of 2. Step 2: expression names unknown band(s): red');
+    const url = new URL(store().preview!.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('op')).toEqual(['band_math']);
+  });
+
+  it('shows no picture, and the reason, when the tiler refuses the first step of a chain', async () => {
+    tilejson = refusal('step 0: expression names unknown band(s): green; the input has: red, nir');
+    await chainOfTwo();
+    expect(store().preview).toBeNull();
+    expect(store().previewNote).toBe('No preview. Step 1: expression names unknown band(s): green; the input has: red, nir.');
+  });
+
+  it('keeps the whole chain when the answer names no step, and drops the note when the chain is fixed', async () => {
+    tilejson = () => new Response('{"detail":"the asset could not be read from the source"}', { status: 502 });
+    await chainOfTwo();
+    expect(store().preview!.stepCount).toBe(2);
+    expect(store().previewNote).toBeNull();
+    tilejson = refusal('step 1: expression names unknown band(s): red; the input has: band_math');
+    typeInto(expression(1), 'red + 2');
+    afterDebounce();
+    await flush();
+    expect(store().previewNote).toContain('Preview shows step 1 of 2');
+    tilejson = () => json({ tilejson: '3.0.0' });
+    typeInto(expression(1), 'band_math + 1');
+    afterDebounce();
+    await flush();
+    expect(store().preview!.stepCount).toBe(2);
+    expect(store().previewNote).toBeNull();
   });
 
   it('asks for a band when none is named', async () => {
