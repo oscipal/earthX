@@ -34,7 +34,7 @@ import zlib
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +106,7 @@ ATTACHMENT_LIMITS: Mapping[str, int] = {
     AOI_FILENAME: 2 * 1024 * 1024,
 }
 _ATTRIBUTION_ENTRIES = 8
+_ATTACHMENT_KEYS = frozenset({"files", "attribution", "dataset", "acquired_on"})
 
 _ATTRIBUTION_CHARS = 1024
 
@@ -129,6 +130,9 @@ class Attachments:
     #: What the methods text says of the dataset beside its identifier; ``None`` for attachments written
     #: before M4-19a, whose methods text then names the dataset by its identifier only.
     dataset: DatasetFacts | None = None
+    #: The UTC day of the overpass for the methods text, as `api` found it for the file names; ``None``
+    #: where there is none.
+    acquired_on: date | None = None
 
     def __post_init__(self) -> None:
         if set(self.files) != set(ATTACHMENT_LIMITS):
@@ -149,20 +153,23 @@ class Attachments:
         data: dict[str, Any] = {"files": dict(self.files), "attribution": list(self.attribution)}
         if self.dataset is not None:
             data["dataset"] = self.dataset.to_json()
+        if self.acquired_on is not None:
+            data["acquired_on"] = self.acquired_on.isoformat()
         return data
 
     @classmethod
     def from_json(cls, data: Any) -> Attachments:
-        if not isinstance(data, Mapping) or set(data) not in ({"files", "attribution"}, {"files", "attribution", "dataset"}):
+        if not isinstance(data, Mapping) or not {"files", "attribution"} <= set(data) <= _ATTACHMENT_KEYS:
             raise AttachmentsInvalid("the attachments hold files and attribution")
         files, attribution = data["files"], data["attribution"]
         if not isinstance(files, Mapping) or not isinstance(attribution, list):
             raise AttachmentsInvalid("the attachments hold files and attribution")
         try:
             dataset = DatasetFacts.from_json(data["dataset"]) if "dataset" in data else None
-        except ValueError:
+            acquired_on = date.fromisoformat(data["acquired_on"]) if "acquired_on" in data else None
+        except (ValueError, TypeError):
             raise AttachmentsInvalid("the attachments hold files and attribution") from None
-        return cls(dict(files), tuple(attribution), dataset)
+        return cls(dict(files), tuple(attribution), dataset, acquired_on)
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,7 +436,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 (RECIPE_FILENAME, document),
                 (CITATION_FILENAME, attachments.files[CITATION_FILENAME].encode("utf-8")),
                 (NOTICE_FILENAME, attachments.files[NOTICE_FILENAME].encode("utf-8")),
-                (METHODS_FILENAME, methods_text(document, dataset=attachments.dataset).encode("utf-8")),
+                (METHODS_FILENAME, methods_text(document, dataset=attachments.dataset, acquired_on=attachments.acquired_on).encode("utf-8")),
             ]
             path = state.pack(files, texts)
             state.tick()

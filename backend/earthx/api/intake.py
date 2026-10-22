@@ -126,6 +126,7 @@ __all__ = [
     "EstimatedOrder",
     "OrderRefused",
     "accept_order",
+    "acquired_day",
     "check_recipe_hosts",
     "crop_recipe_json",
     "describe_bands",
@@ -367,6 +368,7 @@ async def _accept(
         dropped=[item_id for group in prepared.entry.groups if kept.isdisjoint(group) for item_id in group],
         aoi_provenance=aoi_provenance,
         accepted_at=datetime.now(UTC),
+        acquired_on=acquired_on,
     )
     return AcceptedOrder(recipe, False, prepared.skipped, attachments, acquired_on)
 
@@ -378,10 +380,18 @@ def _acquired_on(prepared: _Prepared) -> date | None:
     lie on several days (an export over a month) or whose dataset has no single day (the DEM) has none,
     and its downloads are named by the day of the run, marked ``run``.
     """
-    viewer = prepared.config.viewer
+    return acquired_day([target.item for target in prepared.targets], prepared.config)
+
+
+def acquired_day(items: Sequence[Mapping[str, Any]], config: DatasetConfig) -> date | None:
+    """The one place of the rule: the day all of ``items`` were acquired, else ``None``.
+
+    The name of every download and the methods text take the day from here (Otto, 22.10.2026).
+    """
+    viewer = config.viewer
     if viewer is None:
         return None
-    days = {acquisition_day(target.item, viewer) for target in prepared.targets}
+    days = {acquisition_day(item, viewer) for item in items}
     return days.pop() if len(days) == 1 else None
 
 
@@ -476,6 +486,7 @@ def export_attachments(
     dropped: Sequence[str],
     aoi_provenance: Mapping[str, str] | None,
     accepted_at: datetime,
+    acquired_on: date | None = None,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
 
@@ -496,6 +507,7 @@ def export_attachments(
         ),
         attribution=(attribution,) if attribution else (),
         dataset=DatasetFacts.of(config),
+        acquired_on=acquired_on,
     )
 
 
@@ -1100,7 +1112,10 @@ def crop_recipe_json(
 
 
 def methods_bytes(
-    recipe_json: bytes, config: DatasetConfig | None, operators: OperatorRegistry | None = None
+    recipe_json: bytes,
+    config: DatasetConfig | None,
+    operators: OperatorRegistry | None = None,
+    acquired_on: date | None = None,
 ) -> bytes:
     """``methods.txt`` for a ``recipe.json``, as bytes (M4-19a): the one function every download calls.
 
@@ -1111,7 +1126,7 @@ def methods_bytes(
     """
     dataset = DatasetFacts.of(config) if config is not None else None
     registry = {} if operators is None else {"operators": operators}
-    return methods_text(recipe_json, dataset=dataset, **registry).encode("utf-8")
+    return methods_text(recipe_json, dataset=dataset, acquired_on=acquired_on, **registry).encode("utf-8")
 
 
 def job_recipe_json(

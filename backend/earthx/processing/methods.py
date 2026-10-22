@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pyproj import Geod
@@ -73,9 +73,15 @@ def methods_text(
     document: bytes | str | Mapping[str, Any],
     *,
     dataset: DatasetFacts | None = None,
+    acquired_on: date | None = None,
     operators: OperatorRegistry = REGISTRY,
 ) -> str:
     """The paragraph for ``document``, a ``recipe.json`` with its ``provenance``.
+
+    ``acquired_on`` is the UTC day of the overpass, as `api` found it for the file names too
+    (``catalog.registry.acquisition_day``); the sentence is left out where there is none — a
+    dataset without a single day, a source that does not know it — and the day of the run is never
+    put in its place (Otto, 22.10.2026).
 
     :class:`~earthx.processing.errors.RecipeInvalid` for a document that is not one; the text
     names no value of it.
@@ -91,6 +97,7 @@ def methods_text(
         raise RecipeInvalid("the provenance of the recipe is not valid") from None
     sentences = [
         *_data_sentences(recipe, dataset),
+        _acquired_sentence(acquired_on),
         *_scaling_sentences(provenance),
         *_step_sentences(recipe, operators),
         _output_sentence(recipe),
@@ -114,6 +121,10 @@ def _data_sentences(recipe: Recipe, dataset: DatasetFacts | None) -> list[str]:
                 "Scenes of one overpass were mosaicked; where they overlap, the first valid pixel of a fixed order wins."
             )
     return sentences
+
+
+def _acquired_sentence(acquired_on: date | None) -> str:
+    return f"The scenes were acquired on {acquired_on.isoformat()} (UTC)." if acquired_on is not None else ""
 
 
 def _scaling_sentences(provenance: Provenance) -> list[str]:

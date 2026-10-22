@@ -994,7 +994,9 @@ def _methods_document(api: JobApi, body: dict[str, Any] | None, status: JobStatu
 
 def _methods_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
     """``methods.txt`` of the job, built from the ``recipe.json`` it would serve: the two never disagree."""
-    return methods_bytes(_recipe_bytes(api, body, status), _config_of(api, body), api.operators)
+    return methods_bytes(
+        _recipe_bytes(api, body, status), _config_of(api, body), api.operators, acquired_on=status.acquired_on
+    )
 
 
 def _instant(value: Any) -> datetime | None:

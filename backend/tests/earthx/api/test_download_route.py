@@ -16,6 +16,7 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -303,7 +304,8 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             text = archive.read("methods.txt").decode("utf-8")
             recipe = json.loads(archive.read("recipe.json"))
-        assert text == methods_text(recipe, dataset=DatasetFacts.of(SENTINEL_2_L2A))
+        assert text == methods_text(recipe, dataset=DatasetFacts.of(SENTINEL_2_L2A), acquired_on=date(2026, 7, 24))
+        assert "The scenes were acquired on 2026-07-24 (UTC)." in text, "the day of the overpass, not the day of the run"
         assert text.startswith(f"The dataset {SENTINEL_2_L2A.title} (sentinel-2-c1-l2a")
         assert "cropped to the bounding box" in text and "It was cut on the EarthX platform" in text
         assert "Contains modified Copernicus Sentinel data" in text

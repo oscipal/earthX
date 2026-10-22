@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from io import BytesIO
 from typing import Any
 
@@ -29,7 +29,18 @@ from earthx.objectstore.results import Store
 from earthx.processing.methods import DatasetFacts, methods_text
 from tests.earthx.access.test_download import GOOD_AOI, FakeReader, path
 from tests.earthx.api.conftest import Rig
-from tests.earthx.api.test_intake import NEAR, PLACE, S2, SQUARE, Source, accept, export_order, order, visual_item
+from tests.earthx.api.test_intake import (
+    NEAR,
+    PLACE,
+    S2,
+    SQUARE,
+    Source,
+    accept,
+    dem_item,
+    export_order,
+    order,
+    visual_item,
+)
 from tests.earthx.api.test_processing_route import (
     EXECUTION,
     EXPORT_RESULT,
@@ -198,7 +209,9 @@ class TestTheMethodsText:
         job_id, _, _ = await zipped(rig)
         recipe = await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")
         text = (await rig.client.get(f"/processing/jobs/{job_id}/results/methods.txt")).text
-        assert text == methods_text(recipe.content, dataset=DatasetFacts.of(C1), operators=rig.api.operators)
+        assert text == methods_text(
+            recipe.content, dataset=DatasetFacts.of(C1), acquired_on=date(2026, 6, 1), operators=rig.api.operators
+        )
         assert text.startswith(f"The dataset {C1.title} (sentinel-2-c1-l2a, doi:{doi_name(C1.doi)})")
         assert "Contains modified Copernicus Sentinel data 2026" in text
 
@@ -225,6 +238,33 @@ class TestTheMethodsText:
         async with client_for(api) as client:
             response = await client.get(f"/processing/jobs/{job_id}/results/methods.txt")
         assert response.status_code == 200 and response.text.startswith("The dataset sentinel-2-c1-l2a was used:")
+
+    async def test_a_sentinel_2_job_names_the_day_of_its_overpass_as_its_file_name_does(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        job_id, _, _ = await zipped(rig)  # the run ended on 2026-03-05, the scene is of 2026-06-01
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results/methods.txt")
+        assert "_20260601_methods.txt" in response.headers["content-disposition"]
+        assert "The scenes were acquired on 2026-06-01 (UTC)." in response.text
+        assert "processed on the EarthX platform on 2026-03-05" in response.text, "the run keeps its own day"
+        assert "acquired on 2026-03-05" not in response.text
+
+    async def test_a_dem_job_has_no_sentence_on_an_acquisition_day_and_never_the_day_of_its_run(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        rig.source.items[("cop-dem-glo-30", "DEM_N47_E009")] = dem_item()
+        job_id = await placed(rig, order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)))
+        finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results/methods.txt")
+        assert response.status_code == 200
+        assert "_run20260305_methods.txt" in response.headers["content-disposition"]
+        assert "acquired" not in response.text, "no single day of acquisition: no sentence"
+        assert "processed on the EarthX platform on 2026-03-05" in response.text
+
+    async def test_the_export_carries_the_day_into_its_own_text(self, rig: Rig) -> None:
+        await placed(rig, job_export_order())
+        (attachments,) = rig.db.execute("SELECT attachments FROM public.earthx_run").fetchone()  # type: ignore[misc]
+        assert attachments["acquired_on"] == "2026-06-01"
 
     async def test_an_export_has_it_too(self, rig: Rig) -> None:
         job_id = await placed(rig, job_export_order())

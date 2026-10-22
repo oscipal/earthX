@@ -749,7 +749,7 @@ async def download_crop(
 
     # The worker core stays out of the tiler's start (the intake imports it), so it is
     # loaded when the first crop asks for its recipe.
-    from earthx.api.intake import crop_recipe_json, methods_bytes
+    from earthx.api.intake import acquired_day, crop_recipe_json, methods_bytes
 
     accepted_at = datetime.now(timezone.utc)
     recipe_omitted_cause: str | None = None
@@ -773,7 +773,15 @@ async def download_crop(
         recipe_json = None
         recipe_omitted_cause = refused.stage
     # The methods text is built from the recipe, so it comes and goes with it (M4-19a).
-    methods = methods_bytes(recipe_json, config) if recipe_json is not None else None
+    methods = (
+        methods_bytes(
+            recipe_json,
+            config,
+            acquired_on=acquired_day([item for matched, _ in surviving_groups for item in matched], config),
+        )
+        if recipe_json is not None
+        else None
+    )
     bib = citation_bib(config, downloaded=accepted_at.date())
 
     total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)

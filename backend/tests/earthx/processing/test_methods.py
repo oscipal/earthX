@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -133,6 +133,29 @@ class TestTheParagraph:
 
     def test_it_is_deterministic(self) -> None:
         assert methods_text(document(band_math())) == methods_text(document(band_math()))
+
+
+class TestTheDayOfAcquisition:
+    """Otto, 22.10.2026: the day of the overpass as `api` found it, else no sentence; never the day of the run."""
+
+    def test_the_day_stands_after_the_data_and_before_the_steps(self) -> None:
+        text = methods_text(document(band_math()), acquired_on=date(2026, 6, 1))
+        assert "The scenes were acquired on 2026-06-01 (UTC)." in text
+        assert text.index("was used") < text.index("acquired on") < text.index("One band was computed")
+
+    def test_without_a_day_there_is_no_sentence_and_the_day_of_the_run_is_not_put_in_its_place(self) -> None:
+        text = methods_text(document(band_math()))
+        assert "acquired" not in text
+        assert "processed on the EarthX platform on 2026-10-20" in text, "the run keeps its own day"
+
+    def test_the_day_of_the_overpass_is_not_the_day_of_the_run(self) -> None:
+        text = methods_text(document(band_math()), acquired_on=date(2026, 6, 1))
+        assert "acquired on 2026-10-20" not in text and "processed on the EarthX platform on 2026-10-20" in text
+
+    def test_a_local_run_without_the_source_has_no_sentence(self) -> None:
+        data = json.loads(document(band_math()))
+        data["provenance"].update(execution="local", self_attested=True, runner_version="0.4.1+gabcdef0")
+        assert "acquired" not in methods_text(data)
 
 
 class TestWhatIsNeverInTheText:

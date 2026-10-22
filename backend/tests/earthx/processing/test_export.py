@@ -15,6 +15,8 @@ import io
 import json
 import threading
 import zipfile
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -376,6 +378,36 @@ def test_attachments_with_the_facts_of_the_dataset_survive_their_json_form() -> 
     data = json.loads(json.dumps(attachments.to_json()))
     assert data["dataset"] == {"title": "A title", "doi": "10.1/x"}
     assert Attachments.from_json(data) == attachments
+
+
+def test_attachments_with_the_day_of_the_overpass_survive_their_json_form() -> None:
+    attachments = Attachments(files=FILES, attribution=("a",), acquired_on=date(2026, 6, 1))
+    data = json.loads(json.dumps(attachments.to_json()))
+    assert data["acquired_on"] == "2026-06-01" and "dataset" not in data
+    assert Attachments.from_json(data) == attachments
+
+
+@pytest.mark.parametrize("day", [None, 5, "", "June", "2026-13-01", ["2026-06-01"]])
+def test_attachments_refuse_a_day_that_is_not_one(day: Any) -> None:
+    with pytest.raises(AttachmentsInvalid):
+        Attachments.from_json({"files": FILES, "attribution": [], "acquired_on": day})
+
+
+@pytest.mark.usefixtures("served")
+def test_the_methods_text_of_the_export_names_the_day_it_was_handed_and_none_otherwise(tmp_path: Path) -> None:
+    groups = CASES["one item"]
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip(groups, AOI)))
+    with_day = replace(_attachments(crop), acquired_on=date(2026, 6, 1))
+    result = run(
+        _recipe(groups), workdir=tmp_path, progress=lambda done, total: None, operators=OPERATORS, attachments=with_day
+    )
+    with zipfile.ZipFile(result.path) as exported:
+        assert "The scenes were acquired on 2026-06-01 (UTC)." in exported.read(METHODS_FILENAME).decode("utf-8")
+    other = tmp_path / "other"
+    other.mkdir()
+    result = _export(groups, other, crop)
+    with zipfile.ZipFile(result.path) as exported:
+        assert "acquired" not in exported.read(METHODS_FILENAME).decode("utf-8")
 
 
 def test_attachments_written_before_the_methods_text_still_read() -> None:
