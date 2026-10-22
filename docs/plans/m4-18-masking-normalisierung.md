@@ -581,12 +581,12 @@ Formular der Maske (M4-18c). Keine neue Abhängigkeit, `.github/`, `.claude/`, `
   oft und in der Reihenfolge der Schritte, höchstens 4 (`MAX_OPERATOR_STEPS`). Ungleich oft oder mehr als 4:
   `400`. Jeder Schritt wird für sich geprüft (bekannte Version, `T1` und `pixel`, Parameter strikt,
   `applicable` mit `dataset_check`), vor dem Abruf des Items; ab zwei Schritten beginnt die Meldung mit
-  „step n: “. Die Form mit einem Operator ist der Fall n = 1, ihre Meldungen sind unverändert.
+  „step n: “ (n ab 0, wie in der Annahme). Die Form mit einem Operator ist der Fall n = 1, ihre Meldungen sind unverändert.
   `OperatorInput` trägt jetzt `steps` statt `operator` und `params`; `operator_post_process` ruft die
   Kerne nacheinander.
 - **`processing/tile.py`:** Der Reader lässt `transform` der Reihe nach über die Bänder laufen, vor dem
   ersten Pixel: ein Schritt, der ein Band nennt, das der vorige entfernt hat (die Schicht nach `mask`),
-  wird mit `422` abgewiesen, wie im Auftrag.
+  wird mit `422` abgewiesen, wie im Auftrag; die Meldung nennt den Schritt.
 - **Frontend:** `planPreview` plant den längsten Anfang aus Kachel-Schritten (höchstens 4, wie der
   `tiler`); ein unvollständiger oder nicht zeichenbarer Schritt beendet ihn. Ist schon der erste nicht
   zeichenbar, bleibt es bei „No preview: the first step runs only as a job.“, ist er unvollständig, bei
@@ -614,16 +614,27 @@ panel“, also kann es `mask` im Anfang nicht zeichnen. Die Kette `mask → band
 und im Vergleich belegt, aber im Panel erst mit dem Formular erreichbar; das Asset der Schicht kommt mit
 M4-18c in den Auftrag.
 
-**Bekannte Grenze (offen für Otto):** Der Anfang im Panel prüft jeden Schritt für sich, nicht die Bandnamen, die der vorige
-Schritt übrig lässt. Eine Folge wie `band_math` (Ergebnisband `band_math`), danach ein zweiter `band_math`, der `red` nennt,
-geht als Kette an die Kachel und wird dort mit `422` abgewiesen (das Band fehlt, wie im Job); die Vorschau bleibt dann leer,
-und das Panel meldet den Kachelfehler nirgends. Vorher zeigte die Vorschau den ersten Schritt. Möglich sind ein Hinweis im
-Panel bei abgewiesenen Kacheln oder ein Anfang, der nur bis zum ersten Schritt reicht, der Bandnamen nennt; das ist eine
-Entscheidung über das Verhalten des Panels und gehört zu M4-18c oder davor zu Otto.
+**Kette mit einem Band, das ein früherer Schritt entfernt hat (Otto, 22.10.2026):** Das Panel baut die Bandlogik nicht
+nach. Hat die Vorschau mindestens zwei Schritte, fragt es das TileJSON derselben Kette der ersten Szene (`buildOperatorTileJsonUrl`,
+`probeChain`); der Reader des `tiler` prüft dort jeden Schritt auf den Bändern des vorigen und antwortet mit `422`, dessen Text
+mit `step <n>: ` beginnt (`processing/tile.py`). Das Panel zeigt dann die Schritte davor und den Grund aus der Antwort:
+„Preview shows step 1 of 2. Step 2: expression names unknown band(s): red; the input has: band_math.“ Trifft es den ersten
+Schritt, steht „No preview. Step 1: …“ und keine Karte. Eine Antwort ohne Schritt (Quelle nicht erreichbar, `5xx`) lässt die ganze
+Kette stehen; ein Schritt allein wird nicht gefragt. Gemerkt wird nur eine Ablehnung, bis das Panel nichts mehr zeigt.
+- **Zählung:** `step <n>` zählt wie alle Ablehnungen der Annahme ab 0 (`processing/recipe.py`, `api/intake.py`,
+  `stepOfRefusal`): der zweite Schritt heißt `step 1`. So findet das Panel den Schritt für „Review“; nur der Hinweistext
+  rechnet auf „Step 2“ um.
+- **Annahme:** `plan.check_bands` setzt dasselbe `step <n>: ` vor die Ablehnung, wenn der Auftrag mehr als einen Schritt hat. „Review“
+  (`/estimate`) und „Start“ (`/execution`) weisen denselben Auftrag mit `422` (`urn:earthx:order-refused:applicable`) und diesem
+  Grund ab; nichts kommt in die Warteschlange (`TestAChainThatNamesABandAnEarlierStepRemoved` in `test_processing_route.py`). Das Panel
+  zeigt die Ablehnung am Schritt und sperrt „Start job“ (`ProcessingPanel.test.tsx`).
 
 **Nach dem Review:** Ziffern anderer Schriften in `op_version` werden mit `400` abgewiesen, bevor das Item geholt wird (vorher
 las `int()` sie, und FastAPI wies sie danach mit `422` ab); `tests/earthx/api/test_tiler_chain.py` prüft das, leere Teile und die
 Reihenfolge der Schritte mit einer Kette, deren Reihenfolge die Werte ändert. Die Obergrenze 4 steht im Backend
 (`MAX_OPERATOR_STEPS`) und im Frontend (`MAX_PREVIEW_STEPS`) je einmal; kein Test bindet beide aneinander.
 `NO_PREVIEW` sagt für `mask` als ersten Schritt „runs only as a job“, bis M4-18c das Formular bringt.
+
+**Nummer des Schritts:** In den Meldungen der Kachel und der Annahme steht `step 0:` für den ersten Schritt; die erste
+Fassung dieses Abschnitts zählte ab 1 und hätte im Panel am falschen Schritt gehangen. Die Tests oben nennen die Zählung ab 0.
 
