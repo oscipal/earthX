@@ -1831,12 +1831,12 @@ input[type='date']:focus {
 .pp-recipe-btn {
   box-sizing: border-box;
   width: 25%;
-  padding: 4px 6px;
+  padding: 8px 6px;
   overflow: hidden;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
 }
 .pp-recipe-btn.disabled {

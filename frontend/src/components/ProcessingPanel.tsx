@@ -84,7 +84,7 @@ function RecipeLoader() {
   return (
     <div className="pp-recipe">
       <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps and the data type from a recipe.json, onto the current selection">
-        Load recipe…
+        ⬆ Load recipe…
         <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
       </label>
       {outcome && (
