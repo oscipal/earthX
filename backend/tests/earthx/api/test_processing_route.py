@@ -686,7 +686,7 @@ class TestResults:
         response = await rig.client.get(f"/processing/jobs/{job_id}/results")
         assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
         body = response.json()
-        assert list(body) == ["result", "mask", "recipe", "tiles"]
+        assert list(body) == ["result", "mask", "recipe", "methods", "tiles"]
         base = f"/processing/jobs/{job_id}/results/"
         assert [body[key]["href"] for key in ("result", "mask", "recipe")] == [
             base + "result.tif",
@@ -719,7 +719,7 @@ class TestResults:
         assert response.status_code == 404
 
     async def test_the_links_name_what_the_store_holds_and_what_api_builds(self) -> None:
-        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")
+        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json", "methods.txt")
 
 
 def signed(response: httpx.Response) -> tuple[str, dict[str, list[str]]]:
@@ -1180,7 +1180,7 @@ class TestTheNameOfADownload:
 
 EXPORT_RESULT = {
     "files": ["export.zip"],
-    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt"],
+    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt", "methods.txt"],
     "groups": 1,
     "assets": 1,
     "blocks": 3,
@@ -1275,7 +1275,7 @@ class TestAnExport:
         job_id = await placed(rig, export_order())
         finish(rig.db, job_id, result=EXPORT_RESULT)
         document = (await rig.client.get(f"/processing/jobs/{job_id}/results")).json()
-        assert list(document) == ["export", "recipe"]
+        assert list(document) == ["export", "recipe", "methods"]
         assert document["export"]["type"] == "application/zip" and document["export"]["length"] == 54321
 
     async def test_the_zip_link_is_a_303_named_by_dataset_export_and_date(self, rig: Rig) -> None:

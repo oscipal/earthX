@@ -26,8 +26,8 @@ from tests.earthx.processing.test_memory_8192 import BACKEND, PEAK_LIMIT_MB, bui
 
 SMALL, LARGE = 2048, 4096
 
-#: How much the peak may grow from 2048² to 4096², 4 times the pixels. Measured 68 MB (mask) and 76 MB
-#: (normalize) in the session; 100 MB keeps a third in reserve and stays below the 192 MB by which a core
+#: How much the peak may grow from 2048² to 4096², 4 times the pixels. Measured 69 MB (mask) and 80 MB
+#: (normalize) in the session, with the statistics pass of M4-32a; 100 MB keeps a fifth in reserve and stays below the 192 MB by which a core
 #: holding the float64 scene would grow (plan M4-07a §9.5).
 GROWTH_LIMIT_MB = 100
 

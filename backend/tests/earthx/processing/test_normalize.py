@@ -134,7 +134,18 @@ class TestMetadata:
         assert all(numpy.isnan(b.nodata) for b in result.bands) and result.resampled is True
 
     def test_the_cost_factor_is_the_measured_one(self) -> None:
-        assert NORMALIZE.cost_factor(_params()) == 0.2
+        assert NORMALIZE.cost_factor(_params()) == 0.3
+
+    @pytest.mark.parametrize(
+        ("clip", "outside"),
+        [(True, "limited to the target range"), (False, "continued along the same line")],
+    )
+    def test_the_sentence_of_the_methods_text_says_what_happens_outside_the_range(self, clip, outside) -> None:
+        sentence = NORMALIZE.method(_params(0.0, 0.5, 0.0, 255.0, clip=clip))
+        assert sentence == (
+            "Every band was mapped linearly from the range 0 to 0.5 onto the range 0 to 255, "
+            f"values outside the source range {outside}, in 32-bit floating point."
+        )
 
     def test_lineage(self) -> None:
         assert NORMALIZE.lineage(_params(-1, 1, 0, 255)) == "normalize: [-1, 1] to [0, 255], clipped"

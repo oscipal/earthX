@@ -449,7 +449,9 @@ Abhängigkeit, keine Lock-Datei geändert; `.github/`, `.claude/`, `CLAUDE.md` u
 aus 15 Läufen, zwei Durchgänge, x86_64): Band-Math NDVI 14,6–15,5 ms, `mask` mit
 zwei Bändern und der Schicht 5,3–7,1 ms, `normalize` mit zwei Bändern 27,1–29,3 ms.
 Gegen 146 ms je Megapixel für einen ganzen Band-Math-Lauf (`adr/0014` §3.5)
-ergibt das aufgerundet **0,1** für `mask` und **0,2** für `normalize`. Das Skript
+ergibt das aufgerundet **0,1** für `mask` und **0,2** für `normalize`. Nach dem Merge
+von M4-32a (Statistik-Durchgang, Zuschlag +12,1 % wie bei Band-Math) gelten nach Ottos Regel
+„aufrunden“ **0,2** und **0,3** (§11). Das Skript
 liegt im Scratchpad der Sitzung; es liest keine Datenquelle.
 
 **Tests (neu):**
@@ -501,12 +503,9 @@ Drei Punkte aus Ottos Auftrag vom 22.10.2026, alle in diesem PR:
 1. **ADR-Nummer.** Der Nachtrag in `adr/0014` heißt §15m (M4-32a hat §15k, M4-19a
    §15l). Umbenannt in `adr/0014`, in den Docstrings von `catalog/registry.py`,
    `processing/operators/` und den Tests, in §3.7 dieses Plans und im Log.
-2. **`Operator.method` aus M4-19a (#171).** Beim Holen von `main` am 22.10.2026
-   war #171 noch nicht gemergt (`origin/main` unverändert bei `f17de87`); das
-   Feld und der Wächtertest fehlen hier. **M4-19a muss die Sätze für `mask` und
-   `normalize` ergänzen**, sobald es `Operator.method` als Pflichtfeld
-   einführt, sonst bricht der Wächtertest mit dem Merge dieses PR. Im PR
-   vermerkt.
+2. **`Operator.method` aus M4-19a (#171).** Beim ersten Holen von `main` am 22.10.2026
+   war #171 noch nicht gemergt; M4-19a sollte die Sätze ergänzen. Es ist inzwischen
+   gemergt und die Sätze stehen hier (§11).
 3. **Zwei Lücken aus §9 geschlossen:**
    - **(a) Speicher bei 4096².** `tests/earthx/processing/test_memory_mask_normalize.py`
      misst wie `test_memory_reproject.py` den Gipfel `VmHWM` eines Kindprozesses
@@ -518,6 +517,9 @@ Drei Punkte aus Ottos Auftrag vom 22.10.2026, alle in diesem PR:
      |---|---|---|---|
      | `mask` | 284,8 MB | 353,3 MB | 68,5 MB |
      | `normalize` | 290,0 MB | 365,9 MB | 75,9 MB |
+
+     Nach dem Merge von M4-32a (Statistik-Durchgang im Lauf) neu gemessen: `mask` 282,9 und
+     351,4 MB (Wachstum 68,5 MB), `normalize` 289,7 und 369,8 MB (Wachstum 80,1 MB).
 
      Verlangt sind unter 500 MB bei 4096² und höchstens 100 MB Wachstum (ein Drittel
      Reserve; ein Kern, der die Szene in `float64` hielte, wüchse um 192 MB). Der Wert
@@ -537,3 +539,31 @@ Drei Punkte aus Ottos Auftrag vom 22.10.2026, alle in diesem PR:
      als `float32`.
 
 Die zwei offenen Log-Zeilen aus §9 stehen auf „erledigt (2026-10-22)“.
+
+---
+
+## 11. Nach dem Merge von `main` (M4-19a, M4-32a; 22.10.2026)
+
+`main` brachte M4-32a (#168) und M4-19a (#171) in den Branch. Konflikte gab es nur in
+Dokumenten (`ENTSCHEIDUNGSLOG.md`, `adr/0014`, `plans/m4-processing-kern.md`); beide Seiten
+bleiben stehen, §15m kommt hinter §15k und §15l.
+
+- **`Operator.method` (Pflichtfeld aus M4-19a).** `mask` und `normalize` haben ihre Sätze:
+  - `mask`: „Pixels were hidden in every band where the classification layer scl held class
+    3, 8, 9, 10 or had no value; the layer itself was left out.“
+  - `normalize`: „Every band was mapped linearly from the range 0 to 0.5 onto the range 0 to
+    255, values outside the source range limited to the target range, in 32-bit floating
+    point.“ (bei `clip=false`: „continued along the same line“).
+  
+  Der Wächtertest `TestEveryOperatorSaysItsStep` hat Beispielparameter für beide und
+  bestätigt, dass jeder Satz mit Punkt endet und keinen Platzhalter trägt.
+- **Faktoren nach dem Statistik-Durchgang (`adr/0014` §15k).** Otto hat am 22.10.2026 die Regel
+  gesetzt: Jeder Faktor eines Laufs, der den Statistik-Durchgang durchläuft, bekommt dessen
+  gemessenen Zuschlag und wird auf eine Nachkommastelle aufgerundet. Beide neuen Operatoren
+  laufen im selben Durchgang wie Band-Math und bekommen dessen Zuschlag von +12,1 %: `mask`
+  0,1 → **0,2**, `normalize` 0,2 → **0,3**. Das ist die Anwendung der Regel auf Faktoren,
+  die in der Tabelle von §15k noch nicht stehen; eine eigene Messung des Zuschlags für diese
+  beiden Operatoren gibt es nicht.
+- **Speicher** mit dem Statistik-Durchgang neu gemessen (§10 Punkt 3a): unverändert unter den
+  Grenzen.
+- **Frontend-Fixtures** nach dem Merge neu erzeugt: kein Unterschied.

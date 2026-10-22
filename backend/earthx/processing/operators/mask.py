@@ -106,6 +106,14 @@ def _properties(params: BaseModel) -> dict[str, Any]:
     return {"earthx:mask": {"source": params.source, "classes": list(params.classes)}}
 
 
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, MaskParams)
+    return (
+        f"Pixels were hidden in every band where the classification layer {params.source} held class "
+        f"{', '.join(map(str, params.classes))} or had no value; the layer itself was left out."
+    )
+
+
 def _dataset_check(config: DatasetConfig, params: BaseModel) -> list[str]:
     """The layer and the classes have to be the ones the entry describes (a mask over ``red`` is no mask)."""
     assert isinstance(params, MaskParams)
@@ -134,10 +142,11 @@ MASK = Operator(
     ),
     tiers=frozenset({Tier.T1, Tier.T2}),
     kind="pixel",
-    cost_factor=lambda params: 0.1,
+    cost_factor=lambda params: 0.2,
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
     properties=_properties,
     dataset_check=_dataset_check,
 )

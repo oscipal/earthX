@@ -5,8 +5,8 @@
 
 import { useEffect, useState } from 'react';
 
-import { resultUrl } from '../processing';
-import { useProcessingStore, type JobEntry } from '../processingStore';
+import { fetchMethodsText, resultUrl } from '../processing';
+import { METHODS_FILE, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS } from '../resultLayer';
 
 // `MIN_REMAINING` of the job API (`objectstore/results.py`): from a minute
@@ -26,6 +26,28 @@ function useNowUntil(deadline: number): number {
     return () => clearTimeout(timer);
   }, [deadline, now]);
   return now;
+}
+
+// "Copy" next to "Methods": the text goes to the clipboard, ready for a manuscript.
+function CopyMethods({ jobID }: { jobID: string }) {
+  const [note, setNote] = useState('');
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(await fetchMethodsText(jobID));
+      setNote('Copied');
+    } catch {
+      setNote('Could not copy');
+    }
+  };
+  return (
+    <>
+      {' '}
+      <button type="button" className="link-btn" onClick={() => void copy()}>
+        Copy
+      </button>
+      {note && <span className="hint-text"> {note}</span>}
+    </>
+  );
 }
 
 function stateText(job: JobEntry): string {
@@ -100,9 +122,12 @@ export function JobRow({ job }: { job: JobEntry }) {
       {job.phase === 'successful' && !expired && job.files && (
         <span className="pp-links">
           {job.files.map((f) => (
-            <a key={f.file} href={resultUrl(job.jobID, f.file)} download rel="noopener noreferrer">
-              {f.label}
-            </a>
+            <span key={f.file}>
+              <a href={resultUrl(job.jobID, f.file)} download rel="noopener noreferrer">
+                {f.label}
+              </a>
+              {f.file === METHODS_FILE && <CopyMethods jobID={job.jobID} />}
+            </span>
           ))}
         </span>
       )}

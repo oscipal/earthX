@@ -69,14 +69,15 @@ MAX_SIDE_PX = 32768
 
 #: Each method with GDAL's resampling, its cost factor relative to band math (§5.5;
 #: the four of M4-24 relative to ``bilinear``, plan §7.4) and the panel's one sentence.
+#: Since M4-32 each factor carries the statistics pass, +7.7 % measured, rounded up (adr/0014 §15k).
 _METHODS = {
-    "nearest": (Resampling.nearest, 0.4, "Value of the nearest source pixel; for class data and masks."),
-    "bilinear": (Resampling.bilinear, 1.0, "Distance-weighted mean of the 2x2 nearest pixels; for continuous data."),
-    "cubic": (Resampling.cubic, 1.1, "Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data."),
-    "cubicspline": (Resampling.cubic_spline, 1.7, "Cubic B-spline over 4x4 pixels; smoothest, for continuous data."),
-    "lanczos": (Resampling.lanczos, 2.2, "Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges."),
-    "average": (Resampling.average, 1.2, "Mean of all source pixels per target pixel; for coarsening continuous data."),
-    "mode": (Resampling.mode, 1.1, "Most frequent source value per target pixel; for class data."),
+    "nearest": (Resampling.nearest, 0.5, "Value of the nearest source pixel; for class data and masks."),
+    "bilinear": (Resampling.bilinear, 1.1, "Distance-weighted mean of the 2x2 nearest pixels; for continuous data."),
+    "cubic": (Resampling.cubic, 1.2, "Cubic convolution over 4x4 pixels; sharper than bilinear, for continuous data."),
+    "cubicspline": (Resampling.cubic_spline, 1.9, "Cubic B-spline over 4x4 pixels; smoothest, for continuous data."),
+    "lanczos": (Resampling.lanczos, 2.4, "Lanczos windowed sinc over 6x6 pixels; sharpest, may overshoot at edges."),
+    "average": (Resampling.average, 1.3, "Mean of all source pixels per target pixel; for coarsening continuous data."),
+    "mode": (Resampling.mode, 1.2, "Most frequent source value per target pixel; for class data."),
 }
 
 #: The methods that only ever pick a value of the source, and so need no ``interpolation``.
@@ -178,6 +179,17 @@ def _lineage(params: BaseModel) -> str:
     return f"reprojected to {params.crs} at {params.resolution:g} ({params.resampling})"
 
 
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, ReprojectParams)
+    aligned = " The target grid was snapped to whole multiples of the pixel size." if params.align else ""
+    what = _METHODS[params.resampling][2].rstrip(".")
+    return (
+        f"The raster was reprojected to {params.crs} with a pixel size of {params.resolution:g} "
+        f"in the units of the target CRS, using {params.resampling} resampling "
+        f"({what[0].lower()}{what[1:]}).{aligned}"
+    )
+
+
 REPROJECT = Operator(
     op="reproject",
     op_version=3,
@@ -195,6 +207,7 @@ REPROJECT = Operator(
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
     extra_requirements=_extra_requirements,
 )
 

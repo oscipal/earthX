@@ -15,6 +15,8 @@ import io
 import json
 import threading
 import zipfile
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -29,12 +31,13 @@ from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 
 from earthx.access import download
-from earthx.access.crop_rules import compute_crop_region
+from earthx.access.crop_rules import METHODS_FILENAME, TEXT_FILES, compute_crop_region
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.processing import RunCancelled, run
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
+from earthx.processing.methods import DatasetFacts, methods_text
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import recipe_from_data
 from earthx.readers import Policy
@@ -46,6 +49,7 @@ from tests.earthx.processing.testops import OPERATORS
 
 WIDTH, HEIGHT = 700, 600
 DATASET = "synthetic"
+FACTS = DatasetFacts("Synthetic dataset", None)
 
 
 def _visual(path: Path, data: numpy.ndarray, *, origin_x: float = sources.ORIGIN_X) -> Path:
@@ -155,6 +159,7 @@ def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any]) -> bytes:
         ],
         recipe_json=b"{}",
         citation_bib=b"@misc{x}\n",
+        methods_text=b"A paragraph.\n",
     )
 
 
@@ -193,6 +198,7 @@ def _attachments(crop: zipfile.ZipFile) -> Attachments:
     return Attachments(
         files={name: crop.read(name).decode("utf-8") for name in ("ATTRIBUTION.txt", "citation.bib", "aoi.geojson")},
         attribution=("Contains modified synthetic data",),
+        dataset=FACTS,
     )
 
 
@@ -223,6 +229,23 @@ def test_the_export_writes_the_crops_files_bit_for_bit(groups: list[list[str]], 
             assert exported.read(name) == crop.read(name)
             assert exported.getinfo(name).compress_type == zipfile.ZIP_DEFLATED
         assert sorted(exported.namelist()) == sorted(crop.namelist())
+        # The text files, by the one definition of the downloads and in its order.
+        assert [name for name in exported.namelist() if name in TEXT_FILES] == list(TEXT_FILES)
+        assert [name for name in crop.namelist() if name in TEXT_FILES] == list(TEXT_FILES)
+
+
+@pytest.mark.usefixtures("served")
+def test_the_methods_text_in_the_zip_is_written_from_the_recipe_beside_it(tmp_path: Path) -> None:
+    groups = CASES["one item"]
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip(groups, AOI)))
+    result = _export(groups, tmp_path, crop)
+    with zipfile.ZipFile(result.path) as exported:
+        text = exported.read(METHODS_FILENAME).decode("utf-8")
+        assert text.encode("utf-8") == methods_text(exported.read("recipe.json"), dataset=FACTS).encode("utf-8")
+        assert exported.getinfo(METHODS_FILENAME).compress_type == zipfile.ZIP_DEFLATED
+    assert "Synthetic dataset" in text and "cropped to the bounding box" in text
+    assert "Contains modified synthetic data" in text
+    assert "R" * 22 not in text
 
 
 @pytest.mark.usefixtures("served")
@@ -348,6 +371,56 @@ def test_attachments_from_json_take_only_their_own_shape(data: Any) -> None:
 def test_attachments_survive_their_json_form() -> None:
     attachments = Attachments(files=FILES, attribution=("a",))
     assert Attachments.from_json(json.loads(json.dumps(attachments.to_json()))) == attachments
+
+
+def test_attachments_with_the_facts_of_the_dataset_survive_their_json_form() -> None:
+    attachments = Attachments(files=FILES, attribution=("a",), dataset=DatasetFacts("A title", "10.1/x"))
+    data = json.loads(json.dumps(attachments.to_json()))
+    assert data["dataset"] == {"title": "A title", "doi": "10.1/x"}
+    assert Attachments.from_json(data) == attachments
+
+
+def test_attachments_with_the_day_of_the_overpass_survive_their_json_form() -> None:
+    attachments = Attachments(files=FILES, attribution=("a",), acquired_on=date(2026, 6, 1))
+    data = json.loads(json.dumps(attachments.to_json()))
+    assert data["acquired_on"] == "2026-06-01" and "dataset" not in data
+    assert Attachments.from_json(data) == attachments
+
+
+@pytest.mark.parametrize("day", [None, 5, "", "June", "2026-13-01", ["2026-06-01"]])
+def test_attachments_refuse_a_day_that_is_not_one(day: Any) -> None:
+    with pytest.raises(AttachmentsInvalid):
+        Attachments.from_json({"files": FILES, "attribution": [], "acquired_on": day})
+
+
+@pytest.mark.usefixtures("served")
+def test_the_methods_text_of_the_export_names_the_day_it_was_handed_and_none_otherwise(tmp_path: Path) -> None:
+    groups = CASES["one item"]
+    crop = zipfile.ZipFile(io.BytesIO(_crop_zip(groups, AOI)))
+    with_day = replace(_attachments(crop), acquired_on=date(2026, 6, 1))
+    result = run(
+        _recipe(groups), workdir=tmp_path, progress=lambda done, total: None, operators=OPERATORS, attachments=with_day
+    )
+    with zipfile.ZipFile(result.path) as exported:
+        assert "The scenes were acquired on 2026-06-01 (UTC)." in exported.read(METHODS_FILENAME).decode("utf-8")
+    other = tmp_path / "other"
+    other.mkdir()
+    result = _export(groups, other, crop)
+    with zipfile.ZipFile(result.path) as exported:
+        assert "acquired" not in exported.read(METHODS_FILENAME).decode("utf-8")
+
+
+def test_attachments_written_before_the_methods_text_still_read() -> None:
+    """The rows of the queue hold them for 7 days (M4-19a): no ``dataset`` key is no facts, not an error."""
+    old = {"files": FILES, "attribution": ["a"]}
+    assert Attachments.from_json(old) == Attachments(files=FILES, attribution=("a",))
+    assert "dataset" not in Attachments(files=FILES, attribution=("a",)).to_json()
+
+
+@pytest.mark.parametrize("dataset", [None, "x", {}, {"title": "T"}, {"title": 1, "doi": None}, {"title": "T", "doi": 1}])
+def test_attachments_refuse_facts_of_the_wrong_shape(dataset: Any) -> None:
+    with pytest.raises(AttachmentsInvalid):
+        Attachments.from_json({"files": FILES, "attribution": [], "dataset": dataset})
 
 
 def test_missing_or_unreadable_attachments_are_named_not_shown(tmp_path: Path) -> None:

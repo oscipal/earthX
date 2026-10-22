@@ -82,6 +82,18 @@ def _lineage(params: BaseModel) -> str:
     )
 
 
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, NormalizeParams)
+    outside = (
+        "limited to the target range" if params.clip else "continued along the same line"
+    )
+    return (
+        f"Every band was mapped linearly from the range {params.in_min:g} to {params.in_max:g} onto the range "
+        f"{params.out_min:g} to {params.out_max:g}, values outside the source range {outside}, "
+        "in 32-bit floating point."
+    )
+
+
 NORMALIZE = Operator(
     op="normalize",
     op_version=1,
@@ -95,8 +107,9 @@ NORMALIZE = Operator(
     ),
     tiers=frozenset({Tier.T1, Tier.T2}),
     kind="pixel",
-    cost_factor=lambda params: 0.2,
+    cost_factor=lambda params: 0.3,
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
 )
