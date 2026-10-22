@@ -18,6 +18,12 @@ reading thread.
 over ``bbox(AOI ∩ raster bounds)`` that keeps every value inside that box, and
 ``mask.tif``, ``uint8`` on the same grid, ``1`` inside the AOI polygon.
 
+**Statistics (M4-32).** The last pass counts every band as it writes it
+(:mod:`earthx.processing.statistics`): over the whole file into GDAL's ``STATISTICS_*``
+band tags of ``result.tif``, as ``gdalinfo -stats`` would, and over the pixels the mask
+marks into ``statistics`` of the band in the properties, which the map's colour scale
+is taken from. The mask is written first, so that pass reads it block by block.
+
 **Progress and cancel (approved F5).** ``progress(done, total)`` after every block.
 To stop, the callback raises :class:`~earthx.processing.errors.RunCancelled`; the
 core removes every file it wrote and re-raises, as it does for any other failure.
@@ -65,6 +71,7 @@ from earthx.processing.operators import REGISTRY, BandMeta, OperatorRegistry, Ra
 from earthx.processing.plan import PlannedStep, Segment, crop_window, plan_steps, segments
 from earthx.processing.recipe import AppliedScaling, CropOutput, RasterOutput, Recipe, engine_versions
 from earthx.processing.source import Source, common_grid, merge_images
+from earthx.processing.statistics import BandStatistics, gdal_tags, summarize
 from earthx.processing.workfile import open_workfile, workfile_path
 from earthx.readers import process_gdal_options, read_access_for
 
@@ -236,7 +243,7 @@ def _cast(data: numpy.ma.MaskedArray, dtype: str) -> numpy.ma.MaskedArray:
 
 
 class _Run:
-    """The state of one run: the files it wrote, the blocks done, the valid pixels counted."""
+    """The state of one run: the files it wrote, the blocks done, the valid pixels counted, the statistics."""
 
     def __init__(self, workdir: Path, progress: Progress) -> None:
         self.workdir = workdir
@@ -245,6 +252,8 @@ class _Run:
         self.done = 0
         self.total = 0
         self.valid_pixels = 0
+        #: Per band, over the pixels the mask marks (M4-32).
+        self.statistics: list[dict[str, Any]] = []
 
     def tick(self) -> None:
         self.done += 1
@@ -268,13 +277,49 @@ class _Run:
         block: Callable[[Window], numpy.ma.MaskedArray],
         count_valid: bool,
     ) -> None:
-        with open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata)) as dst:
+        with ExitStack() as files:
+            dst = files.enter_context(
+                open_workfile(self.workdir, self.new_file(name), "w", **_profile(meta, dtype, nodata))
+            )
+            mask = files.enter_context(open_workfile(self.workdir, MASK_NAME)) if count_valid else None
+            whole = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
+            area = [BandStatistics(dtype) for _ in meta.bands] if count_valid else []
+            inside_pixels = 0
             for window in _blocks(meta.width, meta.height):
                 data = _cast(block(window), dtype)
-                if count_valid:
-                    self.valid_pixels += int((~numpy.ma.getmaskarray(data)).any(axis=0).sum())
+                if mask is not None:
+                    valid = ~numpy.ma.getmaskarray(data)
+                    self.valid_pixels += int(valid.any(axis=0).sum())
+                    inside = mask.read(1, window=window) == 1
+                    inside_pixels += int(inside.sum())
+                    values = numpy.ma.getdata(data)
+                    # A valid value rounded onto an integer nodata reads back as nodata: the statistics count
+                    # what the file says (adr/0014 §15h, "Kollision mit nodata").
+                    written = valid if math.isnan(nodata) else valid & (values != nodata)
+                    _count(values, written, inside, whole, area)
                 dst.write(numpy.ma.filled(data, nodata), window=window)
                 self.tick()
+            if mask is not None:
+                for index, statistics in enumerate(whole, start=1):
+                    dst.update_tags(index, **gdal_tags(statistics.summary(meta.width * meta.height)))
+                self.statistics = [statistics.summary(max(inside_pixels, 1)) for statistics in area]
+
+
+def _count(
+    values: numpy.ndarray,
+    valid: numpy.ndarray,
+    inside: numpy.ndarray,
+    whole: list[BandStatistics],
+    area: list[BandStatistics],
+) -> None:
+    """One block into the statistics: what lies inside the mask counts for both, the rest for the file only."""
+    everywhere = bool(inside.all())
+    for band, valid_band, file_statistics, area_statistics in zip(values, valid, whole, area, strict=True):
+        within = summarize(band[valid_band & inside])
+        area_statistics.merge(within)
+        file_statistics.merge(within)
+        if not everywhere:
+            file_statistics.merge(summarize(band[valid_band & ~inside]))
 
 
 def _pixel_kernels(image: ImageData, steps: tuple[PlannedStep, ...]) -> ImageData:
@@ -302,8 +347,15 @@ def _source_meta(
     )
 
 
-def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, str], scenes: int) -> dict[str, Any]:
-    """The STAC properties of the result (§5.6): projection, bands, software, lineage, honesty flag."""
+def _properties(
+    meta: RasterMeta,
+    planned: list[PlannedStep],
+    engine: dict[str, str],
+    scenes: int,
+    statistics: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """The STAC properties of the result (§5.6): projection, bands with the statistics of the area, software,
+    lineage, honesty flag."""
     crs = CRS.from_user_input(meta.crs)
     epsg = crs.to_epsg()
     properties: dict[str, Any] = {"proj:code": f"EPSG:{epsg}"} if epsg is not None else {"proj:wkt2": crs.to_wkt()}
@@ -314,8 +366,9 @@ def _properties(meta: RasterMeta, planned: list[PlannedStep], engine: dict[str, 
             "name": band.name,
             "data_type": band.data_type,
             "nodata": "nan" if band.nodata is not None and math.isnan(band.nodata) else band.nodata,
+            "statistics": band_statistics,
         }
-        for band in meta.bands
+        for band, band_statistics in zip(meta.bands, statistics, strict=True)
     ]
     properties["processing:software"] = {name: engine[name] for name in ("earthx", "gdal", "rasterio", "numexpr")}
     lineage = [f"mosaic of {scenes} scenes"] if scenes > 1 else []
@@ -386,6 +439,8 @@ def run(
             for segment in passes:
                 metas.append(_transform_meta(metas[-1], segment.steps))
             state.total = sum(_block_count(meta) for meta in metas[1:])
+            # Before the passes: the last one reads the mask for the statistics of the area.
+            _write_mask(state, metas[-1], recipe.aoi.model_dump(mode="json"))
             previous: str | None = None
             for index, segment in enumerate(passes):
                 last = index == len(passes) - 1
@@ -406,7 +461,6 @@ def run(
                 metas[-1],
                 bands=tuple(replace(band, data_type=output.dtype, nodata=nodata) for band in metas[-1].bands),
             )
-            _write_mask(state, final, recipe.aoi.model_dump(mode="json"))
             result = state.new_file(RESULT_NAME)
             with open_workfile(workdir, previous) as plain:
                 cog_translate(
@@ -415,6 +469,7 @@ def run(
                     cog_profiles.get(_COG_PROFILE),
                     in_memory=False,
                     quiet=True,
+                    forward_band_tags=True,
                 )
             for name in list(state.written):
                 if name not in (RESULT_NAME, MASK_NAME):
@@ -449,7 +504,7 @@ def run(
         path=workfile_path(workdir, RESULT_NAME),
         mask_path=workfile_path(workdir, MASK_NAME),
         meta=final,
-        properties=_properties(final, planned, engine, _scenes(recipe)),
+        properties=_properties(final, planned, engine, _scenes(recipe), state.statistics),
         scaling=scaling,
         blocks=state.done,
         valid_pixels=state.valid_pixels,

@@ -24,7 +24,7 @@ from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.plan import estimate
 from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig
-from tests.earthx.api.test_intake import CROP, NEAR, PLACE, S2_HOST, SQUARE, dem_item, order, s2_item
+from tests.earthx.api.test_intake import CROP, NEAR, PLACE, S2_HOST, SCALE_STEP, SQUARE, dem_item, order, s2_item
 from tests.earthx.api.test_processing_route import (
     EXECUTION,
     client_for,
@@ -87,8 +87,9 @@ class TestTheAnswer:
         assert body["duration"] == f"PT{cost.seconds:.1f}S"
 
     async def test_more_steps_cost_more_units(self, rig: Rig) -> None:
-        one = (await ask(rig, order(steps=[]))).json()["estimate"]["units"]
-        two = (await ask(rig)).json()["estimate"]["units"]
+        # Not against no step at all: that is one pass of the core too, as costly as `scale` (adr/0014 §15k).
+        one = (await ask(rig)).json()["estimate"]["units"]
+        two = (await ask(rig, order(steps=[SCALE_STEP, SCALE_STEP]))).json()["estimate"]["units"]
         assert two > one > 0
 
     async def test_items_the_area_does_not_touch_are_named_and_left_out(self, rig: Rig) -> None:

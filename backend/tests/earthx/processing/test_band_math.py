@@ -329,7 +329,7 @@ class TestTransform:
         params = _params(NDVI)
         assert BAND_MATH.lineage(params) == f"band math: {NDVI}"
         assert BAND_MATH.properties(params) == {"processing:expression": {"format": "numexpr", "expression": NDVI}}
-        assert BAND_MATH.cost_factor(params) == 1.0
+        assert BAND_MATH.cost_factor(params) == 1.2
 
 
 # --- bit-stability across CPU levels (adr/0016 §3.3, §12a; plan M4-09, K7) ---------------------

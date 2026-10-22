@@ -1856,6 +1856,58 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
+## 15k. Nachtrag vom 2026-10-20: Statistik je Ergebnis in `result.tif` und in den Eigenschaften (zu §4.5, §5.5, §5.6, §6.3; M4-32)
+
+Otto hat den Plan von M4-32 am 2026-10-20 freigegeben (`plans/m4-32-ergebnis-statistik.md` §6, §7). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Was der Kern schreibt (§5.6):**
+  - Der letzte Durchgang zählt jedes Band beim Schreiben (`processing/statistics.py`).
+  - Die ganze Datei geht in die Band-Tags von `result.tif`: `STATISTICS_MINIMUM`, `_MAXIMUM`, `_MEAN`, `_STDDEV`, `_VALID_PERCENT` (Namen von GDAL, wie `gdalinfo -stats`), dazu `EARTHX_PERCENTILE_2` und `_98`. Die Werte stehen als `repr` des `float` darin.
+  - Die Pixel der Maske gehen als STAC-1.1-`statistics` an jedes Band der Eigenschaften, erweitert um `percentile_2` und `percentile_98`. Das Ergebnisdokument und `provenance.json` tragen sie damit. Hat ein Band keinen gültigen Wert, steht dort nur `count` 0 und `valid_percent` 0.
+  - Beide entstehen aus denselben Teilsummen je Block, ohne zweiten Lesedurchgang. Deshalb schreibt der Kern `mask.tif` jetzt vor den Durchgängen; ihr Inhalt ist unverändert.
+- **Verfahren:**
+  - Min, Max, Anzahl und Mittelwert sind exakt; der Mittelwert ist einmal gerundet, aus ganzzahligen Summen über die Bitmuster.
+  - `stddev` wie GDAL: Welford je Block, Chan über die Blöcke.
+  - Die Perzentile kommen aus einem festen Histogramm mit 65 536 Fächern je Band: Ganzzahl bis 16 bit exakt, sonst höchstens 2⁻⁷ des Betrags, nach außen gerundet.
+  - Werte vom Typ `int32`, `uint32` und `float64` kommen abgerundet nach `float32`. Das 98-%-Perzentil geht danach einen `float32`-Schritt nach oben. Jenseits des `float32`-Bereichs gilt Minimum bzw. Maximum. So bleibt `[p2, p98]` auch dort außen.
+  - **Kollision mit `nodata` (§15h):** Ein gültiger Wert, der beim Runden auf das `nodata` einer Ganzzahl-Ausgabe fällt, liest sich in der Datei als `nodata`. Die Statistik zählt ihn deshalb nicht mit, sie folgt der Datei. `valid_pixels` in der Meldung des Kindes zählt ihn weiter mit, wie vor M4-32.
+- **Bitgleichheit (§6.3, §15c):** unverändert. Die Statistik hängt nicht von der Reihenfolge der Werte ab, nur von der festen Blockung (`stddev`). Gemessen sind die Bytes von `result.tif` gleich über die numpy-SIMD-Stufen X86_V4, X86_V3, X86_V2 (Plan §6.4). `runner/test_compare.py` vergleicht zusätzlich die Band-Tags von Job-Kind und Runner.
+- **Version (§4.5):** Die Tags ändern die Bytes jeder `result.tif`. Deshalb geht `earthx.__version__` von 0.4.1 auf 0.4.2. `recipe_version` und `op_version` bleiben. Ergebnisse unter 0.4.1 bleiben unter ihrem alten Schlüssel stehen und werden nicht mehr getroffen.
+- **Kosten (§3.5, §5.5) [M]:**
+
+Gemessen wurde mit `memory_run.py` (synthetisches COG 4096², zwei Bänder `uint16`, `GDAL_CACHEMAX` 64 MB, Kindprozess, `VmHWM`), alter Kern gegen neuen, abwechselnd.
+
+| Lauf | Paare | alt: Zeit (Mittel) / `VmHWM` | neu: Zeit (Mittel) / `VmHWM` | Zusatzzeit |
+|---|---|---|---|---|
+| Band-Math `(b2 - b1) / (b2 + b1)`, ein Band | 9 | 5,84–7,03 s (6,38) / 349 MB | 6,50–8,12 s (7,15) / 350 MB | **+12,1 %** (Median der Paardifferenzen +10,3 %) |
+| `reproject` EPSG:3035, 10 m, `bilinear`, zwei Bänder | 3 | 21,4–23,1 s (22,4) / 418 MB | 23,0–25,2 s (24,2) / 428 MB | +7,7 % |
+| Testoperator `scale`, zwei Bänder | 3 | 10,2–11,2 s (10,8) / 371 MB | 12,2–13,2 s (12,8) / 371 MB | +18,5 % |
+
+  - Je Block von 1024² und Band kostet die Statistik etwa 23 ms. Die Tests `test_memory_8192.py` und `test_memory_reproject.py` bleiben unter 500 MB; der höchste Wert ist `lanczos` 4096² mit 441,7 MB.
+  - **Faktor (Auflage Otto zu Frage 8):** Band-Math liegt über 10 %. Deshalb steigt der Faktor nach der Regel „aufrunden“ von 1,0 auf **1,2** (`operators/band_math.py`). Die letzten drei der neun Paare lagen bei +9,5 %; die Zusatzzeit liegt also nahe an der Schwelle.
+  - **Antwort von Otto (2026-10-22):** Die übrigen Faktoren bleiben nicht unverändert. Jeder Faktor eines Laufs, der den Statistik-Durchgang durchläuft, bekommt dessen gemessenen Zuschlag und wird nach der Regel „aufrunden“ auf eine Nachkommastelle gesetzt. Die Werte in §5.5 und §15j gelten damit nicht mehr; maßgeblich ist diese Tabelle:
+
+| Faktor | bisher | Zuschlag [M] | jetzt | Code |
+|---|---|---|---|---|
+| Band-Math | 1,0 | +12,1 % | 1,2 | `operators/band_math.py` |
+| Reprojektion `nearest` | 0,4 | +7,7 % | 0,5 | `operators/reproject.py` (`_METHODS`, gilt auch für Version 2) |
+| Reprojektion `bilinear` | 1,0 | +7,7 % | 1,1 | dito |
+| Reprojektion `cubic` | 1,1 | +7,7 % | 1,2 | dito |
+| Reprojektion `cubicspline` | 1,7 | +7,7 % | 1,9 | dito |
+| Reprojektion `lanczos` | 2,2 | +7,7 % | 2,4 | dito |
+| Reprojektion `average` | 1,2 | +7,7 % | 1,3 | dito |
+| Reprojektion `mode` | 1,1 | +7,7 % | 1,2 | dito |
+| Raster-Lauf ohne Schritt (etwa das Mosaik eines Überflugs ohne Operator) | 0,9 | +9,3 % | 1,0 | `plan.RASTER_WITHOUT_STEP_FACTOR` (neu) |
+| Export (`crop`) | 0,9 | — | 0,9 | `plan.EXPORT_FACTOR`, unverändert |
+
+  - **Zuschläge:**
+    - Für die Reprojektion gilt der für `bilinear` gemessene Zuschlag für alle sieben Methoden; so hat Otto es vorgegeben.
+    - Der Raster-Lauf ohne Schritt ist eigens gemessen: 4096², sechs Paare, alt gegen neu. Der erste alte Lauf war ein Ausreißer mit kaltem Cache (18,2 s); ohne ihn bleiben fünf Paare, alt 9,93 s, neu 10,86 s im Mittel. Mit ihm wäre der Median der Paardifferenzen +7,7 %. Das Ergebnis ist in beiden Fällen 1,0.
+  - **Betroffen sind** alle Läufe des Kerns mit Rasterausgabe, denn sie schreiben alle über den letzten Durchgang. Das schließt das Mosaik eines Überflugs ein, das die Faktoren seiner Schritte trägt oder den Faktor ohne Schritt.
+  - **Nicht betroffen ist** der Export (`crop`, `processing/export.py`). Er schreibt seine Rasterdateien ohne den Kern und ohne Statistik, deshalb bleibt `EXPORT_FACTOR` bei 0,9. Bisher teilten sich Export und Raster-Lauf ohne Schritt diesen Wert. Jetzt hat der Raster-Lauf einen eigenen.
+  - Die Testoperatoren `scale` und `coarsen` gibt es nur in den Tests. Sie bleiben unverändert.
+  - Die Kalibrierung gegen echte Läufe steht weiter aus.
+
 ## 16. Quellen
 
 **Im Repo [P]**

@@ -184,14 +184,14 @@ class TestTheTargetGrid:
 
     def test_the_cost_depends_on_the_method(self) -> None:
         costs = {name: REPROJECT.cost_factor(_params(resampling=name)) for name in METHODS}
-        assert costs == {  # adr/0014 §5.5 and §15j (plan M4-24 §7.4)
-            "nearest": 0.4,
-            "bilinear": 1.0,
-            "cubic": 1.1,
-            "cubicspline": 1.7,
-            "lanczos": 2.2,
-            "average": 1.2,
-            "mode": 1.1,
+        assert costs == {  # adr/0014 §5.5 and §15j (plan M4-24 §7.4), with the statistics pass of §15k
+            "nearest": 0.5,
+            "bilinear": 1.1,
+            "cubic": 1.2,
+            "cubicspline": 1.9,
+            "lanczos": 2.4,
+            "average": 1.3,
+            "mode": 1.2,
         }
 
     def test_the_lineage_says_what_happened(self) -> None:
