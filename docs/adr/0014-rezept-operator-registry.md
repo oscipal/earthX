@@ -1856,7 +1856,7 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
-## 15k. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize` (zu §5.2, §5.3, §5.5, §6.3; M4-18a)
+## 15m. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize` (zu §5.2, §5.3, §5.5, §6.3; M4-18a)
 
 Otto hat den Plan von M4-18 am 2026-10-20 freigegeben, F1–F6 und F8 je mit
 Option 1 (`plans/m4-18-masking-normalisierung.md` §8). Der Originaltext in §5.2,

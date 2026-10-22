@@ -265,7 +265,7 @@ Fixtures nur synthetisch (`tests/earthx/processing/sources.py`,
 ### 3.7 Doku und Log
 
 - `ENTSCHEIDUNGSLOG.md`: Freigabe und je Teil die Umsetzung, am Ende.
-- `adr/0014`: Nachtrag `§15k` zu §5.2/§5.3 (neue Operatoren, `dataset_check`,
+- `adr/0014`: Nachtrag `§15m` zu §5.2/§5.3 (neue Operatoren, `dataset_check`,
   Flags) und §6.3 (Zeilen für `mask`, `normalize`).
 - `plans/m4-processing-kern.md` §3: Stand von M4-18.
 

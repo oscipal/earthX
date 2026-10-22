@@ -1,4 +1,4 @@
-"""The registry's description of a mask layer (plan M4-18 §3.1, adr/0014 §15k)."""
+"""The registry's description of a mask layer (plan M4-18 §3.1, adr/0014 §15m)."""
 
 from __future__ import annotations
 

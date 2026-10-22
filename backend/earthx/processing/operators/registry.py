@@ -92,7 +92,7 @@ def applicable(operator: Operator, config: DatasetConfig, params: BaseModel | No
     Every flag the operator requires has to be set on the entry (B10); with
     ``params`` the flags the parameters add as well (``interpolation`` for a
     resampling other than ``nearest``) and what they must agree with in the entry
-    (``mask``: the layer and its classes, adr/0014 §15k). The licence has to reach the operator's
+    (``mask``: the layer and its classes, adr/0014 §15m). The licence has to reach the operator's
     tier (B11); ``commercial_use=false`` only matters with accounts (M6).
     """
     reasons = []

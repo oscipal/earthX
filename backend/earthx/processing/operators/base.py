@@ -21,7 +21,7 @@ Deviations from the sketch in §5.2: ``cost_factor`` instead of a full ``estimat
 ``extra_requirements`` for flags that depend on the parameters (``interpolation`` for
 a resampling other than ``nearest``, §5.3; plan M4-07a §3.2), and ``properties`` for
 what a step adds to the result's STAC properties (plan M4-09, §5.6), and ``dataset_check``
-for what the parameters must agree with in the entry itself, such as the layer ``mask`` reads (plan M4-18, adr/0014 §15k).
+for what the parameters must agree with in the entry itself, such as the layer ``mask`` reads (plan M4-18, adr/0014 §15m).
 """
 
 from __future__ import annotations

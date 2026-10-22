@@ -1,4 +1,4 @@
-"""``mask``: hide the pixels whose class in a classification layer the recipe names (adr/0014 §15k).
+"""``mask``: hide the pixels whose class in a classification layer the recipe names (adr/0014 §15m).
 
 An operator for ``T1`` and ``T2``. The layer is one of the bands of the input — the order names its asset
 (``scl``, ``SCL_20m:scl``), the registry says which one (``DatasetConfig.mask``) — so the tile (T1) and the job

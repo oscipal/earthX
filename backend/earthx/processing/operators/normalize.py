@@ -1,4 +1,4 @@
-"""``normalize``: a fixed range of values onto another, linearly (plan M4-18, adr/0014 §15k).
+"""``normalize``: a fixed range of values onto another, linearly (plan M4-18, adr/0014 §15m).
 
 An operator for ``T1`` and ``T2``. Both ranges come from the recipe: no statistic of the scene or the AOI enters
 (F5), which is why the tile and the job give the same bytes. A panel may *suggest* the input range from a

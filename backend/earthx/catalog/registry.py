@@ -193,7 +193,7 @@ class Capabilities:
     #: method other than ``nearest`` needs ``interpolation`` as well.
     reprojection: bool
     #: ``mask`` hides the classes a recipe names of the layer in ``DatasetConfig.mask``
-    #: (adr/0014 §15k); set exactly where that layer is described.
+    #: (adr/0014 §15m); set exactly where that layer is described.
     masking: bool
     #: ``normalize``: a fixed range onto another (M4-18). Generic like band math, but
     #: every entry switches it on by itself (B10).
@@ -675,7 +675,7 @@ class MaskClass:
 
 @dataclass(frozen=True, slots=True)
 class MaskSource:
-    """Where the operator ``mask`` reads its classes from for this dataset (M4-18, adr/0014 §15k).
+    """Where the operator ``mask`` reads its classes from for this dataset (M4-18, adr/0014 §15m).
 
     ``asset`` is the key an order names (``scl``, ``SCL_20m:scl`` for a Zarr group),
     ``band`` the name the layer carries in the core, which is what a recipe's ``source``

@@ -1,6 +1,6 @@
 """The ``normalize`` operator: parameters, kernel against the formula, a run, and bit-stability across CPU levels.
 
-Plan M4-18 §3.3, §3.6; adr/0014 §15c, §15k; adr/0016 §12a.
+Plan M4-18 §3.3, §3.6; adr/0014 §15c, §15m; adr/0016 §12a.
 """
 
 from __future__ import annotations
