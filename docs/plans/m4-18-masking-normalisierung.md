@@ -474,12 +474,10 @@ liegt im Scratchpad der Sitzung; es liest keine Datenquelle.
   dass `earthx:resampled` im Ergebnis und in `meta` gesetzt ist.
 
 **Abweichungen und Befunde:**
-1. **Mini-Zarr nicht mit `mask` verglichen.** §3.6 nannte den Vergleich T1 ↔ T2
-   auch für einen Mini-Zarr mit CF-Attributen. Der Test deckt COG ab; der
-   vorhandene Mini-Zarr hat keine Klassenschicht. Die Maske selbst ist exakt und
-   nimmt nichts von der Näherung der Warps (`adr/0014` §15d), aber der Beleg
-   fehlt; das Lesen einer Zarr-Schicht ist durch den Test mit Float-Werten im
-   Kern nur nachgestellt. Als offene Zeile im Log.
+1. **Mini-Zarr nicht mit `mask` verglichen** (erledigt am 22.10.2026, §10).
+   §3.6 nannte den Vergleich T1 ↔ T2 auch für einen Mini-Zarr mit CF-Attributen.
+   Der Test deckte zunächst nur COG ab, weil der vorhandene Mini-Zarr keine
+   Klassenschicht hatte.
 2. **Kachel unter einer Maske hat keine NaN unter der Maske.** Wo die Maske etwas
    ausblendet, behält die Kachel den Wert des Bands, die Alpha-Schicht der Kachel
    trägt die Maske. Der Hilfsbau `_decode` in `test_tiler_operator.py` verlangt
@@ -488,9 +486,54 @@ liegt im Scratchpad der Sitzung; es liest keine Datenquelle.
    (`test_operators.py`, `test_processing_docs.py`) und drei Erwartungen im
    Frontend; Fixtures neu erzeugt.
 
-**Nicht gemessen:** Speicher von `mask` und `normalize` gegen die Grenze von
-500 MB; beide laufen im selben Durchgang wie das Lesen und halten einen Block,
-aber eine Messung wie bei `reproject` (M4-10b) gibt es nicht.
+**Nicht gemessen** (erledigt am 22.10.2026, §10): Speicher von `mask` und
+`normalize` gegen die Grenze von 500 MB.
 
 **Offen für M4-18b und M4-18c:** Kette in der Kachel (F1), Vorschau des
 T1-Anfangs, Formular „Classes to hide“, Asset der Maske im Auftrag.
+
+---
+
+## 10. Nacharbeit (Otto, 22.10.2026)
+
+Drei Punkte aus Ottos Auftrag vom 22.10.2026, alle in diesem PR:
+
+1. **ADR-Nummer.** Der Nachtrag in `adr/0014` heißt §15m (M4-32a hat §15k, M4-19a
+   §15l). Umbenannt in `adr/0014`, in den Docstrings von `catalog/registry.py`,
+   `processing/operators/` und den Tests, in §3.7 dieses Plans und im Log.
+2. **`Operator.method` aus M4-19a (#171).** Beim Holen von `main` am 22.10.2026
+   war #171 noch nicht gemergt (`origin/main` unverändert bei `f17de87`); das
+   Feld und der Wächtertest fehlen hier. **M4-19a muss die Sätze für `mask` und
+   `normalize` ergänzen**, sobald es `Operator.method` als Pflichtfeld
+   einführt, sonst bricht der Wächtertest mit dem Merge dieses PR. Im PR
+   vermerkt.
+3. **Zwei Lücken aus §9 geschlossen:**
+   - **(a) Speicher bei 4096².** `tests/earthx/processing/test_memory_mask_normalize.py`
+     misst wie `test_memory_reproject.py` den Gipfel `VmHWM` eines Kindprozesses
+     (`memory_run.py` kennt die Schritte `mask` und `normalize`; für `mask` mit einer
+     20-m-Klassenschicht als zweitem COG), `GDAL_CACHEMAX` 64 MB, Szene mit zwei Bändern
+     `uint16` zu 2048² und 4096². Gemessen in der Sitzung (x86_64):
+
+     | Schritt | 2048² | 4096² | Wachstum |
+     |---|---|---|---|
+     | `mask` | 284,8 MB | 353,3 MB | 68,5 MB |
+     | `normalize` | 290,0 MB | 365,9 MB | 75,9 MB |
+
+     Verlangt sind unter 500 MB bei 4096² und höchstens 100 MB Wachstum (ein Drittel
+     Reserve; ein Kern, der die Szene in `float64` hielte, wüchse um 192 MB). Der Wert
+     für `imports_mb` liegt bei 163,5 MB wie bei den anderen Operatoren.
+   - **(b) Kachel gegen Job für `mask` auf Zarr.** Der CF-Mini-Zarr
+     (`tests/earthx/readers/mini_zarr_cf.py`) trägt die Gruppe `scl20m` mit der
+     Variablen `scl` (24² Pixel zu 20 m über derselben Ausdehnung, `uint8`, Klassen 0 bis
+     11, CF-Attribute `scale_factor 1`, `add_offset 0`, `_FillValue 0` wie bei EOPF).
+     `TestTheTileEqualsTheJobOnZarr` prüft zwei Dinge, wie bei Band-Math (`adr/0014`
+     §15d): Die Kachel ist in **jedem** Pixel die Formel auf dem nächsten Quellpixel
+     beider Raster (Maske exakt, Werte des Bands bis auf 1e-6 relativ); und der Job,
+     auf dieselbe Kachel gelesen, gibt dieselben Werte und dieselbe Maske überall außer
+     innerhalb von 0,125 Quellpixel einer Grenze beider Raster, und dort weniger als
+     5 % der gültigen Pixel. Gemessen: 3 von 2236 gültigen Pixeln einer z14-Kachel
+     haben verschiedene Masken, alle an einer Grenze. Die Werte der Kachel kommen als
+     `float64` aus dem Store, die des Jobs als `float32` aus der Datei; verglichen wird
+     als `float32`.
+
+Die zwei offenen Log-Zeilen aus §9 stehen auf „erledigt (2026-10-22)“.
