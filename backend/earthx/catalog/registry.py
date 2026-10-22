@@ -470,9 +470,10 @@ class ViewerInfo:
     always has.
 
     A note on ``min_zoom`` for a dataset released from tiles that are already
-    clipped to their own item's extent (M3-09 onward: every tile URL is
-    per-item, never a mosaic): the reasoning above ("below it one tile shows
-    several scenes") does not hold there — an item's own tile costs the same
+    clipped to their own item's extent (M3-09 onward: the tile URL of one item
+    is clipped to that item; the mosaic tile of M4-17 is the one URL that names
+    several items, from z8 up whatever ``min_zoom`` says): the reasoning above
+    ("below it one tile shows several scenes") does not hold there — an item's own tile costs the same
     at every zoom down to where it stops touching its neighbours (measured for
     the DEM, M3-12 plan step §3: z0 through z8 read the same overview block).
     ``min_zoom`` is then a cost floor on how many tiles a viewport can ask for
