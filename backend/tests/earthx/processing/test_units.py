@@ -117,10 +117,10 @@ class TestTheResult:
         assert [band["unit"] for band in result.properties["bands"]] == ["m"]
 
     def test_a_band_count_that_differs_from_the_file_is_not_believed(self, tmp_path: Path) -> None:
-        entry = _unit(_entry("red"), "1")
+        entry = _unit(_entry("plain", scale=None, offset=None), "m")
         entry["bands"] = entry["bands"] * 2
-        with pytest.raises(Exception, match="describes 2 bands, the file has 1"):
-            _run(_recipe([entry], []), tmp_path)
+        result = _run(_recipe([entry], []), tmp_path)
+        assert "unit" not in result.properties["bands"][0]
 
     def test_a_unit_changes_nothing_in_the_pixels_or_their_statistics(self, tmp_path: Path) -> None:
         (tmp_path / "a").mkdir()

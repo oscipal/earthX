@@ -516,6 +516,17 @@ class TestUnits:
         )
         assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "percent"]
 
+    async def test_a_variable_the_item_does_not_describe_has_the_registrys_unit_alone(self) -> None:
+        item = eopf_item()
+        item["assets"]["SR_10m"].pop("raster:bands")
+        item["assets"]["SR_10m"]["bands"] = [{"name": "b04", "unit": "percent"}]
+        accepted = await accept(
+            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04,b08",)), Source((EOPF, item))
+        )
+        first, second = accepted.recipe.inputs[0].resolved[0].bands
+        assert (first.unit, second.unit) == ("percent", "1")
+        assert (second.data_type, second.scale) == (None, None)
+
     async def test_the_unit_is_part_of_the_hash(self) -> None:
         plain = await accept(order(), Source((S2, s2_item())))
         item = s2_item()
