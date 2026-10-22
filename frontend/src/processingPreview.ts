@@ -4,7 +4,7 @@
 // `processingStore.ts`.
 
 import { clipTileUrl } from './aoiClip';
-import { buildOperatorTileTemplate } from './api';
+import { buildOperatorTileJsonUrl, buildOperatorTileTemplate } from './api';
 import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl } from './mapLayers';
@@ -104,6 +104,50 @@ export function furtherNote(plan: Extract<PreviewPlan, { state: 'ready' }>): str
   return `The map shows ${shown}; the job runs all steps.`;
 }
 
+// --- a chain the tiler refuses (Otto, 22.10.2026) ------------------------------------
+
+// A chain can name a band that an earlier step removed. The panel does not know the bands
+// each operator leaves: it asks the tiler and shows the steps before the one it refuses.
+export interface RefusedStep {
+  // Counted from 0, as every refusal of an order is (`stepOfRefusal`); the first step is 0.
+  step: number;
+  reason: string;
+}
+
+// `step 1: expression names unknown band(s): red; …` → `{ step: 1, reason: '…' }`, the second step.
+export function refusedStepOf(detail: unknown): RefusedStep | null {
+  if (typeof detail !== 'string') return null;
+  const found = /^step (\d+): ([\s\S]+)$/.exec(detail);
+  return found ? { step: Number(found[1]), reason: found[2].trim() } : null;
+}
+
+// Asks the TileJSON of a chain. `null`: the tiler takes it, or the answer names no step
+// (an unreachable source, a refusal of the whole URL) — then the map is left as it is.
+export async function probeChain(url: string, fetchImpl: typeof fetch = fetch): Promise<RefusedStep | null> {
+  try {
+    const response = await fetchImpl(url);
+    if (response.ok || response.status >= 500) return null;
+    const body: unknown = await response.json();
+    return refusedStepOf((body as { detail?: unknown } | null)?.detail);
+  } catch {
+    return null;
+  }
+}
+
+// The plan cut to its first `count` steps, the ones before a refused step; `null` for none.
+export function shortenPlan(plan: Extract<PreviewPlan, { state: 'ready' }>, count: number): Extract<PreviewPlan, { state: 'ready' }> | null {
+  if (count < 1) return null;
+  return { state: 'ready', steps: plan.steps.slice(0, count), further: true };
+}
+
+// "Preview shows step 1 of 2. Step 2: band red is not available after step 1." — for people the first step is 1.
+export function refusedNote(shown: number, total: number, refused: RefusedStep): string {
+  const reason = `Step ${refused.step + 1}: ${refused.reason.replace(/\.?$/, '.')}`;
+  if (shown < 1) return `No preview. ${reason}`;
+  const which = shown === 1 ? 'step 1' : `steps 1 to ${shown}`;
+  return `Preview shows ${which} of ${total}. ${reason}`;
+}
+
 // --- what the map draws -----------------------------------------------------
 
 export interface PreviewScene {
@@ -117,6 +161,10 @@ export interface PreviewSpec {
   // Changes whenever the picture does; the map and the debounce compare it.
   key: string;
   title: string;
+  // How many steps the picture is made of.
+  stepCount: number;
+  // The TileJSON of the first scene with the same steps: what `probeChain` asks.
+  probe: string;
   scenes: PreviewScene[];
   minZoom: number;
   // Capped so that no tile is as fine as the data (`previewMaxZoom`).
@@ -170,6 +218,7 @@ export function previewSpec(args: {
   if ('problem' in rescale) return null;
   const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
   const scenes: PreviewScene[] = [];
+  let probe = '';
   for (const item of items.slice(0, MAX_PREVIEW_SCENES)) {
     if (!item.bbox) continue;
     const template = buildOperatorTileTemplate(dataset.id, item.id, assets, chain);
@@ -178,6 +227,7 @@ export function previewSpec(args: {
       bbox: item.bbox,
       url: buildTileUrl(template, { rescale: rescale.rescale, colormapName: range.colormap || undefined }),
     });
+    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
   }
   if (scenes.length === 0) return null;
   // Without a pixel size there is no level to hold the preview under: it is drawn
@@ -189,6 +239,8 @@ export function previewSpec(args: {
   return {
     key: canonicalJson({ urls: scenes.map((s) => s.url), minZoom: dataset.zoom.min, maxZoom, clipToAoi }),
     title: plan.steps.map(({ operator }) => operator.title).join(' → '),
+    stepCount: plan.steps.length,
+    probe,
     scenes,
     minZoom: dataset.zoom.min,
     maxZoom,

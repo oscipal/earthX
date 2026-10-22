@@ -81,8 +81,12 @@ import {
 import {
   DEFAULT_RANGE,
   planPreview,
+  probeChain,
   previewOverlays,
   previewSpec,
+  refusedNote,
+  shortenPlan,
+  type RefusedStep,
   rescaleOf,
   type PreviewRange,
   type PreviewSpec,
@@ -199,6 +203,8 @@ interface ProcessingState {
   rangeDraft: PreviewRange;
   // What the map shows of the steps (their longest start that runs as tiles); `null` for none.
   preview: PreviewSpec | null;
+  // Why the preview shows fewer steps than the draft chains, or none: the tiler's reason.
+  previewNote: string | null;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
@@ -554,6 +560,7 @@ const EMPTY_DRAFT = {
   range: DEFAULT_RANGE,
   rangeDraft: DEFAULT_RANGE,
   preview: null as PreviewSpec | null,
+  previewNote: null as string | null,
   reviewAsked: false,
   estimate: null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
@@ -1056,15 +1063,48 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
 // What the map should show now: the longest start of the draft's steps that runs as
 // tiles, on the scenes of the order, while the panel is open and its steps are complete.
-function wantedPreview(): PreviewSpec | null {
+// `limit` cuts it to the first steps (what the tiler accepted of a chain).
+function wantedPreview(limit?: number): PreviewSpec | null {
   const p = useProcessingStore.getState();
   if (!p.open) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
-  const plan = planPreview(p.steps, view.info);
-  if (plan.state !== 'ready') return null;
+  const full = planPreview(p.steps, view.info);
+  if (full.state !== 'ready') return null;
+  const plan = limit === undefined ? full : shortenPlan(full, limit);
+  if (plan === null) return null;
   return previewSpec({ dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, range: p.range, area: p.area });
+}
+
+// The key of the whole chain the shown preview comes from: a preview cut by the tiler
+// differs from it, and must not be asked for again on every change that leaves it alone.
+let settledKey: string | null = null;
+let settleRun = 0;
+// What the tiler said of a chain, until there is nothing to show: asking again for a new range would give the same answer.
+const probed = new Map<string, RefusedStep>();
+
+// Shows `wanted`, or — for a chain of several steps the tiler refuses at step k — its first
+// k − 1 steps and the reason. One step needs no question: its refusal has no step to name.
+async function settle(wanted: PreviewSpec): Promise<void> {
+  const run = ++settleRun;
+  let refused: RefusedStep | null = null;
+  if (wanted.stepCount > 1) {
+    refused = probed.get(wanted.probe) ?? null;
+    if (refused === null) {
+      // Only a refusal is remembered: a question that failed on the way is asked again.
+      refused = await probeChain(wanted.probe);
+      if (run !== settleRun) return;
+      if (refused) probed.set(wanted.probe, refused);
+    }
+  }
+  settledKey = wanted.key;
+  if (refused === null || refused.step >= wanted.stepCount) {
+    useProcessingStore.setState({ preview: wanted, previewNote: null });
+    return;
+  }
+  const shown = refused.step;
+  useProcessingStore.setState({ preview: wantedPreview(shown), previewNote: refusedNote(shown, wanted.stepCount, refused) });
 }
 
 // A preview that goes away goes at once; a new or changed one 400 ms after the
@@ -1072,12 +1112,19 @@ function wantedPreview(): PreviewSpec | null {
 function refreshPreview(): void {
   clearTimeout(previewTimer);
   const wanted = wantedPreview();
-  if (wanted?.key === useProcessingStore.getState().preview?.key) return;
+  const state = useProcessingStore.getState();
+  if (wanted !== null && wanted.key === settledKey && (state.preview !== null || state.previewNote !== null)) return;
   if (wanted === null) {
-    useProcessingStore.setState({ preview: null });
+    settleRun++;
+    settledKey = null;
+    probed.clear();
+    if (state.preview !== null || state.previewNote !== null) useProcessingStore.setState({ preview: null, previewNote: null });
     return;
   }
-  previewTimer = setTimeout(() => useProcessingStore.setState({ preview: wantedPreview() }), PREVIEW_DELAY_MS);
+  previewTimer = setTimeout(() => {
+    const again = wantedPreview();
+    if (again) void settle(again);
+  }, PREVIEW_DELAY_MS);
 }
 
 useProcessingStore.subscribe((s, prev) => {

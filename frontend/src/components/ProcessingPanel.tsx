@@ -258,6 +258,7 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
 function PreviewSection({ view }: { view: OrderView }) {
   const steps = useProcessingStore((s) => s.steps);
   const preview = useProcessingStore((s) => s.preview);
+  const previewNote = useProcessingStore((s) => s.previewNote);
   const rangeDraft = useProcessingStore((s) => s.rangeDraft);
   const setRangeDraft = useProcessingStore((s) => s.setRangeDraft);
   const applyRange = useProcessingStore((s) => s.applyRange);
@@ -315,6 +316,7 @@ function PreviewSection({ view }: { view: OrderView }) {
           )}
           {!view.pass && <p className="hint-text">Choose a pass to see the preview.</p>}
           {plan.further && <p className="pp-help">{furtherNote(plan)}</p>}
+          {previewNote && <p className="hint-text">{previewNote}</p>}
           {sceneCount > 1 && (
             <p className="pp-help">
               Where scenes overlap, the preview may show another scene than the result: the job follows the mosaic rule of

@@ -346,6 +346,22 @@ export function buildOperatorTileTemplate(
   assets: readonly string[],
   steps: readonly TileStep[],
 ): string {
+  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${operatorQuery(assets, steps)}`;
+}
+
+// The TileJSON of the same chain. The tiler opens the inputs and judges every step on
+// the bands the one before leaves, so a `422` of it says which step it refuses and why
+// (`api/tiler.py`, `processing/tile.py`) — the panel asks it instead of judging bands itself.
+export function buildOperatorTileJsonUrl(
+  datasetId: string,
+  itemId: string,
+  assets: readonly string[],
+  steps: readonly TileStep[],
+): string {
+  return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps)}`;
+}
+
+function operatorQuery(assets: readonly string[], steps: readonly TileStep[]): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
   for (const step of steps) {
@@ -353,7 +369,7 @@ export function buildOperatorTileTemplate(
     params.append('op_version', String(step.opVersion));
     params.append('params', step.paramsJson);
   }
-  return `${itemBase(datasetId, itemId)}/tiles/${TILE_MATRIX_SET}/{z}/{x}/{y}?${params.toString()}`;
+  return params.toString();
 }
 
 export function buildStatisticsUrl(datasetId: string, itemId: string, asset: string): string {

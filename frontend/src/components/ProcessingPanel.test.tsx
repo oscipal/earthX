@@ -452,6 +452,22 @@ describe('review before start (K4)', () => {
     expect(button('Start job').disabled).toBe(true);
   });
 
+  it('shows the refusal of a chain at the step that names the removed band, and does not let it start', async () => {
+    routes['POST /processing/processes/recipe/estimate'] = () =>
+      problem(422, 'step 1: expression names unknown band(s): red; the input has: band_math');
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    click(button('＋ Band math'));
+    const expressions = container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]');
+    typeInto(expressions[1], 'red + 1');
+    await review();
+    const steps = container.querySelectorAll('.pp-step');
+    expect(steps[0].textContent).not.toContain('unknown band');
+    expect(steps[1].textContent).toContain('expression names unknown band(s): red');
+    expect(button('Start job').disabled).toBe(true);
+  });
+
   it('hides a refusal once the order changed, also one that arrives after the change', async () => {
     let answer!: (r: Response) => void;
     routes['POST /processing/processes/recipe/estimate'] = () => new Promise((resolve) => (answer = resolve));

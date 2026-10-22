@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AOI_CLIP_PROTOCOL } from './aoiClip';
 import type { DatasetOption } from './datasets';
@@ -18,6 +18,10 @@ import {
   NO_PREVIEW,
   planPreview,
   previewOverlays,
+  probeChain,
+  refusedNote,
+  refusedStepOf,
+  shortenPlan,
   previewSpec,
   rescaleOf,
   tileResolution,
@@ -372,5 +376,73 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
 
   it('is never above the data at the pole either', () => {
     expect(previewMaxZoom([[10, 89, 11, 90]], 10, { min: 0, max: 22 })).toBeLessThanOrEqual(22);
+  });
+});
+
+describe('a chain the tiler refuses', () => {
+  const answer = (status: number, body: unknown) => async () =>
+    new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
+
+  it('reads the step and the reason off the detail of the tiler', () => {
+    expect(refusedStepOf('step 1: expression names unknown band(s): red; the input has: band_math')).toEqual({
+      step: 1,
+      reason: 'expression names unknown band(s): red; the input has: band_math',
+    });
+    expect(refusedStepOf("step 12: 'mask' cannot run here: x\ny")).toEqual({ step: 12, reason: "'mask' cannot run here: x\ny" });
+  });
+
+  it.each([['params: expression: required'], ['step : x'], ['step 2:'], ['Step 2: x'], [' step 2: x'], [undefined], [422], [['step 2: x']], [null]])(
+    'names no step in %j',
+    (detail) => {
+      expect(refusedStepOf(detail)).toBeNull();
+    },
+  );
+
+  it('asks the TileJSON and returns what a refusal names', async () => {
+    const fetchImpl = vi.fn(answer(422, { detail: 'step 1: no band red' }));
+    expect(await probeChain('/tj?x=1', fetchImpl as unknown as typeof fetch)).toEqual({ step: 1, reason: 'no band red' });
+    expect(fetchImpl).toHaveBeenCalledWith('/tj?x=1');
+  });
+
+  it.each([
+    ['a chain the tiler takes', answer(200, { tilejson: '3.0.0' })],
+    ['a refusal without a step', answer(400, { detail: 'params: x' })],
+    ['a failure of the source', answer(502, { detail: 'step 1: the asset could not be read' })],
+    ['an answer that is not JSON', answer(422, 'not json')],
+    ['a network that fails', async () => Promise.reject(new TypeError('offline'))],
+  ])('names no step for %s', async (_, fetchImpl) => {
+    expect(await probeChain('/tj', fetchImpl as unknown as typeof fetch)).toBeNull();
+  });
+
+  it('cuts the plan to the steps before the refused one, and to none for the first', () => {
+    const plan = ready([normalize(), bandMath('red', 3), normalize(7)]);
+    expect(shortenPlan(plan, 2)!.steps.map((s) => s.step.key)).toEqual([5, 3]);
+    expect(shortenPlan(plan, 2)!.further).toBe(true);
+    expect(shortenPlan(plan, 0)).toBeNull();
+  });
+
+  it('writes the note the way the panel shows it', () => {
+    const refused = { step: 1, reason: 'band red is not available after step 1' };
+    expect(refusedNote(1, 2, refused)).toBe('Preview shows step 1 of 2. Step 2: band red is not available after step 1.');
+    expect(refusedNote(2, 4, { step: 2, reason: 'no band.' })).toBe('Preview shows steps 1 to 2 of 4. Step 3: no band.');
+    expect(refusedNote(0, 2, { step: 0, reason: 'no band' })).toBe('No preview. Step 1: no band.');
+  });
+
+  it('puts the chain into the TileJSON URL of the first scene', () => {
+    const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
+    const spec = previewSpec({
+      dataset: DATASET,
+      items,
+      assets: ['red', 'nir'],
+      info: S2,
+      range: DEFAULT_RANGE,
+      area: 'scene',
+      plan: ready([normalize(), bandMath('red', 3)]),
+    })!;
+    expect(spec.stepCount).toBe(2);
+    const url = new URL(spec.probe, 'http://localhost');
+    expect(url.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_A/WebMercatorQuad/tilejson.json');
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.has('rescale')).toBe(false);
   });
 });
