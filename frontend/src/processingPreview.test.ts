@@ -6,7 +6,7 @@ import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from './geoUtils';
 import type { ProcessDescription } from './processing';
-import { processInfo, type DraftStep } from './processingOrder';
+import { processInfo, type DraftStep, type ProcessInfo } from './processingOrder';
 import {
   assetGsd,
   DEFAULT_RANGE,
@@ -16,6 +16,8 @@ import {
   MAX_PREVIEW_STEPS,
   previewMaxZoom,
   NO_PREVIEW,
+  NO_PREVIEW_FORM,
+  NO_PREVIEW_UNLISTED,
   planPreview,
   previewOverlays,
   probeChain,
@@ -47,13 +49,13 @@ function normalize(key = 5, values: Record<string, string | boolean> = {}): Draf
   };
 }
 
-// The panel has no form for `mask` until M4-18c: it cannot be drawn, so it ends the start.
-function mask(key = 6): DraftStep {
-  return { key, op: 'mask', opVersion: 1, values: {} };
+function mask(key = 6, values: Record<string, string | boolean> = {}): DraftStep {
+  return { key, op: 'mask', opVersion: 1, values: { source: 'scl', classes: '3, 8, 9, 10', ...values } };
 }
 
+// The listed version of the fixtures; it runs only as a job (`T2`).
 function reproject(): DraftStep {
-  return { key: 2, op: 'reproject', opVersion: 2, values: { crs: 'EPSG:3035', resolution: '30' } };
+  return { key: 2, op: 'reproject', opVersion: 3, values: { crs: 'EPSG:3035', resolution: '30' } };
 }
 
 function item(id: string, properties: Record<string, unknown> = {}, redGsd?: number): StacItem {
@@ -130,11 +132,41 @@ describe('planPreview (adr/0014 §6.1)', () => {
     expect(plan.further).toBe(true);
   });
 
-  it('ends the start at a step the panel cannot draw', () => {
-    const plan = ready([bandMath('red'), mask()]);
+  it('ends the start at a step that runs only as a job', () => {
+    const plan = ready([bandMath('red'), reproject(), normalize()]);
     expect(plan.steps).toHaveLength(1);
     expect(plan.further).toBe(true);
-    expect(planPreview([mask(), bandMath('red')], S2)).toEqual({ state: 'off', reason: NO_PREVIEW });
+  });
+
+  it('previews a mask as the first step: it runs as a tile (M4-18c)', () => {
+    const plan = ready([mask(), bandMath('red')]);
+    expect(plan.steps.map((s) => s.operator.op)).toEqual(['mask', 'band_math']);
+    expect(plan.steps[0].params).toEqual({ source: 'scl', classes: [3, 8, 9, 10] });
+    expect(plan.further).toBe(false);
+    expect(ready([mask()]).steps).toHaveLength(1);
+  });
+
+  it('writes the classes of a mask ascending and once, whatever order they were typed in', () => {
+    expect(ready([mask(6, { classes: '10, 3,3 8' })]).steps[0].params).toEqual({ source: 'scl', classes: [3, 8, 10] });
+  });
+
+  it('asks to complete a mask that has no class yet instead of calling it a job-only step', () => {
+    expect(planPreview([mask(6, { classes: '' })], S2)).toEqual({
+      state: 'off',
+      reason: 'Complete the step to see the preview.',
+    });
+    expect(planPreview([mask(6, { classes: '3, x' })], S2)).toEqual({
+      state: 'off',
+      reason: 'Complete the step to see the preview.',
+    });
+  });
+
+  it('never calls a mask a job-only step, whatever else the order holds', () => {
+    for (const steps of [[mask()], [mask(), reproject()], [mask(), normalize(), bandMath('red')]]) {
+      const plan = planPreview(steps, S2);
+      expect(plan.state).toBe('ready');
+    }
+    expect(planPreview([mask(6, { classes: '' }), reproject()], S2)).not.toEqual({ state: 'off', reason: NO_PREVIEW });
   });
 
   it('takes no more steps than the tile route does', () => {
@@ -158,9 +190,21 @@ describe('planPreview (adr/0014 §6.1)', () => {
     );
   });
 
-  it('has no preview for an operator the dataset does not list', () => {
+  it('says that an operator the dataset does not list is not available, not that it is a job', () => {
     const stranger: DraftStep = { key: 9, op: 'decomp', opVersion: 1, values: {} };
-    expect(planPreview([stranger], S2)).toEqual({ state: 'off', reason: NO_PREVIEW });
+    expect(planPreview([stranger], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
+    expect(planPreview([{ ...mask(), opVersion: 2 }], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
+  });
+
+  it('says that the panel has no form for a tile operator, not that it runs only as a job', () => {
+    const noForm: ProcessInfo = {
+      ...S2,
+      operators: S2.operators.map((o) =>
+        o.op === 'mask' ? { ...o, form: { supported: false, reason: 'not supported by this panel: keyword x' } } : o,
+      ),
+    };
+    expect(planPreview([mask()], noForm)).toEqual({ state: 'off', reason: NO_PREVIEW_FORM });
+    expect(NO_PREVIEW_FORM).not.toContain('only as a job');
   });
 });
 

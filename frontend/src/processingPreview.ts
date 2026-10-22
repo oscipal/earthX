@@ -20,7 +20,11 @@ export const MAX_PREVIEW_ASSETS = 16;
 // And at most this many steps in a chain (`api/tiler.py::MAX_OPERATOR_STEPS`).
 export const MAX_PREVIEW_STEPS = 4;
 
+// Why the first step has no picture, one text for each reason: it must say what is true of that
+// step (a mask runs as a tile, and was once called job-only for want of a form).
 export const NO_PREVIEW = 'No preview: the first step runs only as a job.';
+export const NO_PREVIEW_FORM = 'No preview: this panel has no form for the first step yet.';
+export const NO_PREVIEW_UNLISTED = 'No preview: the first step is not available for this dataset.';
 
 // --- range and colormap ------------------------------------------------------
 
@@ -66,12 +70,14 @@ export type PreviewPlan =
       further: boolean;
     };
 
-// The operator of a step that can be a tile and the fields of its form, or `null`:
-// the operator is not on the dataset's list, the panel has no form for it, or it does
-// not run as a tile (`T1`, `pixel`).
-function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[] } | null {
+// The operator of a step that can be a tile and the fields of its form, or the text why
+// there is no picture: the operator is not on the dataset's list, it does not run as a tile
+// (`T1`, `pixel`), or the panel has no form for it.
+function tileStep(step: DraftStep, info: ProcessInfo): { operator: Operator; fields: Field[] } | { reason: string } {
   const operator = info.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion);
-  if (!operator || !operator.form.supported || !operator.tiers.includes('T1') || operator.kind !== 'pixel') return null;
+  if (!operator) return { reason: NO_PREVIEW_UNLISTED };
+  if (!operator.tiers.includes('T1') || operator.kind !== 'pixel') return { reason: NO_PREVIEW };
+  if (!operator.form.supported) return { reason: NO_PREVIEW_FORM };
   return { operator, fields: operator.form.fields };
 }
 
@@ -85,15 +91,14 @@ export function planPreview(steps: readonly DraftStep[], info: ProcessInfo | nul
   const planned: PlannedStep[] = [];
   for (const step of steps.slice(0, MAX_PREVIEW_STEPS)) {
     const found = tileStep(step, info);
-    if (!found) break;
+    if ('reason' in found) break;
     const { params, errors } = paramsFrom(found.fields, step.values);
     if (Object.keys(errors).length > 0) break;
     planned.push({ step, operator: found.operator, params });
   }
   if (planned.length === 0) {
-    return tileStep(first, info) === null
-      ? { state: 'off', reason: NO_PREVIEW }
-      : { state: 'off', reason: 'Complete the step to see the preview.' };
+    const found = tileStep(first, info);
+    return { state: 'off', reason: 'reason' in found ? found.reason : 'Complete the step to see the preview.' };
   }
   return { state: 'ready', steps: planned, further: planned.length < steps.length };
 }
