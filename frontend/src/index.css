@@ -1823,6 +1823,30 @@ input[type='date']:focus {
   text-transform: none;
   letter-spacing: 0;
 }
+.pp-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pp-recipe-btn {
+  box-sizing: border-box;
+  width: 25%;
+  padding: 8px 6px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pp-recipe-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pp-recipe p {
+  margin: 0;
+  font-size: 11px;
+}
 .pp-options {
   margin: 0;
   padding-left: 14px;

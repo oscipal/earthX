@@ -8,7 +8,7 @@
 // the jobs of this tab have a window of their own (`JobList.tsx`). The first
 // step shows on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { crsBlockReason, midLatitude } from '../crsUnit';
@@ -41,6 +41,7 @@ import {
   useProcessingStore,
   type OrderView,
 } from '../processingStore';
+import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
@@ -53,6 +54,45 @@ const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another 
 function focusedExpression(): HTMLTextAreaElement | null {
   const active = document.activeElement;
   return active instanceof HTMLTextAreaElement && active.dataset.bandTarget !== undefined ? active : null;
+}
+
+// "Load recipe…" (M4-19d): the steps and the data type of a `recipe.json` of the user's
+// own, onto the current selection. The file is read here, nothing leaves the browser.
+function RecipeLoader() {
+  const load = useProcessingStore((s) => s.loadRecipe);
+  const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const pick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.json')) return setOutcome({ ok: false, message: 'Pick a .json file.' });
+    if (file.size > MAX_RECIPE_BYTES) return setOutcome({ ok: false, message: 'The file is larger than 1 MB.' });
+    setBusy(true);
+    setOutcome(null);
+    const result = await load(await file.text());
+    setBusy(false);
+    setOutcome(
+      result.ok
+        ? { ok: true, message: ['Recipe loaded.', ...result.notes].join(' ') }
+        : { ok: false, message: result.reason },
+    );
+  };
+
+  return (
+    <div className="pp-recipe">
+      <label className={`ghost-btn pp-recipe-btn${busy ? ' disabled' : ''}`} title="Take the steps and the data type from a recipe.json, onto the current selection">
+        ⬆ Load recipe…
+        <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => void pick(e)} />
+      </label>
+      {outcome && (
+        <p className={outcome.ok ? 'pp-help' : 'hint-text error'} role="status">
+          {outcome.message}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function Bands({ view }: { view: OrderView }) {
@@ -454,6 +494,7 @@ export default function ProcessingPanel() {
             </p>
             <AreaChoice view={view} hasAoi={hasAoi} />
             <RunAsChoice view={view} />
+            <RecipeLoader />
           </section>
         )}
       </div>

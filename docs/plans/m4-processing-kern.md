@@ -261,7 +261,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-19a | Methodentext: `processing/methods.py`, `Operator.method`, `methods.txt` in Zuschnitt, Export, Job-ZIP und Runner (eine Definition mit M4-30), Link und „Methods“ in der Jobliste | M4b | B | Sonnet (mittel) | M4-19 (Plan) | PR #171 (Entwurf), umgesetzt (`plans/m4-19-teilen-und-beschreiben.md` §10) |
 | M4-19b | Einheiten: Registry-Feld `band_units`, `Band.unit`, `bands[].unit`, Anzeige (§3.2) | M4b | B | Sonnet (mittel) | M4-19a; nicht parallel zu M4-18 | offen (neue Session) |
 | M4-19c | Farbskala der Vorschau: `/statistics` mit `op`, Regel mit M4-32 (§3.3) | M4b | B | Sonnet (mittel) | M4-32b | offen (neue Session) |
-| M4-19d | „Load recipe…“, `draftFromOrder` (§3.4) | M4b | B | Sonnet (mittel) | — | offen (neue Session) |
+| M4-19d | „Load recipe…“, `draftFromOrder` (§3.4) | M4b | B | Sonnet (mittel) | — | umgesetzt (`plans/m4-19-teilen-und-beschreiben.md` §11) |
 | M4-19e | Permalink: Tabelle, Routen, Aufräumer, „Share“; Nachtrag `adr/0015` F13 (§3.5) | M4b | B | Sonnet (mittel) | M4-19d | offen (neue Session) |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | PR (Entwurf) |
 | M4-24 | Weitere Resampling-Methoden für `reproject` (`average`, `mode`, `cubicspline`, `lanczos`) mit Messung gegen `adr/0014` §6.3 (`plans/m4-24-resampling-methoden.md`) | Quer | B | Opus Plan, Sonnet (hoch) | M4-21 | PR #158 (Entwurf), Plan freigegeben am 20.10.2026, umgesetzt (`plans/m4-24-resampling-methoden.md` §8) |

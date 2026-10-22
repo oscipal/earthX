@@ -9,7 +9,7 @@ import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
 import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
-import { paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
+import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
 import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
 // K10: the one input of an order is always called this.
@@ -426,6 +426,72 @@ export function buildOrder(args: {
     },
     stepProblems,
     problems,
+  };
+}
+
+// What the panel takes from a recipe or an order (M4-19d): the other way round
+// from `buildOrder`, which builds the same order again from it.
+export interface Draft {
+  datasetId: string;
+  // One list of scenes per group; the panel's own orders have one.
+  groups: string[][];
+  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  steps: DraftStep[];
+  assets: string[];
+  // `null` for an output without a data type (a crop).
+  dtype: string | null;
+}
+
+// The order as a draft, and what in it the process description does not accept:
+// an operator it does not list for the dataset, a parameter its form does not
+// know or refuses. `nextKey` hands out the keys of the steps.
+export function draftFromOrder(
+  order: Order,
+  info: ProcessInfo,
+  nextKey: () => number,
+): { draft: Draft; problems: string[]; notes: string[] } {
+  const problems: string[] = [];
+  const notes: string[] = [];
+  const steps: DraftStep[] = [];
+  order.steps.forEach((step, index) => {
+    const where = `Step ${index + 1} (${step.op})`;
+    // The server still takes an older version of an operator but no longer lists it (M4-24):
+    // the step is taken as the listed one, whose form accepts what the older one did.
+    const operator =
+      info.operators.find((o) => o.op === step.op && o.opVersion === step.op_version) ??
+      info.operators.find((o) => o.op === step.op && o.opVersion > step.op_version);
+    if (!operator) return void problems.push(`${where}: this operator is not available for this dataset.`);
+    if (operator.opVersion !== step.op_version) {
+      notes.push(`Step ${index + 1} (${step.op}): version ${step.op_version} is taken as version ${operator.opVersion}.`);
+    }
+    if (!operator.form.supported) return void problems.push(`${where}: ${operator.form.reason}`);
+    const { fields } = operator.form;
+    for (const name of Object.keys(step.params)) {
+      if (!fields.some((f) => f.name === name)) problems.push(`${where}: unknown parameter ${name}.`);
+    }
+    const values = initialValues(fields);
+    for (const field of fields) {
+      const raw = step.params[field.name];
+      if (raw === undefined || field.kind === 'const') continue;
+      if (field.kind === 'boolean' && typeof raw === 'boolean') values[field.name] = raw;
+      else if (field.kind !== 'boolean' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
+      else problems.push(`${where}: ${field.name} has the wrong type.`);
+    }
+    for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
+    steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
+  });
+  const input = order.inputs[0];
+  return {
+    draft: {
+      datasetId: input.dataset,
+      groups: input.groups.map((group) => [...group]),
+      aoi: order.aoi ?? null,
+      steps,
+      assets: [...input.assets],
+      dtype: order.output.kind === 'raster' ? order.output.dtype : null,
+    },
+    problems,
+    notes,
   };
 }
 

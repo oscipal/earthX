@@ -568,3 +568,31 @@ nach §4 und der Reihenfolge dort.
 - **Fund:** Die Registry hält die Adresse des DOI (`https://doi.org/…`); der Text nimmt
   `doi_name`, wie `citation.bib`.
 - **Version:** Die Ergebnis-Bytes ändern sich nicht, `earthx.__version__` bleibt.
+
+---
+
+## 11. Umsetzung M4-19d (22.10.2026)
+
+- **Lesen:** `recipeFile.ts::readRecipe` prüft die Datei im Browser (1 MB, JSON, `recipe_version`,
+  `inputs`/`steps`, ein Datensatz und ein Input, AOI als Polygon, bekannte Ausgabe). `resolved`,
+  `provenance` und `recipe_id` werden ignoriert.
+- **Umkehrung:** `processingOrder.ts::draftFromOrder` prüft Operator, Version und Parameter gegen die
+  Prozessbeschreibung (dieselbe Prüfung wie das Formular). Test: `buildOrder(draftFromOrder(x)) ≡ x` über
+  die sieben Auftrags-Fixtures mit Schritten; die mit `steps: []` ergeben einen Entwurf ohne Schritte.
+- **Store:** `loadRecipe(text, 'steps' | 'everything')`. Bei einem Fehler bleibt der Entwurf unverändert.
+  „Everything“ setzt Datensatz, Szenen (wie `processLayer`, fehlende werden einzeln geholt), AOI und Bereich;
+  ohne AOI im Rezept bleibt die AOI auf der Karte, der Bereich ist „Whole scene“.
+- **Zuschnitt-Rezept:** „Everything“ stellt die Auswahl her (ohne Schritte und Datentyp), „Steps only“ sagt
+  „This recipe has no steps.“
+- **Festgelegt (Otto, 22.10.2026):** Mehrere Gruppen im Rezept (Export) wählen alle Szenen aus, den
+  Durchgang wählt der Nutzer; ohne AOI bleibt die Karten-AOI, der Bereich ist „Whole scene“; ein
+  Zuschnitt-Rezept ohne Schritte ist so angenommen.
+- **Ältere Fassung:** Die Prozessbeschreibung listet nur die höchste `op_version` (`_jobs_of`), das Backend
+  nimmt ältere weiter an (reproject v2). `draftFromOrder` lädt einen solchen Schritt als die gelistete
+  höhere Fassung, wenn seine Parameter deren Formular bestehen, und sagt es in einem Hinweis. Das ist
+  verlustfrei für reproject (v2 ist v3 mit engerer Methodenliste, `REPROJECT_V2`). Eine Fassung über der
+  gelisteten bleibt „not available“. Vor dieser Änderung wurde ein v2-Rezept abgewiesen.
+- **Nur „Steps only“ (Otto, 22.10.2026):** „Everything“ ist aus Panel und Store entfernt, weil es AOI, Auswahl
+  und Ergebnisliste auf der Karte ersetzte. „Load recipe…“ (große Schaltfläche) lädt nach der Dateiwahl sofort
+  die Schritte und den Datentyp. Die Festlegungen zu mehreren Gruppen und fehlender AOI betreffen damit nur
+  noch den Permalink (M4-19e); ein Zuschnitt-Rezept ohne Schritte meldet „This recipe has no steps.“
