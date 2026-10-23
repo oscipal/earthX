@@ -90,6 +90,34 @@ class TestARun:
         assert capsys.readouterr().out.strip() == str(folder)
         assert (folder / "recipe.json").read_bytes() == Path(recipe).read_bytes()
 
+    def test_a_recipe_written_before_units_runs_and_names_none(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        """The recipe of a ZIP from earlier has no ``unit`` anywhere; the committed CI recipe is such a file."""
+        recipe = _file(tmp_path, support.band_math_recipe())
+        assert b'"unit"' not in Path(recipe).read_bytes()
+        committed = (Path(__file__).parents[2] / "fixtures" / "runner" / "recipe-ci.json").read_bytes()
+        assert b'"unit"' not in committed
+        load_recipe(committed)
+        assert _main("run", recipe, "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        provenance = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
+        assert all("unit" not in band for band in provenance["properties"]["bands"])
+
+    def test_a_recipe_with_units_runs_is_kept_as_it_is_and_the_result_names_the_unit(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        recipe = support.band_math_recipe("red")
+        for entry in recipe["inputs"][0]["resolved"]:
+            entry["bands"][0]["unit"] = "1"
+        path = _file(tmp_path, recipe)
+        assert json.loads(Path(path).read_bytes())["inputs"][0]["resolved"][0]["bands"][0]["unit"] == "1"
+        assert _main("run", path, "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        assert (folder / "recipe.json").read_bytes() == Path(path).read_bytes()
+        provenance = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
+        assert [band["unit"] for band in provenance["properties"]["bands"]] == ["1"]
+
     def test_its_provenance_says_local_and_self_attested_with_the_versions(
         self, tmp_path: Path, out: Path, served: list[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
