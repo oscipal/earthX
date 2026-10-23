@@ -61,6 +61,35 @@ describe('draftFromOrder', () => {
     expect(read.ok && roundTrip(read.order).built.order).toEqual(order);
   });
 
+  // M4-19b: the unit sits in `resolved`, which the file carries and the order does not. A file from before units
+  // loads as it did, and one with units gives the very same order: nothing of `resolved` goes back to the server.
+  const served = (order: Order, resolved: unknown) => ({
+    ...order,
+    recipe_id: 'AbCdEfGhIjKlMnOpQrSt_-',
+    inputs: order.inputs.map((input) => ({ ...input, resolved })),
+    provenance: { execution: 'cloud' },
+  });
+  const OLD_BANDS = [{ asset: { asset: 'red' }, bands: [{ data_type: 'uint16', nodata: 0, scale: 0.0001, offset: -0.1 }], scaling: 'item' }];
+  const NEW_BANDS = [
+    { asset: { asset: 'red' }, bands: [{ data_type: 'uint16', nodata: 0, scale: 0.0001, offset: -0.1, unit: '1' }], scaling: 'item', unit: null },
+    { asset: { asset: 'data' }, bands: [], scaling: 'none', unit: 'm' },
+  ];
+
+  it.each([
+    ['from before units', OLD_BANDS],
+    ['with units', NEW_BANDS],
+  ])('loads a recipe.json %s into the order it was made from', (_label, resolved) => {
+    for (const [, fixture] of withSteps) {
+      const order = fixture.inputs.recipe;
+      const read = readRecipe(JSON.stringify(served(order, resolved)));
+      expect(read.ok).toBe(true);
+      const { problems, built } = roundTrip((read as { order: Order }).order);
+      expect(problems).toEqual([]);
+      expect(built.order).toEqual(order);
+      expect(JSON.stringify(built.order)).not.toMatch(/"unit"|"resolved"/u);
+    }
+  });
+
   it('takes a recipe without steps as a draft without steps (a crop or a mosaic)', () => {
     const order = Object.values(FIXTURES).find((f) => f.inputs.recipe.steps.length === 0)!.inputs.recipe;
     const { draft, problems } = draftFromOrder(order, infoOf(order.inputs[0].dataset), keys());
