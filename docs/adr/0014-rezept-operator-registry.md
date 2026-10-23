@@ -2021,6 +2021,17 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
     Verfahren `c1` ist unverändert. Ein Test leitet die alten Werte aus dem neuen Kern her, indem
     er diese Schlüssel herausnimmt. Nach dem Deployment gibt es einmal für jedes gecachte Ergebnis
     keinen Treffer; bei 7 Tagen Frist ist das vertretbar.
+- **Warum im Hash, und warum in `resolved` (Frage Otto, 23.10.2026):** Die Einheit steht in
+  `inputs[].resolved[]` (`bands[].unit` und `unit`), also dort, wo die Angaben zum Input bei der
+  Annahme stehen; einen Ort daneben gibt es nicht, denn `resolved` gehört nach §4.5 selbst zum
+  gehashten Kern. Sie kommt wie `scale`, `offset` und `nodata` aus Item und Registry, nicht vom
+  Nutzer, und wird bei der Annahme festgehalten. Im Hash steht sie, weil das Ergebnis sie als
+  `bands[].unit` trägt: Ohne sie träfe ein neuer Auftrag das Ergebnis eines älteren, dessen
+  Einheit unter einem früheren Stand der Registry entstand, und `recipe.json` im ZIP erklärte
+  nicht, woher die Einheit im Ergebnis kommt. Ehrlich dazu: Die Pixel ändert die Einheit nicht;
+  sie in den Hash zu nehmen ist die vorsichtige Wahl und kostet einen Cache-Fehlschuss bei jeder
+  Korrektur einer Einheit in der Registry (7 Tage Frist). Ausgenommen wäre sie nur um den Preis
+  veralteter Metadaten im Treffer (Plan Frage 8, Option 2, von Otto nicht gewählt).
 - **Kern (§5.6):** `Source.units` (`units_of`: je Band, wie das Rezept sie hat; Beschreibungen
   anderer Länge als die Datei glaubt der Kern nicht, ein Asset ohne Beschreibung nimmt die Einheit
   der Eingabe für alle Bänder) fließt in `BandMeta.unit` von Job, Kachel und Schätzung.

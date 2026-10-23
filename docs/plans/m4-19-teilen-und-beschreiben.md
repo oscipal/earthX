@@ -617,7 +617,20 @@ nach §4 und der Reihenfolge dort.
   es einmal für alle gecachten Ergebnisse keinen Treffer.
 - **Anzeige:** Panel („red · 1“, „data · m“), Layer-Manager („Unit: m“ am Ergebnis-Layer); die Collection gibt
   `earthx:band_units` heraus.
-- **Nicht gebaut:** die Einheit in der Wertebereich-Zeile der Vorschau (siehe `adr/0014` §15n). Offen für Otto.
+- **Nicht gebaut, Übergabe an M4-19c (Otto, 23.10.2026):** die Einheit in der Wertebereich-Zeile der Vorschau.
+  Sie kommt mit M4-19c als Feld im TileJSON der Operator-Kachel: Der Kern kennt die Einheit hinter den
+  Schritten (`OperatorTileReader` rechnet `transform` je Schritt schon vor dem ersten Pixel und hält dabei
+  `BandMeta.unit`); das Panel baut diese Bandlogik nicht nach. 19c liest dann `unit` aus dem TileJSON in die
+  Zeile neben „min“/„max“ und dasselbe Feld für `/statistics` mit `op`.
+- **Angenommen (Otto, 23.10.2026):** `ResolvedInput.unit` für das DEM; `aot`, `wvp`, `cloud`, `snow` und `preview`
+  ohne Einheit für M4, eine Einheit dafür kommt nach M4.
+- **Belege zu Rezeptdateien (Frage Otto, 23.10.2026):** (a) Eine `recipe.json` ohne Einheiten (Datei aus einem
+  alten Job-ZIP) lädt über „Load recipe…“ und gibt die Bestellung zurück, aus der sie gemacht wurde
+  (`processingDraft.test.ts`, alle Bestellungen mit Schritten, mit und ohne `unit`). (b) Die Rundreise
+  `buildOrder`/`draftFromOrder` trägt die neuen Schlüssel *nicht*, und soll es nicht: Sie stehen in `resolved`,
+  das die Bestellung nie enthält; der Test prüft, dass `unit` und `resolved` nicht in der gebauten Bestellung
+  stehen. (c) Der Runner nimmt die neue Datei an und lässt sie byte-gleich im Ergebnisordner; die committete
+  `recipe-ci.json` (ohne `unit`) liest weiter (`runner/test_cli.py`).
 
 ### 12.1 Prüfanleitung für Otto (PowerShell 5.1)
 
