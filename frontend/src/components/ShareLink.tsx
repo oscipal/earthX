@@ -90,7 +90,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
           >
             {busy ? 'Sharing…' : 'Share'}
           </button>
-          <p className="pp-help">The link holds the order with its area, not a job or a result.</p>
+          <p className="pp-help">{blocked ?? 'The link holds the order with its area, not a job or a result.'}</p>
         </>
       )}
       {note && (

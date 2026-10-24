@@ -2081,7 +2081,7 @@ maßgeblich ist dieser Nachtrag.
 - **Nicht gebaut: die Basiskarte.** Der Plan nennt sie als Teil der Ansicht. Die App hat eine einzige
   Basiskarte (Satellitenbild); Thema und Projektion sind Einstellungen des Browsers
   (`earthx.theme`, `earthx.projection`), nicht des Auftrags. Es gibt nichts zu speichern, bis die
-  Auswahl einer Basiskarte existiert; ein Feld dafür kommt dann mit ihr.
+  Auswahl einer Basiskarte existiert; ein Feld dafür kommt dann mit ihr (Otto, 2026-10-24: mit UI-02).
 
 ## 16. Quellen
 

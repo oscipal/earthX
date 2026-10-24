@@ -14,9 +14,14 @@ import pytest
 
 from earthx.api.processing_route import MAX_BODY_BYTES
 from earthx.jobs import permalinks
+from earthx.jobs.cleanup import cleanup
+from earthx.objectstore.results import Store
 from tests.conftest import own_log_text
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import order
+from tests.earthx.api.test_processing_route import count, finish, place
+
+from ..objectstore.conftest import store  # noqa: F401 - fixture: a store that answers, for the cleanup
 
 pytestmark = pytest.mark.anyio
 
@@ -162,6 +167,84 @@ class TestWhatIsRefused:
     async def test_the_queue_database_missing_is_a_503(self, rig: Rig) -> None:
         rig.app.state.earthx_job_api = None
         assert (await rig.client.post(PATH, json=body())).status_code == 503
+
+
+class TestWhatIsStored:
+    """The stored state is the order and the view: no address, no signed URL, no result, no job."""
+
+    FORBIDDEN = ("href", "X-Amz", "signature", "result_id", "resultID", "jobID", "job_id", "recipe_id", "recipeID", "resolved")
+
+    async def test_the_row_holds_only_the_order_and_the_view(self, rig: Rig) -> None:
+        job_id = (await place(rig)).json()["jobID"]
+        result_id = finish(rig.db, job_id)
+        await create(rig)
+        row = rig.db.execute("SELECT body FROM public.earthx_permalink").fetchone()
+        assert row is not None
+        assert set(row[0]) == {"order", "view"}
+        text = json.dumps(row[0])
+        for marker in (*self.FORBIDDEN, job_id, result_id):
+            assert marker not in text, marker
+        columns = [c[0] for c in rig.db.execute("SELECT * FROM public.earthx_permalink LIMIT 0").description or []]
+        assert columns == ["permalink_id", "body", "delete_key_hash", "created_at", "expires_at"]
+
+    @pytest.mark.parametrize(
+        "mutate",
+        [
+            lambda d: d["inputs"][0].update(href="https://example.test/scene?X-Amz-Signature=abc"),
+            lambda d: d["inputs"][0].update(result_id="A" * 22),
+            lambda d: d.update(recipe_id="A" * 22),
+            lambda d: d.update(provenance={"execution": "cloud"}),
+            lambda d: d["inputs"][0]["groups"][0].append("https://example.test/a.tif?X-Amz-Signature=abc") or d["inputs"][0].update(href="x"),
+        ],
+    )
+    async def test_an_order_with_an_address_or_an_identifier_is_not_stored(self, rig: Rig, mutate: Any) -> None:
+        document = order()
+        mutate(document)
+        assert (await rig.client.post(PATH, json=body(document))).status_code == 422
+        assert rows(rig) == 0
+
+    @pytest.mark.parametrize("key", ["href", "result_id", "job_id", "tiles", "url"])
+    async def test_the_view_takes_no_such_member(self, rig: Rig, key: str) -> None:
+        view = {**VIEW, key: "https://example.test/x?X-Amz-Signature=abc"}
+        assert (await rig.client.post(PATH, json=body(view=view))).status_code == 422
+        assert rows(rig) == 0
+
+    async def test_the_identifier_is_random_and_not_derived_from_the_order(self, rig: Rig) -> None:
+        ids = {(await create(rig))["id"] for _ in range(20)}
+        assert len(ids) == 20 and all(permalinks.is_permalink_id(i) for i in ids)
+        stored = {r[0] for r in rig.db.execute("SELECT permalink_id FROM public.earthx_permalink")}
+        recipe_ids = {r[0] for r in rig.db.execute("SELECT recipe_id FROM public.earthx_recipe")}
+        assert stored == ids and not stored & recipe_ids
+
+
+class TestAfterTheResultIsGone:
+    """A link outlives the result (30 days against 7): it shows the order, and the order can be run again."""
+
+    async def test_the_order_comes_back_and_runs_again_when_the_result_has_expired(
+        self, rig: Rig, store: Store  # noqa: F811
+    ) -> None:
+        job_id = (await place(rig)).json()["jobID"]
+        finish(rig.db, job_id)
+        made = await create(rig)
+
+        # While the result lives, the same order is a cache hit: no second run.
+        await place(rig)
+        assert count(rig.db, "earthx_run") == 1
+
+        # After the seven days the cleanup takes the run, its jobs and its recipe...
+        rig.db.execute("UPDATE public.earthx_run SET expires_at = clock_timestamp() - interval '1 second'")
+        assert cleanup(rig.db, store).runs == 1
+        assert (count(rig.db, "earthx_run"), count(rig.db, "earthx_job"), count(rig.db, "earthx_recipe")) == (0, 0, 0)
+        assert (await rig.client.get(f"/processing/jobs/{job_id}")).status_code == 404
+
+        # ... and the link still shows the order, which places a job on a new run instead of failing.
+        opened = await rig.client.get(f"{PATH}/{made['id']}")
+        assert opened.status_code == 200
+        placed = await rig.client.post(
+            "/processing/processes/recipe/execution", json={"inputs": {"recipe": opened.json()["order"]}}
+        )
+        assert placed.status_code == 201 and count(rig.db, "earthx_run") == 1
+        assert placed.json()["jobID"] != job_id
 
 
 class TestNothingPersonalInTheLogs:

@@ -704,20 +704,44 @@ heißt, behält die Einheit `1`.
   Fehler. `404` meldet „This link has expired or never existed.“
 - **Festlegungen aus §11 für den Permalink:** Mehrere Gruppen wählen alle Szenen aus, den Durchgang wählt der
   Nutzer; ohne AOI im Auftrag bleibt die AOI der Karte und der Bereich ist „Whole scene“. Beides hat ein Test.
-- **Abweichungen vom Plan (Fragen an Otto, Log 24.10.2026):**
+- **Abweichungen vom Plan und Antworten Otto (24.10.2026):**
   1. **Basiskarte** (§3.5) ist nicht Teil der Ansicht: Die App hat nur eine Basiskarte, Thema und Projektion sind
-     Einstellungen des Browsers. Empfehlung: kein Feld, bis es eine Auswahl gibt.
-  2. **Ein Link hält einen Auftrag:** „Share“ ist bei „Run as“ Szene/Durchgang gesperrt. Ein Stapel hat mehrere
-     Aufträge, und der Plan sagt nicht, welcher gemeint wäre. Empfehlung: so lassen.
+     Einstellungen des Browsers. Otto: kein Feld; es kommt mit UI-02.
+  2. **Ein Link hält einen Auftrag:** „Share“ ist bei „Run as“ Szene/Durchgang gesperrt, der Grund steht im Panel
+     („A link holds one order: choose “One job”.“). Otto: gesperrt lassen, mit Grund im Panel.
   3. **`jobs/submit.py`** sagte nicht mehr „nur ein Lauf oder ein Treffer verlängert“ (so der Plan §2.1), nur
      `cleanup.py`; nur dort ist der Docstring angeglichen.
+  4. **Größe:** weit über dem Richtwert (rund 750 Zeilen Code, 900 Zeilen Tests). Otto: PR nicht teilen; die
+     Begründung steht im PR-Text.
+- **Woher die 30 Tage (Frage Otto):** aus §7 Frage 2, Option 1 („30 Tage fest ab Erstellung; Öffnen verlängert nicht“,
+  Empfehlung), die Otto in §9 mit „Fragen 1–12 je Option 1“ freigegeben hat; ebenso in der Kurzfassung (Z. 37–40) und
+  in §3.5 („Ansehen verlängert nie (Frage 2)“). Gezählt wird **ab Erstellung**, nicht ab dem letzten Öffnen (Option 3
+  wäre „7 Tage ab dem letzten Öffnen“ gewesen und ist nicht gewählt). Im Code: `jobs/permalinks.py::TTL`,
+  `expires_at = clock_timestamp() + TTL` beim Anlegen, nirgends sonst gesetzt; Test, dass Lesen die Frist nicht
+  verschiebt (`test_cleanup.py::TestPermalinks`, `test_permalink_route.py`).
 - **Belegt:** Anlegen, Lesen, Löschen gegen die echte Datenbank; `404` für unbekannt, falsch geformt, abgelaufen
   (Uhr der Datenbank, die Zeile wird zurückdatiert) und falschen Schlüssel; Größe, `extra` in der Ansicht,
   ungültiger Auftrag; Kennung, AOI, Schlüssel und Titel in keinem Log (Zugriffslog und `caplog` mit
   `own_log_text`); der Aufräumer löscht nach 30 Tagen die ganze Zeile, vorher nicht, in Stapeln; Lesen verlängert
   nichts. Frontend: Öffnen (Zustand, Parameter weg, ein Aufruf bei doppeltem Start, `404`, `503`, Unsinn, fremder
   Operator, fehlende Szene, Auftrag ohne AOI), Teilen (Auftrag und Ansicht gesendet, Schlüssel nur im Browser,
-  Löschen mit Schlüssel, Fehler behalten Link und Schlüssel, Stapel gesperrt).
+  Löschen mit Schlüssel, Fehler behalten Link und Schlüssel, Stapel gesperrt, mit Grund im Panel).
+- **Belege auf Ottos Fragen (24.10.2026), `test_permalink_route.py`:**
+  - *Zufällige Kennung, in keinem Log:* 20 Kennungen sind verschieden, 22 Zeichen aus `token_urlsafe(16)`, keine ist
+    eine `recipe_id` (`TestWhatIsStored`); das Zugriffslog schreibt nur `/processing/permalinks/{permalinkID}`
+    (`TestNothingPersonalInTheLogs`, `test_logging.py`), und kein Logsatz von Anlegen, Lesen, Löschen enthält Kennung,
+    Schlüssel, Titel, Koordinaten oder Szene-ID.
+  - *Gespeicherter Zustand ohne signierte URL, `href`, `result_id`:* Die Zeile hat genau die Spalten `permalink_id`,
+    `body`, `delete_key_hash`, `created_at`, `expires_at`; `body` hat genau `order` und `view`. Nach einem fertigen
+    Job mit `result_id` enthält der Text weder `href`, `X-Amz`, `result_id`, `jobID`, `recipe_id`, `resolved` noch die
+    echte `jobID` oder `result_id`. Ein Auftrag mit `href`, `result_id`, `recipe_id` oder `provenance` ist `422` und wird
+    nicht gespeichert; die Ansicht nimmt weder `href` noch `result_id`, `job_id`, `tiles`, `url` (`extra="forbid"`).
+  - *Öffnen nach Ablauf des Ergebnisses:* `TestAfterTheResultIsGone`: Job und Ergebnis laufen ab, der Aufräumer löscht
+    Lauf, Job und Rezept, `/jobs/{jobID}` ist `404`, der Permalink liefert weiter den Auftrag, und derselbe Auftrag ergibt
+    `201` mit einem neuen Lauf, statt zu scheitern (vorher, bei lebendem Ergebnis, war er ein Cache-Treffer). Im
+    Frontend bringt das Öffnen den Auftrag ohne Job und Ergebnis zurück, „Review“ und „Start job“ sind frei
+    (`ProcessingShare.test.tsx`). Der Link zeigt also das Rezept und bietet das Neurechnen über den normalen
+    „Review“/„Start job“ an; einen eigenen Hinweis „Ergebnis abgelaufen“ gibt es nicht, weil der Link kein Ergebnis kennt.
 - **Nicht belegt:** Gegen einen laufenden Stack mit der Oberfläche im Browser ist es nicht gelaufen (kein
   Docker in der Sitzung); die Kamera (`jumpTo`) ist nicht an einer echten Karte gesehen worden.
 - **Größe:** Weit über dem Richtwert von 400 Zeilen (rund 700 Zeilen Code, 750 Zeilen Tests). Die Commits trennen

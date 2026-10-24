@@ -155,6 +155,16 @@ describe('opening a link', () => {
     expect(window.location.search).toBe('?other=1');
   });
 
+  it('brings back the order without a job or a result, ready to be reviewed and started again', async () => {
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(draft().jobs).toEqual([]);
+    const label = (text: string) => [...container.querySelectorAll('button')].find((b) => b.textContent === text) as HTMLButtonElement;
+    expect(label('Review').disabled).toBe(false);
+    expect(label('Start job')).toBeDefined();
+    expect(fetchMock.mock.calls.map(([url]) => url).filter((url) => String(url).includes('/jobs/'))).toEqual([]);
+  });
+
   it('reads the link once, however often the app starts', async () => {
     onAddress(`?permalink=${ID}`);
     await act(async () => {
@@ -313,5 +323,6 @@ describe('Share', () => {
     act(() => draft().setRunAs('scene'));
     expect(button('Share')!.disabled).toBe(true);
     expect(button('Share')!.title).toBe('A link holds one order: choose “One job”.');
+    expect(container.textContent).toContain('A link holds one order: choose “One job”.');
   });
 });
