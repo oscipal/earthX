@@ -1,4 +1,4 @@
--- The permalink of M4-19e (docs/plans/m4/m4-19-teilen-und-beschreiben.md §3.5, Otto 20.10.2026):
+-- The permalink of M4-19e (docs/plans/m4-19-teilen-und-beschreiben.md §3.5, Otto 20.10.2026):
 -- an order and a small view, put there when someone presses "Share", under an identifier of its own.
 --
 -- It is personal data: `body` holds the order with its area (Q8). It is no recipe and no job, it
