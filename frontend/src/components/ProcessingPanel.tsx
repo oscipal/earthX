@@ -337,15 +337,17 @@ function PreviewSection({ view }: { view: OrderView }) {
               <span>min</span>
               <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
             </label>
-            <label className="vc-field vc-num">
-              <span>max</span>
-              <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
-            </label>
-            {unit && (
-              <span className="pp-unit" aria-label="Unit of the range">
-                {unit}
-              </span>
-            )}
+            <div className="pp-bound">
+              <label className="vc-field vc-num">
+                <span>max</span>
+                <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
+              </label>
+              {unit && (
+                <span className="pp-unit" aria-label="Unit of the range">
+                  {unit}
+                </span>
+              )}
+            </div>
             <label className="vc-field">
               <span>Colormap</span>
               <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>

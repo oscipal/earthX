@@ -2015,11 +2015,25 @@ input[type='date']:focus {
   align-items: flex-end;
   gap: 8px;
 }
+/* The fields hold a whole value such as -11000, 8848.86 or -0.123456 (monospace, plus the padding and the spinner);
+   the group wraps rather than lets a field run over its neighbour. */
 .pp-range .vc-num {
-  width: 72px;
+  flex: none;
+}
+.pp-range .vc-num input {
+  width: calc(11ch + 44px);
+  max-width: 100%;
+}
+.pp-bound {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex: none;
+  max-width: 100%;
 }
 .pp-unit {
-  align-self: flex-end;
+  flex: none;
   padding-bottom: 6px;
+  white-space: nowrap;
   opacity: 0.8;
 }
