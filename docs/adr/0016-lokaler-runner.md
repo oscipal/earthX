@@ -8,7 +8,7 @@
   - **Nachtrag §12b (2026-10-20, M4-16):** vier Abweichungen beim Umsetzen,
     von Otto entschieden; der Text oben bleibt stehen, maßgeblich ist §12b.
 - **Datum:** 2026-10-05
-- **Aufgabe:** M4-05 laut `docs/plans/m4-processing-kern.md` §4.
+- **Aufgabe:** M4-05 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode und keine Änderung an
   `backend/`, `.importlinter`, `docker-compose.yml`, `.github/` oder den
   Lock-Dateien. Gemessen wurde mit Skripten und einem Image im
@@ -38,8 +38,8 @@
   - `architekturplan.md` 3.1, 3.2, 7.3, 7.7, 11, 15.2, 16 (mit Nachträgen).
   - `adr/0002` §1; `adr/0013` §5.3, §6; `adr/0014` §4, §6, §7, §8, §14;
     `adr/0015` §4.1, §8.
-  - `plans/m4-processing-kern.md` §1.1 (Q11, Q12), §1.1b (R5), M4-05, Umriss
-    M4-16; `plans/m4-00b-lock-datei.md` (universelle Lock-Datei).
+  - `plans/m4/m4-processing-kern.md` §1.1 (Q11, Q12), §1.1b (R5), M4-05, Umriss
+    M4-16; `plans/m4/m4-00b-lock-datei.md` (universelle Lock-Datei).
   - Entscheidungslog bis 05.10.2026.
 - **Betroffen:**
   - M4-16 (Umsetzung des Runners und des Vergleichstests), M4-07a
@@ -925,7 +925,7 @@ von Docker Desktop in der Anleitung. **Angenommen.**
   Grundrechenarten, Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt`
   und ganzzahlige Potenzen. `log`, `exp`, Winkelfunktionen und gebrochene
   Potenzen folgen später mit eigener Toleranz. Eingearbeitet als Nachtrag in
-  `adr/0014` §15c (zu F9 und §6.3), in R5 (`plans/m4-processing-kern.md`
+  `adr/0014` §15c (zu F9 und §6.3), in R5 (`plans/m4/m4-processing-kern.md`
   §1.1b) und als Hinweis bei M4-09.
 - **F10:** `__version__` entsteht in M4-07a, weil der Cache-Schlüssel sie
   zuerst braucht (`adr/0014` §4.5, E2); M4-16 übernimmt sie für Tag und
@@ -953,7 +953,7 @@ von Docker Desktop in der Anleitung. **Angenommen.**
 ## 12b. Nachtrag vom 2026-10-20: vier Abweichungen beim Umsetzen (M4-16)
 
 Otto hat den Plan von M4-16 am 2026-10-20 freigegeben
-(`plans/m4-16-lokaler-runner.md` §4, §7). Der Code hatte sich seit diesem ADR
+(`plans/m4/m4-16-lokaler-runner.md` §4, §7). Der Code hatte sich seit diesem ADR
 an vier Stellen anders entwickelt (M4-08b, M4-11a, M4-14). Der Originaltext in
 §0, §4.2, §6.1, §6.3 und §7.2 bleibt stehen; maßgeblich ist dieser Nachtrag.
 

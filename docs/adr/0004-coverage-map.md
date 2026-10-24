@@ -3,7 +3,7 @@
 - **Status:** Angenommen. Von Otto am 19.09.2026 entschieden; die fünf Fragen
   aus §7 sind dort beantwortet.
 - **Datum:** 2026-09-19
-- **Aufgabe:** M1-09 laut `docs/plans/m1-fundament.md` §4.
+- **Aufgabe:** M1-09 laut `docs/plans/m1/m1-fundament.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
   Produktivcode geändert, keine Daten heruntergeladen, keine Datei außerhalb von
   `docs/` angefasst.
@@ -39,7 +39,7 @@ Wo ein Beleg fehlt, steht „unbelegt" statt einer Zahl. §8 listet, was offen b
 **Nur Metadaten.** Alle Abrufe waren STAC-Metadaten-Anfragen (`/`,
 `/aggregations`, `/aggregate`, `/search` mit `limit=1`). Es wurden keine Pixel
 gelesen und keine Dateien geladen. Der Umfang lag bei rund 40 Anfragen über
-etwa 20 Minuten — bewusst vorsichtig, wie in `m1-fundament.md` §6 für Spikes
+etwa 20 Minuten — bewusst vorsichtig, wie in `plans/m1/m1-fundament.md` §6 für Spikes
 gefordert.
 
 ---
@@ -75,7 +75,7 @@ die Möglichkeit, das Ergebnis einfach einmal vorzuberechnen.
 
 ## 2. Kriterien
 
-> **Zu den Kürzeln E1–E8.** Sie stehen in `docs/plans/m1-fundament.md` §1 und
+> **Zu den Kürzeln E1–E8.** Sie stehen in `docs/plans/m1/m1-fundament.md` §1 und
 > sind seit **M1-00 entschieden** — Otto hat E1 bis E8 am 19.09.2026 wie
 > empfohlen bestätigt, jede mit einer eigenen Zeile im Entscheidungslog. Dieses
 > ADR benutzt zwei davon, beide also festen Stands: **E4** (Anwendungs-Cache in
@@ -88,7 +88,7 @@ die Möglichkeit, das Ergebnis einfach einmal vorzuberechnen.
 | K2 | Vollständigkeit ist entweder gegeben oder **sichtbar ausgewiesen** | `ENTSCHEIDUNGEN` §2; F12/N3 |
 | K3 | Funktioniert für föderierte **und** für eigene Items, mit demselben Ergebnisformat | `architekturplan.md` 5.2 |
 | K4 | Dienste bleiben zustandslos; ein leerer Zwischenspeicher macht nur langsamer, nie 404 | `adr/0001` §8, §9.3; E5 (fest seit M1-00) |
-| K5 | Alles Ausgehende über `gateway`, konservative Last auf der Quelle | `KLAERUNGEN` B8; `m1-fundament.md` §6 |
+| K5 | Alles Ausgehende über `gateway`, konservative Last auf der Quelle | `KLAERUNGEN` B8; `plans/m1/m1-fundament.md` §6 |
 | K6 | Interaktiv bedienbar: gefilterte Coverage-Antwort **unter 1 s, typisch unter 0,5 s** | Ottos Setzung vom 19.09.2026 (§7 Frage 4); in `docs/` stand zuvor kein Latenzziel |
 | K7 | Läuft auf dem Stack, den die Cloud-Umgebung und CI hergeben — ohne eigenes Image nur für eine Extension | `docs/cloud-umgebung.md`; `adr/0002` §1 |
 | K8 | Kosten wachsen nicht linear mit der Katalogsgröße; grobe Kostenabschätzung pro Request | `projektuebersicht.md` Prinzip 10 (Kostenbewusstsein) |
@@ -403,7 +403,7 @@ Dazu **Option 2 nur für den einen ungefilterten Weltüberblick** — die Ansich
 ohne jeden Filter, die jeder Nutzer als erstes sieht und die nach §3.6 mit 2,0
 bis 7,8 s die einzige wirklich teure ist. Sie hat definitionsgemäß keine Filter
 und ist damit gefahrlos vorberechenbar. Fällt die Vorberechnung aus, antwortet
-Option 1 langsamer statt gar nicht — das ist Regel E5 (`m1-fundament.md` §1,
+Option 1 langsamer statt gar nicht — das ist Regel E5 (`plans/m1/m1-fundament.md` §1,
 fest seit M1-00) und `adr/0001` §9.3 (K4), und sie gehört als Test hinterlegt.
 
 **Gitter: Geotile.** Als einziges Gitter auf beiden Seiten verfügbar, seine
@@ -509,7 +509,7 @@ Fähigkeit ausdrücklich frei), keine Heuristik.
 > **Vereinigung der Item-Footprints** als GeoJSON-`MultiPolygon` (neues Feld
 > `area` der Coverage-Antwort), zugeschnitten auf einen räumlichen Filter der
 > Anfrage, ohne Toleranz-Vereinfachung. Gemessen an der echten DEM-Kachelliste
-> (26 450 Kacheln, `plans/m3-11c-coverage-eigene-items.md` §3): die Fläche der
+> (26 450 Kacheln, `plans/m3/m3-11c-coverage-eigene-items.md` §3): die Fläche der
 > ganzen Welt bleibt mit 35–89 kB weit unter der 500-kB-Schwelle dieses ADR,
 > die Berechnung dauert dabei rund 1 s; ein Kartenausschnitt kostet einstellige
 > bis niedrige zweistellige Millisekunden. Der Weg über `extent.spatial.bbox`
@@ -546,7 +546,7 @@ schlechtesten gemessenen Fall (520 kB, Geohash p3 über die ganze Welt, §3.2),
 nicht aus einer Quelle. Siehe §7 Frage 2.
 
 **Zwischenspeicher: Postgres, kurz, schlüsselbasiert.** Anwendungs-Cache laut
-E4 (`m1-fundament.md` §1, fest seit M1-00), Schlüssel ist der normalisierte
+E4 (`plans/m1/m1-fundament.md` §1, fest seit M1-00), Schlüssel ist der normalisierte
 Filter samt Gitterstufe. Die Fristen sind dieselben wie für die Item-Suche —
 Otto hat sie am 19.09.2026 für die Coverage-Aggregation ausdrücklich aus
 `adr/0005` F1 übernommen: **24 h**, wenn das Zeitfenster geschlossen ist, also
@@ -666,7 +666,7 @@ denen aus `adr/0005` F1 folgen (§5, Zwischenspeicher).
    Begrenzung pro IP kommt mit dem ersten öffentlichen oder Vorschau-Deployment,
    pro Nutzer mit M6.
 7. **Der Auftragsrahmen wurde gedehnt.** M1-09 verlangt „Stand der Technik mit
-   Quellen"; Latenzmessungen gegen Earth Search sind laut `m1-fundament.md` §4
+   Quellen"; Latenzmessungen gegen Earth Search sind laut `plans/m1/m1-fundament.md` §4
    Gegenstand des Spikes **M1-05**. Hier wurde live gemessen, weil die zentrale
    Frage — kann der Upstream überhaupt aggregieren — ohne Messung unbeantwortbar
    blieb und die Vorrecherche sie ausdrücklich offen ließ. Umfang: rund 40

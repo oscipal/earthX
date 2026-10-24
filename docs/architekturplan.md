@@ -412,7 +412,7 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 
 - Der `tiler`-Prozess liefert Tiles, Quicklooks, Punktabfragen, Zeitreihen am Punkt und Statistik pro Polygon.
 - Empfehlung: neue Endpunkte auf den **TiTiler-Fabriken** aufbauen (gleiche Basis wie das vorhandene rio-tiler, ebenfalls FastAPI). Das bringt Ausdrücke/Band-Math, Colormaps, Rescaling, Algorithmen und OGC-konforme Tile-Endpunkte mit, statt sie einzeln nachzubauen.
-- Mosaike über mehrere Szenen: Die Kachel-URL trägt die Szenen eines Überflugs als Item-Liste (`item=` je Szene, höchstens 64); der `tiler` prüft, filtert je Kachel über den Footprint, sortiert wie der Mosaik-Job und mischt nach dem ersten gültigen Pixel. Keine Such-ID: Eine ID, deren Eintrag ablaufen kann, nähme der URL genau die Eigenschaft, das Bild vollständig zu bestimmen, um derentwillen sie CDN-fähig ist (`adr/0006` §5, Nachtrag M4-17; `plans/m4-17-mosaik-kachel-pfad.md`).
+- Mosaike über mehrere Szenen: Die Kachel-URL trägt die Szenen eines Überflugs als Item-Liste (`item=` je Szene, höchstens 64); der `tiler` prüft, filtert je Kachel über den Footprint, sortiert wie der Mosaik-Job und mischt nach dem ersten gültigen Pixel. Keine Such-ID: Eine ID, deren Eintrag ablaufen kann, nähme der URL genau die Eigenschaft, das Bild vollständig zu bestimmen, um derentwillen sie CDN-fähig ist (`adr/0006` §5, Nachtrag M4-17; `plans/m4/m4-17-mosaik-kachel-pfad.md`).
 - Tile-URLs enthalten alle Parameter (oder eine Rezept-ID) und sind damit vollständig per HTTP cachebar.
 - GDAL-Konfiguration für Fernzugriff zentral setzen (kein Directory-Listing beim Öffnen, Zusammenfassen benachbarter Ranges, HTTP/2-Multiplexing, Header-Cache).
 
@@ -687,11 +687,11 @@ Lokal (docker compose) und Cloud sind identisch aufgebaut: `api`, `tiler`, `work
 **Nachtrag 2026-09-26 (M3-21):** Die offiziellen MinIO-Images sind seit dem
 24.09.2026 nicht mehr öffentlich ziehbar; Übergang mit `bitnamilegacy/minio`
 per Digest, nur CI und lokal. Ein Ersatz für MinIO wird vor M4 per Spike
-neu bewertet (P23, `plans/m3-dritte-quelle-und-interface.md` M3-20,
+neu bewertet (P23, `plans/m3/m3-dritte-quelle-und-interface.md` M3-20,
 `adr/0012`).
 
 **Nachtrag 2026-09-26 (M3-23):** Garage ersetzt MinIO in `docker-compose.yml`
-und CI (`adr/0012`, angenommen); Details unter `plans/m3-23-garage.md`.
+und CI (`adr/0012`, angenommen); Details unter `plans/m3/m3-23-garage.md`.
 
 Dieselbe compose-Topologie (`docker compose up`) ist zugleich die Grundlage für eine mögliche selbst gehostete Ausgabe für Institute oder Behörden, die Flächen und Ergebnisse nicht aus dem Haus geben dürfen. Das ist kein Ziel, aber eine Option, die die Architektur ohne Mehraufwand offen hält. Für einzelne Nutzer ist der Runner (7.7) der richtige Weg, nicht die ganze Plattform.
 
@@ -765,7 +765,7 @@ Vorgehen nach dem Strangler-Muster: Neues entsteht neben dem Bestehenden hinter 
 
 **Nachtrag 2026-10-02 (M4 Q6):** Die ersten Operatoren in Inkrement 4 sind
 Band-Math (T1 und T2) und Reprojektion/Resampling (T2); Masking und
-Normalisierung folgen je als eigene Aufgabe (`plans/m4-processing-kern.md`).
+Normalisierung folgen je als eigene Aufgabe (`plans/m4/m4-processing-kern.md`).
 
 ### 15.2 Spikes (kurz, zeitlich begrenzt, mit klarer Frage)
 

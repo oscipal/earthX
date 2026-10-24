@@ -5,11 +5,11 @@
 5 min/Route unverändert, F4 (a) Farbskala je Antwort). Umsetzung in derselben
 Session, Diff im PR.
 **Datum:** 2026-09-24
-**Aufgabe:** M3-19 aus `plans/m3-dritte-quelle-und-interface.md`, **geänderte
+**Aufgabe:** M3-19 aus `plans/m3/m3-dritte-quelle-und-interface.md`, **geänderte
 Vorgabe** von Otto am 23.09.2026 (ersetzt `adr/0010` Antwort 6a „ohne AOI immer
 z6“; Log-Zeile vom 23.09.2026).
 **Grundlage:** `adr/0004` §3.3, §5 (Deckel, Regel V, 500-kB-Schwelle);
-`adr/0010` §3.2, §3.8, §3.9; `adr/0005` Regel II; `plans/m2-05-coverage.md`;
+`adr/0010` §3.2, §3.8, §3.9; `adr/0005` Regel II; `plans/m2/m2-05-coverage.md`;
 Code: `frontend/src/store.ts` (`refreshCoverage`), `frontend/src/coverage.ts`,
 `frontend/src/components/MapView.tsx`, `backend/earthx/api/coverage_route.py`,
 `backend/earthx/catalog/coverage.py` (`level_for_viewport`, `WORLD_LEVEL_CAP`),

@@ -4,7 +4,7 @@
 **Stufe A:** direkt umsetzen, ein Draft-PR. Nur Doku und Verweise, kein Verhalten ändert sich.
 **Modell:** Sonnet, Effort mittel.
 **Start:** nach dem Merge von M4-20 (#181), wenn **keine andere Session läuft**. Bis zum Merge dieser Aufgabe startet keine neue Session (auch nicht Backlog-Punkt 1 und 2), weil sich alle Pfade der Startsätze ändern.
-**Startsatz:** „Führe Aufgabe DOC-01 aus `docs/plans/doc-01-plaene-je-meilenstein.md` aus.“
+**Startsatz:** „Führe Aufgabe DOC-01 aus `docs/plans/querschnitt/doc-01-plaene-je-meilenstein.md` aus.“
 
 ## 1. Ziel
 
@@ -28,7 +28,7 @@ Alle Plan-Dateien liegen in einem Unterordner je Meilenstein. Dateinamen bleiben
 1. **Bestandsaufnahme:** Liste aller Dateien unter `docs/plans/` mit Zielordner (Tabelle im PR).
 2. **Verschieben** nur mit `git mv`, damit die Historie erhalten bleibt (`git log --follow`).
 3. **Verweise nachziehen** im ganzen Repo: Pläne untereinander, `docs/adr/`, `ENTSCHEIDUNGSLOG.md`, `KLAERUNGEN.md`, `projektplan.md`, `architekturplan.md`, `README.md`, Kommentare und Docstrings in Code und Tests, Fixtures.
-   - Auch relative Verweise wie `plans/m4-processing-kern.md` oder `../plans/…` und Verweise ohne Pfad im Fließtext, die eindeutig eine Plan-Datei meinen.
+   - Auch relative Verweise wie `plans/m4/m4-processing-kern.md` oder `../plans/…` und Verweise ohne Pfad im Fließtext, die eindeutig eine Plan-Datei meinen.
    - **Alte Log-Zeilen** im `ENTSCHEIDUNGSLOG.md` bekommen die neuen Pfade (das Log ist ein Nachschlagewerk; die Spalte „betroffene Dokumente“ soll auffindbar bleiben). Der Wortlaut der Entscheidungen bleibt sonst unverändert.
 4. **Geschützte Dateien:** `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert, außer Otto erlaubt es ausdrücklich. Die Session listet im PR jeden Verweis dort, der auf einen alten Pfad zeigt.
 5. **Prüfung:** ein kleiner Test (oder Skript in `scripts/`, im PR begründet), der fehlschlägt, wenn

@@ -1,9 +1,9 @@
 # M3-02 — Architektur-Konformitätsbericht
 
 **Status:** Bericht der Stufe C vom 23.09.2026. Nur gelesen, kein Code geändert.
-**Ort im Repo:** `docs/plans/m3-02-konformitaetsbericht.md`
+**Ort im Repo:** `docs/plans/m3/m3-02-konformitaetsbericht.md`
 **Stand des Codes:** `main` bei Commit `f0f670d` (nach PR #73).
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (M3-02, P10, P18);
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` (M3-02, P10, P18);
 `architekturplan.md` 3.1, 3.2, 5.1, 5.2, 6.1–6.5, 12.4, 13; `KLAERUNGEN.md`
 B8–B13; `CLAUDE.md` („Unverrückbar“, „Arbeitsweise“); `projektplan.md` 7;
 `adr/0004`, `adr/0005`, `adr/0006`; `ENTSCHEIDUNGSLOG.md`.

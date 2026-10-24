@@ -2,12 +2,12 @@
 
 **Ziel:** Otto kann M4 anhand dieses Berichts und des zugehörigen PR abnehmen,
 ohne Code zu lesen.
-**Ort im Repo:** `docs/plans/m4-20-abnahme.md`
-**Grundlage:** `docs/plans/m4-processing-kern.md` Abschnitt 5 („Abnahme von M4“,
+**Ort im Repo:** `docs/plans/m4/m4-20-abnahme.md`
+**Grundlage:** `docs/plans/m4/m4-processing-kern.md` Abschnitt 5 („Abnahme von M4“,
 Kriterien 1–10), Stand `main` bei Commit `b60c3b4` (Merge von PR #169,
 24.10.2026). Alle Aufgaben von M4-00 bis M4-32b außer M4-20 sind gemergt (Tabelle
-in `m4-processing-kern.md` §3, in diesem PR nachgezogen; Übersicht in Abschnitt 13).
-**Muster:** `docs/plans/m3-15-abnahme.md`.
+in `plans/m4/m4-processing-kern.md` §3, in diesem PR nachgezogen; Übersicht in Abschnitt 13).
+**Muster:** `docs/plans/m3/m3-15-abnahme.md`.
 **Abgenommen von Otto am 24.10.2026.** Fragen 1–5 je Option 1 (Abschnitt 15); die Schritte 3–6 der Prüfanleitung B von M4-17 reicht Otto nach.
 **Stufe A, keine Codeänderung.** Dieser PR ändert nur Dokumente (Bericht, §3 des
 Plans, README, Log).
@@ -56,7 +56,7 @@ Pixelgrenze, wo `nearest` den Nachbarn wählen darf, und die Formel stimmt
    `test_the_runner_marks_its_result_as_its_own`). Dazu die Gegenproben
    (`TestTheCounterTest`: `test_another_constant_in_the_expression`,
    `test_another_resampling`), die zeigen, dass der Vergleich fallen kann
-   (`plans/m4-16-lokaler-runner.md` §9, §10.1).
+   (`plans/m4/m4-16-lokaler-runner.md` §9, §10.1).
 2. **Schichtvergleich in der CI, M4-16b (PR #164),** Compose-Job in
    `.github/workflows/ci.yml` („Compose topology“): die Stufe `runner` wird
    gebaut; die Engine-Versionen des Runners gleichen dem Block `engine` des
@@ -65,7 +65,7 @@ Pixelgrenze, wo `nearest` den Nachbarn wählen darf, und die Formel stimmt
    fügt nur `ENV`, `USER` und `ENTRYPOINT` hinzu), UID 10001; `check` nennt auf
    dem synthetischen Rezept genau einen Host; `run` ohne Netz endet mit Exit-Code
    4 und lässt keine Datei zurück. Was `test_compare` für den Code zeigt, gilt
-   damit für die Dateien im Image (`plans/m4-16-lokaler-runner.md` §10.1).
+   damit für die Dateien im Image (`plans/m4/m4-16-lokaler-runner.md` §10.1).
 3. **Ottos lokaler Hash-Vergleich vom 24.10.2026,** Log-Zeile vom 2026-10-24
    („Lokaler Beleg für Kriterium 1 erneuert“, PR #169): Cloud-Job aus
    `scripts/try-job.ps1` gegen das Runner-Image `earthx-runner:0.4.2`
@@ -85,7 +85,7 @@ innerhalb 0,125 Quellpixel einer Pixelgrenze (`adr/0014` §15d); die Gegenprobe
 Ausdruck. Unterhalb der nativen Ebene ist die Kachel eine Vorschau und wird nicht
 als gleich behauptet (`test_tiler_operator.py::test_a_tile_below_the_native_level_is_a_preview_and_not_asserted_equal`).
 
-**Grenzen, offen benannt (`plans/m4-16-lokaler-runner.md` §10.1):**
+**Grenzen, offen benannt (`plans/m4/m4-16-lokaler-runner.md` §10.1):**
 
 - Ein Hash **im Image** gegen den Kern **aus derselben CI** ist nicht nachgewiesen,
   nur über gleiche Schichten und Versionen geschlossen. Der Grund: `gateway`
@@ -213,7 +213,7 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
 
 - **Export als Job, Backend (M4-11a, #133):** `backend/tests/earthx/processing/test_export.py`
   (bitgleich zum synchronen Zuschnitt für ein Item, ein Mosaik und zwei Gruppen,
-  Plan `m4-11-export-job.md`); Kennung im `413` des Zuschnitts.
+  Plan `plans/m4/m4-11-export-job.md`); Kennung im `413` des Zuschnitts.
 - **Ergebnis als ein ZIP (M4-11b-1, #145; M4-30, #159):**
   `backend/tests/earthx/api/test_result_zip_files.py`: das ZIP hält genau die
   Dateien des Zuschnitt-ZIPs (`TEXT_FILES` in `access/crop_rules.py`; die Terms stehen in `ATTRIBUTION.txt`:
@@ -234,7 +234,7 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
   bei mehreren Szenen unter „Download originals“ die Wahl „Merged per pass (job)“ und je Überflug mit mindestens zwei Szenen „Start job“ (`OriginalFiles.tsx`, `MosaicJobs.tsx`);
   Status über `JobRow` mit SSE (Rückfall auf Abfragen); „Download (ZIP)“ im Panel
   (`frontend/src/components/DownloadDialog.test.tsx`, `ProcessingPanel.test.tsx`,
-  `MosaicJobs.test.tsx`; Plan `m4-11b-angebot-und-zip.md` §12, §13, Log 13.–15.10.2026).
+  `MosaicJobs.test.tsx`; Plan `plans/m4/m4-11b-angebot-und-zip.md` §12, §13, Log 13.–15.10.2026).
 - **Prüfung im Browser bei Otto** (Abschnitt 11, Punkt B); in dieser Sitzung nicht
   gelaufen.
 
@@ -292,7 +292,7 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
     (ein TileJSON, Kacheln nur über `/mosaic/tiles/`, eine Fläche ohne Lücke, ein
     Layer-Eintrag je Überflug). **Schritte 3–6 stehen aus;** Otto reicht das Ergebnis nach.
   - Außerdem belegt: die Verdrahtung gegen eine echte MapLibre-Karte mit
-    synthetischen Kacheln (`plans/m4-17-mosaik-kachel-pfad.md` §14, §15).
+    synthetischen Kacheln (`plans/m4/m4-17-mosaik-kachel-pfad.md` §14, §15).
 
 **Ergebnis:** Kriterium 7 erfüllt; offen bleiben die Schritte 3–6 der
 Prüfanleitung B.
@@ -442,14 +442,14 @@ tut es ohne laufende Session.
 Nicht gelaufen: `tests_live` (echte Quellen; aus der Sitzung nicht erreichbar),
 Compose-Topologie, Image-Bau der Stufe `runner` und Browsertests (nie in der
 Cloud-Sitzung, `adr/0002`; der Bau scheitert in der Sitzung an der TLS-Kette des
-Proxys, `plans/m4-16-lokaler-runner.md` §10). Sie laufen in der CI bzw. bei Otto.
+Proxys, `plans/m4/m4-16-lokaler-runner.md` §10). Sie laufen in der CI bzw. bei Otto.
 Dieser PR ändert keinen Code; die Läufe belegen den Stand von `main`.
 
 ---
 
 ## 13. Stand aller M4-Aufgaben
 
-Die Tabelle in `plans/m4-processing-kern.md` §3 ist in diesem PR nachgezogen:
+Die Tabelle in `plans/m4/m4-processing-kern.md` §3 ist in diesem PR nachgezogen:
 doppelte Zeilen (M4-11b, M4-12a, M4-12b) sind zusammengeführt, jede Aufgabe trägt
 ihre PR-Nummer. Alle Aufgaben von M4-00 bis M4-32b sind gemergt, die PR-Nummern
 reichen von #111 bis #180. **M4-20** ist diese Aufgabe (Entwurfs-PR). Abweichungen
@@ -662,7 +662,7 @@ ist, wie dort vermerkt, noch offen.
 ### Ergänzt aus Log und Plänen (nicht in der Datei oben)
 
 Geprüft gegen die Zeilen „offen“ im `ENTSCHEIDUNGSLOG.md`, die Abschnitte „Nicht
-in M4“ (`m4-processing-kern.md` §2) und „Nach M3 vorgemerkt“ (`m3-15-abnahme.md`
+in M4“ (`plans/m4/m4-processing-kern.md` §2) und „Nach M3 vorgemerkt“ (`plans/m3/m3-15-abnahme.md`
 §12) und die Pläne `m4-*.md`. Punkte, die oben schon stehen (etwa Earth Search
 v2, Originale als ZIP, festes nodata, Punkte aus S3, CI), sind nicht noch einmal
 aufgeführt.
@@ -671,34 +671,34 @@ aufgeführt.
 
 E1. **Prüfanleitung B von M4-17, Schritte 3–6, gegen eine echte Quelle** (Log 22.10.2026, „offen“).
    - A hat Otto bestanden, B Schritte 1–2 ebenfalls (Abschnitt 7); das Ergebnis der Schritte 3–6 reicht Otto nach und kommt als Log-Zeile.
-   - Belegt ist sonst die Verdrahtung mit synthetischen Kacheln und einer echten MapLibre-Karte (`plans/m4-17-mosaik-kachel-pfad.md` §14, §15).
+   - Belegt ist sonst die Verdrahtung mit synthetischen Kacheln und einer echten MapLibre-Karte (`plans/m4/m4-17-mosaik-kachel-pfad.md` §14, §15).
 E2. **Ein gescheiterter Job nennt keinen konkreten Grund** (Log 12.10.2026, „M4-13b, offen (2)“).
    - Die Queue speichert nur `error_kind`; Titel und Detail der API sind fest, der Text der Ausnahme geht verloren (Absicht, `adr/0014` §4.7).
    - Vorschlag im Log: je Fehlerart ein fester Satz ohne Werte aus `error_kind` und einem Unterschlüssel; ändert Worker, Queue und API.
-   - Aufgabe: eigene Aufgabe (`plans/m4-13-processing-panel.md` §13).
+   - Aufgabe: eigene Aufgabe (`plans/m4/m4-13-processing-panel.md` §13).
 E3. **Ein Cache-Treffer kann wenige ULP von einer Neuberechnung abweichen,** wenn Worker auf CPUs mit anderen SIMD-Erweiterungen laufen; der Cache-Schlüssel (`adr/0014` E2) enthält die CPU-Stufe nicht (Log 05.10.2026, Nebenfund M4-05 (2), „offen“). Hängt mit der Zusage „gleiche Bits“ zusammen (README, „Lokaler Runner“; Abschnitt 1, Grenzen).
 E4. **Klassenbänder sind in Items nicht erkennbar** (Log 12.10.2026, „M4-13b, offen (1)“): `scl`, `cloud`, `snow` würden mit bilinear empfohlen, richtig wäre `nearest`. Im Log „aufgehoben“: Das Panel empfiehlt kein Resampling mehr; der Rest gilt nur für eine spätere Automatik (Adapter setzt eine Klassifikation) und blieb für M4-23 offen.
-E5. **Hash im Image gegen den Kern aus derselben CI** ist nicht nachgewiesen, nur über gleiche Schichten und Versionen geschlossen (`plans/m4-16-lokaler-runner.md` §10.1, „Offen“). Ottos Beleg vom 24.10.2026 füllt die Lücke von Hand. Offen auch: Podman nicht geprüft, ARM außerhalb der Zusage (README).
+E5. **Hash im Image gegen den Kern aus derselben CI** ist nicht nachgewiesen, nur über gleiche Schichten und Versionen geschlossen (`plans/m4/m4-16-lokaler-runner.md` §10.1, „Offen“). Ottos Beleg vom 24.10.2026 füllt die Lücke von Hand. Offen auch: Podman nicht geprüft, ARM außerhalb der Zusage (README).
 E6. **Worker-Einstieg in `jobs` darf `datasets` nicht importieren;** betrifft den ruhenden Quad-Pol-Operator, zu lösen bei dessen Registrierung (Log 02.10.2026, `adr/0014` §12). `decomp.py` ruht weiter (ENTSCHEIDUNGEN §3).
 E7. **Basiskarte im Permalink:** kommt mit UI-02 (siehe Punkt 29; Log 24.10.2026, M4-19e, Antwort 1); in M4 steht sie nicht in der Ansicht.
 
-**Aus „Nicht in M4“ (`m4-processing-kern.md` §2) und Planständen, weiter offen**
+**Aus „Nicht in M4“ (`plans/m4/m4-processing-kern.md` §2) und Planständen, weiter offen**
 
 | Punkt | Wohin | Quelle |
 |---|---|---|
-| Login, Quotas, Ratenbegrenzung je Nutzer oder IP | M6 (D6) | §2; `m3-15-abnahme.md` §12 |
+| Login, Quotas, Ratenbegrenzung je Nutzer oder IP | M6 (D6) | §2; `plans/m3/m3-15-abnahme.md` §12 |
 | Datacube (Kombination mehrerer Datensätze mit Lizenzprüfung) | M6 | §2; `projektplan.md` M6 |
 | Verbundener Runner und Runner-Auswahl in der Oberfläche | 7f | §2; `adr/0016` |
 | Runner-Image veröffentlichen (Registry) | nicht in M4 (Q12), später | §2; `adr/0016` |
 | Container-Stufe T3 und externe Engines | M7 | §2 |
-| Bug-Report Stufe 2 und 3 (M4 liefert die Rezept-ID als Grundlage) | offen (D9, Q15) | §2; `m3-15-abnahme.md` §12 |
+| Bug-Report Stufe 2 und 3 (M4 liefert die Rezept-ID als Grundlage) | offen (D9, Q15) | §2; `plans/m3/m3-15-abnahme.md` §12 |
 | Health-Status je Quelle, Harvester-Zeitplan, Zählwürfel, STAC-API-Dialekt | M5 | §2; `adr/0011` F6 |
 | COG-Header-Cache; Uvicorn-Worker des `tiler` | M5 / offen | §2; Log 20.09.2026 |
 | CQL2 je Collection ausweisen (nirgends ausgewiesen) | offen | M3-13, `adr/0005` Regel VI |
-| Zenodo als Metadatenquelle; Hybrid-Suche; Datensatz-Browser; Verfügbarkeits-Zeitleiste | M5 | `m3-15-abnahme.md` §12 |
-| Helle Basiskarte passend zum Theme; Viewer-Pakete Swipe und Export | offen (D10) / UI-02 | `m3-15-abnahme.md` §12; `m2-format-und-viewer.md` |
+| Zenodo als Metadatenquelle; Hybrid-Suche; Datensatz-Browser; Verfügbarkeits-Zeitleiste | M5 | `plans/m3/m3-15-abnahme.md` §12 |
+| Helle Basiskarte passend zum Theme; Viewer-Pakete Swipe und Export | offen (D10) / UI-02 | `plans/m3/m3-15-abnahme.md` §12; `plans/m2/m2-format-und-viewer.md` |
 
-**Vor dem ersten öffentlichen Deployment** (Stand `m3-15-abnahme.md` §12, in M4
+**Vor dem ersten öffentlichen Deployment** (Stand `plans/m3/m3-15-abnahme.md` §12, in M4
 nicht neu entschieden): AGPL §13 (Link zum Quellcode für Nutzer); Nominatim und
 ODbL (Bedingungen des öffentlichen Dienstes, gecachte Treffer, AOI im ZIP);
 Copernicus-Attributionstext und Sentinel Legal Notice (zusammen mit Punkt 1
@@ -722,7 +722,7 @@ Nummeriert, Empfehlung zuerst. **Antworten von Otto am 24.10.2026: Fragen 1–5 
    - (2) Erst abnehmen, wenn die Läufe in Abschnitt 11 (A bis C) durch sind.
    - (3) Anders.
 2. **Prüfanleitung B von M4-17, Schritte 3–6** → **Antwort: (1), Otto reicht das Ergebnis als Log-Zeile nach.** (E1; Kriterium 7). A ist bestanden, B Schritte 1–2 auch.
-   - (1) **Empfehlung:** Die Abnahme hängt nicht daran. Du reichst das Ergebnis der Schritte 3–6 nach (die Anleitung steht in `plans/m4-17-mosaik-kachel-pfad.md`); es kommt als Log-Zeile.
+   - (1) **Empfehlung:** Die Abnahme hängt nicht daran. Du reichst das Ergebnis der Schritte 3–6 nach (die Anleitung steht in `plans/m4/m4-17-mosaik-kachel-pfad.md`); es kommt als Log-Zeile.
    - (2) Vor der Abnahme prüfen.
    - (3) Anders.
 3. **Lesart von Kriterium 3 („ohne `gateway`“).** → **Antwort: (1), „kein direkter Import“, keine Änderung.**
@@ -742,7 +742,7 @@ Nummeriert, Empfehlung zuerst. **Antworten von Otto am 24.10.2026: Fragen 1–5 
 
 ## Zusammenfassung
 
-Alle zehn Kriterien aus `docs/plans/m4-processing-kern.md` Abschnitt 5 sind mit
+Alle zehn Kriterien aus `docs/plans/m4/m4-processing-kern.md` Abschnitt 5 sind mit
 Test-, Code- und Log-Belegen erfüllt; Kriterium 1 trägt die drei verlangten
 Belege (`test_compare` aus M4-16a, der Schichtvergleich in der CI aus M4-16b und
 Ottos lokaler Hash-Vergleich vom 24.10.2026 mit Runner 0.4.2+gcb03706:

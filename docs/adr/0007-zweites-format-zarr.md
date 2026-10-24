@@ -17,7 +17,7 @@
   der Quelle); **F9** Zoomstufen **z8–z14**; **F10** Auflösungsstufen aus dem
   **Store**, Item als Rückfall. Damit ist dieser ADR **ohne offene Fragen**.
 - **Datum:** 2026-09-20
-- **Aufgabe:** M2-03 laut `docs/plans/m2-format-und-viewer.md` §4.
+- **Aufgabe:** M2-03 laut `docs/plans/m2/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
   Produktivcode geändert, keine Datei außerhalb von `docs/` angefasst, keine
   Abhängigkeit des Projekts verändert.
@@ -1401,7 +1401,7 @@ Nicht-STAC-Kandidaten ersetzt ihn in M2, und es bliebe der Rückfallweg aus §8 
     passieren kann —, fällt die **Aufnahme des zweiten Datensatzes** (M2-09b,
     M2-10), nicht die Abnahme von M2. Das nimmt dem Risiko aus §5 Option A
     seine Schärfe: Die Arbeit an M2b ist in keinem Fall verloren.
-    **Folge, die noch niemand nachgezogen hat:** `plans/m2-format-und-viewer.md`
+    **Folge, die noch niemand nachgezogen hat:** `plans/m2/m2-format-und-viewer.md`
     §5 verlangt in den Kriterien 1, 3 und 5 weiterhin „beide Datensätze". Diese
     Stellen sind gegen Punkt 15 zu prüfen; die Änderung am Abnahmetext ist eine
     Planänderung und gehört zu M2-12, nicht in diesen ADR.

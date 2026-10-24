@@ -4,9 +4,9 @@
 **Stufe B:** Bis zur Freigabe ist kein Produktivcode geändert. Nach der Freigabe
 setzt dieselbe Session um (oder die Sessions aus Frage 5).
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
-**Startsatz:** „Führe Aufgabe M4-16 aus `docs/plans/m4-processing-kern.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-16 aus `docs/plans/m4/m4-processing-kern.md` aus.“
 **Grundlage:**
-- `plans/m4-processing-kern.md` M4-16, Q11, Q12, §1.2, §1.3 („Vor M4-16“).
+- `plans/m4/m4-processing-kern.md` M4-16, Q11, Q12, §1.2, §1.3 („Vor M4-16“).
 - `adr/0016` (angenommen 06.10.2026, F1–F11 je Option 1, Auflagen §12a).
 - `adr/0014` §4.1–§4.3, §6.3, §6.4, §10.1, §15c, §15d, §15f, §15g.
 - `KLAERUNGEN.md` B8, B9; `architekturplan.md` 3.1, 7.7.
@@ -521,7 +521,7 @@ bleibt stehen. Erledigt als `adr/0016` §12b.
 
 ## 8. M4-16b — Image, Compose-Job, Anleitung
 
-**Startsatz:** „Führe Aufgabe M4-16b aus `docs/plans/m4-16-lokaler-runner.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-16b aus `docs/plans/m4/m4-16-lokaler-runner.md` aus.“
 **Stufe B, Plan freigegeben** (§4 bis §7); die Session setzt direkt um.
 **Voraussetzungen:** M4-16a ist gemergt. Die Session ist neu gestartet, nachdem
 Otto `deb.debian.org` in die Allowlist der Cloud-Umgebung aufgenommen hat.
@@ -562,7 +562,7 @@ und hält an (`CLAUDE.md`, „Fehlt der Zugang …“).
     Prozess.
   Abweichung von §5: Es gibt keine eigene `test_import.py`; der Import-Test
   steht in `test_cli.py`.
-- **Doku:** `adr/0016` §12b, Log-Zeilen, §3 von `m4-processing-kern.md`.
+- **Doku:** `adr/0016` §12b, Log-Zeilen, §3 von `plans/m4/m4-processing-kern.md`.
 - **Nach dem Review (Subagent `reviewer`):**
   - Die Hostprüfung ist jetzt dieselbe wie bei der Annahme in `api`:
     `inspect_url` gegen `asset_hosts` prüft Schema, Zugangsdaten, Port und Host.

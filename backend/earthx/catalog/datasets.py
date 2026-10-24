@@ -51,7 +51,7 @@ _LEGAL_NOTICE_URL = "https://sentinels.copernicus.eu/documents/247904/690755/Sen
 
 # The classes of Sentinel-2's scene classification layer, with the names of SentiWiki "S2
 # Processing", L2A Algorithms, Scene Classification, Table 3 (read by Otto on 20.10.2026;
-# plans/m4-18-masking-normalisierung.md §8). Both Sentinel-2 entries share it.
+# plans/m4/m4-18-masking-normalisierung.md §8). Both Sentinel-2 entries share it.
 _SCL_REFERENCE = "https://sentiwiki.copernicus.eu/web/s2-processing"
 _SCL_CLASSES = tuple(
     MaskClass(value, label)

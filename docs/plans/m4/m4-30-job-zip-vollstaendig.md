@@ -4,7 +4,7 @@
 **Stufe A.** Direkt umsetzen, ein Draft-PR.
 **Modell:** Sonnet, Effort mittel.
 **Start:** Sofort. Die Aufgabe ist nur Backend und läuft neben den Frontend-Sessions.
-**Startsatz:** „Führe Aufgabe M4-30 aus `docs/plans/m4-30-job-zip-vollstaendig.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-30 aus `docs/plans/m4/m4-30-job-zip-vollstaendig.md` aus.“
 
 ## 1. Befund (Otto, lokal, 19.10.2026)
 
@@ -14,7 +14,7 @@ Der Zuschnitt-ZIP (M3-18, M4-14) und das ZIP des Export-Jobs (M4-11a) enthalten 
 - **Attribution.** Die Lizenz verlangt sie, etwa „Contains modified Copernicus Sentinel data …“. Ohne sie gibt die Plattform Daten ohne die geforderte Angabe weiter.
 - **AOI als eigene Datei.** Sie steht zwar in `recipe.json`, als GeoJSON lässt sie sich aber direkt in GIS-Programmen öffnen.
 
-**Ursache:** Der Zusatz `m4-zusaetze-2026-10-12.md` §1 hat nur vier Dateien genannt. Das war ein Fehler im Zusatz, nicht in der Umsetzung.
+**Ursache:** Der Zusatz `plans/m4/m4-zusaetze-2026-10-12.md` §1 hat nur vier Dateien genannt. Das war ein Fehler im Zusatz, nicht in der Umsetzung.
 
 ## 2. Umfang
 
@@ -35,8 +35,8 @@ Der Zuschnitt-ZIP (M3-18, M4-14) und das ZIP des Export-Jobs (M4-11a) enthalten 
 - Die Prüfanleitung für Otto (PowerShell) im PR: NDVI-Job, ZIP laden, entpacken, sechs Dateien sehen.
 - Alle vier Pflicht-Checks der CI sind grün.
 - **Doku:**
-  - Log-Zeile mit dem Befund, Verweis auf `m4-zusaetze-2026-10-12.md` §1. Dort wird ein Satz ergänzt: „ergänzt durch M4-30: Attribution und AOI“.
-  - Zeile M4-30 in `docs/plans/m4-processing-kern.md` §3.
+  - Log-Zeile mit dem Befund, Verweis auf `plans/m4/m4-zusaetze-2026-10-12.md` §1. Dort wird ein Satz ergänzt: „ergänzt durch M4-30: Attribution und AOI“.
+  - Zeile M4-30 in `docs/plans/m4/m4-processing-kern.md` §3.
 - Vor „fertig“ ist main geholt.
 
 ## 4. Grenzen

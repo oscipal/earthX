@@ -1,7 +1,7 @@
 # M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion: Aufgabenschnitt
 
 **Status: Abgenommen am 30.09.2026** (Otto). Fassung 3 vom 30.09.2026: alle
-Aufgaben gemergt bzw. mit PR #109 (M3-15) erledigt; Belege in `m3-15-abnahme.md`,
+Aufgaben gemergt bzw. mit PR #109 (M3-15) erledigt; Belege in `plans/m3/m3-15-abnahme.md`,
 Log-Zeile „M3 abgenommen“.
 Fassung 2 (26.09.2026) schnitt M3-11 nach der Annahme von `adr/0009` in
 M3-11a, M3-11b und M3-11c, nahm die Entscheidungen vom 23. und 24.09.2026 als
@@ -12,19 +12,19 @@ anders umgesetzt wurde als hier beschrieben, gilt das Log; der Aufgabentext
 bleibt als Geschichte stehen.
 Frühere Fassungen: 1.1 (Antworten auf M3-02, M3-16), 1.2 (P19, M3-17),
 1.3 (`adr/0010`, M3-19), 1.4 (M3-18).
-**Ort im Repo:** `docs/plans/m3-dritte-quelle-und-interface.md`
+**Ort im Repo:** `docs/plans/m3/m3-dritte-quelle-und-interface.md`
 **Grundlagen:** `projektplan.md` 4 (M3); `architekturplan.md` 3.1, 3.2, 5.1,
 5.2, 6.1, 6.5, 12.3, 15.1, 15.2; `adr/0001` (Zustand), `adr/0002` (Tests),
 `adr/0003` (Datensätze), `adr/0004` (Coverage), `adr/0005` (föderierte Suche),
 `adr/0006` (Kachel-Pfad), `adr/0007` (Zarr), `adr/0008` (Prototyp entfernt),
 `adr/0009` (dritte Quelle), `adr/0010` (Zählwürfel);
-`plans/m2-format-und-viewer.md` (D1–D31, „Nach M2 vorgemerkt“);
-`plans/m2-12-abnahme.md`; `prototyp-inventar.md`; `projektuebersicht.md` §5
-(Onboarding-Checkliste); `KLAERUNGEN.md` B8–B13; `plans/m3-02-konformitaetsbericht.md`;
+`plans/m2/m2-format-und-viewer.md` (D1–D31, „Nach M2 vorgemerkt“);
+`plans/m2/m2-12-abnahme.md`; `prototyp-inventar.md`; `projektuebersicht.md` §5
+(Onboarding-Checkliste); `KLAERUNGEN.md` B8–B13; `plans/m3/m3-02-konformitaetsbericht.md`;
 `ENTSCHEIDUNGSLOG.md`, Zeilen ab dem 23.09.2026.
 
 Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M3-xx aus
-`docs/plans/m3-dritte-quelle-und-interface.md` aus.“ Jede Aufgabe ist ohne das
+`docs/plans/m3/m3-dritte-quelle-und-interface.md` aus.“ Jede Aufgabe ist ohne das
 Planungsgespräch verständlich und endet mit genau einem Draft-PR. Aufgaben mit
 Buchstaben (M3-06a, M3-06b …) sind je eine eigene Session und ein eigener PR.
 
@@ -143,7 +143,7 @@ Viewer-Pakete Swipe/Export; alles zum ersten öffentlichen Deployment (AGPL
 | M3-08 | `intersects` und `ids` durchreichen | B | Opus Plan, Sonnet (hoch) | M3-16 | erledigt (#76) |
 | M3-09 | Vollauflösung zeigt nur den Zuschnitt | B | Opus Plan, Sonnet (hoch) | — | erledigt (#84) |
 | M3-10a | Datensatz-Auswahl in der Suchkachel: Umschalt-Knöpfe mit Mehrfachauswahl, Dropdown der Treffer je Datensatz, aktiver Datensatz, Coverage-Schalter | B | Opus Plan, Sonnet (mittel) | M3-07b, M3-12 (Reihenfolge, Otto 26.09.2026) | erledigt (#106) |
-| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | erledigt (#108) |
+| M3-10b | Datensatz-Auswahl Teil 2: „Load more“, ±90-Tage-Fallback für den im Dropdown gewählten Datensatz, Namenssuche über mehrere Datensätze | B | Sonnet (hoch), Plan: `plans/m3/m3-10-datensatz-filter.md` | M3-10a (nach dessen Merge, neue Session) | erledigt (#108) |
 | M3-11a | Materialisierte Quellen in Registry, Dispatch und Item-Abruf | B | Opus Plan, Sonnet (hoch) | — | erledigt (#95) |
 | M3-11b | DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#99) |
 | M3-11c | Coverage über eigene Items (`local-sql`) | B | Opus Plan, Sonnet (hoch) | M3-11a | erledigt (#98) |
@@ -210,7 +210,7 @@ laufen; M3-11a bis M3-11c sind reines Backend.
   einzelne Aufgaben des Viewer-Strangs sind.
 - `adr/0006` §6: Nachtrag zum Satz „Mosaik-Kacheln wandern nach M3, zusammen
   mit dem CDN“ — entschieden ist M4 (D11, P11). Den Originaltext stehen lassen.
-- `plans/m2-format-und-viewer.md`: Status „abgenommen“; unter „Nach M2
+- `plans/m2/m2-format-und-viewer.md`: Status „abgenommen“; unter „Nach M2
   vorgemerkt“ ein Verweis auf diesen Plan.
 - `ENTSCHEIDUNGSLOG.md`, nur Status-Spalte bestehender Zeilen ändern, Text
   stehen lassen:
@@ -218,7 +218,7 @@ laufen; M3-11a bis M3-11c sind reines Backend.
     2026-09-23: vorerst nein“.
   - Schwachstelle `Settings.host_allowed` → „gegenstandslos: `backend/app/`
     entfernt (`adr/0008`); `gateway` normalisiert Hosts seit M1-03“.
-  - `plans/m2-format-und-viewer.md` nachziehen, drei Stellen → „erledigt mit
+  - `plans/m2/m2-format-und-viewer.md` nachziehen, drei Stellen → „erledigt mit
     Fassung 5 des M2-Plans“.
   - Die zweite der beiden gleichlautenden Zeilen „Trefferliste gruppiert nach
     Überflug“ → „Dublette der Zeile mit demselben Inhalt“.
@@ -290,7 +290,7 @@ quellenspezifischen Stellen im Frontend** (Datensatz-IDs, Eigenschaftsnamen
 wie `s2:*`, feste Schwellen, feste Blöcke der Suchkachel) mit Fundstelle — das
 ist die Eingabe für M3-12.
 **Nicht anfassen:** Code.
-**Abnahme:** `docs/plans/m3-02-konformitaetsbericht.md` mit Fundstellen,
+**Abnahme:** `docs/plans/m3/m3-02-konformitaetsbericht.md` mit Fundstellen,
 Schwere (Blocker / Schuld / Hinweis) und je Fund einem Vorschlag, in welche
 Aufgabe er gehört.
 
@@ -498,12 +498,12 @@ und heruntergeladene Datei übereinstimmen.
 
 ### M3-10 — Datensatz-Filter in der Suchkachel
 
-**Stand:** erledigt und gemergt: M3-10a (#106) und M3-10b (#108). Abweichungen vom Text stehen im Log und im Plan `plans/m3-10-datensatz-filter.md`.
+**Stand:** erledigt und gemergt: M3-10a (#106) und M3-10b (#108). Abweichungen vom Text stehen im Log und im Plan `plans/m3/m3-10-datensatz-filter.md`.
 
 **Ziel:** Datensätze werden über einen Filter gewählt statt über feste Blöcke
 (P9).
 **Stufe B.**
-**Plan-Schritt:** `plans/m3-10-datensatz-filter.md`.
+**Plan-Schritt:** `plans/m3/m3-10-datensatz-filter.md`.
 **Umfang:** Liste aus `/stac/collections`, Filter über Titel, Beschreibung und
 Schlagworte im Client; Reifegrad („staging“) bleibt sichtbar. Keine Suche im
 Backend, keine Hybrid-Suche (M5).
@@ -517,7 +517,7 @@ Datensatz-Kennung im Frontend-Code nötig.
 > Heatmap-Legende, `ignored_filters_by_collection`, Schlagworte in der Registry)
 > und **M3-10b** („Load more“, ±90-Tage-Fallback, Namenssuche über mehrere
 > Datensätze; nach dem Merge von M3-10a in einer neuen Session). Bedienung und
-> Entscheidungen F1–F9: `plans/m3-10-datensatz-filter.md`.
+> Entscheidungen F1–F9: `plans/m3/m3-10-datensatz-filter.md`.
 >
 > **Änderung nach Ottos lokaler Prüfung (30.09.2026):** Statt Filter mit
 > Kontrollkästchen jetzt Umschalt-Knöpfe (vier sichtbar, sonst scrollbar, kein
@@ -676,7 +676,7 @@ Eigenschaft mehr (P10, M3-Abnahme).
 **Stufe B.** Nach M3-11b (echter DEM-Eintrag), mit dem Bericht aus M3-02 als
 Eingabe. Läuft vor M3-10; die Abhängigkeit von M3-10 ist entfallen (Otto,
 26.09.2026).
-**Plan-Schritt:** `plans/m3-12-frontend-sonderfaelle.md`. Braucht M3-17 ein Registry-Feld für COG oder Zarr, wird es
+**Plan-Schritt:** `plans/m3/m3-12-frontend-sonderfaelle.md`. Braucht M3-17 ein Registry-Feld für COG oder Zarr, wird es
 hier übernommen.
 **Umfang:** Jede Stelle aus M3-02, die der DEM trifft, wird ein
 Registry-Feld (bekannt: Gruppierung der Trefferliste nach `s2:datatake_id`
@@ -750,7 +750,7 @@ entschieden (Regel VI).
 **Stufe B**, Plan-Schritt mit Opus (hoch), weil Paging über mehrere Quellen
 heikel ist. Nach M3-11b: Die eigenen Items des DEM sind die erste echte
 eigene Collection.
-**Plan-Schritt:** `plans/m3-13-gemischte-suche.md`.
+**Plan-Schritt:** `plans/m3/m3-13-gemischte-suche.md`.
 **Umfang:** gemischte Suche statt `400`; Seitenmarke über mehrere Quellen;
 Teilergebnisse und Zeitablauf je Quelle gekennzeichnet (`architekturplan.md`
 16); Konformitätsklassen der Landing Page passend zur schwächsten beteiligten
@@ -793,12 +793,12 @@ Fragen; Otto gibt frei (M3-Abnahme).
 
 ### M3-15 — M3-Abnahme und README
 
-**Stand:** erledigt (#109), M3 abgenommen am 30.09.2026. Bericht: `plans/m3-15-abnahme.md`. Ergänzungen von Otto (30.09.2026): Belege je Kriterium 1–9 aus §5 nach dem Muster von `m2-12-abnahme.md`; wo nur Otto lokal prüfen kann, eine kurze Anleitung (Windows/PowerShell, `docker compose up -d --build`); im Bericht ein Abschnitt „Nach M3 vorgemerkt“ mit allen offenen Punkten aus Log und Plan; der Status aller M3-Aufgaben in diesem Plan auf dem tatsächlichen Stand; keine Codeänderungen. Der Plan ist mit Ottos Abnahme am 30.09.2026 als abgeschlossen markiert.
+**Stand:** erledigt (#109), M3 abgenommen am 30.09.2026. Bericht: `plans/m3/m3-15-abnahme.md`. Ergänzungen von Otto (30.09.2026): Belege je Kriterium 1–9 aus §5 nach dem Muster von `plans/m2/m2-12-abnahme.md`; wo nur Otto lokal prüfen kann, eine kurze Anleitung (Windows/PowerShell, `docker compose up -d --build`); im Bericht ein Abschnitt „Nach M3 vorgemerkt“ mit allen offenen Punkten aus Log und Plan; der Status aller M3-Aufgaben in diesem Plan auf dem tatsächlichen Stand; keine Codeänderungen. Der Plan ist mit Ottos Abnahme am 30.09.2026 als abgeschlossen markiert.
 
 **Ziel:** Otto kann M3 anhand des PR abnehmen, ohne Code zu lesen.
 **Stufe A.**
-**Umfang:** Bericht `docs/plans/m3-15-abnahme.md` mit Belegen je Kriterium aus
-Abschnitt 5, nach dem Muster von `m2-12-abnahme.md`; README um den neuen
+**Umfang:** Bericht `docs/plans/m3/m3-15-abnahme.md` mit Belegen je Kriterium aus
+Abschnitt 5, nach dem Muster von `plans/m2/m2-12-abnahme.md`; README um den neuen
 Datensatz, Attribution (auch OpenStreetMap), Upload-Formate und Ortssuche
 ergänzt. `architekturplan.md` 5.2 an den Datums-Fallback im Frontend anpassen
 (entschieden mit M2-07a am 20.09.2026, bestätigt am 23.09.2026), mit dem
@@ -809,7 +809,7 @@ Vermerk: Neubewertung mit der Verfügbarkeits-Zeitleiste in M5.
 **Stand:** erledigt und gemergt (#85). Abweichungen vom Text stehen im Log.
 
 **Ziel:** Kein Prozess schreibt Koordinaten oder Query-Strings ins Log
-(`CLAUDE.md`; K-01, K-02 aus `plans/m3-02-konformitaetsbericht.md`).
+(`CLAUDE.md`; K-01, K-02 aus `plans/m3/m3-02-konformitaetsbericht.md`).
 **Stufe A.** Sonnet (hoch).
 **Umfang:**
 - Access-Log jedes HTTP-Prozesses ohne Query-String: Methode, Pfad, Status,
@@ -828,7 +828,7 @@ keine Koordinate im Log, Request-ID vorhanden; `compose-topology` grün.
 
 **Stand:** erledigt und gemergt (#88). Freigegeben mit allen Fragen (F1–F6)
 nach Empfehlung (Otto, 26.09.2026); Details, Optionen und die Umsetzung
-stehen in `plans/m3-17-download-folgt-ansicht.md` §9/§10. Die Abhängigkeit
+stehen in `plans/m3/m3-17-download-folgt-ansicht.md` §9/§10. Die Abhängigkeit
 von M3-12 entfiel wie unten vermerkt (Otto, 23.09.2026): Die Gruppierung je
 Überflug hat M3-09 schon gebaut, `download.ts`/`api/tiler.py` verwenden sie
 wieder (`groups: string[][]`/`list[list[str]]`), keine neue
@@ -860,7 +860,7 @@ lässt sich hier übernehmen). Weitere Fundstellen aus M3-09: ein
 CORS-Freigabe (anders als die Canvas-Weiterverarbeitung der Quicklooks);
 ob eine Quelle COG oder Zarr ist, steht heute für das Frontend nirgends ohne
 datensatzspezifische Fallunterscheidung — dafür fehlt ein Registry-Feld,
-wahrscheinlich zusammen mit M3-12. Details: `plans/m3-09-zuschnitt-ansicht.md`
+wahrscheinlich zusammen mit M3-12. Details: `plans/m3/m3-09-zuschnitt-ansicht.md`
 §7/§8.
 **Abnahme:** Tests für jeden Fall aus P19 (Zuschnitt eine Gruppe, Zuschnitt
 mehrere Gruppen, eine ganze Szene COG, Zarr ohne AOI deaktiviert, mehrere
@@ -1059,7 +1059,7 @@ Abnahme: Test des Vergleichs; cloud-umgebung.md nachgezogen; eine frische Sessio
 ## 5. Abnahme von M3
 
 **Abgenommen am 30.09.2026 (Otto).** Belege je Kriterium 1–9 stehen in
-`plans/m3-15-abnahme.md`. Zu Kriterium 1: „`readers` unverändert“ gilt für den
+`plans/m3/m3-15-abnahme.md`. Zu Kriterium 1: „`readers` unverändert“ gilt für den
 Anschluss der dritten Quelle; die Änderung an `zarr_reader.py` stammt aus M3-18
 (#86), der COG-Pfad ist unberührt.
 

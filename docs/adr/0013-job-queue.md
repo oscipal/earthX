@@ -7,7 +7,7 @@
     §5.4, §5.6, §6.2 und §9 eingearbeitet. Der Nachtrag zu F6 steht in
     `adr/0014` §15b.
 - **Datum:** 2026-10-02 (Entwurf), 2026-10-05 (Annahme)
-- **Aufgabe:** M4-02 laut `docs/plans/m4-processing-kern.md` §4.
+- **Aufgabe:** M4-02 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Kein Produktivcode, keine Änderung an `.importlinter`,
   an `docker-compose.yml` oder an der CI. Gemessen wurde mit Skripten im
   Kratzverzeichnis der Sitzung, gegen eigene Kratz-Datenbanken im Postgres der
@@ -34,7 +34,7 @@
   - `adr/0001` §9.2; `adr/0002` §2 (Tests gegen echtes Postgres in CI und
     Sitzung); `adr/0005` §6 (Verbindungen je Host); `adr/0012` F3, F5;
     `adr/0014` §3.5, §3.6, §4.4–§4.7, §7.2, §7.3, §8, §9, §12, §13.
-  - `plans/m3-07a-ortssuche-backend.md` §9 (`RateSlot`).
+  - `plans/m3/m3-07a-ortssuche-backend.md` §9 (`RateSlot`).
   - Der **Entwurf** von `adr/0015` (M4-04, parallel entstanden, Stand
     `eeda0b5`, noch nicht auf `main`): Schlüssel `results/{result_id}/…`,
     Aufräumen erst der Objekte, dann der Zeilen, Treffer nur mit 24 h Rest.
@@ -1257,7 +1257,7 @@ Punkt 2).
 ## 10b. Nachtrag vom 2026-10-08: ein Export hat immer einen eigenen Lauf (zu §5.1, §5.8; M4-11a)
 
 Otto hat M4-11 am 2026-10-08 freigegeben, F3 mit Option 1
-(`plans/m4-11-export-job.md` §10). Der Originaltext in §5.1 und §5.8 bleibt
+(`plans/m4/m4-11-export-job.md` §10). Der Originaltext in §5.1 und §5.8 bleibt
 stehen; für Exporte gilt dieser Nachtrag.
 
 - Ein Auftrag mit der Ausgabe `crop` (Export) hängt sich nie an einen aktiven
@@ -1265,7 +1265,7 @@ stehen; für Exporte gilt dieser Nachtrag.
   `recipe_id`, `cacheable` ist `false` (`jobs/submit.py`).
 - Grund: Das `export.zip` trägt die `recipe.json` dieses Auftrags (mit seiner
   `recipe_id`), die Herkunft seiner Orts-AOI und sein Datum. Ein geteilter Lauf
-  zeigte sie einem zweiten Auftraggeber (`plans/m4-08a-jobs-queue.md` F4).
+  zeigte sie einem zweiten Auftraggeber (`plans/m4/m4-08a-jobs-queue.md` F4).
 - Der Lauf trägt die Begleitdateien, die `api` baut (`earthx_run.attachments`,
   Migration `007`); `jobs` gibt sie ungelesen ans Kind. Das Kind meldet die
   Dateien, die es hinterlässt (`result.tif` + `mask.tif` oder `export.zip`); der

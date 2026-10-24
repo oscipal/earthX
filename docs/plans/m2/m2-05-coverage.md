@@ -14,13 +14,13 @@ geprüft (§3.6); und die Antwort führt die Auflösung des Histogramms mit, wei
 die Quelle sie vorgibt (§3.1, monatlich).
 Drei Nachträge kamen mit der Annahme dazu und sind in diesem PR erledigt: die
 beiden Ergänzungen in `adr/0004` (§3.3 und §5) und die Log-Zeile zu §7.1.
-**Aufgabe:** M2-05 aus `docs/plans/m2-format-und-viewer.md` §4.
+**Aufgabe:** M2-05 aus `docs/plans/m2/m2-format-und-viewer.md` §4.
 **Grundlage:** `adr/0004` (Coverage Map, alle Abschnitte, besonders §3.2, §3.3,
 §3.4, §5 Regel V); `adr/0005` Regel I, II, V (Katalog entscheidet, zwei Fristen,
 eigener Deckel); `architekturplan.md` 3.1 (Modulgrenzen), 5.2 (zweistufiger
 Katalog), 6.1 (Aggregation als vierte, optionale Adapter-Fähigkeit);
 `KLAERUNGEN.md` B8 (alles Ausgehende über `gateway`), B10 (jede Fähigkeit
-ausdrücklich freigeschaltet), E4/E5 (`m1-fundament.md` §1);
+ausdrücklich freigeschaltet), E4/E5 (`plans/m1/m1-fundament.md` §1);
 `ENTSCHEIDUNGSLOG.md` 2026-09-19 (Zählweise, Schwelle 500, Latenzziel, Fristen)
 und 2026-09-20 (D6: keine Ratenbegrenzung in M2).
 **Voraussetzungen:** alle erfüllt. M1-03 (`gateway` kann GET mit langer
@@ -366,7 +366,7 @@ Schwelle steht als Konstante mit Verweis auf Ottos Antwort vom 19.09.2026 an
 **einer** Stelle, serverseitig, und ist damit in pytest prüfbar. Der Zoom
 bleibt die zusätzliche Bremse und liegt im Frontend (M2-07c), das die
 Vitest-Tests dafür mitbringt. `total_count is None` — also eine Stichprobe —
-lässt die Dichte stehen, wie die Ersatzregel in `m2-format-und-viewer.md`
+lässt die Dichte stehen, wie die Ersatzregel in `plans/m2/m2-format-und-viewer.md`
 (M2-07c) es fordert.
 
 ## 7. Tests

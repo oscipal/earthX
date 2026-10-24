@@ -1,4 +1,4 @@
-"""The estimate route: the cost of an order before it is placed (M4-13a; plans/m4-13-processing-panel.md §3.1, F2).
+"""The estimate route: the cost of an order before it is placed (M4-13a; plans/m4/m4-13-processing-panel.md §3.1, F2).
 
 Same rig as the job API tests: a real queue database (to show that nothing is written to it), the
 items from a function, the ``HEAD`` side from a mock transport (to show that nothing is asked).

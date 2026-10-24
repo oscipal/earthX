@@ -1,14 +1,14 @@
 # M3-07b — Ortssuche: Frontend: Plan
 
-**Aufgabe:** M3-07b aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-07b aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B — Plan-Schritt.** Die Session hält nach diesem Plan an; Fragen an
 Otto in §10.
-**Ort im Repo:** `docs/plans/m3-07b-ortssuche-frontend.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P8, M3-07b, §1.2
+**Ort im Repo:** `docs/plans/m3/m3-07b-ortssuche-frontend.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` P8, M3-07b, §1.2
 (Oberflächentexte nur Englisch), §3 (Reihenfolge an der Suchkachel
-M3-06b → M3-07b → M3-12 → M3-10); `plans/m3-07a-ortssuche-backend.md` §§2, 7,
+M3-06b → M3-07b → M3-12 → M3-10); `plans/m3/m3-07a-ortssuche-backend.md` §§2, 7,
 10, 13 (Route, Antwortform, Fehlerabbildung, Nutzungsbedingung);
-`plans/m3-06b-aoi-upload-frontend.md` (Muster für Aufruf, Fehlerzeile, Tests);
+`plans/m3/m3-06b-aoi-upload-frontend.md` (Muster für Aufruf, Fehlerzeile, Tests);
 `prototyp-inventar.md` F2; Log 20.09., 23.09. und 26.09.2026 (Ortssuche);
 heutiger Code in `frontend/src/components/ControlPanel.tsx`,
 `frontend/src/api.ts`, `frontend/src/store.ts` (`setAoi`, `flyTo`,

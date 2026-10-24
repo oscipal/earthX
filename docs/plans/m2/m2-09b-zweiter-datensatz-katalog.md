@@ -10,7 +10,7 @@ Datensatz. **F4** ist zusätzlich als eigene Architekturentscheidung
 festgehalten: `earthx:maturity` ist die zehnte Zeile in `architekturplan.md`
 5.1 (nachgezogen). Die Umsetzung läuft als drei PRs (§7); dies ist der erste,
 **M2-09b-1 — Katalog und Suche**.
-**Aufgabe:** M2-09b aus `docs/plans/m2-format-und-viewer.md`.
+**Aufgabe:** M2-09b aus `docs/plans/m2/m2-format-und-viewer.md`.
 **Grundlage:** `adr/0007` §6, §7 und besonders §12 (Nachmessung), mit den
 fünfzehn Umsetzungspunkten in §12.11; `adr/0004` §5 (Anbieter-Begriff, Regel V,
 Option 6); `adr/0005` Regel I–VI (Katalog entscheidet, eigene Seitenmarke,
@@ -298,7 +298,7 @@ erreichbar (§3.1), über unseren eigenen Stapel voraussichtlich nicht. §10 F7.
   Registry-Eintrags und beabsichtigt; die sichtbare Auszeichnung von „staging"
   ist Sache von M2-10 (§12.11 Punkt 14 sagt das ausdrücklich).
 - **`level_for_viewport`** und die Coverage-Gitterstufen (zurückgestellt, D26).
-- **Die Abnahmetexte in `plans/m2-format-und-viewer.md` §5.** Sie gegen Punkt 15
+- **Die Abnahmetexte in `plans/m2/m2-format-und-viewer.md` §5.** Sie gegen Punkt 15
   zu prüfen ist eine Planänderung und gehört zu M2-12 (offene Log-Zeile).
 
 ---

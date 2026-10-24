@@ -1,14 +1,14 @@
 # M3-06b — AOI-Upload: Frontend auf die Route: Plan
 
-**Aufgabe:** M3-06b aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-06b aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B — von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1)
 (§9), plus zwei Ergänzungen: die 1-MB-Konstante im Frontend trägt einen
 Kommentar auf die Backend-Konstante (§6, umgesetzt), und der KML/Shapefile-
 Befund aus §5/§8 wird abweichend vom ursprünglichen Umfang in diesem PR auch
 im Backend behoben (§10).
-**Ort im Repo:** `docs/plans/m3-06b-aoi-upload-frontend.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P7, M3-06b, §1.2
-(Oberflächentexte nur Englisch); `plans/m3-06a-aoi-upload-backend.md` §§6, 8–10
+**Ort im Repo:** `docs/plans/m3/m3-06b-aoi-upload-frontend.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` P7, M3-06b, §1.2
+(Oberflächentexte nur Englisch); `plans/m3/m3-06a-aoi-upload-backend.md` §§6, 8–10
 (Route, Deckel, Fehlerform) und Log 26.09.2026 (M3-06a umgesetzt, F5 = 2);
 `prototyp-inventar.md` F3; heutiger Code in `frontend/src/aoiFile.ts`,
 `frontend/src/components/ControlPanel.tsx` (`AoiExtras`), `frontend/src/api.ts`,

@@ -2,12 +2,12 @@
 
 **Ziel:** Otto kann M3 anhand dieses Berichts und des zugehörigen PR abnehmen,
 ohne Code zu lesen.
-**Ort im Repo:** `docs/plans/m3-15-abnahme.md`
-**Grundlage:** `docs/plans/m3-dritte-quelle-und-interface.md` Abschnitt 5
+**Ort im Repo:** `docs/plans/m3/m3-15-abnahme.md`
+**Grundlage:** `docs/plans/m3/m3-dritte-quelle-und-interface.md` Abschnitt 5
 („Abnahme von M3“, Kriterien 1–9), Stand `main` bei Commit `6a69582`
 (Merge von PR #108, 30.09.2026). Alle Aufgaben von M3-00 bis M3-24 außer M3-15
 sind gemergt (PR #74 bis #108, Tabelle im Plan §3).
-**Muster:** `docs/plans/m2-12-abnahme.md`.
+**Muster:** `docs/plans/m2/m2-12-abnahme.md`.
 **Abgenommen von Otto am 30.09.2026.** Frage 1 (`readers`): Lesart „für den Anschluss der dritten Quelle unverändert“ übernommen. Frage 2 (`CLAUDE.md`): Zeile ergänzt. Frage 3 (Lock-Datei) bleibt Vorschlag.
 
 Ergänzungen von Otto (30.09.2026), die dieser Bericht umsetzt: Belege je
@@ -83,7 +83,7 @@ ohne Such-API.
 quellenspezifischen Eigenschaftspräfix wie `s2:` (Zeile 113) an; die Prüfung ist
 selbst geprüft (Zeilen 123–149). Die früheren Sonderfälle sind Registry-Felder in
 `earthx:viewer`: `browse`, `quicklook_nodata_max`, `results_group_by`
-(`plans/m3-12-frontend-sonderfaelle.md`, Log 26.09.2026), dazu `keywords`
+(`plans/m3/m3-12-frontend-sonderfaelle.md`, Log 26.09.2026), dazu `keywords`
 (M3-10a) und `earthx:format` (M3-17).
 
 **`readers` unverändert — Abweichung, Otto entscheidet.** Der Diff
@@ -457,7 +457,7 @@ die Stelle, an der der Punkt entschieden oder vorgemerkt wurde.
 | Punkt | Stand | Quelle |
 |---|---|---|
 | **AGPL §13:** Link zum Quellcode für Nutzer anbieten | offene Pflicht | ENTSCHEIDUNGEN §4, Log |
-| **Nominatim / ODbL:** Nutzungsbedingungen des öffentlichen Dienstes (Rate, Kennung, Attribution, Caching) gegen den realen Betrieb; ODbL-Auswirkung der gecachten Treffer und der AOI im ZIP; Wechsel auf einen eigenen Dienst möglich (`EARTHX_GEOCODER_URL`) | offen | Log 23.09.2026 und `plans/m3-07a-ortssuche-backend.md` |
+| **Nominatim / ODbL:** Nutzungsbedingungen des öffentlichen Dienstes (Rate, Kennung, Attribution, Caching) gegen den realen Betrieb; ODbL-Auswirkung der gecachten Treffer und der AOI im ZIP; Wechsel auf einen eigenen Dienst möglich (`EARTHX_GEOCODER_URL`) | offen | Log 23.09.2026 und `plans/m3/m3-07a-ortssuche-backend.md` |
 | **Copernicus:** Attributionstext und Lizenz des DEM (Copernicus DEM, Airbus/DLR, „produced using Copernicus WorldDEM-30“) und Sentinel Legal Notice für die öffentliche Nutzung; B11-Einstufung bleibt bei Otto | offen | `adr/0003` §11.1, `adr/0009` |
 | Nutzungsbedingungen und Haftungsausschluss der Plattform; Esri World Imagery (Basiskarte) | offen | Log 19.09.2026, `prototyp-inventar.md` F2 |
 | Ratenbegrenzung pro IP oder Nutzer | offen | D6 |
@@ -468,7 +468,7 @@ die Stelle, an der der Punkt entschieden oder vorgemerkt wurde.
 |---|---|---|
 | Bug-Report Stufe 2 | offen | D9 |
 | Helle Basiskarte passend zum Theme | offen | D10 |
-| Viewer-Pakete Swipe und Export | offen | `plans/m2-format-und-viewer.md` |
+| Viewer-Pakete Swipe und Export | offen | `plans/m2/m2-format-und-viewer.md` |
 | Datensätze ohne im Browser darstellbaren Quicklook: Verhalten ohne AOI („Draw an AOI to view this dataset“) ist Vorschlag, nicht endgültig | Vorschlag | Log 26.09.2026 (M3-12) |
 
 ### Neu, Vorschlag: Lock-Datei mit festen Versionen für die Backend-Pakete
@@ -507,7 +507,7 @@ im Log vermerkt.
 
 ## Zusammenfassung
 
-Alle neun Kriterien aus `docs/plans/m3-dritte-quelle-und-interface.md`
+Alle neun Kriterien aus `docs/plans/m3/m3-dritte-quelle-und-interface.md`
 Abschnitt 5 sind mit Test-, Code- und Log-Belegen erfüllt. Zwei Punkte gehören
 Otto: **(a)** die Abweichung bei `readers` (Frage 1) und **(b)** die lokale
 Prüfung der Kriterien 1, 4 und 5 nach Abschnitt 10. Die Läufe der Sitzung

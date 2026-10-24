@@ -1,14 +1,14 @@
 # M4-08b — Job-API (OGC-Form), Ergebnis-Links, SSE: Plan
 
-**Aufgabe:** M4-08b aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-08b aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 07.10.2026 freigegeben:** F1–F3 und F5–F8 je
 Option 1, **F4 Option 2**; K1–K10 angenommen. Wo §3 und §8 („Antworten“)
 sich widersprechen, gilt §8. Umsetzung in PR #128.
-**Ort im Repo:** `docs/plans/m4-08b-job-api.md`
+**Ort im Repo:** `docs/plans/m4/m4-08b-job-api.md`
 **Grundlagen:** `adr/0014` §4.1, §4.7, §9, §10.1, §15b; `adr/0013` §5.4, §5.5,
 §5.8, §8 (Punkte 6, 9, 12), §9; `adr/0015` §6, §7.1, §8.1, §13, §14 (F4–F6),
-§14a (F13); `plans/m4-processing-kern.md` §1.1 (Q8, Q9, Q10), §1.2, M4-08b;
-`plans/m4-07b-annahme.md` §4, §6, §8; `plans/m4-08a-jobs-queue.md` §3.3, §8
+§14a (F13); `plans/m4/m4-processing-kern.md` §1.1 (Q8, Q9, Q10), §1.2, M4-08b;
+`plans/m4/m4-07b-annahme.md` §4, §6, §8; `plans/m4/m4-08a-jobs-queue.md` §3.3, §8
 (F4, F5), §10; `architekturplan.md` 3.1, 7.5 (Z. 543); `KLAERUNGEN.md` B8, B9;
 OGC API Processes 1.0, Commit `7a6bad0` (wie `adr/0014` §3.10).
 
@@ -492,7 +492,7 @@ OGC verlangt einen Code „that corresponds to the reason of the failure“.
 - **K6** Dateiname `{dataset}_{ops}_{YYYYMMDD}` mit dem Datum des
   Abschlusses (UTC); `export` ohne Schritte.
   **Nachtrag 14.10.2026 (Otto):** das Datum ist der Aufnahmetag der Szene, sonst
-  `run` + Tag des Abschlusses; `plans/m4-11b-angebot-und-zip.md` §3.1.7.
+  `run` + Tag des Abschlusses; `plans/m4/m4-11b-angebot-und-zip.md` §3.1.7.
 - **K7** Hrefs, `Location` und Links relativ zum Wurzelpfad
   (`/processing/…`), damit sie hinter dem Proxy des Frontends stimmen.
 - **K8** Eine abgelaufene `jobID` (`expires_at` vorbei) ist auf den Job-Routen

@@ -1,11 +1,11 @@
 # M1 — Fundament: Aufgabenschnitt
 
 **Status:** Abschnitt 1 von Otto entschieden am 19.09.2026: E1–E8 alle wie empfohlen.
-**Ort im Repo:** `docs/plans/m1-fundament.md`
+**Ort im Repo:** `docs/plans/m1/m1-fundament.md`
 **Grundlagen:** `projektplan.md` 4 (M1), `architekturplan.md` 3.1, 5, 6.5, 12, 13, 15.1;
 `adr/0001` (Zustand), `adr/0002` (Tests), `adr/0003` (erster Datensatz); `ENTSCHEIDUNGSLOG.md`.
 
-Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M1-xx aus `docs/plans/m1-fundament.md` aus.“
+Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M1-xx aus `docs/plans/m1/m1-fundament.md` aus.“
 Jede Aufgabe ist ohne dieses Gespräch verständlich und endet mit genau einem Draft-PR.
 
 ---
@@ -100,7 +100,7 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 - Pro Entscheidung E1–E8 eine Zeile in `docs/ENTSCHEIDUNGSLOG.md`, mit Ottos tatsächlicher Antwort (liegt der Aufgabe bei). `adr/0001` und `adr/0002` im Kopf auf den entschiedenen Status setzen.
 - Log-Zeilen berichtigen, die den Stand vor der Annahme von `adr/0003` beschreiben: die offene Zeile „Lizenzprüfung nach B11 … blockiert“ und den Satz „ADR bleibt ‚Vorschlag‘“. Nicht löschen, sondern Status ändern und auf die erledigende Zeile verweisen.
 - Abschnitt „Befehle“ in `CLAUDE.md` mit den Befehlen aus `adr/0002` §6 füllen (ausdrücklich erlaubt).
-- Diese Datei nach `docs/plans/m1-fundament.md` legen und Abschnitt 1 mit den Antworten ergänzen.
+- Diese Datei nach `docs/plans/m1/m1-fundament.md` legen und Abschnitt 1 mit den Antworten ergänzen.
 
 **Nicht anfassen:** Code, `.github/`.
 **Abnahme:** Log enthält E1–E8; keine Zeile widerspricht `adr/0003` „angenommen“; `CLAUDE.md` nennt die Befehle, die CI ausführt.
@@ -166,7 +166,7 @@ Pflicht-CI, Otto sichtet und mergt ohne weiteres Eingreifen.
 ### M1-06 — Earth-Search-Adapter
 
 **Umgesetzt am 19.09.2026:** Plan und Ergebnis in
-`docs/plans/m1-06-earth-search-adapter.md` (F1–F5 von Otto wie empfohlen entschieden;
+`docs/plans/m1/m1-06-earth-search-adapter.md` (F1–F5 von Otto wie empfohlen entschieden;
 F6 ebenfalls entschieden: es wird **dauerhaft nicht aufgezeichnet**, die Fixtures
 bleiben synthetisch).
 
@@ -185,7 +185,7 @@ bleiben synthetisch).
 ### M1-07 — STAC-API nach außen
 
 **Umgesetzt am 19.09.2026:** Plan und Ergebnis in
-`docs/plans/m1-07-stac-api.md` (F1–F6 von Otto wie empfohlen entschieden,
+`docs/plans/m1/m1-07-stac-api.md` (F1–F6 von Otto wie empfohlen entschieden,
 dazu eine Zusatzauflage zur STAC-Version/Lizenz-Kopplung, dort begründet
 gelöst). Nimmt zwei offene Nachträge aus M1-06 mit: den festen `sortby` in
 `earthx/adapters/earth_search.py` und den `catalog-load`-Dienst in

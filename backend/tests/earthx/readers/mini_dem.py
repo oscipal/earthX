@@ -1,5 +1,5 @@
 """A synthetic Copernicus DEM tile: one float32 band, no nodata, EPSG:4326
-(M3-11b, `docs/plans/m3-11b-dem-adapter.md` §5).
+(M3-11b, `docs/plans/m3/m3-11b-dem-adapter.md` §5).
 
 Unlike `mini_cog.py` (three uint8 bands with a nodata value, matching
 Sentinel-2's `visual` asset), the real DEM is one continuous float32 elevation

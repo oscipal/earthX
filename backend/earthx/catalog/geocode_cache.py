@@ -83,7 +83,7 @@ class PostgresRateSlot:
 
     Not a lock: :meth:`reserve` never blocks and holds no connection open while a
     caller waits on the delay it returns — the caller sleeps on its own time, then
-    sends (docs/plans/m3-07a-ortssuche-backend.md §9).
+    sends (docs/plans/m3/m3-07a-ortssuche-backend.md §9).
     """
 
     def __init__(self, conn: psycopg.AsyncConnection) -> None:

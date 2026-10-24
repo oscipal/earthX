@@ -4,9 +4,9 @@
 empfohlen**; **F6 entschieden**: Es wird nie aufgezeichnet, die Fixtures bleiben
 dauerhaft synthetisch. Die drei Schritte aus F1 liegen als drei Commits in **einem**
 PR statt in drei — die Sitzung ist an einen Branch gebunden; der Schnitt bleibt am
-Commit ablesbar. **Stufe B** laut `docs/plans/m1-fundament.md` §3: Plan zuerst als
+Commit ablesbar. **Stufe B** laut `docs/plans/m1/m1-fundament.md` §3: Plan zuerst als
 Draft-PR, Umsetzung nach Ottos OK (`projektplan.md` 1.2).
-**Aufgabe:** M1-06 aus `docs/plans/m1-fundament.md` §4.
+**Aufgabe:** M1-06 aus `docs/plans/m1/m1-fundament.md` §4.
 **Grundlage:** `architekturplan.md` 3.1, 5.1, 5.2, 6.1; `KLAERUNGEN.md` B8, B9, B13;
 `adr/0001` §7 (Z1), §8, §9.3; `adr/0003` §11.2 (Sentinel-2 L2A, Legal Notice);
 `adr/0004` §5, §6 (Coverage-Felder, Cache-Fristen); `adr/0005` (Föderierte

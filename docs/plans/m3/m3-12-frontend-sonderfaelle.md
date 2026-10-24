@@ -3,14 +3,14 @@
 **Status (26.09.2026):** Freigegeben und umgesetzt (Otto: F1 (1), F2 (1), F3 (2),
 F4 (1), F5 (1), F6 (1), F7 (1), F8 (1)), im selben Draft-PR wie dieser Plan.
 Details in `ENTSCHEIDUNGSLOG.md`, Zeile vom 26.09.2026.
-**Aufgabe:** M3-12 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P10,
+**Aufgabe:** M3-12 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4 (P10,
 M3-Abnahme 1), mit den Nachträgen vom 26.09.2026 (M3-11b F11) und Ottos
 Änderungen vom 26.09.2026 zu Beginn dieser Session. **Stufe B.** Hängt an
 M3-11b (gemergt); läuft **vor** M3-10 (Otto, 26.09.2026).
-**Grundlagen:** `plans/m3-02-konformitaetsbericht.md` §5 (F-01 bis F-16),
-K-16, K-23; `plans/m3-09-zuschnitt-ansicht.md`; `plans/m3-11b-dem-adapter.md`
-§2.5, F1, F7; `plans/m3-11c-coverage-eigene-items.md` §4.3;
-`plans/m3-17-download-folgt-ansicht.md`; `architekturplan.md` 5.1;
+**Grundlagen:** `plans/m3/m3-02-konformitaetsbericht.md` §5 (F-01 bis F-16),
+K-16, K-23; `plans/m3/m3-09-zuschnitt-ansicht.md`; `plans/m3/m3-11b-dem-adapter.md`
+§2.5, F1, F7; `plans/m3/m3-11c-coverage-eigene-items.md` §4.3;
+`plans/m3/m3-17-download-folgt-ansicht.md`; `architekturplan.md` 5.1;
 `KLAERUNGEN.md` B10; `ENTSCHEIDUNGEN_2026-09-18.md` §2 (Coverage Map).
 
 Belegstufen: **M** gemessen in dieser Sitzung, **P** am Quelltext gelesen
@@ -350,7 +350,7 @@ Suchkachel-Umbau und F-08 bis F-10 (M3-10), gemischte Suche (M3-13).
 - `ENTSCHEIDUNGSLOG.md`: je eine Zeile für O1 bis O5 (fest, Otto 26.09.2026),
   in diesem PR schon eingetragen; nach der Freigabe eine Zeile mit den
   Antworten auf F1–F8.
-- `plans/m3-dritte-quelle-und-interface.md`: §3 Tabelle (M3-12 hängt nur an
+- `plans/m3/m3-dritte-quelle-und-interface.md`: §3 Tabelle (M3-12 hängt nur an
   M3-11b, M3-10 folgt nach M3-12), Wellen, Dateikonflikte, Risiko-Tabelle,
   Nachtrag bei M3-12 — in diesem PR schon eingetragen.
 - Nach der Freigabe: `architekturplan.md` 5.1 (`earthx:viewer`,

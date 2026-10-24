@@ -1,11 +1,11 @@
 # M4-01a — Zugriffsauflösung nach `access`, eine Item-Quelle in `api`: Plan
 
-**Aufgabe:** M4-01a aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-01a aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 02.10.2026 freigegeben** mit F1 (1), F2 (1),
 F3 (1, präzisiert) und F4 (1) und **umgesetzt** (§8).
-**Ort im Repo:** `docs/plans/m4-01a-zugriffsaufloesung.md`
+**Ort im Repo:** `docs/plans/m4/m4-01a-zugriffsaufloesung.md`
 **Grundlagen:** `adr/0011` §6.1–§6.5, §7 (D2), §11 (F2, F4, F7);
-`plans/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01a; `architekturplan.md`
+`plans/m4/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01a; `architekturplan.md`
 3.1; `KLAERUNGEN.md` B8, B9; `ENTSCHEIDUNGSLOG.md` E5 und „Kettenzählung“ vom
 20.09.2026; Code in `backend/earthx/api/tiler.py`,
 `api/federating_client.py`, `api/main.py`, `readers/cog.py`,
@@ -194,7 +194,7 @@ def target_gsd(request: Request, stac_item: Mapping[str, Any]) -> float | None: 
   `access.resolve` und `api.item_source`).
 - `ENTSCHEIDUNGSLOG.md`: je eine Zeile für die Freigabe dieses Plans mit den
   Antworten und für die Umsetzung, ans Ende.
-- `m4-processing-kern.md` §3: Stand M4-01a.
+- `plans/m4/m4-processing-kern.md` §3: Stand M4-01a.
 
 ---
 
@@ -320,7 +320,7 @@ Ergänzungen:
 - **Coverage-Route** bleibt in diesem PR auf `REGISTRY` (`coverage_router` auf
   Modulebene). `build_app(registry)` reicht die Registry an Routing, Gateway und
   Startabgleich, nicht an `/coverage`. **Ergänzung:** Nachgezogen in M4-01b
-  (`plans/m4-processing-kern.md`, M4-01b „Umfang“): `coverage_route` bekommt
+  (`plans/m4/m4-processing-kern.md`, M4-01b „Umfang“): `coverage_route` bekommt
   die Registry aus `build_app(registry)`, danach gibt es in einer App nur eine
   Registry (Test).
 

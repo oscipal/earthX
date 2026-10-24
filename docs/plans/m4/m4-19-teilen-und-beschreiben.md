@@ -4,14 +4,14 @@
 **Stufe B (S6):** Der Plan liegt im Draft-PR, die Session hält an, Otto gibt frei. Danach
 setzen die Sessions aus Frage 10 um.
 **Modell:** Opus für den Plan, Sonnet (Effort mittel) für die Umsetzung (§3 der Übersicht).
-**Startsatz:** „Führe Aufgabe M4-19 aus `docs/plans/m4-processing-kern.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-19 aus `docs/plans/m4/m4-processing-kern.md` aus.“
 **Voraussetzung:** M4-13c ist vollständig gemergt (c-1 bis c-5, zuletzt #166).
 **Grundlage:**
-- `plans/m4-processing-kern.md` M4-19, Q8, Q9, Q10, S6 (§1.1c), §1.2.
+- `plans/m4/m4-processing-kern.md` M4-19, Q8, Q9, Q10, S6 (§1.1c), §1.2.
 - `adr/0014` §4.1–§4.7, §5.6, §9 (F15), §10, §14; `adr/0015` §7.1 (F13), §8.3, §13.
 - `architekturplan.md` 7.1 (Tabelle „Aus diesem einen Objekt folgt“), 8.2.
-- `plans/m4-13-processing-panel.md` F3; `plans/m4-13c-vorschau-und-viewer.md` §3.7, §12.
-- `plans/m4-32-ergebnis-statistik.md` §6.7, §7 (PR #168, Entwurf, freigegeben am 20.10.2026).
+- `plans/m4/m4-13-processing-panel.md` F3; `plans/m4/m4-13c-vorschau-und-viewer.md` §3.7, §12.
+- `plans/m4/m4-32-ergebnis-statistik.md` §6.7, §7 (PR #168, Entwurf, freigegeben am 20.10.2026).
 - Log 05.10.2026 („Frist für Permalinks“, offen), 10.10.2026 (S6).
 
 Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im Code
@@ -519,7 +519,7 @@ Kurz beantwortbar: je Frage eine Nummer.
 - Die Antworten kommen als §9 in diesen Plan, dazu Log-Zeilen und die Zeilen
   M4-19a bis M4-19e in §3 der Übersicht.
 - Jeder Teil startet als neue Session mit dem Satz „Führe Aufgabe M4-19x aus
-  `docs/plans/m4-processing-kern.md` aus (Plan: `docs/plans/m4-19-teilen-und-beschreiben.md`).“
+  `docs/plans/m4/m4-processing-kern.md` aus (Plan: `docs/plans/m4/m4-19-teilen-und-beschreiben.md`).“
 - Jeder Teil-PR bringt eine Prüfanleitung für Otto in PowerShell 5.1 (§1.2 der
   Übersicht), geprüft gegen die Antwortform. Der Teil e etwa: Permalink mit
   `Invoke-RestMethod -Method Post` anlegen, im zweiten Browser öffnen, löschen,

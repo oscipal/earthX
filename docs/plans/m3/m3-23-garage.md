@@ -1,10 +1,10 @@
 # M3-23 — Garage statt MinIO: Plan-Schritt
 
 **Status (26.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe (§8).
-**Aufgabe:** M3-23 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-23 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B.** Keine Abhängigkeit.
 **Grundlagen:** `adr/0012` (angenommen, F1–F6), vor allem §4.1, §7.1, §9;
-`plans/m1-08-compose-topologie.md`; `adr/0002` §1, §2; `KLAERUNGEN.md` B8,
+`plans/m1/m1-08-compose-topologie.md`; `adr/0002` §1, §2; `KLAERUNGEN.md` B8,
 B9; `ENTSCHEIDUNGEN_2026-09-18.md` §4; `architekturplan.md` 12.1;
 `CLAUDE.md` („Ohne Rückfrage nicht ändern“: `.github/` — hier ausdrücklich
 Teil der Aufgabe).
@@ -256,7 +256,7 @@ geprüft sind. Ergebnis und Zahl der Abrufe stehen im PR.
   (§3.3).
 - `projektplan.md` Z. 511 („MinIO-Ersatz … offen“) und das Beispiel
   „z. B. MinIO“ in `projektuebersicht.md` (Prinzipien) — siehe F3.
-- `plans/m3-dritte-quelle-und-interface.md`: Stand von M3-23; Log-Zeile ans
+- `plans/m3/m3-dritte-quelle-und-interface.md`: Stand von M3-23; Log-Zeile ans
   Ende von `ENTSCHEIDUNGSLOG.md` nach der Freigabe.
 
 ---

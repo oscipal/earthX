@@ -1,16 +1,16 @@
 # M4-11b — Export-Job im Download-Dialog und Ergebnis als ein ZIP: Plan
 
-**Aufgabe:** M4-11b aus `docs/plans/m4-processing-kern.md` §4, mit dem Zusatz
-aus `docs/plans/m4-zusaetze-2026-10-12.md` §1.
+**Aufgabe:** M4-11b aus `docs/plans/m4/m4-processing-kern.md` §4, mit dem Zusatz
+aus `docs/plans/m4/m4-zusaetze-2026-10-12.md` §1.
 **Stufe B** — **von Otto am 13.10.2026 freigegeben** (§10), mit Ergänzungen zu
 F1 (Recherche, ZIP64-Test, CRC-Herkunft, Nachtrag `adr/0015`). Geschnitten in
 **M4-11b-1** (Backend, dieser PR) und **M4-11b-2** (Frontend, neue Session nach
 dem Merge). §3 beschreibt die freigegebene Fassung; §8 bleibt als Wortlaut der
-Fragen stehen. **M4-11b-2** mit dem Zusatz `plans/m4-zusaetze-2026-10-12.md` §1a:
+Fragen stehen. **M4-11b-2** mit dem Zusatz `plans/m4/m4-zusaetze-2026-10-12.md` §1a:
 §12 (Plan zu §1a, von Otto am 15.10.2026 beantwortet, §12.7) und §13.2 (Umsetzung).
-**Ort im Repo:** `docs/plans/m4-11b-angebot-und-zip.md`
-**Grundlagen:** `plans/m4-11-export-job.md` (F2, F4, F7, F8, K5–K7, §11
-Punkt 7); `plans/m4-13-processing-panel.md` §12; `plans/m4-08b-job-api.md`
+**Ort im Repo:** `docs/plans/m4/m4-11b-angebot-und-zip.md`
+**Grundlagen:** `plans/m4/m4-11-export-job.md` (F2, F4, F7, F8, K5–K7, §11
+Punkt 7); `plans/m4/m4-13-processing-panel.md` §12; `plans/m4/m4-08b-job-api.md`
 (Ergebnislinks, F5); `adr/0015` §6 (F4–F6), §8.1; `adr/0014` §10;
 `architekturplan.md` 3.1; `KLAERUNGEN.md` B8, B9.
 
@@ -96,7 +96,7 @@ bauen. Belegstufen wie `adr/0009`.
 | **`zipstream-ng`** | „Can calculate the total size of the resulting zip file before generation even begins“, wenn nichts komprimiert wird; verfolgt `last_modified`; „Automatically uses Zip64 extensions, but only if they are required“ **[S]** — README, <https://github.com/pR0Ps/zipstream-ng>. Zu `Range` und zur Herkunft der CRC sagt die README nichts | Größe vorab ja; einen Byte-Bereich mitten im ZIP erwähnt die README nicht. Eine neue Abhängigkeit braucht eine erneuerte Lock-Datei (`CLAUDE.md`) |
 | **`stream-zip`** (uktrade) | „Creates both Zip32/2.0/Legacy and Zip64 files“, ohne das ganze ZIP im Speicher oder auf der Platte zu halten **[S]** — README, <https://github.com/uktrade/stream-zip>. Dass unkomprimierte Einträge ganz gepuffert werden und das Format vorab gewählt werden muss, steht in Zusammenfassungen der Dokumentation, die in der Sitzung nicht erreichbar war **[S]** | Für Rasterdateien bis 5 GB ungeeignet, falls das stimmt; belegt ist es nicht |
 | **`zipfile` der Standardbibliothek** | schreibt in einen Strom mit Datendeskriptoren; die CRC rechnet es aus den Daten, nicht aus einer Vorgabe; `ZIP64_LIMIT = (1 << 31) - 1`; die ZIP64-Erweiterung enthält erst die Größe, dann die gepackte Größe, im Zentralverzeichnis zuletzt den Versatz; ZIP64-Ende, wenn die Zahl der Einträge, der Versatz oder die Größe des Zentralverzeichnisses die Grenze überschreitet **[P]** — `/usr/lib/python3.12/zipfile/__init__.py` des Projekt-Python 3.12.3, Z. 52 (`ZIP64_LIMIT`), 168–174 (Strukturen), 486–493, 2037–2043 | als Leser im Test ideal, als Schreiber für ein ZIP mit vorab bekannten CRC nicht |
-| **Presigned URLs** (unser Weg bei `export.zip` und den Einzelfiles) | `303` auf eine signierte URL, Range ohne Zutun **[M]** (`plans/m4-11-export-job.md` §11 Punkt 7) | gilt weiter für alle Einzeldateien; ein ZIP aus mehreren Objekten und einem Dokument je Job lässt sich so nicht liefern |
+| **Presigned URLs** (unser Weg bei `export.zip` und den Einzelfiles) | `303` auf eine signierte URL, Range ohne Zutun **[M]** (`plans/m4/m4-11-export-job.md` §11 Punkt 7) | gilt weiter für alle Einzeldateien; ein ZIP aus mehreren Objekten und einem Dokument je Job lässt sich so nicht liefern |
 
 Die READMEs von `mod_zip`, `zipstream-ng` und `stream-zip` hat die Sitzung mit
 dem Abrufwerkzeug gelesen, das den Inhalt zusammenfasst; ihr Wortlaut ist darum
@@ -261,7 +261,7 @@ kein einzelnes Aufnahmedatum (DEM), gilt der Tag des Laufs mit Präfix `run`:
 
 **Was bisher galt.** `{dataset}_{operatoren}_{YYYYMMDD}` mit dem UTC-Tag, an dem der
 Lauf endete (`finished_at`, sonst `created_at` des Jobs), ohne Präfix; festgelegt in
-`plans/m4-08b-job-api.md` K6 (Einzellinks), für den Export in `plans/m4-11-export-job.md`
+`plans/m4/m4-08b-job-api.md` K6 (Einzellinks), für den Export in `plans/m4/m4-11-export-job.md`
 K6, ohne Datum der Szene; `adr/0015` §6.5 nennt nur „Datum“. Der Tag eines Laufs sagt
 nichts über die Daten und wechselt bei einem Cache-Treffer (7 Tage später) nicht
 mit dem Auftrag.
@@ -385,8 +385,8 @@ Daten verarbeitet wurden, nicht wo.
 - **M4-11b-2 (Frontend):** Angebot im Download-Dialog, Schätzung, Sperre,
   `aoiProvenance`, „Download (ZIP)“ im Panel, Fehlertexte (§3.2, §3.3). Neue
   Session nach dem Merge dieses PR; Startsatz: „Führe Aufgabe M4-11b-2 aus
-  `docs/plans/m4-processing-kern.md` aus (Plan: `docs/plans/m4-11b-angebot-und-zip.md`).“
-- Processing-Manager (Jobliste, Titel, Archiv): `ui-01-app-rahmen.md`.
+  `docs/plans/m4/m4-processing-kern.md` aus (Plan: `docs/plans/m4/m4-11b-angebot-und-zip.md`).“
+- Processing-Manager (Jobliste, Titel, Archiv): `plans/vp3/ui-01-app-rahmen.md`.
 - `ATTRIBUTION.txt` und `aoi.geojson` im ZIP eines Raster-Jobs (der Zusatz
   nennt vier Dateien).
 - Export-Job für Zarr (S3), Mosaik-Angebot (M4-12b), Vorschau (M4-13c).
@@ -557,7 +557,7 @@ dieselbe Adresse `410`.
 Für den Zuschnitt über 5 GB: ein Zuschnitt mit sehr vielen Assets und Szenen
 antwortet `413` mit der Kopfzeile `X-Export-Job: too-large`, bis 5 GB mit
 `available` (`curl.exe -s -i -X POST …/collections/sentinel-2-c1-l2a/download`, wie in
-`plans/m4-11-export-job.md` §9).
+`plans/m4/m4-11-export-job.md` §9).
 
 ---
 
@@ -685,7 +685,7 @@ Produktion):**
 ## 12. M4-11b-2: Plan zu Zusatz §1a (Vorschlag 14.10.2026, beantwortet 15.10.2026)
 
 **Aufgabe:** M4-11b-2 (§3.2 bis §3.4, freigegeben) mit dem Zusatz
-`plans/m4-zusaetze-2026-10-12.md` §1a (Otto, 14.10.2026). Die Punkte aus §1a lagen
+`plans/m4/m4-zusaetze-2026-10-12.md` §1a (Otto, 14.10.2026). Die Punkte aus §1a lagen
 hier zuerst als Plan vor (Stufe B) und wurden nach Ottos Antwort (§12.7) gebaut.
 
 ### 12.1 Stand (gelesen am 14.10.2026, `main` = `cc584e1`)

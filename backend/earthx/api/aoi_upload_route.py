@@ -1,5 +1,5 @@
 """``POST /aoi/upload``: an uploaded AOI file, checked and returned as EPSG:4326
-GeoJSON (M3-06a, docs/plans/m3-06a-aoi-upload-backend.md).
+GeoJSON (M3-06a, docs/plans/m3/m3-06a-aoi-upload-backend.md).
 
 Lives in `api`, not `tiler`: unlike the download route
 (:func:`earthx.api.tiler.download_crop`), nothing here reads `readers`, a dataset, or

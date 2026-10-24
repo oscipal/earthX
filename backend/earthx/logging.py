@@ -7,7 +7,7 @@ them through :func:`summarize_geometry` first, which reduces even a
 malformed geometry to a coarse bounding box, never the raw points.
 
 Every HTTP process wires :func:`configure_logging` and :class:`RequestIdMiddleware`
-in at startup (M3-16, `plans/m3-02-konformitaetsbericht.md` K-01/K-02) and starts
+in at startup (M3-16, `plans/m3/m3-02-konformitaetsbericht.md` K-01/K-02) and starts
 uvicorn with ``--no-access-log``: uvicorn's own access log writes the raw query
 string, the one place an AOI (``bbox``/``intersects``) would otherwise reach a log
 line untouched. :class:`RequestIdMiddleware` is this process's access log instead —

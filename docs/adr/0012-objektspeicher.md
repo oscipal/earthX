@@ -8,7 +8,7 @@
   eigenen Code zum Speicher wird im M4-Plan entschieden; **F6** die Images
   bestätigt die CI in M3-23.
 - **Datum:** 2026-09-26
-- **Aufgabe:** M3-20 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P23).
+- **Aufgabe:** M3-20 laut `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4 (P23).
 - **Autonomiestufe:** C — nur gemessen, gelesen und berichtet. Kein Code, keine
   Änderung an `docker-compose.yml`, CI oder Registry. Die Übergangslösung
   `bitnamilegacy/minio` bleibt, bis Otto entscheidet.
@@ -17,7 +17,7 @@
   `KLAERUNGEN.md` B8, B9; `adr/0001` §9.2; `adr/0002` §2; Entscheidungslog
   E6, E7 (19.09.2026), Zeilen vom 19.09.2026 (MinIO im Wartungsmodus) und
   26.09.2026 (Übergang `bitnamilegacy/minio`, Spike vorgezogen);
-  `docs/plans/m1-08-compose-topologie.md`.
+  `docs/plans/m1/m1-08-compose-topologie.md`.
 - **Betroffen:** `docker-compose.yml` (Dienst `minio`), `.github/workflows/ci.yml`
   (Job `compose-topology`), `.env.example`, `README.md`,
   `architekturplan.md` 12.1, `projektuebersicht.md`, `projektplan.md` (M1-Zeile,
@@ -569,7 +569,7 @@ Stufe B) muss der Job `compose-topology` belegen:
 3. Erst, wenn `bitnamilegacy/minio` bricht
 
 **Antwort F2: (1)** Jetzt, als eigene Stufe-B-Aufgabe M3-23 („Garage statt
-MinIO“, `plans/m3-dritte-quelle-und-interface.md` §4); `bitnamilegacy/minio`
+MinIO“, `plans/m3/m3-dritte-quelle-und-interface.md` §4); `bitnamilegacy/minio`
 bleibt nur bis zu deren Merge.
 
 **F3 — Braucht M4 anonymes Lesen per Bucket-Policy?**

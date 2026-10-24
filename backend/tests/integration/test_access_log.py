@@ -1,6 +1,6 @@
 """M3-16: the running `api` app never puts a query string in its access log.
 
-`plans/m3-02-konformitaetsbericht.md` K-01/K-02: `GET /stac/search?...bbox=...`
+`plans/m3/m3-02-konformitaetsbericht.md` K-01/K-02: `GET /stac/search?...bbox=...`
 and `GET /coverage/{id}?...bbox=...` both go through `earthx.api.main.app`, the
 same app `RequestIdMiddleware` is now wired into (`api/main.py`). This tests the
 *app*, not the middleware in isolation — `backend/tests/test_logging.py` already

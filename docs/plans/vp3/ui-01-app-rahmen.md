@@ -5,7 +5,7 @@
 **Stufe B:** Erst kommt der Plan im Draft-PR, Otto gibt ihn frei, dann folgt der Code.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** Nach M4-20. Die Aufgabe läuft nicht gleichzeitig mit einer anderen Aufgabe, die das Frontend-Layout ändert.
-**Startsatz:** „Führe Aufgabe UI-01 aus `docs/plans/ui-01-app-rahmen.md` aus.“
+**Startsatz:** „Führe Aufgabe UI-01 aus `docs/plans/vp3/ui-01-app-rahmen.md` aus.“
 
 ## 1. Wünsche von Otto (12.10. und 20.10.2026)
 
@@ -50,7 +50,7 @@
 ## 2. Stand vor der Aufgabe
 
 - **Vorher lesen:** den Stand des Frontends nach M4-13c lesen (Panel, Jobliste „⚙ Jobs (n)“, Batch aus c-4, Layer-Manager nach M4-28, Control-Menü, Kartenschalter).
-- **Pläne:** `plans/m4-13-processing-panel.md`, `plans/m4-13c-vorschau-und-viewer.md` und `plans/m4-zusaetze-2026-10-12.md` §2.
+- **Pläne:** `plans/m4/m4-13-processing-panel.md`, `plans/m4/m4-13c-vorschau-und-viewer.md` und `plans/m4/m4-zusaetze-2026-10-12.md` §2.
 - **Keine Konten bis M6.** Ein Job ist nur über seine zufällige `jobID` erreichbar. Eine Liste aller Jobs gibt es absichtlich nicht (`adr/0013`).
 - **Ablauf.** Ergebnisse laufen nach 7 Tagen ab (`410`).
 - **Wieder starten.** Ein Job lässt sich erst mit M4-19 (Permalinks, „Parameter übernehmen“) wieder starten.

@@ -6,15 +6,15 @@ F4 (2) zusätzlich zur Empfehlung: `ignored_filters_by_collection` bricht die
 Kennzeichnung je Collection auf, weil der Viewer mit Mehrfachauswahl (M3-10)
 je Datensatz einen Hinweis zeigen soll; die flache Liste bleibt für einfache
 Clients. Details in `ENTSCHEIDUNGSLOG.md`, Zeile vom 26.09.2026.
-**Aufgabe:** M3-13 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P6),
+**Aufgabe:** M3-13 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4 (P6),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11): **ein Zeitraum, mehrere
 Datensätze zugleich; der Viewer nutzt die gemischte Suche.** **Stufe B.**
 Hängt an M3-11b (gemergt). Plan-Schritt mit Opus (hoch), weil Paging über
 mehrere Quellen heikel ist.
 **Grundlagen:** `adr/0005` Regeln I, III, V, VI, K1, K3, K5, K8, §3.3, §8.4;
 `architekturplan.md` 5.2, 5.3, 16 („Föderierte Suche ist so langsam wie die
-langsamste Quelle“); `plans/m1-07-stac-api.md` §6, §7; `plans/m2-format-und-viewer.md`
-D8; `plans/m3-08-intersects-ids.md` §2.1; `plans/m3-12-frontend-sonderfaelle.md`
+langsamste Quelle“); `plans/m1/m1-07-stac-api.md` §6, §7; `plans/m2/m2-format-und-viewer.md`
+D8; `plans/m3/m3-08-intersects-ids.md` §2.1; `plans/m3/m3-12-frontend-sonderfaelle.md`
 §4.2; `ENTSCHEIDUNGSLOG.md`, Zeilen vom 20.09.2026 (D8) und 26.09.2026
 (Richtung Viewer).
 
@@ -117,7 +117,7 @@ Alle drei Marken sind Keyset-Marken: Sie zeigen auf das letzte gelieferte Item,
 nicht auf einen Versatz. Die Seitengröße darf sich also von Seite zu Seite
 ändern — **nur unsere eigene Marke** verbietet das heute (§2.1).
 
-Latenzen aus `plans/m3-08-intersects-ids.md` §2.1: Earth Search 0,3–1,5 s,
+Latenzen aus `plans/m3/m3-08-intersects-ids.md` §2.1: Earth Search 0,3–1,5 s,
 EOPF 1,2–3,8 s, auch mit Polygonen bis 20 000 Stützpunkten. Das Gateway
 wartet höchstens 5 s auf die Verbindung und 15 s auf die Antwort; `POST` wird
 nicht wiederholt.
@@ -388,7 +388,7 @@ davon mehr als die Hälfte Tests.
   (Ergebnis von F3); Originaltext bleibt stehen.
 - `architekturplan.md` 5.2/5.3: gemischte Suche und Konformitätsklassen;
   16: Gegenmittel „Teilergebnisse mit Kennzeichnung“ als umgesetzt.
-- `plans/m3-dritte-quelle-und-interface.md`: Stand von M3-13; Hinweise aus
+- `plans/m3/m3-dritte-quelle-und-interface.md`: Stand von M3-13; Hinweise aus
   §4.8 an M3-10.
 - `ENTSCHEIDUNGSLOG.md`: je eine Zeile für den Plan-Schritt (dieser PR) und
   für Ottos Antworten.

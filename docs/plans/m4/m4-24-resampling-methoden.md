@@ -4,7 +4,7 @@
 **Stufe B:** Erst kommt der Plan mit Messung in den Draft-PR, Otto gibt ihn frei, dann folgt der Code.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** Erst nach dem Merge von M4-21. Die Aufgabe zählt als Stufe-B-Session; gleichzeitig laufen höchstens zwei.
-**Startsatz:** „Führe Aufgabe M4-24 aus `docs/plans/m4-24-resampling-methoden.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-24 aus `docs/plans/m4/m4-24-resampling-methoden.md` aus.“
 
 ## 1. Anlass und Grundlage
 
@@ -13,7 +13,7 @@
 - **Otto, 12.10.2026:** Er will die zusätzlichen Methoden. Neu dazu kommt `mode` für Klassendaten.
 - **Weitere Grundlagen:**
   - `adr/0014`: §3.4 (Messaufbau Reprojektion), §5.2 (Parameter), §5.3 (Capabilities `reprojection` und `interpolation`), §5.5 (Faktoren der Schätzung), §6.3 (Toleranzen), §7.2 und §7.3 (Speicher).
-  - Plan `m4-processing-kern.md`: M4-10 und M4-10b.
+  - Plan `plans/m4/m4-processing-kern.md`: M4-10 und M4-10b.
 
 **Ziel:** Der Operator `reproject` bietet zusätzlich `average`, `mode`, `cubicspline` und `lanczos` an. Jede Methode ist gemessen und gegen eine Toleranz belegt, und jede hat einen Faktor in der Schätzung.
 
@@ -79,7 +79,7 @@
 ## 5. Dokumentation
 
 - **`adr/0014`:** datierter Nachtrag als nächster freier Abschnitt nach §15d, mit den neuen Zeilen für §6.3 und den Faktoren für §5.5. Der Originaltext bleibt unverändert.
-- **`docs/plans/m4-processing-kern.md`:** Zeile M4-24 in §3 (nach M4-21, Stufe B). Zeilenenden so lassen, wie die Datei sie dann hat.
+- **`docs/plans/m4/m4-processing-kern.md`:** Zeile M4-24 in §3 (nach M4-21, Stufe B). Zeilenenden so lassen, wie die Datei sie dann hat.
 - **`docs/ENTSCHEIDUNGSLOG.md`:**
   - Die Zeile vom 07.10.2026 „Weitere Resampling-Methoden für `reproject` nach Messung“ bekommt den Status „aufgenommen als M4-24 (2026-10-12)“.
   - Neue Zeilen für Ottos Antworten zu §2.4 und für die Umsetzung.
@@ -317,7 +317,7 @@ Annahme: die Empfehlungen. Bei anderen Antworten passe ich den Plan vor dem Code
 | 3 | Hilfetexte als `oneOf` im Schema | `reproject.py` | 25 |
 | 4 | Tests Backend: Plausibilität je Methode gegen ganzes `reproject` mit den Grenzen aus §7.6 (Vergröbern und gleich; `mode` auf einem synthetischen Klassenraster), Wiederholung bitgleich, Abweisung ohne `interpolation` (und `mode` ohne), Version 2 mit den alten Methoden gleich Version 3, Version 2 mit `lanczos` abgewiesen, Schema listet eine Version; Speichertest zusätzlich mit `lanczos` bei 30 m, 2048² und 4096² (§7.5) | `tests/earthx/processing/test_reproject.py`, `test_memory_reproject.py`, `tests/earthx/api/test_processing_docs.py`, Fixtures der Prozessbeschreibung | 150 |
 | 5 | Panel: `oneOf` mit Texten in `schemaForm`/`StepForm`, `mode` wie `nearest` beim Datentyp, Frontend-Tests für Auswahl und Text | `frontend/src/schemaForm.ts`, `components/StepForm.tsx`, `processingDefaults.ts`, Tests, `fixtures/processes/*.json` | 90 |
-| 6 | Doku: `adr/0014` Nachtrag §15j (§6.3-Zeilen, §5.5-Faktoren, Frage 7), Log-Zeilen, §3 von `m4-processing-kern.md` | `docs/` | 60 |
+| 6 | Doku: `adr/0014` Nachtrag §15j (§6.3-Zeilen, §5.5-Faktoren, Frage 7), Log-Zeilen, §3 von `plans/m4/m4-processing-kern.md` | `docs/` | 60 |
 
 Zusammen etwa 390 Zeilen ohne die generierten Fixtures, also am Richtwert. Wird es mehr, teile ich das Frontend (Commit 5) in einen eigenen PR.
 

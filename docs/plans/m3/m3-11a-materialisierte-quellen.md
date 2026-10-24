@@ -1,10 +1,10 @@
 # M3-11a — Materialisierte Quellen in Registry, Dispatch und Item-Abruf: Plan-Schritt
 
 **Status (26.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe (§7).
-**Aufgabe:** M3-11a aus `docs/plans/m3-dritte-quelle-und-interface.md` §4
+**Aufgabe:** M3-11a aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4
 (P24, K-03, K-05). **Stufe B.**
 **Grundlagen:** `adr/0009` §3.5, §7, §11; `adr/0005` Regeln I und VI;
-`plans/m3-02-konformitaetsbericht.md` K-03, K-05, K-26 und Antwort 2;
+`plans/m3/m3-02-konformitaetsbericht.md` K-03, K-05, K-26 und Antwort 2;
 `architekturplan.md` 3.1, 5.1, 5.2; `KLAERUNGEN.md` B10, B11, B13.
 
 Belegstufen wie in `adr/0009`: **M** gemessen in dieser Sitzung, **P** am

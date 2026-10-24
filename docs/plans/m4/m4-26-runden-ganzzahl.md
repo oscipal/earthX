@@ -4,7 +4,7 @@
 **Stufe A.** Direkt umsetzen, ein Draft-PR.
 **Modell:** Sonnet, Effort hoch.
 **Start:** Nach M4-21. Die Aufgabe läuft neben Stufe-B-Sessions; Frontend wird nicht berührt.
-**Startsatz:** „Führe Aufgabe M4-26 aus `docs/plans/m4-26-runden-ganzzahl.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-26 aus `docs/plans/m4/m4-26-runden-ganzzahl.md` aus.“
 
 ## 1. Anlass
 
@@ -36,7 +36,7 @@ Aus M4-13b, Frage der Session vom 12.10.2026: Wählt der Nutzer eine Ganzzahl al
 ## 4. Doku
 
 - `adr/0014`: datierter Nachtrag mit Regel und Quelle.
-- `docs/plans/m4-processing-kern.md` §3: Zeile M4-26.
+- `docs/plans/m4/m4-processing-kern.md` §3: Zeile M4-26.
 - Log: Zeile zur Umsetzung. Die Zeile „Festes nodata je Ganzzahltyp“ (offen) bleibt, wie sie ist.
 
 ## 5. Grenzen und Abnahme

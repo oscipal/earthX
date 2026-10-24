@@ -33,7 +33,7 @@ LIVE = TESTS.parent / "tests_live"
 SMOKE_FILES = sorted(LIVE.glob("test_*.py"))
 
 # A minimal TIFF header and a bucket listing, written by hand: there is no recording of
-# the DEM bucket (plans/m3-11b-dem-adapter.md §2 measured it by hand).
+# the DEM bucket (plans/m3/m3-11b-dem-adapter.md §2 measured it by hand).
 TIFF_HEADER = b"II*\x00\x08\x00\x00\x00" + b"\x00" * 8
 BUCKET_LISTING = b"<ListBucketResult><Prefix></Prefix><CommonPrefixes><Prefix>Copernicus_DSM_COG_10_N00_00_E006_00_DEM/</Prefix></CommonPrefixes></ListBucketResult>"
 

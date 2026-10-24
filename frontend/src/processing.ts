@@ -146,7 +146,7 @@ export function parseStatusInfo(value: unknown, jobId?: string): StatusInfo | nu
 // JSON with sorted keys and no whitespace: one order, one text. The panel
 // compares orders by it (an estimate belongs to exactly one order, K4), and
 // the preview's `params` must be built the same way to hit the tile cache
-// (`plans/m4-09-band-math.md` §6).
+// (`plans/m4/m4-09-band-math.md` §6).
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value && typeof value === 'object') {

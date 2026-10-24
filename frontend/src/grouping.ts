@@ -11,7 +11,7 @@
 // `results_group_by` being a real registry field for every dataset now.
 //
 // `groupKey` mirrors `earthx.catalog.registry.group_key` part for part
-// (docs/plans/m2-07a-frontend-api-suche-quicklooks-zeitleiste.md §5): the
+// (docs/plans/m2/m2-07a-frontend-api-suche-quicklooks-zeitleiste.md §5): the
 // two must not drift apart, which is why the 12 cases of
 // `backend/tests/catalog/test_group_key.py` are repeated in `grouping.test.ts`.
 

@@ -1,22 +1,22 @@
 # M2 — Zweites Format und generalisierter Viewer: Aufgabenschnitt
 
 **Status:** Fassung 5 vom 22.09.2026. **Abgenommen** (M2-12, PR #70,
-2026-09-23; Belege in `docs/plans/m2-12-abnahme.md`). Der Prototyp ist entfernt (#63), die befristete
+2026-09-23; Belege in `docs/plans/m2/m2-12-abnahme.md`). Der Prototyp ist entfernt (#63), die befristete
 Secret-Ausnahme damit beendet. Neu gegenüber Fassung 4: D28 (keine Sprachwahl),
 D29 (Punkt 10 der Checkliste in Fassung v1.1, `health.last_checked_ok` gestrichen),
 D30 (Trefferliste nach Überflug gruppiert), D31 (`ids`/`intersects` werden
 abgewiesen statt still verworfen) und die Aufgaben V-2 bis V-4 sowie M2-17.
 `adr/0006`, `adr/0007` und `adr/0008` sind angenommen.
-**Ort im Repo:** `docs/plans/m2-format-und-viewer.md`
+**Ort im Repo:** `docs/plans/m2/m2-format-und-viewer.md`
 **Grundlagen:** `projektplan.md` 4 (M2, Viewer-Strang); `architekturplan.md` 3.1,
 3.2, 6, 12.3, 13, 15.2; `adr/0001` (Zustand, Z4), `adr/0002` (Tests), `adr/0003`
 (Datensätze), `adr/0004` (Coverage), `adr/0005` (föderierte Suche), `adr/0006`
 (Kachel-Pfad), `adr/0007` (zweites Format Zarr);
 `prototyp-inventar.md`; `projektuebersicht.md` §5 (Onboarding-Checkliste);
-`plans/m1-fundament.md`.
+`plans/m1/m1-fundament.md`.
 
 Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M2-xx aus
-`docs/plans/m2-format-und-viewer.md` aus.“ Jede Aufgabe ist ohne das
+`docs/plans/m2/m2-format-und-viewer.md` aus.“ Jede Aufgabe ist ohne das
 Planungsgespräch verständlich und endet mit genau einem Draft-PR. Aufgaben mit
 Buchstaben (M2-07a, M2-07b …) sind je eine eigene Session und ein eigener PR.
 
@@ -135,7 +135,7 @@ Ottos Entscheidung zu M2-11).
 | M2-17 | Szene per Namen finden, `ids`/`intersects` abweisen (D31) | B | — | **erledigt** (#68) |
 
 **Wellen.** Höchstens zwei Stufe-B-Sessions gleichzeitig, damit die Reviews nicht
-stauen (`m1-fundament.md` §6).
+stauen (`plans/m1/m1-fundament.md` §6).
 
 Alle Wellen sind abgearbeitet. Offen ist allein **M2-12**, die Abnahme; sie läuft
 zuletzt, damit sie den Stand beschreibt, den Otto tatsächlich bedient.
@@ -146,7 +146,7 @@ Zuschnitts auf der Karte (D11); bessere Coverage-Heatmap, Kandidat Zählwürfel
 (D26); durchsuchbarer Datensatz-Katalog statt fester Blöcke in der Suchkachel;
 Durchreichen von `ids` und `intersects` (D31); Uvicorn-Worker des `tiler`
 (Betriebsfrage, M5); gemischte Suche über mehrere Quellen (D8, M3). Der
-Aufgabenschnitt dafür liegt in `docs/plans/m3-dritte-quelle-und-interface.md`.
+Aufgabenschnitt dafür liegt in `docs/plans/m3/m3-dritte-quelle-und-interface.md`.
 
 M2b (M2-03b, M2-09a, M2-09b, M2-10) läuft als eigener Strang neben M2a. Nur M2-09b
 hängt an M2a, weil es den Kachel-Pfad aus M2-04 wiederverwendet.
@@ -323,7 +323,7 @@ der Kandidatenmatrix.
 ### M2-08 — Onboarding-Checkliste v1, Sentinel-2 vollständig
 
 **Ziel:** Die Checkliste aus `projektuebersicht.md` §5 ist ein Test je Registry-Eintrag, und Sentinel-2 besteht ihn.
-**Stufe B.** Umsetzungsplan: `plans/m2-08-onboarding-checkliste.md` (22.09.2026, wartet auf Freigabe).
+**Stufe B.** Umsetzungsplan: `plans/m2/m2-08-onboarding-checkliste.md` (22.09.2026, wartet auf Freigabe).
 **Umfang:**
 - Test über alle Registry-Einträge: Punkte 1–8 aus Registry und Collection prüfbar; Punkt 2 heißt „Coverage-Anbieter zugeordnet und Vollständigkeitsprobe greift“; Punkt 9 als End-to-End-Test Suche → Anzeige → Zuschnitt-Download gegen Fixtures (D4).
 - Punkt 10: Zeitpunkt des letzten grünen T-D-Smoke-Laufs, gesetzt und im Viewer sichtbar.
@@ -362,7 +362,7 @@ der Kandidatenmatrix.
 **Stufe B.** Frontend ohne datensatzspezifische Verzweigung; Unterschiede kommen aus der Registry, auch die freigegebenen Zoomstufen und das Fehlen des Quicklooks.
 **Abnahme:** Checkliste v1 grün für beide Datensätze; Abnahmekriterium 1 aus Abschnitt 5 lokal vorführbar.
 
-**Umgesetzt** nach `plans/m2-10-zweiter-datensatz-viewer.md`, freigegeben am
+**Umgesetzt** nach `plans/m2/m2-10-zweiter-datensatz-viewer.md`, freigegeben am
 22.09.2026 (F1–F6 je (a), dazu zwei Zusätze): `earthx:viewer` trägt jetzt
 `min_zoom`/`max_zoom` (COG `0..19`, zarr3 `8..14`), und die Kachelroute weist
 eine Stufe außerhalb mit `400` ab, bevor sie das Item holt. Der fehlende
@@ -404,7 +404,7 @@ aufgelöst. Die Adress-Bindung aus M1-03 bleibt unverändert: `gateway` prüft
 weiterhin den Namen und verbindet die geprüfte Adresse; weg fällt allein die
 wiederholte Auflösung **desselben** Namens.
 **Stufe B**, bewusst **klein**.
-**Grundlage:** `plans/m2-format-und-viewer.md` M2-04; Abschnitt „Ladeverhalten" in
+**Grundlage:** `plans/m2/m2-format-und-viewer.md` M2-04; Abschnitt „Ladeverhalten" in
 #47, Befund 3: `dataset_asset_path` löst bei jeder Kachel- und Statistik-Anfrage
 über `gateway/resolver.py::resolve_host` neu auf — synchron, ungecacht und in einer
 `async def`-Abhängigkeit, also blockierend auf der Event-Loop statt im Thread-Pool.

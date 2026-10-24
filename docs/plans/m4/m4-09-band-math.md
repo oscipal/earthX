@@ -1,14 +1,14 @@
 # M4-09 — Operator Band-Math (T1, T2): Plan
 
-**Aufgabe:** M4-09 aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-09 aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** (R1) — **von Otto am 07.10.2026 freigegeben** mit F1–F5 je Option 1
 und Auflagen zu F2, F3, F4 (§8). Umsetzung siehe §9. Wo §3 und §8 sich
 widersprechen, gilt §8.
-**Ort im Repo:** `docs/plans/m4-09-band-math.md`
+**Ort im Repo:** `docs/plans/m4/m4-09-band-math.md`
 **Grundlagen:** `adr/0014` §3.2, §3.3, §5.2–§5.6, §6.1–§6.4, §15a (F7, F7a,
-F9), §15c; `adr/0016` §3.3, §12a, §14.4, §14.5; `plans/m4-processing-kern.md`
-§1.1b (R1, R5), §1.2, M4-09; `plans/m4-07a-processing-kern.md` §3, §8 (F2);
-`plans/m4-07b-annahme.md` §3.4; `adr/0006` §5; `adr/0001` Z4; `KLAERUNGEN.md`
+F9), §15c; `adr/0016` §3.3, §12a, §14.4, §14.5; `plans/m4/m4-processing-kern.md`
+§1.1b (R1, R5), §1.2, M4-09; `plans/m4/m4-07a-processing-kern.md` §3, §8 (F2);
+`plans/m4/m4-07b-annahme.md` §3.4; `adr/0006` §5; `adr/0001` Z4; `KLAERUNGEN.md`
 B8–B11. Code in `processing/core.py`, `processing/scaling.py`,
 `processing/operators/`, `api/tiler.py`, `api/intake.py`, `access/tiles.py`,
 `readers/zarr_reader.py`; rio-tiler 9.4.6 (`expression.py`, `models.py`),
@@ -252,7 +252,7 @@ vorhandenen Umlenkungen (`tests/earthx/processing/sources.py`,
 
 - `ENTSCHEIDUNGSLOG.md`: Freigabe (F1–F5, K1–K8) und Umsetzung je eine Zeile
   am Ende.
-- `plans/m4-processing-kern.md` §3: Stand von M4-09.
+- `plans/m4/m4-processing-kern.md` §3: Stand von M4-09.
 - `adr/0014` bleibt unverändert; Abweichungen von §5.2 (eigener Kern statt
   `apply_expression`, F1) und §5.6 (`format`, K1) stehen in der Log-Zeile.
 

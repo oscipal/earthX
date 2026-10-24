@@ -51,11 +51,11 @@ WORLD_LEVEL_CAP = 6
 # Geotile is the XYZ scheme of the map itself (adr/0004 §3.7), so a level is a zoom.
 # Geotile itself runs out here — below a metre a cell is past any imagery — and Earth
 # Search happens to draw the same line: a precision outside 0..29 comes back as a 400
-# (measured 20.09.2026, plans/m2-05-coverage.md §3.4). The bound is the grid's, the
+# (measured 20.09.2026, plans/m2/m2-05-coverage.md §3.4). The bound is the grid's, the
 # measurement only confirms it, so it stays in `catalog` with the rest of the grid.
 MAX_GEOTILE_LEVEL = 29
 
-# Measured on 20.09.2026 (plans/m2-05-coverage.md §3.1): Earth Search ignores
+# Measured on 20.09.2026 (plans/m2/m2-05-coverage.md §3.1): Earth Search ignores
 # ``datetime_frequency_interval`` — day, month, year and even a nonsense value all
 # return the same monthly buckets. So the histogram is monthly, and no caller is
 # offered a choice that would not be kept. A finer histogram is a new measurement and

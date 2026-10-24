@@ -1,4 +1,4 @@
-"""The ZIP of a raster result, laid out before a byte of it is read (M4-11b-1; plans/m4-11b-angebot-und-zip.md §3.1).
+"""The ZIP of a raster result, laid out before a byte of it is read (M4-11b-1; plans/m4/m4-11b-angebot-und-zip.md §3.1).
 
 `api` hands a job's result out as one ZIP: a folder with `result.tif`, `mask.tif` and the files of a
 crop's ZIP beside its rasters (`aoi.geojson`, `recipe.json`, `citation.bib`, `ATTRIBUTION.txt`). The rasters are not compressed (``ZIP_STORED``) and their size and CRC-32 are known

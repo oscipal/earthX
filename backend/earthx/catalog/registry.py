@@ -737,7 +737,7 @@ class DatasetConfig:
     source: SourceInfo
     coverage: CoverageInfo
     # None where the standard visualisation is not defined yet. For Sentinel-2 L2A
-    # that is deliberate: m1-fundament.md §2 puts it in M2.
+    # that is deliberate: plans/m1/m1-fundament.md §2 puts it in M2.
     default_render: DefaultRender | None
     # None where nobody has decided how the viewer groups the items of this dataset.
     viewer: ViewerInfo | None

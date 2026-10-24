@@ -1,6 +1,6 @@
 # M3-17 — Download folgt der Ansicht: Umsetzungsplan
 
-**Aufgabe:** M3-17 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-17 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B.** **Freigegeben (Otto, 26.09.2026): alle Fragen in §9 nach
 Empfehlung (F1–F6 jeweils Option 1).** Umgesetzt in diesem Branch/PR; §9 ist
 um die gewählte Option ergänzt, §10 hält den tatsächlichen Stand fest.
@@ -8,10 +8,10 @@ um die gewählte Option ergänzt, §10 hält den tatsächlichen Stand fest.
 ab. Die Gruppierung je Überflug hat PR #84 gebaut (`store.groups`,
 `groupIndexOfItem`, ein Layer je Gruppe); M3-17 verwendet sie wieder und baut
 keine neue datensatzspezifische Stelle (Plan §3, `ENTSCHEIDUNGSLOG.md`).
-**Ort im Repo:** `docs/plans/m3-17-download-folgt-ansicht.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (P12, P19, §4 M3-09,
-M3-12, M3-17, M3-18); `plans/m3-09-zuschnitt-ansicht.md` §7, §8, §10;
-`plans/m3-18-download-deckel-maske.md` §10, §13; `ENTSCHEIDUNGSLOG.md`, Zeilen
+**Ort im Repo:** `docs/plans/m3/m3-17-download-folgt-ansicht.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` (P12, P19, §4 M3-09,
+M3-12, M3-17, M3-18); `plans/m3/m3-09-zuschnitt-ansicht.md` §7, §8, §10;
+`plans/m3/m3-18-download-deckel-maske.md` §10, §13; `ENTSCHEIDUNGSLOG.md`, Zeilen
 vom 23.09.2026 (P19) und 24.09.2026 (M3-09 F3, M3-18); `architekturplan.md`
 3.1, 5.1, 6.2, 6.4; `KLAERUNGEN.md` B8, B9, B10, B11; `adr/0003` §11.2.
 
@@ -95,7 +95,7 @@ für Zarr den Zuschnitt fest, ein Zarr-Speicher ist keine einzelne Datei.
 
 Das Muster „Knopf deaktiviert + Tooltip mit Begründung“ kommt aus M3-09
 („Crop & merge to AOI“ ohne AOI, `ViewBar.tsx`). Die bekannte Abweichung aus
-`m3-09-zuschnitt-ansicht.md` §7 („View full selection“ mit AOI lädt den
+`plans/m3/m3-09-zuschnitt-ansicht.md` §7 („View full selection“ mit AOI lädt den
 Zuschnitt) ist mit Zeile 2 aufgelöst.
 
 ---
@@ -420,5 +420,5 @@ DownloadDialog.tsx`, `frontend/src/components/DownloadDialog.test.tsx` (neu).
 `npx tsc -b --pretty false`, `npx vitest run` (363) — alle grün.
 
 **Status:** Otto hat verlangt, den Status von M3-17 in
-`plans/m3-dritte-quelle-und-interface.md` erst nach dem Merge auf „erledigt“
+`plans/m3/m3-dritte-quelle-und-interface.md` erst nach dem Merge auf „erledigt“
 zu setzen; bis dahin bleibt er „in Arbeit“ (siehe dort).

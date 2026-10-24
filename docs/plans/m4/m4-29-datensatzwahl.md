@@ -4,7 +4,7 @@
 **Stufe A.** Direkt umsetzen, ein Draft-PR.
 **Modell:** Sonnet, Effort mittel.
 **Start:** Nach dem Merge von M4-13c-2 (#153). Kann neben M4-28 laufen, weil die Datensatzwahl und der Layer-Manager verschiedene Stellen im Frontend sind. Wer als Zweiter fertig wird, holt main.
-**Startsatz:** „Führe Aufgabe M4-29 aus `docs/plans/m4-29-datensatzwahl.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-29 aus `docs/plans/m4/m4-29-datensatzwahl.md` aus.“
 
 ## 1. Wunsch von Otto (19.10.2026)
 
@@ -46,7 +46,7 @@ Tests:
 Abnahme:
 - Prüfanleitung für Otto (Browser) im PR.
 - Log-Zeile.
-- Zeile M4-29 in `docs/plans/m4-processing-kern.md` §3.
+- Zeile M4-29 in `docs/plans/m4/m4-processing-kern.md` §3.
 - Alle vier Pflicht-Checks der CI sind grün.
 - Vor „fertig“ ist main geholt.
 

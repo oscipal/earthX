@@ -5,7 +5,7 @@
   Verschärfung „in M1 gar keine Filter-Extension", F3 wie empfohlen. Die
   Empfehlung in §5 gibt den entschiedenen Stand wieder.
 - **Datum:** 2026-09-19
-- **Aufgabe:** M1-05 laut `docs/plans/m1-fundament.md` §4 (Spike aus
+- **Aufgabe:** M1-05 laut `docs/plans/m1/m1-fundament.md` §4 (Spike aus
   `architekturplan.md` 15.2, „Föderierte Item-Suche").
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
   Produktivcode geändert, keine Datei außerhalb von `docs/` angefasst, keine
@@ -13,7 +13,7 @@
 - **Grundlage:** `architekturplan.md` 5.2, 5.3, 6.1, 6.3, 6.5, 13, 15.2;
   `KLAERUNGEN.md` B8, B10, B13; `adr/0001` §7 (Z1, Z9), §8, §9.1, §9.3;
   `adr/0003` §11.2 (Sentinel-2 L2A, Earth Search v1); `adr/0004` §3
-  (Messungen gegen dieselbe Quelle); `docs/plans/m1-fundament.md` §1 (E4, E5).
+  (Messungen gegen dieselbe Quelle); `docs/plans/m1/m1-fundament.md` §1 (E4, E5).
 - **Betroffen:** `architekturplan.md` 5.2, 6.1; Planung M1-06, M1-07;
   Entscheidungslog (auch die offene Zeile „Ratengrenzen der Anbieter").
 
@@ -337,7 +337,7 @@ Eine Collection, die weder im eigenen pgstac noch in der Registry steht, ergibt
 > erreichbar, Fehlerstatus, unlesbare Antwort), kommen die übrigen mit `200`
 > und `incomplete_collections`; ein Fehler des eigenen pgstac lässt die ganze
 > Anfrage scheitern, wie zuvor bei einer einzelnen eigenen Collection. Details
-> und Messungen: `plans/m3-13-gemischte-suche.md`.
+> und Messungen: `plans/m3/m3-13-gemischte-suche.md`.
 
 **Regel II — Zwei Cache-Fristen, entschieden am Zeitfenster.** Der Such-Cache
 liegt im Anwendungs-Cache in Postgres (E4). Schlüssel ist der Hash der
@@ -480,7 +480,7 @@ eigenen Items gibt. Mit M3 neu zu prüfen. Das ist Regel VI.
 ## 8. Was offen blieb
 
 1. **Lizenz der Earth-Search-Metadaten** für aufgezeichnete Fixtures — in
-   `m1-fundament.md` §4 (M1-06) ausdrücklich Otto vorbehalten. Dieser Spike hat
+   `plans/m1/m1-fundament.md` §4 (M1-06) ausdrücklich Otto vorbehalten. Dieser Spike hat
    sie **nicht** geprüft und schlägt sie nicht ein. Solange sie offen ist,
    bleiben Fixtures synthetisch.
    **Nachtrag 19.09.2026 (erledigt):** Otto hat entschieden, dass **dauerhaft nicht
@@ -534,4 +534,4 @@ Landing Page; `POST`/`GET /search` mit `limit`, `fields`, `sortby`, `next`;
 
 **Im Repo:** `architekturplan.md` 5.2, 5.3, 6.1, 6.3, 6.5, 15.2;
 `KLAERUNGEN.md` B8, B10, B13; `adr/0001`, `adr/0003` §11.2, `adr/0004` §3;
-`docs/plans/m1-fundament.md` §1, §4.
+`docs/plans/m1/m1-fundament.md` §1, §4.

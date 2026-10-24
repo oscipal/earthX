@@ -1,6 +1,6 @@
 # M3-06a — AOI-Upload: Backend-Route mit Shapefile: Plan
 
-**Aufgabe:** M3-06a aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-06a aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B — von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1),
 F4 (1), F5 (**2**), F6 (1) (§13). F5 (2) heißt: Mehrere Features werden zu
 einer `MultiPolygon` vereinigt, wenn alle polygonal sind, statt abgewiesen zu
@@ -17,8 +17,8 @@ umgeschrieben — dieselbe Größe (1 MiB), dasselbe Ziel (nachweisbar nie auf
 Platte), nur der Übertragungsweg ändert sich. Das ist eine technische
 Korrektur der Umsetzung von F3, keine neue Frage: Ziel und Deckelwert aus F3
 bleiben, wie von Otto freigegeben.
-**Ort im Repo:** `docs/plans/m3-06a-aoi-upload-backend.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P7, M3-06a;
+**Ort im Repo:** `docs/plans/m3/m3-06a-aoi-upload-backend.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` P7, M3-06a;
 `architekturplan.md` 0, 3.1, 7.3; `projektuebersicht.md` §2 (Prinzipien 1, 9,
 15); `KLAERUNGEN.md` B8, B9; `prototyp-inventar.md` F3 (`frontend/src/aoiFile.ts`,
 heutiges Verhalten „erste brauchbare Geometrie gewinnt"); heutiger Code in

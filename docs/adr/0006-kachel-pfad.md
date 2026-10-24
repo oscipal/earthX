@@ -3,7 +3,7 @@
 - **Status:** **Angenommen.** Von Otto am 20.09.2026 entschieden; die sieben
   Fragen aus §7 sind dort beantwortet. Die Umsetzung liegt bei M2-04 und M2-06.
 - **Datum:** 2026-09-20
-- **Aufgabe:** M2-02 laut `docs/plans/m2-format-und-viewer.md` §4.
+- **Aufgabe:** M2-02 laut `docs/plans/m2/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur recherchiert, gemessen und berichtet. Kein
   Produktivcode geändert, keine Datei außerhalb von `docs/` angefasst, nichts
   installiert, was im Repo landet.
@@ -39,8 +39,8 @@ Wo ein Beleg fehlt, steht „unbelegt" statt einer Zahl. §8 listet, was offen b
 **Umfang der Live-Zugriffe.** Rund 15 STAC-Metadaten-Anfragen und rund 40
 Kachel- bzw. Zuschnitt-Lesevorgänge gegen einzelne, öffentlich lesbare COGs
 derselben Szene — zusammen unter 60 MB, über etwa 40 Minuten. Das entspricht
-dem für Spikes vorgesehenen kleinen Umfang (`m1-fundament.md` §6,
-`m2-format-und-viewer.md` §4 M2-02). Nichts wurde auf Platte geschrieben;
+dem für Spikes vorgesehenen kleinen Umfang (`plans/m1/m1-fundament.md` §6,
+`plans/m2/m2-format-und-viewer.md` §4 M2-02). Nichts wurde auf Platte geschrieben;
 `titiler.core` wurde für §3.1 in ein Wegwerfverzeichnis außerhalb des Repos
 installiert, nicht in das venv des Projekts und nicht in `requirements.txt`.
 
@@ -564,13 +564,13 @@ AOI, D3), ohne dass der Kachel-Pfad eine Größenordnung teurer wird. Mosaik-
 Kacheln wandern nach M3, zusammen mit dem CDN.
 
 **Nachtrag M3-00 (2026-09-23):** Entschieden ist **M4**, nicht M3 (D11, P11 in
-`plans/m3-dritte-quelle-und-interface.md`); der Satz oben bleibt als
+`plans/m3/m3-dritte-quelle-und-interface.md`); der Satz oben bleibt als
 ursprüngliche Einschätzung stehen.
 
 **Nachtrag M4-17 (2026-10-20, Otto):** Das Mosaik im Kachel-Pfad kommt als
 Item-Liste in der URL (M1), wie oben empfohlen; Such-ID und Inhaltsadresse
 (O2, O3) sind erneut abgewogen und verworfen
-(`plans/m4-17-mosaik-kachel-pfad.md` §3). Abweichend von oben:
+(`plans/m4/m4-17-mosaik-kachel-pfad.md` §3). Abweichend von oben:
 
 - **Grenzen** gemessen statt übernommen: höchstens **64** Items je URL (ein
   Überflug über 5–16° O, 45–55° N hat bis 60 Szenen; die 22 oben galten einem
@@ -599,7 +599,7 @@ einem Pool-Fehler antwortet die Mosaik-Kachel mit `503` und Grund (Plan §14).
 jetzt `op`, `op_version` und `params` wie die Kachel (`_OPERATOR_ROUTES` um `statistics`
 erweitert; an der Pfad-Abhängigkeit ändert sich sonst nichts: Lizenzstufe, R5, `applicable`,
 Host-Allowlist und `target_gsd_for` gelten gleich). Die Messung dient der Farbskala der
-Vorschau (`plans/m4-19-teilen-und-beschreiben.md` §3.3, §14); der Originaltext oben bleibt
+Vorschau (`plans/m4/m4-19-teilen-und-beschreiben.md` §3.3, §14); der Originaltext oben bleibt
 für die Statistik eines einzelnen Assets maßgeblich.
 - **Lesen:** `OperatorTileReader.preview` liest jede Quelle über die Grenzen der feinsten
   Quelle auf dieselbe Größe, höchstens 1024 px an der langen Seite (die Größe der Statistik

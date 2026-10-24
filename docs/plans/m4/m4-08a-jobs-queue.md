@@ -1,14 +1,14 @@
 # M4-08a — Queue und Worker-Hülle in `jobs`: Plan
 
-**Aufgabe:** M4-08a aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-08a aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 07.10.2026 freigegeben:** F1–F7 je Option 1, außer
 **F4 Option 3**; K1–K6 angenommen. Dazu Auflagen zu F2, F4 und zum Speicher (§8,
 „Antworten“). Umsetzung in PR #124.
-**Ort im Repo:** `docs/plans/m4-08a-jobs-queue.md`
+**Ort im Repo:** `docs/plans/m4/m4-08a-jobs-queue.md`
 **Grundlagen:** `adr/0013` §5, §6, §8, §9, §10, §10a; `adr/0015` §7, §8,
 §12 Punkt 9, §13, §14a (F13); `adr/0014` §4.4–§4.7, §5.5, §7.2, §9, §15b;
-`plans/m4-processing-kern.md` §1.1 (Q4, Q8–Q11), §1.1b (R1, R2), §1.2, §1.3;
-`plans/m4-06-objectstore.md` §3.5; `plans/m4-07a-processing-kern.md` §9.6;
+`plans/m4/m4-processing-kern.md` §1.1 (Q4, Q8–Q11), §1.1b (R1, R2), §1.2, §1.3;
+`plans/m4/m4-06-objectstore.md` §3.5; `plans/m4/m4-07a-processing-kern.md` §9.6;
 `KLAERUNGEN.md` B8, B9 (Nachträge 02.10. und 05.10.2026);
 `architekturplan.md` 3.1, 7.5; Log-Zeile vom 06.10.2026 zu `VmHWM`.
 
@@ -306,7 +306,7 @@ Sitzung (`adr/0002` §2), ohne Netz:
 - `architekturplan.md` 3.1 (§3.2), `backend/earthx/catalog/migrations/README.md`
   (006), `README.md` (Start von `worker`: Datenbank, Migration, Slots).
 - `ENTSCHEIDUNGSLOG.md`: Freigabe, Umsetzung, offene Punkte aus §5; Stand in
-  `m4-processing-kern.md` §3.
+  `plans/m4/m4-processing-kern.md` §3.
 - Kein neues ADR: alles Grundsätzliche steht in `adr/0013`; die Abweichungen
   K1–K5 stehen hier und im Log.
 
@@ -469,7 +469,7 @@ F6 (1), F7 (1); K1–K6 angenommen. Auflagen:
   Auflage F9 aus M4-07a). `recipe.json` liegt nicht im Speicher; `api` erzeugt
   sie in M4-08b je Job aus dessen eigenem Rezept, damit kein Auftrag die
   `recipe_id` eines anderen sieht. Vermerk bei M4-08b in
-  `m4-processing-kern.md`.
+  `plans/m4/m4-processing-kern.md`.
 - **F2:** Der Deckel hält unabhängig von der Zahl der Aufseher (Test mit zwei
   Aufsehern gegen dieselbe Datenbank). Beim Herunterfahren werden laufende
   Kinder beendet und ihre Leases freigegeben (Test).

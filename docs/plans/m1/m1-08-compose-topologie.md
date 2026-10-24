@@ -1,6 +1,6 @@
 # M1-08 — compose-Topologie und CI-Job: Plan
 
-**Bezug:** `docs/plans/m1-fundament.md` M1-08. Stufe B — dieser Plan liegt im
+**Bezug:** `docs/plans/m1/m1-fundament.md` M1-08. Stufe B — dieser Plan liegt im
 Draft-PR, Umsetzung folgt erst nach Ottos OK.
 **Abhängigkeit:** M1-02 (Paketgerüst `earthx`, scharfe Importregeln) — bereits
 gemergt (PR #18).

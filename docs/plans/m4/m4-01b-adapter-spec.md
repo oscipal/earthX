@@ -1,12 +1,12 @@
 # M4-01b — `AdapterSpec`, Signaturen, Fehlerklassen, `harvest_run` entfernen: Plan
 
-**Aufgabe:** M4-01b aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-01b aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 06.10.2026 freigegeben** mit F1–F6 je Option 1,
 mit einer Auflage zum Registry-Test (§7, Antworten), und **umgesetzt** (§8).
-**Ort im Repo:** `docs/plans/m4-01b-adapter-spec.md`
+**Ort im Repo:** `docs/plans/m4/m4-01b-adapter-spec.md`
 **Grundlagen:** `adr/0011` §3.2 (B4, B6–B10), §5.1–§5.3, §6.5 Punkt 3, §11
-(F1, F3, F5, F6, F7); `plans/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01b;
-`plans/m4-01a-zugriffsaufloesung.md` §8 (Abweichung 3: Registry für
+(F1, F3, F5, F6, F7); `plans/m4/m4-processing-kern.md` §1.1 (Q1), §1.2, M4-01b;
+`plans/m4/m4-01a-zugriffsaufloesung.md` §8 (Abweichung 3: Registry für
 `/coverage`); `architekturplan.md` 3.1, 6.1; `KLAERUNGEN.md` B6, B10;
 `ENTSCHEIDUNGSLOG.md` „`adr/0011` angenommen“ (30.09.2026) und „M4-01a
 freigegeben“ (02.10.2026); Code in `backend/earthx/adapters/`,
@@ -293,7 +293,7 @@ ADAPTER_SPECS: AdapterSpecs   # die drei echten Einträge, unveränderlich (Mapp
   „umgesetzt mit M4-01b“; die Tabelle bleibt.
 - `ENTSCHEIDUNGSLOG.md`: je eine Zeile für die Freigabe dieses Plans mit den
   Antworten und für die Umsetzung, ans Ende.
-- `m4-processing-kern.md` §3: Stand M4-01b.
+- `plans/m4/m4-processing-kern.md` §3: Stand M4-01b.
 
 ---
 

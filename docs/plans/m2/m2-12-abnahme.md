@@ -2,8 +2,8 @@
 
 **Ziel:** Otto kann M2 anhand dieses Berichts und des zugehörigen PR abnehmen,
 ohne Code zu lesen.
-**Ort im Repo:** `docs/plans/m2-12-abnahme.md`
-**Grundlage:** `docs/plans/m2-format-und-viewer.md` Abschnitt 5 ("Abnahme von
+**Ort im Repo:** `docs/plans/m2/m2-12-abnahme.md`
+**Grundlage:** `docs/plans/m2/m2-format-und-viewer.md` Abschnitt 5 ("Abnahme von
 M2"), Stand nach dem Merge aller Aufgaben bis einschließlich M2-17 und V-1 bis
 V-4 (`main`, Commit `5e40d04`, Fassung 5 des Plans, PR #69–#71). M2-12 ist
 laut Fassung 5 die letzte offene Aufgabe des Schnitts.
@@ -79,7 +79,7 @@ Szenensuche per Namen (M2-17) sowie Globus und Theme-Umschalter (V-1). Die
 einzelnen Befunde aus diesen Sitzungen und ihre Behebung stehen in
 `docs/ENTSCHEIDUNGSLOG.md` unter den Einträgen zu M2-10, V-1 bis V-4, M2-16
 und M2-17 sowie in den Nachbesserungsrunden in
-`docs/plans/m2-format-und-viewer.md` (V-6 bis V-12, M2-17b) — sie sind selbst
+`docs/plans/m2/m2-format-und-viewer.md` (V-6 bis V-12, M2-17b) — sie sind selbst
 der Beleg, dass ein Mensch beide Datensätze tatsächlich bedient hat, nicht nur
 ein automatisierter Test.
 
@@ -155,7 +155,7 @@ Aus einer Cloud-Sitzung heraus ist die reale Quelle nicht erreichbar
 (`gateway` bindet an die geprüfte Adresse, der Sitzungs-Proxy weist `CONNECT`
 ab — M2-13, `adr/0002` Nachtrag T-D). Die Messung stammt deshalb aus dem PR,
 der M2-05b eingeführt hat (#43), per `curl` gegen die Route:
-`docs/plans/m2-05-coverage.md` §3.2–3.3 (Zeilen 104–123, datiert 20.09.2026):
+`docs/plans/m2/m2-05-coverage.md` §3.2–3.3 (Zeilen 104–123, datiert 20.09.2026):
 gefilterte bbox+Jahr-Anfragen auf z8 0,44–0,83 s, gefiltert (enger) 0,33 s,
 der ungefilterte Weltüberblick z0–z6 durchgehend unter 1,1 s (typisch
 0,60–0,88 s). Festgehalten außerdem in `docs/ENTSCHEIDUNGSLOG.md`
@@ -323,7 +323,7 @@ einer Cloud-Sitzung nicht, M2-13); das ist der separate, nicht blockierende
 
 ## Zusammenfassung
 
-Alle acht Kriterien aus `docs/plans/m2-format-und-viewer.md` Abschnitt 5 sind
+Alle acht Kriterien aus `docs/plans/m2/m2-format-und-viewer.md` Abschnitt 5 sind
 mit Code- und Testbelegen erfüllt, unter den beiden in der Aufgabenstellung
 genannten Einschränkungen (Kriterium 3: nur die Route; Kriterium 1: beim
 Zarr-Datensatz genügt der Lesepfad gegen das synthetische Zarr). M2 ist aus

@@ -1,15 +1,15 @@
 # M4-07a — Kern: Rezept, Hash, Operator-Registry, Blockschleife, Lesen im Worker: Plan
 
-**Aufgabe:** M4-07a aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-07a aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 06.10.2026 freigegeben** mit F1–F10 je Option 1
 und Auflagen zu F1, F2, F4 und F9 sowie einer Versionsangabe für `earthx`
 (§8). Wo §3 und §8 sich widersprechen, gilt §8.
-**Ort im Repo:** `docs/plans/m4-07a-processing-kern.md`
+**Ort im Repo:** `docs/plans/m4/m4-07a-processing-kern.md`
 **Grundlagen:** `adr/0014` §4–§8, §13, §15a, §15b; `adr/0013` §5.3, §5.5, §9
 (Kind ruft `worker_environment()`, Abbruch im nächsten Block);
-`plans/m4-processing-kern.md` §1.1b (R3), §1.2, „Gemeinsam für M4-06 bis
+`plans/m4/m4-processing-kern.md` §1.1b (R3), §1.2, „Gemeinsam für M4-06 bis
 M4-15“, M4-07a; `architekturplan.md` 3.1, 7.1–7.3; `KLAERUNGEN.md` B8, B9,
-B10; `plans/m3-18-download-deckel-maske.md` §10.3, §11, §13. Code in
+B10; `plans/m3/m3-18-download-deckel-maske.md` §10.3, §11, §13. Code in
 `access/resolve.py`, `access/download.py`, `readers/cog.py`,
 `readers/zarr_reader.py`, `gateway/gdal.py`, `gateway/policy.py`,
 `catalog/registry.py`, `catalog/datasets.py`, `catalog/collection.py`.
@@ -309,7 +309,7 @@ das Flag.
 - `ENTSCHEIDUNGSLOG.md`: nach der Freigabe eine Zeile „M4-07a freigegeben“ mit
   den Antworten auf F1–F10, dazu je eine Zeile für Antworten, die über
   `adr/0014` hinausgehen (F1, F4, F5).
-- `m4-processing-kern.md` §3: Stand von M4-07a nach dem Merge (macht der Chat
+- `plans/m4/m4-processing-kern.md` §3: Stand von M4-07a nach dem Merge (macht der Chat
   bzw. M4-20; hier nicht).
 
 ---
@@ -469,7 +469,7 @@ F1–F10 je Option 1, mit diesen Auflagen. Sie gehen §3 vor.
   nach `adr/0016`. Sie ersetzt die in §3.1 geplante eigene Zahl
   `ENGINE_VERSION`: Ein Kern, der Ergebnisse ändert, erhöht `__version__`.
 - **Log:** Zeile „M4-07a freigegeben“ am Ende von `ENTSCHEIDUNGSLOG.md`; Stand
-  von M4-07a in `m4-processing-kern.md` §3 auf „PR #120“.
+  von M4-07a in `plans/m4/m4-processing-kern.md` §3 auf „PR #120“.
 - **Vor dem Fertigmelden:** `main` holen; hat M4-06 die Lock-Dateien
   geändert, werden sie nur aus `main` übernommen (M4-07a ändert keine).
   `pytest`, `ruff`, `lint-imports` und die Laufzeit des Tests 8192² in der CI

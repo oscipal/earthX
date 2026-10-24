@@ -18,7 +18,7 @@ checks of ``SearchParams`` (rule V). What stays here:
 * **Rule III, continued** — reading the ``next`` link out of Earth Search's own
   answer shape (``_next_marker``) and building the search body it expects
   (``_search_body``) — both source-specific, per M1-07 (docs/plans/
-  m1-07-stac-api.md §7).
+  m1/m1-07-stac-api.md §7).
 
 Input checks that are not source-specific (bbox, limit, the time window) already
 ran inside ``SearchParams.__post_init__`` before anything reaches this module. A

@@ -1,6 +1,6 @@
 """M3-12: the frontend knows no dataset and no source-specific property (P10).
 
-M3-02's own report (`plans/m3-02-konformitaetsbericht.md` §5) found the frontend
+M3-02's own report (`plans/m3/m3-02-konformitaetsbericht.md` §5) found the frontend
 free of a dataset id in a branch already — the ids only ever showed up in comments
 — but the constants `DATATAKE_PROPERTY = 's2:datatake_id'` (`grouping.ts`) and
 `NODATA_THRESHOLD` (`mapLayers.ts`) were literal, source-specific knowledge M3-12

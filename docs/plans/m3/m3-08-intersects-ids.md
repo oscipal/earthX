@@ -10,10 +10,10 @@ eigener Weg (uvicorns Access-Log ganz abgeschaltet, `RequestIdMiddleware` in
 jedem Prozess, kein Query-String mehr, egal welcher Parameter) übernimmt die
 Aufgabe vollständig, auch für die Coverage-Route, die F7 nicht erreichte.
 Siehe §8.2.
-**Aufgabe:** M3-08 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4
+**Aufgabe:** M3-08 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4
 (P6, D31). **Stufe B.**
 **Grundlagen:** `adr/0005` Regeln I, III, V, VI, §3.5, K8; `adr/0004` §3.4;
-`plans/m2-format-und-viewer.md` D21, D31, M2-17; `projektplan.md` 7 Punkt 6
+`plans/m2/m2-format-und-viewer.md` D21, D31, M2-17; `projektplan.md` 7 Punkt 6
 (keine exakte AOI in Logs); `KLAERUNGEN.md` B8.
 
 Belegstufen wie in `adr/0005`: **M** gemessen in dieser Sitzung, **P** am

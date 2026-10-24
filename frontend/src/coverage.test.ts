@@ -159,7 +159,7 @@ describe('showFootprints', () => {
 
   // adr/0007's sample case (M2-09b): a source with no checked total leaves
   // `footprints_advised=false` however few cells are counted — the
-  // "Ersatzregel" of m2-format-und-viewer.md's M2-07c is already satisfied by
+  // "Ersatzregel" of plans/m2/m2-format-und-viewer.md's M2-07c is already satisfied by
   // trusting that field rather than re-deriving it from `total_count` here.
   it('stays false for a declared sample with no checked total, whatever the zoom', () => {
     const sample = response({ completeness: 'sample', total_count: null, footprints_advised: false });
@@ -222,7 +222,7 @@ describe('areaGeometry', () => {
 // map's zoom, as before.
 // M3-19 (Otto, 23.09.2026): without an AOI, the level follows the map zoom
 // and the viewport size so roughly TARGET_CELL_COUNT cells cover the screen.
-// Expected values from plans/m3-19-weltueberblick-ausschnitt.md §1 (1920×1080:
+// Expected values from plans/m3/m3-19-weltueberblick-ausschnitt.md §1 (1920×1080:
 // L ≈ Z + 4; 2560×1440: L ≈ Z + 3.6).
 describe('levelForViewport', () => {
   it('is roughly zoom + 4 on a 1920×1080 viewport', () => {

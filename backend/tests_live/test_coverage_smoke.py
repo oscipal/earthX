@@ -1,7 +1,7 @@
 """T-D: does the coverage aggregation still answer the way §3 of the plan measured?
 
 Runs on a schedule in GitHub Actions, never in a pull request and never in a cloud
-session (adr/0002 §2) — plans/m2-05-coverage.md §7.1 records why a cloud session
+session (adr/0002 §2) — plans/m2/m2-05-coverage.md §7.1 records why a cloud session
 cannot reach the source through `gateway` at all (the gateway pins the checked
 *address*, and the environment's egress allowance is name-based). The `curl`
 measurements of the plan's §3 are the evidence for this PR; this test is what turns

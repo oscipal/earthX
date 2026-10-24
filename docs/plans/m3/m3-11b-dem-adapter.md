@@ -1,10 +1,10 @@
 # M3-11b — DEM-Adapter, Einmal-Befehl in `discovery`, Registry-Eintrag: Plan-Schritt
 
 **Status (26.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe (§9).
-**Aufgabe:** M3-11b aus `docs/plans/m3-dritte-quelle-und-interface.md` §4
+**Aufgabe:** M3-11b aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4
 (P24). **Stufe B.** Hängt an M3-11a (gemergt, #95).
 **Grundlagen:** `adr/0009` §3.1, §7, §10, §11; `adr/0003` §10.1, §11.1;
-`adr/0004` §5; `plans/m3-11a-materialisierte-quellen.md` §3.5, §3.6 (F3);
+`adr/0004` §5; `plans/m3/m3-11a-materialisierte-quellen.md` §3.5, §3.6 (F3);
 `architekturplan.md` 3.1, 5.1, 5.2; `KLAERUNGEN.md` B8, B10, B11, B13;
 `projektuebersicht.md` §5 (Onboarding-Checkliste).
 

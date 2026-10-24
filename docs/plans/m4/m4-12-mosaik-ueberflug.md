@@ -1,18 +1,18 @@
 # M4-12 — Mosaik ganzer Szenen je Überflug als Job: Plan
 
-**Aufgabe:** M4-12 aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-12 aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 10.10.2026 freigegeben** (§11): F1, F2, F5–F9 wie
 empfohlen, F3 angepasst, F4 Option 2, K1–K8 angenommen. Geschnitten in
 **M4-12a** (Backend, dieser PR) und **M4-12b** (Frontend, nach dem Merge von
 M4-13b). §3 beschreibt die freigegebene Fassung; §8 bleibt als Wortlaut der
 Fragen stehen, §11 hält die Antworten fest, §12 die Umsetzung.
-**Ort im Repo:** `docs/plans/m4-12-mosaik-ueberflug.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P19; `adr/0011`
+**Ort im Repo:** `docs/plans/m4/m4-12-mosaik-ueberflug.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` P19; `adr/0011`
 §8.1; `adr/0014` §3.4, §4.2, §4.3, §5.3, §5.5, §6.3, §7.2; `adr/0006` §3;
-`plans/m4-07a-processing-kern.md` F2, F3, F9; `plans/m4-07b-annahme.md` F4, F5;
-`plans/m4-processing-kern.md` M4-10b und `processing/operators/reproject.py`
+`plans/m4/m4-07a-processing-kern.md` F2, F3, F9; `plans/m4/m4-07b-annahme.md` F4, F5;
+`plans/m4/m4-processing-kern.md` M4-10b und `processing/operators/reproject.py`
 (M4-10, M4-10b);
-`plans/m4-11-export-job.md` §3, §5, §11; `plans/m4-13-processing-panel.md` F8;
+`plans/m4/m4-11-export-job.md` §3, §5, §11; `plans/m4/m4-13-processing-panel.md` F8;
 `ENTSCHEIDUNGSLOG.md` 23.09.2026 und 26.09.2026 (Mosaik ganzer Szenen als
 Processing-Job), „M4 Q7“ (02.10.2026), „M4-11a“ (08.10.2026);
 `KLAERUNGEN.md` B8, B9, B10, B11.
@@ -282,7 +282,7 @@ von 400 Zeilen wegen der Tests. Commits, je eine Sache:
 4. `processing`: Schätzung und Deckel für Raster-Jobs.
 5. `api`: Auftrag ohne AOI, Prüfung des Überflugs, Flags, Zarr.
 6. Tests über zwei Zonen, Überlappung, Speicher.
-7. Doku: Nachtrag `adr/0014`, Log, Status in `m4-processing-kern.md` §3.
+7. Doku: Nachtrag `adr/0014`, Log, Status in `plans/m4/m4-processing-kern.md` §3.
 
 M4-12b (Frontend) rund 250 Zeilen mit Tests.
 
@@ -562,7 +562,7 @@ Eine eigene Log-Zeile schlage ich vor, sobald es einen Termin gibt.
   anderer Zonen über den Warp aus M4-10. Hebt die Ein-Item-Grenze des Panels
   (M4-13 F8) auf, sobald M4-12b gemergt ist.
 - **F2:** Option 1, kein eigenes Flag.
-- **F3 angepasst (S5, `m4-processing-kern.md` §1.1c):** Der Kern nutzt dieselbe
+- **F3 angepasst (S5, `plans/m4/m4-processing-kern.md` §1.1c):** Der Kern nutzt dieselbe
   Mosaikregel wie der Export-Job aus M4-11a (erstes gültiges Pixel in der
   Reihenfolge der Liste, `access/crop_rules.py` bzw. deren gemeinsamer Teil),
   keine zweite Regel. Die Bevorzugung von Szenen ohne Warp entsteht dadurch,
@@ -716,7 +716,7 @@ Kern; ein Deckel für jeden Job; Annahme in `api`; Tests an den Nähten; Doku.
 12. **Bekannter Fehler, nicht in diesem PR behoben: die Kostenschätzung für
     ein geografisches Raster mit `reproject`** (Otto, 12.10.2026: genau
     beschreiben, `xfail`-Tests, Log-Zeile „offen“, eigene Aufgabe). **Wird
-    Aufgabe M4-25** (`plans/m4-25-schaetzung-geografisch.md`, der Plan entsteht
+    Aufgabe M4-25** (`plans/m4/m4-25-schaetzung-geografisch.md`, der Plan entsteht
     in der Aufgabe); die `xfail`-Tests bleiben, wie sie sind. Den Widerspruch
     zu Ottos lokalem Lauf klärt Otto.
     - *Ursache:* `processing.plan._input_meta` stellt das Raster des ersten
@@ -790,7 +790,7 @@ mit allen Szenen eines Überflugs), Dialog, Vertragsdateien samt Backend-Test, D
 - Die Bänder kommen aus der ersten Szene des Überflugs. Dass alle Szenen je
   Asset gleich beschaffen sind, prüft der Server (M4-12a, `UnsupportedRecipe`).
 - Die AOI bleibt im Auftrag; „Whole scene / AOI only“ ist M4-13c
-  (`m4-zusaetze-2026-10-12.md` §2) und steht nicht hier.
+  (`plans/m4/m4-zusaetze-2026-10-12.md` §2) und steht nicht hier.
 
 **Download-Dialog:**
 - Das Angebot erscheint nur im Fall `originals` (Einzeldateien, nur COG) und nur

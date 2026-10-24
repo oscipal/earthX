@@ -5,9 +5,9 @@
 liegt **nur im Test**; laut Auftrag direkt behoben, kein Halt.
 **Review Otto (08.10.2026, PR #132):** angenommen; der Nebenbefund in §3
 bleibt als bekannte Einschränkung.
-**Ort im Repo:** `docs/plans/m4-08a-fix2.md`
-**Grundlagen:** `adr/0013` §5.2, §5.6; `plans/m4-08a-jobs-queue.md` §3.4
-(„Herunterfahren“, K5); `plans/m4-processing-kern.md` §3.
+**Ort im Repo:** `docs/plans/m4/m4-08a-fix2.md`
+**Grundlagen:** `adr/0013` §5.2, §5.6; `plans/m4/m4-08a-jobs-queue.md` §3.4
+(„Herunterfahren“, K5); `plans/m4/m4-processing-kern.md` §3.
 **Befund aus PR #131:**
 `backend/tests/earthx/jobs/test_worker.py::TestShutdown::test_a_run_picked_up_in_the_moment_of_the_shutdown_is_given_back_before_a_child_starts`
 fällt im Einzellauf mal, mal nicht.
@@ -90,7 +90,7 @@ kein Wettlauf zwischen Abholen und Herunterfahren.
 `_stopping` nach dem Abholen und `_start_child`, startet ein Kind und wird in
 der ersten Runde von `_watch` beendet; der Lauf geht über `_conclude` →
 `release` zurück. Die Lease wird also auch dann sofort freigegeben (K5);
-nur lebt ein Kind kurz. Das widerspricht `plans/m4-08a-jobs-queue.md` §3.4
+nur lebt ein Kind kurz. Das widerspricht `plans/m4/m4-08a-jobs-queue.md` §3.4
 nicht und ist nicht Gegenstand dieses Tests.
 
 ## 4. Behebung (nur Test)

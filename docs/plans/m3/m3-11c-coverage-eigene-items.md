@@ -1,13 +1,13 @@
 # M3-11c — Coverage über eigene Items (`local-sql`): Plan-Schritt
 
 **Status (26.09.2026):** Plan-Schritt, wartet auf Ottos Freigabe (§8).
-**Aufgabe:** M3-11c aus `docs/plans/m3-dritte-quelle-und-interface.md` §4
+**Aufgabe:** M3-11c aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4
 (P24, K-06). **Stufe B.** Hängt an M3-11a (gemergt, #95); läuft parallel zu
 M3-11b.
 **Grundlagen:** `adr/0004` §3.5, §3.6, §5 (Regel V, Einmal-Produkte, 500 kB);
-`adr/0009` §6 (F5), §8 Punkt 5, §10.3; `plans/m3-02-konformitaetsbericht.md`
-K-06, K-08, F-07; `plans/m3-19-weltueberblick-ausschnitt.md`;
-`plans/m3-11a-materialisierte-quellen.md`; `KLAERUNGEN.md` B10, B13;
+`adr/0009` §6 (F5), §8 Punkt 5, §10.3; `plans/m3/m3-02-konformitaetsbericht.md`
+K-06, K-08, F-07; `plans/m3/m3-19-weltueberblick-ausschnitt.md`;
+`plans/m3/m3-11a-materialisierte-quellen.md`; `KLAERUNGEN.md` B10, B13;
 `ENTSCHEIDUNGEN_2026-09-18.md` §2 (Coverage Map).
 
 Belegstufen wie in `adr/0009`: **M** gemessen in dieser Sitzung, **P** am

@@ -4,7 +4,7 @@
 **Stufe B:** Erst kommt der Plan im Draft-PR, Otto gibt ihn frei, dann folgt der Code. Der Grund: Die Aufgabe ändert Ergebnis-Bytes, betrifft also die Version, und sie berührt Rechenzeit und Bitgleichheit.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** Nach dem Merge von M4-13c-5 (#166).
-**Startsatz:** „Führe Aufgabe M4-32 aus `docs/plans/m4-32-ergebnis-statistik.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-32 aus `docs/plans/m4/m4-32-ergebnis-statistik.md` aus.“
 
 ## 1. Anlass
 
@@ -62,7 +62,7 @@ M4-13c-5 zeigt Job-Ergebnisse als Layer. Jedes Gleitkomma-Ergebnis wird dabei mi
 - **Doku:**
   - Nachtrag in `adr/0014`, falls die Bytes des Ergebnisses oder §6.3 berührt sind.
   - Log-Zeilen.
-  - Zeile M4-32 in `docs/plans/m4-processing-kern.md` §3.
+  - Zeile M4-32 in `docs/plans/m4/m4-processing-kern.md` §3.
 - Vor „fertig“ ist main geholt.
 
 ## 6. Plan mit Messung (20.10.2026, zur Freigabe durch Otto)
@@ -360,7 +360,7 @@ NPY_DISABLE_CPU_FEATURES=X86_V3,X86_V4,AVX512_ICL,AVX512_SPR python simd.py   # 
 - In §6.2, §6.3 und §6.7 meint „Statistik“ im Ergebnisdokument und im Frontend die Statistik der AOI. Die Tags beschreiben die ganze Datei.
 - Die Maske entsteht vor dem letzten Durchgang. Dieser liest sie blockweise mit und führt beide Zähler nebeneinander.
 
-**Startsatz M4-32b** (neue Session nach dem Merge von M4-32a, Sonnet, Effort hoch): „Führe Aufgabe M4-32b aus `docs/plans/m4-32-ergebnis-statistik.md` aus (§6.7, §6.10 Frontend, §7).“
+**Startsatz M4-32b** (neue Session nach dem Merge von M4-32a, Sonnet, Effort hoch): „Führe Aufgabe M4-32b aus `docs/plans/m4/m4-32-ergebnis-statistik.md` aus (§6.7, §6.10 Frontend, §7).“
 
 ## 8. Umsetzung M4-32a (20.10.2026)
 

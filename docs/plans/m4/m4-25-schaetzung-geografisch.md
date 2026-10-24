@@ -4,11 +4,11 @@
 **Stufe A.** Direkt umsetzen, ein Draft-PR.
 **Modell:** Sonnet, Effort hoch.
 **Start:** Nach dem Merge von M4-12a (#136) und M4-21. Die Aufgabe läuft neben Stufe-B-Sessions; sie berührt weder Frontend noch `reproject` selbst.
-**Startsatz:** „Führe Aufgabe M4-25 aus `docs/plans/m4-25-schaetzung-geografisch.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-25 aus `docs/plans/m4/m4-25-schaetzung-geografisch.md` aus.“
 
 ## 1. Anlass
 
-Den Fehler hat M4-12a gefunden (`plans/m4-12-mosaik-ueberflug.md` §12 Punkt 12, Log „Kostenschätzung für DEM mit reproject“ vom 12.10.2026, offen). Er besteht schon auf `main`.
+Den Fehler hat M4-12a gefunden (`plans/m4/m4-12-mosaik-ueberflug.md` §12 Punkt 12, Log „Kostenschätzung für DEM mit reproject“ vom 12.10.2026, offen). Er besteht schon auf `main`.
 
 - **Ursache:** `processing.plan._input_meta` stellt das Raster des ersten Durchgangs als `Affine(gsd, 0, 0, 0, -gsd, 0)` im CRS des Assets dar, wobei `gsd` in Metern angegeben ist. In einem geografischen CRS wie EPSG:4326 (`cop-dem-glo-30`) werden diese Meter als Grad gelesen. `reproject` bemisst daraus ein riesiges Zielraster und wirft `UnsupportedRecipe` (Seitenlänge über 32 768 px), oder es schätzt um Größenordnungen falsch.
 - **Wo der Fehler auftritt:**
@@ -57,7 +57,7 @@ Die Schätzung bemisst das Eingaberaster in jedem CRS aus echter Lage und echter
 ## 6. Doku
 
 - Log-Zeile vom 12.10.2026 „Kostenschätzung für DEM mit reproject“: Status auf „erledigt mit M4-25“ setzen und eine Zeile zur Umsetzung ergänzen.
-- `docs/plans/m4-processing-kern.md` §3: Zeile M4-25 ergänzen. Die Zeilenenden so lassen, wie die Datei sie dann hat.
+- `docs/plans/m4/m4-processing-kern.md` §3: Zeile M4-25 ergänzen. Die Zeilenenden so lassen, wie die Datei sie dann hat.
 - `adr/0014` §5.5: datierter Nachtrag, falls sich die Rechnung der Schätzung in der Sache ändert.
 
 ## 7. Abnahme

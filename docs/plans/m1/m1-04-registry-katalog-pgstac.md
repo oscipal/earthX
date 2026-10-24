@@ -1,6 +1,6 @@
 # M1-04 — Datensatz-Registry, Katalogmodell, pgstac: Plan
 
-**Aufgabe:** `docs/plans/m1-fundament.md` §4, M1-04. **Autonomiestufe B** — dieser
+**Aufgabe:** `docs/plans/m1/m1-fundament.md` §4, M1-04. **Autonomiestufe B** — dieser
 Plan geht als Draft-PR an Otto; die Umsetzung beginnt erst nach seinem OK.
 
 **Grundlagen:** `KLAERUNGEN.md` B10 (Capability-Flags), B11 (Lizenzstufen),
@@ -88,7 +88,7 @@ der Widerspruch nicht stehen bleibt.
 
 **Antwort: (a) zwei PRs.**
 
-M1-04 liegt als Ganzes deutlich über dem Richtwert von 400 Zeilen; `m1-fundament.md`
+M1-04 liegt als Ganzes deutlich über dem Richtwert von 400 Zeilen; `plans/m1/m1-fundament.md`
 §6 sieht das Teilen ausdrücklich vor.
 
 1. **Zwei PRs** *(Empfehlung)*: **M1-04a** Registry, Validierung, Collection-Abbildung,
@@ -346,4 +346,4 @@ festgehalten, damit niemand den Wächter später „aufräumt".
 | B13 und 3.1 widersprechen sich beim Ort der Registry | Frage 1; die Umsetzung beginnt nicht ohne Antwort |
 | Setup-Skript wird langsamer | `pypgstac migrate` ist idempotent und läuft nur beim ersten Start; das Ergebnis wird zwischengespeichert |
 | 04b hing an M1-08 | erledigt: PR #24 ist gemergt, der Pin steht in `requirements.txt` |
-| Sentinel-2-Eintrag bleibt in drei Feldern offen (`default_render`, `liability_notice`, `citation`) | jeweils als `None` gesetzt und im PR benannt, statt einen Wert zu erfinden; `m1-fundament.md` §2 sieht die Standard-Visualisierung ohnehin erst in M2 |
+| Sentinel-2-Eintrag bleibt in drei Feldern offen (`default_render`, `liability_notice`, `citation`) | jeweils als `None` gesetzt und im PR benannt, statt einen Wert zu erfinden; `plans/m1/m1-fundament.md` §2 sieht die Standard-Visualisierung ohnehin erst in M2 |

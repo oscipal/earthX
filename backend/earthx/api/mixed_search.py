@@ -8,7 +8,7 @@ A **mixed search** is one that spans more than one *source*: a federated
 collection, or a group of this platform's own collections that share whether a
 ``datetime`` filter applies to them (``earthx:capabilities.time_range`` — a
 materialized dataset without a time axis, such as the DEM, never shares a group
-with one that has one, `plans/m3-13-gemischte-suche.md` §4.2). Fan-out (Option 1
+with one that has one, `plans/m3/m3-13-gemischte-suche.md` §4.2). Fan-out (Option 1
 of that plan's §3): every open source is asked in parallel, each for a *share* of
 the page's ``limit``; the shares are recomputed every page, so a source that
 still has more once another runs out gets the rest of the room rather than a
@@ -35,9 +35,9 @@ from earthx.adapters.errors import InvalidQuery
 # adr/0005 rule V's read timeout is 15 s (gateway.Policy); a mixed page's own budget
 # per source sits under that with room to spare, well above the slowest single
 # federated answer measured so far (EOPF, up to 3.8 s with a 20,000-point polygon,
-# `plans/m3-08-intersects-ids.md` §2.1) — a native (pgstac) source carries no budget
+# `plans/m3/m3-08-intersects-ids.md` §2.1) — a native (pgstac) source carries no budget
 # at all: a failure there is a failure of our own database, not a partial result
-# (`plans/m3-13-gemischte-suche.md` §4.4, "Ein Fehler der eigenen Datenbank...").
+# (`plans/m3/m3-13-gemischte-suche.md` §4.4, "Ein Fehler der eigenen Datenbank...").
 SOURCE_TIMEOUT_S = 10.0
 
 MIXED_TOKEN_VERSION = 1

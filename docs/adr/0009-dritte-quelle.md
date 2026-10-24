@@ -9,7 +9,7 @@
   **F6** Zenodo für M5 vorgemerkt, nur als Discovery- bzw. Metadatenquelle.
   §8 gibt den entschiedenen Stand wieder; §10 nennt, was M3-11 noch klären muss.
 - **Datum:** 2026-09-23
-- **Aufgabe:** M3-01 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+- **Aufgabe:** M3-01 laut `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 - **Autonomiestufe:** C — nur gemessen, gelesen und berichtet. Kein Produktivcode
   geändert, keine Registry, keine Allowlist der Plattform, keine Daten ins Repo.
 - **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §2, §5; `KLAERUNGEN.md` B8, B9,

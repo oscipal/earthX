@@ -10,7 +10,7 @@ offers `materialize` and nothing else, and `adapters.materialize_items` is the
 only way in.
 
 Three things this module refuses to trust, all measured in the M3-11b plan
-step (`docs/plans/m3-11b-dem-adapter.md` §2):
+step (`docs/plans/m3/m3-11b-dem-adapter.md` §2):
 
 * **The list itself.** A line that does not fit the tile naming pattern fails
   the whole run rather than being skipped (`adr/0009` §11 — "Quell-Listen

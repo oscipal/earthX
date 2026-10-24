@@ -6,7 +6,7 @@
   - Dazu Auflagen zu F2, F8, F9 und F13. Sie stehen in §14a und sind in §4.1,
     §4.4, §7.1, §7.3, §7.4, §9.1 und §13 eingearbeitet.
 - **Datum:** 2026-10-02
-- **Aufgabe:** M4-04 laut `docs/plans/m4-processing-kern.md` §4.
+- **Aufgabe:** M4-04 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode und keine Änderung an
   `.importlinter`, `gateway`, `docker-compose.yml`, `compose/objectstore/` oder
   den Lock-Dateien. Gemessen wurde mit Skripten im Kratzverzeichnis der
@@ -29,7 +29,7 @@
     den Nachträgen vom 02.10.2026.
   - `adr/0006` §5 (Verbotsliste, `obstore`); `adr/0012` (Garage, §4.1, §7.3,
     §9, F3, F5); `adr/0014` §4.5, §4.7, §9, §13, §14.
-  - `plans/m3-23-garage.md` und die Log-Zeilen zu M3-23 vom 26.09.2026
+  - `plans/m3/m3-23-garage.md` und die Log-Zeilen zu M3-23 vom 26.09.2026
     (Nachbesserung: keine Zugangsdaten in Logs).
   - Entscheidungslog bis 02.10.2026, besonders „M4 Q4“ bis „M4 Q11“.
 - **Betroffen:**
@@ -672,7 +672,7 @@ Browser-Verlauf; deshalb dieselben Regeln wie für Logs (`adr/0014` §4.7)
 Aufnahme der Szene (Überflug), wo der Datensatz einen einzelnen hat; sonst der Tag
 des Laufs mit Präfix `run` (`cop-dem-glo-30_reproject_run20261014.zip`). Bis dahin
 war es immer der Tag, an dem der Lauf endete. Die Regel und ihre Stellen:
-`plans/m4-11b-angebot-und-zip.md` §3.1.7.
+`plans/m4/m4-11b-angebot-und-zip.md` §3.1.7.
 
 ### 6.6 `400` statt `403`
 
@@ -1263,7 +1263,7 @@ Komprimieren, keine CRC im Abruf (sie kommt vom Aufseher beim Hochladen,
 einer fortgesetzten (`410` ab `expires_at − 60 s`).
 
 **Speicher je Download [M]** (Loopback, echter botocore-Client gegen einen
-HTTP-Stand-in für `HeadObject`/`GetObject` mit `Range`, `plans/m4-11b-angebot-und-zip.md`
+HTTP-Stand-in für `HeadObject`/`GetObject` mit `Range`, `plans/m4/m4-11b-angebot-und-zip.md`
 §11): ein Download von 1,07 GB erhöht die Spitze von `api` um 3 MB, vier
 gleichzeitige um 17 MB.
 
@@ -1330,7 +1330,7 @@ Download bleibt `result.tif` das ganze Rechteck mit `mask.tif`. Der `tiler` lies
 von `mask.tif` (gleiches Raster, `nearest`) und macht durchsichtig, wo sie 0 ist. Beide Dateien liegen schon unter
 `results/{result_id}/`; dasselbe Objekt, derselbe Schlüssel, dieselben Prüfungen, und eine zweite signierte URL für
 `mask.tif`. Ein Ergebnis ohne Maske wird nicht ausgeliefert (`404`). Gemessen: die Maske hat keine Übersichten, die
-untersten Stufen kosten 0,9 s (10 980²) bis 3,1 s (30 000²) je Kachel, `plans/m4-13c-vorschau-und-viewer.md` §15.
+untersten Stufen kosten 0,9 s (10 980²) bis 3,1 s (30 000²) je Kachel, `plans/m4/m4-13c-vorschau-und-viewer.md` §15.
 
 **Das Ende der Kacheln.** Der `tiler` kennt `expires_at` nicht (keine
 Datenbank). Er leitet es aus dem Objekt ab: `Last-Modified + RESULT_TTL` (7 Tage)
@@ -1374,12 +1374,12 @@ lokalen Server geprüft, nicht gegen das offizielle Image. Der Smoke der CI
 (`compose/objectstore/smoke.py`) kennt den Schlüssel des `tiler` nicht; ihn dort
 einzubinden brauchte `S3_TILER_*` in `.github/workflows/ci.yml` und ist eine
 Änderung, die Otto freigeben müsste. Prüfanleitung Schritt 6 und 10 in
-`plans/m4-13c-vorschau-und-viewer.md` §9.
+`plans/m4/m4-13c-vorschau-und-viewer.md` §9.
 
 ## 14d. Nachtrag vom 2026-10-24: Permalinks und die Frist des Rezepts (zu §7.1 F13, §13; M4-19e)
 
 Otto hat den Plan von M4-19 am 2026-10-20 freigegeben: Frage 2 mit Option 1, Frage 3 mit Option 1,
-Frage 12 mit Option 1 (`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §7.1 und
+Frage 12 mit Option 1 (`plans/m4/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §7.1 und
 §13 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Frist des Permalinks (§13, Auflage F13):** fest **30 Tage ab Erstellung**. Öffnen verlängert nie.

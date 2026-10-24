@@ -1,11 +1,11 @@
 # M3-22 — Gelegentlich unlesbare Download-Dateien: Plan
 
-**Aufgabe:** M3-22 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-22 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1),
 F3 (1), F4 (1) und **umgesetzt** (§9).
-**Ort im Repo:** `docs/plans/m3-22-unlesbare-downloads.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, M3-22, P20,
-P21); `plans/m3-18-download-deckel-maske.md` §9 (F9), §12.1 mit Update vom
+**Ort im Repo:** `docs/plans/m3/m3-22-unlesbare-downloads.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` (§1.2, M3-22, P20,
+P21); `plans/m3/m3-18-download-deckel-maske.md` §9 (F9), §12.1 mit Update vom
 26.09.2026; `ENTSCHEIDUNGSLOG.md`, Zeilen vom 24.09.2026 („M3-18, Nebenfund …
 ZSTD statt DEFLATE“, „M3-18 §9, Aktualisierung/Verschärfung …“) und vom
 26.09.2026 („CI-Rot auf PR #86 behoben …“); Code in
@@ -230,7 +230,7 @@ alles synthetisch)
   zwei Zeilen vom 24.09.2026 zur Korruption auf „ersetzt am 2026-09-xx
   (M3-22)“; Text stehen lassen. Die Zeile vom 26.09.2026 („CI-Rot …“) bleibt
   unverändert; die neue Zeile berichtigt deren Mechanismus-Satz.
-- `plans/m3-18-download-deckel-maske.md` §9: ein Satz, dass F9 durch M3-22
+- `plans/m3/m3-18-download-deckel-maske.md` §9: ein Satz, dass F9 durch M3-22
   beantwortet ist, mit Verweis; Originaltext stehen lassen.
 
 **Nicht anfassen:** `readers`, `decomp.py`, `.github/`, Frontend (zeigt

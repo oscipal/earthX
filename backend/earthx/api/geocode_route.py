@@ -1,7 +1,7 @@
 """``POST /geocode``: resolve a place name to an outline and a bounding box (M3-07a).
 
 Serves the place-search AOI path (`prototyp-inventar.md` F2,
-`docs/plans/m3-07a-ortssuche-backend.md`). Talks only to the geocoder's own gateway
+`docs/plans/m3/m3-07a-ortssuche-backend.md`). Talks only to the geocoder's own gateway
 (`api.dependencies.build_geocoder`, built from ``EARTHX_GEOCODER_URL``) — never the
 registry's, so no dataset route can reach the geocoder and this route can never
 reach a dataset source. Cache and rate slot are the small ``psycopg`` pool `api`

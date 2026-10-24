@@ -5,7 +5,7 @@
 **Stufe B mit Recherche:** Plan mit Quellen im Draft-PR, Otto gibt frei, dann Code.
 **Modell:** Opus (Effort hoch) für Plan und Recherche, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** Nach M4-20. Läuft nicht gleichzeitig mit UI-01, weil beide die Kartenschalter berühren.
-**Startsatz:** „Führe Aufgabe UI-02 aus `docs/plans/ui-02-basemap-projektion.md` aus.“
+**Startsatz:** „Führe Aufgabe UI-02 aus `docs/plans/vp3/ui-02-basemap-projektion.md` aus.“
  
 ## 1. Wünsche von Otto (12.10.2026)
  

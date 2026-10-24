@@ -4,14 +4,14 @@
 **Stufe B:** Bis zur Freigabe ist kein Produktivcode geändert. Nach der Freigabe
 setzt dieselbe Session um (oder die Sessions aus Frage 6).
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
-**Startsatz:** „Führe Aufgabe M4-17 aus `docs/plans/m4-processing-kern.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-17 aus `docs/plans/m4/m4-processing-kern.md` aus.“
 **Grundlage:**
-- `plans/m4-processing-kern.md` M4-17, S5 (§1.1c), §1.2, Abnahme 7 (§5).
+- `plans/m4/m4-processing-kern.md` M4-17, S5 (§1.1c), §1.2, Abnahme 7 (§5).
 - `adr/0006` §2 (K1–K8), §3.4, §3.5, §4.2 (M1–M4), §5 „Zu Frage 4“, §6 Folge 1.
-- `adr/0001` Z4; E4/E5 (`plans/m1-fundament.md` §1); `architekturplan.md` 6.3,
+- `adr/0001` Z4; E4/E5 (`plans/m1/m1-fundament.md` §1); `architekturplan.md` 6.3,
   12.1, 12.3.
-- `plans/m4-12-mosaik-ueberflug.md` §8 F3/F4, §11, §12 (Mosaikregel, Reihenfolge).
-- `plans/m3-dritte-quelle-und-interface.md` P11.
+- `plans/m4/m4-12-mosaik-ueberflug.md` §8 F3/F4, §11, §12 (Mosaikregel, Reihenfolge).
+- `plans/m3/m3-dritte-quelle-und-interface.md` P11.
 
 Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im
 Code gelesen, [S] Zusammenfassung oder Suchtreffer, [A] eigene Ableitung.
@@ -835,7 +835,7 @@ keine Route im `tiler`, das Frontend unverändert.
 
 **M4-17b — `api`: Routen, Prüfungen, Item-Abrufe.** Neue Session nach dem
 Merge von M4-17a. *Umgesetzt, siehe §14.*
-**Startsatz:** „Führe Aufgabe M4-17b aus `docs/plans/m4-processing-kern.md`
+**Startsatz:** „Führe Aufgabe M4-17b aus `docs/plans/m4/m4-processing-kern.md`
 aus.“ Grundlage ist dieser Plan: §4.1–§4.4, §4.7, §4.8 (Tests 2, 3, 5–7, 9–11),
 §5, §11 Auflage 3, KE5–KE8.
 - Pfad-Abhängigkeit in `api/tiler.py` nach §4.2 (z8 vor jedem Item-Abruf,
@@ -862,7 +862,7 @@ aus.“ Grundlage ist dieser Plan: §4.1–§4.4, §4.7, §4.8 (Tests 2, 3, 5–
   setzt.
 
 **M4-17c — Frontend.** Neue Session nach dem Merge von M4-17b. *Umgesetzt, siehe §15.*
-**Startsatz:** „Führe Aufgabe M4-17c aus `docs/plans/m4-processing-kern.md`
+**Startsatz:** „Führe Aufgabe M4-17c aus `docs/plans/m4/m4-processing-kern.md`
 aus.“ Grundlage: §4.6, §4.8 (Frontend), §7 Frage 3, §9 B.
 - Ein Layer je Überflug als MapLibre-Quelle mit `url` auf das Mosaik-TileJSON,
   `item` nach ID sortiert (KE5); eine Szene bleibt bei der heutigen URL.
@@ -1091,7 +1091,7 @@ Layer eines Datensatzes, der nicht mehr im Katalog steht, gibt es eine überflü
 
 **Entscheidung (Otto, 22.10.2026):** Diese Grenzen sind für M4 akzeptiert. Die Stapelung
 zwischen Überflügen (Ansicht: zuerst gewählter oben, Layer: zuletzt angehefteter oben) wird in
-UI-01 bei der Reihenfolge der Layer mitgeprüft (`plans/ui-01-app-rahmen.md`). Prüfanleitung B
+UI-01 bei der Reihenfolge der Layer mitgeprüft (`plans/vp3/ui-01-app-rahmen.md`). Prüfanleitung B
 macht Otto lokal gegen Earth Search; die Schritte stehen im PR.
 
 **Prüfanleitung B: gegen eine echte Quelle nicht geprüft.** Wie in §14 erreicht das

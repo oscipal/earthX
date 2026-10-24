@@ -1,15 +1,15 @@
 # M4-06 — Modul `objectstore`: Client, signierte URLs, Schlüssel, Ablaufregel: Plan
 
-**Aufgabe:** M4-06 aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-06 aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 06.10.2026 freigegeben:** F1–F7 je Option 1,
 Kleinentscheidungen angenommen, Befund zu `smoke.py` (§2) angenommen. Dazu
 Auflagen zu F2 und F4 (§8, „Antworten“). Umsetzung in PR #119.
-**Ort im Repo:** `docs/plans/m4-06-objectstore.md`
+**Ort im Repo:** `docs/plans/m4/m4-06-objectstore.md`
 **Grundlagen:** `adr/0015` §3–§9, §12 Punkte 1–8, §14 (F1–F13), §14a;
-`plans/m4-processing-kern.md` §1.1b (R2, R4), §1.2, §1.3, M4-06;
+`plans/m4/m4-processing-kern.md` §1.1b (R2, R4), §1.2, §1.3, M4-06;
 `KLAERUNGEN.md` B8 (Nachtrag 2026-10-05), B9; `architekturplan.md` 3.1 (Nachtrag
 2026-10-05); `adr/0012` §9 Punkt 5 (Nachtrag 2026-10-05);
-`plans/m4-00b-lock-datei.md` (Muster der Lock-Datei); `plans/m3-23-garage.md`;
+`plans/m4/m4-00b-lock-datei.md` (Muster der Lock-Datei); `plans/m3/m3-23-garage.md`;
 Log-Zeilen vom 02.10.2026 (offene Zeile `requirements-smoke.txt`) und vom
 05.10.2026 („M4 R4“).
 

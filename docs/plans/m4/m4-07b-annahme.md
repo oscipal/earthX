@@ -1,15 +1,15 @@
 # M4-07b — Annahme in `api`: Auftrag → Rezept, Fassung, Host-Prüfung: Plan
 
-**Aufgabe:** M4-07b aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-07b aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 07.10.2026 freigegeben** mit F1–F8 je Option 1 und
 Auflagen zu `gateway.head()`, F5 und F6 (§8). Wo §3 und §8 sich widersprechen,
 gilt §8.
-**Ort im Repo:** `docs/plans/m4-07b-annahme.md`
+**Ort im Repo:** `docs/plans/m4/m4-07b-annahme.md`
 **Grundlagen:** `adr/0014` §4.1, §4.2, §4.3, §4.6, §4.7, §5.3, §5.4 (F7a),
 §8 (Allowlist), §10.1, §15a, §15b; `adr/0013` §9 Punkt 2;
-`plans/m4-processing-kern.md` §1.1 (Q8, Q11), §1.2, „Gemeinsam für M4-06 bis
-M4-15“, M4-07b; `plans/m4-07a-processing-kern.md` §3.1, §4, §8;
-`plans/m4-01a-zugriffsaufloesung.md`; `architekturplan.md` 3.1, 7.1;
+`plans/m4/m4-processing-kern.md` §1.1 (Q8, Q11), §1.2, „Gemeinsam für M4-06 bis
+M4-15“, M4-07b; `plans/m4/m4-07a-processing-kern.md` §3.1, §4, §8;
+`plans/m4/m4-01a-zugriffsaufloesung.md`; `architekturplan.md` 3.1, 7.1;
 `KLAERUNGEN.md` B8, B10, B11. Code in `processing/recipe.py`,
 `processing/operators/registry.py`, `access/resolve.py`, `access/download.py`,
 `api/item_source.py`, `api/tiler.py`, `gateway/client.py`, `gateway/policy.py`,
@@ -282,7 +282,7 @@ Resolver. Operatoren aus `tests/earthx/processing/testops.py`.
   Aufträgen (`api/intake.py`)“.
 - `ENTSCHEIDUNGSLOG.md` nach der Freigabe: „M4-07b freigegeben“ mit den
   Antworten; je eine Zeile für Antworten, die über `adr/0014` hinausgehen.
-- `m4-processing-kern.md` §3: Stand von M4-07b auf den PR.
+- `plans/m4/m4-processing-kern.md` §3: Stand von M4-07b auf den PR.
 
 ---
 

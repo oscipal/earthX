@@ -1,6 +1,6 @@
 """What the federating client needs besides pgstac: a gateway, and a cache pool.
 
-Two database drivers live in this process on purpose (docs/plans/m1-07-stac-api.md
+Two database drivers live in this process on purpose (docs/plans/m1/m1-07-stac-api.md
 §5): ``stac-fastapi-pgstac`` speaks ``asyncpg``/``buildpg`` to pgstac itself, and this
 module opens a second, small ``psycopg`` pool for the pieces M1-04 and M1-06 already
 built on ``psycopg`` — the registry's collection load and the search cache. Rebuilding

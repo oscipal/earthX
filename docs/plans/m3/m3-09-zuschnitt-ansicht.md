@@ -1,6 +1,6 @@
 # M3-09 — Vollauflösung zeigt nur den Zuschnitt: Umsetzungsplan
 
-**Aufgabe:** M3-09 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-09 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 24.09.2026 freigegeben**: F1 (1), F2 (eigener
 Wortlaut, seit einem weiteren Nachtrag „Crop & merge to AOI“ / „View full
 selection“, unter einer gemeinsamen „Full resolution“-Beschriftung, §6). **F3
@@ -8,7 +8,7 @@ wurde im Review von PR #84 (Otto, 24.09.2026) wieder zurückgenommen und mit
 einem weiteren Nachtrag endgültig bestätigt** — der Download eines Layers
 folgt nicht der Ansicht, sondern verlangt weiter immer eine AOI, wie vor
 dieser Aufgabe; was dazu geprüft wurde, steht als Fundstelle bei M3-17
-(`plans/m3-dritte-quelle-und-interface.md`, Abschnitt M3-17). Bekannte
+(`plans/m3/m3-dritte-quelle-und-interface.md`, Abschnitt M3-17). Bekannte
 Abweichung bis M3-17, siehe §7. **§10 ist mit F4 (a, `polyclip-ts` statt
 `polygon-clipping`) und F5 (ja) freigegeben (Otto, 24.09.2026) und
 umgesetzt** — Gruppen-Umrandung und ein Layer je Gruppe im Zuschnitt-Modus.
@@ -16,8 +16,8 @@ Der Plan-Schritt ist damit vollständig abgeschlossen, die Umsetzung liegt in
 diesem Branch/PR; §5–§7 und §10 sind auf den tatsächlichen Stand nachgezogen
 (**Fassung 1.3** — „Fassung 2“ ist für den Schnitt von M3-11 reserviert und
 wird hier nicht verwendet).
-**Ort im Repo:** `docs/plans/m3-09-zuschnitt-ansicht.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (P11, P12, P19,
+**Ort im Repo:** `docs/plans/m3/m3-09-zuschnitt-ansicht.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` (P11, P12, P19,
 §4 M3-09, M3-17, M3-18); `adr/0001` (Zustand, Z2, Z9); `adr/0006` (Kachel-Pfad,
 §3.5 Mosaik, Antwort „Mosaik nur im Zuschnitt“); `prototyp-inventar.md` F10;
 `architekturplan.md` 3.1, 7.3 (Stufe T0), 12.3.

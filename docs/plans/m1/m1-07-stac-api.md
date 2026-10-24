@@ -3,9 +3,9 @@
 **Status:** **Umgesetzt am 19.09.2026.** Von Otto angenommen, **F1–F6 alle wie
 empfohlen** (§15), dazu die Zusatzauflage zu F6/§10: ein Test statt eines
 zweiten Pins auf `stac-pydantic` (§10 unten, begründet). **Stufe B** laut
-`docs/plans/m1-fundament.md` §3: Plan zuerst als Draft-PR, Umsetzung nach
+`docs/plans/m1/m1-fundament.md` §3: Plan zuerst als Draft-PR, Umsetzung nach
 Ottos OK (`projektplan.md` 1.2) — die Umsetzung folgt in §16.
-**Aufgabe:** M1-07 aus `docs/plans/m1-fundament.md` §4, zusätzlich zwei
+**Aufgabe:** M1-07 aus `docs/plans/m1/m1-fundament.md` §4, zusätzlich zwei
 Nachträge aus M1-06 (siehe §7 und §8).
 **Grundlage:** `architekturplan.md` 0 (STAC als Modell, zweistufiger Katalog,
 ein Tor nach außen), 3.1 (Modulgrenzen; 7.3 betrifft die Processing-Ebene und
@@ -321,7 +321,7 @@ eingeschleust — keines der oben genannten Pakete zieht es mit.
 | `filter`/CQL2 aktivieren | Regel VI, gilt unverändert bis M3 |
 | `sort`-Extension für Clients öffnen | F2 — der föderierte Pfad kann es noch nicht einlösen |
 | Transactions-, Catalogs- (Multi-Tenant-), Free-Text-Extension | nicht angefragt, Vorgabe ohnehin aus |
-| Kacheln, Quicklooks | M2 (`m1-fundament.md` §2) |
+| Kacheln, Quicklooks | M2 (`plans/m1/m1-fundament.md` §2) |
 | Umbau von `catalog`/`adapters` auf `asyncpg` | §5, kein fachlicher Gewinn in M1 |
 
 ## 13. Tests (Abnahme, für die Umsetzungs-PR(s))
@@ -335,7 +335,7 @@ eingeschleust — keines der oben genannten Pakete zieht es mit.
 | `sortby`-Nachtrag (§7) | Paging über zwei Seiten mit festem `sortby`; eine kaputte Marke ergibt weiterhin unseren eigenen Fehler, nie den Elasticsearch-Text |
 | compose (§8, CI-Job aus M1-08) | frischer `docker compose up`: `catalog-load` läuft nach `pgstac-migrate` durch, `api` wird erst danach gesund, `GET /stac/collections` listet `sentinel-2-c1-l2a` |
 | STAC-Version/Lizenz (§10) | ein Test liest `stac_version` der laufenden API und die ausgegebene Collection-Lizenz und vergleicht sie gegen die Ableitungsregel |
-| Anleitung (Abnahme M1-07 laut `m1-fundament.md`) | Schritt-für-Schritt im PR, wie Otto lokal einen STAC-Browser auf `/stac` richtet |
+| Anleitung (Abnahme M1-07 laut `plans/m1/m1-fundament.md`) | Schritt-für-Schritt im PR, wie Otto lokal einen STAC-Browser auf `/stac` richtet |
 
 ## 14. Risiken
 

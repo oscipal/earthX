@@ -4,7 +4,7 @@
 laut `projektplan.md` 1.2: Plan zuerst als Draft-PR, Umsetzung nach dem OK — sie
 beginnt als **eigene Sitzung**. Die Abhängigkeit von M2-04 ist erfüllt: `#39` ist
 gemergt, `earthx:viewer` liegt auf `main` (§5).
-**Aufgabe:** M2-07a aus `docs/plans/m2-format-und-viewer.md` §4 („M2-07 — Frontend
+**Aufgabe:** M2-07a aus `docs/plans/m2/m2-format-und-viewer.md` §4 („M2-07 — Frontend
 auf `earthx`", Abschnitt „Gemeinsam für 07a–07d" und „M2-07a").
 **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §1–§3 (BIOMASS bleibt nicht, was vom
 Prototyp erhalten bleibt); `KLAERUNGEN.md` B8 (Gateway), B10 (Capability-Flags),

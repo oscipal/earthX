@@ -1,6 +1,6 @@
 # M3-18 — Download-Deckel nach Ausgabegröße und Maske auf die AOI: Umsetzungsplan
 
-**Aufgabe:** M3-18 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-18 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B** — **von Otto am 24.09.2026 freigegeben** mit F1 (1), F2 (1), F3
 (2), F4 (1), F5 (2), F6 (2), F7 (1), F8 (1) (§8) und **umgesetzt**. Die
 native Auflösung (§10, Ottos Erweiterung vom 23.09.2026) ist mit Ottos
@@ -11,8 +11,8 @@ umgesetzt**: die Datendatei ist immer ein reiner Bounding-Box-Zuschnitt, das
 AOI-Polygon lebt in einer eigenen Maskendatei je Asset plus einer
 `aoi.geojson` je ZIP. F9 (§9, Kompression des maskierten Zuschnitts,
 Nebenfund) bleibt offen, unabhängig von §10/§11.
-**Ort im Repo:** `docs/plans/m3-18-download-deckel-maske.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` (§1.2, §1.3, M3-17,
+**Ort im Repo:** `docs/plans/m3/m3-18-download-deckel-maske.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` (§1.2, §1.3, M3-17,
 M3-18, P19); `ENTSCHEIDUNGSLOG.md`, Zeilen vom 20.09.2026 (M2-06, Deckel) und
 23.09.2026 („Download-Deckel: 200 MB gelten für die Ausgabe …“, „Zuschnitt auf
 die AOI-Geometrie …“); `adr/0006` §3.4, §3.5; `adr/0004` §3.4; `KLAERUNGEN.md`
@@ -400,7 +400,7 @@ bräuchte aber einen Versions-Bump außerhalb dieser Aufgabe).
    (die Maske bliebe dann mit dem gemessenen Restrisiko).
 
 **Nachtrag 26.09.2026:** F9 ist durch M3-22 beantwortet
-(`plans/m3-22-unlesbare-downloads.md` §3, §7): Die gemessene Korruption lag im
+(`plans/m3/m3-22-unlesbare-downloads.md` §3, §7): Die gemessene Korruption lag im
 Leseweg der Tests (Use-after-free über `MemoryFile(bytes)`), nicht in den
 geschriebenen Dateien; beide Dateien sind seitdem wieder DEFLATE (F2).
 

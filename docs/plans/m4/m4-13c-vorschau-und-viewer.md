@@ -1,11 +1,11 @@
 # M4-13c — Vorschau, „Preview“ und Processing im Viewer: Plan
 
-**Aufgabe:** M4-13c aus `docs/plans/m4-processing-kern.md` §3 (Plan des Ganzen:
-`plans/m4-13-processing-panel.md` §3.7, F3, F4) mit dem Zusatz
-`plans/m4-zusaetze-2026-10-12.md` §2 (Punkte 1–7).
+**Aufgabe:** M4-13c aus `docs/plans/m4/m4-processing-kern.md` §3 (Plan des Ganzen:
+`plans/m4/m4-13-processing-panel.md` §3.7, F3, F4) mit dem Zusatz
+`plans/m4/m4-zusaetze-2026-10-12.md` §2 (Punkte 1–7).
 **Stufe B:** Plan im Draft-PR #152, **freigegeben von Otto am 15.10.2026** (§10).
 **Stand:** 14.10.2026, `main` nach PR #148 (M4-12b und M4-11b-1 gemergt).
-**Ort im Repo:** `docs/plans/m4-13c-vorschau-und-viewer.md`
+**Ort im Repo:** `docs/plans/m4/m4-13c-vorschau-und-viewer.md`
 
 Aus dem ursprünglichen Plan gelten unverändert (Freigabe 08.10.2026): Planer nach
 `adr/0014` §6.1, kanonisches JSON in der Kachel-URL, F3 (1) Wertebereich und
@@ -233,7 +233,7 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
     vorhandenem Volume `objectstore-secrets` bekommt den Schlüssel beim nächsten
     `docker compose up -d --build`, ohne Datenverlust und ohne Handarbeit. Das
     trägt der Weg, über den M4-06 die Schlüssel `jobs` und `api` in die Volumes
-    aus M3-23 brachte (`plans/m4-06-objectstore.md` §7 „Bestehende Volumes“):
+    aus M3-23 brachte (`plans/m4/m4-06-objectstore.md` §7 „Bestehende Volumes“):
     - `SERVICE_KEYS` in `bootstrap.py` bekommt den dritten Eintrag (`tiler`,
       `earthx-tiler`, `OBJECTSTORE_TILER_KEY_DIR`, `/keys/tiler`, nur `read`).
       Das neue Volume `objectstore-key-tiler` hängt beschreibbar an
@@ -393,7 +393,7 @@ Backend (pytest, synthetisch):
 
 - `ENTSCHEIDUNGSLOG.md`: Plan-Schritt (diese Zeile), später Freigabe und
   Umsetzung.
-- `plans/m4-processing-kern.md` §3: Zeile M4-13c und Teilung nach F7.
+- `plans/m4/m4-processing-kern.md` §3: Zeile M4-13c und Teilung nach F7.
 - Mit c-5: Nachtrag `adr/0015` und `architekturplan.md` 3.1 (`tiler` liest
   Ergebnisse über `objectstore` mit eigenem Leseschlüssel, ohne Datenbank).
 
@@ -601,15 +601,15 @@ Im Browser `http://localhost:5173`:
 **Teilung (F7):** c-1 in dieser Session (Branch `claude/dreamy-brown-nwdzid`,
 PR #152). c-2 bis c-5 je als neue Session nach dem Merge des vorigen, in dieser
 Reihenfolge, mit diesen Startsätzen:
-- „Führe Aufgabe M4-13c-2 aus `docs/plans/m4-processing-kern.md` aus (Plan:
-  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.3, §3.4 erster und zweiter Punkt
+- „Führe Aufgabe M4-13c-2 aus `docs/plans/m4/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4/m4-13c-vorschau-und-viewer.md` §3.3, §3.4 erster und zweiter Punkt
   ohne Job-Ergebnis, §3.5).“
-- „Führe Aufgabe M4-13c-3 aus `docs/plans/m4-processing-kern.md` aus (Plan:
-  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.7 mit der Auflage aus §10).“
-- „Führe Aufgabe M4-13c-4 aus `docs/plans/m4-processing-kern.md` aus (Plan:
-  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.6).“
-- „Führe Aufgabe M4-13c-5 aus `docs/plans/m4-processing-kern.md` aus (Plan:
-  `docs/plans/m4-13c-vorschau-und-viewer.md` §3.4 Job-Ergebnis mit der Auflage
+- „Führe Aufgabe M4-13c-3 aus `docs/plans/m4/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4/m4-13c-vorschau-und-viewer.md` §3.7 mit der Auflage aus §10).“
+- „Führe Aufgabe M4-13c-4 aus `docs/plans/m4/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4/m4-13c-vorschau-und-viewer.md` §3.6).“
+- „Führe Aufgabe M4-13c-5 aus `docs/plans/m4/m4-processing-kern.md` aus (Plan:
+  `docs/plans/m4/m4-13c-vorschau-und-viewer.md` §3.4 Job-Ergebnis mit der Auflage
   aus §10).“
 
 Jede Session liest diesen Plan ganz, schreibt ihren Stand als eigenen
@@ -1104,7 +1104,7 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suche
    „Overview“.
 6. *(Überholt am 20.10.2026, siehe „Zwei Änderungen“ unten: ein Knopf „Add to layers“.)*
 
-**Antworten von Otto (20.10.2026):** (1) „Replace source layer“: Option 1, entfällt auch für Job-Ergebnisse (er hat den Knopf bewusst entfernt). (2) Die Abweichungen 1 und 2 unten sind angenommen, ebenso der relative Link `tiles`; die absolute URL bleibt offen bis M6. (3) Die Farbskala der Ergebnisse bleibt in diesem PR wie gebaut; die Vorgabe aus einer Statistik je Ergebnis kommt mit M4-32 (`plans/m4-32-ergebnis-statistik.md`).
+**Antworten von Otto (20.10.2026):** (1) „Replace source layer“: Option 1, entfällt auch für Job-Ergebnisse (er hat den Knopf bewusst entfernt). (2) Die Abweichungen 1 und 2 unten sind angenommen, ebenso der relative Link `tiles`; die absolute URL bleibt offen bis M6. (3) Die Farbskala der Ergebnisse bleibt in diesem PR wie gebaut; die Vorgabe aus einer Statistik je Ergebnis kommt mit M4-32 (`plans/m4/m4-32-ergebnis-statistik.md`).
 
 **Frage an Otto (beantwortet, siehe oben): „Replace source layer“ für Job-Ergebnisse.** §3.4 sieht „Show on map“ mit „As a new layer“ und
 „Replace source layer“ vor. Für die Vorschau hast du den Knopf am 19.10.2026 gestrichen (§12); c-2 hat dazu

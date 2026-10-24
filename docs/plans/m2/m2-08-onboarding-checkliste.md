@@ -6,8 +6,8 @@ Datensatz ist vom T-D-Smoke abgedeckt", das sichtbare Prüfdatum kommt mit M5
 (§4.4, Fassung v1.1 von D4 im `ENTSCHEIDUNGSLOG.md`). Die Umsetzung läuft als
 drei PRs (§7): **M2-08-1** (Punkte 1–8) ist umgesetzt, **M2-08-2** (Punkt 9) ist
 dieser PR, **M2-08-3** (Punkt 10) folgt.
-**Ort im Repo:** `docs/plans/m2-08-onboarding-checkliste.md`
-**Aufgabe:** M2-08 aus `docs/plans/m2-format-und-viewer.md`.
+**Ort im Repo:** `docs/plans/m2/m2-08-onboarding-checkliste.md`
+**Aufgabe:** M2-08 aus `docs/plans/m2/m2-format-und-viewer.md`.
 **Grundlage:** `projektuebersicht.md` §5 (die zehn Punkte, Fassung v1 nach D4);
 `KLAERUNGEN.md` B10 (Capability-Flags vollständig), B11 (Lizenzstufen), B12
 (Punkt 10), B13 (Registry als Dataclass); `adr/0002` §2 T-D und der Nachtrag vom

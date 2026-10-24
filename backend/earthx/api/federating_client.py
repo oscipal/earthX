@@ -76,7 +76,7 @@ from earthx.gateway import UpstreamError, UpstreamTimeout, UpstreamUnreachable
 LOGGER = logging.getLogger("earthx.api.federating_client")
 
 # adr/0005 rule VI treats `filter`/CQL2 this way; the plan (docs/plans/
-# m1-07-stac-api.md §6, F2) extends the same reasoning to `sort`: the federated path
+# m1/m1-07-stac-api.md §6, F2) extends the same reasoning to `sort`: the federated path
 # cannot yet honour a client-chosen field, so neither extension is enabled
 # (earthx/api/main.py). M3-13 F5 adds `query`/`fields`: measured against the real API
 # (plan §2.2), both are silently dropped on a federated collection today (`#query`/
@@ -108,7 +108,7 @@ def _reject_disallowed_keys(keys: object) -> None:
     _reject_keys(
         frozenset(keys),
         _DISALLOWED_QUERY_KEYS,
-        "is not available in M1 (adr/0005 rule VI; docs/plans/m1-07-stac-api.md §6)",
+        "is not available in M1 (adr/0005 rule VI; docs/plans/m1/m1-07-stac-api.md §6)",
     )
 
 

@@ -4,7 +4,7 @@
 **Stufe A, mit Diagnose zuerst:** Ursachen im PR belegen, dann beheben. Ändert die Behebung die Bedienung, ist das eine Frage an Otto.
 **Modell:** Sonnet, Effort hoch.
 **Start:** Nach dem Merge von M4-13c-2 (#153), weil c-2 Vorschau-Layer und „Replace source layer“ einführt. Vor M4-13c-5, das Job-Ergebnisse als Layer bringt. Läuft nicht gleichzeitig mit einer anderen Aufgabe, die Layer oder Kartenquellen ändert.
-**Startsatz:** „Führe Aufgabe M4-28 aus `docs/plans/m4-28-layer-manager-reparieren.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-28 aus `docs/plans/m4/m4-28-layer-manager-reparieren.md` aus.“
 
 ## 1. Befund (Otto, lokal im Browser, 19.10.2026)
 
@@ -48,7 +48,7 @@
 ## 5. Doku und Abnahme
 
 - Log-Zeile mit Ursachen und Behebung.
-- Zeile M4-28 in `docs/plans/m4-processing-kern.md` §3.
+- Zeile M4-28 in `docs/plans/m4/m4-processing-kern.md` §3.
 - Abnahme:
   - Die Tests aus §3 sind grün.
   - Alle vier Pflicht-Checks der CI sind grün.

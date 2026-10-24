@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite + MapLibre viewer for the EarthX platform. It talks
 only to `earthx`'s own STAC API under `/stac` — never to the BIOMASS
-prototype's `/api/…` routes (see `docs/plans/m2-format-und-viewer.md`).
+prototype's `/api/…` routes (see `docs/plans/m2/m2-format-und-viewer.md`).
 
 ## Development
 

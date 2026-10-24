@@ -4,7 +4,7 @@
 needs; `scripts/lock-backend.sh` turns them into `backend/requirements.lock` and
 `backend/requirements-dev.lock`, exact versions with hashes. CI, the live smoke, the
 image and the SessionStart hook install from the lock files only
-(docs/plans/m4-00b-lock-datei.md).
+(docs/plans/m4/m4-00b-lock-datei.md).
 
 Nothing ties the two kinds of file together but this test: a requirement added to a
 `.txt` file without renewing the lock would otherwise only surface as a failed

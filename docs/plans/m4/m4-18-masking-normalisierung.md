@@ -1,14 +1,14 @@
 # M4-18 — Operatoren Masking und Normalisierung: Plan
 
-**Aufgabe:** M4-18 aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-18 aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B (S4) — von Otto am 20.10.2026 freigegeben:** F1–F6 und F8 je
 Option 1, K1–K8 angenommen, F7 mit Beleg [P] und Auflagen (§8). Umgesetzt wird
 in derselben Session nur **M4-18a**; M4-18b und M4-18c sind je eine neue Session
 nach dem Merge (M4-18c: §13). Wo §3 und §8 sich widersprechen, gilt §8.
-**Ort im Repo:** `docs/plans/m4-18-masking-normalisierung.md`
+**Ort im Repo:** `docs/plans/m4/m4-18-masking-normalisierung.md`
 **Grundlagen:** `adr/0014` §5.1–§5.7, §6.1–§6.4, §15c, §15d; `adr/0016` §3.3,
-§12a; `plans/m4-processing-kern.md` §1.1b (R3, R5), §1.1c (S4), §1.2, M4-18;
-`plans/m4-09-band-math.md` §3, §9, §10; `plans/m4-13-processing-panel.md` §13;
+§12a; `plans/m4/m4-processing-kern.md` §1.1b (R3, R5), §1.1c (S4), §1.2, M4-18;
+`plans/m4/m4-09-band-math.md` §3, §9, §10; `plans/m4/m4-13-processing-panel.md` §13;
 `architekturplan.md` 7.1; `KLAERUNGEN.md` B9, B10, B11. Code in
 `processing/operators/` (`base.py`, `registry.py`, `band_math.py`),
 `processing/source.py`, `processing/tile.py`, `processing/plan.py`,
@@ -57,7 +57,7 @@ Band-Math (COG bitgleich, Zarr nach §15d).
   this panel“.
 - **Ganzzahlige Ausgabe:** `core._nodata_for` verlangt dafür ein gemeinsames,
   endliches nodata aller Bänder; ein Band mit NaN-nodata (Band-Math) macht
-  jede Ganzzahl-Ausgabe unmöglich (`plans/m4-13-processing-panel.md` §13).
+  jede Ganzzahl-Ausgabe unmöglich (`plans/m4/m4-13-processing-panel.md` §13).
 
 **Quellen [M]** (5 Anfragen an Datenquellen, je mindestens 1 s Abstand, keine
 AOI; Rohdaten im Scratchpad der Sitzung):
@@ -267,7 +267,7 @@ Fixtures nur synthetisch (`tests/earthx/processing/sources.py`,
 - `ENTSCHEIDUNGSLOG.md`: Freigabe und je Teil die Umsetzung, am Ende.
 - `adr/0014`: Nachtrag `§15m` zu §5.2/§5.3 (neue Operatoren, `dataset_check`,
   Flags) und §6.3 (Zeilen für `mask`, `normalize`).
-- `plans/m4-processing-kern.md` §3: Stand von M4-18.
+- `plans/m4/m4-processing-kern.md` §3: Stand von M4-18.
 
 ---
 
@@ -280,7 +280,7 @@ Fixtures nur synthetisch (`tests/earthx/processing/sources.py`,
 - Perzentile, z-Score, Statistik der Szene (F5).
 - Bereich je Band bei `normalize` (F4).
 - Ganzzahlige Ausgabe nach `normalize` (nodata NaN, `core._nodata_for`; offene
-  Frage aus `plans/m4-13-processing-panel.md` §13).
+  Frage aus `plans/m4/m4-13-processing-panel.md` §13).
 - `decomp.py`, `gateway`, `jobs`, `objectstore`, `.importlinter`, `.github/`.
 
 ---
@@ -545,7 +545,7 @@ Die zwei offenen Log-Zeilen aus §9 stehen auf „erledigt (2026-10-22)“.
 ## 11. Nach dem Merge von `main` (M4-19a, M4-32a; 22.10.2026)
 
 `main` brachte M4-32a (#168) und M4-19a (#171) in den Branch. Konflikte gab es nur in
-Dokumenten (`ENTSCHEIDUNGSLOG.md`, `adr/0014`, `plans/m4-processing-kern.md`); beide Seiten
+Dokumenten (`ENTSCHEIDUNGSLOG.md`, `adr/0014`, `plans/m4/m4-processing-kern.md`); beide Seiten
 bleiben stehen, §15m kommt hinter §15k und §15l.
 
 - **`Operator.method` (Pflichtfeld aus M4-19a).** `mask` und `normalize` haben ihre Sätze:

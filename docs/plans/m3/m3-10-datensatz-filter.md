@@ -14,13 +14,13 @@ im Fuß, heller Hintergrund hinter der Weltkugel.
 **Teil 2 (M3-10b) umgesetzt** (30.09.2026, eigener Draft-PR): „Load more“,
 Fallback für den im Dropdown gewählten Datensatz, Namenssuche über alle
 angehakten Datensätze; Stand und Auslegungen in §13.
-**Aufgabe:** M3-10 aus `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P9),
+**Aufgabe:** M3-10 aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4 (P9),
 mit dem Nachtrag vom 26.09.2026 (M3-11b F11) und Ottos Vorgaben vom
 26.09.2026 zum Start dieser Aufgabe (unten O1–O3, Log). **Stufe B.** Hängt an
 M3-07b und M3-12 (beide auf `main`) und nutzt die gemischte Suche aus M3-13
 (auf `main`).
-**Grundlagen:** `plans/m3-13-gemischte-suche.md` §3, §4.3–4.5, §4.8, §10;
-`plans/m3-12-frontend-sonderfaelle.md` §4.3–4.6, §4.8; `adr/0005` Regel III;
+**Grundlagen:** `plans/m3/m3-13-gemischte-suche.md` §3, §4.3–4.5, §4.8, §10;
+`plans/m3/m3-12-frontend-sonderfaelle.md` §4.3–4.6, §4.8; `adr/0005` Regel III;
 `ENTSCHEIDUNGEN_2026-09-18.md` §2 (Coverage Map); `KLAERUNGEN.md` B10.
 
 Belegstufen: **M** gemessen in dieser Sitzung, **P** am Quelltext gelesen
@@ -423,7 +423,7 @@ Grobe Schätzung **[A]**, ohne generierte Dateien:
 
 - `ENTSCHEIDUNGSLOG.md`: Ottos Vorgaben O1–O3 (fest) und dieser Plan-Schritt
   (Vorschlag); nach der Freigabe eine Zeile mit den Antworten.
-- `plans/m3-dritte-quelle-und-interface.md`: M3-10 auf „Plan-Schritt“, Verweis
+- `plans/m3/m3-dritte-quelle-und-interface.md`: M3-10 auf „Plan-Schritt“, Verweis
   auf diese Datei.
 - Nach der Umsetzung: §9 dieser Datei um den Stand ergänzen; `architekturplan.md`
   5.1 nur bei F6 (1) (neues Registry-Feld).

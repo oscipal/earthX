@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes the backend lock files from the requirement files (M4-00b,
-# docs/plans/m4-00b-lock-datei.md).
+# docs/plans/m4/m4-00b-lock-datei.md).
 #
 #   backend/requirements.txt      -> backend/requirements.lock      (image)
 #   backend/requirements-dev.txt  -> backend/requirements-dev.lock  (CI, session)

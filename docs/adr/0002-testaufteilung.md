@@ -1,6 +1,6 @@
 # ADR 0002 — Testaufteilung: Cloud-Sitzung, CI, nur lokal
 
-- **Status:** **Angenommen** von Otto am 2026-09-19 (E8, `docs/plans/m1-fundament.md`
+- **Status:** **Angenommen** von Otto am 2026-09-19 (E8, `docs/plans/m1/m1-fundament.md`
   Abschnitt 1), mit der Festlegung E7 aus demselben Abschnitt (`moto` für
   Unit-Tests, MinIO nur als Service-Container in CI).
 - **Datum:** 2026-09-18
@@ -99,7 +99,7 @@ oder des Produktivpfads aus der Sitzung dagegen nicht. In der CI läuft der
 Live-Smoke wie vorgesehen, weil dort kein Proxy dazwischensteht. Latenzen
 für einen PR werden deshalb **über `curl`** belegt, nicht über einen
 Sitzungslauf des eigenen Codes. Dieser Befund wurde bereits dreimal einzeln
-entdeckt (`adr/0003` §10.1, `adr/0007` §3.9/§12, `plans/m2-05-coverage.md`
+entdeckt (`adr/0003` §10.1, `adr/0007` §3.9/§12, `plans/m2/m2-05-coverage.md`
 §7.1); diese Zeile hält ihn an der Stelle fest, an der ihn eine künftige
 Live-Smoke-Aufgabe zuerst nachschlägt, damit er nicht ein viertes Mal
 entdeckt wird.

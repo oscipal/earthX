@@ -1,16 +1,16 @@
 # M4-11 — Export über dem Deckel als Job: Plan
 
-**Aufgabe:** M4-11 aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-11 aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 08.10.2026 freigegeben** (§10), mit einer Ergänzung
 aus M4-13 (mehrere Items und Gruppen im Kern). Geschnitten in **M4-11a**
 (Backend, dieser PR) und **M4-11b** (Frontend, nach dem Merge von M4-13). §3
 beschreibt die freigegebene Fassung; §8 bleibt als Wortlaut der Fragen stehen.
-**Ort im Repo:** `docs/plans/m4-11-export-job.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P19, P20, P21;
-`plans/m3-18-download-deckel-maske.md` §3, §10.3, §13; `adr/0014` §4.1, §4.3,
-§5.5, §10; `adr/0013` §5.1, §5.6; `adr/0015` §6, §8.1; `plans/m4-08a-jobs-queue.md`
-F4; `plans/m4-08b-job-api.md` F3, K6; `plans/m4-07a-processing-kern.md` F2, F6, F9;
-`plans/m4-07b-annahme.md` F5; `ENTSCHEIDUNGSLOG.md` „M4-14, Antworten Otto“
+**Ort im Repo:** `docs/plans/m4/m4-11-export-job.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` P19, P20, P21;
+`plans/m3/m3-18-download-deckel-maske.md` §3, §10.3, §13; `adr/0014` §4.1, §4.3,
+§5.5, §10; `adr/0013` §5.1, §5.6; `adr/0015` §6, §8.1; `plans/m4/m4-08a-jobs-queue.md`
+F4; `plans/m4/m4-08b-job-api.md` F3, K6; `plans/m4/m4-07a-processing-kern.md` F2, F6, F9;
+`plans/m4/m4-07b-annahme.md` F5; `ENTSCHEIDUNGSLOG.md` „M4-14, Antworten Otto“
 (07.10.2026); `architekturplan.md` 3.1; `KLAERUNGEN.md` B8, B9, B11.
 
 ---
@@ -351,7 +351,7 @@ einen eigenen Weg und eine eigene Messung.
   und das Kind rufen dieselbe Funktion.
 - **K5** Kennung im `413` als Kopfzeile `X-Export-Job: available`; kein
   geändertes Format des Fehlertexts.
-- **K6** Dateiname der ZIP `{dataset}_export_{YYYYMMDD}.zip` (Nachtrag 14.10.2026: der Tag nach `plans/m4-11b-angebot-und-zip.md` §3.1.7); im ZIP die Namen
+- **K6** Dateiname der ZIP `{dataset}_export_{YYYYMMDD}.zip` (Nachtrag 14.10.2026: der Tag nach `plans/m4/m4-11b-angebot-und-zip.md` §3.1.7); im ZIP die Namen
   des Zuschnitts.
 - **K7** Die `jobID` lebt im Frontend nur im Zustand der Seite; kein
   `localStorage` (eine `jobID` ist ohne Konten der einzige Schlüssel zum

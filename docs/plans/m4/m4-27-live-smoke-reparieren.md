@@ -4,7 +4,7 @@
 **Stufe A.** Direkt umsetzen, ein Draft-PR.
 **Modell:** Sonnet, Effort mittel.
 **Start:** Nach M4-21. Läuft neben anderen Sessions.
-**Startsatz:** „Führe Aufgabe M4-27 aus `docs/plans/m4-27-live-smoke-reparieren.md` aus.“
+**Startsatz:** „Führe Aufgabe M4-27 aus `docs/plans/m4/m4-27-live-smoke-reparieren.md` aus.“
 
 ## 1. Befund
 
@@ -35,7 +35,7 @@ TypeError: search_items() missing 1 required keyword-only argument: 'adapters'
 - `pytest`, `ruff check backend` und `lint-imports` sind grün. Alle vier Pflicht-Checks der CI sind grün.
 - **Nach dem Merge prüft Otto:** Actions → „Live smoke“ → „Run workflow“ startet den Lauf von Hand. Alle drei Jobs sind grün. Ist ein Job danach immer noch rot, ist das ein echter Befund an der Quelle und kommt als neuer Fund in den Chat.
 - **Log:** eine Zeile mit Befund und Umsetzung.
-- `docs/plans/m4-processing-kern.md` §3: Zeile M4-27 ergänzen.
+- `docs/plans/m4/m4-processing-kern.md` §3: Zeile M4-27 ergänzen.
 - Vor „fertig“ ist main geholt.
 
 ## 4. Offener Punkt, nicht in dieser Aufgabe

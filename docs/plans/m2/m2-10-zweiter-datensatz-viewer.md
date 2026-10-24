@@ -1,10 +1,10 @@
 # M2-10 — Zweiter Datensatz im Viewer: Umsetzungsplan
 
-**Aufgabe:** M2-10 aus `docs/plans/m2-format-und-viewer.md` §4.
+**Aufgabe:** M2-10 aus `docs/plans/m2/m2-format-und-viewer.md` §4.
 **Stufe B** — **von Otto am 22.09.2026 freigegeben** (F1 (a) bis F6 (a), dazu zwei
 Zusätze; §10). Der Plan-Schritt ist damit abgeschlossen, die Umsetzung läuft.
-**Ort im Repo:** `docs/plans/m2-10-zweiter-datensatz-viewer.md`
-**Grundlagen:** `plans/m2-format-und-viewer.md` (D8, D14, D19, D20, D23, D25, D26,
+**Ort im Repo:** `docs/plans/m2/m2-10-zweiter-datensatz-viewer.md`
+**Grundlagen:** `plans/m2/m2-format-und-viewer.md` (D8, D14, D19, D20, D23, D25, D26,
 Abnahmekriterium 1); `adr/0006` (Kachel-Pfad); `adr/0007` §12.7 (kein Quicklook),
 §12.10 (Zoomstufen z8–z14), §12.11 Punkt 8 und 14; `adr/0004` (Coverage);
 `projektuebersicht.md` §5 (Onboarding-Checkliste, Punkte 2, 9, 10) und §7

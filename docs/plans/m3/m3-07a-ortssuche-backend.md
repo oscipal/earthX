@@ -1,6 +1,6 @@
 # M3-07a — Ortssuche: Recherche und Backend-Route: Plan
 
-**Aufgabe:** M3-07a aus `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+**Aufgabe:** M3-07a aus `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 **Stufe B — von Otto am 26.09.2026 freigegeben** mit F1 (1), F2 (1), F3 (1),
 F4 (1), F5 (1) (§12), dazu vier Ergänzungen, die in die Umsetzung eingeflossen
 sind:
@@ -18,10 +18,10 @@ sind:
 - **Attribution** kommt in jeder Antwort mit (`to_payload()`); die Anzeige ist
   M3-07b.
 
-**Ort im Repo:** `docs/plans/m3-07a-ortssuche-backend.md`
-**Grundlagen:** `plans/m3-dritte-quelle-und-interface.md` P3, P8, §1.3, M3-07a;
+**Ort im Repo:** `docs/plans/m3/m3-07a-ortssuche-backend.md`
+**Grundlagen:** `plans/m3/m3-dritte-quelle-und-interface.md` P3, P8, §1.3, M3-07a;
 `prototyp-inventar.md` F2; `architekturplan.md` 3.1, 6.5, 12.3;
-`KLAERUNGEN.md` B8, B9; `plans/m1-fundament.md` E4, E5; `adr/0001` §9.3;
+`KLAERUNGEN.md` B8, B9; `plans/m1/m1-fundament.md` E4, E5; `adr/0001` §9.3;
 `projektuebersicht.md` §2 (Ortssuche, ODbL-Attribution); Log 20.09. und
 23.09.2026 (Ortssuche); heutiger Code in `earthx/gateway/`,
 `earthx/api/dependencies.py`, `earthx/catalog/search_cache.py`,

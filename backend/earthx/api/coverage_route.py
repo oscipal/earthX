@@ -1,6 +1,6 @@
 """``GET /coverage/{dataset_id}``: the coverage seam wired to `api` (M2-05b).
 
-At the base app, beside ``/health`` and outside ``/stac`` (plans/m2-05-coverage.md
+At the base app, beside ``/health`` and outside ``/stac`` (plans/m2/m2-05-coverage.md
 §6.6, F1 a): the answer is not a STAC object, and ``/stac`` stays the namespace of
 the standard, in case the real STAC aggregation extension lands there one day.
 

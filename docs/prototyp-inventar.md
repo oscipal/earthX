@@ -119,11 +119,11 @@ sowie, solange die AOI noch die aus der Ortssuche ist, unter dem Feld.
 oder KML über `DOMParser`, „erste brauchbare Geometrie gewinnt“, ohne Größen-
 oder Gültigkeitsprüfung, kein Shapefile). Seit M3-06a/b (26.09.2026) prüft und
 parst stattdessen `POST /aoi/upload` im Backend
-(`backend/earthx/access/aoi_upload.py`, Plan `plans/m3-06a-aoi-upload-backend.md`):
+(`backend/earthx/access/aoi_upload.py`, Plan `plans/m3/m3-06a-aoi-upload-backend.md`):
 zusätzlich Shapefile als ZIP, mit Größendeckel (1 MiB), Punktanzahl-Deckel,
 Gültigkeitsprüfung und sicherer XML-Verarbeitung. `frontend/src/aoiFile.ts`
 (`readAoiFile`) ruft nur noch diese Route auf und bildet ihre Fehlermeldungen ab
-(`plans/m3-06b-aoi-upload-frontend.md`). Ein Punkt aus der Datei wird wie in F1
+(`plans/m3/m3-06b-aoi-upload-frontend.md`). Ein Punkt aus der Datei wird wie in F1
 gepuffert. „Last AOI“ stellt die zuletzt gesetzte Geometrie aus `lastAoi` wieder
 her — unverändert im Client.
 

@@ -8,7 +8,7 @@ M4b (M4-16 bis M4-19) aus, nimmt die gesammelten kleinen Aufgaben auf (M4-21,
 M4-22), zieht den Stand in §3 nach und legt fest, was nach M4 wartet
 (S1–S6, §1.1c). Wo eine erledigte Aufgabe anders umgesetzt wurde als hier
 beschrieben, gilt das Log und der Plan der Aufgabe (`plans/m4-xx-*.md`).
-**Ort im Repo:** `docs/plans/m4-processing-kern.md`
+**Ort im Repo:** `docs/plans/m4/m4-processing-kern.md`
 **Grundlagen:** `projektplan.md` 4 (M4), 6.1, 10; `architekturplan.md` 3.1,
 3.2, 6.1, 6.3, 6.4, 6.5, 7, 12.1, 12.3, 15.1, 15.2; `adr/0001` §9.2 (Ablauf),
 `adr/0002` (Tests), `adr/0006` (Kachel-Pfad, Mosaik), `adr/0011`
@@ -16,13 +16,13 @@ beschrieben, gilt das Log und der Plan der Aufgabe (`plans/m4-xx-*.md`).
 `adr/0014` (Rezept und Operator-Registry), `adr/0015` (Weg zum Objektspeicher),
 `adr/0016` (lokaler Runner);
 `KLAERUNGEN.md` B8–B13; `projektuebersicht.md` §5 (Onboarding-Checkliste);
-`plans/m3-dritte-quelle-und-interface.md` (P11, P19, P20, „Nicht in M3“);
-`plans/m3-15-abnahme.md` §12 („Nach M3 vorgemerkt“); `ENTSCHEIDUNGSLOG.md`, Zeilen
+`plans/m3/m3-dritte-quelle-und-interface.md` (P11, P19, P20, „Nicht in M3“);
+`plans/m3/m3-15-abnahme.md` §12 („Nach M3 vorgemerkt“); `ENTSCHEIDUNGSLOG.md`, Zeilen
 ab dem 30.09.2026, besonders „M4 Q2“ bis „M4 Q16“ vom 02.10.2026, „M4 Fassung 2“ vom
 05.10.2026 und „M4 Fassung 3“ vom 10.10.2026.
 
 Eine Sitzung startet eine Aufgabe mit: „Führe Aufgabe M4-xx aus
-`docs/plans/m4-processing-kern.md` aus.“ Jede Aufgabe ist ohne das
+`docs/plans/m4/m4-processing-kern.md` aus.“ Jede Aufgabe ist ohne das
 Planungsgespräch verständlich und endet mit genau einem Draft-PR. Aufgaben mit
 Buchstaben (M4-00b, M4-01a …) sind je eine eigene Session und ein eigener PR.
 
@@ -84,7 +84,7 @@ widersprechen, gilt die Tabelle.
 
 | # | Entscheidung | wirkt auf |
 |---|---|---|
-| S1 | **Neue Aufgaben:** M4-21 vereinheitlicht die Zeilenenden per `.gitattributes` (Anlass: vier Sessions haben `m4-processing-kern.md` versehentlich von CRLF auf LF umgestellt). M4-22 schließt drei Testlücken an einer Stelle: Vertragstest der Items je Adapter (Log 06.10.2026), `500` statt `502` bei unlesbarer Antwort einer föderierten Einzelsuche (Fund aus M4-01b), der Geocode-Logtest, der nichts prüft (Log 07.10.2026, M4-07b-fix offen (1)) | §3, M4-21, M4-22 |
+| S1 | **Neue Aufgaben:** M4-21 vereinheitlicht die Zeilenenden per `.gitattributes` (Anlass: vier Sessions haben `plans/m4/m4-processing-kern.md` versehentlich von CRLF auf LF umgestellt). M4-22 schließt drei Testlücken an einer Stelle: Vertragstest der Items je Adapter (Log 06.10.2026), `500` statt `502` bei unlesbarer Antwort einer föderierten Einzelsuche (Fund aus M4-01b), der Geocode-Logtest, der nichts prüft (Log 07.10.2026, M4-07b-fix offen (1)) | §3, M4-21, M4-22 |
 | S2 | **Zeilenenden:** Im Repo und in jedem Checkout gilt LF für alle Textdateien (`* text=auto eol=lf`), CRLF nur für `*.bat` und `*.cmd`, Binärformate ausdrücklich `binary`. Die Normalisierung kommt einmal, als eigener PR, zwischen zwei Wellen, wenn keine andere Session offen ist | M4-21, §1.3 |
 | S3 | **Nach M4 vorgemerkt, nicht in M4:** Export-Job für Zarr blockweise; weitere Resampling-Methoden für `reproject`; schnelleres COG-Profil; Laufzeitdeckel an echten Läufen kalibrieren; Zähler der Verbindungen je Lauf; Job-Schnittstelle in eigenem Prozess (Gewicht von `api`); Eingaben per Referenz; Datei-Cache des Runners. Die Log-Zeilen bleiben „offen“; M4-20 führt sie unter „Nach M4 vorgemerkt“ | M4-20 |
 | S4 | **M4-18 ist Stufe B statt A:** Masking braucht je Datensatz eine Angabe, woher die Maske kommt (etwa eine Klassifikationsschicht), also ein neues Registry-Feld ohne Vorgabewert (B10); die Form legt der Plan-Schritt vor | M4-18 |
@@ -230,51 +230,51 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-08a-fix | Nachbesserung M4-08a: Logtests prüfen Nachricht und Felder, nicht den Zeitstempel | M4a | A | Sonnet (hoch) | M4-08a | erledigt (#130) |
 | M4-07b-fix | Nachbesserung M4-07b: Logtests suchen in Nachricht und eigenen Feldern, nicht in den Standardattributen von `LogRecord` | M4a | A | Sonnet (hoch) | M4-07b, M4-08a-fix | erledigt (#131) |
 | M4-08a-fix2 | Nachbesserung M4-08a: Shutdown-Test beim Abholen nicht stabil; Ursache im Test (zwei Lesezugriffe), nicht im Aufseher | M4a | B | Opus (hoch) | M4-08a | erledigt (#132) |
-| M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | erledigt (#133, `plans/m4-11-export-job.md`) |
+| M4-11a | Export über dem Deckel als Job: Backend (Kern, Queue, Job-API, Kennung im `413`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-14 | erledigt (#133, `plans/m4/m4-11-export-job.md`) |
 | M4-11b | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a, M4-13b | geteilt in M4-11b-1 und M4-11b-2, erledigt |
-| M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | erledigt (#136, `plans/m4-12-mosaik-ueberflug.md`) |
-| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | erledigt (#148, `plans/m4-12-mosaik-ueberflug.md` §13) |
-| M4-11b-1 | Export über dem Deckel als Job: das Ergebnis eines Raster-Jobs als ein ZIP (Backend: CRC und Größe beim Hochladen, Strom aus dem Objektspeicher mit Range, Ausgang `bundle`, `X-Export-Job: too-large`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a | erledigt (#145, `plans/m4-11b-angebot-und-zip.md`) |
-| M4-11b-2 | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife; Panel zeigt „Download (ZIP)“; Zusatz §1a (zwei Knöpfe, Originale) | M4a | B | Sonnet (hoch) | M4-11b-1, M4-13b | erledigt (#151, `plans/m4-11b-angebot-und-zip.md` §12, §13) |
-| M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | erledigt (Plan #134, Umsetzung a bis c-5) |
+| M4-12a | Mosaik ganzer Szenen je Überflug als Job: Backend (Kern, Annahme in `api`, Deckel) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-10 | erledigt (#136, `plans/m4/m4-12-mosaik-ueberflug.md`) |
+| M4-12b | Mosaik ganzer Szenen je Überflug: Angebot im Download-Dialog und im Panel mit der Statusanzeige aus M4-13b; nimmt die Ein-Item-Grenze des Panels (M4-13 F8) zurück | M4a | B | Sonnet (hoch) | M4-12a, M4-13b | erledigt (#148, `plans/m4/m4-12-mosaik-ueberflug.md` §13) |
+| M4-11b-1 | Export über dem Deckel als Job: das Ergebnis eines Raster-Jobs als ein ZIP (Backend: CRC und Größe beim Hochladen, Strom aus dem Objektspeicher mit Range, Ausgang `bundle`, `X-Export-Job: too-large`) | M4a | B | Opus Plan, Sonnet (hoch) | M4-11a | erledigt (#145, `plans/m4/m4-11b-angebot-und-zip.md`) |
+| M4-11b-2 | Export über dem Deckel als Job: Angebot im Download-Dialog mit der Statusanzeige aus M4-13b (SSE mit Rückfall), keine eigene Abfrage-Schleife; Panel zeigt „Download (ZIP)“; Zusatz §1a (zwei Knöpfe, Originale) | M4a | B | Sonnet (hoch) | M4-11b-1, M4-13b | erledigt (#151, `plans/m4/m4-11b-angebot-und-zip.md` §12, §13) |
+| M4-13 | Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status — geteilt in M4-13a bis M4-13c (`plans/m4/m4-13-processing-panel.md` F7) | M4a | B | Opus Plan, Sonnet (hoch) | M4-08b, M4-09 | erledigt (Plan #134, Umsetzung a bis c-5) |
 | M4-13a | Backend: Schätzroute, `x-earthx-tiers`/`x-earthx-kind`, Trenner der Zarr-Variablen, Fixtures der Prozessbeschreibung | M4a | B | Sonnet (hoch) | M4-13 (Plan) | erledigt (#134) |
-| M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | erledigt (#138, `plans/m4-13-processing-panel.md` §12) |
-| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung; dazu Zusatz §2 aus `plans/m4-zusaetze-2026-10-12.md` (Fenster, Whole scene / AOI only, Ergebnis im Viewer, Einstiege, Einheit der Auflösung, Batch) | M4a | B | Opus Plan, Sonnet (hoch) | M4-13b, M4-12b | erledigt (Plan #152, Umsetzung c-1 bis c-5, `plans/m4-13c-vorschau-und-viewer.md`) |
-| M4-13c-1 | Frontend: Seitenleiste zum Zusammenstellen, Jobliste getrennt, „Whole scene / AOI only“ (K1–K4), Test Bänder aus dem Ausdruck | M4a | B | Sonnet (hoch) | M4-13c (Plan) | erledigt (#152, `plans/m4-13c-vorschau-und-viewer.md` §11) |
-| M4-13c-2 | Frontend: T1-Vorschau, „Preview“, Vorschau als Layer (anheften; „Replace source layer“ entfällt), Einstiege aus Layer-Manager und Vollauflösung | M4a | B | Sonnet (hoch) | M4-13c-1 | erledigt (#153, `plans/m4-13c-vorschau-und-viewer.md` §12) |
-| M4-13c-3 | Auflösung mit Einheit: Route `GET /processing/crs/{code}` (`pyproj`, ohne Netz) und Anzeige im Panel | M4a | B | Sonnet (hoch) | M4-13c-2 | erledigt (#157, `plans/m4-13c-vorschau-und-viewer.md` §13) |
-| M4-13c-4 | Frontend: Batch „One job per pass“/„One job per scene“, höchstens 25, Schätzung als Summe | M4a | B | Sonnet (hoch) | M4-13c-3 | erledigt (#161, `plans/m4-13c-vorschau-und-viewer.md` §14) |
-| M4-13c-5 | Job-Ergebnis als Layer: Kachel-Route im `tiler` über `objectstore` ohne Datenbank, eigener Leseschlüssel, Nachtrag `adr/0015` | M4a | B | Opus (hoch) | M4-13c-4 | erledigt (#166, `plans/m4-13c-vorschau-und-viewer.md` §15; Replace source layer entfällt, Otto 20.10.2026) |
+| M4-13b | Frontend: Panel, Formular aus dem Schema, Schätzung, Start, Job-Status (SSE mit Rückfall), Download | M4a | B | Sonnet (hoch) | M4-13a | erledigt (#138, `plans/m4/m4-13-processing-panel.md` §12) |
+| M4-13c | Frontend: Vorschau auf der Karte, „Preview“-Kennzeichnung; dazu Zusatz §2 aus `plans/m4/m4-zusaetze-2026-10-12.md` (Fenster, Whole scene / AOI only, Ergebnis im Viewer, Einstiege, Einheit der Auflösung, Batch) | M4a | B | Opus Plan, Sonnet (hoch) | M4-13b, M4-12b | erledigt (Plan #152, Umsetzung c-1 bis c-5, `plans/m4/m4-13c-vorschau-und-viewer.md`) |
+| M4-13c-1 | Frontend: Seitenleiste zum Zusammenstellen, Jobliste getrennt, „Whole scene / AOI only“ (K1–K4), Test Bänder aus dem Ausdruck | M4a | B | Sonnet (hoch) | M4-13c (Plan) | erledigt (#152, `plans/m4/m4-13c-vorschau-und-viewer.md` §11) |
+| M4-13c-2 | Frontend: T1-Vorschau, „Preview“, Vorschau als Layer (anheften; „Replace source layer“ entfällt), Einstiege aus Layer-Manager und Vollauflösung | M4a | B | Sonnet (hoch) | M4-13c-1 | erledigt (#153, `plans/m4/m4-13c-vorschau-und-viewer.md` §12) |
+| M4-13c-3 | Auflösung mit Einheit: Route `GET /processing/crs/{code}` (`pyproj`, ohne Netz) und Anzeige im Panel | M4a | B | Sonnet (hoch) | M4-13c-2 | erledigt (#157, `plans/m4/m4-13c-vorschau-und-viewer.md` §13) |
+| M4-13c-4 | Frontend: Batch „One job per pass“/„One job per scene“, höchstens 25, Schätzung als Summe | M4a | B | Sonnet (hoch) | M4-13c-3 | erledigt (#161, `plans/m4/m4-13c-vorschau-und-viewer.md` §14) |
+| M4-13c-5 | Job-Ergebnis als Layer: Kachel-Route im `tiler` über `objectstore` ohne Datenbank, eigener Leseschlüssel, Nachtrag `adr/0015` | M4a | B | Opus (hoch) | M4-13c-4 | erledigt (#166, `plans/m4/m4-13c-vorschau-und-viewer.md` §15; Replace source layer entfällt, Otto 20.10.2026) |
 | M4-14 | Zuschnitt-ZIP mit `recipe.json` und `citation.bib`, `sci:doi` | M4a | A | Sonnet (mittel) | M4-07b | erledigt (#129) |
 | M4-15 | Onboarding-Checkliste Punkt 9, Fassung v2 | M4a | A | Sonnet (mittel) | M4-07b, M4-09, M4-10 | erledigt (#135) |
-| M4-16 | Lokaler Runner offline, Vergleichstest in der CI — geteilt in M4-16a und M4-16b (`plans/m4-16-lokaler-runner.md` Frage 5) | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | erledigt (a #160, b #164; Ottos lokaler Beleg #165 und #169) |
-| M4-16a | Lokaler Runner: Modul `earthx.runner`, Importregeln, Tests mit dem Vergleich Job ↔ Runner | M4b | B | Sonnet (hoch) | M4-16 (Plan) | erledigt (#160, `plans/m4-16-lokaler-runner.md` §9) |
-| M4-16b | Lokaler Runner: Stufe `runner` im `Dockerfile`, Basis-Image per Digest, `target: app`, Prüfung im Compose-Job der CI, Anleitung und Prüfanleitung (`plans/m4-16-lokaler-runner.md` §8) | M4b | B | Sonnet (hoch) | M4-16a; `deb.debian.org` in der Allowlist | erledigt (#164, `plans/m4-16-lokaler-runner.md` §10) |
-| M4-17 | Mosaik im Kachel-Pfad — geteilt in M4-17a bis M4-17c (`plans/m4-17-mosaik-kachel-pfad.md` Frage 6) | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | erledigt (a #167, b #172, c #174) |
-| M4-17a | Mosaik im Kachel-Pfad: Reihenfolge nach `access/crop_rules.py` (KE4) mit Vergleichstest, Mosaik-Reader und -Fabrik in `access`, Berichtigung `architekturplan.md` 6.3, Nachtrag `adr/0006` | M4b | B | Sonnet (hoch) | M4-17 (Plan) | erledigt (#167, `plans/m4-17-mosaik-kachel-pfad.md` §12) |
-| M4-17b | Mosaik im Kachel-Pfad: Routen und Pfad-Abhängigkeit im `tiler`, Item-Abrufe (zusammengelegt, gedrosselt, TileJSON wärmt vor), ohne Item-Cache klare Meldung statt `500` (`plans/m4-17-mosaik-kachel-pfad.md` §13) | M4b | B | Sonnet (hoch) | M4-17a | erledigt (#172, `plans/m4-17-mosaik-kachel-pfad.md` §14) |
-| M4-17c | Mosaik im Kachel-Pfad: Frontend, ein Layer je Überflug, Rückfall unter z8 und über 64 Szenen (`plans/m4-17-mosaik-kachel-pfad.md` §13) | M4b | B | Sonnet (hoch) | M4-17b | erledigt (#174, `plans/m4-17-mosaik-kachel-pfad.md` §15) |
-| M4-18 | Operatoren Masking und Normalisierung (`plans/m4-18-masking-normalisierung.md`) | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | erledigt (a #170, b #175, c #177; `plans/m4-18-masking-normalisierung.md`) |
-| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | erledigt (a #171, b #178, c #180, d #176, e #179; `plans/m4-19-teilen-und-beschreiben.md`) |
-| M4-19a | Methodentext: `processing/methods.py`, `Operator.method`, `methods.txt` in Zuschnitt, Export, Job-ZIP und Runner (eine Definition mit M4-30), Link und „Methods“ in der Jobliste | M4b | B | Sonnet (mittel) | M4-19 (Plan) | erledigt (#171, `plans/m4-19-teilen-und-beschreiben.md` §10) |
-| M4-19b | Einheiten: Registry-Feld `band_units`, `Band.unit`, `bands[].unit`, Anzeige (§3.2) | M4b | B | Sonnet (mittel) | M4-19a; nicht parallel zu M4-18 | erledigt (#178, `plans/m4-19-teilen-und-beschreiben.md` §12) |
-| M4-19c | Farbskala der Vorschau: `/statistics` mit `op`, Regel mit M4-32 (§3.3); dazu die Einheit der Vorschau als Feld im TileJSON der Operator-Kachel (Übergabe aus M4-19b, Plan §12) | M4b | B | Sonnet (mittel) | M4-32b | erledigt (#180, `plans/m4-19-teilen-und-beschreiben.md` §14) |
-| M4-19d | „Load recipe…“, `draftFromOrder` (§3.4) | M4b | B | Sonnet (mittel) | — | erledigt (#176, `plans/m4-19-teilen-und-beschreiben.md` §11) |
-| M4-19e | Permalink: Tabelle, Routen, Aufräumer, „Share“; Nachtrag `adr/0015` F13 (§3.5) | M4b | B | Sonnet (mittel) | M4-19d | erledigt (#179, `plans/m4-19-teilen-und-beschreiben.md` §13) |
+| M4-16 | Lokaler Runner offline, Vergleichstest in der CI — geteilt in M4-16a und M4-16b (`plans/m4/m4-16-lokaler-runner.md` Frage 5) | M4b | B | Opus Plan, Sonnet (hoch) | `adr/0016`, M4-08a, M4-11a | erledigt (a #160, b #164; Ottos lokaler Beleg #165 und #169) |
+| M4-16a | Lokaler Runner: Modul `earthx.runner`, Importregeln, Tests mit dem Vergleich Job ↔ Runner | M4b | B | Sonnet (hoch) | M4-16 (Plan) | erledigt (#160, `plans/m4/m4-16-lokaler-runner.md` §9) |
+| M4-16b | Lokaler Runner: Stufe `runner` im `Dockerfile`, Basis-Image per Digest, `target: app`, Prüfung im Compose-Job der CI, Anleitung und Prüfanleitung (`plans/m4/m4-16-lokaler-runner.md` §8) | M4b | B | Sonnet (hoch) | M4-16a; `deb.debian.org` in der Allowlist | erledigt (#164, `plans/m4/m4-16-lokaler-runner.md` §10) |
+| M4-17 | Mosaik im Kachel-Pfad — geteilt in M4-17a bis M4-17c (`plans/m4/m4-17-mosaik-kachel-pfad.md` Frage 6) | M4b | B | Opus Plan, Sonnet (hoch) | M4-01a, M4-12 | erledigt (a #167, b #172, c #174) |
+| M4-17a | Mosaik im Kachel-Pfad: Reihenfolge nach `access/crop_rules.py` (KE4) mit Vergleichstest, Mosaik-Reader und -Fabrik in `access`, Berichtigung `architekturplan.md` 6.3, Nachtrag `adr/0006` | M4b | B | Sonnet (hoch) | M4-17 (Plan) | erledigt (#167, `plans/m4/m4-17-mosaik-kachel-pfad.md` §12) |
+| M4-17b | Mosaik im Kachel-Pfad: Routen und Pfad-Abhängigkeit im `tiler`, Item-Abrufe (zusammengelegt, gedrosselt, TileJSON wärmt vor), ohne Item-Cache klare Meldung statt `500` (`plans/m4/m4-17-mosaik-kachel-pfad.md` §13) | M4b | B | Sonnet (hoch) | M4-17a | erledigt (#172, `plans/m4/m4-17-mosaik-kachel-pfad.md` §14) |
+| M4-17c | Mosaik im Kachel-Pfad: Frontend, ein Layer je Überflug, Rückfall unter z8 und über 64 Szenen (`plans/m4/m4-17-mosaik-kachel-pfad.md` §13) | M4b | B | Sonnet (hoch) | M4-17b | erledigt (#174, `plans/m4/m4-17-mosaik-kachel-pfad.md` §15) |
+| M4-18 | Operatoren Masking und Normalisierung (`plans/m4/m4-18-masking-normalisierung.md`) | M4b | B (S4) | Opus Plan, Sonnet (hoch) | M4-07a, M4-09 | erledigt (a #170, b #175, c #177; `plans/m4/m4-18-masking-normalisierung.md`) |
+| M4-19 | Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“ | M4b | B | Opus Plan, Sonnet (mittel) | M4-13c-2 | erledigt (a #171, b #178, c #180, d #176, e #179; `plans/m4/m4-19-teilen-und-beschreiben.md`) |
+| M4-19a | Methodentext: `processing/methods.py`, `Operator.method`, `methods.txt` in Zuschnitt, Export, Job-ZIP und Runner (eine Definition mit M4-30), Link und „Methods“ in der Jobliste | M4b | B | Sonnet (mittel) | M4-19 (Plan) | erledigt (#171, `plans/m4/m4-19-teilen-und-beschreiben.md` §10) |
+| M4-19b | Einheiten: Registry-Feld `band_units`, `Band.unit`, `bands[].unit`, Anzeige (§3.2) | M4b | B | Sonnet (mittel) | M4-19a; nicht parallel zu M4-18 | erledigt (#178, `plans/m4/m4-19-teilen-und-beschreiben.md` §12) |
+| M4-19c | Farbskala der Vorschau: `/statistics` mit `op`, Regel mit M4-32 (§3.3); dazu die Einheit der Vorschau als Feld im TileJSON der Operator-Kachel (Übergabe aus M4-19b, Plan §12) | M4b | B | Sonnet (mittel) | M4-32b | erledigt (#180, `plans/m4/m4-19-teilen-und-beschreiben.md` §14) |
+| M4-19d | „Load recipe…“, `draftFromOrder` (§3.4) | M4b | B | Sonnet (mittel) | — | erledigt (#176, `plans/m4/m4-19-teilen-und-beschreiben.md` §11) |
+| M4-19e | Permalink: Tabelle, Routen, Aufräumer, „Share“; Nachtrag `adr/0015` F13 (§3.5) | M4b | B | Sonnet (mittel) | M4-19d | erledigt (#179, `plans/m4/m4-19-teilen-und-beschreiben.md` §13) |
 | M4-21 | Zeilenenden per `.gitattributes` vereinheitlichen | Quer | A | Sonnet (mittel) | kein anderer PR offen | erledigt (#142) |
-| M4-24 | Weitere Resampling-Methoden für `reproject` (`average`, `mode`, `cubicspline`, `lanczos`) mit Messung gegen `adr/0014` §6.3 (`plans/m4-24-resampling-methoden.md`) | Quer | B | Opus Plan, Sonnet (hoch) | M4-21 | erledigt (#158, `plans/m4-24-resampling-methoden.md` §8) |
+| M4-24 | Weitere Resampling-Methoden für `reproject` (`average`, `mode`, `cubicspline`, `lanczos`) mit Messung gegen `adr/0014` §6.3 (`plans/m4/m4-24-resampling-methoden.md`) | Quer | B | Opus Plan, Sonnet (hoch) | M4-21 | erledigt (#158, `plans/m4/m4-24-resampling-methoden.md` §8) |
 | M4-22 | Testlücken: Vertragstest Items je Adapter, `502` bei unlesbarer föderierter Einzelsuche, Geocode-Logtest | Quer | A | Sonnet (hoch) | M4-01b | erledigt (#139) |
 | M4-23 | Kernfeld `bands` an den Assets von `sentinel-2-l2a-zarr3` (Anlass: M4-13b F1, PR #138) | Quer | A | Sonnet (mittel) | M4-01b | erledigt (#140) |
-| M4-25 | Kostenschätzung für Raster in geografischem CRS: Eingaberaster aus der Lage, `422`/`413` statt `500` (`plans/m4-25-schaetzung-geografisch.md`) | Quer | A | Sonnet (hoch) | M4-12a, M4-21 | erledigt (#149, `plans/m4-25-schaetzung-geografisch.md`) |
-| M4-26 | Gleitkomma beim Schreiben einer Ganzzahl-Ausgabe runden statt abschneiden (Anlass: M4-13b; `plans/m4-26-runden-ganzzahl.md`) | Quer | A | Sonnet (hoch) | M4-21 | erledigt (#147, `plans/m4-26-runden-ganzzahl.md`) |
-| M4-27 | Live-Smoke auf die Signaturen von M4-01b bringen; Trockenlauf mit Transport-Double im normalen `pytest` (`plans/m4-27-live-smoke-reparieren.md`) | Quer | A | Sonnet (mittel) | M4-21 | erledigt (#146, `plans/m4-27-live-smoke-reparieren.md`) |
-| M4-28 | Layer-Manager reparieren: Tempo beim Schalten, Reihenfolge Liste = Karte, Klick trifft den gewählten Layer (`plans/m4-28-layer-manager-reparieren.md`) | Quer | A | Sonnet (hoch) | M4-13c-2 | erledigt (#156, `plans/m4-28-layer-manager-reparieren.md`) |
-| M4-29 | Frontend: Datensatzwahl ohne Vorauswahl, einzeln per Klick, mehrere nur mit „Select multiple datasets“; „Select all“ je Gruppe und für alle geladenen Treffer, „Clear selection“ (`plans/m4-29-datensatzwahl.md`) | M4 | A | Sonnet (mittel) | M4-13c-2 | erledigt (#154, `plans/m4-29-datensatzwahl.md`) |
-| M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export; dazu die Herkunft einer Orts-AOI (OSM) auch bei Raster-Jobs, Backend und Frontend (`plans/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | erledigt (#159, `plans/m4-30-job-zip-vollstaendig.md`) |
-| M4-32 | Statistik je Raster-Ergebnis (min, max, Mittel, `stddev`, 2-/98-Perzentil, Anteil gültiger Pixel) in `result.tif` und Ergebnisdokument, Vorgabe für die Farbskala im Frontend (`plans/m4-32-ergebnis-statistik.md`) | M4 | B | Opus Plan, Sonnet (hoch) | M4-13c-5 | erledigt (a #168, b #173; `plans/m4-32-ergebnis-statistik.md`) |
-| M4-32a | Backend: Statistik im Kern (Tags über die Datei, `statistics` über die Maske), Version 0.4.2, Faktoren mit Statistik-Durchgang (Band-Math 1,2, `reproject` +7,7 %, Raster ohne Schritt 1,0; Export unverändert), Nachtrag `adr/0014` §15k | M4 | B | Opus (hoch) | M4-32 (Plan) | erledigt (#168, `plans/m4-32-ergebnis-statistik.md` §8, §9) |
-| M4-32b | Frontend: Farbskala eines Ergebnisses aus der AOI-Statistik (§6.7), Prüfanleitung | M4 | B | Sonnet (hoch) | M4-32a gemergt | erledigt (#173, `plans/m4-32-ergebnis-statistik.md` §10) |
-| M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | erledigt (#181, Bericht `plans/m4-20-abnahme.md`); M4 abgenommen am 24.10.2026 |
+| M4-25 | Kostenschätzung für Raster in geografischem CRS: Eingaberaster aus der Lage, `422`/`413` statt `500` (`plans/m4/m4-25-schaetzung-geografisch.md`) | Quer | A | Sonnet (hoch) | M4-12a, M4-21 | erledigt (#149, `plans/m4/m4-25-schaetzung-geografisch.md`) |
+| M4-26 | Gleitkomma beim Schreiben einer Ganzzahl-Ausgabe runden statt abschneiden (Anlass: M4-13b; `plans/m4/m4-26-runden-ganzzahl.md`) | Quer | A | Sonnet (hoch) | M4-21 | erledigt (#147, `plans/m4/m4-26-runden-ganzzahl.md`) |
+| M4-27 | Live-Smoke auf die Signaturen von M4-01b bringen; Trockenlauf mit Transport-Double im normalen `pytest` (`plans/m4/m4-27-live-smoke-reparieren.md`) | Quer | A | Sonnet (mittel) | M4-21 | erledigt (#146, `plans/m4/m4-27-live-smoke-reparieren.md`) |
+| M4-28 | Layer-Manager reparieren: Tempo beim Schalten, Reihenfolge Liste = Karte, Klick trifft den gewählten Layer (`plans/m4/m4-28-layer-manager-reparieren.md`) | Quer | A | Sonnet (hoch) | M4-13c-2 | erledigt (#156, `plans/m4/m4-28-layer-manager-reparieren.md`) |
+| M4-29 | Frontend: Datensatzwahl ohne Vorauswahl, einzeln per Klick, mehrere nur mit „Select multiple datasets“; „Select all“ je Gruppe und für alle geladenen Treffer, „Clear selection“ (`plans/m4/m4-29-datensatzwahl.md`) | M4 | A | Sonnet (mittel) | M4-13c-2 | erledigt (#154, `plans/m4/m4-29-datensatzwahl.md`) |
+| M4-30 | ZIP eines Processing-Jobs: Attribution und AOI ergänzen, dieselben Hinweisdateien wie Zuschnitt und Export; dazu die Herkunft einer Orts-AOI (OSM) auch bei Raster-Jobs, Backend und Frontend (`plans/m4/m4-30-job-zip-vollstaendig.md`) | Quer | A | Sonnet (mittel) | M4-11b-1 | erledigt (#159, `plans/m4/m4-30-job-zip-vollstaendig.md`) |
+| M4-32 | Statistik je Raster-Ergebnis (min, max, Mittel, `stddev`, 2-/98-Perzentil, Anteil gültiger Pixel) in `result.tif` und Ergebnisdokument, Vorgabe für die Farbskala im Frontend (`plans/m4/m4-32-ergebnis-statistik.md`) | M4 | B | Opus Plan, Sonnet (hoch) | M4-13c-5 | erledigt (a #168, b #173; `plans/m4/m4-32-ergebnis-statistik.md`) |
+| M4-32a | Backend: Statistik im Kern (Tags über die Datei, `statistics` über die Maske), Version 0.4.2, Faktoren mit Statistik-Durchgang (Band-Math 1,2, `reproject` +7,7 %, Raster ohne Schritt 1,0; Export unverändert), Nachtrag `adr/0014` §15k | M4 | B | Opus (hoch) | M4-32 (Plan) | erledigt (#168, `plans/m4/m4-32-ergebnis-statistik.md` §8, §9) |
+| M4-32b | Frontend: Farbskala eines Ergebnisses aus der AOI-Statistik (§6.7), Prüfanleitung | M4 | B | Sonnet (hoch) | M4-32a gemergt | erledigt (#173, `plans/m4/m4-32-ergebnis-statistik.md` §10) |
+| M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | erledigt (#181, Bericht `plans/m4/m4-20-abnahme.md`); M4 abgenommen am 24.10.2026 |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben. Kritischer Pfad für die Abnahme:
@@ -354,7 +354,7 @@ Log-Zeile gelöscht oder im Text geändert.
 **Ziel:** CI, Image und Cloud-Session installieren dieselben Versionen mit
 Hashes; eine neue Veröffentlichung irgendwo im Abhängigkeitsbaum bricht nichts
 mehr unbemerkt (Anlass: Installationsfehler `stac-fastapi.types` am 28.09.2026,
-`plans/m3-15-abnahme.md` §12).
+`plans/m3/m3-15-abnahme.md` §12).
 **Stufe B.**
 **Umfang:**
 - Lock-Dateien mit exakten Versionen und Hashes, erzeugt aus den bestehenden
@@ -889,7 +889,7 @@ dort zusätzliche mmap-Aufrufe und Seitenfehler [A].
 mit `steps: []`, Ausgabe wie der synchrone Zuschnitt in voller Auflösung);
 gleiche Hinweisdateien, Maske, `recipe.json` und `citation.bib`; Ergebnis über
 den Link aus M4-08b.
-**Im Plan-Schritt entschieden (08.10.2026, `plans/m4-11-export-job.md`):** ein
+**Im Plan-Schritt entschieden (08.10.2026, `plans/m4/m4-11-export-job.md`):** ein
 `export.zip` wie beim Zuschnitt (Rasterdateien ohne erneute Kompression), jeder
 Export rechnet für sich und kommt nie aus dem Cache, je berührter Gruppe eine
 Datei samt Maske, Deckel 5 GB, Zarr vorerst `422`, Plattenprüfung vor dem
@@ -898,8 +898,8 @@ Lauf. Geteilt in **M4-11a** (Backend, erledigt #133) und **M4-11b**.
 #### M4-11b — Angebot im Download-Dialog
 
 **Stufe B.** Neue Session nach dem Merge von M4-13b. Grundlage
-`plans/m4-11-export-job.md` (F7, F8), die Statusanzeige aus M4-13b.
-**Im Plan-Schritt entschieden (13.10.2026, `plans/m4-11b-angebot-und-zip.md`):** geteilt
+`plans/m4/m4-11-export-job.md` (F7, F8), die Statusanzeige aus M4-13b.
+**Im Plan-Schritt entschieden (13.10.2026, `plans/m4/m4-11b-angebot-und-zip.md`):** geteilt
 in **M4-11b-1** (Backend, erster PR: das Ergebnis eines Raster-Jobs als ein ZIP
 mit Ordner, `api` streamt es aus den Objekten im Speicher mit Range, 60-s-Regel,
 CRC und Größe beim Hochladen, `X-Export-Job: too-large`) und **M4-11b-2**
@@ -935,7 +935,7 @@ braucht (B10), die Regel für Überlappungen und wo der Viewer den Job anbietet
 anheben.
 **Im Plan-Schritt entschieden (10.10.2026):** kein eigenes Capability-Flag, die Regel für
 Überlappungen ist die des Export-Jobs und `api` sortiert die Liste (S5); der Plan
-`plans/m4-12-mosaik-ueberflug.md` teilt die Aufgabe in **M4-12a** (Backend) und
+`plans/m4/m4-12-mosaik-ueberflug.md` teilt die Aufgabe in **M4-12a** (Backend) und
 **M4-12b** (Frontend, nach M4-13b).
 **Abnahme:** Test mit synthetischen Szenen über zwei Zonen; Prüfanleitung.
 
@@ -948,11 +948,11 @@ Karte, auf Übersichtsstufen sichtbar als „Preview“ gekennzeichnet; Job-Stat
 per SSE mit Rückfall auf Abfragen; Ergebnis-Download. Oberflächentexte nur
 Englisch.
 **Im Plan-Schritt entschieden (08.10.2026):** eigener Formularbau, keine
-Bibliothek. Der Plan `plans/m4-13-processing-panel.md` teilt die Aufgabe in
+Bibliothek. Der Plan `plans/m4/m4-13-processing-panel.md` teilt die Aufgabe in
 drei PRs: **M4-13a** Backend, **M4-13b** Panel und Jobs, **M4-13c** Vorschau.
 M4-13b und M4-13c starten je als neue Session mit „Führe Aufgabe M4-13b (bzw.
-M4-13c) aus `docs/plans/m4-processing-kern.md` aus (Plan:
-`docs/plans/m4-13-processing-panel.md`).“
+M4-13c) aus `docs/plans/m4/m4-processing-kern.md` aus (Plan:
+`docs/plans/m4/m4-13-processing-panel.md`).“
 **Abnahme:** Frontend-Tests; Prüfanleitung für Otto (NDVI auf Sentinel-2,
 Vorschau, Start, Fortschritt, Download).
 
@@ -1164,14 +1164,14 @@ mit Prüfung, dass ein neuer Registry-Eintrag den Test erst nach Eintrag besteht
 ### M4-20 — M4-Abnahme und README
 
 **Ziel:** Otto kann M4 anhand eines Berichts abnehmen, ohne Code zu lesen.
-**Stufe A.** Muster: `plans/m3-15-abnahme.md`.
+**Stufe A.** Muster: `plans/m3/m3-15-abnahme.md`.
 **Umfang:** Belege je Kriterium aus §5; eine kurze lokale Prüfanleitung
 (Windows/PowerShell, `docker compose up -d --build`, `scripts/try-job.ps1`);
 ein Abschnitt „Nach M4 vorgemerkt“ mit allen offenen Punkten aus Log und Plan,
 mindestens den Punkten aus S3; Stand aller M4-Aufgaben in §3; README
 nachziehen; keine Codeänderung. Dazu die Frage an Otto, ob die Arbeitsweise
 nach M4 wechselt (Projekte in Claude Code, nicht entschieden).
-**Abnahme:** Bericht `plans/m4-20-abnahme.md` im PR.
+**Abnahme:** Bericht `plans/m4/m4-20-abnahme.md` im PR.
 
 ---
 

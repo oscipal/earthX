@@ -1,5 +1,5 @@
-# EarthX compose topology (architekturplan.md 3.2, 12.1; docs/plans/m1-08-compose-topologie.md,
-# docs/plans/m1-07-stac-api.md §8).
+# EarthX compose topology (architekturplan.md 3.2, 12.1; docs/plans/m1/m1-08-compose-topologie.md,
+# docs/plans/m1/m1-07-stac-api.md §8).
 #
 # One image (backend/Dockerfile), four start commands: api, tiler, worker,
 # harvester. worker and harvester are still shells: they start, report

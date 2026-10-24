@@ -1,17 +1,17 @@
 # M4-13 — Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status: Plan
 
-**Aufgabe:** M4-13 aus `docs/plans/m4-processing-kern.md` §4.
+**Aufgabe:** M4-13 aus `docs/plans/m4/m4-processing-kern.md` §4.
 **Stufe B** — **von Otto am 08.10.2026 freigegeben:** F1–F9 wie empfohlen
 (je Option 1), K1–K12 angenommen. Umsetzung in drei PRs (F7): M4-13a (Backend,
 §3.1, §3.2 und die Backend-Tests aus §3.8) in dieser Session, M4-13b (Panel,
 Formular, Schätzung, Start, Job-Status, Download) und M4-13c (Vorschau,
 „Preview“) je in einer neuen Session nach dem Merge des vorigen. Die
 Statusanzeige aus M4-13b nutzt später M4-11b. Siehe §10.
-**Ort im Repo:** `docs/plans/m4-13-processing-panel.md`
+**Ort im Repo:** `docs/plans/m4/m4-13-processing-panel.md`
 **Grundlagen:** `adr/0014` §5.3, §5.5, §5.6, §6.1–§6.3 (Auflage F9), §9,
-§15c, §15d; `adr/0013` §5.4, §5.5; `plans/m4-processing-kern.md` §1.1 (Q8,
-Q9, Q10), §1.2, M4-13; `plans/m4-08b-job-api.md` §3, §5 („Kostenschätzung als
-eigene Route vor dem Auftrag: M4-13“); `plans/m4-09-band-math.md` §3.4, §4, §6
+§15c, §15d; `adr/0013` §5.4, §5.5; `plans/m4/m4-processing-kern.md` §1.1 (Q8,
+Q9, Q10), §1.2, M4-13; `plans/m4/m4-08b-job-api.md` §3, §5 („Kostenschätzung als
+eigene Route vor dem Auftrag: M4-13“); `plans/m4/m4-09-band-math.md` §3.4, §4, §6
 („Das Panel baut die URL kanonisch“), §8 (F2: „resampled“ für M4-13
 abrufbar); `projektuebersicht.md` §2 (Prinzipien 7, 9, 10); `KLAERUNGEN.md`
 B10, B11. Code auf `main` nach PR #132: `api/processing_route.py`,
@@ -278,7 +278,7 @@ Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
 - **URL:** eine Raster-Quelle für das gewählte Item (F8), wie in der
   Fokusansicht, mit
   `asset` je Band, `op`, `op_version`, `params` als **kanonisches JSON**
-  (Schlüssel sortiert, keine Leerzeichen; `plans/m4-09-band-math.md` §6), dazu
+  (Schlüssel sortiert, keine Leerzeichen; `plans/m4/m4-09-band-math.md` §6), dazu
   `rescale` und `colormap_name` aus F3. Zuschnitt auf die AOI wie die
   Fokusansicht.
 - **„Preview“-Kennzeichnung nach F4 (1):** sichtbar als Badge an der Karte und
@@ -365,7 +365,7 @@ Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
 
 - `ENTSCHEIDUNGSLOG.md`: Plan-Schritt (diese Zeile), später Freigabe und
   Umsetzung, je eine Zeile am Ende.
-- `plans/m4-processing-kern.md` §3: Stand von M4-13.
+- `plans/m4/m4-processing-kern.md` §3: Stand von M4-13.
 - Prüfanleitung (§9) im PR.
 
 ---
@@ -389,7 +389,7 @@ Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
   „Parameter übernehmen“: M4-19.
 - Abbildung von `default_render.expression` auf `op` (F6).
 - Statistik, Info und Punktabfrage mit `op` im `tiler`.
-- Anzeige eines **Job-Ergebnisses** auf der Karte (`plans/m4-08b-job-api.md`
+- Anzeige eines **Job-Ergebnisses** auf der Karte (`plans/m4/m4-08b-job-api.md`
   §5: nicht in M4a).
 - Mehrere Eingaben je Auftrag, Mosaik als Job (M4-11, M4-12).
 - Job-Liste über Sitzungen hinweg (ohne Konten keine, Q9).
@@ -434,7 +434,7 @@ Vor dem Fertigmelden: `main` holen; `ruff check backend`, `pytest`,
   (§3.1); das Panel sagt „An estimate, not a promise.“
 - **Kachel-Cache:** Nur kanonisch gebaute `params` treffen denselben
   Cache-Eintrag; ein anderer Client mit anderer Schreibweise verfehlt ihn, nie
-  mit falschem Bild (`plans/m4-09-band-math.md` §6).
+  mit falschem Bild (`plans/m4/m4-09-band-math.md` §6).
 - **Preview-Regel ist vorsichtig:** Sie kennzeichnet auch Zoomstufen, die
   schon die native Ebene lesen (zwischen `gsd` und der ersten Übersicht, bei
   Sentinel-2 10 m etwa z13 auf 48° N), als „Preview“. Das ist ehrlich im Sinn
@@ -543,7 +543,7 @@ Befunde (Abruf 08.10.2026):
    ist der Schlüssel zum Ergebnis (Q9) und läge dann länger im Browser
 
 **F6 — `default_render.expression` auf `op` abbilden
-(`plans/m4-09-band-math.md` §3.4)**
+(`plans/m4/m4-09-band-math.md` §3.4)**
 1. Nicht in M4-13: Kein Eintrag braucht es, die Registry weist
    `expression` weiter ab; eine offene Zeile im Log **(Empfehlung)**
 2. In M4-13: `DefaultRender` bekommt `op`, `op_version`, `params` (neue
@@ -656,7 +656,7 @@ Einträge haben die Stufe *processing*.
 nur Englisch.
 
 **Schnitt (F7):** Die Teilaufgaben stehen als M4-13a bis M4-13c in
-`plans/m4-processing-kern.md` §3. M4-11b hängt an M4-13b.
+`plans/m4/m4-processing-kern.md` §3. M4-11b hängt an M4-13b.
 
 ## 11. M4-13a — Umsetzung (08.10.2026)
 
@@ -1022,5 +1022,5 @@ verhindert das Panel jetzt vorher.
 
 **Nachtrag M4-12b (13.10.2026):** F8 ist aufgehoben. Das Panel schickt seit M4-12b die
 Szenen eines Überflugs als eine Gruppe und lässt bei mehreren Überflügen einen
-wählen (`plans/m4-12-mosaik-ueberflug.md` §13). Die Stellen oben, die „eine Szene“
+wählen (`plans/m4/m4-12-mosaik-ueberflug.md` §13). Die Stellen oben, die „eine Szene“
 beschreiben, sind der Stand von M4-13b.
