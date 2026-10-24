@@ -1229,6 +1229,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         set({
           layers: [...newLayers, ...s.layers],
+          ...(newLayers.length === 1 && newLayers[0].restore.itemIds.length === Object.keys(s.downloaded).length
+            ? { viewLayerId: newLayers[0].id }
+            : {}),
           layerManagerOpen: true,
           error: null,
           notice: `Added ${newLayers.length} layer${newLayers.length === 1 ? '' : 's'} (one per group).`,
@@ -1259,7 +1262,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         0,
       );
-      set({ layers: [layer, ...s.layers], layerManagerOpen: true, error: null, notice: `Added "${name}" to layers.` });
+      set({
+        layers: [layer, ...s.layers],
+        // The layer is the view's picture, so it takes the view's place in the list (`viewLayer.ts`),
+        // unless it holds only some of the scenes the view draws.
+        ...(entries.length === Object.keys(s.downloaded).length ? { viewLayerId: layer.id } : {}),
+        layerManagerOpen: true,
+        error: null,
+        notice: `Added "${name}" to layers.`,
+      });
       return;
     }
 

@@ -37,6 +37,10 @@ const PREVIEW_LYR = 'preview-lyr-';
 // Dynamic per-frame overlay ids created by syncMosaic (variable count).
 let dynLayerIds: string[] = [];
 let dynSourceIds: string[] = [];
+// What each of the view's own rasters draws (`overlaySignature`), and which of them are out of sight
+// because a pinned layer that is switched on draws the same (`settleViewTwin`).
+const viewPictures = new Map<string, string>();
+const viewTwinsHidden = new Set<string>();
 
 // Bumped on each syncMosaic so slow async quicklook processing can tell whether
 // it has been superseded before it touches the map.
@@ -379,6 +383,8 @@ function clearDynamicMosaic(map: MapLibreMap): void {
   }
   dynLayerIds = [];
   dynSourceIds = [];
+  viewPictures.clear();
+  viewTwinsHidden.clear();
 }
 
 const aboveAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
@@ -457,17 +463,12 @@ function addPreview(
     // already in the map's own projection, so there is nothing to reproject and
     // nothing to get wrong at a scene's rotated edges (the M2-16 bug).
     if (!item.bbox) return;
-    placeRaster(
-      map,
-      `m-tiles-src-${i}`,
-      `m-tiles-lyr-${i}`,
-      buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render),
-      item.bbox,
-      1,
-      { minZoom: plan.zoom, maxZoom: plan.zoom },
-    );
+    const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
+    const zoom = { minZoom: plan.zoom, maxZoom: plan.zoom };
+    placeRaster(map, `m-tiles-src-${i}`, `m-tiles-lyr-${i}`, tileUrl, item.bbox, 1, zoom);
     dynSourceIds.push(`m-tiles-src-${i}`);
     dynLayerIds.push(`m-tiles-lyr-${i}`);
+    drawsPicture(map, `m-tiles-lyr-${i}`, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
   const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
@@ -481,6 +482,7 @@ function addPreview(
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
       dynSourceIds.push(srcId);
       dynLayerIds.push(lyrId);
+      drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
     } catch {
       /* map/style went away while loading */
     }
@@ -504,6 +506,8 @@ function addQuicklookUnderlay(
   i: number,
   clip: GeoJSON.Geometry | null,
   gen: number,
+  // The picture of the scene's tiles, which the underlay belongs to; `null` where it is not known.
+  tiles: string | null,
 ): void {
   const asset = quicklookAsset(item);
   if (!asset?.href) return;
@@ -519,6 +523,7 @@ function addQuicklookUnderlay(
       placeImage(map, srcId, lyrId, dataUrl, coords, ['step', ['zoom'], 1, dataset.zoom.min, 0]);
       dynSourceIds.push(srcId);
       dynLayerIds.push(lyrId);
+      if (tiles !== null) drawsPicture(map, lyrId, tiles);
     } catch {
       /* map/style went away while loading */
     }
@@ -541,6 +546,19 @@ function addTiles(
   placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
   dynSourceIds.push(srcId);
   dynLayerIds.push(lyrId);
+  drawsPicture(map, lyrId, tilesPicture(info, render, clip));
+}
+
+// What a pinned layer made of this raster would draw: its `overlaySignature`.
+function tilesPicture(info: PlannedRaster, render: AppliedRender, clip: GeoJSON.Geometry | null): string {
+  return overlaySignature({
+    kind: 'raster',
+    tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, render), clip),
+    bounds: info.bounds,
+    minZoom: info.minZoom,
+    maxZoom: info.maxZoom,
+    hideFrom: info.hideFrom,
+  });
 }
 
 // --- layer manager rendering (pinned overlays, independent of the active view) ---
@@ -614,6 +632,29 @@ export const overlayBudgetNote = (notDrawn: number): string | null =>
   notDrawn > 0
     ? `The layers hold more images than the map draws (${MAX_LAYER_OVERLAYS}); ${notDrawn} at the bottom of the list ${notDrawn === 1 ? 'is' : 'are'} left out.`
     : null;
+
+// The view's raster `lyrId` draws the picture `sig`. A layer that is switched on and draws the same picture
+// takes its place in the stack, so the view's copy stays out of sight (UI-01a): it would lie over every layer
+// and a move in the list would change nothing. Switched off or gone, the layer draws nothing, and the copy
+// is back. A copy out of sight loads no tiles.
+function drawsPicture(map: MapLibreMap, lyrId: string, sig: string): void {
+  viewPictures.set(lyrId, sig);
+  settleViewTwin(map, lyrId);
+}
+
+function settleViewTwin(map: MapLibreMap, lyrId: string): void {
+  const sig = viewPictures.get(lyrId);
+  if (sig === undefined || !map.getLayer(lyrId)) return;
+  const twin = wantedOverlays.some((w) => w.sig === sig && w.visible && isPlaced(map, w));
+  if (twin === viewTwinsHidden.has(lyrId)) return;
+  setVisibility(map, lyrId, !twin);
+  if (twin) viewTwinsHidden.add(lyrId);
+  else viewTwinsHidden.delete(lyrId);
+}
+
+function settleViewTwins(map: MapLibreMap): void {
+  for (const lyrId of viewPictures.keys()) settleViewTwin(map, lyrId);
+}
 
 function isPlaced(map: MapLibreMap, w: WantedOverlay): boolean {
   return !!map.getLayer(w.lyrId) && placedOverlays.get(w.lyrId)?.sig === w.sig;
@@ -695,6 +736,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
         try {
           if (!isPlaced(map, wantedOverlays[index])) placeWanted(map, wantedOverlays, index, dataUrl);
           restack(map, wantedOverlays);
+          settleViewTwins(map);
         } catch {
           /* map/style went away while loading */
         }
@@ -710,6 +752,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
     placed.opacity = w.opacity;
   }
   restack(map, wanted);
+  settleViewTwins(map);
   return notDrawn;
 }
 
@@ -802,7 +845,9 @@ export function syncFocusRaster(
       // layer, so whichever is added later of the two is the more on top).
       if (dataset?.viewable && dataset.browse === 'quicklook' && underlays < MAX_DYNAMIC_LAYERS) {
         const item = s.items.find((it) => it.id === itemId);
-        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip, gen);
+        // It goes with the tiles of its scene: where a layer draws those, it does not lie over the layers.
+        const tiles = view.kind === 'scenes' ? info : view.kind === 'mosaic' ? view.rasters[view.rasters.length - 1] : null;
+        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip, gen, tiles && tilesPicture(tiles, s.render, clip));
       }
       if (view.kind === 'scenes' && !s.tilesInLayer) place(info);
     });

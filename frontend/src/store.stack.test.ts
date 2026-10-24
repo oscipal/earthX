@@ -1,5 +1,5 @@
 // UI-01a (Befund Punkt 10, §6.3): a pinned layer stacks several time steps and scenes the way
-// the full-resolution view draws them.
+// the full-resolution view draws them, and a layer pinned from the view is the view's picture.
 // Each case here failed against the code before UI-01a.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -133,6 +133,34 @@ describe('addCurrentToLayers: the layer stacks the way the view does', () => {
     focusOn(['A', 'B', 'C'], []);
     useAppStore.getState().addCurrentToLayers();
     expect(useAppStore.getState().layers[0].overlays.map(tileOf)).toEqual(viewOrder());
+  });
+});
+
+describe('addCurrentToLayers from the full-resolution view: the layer is the view', () => {
+  it('makes the one layer it adds the picture of the view', () => {
+    focusOn(['A1', 'A2'], [group(['A1', 'A2'])]);
+    useAppStore.getState().addCurrentToLayers();
+    const { layers, viewLayerId } = useAppStore.getState();
+    expect(viewLayerId).toBe(layers[0].id);
+  });
+
+  it('also when the one layer is a time step cut to the AOI', () => {
+    focusOn(['A1', 'A2'], [group(['A1', 'A2'])], { cropToAoi: true });
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().viewLayerId).toBe(useAppStore.getState().layers[0].id);
+  });
+
+  it('does not when it adds one layer per time step: no layer is the whole view', () => {
+    useAppStore.setState({ cropToAoi: true });
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().layers).toHaveLength(2);
+    expect(useAppStore.getState().viewLayerId).toBeNull();
+  });
+
+  it('does not when the layer holds only some of the view\'s scenes', () => {
+    focusOn(['A1', 'A2'], [group(['A1', 'A2'])], { selectedIds: ['A1'] });
+    useAppStore.getState().addCurrentToLayers();
+    expect(useAppStore.getState().viewLayerId).toBeNull();
   });
 });
 

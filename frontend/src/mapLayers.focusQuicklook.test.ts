@@ -17,7 +17,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { syncFocusRaster } from './mapLayers';
+import { syncFocusRaster, syncLayers } from './mapLayers';
+import { liveMap, pinned } from './fixtures/liveMap';
 import type { DownloadedInfo, StacAsset, StacItem } from './types';
 
 class FakeImage {
@@ -230,5 +231,66 @@ describe('syncFocusRaster: the quicklook underlay below min_zoom (M3-12, O5)', (
     // own full extent, exactly as the plain browse-mode quicklook places it.
     expect(imageSource.spec.url).not.toContain('9.1');
     expect(JSON.stringify(imageSource.spec.coordinates)).not.toContain('9.15');
+  });
+});
+
+// UI-01a: the underlay belongs to the tiles of its scene. Where a pinned layer draws those, the
+// underlay does not lie over the layers below the dataset's smallest zoom, where moving a layer
+// in the list changed nothing.
+describe('syncFocusRaster: the underlay goes with the tiles of its scene', () => {
+  beforeEach(() => {
+    vi.stubGlobal('Image', FakeImage);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const view = (live: ReturnType<typeof liveMap>) => {
+    const scene = georeferencedScene();
+    syncFocusRaster(live.map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      items: [scene],
+      dataset: quicklookDataset(),
+    });
+  };
+  const layerOfView = (id: string) =>
+    pinned(id, 'unused', {
+      overlays: [{ kind: 'raster', tileUrl: info().tileUrl, bounds: info().bounds, minZoom: 8, maxZoom: 19 }],
+    });
+
+  it('lies over the layers while no layer draws the scene', () => {
+    const live = liveMap();
+    syncLayers(live.map as never, [pinned('other', 'https://t/other')]);
+    view(live);
+    expect(live.visible('m-img-lyr-0')).toBe(true);
+    expect(live.visible('m-tiles-lyr-0')).toBe(true);
+  });
+
+  it('steps aside with the tiles when a layer draws the scene, and comes back with them', () => {
+    const live = liveMap();
+    view(live);
+    syncLayers(live.map as never, [layerOfView('mine'), pinned('other', 'https://t/other')]);
+    expect(live.visible('m-img-lyr-0')).toBe(false);
+    expect(live.visible('m-tiles-lyr-0')).toBe(false);
+    syncLayers(live.map as never, [{ ...layerOfView('mine'), visible: false }]);
+    expect(live.visible('m-img-lyr-0')).toBe(true);
+    expect(live.visible('m-tiles-lyr-0')).toBe(true);
+  });
+
+  it('steps aside as well when the layer is the view and the view draws no tiles of its own', () => {
+    const live = liveMap();
+    syncLayers(live.map as never, [layerOfView('mine')]);
+    const scene = georeferencedScene();
+    syncFocusRaster(live.map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      items: [scene],
+      dataset: quicklookDataset(),
+      tilesInLayer: true,
+    });
+    expect(live.visible('m-img-lyr-0')).toBe(false);
   });
 });
