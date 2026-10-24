@@ -615,13 +615,16 @@ nach §4 und der Reihenfolge dort.
   `test_recipe.py::EXPECTED` sind neu; jedes Rezept trägt `"unit":null` zweimal mehr. Die alten Werte stehen als
   `OLD`, ein Test leitet sie aus dem neuen Kern her (Schlüssel heraus, gleicher Hash). Nach dem Deployment gibt
   es einmal für alle gecachten Ergebnisse keinen Treffer.
-- **Anzeige:** Panel („red · 1“, „data · m“), Layer-Manager („Unit: m“ am Ergebnis-Layer); die Collection gibt
+- **Anzeige (Otto, 24.10.2026):** nur die Band-Chips im Panel („data · m“); „1“ zeigt das Frontend nicht („red“),
+  `shownUnit` ist dafür die eine Stelle und gilt auch für M4-19c. Der Layer-Manager zeigt bei keiner Layer-Art
+  eine Einheit (der Hinweis „Unit: m“ am Ergebnis-Layer ist entfernt, ein Test hält es fest). Die Collection gibt
   `earthx:band_units` heraus.
 - **Nicht gebaut, Übergabe an M4-19c (Otto, 23.10.2026):** die Einheit in der Wertebereich-Zeile der Vorschau.
   Sie kommt mit M4-19c als Feld im TileJSON der Operator-Kachel: Der Kern kennt die Einheit hinter den
   Schritten (`OperatorTileReader` rechnet `transform` je Schritt schon vor dem ersten Pixel und hält dabei
   `BandMeta.unit`); das Panel baut diese Bandlogik nicht nach. 19c liest dann `unit` aus dem TileJSON in die
-  Zeile neben „min“/„max“ und dasselbe Feld für `/statistics` mit `op`.
+  Zeile neben „min“/„max“ und dasselbe Feld für `/statistics` mit `op`. Dort gilt `shownUnit`
+  (`processingOrder.ts`): für „1“ steht nichts, das TileJSON trägt die Einheit unverändert.
 - **Angenommen (Otto, 23.10.2026):** `ResolvedInput.unit` für das DEM; `aot`, `wvp`, `cloud`, `snow` und `preview`
   ohne Einheit für M4, eine Einheit dafür kommt nach M4.
 - **Belege zu Rezeptdateien (Frage Otto, 23.10.2026):** (a) Eine `recipe.json` ohne Einheiten (Datei aus einem
@@ -666,7 +669,9 @@ $results = Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)/results"
 $results.result.properties.bands | ConvertTo-Json -Depth 4     # "unit": "m" zwischen nodata und statistics
 
 # 3) Im Browser (http://localhost:5173): DEM-Szene wählen, "Process": der Chip heißt "data · m";
-#    den Job starten, "Add to layers": im Layer-Manager steht unter der Ebene "Unit: m".
+#    bei einer Sentinel-2-Szene heißt der Chip "red", ohne Einheit ("1" zeigt das Panel nicht).
+#    Den Job starten, "Add to layers": der Layer-Manager zeigt bei keiner Ebene eine Einheit; sie steht
+#    nur in den Daten ($results.result.properties.bands, Schritt 2).
 ```
 
 Aus dem Ergebnis eines Band-Math-Jobs (`(nir - red) / (nir + red)`) fehlt `unit` ganz; ein Ausdruck, der nur `red`

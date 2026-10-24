@@ -2044,9 +2044,12 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
 - **Kachel und Job lesen gleich:** `describe_bands` gibt jetzt `(Bänder, Skalierung, Einheit des
   Assets)`; die Kachel baut die `ResolvedInput` daraus, der Job aus `_resolved_json`.
 - **Collection:** `earthx:band_units` gibt die Zuordnung heraus, ein `None` bleibt als `null`.
-- **Frontend:** An jedem Band im Panel steht die Einheit („red · 1“, „data · m“). Im Layer-Manager
-  trägt ein Ergebnis-Layer „Unit: m“, wo alle Bänder des Ergebnisses dieselbe Einheit nennen.
-  Die Einheit des Items geht auch dort vor, die Muster der Registry werden wie im Backend gesucht.
+- **Frontend (Otto, 24.10.2026):** An den Band-Chips im Panel steht die Einheit („data · m“); die
+  Einheit des Items geht vor, die Muster der Registry werden wie im Backend gesucht. Für „1“, die
+  Einheit einer dimensionslosen Größe, zeigt das Frontend nichts („red“ statt „red · 1“): `shownUnit`
+  ist die eine Stelle, die eine Einheit in Anzeigetext verwandelt, und gilt für jede Anzeige, auch
+  die der Vorschau mit M4-19c. In den Daten bleibt „1“ (`bands[].unit`, `earthx:band_units`). Der
+  Layer-Manager zeigt bei keiner Layer-Art eine Einheit; ein Ergebnis-Layer trägt sie nicht.
 - **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag, weil keine Quelle für ihre Einheit gelesen wurde. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
   Schritten kennt nur der Kern (Band-Math: keine; `mask`: die der übrigen Bänder; `normalize`:
   keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trägt
