@@ -80,6 +80,7 @@
 - Schwerpunkt Frontend.
 - Backend nur für die Bündel-Route aus §3 Punkt 7, mit Wiederverwendung des Codes aus M4-11b-1 und M4-30 und ohne neue Abhängigkeit. Für einzelne Jobs ändert sich an der API nichts.
 - Oberflächentexte ausschließlich auf Englisch.
+- **Wenig Text (Otto, 24.10.2026):** Erklärungen und Gründe stehen im Tooltip (Hover und Fokus, für Screenreader erreichbar), nicht als Text unter Knöpfen oder Feldern. Sichtbar bleiben Beschriftungen, Werte, Fehlermeldungen mit Handlungsbedarf und Pflichtangaben (Attribution, Lizenz).
 - Bestehende Funktionen bleiben erreichbar. Der Plan listet jede verschobene Funktion mit ihrem neuen Ort auf.
 - `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` bleiben unverändert.
 ## 5. Abnahme
@@ -98,3 +99,4 @@
 - Im PR liegt eine Prüfanleitung für Otto (Browser und PowerShell).
 - Log-Zeilen für Ottos Antworten.
 - Vor „fertig“ ist main geholt.
+ 
