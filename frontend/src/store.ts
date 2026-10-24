@@ -33,7 +33,7 @@ import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
 import { isResultExpired } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
-import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf } from './mosaic';
+import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
 import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
@@ -404,12 +404,13 @@ function cropsForSearch(
   return { crops, problems };
 }
 
-// The overlays for these scenes, split by time step; `null` while the mosaic of one is not known.
+// The overlays for these scenes, split by time step and stacked the way the view draws them
+// (`stackLikeView`); `null` while the mosaic of one is not known.
 function overlaysOfEntries(s: AppState, entries: SceneEntry[], clip: GeoJSON.Geometry | null): LayerOverlay[] | null {
   const overlays = passesOf(entries, s.groups).map((pass) =>
     overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, clip),
   );
-  return overlays.some((o) => o === null) ? null : overlays.flatMap((o) => o ?? []);
+  return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
 }
 
 // What a pin is made from, to tell on arrival whether the view is still the one it was asked in.

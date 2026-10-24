@@ -110,6 +110,7 @@ import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
+import { stackLikeView } from './mosaic';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
@@ -840,7 +841,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       app.pinDerivedLayer({
         name: `Preview · ${preview.title}`,
         derived: 'preview',
-        overlays: previewOverlays(preview, app.aoi),
+        overlays: stackLikeView(previewOverlays(preview, app.aoi)),
         itemIds: preview.scenes.map((scene) => scene.id),
         cropToAoi: preview.clipToAoi,
       });

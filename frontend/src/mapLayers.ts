@@ -14,7 +14,7 @@ import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoor
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
-import { passesOf, viewOfPass } from './mosaic';
+import { passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster } from './mosaic';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
@@ -780,9 +780,9 @@ export function syncFocusRaster(
   const place = (raster: PlannedRaster) => {
     if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
   };
-  for (const { entries, view } of [...drawn].reverse()) {
+  for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
-    [...entries].reverse().forEach(([itemId, info]) => {
+    stackLikeView(entries).forEach(([itemId, info]) => {
       // O5: the underlay goes down first, so `addTiles` right after it ends up
       // on top (`beforeAoi` puts each newly added layer just below the AOI
       // layer, so whichever is added later of the two is the more on top).
