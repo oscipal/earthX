@@ -1,6 +1,6 @@
 # M4-19 — Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“: Plan
 
-**Stand:** 24.10.2026, Plan freigegeben (§9); M4-19a, d, b und c sind umgesetzt (§10, §11, §12, §13), e folgt in einer neuen Session.
+**Stand:** 24.10.2026, Plan freigegeben (§9); M4-19a bis M4-19e sind umgesetzt (§10, §11, §12, §14, §13).
 **Stufe B (S6):** Der Plan liegt im Draft-PR, die Session hält an, Otto gibt frei. Danach
 setzen die Sessions aus Frage 10 um.
 **Modell:** Opus für den Plan, Sonnet (Effort mittel) für die Umsetzung (§3 der Übersicht).
@@ -679,7 +679,121 @@ heißt, behält die Einheit `1`.
 
 ---
 
-## 13. Umsetzung M4-19c (24.10.2026)
+## 13. Umsetzung M4-19e (24.10.2026)
+
+- **Backend:** Migration `012_permalink.sql` (`earthx_permalink`: Kennung, `body` jsonb, SHA-256 des
+  Löschschlüssels, `created_at`, `expires_at`, Index auf `expires_at`, kein Fremdschlüssel). `jobs/permalinks.py`
+  (`create`, `read`, `delete`, `TTL = 30 Tage`) legt an und liest mit der Uhr der Datenbank; die Routen in
+  `api/processing_route.py` (`POST`, `GET`, `DELETE /processing/permalinks`), dazu `loggable_path` mit
+  `{permalinkID}`. Der Aufräumer in `jobs/cleanup.py` löscht abgelaufene Permalinks im selben Durchgang
+  (`CleanupResult.permalinks`). Importregeln unverändert: `jobs` fasst die Tabelle mit SQL an, `api` ruft `jobs`
+  auf wie bei den Aufträgen. Nachträge: `adr/0015` §14d, `adr/0014` §15o.
+- **Eingabe:** Rumpf `{"order": …, "view": …}`, höchstens 1 MB (`MAX_BODY_BYTES`, wie die Auftragsroute). Der
+  Auftrag geht durch `parse_request` (I-JSON, streng, `resolved` wird abgewiesen, `422`); die Ansicht hat ein eigenes
+  Modell mit `extra="forbid"` (`center`, `zoom` 0–24, `range` mit `vmin`, `vmax`, `colormap`; kein Titel). Gespeichert wird der Auftrag wie gesendet, nicht umgeschrieben. Kein Datensatz- oder
+  Szenen-Abruf: ob die Szenen noch existieren, zeigt sich beim Öffnen.
+- **Antworten:** `201` `{id, expires_at, delete_key}`; `GET` `200` `{order, view, expires_at}`; `DELETE` `204`.
+  `404` mit einem Text für unbekannt, falsch geformt, abgelaufen und falschen Schlüssel; ein fehlender Kopf
+  `X-Delete-Key` ist `400` für jede Kennung gleich (verrät nichts über die Kennung). Alles `no-store`.
+- **Frontend:** `permalink.ts` (Aufrufe, Adresse, Schlüssel in `localStorage` unter `earthx.permalinks`, Ansicht,
+  Öffnen), `ShareLink.tsx` im Fuß des Panels („Share“, danach die Adresse in einem schreibgeschützten Feld im Farbschema des Themes, das Kopier-Symbol der Ergebnisliste (`CopyButton`, aus `ResultsPanel` herausgelöst) und ein kleines rotes Kreuz „Delete link“),
+  `restoreOrder` im Store, `flyToView` für die Kamera. Beim Start liest `App` `?permalink=` **nach**
+  `loadDatasets` (das setzt die Auswahl zurück), holt den Eintrag, stellt Datensatz, Szenen, AOI, Schritte,
+  Datentyp, Bereich und Kartenansicht her und entfernt den Parameter mit `history.replaceState`, auch bei einem
+  Fehler. `404` meldet „This link has expired or never existed.“
+- **Festlegungen aus §11 für den Permalink:** Mehrere Gruppen wählen alle Szenen aus, den Durchgang wählt der
+  Nutzer; ohne AOI im Auftrag bleibt die AOI der Karte und der Bereich ist „Whole scene“. Beides hat ein Test.
+- **Abweichungen vom Plan und Antworten Otto (24.10.2026):**
+  1. **Basiskarte** (§3.5) ist nicht Teil der Ansicht: Die App hat nur eine Basiskarte, Thema und Projektion sind
+     Einstellungen des Browsers. Otto: kein Feld; es kommt mit UI-02.
+  2. **Ein Link hält einen Auftrag:** „Share“ ist bei „Run as“ Szene/Durchgang gesperrt, der Grund steht im Tooltip
+     („A link holds one order: choose “One job”.“). Otto: gesperrt lassen, mit Grund im Panel. Später am 24.10.2026 (Otto): unter „Share“ steht nie ein
+     Beschreibungstext; der Grund steht seitdem nur noch im Tooltip des gesperrten Knopfs.
+  3. **`jobs/submit.py`** sagte nicht mehr „nur ein Lauf oder ein Treffer verlängert“ (so der Plan §2.1), nur
+     `cleanup.py`; nur dort ist der Docstring angeglichen.
+  4. **Änderungen vor dem Merge (Otto, 24.10.2026):** (a) Der **Titel entfällt ganz**: kein Feld im Panel, nicht in
+     der API, im Speicher und in der Migration 012 (noch nicht gemergt, also dort direkt, ohne neue Migration; die
+     Ansicht lehnt `title` wie jedes unbekannte Feld ab). (b) Der Link steht in einem schreibgeschützten Textfeld, das
+     die Regel `input[type='text']` des Themes nutzt (`--input-bg`, `--text`), nicht weiß im Dark Mode. (c) „Copy link“
+     ist das Kopier-Symbol der Ergebnisliste: Dasselbe `CopyButton` (Glyph, Häkchen, Zwischenablage) ist aus
+     `ResultsPanel` in `components/CopyButton.tsx` herausgelöst und wird von beiden benutzt. (d) „Delete link“ ist ein
+     kleines rotes Kreuz rechts neben dem Kopier-Symbol, Tooltip und `aria-label` „Delete link“, löscht ohne Rückfrage
+     und ohne Browser-Dialog; danach steht im Panel „Link deleted.“.
+  5. **Größe:** weit über dem Richtwert (rund 1700 Zeilen, davon etwa 880 Tests). Otto: PR nicht teilen; die
+     Begründung steht im PR-Text.
+- **Woher die 30 Tage (Frage Otto):** aus §7 Frage 2, Option 1 („30 Tage fest ab Erstellung; Öffnen verlängert nicht“,
+  Empfehlung), die Otto in §9 mit „Fragen 1–12 je Option 1“ freigegeben hat; ebenso in der Kurzfassung (Z. 37–40) und
+  in §3.5 („Ansehen verlängert nie (Frage 2)“). Gezählt wird **ab Erstellung**, nicht ab dem letzten Öffnen (Option 3
+  wäre „7 Tage ab dem letzten Öffnen“ gewesen und ist nicht gewählt). Im Code: `jobs/permalinks.py::TTL`,
+  `expires_at = clock_timestamp() + TTL` beim Anlegen, nirgends sonst gesetzt; Test, dass Lesen die Frist nicht
+  verschiebt (`test_cleanup.py::TestPermalinks`, `test_permalink_route.py`).
+- **Belegt:** Anlegen, Lesen, Löschen gegen die echte Datenbank; `404` für unbekannt, falsch geformt, abgelaufen
+  (Uhr der Datenbank, die Zeile wird zurückdatiert) und falschen Schlüssel; Größe, `extra` in der Ansicht,
+  ungültiger Auftrag; Kennung, AOI, Schlüssel und Link in keinem Log (Zugriffslog und `caplog` mit
+  `own_log_text`); der Aufräumer löscht nach 30 Tagen die ganze Zeile, vorher nicht, in Stapeln; Lesen verlängert
+  nichts. Frontend: Öffnen (Zustand, Parameter weg, ein Aufruf bei doppeltem Start, `404`, `503`, Unsinn, fremder
+  Operator, fehlende Szene, Auftrag ohne AOI), Teilen (Auftrag und Ansicht gesendet, Schlüssel nur im Browser,
+  Löschen mit Schlüssel, Fehler behalten Link und Schlüssel, Stapel gesperrt, Grund im Tooltip, kein Text unter dem Knopf).
+- **Belege auf Ottos Fragen (24.10.2026), `test_permalink_route.py`:**
+  - *Zufällige Kennung, in keinem Log:* 20 Kennungen sind verschieden, 22 Zeichen aus `token_urlsafe(16)`, keine ist
+    eine `recipe_id` (`TestWhatIsStored`); das Zugriffslog schreibt nur `/processing/permalinks/{permalinkID}`
+    (`TestNothingPersonalInTheLogs`, `test_logging.py`), und kein Logsatz von Anlegen, Lesen, Löschen enthält Kennung,
+    Schlüssel, Koordinaten oder Szene-ID.
+  - *Gespeicherter Zustand ohne signierte URL, `href`, `result_id`:* Die Zeile hat genau die Spalten `permalink_id`,
+    `body`, `delete_key_hash`, `created_at`, `expires_at`; `body` hat genau `order` und `view`. Nach einem fertigen
+    Job mit `result_id` enthält der Text weder `href`, `X-Amz`, `result_id`, `jobID`, `recipe_id`, `resolved` noch die
+    echte `jobID` oder `result_id`. Ein Auftrag mit `href`, `result_id`, `recipe_id` oder `provenance` ist `422` und wird
+    nicht gespeichert; die Ansicht nimmt weder `href` noch `result_id`, `job_id`, `tiles`, `url` (`extra="forbid"`).
+  - *Öffnen nach Ablauf des Ergebnisses:* `TestAfterTheResultIsGone`: Job und Ergebnis laufen ab, der Aufräumer löscht
+    Lauf, Job und Rezept, `/jobs/{jobID}` ist `404`, der Permalink liefert weiter den Auftrag, und derselbe Auftrag ergibt
+    `201` mit einem neuen Lauf, statt zu scheitern (vorher, bei lebendem Ergebnis, war er ein Cache-Treffer). Im
+    Frontend bringt das Öffnen den Auftrag ohne Job und Ergebnis zurück, „Review“ und „Start job“ sind frei
+    (`ProcessingShare.test.tsx`). Der Link zeigt also das Rezept und bietet das Neurechnen über den normalen
+    „Review“/„Start job“ an; einen eigenen Hinweis „Ergebnis abgelaufen“ gibt es nicht, weil der Link kein Ergebnis kennt.
+- **Nicht belegt:** Gegen einen laufenden Stack mit der Oberfläche im Browser ist es nicht gelaufen (kein
+  Docker in der Sitzung); die Kamera (`jumpTo`) ist nicht an einer echten Karte gesehen worden.
+- **Größe:** Weit über dem Richtwert von 400 Zeilen (rund 700 Zeilen Code, 750 Zeilen Tests). Die Commits trennen
+  Backend (zwei) und Frontend (zwei); Otto kann daran teilen.
+
+### 13.1 Prüfanleitung für Otto (PowerShell 5.1)
+
+Entwurf. Belegt ist die Antwortform durch die Tests des Backends; gegen einen laufenden Stack nicht gelaufen.
+
+```powershell
+docker compose up -d --build
+$api = 'http://localhost:8000'
+
+# 1) Einen Permalink anlegen (die Szene muss nicht existieren, sie wird erst beim Öffnen gebraucht)
+$ring = @(@(10.00, 47.00), @(10.01, 47.00), @(10.01, 47.01), @(10.00, 47.01), @(10.00, 47.00))
+$order = @{ recipe_version = 1; steps = @(); aoi = @{ type = 'Polygon'; coordinates = @(, $ring) }
+            inputs = @(@{ name = 'input'; dataset = 'cop-dem-glo-30'; groups = @(, @('Beispiel-Szene')); assets = @('data') })
+            output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
+$view = @{ center = @(10.0, 47.0); zoom = 9.5 }
+$body = @{ order = $order; view = $view } | ConvertTo-Json -Depth 12
+$made = Invoke-RestMethod -Method Post -Uri "${api}/processing/permalinks" -ContentType 'application/json; charset=utf-8' `
+    -Body ([Text.Encoding]::UTF8.GetBytes($body))
+$made | Format-List      # id (22 Zeichen), expires_at (in 30 Tagen), delete_key (einmalig)
+
+# 2) Lesen, auch im zweiten Browser: http://localhost:5173/?permalink=<id>
+Invoke-RestMethod "${api}/processing/permalinks/$($made.id)" | ConvertTo-Json -Depth 12
+
+# 3) Mit falschem und mit richtigem Schlüssel löschen
+function Status($script) { try { & $script; 'ok' } catch { [int]$_.Exception.Response.StatusCode } }
+Status { Invoke-RestMethod -Method Delete -Uri "${api}/processing/permalinks/$($made.id)" -Headers @{ 'X-Delete-Key' = 'falsch' } }   # 404
+Status { Invoke-RestMethod -Method Delete -Uri "${api}/processing/permalinks/$($made.id)" -Headers @{ 'X-Delete-Key' = $made.delete_key } }  # ok (204)
+Status { Invoke-RestMethod "${api}/processing/permalinks/$($made.id)" }   # 404
+```
+
+Im Browser (http://localhost:5173): Szene wählen, AOI zeichnen, „Process“, einen Schritt anlegen, unten „Share“. Es gibt
+kein Titelfeld. Die Adresse steht in einem schreibgeschützten Feld in den Farben des Themes (auch im Dark Mode nicht
+weiß), die Form ist `…/?permalink=<id>`, ohne Koordinaten. Rechts daneben das Kopier-Symbol (wie beim Szenennamen in den
+Suchergebnissen; nach dem Klick kurz ein Häkchen) und ein kleines rotes Kreuz mit dem Tooltip „Delete link“. In einem zweiten Fenster öffnen: Datensatz, Szene, AOI,
+Schritt und Kartenausschnitt sind wieder da, die Adresszeile zeigt den Parameter nicht mehr. Das Kreuz löscht ohne Rückfrage, das Panel meldet „Link deleted.“; die Adresse neu
+öffnen: „This link has expired or never existed.“
+
+---
+
+## 14. Umsetzung M4-19c (24.10.2026)
 
 - **Backend:** `/statistics` nimmt `op`, `op_version` und `params` wie die Kachel (`api/tiler.py`
   `_OPERATOR_ROUTES`). `OperatorTileReader.preview` liest alle Quellen über dieselben Grenzen auf dieselbe
@@ -743,6 +857,10 @@ heißt, behält die Einheit `1`.
   Scrollen; es schreibt je Fall ein Bild. Vorher 24 von 24 Fällen mit Befund, nachher keiner. Es ist keine Abhängigkeit
   des Projekts (CI führt es nicht aus); es läuft von Hand (Kopf der Datei). Ein vitest-Test hält fest, dass die Einheit
   ein eigenes Element neben dem Feld ist.
+- **Zusammenführung mit M4-19e (Otto, 24.10.2026: „main holen“):** Der Permalink (M4-19e) war inzwischen gemergt und benutzte
+  `handRange`. „Share“ nimmt jetzt `handRangeOf` und legt den Bereich nur ab, wenn der Nutzer ihn angewandt hat (auch den
+  Startwert); beim Öffnen eines Links mit Bereich gilt dieser als von Hand angewandt (`rangeByHand`), hält also gegen die
+  Messung. Der Abschnitt von M4-19e ist §13, dieser §14.
 - **Größe des PRs:** rund 1650 geänderte Zeilen mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
   300. Otto hat entschieden, ihn nicht zu teilen. Gründe: Die Route ist ohne die Anzeige nicht zu prüfen und
   die Anzeige ohne die Route nicht zu bauen; die gemeinsame Regel (`scaleOf`) berührt beide Seiten. Etwa die Hälfte
@@ -758,7 +876,7 @@ heißt, behält die Einheit `1`.
   (d) Die Antwortzeit gegen eine echte Quelle ist nicht gemessen: Das `gateway` der Sitzung erreicht keine Quelle
   (wie in §12.1). Gemessen ist nur der Lauf gegen synthetische COGs und den Mini-Zarr-Speicher.
 
-### 13.1 Prüfanleitung für Otto (PowerShell 5.1)
+### 14.1 Prüfanleitung für Otto (PowerShell 5.1)
 
 Entwurf. Belegt sind die Antwortformen der Route gegen synthetische Quellen
 (`tests/earthx/api/test_tiler_statistics_operator.py`); gegen einen laufenden Stack mit echter Quelle ist sie nicht

@@ -2063,6 +2063,27 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   `processingOrder.test.ts`, `resultLayer.test.ts`, `ProcessingPanel.test.tsx`,
   `ProcessingResultLayer.test.tsx`.
 
+## 15o. Nachtrag vom 2026-10-24: die Kennung eines Permalinks (zu §9, F15; M4-19e)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben, Frage 1 mit Option 1
+(`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §9 (F15) bleibt stehen;
+maßgeblich ist dieser Nachtrag.
+
+- **Nicht die `recipe_id`:** F15 nannte sie „Grundlage für Permalink (M4-19)“. Ein Rezept lebt nur so
+  lange wie der Lauf seines Jobs und entsteht erst mit einem Job, also gäbe es ohne Job keinen
+  Permalink; und die `recipe_id` steht im Statusdokument und in jeder `recipe.json`, ein Lesezugriff
+  über sie machte jede weitergegebene Datei zum Schlüssel. Die `recipe_id` bleibt die Grundlage für
+  Bug-Report Stufe 3.
+- **Eine eigene Kennung:** Der Permalink hat eine eigene Tabelle und eine eigene zufällige Kennung
+  (22 Zeichen, 128 Bit). Er wird nur auf „Share“ angelegt und hält den Auftrag in der Form von
+  `RecipeRequest` (ohne `resolved`; `parse_request` prüft ihn streng) und eine kleine Ansicht
+  (Kartenmitte, Zoom, Bereich und Colormap der Vorschau). Routen unter
+  `/processing/permalinks`, außerhalb von OGC. Frist und Löschen: `adr/0015` §14d.
+- **Nicht gebaut: die Basiskarte.** Der Plan nennt sie als Teil der Ansicht. Die App hat eine einzige
+  Basiskarte (Satellitenbild); Thema und Projektion sind Einstellungen des Browsers
+  (`earthx.theme`, `earthx.projection`), nicht des Auftrags. Es gibt nichts zu speichern, bis die
+  Auswahl einer Basiskarte existiert; ein Feld dafür kommt dann mit ihr (Otto, 2026-10-24: mit UI-02).
+
 ## 16. Quellen
 
 **Im Repo [P]**

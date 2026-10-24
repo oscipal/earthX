@@ -1,32 +1,12 @@
-import { useCallback, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { maturityLabel, quicklookAsset } from '../datasets';
 import type { ResultSection } from '../sections';
 import { hasResultsPanel, totalItems } from '../sections';
 import { useAppStore } from '../store';
 import type { StacItem, TimeStepGroup } from '../types';
+import CopyButton from './CopyButton';
 import Popover from './Popover';
-
-// Two overlapping rounded rectangles — the same copy glyph Claude's own
-// interface uses, in place of the earlier "⧉" character glyph, which
-// rendered inconsistently and didn't read as "copy" at a glance (V-6).
-// `currentColor` so `.copy-btn`'s own color (and its `:hover` accent) still
-// drive it.
-function CopyIcon({ copied }: { copied: boolean }) {
-  if (copied) {
-    return (
-      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M20 6 9 17l-5-5" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
 
 function timeOf(properties: Record<string, unknown>): string {
   const dt = properties['datetime'];
@@ -38,24 +18,8 @@ function timeOf(properties: Record<string, unknown>): string {
 function Row({ item }: { item: StacItem }) {
   const selectedIds = useAppStore((s) => s.selectedIds);
   const toggleSelected = useAppStore((s) => s.toggleSelected);
-  const [copied, setCopied] = useState(false);
-
   const selected = selectedIds.includes(item.id);
   const asset = quicklookAsset(item);
-
-  const copyName = (e: MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard
-      .writeText(item.id)
-      .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1200);
-      })
-      .catch(() => {
-        // Clipboard unavailable (no permission, insecure context) — the name
-        // stays visible in the row to select and copy by hand.
-      });
-  };
 
   return (
     <li className={`result-row${selected ? ' selected' : ''}`} onClick={() => toggleSelected(item.id)}>
@@ -93,15 +57,7 @@ function Row({ item }: { item: StacItem }) {
           <span className="result-id" title={item.id}>
             {item.id}
           </span>
-          <button
-            type="button"
-            className="copy-btn"
-            title="Copy scene name"
-            aria-label={`Copy scene name ${item.id}`}
-            onClick={copyName}
-          >
-            <CopyIcon copied={copied} />
-          </button>
+          <CopyButton text={item.id} title="Copy scene name" label={`Copy scene name ${item.id}`} />
         </span>
       </div>
     </li>

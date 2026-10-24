@@ -599,7 +599,7 @@ einem Pool-Fehler antwortet die Mosaik-Kachel mit `503` und Grund (Plan §14).
 jetzt `op`, `op_version` und `params` wie die Kachel (`_OPERATOR_ROUTES` um `statistics`
 erweitert; an der Pfad-Abhängigkeit ändert sich sonst nichts: Lizenzstufe, R5, `applicable`,
 Host-Allowlist und `target_gsd_for` gelten gleich). Die Messung dient der Farbskala der
-Vorschau (`plans/m4-19-teilen-und-beschreiben.md` §3.3, §13); der Originaltext oben bleibt
+Vorschau (`plans/m4-19-teilen-und-beschreiben.md` §3.3, §14); der Originaltext oben bleibt
 für die Statistik eines einzelnen Assets maßgeblich.
 - **Lesen:** `OperatorTileReader.preview` liest jede Quelle über die Grenzen der feinsten
   Quelle auf dieselbe Größe, höchstens 1024 px an der langen Seite (die Größe der Statistik

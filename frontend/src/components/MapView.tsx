@@ -109,6 +109,7 @@ export default function MapView() {
   const downloaded = useAppStore((s) => s.downloaded);
   const allMosaics = useAppStore((s) => s.mosaics);
   const flyToBbox = useAppStore((s) => s.flyToBbox);
+  const flyToView = useAppStore((s) => s.flyToView);
   const appliedRender = useAppStore((s) => s.appliedRender);
   const focusMode = useAppStore((s) => s.focusMode);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
@@ -419,6 +420,14 @@ export default function MapView() {
     );
     useAppStore.getState().clearFly();
   }, [flyToBbox]);
+
+  // --- jump to the view of a permalink ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !flyToView) return;
+    map.jumpTo({ center: flyToView.center, zoom: flyToView.zoom });
+    useAppStore.getState().clearFlyView();
+  }, [flyToView]);
 
   return <div ref={containerRef} className="map" />;
 }

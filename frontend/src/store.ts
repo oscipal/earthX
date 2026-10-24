@@ -713,6 +713,8 @@ export interface AppState {
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
   lastAoiPoint: GeoJSON.Point | null; // the point behind lastAoi, if it had one
   flyToBbox: Bbox | null;
+  // A camera to jump to as it is (a permalink's view, M4-19e): centre [lon, lat] and zoom.
+  flyToView: { center: [number, number]; zoom: number } | null;
   // --- view preferences (V-1), saved per browser (preferences.ts) ---
   theme: Theme;
   projection: Projection;
@@ -880,6 +882,7 @@ export interface AppState {
   useLastAoi: () => void;
   flyTo: (b: Bbox) => void;
   clearFly: () => void;
+  clearFlyView: () => void;
   togglePanel: () => void;
   setPanelCollapsed: (v: boolean) => void;
   toggleResultsPanel: () => void;
@@ -942,6 +945,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastAoi: null,
   lastAoiPoint: null,
   flyToBbox: null,
+  flyToView: null,
   theme: loadTheme(),
   projection: loadProjection(),
   showCoverage: false,
@@ -1117,6 +1121,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
+  clearFlyView: () => set({ flyToView: null }),
   togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
   setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
   toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
