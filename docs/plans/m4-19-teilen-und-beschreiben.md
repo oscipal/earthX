@@ -706,8 +706,9 @@ heißt, behält die Einheit `1`.
 - **Abweichungen vom Plan und Antworten Otto (24.10.2026):**
   1. **Basiskarte** (§3.5) ist nicht Teil der Ansicht: Die App hat nur eine Basiskarte, Thema und Projektion sind
      Einstellungen des Browsers. Otto: kein Feld; es kommt mit UI-02.
-  2. **Ein Link hält einen Auftrag:** „Share“ ist bei „Run as“ Szene/Durchgang gesperrt, der Grund steht im Panel
-     („A link holds one order: choose “One job”.“). Otto: gesperrt lassen, mit Grund im Panel.
+  2. **Ein Link hält einen Auftrag:** „Share“ ist bei „Run as“ Szene/Durchgang gesperrt, der Grund steht im Tooltip
+     („A link holds one order: choose “One job”.“). Otto: gesperrt lassen, mit Grund im Panel. Später am 24.10.2026 (Otto): unter „Share“ steht nie ein
+     Beschreibungstext; der Grund steht seitdem nur noch im Tooltip des gesperrten Knopfs.
   3. **`jobs/submit.py`** sagte nicht mehr „nur ein Lauf oder ein Treffer verlängert“ (so der Plan §2.1), nur
      `cleanup.py`; nur dort ist der Docstring angeglichen.
   4. **Änderungen vor dem Merge (Otto, 24.10.2026):** (a) Der **Titel entfällt ganz**: kein Feld im Panel, nicht in
@@ -732,7 +733,7 @@ heißt, behält die Einheit `1`.
   `own_log_text`); der Aufräumer löscht nach 30 Tagen die ganze Zeile, vorher nicht, in Stapeln; Lesen verlängert
   nichts. Frontend: Öffnen (Zustand, Parameter weg, ein Aufruf bei doppeltem Start, `404`, `503`, Unsinn, fremder
   Operator, fehlende Szene, Auftrag ohne AOI), Teilen (Auftrag und Ansicht gesendet, Schlüssel nur im Browser,
-  Löschen mit Schlüssel, Fehler behalten Link und Schlüssel, Stapel gesperrt, mit Grund im Panel).
+  Löschen mit Schlüssel, Fehler behalten Link und Schlüssel, Stapel gesperrt, Grund im Tooltip, kein Text unter dem Knopf).
 - **Belege auf Ottos Fragen (24.10.2026), `test_permalink_route.py`:**
   - *Zufällige Kennung, in keinem Log:* 20 Kennungen sind verschieden, 22 Zeichen aus `token_urlsafe(16)`, keine ist
     eine `recipe_id` (`TestWhatIsStored`); das Zugriffslog schreibt nur `/processing/permalinks/{permalinkID}`

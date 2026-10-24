@@ -1850,14 +1850,15 @@ input[type='date']:focus {
 .pp-share {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
+  align-items: flex-start;
+  gap: 8px;
 }
 .pp-share p {
   margin: 0;
 }
 /* The link in a read-only field (the themed `input[type='text']`), the copy glyph of the results list and a small red cross. */
 .pp-share-link {
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 4px;

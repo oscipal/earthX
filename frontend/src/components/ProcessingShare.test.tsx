@@ -280,6 +280,19 @@ describe('Share', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toBeNull();
   });
 
+  it('is a button like "Review", close below it, and has no text under it', async () => {
+    const share = button('Share')!;
+    expect(share.className).toBe(button('Review')!.className);
+    const box = container.querySelector('.pp-share')!;
+    expect([...box.children]).toEqual([share]);
+    // `.pp-foot` spaces its children by 8px, like "Review" and "Start job"; the box adds no margin of its own and the
+    // button keeps the width of its label instead of the width of the panel.
+    const rule = (selector: string) => new RegExp(`${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
+    expect(rule('.pp-share')).not.toMatch(/margin/u);
+    expect(rule('.pp-share')).toContain('align-items: flex-start');
+    expect(rule('.pp-foot')).toContain('gap: 8px');
+  });
+
   it('has no title field, in the panel or in what is sent', async () => {
     expect(container.querySelector('input[aria-label*="Title" i], input[placeholder*="Title" i]')).toBeNull();
     await click('Share');
@@ -352,6 +365,7 @@ describe('Share', () => {
     act(() => draft().setRunAs('scene'));
     expect(button('Share')!.disabled).toBe(true);
     expect(button('Share')!.title).toBe('A link holds one order: choose “One job”.');
-    expect(container.textContent).toContain('A link holds one order: choose “One job”.');
+    // The reason is the tooltip; no text stands under the button.
+    expect(container.textContent).not.toContain('A link holds one order');
   });
 });
