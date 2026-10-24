@@ -2,7 +2,7 @@
 
 > **Rangfolge:** Bei Widerspruch gilt `ENTSCHEIDUNGEN_2026-09-18.md`, danach `KLAERUNGEN.md`, danach dieses Dokument. Dieser Plan ist am 18.09.2026 an die Entscheidungen jenes Tages angepasst; die sieben Hard Constraints aus `ADDING_ESA_DATASETS.md` sind aufgehoben.
 
-Stand: 2026-10-20 · Version 1.5 (Viewer-Strang um VP3 ergänzt: UI-01 App-Rahmen und Processing-Manager, UI-02 Basemap und Projektion, direkt nach M4; Otto 12.10. und 20.10.2026). Vorher 1.4: M3 abgenommen am 30.09.2026; M2 abgenommen; M3-Tabelle nach `plans/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21
+Stand: 2026-10-20 · Version 1.5 (Viewer-Strang um VP3 ergänzt: UI-01 App-Rahmen und Processing-Manager, UI-02 Basemap und Projektion, direkt nach M4; Otto 12.10. und 20.10.2026). Vorher 1.4: M3 abgenommen am 30.09.2026; M2 abgenommen; M3-Tabelle nach `plans/m3/m3-dritte-quelle-und-interface.md` P1–P24 nachgezogen; Doku-Abgleich nach Fassung 2 des M3-Plans, M3-21
 
 Dieser Plan führt drei Dokumente zusammen und ergänzt, **wie** das Projekt umgesetzt wird:
 
@@ -85,7 +85,7 @@ earthX/
     architekturplan.md
     projektplan.md              dieses Dokument
     adr/                        Entscheidungen, eine Datei pro Entscheidung
-    plans/                      Umsetzungspläne für Stufe-B-Aufgaben
+    plans/                      Umsetzungspläne für Stufe-B-Aufgaben, je Meilenstein ein Unterordner
     ADDING_ESA_DATASETS.md    nur noch Beschreibung des Code-Stands vom 13.08.2026
   .claude/
     agents/                     Subagenten mit Modell und Effort (Abschnitt 3.3)
@@ -256,13 +256,13 @@ Parallel ab M2 läuft ein **Viewer-Strang** (VP1, VP2, VP3) mit Frontend-Aufgabe
 
 ### M2 — Zweites Format und generalisierter Viewer (Inkrement 2) — **abgenommen**
 
-Der Aufgabenschnitt liegt in `docs/plans/m2-format-und-viewer.md` und ist
+Der Aufgabenschnitt liegt in `docs/plans/m2/m2-format-und-viewer.md` und ist
 maßgeblich; diese Tabelle ist nur die Kurzfassung. M2 zerfällt seit dem
 2026-09-20 (M2-Schnitt) in zwei Stränge: **M2a** trägt Sentinel-2 durchgehend
 durch Kachel-Pfad, Coverage-Heatmap, Zuschnitt-Download und Frontend; **M2b**
 bringt Zarr als zweites Format, mit offenem Kandidatenfeld (`adr/0007`, nicht
 mehr fest EOPF). Abgenommen mit M2-12 (PR #70, 2026-09-23); Belege je
-Kriterium in `docs/plans/m2-12-abnahme.md`.
+Kriterium in `docs/plans/m2/m2-12-abnahme.md`.
 
 | | |
 |---|---|
@@ -275,7 +275,7 @@ Kriterium in `docs/plans/m2-12-abnahme.md`.
 
 ### M3 — Erste Nicht-STAC-Quelle und Interface-Reflexion (Inkrement 3) — **abgenommen**
 
-Der Aufgabenschnitt liegt in `docs/plans/m3-dritte-quelle-und-interface.md`
+Der Aufgabenschnitt liegt in `docs/plans/m3/m3-dritte-quelle-und-interface.md`
 (M3-00 bis M3-24, Vorentscheidungen P1–P24) und ist maßgeblich; diese Tabelle
 ist nur die Kurzfassung.
 
@@ -352,7 +352,7 @@ heißen UI-01 und UI-02.
 | V-1 | Theme-Umschalter zwischen dunkler und heller HUD-Palette; die Basiskarte bleibt Esri World Imagery, **ohne** helle Basiskarte (D10, 2026-09-20) — die folgt erst, wenn Esri-Bedingungen und Alternativen geklärt sind |
 | VP1 | Swipe-/Split-Vergleich mit synchronisierten Karten; "Layer auf Ansicht zuschneiden"; Pixel-Inspektor; Zeitreihe am Punkt mit CSV-Export |
 | VP2 | Schlanker Kartenexport (PNG/SVG, Titel, Colorbar, Maßstab, Attribution, optional ohne Hintergrundkarte) + generiertes matplotlib-Snippet; Wolkenfilter; Feinschliff Bedienbarkeit |
-| VP3 | **Direkt nach M4 (nach M4-20), vor M5.** UI-01 (`docs/plans/ui-01-app-rahmen.md`): schmale linke Leiste mit Control-Menü, Layer-Manager (fest am linken Rand) und Processing-Manager; Jobs mit umbenennbarem Titel, Fortschritt und Ablaufdatum, nicht löschbar, nur archivierbar und in eigene Gruppen einordenbar, Filter „Active / All“; Batch als ein Eintrag mit „Download all (ZIP)“. UI-02 (`docs/plans/ui-02-basemap-projektion.md`): Basemap-Menü statt Mercator-Schalter (Satellit, Straße, nur Umrisse, weitere nach Recherche) und Projektion (Mercator, Globus, Equal Earth nach Machbarkeit); klärt dabei die in V-1 offen gelassene Frage nach Bedingungen und Alternativen zur Basiskarte (D10). Beide Stufe B, nicht gleichzeitig |
+| VP3 | **Direkt nach M4 (nach M4-20), vor M5.** UI-01 (`docs/plans/vp3/ui-01-app-rahmen.md`): schmale linke Leiste mit Control-Menü, Layer-Manager (fest am linken Rand) und Processing-Manager; Jobs mit umbenennbarem Titel, Fortschritt und Ablaufdatum, nicht löschbar, nur archivierbar und in eigene Gruppen einordenbar, Filter „Active / All“; Batch als ein Eintrag mit „Download all (ZIP)“. UI-02 (`docs/plans/vp3/ui-02-basemap-projektion.md`): Basemap-Menü statt Mercator-Schalter (Satellit, Straße, nur Umrisse, weitere nach Recherche) und Projektion (Mercator, Globus, Equal Earth nach Machbarkeit); klärt dabei die in V-1 offen gelassene Frage nach Bedingungen und Alternativen zur Basiskarte (D10). Beide Stufe B, nicht gleichzeitig |
 
 ---
 
