@@ -426,7 +426,7 @@ tut es ohne laufende Session.
 | Prüfung | Befehl | Ergebnis |
 |---|---|---|
 | Backend-Lint | `ruff check backend` | grün („All checks passed!“) |
-| Backend-Tests | `pytest` (aus der Repo-Wurzel, ohne `tests_live`) | PYTEST_RESULT |
+| Backend-Tests | `pytest` (aus der Repo-Wurzel, ohne `tests_live`) | **5762 passed, 8 skipped** (PowerShell `pwsh` ist in der Sitzung nicht installiert, die CI hat es), 1102 Warnungen, 19 min 23 s |
 | Importregeln | `PYTHONPATH=backend lint-imports --config .importlinter` | grün, **16 Verträge KEPT, 0 broken** |
 | Frontend-Lint | `npm run lint` (oxlint) | grün, keine Funde |
 | Frontend-Typprüfung | `npx tsc -b --pretty false` | grün, Exit 0 |
