@@ -1,6 +1,6 @@
 # M4-19 — Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“: Plan
 
-**Stand:** 22.10.2026, Plan freigegeben (§9); M4-19a, d und b sind umgesetzt (§10, §11, §12), c und e folgen je in einer neuen Session.
+**Stand:** 24.10.2026, Plan freigegeben (§9); M4-19a, d, b und c sind umgesetzt (§10, §11, §12, §13), e folgt in einer neuen Session.
 **Stufe B (S6):** Der Plan liegt im Draft-PR, die Session hält an, Otto gibt frei. Danach
 setzen die Sessions aus Frage 10 um.
 **Modell:** Opus für den Plan, Sonnet (Effort mittel) für die Umsetzung (§3 der Übersicht).
@@ -677,3 +677,87 @@ $results.result.properties.bands | ConvertTo-Json -Depth 4     # "unit": "m" zwi
 Aus dem Ergebnis eines Band-Math-Jobs (`(nir - red) / (nir + red)`) fehlt `unit` ganz; ein Ausdruck, der nur `red`
 heißt, behält die Einheit `1`.
 
+---
+
+## 13. Umsetzung M4-19c (24.10.2026)
+
+- **Backend:** `/statistics` nimmt `op`, `op_version` und `params` wie die Kachel (`api/tiler.py`
+  `_OPERATOR_ROUTES`). `OperatorTileReader.preview` liest alle Quellen über dieselben Grenzen auf dieselbe
+  Größe (höchstens 1024 px, mehr ist `400`), danach laufen die Kernel der Schritte und rio-tilers Statistik.
+  Der Cache-Schlüssel ist ein Hash über Assets, Skalierung, Einheiten und Schritte
+  (`OperatorInput.cache_identity`). Nachtrag `adr/0006` („M4-19c“); die Version `0.4.2` bleibt, die Ergebnis-Bytes
+  ändern sich nicht.
+- **Einheit der Vorschau (Übergabe aus §12, Otto 23.10.2026):** Der Reader kennt die Einheit hinter den Schritten
+  und gibt sie als `unit` ins TileJSON der Operator-Kachel (wo alle Bänder dieselbe haben) und an jedes Band von
+  `/statistics` mit `op` (`null`: unbekannt). Das Panel liest sie aus der Statistik, die es für die Farbskala
+  ohnehin anfragt, also ohne eine Anfrage mehr; das TileJSON fragt es dafür nicht. Das weicht vom Wortlaut der
+  Übergabe ab („liest `unit` aus dem TileJSON“): das Feld steht dort für jeden anderen Leser, getestet, aber das
+  Panel braucht es nicht.
+- **Anzeige (Otto, 24.10.2026):** Die Einheit der Vorschau steht nur im Panel am Wertebereich („min … max m“),
+  nie im Layer-Manager (ein Test pinnt eine Vorschau mit Einheit und prüft Layer und Layer-Manager). „1“ und eine
+  unbekannte oder gemischte Einheit zeigt es nicht an: `shownUnit`, die eine Stelle aus §12.
+- **Regel (§2.6, eine Funktion):** `render.ts::scaleOf` ist die Regel von M4-32b, aus `resultLayer.ts` herausgezogen
+  und für Vorschau und Ergebnis dieselbe: Index (Band-Math, alle Werte in −1…1) → −1…1 `rdylgn`, sonst 2–98 %
+  `viridis`, ohne Perzentile Minimum…Maximum. `resultRender` ruft sie auf; seine Tests laufen unverändert.
+- **Ablauf im Panel:** Die Vorschau misst die Schritte über der **ersten** Szene (ein Bereich gilt für alle Szenen
+  der Karte). Ein Bereich, den der Nutzer angewandt hat (`handRange`, wie bei M4-32b: ein anderer als der Startwert),
+  geht vor, und die Vorschau wartet dann nicht auf die Messung (sie kommt nur für die Einheit). Sonst wartet das
+  Bild auf die Messung und wird einmal gezeichnet, nicht erst mit −1…1 und dann neu. Die Felder zeigen den
+  gemessenen Bereich, solange der Nutzer nicht darin tippt. „Auto stretch“ ist frei, sobald ein Bereich von Hand gilt,
+  die Felder bearbeitet sind oder die Messung fehlschlug: Es nimmt den Startbereich zurück und misst nötigenfalls neu.
+- **Eine Messung je Zustand (Auflage Otto, §9):** Der Zustand ist die Statistik-URL (Schritte über der ersten Szene,
+  ohne Bereich). Das Frontend merkt sich das Ergebnis (bis 50) und fragt dieselbe URL nie zweimal gleichzeitig; ein
+  Fehlschlag wird bis „Auto stretch“ nicht wiederholt. Dahinter steht der Postgres-Cache (30 Tage). Die Adressen
+  gehen wie bei der Kachel durch `check_url` und die Allowlist (Test: fremder Host → `502`).
+- **Schlägt die Messung fehl:** Die Vorschau bleibt bei −1…1 `rdylgn` und das Panel sagt es (Regel 4). Hat die
+  Messung keinen gültigen Pixel (Zähler 0), bleibt der Bereich ebenfalls, ohne Hinweis auf einen Fehler.
+- **Gefunden und behoben:** Liegen die Werte so nah an einer Zahl, dass `numpy` keine Histogramm-Fächer bilden kann
+  (`nir - red` über eine flache Szene), scheiterte `/statistics` mit `500`. Das Histogramm hat dann einen Fach
+  (`access/tiles.py::_statistics_of`); es gilt auch für die Statistik ohne `op`.
+- **Geändert:** Die zwei Tests, die `statistics` mit `op` als `400` festhielten, sagen jetzt, dass `info` und
+  `point` es bleiben. Die Vorschau-Tests im Frontend warten nach den 400 ms auf die Messung (`afterDebounce` ist
+  `async`), und ein Test je Regel (1)–(4), Einheit und Zähler kam dazu.
+- **Offen, ehrlich:** (a) Die Messung gilt für die erste Szene, nicht für den Mosaik-Mittelwert über alle. (b) Bei
+  „AOI only“ misst sie die ganze Szene (Frage 7, Option 1): Die Farbskala kann von der der AOI abweichen. (c) Zarr:
+  zwei Gruppen, deren gröbste Ebenen kein ganzzahliges Vielfaches sind, ergeben `422` und damit den Startbereich.
+  (d) Die Antwortzeit gegen eine echte Quelle ist nicht gemessen: Das `gateway` der Sitzung erreicht keine Quelle
+  (wie in §12.1). Gemessen ist nur der Lauf gegen synthetische COGs und den Mini-Zarr-Speicher.
+
+### 13.1 Prüfanleitung für Otto (PowerShell 5.1)
+
+Entwurf. Belegt sind die Antwortformen der Route gegen synthetische Quellen
+(`tests/earthx/api/test_tiler_statistics_operator.py`); gegen einen laufenden Stack mit echter Quelle ist sie nicht
+gelaufen.
+
+```powershell
+docker compose up -d --build
+$api = 'http://localhost:8000'; $tiler = 'http://localhost:8001'
+
+# Eine Sentinel-2-Szene
+$search = @{ collections = @('sentinel-2-c1-l2a'); bbox = @(10.0, 47.0, 10.5, 47.5); limit = 1 } | ConvertTo-Json -Depth 5
+$item = (Invoke-RestMethod -Method Post -Uri "${api}/stac/search" -ContentType application/json -Body $search).features[0].id
+$base = "${tiler}/collections/sentinel-2-c1-l2a/items/${item}"
+
+function Get-Op($expression) {
+    $params = [uri]::EscapeDataString((@{ expression = $expression } | ConvertTo-Json -Compress))
+    "op=band_math&op_version=1&params=$params"
+}
+
+# 1) Die Messung eines Index: min, max und die Perzentile; kein "unit" (eine Formel hat keine bekannte Einheit)
+$ndvi = Invoke-RestMethod "${base}/statistics?asset=red&asset=nir&$(Get-Op '(nir - red) / (nir + red)')"
+$ndvi.PSObject.Properties | ForEach-Object { '{0}: {1} ... {2} (2 %: {3}, 98 %: {4})' -f $_.Name, $_.Value.min, $_.Value.max, $_.Value.percentile_2, $_.Value.percentile_98 }
+
+# 2) Ein Band, das bleibt, behält seine Einheit "1" - in den Daten; das Panel zeigt sie nicht
+$red = Invoke-RestMethod "${base}/statistics?asset=red&$(Get-Op 'red')"
+($red.PSObject.Properties | Select-Object -First 1).Value.unit              # 1
+(Invoke-RestMethod "${base}/WebMercatorQuad/tilejson.json?asset=red&$(Get-Op 'red')").unit   # 1
+
+# 3) Mehr als 1024 Pixel sind ein 400
+try { Invoke-RestMethod "${base}/statistics?asset=red&$(Get-Op 'red')&max_size=2000" } catch { $_.Exception.Response.StatusCode.value__ }
+
+# 4) Im Browser (http://localhost:5173): Szene wählen, "Process", "＋ Band math", (nir - red) / (nir + red) eintippen.
+#    Die Vorschau erscheint, sobald die Messung da ist; min/max stehen auf -1 und 1 (ein Index).
+#    Dann "red * 100": min/max springen auf das 2.-98.-Perzentil, die Farben sind viridis.
+#    Von Hand "0" und "5" setzen, "Apply": der Bereich bleibt, auch bei einer anderen Formel. "Auto stretch" gibt die Messung zurück.
+#    Beim DEM (Band math mit dem Ausdruck data) steht neben max ein "m", bei Sentinel-2 (Ausdruck red) steht dort nichts. Im Layer-Manager steht nie eine Einheit.
+```
