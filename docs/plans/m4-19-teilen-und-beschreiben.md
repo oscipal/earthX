@@ -731,6 +731,18 @@ heißt, behält die Einheit `1`.
   mit und ohne `op`, vor dem Abruf des Items (Otto, 24.10.2026; vorher `500`). (4) Einheiten werden nur geschrieben, wenn ihre Zahl die der Bänder trifft.
 - **Angenommen (Otto, 24.10.2026):** Einheit aus der Statistik statt aus dem TileJSON; Messung an der ersten Szene,
   bei „AOI only“ an der ganzen Szene (für M4).
+- **Anzeige der Wertebereich-Zeile (Fehler vor dem Merge, Otto 24.10.2026):** Beim DEM überlappten sich die Felder, und
+  „m“ stand halb hinter dem Feld: Das Etikett war auf 72 px festgelegt, das Feld darin 84 px breit. Jetzt sind die Felder
+  `11ch + 44px` breit (ein Wert wie −11000, 8848.86 oder −0.123456 samt Innenabstand und Pfeilen), das Etikett richtet
+  sich nach dem Feld, und „max“ und die Einheit stehen in einem eigenen Element (`.pp-bound`); bei schmalem Panel bricht
+  die Zeile um, statt zu überlappen. Geprüft im echten Browser (Chromium über Playwright, Vite-Server, die Antworten
+  des Tilers vorgetäuscht) mit `frontend/e2e/range-layout.cjs`: DEM-artige (−11000 … 8848.86 m) und NDVI-artige Werte
+  (gemessen und eingetippt: −0.123456 … 0.987654), helles (`normal`) und dunkles (`tech`) Thema, Panel breit (1280 px),
+  schmal (360 px) und sehr schmal (320 px): 24 Fälle. Das Skript misst die Rahmen von Feldern, Einheit, Farbwahl und
+  Schaltflächen und meldet Überlappung, ein Feld außerhalb des Panels, einen abgeschnittenen Wert und seitliches
+  Scrollen; es schreibt je Fall ein Bild. Vorher 24 von 24 Fällen mit Befund, nachher keiner. Es ist keine Abhängigkeit
+  des Projekts (CI führt es nicht aus); es läuft von Hand (Kopf der Datei). Ein vitest-Test hält fest, dass die Einheit
+  ein eigenes Element neben dem Feld ist.
 - **Größe des PRs:** rund 1650 geänderte Zeilen mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
   300. Otto hat entschieden, ihn nicht zu teilen. Gründe: Die Route ist ohne die Anzeige nicht zu prüfen und
   die Anzeige ohne die Route nicht zu bauen; die gemeinsame Regel (`scaleOf`) berührt beide Seiten. Etwa die Hälfte
