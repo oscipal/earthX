@@ -17,6 +17,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
+from fnmatch import fnmatchcase
 from types import MappingProxyType
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
@@ -29,6 +30,9 @@ EARTH_CIRCUMFERENCE_KM = 40075.0
 # mistake, not a wish, and the same reasoning as MAX_GEOTILE_LEVEL in
 # catalog/coverage.py: a grid finer than the data is a number, not a picture.
 MAX_TILE_ZOOM = 22
+
+# A unit is a symbol, not a sentence (UCUM: "m", "1", "mm/h"); the longest in use stays far below this.
+MAX_UNIT_CHARS = 32
 
 
 class DataClass(Enum):
@@ -147,6 +151,21 @@ class ConfigError(ValueError):
 
 _DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
 _DOI_NAME = re.compile(r"10\.\d{4,9}/[^\s{}]+")
+
+
+#: What ``readers.zarr_reader`` puts between the variables of one Zarr asset key (``SR_10m:b04,b03``). The catalog
+#: may not import the readers; a test holds the two equal.
+VARIABLE_LIST_SEPARATOR = ","
+
+
+def single_asset_keys(asset: str, separator: str | None) -> list[str]:
+    """The keys ``band_units`` is read by for one asset key an order names: a Zarr group has one per variable."""
+    if separator is None:
+        return [asset]
+    group, found, variables = asset.partition(separator)
+    if not found:
+        return [asset]
+    return [f"{group}{separator}{variable}" for variable in variables.split(VARIABLE_LIST_SEPARATOR)]
 
 
 def doi_name(doi: str | None) -> str | None:
@@ -735,8 +754,15 @@ class DatasetConfig:
     # DEM). No default (KLAERUNGEN B10): an entry says so on purpose, and ``masking`` in
     # its capabilities agrees with it.
     mask: MaskSource | None
+    # The unit of the values of an asset after the scaling, by asset key as an order names
+    # it (``red``, ``SR_10m:b04``); a key may carry ``*`` for a whole group (``SR_*``). ``None``
+    # says "unknown" on purpose. No default (KLAERUNGEN B10): an entry decides. An item that
+    # names a unit itself goes first (adr/0014 §15n). The default render and the mask layer
+    # each need a key.
+    band_units: Mapping[str, str | None]
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
         self._check_keywords()
         self._check_doi()
         self._check_license_is_identifiable()
@@ -748,6 +774,48 @@ class DatasetConfig:
         self._check_zarr()
         self._check_browse_cors()
         self._check_mask()
+        self._check_band_units()
+
+    def band_unit(self, asset: str) -> str | None:
+        """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
+
+        The exact key goes first, then a key with a ``*`` (the entry allows no two that overlap).
+        """
+        if asset in self.band_units:
+            return self.band_units[asset]
+        for pattern, unit in self.band_units.items():
+            if "*" in pattern and fnmatchcase(asset, pattern):
+                return unit
+        return None
+
+    def _check_band_units(self) -> None:
+        """Keys and units are usable text, and what the viewer draws by default has an entry (M4-19b)."""
+        for key, unit in self.band_units.items():
+            if not isinstance(key, str) or not key.strip() or key != key.strip():
+                raise ConfigError(f"{self.dataset_id}: a band unit is keyed by an asset, not {key!r}")
+            # Only `*` is a wildcard; the viewer reads the keys the same way, and fnmatch would also read these.
+            if any(char in key for char in "?[]"):
+                raise ConfigError(f"{self.dataset_id}: the key {key!r} of a band unit uses a wildcard other than '*'")
+            if unit is not None and (not isinstance(unit, str) or not unit.strip() or unit != unit.strip()):
+                raise ConfigError(f"{self.dataset_id}: the unit of {key!r} is a non-blank text or None")
+            if unit is not None and len(unit) > MAX_UNIT_CHARS:
+                raise ConfigError(f"{self.dataset_id}: the unit of {key!r} is longer than {MAX_UNIT_CHARS} characters")
+        # The collection travels through JSONB, which does not keep the order of keys: two patterns that can both
+        # match one asset would be read in an order nobody chose.
+        patterns = [key for key in self.band_units if "*" in key]
+        for first in patterns:
+            for second in patterns:
+                if first != second and fnmatchcase(first, second):
+                    raise ConfigError(f"{self.dataset_id}: the patterns {second!r} and {first!r} of band_units overlap")
+        separator = self.zarr.variable_separator if self.zarr is not None else None
+        wanted = list(self.default_render.assets) if self.default_render is not None else []
+        if self.mask is not None:
+            wanted.append(self.mask.asset)
+        listed = tuple(self.band_units)
+        for order_asset in wanted:
+            for key in single_asset_keys(order_asset, separator):
+                if not any(key == pattern or ("*" in pattern and fnmatchcase(key, pattern)) for pattern in listed):
+                    raise ConfigError(f"{self.dataset_id}: band_units has no entry for {key!r}, which the entry reads itself")
 
     def _check_mask(self) -> None:
         """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""

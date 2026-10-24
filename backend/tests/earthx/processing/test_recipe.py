@@ -33,7 +33,18 @@ from tests.earthx.processing.testops import OPERATORS
 
 #: Fixed on purpose (condition F2): a change here is a change of method `c1`, and
 #: every cache key computed before it would silently stop matching.
+#:
+#: Renewed on purpose by M4-19b (adr/0014 §15n): ``Band.unit`` and ``ResolvedInput.unit`` entered the core, so
+#: every recipe carries two more keys (``"unit":null``) and every key computed before misses once. The method
+#: itself did not change: ``OLD`` below are the values before, and ``test_only_the_two_unit_keys_changed_them``
+#: derives them from the new core by taking those keys out.
 EXPECTED = {
+    "base": "c1:0b03ffb4f3a8eb886ca9c88cfc1a70c4ca187dbf91d57e56a71c1ec791dfd917",
+    "non_ascii": "c1:e3842389856c075e37dea8bec47c2f804cc8af5a741282beddcffc38ec323f83",
+    "small_float": "c1:43ab077b6d72cc318cf12fbae2656ec7f58df19bc8b110d3f882350a48d1a940",
+    "zarr": "c1:027eabb452c999f2e8574f8239e35926bda6fef4dd8929cc24716ebc93ea6f5b",
+}
+OLD = {
     "base": "c1:db05e56f9323422467188e8899b4d4c69772794d785e9c7ecf27041b3666467d",
     "non_ascii": "c1:86c3092e8705c6a45438c1b61e290572f297ae02d5102833c6423674431e938b",
     "small_float": "c1:63f87919039f7b2dd54b24362e08ae343d947aec2f504c18ba86f15e443bfeab",
@@ -86,6 +97,24 @@ class TestFixedHashes:
     def test_the_hash_is_the_recorded_one(self, case: str, data: dict) -> None:
         assert _hash(data) == EXPECTED[case]
 
+    @pytest.mark.parametrize(
+        ("case", "data"),
+        [
+            ("base", recipe_data()),
+            ("non_ascii", _with_params({"factor": 2.0, "label": "Größe ≥ 1"})),
+            ("small_float", _with_params({"factor": 1e-7})),
+            ("zarr", _zarr_recipe()),
+        ],
+    )
+    def test_only_the_two_unit_keys_changed_them(self, case: str, data: dict) -> None:
+        core = recipe_from_data(data, OPERATORS).model_dump(mode="json", exclude={"recipe_id"})
+        for entry in core["inputs"]:
+            for asset in entry["resolved"]:
+                assert asset.pop("unit") is None
+                for band in asset["bands"]:
+                    assert band.pop("unit") is None
+        assert "c1:" + hashlib.sha256(canonical_bytes(core)).hexdigest() == OLD[case]
+
     def test_the_canonical_bytes_follow_the_rules_of_4_4(self) -> None:
         data = {"b": 1.0, "a": -0.0, "c": "ä", "d": 1e-7, "e": [3, 1], "f": {"z": None, "y": True}}
         assert canonical_bytes(data) == '{"a":0.0,"b":1.0,"c":"ä","d":1e-07,"e":[3,1],"f":{"y":true,"z":null}}'.encode()
@@ -124,6 +153,19 @@ class TestWhatTheHashIgnoresAndWhatItSees:
             {"op": "scale", "op_version": 1, "params": {"factor": 3.0}},
         ]
         assert _hash(recipe_data(steps=steps)) != _hash(recipe_data(steps=list(reversed(steps))))
+
+    def test_the_unit_of_a_band_is_part_of_the_hash(self) -> None:
+        data = recipe_data()
+        data["inputs"][0]["resolved"][0]["bands"][0]["unit"] = "1"
+        assert _hash(data) != EXPECTED["base"]
+
+    def test_the_unit_of_an_input_is_part_of_the_hash(self) -> None:
+        data = recipe_data()
+        entry = data["inputs"][0]["resolved"][0]
+        entry.update(bands=[], scaling="none", unit="m")
+        other = recipe_data()
+        other["inputs"][0]["resolved"][0].update(bands=[], scaling="none")
+        assert _hash(data) != _hash(other)
 
     def test_the_version_of_an_input_is_part_of_the_hash(self) -> None:
         data = recipe_data()
@@ -242,6 +284,27 @@ class TestRefusals:
         entry["scaling"] = scaling
         with pytest.raises(RecipeInvalid):
             recipe_from_data(data, OPERATORS)
+
+    @pytest.mark.parametrize("unit", ["", 5, ["m"], {"symbol": "m"}, "x" * 257, True])
+    @pytest.mark.parametrize("where", ["band", "input"])
+    def test_a_unit_that_is_no_usable_text(self, where: str, unit) -> None:
+        data = recipe_data()
+        entry = data["inputs"][0]["resolved"][0]
+        if where == "band":
+            entry["bands"][0]["unit"] = unit
+        else:
+            entry.update(bands=[], scaling="none", unit=unit)
+        with pytest.raises(RecipeInvalid):
+            recipe_from_data(data, OPERATORS)
+
+    def test_a_recipe_written_before_units_still_reads(self) -> None:
+        """A ``recipe.json`` in a ZIP from earlier carries no ``unit`` anywhere; the runner has to run it."""
+        data = recipe_data()
+        assert "unit" not in data["inputs"][0]["resolved"][0]
+        assert "unit" not in data["inputs"][0]["resolved"][0]["bands"][0]
+        recipe = recipe_from_data(data, OPERATORS)
+        resolved_input = recipe.inputs[0].resolved[0]
+        assert (resolved_input.unit, resolved_input.bands[0].unit) == (None, None)
 
     def test_the_error_text_names_fields_never_values(self) -> None:
         data = recipe_data()

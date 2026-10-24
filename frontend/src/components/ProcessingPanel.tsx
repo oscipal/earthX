@@ -22,6 +22,7 @@ import {
   isArea,
   namesInExpression,
   processBlockReason,
+  shownUnit,
   uniqueNames,
   type Area,
   type BandSource,
@@ -142,6 +143,7 @@ function Bands({ view }: { view: OrderView }) {
     const byMask = pressed && source.asset === view.maskAsset?.asset;
     const byExpression = pressed && !byMask && !picked.includes(source.asset);
     const label = name !== null && unique.get(name) === source.asset ? name : source.asset;
+    const unit = shownUnit(name === null ? source.unit : source.units[source.names.indexOf(name)]);
     return (
       <button
         key={`${source.asset}/${name ?? ''}`}
@@ -163,6 +165,7 @@ function Bands({ view }: { view: OrderView }) {
         onClick={() => click(source, name)}
       >
         {label}
+        {unit && <span className="pp-chip-unit"> · {unit}</span>}
       </button>
     );
   };

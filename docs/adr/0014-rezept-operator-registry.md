@@ -1981,6 +1981,87 @@ mit M4-18c.
 - **Speicher (§3.5, M4-10b):** Beide Operatoren laufen im Durchgang des Lesens. Gemessen im Kindprozess (`VmHWM`, `GDAL_CACHEMAX` 64 MB): `mask` 351 MB und `normalize` 370 MB bei 4096², Wachstum von 2048² auf 4096² 69 und 80 MB (mit dem Statistik-Durchgang von M4-32a); die Grenzen sind 500 MB und 100 MB (`test_memory_mask_normalize.py`).
 - **Kette in der Kachel (§6.1, §6.2; F1, M4-18b):** Eine Kachel-URL darf `op`, `op_version` und `params` wiederholen: gleich oft, in der Reihenfolge der Schritte, höchstens 4. Die Ein-Schritt-Form ist der Fall n = 1 und unverändert. Jeder Schritt muss `T1` und `pixel` sein und auf den Datensatz passen (`applicable`, je Schritt, vor dem Abruf des Items); eine Abweisung nennt ab zwei Schritten den Platz („step 1: …“ für den zweiten, ab 0 gezählt wie alle Ablehnungen des Auftrags). Der Reader prüft die Bänder, die jeder Schritt dem nächsten lässt (`transform` der Reihe nach), vor dem ersten Pixel, wie der Auftrag; `process_dependency` ruft die Kerne nacheinander, dieselben Funktionen wie ein Job auf einem Block. Das Panel zeigt den längsten Anfang aus Kachel-Schritten (höchstens 4); ein unvollständiger oder nicht zeichenbarer Schritt beendet ihn, und der Hinweis nennt, wie viele Schritte die Karte zeigt. Nennt ein Schritt ein Band, das ein früherer entfernt hat, fragt das Panel das TileJSON der Kette, zeigt die Schritte vor dem abgewiesenen und dessen Grund und baut die Bandlogik nicht nach; die Annahme (`check_bands`, „Review“ und „Start“) weist denselben Auftrag mit demselben Grund ab (Otto, 22.10.2026). Verglichen mit dem Job ist die Kette `mask → band_math` auf der nativen Ebene bitgleich (COG, Maske gleich); auf Zarr gilt die Regel von §15d.
 
+## 15n. Nachtrag vom 2026-10-22: die Einheit je Band (zu §4.2, §4.5, §5.6; M4-19b)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben, Frage 8 mit Option 1
+(`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §4.2, §4.5 und §5.6
+bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Registry (B10):** Neues Feld `DatasetConfig.band_units`, ohne Vorgabe: Asset-Schlüssel, wie
+  ein Auftrag ihn nennt (`red`, `SR_10m:b04`), auf eine Einheit als UCUM-Zeichen oder `None`.
+  `None` heißt „unbekannt“, und ein Asset ohne Eintrag ist es auch; geraten wird nichts. Ein
+  Schlüssel darf ein `*` tragen (`SR_*` für die Gruppen eines Zarr-Speichers); der genaue
+  Schlüssel geht vor, dann ein Muster; der Eintrag erlaubt nur `*` als Platzhalter und keine zwei Muster, die sich überlappen (die Collection geht durch JSONB, das die Reihenfolge der Schlüssel nicht hält). Der Eintrag prüft beim
+  Laden: Schlüssel und Einheit sind Text ohne Rand und höchstens 32 Zeichen, und jedes Asset,
+  das `default_render` oder die Maske lesen, hat einen Schlüssel (bei einer Zarr-Liste
+  `SR_10m:b04,b03,b02` jede Variable für sich). Ein Eintrag für *alle* Assets, die ein Operator
+  lesen kann, ist nicht prüfbar: Die Registry zählt die Assets eines Items nicht auf.
+  - `sentinel-2-c1-l2a`: die zwölf Reflexionsbänder `"1"` (Oberflächenreflexion ist ein
+    Verhältnis); `scl` und `visual` ausdrücklich `None`. `aot`, `wvp`, `cloud`, `snow` und
+    `preview` nennt der Eintrag nicht.
+  - `sentinel-2-l2a-zarr3`: `SR_*` `"1"`, `SCL_20m:scl` `None`.
+  - `cop-dem-glo-30`: `data` `"m"`, die Einheit, die der Bereich 0 bis 5000 der Standarddarstellung schon nennt.
+  - `"1"` gilt für Werte **nach** der Skalierung. Liefe eine Quelle ein Reflexionsband ohne
+    `scale` und `offset`, stünde die Einheit an Zählwerten. Für die drei Einträge trifft das nicht zu
+    (Earth Search nennt die Skalierung, der Zarr-Speicher trägt sie als CF-Attribute).
+- **Vorrang:** Nennt das Item `raster:bands[].unit` bzw. `bands[].unit`, gilt das Item, sonst die
+  Registry. Ein `unit`, das kein Text ist, leer oder über 256 Zeichen, ist der Fehler der Quelle
+  (`502`, Stufe `bands`), wie eine unlesbare Zahl; ein `null` heißt „keine Angabe“.
+- **Rezept (§4.2):** `Band.unit` und `ResolvedInput.unit`, beide `Text | None`, **mit Vorgabe
+  `None`**, damit eine `recipe.json` aus einem früheren ZIP im Runner weiter liest.
+  - Hat das Item Bänder, trägt jedes Band seine Einheit (die des Items, sonst die der Registry).
+    Bei Zarr ist das je Variable, über den Schlüssel `<Asset><Trenner><Variable>`.
+  - Hat ein COG-Item keine Bandbeschreibung (das DEM), gäbe ein erfundenes Band eine Anzahl
+    vor, die nur die Datei kennt, und `check_bands` wartete nicht mehr auf sie. Deshalb
+    trägt dort `ResolvedInput.unit` die Einheit der Registry, für jedes Band des Assets. `bands`
+    bleibt leer. Das ist die erste von drei Abweichungen vom Wortlaut des Plans (§3.2: „`Band` bekommt
+    `unit`“); die anderen zwei stehen unter „Nicht gebaut“.
+  - Die Einheit gehört zum Kern des Hashes (§4.5). Alle vier festen Hashwerte aus §4.4 Punkt 9
+    sind **bewusst erneuert**: Jedes Rezept trägt zwei Schlüssel mehr (`"unit":null`), das
+    Verfahren `c1` ist unverändert. Ein Test leitet die alten Werte aus dem neuen Kern her, indem
+    er diese Schlüssel herausnimmt. Nach dem Deployment gibt es einmal für jedes gecachte Ergebnis
+    keinen Treffer; bei 7 Tagen Frist ist das vertretbar.
+- **Warum im Hash, und warum in `resolved` (Frage Otto, 23.10.2026):** Die Einheit steht in
+  `inputs[].resolved[]` (`bands[].unit` und `unit`), also dort, wo die Angaben zum Input bei der
+  Annahme stehen; einen Ort daneben gibt es nicht, denn `resolved` gehört nach §4.5 selbst zum
+  gehashten Kern. Sie kommt wie `scale`, `offset` und `nodata` aus Item und Registry, nicht vom
+  Nutzer, und wird bei der Annahme festgehalten. Im Hash steht sie, weil das Ergebnis sie als
+  `bands[].unit` trägt: Ohne sie träfe ein neuer Auftrag das Ergebnis eines älteren, dessen
+  Einheit unter einem früheren Stand der Registry entstand, und `recipe.json` im ZIP erklärte
+  nicht, woher die Einheit im Ergebnis kommt. Ehrlich dazu: Die Pixel ändert die Einheit nicht;
+  sie in den Hash zu nehmen ist die vorsichtige Wahl und kostet einen Cache-Fehlschuss bei jeder
+  Korrektur einer Einheit in der Registry (7 Tage Frist). Ausgenommen wäre sie nur um den Preis
+  veralteter Metadaten im Treffer (Plan Frage 8, Option 2, von Otto nicht gewählt).
+- **Kern (§5.6):** `Source.units` (`units_of`: je Band, wie das Rezept sie hat; Beschreibungen
+  anderer Länge als die Datei glaubt der Kern nicht, ein Asset ohne Beschreibung nimmt die Einheit
+  der Eingabe für alle Bänder) fließt in `BandMeta.unit` von Job, Kachel und Schätzung.
+  - `reproject` und `mask` reichen die Einheit durch. `normalize` lässt sie leer: Der Zielbereich
+    ist der des Aufrufers. `band_math` gibt `None`, denn eine Formel hat keine bekannte Einheit;
+    ein Ausdruck, der nur ein Bandname ist, behält die Einheit dieses Bandes.
+  - Ein Mosaik verlangt dieselben Einheiten in allen Szenen (wie Bänder, Datentyp und `nodata`).
+  - Das Ergebnis trägt `properties.bands[].unit` (STAC 1.1), nur wo es eine gibt, zwischen
+    `nodata` und `statistics`. Die Pixel und ihre Statistik ändert die Einheit nicht.
+- **Kachel und Job lesen gleich:** `describe_bands` gibt jetzt `(Bänder, Skalierung, Einheit des
+  Assets)`; die Kachel baut die `ResolvedInput` daraus, der Job aus `_resolved_json`.
+- **Collection:** `earthx:band_units` gibt die Zuordnung heraus, ein `None` bleibt als `null`.
+- **Frontend (Otto, 24.10.2026):** An den Band-Chips im Panel steht die Einheit („data · m“); die
+  Einheit des Items geht vor, die Muster der Registry werden wie im Backend gesucht. Für „1“, die
+  Einheit einer dimensionslosen Größe, zeigt das Frontend nichts („red“ statt „red · 1“): `shownUnit`
+  ist die eine Stelle, die eine Einheit in Anzeigetext verwandelt, und gilt für jede Anzeige, auch
+  die der Vorschau mit M4-19c. In den Daten bleibt „1“ (`bands[].unit`, `earthx:band_units`). Der
+  Layer-Manager zeigt bei keiner Layer-Art eine Einheit; ein Ergebnis-Layer trägt sie nicht.
+- **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag, weil keine Quelle für ihre Einheit gelesen wurde. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
+  Schritten kennt nur der Kern (Band-Math: keine; `mask`: die der übrigen Bänder; `normalize`:
+  keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trägt
+  sie nicht. Das bräuchte ein Feld im TileJSON (Frage an Otto im PR).
+- **Tests:** `tests/catalog/test_band_units.py` (Registry, Muster, Prüfung, Collection),
+  `tests/earthx/api/test_intake.py::TestUnits` (Item vor Registry, Zarr je Variable, DEM, kaputte
+  Einheit), `tests/earthx/processing/test_units.py` (Kern, Operatoren, Mosaik, Schätzung),
+  `test_recipe.py` (erneuerte Hashwerte und ihre Herleitung, Rezept ohne `unit`),
+  `tests/integration/test_pgstac_load.py` (ein `null` übersteht pgstac), Frontend:
+  `processingOrder.test.ts`, `resultLayer.test.ts`, `ProcessingPanel.test.tsx`,
+  `ProcessingResultLayer.test.tsx`.
+
 ## 16. Quellen
 
 **Im Repo [P]**

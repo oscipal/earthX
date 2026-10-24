@@ -232,7 +232,10 @@ def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     problem = numexpr.validate(params.expression, local_dict=placeholders, optimization="aggressive", truediv=True)
     if problem is not None:
         raise RecipeInvalid("numexpr does not accept the expression")
-    band = BandMeta(name=OUTPUT_BAND, data_type="float32", nodata=float("nan"))
+    # A formula has no known unit. Only the bare name of a band is that band again, so it keeps the band's unit.
+    units = {band.name: band.unit for band in meta.bands}
+    unit = units.get(params.expression.strip())
+    band = BandMeta(name=OUTPUT_BAND, data_type="float32", nodata=float("nan"), unit=unit)
     return RasterMeta(meta.crs, meta.transform, meta.width, meta.height, (band,), meta.resampled)
 
 

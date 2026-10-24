@@ -339,9 +339,11 @@ def _source_meta(
 ) -> RasterMeta:
     bands = []
     for source in sources:
-        for name, data_type, nodata in zip(source.names, source.data_types, source.nodata, strict=True):
+        for name, data_type, nodata, unit in zip(
+            source.names, source.data_types, source.nodata, source.units, strict=True
+        ):
             data_type = "float32" if source.scaling.applied_by_core else data_type
-            bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata))
+            bands.append(BandMeta(name=name, data_type=data_type, nodata=nodata, unit=unit))
     return RasterMeta(
         finest.crs.to_string(), transform, int(window.width), int(window.height), tuple(bands), resampled
     )
@@ -366,6 +368,7 @@ def _properties(
             "name": band.name,
             "data_type": band.data_type,
             "nodata": "nan" if band.nodata is not None and math.isnan(band.nodata) else band.nodata,
+            **({} if band.unit is None else {"unit": band.unit}),
             "statistics": band_statistics,
         }
         for band, band_statistics in zip(meta.bands, statistics, strict=True)

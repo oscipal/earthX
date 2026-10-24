@@ -364,6 +364,19 @@ describe('the layer a result becomes', () => {
     expect(button('⇩')).toBeUndefined();
   });
 
+  // Otto, 24.10.2026: units are on the band chips of the panel and in the data, never in the layer manager.
+  it('shows no unit in its row, though the result states one', async () => {
+    useProcessingStore.setState({
+      jobs: [entry({ statistics: resultStats({ bands: [{ name: 'data', unit: 'm', statistics: { count: 4, minimum: 1, maximum: 9 } }] }) })],
+    });
+    await showOnMap();
+    expect(layers()[0].result).not.toHaveProperty('unit');
+    act(() => root.render(<LayerManager />));
+    expect(container.querySelector('.lm-note')).toBeNull();
+    expect(container.querySelector('.layer-row-noted')).toBeNull();
+    expect(container.textContent).not.toMatch(/\bunit\b/iu);
+  });
+
   it('says in its row that the result was resampled to a common grid', async () => {
     useProcessingStore.setState({ jobs: [entry({ resampled: true })] });
     await showOnMap();

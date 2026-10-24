@@ -1,6 +1,6 @@
 # M4-19 — Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“: Plan
 
-**Stand:** 20.10.2026, Plan freigegeben (§9); M4-19a wird umgesetzt, b bis e folgen je in einer neuen Session.
+**Stand:** 22.10.2026, Plan freigegeben (§9); M4-19a, d und b sind umgesetzt (§10, §11, §12), c und e folgen je in einer neuen Session.
 **Stufe B (S6):** Der Plan liegt im Draft-PR, die Session hält an, Otto gibt frei. Danach
 setzen die Sessions aus Frage 10 um.
 **Modell:** Opus für den Plan, Sonnet (Effort mittel) für die Umsetzung (§3 der Übersicht).
@@ -596,3 +596,84 @@ nach §4 und der Reihenfolge dort.
   und Ergebnisliste auf der Karte ersetzte. „Load recipe…“ (große Schaltfläche) lädt nach der Dateiwahl sofort
   die Schritte und den Datentyp. Die Festlegungen zu mehreren Gruppen und fehlender AOI betreffen damit nur
   noch den Permalink (M4-19e); ein Zuschnitt-Rezept ohne Schritte meldet „This recipe has no steps.“
+
+---
+
+## 12. Umsetzung M4-19b (22.10.2026)
+
+- **Registry:** `DatasetConfig.band_units` (ohne Vorgabe, B10), Schlüssel wie ein Auftrag das Asset nennt, `*`
+  für eine Gruppe, `None` für „unbekannt“; der Eintrag prüft Text, Länge und je einen Schlüssel für die
+  Standarddarstellung und die Maske. Einheiten: Reflexionsbänder `"1"`, das DEM `"m"`, `scl`/`visual` `None`.
+  `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag (keine Quelle gelesen, nichts geraten).
+- **Rezept und Kern:** `Band.unit` und `ResolvedInput.unit` (beide mit Vorgabe `None`, ältere `recipe.json` lesen
+  weiter), `Source.units` → `BandMeta.unit` in Job, Kachel und Schätzung, `bands[].unit` im Ergebnis. Nachtrag
+  `adr/0014` §15n.
+- **Abweichung vom Plan (§3.2):** Ein COG-Item ohne Bandbeschreibung (das DEM) bekommt kein erfundenes `Band`,
+  denn das behauptete eine Bandanzahl, auf die `check_bands` sonst bis zur Datei wartet (ein Test hielt das
+  fest und schlug an). Die Einheit steht dort an `ResolvedInput.unit`, `bands` bleibt leer.
+- **Hashwerte erneuert (`adr/0014` §4.4 Punkt 9, Auflage des Plans §5):** Alle vier festen Werte in
+  `test_recipe.py::EXPECTED` sind neu; jedes Rezept trägt `"unit":null` zweimal mehr. Die alten Werte stehen als
+  `OLD`, ein Test leitet sie aus dem neuen Kern her (Schlüssel heraus, gleicher Hash). Nach dem Deployment gibt
+  es einmal für alle gecachten Ergebnisse keinen Treffer.
+- **Anzeige (Otto, 24.10.2026):** nur die Band-Chips im Panel („data · m“); „1“ zeigt das Frontend nicht („red“),
+  `shownUnit` ist dafür die eine Stelle und gilt auch für M4-19c. Der Layer-Manager zeigt bei keiner Layer-Art
+  eine Einheit (der Hinweis „Unit: m“ am Ergebnis-Layer ist entfernt, ein Test hält es fest). Die Collection gibt
+  `earthx:band_units` heraus.
+- **Nicht gebaut, Übergabe an M4-19c (Otto, 23.10.2026):** die Einheit in der Wertebereich-Zeile der Vorschau.
+  Sie kommt mit M4-19c als Feld im TileJSON der Operator-Kachel: Der Kern kennt die Einheit hinter den
+  Schritten (`OperatorTileReader` rechnet `transform` je Schritt schon vor dem ersten Pixel und hält dabei
+  `BandMeta.unit`); das Panel baut diese Bandlogik nicht nach. 19c liest dann `unit` aus dem TileJSON in die
+  Zeile neben „min“/„max“ und dasselbe Feld für `/statistics` mit `op`. Dort gilt `shownUnit`
+  (`processingOrder.ts`): für „1“ steht nichts, das TileJSON trägt die Einheit unverändert.
+- **Angenommen (Otto, 23.10.2026):** `ResolvedInput.unit` für das DEM; `aot`, `wvp`, `cloud`, `snow` und `preview`
+  ohne Einheit für M4, eine Einheit dafür kommt nach M4.
+- **Belege zu Rezeptdateien (Frage Otto, 23.10.2026):** (a) Eine `recipe.json` ohne Einheiten (Datei aus einem
+  alten Job-ZIP) lädt über „Load recipe…“ und gibt die Bestellung zurück, aus der sie gemacht wurde
+  (`processingDraft.test.ts`, alle Bestellungen mit Schritten, mit und ohne `unit`). (b) Die Rundreise
+  `buildOrder`/`draftFromOrder` trägt die neuen Schlüssel *nicht*, und soll es nicht: Sie stehen in `resolved`,
+  das die Bestellung nie enthält; der Test prüft, dass `unit` und `resolved` nicht in der gebauten Bestellung
+  stehen. (c) Der Runner nimmt die neue Datei an und lässt sie byte-gleich im Ergebnisordner; die committete
+  `recipe-ci.json` (ohne `unit`) liest weiter (`runner/test_cli.py`).
+
+### 12.1 Prüfanleitung für Otto (PowerShell 5.1)
+
+Entwurf. Belegt sind die Antwortformen der Collection (Rundreise durch pgstac, `test_pgstac_load.py`) und der
+Ergebniseigenschaften (`test_units.py`); gegen einen laufenden Stack mit echter Quelle ist sie nicht gelaufen, weil
+das `gateway` der Sitzung keine Quelle erreicht.
+
+```powershell
+docker compose up -d --build
+$api = 'http://localhost:8000'
+
+# 1) Die Collections nennen ihre Einheiten (null = unbekannt)
+foreach ($id in 'cop-dem-glo-30', 'sentinel-2-c1-l2a', 'sentinel-2-l2a-zarr3') {
+    $c = Invoke-RestMethod "${api}/stac/collections/${id}"
+    '{0}: {1}' -f $id, ($c.'earthx:band_units' | ConvertTo-Json -Compress)
+}
+# erwartet: cop-dem-glo-30 {"data":"m"}; sentinel-2-c1-l2a mit "red":"1" und "scl":null; zarr3 {"SR_*":"1","SCL_20m:scl":null}
+
+# 2) Ein DEM-Job: die Einheit steht im Ergebnis
+$search = @{ collections = @('cop-dem-glo-30'); bbox = @(10.0, 47.0, 10.5, 47.5); limit = 1 } | ConvertTo-Json -Depth 5
+$tile = (Invoke-RestMethod -Method Post -Uri "${api}/stac/search" -ContentType application/json -Body $search).features[0]
+$cx = ($tile.bbox[0] + $tile.bbox[2]) / 2; $cy = ($tile.bbox[1] + $tile.bbox[3]) / 2; $h = 0.01
+$ring = @(@(($cx - $h), ($cy - $h)), @(($cx + $h), ($cy - $h)), @(($cx + $h), ($cy + $h)),
+          @(($cx - $h), ($cy + $h)), @(($cx - $h), ($cy - $h)))
+$order = @{ recipe_version = 1; steps = @(); aoi = @{ type = 'Polygon'; coordinates = @(, $ring) }
+            inputs = @(@{ name = 'input'; dataset = 'cop-dem-glo-30'; groups = @(, @($tile.id)); assets = @('data') })
+            output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
+$body = @{ inputs = @{ recipe = $order } } | ConvertTo-Json -Depth 12
+$job = Invoke-RestMethod -Method Post -Uri "${api}/processing/processes/recipe/execution" `
+    -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+do { Start-Sleep 5; $status = Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)"; $status.status } while ($status.status -in 'accepted', 'running')
+$results = Invoke-RestMethod "${api}/processing/jobs/$($job.jobID)/results"
+$results.result.properties.bands | ConvertTo-Json -Depth 4     # "unit": "m" zwischen nodata und statistics
+
+# 3) Im Browser (http://localhost:5173): DEM-Szene wählen, "Process": der Chip heißt "data · m";
+#    bei einer Sentinel-2-Szene heißt der Chip "red", ohne Einheit ("1" zeigt das Panel nicht).
+#    Den Job starten, "Add to layers": der Layer-Manager zeigt bei keiner Ebene eine Einheit; sie steht
+#    nur in den Daten ($results.result.properties.bands, Schritt 2).
+```
+
+Aus dem Ergebnis eines Band-Math-Jobs (`(nir - red) / (nir + red)`) fehlt `unit` ganz; ein Ausdruck, der nur `red`
+heißt, behält die Einheit `1`.
+

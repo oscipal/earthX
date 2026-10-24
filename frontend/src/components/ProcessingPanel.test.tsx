@@ -781,6 +781,51 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
   });
 });
 
+describe('the unit of a band (M4-19b)', () => {
+  const withUnits = (units: object): DatasetOption => {
+    const option = dataset('processing');
+    return { ...option, collection: { ...option.collection, 'earthx:band_units': units } as Collection };
+  };
+
+  it('is written after the name of the band on its chip, and the name stays the name of the button', async () => {
+    select([scene('S2B_A')], 'processing', withUnits({ red: 'K', nir: null }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red · K', 'nir']);
+    click(button(/^red/));
+    expect(button(/^red/).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('is not written for "1", the unit of a dimensionless quantity, whoever names it (Otto, 24.10.2026)', async () => {
+    const item: StacItem = {
+      ...scene('S2B_A'),
+      assets: {
+        red: { href: 'https://example.org/r.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+        nir: { href: 'https://example.org/n.tif', type: COG, 'raster:bands': [{ unit: '1' }] },
+      },
+    };
+    select([item], 'processing', withUnits({ red: '1', nir: 'm' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red', 'nir']);
+  });
+
+  it('is the registry\'s for an asset the item describes with no band', async () => {
+    const dem: StacItem = { ...scene('DEM_A'), assets: { data: { href: 'https://example.org/dem.tif', type: COG } } };
+    select([dem], 'processing', withUnits({ data: 'm' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['data · m']);
+  });
+
+  it('is the item\'s own where the item states one', async () => {
+    const item: StacItem = {
+      ...scene('S2B_A'),
+      assets: { red: { href: 'https://example.org/r.tif', type: COG, 'raster:bands': [{ unit: 'percent' }] } },
+    };
+    select([item], 'processing', withUnits({ red: '1' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red · percent']);
+  });
+});
+
 describe('a COG asset without band descriptions (K7, Otto 10.10.2026)', () => {
   it('gets a chip with the asset name, which puts the asset into the order', async () => {
     const dem: StacItem = {

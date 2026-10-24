@@ -6,7 +6,7 @@ import type { BandSource } from './processingOrder';
 const DTYPES = ['uint8', 'uint16', 'int16', 'uint32', 'int32', 'float32', 'float64'];
 
 function band(over: Partial<BandSource> = {}): BandSource {
-  return { asset: 'a', names: ['a'], dataType: null, scaled: false, nodata: null, ...over };
+  return { asset: 'a', names: ['a'], units: [null], unit: null, dataType: null, scaled: false, nodata: null, ...over };
 }
 
 // A raster of integers whose item states one nodata value and no scaling.

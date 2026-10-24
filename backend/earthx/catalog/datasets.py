@@ -80,6 +80,11 @@ _SCL_NOTE = (
     "the values are the same."
 )
 
+# The unit of a value after the scaling, in UCUM (adr/0014 §15n). Surface reflectance is a ratio, so "1". An asset
+# that is not on the list is "unknown", and so is an explicit None; none of those is guessed. A class layer has no
+# unit (its values name classes, `mask` below), and the TCI `visual` is the 8-bit picture the default render shows.
+_REFLECTANCE_UNIT = "1"
+
 SENTINEL_2_L2A = DatasetConfig(
     # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
     # shorter "sentinel-2-l2a" is the name of the older Earth Search collection that
@@ -266,6 +271,19 @@ SENTINEL_2_L2A = DatasetConfig(
         reference=_SCL_REFERENCE,
         note=_SCL_NOTE,
     ),
+    # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item). Not listed:
+    # `aot`, `wvp`, `cloud`, `snow`, `preview`, whose unit this entry does not state.
+    band_units={
+        **dict.fromkeys(
+            (
+                "coastal", "blue", "green", "red", "rededge1", "rededge2", "rededge3",
+                "nir", "nir08", "nir09", "swir16", "swir22",
+            ),  # fmt: skip
+            _REFLECTANCE_UNIT,
+        ),
+        "scl": None,
+        "visual": None,
+    },
 )
 
 # adr/0007 §12: measured against the real collection on 20.09.2026 (Nachmessung
@@ -458,6 +476,9 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         reference=_SCL_REFERENCE,
         note=_SCL_NOTE,
     ),
+    # `SR_10m`, `SR_20m` and `SR_60m` are the groups under `measurements/reflectance` (adr/0007 §12.3): surface
+    # reflectance, decoded by the store's CF attributes. The classification layer has no unit.
+    band_units={"SR_*": _REFLECTANCE_UNIT, "SCL_20m:scl": None},
 )
 
 # M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
@@ -640,6 +661,8 @@ COP_DEM_GLO_30 = DatasetConfig(
     maturity=Maturity.STABLE,
     zarr=None,
     mask=None,
+    # Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
+    band_units={"data": "m"},
 )
 
 REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3, COP_DEM_GLO_30))

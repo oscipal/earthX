@@ -122,6 +122,7 @@ def valid_config() -> DatasetConfig:
         maturity=Maturity.STABLE,
         zarr=None,
         mask=None,
+        band_units={"red": "1", "green": "1", "blue": "1"},
     )
 
 

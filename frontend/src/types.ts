@@ -35,6 +35,7 @@ export interface StacBand {
   spatial_resolution?: number | null;
   scale?: number | null;
   offset?: number | null;
+  unit?: string | null;
 }
 
 // A STAC Item as `/stac` returns it. `properties` is where a real STAC item
@@ -202,6 +203,9 @@ export interface Collection {
   'earthx:format'?: DatasetFormat | string | null;
   'earthx:source'?: EarthxSource | null;
   'earthx:mask'?: EarthxMask | null;
+  // The unit of the values of an asset, by the asset key an order names (`red`, `SR_10m:b04`); a key may end in
+  // `*` for a group (`SR_*`). `null` says the registry does not know it (M4-19b).
+  'earthx:band_units'?: Record<string, string | null> | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).

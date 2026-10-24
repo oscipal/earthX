@@ -354,7 +354,7 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const pass = runAs === 'one' ? chosen : batchPass(runAs, units);
   const format = dataset?.collection['earthx:format'] ?? null;
   // The scenes of a pass agree on the assets and bands (the server checks it, M4-12a).
-  const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null) : [];
+  const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null, dataset?.collection) : [];
   const maskLayer = maskLayerOf(dataset?.collection);
   const maskAsset = maskAssetOf(p.steps, maskLayer);
   const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps), maskAsset ? [maskAsset] : []);

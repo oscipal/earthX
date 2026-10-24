@@ -24,6 +24,8 @@ import {
   passesOf,
   processBlockReason,
   processInfo,
+  registryUnit,
+  shownUnit,
   stepOfRefusal,
   type DraftStep,
 } from './processingOrder';
@@ -82,7 +84,7 @@ describe('bandSources (K7)', () => {
       thumbnail: { href: 'y', type: 'image/jpeg', roles: ['thumbnail'] },
     });
     expect(bandSources(it1, 'cog', null)).toEqual([
-      { asset: 'red', names: ['red'], dataType: 'uint16', scaled: false, nodata: null },
+      { asset: 'red', names: ['red'], units: [null], unit: null, dataType: 'uint16', scaled: false, nodata: null },
     ]);
   });
 
@@ -122,7 +124,7 @@ describe('bandSources (K7)', () => {
   it('offers a COG asset without band descriptions with no name to insert', () => {
     const dem = item('d', { data: { href: 'x', type: 'image/tiff; application=geotiff' } });
     expect(bandSources(dem, 'cog', null)).toEqual([
-      { asset: 'data', names: [], dataType: null, scaled: false, nodata: null },
+      { asset: 'data', names: [], units: [], unit: null, dataType: null, scaled: false, nodata: null },
     ]);
   });
 
@@ -132,8 +134,8 @@ describe('bandSources (K7)', () => {
       product: { href: 'y', type: 'application/vnd+zarr' },
     });
     expect(bandSources(z, 'zarr', ':')).toEqual([
-      { asset: 'SR_10m:b04', names: ['b04'], dataType: null, scaled: false, nodata: null },
-      { asset: 'SR_10m:b08', names: ['b08'], dataType: null, scaled: false, nodata: null },
+      { asset: 'SR_10m:b04', names: ['b04'], units: [null], unit: null, dataType: null, scaled: false, nodata: null },
+      { asset: 'SR_10m:b08', names: ['b08'], units: [null], unit: null, dataType: null, scaled: false, nodata: null },
     ]);
   });
 
@@ -151,8 +153,107 @@ describe('bandSources (K7)', () => {
   });
 });
 
+describe('the unit of a band (M4-19b)', () => {
+  const collection = (units: unknown): Collection => ({ id: 'c', 'earthx:band_units': units }) as unknown as Collection;
+  const REGISTRY = collection({ red: '1', scl: null, data: 'm', 'SR_*': '1' });
+
+  it('takes the unit of a COG asset from the registry where the item states none', () => {
+    const it1 = item('a', {
+      red: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+      scl: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint8' }] },
+      aot: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+    });
+    const by = Object.fromEntries(bandSources(it1, 'cog', null, REGISTRY).map((b) => [b.asset, b.units]));
+    expect(by).toEqual({ red: ['1'], scl: [null], aot: [null] });
+  });
+
+  it('lets the unit of the item go before the registry', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit: 'percent' }] } });
+    expect(bandSources(it1, 'cog', null, REGISTRY)[0].units).toEqual(['percent']);
+  });
+
+  it('gives each band of a multi-band asset its own unit, the registry standing in for the rest', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, bands: [{ unit: 'K' }, {}] } });
+    expect(bandSources(it1, 'cog', null, REGISTRY)[0].units).toEqual(['K', '1']);
+  });
+
+  it('gives an asset with no band description the unit of the registry for the asset', () => {
+    const dem = item('d', { data: { href: 'x', type: COG } });
+    expect(bandSources(dem, 'cog', null, REGISTRY)[0]).toMatchObject({ names: [], units: [], unit: 'm' });
+  });
+
+  it('finds the unit of a Zarr variable by its key, with a group pattern', () => {
+    const z = item('z', { SR_10m: { href: 'x', bands: [{ name: 'b04' }, { name: 'b08', unit: 'percent' }] } });
+    expect(bandSources(z, 'zarr', ':', REGISTRY).map((b) => b.unit)).toEqual(['1', 'percent']);
+  });
+
+  it.each([
+    ['not a unit', 5],
+    ['blank', ''],
+    ['a list', ['m']],
+    ['an object', { symbol: 'm' }],
+  ])('does not take %s from an item for a unit', (_, unit) => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit }] as never } });
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual([null]);
+  });
+
+  it('knows no unit without the field, or where the field is not a table of texts', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{}] } });
+    for (const field of [undefined, null, [], 'm', { red: 5 }, { red: '' }]) {
+      expect(bandSources(it1, 'cog', null, collection(field))[0].units).toEqual([null]);
+    }
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual([null]);
+  });
+});
+
+describe('shownUnit (Otto, 24.10.2026)', () => {
+  it('writes a unit as it is', () => {
+    expect(shownUnit('m')).toBe('m');
+    expect(shownUnit('percent')).toBe('percent');
+  });
+
+  it('writes nothing for "1", for no unit and for what is no unit', () => {
+    for (const unit of ['1', '', null, undefined, 1, ['m']]) expect(shownUnit(unit as never)).toBeNull();
+  });
+
+  it('writes "10" and " 1" as they are: only the exact "1" is dimensionless', () => {
+    expect(shownUnit('10')).toBe('10');
+    expect(shownUnit(' 1')).toBe(' 1');
+  });
+
+  it('leaves the data alone: the sources keep "1"', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit: '1' }] } });
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual(['1']);
+  });
+});
+
+describe('registryUnit', () => {
+  const units = { 'SR_*': '1', 'SR_20m:b05': 'x', 'a.b*': 'dot', 'p(1)*': 'paren', data: 'm', none: null };
+  const collection = { id: 'c', 'earthx:band_units': units } as unknown as Collection;
+
+  it('takes the exact key before a pattern', () => {
+    expect(registryUnit(collection, 'SR_20m:b05')).toBe('x');
+    expect(registryUnit(collection, 'SR_20m:b06')).toBe('1');
+  });
+
+  it('matches a pattern over the whole key only, and its other characters literally', () => {
+    expect(registryUnit(collection, 'xSR_10m:b04')).toBeNull();
+    expect(registryUnit(collection, 'a.bc')).toBe('dot');
+    expect(registryUnit(collection, 'aXbc')).toBeNull();
+    expect(registryUnit(collection, 'p(1)x')).toBe('paren');
+    expect(registryUnit(collection, 'p1x')).toBeNull();
+  });
+
+  it('says null for an unknown key, an explicit unknown and a key of Object.prototype', () => {
+    expect(registryUnit(collection, 'other')).toBeNull();
+    expect(registryUnit(collection, 'none')).toBeNull();
+    expect(registryUnit(collection, 'constructor')).toBeNull();
+    expect(registryUnit(undefined, 'data')).toBeNull();
+  });
+});
+
 describe('the assets of the order', () => {
-  const plain = { dataType: null, scaled: false, nodata: null };
+  const plain = { units: [null], unit: null, dataType: null, scaled: false, nodata: null };
   const sources = [
     { asset: 'red', names: ['red'], ...plain },
     { asset: 'nir', names: ['nir'], ...plain },

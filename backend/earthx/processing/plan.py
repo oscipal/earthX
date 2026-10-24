@@ -43,7 +43,7 @@ from earthx.access.crop_rules import (
 from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
-from earthx.processing.source import expected_band_names
+from earthx.processing.source import expected_band_names, units_of
 
 __all__ = [
     "EXPORT_FACTOR",
@@ -290,7 +290,11 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
                 return None
             names = [entry.asset.asset]
         types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
-        bands.extend(BandMeta(name, data_type or "float64", None) for name, data_type in zip(names, types, strict=True))
+        units = units_of(entry, len(names))
+        bands.extend(
+            BandMeta(name, data_type or "float64", None, unit)
+            for name, data_type, unit in zip(names, types, units, strict=True)
+        )
     first = resolved[0]
     crs = first.asset.crs or "EPSG:4326"
     if sized:
