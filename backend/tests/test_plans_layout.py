@@ -14,6 +14,10 @@ Two rules:
 Files the task may not change without Otto (`CLAUDE.md`, `.github/`, `.claude/`,
 `CODEOWNERS`) are left out of the scan; `PROTECTED` is the one place to drop them
 again once they are updated.
+
+The migration files are left out as well: `apply_migrations` records a checksum per
+file, so editing a comment in an applied migration breaks `catalog-load` on every
+existing database (#183). Their old paths stay as they are.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ PLANS = REPO / "docs" / "plans"
 
 ROOT_FILES = {"README.md", "nach-m4-backlog.md"}
 PROTECTED = ("CLAUDE.md", ".github", ".claude", "CODEOWNERS")
+MIGRATIONS = Path("backend/earthx/catalog/migrations")
 SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", "dist", ".ruff_cache", ".pytest_cache"}
 SELF = Path(__file__).resolve()
 
@@ -45,6 +50,8 @@ def scanned_files():
             path = Path(root) / name
             rel = path.relative_to(REPO)
             if path == SELF or rel.parts[0] in PROTECTED or rel.name in PROTECTED:
+                continue
+            if MIGRATIONS in rel.parents:
                 continue
             yield path
 
@@ -78,3 +85,9 @@ def test_the_pattern_finds_the_old_form_and_not_the_new_one():
     assert flat_links("see ../plans/m1-fundament.md") == ["m1-fundament.md"]
     assert flat_links("see `docs/plans/m4/m4-processing-kern.md`") == []
     assert flat_links("a new plan `docs/plans/m3-xx-<kurzname>.md` or `plans/m4-xx-*.md`") == []
+
+
+def test_migration_files_are_not_scanned() -> None:
+    names = {p.relative_to(REPO) for p in scanned_files()}
+    assert not any(MIGRATIONS in p.parents for p in names)
+    assert any(p.suffix == ".py" for p in names)
