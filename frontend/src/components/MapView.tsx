@@ -17,6 +17,7 @@ import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
+  overlayBudgetNote,
   setAoiData,
   setCoverageDisplay,
   syncBrowseMosaic,
@@ -338,7 +339,10 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) {
-      syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId), viewLayer, showDownloaded));
+      const note = overlayBudgetNote(
+        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId), viewLayer, showDownloaded)),
+      );
+      if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
   }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded]);
 

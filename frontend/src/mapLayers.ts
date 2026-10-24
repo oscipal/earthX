@@ -582,14 +582,21 @@ function overlaySignature(ov: LayerOverlay): string {
     : JSON.stringify([ov.kind, ov.url, ov.coords, ov.nodataMax]);
 }
 
-// Bottom to top: `layers[0]` is the top of the list, so it comes last.
-function wantedOverlaysOf(layers: MapLayer[]): WantedOverlay[] {
+// The overlays up to the budget, bottom to top, and how many did not fit. The budget is spent from the
+// top: the layers on top of the list, and of a layer its topmost overlays (the mosaic of a time step),
+// are always whole; what is left out is the bottom of the stack.
+function wantedOverlaysOf(layers: MapLayer[]): { wanted: WantedOverlay[]; notDrawn: number } {
   const wanted: WantedOverlay[] = [];
-  for (const layer of [...layers].reverse()) {
+  let notDrawn = 0;
+  for (const layer of layers) {
     // A result whose job's results are going: no more tiles (M4-13c-5).
     if (layer.result?.expired) continue;
-    layer.overlays.forEach((overlay, n) => {
-      if (wanted.length >= MAX_LAYER_OVERLAYS) return;
+    for (let n = layer.overlays.length - 1; n >= 0; n--) {
+      if (wanted.length >= MAX_LAYER_OVERLAYS) {
+        notDrawn++;
+        continue;
+      }
+      const overlay = layer.overlays[n];
       wanted.push({
         srcId: `layer-src-${layer.id}-${n}`,
         lyrId: `layer-lyr-${layer.id}-${n}`,
@@ -598,10 +605,15 @@ function wantedOverlaysOf(layers: MapLayer[]): WantedOverlay[] {
         opacity: layer.opacity,
         sig: overlaySignature(overlay),
       });
-    });
+    }
   }
-  return wanted;
+  return { wanted: wanted.reverse(), notDrawn };
 }
+
+export const overlayBudgetNote = (notDrawn: number): string | null =>
+  notDrawn > 0
+    ? `The layers hold more images than the map draws (${MAX_LAYER_OVERLAYS}); ${notDrawn} at the bottom of the list ${notDrawn === 1 ? 'is' : 'are'} left out.`
+    : null;
 
 function isPlaced(map: MapLibreMap, w: WantedOverlay): boolean {
   return !!map.getLayer(w.lyrId) && placedOverlays.get(w.lyrId)?.sig === w.sig;
@@ -658,8 +670,9 @@ function restack(map: MapLibreMap, wanted: readonly WantedOverlay[]): void {
   stackedOrder = order;
 }
 
-export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
-  const wanted = wantedOverlaysOf(layers);
+// Returns how many overlays the budget left out (`overlayBudgetNote`).
+export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
+  const { wanted, notDrawn } = wantedOverlaysOf(layers);
   wantedOverlays = wanted;
   const known = new Map(wanted.map((w) => [w.lyrId, w]));
   // Gone from the list, or built from something else now: out.
@@ -697,6 +710,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
     placed.opacity = w.opacity;
   }
   restack(map, wanted);
+  return notDrawn;
 }
 
 export interface MosaicState {
