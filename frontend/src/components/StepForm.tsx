@@ -5,7 +5,8 @@
 import { Fragment } from 'react';
 
 import type { Operator } from '../processingOrder';
-import type { Field, FieldValue } from '../schemaForm';
+import { integersIn, type Field, type FieldValue } from '../schemaForm';
+import type { EarthxMask } from '../types';
 import { CellSize, CrsRefusal } from './CellSize';
 import { useCrsLookup } from './useCrsLookup';
 
@@ -121,6 +122,59 @@ function FieldInput({
   );
 }
 
+// "Classes to hide" of a mask step: one box per class the layer knows, with the name the registry
+// gives it. The recipe lists exactly the classes ticked, ascending (the text of the field is the
+// list). The classes the dataset suggests are ticked when the step is added, nothing is applied
+// unseen.
+function ClassPicker({
+  field,
+  layer,
+  value,
+  error,
+  inputId,
+  onChange,
+}: {
+  field: Field;
+  layer: EarthxMask;
+  value: FieldValue | undefined;
+  error: string | undefined;
+  inputId: string;
+  onChange: (value: FieldValue) => void;
+}) {
+  const ticked = new Set(integersIn(typeof value === 'string' ? value : '') ?? []);
+  const toggle = (klass: number) => {
+    const next = new Set(ticked);
+    if (!next.delete(klass)) next.add(klass);
+    onChange([...next].sort((a, b) => a - b).join(', '));
+  };
+  return (
+    <fieldset className="pp-classes" aria-describedby={`${inputId}-help`}>
+      <legend>Classes to hide</legend>
+      {layer.classes.map((entry) => (
+        <label key={entry.value} className="pp-check">
+          <input type="checkbox" checked={ticked.has(entry.value)} onChange={() => toggle(entry.value)} />
+          {entry.value} · {entry.label}
+          {layer.suggested.includes(entry.value) && <span className="pp-help"> (suggested)</span>}
+        </label>
+      ))}
+      <span id={`${inputId}-help`} className="pp-help">
+        {field.description ?? 'Pixels of the ticked classes are hidden in every band.'} The layer {layer.band} is read
+        for it and left out of the result.
+        {layer.note && ` ${layer.note}`}
+        {layer.reference && (
+          <>
+            {' '}
+            <a href={layer.reference} target="_blank" rel="noreferrer noopener">
+              Class table
+            </a>
+          </>
+        )}
+      </span>
+      {error && <span className="hint-text error">{error}</span>}
+    </fieldset>
+  );
+}
+
 export default function StepForm({
   index,
   count,
@@ -132,6 +186,7 @@ export default function StepForm({
   unsupported,
   refusal,
   latitude,
+  maskLayer,
   onChange,
   onMove,
   onRemove,
@@ -149,11 +204,17 @@ export default function StepForm({
   refusal: string | null;
   // The middle latitude of the area the order covers, for the size of a cell in degrees.
   latitude: number | null;
+  // `earthx:mask` of the dataset, for the classes of a mask step.
+  maskLayer: EarthxMask | null;
   onChange: (name: string, value: FieldValue) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
 }) {
-  const fields = operator?.form.supported ? operator.form.fields.filter((f) => f.kind !== 'const') : [];
+  // A mask step names its layer from the registry (`source`), the user ticks classes instead.
+  const masks = operator?.op === 'mask' && maskLayer !== null;
+  const fields = operator?.form.supported
+    ? operator.form.fields.filter((f) => f.kind !== 'const' && !(masks && f.name === 'source'))
+    : [];
   // `reproject` (M4-13c-3): what the target CRS and the resolution mean.
   const reprojects = operator?.op === 'reproject';
   useCrsLookup(reprojects ? values.crs : undefined);
@@ -185,6 +246,19 @@ export default function StepForm({
       {fields.map((field) => {
         const value = values[field.name];
         const touched = typeof value === 'string' && value !== '';
+        if (masks && field.name === 'classes') {
+          return (
+            <ClassPicker
+              key={field.name}
+              field={field}
+              layer={maskLayer}
+              value={value}
+              error={showErrors || touched ? errors[field.name] : undefined}
+              inputId={`pp-step-${stepKey}-${field.name}`}
+              onChange={(v) => onChange(field.name, v)}
+            />
+          );
+        }
         return (
           <Fragment key={field.name}>
             <FieldInput

@@ -31,6 +31,8 @@ from earthx.catalog.registry import (
     ItemHolding,
     LicenseInfo,
     LicenseTier,
+    MaskClass,
+    MaskSource,
     Maturity,
     SourceInfo,
     SpatialExtent,
@@ -46,6 +48,42 @@ _REACHABILITY_CHECKED = date(2026, 9, 18)
 # The licence of the data and, since Otto's decision of 19.09.2026, also the terms
 # we pass on at a download. Read from the primary source on 19.09.2026.
 _LEGAL_NOTICE_URL = "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice"
+
+# The classes of Sentinel-2's scene classification layer, with the names of SentiWiki "S2
+# Processing", L2A Algorithms, Scene Classification, Table 3 (read by Otto on 20.10.2026;
+# plans/m4-18-masking-normalisierung.md §8). Both Sentinel-2 entries share it.
+_SCL_REFERENCE = "https://sentiwiki.copernicus.eu/web/s2-processing"
+_SCL_CLASSES = tuple(
+    MaskClass(value, label)
+    for value, label in enumerate(
+        (
+            "NO_DATA",
+            "SATURATED_OR_DEFECTIVE",
+            "CAST_SHADOWS",
+            "CLOUD_SHADOWS",
+            "VEGETATION",
+            "NOT_VEGETATED",
+            "WATER",
+            "UNCLASSIFIED",
+            "CLOUD_MEDIUM_PROBABILITY",
+            "CLOUD_HIGH_PROBABILITY",
+            "THIN_CIRRUS",
+            "SNOW or ICE",
+        )
+    )
+)
+# Cloud shadows, both cloud classes and thin cirrus: the example of architekturplan.md 7.1.
+_SCL_SUGGESTED = frozenset({3, 8, 9, 10})
+_SCL_NOTE = (
+    "Class names follow the current Sentinel-2 L2A documentation. Older processing baselines name some "
+    "classes differently (for example 2 as Dark Area Pixels, 7 as Clouds Low Probability / Unclassified); "
+    "the values are the same."
+)
+
+# The unit of a value after the scaling, in UCUM (adr/0014 §15n). Surface reflectance is a ratio, so "1". An asset
+# that is not on the list is "unknown", and so is an explicit None; none of those is guessed. A class layer has no
+# unit (its values name classes, `mask` below), and the TCI `visual` is the 8-bit picture the default render shows.
+_REFLECTANCE_UNIT = "1"
 
 SENTINEL_2_L2A = DatasetConfig(
     # The same id as the upstream collection, by Otto's decision of 19.09.2026: the
@@ -88,6 +126,9 @@ SENTINEL_2_L2A = DatasetConfig(
         interpolation=True,
         # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
         reprojection=True,
+        # M4-18 (Otto, 20.10.2026): the layer is described in `mask` below.
+        masking=True,
+        normalization=True,
         ml_processing=True,
         # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
         quad_pol=False,
@@ -221,6 +262,28 @@ SENTINEL_2_L2A = DatasetConfig(
     # Element 84's Collection 1 is a released, versioned product line, not a pilot.
     maturity=Maturity.STABLE,
     zarr=None,
+    # The 20 m layer; read onto the 10 m grid of the bands with `nearest`, no new values (M4-18).
+    mask=MaskSource(
+        asset="scl",
+        band="scl",
+        classes=_SCL_CLASSES,
+        suggested=_SCL_SUGGESTED,
+        reference=_SCL_REFERENCE,
+        note=_SCL_NOTE,
+    ),
+    # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item). Not listed:
+    # `aot`, `wvp`, `cloud`, `snow`, `preview`, whose unit this entry does not state.
+    band_units={
+        **dict.fromkeys(
+            (
+                "coastal", "blue", "green", "red", "rededge1", "rededge2", "rededge3",
+                "nir", "nir08", "nir09", "swir16", "swir22",
+            ),  # fmt: skip
+            _REFLECTANCE_UNIT,
+        ),
+        "scl": None,
+        "visual": None,
+    },
 )
 
 # adr/0007 §12: measured against the real collection on 20.09.2026 (Nachmessung
@@ -272,6 +335,9 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         interpolation=True,
         # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
         reprojection=True,
+        # M4-18 (Otto, 20.10.2026): the layer is described in `mask` below.
+        masking=True,
+        normalization=True,
         ml_processing=True,
         # Optical, dual-pol source data — decomp.py stays out (ENTSCHEIDUNGEN §3).
         quad_pol=False,
@@ -401,6 +467,18 @@ SENTINEL_2_L2A_ZARR3 = DatasetConfig(
         variable_separator=":",
         multiscales_convention="zarr-conventions/multiscales v0.1 (pilot)",
     ),
+    # `conditions/mask/l2a_classification/r20m`, variable `scl` (measured 20.10.2026, plan M4-18 §2).
+    mask=MaskSource(
+        asset="SCL_20m:scl",
+        band="scl",
+        classes=_SCL_CLASSES,
+        suggested=_SCL_SUGGESTED,
+        reference=_SCL_REFERENCE,
+        note=_SCL_NOTE,
+    ),
+    # `SR_10m`, `SR_20m` and `SR_60m` are the groups under `measurements/reflectance` (adr/0007 §12.3): surface
+    # reflectance, decoded by the store's CF attributes. The classification layer has no unit.
+    band_units={"SR_*": _REFLECTANCE_UNIT, "SCL_20m:scl": None},
 )
 
 # M3-11b, F1: no single acquisition instant exists for the DEM (`adr/0009`
@@ -470,6 +548,9 @@ COP_DEM_GLO_30 = DatasetConfig(
         interpolation=True,
         # Every entry switches it on by itself (B10); M4 R3, Otto 05.10.2026.
         reprojection=True,
+        # M4-18: the bucket holds elevation only, no classification layer.
+        masking=False,
+        normalization=True,
         ml_processing=True,
         # No complex quad-pol data — decomp.py stays out (ENTSCHEIDUNGEN §3).
         quad_pol=False,
@@ -579,6 +660,9 @@ COP_DEM_GLO_30 = DatasetConfig(
     # A released, versioned product (state of 9 May 2022), not a pilot.
     maturity=Maturity.STABLE,
     zarr=None,
+    mask=None,
+    # Elevation in metres, the unit the default render's range of 0 to 5000 already states (M3-11b plan §2.4).
+    band_units={"data": "m"},
 )
 
 REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3, COP_DEM_GLO_30))

@@ -8,7 +8,7 @@
 // covers the whole scenes by default, or only the AOI (M4-13c §3.2). "Run as"
 // makes one order per pass or per scene instead (M4-13c-4, §3.6).
 //
-// The map preview of the first step (M4-13c-2) is computed from the draft and
+// The map preview of the first steps (M4-13c-2, M4-18b) is computed from the draft and
 // the selection; it follows 400 ms after the last change (K7).
 //
 // The draft belongs to one dataset: a new dataset drops it. A new AOI drops
@@ -18,7 +18,7 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, HttpError } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import type { DatasetOption } from './datasets';
 import { loadStoredJobs, saveStoredJobs, trackJob, type TrackerOptions } from './jobTracker';
@@ -43,18 +43,35 @@ import {
   fetchCrs,
   fetchProcess,
   fetchResults,
+  fetchResultTileJson,
   placeJob,
   type AoiProvenance,
   type EstimateDocument,
   type Order,
+  type ResultTileJson,
   type StatusInfo,
 } from './processing';
+import {
+  isResultExpired,
+  positive,
+  resultGsd,
+  resultLayerName,
+  resultRender,
+  resultStats,
+  resultTileTemplate,
+  tilesHref,
+} from './resultLayer';
 import {
   aoiProvenanceFor,
   bandSources,
   buildOrder,
   candidateItems,
+  draftFromOrder,
   isArea,
+  maskAssetOf,
+  maskLayerOf,
+  maskStepValues,
+  namesInExpression,
   orderAssets,
   passesOf,
   processBlockReason,
@@ -69,19 +86,31 @@ import {
 } from './processingOrder';
 import {
   DEFAULT_RANGE,
+  measuredRange,
+  measureOf,
+  NO_MEASURE,
   planPreview,
+  probeChain,
   previewOverlays,
   previewSpec,
+  refusedNote,
+  shortenPlan,
+  type RefusedStep,
   rescaleOf,
+  type PreviewMeasure,
   type PreviewRange,
   type PreviewSpec,
 } from './processingPreview';
+import type { ResultStats } from './render';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
+import { buildTileUrl } from './mapLayers';
+import type { PermalinkView } from './permalink';
+import { readRecipe } from './recipeFile';
 import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
-import type { StacItem, TimeStepGroup } from './types';
+import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
 // results on screen lack.
@@ -143,6 +172,25 @@ export interface JobEntry {
   expired: boolean;
   // What the panel called the job (K5); `null` for a job of the download dialog.
   title: string | null;
+  // The tiles of a raster result (the link `tiles` of the results document, M4-13c-5);
+  // `null` until the results are read, for an export, and for a result before this link existed.
+  tiles: JobTiles | null;
+  // The statistics of the AOI per band, for the colour scale of the layer (M4-32b); `null` until the
+  // results are read, and for a result from before they were written.
+  statistics: ResultStats | null;
+  // The range and colormap the user had set by hand in the panel when the job was started; its
+  // result is drawn with them and no other result is. `null` for the default range, for a job of
+  // the download dialog, and for one taken up again after a reload (it is not kept in the tab).
+  range: PreviewRange | null;
+}
+
+export interface JobTiles {
+  // `/results/{result_id}/WebMercatorQuad/tilejson.json`, already checked (`resultLayer.ts::tilesHref`).
+  href: string;
+  // The columns of the raster and its stated pixel size in metres (projected CRS only):
+  // what "Overview" needs to know about the data.
+  width: number | null;
+  gsd: number | null;
 }
 
 // What the review made of one job of a batch: its estimate, or the reason the
@@ -173,8 +221,18 @@ interface ProcessingState {
   // The range and colormap of the map preview: applied, and as edited (F3 (1)).
   range: PreviewRange;
   rangeDraft: PreviewRange;
-  // What the map shows of the first step; `null` for none.
+  // What the map shows of the steps (their longest start that runs as tiles); `null` for none.
   preview: PreviewSpec | null;
+  // Why the preview shows fewer steps than the draft chains, or none: the tiler's reason.
+  previewNote: string | null;
+  // What the tiler measured of the preview (M4-19c): the numbers its colour scale comes from, and its unit.
+  measure: PreviewMeasure | null;
+  // Why the preview has no measured range: the measure could not be had.
+  rangeNote: string | null;
+  // The user applied the range in `range` (also when it is the start range): it holds against a measure.
+  rangeByHand: boolean;
+  // The range fields hold what the user typed and did not apply; a measure does not write over them.
+  rangeEdited: boolean;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
@@ -193,8 +251,12 @@ interface ProcessingState {
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
+  // Back to the range the measure calls for (M4-19c), measured again where the measure failed.
+  autoStretch: () => void;
   pinPreview: () => void;
   closeProcessing: () => void;
+  // A finished job's result as a layer of its own on the map (M4-13c-5, plan §3.4).
+  showResultOnMap: (jobID: string) => Promise<void>;
   openJobs: () => void;
   closeJobs: () => void;
   ensureDescription: (datasetId: string) => void;
@@ -209,6 +271,8 @@ interface ProcessingState {
   removeStep: (key: number) => void;
   togglePick: (asset: string) => void;
   setDtype: (dtype: string) => void;
+  loadRecipe: (text: string) => Promise<LoadResult>;
+  restoreOrder: (order: Order, view: PermalinkView) => Promise<LoadResult>;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (order: Order, options?: { aoiProvenance?: AoiProvenance }) => Promise<{ jobID: string } | { message: string }>;
@@ -216,6 +280,9 @@ interface ProcessingState {
   removeJob: (jobID: string) => void;
   resumeJobs: () => void;
 }
+
+// "Load recipe…" (M4-19d): the steps of a recipe on the current selection.
+export type LoadResult = { ok: true; notes: string[] } | { ok: false; reason: string };
 
 // --- the order as the panel sees it --------------------------------------------
 
@@ -235,6 +302,11 @@ export interface OrderView {
   parts: OrderPart[];
   sources: BandSource[];
   assets: string[];
+  // The layer the mask steps read (`earthx:mask`), `null` for a dataset without one; and, once
+  // there is a mask step, whether the scene offers its asset — the order then reads it, apart
+  // from the bands the user picked, and the result leaves it out (M4-18c).
+  maskLayer: EarthxMask | null;
+  maskAsset: { asset: string; inOrder: boolean } | null;
   // The type the order is sent with, and the options and notes around the choice.
   dtype: string;
   dtypeOptions: DtypeOption[];
@@ -297,11 +369,14 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
   const pass = runAs === 'one' ? chosen : batchPass(runAs, units);
   const format = dataset?.collection['earthx:format'] ?? null;
   // The scenes of a pass agree on the assets and bands (the server checks it, M4-12a).
-  const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null) : [];
-  const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps));
+  const sources = pass ? bandSources(pass.items[0], format, info?.variableSeparator ?? null, dataset?.collection) : [];
+  const maskLayer = maskLayerOf(dataset?.collection);
+  const maskAsset = maskAssetOf(p.steps, maskLayer);
+  const assets = orderAssets(sources, p.picked, bandMathExpressions(p.steps), maskAsset ? [maskAsset] : []);
   // The output type follows the data and the steps as they will be sent (Otto,
   // 12.10.2026); the resampling is the user's own choice and recommended nowhere.
-  const inOrder = sources.filter((s) => assets.includes(s.asset));
+  // The layer of a mask is no band of the result, so it does not decide the type.
+  const inOrder = sources.filter((s) => assets.includes(s.asset) && s.asset !== maskAsset);
   const choices = p.steps.map((step) => ({
     op: step.op,
     ...(typeof step.values.resampling === 'string' ? { resampling: step.values.resampling } : {}),
@@ -339,6 +414,8 @@ export function orderView(selection: SelectionState, p: ProcessingState): OrderV
     parts,
     sources,
     assets,
+    maskLayer,
+    maskAsset: maskAsset ? { asset: maskAsset, inOrder: assets.includes(maskAsset) } : null,
     dtype,
     dtypeOptions: options,
     dtypeAutomatic: automatic,
@@ -470,10 +547,14 @@ export function refusalMessage(error: unknown): string {
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
+// A paragraph for a methods section, written by the backend from the recipe (M4-19a).
+export const METHODS_FILE = 'methods.txt';
+
 const FILE_LABELS: Record<string, string> = {
   'result.tif': 'Result (COG)',
   'mask.tif': 'Mask',
   'recipe.json': 'Recipe',
+  [METHODS_FILE]: 'Methods',
 };
 
 // The one archive of a result (M4-11b-2): an export's `export.zip`, or a raster
@@ -493,7 +574,10 @@ export function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile
     if (!names.includes(file)) names.push(file);
   }
   const zip = ZIP_FILES.find((file) => names.includes(file));
-  if (zip) return [{ file: zip, label: ZIP_LABEL }];
+  if (zip) {
+    // The archive holds the text too; it stays a link of its own for the one who wants to paste it.
+    return [{ file: zip, label: ZIP_LABEL }, ...(names.includes(METHODS_FILE) ? [{ file: METHODS_FILE, label: 'Methods' }] : [])];
+  }
   return names.filter((file) => FILE_LABELS[file]).map((file) => ({ file, label: FILE_LABELS[file] }));
 }
 
@@ -521,6 +605,11 @@ const EMPTY_DRAFT = {
   range: DEFAULT_RANGE,
   rangeDraft: DEFAULT_RANGE,
   preview: null as PreviewSpec | null,
+  previewNote: null as string | null,
+  measure: null as PreviewMeasure | null,
+  rangeNote: null as string | null,
+  rangeByHand: false,
+  rangeEdited: false,
   reviewAsked: false,
   estimate: null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
@@ -532,6 +621,23 @@ const EMPTY_DRAFT = {
 };
 
 export const useProcessingStore = create<ProcessingState>((set, get) => {
+  // The process description of a dataset once it has loaded (or failed to).
+  const describe = (datasetId: string) => {
+    get().ensureDescription(datasetId);
+    return new Promise<Description | undefined>((resolve) => {
+      const settled = (s: ProcessingState) => (s.descriptions[datasetId]?.state === 'loading' ? undefined : s.descriptions[datasetId]);
+      const now = settled(get());
+      if (now) return resolve(now);
+      const stop = useProcessingStore.subscribe((s) => {
+        const done = settled(s);
+        if (done) {
+          stop();
+          resolve(done);
+        }
+      });
+    });
+  };
+
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
     set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, ...patch } : j)) }));
   };
@@ -548,9 +654,14 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     try {
       const doc = await fetchResults(jobID);
       const properties = doc.result?.properties;
+      const href = tilesHref(doc);
       updateJob(jobID, {
         files: resultFiles(doc),
         resampled: properties ? properties['earthx:resampled'] === true : null,
+        tiles: href
+          ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
+          : null,
+        statistics: resultStats(properties),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -595,7 +706,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     trackers.set(jobID, stop);
   };
 
-  const addJob = (jobID: string, expires: string, status: StatusInfo | null, title: string | null = null) => {
+  const addJob = (
+    jobID: string,
+    expires: string,
+    status: StatusInfo | null,
+    title: string | null = null,
+    range: PreviewRange | null = null,
+  ) => {
     if (get().jobs.some((j) => j.jobID === jobID)) return;
     const entry: JobEntry = {
       jobID,
@@ -609,6 +726,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       cancelling: false,
       expired: false,
       title,
+      tiles: null,
+      statistics: null,
+      range,
     };
     set((s) => ({ jobs: [entry, ...s.jobs] }));
     persist();
@@ -633,6 +753,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     if (!view.key || batch?.key !== view.key) return;
     const total = view.parts.length;
     const titleOf = titler(view);
+    const own = handRangeOf(get());
     const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
     let opened = false;
@@ -644,7 +765,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         const status = await placeJob(part.order);
         if (!opened) set({ jobsOpen: true });
         opened = true;
-        addJob(status.jobID, status.expires, status, titleOf({ index, total }));
+        addJob(status.jobID, status.expires, status, titleOf({ index, total }), own);
       } catch (error) {
         refusals.push({ label: part.unit.label, message: refusalMessage(error) });
       }
@@ -700,9 +821,16 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
       });
     },
-    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch } })),
+    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
     applyRange: () => {
-      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft }));
+      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
+    },
+    autoStretch: () => {
+      failedMeasures.clear();
+      measuring.clear();
+      settledKey = null;
+      set({ range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
+      refreshPreview();
     },
     // The preview on screen becomes a layer of its own.
     pinPreview: () => {
@@ -720,6 +848,65 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     closeProcessing: () => {
       abortEstimate();
       set({ open: false, reviewing: false });
+    },
+    // The layer reads the tiles from the tiler, which knows nothing of the job: the link
+    // of the results document is all there is (plan §3.4). Once the job's results are
+    // about to go there are no tiles any more, and no layer is made of them.
+    showResultOnMap: async (jobID) => {
+      const job = get().jobs.find((j) => j.jobID === jobID);
+      const app = useAppStore.getState();
+      if (!job?.tiles || job.phase !== 'successful' || job.expired) return;
+      if (isResultExpired(job.expires, Date.now())) {
+        updateJob(jobID, { expired: true });
+        return;
+      }
+      const shown = (layers: MapLayer[]) => layers.find((l) => l.result?.jobID === jobID);
+      const already = shown(app.layers);
+      if (already) {
+        if (!already.visible) app.toggleLayerVisible(already.id);
+        return;
+      }
+      const { href, width, gsd } = job.tiles;
+      let tileJson: ResultTileJson;
+      try {
+        updateJob(jobID, { error: null });
+        tileJson = await fetchResultTileJson(href);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 410) {
+          updateJob(jobID, { expired: true });
+        } else {
+          const reason = error instanceof Error ? error.message : String(error);
+          updateJob(jobID, { error: `The result could not be shown on the map. ${reason}` });
+        }
+        return;
+      }
+      // A second click while the TileJSON was coming: one layer.
+      if (shown(useAppStore.getState().layers)) return;
+      useAppStore.getState().pinDerivedLayer({
+        name: resultLayerName(job.title),
+        derived: 'result',
+        result: {
+          jobID,
+          expires: job.expires,
+          gsd: resultGsd(gsd, width, tileJson.bounds),
+          resampled: job.resampled,
+          expired: false,
+        },
+        overlays: [
+          {
+            kind: 'raster',
+            tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range, job.statistics, job.range)),
+            bounds: tileJson.bounds,
+            minZoom: tileJson.minZoom,
+            // rio-tiler's `maxzoom` is the level nearest the data's pixel size, and often the coarser
+            // one (10 m at 48° N: level 13, 12.8 m). One level more lets the map ask for the data
+            // itself; the tiler reads the file at any level.
+            maxZoom: tileJson.maxZoom + 1,
+          },
+        ],
+        itemIds: [],
+        cropToAoi: false,
+      });
     },
     openJobs: () => set({ jobsOpen: true }),
     closeJobs: () => set({ jobsOpen: false }),
@@ -768,20 +955,25 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     resetDraft: () => {
       abortEstimate();
       startGeneration += 1;
+      measures.clear();
+      failedMeasures.clear();
+      measuring.clear();
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null, ...dropReview() }),
     setArea: (area) => set({ area, reviewError: null, startError: null, ...dropReview() }),
     setRunAs: (runAs) => set({ runAs, reviewError: null, startError: null, ...dropReview() }),
     addStep: (op, opVersion) => {
-      const datasetId = useAppStore.getState().datasetId;
+      const { datasetId, datasets } = useAppStore.getState();
       const description = datasetId ? get().descriptions[datasetId] : undefined;
       if (description?.state !== 'ready') return;
       const operator = description.info.operators.find((o) => o.op === op && o.opVersion === opVersion);
       if (!operator?.form.supported || get().steps.length >= description.info.maxSteps) return;
+      const layer = op === 'mask' ? maskLayerOf(datasets.find((d) => d.id === datasetId)?.collection) : null;
+      const values = { ...initialValues(operator.form.fields), ...(layer ? maskStepValues(layer) : {}) };
       const key = nextStepKey++;
       set((s) => ({
-        steps: [...s.steps, { key, op, opVersion, values: initialValues(operator.form.supported ? operator.form.fields : []) }],
+        steps: [...s.steps, { key, op, opVersion, values }],
         reviewError: null,
         startError: null,
         ...dropReview(),
@@ -818,6 +1010,73 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         ...dropReview(),
       })),
     setDtype: (dtype) => set({ dtype: dtype || null, reviewError: null, startError: null, ...dropReview() }),
+
+    // "Load recipe…": the steps and the data type of a `recipe.json` become the draft, on the
+    // current selection, which stays as it is. Nothing is changed unless the recipe is taken up
+    // as a whole; what cannot be checked here (band names of another dataset) comes back as
+    // notes, the server decides on the order.
+    loadRecipe: async (text) => {
+      const read = readRecipe(text);
+      if (!read.ok) return { ok: false, reason: read.reason };
+      const { order } = read;
+      const datasetId = useAppStore.getState().datasetId;
+      if (!datasetId) return { ok: false, reason: 'Pick a dataset first.' };
+      if (order.steps.length === 0) return { ok: false, reason: 'This recipe has no steps.' };
+      const description = await describe(datasetId);
+      if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
+      const { info } = description;
+      const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
+      if (problems.length > 0) return { ok: false, reason: problems.slice(0, 3).join(' ') };
+      if (draft.dtype !== null && !info.dtypes.includes(draft.dtype)) notes.push(`Data type ${draft.dtype} is not offered for this dataset.`);
+      const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
+      abortEstimate();
+      startGeneration += 1;
+      set({ steps: draft.steps, dtype, reviewAsked: false, estimate: null, batch: null, reviewing: false, reviewError: null, startError: null, batchStartRefusals: null });
+      const known = new Set(orderView(selectionState(useAppStore.getState()), get()).sources.flatMap((source) => source.names));
+      const missing = new Set(
+        bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)].filter((name) => known.size > 0 && !known.has(name))),
+      );
+      for (const name of missing) notes.push(`Band ${name} is not in this selection.`);
+      return { ok: true, notes };
+    },
+
+    // A permalink (M4-19e): the order and the view come back as they were shared. Unlike "Load recipe…"
+    // this replaces the selection: the dataset, the scenes (one by one if the results lack them), the
+    // AOI and the steps. Several groups select all their scenes and the user picks the pass; an order
+    // without an AOI keeps the AOI on the map and covers the whole scenes. Nothing is changed unless
+    // the order is taken up as a whole.
+    restoreOrder: async (order, view) => {
+      const datasetId = order.inputs[0].dataset;
+      const dataset = useAppStore.getState().datasets.find((d) => d.id === datasetId);
+      const block = processBlockReason(dataset, order.inputs[0].groups.flat().length);
+      if (block) return { ok: false, reason: block };
+      const description = await describe(datasetId);
+      if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
+      const { info } = description;
+      const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
+      if (problems.length > 0) return { ok: false, reason: problems.slice(0, 3).join(' ') };
+      if (draft.dtype !== null && !info.dtypes.includes(draft.dtype)) notes.push(`Data type ${draft.dtype} is not offered for this dataset.`);
+      const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
+      abortEstimate();
+      startGeneration += 1;
+      useAppStore.setState({ datasetId, selectedDatasetIds: [datasetId] });
+      const extraScenes = await selectScenes(draft.groups.flat(), 'this link');
+      if (!extraScenes) return { ok: false, reason: useAppStore.getState().error ?? 'The scenes could not be loaded.' };
+      if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
+      const range = view.range && { vmin: String(view.range.vmin), vmax: String(view.range.vmax), colormap: view.range.colormap };
+      set({
+        ...EMPTY_DRAFT,
+        ...(range ? { range, rangeDraft: range, rangeByHand: true } : {}),
+        open: true,
+        area: draft.aoi ? 'aoi' : 'scene',
+        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+        steps: draft.steps,
+        picked: draft.assets,
+        dtype,
+      });
+      useAppStore.setState({ flyToView: { center: view.center, zoom: view.zoom } });
+      return { ok: true, notes };
+    },
 
     reviewOrder: async () => {
       const view = orderView(useAppStore.getState(), get());
@@ -868,6 +1127,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       if (s.estimate?.key !== view.key) return;
       const title = titler(view)();
+      const own = handRangeOf(s);
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
@@ -877,7 +1137,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
         set({ jobsOpen: true });
-        addJob(status.jobID, status.expires, status, title);
+        addJob(status.jobID, status.expires, status, title, own);
       } catch (error) {
         if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
@@ -957,17 +1217,163 @@ useAppStore.subscribe((s, prev) => {
 const PREVIEW_DELAY_MS = 400;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
-// What the map should show now: the first step of the draft on the scenes of the
-// order, while the panel is open and the step is complete.
-function wantedPreview(): PreviewSpec | null {
+// What the map should show now: the longest start of the draft's steps that runs as
+// tiles, on the scenes of the order, while the panel is open and its steps are complete.
+// `limit` cuts it to the first steps (what the tiler accepted of a chain).
+function wantedPreview(limit?: number): PreviewSpec | null {
   const p = useProcessingStore.getState();
   if (!p.open) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
-  const plan = planPreview(p.steps, view.info);
-  if (plan.state !== 'ready') return null;
-  return previewSpec({ dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, range: p.range, area: p.area });
+  const full = planPreview(p.steps, view.info);
+  if (full.state !== 'ready') return null;
+  const plan = limit === undefined ? full : shortenPlan(full, limit);
+  if (plan === null) return null;
+  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area };
+  const spec = previewSpec({ ...args, range: p.range });
+  if (spec === null) return null;
+  const range = drawnRange(p, spec.measure);
+  return range === p.range ? spec : previewSpec({ ...args, range });
+}
+
+// The range the user applied by hand, or `null`: the one a job keeps for its result (M4-32b), and the one the
+// preview holds against a measure — the same switch, so that both are drawn alike (Otto, 24.10.2026). A range
+// equal to the start range counts once the user applied it.
+export function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): PreviewRange | null {
+  return p.rangeByHand ? p.range : null;
+}
+
+// The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
+// preview calls for (the rule of a result's, `scaleOf`); else the start range.
+function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, measureKey: string): PreviewRange {
+  if (handRangeOf(p)) return p.range;
+  return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
+}
+
+// One measure per state of the preview, which is the steps over the first scene: remembered, and a failed one is
+// not asked again before "Auto stretch" (so a typed expression asks for no measure per key, nor a refusal twice).
+const MEASURES_KEPT = 50;
+const measures = new Map<string, PreviewMeasure>();
+const failedMeasures = new Set<string>();
+const measuring = new Map<string, Promise<PreviewMeasure | null>>();
+
+function measureFor(spec: PreviewSpec): Promise<PreviewMeasure | null> {
+  const known = measures.get(spec.measure);
+  if (known) return Promise.resolve(known);
+  if (failedMeasures.has(spec.measure)) return Promise.resolve(null);
+  let request = measuring.get(spec.measure);
+  if (!request) {
+    request = fetchStatisticsAt(spec.measure)
+      .then((statistics) => {
+        const measure = measureOf(spec.measure, statistics, spec.expression);
+        if (measures.size >= MEASURES_KEPT) measures.delete(measures.keys().next().value!);
+        measures.set(spec.measure, measure);
+        return measure;
+      })
+      .catch(() => {
+        failedMeasures.add(spec.measure);
+        return null;
+      })
+      .finally(() => {
+        if (measuring.get(spec.measure) === request) measuring.delete(spec.measure);
+      });
+    measuring.set(spec.measure, request);
+  }
+  return request;
+}
+
+// The longest the picture waits for the measure (Otto, 24.10.2026, proposal 5 s).
+export const MEASURE_WAIT_MS = 5000;
+const TOO_LATE = Symbol('too late');
+
+// `request`'s answer, or `TOO_LATE` once `ms` have passed; the request goes on either way.
+function within<T>(request: Promise<T>, ms: number): Promise<T | typeof TOO_LATE> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(TOO_LATE), ms);
+    void request.then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
+}
+
+// Whether `spec` is still what the panel asks for: no newer settle, and no change of the draft inside the 400 ms
+// before one starts (`settleRun` rises only then), so that the measure of an older formula is not taken for the new one.
+function stillWanted(run: number, spec: PreviewSpec | null, limit: number | undefined): boolean {
+  return run === settleRun && spec !== null && wantedPreview(limit)?.measure === spec.measure;
+}
+
+// Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
+// for in the fields, unless the user is typing in them. Without one the panel says so.
+function adoptMeasure(measure: PreviewMeasure | null): void {
+  const p = useProcessingStore.getState();
+  const hand = p.rangeByHand;
+  useProcessingStore.setState({
+    measure,
+    rangeNote: hand || measure !== null ? null : NO_MEASURE,
+    ...(!hand && !p.rangeEdited ? { rangeDraft: measuredRange(measure) ?? p.range } : {}),
+  });
+}
+
+// The key of the whole chain the shown preview comes from: a preview cut by the tiler
+// differs from it, and must not be asked for again on every change that leaves it alone.
+let settledKey: string | null = null;
+let settleRun = 0;
+// What the tiler said of a chain, until there is nothing to show: asking again for a new range would give the same answer.
+const probed = new Map<string, RefusedStep>();
+
+// Shows `wanted`, or — for a chain of several steps the tiler refuses at step k — its first
+// k − 1 steps and the reason. One step needs no question: its refusal has no step to name.
+async function settle(wanted: PreviewSpec): Promise<void> {
+  const run = ++settleRun;
+  let refused: RefusedStep | null = null;
+  if (wanted.stepCount > 1) {
+    refused = probed.get(wanted.probe) ?? null;
+    if (refused === null) {
+      // Only a refusal is remembered: a question that failed on the way is asked again.
+      refused = await probeChain(wanted.probe);
+      if (run !== settleRun) return;
+      if (refused) probed.set(wanted.probe, refused);
+    }
+  }
+  // The steps the tiler takes: all of them, or the ones before the step it refuses.
+  const limit = refused === null || refused.step >= wanted.stepCount ? undefined : refused.step;
+  const note = limit === undefined ? null : refusedNote(limit, wanted.stepCount, refused!);
+  const hand = useProcessingStore.getState().rangeByHand;
+  let spec = wantedPreview(limit);
+  // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice,
+  // but not longer than `MEASURE_WAIT_MS`: then it is drawn with the start range.
+  let late: Promise<PreviewMeasure | null> | null = null;
+  if (spec && !hand) {
+    const request = measureFor(spec);
+    const measure = await within(request, MEASURE_WAIT_MS);
+    if (!stillWanted(run, spec, limit)) return;
+    if (measure === TOO_LATE) {
+      late = request;
+    } else {
+      adoptMeasure(measure);
+      spec = wantedPreview(limit);
+    }
+  }
+  settledKey = wantedPreview()?.key ?? wanted.key;
+  useProcessingStore.setState({ preview: spec, previewNote: note });
+  // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
+  if (late) {
+    const measure = await late;
+    if (!stillWanted(run, spec, limit)) return;
+    adoptMeasure(measure);
+    const again = wantedPreview(limit);
+    if (again && again.key !== spec?.key) {
+      settledKey = wantedPreview()?.key ?? settledKey;
+      useProcessingStore.setState({ preview: again });
+    }
+  }
+  // With one, the measure is for the unit alone, and the picture does not wait for it.
+  if (spec && hand) {
+    const measure = await measureFor(spec);
+    if (stillWanted(run, spec, limit)) adoptMeasure(measure);
+  }
 }
 
 // A preview that goes away goes at once; a new or changed one 400 ms after the
@@ -975,12 +1381,19 @@ function wantedPreview(): PreviewSpec | null {
 function refreshPreview(): void {
   clearTimeout(previewTimer);
   const wanted = wantedPreview();
-  if (wanted?.key === useProcessingStore.getState().preview?.key) return;
+  const state = useProcessingStore.getState();
+  if (wanted !== null && wanted.key === settledKey && (state.preview !== null || state.previewNote !== null)) return;
   if (wanted === null) {
-    useProcessingStore.setState({ preview: null });
+    settleRun++;
+    settledKey = null;
+    probed.clear();
+    if (state.preview !== null || state.previewNote !== null) useProcessingStore.setState({ preview: null, previewNote: null });
     return;
   }
-  previewTimer = setTimeout(() => useProcessingStore.setState({ preview: wantedPreview() }), PREVIEW_DELAY_MS);
+  previewTimer = setTimeout(() => {
+    const again = wantedPreview();
+    if (again) void settle(again);
+  }, PREVIEW_DELAY_MS);
 }
 
 useProcessingStore.subscribe((s, prev) => {

@@ -7,13 +7,14 @@ the raster of one item.
 **One rule, from the list.** Per band and pixel the first valid element wins, in the order
 of the list the recipe carries (:func:`~earthx.access.crop_rules.merge_first_valid`, the rule
 of the synchronous crop and the export job). The core does not sort and has no second rule.
-`api` sorts the list when it makes the recipe (:func:`mosaic_order`): first the scenes in
-the target CRS, so that the values nearest to the source win where scenes overlap, then the
-others, each part by item id. The same overpass thus gives the same recipe in whatever order
-it was asked for (Otto, 10.10.2026, F3 and F4).
+`api` sorts the list when it makes the recipe (:func:`~earthx.access.crop_rules.mosaic_order`):
+first the scenes in the target CRS, so that the values nearest to the source win where scenes
+overlap, then the others, each part by item id. The same overpass thus gives the same recipe in
+whatever order it was asked for (Otto, 10.10.2026, F3 and F4). The order lives next to the rule
+in `access` since M4-17a, where the mosaic tile of the tiler reads it too.
 
-**The target CRS** (:func:`target_crs`) is the one most scenes are in; a tie goes to the
-smaller EPSG number, whatever the order. The grid is that of the first scene (the finest of
+**The target CRS** (:func:`~earthx.access.crop_rules.target_crs`) is the one most scenes are in;
+a tie goes to the smaller EPSG number, whatever the order. The grid is that of the first scene (the finest of
 its assets), extended to the union of all scenes and snapped outward to its pixels.
 
 **Scenes on the grid are read without a warp**; every other scene (another CRS, another
@@ -30,14 +31,12 @@ single-item run, so every address has passed ``check_url``.
 from __future__ import annotations
 
 import math
-from collections import Counter
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import ExitStack
 
 import numpy
 import rasterio
 from rasterio.crs import CRS
-from rasterio.errors import CRSError
 from rasterio.transform import Affine
 from rasterio.warp import transform_bounds
 from rasterio.windows import Window
@@ -53,41 +52,13 @@ from earthx.processing.warped import WarpedItem, cache_per_item
 from earthx.readers import read_access_for
 from earthx.readers.cog import CogReader
 
-__all__ = ["MosaicSource", "lies_on_grid", "mosaic_order", "open_mosaic", "target_crs"]
+__all__ = ["MosaicSource", "lies_on_grid", "open_mosaic"]
 
 #: A pixel offset or size counts as a whole number within this (of a pixel).
 _PIXEL_TOLERANCE = 1e-3
 
 #: Relative slack when comparing two pixel sizes.
 _SIZE_TOLERANCE = 1e-6
-
-_NO_EPSG = 1 << 30
-
-
-def _epsg(crs: str) -> int:
-    try:
-        return CRS.from_user_input(crs).to_epsg() or _NO_EPSG
-    except CRSError:
-        return _NO_EPSG
-
-
-def target_crs(crs_by_item: Mapping[str, str | None]) -> str | None:
-    """The CRS most items are in; a tie goes to the smaller EPSG number (F4), whatever the order.
-
-    ``None`` when no item names its CRS (a DEM tile without ``proj:code``): the core then
-    takes the CRS of the first file.
-    """
-    counts = Counter(crs for crs in crs_by_item.values() if crs is not None)
-    if not counts:
-        return None
-    return min(counts, key=lambda crs: (-counts[crs], _epsg(crs), crs))
-
-
-def mosaic_order(crs_by_item: Mapping[str, str | None]) -> list[str]:
-    """The items in the order the mosaic reads them: those in the target CRS first, each part by id (F3)."""
-    target = target_crs(crs_by_item)
-    return sorted(crs_by_item, key=lambda item_id: (crs_by_item[item_id] != target, item_id))
-
 
 def _north_up(source: Source) -> bool:
     t = source.transform
@@ -172,6 +143,7 @@ class MosaicSource(Source):
         self.reader = anchor.reader
         self.crs = anchor.crs
         self.names, self.data_types, self.nodata, self.scaling = anchor.names, anchor.data_types, anchor.nodata, anchor.scaling
+        self.units = anchor.units
         left, bottom, right, top = extent
         self.transform = Affine(anchor.transform.a, 0, left, 0, anchor.transform.e, top)
         self.width = round((right - left) / anchor.transform.a)
@@ -258,8 +230,15 @@ def _chain(first: numpy.ma.MaskedArray, rest: Iterator[numpy.ma.MaskedArray]) ->
 def _check_alike(asset: str, members: Sequence[Source]) -> None:
     anchor = members[0]
     for other in members[1:]:
-        if (other.names, other.data_types, other.nodata) != (anchor.names, anchor.data_types, anchor.nodata):
-            raise UnsupportedRecipe(f"the scenes of the mosaic differ in the bands, data type or nodata of {asset!r}")
+        if (other.names, other.data_types, other.nodata, other.units) != (
+            anchor.names,
+            anchor.data_types,
+            anchor.nodata,
+            anchor.units,
+        ):
+            raise UnsupportedRecipe(
+                f"the scenes of the mosaic differ in the bands, data type, nodata or unit of {asset!r}"
+            )
         if other.scaling != anchor.scaling:
             raise UnsupportedRecipe(f"the scenes of the mosaic scale {asset!r} differently")
 

@@ -24,6 +24,8 @@ export default defineConfig({
       '/geocode': { target: apiTarget, changeOrigin: true },
       '/processing': { target: apiTarget, changeOrigin: true },
       '/collections': { target: tilerTarget, changeOrigin: true },
+      // The tiles of a finished job (M4-13c-5): read by the tiler from the object store.
+      '/results': { target: tilerTarget, changeOrigin: true },
     },
   },
   test: {

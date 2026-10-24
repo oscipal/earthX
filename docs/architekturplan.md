@@ -195,6 +195,15 @@ Hülle um den Kern neben `jobs` und dem `tiler`. Sie darf `processing` und aus
 `objectstore` und `botocore` aus, auch über Ketten. Die Verträge der übrigen
 Module verbieten den Import von `runner`. Keine bestehende Regel wird gelockert.
 
+**Nachtrag 2026-10-20 (M4-13c-5, `adr/0015` §14c):** Der `tiler` (Modul `api`)
+liest die Dateien fertiger Jobs über `objectstore`, ohne Datenbank: Routen unter
+`/results/{result_id}`, ein eigener Dienstschlüssel `earthx-tiler` nur zum Lesen
+(wie `api`, nicht der Schlüssel des Workers), GDAL öffnet eine von `objectstore`
+für den internen Endpunkt signierte URL. Der Fall liegt in der Ausnahme vom
+Nachtrag 2026-10-05: die Adresse stammt aus `objectstore`, nicht aus einer
+Datenquelle, und passiert `gateway` nicht. Keine Importregel ändert sich
+(`api` darf `objectstore` schon).
+
 ### 3.2 Prozesstypen (ein Image, vier Startbefehle)
 
 | Prozess | Last | Skalierung | Zustand |
@@ -403,9 +412,11 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 
 - Der `tiler`-Prozess liefert Tiles, Quicklooks, Punktabfragen, Zeitreihen am Punkt und Statistik pro Polygon.
 - Empfehlung: neue Endpunkte auf den **TiTiler-Fabriken** aufbauen (gleiche Basis wie das vorhandene rio-tiler, ebenfalls FastAPI). Das bringt Ausdrücke/Band-Math, Colormaps, Rescaling, Algorithmen und OGC-konforme Tile-Endpunkte mit, statt sie einzeln nachzubauen.
-- Mosaike über mehrere Szenen: eigenes Mosaik-Backend, das eine (föderierte) Item-Suche als Eingabe nimmt; Suchergebnis wird unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind.
+- Mosaike über mehrere Szenen: Die Kachel-URL trägt die Szenen eines Überflugs als Item-Liste (`item=` je Szene, höchstens 64); der `tiler` prüft, filtert je Kachel über den Footprint, sortiert wie der Mosaik-Job und mischt nach dem ersten gültigen Pixel. Keine Such-ID: Eine ID, deren Eintrag ablaufen kann, nähme der URL genau die Eigenschaft, das Bild vollständig zu bestimmen, um derentwillen sie CDN-fähig ist (`adr/0006` §5, Nachtrag M4-17; `plans/m4-17-mosaik-kachel-pfad.md`).
 - Tile-URLs enthalten alle Parameter (oder eine Rezept-ID) und sind damit vollständig per HTTP cachebar.
 - GDAL-Konfiguration für Fernzugriff zentral setzen (kein Directory-Listing beim Öffnen, Zusammenfassen benachbarter Ranges, HTTP/2-Multiplexing, Header-Cache).
+
+**Nachtrag 2026-10-20 (M4-17, `adr/0006` §6 Folge 1):** Der frühere Satz „Suchergebnis wird unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind“ ist durch die Item-Liste in der URL ersetzt; die Berichtigung war seit dem 20.09.2026 fällig.
 
 ### 6.4 Download-Vermittlung
 

@@ -24,6 +24,9 @@ export type LayerOverlay =
       bounds: Bbox;
       minZoom: number;
       maxZoom: number;
+      // From this zoom up the layer is not drawn (MapLibre's layer `maxzoom`): a scene stacked
+      // below the first level of a mosaic (`mosaic.ts`) steps aside for it.
+      hideFrom?: number;
       preview?: true;
     };
 
@@ -73,7 +76,23 @@ export interface MapLayer {
   overlays: LayerOverlay[];
   restore: LayerRestore;
   // Set for a layer that shows a derived picture, not scenes of a dataset: a
-  // preview of the processing panel. It cannot be processed or downloaded as
-  // scenes (the buttons of the layer manager skip it).
-  derived?: 'preview';
+  // preview of the processing panel, or the result of a job. It cannot be
+  // processed or downloaded as scenes (the buttons of the layer manager skip it).
+  derived?: 'preview' | 'result';
+  // Of a `result` layer (M4-13c-5).
+  result?: ResultLayerInfo;
+}
+
+// What a layer made of a job's result knows about it. Not the tile URL (that is
+// the overlay's) and not the order: the AOI never goes into a layer's text.
+export interface ResultLayerInfo {
+  jobID: string;
+  // When the job's results are dropped; the layer is "Expired" from a minute before.
+  expires: string;
+  // Metres per pixel of the result, for "Overview"; `null` if it is not known.
+  gsd: number | null;
+  // `earthx:resampled` (Prinzip 2.9); `null` if the results said nothing.
+  resampled: boolean | null;
+  // Set when `expires` has passed: the map loads no more tiles of it.
+  expired: boolean;
 }

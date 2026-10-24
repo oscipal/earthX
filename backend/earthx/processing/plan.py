@@ -40,13 +40,14 @@ from earthx.access.crop_rules import (
     compute_crop_region,
     estimate_output_dims,
 )
-from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, UnsupportedRecipe
+from earthx.processing.errors import AoiOutsideInputs, ExportTooLarge, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import BandMeta, Operator, OperatorRegistry, RasterMeta, Tier
 from earthx.processing.recipe import Band, CropOutput, Recipe, ResolvedInput, Step
-from earthx.processing.source import expected_band_names
+from earthx.processing.source import expected_band_names, units_of
 
 __all__ = [
     "EXPORT_FACTOR",
+    "RASTER_WITHOUT_STEP_FACTOR",
     "SECONDS_PER_ASSET",
     "SECONDS_PER_EXPORT_MB",
     "SECONDS_PER_EXPORT_MB_PER_ITEM",
@@ -72,8 +73,12 @@ SECONDS_PER_INPUT_MB = 0.034
 #: First open of an asset over the network (adr/0006 §3.4).
 SECONDS_PER_ASSET = 1.0
 
-#: Units of a run without any step, the crop alone (adr/0014 §5.5, M3-18 §10.3).
+#: Units of an export, the crop alone (adr/0014 §5.5, M3-18 §10.3). It writes no statistics.
 EXPORT_FACTOR = 0.9
+
+#: Units of a raster run without any step: the crop as one pass of the core, which counts the
+#: statistics as it writes (M4-32, +9.3 % measured, rounded up; adr/0014 §15k).
+RASTER_WITHOUT_STEP_FACTOR = 1.0
 
 #: Seconds per MB of an export's output (data and mask, as ``PlannedOutput.total_bytes``
 #: counts) for writing, the COG, reading it back and packing, plus per item of the group for
@@ -285,7 +290,11 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
                 return None
             names = [entry.asset.asset]
         types = [band.data_type for band in entry.bands] if len(entry.bands) == len(names) else [None] * len(names)
-        bands.extend(BandMeta(name, data_type or "float64", None) for name, data_type in zip(names, types, strict=True))
+        units = units_of(entry, len(names))
+        bands.extend(
+            BandMeta(name, data_type or "float64", None, unit)
+            for name, data_type, unit in zip(names, types, units, strict=True)
+        )
     first = resolved[0]
     crs = first.asset.crs or "EPSG:4326"
     if sized:
@@ -302,14 +311,22 @@ def _input_meta(recipe: Recipe, *, names_known: bool, sized: bool) -> RasterMeta
 def check_bands(recipe: Recipe, operators: OperatorRegistry) -> None:
     """Run every step's ``transform`` on the bands the inputs will carry; ``RecipeInvalid`` for a wrong name.
 
+    With several steps the refusal begins with the place of the step (``step 1: …`` for the second, counted from 0 like the other refusals of an order), as the tile of a chain says it.
+
     Where the item does not say how many bands an asset has, the file does, and the
     core checks again before it reads the first block (plan M4-09 §3.3). Nothing is read.
     """
     meta = _input_meta(recipe, names_known=True, sized=False)
     if meta is None:
         return
-    for step in plan_steps(recipe.steps, operators):
-        meta = step.operator.transform(meta, step.params)
+    planned = plan_steps(recipe.steps, operators)
+    for index, step in enumerate(planned):
+        try:
+            meta = step.operator.transform(meta, step.params)
+        except RecipeInvalid as error:
+            if len(planned) == 1:
+                raise
+            raise RecipeInvalid(f"step {index}: {error}") from error
 
 
 def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
@@ -345,7 +362,7 @@ def estimate(recipe: Recipe, operators: OperatorRegistry) -> CostEstimate:
             f"This job would write about {(output_bytes + output_pixels) / 1_000_000:.0f} MB, more than the "
             f"{MAX_JOB_BYTES / 1_000_000:.0f} MB a job may write. Draw a smaller area or choose fewer assets."
         )
-    factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else EXPORT_FACTOR
+    factor = sum(step.operator.cost_factor(step.params) for step in planned) if planned else RASTER_WITHOUT_STEP_FACTOR
     return CostEstimate(
         input_pixels=input_pixels,
         input_bytes=input_bytes,

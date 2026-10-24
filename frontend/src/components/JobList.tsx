@@ -5,13 +5,14 @@
 
 import { useEffect, useState } from 'react';
 
-import { resultUrl } from '../processing';
-import { useProcessingStore, type JobEntry } from '../processingStore';
+import { fetchMethodsText, resultUrl } from '../processing';
+import { METHODS_FILE, useProcessingStore, type JobEntry } from '../processingStore';
+import { MIN_REMAINING_MS } from '../resultLayer';
 
 // `MIN_REMAINING` of the job API (`objectstore/results.py`): from a minute
 // before `expires`, a result link answers `410`, which a plain link could only
 // show as a JSON page — the row says so instead.
-export const MIN_REMAINING_MS = 60_000;
+export { MIN_REMAINING_MS };
 
 export const EXPIRED_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 
@@ -25,6 +26,28 @@ function useNowUntil(deadline: number): number {
     return () => clearTimeout(timer);
   }, [deadline, now]);
   return now;
+}
+
+// "Copy" next to "Methods": the text goes to the clipboard, ready for a manuscript.
+function CopyMethods({ jobID }: { jobID: string }) {
+  const [note, setNote] = useState('');
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(await fetchMethodsText(jobID));
+      setNote('Copied');
+    } catch {
+      setNote('Could not copy');
+    }
+  };
+  return (
+    <>
+      {' '}
+      <button type="button" className="link-btn" onClick={() => void copy()}>
+        Copy
+      </button>
+      {note && <span className="hint-text"> {note}</span>}
+    </>
+  );
 }
 
 function stateText(job: JobEntry): string {
@@ -51,6 +74,7 @@ function formatTime(iso: string): string {
 export function JobRow({ job }: { job: JobEntry }) {
   const cancelJob = useProcessingStore((s) => s.cancelJob);
   const removeJob = useProcessingStore((s) => s.removeJob);
+  const addToLayers = useProcessingStore((s) => s.showResultOnMap);
   const linksUntil = Date.parse(job.expires) - MIN_REMAINING_MS;
   const now = useNowUntil(linksUntil);
   const expired = job.expired || !(now < linksUntil);
@@ -83,12 +107,27 @@ export function JobRow({ job }: { job: JobEntry }) {
         <span className="pp-help">Kept until {formatTime(job.expires)}</span>
       )}
       {job.phase === 'successful' && expired && <span className="hint-text warn">{EXPIRED_TEXT}</span>}
+      {job.phase === 'successful' && !expired && job.tiles && (
+        <span className="pp-links">
+          <button
+            type="button"
+            className="link-btn"
+            title="Draw the result on the map, cut to the area of the job, as a layer"
+            onClick={() => void addToLayers(job.jobID)}
+          >
+            Add to layers
+          </button>
+        </span>
+      )}
       {job.phase === 'successful' && !expired && job.files && (
         <span className="pp-links">
           {job.files.map((f) => (
-            <a key={f.file} href={resultUrl(job.jobID, f.file)} download rel="noopener noreferrer">
-              {f.label}
-            </a>
+            <span key={f.file}>
+              <a href={resultUrl(job.jobID, f.file)} download rel="noopener noreferrer">
+                {f.label}
+              </a>
+              {f.file === METHODS_FILE && <CopyMethods jobID={job.jobID} />}
+            </span>
           ))}
         </span>
       )}

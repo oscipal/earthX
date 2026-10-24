@@ -217,6 +217,9 @@ class Band(_Model):
     nodata: float | Literal["nan", "inf", "-inf"] | None
     scale: float | None
     offset: float | None
+    #: UCUM symbol of the values after the scaling; the item's own where it names one, else the registry's (M4-19b).
+    #: Optional, so that a ``recipe.json`` written before the field existed still reads.
+    unit: Text | None = None
 
     @property
     def scaled(self) -> bool:
@@ -245,6 +248,8 @@ class ResolvedInput(_Model):
     ``scaling`` names the source of the physical values (F7a): ``item`` when the
     item's bands carry a scale or offset, otherwise ``store-cf`` for Zarr (the
     reader's generic CF decoding) and ``none`` for a COG.
+
+    ``unit`` is optional, so that a ``recipe.json`` written before the field existed still reads.
     """
 
     asset: ResolvedAssetModel
@@ -252,6 +257,9 @@ class ResolvedInput(_Model):
     bands: list[Band]
     scaling: Literal["item", "store-cf", "none"]
     gsd: Annotated[float, Field(gt=0)] | None
+    #: Unit of every band of this asset where the item describes none (``bands`` is empty): the registry's (M4-19b).
+    #: Where there are bands, each carries its own.
+    unit: Text | None = None
 
     @model_validator(mode="after")
     def _scaling_matches(self) -> ResolvedInput:

@@ -56,6 +56,7 @@ from shapely.geometry import box, mapping
 from shapely.geometry import shape as shapely_shape
 from shapely.ops import unary_union
 
+from earthx.access.crop_rules import mosaic_order
 from earthx.access.download import (
     AOI_FILENAME,
     CITATION_FILENAME,
@@ -92,7 +93,8 @@ from earthx.catalog.registry import (
 from earthx.gateway import Gateway, GatewayError, Policy, UpstreamError, UrlRejected, UrlTooLong, inspect_url
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnknownOperator, UnsupportedRecipe
 from earthx.processing.export import Attachments
-from earthx.processing.mosaic import lies_on_grid, mosaic_order
+from earthx.processing.methods import DatasetFacts, methods_text
+from earthx.processing.mosaic import lies_on_grid
 from earthx.processing.operators import OperatorRegistry, Tier, applicable
 from earthx.processing.plan import check_bands, estimate
 from earthx.processing.recipe import (
@@ -124,6 +126,7 @@ __all__ = [
     "EstimatedOrder",
     "OrderRefused",
     "accept_order",
+    "acquired_day",
     "check_recipe_hosts",
     "crop_recipe_json",
     "describe_bands",
@@ -132,6 +135,7 @@ __all__ = [
     "footprint_of",
     "job_recipe_json",
     "job_side_files",
+    "methods_bytes",
 ]
 
 # The starting values of an order's size (Otto, M4-07b F5). One input per order until
@@ -315,7 +319,7 @@ async def _prepare(
     if not export:
         groups = _one_overpass(groups, items, config, entry.assets[0], policy)
     targets = [
-        _Target(items[item_id], _resolve_checked(items[item_id], config, asset, policy), separator, policy)
+        _Target(items[item_id], _resolve_checked(items[item_id], config, asset, policy), separator, policy, config)
         for group in groups
         for item_id in group
         for asset in entry.assets
@@ -364,6 +368,7 @@ async def _accept(
         dropped=[item_id for group in prepared.entry.groups if kept.isdisjoint(group) for item_id in group],
         aoi_provenance=aoi_provenance,
         accepted_at=datetime.now(UTC),
+        acquired_on=acquired_on,
     )
     return AcceptedOrder(recipe, False, prepared.skipped, attachments, acquired_on)
 
@@ -375,10 +380,18 @@ def _acquired_on(prepared: _Prepared) -> date | None:
     lie on several days (an export over a month) or whose dataset has no single day (the DEM) has none,
     and its downloads are named by the day of the run, marked ``run``.
     """
-    viewer = prepared.config.viewer
+    return acquired_day([target.item for target in prepared.targets], prepared.config)
+
+
+def acquired_day(items: Sequence[Mapping[str, Any]], config: DatasetConfig) -> date | None:
+    """The one place of the rule: the day all of ``items`` were acquired, else ``None``.
+
+    The name of every download and the methods text take the day from here (Otto, 22.10.2026).
+    """
+    viewer = config.viewer
     if viewer is None:
         return None
-    days = {acquisition_day(target.item, viewer) for target in prepared.targets}
+    days = {acquisition_day(item, viewer) for item in items}
     return days.pop() if len(days) == 1 else None
 
 
@@ -473,6 +486,7 @@ def export_attachments(
     dropped: Sequence[str],
     aoi_provenance: Mapping[str, str] | None,
     accepted_at: datetime,
+    acquired_on: date | None = None,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
 
@@ -492,6 +506,8 @@ def export_attachments(
             config, groups=entry.groups, assets=entry.assets, aoi=aoi, dropped=dropped, accepted_at=accepted_at
         ),
         attribution=(attribution,) if attribution else (),
+        dataset=DatasetFacts.of(config),
+        acquired_on=acquired_on,
     )
 
 
@@ -690,7 +706,7 @@ def _one_overpass(
 
     The scenes share the overpass key of the registry (``results_group_by``, P19), the dataset
     offers reprojection (a scene off the grid is warped), and a Zarr store lies in one CRS. The
-    list is then sorted by :func:`~earthx.processing.mosaic.mosaic_order`, so that the same
+    list is then sorted by :func:`~earthx.access.crop_rules.mosaic_order`, so that the same
     overpass gives the same recipe however the order named its scenes. A group of one scene
     is left alone; more than one group is not a raster job.
     """
@@ -781,6 +797,7 @@ class _Target:
     ref: ResolvedAsset
     separator: str | None
     policy: Policy
+    config: DatasetConfig
 
     @property
     def item_asset(self) -> str:
@@ -863,7 +880,8 @@ def _entries(asset_entry: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return []
 
 
-def _band(entry: Mapping[str, Any], item: str) -> Band:
+def _band(entry: Mapping[str, Any], item: str, registry_unit: str | None) -> Band:
+    """One band of the item. Its own ``unit`` goes first; the registry's stands in where it names none (M4-19b)."""
     nodata = entry.get("nodata")
     if not isinstance(nodata, str):  # a string is "nan", "inf" or "-inf", or the model refuses it
         nodata = _number(nodata, "nodata", item)
@@ -873,12 +891,18 @@ def _band(entry: Mapping[str, Any], item: str) -> Band:
             nodata=nodata,
             scale=_number(entry.get("scale", entry.get("raster:scale")), "scale", item),
             offset=_number(entry.get("offset", entry.get("raster:offset")), "offset", item),
+            unit=entry["unit"] if entry.get("unit") is not None else registry_unit,
         )
     except ValidationError:
         raise OrderRefused(502, malformed_item_detail(item) + " (a band is not described correctly)", "bands") from None
 
 
 _NO_BAND = Band(data_type=None, nodata=None, scale=None, offset=None)
+
+
+def _band_with_unit(unit: str) -> Band:
+    """The band of a Zarr variable the item does not describe, as far as the registry does: nothing but the unit."""
+    return Band(data_type=None, nodata=None, scale=None, offset=None, unit=unit)
 
 
 def _bands_of(target: _Target) -> list[Band]:
@@ -889,12 +913,18 @@ def _bands_of(target: _Target) -> list[Band]:
     names describes the whole asset and holds for every variable (that is how the EOPF
     adapter normalises); anything else is an empty description, and the store's own
     CF attributes decide the scaling. The item says nothing it does not say.
+
+    The unit is the one place the registry adds to what the item says (``DatasetConfig.band_units``,
+    adr/0014 §15n): the item's own goes first, the registry's stands in for a band that names none. A
+    COG asset the item describes with no band at all has no band to carry it: see :func:`_asset_unit`.
     """
     item_id = str(target.item.get("id"))
     entry = target.item["assets"][target.item_asset]
     entries = _entries(entry)
+    config = target.config
     if target.ref.reader == "cog":
-        return [_band(raw, item_id) for raw in entries]
+        registry = config.band_unit(target.ref.asset)
+        return [_band(raw, item_id, registry) for raw in entries]
     names = [raw["name"] for raw in entries if isinstance(raw.get("name"), str)]
     if len(set(names)) != len(names):
         raise OrderRefused(502, malformed_item_detail(item_id) + " (two bands share a name)", "bands")
@@ -905,8 +935,25 @@ def _bands_of(target: _Target) -> list[Band]:
             raw = named.get(name) if name is not None else None
         else:
             raw = entries[0] if len(entries) == 1 else None
-        bands.append(_band(raw, item_id) if raw is not None else _NO_BAND)
+        grouped = target.separator is not None and name is not None
+        registry = config.band_unit(f"{target.item_asset}{target.separator}{name}" if grouped else target.ref.asset)
+        if raw is not None:
+            bands.append(_band(raw, item_id, registry))
+        else:
+            bands.append(_NO_BAND if registry is None else _band_with_unit(registry))
     return bands
+
+
+def _asset_unit(target: _Target, bands: Sequence[Band]) -> str | None:
+    """The registry's unit for a COG asset whose item describes no band, else ``None``.
+
+    Such an asset has no :class:`Band` to put it on, and inventing one would claim a number of bands
+    that only the file knows (the DEM item says nothing of its bands, ``check_bands`` waits for the
+    file). The unit stands for every band of the asset (:func:`~earthx.processing.source.units_of`).
+    """
+    if bands or target.ref.reader != "cog":
+        return None
+    return target.config.band_unit(target.ref.asset)
 
 
 def _scaling_of(target: _Target, bands: Sequence[Band]) -> str:
@@ -915,17 +962,20 @@ def _scaling_of(target: _Target, bands: Sequence[Band]) -> str:
     return "store-cf" if target.ref.reader == "zarr" else "none"
 
 
-def describe_bands(item: Mapping[str, Any], config: DatasetConfig, ref: ResolvedAsset) -> tuple[list[Band], str]:
-    """The bands the item describes for ``ref`` and where their scaling comes from (``item``, ``store-cf``, ``none``).
+def describe_bands(
+    item: Mapping[str, Any], config: DatasetConfig, ref: ResolvedAsset
+) -> tuple[list[Band], str, str | None]:
+    """The bands the item describes for ``ref``, where their scaling comes from (``item``, ``store-cf``, ``none``),
+    and the unit of an asset the item describes with no band (:func:`_asset_unit`).
 
     The one reading of ``raster:bands`` the job and the tile share (adr/0014 §5.4,
     F7): a tile that scaled differently from a job would break their agreement.
     Raises :class:`OrderRefused` (502) for a description it cannot read.
     """
     separator = config.zarr.variable_separator if config.zarr is not None else None
-    target = _Target(item, ref, separator, Policy(allowed_hosts=frozenset(config.source.asset_hosts)))
+    target = _Target(item, ref, separator, Policy(allowed_hosts=frozenset(config.source.asset_hosts)), config)
     bands = _bands_of(target)
-    return bands, _scaling_of(target, bands)
+    return bands, _scaling_of(target, bands), _asset_unit(target, bands)
 
 
 def _usable_etag(value: str | None) -> str | None:
@@ -995,6 +1045,7 @@ def _resolved_json(target: _Target, version: InputVersion | None) -> dict[str, A
         "version": None if version is None else version.model_dump(mode="json"),
         "bands": [band.model_dump(mode="json") for band in bands],
         "scaling": _scaling_of(target, bands),
+        "unit": _asset_unit(target, bands),
         "gsd": asset_gsd(target.item, target.item_asset),
     }
 
@@ -1040,7 +1091,7 @@ def crop_recipe_json(
     policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
     separator = config.zarr.variable_separator if config.zarr is not None else None
     targets = [
-        _Target(item, _resolve_checked(item, config, asset, policy), separator, policy)
+        _Target(item, _resolve_checked(item, config, asset, policy), separator, policy, config)
         for group in groups
         for item in group
         for asset in assets
@@ -1093,6 +1144,24 @@ def crop_recipe_json(
         "provenance": provenance.model_dump(mode="json"),
     }
     return document_bytes(document)
+
+
+def methods_bytes(
+    recipe_json: bytes,
+    config: DatasetConfig | None,
+    operators: OperatorRegistry | None = None,
+    acquired_on: date | None = None,
+) -> bytes:
+    """``methods.txt`` for a ``recipe.json``, as bytes (M4-19a): the one function every download calls.
+
+    The crop's ZIP, the job's link and ZIP and the export's own copy all build it from the
+    ``recipe.json`` they carry, so the file says what its neighbour says. A dataset the registry no
+    longer knows is named by its identifier only. ``operators`` is the registry the recipe was
+    validated with, the platform's own where none is given.
+    """
+    dataset = DatasetFacts.of(config) if config is not None else None
+    registry = {} if operators is None else {"operators": operators}
+    return methods_text(recipe_json, dataset=dataset, acquired_on=acquired_on, **registry).encode("utf-8")
 
 
 def job_recipe_json(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AOI_CLIP_PROTOCOL } from './aoiClip';
 import type { DatasetOption } from './datasets';
@@ -6,20 +6,32 @@ import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from './geoUtils';
 import type { ProcessDescription } from './processing';
-import { processInfo, type DraftStep } from './processingOrder';
+import { processInfo, type DraftStep, type ProcessInfo } from './processingOrder';
 import {
   assetGsd,
   DEFAULT_RANGE,
   finestGsd,
+  furtherNote,
   MAX_PREVIEW_SCENES,
+  MAX_PREVIEW_STEPS,
   previewMaxZoom,
   NO_PREVIEW,
+  NO_PREVIEW_FORM,
+  NO_PREVIEW_UNLISTED,
+  measuredRange,
+  measureOf,
   planPreview,
   previewOverlays,
+  previewUnit,
+  probeChain,
+  refusedNote,
+  refusedStepOf,
+  shortenPlan,
   previewSpec,
   rescaleOf,
   tileResolution,
   type PreviewPlan,
+  type PreviewSpec,
 } from './processingPreview';
 import type { Collection, StacItem } from './types';
 
@@ -32,8 +44,22 @@ function bandMath(expression: string, key = 1): DraftStep {
   return { key, op: 'band_math', opVersion: 1, values: { expression } };
 }
 
+function normalize(key = 5, values: Record<string, string | boolean> = {}): DraftStep {
+  return {
+    key,
+    op: 'normalize',
+    opVersion: 1,
+    values: { in_min: '0', in_max: '0.5', out_min: '0', out_max: '255', clip: true, ...values },
+  };
+}
+
+function mask(key = 6, values: Record<string, string | boolean> = {}): DraftStep {
+  return { key, op: 'mask', opVersion: 1, values: { source: 'scl', classes: '3, 8, 9, 10', ...values } };
+}
+
+// The listed version of the fixtures; it runs only as a job (`T2`).
 function reproject(): DraftStep {
-  return { key: 2, op: 'reproject', opVersion: 2, values: { crs: 'EPSG:3035', resolution: '30' } };
+  return { key: 2, op: 'reproject', opVersion: 3, values: { crs: 'EPSG:3035', resolution: '30' } };
 }
 
 function item(id: string, properties: Record<string, unknown> = {}, redGsd?: number): StacItem {
@@ -77,8 +103,9 @@ describe('planPreview (adr/0014 §6.1)', () => {
 
   it('previews a complete band-math step with its parameters', () => {
     const plan = ready([bandMath('(nir - red) / (nir + red)')]);
-    expect(plan.params).toEqual({ expression: '(nir - red) / (nir + red)' });
-    expect(plan.operator.op).toBe('band_math');
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0].params).toEqual({ expression: '(nir - red) / (nir + red)' });
+    expect(plan.steps[0].operator.op).toBe('band_math');
     expect(plan.further).toBe(false);
   });
 
@@ -91,15 +118,97 @@ describe('planPreview (adr/0014 §6.1)', () => {
     expect(planPreview([reproject(), bandMath('red')], S2)).toEqual({ state: 'off', reason: NO_PREVIEW });
   });
 
-  it('shows only the first of several steps and says there are more', () => {
-    const plan = ready([bandMath('red + nir'), bandMath('red', 3), reproject()]);
-    expect(plan.params).toEqual({ expression: 'red + nir' });
+  it('shows the longest start of tile steps, and says there are more', () => {
+    const plan = ready([bandMath('red + nir'), normalize(), reproject(), bandMath('red', 3)]);
+    expect(plan.steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
+    expect(plan.steps[1].params).toEqual({ in_min: 0, in_max: 0.5, out_min: 0, out_max: 255, clip: true });
     expect(plan.further).toBe(true);
   });
 
-  it('has no preview for an operator the dataset does not list', () => {
+  it('keeps the order of the steps', () => {
+    expect(ready([normalize(), bandMath('red')]).steps.map((s) => s.operator.op)).toEqual(['normalize', 'band_math']);
+    expect(ready([bandMath('red'), normalize()]).steps.map((s) => s.operator.op)).toEqual(['band_math', 'normalize']);
+  });
+
+  it('ends the start at a step that is incomplete and shows what is before it', () => {
+    const plan = ready([normalize(), bandMath('', 3), bandMath('red', 4)]);
+    expect(plan.steps.map((s) => s.step.key)).toEqual([5]);
+    expect(plan.further).toBe(true);
+  });
+
+  it('ends the start at a step that runs only as a job', () => {
+    const plan = ready([bandMath('red'), reproject(), normalize()]);
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.further).toBe(true);
+  });
+
+  it('previews a mask as the first step: it runs as a tile (M4-18c)', () => {
+    const plan = ready([mask(), bandMath('red')]);
+    expect(plan.steps.map((s) => s.operator.op)).toEqual(['mask', 'band_math']);
+    expect(plan.steps[0].params).toEqual({ source: 'scl', classes: [3, 8, 9, 10] });
+    expect(plan.further).toBe(false);
+    expect(ready([mask()]).steps).toHaveLength(1);
+  });
+
+  it('writes the classes of a mask ascending and once, whatever order they were typed in', () => {
+    expect(ready([mask(6, { classes: '10, 3,3 8' })]).steps[0].params).toEqual({ source: 'scl', classes: [3, 8, 10] });
+  });
+
+  it('asks to complete a mask that has no class yet instead of calling it a job-only step', () => {
+    expect(planPreview([mask(6, { classes: '' })], S2)).toEqual({
+      state: 'off',
+      reason: 'Complete the step to see the preview.',
+    });
+    expect(planPreview([mask(6, { classes: '3, x' })], S2)).toEqual({
+      state: 'off',
+      reason: 'Complete the step to see the preview.',
+    });
+  });
+
+  it('never calls a mask a job-only step, whatever else the order holds', () => {
+    for (const steps of [[mask()], [mask(), reproject()], [mask(), normalize(), bandMath('red')]]) {
+      const plan = planPreview(steps, S2);
+      expect(plan.state).toBe('ready');
+    }
+    expect(planPreview([mask(6, { classes: '' }), reproject()], S2)).not.toEqual({ state: 'off', reason: NO_PREVIEW });
+  });
+
+  it('takes no more steps than the tile route does', () => {
+    const many = Array.from({ length: MAX_PREVIEW_STEPS + 2 }, (_, i) => normalize(10 + i));
+    const plan = ready(many);
+    expect(plan.steps).toHaveLength(MAX_PREVIEW_STEPS);
+    expect(plan.further).toBe(true);
+  });
+
+  it('asks to complete the first step when it is the one that is incomplete', () => {
+    expect(planPreview([normalize(5, { in_max: '' }), bandMath('red')], S2)).toEqual({
+      state: 'off',
+      reason: 'Complete the step to see the preview.',
+    });
+  });
+
+  it('says how much of the job the map shows', () => {
+    expect(furtherNote(ready([bandMath('red'), reproject()]))).toBe('The map shows the first step; the job runs all steps.');
+    expect(furtherNote(ready([bandMath('red'), normalize(), reproject()]))).toBe(
+      'The map shows the first 2 steps; the job runs all steps.',
+    );
+  });
+
+  it('says that an operator the dataset does not list is not available, not that it is a job', () => {
     const stranger: DraftStep = { key: 9, op: 'decomp', opVersion: 1, values: {} };
-    expect(planPreview([stranger], S2)).toEqual({ state: 'off', reason: NO_PREVIEW });
+    expect(planPreview([stranger], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
+    expect(planPreview([{ ...mask(), opVersion: 2 }], S2)).toEqual({ state: 'off', reason: NO_PREVIEW_UNLISTED });
+  });
+
+  it('says that the panel has no form for a tile operator, not that it runs only as a job', () => {
+    const noForm: ProcessInfo = {
+      ...S2,
+      operators: S2.operators.map((o) =>
+        o.op === 'mask' ? { ...o, form: { supported: false, reason: 'not supported by this panel: keyword x' } } : o,
+      ),
+    };
+    expect(planPreview([mask()], noForm)).toEqual({ state: 'off', reason: NO_PREVIEW_FORM });
+    expect(NO_PREVIEW_FORM).not.toContain('only as a job');
   });
 });
 
@@ -139,6 +248,42 @@ describe('previewSpec', () => {
     expect(url.searchParams.get('rescale')).toBe('-1,1');
     expect(url.searchParams.get('colormap_name')).toBe('rdylgn');
     expect(spec).toMatchObject({ title: 'Band math', minZoom: 8, maxZoom: 13, clipToAoi: false });
+  });
+
+  it('chains the steps in the URL: op, op_version and params once per step, in order', () => {
+    const plan = ready([normalize(), bandMath('red / 2', 3)]);
+    const spec = previewSpec({ ...base, plan })!;
+    const url = new URL(spec.scenes[0].url, 'http://localhost');
+    expect(url.searchParams.getAll('asset')).toEqual(['red', 'nir']);
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.getAll('op_version')).toEqual(['1', '1']);
+    expect(url.searchParams.getAll('params')).toEqual([
+      '{"clip":true,"in_max":0.5,"in_min":0,"out_max":255,"out_min":0}',
+      '{"expression":"red / 2"}',
+    ]);
+    expect(spec.title).toBe('Normalize → Band math');
+    const order = [...url.search.matchAll(/(?:^|&|\?)(op|op_version|params)=/g)].map((m) => m[1]);
+    expect(order).toEqual(['op', 'op_version', 'params', 'op', 'op_version', 'params']);
+  });
+
+  it('names the statistics of the first scene with the same steps, whatever the range', () => {
+    const plan = ready([normalize(), bandMath('red / 2', 3)]);
+    const a = previewSpec({ ...base, plan })!;
+    const b = previewSpec({ ...base, plan, range: { vmin: '0', vmax: '9', colormap: 'viridis' } })!;
+    expect(a.key).not.toBe(b.key);
+    expect(a.measure).toBe(b.measure);
+    const url = new URL(a.measure, 'http://localhost');
+    expect(url.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_A/statistics');
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.has('rescale')).toBe(false);
+    expect(a.expression).toBe(true);
+    expect(previewSpec({ ...base, plan: ready([normalize()]) })!.expression).toBe(false);
+  });
+
+  it('has another key for the steps in another order', () => {
+    const a = previewSpec({ ...base, plan: ready([normalize(), bandMath('red', 3)]) })!;
+    const b = previewSpec({ ...base, plan: ready([bandMath('red', 3), normalize()]) })!;
+    expect(a.key).not.toBe(b.key);
   });
 
   it('keeps the placeholders of the tile grid and survives characters of a URL in the expression', () => {
@@ -207,6 +352,60 @@ describe('previewSpec', () => {
     expect(previewSpec({ ...base, plan, items: many })!.scenes).toHaveLength(MAX_PREVIEW_SCENES);
     const spec = previewSpec({ ...base, plan, items: [{ ...items[0], bbox: null }, items[1]] })!;
     expect(spec.scenes.map((s) => s.id)).toEqual(['S2_B']);
+  });
+});
+
+describe('the measure of a preview (M4-19c)', () => {
+  const band = { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8 };
+  const ask = (...bands: Array<Record<string, unknown>>) =>
+    measureOf('K', Object.fromEntries(bands.map((b, i) => [`b${i + 1}`, b])) as never, true);
+
+  it('reads the numbers a colour scale is chosen from, and the unit', () => {
+    expect(ask({ ...band, unit: 'm' })).toEqual({
+      key: 'K',
+      stats: { bands: [{ minimum: -0.2, maximum: 0.9, percentile2: -0.1, percentile98: 0.8 }], expression: true },
+      unit: 'm',
+    });
+  });
+
+  it('names no value of a band without a valid pixel, and no scale when no band has one', () => {
+    const none = { count: 0, min: null, max: null, percentile_2: null, percentile_98: null, unit: null };
+    expect(ask(none).stats).toBeNull();
+    expect(measuredRange(ask(none))).toBeNull();
+  });
+
+  it('keeps the one unit all bands share, and none where they differ or are not stated', () => {
+    expect(ask({ ...band, unit: 'K' }, { ...band, unit: 'K' }).unit).toBe('K');
+    expect(ask({ ...band, unit: 'K' }, { ...band, unit: 'm' }).unit).toBeNull();
+    expect(ask({ ...band, unit: 'K' }, { ...band, unit: null }).unit).toBeNull();
+    expect(ask({ ...band }).unit).toBeNull();
+    expect(ask({ ...band, unit: 4 }).unit).toBeNull();
+  });
+
+  it('turns an index into -1 to 1 in rdylgn and other values into their 2nd to 98th percentile in viridis', () => {
+    expect(measuredRange(ask(band))).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' });
+    expect(measuredRange(ask({ ...band, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400 }))).toEqual({
+      vmin: '120',
+      vmax: '2400',
+      colormap: 'viridis',
+    });
+    expect(measuredRange(null)).toBeNull();
+  });
+
+  const spec = { measure: 'M' } as PreviewSpec;
+  it.each([
+    ['m', 'm'],
+    ['1', null],
+    ['', null],
+    [null, null],
+  ])('shows the unit %j beside the range as %j', (unit, shown) => {
+    expect(previewUnit(spec, { key: 'M', stats: null, unit })).toBe(shown);
+  });
+
+  it('shows the unit of the measure of this preview and of no other', () => {
+    expect(previewUnit(spec, { key: 'other', stats: null, unit: 'm' })).toBeNull();
+    expect(previewUnit(spec, null)).toBeNull();
+    expect(previewUnit(null, { key: 'M', stats: null, unit: 'm' })).toBeNull();
   });
 });
 
@@ -293,5 +492,73 @@ describe('the preview is never as fine as the data (Otto, 19.10.2026)', () => {
 
   it('is never above the data at the pole either', () => {
     expect(previewMaxZoom([[10, 89, 11, 90]], 10, { min: 0, max: 22 })).toBeLessThanOrEqual(22);
+  });
+});
+
+describe('a chain the tiler refuses', () => {
+  const answer = (status: number, body: unknown) => async () =>
+    new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
+
+  it('reads the step and the reason off the detail of the tiler', () => {
+    expect(refusedStepOf('step 1: expression names unknown band(s): red; the input has: band_math')).toEqual({
+      step: 1,
+      reason: 'expression names unknown band(s): red; the input has: band_math',
+    });
+    expect(refusedStepOf("step 12: 'mask' cannot run here: x\ny")).toEqual({ step: 12, reason: "'mask' cannot run here: x\ny" });
+  });
+
+  it.each([['params: expression: required'], ['step : x'], ['step 2:'], ['Step 2: x'], [' step 2: x'], [undefined], [422], [['step 2: x']], [null]])(
+    'names no step in %j',
+    (detail) => {
+      expect(refusedStepOf(detail)).toBeNull();
+    },
+  );
+
+  it('asks the TileJSON and returns what a refusal names', async () => {
+    const fetchImpl = vi.fn(answer(422, { detail: 'step 1: no band red' }));
+    expect(await probeChain('/tj?x=1', fetchImpl as unknown as typeof fetch)).toEqual({ step: 1, reason: 'no band red' });
+    expect(fetchImpl).toHaveBeenCalledWith('/tj?x=1');
+  });
+
+  it.each([
+    ['a chain the tiler takes', answer(200, { tilejson: '3.0.0' })],
+    ['a refusal without a step', answer(400, { detail: 'params: x' })],
+    ['a failure of the source', answer(502, { detail: 'step 1: the asset could not be read' })],
+    ['an answer that is not JSON', answer(422, 'not json')],
+    ['a network that fails', async () => Promise.reject(new TypeError('offline'))],
+  ])('names no step for %s', async (_, fetchImpl) => {
+    expect(await probeChain('/tj', fetchImpl as unknown as typeof fetch)).toBeNull();
+  });
+
+  it('cuts the plan to the steps before the refused one, and to none for the first', () => {
+    const plan = ready([normalize(), bandMath('red', 3), normalize(7)]);
+    expect(shortenPlan(plan, 2)!.steps.map((s) => s.step.key)).toEqual([5, 3]);
+    expect(shortenPlan(plan, 2)!.further).toBe(true);
+    expect(shortenPlan(plan, 0)).toBeNull();
+  });
+
+  it('writes the note the way the panel shows it', () => {
+    const refused = { step: 1, reason: 'band red is not available after step 1' };
+    expect(refusedNote(1, 2, refused)).toBe('Preview shows step 1 of 2. Step 2: band red is not available after step 1.');
+    expect(refusedNote(2, 4, { step: 2, reason: 'no band.' })).toBe('Preview shows steps 1 to 2 of 4. Step 3: no band.');
+    expect(refusedNote(0, 2, { step: 0, reason: 'no band' })).toBe('No preview. Step 1: no band.');
+  });
+
+  it('puts the chain into the TileJSON URL of the first scene', () => {
+    const items = [item('S2_A', { gsd: 10 }), item('S2_B', { gsd: 10 })];
+    const spec = previewSpec({
+      dataset: DATASET,
+      items,
+      assets: ['red', 'nir'],
+      info: S2,
+      range: DEFAULT_RANGE,
+      area: 'scene',
+      plan: ready([normalize(), bandMath('red', 3)]),
+    })!;
+    expect(spec.stepCount).toBe(2);
+    const url = new URL(spec.probe, 'http://localhost');
+    expect(url.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_A/WebMercatorQuad/tilejson.json');
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.has('rescale')).toBe(false);
   });
 });

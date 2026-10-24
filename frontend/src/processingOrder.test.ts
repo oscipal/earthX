@@ -16,11 +16,16 @@ import {
   candidateItems,
   formatBytes,
   formatDuration,
+  maskAssetOf,
+  maskLayerOf,
+  maskStepValues,
   namesInExpression,
   orderAssets,
   passesOf,
   processBlockReason,
   processInfo,
+  registryUnit,
+  shownUnit,
   stepOfRefusal,
   type DraftStep,
 } from './processingOrder';
@@ -40,6 +45,8 @@ describe('processInfo from the fixtures (K3)', () => {
   it('lists the operators with tiers and kind, and the limits of the order', () => {
     expect(S2.operators.map((o) => [o.op, o.opVersion, o.tiers, o.kind])).toEqual([
       ['band_math', 1, ['T1', 'T2'], 'pixel'],
+      ['mask', 1, ['T1', 'T2'], 'pixel'],
+      ['normalize', 1, ['T1', 'T2'], 'pixel'],
       ['reproject', 3, ['T2'], 'grid'],
     ]);
     expect(S2).toMatchObject({ maxSteps: 16, maxAssets: 16, variableSeparator: null });
@@ -57,14 +64,16 @@ describe('processInfo from the fixtures (K3)', () => {
     ['cop-dem-glo-30', DEM],
   ])('%s: every operator has a form the panel supports', (_, info) => {
     expect(info.operators.length).toBeGreaterThan(0);
-    for (const operator of info.operators) expect(operator.form, operator.op).toMatchObject({ supported: true });
+    for (const operator of info.operators) {
+      expect(operator.form, operator.op).toMatchObject({ supported: true });
+    }
   });
 
   it('leaves out a step variant it cannot read instead of guessing', () => {
     const broken = structuredClone(s2) as unknown as ProcessDescription;
     const schema = broken.inputs.recipe.schema as { $defs: Record<string, { properties: Record<string, unknown> }> };
     delete schema.$defs.step_reproject_v3.properties.op;
-    expect(processInfo(broken).operators.map((o) => o.op)).toEqual(['band_math']);
+    expect(processInfo(broken).operators.map((o) => o.op)).toEqual(['band_math', 'mask', 'normalize']);
   });
 });
 
@@ -75,7 +84,7 @@ describe('bandSources (K7)', () => {
       thumbnail: { href: 'y', type: 'image/jpeg', roles: ['thumbnail'] },
     });
     expect(bandSources(it1, 'cog', null)).toEqual([
-      { asset: 'red', names: ['red'], dataType: 'uint16', scaled: false, nodata: null },
+      { asset: 'red', names: ['red'], units: [null], unit: null, dataType: 'uint16', scaled: false, nodata: null },
     ]);
   });
 
@@ -115,7 +124,7 @@ describe('bandSources (K7)', () => {
   it('offers a COG asset without band descriptions with no name to insert', () => {
     const dem = item('d', { data: { href: 'x', type: 'image/tiff; application=geotiff' } });
     expect(bandSources(dem, 'cog', null)).toEqual([
-      { asset: 'data', names: [], dataType: null, scaled: false, nodata: null },
+      { asset: 'data', names: [], units: [], unit: null, dataType: null, scaled: false, nodata: null },
     ]);
   });
 
@@ -125,8 +134,8 @@ describe('bandSources (K7)', () => {
       product: { href: 'y', type: 'application/vnd+zarr' },
     });
     expect(bandSources(z, 'zarr', ':')).toEqual([
-      { asset: 'SR_10m:b04', names: ['b04'], dataType: null, scaled: false, nodata: null },
-      { asset: 'SR_10m:b08', names: ['b08'], dataType: null, scaled: false, nodata: null },
+      { asset: 'SR_10m:b04', names: ['b04'], units: [null], unit: null, dataType: null, scaled: false, nodata: null },
+      { asset: 'SR_10m:b08', names: ['b08'], units: [null], unit: null, dataType: null, scaled: false, nodata: null },
     ]);
   });
 
@@ -144,8 +153,107 @@ describe('bandSources (K7)', () => {
   });
 });
 
+describe('the unit of a band (M4-19b)', () => {
+  const collection = (units: unknown): Collection => ({ id: 'c', 'earthx:band_units': units }) as unknown as Collection;
+  const REGISTRY = collection({ red: '1', scl: null, data: 'm', 'SR_*': '1' });
+
+  it('takes the unit of a COG asset from the registry where the item states none', () => {
+    const it1 = item('a', {
+      red: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+      scl: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint8' }] },
+      aot: { href: 'x', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+    });
+    const by = Object.fromEntries(bandSources(it1, 'cog', null, REGISTRY).map((b) => [b.asset, b.units]));
+    expect(by).toEqual({ red: ['1'], scl: [null], aot: [null] });
+  });
+
+  it('lets the unit of the item go before the registry', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit: 'percent' }] } });
+    expect(bandSources(it1, 'cog', null, REGISTRY)[0].units).toEqual(['percent']);
+  });
+
+  it('gives each band of a multi-band asset its own unit, the registry standing in for the rest', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, bands: [{ unit: 'K' }, {}] } });
+    expect(bandSources(it1, 'cog', null, REGISTRY)[0].units).toEqual(['K', '1']);
+  });
+
+  it('gives an asset with no band description the unit of the registry for the asset', () => {
+    const dem = item('d', { data: { href: 'x', type: COG } });
+    expect(bandSources(dem, 'cog', null, REGISTRY)[0]).toMatchObject({ names: [], units: [], unit: 'm' });
+  });
+
+  it('finds the unit of a Zarr variable by its key, with a group pattern', () => {
+    const z = item('z', { SR_10m: { href: 'x', bands: [{ name: 'b04' }, { name: 'b08', unit: 'percent' }] } });
+    expect(bandSources(z, 'zarr', ':', REGISTRY).map((b) => b.unit)).toEqual(['1', 'percent']);
+  });
+
+  it.each([
+    ['not a unit', 5],
+    ['blank', ''],
+    ['a list', ['m']],
+    ['an object', { symbol: 'm' }],
+  ])('does not take %s from an item for a unit', (_, unit) => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit }] as never } });
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual([null]);
+  });
+
+  it('knows no unit without the field, or where the field is not a table of texts', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{}] } });
+    for (const field of [undefined, null, [], 'm', { red: 5 }, { red: '' }]) {
+      expect(bandSources(it1, 'cog', null, collection(field))[0].units).toEqual([null]);
+    }
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual([null]);
+  });
+});
+
+describe('shownUnit (Otto, 24.10.2026)', () => {
+  it('writes a unit as it is', () => {
+    expect(shownUnit('m')).toBe('m');
+    expect(shownUnit('percent')).toBe('percent');
+  });
+
+  it('writes nothing for "1", for no unit and for what is no unit', () => {
+    for (const unit of ['1', '', null, undefined, 1, ['m']]) expect(shownUnit(unit as never)).toBeNull();
+  });
+
+  it('writes "10" and " 1" as they are: only the exact "1" is dimensionless', () => {
+    expect(shownUnit('10')).toBe('10');
+    expect(shownUnit(' 1')).toBe(' 1');
+  });
+
+  it('leaves the data alone: the sources keep "1"', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit: '1' }] } });
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual(['1']);
+  });
+});
+
+describe('registryUnit', () => {
+  const units = { 'SR_*': '1', 'SR_20m:b05': 'x', 'a.b*': 'dot', 'p(1)*': 'paren', data: 'm', none: null };
+  const collection = { id: 'c', 'earthx:band_units': units } as unknown as Collection;
+
+  it('takes the exact key before a pattern', () => {
+    expect(registryUnit(collection, 'SR_20m:b05')).toBe('x');
+    expect(registryUnit(collection, 'SR_20m:b06')).toBe('1');
+  });
+
+  it('matches a pattern over the whole key only, and its other characters literally', () => {
+    expect(registryUnit(collection, 'xSR_10m:b04')).toBeNull();
+    expect(registryUnit(collection, 'a.bc')).toBe('dot');
+    expect(registryUnit(collection, 'aXbc')).toBeNull();
+    expect(registryUnit(collection, 'p(1)x')).toBe('paren');
+    expect(registryUnit(collection, 'p1x')).toBeNull();
+  });
+
+  it('says null for an unknown key, an explicit unknown and a key of Object.prototype', () => {
+    expect(registryUnit(collection, 'other')).toBeNull();
+    expect(registryUnit(collection, 'none')).toBeNull();
+    expect(registryUnit(collection, 'constructor')).toBeNull();
+    expect(registryUnit(undefined, 'data')).toBeNull();
+  });
+});
+
 describe('the assets of the order', () => {
-  const plain = { dataType: null, scaled: false, nodata: null };
+  const plain = { units: [null], unit: null, dataType: null, scaled: false, nodata: null };
   const sources = [
     { asset: 'red', names: ['red'], ...plain },
     { asset: 'nir', names: ['nir'], ...plain },
@@ -165,6 +273,82 @@ describe('the assets of the order', () => {
 
   it('leaves a name two assets carry to the user', () => {
     expect(orderAssets(sources, [], ['b04 * 2'])).toEqual([]);
+  });
+
+  it('adds what a step needs, once, in the item order, without picking it (M4-18c)', () => {
+    expect(orderAssets(sources, ['red'], [], ['scl'])).toEqual(['red', 'scl']);
+    expect(orderAssets(sources, ['scl', 'red'], [], ['scl'])).toEqual(['red', 'scl']);
+    expect(orderAssets(sources, [], ['nir / red'], ['scl'])).toEqual(['red', 'nir', 'scl']);
+  });
+
+  it('does not invent an asset the scene lacks', () => {
+    expect(orderAssets(sources, ['red'], [], ['SCL_20m:scl'])).toEqual(['red']);
+  });
+});
+
+describe('the layer a mask reads (M4-18c)', () => {
+  const layer = {
+    asset: 'SCL_20m:scl',
+    band: 'scl',
+    classes: [
+      { value: 3, label: 'CLOUD_SHADOWS' },
+      { value: 8, label: 'CLOUD_MEDIUM_PROBABILITY' },
+      { value: 10, label: 'THIN_CIRRUS' },
+    ],
+    suggested: [10, 3],
+    reference: 'https://sentiwiki.copernicus.eu/web/s2-processing',
+    note: 'Older baselines name some classes differently.',
+  };
+  const collection = (mask: unknown) => ({ id: 'x', 'earthx:mask': mask }) as unknown as Collection;
+
+  it('is read from the collection as the registry writes it', () => {
+    expect(maskLayerOf(collection(layer))).toEqual(layer);
+  });
+
+  it.each([
+    ['no field', undefined],
+    ['null, as a dataset without a layer serves it', null],
+    ['a text', 'scl'],
+    ['no asset', { ...layer, asset: '' }],
+    ['no band', { ...layer, band: undefined }],
+    ['no classes', { ...layer, classes: [] }],
+    ['a class without a label', { ...layer, classes: [{ value: 3 }] }],
+    ['a class value with a fraction', { ...layer, classes: [{ value: 3.5, label: 'x' }] }],
+  ])('has none for %s', (_, mask) => {
+    expect(maskLayerOf(collection(mask))).toBeNull();
+    expect(maskLayerOf(undefined)).toBeNull();
+  });
+
+  it('keeps no suggestion the table does not hold, and no link that is not https', () => {
+    const read = maskLayerOf(collection({ ...layer, suggested: [3, 99, 'x'], reference: 'javascript:alert(1)' }))!;
+    expect(read.suggested).toEqual([3]);
+    expect(read.reference).toBe('');
+    expect(maskLayerOf(collection({ ...layer, reference: 'http://example.org/' }))!.reference).toBe('');
+  });
+
+  it('starts a mask step with the layer band and the suggested classes ascending', () => {
+    expect(maskStepValues(layer)).toEqual({ source: 'scl', classes: '3, 10' });
+    expect(maskStepValues({ ...layer, suggested: [] })).toEqual({ source: 'scl', classes: '' });
+  });
+
+  it('is found among the variables of a Zarr item, as <asset>:<variable>', () => {
+    const zarrItem = {
+      id: 'z',
+      properties: {},
+      assets: {
+        SCL_20m: { href: 'https://example.org/scl20', type: 'application/vnd+zarr', bands: [{ name: 'scl' }] },
+        reflectance: { href: 'https://example.org/r', type: 'application/vnd+zarr', bands: [{ name: 'b04' }] },
+      },
+    } as unknown as StacItem;
+    const sources = bandSources(zarrItem, 'zarr', ':');
+    expect(sources.map((s) => s.asset)).toEqual(['SCL_20m:scl', 'reflectance:b04']);
+    expect(orderAssets(sources, ['reflectance:b04'], [], [layer.asset])).toEqual(['SCL_20m:scl', 'reflectance:b04']);
+  });
+
+  it('needs its asset only while a mask step is in the order', () => {
+    expect(maskAssetOf([{ op: 'band_math' }, { op: 'mask' }], layer)).toBe('SCL_20m:scl');
+    expect(maskAssetOf([{ op: 'band_math' }], layer)).toBeNull();
+    expect(maskAssetOf([{ op: 'mask' }], null)).toBeNull();
   });
 });
 
@@ -404,6 +588,7 @@ describe('small rules', () => {
   it('finds the step a refusal names', () => {
     expect(stepOfRefusal('the order is not valid: parameters of step 1 (reproject): crs')).toBe(1);
     expect(stepOfRefusal("step 0: 'band_math' cannot run here")).toBe(0);
+    expect(stepOfRefusal('step 1: expression names unknown band(s): red; the input has: band_math')).toBe(1);
     expect(stepOfRefusal('invalid order: steps.2.params.expression: string_too_long')).toBe(2);
     expect(stepOfRefusal('the AOI does not touch any of the given items')).toBeNull();
     const bm = [{ op: 'reproject' }, { op: 'band_math' }];

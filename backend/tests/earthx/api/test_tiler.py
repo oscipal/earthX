@@ -27,8 +27,10 @@ from rio_tiler.errors import InvalidBandName, TileOutsideBounds
 
 from earthx.adapters.errors import UnknownCollection
 from earthx.api.dependencies import policy_from_registry
+from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.tiler import (
     DOWNLOAD_ROUTE,
+    MOSAIC_ROUTER_PREFIX,
     ROUTER_PREFIX,
     build_app,
 )
@@ -135,10 +137,16 @@ class TestNoFreeAddress:
         names only the dataset in its path because the item(s) travel in the body
         (a mosaic can list several), not because it skips the catalogue — every
         item it touches still resolves through ``earthx_item_source`` like any
-        other route here.
+        other route here. The mosaic tiles (M4-17b) name the dataset in the path and the items
+        of one overpass in the query, each fetched through the same source. The tiles of a job
+        result (M4-13c-5) are the last: they name a result, which the object store holds, and no
+        source at all.
         """
         rendering = [
-            path for path in client.app.openapi()["paths"] if path not in ("/health", DOWNLOAD_ROUTE)
+            path
+            for path in client.app.openapi()["paths"]
+            if path not in ("/health", DOWNLOAD_ROUTE)
+            and not path.startswith((RESULT_ROUTER_PREFIX, MOSAIC_ROUTER_PREFIX))
         ]
         assert rendering
         assert all(path.startswith(ROUTER_PREFIX) for path in rendering)

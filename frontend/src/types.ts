@@ -35,6 +35,7 @@ export interface StacBand {
   spatial_resolution?: number | null;
   scale?: number | null;
   offset?: number | null;
+  unit?: string | null;
 }
 
 // A STAC Item as `/stac` returns it. `properties` is where a real STAC item
@@ -164,6 +165,25 @@ export interface StacTemporalExtent {
   interval: (string | null)[][];
 }
 
+// One class of the layer `mask` reads, and the layer itself (`earthx:mask`, M4-18): where the
+// panel takes the class names, the pre-ticked classes and the band the recipe names.
+export interface EarthxMaskClass {
+  value: number;
+  label: string;
+}
+
+export interface EarthxMask {
+  // The order's asset key of the layer, and the band name the operator sees.
+  asset: string;
+  band: string;
+  classes: EarthxMaskClass[];
+  // What the panel ticks first; the recipe always names its classes itself.
+  suggested: number[];
+  // Where the class table comes from (https URL).
+  reference: string;
+  note: string;
+}
+
 export interface Collection {
   id: string;
   title?: string | null;
@@ -182,6 +202,10 @@ export interface Collection {
   'earthx:license_flags'?: LicenseFlags | null;
   'earthx:format'?: DatasetFormat | string | null;
   'earthx:source'?: EarthxSource | null;
+  'earthx:mask'?: EarthxMask | null;
+  // The unit of the values of an asset, by the asset key an order names (`red`, `SR_10m:b04`); a key may end in
+  // `*` for a group (`SR_*`). `null` says the registry does not know it (M4-19b).
+  'earthx:band_units'?: Record<string, string | null> | null;
 }
 
 // A time step: the items that share one grouping key (registry.ViewerInfo).

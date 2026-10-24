@@ -1856,6 +1856,234 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
   - Den höchsten Wert hat `lanczos` beim Vergröbern um 3: 436–437 MB `VmHWM` ohne `boto3`, wie im Image und in `memory_run.py`. Das Messskript des Plans (§7.5) lud die Testmodule mit und kam auf 443 MB.
   - `test_memory_reproject.py` rechnet diesen Fall zusätzlich, mit eigener Wachstumsgrenze von 180 MB (gemessen 135 MB).
 
+## 15k. Nachtrag vom 2026-10-20: Statistik je Ergebnis in `result.tif` und in den Eigenschaften (zu §4.5, §5.5, §5.6, §6.3; M4-32)
+
+Otto hat den Plan von M4-32 am 2026-10-20 freigegeben (`plans/m4-32-ergebnis-statistik.md` §6, §7). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Was der Kern schreibt (§5.6):**
+  - Der letzte Durchgang zählt jedes Band beim Schreiben (`processing/statistics.py`).
+  - Die ganze Datei geht in die Band-Tags von `result.tif`: `STATISTICS_MINIMUM`, `_MAXIMUM`, `_MEAN`, `_STDDEV`, `_VALID_PERCENT` (Namen von GDAL, wie `gdalinfo -stats`), dazu `EARTHX_PERCENTILE_2` und `_98`. Die Werte stehen als `repr` des `float` darin.
+  - Die Pixel der Maske gehen als STAC-1.1-`statistics` an jedes Band der Eigenschaften, erweitert um `percentile_2` und `percentile_98`. Das Ergebnisdokument und `provenance.json` tragen sie damit. Hat ein Band keinen gültigen Wert, steht dort nur `count` 0 und `valid_percent` 0.
+  - Beide entstehen aus denselben Teilsummen je Block, ohne zweiten Lesedurchgang. Deshalb schreibt der Kern `mask.tif` jetzt vor den Durchgängen; ihr Inhalt ist unverändert.
+- **Verfahren:**
+  - Min, Max, Anzahl und Mittelwert sind exakt; der Mittelwert ist einmal gerundet, aus ganzzahligen Summen über die Bitmuster.
+  - `stddev` wie GDAL: Welford je Block, Chan über die Blöcke.
+  - Die Perzentile kommen aus einem festen Histogramm mit 65 536 Fächern je Band: Ganzzahl bis 16 bit exakt, sonst höchstens 2⁻⁷ des Betrags, nach außen gerundet.
+  - Werte vom Typ `int32`, `uint32` und `float64` kommen abgerundet nach `float32`. Das 98-%-Perzentil geht danach einen `float32`-Schritt nach oben. Jenseits des `float32`-Bereichs gilt Minimum bzw. Maximum. So bleibt `[p2, p98]` auch dort außen.
+  - **Kollision mit `nodata` (§15h):** Ein gültiger Wert, der beim Runden auf das `nodata` einer Ganzzahl-Ausgabe fällt, liest sich in der Datei als `nodata`. Die Statistik zählt ihn deshalb nicht mit, sie folgt der Datei. `valid_pixels` in der Meldung des Kindes zählt ihn weiter mit, wie vor M4-32.
+- **Bitgleichheit (§6.3, §15c):** unverändert. Die Statistik hängt nicht von der Reihenfolge der Werte ab, nur von der festen Blockung (`stddev`). Gemessen sind die Bytes von `result.tif` gleich über die numpy-SIMD-Stufen X86_V4, X86_V3, X86_V2 (Plan §6.4). `runner/test_compare.py` vergleicht zusätzlich die Band-Tags von Job-Kind und Runner.
+- **Version (§4.5):** Die Tags ändern die Bytes jeder `result.tif`. Deshalb geht `earthx.__version__` von 0.4.1 auf 0.4.2. `recipe_version` und `op_version` bleiben. Ergebnisse unter 0.4.1 bleiben unter ihrem alten Schlüssel stehen und werden nicht mehr getroffen.
+- **Kosten (§3.5, §5.5) [M]:**
+
+Gemessen wurde mit `memory_run.py` (synthetisches COG 4096², zwei Bänder `uint16`, `GDAL_CACHEMAX` 64 MB, Kindprozess, `VmHWM`), alter Kern gegen neuen, abwechselnd.
+
+| Lauf | Paare | alt: Zeit (Mittel) / `VmHWM` | neu: Zeit (Mittel) / `VmHWM` | Zusatzzeit |
+|---|---|---|---|---|
+| Band-Math `(b2 - b1) / (b2 + b1)`, ein Band | 9 | 5,84–7,03 s (6,38) / 349 MB | 6,50–8,12 s (7,15) / 350 MB | **+12,1 %** (Median der Paardifferenzen +10,3 %) |
+| `reproject` EPSG:3035, 10 m, `bilinear`, zwei Bänder | 3 | 21,4–23,1 s (22,4) / 418 MB | 23,0–25,2 s (24,2) / 428 MB | +7,7 % |
+| Testoperator `scale`, zwei Bänder | 3 | 10,2–11,2 s (10,8) / 371 MB | 12,2–13,2 s (12,8) / 371 MB | +18,5 % |
+
+  - Je Block von 1024² und Band kostet die Statistik etwa 23 ms. Die Tests `test_memory_8192.py` und `test_memory_reproject.py` bleiben unter 500 MB; der höchste Wert ist `lanczos` 4096² mit 441,7 MB.
+  - **Faktor (Auflage Otto zu Frage 8):** Band-Math liegt über 10 %. Deshalb steigt der Faktor nach der Regel „aufrunden“ von 1,0 auf **1,2** (`operators/band_math.py`). Die letzten drei der neun Paare lagen bei +9,5 %; die Zusatzzeit liegt also nahe an der Schwelle.
+  - **Antwort von Otto (2026-10-22):** Die übrigen Faktoren bleiben nicht unverändert. Jeder Faktor eines Laufs, der den Statistik-Durchgang durchläuft, bekommt dessen gemessenen Zuschlag und wird nach der Regel „aufrunden“ auf eine Nachkommastelle gesetzt. Die Werte in §5.5 und §15j gelten damit nicht mehr; maßgeblich ist diese Tabelle:
+
+| Faktor | bisher | Zuschlag [M] | jetzt | Code |
+|---|---|---|---|---|
+| Band-Math | 1,0 | +12,1 % | 1,2 | `operators/band_math.py` |
+| Reprojektion `nearest` | 0,4 | +7,7 % | 0,5 | `operators/reproject.py` (`_METHODS`, gilt auch für Version 2) |
+| Reprojektion `bilinear` | 1,0 | +7,7 % | 1,1 | dito |
+| Reprojektion `cubic` | 1,1 | +7,7 % | 1,2 | dito |
+| Reprojektion `cubicspline` | 1,7 | +7,7 % | 1,9 | dito |
+| Reprojektion `lanczos` | 2,2 | +7,7 % | 2,4 | dito |
+| Reprojektion `average` | 1,2 | +7,7 % | 1,3 | dito |
+| Reprojektion `mode` | 1,1 | +7,7 % | 1,2 | dito |
+| Raster-Lauf ohne Schritt (etwa das Mosaik eines Überflugs ohne Operator) | 0,9 | +9,3 % | 1,0 | `plan.RASTER_WITHOUT_STEP_FACTOR` (neu) |
+| Export (`crop`) | 0,9 | — | 0,9 | `plan.EXPORT_FACTOR`, unverändert |
+
+  - **Zuschläge:**
+    - Für die Reprojektion gilt der für `bilinear` gemessene Zuschlag für alle sieben Methoden; so hat Otto es vorgegeben.
+    - Der Raster-Lauf ohne Schritt ist eigens gemessen: 4096², sechs Paare, alt gegen neu. Der erste alte Lauf war ein Ausreißer mit kaltem Cache (18,2 s); ohne ihn bleiben fünf Paare, alt 9,93 s, neu 10,86 s im Mittel. Mit ihm wäre der Median der Paardifferenzen +7,7 %. Das Ergebnis ist in beiden Fällen 1,0.
+  - **Betroffen sind** alle Läufe des Kerns mit Rasterausgabe, denn sie schreiben alle über den letzten Durchgang. Das schließt das Mosaik eines Überflugs ein, das die Faktoren seiner Schritte trägt oder den Faktor ohne Schritt.
+  - **Nicht betroffen ist** der Export (`crop`, `processing/export.py`). Er schreibt seine Rasterdateien ohne den Kern und ohne Statistik, deshalb bleibt `EXPORT_FACTOR` bei 0,9. Bisher teilten sich Export und Raster-Lauf ohne Schritt diesen Wert. Jetzt hat der Raster-Lauf einen eigenen.
+  - Die Testoperatoren `scale` und `coarsen` gibt es nur in den Tests. Sie bleiben unverändert.
+  - Die Kalibrierung gegen echte Läufe steht weiter aus.
+
+## 15l. Nachtrag vom 2026-10-20: `methods.txt`, der Methodentext (zu §5.6, §10; M4-19a)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben (`plans/m4-19-teilen-und-beschreiben.md`
+§9). Der Originaltext in §5.6 („der Methodentext in voller Länge ist M4-19“) und §10 bleibt
+stehen; maßgeblich ist dieser Nachtrag.
+
+- **Eine Funktion, ein Eingang:** `processing/methods.py::methods_text` liest ein `recipe.json`
+  (Rezept mit `provenance`) und gibt einen englischen Absatz aus. Zuschnitt, Export, Job und
+  lokaler Runner bauen den Text aus dem `recipe.json`, das sie ohnehin tragen. So sagt die
+  Datei, was ihr Nachbar sagt.
+- **Je Operator ein Satz:** `Operator.method` (neues Pflichtfeld, wie `lineage`). Ein
+  Wächtertest verlangt für jeden registrierten Operator einen Satz ohne Platzhalter; M4-18 muss
+  ihn mitbringen.
+- **Eine Definition der Download-Inhalte (Auflage Otto):** `access/crop_rules.py::TEXT_FILES`
+  nennt die Textdateien in ihrer Reihenfolge: `aoi.geojson`, `recipe.json`, `citation.bib`,
+  `ATTRIBUTION.txt`, `methods.txt`. Zuschnitt-Route, Export, Job-ZIP und Job-Link richten sich
+  danach; jeder hat einen Test, der gegen diese Tuple prüft, nicht gegen eine eigene Liste. Der
+  Runner schreibt davon nur `recipe.json` und `methods.txt` (`adr/0016` §12b: keine Zitierung,
+  keine Hinweisdatei); ein Test hält das fest.
+- **Wer baut, wo:**
+
+| Weg | Gebaut von | aus |
+|---|---|---|
+| synchroner Zuschnitt | `api` (`methods_bytes`) | dem `recipe.json` des Zuschnitts, an `build_download_zip` als Bytes |
+| Export | der Worker, im Kern | dem `recipe.json`, das er selbst schreibt, und `Attachments.dataset` |
+| Job-Link und Job-ZIP | `api` je Download | dem `recipe.json`, das der Link ausgibt |
+| lokaler Runner | der Runner | dem Rezept der Eingabe mit der Provenienz des lokalen Laufs |
+
+- **Aufnahmetag (Otto, 22.10.2026):** `methods_text(…, acquired_on=…)` nennt „The scenes were
+  acquired on YYYY-MM-DD (UTC).“ aus derselben Quelle wie der Dateiname eines Downloads
+  (`acquired_on` des Jobs, `api.intake.acquired_day`). Ein Datensatz ohne einzelnen Aufnahmetag
+  (DEM) und der Runner, der die Quelle nicht kennt, lassen den Satz weg; der Tag des Laufs steht nie
+  als Aufnahme, nur als „processed on“. Der Export bekommt den Tag als `Attachments.acquired_on`
+  (optional, alte Zeilen lesen weiter).
+- **Titel und DOI:** Der Worker-Kern liest keine Registry. `api` gibt sie dem Export als
+  `Attachments.dataset` (`DatasetFacts`: Titel und DOI-Name, nicht die Adresse) mit. Alte Zeilen
+  ohne diesen Schlüssel lesen weiter; der Text nennt den Datensatz dann nur mit seiner Kennung.
+  Der Runner nimmt sie aus der Registry seines Images.
+- **Was im Text steht:** Datensatz und Szenen, Skalierung nach `provenance.scaling`, je Schritt
+  ein Satz, Ausgabe, Größe der Fläche in km², Software, Ort und Tag des Laufs, Attribution.
+  **Nie:** Hash, `recipe_id`, `jobID`, Adressen, Koordinaten (Frage 6).
+- **Link und Cache:** `GET /processing/jobs/{jobID}/results/methods.txt` (`text/plain`) ist ein
+  Ausgang `methods` der Prozessbeschreibung. Der Text steht nicht im Objektspeicher und ändert
+  weder Ergebnis-Bytes noch Cache-Schlüssel; die ETag des Job-ZIP ändert sich, weil sein Inhalt
+  sich ändert (ein begonnener Download startet neu, wie bei M4-30).
+- **Tests:** `tests/earthx/processing/test_methods.py` (Wortlaut, Fehlerfälle, Wächter),
+  `test_export.py` (Reihenfolge nach `TEXT_FILES`, Herkunft des Textes, alte Anhänge),
+  `test_download_route.py`, `test_result_zip_files.py` (Zuschnitt, Link, ZIP, Export),
+  `runner/test_cli.py`.
+
+## 15m. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize`, die Kette in der Kachel (zu §5.2, §5.3, §5.5, §6.1, §6.2, §6.3; M4-18a, M4-18b)
+
+Otto hat den Plan von M4-18 am 2026-10-20 freigegeben, F1–F6 und F8 je mit
+Option 1 (`plans/m4-18-masking-normalisierung.md` §8). Der Originaltext in §5.2,
+§5.3, §5.5, §6.1, §6.2 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt
+sind M4-18a (Registry, Operatoren) und M4-18b (Kette in der Kachel, F1); das Panel (F6) folgt
+mit M4-18c.
+
+- **Registry (§5.3, B10):**
+  - Neue Flags `masking` und `normalization` in `Capabilities`, ohne Vorgabe. Alle drei Einträge setzen `normalization` auf `True`; `masking` ist genau dort `True`, wo `DatasetConfig.mask` die Schicht beschreibt (das prüft der Eintrag beim Laden).
+  - Neues Feld `DatasetConfig.mask: MaskSource | None`, ohne Vorgabe: Asset (so, wie ein Auftrag es nennt), Bandname, Klassen mit Namen (aufsteigend, je einmal, 0 bis 65535), vorgekreuzte Klassen, Beleg (`https`) und ein Hinweis zu den Namen.
+  - `sentinel-2-c1-l2a`: `scl`. `sentinel-2-l2a-zarr3`: `SCL_20m:scl`. `cop-dem-glo-30`: keine Schicht, `masking=False`.
+  - Die Collection veröffentlicht es als `earthx:mask`.
+- **Klassen der SCL [P]:** SentiWiki „S2 Processing“, L2A Algorithms → Scene Classification → Table 3, von Otto am 2026-10-20 gelesen: 0 NO_DATA, 1 SATURATED_OR_DEFECTIVE, 2 CAST_SHADOWS, 3 CLOUD_SHADOWS, 4 VEGETATION, 5 NOT_VEGETATED, 6 WATER, 7 UNCLASSIFIED, 8 CLOUD_MEDIUM_PROBABILITY, 9 CLOUD_HIGH_PROBABILITY, 10 THIN_CIRRUS, 11 SNOW or ICE. Ältere Darstellungen benennen 2 und 7 anders; die Werte sind gleich. Der Hinweis steht im Hilfetext (`MaskSource.note`).
+- **`mask` v1 (§5.2):** `pixel`, `{T1, T2}`. Parameter `source` (Bandname der Schicht) und `classes` (aufsteigend, je einmal, 1 bis 64 Werte). Ein Pixel fällt in allen übrigen Bändern aus, wo die Schicht eine der Klassen trägt oder selbst maskiert ist (nodata, F3); die Schicht verlässt das Ergebnis. Der Vergleich ist exakt (`numpy.isin`), es gibt keine Gleitkommarechnung. Das Ergebnis trägt `earthx:mask` (`source`, `classes`).
+- **`normalize` v1 (§5.2):** `pixel`, `{T1, T2}`. Parameter `in_min`, `in_max`, `out_min`, `out_max`, `clip`, alle Pflicht. Je Band in `float64` in fester Reihenfolge `(x − in_min) / (in_max − in_min) · (out_max − out_min) + out_min`, mit `clip` danach auf den Zielbereich begrenzt; Ergebnis `float32` mit NaN. Ein Bereich für alle Bänder (F4), keine Statistik der Szene (F5).
+- **Anwendbarkeit (§5.3):** `Operator.dataset_check(config, params)` ist neu, mit Vorgabe „keine Gründe“. `applicable` ruft es mit Parametern auf und nur, wenn die Flags und die Lizenzstufe schon passen. Für `mask` verlangt es, dass `source` das Band der Schicht ist und die Klassen unter den Klassen der Schicht liegen. Ein Rezept, das mit `red` maskiert oder Klasse 12 nennt, wird so mit `422` abgewiesen, in der Annahme wie in der Kachel.
+- **Raster der Schicht (Auflage Otto):** Die 20-m-Schicht kommt über die Regel der verschachtelten Raster (M4-09 F2) mit `nearest` auf das Raster der Bänder. Es entstehen keine neuen Werte; das Ergebnis trägt `earthx:resampled=true`. Beides prüft ein Test.
+- **Faktoren (§5.5):** `mask` 0,2 und `normalize` 0,3, relativ zu Band-Math = 1,0 vor dem Statistik-Durchgang (§15k). Gemessen wurde der Kern auf einem Block von 1024² (kleinster Wert aus 15 Läufen, zwei Durchgänge): Band-Math NDVI 14,6–15,5 ms, `mask` mit zwei Bändern und der Schicht 5,3–7,1 ms, `normalize` mit zwei Bändern 27,1–29,3 ms. Ein ganzer Band-Math-Lauf kostet 146 ms je Megapixel (§3.5); die Kerne laufen im selben Durchgang wie das Lesen, also zählt ihr Anteil daran, aufgerundet auf eine Nachkommastelle: 7 / 146 → 0,1 und 29 / 146 → 0,2. Beide laufen über den Statistik-Durchgang von M4-32a und bekommen nach Ottos Regel („aufrunden“, Zuschlag [M] +12,1 % wie Band-Math, derselbe Durchgang) den Zuschlag dazu: 0,1 · 1,121 → **0,2** und 0,2 · 1,121 → **0,3**. Die Messung lief auf der Sitzung (x86_64), nicht gegen echte Läufe; die Kalibrierung bleibt bei M4-08 (§5.5).
+- **Toleranz (§6.3):** Beide Operatoren sind bitstabil im Sinn von §15c: `mask` rechnet nicht in Gleitkomma, `normalize` nur mit Grundrechenarten und Vergleichen in getrennten numpy-Schritten. Ein Test rechnet beide unter den Einstellungen A und D von `adr/0016` §3.3 und verlangt gleiche SHA-256. Die Kachel gleicht dem Job auf der nativen Ebene bitgleich (COG); auf Zarr gilt die Regel von §15d, geprüft mit einer 20-m-Klassenschicht im Mini-Zarr (3 von 2236 gültigen Pixeln einer z14-Kachel mit anderer Maske, alle an einer Pixelgrenze).
+- **Speicher (§3.5, M4-10b):** Beide Operatoren laufen im Durchgang des Lesens. Gemessen im Kindprozess (`VmHWM`, `GDAL_CACHEMAX` 64 MB): `mask` 351 MB und `normalize` 370 MB bei 4096², Wachstum von 2048² auf 4096² 69 und 80 MB (mit dem Statistik-Durchgang von M4-32a); die Grenzen sind 500 MB und 100 MB (`test_memory_mask_normalize.py`).
+- **Kette in der Kachel (§6.1, §6.2; F1, M4-18b):** Eine Kachel-URL darf `op`, `op_version` und `params` wiederholen: gleich oft, in der Reihenfolge der Schritte, höchstens 4. Die Ein-Schritt-Form ist der Fall n = 1 und unverändert. Jeder Schritt muss `T1` und `pixel` sein und auf den Datensatz passen (`applicable`, je Schritt, vor dem Abruf des Items); eine Abweisung nennt ab zwei Schritten den Platz („step 1: …“ für den zweiten, ab 0 gezählt wie alle Ablehnungen des Auftrags). Der Reader prüft die Bänder, die jeder Schritt dem nächsten lässt (`transform` der Reihe nach), vor dem ersten Pixel, wie der Auftrag; `process_dependency` ruft die Kerne nacheinander, dieselben Funktionen wie ein Job auf einem Block. Das Panel zeigt den längsten Anfang aus Kachel-Schritten (höchstens 4); ein unvollständiger oder nicht zeichenbarer Schritt beendet ihn, und der Hinweis nennt, wie viele Schritte die Karte zeigt. Nennt ein Schritt ein Band, das ein früherer entfernt hat, fragt das Panel das TileJSON der Kette, zeigt die Schritte vor dem abgewiesenen und dessen Grund und baut die Bandlogik nicht nach; die Annahme (`check_bands`, „Review“ und „Start“) weist denselben Auftrag mit demselben Grund ab (Otto, 22.10.2026). Verglichen mit dem Job ist die Kette `mask → band_math` auf der nativen Ebene bitgleich (COG, Maske gleich); auf Zarr gilt die Regel von §15d.
+
+## 15n. Nachtrag vom 2026-10-22: die Einheit je Band (zu §4.2, §4.5, §5.6; M4-19b)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben, Frage 8 mit Option 1
+(`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §4.2, §4.5 und §5.6
+bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Registry (B10):** Neues Feld `DatasetConfig.band_units`, ohne Vorgabe: Asset-Schlüssel, wie
+  ein Auftrag ihn nennt (`red`, `SR_10m:b04`), auf eine Einheit als UCUM-Zeichen oder `None`.
+  `None` heißt „unbekannt“, und ein Asset ohne Eintrag ist es auch; geraten wird nichts. Ein
+  Schlüssel darf ein `*` tragen (`SR_*` für die Gruppen eines Zarr-Speichers); der genaue
+  Schlüssel geht vor, dann ein Muster; der Eintrag erlaubt nur `*` als Platzhalter und keine zwei Muster, die sich überlappen (die Collection geht durch JSONB, das die Reihenfolge der Schlüssel nicht hält). Der Eintrag prüft beim
+  Laden: Schlüssel und Einheit sind Text ohne Rand und höchstens 32 Zeichen, und jedes Asset,
+  das `default_render` oder die Maske lesen, hat einen Schlüssel (bei einer Zarr-Liste
+  `SR_10m:b04,b03,b02` jede Variable für sich). Ein Eintrag für *alle* Assets, die ein Operator
+  lesen kann, ist nicht prüfbar: Die Registry zählt die Assets eines Items nicht auf.
+  - `sentinel-2-c1-l2a`: die zwölf Reflexionsbänder `"1"` (Oberflächenreflexion ist ein
+    Verhältnis); `scl` und `visual` ausdrücklich `None`. `aot`, `wvp`, `cloud`, `snow` und
+    `preview` nennt der Eintrag nicht.
+  - `sentinel-2-l2a-zarr3`: `SR_*` `"1"`, `SCL_20m:scl` `None`.
+  - `cop-dem-glo-30`: `data` `"m"`, die Einheit, die der Bereich 0 bis 5000 der Standarddarstellung schon nennt.
+  - `"1"` gilt für Werte **nach** der Skalierung. Liefe eine Quelle ein Reflexionsband ohne
+    `scale` und `offset`, stünde die Einheit an Zählwerten. Für die drei Einträge trifft das nicht zu
+    (Earth Search nennt die Skalierung, der Zarr-Speicher trägt sie als CF-Attribute).
+- **Vorrang:** Nennt das Item `raster:bands[].unit` bzw. `bands[].unit`, gilt das Item, sonst die
+  Registry. Ein `unit`, das kein Text ist, leer oder über 256 Zeichen, ist der Fehler der Quelle
+  (`502`, Stufe `bands`), wie eine unlesbare Zahl; ein `null` heißt „keine Angabe“.
+- **Rezept (§4.2):** `Band.unit` und `ResolvedInput.unit`, beide `Text | None`, **mit Vorgabe
+  `None`**, damit eine `recipe.json` aus einem früheren ZIP im Runner weiter liest.
+  - Hat das Item Bänder, trägt jedes Band seine Einheit (die des Items, sonst die der Registry).
+    Bei Zarr ist das je Variable, über den Schlüssel `<Asset><Trenner><Variable>`.
+  - Hat ein COG-Item keine Bandbeschreibung (das DEM), gäbe ein erfundenes Band eine Anzahl
+    vor, die nur die Datei kennt, und `check_bands` wartete nicht mehr auf sie. Deshalb
+    trägt dort `ResolvedInput.unit` die Einheit der Registry, für jedes Band des Assets. `bands`
+    bleibt leer. Das ist die erste von drei Abweichungen vom Wortlaut des Plans (§3.2: „`Band` bekommt
+    `unit`“); die anderen zwei stehen unter „Nicht gebaut“.
+  - Die Einheit gehört zum Kern des Hashes (§4.5). Alle vier festen Hashwerte aus §4.4 Punkt 9
+    sind **bewusst erneuert**: Jedes Rezept trägt zwei Schlüssel mehr (`"unit":null`), das
+    Verfahren `c1` ist unverändert. Ein Test leitet die alten Werte aus dem neuen Kern her, indem
+    er diese Schlüssel herausnimmt. Nach dem Deployment gibt es einmal für jedes gecachte Ergebnis
+    keinen Treffer; bei 7 Tagen Frist ist das vertretbar.
+- **Warum im Hash, und warum in `resolved` (Frage Otto, 23.10.2026):** Die Einheit steht in
+  `inputs[].resolved[]` (`bands[].unit` und `unit`), also dort, wo die Angaben zum Input bei der
+  Annahme stehen; einen Ort daneben gibt es nicht, denn `resolved` gehört nach §4.5 selbst zum
+  gehashten Kern. Sie kommt wie `scale`, `offset` und `nodata` aus Item und Registry, nicht vom
+  Nutzer, und wird bei der Annahme festgehalten. Im Hash steht sie, weil das Ergebnis sie als
+  `bands[].unit` trägt: Ohne sie träfe ein neuer Auftrag das Ergebnis eines älteren, dessen
+  Einheit unter einem früheren Stand der Registry entstand, und `recipe.json` im ZIP erklärte
+  nicht, woher die Einheit im Ergebnis kommt. Ehrlich dazu: Die Pixel ändert die Einheit nicht;
+  sie in den Hash zu nehmen ist die vorsichtige Wahl und kostet einen Cache-Fehlschuss bei jeder
+  Korrektur einer Einheit in der Registry (7 Tage Frist). Ausgenommen wäre sie nur um den Preis
+  veralteter Metadaten im Treffer (Plan Frage 8, Option 2, von Otto nicht gewählt).
+- **Kern (§5.6):** `Source.units` (`units_of`: je Band, wie das Rezept sie hat; Beschreibungen
+  anderer Länge als die Datei glaubt der Kern nicht, ein Asset ohne Beschreibung nimmt die Einheit
+  der Eingabe für alle Bänder) fließt in `BandMeta.unit` von Job, Kachel und Schätzung.
+  - `reproject` und `mask` reichen die Einheit durch. `normalize` lässt sie leer: Der Zielbereich
+    ist der des Aufrufers. `band_math` gibt `None`, denn eine Formel hat keine bekannte Einheit;
+    ein Ausdruck, der nur ein Bandname ist, behält die Einheit dieses Bandes.
+  - Ein Mosaik verlangt dieselben Einheiten in allen Szenen (wie Bänder, Datentyp und `nodata`).
+  - Das Ergebnis trägt `properties.bands[].unit` (STAC 1.1), nur wo es eine gibt, zwischen
+    `nodata` und `statistics`. Die Pixel und ihre Statistik ändert die Einheit nicht.
+- **Kachel und Job lesen gleich:** `describe_bands` gibt jetzt `(Bänder, Skalierung, Einheit des
+  Assets)`; die Kachel baut die `ResolvedInput` daraus, der Job aus `_resolved_json`.
+- **Collection:** `earthx:band_units` gibt die Zuordnung heraus, ein `None` bleibt als `null`.
+- **Frontend (Otto, 24.10.2026):** An den Band-Chips im Panel steht die Einheit („data · m“); die
+  Einheit des Items geht vor, die Muster der Registry werden wie im Backend gesucht. Für „1“, die
+  Einheit einer dimensionslosen Größe, zeigt das Frontend nichts („red“ statt „red · 1“): `shownUnit`
+  ist die eine Stelle, die eine Einheit in Anzeigetext verwandelt, und gilt für jede Anzeige, auch
+  die der Vorschau mit M4-19c. In den Daten bleibt „1“ (`bands[].unit`, `earthx:band_units`). Der
+  Layer-Manager zeigt bei keiner Layer-Art eine Einheit; ein Ergebnis-Layer trägt sie nicht.
+- **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag, weil keine Quelle für ihre Einheit gelesen wurde. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
+  Schritten kennt nur der Kern (Band-Math: keine; `mask`: die der übrigen Bänder; `normalize`:
+  keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trug
+  sie nicht. Das Feld `unit` im TileJSON und an den Bändern von `/statistics` mit `op` kam mit
+  M4-19c (`adr/0006`, Nachtrag M4-19c; Otto, 23.10.2026).
+- **Tests:** `tests/catalog/test_band_units.py` (Registry, Muster, Prüfung, Collection),
+  `tests/earthx/api/test_intake.py::TestUnits` (Item vor Registry, Zarr je Variable, DEM, kaputte
+  Einheit), `tests/earthx/processing/test_units.py` (Kern, Operatoren, Mosaik, Schätzung),
+  `test_recipe.py` (erneuerte Hashwerte und ihre Herleitung, Rezept ohne `unit`),
+  `tests/integration/test_pgstac_load.py` (ein `null` übersteht pgstac), Frontend:
+  `processingOrder.test.ts`, `resultLayer.test.ts`, `ProcessingPanel.test.tsx`,
+  `ProcessingResultLayer.test.tsx`.
+
+## 15o. Nachtrag vom 2026-10-24: die Kennung eines Permalinks (zu §9, F15; M4-19e)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben, Frage 1 mit Option 1
+(`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §9 (F15) bleibt stehen;
+maßgeblich ist dieser Nachtrag.
+
+- **Nicht die `recipe_id`:** F15 nannte sie „Grundlage für Permalink (M4-19)“. Ein Rezept lebt nur so
+  lange wie der Lauf seines Jobs und entsteht erst mit einem Job, also gäbe es ohne Job keinen
+  Permalink; und die `recipe_id` steht im Statusdokument und in jeder `recipe.json`, ein Lesezugriff
+  über sie machte jede weitergegebene Datei zum Schlüssel. Die `recipe_id` bleibt die Grundlage für
+  Bug-Report Stufe 3.
+- **Eine eigene Kennung:** Der Permalink hat eine eigene Tabelle und eine eigene zufällige Kennung
+  (22 Zeichen, 128 Bit). Er wird nur auf „Share“ angelegt und hält den Auftrag in der Form von
+  `RecipeRequest` (ohne `resolved`; `parse_request` prüft ihn streng) und eine kleine Ansicht
+  (Kartenmitte, Zoom, Bereich und Colormap der Vorschau). Routen unter
+  `/processing/permalinks`, außerhalb von OGC. Frist und Löschen: `adr/0015` §14d.
+- **Nicht gebaut: die Basiskarte.** Der Plan nennt sie als Teil der Ansicht. Die App hat eine einzige
+  Basiskarte (Satellitenbild); Thema und Projektion sind Einstellungen des Browsers
+  (`earthx.theme`, `earthx.projection`), nicht des Auftrags. Es gibt nichts zu speichern, bis die
+  Auswahl einer Basiskarte existiert; ein Feld dafür kommt dann mit ihr (Otto, 2026-10-24: mit UI-02).
+
 ## 16. Quellen
 
 **Im Repo [P]**

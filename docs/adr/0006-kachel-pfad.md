@@ -567,6 +567,71 @@ Kacheln wandern nach M3, zusammen mit dem CDN.
 `plans/m3-dritte-quelle-und-interface.md`); der Satz oben bleibt als
 ursprüngliche Einschätzung stehen.
 
+**Nachtrag M4-17 (2026-10-20, Otto):** Das Mosaik im Kachel-Pfad kommt als
+Item-Liste in der URL (M1), wie oben empfohlen; Such-ID und Inhaltsadresse
+(O2, O3) sind erneut abgewogen und verworfen
+(`plans/m4-17-mosaik-kachel-pfad.md` §3). Abweichend von oben:
+
+- **Grenzen** gemessen statt übernommen: höchstens **64** Items je URL (ein
+  Überflug über 5–16° O, 45–55° N hat bis 60 Szenen; die 22 oben galten einem
+  kleineren landesgroßen Rechteck), höchstens **12** Szenen je Kachel nach dem
+  Vorfilter über den Footprint, Mosaik-Kacheln erst ab **z8**, je Portion
+  **4** Szenen parallel (Plan §2.2, §5).
+- **Reihenfolge** wie der Mosaik-Job (M4-12 F3/F4): Der Server sortiert mit
+  `mosaic_order`, die Regel ist `FirstMethod` (S5). Reihenfolge und Regel
+  liegen seit M4-17a beide in `access/crop_rules.py`.
+- **Item-Abrufe:** Der Satz in §3.5, die vorangegangene Suche habe die Items
+  „ohnehin schon geliefert“, trifft für den Item-Cache nicht zu — er wird nur
+  von `get_item` gefüllt, nicht von der Suche (Plan §2.8). Die Mosaik-Kachel
+  braucht aber alle Items der URL. Deshalb: gleichzeitige Abrufe desselben Items
+  zusammengelegt, je Anfrage gedrosselt, Vorwärmen über das TileJSON; ohne
+  Item-Cache antwortet die Mosaik-Kachel mit klarer Meldung und Grund, nie mit
+  `500`, und die Abrufe bei der Quelle bleiben in den Grenzen je Host aus
+  `gateway` (Auflage Otto, Plan §11).
+
+**Nachtrag M4-17b (2026-10-20):** Umgesetzt in `api/mosaic_tiles.py` und
+`api/tiler.py`. Die Drosselung der Item-Abrufe gilt im ganzen Prozess (vier
+gleichzeitig), nicht je Anfrage; je Anfrage ≤ 4 folgt daraus. Ohne Pool und bei
+einem Pool-Fehler antwortet die Mosaik-Kachel mit `503` und Grund (Plan §14).
+- **Form:** `item` wiederholt statt `items=` mit Kommas, wie `asset`.
+
+**Nachtrag M4-19c (2026-10-24, §3.4, Statistik mit Operator):** `/statistics` nimmt
+jetzt `op`, `op_version` und `params` wie die Kachel (`_OPERATOR_ROUTES` um `statistics`
+erweitert; an der Pfad-Abhängigkeit ändert sich sonst nichts: Lizenzstufe, R5, `applicable`,
+Host-Allowlist und `target_gsd_for` gelten gleich). Die Messung dient der Farbskala der
+Vorschau (`plans/m4-19-teilen-und-beschreiben.md` §3.3, §14); der Originaltext oben bleibt
+für die Statistik eines einzelnen Assets maßgeblich.
+- **Lesen:** `OperatorTileReader.preview` liest jede Quelle über die Grenzen der feinsten
+  Quelle auf dieselbe Größe, höchstens 1024 px an der langen Seite (die Größe der Statistik
+  eines Assets; mehr nimmt die Route mit `400` nicht an), `nearest`, in physikalischen Werten
+  (`Source.read_preview`). Danach laufen die Kernel der Schritte, danach rio-tilers
+  Statistik. Optionen, die Werte ändern würden (`bidx`, `unscale`, `nodata`, `height`,
+  `width`, ein anderes Resampling), sind wie bei der Kachel ein `400`. Eine Zarr-Quelle
+  wird auf der gröbsten Ebene gelesen; zwei Gruppen, deren gröbste Ebenen kein ganzzahliges
+  Vielfaches ergeben, sind ein `422` (`GridMismatch`), und die Vorschau bleibt dann bei ihrem
+  Startbereich.
+- **Cache:** derselbe Postgres-Cache (30 Tage). Der Schlüssel ist ein Hash über Assets (ohne
+  `href`), Skalierung, Einheiten und die Schritte mit Version und kanonischen Parametern
+  (`OperatorInput.cache_identity`); ein Asset ohne `op` behält seinen Schlüssel. Kein
+  Ausdruck steht in einer Spalte.
+- **Einheit (Übergabe aus M4-19b):** Der Reader kennt die Einheit hinter den Schritten
+  (`OperatorTileReader.units`). Sie steht als `unit` an jedem Band der Statistik (`null`:
+  unbekannt; ein Asset ohne `op` hat das Feld nicht) und, wo alle Bänder dieselbe haben, als
+  `unit` im TileJSON derselben Schritte. „1“ bleibt in den Daten stehen; das Frontend zeigt
+  es nicht an (`shownUnit`).
+- **Optionen:** Perzentile außerhalb 0–100 (oder mehr als 20), `histogram_range` mit Min über Max,
+  `histogram_bins` außerhalb 1–1000 oder Kanten, die nicht streng steigen, und mehr als 100 Kategorien sind ein `400`
+  mit Grund, vor dem Abruf des Items, mit und ohne `op` (`check_statistics_options`; vorher `500` oder eine große
+  Antwort).
+- **Histogramm:** Liegen die Werte so nah an einer Zahl, dass `numpy` keine Fächer bilden
+  kann (`nir - red` über eine flache Szene), hat das Histogramm einen Fach, statt die Route
+  mit `500` scheitern zu lassen. Das gilt auch für die Statistik ohne `op`.
+- **Grenzen:** höchstens eine Messung je Zustand der Vorschau (Schritte über der ersten
+  Szene): das Frontend merkt sich das Ergebnis, ein Fehlschlag wird bis „Auto stretch“ nicht
+  wiederholt, und der Cache beantwortet den Rest. Das Bild wartet höchstens 5 s auf die Messung (Otto,
+  24.10.2026); danach gilt der Startbereich, und eine spätere Messung wird mit einem Neuzeichnen übernommen. Alle Adressen gehen durch `check_url` wie
+  bei der Kachel.
+
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
 F15 fällt mit dem Token weg. Die Registry bekommt dafür zwei Felder: den
@@ -655,7 +720,8 @@ Cache ist kein Zustand — sein Ausfall macht langsamer, nie falsch (E5, K5).
    `titiler.core` mit ersetzter Pfad-Abhängigkeit; Mosaike laufen über eine
    Item-Liste in der URL, nicht über eine Such-ID — der Satz „Suchergebnis wird
    unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind"
-   kehrt seine eigene Begründung um und ist zu ersetzen.
+   kehrt seine eigene Begründung um und ist zu ersetzen. *Erledigt mit M4-17a
+   (2026-10-20).*
 2. **Die Registry wächst um drei Felder:** `asset_hosts` an `SourceInfo`
    (Allowlist), Quicklook-Asset samt Nodata-Schwelle, und `DefaultRender` wird
    gefüllt. Alle drei ohne Vorgabewert, wie B10 es verlangt. Dazu wird

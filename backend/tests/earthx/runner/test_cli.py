@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from earthx.access.crop_rules import TEXT_FILES
 from earthx.catalog.registry import DatasetRegistry
 from earthx.runner import output
 from earthx.runner.cli import EXIT_HOST, EXIT_OK, EXIT_OTHER, EXIT_RECIPE, EXIT_SOURCE, exit_code, main
@@ -73,7 +74,7 @@ def _document(recipe: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 class TestARun:
-    def test_it_leaves_result_mask_recipe_and_provenance_in_a_new_folder(
+    def test_it_leaves_result_mask_recipe_methods_and_provenance_in_a_new_folder(
         self, tmp_path: Path, out: Path, served: list[str], capsys: pytest.CaptureFixture[str]
     ) -> None:
         recipe = _file(tmp_path, support.band_math_recipe())
@@ -81,12 +82,41 @@ class TestARun:
         (folder,) = out.iterdir()
         assert sorted(path.name for path in folder.iterdir()) == [
             "mask.tif",
+            "methods.txt",
             "provenance.json",
             "recipe.json",
             "result.tif",
         ]
         assert capsys.readouterr().out.strip() == str(folder)
         assert (folder / "recipe.json").read_bytes() == Path(recipe).read_bytes()
+
+    def test_a_recipe_written_before_units_runs_and_names_none(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        """The recipe of a ZIP from earlier has no ``unit`` anywhere; the committed CI recipe is such a file."""
+        recipe = _file(tmp_path, support.band_math_recipe())
+        assert b'"unit"' not in Path(recipe).read_bytes()
+        committed = (Path(__file__).parents[2] / "fixtures" / "runner" / "recipe-ci.json").read_bytes()
+        assert b'"unit"' not in committed
+        load_recipe(committed)
+        assert _main("run", recipe, "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        provenance = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
+        assert all("unit" not in band for band in provenance["properties"]["bands"])
+
+    def test_a_recipe_with_units_runs_is_kept_as_it_is_and_the_result_names_the_unit(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        recipe = support.band_math_recipe("red")
+        for entry in recipe["inputs"][0]["resolved"]:
+            entry["bands"][0]["unit"] = "1"
+        path = _file(tmp_path, recipe)
+        assert json.loads(Path(path).read_bytes())["inputs"][0]["resolved"][0]["bands"][0]["unit"] == "1"
+        assert _main("run", path, "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        assert (folder / "recipe.json").read_bytes() == Path(path).read_bytes()
+        provenance = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
+        assert [band["unit"] for band in provenance["properties"]["bands"]] == ["1"]
 
     def test_its_provenance_says_local_and_self_attested_with_the_versions(
         self, tmp_path: Path, out: Path, served: list[str], monkeypatch: pytest.MonkeyPatch
@@ -102,6 +132,29 @@ class TestARun:
         assert provenance["source_engine"] == provenance["engine"]
         assert provenance["attribution"] == support.ATTRIBUTION
         assert provenance["properties"]["processing:lineage"]
+
+    def test_the_text_files_of_the_folder_are_among_the_ones_every_download_has(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        """The one definition (`TEXT_FILES`): the runner writes the recipe and the methods text, no other of them."""
+        assert _main("run", _file(tmp_path, support.band_math_recipe()), "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        written = {path.name for path in folder.iterdir()}
+        assert [name for name in TEXT_FILES if name in written] == ["recipe.json", "methods.txt"]
+
+    def test_its_methods_text_says_it_was_computed_locally_and_names_no_identifier_or_coordinate(
+        self, tmp_path: Path, out: Path, served: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("EARTHX_COMMIT", "1a2b3c4")
+        recipe = support.band_math_recipe()
+        assert _main("run", _file(tmp_path, recipe), "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        text = (folder / "methods.txt").read_text(encoding="utf-8")
+        assert "recomputed on the user's own machine with the EarthX runner" in text and "+g1a2b3c4" in text
+        assert "self-attested" in text and "processed on the EarthX platform" not in text
+        assert recipe["recipe_id"] not in text and "https://" not in text
+        for lon, lat in recipe["aoi"]["coordinates"][0]:
+            assert f"{lon:.4f}" not in text and f"{lat:.4f}" not in text
 
     def test_two_runs_never_share_a_folder(self, tmp_path: Path, out: Path, served: list[str]) -> None:
         recipe = _file(tmp_path, support.band_math_recipe())

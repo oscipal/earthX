@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initialValues, paramsForm, paramsFrom, type Field } from './schemaForm';
+import { initialValues, integersIn, paramsForm, paramsFrom, type Field } from './schemaForm';
 
 function fields(schema: unknown, defs = {}): Field[] {
   const form = paramsForm(schema, defs);
@@ -133,5 +133,79 @@ describe('paramsFrom', () => {
   it('leaves a pattern this browser cannot compile to the server', () => {
     const odd = fields({ type: 'object', properties: { t: { type: 'string', pattern: '(?P<x>a)' } } });
     expect(paramsFrom(odd, { t: 'anything' }).errors).toEqual({});
+  });
+});
+
+// A list of whole numbers, as `mask` takes its classes (M4-18c).
+describe('a list of whole numbers', () => {
+  const LIST = {
+    type: 'object',
+    properties: {
+      classes: {
+        type: 'array',
+        title: 'Classes',
+        items: { type: 'integer', minimum: 0, maximum: 65535 },
+        minItems: 1,
+        maxItems: 4,
+      },
+    },
+    required: ['classes'],
+  };
+  const read = (text: string) => paramsFrom(fields(LIST), { classes: text });
+
+  it('is read with the bounds of the list and of each value', () => {
+    expect(fields(LIST)[0]).toMatchObject({
+      kind: 'integers',
+      required: true,
+      minItems: 1,
+      maxItems: 4,
+      itemMinimum: 0,
+      itemMaximum: 65535,
+    });
+  });
+
+  it('writes the numbers ascending and each once, as one recipe has one way to say it', () => {
+    expect(read('10, 3,3 8;9').params).toEqual({ classes: [3, 8, 9, 10] });
+    expect(read(' 7 ').params).toEqual({ classes: [7] });
+  });
+
+  it('asks for the list when it is empty', () => {
+    expect(read('').errors.classes).toBe('Required.');
+    expect(read(' , ').errors.classes).toBe('At least 1 values.');
+  });
+
+  it.each(['3, x', '1.5', '3 8e1', '-', '0x10', '1e2', '٣'])('refuses %j: not whole numbers', (text) => {
+    expect(read(text).errors.classes).toBe('Enter whole numbers separated by commas.');
+  });
+
+  it('refuses a value outside the bounds of an item, naming it', () => {
+    expect(read('3, 65536').errors.classes).toBe('65536 is outside 0 to 65535.');
+    expect(read('-1').errors.classes).toBe('-1 is outside 0 to 65535.');
+  });
+
+  it('refuses more values than the list takes, counting each once', () => {
+    expect(read('1 2 3 4 5').errors.classes).toBe('At most 4 values.');
+    expect(read('1 1 1 1 1 2').errors.classes).toBeUndefined();
+  });
+
+  it('refuses a number too large to be exact', () => {
+    expect(integersIn('9007199254740993')).toBeNull();
+    expect(integersIn('')).toEqual([]);
+  });
+
+  it('starts from the default of the schema, written as the field is edited', () => {
+    const withDefault = { ...LIST, properties: { classes: { ...LIST.properties.classes, default: [3, 8] } } };
+    expect(initialValues(fields(withDefault))).toEqual({ classes: '3, 8' });
+    expect(initialValues(fields(LIST))).toEqual({ classes: '' });
+  });
+
+  it.each([
+    ['items that are not whole numbers', { type: 'array', items: { type: 'string' } }],
+    ['items with a keyword it does not know', { type: 'array', items: { type: 'integer', multipleOf: 2 } }],
+    ['no items', { type: 'array' }],
+    ['a list of lists', { type: 'array', items: { type: 'array', items: { type: 'integer' } } }],
+  ])('stays "not supported by this panel" for %s', (_, property) => {
+    const form = paramsForm({ type: 'object', properties: { x: property } });
+    expect(form.supported).toBe(false);
   });
 });

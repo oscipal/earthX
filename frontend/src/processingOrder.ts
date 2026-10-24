@@ -9,8 +9,8 @@ import { footprintOf, polygonBbox } from './geoUtils';
 import { bboxesOverlap } from './aoiClip';
 import { groupIndexOfItem } from './grouping';
 import type { AoiProvenance, JsonSchema, Order, OrderStep, ProcessDescription } from './processing';
-import { paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
-import type { Collection, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
+import { initialValues, paramsForm, paramsFrom, type FieldValue, type ParamsForm } from './schemaForm';
+import type { Collection, EarthxMask, StacAsset, StacBand, StacItem, TimeStepGroup } from './types';
 
 // K10: the one input of an order is always called this.
 export const INPUT_NAME = 'input';
@@ -99,6 +99,10 @@ export function processInfo(description: ProcessDescription): ProcessInfo {
 export interface BandSource {
   asset: string;
   names: string[];
+  // The unit of each of `names`, in step with them (the item's own, else the registry's); `unit` is the one of an
+  // asset with no names. `null` where nobody states one (M4-19b).
+  units: Array<string | null>;
+  unit: string | null;
   dataType: string | null;
   // What the item says about the values, for the output type in
   // `processingDefaults.ts`; `false`/`null` mean "the item does not say".
@@ -129,6 +133,33 @@ function bandFacts(asset: StacAsset): Pick<BandSource, 'scaled' | 'nodata'> {
   return { scaled, nodata };
 }
 
+// The registry's unit for an asset key (`earthx:band_units`): the exact key, else a key with a `*` that matches. The
+// same lookup as `DatasetConfig.band_unit`.
+export function registryUnit(collection: Collection | undefined, key: string): string | null {
+  const units = collection?.['earthx:band_units'];
+  if (!isObject(units)) return null;
+  const entry = (value: unknown) => (typeof value === 'string' && value ? value : null);
+  if (Object.hasOwn(units, key)) return entry(units[key]);
+  for (const [pattern, unit] of Object.entries(units)) {
+    if (!pattern.includes('*')) continue;
+    const parts = pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, '\\$&'));
+    if (new RegExp(`^${parts.join('.*')}$`, 'su').test(key)) return entry(unit);
+  }
+  return null;
+}
+
+// The unit to write beside a band: none for "1", the unit of a dimensionless quantity (Otto, 24.10.2026). The data
+// keep "1" (`bands[].unit`, `earthx:band_units`); this is the one place a frontend display turns a unit into text,
+// so that the chips of the panel and whatever shows units later (M4-19c) agree.
+export function shownUnit(unit: string | null | undefined): string | null {
+  return typeof unit === 'string' && unit !== '' && unit !== '1' ? unit : null;
+}
+
+// The unit an item states for one of its bands, if it does.
+function itemUnit(band: StacBand | undefined): string | null {
+  return band && typeof band.unit === 'string' && band.unit ? band.unit : null;
+}
+
 function firstDataType(asset: StacAsset): string | null {
   const first = bandsOf(asset)?.[0];
   return first && typeof first.data_type === 'string' ? first.data_type : null;
@@ -144,23 +175,34 @@ function isGeoTiff(asset: StacAsset): boolean {
 // in the STAC core field `bands`, as `<asset><separator><variable>` — none
 // without a separator (F9) and none for an asset that names no variables
 // (nothing guessed; Otto 10.10.2026).
-export function bandSources(item: StacItem, format: string | null | undefined, separator: string | null): BandSource[] {
+export function bandSources(
+  item: StacItem,
+  format: string | null | undefined,
+  separator: string | null,
+  collection?: Collection,
+): BandSource[] {
   const sources: BandSource[] = [];
   for (const [key, asset] of Object.entries(item.assets ?? {})) {
     if (format === 'cog') {
       if (!isGeoTiff(asset)) continue;
       const count = bandCount(asset);
       const names = count === null ? [] : count === 1 ? [key] : Array.from({ length: count }, (_, i) => `${key}_${i + 1}`);
-      sources.push({ asset: key, names, dataType: firstDataType(asset), ...bandFacts(asset) });
+      const registry = registryUnit(collection, key);
+      const described = bandsOf(asset);
+      const units = names.map((_, i) => itemUnit(described?.[i]) ?? registry);
+      sources.push({ asset: key, names, units, unit: registry, dataType: firstDataType(asset), ...bandFacts(asset) });
     } else if (format === 'zarr') {
       const bands = asset.bands;
       if (!separator || !Array.isArray(bands)) continue;
       const dataType = firstDataType(asset);
       for (const band of bands) {
         if (band && typeof band.name === 'string' && band.name) {
+          const unit = itemUnit(band) ?? registryUnit(collection, `${key}${separator}${band.name}`);
           sources.push({
             asset: `${key}${separator}${band.name}`,
             names: [band.name],
+            units: [unit],
+            unit,
             dataType,
             ...bandFacts(asset),
           });
@@ -202,15 +244,16 @@ export function uniqueNames(sources: readonly BandSource[]): Map<string, string>
   return unique;
 }
 
-// The assets of the order: those the user picked and those an expression
-// names, in the item's own order.
+// The assets of the order: those the user picked, those an expression names and
+// those a step needs (the layer of a mask), in the item's own order.
 export function orderAssets(
   sources: readonly BandSource[],
   picked: readonly string[],
   expressions: readonly string[],
+  needed: readonly string[] = [],
 ): string[] {
   const unique = uniqueNames(sources);
-  const wanted = new Set(picked);
+  const wanted = new Set([...picked, ...needed]);
   for (const expression of expressions) {
     for (const name of namesInExpression(expression)) {
       const asset = unique.get(name);
@@ -218,6 +261,45 @@ export function orderAssets(
     }
   }
   return sources.map((s) => s.asset).filter((asset) => wanted.has(asset));
+}
+
+// --- the layer a mask reads (M4-18c) ----------------------------------------------
+
+const isInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
+
+// `earthx:mask` of the collection, or `null` where the dataset has none or the field is
+// not what the registry writes. Only https references are kept: the panel links to it.
+export function maskLayerOf(collection: Collection | undefined): EarthxMask | null {
+  const raw: unknown = collection?.['earthx:mask'];
+  if (!isObject(raw)) return null;
+  const { asset, band, classes, suggested, reference, note } = raw;
+  if (typeof asset !== 'string' || !asset || typeof band !== 'string' || !band) return null;
+  if (!Array.isArray(classes) || classes.length === 0) return null;
+  const known = classes.flatMap((entry: unknown) =>
+    isObject(entry) && isInteger(entry.value) && typeof entry.label === 'string' ? [{ value: entry.value, label: entry.label }] : [],
+  );
+  if (known.length !== classes.length) return null;
+  const values = new Set(known.map((entry) => entry.value));
+  return {
+    asset,
+    band,
+    classes: known,
+    suggested: Array.isArray(suggested) ? suggested.filter((v): v is number => isInteger(v) && values.has(v)) : [],
+    reference: typeof reference === 'string' && reference.startsWith('https://') ? reference : '',
+    note: typeof note === 'string' ? note : '',
+  };
+}
+
+// What a new mask step starts with: the layer's band, which the recipe names but the user does
+// not type, and the classes the dataset suggests — ticked, not decided: the recipe lists exactly
+// the classes ticked when it is sent (K6).
+export function maskStepValues(layer: EarthxMask): Record<string, FieldValue> {
+  return { source: layer.band, classes: [...layer.suggested].sort((a, b) => a - b).join(', ') };
+}
+
+// The asset the order has to read for its mask steps, or `null` without one.
+export function maskAssetOf(steps: readonly Pick<DraftStep, 'op'>[], layer: EarthxMask | null): string | null {
+  return layer && steps.some((step) => step.op === 'mask') ? layer.asset : null;
 }
 
 // --- scenes and passes (F8, M4-12b) ---------------------------------------------
@@ -386,6 +468,72 @@ export function buildOrder(args: {
     },
     stepProblems,
     problems,
+  };
+}
+
+// What the panel takes from a recipe or an order (M4-19d): the other way round
+// from `buildOrder`, which builds the same order again from it.
+export interface Draft {
+  datasetId: string;
+  // One list of scenes per group; the panel's own orders have one.
+  groups: string[][];
+  aoi: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  steps: DraftStep[];
+  assets: string[];
+  // `null` for an output without a data type (a crop).
+  dtype: string | null;
+}
+
+// The order as a draft, and what in it the process description does not accept:
+// an operator it does not list for the dataset, a parameter its form does not
+// know or refuses. `nextKey` hands out the keys of the steps.
+export function draftFromOrder(
+  order: Order,
+  info: ProcessInfo,
+  nextKey: () => number,
+): { draft: Draft; problems: string[]; notes: string[] } {
+  const problems: string[] = [];
+  const notes: string[] = [];
+  const steps: DraftStep[] = [];
+  order.steps.forEach((step, index) => {
+    const where = `Step ${index + 1} (${step.op})`;
+    // The server still takes an older version of an operator but no longer lists it (M4-24):
+    // the step is taken as the listed one, whose form accepts what the older one did.
+    const operator =
+      info.operators.find((o) => o.op === step.op && o.opVersion === step.op_version) ??
+      info.operators.find((o) => o.op === step.op && o.opVersion > step.op_version);
+    if (!operator) return void problems.push(`${where}: this operator is not available for this dataset.`);
+    if (operator.opVersion !== step.op_version) {
+      notes.push(`Step ${index + 1} (${step.op}): version ${step.op_version} is taken as version ${operator.opVersion}.`);
+    }
+    if (!operator.form.supported) return void problems.push(`${where}: ${operator.form.reason}`);
+    const { fields } = operator.form;
+    for (const name of Object.keys(step.params)) {
+      if (!fields.some((f) => f.name === name)) problems.push(`${where}: unknown parameter ${name}.`);
+    }
+    const values = initialValues(fields);
+    for (const field of fields) {
+      const raw = step.params[field.name];
+      if (raw === undefined || field.kind === 'const') continue;
+      if (field.kind === 'boolean' && typeof raw === 'boolean') values[field.name] = raw;
+      else if (field.kind !== 'boolean' && (typeof raw === 'string' || typeof raw === 'number')) values[field.name] = String(raw);
+      else problems.push(`${where}: ${field.name} has the wrong type.`);
+    }
+    for (const [name, message] of Object.entries(paramsFrom(fields, values).errors)) problems.push(`${where}: ${name}: ${message}`);
+    steps.push({ key: nextKey(), op: step.op, opVersion: operator.opVersion, values });
+  });
+  const input = order.inputs[0];
+  return {
+    draft: {
+      datasetId: input.dataset,
+      groups: input.groups.map((group) => [...group]),
+      aoi: order.aoi ?? null,
+      steps,
+      assets: [...input.assets],
+      dtype: order.output.kind === 'raster' ? order.output.dtype : null,
+    },
+    problems,
+    notes,
   };
 }
 

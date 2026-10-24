@@ -232,13 +232,24 @@ def _transform(meta: RasterMeta, params: BaseModel) -> RasterMeta:
     problem = numexpr.validate(params.expression, local_dict=placeholders, optimization="aggressive", truediv=True)
     if problem is not None:
         raise RecipeInvalid("numexpr does not accept the expression")
-    band = BandMeta(name=OUTPUT_BAND, data_type="float32", nodata=float("nan"))
+    # A formula has no known unit. Only the bare name of a band is that band again, so it keeps the band's unit.
+    units = {band.name: band.unit for band in meta.bands}
+    unit = units.get(params.expression.strip())
+    band = BandMeta(name=OUTPUT_BAND, data_type="float32", nodata=float("nan"), unit=unit)
     return RasterMeta(meta.crs, meta.transform, meta.width, meta.height, (band,), meta.resampled)
 
 
 def _lineage(params: BaseModel) -> str:
     assert isinstance(params, BandMathParams)
     return f"band math: {params.expression}"
+
+
+def _method(params: BaseModel) -> str:
+    assert isinstance(params, BandMathParams)
+    return (
+        f"One band was computed per pixel from the expression {params.expression!r} "
+        "on physical values, in 32-bit floating point."
+    )
 
 
 def _properties(params: BaseModel) -> dict[str, Any]:
@@ -259,9 +270,11 @@ BAND_MATH = Operator(
     ),
     tiers=frozenset({Tier.T1, Tier.T2}),
     kind="pixel",
-    cost_factor=lambda params: 1.0,
+    # 1.0 until M4-32; the statistics of the result added 12 % (adr/0014 §15k), rounded up.
+    cost_factor=lambda params: 1.2,
     transform=_transform,
     run=_run,
     lineage=_lineage,
+    method=_method,
     properties=_properties,
 )

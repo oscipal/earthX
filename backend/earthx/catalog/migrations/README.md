@@ -31,6 +31,10 @@ Szenen ohne Fläche nannte, sein Rezept also die Vereinigung der Footprints als 
 eines Raster-Auftrags stammt (Attribution, Lizenz, Quelle). Je Job, nicht je Lauf, nicht im Rezept;
 `jobs` speichert sie ungelesen, `api` schreibt sie ins ZIP des Jobs.
 
+`012_permalink.sql` — die Tabelle `earthx_permalink` aus M4-19e: Auftrag und Ansicht hinter einer
+zufälligen Kennung, die Frist fest 30 Tage ab Erstellung, dazu der SHA-256 des Löschschlüssels. Kein
+Fremdschlüssel; `api` schreibt und liest über `jobs/permalinks.py`, der stündliche Aufräumer löscht.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

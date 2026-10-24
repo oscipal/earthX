@@ -35,15 +35,19 @@ bytes, which is what makes the answers cacheable in front of the process.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+import time
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi.dependencies.utils import solve_dependencies
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from rasterio.errors import RasterioError, RasterioIOError
@@ -53,7 +57,7 @@ from shapely.geometry import mapping as shapely_mapping
 from starlette.concurrency import run_in_threadpool
 from titiler.core.dependencies import BidxParams
 
-from earthx.access.crop_rules import MAX_JOB_BYTES
+from earthx.access.crop_rules import MAX_JOB_BYTES, mosaic_order
 from earthx.access.download import (
     LARGE_DOWNLOAD_THRESHOLD_BYTES,
     RESOLUTION_FACTORS,
@@ -72,6 +76,7 @@ from earthx.access.download import (
     parse_aoi_geometry,
     plan_outputs,
 )
+from earthx.access.mosaic_tiles import EarthxMosaicTilerFactory, MosaicScenes
 from earthx.access.resolve import (
     AssetNotOnItem,
     InvalidAssetKey,
@@ -88,6 +93,7 @@ from earthx.adapters import (
     AdapterSpecs,
     check_adapter_specs,
 )
+from earthx.api import mosaic_tiles
 from earthx.api.citation import citation_bib
 from earthx.api.dependencies import cache_pool, policy_from_registry
 from earthx.api.item_source import (
@@ -97,6 +103,8 @@ from earthx.api.item_source import (
     fetch_item_or_refuse,
     malformed_item_detail,
 )
+from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
+from earthx.api.result_tiles import ResultSources, build_result_factory
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
     DatasetConfig,
@@ -108,6 +116,8 @@ from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError
 from earthx.gateway.gdal import gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
+from earthx.objectstore.errors import StoreConfigError
+from earthx.objectstore.results import Store
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError
@@ -118,6 +128,12 @@ LOGGER = logging.getLogger("earthx.api.tiler")
 # metadata of that very item. The tiler answers under its own port (docker-compose),
 # so the two never collide.
 ROUTER_PREFIX = "/collections/{dataset}/items/{item}"
+
+# The tiles of the scenes of one overpass read as one (M4-17b); the item ids are query parameters.
+MOSAIC_ROUTER_PREFIX = mosaic_tiles.ROUTER_PREFIX
+
+# Where the tiles of a job result begin (`result_tiles.ROUTER_PREFIX` up to its identifier).
+RESULT_PATH_START = "/results/"
 
 # The download route (M2-06) names only the dataset in its path — the item(s) and
 # the asset(s) travel in the body (a mosaic can name several of each, and an AOI
@@ -308,16 +324,30 @@ def _resolve_asset_path(
 
 @dataclass(frozen=True, slots=True)
 class OperatorInput:
-    """What the path of an operator tile stands for: its assets, the operator and its parameters.
+    """What the path of an operator tile stands for: its assets and the chain of steps (operator, parameters).
 
     Defined here and typed loosely on purpose: the tiler does not load the worker core when it
     starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
-    object by its three attributes (``TileInputs``).
+    object by its two attributes (``TileInputs``); the statistics cache of `access` reads ``dataset_id`` and
+    ``cache_identity()`` (``CacheIdentity``).
     """
 
     inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
-    operator: Any
-    params: Any
+    steps: tuple[tuple[Any, Any], ...]
+
+    @property
+    def dataset_id(self) -> str:
+        return self.inputs[0][1].dataset_id
+
+    def cache_identity(self) -> dict[str, Any]:
+        """What the statistics of these inputs depend on, for the cache key: the assets with their scaling and units, the steps.
+
+        The address is left out (the key is a hash of the question, not of where the bytes are), like the key of one asset.
+        """
+        return {
+            "inputs": [entry.model_dump(mode="json", exclude={"asset": {"href"}}) for entry, _ in self.inputs],
+            "steps": [[operator.op, operator.op_version, params.model_dump(mode="json")] for operator, params in self.steps],
+        }
 
 
 def _operator_support() -> Any:
@@ -344,10 +374,13 @@ def _operator_support() -> Any:
 
 
 # A tile URL that carries an operator names it, its version and its parameters, and
-# nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8).
+# nothing else of the recipe (adr/0014 §6.2): no recipe id, no hash, no AOI (Q8). It may
+# repeat the three, equally often and in the order of the steps: the longest start of a
+# recipe that runs as a tile (§6.1, plan M4-18 F1).
 MAX_OPERATOR_ASSETS = 16
 MAX_OPERATOR_PARAMS_CHARS = 2048
-_OPERATOR_ROUTES = frozenset({"tile", "tilejson"})
+MAX_OPERATOR_STEPS = 4
+_OPERATOR_ROUTES = frozenset({"tile", "tilejson", "statistics"})
 
 # TiTiler's free band-math and algorithm parameters. They computed on raw values with
 # every numexpr function, outside R5 and the scaling of adr/0014 §5.4; `op=band_math`
@@ -364,35 +397,27 @@ def _refuse_free_parameters(request: Request) -> None:
             )
 
 
-def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any] | None:
-    """``(operator, parameters)`` of an ``op`` in the query, or ``None`` when the URL names none.
+def _operator_step(
+    support: Any, operators: Any, config: DatasetConfig, *, op: str, version: str, raw: str, where: str
+) -> tuple[Any, Any]:
+    """One step of the chain: its operator and validated parameters, or the ``HTTPException`` its refusal maps to.
 
-    ``400`` for a query that is malformed or whose parameters do not validate (R5
-    included); ``422`` for one that is well formed but not something this platform
-    does here — an operator it does not know, one that does not run as a tile, one the
-    dataset does not allow.
+    ``where`` prefixes every message of a chain of several steps (``"step 1: "`` for the second): counted from
+    0 like the refusals of the recipe and the order (``processing/recipe.py``, ``api/intake.py``), which is how the
+    panel finds the step. A single step reads as it always did.
     """
-    query = request.query_params
-    given = [name for name in ("op", "op_version", "params") if name in query]
-    if not given:
-        return None
-    support = _operator_support()
-    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
-    if len(given) != 3 or any(len(query.getlist(name)) != 1 for name in given):
-        raise HTTPException(status_code=400, detail="op, op_version and params go together, once each")
-    raw = query["params"]
     if len(raw) > MAX_OPERATOR_PARAMS_CHARS:
-        raise HTTPException(status_code=400, detail=f"params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
+        raise HTTPException(status_code=400, detail=f"{where}params are at most {MAX_OPERATOR_PARAMS_CHARS} characters")
+    # ASCII digits only: `int()` also reads other scripts' digits, which the query validation of
+    # `operator_post_process` refuses afterwards — after the item has been fetched.
+    if not (version.isascii() and version.isdecimal()):
+        raise HTTPException(status_code=400, detail=f"{where}op_version is a whole number")
     try:
-        version = int(query["op_version"])
-    except ValueError:
-        raise HTTPException(status_code=400, detail="op_version is a whole number") from None
-    try:
-        operator = operators.operator(query["op"], version)
+        operator = operators.operator(op, int(version))
     except support.unknown_operator as error:
-        raise HTTPException(status_code=422, detail=str(error)) from None
+        raise HTTPException(status_code=422, detail=f"{where}{error}") from None
     if support.tier.T1 not in operator.tiers or operator.kind != "pixel":
-        raise HTTPException(status_code=422, detail=f"{operator.op!r} does not run as a tile")
+        raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} does not run as a tile")
     try:
         params = operator.params.model_validate_json(raw, strict=True)
     except ValidationError as error:
@@ -400,11 +425,44 @@ def _operator_request(request: Request, config: DatasetConfig) -> tuple[Any, Any
             f"{'.'.join(map(str, entry['loc'])) or 'params'}: {entry['msg']}"
             for entry in error.errors(include_url=False, include_input=False, include_context=False)
         )
-        raise HTTPException(status_code=400, detail=f"params: {problems}") from None
+        raise HTTPException(status_code=400, detail=f"{where}params: {problems}") from None
     reasons = support.applicable(operator, config, params)
     if reasons:
-        raise HTTPException(status_code=422, detail=f"{operator.op!r} cannot run here: {'; '.join(reasons)}")
+        raise HTTPException(status_code=422, detail=f"{where}{operator.op!r} cannot run here: {'; '.join(reasons)}")
     return operator, params
+
+
+def _operator_request(request: Request, config: DatasetConfig) -> list[tuple[Any, Any]] | None:
+    """The steps ``(operator, parameters)`` of the ``op`` in the query, or ``None`` when the URL names none.
+
+    ``op``, ``op_version`` and ``params`` come in threes: each as often as the others, at most
+    :data:`MAX_OPERATOR_STEPS` times, the first of each being the first step. Every step has to run as a tile
+    (``T1``, ``pixel``) and to apply to the dataset on its own; the bands each one leaves for the next are
+    judged by the reader, before the first pixel.
+
+    ``400`` for a query that is malformed or whose parameters do not validate (R5 included); ``422`` for one
+    that is well formed but not something this platform does here — an operator it does not know, one that
+    does not run as a tile, one the dataset does not allow.
+    """
+    query = request.query_params
+    names = ("op", "op_version", "params")
+    given = [name for name in names if name in query]
+    if not given:
+        return None
+    support = _operator_support()
+    operators = getattr(request.app.state, "earthx_operators", None) or support.registry
+    columns = [query.getlist(name) for name in names]
+    if len(given) != 3 or len({len(column) for column in columns}) != 1:
+        raise HTTPException(status_code=400, detail="op, op_version and params go together, equally often")
+    if len(columns[0]) > MAX_OPERATOR_STEPS:
+        raise HTTPException(status_code=400, detail=f"a tile takes at most {MAX_OPERATOR_STEPS} steps")
+    chained = len(columns[0]) > 1
+    return [
+        _operator_step(
+            support, operators, config, op=op, version=version, raw=raw, where=f"step {index}: " if chained else ""
+        )
+        for index, (op, version, raw) in enumerate(zip(*columns, strict=True))
+    ]
 
 
 def _operator_input(
@@ -414,8 +472,7 @@ def _operator_input(
     config: DatasetConfig,
     item: str,
     assets: list[str],
-    operator: Any,
-    params: Any,
+    steps: list[tuple[Any, Any]],
     target_gsd: float | None,
 ) -> OperatorInput:
     """The assets of an operator tile, each with the bands and scaling source the item describes."""
@@ -424,19 +481,24 @@ def _operator_input(
     for key in assets:
         ref = _resolve_ref(stac_item, config=config, item=item, asset=key)
         try:
-            bands, scaling = support.describe_bands(stac_item, config, ref)
+            bands, scaling, unit = support.describe_bands(stac_item, config, ref)
             # Item scaling is applied by the core, so the reader reads raw; without it the
             # reader's own CF decoding applies (adr/0014 §5.4, F7a) — the job's rule.
             target = _open_ref(state, ref, target_gsd=target_gsd, decode_cf=scaling == "store-cf")
             entry = support.resolved_input(
-                asset=support.resolved_asset(**ref.to_json()), version=None, bands=bands, scaling=scaling, gsd=None
+                asset=support.resolved_asset(**ref.to_json()),
+                version=None,
+                bands=bands,
+                scaling=scaling,
+                unit=unit,
+                gsd=None,
             )
         except OrderRefused as error:
             raise HTTPException(status_code=error.status_code, detail=error.detail) from None
         except ValidationError:
             raise HTTPException(status_code=502, detail=malformed_item_detail(item)) from None
         inputs.append((entry, target))
-    return OperatorInput(tuple(inputs), operator, params)
+    return OperatorInput(tuple(inputs), tuple(steps))
 
 
 async def dataset_asset_path(
@@ -461,7 +523,8 @@ async def dataset_asset_path(
     on the collection (``earthx:default_render``), which is where it can be a default.
 
     With ``op``, ``op_version`` and ``params`` the URL asks for an operator over one or
-    several assets of the item (M4-09, adr/0014 §6.2) — on a tile or its TileJSON only.
+    several assets of the item (M4-09, adr/0014 §6.2) — on a tile, its TileJSON or the statistics (M4-19c) only. The three
+    may repeat, up to :data:`MAX_OPERATOR_STEPS` times, for a chain of steps (M4-18b).
     """
     state = request.app.state
     config = _dataset_config(state, dataset)
@@ -477,44 +540,55 @@ async def dataset_asset_path(
         return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset[0], target_gsd=target_gsd)
     route = request.scope.get("route")
     if getattr(route, "name", None) not in _OPERATOR_ROUTES:
-        raise HTTPException(status_code=400, detail="op is for tiles and their TileJSON only")
+        raise HTTPException(status_code=400, detail="op is for tiles, their TileJSON and statistics only")
     if len(asset) > MAX_OPERATOR_ASSETS or len(set(asset)) != len(asset):
         raise HTTPException(
             status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them"
         )
     stac_item = await _fetch_item(state, dataset, item)
     target_gsd = target_gsd_for(request, stac_item)
-    operator, params = requested
     return _operator_input(
         state,
         stac_item,
         config=config,
         item=item,
         assets=asset,
-        operator=operator,
-        params=params,
+        steps=requested,
         target_gsd=target_gsd,
     )
 
 
 def operator_post_process(
     src_path: Annotated[Any, Depends(dataset_asset_path)],
-    op: Annotated[str | None, Query(description="operator of a computed tile, such as `band_math`")] = None,
-    op_version: Annotated[int | None, Query(ge=1, description="version of the operator")] = None,
+    op: Annotated[
+        list[str] | None, Query(description="operator of a computed tile, such as `band_math`; repeated for a chain")
+    ] = None,
+    op_version: Annotated[
+        list[Annotated[int, Field(ge=1)]] | None, Query(description="version of the operator, once per `op`")
+    ] = None,
     params: Annotated[
-        str | None, Query(max_length=MAX_OPERATOR_PARAMS_CHARS, description="its parameters, as JSON")
+        list[str] | None,
+        Query(
+            description=f"its parameters, as JSON, once per `op`; at most {MAX_OPERATOR_PARAMS_CHARS} characters each"
+        ),
     ] = None,
 ) -> Callable[[ImageData], ImageData] | None:
-    """TiTiler's ``process_dependency`` for our tile: the operator's kernel, the one a job calls.
+    """TiTiler's ``process_dependency`` for our tile: the operators' kernels, the ones a job calls.
 
     The path dependency has already validated ``op`` and built the inputs, so this only
-    hands its kernel to the factory. TiTiler's own ``algorithm`` parameters are gone
-    (plan M4-09, F3).
+    hands the kernels, one after the other, to the factory. TiTiler's own ``algorithm``
+    parameters are gone (plan M4-09, F3).
     """
     if not isinstance(src_path, OperatorInput):
         return None
-    operator, parameters = src_path.operator, src_path.params
-    return lambda image: operator.run(image, parameters)
+    steps = src_path.steps
+
+    def chain(image: ImageData) -> ImageData:
+        for operator, parameters in steps:
+            image = operator.run(image, parameters)
+        return image
+
+    return chain
 
 
 def _open_reader(src_path: Any, **reader_params: Any) -> Any:
@@ -522,6 +596,122 @@ def _open_reader(src_path: Any, **reader_params: Any) -> Any:
     if isinstance(src_path, OperatorInput):
         return _operator_support().reader(src_path, **reader_params)
     return open_asset(src_path, **reader_params)
+
+
+def _no_post_process() -> None:
+    """The mosaic tile has no post-processing: TiTiler's own ``algorithm`` parameters stay out of its schema."""
+    return None
+
+
+def _declared_query(request: Request) -> set[str]:
+    """The query parameters the matched route declares, its own and those of its dependencies."""
+
+    def names(dependant: Any) -> Iterator[str]:
+        yield from (parameter.alias for parameter in dependant.query_params)
+        for sub in dependant.dependencies:
+            yield from names(sub)
+
+    route = request.scope.get("route")
+    return set(names(route.dependant)) if route is not None else set()
+
+
+async def _validate_before_fetching(request: Request) -> None:
+    """Everything FastAPI would check of this request, before a single item is fetched.
+
+    FastAPI solves the dependencies of a route one after the other and checks the route's own path and
+    query parameters last, so the path dependency below would fetch up to 64 items for a request that is
+    refused afterwards for its format, its tile matrix set or a ``tilesize``. This runs the same solving
+    on the matched route without that dependency: the other dependencies (``bidx``, ``rescale``, the
+    zoom limits of a TileJSON …) and the route's own parameters are checked here, and a refusal is the
+    ``422`` FastAPI would have answered, with nothing asked of the source.
+    """
+    route = request.scope["route"]
+    dependant = dataclasses.replace(
+        route.dependant, dependencies=[sub for sub in route.dependant.dependencies if sub.call is not mosaic_scenes]
+    )
+    async with AsyncExitStack() as stack:
+        solved = await solve_dependencies(
+            request=request,
+            dependant=dependant,
+            dependency_overrides_provider=request.app,
+            async_exit_stack=stack,
+            embed_body_fields=False,
+        )
+    if solved.errors:
+        raise RequestValidationError(solved.errors)
+
+
+def _mosaic_zooms(config: DatasetConfig) -> tuple[int, int]:
+    """The levels a mosaic tile of this dataset serves: the released range, from z8 up (plan M4-17 §5).
+
+    ``501`` without a released range, ``400`` for a dataset released only below the first level a
+    mosaic starts at — both before any item is fetched.
+    """
+    if config.viewer is None:
+        raise HTTPException(
+            status_code=501, detail=f"{config.dataset_id!r} names no released zoom range (earthx:viewer)"
+        )
+    low, high = config.viewer.min_zoom, config.viewer.max_zoom
+    if high < mosaic_tiles.MIN_MOSAIC_ZOOM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{config.dataset_id!r} is released up to z{high}; mosaic tiles start at z{mosaic_tiles.MIN_MOSAIC_ZOOM}",
+        )
+    return max(low, mosaic_tiles.MIN_MOSAIC_ZOOM), high
+
+
+def _mosaic_zoom_range(request: Request) -> tuple[int, int]:
+    """The zoom range of a mosaic's TileJSON: what :func:`_mosaic_zooms` says for the dataset in the path."""
+    return _mosaic_zooms(_dataset_config(request.app.state, str(request.path_params.get("dataset"))))
+
+
+async def mosaic_scenes(
+    request: Request,
+    dataset: Annotated[str, Path(description="dataset id of the registry")],
+    item: Annotated[
+        list[str],
+        Query(default_factory=list, description="item ids of one overpass, each once; 2 to 64 of them"),
+    ],
+    asset: Annotated[list[str], Query(default_factory=list, description="asset key every scene is read from")],
+) -> MosaicScenes:
+    """Turn dataset, item ids and asset into the scenes a mosaic tile reads, in the order it reads them.
+
+    The path dependency of the mosaic route, in the order of plan M4-17 §4.2: everything that costs
+    no request first (licence, level, the shape of the query), then the items, then the rules that
+    need them — one overpass, the CRS of each scene, the scenes the tile touches — and last the
+    address of each scene through the gateway policy, as for the tile of one item. The target CRS and
+    the order come from the **whole** list, so a tile that touches only some scenes still picks the
+    scene the mosaic job over the same list picks (S5, `access.crop_rules.mosaic_order`).
+
+    A TileJSON names no tile and gets every scene, in the order a tile reads them.
+    """
+    state = request.app.state
+    config = _dataset_config(state, dataset)
+    _check_display_allowed(config)
+    _check_zoom_released(request, config)
+    _mosaic_zooms(config)
+    viewer = config.viewer
+    assert viewer is not None  # `_mosaic_zooms` answered 501 otherwise
+    try:
+        grid = mosaic_tiles.mosaic_tile(request.path_params)
+        ids = mosaic_tiles.check_query(request.query_params, _declared_query(request), item, asset)
+        await _validate_before_fetching(request)
+        if getattr(state, "earthx_cache_pool", None) is None:
+            raise OrderRefused(
+                503, "mosaic tiles need the item cache, and the catalogue database is not reachable", "items"
+            )
+        items = await mosaic_tiles.fetch_items(state.earthx_item_fetches, state.earthx_item_source, dataset, ids)
+        mosaic_tiles.check_one_overpass(items, viewer)
+        refs = {item_id: _resolve_ref(items[item_id], config=config, item=item_id, asset=asset[0]) for item_id in ids}
+        outlines = mosaic_tiles.footprints_of(items)
+        order = mosaic_order({item_id: ref.crs for item_id, ref in refs.items()})
+        read = order if grid is None else mosaic_tiles.scenes_touching(order, outlines, grid)
+    except OrderRefused as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from None
+    scenes = tuple(
+        _open_ref(state, refs[item_id], target_gsd=target_gsd_for(request, items[item_id])) for item_id in read
+    )
+    return MosaicScenes(dataset, scenes, mosaic_tiles.union_bounds(outlines))
 
 
 #: On a `413` of the crop: whether the same selection fits an export job (M4-11 K5); M4-11b-2 reads it.
@@ -741,7 +931,7 @@ async def download_crop(
 
     # The worker core stays out of the tiler's start (the intake imports it), so it is
     # loaded when the first crop asks for its recipe.
-    from earthx.api.intake import crop_recipe_json
+    from earthx.api.intake import acquired_day, crop_recipe_json, methods_bytes
 
     accepted_at = datetime.now(timezone.utc)
     recipe_omitted_cause: str | None = None
@@ -764,6 +954,16 @@ async def download_crop(
         LOGGER.warning("crop recipe omitted", extra={"dataset": dataset, "stage": refused.stage})
         recipe_json = None
         recipe_omitted_cause = refused.stage
+    # The methods text is built from the recipe, so it comes and goes with it (M4-19a).
+    methods = (
+        methods_bytes(
+            recipe_json,
+            config,
+            acquired_on=acquired_day([item for matched, _ in surviving_groups for item in matched], config),
+        )
+        if recipe_json is not None
+        else None
+    )
     bib = citation_bib(config, downloaded=accepted_at.date())
 
     total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
@@ -789,6 +989,7 @@ async def download_crop(
             resolution_factor=body.resolution,
             recipe_json=recipe_json,
             citation_bib=bib,
+            methods_text=methods,
             recipe_omitted_cause=recipe_omitted_cause,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
@@ -906,7 +1107,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.earthx_item_source = build_item_source(
             app.state.earthx_registry, app.state.earthx_adapters, gateway, pool
         )
+        app.state.earthx_results = _result_sources()
         yield
+
+
+def _result_sources() -> ResultSources | None:
+    """The tiles of job results (M4-13c-5), or ``None`` when this process has no key for the store.
+
+    A tiler without the `S3_*` environment still serves every source; the result routes then answer
+    ``503``, with a line in the log that names the missing setting and never its value. Compose gives
+    this process the read-only key `earthx-tiler`.
+    """
+    try:
+        return ResultSources(Store.from_environ(), clock=time.monotonic)
+    except StoreConfigError as error:
+        LOGGER.warning("job results are not served: %s", error)
+        return None
 
 
 def build_app(
@@ -956,6 +1172,22 @@ def build_app(
         name="tiles",
     )
     app.include_router(factory.router, prefix=ROUTER_PREFIX, tags=["Tiles"])
+    # The scenes of one overpass as one tile (M4-17b): the ids travel in the URL, the process keeps
+    # nothing but the item fetches that are running.
+    app.state.earthx_item_fetches = mosaic_tiles.ItemFetches()
+    mosaic_factory = EarthxMosaicTilerFactory(
+        path_dependency=mosaic_scenes,
+        layer_dependency=BidxParams,
+        process_dependency=_no_post_process,
+        environment_dependency=gdal_environment,
+        viewer_zoom_dependency=_mosaic_zoom_range,
+        router_prefix=MOSAIC_ROUTER_PREFIX,
+        name="mosaic-tiles",
+    )
+    app.include_router(mosaic_factory.router, prefix=MOSAIC_ROUTER_PREFIX, tags=["Mosaic tiles"])
+    # The tiles of a finished job (M4-13c-5): read from the object store, not through the registry.
+    app.state.earthx_results = None
+    app.include_router(build_result_factory().router, prefix=RESULT_ROUTER_PREFIX, tags=["Results"])
     app.add_api_route(
         DOWNLOAD_ROUTE,
         download_crop,
@@ -1001,6 +1233,15 @@ def _problem(status_code: int, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
+def _may_log_detail(request: Request) -> bool:
+    """Whether the traceback of a read error may go to the log.
+
+    Not for a result's tiles: GDAL's message names the path it opened, which for a result is the signed
+    URL — the `result_id`, the id of the tiler's key and a signature good for 15 minutes.
+    """
+    return RESULT_PATH_START not in request.url.path
+
+
 async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONResponse:
     """A genuine read failure: GDAL could not get bytes from the source.
 
@@ -1010,7 +1251,7 @@ async def _rasterio_io_error(request: Request, error: RasterioIOError) -> JSONRe
     `RasterioIOError` is `rasterio.errors`' one subclass of `OSError`; every other
     `RasterioError` goes to :func:`_rasterio_error` below instead of here.
     """
-    LOGGER.warning("could not read the asset from the source", exc_info=True)
+    LOGGER.warning("could not read the asset from the source", exc_info=_may_log_detail(request))
     return _problem(502, "the asset could not be read from the source")
 
 
@@ -1025,7 +1266,7 @@ async def _rasterio_error(request: Request, error: RasterioError) -> JSONRespons
     This is our side of the line rather than the source's, hence `error`, not
     `warning`.
     """
-    LOGGER.error("the asset could not be processed", exc_info=True)
+    LOGGER.error("the asset could not be processed", exc_info=_may_log_detail(request))
     return _problem(500, "the asset could not be processed")
 
 
@@ -1034,10 +1275,12 @@ app = build_app()
 
 __all__ = [
     "DOWNLOAD_ROUTE",
+    "MOSAIC_ROUTER_PREFIX",
     "ROUTER_PREFIX",
     "DownloadRequest",
     "app",
     "build_app",
     "dataset_asset_path",
     "download_crop",
+    "mosaic_scenes",
 ]

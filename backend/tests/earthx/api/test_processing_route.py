@@ -682,21 +682,44 @@ class TestResults:
 
     async def test_a_finished_job_has_links_to_api_and_never_to_the_store(self, rig: Rig) -> None:
         job_id = await placed(rig)
-        result_id = finish(rig.db, job_id)
+        finish(rig.db, job_id)
         response = await rig.client.get(f"/processing/jobs/{job_id}/results")
         assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
         body = response.json()
-        assert list(body) == ["result", "mask", "recipe"]
+        assert list(body) == ["result", "mask", "recipe", "methods", "tiles"]
         base = f"/processing/jobs/{job_id}/results/"
-        assert [body[key]["href"] for key in body] == [base + "result.tif", base + "mask.tif", base + "recipe.json"]
+        assert [body[key]["href"] for key in ("result", "mask", "recipe")] == [
+            base + "result.tif",
+            base + "mask.tif",
+            base + "recipe.json",
+        ]
         assert body["result"]["type"] == "image/tiff; application=geotiff; profile=cloud-optimized"
         assert (body["result"]["length"], body["result"]["width"], body["result"]["height"]) == (12345, 64, 48)
         assert body["result"]["properties"]["proj:code"] == "EPSG:32632"
-        for forbidden in (result_id, "localhost:3900", "objectstore", "X-Amz", "earthx/results", "c1:", "9.01"):
+        for forbidden in ("localhost:3900", "objectstore", "X-Amz", "earthx/results", "c1:", "9.01"):
             assert forbidden not in response.text
 
+    async def test_the_result_id_is_in_the_tiles_link_and_nowhere_else(self, rig: Rig) -> None:
+        """M4-13c-5: the tiler reads a result by its id alone, so the link that leads there names it."""
+        job_id = await placed(rig)
+        result_id = finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results")
+        tiles = response.json()["tiles"]
+        assert tiles == {
+            "href": f"/results/{result_id}/WebMercatorQuad/tilejson.json",
+            "type": "application/json",
+            "title": "The result as map tiles (TileJSON), served by the tiler",
+        }
+        assert response.text.count(result_id) == 1
+
+    async def test_the_tiles_link_is_not_a_file_to_fetch_from_here(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results/tilejson.json")
+        assert response.status_code == 404
+
     async def test_the_links_name_what_the_store_holds_and_what_api_builds(self) -> None:
-        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json")
+        assert LINK_NAMES == ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json", "methods.txt")
 
 
 def signed(response: httpx.Response) -> tuple[str, dict[str, list[str]]]:
@@ -1157,7 +1180,7 @@ class TestTheNameOfADownload:
 
 EXPORT_RESULT = {
     "files": ["export.zip"],
-    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt"],
+    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt", "methods.txt"],
     "groups": 1,
     "assets": 1,
     "blocks": 3,
@@ -1252,7 +1275,7 @@ class TestAnExport:
         job_id = await placed(rig, export_order())
         finish(rig.db, job_id, result=EXPORT_RESULT)
         document = (await rig.client.get(f"/processing/jobs/{job_id}/results")).json()
-        assert list(document) == ["export", "recipe"]
+        assert list(document) == ["export", "recipe", "methods"]
         assert document["export"]["type"] == "application/zip" and document["export"]["length"] == 54321
 
     async def test_the_zip_link_is_a_303_named_by_dataset_export_and_date(self, rig: Rig) -> None:
@@ -1540,3 +1563,32 @@ class TestTheOriginOfTheAreaOfARasterJob:
             "/processing/processes/recipe/estimate", json={"inputs": {"recipe": order()}}
         )
         assert response.status_code == 200
+
+
+class TestAChainThatNamesABandAnEarlierStepRemoved:
+    """"Review" (the estimate) and "Start" (the execution) turn away what the tile of the same chain turns away (M4-18b).
+
+    The panel shows the steps before the refused one as a preview, from the answer of the tiler; the order itself
+    must never reach the queue. Both routes run the same check (`processing.plan.check_bands`) and name the step.
+    """
+
+    STEPS = [
+        {"op": "band_math", "op_version": 1, "params": {"expression": "nir - red"}},
+        {"op": "band_math", "op_version": 1, "params": {"expression": "red + 1"}},
+    ]
+
+    @pytest.mark.parametrize("path", [EXECUTION, "/processing/processes/recipe/estimate"], ids=["start", "review"])
+    async def test_the_order_is_a_422_that_names_the_step_and_the_band(self, rig: Rig, path: str) -> None:
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(path, json=envelope(order(steps=self.STEPS)))
+        body = problem(response, 422)
+        assert body["type"] == "urn:earthx:order-refused:applicable"
+        assert body["detail"].startswith("step 1: ") and "red" in body["detail"]
+        assert (count(rig.db, "earthx_recipe"), count(rig.db, "earthx_run"), count(rig.db, "earthx_job")) == (0, 0, 0)
+
+    @pytest.mark.parametrize("path", [EXECUTION, "/processing/processes/recipe/estimate"], ids=["start", "review"])
+    async def test_the_same_steps_in_a_chain_that_keeps_the_band_are_accepted(self, rig: Rig, path: str) -> None:
+        steps = [self.STEPS[0], {**self.STEPS[1], "params": {"expression": "band_math + 1"}}]
+        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+            response = await client.post(path, json=envelope(order(steps=steps)))
+        assert response.status_code in (200, 201), response.text

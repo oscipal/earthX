@@ -241,6 +241,70 @@
               "T2"
             ]
           },
+          "step_normalize_v1": {
+            "additionalProperties": false,
+            "description": "Map a fixed range of values linearly onto another range, for all bands alike.",
+            "properties": {
+              "op": {
+                "const": "normalize"
+              },
+              "op_version": {
+                "const": 1
+              },
+              "params": {
+                "additionalProperties": false,
+                "description": "The panel's form (K8): both ranges and whether to clip, always given (B10).",
+                "properties": {
+                  "clip": {
+                    "description": "Limit the result to the target range instead of continuing the line.",
+                    "title": "Clip",
+                    "type": "boolean"
+                  },
+                  "in_max": {
+                    "description": "Value that becomes out_max; above in_min.",
+                    "title": "In Max",
+                    "type": "number"
+                  },
+                  "in_min": {
+                    "description": "Value that becomes out_min.",
+                    "title": "In Min",
+                    "type": "number"
+                  },
+                  "out_max": {
+                    "description": "End of the target range; below out_min reverses the values.",
+                    "title": "Out Max",
+                    "type": "number"
+                  },
+                  "out_min": {
+                    "description": "Start of the target range.",
+                    "title": "Out Min",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "in_min",
+                  "in_max",
+                  "out_min",
+                  "out_max",
+                  "clip"
+                ],
+                "title": "NormalizeParams",
+                "type": "object"
+              }
+            },
+            "required": [
+              "op",
+              "op_version",
+              "params"
+            ],
+            "title": "Normalize",
+            "type": "object",
+            "x-earthx-kind": "pixel",
+            "x-earthx-tiers": [
+              "T1",
+              "T2"
+            ]
+          },
           "step_reproject_v3": {
             "additionalProperties": false,
             "description": "Bring the raster into another CRS at a chosen pixel size, with a chosen resampling.",
@@ -395,6 +459,9 @@
                   "$ref": "#/$defs/step_band_math_v1"
                 },
                 {
+                  "$ref": "#/$defs/step_normalize_v1"
+                },
+                {
                   "$ref": "#/$defs/step_reproject_v3"
                 }
               ]
@@ -443,7 +510,7 @@
         "contentMediaType": "application/zip",
         "type": "string"
       },
-      "title": "Result, mask, area, recipe, citation and attribution in one ZIP"
+      "title": "Result, mask, area, recipe, citation, attribution and methods in one ZIP"
     },
     "export": {
       "schema": {
@@ -459,6 +526,13 @@
       },
       "title": "Mask of the area of interest"
     },
+    "methods": {
+      "schema": {
+        "contentMediaType": "text/plain",
+        "type": "string"
+      },
+      "title": "A paragraph for a methods section, written from the recipe and its provenance"
+    },
     "recipe": {
       "schema": {
         "contentMediaType": "application/json",
@@ -472,6 +546,13 @@
         "type": "string"
       },
       "title": "Result raster (Cloud Optimized GeoTIFF)"
+    },
+    "tiles": {
+      "schema": {
+        "contentMediaType": "application/json",
+        "type": "string"
+      },
+      "title": "The result as map tiles (TileJSON), served by the tiler"
     }
   },
   "title": "Recipe",

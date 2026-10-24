@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 
-import { clipTileUrl } from './aoiClip';
 import * as api from './api';
 import type { CoverageResponse, ResolutionFactor } from './api';
 import {
@@ -31,8 +30,11 @@ import {
 } from './download';
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
-import type { LayerOverlay, LayerRestore, MapLayer } from './layers';
-import { buildTileUrl, footprintsFC } from './mapLayers';
+import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
+import { isResultExpired } from './resultLayer';
+import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
+import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf } from './mosaic';
+import type { Mosaics, SceneEntry } from './mosaic';
 import type { Projection, Theme } from './preferences';
 import { loadProjection, loadTheme, saveProjection, saveTheme } from './preferences';
 import { appliedRenderFrom, autoRescale } from './render';
@@ -46,7 +48,7 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { fullResolutionLayers } from './searchLayers';
+import { cropPasses, fullResolutionLayers, overlaysOfPass } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -250,6 +252,7 @@ function foundNotice(
 export interface DerivedLayer {
   name: string;
   derived: NonNullable<MapLayer['derived']>;
+  result?: ResultLayerInfo;
   overlays: LayerOverlay[];
   // The scenes the picture was made from.
   itemIds: string[];
@@ -381,13 +384,14 @@ function cropsForSearch(
   datasets: ViewableDataset[],
   sections: ResultSection[],
   aoi: GeoJSON.Geometry,
+  mosaics?: Mosaics,
 ): { crops: MapLayer[]; problems: string[] } {
   const batchId = nextBatchId();
   const problems: string[] = [];
   const crops = datasets.flatMap((dataset) => {
     const section = sections.find((x) => x.datasetId === dataset.id);
     if (dataset.browse !== 'full_resolution' || !section || section.items.length === 0) return [];
-    const drawn = fullResolutionLayers(dataset, section, aoi, batchId);
+    const drawn = fullResolutionLayers(dataset, section, aoi, batchId, mosaics);
     if (drawn.length === 0) {
       problems.push(
         defaultRenderOf(dataset.collection)?.assets[0]
@@ -398,6 +402,94 @@ function cropsForSearch(
     return drawn;
   });
   return { crops, problems };
+}
+
+// The overlays for these scenes, split by time step; `null` while the mosaic of one is not known.
+function overlaysOfEntries(s: AppState, entries: SceneEntry[], clip: GeoJSON.Geometry | null): LayerOverlay[] | null {
+  const overlays = passesOf(entries, s.groups).map((pass) =>
+    overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, clip),
+  );
+  return overlays.some((o) => o === null) ? null : overlays.flatMap((o) => o ?? []);
+}
+
+// What a pin is made from, to tell on arrival whether the view is still the one it was asked in.
+const pinKey = (s: AppState) =>
+  JSON.stringify([s.datasetId, s.cropToAoi, s.selectedIds, Object.keys(s.downloaded), s.layers.length]);
+
+// A selection inside the view is another mosaic than the one the view loaded (a part of its scenes), and
+// one the view has not loaded yet is still on its way. Pinning waits for it ("Loading…") and then pins by
+// itself; if the tiler cannot give it, `fetchMosaics` has said why and nothing is pinned. A pin made
+// meanwhile from another selection, or another pin that changed the list, is not repeated.
+function pinWhenLoaded(set: SetState, get: GetState, lists: SceneEntry[][]): void {
+  const s = get();
+  const datasetId = s.datasetId ?? '';
+  const key = pinKey(s);
+  const requests = lists.flatMap((entries) => passesOf(entries, s.groups).map((pass) => ({ datasetId, entries: pass })));
+  set({ pinLoading: true, error: null });
+  void fetchMosaics(set, get, requests).then(() => {
+    const now = get();
+    set({ pinLoading: false });
+    if (pinKey(now) !== key) return;
+    const failed = requests.some((r) => {
+      const template = mosaicTemplateOf(r.datasetId, r.entries);
+      return template !== null && !now.mosaics[template];
+    });
+    if (!failed) now.addCurrentToLayers();
+  });
+}
+
+// In flight, by the mosaic's template: two views that want one mosaic ask the tiler once.
+const mosaicLoads = new Map<string, Promise<void>>();
+
+// Loads the TileJSON of each pass that a mosaic would draw, once. The tiler fills its item cache by
+// it, and the map learns the surface, the levels and the order of the scenes (`mosaic.ts`). A mosaic
+// the tiler cannot give is kept as `null` and its pass is drawn scene by scene; asking again after a
+// `null` asks the tiler again.
+async function fetchMosaics(
+  set: SetState,
+  get: GetState,
+  requests: { datasetId: string; entries: SceneEntry[] }[],
+): Promise<void> {
+  const failures: string[] = [];
+  await Promise.all(
+    requests.map(async ({ datasetId, entries }) => {
+      const template = mosaicTemplateOf(datasetId, entries);
+      if (!template || get().mosaics[template]) return;
+      let load = mosaicLoads.get(template);
+      if (!load) {
+        load = (async () => {
+          let info: Mosaics[string] = null;
+          try {
+            const json = await api.fetchMosaicTileJson(datasetId, entries.map(([id]) => id), entries[0][1].asset);
+            info = { tileUrl: template, bounds: json.bounds, minZoom: json.minzoom, maxZoom: json.maxzoom, order: json.order };
+          } catch (e) {
+            failures.push((e as Error).message);
+          }
+          if (info || get().mosaics[template] === undefined) set({ mosaics: { ...get().mosaics, [template]: info } });
+        })().finally(() => mosaicLoads.delete(template));
+        mosaicLoads.set(template, load);
+      }
+      await load;
+    }),
+  );
+  if (failures.length > 0) set({ notice: `Could not load the mosaic (${failures[0]}); its scenes are drawn one by one.` });
+}
+
+// The AOI crops are drawn scene by scene until the mosaics of their groups have loaded, and then again.
+function upgradeCrops(
+  set: SetState,
+  get: GetState,
+  datasets: ViewableDataset[],
+  sections: ResultSection[],
+  aoi: GeoJSON.Geometry,
+): void {
+  const requests = cropPasses(datasets, sections).filter((r) => isMosaicPass(r.entries));
+  if (requests.length === 0) return;
+  void fetchMosaics(set, get, requests).then(() => {
+    if (get().sections !== sections) return; // another search has taken the results over
+    const loaded = requests.some((r) => get().mosaics[mosaicTemplateOf(r.datasetId, r.entries) ?? '']);
+    if (loaded) set({ searchCrops: cropsForSearch(datasets, sections, aoi, get().mosaics).crops });
+  });
 }
 
 function resultsNotice(ctx: SearchContext, datasets: ViewableDataset[], sections: ResultSection[]): string {
@@ -466,7 +558,7 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     single && !single.hasTimeAxis && ctx.answer.ignoredFilters.includes('datetime')
       ? acquisitionNote(single.collection)
       : null;
-  const { crops, problems } = cropsForSearch(datasets, sections, ctx.aoi);
+  const { crops, problems } = cropsForSearch(datasets, sections, ctx.aoi, s.mosaics);
   const notice = [
     resultsNotice(ctx, datasets, sections),
     ctx.truncatedNotice,
@@ -486,6 +578,7 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     error: null,
     notice,
   });
+  upgradeCrops(set, get, datasets, sections, ctx.aoi);
 }
 
 // A new set of ticked datasets (M4-29): the results of the last search go, the
@@ -572,7 +665,7 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
     );
     if (!done) return;
     const { now, replacement, sections } = done;
-    const { crops, problems } = cropsForSearch(viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi);
+    const { crops, problems } = cropsForSearch(viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi, now.mosaics);
     const singleNotice = replacement.groupingError
       ? { error: `Grouping failed: ${replacement.groupingError}`, notice: null }
       : { notice: [replacement.notes[0], ctx.truncatedNotice, ...problems].filter(Boolean).join(' ') };
@@ -582,6 +675,7 @@ async function runFallback(set: SetState, get: GetState, datasetId: string, reth
       searchCrops: crops,
       ...(ctx.datasetIds.length === 1 ? singleNotice : {}),
     });
+    upgradeCrops(set, get, viewableDatasets(now.datasets, ctx.datasetIds), sections, ctx.aoi);
   } catch (e) {
     if (rethrow) throw e;
     // Not tried again for this search.
@@ -619,6 +713,8 @@ export interface AppState {
   lastAoi: GeoJSON.Geometry | null; // most recent AOI, for "use last"
   lastAoiPoint: GeoJSON.Point | null; // the point behind lastAoi, if it had one
   flyToBbox: Bbox | null;
+  // A camera to jump to as it is (a permalink's view, M4-19e): centre [lon, lat] and zoom.
+  flyToView: { center: [number, number]; zoom: number } | null;
   // --- view preferences (V-1), saved per browser (preferences.ts) ---
   theme: Theme;
   projection: Projection;
@@ -754,6 +850,11 @@ export interface AppState {
   expandedGroupIndex: number | null;
   selectedIds: string[];
   downloaded: Record<string, DownloadedInfo>;
+  // What the mosaics of the time steps in view look like, by tile template (`mosaic.ts`). Kept for
+  // the session: the same scenes are the same URL, so one answer serves a later view of them.
+  mosaics: Mosaics;
+  // "Add to layers" is waiting for a mosaic (`pinWhenLoaded`).
+  pinLoading: boolean;
 
   // --- filters ---
   dateFrom: string;
@@ -781,6 +882,7 @@ export interface AppState {
   useLastAoi: () => void;
   flyTo: (b: Bbox) => void;
   clearFly: () => void;
+  clearFlyView: () => void;
   togglePanel: () => void;
   setPanelCollapsed: (v: boolean) => void;
   toggleResultsPanel: () => void;
@@ -788,6 +890,8 @@ export interface AppState {
   toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
   pinDerivedLayer: (layer: DerivedLayer) => void;
+  // Marks the result layers whose job's results are about to go (M4-13c-5).
+  expireResultLayers: (now: number) => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
@@ -800,6 +904,7 @@ export interface AppState {
   setDownloadResolution: (factor: ResolutionFactor) => void;
   confirmDownload: () => Promise<void>;
   enterFocus: (cropToAoi: boolean) => Promise<void>;
+  loadMosaics: () => Promise<void>;
   exitFocus: () => void;
   toggleDownloaded: () => void;
   setPendingColormapName: (v: string) => void;
@@ -840,6 +945,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastAoi: null,
   lastAoiPoint: null,
   flyToBbox: null,
+  flyToView: null,
   theme: loadTheme(),
   projection: loadProjection(),
   showCoverage: false,
@@ -896,6 +1002,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   expandedGroupIndex: 0,
   selectedIds: [],
   downloaded: {},
+  mosaics: {},
+  pinLoading: false,
 
   dateFrom: '',
   dateTo: '',
@@ -1013,6 +1121,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
+  clearFlyView: () => set({ flyToView: null }),
   togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
   setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
   toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
@@ -1054,6 +1163,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // selection, since there is nothing cropped to merge into groups.
   addCurrentToLayers: () => {
     const s = get();
+    if (s.pinLoading) return; // already waiting for a mosaic; it pins when it is here
     const activeGroup = s.groups[s.activeGroupIndex];
     const dataset = s.datasets.find((d) => d.id === s.datasetId);
     const batchId = nextBatchId();
@@ -1083,19 +1193,21 @@ export const useAppStore = create<AppState>((set, get) => ({
           bucket.push(entry);
           byGroupIndex.set(idx, bucket);
         }
-        const newLayers = [...byGroupIndex.entries()].map(([idx, groupEntries], i) => {
+        const perGroup = [...byGroupIndex.entries()].map(([idx, groupEntries]) => ({
+          idx,
+          groupEntries,
+          overlays: overlaysOfEntries(s, groupEntries, aoi),
+        }));
+        if (perGroup.some((g) => g.overlays === null)) {
+          pinWhenLoaded(set, get, perGroup.filter((g) => g.overlays === null).map((g) => g.groupEntries));
+          return;
+        }
+        const newLayers = perGroup.map(({ idx, groupEntries, overlays }, i) => {
           const label = idx >= 0 ? s.groups[idx]?.label : activeGroup?.label;
           const itemIds = groupEntries.map(([id]) => id);
-          const overlays: LayerOverlay[] = groupEntries.map(([, info]) => ({
-            kind: 'raster',
-            tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, s.appliedRender), aoi),
-            bounds: info.bounds,
-            minZoom: info.minZoom,
-            maxZoom: info.maxZoom,
-          }));
           return makeLayer(
             `${dataset?.title ?? s.datasetId ?? '?'} · ${label ?? ''}`,
-            overlays,
+            overlays ?? [],
             {
               focusMode: true,
               downloaded: Object.fromEntries(groupEntries),
@@ -1117,18 +1229,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           layers: [...newLayers, ...s.layers],
           layerManagerOpen: true,
+          error: null,
           notice: `Added ${newLayers.length} layer${newLayers.length === 1 ? '' : 's'} (one per group).`,
         });
         return;
       }
       const itemIds = entries.map(([id]) => id);
-      const overlays: LayerOverlay[] = entries.map(([, info]) => ({
-        kind: 'raster',
-        tileUrl: buildTileUrl(info.tileUrl, s.appliedRender),
-        bounds: info.bounds,
-        minZoom: info.minZoom,
-        maxZoom: info.maxZoom,
-      }));
+      const overlays = overlaysOfEntries(s, entries, null);
+      if (overlays === null) {
+        pinWhenLoaded(set, get, [entries]);
+        return;
+      }
       const name = `${dataset?.title ?? s.datasetId ?? '?'} · ${activeGroup?.label ?? ''}`;
       const layer = makeLayer(
         name,
@@ -1147,7 +1258,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         0,
       );
-      set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
+      set({ layers: [layer, ...s.layers], layerManagerOpen: true, error: null, notice: `Added "${name}" to layers.` });
       return;
     }
 
@@ -1220,6 +1331,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       opacity: 1,
       overlays: input.overlays,
       derived: input.derived,
+      ...(input.result ? { result: input.result } : {}),
       restore: {
         focusMode: false,
         downloaded: {},
@@ -1235,6 +1347,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${input.name}" to layers.` });
   },
+  expireResultLayers: (now) =>
+    set((s) => {
+      const due = (l: MapLayer) => l.result && !l.result.expired && isResultExpired(l.result.expires, now);
+      if (!s.layers.some(due)) return {};
+      return { layers: s.layers.map((l) => (due(l) && l.result ? { ...l, result: { ...l.result, expired: true } } : l)) };
+    }),
   removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
@@ -1281,7 +1399,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
       viewLayerId: id,
+      focusLoading: true,
     });
+    void get().loadMosaics().finally(() => set({ focusLoading: false }));
   },
 
   // Open the dialog for a pinned layer (M2-07d). The crop and disabled
@@ -1534,8 +1654,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const rescale = render.rescale?.[0];
+    // Scenes of a time step too big for one mosaic are drawn one by one, and only so many of those.
+    const passes = passesOf(Object.entries(downloaded), s.groups);
+    const oneByOne = passes.filter((pass) => !isMosaicPass(pass)).reduce((sum, pass) => sum + pass.length, 0);
+    const oversize = oversizeNote(passes, Math.max(0, oneByOne - MAX_MOSAIC_LAYERS));
     set({
       error: null,
+      ...(oversize ? { notice: oversize } : {}),
       focusMode: true,
       cropToAoi,
       showDownloaded: true,
@@ -1545,7 +1670,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingVmin: rescale ? String(rescale[0]) : '',
       pendingVmax: rescale ? String(rescale[1]) : '',
     });
+    // The stretch and the mosaics are asked for together; the view says "Loading…" until both are here,
+    // because a time step draws nothing until its mosaic has answered.
+    const mosaics = get().loadMosaics();
     await get().autoStretch();
+    set({ focusLoading: true });
+    await mosaics;
+    set({ focusLoading: false });
+  },
+  // The mosaics of the time steps the view shows, which the map draws once they are here.
+  loadMosaics: async () => {
+    const s = get();
+    const datasetId = s.datasetId;
+    if (!s.focusMode || !datasetId) return;
+    await fetchMosaics(
+      set,
+      get,
+      passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
+    );
   },
   exitFocus: () =>
     set({

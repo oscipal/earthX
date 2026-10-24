@@ -13,6 +13,7 @@ import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi } from '../placeSearch';
+import { DEFAULT_RANGE } from '../processingPreview';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
@@ -452,6 +453,22 @@ describe('review before start (K4)', () => {
     expect(button('Start job').disabled).toBe(true);
   });
 
+  it('shows the refusal of a chain at the step that names the removed band, and does not let it start', async () => {
+    routes['POST /processing/processes/recipe/estimate'] = () =>
+      problem(422, 'step 1: expression names unknown band(s): red; the input has: band_math');
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    click(button('＋ Band math'));
+    const expressions = container.querySelectorAll<HTMLTextAreaElement>('textarea[id$="-expression"]');
+    typeInto(expressions[1], 'red + 1');
+    await review();
+    const steps = container.querySelectorAll('.pp-step');
+    expect(steps[0].textContent).not.toContain('unknown band');
+    expect(steps[1].textContent).toContain('expression names unknown band(s): red');
+    expect(button('Start job').disabled).toBe(true);
+  });
+
   it('hides a refusal once the order changed, also one that arrives after the change', async () => {
     let answer!: (r: Response) => void;
     routes['POST /processing/processes/recipe/estimate'] = () => new Promise((resolve) => (answer = resolve));
@@ -765,6 +782,51 @@ describe('resampling and data type (Otto, 12.10.2026)', () => {
   });
 });
 
+describe('the unit of a band (M4-19b)', () => {
+  const withUnits = (units: object): DatasetOption => {
+    const option = dataset('processing');
+    return { ...option, collection: { ...option.collection, 'earthx:band_units': units } as Collection };
+  };
+
+  it('is written after the name of the band on its chip, and the name stays the name of the button', async () => {
+    select([scene('S2B_A')], 'processing', withUnits({ red: 'K', nir: null }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red · K', 'nir']);
+    click(button(/^red/));
+    expect(button(/^red/).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('is not written for "1", the unit of a dimensionless quantity, whoever names it (Otto, 24.10.2026)', async () => {
+    const item: StacItem = {
+      ...scene('S2B_A'),
+      assets: {
+        red: { href: 'https://example.org/r.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+        nir: { href: 'https://example.org/n.tif', type: COG, 'raster:bands': [{ unit: '1' }] },
+      },
+    };
+    select([item], 'processing', withUnits({ red: '1', nir: 'm' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red', 'nir']);
+  });
+
+  it('is the registry\'s for an asset the item describes with no band', async () => {
+    const dem: StacItem = { ...scene('DEM_A'), assets: { data: { href: 'https://example.org/dem.tif', type: COG } } };
+    select([dem], 'processing', withUnits({ data: 'm' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['data · m']);
+  });
+
+  it('is the item\'s own where the item states one', async () => {
+    const item: StacItem = {
+      ...scene('S2B_A'),
+      assets: { red: { href: 'https://example.org/r.tif', type: COG, 'raster:bands': [{ unit: 'percent' }] } },
+    };
+    select([item], 'processing', withUnits({ red: '1' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red · percent']);
+  });
+});
+
 describe('a COG asset without band descriptions (K7, Otto 10.10.2026)', () => {
   it('gets a chip with the asset name, which puts the asset into the order', async () => {
     const dem: StacItem = {
@@ -935,6 +997,48 @@ describe('starting and following a job', () => {
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
 
+  describe('keeps the range set by hand with the job (Otto, 22.10.2026)', () => {
+    const HAND = { vmin: '0', vmax: '0.5', colormap: 'greys' };
+
+    async function startOne() {
+      routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
+      select([scene('S2B_A')]);
+      await openPanel();
+      await ndvi();
+      await review();
+      click(button('Start job'));
+      await flush();
+      return useProcessingStore.getState().jobs[0];
+    }
+
+    it('stores a range applied by hand at the job started under it', async () => {
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
+      expect((await startOne()).range).toEqual(HAND);
+    });
+
+    it('stores none where the range is the default, which nobody chose', async () => {
+      expect((await startOne()).range).toBeNull();
+    });
+
+    it('stores the start range once the user applied it, against a measure that would call for another', async () => {
+      useProcessingStore.setState({ range: DEFAULT_RANGE, rangeDraft: DEFAULT_RANGE, rangeByHand: true });
+      expect((await startOne()).range).toEqual(DEFAULT_RANGE);
+    });
+
+    it('stores none for a range that is only typed and not applied', async () => {
+      useProcessingStore.setState({ rangeDraft: HAND });
+      expect((await startOne()).range).toBeNull();
+    });
+
+    it('does not change the range of a started job when the panel is changed after', async () => {
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
+      const job = await startOne();
+      useProcessingStore.setState({ range: { vmin: '2', vmax: '9', colormap: '' } });
+      expect(useProcessingStore.getState().jobs[0].range).toEqual(job.range);
+      expect(job.range).toEqual(HAND);
+    });
+  });
+
   it('starts, follows by polling and offers the files when the job is done', async () => {
     let polls = 0;
     routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
@@ -1080,6 +1184,45 @@ describe('starting and following a job', () => {
     ]);
   });
 
+  // M4-13c-5: the link `tiles` of a raster result leads to the tiler, not to a file to download.
+  const TILES = `/results/${JOB}/WebMercatorQuad/tilejson.json`;
+
+  it('keeps the link to the tiles of a raster result, apart from the files, with what "Overview" needs', async () => {
+    await resume(() =>
+      json({
+        result: { ...link('result.tif'), width: 1000, properties: { gsd: 10, 'earthx:resampled': false } },
+        mask: link('mask.tif'),
+        recipe: link('recipe.json'),
+        bundle: link('result.zip'),
+        tiles: { href: TILES, type: 'application/json' },
+      }),
+    );
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
+    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Download (ZIP)']);
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Add to layers');
+  });
+
+  it('keeps the single links of an old result next to its tiles', async () => {
+    await resume(() =>
+      json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json'), tiles: { href: TILES } }),
+    );
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Result (COG)', 'Mask', 'Recipe']);
+    expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: null, gsd: null });
+  });
+
+  it.each([
+    ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
+    ['a link of another shape', { result: link('result.tif'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
+    ['a link to a file of the job API', { result: link('result.tif'), tiles: link('result.tif') }],
+  ])('offers no "Add to layers" for %s', async (_, doc) => {
+    await resume(() => json(doc));
+    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Add to layers');
+  });
+
   it.each([
     ['runtime_exceeded', 'The job took longer than allowed', 'The job took longer than allowed. Choose a smaller area or fewer assets.'],
     [
@@ -1113,6 +1256,9 @@ describe('a finished job row (K6)', () => {
       error: null,
       cancelling: false,
       expired: false,
+      tiles: null,
+      statistics: null,
+      range: null,
       title: null,
     };
   }

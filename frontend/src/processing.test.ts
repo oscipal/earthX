@@ -8,8 +8,10 @@ import {
   eventsUrl,
   fetchCrs,
   fetchJob,
+  fetchMethodsText,
   fetchProcess,
   fetchResults,
+  fetchResultTileJson,
   isJobId,
   parseStatusInfo,
   placeJob,
@@ -240,5 +242,51 @@ describe('the unit of a target CRS', () => {
   ])('refuses an answer with %s instead of showing it', async (_, body) => {
     vi.stubGlobal('fetch', vi.fn(async () => respond(body)));
     await expect(fetchCrs('EPSG:3035')).rejects.toThrow('could not be read');
+  });
+});
+
+describe('the TileJSON of a result (M4-13c-5)', () => {
+  const HREF = '/results/ZyXwVuTsRqPoNmLkJiHg_-/WebMercatorQuad/tilejson.json';
+  const TILE_JSON = { bounds: [10, 50, 11, 51], minzoom: 8, maxzoom: 14, data_type: 'uint16', tiles: ['http://tiler/{z}'] };
+
+  it('asks the address of the link and hands the signal on', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(TILE_JSON));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    expect(await fetchResultTileJson(HREF, controller.signal)).toEqual({
+      bounds: [10, 50, 11, 51],
+      minZoom: 8,
+      maxZoom: 14,
+      dataType: 'uint16',
+    });
+    expect(fetchMock.mock.calls[0]).toEqual([HREF, { signal: controller.signal }]);
+  });
+
+  it.each([410, 404, 503])('throws the status %i with its reason', async (code) => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ detail: 'the result has expired' }, { status: code })));
+    const error = await fetchResultTileJson(HREF).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).status).toBe(code);
+  });
+
+  it('refuses an answer the map cannot use', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ bounds: [1, 2] })));
+    await expect(fetchResultTileJson(HREF)).rejects.toThrow('cannot read');
+  });
+});
+
+describe('fetchMethodsText', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads the text of the job from its methods link', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response('A paragraph.\n', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await fetchMethodsText(JOB)).toBe('A paragraph.\n');
+    expect(fetchMock.mock.calls[0][0]).toBe(resultUrl(JOB, 'methods.txt'));
+  });
+
+  it('says so when the link answers with an error, such as an expired result', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('gone', { status: 410 })));
+    await expect(fetchMethodsText(JOB)).rejects.toThrow('could not be read (410)');
   });
 });

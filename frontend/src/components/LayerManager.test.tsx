@@ -64,6 +64,23 @@ describe('LayerManager', () => {
     expect(container.textContent).toContain('No layers yet');
   });
 
+  // Otto, 24.10.2026: no kind of layer shows a unit; they stay on the band chips and in the data.
+  it('shows no unit on a layer of a dataset that names units', () => {
+    const datasets = datasetsFrom([{ id: 'dem', title: 'Elevation', 'earthx:band_units': { data: 'm' } }]);
+    const layer: MapLayer = {
+      id: 'dem-layer',
+      name: 'Elevation · tile',
+      visible: true,
+      opacity: 1,
+      overlays: [{ kind: 'raster', tileUrl: 'https://t/dem/{z}/{x}/{y}', bounds: [0, 0, 1, 1], minZoom: 0, maxZoom: 12 }],
+      restore: { datasetId: 'dem', itemIds: [] } as never,
+    };
+    useAppStore.setState({ datasets, datasetId: 'dem', selectedDatasetIds: ['dem'], layers: [layer], layerManagerOpen: true });
+    act(() => root.render(<LayerManager />));
+    expect(container.querySelector('.layer-row')).not.toBeNull();
+    expect(container.textContent).not.toMatch(/\bm\b/u);
+  });
+
   // M4-28: a click arrives at the row it was made on — also when every row has the
   // same name and shows the same picture, and after the list was reordered.
   describe('a click on a row', () => {

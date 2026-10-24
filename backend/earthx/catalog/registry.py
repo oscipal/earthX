@@ -17,6 +17,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
+from fnmatch import fnmatchcase
 from types import MappingProxyType
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
@@ -29,6 +30,9 @@ EARTH_CIRCUMFERENCE_KM = 40075.0
 # mistake, not a wish, and the same reasoning as MAX_GEOTILE_LEVEL in
 # catalog/coverage.py: a grid finer than the data is a number, not a picture.
 MAX_TILE_ZOOM = 22
+
+# A unit is a symbol, not a sentence (UCUM: "m", "1", "mm/h"); the longest in use stays far below this.
+MAX_UNIT_CHARS = 32
 
 
 class DataClass(Enum):
@@ -149,6 +153,21 @@ _DOI_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "
 _DOI_NAME = re.compile(r"10\.\d{4,9}/[^\s{}]+")
 
 
+#: What ``readers.zarr_reader`` puts between the variables of one Zarr asset key (``SR_10m:b04,b03``). The catalog
+#: may not import the readers; a test holds the two equal.
+VARIABLE_LIST_SEPARATOR = ","
+
+
+def single_asset_keys(asset: str, separator: str | None) -> list[str]:
+    """The keys ``band_units`` is read by for one asset key an order names: a Zarr group has one per variable."""
+    if separator is None:
+        return [asset]
+    group, found, variables = asset.partition(separator)
+    if not found:
+        return [asset]
+    return [f"{group}{separator}{variable}" for variable in variables.split(VARIABLE_LIST_SEPARATOR)]
+
+
 def doi_name(doi: str | None) -> str | None:
     """The DOI name (``10.5270/...``) of a registry ``doi``, which may be a resolver URL.
 
@@ -192,6 +211,12 @@ class Capabilities:
     #: Reprojection and resampling to another grid (adr/0014 §5.3, F6; R3). A
     #: method other than ``nearest`` needs ``interpolation`` as well.
     reprojection: bool
+    #: ``mask`` hides the classes a recipe names of the layer in ``DatasetConfig.mask``
+    #: (adr/0014 §15m); set exactly where that layer is described.
+    masking: bool
+    #: ``normalize``: a fixed range onto another (M4-18). Generic like band math, but
+    #: every entry switches it on by itself (B10).
+    normalization: bool
     ml_processing: bool
     quad_pol: bool
     single_coverage_product: bool
@@ -464,9 +489,10 @@ class ViewerInfo:
     always has.
 
     A note on ``min_zoom`` for a dataset released from tiles that are already
-    clipped to their own item's extent (M3-09 onward: every tile URL is
-    per-item, never a mosaic): the reasoning above ("below it one tile shows
-    several scenes") does not hold there — an item's own tile costs the same
+    clipped to their own item's extent (M3-09 onward: the tile URL of one item
+    is clipped to that item; the mosaic tile of M4-17 is the one URL that names
+    several items, from z8 up whatever ``min_zoom`` says): the reasoning above
+    ("below it one tile shows several scenes") does not hold there — an item's own tile costs the same
     at every zoom down to where it stops touching its neighbours (measured for
     the DEM, M3-12 plan step §3: z0 through z8 read the same overview block).
     ``min_zoom`` is then a cost floor on how many tiles a viewport can ask for
@@ -655,6 +681,37 @@ def max_geotile_level_for(typical_footprint_km: float) -> int:
     return math.floor(math.log2(EARTH_CIRCUMFERENCE_KM / typical_footprint_km))
 
 
+#: Largest class value a mask layer may carry (``uint16``).
+MAX_MASK_VALUE = 65535
+
+
+@dataclass(frozen=True, slots=True)
+class MaskClass:
+    """One class of a classification layer: the value in the pixels and the source's name for it."""
+
+    value: int
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class MaskSource:
+    """Where the operator ``mask`` reads its classes from for this dataset (M4-18, adr/0014 §15m).
+
+    ``asset`` is the key an order names (``scl``, ``SCL_20m:scl`` for a Zarr group),
+    ``band`` the name the layer carries in the core, which is what a recipe's ``source``
+    must equal. ``classes`` lists every class the layer knows, ascending, with the names
+    of ``reference``; ``suggested`` is what the panel ticks first and is never applied
+    unless a recipe names it (B10). ``note`` is the help text's remark on the names.
+    """
+
+    asset: str
+    band: str
+    classes: tuple[MaskClass, ...]
+    suggested: frozenset[int]
+    reference: str
+    note: str
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     """One dataset, everything the platform decides about it before asking the source."""
@@ -693,8 +750,19 @@ class DatasetConfig:
     # ZarrInfo). A dataset whose store needs anything more says so here, not with a
     # branch on `dataset_id` somewhere in `readers`.
     zarr: ZarrInfo | None
+    # The classification layer ``mask`` reads, or None where the dataset has none (the
+    # DEM). No default (KLAERUNGEN B10): an entry says so on purpose, and ``masking`` in
+    # its capabilities agrees with it.
+    mask: MaskSource | None
+    # The unit of the values of an asset after the scaling, by asset key as an order names
+    # it (``red``, ``SR_10m:b04``); a key may carry ``*`` for a whole group (``SR_*``). ``None``
+    # says "unknown" on purpose. No default (KLAERUNGEN B10): an entry decides. An item that
+    # names a unit itself goes first (adr/0014 §15n). The default render and the mask layer
+    # each need a key.
+    band_units: Mapping[str, str | None]
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "band_units", MappingProxyType(dict(self.band_units)))
         self._check_keywords()
         self._check_doi()
         self._check_license_is_identifiable()
@@ -705,6 +773,78 @@ class DatasetConfig:
         self._check_item_holding()
         self._check_zarr()
         self._check_browse_cors()
+        self._check_mask()
+        self._check_band_units()
+
+    def band_unit(self, asset: str) -> str | None:
+        """The unit the entry names for ``asset`` (one key, not a list of variables), or ``None`` where it names none.
+
+        The exact key goes first, then a key with a ``*`` (the entry allows no two that overlap).
+        """
+        if asset in self.band_units:
+            return self.band_units[asset]
+        for pattern, unit in self.band_units.items():
+            if "*" in pattern and fnmatchcase(asset, pattern):
+                return unit
+        return None
+
+    def _check_band_units(self) -> None:
+        """Keys and units are usable text, and what the viewer draws by default has an entry (M4-19b)."""
+        for key, unit in self.band_units.items():
+            if not isinstance(key, str) or not key.strip() or key != key.strip():
+                raise ConfigError(f"{self.dataset_id}: a band unit is keyed by an asset, not {key!r}")
+            # Only `*` is a wildcard; the viewer reads the keys the same way, and fnmatch would also read these.
+            if any(char in key for char in "?[]"):
+                raise ConfigError(f"{self.dataset_id}: the key {key!r} of a band unit uses a wildcard other than '*'")
+            if unit is not None and (not isinstance(unit, str) or not unit.strip() or unit != unit.strip()):
+                raise ConfigError(f"{self.dataset_id}: the unit of {key!r} is a non-blank text or None")
+            if unit is not None and len(unit) > MAX_UNIT_CHARS:
+                raise ConfigError(f"{self.dataset_id}: the unit of {key!r} is longer than {MAX_UNIT_CHARS} characters")
+        # The collection travels through JSONB, which does not keep the order of keys: two patterns that can both
+        # match one asset would be read in an order nobody chose.
+        patterns = [key for key in self.band_units if "*" in key]
+        for first in patterns:
+            for second in patterns:
+                if first != second and fnmatchcase(first, second):
+                    raise ConfigError(f"{self.dataset_id}: the patterns {second!r} and {first!r} of band_units overlap")
+        separator = self.zarr.variable_separator if self.zarr is not None else None
+        wanted = list(self.default_render.assets) if self.default_render is not None else []
+        if self.mask is not None:
+            wanted.append(self.mask.asset)
+        listed = tuple(self.band_units)
+        for order_asset in wanted:
+            for key in single_asset_keys(order_asset, separator):
+                if not any(key == pattern or ("*" in pattern and fnmatchcase(key, pattern)) for pattern in listed):
+                    raise ConfigError(f"{self.dataset_id}: band_units has no entry for {key!r}, which the entry reads itself")
+
+    def _check_mask(self) -> None:
+        """``masking`` and ``mask`` agree, and the description of the layer is consistent (M4-18)."""
+        mask = self.mask
+        if mask is None:
+            if self.capabilities.masking:
+                raise ConfigError(f"{self.dataset_id}: masking is on, but the entry describes no mask layer")
+            return
+        if not self.capabilities.masking:
+            raise ConfigError(f"{self.dataset_id}: the entry describes a mask layer, but masking is off")
+        if not mask.asset or not mask.band or not mask.note.strip():
+            raise ConfigError(f"{self.dataset_id}: a mask layer names its asset, band and a note")
+        # A Zarr group is addressed as ``<asset>:<variable>`` (plan M4-13, ZarrInfo); a COG asset key holds no colon.
+        variable = mask.asset.rsplit(":", 1)[-1]
+        if variable != mask.band:
+            raise ConfigError(
+                f"{self.dataset_id}: mask band {mask.band!r} is not what asset {mask.asset!r} reads as {variable!r}"
+            )
+        if not mask.reference.startswith("https://"):
+            raise ConfigError(f"{self.dataset_id}: the source of the mask classes is not an https URL")
+        values = [entry.value for entry in mask.classes]
+        if not values or values != sorted(set(values)):
+            raise ConfigError(f"{self.dataset_id}: mask classes are listed ascending, each value once")
+        if not all(isinstance(value, int) and 0 <= value <= MAX_MASK_VALUE for value in values):
+            raise ConfigError(f"{self.dataset_id}: mask class values are whole numbers from 0 to {MAX_MASK_VALUE}")
+        if not all(entry.label.strip() for entry in mask.classes):
+            raise ConfigError(f"{self.dataset_id}: every mask class has a name")
+        if not mask.suggested <= set(values):
+            raise ConfigError(f"{self.dataset_id}: suggested mask classes are among the listed ones")
 
     def _check_keywords(self) -> None:
         """At least one keyword, each a non-blank string (M3-10): the viewer's filter

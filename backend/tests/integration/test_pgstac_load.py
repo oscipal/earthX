@@ -68,6 +68,9 @@ class TestLoading:
         assert stored["earthx:capabilities"]["quad_pol"] is False
         assert stored["earthx:license_flags"]["tier"] == "processing"
         assert stored["earthx:license_flags"]["terms_url"].endswith("Sentinel_Data_Legal_Notice")
+        # An explicit "unknown" is a null that must not vanish on the way (M4-19b).
+        assert stored["earthx:band_units"]["red"] == "1"
+        assert "scl" in stored["earthx:band_units"] and stored["earthx:band_units"]["scl"] is None
 
     def test_loading_twice_leaves_one_row(self, conn) -> None:
         """Acceptance criterion: loading is idempotent."""

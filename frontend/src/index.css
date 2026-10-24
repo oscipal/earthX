@@ -1408,6 +1408,14 @@ input[type='date']:focus {
   padding: 5px 4px;
   border-bottom: 1px solid var(--panel-border);
 }
+/* A line of its own under the controls of a layer: "Expired", "Resampled …" (M4-13c-5). */
+.layer-row-noted {
+  flex-wrap: wrap;
+}
+.lm-note {
+  flex: 1 0 100%;
+  margin: 0 0 0 22px;
+}
 .lm-eye,
 .lm-btn {
   background: none;
@@ -1815,6 +1823,68 @@ input[type='date']:focus {
   text-transform: none;
   letter-spacing: 0;
 }
+.pp-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pp-recipe-btn {
+  box-sizing: border-box;
+  width: 25%;
+  padding: 8px 6px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pp-recipe-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pp-recipe p {
+  margin: 0;
+  font-size: 11px;
+}
+.pp-share {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pp-share p {
+  margin: 0;
+}
+/* The link in a read-only field (the themed `input[type='text']`), the copy glyph of the results list and a small red cross. */
+.pp-share-link {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pp-share-link input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.delete-btn {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ff5a6e;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.delete-btn:hover:not(:disabled) {
+  border-color: #ff5a6e;
+}
+.delete-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .pp-options {
   margin: 0;
   padding-left: 14px;
@@ -1832,6 +1902,21 @@ input[type='date']:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+}
+.pp-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.pp-classes legend {
+  padding: 0;
+  margin-bottom: 4px;
   font-size: 11px;
   color: var(--text);
 }
@@ -1855,6 +1940,10 @@ input[type='date']:focus {
 .pp-seg.on {
   border-color: var(--accent);
   color: var(--accent);
+}
+/* The unit of a band after its name (M4-19b): present, but quieter than the name. */
+.pp-chip-unit {
+  opacity: 0.7;
 }
 .pp-steps,
 .pp-jobs {
@@ -1955,12 +2044,34 @@ input[type='date']:focus {
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+.preview-badge + .preview-badge {
+  margin-left: 6px;
+}
 .pp-range {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
 }
+/* The fields hold a whole value such as -11000, 8848.86 or -0.123456 (monospace, plus the padding and the spinner);
+   the group wraps rather than lets a field run over its neighbour. */
 .pp-range .vc-num {
-  width: 72px;
+  flex: none;
+}
+.pp-range .vc-num input {
+  width: calc(11ch + 44px);
+  max-width: 100%;
+}
+.pp-bound {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex: none;
+  max-width: 100%;
+}
+.pp-unit {
+  flex: none;
+  padding-bottom: 6px;
+  white-space: nowrap;
+  opacity: 0.8;
 }

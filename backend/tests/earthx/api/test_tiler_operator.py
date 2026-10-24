@@ -463,12 +463,12 @@ class TestRefusals:
         assert response.status_code == 422
         assert "does not allow processing" in response.json()["detail"]
 
-    @pytest.mark.parametrize("route", ["statistics", "info", "point/9.0,47.0"])
-    def test_an_operator_is_for_tiles_and_their_tilejson_only(self, client: TestClient, route: str) -> None:
+    @pytest.mark.parametrize("route", ["info", "point/9.0,47.0"])
+    def test_an_operator_is_for_tiles_their_tilejson_and_statistics_only(self, client: TestClient, route: str) -> None:
         query = f"asset=red&asset=nir&op=band_math&op_version=1&params={quote(json.dumps({'expression': NDVI}))}"
         response = client.get(f"/collections/{COG}/items/{ITEM}/{route}?{query}")
         assert response.status_code == 400
-        assert "tiles and their TileJSON only" in response.json()["detail"]
+        assert "tiles, their TileJSON and statistics only" in response.json()["detail"]
 
     def test_the_same_asset_twice_is_a_400(self, client: TestClient) -> None:
         assert client.get(_url(_tiles()[0], assets=("red", "red"), expression="red")).status_code == 400

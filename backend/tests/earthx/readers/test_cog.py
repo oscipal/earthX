@@ -109,3 +109,18 @@ def test_the_caller_s_resolver_is_the_one_that_is_asked(policy: Policy) -> None:
     path = asset_path(HREF, policy, dataset_id="d", item_id="i", asset="visual", resolve=resolve)
     assert path == f"/vsicurl/{HREF}"
     assert asked == [HOST]
+
+
+def test_only_two_places_build_an_asset_path() -> None:
+    """The path a reader opens comes from `asset_path` after `check_url` — and, agreed in adr/0015 §14c,
+    from `api/result_tiles.py` for a job result, whose signed URL `earthx.objectstore` made."""
+    import ast
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[3] / "earthx"
+    builders = set()
+    for path in package.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", None)) == "AssetPath":
+                builders.add(str(path.relative_to(package)))
+    assert builders == {"readers/cog.py", "api/result_tiles.py"}

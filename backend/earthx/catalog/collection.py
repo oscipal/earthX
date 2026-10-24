@@ -56,10 +56,32 @@ def _earthx_capabilities(config: DatasetConfig) -> dict[str, bool]:
         "band_math": caps.band_math,
         "interpolation": caps.interpolation,
         "reprojection": caps.reprojection,
+        "masking": caps.masking,
+        "normalization": caps.normalization,
         "ml_processing": caps.ml_processing,
         "quad_pol": caps.quad_pol,
         "single_coverage_product": caps.single_coverage_product,
     }
+
+
+def _earthx_mask(config: DatasetConfig) -> dict[str, object] | None:
+    """The layer ``mask`` reads, for the panel's list of classes; ``None`` where there is none (M4-18)."""
+    mask = config.mask
+    if mask is None:
+        return None
+    return {
+        "asset": mask.asset,
+        "band": mask.band,
+        "classes": [{"value": entry.value, "label": entry.label} for entry in mask.classes],
+        "suggested": sorted(mask.suggested),
+        "reference": mask.reference,
+        "note": mask.note,
+    }
+
+
+def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
+    """The unit of each asset the entry names, ``None`` where it says the unit is unknown (M4-19b)."""
+    return dict(config.band_units)
 
 
 def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
@@ -138,6 +160,8 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         # file to link, M3-17) without a dataset-specific branch anywhere.
         "earthx:format": config.format.value,
         "earthx:capabilities": _earthx_capabilities(config),
+        "earthx:mask": _earthx_mask(config),
+        "earthx:band_units": _earthx_band_units(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
             "token_free_checked_at": config.access.token_free_checked_at.isoformat(),

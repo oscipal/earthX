@@ -175,8 +175,10 @@ Von Otto entschieden: Umschalter, Vorgabe „Whole scene“. Ausgestaltung (K1�
   Abschnitt „Preview on the map“. Der Layer hält die Kachel-URL mit
   `op`/`params` (Overlay `raster`, wie heute) und heißt „Preview · <Operator>“;
   er trägt das Badge-Recht weiter (Overlay bekommt `gsd`).
+- **[Geändert am 20.10.2026 (Otto, Option 1): „Replace source layer“ entfällt auch für Job-Ergebnisse, siehe §15.]**
+- **[Geändert am 20.10.2026 (Otto): ein Knopf „Add to layers“ statt „Show on map“ → „As a new layer“; das Ergebnis erscheint auf der Karte auf die AOI zugeschnitten (die `mask.tif`, vom `tiler` angewandt), siehe §15.]**
 - **Job-Ergebnis (T2):** In der Jobzeile eines fertigen Jobs „Show on map“ mit
-  „As a new layer“ und „Replace source layer“. „Source layer“ ist der Layer, aus
+  „As a new layer“ und ~~„Replace source layer“~~. „Source layer“ ist der Layer, aus
   dem das Panel geöffnet wurde (§3.5), sonst die Fokusansicht; ohne beides gibt
   es nur „As a new layer“.
 - **Ersetzen** heißt: der Quell-Layer wird ausgeblendet (nicht gelöscht), der neue
@@ -565,7 +567,7 @@ Im Browser `http://localhost:5173`:
 4. Hineinzoomen bis etwa Kartenzoom 12,5 (10 m auf 48° N): „Preview“
    verschwindet. „＋ Add preview to layers“: der Layer steht im Layer-Manager.
 5. „AOI only“: Vorschau und Auftrag auf die Fläche zugeschnitten.
-6. „Start job“; fertig: „Show on map“ → „As a new layer“; der Layer heißt
+6. „Start job“; fertig: „Add to layers“ (seit 20.10.2026, vorher „Show on map“ → „As a new layer“); der Layer heißt
    „Result · band_math“, beim Herauszoomen mit „Overview“.
 7. `cop-dem-glo-30`, „＋ Reproject“, `crs` `EPSG:4326`, `resolution` `0.0003`:
    unter dem Feld „≈ 33 m (N–S) × 23 m (E–W) at …“; `EPSG:3035`, `30`:
@@ -1039,3 +1041,198 @@ Im Browser `http://localhost:5173`: `sentinel-2-c1-l2a`, Fläche zeichnen, suche
 4. „Start N jobs“: die Jobliste öffnet; jede Zeile trägt „Band math · Sentinel-2 L2A · 1/N“
    usw. Seite neu laden: die Titel bleiben.
 5. Mehr als 25 Szenen wählen: „One job per scene“ ist grau („At most 25 jobs at once“).
+
+## 15. M4-13c-5 — Umsetzung (20.10.2026)
+
+**Gebaut** (Backend, Compose, Frontend; Branch `claude/cool-albattani-ierbjy`):
+- **Kachel-Route im `tiler` (§3.4):** `api/result_tiles.py`. `GET /results/{result_id}/tiles/WebMercatorQuad/{z}/{x}/{y}`
+  und `/results/{result_id}/WebMercatorQuad/tilejson.json` (die zwei Routen der TiTiler-Factory, sonst keine:
+  kein `info`, keine Statistik, keine Punktabfrage), `rescale`, `colormap_name`, `bidx` wie bei einer Quelle.
+  `op`, `op_version`, `params`, `expression`, `algorithm` und `algorithm_params` → `400`. Eine `result_id`
+  anderer Gestalt als `token_urlsafe(16)` → `404` vor jedem Zugriff auf den Speicher. Keine Datenbank im Pfad
+  (die Tests bauen den `tiler` ohne Pool).
+- **Ende und Lesen:** `ResultSources` fragt `Last-Modified` des Objekts (`objectstore.results.result_modified`),
+  `410` ab `Last-Modified + 7 Tage − 60 s`, `404` für ein fehlendes Objekt, `503` ohne Schlüssel oder bei
+  nicht erreichbarem Speicher. GDAL öffnet `objectstore.results.signed_read` (für den internen Endpunkt
+  signiert, höchstens 15 min, nie über das Ende hinaus). Die Antwort des `HEAD` gilt 60 s, die signierte URL
+  10 min (GDALs Lesecache hängt an der URL), je höchstens 128 Ergebnisse.
+- **Ergebnisdokument:** Ausgabe `tiles` (`processing_docs.OUTPUTS`, also auch in der Prozessbeschreibung und in
+  den Fixtures `frontend/src/fixtures/processes/*.json`, neu geschrieben mit
+  `scripts/write-process-fixtures.py`): Link `/results/{result_id}/WebMercatorQuad/tilejson.json`, nur bei
+  einem Raster-Job. Im Ergebnisdokument steht die `result_id` damit nur in diesem Link (sonst in der signierten URL und im `303`, wie schon vorher).
+- **Eigener Leseschlüssel (Auflage):** `earthx-tiler`, nur `read`, Volume `objectstore-key-tiler`; `SERVICE_KEYS`
+  in `compose/objectstore/bootstrap.py`, `docker-compose.yml` (`objectstore-secrets` schreibt, `objectstore-init`
+  und `tiler` lesen), `S3_*` am `tiler`. Nachtrag `adr/0015` §14c und `architekturplan.md` 3.1; README.
+  `.importlinter` unverändert (16 Verträge eingehalten).
+- **Log:** GDAL schreibt die signierte URL in seine Warnung. `JsonFormatter` ersetzt jeden Wert eines `X-Amz-…`
+  und jede `result_id` hinter `/results/`; der Zugriffslog zeigt `/results/{resultID}/…`; ein Lesefehler an
+  einem Ergebnis schreibt keinen Traceback.
+- **Frontend:** `resultLayer.ts` (reine Logik), „Add to layers“ (ein Knopf, kein Untermenü) in `JobRow`
+  (`processingStore.ts::showResultOnMap`), Layer „Result · <Operator>“ (`derived: 'result'`, `result:
+  { jobID, expires, gsd, resampled, expired }`), Badge „Overview“ (`PreviewBadge.tsx`) nach der Regel von F4 (1)
+  (Stufe `round(Zoom + 1)`, gedeckelt auf die feinste Stufe des Ergebnisses, an der äquatornächsten Breite des
+  Ausschnitts), „Expired“ ab `expires` − 60 s (`LayerManager.tsx`, ein Timer für den nächsten Ablauf; die Karte
+  lädt dann keine Kacheln mehr, `mapLayers.ts`), „Resampled to a common grid“ in der Layer-Zeile, Proxy
+  `/results` → `tiler` in `vite.config.ts`. Ein Ergebnis-Layer ist nicht weiter zu verarbeiten („A result cannot
+  be processed further yet.“, schon durch `derived`) und hat kein „⇩“.
+
+**Geprüft, wie der Plan es verlangte („in c-5 zu prüfen“):**
+- *GDAL-Optionen des `gateway` und der interne Endpunkt:* `gdal_options` kennt keinen Host und sperrt nichts; die
+  Liste der Endungen wird vor dem `?` geprüft (`result.tif?X-Amz-…` besteht). Gemessen mit einem lokalen Server,
+  der nur GET mit gültiger Signatur beantwortet. Eine Ausnahme am `gateway` ist nicht nötig. Eine für GET
+  signierte URL beantwortet der Speicher auf `HEAD` mit `403`, GDAL fällt dann auf ein GET ohne `Range` zurück;
+  `CPL_VSIL_CURL_USE_HEAD=NO` (nur für Ergebnisse, in `api/result_tiles.py`) spart die Anfrage.
+- *Übersichten im Ergebnis-COG:* Der Aufruf `cog_translate` in `processing/core.py` (Profil `deflate`, ohne
+  `overview_level`) schreibt Übersichten: ein Raster von 2048² Pixeln bekam `[2, 4]` [M]. Die 4/3 in `plan.py`
+  sind also kein Wunschdenken. Wie schnell die Kacheln des echten Ergebnisses bei kleinen Stufen kommen, zeigt
+  Schritt 1 der Prüfanleitung; nicht gemessen.
+
+**Abweichungen vom Plan und Kleinigkeiten, die er nicht regelt** (Vorschläge; Otto darf widersprechen):
+1. *Pfad des TileJSON:* `/results/{result_id}/WebMercatorQuad/tilejson.json` statt `/results/{result_id}/tilejson.json`,
+   die Form der TiTiler-Factory und der Routen unter `/collections/…` (die Matrix steht im Pfad). Der Link
+   `tiles` zeigt darauf; das Frontend leitet die Kachel-URL daraus ab (`resultTileTemplate`), nicht aus der
+   absoluten Adresse im TileJSON (die den Host des `tiler` nennt, nicht den Proxy).
+2. *Der `tiler` startet auch ohne `S3_*`:* alle Quellen laufen, `/results` antwortet `503`, im Log steht die
+   fehlende Variable (nie ihr Wert). `api` startet dagegen nicht ohne (§3.4 sagte dazu nichts).
+3. *Darstellung eines Ergebnisses:* Ein Gleitkomma-Ergebnis (ein Index wie NDVI) bekommt den Wertebereich und die
+   Colormap der vorangehenden Vorschau (Vorgabe −1 bis 1, `rdylgn`), jedes andere wird unverändert gezeichnet. Der
+   Plan sagt dazu nichts; ohne Bereich wäre ein `float32`-Bild grau.
+4. *Ein Layer je Job:* Ein zweiter Klick auf „Add to layers“ blendet den Layer ein, falls er aus ist, und legt
+   keinen zweiten an.
+5. *Pixelgröße für „Overview“:* `gsd` der Eigenschaften (nur bei projiziertem CRS); sonst Breite der `bounds`
+   des TileJSON über die Spaltenzahl des Ergebnisses, am Meter je Grad der mittleren Breite. Ohne beides kein
+   „Overview“.
+6. *(Überholt am 20.10.2026, siehe „Zwei Änderungen“ unten: ein Knopf „Add to layers“.)*
+
+**Antworten von Otto (20.10.2026):** (1) „Replace source layer“: Option 1, entfällt auch für Job-Ergebnisse (er hat den Knopf bewusst entfernt). (2) Die Abweichungen 1 und 2 unten sind angenommen, ebenso der relative Link `tiles`; die absolute URL bleibt offen bis M6. (3) Die Farbskala der Ergebnisse bleibt in diesem PR wie gebaut; die Vorgabe aus einer Statistik je Ergebnis kommt mit M4-32 (`plans/m4-32-ergebnis-statistik.md`).
+
+**Frage an Otto (beantwortet, siehe oben): „Replace source layer“ für Job-Ergebnisse.** §3.4 sieht „Show on map“ mit „As a new layer“ und
+„Replace source layer“ vor. Für die Vorschau hast du den Knopf am 19.10.2026 gestrichen (§12); c-2 hat dazu
+offen gelassen, ob er bei Job-Ergebnissen bleibt, und c-5 sollte vor dem Bauen fragen. **Nicht gebaut.**
+1. Entfällt auch hier; „Show on map“ legt nur einen neuen Layer an und wird ein einfacher Knopf **(Empfehlung:
+   dasselbe wie bei der Vorschau; nach c-2 merkt sich nichts einen „Quell-Layer“, und ein Job kann aus der
+   Auswahl mehrerer Layer entstehen)**
+2. Bleibt: „Replace source layer“ blendet den Quell-Layer aus (nicht löschen), der neue Layer steht an seiner Stelle;
+   gilt nur, wenn das Panel aus einem Layer geöffnet wurde (sonst nur „As a new layer“) — bräuchte einen
+   Quell-Layer im Speicher des Tabs, den es nach c-2 nicht mehr gibt (`activateLayerContext` merkt sich keinen)
+3. Bleibt, aber für die Fokusansicht wie der Plan sie nannte („sonst die Fokusansicht“): blendet die Ansicht aus
+
+**Tests:**
+- Backend: `test_result_tiles.py` (42: Kachel aus dem Objektspeicher-Double, signierte URL für den internen
+  Endpunkt, TileJSON, ohne Datenbank, `op` und freie Parameter `400`, erfundene und fremd geformte `result_id`
+  `404` ohne Zugriff auf den Speicher, fehlendes Objekt `404`, `410` genau 60 s vor dem Ende und ab dann, auch
+  mit einer URL im Cache, Cache von `HEAD` und URL und seine Grenze, Speicher nicht erreichbar `503` ohne Namen,
+  `tiler` ohne Speicher, kein `result_id` und keine Signatur im Log auch bei einem Lesefehler von GDAL),
+  `test_results.py` (`signed_read`, `result_modified`, `is_result_id`), `test_processing_route.py` und
+  `test_result_zip_route.py` (Link `tiles`, `result_id` nur dort), `test_objectstore_bootstrap.py` (dritter Schlüssel,
+  Rechte, **bestehende Installation**: nur der Schlüssel des `tiler` kommt hinzu, alle anderen Dateien
+  byte-gleich, `init` importiert nur `earthx-tiler` mit `read`, kein Bucket, Regel unverändert, ein zweiter Lauf
+  ändert nichts), `test_compose_objectstore_wiring.py` (das Volume hängt an genau den drei Diensten,
+  beschreibbar nur an `objectstore-secrets`).
+- Frontend: `resultLayer.test.ts` (47), `ProcessingResultLayer.test.tsx` (36: Knopf, Layer, Darstellung, 410 →
+  „Expired“, Fehler, ein Layer je Job, Ablauf mit einem Timer, „Overview“), `processing.test.ts`,
+  `ProcessingPanel.test.tsx` (Link `tiles` im Ergebnisdokument), `mapLayers.test.ts` (kein Source für einen
+  abgelaufenen Layer).
+- Gegenproben in der Sitzung: ohne die Schwärzung im Log, ohne die Prüfung gegen den Doppelklick und ohne die Prüfung
+  der Frist vor dem TileJSON fällt je ein Test.
+
+**Ergebnis der Prüfungen:** siehe PR-Text.
+
+**Nicht belegt:** Docker läuft in der Sitzung nicht. Der Weg Garage → signierte URL → GDAL im `tiler` ist gegen
+`moto` und einen lokalen Server geprüft, nicht gegen das Image; der Smoke der CI kennt den Schlüssel des `tiler`
+nicht (`.github/` blieb unverändert; `S3_TILER_*` im Workflow wäre ein Vorschlag, den Otto freigeben müsste).
+Die Oberfläche selbst nur in Tests, nicht im Browser.
+
+**Prüfanleitung für Otto** (Windows PowerShell; Schritte 6 und 10 von §9, soweit sie c-5 betreffen):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. `sentinel-2-c1-l2a`, Fläche zeichnen, suchen, einen Überflug wählen, „⚙ Process“, „＋ Band math“,
+   `(nir - red) / (nir + red)`, „Start job“; wenn der Job fertig ist: in der Jobzeile „Add to layers“.
+   Ein Layer „Result · Band math“ steht im Layer-Manager, mit „Resampled to a common grid“ nur, wenn der Job es
+   sagt, und die Karte zeigt das Ergebnis (−1 bis 1, `rdylgn`). Beim Herauszoomen steht unten links „Overview“;
+   beim Hineinzoomen bis zur Pixelgröße des Ergebnisses verschwindet es.
+2. Das Auge des Layers blendet ihn aus, „Add to layers“ ein zweites Mal blendet ihn wieder ein, es gibt keinen
+   zweiten Layer.
+3. In den Entwicklerwerkzeugen des Browsers: die Kachel-Anfragen gehen an `/results/…/tiles/…` (Port 5173, vom
+   Proxy an `tiler`), keine an `localhost:3900`.
+4. `docker compose logs tiler` nennt weder die `result_id` noch `X-Amz`; der Zugriffslog zeigt
+   `/results/{resultID}/tiles/…`.
+5. (Ablauf) Nicht in einer Sitzung zu erleben (7 Tage); der Test mit der Frist steht in
+   `test_result_tiles.py`.
+6. (Bestehende Installation, Schritt 10 von §9) Vor dem Update einen Job laufen lassen und den „Result (COG)“-Link
+   merken. Dann den Branch holen und nur `docker compose up -d --build` ausführen, ohne `down` und ohne `-v`.
+   `docker compose logs objectstore-secrets objectstore-init` zeigt `service key for tiler created` bzw.
+   `imported service key for tiler`, für `jobs` und `api` `already present, unchanged` bzw. `already imported`.
+   Der alte Link lädt weiter, und sein Ergebnis lässt sich als Layer zeigen.
+
+**Befunde des Reviewers, behoben:** `maxzoom` des TileJSON liegt bei 10 m und 48° N auf Stufe 13 (12,8 m je Pixel,
+gemessen), also gröber als die Daten; der Layer fragt jetzt eine Stufe mehr an, sonst wäre die volle Auflösung nie
+zu sehen und „Overview“ bliebe stehen. Der `tiler` bot auf den Ergebnis-Routen `algorithm` und `algorithm_params` im
+Schema an (TiTilers Vorgabe); jetzt keine Parameter außer Kachel, `rescale`, `colormap_name`, `bidx`. Die Kachel-URL
+trägt wie das TileJSON `VITE_API_BASE`. `_names_of` zählt `tiles` nicht als Datei. Ein Test begrenzt, wo ein
+`AssetPath` entstehen darf (`readers/cog.py` und `api/result_tiles.py`; der Docstring von `CogReader` nennt die
+Ausnahme). Der Traceback-Schutz im `tiler` greift auch hinter einem Pfadpräfix.
+
+**Offen für Otto (neben „Replace source layer“):**
+- Darstellung eines Ergebnisses (**M4-32**, Otto 20.10.2026): heute der Wertebereich des Panels (Vorgabe −1 bis 1, `rdylgn`) für Gleitkomma, nichts
+  für Ganzzahlen. Ein Höhenmodell (`float32`, Meter) käme einfarbig, eine Reflektanz (`uint16`) dunkel. Ein Bereich je
+  Job (aus den Statistiken des Ergebnisses) wäre eine eigene Aufgabe.
+- Der Link `tiles` ist relativ zum Host (`/results/…`), anders als die übrigen Links des Ergebnisdokuments; ein
+  reiner API-Client ohne den gemeinsamen Proxy findet den `tiler` so nicht.
+- Restrisiko im Log: Ein `CPLE_*`, das nicht als `RasterioError` ankommt, ginge über den Handler von uvicorn, nicht über
+  `JsonFormatter`; nicht belegt.
+
+**Zwei Änderungen von Otto (20.10.2026), in diesem PR:**
+1. *Ein Knopf „Add to layers“* statt „Show on map“ → „As a new layer“, kein Untermenü (`JobRow`,
+   `showResultOnMap` bleibt der Name der Aktion im Store). Verhalten sonst wie oben: ein Layer je Job, „Expired“,
+   Fehler in der Zeile.
+2. *Das Ergebnis erscheint auf der Karte auf die AOI zugeschnitten* (außerhalb durchsichtig); die heruntergeladene
+   `result.tif` bleibt unverändert (Bounding Box, dazu `mask.tif`). Bei „Whole scene“ ohne `aoi` gilt die Maske des
+   Jobs, also die Vereinigung der Footprints.
+
+   **Gewählter Weg: der `tiler` wendet die `mask.tif` des Ergebnisses an** (Empfehlung Ottos). Gründe:
+   - Die Maske ist dieselbe wie im Download (rasterisiert aus der `aoi` des Rezepts mit `all_touched`, auf dem Raster
+     des Ergebnisses; ohne `aoi` die Vereinigung der Footprints, `intake.py::_whole_scenes_aoi`). Karte und Datei
+     können nicht auseinanderlaufen.
+   - Es braucht keinen Zustand im Browser. Die AOI ist nicht Teil des Jobeintrags (K5: nur `jobID`, `expires`, Titel
+     liegen im `sessionStorage`) und wäre nach einem Neuladen weg; die Footprints der Szenen eines Jobs kennt der
+     Layer ebenfalls nicht. Der Zuschnitt im Browser wie bei der Vorschau (`clipTileUrl`, c-2) hängt dagegen am
+     Zustand der Auswahl und der AOI des Tabs; er wäre nur gleichwertig, solange beides unverändert vorliegt, und für
+     „Whole scene“ bräuchte er die Footprints der Szenen aus der Auswahl, die der Job genommen hat.
+   - Ein API-Client, der den Link `tiles` nimmt, bekommt dieselben Kacheln.
+   - Kein zweiter Weg zur Ablage: `mask.tif` liegt schon unter `results/{result_id}/`; der `tiler` liest sie mit
+     demselben Schlüssel (`earthx-tiler`, nur `read`), derselben Prüfung der `result_id` (`404` vor jedem Zugriff),
+     derselben Frist (`410` ab `Last-Modified` von `result.tif` + 7 Tage − 60 s; ein Ergebnis ohne Maske ist `404`)
+     und demselben Log (`{resultID}`, Signatur geschwärzt). Beide Dateien teilen sich einen `HEAD`-Takt (60 s) und eine
+     Signatur-Runde (10 min).
+
+   *Umsetzung:* `api/result_tiles.py::ResultReader` liest die Kachel des Ergebnisses und dieselbe Kachel der Maske
+   (`nearest`, `indexes=1`) und maskiert, wo die Maske 0 ist. `ResultPath` trägt die Pfade beider Dateien. Das
+   TileJSON ändert sich nicht (Grenzen des Ergebnisses). Der Zuschnitt gilt für jede Darstellung gleich
+   (`rescale`, `colormap_name`, `bidx`).
+
+   *Kosten, gemessen* (synthetische Maske, deflate, 512er Blöcke, **ohne Übersichten**, wie sie der Worker schreibt):
+   Eine Kachel auf den untersten Stufen (ein Kachel deckt das ganze Raster) muss die Maske ganz lesen: 0,9 s bei
+   10 980² Pixeln (eine Sentinel-2-Szene), 3,1 s bei 30 000²; schon zwei Stufen darüber 0,03 s bzw. 0,11 s. Der Browser
+   fragt diese Stufen einmal je Ansicht an. Wer es schneller will, lässt den Worker die Maske als COG mit Übersichten
+   schreiben (Änderung in `processing`, das ändert die heruntergeladene `mask.tif`: nicht in diesem PR, nur Vorschlag).
+
+   *Nicht geändert:* `result.tif` und `mask.tif` im Speicher und im Download; ein Test liest beide Objekte vor und nach
+   einer Kachel und vergleicht die Bytes, und dass kein Pixel von `result.tif` maskiert ist.
+
+   *Tests:* `test_result_tiles.py` (nur die Pixel der Maske sind sichtbar für „links“ und „L-Form“ — die Vereinigung
+   eines „Whole scene“ —, die Maske nimmt nur weg; eine leere Maske gibt eine unsichtbare Kachel; dieselbe Maske für
+   jede Darstellung; ein Ergebnis ohne Maske ist `404` ohne Zugriff; beide URLs sind für den internen Endpunkt
+   signiert; Cache und Frist für beide Dateien; Gegenprobe ohne Maskierung: drei Tests fallen), `ProcessingResultLayer.test.tsx`
+   (ein Knopf ohne Menü; der Layer ist mit AOI, ohne AOI und nach einem Neuladen derselbe, ohne Zuschnitt im Browser).
+
+*Prüfanleitung, geändert:* Schritt 1 oben: in der Jobzeile „Add to layers“; das Ergebnis liegt nur über der Fläche
+(bei „AOI only“ die AOI, bei „Whole scene“ die Szenen) und ist außerhalb durchsichtig; die heruntergeladene
+`result.tif` ist weiter das ganze Rechteck.

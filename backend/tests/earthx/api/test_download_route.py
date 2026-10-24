@@ -16,6 +16,7 @@ import zipfile
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -27,11 +28,13 @@ from fastapi.testclient import TestClient
 from rio_tiler.models import ImageData
 
 from earthx.access import download as download_module
+from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.item_source import OrderRefused
 from earthx.api.tiler import build_app
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseInfo, LicenseTier
 from earthx.gateway import UpstreamError, check_url
+from earthx.processing.methods import DatasetFacts, methods_text
 
 FIXTURE = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search" / "item_asset_hosts.json"
 DATASET = SENTINEL_2_L2A.dataset_id
@@ -215,6 +218,7 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
+                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "2x coarser than native" in notice
@@ -283,9 +287,29 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
+                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
+
+    def test_the_text_files_are_the_ones_of_the_definition_in_its_order(self, client: TestClient) -> None:
+        """M4-19a: the crop lays out `TEXT_FILES`, the one definition the job's ZIP, the export and the runner follow."""
+        response = _download(client)
+        assert response.status_code == 200
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            assert [name for name in archive.namelist() if name in TEXT_FILES] == list(TEXT_FILES)
+
+    def test_the_methods_text_is_written_from_the_recipe_beside_it(self, client: TestClient) -> None:
+        response = _download(client)
+        with zipfile.ZipFile(BytesIO(response.content)) as archive:
+            text = archive.read("methods.txt").decode("utf-8")
+            recipe = json.loads(archive.read("recipe.json"))
+        assert text == methods_text(recipe, dataset=DatasetFacts.of(SENTINEL_2_L2A), acquired_on=date(2026, 7, 24))
+        assert "The scenes were acquired on 2026-07-24 (UTC)." in text, "the day of the overpass, not the day of the run"
+        assert text.startswith(f"The dataset {SENTINEL_2_L2A.title} (sentinel-2-c1-l2a")
+        assert "cropped to the bounding box" in text and "It was cut on the EarthX platform" in text
+        assert "Contains modified Copernicus Sentinel data" in text
+        assert "https://" not in text and "c1:" not in text
 
     def test_a_place_search_aoi_names_openstreetmap_in_the_notice_too(self, client: TestClient) -> None:
         """M3-07b, Otto's second local check (26.09.2026): the exact request
@@ -366,6 +390,7 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
+                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Group 1 (group-01/): {ITEM_ID}" in notice
@@ -382,6 +407,7 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
+                "methods.txt",
             }
 
     def test_a_group_that_misses_the_aoi_is_dropped_the_others_still_download(
@@ -399,6 +425,7 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
+                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Not covered by the AOI, left out: {ITEM_ID}~outside" in notice

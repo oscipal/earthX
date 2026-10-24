@@ -26,6 +26,11 @@ def test_importing_the_tiler_loads_neither_the_intake_nor_processing() -> None:
     assert _heavy_after("import earthx.api.tiler") == "[]"
 
 
+def test_the_mosaic_tile_sorts_without_loading_the_worker_core() -> None:
+    """M4-17 KE4: the order of a mosaic lives in `access`, so its tile needs no `processing`."""
+    assert _heavy_after("import earthx.access.mosaic_tiles, earthx.access.crop_rules") == "[]"
+
+
 @pytest.mark.parametrize("module", ["earthx.api.intake", "earthx.processing"])
 def test_the_check_would_see_one(module: str) -> None:
     """Counter-sample: the same probe does see the module when something imports it."""
