@@ -19,12 +19,11 @@ export const KEYS_STORAGE = 'earthx.permalinks';
 export const GONE_TEXT = 'This link has expired or never existed.';
 
 // What is restored besides the order: the map's centre and zoom, the range and colormap of
-// the preview if the user set them by hand, and a title.
+// the preview if the user set them by hand.
 export interface PermalinkView {
   center: [number, number];
   zoom: number;
   range: { vmin: number; vmax: number; colormap: string } | null;
-  title: string | null;
 }
 
 export interface PermalinkDocument {
@@ -74,7 +73,6 @@ export function viewOf(
   bbox: Bbox,
   zoom: number,
   range: { vmin: string; vmax: string; colormap: string } | null,
-  title: string,
 ): PermalinkView {
   const [west, south, east, north] = bbox;
   const lon = (west + (east < west ? east + 360 : east)) / 2;
@@ -83,7 +81,6 @@ export function viewOf(
     center: [lon > 180 ? lon - 360 : lon, (south + north) / 2],
     zoom: Math.min(Math.max(zoom, 0), 24),
     range: hand ? { vmin: Number(range.vmin), vmax: Number(range.vmax), colormap: range.colormap } : null,
-    title: title.trim() === '' ? null : title.trim().slice(0, 100),
   };
 }
 
@@ -91,13 +88,13 @@ export function parseView(value: unknown): PermalinkView | null {
   if (!isObject(value) || !Array.isArray(value.center) || value.center.length !== 2) return null;
   const [lon, lat] = value.center;
   if (!isNumber(lon) || !isNumber(lat) || !isNumber(value.zoom)) return null;
-  const { range, title } = value;
+  const { range } = value;
   let parsed: PermalinkView['range'] = null;
   if (range !== null && range !== undefined) {
     if (!isObject(range) || !isNumber(range.vmin) || !isNumber(range.vmax) || typeof range.colormap !== 'string') return null;
     parsed = { vmin: range.vmin, vmax: range.vmax, colormap: range.colormap };
   }
-  return { center: [lon, lat], zoom: value.zoom, range: parsed, title: typeof title === 'string' ? title : null };
+  return { center: [lon, lat], zoom: value.zoom, range: parsed };
 }
 
 // What the server keeps is checked again: it is a file of someone else's, as far as this tab knows.

@@ -9,12 +9,12 @@ import type { OrderView } from '../processingStore';
 import { useProcessingStore } from '../processingStore';
 import { handRange } from '../resultLayer';
 import { useAppStore } from '../store';
+import CopyButton from './CopyButton';
 
 export default function ShareLink({ view }: { view: OrderView }) {
   const bbox = useAppStore((s) => s.viewportBbox);
   const zoom = useAppStore((s) => s.mapZoom);
   const range = useProcessingStore((s) => s.range);
-  const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<Created | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -27,7 +27,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
     setBusy(true);
     setNote(null);
     try {
-      const created = await createPermalink(order, viewOf(bbox, zoom, handRange(range), title));
+      const created = await createPermalink(order, viewOf(bbox, zoom, handRange(range)));
       rememberKey(created);
       setMade(created);
     } catch (error) {
@@ -36,21 +36,13 @@ export default function ShareLink({ view }: { view: OrderView }) {
     setBusy(false);
   };
 
-  const copy = async (address: string) => {
-    try {
-      await navigator.clipboard.writeText(address);
-      setNote({ ok: true, text: 'Copied.' });
-    } catch {
-      setNote({ ok: false, text: 'Could not copy; select the address and copy it.' });
-    }
-  };
-
+  // Without a question: the link is deleted at once, and the panel says so.
   const remove = async (id: string) => {
     setBusy(true);
     try {
       const deleted = await removePermalink(id);
       setMade(null);
-      setNote({ ok: true, text: deleted ? 'The link is deleted.' : 'This browser has no key for the link; it expires on its own.' });
+      setNote({ ok: true, text: deleted ? 'Link deleted.' : 'This browser has no key for the link; it expires on its own.' });
     } catch (error) {
       setNote({ ok: false, text: `The link could not be deleted: ${error instanceof Error ? error.message : String(error)}` });
     }
@@ -61,26 +53,24 @@ export default function ShareLink({ view }: { view: OrderView }) {
     <div className="pp-share" aria-label="Share">
       {made ? (
         <>
-          <input readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
-          <div className="vc-actions">
-            <button type="button" className="ghost-btn" onClick={() => void copy(permalinkAddress(made.id))}>
-              Copy link
-            </button>
-            <button type="button" className="ghost-btn" disabled={busy} onClick={() => void remove(made.id)}>
-              Delete link
+          <div className="pp-share-link">
+            <input type="text" readOnly value={permalinkAddress(made.id)} aria-label="Link" onFocus={(e) => e.currentTarget.select()} />
+            <CopyButton text={permalinkAddress(made.id)} title="Copy link" label="Copy link" />
+            <button
+              type="button"
+              className="delete-btn"
+              title="Delete link"
+              aria-label="Delete link"
+              disabled={busy}
+              onClick={() => void remove(made.id)}
+            >
+              ✕
             </button>
           </div>
           <p className="pp-help">Good until {new Date(made.expiresAt).toLocaleDateString()}. Anyone with the link sees your area.</p>
         </>
       ) : (
         <>
-          <input
-            value={title}
-            maxLength={100}
-            placeholder="Title (optional)"
-            aria-label="Title of the link"
-            onChange={(e) => setTitle(e.target.value)}
-          />
           <button
             type="button"
             className="ghost-btn"

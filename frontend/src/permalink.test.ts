@@ -32,7 +32,7 @@ const ORDER: Order = {
   steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
   output: { kind: 'raster', format: 'cog', dtype: 'float32' },
 };
-const VIEW = { center: [9.5, 47.25] as [number, number], zoom: 9.5, range: null, title: null };
+const VIEW = { center: [9.5, 47.25] as [number, number], zoom: 9.5, range: null };
 const FUTURE = new Date(Date.now() + 86_400_000).toISOString();
 
 const json = (body: unknown, status = 200) =>
@@ -64,33 +64,32 @@ describe('the address', () => {
 
 describe('viewOf', () => {
   it('takes the centre of the viewport, also across the antimeridian', () => {
-    expect(viewOf([8, 46, 11, 48], 9.5, null, '').center).toEqual([9.5, 47]);
-    expect(viewOf([170, -10, -160, 10], 3, null, '').center).toEqual([-175, 0]);
-    expect(viewOf([175, -10, -175, 10], 3, null, '').center[0]).toBe(180);
+    expect(viewOf([8, 46, 11, 48], 9.5, null).center).toEqual([9.5, 47]);
+    expect(viewOf([170, -10, -160, 10], 3, null).center).toEqual([-175, 0]);
+    expect(viewOf([175, -10, -175, 10], 3, null).center[0]).toBe(180);
   });
 
   it('keeps a range only where the user set one, as numbers, and drops one that is none', () => {
-    expect(viewOf([8, 46, 11, 48], 5, null, '').range).toBeNull();
-    expect(viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '0.5', colormap: 'viridis' }, '').range).toEqual({
+    expect(viewOf([8, 46, 11, 48], 5, null).range).toBeNull();
+    expect(viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '0.5', colormap: 'viridis' }).range).toEqual({
       vmin: 0,
       vmax: 0.5,
       colormap: 'viridis',
     });
-    expect(viewOf([8, 46, 11, 48], 5, { vmin: '', vmax: '1', colormap: 'viridis' }, '').range).toBeNull();
-    expect(viewOf([8, 46, 11, 48], 5, { vmin: 'x', vmax: '1', colormap: '' }, '').range).toBeNull();
+    expect(viewOf([8, 46, 11, 48], 5, { vmin: '', vmax: '1', colormap: 'viridis' }).range).toBeNull();
+    expect(viewOf([8, 46, 11, 48], 5, { vmin: 'x', vmax: '1', colormap: '' }).range).toBeNull();
   });
 
-  it('clamps the zoom and trims and cuts the title', () => {
-    expect(viewOf([8, 46, 11, 48], 99, null, '').zoom).toBe(24);
-    expect(viewOf([8, 46, 11, 48], -1, null, '').zoom).toBe(0);
-    expect(viewOf([8, 46, 11, 48], 5, null, '   ').title).toBeNull();
-    expect(viewOf([8, 46, 11, 48], 5, null, `  ${'x'.repeat(150)} `).title).toHaveLength(100);
+  it('clamps the zoom, and has no title', () => {
+    expect(viewOf([8, 46, 11, 48], 99, null).zoom).toBe(24);
+    expect(viewOf([8, 46, 11, 48], -1, null).zoom).toBe(0);
+    expect(Object.keys(viewOf([8, 46, 11, 48], 5, null)).sort()).toEqual(['center', 'range', 'zoom']);
   });
 });
 
 describe('parseView', () => {
   it('reads what viewOf writes', () => {
-    const view = viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '1', colormap: 'plasma' }, 'Lake');
+    const view = viewOf([8, 46, 11, 48], 5, { vmin: '0', vmax: '1', colormap: 'plasma' });
     expect(parseView(JSON.parse(JSON.stringify(view)))).toEqual(view);
   });
 

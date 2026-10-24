@@ -1048,7 +1048,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         dtype,
       });
       useAppStore.setState({ flyToView: { center: view.center, zoom: view.zoom } });
-      return { ok: true, notes: view.title ? [`Shared as “${view.title}”.`, ...notes] : notes };
+      return { ok: true, notes };
     },
 
     reviewOrder: async () => {

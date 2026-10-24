@@ -1237,24 +1237,19 @@ class PermalinkRange(BaseModel):
 
 
 class PermalinkView(BaseModel):
-    """What a permalink restores besides the order: the map's centre and zoom, the preview, a title."""
+    """What a permalink restores besides the order: the map's centre and zoom and the preview's range."""
 
     model_config = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False)
 
     center: list[float] = Field(min_length=2, max_length=2)
     zoom: float = Field(ge=0, le=24)
     range: PermalinkRange | None = None
-    title: str | None = Field(default=None, min_length=1, max_length=100)
 
     @model_validator(mode="after")
-    def _plain(self) -> PermalinkView:
+    def _in_the_world(self) -> PermalinkView:
         lon, lat = self.center
         if not (-180 <= lon <= 180 and -90 <= lat <= 90):
             raise ValueError("center is a longitude and a latitude")
-        if self.title is not None and (
-            self.title != self.title.strip() or any(unicodedata.category(c) in _NOT_PLAIN_TEXT for c in self.title)
-        ):
-            raise ValueError("title is one line of plain text")
         return self
 
 

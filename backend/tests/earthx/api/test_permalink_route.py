@@ -26,7 +26,7 @@ from ..objectstore.conftest import store  # noqa: F401 - fixture: a store that a
 pytestmark = pytest.mark.anyio
 
 PATH = "/processing/permalinks"
-VIEW = {"center": [9.5, 47.25], "zoom": 9.5, "range": {"vmin": -1.0, "vmax": 1.0, "colormap": "rdylgn"}, "title": "Lake"}
+VIEW = {"center": [9.5, 47.25], "zoom": 9.5, "range": {"vmin": -1.0, "vmax": 1.0, "colormap": "rdylgn"}}
 KEY_HEADER = "X-Delete-Key"
 
 
@@ -58,10 +58,10 @@ class TestCreateReadDelete:
         assert expires == datetime.fromisoformat(made["expires_at"])
         assert timedelta(days=29, hours=23) < expires - datetime.now(UTC) <= permalinks.TTL
 
-    async def test_the_view_is_optional_in_its_range_and_title(self, rig: Rig) -> None:
+    async def test_the_range_of_the_view_is_optional(self, rig: Rig) -> None:
         made = await create(rig, body(view={"center": [0, 0], "zoom": 2}))
         stored = (await rig.client.get(f"{PATH}/{made['id']}")).json()["view"]
-        assert stored["range"] is None and stored["title"] is None
+        assert stored == {"center": [0, 0], "zoom": 2, "range": None}
 
     async def test_two_links_for_one_order_are_two_identifiers_and_two_keys(self, rig: Rig) -> None:
         one, two = await create(rig), await create(rig)
@@ -133,9 +133,7 @@ class TestWhatIsRefused:
             {"center": [9.5], "zoom": 5},
             {"center": [9.5, 47], "zoom": 25},
             {"center": [9.5, 47], "zoom": "5"},
-            {"center": [9.5, 47], "zoom": 5, "title": ""},
-            {"center": [9.5, 47], "zoom": 5, "title": "a\nb"},
-            {"center": [9.5, 47], "zoom": 5, "title": "x" * 101},
+            {"center": [9.5, 47], "zoom": 5, "title": "Lake"},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1, "colormap": "../x"}},
             {"center": [9.5, 47], "zoom": 5, "range": {"vmin": 0, "vmax": 1, "colormap": "a", "extra": 1}},
@@ -203,7 +201,7 @@ class TestWhatIsStored:
         assert (await rig.client.post(PATH, json=body(document))).status_code == 422
         assert rows(rig) == 0
 
-    @pytest.mark.parametrize("key", ["href", "result_id", "job_id", "tiles", "url"])
+    @pytest.mark.parametrize("key", ["href", "result_id", "job_id", "tiles", "url", "title"])
     async def test_the_view_takes_no_such_member(self, rig: Rig, key: str) -> None:
         view = {**VIEW, key: "https://example.test/x?X-Amz-Signature=abc"}
         assert (await rig.client.post(PATH, json=body(view=view))).status_code == 422
@@ -259,16 +257,16 @@ class TestNothingPersonalInTheLogs:
         paths = {json.loads(line)["path"] for line in access_log_lines}
         assert {PATH, f"{PATH}/{{permalinkID}}"} <= paths
 
-    async def test_no_log_line_holds_the_area_the_key_the_link_or_the_title(
+    async def test_no_log_line_holds_the_area_the_key_or_the_link(
         self, rig: Rig, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.DEBUG, logger="earthx"):
             made = await create(rig)
             await rig.client.get(f"{PATH}/{made['id']}")
-            await rig.client.post(PATH, json=body(view={"center": [1, 1], "zoom": 99, "title": "Lake"}))
+            await rig.client.post(PATH, json=body(view={"center": [1, 1], "zoom": 99}))
             await rig.client.delete(f"{PATH}/{made['id']}", headers={KEY_HEADER: made["delete_key"]})
         text = "\n".join(own_log_text(record) for record in caplog.records)
         assert caplog.records
-        for forbidden in (made["id"], made["delete_key"], "9.01", "47.01", "9.5", "Lake", "S2_A"):
+        for forbidden in (made["id"], made["delete_key"], "9.01", "47.01", "9.5", "S2_A"):
             assert forbidden not in text, forbidden
         assert "permalink created" in text and "sentinel-2-c1-l2a" in text

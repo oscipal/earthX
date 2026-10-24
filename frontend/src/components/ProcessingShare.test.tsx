@@ -16,6 +16,7 @@ import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import ProcessingPanel from './ProcessingPanel';
+import css from '../index.css?raw';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -69,7 +70,7 @@ const ORDER: Order = {
   steps: [{ op: 'band_math', op_version: 1, params: { expression: '(nir - red) / (nir + red)' } }],
   output: { kind: 'raster', format: 'cog', dtype: 'float32' },
 };
-const VIEW = { center: [10.15, 50.15], zoom: 11.5, range: { vmin: 0, vmax: 0.8, colormap: 'viridis' }, title: 'Lake' };
+const VIEW = { center: [10.15, 50.15], zoom: 11.5, range: { vmin: 0, vmax: 0.8, colormap: 'viridis' } };
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -144,7 +145,7 @@ describe('opening a link', () => {
     expect(app.selectedIds).toEqual(['NEW_A']);
     expect(app.aoi).toEqual(SHARED_AOI);
     expect(app.error).toBeNull();
-    expect(app.notice).toBe('Shared as “Lake”.');
+    expect(app.notice).toBeNull();
     expect(app.flyToView).toEqual({ center: [10.15, 50.15], zoom: 11.5 });
     expect(draft().open).toBe(true);
     expect(draft().area).toBe('aoi');
@@ -230,7 +231,7 @@ describe('opening a link', () => {
 
   it('covers the whole scenes and keeps the area on the map for an order without one', async () => {
     const { aoi: _aoi, ...whole } = ORDER;
-    link = () => json({ order: whole, view: { ...VIEW, range: null, title: null }, expires_at: EXPIRES });
+    link = () => json({ order: whole, view: { ...VIEW, range: null }, expires_at: EXPIRES });
     onAddress(`?permalink=${ID}`);
     await open();
     expect(draft().area).toBe('scene');
@@ -247,6 +248,11 @@ describe('Share', () => {
     await act(async () => button(label)!.click());
     await settle();
   };
+  const icon = (label: string) => container.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement | null;
+  const clickIcon = async (label: string) => {
+    await act(async () => icon(label)!.click());
+    await settle();
+  };
 
   beforeEach(async () => {
     onAddress(`?permalink=${ID}`);
@@ -261,7 +267,7 @@ describe('Share', () => {
     const sent = JSON.parse(init.body);
     expect(sent.order).toEqual(ORDER);
     // The centre is the viewport's, the range the one that came back with the opened link.
-    expect(sent.view).toEqual({ center: [10.15, 50.15], zoom: 11.5, range: VIEW.range, title: null });
+    expect(sent.view).toEqual({ center: [10.15, 50.15], zoom: 11.5, range: VIEW.range });
     expect((container.querySelector('input[aria-label="Link"]') as HTMLInputElement).value).toContain(`?permalink=${ID}`);
     expect(container.textContent).toContain('Anyone with the link sees your area');
     expect(loadKeys()[ID].key).toBe(KEY);
@@ -274,37 +280,60 @@ describe('Share', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toBeNull();
   });
 
-  it('sends the title and the range the user set by hand', async () => {
-    const title = container.querySelector('input[aria-label="Title of the link"]') as HTMLInputElement;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(title, ' Lake ');
-      title.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+  it('has no title field, in the panel or in what is sent', async () => {
+    expect(container.querySelector('input[aria-label*="Title" i], input[placeholder*="Title" i]')).toBeNull();
     await click('Share');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view).toMatchObject({
-      title: 'Lake',
-      range: { vmin: 0, vmax: 0.8, colormap: 'viridis' },
-    });
+    expect(Object.keys(JSON.parse(fetchMock.mock.calls[0][1].body).view).sort()).toEqual(['center', 'range', 'zoom']);
+  });
+
+  it('shows the link in a read-only text field, which the theme colours', async () => {
+    await click('Share');
+    const field = container.querySelector('input[aria-label="Link"]') as HTMLInputElement;
+    expect([field.type, field.readOnly]).toEqual(['text', true]);
+    // `input[type='text']` takes the background and text colour of the theme, so it is not white in the dark one.
+    const rule = /input\[type='text'\],[^{]*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
+    expect(rule).toContain('background: var(--input-bg)');
+    expect(rule).toContain('color: var(--text)');
+  });
+
+  it('copies the link with the copy glyph of the results list', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    await click('Share');
+    expect(button('Copy link')).toBeUndefined();
+    const copy = icon('Copy link')!;
+    expect(copy.className).toBe('copy-btn');
+    expect(copy.title).toBe('Copy link');
+    const glyph = copy.innerHTML;
+    await clickIcon('Copy link');
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining(`?permalink=${ID}`));
+    expect(copy.innerHTML).not.toBe(glyph);
+    expect(copy.innerHTML).toContain('M20 6 9 17l-5-5');
   });
 
   it('deletes the link with the key it was given, and forgets the key', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
     await click('Share');
-    await click('Delete link');
+    const cross = icon('Delete link')!;
+    expect([cross.className, cross.title, cross.textContent]).toEqual(['delete-btn', 'Delete link', '✕']);
+    expect(button('Delete link')).toBeUndefined();
+    await clickIcon('Delete link');
+    expect(confirm).not.toHaveBeenCalled();
     const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE')!;
     expect(call[0]).toBe(`/processing/permalinks/${ID}`);
     expect(call[1].headers['X-Delete-Key']).toBe(KEY);
     expect(localStorage.getItem(KEYS_STORAGE)).toBe('{}');
-    expect(container.textContent).toContain('The link is deleted.');
+    expect(container.textContent).toContain('Link deleted.');
     expect(button('Share')).toBeDefined();
   });
 
   it('keeps the link and its key when the delete fails', async () => {
     await click('Share');
     fetchMock.mockImplementationOnce(async () => json({ detail: 'down' }, 503));
-    await click('Delete link');
+    await clickIcon('Delete link');
     expect(container.textContent).toContain('could not be deleted');
     expect(loadKeys()[ID]).toBeDefined();
-    expect(button('Delete link')).toBeDefined();
+    expect(icon('Delete link')).not.toBeNull();
   });
 
   it('says why it could not be made, and offers it again', async () => {
