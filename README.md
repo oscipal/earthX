@@ -62,7 +62,7 @@ Einen echten Job einmal durchspielen: `scripts/try-job.ps1` (Abschnitt
 
 Noch **nicht** enthalten: Login und Quotas (M6); Datacube (M6); Health-Status,
 Harvester-Zeitplan und Hybrid-Suche (M5); der neue App-Rahmen und die
-Basiskarte mit Projektion (UI-01, UI-02, direkt nach M4). Weitere Punkte stehen
+Basiskarte mit Projektion (UI-01, UI-02, nach M4 geplant). Weitere Punkte stehen
 unter „Nach M4 vorgemerkt“ im Abnahmebericht.
 
 ### Aus M3
@@ -108,7 +108,7 @@ Was M3 dazu bringt:
   (`adr/0012`); Python 3.12 in Backend, CI und Image; kein Prozess schreibt
   Koordinaten oder Query-Strings ins Log.
 - **Architektur:** Das Adapter-Interface ist aus den drei Quellen abgeleitet
-  (`adr/0011`); der Umbau war der erste Schritt von M4.
+  (`adr/0011`, angenommen); der Umbau war der erste Schritt von M4.
 
 Vollständige Belege je Abnahmekriterium und die Liste der offenen Punkte:
 [`docs/plans/m3-15-abnahme.md`](docs/plans/m3-15-abnahme.md) (Aufgabenschnitt:

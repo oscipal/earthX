@@ -43,7 +43,7 @@ ohne Einschränkung; Zarr bitgleich außerhalb von 0,125 Quellpixel an einer
 Pixelgrenze, wo `nearest` den Nachbarn wählen darf, und die Formel stimmt
 überall; T2 ↔ T2L bleibt bitgleich (`adr/0014` §15d, Log 2026-10-07).
 
-**Drei beantragte Belege für T2 ↔ T2L (Job ↔ lokaler Runner):**
+**Drei verlangte Belege für T2 ↔ T2L (Job ↔ lokaler Runner):**
 
 1. **`test_compare` aus M4-16a (PR #160),**
    `backend/tests/earthx/runner/test_compare.py`, läuft im Backend-Job der CI
@@ -151,7 +151,7 @@ Abschnitt 12): **16 Verträge, 16 KEPT, 0 broken.** Die Relevanten:
 - `runner imports only processing, catalog.datasets and catalog.registry` und
   `the local runner reaches no database and no object store`.
 - `backend/tests/earthx/processing/test_import_is_pure.py` und
-  `test_no_direct_open.py` halten `processing` rein; `test_module_boundaries.py`
+  `test_no_direct_open.py` halten `processing` rein; `backend/tests/test_module_boundaries.py`
   gleicht die Module mit der Platte ab.
 
 Zum Vergleich: bei M3-15 waren es 12 Verträge.
@@ -215,7 +215,7 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
   Plan `m4-11-export-job.md`); Kennung im `413` des Zuschnitts.
 - **Ergebnis als ein ZIP (M4-11b-1, #145; M4-30, #159):**
   `backend/tests/earthx/api/test_result_zip_files.py`: das ZIP hält genau die
-  Dateien des Zuschnitt-ZIPs (`TEXT_FILES` in `access/crop_rules.py`:
+  Dateien des Zuschnitt-ZIPs (`TEXT_FILES` in `access/crop_rules.py`; die Terms stehen in `ATTRIBUTION.txt`:
   `aoi.geojson`, `recipe.json`, `citation.bib`, `ATTRIBUTION.txt`,
   `methods.txt`) plus `result.tif` und `mask.tif` und keine anderen
   (`test_it_holds_the_files_of_the_crops_zip_and_the_two_rasters_and_no_other`);
@@ -230,7 +230,7 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
   folgt der AOI).
 - **Im Viewer (M4-11b-2, #151; M4-12b, #148):** Angebot „Export as job“ im
   Download-Dialog bei `X-Export-Job: available`, gesperrt bei `too-large`;
-  „Merge scenes of this pass (job)“ für Überflüge mit mindestens zwei Szenen;
+  bei mehreren Szenen unter „Download originals“ die Wahl „Merged per pass (job)“ und je Überflug mit mindestens zwei Szenen „Start job“ (`OriginalFiles.tsx`, `MosaicJobs.tsx`);
   Status über `JobRow` mit SSE (Rückfall auf Abfragen); „Download (ZIP)“ im Panel
   (`frontend/src/components/DownloadDialog.test.tsx`, `ProcessingPanel.test.tsx`,
   `MosaicJobs.test.tsx`; Plan `m4-11b-angebot-und-zip.md` §12, §13, Log 13.–15.10.2026).
@@ -254,8 +254,9 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
   genau dieses Auftrags (`ProcessingPanel.test.tsx`: `"Start job" waits for an
   estimate of exactly this order`, `drops an estimate still on its way when the
   selection changes`).
-- **Formular aus dem Schema:** eigener Formularbau (M4-13b, #138), Weitere
-  Operatoren nutzen ihn unverändert (`mask`: M4-18c, #177).
+- **Formular aus dem Schema:** eigener Formularbau (M4-13b, #138), M4-18c (#177)
+  erweitert ihn um Listen ganzer Zahlen (Klassen der Maske, `mask`).
+  Reprojektion im Panel: `ProcessingPanel.test.tsx` (`reprojectDem`).
 - **Weitere Resampling-Methoden** (`average`, `mode`, `cubicspline`, `lanczos`)
   mit Messung gegen `adr/0014` §6.3: M4-24 (#158).
 - **Prüfung im Browser bei Otto** (Abschnitt 11, Punkt B).
@@ -277,7 +278,7 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
   der Zuschnitt auf die AOI geschieht im Browser um die Kachel-URL
   (`frontend/src/store.mosaic.test.ts`: `pins the mosaic and the scenes under it
   as one layer per time step, cut to the AOI`).
-- **Ohne Item-Cache:** klare Meldung statt `500` (`test_without_a_pool_a_mosaic_is_a_503_that_says_why_…`).
+- **Ohne Item-Cache:** klare Meldung statt `500` (`test_without_a_pool_a_mosaic_is_a_503_that_says_why_and_the_tile_of_one_item_goes_on`).
 - **Gleiche Mosaikregel wie der Job (S5):** `access/crop_rules.py`
   (`mosaic_order`), Vergleichstest in M4-17a (#167).
 - **Offen:** Die Prüfanleitungen **A** (Backend gegen eine echte Quelle) und **B**
@@ -323,7 +324,7 @@ synthetisch (Mini-COG, Mini-Zarr).
 - **Pflicht-CI:** Der Lauf „CI“ Nr. 704 auf `main` (Commit `cb03706`, Merge von
   PR #180 = M4-19c, der letzte Code-Stand) ist **erfolgreich** abgeschlossen (GitHub
   Actions, abgefragt am 24.10.2026). Der Lauf Nr. 707 auf `b60c3b4` (Merge von #169,
-  nur ein Plandokument) lief bei der Abfrage noch. Dazu die lokalen Läufe dieser
+  nur Dokumente) lief bei der Abfrage noch. Dazu die lokalen Läufe dieser
   Sitzung (Abschnitt 12).
 
 **Ergebnis:** Kriterium 9 erfüllt.
@@ -392,8 +393,9 @@ suchen (kleine AOI, Juli 2025), zwei angrenzende Szenen eines Überflugs wählen
 Formular bedienbar; „Review“ zeigt die Schätzung, „Start job“ ist vorher
 gesperrt; „Preview“ erscheint als Kennzeichnung auf der Karte. Ein Überflug mit
 mehreren Szenen erscheint als **ein** Layer (Mosaik); beim Heranzoomen ab z8 lädt
-es nach. Im Download-Dialog bei einer sehr großen AOI „Export as job“ und
-„Merge scenes of this pass (job)“; fertige Jobs bieten „Download (ZIP)“ mit
+es nach. Im Download-Dialog bei einer sehr großen AOI „Export as job“; bei mehreren
+Szenen unter „Download originals“ die Wahl „Merged per pass (job)“ und „Start job“
+je Überflug; fertige Jobs bieten „Download (ZIP)“ mit
 `result.tif`, `mask.tif`, `aoi.geojson`, `recipe.json`, `citation.bib`,
 `ATTRIBUTION.txt`, `methods.txt`.
 
@@ -402,7 +404,7 @@ es nach. Im Download-Dialog bei einer sehr großen AOI „Export as job“ und
 erzeugt einen Link (`?permalink=…`), im neuen Tab stellt er Auswahl, AOI und
 Schritte wieder her; das rote Kreuz löscht ihn.
 
-**D. Lokaler Runner (Kriterium 1).** Aus `README.md`, Abschnitt „Lokaler Runner“:
+**D. Lokaler Runner (Kriterium 1).** Nach `README.md`, Abschnitt „Lokaler Runner“, in der PowerShell-Fassung:
 
 ```powershell
 docker build --target runner --build-arg "EARTHX_COMMIT=$(git rev-parse --short HEAD)" -t earthx-runner:0.4.2 backend
@@ -669,10 +671,10 @@ E2. **Ein gescheiterter Job nennt keinen konkreten Grund** (Log 12.10.2026, „M
    - Vorschlag im Log: je Fehlerart ein fester Satz ohne Werte aus `error_kind` und einem Unterschlüssel; ändert Worker, Queue und API.
    - Aufgabe: eigene Aufgabe (`plans/m4-13-processing-panel.md` §13).
 E3. **Ein Cache-Treffer kann wenige ULP von einer Neuberechnung abweichen,** wenn Worker auf CPUs mit anderen SIMD-Erweiterungen laufen; der Cache-Schlüssel (`adr/0014` E2) enthält die CPU-Stufe nicht (Log 05.10.2026, Nebenfund M4-05 (2), „offen“). Hängt mit der Zusage „gleiche Bits“ zusammen (README, „Lokaler Runner“; Abschnitt 1, Grenzen).
-E4. **Klassenbänder sind in Items nicht erkennbar** (Log 12.10.2026, „M4-13b, offen (1)“): `scl`, `cloud`, `snow` würden mit bilinear empfohlen, richtig wäre `nearest`. Das Panel empfiehlt kein Resampling mehr; der Rest gilt nur für eine spätere Automatik (Adapter setzt eine Klassifikation).
+E4. **Klassenbänder sind in Items nicht erkennbar** (Log 12.10.2026, „M4-13b, offen (1)“): `scl`, `cloud`, `snow` würden mit bilinear empfohlen, richtig wäre `nearest`. Im Log „aufgehoben“: Das Panel empfiehlt kein Resampling mehr; der Rest gilt nur für eine spätere Automatik (Adapter setzt eine Klassifikation) und blieb für M4-23 offen.
 E5. **Hash im Image gegen den Kern aus derselben CI** ist nicht nachgewiesen, nur über gleiche Schichten und Versionen geschlossen (`plans/m4-16-lokaler-runner.md` §10.1, „Offen“). Ottos Beleg vom 24.10.2026 füllt die Lücke von Hand. Offen auch: Podman nicht geprüft, ARM außerhalb der Zusage (README).
 E6. **Worker-Einstieg in `jobs` darf `datasets` nicht importieren;** betrifft den ruhenden Quad-Pol-Operator, zu lösen bei dessen Registrierung (Log 02.10.2026, `adr/0014` §12). `decomp.py` ruht weiter (ENTSCHEIDUNGEN §3).
-E7. **Basiskarte im Permalink:** kommt mit UI-02 (Log 24.10.2026, M4-19e, Antwort 1); in M4 steht sie nicht in der Ansicht.
+E7. **Basiskarte im Permalink:** kommt mit UI-02 (siehe Punkt 29; Log 24.10.2026, M4-19e, Antwort 1); in M4 steht sie nicht in der Ansicht.
 
 **Aus „Nicht in M4“ (`m4-processing-kern.md` §2) und Planständen, weiter offen**
 
