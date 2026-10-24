@@ -52,7 +52,6 @@ import {
   type StatusInfo,
 } from './processing';
 import {
-  handRange,
   isResultExpired,
   positive,
   resultGsd,
@@ -735,7 +734,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     if (!view.key || batch?.key !== view.key) return;
     const total = view.parts.length;
     const titleOf = titler(view);
-    const own = handRange(get().range);
+    const own = handRangeOf(get());
     const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
     let opened = false;
@@ -1083,7 +1082,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       }
       if (s.estimate?.key !== view.key) return;
       const title = titler(view)();
-      const own = handRange(s.range);
+      const own = handRangeOf(s);
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
       try {
@@ -1193,10 +1192,17 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   return range === p.range ? spec : previewSpec({ ...args, range });
 }
 
+// The range the user applied by hand, or `null`: the one a job keeps for its result (M4-32b), and the one the
+// preview holds against a measure — the same switch, so that both are drawn alike (Otto, 24.10.2026). A range
+// equal to the start range counts once the user applied it.
+function handRangeOf(p: Pick<ProcessingState, 'range' | 'rangeByHand'>): PreviewRange | null {
+  return p.rangeByHand ? p.range : null;
+}
+
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
 // preview calls for (the rule of a result's, `scaleOf`); else the start range.
 function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, measureKey: string): PreviewRange {
-  if (p.rangeByHand) return p.range;
+  if (handRangeOf(p)) return p.range;
   return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
 }
 

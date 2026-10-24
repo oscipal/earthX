@@ -206,6 +206,14 @@ describe('the layer a result becomes', () => {
       expect(urlOfLayer()).toContain('colormap_name=terrain&rescale=0%2C3000');
     });
 
+    it('is drawn at −1…1 in rdylgn when the user applied that very range by hand, whatever the statistics say', async () => {
+      useProcessingStore.setState({
+        jobs: [entry({ statistics: resultStats(properties(DEM)), range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' } })],
+      });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
+    });
+
     it('is drawn with its own statistics when the range of the panel was set by hand for another job', async () => {
       // An NDVI preview with a range by hand; the DEM job before it was started without one.
       useProcessingStore.setState({

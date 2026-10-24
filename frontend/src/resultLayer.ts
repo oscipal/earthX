@@ -3,7 +3,7 @@
 // when the map says "Overview", and when the layer is "Expired". Pure functions; the
 // state lives in `processingStore.ts` and `store.ts`.
 
-import { DEFAULT_RANGE, rescaleOf, type PreviewRange } from './processingPreview';
+import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, type BandStats, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
 
@@ -54,12 +54,6 @@ export function resultStats(properties: Record<string, unknown> | undefined): Re
   if (read.every((band) => band.minimum === null && band.maximum === null)) return null;
   return { bands: read, expression: properties?.['processing:expression'] != null };
 }
-
-const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
-
-// The range the user set by hand in the panel, to be kept with the job started under it
-// (Otto, 22.10.2026); `null` for the default, which is no choice of the user's.
-export const handRange = (range: PreviewRange): PreviewRange | null => (sameRange(range, DEFAULT_RANGE) ? null : range);
 
 function drawnWith(range: PreviewRange): AppliedRender {
   const rescale = rescaleOf(range);

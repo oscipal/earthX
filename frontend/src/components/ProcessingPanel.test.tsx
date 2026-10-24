@@ -13,6 +13,7 @@ import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi } from '../placeSearch';
+import { DEFAULT_RANGE } from '../processingPreview';
 import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
@@ -1011,12 +1012,17 @@ describe('starting and following a job', () => {
     }
 
     it('stores a range applied by hand at the job started under it', async () => {
-      useProcessingStore.setState({ range: HAND, rangeDraft: HAND });
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
       expect((await startOne()).range).toEqual(HAND);
     });
 
     it('stores none where the range is the default, which nobody chose', async () => {
       expect((await startOne()).range).toBeNull();
+    });
+
+    it('stores the start range once the user applied it, against a measure that would call for another', async () => {
+      useProcessingStore.setState({ range: DEFAULT_RANGE, rangeDraft: DEFAULT_RANGE, rangeByHand: true });
+      expect((await startOne()).range).toEqual(DEFAULT_RANGE);
     });
 
     it('stores none for a range that is only typed and not applied', async () => {
@@ -1025,7 +1031,7 @@ describe('starting and following a job', () => {
     });
 
     it('does not change the range of a started job when the panel is changed after', async () => {
-      useProcessingStore.setState({ range: HAND, rangeDraft: HAND });
+      useProcessingStore.setState({ range: HAND, rangeDraft: HAND, rangeByHand: true });
       const job = await startOne();
       useProcessingStore.setState({ range: { vmin: '2', vmax: '9', colormap: '' } });
       expect(useProcessingStore.getState().jobs[0].range).toEqual(job.range);
