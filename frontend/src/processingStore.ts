@@ -1226,6 +1226,21 @@ function measureFor(spec: PreviewSpec): Promise<PreviewMeasure | null> {
   return request;
 }
 
+// The longest the picture waits for the measure (Otto, 24.10.2026, proposal 5 s).
+export const MEASURE_WAIT_MS = 5000;
+const TOO_LATE = Symbol('too late');
+
+// `request`'s answer, or `TOO_LATE` once `ms` have passed; the request goes on either way.
+function within<T>(request: Promise<T>, ms: number): Promise<T | typeof TOO_LATE> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(TOO_LATE), ms);
+    void request.then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
+}
+
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
 function adoptMeasure(measure: PreviewMeasure | null): void {
@@ -1264,15 +1279,33 @@ async function settle(wanted: PreviewSpec): Promise<void> {
   const note = limit === undefined ? null : refusedNote(limit, wanted.stepCount, refused!);
   const hand = handRange(useProcessingStore.getState().range) !== null;
   let spec = wantedPreview(limit);
-  // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice.
+  // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice,
+  // but not longer than `MEASURE_WAIT_MS`: then it is drawn with the start range.
+  let late: Promise<PreviewMeasure | null> | null = null;
   if (spec && !hand) {
-    const measure = await measureFor(spec);
+    const request = measureFor(spec);
+    const measure = await within(request, MEASURE_WAIT_MS);
     if (run !== settleRun) return;
-    adoptMeasure(measure);
-    spec = wantedPreview(limit);
+    if (measure === TOO_LATE) {
+      late = request;
+    } else {
+      adoptMeasure(measure);
+      spec = wantedPreview(limit);
+    }
   }
   settledKey = wantedPreview()?.key ?? wanted.key;
   useProcessingStore.setState({ preview: spec, previewNote: note });
+  // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
+  if (late) {
+    const measure = await late;
+    if (run !== settleRun) return;
+    adoptMeasure(measure);
+    const again = wantedPreview(limit);
+    if (again && again.key !== spec?.key) {
+      settledKey = wantedPreview()?.key ?? settledKey;
+      useProcessingStore.setState({ preview: again });
+    }
+  }
   // With one, the measure is for the unit alone, and the picture does not wait for it.
   if (spec && hand) {
     const measure = await measureFor(spec);

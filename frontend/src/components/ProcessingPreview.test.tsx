@@ -606,6 +606,100 @@ describe('the preview section', () => {
       expect(rescale()).toBe('120,2400');
     });
 
+    describe('a measure that is slow (the longest wait is 5 s)', () => {
+      let answer!: (response: Response) => void;
+      const slow = () => {
+        statistics = () => new Promise<Response>((resolve) => (answer = resolve)) as unknown as Response;
+      };
+      const drawn = () => {
+        const seen: Array<string | null> = [];
+        useProcessingStore.subscribe((s, prev) => {
+          if (s.preview !== prev.preview) seen.push(s.preview && new URL(s.preview.scenes[0].url, 'http://localhost').searchParams.get('rescale'));
+        });
+        return seen;
+      };
+      const start = async () => {
+        select([scene('S2B_A')]);
+        await openPanel();
+        vi.useFakeTimers();
+        const seen = drawn();
+        click(button('＋ Band math'));
+        typeInto(expression(), 'nir / red');
+        await afterDebounce();
+        return seen;
+      };
+
+      it('draws nothing before the wait is over, then the start range', async () => {
+        slow();
+        const seen = await start();
+        act(() => {
+          vi.advanceTimersByTime(4999);
+        });
+        expect(seen).toEqual([]);
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        await flush();
+        expect(seen).toEqual(['-1,1']);
+      });
+
+      it('takes the measure in afterwards with exactly one redraw', async () => {
+        slow();
+        const seen = await start();
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        await flush();
+        await act(async () => answer(measured({ b1: DEM_VALUES })));
+        await flush();
+        expect(seen).toEqual(['-1,1', '120,2400']);
+        expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
+        expect(unit()).toBe('m');
+      });
+
+      it('does not redraw when the late measure calls for the same range', async () => {
+        slow();
+        const seen = await start();
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        await flush();
+        await act(async () => answer(measured({ b1: INDEX_VALUES })));
+        await flush();
+        expect(seen).toEqual(['-1,1']);
+      });
+
+      it('says so when the late measure is a failure, and draws nothing again', async () => {
+        slow();
+        const seen = await start();
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        await flush();
+        await act(async () => answer(new Response('{}', { status: 502 })));
+        await flush();
+        expect(seen).toEqual(['-1,1']);
+        expect(section().textContent).toContain('The range could not be measured');
+      });
+
+      it('lets a newer picture win over a measure of an older one that comes late', async () => {
+        slow();
+        const seen = await start();
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        await flush();
+        const first = answer;
+        statistics = () => measured({ b1: INDEX_VALUES });
+        typeInto(expression(), 'nir / blue');
+        await afterDebounce();
+        await act(async () => first(measured({ b1: DEM_VALUES })));
+        await flush();
+        expect(seen.at(-1)).toBe('-1,1');
+        expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
+      });
+    });
+
     it('keeps the start range, says so and does not ask again when the measure fails; "Auto stretch" asks again', async () => {
       statistics = () => new Response('{}', { status: 502 });
       await withNdvi();
