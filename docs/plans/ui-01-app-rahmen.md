@@ -1,6 +1,6 @@
 # UI-01 — App-Rahmen mit linker Leiste und Processing-Manager
  
-**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4), 22.10.2026 (§1 Punkte 10 und 12) und 24.10.2026 (§1 Punkt 11), beauftragt von Otto.
+**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4), 22.10.2026 (§1 Punkte 10 und 12) und 24.10.2026 (§1 Punkte 6 und 11), beauftragt von Otto.
 **Meilenstein:** UI, direkt nach M4 (nach M4-20). Nummer und Name des Meilensteins stehen in `projektplan.md` noch aus.
 **Stufe B:** Erst kommt der Plan im Draft-PR, Otto gibt ihn frei, dann folgt der Code.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -24,6 +24,7 @@
    - mit gemeinsamem Titel, Gesamtfortschritt (fertig, laufend, abgewiesen, gescheitert) und dem frühesten Ablaufdatum,
    - aufklappbar zu den einzelnen Teilen.
    Im Backend bleiben es einzelne Jobs: ein Raster je Job, Cache je Teil, Fehler je Teil getrennt, parallel in der Queue (M4-12 §5).
+   **Share bei einem Batch (24.10.2026):** In M4-19e ist „Share“ für Stapel gesperrt. Der Plan schlägt vor, ob UI-01 einen Permalink für den ganzen Batch anbietet (ein Link, mehrere Aufträge) oder es bei der Sperre mit Grund bleibt.
 7. **„Download all (ZIP)“ (20.10.2026).** Je Batch gibt es ein ZIP mit allen fertigen Teilergebnissen, je Teil ein Ordner mit dem Inhalt des Job-ZIP (Sollliste aus M4-30). Teile, die abgelaufen oder gescheitert sind, fehlen; welche das sind, steht in einer kurzen Liste im ZIP.
 8. **Gleiche Breite der Layer-Zeilen (20.10.2026).** Alle Einträge im Layer-Manager sind gleich breit. Die Knöpfe stehen immer an derselben Stelle, auch wenn bei einem Layer ein Knopf fehlt, etwa „Download“. Ein fehlender Knopf lässt einen leeren Platz, statt die anderen zu verschieben.
 9. **Ergebnisse aus dem Layer-Manager laden (20.10.2026).** Ein Ergebnis-Layer (Job-Ergebnis, M4-13c-5) hat einen Download-Knopf. Er lädt dasselbe Job-ZIP wie das Panel (Sollliste aus M4-30), ohne zweiten Weg. Ist das Ergebnis abgelaufen, ist der Knopf gesperrt und nennt den Grund.
