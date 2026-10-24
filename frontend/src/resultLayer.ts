@@ -69,16 +69,6 @@ export function resultStats(properties: Record<string, unknown> | undefined): Re
   return { bands: read, expression: properties?.['processing:expression'] != null };
 }
 
-// The unit the bands of a result state, when they all state one and the same: `null` if one is missing or they differ
-// (a result of several bands in several units has no single unit to write beside a range).
-export function resultUnit(properties: Record<string, unknown> | undefined): string | null {
-  const bands = properties?.bands;
-  if (!Array.isArray(bands) || bands.length === 0) return null;
-  const units = bands.map((band) => (band as { unit?: unknown } | null)?.unit);
-  const first = units[0];
-  return typeof first === 'string' && first !== '' && units.every((unit) => unit === first) ? first : null;
-}
-
 const smallest = (values: Array<number | null>) => Math.min(...values.filter((v): v is number => v !== null));
 const largest = (values: Array<number | null>) => Math.max(...values.filter((v): v is number => v !== null));
 

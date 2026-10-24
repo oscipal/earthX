@@ -25,6 +25,7 @@ import {
   processBlockReason,
   processInfo,
   registryUnit,
+  shownUnit,
   stepOfRefusal,
   type DraftStep,
 } from './processingOrder';
@@ -202,6 +203,27 @@ describe('the unit of a band (M4-19b)', () => {
       expect(bandSources(it1, 'cog', null, collection(field))[0].units).toEqual([null]);
     }
     expect(bandSources(it1, 'cog', null)[0].units).toEqual([null]);
+  });
+});
+
+describe('shownUnit (Otto, 24.10.2026)', () => {
+  it('writes a unit as it is', () => {
+    expect(shownUnit('m')).toBe('m');
+    expect(shownUnit('percent')).toBe('percent');
+  });
+
+  it('writes nothing for "1", for no unit and for what is no unit', () => {
+    for (const unit of ['1', '', null, undefined, 1, ['m']]) expect(shownUnit(unit as never)).toBeNull();
+  });
+
+  it('writes "10" and " 1" as they are: only the exact "1" is dimensionless', () => {
+    expect(shownUnit('10')).toBe('10');
+    expect(shownUnit(' 1')).toBe(' 1');
+  });
+
+  it('leaves the data alone: the sources keep "1"', () => {
+    const it1 = item('a', { red: { href: 'x', type: COG, 'raster:bands': [{ unit: '1' }] } });
+    expect(bandSources(it1, 'cog', null)[0].units).toEqual(['1']);
   });
 });
 

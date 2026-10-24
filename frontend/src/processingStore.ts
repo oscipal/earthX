@@ -60,7 +60,6 @@ import {
   resultRender,
   resultStats,
   type ResultStats,
-  resultUnit,
   resultTileTemplate,
   tilesHref,
 } from './resultLayer';
@@ -175,9 +174,6 @@ export interface JobEntry {
   // The statistics of the AOI per band, for the colour scale of the layer (M4-32b); `null` until the
   // results are read, and for a result from before they were written.
   statistics: ResultStats | null;
-  // The unit of the values of the result, if its bands state one and agree on it (M4-19b); `null` otherwise, and
-  // until the results are read.
-  unit: string | null;
   // The range and colormap the user had set by hand in the panel when the job was started; its
   // result is drawn with them and no other result is. `null` for the default range, for a job of
   // the download dialog, and for one taken up again after a reload (it is not kept in the tab).
@@ -630,7 +626,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
           : null,
         statistics: resultStats(properties),
-        unit: resultUnit(properties),
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 410) {
@@ -697,7 +692,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       title,
       tiles: null,
       statistics: null,
-      unit: null,
       range,
     };
     set((s) => ({ jobs: [entry, ...s.jobs] }));
@@ -853,7 +847,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           expires: job.expires,
           gsd: resultGsd(gsd, width, tileJson.bounds),
           resampled: job.resampled,
-          unit: job.unit,
           expired: false,
         },
         overlays: [

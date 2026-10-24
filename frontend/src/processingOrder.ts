@@ -148,6 +148,13 @@ export function registryUnit(collection: Collection | undefined, key: string): s
   return null;
 }
 
+// The unit to write beside a band: none for "1", the unit of a dimensionless quantity (Otto, 24.10.2026). The data
+// keep "1" (`bands[].unit`, `earthx:band_units`); this is the one place a frontend display turns a unit into text,
+// so that the chips of the panel and whatever shows units later (M4-19c) agree.
+export function shownUnit(unit: string | null | undefined): string | null {
+  return typeof unit === 'string' && unit !== '' && unit !== '1' ? unit : null;
+}
+
 // The unit an item states for one of its bands, if it does.
 function itemUnit(band: StacBand | undefined): string | null {
   return band && typeof band.unit === 'string' && band.unit ? band.unit : null;

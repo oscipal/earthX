@@ -788,11 +788,24 @@ describe('the unit of a band (M4-19b)', () => {
   };
 
   it('is written after the name of the band on its chip, and the name stays the name of the button', async () => {
-    select([scene('S2B_A')], 'processing', withUnits({ red: '1', nir: null }));
+    select([scene('S2B_A')], 'processing', withUnits({ red: 'K', nir: null }));
     await openPanel();
-    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red · 1', 'nir']);
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red · K', 'nir']);
     click(button(/^red/));
     expect(button(/^red/).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('is not written for "1", the unit of a dimensionless quantity, whoever names it (Otto, 24.10.2026)', async () => {
+    const item: StacItem = {
+      ...scene('S2B_A'),
+      assets: {
+        red: { href: 'https://example.org/r.tif', type: COG, 'raster:bands': [{ data_type: 'uint16' }] },
+        nir: { href: 'https://example.org/n.tif', type: COG, 'raster:bands': [{ unit: '1' }] },
+      },
+    };
+    select([item], 'processing', withUnits({ red: '1', nir: 'm' }));
+    await openPanel();
+    expect([...container.querySelectorAll('.pp-chip')].map((c) => c.textContent)).toEqual(['red', 'nir']);
   });
 
   it('is the registry\'s for an asset the item describes with no band', async () => {
@@ -1184,26 +1197,6 @@ describe('starting and following a job', () => {
     expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Add to layers');
   });
 
-  it('keeps the unit its bands state, and none from a result that states none', async () => {
-    await resume(() =>
-      json({
-        result: {
-          ...link('result.tif'),
-          properties: { bands: [{ name: 'data', unit: 'm', statistics: { count: 4, minimum: 1, maximum: 9 } }] },
-        },
-        tiles: { href: TILES },
-      }),
-    );
-    await waitFor(() => useProcessingStore.getState().jobs[0]?.tiles !== null);
-    expect(useProcessingStore.getState().jobs[0].unit).toBe('m');
-  });
-
-  it('keeps no unit from an old result', async () => {
-    await resume(() => json({ result: link('result.tif'), tiles: { href: TILES } }));
-    await waitFor(() => useProcessingStore.getState().jobs[0]?.tiles !== null);
-    expect(useProcessingStore.getState().jobs[0].unit).toBeNull();
-  });
-
   it('keeps the single links of an old result next to its tiles', async () => {
     await resume(() =>
       json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json'), tiles: { href: TILES } }),
@@ -1259,7 +1252,6 @@ describe('a finished job row (K6)', () => {
       expired: false,
       tiles: null,
       statistics: null,
-      unit: null,
       range: null,
       title: null,
     };

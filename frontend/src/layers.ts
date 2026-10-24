@@ -93,8 +93,6 @@ export interface ResultLayerInfo {
   gsd: number | null;
   // `earthx:resampled` (Prinzip 2.9); `null` if the results said nothing.
   resampled: boolean | null;
-  // The unit of the result's values (`bands[].unit` of the results document); absent or `null` where it states none.
-  unit?: string | null;
   // Set when `expires` has passed: the map loads no more tiles of it.
   expired: boolean;
 }
