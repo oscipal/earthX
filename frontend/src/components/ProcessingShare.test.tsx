@@ -209,6 +209,15 @@ describe('opening a link', () => {
     expect(draft().open).toBe(false);
   });
 
+  it('selects the scenes of every group and leaves the pass to the user', async () => {
+    link = () => json({ order: { ...ORDER, inputs: [{ ...ORDER.inputs[0], groups: [['NEW_A'], ['NEW_B']] }] }, view: VIEW, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState().error).toBeNull();
+    expect(useAppStore.getState().selectedIds).toEqual(['NEW_A', 'NEW_B']);
+    expect(draft().passKey).toBeNull();
+  });
+
   it('covers the whole scenes and keeps the area on the map for an order without one', async () => {
     const { aoi: _aoi, ...whole } = ORDER;
     link = () => json({ order: whole, view: { ...VIEW, range: null, title: null }, expires_at: EXPIRES });

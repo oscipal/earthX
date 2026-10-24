@@ -1,6 +1,6 @@
 # M4-19 — Permalinks, Methodentext, Skalierung und Einheiten, „Parameter übernehmen“: Plan
 
-**Stand:** 22.10.2026, Plan freigegeben (§9); M4-19a, d und b sind umgesetzt (§10, §11, §12), c und e folgen je in einer neuen Session.
+**Stand:** 24.10.2026, Plan freigegeben (§9); M4-19a, d, b und e sind umgesetzt (§10, §11, §12, §13), c folgt in einer neuen Session.
 **Stufe B (S6):** Der Plan liegt im Draft-PR, die Session hält an, Otto gibt frei. Danach
 setzen die Sessions aus Frage 10 um.
 **Modell:** Opus für den Plan, Sonnet (Effort mittel) für die Umsetzung (§3 der Übersicht).
@@ -677,3 +677,82 @@ $results.result.properties.bands | ConvertTo-Json -Depth 4     # "unit": "m" zwi
 Aus dem Ergebnis eines Band-Math-Jobs (`(nir - red) / (nir + red)`) fehlt `unit` ganz; ein Ausdruck, der nur `red`
 heißt, behält die Einheit `1`.
 
+---
+
+## 13. Umsetzung M4-19e (24.10.2026)
+
+- **Backend:** Migration `012_permalink.sql` (`earthx_permalink`: Kennung, `body` jsonb, SHA-256 des
+  Löschschlüssels, `created_at`, `expires_at`, Index auf `expires_at`, kein Fremdschlüssel). `jobs/permalinks.py`
+  (`create`, `read`, `delete`, `TTL = 30 Tage`) legt an und liest mit der Uhr der Datenbank; die Routen in
+  `api/processing_route.py` (`POST`, `GET`, `DELETE /processing/permalinks`), dazu `loggable_path` mit
+  `{permalinkID}`. Der Aufräumer in `jobs/cleanup.py` löscht abgelaufene Permalinks im selben Durchgang
+  (`CleanupResult.permalinks`). Importregeln unverändert: `jobs` fasst die Tabelle mit SQL an, `api` ruft `jobs`
+  auf wie bei den Aufträgen. Nachträge: `adr/0015` §14d, `adr/0014` §15o.
+- **Eingabe:** Rumpf `{"order": …, "view": …}`, höchstens 1 MB (`MAX_BODY_BYTES`, wie die Auftragsroute). Der
+  Auftrag geht durch `parse_request` (I-JSON, streng, `resolved` wird abgewiesen, `422`); die Ansicht hat ein eigenes
+  Modell mit `extra="forbid"` (`center`, `zoom` 0–24, `range` mit `vmin`, `vmax`, `colormap`, `title` bis 100
+  Zeichen, eine Zeile Text). Gespeichert wird der Auftrag wie gesendet, nicht umgeschrieben. Kein Datensatz- oder
+  Szenen-Abruf: ob die Szenen noch existieren, zeigt sich beim Öffnen.
+- **Antworten:** `201` `{id, expires_at, delete_key}`; `GET` `200` `{order, view, expires_at}`; `DELETE` `204`.
+  `404` mit einem Text für unbekannt, falsch geformt, abgelaufen und falschen Schlüssel; ein fehlender Kopf
+  `X-Delete-Key` ist `400` für jede Kennung gleich (verrät nichts über die Kennung). Alles `no-store`.
+- **Frontend:** `permalink.ts` (Aufrufe, Adresse, Schlüssel in `localStorage` unter `earthx.permalinks`, Ansicht,
+  Öffnen), `ShareLink.tsx` im Fuß des Panels („Share“ mit Titel, danach Adresse, „Copy link“, „Delete link“),
+  `restoreOrder` im Store, `flyToView` für die Kamera. Beim Start liest `App` `?permalink=` **nach**
+  `loadDatasets` (das setzt die Auswahl zurück), holt den Eintrag, stellt Datensatz, Szenen, AOI, Schritte,
+  Datentyp, Bereich und Kartenansicht her und entfernt den Parameter mit `history.replaceState`, auch bei einem
+  Fehler. `404` meldet „This link has expired or never existed.“
+- **Festlegungen aus §11 für den Permalink:** Mehrere Gruppen wählen alle Szenen aus, den Durchgang wählt der
+  Nutzer; ohne AOI im Auftrag bleibt die AOI der Karte und der Bereich ist „Whole scene“. Beides hat ein Test.
+- **Abweichungen vom Plan (Fragen an Otto, Log 24.10.2026):**
+  1. **Basiskarte** (§3.5) ist nicht Teil der Ansicht: Die App hat nur eine Basiskarte, Thema und Projektion sind
+     Einstellungen des Browsers. Empfehlung: kein Feld, bis es eine Auswahl gibt.
+  2. **Ein Link hält einen Auftrag:** „Share“ ist bei „Run as“ Szene/Durchgang gesperrt. Ein Stapel hat mehrere
+     Aufträge, und der Plan sagt nicht, welcher gemeint wäre. Empfehlung: so lassen.
+  3. **`jobs/submit.py`** sagte nicht mehr „nur ein Lauf oder ein Treffer verlängert“ (so der Plan §2.1), nur
+     `cleanup.py`; nur dort ist der Docstring angeglichen.
+- **Belegt:** Anlegen, Lesen, Löschen gegen die echte Datenbank; `404` für unbekannt, falsch geformt, abgelaufen
+  (Uhr der Datenbank, die Zeile wird zurückdatiert) und falschen Schlüssel; Größe, `extra` in der Ansicht,
+  ungültiger Auftrag; Kennung, AOI, Schlüssel und Titel in keinem Log (Zugriffslog und `caplog` mit
+  `own_log_text`); der Aufräumer löscht nach 30 Tagen die ganze Zeile, vorher nicht, in Stapeln; Lesen verlängert
+  nichts. Frontend: Öffnen (Zustand, Parameter weg, ein Aufruf bei doppeltem Start, `404`, `503`, Unsinn, fremder
+  Operator, fehlende Szene, Auftrag ohne AOI), Teilen (Auftrag und Ansicht gesendet, Schlüssel nur im Browser,
+  Löschen mit Schlüssel, Fehler behalten Link und Schlüssel, Stapel gesperrt).
+- **Nicht belegt:** Gegen einen laufenden Stack mit der Oberfläche im Browser ist es nicht gelaufen (kein
+  Docker in der Sitzung); die Kamera (`jumpTo`) ist nicht an einer echten Karte gesehen worden.
+- **Größe:** Weit über dem Richtwert von 400 Zeilen (rund 700 Zeilen Code, 750 Zeilen Tests). Die Commits trennen
+  Backend (zwei) und Frontend (zwei); Otto kann daran teilen.
+
+### 13.1 Prüfanleitung für Otto (PowerShell 5.1)
+
+Entwurf. Belegt ist die Antwortform durch die Tests des Backends; gegen einen laufenden Stack nicht gelaufen.
+
+```powershell
+docker compose up -d --build
+$api = 'http://localhost:8000'
+
+# 1) Einen Permalink anlegen (die Szene muss nicht existieren, sie wird erst beim Öffnen gebraucht)
+$ring = @(@(10.00, 47.00), @(10.01, 47.00), @(10.01, 47.01), @(10.00, 47.01), @(10.00, 47.00))
+$order = @{ recipe_version = 1; steps = @(); aoi = @{ type = 'Polygon'; coordinates = @(, $ring) }
+            inputs = @(@{ name = 'input'; dataset = 'cop-dem-glo-30'; groups = @(, @('Beispiel-Szene')); assets = @('data') })
+            output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
+$view = @{ center = @(10.0, 47.0); zoom = 9.5; title = 'Test' }
+$body = @{ order = $order; view = $view } | ConvertTo-Json -Depth 12
+$made = Invoke-RestMethod -Method Post -Uri "${api}/processing/permalinks" -ContentType 'application/json; charset=utf-8' `
+    -Body ([Text.Encoding]::UTF8.GetBytes($body))
+$made | Format-List      # id (22 Zeichen), expires_at (in 30 Tagen), delete_key (einmalig)
+
+# 2) Lesen, auch im zweiten Browser: http://localhost:5173/?permalink=<id>
+Invoke-RestMethod "${api}/processing/permalinks/$($made.id)" | ConvertTo-Json -Depth 12
+
+# 3) Mit falschem und mit richtigem Schlüssel löschen
+function Status($script) { try { & $script; 'ok' } catch { [int]$_.Exception.Response.StatusCode } }
+Status { Invoke-RestMethod -Method Delete -Uri "${api}/processing/permalinks/$($made.id)" -Headers @{ 'X-Delete-Key' = 'falsch' } }   # 404
+Status { Invoke-RestMethod -Method Delete -Uri "${api}/processing/permalinks/$($made.id)" -Headers @{ 'X-Delete-Key' = $made.delete_key } }  # ok (204)
+Status { Invoke-RestMethod "${api}/processing/permalinks/$($made.id)" }   # 404
+```
+
+Im Browser (http://localhost:5173): Szene wählen, AOI zeichnen, „Process“, einen Schritt anlegen, unten „Share“. Die
+Adresse hat die Form `…/?permalink=<id>`, ohne Koordinaten. In einem zweiten Fenster öffnen: Datensatz, Szene, AOI,
+Schritt und Kartenausschnitt sind wieder da, die Adresszeile zeigt den Parameter nicht mehr. „Delete link“ und neu
+öffnen: „This link has expired or never existed.“
