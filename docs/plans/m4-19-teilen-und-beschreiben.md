@@ -730,7 +730,7 @@ heißt, behält die Einheit `1`.
   dieser Aufgabe). (4) Einheiten werden nur geschrieben, wenn ihre Zahl die der Bänder trifft.
 - **Angenommen (Otto, 24.10.2026):** Einheit aus der Statistik statt aus dem TileJSON; Messung an der ersten Szene,
   bei „AOI only“ an der ganzen Szene (für M4).
-- **Größe des PRs:** rund 1250 Zeilen mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
+- **Größe des PRs:** rund 1500 geänderte Zeilen (1375 neu, 117 entfernt) mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
   300. Otto hat entschieden, ihn nicht zu teilen. Gründe: Die Route ist ohne die Anzeige nicht zu prüfen und
   die Anzeige ohne die Route nicht zu bauen; die gemeinsame Regel (`scaleOf`) berührt beide Seiten. Etwa die Hälfte
   sind Tests (Backend 330 Zeilen, Frontend 340), etwa 130 Zeilen Doku. Die Commits sind nach Backend (Lesen, Route),
