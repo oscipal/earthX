@@ -29,7 +29,7 @@ Sitzung selbst gelaufen ist, steht in Abschnitt 12.
 | 4 | Ergebnisse privat, nur signierte URLs; Ablauf 7 Tage; zufällige Job-IDs; kein Hash und keine AOI in URLs oder Logs | erfüllt; das tatsächliche Löschen durch den Speicher nach 7 Tagen ist nicht im Lauf zu beobachten (Abschnitt 4) |
 | 5 | Export über dem Deckel und Mosaik je Überflug als Job im Viewer, mit Attribution, Terms, `citation.bib`, `recipe.json` | erfüllt; Prüfung im Browser bei Otto |
 | 6 | Band-Math und Reprojektion registriert, im Panel aus Schemas bedienbar, Kostenschätzung vor dem Start | erfüllt; Prüfung im Browser bei Otto |
-| 7 | Mosaik im Kachel-Pfad zustandslos, ohne exakte AOI in der URL | erfüllt; Prüfanleitungen A und B gegen eine echte Quelle **offen** (Abschnitt 7) |
+| 7 | Mosaik im Kachel-Pfad zustandslos, ohne exakte AOI in der URL | erfüllt; Prüfanleitung A von Otto bestanden, B Schritte 1–2 bestanden, Schritte 3–6 **offen** (Abschnitt 7) |
 | 8 | Onboarding-Checkliste Fassung v2 grün je Datensatz | erfüllt |
 | 9 | M4-01a und M4-01b umgesetzt; Pflicht-CI grün aus der Lock-Datei | erfüllt |
 | 10 | Masking und Normalisierung registriert (M4-18); Permalink und Methodentext (M4-19) | erfüllt; Prüfung im Browser bei Otto |
@@ -281,14 +281,20 @@ Zum Vergleich: bei M3-15 waren es 12 Verträge.
 - **Ohne Item-Cache:** klare Meldung statt `500` (`test_without_a_pool_a_mosaic_is_a_503_that_says_why_and_the_tile_of_one_item_goes_on`).
 - **Gleiche Mosaikregel wie der Job (S5):** `access/crop_rules.py`
   (`mosaic_order`), Vergleichstest in M4-17a (#167).
-- **Offen:** Die Prüfanleitungen **A** (Backend gegen eine echte Quelle) und **B**
-  (Viewer gegen eine echte Quelle) von M4-17 sind nicht gelaufen, weil das
-  `gateway` der Sitzung Earth Search nicht erreicht (Log 20.10.2026 und
-  22.10.2026, beide „offen“). Belegt ist die Verdrahtung gegen eine echte
-  MapLibre-Karte mit synthetischen Kacheln. Frage 2.
+- **Gegen eine echte Quelle (Otto, lokal, Antwort vom 24.10.2026).** In der
+  Cloud-Sitzung erreicht das `gateway` Earth Search nicht (Log 20.10.2026 und
+  22.10.2026, beide „offen“); die Läufe hat Otto auf seinem Rechner gemacht, diese
+  Sitzung hat sie nicht wiederholt:
+  - **Prüfanleitung A von M4-17 (Backend): bestanden.** Zu M4-17b: Antwort `200`,
+    Hash `True`, z7 → `400`, gemischte Überflüge → `422`.
+  - **Prüfanleitung B von M4-17 (Viewer): Schritte 1–2 am 22.10.2026 bestanden**
+    (ein TileJSON, Kacheln nur über `/mosaic/tiles/`, eine Fläche ohne Lücke, ein
+    Layer-Eintrag je Überflug). **Schritte 3–6 stehen aus;** Otto reicht das Ergebnis nach.
+  - Außerdem belegt: die Verdrahtung gegen eine echte MapLibre-Karte mit
+    synthetischen Kacheln (`plans/m4-17-mosaik-kachel-pfad.md` §14, §15).
 
-**Ergebnis:** Kriterium 7 erfüllt für Bauart und Tests; der Lauf gegen eine echte
-Quelle steht aus.
+**Ergebnis:** Kriterium 7 erfüllt; offen bleiben die Schritte 3–6 der
+Prüfanleitung B.
 
 ---
 
@@ -662,10 +668,9 @@ aufgeführt.
 
 **Aus M4 selbst**
 
-E1. **Prüfanleitungen A und B von M4-17 gegen eine echte Quelle** (Log 20.10. und 22.10.2026, beide „offen“).
-   - Fehlt: ein Lauf von `tiler` und Prüfskript (A) bzw. Viewer (B), wo das `gateway` Earth Search erreicht.
-   - Belegt ist die Verdrahtung mit synthetischen Kacheln und einer echten MapLibre-Karte (`plans/m4-17-mosaik-kachel-pfad.md` §14, §15).
-   - Hängt an Frage 2 in Abschnitt 15.
+E1. **Prüfanleitung B von M4-17, Schritte 3–6, gegen eine echte Quelle** (Log 22.10.2026, „offen“).
+   - A hat Otto bestanden, B Schritte 1–2 ebenfalls (Abschnitt 7); das Ergebnis der Schritte 3–6 reicht Otto nach und kommt als Log-Zeile.
+   - Belegt ist sonst die Verdrahtung mit synthetischen Kacheln und einer echten MapLibre-Karte (`plans/m4-17-mosaik-kachel-pfad.md` §14, §15).
 E2. **Ein gescheiterter Job nennt keinen konkreten Grund** (Log 12.10.2026, „M4-13b, offen (2)“).
    - Die Queue speichert nur `error_kind`; Titel und Detail der API sind fest, der Text der Ausnahme geht verloren (Absicht, `adr/0014` §4.7).
    - Vorschlag im Log: je Fehlerart ein fester Satz ohne Werte aus `error_kind` und einem Unterschlüssel; ändert Worker, Queue und API.
@@ -715,8 +720,8 @@ Nummeriert, Empfehlung zuerst.
    - (1) **Empfehlung:** M4 mit den Belegen in Abschnitt 1–10 abnehmen. Kriterium 1 trägt Ottos Hash-Vergleich vom 24.10.2026 (Runner 0.4.2+gcb03706) neben `test_compare` und dem Schichtvergleich; die benannte Grenze (Image gegen Kern aus derselben CI) ist damit von Hand geschlossen.
    - (2) Erst abnehmen, wenn die Läufe in Abschnitt 11 (A bis C) durch sind.
    - (3) Anders.
-2. **Prüfanleitungen A und B von M4-17 gegen eine echte Quelle** (E1; Kriterium 7).
-   - (1) **Empfehlung:** Die Abnahme hängt nicht daran. Du prüfst A und B bei Gelegenheit lokal (die Anleitungen stehen in `plans/m4-17-mosaik-kachel-pfad.md`); das Ergebnis kommt als Log-Zeile.
+2. **Prüfanleitung B von M4-17, Schritte 3–6** (E1; Kriterium 7). A ist bestanden, B Schritte 1–2 auch.
+   - (1) **Empfehlung:** Die Abnahme hängt nicht daran. Du reichst das Ergebnis der Schritte 3–6 nach (die Anleitung steht in `plans/m4-17-mosaik-kachel-pfad.md`); es kommt als Log-Zeile.
    - (2) Vor der Abnahme prüfen.
    - (3) Anders.
 3. **Lesart von Kriterium 3 („ohne `gateway`“).**
@@ -741,8 +746,8 @@ Test-, Code- und Log-Belegen erfüllt; Kriterium 1 trägt die drei verlangten
 Belege (`test_compare` aus M4-16a, der Schichtvergleich in der CI aus M4-16b und
 Ottos lokaler Hash-Vergleich vom 24.10.2026 mit Runner 0.4.2+gcb03706:
 `result.tif` und `mask.tif` je True). Offen und bei Otto: die lokale Prüfung
-(Abschnitt 11), die Prüfanleitungen A und B von M4-17 gegen eine echte Quelle
-(Frage 2) und das Löschen nach 7 Tagen, das in keinem Lauf zu beobachten ist
+(Abschnitt 11), die Schritte 3–6 der Prüfanleitung B von M4-17 gegen eine echte Quelle
+(Frage 2; A und B 1–2 hat Otto bestanden) und das Löschen nach 7 Tagen, das in keinem Lauf zu beobachten ist
 (Kriterium 4). Die Läufe der Sitzung (Abschnitt 12) sind grün. Mit Ottos Abnahme
 wird M4 im Plan als abgeschlossen markiert und die Log-Zeile „M4 abgenommen“ mit
 Datum und PR-Nummer ergänzt.
