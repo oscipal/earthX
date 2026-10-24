@@ -1847,6 +1847,15 @@ input[type='date']:focus {
   margin: 0;
   font-size: 11px;
 }
+.pp-share {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.pp-share p {
+  margin: 0;
+}
 .pp-options {
   margin: 0;
   padding-left: 14px;
