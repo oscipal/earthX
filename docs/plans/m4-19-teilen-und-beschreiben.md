@@ -690,14 +690,13 @@ heißt, behält die Einheit `1`.
   auf wie bei den Aufträgen. Nachträge: `adr/0015` §14d, `adr/0014` §15o.
 - **Eingabe:** Rumpf `{"order": …, "view": …}`, höchstens 1 MB (`MAX_BODY_BYTES`, wie die Auftragsroute). Der
   Auftrag geht durch `parse_request` (I-JSON, streng, `resolved` wird abgewiesen, `422`); die Ansicht hat ein eigenes
-  Modell mit `extra="forbid"` (`center`, `zoom` 0–24, `range` mit `vmin`, `vmax`, `colormap`, `title` bis 100
-  Zeichen, eine Zeile Text). Gespeichert wird der Auftrag wie gesendet, nicht umgeschrieben. Kein Datensatz- oder
+  Modell mit `extra="forbid"` (`center`, `zoom` 0–24, `range` mit `vmin`, `vmax`, `colormap`; kein Titel). Gespeichert wird der Auftrag wie gesendet, nicht umgeschrieben. Kein Datensatz- oder
   Szenen-Abruf: ob die Szenen noch existieren, zeigt sich beim Öffnen.
 - **Antworten:** `201` `{id, expires_at, delete_key}`; `GET` `200` `{order, view, expires_at}`; `DELETE` `204`.
   `404` mit einem Text für unbekannt, falsch geformt, abgelaufen und falschen Schlüssel; ein fehlender Kopf
   `X-Delete-Key` ist `400` für jede Kennung gleich (verrät nichts über die Kennung). Alles `no-store`.
 - **Frontend:** `permalink.ts` (Aufrufe, Adresse, Schlüssel in `localStorage` unter `earthx.permalinks`, Ansicht,
-  Öffnen), `ShareLink.tsx` im Fuß des Panels („Share“ mit Titel, danach Adresse, „Copy link“, „Delete link“),
+  Öffnen), `ShareLink.tsx` im Fuß des Panels („Share“, danach die Adresse in einem schreibgeschützten Feld im Farbschema des Themes, das Kopier-Symbol der Ergebnisliste (`CopyButton`, aus `ResultsPanel` herausgelöst) und ein kleines rotes Kreuz „Delete link“),
   `restoreOrder` im Store, `flyToView` für die Kamera. Beim Start liest `App` `?permalink=` **nach**
   `loadDatasets` (das setzt die Auswahl zurück), holt den Eintrag, stellt Datensatz, Szenen, AOI, Schritte,
   Datentyp, Bereich und Kartenansicht her und entfernt den Parameter mit `history.replaceState`, auch bei einem
@@ -711,7 +710,15 @@ heißt, behält die Einheit `1`.
      („A link holds one order: choose “One job”.“). Otto: gesperrt lassen, mit Grund im Panel.
   3. **`jobs/submit.py`** sagte nicht mehr „nur ein Lauf oder ein Treffer verlängert“ (so der Plan §2.1), nur
      `cleanup.py`; nur dort ist der Docstring angeglichen.
-  4. **Größe:** weit über dem Richtwert (rund 750 Zeilen Code, 900 Zeilen Tests). Otto: PR nicht teilen; die
+  4. **Änderungen vor dem Merge (Otto, 24.10.2026):** (a) Der **Titel entfällt ganz**: kein Feld im Panel, nicht in
+     der API, im Speicher und in der Migration 012 (noch nicht gemergt, also dort direkt, ohne neue Migration; die
+     Ansicht lehnt `title` wie jedes unbekannte Feld ab). (b) Der Link steht in einem schreibgeschützten Textfeld, das
+     die Regel `input[type='text']` des Themes nutzt (`--input-bg`, `--text`), nicht weiß im Dark Mode. (c) „Copy link“
+     ist das Kopier-Symbol der Ergebnisliste: Dasselbe `CopyButton` (Glyph, Häkchen, Zwischenablage) ist aus
+     `ResultsPanel` in `components/CopyButton.tsx` herausgelöst und wird von beiden benutzt. (d) „Delete link“ ist ein
+     kleines rotes Kreuz rechts neben dem Kopier-Symbol, Tooltip und `aria-label` „Delete link“, löscht ohne Rückfrage
+     und ohne Browser-Dialog; danach steht im Panel „Link deleted.“.
+  5. **Größe:** weit über dem Richtwert (rund 1700 Zeilen, davon etwa 880 Tests). Otto: PR nicht teilen; die
      Begründung steht im PR-Text.
 - **Woher die 30 Tage (Frage Otto):** aus §7 Frage 2, Option 1 („30 Tage fest ab Erstellung; Öffnen verlängert nicht“,
   Empfehlung), die Otto in §9 mit „Fragen 1–12 je Option 1“ freigegeben hat; ebenso in der Kurzfassung (Z. 37–40) und
@@ -721,7 +728,7 @@ heißt, behält die Einheit `1`.
   verschiebt (`test_cleanup.py::TestPermalinks`, `test_permalink_route.py`).
 - **Belegt:** Anlegen, Lesen, Löschen gegen die echte Datenbank; `404` für unbekannt, falsch geformt, abgelaufen
   (Uhr der Datenbank, die Zeile wird zurückdatiert) und falschen Schlüssel; Größe, `extra` in der Ansicht,
-  ungültiger Auftrag; Kennung, AOI, Schlüssel und Titel in keinem Log (Zugriffslog und `caplog` mit
+  ungültiger Auftrag; Kennung, AOI, Schlüssel und Link in keinem Log (Zugriffslog und `caplog` mit
   `own_log_text`); der Aufräumer löscht nach 30 Tagen die ganze Zeile, vorher nicht, in Stapeln; Lesen verlängert
   nichts. Frontend: Öffnen (Zustand, Parameter weg, ein Aufruf bei doppeltem Start, `404`, `503`, Unsinn, fremder
   Operator, fehlende Szene, Auftrag ohne AOI), Teilen (Auftrag und Ansicht gesendet, Schlüssel nur im Browser,
@@ -730,7 +737,7 @@ heißt, behält die Einheit `1`.
   - *Zufällige Kennung, in keinem Log:* 20 Kennungen sind verschieden, 22 Zeichen aus `token_urlsafe(16)`, keine ist
     eine `recipe_id` (`TestWhatIsStored`); das Zugriffslog schreibt nur `/processing/permalinks/{permalinkID}`
     (`TestNothingPersonalInTheLogs`, `test_logging.py`), und kein Logsatz von Anlegen, Lesen, Löschen enthält Kennung,
-    Schlüssel, Titel, Koordinaten oder Szene-ID.
+    Schlüssel, Koordinaten oder Szene-ID.
   - *Gespeicherter Zustand ohne signierte URL, `href`, `result_id`:* Die Zeile hat genau die Spalten `permalink_id`,
     `body`, `delete_key_hash`, `created_at`, `expires_at`; `body` hat genau `order` und `view`. Nach einem fertigen
     Job mit `result_id` enthält der Text weder `href`, `X-Amz`, `result_id`, `jobID`, `recipe_id`, `resolved` noch die
@@ -760,7 +767,7 @@ $ring = @(@(10.00, 47.00), @(10.01, 47.00), @(10.01, 47.01), @(10.00, 47.01), @(
 $order = @{ recipe_version = 1; steps = @(); aoi = @{ type = 'Polygon'; coordinates = @(, $ring) }
             inputs = @(@{ name = 'input'; dataset = 'cop-dem-glo-30'; groups = @(, @('Beispiel-Szene')); assets = @('data') })
             output = @{ kind = 'raster'; format = 'cog'; dtype = 'float32' } }
-$view = @{ center = @(10.0, 47.0); zoom = 9.5; title = 'Test' }
+$view = @{ center = @(10.0, 47.0); zoom = 9.5 }
 $body = @{ order = $order; view = $view } | ConvertTo-Json -Depth 12
 $made = Invoke-RestMethod -Method Post -Uri "${api}/processing/permalinks" -ContentType 'application/json; charset=utf-8' `
     -Body ([Text.Encoding]::UTF8.GetBytes($body))
@@ -776,7 +783,9 @@ Status { Invoke-RestMethod -Method Delete -Uri "${api}/processing/permalinks/$($
 Status { Invoke-RestMethod "${api}/processing/permalinks/$($made.id)" }   # 404
 ```
 
-Im Browser (http://localhost:5173): Szene wählen, AOI zeichnen, „Process“, einen Schritt anlegen, unten „Share“. Die
-Adresse hat die Form `…/?permalink=<id>`, ohne Koordinaten. In einem zweiten Fenster öffnen: Datensatz, Szene, AOI,
-Schritt und Kartenausschnitt sind wieder da, die Adresszeile zeigt den Parameter nicht mehr. „Delete link“ und neu
+Im Browser (http://localhost:5173): Szene wählen, AOI zeichnen, „Process“, einen Schritt anlegen, unten „Share“. Es gibt
+kein Titelfeld. Die Adresse steht in einem schreibgeschützten Feld in den Farben des Themes (auch im Dark Mode nicht
+weiß), die Form ist `…/?permalink=<id>`, ohne Koordinaten. Rechts daneben das Kopier-Symbol (wie beim Szenennamen in den
+Suchergebnissen; nach dem Klick kurz ein Häkchen) und ein kleines rotes Kreuz mit dem Tooltip „Delete link“. In einem zweiten Fenster öffnen: Datensatz, Szene, AOI,
+Schritt und Kartenausschnitt sind wieder da, die Adresszeile zeigt den Parameter nicht mehr. Das Kreuz löscht ohne Rückfrage, das Panel meldet „Link deleted.“; die Adresse neu
 öffnen: „This link has expired or never existed.“

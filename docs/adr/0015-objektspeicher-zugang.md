@@ -1393,7 +1393,7 @@ Frage 12 mit Option 1 (`plans/m4-19-teilen-und-beschreiben.md` §9). Der Origina
   SHA-256. `DELETE` mit Kopf `X-Delete-Key` gibt `204`; ein falscher Schlüssel, eine unbekannte und eine
   abgelaufene Kennung geben dasselbe `404`. Der Schlüssel liegt im Browser (`localStorage`,
   `earthx.permalinks`), nie in einem Log.
-- **Personenbezogen (Q8):** Der Auftrag trägt die AOI. Kennung, Auftrag, Titel und Schlüssel stehen in
+- **Personenbezogen (Q8):** Der Auftrag trägt die AOI. Kennung, Auftrag und Schlüssel stehen in
   keinem Log; das Zugriffslog ersetzt die Kennung im Pfad durch `{permalinkID}`
   (`logging.loggable_path`). Die Meldungen „permalink created/read/deleted“ nennen höchstens die
   Datensatz-ID.

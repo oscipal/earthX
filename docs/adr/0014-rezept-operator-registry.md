@@ -2076,7 +2076,7 @@ maßgeblich ist dieser Nachtrag.
 - **Eine eigene Kennung:** Der Permalink hat eine eigene Tabelle und eine eigene zufällige Kennung
   (22 Zeichen, 128 Bit). Er wird nur auf „Share“ angelegt und hält den Auftrag in der Form von
   `RecipeRequest` (ohne `resolved`; `parse_request` prüft ihn streng) und eine kleine Ansicht
-  (Kartenmitte, Zoom, Bereich und Colormap der Vorschau, Titel). Routen unter
+  (Kartenmitte, Zoom, Bereich und Colormap der Vorschau). Routen unter
   `/processing/permalinks`, außerhalb von OGC. Frist und Löschen: `adr/0015` §14d.
 - **Nicht gebaut: die Basiskarte.** Der Plan nennt sie als Teil der Ansicht. Die App hat eine einzige
   Basiskarte (Satellitenbild); Thema und Projektion sind Einstellungen des Browsers
