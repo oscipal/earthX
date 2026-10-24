@@ -118,6 +118,11 @@ let pending: Record<string, Promise<Response> | undefined>;
 let fetchMock: ReturnType<typeof vi.fn>;
 // What the tiler answers to the TileJSON of a chain (the question of `probeChain`): the chain is fine by default.
 let tilejson: (url: string) => Response;
+// What it answers to the statistics of the steps (the measure of the preview): the values of an index by default.
+let statistics: (url: string) => Response;
+const INDEX_VALUES = { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8, unit: null };
+// Answers at once, with no stream to wait for: a test settles the preview in microtasks.
+const measured = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 const ITEM_URL = '/stac/collections/sentinel-2-c1-l2a/items/';
 
 beforeEach(() => {
@@ -126,9 +131,11 @@ beforeEach(() => {
   catalog = {};
   pending = {};
   tilejson = () => json({ tilejson: '3.0.0' });
+  statistics = () => measured({ b1: INDEX_VALUES });
   fetchMock = vi.fn(async (url: string) => {
     if (url === '/processing/processes/recipe?dataset=sentinel-2-c1-l2a') return json(s2);
     if (url.includes('/tilejson.json')) return tilejson(url);
+    if (url.includes('/statistics?')) return statistics(url);
     if (pending[url]) return pending[url];
     if (url.startsWith(ITEM_URL)) {
       const entry = catalog[decodeURIComponent(url.slice(ITEM_URL.length))];
@@ -158,7 +165,7 @@ afterEach(() => {
 
 async function flush() {
   await act(async () => {
-    for (let i = 0; i < 5; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
   });
 }
 
@@ -199,10 +206,11 @@ const store = () => useProcessingStore.getState();
 
 // The preview follows 400 ms after the last change: real timers up to here (the
 // description is fetched), fake ones for the wait.
-function afterDebounce() {
+async function afterDebounce() {
   act(() => {
     vi.advanceTimersByTime(400);
   });
+  await flush();
 }
 
 async function withNdvi(items = [scene('S2B_A')]) {
@@ -211,7 +219,7 @@ async function withNdvi(items = [scene('S2B_A')]) {
   vi.useFakeTimers();
   click(button('＋ Band math'));
   typeInto(expression(), '(nir - red) / (nir + red)');
-  afterDebounce();
+  await afterDebounce();
 }
 
 describe('the preview section', () => {
@@ -243,6 +251,7 @@ describe('the preview section', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
+    await flush();
     const preview = store().preview!;
     expect(preview.scenes.map((s) => s.id)).toEqual(['S2B_A', 'S2B_B']);
     const params = new URL(preview.scenes[0].url, 'http://localhost').searchParams;
@@ -258,7 +267,7 @@ describe('the preview section', () => {
     await withNdvi();
     expect(store().preview!.clipToAoi).toBe(false);
     click(button('AOI only'));
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview!.clipToAoi).toBe(true);
     expect(store().preview!.scenes[0].url).not.toContain('10.4');
   });
@@ -269,7 +278,7 @@ describe('the preview section', () => {
     typeInto(expression(), '');
     expect(store().preview).toBeNull();
     typeInto(expression(), 'nir / red');
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview).not.toBeNull();
     act(() => store().closeProcessing());
     expect(store().preview).toBeNull();
@@ -289,13 +298,13 @@ describe('the preview section', () => {
     click(button('＋ Band math'));
     typeInto(expression(), 'nir / red');
     act(() => store().closeProcessing());
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview).toBeNull();
 
     act(() => store().openProcessing());
     typeInto(expression(), 'nir / red');
     act(() => useAppStore.setState({ datasetId: 'other' }));
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview).toBeNull();
   });
 
@@ -307,7 +316,7 @@ describe('the preview section', () => {
       vi.advanceTimersByTime(300);
     });
     typeInto(expression(), '(nir - red) / (nir + red)');
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview).toBe(before);
   });
 
@@ -315,10 +324,10 @@ describe('the preview section', () => {
     await withNdvi();
     const before = store().preview;
     act(() => useAppStore.setState({ aoi: bboxToPolygon([10.1, 50.1, 10.2, 50.2]) }));
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview).toBe(before); // "Whole scene" does not read the AOI
     click(button('AOI only'));
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview!.clipToAoi).toBe(true);
     act(() => useAppStore.setState({ aoi: null }));
     expect(store().preview).toBeNull();
@@ -359,7 +368,7 @@ describe('the preview section', () => {
     click(button('＋ Reproject and resample'));
     click(button('＋ Band math'));
     typeInto(expression(), 'nir / red');
-    afterDebounce();
+    await afterDebounce();
     expect(section().textContent).toContain('No preview: the first step runs only as a job.');
     expect(section().querySelector('.pp-range')).toBeNull();
     expect(store().preview).toBeNull();
@@ -377,7 +386,7 @@ describe('the preview section', () => {
     await withNdvi();
     click(button('＋ Band math'));
     typeInto(expression(1), 'red + 1');
-    afterDebounce();
+    await afterDebounce();
     await flush();
   }
 
@@ -388,7 +397,7 @@ describe('the preview section', () => {
     await withNdvi();
     const normalize = { key: 900, op: 'normalize', opVersion: 1, values: { in_min: '-1', in_max: '1', out_min: '0', out_max: '255', clip: true } };
     act(() => useProcessingStore.setState({ steps: [...store().steps, normalize] }));
-    afterDebounce();
+    await afterDebounce();
     await flush();
     expect(store().preview!.title).toBe('Band math → Normalize');
     expect(store().previewNote).toBeNull();
@@ -438,12 +447,12 @@ describe('the preview section', () => {
     expect(store().previewNote).toBeNull();
     tilejson = refusal('step 1: expression names unknown band(s): red; the input has: band_math');
     typeInto(expression(1), 'red + 2');
-    afterDebounce();
+    await afterDebounce();
     await flush();
     expect(store().previewNote).toContain('Preview shows step 1 of 2');
     tilejson = () => json({ tilejson: '3.0.0' });
     typeInto(expression(1), 'band_math + 1');
-    afterDebounce();
+    await afterDebounce();
     await flush();
     expect(store().preview!.stepCount).toBe(2);
     expect(store().previewNote).toBeNull();
@@ -466,10 +475,10 @@ describe('the preview section', () => {
       expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
       expect(section().querySelector('select')!.value).toBe('rdylgn');
       typeInto(inputs()[1], '0.8');
-      afterDebounce();
+      await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale')).toBe('-1,1');
       click(button('Apply'));
-      afterDebounce();
+      await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale')).toBe('-1,0.8');
     });
 
@@ -493,15 +502,179 @@ describe('the preview section', () => {
         select_.dispatchEvent(new Event('change', { bubbles: true }));
       });
       click(button('Apply'));
-      afterDebounce();
+      await afterDebounce();
       expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.has('colormap_name')).toBe(false);
     });
 
-    it('locks "Auto stretch" and says why', async () => {
+  });
+
+  // M4-19c: the range of a preview is measured once, on the first scene, and chosen by the rule of a result's.
+  describe('the measured range and the unit (M4-19c)', () => {
+    const inputs = () => [...section().querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    const asked = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/statistics?'));
+    const rescale = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('rescale');
+    const colormap = () => new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('colormap_name');
+    const unit = () => section().querySelector('.pp-unit')?.textContent ?? null;
+    const DEM_VALUES = { count: 900, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400, unit: 'm' };
+
+    it('asks the statistics of the first scene with the steps of the preview, once, and draws a flat index at -1 to 1', async () => {
+      await withNdvi([scene('S2B_A'), scene('S2B_B')]);
+      expect(asked()).toHaveLength(1);
+      const query = new URL(asked()[0], 'http://localhost');
+      expect(query.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2B_A/statistics');
+      expect(query.searchParams.getAll('asset')).toEqual(['red', 'nir']);
+      expect(query.searchParams.get('op')).toBe('band_math');
+      expect(query.searchParams.has('rescale')).toBe(false);
+      expect([rescale(), colormap()]).toEqual(['-1,1', 'rdylgn']);
+    });
+
+    it('draws other values at their 2nd to 98th percentile in viridis, and shows that in the fields', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
       await withNdvi();
-      const auto = button('Auto stretch');
-      expect(auto.disabled).toBe(true);
-      expect(auto.title).toContain('statistics');
+      expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
+      expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
+      expect(section().querySelector('select')!.value).toBe('viridis');
+      expect(store().range).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' }); // no choice of the user's
+    });
+
+    it('draws a preview once, with the measure, and not first with the start range', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      const seen: Array<string | null> = [];
+      useProcessingStore.subscribe((s) => seen.push(s.preview && new URL(s.preview.scenes[0].url, 'http://localhost').searchParams.get('rescale')));
+      typeInto(expression(), 'nir / red');
+      await afterDebounce();
+      expect(new Set(seen.filter((r) => r !== null))).toEqual(new Set(['120,2400']));
+    });
+
+    it('measures a state once: a range typed, applied or an expression typed back asks for no new measure', async () => {
+      await withNdvi();
+      typeInto(inputs()[1], '0.8');
+      click(button('Apply'));
+      await afterDebounce();
+      typeInto(expression(), 'nir / red');
+      await afterDebounce();
+      expect(asked()).toHaveLength(2);
+      typeInto(expression(), '(nir - red) / (nir + red)');
+      await afterDebounce();
+      expect(asked()).toHaveLength(2);
+    });
+
+    it('holds the range the user applied against the measure, and shows its picture at once', async () => {
+      await withNdvi();
+      typeInto(inputs()[1], '0.8');
+      click(button('Apply'));
+      statistics = () => new Promise<Response>(() => {}) as unknown as Response; // a measure that does not come
+      typeInto(expression(), 'nir / red');
+      await afterDebounce();
+      expect(rescale()).toBe('-1,0.8');
+      expect(store().range).toEqual({ vmin: '-1', vmax: '0.8', colormap: 'rdylgn' });
+    });
+
+    it('keeps the range of the user across expressions, and "Auto stretch" gives the measure back', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      typeInto(inputs()[0], '0');
+      typeInto(inputs()[1], '5');
+      click(button('Apply'));
+      await afterDebounce();
+      typeInto(expression(), 'nir / red');
+      await afterDebounce();
+      expect(rescale()).toBe('0,5');
+      click(button('Auto stretch'));
+      await afterDebounce();
+      expect([rescale(), colormap()]).toEqual(['120,2400', 'viridis']);
+      expect(inputs().map((i) => i.value)).toEqual(['120', '2400']);
+      expect(button('Auto stretch').disabled).toBe(true);
+    });
+
+    it('does not write over what the user is typing when the measure arrives', async () => {
+      let answer!: (response: Response) => void;
+      statistics = () => new Promise<Response>((resolve) => (answer = resolve)) as unknown as Response;
+      select([scene('S2B_A')]);
+      await openPanel();
+      vi.useFakeTimers();
+      click(button('＋ Band math'));
+      typeInto(expression(), 'nir / red');
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      typeInto(inputs()[1], '3');
+      await act(async () => answer(measured({ b1: DEM_VALUES })));
+      await flush();
+      expect(inputs().map((i) => i.value)).toEqual(['-1', '3']);
+      expect(rescale()).toBe('120,2400');
+    });
+
+    it('keeps the start range, says so and does not ask again when the measure fails; "Auto stretch" asks again', async () => {
+      statistics = () => new Response('{}', { status: 502 });
+      await withNdvi();
+      expect(rescale()).toBe('-1,1');
+      expect(section().textContent).toContain('The range could not be measured');
+      typeInto(expression(), 'nir / red');
+      await afterDebounce();
+      typeInto(expression(), '(nir - red) / (nir + red)');
+      await afterDebounce();
+      expect(asked()).toHaveLength(2);
+      statistics = () => measured({ b1: DEM_VALUES });
+      expect(button('Auto stretch').disabled).toBe(false);
+      click(button('Auto stretch'));
+      await afterDebounce();
+      expect(asked()).toHaveLength(3);
+      expect(rescale()).toBe('120,2400');
+      expect(section().textContent).not.toContain('could not be measured');
+    });
+
+    it('stays at -1 to 1 when no pixel is valid, with no note of a failure', async () => {
+      statistics = () => measured({ b1: { count: 0, min: null, max: null, percentile_2: null, percentile_98: null, unit: null } });
+      await withNdvi();
+      expect(rescale()).toBe('-1,1');
+      expect(section().textContent).not.toContain('could not be measured');
+    });
+
+    it('writes the unit beside the range, where the steps leave one', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      expect(unit()).toBe('m');
+    });
+
+    it.each([['1'], [null], ['']])('writes no unit beside the range for %j', async (value) => {
+      statistics = () => measured({ b1: { ...DEM_VALUES, unit: value } });
+      await withNdvi();
+      expect(unit()).toBeNull();
+    });
+
+    it('writes no unit where the bands of the result differ in theirs', async () => {
+      statistics = () => measured({ b1: DEM_VALUES, b2: { ...DEM_VALUES, unit: 'K' } });
+      await withNdvi();
+      expect(unit()).toBeNull();
+    });
+
+    it('shows the unit of a hand range as soon as the measure is in, and drops that of a former preview', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      typeInto(inputs()[1], '5');
+      click(button('Apply'));
+      statistics = () => measured({ b1: { ...DEM_VALUES, unit: null } });
+      typeInto(expression(), 'nir / red');
+      await afterDebounce();
+      expect(unit()).toBeNull();
+    });
+
+    it('puts the unit into no layer: the preview pinned to the layer manager shows none', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      expect(unit()).toBe('m');
+      click(button('＋ Add preview to layers'));
+      expect(useAppStore.getState().layers[0]).not.toHaveProperty('unit');
+      const manager = document.createElement('div');
+      document.body.append(manager);
+      const managerRoot = createRoot(manager);
+      act(() => managerRoot.render(<LayerManager />));
+      expect(manager.querySelector('.layer-row')).not.toBeNull();
+      expect(manager.textContent).not.toMatch(/\bm\b/u);
+      act(() => managerRoot.unmount());
+      manager.remove();
     });
   });
 });
@@ -521,7 +694,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     vi.useFakeTimers();
     click(button('＋ Band math'));
     typeInto(expression(), 'nir / red');
-    afterDebounce();
+    await afterDebounce();
     for (const zoom of [3, 12.5, 18, 22]) {
       act(() => useAppStore.setState({ mapZoom: zoom, viewportBbox: [10, 50, 11, 51] }));
       expect(section().querySelector('.pp-badge')?.textContent).toBe('Preview');
@@ -551,7 +724,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
     vi.useFakeTimers();
     click(button('＋ Band math'));
     typeInto(expression(), 'nir / red');
-    afterDebounce();
+    await afterDebounce();
     expect(store().preview).toMatchObject({ minZoom: 8, maxZoom: 14 });
     expect(container.textContent).not.toContain('pixel size');
     for (const zoom of [3, 12.5, 22]) {
@@ -604,7 +777,7 @@ describe('the preview as a layer (§3.4)', () => {
   it('keeps the tile URL of the preview, and the AOI out of it', async () => {
     await withNdvi();
     click(button('AOI only'));
-    afterDebounce();
+    await afterDebounce();
     click(button('＋ Add preview to layers'));
     const layer = useAppStore.getState().layers[0];
     expect(layer.restore.cropToAoi).toBe(true);
@@ -622,7 +795,7 @@ describe('the preview as a layer (§3.4)', () => {
     typeInto(expression(), 'nir / red');
     // The step is complete, the picture follows in 400 ms.
     expect(button('＋ Add preview to layers').disabled).toBe(true);
-    afterDebounce();
+    await afterDebounce();
     expect(button('＋ Add preview to layers').disabled).toBe(false);
   });
 
@@ -640,7 +813,7 @@ describe('the preview as a layer (§3.4)', () => {
     vi.useFakeTimers();
     click(button('＋ Band math'));
     typeInto(expression(), '(nir - red) / (nir + red)');
-    afterDebounce();
+    await afterDebounce();
     click(button('＋ Add preview to layers'));
     expect(useAppStore.getState().layers.map((l) => [l.id.startsWith('P') ? 'preview' : l.id, l.visible])).toEqual([
       ['preview', true],

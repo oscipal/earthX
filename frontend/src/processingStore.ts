@@ -18,7 +18,7 @@
 
 import { create } from 'zustand';
 
-import { fetchItem, HttpError } from './api';
+import { fetchItem, fetchStatisticsAt, HttpError } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
 import type { DatasetOption } from './datasets';
 import { loadStoredJobs, saveStoredJobs, trackJob, type TrackerOptions } from './jobTracker';
@@ -59,7 +59,6 @@ import {
   resultLayerName,
   resultRender,
   resultStats,
-  type ResultStats,
   resultTileTemplate,
   tilesHref,
 } from './resultLayer';
@@ -88,6 +87,9 @@ import {
 } from './processingOrder';
 import {
   DEFAULT_RANGE,
+  measuredRange,
+  measureOf,
+  NO_MEASURE,
   planPreview,
   probeChain,
   previewOverlays,
@@ -96,9 +98,11 @@ import {
   shortenPlan,
   type RefusedStep,
   rescaleOf,
+  type PreviewMeasure,
   type PreviewRange,
   type PreviewSpec,
 } from './processingPreview';
+import type { ResultStats } from './render';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
 import { readRecipe } from './recipeFile';
@@ -221,6 +225,12 @@ interface ProcessingState {
   preview: PreviewSpec | null;
   // Why the preview shows fewer steps than the draft chains, or none: the tiler's reason.
   previewNote: string | null;
+  // What the tiler measured of the preview (M4-19c): the numbers its colour scale comes from, and its unit.
+  measure: PreviewMeasure | null;
+  // Why the preview has no measured range: the measure could not be had.
+  rangeNote: string | null;
+  // The range fields hold what the user typed and did not apply; a measure does not write over them.
+  rangeEdited: boolean;
   // "Review" was asked for this draft: empty required fields show their hint.
   reviewAsked: boolean;
   estimate: { key: string; doc: EstimateDocument } | null;
@@ -239,6 +249,8 @@ interface ProcessingState {
   processFocusView: () => Promise<void>;
   setRangeDraft: (patch: Partial<PreviewRange>) => void;
   applyRange: () => void;
+  // Back to the range the measure calls for (M4-19c), measured again where the measure failed.
+  autoStretch: () => void;
   pinPreview: () => void;
   closeProcessing: () => void;
   // A finished job's result as a layer of its own on the map (M4-13c-5, plan §3.4).
@@ -591,6 +603,9 @@ const EMPTY_DRAFT = {
   rangeDraft: DEFAULT_RANGE,
   preview: null as PreviewSpec | null,
   previewNote: null as string | null,
+  measure: null as PreviewMeasure | null,
+  rangeNote: null as string | null,
+  rangeEdited: false,
   reviewAsked: false,
   estimate: null,
   batch: null as { key: string; parts: PartOutcome[] } | null,
@@ -785,9 +800,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
       });
     },
-    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch } })),
+    setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
     applyRange: () => {
-      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft }));
+      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeEdited: false }));
+    },
+    autoStretch: () => {
+      failedMeasures.clear();
+      settledKey = null;
+      set({ range: DEFAULT_RANGE, rangeEdited: false });
+      refreshPreview();
     },
     // The preview on screen becomes a layer of its own.
     pinPreview: () => {
@@ -912,6 +933,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     resetDraft: () => {
       abortEstimate();
       startGeneration += 1;
+      measures.clear();
+      failedMeasures.clear();
+      measuring.clear();
       set({ ...EMPTY_DRAFT });
     },
     choosePass: (passKey) => set({ passKey, picked: [], reviewError: null, startError: null, ...dropReview() }),
@@ -1158,7 +1182,60 @@ function wantedPreview(limit?: number): PreviewSpec | null {
   if (full.state !== 'ready') return null;
   const plan = limit === undefined ? full : shortenPlan(full, limit);
   if (plan === null) return null;
-  return previewSpec({ dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, range: p.range, area: p.area });
+  const args = { dataset: view.dataset, items: view.pass.items, assets: view.assets, info: view.info, plan, area: p.area };
+  const spec = previewSpec({ ...args, range: p.range });
+  if (spec === null) return null;
+  const range = drawnRange(p, spec.measure);
+  return range === p.range ? spec : previewSpec({ ...args, range });
+}
+
+// The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
+// preview calls for (the rule of a result's, `scaleOf`); else the start range.
+function drawnRange(p: Pick<ProcessingState, 'range' | 'measure'>, measureKey: string): PreviewRange {
+  if (handRange(p.range)) return p.range;
+  return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
+}
+
+// One measure per state of the preview, which is the steps over the first scene: remembered, and a failed one is
+// not asked again before "Auto stretch" (so a typed expression asks for no measure per key, nor a refusal twice).
+const MEASURES_KEPT = 50;
+const measures = new Map<string, PreviewMeasure>();
+const failedMeasures = new Set<string>();
+const measuring = new Map<string, Promise<PreviewMeasure | null>>();
+
+function measureFor(spec: PreviewSpec): Promise<PreviewMeasure | null> {
+  const known = measures.get(spec.measure);
+  if (known) return Promise.resolve(known);
+  if (failedMeasures.has(spec.measure)) return Promise.resolve(null);
+  let request = measuring.get(spec.measure);
+  if (!request) {
+    request = fetchStatisticsAt(spec.measure)
+      .then((statistics) => {
+        const measure = measureOf(spec.measure, statistics, spec.expression);
+        if (measures.size >= MEASURES_KEPT) measures.delete(measures.keys().next().value!);
+        measures.set(spec.measure, measure);
+        return measure;
+      })
+      .catch(() => {
+        failedMeasures.add(spec.measure);
+        return null;
+      })
+      .finally(() => measuring.delete(spec.measure));
+    measuring.set(spec.measure, request);
+  }
+  return request;
+}
+
+// Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
+// for in the fields, unless the user is typing in them. Without one the panel says so.
+function adoptMeasure(measure: PreviewMeasure | null): void {
+  const p = useProcessingStore.getState();
+  const hand = handRange(p.range) !== null;
+  useProcessingStore.setState({
+    measure,
+    rangeNote: hand || measure !== null ? null : NO_MEASURE,
+    ...(!hand && !p.rangeEdited ? { rangeDraft: measuredRange(measure) ?? p.range } : {}),
+  });
 }
 
 // The key of the whole chain the shown preview comes from: a preview cut by the tiler
@@ -1182,13 +1259,25 @@ async function settle(wanted: PreviewSpec): Promise<void> {
       if (refused) probed.set(wanted.probe, refused);
     }
   }
-  settledKey = wanted.key;
-  if (refused === null || refused.step >= wanted.stepCount) {
-    useProcessingStore.setState({ preview: wanted, previewNote: null });
-    return;
+  // The steps the tiler takes: all of them, or the ones before the step it refuses.
+  const limit = refused === null || refused.step >= wanted.stepCount ? undefined : refused.step;
+  const note = limit === undefined ? null : refusedNote(limit, wanted.stepCount, refused!);
+  const hand = handRange(useProcessingStore.getState().range) !== null;
+  let spec = wantedPreview(limit);
+  // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice.
+  if (spec && !hand) {
+    const measure = await measureFor(spec);
+    if (run !== settleRun) return;
+    adoptMeasure(measure);
+    spec = wantedPreview(limit);
   }
-  const shown = refused.step;
-  useProcessingStore.setState({ preview: wantedPreview(shown), previewNote: refusedNote(shown, wanted.stepCount, refused) });
+  settledKey = wantedPreview()?.key ?? wanted.key;
+  useProcessingStore.setState({ preview: spec, previewNote: note });
+  // With one, the measure is for the unit alone, and the picture does not wait for it.
+  if (spec && hand) {
+    const measure = await measureFor(spec);
+    if (run === settleRun) adoptMeasure(measure);
+  }
 }
 
 // A preview that goes away goes at once; a new or changed one 400 ms after the

@@ -555,7 +555,7 @@ describe('"Overview" over the map', () => {
 
   it('stands beside "Preview" when both are on the map', () => {
     result();
-    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', scenes: [], minZoom: 8, maxZoom: 14, clipToAoi: false } });
+    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', measure: '', expression: false, scenes: [], minZoom: 8, maxZoom: 14, clipToAoi: false } });
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('PreviewOverview');
   });

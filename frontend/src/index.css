@@ -2018,3 +2018,8 @@ input[type='date']:focus {
 .pp-range .vc-num {
   width: 72px;
 }
+.pp-unit {
+  align-self: flex-end;
+  padding-bottom: 6px;
+  opacity: 0.8;
+}
