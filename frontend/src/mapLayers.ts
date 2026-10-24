@@ -506,8 +506,6 @@ function addQuicklookUnderlay(
   i: number,
   clip: GeoJSON.Geometry | null,
   gen: number,
-  // The picture of the scene's tiles, which the underlay belongs to; `null` where it is not known.
-  tiles: string | null,
 ): void {
   const asset = quicklookAsset(item);
   if (!asset?.href) return;
@@ -523,7 +521,6 @@ function addQuicklookUnderlay(
       placeImage(map, srcId, lyrId, dataUrl, coords, ['step', ['zoom'], 1, dataset.zoom.min, 0]);
       dynSourceIds.push(srcId);
       dynLayerIds.push(lyrId);
-      if (tiles !== null) drawsPicture(map, lyrId, tiles);
     } catch {
       /* map/style went away while loading */
     }
@@ -845,9 +842,7 @@ export function syncFocusRaster(
       // layer, so whichever is added later of the two is the more on top).
       if (dataset?.viewable && dataset.browse === 'quicklook' && underlays < MAX_DYNAMIC_LAYERS) {
         const item = s.items.find((it) => it.id === itemId);
-        // It goes with the tiles of its scene: where a layer draws those, it does not lie over the layers.
-        const tiles = view.kind === 'scenes' ? info : view.kind === 'mosaic' ? view.rasters[view.rasters.length - 1] : null;
-        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip, gen, tiles && tilesPicture(tiles, s.render, clip));
+        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip, gen);
       }
       if (view.kind === 'scenes' && !s.tilesInLayer) place(info);
     });

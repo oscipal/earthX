@@ -234,10 +234,10 @@ describe('syncFocusRaster: the quicklook underlay below min_zoom (M3-12, O5)', (
   });
 });
 
-// UI-01a: the underlay belongs to the tiles of its scene. Where a pinned layer draws those, the
-// underlay does not lie over the layers below the dataset's smallest zoom, where moving a layer
-// in the list changed nothing.
-describe('syncFocusRaster: the underlay goes with the tiles of its scene', () => {
+// UI-01a (Otto, 24.10.2026): a pinned layer draws tiles only from the dataset's smallest zoom and
+// has no quicklook of its own, so the underlay is not redundant with it. It stays when a layer
+// draws the scene's tiles, or the map would be empty when zooming out.
+describe('syncFocusRaster: the underlay when a layer draws the scene', () => {
   beforeEach(() => {
     vi.stubGlobal('Image', FakeImage);
   });
@@ -245,7 +245,7 @@ describe('syncFocusRaster: the underlay goes with the tiles of its scene', () =>
     vi.unstubAllGlobals();
   });
 
-  const view = (live: ReturnType<typeof liveMap>) => {
+  const view = (live: ReturnType<typeof liveMap>, tilesInLayer = false) => {
     const scene = georeferencedScene();
     syncFocusRaster(live.map as never, {
       downloaded: { [scene.id]: info() },
@@ -253,44 +253,44 @@ describe('syncFocusRaster: the underlay goes with the tiles of its scene', () =>
       showDownloaded: true,
       items: [scene],
       dataset: quicklookDataset(),
+      tilesInLayer,
     });
   };
+  // As "Add to layers" pins the scene: tiles from the smallest zoom, no image overlay.
   const layerOfView = (id: string) =>
     pinned(id, 'unused', {
       overlays: [{ kind: 'raster', tileUrl: info().tileUrl, bounds: info().bounds, minZoom: 8, maxZoom: 19 }],
     });
+  // The quicklook is on the map once, opaque below the smallest zoom and gone from it.
+  const expectQuicklookOnce = (live: ReturnType<typeof liveMap>) => {
+    const images = [...live.layers.values()].filter((l) => l.id.startsWith('m-img-lyr-'));
+    expect(images).toHaveLength(1);
+    expect(live.visible(images[0].id)).toBe(true);
+    expect(images[0].paint['raster-opacity']).toEqual(['step', ['zoom'], 1, 8, 0]);
+  };
 
-  it('lies over the layers while no layer draws the scene', () => {
-    const live = liveMap();
-    syncLayers(live.map as never, [pinned('other', 'https://t/other')]);
-    view(live);
-    expect(live.visible('m-img-lyr-0')).toBe(true);
-    expect(live.visible('m-tiles-lyr-0')).toBe(true);
-  });
-
-  it('steps aside with the tiles when a layer draws the scene, and comes back with them', () => {
+  it('keeps the quicklook once below the smallest zoom, where the layer draws nothing yet', () => {
     const live = liveMap();
     view(live);
     syncLayers(live.map as never, [layerOfView('mine'), pinned('other', 'https://t/other')]);
-    expect(live.visible('m-img-lyr-0')).toBe(false);
-    expect(live.visible('m-tiles-lyr-0')).toBe(false);
-    syncLayers(live.map as never, [{ ...layerOfView('mine'), visible: false }]);
-    expect(live.visible('m-img-lyr-0')).toBe(true);
-    expect(live.visible('m-tiles-lyr-0')).toBe(true);
+    expectQuicklookOnce(live);
+    // The layer's tiles start at the zoom where the quicklook is gone, so they never meet.
+    expect(live.layers.get('layer-lyr-mine-0')?.maxzoom).toBeUndefined();
+    expect((live.sources.get('layer-src-mine-0') as { minzoom: number }).minzoom).toBe(8);
   });
 
-  it('steps aside as well when the layer is the view and the view draws no tiles of its own', () => {
+  it('keeps it once when the layer is the view and the view draws no tiles of its own', () => {
     const live = liveMap();
     syncLayers(live.map as never, [layerOfView('mine')]);
-    const scene = georeferencedScene();
-    syncFocusRaster(live.map as never, {
-      downloaded: { [scene.id]: info() },
-      render: {},
-      showDownloaded: true,
-      items: [scene],
-      dataset: quicklookDataset(),
-      tilesInLayer: true,
-    });
-    expect(live.visible('m-img-lyr-0')).toBe(false);
+    view(live, true);
+    expectQuicklookOnce(live);
+    expect([...live.layers.keys()].some((id) => id.startsWith('m-tiles-lyr-'))).toBe(false);
+  });
+
+  it('keeps it once while the layer is switched off', () => {
+    const live = liveMap();
+    view(live);
+    syncLayers(live.map as never, [{ ...layerOfView('mine'), visible: false }]);
+    expectQuicklookOnce(live);
   });
 });
