@@ -1847,6 +1847,44 @@ input[type='date']:focus {
   margin: 0;
   font-size: 11px;
 }
+.pp-share {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pp-share p {
+  margin: 0;
+}
+/* The link in a read-only field (the themed `input[type='text']`), the copy glyph of the results list and a small red cross. */
+.pp-share-link {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pp-share-link input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.delete-btn {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ff5a6e;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.delete-btn:hover:not(:disabled) {
+  border-color: #ff5a6e;
+}
+.delete-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .pp-options {
   margin: 0;
   padding-left: 14px;

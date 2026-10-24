@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import psycopg
 import pytest
 
+from earthx.jobs import permalinks
 from earthx.jobs.cleanup import cleanup, cleanup_batch
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.queue import CLEANUP_LOCK_KEY
@@ -68,6 +70,41 @@ class TestExpiry:
     def test_a_finished_object_that_is_already_gone_is_no_problem(self, db: psycopg.Connection, store: Store) -> None:
         add_run(db, status="successful", result_id=new_result_id(), expires_in="-1 hour")
         assert cleanup(db, store).runs == 1
+
+
+class TestPermalinks:
+    """M4-19e: a fixed term of 30 days from creation; the row goes whole, and looking never lengthens it."""
+
+    @staticmethod
+    def _made(db: psycopg.Connection, age: str) -> str:
+        made = permalinks.create(db, {"order": {"aoi": "9.01 47.01"}, "view": {}})
+        db.execute(
+            "UPDATE public.earthx_permalink SET created_at = clock_timestamp() - %s::interval, "
+            "expires_at = clock_timestamp() + interval '30 days' - %s::interval WHERE permalink_id = %s",
+            (age, age, made.permalink_id),
+        )
+        return made.permalink_id
+
+    def test_after_30_days_the_row_is_gone_whole_and_before_it_stays(self, db: psycopg.Connection, store: Store) -> None:
+        old, young = self._made(db, "30 days 1 minute"), self._made(db, "29 days 23 hours")
+        assert permalinks.read(db, old) is None  # already refused before the cleanup came
+        result = cleanup(db, store)
+        assert result.permalinks == 1 and result.total == 1
+        assert [r[0] for r in db.execute("SELECT permalink_id FROM public.earthx_permalink")] == [young]
+        assert permalinks.read(db, young) is not None
+
+    def test_reading_does_not_move_the_term(self, db: psycopg.Connection, store: Store) -> None:
+        made = permalinks.create(db, {"order": {}, "view": {}})
+        for _ in range(3):
+            assert permalinks.read(db, made.permalink_id) is not None
+        row = db.execute("SELECT expires_at FROM public.earthx_permalink").fetchone()
+        assert row is not None and row[0] == made.expires_at
+        assert made.expires_at - datetime.now(UTC) <= permalinks.TTL
+
+    def test_batches_go_on_until_none_is_left(self, db: psycopg.Connection, store: Store) -> None:
+        for _ in range(5):
+            self._made(db, "31 days")
+        assert cleanup(db, store, batch=2).permalinks == 5 and _count(db, "earthx_permalink") == 0
 
 
 class TestObjectsBeforeRows:

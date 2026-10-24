@@ -44,6 +44,10 @@ _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 # number of slashes in front of the segment.
 _JOB_PATH = re.compile(r"(/processing/jobs/)/*[^/]+")
 
+# M4-19e: the identifier of a permalink is the way to an order with its area (Q8), kept out of the log
+# like the `jobID`. Creating one has no segment after `permalinks`, so nothing is replaced there.
+_PERMALINK_PATH = re.compile(r"(/processing/permalinks/)/*[^/]+")
+
 # M4-13c-5: the `result_id` in `/results/{result_id}/…` of the tiler is the way to a result's tiles, as
 # the `jobID` is the way to its files, and is kept out of the log the same way. The `results` segment
 # after a job (`/processing/jobs/{jobID}/results/result.tif`) is the name of a file, not an identifier.
@@ -57,9 +61,11 @@ def _hide_result_id(match: re.Match[str]) -> str:
 
 
 def loggable_path(path: str | None) -> str | None:
-    """``path`` as the access log writes it: a job's identifier replaced by ``{jobID}``, a result's by ``{resultID}``."""
+    """``path`` as the access log writes it: a job's identifier replaced by ``{jobID}``, a result's by ``{resultID}``,
+    a permalink's by ``{permalinkID}``."""
     if not path:
         return path
+    path = _PERMALINK_PATH.sub(r"\1{permalinkID}", path)
     return _RESULT_PATH.sub(_hide_result_id, _JOB_PATH.sub(r"\1{jobID}", path))
 
 

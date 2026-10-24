@@ -1376,6 +1376,37 @@ einzubinden brauchte `S3_TILER_*` in `.github/workflows/ci.yml` und ist eine
 Änderung, die Otto freigeben müsste. Prüfanleitung Schritt 6 und 10 in
 `plans/m4-13c-vorschau-und-viewer.md` §9.
 
+## 14d. Nachtrag vom 2026-10-24: Permalinks und die Frist des Rezepts (zu §7.1 F13, §13; M4-19e)
+
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben: Frage 2 mit Option 1, Frage 3 mit Option 1,
+Frage 12 mit Option 1 (`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §7.1 und
+§13 bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Frist des Permalinks (§13, Auflage F13):** fest **30 Tage ab Erstellung**. Öffnen verlängert nie.
+  Ein Permalink ist kein Rezept und hat keine Zeile in `earthx_recipe`, `earthx_run` oder `earthx_job`:
+  Er hat eine eigene Tabelle (`earthx_permalink`, Migration 012), eine eigene zufällige Kennung
+  (`secrets.token_urlsafe(16)`, nie die `recipe_id`, nie ein Hash) und hält den Auftrag, nicht den Job
+  (Q9). Der stündliche Aufräumer in `jobs` löscht abgelaufene Zeilen ganz, in Stapeln, im selben
+  Durchgang wie die Läufe. Bis dahin antwortet die Leseroute schon mit `404` (die Zeit zählt in SQL
+  mit `clock_timestamp()`).
+- **Löschen vor Ablauf:** Der Schlüssel steht nur in der Antwort der Erstellung; gespeichert wird sein
+  SHA-256. `DELETE` mit Kopf `X-Delete-Key` gibt `204`; ein falscher Schlüssel, eine unbekannte und eine
+  abgelaufene Kennung geben dasselbe `404`. Der Schlüssel liegt im Browser (`localStorage`,
+  `earthx.permalinks`), nie in einem Log.
+- **Personenbezogen (Q8):** Der Auftrag trägt die AOI. Kennung, Auftrag und Schlüssel stehen in
+  keinem Log; das Zugriffslog ersetzt die Kennung im Pfad durch `{permalinkID}`
+  (`logging.loggable_path`). Die Meldungen „permalink created/read/deleted“ nennen höchstens die
+  Datensatz-ID.
+- **Frage 12, Befund (§7.1, F13):** Der Wortlaut „Nur ein Lauf oder ein Cache-Treffer verlängert die
+  Frist“ ist so nicht gebaut und soll es nicht sein. Ein Treffer hängt einen neuen Job an einen
+  fertigen Lauf, ohne dessen `expires_at` zu verschieben (`submit._run_for`); der neue Job und sein
+  Rezept laufen mit dem alten Lauf ab. Der Code bleibt: Die Regel am Bucket (§7.3) zählt ab dem
+  Schreiben des Objekts, also zeigte ein Lauf, dessen Frist ein Treffer verlängerte, nach Tag 7 auf
+  gelöschte Bytes. **Maßgeblich: Nur ein neuer Lauf verlängert die Lebenszeit eines Rezepts, ein
+  Treffer nie.** Die Docstrings in `jobs/cleanup.py` sind angeglichen; der Test zu Auflage F13
+  (§12 Punkt 9) prüft weiter, dass Abrufe nichts verlängern. Verlängerte ein Treffer doch, müsste er
+  das Objekt kopieren (§8.3 T2): eigene Aufgabe nach M4.
+
 ## 15. Quellen
 
 **Primär, in der Sitzung gelesen [P]:**

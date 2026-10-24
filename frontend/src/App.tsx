@@ -13,6 +13,7 @@ import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
 import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
+import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
 import { hasResultsPanel } from './sections';
 import { useAppStore } from './store';
@@ -43,8 +44,9 @@ export default function App() {
   const jobCount = useProcessingStore((s) => s.jobs.length);
   const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
+  // `?permalink=` is opened once the datasets are there: loading them resets the selection.
   useEffect(() => {
-    loadDatasets();
+    void loadDatasets().then(openPermalinkInAddress);
   }, [loadDatasets]);
 
   // The jobs of this tab, kept across a reload (M4-13 F5 (1)).

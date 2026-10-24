@@ -46,6 +46,7 @@ import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
+import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 
 const PASS_NOTE = 'One job covers the scenes of one pass; the scenes of another pass need a job of their own.';
@@ -717,6 +718,7 @@ export default function ProcessingPanel() {
             </p>
           ))}
           {tooLarge && <TooLarge hasAoi={hasAoi} />}
+          <ShareLink view={view} />
         </section>
       )}
     </div>

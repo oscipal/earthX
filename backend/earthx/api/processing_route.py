@@ -35,7 +35,12 @@ What each route turns away, and how (all errors are ``application/problem+json``
 with ``pyproj``, so the panel can say what a cell size means: ``422`` for a code that is no EPSG code, is
 unknown, or names no unit. It reads nothing from the network (:mod:`crs_info`).
 
-Every answer under ``/jobs/`` and the placing of a job carry ``Cache-Control: no-store``.
+``/permalinks`` (M4-19e, outside OGC) keeps an order and a small view under an identifier of its own, 30 days
+from its creation. Creating answers ``201`` with the identifier, the expiry and a key that deletes it, once;
+reading answers ``404`` for an identifier that is malformed, unknown or expired, and deleting answers the same
+``404`` for a wrong key, so nobody can tell the cases apart. The order carries the area and is never logged.
+
+Every answer under ``/jobs/`` and ``/permalinks`` and the placing of a job carry ``Cache-Control: no-store``.
 """
 
 from __future__ import annotations
@@ -59,7 +64,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from psycopg_pool import ConnectionPool, PoolTimeout
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.crop_rules import METHODS_FILENAME, RECIPE_FILENAME, TEXT_FILES
@@ -80,6 +85,7 @@ from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFoll
 from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
 from earthx.catalog.registry import DatasetConfig, DatasetRegistry, UnknownDatasetError
 from earthx.gateway import Gateway
+from earthx.jobs import permalinks
 from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring, ResultNotFound, StoreUnavailable
 from earthx.objectstore.results import MIN_REMAINING, Store, open_result_range, result_size, signed_download
@@ -87,7 +93,7 @@ from earthx.processing import check_scope
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnsupportedRecipe
 from earthx.processing.operators import OperatorRegistry
 from earthx.processing.plan import estimate
-from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json
+from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json, parse_request
 
 LOGGER = logging.getLogger("earthx.api.processing")
 
@@ -244,7 +250,7 @@ class _JobRoute(APIRoute):
                 )
                 response = Problem(400, f"the request does not match the interface: {reasons}").response()
             path = request.url.path
-            if "/jobs/" in path or path.endswith(("/execution", "/estimate")):
+            if "/jobs/" in path or "/permalinks" in path or path.endswith(("/execution", "/estimate")):
                 response.headers["Cache-Control"] = "no-store"
             return response
 
@@ -1208,6 +1214,102 @@ async def job_events(
         if state.status in TERMINAL:
             return
         state = await sub.next()
+
+
+# --- permalinks ----------------------------------------------------------------
+
+NO_SUCH_PERMALINK = "urn:earthx:no-such-permalink"
+DELETE_KEY_HEADER = "X-Delete-Key"
+
+
+def _no_such_permalink() -> Problem:
+    return Problem(404, "there is no such permalink", type_=NO_SUCH_PERMALINK, title="No such permalink")
+
+
+class PermalinkRange(BaseModel):
+    """The range and colormap of the preview as it was on screen; ``colormap`` empty for none."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False)
+
+    vmin: float
+    vmax: float
+    colormap: str = Field(max_length=32, pattern=r"^[A-Za-z0-9_]*$")
+
+
+class PermalinkView(BaseModel):
+    """What a permalink restores besides the order: the map's centre and zoom and the preview's range."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False)
+
+    center: list[float] = Field(min_length=2, max_length=2)
+    zoom: float = Field(ge=0, le=24)
+    range: PermalinkRange | None = None
+
+    @model_validator(mode="after")
+    def _in_the_world(self) -> PermalinkView:
+        lon, lat = self.center
+        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            raise ValueError("center is a longitude and a latitude")
+        return self
+
+
+def _permalink_body(raw: bytes, operators: OperatorRegistry) -> dict[str, Any]:
+    """``{"order": …, "view": …}`` checked: the order as an order is (strictly, no ``resolved``), the view by its model."""
+    try:
+        document = loads_i_json(raw)
+    except RecipeInvalid as error:
+        raise Problem(400, str(error)) from None
+    if not isinstance(document, dict) or set(document) != {"order", "view"}:
+        raise Problem(400, "the request is a JSON object with the members order and view")
+    try:
+        order_text = json.dumps(document["order"], ensure_ascii=False, allow_nan=False)
+        order = parse_request(order_text, operators)
+    except (RecipeInvalid, UnicodeEncodeError) as error:
+        raise Problem(422, str(error) if isinstance(error, RecipeInvalid) else "the order is not valid text") from None
+    try:
+        view = PermalinkView.model_validate(document["view"])
+    except ValidationError as error:
+        # Where and what kind, never the value.
+        reasons = "; ".join(f"{'.'.join(str(part) for part in e['loc'])}: {e['type']}" for e in error.errors()[:5])
+        raise Problem(422, f"invalid view: {reasons}") from None
+    return {
+        "order": json.loads(order_text),
+        "view": view.model_dump(mode="json"),
+        "dataset": order.inputs[0].dataset,
+    }
+
+
+@router.post("/permalinks", summary="Keep an order and a view under a link", status_code=201, responses=_PROBLEMS)
+async def create_permalink(request: Request, api: Api) -> Response:
+    body = _permalink_body(await _read_body(request), api.operators)
+    dataset = body.pop("dataset")
+    created = await _db(api, permalinks.create, body)
+    LOGGER.info("permalink created", extra={"order_dataset": dataset})
+    return JSONResponse(
+        {"id": created.permalink_id, "expires_at": created.expires_at.isoformat(), "delete_key": created.delete_key},
+        status_code=201,
+    )
+
+
+@router.get("/permalinks/{permalink_id}", summary="The order and view of a permalink", responses=_PROBLEMS)
+async def read_permalink(permalink_id: str, api: Api) -> Response:
+    found = await _db(api, permalinks.read, permalink_id) if permalinks.is_permalink_id(permalink_id) else None
+    if found is None:
+        raise _no_such_permalink()
+    body, expires_at = found
+    LOGGER.info("permalink read")
+    return JSONResponse({**body, "expires_at": expires_at.isoformat()})
+
+
+@router.delete("/permalinks/{permalink_id}", summary="Delete a permalink with its key", status_code=204, responses=_PROBLEMS)
+async def delete_permalink(request: Request, permalink_id: str, api: Api) -> Response:
+    key = request.headers.get(DELETE_KEY_HEADER)
+    if key is None:
+        raise Problem(400, f"send the key you were given as {DELETE_KEY_HEADER}")
+    if not permalinks.is_permalink_id(permalink_id) or not await _db(api, permalinks.delete, permalink_id, key):
+        raise _no_such_permalink()
+    LOGGER.info("permalink deleted")
+    return Response(status_code=204)
 
 
 @router.api_route("/jobs/{rest:path}", methods=["GET", "DELETE"], include_in_schema=False)

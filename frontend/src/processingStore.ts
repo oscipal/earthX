@@ -101,6 +101,7 @@ import {
 } from './processingPreview';
 import { chooseDtype, dtypeOptions, effectiveDtype, integerNote, type Choice, type DtypeOption } from './processingDefaults';
 import { buildTileUrl } from './mapLayers';
+import type { PermalinkView } from './permalink';
 import { readRecipe } from './recipeFile';
 import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
@@ -258,6 +259,7 @@ interface ProcessingState {
   togglePick: (asset: string) => void;
   setDtype: (dtype: string) => void;
   loadRecipe: (text: string) => Promise<LoadResult>;
+  restoreOrder: (order: Order, view: PermalinkView) => Promise<LoadResult>;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
   placeOrder: (order: Order, options?: { aoiProvenance?: AoiProvenance }) => Promise<{ jobID: string } | { message: string }>;
@@ -602,6 +604,23 @@ const EMPTY_DRAFT = {
 };
 
 export const useProcessingStore = create<ProcessingState>((set, get) => {
+  // The process description of a dataset once it has loaded (or failed to).
+  const describe = (datasetId: string) => {
+    get().ensureDescription(datasetId);
+    return new Promise<Description | undefined>((resolve) => {
+      const settled = (s: ProcessingState) => (s.descriptions[datasetId]?.state === 'loading' ? undefined : s.descriptions[datasetId]);
+      const now = settled(get());
+      if (now) return resolve(now);
+      const stop = useProcessingStore.subscribe((s) => {
+        const done = settled(s);
+        if (done) {
+          stop();
+          resolve(done);
+        }
+      });
+    });
+  };
+
   const updateJob = (jobID: string, patch: Partial<JobEntry>) => {
     set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, ...patch } : j)) }));
   };
@@ -976,19 +995,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const datasetId = useAppStore.getState().datasetId;
       if (!datasetId) return { ok: false, reason: 'Pick a dataset first.' };
       if (order.steps.length === 0) return { ok: false, reason: 'This recipe has no steps.' };
-      get().ensureDescription(datasetId);
-      const description = await new Promise<Description | undefined>((resolve) => {
-        const settled = (s: ProcessingState) => (s.descriptions[datasetId]?.state === 'loading' ? undefined : s.descriptions[datasetId]);
-        const now = settled(get());
-        if (now) return resolve(now);
-        const stop = useProcessingStore.subscribe((s) => {
-          const done = settled(s);
-          if (done) {
-            stop();
-            resolve(done);
-          }
-        });
-      });
+      const description = await describe(datasetId);
       if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
       const { info } = description;
       const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
@@ -1003,6 +1010,44 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         bandMathExpressions(draft.steps).flatMap((expression) => [...namesInExpression(expression)].filter((name) => known.size > 0 && !known.has(name))),
       );
       for (const name of missing) notes.push(`Band ${name} is not in this selection.`);
+      return { ok: true, notes };
+    },
+
+    // A permalink (M4-19e): the order and the view come back as they were shared. Unlike "Load recipe…"
+    // this replaces the selection: the dataset, the scenes (one by one if the results lack them), the
+    // AOI and the steps. Several groups select all their scenes and the user picks the pass; an order
+    // without an AOI keeps the AOI on the map and covers the whole scenes. Nothing is changed unless
+    // the order is taken up as a whole.
+    restoreOrder: async (order, view) => {
+      const datasetId = order.inputs[0].dataset;
+      const dataset = useAppStore.getState().datasets.find((d) => d.id === datasetId);
+      const block = processBlockReason(dataset, order.inputs[0].groups.flat().length);
+      if (block) return { ok: false, reason: block };
+      const description = await describe(datasetId);
+      if (description?.state !== 'ready') return { ok: false, reason: 'The process description of the dataset could not be loaded.' };
+      const { info } = description;
+      const { draft, problems, notes } = draftFromOrder(order, info, () => nextStepKey++);
+      if (problems.length > 0) return { ok: false, reason: problems.slice(0, 3).join(' ') };
+      if (draft.dtype !== null && !info.dtypes.includes(draft.dtype)) notes.push(`Data type ${draft.dtype} is not offered for this dataset.`);
+      const dtype = draft.dtype !== null && info.dtypes.includes(draft.dtype) ? draft.dtype : null;
+      abortEstimate();
+      startGeneration += 1;
+      useAppStore.setState({ datasetId, selectedDatasetIds: [datasetId] });
+      const extraScenes = await selectScenes(draft.groups.flat(), 'this link');
+      if (!extraScenes) return { ok: false, reason: useAppStore.getState().error ?? 'The scenes could not be loaded.' };
+      if (draft.aoi) useAppStore.getState().setAoi(draft.aoi);
+      const range = view.range && { vmin: String(view.range.vmin), vmax: String(view.range.vmax), colormap: view.range.colormap };
+      set({
+        ...EMPTY_DRAFT,
+        ...(range ? { range, rangeDraft: range } : {}),
+        open: true,
+        area: draft.aoi ? 'aoi' : 'scene',
+        extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
+        steps: draft.steps,
+        picked: draft.assets,
+        dtype,
+      });
+      useAppStore.setState({ flyToView: { center: view.center, zoom: view.zoom } });
       return { ok: true, notes };
     },
 
