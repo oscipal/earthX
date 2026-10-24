@@ -624,7 +624,8 @@ für die Statistik eines einzelnen Assets maßgeblich.
   mit `500` scheitern zu lassen. Das gilt auch für die Statistik ohne `op`.
 - **Grenzen:** höchstens eine Messung je Zustand der Vorschau (Schritte über der ersten
   Szene): das Frontend merkt sich das Ergebnis, ein Fehlschlag wird bis „Auto stretch“ nicht
-  wiederholt, und der Cache beantwortet den Rest. Alle Adressen gehen durch `check_url` wie
+  wiederholt, und der Cache beantwortet den Rest. Das Bild wartet höchstens 5 s auf die Messung (Otto,
+  24.10.2026); danach gilt der Startbereich, und eine spätere Messung wird mit einem Neuzeichnen übernommen. Alle Adressen gehen durch `check_url` wie
   bei der Kachel.
 
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das

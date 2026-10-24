@@ -702,7 +702,9 @@ heißt, behält die Einheit `1`.
 - **Ablauf im Panel:** Die Vorschau misst die Schritte über der **ersten** Szene (ein Bereich gilt für alle Szenen
   der Karte). Ein Bereich, den der Nutzer angewandt hat (`handRange`, wie bei M4-32b: ein anderer als der Startwert),
   geht vor, und die Vorschau wartet dann nicht auf die Messung (sie kommt nur für die Einheit). Sonst wartet das
-  Bild auf die Messung und wird einmal gezeichnet, nicht erst mit −1…1 und dann neu. Die Felder zeigen den
+  Bild auf die Messung und wird einmal gezeichnet, nicht erst mit −1…1 und dann neu, höchstens aber 5 s lang
+  (`MEASURE_WAIT_MS`, Otto 24.10.2026). Danach zeichnet es mit dem Startbereich; kommt die Messung später, wird sie
+  mit genau einem Neuzeichnen übernommen, und nur wenn sie den Bereich ändert (Test mit verzögerter Antwort). Die Felder zeigen den
   gemessenen Bereich, solange der Nutzer nicht darin tippt. „Auto stretch“ ist frei, sobald ein Bereich von Hand gilt,
   die Felder bearbeitet sind oder die Messung fehlschlug: Es nimmt den Startbereich zurück und misst nötigenfalls neu.
 - **Eine Messung je Zustand (Auflage Otto, §9):** Der Zustand ist die Statistik-URL (Schritte über der ersten Szene,
@@ -714,6 +716,17 @@ heißt, behält die Einheit `1`.
 - **Gefunden und behoben:** Liegen die Werte so nah an einer Zahl, dass `numpy` keine Histogramm-Fächer bilden kann
   (`nir - red` über eine flache Szene), scheiterte `/statistics` mit `500`. Das Histogramm hat dann einen Fach
   (`access/tiles.py::_statistics_of`); es gilt auch für die Statistik ohne `op`.
+- **Job-Kern bei fast konstanten Werten (Prüfauftrag Otto, 24.10.2026):** Er scheitert nicht: Die Statistik des
+  Laufs (M4-32a) zählt in einem festen Histogramm, nicht mit `numpy.histogram`. Zwei Tests mit einem flachen Raster
+  als Job (ein Wert; zwei Werte einen Schritt auseinander) in `test_core_statistics.py`. Die Bytes von `result.tif`,
+  die Version und `adr/0014` ändern sich deshalb nicht.
+- **Angenommen (Otto, 24.10.2026):** Einheit aus der Statistik statt aus dem TileJSON; Messung an der ersten Szene,
+  bei „AOI only“ an der ganzen Szene (für M4).
+- **Größe des PRs:** rund 1250 Zeilen mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
+  300. Otto hat entschieden, ihn nicht zu teilen. Gründe: Die Route ist ohne die Anzeige nicht zu prüfen und
+  die Anzeige ohne die Route nicht zu bauen; die gemeinsame Regel (`scaleOf`) berührt beide Seiten. Etwa die Hälfte
+  sind Tests (Backend 330 Zeilen, Frontend 340), etwa 130 Zeilen Doku. Die Commits sind nach Backend (Lesen, Route),
+  Frontend und Doku getrennt.
 - **Geändert:** Die zwei Tests, die `statistics` mit `op` als `400` festhielten, sagen jetzt, dass `info` und
   `point` es bleiben. Die Vorschau-Tests im Frontend warten nach den 400 ms auf die Messung (`afterDebounce` ist
   `async`), und ein Test je Regel (1)–(4), Einheit und Zähler kam dazu.
