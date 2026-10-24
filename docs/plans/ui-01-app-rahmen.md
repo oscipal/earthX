@@ -1,6 +1,6 @@
 # UI-01 — App-Rahmen mit linker Leiste und Processing-Manager
  
-**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4) und 22.10.2026 (§1 Punkte 10 und 12), beauftragt von Otto.
+**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4), 22.10.2026 (§1 Punkte 10 und 12) und 24.10.2026 (§1 Punkt 11), beauftragt von Otto.
 **Meilenstein:** UI, direkt nach M4 (nach M4-20). Nummer und Name des Meilensteins stehen in `projektplan.md` noch aus.
 **Stufe B:** Erst kommt der Plan im Draft-PR, Otto gibt ihn frei, dann folgt der Code.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -36,6 +36,7 @@
 11. **Klick auf einen Ergebnis-Layer (20.10.2026).**
     - **Heute:** Es erscheinen die Suchergebnisse.
     - **Soll:** Es erscheint dieselbe Ansicht wie bei anderen Layern, bezogen auf das Ergebnis: Wertebereich (vmin, vmax), Colormap und Deckkraft, mit der Vorgabe aus der Statistik (M4-32).
+    - **Keine Einheiten im Layer-Manager (Otto, 24.10.2026):** Weder Zeilen noch Darstellung im Layer-Manager zeigen eine Einheit, bei keiner Layer-Art. Einheiten stehen im Processing-Panel (Band-Chips, M4-19b) und in den Daten (`bands[].unit`).
     - **Nicht in UI-01:** Processing auf einem Ergebnis, also ein Ergebnis als Eingabe eines neuen Rezepts. Das braucht vorher eine Entscheidungsvorlage (Stufe C, siehe `claude/nach-m4-backlog.md`). Bis dahin ist der Processing-Knopf bei Ergebnis-Layern gesperrt und nennt den Grund.
 12. **Nur „Download (ZIP)“ je fertigem Job (22.10.2026).**
     - Ein fertiger Job zeigt in Liste und Details nur noch „Download (ZIP)“.
