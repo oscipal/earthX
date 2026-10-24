@@ -8,6 +8,7 @@ Kriterien 1–10), Stand `main` bei Commit `b60c3b4` (Merge von PR #169,
 24.10.2026). Alle Aufgaben von M4-00 bis M4-32b außer M4-20 sind gemergt (Tabelle
 in `m4-processing-kern.md` §3, in diesem PR nachgezogen; Übersicht in Abschnitt 13).
 **Muster:** `docs/plans/m3-15-abnahme.md`.
+**Abgenommen von Otto am 24.10.2026.** Fragen 1–5 je Option 1 (Abschnitt 15); die Schritte 3–6 der Prüfanleitung B von M4-17 reicht Otto nach.
 **Stufe A, keine Codeänderung.** Dieser PR ändert nur Dokumente (Bericht, §3 des
 Plans, README, Log).
 
@@ -714,25 +715,25 @@ Testlücken (M4-22); Lock-Datei (M4-00b).
 
 ## 15. Fragen an Otto
 
-Nummeriert, Empfehlung zuerst.
+Nummeriert, Empfehlung zuerst. **Antworten von Otto am 24.10.2026: Fragen 1–5 je Option 1.**
 
-1. **M4 abnehmen?**
+1. **M4 abnehmen?** → **Antwort: (1), M4 abgenommen.**
    - (1) **Empfehlung:** M4 mit den Belegen in Abschnitt 1–10 abnehmen. Kriterium 1 trägt Ottos Hash-Vergleich vom 24.10.2026 (Runner 0.4.2+gcb03706) neben `test_compare` und dem Schichtvergleich; die benannte Grenze (Image gegen Kern aus derselben CI) ist damit von Hand geschlossen.
    - (2) Erst abnehmen, wenn die Läufe in Abschnitt 11 (A bis C) durch sind.
    - (3) Anders.
-2. **Prüfanleitung B von M4-17, Schritte 3–6** (E1; Kriterium 7). A ist bestanden, B Schritte 1–2 auch.
+2. **Prüfanleitung B von M4-17, Schritte 3–6** → **Antwort: (1), Otto reicht das Ergebnis als Log-Zeile nach.** (E1; Kriterium 7). A ist bestanden, B Schritte 1–2 auch.
    - (1) **Empfehlung:** Die Abnahme hängt nicht daran. Du reichst das Ergebnis der Schritte 3–6 nach (die Anleitung steht in `plans/m4-17-mosaik-kachel-pfad.md`); es kommt als Log-Zeile.
    - (2) Vor der Abnahme prüfen.
    - (3) Anders.
-3. **Lesart von Kriterium 3 („ohne `gateway`“).**
+3. **Lesart von Kriterium 3 („ohne `gateway`“).** → **Antwort: (1), „kein direkter Import“, keine Änderung.**
    - (1) **Empfehlung:** Es heißt: `processing` importiert `gateway` nicht direkt (Vertrag mit direkten Importen). Das Lesen der Datenquellen läuft über `readers`, das `gateway` nutzt, wie es `CLAUDE.md` erlaubt. Keine Änderung.
    - (2) Auch indirekt verbieten. Das bräche das Lesen und verlangt eine Änderung der Architektur.
    - (3) Anders.
-4. **Arbeitsweise nach M4 (Projekte in Claude Code, nicht entschieden).**
+4. **Arbeitsweise nach M4 (Projekte in Claude Code, nicht entschieden).** → **Antwort: (1), unverändert bis nach UI-01.**
    - (1) **Empfehlung:** Unverändert lassen (ein Branch, ein Draft-PR, Startsatz je Aufgabe), bis UI-01 abgeschlossen ist, dann neu entscheiden: UI-01 und UI-02 bauen auf der bestehenden Arbeitsweise und den Startsätzen auf.
    - (2) Sofort wechseln; dann zuerst Punkt 13 im Abschnitt 14 (`docs/plans/` je Meilenstein), weil sich die Pfade der Startsätze ändern.
    - (3) Anders.
-5. **Reihenfolge nach M4** (Abschnitt 14 lässt sie offen).
+5. **Reihenfolge nach M4** (Abschnitt 14 lässt sie offen). → **Antwort: (1): Punkt 13, dann UI-01, UI-02; Punkte 1 und 2 als Stufe A daneben.**
    - (1) **Empfehlung:** Punkt 13 (`docs/plans/` aufräumen, ohne laufende Session), dann UI-01 und UI-02; Punkt 1 (Jahr der Attribution) und Punkt 2 (Sortierung von Zuschnitt und Export) als Stufe-A-Aufgaben daneben, weil Punkt 1 vor einem öffentlichen Deployment geklärt sein muss.
    - (2) Zuerst Punkt 1 und 2, dann 13.
    - (3) Anders.
@@ -748,6 +749,6 @@ Ottos lokaler Hash-Vergleich vom 24.10.2026 mit Runner 0.4.2+gcb03706:
 `result.tif` und `mask.tif` je True). Offen und bei Otto: die lokale Prüfung
 (Abschnitt 11), die Schritte 3–6 der Prüfanleitung B von M4-17 gegen eine echte Quelle
 (Frage 2; A und B 1–2 hat Otto bestanden) und das Löschen nach 7 Tagen, das in keinem Lauf zu beobachten ist
-(Kriterium 4). Die Läufe der Sitzung (Abschnitt 12) sind grün. Mit Ottos Abnahme
-wird M4 im Plan als abgeschlossen markiert und die Log-Zeile „M4 abgenommen“ mit
-Datum und PR-Nummer ergänzt.
+(Kriterium 4). Die Läufe der Sitzung (Abschnitt 12) sind grün. **Otto hat M4 am 24.10.2026
+abgenommen** (Abschnitt 15); die Log-Zeilen „M4 abgenommen“ und „Reihenfolge nach M4“
+stehen im Log.

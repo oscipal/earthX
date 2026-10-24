@@ -274,7 +274,7 @@ Eingaben per Referenz, Datei-Cache des Runners).
 | M4-32 | Statistik je Raster-Ergebnis (min, max, Mittel, `stddev`, 2-/98-Perzentil, Anteil gültiger Pixel) in `result.tif` und Ergebnisdokument, Vorgabe für die Farbskala im Frontend (`plans/m4-32-ergebnis-statistik.md`) | M4 | B | Opus Plan, Sonnet (hoch) | M4-13c-5 | erledigt (a #168, b #173; `plans/m4-32-ergebnis-statistik.md`) |
 | M4-32a | Backend: Statistik im Kern (Tags über die Datei, `statistics` über die Maske), Version 0.4.2, Faktoren mit Statistik-Durchgang (Band-Math 1,2, `reproject` +7,7 %, Raster ohne Schritt 1,0; Export unverändert), Nachtrag `adr/0014` §15k | M4 | B | Opus (hoch) | M4-32 (Plan) | erledigt (#168, `plans/m4-32-ergebnis-statistik.md` §8, §9) |
 | M4-32b | Frontend: Farbskala eines Ergebnisses aus der AOI-Statistik (§6.7), Prüfanleitung | M4 | B | Sonnet (hoch) | M4-32a gemergt | erledigt (#173, `plans/m4-32-ergebnis-statistik.md` §10) |
-| M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | Entwurfs-PR, Bericht `plans/m4-20-abnahme.md` |
+| M4-20 | M4-Abnahme und README | — | A | Sonnet (mittel) | alle | erledigt (#181, Bericht `plans/m4-20-abnahme.md`); M4 abgenommen am 24.10.2026 |
 
 **Wellen (Fassung 3).** Höchstens zwei Stufe-B-Sessions gleichzeitig; Stufe A
 und C laufen daneben. Kritischer Pfad für die Abnahme:
