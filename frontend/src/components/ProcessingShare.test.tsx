@@ -153,6 +153,7 @@ describe('opening a link', () => {
     expect(draft().steps.map((s) => s.values.expression)).toEqual(['(nir - red) / (nir + red)']);
     expect(draft().dtype).toBe('float32');
     expect(draft().range).toEqual({ vmin: '0', vmax: '0.8', colormap: 'viridis' });
+    expect(draft().rangeByHand).toBe(true); // it holds against a measure of the preview
     expect(window.location.search).toBe('?other=1');
   });
 
@@ -237,6 +238,7 @@ describe('opening a link', () => {
     expect(draft().area).toBe('scene');
     expect(useAppStore.getState().aoi).toEqual(OLD_AOI);
     expect(draft().range).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' });
+    expect(draft().rangeByHand).toBe(false);
     expect(useAppStore.getState().notice).toBeNull();
   });
 });
@@ -274,10 +276,16 @@ describe('Share', () => {
     expect(container.textContent).not.toContain(KEY);
   });
 
-  it('leaves the range out where it is the default one', async () => {
-    act(() => useProcessingStore.setState({ range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' } }));
+  it('leaves the range out where the user did not apply one', async () => {
+    act(() => useProcessingStore.setState({ range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' }, rangeByHand: false }));
     await click('Share');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toBeNull();
+  });
+
+  it('keeps the range the user applied, also when it is the start range (the same switch as the preview and the job)', async () => {
+    act(() => useProcessingStore.setState({ range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' }, rangeByHand: true }));
+    await click('Share');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).view.range).toEqual({ vmin: -1, vmax: 1, colormap: 'rdylgn' });
   });
 
   it('is a button like "Review", close below it, and has no text under it', async () => {

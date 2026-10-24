@@ -2052,8 +2052,9 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   Layer-Manager zeigt bei keiner Layer-Art eine Einheit; ein Ergebnis-Layer trägt sie nicht.
 - **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag, weil keine Quelle für ihre Einheit gelesen wurde. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
   Schritten kennt nur der Kern (Band-Math: keine; `mask`: die der übrigen Bänder; `normalize`:
-  keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trägt
-  sie nicht. Das bräuchte ein Feld im TileJSON (Frage an Otto im PR).
+  keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trug
+  sie nicht. Das Feld `unit` im TileJSON und an den Bändern von `/statistics` mit `op` kam mit
+  M4-19c (`adr/0006`, Nachtrag M4-19c; Otto, 23.10.2026).
 - **Tests:** `tests/catalog/test_band_units.py` (Registry, Muster, Prüfung, Collection),
   `tests/earthx/api/test_intake.py::TestUnits` (Item vor Registry, Zarr je Variable, DEM, kaputte
   Einheit), `tests/earthx/processing/test_units.py` (Kern, Operatoren, Mosaik, Schätzung),

@@ -422,6 +422,17 @@ export function buildOperatorTileJsonUrl(
   return `${itemBase(datasetId, itemId)}/${TILE_MATRIX_SET}/tilejson.json?${operatorQuery(assets, steps)}`;
 }
 
+// The statistics of the same chain (M4-19c): one measure of what the steps make of the scene, for the colour
+// scale and the unit of the preview. At most 1024 pixels on the long side (`processing/tile.py`).
+export function buildOperatorStatisticsUrl(
+  datasetId: string,
+  itemId: string,
+  assets: readonly string[],
+  steps: readonly TileStep[],
+): string {
+  return `${itemBase(datasetId, itemId)}/statistics?${operatorQuery(assets, steps)}`;
+}
+
 function operatorQuery(assets: readonly string[], steps: readonly TileStep[]): string {
   const params = new URLSearchParams();
   for (const asset of assets) params.append('asset', asset);
@@ -446,6 +457,8 @@ export interface BandStatistics {
   max: number;
   percentile_2: number;
   percentile_98: number;
+  // Of an operator's statistics: the unit of this band of the result, `null` where it is not known.
+  unit?: string | null;
   [key: string]: unknown;
 }
 
@@ -455,6 +468,11 @@ export async function fetchStatistics(
   asset: string,
 ): Promise<Record<string, BandStatistics>> {
   return jsonOrThrow(await fetch(buildStatisticsUrl(datasetId, itemId, asset)));
+}
+
+// The statistics at an address the panel built (`buildOperatorStatisticsUrl`).
+export async function fetchStatisticsAt(url: string): Promise<Record<string, BandStatistics>> {
+  return jsonOrThrow(await fetch(url));
 }
 
 // Pages through `nextToken` until the result is complete or `maxItems` is

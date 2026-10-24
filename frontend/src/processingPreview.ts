@@ -4,12 +4,13 @@
 // `processingStore.ts`.
 
 import { clipTileUrl } from './aoiClip';
-import { buildOperatorTileJsonUrl, buildOperatorTileTemplate } from './api';
+import { buildOperatorStatisticsUrl, buildOperatorTileJsonUrl, buildOperatorTileTemplate, type BandStatistics } from './api';
 import type { DatasetOption } from './datasets';
 import type { LayerOverlay } from './layers';
 import { buildTileUrl } from './mapLayers';
 import { canonicalJson } from './processing';
-import { bandsOf, type Area, type DraftStep, type Operator, type ProcessInfo } from './processingOrder';
+import { bandsOf, shownUnit, type Area, type DraftStep, type Operator, type ProcessInfo } from './processingOrder';
+import { INDEX_COLORMAP, INDEX_RANGE, scaleOf, type BandStats, type ResultStats } from './render';
 import { paramsFrom, type Field } from './schemaForm';
 import type { Bbox, StacItem } from './types';
 
@@ -28,9 +29,8 @@ export const NO_PREVIEW_UNLISTED = 'No preview: the first step is not available 
 
 // --- range and colormap ------------------------------------------------------
 
-// What the preview is drawn with (F3 (1)): a range and a colormap by hand, the
-// start values for an index such as NDVI. "Auto stretch" is not offered: the
-// statistics route takes no operator.
+// What the preview is drawn with (F3 (1)): the range and colormap of an index such as NDVI to begin with,
+// by hand once the user applies one, and the measure of the steps (M4-19c, `measureOf`) while they have not.
 export interface PreviewRange {
   vmin: string;
   vmax: string;
@@ -38,9 +38,11 @@ export interface PreviewRange {
   colormap: string;
 }
 
-export const DEFAULT_RANGE: PreviewRange = { vmin: '-1', vmax: '1', colormap: 'rdylgn' };
-
-export const AUTO_STRETCH_REASON = 'Not for a preview: the statistics of a tile cannot be measured through an operator. Set the range by hand.';
+export const DEFAULT_RANGE: PreviewRange = {
+  vmin: String(INDEX_RANGE[0]),
+  vmax: String(INDEX_RANGE[1]),
+  colormap: INDEX_COLORMAP,
+};
 
 export function rescaleOf(range: PreviewRange): { rescale: string } | { problem: string } {
   const number = (text: string) => (text.trim() === '' ? NaN : Number(text));
@@ -170,6 +172,11 @@ export interface PreviewSpec {
   stepCount: number;
   // The TileJSON of the first scene with the same steps: what `probeChain` asks.
   probe: string;
+  // The statistics of the first scene with the same steps: what `measureOf` reads. It does not depend on the
+  // range, so a new range is no new measure.
+  measure: string;
+  // Whether a Band math step is among the steps: what the values of an index are judged by.
+  expression: boolean;
   scenes: PreviewScene[];
   minZoom: number;
   // Capped so that no tile is as fine as the data (`previewMaxZoom`).
@@ -224,6 +231,7 @@ export function previewSpec(args: {
   const chain = plan.steps.map(({ step, params }) => ({ op: step.op, opVersion: step.opVersion, paramsJson: canonicalJson(params) }));
   const scenes: PreviewScene[] = [];
   let probe = '';
+  let measure = '';
   for (const item of items.slice(0, MAX_PREVIEW_SCENES)) {
     if (!item.bbox) continue;
     const template = buildOperatorTileTemplate(dataset.id, item.id, assets, chain);
@@ -232,7 +240,10 @@ export function previewSpec(args: {
       bbox: item.bbox,
       url: buildTileUrl(template, { rescale: rescale.rescale, colormapName: range.colormap || undefined }),
     });
-    if (!probe) probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
+    if (!probe) {
+      probe = buildOperatorTileJsonUrl(dataset.id, item.id, assets, chain);
+      measure = buildOperatorStatisticsUrl(dataset.id, item.id, assets, chain);
+    }
   }
   if (scenes.length === 0) return null;
   // Without a pixel size there is no level to hold the preview under: it is drawn
@@ -246,12 +257,61 @@ export function previewSpec(args: {
     title: plan.steps.map(({ operator }) => operator.title).join(' → '),
     stepCount: plan.steps.length,
     probe,
+    measure,
+    expression: plan.steps.some(({ step }) => step.op === 'band_math'),
     scenes,
     minZoom: dataset.zoom.min,
     maxZoom,
     clipToAoi,
   };
 }
+
+// --- the measure of a preview (M4-19c) ---------------------------------------
+
+// What the tiler said of the values the steps make of the first scene: the numbers the colour scale is chosen
+// from, and the unit of the result. `key` is the `PreviewSpec.measure` it answers.
+export interface PreviewMeasure {
+  key: string;
+  stats: ResultStats | null;
+  // As the data say it; "1" is shown as nothing (`shownUnit`).
+  unit: string | null;
+}
+
+const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+// `/statistics` with the steps, as a measure: per band the minimum, maximum and 2/98 percentiles of the valid
+// pixels (none with `count` 0), and the one unit all bands have, where they have one.
+export function measureOf(key: string, statistics: Record<string, BandStatistics>, expression: boolean): PreviewMeasure {
+  const bands = Object.values(statistics);
+  const read = bands.map((band): BandStats => {
+    const usable = (finite(band.count) ?? 0) > 0;
+    return {
+      minimum: usable ? finite(band.min) : null,
+      maximum: usable ? finite(band.max) : null,
+      percentile2: usable ? finite(band.percentile_2) : null,
+      percentile98: usable ? finite(band.percentile_98) : null,
+    };
+  });
+  const units = new Set(bands.map((band) => (typeof band.unit === 'string' ? band.unit : null)));
+  const unit = units.size === 1 ? [...units][0] : null;
+  const named = read.some((band) => band.minimum !== null && band.maximum !== null);
+  return { key, stats: named ? { bands: read, expression } : null, unit };
+}
+
+// The range the measure calls for as the panel holds it (the same rule as a result's, `scaleOf`), or `null`.
+export function measuredRange(measure: PreviewMeasure | null): PreviewRange | null {
+  const scale = scaleOf(measure?.stats ?? null);
+  return scale ? { vmin: String(scale.low), vmax: String(scale.high), colormap: scale.colormap } : null;
+}
+
+// The unit beside the range of the preview: that of the measure of this very preview, and nothing for a
+// dimensionless quantity ("1") or an unknown one.
+export function previewUnit(preview: PreviewSpec | null, measure: PreviewMeasure | null): string | null {
+  return preview && measure && measure.key === preview.measure ? shownUnit(measure.unit) : null;
+}
+
+// What the panel says when the measure could not be had: the preview then keeps the start range.
+export const NO_MEASURE = 'The range could not be measured, so the preview uses its start range. Set it by hand or try Auto stretch.';
 
 // The overlays of a preview, as the map and a layer hold them.
 export function previewOverlays(spec: PreviewSpec, aoi: GeoJSON.Geometry | null): LayerOverlay[] {

@@ -6,15 +6,14 @@ import { useState } from 'react';
 
 import { createPermalink, permalinkAddress, rememberKey, removePermalink, viewOf, type Created } from '../permalink';
 import type { OrderView } from '../processingStore';
-import { useProcessingStore } from '../processingStore';
-import { handRange } from '../resultLayer';
+import { handRangeOf, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import CopyButton from './CopyButton';
 
 export default function ShareLink({ view }: { view: OrderView }) {
   const bbox = useAppStore((s) => s.viewportBbox);
   const zoom = useAppStore((s) => s.mapZoom);
-  const range = useProcessingStore((s) => s.range);
+  const range = useProcessingStore((s) => handRangeOf(s));
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<Created | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -27,7 +26,7 @@ export default function ShareLink({ view }: { view: OrderView }) {
     setBusy(true);
     setNote(null);
     try {
-      const created = await createPermalink(order, viewOf(bbox, zoom, handRange(range)));
+      const created = await createPermalink(order, viewOf(bbox, zoom, range));
       rememberKey(created);
       setMade(created);
     } catch (error) {

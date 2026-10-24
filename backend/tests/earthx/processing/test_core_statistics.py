@@ -179,3 +179,25 @@ def test_a_value_rounded_onto_nodata_is_not_counted(tmp_path: Path, monkeypatch:
     _assert_matches(area, written.compressed(), written.size, exact=True)
     assert area["minimum"] >= 1 and float(tags["STATISTICS_MINIMUM"]) >= 1
     assert tags == gdal_tags(area)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        numpy.full((300, 300), 3000, dtype="uint16"),
+        numpy.where(numpy.indices((300, 300)).sum(axis=0) % 2 == 0, 3000, 3001).astype("uint16"),
+    ],
+    ids=["one value", "two values one step apart"],
+)
+def test_a_flat_raster_has_statistics_and_a_run_that_does_not_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: numpy.ndarray
+) -> None:
+    """The histogram of the pass has a fixed bin per value, so values that are (nearly) one number need no special case."""
+    path = sources.build_band_cog(tmp_path / "flat.tif", raw)
+    sources.serve({sources.url("band"): path}, monkeypatch)
+    result = _run(_recipe(sources.whole(300, 300)), tmp_path / "work")
+    data, _, tags = _files(result)
+    area = result.properties["bands"][0]["statistics"]
+    _assert_matches(area, data.compressed(), data.size, exact=False)
+    assert area["minimum"] <= area["percentile_2"] <= area["percentile_98"] <= area["maximum"]
+    assert tags == gdal_tags(area)

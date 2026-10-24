@@ -246,10 +246,9 @@ class TestRefusals:
         response = client.get(_url(_tiles()[0], op, params, assets=("red",)))
         assert response.status_code == 400 and response.json()["detail"].startswith("params: ")
 
-    @pytest.mark.parametrize("route", ["statistics", "info"])
-    def test_an_operator_is_for_tiles_only(self, client: TestClient, route: str) -> None:
+    def test_an_operator_is_for_tiles_their_tilejson_and_statistics_only(self, client: TestClient) -> None:
         query = f"asset=red&asset=scl&op=mask&op_version=1&params={quote(json.dumps(MASK))}"
-        assert client.get(f"/collections/{COG}/items/{ITEM}/{route}?{query}").status_code == 400
+        assert client.get(f"/collections/{COG}/items/{ITEM}/info?{query}").status_code == 400
 
 
 # --- the CF Mini-Zarr: a 10 m band and its 20 m classification layer -------------------------------------

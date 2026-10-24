@@ -110,6 +110,16 @@ class Source:
         )
         return self.physical(image)
 
+    def read_preview(self, bounds: tuple[float, float, float, float], width: int, height: int) -> ImageData:
+        """The extent ``bounds`` of the common grid (in this source's CRS) as ``width`` × ``height`` pixels, in physical values.
+
+        A decimated read, nearest like the tile: the reader picks an overview where there is one.
+        """
+        image = self.reader.part(
+            bounds, dst_crs=self.crs, bounds_crs=self.crs, width=width, height=height, max_size=None
+        )
+        return self.physical(image)
+
     def read_tile(self, x: int, y: int, z: int, **options: Any) -> ImageData:
         """One map tile, in physical values; ``options`` are the reader's own (``tilesize`` and the like)."""
         return self.physical(self.reader.tile(x, y, z, **options))

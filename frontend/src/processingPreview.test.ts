@@ -18,8 +18,11 @@ import {
   NO_PREVIEW,
   NO_PREVIEW_FORM,
   NO_PREVIEW_UNLISTED,
+  measuredRange,
+  measureOf,
   planPreview,
   previewOverlays,
+  previewUnit,
   probeChain,
   refusedNote,
   refusedStepOf,
@@ -28,6 +31,7 @@ import {
   rescaleOf,
   tileResolution,
   type PreviewPlan,
+  type PreviewSpec,
 } from './processingPreview';
 import type { Collection, StacItem } from './types';
 
@@ -262,6 +266,20 @@ describe('previewSpec', () => {
     expect(order).toEqual(['op', 'op_version', 'params', 'op', 'op_version', 'params']);
   });
 
+  it('names the statistics of the first scene with the same steps, whatever the range', () => {
+    const plan = ready([normalize(), bandMath('red / 2', 3)]);
+    const a = previewSpec({ ...base, plan })!;
+    const b = previewSpec({ ...base, plan, range: { vmin: '0', vmax: '9', colormap: 'viridis' } })!;
+    expect(a.key).not.toBe(b.key);
+    expect(a.measure).toBe(b.measure);
+    const url = new URL(a.measure, 'http://localhost');
+    expect(url.pathname).toBe('/collections/sentinel-2-c1-l2a/items/S2_A/statistics');
+    expect(url.searchParams.getAll('op')).toEqual(['normalize', 'band_math']);
+    expect(url.searchParams.has('rescale')).toBe(false);
+    expect(a.expression).toBe(true);
+    expect(previewSpec({ ...base, plan: ready([normalize()]) })!.expression).toBe(false);
+  });
+
   it('has another key for the steps in another order', () => {
     const a = previewSpec({ ...base, plan: ready([normalize(), bandMath('red', 3)]) })!;
     const b = previewSpec({ ...base, plan: ready([bandMath('red', 3), normalize()]) })!;
@@ -334,6 +352,60 @@ describe('previewSpec', () => {
     expect(previewSpec({ ...base, plan, items: many })!.scenes).toHaveLength(MAX_PREVIEW_SCENES);
     const spec = previewSpec({ ...base, plan, items: [{ ...items[0], bbox: null }, items[1]] })!;
     expect(spec.scenes.map((s) => s.id)).toEqual(['S2_B']);
+  });
+});
+
+describe('the measure of a preview (M4-19c)', () => {
+  const band = { count: 900, min: -0.2, max: 0.9, percentile_2: -0.1, percentile_98: 0.8 };
+  const ask = (...bands: Array<Record<string, unknown>>) =>
+    measureOf('K', Object.fromEntries(bands.map((b, i) => [`b${i + 1}`, b])) as never, true);
+
+  it('reads the numbers a colour scale is chosen from, and the unit', () => {
+    expect(ask({ ...band, unit: 'm' })).toEqual({
+      key: 'K',
+      stats: { bands: [{ minimum: -0.2, maximum: 0.9, percentile2: -0.1, percentile98: 0.8 }], expression: true },
+      unit: 'm',
+    });
+  });
+
+  it('names no value of a band without a valid pixel, and no scale when no band has one', () => {
+    const none = { count: 0, min: null, max: null, percentile_2: null, percentile_98: null, unit: null };
+    expect(ask(none).stats).toBeNull();
+    expect(measuredRange(ask(none))).toBeNull();
+  });
+
+  it('keeps the one unit all bands share, and none where they differ or are not stated', () => {
+    expect(ask({ ...band, unit: 'K' }, { ...band, unit: 'K' }).unit).toBe('K');
+    expect(ask({ ...band, unit: 'K' }, { ...band, unit: 'm' }).unit).toBeNull();
+    expect(ask({ ...band, unit: 'K' }, { ...band, unit: null }).unit).toBeNull();
+    expect(ask({ ...band }).unit).toBeNull();
+    expect(ask({ ...band, unit: 4 }).unit).toBeNull();
+  });
+
+  it('turns an index into -1 to 1 in rdylgn and other values into their 2nd to 98th percentile in viridis', () => {
+    expect(measuredRange(ask(band))).toEqual({ vmin: '-1', vmax: '1', colormap: 'rdylgn' });
+    expect(measuredRange(ask({ ...band, min: 100, max: 2500, percentile_2: 120, percentile_98: 2400 }))).toEqual({
+      vmin: '120',
+      vmax: '2400',
+      colormap: 'viridis',
+    });
+    expect(measuredRange(null)).toBeNull();
+  });
+
+  const spec = { measure: 'M' } as PreviewSpec;
+  it.each([
+    ['m', 'm'],
+    ['1', null],
+    ['', null],
+    [null, null],
+  ])('shows the unit %j beside the range as %j', (unit, shown) => {
+    expect(previewUnit(spec, { key: 'M', stats: null, unit })).toBe(shown);
+  });
+
+  it('shows the unit of the measure of this preview and of no other', () => {
+    expect(previewUnit(spec, { key: 'other', stats: null, unit: 'm' })).toBeNull();
+    expect(previewUnit(spec, null)).toBeNull();
+    expect(previewUnit(null, { key: 'M', stats: null, unit: 'm' })).toBeNull();
   });
 });
 

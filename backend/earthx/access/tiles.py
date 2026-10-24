@@ -37,6 +37,7 @@ from fastapi import Depends, HTTPException, Path, Query, Request
 from morecantile.defaults import TileMatrixSets
 from rasterio.errors import RasterioIOError
 from rio_tiler.io import BaseReader
+from rio_tiler.models import ImageData
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import QueryParams
 from titiler.core.factory import TilerFactory
@@ -81,20 +82,35 @@ class StatsCache(Protocol):
     async def set(self, key: str, value: dict[str, Any], *, dataset_id: str) -> None: ...
 
 
-def statistics_cache_key(path: AssetPath | ZarrAsset, parameters: dict[str, Any]) -> str:
+class CacheIdentity(Protocol):
+    """What an operator's inputs say of themselves for the statistics cache (M4-19c): the question, not the data.
+
+    Structural, like :class:`StatsCache`: `access` does not know `api`'s ``OperatorInput``.
+    """
+
+    dataset_id: str
+
+    def cache_identity(self) -> dict[str, Any]: ...
+
+
+def statistics_cache_key(path: AssetPath | ZarrAsset | CacheIdentity, parameters: dict[str, Any]) -> str:
     """One key for one question: which asset, and everything that shapes the numbers.
 
     Both readers' paths answer to the same three names, so a Zarr statistic is cached
-    the same way a COG's is — the format does not change what the numbers are of.
+    the same way a COG's is — the format does not change what the numbers are of. The
+    inputs of an operator name their assets, scaling, units and steps instead.
 
     A hash rather than the values themselves, so that no address and no parameter
     text ends up in a database column (projektplan.md 7, point 6).
     """
+    identity = (
+        {"dataset": path.dataset_id, "item": path.item_id, "asset": path.asset}
+        if isinstance(path, (AssetPath, ZarrAsset))
+        else {"operator": path.cache_identity()}
+    )
     payload = json.dumps(
         {
-            "dataset": path.dataset_id,
-            "item": path.item_id,
-            "asset": path.asset,
+            **identity,
             "parameters": parameters,
         },
         separators=(",", ":"),
@@ -147,8 +163,9 @@ class EarthxTilerFactory(TilerFactory):
     supported_tms: TileMatrixSets = TileMatrixSets({"WebMercatorQuad": morecantile.tms.get("WebMercatorQuad")})
 
     def tilejson_extras(self, src_dst: BaseReader) -> dict[str, Any]:
-        """Fields a factory adds to its TileJSON beyond TiTiler's; none for the tiles of one item."""
-        return {}
+        """Fields a factory adds to its TileJSON beyond TiTiler's: the ``unit`` of an operator's tile, if it has one."""
+        unit = getattr(src_dst, "unit", None)
+        return {} if unit is None else {"unit": unit}
 
     def statistics(self) -> None:
         """Register ``GET /statistics`` — the same answer as TiTiler's, with a cache.
@@ -158,6 +175,12 @@ class EarthxTilerFactory(TilerFactory):
         and a route nobody has thought about is a route nobody has secured.
         """
 
+        def checked_options(
+            stats_params=Depends(self.stats_dependency),
+            histogram_params=Depends(self.histogram_dependency),
+        ) -> None:
+            check_statistics_options(stats_params.as_dict(), histogram_params.as_dict())
+
         @self.router.get(
             "/statistics",
             response_class=JSONResponse,
@@ -166,6 +189,7 @@ class EarthxTilerFactory(TilerFactory):
             operation_id=f"{self.operation_prefix}getStatistics",
         )
         async def statistics(
+            _options: None = Depends(checked_options),
             src_path=Depends(self.path_dependency),
             reader_params=Depends(self.reader_dependency),
             layer_params=Depends(self.layer_dependency),
@@ -173,10 +197,11 @@ class EarthxTilerFactory(TilerFactory):
             image_params=Depends(self.img_preview_dependency),
             stats_params=Depends(self.stats_dependency),
             histogram_params=Depends(self.histogram_dependency),
+            post_process=Depends(self.process_dependency),
             env=Depends(self.environment_dependency),
             cache=Depends(self.stats_cache_dependency),
         ) -> dict[str, Any]:
-            """Statistics of one asset, over the whole scene."""
+            """Statistics of one asset, over the whole scene; with ``op``, of what the steps make of it."""
             parameters = {
                 "layer": layer_params.as_dict(),
                 "dataset": dataset_params.as_dict(),
@@ -185,7 +210,7 @@ class EarthxTilerFactory(TilerFactory):
                 "histogram": histogram_params.as_dict(),
             }
             key = None
-            if cache is not None and isinstance(src_path, (AssetPath, ZarrAsset)):
+            if cache is not None and (isinstance(src_path, (AssetPath, ZarrAsset)) or hasattr(src_path, "cache_identity")):
                 key = statistics_cache_key(src_path, parameters)
                 cached = await _cache_get(cache, key)
                 if cached is not None:
@@ -205,6 +230,7 @@ class EarthxTilerFactory(TilerFactory):
                 image_params=image_params.as_dict(),
                 stats_params=stats_params.as_dict(),
                 histogram_params=histogram_params.as_dict(),
+                post_process=post_process,
             )
             if key is not None:
                 await _cache_set(cache, key, statistics, dataset_id=src_path.dataset_id)
@@ -387,7 +413,7 @@ _STATISTICS_READ_ATTEMPTS = 2
 
 def _read_statistics(
     reader: Callable[..., BaseReader],
-    src_path: AssetPath | ZarrAsset,
+    src_path: AssetPath | ZarrAsset | CacheIdentity,
     *,
     env: dict[str, str],
     reader_params: dict[str, Any],
@@ -396,8 +422,12 @@ def _read_statistics(
     image_params: dict[str, Any],
     stats_params: dict[str, Any],
     histogram_params: dict[str, Any],
+    post_process: Callable[[ImageData], ImageData] | None = None,
 ) -> dict[str, Any]:
-    """TiTiler's own statistics, as plain JSON.
+    """TiTiler's own statistics, as plain JSON; ``post_process`` (the steps of an operator) runs on the read first.
+
+    A reader that knows the unit of its bands (an operator's) has it written to each band's statistics as
+    ``unit`` (``null``: not known).
 
     Plain JSON and not the models, because the same value goes into the cache and
     comes back out of it: a cache hit and a cold read are then the same answer by
@@ -408,8 +438,15 @@ def _read_statistics(
         with rasterio.Env(**env):
             with reader(src_path, **reader_params) as src_dst:
                 image = src_dst.preview(**layer_params, **image_params, **dataset_params)
-                statistics = image.statistics(**stats_params, hist_options=histogram_params)
-        return {name: value.model_dump(mode="json") for name, value in statistics.items()}
+                if post_process is not None:
+                    image = post_process(image)
+                statistics = _statistics_of(image, stats_params, histogram_params)
+                units = getattr(src_dst, "units", None)
+        document = {name: value.model_dump(mode="json") for name, value in statistics.items()}
+        if units is not None and len(units) == len(document):
+            for entry, unit in zip(document.values(), units, strict=True):
+                entry["unit"] = unit
+        return document
 
     for _ in range(_STATISTICS_READ_ATTEMPTS - 1):
         try:
@@ -417,6 +454,49 @@ def _read_statistics(
         except RasterioIOError:
             LOGGER.warning("could not read the asset from the source, retrying once", exc_info=True)
     return once()  # the last attempt: a RasterioIOError here is not retried again
+
+
+#: What a caller may ask of the statistics (a `400` beyond it, before anything is read): numpy and rio-tiler would
+#: answer a percentile above 100 or inverted bins with a `500`, and many bins or categories with a large answer.
+MAX_PERCENTILES = 20
+MAX_HISTOGRAM_BINS = 1000
+MAX_CATEGORIES = 100
+
+
+def check_statistics_options(stats: dict[str, Any], histogram: dict[str, Any]) -> None:
+    """Refuse statistics options that cannot be computed, with the reason (`400`)."""
+    problems: list[str] = []
+    percentiles = stats.get("percentiles") or []
+    if len(percentiles) > MAX_PERCENTILES:
+        problems.append(f"p takes at most {MAX_PERCENTILES} percentiles")
+    if any(not 0 <= value <= 100 for value in percentiles):
+        problems.append("p is a percentile from 0 to 100")
+    if len(stats.get("categories") or []) > MAX_CATEGORIES:
+        problems.append(f"c takes at most {MAX_CATEGORIES} values")
+    bins = histogram.get("bins")
+    if isinstance(bins, list):
+        if len(bins) < 2 or len(bins) > MAX_HISTOGRAM_BINS + 1 or any(a >= b for a, b in zip(bins, bins[1:], strict=False)):
+            problems.append(f"histogram_bins as edges rises strictly, from 2 up to {MAX_HISTOGRAM_BINS + 1} of them")
+    elif isinstance(bins, int) and not 1 <= bins <= MAX_HISTOGRAM_BINS:
+        problems.append(f"histogram_bins is a number from 1 to {MAX_HISTOGRAM_BINS}")
+    low_high = histogram.get("range")
+    if low_high is not None and not low_high[0] <= low_high[1]:
+        problems.append("histogram_range is min,max with min not above max")
+    if problems:
+        raise HTTPException(status_code=400, detail="; ".join(problems))
+
+
+def _statistics_of(image: ImageData, stats_params: dict[str, Any], histogram_params: dict[str, Any]) -> Any:
+    """rio-tiler's statistics of ``image``; where the values are so nearly one number that the histogram has no
+    bins to cut them into (``numpy`` refuses), the histogram has a single bin.
+
+    A result such as ``nir - red`` over a flat scene is that, and a scale for a preview is measured exactly there.
+    """
+    try:
+        return image.statistics(**stats_params, hist_options=histogram_params)
+    except ValueError:
+        # Anything else that is wrong with the parameters fails again here, with the same error.
+        return image.statistics(**stats_params, hist_options={**histogram_params, "bins": 1})
 
 
 async def _cache_get(cache: StatsCache, key: str) -> dict[str, Any] | None:

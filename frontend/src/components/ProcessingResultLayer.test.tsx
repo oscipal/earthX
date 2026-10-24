@@ -206,6 +206,14 @@ describe('the layer a result becomes', () => {
       expect(urlOfLayer()).toContain('colormap_name=terrain&rescale=0%2C3000');
     });
 
+    it('is drawn at −1…1 in rdylgn when the user applied that very range by hand, whatever the statistics say', async () => {
+      useProcessingStore.setState({
+        jobs: [entry({ statistics: resultStats(properties(DEM)), range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' } })],
+      });
+      await showOnMap();
+      expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
+    });
+
     it('is drawn with its own statistics when the range of the panel was set by hand for another job', async () => {
       // An NDVI preview with a range by hand; the DEM job before it was started without one.
       useProcessingStore.setState({
@@ -555,7 +563,7 @@ describe('"Overview" over the map', () => {
 
   it('stands beside "Preview" when both are on the map', () => {
     result();
-    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', scenes: [], minZoom: 8, maxZoom: 14, clipToAoi: false } });
+    useProcessingStore.setState({ preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', measure: '', expression: false, scenes: [], minZoom: 8, maxZoom: 14, clipToAoi: false } });
     act(() => root.render(<PreviewBadge />));
     expect(badge()).toBe('PreviewOverview');
   });

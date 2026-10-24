@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
 import {
-  handRange,
   isOverview,
   isResultExpired,
   MIN_REMAINING_MS,
@@ -212,22 +211,6 @@ describe('the colour scale of a result (plan §6.7)', () => {
 
   it('draws a result of an unknown data type as it is, statistics or not', () => {
     expect(resultRender(null, DEFAULT_RANGE, stats(dem))).toEqual({});
-  });
-});
-
-describe('the range set by hand', () => {
-  it('is none for the default range, which is no choice of the user', () => {
-    expect(handRange(DEFAULT_RANGE)).toBeNull();
-    expect(handRange({ ...DEFAULT_RANGE })).toBeNull();
-  });
-
-  it.each([
-    ['the end of the range', { ...DEFAULT_RANGE, vmax: '2' }],
-    ['the start of the range', { ...DEFAULT_RANGE, vmin: '0' }],
-    ['the colormap', { ...DEFAULT_RANGE, colormap: 'viridis' }],
-    ['no colormap', { ...DEFAULT_RANGE, colormap: '' }],
-  ])('is the range once %s differs', (_, range) => {
-    expect(handRange(range)).toEqual(range);
   });
 });
 

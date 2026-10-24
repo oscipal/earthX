@@ -52,3 +52,55 @@ export function appliedRenderFrom(render: EarthxDefaultRender): AppliedRender {
     rescale: rescale ? `${rescale[0]},${rescale[1]}` : undefined,
   };
 }
+
+// --- one colour scale for a preview and a result (M4-32b, M4-19c) --------------------
+
+// What a measure says of one band, for the colour scale: the fields that are numbers. A result gets it from
+// its results document, a preview from `/statistics` with the steps.
+export interface BandStats {
+  minimum: number | null;
+  maximum: number | null;
+  percentile2: number | null;
+  percentile98: number | null;
+}
+
+export interface ResultStats {
+  bands: BandStats[];
+  // The values come from a Band math step: what an index looks like is judged by the values.
+  expression: boolean;
+}
+
+// An index has no unit and lies in −1…1, and is drawn so, in the same colours, wherever it is drawn.
+export const INDEX_RANGE: readonly [number, number] = [-1, 1];
+export const INDEX_COLORMAP = 'rdylgn';
+
+// The colormap of values whose quantity is not known; `rdylgn` is for indices.
+export const MEASURED_COLORMAP = 'viridis';
+
+export interface Scale {
+  low: number;
+  high: number;
+  colormap: string;
+}
+
+const smallest = (values: Array<number | null>) => Math.min(...values.filter((v): v is number => v !== null));
+const largest = (values: Array<number | null>) => Math.max(...values.filter((v): v is number => v !== null));
+
+// The scale the measured values call for, or `null` where they name none. In order:
+//  1. an index (a Band math result whose values all lie in −1…1) is drawn at −1…1 in `rdylgn`, so that
+//     indices can be compared with one another;
+//  2. otherwise the 2–98 % of the measure, in `viridis`; the minimum…maximum where there are no percentiles.
+export function scaleOf(stats: ResultStats | null): Scale | null {
+  const present = stats?.bands.filter((band) => band.minimum !== null && band.maximum !== null) ?? [];
+  if (!stats || present.length === 0) return null;
+  if (stats.expression && present.every((band) => band.minimum! >= INDEX_RANGE[0] && band.maximum! <= INDEX_RANGE[1])) {
+    return { low: INDEX_RANGE[0], high: INDEX_RANGE[1], colormap: INDEX_COLORMAP };
+  }
+  let low = smallest(present.map((band) => band.percentile2));
+  let high = largest(present.map((band) => band.percentile98));
+  if (!(low < high)) {
+    low = smallest(present.map((band) => band.minimum));
+    high = largest(present.map((band) => band.maximum));
+  }
+  return low < high ? { low, high, colormap: MEASURED_COLORMAP } : null;
+}

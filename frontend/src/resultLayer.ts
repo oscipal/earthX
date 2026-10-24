@@ -3,7 +3,8 @@
 // when the map says "Overview", and when the layer is "Expired". Pure functions; the
 // state lives in `processingStore.ts` and `store.ts`.
 
-import { DEFAULT_RANGE, rescaleOf, type PreviewRange } from './processingPreview';
+import { rescaleOf, type PreviewRange } from './processingPreview';
+import { scaleOf, type BandStats, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
 
 // The link of the output `tiles` (`api/processing_docs.py::TILES_HREF`): a path on
@@ -32,21 +33,6 @@ export function resultTileTemplate(href: string): string {
 
 const FLOAT = /^float/;
 
-// What the results document says of one band, for the colour scale: the statistics of
-// the AOI (`properties.bands[].statistics`, M4-32a), the fields that are numbers.
-export interface BandStats {
-  minimum: number | null;
-  maximum: number | null;
-  percentile2: number | null;
-  percentile98: number | null;
-}
-
-export interface ResultStats {
-  bands: BandStats[];
-  // The result of a Band math step (`processing:expression`): what an index looks like is judged by the values.
-  expression: boolean;
-}
-
 const finite = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
 // The statistics in the `properties` of the `result` link; `null` for a result from before
@@ -68,18 +54,6 @@ export function resultStats(properties: Record<string, unknown> | undefined): Re
   if (read.every((band) => band.minimum === null && band.maximum === null)) return null;
   return { bands: read, expression: properties?.['processing:expression'] != null };
 }
-
-const smallest = (values: Array<number | null>) => Math.min(...values.filter((v): v is number => v !== null));
-const largest = (values: Array<number | null>) => Math.max(...values.filter((v): v is number => v !== null));
-
-// The colormap of a result whose quantity is not known; `rdylgn` is for indices.
-export const RESULT_COLORMAP = 'viridis';
-
-const sameRange = (a: PreviewRange, b: PreviewRange) => a.vmin === b.vmin && a.vmax === b.vmax && a.colormap === b.colormap;
-
-// The range the user set by hand in the panel, to be kept with the job started under it
-// (Otto, 22.10.2026); `null` for the default, which is no choice of the user's.
-export const handRange = (range: PreviewRange): PreviewRange | null => (sameRange(range, DEFAULT_RANGE) ? null : range);
 
 function drawnWith(range: PreviewRange): AppliedRender {
   const rescale = rescaleOf(range);
@@ -105,17 +79,8 @@ export function resultRender(
 ): AppliedRender {
   if (dataType === null || !FLOAT.test(dataType)) return {};
   if (own) return drawnWith(own);
-  const present = stats?.bands.filter((band) => band.minimum !== null && band.maximum !== null) ?? [];
-  if (!stats || present.length === 0) return drawnWith(panel);
-  if (stats.expression && present.every((band) => band.minimum! >= -1 && band.maximum! <= 1)) return drawnWith(DEFAULT_RANGE);
-  let low = smallest(present.map((band) => band.percentile2));
-  let high = largest(present.map((band) => band.percentile98));
-  if (!(low < high)) {
-    low = smallest(present.map((band) => band.minimum));
-    high = largest(present.map((band) => band.maximum));
-  }
-  if (!(low < high)) return drawnWith(panel);
-  return { rescale: `${low},${high}`, colormapName: RESULT_COLORMAP };
+  const scale = scaleOf(stats);
+  return scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
 }
 
 // --- the pixel size of the result -------------------------------------------

@@ -145,7 +145,7 @@ afterEach(() => {
 
 async function flush() {
   await act(async () => {
-    for (let i = 0; i < 5; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
   });
 }
 
@@ -395,6 +395,7 @@ describe('the preview of a mask', () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
+    await flush();
     expect(store().preview!.key).not.toBe(before);
     const params = new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams;
     expect(JSON.parse(params.get('params')!).classes).toEqual([2, 3, 8, 9, 10]);

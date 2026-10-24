@@ -28,10 +28,10 @@ import {
   type BandSource,
 } from '../processingOrder';
 import {
-  AUTO_STRETCH_REASON,
   furtherNote,
   MAX_PREVIEW_ASSETS,
   planPreview,
+  previewUnit,
   rescaleOf,
 } from '../processingPreview';
 import {
@@ -310,6 +310,12 @@ function PreviewSection({ view }: { view: OrderView }) {
   const setRangeDraft = useProcessingStore((s) => s.setRangeDraft);
   const applyRange = useProcessingStore((s) => s.applyRange);
   const pinPreview = useProcessingStore((s) => s.pinPreview);
+  const rangeByHand = useProcessingStore((s) => s.rangeByHand);
+  const rangeEdited = useProcessingStore((s) => s.rangeEdited);
+  const rangeNote = useProcessingStore((s) => s.rangeNote);
+  const measure = useProcessingStore((s) => s.measure);
+  const autoStretch = useProcessingStore((s) => s.autoStretch);
+  const unit = previewUnit(preview, measure);
   const plan = planPreview(steps, view.info);
   const range = rescaleOf(rangeDraft);
   const sceneCount = view.pass?.items.length ?? 0;
@@ -332,10 +338,17 @@ function PreviewSection({ view }: { view: OrderView }) {
               <span>min</span>
               <input type="number" value={rangeDraft.vmin} onChange={(e) => setRangeDraft({ vmin: e.target.value })} />
             </label>
-            <label className="vc-field vc-num">
-              <span>max</span>
-              <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
-            </label>
+            <div className="pp-bound">
+              <label className="vc-field vc-num">
+                <span>max</span>
+                <input type="number" value={rangeDraft.vmax} onChange={(e) => setRangeDraft({ vmax: e.target.value })} />
+              </label>
+              {unit && (
+                <span className="pp-unit" aria-label="Unit of the range">
+                  {unit}
+                </span>
+              )}
+            </div>
             <label className="vc-field">
               <span>Colormap</span>
               <select value={rangeDraft.colormap} onChange={(e) => setRangeDraft({ colormap: e.target.value })}>
@@ -350,11 +363,18 @@ function PreviewSection({ view }: { view: OrderView }) {
             <button type="button" className="primary-btn vc-apply" disabled={'problem' in range} onClick={() => applyRange()}>
               Apply
             </button>
-            <button type="button" className="link-btn" disabled title={AUTO_STRETCH_REASON}>
+            <button
+              type="button"
+              className="link-btn"
+              disabled={!rangeByHand && !rangeEdited && rangeNote === null}
+              title="Use the range measured on the first scene (the 2nd to 98th percentile, or −1 to 1 for an index)"
+              onClick={() => autoStretch()}
+            >
               Auto stretch
             </button>
           </div>
           {'problem' in range && <p className="hint-text error">{range.problem}</p>}
+          {rangeNote && <p className="hint-text">{rangeNote}</p>}
           {view.assets.length === 0 && (
             <p className="hint-text">Pick a band, or name it in the expression, to see the preview.</p>
           )}

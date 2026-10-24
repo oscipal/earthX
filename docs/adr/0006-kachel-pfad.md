@@ -595,6 +595,43 @@ gleichzeitig), nicht je Anfrage; je Anfrage ≤ 4 folgt daraus. Ohne Pool und be
 einem Pool-Fehler antwortet die Mosaik-Kachel mit `503` und Grund (Plan §14).
 - **Form:** `item` wiederholt statt `items=` mit Kommas, wie `asset`.
 
+**Nachtrag M4-19c (2026-10-24, §3.4, Statistik mit Operator):** `/statistics` nimmt
+jetzt `op`, `op_version` und `params` wie die Kachel (`_OPERATOR_ROUTES` um `statistics`
+erweitert; an der Pfad-Abhängigkeit ändert sich sonst nichts: Lizenzstufe, R5, `applicable`,
+Host-Allowlist und `target_gsd_for` gelten gleich). Die Messung dient der Farbskala der
+Vorschau (`plans/m4-19-teilen-und-beschreiben.md` §3.3, §14); der Originaltext oben bleibt
+für die Statistik eines einzelnen Assets maßgeblich.
+- **Lesen:** `OperatorTileReader.preview` liest jede Quelle über die Grenzen der feinsten
+  Quelle auf dieselbe Größe, höchstens 1024 px an der langen Seite (die Größe der Statistik
+  eines Assets; mehr nimmt die Route mit `400` nicht an), `nearest`, in physikalischen Werten
+  (`Source.read_preview`). Danach laufen die Kernel der Schritte, danach rio-tilers
+  Statistik. Optionen, die Werte ändern würden (`bidx`, `unscale`, `nodata`, `height`,
+  `width`, ein anderes Resampling), sind wie bei der Kachel ein `400`. Eine Zarr-Quelle
+  wird auf der gröbsten Ebene gelesen; zwei Gruppen, deren gröbste Ebenen kein ganzzahliges
+  Vielfaches ergeben, sind ein `422` (`GridMismatch`), und die Vorschau bleibt dann bei ihrem
+  Startbereich.
+- **Cache:** derselbe Postgres-Cache (30 Tage). Der Schlüssel ist ein Hash über Assets (ohne
+  `href`), Skalierung, Einheiten und die Schritte mit Version und kanonischen Parametern
+  (`OperatorInput.cache_identity`); ein Asset ohne `op` behält seinen Schlüssel. Kein
+  Ausdruck steht in einer Spalte.
+- **Einheit (Übergabe aus M4-19b):** Der Reader kennt die Einheit hinter den Schritten
+  (`OperatorTileReader.units`). Sie steht als `unit` an jedem Band der Statistik (`null`:
+  unbekannt; ein Asset ohne `op` hat das Feld nicht) und, wo alle Bänder dieselbe haben, als
+  `unit` im TileJSON derselben Schritte. „1“ bleibt in den Daten stehen; das Frontend zeigt
+  es nicht an (`shownUnit`).
+- **Optionen:** Perzentile außerhalb 0–100 (oder mehr als 20), `histogram_range` mit Min über Max,
+  `histogram_bins` außerhalb 1–1000 oder Kanten, die nicht streng steigen, und mehr als 100 Kategorien sind ein `400`
+  mit Grund, vor dem Abruf des Items, mit und ohne `op` (`check_statistics_options`; vorher `500` oder eine große
+  Antwort).
+- **Histogramm:** Liegen die Werte so nah an einer Zahl, dass `numpy` keine Fächer bilden
+  kann (`nir - red` über eine flache Szene), hat das Histogramm einen Fach, statt die Route
+  mit `500` scheitern zu lassen. Das gilt auch für die Statistik ohne `op`.
+- **Grenzen:** höchstens eine Messung je Zustand der Vorschau (Schritte über der ersten
+  Szene): das Frontend merkt sich das Ergebnis, ein Fehlschlag wird bis „Auto stretch“ nicht
+  wiederholt, und der Cache beantwortet den Rest. Das Bild wartet höchstens 5 s auf die Messung (Otto,
+  24.10.2026); danach gilt der Startbereich, und eine spätere Messung wird mit einem Neuzeichnen übernommen. Alle Adressen gehen durch `check_url` wie
+  bei der Kachel.
+
 **Zu Frage 5 — Quicklook-Proxy.** **Es gibt keinen.** Der Browser lädt das
 Thumbnail direkt von der Quelle; CORS ist offen (§3.6), 6.4 verlangt es so, und
 F15 fällt mit dem Token weg. Die Registry bekommt dafür zwei Felder: den

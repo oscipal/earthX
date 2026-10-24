@@ -8,6 +8,9 @@ it. The reader reads each asset's tile through :class:`~earthx.processing.source
 image; the kernels of the chain then run as TiTiler's ``process_dependency``, one after the other, the very
 functions a job calls on a block.
 
+The same reader measures the whole extent for the colour scale of a preview (:meth:`OperatorTileReader.preview`,
+M4-19c): each source over the same bounds onto the same grid, at most :data:`MAX_PREVIEW_SIDE` pixels on the long side.
+
 The tile is a *preview* below the native level: rio-tiler reads an overview there, and
 only on the native level is the tile bit-identical with the job (§6.3, F9).
 """
@@ -29,7 +32,10 @@ from earthx.processing.source import Source, common_grid, merge_images
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
-__all__ = ["OperatorTileReader", "TileInputs", "TileOptionRefused", "TileRefused"]
+__all__ = ["MAX_PREVIEW_SIDE", "OperatorTileReader", "TileInputs", "TileOptionRefused", "TileRefused"]
+
+#: The longest side, in pixels, of the read a measurement of an operator takes (the size of the statistics of one asset).
+MAX_PREVIEW_SIDE = 1024
 
 
 class TileRefused(RioTilerError):
@@ -69,6 +75,8 @@ class OperatorTileReader:
         self._tms = tms
         self._stack = ExitStack()
         self._sources: list[Source] = []
+        self._grid: Source | None = None
+        self._units: tuple[str | None, ...] = ()
 
     def __enter__(self) -> OperatorTileReader:
         try:
@@ -79,6 +87,7 @@ class OperatorTileReader:
                 for source in self._sources
                 for name, unit in zip(source.names, source.units, strict=True)
             )
+            self._grid = finest
             meta = RasterMeta(finest.crs.to_string(), finest.transform, finest.width, finest.height, bands, resampled)
             # The names and the syntax are judged before the first pixel, as in a job: each step
             # on the bands the one before leaves. In a chain the refusal says which step it is, counted from 0 like the order's.
@@ -90,6 +99,7 @@ class OperatorTileReader:
                     if len(steps) == 1:
                         raise
                     raise RecipeInvalid(f"step {index}: {error}") from error
+            self._units = tuple(band.unit for band in meta.bands)
         except BaseException as error:
             self._stack.close()
             raise _as_refusal(error) from error
@@ -112,6 +122,16 @@ class OperatorTileReader:
 
     def get_geographic_bounds(self, crs: Any) -> tuple[float, float, float, float]:
         return self._first.reader.get_geographic_bounds(crs)
+
+    @property
+    def units(self) -> tuple[str | None, ...]:
+        """The unit of each band the steps leave, in order; ``None`` where it is not known."""
+        return self._units
+
+    @property
+    def unit(self) -> str | None:
+        """The one unit all bands share, or ``None`` where it is unknown or the bands differ."""
+        return self._units[0] if self._units and len(set(self._units)) == 1 else None
 
     def info(self) -> SimpleNamespace:
         return SimpleNamespace(band_descriptions=None, dtype="float32", minmax=None)
@@ -140,3 +160,31 @@ class OperatorTileReader:
             if value is not None:
                 options[name] = value
         return merge_images([source.read_tile(x, y, z, **options) for source in self._sources])
+
+    def preview(
+        self,
+        *,
+        max_size: int | None = None,
+        resampling_method: str | None = None,
+        **refused: Any,
+    ) -> ImageData:
+        """The whole extent in physical values, at most ``max_size`` pixels on its long side (default and limit 1024).
+
+        Every source is read over the same bounds onto the same size, so the bands of two assets of
+        different resolution stay one grid. The steps of the chain are not applied: that is the caller's.
+        """
+        if refused:
+            raise TileOptionRefused(
+                f"{', '.join(sorted(refused))} cannot be used with op: the measure is computed in physical values"
+            )
+        if resampling_method not in (None, "nearest"):
+            raise TileOptionRefused("an operator measure is read with nearest resampling")
+        if max_size is not None and not 1 <= max_size <= MAX_PREVIEW_SIDE:
+            raise TileOptionRefused(f"max_size is at most {MAX_PREVIEW_SIDE}")
+        assert self._grid is not None  # set by __enter__
+        grid = self._grid
+        scale = min(1.0, (max_size or MAX_PREVIEW_SIDE) / max(grid.width, grid.height))
+        left, top = grid.transform @ (0, 0)
+        right, bottom = grid.transform @ (grid.width, grid.height)
+        width, height = max(1, round(grid.width * scale)), max(1, round(grid.height * scale))
+        return merge_images([source.read_preview((left, bottom, right, top), width, height) for source in self._sources])
