@@ -1,6 +1,6 @@
 # ADR 0001 — Zustand im Prototyp und seine Verortung in der Zielarchitektur
 
-- **Status:** **Angenommen** von Otto am 2026-09-19 (E8, `docs/plans/m1-fundament.md`
+- **Status:** **Angenommen** von Otto am 2026-09-19 (E8, `docs/plans/m1/m1-fundament.md`
   Abschnitt 1), mit den Festlegungen E2 bis E7 aus demselben Abschnitt.
 - **Datum:** 2026-09-18
 - **Aufgabe:** M0 Schritt 4 laut `ENTSCHEIDUNGEN_2026-09-18.md` §6.

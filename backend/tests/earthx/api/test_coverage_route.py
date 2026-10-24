@@ -325,7 +325,7 @@ class TestIgnoredFilters:
 
 
 class TestNoAoiReachesAnswerOrLog:
-    """plans/m2-05-coverage.md §3.5, §6.6: the source's body stays out of both."""
+    """plans/m2/m2-05-coverage.md §3.5, §6.6: the source's body stays out of both."""
 
     def test_no_coordinate_from_the_request_appears_in_the_response_or_the_log(
         self, caplog: pytest.LogCaptureFixture

@@ -1,0 +1,1026 @@
+# M4-13 — Frontend: Processing-Panel, Kostenschätzung, Vorschau, Job-Status: Plan
+
+**Aufgabe:** M4-13 aus `docs/plans/m4/m4-processing-kern.md` §4.
+**Stufe B** — **von Otto am 08.10.2026 freigegeben:** F1–F9 wie empfohlen
+(je Option 1), K1–K12 angenommen. Umsetzung in drei PRs (F7): M4-13a (Backend,
+§3.1, §3.2 und die Backend-Tests aus §3.8) in dieser Session, M4-13b (Panel,
+Formular, Schätzung, Start, Job-Status, Download) und M4-13c (Vorschau,
+„Preview“) je in einer neuen Session nach dem Merge des vorigen. Die
+Statusanzeige aus M4-13b nutzt später M4-11b. Siehe §10.
+**Ort im Repo:** `docs/plans/m4/m4-13-processing-panel.md`
+**Grundlagen:** `adr/0014` §5.3, §5.5, §5.6, §6.1–§6.3 (Auflage F9), §9,
+§15c, §15d; `adr/0013` §5.4, §5.5; `plans/m4/m4-processing-kern.md` §1.1 (Q8,
+Q9, Q10), §1.2, M4-13; `plans/m4/m4-08b-job-api.md` §3, §5 („Kostenschätzung als
+eigene Route vor dem Auftrag: M4-13“); `plans/m4/m4-09-band-math.md` §3.4, §4, §6
+(„Das Panel baut die URL kanonisch“), §8 (F2: „resampled“ für M4-13
+abrufbar); `projektuebersicht.md` §2 (Prinzipien 7, 9, 10); `KLAERUNGEN.md`
+B10, B11. Code auf `main` nach PR #132: `api/processing_route.py`,
+`api/processing_docs.py`, `api/intake.py`, `api/tiler.py`,
+`processing/plan.py`, `catalog/collection.py`; Frontend `store.ts`, `api.ts`,
+`mapLayers.ts`, `render.ts`, `components/`.
+
+---
+
+## 1. Ergebnis in drei Sätzen
+
+Ein Panel baut aus dem Schema von `GET /processing/processes/recipe?dataset=…`
+für die aktuelle Auswahl (Datensatz, eine Szene, AOI) eine Schrittfolge aus den
+Operatoren, die dieser Datensatz erlaubt, zeigt vor dem Start eine
+Kostenschätzung aus einer neuen Route und startet den Job über die
+vorhandene Job-API. Solange die Schritte einen Anfang mit T1-Operatoren haben,
+zeigt die Karte eine Vorschau über die Kachel-Route mit `op`/`op_version`/`params`
+und kennzeichnet sie als „Preview“, sobald die Zoomstufe nicht die native Ebene
+liest (Auflage F9). Der Status eines Jobs kommt per SSE, mit Rückfall auf
+Abfragen; ist er fertig, bietet das Panel `result.tif`, `mask.tif` und
+`recipe.json` zum Download und zeigt, ob das Ergebnis resampelt wurde.
+
+---
+
+## 2. Stand vor dieser Aufgabe (gelesen, 08.10.2026, `main` nach PR #132)
+
+**Backend, vorhanden:**
+- `GET /processing/processes/recipe?dataset=<id>` (`processing_docs.py`
+  `process_description`) liefert den Auftrag als JSON Schema 2020-12: `steps`
+  als `oneOf` mit `discriminator: op` über die Definitionen
+  `step_<op>_v<version>`, nur Operatoren mit T2, die `applicable` für diesen
+  Datensatz sind; `inputs[0].dataset` als `const`; `output` als
+  `RasterOutput` (`kind`, `format`, `dtype`). Die Parameter sind heute flach:
+  `band_math` v1 hat `expression` (Text, 1–256 Zeichen), `reproject` v2 hat
+  `crs` (Text mit `pattern`), `resolution` (Zahl, `exclusiveMinimum: 0`),
+  `resampling` (`enum`), `align` (bool mit `default`). Das ganze Dokument für
+  Sentinel-2 hat 9,2 kB [M, Sitzung].
+- **Lücke 1:** Das Schema sagt nicht, welche Schritte T1 können (`tiers`) und
+  welche `kind` sie haben. Der Planer (`adr/0014` §6.1) braucht beides, um die
+  Vorschau abzuschneiden.
+- `POST /processing/processes/recipe/execution` mit `{"inputs": {"recipe": <Auftrag>}}`
+  → `201`, `Location`, `statusInfo` mit `jobID`, `recipeID`, `expires`,
+  `skippedItems`. `GET /jobs/{jobID}`, `DELETE /jobs/{jobID}`,
+  `GET /jobs/{jobID}/events` (SSE, Ereignis `status` mit dem `statusInfo`,
+  schließt nach dem Endstatus), `GET /jobs/{jobID}/results` (Links mit
+  `properties` des Ergebnisses, darin `earthx:resampled`) und
+  `GET /jobs/{jobID}/results/{name}` (`303` auf eine signierte URL, `410` nach
+  Ablauf). Fehler sind `application/problem+json` mit `title` und `detail`.
+- **Ein Item je Job:** `processing.check_scope` (`core.py` Z. 171) nimmt nur
+  ein Item einer Gruppe einer Eingabe; mehr ist `422` („mosaics and several
+  groups come with M4-11/M4-12“), auch über `execution`
+  (`processing_route.py` Z. 498). Ein Überflug, dessen AOI zwei Kacheln
+  berührt, geht also heute nicht als Job (F8).
+- **Lücke 2:** Es gibt keine Route für die Schätzung vor dem Auftrag.
+  `processing.plan.estimate(recipe, operators)` rechnet ohne Lesen aus AOI,
+  `gsd` und Datentyp; `jobs/submit.py` nutzt es nur für den Laufzeitdeckel.
+  Es braucht ein Rezept, also die Stufen 1–6 von `accept_order` (Items holen,
+  Assets auflösen, Bänder lesen). Die Fassungen (Stufe 7, bei COGs ohne
+  Prüfsumme ein `HEAD` je Asset) braucht die Schätzung nicht; im Code laufen
+  sie aber **vor** dem Rezeptbau, `check_recipe_hosts` und `check_bands`
+  (`intake.py` Z. 200, 221, 228, 230).
+- Kachel-Route mit Operator (M4-09): `…/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=red&asset=nir&op=band_math&op_version=1&params=<JSON>`
+  plus die üblichen `rescale`, `colormap_name`. `statistics`, `info`, `point`
+  weisen `op` mit `400` ab. `tilejson.json` nennt die freigegebene Spanne aus
+  `earthx:viewer`, nicht die native Ebene.
+- **Lücke 3:** Für Zarr-Datensätze ist der Asset-Schlüssel einer Variablen
+  `<asset><Trenner><variable>` (`SR_10m:b04`); den Trenner
+  (`zarr.variable_separator`) gibt keine Schnittstelle heraus (F9). Das
+  Frontend kennt ihn heute nur implizit aus `default_render.assets`.
+- **Bandangaben im Item:** Der EOPF-Adapter legt die Bandnamen nach
+  `eo:bands`, `raster:bands` trägt dann nur `nodata`, `data_type` und
+  `spatial_resolution` (`adapters/eopf_stac.py` Z. 257–269). Die Zahl der
+  Bänder eines COG steht in `raster:bands` bzw. `bands` (`intake.py`
+  Z. 404–418). Der Frontend-Typ `StacAsset` kennt keines dieser Felder
+  (`types.ts` Z. 8–22), nur `gsd`. `gsd` liest das Backend in der Reihenfolge
+  Asset-`gsd`, `raster:bands[0].spatial_resolution`, `properties.gsd`
+  (`access/download.py` Z. 409–424).
+- Alle drei Registry-Einträge haben die Lizenzstufe *processing* und erlauben
+  beide Operatoren (`catalog/datasets.py` Z. 109, 290, 488).
+
+**Frontend, vorhanden** (React 19, zustand, MapLibre, vitest mit jsdom, keine
+Testing Library; Komponententests mit `createRoot` und `act`):
+- Auswahl: `datasetId`, `groups`, `activeGroupIndex`, `selectedIds`, `aoi`
+  (`store.ts` Z. 539–680). `aoi` ist immer eine Fläche: Für einen Punkt hält
+  der Store das gepufferte Quadrat, `aoiPoint` nennt die Herkunft
+  (Z. 542–547). `downloadRequestForSelection(dataset, groups, aoi)`
+  (`download.ts` Z. 210) baut `groups` und `aoi` für den Zuschnitt.
+- Karte: `placeRaster` (`mapLayers.ts` Z. 176) legt Raster-Quellen an,
+  `syncFocusRaster` (Z. 549) die Fokusansicht je Item; `mapZoom` und
+  `viewportBbox` stehen im Store (`setMapViewport`, nur bei `moveend`).
+- Darstellung: `ViewerControls` mit Stretch, Colormap und „Apply“ (F18);
+  „Auto stretch“ ruft `/statistics` — mit `op` wäre das ein `400`.
+- Lizenzstufe je Datensatz in `earthx:license_flags.tier` (`types.ts` Z. 137).
+- `api.ts`: `jsonOrThrow` (nicht exportiert), `HttpError` mit `status`,
+  `detail`, `retryAfter`, ohne `title`; kein `AbortController`. Kein Code zu `/processing`, `EventSource` oder `op=`.
+- `vite.config.ts`: Proxy für `/stac`, `/coverage`, `/aoi`, `/geocode` (→ `api`)
+  und `/collections` (→ `tiler`); `/processing` fehlt. Das Frontend läuft
+  lokal über `npm run dev`; `docker-compose.yml` hat keinen Frontend-Dienst.
+
+---
+
+## 3. Umsetzung
+
+### 3.1 Backend: Schätzroute (F2)
+
+`POST /processing/processes/recipe/estimate`, Hülle und Grenzen wie
+`execution` (`_read_body`, `_unwrap`: 1 MiB, nur JSON, keine Eingabe per
+Referenz). Ablauf:
+- `intake.py`: Die Stufen 1–6 (bis einschließlich `targets`) werden eine
+  eigene Funktion `_targets`, die `_accept` unverändert aufruft; Reihenfolge,
+  Abweisungen und Logs von `accept_order` bleiben gleich (bestehende Tests
+  grün). Neu daneben `estimate_order`: `_targets`, Rezept mit
+  `version: None` für jede Eingabe, ohne `recipe_id`, dann
+  `check_recipe_hosts` und `check_bands` wie in `_accept`.
+- Die Route ruft `estimate_order`, `check_scope` und `plan.estimate` und
+  antwortet `200` mit `Cache-Control: no-store` (die Zahlen hängen an der AOI):
+  `{"estimate": {"size", "duration", "outputPixels", "inputPixels",
+  "inputBytes", "assets", "units"}, "skippedItems": [...]}`.
+  `size` (Bytes der Ausgabe) und `duration` (ISO 8601, nur Sekunden,
+  `PT12.3S`) heißen wie bei openEO (F2), die übrigen sind eigen.
+- **Abweisungen:** dieselben Stufen und Codes wie `execution` bis Stufe 6
+  und für `check_scope`. Was erst Stufe 7 findet (ein Asset, das beim `HEAD`
+  fehlt, `404`/`410` → `502`, Stufe `version`), erkennt die
+  Schätzung **nicht**; dann scheitert der Start trotz Schätzung, und das Panel
+  zeigt den Fehler des Starts. Kein `HEAD`, keine Zeile in der Queue, kein
+  `recipe_id`.
+- Log: eine Zeile „order estimated“ mit Datensatz, Zahl der Items und Assets
+  und Operatoren; nie AOI, Adresse, Hash (`adr/0014` §4.7). Die Zahlen der
+  Schätzung stehen nur in der Antwort.
+- Die API-Beschreibung nennt die Route als Erweiterung außerhalb der OGC-Form
+  („no conformance claimed“ gilt ohnehin, `adr/0014` §15d).
+
+### 3.2 Backend: Angaben für das Panel (K1, F9, K3)
+
+- **K1:** Jede Definition `step_<op>_v<n>` trägt zusätzlich
+  `"x-earthx-tiers": ["T1", "T2"]` und `"x-earthx-kind": "pixel" | "grid"`.
+  JSON Schema 2020-12 lässt unbekannte Schlüsselwörter als Anmerkung zu; die
+  Prüfung in `parse_request` sieht sie nicht.
+- **Trenner der Zarr-Variablen nach F9 (1):** Mit `?dataset=` trägt
+  `InputRequest.assets` im Schema `"x-earthx-variable-separator": ":"`, wenn
+  der Eintrag ein `zarr`-Feld hat; sonst fehlt der Schlüssel (B10: nichts
+  geraten). Die Angabe gehört zum Auftrag, also in dessen Schema, nicht in
+  die Collection.
+- **K3:** Ein Backend-Test vergleicht `process_description` für jeden
+  Registry-Eintrag mit einer Datei `frontend/src/fixtures/processes/<id>.json`;
+  die Frontend-Tests bauen das Formular aus genau diesen Dateien. Ändert sich
+  ein Parametermodell, fällt der Backend-Test, bis die Datei mit einem Skript
+  (`scripts/write-process-fixtures.py`) neu geschrieben ist. So kann das Panel
+  nicht still hinter dem Schema zurückbleiben.
+
+### 3.3 Frontend: API-Client `processing.ts`
+
+- `fetchProcess(datasetId)`, `estimateOrder(order)`, `placeJob(order)`,
+  `fetchJob(jobId)`, `dismissJob(jobId)`, `fetchResults(jobId)`,
+  `resultUrl(jobId, name)`. Alle über `jsonOrThrow` (dafür exportiert);
+  `HttpError` bekommt `title` aus dem Problemdokument, `detail` liest
+  `errorDetail` schon, `Retry-After` geht in `HttpError.retryAfter`.
+- `AbortController` für Schätzung und Schema, damit ein Wechsel der Auswahl
+  eine laufende Anfrage verwirft.
+- Der Auftrag:
+  `{recipe_version: 1, inputs: [{name: "input", dataset, groups, assets}], aoi, steps, output: {kind: "raster", format: "cog", dtype}}`.
+- `vite.config.ts`: `/processing` → `apiTarget`.
+
+### 3.4 Frontend: Formular aus dem Schema (F1)
+
+Nach Empfehlung F1 (1) ein eigener, kleiner Formularbau
+`schemaForm.ts` + `components/StepForm.tsx`:
+- Unterstützt genau, was die Parameter heute brauchen: `string` (mit
+  `minLength`, `maxLength`, `pattern`), `number`/`integer` (mit `minimum`,
+  `maximum`, `exclusiveMinimum`, `exclusiveMaximum`), `boolean` (mit
+  `default`), `enum` von Texten, `const`, `$ref` auf `#/$defs/…`,
+  `title`/`description` als Beschriftung und Hilfetext, `required`.
+- **Wächter:** Ein Parameterschema mit einem Schlüsselwort außerhalb dieser
+  Liste (etwa `oneOf`, `array`, `object` mit Unterobjekten) gilt als „not
+  supported by this panel“: Der Operator steht im Menü, ist aber deaktiviert
+  und nennt den Grund. Der Test über die Fixtures aus K3 verlangt, dass jeder
+  Operator jedes Datensatzes unterstützt ist.
+- Prüfung im Browser nur als Hilfe (Pflichtfeld, Länge, Muster, Grenzen);
+  verbindlich prüft der Server (`422` mit Text, wird am Schritt angezeigt).
+  Kein `eval`, kein `new Function`; `pattern` wird mit `new RegExp(p, "u")`
+  geprüft, ein Muster, das so nicht kompiliert, wird nicht geprüft (der Server
+  prüft).
+- Felder ohne `default` bleiben leer, auch `resampling` („No default: the
+  choice changes the values“, B10).
+
+### 3.5 Frontend: Panel `ProcessingPanel.tsx` und Store-Teil (K4, K7–K12)
+
+- **Öffnen:** Knopf „Process“ in der `ViewBar` neben „Download“, für die
+  aktuelle Auswahl. Deaktiviert mit Grund, wenn die Lizenzstufe nicht
+  `processing` ist (B11), keine Fläche als AOI gezeichnet ist (ein Punkt reicht
+  nicht) oder nichts ausgewählt ist. Das Panel ist ein `Draggable` wie die
+  `ViewerControls`, mit den vorhandenen HUD-Klassen.
+- **AOI:** wie beim Zuschnitt, also auch das gepufferte Quadrat eines Punkts
+  (K11).
+- **Ein Item (F8 (1)):** Der Auftrag nennt genau ein Item. Von den Items der
+  aktiven Gruppe kommen die in Frage, deren Footprint die AOI schneidet. Ist
+  es eines, wird es genommen; sind es mehrere, wählt der Nutzer eines aus, und
+  das Panel sagt „The result covers only this scene; several scenes in one job
+  come with a later version.“
+- **Inhalt, von oben nach unten:**
+  1. Auswahl in Worten: Datensatz, Datum, gewählte Szene (nie die AOI als
+     Zahlen).
+  2. **Bands:** Liste der Bandnamen, die die Auswahl bietet (K7), als Chips;
+     ein Klick fügt den Namen in den Ausdruck ein. Die Assets des Auftrags sind
+     die Bänder, die der Ausdruck nennt bzw. die der Nutzer ausgewählt hat
+     (höchstens 16).
+  3. **Processing steps:** geordnete Liste; „Add step“ mit den Operatoren aus dem
+     Schema; je Schritt das Formular aus 3.4, „Remove“, „Up“/„Down“; höchstens
+     `maxItems` (16).
+  4. **Output:** `dtype` (K9).
+  5. **Review:** holt die Schätzung (K4) und zeigt „about N MP, N MB,
+     about N s, N units“ plus übersprungene Items; Text „An estimate, not a
+     promise.“
+  6. **Start job:** erst nach einer Schätzung für genau diesen Auftrag
+     aktiv; jede Änderung am Auftrag verwirft die Schätzung.
+  7. **Jobs:** je gestartetem Job eine Zeile mit Status, Fortschrittsbalken,
+     „Cancel“ (`DELETE`), Ablaufzeit; fertig: Links „Result (COG)“, „Mask“,
+     „Recipe“ und der Hinweis „Resampled to a common grid“, wenn
+     `earthx:resampled` `true` ist (Prinzip 2.9; das Feld steht immer im
+     Ergebnis, `core.py` Z. 290); gescheitert: `title` aus dem
+     Problemdokument von `/results`.
+- **Download (K6):** einfache Links auf
+  `/processing/jobs/{jobID}/results/{name}`; der Browser folgt dem `303`. Ab
+  `expires` minus 60 s (`MIN_REMAINING`) zeigt die Zeile „Expired“ statt der
+  Links, weil ein Link einen `410` nur als JSON-Seite zeigen könnte.
+- **Store:** ein Teil `processing` mit Schema je Datensatz, Entwurf der
+  Schritte, Schätzung, Jobs; Aktionen `openProcessing`, `addStep`,
+  `updateStep`, `moveStep`, `removeStep`, `reviewOrder`, `startJob`,
+  `cancelJob`. Der Entwurf wird verworfen, wenn sich Datensatz oder AOI ändert.
+
+### 3.6 Frontend: Job-Status (K5, F5)
+
+`jobTracker.ts`:
+- `EventSource` auf `/processing/jobs/{jobID}/events`, Ereignis `status`,
+  Daten als `statusInfo` geprüft; eine unbekannte Form oder eine fremde
+  `jobID` wird verworfen, nicht angezeigt. Beim Endstatus `close()`, sonst
+  verbände sich `EventSource` von selbst neu.
+- **Rückfall auf Abfragen:** Weist der Server die Verbindung ab (`404`, `503`
+  bei zu vielen Verfolgern; beides vor dem Stream,
+  `processing_route.py` Z. 673–684), gibt `EventSource` ohne Neuverbindung
+  auf (`readyState === CLOSED`). Dann wechselt der Tracker **sofort** auf
+  Abfragen. Bei einem Abbruch mitten im Stream verbindet `EventSource` selbst
+  neu (`CONNECTING`); nach drei solchen Fehlern in Folge wechselt der Tracker
+  ebenfalls. Ohne `EventSource` fragt er von Anfang an. Abfragen:
+  `GET /jobs/{jobID}` alle 2 s, mit `Retry-After`, wenn der Server eines
+  schickt. `404` heißt „gone“ (abgelaufen oder verworfen) und beendet das
+  Verfolgen.
+- Jobs werden nach F5 (1) in `sessionStorage` gehalten: nur `jobID` und
+  `expires`, kein Auftrag, keine AOI (Q8). Nach dem Neuladen nimmt der Tracker
+  sie wieder auf; abgelaufene fallen weg; ein Eintrag, der nicht die Form einer
+  `jobID` hat, wird verworfen. Ist `sessionStorage` gesperrt (wirft), läuft
+  das Panel ohne Wiederaufnahme weiter.
+
+### 3.7 Frontend: Vorschau auf der Karte (F3, F4)
+
+- **Planer** wie `adr/0014` §6.1: der längste Anfang der Schritte mit T1 in
+  `x-earthx-tiers` und `x-earthx-kind = "pixel"`. Ist er leer, gibt es keine
+  Vorschau des Ergebnisses (Hinweis „No preview: the first step runs only as a
+  job“); die Karte zeigt weiter die Eingabe in der Fokusansicht, wie
+  `adr/0014` §6.1 es beschreibt.
+- In M4 ist der Anfang höchstens ein Schritt (`band_math`); mehrere T1-Schritte
+  in einer Kachel nimmt die Kachel-Route heute nicht (ein `op` je URL). Hat der
+  Anfang mehr als einen Schritt, zeigt die Vorschau nur den ersten und sagt es.
+- **URL:** eine Raster-Quelle für das gewählte Item (F8), wie in der
+  Fokusansicht, mit
+  `asset` je Band, `op`, `op_version`, `params` als **kanonisches JSON**
+  (Schlüssel sortiert, keine Leerzeichen; `plans/m4/m4-09-band-math.md` §6), dazu
+  `rescale` und `colormap_name` aus F3. Zuschnitt auf die AOI wie die
+  Fokusansicht.
+- **„Preview“-Kennzeichnung nach F4 (1):** sichtbar als Badge an der Karte und
+  im Panel, solange die Bodenauflösung einer Kachel gröber ist als das feinste
+  `gsd` der gewählten Assets, gerechnet an der Breite des Ausschnitts, die dem
+  Äquator am nächsten liegt (dort ist die Kachel am gröbsten). Ohne `gsd`
+  steht das Badge immer.
+  - Bodenauflösung: `156543.03392 · cos(φ) / 2^z` m je Pixel (Web Mercator,
+    256 px).
+  - `z` ist die Stufe der **Kacheln**, nicht `mapZoom`: Die Quellen haben
+    `tileSize: 256` (`mapLayers.ts` Z. 189), MapLibre lädt dann Kacheln der
+    Stufe `round(mapZoom + 1)`, höchstens `max_zoom` aus `earthx:viewer`.
+  - `gsd` je Asset in derselben Reihenfolge wie `asset_gsd` im Backend:
+    Asset-`gsd`, `raster:bands[0].spatial_resolution`, `properties.gsd`.
+  - Wie die Bandnamen (K7) ist das eine Anzeigehilfe im Frontend, kein
+    Ergebnis; Prinzip 2.7 betrifft Ergebnisse, die nur das Panel liefern
+    könnte (F2).
+- „Auto stretch“ ist für die Vorschau deaktiviert (`/statistics` nimmt kein
+  `op`), mit Grund im Tooltip.
+
+### 3.8 Tests
+
+Fixtures nur synthetisch; das Frontend erreicht kein Backend, `fetch` und
+`EventSource` sind gestubbt.
+
+**Backend** (`tests/earthx/api/test_processing_estimate.py`, Ergänzungen):
+- Schätzung: gültiger Auftrag → `200` mit allen Feldern und `no-store`;
+  dieselben Abweisungen wie `execution` bis Stufe 6 (falsche Hülle,
+  Referenz-Eingabe, 413, 415, ein Auftrag mit `resolved` oder `recipe_id` →
+  `400`, Ausgabe `crop` → `422`, unbekannter Datensatz, Lizenz unter
+  *processing* → `403`, nicht anwendbarer Operator, Bandname, AOI außerhalb
+  → `422`) und `check_scope` (zwei Items → `422`); **kein `HEAD`** über das
+  Gateway (gezählt), **keine Zeile** in der Queue, kein `recipe_id` in der
+  Antwort; kein Log mit AOI-Koordinaten oder Adresse (`own_log_text`).
+- Grenze der Schätzung: Ein Asset, das erst beim `HEAD` fehlt, besteht die
+  Schätzung und scheitert beim Start (Test belegt beides).
+- `accept_order` nach dem Herauslösen von `_targets`: bestehende Tests
+  unverändert grün.
+- K1: jede Schritt-Definition trägt `x-earthx-tiers` und `x-earthx-kind`
+  passend zum Operator; `parse_request` weist einen Schritt mit diesen
+  Schlüsseln weiter ab (`additionalProperties`).
+- F9: `x-earthx-variable-separator` für den Zarr-Eintrag, fehlt bei den
+  COG-Einträgen und ohne `?dataset=`.
+- K3: Fixture-Dateien gleich `process_description`; Gegenprobe im PR: ein
+  geändertes Parametermodell lässt den Test fallen.
+
+**Frontend** (vitest):
+- `schemaForm`: jeder unterstützte Typ, Pflichtfelder, Grenzen,
+  `exclusiveMinimum`, `pattern`, `enum`, `default`; ein Schema mit `oneOf`
+  oder Unterobjekt → „not supported“; alle Fixtures aus K3 voll unterstützt.
+- Auftrag: Hülle, ein Item und AOI aus der Auswahl; gepuffertes Quadrat eines
+  Punkts wie beim Zuschnitt; mehrere Items, die die AOI schneiden → Auswahl
+  einer Szene mit Hinweis (F8); mehr als 16 Assets oder Schritte → im Panel
+  blockiert.
+- Wechsel der Auswahl während einer Schätzung → die Anfrage wird abgebrochen
+  (`AbortController`), ihre Antwort nicht angezeigt.
+- Kanonisches JSON und Kachel-URL: Schlüsselreihenfolge, `&`, `#`, `+` und
+  Nicht-ASCII im Ausdruck werden kodiert und landen nicht als eigener
+  Parameter in der URL.
+- Bandnamen (K7): COG mit einem Band je Asset, COG mit mehreren Bändern
+  (`<asset>_1` …), Zarr mit Namen aus `eo:bands` und Trenner aus F9, Zarr ohne
+  Trenner → keine Bandliste; Asset ohne Bandangaben → kein Chip.
+- Preview-Regel: Kachelstufe aus `mapZoom` und `max_zoom`; Grenzfälle an
+  Äquator und 60° N; `gsd` aus jeder der drei Quellen; ohne `gsd`; gemischte
+  `gsd`.
+- Tracker: Folge von `status`-Ereignissen bis `successful` → `close()`;
+  Ereignis mit kaputtem JSON oder fremder `jobID` → verworfen; Abweisung vor
+  dem Stream (`CLOSED`) → sofort Abfragen; drei Abbrüche (`CONNECTING`) →
+  Abfragen; `Retry-After`; `404` → „gone“; keine `EventSource` → sofort
+  Abfragen.
+- `sessionStorage`: Wiederaufnahme, abgelaufene und falsch geformte Einträge
+  verworfen; gesperrter Speicher → keine Wiederaufnahme, kein Fehler; kein
+  Auftrag und keine AOI im Speicher.
+- Download: Links bis `expires` − 60 s, danach „Expired“; `earthx:resampled`
+  `false` → kein Hinweis.
+- Panel (Komponente): Aufbau aus der Sentinel-2-Fixture; ein Operator, den
+  eine synthetische Prozessbeschreibung nicht enthält, fehlt im Menü; „Start
+  job“ erst nach „Review“; Änderung verwirft die Schätzung; `422`-Text am
+  Schritt; erfolgreiche Schätzung, dann `502` beim Start → Fehler des Starts
+  sichtbar; `503` mit Hinweis „try again“; Lizenzstufe *display*
+  (synthetischer Datensatz) → Knopf deaktiviert mit Grund.
+
+### 3.9 Doku und Log
+
+- `ENTSCHEIDUNGSLOG.md`: Plan-Schritt (diese Zeile), später Freigabe und
+  Umsetzung, je eine Zeile am Ende.
+- `plans/m4/m4-processing-kern.md` §3: Stand von M4-13.
+- Prüfanleitung (§9) im PR.
+
+---
+
+## 4. Abnahme
+
+| Punkt aus M4-13 | Beleg |
+|---|---|
+| Panel aus dem Schema, nur anwendbare Operatoren | Schema mit `?dataset=` (vorhanden, filtert nach `applicable`); Frontend-Test baut das Panel aus den Fixtures aus K3; mit einer synthetischen Prozessbeschreibung ohne `reproject` fehlt der Operator im Menü (alle drei echten Einträge erlauben beide) |
+| Kostenschätzung vor dem Start | Route aus §3.1 mit Tests; „Start job“ erst nach „Review“ (Komponententest) |
+| T1-Vorschau, „Preview“ auf Übersichtsstufen | Planer- und URL-Tests; Preview-Regel mit Grenzfällen; Prüfanleitung Schritt 4 |
+| Job-Status per SSE mit Rückfall | Tracker-Tests (Ereignisse, Fehler, Abfragen, `404`) |
+| Ergebnis-Download | Links aus `/results`; Prüfanleitung Schritt 6 |
+| Oberflächentexte nur Englisch | Durchsicht im PR |
+
+---
+
+## 5. Nicht in dieser Aufgabe
+
+- Automatische Skalierung und Einheiten, Methodentext, Permalinks,
+  „Parameter übernehmen“: M4-19.
+- Abbildung von `default_render.expression` auf `op` (F6).
+- Statistik, Info und Punktabfrage mit `op` im `tiler`.
+- Anzeige eines **Job-Ergebnisses** auf der Karte (`plans/m4/m4-08b-job-api.md`
+  §5: nicht in M4a).
+- Mehrere Eingaben je Auftrag, Mosaik als Job (M4-11, M4-12).
+- Job-Liste über Sitzungen hinweg (ohne Konten keine, Q9).
+- `.github/`, `.importlinter`, `processing`, `jobs`, `gateway`, `objectstore`.
+
+---
+
+## 6. Umfang und Commits
+
+Geschätzt [A]: Backend rund 150 Zeilen Code (Teilung von `accept_order` 40,
+Route 60, K1/F9 20, Fixture-Skript 30) und 250 Zeilen Tests; Frontend rund
+950 Zeilen Code (`processing.ts` 120, `schemaForm.ts` 160, `StepForm.tsx`
+120, `ProcessingPanel.tsx` 260, `jobTracker.ts` 130, Store 120, Vorschau und
+Bandnamen 100, CSS 40) und 800 Zeilen Tests. Zusammen weit über dem Richtwert
+von 400 Zeilen; Schnitt nach F7.
+
+Commits, je ein Thema (bei F7 (1) verteilt auf drei PRs):
+1. `api`: `prepare_order` aus `accept_order`, ohne Verhaltensänderung
+2. `api`: Route `…/estimate`
+3. `api`: `x-earthx-tiers`/`x-earthx-kind`, `x-earthx-variable-separator`
+4. Fixtures der Prozessbeschreibung und Gleichheitstest (K3)
+5. `frontend`: Client `processing.ts`, Proxy
+6. `frontend`: Formular aus dem Schema
+7. `frontend`: Panel, Store, Schätzung, Start
+8. `frontend`: Job-Status mit SSE und Rückfall, Download
+9. `frontend`: Vorschau und „Preview“
+10. Doku und Log
+
+Vor dem Fertigmelden: `main` holen; `ruff check backend`, `pytest`,
+`PYTHONPATH=backend lint-imports --config .importlinter`; im Frontend
+`npm run lint`, `npx tsc -b --pretty false`, `npm test`.
+
+---
+
+## 7. Risiken
+
+- **Schätzung kostet Abrufe:** Jede Schätzung holt die Items über die
+  Item-Quelle (das Panel schickt eines, die Route nimmt wie `execution` bis
+  25). Deshalb nur auf „Review“, nicht bei jeder Eingabe (K4). Ein Missbrauch
+  bleibt bis M6 (Quotas) offen wie bei `execution`.
+- **Schätzung ohne Stufe 7:** Sie sagt nicht zu, dass der Start gelingt
+  (§3.1); das Panel sagt „An estimate, not a promise.“
+- **Kachel-Cache:** Nur kanonisch gebaute `params` treffen denselben
+  Cache-Eintrag; ein anderer Client mit anderer Schreibweise verfehlt ihn, nie
+  mit falschem Bild (`plans/m4/m4-09-band-math.md` §6).
+- **Preview-Regel ist vorsichtig:** Sie kennzeichnet auch Zoomstufen, die
+  schon die native Ebene lesen (zwischen `gsd` und der ersten Übersicht, bei
+  Sentinel-2 10 m etwa z13 auf 48° N), als „Preview“. Das ist ehrlich im Sinn
+  von Prinzip 2.9; genauer ginge es nur mit Wissen über die Übersichten der
+  Datei (F4 (2)).
+- **Signierte URL im Browser:** Der Download folgt dem `303` auf den
+  öffentlichen Endpunkt des Objektspeichers; lokal muss der Endpunkt aus der
+  Konfiguration vom Browser erreichbar sein (Prüfanleitung).
+- **`EventSource` und Proxy:** Ein Proxy, der Antworten puffert, hält die
+  Ereignisse zurück; der Vite-Proxy puffert `text/event-stream` nicht [A].
+  Der Rückfall auf Abfragen fängt es ab, wenn nicht.
+
+---
+
+## 8. Fragen an Otto
+
+**F1 — Formular aus dem Schema: eigener Bau oder Bibliothek (§3.4)**
+
+Befunde (Abruf 08.10.2026; gzip-Größen nicht ermittelbar, weil
+Bundlephobia & Co. aus der Sitzung gesperrt sind — entpackte npm-Größen):
+
+| | react-jsonschema-form (`@rjsf/core` 6.11.0) | JSON Forms (`@jsonforms/*` 3.8.0) | eigener Bau |
+|---|---|---|---|
+| letztes Release | 29.09.2026 [P] | 16.06.2026, rund 3 Releases in 12 Monaten [P] | — |
+| Lizenz | Apache-2.0 [P] | MIT [P] | AGPL wie das Repo |
+| React 19 | Peer `react >=18` [P] | ausdrücklich seit 3.5.0 [P] | ja |
+| JSON Schema 2020-12 | nur mit `ajv/dist/2020`; Doku: „draft-2020-12 has breaking changes and hasn't been fully tested“ [P] | Maintainer: „advanced 2020-12 features“ nicht unterstützt (Issue #2567) [P] | genau die Schlüsselwörter aus §3.4 |
+| `oneOf` + `discriminator` | belegt (`getDiscriminatorFieldFromSchema`) [P] | nichts gefunden | trivial: `op` ist je Variante ein `const` |
+| entpackt | core 2,5 MB + utils 2,8 MB + Validator 0,3 MB [P] | core 1,2 + react 0,3 + vanilla 0,6 MB [P] | — |
+| transitive Abhängigkeiten | rund 12, darunter ajv [A] | rund 9, darunter ajv und lodash [A] | 0 |
+| ohne `new Function` (CSP ohne `unsafe-eval`) | nur mit vorkompilierten Validatoren (Schema zur Build-Zeit) oder `validator-cfworker`, der kein `discriminator` kann [P] | nein; Issue #1498 seit 2019 offen, Entkopplung von ajv erst für 4.0 geplant [P] | ja |
+
+Quellen: npm-Registry (`@rjsf/core`, `@rjsf/utils`, `@jsonforms/core`,
+`@jsonforms/react`, `@jsonforms/vanilla-renderers`, `ajv`); rjsf
+`packages/docs/docs/usage/validation.md`,
+`…/api-reference/utility-functions.md`, `…/validator-cfworker.md`, Release
+6.8.0; ajv `docs/security.md` („unsafe-eval“); JSON Forms Issues #1498,
+#2043, #2567, PR #2644. uniforms 4.0.0 hat Peer `react ^16.8 || ^17 || ^18`
+und fällt aus [P].
+
+1. Eigener kleiner Formularbau für flache Parameter (§3.4), mit Wächter für
+   alles andere; keine neue Abhängigkeit, kein `eval`, volles HUD-Styling.
+   Umdenken, sobald ein Operator verschachtelte Objekte, Listen oder
+   bedingte Felder braucht; dann wäre rjsf der erste Kandidat
+   **(Empfehlung)**
+2. `@rjsf/core` mit `validator-ajv8` und `ajv/dist/2020`; eigene Widgets für
+   das HUD; braucht `unsafe-eval` oder vorkompilierte Validatoren und eine
+   Lock-Datei-Änderung im Frontend
+3. JSON Forms mit Vanilla-Renderern; ajv mit `new Function` lässt sich nicht
+   abschalten, `discriminator` unbelegt
+
+**F2 — Kostenschätzung vor dem Auftrag (§3.1)**
+
+Befunde (Abruf 08.10.2026):
+- openEO API 1.2.0: `GET /jobs/{job_id}/estimate` auf einem schon angelegten
+  Job; Antwort `costs`, `duration` (ISO 8601), `size` (Bytes),
+  `downloads_included`, `expires`; „The estimate SHOULD be the upper limit of
+  the costs“. Angelegt wird mit `POST /jobs` (Status `created`), gestartet mit
+  `POST /jobs/{job_id}/results` [P] (`openeo-api`, Tag 1.2.0,
+  `openapi.yaml`).
+- OGC API – Processes Part 1 Core 1.0 kennt keine Schätzung [S]. Part 4 „Job
+  Management“ (Entwurf 24-051) legt Jobs mit `POST /jobs` im Status
+  `created` an und startet sie mit `POST /jobs/{jobID}/results`, ohne
+  Schätzung [P] (`ogcapi-processes`, `extensions/job_management`,
+  `clause_6_job_management.adoc`, `statusCode.yaml`). Die Erweiterung
+  „quotation“ ist dort nur ein Platzhalter ohne Inhalt [P].
+- Prinzip 2.7 (API-first): Was das Panel zeigt, muss auch die API liefern.
+
+1. Eigene Route `POST /processing/processes/recipe/estimate` mit derselben
+   Hülle wie `execution`; Stufen 1–6 der Annahme, kein `HEAD`, keine Zeile in
+   der Queue. Wo die Bedeutung gleich ist, heißen die Felder wie bei openEO
+   (`size` in Bytes, `duration` als ISO 8601), dazu die eigenen
+   (`outputPixels`, `units`, …). Ein späterer Wechsel zu Option 3 behält
+   damit die Antwort; er braucht aber den neuen Zustand `created` in der
+   Queue **(Empfehlung)**
+2. Schätzung im Frontend aus AOI, `gsd`, Datentyp und Faktoren, die das
+   Schema mitliefert. Verdoppelt `plan.estimate` und verstößt gegen
+   Prinzip 2.7
+3. Ablauf nach openEO bzw. OGC Part 4: Job anlegen (`created`), schätzen,
+   starten. Braucht einen neuen Zustand in der Queue (`jobs`, Migration) und
+   ändert die Job-API aus M4-08b; nicht in M4
+
+**F3 — Darstellung der Vorschau (§3.7)**
+1. Wertebereich und Colormap im Panel von Hand, mit „Apply“ wie in den
+   `ViewerControls`; Startwerte −1 bis 1 und `rdylgn`, sichtbar und
+   änderbar; die automatische Skalierung kommt mit M4-19 **(Empfehlung)**
+2. `/statistics` im `tiler` nimmt `op` (Backend-Änderung im Kachel-Pfad) und
+   „Auto stretch“ misst den Bereich wie heute (F18)
+3. Wie 1, aber ohne Startwerte: Die Vorschau erscheint erst, wenn ein Bereich
+   eingetragen ist
+
+**F4 — Wann „Preview“ steht (§3.7, Auflage F9)**
+1. Vorsichtige Regel im Frontend aus `gsd` und Zoomstufe: „Preview“, solange
+   eine Kachel gröber ist als das feinste `gsd`; ohne `gsd` immer
+   **(Empfehlung)**
+2. Der `tiler` meldet je Datensatz bzw. Asset die Zoomstufe, ab der die native
+   Ebene gelesen wird (etwa in `tilejson.json`); genauer, aber eine Änderung
+   im Kachel-Pfad und abhängig von den Übersichten jeder Datei
+3. Die Vorschau heißt immer „Preview“
+
+**F5 — Jobs nach dem Neuladen (§3.6)**
+1. `sessionStorage`: nur `jobID` und Ablaufzeit, je Tab, bis zum Ablauf
+   **(Empfehlung)**
+2. Nur im Speicher; nach dem Neuladen ist der Job aus dem Panel verschwunden
+3. `localStorage`: über Tabs und Neustarts des Browsers hinweg; die `jobID`
+   ist der Schlüssel zum Ergebnis (Q9) und läge dann länger im Browser
+
+**F6 — `default_render.expression` auf `op` abbilden
+(`plans/m4/m4-09-band-math.md` §3.4)**
+1. Nicht in M4-13: Kein Eintrag braucht es, die Registry weist
+   `expression` weiter ab; eine offene Zeile im Log **(Empfehlung)**
+2. In M4-13: `DefaultRender` bekommt `op`, `op_version`, `params` (neue
+   Registry-Felder ohne Vorgabe, B10) und die Standardansicht nutzt sie
+
+**F7 — Schnitt (§6)**
+1. Drei PRs: **M4-13a** Backend (Schätzroute, K1, F9, K3) in dieser Session
+   auf diesem Branch; **M4-13b** Panel, Schätzung, Start, Job-Status,
+   Download; **M4-13c** Vorschau und „Preview“; b und c je eine eigene
+   Session nach diesem Plan, c nach b **(Empfehlung)**
+2. Ein PR über dem Richtwert (rund 1100 Zeilen Code, 1050 Tests)
+3. Zwei PRs: Backend mit Panel ohne Vorschau, dann Vorschau
+
+**F8 — Ein Item je Job (§2, §3.5; `core.py` Z. 171)**
+
+Der Kern rechnet heute genau ein Item; ein Überflug, dessen AOI zwei Kacheln
+berührt, ist als Job ein `422`. Mosaik ganzer Szenen kommt mit M4-12.
+1. Das Panel nimmt das eine Item der aktiven Gruppe, das die AOI schneidet;
+   sind es mehrere, wählt der Nutzer eines, und das Panel sagt, dass das
+   Ergebnis nur diese Szene abdeckt **(Empfehlung)**
+2. Das Panel sperrt „Start job“, solange mehr als ein Item die AOI schneidet,
+   mit dem Hinweis, die Fläche zu verkleinern
+3. M4-13b wartet auf M4-12; dann schickt das Panel die ganze Gruppe
+
+**F9 — Woher das Panel den Trenner der Zarr-Variablen kennt (§3.2)**
+
+Für Zarr ist der Asset-Schlüssel einer Variablen `<asset><Trenner><variable>`;
+der Trenner steht nur in der Registry.
+1. Im Schema des Auftrags mit `?dataset=`:
+   `InputRequest.assets` trägt `x-earthx-variable-separator`. Die Angabe
+   gehört zum Auftrag; keine neue Collection-Eigenschaft **(Empfehlung)**
+2. Neues Feld `earthx:zarr.variable_separator` in der Collection; das ist
+   eine Erweiterung der `earthx:`-Felder aus `architekturplan.md` 5.1, mit
+   Nachtrag dort und Log-Zeile
+3. Das Frontend liest ihn aus `default_render.assets`; bricht, sobald eine
+   Standardansicht keine Variable nennt
+
+**Kleinentscheidungen K1–K12** (gelten mit der Freigabe, wenn Otto nichts
+sagt):
+- **K1:** `x-earthx-tiers` und `x-earthx-kind` je Schritt-Definition im
+  Schema (§3.2).
+- **K2:** entfällt (jetzt F9).
+- **K3:** Fixtures der Prozessbeschreibung im Frontend, Gleichheitstest im
+  Backend, Skript zum Neuschreiben (§3.2).
+- **K4:** Schätzung nur auf „Review“, nicht bei jeder Eingabe; „Start job“
+  erst nach einer Schätzung für genau diesen Auftrag (§3.5).
+- **K5:** SSE mit `close()` beim Endstatus; Rückfall auf Abfragen alle 2 s,
+  sofort bei einer Abweisung vor dem Stream (`readyState === CLOSED`), nach
+  drei Abbrüchen in Folge oder ohne `EventSource`; `Retry-After` gilt
+  (§3.6).
+- **K6:** Download als Links auf `/processing/jobs/{jobID}/results/{name}`;
+  der Browser folgt dem `303`. Ab `expires` − 60 s „Expired“ statt Links.
+- **K7:** Bandnamen im Frontend nach derselben Regel wie
+  `processing.source.expected_band_names`: COG mit einem Band → Asset-Schlüssel,
+  mit mehreren → `<asset>_1`, `<asset>_2` …; die Zahl der Bänder aus
+  `raster:bands` bzw. `bands`. Zarr → Namen aus `eo:bands[].name` (so legt
+  der EOPF-Adapter sie ab), je Band ein Asset `<asset><Trenner><variable>`.
+  Chips nur für Assets, die Bänder beschreiben; das ist eine Anzeigehilfe,
+  verbindlich prüft der Server. `StacAsset` bekommt dafür die drei Felder.
+- **K8:** Proxy `/processing` → `api` in `vite.config.ts`.
+- **K9:** `dtype` startet mit `float32`, wenn ein `band_math`-Schritt dabei
+  ist, sonst mit dem Datentyp des ersten Bandes; änderbar.
+- **K10:** Eingabename im Auftrag fest `input`.
+- **K11:** AOI wie beim Zuschnitt, also auch das gepufferte Quadrat eines
+  Punkts.
+- **K12:** Der Knopf „Process“ sitzt in der `ViewBar`; das Panel ist ein
+  `Draggable`.
+
+---
+
+## 9. Prüfanleitung für Otto (nach dem Merge, PowerShell)
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. Datensatz `sentinel-2-c1-l2a`, eine kleine Fläche zeichnen, die ganz in
+   einer Szene liegt, und einen Überflug mit wenig Wolken auswählen.
+2. „Process“ → „Add step“ → „Band math“; Bänder `nir` und `red` anklicken,
+   Ausdruck `(nir - red) / (nir + red)`.
+3. Die Karte zeigt die Vorschau (−1 bis 1, `rdylgn`) mit dem Badge
+   „Preview“.
+4. Hineinzoomen, bis das Badge verschwindet (bei 10 m auf 48° N ab
+   Kachelstufe 14, also Kartenzoom etwa 12,5); die Vorschau liest dort die
+   native Ebene.
+5. „Review“ zeigt Größe, Dauer und Einheiten; „Start job“; die Zeile zeigt
+   `accepted`, `running` mit Fortschritt, dann `successful`.
+6. „Result (COG)“ lädt eine `.tif`, „Recipe“ eine `_recipe.json`; die Datei
+   öffnet sich in QGIS mit Werten zwischen −1 und 1.
+7. Gegenprobe ohne Vorschau: Datensatz `cop-dem-glo-30`, ein Schritt
+   „Reproject“ (z. B. `EPSG:3035`, 30, `bilinear`): Die Karte zeigt keine
+   Vorschau, das Panel sagt „No preview: the first step runs only as a job“;
+   der Job läuft trotzdem.
+8. Gegenprobe mehrere Szenen: eine Fläche über einer Kachelgrenze zeichnen;
+   das Panel lässt eine Szene wählen und sagt, dass das Ergebnis nur diese
+   abdeckt (F8 (1)).
+
+Die Gegenprobe zur Lizenzstufe gibt es nur als Frontend-Test: Alle drei
+Einträge haben die Stufe *processing*.
+
+---
+
+## 10. Freigabe (Otto, 08.10.2026) und Umsetzung
+
+**Freigabe:** F1–F9 je Option 1 (Empfehlung), K1–K12 angenommen. Oberflächentexte
+nur Englisch.
+
+**Schnitt (F7):** Die Teilaufgaben stehen als M4-13a bis M4-13c in
+`plans/m4/m4-processing-kern.md` §3. M4-11b hängt an M4-13b.
+
+## 11. M4-13a — Umsetzung (08.10.2026)
+
+**Gebaut** (PR #134, Branch `claude/m4-13-verarbeitungsplan-gq3t3p`):
+- `api/intake.py`: `_accept` in `_prepare` (Stufen 1–6) und `_recipe_of` geteilt,
+  Reihenfolge der Prüfungen und Logs von `accept_order` unverändert. Neu
+  `estimate_order` und `EstimatedOrder`: Rezept ohne Fassungen und ohne
+  `recipe_id`, ohne Gateway.
+- `api/processing_route.py`: `POST /processing/processes/recipe/estimate`
+  (`Estimate`, `EstimateDocument`), `no-store`, dieselbe Hülle und dieselben
+  Abweisungen wie `execution` bis Stufe 6 und `check_scope`; ein
+  `RecipeInvalid` aus `plan.estimate` ist ein `422` der Stufe `applicable`.
+  Log „order estimated“ (Datensatz, Zahl der Items und Assets, Operatoren).
+- `api/processing_docs.py`: `x-earthx-tiers` und `x-earthx-kind` je
+  Schritt-Definition (K1); `x-earthx-variable-separator` an
+  `InputRequest.assets` für einen Zarr-Datensatz (F9).
+- `scripts/write-process-fixtures.py` (mit `--check`) und
+  `frontend/src/fixtures/processes/<datensatz>.json` (K3), dazu der
+  Gleichheitstest `tests/earthx/api/test_process_fixtures.py`.
+
+**Abweichungen vom Plan:**
+1. **`_targets` heißt `_prepare`** und liefert ein kleines Objekt mit Anfrage,
+   Eintrag, Datensatz, Gruppen, übersprungenen Items und Zielen. Statt `_accept`
+   unverändert zu lassen, ruft `_accept` jetzt `_prepare` und `_recipe_of`; das
+   Ergebnis ist dasselbe, und es gibt nur eine Stelle für die sechs Stufen.
+2. **Ein `HEAD`, der ein fehlendes Asset findet, ist ein `502`** der Stufe
+   `version` (nicht `422`, wie §3.1 zuerst schrieb); der Plan ist berichtigt.
+3. **Zusätzlicher Fund, behoben in einem eigenen Commit:** `execution` mit
+   einem Band, das das Item nicht beschreibt (Asset ohne `raster:bands`,
+   Ausdruck nennt `red_2`), endete als `500`, weil `submit` die Laufzeit mit
+   `estimate` rechnet und dessen `RecipeInvalid` nicht gefangen wurde. Jetzt
+   `422`, Stufe `applicable`, nichts in der Queue (Test in
+   `test_processing_route.py`). Das ist eine Verhaltensänderung von M4-08b
+   (`500` → `422`); der Commit lässt sich einzeln zurücknehmen.
+
+**Tests** (alle synthetisch, offline): `test_processing_estimate.py` (32:
+Antwort, Abgleich mit `plan.estimate`, kein `HEAD`, keine Zeile in der Queue,
+alle Abweisungen, Grenze der Schätzung, Logs), `test_intake.py` (6 neu, davon
+die Gleichheit der Abweisungen von `accept_order` und `estimate_order` über
+alle Stufen), `test_processing_docs.py` (7 neu für K1 und F9, dazu der Pfad der Schätzung und
+der `503` ohne Queue), `test_process_fixtures.py`
+(8, mit Gegenprobe). Gegenprobe im PR: Eine geänderte Beschreibung in
+`reproject.py` lässt vier Tests fallen (drei Dateien und `--check`); nach dem
+Zurücksetzen sind alle grün.
+
+**Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell 5.1; die
+Befehle konnte die Sitzung nicht ausführen, weil `pwsh` fehlt — die Route ist
+mit synthetischen Quellen getestet, nicht gegen die echte Quelle):
+
+```powershell
+docker compose up -d --build
+docker compose ps                                     # api, worker: healthy
+$base = "http://localhost:8000"
+$search = '{"collections":["sentinel-2-c1-l2a"],"bbox":[10.50,49.50,10.51,49.51],"datetime":"2025-07-01/2025-07-31","limit":1}'
+$item = (Invoke-RestMethod -Method Post -Uri "$base/stac/search" -ContentType "application/json" -Body $search).features[0].id
+$aoi = '{"type":"Polygon","coordinates":[[[10.500,49.500],[10.510,49.500],[10.510,49.510],[10.500,49.510],[10.500,49.500]]]}'
+function New-Order($expression) { '{"inputs":{"recipe":{"recipe_version":1,"inputs":[{"name":"scene","dataset":"sentinel-2-c1-l2a","groups":[["' + $item + '"]],"assets":["red","nir"]}],"aoi":' + $aoi + ',"steps":[{"op":"band_math","op_version":1,"params":{"expression":"' + $expression + '"}}],"output":{"kind":"raster","format":"cog","dtype":"float32"}}}}' }
+$uri = "$base/processing/processes/recipe/estimate"
+# 1. die Schätzung: size, duration (PT...S), outputPixels, inputPixels, inputBytes, assets 2, units
+Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body (New-Order "(nir - red) / (nir + red)") | ConvertTo-Json -Depth 5
+# 2. ein Band, das es nicht gibt: 422 mit Text
+try { Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body (New-Order "nir_2 + 1") } catch { $_.ErrorDetails.Message }
+# 3. kein Job, kein Zugriff auf die Dateien, keine Fläche im Log
+docker compose logs api | Select-String "order estimated"
+```
+
+Erwartet: Schritt 1 gibt `assets` 2 und ein `duration` wie `PT3.4S`; Schritt 2
+einen Problemtext mit `nir_2` (Typ `urn:earthx:order-refused:applicable`);
+Schritt 3 Zeilen ohne Koordinaten. `.env` bleibt, wie sie ist.
+
+## 12. M4-13b — Umsetzung (10.10.2026)
+
+**Gebaut** (Branch `claude/m4-13b-processing-kern-fivakj`, nur `frontend/`):
+- `processing.ts`: Client für `/processing` (Beschreibung, Schätzung, Start,
+  Status, `DELETE`, Ergebnisse, Ergebnis-Links), `canonicalJson`,
+  `parseStatusInfo` (verwirft fremde `jobID`, unbekannte Zustände, fehlende
+  Felder), `isJobId` (Form von `token_urlsafe(16)`; nichts anderes kommt in
+  eine URL). `api.ts`: `jsonOrThrow` exportiert, `HttpError.title`.
+  `vite.config.ts`: `/processing` → `api` (K8).
+- `schemaForm.ts`, `components/StepForm.tsx`: Formular aus dem
+  Parameterschema nach §3.4 mit Wächter („not supported by this panel: …“).
+- `processingOrder.ts`: Operatoren, Grenzen, Datentypen und Trenner aus dem
+  Schema; Bandnamen (K7); Szenen, deren Footprint die AOI schneidet (F8);
+  Bau des Auftrags (K9, K10, K11); Zuordnung einer Abweisung zum Schritt
+  („step <n>“ im Text des Servers).
+- `jobTracker.ts`: SSE mit `close()` beim Endstatus, Rückfall auf Abfragen
+  nach K5, `Retry-After`, `404` → „gone“; `sessionStorage` nach F5 (nur
+  `jobID` und `expires`).
+- `processingStore.ts`, `components/ProcessingPanel.tsx`,
+  `components/JobList.tsx`: Panel nach §3.5; Knopf „Process“ in der `ViewBar`
+  (K12); Jobzeilen mit Status, Fortschritt, „Cancel“, Ablauf, Links
+  „Result (COG)“, „Mask“, „Recipe“ bis `expires` − 60 s, danach „Expired“;
+  Hinweis „Resampled to a common grid“. `JobRow` ist für M4-11b exportiert.
+
+**Abweichungen vom Plan** (Vorschlag, gilt bis Otto widerspricht):
+1. **Eigener Store** `processingStore.ts` statt eines Teils in `store.ts`
+   (dort schon rund 1800 Zeilen). Er liest die Auswahl aus `store.ts` und
+   schreibt nie hinein; `store.ts` exportiert dafür nur `selectionItemsFrom`
+   und den Typ `AppState`.
+2. **Asset ohne Bandangaben:** K7 sagt „kein Chip“. Dann wäre der Auftrag für
+   `cop-dem-glo-30` nicht bedienbar (sein Asset `data` trägt weder
+   `raster:bands` noch `bands`; Prüfanleitung Schritt 6). Das Panel zeigt
+   solche Assets als Chip mit dem Asset-Schlüssel, der das Asset nur in den
+   Auftrag nimmt und keinen Namen einfügt (Tooltip sagt es). Von Otto am
+   10.10.2026 angenommen. Bänder mit Namen bleiben, wie K7 sie beschreibt.
+3. **Knopf „Jobs (n)“ oben rechts**, solange Jobs in diesem Tab bestehen und
+   das Panel zu ist. Ohne ihn wären wiederaufgenommene Jobs (F5) nach dem
+   Neuladen erst nach einer neuen Auswahl sichtbar.
+4. **Einfügen per Chip (Otto, 12.10.2026):** Ein Klick auf einen Band-Chip
+   fügt den Namen nur ein, wenn gerade das Ausdrucksfeld eines Band-Math-Schritts
+   den Cursor hat; er steht dann an der Cursorstelle (eine Markierung wird
+   ersetzt), mit Leerzeichen, wo er sonst an Nachbarn klebte, und der Cursor
+   bleibt dahinter. Dafür behält der Chip beim Drücken den Fokus
+   (`mousedown` ohne Standardwirkung). Sonst nimmt der Klick das Band nur in
+   den Auftrag auf oder entfernt es und ändert keinen Ausdruck. Ein Band, das
+   ein Ausdruck nennt, ist gedrückt und lässt sich nicht abwählen (der Tooltip
+   sagt, den Namen dort zu entfernen). Der Hinweis unter den Chips sagt es auf
+   Englisch. Das ersetzt „hängt an den zuletzt bearbeiteten Ausdruck an“ aus
+   der ersten Fassung; der Entwurf kennt keinen „aktiven Schritt“ mehr.
+5. **Gleicher Bandname in zwei Assets** (bei Zarr möglich, z. B. `b04` in zwei
+   Auflösungsgruppen): Der Chip zeigt den vollen Asset-Schlüssel und fügt
+   nichts ein; ein solcher Name im Ausdruck wählt kein Asset von selbst. Ob
+   die echten Items das tun, ist nicht gemessen (kein Zugriff auf die Quelle
+   aus der Sitzung).
+6. **Hinweise der Formularprüfung** erscheinen an einem Feld, sobald es Text
+   hat, an leeren Pflichtfeldern erst nach „Review“.
+
+7. **Eine Schätzung, ein Job:** Nach einem erfolgreichen Start verfällt die
+   Schätzung; ein zweiter gleicher Job braucht ein neues „Review“. Macht der
+   Nutzer eine Änderung rückgängig, erscheint die Schätzung desselben
+   Auftrags wieder (sie gehört zum Auftrag, nicht zum Zeitpunkt).
+
+**Befunde des Reviewers, behoben:** Schätzung unbekannter Form (`{}` von
+einem Proxy) brachte das Panel im Render zum Absturz → `parseEstimate`;
+eine unlesbare Prozessbeschreibung blieb für immer „loading“ → Fehler mit
+„Retry“; eine Abweisung, die nach einer Änderung ankam, stand am geänderten
+Schritt → Abweisungen tragen den Schlüssel ihres Auftrags; `onopen` setzte
+den Zähler der Abbrüche zurück, sodass ein puffernder Proxy nie auf Abfragen
+fiel → nur ein gültiges Ereignis setzt zurück; leeres `raster:bands` fiel
+nicht auf `bands` zurück wie in `api/intake.py`; „expression names unknown
+band(s)“ und „steps.<n>“ landeten nicht am Schritt; das Panel abonnierte
+den ganzen Store (jetzt nur die Auswahl) und hinterließ geschlossen einen
+leeren Ziehgriff; Panel und `ViewBar` zählten „nichts gewählt“ verschieden
+(beide jetzt die von Hand gewählten Szenen).
+
+**Tests** (vitest, `fetch` und `EventSource` gestubbt, alles synthetisch):
+`processing.test.ts` (kanonisches JSON, Statusdokument, Hülle, Problem-Titel,
+`Retry-After`, keine fremde `jobID` in URLs), `schemaForm.test.ts` (jeder Typ,
+Grenzen, `pattern`, `enum`, `default`, Wächter), `processingOrder.test.ts`
+(Fixtures aus K3 voll unterstützt, Bandnamen für COG mit einem und mehreren
+Bändern, Zarr mit und ohne Trenner, Asset ohne Bandangaben, Szenen und AOI,
+gepuffertes Quadrat eines Punkts, mehr als 16 Assets oder Schritte),
+`jobTracker.test.ts` (Ereignisfolge bis `close()`, kaputtes JSON und fremde
+`jobID`, `CLOSED` → sofort Abfragen, drei Abbrüche, `Retry-After`, `404`,
+ohne `EventSource`, `sessionStorage` mit Wiederaufnahme, abgelaufenen und
+falsch geformten Einträgen, gesperrtem Speicher),
+`components/ProcessingPanel.test.tsx` (Aufbau aus der Sentinel-2-Fixture,
+Operator fehlt im Menü, „Start job“ erst nach „Review“, Änderung verwirft die
+Schätzung, Abweisung am Schritt, `502` beim Start nach guter Schätzung, `503`
+mit „try again“, Abbruch der Schätzung beim Wechsel der Auswahl, Auswahl einer
+Szene mit Hinweis, Start bis zu den Links, gescheiterter Job mit Titel,
+„Expired“, Hinweis „Resampled“, Knopf „Process“ bei Stufe *display* und ohne
+AOI; dazu nach dem Review: „Cancel“ mit `DELETE`, `404` und `503`, „Gone“
+beim Abfragen, SSE durch den Store bis zu den Links, kaputte Schätzung und
+Beschreibung, veraltete Abweisung, Grenze von 16 Schritten, Abbruch der
+Schätzung bei neuer AOI und beim Schließen). Frontend gesamt: 821 Tests grün,
+`tsc` und `oxlint` ohne Befund. Gegenprobe in der Sitzung: Ohne die Bindung der Schätzung an den Auftrag
+und ohne den Abbruch fallen die zwei zugehörigen Komponententests.
+
+**Prüfanleitung für Otto** (nach dem Merge; Windows PowerShell; die Sitzung
+hat das Panel nur in Tests gesehen, nicht im Browser gegen die echte Quelle):
+
+```powershell
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
+```
+
+Im Browser `http://localhost:5173`:
+1. Datensatz `sentinel-2-c1-l2a`, eine kleine Fläche zeichnen, die ganz in
+   einer Szene liegt, suchen und einen Überflug mit wenig Wolken auswählen.
+2. „⚙ Process“ → „＋ Band math“; in das Ausdrucksfeld klicken, dann die Chips
+   `nir` und `red` anklicken: Sie fügen ihre Namen an der Cursorstelle ein.
+   Den Ausdruck zu `(nir - red) / (nir + red)` ergänzen. (Ein Chip ohne Cursor
+   im Feld nimmt das Band nur in den Auftrag auf.)
+3. „Review“ zeigt Pixel, Größe, Dauer und Einheiten; „Start job“; die Zeile
+   zeigt „Waiting for a worker“, „Running · n %“, dann „Finished“.
+4. „Result (COG)“ lädt eine `.tif`, „Recipe“ eine `_recipe.json`; die Datei
+   öffnet sich in QGIS mit Werten zwischen −1 und 1.
+5. Seite neu laden: „⚙ Jobs (1)“ oben rechts öffnet das Panel mit dem Job.
+6. Datensatz `cop-dem-glo-30`: Chip `data` anklicken, „＋ Reproject and
+   resample“, `crs` `EPSG:3035`, `resolution` `30`, unter „Resampling“
+   `bilinear` wählen (das Panel empfiehlt kein Verfahren; ohne Wahl meldet
+   „Review“ „Required.“). Unter „Output“ steht „Data type: float32 (chosen
+   automatically)“ mit dem Grund. „Review“, „Start job“; der Job läuft. (Der
+   Typ lässt sich unter „Change the data type“ ändern; wählt man `uint16`,
+   steht dort, dass der Job scheitert, wenn die Quelldatei keinen nodata-Wert
+   nennt.)
+7. Fläche über einer Kachelgrenze zeichnen: Das Panel lässt eine Szene
+   wählen und sagt, dass das Ergebnis nur diese abdeckt (F8).
+
+Vorschau und „Preview“ (§9 Schritte 3 und 4) kommen mit M4-13c.
+
+**F1 (Otto, 10.10.2026): Bandnamen eines Zarr-Assets.** Das Frontend liest sie
+nur aus dem STAC-Kernfeld `bands[].name` des Assets (STAC 1.1), nie aus
+`eo:bands`; der Wächtertest `test_frontend_no_dataset_literals.py` bleibt
+unverändert und trifft `bands` nicht. Fehlt `bands`, gibt es keine
+Band-Chips und das Panel sagt „This dataset does not list band names yet.“
+Der EOPF-Adapter wird in M4-23 angepasst (parallel); bis dahin ist
+`sentinel-2-l2a-zarr3` im Panel ohne Bandnamen. Das ersetzt die Regel „Zarr →
+Namen aus `eo:bands[].name`“ in K7. Frontend-Tests mit und ohne `bands`
+(`processingOrder.test.ts`, `ProcessingPanel.test.tsx`), dazu eines, das
+zeigt, dass ein `eo:bands` am Asset nichts bewirkt.
+
+**Vertrag Frontend ↔ Backend (Fund im Browsertest, 12.10.2026).** Beim ersten
+Browsertest antwortete „Start job“ mit `invalid order: aoi.Polygon.properties:
+extra_forbidden`: Die AOI einer Ortssuche trägt in `properties` die Herkunft
+(F3 aus M3-07, für `aoi.geojson` des Zuschnitts), und `buildOrder` reichte sie
+unverändert in den Auftrag. Das Schema des Auftrags verbietet jedes Mitglied,
+das es nicht nennt (`extra="forbid"`); es bleibt unverändert. Kein Test hatte
+es gefunden, weil kein Frontend-Test eine AOI mit `properties` und kein
+Backend-Test eine Payload des Frontends kannte. Behoben:
+- `orderAoi` (`processingOrder.ts`) baut die AOI des Auftrags nur aus `type`
+  und `coordinates`, jede Position als `[lon, lat]` (kein `properties`, kein
+  `bbox`, keine Höhe). Die AOI im Store bleibt, wie sie ist: Der Zuschnitt
+  braucht die Herkunft weiter.
+- **Wie die zwei Tests zusammenhängen:** `src/processingContract.test.ts` baut
+  Aufträge wie das Panel (`buildOrder` aus den Prozess-Fixtures aus K3 und den
+  Werten eines Entwurfs), schickt sie durch den echten Client (`estimateOrder`,
+  `placeJob`) mit aufgezeichnetem `fetch` und hält den gesendeten Körper in
+  `frontend/src/fixtures/orders/*.json` fest (`toMatchFileSnapshot`). Vier
+  Fälle: NDVI mit Orts-AOI, Reprojektion des DEM, MultiPolygon mit Höhen und
+  `bbox` mit zwei Schritten, Band-Math auf Zarr-Variablen. Ändert sich, was das
+  Panel sendet, fällt der Test, bis die Dateien neu geschrieben sind
+  (`npx vitest run -u src/processingContract.test.ts`; in der CI schreibt
+  vitest nie). `backend/tests/earthx/api/test_frontend_orders.py` nimmt
+  genau diese Dateien: `parse_request` mit den echten Operatoren, dieselben
+  Mitglieder wie das Schema, und beide Routen (`…/estimate`, `…/execution`)
+  mit synthetischen Items, die die AOI der Datei abdecken, gegen die echten
+  Operatoren. Dazu die Gegenprobe: Dieselbe Datei mit `aoi.properties` wird
+  mit `extra_forbidden` abgewiesen. Nur zusammen halten die beiden Tests die
+  Form: Der erste sagt, was das Panel sendet, der zweite, ob das Backend es
+  nimmt. Ein neuer Fall im Frontend braucht eine Zeile in `CASES` und die
+  geschriebene Datei; der Backend-Test findet jede Datei im Ordner selbst.
+- Die Gegenrichtung (was das Frontend aus Antworten liest) prüft derselbe
+  Backend-Test für Status (`jobID`-Form, Zustand, `progress`, `expires`) und
+  Schätzung (die sieben Felder); die Ergebnis-Links deckt
+  `test_processing_route.py` (`result.tif`, `mask.tif`, `recipe.json`).
+
+**Zweiter Fund durch denselben Test: Schätzung für ein Quell-KBS in Grad.**
+Die Reprojektion des DEM (`EPSG:4326`, `gsd` 30 m) scheiterte in `Review` und
+beim Start mit einer ungefangenen `UnsupportedRecipe` (`500`): `_input_meta`
+setzte die Pixelgröße des Platzhalters gleich `gsd` in Einheiten des KBS, also
+30 Grad je Pixel („the target grid would be 318934 x 754738 px“). Jetzt rechnet
+`plan._pixel_size` das `gsd` für ein geografisches KBS in Grad um
+(111 320 m je Grad); für projizierte KBS bleibt es, wie es war. Eigener
+Commit, einzeln zurücknehmbar; Regressionstest in `test_plan.py` (fällt ohne
+die Änderung). Das betrifft nur die Schätzung und die Laufzeitgrenze, die aus
+ihr folgt; der Lauf liest die Werte aus der Datei.
+**Nach dem Merge von `main` (M4-12a, PR #136):** Dort ist derselbe Fehler als offene Aufgabe M4-25
+beschrieben, mit strikten `xfail`-Tests (`test_plan.TestTheEstimateOnAGeographicGrid`,
+`test_processing_route.TestAnOrderOnAGeographicGrid`). Diese Tests laufen mit dem Fix von
+selbst durch (XPASS); die Markierungen sind hier entfernt (Log „M4-25 ist mit M4-13b behoben“).
+
+## 13. Resampling und Datentyp (Otto, 12.10.2026, zweite Fassung)
+
+**Anlass.** Im Browsertest zeigte „Data type“ beim DEM keine Empfehlung; mit
+`uint16` endete der Job mit „Failed: The recipe asks for what the platform does
+not run yet“, mit `float32` lief derselbe Auftrag. Ursache (gelesen,
+`processing/core.py::_nodata_for`): Ein ganzzahliger Typ geht nur, wenn jedes
+Band des Ergebnisses einen endlichen nodata-Wert trägt, denselben für alle;
+nach Band-Math ist es immer `float32` mit NaN, und eine Reprojektion behält das
+nodata ihrer Eingabe, das die **Quelldatei** nennt (`processing/source.py`),
+nicht das Item. Das DEM nennt keines.
+
+**Entscheidung.** Die erste Fassung vom selben Tag (beide Felder vorbelegt und
+als „(recommended)“ gekennzeichnet) ist ersetzt:
+- **Resampling:** keine Empfehlung, nichts vorbelegt. Das Verfahren ändert die
+  Werte; der Nutzer wählt es (B10), ohne Wahl meldet „Review“ „Required.“. Die
+  Erkennung von Klassenbändern aus der ersten Fassung (`classification:*`)
+  ist damit entfallen.
+- **Datentyp:** Das Panel nimmt den bestmöglichen selbst, den **Typ der
+  Ursprungsdaten, wo die Plattform ihn schreiben kann**, zeigt ihn als Zeile
+  „Data type: float32 (chosen automatically)“ mit dem Grund und sendet ihn
+  ausdrücklich mit. Ändern lässt er sich unter „Change the data type“ (mit der
+  Auswahl „Automatic: …“ zurück). Das ersetzt K9.
+
+**Regel** (`frontend/src/processingDefaults.ts::chooseDtype`, getestet in
+`processingDefaults.test.ts` und `ProcessingPanel.test.tsx`):
+1. Band-Math im Auftrag → `float32`; ganzzahlige Typen werden dann **nicht
+   angeboten** (deaktiviert, mit Grund), weil der Lauf sie sicher abweist. Ein
+   zuvor gewählter ganzzahliger Typ fällt auf den automatischen.
+2. Eine Quelle mit Gleitkommatyp (`float32`, `float64`) ohne Skalierung → ihr
+   eigener Typ, mit oder ohne Interpolation.
+3. Eine Reprojektion, deren Resampling nicht `nearest` ist oder noch fehlt →
+   `float32` (der Kern rundet seit M4-26 beim Schreiben einer Ganzzahl: Regel wie
+   `GDALCopyWords`, x,5 weg von null, dann Klemmen auf den Wertebereich; NaN wird
+   `nodata`; `adr/0014` §15h).
+4. `nearest`, alle Bänder derselben ganzzahligen Typ ohne `scale`/`offset` am
+   Item (sonst rechnet der Kern auf `float32`), und das Item nennt für alle
+   Bänder denselben endlichen nodata-Wert → der Eingabetyp.
+5. Sonst → `float32` (DEM, Zarr, jedes Item ohne Bandangaben).
+Wählt der Nutzer eine Ganzzahl, obwohl das Item kein nodata nennt, sagt ein
+Hinweis, dass der Job scheitert, wenn die Quelldatei keines nennt; ob sie eines
+nennt, weiß nur der Lauf.
+
+**Wie andere Programme es machen** (gelesen am 12.10.2026, Quelltext der
+GDAL-Doku auf GitHub; `gdal.org` ist aus der Sitzung nicht erreichbar):
+- [P] `gdal_calc.py`: Ohne `--type` ist der Ausgabetyp die Vereinigung der
+  Eingabetypen (GDAL ≥ 3.5). Ohne `--NoDataValue` nimmt es ein **festes nodata
+  je Datentyp**: Byte 255, UInt16 65535, Int16 −32768, UInt32 4294967293,
+  Int32 −2147483647, Float32 3,4·10³⁸ (`DefaultNDVLookup`). Es greift also
+  immer auf einen Wert zurück.
+- [P] `gdalwarp`: Ohne `-dstnodata` „nodata values will be copied from the
+  source dataset“; mit `-dstnodata` werden neue Dateien damit initialisiert und
+  der Wert wird, wenn möglich, in der Datei vermerkt. Den Standard für `-ot`
+  nennt die gelesene Seite nicht (`options/ot.rst`: „Force the output image
+  bands to have a specific data type“); dass er der Typ der Quelle ist, ist
+  hier **nicht belegt**. Was `gdalwarp` ohne Quell-nodata für Pixel außerhalb
+  der Quelle einsetzt, steht ebenfalls nicht auf der Seite.
+- QGIS-Dokumentation (Warp): Die Seite nennt als Standard für Datentyp und
+  Resampling den ersten Eintrag der Liste, die Einträge selbst standen nicht
+  im gelesenen Text; nicht belegt.
+
+**Was die Plattform dafür ändern müsste (offen).** „Der gleiche Typ wie die
+Ursprungsdaten“ ist heute nur möglich, wenn die Quelle ein nodata nennt, weil
+`core._nodata_for` sonst ablehnt. Wie `gdal_calc.py` könnte der Kern für einen
+ganzzahligen Typ **ohne** gemeinsames Quell-nodata ein festes nodata je Typ
+nehmen und in die Datei schreiben, dazu beim Schreiben **runden** statt
+abschneiden (heute `astype(dtype, casting="unsafe")`) und prüfen, dass kein
+gültiger Pixelwert dem nodata gleicht (sonst ablehnen). Dann entfielen im
+Panel die Bedingungen „Item nennt nodata“ und „nicht interpoliert“, und jede
+unskalierte Ganzzahl-Quelle behielte ihren Typ. Das ändert den Kern, das
+Ergebnis und `adr/0014`; die Entscheidung liegt bei Otto.
+
+**Was die Items hergeben.** Das echte Item von `sentinel-2-c1-l2a` (eine
+Anfrage, 12.10.2026) nennt für die Farbbänder `uint16`, nodata 0, `scale`
+0,0001, `offset` −0,1 (der Kern rechnet auf `float32`: Ergebnis `float32`);
+`scl`, `cloud`, `snow` und `visual` sind `uint8` mit nodata 0 ohne Skalierung
+(bei `nearest`: `uint8`). `sentinel-2-l2a-zarr3`: `bands` trägt nur Namen und
+`eo:`-Felder, kein `data_type`, kein nodata (Ergebnis: `float32`). Für M4-23
+zu beachten: Die Namen dort sind `B04` (groß), die Variablen im Store und in
+der Registry `b04` (klein); liest das Panel die Namen aus `bands`, schickt es
+`SR_10m:B04`, und der Store kennt nur `b04`. `cop-dem-glo-30`: `data` ohne
+Bandangaben (Ergebnis: `float32`).
+
+**Fehlermeldung eines gescheiterten Jobs.** Das Panel zeigt den `title` des
+Problemdokuments von `/results` (Englisch, ohne AOI, Hash, href). Einen
+konkreten Grund liefert die API für einen **gescheiterten Lauf nicht**: Die
+Queue speichert nur `error_kind` (`catalog/migrations/006_jobs.sql`,
+`jobs/queue.py`), `processing/failures.py::failure_kind` reduziert die Ausnahme
+darauf, und `api/processing_route.py::_failed` antwortet mit dem festen Titel
+(„The recipe asks for what the platform does not run yet“) und dem festen
+Detail „the job failed; no result exists“. Der Text der Ausnahme geht verloren;
+das ist Absicht (kein Text einer Ausnahme in die Datenbank, `adr/0014` §4.7).
+Bei „Review“ und „Start job“ kommt der `detail` der Antwort ins Panel.
+Vorschlag für Otto: je Fehlerart einen **festen** Satz zum Titel, den die API
+aus `error_kind` und einem kleinen Unterschlüssel ableitet (hier etwa
+`integer_nodata`), ohne Werte; das ändert Worker, Queue und API und gehört in
+eine eigene Aufgabe. Den häufigsten Fall (ein ganzzahliger Typ ohne nodata)
+verhindert das Panel jetzt vorher.
+
+**Nachtrag M4-12b (13.10.2026):** F8 ist aufgehoben. Das Panel schickt seit M4-12b die
+Szenen eines Überflugs als eine Gruppe und lässt bei mehreren Überflügen einen
+wählen (`plans/m4/m4-12-mosaik-ueberflug.md` §13). Die Stellen oben, die „eine Szene“
+beschreiben, sind der Stand von M4-13b.

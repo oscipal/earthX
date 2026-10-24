@@ -1,5 +1,5 @@
 -- The place-search cache and the shared rate slot of M3-07a
--- (docs/plans/m3-07a-ortssuche-backend.md §8, §9; earthx/catalog/geocode_cache.py).
+-- (docs/plans/m3/m3-07a-ortssuche-backend.md §8, §9; earthx/catalog/geocode_cache.py).
 --
 -- public. on purpose, same reason as 002_search_cache.sql: pgstac's own roles set
 -- `search_path = pgstac, public`, so an unqualified CREATE would land inside pgstac.

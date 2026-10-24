@@ -66,7 +66,7 @@ und CI geht denselben Weg — damit prüft CI, was die Sitzung benutzt.
 *(Stand 2026-09-18. `environment.yml` ist mit dem Prototyp entfallen,
 `adr/0008`; der pip-Weg ist seither überall der einzige. Die Tabelle oben ist
 eine Messung unter 3.11; unter 3.12 lösen mehrere Pakete neuer auf,
-`plans/m3-03-python-312.md` §2.3.)*
+`plans/m3/m3-03-python-312.md` §2.3.)*
 *(Nachtrag 2026-10-02, M4-00b: CI, Image und Sitzung installieren seither aus
 den Lock-Dateien `backend/requirements.lock` und `backend/requirements-dev.lock`
 mit Hash-Prüfung, nicht mehr direkt aus den `.txt`-Dateien; siehe §7.)*
@@ -146,8 +146,8 @@ Ausgehendes HTTPS geht über den Agent-Proxy der Umgebung. Gemessen:
 | `earth-search.aws.element84.com` (seit dem 18.09.2026 freigegeben, in Sitzungen vom 19.09.2026 erreichbar und gemessen) | `stac.eopf.copernicus.eu` |
 | `api.github.com`, `github.com` | `tile.openstreetmap.org` |
 | Ubuntu-Archiv (`apt`) | `data.maap-project.org`, `quay.io`, Container-Blob-CDNs |
-| `mcr.microsoft.com` | `operations.osmfoundation.org`, `nominatim.org`, `osmfoundation.org`, `www.openstreetmap.org` (Doku-Seiten, Beleg `plans/m3-07a-ortssuche-backend.md` §2) |
-| `nominatim.openstreetmap.org` (seit dem 26.09.2026 freigegeben, für M3-07a gemessen, Beleg `plans/m3-07a-ortssuche-backend.md` §3) | |
+| `mcr.microsoft.com` | `operations.osmfoundation.org`, `nominatim.org`, `osmfoundation.org`, `www.openstreetmap.org` (Doku-Seiten, Beleg `plans/m3/m3-07a-ortssuche-backend.md` §2) |
+| `nominatim.openstreetmap.org` (seit dem 26.09.2026 freigegeben, für M3-07a gemessen, Beleg `plans/m3/m3-07a-ortssuche-backend.md` §3) | |
 | `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com` (tatsächlicher Asset-Host von `sentinel-2-c1-l2a`, Beleg `adr/0006`) | |
 | `objects.eodc.eu`, **`data.eodc.eu`**, `stac.core.eopf.eodc.eu` (Beleg `adr/0007` §3.1, §12.1) | `download.user.eopf.eodc.eu`, `stac.browser.user.eopf.eodc.eu` (Beleg `adr/0007` §12.1) |
 
@@ -231,7 +231,7 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    noch nicht installiert war — erwartungsgemäß, da die apt-Installation
    erst mit der nächsten neu gestarteten Sitzung wirkt (siehe die
    Allowlist-Regel oben).
-   **Nachtrag 2026-09-23 (M3-03, `plans/m3-03-python-312.md`):** Der Hook
+   **Nachtrag 2026-09-23 (M3-03, `plans/m3/m3-03-python-312.md`):** Der Hook
    legt das venv mit `/usr/bin/python3.12` an, über den absoluten Pfad: `python3`
    zeigt im Image auf 3.11, und ein `python3.12` im `PATH` kann ein anderer Build
    sein (`uv python install` legt einen nach `~/.local/bin`, vor `/usr/bin`). Ein
@@ -267,7 +267,7 @@ Sitzung eingetragene Freigabe wirkt dort nicht (`adr/0003` §11.3).
    venv zu den Backend-Anforderungen. Die Vergleichslogik steht in
    `scripts/lib/frontend-deps.sh`, getrennt vom Hook, damit sie ohne Postgres
    und venv testbar ist (`backend/tests/test_frontend_deps_hook.py`).
-   **Nachtrag 2026-10-02 (M4-00b, `plans/m4-00b-lock-datei.md`):** Der Hook
+   **Nachtrag 2026-10-02 (M4-00b, `plans/m4/m4-00b-lock-datei.md`):** Der Hook
    installiert die Backend-Pakete aus `backend/requirements-dev.lock` mit
    `--require-hashes`, wie die CI; das Image installiert aus
    `backend/requirements.lock`. Die `.txt`-Dateien sind nur noch die Eingabe

@@ -7,7 +7,7 @@ gemessen hat — Antwortrumpf mit `numberMatched`/`context`, `next`-Link als POS
 IDs, Zeiten, Geometrien und Asset-Adressen sind erfunden und klein gehalten.
 
 **Warum synthetisch:** Otto hat am 19.09.2026 entschieden, dass **dauerhaft nicht
-aufgezeichnet wird** (`docs/plans/m1-06-earth-search-adapter.md` §9 F6). Damit stellt
+aufgezeichnet wird** (`docs/plans/m1/m1-06-earth-search-adapter.md` §9 F6). Damit stellt
 sich die offene Lizenzfrage zu den Earth-Search-Metadaten (`adr/0005` §8 Punkt 1) für
 Fixtures nicht mehr, und `ENTSCHEIDUNGEN_2026-09-18.md` §4 ist ohne weitere Prüfung
 eingehalten. Wer hier eine Datei ergänzt, schreibt sie also von Hand.
@@ -19,7 +19,7 @@ dafür gibt es den zeitgesteuerten Live-Smoke-Test (`backend/tests_live/`, T-D l
 ## Aggregation (M2-05)
 
 `aggregate_complete.json` und `aggregate_truncated.json` bilden die Form nach, die
-`GET /aggregate` am 20.09.2026 zurückgab und die in `plans/m2-05-coverage.md` §3.1
+`GET /aggregate` am 20.09.2026 zurückgab und die in `plans/m2/m2-05-coverage.md` §3.1
 mit einem Bucket je Aggregation abgedruckt ist: eine Liste `aggregations` mit
 `total_count` als `value` und den beiden `frequency_distribution`-Aggregationen als
 `buckets` mit `key` und `frequency`, der Gitterschlüssel wörtlich als `z/x/y`, die
@@ -37,7 +37,7 @@ Dinge: der Asset-Host `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com
 den `docs/adr/0006-kachel-pfad.md` §3.7 an der Quelle gemessen und im Dokument
 festgehalten hat, und seit M3-18 `gsd`/`raster:bands` an `visual` (3 x `uint8`)
 und `red` (1 x `uint16`) — die Form, die eine echte Earth-Search-Antwort am
-24.09.2026 für dieselben zwei Assets trug (Plan `m3-18-download-deckel-maske.md`
+24.09.2026 für dieselben zwei Assets trug (Plan `plans/m3/m3-18-download-deckel-maske.md`
 §3), damit die Ausgabegrößen-Schätzung des Downloads (`access/download.py`,
 F1/F2) hier nicht auf ihren Rückfallwert zurückfällt. Item-ID, Pfad, Zeit und
 Ausdehnung sind erfunden.

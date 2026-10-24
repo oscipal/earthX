@@ -20,7 +20,7 @@
     erklärt keine Konformitätsklasse (zu F12 und §9). Der Originaltext bleibt
     stehen.
 - **Datum:** 2026-10-02
-- **Aufgabe:** M4-03 laut `docs/plans/m4-processing-kern.md` §4.
+- **Aufgabe:** M4-03 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
   `.importlinter`, an der Registry, an `gateway` oder an `decomp.py`. Gemessen
   wurde mit Skripten im Kratzverzeichnis der Sitzung. Der Messanhang (§17) nennt
@@ -36,7 +36,7 @@
   - `architekturplan.md` 3.1, 6.4, 6.5, 7.1–7.7, 12.3.
   - `adr/0001` Z4; `adr/0006` §3.3, §3.4, §5; `adr/0007` §12.8; `adr/0011` §6,
     §8.1; `adr/0012` F3, F5.
-  - `plans/m3-18-download-deckel-maske.md` §10.3.
+  - `plans/m3/m3-18-download-deckel-maske.md` §10.3.
   - `projektuebersicht.md` §2 (Prinzipien 8, 9), §5 (Punkt 9).
   - Entscheidungslog bis 02.10.2026.
 - **Betroffen:**
@@ -357,7 +357,7 @@ wie in §3.2, Ausgabe float32 als gekacheltes GeoTIFF auf lokaler Platte,
   - Otto hat deshalb die Abnahmegrenze von 300 MB auf **500 MB für den ganzen
     Kindprozess** gesetzt. Dazu kommt ein Test, dass die Spitze von 2048² auf
     8192² nur um einen festen Betrag wächst. Quelle:
-    `plans/m4-07a-processing-kern.md` §9.
+    `plans/m4/m4-07a-processing-kern.md` §9.
 
 ### 3.6 GDAL-Optionen in Threads — [M] und [P]
 
@@ -1066,7 +1066,7 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
     **64 MB**, der in §3.5 gemessene Wert (1024er Blöcke, 148 MB Spitze). Für
     256 MB gibt es keine Messung; ein Lauf über die 268 MB Rohdaten einer
     8192²-Szene füllt den Cache voraussichtlich ganz und läge dann über der
-    Abnahmegrenze von 300 MB [A]. Quelle: `plans/m4-07a-processing-kern.md`
+    Abnahmegrenze von 300 MB [A]. Quelle: `plans/m4/m4-07a-processing-kern.md`
     §6, §8.
   - **Nachtrag vom 2026-10-07 (M4-10b, Otto F1 Option 1):**
     `processing.worker_environment()` setzt zusätzlich die mmap-Schwelle von
@@ -1086,7 +1086,7 @@ lokales Dask vorgezogen, weil es heute nichts kauft [A].
       C-Bibliothek; `worker_environment()` loggt dann eine Warnung, weil die
       gemessene Spitze nicht mehr gilt. Das Image (`python:3.12-slim`, Debian)
       hat glibc.
-    - Quelle: `plans/m4-processing-kern.md` M4-10b; `processing/core.py`.
+    - Quelle: `plans/m4/m4-processing-kern.md` M4-10b; `processing/core.py`.
 - **Fortschritt und Abbruch:** ein Rückruf je Block. Die Hülle kann darin
   abbrechen.
 
@@ -1585,7 +1585,7 @@ Erweiterungen gilt:
 | §6.3, Zeile T2 ↔ T2L | bitgleich auf derselben CPU-Architektur (CI, x86_64) | **bitgleich auf derselben Maschine** (so prüft es die CI: beide Läufe im selben Job, kein gespeicherter Referenz-Hash). Über Maschinen hinweg bitgleich für alles, was Band-Math in M4 erlaubt (unten), und für die Reprojektion |
 | §6.3, Zeile T1 ↔ T2 (Band-Math) | bitgleich bei nativer Ebene und `nearest`, dieselbe CPU-Architektur | unverändert; mit der eingeengten Funktionsliste gilt es auch über Maschinen |
 | Auflage F9 (§15a) | dieselbe CPU-Architektur | zusätzlich: Funktionen außerhalb der Liste unten sind nicht bitstabil über Maschinen; sie kommen erst mit eigener Toleranz |
-| R5 (`plans/m4-processing-kern.md` §1.1b) | feste Liste von numexpr-Funktionen, Vorschlag durch M4-09 | **eingeengt:** nur bitstabile Funktionen (unten) |
+| R5 (`plans/m4/m4-processing-kern.md` §1.1b) | feste Liste von numexpr-Funktionen, Vorschlag durch M4-09 | **eingeengt:** nur bitstabile Funktionen (unten) |
 
 **Band-Math in M4 (R5, eingeengt):** Grundrechenarten (`+ - * /`),
 Vergleiche, `where`, `abs`, `minimum`/`maximum`, `sqrt` und ganzzahlige
@@ -1608,11 +1608,11 @@ Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
 
 | Stelle hier | Was dort steht | Was gilt jetzt | Beleg |
 |---|---|---|---|
-| §5.6: „`processing:expression` mit `format: "rio-calc"` bei Band-Math“ | `rio-calc` | **`format: "numexpr"`**, der Wert ist ein Objekt `{"format": "numexpr", "expression": "<Text>"}`. `rio calc` von rasterio hat eine Lisp-Syntax (`rasterio/rio/calc.py`, Docstring) [P]; unsere Ausdrücke sind Infix in numexpr-Syntax mit der Positivliste von R5. Bei mehreren Band-Math-Schritten ist der Wert eine Liste in der Reihenfolge der Schritte | `plans/m4-09-band-math.md` K1, §9 |
+| §5.6: „`processing:expression` mit `format: "rio-calc"` bei Band-Math“ | `rio-calc` | **`format: "numexpr"`**, der Wert ist ein Objekt `{"format": "numexpr", "expression": "<Text>"}`. `rio calc` von rasterio hat eine Lisp-Syntax (`rasterio/rio/calc.py`, Docstring) [P]; unsere Ausdrücke sind Infix in numexpr-Syntax mit der Positivliste von R5. Bei mehreren Band-Math-Schritten ist der Wert eine Liste in der Reihenfolge der Schritte | `plans/m4/m4-09-band-math.md` K1, §9 |
 | §5.2: „Der Kern ist `ImageData.apply_expression` aus rio-tiler“ | rio-tilers Funktion | **Eigener Kern in `processing/operators/band_math.py`** (Auflage F1 von M4-09): `numexpr.evaluate` mit `optimization="aggressive"`, Eingaben `float64`, Ergebnis `float32`; nicht endliche Ergebnisse (`0/0`, `x/0`) werden maskiert statt mit `nan_to_num` zu `0.0` (§3.2) und die Maske ist das ODER der Masken der Bänder, die der Ausdruck nennt. Kachel (T1) und Job (T2) rufen dieselbe Funktion | M4-09 F1, §9 Punkt 1 |
-| §5.2 und R5: „`+ - * /`, Klammern und eine kleine Liste von numexpr-Funktionen“ | keine logischen Verknüpfungen | **`&`, `\|`, `~` nur auf Wahrheitswerten** (Vergleiche und ihre Verknüpfungen); die Funktionen sind `where`, `abs`, `minimum`, `maximum`, `sqrt` (§15c); `**` nur mit ganzzahligem Literal, \|n\| ≤ 50 | M4-09 F4; `plans/m4-processing-kern.md` §1.1b (R5) |
+| §5.2 und R5: „`+ - * /`, Klammern und eine kleine Liste von numexpr-Funktionen“ | keine logischen Verknüpfungen | **`&`, `\|`, `~` nur auf Wahrheitswerten** (Vergleiche und ihre Verknüpfungen); die Funktionen sind `where`, `abs`, `minimum`, `maximum`, `sqrt` (§15c); `**` nur mit ganzzahligem Literal, \|n\| ≤ 50 | M4-09 F4; `plans/m4/m4-processing-kern.md` §1.1b (R5) |
 | §6.2: „Bänder verschiedener Auflösung“ nicht geregelt | `GridMismatch` (M4-07a F2) | **Verschachtelte Raster** (gleiches CRS, gleiche Ausdehnung, jede Pixelgröße ein ganzes Vielfaches der feinsten) werden mit `nearest` auf das feinste Raster gelesen; das Ergebnis trägt `earthx:resampled=true`, der Bericht des Jobs den Schlüssel `resampled`. Gemessen: Kachel eines 20-m-Assets gegen die auf 10 m verdoppelte Kachel, z13–z15, 100 % gleich | M4-09 F2, §2 |
-| §6.3, Zeile T1 ↔ T2 (Band-Math), für **Zarr** | bitgleich | **Entschieden am 2026-10-07 (Otto, Option 1):** COG: bitgleich ohne Einschränkung. Zarr: bitgleich außerhalb von 0,125 Quellpixel an einer Pixelgrenze (GDALs Näherungsschwelle); an der Grenze darf `nearest` den Nachbarn wählen. Die Formel auf dem exakt nächsten Quellpixel stimmt überall. T2 ↔ T2L bleibt bitgleich. Befund [M]: 13 von 3489 gültigen Pixeln einer z14-Kachel weichen ab (dazu eines in der Maske), alle bis 0,003 Quellpixel an einer Grenze; Ursache sind zwei `nearest`-Warps verschiedener Näherung (`XarrayReader` gegen `Reader` auf dem COG des Ergebnisses), nicht der Operator. Der Vergleichstest prüft beides (`tests/earthx/api/test_tiler_operator.py`) | `plans/m4-09-band-math.md` §9 Punkt 3, §10; Log 2026-10-07 |
+| §6.3, Zeile T1 ↔ T2 (Band-Math), für **Zarr** | bitgleich | **Entschieden am 2026-10-07 (Otto, Option 1):** COG: bitgleich ohne Einschränkung. Zarr: bitgleich außerhalb von 0,125 Quellpixel an einer Pixelgrenze (GDALs Näherungsschwelle); an der Grenze darf `nearest` den Nachbarn wählen. Die Formel auf dem exakt nächsten Quellpixel stimmt überall. T2 ↔ T2L bleibt bitgleich. Befund [M]: 13 von 3489 gültigen Pixeln einer z14-Kachel weichen ab (dazu eines in der Maske), alle bis 0,003 Quellpixel an einer Grenze; Ursache sind zwei `nearest`-Warps verschiedener Näherung (`XarrayReader` gegen `Reader` auf dem COG des Ergebnisses), nicht der Operator. Der Vergleichstest prüft beides (`tests/earthx/api/test_tiler_operator.py`) | `plans/m4/m4-09-band-math.md` §9 Punkt 3, §10; Log 2026-10-07 |
 
 ---
 
@@ -1621,7 +1621,7 @@ Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
 ## 15d. Nachtrag vom 2026-10-07: keine Konformität erklärt (zu F12 und §9)
 
 Otto hat M4-08b am 2026-10-07 freigegeben, F4 mit Option 2
-(`plans/m4-08b-job-api.md` §8). Der Originaltext in §0 Punkt 10, §9 (Tabelle,
+(`plans/m4/m4-08b-job-api.md` §8). Der Originaltext in §0 Punkt 10, §9 (Tabelle,
 Zeile „Konformität erklärt“) und F12 bleibt stehen; maßgeblich ist dieser
 Nachtrag.
 
@@ -1662,13 +1662,13 @@ Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
 
 | Stelle hier | Was dort steht | Was gilt jetzt | Beleg |
 |---|---|---|---|
-| §9, Tabelle der Routen | keine Route für die Kosten vor dem Auftrag; §5.5: „Die Schätzung liefert nur die Zahl“ | **`POST /processing/processes/recipe/estimate`**, außerhalb der OGC-Form wie die ganze Schnittstelle ohne Konformitätsanspruch (§15d). Derselbe Umschlag wie `execution`, Antwort `{"estimate": {size, duration, outputPixels, inputPixels, inputBytes, assets, units}, "skippedItems": […]}`; `size` und `duration` (ISO 8601) heißen wie bei openEO `estimate`. Sie führt die Stufen 1–6 der Annahme aus, kein `HEAD`, keine Zeile in der Queue, kein `recipe_id`; was erst die Fassung findet (ein Asset, das die Quelle nicht mehr hat), zeigt sich erst beim Start | `plans/m4-13-processing-panel.md` §3.1, F2 |
+| §9, Tabelle der Routen | keine Route für die Kosten vor dem Auftrag; §5.5: „Die Schätzung liefert nur die Zahl“ | **`POST /processing/processes/recipe/estimate`**, außerhalb der OGC-Form wie die ganze Schnittstelle ohne Konformitätsanspruch (§15d). Derselbe Umschlag wie `execution`, Antwort `{"estimate": {size, duration, outputPixels, inputPixels, inputBytes, assets, units}, "skippedItems": […]}`; `size` und `duration` (ISO 8601) heißen wie bei openEO `estimate`. Sie führt die Stufen 1–6 der Annahme aus, kein `HEAD`, keine Zeile in der Queue, kein `recipe_id`; was erst die Fassung findet (ein Asset, das die Quelle nicht mehr hat), zeigt sich erst beim Start | `plans/m4/m4-13-processing-panel.md` §3.1, F2 |
 | §9, Schema des Auftrags (K8) | `steps` als `oneOf` über die Operatoren | jede Schritt-Definition trägt zusätzlich `x-earthx-tiers` und `x-earthx-kind` (Anmerkungen nach JSON Schema 2020-12), damit der Planer des Panels (§6.1) die T1-Schritte am Anfang erkennt | M4-13 K1 |
 | §9, Schema des Auftrags | – | mit `?dataset=` trägt `InputRequest.assets` bei einem Zarr-Datensatz `x-earthx-variable-separator`, sonst nichts; die Angabe gehört zum Auftrag, nicht zur Collection | M4-13 F9 |
 
 ## 15f. Nachtrag vom 2026-10-08: die Ausgabe `crop` im Kern (zu §4.2, §10.1; M4-11a)
 
-Otto hat M4-11 am 2026-10-08 freigegeben (`plans/m4-11-export-job.md` §10). Der
+Otto hat M4-11 am 2026-10-08 freigegeben (`plans/m4/m4-11-export-job.md` §10). Der
 Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Die Ausgabe `crop` wird gerechnet**, nicht nur beschrieben: Der Export-Job
@@ -1698,7 +1698,7 @@ Originaltext in §4.2 und §10.1 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 ## 15g. Nachtrag vom 2026-10-10: das Mosaik eines Überflugs im Kern (zu §4.2, §6.3; M4-12a)
 
-Otto hat M4-12 am 2026-10-10 freigegeben (`plans/m4-12-mosaik-ueberflug.md`
+Otto hat M4-12 am 2026-10-10 freigegeben (`plans/m4/m4-12-mosaik-ueberflug.md`
 §11). Der Originaltext in §4.2 (`groups`) bleibt stehen; maßgeblich ist dieser
 Nachtrag.
 
@@ -1716,7 +1716,7 @@ Nachtrag.
     bei `recipe_version` 1 optional, als Lockerung (Pflicht → optional) und
     nicht als neues Feld. Die verworfenen Optionen (Version 2 für Aufträge
     ohne `aoi`; das Frontend schickt die Vereinigung) stehen in
-    `plans/m4-12-mosaik-ueberflug.md` §12 Punkt 11. Die Regel „Felder kommen
+    `plans/m4/m4-12-mosaik-ueberflug.md` §12 Punkt 11. Die Regel „Felder kommen
     nur mit Version hinzu“ gilt weiter für jedes neue Feld.
 - **Eine Regel für die Überlappung, in der Liste.** Je Band und Pixel gewinnt
   das erste gültige Element in der Reihenfolge der Liste
@@ -1745,7 +1745,7 @@ Nachtrag.
 ## 15h. Nachtrag vom 2026-10-13: Gleitkomma in eine Ganzzahl-Ausgabe runden (zu §3.2, §3.4; M4-26)
 
 Otto hat am 2026-10-12 entschieden: Schreibt der Kern Gleitkomma in einen
-ganzzahligen Ausgabetyp, wird gerundet statt abgeschnitten (`plans/m4-26-runden-ganzzahl.md`).
+ganzzahligen Ausgabetyp, wird gerundet statt abgeschnitten (`plans/m4/m4-26-runden-ganzzahl.md`).
 Bisher schnitt `astype(dtype, casting="unsafe")` den Bruchteil ab: 1234,7 wurde
 1234, im Mittel ein halbes Bit zu wenig.
 
@@ -1786,7 +1786,7 @@ Bisher schnitt `astype(dtype, casting="unsafe")` den Bruchteil ab: 1234,7 wurde
 
 ## 15i. Nachtrag vom 2026-10-13: die Schätzung bemisst das Eingaberaster aus der Lage (zu §5.5; M4-25)
 
-Otto hat M4-25 am 2026-10-12 beauftragt (`plans/m4-25-schaetzung-geografisch.md`).
+Otto hat M4-25 am 2026-10-12 beauftragt (`plans/m4/m4-25-schaetzung-geografisch.md`).
 Der Originaltext in §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Das Eingaberaster der Schätzung** liegt dort, wo der erste Durchgang liest:
@@ -1813,7 +1813,7 @@ Der Originaltext in §5.5 bleibt stehen; maßgeblich ist dieser Nachtrag.
 ## 15j. Nachtrag vom 2026-10-20: weitere Resampling-Methoden für `reproject` (zu §5.2, §5.3, §5.5, §6.3; M4-24)
 
 Otto hat den Plan von M4-24 am 2026-10-20 freigegeben, Fragen 1–7 je wie
-empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
+empfohlen (`plans/m4/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
 §5.2, §5.3, §5.5 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Methoden und Version (§5.2):**
@@ -1858,7 +1858,7 @@ empfohlen (`plans/m4-24-resampling-methoden.md` §7.7, §8). Der Originaltext in
 
 ## 15k. Nachtrag vom 2026-10-20: Statistik je Ergebnis in `result.tif` und in den Eigenschaften (zu §4.5, §5.5, §5.6, §6.3; M4-32)
 
-Otto hat den Plan von M4-32 am 2026-10-20 freigegeben (`plans/m4-32-ergebnis-statistik.md` §6, §7). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
+Otto hat den Plan von M4-32 am 2026-10-20 freigegeben (`plans/m4/m4-32-ergebnis-statistik.md` §6, §7). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Was der Kern schreibt (§5.6):**
   - Der letzte Durchgang zählt jedes Band beim Schreiben (`processing/statistics.py`).
@@ -1910,7 +1910,7 @@ Gemessen wurde mit `memory_run.py` (synthetisches COG 4096², zwei Bänder `uint
 
 ## 15l. Nachtrag vom 2026-10-20: `methods.txt`, der Methodentext (zu §5.6, §10; M4-19a)
 
-Otto hat den Plan von M4-19 am 2026-10-20 freigegeben (`plans/m4-19-teilen-und-beschreiben.md`
+Otto hat den Plan von M4-19 am 2026-10-20 freigegeben (`plans/m4/m4-19-teilen-und-beschreiben.md`
 §9). Der Originaltext in §5.6 („der Methodentext in voller Länge ist M4-19“) und §10 bleibt
 stehen; maßgeblich ist dieser Nachtrag.
 
@@ -1961,7 +1961,7 @@ stehen; maßgeblich ist dieser Nachtrag.
 ## 15m. Nachtrag vom 2026-10-20: die Operatoren `mask` und `normalize`, die Kette in der Kachel (zu §5.2, §5.3, §5.5, §6.1, §6.2, §6.3; M4-18a, M4-18b)
 
 Otto hat den Plan von M4-18 am 2026-10-20 freigegeben, F1–F6 und F8 je mit
-Option 1 (`plans/m4-18-masking-normalisierung.md` §8). Der Originaltext in §5.2,
+Option 1 (`plans/m4/m4-18-masking-normalisierung.md` §8). Der Originaltext in §5.2,
 §5.3, §5.5, §6.1, §6.2 und §6.3 bleibt stehen; maßgeblich ist dieser Nachtrag. Umgesetzt
 sind M4-18a (Registry, Operatoren) und M4-18b (Kette in der Kachel, F1); das Panel (F6) folgt
 mit M4-18c.
@@ -1984,7 +1984,7 @@ mit M4-18c.
 ## 15n. Nachtrag vom 2026-10-22: die Einheit je Band (zu §4.2, §4.5, §5.6; M4-19b)
 
 Otto hat den Plan von M4-19 am 2026-10-20 freigegeben, Frage 8 mit Option 1
-(`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §4.2, §4.5 und §5.6
+(`plans/m4/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §4.2, §4.5 und §5.6
 bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Registry (B10):** Neues Feld `DatasetConfig.band_units`, ohne Vorgabe: Asset-Schlüssel, wie
@@ -2066,7 +2066,7 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
 ## 15o. Nachtrag vom 2026-10-24: die Kennung eines Permalinks (zu §9, F15; M4-19e)
 
 Otto hat den Plan von M4-19 am 2026-10-20 freigegeben, Frage 1 mit Option 1
-(`plans/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §9 (F15) bleibt stehen;
+(`plans/m4/m4-19-teilen-und-beschreiben.md` §9). Der Originaltext in §9 (F15) bleibt stehen;
 maßgeblich ist dieser Nachtrag.
 
 - **Nicht die `recipe_id`:** F15 nannte sie „Grundlage für Permalink (M4-19)“. Ein Rezept lebt nur so

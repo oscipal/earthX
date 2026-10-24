@@ -217,7 +217,7 @@ class TestFilterCapabilities:
 
     def test_every_known_adapter_supports_both_filters(self) -> None:
         """K8: the landing page's ``item-search`` conformance class (adr/0005 rule
-        VI, `docs/plans/m1-07-stac-api.md` §6) only holds true while every adapter
+        VI, `docs/plans/m1/m1-07-stac-api.md` §6) only holds true while every adapter
         this platform dispatches to can honour both `intersects` and `ids` — this
         turns the day that stops being so into a failing test here, not a landing
         page silently promising more than the weakest adapter can do."""

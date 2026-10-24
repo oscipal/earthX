@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// V-2 (docs/plans/m2-format-und-viewer.md), five findings from Otto's review:
+// V-2 (docs/plans/m2/m2-format-und-viewer.md), five findings from Otto's review:
 // 1. the theme/projection buttons label the switch's *target* (what clicking
 //    gets you), e.g. "Light" while the theme is dark — confirmed with Otto
 //    2026-09-23 after an initial state-first reading of the same wording;

@@ -1,5 +1,5 @@
 // One time step (an overpass) drawn as one surface instead of one layer per scene
-// (M4-17c, plan `docs/plans/m4-17-mosaik-kachel-pfad.md` §4.6). The tiler reads the
+// (M4-17c, plan `docs/plans/m4/m4-17-mosaik-kachel-pfad.md` §4.6). The tiler reads the
 // scenes into a tile itself (`/collections/{dataset}/mosaic/…`); this module decides,
 // per pass of a view, which of three things the map does:
 //

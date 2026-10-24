@@ -5,7 +5,7 @@
   Schritt von M4, zugeschnitten als M4-01a und M4-01b (F7). Die Anpassung von
   `architekturplan.md` 3.1 und 6.1 (F8) ist mit dieser Annahme umgesetzt.
 - **Datum:** 2026-09-30
-- **Aufgabe:** M3-14 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4 (P15).
+- **Aufgabe:** M3-14 laut `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4 (P15).
 - **Autonomiestufe:** C. Die Grundlage ist gelesen und berichtet. Code,
   Registry und Importregeln bleiben unverändert. Was sich in
   `architekturplan.md` ändert, steht in §4.3 und ist nach der Annahme (F8)
@@ -13,7 +13,7 @@
 - **Grundlage:** `ENTSCHEIDUNGEN_2026-09-18.md` §3, §5; `KLAERUNGEN.md` B8, B9,
   B10, B13; `architekturplan.md` 1.2, 3.1, 5.1, 5.2, 6.1, 6.2, 7.1, 7.3, 7.7,
   15.2, 16; `adr/0004` §5; `adr/0005` Regeln I–VI; `adr/0009` §7, §10, §11;
-  `plans/m3-02-konformitaetsbericht.md` K-04 bis K-11 und §8 Antwort 3;
+  `plans/m3/m3-02-konformitaetsbericht.md` K-04 bis K-11 und §8 Antwort 3;
   `plans/m3-11a-…`, `m3-11b-…`, `m3-11c-…`, `m3-13-…` samt Umsetzungsabschnitten;
   Entscheidungslog bis 26.09.2026.
 - **Betroffen:** `backend/earthx/adapters/` (alle Module), `api/tiler.py`

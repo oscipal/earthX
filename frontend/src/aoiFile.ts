@@ -3,7 +3,7 @@
 // go through it. Replaces this file's former in-browser GeoJSON/KML parser
 // (`prototyp-inventar.md` F3): that parser had no size, point-count or validity
 // checks and took "first usable geometry wins" for a file with several — the
-// route is stricter (docs/plans/m3-06a-aoi-upload-backend.md §§7–9) and is now
+// route is stricter (docs/plans/m3/m3-06a-aoi-upload-backend.md §§7–9) and is now
 // the only place any of that logic lives.
 
 import { HttpError, uploadAoi } from './api';

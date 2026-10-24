@@ -1,7 +1,7 @@
 """T-B: the place-search adapter against synthetic, recorded-looking answers.
 
 Fixtures are invented places and coordinates (`backend/tests/fixtures/nominatim/`),
-never a copy of real OSM data — CLAUDE.md and `docs/plans/m3-07a-ortssuche-backend.md`
+never a copy of real OSM data — CLAUDE.md and `docs/plans/m3/m3-07a-ortssuche-backend.md`
 §11. Everything goes through the gateway with a mock transport and a fake resolver,
 same as the other adapter tests.
 """

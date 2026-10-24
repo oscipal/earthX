@@ -1,5 +1,5 @@
 """Turn an uploaded AOI file into a checked EPSG:4326 GeoJSON geometry (M3-06a,
-docs/plans/m3-06a-aoi-upload-backend.md).
+docs/plans/m3/m3-06a-aoi-upload-backend.md).
 
 Lives in `access`, not a new module (Otto F2): no module in architekturplan.md 3.1
 is named for "parse an uploaded vector file", and `access` already owns AOI handling
@@ -49,7 +49,7 @@ class AoiTooLarge(AoiUploadError):
     """A size cap was exceeded (a 413, not a 400 — plan §10)."""
 
 
-# docs/plans/m3-06a-aoi-upload-backend.md §8, Otto's F4 (26.09.2026).
+# docs/plans/m3/m3-06a-aoi-upload-backend.md §8, Otto's F4 (26.09.2026).
 # = Starlette's own SpooledTemporaryFile threshold (§6) — kept even though this
 # route no longer goes through Starlette's multipart parser (§6 Nachtrag): it is
 # still the size below which "definitely never written to disk" needs no borrowed

@@ -55,8 +55,8 @@ dem Cache, wenn alle Eingaben eine Fassung tragen.
   `runner` (16 Verträge).
 
 Belege je Abnahmekriterium, die lokale Prüfanleitung und die Liste „Nach M4
-vorgemerkt“: [`docs/plans/m4-20-abnahme.md`](docs/plans/m4-20-abnahme.md)
-(Aufgabenschnitt: [`docs/plans/m4-processing-kern.md`](docs/plans/m4-processing-kern.md)).
+vorgemerkt“: [`docs/plans/m4/m4-20-abnahme.md`](docs/plans/m4/m4-20-abnahme.md)
+(Aufgabenschnitt: [`docs/plans/m4/m4-processing-kern.md`](docs/plans/m4/m4-processing-kern.md)).
 Einen echten Job einmal durchspielen: `scripts/try-job.ps1` (Abschnitt
 „Job-Schnittstelle“).
 
@@ -111,10 +111,10 @@ Was M3 dazu bringt:
   (`adr/0011`, angenommen); der Umbau war der erste Schritt von M4.
 
 Vollständige Belege je Abnahmekriterium und die Liste der offenen Punkte:
-[`docs/plans/m3-15-abnahme.md`](docs/plans/m3-15-abnahme.md) (Aufgabenschnitt:
-[`docs/plans/m3-dritte-quelle-und-interface.md`](docs/plans/m3-dritte-quelle-und-interface.md)).
+[`docs/plans/m3/m3-15-abnahme.md`](docs/plans/m3/m3-15-abnahme.md) (Aufgabenschnitt:
+[`docs/plans/m3/m3-dritte-quelle-und-interface.md`](docs/plans/m3/m3-dritte-quelle-und-interface.md)).
 Die Belege für M2 stehen in
-[`docs/plans/m2-12-abnahme.md`](docs/plans/m2-12-abnahme.md).
+[`docs/plans/m2/m2-12-abnahme.md`](docs/plans/m2/m2-12-abnahme.md).
 
 ---
 
@@ -229,7 +229,7 @@ grafisch anzeigt — er läuft selbst **nicht** in diesem Repo, sondern separat
    zeigt ihre Beschreibung und Lizenz; **„Items"** öffnet die Suche und
    zeigt Treffer aus der jeweiligen Quelle, durch den eigenen Katalog
    gereicht.
-4. Fertig — das ist die Abnahme aus `docs/plans/m1-fundament.md` Abschnitt 5,
+4. Fertig — das ist die Abnahme aus `docs/plans/m1/m1-fundament.md` Abschnitt 5,
    Punkt 1: ein STAC-Browser kann den eigenen Katalog lesen, jetzt für alle
    Datensätze.
 
@@ -352,7 +352,7 @@ vom Backend, damit er im Entwicklungsmodus schnell neu lädt:
    mit Datei und Maske je Gruppe, `aoi.geojson` und `ATTRIBUTION.txt`).
 
 Vollständige Bedienung und alle Nachbesserungen aus Ottos Durchsicht:
-`docs/plans/m2-format-und-viewer.md`, Aufgaben V-1 bis V-4 und ihre
+`docs/plans/m2/m2-format-und-viewer.md`, Aufgaben V-1 bis V-4 und ihre
 Nachbesserungsrunden.
 
 ### Backend-Abhängigkeiten ändern oder erneuern (M4-00b)

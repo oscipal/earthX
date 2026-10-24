@@ -1,5 +1,5 @@
 """Parsing and checking an uploaded AOI file (M3-06a), one case per format ×
-failure mode from the plan's Abnahme list (docs/plans/m3-06a-aoi-upload-backend.md
+failure mode from the plan's Abnahme list (docs/plans/m3/m3-06a-aoi-upload-backend.md
 §11). Everything here is a synthetic fixture built in the test itself — never a
 real AOI or a real shapefile export (`CLAUDE.md`).
 """

@@ -1,5 +1,5 @@
 -- The application cache of E4: Postgres, because pgstac needs it anyway
--- (docs/plans/m1-fundament.md §1, E4; architekturplan.md 15.3 keeps Redis for a
+-- (docs/plans/m1/m1-fundament.md §1, E4; architekturplan.md 15.3 keeps Redis for a
 -- measured need). Used by the federated item search of M1-06.
 --
 -- public. on purpose: pgstac puts `pgstac, public` on the search_path of its own

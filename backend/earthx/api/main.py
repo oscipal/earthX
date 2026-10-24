@@ -1,7 +1,7 @@
 """Process entrypoint for `api` (architekturplan.md 3.2): the outward STAC API.
 
 Collections come from pgstac; items are federated per collection through
-``FederatingCoreCrudClient`` (adr/0005, docs/plans/m1-07-stac-api.md). Two things are
+``FederatingCoreCrudClient`` (adr/0005, docs/plans/m1/m1-07-stac-api.md). Two things are
 hard-set here rather than left to the environment, because both are safety
 properties, not preferences:
 

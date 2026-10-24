@@ -1,4 +1,4 @@
-// The other half of the order contract (M4-13b; plans/m4-13-processing-panel.md
+// The other half of the order contract (M4-13b; plans/m4/m4-13-processing-panel.md
 // §12): what the panel really sends, written to `src/fixtures/orders/*.json`,
 // and checked against the backend's own schema by
 // `backend/tests/earthx/api/test_frontend_orders.py`.

@@ -13,7 +13,7 @@
   Dieses Dokument selbst ändert nichts am Code; die Umsetzung ist eine eigene
   Sitzung (Stufe B).
 - **Datum:** 2026-09-22
-- **Aufgabe:** M2-11 laut `docs/plans/m2-format-und-viewer.md` §4.
+- **Aufgabe:** M2-11 laut `docs/plans/m2/m2-format-und-viewer.md` §4.
 - **Autonomiestufe:** C — nur gelesen und berichtet. Kein Produktivcode geändert,
   keine Datei außerhalb von `docs/` angefasst, kein Dienst aufgerufen.
 - **Stand des untersuchten Codes:** `main` nach #58 (22.09.2026), einschließlich
@@ -23,7 +23,7 @@
   `KLAERUNGEN.md` B8, B9, B10, B12; `architekturplan.md` 3.1, 3.2, 6.1, 7.2,
   7.3, 12.3, 13; `adr/0001` (Z1–Z9), `adr/0002` (T-A), `adr/0005` Regel IV,
   `adr/0006`, `adr/0007`; `prototyp-inventar.md` F1–F21, N1–N5, Teil 4;
-  `projektuebersicht.md` §5; `plans/m2-format-und-viewer.md` D7, D11, D14, §5;
+  `projektuebersicht.md` §5; `plans/m2/m2-format-und-viewer.md` D7, D11, D14, §5;
   Entscheidungslog.
 - **Betroffen:** `backend/app/`, `backend/build_coverage.py`, `backend/tests/`,
   `backend/Dockerfile`, `backend/requirements.txt`, `pyproject.toml`,

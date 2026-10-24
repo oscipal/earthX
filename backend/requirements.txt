@@ -12,13 +12,13 @@ httpx>=0.27
 python-dotenv>=1.0
 pydantic-settings>=2.2
 # pgstac schema migration for the compose `pgstac-migrate` service
-# (docs/plans/m1-08-compose-topologie.md). Exact pin, not a range: this is
+# (docs/plans/m1/m1-08-compose-topologie.md). Exact pin, not a range: this is
 # the only place the pgstac version is set (docker-compose.yml has none of
 # its own, it just runs `pypgstac migrate` from this image) and M1-04 builds
 # on it, so it must not drift on its own. Matches the version measured
 # working in docs/cloud-umgebung.md §5.
 pypgstac[psycopg]==0.9.12
-# The STAC API this repo serves outward (M1-07; docs/plans/m1-07-stac-api.md).
+# The STAC API this repo serves outward (M1-07; docs/plans/m1/m1-07-stac-api.md).
 # Pinned exact, like pypgstac above: it brings its own DB driver (asyncpg +
 # buildpg, plan §5) and its extension set decides which STAC conformance
 # classes we advertise (§6) — not something to let drift on its own. 6.4.1 is
@@ -47,7 +47,7 @@ rioxarray>=0.17
 # a pool, not a single connection; pypgstac[psycopg] above pulls in psycopg
 # itself already, this only adds the pooling extra.
 psycopg[pool]>=3.1
-# AOI upload (M3-06a, docs/plans/m3-06a-aoi-upload-backend.md §4, Otto F1). Pure
+# AOI upload (M3-06a, docs/plans/m3/m3-06a-aoi-upload-backend.md §4, Otto F1). Pure
 # Python, no C extension, no second GDAL/OGR binding next to the one `rasterio`
 # already bundles: `pyshp` reads a Shapefile's geometry straight out of BytesIO,
 # `defusedxml` is what actually satisfies "no external XML entities" for KML

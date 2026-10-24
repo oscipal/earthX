@@ -5,7 +5,7 @@ cloud session (`adr/0002` §2) — the same reasoning `test_coverage_smoke.py`
 already documents: `gateway` pins the checked *address*, and a cloud session's
 egress allowance is name-based, so it cannot reach a real source through
 `gateway` at all. The measurements themselves are `docs/plans/
-m3-11b-dem-adapter.md` §2, from 26.09.2026.
+m3/m3-11b-dem-adapter.md` §2, from 26.09.2026.
 
 Three requests only (adr/0005 §3.6, K5: rücksichtsvoll gegenüber der Quelle):
 

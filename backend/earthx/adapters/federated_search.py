@@ -76,12 +76,12 @@ TTL_ITEM_S = 24 * 60 * 60
 TOKEN_VERSION = 2
 
 # M1-06 sent no ``sortby`` and rode on Earth Search's undocumented default order
-# (adr/0005 §8 point 5); M1-07 fixed one instead (docs/plans/m1-07-stac-api.md §7).
+# (adr/0005 §8 point 5); M1-07 fixed one instead (docs/plans/m1/m1-07-stac-api.md §7).
 # ``datetime`` alone is not a unique key — tiles of one swath can share it — so
 # ``id`` breaks the tie. Measured to work identically against the EOPF STAC API in
 # the M2-09b plan step (plan §3): same field names, same accepted shape. This is a
 # constant, not a caller choice (the STAC API's ``sort`` extension stays off,
-# docs/plans/m1-07-stac-api.md §6), so it is not part of the search fingerprint.
+# docs/plans/m1/m1-07-stac-api.md §6), so it is not part of the search fingerprint.
 # Changing it later would silently reinterpret a page marker minted under the old
 # order — bump ``TOKEN_VERSION`` alongside any change here.
 SORTBY: tuple[dict[str, str], ...] = (

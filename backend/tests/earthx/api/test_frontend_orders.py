@@ -1,4 +1,4 @@
-"""The orders the panel sends, held against the backend's own schema (M4-13b; plans/m4-13-processing-panel.md §12).
+"""The orders the panel sends, held against the backend's own schema (M4-13b; plans/m4/m4-13-processing-panel.md §12).
 
 ``frontend/src/processingContract.test.ts`` builds orders the way the panel does, sends them through the
 real client with ``fetch`` recorded, and writes what it would have sent to ``frontend/src/fixtures/orders/``.

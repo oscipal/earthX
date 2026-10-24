@@ -22,7 +22,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 
 # Deliberately equal, not "at least": moving on to 3.13 is a task of its own, as
-# this one was (docs/plans/m3-03-python-312.md).
+# this one was (docs/plans/m3/m3-03-python-312.md).
 EXPECTED = (3, 12)
 
 WORKFLOW_VERSION = re.compile(r"""^\s*PYTHON_VERSION:\s*['"]?(\d+\.\d+)['"]?\s*$""")

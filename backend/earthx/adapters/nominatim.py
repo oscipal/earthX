@@ -12,7 +12,7 @@ knows nothing about Postgres (architekturplan.md 3.1, `adapters` may import only
 split ``adapters/cache.py`` documents for the search cache.
 
 **Rate is not a performance concern here, it is the usage policy**
-(`docs/plans/m3-07a-ortssuche-backend.md` §2.1): at most one request per second to
+(`docs/plans/m3/m3-07a-ortssuche-backend.md` §2.1): at most one request per second to
 ``nominatim.openstreetmap.org``, summed over every process. :func:`geocode` reserves
 a slot before it ever sends, refuses to send if the slot is too far out
 (:class:`RateLimited`), and never retries the request itself — a retry would be a

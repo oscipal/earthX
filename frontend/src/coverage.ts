@@ -115,7 +115,7 @@ export function clampBboxLongitude([west, south, east, north]: Bbox): Bbox {
   return [Math.max(-180, Math.min(180, west)), south, Math.max(-180, Math.min(180, east)), north];
 }
 
-// The zoom brake of `plans/m2-05-coverage.md` §6.8: `footprints_advised`
+// The zoom brake of `plans/m2/m2-05-coverage.md` §6.8: `footprints_advised`
 // alone answers "is the checked total small enough", but a strict filter
 // (e.g. a narrow date range) can keep a *world* view under 500 hits, and
 // drawing five hundred tiny footprints across the whole globe reads as noise,
@@ -159,7 +159,7 @@ export function areaGeometry(result: CoverageResponse): GeoJSON.Geometry | null 
 // derived from zoom alone asking for far fewer cells than the screen has
 // room for (zoom 1.6 asked for level 1 — four cells for the whole globe —
 // before a fixed z6 cap ever applied). See
-// `plans/m3-19-weltueberblick-ausschnitt.md` §1 for the derivation and §2 for
+// `plans/m3/m3-19-weltueberblick-ausschnitt.md` §1 for the derivation and §2 for
 // the measured cell counts/payload sizes it is chosen from. With an AOI nothing
 // changes: the request is a real spatial filter, and the map's zoom alone
 // still decides (`Math.floor`, in `store.ts`).
@@ -233,7 +233,7 @@ export function bboxContains(outer: Bbox, inner: Bbox): boolean {
   return outer[0] <= inner[0] && outer[2] >= inner[2] && outer[1] <= inner[1] && outer[3] >= inner[3];
 }
 
-// The legend's completeness line (`plans/m2-05-coverage.md` §3.5 table).
+// The legend's completeness line (`plans/m2/m2-05-coverage.md` §3.5 table).
 // `null` means the legend needs no addition. English here, like the rest of
 // the interface (D25; `adr/0004` §5.3 nachtrag 22.09.2026 lifts the earlier
 // German-terms default).

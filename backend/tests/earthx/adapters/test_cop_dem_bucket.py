@@ -1,7 +1,7 @@
 """T-A/T-B: `adapters.cop_dem_bucket` against a mocked bucket.
 
 Everything goes through `gateway` with a mock transport, so these tests also
-prove the reconciliation the plan asked for (`docs/plans/m3-11b-dem-adapter.md`
+prove the reconciliation the plan asked for (`docs/plans/m3/m3-11b-dem-adapter.md`
 §3.2, F2): a tile the list names but the bucket does not have, a tile the
 bucket itself withholds, and a bucket prefix the list never named — none of
 the three is trusted blindly ("Quell-Listen lügen", `adr/0009` §11).

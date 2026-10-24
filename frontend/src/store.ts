@@ -96,7 +96,7 @@ let coverageGen = 0;
 // M3-19 §3: the last few viewport (no-AOI) answers, so a pan/zoom that stays
 // inside a bbox already asked for skips the request instead of repeating it.
 // Keyed on dataset/level/datetime — an AOI query never reads or writes this,
-// it always asks fresh (`plans/m3-19-weltueberblick-ausschnitt.md`: "mit AOI
+// it always asks fresh (`plans/m3/m3-19-weltueberblick-ausschnitt.md`: "mit AOI
 // bleibt alles wie heute"). Module-level like `coverageGen` above: it holds
 // no more than the interaction needs to feel warm, nothing a reload should
 // have to restore.

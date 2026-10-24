@@ -2,7 +2,7 @@
 
 One pure function over the document every download already carries — the recipe with its
 ``provenance`` — so that the crop's ZIP, the export's, the job's and the local runner's folder
-write the same text for the same run (plan ``m4-19-teilen-und-beschreiben.md`` §3.1). The text is
+write the same text for the same run (plan ``plans/m4/m4-19-teilen-und-beschreiben.md`` §3.1). The text is
 English, deterministic and built from what the document says; the title and DOI of the dataset
 come in as :class:`DatasetFacts` because the worker core reads no registry.
 

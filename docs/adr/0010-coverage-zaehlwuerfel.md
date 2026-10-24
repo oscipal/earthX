@@ -5,18 +5,18 @@
   dem Würfel höchstens z7, Anstoß im `harvester`, EOPF ohne Würfel, Option B
   vorgezogen als M3-19. Gebaut wird nicht in M3 (P13).
 - **Datum:** 2026-09-23
-- **Aufgabe:** M3-05 laut `docs/plans/m3-dritte-quelle-und-interface.md` §4.
+- **Aufgabe:** M3-05 laut `docs/plans/m3/m3-dritte-quelle-und-interface.md` §4.
 - **Autonomiestufe:** C — gemessen, recherchiert und berichtet. Kein
   Produktivcode geändert, keine Daten ins Repo, keine Datei außerhalb von
   `docs/` angefasst.
-- **Grundlage:** `plans/m2-format-und-viewer.md` D26; `plans/m2-05-coverage.md`
+- **Grundlage:** `plans/m2/m2-format-und-viewer.md` D26; `plans/m2/m2-05-coverage.md`
   F3; `adr/0004` (ganz, besonders §3.3, §3.6, §5 Regel V); `adr/0005` Regel II;
   `adr/0007` §12 (EOPF); `architekturplan.md` 3.1, 3.2; `KLAERUNGEN.md` B8, B9,
   B10; `ENTSCHEIDUNGSLOG.md` Zeilen „Coverage-Heatmap im Viewer zurückgestellt"
   (20.09.), „M2-07c abgeschlossen im kleinstmöglichen Umfang" (22.09.),
-  „Heatmap-Zählwürfel (D26)" (23.09.); `plans/m3-02-konformitaetsbericht.md`
+  „Heatmap-Zählwürfel (D26)" (23.09.); `plans/m3/m3-02-konformitaetsbericht.md`
   K-06, K-07.
-- **Betroffen:** `adr/0004` §5 (Nachtrag), `plans/m2-05-coverage.md`
+- **Betroffen:** `adr/0004` §5 (Nachtrag), `plans/m2/m2-05-coverage.md`
   F3 (aufgehoben), `catalog/registry.py` (`CoverageInfo`), eine Migration in
   `catalog`, `api/coverage_route.py`, Prozess `harvester`; Entscheidungslog.
 
@@ -514,12 +514,12 @@ bei 1,6 bis 2,4 MB und erzwänge Vektorkacheln.
 
 ## 8. Folgen
 
-- `plans/m2-05-coverage.md` F3 ist aufgehoben; `adr/0004` §5 bekommt einen
+- `plans/m2/m2-05-coverage.md` F3 ist aufgehoben; `adr/0004` §5 bekommt einen
   Nachtrag „Würfel für den Weltüberblick", mit Verweis hierher.
 - Eine Bauaufgabe der Stufe B; der Bau ist nicht Teil von M3 (P13). Vorgemerkt
   für M5, zusammen mit der Arbeit am `harvester` (Entscheidungslog,
   23.09.2026, Status „Vorschlag"). Die Nachträge in `adr/0004` §5 und
-  `plans/m2-05-coverage.md` F3 kommen mit dieser Bauaufgabe.
+  `plans/m2/m2-05-coverage.md` F3 kommen mit dieser Bauaufgabe.
 - Option B wird vorgezogen: **M3-19** im M3-Plan (F6).
 - `CoverageInfo` bekommt ein Feld; die Onboarding-Checkliste Punkt 2 prüft bei
   gesetztem Feld zusätzlich, dass der Würfel je Monat Regel V besteht.
@@ -568,7 +568,7 @@ jeweils unter der Frage.
 Heatmap den sichtbaren Kartenausschnitt ab, nicht fest z6. Die Zellstufe folgt
 dem Kartenzoom, sodass auf dem Bildschirm ungefähr gleich viele Zellen liegen;
 mit AOI bleibt es wie bisher. M3-19 wird damit Stufe B. Plan und Messung:
-`plans/m3-19-weltueberblick-ausschnitt.md`; Log-Zeile vom 23.09.2026. Die
+`plans/m3/m3-19-weltueberblick-ausschnitt.md`; Log-Zeile vom 23.09.2026. Die
 Folge für den Würfel (Option D, §7): Anfragen ohne AOI tragen künftig den
 Ausschnitt als `bbox`; wie der Würfel sie erkennt, klärt die Bauaufgabe in M5.
 
