@@ -406,7 +406,7 @@ _STATISTICS_READ_ATTEMPTS = 2
 
 def _read_statistics(
     reader: Callable[..., BaseReader],
-    src_path: AssetPath | ZarrAsset,
+    src_path: AssetPath | ZarrAsset | CacheIdentity,
     *,
     env: dict[str, str],
     reader_params: dict[str, Any],
@@ -436,8 +436,8 @@ def _read_statistics(
                 statistics = _statistics_of(image, stats_params, histogram_params)
                 units = getattr(src_dst, "units", None)
         document = {name: value.model_dump(mode="json") for name, value in statistics.items()}
-        if units is not None:
-            for entry, unit in zip(document.values(), units, strict=False):
+        if units is not None and len(units) == len(document):
+            for entry, unit in zip(document.values(), units, strict=True):
                 entry["unit"] = unit
         return document
 
@@ -457,9 +457,8 @@ def _statistics_of(image: ImageData, stats_params: dict[str, Any], histogram_par
     """
     try:
         return image.statistics(**stats_params, hist_options=histogram_params)
-    except ValueError as error:
-        if "bins" not in str(error):
-            raise
+    except ValueError:
+        # Anything else that is wrong with the parameters fails again here, with the same error.
         return image.statistics(**stats_params, hist_options={**histogram_params, "bins": 1})
 
 

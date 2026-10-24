@@ -8,6 +8,9 @@ it. The reader reads each asset's tile through :class:`~earthx.processing.source
 image; the kernels of the chain then run as TiTiler's ``process_dependency``, one after the other, the very
 functions a job calls on a block.
 
+The same reader measures the whole extent for the colour scale of a preview (:meth:`OperatorTileReader.preview`,
+M4-19c): each source over the same bounds onto the same grid, at most :data:`MAX_PREVIEW_SIDE` pixels on the long side.
+
 The tile is a *preview* below the native level: rio-tiler reads an overview there, and
 only on the native level is the tile bit-identical with the job (§6.3, F9).
 """

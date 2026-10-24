@@ -328,7 +328,8 @@ class OperatorInput:
 
     Defined here and typed loosely on purpose: the tiler does not load the worker core when it
     starts (M4-14), only when the first operator tile asks for it. `processing.tile` reads this
-    object by its two attributes (``TileInputs``).
+    object by its two attributes (``TileInputs``); the statistics cache of `access` reads ``dataset_id`` and
+    ``cache_identity()`` (``CacheIdentity``).
     """
 
     inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
