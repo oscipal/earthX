@@ -721,16 +721,17 @@ heißt, behält die Einheit `1`.
   als Job (ein Wert; zwei Werte einen Schritt auseinander) in `test_core_statistics.py`. Die Bytes von `result.tif`,
   die Version und `adr/0014` ändern sich deshalb nicht.
 - **Nach dem Review (Subagent `reviewer`):** (1) „Apply“ mit dem Startwert wurde gegen eine Messung still ignoriert,
-  weil `handRange` den Startwert nach Wert nie als Wahl sah; die Vorschau führt jetzt `rangeByHand`. **Offen für Otto:**
-  Der Job übernimmt weiter `handRange` (M4-32b: „nicht der Vorgabewert“); wer −1…1 `rdylgn` von Hand anwendet, bekommt
-  in der Vorschau diesen Bereich, am Ergebnis aber dessen eigene Statistik. Soll auch der Job `rangeByHand` nehmen?
+  weil `handRange` den Startwert nach Wert nie als Wahl sah; die Vorschau führt jetzt `rangeByHand`. **Entschieden
+  (Otto, 24.10.2026):** Auch der Job nimmt diesen Schalter, noch in diesem PR (`handRange` aus `resultLayer.ts` entfällt):
+  Wer −1…1 `rdylgn` von Hand anwendet, bekommt in Vorschau und Ergebnis diesen Bereich; ohne Hand-Bereich zeichnet das
+  Ergebnis aus seiner eigenen Statistik.
   (2) Die Messung einer älteren Formel galt im 400-ms-Fenster der nächsten; `stillWanted` verwirft sie.
-  (3) Der Wiederholungsversuch des Histogramms prüft die Meldung nicht mehr (kein String-Vergleich); falsche
-  Parameter (`histogram_range=5,1`, `p=150`) enden wie vorher mit `500`, auch ohne `op` (vorbestehend, nicht Teil
-  dieser Aufgabe). (4) Einheiten werden nur geschrieben, wenn ihre Zahl die der Bänder trifft.
+  (3) Der Wiederholungsversuch des Histogramms prüft die Meldung nicht mehr (kein String-Vergleich). Falsche
+  Parameter (`histogram_range=5,1`, `p=150`, `histogram_bins=0`, zu viele Kategorien) sind jetzt ein `400` mit Grund,
+  mit und ohne `op`, vor dem Abruf des Items (Otto, 24.10.2026; vorher `500`). (4) Einheiten werden nur geschrieben, wenn ihre Zahl die der Bänder trifft.
 - **Angenommen (Otto, 24.10.2026):** Einheit aus der Statistik statt aus dem TileJSON; Messung an der ersten Szene,
   bei „AOI only“ an der ganzen Szene (für M4).
-- **Größe des PRs:** rund 1500 geänderte Zeilen (1375 neu, 117 entfernt) mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
+- **Größe des PRs:** rund 1650 geänderte Zeilen mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
   300. Otto hat entschieden, ihn nicht zu teilen. Gründe: Die Route ist ohne die Anzeige nicht zu prüfen und
   die Anzeige ohne die Route nicht zu bauen; die gemeinsame Regel (`scaleOf`) berührt beide Seiten. Etwa die Hälfte
   sind Tests (Backend 330 Zeilen, Frontend 340), etwa 130 Zeilen Doku. Die Commits sind nach Backend (Lesen, Route),

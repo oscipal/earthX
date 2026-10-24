@@ -619,6 +619,10 @@ für die Statistik eines einzelnen Assets maßgeblich.
   unbekannt; ein Asset ohne `op` hat das Feld nicht) und, wo alle Bänder dieselbe haben, als
   `unit` im TileJSON derselben Schritte. „1“ bleibt in den Daten stehen; das Frontend zeigt
   es nicht an (`shownUnit`).
+- **Optionen:** Perzentile außerhalb 0–100 (oder mehr als 20), `histogram_range` mit Min über Max,
+  `histogram_bins` außerhalb 1–1000 oder Kanten, die nicht streng steigen, und mehr als 100 Kategorien sind ein `400`
+  mit Grund, vor dem Abruf des Items, mit und ohne `op` (`check_statistics_options`; vorher `500` oder eine große
+  Antwort).
 - **Histogramm:** Liegen die Werte so nah an einer Zahl, dass `numpy` keine Fächer bilden
   kann (`nir - red` über eine flache Szene), hat das Histogramm einen Fach, statt die Route
   mit `500` scheitern zu lassen. Das gilt auch für die Statistik ohne `op`.
