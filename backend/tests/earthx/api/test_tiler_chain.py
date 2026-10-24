@@ -451,10 +451,9 @@ class TestTilejson:
         assert (carried["op"], carried["op_version"]) == (["mask", "band_math"], ["1", "1"])
         assert [json.loads(raw) for raw in carried["params"]] == [MASK, BAND_MATH]
 
-    def test_the_chain_is_for_tiles_and_their_tilejson_only(self, client: TestClient) -> None:
-        for route in ("statistics", "info"):
-            response = client.get(_url((14, 1, 1), CLOUDS_THEN_NDVI, route=route))
-            assert response.status_code == 400 and "tiles and their TileJSON only" in response.json()["detail"]
+    def test_the_chain_is_for_tiles_their_tilejson_and_statistics_only(self, client: TestClient) -> None:
+        response = client.get(_url((14, 1, 1), CLOUDS_THEN_NDVI, route="info"))
+        assert response.status_code == 400 and "tiles, their TileJSON and statistics only" in response.json()["detail"]
 
 
 class TestABandAnEarlierStepRemoved:

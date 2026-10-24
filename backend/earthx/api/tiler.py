@@ -334,6 +334,20 @@ class OperatorInput:
     inputs: tuple[tuple[Any, AssetPath | ZarrAsset], ...]
     steps: tuple[tuple[Any, Any], ...]
 
+    @property
+    def dataset_id(self) -> str:
+        return self.inputs[0][1].dataset_id
+
+    def cache_identity(self) -> dict[str, Any]:
+        """What the statistics of these inputs depend on, for the cache key: the assets with their scaling and units, the steps.
+
+        The address is left out (the key is a hash of the question, not of where the bytes are), like the key of one asset.
+        """
+        return {
+            "inputs": [entry.model_dump(mode="json", exclude={"asset": {"href"}}) for entry, _ in self.inputs],
+            "steps": [[operator.op, operator.op_version, params.model_dump(mode="json")] for operator, params in self.steps],
+        }
+
 
 def _operator_support() -> Any:
     """The worker core's operator side, imported when the first operator tile needs it.
@@ -365,7 +379,7 @@ def _operator_support() -> Any:
 MAX_OPERATOR_ASSETS = 16
 MAX_OPERATOR_PARAMS_CHARS = 2048
 MAX_OPERATOR_STEPS = 4
-_OPERATOR_ROUTES = frozenset({"tile", "tilejson"})
+_OPERATOR_ROUTES = frozenset({"tile", "tilejson", "statistics"})
 
 # TiTiler's free band-math and algorithm parameters. They computed on raw values with
 # every numexpr function, outside R5 and the scaling of adr/0014 §5.4; `op=band_math`
@@ -508,7 +522,7 @@ async def dataset_asset_path(
     on the collection (``earthx:default_render``), which is where it can be a default.
 
     With ``op``, ``op_version`` and ``params`` the URL asks for an operator over one or
-    several assets of the item (M4-09, adr/0014 §6.2) — on a tile or its TileJSON only. The three
+    several assets of the item (M4-09, adr/0014 §6.2) — on a tile, its TileJSON or the statistics (M4-19c) only. The three
     may repeat, up to :data:`MAX_OPERATOR_STEPS` times, for a chain of steps (M4-18b).
     """
     state = request.app.state
@@ -525,7 +539,7 @@ async def dataset_asset_path(
         return _resolve_asset_path(state, stac_item, config=config, item=item, asset=asset[0], target_gsd=target_gsd)
     route = request.scope.get("route")
     if getattr(route, "name", None) not in _OPERATOR_ROUTES:
-        raise HTTPException(status_code=400, detail="op is for tiles and their TileJSON only")
+        raise HTTPException(status_code=400, detail="op is for tiles, their TileJSON and statistics only")
     if len(asset) > MAX_OPERATOR_ASSETS or len(set(asset)) != len(asset):
         raise HTTPException(
             status_code=400, detail=f"name each asset once, at most {MAX_OPERATOR_ASSETS} of them"
