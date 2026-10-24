@@ -229,6 +229,8 @@ interface ProcessingState {
   measure: PreviewMeasure | null;
   // Why the preview has no measured range: the measure could not be had.
   rangeNote: string | null;
+  // The user applied the range in `range` (also when it is the start range): it holds against a measure.
+  rangeByHand: boolean;
   // The range fields hold what the user typed and did not apply; a measure does not write over them.
   rangeEdited: boolean;
   // "Review" was asked for this draft: empty required fields show their hint.
@@ -605,6 +607,7 @@ const EMPTY_DRAFT = {
   previewNote: null as string | null,
   measure: null as PreviewMeasure | null,
   rangeNote: null as string | null,
+  rangeByHand: false,
   rangeEdited: false,
   reviewAsked: false,
   estimate: null,
@@ -802,12 +805,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     setRangeDraft: (patch) => set((s) => ({ rangeDraft: { ...s.rangeDraft, ...patch }, rangeEdited: true })),
     applyRange: () => {
-      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeEdited: false }));
+      if ('rescale' in rescaleOf(get().rangeDraft)) set((s) => ({ range: s.rangeDraft, rangeByHand: true, rangeEdited: false }));
     },
     autoStretch: () => {
       failedMeasures.clear();
+      measuring.clear();
       settledKey = null;
-      set({ range: DEFAULT_RANGE, rangeEdited: false });
+      set({ range: DEFAULT_RANGE, rangeByHand: false, rangeEdited: false });
       refreshPreview();
     },
     // The preview on screen becomes a layer of its own.
@@ -1191,8 +1195,8 @@ function wantedPreview(limit?: number): PreviewSpec | null {
 
 // The range the preview is drawn with (M4-19c): the one the user applied; else the one the measure of this very
 // preview calls for (the rule of a result's, `scaleOf`); else the start range.
-function drawnRange(p: Pick<ProcessingState, 'range' | 'measure'>, measureKey: string): PreviewRange {
-  if (handRange(p.range)) return p.range;
+function drawnRange(p: Pick<ProcessingState, 'range' | 'rangeByHand' | 'measure'>, measureKey: string): PreviewRange {
+  if (p.rangeByHand) return p.range;
   return (p.measure?.key === measureKey ? measuredRange(p.measure) : null) ?? p.range;
 }
 
@@ -1220,7 +1224,9 @@ function measureFor(spec: PreviewSpec): Promise<PreviewMeasure | null> {
         failedMeasures.add(spec.measure);
         return null;
       })
-      .finally(() => measuring.delete(spec.measure));
+      .finally(() => {
+        if (measuring.get(spec.measure) === request) measuring.delete(spec.measure);
+      });
     measuring.set(spec.measure, request);
   }
   return request;
@@ -1241,11 +1247,17 @@ function within<T>(request: Promise<T>, ms: number): Promise<T | typeof TOO_LATE
   });
 }
 
+// Whether `spec` is still what the panel asks for: no newer settle, and no change of the draft inside the 400 ms
+// before one starts (`settleRun` rises only then), so that the measure of an older formula is not taken for the new one.
+function stillWanted(run: number, spec: PreviewSpec | null, limit: number | undefined): boolean {
+  return run === settleRun && spec !== null && wantedPreview(limit)?.measure === spec.measure;
+}
+
 // Takes a measure into the state: with it the unit, and — where no range of the user's holds — the range it calls
 // for in the fields, unless the user is typing in them. Without one the panel says so.
 function adoptMeasure(measure: PreviewMeasure | null): void {
   const p = useProcessingStore.getState();
-  const hand = handRange(p.range) !== null;
+  const hand = p.rangeByHand;
   useProcessingStore.setState({
     measure,
     rangeNote: hand || measure !== null ? null : NO_MEASURE,
@@ -1277,7 +1289,7 @@ async function settle(wanted: PreviewSpec): Promise<void> {
   // The steps the tiler takes: all of them, or the ones before the step it refuses.
   const limit = refused === null || refused.step >= wanted.stepCount ? undefined : refused.step;
   const note = limit === undefined ? null : refusedNote(limit, wanted.stepCount, refused!);
-  const hand = handRange(useProcessingStore.getState().range) !== null;
+  const hand = useProcessingStore.getState().rangeByHand;
   let spec = wantedPreview(limit);
   // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice,
   // but not longer than `MEASURE_WAIT_MS`: then it is drawn with the start range.
@@ -1285,7 +1297,7 @@ async function settle(wanted: PreviewSpec): Promise<void> {
   if (spec && !hand) {
     const request = measureFor(spec);
     const measure = await within(request, MEASURE_WAIT_MS);
-    if (run !== settleRun) return;
+    if (!stillWanted(run, spec, limit)) return;
     if (measure === TOO_LATE) {
       late = request;
     } else {
@@ -1298,7 +1310,7 @@ async function settle(wanted: PreviewSpec): Promise<void> {
   // A measure that comes after all is taken in with one redraw, and only if it changes the picture.
   if (late) {
     const measure = await late;
-    if (run !== settleRun) return;
+    if (!stillWanted(run, spec, limit)) return;
     adoptMeasure(measure);
     const again = wantedPreview(limit);
     if (again && again.key !== spec?.key) {
@@ -1309,7 +1321,7 @@ async function settle(wanted: PreviewSpec): Promise<void> {
   // With one, the measure is for the unit alone, and the picture does not wait for it.
   if (spec && hand) {
     const measure = await measureFor(spec);
-    if (run === settleRun) adoptMeasure(measure);
+    if (stillWanted(run, spec, limit)) adoptMeasure(measure);
   }
 }
 

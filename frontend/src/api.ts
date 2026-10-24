@@ -471,8 +471,8 @@ export async function fetchStatistics(
 }
 
 // The statistics at an address the panel built (`buildOperatorStatisticsUrl`).
-export async function fetchStatisticsAt(url: string, signal?: AbortSignal): Promise<Record<string, BandStatistics>> {
-  return jsonOrThrow(await fetch(url, { signal }));
+export async function fetchStatisticsAt(url: string): Promise<Record<string, BandStatistics>> {
+  return jsonOrThrow(await fetch(url));
 }
 
 // Pages through `nextToken` until the result is complete or `maxItems` is

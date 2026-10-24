@@ -606,6 +606,44 @@ describe('the preview section', () => {
       expect(rescale()).toBe('120,2400');
     });
 
+    it('draws the start range once the user applies it against a measure, and lets Auto stretch take it back', async () => {
+      statistics = () => measured({ b1: DEM_VALUES });
+      await withNdvi();
+      expect(rescale()).toBe('120,2400');
+      typeInto(inputs()[0], '-1');
+      typeInto(inputs()[1], '1');
+      const select_ = section().querySelector('select')!;
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!;
+        setter.call(select_, 'rdylgn');
+        select_.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      click(button('Apply'));
+      await afterDebounce();
+      expect([rescale(), colormap()]).toEqual(['-1,1', 'rdylgn']);
+      expect(button('Auto stretch').disabled).toBe(false);
+      click(button('Auto stretch'));
+      await afterDebounce();
+      expect(rescale()).toBe('120,2400');
+    });
+
+    it('does not take the measure of the formula before for the one typed while the 400 ms run', async () => {
+      let answer!: (response: Response) => void;
+      statistics = () => new Promise<Response>((resolve) => (answer = resolve)) as unknown as Response;
+      select([scene('S2B_A')]);
+      await openPanel();
+      vi.useFakeTimers();
+      click(button('＋ Band math'));
+      typeInto(expression(), 'nir - red');
+      await afterDebounce();
+      typeInto(expression(), 'nir / red'); // inside the 400 ms of the next picture
+      await act(async () => answer(measured({ b1: DEM_VALUES })));
+      await flush();
+      expect(store().preview).toBeNull();
+      expect(store().measure).toBeNull();
+      expect(inputs().map((i) => i.value)).toEqual(['-1', '1']);
+    });
+
     describe('a measure that is slow (the longest wait is 5 s)', () => {
       let answer!: (response: Response) => void;
       const slow = () => {

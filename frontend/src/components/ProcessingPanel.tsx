@@ -34,7 +34,6 @@ import {
   previewUnit,
   rescaleOf,
 } from '../processingPreview';
-import { handRange } from '../resultLayer';
 import {
   bandMathExpressions,
   orderView,
@@ -310,7 +309,7 @@ function PreviewSection({ view }: { view: OrderView }) {
   const setRangeDraft = useProcessingStore((s) => s.setRangeDraft);
   const applyRange = useProcessingStore((s) => s.applyRange);
   const pinPreview = useProcessingStore((s) => s.pinPreview);
-  const appliedRange = useProcessingStore((s) => s.range);
+  const rangeByHand = useProcessingStore((s) => s.rangeByHand);
   const rangeEdited = useProcessingStore((s) => s.rangeEdited);
   const rangeNote = useProcessingStore((s) => s.rangeNote);
   const measure = useProcessingStore((s) => s.measure);
@@ -364,7 +363,7 @@ function PreviewSection({ view }: { view: OrderView }) {
             <button
               type="button"
               className="link-btn"
-              disabled={handRange(appliedRange) === null && !rangeEdited && rangeNote === null}
+              disabled={!rangeByHand && !rangeEdited && rangeNote === null}
               title="Use the range measured on the first scene (the 2nd to 98th percentile, or −1 to 1 for an index)"
               onClick={() => autoStretch()}
             >
