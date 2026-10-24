@@ -302,3 +302,56 @@ class TestTheUnit:
         response = client.get(f"/collections/{COG}/items/{ITEM}/statistics?asset=red")
         assert response.status_code == 200
         assert "unit" not in _only_band(response.json())
+
+
+class TestStatisticsOptionsThatCannotBeComputed:
+    """A `400` with the reason, with and without `op`, and before the item is asked for (they were `500`)."""
+
+    BAD = [
+        ("p=150", "percentile from 0 to 100"),
+        ("p=-1", "percentile from 0 to 100"),
+        ("histogram_range=5,1", "min not above max"),
+        ("histogram_bins=0", "number from 1 to 1000"),
+        ("histogram_bins=100000", "number from 1 to 1000"),
+        ("histogram_bins=5,1", "rises strictly"),
+        ("histogram_bins=1,1,2", "rises strictly"),
+        ("histogram_bins=1", None),
+        ("&".join(f"p={n}" for n in range(21)), "at most 20 percentiles"),
+        ("&".join(f"c={n}" for n in range(101)), "at most 100 values"),
+    ]
+
+    @staticmethod
+    def _plain(option: str) -> str:
+        return f"/collections/{COG}/items/{ITEM}/statistics?asset=red&{option}"
+
+    @pytest.mark.parametrize(("option", "reason"), BAD)
+    @pytest.mark.parametrize("operator", [False, True], ids=["a plain asset", "an operator"])
+    def test_is_a_400_with_the_reason(self, client: TestClient, option: str, reason: str | None, operator: bool) -> None:
+        url = _path(extra=f"&{option}") if operator else self._plain(option)
+        response = client.get(url)
+        if reason is None:  # a single bin is a valid choice
+            assert response.status_code == 200
+            return
+        assert response.status_code == 400, response.text
+        assert reason in response.json()["detail"]
+
+    def test_is_refused_before_the_item_is_fetched(self, client: TestClient) -> None:
+        asked: list[str] = []
+        original = client.app.state.earthx_item_source
+
+        async def counting(dataset_id: str, item_id: str) -> dict[str, Any]:
+            asked.append(item_id)
+            return await original(dataset_id, item_id)
+
+        client.app.state.earthx_item_source = counting
+        assert client.get(self._plain("p=150")).status_code == 400
+        assert client.get(_path(extra="&histogram_range=5,1")).status_code == 400
+        assert asked == []
+
+    def test_names_every_problem_at_once(self, client: TestClient) -> None:
+        detail = client.get(self._plain("p=150&histogram_range=5,1")).json()["detail"]
+        assert "percentile" in detail and "histogram_range" in detail
+
+    def test_leaves_the_usual_options_alone(self, client: TestClient) -> None:
+        for option in ("p=5&p=95", "histogram_bins=20", "histogram_bins=0,1,2", "histogram_range=-1,1", "p=0&p=100"):
+            assert client.get(self._plain(option)).status_code == 200, option
