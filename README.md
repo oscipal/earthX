@@ -26,7 +26,46 @@ earthX/
 
 ---
 
-## 1. Stand (Meilenstein M3)
+## 1. Stand (Meilenstein M4)
+
+M4 macht aus der Betrachtungsplattform eine Rechenplattform: Ein **Rezept**
+beschreibt eine Verarbeitung so vollständig, dass dieselbe Operator-Implementierung
+sie als Vorschau im `tiler`, als Job im `worker` und offline im lokalen Runner mit
+übereinstimmendem Ergebnis ausführt. Ein zweiter identischer Auftrag kommt aus
+dem Cache, wenn alle Eingaben eine Fassung tragen.
+
+- **Rezept und Operatoren** (`adr/0014`): Hash des kanonischen Rezepts nur
+  intern; Operatoren **Band-Math**, **Reprojektion/Resampling** (mit weiteren
+  Resampling-Methoden), **Masking** und **Normalisierung**; Statistik, Einheiten
+  und Methodentext je Ergebnis; `recipe.json` und `citation.bib` in jedem ZIP.
+- **Jobs** (`adr/0013`, `adr/0015`): Queue und Worker-Hülle in `jobs`, Job-Schnittstelle
+  in der Form von OGC API – Processes unter `/processing` (ohne Konformitätsanspruch),
+  Fortschritt per SSE, Ergebnisse privat im Objektspeicher, nur über signierte
+  URLs, Ablauf nach 7 Tagen. **Export über dem Deckel** und **Mosaik ganzer Szenen
+  je Überflug** laufen als Job.
+- **Viewer:** Processing-Panel aus den Schemas der Operatoren mit
+  Kostenschätzung, **Vorschau** (T1) auf der Karte, Job-Ergebnis als Layer,
+  Batch, **Mosaik im Kachel-Pfad** je Überflug, Farbskala und Einheit aus der
+  Statistik, **Permalink** („Share“) und „Load recipe…“.
+- **Lokaler Runner** (`adr/0016`): `earthx.runner` und die Stufe `runner` im
+  `Dockerfile`, offline, gehärtet; Ergebnisse sind `self_attested` und kommen nie
+  in den Cache (siehe unten).
+- **Umbau:** Adapter-Interface nach `adr/0011` (`AdapterSpec`), Lock-Datei für die
+  Backend-Pakete, `.gitattributes` mit LF, Importverträge für `objectstore` und
+  `runner` (16 Verträge).
+
+Belege je Abnahmekriterium, die lokale Prüfanleitung und die Liste „Nach M4
+vorgemerkt“: [`docs/plans/m4-20-abnahme.md`](docs/plans/m4-20-abnahme.md)
+(Aufgabenschnitt: [`docs/plans/m4-processing-kern.md`](docs/plans/m4-processing-kern.md)).
+Einen echten Job einmal durchspielen: `scripts/try-job.ps1` (Abschnitt
+„Job-Schnittstelle“).
+
+Noch **nicht** enthalten: Login und Quotas (M6); Datacube (M6); Health-Status,
+Harvester-Zeitplan und Hybrid-Suche (M5); der neue App-Rahmen und die
+Basiskarte mit Projektion (UI-01, UI-02, direkt nach M4). Weitere Punkte stehen
+unter „Nach M4 vorgemerkt“ im Abnahmebericht.
+
+### Aus M3
 
 M3 trägt **drei token-freie Datensätze** durch denselben Viewer, darunter die
 erste Quelle ganz ohne Such-API:
@@ -69,18 +108,13 @@ Was M3 dazu bringt:
   (`adr/0012`); Python 3.12 in Backend, CI und Image; kein Prozess schreibt
   Koordinaten oder Query-Strings ins Log.
 - **Architektur:** Das Adapter-Interface ist aus den drei Quellen abgeleitet
-  (`adr/0011`, angenommen); der Umbau ist der erste Schritt von M4.
+  (`adr/0011`); der Umbau war der erste Schritt von M4.
 
 Vollständige Belege je Abnahmekriterium und die Liste der offenen Punkte:
 [`docs/plans/m3-15-abnahme.md`](docs/plans/m3-15-abnahme.md) (Aufgabenschnitt:
 [`docs/plans/m3-dritte-quelle-und-interface.md`](docs/plans/m3-dritte-quelle-und-interface.md)).
 Die Belege für M2 stehen in
 [`docs/plans/m2-12-abnahme.md`](docs/plans/m2-12-abnahme.md).
-
-Noch **nicht** enthalten: Ergebnisse im Objektspeicher, Rezept, Operatoren und
-Jobs (M4); Exporte über dem synchronen Deckel und gemergte Mosaike ganzer
-Szenen (M4, als Job); Health-Status, Harvester-Zeitplan und Hybrid-Suche (M5);
-Login und Quotas (M6).
 
 ---
 
