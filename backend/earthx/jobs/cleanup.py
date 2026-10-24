@@ -8,8 +8,10 @@ would leave objects nobody knows (the bucket rule is the net for those).
 **What lives how long.** A run, and so its jobs and its result, lives until ``expires_at``:
 seven days after it finished (Q10), counted from its creation for a run that never
 finished. A recipe has no term of its own: it stays while a job or a run refers to it, so
-it lives as long as the latest result that uses it, and only a run or a cache hit lengthens
-that (adr/0015 F13). Nothing here is lengthened by looking.
+it lives as long as the latest result that uses it, and only a new run lengthens that. A cache
+hit does not: the bucket rule counts from the write of the object, so a run whose term a hit
+had moved would point at deleted bytes (adr/0015 F13, as amended in §7.1). A permalink has a fixed term from its creation and is deleted whole
+(M4-19e, adr/0015 §13). Nothing here is lengthened by looking.
 
 Foreign keys are RESTRICT, so a deletion in the wrong order fails loudly instead of taking
 valid rows along. Only one supervisor works at a time: the batch holds a transaction-level
@@ -41,10 +43,11 @@ class CleanupResult:
     jobs: int = 0
     recipes: int = 0
     objects: int = 0
+    permalinks: int = 0
 
     @property
     def total(self) -> int:
-        return self.runs + self.jobs + self.recipes
+        return self.runs + self.jobs + self.recipes + self.permalinks
 
 
 def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> CleanupResult | None:
@@ -88,28 +91,38 @@ def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH)
             """,
             (batch,),
         ).rowcount
-        return CleanupResult(runs=runs, jobs=jobs, recipes=recipes, objects=objects)
+        permalinks = conn.execute(
+            """
+            DELETE FROM public.earthx_permalink WHERE permalink_id IN (
+                SELECT permalink_id FROM public.earthx_permalink
+                WHERE expires_at < clock_timestamp() ORDER BY expires_at LIMIT %s
+            )
+            """,
+            (batch,),
+        ).rowcount
+        return CleanupResult(runs=runs, jobs=jobs, recipes=recipes, objects=objects, permalinks=permalinks)
 
 
 def cleanup(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> CleanupResult:
     """Batches until nothing expired is left; the sum of what was deleted."""
-    runs = jobs = recipes = objects = 0
+    runs = jobs = recipes = objects = permalinks = 0
     while True:
         done = cleanup_batch(conn, store, batch=batch)
         if done is None or done.total == 0:
             break
-        runs, jobs, recipes, objects = (
+        runs, jobs, recipes, objects, permalinks = (
             runs + done.runs,
             jobs + done.jobs,
             recipes + done.recipes,
             objects + done.objects,
+            permalinks + done.permalinks,
         )
-        if done.runs < batch and done.recipes < batch:
+        if done.runs < batch and done.recipes < batch and done.permalinks < batch:
             break
-    result = CleanupResult(runs, jobs, recipes, objects)
+    result = CleanupResult(runs, jobs, recipes, objects, permalinks)
     if result.total:
         LOGGER.info(
-            "expired runs cleaned up",
-            extra={"runs": runs, "jobs": jobs, "recipes": recipes, "objects": objects},
+            "expired runs and permalinks cleaned up",
+            extra={"runs": runs, "jobs": jobs, "recipes": recipes, "objects": objects, "permalinks": permalinks},
         )
     return result
