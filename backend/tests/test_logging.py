@@ -513,6 +513,26 @@ class TestAJobIdentifierIsNotLogged:
         assert "AAAAAAAAAAAAAAAAAAAAAA" not in line
 
 
+class TestAPermalinkIdentifierIsNotLogged:
+    """M4-19e: the identifier of a permalink is the way to an order with its area."""
+
+    @pytest.mark.parametrize(
+        ("path", "logged"),
+        [
+            ("/processing/permalinks/AAAAAAAAAAAAAAAAAAAAAA", "/processing/permalinks/{permalinkID}"),
+            ("/processing/permalinks//AAAAAAAAAAAAAAAAAAAAAA", "/processing/permalinks/{permalinkID}"),
+            ("/processing/permalinks/not-an-identifier-but-secret", "/processing/permalinks/{permalinkID}"),
+            ("/earthx/processing/permalinks/AAAAAAAAAAAAAAAAAAAAAA", "/earthx/processing/permalinks/{permalinkID}"),
+            ("/processing/permalinks", "/processing/permalinks"),
+            ("/processing/permalinks/", "/processing/permalinks/"),
+        ],
+    )  # fmt: skip
+    def test_the_path_as_the_access_log_writes_it(self, path: str, logged: str) -> None:
+        from earthx.logging import loggable_path
+
+        assert loggable_path(path) == logged
+
+
 class TestAResultIdentifierIsNotLogged:
     """M4-13c-5: `/results/{result_id}` of the tiler is the way to a result's tiles, as the job's identifier is to its files."""
 
