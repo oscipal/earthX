@@ -160,6 +160,13 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Umfang:** Durchgang durch Panel, Suchergebnisse, Layer-Manager, Control-Panel; Liste der gekürzten bzw. verschobenen Texte im PR.
    - **Aufgabe:** Stufe A, nur Frontend, zusammen mit Punkt 20 oder in UI-01; gilt ab sofort als Regel für jede neue Oberfläche.
 
+23. **Backend-Tests schneller** (Otto, 24.10.2026).
+   - **Befund (CI-Lauf auf `main`, 24.10.2026):** Job „Backend — lint and tests“ 14,2 min, davon `pytest` 13,2 min; Installation 0,5 min, Ruff und Migration je unter 0,1 min. Frontend 0,7 min, Modulgrenzen 0,7 min, compose-topology 1,9 min.
+   - **Schritt 1 – messen:** `pytest --durations=30` (lokal in der Session und einmal in der CI-Ausgabe), Tabelle der langsamsten Tests im PR. Erwartete Kandidaten: Speichertests bei 4096² (`VmHWM`), Vergleiche in `spawn`-Prozessen (Runner, Worker, Import), Tests gegen Postgres. Abhilfe ohne Verlust an Aussage: kleinere synthetische Raster, wo die Größe nicht der Prüfgegenstand ist; teure Fixtures mit Geltungsbereich `module`/`session`; doppelte Prüfungen zusammenlegen. Speicher- und Bitgleich-Tests bleiben in voller Größe.
+   - **Schritt 2 – parallel (nur nach Ottos Freigabe):** `pytest-xdist` (neue Abhängigkeit). Vorher mit Quellen klären: Verträglichkeit mit `spawn`-Kindprozessen und Speichermessungen (`VmHWM` je Prozess), eigene Datenbank je xdist-Worker für Postgres-Tests, Zahl der Kerne der GitHub-Runner für öffentliche Repos. Einstellung über die pytest-Konfiguration, nicht über `.github/`.
+   - **Grenze:** keine Tests streichen oder überspringen, um Zeit zu sparen; `.github/` bleibt unverändert.
+   - **Aufgabe:** Stufe B (Schritt 2 ist eine Abhängigkeit und rechenrelevant), nur Tests und Testkonfiguration.
+
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
@@ -172,11 +179,11 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 ## Offen im Entscheidungslog (bewusst nach M4)
 
-23. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
-24. Originale als ZIP über die Plattform. Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
-25. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
-26. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
-27. Punkte aus S3 (M4-Plan Fassung 3):
+24. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
+25. Originale als ZIP über die Plattform. Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
+26. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
+27. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
+28. Punkte aus S3 (M4-Plan Fassung 3):
     - Export-Job für Zarr blockweise,
     - schnelleres COG-Profil,
     - Laufzeitdeckel an echten Läufen kalibrieren,
@@ -184,14 +191,15 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
     - Job-Schnittstelle in eigenem Prozess,
     - Eingaben per Referenz (siehe Punkt 5),
     - Datei-Cache des Runners.
-28. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
+29. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
 
 ## Danach geplant
 
-29. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
+30. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
 
 ## Verworfen bzw. nur bei Bedarf
 
 - Zarr im Viewer generell durch COG ersetzen (Daten umwandeln): nein. Davon getrennt steht Punkt 15 (Zarr-Datensatz als Doppel entfernen). Jeder Datensatz bleibt bei seiner Quelle. Nur falls Zarr im Viewer langsam auffällt, folgt eine Messung (Stufe C) zu GeoZarr-Multiscales und Quicklooks.
 - „Replace source layer“ für Vorschau und Job-Ergebnis: von Otto entfernt (20.10.2026).
 - Knopf zum Kopieren des Methodentexts: von Otto abgelehnt (22.10.2026).
+- CI bei reinen Plan-Änderungen verkürzen (Filter im Job oder zweiter Workflow): von Otto verworfen (24.10.2026); `.github/` bleibt unverändert.
