@@ -1,6 +1,6 @@
 # UI-01 — App-Rahmen mit linker Leiste und Processing-Manager
 
-**Stand:** 12.10.2026, ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4), 22.10.2026 (§1 Punkte 10 und 12) und 24.10.2026 (§1 Punkte 6 und 11), beauftragt von Otto.
+**Stand:** 12.10.2026, Freigabe der Antworten am 24.10.2026 (§6), ergänzt am 20.10.2026 (§1 Punkte 6–7, §3 Punkt 7, §4), 22.10.2026 (§1 Punkte 10 und 12) und 24.10.2026 (§1 Punkte 6 und 11), beauftragt von Otto.
 **Meilenstein:** UI, direkt nach M4 (nach M4-20). Nummer und Name des Meilensteins stehen in `projektplan.md` noch aus.
 **Stufe B:** Erst kommt der Plan im Draft-PR, Otto gibt ihn frei, dann folgt der Code.
 **Modell:** Opus für den Plan, Sonnet (Effort hoch) für die Umsetzung.
@@ -83,7 +83,7 @@
 ## 4. Grenzen
 
 - Schwerpunkt Frontend.
-- Backend nur für die Bündel-Route aus §3 Punkt 7, mit Wiederverwendung des Codes aus M4-11b-1 und M4-30 und ohne neue Abhängigkeit. Für einzelne Jobs ändert sich an der API nichts.
+- Backend nur für die Bündel-Routen aus §3 Punkt 7 samt kurzlebigem Bündel-Eintrag (Tabelle, Migration, Aufräumer, §6.12), mit Wiederverwendung des Codes aus M4-11b-1 und M4-30 und ohne neue Abhängigkeit. Für einzelne Jobs ändert sich an der API nichts.
 - Oberflächentexte ausschließlich auf Englisch.
 - **Wenig Text (Otto, 24.10.2026):** Erklärungen und Gründe stehen im Tooltip (Hover und Fokus, für Screenreader erreichbar), nicht als Text unter Knöpfen oder Feldern. Sichtbar bleiben Beschriftungen, Werte, Fehlermeldungen mit Handlungsbedarf und Pflichtangaben (Attribution, Lizenz).
 - Bestehende Funktionen bleiben erreichbar. Der Plan listet jede verschobene Funktion mit ihrem neuen Ort auf.
@@ -106,21 +106,23 @@
 - Log-Zeilen für Ottos Antworten.
 - Vor „fertig“ ist main geholt.
 
-## 6. Plan (24.10.2026, zur Freigabe durch Otto)
+## 6. Plan (24.10.2026, von Otto am 24.10.2026 freigegeben)
 
-Stufe B: Bis zur Freigabe ist kein Produktivcode geändert. Grundlage ist `main` nach #184 (M4 abgenommen, DOC-01 gemergt). Belegstufen wie in `adr/0014`: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen bzw. mit einem Wegwerf-Test nachgestellt (nicht im Repo), [S] Sekundärquelle, [A] eigene Ableitung.
+**Freigabe (Otto, 24.10.2026):** Antworten auf alle 13 Fragen stehen in §6.13; Frage 1 nach Option 2, 4 mit Zusatz, 5 nach Option 2, 8 nach Option 2, die übrigen nach Option 1. Die Änderungen daraus sind in §6.2, §6.4, §6.5, §6.6, §6.12 und §6.14 eingearbeitet. Der Schnitt wächst deshalb auf sechs PRs (§6.14). Die Umsetzung beginnt mit UI-01a.
+
+Stufe B: Bis zur Freigabe war kein Produktivcode geändert. Grundlage ist `main` nach #184 (M4 abgenommen, DOC-01 gemergt). Belegstufen wie in `adr/0014`: [P] Code oder Primärquelle gelesen, [M] in der Sitzung gemessen bzw. mit einem Wegwerf-Test nachgestellt (nicht im Repo), [S] Sekundärquelle, [A] eigene Ableitung.
 
 **Kurzfassung.**
 
 - **Rahmen:** Eine 48 px breite Leiste am linken Rand mit drei Symbolen (Control-Menü, Layer-Manager, Processing-Manager). Die Panels docken rechts neben der Leiste an, eines zur Zeit (Frage 3). „☰ Layers (n)“ und „⚙ Jobs (n)“ oben rechts entfallen und wandern in die Leiste. Das Processing-Fenster rechts (Auftrag bauen) bleibt, wo es ist, und zeigt zusätzlich die Details eines Jobs.
 - **Processing-Manager:** je Eintrag nur Titel, Fortschritt und Ablaufdatum; Batch als ein Eintrag mit Aufklappen; Archivieren, Gruppen, Filter „Active / All“; kein Löschen mehr (das heutige „✕ Remove this row“ entfällt). Ein Klick öffnet die Details im Processing-Fenster. Einzige Aktion eines fertigen Jobs ist „Download (ZIP)“; „Methods“ und „Copy“ entfallen.
 - **Ablage:** ein Schlüssel `earthx.processing.manager` im `localStorage` mit Formatversion 1; die Titel aus dem `sessionStorage` werden einmal übernommen. Ohne nutzbaren Speicher läuft alles für die Sitzung weiter. Der Hinweis steht als Tooltip am Kopf des Managers.
-- **Befund Punkt 10 [P][M]:** Drei Ursachen im Code gefunden, an denen eine Änderung der Reihenfolge auf der Karte nichts oder das Falsche bewirkt, dazu eine gewollte Überdeckung durch die Live-Vorschau (§6.2). Welche davon Ottos Befund ist, klären die Schritte, die Otto beim Start liefern wollte (Frage 1). Behebung in `mapLayers.ts`, `viewLayer.ts` und `store.ts`.
+- **Befund Punkt 10 [P][M]:** Drei Ursachen im Code gefunden, an denen eine Änderung der Reihenfolge auf der Karte nichts oder das Falsche bewirkt, dazu eine gewollte Überdeckung durch die Live-Vorschau (§6.2). Otto konnte den Befund nicht nachstellen (Frage 1, Option 2): H1–H3 werden alle behoben, je mit einem Test, der am alten Code scheitert; die Gegenprüfung läuft über die Prüfanleitung von UI-01a. Behebung in `mapLayers.ts`, `viewLayer.ts` und `store.ts`.
 - **Stapelung zwischen Überflügen [P]:** Ursache ist der Aufbau der Overlays eines angehefteten Layers (`store.ts::overlaysOfEntries`, dazu `processingStore.ts::pinPreview`). Er wird an die Regel der Ansicht angeglichen: Der zuerst gewählte Überflug bzw. die zuerst gewählte Szene liegt oben.
 - **Layer-Manager:** feste Spalten im Raster (CSS-Grid), ein fehlender Knopf lässt seinen Platz leer; Hinweise als Symbol mit Tooltip statt Zeile darunter. Ergebnis-Layer bekommen „Download (ZIP)“ (gesperrt mit Grund, wenn abgelaufen) und beim Klick eine Darstellung mit vmin, vmax, Colormap und Deckkraft, Vorgabe aus der Statistik (M4-32), ohne Einheit.
-- **„Download all (ZIP)“:** neue Route `POST /processing/bundles` in `api`, Liste der `jobID`s im Body, dasselbe `Layout` wie `result.zip` (M4-11b-1) und dieselben Hinweisdateien (M4-30). Fehlende Teile stehen in `MISSING.txt`. Grenzen: höchstens 25 Teile, eigene Größengrenze (Frage 7). Nicht fortsetzbar, weil `Range` nur für `GET` definiert ist; die Teile bleiben einzeln fortsetzbar (Frage 8).
-- **Schnitt:** fünf PRs UI-01a bis UI-01e, je unter etwa 400 Zeilen (§6.14).
-- **Fragen an Otto:** 13, je mit Empfehlung (§6.13).
+- **„Download all (ZIP)“:** neue Route `POST /processing/bundles` in `api`, Liste der `jobID`s im Body, dasselbe `Layout` wie `result.zip` (M4-11b-1) und dieselben Hinweisdateien (M4-30). Fehlende Teile stehen in `MISSING.txt`. Grenzen: höchstens 25 Teile, 25 GB je Bündel (Frage 7). Fortsetzbar (Frage 8, Option 2): `POST` legt einen kurzlebigen Bündel-Eintrag mit zufälliger ID an, `GET /processing/bundles/{id}` liefert das ZIP mit `Range`, `If-Range` und ETag wie das Job-ZIP.
+- **Schnitt:** sechs PRs UI-01a bis UI-01f, je unter etwa 400 Zeilen (§6.14).
+- **Fragen an Otto:** 13, am 24.10.2026 beantwortet (§6.13).
 
 ### 6.1 Stand vor der Aufgabe [P]
 
@@ -160,7 +162,11 @@ Otto hat beim Start keine Schritte geliefert (Frage 1). Die Diagnose am Code fin
 - **Zu H2:** Das Budget zählt von oben. Die Layer oben in der Liste, also oben auf der Karte, sind immer vollständig. Wird gekürzt, nennt eine Meldung die Zahl der nicht gezeichneten Bilder, in Anlehnung an `mosaic.ts::oversizeNote`.
 - **Zu H3:** §6.3.
 - **Test zuerst:** Je Ursache ein Fall, der am Code vor UI-01 scheitert; Gegenprobe im PR. Dazu eine Matrix in `mapLayers.test.ts`: fünf Layer, einer je Art (Quicklook, Vollauflösung, angeheftete Vorschau, Ergebnis, Mosaik aus M4-17). Nach jedem Verschieben (oben, mitte, unten, ganz nach oben, ganz nach unten) entspricht die Reihenfolge der Layer auf der Karte der Liste, jeweils mit Ansicht im Browse-Modus, mit Vollauflösung und mit einer Ansicht, die ein Layer ist.
-- **Ottos Schritte (Frage 1):** Sie kommen als eigener Testfall dazu. Passt keine der Ursachen H1–H3, wird weiter gesucht, bevor UI-01a als fertig gilt.
+- **Ottos Schritte (Frage 1, Option 2; Otto, 24.10.2026):** Otto konnte den Befund mit den Schritten nicht nachstellen. Deshalb werden H1–H3 behoben und je mit einem Test belegt, der am alten Code scheitert. Die Gegenprüfung in der Prüfanleitung von UI-01a folgt den Schritten, die Otto nannte:
+  1. Zwei überlappende Szenen in voller Auflösung anheften, die Ansicht bleibt offen, im Layer-Manager umsortieren.
+  2. Dasselbe mit geschlossener Ansicht.
+
+  Schritt 1 entspricht H1 (a): „Add to layers“ aus der Vollauflösung mit der Ansicht obenauf. Die Prüfanleitung hat die Schritte vor und nach der Behebung (Stand `main` gegen den PR) und das Panel geschlossen (H4).
 
 ### 6.3 Stapelung zwischen Überflügen (Punkt 10, 22.10.2026) [P]
 
@@ -202,7 +208,9 @@ earthx.processing.manager = {
 - **Übernahme:** Beim ersten Start mit UI-01 wird `earthx.processing.jobs` aus dem `sessionStorage` dieses Tabs übernommen (`jobID`, `expires`, `title`) und dort entfernt. Ein Job, der schon im `localStorage` steht, wird nicht doppelt angelegt.
 - **Mehrere Tabs:** Der Speicher gilt jetzt für alle Tabs eines Browsers. Das Ereignis `storage` gleicht die anderen Tabs ab. Jede Änderung liest vor dem Schreiben neu; bei gleichzeitiger Änderung desselben Eintrags gilt die letzte.
 - **Verfolgen:** Auch ein Job aus einem anderen Tab wird verfolgt (SSE bzw. Abfrage, `jobTracker.ts` unverändert), aber nur, solange er läuft und sein Manager offen ist oder er zu einem offenen Batch gehört. Sonst wären bei 25 Teilen in mehreren Tabs 25 Ströme je Tab offen (`503` bei zu vielen Verfolgern).
-- **Dauer:** Einträge bleiben, auch abgelaufene (§6.6). Nur die Auftragskopien werden bei Platzmangel verdrängt, die ältesten zuerst. Ein Eintrag ohne Kopie bleibt sichtbar. Grobe Rechnung [A]: ein Eintrag ohne Kopie etwa 300 B, also 10 000 Jobs etwa 3 MB.
+- **Dauer:** Einträge bleiben, auch abgelaufene (§6.6). Nur die Auftragskopien werden bei Platzmangel verdrängt, die ältesten zuerst. Ein Eintrag ohne Kopie bleibt sichtbar.
+  - **Hinweis statt stilles Scheitern (Otto, 24.10.2026, Frage 4):** Wird der Speicher knapp und fallen Auftragskopien weg, zeigt der Manager das kurz: ein Symbol im Kopf mit Tooltip „Browser storage is full: copies of the oldest orders were dropped.“ Betroffene Einträge zeigen im Detailfenster im Tooltip, dass keine Kopie mehr da ist („Open in panel“ gesperrt mit Grund). Verdrängt wird nie ein Eintrag selbst und nie still.
+  - **Test:** ein `localStorage`, dessen `setItem` bei Überlauf wirft (`QuotaExceededError`): die ältesten Kopien fallen weg, die Einträge und der Schlüssel bleiben gültig, der Hinweis erscheint; ist auch das Schreiben ohne Kopien nicht möglich, arbeitet der Manager im Speicher und zeigt die Meldung „This browser does not keep your jobs.“ Grobe Rechnung [A]: ein Eintrag ohne Kopie etwa 300 B, also 10 000 Jobs etwa 3 MB.
 - **Privates Fenster, gelöschte Daten, gesperrter Speicher:**
   - Im privaten Fenster gilt der Speicher bis zum Schließen.
   - Nach dem Löschen der Browserdaten sind Titel, Gruppen und Archiv weg. Die Jobs selbst laufen auf dem Server weiter, sind aber ohne `jobID` nicht mehr erreichbar (`adr/0013`, keine Liste).
@@ -213,15 +221,15 @@ earthx.processing.manager = {
 
 ### 6.5 Vorgabetitel (§3 Punkt 2)
 
-- **Vorschlag (Frage 5):** `<Operatoren> · <Datensatz-ID> · <Tag>`, also „Band math · sentinel-2-c1-l2a · 12 Oct“.
+- **Entschieden (Frage 5, Option 2; Otto, 24.10.2026):** `<Operatoren> · <Datensatz-Titel> · <Tag>`, also „Band math · Sentinel-2 L2A · 12 Oct“.
   - Operatoren als Titel aus der Prozessbeschreibung, wie heute (`jobTitle`).
-  - Der Datensatz als ID wie in Ottos Beispiel; heute steht dort der Titel.
+  - Der Datensatz mit seinem Titel aus der Registry, wie heute; die ID erscheint nicht im Titel.
   - Der Tag ist der Aufnahmetag, wenn die Szenen des Auftrags einen gemeinsamen haben, sonst der Starttag. Das ist dieselbe Regel wie im Dateinamen der Downloads (`_day_of_name`, Otto 14.10.2026). Format `d MMM` in Englisch, mit Jahr nur, wenn es nicht das laufende ist.
 - **„NDVI“:** Ein Name wie „NDVI“ setzt eine Zuordnung von Ausdruck zu Index voraus. Die gibt es nicht; sie gehört zu den Index-Knöpfen aus dem Backlog (Punkt 10). Bis dahin steht dort der Operator.
 - **Batch:** Der Eintrag trägt den Titel ohne Zusatz; die Teile zeigen beim Aufklappen ihre Beschriftung (Überflug bzw. Szene). Das heutige „· 3/25“ entfällt im Titel.
 - **Jobs aus dem Download-Dialog:**
-  - Export: „Export · <Datensatz-ID> · <Tag>“.
-  - Mosaik: „Mosaic · <Datensatz-ID> · <Tag>“.
+  - Export: „Export · <Datensatz-Titel> · <Tag>“.
+  - Mosaik: „Mosaic · <Datensatz-Titel> · <Tag>“.
   - Heute haben beide keinen Titel.
 - **Umbenennen:** im Detailfenster und über das Menü der Zeile. Ein leerer Titel stellt die Vorgabe wieder her.
 
@@ -232,6 +240,7 @@ earthx.processing.manager = {
 - **Kopie des Auftrags (Frage 4):** Beim Start legt der Browser den gesendeten Auftrag (`Order`, kanonisches JSON) zum Job. Damit kann der Job später wieder geöffnet werden, über den vorhandenen Weg `processingStore.restoreOrder` (M4-19e) mit „Open in panel“ in den Details.
   - Die AOI bleibt dabei im Browser.
   - Bis 64 KB je Auftrag. Ein größerer, also eine sehr feine AOI, wird nicht kopiert; die Details sagen das im Tooltip.
+  - Entschieden (Frage 4, Option 1; Otto, 24.10.2026), mit dem Zusatz zum knappen Speicher in §6.4.
   - `recipe.json` selbst wird nicht kopiert. Es ist größer, und `draftFromOrder` braucht den Auftrag.
 
 ### 6.7 Nicht löschbar, „Cancel“ (§3 Punkt 4)
@@ -332,96 +341,131 @@ earthx.processing.manager = {
   - **Keine Einheit,** weder in Zeilen noch in der Darstellung, bei keiner Art von Layer. Ein Test prüft, dass keine Einheit (`bands[].unit`) im Layer-Manager und in der Darstellung erscheint.
 - **Processing-Knopf am Ergebnis-Layer:** bleibt gesperrt; der Grund steht im Tooltip (heute schon so).
 
-### 6.12 „Download all (ZIP)“ (§3 Punkt 7)
+### 6.12 „Download all (ZIP)“ (§3 Punkt 7; Frage 8, Option 2, Otto 24.10.2026)
 
-- **Route:** `POST /processing/bundles` in `api`, im Modul `api/processing_route.py` neben `result.zip`.
-  - **Body:** `jobs=<id>,<id>,…` als `application/x-www-form-urlencoded`. Der Browser schickt es als verstecktes Formular und speichert die Antwort selbst, ohne das ZIP im Speicher zu halten. Gelesen wird der Body mit `urllib.parse`, ohne `python-multipart`, also ohne neue Abhängigkeit.
-  - **Prüfungen:** Grenze `MAX_BODY_BYTES`; 1 bis 25 `jobID`s, jede in der Form einer `jobID`, keine doppelt; sonst `422`.
-  - Die Liste steht nie in der URL.
+Zwei Routen im Modul `api/processing_route.py` neben `result.zip`. `POST` legt einen kurzlebigen Bündel-Eintrag an, `GET` liefert das ZIP, fortsetzbar wie das Job-ZIP. Der Ablauf im Browser: `fetch` mit `POST`, aus der Antwort die Adresse, dann ein Download über diese Adresse; Browser und Download-Manager setzen mit `Range` und `If-Range` fort.
+
+- **`POST /processing/bundles`:**
+  - **Body:** JSON `{"jobs": ["<jobID>", …]}`; die Liste steht nie in der URL. Gelesen wie bei den Permalinks (`_read_body` mit `MAX_BODY_BYTES`, `415` bei anderem Medientyp, `400` bei kaputtem JSON). Keine neue Abhängigkeit.
+  - **Prüfungen:** 1 bis 25 `jobID`s, jede in der Form einer `jobID`, keine doppelt, sonst `422`. Die Größengrenze (Frage 7) wird hier geprüft, sonst `413` mit der Summe.
+  - **Antwort `201`:** `{"href": "/processing/bundles/<id>", "expires": "<Zeitpunkt>"}` und `Location`. Kein Name, keine `jobID` in der Antwort. `Cache-Control: no-store`.
+  - Ist kein Teil vorhanden: `410` (alle abgelaufen) bzw. `409` (keiner fertig); es wird nichts angelegt und kein leeres ZIP gebaut.
+- **Bündel-Eintrag:**
+  - Neue Tabelle `public.earthx_bundle` (Migration `013_bundle.sql`, nach dem Vorbild von `012_permalink.sql`): `bundle_id text PRIMARY KEY`, `job_ids jsonb NOT NULL`, `created_at`, `expires_at`, Index auf `expires_at`.
+  - **Zufällige ID:** `secrets.token_urlsafe(16)`, nie aus den Jobs abgeleitet. Gleiche Teile ergeben bei zwei `POST` zwei IDs.
+  - **Nie im Log:** weder die ID noch die `jobID`s; das Zugriffslog nennt nur die Route (`/processing/bundles/…`), wie bei den Permalinks.
+  - **Ablauf mit dem frühesten Teil:** `expires_at` ist das früheste `expires_at` der Jobs, die ins Bündel eingehen (nicht abgelaufen, fertig). Das Ablaufdatum wird beim Anlegen festgelegt und beim Ansehen nie verlängert.
+  - **Aufräumer wie bei den Permalinks (M4-19e):** der stündliche Lauf in `jobs/cleanup.py` löscht abgelaufene Bündel-Zeilen ganz; `CleanupResult` bekommt ein Feld `bundles`. Neues Modul `jobs/bundles.py` mit `create`, `read`, `is_bundle_id` nach dem Muster von `jobs/permalinks.py`.
+  - Kein Lösch-Schlüssel (anders als beim Permalink): Das Bündel hält nur eine Liste von `jobID`s und lebt höchstens 7 Tage; ein Teil davon ist über seinen Job ohnehin erreichbar.
+  - Kein Objektspeicher: Die Zeile hält keine Bytes.
+- **`GET /processing/bundles/{id}`:**
+  - **Unbekannt, falsche Form und abgelaufen** antworten gleich (`404`, `urn:earthx:no-such-bundle`), auch vor dem Aufräumer. So lässt sich nichts erraten.
+  - Das ZIP wird beim Lesen aus dem Stand der Jobs gebaut, mit derselben Funktion wie `result.zip`; die Jobs werden nicht verändert.
+  - `Range` (ein Bereich, wie beim Job-ZIP), `If-Range`, `ETag`, `Accept-Ranges: bytes`, `Content-Disposition` mit dem Namen unten, `Cache-Control: no-store`. Ein Bereich außerhalb gibt `416`.
+  - Ein Teil, der zwischen `POST` und `GET` gescheitert ist, steht in `MISSING.txt`; das ändert den ETag, sodass `If-Range` den Rest verwirft und das ZIP neu ausgeliefert wird.
 - **Inhalt:**
   - `<Name>/NN_<Stamm des Teils>/…`: je Teil der Inhalt seines `result.zip`. Es sind dieselben `Member`s, gebaut von derselben Funktion, die aus `_bundle_response` herausgezogen wird (Rasterdateien aus dem Speicher plus `TEXT_FILES` aus M4-30). Bei einem Export ist es der Inhalt von `export.zip` als ein Eintrag.
   - `NN` ist die Stelle in der Liste (01–25). Das trennt Teile mit gleichem Stamm, etwa „One job per scene“ am selben Tag.
   - **`MISSING.txt`:** eine Zeile je fehlendem Teil, „NN <Stamm>: expired“, „…: failed“, „…: not finished“ bzw. „NN: no longer available“ (keine Zeile mehr in der Datenbank). Fehlt nichts, gibt es die Datei nicht.
   - **Name des ZIPs:** `<Stamm des ersten Teils>_batch-<n>.zip`, ohne `jobID`, AOI oder Hash (`_download_name`).
-  - Ist kein Teil vorhanden: `410` (alle abgelaufen) bzw. `409`, kein leeres ZIP.
-- **Grenzen:** 25 Teile; die Größengrenze nach Frage 7, sonst `413` mit der Summe. Das Frontend sperrt den Knopf vorher mit Grund, sofern die Größen bekannt sind (`length` im Ergebnisdokument). Das Bündel nimmt einen Platz aus `DownloadSlots` (vier ZIPs je Prozess), sonst `503` mit `Retry-After`.
-- **ETag:** `Layout.etag` über alle Einträge (Namen, Größen, CRC, Zeitstempel, `FORMAT`); `MISSING.txt` ist ein Eintrag wie jeder andere. Der Zeitstempel ist das späteste Ende der Teile. Gleiche Teile in gleichem Zustand ergeben dieselben Bytes.
-- **Fortsetzen:** nach Frage 8.
-- **Datenschutz:**
-  - Keine `jobID`, keine AOI und keine Liste in Logs oder URL. Die Warnungen aus `_archive_bytes` tragen keine `jobID`, wie heute.
-  - Ein Test prüft die Log-Zeilen (`caplog`) auf `jobID`s.
-  - Keine neue Ablage im Objektspeicher.
-- **Doku:** Nachtrag in `adr/0015` (neue Route, Grenze, Fortsetzen); Zeile im Log.
+- **Grenzen:** 25 Teile; 25 GB je Bündel (Frage 7, Startwert [A]). Das Frontend sperrt den Knopf vorher mit Grund, sofern die Größen bekannt sind (`length` im Ergebnisdokument). Der `GET` nimmt einen Platz aus `DownloadSlots` (vier ZIPs je Prozess), sonst `503` mit `Retry-After`; ein fortgesetzter Abruf nimmt wieder einen Platz.
+- **ETag:** `Layout.etag` über alle Einträge (Namen, Größen, CRC, Zeitstempel, `FORMAT`); `MISSING.txt` ist ein Eintrag wie jeder andere. Der Zeitstempel ist das späteste Ende der Teile. Gleiche Teile in gleichem Zustand ergeben dieselben Bytes, auch über mehrere `GET` hinweg; das trägt `If-Range`.
+- **Datenschutz (Tests wie bei M4-19e, `test_permalink_route.py`):**
+  - Die ID ist zufällig und nicht aus den Jobs abgeleitet; zwei `POST` mit gleicher Liste ergeben zwei IDs.
+  - Die Zeile hält nur die `jobID`s und die Zeiten, keine AOI, keinen Titel, keine Bytes.
+  - Unbekannt, falsch geformt und abgelaufen sind dieselbe `404`; ein Ansehen verlängert die Frist nicht; abgelaufen schon vor dem Aufräumer `404`.
+  - Zugriffslog und alle Log-Zeilen (`caplog`) enthalten weder ID noch `jobID` noch Liste noch AOI, auch nicht bei Fehlern; die Warnungen aus `_archive_bytes` tragen keine `jobID`.
+  - `Cache-Control: no-store` auf beiden Routen; weder URL noch Antwort noch `Content-Disposition` enthalten eine `jobID`.
+  - Der Aufräumer mit injizierter Uhr löscht abgelaufene Bündel ganz und lässt die übrigen stehen.
+- **Doku:** Nachtrag in `adr/0015` (neue Tabelle, Routen, Grenze, Fortsetzen); Zeile im Log.
 
 ### 6.13 Fragen an Otto
+
+**Antworten von Otto (24.10.2026):** 1: Option 2 · 2, 3, 6, 7, 9, 10, 11, 12, 13: Option 1 · 4: Option 1 mit Zusatz · 5: Option 2 · 8: Option 2. Die Optionen unten bleiben zur Nachvollziehbarkeit stehen; die Antwort steht je Frage in der letzten Zeile.
 
 **Frage 1 – Schritte zum Befund Punkt 10.**
 1. **Otto schickt die Schritte; UI-01a behebt H1–H3 und nimmt die Schritte als Test auf (Empfehlung).**
 2. Ohne Schritte: H1–H3 beheben und den Befund mit der Prüfanleitung von UI-01a gegenprüfen.
+- **Entschieden: Option 2** (Otto, 24.10.2026). Der Befund ist mit den Schritten (zwei überlappende Szenen in voller Auflösung anheften, Ansicht offen, im Layer-Manager umsortieren; danach mit geschlossener Ansicht) nicht nachstellbar. H1–H3 werden behoben, je ein Test, der am alten Code scheitert, gilt als Beleg; Gegenprüfung über die Prüfanleitung von UI-01a (§6.2).
 
 **Frage 2 – Wo bleibt „Add to layers“ eines Ergebnisses?**
 1. **In den Details als „Show on map“, neben „Download (ZIP)“; in der Liste nur der Download (Empfehlung).** „Nur Download (ZIP)“ betrifft die Dateien.
 2. Ein fertiges Raster-Ergebnis erscheint von selbst als Layer, ausgeblendet.
 3. Auch in der Zeile, als zweites Symbol.
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
 **Frage 3 – Mehrere Panels gleichzeitig?**
 1. **Eines zur Zeit links (Empfehlung).** Übersichtlich, die Karte bleibt frei, gleiches Verhalten auf schmalen Bildschirmen.
 2. Control-Menü und ein Manager nebeneinander (zusammen etwa 730 px).
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
 **Frage 4 – Kopie des Auftrags und Wiederstart.**
 1. **Kopie bis 64 KB; „Open in panel“ in den Details abgelaufener Jobs (Empfehlung).**
 2. Kopie ja, Knopf erst in einer späteren Aufgabe.
 3. Keine Kopie.
+- **Entschieden: Option 1** (Otto, 24.10.2026), mit Zusatz: Wird der Speicher im Browser knapp, fallen die ältesten Auftragskopien weg, mit kurzem Hinweis (Tooltip bzw. Meldung) statt still zu scheitern; Test dazu (§6.4).
 
 **Frage 5 – Vorgabetitel.**
 1. **„Band math · sentinel-2-c1-l2a · 12 Oct“: Operator-Titel, Datensatz-ID, Aufnahmetag, sonst Starttag (Empfehlung).**
 2. Wie 1, aber mit Datensatz-Titel („Sentinel-2 L2A“) wie heute.
+- **Entschieden: Option 2** (Otto, 24.10.2026): Datensatz-Titel, z. B. „Band math · Sentinel-2 L2A · 12 Oct“ (§6.5).
 
 **Frage 6 – „Share“ für einen Batch.**
 1. **Sperre bleibt, Grund im Tooltip (Empfehlung).** Ein Permalink hält heute einen Auftrag (M4-19e). Mehrere Aufträge brauchen Tabelle, Routen und `adr/0015` F13 neu; das liegt außerhalb der Grenze aus §4 (Backend nur für die Bündel-Route).
 2. Ein Link für den ganzen Batch: ein Auftrag mit allen Szenen plus „Run as“ in der Ansicht, eigene Aufgabe danach.
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
 **Frage 7 – Größengrenze des Bündels.** Ein Job darf bis 5 GB schreiben (`MAX_JOB_BYTES`); 25 Teile ergeben bis zu 125 GB.
 1. **Eigene Grenze 25 GB je Bündel, als Startwert [A] (Empfehlung).** 25 ganze Szenen NDVI (`float32`, 10980², etwa 0,5 GB je Teil) passen. Ein Bündel belegt einen der vier ZIP-Plätze, solange es lädt.
 2. 5 GB wie ein Job. Viele Batches mit ganzen Szenen gingen dann nicht als ein ZIP.
 3. Keine eigene Grenze (bis 125 GB).
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
 **Frage 8 – Fortsetzen.**
 1. **Nicht fortsetzbar: `POST` als Formular, der Browser lädt direkt auf die Platte; jeder Teil bleibt einzeln fortsetzbar (Empfehlung).** `Range` ist nur für `GET` definiert (RFC 9110 §14.2 [S], die Quelle war in der Sitzung nicht erreichbar). Der ETag wird trotzdem gesetzt.
 2. Fortsetzbar: `POST` legt einen kurzlebigen Bündel-Eintrag mit zufälliger ID in der Datenbank an (kein Objektspeicher), dann `GET /processing/bundles/{id}` mit `Range` und `If-Range`. Kostet Tabelle, Migration und Aufräumer.
+- **Entschieden: Option 2** (Otto, 24.10.2026): fortsetzbar. `POST` legt einen kurzlebigen Bündel-Eintrag mit zufälliger ID an (nie im Log, Ablauf mit dem frühesten Teil, Aufräumer wie bei den Permalinks), `GET /processing/bundles/{id}` mit `Range`, `If-Range` und ETag wie das Job-ZIP; Datenschutz-Tests wie bei M4-19e (§6.12).
 
 **Frage 9 – Gruppen entfernen.**
 1. **Nur leere Gruppen dürfen entfernt werden (Empfehlung).**
 2. Gruppen bleiben immer.
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
 **Frage 10 – „Cancel“ bei einem Batch.**
 1. **„Cancel all“ am Eintrag und „Cancel“ je Teil (Empfehlung).**
 2. Nur je Teil.
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
-**Frage 11 – Schnitt in fünf PRs (§6.14).**
+**Frage 11 – Schnitt in fünf PRs (§6.14; jetzt sechs).**
 1. **Wie vorgeschlagen, a bis e nacheinander (Empfehlung).**
 2. Weniger, größere PRs mit Begründung der Größe.
+- **Entschieden: Option 1** (Otto, 24.10.2026), mit Anpassung des Plans ("Schnitt der PRs falls nötig"): Die fortsetzbare Bündel-Route (Frage 8) macht UI-01e zu groß; sie wird in Backend (UI-01e) und Frontend (UI-01f) geteilt, also sechs PRs (§6.14).
 
 **Frage 12 – Ansicht über den Layern (Änderung an M4-28).**
 1. **Was ein sichtbarer Layer schon zeichnet (gleiche Signatur), zeichnet die Ansicht nicht noch einmal; die Unterlage nur, wo die Ansicht selbst zeichnet (Empfehlung).**
 2. Nur „Add to layers“ setzt `viewLayerId`. Kleiner, deckt aber Browse-Modus und Unterlage nicht ab.
+- **Entschieden: Option 1** (Otto, 24.10.2026).
 
 **Frage 13 – Backlog-Punkte 9 und 22 in UI-01?**
 1. **Nicht aufnehmen. Die Regel „wenig Text“ gilt für alles, was UI-01 neu baut (Empfehlung).**
 2. Punkt 22 (Durchgang durch alle Texte) mit aufnehmen.
+- **Entschieden: Option 1** (Otto, 24.10.2026).
+
+
 
 ### 6.14 Umsetzung nach Freigabe
 
-Schnitt (Frage 11). Jeder Teil ist ein eigener Draft-PR von `main`, in neuer Session, nach dem Merge des vorigen.
+Schnitt (Frage 11, angepasst auf sechs PRs). Jeder Teil ist ein eigener Draft-PR von `main`, in neuer Session, nach dem Merge des vorigen.
 
 | PR | Inhalt | Dateien (Schwerpunkt) |
 |---|---|---|
-| **UI-01a** | Punkt 10: H1–H3, Stapelung §6.3, Budget von oben; Matrix-Test, Gegenprobe | `mapLayers.ts`, `viewLayer.ts`, `mosaic.ts`, `store.ts`, `processingStore.ts::pinPreview`, Tests |
+| **UI-01a** | Punkt 10: H1–H3, Stapelung §6.3, Budget von oben; je Ursache ein Test, der am alten Code scheitert (Beleg, Frage 1), Matrix-Test, Gegenprobe im PR und Prüfanleitung mit Ottos Schritten (§6.2) | `mapLayers.ts`, `viewLayer.ts`, `mosaic.ts`, `store.ts`, `processingStore.ts::pinPreview`, Tests |
 | **UI-01b** | Ablage §6.4 (neues Modul `jobShelf.ts`), Übernahme, Batch-Kennung in `startBatch`, abgewiesene Teile, Vorgabetitel §6.5, Wächter für `DELETE`, `removeJob` raus | `jobTracker.ts`, `processingStore.ts`, `processingBatch.ts`, Tests |
 | **UI-01c** | Leiste, Panels, Processing-Manager (Gruppen, Archiv, Filter, Batch), Details im Processing-Fenster; „Methods“/„Copy“ raus | `App.tsx`, neue `AppRail.tsx`, `ProcessingManager.tsx`, `JobDetails.tsx`, `JobList.tsx` (raus), `index.css` |
 | **UI-01d** | Layer-Manager: Raster, Download des Ergebnis-Layers, Darstellung des Ergebnisses, Handbereich je Job | `LayerManager.tsx`, neue `ResultControls.tsx`, `store.ts`, `resultLayer.ts` |
-| **UI-01e** | Bündel-Route mit Tests (alle Teile, abgelaufene und gescheiterte, über der Grenze, 26 Teile, doppelte, fremde Form, Logs), Nachtrag `adr/0015`; Frontend „Download all (ZIP)“ | `api/processing_route.py`, `api/result_zip.py` (unverändert oder kleine Hilfsfunktion), Tests, `ProcessingManager.tsx` |
+| **UI-01e** | Bündel-Backend §6.12: Migration `013_bundle.sql`, `jobs/bundles.py`, Aufräumer, `POST /processing/bundles` und `GET /processing/bundles/{id}` mit `Range`/`If-Range`/ETag, gemeinsame Funktion für die `Member`s; Tests (alle Teile, abgelaufene und gescheiterte, über der Grenze, 26 Teile, doppelte, fremde Form, Fortsetzen, Datenschutz wie M4-19e); Nachtrag `adr/0015` | `catalog/migrations/013_bundle.sql`, `jobs/bundles.py`, `jobs/cleanup.py`, `api/processing_route.py`, `api/result_zip.py`, Tests |
+| **UI-01f** | Frontend „Download all (ZIP)“: `POST`, dann Download über die Adresse, Sperre über der Grenze mit Grund, Hinweis auf `MISSING.txt` | `ProcessingManager.tsx`, Tests |
 
 - **Tests je PR:** wie §5. Fehlerfälle und zweckfremde Nutzung sind dabei: kaputter oder fremder Speicherinhalt, unbekannte Version, voller und gesperrter Speicher, zwei Tabs, abgewiesene Teile, Job aus einem anderen Tab, `404`/`410` bei Details und Download, Doppelklick auf „Cancel all“.
-- **Prüfanleitung für Otto:** im jeweiligen PR, Browser und PowerShell. Für UI-01e: `Invoke-WebRequest -Method Post -Body "jobs=…" -OutFile …` und das Auspacken mit `Expand-Archive`.
+- **Prüfanleitung für Otto:** im jeweiligen PR, Browser und PowerShell. Für UI-01e: `Invoke-RestMethod -Method Post -ContentType application/json -Body '{"jobs":[…]}'`, dann `Invoke-WebRequest` auf die Adresse aus der Antwort, auch mit `-Headers @{Range='bytes=0-1023'}` für das Fortsetzen, und das Auspacken mit `Expand-Archive`.
 - **Doku je PR:** Log-Zeilen; UI-01 in `projektplan.md` (VP3); am Ende diese Datei §7 mit der Umsetzung.
