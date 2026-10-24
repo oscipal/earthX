@@ -700,7 +700,7 @@ heißt, behält die Einheit `1`.
   und für Vorschau und Ergebnis dieselbe: Index (Band-Math, alle Werte in −1…1) → −1…1 `rdylgn`, sonst 2–98 %
   `viridis`, ohne Perzentile Minimum…Maximum. `resultRender` ruft sie auf; seine Tests laufen unverändert.
 - **Ablauf im Panel:** Die Vorschau misst die Schritte über der **ersten** Szene (ein Bereich gilt für alle Szenen
-  der Karte). Ein Bereich, den der Nutzer angewandt hat (`handRange`, wie bei M4-32b: ein anderer als der Startwert),
+  der Karte). Ein Bereich, den der Nutzer mit „Apply“ angewandt hat (`rangeByHand`, auch wenn er dem Startwert gleicht),
   geht vor, und die Vorschau wartet dann nicht auf die Messung (sie kommt nur für die Einheit). Sonst wartet das
   Bild auf die Messung und wird einmal gezeichnet, nicht erst mit −1…1 und dann neu, höchstens aber 5 s lang
   (`MEASURE_WAIT_MS`, Otto 24.10.2026). Danach zeichnet es mit dem Startbereich; kommt die Messung später, wird sie
@@ -720,6 +720,14 @@ heißt, behält die Einheit `1`.
   Laufs (M4-32a) zählt in einem festen Histogramm, nicht mit `numpy.histogram`. Zwei Tests mit einem flachen Raster
   als Job (ein Wert; zwei Werte einen Schritt auseinander) in `test_core_statistics.py`. Die Bytes von `result.tif`,
   die Version und `adr/0014` ändern sich deshalb nicht.
+- **Nach dem Review (Subagent `reviewer`):** (1) „Apply“ mit dem Startwert wurde gegen eine Messung still ignoriert,
+  weil `handRange` den Startwert nach Wert nie als Wahl sah; die Vorschau führt jetzt `rangeByHand`. **Offen für Otto:**
+  Der Job übernimmt weiter `handRange` (M4-32b: „nicht der Vorgabewert“); wer −1…1 `rdylgn` von Hand anwendet, bekommt
+  in der Vorschau diesen Bereich, am Ergebnis aber dessen eigene Statistik. Soll auch der Job `rangeByHand` nehmen?
+  (2) Die Messung einer älteren Formel galt im 400-ms-Fenster der nächsten; `stillWanted` verwirft sie.
+  (3) Der Wiederholungsversuch des Histogramms prüft die Meldung nicht mehr (kein String-Vergleich); falsche
+  Parameter (`histogram_range=5,1`, `p=150`) enden wie vorher mit `500`, auch ohne `op` (vorbestehend, nicht Teil
+  dieser Aufgabe). (4) Einheiten werden nur geschrieben, wenn ihre Zahl die der Bänder trifft.
 - **Angenommen (Otto, 24.10.2026):** Einheit aus der Statistik statt aus dem TileJSON; Messung an der ersten Szene,
   bei „AOI only“ an der ganzen Szene (für M4).
 - **Größe des PRs:** rund 1250 Zeilen mit Tests und Doku, der Richtwert liegt bei 400 und die Schätzung des Plans bei
@@ -732,7 +740,8 @@ heißt, behält die Einheit `1`.
   `async`), und ein Test je Regel (1)–(4), Einheit und Zähler kam dazu.
 - **Offen, ehrlich:** (a) Die Messung gilt für die erste Szene, nicht für den Mosaik-Mittelwert über alle. (b) Bei
   „AOI only“ misst sie die ganze Szene (Frage 7, Option 1): Die Farbskala kann von der der AOI abweichen. (c) Zarr:
-  zwei Gruppen, deren gröbste Ebenen kein ganzzahliges Vielfaches sind, ergeben `422` und damit den Startbereich.
+  zwei Gruppen, deren gröbste Ebenen kein ganzzahliges Vielfaches sind, ergeben nach dem Aufbau des Readers ein `422`
+  und damit den Startbereich (derselbe Pfad wie bei der Kachel, auf `/statistics` nicht eigens getestet).
   (d) Die Antwortzeit gegen eine echte Quelle ist nicht gemessen: Das `gateway` der Sitzung erreicht keine Quelle
   (wie in §12.1). Gemessen ist nur der Lauf gegen synthetische COGs und den Mini-Zarr-Speicher.
 
