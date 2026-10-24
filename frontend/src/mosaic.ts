@@ -57,6 +57,14 @@ export function passesOf(entries: SceneEntry[], groups: readonly TimeStepGroup[]
   return [...passes.values()];
 }
 
+// Time steps, and the scenes of a pass drawn one by one, come first on top: the first one wins where
+// they overlap ("first valid pixel wins", M3-09, like the download's mosaic). The map takes them
+// bottom to top, so this is the order to hand it. The view, a layer pinned from it and a pinned
+// preview all lay their pictures with it, or the same selection would stack differently in each.
+export function stackLikeView<T>(firstOnTop: readonly T[]): T[] {
+  return [...firstOnTop].reverse();
+}
+
 export function isMosaicPass(entries: SceneEntry[]): boolean {
   const asset = entries[0]?.[1].asset;
   return (

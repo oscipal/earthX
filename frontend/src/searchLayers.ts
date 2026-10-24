@@ -10,7 +10,7 @@ import type { DatasetOption } from './datasets';
 import { defaultRenderOf } from './datasets';
 import type { LayerOverlay, MapLayer } from './layers';
 import { buildTileUrl } from './mapLayers';
-import { viewOfPass } from './mosaic';
+import { stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { appliedRenderFrom } from './render';
 import type { ResultSection } from './sections';
@@ -39,7 +39,7 @@ export function overlaysOfPass(
 ): LayerOverlay[] | null {
   const view = viewOfPass(datasetId, entries, mosaics);
   if (view.kind === 'pending') return null;
-  const rasters = view.kind === 'mosaic' ? view.rasters : entries.map(([, info]) => info);
+  const rasters = view.kind === 'mosaic' ? view.rasters : stackLikeView(entries.map(([, info]) => info));
   return rasters.map((raster) => rasterOverlay(raster, render, clip));
 }
 

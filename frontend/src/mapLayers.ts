@@ -14,7 +14,7 @@ import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoor
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
-import { passesOf, viewOfPass } from './mosaic';
+import { passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster } from './mosaic';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
 
@@ -37,6 +37,10 @@ const PREVIEW_LYR = 'preview-lyr-';
 // Dynamic per-frame overlay ids created by syncMosaic (variable count).
 let dynLayerIds: string[] = [];
 let dynSourceIds: string[] = [];
+// What each of the view's own rasters draws (`overlaySignature`), and which of them are out of sight
+// because a pinned layer that is switched on draws the same (`settleViewTwin`).
+const viewPictures = new Map<string, string>();
+const viewTwinsHidden = new Set<string>();
 
 // Bumped on each syncMosaic so slow async quicklook processing can tell whether
 // it has been superseded before it touches the map.
@@ -379,6 +383,8 @@ function clearDynamicMosaic(map: MapLibreMap): void {
   }
   dynLayerIds = [];
   dynSourceIds = [];
+  viewPictures.clear();
+  viewTwinsHidden.clear();
 }
 
 const aboveAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
@@ -457,17 +463,12 @@ function addPreview(
     // already in the map's own projection, so there is nothing to reproject and
     // nothing to get wrong at a scene's rotated edges (the M2-16 bug).
     if (!item.bbox) return;
-    placeRaster(
-      map,
-      `m-tiles-src-${i}`,
-      `m-tiles-lyr-${i}`,
-      buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render),
-      item.bbox,
-      1,
-      { minZoom: plan.zoom, maxZoom: plan.zoom },
-    );
+    const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
+    const zoom = { minZoom: plan.zoom, maxZoom: plan.zoom };
+    placeRaster(map, `m-tiles-src-${i}`, `m-tiles-lyr-${i}`, tileUrl, item.bbox, 1, zoom);
     dynSourceIds.push(`m-tiles-src-${i}`);
     dynLayerIds.push(`m-tiles-lyr-${i}`);
+    drawsPicture(map, `m-tiles-lyr-${i}`, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
   const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
@@ -481,6 +482,7 @@ function addPreview(
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
       dynSourceIds.push(srcId);
       dynLayerIds.push(lyrId);
+      drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
     } catch {
       /* map/style went away while loading */
     }
@@ -541,6 +543,19 @@ function addTiles(
   placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
   dynSourceIds.push(srcId);
   dynLayerIds.push(lyrId);
+  drawsPicture(map, lyrId, tilesPicture(info, render, clip));
+}
+
+// What a pinned layer made of this raster would draw: its `overlaySignature`.
+function tilesPicture(info: PlannedRaster, render: AppliedRender, clip: GeoJSON.Geometry | null): string {
+  return overlaySignature({
+    kind: 'raster',
+    tileUrl: clipTileUrl(buildTileUrl(info.tileUrl, render), clip),
+    bounds: info.bounds,
+    minZoom: info.minZoom,
+    maxZoom: info.maxZoom,
+    hideFrom: info.hideFrom,
+  });
 }
 
 // --- layer manager rendering (pinned overlays, independent of the active view) ---
@@ -582,14 +597,21 @@ function overlaySignature(ov: LayerOverlay): string {
     : JSON.stringify([ov.kind, ov.url, ov.coords, ov.nodataMax]);
 }
 
-// Bottom to top: `layers[0]` is the top of the list, so it comes last.
-function wantedOverlaysOf(layers: MapLayer[]): WantedOverlay[] {
+// The overlays up to the budget, bottom to top, and how many did not fit. The budget is spent from the
+// top: the layers on top of the list, and of a layer its topmost overlays (the mosaic of a time step),
+// are always whole; what is left out is the bottom of the stack.
+function wantedOverlaysOf(layers: MapLayer[]): { wanted: WantedOverlay[]; notDrawn: number } {
   const wanted: WantedOverlay[] = [];
-  for (const layer of [...layers].reverse()) {
+  let notDrawn = 0;
+  for (const layer of layers) {
     // A result whose job's results are going: no more tiles (M4-13c-5).
     if (layer.result?.expired) continue;
-    layer.overlays.forEach((overlay, n) => {
-      if (wanted.length >= MAX_LAYER_OVERLAYS) return;
+    for (let n = layer.overlays.length - 1; n >= 0; n--) {
+      if (wanted.length >= MAX_LAYER_OVERLAYS) {
+        notDrawn++;
+        continue;
+      }
+      const overlay = layer.overlays[n];
       wanted.push({
         srcId: `layer-src-${layer.id}-${n}`,
         lyrId: `layer-lyr-${layer.id}-${n}`,
@@ -598,9 +620,37 @@ function wantedOverlaysOf(layers: MapLayer[]): WantedOverlay[] {
         opacity: layer.opacity,
         sig: overlaySignature(overlay),
       });
-    });
+    }
   }
-  return wanted;
+  return { wanted: wanted.reverse(), notDrawn };
+}
+
+export const overlayBudgetNote = (notDrawn: number): string | null =>
+  notDrawn > 0
+    ? `The layers hold more images than the map draws (${MAX_LAYER_OVERLAYS}); ${notDrawn} at the bottom of the list ${notDrawn === 1 ? 'is' : 'are'} left out.`
+    : null;
+
+// The view's raster `lyrId` draws the picture `sig`. A layer that is switched on and draws the same picture
+// takes its place in the stack, so the view's copy stays out of sight (UI-01a): it would lie over every layer
+// and a move in the list would change nothing. Switched off or gone, the layer draws nothing, and the copy
+// is back. A copy out of sight loads no tiles.
+function drawsPicture(map: MapLibreMap, lyrId: string, sig: string): void {
+  viewPictures.set(lyrId, sig);
+  settleViewTwin(map, lyrId);
+}
+
+function settleViewTwin(map: MapLibreMap, lyrId: string): void {
+  const sig = viewPictures.get(lyrId);
+  if (sig === undefined || !map.getLayer(lyrId)) return;
+  const twin = wantedOverlays.some((w) => w.sig === sig && w.visible && isPlaced(map, w));
+  if (twin === viewTwinsHidden.has(lyrId)) return;
+  setVisibility(map, lyrId, !twin);
+  if (twin) viewTwinsHidden.add(lyrId);
+  else viewTwinsHidden.delete(lyrId);
+}
+
+function settleViewTwins(map: MapLibreMap): void {
+  for (const lyrId of viewPictures.keys()) settleViewTwin(map, lyrId);
 }
 
 function isPlaced(map: MapLibreMap, w: WantedOverlay): boolean {
@@ -658,8 +708,9 @@ function restack(map: MapLibreMap, wanted: readonly WantedOverlay[]): void {
   stackedOrder = order;
 }
 
-export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
-  const wanted = wantedOverlaysOf(layers);
+// Returns how many overlays the budget left out (`overlayBudgetNote`).
+export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
+  const { wanted, notDrawn } = wantedOverlaysOf(layers);
   wantedOverlays = wanted;
   const known = new Map(wanted.map((w) => [w.lyrId, w]));
   // Gone from the list, or built from something else now: out.
@@ -682,6 +733,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
         try {
           if (!isPlaced(map, wantedOverlays[index])) placeWanted(map, wantedOverlays, index, dataUrl);
           restack(map, wantedOverlays);
+          settleViewTwins(map);
         } catch {
           /* map/style went away while loading */
         }
@@ -697,6 +749,8 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): void {
     placed.opacity = w.opacity;
   }
   restack(map, wanted);
+  settleViewTwins(map);
+  return notDrawn;
 }
 
 export interface MosaicState {
@@ -780,9 +834,9 @@ export function syncFocusRaster(
   const place = (raster: PlannedRaster) => {
     if (tiles < MAX_DYNAMIC_LAYERS) addTiles(map, raster, tiles++, s.render, clip);
   };
-  for (const { entries, view } of [...drawn].reverse()) {
+  for (const { entries, view } of stackLikeView(drawn)) {
     if (view.kind === 'pending' && !s.tilesInLayer) continue;
-    [...entries].reverse().forEach(([itemId, info]) => {
+    stackLikeView(entries).forEach(([itemId, info]) => {
       // O5: the underlay goes down first, so `addTiles` right after it ends up
       // on top (`beforeAoi` puts each newly added layer just below the AOI
       // layer, so whichever is added later of the two is the more on top).

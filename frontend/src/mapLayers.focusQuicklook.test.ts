@@ -17,7 +17,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { datasetsFrom } from './datasets';
-import { syncFocusRaster } from './mapLayers';
+import { syncFocusRaster, syncLayers } from './mapLayers';
+import { liveMap, pinned } from './fixtures/liveMap';
 import type { DownloadedInfo, StacAsset, StacItem } from './types';
 
 class FakeImage {
@@ -230,5 +231,66 @@ describe('syncFocusRaster: the quicklook underlay below min_zoom (M3-12, O5)', (
     // own full extent, exactly as the plain browse-mode quicklook places it.
     expect(imageSource.spec.url).not.toContain('9.1');
     expect(JSON.stringify(imageSource.spec.coordinates)).not.toContain('9.15');
+  });
+});
+
+// UI-01a (Otto, 24.10.2026): a pinned layer draws tiles only from the dataset's smallest zoom and
+// has no quicklook of its own, so the underlay is not redundant with it. It stays when a layer
+// draws the scene's tiles, or the map would be empty when zooming out.
+describe('syncFocusRaster: the underlay when a layer draws the scene', () => {
+  beforeEach(() => {
+    vi.stubGlobal('Image', FakeImage);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const view = (live: ReturnType<typeof liveMap>, tilesInLayer = false) => {
+    const scene = georeferencedScene();
+    syncFocusRaster(live.map as never, {
+      downloaded: { [scene.id]: info() },
+      render: {},
+      showDownloaded: true,
+      items: [scene],
+      dataset: quicklookDataset(),
+      tilesInLayer,
+    });
+  };
+  // As "Add to layers" pins the scene: tiles from the smallest zoom, no image overlay.
+  const layerOfView = (id: string) =>
+    pinned(id, 'unused', {
+      overlays: [{ kind: 'raster', tileUrl: info().tileUrl, bounds: info().bounds, minZoom: 8, maxZoom: 19 }],
+    });
+  // The quicklook is on the map once, opaque below the smallest zoom and gone from it.
+  const expectQuicklookOnce = (live: ReturnType<typeof liveMap>) => {
+    const images = [...live.layers.values()].filter((l) => l.id.startsWith('m-img-lyr-'));
+    expect(images).toHaveLength(1);
+    expect(live.visible(images[0].id)).toBe(true);
+    expect(images[0].paint['raster-opacity']).toEqual(['step', ['zoom'], 1, 8, 0]);
+  };
+
+  it('keeps the quicklook once below the smallest zoom, where the layer draws nothing yet', () => {
+    const live = liveMap();
+    view(live);
+    syncLayers(live.map as never, [layerOfView('mine'), pinned('other', 'https://t/other')]);
+    expectQuicklookOnce(live);
+    // The layer's tiles start at the zoom where the quicklook is gone, so they never meet.
+    expect(live.layers.get('layer-lyr-mine-0')?.maxzoom).toBeUndefined();
+    expect((live.sources.get('layer-src-mine-0') as { minzoom: number }).minzoom).toBe(8);
+  });
+
+  it('keeps it once when the layer is the view and the view draws no tiles of its own', () => {
+    const live = liveMap();
+    syncLayers(live.map as never, [layerOfView('mine')]);
+    view(live, true);
+    expectQuicklookOnce(live);
+    expect([...live.layers.keys()].some((id) => id.startsWith('m-tiles-lyr-'))).toBe(false);
+  });
+
+  it('keeps it once while the layer is switched off', () => {
+    const live = liveMap();
+    view(live);
+    syncLayers(live.map as never, [{ ...layerOfView('mine'), visible: false }]);
+    expectQuicklookOnce(live);
   });
 });
