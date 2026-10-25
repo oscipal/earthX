@@ -160,6 +160,12 @@ class TestRemovingWhatLeftTheRegistry:
 
     GONE = replace(SENTINEL_2_L2A, dataset_id="gone-dataset", source=replace(SENTINEL_2_L2A.source, source_collection_id="gone-dataset"))
 
+    @pytest.fixture(autouse=True)
+    def an_empty_catalogue(self, conn) -> None:
+        """Collections another test committed are no part of the question; the transaction is rolled back."""
+        use_pgstac_search_path(conn)
+        conn.execute("DELETE FROM pgstac.collections")
+
     def test_a_federated_collection_that_left_is_removed_with_its_items(self, conn) -> None:
         load_collection(conn, self.GONE)
         conn.execute("SELECT pgstac.create_item(%s::jsonb)", (json.dumps(_item(self.GONE.dataset_id)),))
