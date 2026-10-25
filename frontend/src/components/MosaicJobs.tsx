@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 import type { DatasetOption } from '../datasets';
-import { defaultRenderOf } from '../datasets';
+import { defaultRenderOf, resultsGroupByOfOption } from '../datasets';
 import {
   attributionText,
   canExportLicense,
@@ -10,9 +10,10 @@ import {
   type DownloadPass,
   type OriginalFileLink,
 } from '../download';
+import { jobTitle, titleDay } from '../processingBatch';
 import { chooseDtype } from '../processingDefaults';
 import { bandSources, buildMosaicOrder } from '../processingOrder';
-import { useProcessingStore } from '../processingStore';
+import { orderStands, useProcessingStore } from '../processingStore';
 import { JobRow } from './JobList';
 
 // "Merged per pass (job)" in the download dialog's choice for original files
@@ -74,6 +75,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
     onStarted(index, { state: 'starting' });
     const answer = await placeOrder(
       buildMosaicOrder({ datasetId: dataset.id, itemIds: pass.items.map((i) => i.id), assets: [asset], dtype }),
+      { title: jobTitle({ operators: ['Mosaic'], dataset: dataset.title, day: titleDay(pass.items, resultsGroupByOfOption(dataset)) }) },
     );
     onStarted(
       index,
@@ -131,7 +133,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
               <button
                 type="button"
                 className="lm-btn"
-                disabled={!!blocked || run?.state === 'starting' || !!job}
+                disabled={!!blocked || run?.state === 'starting' || orderStands(job)}
                 title={blocked ?? 'Merge the scenes of this pass into one file, as a job'}
                 onClick={() => void start(index, pass)}
               >

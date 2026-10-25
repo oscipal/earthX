@@ -2,15 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HttpError } from './api';
-import {
-  JOBS_STORAGE_KEY,
-  loadStoredJobs,
-  MAX_STREAM_ERRORS,
-  POLL_MS,
-  saveStoredJobs,
-  trackJob,
-  type TrackerOptions,
-} from './jobTracker';
+import { MAX_STREAM_ERRORS, POLL_MS, trackJob, type TrackerOptions } from './jobTracker';
 import type { StatusInfo } from './processing';
 
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
@@ -199,86 +191,5 @@ describe('trackJob by polling', () => {
     await vi.advanceTimersByTimeAsync(POLL_MS * 3);
     expect(onGone).toHaveBeenCalledTimes(1);
     expect(fetchJob).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('jobs in sessionStorage', () => {
-  const now = Date.parse('2026-10-10T12:00:00Z');
-
-  beforeEach(() => {
-    sessionStorage.clear();
-  });
-
-  it('keeps only jobID and expires', () => {
-    saveStoredJobs([{ jobID: JOB, expires: '2026-10-17T12:00:00Z', aoi: [1, 2], order: {} } as never]);
-    expect(JSON.parse(sessionStorage.getItem(JOBS_STORAGE_KEY)!)).toEqual([
-      { jobID: JOB, expires: '2026-10-17T12:00:00Z' },
-    ]);
-  });
-
-  it('keeps the title next to the id and the expiry, and nothing else of the job (K5)', () => {
-    saveStoredJobs([
-      { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Band math · Sentinel-2 · 3/25', aoi: [1, 2] } as never,
-    ]);
-    const stored = sessionStorage.getItem(JOBS_STORAGE_KEY)!;
-    expect(JSON.parse(stored)).toEqual([
-      { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Band math · Sentinel-2 · 3/25' },
-    ]);
-    expect(loadStoredJobs(now)).toEqual([
-      { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Band math · Sentinel-2 · 3/25' },
-    ]);
-  });
-
-  it('drops a title that is no text, empty or too long, and keeps the job', () => {
-    sessionStorage.setItem(
-      JOBS_STORAGE_KEY,
-      JSON.stringify([
-        { jobID: JOB, expires: '2026-10-17T12:00:00Z', title: { html: '<b>x</b>' } },
-        { jobID: OTHER, expires: '2026-10-17T12:00:00Z', title: 'x'.repeat(201) },
-        { jobID: 'ABCDEFGHIJKLMNOPQRSTUV', expires: '2026-10-17T12:00:00Z', title: '' },
-      ]),
-    );
-    expect(loadStoredJobs(now)).toEqual([
-      { jobID: JOB, expires: '2026-10-17T12:00:00Z' },
-      { jobID: OTHER, expires: '2026-10-17T12:00:00Z' },
-      { jobID: 'ABCDEFGHIJKLMNOPQRSTUV', expires: '2026-10-17T12:00:00Z' },
-    ]);
-  });
-
-  it('takes the jobs up again and drops expired, malformed and repeated ones', () => {
-    sessionStorage.setItem(
-      JOBS_STORAGE_KEY,
-      JSON.stringify([
-        { jobID: JOB, expires: '2026-10-17T12:00:00Z' },
-        { jobID: OTHER, expires: '2026-10-10T11:59:59Z' },
-        { jobID: '../x', expires: '2026-10-17T12:00:00Z' },
-        { jobID: OTHER, expires: 'tomorrow' },
-        'nonsense',
-        { jobID: JOB, expires: '2026-10-18T12:00:00Z' },
-      ]),
-    );
-    expect(loadStoredJobs(now)).toEqual([{ jobID: JOB, expires: '2026-10-17T12:00:00Z' }]);
-  });
-
-  it('reads nothing from a value that is no list or no JSON', () => {
-    sessionStorage.setItem(JOBS_STORAGE_KEY, '{"jobID":"x"}');
-    expect(loadStoredJobs(now)).toEqual([]);
-    sessionStorage.setItem(JOBS_STORAGE_KEY, '[');
-    expect(loadStoredJobs(now)).toEqual([]);
-  });
-
-  it('removes the key when no job is left', () => {
-    saveStoredJobs([{ jobID: JOB, expires: '2026-10-17T12:00:00Z' }]);
-    saveStoredJobs([]);
-    expect(sessionStorage.getItem(JOBS_STORAGE_KEY)).toBeNull();
-  });
-
-  it('works on without resuming when the storage is blocked', () => {
-    const blocked = vi.spyOn(globalThis, 'sessionStorage', 'get').mockImplementation(() => {
-      throw new DOMException('blocked', 'SecurityError');
-    });
-    expect(() => saveStoredJobs([{ jobID: JOB, expires: '2026-10-17T12:00:00Z' }])).not.toThrow();
-    expect(loadStoredJobs(now)).toEqual([]);
-    blocked.mockRestore();
   });
 });

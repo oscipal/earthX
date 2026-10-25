@@ -128,6 +128,7 @@ const ITEM_URL = '/stac/collections/sentinel-2-c1-l2a/items/';
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   catalog = {};
   pending = {};
   tilejson = () => json({ tilejson: '3.0.0' });

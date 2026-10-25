@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 
 import { HttpError } from '../api';
+import { resultsGroupByOfOption } from '../datasets';
 import type { ExportOffer } from '../download';
 import { estimateOrder, type EstimateDocument } from '../processing';
+import { jobTitle, titleDay } from '../processingBatch';
 import { aoiProvenanceOf, buildExportOrder, formatBytes, formatDuration } from '../processingOrder';
-import { refusalMessage, useProcessingStore } from '../processingStore';
+import { orderStands, refusalMessage, useProcessingStore } from '../processingStore';
+import { useAppStore } from '../store';
 import { JobRow } from './JobList';
 
 // "Export as job" in the download dialog (M4-11b-2, plan §3.2): the crop was
@@ -23,6 +26,20 @@ type Estimate =
   | { state: 'error'; message: string };
 
 type Started = { state: 'starting' } | { state: 'placed'; jobID: string } | { state: 'refused'; message: string };
+
+// "Export · <dataset> · <day>"; the day is the one the scenes share, where the app holds them.
+function titleOfExport({ request }: ExportOffer): string {
+  const app = useAppStore.getState();
+  const dataset = app.datasets.find((d) => d.id === request.datasetId);
+  const ids = new Set(request.groups.flat());
+  const scenes = app.items.filter((item) => ids.has(item.id));
+  const known = scenes.length === ids.size ? scenes : [];
+  return jobTitle({
+    operators: ['Export'],
+    dataset: dataset?.title ?? '',
+    day: titleDay(known, dataset ? resultsGroupByOfOption(dataset) : null),
+  });
+}
 
 export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
   const placeOrder = useProcessingStore((s) => s.placeOrder);
@@ -48,12 +65,15 @@ export default function ExportJobOffer({ offer }: { offer: ExportOffer }) {
   }, [offer, tooLarge, attempt]);
 
   const job = started?.state === 'placed' ? jobs.find((j) => j.jobID === started.jobID) : undefined;
-  const blocked = estimate.state !== 'ready' || started?.state === 'starting' || !!job;
+  const blocked = estimate.state !== 'ready' || started?.state === 'starting' || orderStands(job);
 
   const start = async () => {
     if (blocked) return;
     setStarted({ state: 'starting' });
-    const answer = await placeOrder(buildExportOrder(offer.request), { aoiProvenance: aoiProvenanceOf(offer.request.aoi) });
+    const answer = await placeOrder(buildExportOrder(offer.request), {
+      aoiProvenance: aoiProvenanceOf(offer.request.aoi),
+      title: titleOfExport(offer),
+    });
     setStarted('jobID' in answer ? { state: 'placed', jobID: answer.jobID } : { state: 'refused', message: answer.message });
   };
 
