@@ -7,17 +7,33 @@ import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, type BandStats, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
 
-// The link of the output `tiles` (`api/processing_docs.py::TILES_HREF`): a path on
-// this host, in the shape the tiler serves — nothing else is ever fetched or used
-// for a layer. `secrets.token_urlsafe(16)`: 22 characters of the URL-safe alphabet.
+// The path of the output `tiles` (`api/processing_docs.py::TILES_HREF`), in the shape the
+// tiler serves — nothing else is ever fetched or used for a layer. The results document
+// links it absolute since NM4-03 (`EARTHX_TILER_URL`); only the path is kept, so the tiles
+// are read through this host's own proxy and never from a host the document names.
+// `secrets.token_urlsafe(16)`: 22 characters of the URL-safe alphabet.
 const TILES_HREF = /^\/results\/[A-Za-z0-9_-]{22}\/WebMercatorQuad\/tilejson\.json$/;
 
 // From a minute before `expires` the tiler answers `410` (`objectstore/results.py::MIN_REMAINING`).
 export const MIN_REMAINING_MS = 60_000;
 
+// An absolute link is reduced to its path: `http` or `https` only, no credentials, query or fragment.
+function pathOf(href: string): string | null {
+  if (href.startsWith('/')) return href;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  const plain = (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password && !url.search && !url.hash;
+  return plain && href === `${url.origin}${url.pathname}` ? url.pathname : null;
+}
+
 export function tilesHref(doc: Record<string, { href?: unknown }>): string | null {
   const href = doc.tiles?.href;
-  return typeof href === 'string' && TILES_HREF.test(href) ? href : null;
+  const path = typeof href === 'string' ? pathOf(href) : null;
+  return path !== null && TILES_HREF.test(path) ? path : null;
 }
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
