@@ -24,7 +24,8 @@
     Punkte 5, 9, 10).
   - `architekturplan.md` 3.1, 5.2, 6.2.
   - `adr/0003` §10, §11; `adr/0005` §5 (Regeln I–III, Nachtrag M3-13);
-    `adr/0007` §12; `adr/0014` §3.1, §4.6, §5.4, §15a (F7a), §15d;
+    `adr/0007` §12; `adr/0014` §3.1, §4.6, §5.4, §15a (F7a), §15d (der erste der
+    beiden Abschnitte mit dieser Nummer, M4-09);
     `adr/0015` §14d; `adr/0016` §12 (F4).
   - Pläne M2-09b, M2-10, M4-15, M4-18, M4-19, M4-20; Entscheidungslog bis
     25.10.2026.
@@ -223,8 +224,8 @@ geändert [M].
 ### 3.6 Prüfsummen — [M]
 
 - **Earth Search:** `file:checksum` (Multihash, Präfix `1220` = SHA2-256) an
-  allen 18 Datenassets des Items; nur die Metadaten-Assets (`preview`,
-  `thumbnail`, `*_metadata`) haben keine (Q6). Bestätigt `adr/0014` §3.1.
+  allen 23 Assets des Items, auch an `preview`, `thumbnail` und den
+  `*_metadata` (Q6). Bestätigt `adr/0014` §3.1.
 - **EOPF Zarr3:** an keinem Asset (Q5). Fassung bleibt `updated` am Item
   (`adr/0014` §4.6, Stufe 3).
 
@@ -290,11 +291,13 @@ Mini-Zarrs (`tests/earthx/readers/mini_zarr*.py`, M2-09a).
   `catalog/test_onboarding_processing.py::test_the_tile_equals_the_job_on_the_native_level`
   läuft je Registry-Eintrag; der Zarr-Fall entsteht dort, weil
   `sentinel-2-l2a-zarr3` mit `format=ZARR` in der Registry steht (`:66`,
-  `:139–140`), gerechnet wird auf `mini_zarr_cf`. Dazu
-  `api/test_tiler_operator.py` mit `ZARR_DATASET = replace(SENTINEL_2_L2A_ZARR3, …)`.
-  **Fällt der Eintrag weg, fällt der Zarr-Fall dieser beiden Tests weg**,
-  obwohl die Daten synthetisch sind. Er muss auf einen Testeintrag mit
-  `format=ZARR` umziehen (§7.1).
+  `:139–140`), gerechnet wird auf `mini_zarr_cf`. **Fällt der Eintrag weg,
+  fällt dieser Zarr-Fall still weg** (`ENTRIES = list(REGISTRY)`, `:70`),
+  obwohl die Daten synthetisch sind. Dazu `api/test_tiler_operator.py`: Er hat
+  schon eine eigene Test-Registry (`:61`), nimmt den Eintrag aber als Vorlage
+  (`ZARR_DATASET = replace(SENTINEL_2_L2A_ZARR3, …)`, `:29`, `:50–51`); ohne ihn
+  scheitert der Test laut beim Import. Beide brauchen einen Testeintrag mit
+  `format=ZARR` (Regel II).
 
 **Verhalten bei einer unbekannten `dataset_id` heute:**
 
@@ -303,8 +306,10 @@ Mini-Zarrs (`tests/earthx/readers/mini_zarr*.py`, M2-09a).
 | Kachel, Statistik, Info (`api/tiler.py:165–176`) | `404`, `no dataset '<id>'` |
 | Coverage (`api/coverage_route.py:103–104`) | `404`, derselbe Text |
 | Prozessbeschreibung (`api/processing_route.py:476–486`) | `400`, `no dataset '<id>'` |
-| Auftrag (`api/intake.py:827–838`) | `400`, `no dataset '<id>'` |
-| Permalink öffnen (`api/processing_route.py:1294–1301`) | `200` mit dem gespeicherten Auftrag; die ID wird nicht geprüft. Erst der Start scheitert mit `400` |
+| Auftrag und Schätzung (`api/intake.py:299–302`) | `422`, `no dataset '<id>'` |
+| Rezept aus Queue oder Permalink (`api/intake.py:827–838`, `check_recipe_hosts`) | `400`, `no dataset '<id>'` |
+| Fertiger Job: `recipe.json`, ZIP, Seitendateien (`api/processing_route.py:955–961`, `api/intake.py:543–544`) | kein Fehler; ohne Eintrag fehlen Attribution, Nutzungsbedingungen und `citation.bib`, im ZIP bleibt nur `aoi.geojson` |
+| Permalink öffnen (`api/processing_route.py:1294–1301`) | `200` mit dem gespeicherten Auftrag; die ID wird nicht geprüft. Erst der Start scheitert mit `422` |
 | Runner (`runner/recipe_file.py:87–98`) | Abbruch, „a dataset of the recipe is not known to this runner“ |
 | pgstac (`catalog/load.py`, `catalog/pgstac.py:110–121`) | `load_registry` schreibt nur; eine Collection, die aus der Registry fällt, **bleibt** in pgstac stehen |
 
@@ -351,7 +356,7 @@ Robustheit gegen den Ausfall einer Quelle (Prinzip 11), soweit die zweite
 dieselbe Szene führt.
 *Gegen:*
 - **Keine gemeinsame Identität [M][P].** Item-IDs (`S2C_T38TMK_20261025T080222_L2A`
-  gegen `S2A_MSIL2A_20261024T143211_N0513_R139_T26WME_20261024T204702`, §3.3),
+  gegen `S2A_MSIL2A_20261024T143211_N0513_R139_T26WME_20261024T204702`, Q5, Q6),
   Asset-Schlüssel (`red`
   gegen `SR_10m:b04`), Maske (`scl` gegen `SCL_20m:scl`), Gruppierung
   (`s2:datatake_id` gegen `eopf:datatake_id`) und Zoomspanne (0–19 gegen 8–14)
@@ -415,22 +420,30 @@ Schema, die Zarr-Zweige im Frontend und alle Tests auf den Mini-Zarrs. Es
 gehen: Registry-Eintrag, Adapter `eopf_stac` samt `AdapterKind.EOPF_STAC_V1`,
 `eopf_sample_coverage`, die Fixtures `eopf_stac/`, der Live-Smoke. Grund für 1b:
 Ein Adapter ohne Datensatz hat keinen Live-Smoke mehr und veraltet unbemerkt;
-eine operative EOPF-Quelle käme über eine andere API (§3.1). `CoverageProvider.SAMPLE`
-bleibt als Wert nur, wenn ein generischer Anbieter ihn trägt; sonst geht er mit
-und kommt mit der nächsten Quelle ohne Aggregation zurück (F2).
+eine operative EOPF-Quelle käme über eine andere API (§3.1). Mit
+`eopf_sample_coverage` verschwindet der einzige Anbieter einer ausgewiesenen
+Stichprobe; `CoverageProvider.SAMPLE` und sein Platz in `IMPLEMENTED_PROVIDERS`
+gehen mit und kommen mit der nächsten Quelle ohne Aggregation zurück
+(`adr/0004` §5 Option 6 bleibt der Weg dafür; F2).
 
 **Regel II — Der Zarr-Fall der Vergleichstests zieht um, statt zu entfallen.**
 `test_onboarding_processing.py` und `test_tiler_operator.py` rechnen den
-Zarr-Fall künftig auf einem **Testeintrag** mit `format=ZARR` (wie `synthetic`
-in `runner/test_compare.py`), nicht auf einem Eintrag der Registry. Die
-Zarr-Toleranz aus `adr/0014` §15d bleibt damit in der CI belegt. Ein
+Zarr-Fall künftig auf einem **Testeintrag** mit `format=ZARR` und eigenem
+`ZarrInfo`, nicht auf einem Eintrag der Registry. Vorbild ist `synthetic` in
+`tests/earthx/runner/support.py:29–34`, dort für COG. Die Zarr-Toleranz aus
+`adr/0014` §15d bleibt damit in der CI belegt. Ein
 Wächtertest stellt sicher, dass der Zarr-Zweig ausgeführt wird, auch wenn die
 Registry keinen Zarr-Eintrag hat.
 
 **Regel III — Abweisen mit Grund, nicht umleiten** (§8). Die ID
 `sentinel-2-l2a-zarr3` kommt in eine kleine Liste ausgeschiedener Datensätze
-neben der Registry (ID, Datum, Hinweis auf den verbleibenden Datensatz). Wer
-sie nennt, bekommt `410 Gone` mit diesem Grund statt `404`/`400` „no dataset“.
+neben der Registry (ID, Datum, Hinweis auf den verbleibenden Datensatz, dazu
+Lizenzblock und Zitat des alten Eintrags). Wer sie nennt, bekommt `410 Gone`
+mit diesem Grund statt `404`/`422`/`400` „no dataset“. Lizenzblock und Zitat
+halten die Seitendateien fertiger Jobs vollständig: Ohne sie fehlen nach dem
+Umbau bis zu 7 Tage lang Attribution, Nutzungsbedingungen und `citation.bib`
+im ZIP (§3.8), und die Attribution gehört zu jedem Download (§5 der
+Projektübersicht).
 Die Liste ist Daten, kein datensatzspezifischer Code; `REGISTRY` und die
 ausgeschiedenen IDs dürfen sich nie überschneiden (Test).
 
@@ -452,8 +465,8 @@ sobald eine solche Quelle für irgendeinen Datensatz erreichbar ist (F4).
 
 | Bereich | Was | Größe [A] |
 |---|---|---|
-| Registry | Eintrag und Zeile in `REGISTRY` entfernen; Liste ausgeschiedener IDs neu (Regel III) | klein |
-| Adapter (1b) | `eopf_stac.py`, `eopf_sample_coverage.py`, Bindung in `spec.py`, `AdapterKind.EOPF_STAC_V1` entfernen | rund 500 Zeilen weniger |
+| Registry | Eintrag und Zeile in `REGISTRY` entfernen; Liste ausgeschiedener IDs mit Lizenzblock und Zitat neu (Regel III); `_config_of` und die Seitendateien fertiger Jobs lesen sie | klein |
+| Adapter (1b) | `eopf_stac.py`, `eopf_sample_coverage.py`, Bindung in `spec.py`, `AdapterKind.EOPF_STAC_V1`, `CoverageProvider.SAMPLE` mit `IMPLEMENTED_PROVIDERS` (`api/coverage_route.py:69`) entfernen | rund 500 Zeilen weniger |
 | API | `410` mit Grund an den Stellen aus §3.8 (Kachel, Coverage, Prozessbeschreibung, Auftrag); ein Permalink öffnet weiter mit `200` (§8) | klein |
 | Frontend | ein `410` der Vorschau oder des Starts zeigt „Dataset retired“, der Grund aus dem Problem-Dokument steht im Tooltip; keine Datensatz-ID im Frontend | klein |
 | Runner | eigene Meldung für eine ausgeschiedene ID statt „not known to this runner“ | klein |
@@ -461,13 +474,17 @@ sobald eine solche Quelle für irgendeinen Datensatz erreichbar ist (F4).
 | Backend-Tests | quellgebundene Tests und Fixtures entfernen; Zarr-Fall in `test_onboarding_processing.py` und `test_tiler_operator.py` auf Testeintrag (Regel II); Tests für `410`; `test_frontend_no_dataset_literals.py` unverändert | mittel, überwiegend Löschungen |
 | Frontend-Tests | Beispiele mit der ID durch eine neutrale Test-ID ersetzen (etwa `synthetic-zarr`), Zarr-Logik bleibt geprüft; Fixtures `processes/sentinel-2-l2a-zarr3.json` und `orders/band-math-on-zarr-variables.json` umbenennen | mittel, mechanisch |
 | Live | `tests_live/test_eopf_smoke.py` entfernen | klein |
-| Doku | `README.md` (Datensatzliste, Beispiele, Attribution), `cloud-umgebung.md` §6 (EOPF-Hosts als Historie), `projektuebersicht.md` §5 Punkte 5 und 9, Backlog 14 („COG gegen EOPF-Zarr“ entfällt) | klein |
+| Doku | `README.md` (Datensatzliste, Beispiele, Attribution), `cloud-umgebung.md` §6 (EOPF-Hosts als Historie), `projektuebersicht.md` §5 Punkte 2 (Stichprobe ohne Anbieter), 5 und 9, Backlog 14 („COG gegen EOPF-Zarr“ entfällt) | klein |
 | ADRs | Nachtrag in `adr/0007` und `adr/0014` (§15d bleibt gültig, Beleg jetzt synthetisch); M4-Belege bleiben als Stand von M4 | klein |
 | Prüfanleitungen | M2-10, M4-17, M4-18 nennen den Zarr-Datensatz; sie bleiben als Stand ihres Meilensteins, neue Läufe nehmen `sentinel-2-c1-l2a` | keine Änderung |
 
-Die Umsetzung passt in zwei PRs unter dem Richtwert [A]: (a) Backend mit
-Registry, `410`, Adapter, Tests, pgstac; (b) Frontend-Tests und Doku. Nicht
-generierte Zeilen fallen überwiegend weg.
+**PR-Schnitt [A].** Das Löschen allein liegt über dem Richtwert von rund
+400 Zeilen: Adapter rund 490, quellgebundene Tests rund 1600, Fixtures 135,
+Registry-Eintrag rund 185 Zeilen. Vorschlag in drei PRs: (a) Liste
+ausgeschiedener IDs, `410`, Seitendateien fertiger Jobs, pgstac und der Umzug
+des Zarr-Falls auf den Testeintrag (klein, Verhalten); (b) Registry-Eintrag,
+Adapter, Tests, Fixtures und Live-Smoke löschen (groß, fast nur Löschungen,
+als benannte Ausnahme vom Richtwert); (c) Frontend-Tests und Doku.
 
 ### 7.2 Folgen von Option 2
 
@@ -525,6 +542,8 @@ einem Link, der das Original verspricht, verletzt das Prinzip 8 und 9.
 |---|---|
 | Permalink öffnen | `200` wie heute (der Auftrag gehört dem Nutzer). Vorschau und Start antworten mit `410`; die Oberfläche zeigt „Dataset retired“, der Grund aus dem Problem-Dokument steht im Tooltip. Das Frontend kennt dafür keine Datensatz-ID |
 | Auftrag, Kachel, Coverage, Prozessbeschreibung | `410 Gone`, Problem-Dokument mit Grund und dem verbleibenden Datensatz |
+| Fertige Jobs (bis 7 Tage nach dem Umbau) | Ergebnis, `recipe.json` und ZIP bleiben abrufbar; Attribution, Bedingungen und `citation.bib` kommen aus der Liste ausgeschiedener IDs |
+| Laufende Jobs zum Zeitpunkt des Umbaus | laufen zu Ende; der Umbau wird in einem Fenster ohne laufende Jobs ausgerollt oder sie scheitern mit Grund (in der Umsetzung festzulegen) |
 | Runner (neues Image) | Abbruch vor jeder Anfrage, Meldung „dataset retired on …“ statt „not known“ |
 | STAC-API | Collection fehlt (`404`), wie jede unbekannte Collection (`adr/0005` Regel I) |
 
@@ -544,13 +563,13 @@ Oberflächentext nur Englisch und kurz, Erklärung im Tooltip (UI-01 §4).
 3. Option 3: Earth Search entfernen, EOPF behalten
 
 **F2 — Was geht mit dem Datensatz (nur bei F1 = 1)?**
-1. Variante 1b: Adapter `eopf_stac`, Coverage-Stichprobe, Fixtures und Live-Smoke gehen mit; Zarr-Reader und alles Formatgenerische bleibt **(Empfehlung)**
-2. Variante 1a: Adapter und Stichprobe bleiben mit synthetischen Fixtures, ohne Registry-Eintrag
+1. Variante 1b: Adapter `eopf_stac`, Coverage-Stichprobe samt `CoverageProvider.SAMPLE`, Fixtures und Live-Smoke gehen mit; Zarr-Reader und alles Formatgenerische bleibt **(Empfehlung)**
+2. Variante 1a: Adapter und Stichprobe bleiben mit synthetischen Fixtures, ohne Registry-Eintrag; `SAMPLE` bleibt damit gebaut
 3. Nur der Registry-Eintrag geht; alles andere bleibt, auch der Live-Smoke ohne Eintrag
 
 **F3 — Alte Permalinks und `recipe.json`?**
-1. Abweisen mit Grund: `410` und Liste ausgeschiedener IDs, Hinweis im Viewer (§8) **(Empfehlung)**
-2. Abweisen wie jede unbekannte ID (`404`/`400`, „no dataset“), keine Liste
+1. Abweisen mit Grund: `410` und Liste ausgeschiedener IDs mit Lizenzblock und Zitat, Hinweis im Viewer (§8) **(Empfehlung)**
+2. Abweisen wie jede unbekannte ID (`404`/`422`/`400`, „no dataset“), keine Liste; ZIPs fertiger Jobs verlieren bis zu 7 Tage lang Attribution und Zitat
 3. Umleiten auf `sentinel-2-c1-l2a` mit Übersetzung (ändert die Rechnung, §8)
 
 **F4 — Lücke bei der Formatachse (Prinzip 3, Checkliste Punkt 5)?**
@@ -612,7 +631,7 @@ $i = (Invoke-RestMethod "$es/v1/collections/sentinel-2-c1-l2a/items?limit=1").fe
 $i.id; $i.properties.datetime; $i.properties.created
 $i.assets.red.'raster:bands'                     # (scale 0.0001, offset -0.1)
 $i.assets.red.'file:checksum'                    # (beginnt mit 1220)
-($i.assets.PSObject.Properties | Where-Object { $_.Value.'file:checksum' }).Count   # (18)
+($i.assets.PSObject.Properties | Where-Object { $_.Value.'file:checksum' }).Count   # (23)
 
 $z = (Invoke-RestMethod "$eo/collections/sentinel-2-l2a-zarr3/items?limit=1").features[0]
 $z.id; $z.properties.datetime; $z.properties.created
