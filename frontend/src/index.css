@@ -1688,7 +1688,7 @@ button.pm-open:hover {
   border-radius: 4px;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 14px;
   text-decoration: none;
   cursor: pointer;
 }
@@ -2089,7 +2089,7 @@ a.pm-icon:hover {
   }
   .processing-sheet {
     top: auto;
-    left: 0;
+    left: var(--rail-width);
     right: 0;
     bottom: 0;
     width: auto;
