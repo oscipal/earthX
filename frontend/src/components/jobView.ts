@@ -51,8 +51,6 @@ export function jobState(job: JobEntry, now: number): JobState {
   }
 }
 
-export const isOver = (state: JobState): boolean => state.progress === null && state.key !== 'checking';
-
 const MONTH_DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 const HOUR_MINUTE = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
 const YEAR = new Intl.DateTimeFormat('en-GB', { year: 'numeric' });

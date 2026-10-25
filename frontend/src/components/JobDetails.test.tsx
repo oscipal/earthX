@@ -32,6 +32,9 @@ const ORDER: Order = {
   output: { kind: 'raster', format: 'cog', dtype: 'float32' },
 };
 
+// The actions a test replaces by a spy, put back after it.
+const { cancelJob, ensureDescription, restoreOrder, showResultOnMap } = useProcessingStore.getState();
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -42,7 +45,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
   setTrackerOptions({ EventSource: null, fetchJob: async (id) => status({ jobID: id }), pollMs: 60_000 });
   resetJobs();
-  useAppStore.setState({ datasets: [], viewportBbox: [5, 45, 15, 55], mapZoom: 6 });
+  useProcessingStore.setState({ open: false, cancelJob, ensureDescription, restoreOrder, showResultOnMap });
+  useAppStore.setState({ datasetId: null, datasets: [], viewportBbox: [5, 45, 15, 55], mapZoom: 6 });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -94,6 +98,23 @@ describe('the window', () => {
     expect(useProcessingStore.getState().steps).toHaveLength(1);
   });
 
+  it('folds down to its head and opens again, as the order does (narrow screens)', () => {
+    show(jobEntry(1));
+    const panel = container.querySelector('.processing-panel')!;
+    click(button('▾'));
+    expect(panel.classList.contains('folded')).toBe(true);
+    click(button('▴'));
+    expect(panel.classList.contains('folded')).toBe(false);
+  });
+
+  it('reads the operators of the dataset when it opens over a closed panel, as the order does', () => {
+    const ensure = vi.fn();
+    act(() => useAppStore.setState({ datasetId: 'sentinel-2-c1-l2a' }));
+    act(() => useProcessingStore.setState({ open: false, jobs: [jobEntry(1)], ensureDescription: ensure }));
+    act(() => useProcessingStore.getState().openJobDetails(jobId(1)));
+    expect(ensure).toHaveBeenCalledWith('sentinel-2-c1-l2a');
+  });
+
   it('closes the whole window with the cross', () => {
     show(jobEntry(1));
     click(button('✕'));
@@ -142,9 +163,11 @@ describe('what it says of the job', () => {
     expect(container.querySelector('progress')).toBeNull();
   });
 
-  it('gives no expiry for a cancelled or an expired job: it is over', () => {
+  it('gives no expiry for a cancelled job, and keeps the date of an expired one', () => {
     show(jobEntry(1, { phase: 'dismissed' }));
     expect(fact('Expires')).toBeNull();
+    show(jobEntry(1, { phase: 'gone' }));
+    expect(fact('Expires')).toMatch(/^27 Oct, \d{2}:\d{2}$/u);
   });
 
   it('shows the reason of a failed job, and an error of its own, as alerts', () => {
@@ -267,6 +290,24 @@ describe('the actions', () => {
     expect(button('Cancelling…')!.disabled).toBe(true);
   });
 
+  it('sends one DELETE for a double click on "Cancel", and shows the job as cancelled', async () => {
+    const calls: string[] = [];
+    const running = { processID: 'recipe', type: 'process', jobID: jobId(1), status: 'running', message: '', progress: 5, created: '2026-10-10T10:00:00Z', expires: new Date(NOW + 86_400_000).toISOString(), recipeID: 'r', links: [] };
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      const state = init?.method === 'DELETE' ? 'dismissed' : 'running';
+      return new Response(JSON.stringify({ ...running, status: state }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+    show(jobEntry(1));
+    await act(async () => {
+      button('Cancel')!.click();
+      button('Cancel')?.click();
+    });
+    await vi.waitFor(() => expect(useProcessingStore.getState().jobs[0].phase).toBe('dismissed'));
+    expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([`DELETE /processing/jobs/${jobId(1)}`]);
+    expect(fact('State')).toBe('Cancelled');
+  });
+
   it('of a failed or cancelled job are none', () => {
     show(jobEntry(1, { phase: 'failed', failure: 'x', order: ORDER }));
     expect(actions()).toEqual([]);
@@ -277,7 +318,7 @@ describe('the actions', () => {
   it('of an expired job is "Open in panel", and nothing to download', () => {
     show(jobEntry(1, { phase: 'gone', order: ORDER }));
     expect(actions()).toEqual(['Open in panel']);
-    expect(button('Open in panel')!.disabled).toBe(false);
+    expect(button('Open in panel')!.getAttribute('aria-disabled')).toBe('false');
     show(finished(1, { expired: true, order: ORDER }));
     expect(actions()).toEqual(['Open in panel']);
   });
@@ -320,7 +361,18 @@ describe('"Open in panel"', () => {
 
   it('is off where no copy of the order is kept, and the reason is its tooltip', () => {
     show(jobEntry(1, { phase: 'gone', order: null }));
-    expect(button('Open in panel')!.disabled).toBe(true);
-    expect(button('Open in panel')!.title).toBe(NO_COPY_TIP);
+    const off = button('Open in panel')!;
+    // Off but reachable by keyboard, with the reason as a tooltip that shows on focus.
+    expect(off.getAttribute('aria-disabled')).toBe('true');
+    expect(off.getAttribute('data-tip')).toBe(NO_COPY_TIP);
+    expect(off.getAttribute('aria-label')).toBe(`Open in panel: ${NO_COPY_TIP}`);
+  });
+
+  it('does nothing for a click on it where there is no copy', () => {
+    const restore = vi.fn(async () => ({ ok: true as const, notes: [] }));
+    act(() => useProcessingStore.setState({ restoreOrder: restore }));
+    show(jobEntry(1, { phase: 'gone', order: null }));
+    click(button('Open in panel'));
+    expect(restore).not.toHaveBeenCalled();
   });
 });

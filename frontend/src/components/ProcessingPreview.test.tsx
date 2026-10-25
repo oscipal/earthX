@@ -285,6 +285,16 @@ describe('the preview section', () => {
     expect(store().preview).toBeNull();
   });
 
+  it('draws no picture of the draft while the details of a job are shown, and draws it again with the order', async () => {
+    await withNdvi();
+    act(() => useProcessingStore.setState({ jobs: [{ jobID: 'Job0000000000000000001' } as never] }));
+    act(() => store().openJobDetails('Job0000000000000000001'));
+    expect(store().preview).toBeNull();
+    act(() => store().closeJobDetails());
+    await afterDebounce();
+    expect(store().preview).not.toBeNull();
+  });
+
   it('drops the picture with the draft when the dataset changes', async () => {
     await withNdvi();
     act(() => useAppStore.setState({ datasetId: 'other' }));

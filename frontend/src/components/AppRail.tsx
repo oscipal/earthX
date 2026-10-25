@@ -60,7 +60,8 @@ export default function AppRail() {
   const toggleDock = useAppStore((s) => s.toggleDock);
   const closeDock = useAppStore((s) => s.closeDock);
   const layerCount = useAppStore((s) => s.layers.length);
-  const running = useProcessingStore((s) => s.jobs.filter((j) => j.phase === 'active').length);
+  // A job whose state is not known yet (an archived one, one of another tab) is not counted as running.
+  const running = useProcessingStore((s) => s.jobs.filter((j) => j.phase === 'active' && j.status !== null).length);
   const counts: Record<DockPanel, number> = { controls: 0, layers: layerCount, jobs: running };
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   // The symbol that takes the Tab key: the open panel's, else the one last used.

@@ -214,7 +214,6 @@ export interface PartOutcome {
 
 interface ProcessingState {
   open: boolean;
-  // The window of the jobs (M4-13c §3.1), apart from the panel.
   // The job whose details the processing window shows instead of the order (UI-01 §6.8), or `null`.
   detailJobID: string | null;
   descriptions: Record<string, Description>;
@@ -869,8 +868,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   // does not know is not followed until `followJob`.
   const takeShelf = () => {
     const { shelf, state } = readShelf();
-    // A shelf that cannot be read says nothing about the groups; the jobs of this tab stay what they are.
+    // A shelf that cannot be read, or reads as empty, says nothing about the groups; the jobs of this tab
+    // stay what they are.
     if (state === 'memory') return;
+    const empty = shelf.jobs.length + shelf.batches.length + shelf.groups.length === 0;
     const stored = new Map(shelf.jobs.map((j) => [j.jobID, j]));
     set((s) => {
       const known = new Set(s.jobs.map((j) => j.jobID));
@@ -879,7 +880,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         jobs: [...added, ...s.jobs.map((j) => ({ ...j, ...stored.get(j.jobID) }))],
         batches: withOthers(shelf.batches, s.batches),
         // What is stored is the truth about groups: another tab may have removed an empty one.
-        groups: shelf.groups,
+        groups: empty ? s.groups : shelf.groups,
       };
     });
   };
@@ -1020,8 +1021,12 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         cropToAoi: false,
       });
     },
+    // The order behind the details is read from the operators of the dataset, as `openProcessing` does.
     openJobDetails: (jobID) => {
-      if (get().jobs.some((j) => j.jobID === jobID)) set({ open: true, detailJobID: jobID });
+      if (!get().jobs.some((j) => j.jobID === jobID)) return;
+      set({ open: true, detailJobID: jobID });
+      const datasetId = useAppStore.getState().datasetId;
+      if (datasetId) get().ensureDescription(datasetId);
     },
     closeJobDetails: () => set({ detailJobID: null }),
     // The unit of a target CRS (M4-13c-3). A refusal and an answer stay; an answer that
@@ -1446,7 +1451,8 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 // `limit` cuts it to the first steps (what the tiler accepted of a chain).
 function wantedPreview(limit?: number): PreviewSpec | null {
   const p = useProcessingStore.getState();
-  if (!p.open) return null;
+  // The details of a job are not the order: the draft draws nothing while they are shown.
+  if (!p.open || p.detailJobID) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
@@ -1623,6 +1629,7 @@ function refreshPreview(): void {
 useProcessingStore.subscribe((s, prev) => {
   if (
     s.open !== prev.open ||
+    s.detailJobID !== prev.detailJobID ||
     s.descriptions !== prev.descriptions ||
     s.passKey !== prev.passKey ||
     s.area !== prev.area ||

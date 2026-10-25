@@ -894,9 +894,8 @@ export interface AppState {
   // A second click on the open panel's symbol closes it.
   toggleDock: (panel: DockPanel) => void;
   closeDock: () => void;
-  // The control panel slides away so it cannot block the map (a draw, a search), and comes back when that is
-  // over, unless another panel took its place meanwhile.
-  hideControls: () => void;
+  // The control panel slides away for a draw or a search (`withoutControls`) and comes back when that is over,
+  // unless another panel took its place meanwhile.
   reopenControls: () => void;
   toggleResultsPanel: () => void;
   clearAll: () => void;
@@ -1135,7 +1134,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearFlyView: () => set({ flyToView: null }),
   toggleDock: (panel) => set((s) => ({ dock: s.dock === panel ? null : panel })),
   closeDock: () => set({ dock: null }),
-  hideControls: () => set((s) => ({ dock: withoutControls(s.dock) })),
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
   clearAll: () => {

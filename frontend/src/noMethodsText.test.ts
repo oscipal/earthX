@@ -15,6 +15,13 @@ describe('the frontend code', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(40);
   });
 
+  it('has no "Methods" as the text of an element, also on a line of its own', () => {
+    const found = Object.entries(sources)
+      .filter(([, text]) => /^\s*Methods\s*$/mu.test(text) || />\s*Methods\s*</u.test(text))
+      .map(([file]) => file);
+    expect(found).toEqual([]);
+  });
+
   it.each(['methods.txt', 'fetchMethodsText', 'METHODS_FILE', 'CopyMethods', "'Methods'", '>Methods<'])(
     'has nothing that reads, links or copies the methods text: %s',
     (needle) => {

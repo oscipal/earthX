@@ -1258,7 +1258,7 @@ describe('starting and following a job', () => {
     await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Expired');
     expect(downloads()).toHaveLength(0);
     // The file is not offered; the reason is the tooltip of the dimmed symbol.
-    expect(container.querySelector<HTMLButtonElement>('button.pm-icon[disabled]')?.title).toBe(EXPIRED_TIP);
+    expect(container.querySelector<HTMLButtonElement>('button.pm-icon[aria-disabled="true"]')?.getAttribute('data-tip')).toBe(EXPIRED_TIP);
     expect(container.querySelector('.hint-text.error')).toBeNull();
   });
 });

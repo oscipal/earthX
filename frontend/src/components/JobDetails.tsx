@@ -114,10 +114,13 @@ function OpenInPanel({ job }: { job: JobEntry }) {
     <>
       <button
         type="button"
-        className="ghost-btn"
-        disabled={!order || busy}
-        title={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
-        onClick={() => void open()}
+        className="ghost-btn has-tip"
+        aria-disabled={!order || busy}
+        data-tip={order ? 'Take the order of this job back into the panel' : NO_COPY_TIP}
+        aria-label={order ? undefined : `Open in panel: ${NO_COPY_TIP}`}
+        onClick={() => {
+          if (order && !busy) void open();
+        }}
       >
         Open in panel
       </button>
@@ -138,6 +141,8 @@ export default function JobDetails() {
   const cancelJob = useProcessingStore((s) => s.cancelJob);
   const showOnMap = useProcessingStore((s) => s.showResultOnMap);
   const followJob = useProcessingStore((s) => s.followJob);
+  // Narrow screens only: the sheet from below folds down to its head, as the order does.
+  const [folded, setFolded] = useState(false);
   const now = useNowUntil(job ? Date.parse(job.expires) - MIN_REMAINING_MS : Number.POSITIVE_INFINITY);
   const unknownStatus = job?.status === null;
   useEffect(() => {
@@ -147,8 +152,18 @@ export default function JobDetails() {
   const active = job?.phase === 'active';
 
   return (
-    <div className="panel processing-panel" role="dialog" aria-label="Job">
+    <div className={`panel processing-panel${folded ? ' folded' : ''}`} role="dialog" aria-label="Job">
       <div className="pp-head">
+        <button
+          type="button"
+          className="pp-grip"
+          aria-expanded={!folded}
+          aria-label={folded ? 'Show the panel' : 'Fold the panel down'}
+          title={folded ? 'Show the panel' : 'Fold the panel down'}
+          onClick={() => setFolded(!folded)}
+        >
+          {folded ? '▴' : '▾'}
+        </button>
         <div className="vc-head">
           <button type="button" className="link-btn" title="Back to the order" onClick={back}>
             ‹ Order
@@ -170,7 +185,7 @@ export default function JobDetails() {
                 {state.key === 'running' ? `Running · ${state.text}` : state.text}
                 {job.resampled === true && state.key === 'finished' && <Tip text={RESAMPLED_TIP} symbol="⚠" tone="warn" />}
               </dd>
-              {state.key !== 'cancelled' && state.key !== 'expired' && (
+              {state.key !== 'cancelled' && (
                 <>
                   <dt>Expires</dt>
                   <dd title={job.expires}>{formatUntil(job.expires, now)}</dd>

@@ -139,8 +139,12 @@ describe('the rows', () => {
     mount();
     expect(rows()[0].querySelector('.pm-state')?.textContent).toBe('Expired');
     expect(rows()[0].querySelector('a')).toBeNull();
-    expect(rows()[0].querySelector<HTMLButtonElement>('button.pm-icon[disabled]')?.title).toBe('Expired: results are kept for 7 days.');
-    expect(rows()[0].querySelector('.pm-until')).toBeNull();
+    // Off, but reachable by keyboard, so that the reason shows on focus as well as on hover.
+    const off = rows()[0].querySelector<HTMLButtonElement>('button.pm-icon[aria-disabled="true"]')!;
+    expect(off.getAttribute('data-tip')).toBe('Expired: results are kept for 7 days.');
+    expect(off.disabled).toBe(false);
+    // The date stays, so the user can see when it went.
+    expect(rows()[0].querySelector('.pm-until')?.textContent).toMatch(/^until \d+ Oct, \d{2}:\d{2}$/u);
   });
 
   it('shows a failed job with its reason, and a cancelled one as cancelled', () => {
@@ -188,19 +192,40 @@ describe('the menu of a row', () => {
     expect([...container.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['Rename', 'Move to group…', 'Archive']);
   });
 
-  it('closes on Escape and gives the focus back to its button, and does not let Escape go on', () => {
+  it('closes on Escape and gives the focus back to its button, and does not let Escape go on to the panel', () => {
     put({ jobs: [jobEntry(1)] });
-    mount();
-    menuOf(rows()[0]);
     const outer = vi.fn();
-    container.addEventListener('keydown', outer);
+    // A handler of the panel around it, as `App` has one for the dock.
+    act(() => root.render(<div onKeyDown={outer}><ProcessingManager /></div>));
+    menuOf(rows()[0]);
     const first = container.querySelector('[role="menu"] button')!;
-    (first as HTMLElement).focus();
     key(first, 'Escape');
     expect(container.querySelector('[role="menu"]')).toBeNull();
     expect(document.activeElement).toBe(container.querySelector('button[aria-haspopup="menu"]'));
-    // React stops the event at the root; the outer handler on the container does see the native one.
-    expect(outer).toHaveBeenCalledTimes(1);
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  it('puts the focus in the menu when it opens, keeps it there for the list of groups, and moves it with the arrow keys', () => {
+    put({ jobs: [jobEntry(1)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    menuOf(rows()[0]);
+    const items = () => [...container.querySelectorAll<HTMLElement>('[role="menu"] button')];
+    expect(document.activeElement).toBe(items()[0]);
+    key(items()[0], 'ArrowDown');
+    expect(document.activeElement).toBe(items()[1]);
+    key(items()[1], 'ArrowUp');
+    key(items()[0], 'ArrowUp');
+    expect(document.activeElement).toBe(items().at(-1));
+    key(items().at(-1)!, 'Home');
+    expect(document.activeElement).toBe(items()[0]);
+    key(items()[0], 'End');
+    click(items()[1]);
+    expect(items().map((b) => b.textContent)).toEqual(['Ungrouped', 'Field 7']);
+    expect(container.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(items()[0]);
+    // Escape still works from there.
+    key(items()[0], 'Escape');
+    expect(container.querySelector('[role="menu"]')).toBeNull();
   });
 
   it('closes with a click beside it', () => {
@@ -361,8 +386,10 @@ describe('groups', () => {
     put({ jobs: [jobEntry(1, { groupId: GROUP, archived: true })], groups: [{ id: GROUP, name: 'Field 7' }, { id: OTHER_GROUP, name: 'Empty' }] });
     mount();
     const full = container.querySelector<HTMLButtonElement>('button[aria-label^="Remove Field 7"]')!;
-    expect(full.disabled).toBe(true);
-    expect(full.title).toBe(GROUP_NOT_EMPTY_TIP);
+    expect(full.getAttribute('aria-disabled')).toBe('true');
+    expect(full.getAttribute('data-tip')).toBe(GROUP_NOT_EMPTY_TIP);
+    click(full);
+    expect(useProcessingStore.getState().groups).toHaveLength(2);
     expect(useProcessingStore.getState().removeGroup(GROUP)).toBe(false);
     click(container.querySelector('button[aria-label="Remove Empty"]'));
     expect(useProcessingStore.getState().groups.map((g) => g.name)).toEqual(['Field 7']);
@@ -455,7 +482,9 @@ describe('a batch', () => {
     const refused = container.querySelector('.pm-row.refused')!;
     expect(refused.querySelector('.pm-title')?.textContent).toBe('S2');
     expect(refused.querySelector('.pm-state')?.textContent).toBe('Refused');
-    expect(refused.querySelector('.pm-open')?.getAttribute('title')).toBe('no good');
+    // The reason is a symbol that the keyboard reaches, not a title on text.
+    expect(refused.querySelector('.tip')?.getAttribute('data-tip')).toBe('no good');
+    expect(refused.querySelector('[title], [aria-label]:not(.tip)')).toBeNull();
     expect(refused.querySelector('a, [role="menu"], button[aria-haspopup]')).toBeNull();
   });
 
@@ -704,6 +733,18 @@ describe('another tab', () => {
     });
     expect(titles()).toEqual(['Renamed there']);
     expect(useProcessingStore.getState().groups.map((g) => g.name)).toEqual(['Field 7']);
+  });
+
+  it('keeps the groups of this tab where the browser holds no readable shelf for them', () => {
+    put({ jobs: [jobEntry(1, { groupId: GROUP })], groups: [{ id: GROUP, name: 'Field 7' }] });
+    act(() => useProcessingStore.getState().resumeJobs());
+    mount();
+    localStorage.setItem(SHELF_KEY, '{damaged');
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: SHELF_KEY, newValue: '{damaged' }));
+    });
+    expect(useProcessingStore.getState().groups.map((g) => g.name)).toEqual(['Field 7']);
+    expect(container.querySelector('.pm-group[aria-label="Field 7"] .pm-row')).not.toBeNull();
   });
 
   it('does not take it as news when the other tab clears the browser data', () => {

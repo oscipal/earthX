@@ -35,7 +35,13 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
   const [open, setOpen] = useState(false);
   const [moving, setMoving] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  // The focus goes into the list when it opens and when it turns into the list of groups: the item that
+  // was focused is gone by then.
+  useEffect(() => {
+    if (open) list.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+  }, [open, moving]);
   useEffect(() => {
     if (!open) return undefined;
     const away = (e: PointerEvent) => {
@@ -56,12 +62,26 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
       className="pm-menu"
       ref={root}
       onKeyDown={(e) => {
-        if (e.key !== 'Escape' || !open) return;
-        // The menu closes; the panel around it stays.
-        e.stopPropagation();
-        setOpen(false);
-        setMoving(false);
-        button.current?.focus();
+        if (!open) return;
+        if (e.key === 'Escape') {
+          // The menu closes; the panel around it stays.
+          e.stopPropagation();
+          setOpen(false);
+          setMoving(false);
+          button.current?.focus();
+          return;
+        }
+        const items = [...(list.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? [])];
+        const at = items.indexOf(document.activeElement as HTMLElement);
+        if (items.length === 0 || at < 0) return;
+        const go = (index: number) => {
+          e.preventDefault();
+          items[(index + items.length) % items.length].focus();
+        };
+        if (e.key === 'ArrowDown') go(at + 1);
+        else if (e.key === 'ArrowUp') go(at - 1);
+        else if (e.key === 'Home') go(0);
+        else if (e.key === 'End') go(items.length - 1);
       }}
     >
       <button
@@ -80,14 +100,14 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
         ⋯
       </button>
       {open && (
-        <div className="pm-menu-list" role="menu" aria-label={`Actions for ${name}`}>
+        <div className="pm-menu-list" role="menu" aria-label={`Actions for ${name}`} ref={list}>
           {!moving && onRename && (
             <button type="button" role="menuitem" onClick={done(onRename)}>
               Rename
             </button>
           )}
           {!moving && onMove && (
-            <button type="button" role="menuitem" aria-haspopup="menu" onClick={() => setMoving(true)}>
+            <button type="button" role="menuitem" onClick={() => setMoving(true)}>
               Move to group…
             </button>
           )}
@@ -139,7 +159,6 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
   const state = jobState(job, now);
   const title = part ? (job.part ?? jobLabel(job)) : jobLabel(job);
   const target: ManagerTarget = { jobID: job.jobID };
-  const over = state.key === 'expired' || state.key === 'cancelled';
   return (
     <li className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}`}>
       <div className="pm-line">
@@ -159,7 +178,7 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
             <span className="pm-title">{title}</span>
             <span className={`pm-meta ${state.key}`}>
               <span className="pm-state">{state.text}</span>
-              {!over && (
+              {state.key !== 'cancelled' && (
                 <span className="pm-until" title={job.expires}>
                   until {formatUntil(job.expires, now)}
                 </span>
@@ -269,12 +288,13 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
           {batch.refused.map((refused) => (
             <li key={refused.label} className="pm-row part refused">
               <div className="pm-line">
-                <span className="pm-open" title={refused.message} aria-label={`${refused.label}: refused. ${refused.message}`}>
+                <span className="pm-open">
                   <span className="pm-title">{refused.label}</span>
                   <span className="pm-meta">
                     <span className="pm-state">Refused</span>
                   </span>
                 </span>
+                <Tip text={refused.message} />
               </div>
             </li>
           ))}
@@ -330,13 +350,16 @@ function GroupHeading({ group, empty }: { group: ShelfGroup; empty: boolean }) {
       <button type="button" className="pm-icon" title="Rename this group" aria-label={`Rename ${group.name}`} onClick={() => setRenaming(true)}>
         ✎
       </button>
+      {/* `aria-disabled`, not `disabled`: the symbol stays reachable by keyboard, and so does the reason. */}
       <button
         type="button"
-        className="pm-icon"
-        disabled={!empty}
-        title={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
+        className="pm-icon has-tip"
+        aria-disabled={!empty}
+        data-tip={empty ? 'Remove this group' : GROUP_NOT_EMPTY_TIP}
         aria-label={empty ? `Remove ${group.name}` : `Remove ${group.name}: ${GROUP_NOT_EMPTY_TIP}`}
-        onClick={() => removeGroup(group.id)}
+        onClick={() => {
+          if (empty) removeGroup(group.id);
+        }}
       >
         ✕
       </button>

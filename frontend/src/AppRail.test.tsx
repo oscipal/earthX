@@ -89,6 +89,11 @@ describe('the symbols', () => {
     expect(symbol('controls').querySelector('.rail-badge')).toBeNull();
   });
 
+  it('do not count a job whose state is not known yet as running: an archived one, one of another tab', () => {
+    act(() => useProcessingStore.setState({ jobs: [jobEntry(1, { status: null }), jobEntry(2)] }));
+    expect(symbol('jobs').getAttribute('aria-label')).toBe('Processing jobs, 1');
+  });
+
   it('show no count where there is nothing to count, and "99+" for a great many', () => {
     expect(symbol('layers').querySelector('.rail-badge')).toBeNull();
     act(() => useAppStore.setState({ layers: Array.from({ length: 120 }, (_, i) => layer(String(i))) }));
@@ -200,7 +205,7 @@ describe('the keyboard', () => {
     expect(document.activeElement).toBe(symbol('controls'));
   });
 
-  it('opens a panel with Enter and Space (a button\'s click) and moves nothing else', () => {
+  it('opens a panel with a click, which is what Enter and Space make on a button', () => {
     click(symbol('controls'));
     act(() => symbol('layers').focus());
     click(symbol('layers'));
@@ -268,10 +273,9 @@ describe('the control menu slides away for a draw or a search, and comes back', 
     expect(useAppStore.getState().dock).toBe('layers');
   });
 
-  it('hides the control menu only, and a second hide changes nothing', () => {
-    act(() => useAppStore.getState().hideControls());
-    expect(useAppStore.getState().dock).toBeNull();
-    act(() => useAppStore.getState().hideControls());
+  it('slides away again, without effect, for a second draw tool', () => {
+    act(() => useAppStore.getState().setToolMode('polygon'));
+    act(() => useAppStore.getState().setToolMode('rectangle'));
     expect(useAppStore.getState().dock).toBeNull();
   });
 

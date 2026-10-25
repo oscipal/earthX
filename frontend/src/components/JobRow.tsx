@@ -17,7 +17,7 @@ export function DownloadZip({ job, now, label, className = 'pm-icon' }: { job: J
   const state = jobState(job, now);
   if (state.key === 'expired' && job.phase === 'successful') {
     return (
-      <button type="button" className={className} disabled title={EXPIRED_TIP} aria-label={`${ZIP_LABEL}: ${EXPIRED_TIP}`}>
+      <button type="button" className={`${className} has-tip`} aria-disabled="true" data-tip={EXPIRED_TIP} aria-label={`${ZIP_LABEL}: ${EXPIRED_TIP}`}>
         {label ?? '⇩'}
       </button>
     );
@@ -59,7 +59,7 @@ export function JobRow({ job }: { job: JobEntry }) {
       </div>
       {active && <progress className="pp-progress" max={100} value={job.status?.progress ?? 0} aria-label="Progress" />}
       {job.phase === 'failed' && <span className="hint-text error">{job.failure ?? job.status?.message ?? 'The job failed'}</span>}
-      {state.key !== 'expired' && state.key !== 'cancelled' && (
+      {state.key !== 'cancelled' && (
         <span className="pp-help" title={job.expires}>
           until {formatUntil(job.expires, now)}
         </span>

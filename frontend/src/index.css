@@ -1700,6 +1700,25 @@ a.pm-icon:hover {
   opacity: 0.3;
   cursor: not-allowed;
 }
+/* A symbol that is off but still reachable, so that its reason shows on focus (UI-01 §4). */
+.pm-icon[aria-disabled='true'],
+.ghost-btn[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.pm-icon.has-tip,
+.ghost-btn.has-tip {
+  position: relative;
+}
+.pm-icon.has-tip::after,
+.ghost-btn.has-tip::after {
+  top: calc(100% + 4px);
+  right: 0;
+}
+.pm-icon[aria-disabled='true']:hover,
+.pm-icon[aria-disabled='true']:focus-visible {
+  border-color: transparent;
+}
 .pm-progress {
   display: block;
   width: calc(100% - 8px);
