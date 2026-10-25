@@ -9,12 +9,14 @@ import pytest
 
 from earthx.api.citation import citation_bib
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.registry import AcquisitionYears
 
 DAY = date(2026, 10, 7)
+YEARS = AcquisitionYears(2025, 2025)
 
 
 def _bib(config, day: date = DAY) -> str:
-    return citation_bib(config, downloaded=day).decode("utf-8")
+    return citation_bib(config, downloaded=day, years=YEARS).decode("utf-8")
 
 
 def test_the_entry_is_the_documented_misc_shape() -> None:
@@ -23,7 +25,7 @@ def test_the_entry_is_the_documented_misc_shape() -> None:
         "  title   = {Sentinel-2 L2A},\n"
         "  doi     = {10.5270/S2_-742ikth},\n"
         "  url     = {https://doi.org/10.5270/S2_-742ikth},\n"
-        f"  note    = {{{SENTINEL_2_L2A.license.attribution_modified.format(year=2026)}}},\n"
+        f"  note    = {{{SENTINEL_2_L2A.license.attribution_modified.format(year=2025)}}},\n"
         "  urldate = {2026-10-07}\n"
         "}\n"
     )
@@ -54,7 +56,7 @@ def test_without_a_doi_the_persistent_citation_stands_as_note() -> None:
     assert "doi " not in bib
     assert "url " not in bib
     assert "Publisher (2026): Dataset, version 1." in bib
-    assert "Sentinel data 2026. Publisher (2026)" in bib
+    assert "Sentinel data 2025. Publisher (2026)" in bib
 
 
 def test_without_doi_and_citation_the_entry_still_has_title_and_date() -> None:
@@ -64,8 +66,28 @@ def test_without_doi_and_citation_the_entry_still_has_title_and_date() -> None:
     assert "urldate" in bib
 
 
-def test_the_year_of_the_attribution_is_the_year_of_the_download() -> None:
-    assert "2031" in _bib(SENTINEL_2_L2A, date(2031, 1, 2))
+def test_the_year_of_the_attribution_is_the_year_of_acquisition_not_of_the_download() -> None:
+    bib = _bib(SENTINEL_2_L2A, date(2031, 1, 2))
+    assert "Contains modified Copernicus Sentinel data 2025" in bib
+    assert "urldate = {2031-01-02}" in bib
+    assert "data 2031" not in bib
+
+
+def test_scenes_of_several_years_give_the_span() -> None:
+    bib = citation_bib(SENTINEL_2_L2A, downloaded=DAY, years=AcquisitionYears(2024, 2025)).decode("utf-8")
+    assert "Contains modified Copernicus Sentinel data 2024\u20132025" in bib
+
+
+def test_a_dataset_whose_attribution_names_no_year_needs_none() -> None:
+    dem = REGISTRY.get("cop-dem-glo-30")
+    bib = citation_bib(dem, downloaded=DAY, years=None).decode("utf-8")
+    assert dem.license.attribution_unmodified is not None
+    assert dem.license.attribution_modified.split(";")[0] in bib
+
+
+def test_a_year_in_the_attribution_without_years_is_refused_not_taken_from_the_clock() -> None:
+    with pytest.raises(ValueError, match="years"):
+        citation_bib(SENTINEL_2_L2A, downloaded=DAY, years=None)
 
 
 def test_characters_bibtex_acts_on_are_escaped_so_braces_stay_balanced() -> None:
@@ -86,4 +108,4 @@ def test_a_dataset_id_that_is_no_bibtex_key_is_made_one() -> None:
 
 def test_the_file_is_utf_8_bytes() -> None:
     config = replace(SENTINEL_2_L2A, title="Überflug ∩ Karte")
-    assert "Überflug ∩ Karte".encode("utf-8") in citation_bib(config, downloaded=DAY)
+    assert "Überflug ∩ Karte".encode("utf-8") in citation_bib(config, downloaded=DAY, years=YEARS)

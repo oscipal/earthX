@@ -7,6 +7,7 @@ import {
   foreignReason,
   foreignScenes,
   jobTitle,
+  titleDay,
   MAX_BATCH_JOBS,
   runChoices,
   runPool,
@@ -160,12 +161,12 @@ describe('the estimate as a sum', () => {
   });
 });
 
-describe('the title of a job (K5)', () => {
-  it('is the operators and the dataset, and the place in a batch', () => {
+describe('the title of a job (K5, UI-01 §6.5)', () => {
+  it('is the operators, the dataset and the day', () => {
+    expect(jobTitle({ operators: ['Band math'], dataset: 'Sentinel-2 L2A', day: '12 Oct' })).toBe(
+      'Band math · Sentinel-2 L2A · 12 Oct',
+    );
     expect(jobTitle({ operators: ['Band math'], dataset: 'Sentinel-2 L2A' })).toBe('Band math · Sentinel-2 L2A');
-    expect(
-      jobTitle({ operators: ['Band math'], dataset: 'Sentinel-2 L2A', position: { index: 2, total: 25 } }),
-    ).toBe('Band math · Sentinel-2 L2A · 3/25');
   });
 
   it('names an operator once and lists several', () => {
@@ -176,6 +177,40 @@ describe('the title of a job (K5)', () => {
 
   it('leaves out what is empty', () => {
     expect(jobTitle({ operators: [], dataset: 'DEM' })).toBe('DEM');
+  });
+
+  it('never grows past the length the shelf keeps', () => {
+    expect(jobTitle({ operators: ['x'.repeat(300)], dataset: 'DEM', day: '1 Jan' })).toHaveLength(200);
+  });
+});
+
+describe('the day of a title', () => {
+  const now = new Date(2026, 9, 25, 10);
+  const scene = (datetime: unknown) => ({ id: 's', properties: { datetime } }) as unknown as StacItem;
+  const key = ['datetime', 's2:datatake_id'];
+
+  it('is the day the scenes were acquired, where they share one', () => {
+    expect(titleDay([scene('2026-10-12T10:20:30Z'), scene('2026-10-12T10:20:55Z')], key, now)).toBe('12 Oct');
+  });
+
+  it('counts the day in UTC, as the name of a download does', () => {
+    expect(titleDay([scene('2026-10-12T23:59:59-03:00')], key, now)).toBe('13 Oct');
+  });
+
+  it('adds the year when it is not the current one', () => {
+    expect(titleDay([scene('2025-03-02T10:00:00Z')], key, now)).toBe('2 Mar 2025');
+  });
+
+  it('is the day the job is started where the scenes were acquired on several days', () => {
+    expect(titleDay([scene('2026-10-12T10:00:00Z'), scene('2026-10-13T10:00:00Z')], key, now)).toBe('25 Oct');
+  });
+
+  it('is the day the job is started where a scene has no instant, or the dataset has no day of acquisition', () => {
+    expect(titleDay([scene('2026-10-12T10:00:00Z'), scene(null)], key, now)).toBe('25 Oct');
+    expect(titleDay([scene('nonsense')], key, now)).toBe('25 Oct');
+    expect(titleDay([scene('2026-10-12T10:00:00Z')], ['start_datetime'], now)).toBe('25 Oct');
+    expect(titleDay([scene('2026-10-12T10:00:00Z')], null, now)).toBe('25 Oct');
+    expect(titleDay([], key, now)).toBe('25 Oct');
   });
 });
 

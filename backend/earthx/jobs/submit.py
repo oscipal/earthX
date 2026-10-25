@@ -81,6 +81,9 @@ class JobStatus:
     result: dict[str, Any] | None
     #: The UTC day of acquisition of the order's scenes, if they share one (Otto, 14.10.2026); `api` names downloads by it.
     acquired_on: date | None = None
+    #: The first and last calendar year (UTC) the order's scenes were acquired in, if its attribution names a year
+    #: (NM4-01); `api` builds the attribution of every download from them, never from the clock.
+    acquired_years: tuple[int, int] | None = None
     #: The order named whole scenes and no area: the AOI of its recipe is the union of their footprints (M4-30).
     scene_aoi: bool = False
     #: Where a place-search AOI of a raster order came from (M4-30); the ZIP of the job names it.
@@ -99,6 +102,7 @@ def submit(
     operators: OperatorRegistry = REGISTRY,
     attachments: Attachments | None = None,
     acquired_on: date | None = None,
+    acquired_years: tuple[int, int] | None = None,
     scene_aoi: bool = False,
     aoi_provenance: Mapping[str, str] | None = None,
 ) -> str:
@@ -116,8 +120,8 @@ def submit(
     origin of its AOI, which no other order may see. Every other order comes without.
 
     ``acquired_on`` is the day of acquisition of the order's scenes, as `api` found it (Otto,
-    14.10.2026): kept on the job and handed back by :func:`job_status`, never read here. So is
-    ``scene_aoi``, whether the order named whole scenes and no area (M4-30), and ``aoi_provenance``,
+    14.10.2026): kept on the job and handed back by :func:`job_status`, never read here. So are
+    ``acquired_years``, the first and last year of acquisition (NM4-01), ``scene_aoi``, whether the order named whole scenes and no area (M4-30), and ``aoi_provenance``,
     where the area of a raster order came from: both belong to the job, never to the run it shares.
     """
     export = isinstance(recipe.output, CropOutput)
@@ -154,9 +158,17 @@ def submit(
             None if attachments is None else attachments.to_json(),
         )
         conn.execute(
-            "INSERT INTO public.earthx_job (job_id, run_id, recipe_id, acquired_on, scene_aoi, aoi_provenance) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (job_id, run_id, recipe_id, acquired_on, scene_aoi, None if aoi_provenance is None else Jsonb(dict(aoi_provenance))),
+            "INSERT INTO public.earthx_job (job_id, run_id, recipe_id, acquired_on, scene_aoi, aoi_provenance, "
+            "acquired_first_year, acquired_last_year) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                job_id,
+                run_id,
+                recipe_id,
+                acquired_on,
+                scene_aoi,
+                None if aoi_provenance is None else Jsonb(dict(aoi_provenance)),
+                *(acquired_years or (None, None)),
+            ),
         )
         if created:
             conn.execute("SELECT pg_notify(%s, '')", (WAKE_CHANNEL,))
@@ -227,7 +239,7 @@ def _run_for(
 _STATUS_SQL = """
 SELECT j.job_id, j.recipe_id, j.dismissed, j.created_at,
        r.status, r.progress, r.started_at, r.finished_at, r.expires_at, r.error_kind, r.result_id, r.result,
-       j.acquired_on, j.scene_aoi, j.aoi_provenance
+       j.acquired_on, j.scene_aoi, j.aoi_provenance, j.acquired_first_year, j.acquired_last_year
 FROM public.earthx_job j
 JOIN public.earthx_run r ON r.run_id = j.run_id
 WHERE j.job_id = %s
@@ -251,6 +263,8 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         day,
         scene_aoi,
         provenance,
+        first_year,
+        last_year,
     ) = row
     if dismissed:
         status = "dismissed"
@@ -270,6 +284,7 @@ def _status(row: tuple[Any, ...]) -> JobStatus:
         acquired_on=day,
         scene_aoi=scene_aoi,
         aoi_provenance=provenance,
+        acquired_years=None if first_year is None else (first_year, last_year),
     )
 
 

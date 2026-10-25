@@ -12,7 +12,7 @@ import re
 from datetime import date
 
 from earthx.access.download import attribution_text
-from earthx.catalog.registry import DatasetConfig, doi_name
+from earthx.catalog.registry import AcquisitionYears, DatasetConfig, doi_name
 
 __all__ = ["citation_bib"]
 
@@ -38,8 +38,11 @@ def _escaped(text: str) -> str:
     return "".join(_ESCAPES.get(char, char) for char in " ".join(text.split()))
 
 
-def citation_bib(config: DatasetConfig, *, downloaded: date) -> bytes:
+def citation_bib(config: DatasetConfig, *, downloaded: date, years: AcquisitionYears | None) -> bytes:
     """The ``@misc`` entry of ``config``, UTF-8, with ``downloaded`` as its ``urldate``.
+
+    ``years`` are those the scenes were acquired in (NM4-01), which the attribution names: ``urldate``
+    is the day of the download, the year in the note is never taken from it.
 
     ``note`` is the attribution a crop carries (the one in ``ATTRIBUTION.txt``),
     followed by the registry's ``citation`` where the dataset has one: with a DOI
@@ -51,7 +54,7 @@ def citation_bib(config: DatasetConfig, *, downloaded: date) -> bytes:
     if name:
         fields.append(("doi", name))
         fields.append(("url", f"https://doi.org/{name}"))
-    notes = [attribution_text(config, year=downloaded.year), config.citation]
+    notes = [attribution_text(config, years=years), config.citation]
     parts = [_escaped(text) for text in notes if text]
     note = " ".join(part if part.endswith(".") or part is parts[-1] else part + "." for part in parts)
     if note:

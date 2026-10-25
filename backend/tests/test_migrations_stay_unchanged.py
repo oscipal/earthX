@@ -27,6 +27,7 @@ PINNED = {
     "010_job_scene_aoi": "2d20a597e668c476b084a1b3e671332f26b4aa106e249a98f5d1568d74f3d3d0",
     "011_job_aoi_provenance": "598b0259b8840a3062dac3bc3d914edf2855ba5de251ac5afef1c46f495e126c",
     "012_permalink": "37e16cea89f782b4760d1fec9de154f912aa067b9c1498faec29de848e7588c0",
+    "013_job_acquisition_years": "4d64fde4bcdc4700eb4af4bd9b6a6f298ff75e0e3e38be8328d55a8d17a7c733",
 }
 
 

@@ -11,13 +11,16 @@ import json
 import multiprocessing
 import socket
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from earthx.access.crop_rules import TEXT_FILES
-from earthx.catalog.registry import DatasetRegistry
+from earthx.api.intake import job_recipe_json
+from earthx.catalog.registry import DatasetRegistry, acquisition_years
+from earthx.processing.recipe import engine_versions
 from earthx.runner import output
 from earthx.runner.cli import EXIT_HOST, EXIT_OK, EXIT_OTHER, EXIT_RECIPE, EXIT_SOURCE, exit_code, main
 from earthx.runner.recipe_file import MAX_RECIPE_BYTES, HostRefused, check_hosts, load_recipe
@@ -132,6 +135,25 @@ class TestARun:
         assert provenance["source_engine"] == provenance["engine"]
         assert provenance["attribution"] == support.ATTRIBUTION
         assert provenance["properties"]["processing:lineage"]
+
+    def test_the_year_of_the_scenes_the_api_wrote_arrives_in_the_provenance_and_the_methods_text(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        """NM4-01 (M4-16 §3.4): the runner takes the attribution of the input as it stands; a run in 2026 keeps 2025."""
+        years = acquisition_years([{"properties": {"datetime": "2025-07-29T10:15:00Z"}}])
+        document = job_recipe_json(
+            support.band_math_recipe(),
+            config=support.registry().get("synthetic"),
+            result={"engine": engine_versions(), "scaling": []},
+            started=datetime(2026, 10, 20, 8, 0, tzinfo=UTC),
+            finished=datetime(2026, 10, 20, 8, 1, tzinfo=UTC),
+            years=years,
+        )
+        assert _main("run", _file(tmp_path, document), "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        provenance = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
+        assert provenance["attribution"] == ["Contains modified Copernicus Sentinel data 2025"]
+        assert "Contains modified Copernicus Sentinel data 2025" in (folder / "methods.txt").read_text(encoding="utf-8")
 
     def test_the_text_files_of_the_folder_are_among_the_ones_every_download_has(
         self, tmp_path: Path, out: Path, served: list[str]

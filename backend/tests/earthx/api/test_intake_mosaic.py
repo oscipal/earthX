@@ -407,8 +407,10 @@ class TestTheDayOfAcquisition:
         )
         assert accepted.acquired_on is None
 
-    async def test_an_item_without_an_instant_is_not_refused_for_it(self) -> None:
+    async def test_an_item_without_an_instant_is_not_refused_for_its_name(self) -> None:
+        """A name is no reason to refuse; only an attribution that names the year is (NM4-01, `TestTheYearOfTheAttribution`)."""
         item = s2_item("S2_A")
         del item["properties"]["datetime"]
-        accepted = await accept(order(), Source((S2, item)))
+        fixed = replace(S2, license=replace(S2.license, attribution_modified="Fixed wording", attribution_unmodified=None))
+        accepted = await accept(order(), Source((S2, item)), registry=DatasetRegistry((fixed,)))
         assert accepted.acquired_on is None

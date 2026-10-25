@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
 import { bboxToPolygon } from '../geoUtils';
-import { setTrackerOptions, useProcessingStore } from '../processingStore';
+import { resetJobs, setTrackerOptions, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import JobList from './JobList';
@@ -126,6 +126,7 @@ const idsOf = (sent: Sent) => sent.body.inputs.recipe.inputs[0].groups[0];
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   estimates = [];
   placed = [];
   estimateFor = () => json(estimateOf());
@@ -161,7 +162,9 @@ afterEach(() => {
   setTrackerOptions({});
   act(() => root.unmount());
   container.remove();
-  for (const job of useProcessingStore.getState().jobs) useProcessingStore.getState().removeJob(job.jobID);
+  resetJobs();
+  localStorage.clear();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -544,66 +547,105 @@ describe('starting a batch', () => {
   });
 });
 
-describe('the title of a job (K5)', () => {
-  it('numbers the jobs of a batch, in the list and in the storage', async () => {
+describe('the title and the entry of a batch (K5, UI-01 §6.4, §6.5)', () => {
+  const TITLE = /^Band math · Sentinel-2 L2A · 1 Jul( 2026)?$/;
+  const shelf = () => JSON.parse(localStorage.getItem('earthx.processing.manager')!);
+
+  it('gives the jobs of a batch one title and the batch one entry, the parts told apart by their label', async () => {
     selectPasses([sceneIds(3)]);
     await openPanel();
     await ndvi();
     click(button('One job per scene (3)'));
     await review();
     await start('Start 3 jobs');
-    const titles = useProcessingStore.getState().jobs.map((j) => j.title);
-    expect(titles.sort()).toEqual([
-      'Band math · Sentinel-2 L2A · 1/3',
-      'Band math · Sentinel-2 L2A · 2/3',
-      'Band math · Sentinel-2 L2A · 3/3',
-    ]);
+    const { jobs, batches } = useProcessingStore.getState();
+    expect(batches).toHaveLength(1);
+    expect(batches[0].title).toMatch(TITLE);
+    expect(jobs.map((j) => j.title)).toEqual([batches[0].title, batches[0].title, batches[0].title]);
+    expect(jobs.map((j) => j.batchId)).toEqual([batches[0].id, batches[0].id, batches[0].id]);
+    expect(jobs.map((j) => j.part).sort()).toEqual(['S1', 'S2', 'S3']);
+    expect(batches[0].id).toMatch(/^[0-9a-f]{32}$/);
     expect(container.querySelectorAll('.pp-job-title')).toHaveLength(3);
-    const stored = sessionStorage.getItem('earthx.processing.jobs')!;
-    expect(JSON.parse(stored).map((j: { title: string }) => j.title).sort()).toEqual(titles);
-    // title, id and expiry — never the AOI or the order
-    expect(stored).not.toContain('10.4');
-    expect(stored).not.toContain('nir');
   });
 
-  it('numbers by the place in the batch, also where a part was left out', async () => {
-    estimateFor = (ids) => (ids[0] === 'S2' ? problem(422, 'no good') : json(estimateOf()));
-    selectPasses([sceneIds(3)]);
-    await openPanel();
-    await ndvi();
-    click(button('One job per scene (3)'));
-    await review();
-    await start('Start 2 of 3 jobs');
-    expect(useProcessingStore.getState().jobs.map((j) => j.title).sort()).toEqual([
-      'Band math · Sentinel-2 L2A · 1/3',
-      'Band math · Sentinel-2 L2A · 3/3',
-    ]);
-  });
-
-  it('is taken up again after a reload', async () => {
+  it('keeps the batch in the browser with the title, the batch and the part of every job, and its order', async () => {
     selectPasses([sceneIds(2)]);
     await openPanel();
     await ndvi();
     click(button('One job per scene (2)'));
     await review();
     await start('Start 2 jobs');
-    for (const job of useProcessingStore.getState().jobs) useProcessingStore.getState().removeJob(job.jobID);
-    expect(useProcessingStore.getState().jobs).toHaveLength(0);
-    sessionStorage.setItem(
-      'earthx.processing.jobs',
-      JSON.stringify([{ jobID: `Job${'1'.padStart(19, '0')}`, expires: new Date(Date.now() + 86_400_000).toISOString(), title: 'Band math · Sentinel-2 L2A · 1/2' }]),
-    );
-    act(() => useProcessingStore.getState().resumeJobs());
-    expect(useProcessingStore.getState().jobs[0].title).toBe('Band math · Sentinel-2 L2A · 1/2');
+    const stored = shelf();
+    const { batches } = useProcessingStore.getState();
+    expect(stored.v).toBe(1);
+    expect(stored.batches).toEqual([{ id: batches[0].id, title: batches[0].title, createdAt: expect.any(String), refused: [] }]);
+    expect(stored.jobs).toHaveLength(2);
+    for (const job of stored.jobs) {
+      expect(Object.keys(job).sort()).toEqual(['batchId', 'createdAt', 'expires', 'jobID', 'order', 'part', 'title']);
+      expect(job.batchId).toBe(batches[0].id);
+      expect(job.order.steps).toHaveLength(1);
+    }
+    expect(stored.jobs.map((j: { part: string }) => j.part).sort()).toEqual(['S1', 'S2']);
   });
 
-  it('names a single job by operators and dataset, without a number', async () => {
+  it('numbers nothing, and records the part the server refused, with its reason', async () => {
+    placeFor = (ids, n) => (ids[0] === 'S2' ? problem(422, 'no good') : json(statusDoc(`Job${String(n).padStart(19, '0')}`)));
+    selectPasses([sceneIds(3)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (3)'));
+    await review();
+    await start('Start 3 jobs');
+    const { jobs, batches } = useProcessingStore.getState();
+    expect(jobs.map((j) => j.part).sort()).toEqual(['S1', 'S3']);
+    expect(jobs.every((j) => !/\d\/\d/.test(j.title ?? ''))).toBe(true);
+    expect(batches).toHaveLength(1);
+    expect(batches[0].refused).toEqual([{ label: 'S2', message: expect.stringContaining('no good') }]);
+    expect(shelf().batches[0].refused).toEqual(batches[0].refused);
+  });
+
+  it('makes no entry for a batch the server refused whole', async () => {
+    placeFor = () => problem(422, 'no good');
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    click(button('Start 2 jobs'));
+    await flush();
+    expect(useProcessingStore.getState().batches).toEqual([]);
+    expect(useProcessingStore.getState().jobs).toEqual([]);
+    expect(localStorage.getItem('earthx.processing.manager')).toBeNull();
+  });
+
+  it('is taken up again after a reload, the batch with its parts', async () => {
+    selectPasses([sceneIds(2)]);
+    await openPanel();
+    await ndvi();
+    click(button('One job per scene (2)'));
+    await review();
+    await start('Start 2 jobs');
+    const before = useProcessingStore.getState();
+    resetJobs();
+    expect(useProcessingStore.getState().jobs).toHaveLength(0);
+    act(() => useProcessingStore.getState().resumeJobs());
+    const after = useProcessingStore.getState();
+    expect(after.batches).toEqual(before.batches);
+    expect(after.jobs.map((j) => [j.jobID, j.title, j.batchId, j.part, j.order !== null]).sort()).toEqual(
+      before.jobs.map((j) => [j.jobID, j.title, j.batchId, j.part, true]).sort(),
+    );
+  });
+
+  it('names a single job by operators, dataset and day, and makes no batch', async () => {
     selectPasses([sceneIds(3)]);
     await openPanel();
     await ndvi();
     await review();
     await start('Start job');
-    expect(useProcessingStore.getState().jobs.map((j) => j.title)).toEqual(['Band math · Sentinel-2 L2A']);
+    const { jobs, batches } = useProcessingStore.getState();
+    expect(jobs.map((j) => j.title)).toEqual([expect.stringMatching(TITLE)]);
+    expect(jobs[0].batchId).toBeNull();
+    expect(batches).toEqual([]);
   });
 });
 
@@ -625,9 +667,9 @@ describe('a draft that changes while the batch is on its way', () => {
     click(button('＋ Reproject and resample'));
     release();
     await flush();
-    expect(useProcessingStore.getState().jobs.map((j) => j.title).sort()).toEqual([
-      'Band math · Sentinel-2 L2A · 1/2',
-      'Band math · Sentinel-2 L2A · 2/2',
+    expect(useProcessingStore.getState().jobs.map((j) => j.title)).toEqual([
+      expect.stringMatching(/^Band math · Sentinel-2 L2A · 1 Jul/),
+      expect.stringMatching(/^Band math · Sentinel-2 L2A · 1 Jul/),
     ]);
   });
 

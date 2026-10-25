@@ -45,7 +45,9 @@ Every answer under ``/jobs/`` and ``/permalinks`` and the placing of a job carry
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import unicodedata
@@ -68,6 +70,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.crop_rules import METHODS_FILENAME, RECIPE_FILENAME, TEXT_FILES
+from earthx.access.download import attribution_names_year
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
 from earthx.api.crs_info import CrsRefused, crs_description
@@ -80,10 +83,17 @@ from earthx.api.intake import (
     job_side_files,
     methods_bytes,
 )
-from earthx.api.item_source import ItemSource
+from earthx.api.item_source import ItemSource, fetch_item_or_refuse
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
 from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import (
+    AcquisitionYearMissing,
+    AcquisitionYears,
+    DatasetConfig,
+    DatasetRegistry,
+    UnknownDatasetError,
+    acquisition_years,
+)
 from earthx.gateway import Gateway
 from earthx.jobs import permalinks
 from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
@@ -107,6 +117,7 @@ NO_SUCH_JOB = f"{_TYPE_BASE}no-such-job"
 NO_SUCH_PROCESS = f"{_TYPE_BASE}no-such-process"
 RESULT_NOT_READY = f"{_TYPE_BASE}result-not-ready"
 NO_BUNDLE = "urn:earthx:no-bundle"
+NO_ACQUISITION_YEARS = "urn:earthx:no-acquisition-years"
 _FAILED_TYPE = "urn:earthx:job-failed:"
 _ORDER_TYPE = "urn:earthx:order-refused:"
 
@@ -664,6 +675,9 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
                 operators=api.operators,
                 attachments=accepted.attachments,
                 acquired_on=accepted.acquired_on,
+                acquired_years=None
+                if accepted.acquired_years is None
+                else (accepted.acquired_years.first, accepted.acquired_years.last),
                 scene_aoi=accepted.scene_aoi,
                 aoi_provenance=accepted.aoi_provenance,
             ),
@@ -936,6 +950,7 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     if name not in _names_of(status):
         raise Problem(404, "there is no such result", type_="urn:earthx:no-such-result", title="No such result")
     body = await _db(api, job_recipe, jobID)
+    status = await _with_derived_years(api, body, status)
     filename = _download_name(body, status, _SUFFIXES[name])
     if name == "recipe.json":
         return _recipe_document(api, body, status, filename)
@@ -963,6 +978,47 @@ def _config_of(api: JobApi, body: dict[str, Any]) -> DatasetConfig | None:
         return None
 
 
+def _years_of(config: DatasetConfig | None, status: JobStatus) -> AcquisitionYears | None:
+    """The years the job's scenes were acquired in, which its attribution names (NM4-01).
+
+    A job from before they were kept is given them first (:func:`_with_derived_years`). One whose
+    attribution needs a year and who still has none has no honest one to give: the clock would put the
+    year of the download there. It answers ``409`` and the order is to be placed again.
+    """
+    if status.acquired_years is not None:
+        return AcquisitionYears(*status.acquired_years)
+    if config is not None and attribution_names_year(config):
+        raise Problem(
+            409,
+            "this job was placed before the years of acquisition were kept, and the dates of its scenes can no longer "
+            "be read from the source; place the order again",
+            type_=NO_ACQUISITION_YEARS,
+            title="No acquisition years",
+        )
+    return None
+
+
+async def _with_derived_years(api: JobApi, body: dict[str, Any] | None, status: JobStatus) -> JobStatus:
+    """``status`` with the years of the scenes, read from the stored recipe's items if the job kept none (NM4-01).
+
+    A job placed before the years were kept has the ids of its scenes in its recipe and no dates; the
+    dates are the items' own, so they are asked of the item source again, as the intake asked them.
+    Nothing is written back. Where that fails (an item gone, undated, or the source down) the status
+    stays as it was and :func:`_years_of` answers ``409`` if the attribution needs a year.
+    """
+    config = _config_of(api, body or {})
+    if body is None or status.acquired_years is not None or config is None or not attribution_names_year(config):
+        return status
+    try:
+        entry = body["inputs"][0]
+        ids = [item for group in entry["groups"] for item in group]
+        items = await asyncio.gather(*(fetch_item_or_refuse(api.item_source, entry["dataset"], item) for item in ids))
+        years = acquisition_years(items)
+    except (OrderRefused, AcquisitionYearMissing, LookupError, TypeError):
+        return status
+    return dataclasses.replace(status, acquired_years=(years.first, years.last))
+
+
 def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
     """``recipe.json`` of the job: the file of its link, and the entry of its ZIP."""
     config = _config_of(api, body)
@@ -977,7 +1033,14 @@ def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes
             started=_instant(result.get("started")) or status.started_at,
             finished=_instant(result.get("finished")) or status.finished_at,
         )
-    return job_recipe_json(body, config=config, result=result, started=status.started_at, finished=status.finished_at)
+    return job_recipe_json(
+        body,
+        config=config,
+        result=result,
+        started=status.started_at,
+        finished=status.finished_at,
+        years=_years_of(config, status),
+    )
 
 
 def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str) -> Response:
@@ -1125,12 +1188,14 @@ async def _bundle_response(
     finished = (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
     stem = filename.removesuffix(".zip")
     members = [Member.stored(f"{stem}/{name}", name, facts[name]) for name in BUNDLE_FILES]
+    config = _config_of(api, body)
     documents = {
         name: text.encode("utf-8")
         for name, text in job_side_files(
-            _config_of(api, body),
+            config,
             body,
             finished=finished,
+            years=_years_of(config, status),
             scene_aoi=status.scene_aoi,
             aoi_provenance=status.aoi_provenance,
         ).items()

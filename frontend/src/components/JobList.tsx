@@ -1,4 +1,4 @@
-// The jobs of this tab (M4-13 §3.5 point 7, K6): state, progress, "Cancel",
+// The jobs of this browser (M4-13 §3.5 point 7, K6): state, progress, "Cancel",
 // when it expires; once finished, links to the files, and whether the result
 // was resampled to a common grid (Prinzip 2.9). The download dialog shows its
 // export and mosaic jobs with the same row (M4-11b-2, M4-12b).
@@ -73,8 +73,12 @@ function formatTime(iso: string): string {
 
 export function JobRow({ job }: { job: JobEntry }) {
   const cancelJob = useProcessingStore((s) => s.cancelJob);
-  const removeJob = useProcessingStore((s) => s.removeJob);
   const addToLayers = useProcessingStore((s) => s.showResultOnMap);
+  const followJob = useProcessingStore((s) => s.followJob);
+  // A job from another tab is followed from the moment its row is shown.
+  useEffect(() => {
+    if (job.status === null) followJob(job.jobID);
+  }, [job.jobID, job.status, followJob]);
   const linksUntil = Date.parse(job.expires) - MIN_REMAINING_MS;
   const now = useNowUntil(linksUntil);
   const expired = job.expired || !(now < linksUntil);
@@ -84,19 +88,15 @@ export function JobRow({ job }: { job: JobEntry }) {
       {job.title && <span className="pp-job-title">{job.title}</span>}
       <div className="pp-job-head">
         <span className="pp-job-state">{stateText(job)}</span>
-        {active ? (
+        {active && (
           <button
             type="button"
             className="link-btn"
-            disabled={job.cancelling}
+            disabled={job.cancelling || !job.status}
             title="Cancel this job"
             onClick={() => void cancelJob(job.jobID)}
           >
             {job.cancelling ? 'Cancelling…' : 'Cancel'}
-          </button>
-        ) : (
-          <button type="button" className="link-btn" title="Remove this row" onClick={() => removeJob(job.jobID)}>
-            ✕
           </button>
         )}
       </div>
@@ -155,7 +155,7 @@ export default function JobList() {
         </button>
       </div>
       {jobs.length === 0 ? (
-        <p className="hint-text">No jobs in this tab.</p>
+        <p className="hint-text">No jobs yet.</p>
       ) : (
         <ul className="pp-jobs">
           {jobs.map((job) => (

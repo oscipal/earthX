@@ -273,15 +273,46 @@ export function downloadRequestForSelection(
 // shows the unmodified text for that outcome (M3-17 plan §6) — `false` picks
 // `attribution_unmodified` first, falling back the other way where a dataset
 // only defines one of the two texts.
+// `years` (NM4-01) are the years the scenes were acquired in, `acquisitionYears`
+// below — never the clock. Where the text names a year and the scenes give none,
+// there is no text: a preview with a guessed year would be wrong in the file too.
 export function attributionText(
   flags: LicenseFlags | null | undefined,
-  year: number,
+  years: string | null,
   modified = true,
 ): string | null {
   const text = modified
     ? (flags?.attribution_modified ?? flags?.attribution_unmodified ?? null)
     : (flags?.attribution_unmodified ?? flags?.attribution_modified ?? null);
-  return text ? text.replaceAll('{year}', String(year)) : null;
+  if (!text) return null;
+  if (!text.includes('{year}')) return text;
+  return years ? text.replaceAll('{year}', years) : null;
+}
+
+// An instant without an offset is read as UTC, as STAC writes them (`new Date` would read it as local time).
+function utcYear(instant: string): number {
+  if (/^\d{4}-\d{2}-\d{2}(T[\d:.]+)?$/.test(instant)) return Number(instant.slice(0, 4));
+  return new Date(instant).getUTCFullYear();
+}
+
+// The year the scenes were acquired in, or the span "2024–2025" (Otto,
+// 25.10.2026): every `datetime`, `start_datetime` and `end_datetime` of the
+// items, by UTC year, as `catalog.registry.acquisition_years` reads them on the
+// backend. `null` when there is no item or one of them has no usable date.
+export function acquisitionYears(items: readonly StacItem[]): string | null {
+  const years: number[] = [];
+  for (const item of items) {
+    const found = ['datetime', 'start_datetime', 'end_datetime']
+      .map((name) => item.properties[name])
+      .filter((value) => value !== undefined && value !== null)
+      .map((value) => (typeof value === 'string' ? utcYear(value) : Number.NaN));
+    if (found.length === 0 || found.some(Number.isNaN)) return null;
+    years.push(...found);
+  }
+  if (years.length === 0) return null;
+  const first = Math.min(...years);
+  const last = Math.max(...years);
+  return first === last ? String(first) : `${first}\u2013${last}`;
 }
 
 // The terms notice in the given language, falling back to English and then to

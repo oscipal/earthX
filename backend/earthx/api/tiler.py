@@ -68,6 +68,7 @@ from earthx.access.download import (
     GroupCrop,
     InvalidAoi,
     PlannedOutput,
+    attribution_years,
     build_download_zip,
     check_item_count_cap,
     check_output_size_cap,
@@ -107,6 +108,7 @@ from earthx.api.result_tiles import ROUTER_PREFIX as RESULT_ROUTER_PREFIX
 from earthx.api.result_tiles import ResultSources, build_result_factory
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import (
+    AcquisitionYearMissing,
     DatasetConfig,
     DatasetRegistry,
     LicenseTier,
@@ -873,6 +875,13 @@ async def download_crop(
     if not surviving_groups:
         raise HTTPException(status_code=400, detail="the AOI does not touch any of the given items")
 
+    # The attribution names the year of acquisition, from the scenes that stay (NM4-01); a scene with
+    # no date is refused before anything is read, not given the year of the download.
+    try:
+        years = attribution_years(config, [item for matched, _ in surviving_groups for item in matched])
+    except AcquisitionYearMissing as error:
+        raise HTTPException(status_code=422, detail=f"{error}; the attribution of this dataset names the year") from None
+
     # Deduplicated, order kept: `assets` is a caller's list and may repeat a key,
     # and two identical keys would otherwise write the same file name into the
     # archive twice (M2-10 review). One request for `visual` is one `visual.tif`.
@@ -963,6 +972,7 @@ async def download_crop(
             aoi=body.aoi,
             resolution_factor=body.resolution,
             accepted_at=accepted_at,
+            years=years,
         )
     except OrderRefused as refused:
         # By cause (Otto, 07.10.2026): an address its dataset does not declare, or an
@@ -984,7 +994,7 @@ async def download_crop(
         if recipe_json is not None
         else None
     )
-    bib = citation_bib(config, downloaded=accepted_at.date())
+    bib = citation_bib(config, downloaded=accepted_at.date(), years=years)
 
     total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
     large = total_planned_bytes >= LARGE_DOWNLOAD_THRESHOLD_BYTES
@@ -1011,6 +1021,7 @@ async def download_crop(
             citation_bib=bib,
             methods_text=methods,
             recipe_omitted_cause=recipe_omitted_cause,
+            years=years,
             # The GDAL/VSI settings `gateway` also uses for the tile path
             # (timeouts, the read cache, no directory listings on open) —
             # missing here until M3-18 (F7 Nebenbefund), so a crop's reads

@@ -23,6 +23,7 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 3. **Absolute URL für den Link `tiles`** im Ergebnisdokument (M4-13c-5). Heute ist der Link relativ, ein API-Client ohne den gemeinsamen Proxy findet den `tiler` damit nicht. Spätestens mit der öffentlichen API in M6 nötig.
    - **Plan:** `querschnitt/nm4-03-tiles-url-absolut.md`
    - **Erledigt:** NM4-03, 25.10.2026, Draft-PR [#193](https://github.com/oscipal/earthX/pull/193); `EARTHX_TILER_URL`.
+   - **Vermerk für M6 (Otto, 25.10.2026):** Die übrigen Links des Ergebnisdokuments und des Auftrags bleiben relativ. Sie liegen auf `api` selbst und lösen sich gegen die Dokument-URL auf. Mit der öffentlichen API (M6) neu prüfen; ein mögliches `EARTHX_API_URL` nach dem Muster von `EARTHX_TILER_URL` wäre dann eine eigene Entscheidung.
 4. **Mosaik mit Operator im Kachel-Pfad,** also eine Vorschau des Mosaik-Jobs mit Band math (M4-17, Frage 4).
    - **Plan:** `querschnitt/nm4-04-mosaik-mit-operator.md`
 5. **Processing auf einem Ergebnis** (Otto, 20.10.2026), also ein Job-Ergebnis als Eingabe eines neuen Rezepts.
@@ -121,6 +122,8 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 15. **Nur ein Sentinel-2-L2A-Datensatz sichtbar** (Otto, 22.10.2026).
    - **Plan:** `querschnitt/nm4-15-ein-sentinel-2-datensatz.md`
+   - **Erledigt (Vorlage):** `adr/0017`, PR #189, von Otto am 25.10.2026 angenommen (F1–F6 je Option 1). Die Umsetzung folgt als NM4-15b nach dem Merge.
+   - **Wiedervorlage Formatachse (F4):** Anfang 2027 oder früher, sobald EOPF operative Zarr-Produkte meldet.
    - **Wunsch:** Die Plattform bietet nicht mehrere Datensätze an, die dasselbe zeigen. Heute gibt es `sentinel-2-c1-l2a` (Earth Search, COG) und `sentinel-2-l2a-zarr3` (EOPF, Zarr). Otto will den Zarr-Datensatz loswerden.
    - **Warum zuerst eine Vorlage (Stufe C):** Der Zarr-Datensatz trägt Belege und Entscheidungen: zweites Format (`adr/0007`), Zarr-Vergleich T1 ↔ T2 (`adr/0014` §15d, Kriterium 1 der M4-Abnahme), Tests und Fixtures, Prüfanleitungen, `SCL_20m:scl` in der Maske (M4-18c).
    - **Optionen für die Vorlage:**

@@ -47,6 +47,11 @@ export type DatasetOption =
     }
   | { id: string; title: string; collection: Collection; viewable: false; reason: string };
 
+// The key results are grouped by, for any dataset (a dataset that cannot be viewed has the key off its collection).
+export function resultsGroupByOfOption(dataset: DatasetOption): string[] | null {
+  return dataset.viewable ? dataset.resultsGroupBy : resultsGroupByOf(dataset.collection);
+}
+
 export function groupByOf(collection: Collection): string[] | null {
   const groupBy = collection['earthx:viewer']?.group_by;
   return groupBy && groupBy.length > 0 ? groupBy : null;

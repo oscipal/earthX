@@ -42,10 +42,13 @@ from shapely.geometry import shape as shapely_shape
 
 from earthx.access import download as dl
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import AcquisitionYears
 from earthx.readers.cog import AssetPath
 
 UTM32 = "EPSG:32632"
 UTM33 = "EPSG:32633"
+
+YEARS = AcquisitionYears(2025, 2025)
 
 
 def _memcog(data: np.ndarray, *, crs: str, transform: rasterio.Affine, nodata: int | None = 0) -> MemoryFile:
@@ -106,6 +109,7 @@ class TestPolygonOverhangsTheAssetsEdge:
 
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_reader,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(mem),))],
             aoi_geometry=aoi,
@@ -140,6 +144,7 @@ class TestPolygonOnlyTouchesNodata:
         with pytest.raises(dl.AoiOutsideItems):
             dl.build_download_zip(
                 config=SENTINEL_2_L2A,
+                years=YEARS,
                 open_reader=open_reader,
                 crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(mem),))],
                 aoi_geometry=aoi,
@@ -167,6 +172,7 @@ class TestPolygonMissesTheFootprintDespiteTheBbox:
         with pytest.raises(dl.AoiOutsideItems):
             dl.build_download_zip(
                 config=SENTINEL_2_L2A,
+                years=YEARS,
                 open_reader=open_reader,
                 crops=[
                     dl.AssetCrop(
@@ -222,6 +228,7 @@ class TestMosaicAcrossUtmZones:
 
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_reader,
             crops=[
                 dl.AssetCrop(
@@ -253,6 +260,7 @@ class TestMaskMatchesEachAssetsOwnResolution:
 
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_reader,
             crops=[
                 dl.AssetCrop(asset="visual", paths=(_asset_path(mem_10m, asset="visual"),)),
@@ -298,6 +306,7 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
         region = dl.compute_crop_region([item], shapely_shape(aoi))
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_reader,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(mem),))],
             aoi_geometry=aoi,
@@ -348,6 +357,7 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
         region = dl.compute_crop_region(items, shapely_shape(aoi))
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_reader,
             crops=[
                 dl.AssetCrop(
@@ -386,6 +396,7 @@ class TestCropExtentIsTheGroupsOwnFootprintNotTheWholeAoi:
         region = dl.compute_crop_region([item], shapely_shape(aoi))
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_reader,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset_path(mem),))],
             aoi_geometry=aoi,

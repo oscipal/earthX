@@ -13,7 +13,7 @@ import type { DatasetOption } from '../datasets';
 import { bboxToPolygon } from '../geoUtils';
 import { placeAoi } from '../placeSearch';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
-import { setTrackerOptions, useProcessingStore } from '../processingStore';
+import { resetJobs, setTrackerOptions, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
@@ -121,6 +121,7 @@ let root: Root;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   routes = {
     'GET /processing/processes/recipe?dataset=sentinel-2-c1-l2a': () => json(s2),
     'POST /processing/processes/recipe/execution': () => json(statusDoc('accepted'), 201),
@@ -143,7 +144,9 @@ afterEach(() => {
   setTrackerOptions({});
   act(() => root.unmount());
   container.remove();
-  for (const job of useProcessingStore.getState().jobs) useProcessingStore.getState().removeJob(job.jobID);
+  resetJobs();
+  localStorage.clear();
+  sessionStorage.clear();
   useAppStore.getState().closeDownloadDialog();
   vi.unstubAllGlobals();
 });
@@ -426,7 +429,7 @@ describe('Merged per pass (job)', () => {
   it('shows the attribution for modified data under the offer', async () => {
     open();
     await showMerged();
-    expect(container.querySelector('.dialog-mosaics')?.textContent).toContain('Contains modified Copernicus Sentinel data');
+    expect(container.querySelector('.dialog-mosaics')?.textContent).toContain('Contains modified Copernicus Sentinel data 2026');
   });
 
   it('locks a pass over 25 scenes with the reason and starts nothing', async () => {
@@ -492,13 +495,25 @@ describe('starting the job', () => {
     expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
   });
 
-  it('can order the pass again once the row is removed', async () => {
+  it.each([
+    ['failed', (j: string) => useProcessingStore.setState((s) => ({ jobs: s.jobs.map((x) => (x.jobID === j ? { ...x, phase: 'failed' as const } : x)) }))],
+    ['cancelled', (j: string) => useProcessingStore.setState((s) => ({ jobs: s.jobs.map((x) => (x.jobID === j ? { ...x, phase: 'dismissed' as const } : x)) }))],
+    ['expired', (j: string) => useProcessingStore.setState((s) => ({ jobs: s.jobs.map((x) => (x.jobID === j ? { ...x, phase: 'successful' as const, expired: true } : x)) }))],
+  ])('can order the pass again once the job %s, and the first job stays in the list of jobs', async (_name, end) => {
     open();
     await showMerged();
     await press(START);
-    act(() => useProcessingStore.getState().removeJob(JOB));
+    act(() => end(JOB));
     await flush();
     expect(buttons(START)[0].disabled).toBe(false);
+    expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
+  });
+
+  it('names the job "Mosaic · <dataset> · <day>"', async () => {
+    open();
+    await showMerged();
+    await press(START);
+    expect(useProcessingStore.getState().jobs[0].title).toMatch(/^Mosaic · .+ · \d{1,2} [A-Z][a-z]{2}( \d{4})?$/);
   });
 
   it.each([
