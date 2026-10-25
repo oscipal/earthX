@@ -122,6 +122,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === DESCRIPTION) return json(s2);
     if (url === '/processing/processes/recipe/estimate' && init?.method === 'POST') return json(ESTIMATE);

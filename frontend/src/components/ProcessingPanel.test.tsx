@@ -14,7 +14,7 @@ import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
 import { bboxToPolygon } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi } from '../placeSearch';
 import { DEFAULT_RANGE } from '../processingPreview';
-import { setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
+import { resetJobs, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import JobList, { EXPIRED_TEXT, JobRow, MIN_REMAINING_MS } from './JobList';
@@ -125,6 +125,7 @@ let root: Root;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   routes = {
     'GET /processing/processes/recipe?dataset=sentinel-2-c1-l2a': () => json(s2),
     'POST /processing/processes/recipe/estimate': () => json(ESTIMATE),
@@ -146,7 +147,9 @@ afterEach(() => {
   setTrackerOptions({});
   act(() => root.unmount());
   container.remove();
-  for (const job of useProcessingStore.getState().jobs) useProcessingStore.getState().removeJob(job.jobID);
+  resetJobs();
+  localStorage.clear();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -1068,10 +1071,23 @@ describe('starting and following a job', () => {
       ['Recipe', `/processing/jobs/${JOB}/results/recipe.json`],
     ]);
     expect(container.textContent).toContain('Resampled to a common grid');
-    const stored = sessionStorage.getItem('earthx.processing.jobs')!;
-    // The title (K5) is kept with the id and the expiry; the order and the AOI never.
-    expect(JSON.parse(stored)).toEqual([{ jobID: JOB, expires: expect.any(String), title: 'Band math · Sentinel-2 L2A' }]);
-    expect(stored).not.toContain('10.4');
+    const stored = localStorage.getItem('earthx.processing.manager')!;
+    // The title (K5) and the order are kept with the id and the expiry; nothing of the job's state or result.
+    expect(JSON.parse(stored)).toEqual({
+      v: 1,
+      jobs: [
+        {
+          jobID: JOB,
+          expires: expect.any(String),
+          createdAt: expect.any(String),
+          title: expect.stringMatching(/^Band math · Sentinel-2 L2A · \d{1,2} [A-Z][a-z]{2}( \d{4})?$/),
+          order: expect.objectContaining({ recipe_version: 1 }),
+        },
+      ],
+      batches: [],
+      groups: [],
+    });
+    expect(stored).not.toContain('result.tif');
   });
 
   it('needs a new review for a second job of the same order', async () => {
@@ -1259,6 +1275,12 @@ describe('a finished job row (K6)', () => {
       tiles: null,
       statistics: null,
       range: null,
+      archived: false,
+      groupId: null,
+      batchId: null,
+      part: null,
+      order: null,
+      createdAt: '2026-10-10T12:00:00Z',
       title: null,
     };
   }
@@ -1273,6 +1295,12 @@ describe('a finished job row (K6)', () => {
     });
     expect(container.querySelector('.pp-links a')).toBeNull();
     expect(container.textContent).toContain(EXPIRED_TEXT);
+  });
+
+  it('has no button to remove the row: a job is cancelled while it runs and kept after (UI-01 §6.7)', () => {
+    act(() => root.render(<ul><JobRow job={entry(MIN_REMAINING_MS + 5000, false)} /></ul>));
+    expect(container.querySelector('[title="Remove this row"]')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
   it('shows "Expired" at once inside the last minute', () => {
@@ -1328,13 +1356,29 @@ describe('cancelling and losing a job', () => {
     routes[`GET /processing/jobs/${JOB}`] = () => json(statusDoc('running', 20));
   });
 
-  it('cancels with DELETE and drops the job from sessionStorage', async () => {
+  it('cancels with DELETE and keeps the job in the browser as cancelled', async () => {
     routes[`DELETE /processing/jobs/${JOB}`] = () => json(statusDoc('dismissed'));
     resume();
     await waitFor(() => container.textContent?.includes('Running · 20%') ?? false);
     click(button('Cancel'));
     await waitFor(() => container.textContent?.includes('Cancelled') ?? false);
-    expect(sessionStorage.getItem('earthx.processing.jobs')).toBeNull();
+    expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
+  });
+
+  it('cannot cancel a job whose state is not known yet, and follows one from another tab once its row is shown', async () => {
+    localStorage.setItem(
+      'earthx.processing.manager',
+      JSON.stringify({ v: 1, jobs: [{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }], batches: [], groups: [] }),
+    );
+    act(() => root.render(<JobList />));
+    act(() => {
+      useProcessingStore.getState().resumeJobs();
+      useProcessingStore.setState((st) => ({ jobs: st.jobs.map((j) => ({ ...j, status: null })) }));
+      useProcessingStore.getState().openJobs();
+    });
+    expect(button('Cancel').disabled).toBe(true);
+    await waitFor(() => container.textContent?.includes('Running · 20%') ?? false);
+    expect(button('Cancel').disabled).toBe(false);
   });
 
   it('says "Gone" when the job is no longer there at cancel', async () => {
@@ -1352,14 +1396,14 @@ describe('cancelling and losing a job', () => {
     click(button('Cancel'));
     await waitFor(() => container.textContent?.includes('not reachable') ?? false);
     expect(button('Cancel').disabled).toBe(false);
-    expect(sessionStorage.getItem('earthx.processing.jobs')).toContain(JOB);
+    expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 
-  it('says "Gone" and forgets the job when polling finds it no more', async () => {
+  it('says "Gone" and keeps the job when polling finds it no more', async () => {
     routes[`GET /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
     resume();
     await waitFor(() => container.textContent?.includes('Gone (expired or dismissed)') ?? false);
-    expect(sessionStorage.getItem('earthx.processing.jobs')).toBeNull();
+    expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 });
 

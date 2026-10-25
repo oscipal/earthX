@@ -3,6 +3,7 @@
 // panel's state lives in `processingStore.ts`. No backend: a job of a batch is a
 // job like any other.
 
+import { MAX_TITLE_LENGTH } from './jobShelf';
 import type { EstimateDocument } from './processing';
 import type { Pass } from './processingOrder';
 import type { StacItem } from './types';
@@ -128,18 +129,40 @@ export function totalOf(docs: readonly EstimateDocument[]): EstimateTotal {
   };
 }
 
-// --- the title of a job (K5) ---------------------------------------------------------
+// --- the title of a job (K5, UI-01 §6.5) ----------------------------------------------
 
-// "<operators> · <dataset>", and "· 3/25" for the third job of a batch of 25.
-export function jobTitle(args: {
-  operators: readonly string[];
-  dataset: string;
-  position?: { index: number; total: number };
-}): string {
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "12 Oct", with the year when it is not the current one.
+function dayText(year: number, month: number, day: number, now: Date): string {
+  return `${day} ${MONTHS[month]}${year === now.getFullYear() ? '' : ` ${year}`}`;
+}
+
+// The day in a title: the day the scenes were acquired (UTC) where they share one — as the name of a
+// download does — else the day the job is started (the local one). Only a dataset whose results are
+// grouped by the instant `datetime` has a day of acquisition (`registry.acquisition_day`).
+export function titleDay(items: readonly StacItem[], resultsGroupBy: readonly string[] | null, now: Date = new Date()): string {
+  const days = new Set<string>();
+  if (resultsGroupBy?.includes('datetime')) {
+    for (const item of items) {
+      const instant = item.properties?.datetime;
+      const time = typeof instant === 'string' ? Date.parse(instant) : NaN;
+      days.add(Number.isNaN(time) ? '' : new Date(time).toISOString().slice(0, 10));
+    }
+  }
+  const [day] = days;
+  if (days.size === 1 && day) {
+    const [y, m, d] = day.split('-').map(Number);
+    return dayText(y, m - 1, d, now);
+  }
+  return dayText(now.getFullYear(), now.getMonth(), now.getDate(), now);
+}
+
+// "<operators> · <dataset> · <day>": "Band math · Sentinel-2 L2A · 12 Oct". A batch has one title; its
+// parts are told apart by their label.
+export function jobTitle(args: { operators: readonly string[]; dataset: string; day?: string }): string {
   const names = [...new Set(args.operators)].join(', ');
-  const parts = [names, args.dataset];
-  if (args.position) parts.push(`${args.position.index + 1}/${args.position.total}`);
-  return parts.filter(Boolean).join(' · ');
+  return [names, args.dataset, args.day].filter(Boolean).join(' · ').slice(0, MAX_TITLE_LENGTH);
 }
 
 // --- a few at a time ----------------------------------------------------------------

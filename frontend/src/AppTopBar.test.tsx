@@ -187,6 +187,12 @@ describe('the processing side bar and the window of the jobs', () => {
     tiles: null,
     statistics: null,
     range: null,
+    archived: false,
+    groupId: null,
+    batchId: null,
+    part: null,
+    order: null,
+    createdAt: '2026-10-10T12:00:00Z',
     title: null,
   };
 
