@@ -23,19 +23,20 @@ from earthx.access.resolve import (
     open_asset_ref,
     resolve_asset,
 )
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy, UrlRejected
 from earthx.readers import AssetRejected
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 HOST = "assets.example.invalid"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
 RESOLVE_PY = Path(__file__).resolve().parents[3] / "earthx" / "access" / "resolve.py"
 
 COG = replace(SENTINEL_2_L2A, source=replace(SENTINEL_2_L2A.source, asset_hosts=(HOST,)))
-ZARR_GROUPS = replace(SENTINEL_2_L2A_ZARR3, source=replace(SENTINEL_2_L2A_ZARR3.source, asset_hosts=(HOST,)))
+ZARR_GROUPS = replace(SYNTHETIC_ZARR, source=replace(SYNTHETIC_ZARR.source, asset_hosts=(HOST,)))
 ZARR_PLAIN = replace(ZARR_GROUPS, zarr=ZarrInfo(variable_separator=None, multiscales_convention="test"))
 DEM = replace(COP_DEM_GLO_30, source=replace(COP_DEM_GLO_30.source, asset_hosts=(HOST,)))
 

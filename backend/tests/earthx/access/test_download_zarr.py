@@ -26,13 +26,13 @@ from rasterio.warp import transform_bounds
 
 from earthx.access import download as dl
 from earthx.access.tiles import open_asset
-from earthx.catalog.datasets import SENTINEL_2_L2A_ZARR3
 from earthx.catalog.registry import AcquisitionYears
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, zarr_asset
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.readers import mini_zarr
 from tests.earthx.readers.mini_zarr import BASE_URL, POLICY, from_memory
 
-DATASET = SENTINEL_2_L2A_ZARR3.dataset_id
+DATASET = SYNTHETIC_ZARR.dataset_id
 ITEM = "SYNTH_20260102T100000"
 
 # The registry entry addresses bands as `<group>:<variables>` (ZarrInfo
@@ -90,7 +90,7 @@ def aoi_over(fraction: float = 0.5) -> dict:
 
 def build(crops: list[dl.AssetCrop], aoi: dict) -> bytes:
     return dl.build_download_zip(
-        config=SENTINEL_2_L2A_ZARR3,
+        config=SYNTHETIC_ZARR,
         years=YEARS,
         open_reader=open_asset,
         crops=crops,
@@ -114,7 +114,7 @@ class TestACropOverTheSecondFormat:
         self, served: list[httpx.Request]
     ) -> None:
         """M3-07b, Otto's second local check (26.09.2026): the Zarr crop path
-        (EOPF's own way through `build_download_zip`) is a distinct way to end
+        (a Zarr dataset's way through `build_download_zip`) is a distinct way to end
         up with an ``ATTRIBUTION.txt`` from the COG path above — checked
         separately rather than assumed to behave the same just because it
         calls the same function."""

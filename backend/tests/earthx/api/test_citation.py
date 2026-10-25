@@ -10,6 +10,7 @@ import pytest
 from earthx.api.citation import citation_bib
 from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
+from tests.catalog.synthetic_zarr import TEST_ENTRIES
 
 DAY = date(2026, 10, 7)
 YEARS = AcquisitionYears(2025, 2025)
@@ -31,7 +32,7 @@ def test_the_entry_is_the_documented_misc_shape() -> None:
     )
 
 
-@pytest.mark.parametrize("config", list(REGISTRY), ids=lambda config: config.dataset_id)
+@pytest.mark.parametrize("config", list(TEST_ENTRIES), ids=lambda config: config.dataset_id)
 def test_every_dataset_gets_one_entry_with_its_own_key(config) -> None:
     bib = _bib(config)
     assert bib.startswith(f"@misc{{{config.dataset_id},\n")
@@ -40,7 +41,7 @@ def test_every_dataset_gets_one_entry_with_its_own_key(config) -> None:
     assert "urldate = {2026-10-07}" in bib
 
 
-@pytest.mark.parametrize("config", list(REGISTRY), ids=lambda config: config.dataset_id)
+@pytest.mark.parametrize("config", list(TEST_ENTRIES), ids=lambda config: config.dataset_id)
 def test_the_doi_field_is_the_name_never_the_url(config) -> None:
     bib = _bib(config)
     if config.doi:

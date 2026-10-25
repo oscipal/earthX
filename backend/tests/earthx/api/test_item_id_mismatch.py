@@ -1,6 +1,6 @@
 """An item the source delivers under another id, or with none, is refused (Otto's
 review of M4-01a): a tile or a crop must not show another scene under the name it
-asked for. Checked for each registry entry — a COG, a Zarr and a materialized
+asked for. Checked for each registry entry and the synthetic Zarr one — a COG, a Zarr and a materialized
 item — on the tile path and on the download.
 """
 
@@ -13,11 +13,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import REGISTRY
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain
+from tests.catalog.synthetic_zarr import TEST_ENTRIES
 
-ENTRIES = list(REGISTRY)
+ENTRIES = list(TEST_ENTRIES)
 
 
 @pytest.fixture(params=ENTRIES, ids=[config.dataset_id for config in ENTRIES])
