@@ -24,7 +24,7 @@ from earthx.api.citation import citation_bib
 from earthx.api.intake import SCENE_AOI_PROPERTIES
 from earthx.api.result_zip import Layout, Member
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DatasetRegistry, doi_name
+from earthx.catalog.registry import AcquisitionYears, DatasetRegistry, doi_name
 from earthx.objectstore.results import Store
 from earthx.processing.methods import DatasetFacts, methods_text
 from tests.earthx.access.test_download import GOOD_AOI, FakeReader, path
@@ -71,6 +71,7 @@ pytestmark = pytest.mark.anyio
 C1 = REGISTRY.get("sentinel-2-c1-l2a")
 RASTERS = ("result.tif", "mask.tif")
 FINISHED = datetime(2026, 3, 5, 10, 0, tzinfo=UTC)
+YEARS = AcquisitionYears(2025, 2025)
 
 
 def crop_files() -> list[str]:
@@ -79,6 +80,7 @@ def crop_files() -> list[str]:
         BytesIO(
             dl.build_download_zip(
                 config=C1,
+                years=YEARS,
                 open_reader=FakeReader,
                 crops=[dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))],
                 aoi_geometry=GOOD_AOI,
@@ -134,13 +136,13 @@ class TestTheFilesOfTheZip:
         beside = crop_files()
         assert [name.removeprefix(f"{FOLDER}/") for name in names] == [*RASTERS, *beside]
 
-    async def test_the_attribution_is_the_text_of_the_registry_with_the_year_of_the_run(
+    async def test_the_attribution_is_the_text_of_the_registry_with_the_year_of_the_scene(
         self, mocked: Store, rig: Rig  # noqa: F811
     ) -> None:
         job_id, _, _ = await zipped(rig)
         notice = (await zip_of(rig, job_id)).read(inside(dl.NOTICE_FILENAME)).decode("utf-8")
-        assert dl.attribution_text(C1, year=2026) in notice
-        assert dl.attribution_text(C1, year=2026) == "Contains modified Copernicus Sentinel data 2026"
+        assert dl.attribution_text(C1, years=AcquisitionYears(2026, 2026)) in notice
+        assert dl.attribution_text(C1, years=YEARS) == "Contains modified Copernicus Sentinel data 2025"
         assert C1.title in notice and C1.license.terms is not None and C1.license.terms.url in notice
         assert "Items: S2_A" in notice and "Generated: 2026-03-05T10:00:00Z" in notice
 
@@ -168,6 +170,7 @@ class TestTheFilesOfTheZip:
             BytesIO(
                 dl.build_download_zip(
                     config=C1,
+                    years=YEARS,
                     open_reader=FakeReader,
                     crops=[dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))],
                     aoi_geometry=GOOD_AOI,
@@ -480,8 +483,8 @@ class TestNoSecondVersion:
 
     def test_a_notice_without_the_new_arguments_is_the_one_it_always_was(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(dl, "datetime", self.Frozen)
-        plain = dl.build_notice_text(C1, item_ids=["A"], assets=["red"])
-        assert plain == dl.build_notice_text(C1, item_ids=["A"], assets=["red"], at=FINISHED, raster_result=False)
+        plain = dl.build_notice_text(C1, years=YEARS, item_ids=["A"], assets=["red"])
+        assert plain == dl.build_notice_text(C1, years=YEARS, item_ids=["A"], assets=["red"], at=FINISHED, raster_result=False)
         assert "Assets: red (" in plain and "Resolution: native" in plain and "each asset's own mask" in plain
         assert plain.endswith("Generated: 2026-03-05T10:00:00Z\n")
 
@@ -497,13 +500,14 @@ class TestNoSecondVersion:
         expected = {
             dl.NOTICE_FILENAME: dl.build_notice_text(
                 C1,
+                years=AcquisitionYears(2026, 2026),
                 item_ids=["S2_A", "S2_B", "S2_C"],
                 assets=["visual"],
                 group_item_ids=[["S2_A", "S2_B"], ["S2_C"]],
                 skipped_item_ids=[],
                 aoi_geometry=aoi,
             ),
-            dl.CITATION_FILENAME: citation_bib(C1, downloaded=datetime.now(UTC).date()).decode("utf-8"),
+            dl.CITATION_FILENAME: citation_bib(C1, downloaded=datetime.now(UTC).date(), years=AcquisitionYears(2026, 2026)).decode("utf-8"),
             dl.AOI_FILENAME: json.dumps(aoi),
         }
         got = accepted.attachments.files
@@ -511,3 +515,67 @@ class TestNoSecondVersion:
         assert got[dl.AOI_FILENAME] == expected[dl.AOI_FILENAME]
         assert got[dl.CITATION_FILENAME].startswith("@misc{sentinel-2-c1-l2a,")
         assert set(got) == set(expected)
+
+
+class TestTheYearInTheFilesOfAJob:
+    """NM4-01: ``ATTRIBUTION.txt``, ``citation.bib`` and ``recipe.json`` name the years of the scenes, not the year of the run."""
+
+    SCENE = "2025-07-29T10:15:00Z"
+    MODIFIED = "Contains modified Copernicus Sentinel data"
+
+    @staticmethod
+    def acquired(rig: Rig, *instants: str) -> None:
+        properties = rig.source.items[("sentinel-2-c1-l2a", "S2_A")]["properties"]
+        properties["datetime"] = instants[0]
+        if len(instants) > 1:
+            properties["end_datetime"] = instants[1]
+
+    async def files(self, rig: Rig) -> tuple[str, zipfile.ZipFile]:
+        job_id, _, _ = await zipped(rig)
+        return job_id, await zip_of(rig, job_id)
+
+    async def test_a_scene_of_2025_run_in_2026_gives_2025_in_every_file(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        self.acquired(rig, self.SCENE)
+        job_id, archive = await self.files(rig)
+        assert f"{self.MODIFIED} 2025" in member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+        assert f"{self.MODIFIED} 2025" in member(archive, dl.CITATION_FILENAME).decode("utf-8")
+        recipe = json.loads(member(archive, dl.RECIPE_FILENAME))
+        assert recipe["provenance"]["attribution"] == [f"{self.MODIFIED} 2025"]
+        link = await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")
+        assert link.content == member(archive, dl.RECIPE_FILENAME)
+        assert "Generated: 2026-03-05" in member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+
+    async def test_scenes_of_two_years_give_the_span_in_every_file(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        self.acquired(rig, "2024-12-30T10:00:00Z", "2025-01-02T10:00:00Z")
+        _, archive = await self.files(rig)
+        span = f"{self.MODIFIED} 2024\N{EN DASH}2025"
+        assert span in member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+        assert span in member(archive, dl.CITATION_FILENAME).decode("utf-8")
+        assert json.loads(member(archive, dl.RECIPE_FILENAME))["provenance"]["attribution"] == [span]
+
+    async def test_two_downloads_of_one_job_are_the_same_bytes(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        self.acquired(rig, self.SCENE)
+        job_id, _, url = await zipped(rig)
+        first, second = await rig.client.get(url), await rig.client.get(url)
+        assert first.content == second.content and first.headers["etag"] == second.headers["etag"]
+
+    async def test_the_recipe_hash_does_not_move_with_the_year(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        self.acquired(rig, self.SCENE)
+        job_id, archive = await self.files(rig)
+        stored = stored_recipe(rig, job_id)
+        shown = json.loads(member(archive, dl.RECIPE_FILENAME))
+        assert "attribution" not in json.dumps(stored)
+        assert {key: shown[key] for key in stored if key in shown and key != "recipe_id"} == {
+            key: stored[key] for key in stored if key in shown and key != "recipe_id"
+        }
+
+    async def test_a_job_from_before_the_years_were_kept_is_not_given_the_year_of_the_download(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        job_id, _, url = await zipped(rig)
+        rig.db.execute("UPDATE public.earthx_job SET acquired_first_year = NULL, acquired_last_year = NULL, acquired_on = NULL")
+        for target in (url, f"/processing/jobs/{job_id}/results/recipe.json", f"/processing/jobs/{job_id}/results/methods.txt"):
+            response = await rig.client.get(target)
+            assert response.status_code == 409, target
+            assert response.json()["type"] == "urn:earthx:no-acquisition-years"
+        assert (await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif")).status_code == 303

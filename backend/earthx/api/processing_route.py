@@ -68,6 +68,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from starlette.concurrency import run_in_threadpool
 
 from earthx.access.crop_rules import METHODS_FILENAME, RECIPE_FILENAME, TEXT_FILES
+from earthx.access.download import attribution_names_year
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
 from earthx.api.crs_info import CrsRefused, crs_description
@@ -83,7 +84,7 @@ from earthx.api.intake import (
 from earthx.api.item_source import ItemSource
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
 from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import AcquisitionYears, DatasetConfig, DatasetRegistry, UnknownDatasetError
 from earthx.gateway import Gateway
 from earthx.jobs import permalinks
 from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
@@ -107,6 +108,7 @@ NO_SUCH_JOB = f"{_TYPE_BASE}no-such-job"
 NO_SUCH_PROCESS = f"{_TYPE_BASE}no-such-process"
 RESULT_NOT_READY = f"{_TYPE_BASE}result-not-ready"
 NO_BUNDLE = "urn:earthx:no-bundle"
+NO_ACQUISITION_YEARS = "urn:earthx:no-acquisition-years"
 _FAILED_TYPE = "urn:earthx:job-failed:"
 _ORDER_TYPE = "urn:earthx:order-refused:"
 
@@ -662,6 +664,9 @@ async def execute(request: Request, process_id: str, api: Api) -> Response:
                 operators=api.operators,
                 attachments=accepted.attachments,
                 acquired_on=accepted.acquired_on,
+                acquired_years=None
+                if accepted.acquired_years is None
+                else (accepted.acquired_years.first, accepted.acquired_years.last),
                 scene_aoi=accepted.scene_aoi,
                 aoi_provenance=accepted.aoi_provenance,
             ),
@@ -961,6 +966,24 @@ def _config_of(api: JobApi, body: dict[str, Any]) -> DatasetConfig | None:
         return None
 
 
+def _years_of(config: DatasetConfig | None, status: JobStatus) -> AcquisitionYears | None:
+    """The years the job's scenes were acquired in, which its attribution names (NM4-01).
+
+    A job from before they were kept, whose attribution needs a year, has no honest one to give: the
+    clock would put the year of the download there. It answers ``409`` and the order is to be placed again.
+    """
+    if status.acquired_years is not None:
+        return AcquisitionYears(*status.acquired_years)
+    if config is not None and attribution_names_year(config):
+        raise Problem(
+            409,
+            "this job was placed before the years of acquisition were kept; place the order again",
+            type_=NO_ACQUISITION_YEARS,
+            title="No acquisition years",
+        )
+    return None
+
+
 def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
     """``recipe.json`` of the job: the file of its link, and the entry of its ZIP."""
     config = _config_of(api, body)
@@ -975,7 +998,14 @@ def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes
             started=_instant(result.get("started")) or status.started_at,
             finished=_instant(result.get("finished")) or status.finished_at,
         )
-    return job_recipe_json(body, config=config, result=result, started=status.started_at, finished=status.finished_at)
+    return job_recipe_json(
+        body,
+        config=config,
+        result=result,
+        started=status.started_at,
+        finished=status.finished_at,
+        years=_years_of(config, status),
+    )
 
 
 def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str) -> Response:
@@ -1123,12 +1153,14 @@ async def _bundle_response(
     finished = (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
     stem = filename.removesuffix(".zip")
     members = [Member.stored(f"{stem}/{name}", name, facts[name]) for name in BUNDLE_FILES]
+    config = _config_of(api, body)
     documents = {
         name: text.encode("utf-8")
         for name, text in job_side_files(
-            _config_of(api, body),
+            config,
             body,
             finished=finished,
+            years=_years_of(config, status),
             scene_aoi=status.scene_aoi,
             aoi_provenance=status.aoi_provenance,
         ).items()

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
@@ -599,6 +599,69 @@ def acquisition_day(item: Mapping[str, object], viewer: ViewerInfo) -> date | No
         return date.fromisoformat(day)
     except (MissingProperty, ValueError):
         return None
+
+
+#: The STAC properties that date an acquisition: the instant, or the start and end of a period.
+ACQUISITION_PROPERTIES = ("datetime", "start_datetime", "end_datetime")
+
+
+class AcquisitionYearMissing(ValueError):
+    """An item names no usable acquisition date, so the year of its attribution is unknown."""
+
+
+@dataclass(frozen=True, slots=True)
+class AcquisitionYears:
+    """The calendar years (UTC) the scenes of an order were acquired in: the one year, or the span.
+
+    What "[Year]" of the Sentinel notice means is not defined by the Sentinel Data Legal Notice; the
+    platform reads it as the year of acquisition (Otto, 25.10.2026, NM4-01, adr/0014 §4.5) and writes
+    several years as a span, ``2024–2025``.
+    """
+
+    first: int
+    last: int
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.first <= self.last <= 9999:
+            raise ValueError("the first year is not after the last, and both have four digits")
+
+    def __str__(self) -> str:
+        return str(self.first) if self.first == self.last else f"{self.first}\N{EN DASH}{self.last}"
+
+
+def acquisition_years(items: Iterable[Mapping[str, object]]) -> AcquisitionYears:
+    """The years ``items`` were acquired in, from ``datetime``, ``start_datetime`` and ``end_datetime``.
+
+    Every instant an item carries counts, so a period that crosses New Year gives a span. Never the
+    clock: an item with none of the three, or only text that is no instant, raises
+    :class:`AcquisitionYearMissing`, as does an empty ``items``.
+    """
+    years: list[int] = []
+    for item in items:
+        properties = item.get("properties")
+        found = [
+            _instant_year(properties[name])
+            for name in ACQUISITION_PROPERTIES
+            if isinstance(properties, Mapping) and properties.get(name) is not None
+        ]
+        if not found:
+            raise AcquisitionYearMissing("an item carries no acquisition date (datetime or start_datetime)")
+        years.extend(found)
+    if not years:
+        raise AcquisitionYearMissing("no item to take an acquisition date from")
+    return AcquisitionYears(min(years), max(years))
+
+
+def _instant_year(value: object) -> int:
+    if not isinstance(value, (str, datetime)):
+        raise AcquisitionYearMissing("an item's acquisition date is no instant")
+    try:
+        instant = datetime.fromisoformat(value) if isinstance(value, str) else value
+    except ValueError:
+        raise AcquisitionYearMissing("an item's acquisition date is no instant") from None
+    if instant.tzinfo is not None:
+        instant = instant.astimezone(timezone.utc)
+    return instant.year
 
 
 def _key_part(value: object) -> str:

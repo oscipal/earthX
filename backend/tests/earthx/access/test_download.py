@@ -24,9 +24,10 @@ from rio_tiler.models import ImageData
 from earthx.access import crop_rules
 from earthx.access import download as dl
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import LicenseInfo, LicenseTier
+from earthx.catalog.registry import AcquisitionYears, LicenseInfo, LicenseTier
 from earthx.readers.cog import AssetPath
 
+YEARS = AcquisitionYears(2025, 2025)
 GOOD_AOI = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
 
 
@@ -368,7 +369,7 @@ class TestCropAsset:
 class TestBuildNoticeText:
     def test_carries_attribution_and_the_full_terms_notice(self) -> None:
         """Otto, 22.09.2026: the platform offers no language choice, only English."""
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"])
         assert "Contains modified Copernicus Sentinel data" in text
         notice_en = SENTINEL_2_L2A.license.terms.notice["en"].format(
             terms_url=SENTINEL_2_L2A.license.terms.url
@@ -379,19 +380,19 @@ class TestBuildNoticeText:
 
     def test_a_dataset_without_terms_still_gets_a_notice_with_its_attribution(self) -> None:
         config = _dataset_without_terms()
-        text = dl.build_notice_text(config, item_ids=["ITEM1"])
+        text = dl.build_notice_text(config, years=YEARS, item_ids=["ITEM1"])
         assert config.title in text
         assert "ITEM1" in text
 
     def test_no_aoi_geometry_leaves_the_notice_as_it_was(self) -> None:
         """The default (``aoi_geometry`` omitted) — every caller before this
         review, and a drawn/uploaded AOI's caller today."""
-        assert "AOI geometry" not in dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+        assert "AOI geometry" not in dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"])
 
     def test_an_aoi_with_no_properties_key_leaves_the_notice_as_it_was(self) -> None:
         """A drawn or uploaded AOI: `aoi_geometry` is passed, but it is a bare
         geometry with nothing under ``properties`` (M3-07b F3 review, 26.09.2026)."""
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=GOOD_AOI)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=GOOD_AOI)
         assert "AOI geometry" not in text
 
     def test_a_place_search_aoi_adds_one_line_naming_attribution_license_and_source(self) -> None:
@@ -403,34 +404,34 @@ class TestBuildNoticeText:
                 "license": "ODbL-1.0",
             },
         }
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "AOI geometry: © OpenStreetMap contributors, ODbL-1.0 (via OpenStreetMap / Nominatim)" in text
 
     def test_the_line_still_appears_with_only_attribution_and_no_source(self) -> None:
         aoi = {**GOOD_AOI, "properties": {"attribution": "© OpenStreetMap contributors"}}
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "AOI geometry: © OpenStreetMap contributors" in text
         assert "via" not in text
 
     def test_a_properties_key_with_none_of_the_recognised_fields_adds_nothing(self) -> None:
         aoi = {**GOOD_AOI, "properties": {"note": "not a recognised field"}}
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "AOI geometry" not in text
 
     def test_non_string_provenance_fields_are_ignored_rather_than_crashing(self) -> None:
         aoi = {**GOOD_AOI, "properties": {"attribution": 12345, "license": ["ODbL-1.0"], "source": None}}
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "AOI geometry" not in text
 
     def test_a_properties_value_that_is_not_a_mapping_is_ignored_rather_than_crashing(self) -> None:
         aoi = {**GOOD_AOI, "properties": "not a mapping"}
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "AOI geometry" not in text
 
     def test_an_oversized_field_is_capped_rather_than_bloating_the_notice(self) -> None:
         huge = "x" * 10_000
         aoi = {**GOOD_AOI, "properties": {"attribution": huge}}
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         line = next(line for line in text.splitlines() if line.startswith("AOI geometry"))
         assert len(line) < 250
 
@@ -441,13 +442,13 @@ class TestBuildNoticeText:
             **GOOD_AOI,
             "properties": {"attribution": "© OpenStreetMap contributors\nFAKE NOTICE: this data is public domain"},
         }
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "FAKE NOTICE" not in text
         assert "AOI geometry: © OpenStreetMap contributors" in text
 
     def test_a_blank_attribution_with_a_real_license_still_adds_the_license_alone(self) -> None:
         aoi = {**GOOD_AOI, "properties": {"attribution": "   ", "license": "ODbL-1.0"}}
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], aoi_geometry=aoi)
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], aoi_geometry=aoi)
         assert "AOI geometry: ODbL-1.0" in text
 
 
@@ -479,6 +480,7 @@ class TestRecipeAndCitationFiles:
     def _zip(self, **extra) -> zipfile.ZipFile:
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=FakeReader,
             crops=[dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))],
             aoi_geometry=GOOD_AOI,
@@ -519,10 +521,10 @@ class TestRecipeAndCitationFiles:
     @pytest.mark.parametrize("cause", ["", "Bands", "7.1,46.1", "a\nb", "https://x.example/a", "x" * 33, "bands "])
     def test_a_cause_that_is_no_code_is_refused_not_written_into_the_notice(self, cause: str) -> None:
         with pytest.raises(ValueError):
-            dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"], recipe_omitted_cause=cause)
+            dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], recipe_omitted_cause=cause)
 
     def test_without_a_cause_the_notice_is_the_one_it_was(self) -> None:
-        text = dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+        text = dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"])
         assert "is not included" not in text
 
     def test_with_several_groups_they_sit_once_at_the_root(self) -> None:
@@ -545,6 +547,7 @@ class TestBuildDownloadZip:
         ]
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=FakeReader,
             crops=crops,
             aoi_geometry=GOOD_AOI,
@@ -610,6 +613,7 @@ class TestBuildDownloadZip:
         crops = [dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))]
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=FakeReader,
             crops=crops,
             aoi_geometry=aoi_with_provenance,
@@ -626,6 +630,7 @@ class TestBuildDownloadZip:
         crops = [dl.AssetCrop(asset="visual", paths=(path(asset="visual"),))]
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=FakeReader,
             crops=crops,
             aoi_geometry=GOOD_AOI,
@@ -656,6 +661,7 @@ class TestBuildDownloadZip:
         crops = [dl.AssetCrop(asset="visual", paths=(path(),))]
         dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=FakeReader,
             crops=crops,
             aoi_geometry=GOOD_AOI,
@@ -710,13 +716,13 @@ class TestTheNameACropGetsInsideTheZip:
 
     def test_the_notice_names_the_key_the_cleaned_file_came_from(self) -> None:
         notice = dl.build_notice_text(
-            SENTINEL_2_L2A, item_ids=["ITEM1"], assets=["SR_10m:b04,b03,b02"]
+            SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"], assets=["SR_10m:b04,b03,b02"]
         )
         assert "SR_10m:b04,b03,b02" in notice
         assert "SR_10m_b04_b03_b02.tif" in notice
 
     def test_a_crop_without_named_assets_keeps_the_notice_as_it_was(self) -> None:
-        assert "Assets:" not in dl.build_notice_text(SENTINEL_2_L2A, item_ids=["ITEM1"])
+        assert "Assets:" not in dl.build_notice_text(SENTINEL_2_L2A, years=YEARS, item_ids=["ITEM1"])
 
 
 class TestPerBandNodataNeverCombinedAcrossBands:

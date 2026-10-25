@@ -27,6 +27,7 @@ from rasterio.warp import transform_bounds
 from earthx.access import download as dl
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A_ZARR3
+from earthx.catalog.registry import AcquisitionYears
 from earthx.readers.zarr_reader import ZarrAsset, ZarrAssetError, zarr_asset
 from tests.earthx.readers import mini_zarr
 from tests.earthx.readers.mini_zarr import BASE_URL, POLICY, from_memory
@@ -37,6 +38,8 @@ ITEM = "SYNTH_20260102T100000"
 # The registry entry addresses bands as `<group>:<variables>` (ZarrInfo
 # .variable_separator), which is the key that ends up as the ZIP member name.
 ASSET_KEY = "SR_20m:b04,b02"
+
+YEARS = AcquisitionYears(2025, 2025)
 
 
 @pytest.fixture(scope="module")
@@ -88,6 +91,7 @@ def aoi_over(fraction: float = 0.5) -> dict:
 def build(crops: list[dl.AssetCrop], aoi: dict) -> bytes:
     return dl.build_download_zip(
         config=SENTINEL_2_L2A_ZARR3,
+        years=YEARS,
         open_reader=open_asset,
         crops=crops,
         aoi_geometry=aoi,

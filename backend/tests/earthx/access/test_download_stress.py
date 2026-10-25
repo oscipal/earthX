@@ -25,6 +25,7 @@ import pytest
 from earthx.access import download as dl
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import AcquisitionYears
 from tests.earthx.access.test_download_mask import (
     ITEM,
     _asset,
@@ -38,6 +39,8 @@ from tests.earthx.readers import mini_cog
 RUNS = int(os.environ.get("EARTHX_DOWNLOAD_STRESS_RUNS", "50"))
 # The CI budget for the default count; measured at under 2 s in the cloud session.
 BUDGET_SECONDS = 30.0
+
+YEARS = AcquisitionYears(2025, 2025)
 
 
 @pytest.fixture(scope="module")
@@ -53,6 +56,7 @@ def served(cog_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def _one_round(aoi_geometry: dict) -> None:
     zip_bytes = dl.build_download_zip(
         config=SENTINEL_2_L2A,
+        years=YEARS,
         open_reader=open_asset,
         crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
         aoi_geometry=aoi_geometry,

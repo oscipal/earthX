@@ -114,7 +114,7 @@ import math
 import re
 import zipfile
 import zlib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
@@ -162,7 +162,7 @@ from earthx.access.crop_rules import (
     native_crop_grid,
     rasterize_aoi,
 )
-from earthx.catalog.registry import DatasetConfig
+from earthx.catalog.registry import AcquisitionYears, DatasetConfig, acquisition_years
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
@@ -185,7 +185,9 @@ __all__ = [
     "PlannedOutput",
     "RECIPE_FILENAME",
     "asset_gsd",
+    "attribution_names_year",
     "attribution_text",
+    "attribution_years",
     "build_download_zip",
     "build_notice_text",
     "check_item_count_cap",
@@ -939,10 +941,35 @@ def _aoi_provenance_line(aoi_geometry: Mapping[str, Any]) -> str | None:
     return line
 
 
-def attribution_text(config: DatasetConfig, *, year: int) -> str | None:
-    """The attribution a crop carries: the conservative "modified" text, else the plain one."""
+def attribution_text(config: DatasetConfig, *, years: AcquisitionYears | None) -> str | None:
+    """The attribution a crop carries: the conservative "modified" text, else the plain one.
+
+    The one place the text is made (NM4-01): from the registry's template, with ``{year}`` taken from
+    the years the scenes were acquired in, never from the clock. A template without the placeholder
+    (the DEM's fixed wording) needs no years; one with it and no ``years`` is a caller's mistake.
+    """
     text = config.license.attribution_modified or config.license.attribution_unmodified
-    return text.format(year=year) if text else None
+    if not text:
+        return None
+    if attribution_names_year(config) and years is None:
+        raise ValueError("this attribution names the year of acquisition; the caller must give the years")
+    return text.format(year=years)
+
+
+def attribution_years(config: DatasetConfig, items: Iterable[Mapping[str, Any]]) -> AcquisitionYears | None:
+    """The years ``items`` were acquired in, where the dataset's attribution names a year, else ``None``.
+
+    The one place a caller learns the years (NM4-01), before anything is run or downloaded. Raises
+    :class:`~earthx.catalog.registry.AcquisitionYearMissing` where the attribution needs a year and
+    an item has no acquisition date: the order is refused, not given a year from the clock.
+    """
+    return acquisition_years(items) if attribution_names_year(config) else None
+
+
+def attribution_names_year(config: DatasetConfig) -> bool:
+    """Whether the dataset's attribution has the year of acquisition in it (the DEM's fixed wording has none)."""
+    text = config.license.attribution_modified or config.license.attribution_unmodified
+    return bool(text) and "{year}" in text
 
 
 def build_notice_text(
@@ -955,6 +982,7 @@ def build_notice_text(
     skipped_item_ids: Sequence[str] = (),
     aoi_geometry: Mapping[str, Any] | None = None,
     recipe_omitted_cause: str | None = None,
+    years: AcquisitionYears | None = None,
     at: datetime | None = None,
     raster_result: bool = False,
 ) -> str:
@@ -994,8 +1022,9 @@ def build_notice_text(
     the item contained — no AOI, address or query. Anything else than such a code is
     refused rather than written into the file.
 
-    ``at`` (M4-30): the moment the notice is "generated" and whose year the attribution
-    names. Left out it is now, as it always was. A file that must be the same bytes each
+    ``years`` (NM4-01): the years the scenes were acquired in, which the attribution names; required
+    where the dataset's attribution has a year in it. ``at`` (M4-30): the moment the notice is
+    "generated". Left out it is now, as it always was. A file that must be the same bytes each
     time it is asked for — the notice in the ZIP of a job, whose ETag is built from it —
     passes the end of the job.
 
@@ -1008,10 +1037,9 @@ def build_notice_text(
         raise ValueError("recipe_omitted_cause is a short lower-case code")
     license_ = config.license
     moment = at if at is not None else datetime.now(timezone.utc)
-    year = moment.year
     lines = [config.title]
 
-    attribution = attribution_text(config, year=year)
+    attribution = attribution_text(config, years=years)
     if attribution:
         lines.append(attribution)
 
@@ -1121,6 +1149,7 @@ def build_download_zip(
     citation_bib: bytes | None = None,
     methods_text: bytes | None = None,
     recipe_omitted_cause: str | None = None,
+    years: AcquisitionYears | None = None,
 ) -> bytes:
     """The finished ZIP: a data COG and a mask file per requested asset, the AOI
     as GeoJSON, plus :data:`NOTICE_FILENAME`.
@@ -1217,6 +1246,7 @@ def build_download_zip(
                     skipped_item_ids=skipped_item_ids,
                     aoi_geometry=aoi_geometry,
                     recipe_omitted_cause=recipe_omitted_cause,
+                    years=years,
                 ),
             )
             if methods_text is not None:

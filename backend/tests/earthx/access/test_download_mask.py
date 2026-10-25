@@ -33,12 +33,15 @@ from rasterio.warp import transform_bounds
 from earthx.access import download as dl
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import AcquisitionYears
 from earthx.readers.cog import asset_path
 from tests.earthx.readers import mini_cog
 from tests.earthx.readers.mini_cog import ASSET_URL, ORIGIN_X, ORIGIN_Y, RESOLUTION, SIZE
 from tests.earthx.readers.mini_zarr import ITEM_CRS, POLICY, from_memory
 
 ITEM = "SYNTH_20260924T000000"
+
+YEARS = AcquisitionYears(2025, 2025)
 
 
 @pytest.fixture(scope="module")
@@ -133,6 +136,7 @@ class TestTheAoiMaskOnARealCog:
         shape. The polygon itself is checked separately, on the mask file, below."""
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_asset,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
             aoi_geometry=_diamond_aoi(),
@@ -174,6 +178,7 @@ class TestTheAoiMaskOnARealCog:
     def test_a_slanted_polygon_s_mask_file_marks_outside_and_inside(self, served: list[str]) -> None:
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_asset,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
             aoi_geometry=_diamond_aoi(),
@@ -203,6 +208,7 @@ class TestTheAoiMaskOnARealCog:
         here — checked, not assumed to be all `1`."""
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_asset,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
             aoi_geometry=_rectangle_aoi(),
@@ -224,6 +230,7 @@ class TestTheAoiMaskOnARealCog:
         aoi_geometry = _diamond_aoi()
         zip_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_asset,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
             aoi_geometry=aoi_geometry,
@@ -251,6 +258,7 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         aoi_geometry = _rectangle_aoi()
         windowed_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_asset,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
             aoi_geometry=aoi_geometry,
@@ -272,6 +280,7 @@ class TestWindowedReadMatchesTheWholeArrayRead:
         aoi_geometry = _diamond_aoi()
         windowed_bytes = dl.build_download_zip(
             config=SENTINEL_2_L2A,
+            years=YEARS,
             open_reader=open_asset,
             crops=[dl.AssetCrop(asset="visual", paths=(_asset(),))],
             aoi_geometry=aoi_geometry,

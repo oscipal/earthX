@@ -34,6 +34,7 @@ from earthx.access import download
 from earthx.access.crop_rules import METHODS_FILENAME, TEXT_FILES, compute_crop_region
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
+from earthx.catalog.registry import AcquisitionYears
 from earthx.processing import RunCancelled, run
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
@@ -50,6 +51,8 @@ from tests.earthx.processing.testops import OPERATORS
 WIDTH, HEIGHT = 700, 600
 DATASET = "synthetic"
 FACTS = DatasetFacts("Synthetic dataset", None)
+
+YEARS = AcquisitionYears(2025, 2025)
 
 
 def _visual(path: Path, data: numpy.ndarray, *, origin_x: float = sources.ORIGIN_X) -> Path:
@@ -148,6 +151,7 @@ def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any]) -> bytes:
     crops = [[download.AssetCrop(asset="visual", paths=tuple(path(item) for item in group))] for group in groups]
     return download.build_download_zip(
         config=SENTINEL_2_L2A,
+        years=YEARS,
         open_reader=open_asset,
         crops=crops[0],
         aoi_geometry=notice_aoi,
