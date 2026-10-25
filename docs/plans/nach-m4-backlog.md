@@ -190,6 +190,9 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Schritt 2 – parallel (nur nach Ottos Freigabe):** `pytest-xdist` (neue Abhängigkeit). Vorher mit Quellen klären: Verträglichkeit mit `spawn`-Kindprozessen und Speichermessungen (`VmHWM` je Prozess), eigene Datenbank je xdist-Worker für Postgres-Tests, Zahl der Kerne der GitHub-Runner für öffentliche Repos. Einstellung über die pytest-Konfiguration, nicht über `.github/`.
    - **Grenze:** keine Tests streichen oder überspringen, um Zeit zu sparen; `.github/` bleibt unverändert.
    - **Aufgabe:** Stufe B (Schritt 2 ist eine Abhängigkeit und rechenrelevant), nur Tests und Testkonfiguration.
+24. **Rückfall „Szene für Szene“ stapelt nach Auswahl** (Otto, 25.10.2026, aus NM4-02).
+   - **Befund:** Wo die Karte keine Mosaik-Kachel nutzt (Überflug über 64 Szenen, abgelehnte Kachel), stapelt sie die Szenen in der Reihenfolge der Auswahl (`stackLikeView`, `mosaic.ts`). Zuschnitt, Export, Job und Kachel ordnen seit NM4-02 mit `mosaic_order`; in Überlappungen kann dieser Rückfall eine andere Szene oben zeigen.
+   - **Aufgabe:** nach UI-01, weil dieselbe Stelle betroffen ist. Nicht in NM4-02.
 
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
