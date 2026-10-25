@@ -4,12 +4,16 @@
 
 export type Theme = 'tech' | 'normal';
 export type Projection = 'mercator' | 'globe';
+// The jobs the processing manager lists: those not archived, or all of them (UI-01 §6.10).
+export type JobFilter = 'active' | 'all';
 
 const THEME_KEY = 'earthx.theme';
 const PROJECTION_KEY = 'earthx.projection';
+const JOB_FILTER_KEY = 'earthx.jobfilter';
 
 const THEMES: readonly Theme[] = ['tech', 'normal'];
 const PROJECTIONS: readonly Projection[] = ['mercator', 'globe'];
+const JOB_FILTERS: readonly JobFilter[] = ['active', 'all'];
 
 function readStored<T extends string>(key: string, valid: readonly T[], fallback: T): T {
   let raw: string | null;
@@ -45,4 +49,12 @@ export function loadProjection(): Projection {
 
 export function saveProjection(projection: Projection): void {
   writeStored(PROJECTION_KEY, projection);
+}
+
+export function loadJobFilter(): JobFilter {
+  return readStored(JOB_FILTER_KEY, JOB_FILTERS, 'active');
+}
+
+export function saveJobFilter(filter: JobFilter): void {
+  writeStored(JOB_FILTER_KEY, filter);
 }

@@ -8,7 +8,6 @@ import {
   eventsUrl,
   fetchCrs,
   fetchJob,
-  fetchMethodsText,
   fetchProcess,
   fetchResults,
   fetchResultTileJson,
@@ -272,21 +271,5 @@ describe('the TileJSON of a result (M4-13c-5)', () => {
   it('refuses an answer the map cannot use', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => respond({ bounds: [1, 2] })));
     await expect(fetchResultTileJson(HREF)).rejects.toThrow('cannot read');
-  });
-});
-
-describe('fetchMethodsText', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('reads the text of the job from its methods link', async () => {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response('A paragraph.\n', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-    expect(await fetchMethodsText(JOB)).toBe('A paragraph.\n');
-    expect(fetchMock.mock.calls[0][0]).toBe(resultUrl(JOB, 'methods.txt'));
-  });
-
-  it('says so when the link answers with an error, such as an expired result', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('gone', { status: 410 })));
-    await expect(fetchMethodsText(JOB)).rejects.toThrow('could not be read (410)');
   });
 });

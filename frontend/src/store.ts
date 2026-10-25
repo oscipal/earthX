@@ -703,6 +703,12 @@ function forgetSearch() {
   return { searchContext: null, loadingMore: false, loadMoreError: null, loadMoreUsed: false, fallbackDatasetIds: [] };
 }
 
+// The panels beside the rail (UI-01 §6.9). One is open at a time, or none.
+export type DockPanel = 'controls' | 'layers' | 'jobs';
+
+// Sliding the control panel away leaves another panel where it is.
+const withoutControls = (dock: DockPanel | null): DockPanel | null => (dock === 'controls' ? null : dock);
+
 export interface AppState {
   // --- map / selection ---
   toolMode: ToolMode;
@@ -742,7 +748,8 @@ export interface AppState {
   viewportSize: { width: number; height: number } | null;
 
   // --- ui layout ---
-  panelCollapsed: boolean; // left control panel slid off to the left
+  // The panel beside the rail (UI-01 §6.9): one at a time, or none.
+  dock: DockPanel | null;
   // Right-docked results list slid off to the right — collapsible the same
   // way as the left control panel, not freely draggable any more (V-5).
   resultsPanelCollapsed: boolean;
@@ -769,7 +776,6 @@ export interface AppState {
   // while that dataset is the one chosen in the results dropdown. Not in `layers`;
   // `pinSearchCrops` copies them there.
   searchCrops: MapLayer[];
-  layerManagerOpen: boolean;
   // The layer the download dialog (M2-07d) is open for, `null` when closed.
   downloadDialogLayerId: string | null;
   // The dialog open for the current selection (V-4) rather than a pinned
@@ -885,11 +891,15 @@ export interface AppState {
   flyTo: (b: Bbox) => void;
   clearFly: () => void;
   clearFlyView: () => void;
-  togglePanel: () => void;
-  setPanelCollapsed: (v: boolean) => void;
+  // A second click on the open panel's symbol closes it.
+  toggleDock: (panel: DockPanel) => void;
+  closeDock: () => void;
+  // The control panel slides away so it cannot block the map (a draw, a search), and comes back when that is
+  // over, unless another panel took its place meanwhile.
+  hideControls: () => void;
+  reopenControls: () => void;
   toggleResultsPanel: () => void;
   clearAll: () => void;
-  toggleLayerManager: () => void;
   addCurrentToLayers: () => void;
   pinDerivedLayer: (layer: DerivedLayer) => void;
   // Marks the result layers whose job's results are about to go (M4-13c-5).
@@ -960,7 +970,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewportBbox: null,
   viewportSize: null,
 
-  panelCollapsed: false,
+  dock: 'controls',
   resultsPanelCollapsed: false,
   focusMode: false,
   showDownloaded: true,
@@ -970,7 +980,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   layers: [],
   viewLayerId: null,
   searchCrops: [],
-  layerManagerOpen: false,
   downloadDialogLayerId: null,
   downloadSelection: false,
   downloadResolution: 1,
@@ -1095,7 +1104,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Activating a draw tool slides the control panel away so it can't block the
   // map while you draw; finishing a draw re-opens it (see MapView).
   setToolMode: (toolMode) =>
-    set(toolMode === 'none' ? { toolMode } : { toolMode, panelCollapsed: true }),
+    set((s) => (toolMode === 'none' ? { toolMode } : { toolMode, dock: withoutControls(s.dock) })),
   // The AOI is also the coverage route's spatial filter (`refreshCoverage`),
   // so every way it can change reschedules a refresh.
   setAoi: (aoi, point = null) => {
@@ -1124,8 +1133,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
   clearFlyView: () => set({ flyToView: null }),
-  togglePanel: () => set((s) => ({ panelCollapsed: !s.panelCollapsed })),
-  setPanelCollapsed: (panelCollapsed) => set({ panelCollapsed }),
+  toggleDock: (panel) => set((s) => ({ dock: s.dock === panel ? null : panel })),
+  closeDock: () => set({ dock: null }),
+  hideControls: () => set((s) => ({ dock: withoutControls(s.dock) })),
+  reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
   clearAll: () => {
     set({
@@ -1141,7 +1152,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeGroupIndex: 0,
       expandedGroupIndex: 0,
       selectedIds: [],
-      panelCollapsed: false,
+      dock: get().dock ?? 'controls',
       playing: false,
       error: null,
       notice: null,
@@ -1156,7 +1167,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     scheduleCoverageRefresh(set, get);
   },
 
-  toggleLayerManager: () => set((s) => ({ layerManagerOpen: !s.layerManagerOpen })),
   // M3-09 §10 (Otto): a "Crop & merge to AOI" view pins one layer *per
   // group*, not one for the whole selection — each with its own overlays,
   // its own download, matching what a group's download has always merged
@@ -1233,7 +1243,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...(newLayers.length === 1 && newLayers[0].restore.itemIds.length === Object.keys(s.downloaded).length
             ? { viewLayerId: newLayers[0].id }
             : {}),
-          layerManagerOpen: true,
           error: null,
           notice: `Added ${newLayers.length} layer${newLayers.length === 1 ? '' : 's'} (one per group).`,
         });
@@ -1268,7 +1277,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         // The layer is the view's picture, so it takes the view's place in the list (`viewLayer.ts`),
         // unless it holds only some of the scenes the view draws.
         ...(entries.length === Object.keys(s.downloaded).length ? { viewLayerId: layer.id } : {}),
-        layerManagerOpen: true,
         error: null,
         notice: `Added "${name}" to layers.`,
       });
@@ -1332,7 +1340,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       0,
     );
-    set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${name}" to layers.` });
+    set({ layers: [layer, ...s.layers], notice: `Added "${name}" to layers.` });
   },
   // Pins a derived picture at the top of the list.
   pinDerivedLayer: (input) => {
@@ -1358,7 +1366,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasetId: s.datasetId,
       },
     };
-    set({ layers: [layer, ...s.layers], layerManagerOpen: true, notice: `Added "${input.name}" to layers.` });
+    set({ layers: [layer, ...s.layers], notice: `Added "${input.name}" to layers.` });
   },
   expireResultLayers: (now) =>
     set((s) => {
@@ -1862,7 +1870,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const pinned = crops.map((c, i) => ({ ...c, id: `L${batchId}${i}` }));
     set({
       layers: [...pinned, ...s.layers],
-      layerManagerOpen: true,
       error: null,
       notice: `Pinned ${pinned.length} layer${pinned.length === 1 ? '' : 's'} (${pinned[0].name.split(' · ')[0]}).`,
     });
@@ -1911,7 +1918,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       notice: null,
       playing: false,
-      panelCollapsed: true,
+      dock: withoutControls(get().dock),
       ...forgetSearch(),
       ...LEAVE_FOCUS,
     });
@@ -1963,7 +1970,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         searchCrops: [],
         searchContext: null,
         ...openSectionState(null),
-        panelCollapsed: false,
+        dock: get().dock ?? 'controls',
       });
     } finally {
       set({ searching: false });
@@ -2104,7 +2111,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A lookup carries no AOI, so there is no crop of the last search to keep.
       searchCrops: [],
       selectedIds: [item.id],
-      panelCollapsed: true,
+      dock: withoutControls(get().dock),
       playing: false,
       ...LEAVE_FOCUS,
       error: null,

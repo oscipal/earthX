@@ -25,6 +25,7 @@ function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
     jobID,
     expires: '2026-10-17T12:00:00Z',
     title: null,
+    titleDefault: null,
     createdAt: '2026-10-10T10:00:00Z',
     archived: false,
     groupId: null,
@@ -52,7 +53,7 @@ afterEach(() => {
 
 describe('what the shelf writes', () => {
   it('is one key of version 1 with the jobs, the batches and the groups', () => {
-    const batch = { id: BATCH, title: 'Band math · DEM', createdAt: '2026-10-10T10:00:00Z', archived: true, groupId: GROUP, refused: [{ label: 'S2', message: 'no' }] };
+    const batch = { id: BATCH, title: 'Band math · DEM', titleDefault: 'Band math · DEM', createdAt: '2026-10-10T10:00:00Z', archived: true, groupId: GROUP, refused: [{ label: 'S2', message: 'no' }] };
     const saved = saveShelf(
       shelfOf(
         [
@@ -86,7 +87,8 @@ describe('what the shelf writes', () => {
           order: ORDER,
         },
       ],
-      batches: [batch],
+      // The default title is written only where it differs from the title.
+      batches: [{ ...batch, titleDefault: undefined }],
       groups: [{ id: GROUP, name: 'Field 7' }],
     });
     expect(readShelf()).toEqual({ shelf: expect.objectContaining({ batches: [batch] }), state: 'ok', locked: false });
@@ -99,7 +101,7 @@ describe('what the shelf writes', () => {
 
   it('writes the refused parts of a batch as far as they are read back, and the fields of a group it knows', () => {
     const refused = Array.from({ length: 30 }, (_, i) => ({ label: `S${i}`, message: 'm'.repeat(600) }));
-    const batch = { id: BATCH, title: 'T', createdAt: '2026-10-10T10:00:00Z', archived: false, groupId: null, refused };
+    const batch = { id: BATCH, title: 'T', titleDefault: 'T', createdAt: '2026-10-10T10:00:00Z', archived: false, groupId: null, refused };
     saveShelf(shelfOf([], { batches: [batch], groups: [{ id: GROUP, name: 'G', extra: 1 } as never] }));
     expect(stored().groups).toEqual([{ id: GROUP, name: 'G' }]);
     expect(stored().batches[0].refused).toHaveLength(25);
