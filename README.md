@@ -442,6 +442,16 @@ Zeitlimit Variablen oben im Skript. Es braucht laufende Dienste `api` und
 `worker` und für den Download den veröffentlichten Port 3900 des
 Objektspeichers.
 
+**Der Link `tiles` im Ergebnisdokument (NM4-03):** `GET /processing/jobs/{jobID}/results`
+nennt unter `tiles` den TileJSON-Link des `tiler` (Port 8001) als absolute URL, damit
+ein API-Client ohne den Proxy des Frontends ihn findet. Die Basis kommt allein aus
+`EARTHX_TILER_URL` (`.env`, Vorgabe in `docker compose`: `http://localhost:8001`),
+nie aus dem `Host`-Header der Anfrage. Erlaubt sind nur `http` und `https` mit Host,
+ohne Zugangsdaten, Query und Fragment; ein unbrauchbarer Wert steht nie im Log, `api`
+meldet nur, dass er unbrauchbar ist. Ohne gültigen Wert (außerhalb von `docker compose`)
+bleibt der Link ein Pfad (`/results/…`). Der Viewer liest nur den Pfad und holt die
+Kacheln weiter über seinen eigenen Proxy.
+
 ### Lokaler Runner (seit M4-16)
 
 Der Runner rechnet die `recipe.json` eines Ergebnisses noch einmal auf dem

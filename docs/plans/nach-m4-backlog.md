@@ -22,6 +22,7 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Erledigt:** NM4-02 (`querschnitt/nm4-02-sortierung-zuschnitt.md`), 25.10.2026, Draft-PR; `adr/0014` §15p, Version 0.4.3.
 3. **Absolute URL für den Link `tiles`** im Ergebnisdokument (M4-13c-5). Heute ist der Link relativ, ein API-Client ohne den gemeinsamen Proxy findet den `tiler` damit nicht. Spätestens mit der öffentlichen API in M6 nötig.
    - **Plan:** `querschnitt/nm4-03-tiles-url-absolut.md`
+   - **Erledigt:** NM4-03, 25.10.2026, Draft-PR (Nummer folgt mit dem PR); `EARTHX_TILER_URL`.
 4. **Mosaik mit Operator im Kachel-Pfad,** also eine Vorschau des Mosaik-Jobs mit Band math (M4-17, Frage 4).
    - **Plan:** `querschnitt/nm4-04-mosaik-mit-operator.md`
 5. **Processing auf einem Ergebnis** (Otto, 20.10.2026), also ein Job-Ergebnis als Eingabe eines neuen Rezepts.
