@@ -260,8 +260,8 @@ function jobUrl(jobId: string): string {
   return `${PREFIX}/jobs/${jobId}`;
 }
 
-export async function fetchJob(jobId: string): Promise<StatusInfo> {
-  const status = parseStatusInfo(await jsonOrThrow<unknown>(await fetch(jobUrl(jobId))), jobId);
+export async function fetchJob(jobId: string, signal?: AbortSignal): Promise<StatusInfo> {
+  const status = parseStatusInfo(await jsonOrThrow<unknown>(await fetch(jobUrl(jobId), { signal })), jobId);
   if (!status) throw new Error('the server answered with a status the panel cannot read');
   return status;
 }

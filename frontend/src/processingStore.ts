@@ -54,6 +54,7 @@ import {
   dismissJob,
   estimateOrder,
   fetchCrs,
+  fetchJob,
   fetchProcess,
   fetchResults,
   fetchResultTileJson,
@@ -543,6 +544,9 @@ let shelfLocked = false;
 let copiesDropped = false;
 let storageListening = false;
 
+// How long "Cancel" waits for the fresh state of the job before it gives up (and cancels nothing).
+const CANCEL_CHECK_MS = 4000;
+
 const withOthers = <T extends { id: string }>(first: T[], rest: T[]): T[] => [
   ...first,
   ...rest.filter((r) => !first.some((f) => f.id === r.id)),
@@ -730,24 +734,27 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     }
   };
 
+  // What the server said of a job.
+  const applyStatus = (jobID: string, status: StatusInfo) => {
+    const before = get().jobs.find((j) => j.jobID === jobID);
+    if (!before) return;
+    const phase = status.status === 'accepted' || status.status === 'running' ? 'active' : status.status;
+    updateJob(jobID, { status, phase, expires: status.expires });
+    if (before.expires !== status.expires) persist();
+    if (phase === 'successful' || phase === 'failed') {
+      trackers.delete(jobID);
+      if (phase === 'failed') updateJob(jobID, { failure: status.message || null });
+      void readResults(jobID, status);
+    }
+    if (phase === 'dismissed') trackers.delete(jobID);
+  };
+
   const follow = (jobID: string) => {
     trackers.get(jobID)?.();
     const stop = trackJob(
       jobID,
       {
-        onStatus: (status) => {
-          const before = get().jobs.find((j) => j.jobID === jobID);
-          if (!before) return;
-          const phase = status.status === 'accepted' || status.status === 'running' ? 'active' : status.status;
-          updateJob(jobID, { status, phase, expires: status.expires });
-          if (before.expires !== status.expires) persist();
-          if (phase === 'successful' || phase === 'failed') {
-            trackers.delete(jobID);
-            if (phase === 'failed') updateJob(jobID, { failure: status.message || null });
-            void readResults(jobID, status);
-          }
-          if (phase === 'dismissed') trackers.delete(jobID);
-        },
+        onStatus: (status) => applyStatus(jobID, status),
         onGone: () => {
           trackers.delete(jobID);
           updateJob(jobID, { phase: 'gone' });
@@ -1258,11 +1265,32 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 
     cancelJob: async (jobID) => {
       const job = get().jobs.find((j) => j.jobID === jobID);
-      // `DELETE` also discards the result of a finished job: it goes out only for a job last known to be
-      // waiting or running, and once for a double click.
       if (!job || job.cancelling || job.phase !== 'active') return;
-      if (job.status?.status !== 'accepted' && job.status?.status !== 'running') return;
       updateJob(jobID, { cancelling: true, error: null });
+      // `DELETE` also discards the result of a finished job, so a job that ended since its last status must
+      // not get one: the state is asked for afresh, within a few seconds, and only a job that waits or runs
+      // is dismissed. Any other answer is shown as it is.
+      try {
+        const fresh = await fetchJob(jobID, AbortSignal.timeout(CANCEL_CHECK_MS));
+        if (fresh.status !== 'accepted' && fresh.status !== 'running') {
+          trackers.get(jobID)?.();
+          trackers.delete(jobID);
+          updateJob(jobID, { cancelling: false });
+          applyStatus(jobID, fresh);
+          return;
+        }
+      } catch (error) {
+        const gone = error instanceof HttpError && error.status === 404;
+        if (gone) {
+          trackers.get(jobID)?.();
+          trackers.delete(jobID);
+        }
+        updateJob(jobID, {
+          cancelling: false,
+          ...(gone ? { phase: 'gone' as const } : { error: 'The state of the job could not be checked, so it was not cancelled. Try again.' }),
+        });
+        return;
+      }
       try {
         await dismissJob(jobID);
         trackers.get(jobID)?.();

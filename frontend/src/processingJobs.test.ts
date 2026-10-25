@@ -26,12 +26,15 @@ const response = (body: unknown, status = 200) =>
 const store = () => useProcessingStore.getState();
 const stored = () => JSON.parse(localStorage.getItem(SHELF_KEY)!);
 let calls: string[];
+// What the server says of the job when it is asked afresh.
+let serverState: () => Response;
 let fetchJob: ReturnType<typeof vi.fn<(jobID: string) => Promise<StatusInfo>>>;
 
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   calls = [];
+  serverState = () => response(statusDoc(JOB));
   fetchJob = vi.fn(async (jobID: string) => statusDoc(jobID) as unknown as StatusInfo);
   setTrackerOptions({ EventSource: null, fetchJob, pollMs: 60_000 });
   vi.stubGlobal(
@@ -40,6 +43,7 @@ beforeEach(() => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
       if (init?.method === 'POST') return response(statusDoc(JOB), 201);
       if (init?.method === 'DELETE') return response(statusDoc(JOB, 'dismissed'));
+      if (url === `/processing/jobs/${JOB}`) return serverState();
       return response({ title: 'Not found' }, 404);
     }),
   );
@@ -67,6 +71,61 @@ describe('dismissing a job (§6.7)', () => {
     expect(store().jobs[0]).toMatchObject({ phase: 'dismissed', cancelling: false });
   });
 
+  it('asks for the state afresh and sends no DELETE for a job that finished since its last status', async () => {
+    await place();
+    expect(store().jobs[0].status?.status).toBe('running');
+    serverState = () => response(statusDoc(JOB, 'successful'));
+    await store().cancelJob(JOB);
+    expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+    expect(calls).toContain(`GET /processing/jobs/${JOB}`);
+    expect(store().jobs[0]).toMatchObject({ phase: 'successful', cancelling: false });
+    expect(store().jobs[0].status?.status).toBe('successful');
+  });
+
+  it.each(['failed', 'dismissed'])('shows the fresh state and sends no DELETE for a job that is %s by now', async (state) => {
+    await place();
+    serverState = () => response(statusDoc(JOB, state));
+    await store().cancelJob(JOB);
+    expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+    expect(store().jobs[0].phase).toBe(state);
+  });
+
+  it('says the job is gone, and sends no DELETE, when the fresh state is a 404', async () => {
+    await place();
+    serverState = () => response({ title: 'no such job' }, 404);
+    await store().cancelJob(JOB);
+    expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+    expect(store().jobs[0]).toMatchObject({ phase: 'gone', cancelling: false });
+  });
+
+  it('cancels nothing and says so when the fresh state cannot be had', async () => {
+    await place();
+    serverState = () => response({ title: 'queue down' }, 503);
+    await store().cancelJob(JOB);
+    expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+    expect(store().jobs[0]).toMatchObject({ phase: 'active', cancelling: false, error: expect.stringContaining('not cancelled') });
+  });
+
+  it('gives up on a fresh state that takes more than a few seconds, and cancels nothing', async () => {
+    vi.useFakeTimers();
+    try {
+      await place();
+      vi.mocked(fetch).mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'TimeoutError')));
+          }),
+      );
+      const cancelled = store().cancelJob(JOB);
+      await vi.advanceTimersByTimeAsync(5000);
+      await cancelled;
+      expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+      expect(store().jobs[0]).toMatchObject({ phase: 'active', cancelling: false, error: expect.any(String) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(states)('never sends DELETE for a job that is %s', async (state) => {
     await place();
     useProcessingStore.setState((s) => ({
@@ -77,16 +136,23 @@ describe('dismissing a job (§6.7)', () => {
     expect(store().jobs[0].phase).toBe(state);
   });
 
-  it('never sends DELETE for a job that is gone, or whose state is not yet known, or that is not in the list', async () => {
-    localStorage.setItem(SHELF_KEY, JSON.stringify({ v: 1, jobs: [{ jobID: JOB, expires: LATER }], batches: [], groups: [] }));
-    fetchJob.mockImplementation(() => new Promise(() => {}));
-    store().resumeJobs();
-    expect(store().jobs[0].status).toBeNull();
-    await store().cancelJob(JOB);
+  it('never sends DELETE for a job that is gone or that is not in the list', async () => {
+    await place();
     await store().cancelJob(OTHER);
     useProcessingStore.setState((s) => ({ jobs: s.jobs.map((j) => ({ ...j, phase: 'gone' as const })) }));
     await store().cancelJob(JOB);
     expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+  });
+
+  it('asks afresh for a job whose state is not yet known, and dismisses it only if it runs', async () => {
+    localStorage.setItem(SHELF_KEY, JSON.stringify({ v: 1, jobs: [{ jobID: JOB, expires: LATER }], batches: [], groups: [] }));
+    fetchJob.mockImplementation(() => new Promise(() => {}));
+    store().resumeJobs();
+    expect(store().jobs[0].status).toBeNull();
+    serverState = () => response(statusDoc(JOB, 'successful'));
+    await store().cancelJob(JOB);
+    expect(calls.filter((c) => c.startsWith('DELETE'))).toEqual([]);
+    expect(store().jobs[0].phase).toBe('successful');
   });
 
   it('keeps the job when the server says it is gone, and shows the error when the dismissal fails', async () => {
