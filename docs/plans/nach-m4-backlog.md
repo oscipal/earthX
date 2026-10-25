@@ -118,7 +118,7 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 15. **Nur ein Sentinel-2-L2A-Datensatz sichtbar** (Otto, 22.10.2026).
    - **Plan:** `querschnitt/nm4-15-ein-sentinel-2-datensatz.md` (Vorlage, `adr/0017`); Umsetzung `querschnitt/nm4-15b-eopf-datensatz-entfernen.md`
    - **Entschieden:** `adr/0017` angenommen, PR #189 (25.10.2026), Fragen 1–6 je Option 1.
-   - **Erledigt:** NM4-15b, 25.10.2026, Draft-PR (Nummer im PR); `sentinel-2-l2a-zarr3` verließ Registry, Katalog und Oberfläche, die ID antwortet mit `410`.
+   - **Erledigt:** NM4-15b, 25.10.2026, Draft-PR [#195](https://github.com/oscipal/earthX/pull/195); `sentinel-2-l2a-zarr3` verließ Registry, Katalog und Oberfläche, die ID antwortet mit `410`.
    - **Wiedervorlage (Otto, 25.10.2026):** Anfang 2027 oder früher, sobald EOPF operative Zarr-Produkte meldet (FAQ des Dienstes: „late 2026 or early 2027“). Dann eine operative, token-freie Zarr-Quelle prüfen; bis dahin ist die Formatachse (Prinzip 3, Checkliste Punkt 5) nur synthetisch belegt (`projektuebersicht.md` §5).
    - **Wunsch:** Die Plattform bietet nicht mehrere Datensätze an, die dasselbe zeigen. Heute gibt es `sentinel-2-c1-l2a` (Earth Search, COG) und `sentinel-2-l2a-zarr3` (EOPF, Zarr). Otto will den Zarr-Datensatz loswerden.
    - **Warum zuerst eine Vorlage (Stufe C):** Der Zarr-Datensatz trägt Belege und Entscheidungen: zweites Format (`adr/0007`), Zarr-Vergleich T1 ↔ T2 (`adr/0014` §15d, Kriterium 1 der M4-Abnahme), Tests und Fixtures, Prüfanleitungen, `SCL_20m:scl` in der Maske (M4-18c).

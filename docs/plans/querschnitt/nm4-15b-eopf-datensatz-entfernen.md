@@ -35,7 +35,7 @@
 
 ## 5. Stand der Umsetzung (25.10.2026)
 
-Umgesetzt in einem Draft-PR (Nummer im Backlog, Punkt 15). Die Liste der entfernten Dateien mit Grund und die Verweise auf `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` stehen in der PR-Beschreibung.
+Umgesetzt in einem Draft-PR ([#195](https://github.com/oscipal/earthX/pull/195)). Die Liste der entfernten Dateien mit Grund und die Verweise auf `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` stehen in der PR-Beschreibung.
 
 ### Prüfanleitung für Otto (Windows PowerShell 5.1 und Browser)
 
