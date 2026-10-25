@@ -2084,7 +2084,7 @@ maßgeblich ist dieser Nachtrag.
   (`earthx.theme`, `earthx.projection`), nicht des Auftrags. Es gibt nichts zu speichern, bis die
   Auswahl einer Basiskarte existiert; ein Feld dafür kommt dann mit ihr (Otto, 2026-10-24: mit UI-02).
 
-## 15p. Nachtrag vom 2026-10-25: das Jahr der Attribution (zu §4.5, §10; NM4-01)
+## 15q. Nachtrag vom 2026-10-25: das Jahr der Attribution (zu §4.5, §10; NM4-01)
 
 Otto hat am 2026-10-25 entschieden (Option 1 der Rückfrage zu `plans/querschnitt/nm4-01-attribution-jahr.md`).
 Der Satz in §4.5, das `{year}` ändere sich zum Jahreswechsel, ist damit überholt; maßgeblich ist dieser Nachtrag.
@@ -2093,10 +2093,13 @@ Der Satz in §4.5, das `{year}` ändere sich zum Jahreswechsel, ist damit überh
   `accepted_at.year` bei Export und Zuschnitts-`recipe.json` (`api/intake.py`), das Ende des Laufs bei
   `recipe.json` eines Jobs, das Datum des Downloads in `citation.bib` (`api/citation.py`). Eine Szene vom
   29.07.2025, am 20.10.2026 verarbeitet, trug „2026“.
-- **Was „[Year]“ meint:** Die Sentinel Data Legal Notice der ESA schreibt vor, die Empfänger mit dem Hinweis
+- **Was „[Year]“ meint:** **Primärquelle:** Die Copernicus Sentinel data licence (rev. 1), https://ewds.climate.copernicus.eu/licences/ec-sentinel,
+  verlangt „Contains modified Copernicus Sentinel data [Year]“ bei veränderten und „Copernicus Sentinel data [Year]“ bei
+  unveränderten Daten, **ohne zu sagen, was „[Year]“ ist**; Otto bzw. der Planungs-Chat hat die Seite am 24.10.2026 gelesen
+  (die Sitzung dieses Nachtrags konnte sie nicht erreichen). Ebenso die Sentinel Data Legal Notice der ESA: Sie schreibt vor, die Empfänger mit dem Hinweis
   `'Copernicus Sentinel data [Year]'` bzw. bei veränderten Daten `'Contains modified Copernicus Sentinel data [Year]'`
   über die Quelle zu unterrichten (Fußnoten: Art. 7 und 8 der Verordnung (EU) Nr. 1159/2013). **Sie sagt nicht, was
-  „[Year]“ ist, und regelt keine Spanne** (Quelle: https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice,
+  „[Year]“ ist, und regelt keine Spanne** (https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice,
   am 25.10.2026 gelesen). Als Praxisbeleg dient die Vorlage `Attribution-Copernicus` der Wikimedia Commons, die
   den Parameter als „Year of data acquisition“ definiert (https://c.enwp.org/wiki/Template:Attribution-Copernicus);
   Google Earth Timelapse schreibt eine Spanne („Contains modified Copernicus Sentinel data [2015-present]“).
@@ -2120,13 +2123,16 @@ Der Satz in §4.5, das `{year}` ändere sich zum Jahreswechsel, ist damit überh
   `013_job_acquisition_years.sql`: `earthx_job.acquired_first_year`/`acquired_last_year`, je Job, nicht je Lauf). Ein
   gecachtes Ergebnis bekommt also beim Abruf die Attribution des Auftrags, der es abruft, nie die des ersten
   Auftraggebers. Der Export-Job hält seine Attribution im Lauf (`attachments`, einmalig je Auftrag).
-- **Jobs von vor der Migration:** Die Migration setzt die Jahre aus `acquired_on`, wo es gesetzt war. Ein älterer Job
-  ohne Jahre, dessen Text ein Jahr nennt, antwortet bei `result.zip`, `recipe.json` und `methods.txt` mit `409`
-  (`urn:earthx:no-acquisition-years`) statt mit dem Jahr des Downloads; das Ergebnis selbst bleibt abrufbar. Solche
-  Jobs leben höchstens 7 Tage.
-- **Offen (Frontend):** Ein angehefteter Layer behält nur die IDs seiner Szenen. Der Dialog „Download crop“ nennt das
-  Jahr, solange die Ergebnisliste alle Szenen noch hält, sonst zeigt er keinen Attributionstext; die Datei im ZIP
-  trägt in jedem Fall das richtige Jahr. Ob der Layer die Jahre mitspeichern soll, entscheidet Otto.
+- **Jobs von vor der Migration (Otto, 2026-10-25):** Die Migration setzt die Jahre aus `acquired_on`, wo es gesetzt war.
+  Für einen älteren Job ohne Jahre, dessen Text ein Jahr nennt, liest `api` sie beim Abruf aus dem gespeicherten Rezept:
+  Das Rezept hält die Item-IDs, nicht deren Daten; die Daten sind die der Items und werden bei der Item-Quelle erneut
+  geholt (`_with_derived_years`, nichts wird zurückgeschrieben). Nur wo das nicht geht (Item weg, ohne Datum, Quelle
+  nicht erreichbar) antwortet `result.zip`, `recipe.json` und `methods.txt` mit `409`
+  (`urn:earthx:no-acquisition-years`, mit Grund) statt mit dem Jahr des Downloads; das Ergebnis selbst bleibt abrufbar.
+  Solche Jobs leben höchstens 7 Tage.
+- **Frontend (Otto, 2026-10-25):** Ein angehefteter Layer speichert nichts zusätzlich. Der Dialog „Download crop“ zeigt
+  keine Attribution und kein Jahr (wenig Text); `ATTRIBUTION.txt` im ZIP trägt die richtige. Die Dialoge „Download
+  original files“ und der Mosaik-Job nennen das Jahr aus den Items, die sie halten.
 
 ## 16. Quellen
 
