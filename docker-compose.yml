@@ -218,6 +218,10 @@ services:
       # treats an empty value the same as unset.
       EARTHX_GEOCODER_URL: ${EARTHX_GEOCODER_URL:-}
       EARTHX_GEOCODER_USER_AGENT: ${EARTHX_GEOCODER_USER_AGENT:-}
+      # NM4-03: where a client reaches the tiler (published below as 8001). The
+      # `tiles` link of a results document is built from this value, never from
+      # the request's Host header.
+      EARTHX_TILER_URL: ${EARTHX_TILER_URL:-http://localhost:8001}
       # M4-06 (adr/0015 §9.1): the object store, read-only key. Used from M4-08b
       # for signed result links; signed for the endpoint the browser reaches
       # (§6.3), which is port 3900 published below.

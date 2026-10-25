@@ -35,7 +35,7 @@ from earthx.adapters import ADAPTER_SPECS, AdapterSpecs, check_adapter_specs
 from earthx.api.aoi_upload_route import router as aoi_upload_router
 from earthx.api.coverage_route import build_router as build_coverage_router
 from earthx.api.crs_info import switch_off_proj_network
-from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool
+from earthx.api.dependencies import build_gateway, build_geocoder, cache_pool, resolve_tiler_base
 from earthx.api.federating_client import FederatingCoreCrudClient
 from earthx.api.geocode_route import router as geocode_router
 from earthx.api.item_source import build_item_source, check_item_holdings
@@ -109,6 +109,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     store=store,
                     pool=job_pool,
                     events=events,
+                    tiler_base=resolve_tiler_base(),
                 )
                 # M3-07a: a second, separate gateway that can reach only the geocoder's
                 # host — never a dataset's asset host, and no dataset route can reach it

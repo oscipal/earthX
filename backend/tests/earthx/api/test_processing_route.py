@@ -712,6 +712,29 @@ class TestResults:
         }
         assert response.text.count(result_id) == 1
 
+    async def test_the_tiles_link_is_absolute_under_the_configured_tiler(self, rig: Rig) -> None:
+        """NM4-03: a client without the frontend's proxy finds the tiler; the base is configuration, not the request."""
+        job_id = await placed(rig)
+        result_id = finish(rig.db, job_id)
+        tiler = "https://tiles.example.test"
+        async with client_for(replace_api(rig.api, tiler_base=tiler)) as client:
+            response = await client.get(f"/processing/jobs/{job_id}/results")
+            forged = await client.get(
+                f"/processing/jobs/{job_id}/results",
+                headers={"Host": "evil.example", "X-Forwarded-Host": "evil.example", "Forwarded": "host=evil.example"},
+            )
+        expected = f"{tiler}/results/{result_id}/WebMercatorQuad/tilejson.json"
+        assert response.json()["tiles"]["href"] == expected
+        assert forged.json()["tiles"]["href"] == expected
+        assert "evil.example" not in forged.text
+
+    async def test_without_a_configured_tiler_the_link_stays_a_path(self, rig: Rig) -> None:
+        job_id = await placed(rig)
+        result_id = finish(rig.db, job_id)
+        response = await rig.client.get(f"/processing/jobs/{job_id}/results", headers={"Host": "evil.example"})
+        assert response.json()["tiles"]["href"] == f"/results/{result_id}/WebMercatorQuad/tilejson.json"
+        assert "evil.example" not in response.text
+
     async def test_the_tiles_link_is_not_a_file_to_fetch_from_here(self, rig: Rig) -> None:
         job_id = await placed(rig)
         finish(rig.db, job_id)

@@ -198,6 +198,8 @@ class JobApi:
     pool: ConnectionPool
     events: JobEvents
     bundles: DownloadSlots = field(default_factory=DownloadSlots)
+    #: Public base URL of the tiler (``EARTHX_TILER_URL``); the only source of the absolute ``tiles`` link.
+    tiler_base: str | None = None
 
 
 class Problem(Exception):
@@ -830,13 +832,13 @@ def _names_of(status: JobStatus) -> tuple[str, ...]:
     return tuple(docs.OUTPUTS[name][0] for name in _outputs_of(status) if name != "tiles")
 
 
-def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
+def _results_document(root: str, status: JobStatus, tiler_base: str | None) -> dict[str, Any]:
     base = f"{root}{docs.PREFIX}/jobs/{status.job_id}/results"
     result = status.result or {}
     document: dict[str, Any] = {}
     for name in _outputs_of(status):
         file, title = docs.OUTPUTS[name]
-        href = docs.TILES_HREF.format(result_id=status.result_id) if name == "tiles" else f"{base}/{file}"
+        href = docs.tiles_href(tiler_base, status.result_id) if name == "tiles" else f"{base}/{file}"
         link: dict[str, Any] = {"href": href, "type": docs.MEDIA_TYPES[file], "title": title}
         if name == "result":
             for key, member in (("bytes", "length"), ("width", "width"), ("height", "height"), ("bands", "bands")):
@@ -853,7 +855,7 @@ def _results_document(root: str, status: JobStatus) -> dict[str, Any]:
 @router.get("/jobs/{jobID}/results", summary="The results of a finished job", responses=_PROBLEMS)
 async def job_results(request: Request, jobID: str, api: Api) -> dict[str, Any]:
     status = _ready(await _live_job(api, jobID))
-    return _results_document(_root(request), status)
+    return _results_document(_root(request), status, api.tiler_base)
 
 
 def _day_of_name(status: JobStatus) -> str:
