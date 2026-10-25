@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatasetOption } from '../datasets';
 import s2 from '../fixtures/processes/sentinel-2-c1-l2a.json';
-import zarr from '../fixtures/processes/sentinel-2-l2a-zarr3.json';
+import zarr from '../fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi } from '../placeSearch';
 import { DEFAULT_RANGE } from '../processingPreview';
@@ -506,6 +506,33 @@ describe('review before start (K4)', () => {
     expect(container.textContent).toContain('the job API is not available Try again in a moment.');
   });
 
+  describe('a dataset the platform retired (410 on the order route)', () => {
+    const REASON = "dataset 'old' was retired on 2026-10-25: no longer offered; use 'sentinel-2-c1-l2a' instead";
+
+    it('says so briefly on a review and keeps the reason as the tooltip', async () => {
+      routes['POST /processing/processes/recipe/estimate'] = () => problem(410, REASON);
+      select([scene('S2B_A')]);
+      await openPanel();
+      await ndvi();
+      await review();
+      const alert = container.querySelector('[role="alert"]')!;
+      expect(alert.textContent).toBe('Dataset retired');
+      expect(alert.getAttribute('title')).toBe(REASON);
+      expect(button('Start job').disabled).toBe(true);
+    });
+
+    it('is not mistaken for a retired dataset when the answer has no problem document', async () => {
+      routes['POST /processing/processes/recipe/estimate'] = () => new Response('gone', { status: 410 });
+      select([scene('S2B_A')]);
+      await openPanel();
+      await ndvi();
+      await review();
+      const alert = container.querySelector('[role="alert"]')!;
+      expect(alert.textContent).not.toContain('Dataset retired');
+      expect(alert.hasAttribute('title')).toBe(false);
+    });
+  });
+
   it('disables adding a step once the schema maximum is reached', async () => {
     select([scene('S2B_A')]);
     await openPanel();
@@ -845,7 +872,7 @@ describe('a COG asset without band descriptions (K7, Otto 10.10.2026)', () => {
 });
 
 describe('a Zarr dataset (K7, Otto 10.10.2026)', () => {
-  const ID = 'sentinel-2-l2a-zarr3';
+  const ID = 'synthetic-zarr';
 
   function zarrScene(bands: { name: string }[] | undefined): StacItem {
     return {
@@ -997,6 +1024,21 @@ describe('starting and following a job', () => {
     click(button('Start job'));
     await flush();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('no longer at its source');
+    expect(useProcessingStore.getState().jobs).toEqual([]);
+  });
+
+  it('says a retired dataset briefly on a start, with the reason as the tooltip', async () => {
+    const reason = "dataset 'old' was retired on 2026-10-25: no longer offered; use 'sentinel-2-c1-l2a' instead";
+    routes['POST /processing/processes/recipe/execution'] = () => problem(410, reason);
+    select([scene('S2B_A')]);
+    await openPanel();
+    await ndvi();
+    await review();
+    click(button('Start job'));
+    await flush();
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toBe('Dataset retired');
+    expect(alert.getAttribute('title')).toBe(reason);
     expect(useProcessingStore.getState().jobs).toEqual([]);
   });
 

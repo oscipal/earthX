@@ -291,7 +291,7 @@ function BatchEstimate({ parts }: { parts: readonly PartOutcome[] }) {
       )}
       {skipped.length > 0 && <p className="hint-text warn">Left out (the AOI misses them): {skipped.join(', ')}</p>}
       {refused.map((part) => (
-        <p key={part.unit.key} className="hint-text error" role="alert">
+        <p key={part.unit.key} className="hint-text error" role="alert" title={part.refusal!.reason}>
           {part.unit.label}: {part.refusal!.message}
         </p>
       ))}
@@ -733,7 +733,7 @@ export default function ProcessingPanel() {
             </p>
           ))}
           {orderRefusals.map((refusal, index) => (
-            <p key={index} className="hint-text error" role="alert">
+            <p key={index} className="hint-text error" role="alert" title={refusal!.reason}>
               {refusal!.message}
             </p>
           ))}

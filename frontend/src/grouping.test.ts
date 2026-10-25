@@ -115,7 +115,7 @@ describe('buildGroups', () => {
 });
 
 // V-4: the results list heads groups by day + overpass (`s2:datatake_id` for
-// the COG dataset, `eopf:datatake_id` for the Zarr one) instead of day + MGRS
+// the COG dataset, another property for a Zarr one) instead of day + MGRS
 // tile — a display-only change, never affecting which scenes exist (D11).
 // Before M3-12 this was `displayGroupBy`, a runtime fallback from a hardcoded
 // property name to the registry's `group_by`; the key is now a real registry

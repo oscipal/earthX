@@ -171,8 +171,8 @@ describe('syncFocusRaster: the quicklook underlay below min_zoom (M3-12, O5)', (
     const scene = georeferencedScene();
     const [previewTiles] = datasetsFrom([
       {
-        id: 'sentinel-2-l2a-zarr3',
-        title: 'Sentinel-2 L2A (Zarr3)',
+        id: 'synthetic-zarr',
+        title: 'Synthetic Zarr dataset',
         'earthx:capabilities': CAPABILITIES,
         'earthx:viewer': {
           group_by: ['datetime'],

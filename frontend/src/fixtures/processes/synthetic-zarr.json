@@ -53,7 +53,7 @@
                 "x-earthx-variable-separator": ":"
               },
               "dataset": {
-                "const": "sentinel-2-l2a-zarr3",
+                "const": "synthetic-zarr",
                 "title": "Dataset"
               },
               "groups": {

@@ -400,7 +400,7 @@ describe('quicklookPlan', () => {
     resampling: 'nearest',
   };
   const zarrLike = collection({
-    id: 'sentinel-2-l2a-zarr3',
+    id: 'synthetic-zarr',
     'earthx:viewer': viewer({ min_zoom: 8, max_zoom: 14 }),
     'earthx:default_render': render,
   });
@@ -481,8 +481,8 @@ describe('zoomFloorHint', () => {
     const { min = 8, max = 14 } = overrides;
     return datasetsFrom([
       collection({
-        id: 'sentinel-2-l2a-zarr3',
-        title: 'Sentinel-2 L2A (Zarr3)',
+        id: 'synthetic-zarr',
+        title: 'Synthetic Zarr dataset',
         'earthx:viewer': viewer({ min_zoom: min, max_zoom: max }),
       }),
     ])[0];
@@ -491,7 +491,7 @@ describe('zoomFloorHint', () => {
   it('names the level to reach and the dataset it is about', () => {
     const text = zoomFloorHint(option(), 5);
     expect(text).toContain('level 8');
-    expect(text).toContain('Sentinel-2 L2A (Zarr3)');
+    expect(text).toContain('Synthetic Zarr dataset');
   });
 
   it('points at the coverage layer as what answers this zoom', () => {
