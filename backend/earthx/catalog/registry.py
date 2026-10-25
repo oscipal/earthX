@@ -19,6 +19,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from fnmatch import fnmatchcase
 from types import MappingProxyType
+from typing import Protocol
 
 # Circumference at the equator, in kilometres. Geotile level z splits it into
 # 2**z columns, so a cell is EARTH_CIRCUMFERENCE_KM / 2**z wide (adr/0004 §5).
@@ -62,7 +63,6 @@ class AdapterKind(Enum):
     """Which adapter speaks the protocol of the source (architekturplan.md 6.1)."""
 
     EARTH_SEARCH_V1 = "earth-search-v1"
-    EOPF_STAC_V1 = "eopf-stac-v1"
     # M3-11b: this one only *materializes* items (adapters.materialize_items), it
     # never searches or answers a single-item request — its `AdapterSpec` in
     # `adapters/spec.py` offers `materialize` alone. A `SourceInfo` naming this
@@ -93,7 +93,6 @@ class CoverageProvider(Enum):
 
     UPSTREAM_AGGREGATION = "upstream-aggregation"
     LOCAL_SQL = "local-sql"
-    SAMPLE = "sample"
 
 
 class HealthStatus(Enum):
@@ -194,6 +193,18 @@ class UnknownDatasetError(LookupError):
     Deliberately its own type: adr/0005 rule I turns an unknown collection into a
     404, and it must not be confused with an empty result that merely looks valid.
     """
+
+
+class RetiredDatasetError(UnknownDatasetError):
+    """The id belongs to a dataset that left the registry (adr/0017).
+
+    An :class:`UnknownDatasetError` for everything that does not care why; the routes that
+    can say why answer ``410`` with :attr:`retired` instead of ``404`` or ``422``.
+    """
+
+    def __init__(self, retired: RetiredDataset) -> None:
+        super().__init__(retired.dataset_id)
+        self.retired = retired
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,7 +356,7 @@ class ZarrInfo:
     segment, and ``multiscales`` is either absent or not needed.
 
     ``variable_separator`` — an asset whose href already names a *group*, not a
-    variable (measured at ``sentinel-2-l2a-zarr3``: ``SR_10m`` points at
+    variable (measured at the EOPF Zarr products: ``SR_10m`` points at
     ``…/measurements/reflectance/r10m``, a group with several bands) cannot say
     which variable a tile wants from its href alone. The tile URL's asset key
     carries the variable instead, split off by this separator — a key
@@ -478,8 +489,8 @@ class ViewerInfo:
     (P19, M3-17): the same rule as ``group_by`` above, but a second field
     because it may name a property ``group_by`` deliberately does not (M3-02
     F-01) — Sentinel-2 COG groups its tile-and-day key display by day and
-    overpass instead (``s2:datatake_id``), the Zarr dataset by day and
-    overpass under its own vocabulary (``eopf:datatake_id``), and the DEM has
+    overpass instead (``s2:datatake_id``), a Zarr dataset by day and
+    overpass under its own vocabulary where a source has one, and the DEM has
     only one group for the whole dataset (``start_datetime``, every tile
     shares the one acquisition period, M3-11b F7). Unlike the pre-M3-12
     ``displayGroupBy`` in the frontend, there is no runtime fallback to
@@ -1052,20 +1063,98 @@ class DatasetConfig:
             )
 
 
-class DatasetRegistry:
-    """The entries, looked up by dataset id."""
+class Attributable(Protocol):
+    """What the attribution, the notice and ``citation.bib`` of a download read of a dataset.
 
-    def __init__(self, entries: tuple[DatasetConfig, ...]) -> None:
+    A registry entry has it, and so has a retired dataset: a job finished before the entry left
+    keeps its attribution, its terms and its citation until it expires (adr/0017 rule III).
+    """
+
+    @property
+    def dataset_id(self) -> str: ...
+
+    @property
+    def title(self) -> str: ...
+
+    @property
+    def doi(self) -> str | None: ...
+
+    @property
+    def citation(self) -> str | None: ...
+
+    @property
+    def license(self) -> LicenseInfo: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RetiredDataset:
+    """A dataset that left the registry, with the licence block and the citation it had (adr/0017 rule III).
+
+    Data, not code: the list lives in ``catalog/datasets.py``. ``recipe.json`` files of the user have
+    no expiry, so the id stays on the list; the licence block and the citation are those of the last
+    entry and keep the side files of a finished job complete.
+    """
+
+    dataset_id: str
+    title: str
+    doi: str | None
+    citation: str | None
+    license: LicenseInfo
+    retired_on: date
+    #: The dataset that shows the same thing now.
+    successor: str
+    #: Why it left, one English sentence without a full stop.
+    reason: str
+
+    def __post_init__(self) -> None:
+        for name in ("dataset_id", "title", "successor", "reason"):
+            if not getattr(self, name).strip():
+                raise ConfigError(f"a retired dataset needs a {name}")
+
+    @property
+    def message(self) -> str:
+        """The text of a ``410``: what left, when, why, and where to go instead."""
+        return (
+            f"dataset {self.dataset_id!r} was retired on {self.retired_on.isoformat()}: {self.reason}; "
+            f"use {self.successor!r} instead"
+        )
+
+
+class DatasetRegistry:
+    """The entries, looked up by dataset id, and the datasets that left (adr/0017)."""
+
+    def __init__(self, entries: tuple[DatasetConfig, ...], retired: tuple[RetiredDataset, ...] = ()) -> None:
         self._by_id = {entry.dataset_id: entry for entry in entries}
         if len(self._by_id) != len(entries):
             raise ConfigError("duplicate dataset_id in the registry")
+        self._retired = {entry.dataset_id: entry for entry in retired}
+        if len(self._retired) != len(retired):
+            raise ConfigError("duplicate dataset_id among the retired datasets")
+        if overlap := sorted(self._by_id.keys() & self._retired.keys()):
+            raise ConfigError(f"a dataset is registered and retired at once: {', '.join(overlap)}")
+        for gone in self._retired.values():
+            if gone.successor not in self._by_id:
+                raise ConfigError(f"the successor of {gone.dataset_id!r} is not in the registry")
 
     def get(self, dataset_id: str) -> DatasetConfig:
-        """Return the entry, or raise ``UnknownDatasetError`` — never None (adr/0005 rule I)."""
+        """Return the entry, or raise ``UnknownDatasetError`` — never None (adr/0005 rule I).
+
+        A retired id raises :class:`RetiredDatasetError`, which is an ``UnknownDatasetError`` too.
+        """
         try:
             return self._by_id[dataset_id]
         except KeyError:
+            if (gone := self._retired.get(dataset_id)) is not None:
+                raise RetiredDatasetError(gone) from None
             raise UnknownDatasetError(dataset_id) from None
+
+    def attributable(self, dataset_id: str) -> Attributable | None:
+        """The entry or the retired dataset with this id — what a finished job's side files need — or None."""
+        return self._by_id.get(dataset_id) or self._retired.get(dataset_id)
+
+    @property
+    def retired(self) -> tuple[RetiredDataset, ...]:
+        return tuple(self._retired.values())
 
     def __contains__(self, dataset_id: object) -> bool:
         return dataset_id in self._by_id

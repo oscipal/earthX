@@ -148,7 +148,7 @@ class EarthxTilerFactory(TilerFactory):
     # `/preview` is off for two reasons that point the same way (M2-10). It carries
     # no zoom, so the released-levels check of `api.tiler` has nothing to check it
     # against; and it computes no target resolution, so for a Zarr dataset it reads
-    # the level the asset names — the native 10 m of sentinel-2-l2a-zarr3, the very
+    # the level the asset names — the native 10 m of a Sentinel-2 Zarr store, the very
     # read the released range exists to prevent. Nothing asks for it: the viewer
     # builds tile URLs, and the browse preview is a tile on the coarsest released
     # level. A preview worth having would have to pick its own resolution, which is
