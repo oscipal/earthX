@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import type { DatasetOption } from '../datasets';
 import { defaultRenderOf, resultsGroupByOfOption } from '../datasets';
 import {
+  acquisitionYears,
   attributionText,
   canExportLicense,
   MAX_JOB_SCENES,
@@ -56,7 +57,7 @@ export default function MosaicJobs({ dataset, passes, links, started, onStarted 
   const allowed = canExportLicense(flags);
   const info = description?.state === 'ready' ? description.info : null;
   // A mosaic is derived data: the text for modified data, as for a crop.
-  const attribution = allowed && hasJobs ? attributionText(flags, new Date().getFullYear()) : null;
+  const attribution = allowed && hasJobs ? attributionText(flags, acquisitionYears(passes.flatMap((pass) => pass.items))) : null;
 
   const why = !allowed
     ? noProcessingLicence(dataset)

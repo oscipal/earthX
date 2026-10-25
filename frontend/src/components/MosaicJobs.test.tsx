@@ -429,7 +429,7 @@ describe('Merged per pass (job)', () => {
   it('shows the attribution for modified data under the offer', async () => {
     open();
     await showMerged();
-    expect(container.querySelector('.dialog-mosaics')?.textContent).toContain('Contains modified Copernicus Sentinel data');
+    expect(container.querySelector('.dialog-mosaics')?.textContent).toContain('Contains modified Copernicus Sentinel data 2026');
   });
 
   it('locks a pass over 25 scenes with the reason and starts nothing', async () => {

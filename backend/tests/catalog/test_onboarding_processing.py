@@ -42,6 +42,7 @@ from rio_cogeo.cogeo import cog_validate
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 from rio_tiler.io import Reader
 
+from earthx.access.download import attribution_years
 from earthx.access.resolve import ResolvedAsset, resolve_asset
 from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, search_items
 from earthx.api.citation import citation_bib
@@ -261,12 +262,14 @@ def walk(s: Scenario, workdir: Path) -> Walk:
     workdir.mkdir()
     result = run(accepted.recipe, workdir=workdir, progress=lambda done, total: ticks.append((done, total)))
     now = datetime.now(UTC)
+    years = attribution_years(s.config, [found])
     document = job_recipe_json(
         accepted.recipe.model_dump(mode="json"),
         config=s.config,
         result={"engine": result.engine, "scaling": [applied.model_dump(mode="json") for applied in result.scaling]},
         started=now,
         finished=now,
+        years=years,
     )
     return Walk(
         found=found,
@@ -275,7 +278,7 @@ def walk(s: Scenario, workdir: Path) -> Walk:
         result=result,
         ticks=ticks,
         recipe_json=json.loads(document),
-        citation=citation_bib(s.config, downloaded=date.today()).decode("utf-8"),
+        citation=citation_bib(s.config, downloaded=date.today(), years=years).decode("utf-8"),
     )
 
 

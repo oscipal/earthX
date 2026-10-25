@@ -30,6 +30,9 @@ next one costs anything (the status in brackets):
    the cost estimate (413, F5) and for a Zarr dataset (422, F6), and gets the side
    files of its ZIP (:func:`export_attachments`).
 
+An item without an acquisition date is refused (422) where the attribution of the dataset names
+the year of acquisition (NM4-01): the year is never taken from the clock.
+
 :func:`estimate_order` stops after stage 6: the cost estimate needs the recipe, not the
 versions, so it makes no ``HEAD`` and gives the recipe no ``recipe_id`` (M4-13a). What only
 stage 7 finds — an asset the source no longer has — is therefore not found by an estimate.
@@ -65,6 +68,7 @@ from earthx.access.download import (
     InvalidAoi,
     asset_gsd,
     attribution_text,
+    attribution_years,
     build_notice_text,
     compute_crop_region,
     filter_items_intersecting_aoi,
@@ -82,6 +86,8 @@ from earthx.adapters import UnknownCollection, dataset_config
 from earthx.api.citation import citation_bib
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
 from earthx.catalog.registry import (
+    AcquisitionYearMissing,
+    AcquisitionYears,
     DatasetConfig,
     DatasetRegistry,
     LicenseTier,
@@ -170,6 +176,8 @@ class AcceptedOrder:
     #: The UTC day of acquisition of the scenes of the recipe, if they all share one (Otto, 14.10.2026);
     #: the date in the name of every download of the job. See :func:`_acquired_on`.
     acquired_on: date | None = None
+    #: The years the scenes of the recipe were acquired in, if the attribution of the dataset names a year (NM4-01).
+    acquired_years: AcquisitionYears | None = None
     #: The order named whole scenes and no area, so the AOI of its recipe is the union of their
     #: footprints (M4-30). Kept with the job: the recipe cannot tell it from an area somebody drew.
     scene_aoi: bool = False
@@ -200,6 +208,8 @@ class _Prepared:
     aoi: dict[str, Any]
     #: Whether that is the union, because the order had none of its own (M4-30).
     scene_aoi: bool = False
+    #: The years the scenes of the targets were acquired in, if the attribution names a year (NM4-01).
+    years: AcquisitionYears | None = None
 
 
 async def accept_order(
@@ -326,7 +336,11 @@ async def _prepare(
         for item_id in group
         for asset in entry.assets
     ]
-    return _Prepared(request, entry, config, groups, skipped, targets, aoi, scene_aoi=request.aoi is None)
+    try:
+        years = attribution_years(config, [target.item for target in targets])
+    except AcquisitionYearMissing as error:
+        raise OrderRefused(422, f"{error}; the attribution of {config.dataset_id!r} names the year", "attribution") from None
+    return _Prepared(request, entry, config, groups, skipped, targets, aoi, scene_aoi=request.aoi is None, years=years)
 
 
 async def _accept(
@@ -360,6 +374,7 @@ async def _accept(
             cache_key(recipe) is not None,
             prepared.skipped,
             acquired_on=acquired_on,
+            acquired_years=prepared.years,
             scene_aoi=prepared.scene_aoi,
             aoi_provenance=dict(aoi_provenance) if aoi_provenance else None,
         )
@@ -371,8 +386,9 @@ async def _accept(
         aoi_provenance=aoi_provenance,
         accepted_at=datetime.now(UTC),
         acquired_on=acquired_on,
+        years=prepared.years,
     )
-    return AcceptedOrder(recipe, False, prepared.skipped, attachments, acquired_on)
+    return AcceptedOrder(recipe, False, prepared.skipped, attachments, acquired_on, prepared.years)
 
 
 def _acquired_on(prepared: _Prepared) -> date | None:
@@ -454,6 +470,7 @@ def side_files(
     aoi: Mapping[str, Any],
     dropped: Sequence[str],
     accepted_at: datetime,
+    years: AcquisitionYears | None,
     at: datetime | None = None,
     raster_result: bool = False,
 ) -> dict[str, str]:
@@ -462,7 +479,8 @@ def side_files(
     The one place that builds them for a job's ZIP, the export's (:func:`export_attachments`) and
     the raster job's (:func:`job_side_files`); the crop itself has them from ``build_download_zip``
     with the same functions. ``aoi`` is the geometry with the ``properties`` that go into the file.
-    ``at`` and ``raster_result`` are those of :func:`~earthx.access.download.build_notice_text`.
+    ``years`` are those the scenes were acquired in, which both attributions name (NM4-01); ``at`` and
+    ``raster_result`` are those of :func:`~earthx.access.download.build_notice_text`.
     """
     notice = build_notice_text(
         config,
@@ -471,12 +489,13 @@ def side_files(
         group_item_ids=[list(group) for group in groups] if len(groups) > 1 else None,
         skipped_item_ids=list(dropped),
         aoi_geometry=aoi,
+        years=years,
         at=at,
         raster_result=raster_result,
     )
     return {
         NOTICE_FILENAME: notice,
-        CITATION_FILENAME: citation_bib(config, downloaded=accepted_at.date()).decode("utf-8"),
+        CITATION_FILENAME: citation_bib(config, downloaded=accepted_at.date(), years=years).decode("utf-8"),
         AOI_FILENAME: json.dumps(aoi),
     }
 
@@ -488,6 +507,7 @@ def export_attachments(
     dropped: Sequence[str],
     aoi_provenance: Mapping[str, str] | None,
     accepted_at: datetime,
+    years: AcquisitionYears | None,
     acquired_on: date | None = None,
 ) -> Attachments:
     """The side files of an export's ZIP, as the synchronous crop writes them (M4-11 F3, F4, K3).
@@ -502,10 +522,16 @@ def export_attachments(
     aoi = recipe.aoi.model_dump(mode="json")
     if aoi_provenance:
         aoi = {**aoi, "properties": dict(aoi_provenance)}
-    attribution = attribution_text(config, year=accepted_at.year)
+    attribution = attribution_text(config, years=years)
     return Attachments(
         files=side_files(
-            config, groups=entry.groups, assets=entry.assets, aoi=aoi, dropped=dropped, accepted_at=accepted_at
+            config,
+            groups=entry.groups,
+            assets=entry.assets,
+            aoi=aoi,
+            dropped=dropped,
+            accepted_at=accepted_at,
+            years=years,
         ),
         attribution=(attribution,) if attribution else (),
         dataset=DatasetFacts.of(config),
@@ -522,6 +548,7 @@ def job_side_files(
     body: Mapping[str, Any],
     *,
     finished: datetime,
+    years: AcquisitionYears | None,
     scene_aoi: bool,
     aoi_provenance: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
@@ -529,7 +556,8 @@ def job_side_files(
 
     The same three files and the same functions as the export and the crop (:func:`side_files`), not
     stored: a result is shared between orders, the ZIP of each is its own. Built from ``finished``
-    alone, so that two requests give the same bytes and the ETag of the ZIP holds. ``scene_aoi``
+    and ``years`` (those of the job's scenes, NM4-01) alone, so that two requests give the same bytes and
+    the ETag of the ZIP holds. ``scene_aoi``
     marks ``aoi.geojson`` as the union of the scenes' footprints where the recipe's area is that;
     ``aoi_provenance`` is the origin of a place-search area, which goes into the same ``properties``
     and the same line of the notice as in an export. An order has the one or the other.
@@ -552,6 +580,7 @@ def job_side_files(
         aoi=aoi,
         dropped=(),
         accepted_at=finished,
+        years=years,
         at=finished,
         raster_result=True,
     )
@@ -1088,6 +1117,7 @@ def crop_recipe_json(
     aoi: Mapping[str, Any],
     resolution_factor: int,
     accepted_at: datetime,
+    years: AcquisitionYears | None,
 ) -> bytes:
     """``recipe.json`` for the ZIP of a crop, as bytes (M4-14 puts it in).
 
@@ -1142,7 +1172,7 @@ def crop_recipe_json(
             502, f"the items of {config.dataset_id!r} do not make a valid recipe: {error}", "recipe"
         ) from None
     _check_hosts_of(recipe, config)
-    attribution = attribution_text(config, year=accepted_at.year)
+    attribution = attribution_text(config, years=years)
     provenance = Provenance(
         execution="cloud",
         kind="sync-download",
@@ -1186,6 +1216,7 @@ def job_recipe_json(
     result: Mapping[str, Any],
     started: datetime | None,
     finished: datetime | None,
+    years: AcquisitionYears | None,
 ) -> bytes:
     """``recipe.json`` of a job, from the job's **own** recipe and what the run reported (adr/0014 §10.1).
 
@@ -1193,11 +1224,12 @@ def job_recipe_json(
     a run but never a recipe, so this file never shows another order's identifier (M4-08a F4). No
     hash. ``provenance`` is the cloud run: the versions and the scaling the core reported
     (``result``), the times of the run that computed it — for a cache hit those of the first
-    order — and the attribution of the dataset, if the registry still knows it. The document
+    order — and the attribution of the dataset, if the registry still knows it, with the ``years``
+    the job's scenes were acquired in (NM4-01). The document
     itself is :func:`~earthx.processing.recipe.job_recipe_document`, which the export job also
     writes into its ZIP.
     """
-    attribution = attribution_text(config, year=(finished or started or datetime.now(UTC)).year) if config else None
+    attribution = attribution_text(config, years=years) if config else None
     return job_recipe_document(
         body, attribution=[attribution] if attribution else [], result=result, started=started, finished=finished
     )

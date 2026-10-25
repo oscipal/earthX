@@ -30,10 +30,13 @@ from earthx.api.intake import (
     check_recipe_hosts,
     crop_recipe_json,
     estimate_order,
+    export_attachments,
+    job_recipe_json,
+    job_side_files,
 )
 from earthx.api.item_source import MaterializedCatalogUnavailable, MaterializedItemNotFound, Stage, fetch_item_or_refuse
 from earthx.catalog.datasets import REGISTRY
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, LicenseTier
+from earthx.catalog.registry import AcquisitionYears, DatasetConfig, DatasetRegistry, LicenseTier
 from earthx.gateway import Gateway, Policy, UpstreamError
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.plan import export_outputs
@@ -555,7 +558,7 @@ class TestUnits:
 
     def test_the_crop_recipe_names_the_same_units(self) -> None:
         document = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
         )
         assert json.loads(document)["inputs"][0]["resolved"][0]["bands"][0]["unit"] == "1"
 
@@ -1112,11 +1115,12 @@ class TestEstimateOrder:
 
 
 AT = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+YEARS = AcquisitionYears(2026, 2026)
 
 
 def crop(config: DatasetConfig, groups: list[list[dict[str, Any]]], assets: list[str], **kw: Any) -> dict[str, Any]:
     raw = crop_recipe_json(
-        config, groups=groups, assets=assets, aoi=SQUARE, resolution_factor=kw.pop("factor", 1), accepted_at=AT
+        config, groups=groups, assets=assets, aoi=SQUARE, resolution_factor=kw.pop("factor", 1), accepted_at=AT, years=YEARS
     )
     assert raw.endswith(b"\n")
     return json.loads(raw)
@@ -1147,7 +1151,7 @@ class TestCropRecipeJson:
 
     def test_no_hash_anywhere(self) -> None:
         raw = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
         )
         assert b"c1:" not in raw
 
@@ -1165,10 +1169,10 @@ class TestCropRecipeJson:
 
     def test_the_same_input_gives_the_same_bytes(self) -> None:
         one = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
         )
         two = crop_recipe_json(
-            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT
+            S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS
         )
         assert one == two
 
@@ -1176,13 +1180,13 @@ class TestCropRecipeJson:
         item = s2_item()
         item["assets"]["red"]["href"] = "https://evil.example/B04.tif"
         with pytest.raises(OrderRefused) as error:
-            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT)
+            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS)
         assert error.value.status_code == 502
 
     def test_an_aoi_with_properties_keeps_only_its_geometry(self) -> None:
         """A place-search AOI carries its provenance in `properties` (M3-07b); the notice reads it, the recipe does not."""
         aoi = {**SQUARE, "properties": {"attribution": "OSM contributors"}}
-        raw = crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=aoi, resolution_factor=1, accepted_at=AT)
+        raw = crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=aoi, resolution_factor=1, accepted_at=AT, years=YEARS)
         assert json.loads(raw)["aoi"] == SQUARE
         assert b"OSM" not in raw
 
@@ -1190,12 +1194,12 @@ class TestCropRecipeJson:
         item = s2_item()
         item["assets"]["red"]["file:checksum"] = "x" * 300
         with pytest.raises(OrderRefused) as error:
-            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT)
+            crop_recipe_json(S2, groups=[[item]], assets=["red"], aoi=SQUARE, resolution_factor=1, accepted_at=AT, years=YEARS)
         assert error.value.status_code == 502
 
     def test_a_resolution_that_no_download_offers_is_refused(self) -> None:
         with pytest.raises(OrderRefused):
-            crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=3, accepted_at=AT)
+            crop_recipe_json(S2, groups=[[s2_item()]], assets=["red"], aoi=SQUARE, resolution_factor=3, accepted_at=AT, years=YEARS)
 
     def test_every_item_brings_its_footprint_and_one_without_a_polygon_brings_none(self) -> None:
         with_polygon = s2_item("S2_A")
@@ -1339,3 +1343,139 @@ class TestTheJobsCapMatchesTheCropsEstimate:
         assert (await accept(export_order(), source)).attachments is not None
         monkeypatch.setattr("earthx.processing.plan.MAX_JOB_BYTES", total - 1)
         assert (await refused(export_order(), source)).status_code == 413
+
+
+def dated(item: dict[str, Any], *instants: str, **properties: Any) -> dict[str, Any]:
+    """``item`` acquired at ``instants`` (the first as ``datetime``), with ``properties`` over its own."""
+    item = copy.deepcopy(item)
+    item["properties"].update(properties)
+    item["properties"]["datetime"] = instants[0] if instants else None
+    return item
+
+
+class TestTheYearOfTheAttribution:
+    """NM4-01: the year is the year of acquisition, from the items, never from the clock."""
+
+    MODIFIED = "Contains modified Copernicus Sentinel data"
+
+    async def test_a_raster_order_of_a_scene_of_2025_keeps_2025_for_its_job(self) -> None:
+        source = Source((S2, dated(s2_item(), "2025-07-29T10:15:00Z")))
+        accepted = await accept(order(), source)
+        assert accepted.acquired_years == AcquisitionYears(2025, 2025)
+
+    async def test_scenes_of_2024_and_2025_keep_the_span(self) -> None:
+        scene = dated(s2_item(), "2024-12-30T10:00:00Z", end_datetime="2025-01-02T10:00:00Z")
+        accepted = await accept(order(), Source((S2, scene)))
+        assert accepted.acquired_years == AcquisitionYears(2024, 2025)
+
+    async def test_an_export_names_2025_in_every_file_it_writes(self) -> None:
+        source = Source((S2, dated(visual_item("S2_A"), "2025-07-29T10:15:00Z")))
+        accepted = await accept(export_order(), source)
+        assert accepted.attachments is not None
+        files = accepted.attachments.files
+        assert accepted.attachments.attribution == (f"{self.MODIFIED} 2025",)
+        assert f"{self.MODIFIED} 2025" in files["ATTRIBUTION.txt"]
+        assert f"{self.MODIFIED} 2025" in files["citation.bib"]
+        assert accepted.acquired_years == AcquisitionYears(2025, 2025)
+
+    async def test_an_export_of_two_years_names_the_span(self) -> None:
+        source = Source(
+            (S2, dated(visual_item("S2_A"), "2024-12-30T10:00:00Z")),
+            (S2, dated(visual_item("S2_B"), "2025-01-02T10:00:00Z")),
+        )
+        accepted = await accept(export_order((("S2_A",), ("S2_B",))), source)
+        assert accepted.attachments is not None
+        assert f"{self.MODIFIED} 2024\N{EN DASH}2025" in accepted.attachments.files["ATTRIBUTION.txt"]
+        assert accepted.attachments.attribution == (f"{self.MODIFIED} 2024\N{EN DASH}2025",)
+
+    async def test_the_scenes_a_group_drops_do_not_count(self) -> None:
+        source = Source(
+            (S2, dated(visual_item("S2_A"), "2025-07-29T10:15:00Z")),
+            (S2, dated(visual_item("S2_FAR", FAR), "2019-01-01T10:00:00Z")),
+        )
+        accepted = await accept(export_order((("S2_A",), ("S2_FAR",))), source)
+        assert accepted.acquired_years == AcquisitionYears(2025, 2025)
+
+    @pytest.mark.parametrize("make", [order, export_order], ids=["raster order", "export"])
+    async def test_a_scene_without_a_date_is_refused_before_anything_runs(self, make: Callable[..., Any]) -> None:
+        item = visual_item("S2_A")
+        del item["properties"]["datetime"]
+        error = await refused(make(), Source((S2, item)))
+        assert (error.status_code, error.stage) == (422, "attribution")
+        assert "acquisition date" in error.detail and "S2_A" not in error.detail
+
+    async def test_one_scene_without_a_date_among_dated_ones_refuses_the_order(self) -> None:
+        undated = visual_item("S2_B")
+        undated["properties"]["datetime"] = "not an instant"
+        source = Source((S2, dated(visual_item("S2_A"), "2025-07-29T10:15:00Z")), (S2, undated))
+        assert (await refused(export_order((("S2_A",), ("S2_B",))), source)).stage == "attribution"
+
+    async def test_the_estimate_refuses_it_as_well(self) -> None:
+        item = s2_item()
+        del item["properties"]["datetime"]
+        with pytest.raises(OrderRefused) as error:
+            await estimate_order(json.dumps(order()), registry=REGISTRY, operators=OPERATORS, item_source=Source((S2, item)))
+        assert error.value.stage == "attribution"
+
+    async def test_a_dataset_whose_attribution_names_no_year_needs_no_date(self) -> None:
+        item = dem_item()
+        item["properties"].update(datetime=None, start_datetime=None, end_datetime=None)
+        accepted = await accept(order("cop-dem-glo-30", (("DEM_N47_E009",),), ("data",)), Source((DEM, item)))
+        assert accepted.acquired_years is None
+
+    async def test_the_order_hash_does_not_move_with_the_year(self) -> None:
+        """adr/0014 §4.5: the attribution is provenance, not part of the hashed core."""
+        first = await accept(order(), Source((S2, dated(s2_item(), "2024-07-29T10:15:00Z"))))
+        second = await accept(order(), Source((S2, dated(s2_item(), "2025-07-29T10:15:00Z"))))
+        assert recipe_hash(first.recipe) == recipe_hash(second.recipe)
+
+
+class TestTheClockIsNotAsked:
+    """A run on the first of January changes nothing: the moment is handed in and names no year."""
+
+    NEW_YEAR = datetime(2027, 1, 1, 0, 0, 5, tzinfo=UTC)
+    YEARS = AcquisitionYears(2025, 2025)
+
+    async def test_the_files_of_an_export_do_not_take_their_year_from_the_moment(self) -> None:
+        accepted = await accept(export_order(), Source((S2, dated(visual_item("S2_A"), "2025-07-29T10:15:00Z"))))
+        attachments = export_attachments(
+            S2, accepted.recipe, dropped=[], aoi_provenance=None, accepted_at=self.NEW_YEAR, years=self.YEARS
+        )
+        assert attachments.attribution == ("Contains modified Copernicus Sentinel data 2025",)
+        assert "data 2025" in attachments.files["ATTRIBUTION.txt"] and "data 2027" not in attachments.files["ATTRIBUTION.txt"]
+        assert "data 2025" in attachments.files["citation.bib"] and "urldate = {2027-01-01}" in attachments.files["citation.bib"]
+
+    async def test_the_recipe_json_of_a_job_names_the_years_of_its_scenes(self) -> None:
+        accepted = await accept(order(), Source((S2, dated(s2_item(), "2025-07-29T10:15:00Z"))))
+        document = json.loads(
+            job_recipe_json(
+                accepted.recipe.model_dump(mode="json"),
+                config=S2,
+                result={},
+                started=self.NEW_YEAR,
+                finished=self.NEW_YEAR,
+                years=self.YEARS,
+            )
+        )
+        assert document["provenance"]["attribution"] == ["Contains modified Copernicus Sentinel data 2025"]
+
+    async def test_the_side_files_of_a_job_name_the_years_of_its_scenes(self) -> None:
+        accepted = await accept(order(), Source((S2, dated(s2_item(), "2025-07-29T10:15:00Z"))))
+        files = job_side_files(
+            S2, accepted.recipe.model_dump(mode="json"), finished=self.NEW_YEAR, years=self.YEARS, scene_aoi=False
+        )
+        assert "Contains modified Copernicus Sentinel data 2025" in files["ATTRIBUTION.txt"]
+        assert "data 2027" not in files["ATTRIBUTION.txt"] and "data 2027" not in files["citation.bib"]
+        assert "data 2025" in files["citation.bib"]
+
+    async def test_a_job_whose_text_names_a_year_cannot_be_built_without_years(self) -> None:
+        accepted = await accept(order(), Source((S2, dated(s2_item(), "2025-07-29T10:15:00Z"))))
+        with pytest.raises(ValueError, match="years"):
+            job_recipe_json(
+                accepted.recipe.model_dump(mode="json"),
+                config=S2,
+                result={},
+                started=self.NEW_YEAR,
+                finished=self.NEW_YEAR,
+                years=None,
+            )

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { DatasetOption } from './datasets';
 import {
   assetHostsOf,
+  acquisitionYears,
   attributionText,
   canDownloadLayer,
   canExportLicense,
@@ -376,33 +377,76 @@ function flags(overrides: Partial<LicenseFlags> = {}): LicenseFlags {
 
 describe('attributionText', () => {
   it('fills {year} into the modified-data text', () => {
-    expect(attributionText(flags(), 2026)).toBe('Contains modified Copernicus Sentinel data 2026');
+    expect(attributionText(flags(), '2025')).toBe('Contains modified Copernicus Sentinel data 2025');
   });
 
   it('falls back to the unmodified text when no modified text is set', () => {
-    expect(attributionText(flags({ attribution_modified: null }), 2026)).toBe(
-      'Copernicus Sentinel data 2026',
+    expect(attributionText(flags({ attribution_modified: null }), '2025')).toBe(
+      'Copernicus Sentinel data 2025',
     );
   });
 
   it('is null without any attribution text', () => {
     expect(
-      attributionText(flags({ attribution_modified: null, attribution_unmodified: null }), 2026),
+      attributionText(flags({ attribution_modified: null, attribution_unmodified: null }), '2025'),
     ).toBeNull();
   });
 
+  it('names the span for scenes of several years', () => {
+    expect(attributionText(flags(), '2024\u20132025')).toBe('Contains modified Copernicus Sentinel data 2024\u20132025');
+  });
+
+  it('is null, not a guessed year, where the text names a year and the scenes give none', () => {
+    expect(attributionText(flags(), null)).toBeNull();
+  });
+
+  it('keeps a text without a year as it is, with or without years (the DEM)', () => {
+    const fixed = flags({ attribution_modified: 'Fixed wording', attribution_unmodified: 'Fixed wording' });
+    expect(attributionText(fixed, null)).toBe('Fixed wording');
+    expect(attributionText(fixed, '2025')).toBe('Fixed wording');
+  });
+
   it('is null without licence flags at all', () => {
-    expect(attributionText(null, 2026)).toBeNull();
+    expect(attributionText(null, '2025')).toBeNull();
   });
 
   it('picks the unmodified text first when asked to (M3-17: the originals are unmodified)', () => {
-    expect(attributionText(flags(), 2026, false)).toBe('Copernicus Sentinel data 2026');
+    expect(attributionText(flags(), '2025', false)).toBe('Copernicus Sentinel data 2025');
   });
 
   it('falls back to the modified text when unmodified is not set, even when asked for it', () => {
-    expect(attributionText(flags({ attribution_unmodified: null }), 2026, false)).toBe(
-      'Contains modified Copernicus Sentinel data 2026',
+    expect(attributionText(flags({ attribution_unmodified: null }), '2025', false)).toBe(
+      'Contains modified Copernicus Sentinel data 2025',
     );
+  });
+});
+
+describe('acquisitionYears', () => {
+  const item = (properties: Record<string, unknown>) => ({ id: 'a', properties, assets: {} });
+
+  it('is the year of a scene of 2025, not the year of today', () => {
+    expect(acquisitionYears([item({ datetime: '2025-07-29T10:15:00Z' })])).toBe('2025');
+  });
+
+  it('is a span for scenes of 2024 and 2025', () => {
+    expect(
+      acquisitionYears([item({ datetime: '2024-12-30T10:00:00Z' }), item({ datetime: '2025-01-02T10:00:00Z' })]),
+    ).toBe('2024\u20132025');
+  });
+
+  it('reads start and end of a period, and the UTC year of an instant with an offset', () => {
+    expect(acquisitionYears([item({ start_datetime: '2010-01-01T00:00:00Z', end_datetime: '2015-12-31T23:59:59Z' })])).toBe(
+      '2010\u20132015',
+    );
+    expect(acquisitionYears([item({ datetime: '2024-12-31T23:30:00-02:00' })])).toBe('2025');
+    expect(acquisitionYears([item({ datetime: '2025-01-01T00:30:00' })])).toBe('2025');
+  });
+
+  it('is null when any scene has no usable date, or there is none', () => {
+    expect(acquisitionYears([item({ datetime: '2025-07-29T10:15:00Z' }), item({})])).toBeNull();
+    expect(acquisitionYears([item({ datetime: 'yesterday' })])).toBeNull();
+    expect(acquisitionYears([item({ datetime: 20250729 })])).toBeNull();
+    expect(acquisitionYears([])).toBeNull();
   });
 });
 

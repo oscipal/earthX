@@ -2100,6 +2100,56 @@ Otto hat NM4-02 am 2026-10-24 beauftragt (`plans/querschnitt/nm4-02-sortierung-z
 - **Runner:** Er rechnet keinen Zuschnitt und keinen Export (`runner/cli.py` weist `crop` ab, M4-16 Frage 2). Die Reihenfolge eines Mosaik-Rezepts steht im Rezept und kommt von `api`; der Runner liest sie, wie sie dasteht. Er ist von der Änderung nicht betroffen. Weil die Version steigt und Cloud und Runner dieselbe tragen müssen (§15k), braucht Ottos lokaler Hash-Vergleich ein neu gebautes Image `earthx-runner:0.4.3`.
 - **Tests:** `tests/earthx/api/test_selection_order.py` — zwei überlappende Szenen in beiden Auswahlreihenfolgen: Kachel, Mosaik-Job, Zuschnitt und Export zeigen in der Überlappung dieselbe Szene; dazu gemischte CRS, fehlendes CRS, mehrere Gruppen, fehlendes Asset. Mit dem Code von vor NM4-02 scheitern der Zuschnitt und der Export bei umgekehrter Auswahl.
 
+## 15q. Nachtrag vom 2026-10-25: das Jahr der Attribution (zu §4.5, §10; NM4-01)
+
+Otto hat am 2026-10-25 entschieden (Option 1 der Rückfrage zu `plans/querschnitt/nm4-01-attribution-jahr.md`).
+Der Satz in §4.5, das `{year}` ändere sich zum Jahreswechsel, ist damit überholt; maßgeblich ist dieser Nachtrag.
+
+- **Befund:** Das Jahr kam aus der Uhr: `datetime.now()` im Zuschnitt (`access/download.py`),
+  `accepted_at.year` bei Export und Zuschnitts-`recipe.json` (`api/intake.py`), das Ende des Laufs bei
+  `recipe.json` eines Jobs, das Datum des Downloads in `citation.bib` (`api/citation.py`). Eine Szene vom
+  29.07.2025, am 20.10.2026 verarbeitet, trug „2026“.
+- **Was „[Year]“ meint:** **Primärquelle:** Die Copernicus Sentinel data licence (rev. 1), https://ewds.climate.copernicus.eu/licences/ec-sentinel,
+  verlangt „Contains modified Copernicus Sentinel data [Year]“ bei veränderten und „Copernicus Sentinel data [Year]“ bei
+  unveränderten Daten, **ohne zu sagen, was „[Year]“ ist**; Otto bzw. der Planungs-Chat hat die Seite am 24.10.2026 gelesen
+  (die Sitzung dieses Nachtrags konnte sie nicht erreichen). Ebenso die Sentinel Data Legal Notice der ESA: Sie schreibt vor, die Empfänger mit dem Hinweis
+  `'Copernicus Sentinel data [Year]'` bzw. bei veränderten Daten `'Contains modified Copernicus Sentinel data [Year]'`
+  über die Quelle zu unterrichten (Fußnoten: Art. 7 und 8 der Verordnung (EU) Nr. 1159/2013). **Sie sagt nicht, was
+  „[Year]“ ist, und regelt keine Spanne** (https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice,
+  am 25.10.2026 gelesen). Als Praxisbeleg dient die Vorlage `Attribution-Copernicus` der Wikimedia Commons, die
+  den Parameter als „Year of data acquisition“ definiert (https://c.enwp.org/wiki/Template:Attribution-Copernicus);
+  Google Earth Timelapse schreibt eine Spanne („Contains modified Copernicus Sentinel data [2015-present]“).
+  Beides ist **kein Primärdokument**; die Auslegung ist Ottos Entscheidung, nicht die der Lizenz.
+- **Entscheidung:** Das Jahr ist das **Aufnahmejahr (UTC)**, bei mehreren Jahren die **Spanne** „2024–2025“
+  (Gedankenstrich U+2013). Es kommt aus `datetime`, `start_datetime` und `end_datetime` der Items, die in den Auftrag
+  eingehen (bei einer Gruppe, die die AOI nicht berührt, nur die behaltenen), **nie aus der Uhr**. Es gibt keinen
+  Rückfall: Ein Item ohne verwertbares Aufnahmedatum macht den Auftrag, wenn der Text des Datensatzes ein Jahr
+  nennt, zu einem `422` (Stufe `attribution`; beim synchronen Zuschnitt `422` vor dem ersten Lesen). Ein Datensatz
+  ohne `{year}` im Text (das DEM mit dem festen Wortlaut „© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH
+  2014-2018 …“ nach Art. 6 seiner Lizenz) braucht kein Datum und bleibt unverändert.
+- **Eine Stelle:** `catalog.registry.acquisition_years` liest die Jahre, `access.download.attribution_text` setzt sie in
+  die Vorlage der Registry. Alle Ausgänge rufen nur diese beiden: ATTRIBUTION.txt und `citation.bib` des Zuschnitts und
+  des Export-Jobs, `provenance.attribution` in `recipe.json` (Zuschnitt, Export, Raster-Job), ZIP und Links des
+  Raster-Jobs. Der Runner übernimmt die Attribution der Eingabe unverändert (M4-16 §3.4) und zeigt damit das Jahr der
+  Szenen. Das Ergebnisdokument der API trägt keine Attribution. Im Frontend baut `acquisitionYears` (`download.ts`) die
+  Jahre derselben Regel für die Vorschau im Dialog; ohne Datum zeigt der Dialog keinen Text statt eines geratenen Jahres.
+- **Hash und Cache:** Die Attribution steht in `provenance`, nie im gehashten Kern; ein Test belegt, dass der
+  Rezept-Hash für Szenen von 2024 und 2025 gleich bleibt. Für Raster-Jobs teilen gleiche Aufträge einen Lauf, die
+  Attribution wird aber **beim Abruf** gebaut, aus den Jahren, die der **Job** hält (Migration
+  `013_job_acquisition_years.sql`: `earthx_job.acquired_first_year`/`acquired_last_year`, je Job, nicht je Lauf). Ein
+  gecachtes Ergebnis bekommt also beim Abruf die Attribution des Auftrags, der es abruft, nie die des ersten
+  Auftraggebers. Der Export-Job hält seine Attribution im Lauf (`attachments`, einmalig je Auftrag).
+- **Jobs von vor der Migration (Otto, 2026-10-25):** Die Migration setzt die Jahre aus `acquired_on`, wo es gesetzt war.
+  Für einen älteren Job ohne Jahre, dessen Text ein Jahr nennt, liest `api` sie beim Abruf aus dem gespeicherten Rezept:
+  Das Rezept hält die Item-IDs, nicht deren Daten; die Daten sind die der Items und werden bei der Item-Quelle erneut
+  geholt (`_with_derived_years`, nichts wird zurückgeschrieben). Nur wo das nicht geht (Item weg, ohne Datum, Quelle
+  nicht erreichbar) antwortet `result.zip`, `recipe.json` und `methods.txt` mit `409`
+  (`urn:earthx:no-acquisition-years`, mit Grund) statt mit dem Jahr des Downloads; das Ergebnis selbst bleibt abrufbar.
+  Solche Jobs leben höchstens 7 Tage.
+- **Frontend (Otto, 2026-10-25):** Ein angehefteter Layer speichert nichts zusätzlich. Der Dialog „Download crop“ zeigt
+  keine Attribution und kein Jahr (wenig Text); `ATTRIBUTION.txt` im ZIP trägt die richtige. Die Dialoge „Download
+  original files“ und der Mosaik-Job nennen das Jahr aus den Items, die sie halten.
+
 ## 16. Quellen
 
 **Im Repo [P]**

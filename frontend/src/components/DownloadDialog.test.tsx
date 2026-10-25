@@ -14,6 +14,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { useAppStore } from '../store';
+import type { StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
 
 declare global {
@@ -37,6 +38,10 @@ afterEach(() => {
   });
   container.remove();
 });
+
+function scene(id: string, properties: Record<string, unknown>): StacItem {
+  return { id, properties, assets: {} };
+}
 
 function show(): HTMLElement {
   act(() => {
@@ -89,6 +94,7 @@ describe('the originals dialog shows attribution and terms next to the links', (
       downloadOriginalLinks: [
         { itemId: 'S1', groupLabel: 'Overpass A', asset: 'visual', href: 'https://data.test/S1.tif' },
       ],
+      downloadPasses: [{ label: 'Overpass A', items: [scene('S1', { datetime: '2025-07-29T10:15:00Z' })] }],
       downloading: false,
       error: null,
       notice: null,
@@ -98,12 +104,30 @@ describe('the originals dialog shows attribution and terms next to the links', (
   it('shows the unmodified attribution text (not the modified one), never a licence-tier gate', () => {
     const el = show();
     const text = el.textContent ?? '';
-    expect(text).toContain('Copernicus Sentinel data');
+    expect(text).toContain('Copernicus Sentinel data 2025');
     expect(text).not.toContain('Contains modified Copernicus Sentinel data');
     // Katalogeintrag: B11 already permits a link at this tier — no
     // "licence does not permit a data export" message, no disabled Download
     // button gate as the crop view has.
     expect(text).not.toContain('does not permit a data export');
+  });
+
+  it('names the year of the scenes, not the year of today (NM4-01)', () => {
+    useAppStore.setState({
+      downloadPasses: [
+        { label: 'A', items: [scene('S1', { datetime: '2024-12-30T10:00:00Z' })] },
+        { label: 'B', items: [scene('S2', { datetime: '2025-01-02T10:00:00Z' })] },
+      ],
+    });
+    expect(show().textContent).toContain('Copernicus Sentinel data 2024\u20132025');
+    expect(show().textContent).not.toContain(String(new Date().getFullYear()));
+  });
+
+  it('shows no attribution rather than a guessed year for a scene without a date', () => {
+    useAppStore.setState({ downloadPasses: [{ label: 'A', items: [scene('S1', {})] }] });
+    const text = show().textContent ?? '';
+    expect(text).not.toContain('Copernicus Sentinel data');
+    expect(text).toContain('Subject to');
   });
 
   it('shows the terms notice and the terms URL', () => {
@@ -131,5 +155,21 @@ describe('the originals dialog shows attribution and terms next to the links', (
     useAppStore.setState({ downloadOriginalLinks: [] });
     const el = show();
     expect(el.textContent).toContain('No original file');
+  });
+});
+
+describe('the crop dialog (NM4-01)', () => {
+  it('shows no attribution line and no year: the file in the ZIP carries the text', () => {
+    useAppStore.setState({
+      downloadOutcome: 'crop',
+      downloadOriginalLinks: null,
+      downloadPasses: null,
+      selectedIds: ['S1'],
+      items: [scene('S1', { datetime: '2025-07-29T10:15:00Z' })],
+    });
+    const text = show().textContent ?? '';
+    expect(text).toContain('Download crop');
+    expect(text).not.toContain('Copernicus Sentinel data');
+    expect(text).toContain('Subject to');
   });
 });

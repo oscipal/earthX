@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { RESOLUTION_FACTORS } from '../api';
 import {
+  acquisitionYears,
   attributionText,
   canExportLicense,
   downloadRequestFor,
@@ -82,7 +83,7 @@ export default function DownloadDialog() {
     // A whole scene's own files, unmodified, straight from the source (B11:
     // Katalogeintrag already permits a link — no licence-tier gate here,
     // unlike the crop below).
-    const attribution = attributionText(flags, new Date().getFullYear(), false);
+    const attribution = attributionText(flags, acquisitionYears((passes ?? []).flatMap((pass) => pass.items)), false);
     const terms = termsNoticeText(flags, 'en');
     return (
       <div className="dialog-backdrop" onClick={close}>
@@ -160,7 +161,8 @@ export default function DownloadDialog() {
       ? downloadRequestFor(layer, datasets)
       : null;
   const sceneCount = req?.groups.flat().length ?? 0;
-  const attribution = attributionText(flags, new Date().getFullYear());
+  // No attribution line: its year is that of the scenes' acquisition, which a pinned layer does not keep,
+  // and ATTRIBUTION.txt in the ZIP carries the text (Otto, 25.10.2026, NM4-01).
   const terms = termsNoticeText(flags, 'en');
   const exportAllowed = canExportLicense(flags);
 
@@ -216,7 +218,6 @@ export default function DownloadDialog() {
             </p>
           )}
 
-          {attribution && <p className="dialog-attribution">{attribution}</p>}
           {terms && <p className="dialog-terms">{terms}</p>}
           {flags?.terms_url && !terms?.includes(flags.terms_url) && (
             <p>

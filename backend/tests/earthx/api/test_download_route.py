@@ -14,7 +14,7 @@ import json
 import logging
 import zipfile
 from collections.abc import Iterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from datetime import date
 from io import BytesIO
@@ -881,6 +881,77 @@ class TestOverTheCapAnExportJob:
         response = _download(client)
         assert response.status_code == 413
         assert "X-Export-Job" not in response.headers
+
+
+class TestTheYearOfTheAttribution:
+    """NM4-01: the crop's files name the year the scenes were acquired in, not the year of the download."""
+
+    MODIFIED = "Contains modified Copernicus Sentinel data"
+
+    @staticmethod
+    @contextmanager
+    def serving(item: dict[str, Any], monkeypatch: pytest.MonkeyPatch, **properties: Any) -> Iterator[TestClient]:
+        changed = {**item, "properties": {**item["properties"], **properties}}
+        yield from _client_for(REGISTRY, changed, monkeypatch)
+
+    def test_a_scene_of_2025_gives_2025_in_the_notice_the_citation_and_the_recipe(
+        self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with self.serving(item, monkeypatch, datetime="2025-07-29T10:15:00Z") as served:
+            with _zip_of(_download(served)) as archive:
+                notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
+                bib = archive.read("citation.bib").decode("utf-8")
+                recipe = json.loads(archive.read("recipe.json"))
+        assert f"{self.MODIFIED} 2025" in notice
+        assert f"{self.MODIFIED} 2025" in bib
+        assert recipe["provenance"]["attribution"] == [f"{self.MODIFIED} 2025"]
+
+    def test_scenes_of_two_years_give_the_span_in_all_three(
+        self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        span = f"{self.MODIFIED} 2024\N{EN DASH}2025"
+
+        async def source(dataset_id: str, item_id: str) -> dict[str, Any]:
+            year = "2024-12-30" if item_id == ITEM_ID else "2025-01-02"
+            return {**item, "id": item_id, "properties": {"datetime": f"{year}T10:00:00Z"}}
+
+        monkeypatch.setattr("earthx.readers.cog.check_url", lambda url, policy, **_: check_url(url, policy, resolve=lambda host, port: ("93.184.216.34",)))
+        monkeypatch.setattr("earthx.api.tiler.open_asset", lambda src_path, **_: FakeReader(src_path))
+
+        @asynccontextmanager
+        async def lifespan(app):
+            app.state.earthx_item_source = source
+            yield
+
+        with TestClient(build_app(REGISTRY, lifespan=lifespan)) as served:
+            with _zip_of(_download(served, groups=[[ITEM_ID], [f"{ITEM_ID}#2"]])) as archive:
+                assert span in archive.read("ATTRIBUTION.txt").decode("utf-8")
+                assert span in archive.read("citation.bib").decode("utf-8")
+                assert json.loads(archive.read("recipe.json"))["provenance"]["attribution"] == [span]
+
+    def test_a_scene_without_a_date_is_refused_before_anything_is_read(
+        self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        undated = {**item, "properties": {}}
+        with self.serving(undated, monkeypatch) as served:
+            response = _download(served)
+        assert response.status_code == 422
+        assert "acquisition date" in response.json()["detail"] and ITEM_ID not in response.json()["detail"]
+
+    def test_a_dataset_whose_attribution_names_no_year_needs_no_date(
+        self, item: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The DEM's wording is fixed by its licence, with the years of its production in it."""
+        dem = REGISTRY.get("cop-dem-glo-30")
+        (host,) = dem.source.asset_hosts
+        asset = {"href": f"https://{host}/tile.tif", "type": "image/tiff; application=geotiff", "gsd": 30}
+        undated = {**item, "properties": {}, "assets": {"data": asset}}
+        registry = DatasetRegistry((dem,))
+        for generated in _client_for(registry, undated, monkeypatch):
+            response = _download(generated, dataset=dem.dataset_id, assets=["data"])
+            assert response.status_code == 200, response.text
+            with _zip_of(response) as archive:
+                assert "2010-2014" in archive.read("ATTRIBUTION.txt").decode("utf-8")
 
 
 def _without_generated(notice: str) -> str:
