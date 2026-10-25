@@ -35,6 +35,10 @@ eines Raster-Auftrags stammt (Attribution, Lizenz, Quelle). Je Job, nicht je Lau
 zufälligen Kennung, die Frist fest 30 Tage ab Erstellung, dazu der SHA-256 des Löschschlüssels. Kein
 Fremdschlüssel; `api` schreibt und liest über `jobs/permalinks.py`, der stündliche Aufräumer löscht.
 
+`013_job_acquisition_years.sql` — die Spalten `earthx_job.acquired_first_year` und `acquired_last_year` aus
+NM4-01: die Aufnahmejahre der Szenen eines Auftrags, aus denen die Attribution beim Abruf gebaut wird
+(nie aus der Uhr). Je Job, nicht je Lauf, nicht im Rezept; `jobs` speichert sie ungelesen.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

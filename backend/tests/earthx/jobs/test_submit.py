@@ -218,6 +218,24 @@ class TestStatus:
         status = job_status(db, submit(db, make_recipe(), acquired_on=date(2025, 7, 5)))
         assert status is not None and status.acquired_on == date(2025, 7, 5)
 
+    def test_the_years_of_the_scenes_are_kept_with_the_job_and_two_orders_on_one_run_keep_their_own(
+        self, db: psycopg.Connection
+    ) -> None:
+        """NM4-01: the years the attribution names are `api`'s to find and the job's to keep; `jobs` never reads them."""
+        none = job_status(db, submit(db, make_recipe()))
+        one = job_status(db, submit(db, make_recipe(), acquired_years=(2025, 2025)))
+        span = job_status(db, submit(db, make_recipe(), acquired_years=(2024, 2025)))
+        assert none is not None and one is not None and span is not None
+        assert (none.acquired_years, one.acquired_years, span.acquired_years) == (None, (2025, 2025), (2024, 2025))
+        assert db.execute("SELECT count(DISTINCT run_id) FROM public.earthx_job").fetchone() == (1,)
+
+    def test_the_database_refuses_years_that_are_not_a_pair_in_order(self, db: psycopg.Connection) -> None:
+        with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
+            submit(db, make_recipe(), acquired_years=(2026, 2025))
+        submit(db, make_recipe())
+        with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
+            db.execute("UPDATE public.earthx_job SET acquired_first_year = 2025, acquired_last_year = NULL")
+
     def test_without_a_day_the_job_has_none_and_two_orders_on_one_run_keep_their_own(self, db: psycopg.Connection) -> None:
         from datetime import date
 
@@ -342,6 +360,7 @@ class TestStatus:
             "result_id",
             "result",
             "acquired_on",
+            "acquired_years",
             "scene_aoi",
             "aoi_provenance",
         }
