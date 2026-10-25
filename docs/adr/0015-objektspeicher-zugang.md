@@ -1407,6 +1407,39 @@ Frage 12 mit Option 1 (`plans/m4/m4-19-teilen-und-beschreiben.md` §9). Der Orig
   (§12 Punkt 9) prüft weiter, dass Abrufe nichts verlängern. Verlängerte ein Treffer doch, müsste er
   das Objekt kopieren (§8.3 T2): eigene Aufgabe nach M4.
 
+## 14e. Nachtrag vom 2026-10-25: die Zoomstufen im TileJSON eines Ergebnisses (zu §14c; UI-01a)
+
+**Befund [P][M].** Der TileJSON eines Ergebnisses nannte `minzoom` und `maxzoom` von rio-tiler: von der Stufe der gröbsten Übersicht
+bis zur Stufe nahe der Pixelgröße (3072 Pixel mit 10 m bei 51° N: 9 und 13). Die Karte hält sich daran. Unterhalb von `minzoom`
+verschwand das Ergebnis; oberhalb von `maxzoom` zog MapLibre die letzte Kachel glatt auseinander, sodass das Ergebnis beim
+Hineinzoomen weicher aussah als die Szene, die bis Stufe 19 Kacheln vom Tiler bekommt.
+
+**Entscheidung (Vorschlag, gilt bis Otto widerspricht; im Rahmen der Ausnahme von UI-01 §4, Otto 25.10.2026).**
+`ResultReader` nennt `minzoom` 0 und `maxzoom` mindestens 19 (`RESULT_MIN_ZOOM`, `RESULT_MAX_ZOOM` in `api/result_tiles.py`; die feinste
+Stufe, auf der eine Quelle freigegeben ist, ist `sentinel-2-c1-l2a` mit 19). Der Tiler liest die Datei auf jeder Stufe, wie vorher auch; nur
+der TileJSON nennt jetzt alle Stufen. Die Karte fragt auf Stufe 15 bis 19 die Pixel der Datei ab (`nearest`, wie bei den Szenen) und streckt
+nichts mehr.
+
+**Kosten je Kachel [M]** (`result.tif` 10 980 × 10 980, `float32`, Rauschen als ungünstigster Fall, mit Übersichten 2 bis 32; `mask.tif`
+mit 1024er Blöcken ohne Übersichten; lokaler Server mit `Range`, jede Kachel kalt gelesen; Zeiten enthalten das Öffnen der Dateien und
+sagen nichts über ein Netz):
+
+| Stufe | `result.tif` | `mask.tif` | Anfragen |
+|---|---|---|---|
+| 0 bis 8 | 0,44 MB (gröbste Übersicht) | 0,36 bis 0,48 MB (bei Stufe 0 bis 6 alle Blöcke) | 2 + 4 bis 15 |
+| 10 | 1,9 MB | 0,36 MB | 2 + 6 |
+| 12, 16, 19 | 1,0 MB | 0,35 MB | 2 + 4 |
+| 14 | 1,9 MB | 0,35 MB | 2 + 4 |
+
+Eine Kachel ganz draußen kostet also nicht mehr als eine nah dran: etwa 0,8 bis 1,0 MB, 0,7 bis 1,5 s kalt. Die Maske ist mit 159 KB
+(alles eins) klein; mit einer AOI-Form wächst sie, ist aber durch die Dateigröße begrenzt, und ohne Übersichten liest Stufe 0 bis 6 sie ganz.
+Weniger Kacheln als nah dran werden gebraucht, weil die Quelle `bounds` hat: MapLibre fragt nur Kacheln über dem Ergebnis ab.
+
+**Grenze, die bleibt.** Eine Quelle mit `min_zoom` 8 und ohne Quicklook (`sentinel-2-l2a-zarr3`) hat unterhalb davon kein Bild; der
+Tiler weist die Stufen ab. Eine Kachel auf Stufe 7 deckt etwa 313 km, also bis zu neun Szenen; je Szene die gröbste Zarr-Stufe (60 m,
+1830², drei Bänder `uint16`) wären etwa 70 bis 90 MB je Kachel [A] und deshalb nicht freigegeben. Die Karte sagt es statt leer zu bleiben:
+„Zoom in“ mit dem Zoom, ab dem das Bild gezeichnet wird (`zoomHint.ts`).
+
 ## 15. Quellen
 
 **Primär, in der Sitzung gelesen [P]:**

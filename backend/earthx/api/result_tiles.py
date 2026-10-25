@@ -64,6 +64,11 @@ HEAD_KEPT = timedelta(seconds=60)
 URL_REUSED = timedelta(minutes=10)
 CACHE_SIZE = 128
 
+# The levels a result's TileJSON names: all of them from 0 (a tile of the coarsest overview) to the finest one a
+# source is released at (`sentinel-2-c1-l2a`, `earthx.catalog.datasets`).
+RESULT_MIN_ZOOM = 0
+RESULT_MAX_ZOOM = 19
+
 # TiTiler's free parameters, and the operator of a source's tile: a result is read as it is.
 _REFUSED_PARAMETERS = ("expression", "algorithm", "algorithm_params", "op", "op_version", "params")
 
@@ -148,6 +153,24 @@ class ResultReader(CogReader):
     union of the footprints), 0 outside — on the grid of the result, read for the same tile with ``nearest``.
     The files themselves are not changed.
     """
+
+    @property
+    def minzoom(self) -> int:
+        """Level 0: a tile far out reads the coarsest overview of the file and the map keeps the picture.
+
+        rio-tiler's own value is the level of the file's coarsest overview, from which the result would vanish
+        when zooming out of it (Otto, 25.10.2026).
+        """
+        return RESULT_MIN_ZOOM
+
+    @property
+    def maxzoom(self) -> int:
+        """At least level 19, like the finest source: the map asks the tiler for the file's own pixels there.
+
+        rio-tiler's value is the level nearest the pixel size; beyond it the browser stretches the last tile it
+        has, so a result looked blurrier than the scene it was made from (Otto, 25.10.2026).
+        """
+        return max(RESULT_MAX_ZOOM, self._maxzoom)
 
     def tile(self, tile_x: int, tile_y: int, tile_z: int, **kwargs: Any) -> Any:
         image = super().tile(tile_x, tile_y, tile_z, **kwargs)
