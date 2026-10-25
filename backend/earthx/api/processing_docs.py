@@ -34,6 +34,7 @@ __all__ = [
     "PROCESS_ID",
     "RASTER_OUTPUTS",
     "TILES_HREF",
+    "tiles_href",
     "conformance",
     "landing_page",
     "order_schema",
@@ -70,9 +71,14 @@ OUTPUTS: dict[str, tuple[str, str]] = {
 }
 
 #: Where the tiler serves the tiles of a result (`api/result_tiles.py`): not under `/processing`, and not
-#: a file in the store — the link of the output ``tiles`` names it. Relative to the host like the frontend's
-#: other tile URLs; the proxy that mounts `/processing` mounts `/results` (M4-13c-5).
+#: a file in the store — the link of the output ``tiles`` names it (M4-13c-5). The path alone is relative to
+#: the host; :func:`tiles_href` puts the configured base of the tiler in front (NM4-03).
 TILES_HREF = "/results/{result_id}/WebMercatorQuad/tilejson.json"
+
+
+def tiles_href(tiler_base: str | None, result_id: str) -> str:
+    """The link of the output ``tiles``: absolute under ``tiler_base`` (``EARTHX_TILER_URL``), the bare path without one."""
+    return f"{tiler_base or ''}{TILES_HREF.format(result_id=result_id)}"
 
 #: The media type of each file a link under ``/results`` serves. `result.zip` is not in the store:
 #: `api` lays it out from the stored files and the documents it builds (M4-11b-1).

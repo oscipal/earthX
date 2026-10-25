@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -42,6 +43,15 @@ _CACHE_POOL_MAX_SIZE = 5
 GEOCODER_URL_ENV = "EARTHX_GEOCODER_URL"
 GEOCODER_USER_AGENT_ENV = "EARTHX_GEOCODER_USER_AGENT"
 DEFAULT_GEOCODER_USER_AGENT = "EarthX/0.1 (+https://github.com/oscipal/earthX)"
+
+# NM4-03: where a client reaches the tiler. The links of a results document that lead there are built from
+# this value alone, never from the `Host` header of the request (header injection).
+TILER_URL_ENV = "EARTHX_TILER_URL"
+
+# ``http(s)://host[:port][/path]``: no credentials, query or fragment, nothing outside the URL-safe characters.
+_TILER_BASE = re.compile(
+    r"https?://(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[0-9]{1,5}))?(?:/[A-Za-z0-9._~/-]*)?"
+)
 
 # Measured against the live service in the plan step (plan §3): Russia's outline at
 # the smallest threshold we ask for is a little over 0.6 MB. Tighter than the
@@ -71,6 +81,24 @@ def resolve_geocoder_config(environ: Mapping[str, str] | None = None) -> Geocode
         return None
     user_agent = values.get(GEOCODER_USER_AGENT_ENV, "").strip() or DEFAULT_GEOCODER_USER_AGENT
     return GeocoderConfig(base_url=raw.rstrip("/"), user_agent=user_agent)
+
+
+def resolve_tiler_base(environ: Mapping[str, str] | None = None) -> str | None:
+    """The public base URL of the tiler from the environment, without a trailing slash; None if unset or unusable.
+
+    Only ``http`` or ``https`` with a host, no credentials, no query, no fragment: anything else would
+    put something into the links of every results document that the operator did not mean. An unusable
+    value is logged without the value itself and treated like an unset one.
+    """
+    values = environ if environ is not None else os.environ
+    raw = values.get(TILER_URL_ENV, "").strip().rstrip("/")
+    if not raw:
+        return None
+    match = _TILER_BASE.fullmatch(raw)
+    if match is None or int(match["port"] or 0) > 65535:
+        LOGGER.warning(f"{TILER_URL_ENV} is set but not usable; the tiles link stays relative")
+        return None
+    return raw
 
 
 def build_geocoder(environ: Mapping[str, str] | None = None) -> tuple[Gateway, GeocoderConfig] | None:

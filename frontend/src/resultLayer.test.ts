@@ -22,11 +22,20 @@ describe('the link to the tiles of a result', () => {
     expect(tilesHref({ tiles: { href: HREF } })).toBe(HREF);
   });
 
+  it('is the path alone for an absolute link: the tiles are read through this host, never from the one named', () => {
+    expect(tilesHref({ tiles: { href: `http://localhost:8001${HREF}` } })).toBe(HREF);
+    expect(tilesHref({ tiles: { href: `https://tiles.example.org${HREF}` } })).toBe(HREF);
+  });
+
   it.each([
     ['no link', {}],
     ['a link without an address', { tiles: {} }],
     ['an address that is not text', { tiles: { href: 5 } }],
-    ['another host', { tiles: { href: `https://example.org${HREF}` } }],
+    ['an address with credentials', { tiles: { href: `https://user:pw@example.org${HREF}` } }],
+    ['an absolute address with a query', { tiles: { href: `https://example.org${HREF}?x=1` } }],
+    ['an absolute address with a fragment', { tiles: { href: `https://example.org${HREF}#x` } }],
+    ['an address of another scheme', { tiles: { href: `javascript://example.org${HREF}` } }],
+    ['an absolute address of another path', { tiles: { href: 'https://example.org/processing/x' } }],
     ['a host-relative address with two slashes', { tiles: { href: `/${HREF}` } }],
     ['an identifier of the wrong length', { tiles: { href: `/results/${ID}x/WebMercatorQuad/tilejson.json` } }],
     ['an identifier with a dot', { tiles: { href: `/results/${ID.slice(0, 20)}../WebMercatorQuad/tilejson.json` } }],
