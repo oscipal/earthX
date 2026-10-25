@@ -15,7 +15,6 @@
     <div id="map"></div>
     <script type="module">
       import maplibregl from 'maplibre-gl';
-      import { buildTileTemplate } from '/src/api.ts';
       import { fetchResultTileJson } from '/src/processing.ts';
       import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
       import { resultTileTemplate } from '/src/resultLayer.ts';
@@ -117,11 +116,10 @@
         pinScene: (quicklook = true) => {
           const item = quicklookScene('E2E');
           const entries = [[item.id, sceneInfo(item, 8, 19)]];
-          const overlays = overlaysOfPass('sentinel-2-c1-l2a', entries, undefined, {}, null, (quicklook ? underlaysOf(entries, [item], quicklookDataset(8), null) : []));
+          const overlays = overlaysOfPass('quicklook-source', entries, undefined, {}, null, (quicklook ? underlaysOf(entries, [item], quicklookDataset(8), null) : []));
           syncLayers(map, [{ id: 'scene', name: 'Scene', visible: true, opacity: 1, restore: {}, overlays }]);
           return overlays.map((o) => o.kind);
         },
-        tileUrl: () => buildTileTemplate('sentinel-2-l2a-zarr3', 'H1', 'x'),
       };
     </script>
   </body>

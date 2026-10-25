@@ -45,7 +45,7 @@ describe('a layer pinned from a scene with a quicklook, whose tiles start at z8'
   const item = quicklookScene('Z1');
   const entries: SceneEntry[] = [[item.id, sceneInfo(item, 8, 19)]];
   const overlays = () =>
-    overlaysOfPass('sentinel-2-c1-l2a', entries, undefined, {}, null, underlaysOf(entries, [item], quicklookDataset(8), null)) ?? [];
+    overlaysOfPass('quicklook-source', entries, undefined, {}, null, underlaysOf(entries, [item], quicklookDataset(8), null)) ?? [];
 
   it('holds the quicklook under its tiles', () => {
     expect(overlays().map((o) => o.kind)).toEqual(['image', 'raster']);

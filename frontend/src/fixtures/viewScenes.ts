@@ -24,8 +24,8 @@ const viewer = (browse: 'preview_tiles' | 'quicklook', minZoom: number, maxZoom:
 export const previewDataset = () =>
   datasetsFrom([
     {
-      id: 'sentinel-2-l2a-zarr3',
-      title: 'Sentinel-2 L2A (Zarr3)',
+      id: 'preview-source',
+      title: 'Preview source',
       'earthx:capabilities': CAPABILITIES,
       'earthx:viewer': viewer('preview_tiles', 8, 14, null),
       'earthx:default_render': {
@@ -43,8 +43,8 @@ export const previewDataset = () =>
 export const quicklookDataset = (minZoom = 8) =>
   datasetsFrom([
     {
-      id: 'sentinel-2-c1-l2a',
-      title: 'Sentinel-2 L2A',
+      id: 'quicklook-source',
+      title: 'Quicklook source',
       'earthx:capabilities': CAPABILITIES,
       'earthx:viewer': viewer('quicklook', minZoom, 19, 16),
     },

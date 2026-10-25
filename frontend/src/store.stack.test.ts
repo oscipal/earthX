@@ -191,7 +191,7 @@ describe('addCurrentToLayers for a dataset with a quicklook whose tiles start at
     const item = quicklookScene('Q1');
     focusOn(['Q1'], [], {
       datasets: [quicklookDataset(8)],
-      datasetId: 'sentinel-2-c1-l2a',
+      datasetId: quicklookDataset(8).id,
       items: [item],
       downloaded: { Q1: tileInfo(item, 8, 19) },
       ...over,
