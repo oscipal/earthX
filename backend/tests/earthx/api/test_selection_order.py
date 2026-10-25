@@ -104,14 +104,20 @@ def _aoi(scenes: Scenes, *, around: float | None = None) -> dict[str, Any]:
     }
 
 
-def _in_the_overlap(source: Any) -> float | None:
+def _in_the_overlap(source: Path | bytes) -> float | None:
     """The first band at the middle of the overlap, from a raster file (a path or bytes); ``None`` if masked."""
-    opener = rasterio.MemoryFile(source).open() if isinstance(source, bytes) else rasterio.open(source)
-    with opener as dataset:
-        x, y = Transformer.from_crs(ZONE_32, dataset.crs, always_xy=True).transform(SEAM_X, SEAM_Y)
-        row, col = dataset.index(x, y)
-        value = dataset.read(1, masked=True)[row, col]
-        return None if numpy.ma.is_masked(value) else float(value)
+    if isinstance(source, bytes):
+        with rasterio.MemoryFile(source) as memory, memory.open() as dataset:
+            return _value_at_the_seam(dataset)
+    with rasterio.open(source) as dataset:
+        return _value_at_the_seam(dataset)
+
+
+def _value_at_the_seam(dataset: rasterio.DatasetReader) -> float | None:
+    x, y = Transformer.from_crs(ZONE_32, dataset.crs, always_xy=True).transform(SEAM_X, SEAM_Y)
+    row, col = dataset.index(x, y)
+    value = dataset.read(1, masked=True)[row, col]
+    return None if numpy.ma.is_masked(value) else float(value)
 
 
 def _member(archive: bytes, name: str) -> bytes:
