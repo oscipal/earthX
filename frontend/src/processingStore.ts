@@ -110,6 +110,7 @@ import { initialValues, type FieldValue } from './schemaForm';
 import type { MapLayer } from './layers';
 import { selectionItemsFrom, useAppStore, type AppState } from './store';
 import { buildGroups } from './grouping';
+import { stackLikeView } from './mosaic';
 import type { EarthxMask, StacItem, TimeStepGroup } from './types';
 
 // Where a panel opens from: the "Area" it starts with, and the scenes the
@@ -840,7 +841,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       app.pinDerivedLayer({
         name: `Preview · ${preview.title}`,
         derived: 'preview',
-        overlays: previewOverlays(preview, app.aoi),
+        overlays: stackLikeView(previewOverlays(preview, app.aoi)),
         itemIds: preview.scenes.map((scene) => scene.id),
         cropToAoi: preview.clipToAoi,
       });
@@ -897,11 +898,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             kind: 'raster',
             tileUrl: buildTileUrl(resultTileTemplate(href), resultRender(tileJson.dataType, get().range, job.statistics, job.range)),
             bounds: tileJson.bounds,
+            // The tiler names every level, from a tile of the coarsest overview to the finest source's
+            // (`result_tiles.py::RESULT_MIN_ZOOM`/`RESULT_MAX_ZOOM`): the result stays on the map at every
+            // zoom, and zooming in asks the tiler for the file's pixels instead of stretching a tile.
             minZoom: tileJson.minZoom,
-            // rio-tiler's `maxzoom` is the level nearest the data's pixel size, and often the coarser
-            // one (10 m at 48° N: level 13, 12.8 m). One level more lets the map ask for the data
-            // itself; the tiler reads the file at any level.
-            maxZoom: tileJson.maxZoom + 1,
+            maxZoom: tileJson.maxZoom,
           },
         ],
         itemIds: [],

@@ -11,7 +11,14 @@ export type LayerOverlay =
   // here for the same reason `minZoom`/`maxZoom` are captured on the raster
   // variant below: the live dataset selection can move on while the layer
   // stays pinned.
-  | { kind: 'image'; url: string; coords: Coords4; nodataMax: number | null }
+  | {
+      kind: 'image';
+      url: string;
+      coords: Coords4;
+      nodataMax: number | null;
+      // The AOI the image is cut to, in its own pixels (`geoUtils.ts::quicklookAoiPixelRings`).
+      clipRings?: [number, number][][];
+    }
   // Tiles: full resolution, a stitch, a decomposition — or the browse preview of a
   // source that publishes no quicklook, which is the same thing pinned to a single
   // level (M2-10). The range travels with the overlay so a pinned layer still knows

@@ -1,0 +1,126 @@
+<!doctype html>
+<!-- A bare map for the browser checks in `zoom-layers.cjs` (UI-01a): the real `mapLayers.ts` on a MapLibre map with no
+     basemap, over a magenta background, so that any moment the map shows nothing is a magenta pixel. Served by the dev
+     server (`npm run dev`) at /e2e/harness.html; no part of the app. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>harness</title>
+    <link rel="stylesheet" href="/node_modules/maplibre-gl/dist/maplibre-gl.css" />
+    <style>
+      html, body, #map { margin: 0; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      import maplibregl from 'maplibre-gl';
+      import { fetchResultTileJson } from '/src/processing.ts';
+      import { ensureBaseLayers, syncBrowseMosaic, syncFocusRaster, syncLayers, buildTileUrl } from '/src/mapLayers.ts';
+      import { resultTileTemplate } from '/src/resultLayer.ts';
+      import { overlaysOfPass, underlaysOf } from '/src/searchLayers.ts';
+      import { previewDataset, previewScene, quicklookDataset, quicklookScene, sceneInfo } from '/src/fixtures/viewScenes.ts';
+
+      const EMPTY = [255, 0, 255];
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#ff00ff' } }] },
+        center: [10.65, 51.3],
+        zoom: 3,
+        fadeDuration: 0,
+        canvasContextAttributes: { preserveDrawingBuffer: true },
+      });
+      const loaded = new Promise((resolve) => map.on('load', resolve));
+      const idle = () => new Promise((resolve) => map.once('idle', resolve));
+
+      const pixels = (x, y, w, h) => {
+        const gl = map.getCanvas().getContext('webgl2') ?? map.getCanvas().getContext('webgl');
+        const out = new Uint8Array(w * h * 4);
+        gl.readPixels(x, gl.drawingBufferHeight - y - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+        return out;
+      };
+      const centre = () => {
+        const gl = map.getCanvas().getContext('webgl2') ?? map.getCanvas().getContext('webgl');
+        return [...pixels(Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2), 1, 1)].slice(0, 3);
+      };
+
+      window.h = {
+        loaded: loaded.then(() => {
+          ensureBaseLayers(map);
+        }),
+        idle,
+        centre,
+        isEmpty: () => centre().every((v, i) => v === EMPTY[i]),
+        // Fraction of neighbouring pixel pairs, in a block around the centre, that differ in luminance by 40 or more:
+        // nearest-neighbour pixels are blocks with hard edges, a stretched tile is a smooth gradient.
+        edges: (size = 200) => {
+          const gl = map.getCanvas().getContext('webgl2') ?? map.getCanvas().getContext('webgl');
+          const x = Math.floor(gl.drawingBufferWidth / 2 - size / 2);
+          const y = Math.floor(gl.drawingBufferHeight / 2 - size / 2);
+          const data = pixels(x, y, size, size);
+          const lum = (i) => 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+          let hard = 0;
+          let pairs = 0;
+          for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size - 1; col++) {
+              const i = (row * size + col) * 4;
+              pairs++;
+              if (Math.abs(lum(i) - lum(i + 4)) >= 40) hard++;
+            }
+          }
+          return hard / pairs;
+        },
+        jump: async (lon, lat, zoom) => {
+          map.jumpTo({ center: [lon, lat], zoom });
+          await idle();
+        },
+        zoom: () => map.getZoom(),
+        // A job's result, drawn the way the app draws it (`processingStore.ts::showResultOnMap`): the tile template
+        // of the result and the levels given here.
+        showResult: async (resultId, minZoom, maxZoom) => {
+          const href = `/results/${resultId}/WebMercatorQuad/tilejson.json`;
+          const tileJson = await fetchResultTileJson(href);
+          syncLayers(map, [
+            {
+              id: 'result',
+              name: 'Result',
+              visible: true,
+              opacity: 1,
+              derived: 'result',
+              restore: {},
+              overlays: [
+                {
+                  kind: 'raster',
+                  tileUrl: buildTileUrl(resultTileTemplate(href), { colormapName: 'viridis', rescale: '-1,1' }),
+                  bounds: tileJson.bounds,
+                  minZoom: minZoom ?? tileJson.minZoom,
+                  maxZoom: maxZoom ?? tileJson.maxZoom,
+                },
+              ],
+            },
+          ]);
+          return tileJson;
+        },
+        tileJson: (resultId) => fetchResultTileJson(`/results/${resultId}/WebMercatorQuad/tilejson.json`),
+        // The view of a scene: the browse preview, then the full resolution.
+        browse: () => syncBrowseMosaic(map, { items: [previewScene('H1')], dataset: previewDataset() }),
+        full: () =>
+          syncFocusRaster(map, {
+            downloaded: { H1: sceneInfo(previewScene('H1'), 8, 14) },
+            render: {},
+            showDownloaded: true,
+            items: [previewScene('H1')],
+            dataset: previewDataset(),
+          }),
+        // A layer pinned from a scene whose dataset has a quicklook and releases its tiles from z8, as the store pins it.
+        pinScene: (quicklook = true) => {
+          const item = quicklookScene('E2E');
+          const entries = [[item.id, sceneInfo(item, 8, 19)]];
+          const overlays = overlaysOfPass('quicklook-source', entries, undefined, {}, null, (quicklook ? underlaysOf(entries, [item], quicklookDataset(8), null) : []));
+          syncLayers(map, [{ id: 'scene', name: 'Scene', visible: true, opacity: 1, restore: {}, overlays }]);
+          return overlays.map((o) => o.kind);
+        },
+      };
+    </script>
+  </body>
+</html>

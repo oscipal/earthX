@@ -25,7 +25,8 @@ declare global {
 const JOB = 'AbCdEfGhIjKlMnOpQrSt_-';
 const RESULT = 'ZyXwVuTsRqPoNmLkJiHg_-';
 const HREF = `/results/${RESULT}/WebMercatorQuad/tilejson.json`;
-const TILE_JSON = { bounds: [10, 50, 11, 51], minzoom: 8, maxzoom: 14, data_type: 'float32', tiles: ['http://tiler/x'] };
+// What the tiler names for any result: every level, from a tile of the coarsest overview to the finest source's.
+const TILE_JSON = { bounds: [10, 50, 11, 51], minzoom: 0, maxzoom: 19, data_type: 'float32', tiles: ['http://tiler/x'] };
 
 function entry(over: Partial<JobEntry> = {}): JobEntry {
   return {
@@ -166,8 +167,8 @@ describe('the layer a result becomes', () => {
         kind: 'raster',
         tileUrl: `/results/${RESULT}/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=256&colormap_name=rdylgn&rescale=-1%2C1`,
         bounds: [10, 50, 11, 51],
-        minZoom: 8,
-        maxZoom: 15, // one level beyond the TileJSON's 14: its `maxzoom` can be coarser than the data
+        minZoom: 0,
+        maxZoom: 19, // the map asks the tiler for the levels the TileJSON names and stretches none past them
       },
     ]);
   });
@@ -453,7 +454,7 @@ describe('a result layer that expires', () => {
       name: 'Result · Band math',
       derived: 'result',
       result: { jobID: JOB, expires: new Date(Date.now() + expiresInMs).toISOString(), gsd: 10, resampled: null, expired: false },
-      overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 14 }],
+      overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
       itemIds: [],
       cropToAoi: false,
     });
@@ -518,7 +519,7 @@ describe('"Overview" over the map', () => {
           name: 'Result · Band math',
           visible: true,
           opacity: 1,
-          overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 14 }],
+          overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
           derived: 'result',
           result: { jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, ...over },
           restore: {
@@ -549,6 +550,47 @@ describe('"Overview" over the map', () => {
     expect(container.querySelector('.preview-badge-dock')).toBeNull();
     act(() => useAppStore.setState({ mapZoom: 3 }));
     expect(badge()).toBe('Overview');
+  });
+
+  describe('"Zoom in" (Otto, 25.10.2026: the picture does not vanish without a word)', () => {
+    const from = (minZoom: number) => ({ overlays: [{ kind: 'raster' as const, tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51] as [number, number, number, number], minZoom, maxZoom: 14 }] });
+    const chips = () => [...container.querySelectorAll('.preview-badge')].map((chip) => chip.textContent);
+
+    it('says from which zoom a layer is drawn, while the map is zoomed out of it', () => {
+      result({ gsd: null }, from(8));
+      act(() => useAppStore.setState({ mapZoom: 3 }));
+      act(() => root.render(<PreviewBadge />));
+      expect(chips()).toEqual(['Zoom in']);
+      expect(container.querySelector('.preview-badge')?.getAttribute('title')).toContain('is drawn from zoom 7.');
+      act(() => useAppStore.setState({ mapZoom: 7 }));
+      expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    });
+
+    it.each([
+      ['switched off', {}, { visible: false }],
+      ['expired', { expired: true }, {}],
+    ])('says nothing for a layer that is %s', (_, over, layer) => {
+      result({ gsd: null, ...over }, { ...from(8), ...layer });
+      act(() => useAppStore.setState({ mapZoom: 3 }));
+      act(() => root.render(<PreviewBadge />));
+      expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    });
+
+    it('says nothing for a layer drawn at this zoom', () => {
+      result({ gsd: null }, from(0));
+      act(() => useAppStore.setState({ mapZoom: 3 }));
+      act(() => root.render(<PreviewBadge />));
+      expect(container.querySelector('.preview-badge-dock')).toBeNull();
+    });
+
+    it('says it for the preview of the panel too, beside "Preview"', () => {
+      useProcessingStore.setState({
+        preview: { key: 'k', title: 'Band math', stepCount: 1, probe: '', measure: '', expression: false, scenes: [{ id: 'A', bbox: [10, 50, 11, 51], url: 'u' }], minZoom: 8, maxZoom: 14, clipToAoi: false },
+      });
+      act(() => useAppStore.setState({ mapZoom: 3 }));
+      act(() => root.render(<PreviewBadge />));
+      expect(chips()).toEqual(['Preview', 'Zoom in']);
+    });
   });
 
   it.each([

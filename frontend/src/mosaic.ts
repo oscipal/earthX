@@ -22,7 +22,7 @@ export const MAX_MOSAIC_SCENES = 64;
 // A source's `minzoom`/`maxzoom` are tile levels, a layer's `maxzoom` is a map zoom. MapLibre rounds the map zoom
 // for a raster source and asks 256-px tiles for the level above it (`placeRaster`), so tile level L is first
 // asked at map zoom L - 1.5: from there the mosaic is loaded and the scenes under it have to be out of sight.
-const TILE_LEVEL_AHEAD = 1.5;
+export const TILE_LEVEL_AHEAD = 1.5;
 
 export type SceneEntry = [itemId: string, info: DownloadedInfo];
 
@@ -55,6 +55,14 @@ export function passesOf(entries: SceneEntry[], groups: readonly TimeStepGroup[]
     else passes.set(key, [entry]);
   }
   return [...passes.values()];
+}
+
+// Time steps, and the scenes of a pass drawn one by one, come first on top: the first one wins where
+// they overlap ("first valid pixel wins", M3-09, like the download's mosaic). The map takes them
+// bottom to top, so this is the order to hand it. The view, a layer pinned from it and a pinned
+// preview all lay their pictures with it, or the same selection would stack differently in each.
+export function stackLikeView<T>(firstOnTop: readonly T[]): T[] {
+  return [...firstOnTop].reverse();
 }
 
 export function isMosaicPass(entries: SceneEntry[]): boolean {

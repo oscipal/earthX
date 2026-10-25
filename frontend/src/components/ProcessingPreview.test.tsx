@@ -880,7 +880,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
       ...pinned(id),
       visible,
       derived: 'preview',
-      overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 13, preview: true }],
+      overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 13, preview: true }],
     });
     useAppStore.setState({ layers: [layer('P1', false)] });
     mount(<PreviewBadge />);
@@ -893,7 +893,7 @@ describe('"Preview" (Otto, 19.10.2026: always coarser than the data)', () => {
 
   it('does not stand for an ordinary layer', () => {
     useAppStore.setState({
-      layers: [{ ...pinned('L1'), overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 8, maxZoom: 14 }] }],
+      layers: [{ ...pinned('L1'), overlays: [{ kind: 'raster', tileUrl: 'u', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }] }],
     });
     mount(<PreviewBadge />);
     expect(container.querySelector('.preview-badge')).toBeNull();
