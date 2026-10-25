@@ -190,7 +190,7 @@ export default function JobDetails() {
             )}
             {job.order && <Steps order={job.order} />}
             <div className="vc-actions">
-              {state.key === 'finished' && <DownloadZip job={job} now={now} label="Download (ZIP)" className="ghost-btn" />}
+              {state.key === 'finished' && job.archive && <DownloadZip job={job} now={now} label="Download (ZIP)" className="ghost-btn" />}
               {state.key === 'finished' && job.tiles && (
                 <button
                   type="button"

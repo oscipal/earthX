@@ -167,6 +167,14 @@ describe('opening a link', () => {
     expect(fetchMock.mock.calls.map(([url]) => url).filter((url) => String(url).includes('/jobs/'))).toEqual([]);
   });
 
+  it('leaves the details of a job, which the order in the window replaces', async () => {
+    act(() => useProcessingStore.setState({ open: true, detailJobID: 'AbCdEfGhIjKlMnOpQrSt_-' }));
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(draft().detailJobID).toBeNull();
+    expect(container.querySelector('[aria-label="Processing"]')).not.toBeNull();
+  });
+
   it('reads the link once, however often the app starts', async () => {
     onAddress(`?permalink=${ID}`);
     await act(async () => {

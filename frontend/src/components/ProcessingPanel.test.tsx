@@ -1302,6 +1302,12 @@ describe('a finished job row (K6)', () => {
     expect(container.textContent).toContain('Expired');
   });
 
+  it('offers "Download (ZIP)" and nothing else: no single file, no "Methods", no "Copy" (UI-01 §1 point 12)', () => {
+    act(() => root.render(<ul><JobRow job={entry(MIN_REMAINING_MS + 5000, false)} /></ul>));
+    expect([...container.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Download (ZIP)']);
+    for (const word of ['Methods', 'Copy', 'Result (COG)', 'Recipe']) expect(container.textContent).not.toContain(word);
+  });
+
   it('has no button to remove the row: a job is cancelled while it runs and kept after (UI-01 §6.7)', () => {
     act(() => root.render(<ul><JobRow job={entry(MIN_REMAINING_MS + 5000, false)} /></ul>));
     expect(container.querySelector('[title="Remove this row"]')).toBeNull();
