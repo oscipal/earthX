@@ -2084,6 +2084,22 @@ maßgeblich ist dieser Nachtrag.
   (`earthx.theme`, `earthx.projection`), nicht des Auftrags. Es gibt nichts zu speichern, bis die
   Auswahl einer Basiskarte existiert; ein Feld dafür kommt dann mit ihr (Otto, 2026-10-24: mit UI-02).
 
+## 15p. Nachtrag vom 2026-10-25: Zuschnitt und Export lesen in der Reihenfolge des Mosaiks (zu §4.5, §5.6; NM4-02)
+
+Otto hat NM4-02 am 2026-10-24 beauftragt (`plans/querschnitt/nm4-02-sortierung-zuschnitt.md`). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Befund (M4-17, Frage 2):** Die Regel „erstes gültiges Pixel“ gilt auf allen vier Wegen. Mosaik-Job und Mosaik-Kachel ordneten die Szenen aber mit `access.crop_rules.mosaic_order` (Ziel-CRS zuerst, je Teil nach Item-ID), der synchrone Zuschnitt und der Export-Job lasen sie in der Reihenfolge der Auswahl. In einer Überlappung konnte die Vorschau eine andere Szene zeigen als die Datei.
+- **Eine Funktion:** `mosaic_order` bleibt die einzige Regel. Der Zuschnitt (`api/tiler.py::_in_mosaic_order`) und die Annahme eines Exports (`api/intake.py::_mosaic_ordered`, dieselbe Funktion wie beim Mosaik-Job) rufen sie je Gruppe auf, mit dem CRS des ersten Assets der Anfrage, aufgelöst durch `resolve_asset` wie bei der Kachel.
+  - Die Reihenfolge gilt je Gruppe, über die Szenen, die die Fläche berühren; so rechnet auch der Mosaik-Job. Die Kachel ordnet die ganze Liste, die man ihr gibt.
+  - **Bekannte Grenze (Otto, 2026-10-25):** Die Kachel ordnet die ganze Liste, die man ihr gibt, und darf die AOI nicht kennen. Zuschnitt, Export und Mosaik-Job ordnen nur die Szenen, die die Fläche berühren. Bei gemischten CRS, wenn die Fläche nur einen Teil des Überflugs berührt, kann sich das Ziel-CRS und damit die Reihenfolge unterscheiden. Das war zwischen Job und Kachel schon so und bleibt.
+  - Der Export schreibt die geordneten Gruppen in sein Rezept. Zwei Auswahlen derselben Szenen in anderer Reihenfolge ergeben damit dasselbe Rezept und denselben Hash; `recipe.json` des Zuschnitts nennt die Reihenfolge, in der gelesen wurde.
+  - Eine einzelne Szene hat keine Reihenfolge und wird nicht aufgelöst. Fehlt allen Szenen das CRS (`proj:code`), ordnet die Funktion nach Item-ID.
+  - Die Abweisungen behalten ihren Platz: Der Zuschnitt ordnet nach den Größengrenzen, der Export löst dieselben Adressen mit denselben Prüfungen auf wie zuvor.
+- **Version (§4.5):** Der Zuschnitt und der Export liefern in Überlappungen andere Bytes als zuvor. Deshalb geht `earthx.__version__` von 0.4.2 auf **0.4.3**. `recipe_version` und `op_version` bleiben.
+  - Ergebnisse unter 0.4.2 bleiben unter ihrem alten Schlüssel stehen und werden nicht mehr getroffen. Die Reihenfolge der Gruppen steht auch bisher im Hash, ein Treffer auf ein falsch geordnetes Ergebnis war daher nicht möglich; die Erhöhung hält die Regel der Versionierung ein (Bytes ändern sich, Version steigt) und trennt die Ergebnisse beider Regeln sauber.
+- **Runner:** Er rechnet keinen Zuschnitt und keinen Export (`runner/cli.py` weist `crop` ab, M4-16 Frage 2). Die Reihenfolge eines Mosaik-Rezepts steht im Rezept und kommt von `api`; der Runner liest sie, wie sie dasteht. Er ist von der Änderung nicht betroffen. Weil die Version steigt und Cloud und Runner dieselbe tragen müssen (§15k), braucht Ottos lokaler Hash-Vergleich ein neu gebautes Image `earthx-runner:0.4.3`.
+- **Tests:** `tests/earthx/api/test_selection_order.py` — zwei überlappende Szenen in beiden Auswahlreihenfolgen: Kachel, Mosaik-Job, Zuschnitt und Export zeigen in der Überlappung dieselbe Szene; dazu gemischte CRS, fehlendes CRS, mehrere Gruppen, fehlendes Asset. Mit dem Code von vor NM4-02 scheitern der Zuschnitt und der Export bei umgekehrter Auswahl.
+
 ## 16. Quellen
 
 **Im Repo [P]**

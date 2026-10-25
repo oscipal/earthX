@@ -316,7 +316,9 @@ async def _prepare(
 
     policy = Policy(allowed_hosts=frozenset(config.source.asset_hosts))
     separator = config.zarr.variable_separator if config.zarr is not None else None
-    if not export:
+    if export:
+        groups = [_mosaic_ordered(group, items, config, entry.assets[0], policy)[0] for group in groups]
+    else:
         groups = _one_overpass(groups, items, config, entry.assets[0], policy)
     targets = [
         _Target(items[item_id], _resolve_checked(items[item_id], config, asset, policy), separator, policy, config)
@@ -695,6 +697,20 @@ def _whole_scenes_aoi(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return json.loads(json.dumps(mapping(union)))
 
 
+def _mosaic_ordered(
+    ids: Sequence[str], items: Mapping[str, dict[str, Any]], config: DatasetConfig, asset: str, policy: Policy
+) -> tuple[list[str], dict[str, str | None]]:
+    """``ids`` in the order the core reads a mosaic (:func:`~earthx.access.crop_rules.mosaic_order`), and the CRS of each.
+
+    The CRS is that of ``asset``, resolved and checked against the hosts of the dataset. A single
+    scene has no order, and nothing is resolved for it.
+    """
+    if len(ids) < 2:
+        return list(ids), {}
+    crs_by_item = {item_id: _resolve_checked(items[item_id], config, asset, policy).crs for item_id in ids}
+    return mosaic_order(crs_by_item), crs_by_item
+
+
 def _one_overpass(
     groups: list[list[str]],
     items: Mapping[str, dict[str, Any]],
@@ -735,8 +751,7 @@ def _one_overpass(
             f"the scenes of a mosaic belong to one overpass; {', '.join(apart[:10])} differ from {ids[0]}",
             "items",
         )
-    crs_by_item = {item_id: _resolve_checked(items[item_id], config, asset, policy).crs for item_id in ids}
-    ordered = mosaic_order(crs_by_item)
+    ordered, crs_by_item = _mosaic_ordered(ids, items, config, asset, policy)
     if config.zarr is not None:
         if len(set(crs_by_item.values())) > 1:
             raise OrderRefused(
