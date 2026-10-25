@@ -12,7 +12,7 @@ import type { DatasetOption } from '../datasets';
 import type { ExportOffer } from '../download';
 import { bboxToPolygon } from '../geoUtils';
 import { placeAoi } from '../placeSearch';
-import { useProcessingStore } from '../processingStore';
+import { resetJobs, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
 import DownloadDialog from './DownloadDialog';
@@ -141,6 +141,7 @@ let root: Root;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   routes = {
     'POST /processing/processes/recipe/estimate': () => json(ESTIMATE),
     'POST /processing/processes/recipe/execution': () => json(statusDoc('accepted'), 201),
@@ -161,7 +162,9 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  for (const job of useProcessingStore.getState().jobs) useProcessingStore.getState().removeJob(job.jobID);
+  resetJobs();
+  localStorage.clear();
+  sessionStorage.clear();
   useAppStore.getState().closeDownloadDialog();
   vi.unstubAllGlobals();
 });
@@ -342,6 +345,30 @@ describe('starting the export', () => {
     expect(button(EXPORT)?.disabled).toBe(true);
     expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
     act(() => useAppStore.getState().closeDownloadDialog());
+    expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
+  });
+
+  it('names the job "Export · <dataset> · <day>", with the day the scenes share', async () => {
+    open();
+    await show();
+    await click(EXPORT);
+    expect(useProcessingStore.getState().jobs[0].title).toMatch(/^Export · Sentinel-2 L2A · 1 Jul( 2026)?$/);
+  });
+
+  it('names the day the job is started where the app does not hold the scenes of the export', async () => {
+    open();
+    useAppStore.setState({ items: [], groups: [] });
+    await show();
+    await click(EXPORT);
+    expect(useProcessingStore.getState().jobs[0].title).toMatch(/^Export · Sentinel-2 L2A · \d{1,2} [A-Z][a-z]{2}( \d{4})?$/);
+  });
+
+  it('lets the export be ordered again once the job failed, and keeps the first job in the list', async () => {
+    open();
+    await show();
+    await click(EXPORT);
+    act(() => useProcessingStore.setState((s) => ({ jobs: s.jobs.map((j) => ({ ...j, phase: 'failed' as const })) })));
+    expect(button(EXPORT)?.disabled).toBe(false);
     expect(useProcessingStore.getState().jobs.map((j) => j.jobID)).toEqual([JOB]);
   });
 

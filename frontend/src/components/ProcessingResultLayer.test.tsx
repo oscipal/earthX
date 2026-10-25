@@ -8,7 +8,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { saveStoredJobs } from '../jobTracker';
+import { saveShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
 import { layerProcessBlock, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
@@ -44,6 +44,12 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     tiles: { href: HREF, width: 1000, gsd: 10 },
     statistics: null,
     range: null,
+    archived: false,
+    groupId: null,
+    batchId: null,
+    part: null,
+    order: null,
+    createdAt: '2026-10-10T12:00:00Z',
     ...over,
   };
 }
@@ -63,6 +69,7 @@ let tileJson: () => Response | Promise<Response>;
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   tileJson = () => json(TILE_JSON);
   fetchMock = vi.fn(async (url: string) => {
     if (url === HREF) return tileJson();
@@ -253,7 +260,7 @@ describe('the layer a result becomes', () => {
 
       afterEach(() => setTrackerOptions({}));
 
-      async function readJob(result: Record<string, unknown>) {
+      async function readJob(result: Record<string, unknown>, range: JobEntry['range'] = null) {
         const document = { result: { href: `/processing/jobs/${JOB}/results/result.tif`, properties: result }, tiles: { href: HREF } };
         fetchMock.mockImplementation(async (url: string) => {
           if (url === HREF) return tileJson();
@@ -262,8 +269,17 @@ describe('the layer a result becomes', () => {
         });
         setTrackerOptions({ EventSource: null, fetchJob: async () => STATUS as never, pollMs: 60_000 });
         useProcessingStore.setState({ jobs: [] });
-        // As a reload does: the tab remembers the job, the server says it is done, the results are read.
-        saveStoredJobs([{ jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM' }]);
+        // As a reload does: the browser remembers the job, the server says it is done, the results are read.
+        saveShelf({
+          jobs: [
+            {
+              jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', createdAt: '2026-10-10T12:00:00Z',
+              archived: false, groupId: null, batchId: null, part: null, range, order: null,
+            },
+          ],
+          batches: [],
+          groups: [],
+        });
         act(() => useProcessingStore.getState().resumeJobs());
         await flush();
         return useProcessingStore.getState().jobs[0];
@@ -286,9 +302,18 @@ describe('the layer a result becomes', () => {
         expect(job.statistics?.expression).toBe(true);
       });
 
-      it('has no range of its own once taken up again: the tab does not keep it', async () => {
+      it('has no range of its own where none was set by hand', async () => {
         const job = await readJob(properties(DEM));
         expect(job.range).toBeNull();
+      });
+
+      it('takes the range set by hand up again with the job, and the layer is drawn with it (UI-01 §6.4)', async () => {
+        const job = await readJob(properties(DEM), { vmin: '0', vmax: '3000', colormap: 'magma' });
+        expect(job.range).toEqual({ vmin: '0', vmax: '3000', colormap: 'magma' });
+        act(() => root.render(<JobList />));
+        click(button('Add to layers'));
+        await flush();
+        expect(urlOfLayer()).toContain('colormap_name=magma&rescale=0%2C3000');
       });
 
       it('has none for a document from before they were written, and the layer is drawn as before', async () => {

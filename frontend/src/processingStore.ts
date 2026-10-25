@@ -1,5 +1,5 @@
 // The processing panel's state (M4-13 §3.5): the process description per
-// dataset, the draft of an order, its estimate, and the jobs of this tab. A
+// dataset, the draft of an order, its estimate, and the jobs of this browser. A
 // store of its own next to `store.ts`; it reads the selection (dataset,
 // scenes, AOI) from there and never writes to it.
 //
@@ -20,8 +20,20 @@ import { create } from 'zustand';
 
 import { fetchItem, fetchStatisticsAt, HttpError } from './api';
 import { crsBlockReason, type CrsEntry } from './crsUnit';
-import type { DatasetOption } from './datasets';
-import { loadStoredJobs, saveStoredJobs, trackJob, type TrackerOptions } from './jobTracker';
+import { resultsGroupByOfOption, type DatasetOption } from './datasets';
+import {
+  loadShelf,
+  newId,
+  orderCopy,
+  readShelf,
+  saveShelf,
+  SHELF_KEY,
+  type ShelfBatch,
+  type ShelfGroup,
+  type ShelfJob,
+  type ShelfState,
+} from './jobShelf';
+import { trackJob, type TrackerOptions } from './jobTracker';
 import {
   batchPass,
   effectiveRunAs,
@@ -29,6 +41,7 @@ import {
   foreignReason,
   foreignScenes,
   jobTitle,
+  titleDay,
   runChoices,
   runPool,
   unitsOf,
@@ -158,9 +171,7 @@ export interface ResultFile {
   label: string;
 }
 
-export interface JobEntry {
-  jobID: string;
-  expires: string;
+export interface JobEntry extends ShelfJob {
   status: StatusInfo | null;
   phase: JobPhase;
   files: ResultFile[] | null;
@@ -171,19 +182,16 @@ export interface JobEntry {
   cancelling: boolean;
   // `/results` answered `410`: the result is gone before the row's own clock says so.
   expired: boolean;
-  // What the panel called the job (K5); `null` for a job of the download dialog.
-  title: string | null;
   // The tiles of a raster result (the link `tiles` of the results document, M4-13c-5);
   // `null` until the results are read, for an export, and for a result before this link existed.
   tiles: JobTiles | null;
   // The statistics of the AOI per band, for the colour scale of the layer (M4-32b); `null` until the
   // results are read, and for a result from before they were written.
   statistics: ResultStats | null;
-  // The range and colormap the user had set by hand in the panel when the job was started; its
-  // result is drawn with them and no other result is. `null` for the default range, for a job of
-  // the download dialog, and for one taken up again after a reload (it is not kept in the tab).
-  range: PreviewRange | null;
 }
+
+// The jobs of one batch (M4-13c-4) are one entry of the manager (UI-01 §6.10).
+export type BatchEntry = ShelfBatch;
 
 export interface JobTiles {
   // `/results/{result_id}/WebMercatorQuad/tilejson.json`, already checked (`resultLayer.ts::tilesHref`).
@@ -204,7 +212,7 @@ export interface PartOutcome {
 
 interface ProcessingState {
   open: boolean;
-  // The window of the jobs of this tab (M4-13c §3.1), apart from the panel.
+  // The window of the jobs (M4-13c §3.1), apart from the panel.
   jobsOpen: boolean;
   descriptions: Record<string, Description>;
   // What the server said about the target CRS codes typed so far (M4-13c-3); kept
@@ -246,6 +254,10 @@ interface ProcessingState {
   // The jobs of a batch the server refused to start, for the batch they were started from.
   batchStartRefusals: { key: string; refusals: { label: string; message: string }[] } | null;
   jobs: JobEntry[];
+  batches: BatchEntry[];
+  groups: ShelfGroup[];
+  // Whether the browser keeps the jobs, and all of them (UI-01 §6.4).
+  shelf: ShelfState;
 
   openProcessing: (entry?: ProcessingEntry) => void;
   processLayer: (layerId: string) => Promise<void>;
@@ -276,10 +288,16 @@ interface ProcessingState {
   restoreOrder: (order: Order, view: PermalinkView) => Promise<LoadResult>;
   reviewOrder: () => Promise<void>;
   startJob: () => Promise<void>;
-  placeOrder: (order: Order, options?: { aoiProvenance?: AoiProvenance }) => Promise<{ jobID: string } | { message: string }>;
+  placeOrder: (
+    order: Order,
+    options?: { aoiProvenance?: AoiProvenance; title?: string },
+  ) => Promise<{ jobID: string } | { message: string }>;
+  // Dismisses a job that is waiting or running; any other is left alone (a finished job is never deleted).
   cancelJob: (jobID: string) => Promise<void>;
-  removeJob: (jobID: string) => void;
+  // Takes the jobs kept in this browser up again, and follows those that have not expired.
   resumeJobs: () => void;
+  // Follows a job that is not followed yet (one from another tab, an archived one) because its row is shown.
+  followJob: (jobID: string) => void;
 }
 
 // "Load recipe…" (M4-19d): the steps of a recipe on the current selection.
@@ -519,6 +537,34 @@ export function setTrackerOptions(options: TrackerOptions): void {
   trackerOptions = options;
 }
 
+// Whether the shelf of this page may not be written: its stored value is of a version this build does not know.
+let shelfLocked = false;
+// A copy of an order went to make room, and the shelf goes on saying so for this page.
+let copiesDropped = false;
+let storageListening = false;
+
+const withOthers = <T extends { id: string }>(first: T[], rest: T[]): T[] => [
+  ...first,
+  ...rest.filter((r) => !first.some((f) => f.id === r.id)),
+];
+
+// Tests start from no jobs: the trackers stop and the list is empty. What the browser keeps is theirs to clear.
+export function resetJobs(): void {
+  for (const stop of trackers.values()) stop();
+  trackers.clear();
+  shelfLocked = false;
+  copiesDropped = false;
+  useProcessingStore.setState({ jobs: [], batches: [], groups: [], shelf: 'ok' });
+}
+
+// A job still stands for the order it was placed for: it runs, or its results are there. Another one may be
+// placed once it failed, was cancelled or has expired — the way to "Start the job again".
+export function orderStands(job: JobEntry | undefined): boolean {
+  if (!job) return false;
+  if (job.phase === 'active') return true;
+  return job.phase === 'successful' && !job.expired && !isResultExpired(job.expires, Date.now());
+}
+
 function abortEstimate(): void {
   estimating?.abort();
   estimating = null;
@@ -643,12 +689,21 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, ...patch } : j)) }));
   };
 
+  // Keeps the jobs in the browser (UI-01 §6.4). Where the browser is full the oldest copies of orders go,
+  // here as well as there, and the shelf says so; it does not say it less once it has.
   const persist = () => {
-    saveStoredJobs(
-      get()
-        .jobs.filter((j) => j.phase !== 'gone' && j.phase !== 'dismissed')
-        .map(({ jobID, expires, title }) => ({ jobID, expires, title: title ?? undefined })),
-    );
+    if (shelfLocked) {
+      set({ shelf: 'memory' });
+      return;
+    }
+    const { jobs, batches, groups } = get();
+    const saved = saveShelf({ jobs, batches, groups });
+    const dropped = new Set(saved.dropped);
+    if (dropped.size > 0) copiesDropped = true;
+    set((s) => ({
+      jobs: dropped.size > 0 ? s.jobs.map((j) => (dropped.has(j.jobID) ? { ...j, order: null } : j)) : s.jobs,
+      shelf: saved.state === 'ok' && copiesDropped ? 'trimmed' : saved.state,
+    }));
   };
 
   const readResults = async (jobID: string, status: StatusInfo) => {
@@ -691,15 +746,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             if (phase === 'failed') updateJob(jobID, { failure: status.message || null });
             void readResults(jobID, status);
           }
-          if (phase === 'dismissed') {
-            trackers.delete(jobID);
-            persist();
-          }
+          if (phase === 'dismissed') trackers.delete(jobID);
         },
         onGone: () => {
           trackers.delete(jobID);
           updateJob(jobID, { phase: 'gone' });
-          persist();
         },
       },
       trackerOptions,
@@ -707,43 +758,52 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     trackers.set(jobID, stop);
   };
 
-  const addJob = (
-    jobID: string,
-    expires: string,
-    status: StatusInfo | null,
-    title: string | null = null,
-    range: PreviewRange | null = null,
-  ) => {
-    if (get().jobs.some((j) => j.jobID === jobID)) return;
-    const entry: JobEntry = {
-      jobID,
-      expires,
+  // A job as the list holds it: what the browser kept of it, and what is learnt from the server.
+  const jobEntry = (job: ShelfJob, status: StatusInfo | null, now: number): JobEntry => {
+    // A job past its expiry is not asked after; it stays in the list as expired.
+    const over = Date.parse(job.expires) <= now;
+    return {
+      ...job,
       status,
-      phase: 'active',
+      phase: over ? 'gone' : 'active',
       files: null,
       resampled: null,
       failure: null,
       error: null,
       cancelling: false,
-      expired: false,
-      title,
+      expired: over,
       tiles: null,
       statistics: null,
-      range,
     };
-    set((s) => ({ jobs: [entry, ...s.jobs] }));
-    persist();
-    follow(jobID);
   };
 
-  // "<operators> · <dataset>", with the place in the batch for one of many.
-  // Made before the first job is placed: the draft may change while they are.
-  const titler = (view: OrderView) => {
+  type NewJob = Pick<ShelfJob, 'jobID' | 'expires'> & Partial<ShelfJob> & { status: StatusInfo };
+
+  const addJob = ({ status, ...job }: NewJob) => {
+    if (get().jobs.some((j) => j.jobID === job.jobID)) return;
+    const blank: ShelfJob = {
+      title: null,
+      createdAt: new Date().toISOString(),
+      archived: false,
+      groupId: null,
+      batchId: null,
+      part: null,
+      range: null,
+      order: null,
+      ...job,
+    };
+    set((s) => ({ jobs: [jobEntry(blank, status, Date.now()), ...s.jobs] }));
+    persist();
+    follow(job.jobID);
+  };
+
+  // "<operators> · <dataset> · <day>". Made before the first job is placed: the draft may change while they are.
+  const titleOf = (view: OrderView) => {
     const operators = get().steps.map(
       (step) => view.info?.operators.find((o) => o.op === step.op && o.opVersion === step.opVersion)?.title ?? step.op,
     );
-    const dataset = view.dataset?.title ?? view.dataset?.id ?? '';
-    return (position?: { index: number; total: number }) => jobTitle({ operators, dataset, position });
+    const resultsGroupBy = view.dataset ? resultsGroupByOfOption(view.dataset) : null;
+    return jobTitle({ operators, dataset: view.dataset?.title ?? '', day: titleDay(view.pass?.items ?? [], resultsGroupBy) });
   };
 
   // The jobs of the reviewed batch the server took in; one after the other, and a
@@ -752,11 +812,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   const startBatch = async (view: OrderView) => {
     const batch = get().batch;
     if (!view.key || batch?.key !== view.key) return;
-    const total = view.parts.length;
-    const titleOf = titler(view);
+    const title = titleOf(view);
     const own = handRangeOf(get());
     const mine = ++startGeneration;
     set({ starting: true, startError: null, batchStartRefusals: null });
+    // One entry for the batch, made with its first job; the jobs themselves stay jobs of their own.
+    const batchId = newId();
+    const createdAt = new Date().toISOString();
     let opened = false;
     const refusals: { label: string; message: string }[] = [];
     for (const [index, outcome] of batch.parts.entries()) {
@@ -764,17 +826,51 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       if (!outcome.doc || !part?.order) continue;
       try {
         const status = await placeJob(part.order);
-        if (!opened) set({ jobsOpen: true });
+        if (!opened) {
+          set((s) => ({
+            jobsOpen: true,
+            batches: [{ id: batchId, title, createdAt, archived: false, groupId: null, refused: [] }, ...s.batches],
+          }));
+        }
         opened = true;
-        addJob(status.jobID, status.expires, status, titleOf({ index, total }), own);
+        addJob({
+          jobID: status.jobID,
+          expires: status.expires,
+          status,
+          title,
+          range: own,
+          batchId,
+          part: part.unit.label,
+          order: orderCopy(part.order),
+        });
       } catch (error) {
         refusals.push({ label: part.unit.label, message: refusalMessage(error) });
       }
     }
+    if (opened && refusals.length > 0) {
+      set((s) => ({ batches: s.batches.map((b) => (b.id === batchId ? { ...b, refused: refusals } : b)) }));
+    }
+    if (opened) persist();
     // A draft dropped meanwhile (`resetDraft`) has its own state by now.
     if (mine !== startGeneration) return;
     // One review, these jobs: starting again needs a new review.
     set({ starting: false, batch: null, batchStartRefusals: refusals.length > 0 ? { key: view.key, refusals } : null });
+  };
+
+  // The shelf as another tab last wrote it (`storage` event): its entries are this tab's too. A job this tab
+  // does not know is not followed until `followJob`.
+  const takeShelf = () => {
+    const { shelf } = readShelf();
+    const stored = new Map(shelf.jobs.map((j) => [j.jobID, j]));
+    set((s) => {
+      const known = new Set(s.jobs.map((j) => j.jobID));
+      const added = shelf.jobs.filter((j) => !known.has(j.jobID)).map((j) => jobEntry(j, null, Date.now()));
+      return {
+        jobs: [...added, ...s.jobs.map((j) => ({ ...j, ...stored.get(j.jobID) }))],
+        batches: withOthers(shelf.batches, s.batches),
+        groups: withOthers(shelf.groups, s.groups),
+      };
+    });
   };
 
   return {
@@ -784,6 +880,9 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     crs: {},
     ...EMPTY_DRAFT,
     jobs: [],
+    batches: [],
+    groups: [],
+    shelf: 'ok',
 
     // Opened from the selection (`ViewBar`), a layer or the full-resolution view.
     // Every entry sets the area: "Whole scene" unless the entry says otherwise
@@ -1127,7 +1226,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         return;
       }
       if (s.estimate?.key !== view.key) return;
-      const title = titler(view)();
+      const title = titleOf(view);
       const own = handRangeOf(s);
       const mine = ++startGeneration;
       set({ starting: true, startError: null });
@@ -1138,7 +1237,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
         set({ jobsOpen: true });
-        addJob(status.jobID, status.expires, status, title, own);
+        addJob({ jobID: status.jobID, expires: status.expires, status, title, range: own, order: orderCopy(order) });
       } catch (error) {
         if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
       }
@@ -1149,8 +1248,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     // as text, the job as a row in the list.
     placeOrder: async (order, options) => {
       try {
-        const status = await placeJob(order, options);
-        addJob(status.jobID, status.expires, status);
+        const status = await placeJob(order, options && { aoiProvenance: options.aoiProvenance });
+        addJob({ jobID: status.jobID, expires: status.expires, status, title: options?.title ?? null, order: orderCopy(order) });
         return { jobID: status.jobID };
       } catch (error) {
         return { message: refusalMessage(error) };
@@ -1158,6 +1257,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
 
     cancelJob: async (jobID) => {
+      const job = get().jobs.find((j) => j.jobID === jobID);
+      // `DELETE` also discards the result of a finished job: it goes out only for a job last known to be
+      // waiting or running, and once for a double click.
+      if (!job || job.cancelling || job.phase !== 'active') return;
+      if (job.status?.status !== 'accepted' && job.status?.status !== 'running') return;
       updateJob(jobID, { cancelling: true, error: null });
       try {
         await dismissJob(jobID);
@@ -1173,16 +1277,36 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           updateJob(jobID, { cancelling: false, error: error instanceof Error ? error.message : String(error) });
         }
       }
-      persist();
-    },
-    removeJob: (jobID) => {
-      trackers.get(jobID)?.();
-      trackers.delete(jobID);
-      set((s) => ({ jobs: s.jobs.filter((j) => j.jobID !== jobID) }));
-      persist();
     },
     resumeJobs: () => {
-      for (const { jobID, expires, title } of loadStoredJobs().reverse()) addJob(jobID, expires, null, title ?? null);
+      const { shelf, state, locked } = loadShelf();
+      shelfLocked = locked;
+      const now = Date.now();
+      const known = new Set(get().jobs.map((j) => j.jobID));
+      // Newest first, as the list is made when jobs are placed.
+      const entries = shelf.jobs
+        .filter((j) => !known.has(j.jobID))
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .map((j) => jobEntry(j, null, now));
+      set((s) => ({
+        shelf: state,
+        jobs: [...entries, ...s.jobs],
+        batches: withOthers(shelf.batches, s.batches),
+        groups: withOthers(shelf.groups, s.groups),
+      }));
+      // An archived job is not followed until its row is shown (`followJob`).
+      for (const entry of entries) if (entry.phase === 'active' && !entry.archived) follow(entry.jobID);
+      if (!storageListening && typeof window !== 'undefined') {
+        storageListening = true;
+        window.addEventListener('storage', (event) => {
+          // A value removed by another tab (the browser's data cleared) is not news: this tab still holds its jobs.
+          if (event.key === SHELF_KEY && event.newValue !== null) takeShelf();
+        });
+      }
+    },
+    followJob: (jobID) => {
+      const job = get().jobs.find((j) => j.jobID === jobID);
+      if (job && job.phase === 'active' && !trackers.has(jobID) && Date.parse(job.expires) > Date.now()) follow(jobID);
     },
   };
 });

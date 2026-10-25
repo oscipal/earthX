@@ -15,11 +15,10 @@
 // - Polling honours `Retry-After`; a `404` means the job is gone (expired or
 //   dismissed) and ends the tracking.
 //
-// Jobs survive a reload in `sessionStorage` (F5 (1)): `jobID`, `expires` and the
-// title the panel gave the job (M4-13c K5), never the order or the AOI (Q8).
+// What survives a reload is kept in `jobShelf.ts`.
 
 import { HttpError } from './api';
-import { eventsUrl, fetchJob, isJobId, parseStatusInfo, TERMINAL_STATES, type StatusInfo } from './processing';
+import { eventsUrl, fetchJob, parseStatusInfo, TERMINAL_STATES, type StatusInfo } from './processing';
 
 export const POLL_MS = 2000;
 export const MAX_STREAM_ERRORS = 3;
@@ -129,64 +128,4 @@ export function trackJob(jobId: string, handlers: TrackerHandlers, options: Trac
     if (errors >= MAX_STREAM_ERRORS) fallBack();
   };
   return stop;
-}
-
-// --- sessionStorage (F5 (1)) ---------------------------------------------------
-
-export const JOBS_STORAGE_KEY = 'earthx.processing.jobs';
-
-export interface StoredJob {
-  jobID: string;
-  expires: string;
-  title?: string;
-}
-
-const MAX_TITLE_LENGTH = 200;
-
-const keptTitle = (title: unknown): { title: string } | Record<string, never> =>
-  typeof title === 'string' && title !== '' && title.length <= MAX_TITLE_LENGTH ? { title } : {};
-
-function storage(): Storage | null {
-  try {
-    return globalThis.sessionStorage ?? null;
-  } catch {
-    return null; // blocked storage throws on access
-  }
-}
-
-// The jobs of this tab that have not expired; anything malformed is dropped.
-export function loadStoredJobs(now: number = Date.now()): StoredJob[] {
-  try {
-    const raw = storage()?.getItem(JOBS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    const jobs: StoredJob[] = [];
-    for (const entry of parsed) {
-      if (!entry || typeof entry !== 'object') continue;
-      const { jobID, expires, title } = entry as Record<string, unknown>;
-      if (!isJobId(jobID) || typeof expires !== 'string') continue;
-      const end = Date.parse(expires);
-      if (Number.isNaN(end) || end <= now) continue;
-      if (jobs.some((j) => j.jobID === jobID)) continue;
-      jobs.push({ jobID, expires, ...keptTitle(title) });
-    }
-    return jobs;
-  } catch {
-    return [];
-  }
-}
-
-export function saveStoredJobs(jobs: readonly StoredJob[]): void {
-  try {
-    const target = storage();
-    if (!target) return;
-    if (jobs.length === 0) target.removeItem(JOBS_STORAGE_KEY);
-    else {
-      const kept = jobs.map(({ jobID, expires, title }) => ({ jobID, expires, ...keptTitle(title) }));
-      target.setItem(JOBS_STORAGE_KEY, JSON.stringify(kept));
-    }
-  } catch {
-    /* blocked or full: the panel works on without resuming after a reload */
-  }
 }
