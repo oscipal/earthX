@@ -154,6 +154,10 @@ not extended to handle Zarr. `DatasetConfig.format` selects the reader.
 Top candidate at the time: EOPF Sentinel Zarr Samples Service (ESA-operated,
 Zarr, STAC catalog, Zarr assets readable without credentials).
 
+> **Stand 25.10.2026 (`adr/0017`):** Der EOPF-Datensatz ist wieder aus der Registry
+> ausgeschieden. `zarr_reader.py` und der formatgenerische Code bleiben und werden auf
+> synthetischen Stores und einem Testeintrag geprüft; die Registry führt keinen Zarr-Datensatz.
+
 ---
 
 ## 3. Backend checklist

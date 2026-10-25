@@ -168,9 +168,9 @@ liegen auf `e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com`.
 `sentinel-2-l2a`, die Collection 1 ablöst (adr/0003 §3, Option B) — nicht zum
 Datensatz, den `earthx` führt. Die Tabelle oben ist entsprechend korrigiert.
 
-**EOPF-Hosts — Stand nach der Freigabe (2026-09-20, M2-03b, `adr/0007` §12.1):**
+**EOPF-Hosts — Stand nach der Freigabe (2026-09-20, M2-03b, `adr/0007` §12.1; Historie: der Datensatz schied am 25.10.2026 aus, `adr/0017`, die Freigaben bleiben für Messungen):**
 `data.eodc.eu` ist **freigegeben und gemessen erreichbar**; darauf liegen die
-Zarr-v3-Produkte der Collection `sentinel-2-l2a-zarr3`, die in `adr/0007` §12
+Zarr-v3-Produkte der Collection des EOPF-Dienstes (seit `adr/0017` vom 25.10.2026 kein Datensatz der Plattform mehr), die in `adr/0007` §12
 durchgemessen sind. `objects.eodc.eu` (ältere Tutorial-Produkte, S1-SLC) und
 `stac.core.eopf.eodc.eu` (die STAC-API) sind unverändert erreichbar; die Tabelle
 oben führte die STAC-API bisher gar nicht.

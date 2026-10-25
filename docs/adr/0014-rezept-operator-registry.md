@@ -19,6 +19,10 @@
   - **Nachtrag vom 2026-10-07 (M4-08b, Otto):** §15d: Die Job-Schnittstelle
     erklärt keine Konformitätsklasse (zu F12 und §9). Der Originaltext bleibt
     stehen.
+  - **Nachtrag vom 2026-10-25 (NM4-15b):** §15d (der erste Abschnitt dieser
+    Nummer): Der Zarr-Fall der Toleranz T1 ↔ T2 läuft seit dem Ausscheiden des
+    EOPF-Datensatzes (`adr/0017`) auf einem synthetischen Testeintrag. Der
+    Originaltext bleibt stehen.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -1613,6 +1617,8 @@ Originaltext oben bleibt unverändert; maßgeblich ist dieser Nachtrag.
 | §5.2 und R5: „`+ - * /`, Klammern und eine kleine Liste von numexpr-Funktionen“ | keine logischen Verknüpfungen | **`&`, `\|`, `~` nur auf Wahrheitswerten** (Vergleiche und ihre Verknüpfungen); die Funktionen sind `where`, `abs`, `minimum`, `maximum`, `sqrt` (§15c); `**` nur mit ganzzahligem Literal, \|n\| ≤ 50 | M4-09 F4; `plans/m4/m4-processing-kern.md` §1.1b (R5) |
 | §6.2: „Bänder verschiedener Auflösung“ nicht geregelt | `GridMismatch` (M4-07a F2) | **Verschachtelte Raster** (gleiches CRS, gleiche Ausdehnung, jede Pixelgröße ein ganzes Vielfaches der feinsten) werden mit `nearest` auf das feinste Raster gelesen; das Ergebnis trägt `earthx:resampled=true`, der Bericht des Jobs den Schlüssel `resampled`. Gemessen: Kachel eines 20-m-Assets gegen die auf 10 m verdoppelte Kachel, z13–z15, 100 % gleich | M4-09 F2, §2 |
 | §6.3, Zeile T1 ↔ T2 (Band-Math), für **Zarr** | bitgleich | **Entschieden am 2026-10-07 (Otto, Option 1):** COG: bitgleich ohne Einschränkung. Zarr: bitgleich außerhalb von 0,125 Quellpixel an einer Pixelgrenze (GDALs Näherungsschwelle); an der Grenze darf `nearest` den Nachbarn wählen. Die Formel auf dem exakt nächsten Quellpixel stimmt überall. T2 ↔ T2L bleibt bitgleich. Befund [M]: 13 von 3489 gültigen Pixeln einer z14-Kachel weichen ab (dazu eines in der Maske), alle bis 0,003 Quellpixel an einer Grenze; Ursache sind zwei `nearest`-Warps verschiedener Näherung (`XarrayReader` gegen `Reader` auf dem COG des Ergebnisses), nicht der Operator. Der Vergleichstest prüft beides (`tests/earthx/api/test_tiler_operator.py`) | `plans/m4/m4-09-band-math.md` §9 Punkt 3, §10; Log 2026-10-07 |
+
+**Nachtrag vom 2026-10-25 (`adr/0017`, NM4-15b):** Der Datensatz, an dem der Zarr-Fall der Toleranz oben bisher hing, schied aus der Registry aus. Die Regel gilt unverändert: Der Zarr-Vergleich Kachel ↔ Job läuft in der CI auf dem synthetischen Testeintrag `synthetic-zarr` (`backend/tests/catalog/synthetic_zarr.py`) und dem Mini-Zarr; ein Wächtertest in `test_onboarding_processing.py` stellt sicher, dass dieser Fall nicht still wegfällt. Der Beleg ist damit synthetisch, wie schon bisher (die Daten waren es); eine echte Quelle fehlt bis zur Wiedervorlage aus `adr/0017` F4.
 
 ---
 
