@@ -161,12 +161,8 @@ export default function DownloadDialog() {
       ? downloadRequestFor(layer, datasets)
       : null;
   const sceneCount = req?.groups.flat().length ?? 0;
-  // The years of the scenes the crop reads. A pinned layer keeps only their ids: it names the years
-  // while the results list still holds all of them, else the text waits for the server's own (NM4-01).
-  const pinnedIds = layer?.restore.itemIds ?? [];
-  const cropItems = selectionMode ? selectionItems : pinnedIds.flatMap((id) => items.find((it) => it.id === id) ?? []);
-  const cropSceneCount = selectionMode ? selectionItems.length : pinnedIds.length;
-  const attribution = attributionText(flags, cropItems.length === cropSceneCount ? acquisitionYears(cropItems) : null);
+  // No attribution line: its year is that of the scenes' acquisition, which a pinned layer does not keep,
+  // and ATTRIBUTION.txt in the ZIP carries the text (Otto, 25.10.2026, NM4-01).
   const terms = termsNoticeText(flags, 'en');
   const exportAllowed = canExportLicense(flags);
 
@@ -222,7 +218,6 @@ export default function DownloadDialog() {
             </p>
           )}
 
-          {attribution && <p className="dialog-attribution">{attribution}</p>}
           {terms && <p className="dialog-terms">{terms}</p>}
           {flags?.terms_url && !terms?.includes(flags.terms_url) && (
             <p>

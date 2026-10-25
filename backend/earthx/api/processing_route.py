@@ -45,7 +45,9 @@ Every answer under ``/jobs/`` and ``/permalinks`` and the placing of a job carry
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import unicodedata
@@ -81,10 +83,17 @@ from earthx.api.intake import (
     job_side_files,
     methods_bytes,
 )
-from earthx.api.item_source import ItemSource
+from earthx.api.item_source import ItemSource, fetch_item_or_refuse
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
 from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
-from earthx.catalog.registry import AcquisitionYears, DatasetConfig, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import (
+    AcquisitionYearMissing,
+    AcquisitionYears,
+    DatasetConfig,
+    DatasetRegistry,
+    UnknownDatasetError,
+    acquisition_years,
+)
 from earthx.gateway import Gateway
 from earthx.jobs import permalinks
 from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
@@ -939,6 +948,7 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     if name not in _names_of(status):
         raise Problem(404, "there is no such result", type_="urn:earthx:no-such-result", title="No such result")
     body = await _db(api, job_recipe, jobID)
+    status = await _with_derived_years(api, body, status)
     filename = _download_name(body, status, _SUFFIXES[name])
     if name == "recipe.json":
         return _recipe_document(api, body, status, filename)
@@ -969,19 +979,42 @@ def _config_of(api: JobApi, body: dict[str, Any]) -> DatasetConfig | None:
 def _years_of(config: DatasetConfig | None, status: JobStatus) -> AcquisitionYears | None:
     """The years the job's scenes were acquired in, which its attribution names (NM4-01).
 
-    A job from before they were kept, whose attribution needs a year, has no honest one to give: the
-    clock would put the year of the download there. It answers ``409`` and the order is to be placed again.
+    A job from before they were kept is given them first (:func:`_with_derived_years`). One whose
+    attribution needs a year and who still has none has no honest one to give: the clock would put the
+    year of the download there. It answers ``409`` and the order is to be placed again.
     """
     if status.acquired_years is not None:
         return AcquisitionYears(*status.acquired_years)
     if config is not None and attribution_names_year(config):
         raise Problem(
             409,
-            "this job was placed before the years of acquisition were kept; place the order again",
+            "this job was placed before the years of acquisition were kept, and the dates of its scenes can no longer "
+            "be read from the source; place the order again",
             type_=NO_ACQUISITION_YEARS,
             title="No acquisition years",
         )
     return None
+
+
+async def _with_derived_years(api: JobApi, body: dict[str, Any] | None, status: JobStatus) -> JobStatus:
+    """``status`` with the years of the scenes, read from the stored recipe's items if the job kept none (NM4-01).
+
+    A job placed before the years were kept has the ids of its scenes in its recipe and no dates; the
+    dates are the items' own, so they are asked of the item source again, as the intake asked them.
+    Nothing is written back. Where that fails (an item gone, undated, or the source down) the status
+    stays as it was and :func:`_years_of` answers ``409`` if the attribution needs a year.
+    """
+    config = _config_of(api, body or {})
+    if body is None or status.acquired_years is not None or config is None or not attribution_names_year(config):
+        return status
+    try:
+        entry = body["inputs"][0]
+        ids = [item for group in entry["groups"] for item in group]
+        items = await asyncio.gather(*(fetch_item_or_refuse(api.item_source, entry["dataset"], item) for item in ids))
+        years = acquisition_years(items)
+    except (OrderRefused, AcquisitionYearMissing, LookupError, TypeError):
+        return status
+    return dataclasses.replace(status, acquired_years=(years.first, years.last))
 
 
 def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:

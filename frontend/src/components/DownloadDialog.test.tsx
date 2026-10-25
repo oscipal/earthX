@@ -157,3 +157,19 @@ describe('the originals dialog shows attribution and terms next to the links', (
     expect(el.textContent).toContain('No original file');
   });
 });
+
+describe('the crop dialog (NM4-01)', () => {
+  it('shows no attribution line and no year: the file in the ZIP carries the text', () => {
+    useAppStore.setState({
+      downloadOutcome: 'crop',
+      downloadOriginalLinks: null,
+      downloadPasses: null,
+      selectedIds: ['S1'],
+      items: [scene('S1', { datetime: '2025-07-29T10:15:00Z' })],
+    });
+    const text = show().textContent ?? '';
+    expect(text).toContain('Download crop');
+    expect(text).not.toContain('Copernicus Sentinel data');
+    expect(text).toContain('Subject to');
+  });
+});

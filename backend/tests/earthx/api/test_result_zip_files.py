@@ -569,13 +569,42 @@ class TestTheYearInTheFilesOfAJob:
             key: stored[key] for key in stored if key in shown and key != "recipe_id"
         }
 
-    async def test_a_job_from_before_the_years_were_kept_is_not_given_the_year_of_the_download(
+    @staticmethod
+    def forget_the_years(rig: Rig) -> None:
+        rig.db.execute(
+            "UPDATE public.earthx_job SET acquired_first_year = NULL, acquired_last_year = NULL, acquired_on = NULL"
+        )
+
+    async def test_a_job_from_before_the_years_were_kept_gets_them_from_the_items_of_its_recipe(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        self.acquired(rig, self.SCENE)
+        job_id, _, url = await zipped(rig)
+        self.forget_the_years(rig)
+        archive = opened((await rig.client.get(url)).content)
+        assert f"{self.MODIFIED} 2025" in member(archive, dl.NOTICE_FILENAME).decode("utf-8")
+        assert f"{self.MODIFIED} 2025" in member(archive, dl.CITATION_FILENAME).decode("utf-8")
+        link = await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")
+        assert json.loads(link.content)["provenance"]["attribution"] == [f"{self.MODIFIED} 2025"]
+        assert link.content == member(archive, dl.RECIPE_FILENAME)
+        row = rig.db.execute("SELECT acquired_first_year FROM public.earthx_job").fetchone()
+        assert row == (None,), "nothing is written back by a download"
+
+    async def test_where_the_dates_cannot_be_read_again_it_is_a_409_with_the_reason_not_the_year_of_the_download(
         self, mocked: Store, rig: Rig  # noqa: F811
     ) -> None:
         job_id, _, url = await zipped(rig)
-        rig.db.execute("UPDATE public.earthx_job SET acquired_first_year = NULL, acquired_last_year = NULL, acquired_on = NULL")
+        self.forget_the_years(rig)
+        del rig.source.items[("sentinel-2-c1-l2a", "S2_A")]["properties"]["datetime"]
         for target in (url, f"/processing/jobs/{job_id}/results/recipe.json", f"/processing/jobs/{job_id}/results/methods.txt"):
             response = await rig.client.get(target)
             assert response.status_code == 409, target
             assert response.json()["type"] == "urn:earthx:no-acquisition-years"
+            assert "dates of its scenes" in response.json()["detail"]
         assert (await rig.client.get(f"/processing/jobs/{job_id}/results/result.tif")).status_code == 303
+
+    async def test_an_item_the_source_no_longer_has_is_the_same_409(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
+        job_id, _, url = await zipped(rig)
+        self.forget_the_years(rig)
+        del rig.source.items[("sentinel-2-c1-l2a", "S2_A")]
+        assert (await rig.client.get(url)).status_code == 409
