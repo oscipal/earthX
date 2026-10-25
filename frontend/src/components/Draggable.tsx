@@ -59,7 +59,7 @@ export default function Draggable({
   offRef.current = off;
 
   // The anchor position with no offset applied at all: the parent overlay
-  // (`.overlay.right`, `.layermgr`, …) carries the actual `position:
+  // (`.overlay.right`, `.bottom`, …) carries the actual `position:
   // absolute; top/left`, and the transform below lives only on this
   // component's own root, so the parent's rect is unaffected by either kind
   // of offset — safe to measure at any time, including while this panel is

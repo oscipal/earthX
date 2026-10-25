@@ -104,7 +104,7 @@ function show(collection: Collection, mapZoom: number): HTMLElement {
       downloading: false,
       // Exactly as `runSearch` leaves it: the panel that used to carry this hint
       // is off screen in this state, which is what the cases below are about.
-      panelCollapsed: true,
+      dock: null,
     });
   });
   return container;
@@ -137,15 +137,15 @@ describe('the hint below a dataset’s lowest released level', () => {
     expect(text).toContain('coverage layer');
   });
 
-  it('does not sit inside the panel that slides away', () => {
-    // The whole bug in one assertion: the hint used to live in `.panel-dock`,
-    // which carries `collapsed` in this very state and is moved off screen by a
-    // CSS transform — visible to neither the type check nor a test of the rule.
+  it('does not sit inside the panel beside the rail', () => {
+    // The whole bug in one assertion: the hint used to live in the panel beside
+    // the rail, which is hidden in this very state — visible to neither the type
+    // check nor a test of the rule.
     const hint = hintOf(show(ZARR_LIKE, 5));
-    const dock = container.querySelector('.panel-dock');
+    const dock = container.querySelector('.dock');
 
     expect(hint).not.toBeNull();
-    expect(dock?.classList.contains('collapsed')).toBe(true);
+    expect(dock?.hasAttribute('hidden')).toBe(true);
     expect(dock?.contains(hint!)).toBe(false);
   });
 
