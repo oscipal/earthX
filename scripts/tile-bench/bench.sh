@@ -30,3 +30,4 @@ else
   python "$here/view.py" --out "$OUT/view_$tag.jsonl" "$@"
 fi
 python "$here/summary.py" "$OUT/tiler_$tag.jsonl" "$OUT/source_$tag.jsonl"
+ps -o rss= --ppid "$tiler_pid" -p "$tiler_pid" | awk '{kb += $1} END {printf "{\"tiler_rss_MB\": %d}\n", kb / 1024}'
