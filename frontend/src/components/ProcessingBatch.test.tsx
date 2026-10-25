@@ -15,7 +15,7 @@ import { bboxToPolygon } from '../geoUtils';
 import { resetJobs, setTrackerOptions, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
-import JobList from './JobList';
+import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
 
 declare global {
@@ -152,7 +152,7 @@ beforeEach(() => {
     }),
   );
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, crs: {}, jobs: [] });
+  useProcessingStore.setState({ open: false, descriptions: {}, crs: {}, jobs: [] });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -179,7 +179,7 @@ async function openPanel() {
     root.render(
       <>
         <ProcessingPanel />
-        <JobList />
+        <ProcessingManager />
       </>,
     ),
   );
@@ -453,7 +453,7 @@ describe('"AOI only" in a batch', () => {
 });
 
 describe('starting a batch', () => {
-  it('starts one job for each part, each with its own scenes, and opens the list', async () => {
+  it('starts one job for each part, each with its own scenes, and opens no panel', async () => {
     selectPasses([sceneIds(3)]);
     await openPanel();
     await ndvi();
@@ -462,7 +462,7 @@ describe('starting a batch', () => {
     await start('Start 3 jobs');
     expect(placed.map(idsOf)).toEqual([['S1'], ['S2'], ['S3']]);
     expect(useProcessingStore.getState().jobs).toHaveLength(3);
-    expect(useProcessingStore.getState().jobsOpen).toBe(true);
+    expect(useAppStore.getState().dock).toBe('controls');
     // one review, these jobs: the next start needs a new review
     expect(button('Start 3 jobs').disabled).toBe(true);
   });
@@ -565,7 +565,8 @@ describe('the title and the entry of a batch (K5, UI-01 §6.4, §6.5)', () => {
     expect(jobs.map((j) => j.batchId)).toEqual([batches[0].id, batches[0].id, batches[0].id]);
     expect(jobs.map((j) => j.part).sort()).toEqual(['S1', 'S2', 'S3']);
     expect(batches[0].id).toMatch(/^[0-9a-f]{32}$/);
-    expect(container.querySelectorAll('.pp-job-title')).toHaveLength(3);
+    // One row for the batch, folded; the parts show when it is opened.
+    expect(container.querySelectorAll('.pm-row')).toHaveLength(1);
   });
 
   it('keeps the batch in the browser with the title, the batch and the part of every job, and its order', async () => {
@@ -804,21 +805,18 @@ describe('the buttons of a reviewed batch', () => {
     expect(startButton.title).toBe('The server refused every job');
   });
 
-  it('opens the list of jobs once, however many jobs are started', async () => {
+  it('takes no panel away from the user, however many jobs are started', async () => {
     selectPasses([sceneIds(3)]);
     await openPanel();
     await ndvi();
     click(button('One job per scene (3)'));
     await review();
-    let opened = 0;
-    const unsubscribe = useProcessingStore.subscribe((s, prev) => {
-      if (s.jobsOpen && !prev.jobsOpen) opened += 1;
-      if (s.jobsOpen && s.jobs.length === 1 && prev.jobs.length === 0) act(() => useProcessingStore.getState().closeJobs());
-    });
+    const docks: unknown[] = [];
+    const unsubscribe = useAppStore.subscribe((s) => docks.push(s.dock));
     await start('Start 3 jobs');
     unsubscribe();
     expect(placed).toHaveLength(3);
-    expect(opened).toBe(1);
+    expect(docks).toEqual([]);
   });
 });
 

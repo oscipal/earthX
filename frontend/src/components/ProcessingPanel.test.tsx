@@ -15,9 +15,12 @@ import { bboxToPolygon } from '../geoUtils';
 import { PLACE_SEARCH_PROVENANCE, placeAoi } from '../placeSearch';
 import { DEFAULT_RANGE } from '../processingPreview';
 import { resetJobs, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
+import { MIN_REMAINING_MS } from '../resultLayer';
 import { useAppStore } from '../store';
 import type { Collection, StacItem } from '../types';
-import JobList, { EXPIRED_TEXT, JobRow, MIN_REMAINING_MS } from './JobList';
+import { JobRow } from './JobRow';
+import { EXPIRED_TIP } from './jobView';
+import ProcessingManager from './ProcessingManager';
 import ProcessingPanel from './ProcessingPanel';
 import ViewBar from './ViewBar';
 
@@ -137,7 +140,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, crs: {}, jobs: [] });
+  useProcessingStore.setState({ open: false, descriptions: {}, crs: {}, jobs: [] });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -177,7 +180,7 @@ async function openPanel() {
     root.render(
       <>
         <ProcessingPanel />
-        <JobList />
+        <ProcessingManager />
       </>,
     ),
   );
@@ -192,6 +195,9 @@ function button(label: string | RegExp, within: Element = container): HTMLButton
   if (!found) throw new Error(`no button ${String(label)} in ${container.textContent}`);
   return found as HTMLButtonElement;
 }
+
+// The "Download (ZIP)" links of the manager.
+const downloads = () => [...container.querySelectorAll<HTMLAnchorElement>('a[aria-label="Download (ZIP)"]')];
 
 function click(element: HTMLElement) {
   act(() => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -1054,6 +1060,7 @@ describe('starting and following a job', () => {
         },
         mask: { href: `/processing/jobs/${JOB}/results/mask.tif` },
         recipe: { href: `/processing/jobs/${JOB}/results/recipe.json` },
+        bundle: { href: `/processing/jobs/${JOB}/results/result.zip` },
       });
     select([scene('S2B_A')]);
     await openPanel();
@@ -1061,16 +1068,11 @@ describe('starting and following a job', () => {
     await review();
     setTrackerOptions({ pollMs: 5 });
     click(button('Start job'));
-    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    await waitFor(() => downloads().length > 0);
     setTrackerOptions({});
     expect(polls).toBe(2);
-    const links = [...container.querySelectorAll('.pp-links a')].map((a) => [a.textContent, a.getAttribute('href')]);
-    expect(links).toEqual([
-      ['Result (COG)', `/processing/jobs/${JOB}/results/result.tif`],
-      ['Mask', `/processing/jobs/${JOB}/results/mask.tif`],
-      ['Recipe', `/processing/jobs/${JOB}/results/recipe.json`],
-    ]);
-    expect(container.textContent).toContain('Resampled to a common grid');
+    // One file to take, the archive; the single files are not offered (UI-01 §1 point 12).
+    expect(downloads().map((a) => a.getAttribute('href'))).toEqual([`/processing/jobs/${JOB}/results/result.zip`]);
     const stored = localStorage.getItem('earthx.processing.manager')!;
     // The title (K5) and the order are kept with the id and the expiry; nothing of the job's state or result.
     expect(JSON.parse(stored)).toEqual({
@@ -1128,7 +1130,10 @@ describe('starting and following a job', () => {
     setTrackerOptions({ EventSource: Source as never });
     routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
     routes[`GET /processing/jobs/${JOB}/results`] = () =>
-      json({ result: { href: `/processing/jobs/${JOB}/results/result.tif`, properties: { 'earthx:resampled': false } } });
+      json({
+        result: { href: `/processing/jobs/${JOB}/results/result.tif`, properties: { 'earthx:resampled': false } },
+        bundle: { href: `/processing/jobs/${JOB}/results/result.zip` },
+      });
     select([scene('S2B_A')]);
     await openPanel();
     await ndvi();
@@ -1137,12 +1142,11 @@ describe('starting and following a job', () => {
     await flush();
     expect(sources[0].url).toBe(`/processing/jobs/${JOB}/events`);
     sources[0].emit(statusDoc('running', 70));
-    expect(container.textContent).toContain('Running · 70%');
+    expect(container.querySelector('.pm-row .pm-state')?.textContent).toBe('70%');
     sources[0].emit(statusDoc('successful', 100));
     await flush();
     expect(sources[0].closed).toBe(true);
-    expect(container.querySelector('.pp-links a')?.textContent).toBe('Result (COG)');
-    expect(container.textContent).not.toContain('Resampled');
+    expect(downloads()).toHaveLength(1);
     expect(fetchMock.mock.calls.some(([u]) => String(u) === `/processing/jobs/${JOB}`)).toBe(false);
   });
 
@@ -1154,12 +1158,10 @@ describe('starting and following a job', () => {
       'earthx.processing.jobs',
       JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
     );
-    act(() => root.render(<JobList />));
-    act(() => {
-      useProcessingStore.getState().resumeJobs();
-      useProcessingStore.getState().openJobs();
-    });
-    await waitFor(() => container.textContent?.includes('Failed: The source failed') ?? false);
+    act(() => root.render(<ProcessingManager />));
+    act(() => useProcessingStore.getState().resumeJobs());
+    await waitFor(() => container.querySelector('.pm-fault')?.textContent === 'The source failed');
+    expect(container.querySelector('.pm-state')?.textContent).toBe('Failed');
   });
 
   // M4-11b-2 (plan §3.3): one archive where the result has one; the wording of failures and expiry.
@@ -1170,12 +1172,20 @@ describe('starting and following a job', () => {
       'earthx.processing.jobs',
       JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
     );
-    act(() => root.render(<JobList />));
-    act(() => {
-      useProcessingStore.getState().resumeJobs();
-      useProcessingStore.getState().openJobs();
-    });
+    act(() =>
+      root.render(
+        <>
+          <ProcessingPanel />
+          <ProcessingManager />
+        </>,
+      ),
+    );
+    act(() => useProcessingStore.getState().resumeJobs());
   }
+
+  // The results of the job were read: the archive and the link to the tiles are known.
+  const resultsRead = () => fetchMock.mock.calls.some(([u]) => String(u) === `/processing/jobs/${JOB}/results`);
+  const showDetails = () => act(() => useProcessingStore.getState().openJobDetails(JOB));
 
   const link = (name: string) => ({ href: `/processing/jobs/${JOB}/results/${name}`, type: 'application/octet-stream' });
 
@@ -1184,20 +1194,17 @@ describe('starting and following a job', () => {
     ['an export', { export: link('export.zip'), recipe: link('recipe.json') }, 'export.zip'],
   ])('offers %s as one link "Download (ZIP)"', async (_, doc, file) => {
     await resume(() => json(doc));
-    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
-    const links = [...container.querySelectorAll('.pp-links a')] as HTMLAnchorElement[];
-    expect(links.map((a) => a.textContent)).toEqual(['Download (ZIP)']);
-    expect(links[0].getAttribute('href')).toBe(`/processing/jobs/${JOB}/results/${file}`);
+    await waitFor(() => downloads().length > 0);
+    expect(downloads().map((a) => a.getAttribute('href'))).toEqual([`/processing/jobs/${JOB}/results/${file}`]);
   });
 
-  it('keeps the single links of a result from before archives existed', async () => {
-    await resume(() => json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json') }));
-    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
-    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual([
-      'Result (COG)',
-      'Mask',
-      'Recipe',
-    ]);
+  it('offers no file of a result from before archives existed: those have expired, and the single links are gone', async () => {
+    await resume(() => json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json'), methods: link('methods.txt') }));
+    await waitFor(resultsRead);
+    await flush();
+    expect(downloads()).toHaveLength(0);
+    expect(useProcessingStore.getState().jobs[0].archive).toBeNull();
+    for (const text of ['Result (COG)', 'Mask', 'Recipe', 'Methods', 'Copy']) expect(container.textContent).not.toContain(text);
   });
 
   // M4-13c-5: the link `tiles` of a raster result leads to the tiler, not to a file to download.
@@ -1213,30 +1220,25 @@ describe('starting and following a job', () => {
         tiles: { href: TILES, type: 'application/json' },
       }),
     );
-    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: 1000, gsd: 10 });
-    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Download (ZIP)']);
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Add to layers');
-  });
-
-  it('keeps the single links of an old result next to its tiles', async () => {
-    await resume(() =>
-      json({ result: link('result.tif'), mask: link('mask.tif'), recipe: link('recipe.json'), tiles: { href: TILES } }),
-    );
-    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
-    expect([...container.querySelectorAll('.pp-links a')].map((a) => a.textContent)).toEqual(['Result (COG)', 'Mask', 'Recipe']);
-    expect(useProcessingStore.getState().jobs[0].tiles).toEqual({ href: TILES, width: null, gsd: null });
+    // The result goes on the map from the details, not from the list.
+    expect([...container.querySelectorAll('.processing-manager button')].map((b) => b.textContent)).not.toContain('Show on map');
+    showDetails();
+    expect(downloads().length).toBeGreaterThan(0);
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show on map');
   });
 
   it.each([
     ['an export', { export: link('export.zip'), recipe: link('recipe.json') }],
-    ['a link of another shape', { result: link('result.tif'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
-    ['a link to a file of the job API', { result: link('result.tif'), tiles: link('result.tif') }],
-  ])('offers no "Add to layers" for %s', async (_, doc) => {
+    ['a link of another shape', { result: link('result.tif'), bundle: link('result.zip'), tiles: { href: 'https://example.org/results/x/tilejson.json' } }],
+    ['a link to a file of the job API', { result: link('result.tif'), bundle: link('result.zip'), tiles: link('result.tif') }],
+  ])('offers no "Show on map" for %s', async (_, doc) => {
     await resume(() => json(doc));
-    await waitFor(() => container.querySelectorAll('.pp-links a').length > 0);
+    await waitFor(() => downloads().length > 0);
     expect(useProcessingStore.getState().jobs[0].tiles).toBeNull();
-    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Add to layers');
+    showDetails();
+    expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Show on map');
   });
 
   it.each([
@@ -1248,13 +1250,15 @@ describe('starting and following a job', () => {
     ],
   ])('words a failure of kind %s for the user', async (kind, title, text) => {
     await resume(() => json({ type: `urn:earthx:job-failed:${kind}`, title, status: 500, detail: 'x' }, 500), 'failed');
-    await waitFor(() => container.textContent?.includes(`Failed: ${text}`) ?? false);
+    await waitFor(() => container.querySelector('.pm-fault')?.textContent === text);
   });
 
   it('says the result expired when /results answers 410, before the row\'s own clock does', async () => {
     await resume(() => json({ type: 'urn:earthx:gone', title: 'Gone', status: 410, detail: 'the result has expired' }, 410));
-    await waitFor(() => container.textContent?.includes(EXPIRED_TEXT) ?? false);
-    expect(container.querySelector('.pp-links a')).toBeNull();
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Expired');
+    expect(downloads()).toHaveLength(0);
+    // The file is not offered; the reason is the tooltip of the dimmed symbol.
+    expect(container.querySelector<HTMLButtonElement>('button.pm-icon[disabled]')?.title).toBe(EXPIRED_TIP);
     expect(container.querySelector('.hint-text.error')).toBeNull();
   });
 });
@@ -1266,7 +1270,7 @@ describe('a finished job row (K6)', () => {
       expires: new Date(Date.now() + expiresIn).toISOString(),
       status: null,
       phase: 'successful',
-      files: [{ file: 'result.tif', label: 'Result (COG)' }],
+      archive: 'result.zip',
       resampled,
       failure: null,
       error: null,
@@ -1282,10 +1286,11 @@ describe('a finished job row (K6)', () => {
       order: null,
       createdAt: '2026-10-10T12:00:00Z',
       title: null,
+      titleDefault: null,
     };
   }
 
-  it('links the files until a minute before expiry, then says "Expired"', () => {
+  it('links the archive until a minute before expiry, then says "Expired"', () => {
     vi.useFakeTimers();
     act(() => root.render(<ul><JobRow job={entry(MIN_REMAINING_MS + 5000, false)} /></ul>));
     expect(container.querySelector('.pp-links a')).not.toBeNull();
@@ -1294,7 +1299,7 @@ describe('a finished job row (K6)', () => {
       vi.advanceTimersByTime(5100);
     });
     expect(container.querySelector('.pp-links a')).toBeNull();
-    expect(container.textContent).toContain(EXPIRED_TEXT);
+    expect(container.textContent).toContain('Expired');
   });
 
   it('has no button to remove the row: a job is cancelled while it runs and kept after (UI-01 §6.7)', () => {
@@ -1344,12 +1349,16 @@ describe('cancelling and losing a job', () => {
       'earthx.processing.jobs',
       JSON.stringify([{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }]),
     );
-    act(() => root.render(<JobList />));
-    act(() => {
-      useProcessingStore.getState().resumeJobs();
-      useProcessingStore.getState().openJobs();
-    });
+    act(() => root.render(<ProcessingManager />));
+    act(() => useProcessingStore.getState().resumeJobs());
   }
+
+  // "Cancel" is an item of the menu at the end of the row.
+  const openMenu = () => click(container.querySelector<HTMLButtonElement>('button[aria-label^="Actions for"]')!);
+  const cancel = () => {
+    openMenu();
+    click(button('Cancel'));
+  };
 
   beforeEach(() => {
     setTrackerOptions({ pollMs: 60_000 });
@@ -1359,9 +1368,9 @@ describe('cancelling and losing a job', () => {
   it('cancels with DELETE and keeps the job in the browser as cancelled', async () => {
     routes[`DELETE /processing/jobs/${JOB}`] = () => json(statusDoc('dismissed'));
     resume();
-    await waitFor(() => container.textContent?.includes('Running · 20%') ?? false);
-    click(button('Cancel'));
-    await waitFor(() => container.textContent?.includes('Cancelled') ?? false);
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === '20%');
+    cancel();
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Cancelled');
     expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 
@@ -1370,39 +1379,40 @@ describe('cancelling and losing a job', () => {
       'earthx.processing.manager',
       JSON.stringify({ v: 1, jobs: [{ jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString() }], batches: [], groups: [] }),
     );
-    act(() => root.render(<JobList />));
+    act(() => root.render(<ProcessingManager />));
     act(() => {
       useProcessingStore.getState().resumeJobs();
       useProcessingStore.setState((st) => ({ jobs: st.jobs.map((j) => ({ ...j, status: null })) }));
-      useProcessingStore.getState().openJobs();
     });
+    openMenu();
     expect(button('Cancel').disabled).toBe(true);
-    await waitFor(() => container.textContent?.includes('Running · 20%') ?? false);
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === '20%');
     expect(button('Cancel').disabled).toBe(false);
   });
 
-  it('says "Gone" when the job is no longer there at cancel', async () => {
+  it('says "Expired" when the job is no longer there at cancel', async () => {
     routes[`DELETE /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
     resume();
-    await waitFor(() => container.textContent?.includes('Running') ?? false);
-    click(button('Cancel'));
-    await waitFor(() => container.textContent?.includes('Gone') ?? false);
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === '20%');
+    cancel();
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Expired');
   });
 
   it('keeps the job and shows the error when cancel fails', async () => {
     routes[`DELETE /processing/jobs/${JOB}`] = () => problem(503, 'the job queue is not reachable; try again');
     resume();
-    await waitFor(() => container.textContent?.includes('Running') ?? false);
-    click(button('Cancel'));
-    await waitFor(() => container.textContent?.includes('not reachable') ?? false);
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === '20%');
+    cancel();
+    await waitFor(() => useProcessingStore.getState().jobs[0].error?.includes('not reachable') ?? false);
+    openMenu();
     expect(button('Cancel').disabled).toBe(false);
     expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 
-  it('says "Gone" and keeps the job when polling finds it no more', async () => {
+  it('says "Expired" and keeps the job when polling finds it no more', async () => {
     routes[`GET /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
     resume();
-    await waitFor(() => container.textContent?.includes('Gone (expired or dismissed)') ?? false);
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Expired');
     expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 });
@@ -1529,24 +1539,22 @@ describe('the expression field (M4-13c §3.1)', () => {
   });
 });
 
-describe('the panel and the window of the jobs (M4-13c §3.1)', () => {
-  it('opens the window of the jobs when a job starts; the panel holds no job rows', async () => {
+describe('the panel and the manager of the jobs (M4-13c §3.1, UI-01 §6.9)', () => {
+  it('lists a job in the manager when it starts, leaves the panel without job rows, and opens no panel by itself', async () => {
     routes['POST /processing/processes/recipe/execution'] = () => json(statusDoc('accepted'), 201);
     routes[`GET /processing/jobs/${JOB}`] = () => json(statusDoc('running', 5));
     setTrackerOptions({ pollMs: 60_000 });
     select([scene('S2B_A')]);
     await openPanel();
-    expect(container.querySelector('[aria-label="Jobs"]')).toBeNull();
+    expect(container.querySelector('.processing-manager .pm-row')).toBeNull();
+    useAppStore.setState({ dock: 'controls' });
     await ndvi();
     await review();
     click(button('Start job'));
     await flush();
-    expect(useProcessingStore.getState().jobsOpen).toBe(true);
-    const jobs = container.querySelector('[aria-label="Jobs"]')!;
-    expect(jobs.querySelector('.pp-job')).not.toBeNull();
+    expect(container.querySelector('.processing-manager .pm-row')).not.toBeNull();
     expect(container.querySelector('[aria-label="Processing"] .pp-job')).toBeNull();
-    click(button('✕', jobs));
-    expect(container.querySelector('[aria-label="Jobs"]')).toBeNull();
+    expect(useAppStore.getState().dock).toBe('controls');
   });
 
   it('folds the sheet down to its head and opens it again (narrow screens)', async () => {

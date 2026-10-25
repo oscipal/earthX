@@ -15,7 +15,7 @@ import { jobTitle, titleDay } from '../processingBatch';
 import { chooseDtype } from '../processingDefaults';
 import { bandSources, buildMosaicOrder } from '../processingOrder';
 import { orderStands, useProcessingStore } from '../processingStore';
-import { JobRow } from './JobList';
+import { JobRow } from './JobRow';
 
 // "Merged per pass (job)" in the download dialog's choice for original files
 // (M4-12b, Zusatz 1a): one job per pass of two or more scenes, the whole scenes
