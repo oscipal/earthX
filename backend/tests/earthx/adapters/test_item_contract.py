@@ -27,7 +27,7 @@ from stac_pydantic import Item as StacItem
 
 from earthx.adapters import ADAPTER_SPECS, get_item, materialize_items, search_items
 from earthx.adapters.spec import AdapterSpec, AdapterSpecs
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import AdapterKind, DatasetConfig
 from earthx.gateway import Policy, host_of
 from tests.earthx.adapters.conftest import FIXTURES as EARTH_SEARCH_FIXTURES
@@ -36,8 +36,6 @@ from tests.earthx.adapters.test_cop_dem_bucket import HOST as DEM_HOST
 from tests.earthx.adapters.test_cop_dem_bucket import TILE_NE, TILE_SW, bucket
 
 pytestmark = pytest.mark.anyio
-
-EOPF_FIXTURES = EARTH_SEARCH_FIXTURES.parent / "eopf_stac"
 
 # What the adapter table can offer an item through (``AdapterSpec`` fields).
 ITEM_CAPABILITIES = ("search", "fetch", "materialize")
@@ -121,8 +119,6 @@ PRODUCERS: Mapping[Capability, Producer] = {
     (AdapterKind.EARTH_SEARCH_V1, "fetch"): lambda: _fetched(
         SENTINEL_2_L2A, EARTH_SEARCH_FIXTURES, "item", "item_asset_hosts"
     ),
-    (AdapterKind.EOPF_STAC_V1, "search"): lambda: _searched(SENTINEL_2_L2A_ZARR3, EOPF_FIXTURES, "search_page_1"),
-    (AdapterKind.EOPF_STAC_V1, "fetch"): lambda: _fetched(SENTINEL_2_L2A_ZARR3, EOPF_FIXTURES, "item"),
     (AdapterKind.COP_DEM_BUCKET, "materialize"): _materialized,
 }
 
@@ -171,7 +167,7 @@ class TestTheGuardFails:
             raise AssertionError("not called")
 
         dem = ADAPTER_SPECS[AdapterKind.COP_DEM_BUCKET]
-        filters = ADAPTER_SPECS[AdapterKind.EOPF_STAC_V1].filters
+        filters = ADAPTER_SPECS[AdapterKind.EARTH_SEARCH_V1].filters
         searchable: AdapterSpec = replace(dem, search=never, fetch=never, filters=filters)
         grown = {**ADAPTER_SPECS, AdapterKind.COP_DEM_BUCKET: searchable}
         assert capabilities_without_fixtures(grown, PRODUCERS) == {

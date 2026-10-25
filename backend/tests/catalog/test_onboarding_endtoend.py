@@ -30,14 +30,14 @@ from fastapi.testclient import TestClient
 from earthx.access.download import NOTICE_FILENAME
 from earthx.adapters import ADAPTER_SPECS, SearchParams, materialize_items, search_items
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import DatasetConfig, ItemHolding, group_key
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain, UnsupportedFormat
+from tests.catalog.synthetic_zarr import TEST_ENTRIES
 
 pytestmark = pytest.mark.anyio
 
-ENTRIES = list(REGISTRY)
+ENTRIES = list(TEST_ENTRIES)
 ENTRY_IDS = [config.dataset_id for config in ENTRIES]
 
 

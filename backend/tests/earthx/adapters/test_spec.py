@@ -29,10 +29,11 @@ from earthx.adapters import (
 )
 from earthx.adapters.spec import AdapterSpec, AdapterSpecs, FilterSupport, spec_table
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetConfig, DatasetRegistry, ItemHolding
 from earthx.gateway import Policy, host_of
 from earthx.gateway.client import Gateway
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
 ADAPTERS_DIR = Path(__file__).resolve().parents[3] / "earthx" / "adapters"
 
@@ -58,6 +59,12 @@ def _spec(**fields: object) -> AdapterSpec:
 
 def _without(kind: AdapterKind) -> AdapterSpecs:
     return spec_table(*(spec for other, spec in ADAPTER_SPECS.items() if other is not kind))
+
+
+def _with_earth_search(**fields: object) -> AdapterSpecs:
+    """The real table, with fields of the Earth Search spec replaced."""
+    changed = replace(ADAPTER_SPECS[AdapterKind.EARTH_SEARCH_V1], **fields)
+    return spec_table(changed, *(spec for kind, spec in ADAPTER_SPECS.items() if kind is not changed.kind))
 
 
 class TestTheShapeOfASpec:
@@ -86,12 +93,12 @@ class TestTheShapeOfASpec:
             AdapterSpec(kind=AdapterKind.EARTH_SEARCH_V1)  # type: ignore[call-arg]
 
     def test_the_coverage_map_cannot_be_changed_afterwards(self) -> None:
-        answers = {CoverageProvider.SAMPLE: _never}
+        answers = {CoverageProvider.UPSTREAM_AGGREGATION: _never}
         spec = _spec(coverage=answers)
-        answers[CoverageProvider.UPSTREAM_AGGREGATION] = _never
-        assert list(spec.coverage) == [CoverageProvider.SAMPLE]
+        answers[CoverageProvider.LOCAL_SQL] = _never
+        assert list(spec.coverage) == [CoverageProvider.UPSTREAM_AGGREGATION]
         with pytest.raises(TypeError):
-            spec.coverage[CoverageProvider.UPSTREAM_AGGREGATION] = _never  # type: ignore[index]
+            spec.coverage[CoverageProvider.LOCAL_SQL] = _never  # type: ignore[index]
 
     def test_a_kind_twice_in_a_table_is_refused(self) -> None:
         with pytest.raises(ValueError, match="twice"):
@@ -144,7 +151,7 @@ def _recording_gateway() -> tuple[Gateway, list[httpx.Request]]:
         return None
 
     hosts = frozenset(
-        host for config in REGISTRY for host in (host_of(config.source.endpoint), *config.source.asset_hosts)
+        host for config in TEST_ENTRIES for host in (host_of(config.source.endpoint), *config.source.asset_hosts)
     )
     policy = Policy(allowed_hosts=hosts)
     return Gateway(
@@ -169,18 +176,18 @@ async def _ask(capability: str, config: DatasetConfig, gateway: Gateway) -> obje
     return await search_items(config, SearchParams(ids=("SYNTH_ITEM",)), adapters=ADAPTER_SPECS, gateway=gateway)
 
 
-ENTRIES = [pytest.param(config, id=config.dataset_id) for config in REGISTRY]
+ENTRIES = [pytest.param(config, id=config.dataset_id) for config in TEST_ENTRIES]
 NOT_NEEDED = [
     pytest.param(config, capability, id=f"{config.dataset_id}-{capability}")
-    for config in REGISTRY
+    for config in TEST_ENTRIES
     for capability in CAPABILITIES
     if capability not in _required(config)
 ]
 
 
 class TestEveryRegistryEntryAgainstTheTable:
-    """Otto's condition on M4-01b: each entry of the real registry, complete against
-    adr/0011 §5 — every capability is offered by its spec or refused by name;
+    """Otto's condition on M4-01b: each entry of the real registry and the synthetic
+    Zarr entry, complete against adr/0011 §5 — every capability is offered by its spec or refused by name;
     materialized needs materialization; federated needs search and item fetch."""
 
     @pytest.mark.parametrize("config", ENTRIES)
@@ -213,17 +220,13 @@ class TestTheCheckFailsForAManipulatedEntry:
         assert _missing(manipulated, ADAPTER_SPECS) == ["coverage", "fetch", "ids", "intersects", "search"]
 
     def test_a_provider_the_adapter_does_not_answer(self) -> None:
-        manipulated = replace(
-            SENTINEL_2_L2A, coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.SAMPLE)
-        )
-        assert _missing(manipulated, ADAPTER_SPECS) == ["coverage"]
+        table = _with_earth_search(coverage={})
+        assert _missing(SENTINEL_2_L2A, table) == ["coverage"]
+        assert _missing(SYNTHETIC_ZARR, table) == ["coverage"]
 
     def test_a_table_whose_source_lost_a_filter(self) -> None:
-        weaker = replace(
-            ADAPTER_SPECS[AdapterKind.EOPF_STAC_V1], filters=FilterSupport(intersects=True, ids=False, cql2=True)
-        )
-        table = spec_table(weaker, *(spec for kind, spec in ADAPTER_SPECS.items() if kind is not weaker.kind))
-        assert _missing(SENTINEL_2_L2A_ZARR3, table) == ["ids"]
+        table = _with_earth_search(filters=FilterSupport(intersects=True, ids=False, cql2=False))
+        assert _missing(SYNTHETIC_ZARR, table) == ["ids"]
 
     def test_a_table_without_the_entrys_kind(self) -> None:
         assert _missing(COP_DEM_GLO_30, _without(AdapterKind.COP_DEM_BUCKET)) == ["materialize"]
@@ -276,9 +279,12 @@ class TestCheckAdapterSpecs:
     def test_the_real_registry_and_table_agree(self) -> None:
         check_adapter_specs(REGISTRY, ADAPTER_SPECS)
 
+    def test_the_synthetic_zarr_entry_and_the_table_agree(self) -> None:
+        check_adapter_specs(DatasetRegistry(TEST_ENTRIES), ADAPTER_SPECS)
+
     def test_a_kind_missing_from_the_table_names_the_dataset(self) -> None:
-        with pytest.raises(AdapterSpecMismatch, match=SENTINEL_2_L2A_ZARR3.dataset_id):
-            check_adapter_specs(REGISTRY, _without(AdapterKind.EOPF_STAC_V1))
+        with pytest.raises(AdapterSpecMismatch, match=COP_DEM_GLO_30.dataset_id):
+            check_adapter_specs(REGISTRY, _without(AdapterKind.COP_DEM_BUCKET))
 
     def test_a_federated_entry_without_search_is_refused(self) -> None:
         no_search = _spec(
@@ -289,17 +295,11 @@ class TestCheckAdapterSpecs:
             check_adapter_specs(REGISTRY, table)
 
     def test_a_coverage_provider_the_adapter_lacks_is_refused(self) -> None:
-        sampled = replace(SENTINEL_2_L2A, coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.SAMPLE))
-        with pytest.raises(AdapterSpecMismatch, match="sample coverage"):
-            check_adapter_specs(DatasetRegistry((sampled,)), ADAPTER_SPECS)
-
-    def test_a_one_off_product_asks_no_adapter_for_coverage(self) -> None:
-        one_off = replace(
-            SENTINEL_2_L2A,
-            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.SAMPLE),
-            capabilities=replace(SENTINEL_2_L2A.capabilities, single_coverage_product=True),
-        )
-        check_adapter_specs(DatasetRegistry((one_off,)), ADAPTER_SPECS)
+        for entry in (SENTINEL_2_L2A, SYNTHETIC_ZARR):
+            with pytest.raises(
+                AdapterSpecMismatch, match=f"{entry.dataset_id}: .* answers no upstream-aggregation coverage"
+            ):
+                check_adapter_specs(DatasetRegistry((entry,)), _with_earth_search(coverage={}))
 
     def test_a_materialized_entry_of_a_searching_kind_builds(self) -> None:
         """The app asks no adapter for it (pgstac and `catalog` answer); whether it

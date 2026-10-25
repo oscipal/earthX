@@ -78,7 +78,6 @@ def _dem_double(request: httpx.Request) -> httpx.Response:
 
 DOUBLES: dict[str, Callable[[httpx.Request], httpx.Response]] = {
     "test_earth_search_smoke": _stac_double("earth_search"),
-    "test_eopf_smoke": _stac_double("eopf_stac"),
     "test_coverage_smoke": _coverage_double,
     "test_cop_dem_smoke": _dem_double,
 }
