@@ -56,9 +56,9 @@ Belegstufen wie in `adr/0009`: [M] gemessen, [P] am Primärdokument oder im Code
 ## 7. Kurzfassung
 
 - **Hauptursache: zwei GDAL-Einstellungen.** Mit `GDAL_HTTP_MULTIRANGE=YES` liest GDAL die Blöcke einer Kachel parallel. Dieser Weg schreibt nicht in den `/vsicurl/`-Cache [P], und der Cache hat nur 16 MB [P]. Jede Kachel lädt deshalb die Blöcke neu, die ihre Nachbarn schon geholt haben. Für die Ansicht in §8 holt GDAL 1,72 GB von der Quelle, gebraucht werden 284 MB [M]. Mit `SERIAL` und 256 MB Cache wird jedes Byte einmal geholt.
-- **Wirkung [M]:** Die gemessene Ansicht (13 Szenen × 25 NDVI-Kacheln, 325 Anfragen, Quelle mit EU-Latenz) dauert ⟨A⟩ statt ⟨B⟩. Bei 100 Mbit/s zur Quelle sind es ⟨C⟩ statt ⟨D⟩. Die Kacheln sind byte-identisch, Kachel ↔ Job ist also nicht berührt.
+- **Wirkung [M]:** Die gemessene Ansicht (13 Szenen × 25 NDVI-Kacheln, 325 Anfragen, Quelle mit EU-Latenz) dauert 28,3 s statt 45,6 s. Bei 100 Mbit/s zur Quelle sind es 38,4 s statt 145,3 s. Die Kacheln sind byte-identisch, Kachel ↔ Job ist also nicht berührt.
 - **Die Warteschlange liegt im Browser, nicht im `tiler`:** Über HTTP/1.1 öffnet der Browser 6 Verbindungen je Host [P]. Die 325 Anfragen warten dort, im `tiler` gibt es keine Schlange (Wartezeit auf einen Thread ~0 ms [M]). Mehr Gleichzeitigkeit (HTTP/2 davor, mehrere Prozesse) hilft erst, wenn die Quelle schnell genug liefert. Jeder Prozess hat seinen eigenen Cache, die Bytes von der Quelle verdoppeln sich dann [M].
-- **10 s für diese Ansicht sind mit dem `tiler` allein nicht erreichbar:** 284 MB müssen von der Quelle kommen, bei 100 Mbit/s sind das schon 23 s. Eine Ansicht mit einer Szene braucht ⟨E⟩ statt ⟨F⟩. Der große Hebel für viele Szenen ist eine Mosaik-Kachel mit Operator statt 13 übereinanderliegender Ebenen (NM4-04), hier nicht im Umfang.
+- **10 s für diese Ansicht sind mit dem `tiler` allein nicht erreichbar:** 284 MB müssen von der Quelle kommen, bei 100 Mbit/s sind das schon 23 s. Eine Ansicht mit einer Szene (25 Kacheln) braucht bei 100 Mbit/s 5,9 s statt 10,5 s. Der große Hebel für viele Szenen ist eine Mosaik-Kachel mit Operator statt 13 übereinanderliegender Ebenen (NM4-04), hier nicht im Umfang.
 - **Suche „dreifach“:** Es sind drei Seiten zu je 100 Szenen (`MAX_SEARCH_ITEMS = 300`, Plattformgrenze 100 je Seite, `adr/0005` Regel V), keine Wiederholung [P]. Frage 6.
 - **`statistics` mit `op` → `400`:** Ursache am Code nicht eindeutig; Kandidaten in §12. Frage 7.
 - **Umsetzung in einem PR** (nach Freigabe): GDAL-Profil des `tiler` in `gateway`, Item-Abrufe der Einzelkachel bündeln, Test „jede Suchseite genau einmal“, Ursache und Test für `statistics`. 512er-Kacheln, HTTP/2 und `Cache-Control` sind je eine Frage an Otto.
@@ -84,11 +84,44 @@ Alles dazwischen ist der ausgelieferte Code: Registry, Lizenz, Zoomprüfung, `ch
 
 Rechner der Sitzung: 4 Kerne, 16 GB. Jede Zeile ist ein frischer Prozess mit leerem Item- und Statistik-Cache.
 
-⟨TABELLE⟩
+Spalten: Wandzeit bis zur letzten Kachel; Zeit einer Kachel im `tiler`, ihr `open`, `read` und `encode` (je Median/Mittel in ms); Bytes von der Quelle; davon gebraucht (Vereinigung der Byte-Bereiche je Datei). „S1“ = `SERIAL` + 256 MiB Cache (§10). Quelle mit EU-Latenz (170 ms je Anfrage, 350 ms je Verbindung), Leitung unbegrenzt oder 100 Mbit/s.
+
+| Ansicht | Leitung | Stand | Wandzeit | Kachel | `open` | `read` | `encode` | Quelle | gebraucht |
+|---|---|---|---|---|---|---|---|---|---|
+| NDVI, 13 Szenen × 25 (325 Anfragen) | unbegrenzt | heute | **45,6 s** | 878/823 | 389/278 | 442/449 | 31/33 | 1719 MB | 284 MB |
+| | unbegrenzt | S1 | **28,3 s** | 388/497 | 8/58 | 145/247 | 34/39 | 301 MB | 284 MB |
+| | 100 Mbit/s | heute | **145,3 s** | 2559/2655 | 428/322 | 2095/2269 | 28/30 | 1770 MB | 284 MB |
+| | 100 Mbit/s | S1 | **38,4 s** | 370/682 | 8/49 | 142/470 | 33/37 | 302 MB | 284 MB |
+| `visual`, 13 × 25 (325) | unbegrenzt | heute | **30,1 s** | 496/526 | 173/119 | 263/268 | 39/44 | 1266 MB | 212 MB |
+| | unbegrenzt | S1 | **22,9 s** | 346/390 | 5/31 | 128/167 | 42/53 | 214 MB | 212 MB |
+| | 100 Mbit/s | heute | **103,4 s** | 1889/1883 | 198/148 | 1617/1666 | 35/37 | 1255 MB | 212 MB |
+| | 100 Mbit/s | S1 | **32,1 s** | 344/559 | 4/33 | 127/357 | 40/50 | 224 MB | 212 MB |
+| NDVI, 1 Szene × 25 (25) | unbegrenzt | heute | **4,3 s** | 610/935 | 8/263 | 462/449 | 31/37 | 100 MB | 22 MB |
+| | unbegrenzt | S1 | **4,0 s** | 631/894 | 19/272 | 432/349 | 52/51 | 40 MB | 22 MB |
+| | 100 Mbit/s | heute | **10,5 s** | 2765/2311 | 7/276 | 2182/1836 | 33/36 | 103 MB | 22 MB |
+| | 100 Mbit/s | S1 | **5,9 s** | 1007/1283 | 12/272 | 831/794 | 34/41 | 40 MB | 22 MB |
+| NDVI, 13 × 9 Kacheln 512 px (117), dieselbe Fläche | unbegrenzt | S1 + S3 | **23,0 s** | 1003/1125 | 8/115 | 536/534 | 121/142 | 284 MB | 284 MB |
+| | 100 Mbit/s | S1 + S3 | **33,4 s** | 1281/1667 | 6/116 | 1024/1216 | 119/136 | 285 MB | 284 MB |
+| wie oben, 4 Prozesse, 24 Verbindungen (S4) | unbegrenzt | S1 + S3 + S4 | **13,3 s** | 2363/2367 | 49/413 | 896/913 | 168/214 | 586 MB | 284 MB |
+| | 100 Mbit/s | S1 + S3 + S4 | **40,0 s** | 7091/7646 | 14/407 | 5825/6644 | 118/141 | 471 MB | 284 MB |
+| NDVI 13 × 25, 4 Prozesse, 24 Verbindungen | unbegrenzt | S1 + S4 | **19,0 s** | 1308/1263 | 23/192 | 514/534 | 55/66 | 739 MB | 284 MB |
+| | 100 Mbit/s | S1 + S4 | **42,6 s** | 1592/2963 | 22/165 | 447/2170 | 42/61 | 472 MB | 284 MB |
+| NDVI 13 × 25, Quelle ohne Latenz | unbegrenzt | heute | **23,8 s** | 405/412 | 53/51 | 146/153 | 36/43 | 1715 MB | 284 MB |
+| | unbegrenzt | S1 | **23,8 s** | 404/413 | 12/19 | 144/151 | 38/45 | 290 MB | 284 MB |
+
+In allen Zeilen mit 6 Verbindungen wartet eine Kachel im `tiler` im Median 0–1 ms auf einen Thread für den Endpunkt und 1–29 ms für die synchronen Abhängigkeiten. Der Operator (`compute`) kostet 1–12 ms. Ottos Zahlen (rund 40 s für 325 Anfragen, Kacheln 1,7–6,5 s im Browser) liegen zwischen den Zeilen „heute“ ohne und mit Leitungsgrenze.
 
 ### 8.3 Was die Zahlen sagen
 
-⟨BEFUNDE⟩
+- **B1 Die Schlange steht im Browser.** Im Browser wartet eine Kachel im Median 26 s (Spalte „Time“ in DevTools), im `tiler` dauert sie 0,9 s. Die Zeiten steigen gleichmäßig an, weil 325 Anfragen über 6 Verbindungen nacheinander abgearbeitet werden. Das deckt sich mit Ottos Beobachtung.
+- **B2 GDAL holt das Sechsfache.** Heute 1719 MB für eine Ansicht, die 284 MB braucht (`visual`: 1266 für 212 MB). Ursache sind `MULTIRANGE=YES` und der 16-MB-Cache (R2–R5). Auch der Header einer Datei fällt aus dem Cache: Jede Kachel öffnet ihre COGs mit 1–2 Anfragen neu (`open` im Mittel 278 ms).
+- **B3 Mit S1 kommt jedes Byte einmal.** 301 statt 1719 MB, `open` 58 statt 278 ms im Mittel. Was über 284 MB hinausgeht, kommt aus der ersten Welle: Sechs gleichzeitige kalte Kacheln derselben Datei holen dieselben Blöcke, bevor einer im Cache liegt. GDAL bündelt gleichzeitige Fehlgriffe nicht.
+- **B4 Bei begrenzter Leitung zählen nur die Bytes.** 1770 MB über 100 Mbit/s sind 142 s, gemessen 145 s; 302 MB sind 24 s, gemessen 38 s. Ottos Leitung kenne ich nicht. Die Prüfanleitung (§16) misst die Bytes des `tiler` über `docker stats`.
+- **B5 Ohne Latenz rechnet der `tiler` an seiner Grenze.** Ohne Netzverzögerung brauchen heute und S1 gleich lange (23,8 s): ein Prozess, 6 Anfragen gleichzeitig, ~0,4 s je NDVI-Kachel. Darunter kommt man nur mit weniger Anfragen (S3) oder mehr Prozessen (S4).
+- **B6 Mehr Prozesse kosten Bytes.** Mit 4 Prozessen hat jeder seinen eigenen Cache: 471–739 statt 285–302 MB von der Quelle. Ohne Leitungsgrenze ist das die schnellste Variante (13,3 s mit 512 px). Bei 100 Mbit/s ist die Ansicht damit langsamer (40,0 bzw. 42,6 s statt 33,4 bzw. 38,4 s).
+- **B7 Eine Szene:** 10,5 → 5,9 s bei 100 Mbit/s, 4,3 → 4,0 s ohne Grenze. Hier dominiert die erste Welle (B3).
+- **B8 Das Item kommt mehrfach.** Für eine kalte Szene holt der `tiler` das Item bis zu fünfmal gleichzeitig von der Quelle, für 13 Szenen 13–17-mal (S2). Danach kommt es aus dem Cache in Postgres (Median 2–17 ms).
+- **B9 Nur in der Entwicklungsumgebung:** Mit `boto3` (Dev-Lock) kostet jede Kachel ~100 ms CPU in `botocore` (§17.2). Das Image ist nicht betroffen. Ein Test unter `pytest`, der Kachelzeiten misst, wäre davon verzerrt.
 
 ## 9. Recherche
 
@@ -119,10 +152,10 @@ Reihenfolge nach Nutzen je Aufwand. Zahlen aus §8.2, Speicher als RSS des `tile
 
 | # | Stellschraube | Wirkung [M] | Kosten | Empfehlung |
 |---|---|---|---|---|
-| S1 | **GDAL-Profil des `tiler`:** `GDAL_HTTP_MULTIRANGE=SERIAL`, `CPL_VSIL_CURL_CACHE_SIZE=256 MiB` | Bytes von der Quelle 1,72 GB → 0,30 GB; Ansicht ⟨S1a⟩ ohne, ⟨S1b⟩ mit 100-Mbit/s-Leitung; `open` 278 → 58 ms im Mittel | RSS ~300 → ~⟨RSS⟩ MB je Prozess. Neue Blöcke einer Kachel kommen nacheinander statt parallel (spürbar nur bei kaltem Cache und vielen Blöcken je Kachel); Zuschnitt siehe §13 | **jetzt**, ohne Änderung an `docker-compose.yml` |
+| S1 | **GDAL-Profil des `tiler`:** `GDAL_HTTP_MULTIRANGE=SERIAL`, `CPL_VSIL_CURL_CACHE_SIZE=256 MiB` | Bytes von der Quelle 1,72 GB → 0,30 GB; Ansicht 45,6 → 28,3 s ohne, 145,3 → 38,4 s mit 100-Mbit/s-Leitung; `open` 278 → 58 ms im Mittel | RSS ~300 → ~⟨RSS⟩ MB je Prozess. Neue Blöcke einer Kachel kommen nacheinander statt parallel (spürbar nur bei kaltem Cache und vielen Blöcken je Kachel); Zuschnitt siehe §13 | **jetzt**, ohne Änderung an `docker-compose.yml` |
 | S2 | **Item-Abrufe der Einzelkachel bündeln** wie bei der Mosaik-Kachel (`mosaic_tiles.ItemFetches`, M4-17b) | eine statt bis zu 6 Item-Abfragen je kalter Szene (gemessen 5 für 1 Szene, 15 für 13) | ~20 Zeilen; derselbe Weg wie die Mosaik-Kachel | **jetzt** |
-| S3 | **512er-Kacheln** im Frontend (`tileSize: 512`, `tilesize=512`) | ein Drittel der Anfragen (325 → 117); Ansicht ⟨S3a⟩ statt ⟨S1a⟩, gleiche Bytes | ändert die Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5: eine Kachel deckt die vierfache Fläche) | **eigene Aufgabe** (Frage 3) |
-| S4 | **Mehr Gleichzeitigkeit:** HTTP/2 zum Browser (TLS davor) und `uvicorn --workers 4` | ⟨S4a⟩ (24 Anfragen gleichzeitig, 4 Prozesse, 512 px) | Bytes von der Quelle ×2, weil jeder Prozess eigene Caches hat; RSS ×4 (⟨RSS4⟩ MB gesamt); TLS lokal braucht ein Zertifikat (neues Werkzeug oder Abhängigkeit) | **mit M6** (Frage 4) |
+| S3 | **512er-Kacheln** im Frontend (`tileSize: 512`, `tilesize=512`) | ein Drittel der Anfragen (325 → 117); Ansicht 23,0 statt 28,3 s (100 Mbit/s: 33,4 statt 38,4 s), gleiche Bytes | ändert die Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5: eine Kachel deckt die vierfache Fläche) | **eigene Aufgabe** (Frage 3) |
+| S4 | **Mehr Gleichzeitigkeit:** HTTP/2 zum Browser (TLS davor) und `uvicorn --workers 4` | ohne Leitungsgrenze 13,3 s (512 px) bzw. 19,0 s (256 px); bei 100 Mbit/s 40,0 bzw. 42,6 s, also langsamer als S1 allein (24 Anfragen gleichzeitig, 4 Prozesse) | Bytes von der Quelle ×2–2,5 (586–739 statt 284–302 MB), weil jeder Prozess eigene Caches hat; RSS ×4 (~2,0 GB gesamt); TLS lokal braucht ein Zertifikat (neues Werkzeug oder Abhängigkeit) | **mit M6** (Frage 4) |
 | S5 | PNG schneller kodieren (`ZLEVEL=1`) | Kodieren 45 → 25 ms je NDVI-Kachel (echte Szene, §17.4) | +2 % Größe | später; zählt erst, wenn der `tiler` rechengebunden ist |
 | S6 | Threadpool (40), `GDAL_HTTP_VERSION`, `GDAL_HTTP_MULTIPLEX`, `CPL_VSIL_CURL_USE_HEAD=NO`, `VSI_CACHE` | keine messbare Wirkung: Warten auf einen Thread ~0 ms; S3 spricht HTTP/1.1 (R7); ohne `HEAD` 32,4 statt 32,0 s | — | **unverändert lassen** |
 
