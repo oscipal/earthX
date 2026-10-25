@@ -8,12 +8,14 @@ import { clipTileUrl } from './aoiClip';
 import { buildTileTemplate } from './api';
 import type { CoverageCell } from './api';
 import { cellsToFeatureCollection, coverageFillColorExpression } from './coverage';
-import { preferredGeoreferencedAsset, quicklookAsset, quicklookPlan } from './datasets';
+import { preferredGeoreferencedAsset, quicklookPlan } from './datasets';
 import type { DatasetOption } from './datasets';
-import { asFeatureCollection, footprintOf, quicklookAoiPixelRings, quicklookCoords } from './geoUtils';
+import { asFeatureCollection, footprintOf, quicklookCoords } from './geoUtils';
 import type { Coords4 } from './geoUtils';
 import { groupOutlineFeatures } from './groupOutline';
 import type { LayerOverlay, MapLayer } from './layers';
+import { underlayOf } from './underlay';
+import type { ImageOverlay } from './underlay';
 import { passesOf, stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster } from './mosaic';
 import type { AppliedRender, DownloadedInfo, StacItem, TimeStepGroup } from './types';
@@ -34,9 +36,6 @@ const MAX_DYNAMIC_LAYERS = 200;
 const PREVIEW_SRC = 'preview-src-';
 const PREVIEW_LYR = 'preview-lyr-';
 
-// Dynamic per-frame overlay ids created by syncMosaic (variable count).
-let dynLayerIds: string[] = [];
-let dynSourceIds: string[] = [];
 // What each of the view's own rasters draws (`overlaySignature`), and which of them are out of sight
 // because a pinned layer that is switched on draws the same (`settleViewTwin`).
 const viewPictures = new Map<string, string>();
@@ -369,22 +368,90 @@ export function setAoiData(map: MapLibreMap, geom: GeoJSON.Geometry | null): voi
   setData(map, AOI_SRC, asFeatureCollection(geom));
 }
 
-function clearDynamicMosaic(map: MapLibreMap): void {
+// The view's own rasters live in one of two id ranges, `m-…` and `n-…`. A new sync lays its layers in the range the
+// last one did not use and takes the last one's away only once the new picture has loaded, so that switching
+// between the quicklook and full resolution (or any redraw of the view) never shows the basemap in between.
+type DynamicBank = 'm' | 'n';
+const DYNAMIC_KINDS = ['img-lyr', 'img-src', 'tiles-lyr', 'tiles-src'] as const;
+let bank: DynamicBank = 'm';
+// How long the picture it replaces stays when the new one does not load (a tile that fails, a quicklook that does not arrive).
+const RETIRE_AFTER_MS = 10_000;
+let retiring: { id: number; map: MapLibreMap; bank: DynamicBank; timer: ReturnType<typeof setTimeout> } | null = null;
+let retired = 0;
+// Quicklooks of the current sync that are still on their way, and whether it has put a layer on the map at all.
+let pendingImages = 0;
+let drawnNew = false;
+
+const dynamicId = (kind: (typeof DYNAMIC_KINDS)[number], i: number): string => `${bank}-${kind}-${i}`;
+
+function hasDynamic(map: MapLibreMap, which: DynamicBank): boolean {
+  for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
+    if (map.getLayer(`${which}-img-lyr-${i}`) || map.getLayer(`${which}-tiles-lyr-${i}`)) return true;
+  }
+  return false;
+}
+
+function removeDynamic(map: MapLibreMap, which: DynamicBank): void {
   // Remove by deterministic id across the whole index range — not just the
   // tracked ids — so an overlay placed by a slow async quicklook load that
   // finished around a re-sync can't survive as an orphan.
   for (let i = 0; i < MAX_DYNAMIC_LAYERS; i++) {
-    for (const lyr of [`m-img-lyr-${i}`, `m-tiles-lyr-${i}`]) {
+    for (const lyr of [`${which}-img-lyr-${i}`, `${which}-tiles-lyr-${i}`]) {
       if (map.getLayer(lyr)) map.removeLayer(lyr);
+      viewPictures.delete(lyr);
+      viewTwinsHidden.delete(lyr);
     }
-    for (const src of [`m-img-src-${i}`, `m-tiles-src-${i}`]) {
+    for (const src of [`${which}-img-src-${i}`, `${which}-tiles-src-${i}`]) {
       if (map.getSource(src)) map.removeSource(src);
     }
   }
-  dynLayerIds = [];
-  dynSourceIds = [];
-  viewPictures.clear();
-  viewTwinsHidden.clear();
+}
+
+function finishRetired(map: MapLibreMap): void {
+  if (!retiring) return;
+  clearTimeout(retiring.timer);
+  removeDynamic(map, retiring.bank);
+  retiring = null;
+}
+
+// Start of a sync of the view: what the view drew is taken away at once where the map cannot say when the new picture is
+// there, else it stays, under the new one, until `settleRetired`.
+function retireDynamicMosaic(map: MapLibreMap): void {
+  pendingImages = 0;
+  // A style reload (a theme switch) wipes the layers a picture was waiting to be taken away from.
+  if (retiring && (retiring.map !== map || !hasDynamic(map, retiring.bank))) {
+    clearTimeout(retiring.timer);
+    retiring = null;
+  }
+  // The last sync drew nothing yet (a mosaic still on its way): the picture before it waits on for this one.
+  if (retiring && !drawnNew) return;
+  finishRetired(map);
+  drawnNew = false;
+  if (!hasDynamic(map, bank)) {
+    bank = 'm';
+    return;
+  }
+  if (typeof map.once !== 'function') {
+    removeDynamic(map, bank);
+    return;
+  }
+  const id = ++retired;
+  retiring = { id, map, bank, timer: setTimeout(() => retiring?.id === id && finishRetired(map), RETIRE_AFTER_MS) };
+  bank = bank === 'm' ? 'n' : 'm';
+}
+
+// The new picture is on the map once the quicklooks it waits for have arrived and the map has no tile left to load.
+function settleRetired(map: MapLibreMap): void {
+  if (!retiring || !drawnNew || pendingImages > 0) return;
+  const { id } = retiring;
+  map.once('idle', () => {
+    if (retiring?.id === id && pendingImages === 0) finishRetired(map);
+  });
+}
+
+// A sync that draws nothing new has nothing to wait for.
+function dropRetired(map: MapLibreMap): void {
+  finishRetired(map);
 }
 
 const aboveAll = (map: MapLibreMap): string | undefined => (map.getLayer('aoi-fill') ? 'aoi-fill' : undefined);
@@ -465,65 +532,51 @@ function addPreview(
     if (!item.bbox) return;
     const tileUrl = buildTileUrl(buildTileTemplate(dataset.id, item.id, plan.asset), plan.render);
     const zoom = { minZoom: plan.zoom, maxZoom: plan.zoom };
-    placeRaster(map, `m-tiles-src-${i}`, `m-tiles-lyr-${i}`, tileUrl, item.bbox, 1, zoom);
-    dynSourceIds.push(`m-tiles-src-${i}`);
-    dynLayerIds.push(`m-tiles-lyr-${i}`);
-    drawsPicture(map, `m-tiles-lyr-${i}`, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
+    const lyrId = dynamicId('tiles-lyr', i);
+    placeRaster(map, dynamicId('tiles-src', i), lyrId, tileUrl, item.bbox, 1, zoom);
+    drawsPicture(map, lyrId, overlaySignature({ kind: 'raster', tileUrl, bounds: item.bbox, ...zoom }));
     return;
   }
   const coords = quicklookCoords(item, preferredGeoreferencedAsset(dataset));
   if (!coords) return;
-  const srcId = `m-img-src-${i}`;
-  const lyrId = `m-img-lyr-${i}`;
+  const srcId = dynamicId('img-src', i);
+  const lyrId = dynamicId('img-lyr', i);
   const nodataMax = dataset.viewable ? dataset.quicklookNodataMax : null;
+  pendingImages++;
   loadProcessed(plan.href, nodataMax, null, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this group
+    pendingImages--;
     try {
       placeImage(map, srcId, lyrId, dataUrl, coords, 1);
-      dynSourceIds.push(srcId);
-      dynLayerIds.push(lyrId);
       drawsPicture(map, lyrId, overlaySignature({ kind: 'image', url: plan.href, coords, nodataMax }));
     } catch {
       /* map/style went away while loading */
     }
+    settleRetired(map);
   });
 }
 
-// Below `min_zoom`, for a dataset with a browsable quicklook (M3-12, O5): the
-// quicklook stands in for the raster tiles the map cannot show yet, cropped
-// to the AOI the same way the tiles above it are, instead of an empty area
-// while the AOI is still on screen. The raster tiles (`addTiles`, placed
-// right after this for the same scene) fade in at `dataset.zoom.min` via a
-// zoom-stepped `raster-opacity` — an image source has no `minzoom`/`maxzoom`
-// of its own the way a raster tile source does, so the boundary lives there
-// instead. Reuses the `m-img-*` id range the browse preview uses: focus mode
-// and browse mode never sync at once, and `clearDynamicMosaic` already
+// For a dataset with a browsable quicklook (M3-12, O5): the quicklook stands in for the raster tiles the map
+// cannot show yet — below `min_zoom`, and while they load — cropped to the AOI the same way the tiles above it
+// are, instead of an empty area while the AOI is still on screen (`underlay.ts` says what it is made of). It
+// stays under the tiles at every zoom, so that no zoom and no jump leaves the map without a picture. Reuses the `m-img-*` id range the browse preview uses: focus mode
+// and browse mode never sync at once, and `retireDynamicMosaic` already
 // clears both ranges up front regardless of which mode is running.
-function addQuicklookUnderlay(
-  map: MapLibreMap,
-  item: StacItem,
-  dataset: DatasetOption & { viewable: true },
-  i: number,
-  clip: GeoJSON.Geometry | null,
-  gen: number,
-): void {
-  const asset = quicklookAsset(item);
-  if (!asset?.href) return;
-  const preferred = preferredGeoreferencedAsset(dataset);
-  const coords = quicklookCoords(item, preferred);
-  if (!coords) return;
-  const clipRings = clip ? quicklookAoiPixelRings(item, clip, preferred) : null;
-  const srcId = `m-img-src-${i}`;
-  const lyrId = `m-img-lyr-${i}`;
-  loadProcessed(asset.href, dataset.quicklookNodataMax, clipRings, (dataUrl) => {
+function addQuicklookUnderlay(map: MapLibreMap, underlay: ImageOverlay, i: number, gen: number): void {
+  const srcId = dynamicId('img-src', i);
+  const lyrId = dynamicId('img-lyr', i);
+  pendingImages++;
+  loadProcessed(underlay.url, underlay.nodataMax, underlay.clipRings ?? null, (dataUrl) => {
     if (gen !== syncGen) return; // a newer sync superseded this one
+    pendingImages--;
     try {
-      placeImage(map, srcId, lyrId, dataUrl, coords, ['step', ['zoom'], 1, dataset.zoom.min, 0]);
-      dynSourceIds.push(srcId);
-      dynLayerIds.push(lyrId);
+      placeImage(map, srcId, lyrId, dataUrl, underlay.coords, 1);
+      // The quicklook of a pinned layer of the same scene takes its place (`drawsPicture`).
+      drawsPicture(map, lyrId, overlaySignature(underlay));
     } catch {
       /* map/style went away while loading */
     }
+    settleRetired(map);
   });
 }
 
@@ -538,11 +591,9 @@ function addTiles(
   render: AppliedRender,
   clip: GeoJSON.Geometry | null,
 ): void {
-  const srcId = `m-tiles-src-${i}`;
-  const lyrId = `m-tiles-lyr-${i}`;
+  const srcId = dynamicId('tiles-src', i);
+  const lyrId = dynamicId('tiles-lyr', i);
   placeRaster(map, srcId, lyrId, clipTileUrl(buildTileUrl(info.tileUrl, render), clip), info.bounds, 1, info);
-  dynSourceIds.push(srcId);
-  dynLayerIds.push(lyrId);
   drawsPicture(map, lyrId, tilesPicture(info, render, clip));
 }
 
@@ -594,7 +645,7 @@ let stackedOrder: string[] = [];
 function overlaySignature(ov: LayerOverlay): string {
   return ov.kind === 'raster'
     ? JSON.stringify([ov.kind, ov.tileUrl, ov.bounds, ov.minZoom, ov.maxZoom, ov.hideFrom])
-    : JSON.stringify([ov.kind, ov.url, ov.coords, ov.nodataMax]);
+    : JSON.stringify([ov.kind, ov.url, ov.coords, ov.nodataMax, ov.clipRings]);
 }
 
 // The overlays up to the budget, bottom to top, and how many did not fit. The budget is spent from the
@@ -635,6 +686,7 @@ export const overlayBudgetNote = (notDrawn: number): string | null =>
 // and a move in the list would change nothing. Switched off or gone, the layer draws nothing, and the copy
 // is back. A copy out of sight loads no tiles.
 function drawsPicture(map: MapLibreMap, lyrId: string, sig: string): void {
+  drawnNew = true;
   viewPictures.set(lyrId, sig);
   settleViewTwin(map, lyrId);
 }
@@ -727,7 +779,7 @@ export function syncLayers(map: MapLibreMap, layers: MapLayer[]): number {
     } else if (w.visible) {
       // A hidden quicklook is not even fetched; it is the next sync that finds it missing.
       const ov = w.overlay;
-      loadProcessed(ov.url, ov.nodataMax, null, (dataUrl) => {
+      loadProcessed(ov.url, ov.nodataMax, ov.clipRings ?? null, (dataUrl) => {
         const index = wantedOverlays.findIndex((x) => x.lyrId === w.lyrId && x.sig === w.sig);
         if (index < 0) return; // gone from the list, or a newer one took its place
         try {
@@ -802,8 +854,8 @@ export function syncFocusRaster(
 ): void {
   // A quicklook that arrives after this sync belongs to the one before it.
   const gen = ++syncGen;
-  clearDynamicMosaic(map);
-  if (!s.showDownloaded) return;
+  retireDynamicMosaic(map);
+  if (!s.showDownloaded) return dropRetired(map);
   const clip = s.cropToAoi ? (s.aoi ?? null) : null;
   const dataset = s.dataset;
   // Each pass is a mosaic, scene by scene, or not yet known (`mosaic.ts`). The scenes drawn one by
@@ -840,16 +892,16 @@ export function syncFocusRaster(
       // O5: the underlay goes down first, so `addTiles` right after it ends up
       // on top (`beforeAoi` puts each newly added layer just below the AOI
       // layer, so whichever is added later of the two is the more on top).
-      if (dataset?.viewable && dataset.browse === 'quicklook' && underlays < MAX_DYNAMIC_LAYERS) {
-        const item = s.items.find((it) => it.id === itemId);
-        if (item) addQuicklookUnderlay(map, item, dataset, underlays++, clip, gen);
-      }
+      const item = underlays < MAX_DYNAMIC_LAYERS ? s.items.find((it) => it.id === itemId) : undefined;
+      const underlay = item && underlayOf(item, dataset, clip);
+      if (underlay) addQuicklookUnderlay(map, underlay, underlays++, gen);
       if (view.kind === 'scenes' && !s.tilesInLayer) place(info);
     });
     if (view.kind === 'mosaic' && !s.tilesInLayer) {
       (wanted > MAX_DYNAMIC_LAYERS ? view.rasters.slice(-1) : view.rasters).forEach(place);
     }
   }
+  settleRetired(map);
 }
 
 // Browse-mode preview overlays: one per scene of `items` (the active time
@@ -858,10 +910,12 @@ export function syncFocusRaster(
 // preview *from* — the registry decides both the image and the level.
 export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' | 'dataset'>): void {
   const gen = ++syncGen;
-  clearDynamicMosaic(map);
+  retireDynamicMosaic(map);
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
-  if (dataset) items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
+  if (!dataset) return dropRetired(map);
+  items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
+  settleRetired(map);
 }
 
 // The yellow outline around selected scenes, in either mode. A plain GeoJSON

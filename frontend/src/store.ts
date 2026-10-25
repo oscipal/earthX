@@ -48,7 +48,7 @@ import {
   needsFallback,
   withSourceState,
 } from './sections';
-import { cropPasses, fullResolutionLayers, overlaysOfPass } from './searchLayers';
+import { cropPasses, fullResolutionLayers, overlaysOfPass, underlaysOf } from './searchLayers';
 import type { AppliedRender, Bbox, DownloadedInfo, StacItem, TimeStepGroup, ToolMode } from './types';
 
 const PAGE_LIMIT = 100;
@@ -407,8 +407,9 @@ function cropsForSearch(
 // The overlays for these scenes, split by time step and stacked the way the view draws them
 // (`stackLikeView`); `null` while the mosaic of one is not known.
 function overlaysOfEntries(s: AppState, entries: SceneEntry[], clip: GeoJSON.Geometry | null): LayerOverlay[] | null {
+  const dataset = s.datasets.find((d) => d.id === s.datasetId);
   const overlays = passesOf(entries, s.groups).map((pass) =>
-    overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, clip),
+    overlaysOfPass(s.datasetId ?? '', pass, s.mosaics, s.appliedRender, clip, underlaysOf(pass, s.items, dataset, clip)),
   );
   return overlays.some((o) => o === null) ? null : stackLikeView(overlays).flatMap((o) => o ?? []);
 }

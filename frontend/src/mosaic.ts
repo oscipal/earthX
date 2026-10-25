@@ -22,7 +22,7 @@ export const MAX_MOSAIC_SCENES = 64;
 // A source's `minzoom`/`maxzoom` are tile levels, a layer's `maxzoom` is a map zoom. MapLibre rounds the map zoom
 // for a raster source and asks 256-px tiles for the level above it (`placeRaster`), so tile level L is first
 // asked at map zoom L - 1.5: from there the mosaic is loaded and the scenes under it have to be out of sight.
-const TILE_LEVEL_AHEAD = 1.5;
+export const TILE_LEVEL_AHEAD = 1.5;
 
 export type SceneEntry = [itemId: string, info: DownloadedInfo];
 

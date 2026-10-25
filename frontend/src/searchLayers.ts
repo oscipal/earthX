@@ -14,7 +14,9 @@ import { stackLikeView, viewOfPass } from './mosaic';
 import type { Mosaics, PlannedRaster, SceneEntry } from './mosaic';
 import { appliedRenderFrom } from './render';
 import type { ResultSection } from './sections';
-import type { AppliedRender, TimeStepGroup } from './types';
+import { underlayOf } from './underlay';
+import type { ImageOverlay } from './underlay';
+import type { AppliedRender, StacItem, TimeStepGroup } from './types';
 
 type ViewableDataset = Extract<DatasetOption, { viewable: true }>;
 
@@ -36,11 +38,27 @@ export function overlaysOfPass(
   mosaics: Mosaics | undefined,
   render: AppliedRender,
   clip: GeoJSON.Geometry | null,
+  // The quicklooks under the tiles (`underlaysOf`), which the layer draws where its tiles do not start yet.
+  underlays: readonly ImageOverlay[] = [],
 ): LayerOverlay[] | null {
   const view = viewOfPass(datasetId, entries, mosaics);
   if (view.kind === 'pending') return null;
   const rasters = view.kind === 'mosaic' ? view.rasters : stackLikeView(entries.map(([, info]) => info));
-  return rasters.map((raster) => rasterOverlay(raster, render, clip));
+  return [...underlays, ...rasters.map((raster) => rasterOverlay(raster, render, clip))];
+}
+
+// The quicklooks of these scenes, bottom to top like the view lays them (`underlay.ts`).
+export function underlaysOf(
+  entries: SceneEntry[],
+  items: readonly StacItem[],
+  dataset: DatasetOption | null | undefined,
+  clip: GeoJSON.Geometry | null,
+): ImageOverlay[] {
+  return stackLikeView(entries).flatMap(([id]) => {
+    const item = items.find((it) => it.id === id);
+    const underlay = item && underlayOf(item, dataset, clip);
+    return underlay ? [underlay] : [];
+  });
 }
 
 // The scenes of a group the dataset can draw: those with a bounding box, in the tile URL of its
@@ -103,7 +121,9 @@ export function fullResolutionLayers(
       visible: true,
       opacity: 1,
       overlays:
-        overlaysOfPass(dataset.id, entries, mosaics, applied, aoi) ?? overlaysOfPass(dataset.id, entries, undefined, applied, aoi) ?? [],
+        overlaysOfPass(dataset.id, entries, mosaics, applied, aoi, underlaysOf(entries, group.items, dataset, aoi)) ??
+        overlaysOfPass(dataset.id, entries, undefined, applied, aoi, underlaysOf(entries, group.items, dataset, aoi)) ??
+        [],
       restore: {
         focusMode: true,
         downloaded,

@@ -9,15 +9,27 @@
 // "Overview": the layer of a job's result is real data, drawn from the result's
 // own file; at a zoom where the tile is coarser than the result's pixel size, the
 // tiler reads its overviews, and the badge says so (`resultLayer.ts::isOverview`).
+//
+// "Zoom in": a layer, or the preview of the panel, whose tiles start at a level above the map's zoom
+// shows nothing there, and the badge says from which zoom it is drawn (`zoomHint.ts`).
 
+import { useMemo } from 'react';
+
+import { previewOverlays } from '../processingPreview';
 import { isOverview } from '../resultLayer';
 import { useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
+import { zoomInTo } from '../zoomHint';
 
 export const OVERVIEW_TITLE = 'Drawn coarser than the result: zoom in for its full resolution.';
 
+const zoomInTitle = (waiting: { name: string; from: number }[]): string =>
+  `${waiting[0].name} is drawn from zoom ${waiting[0].from}.${waiting.length > 1 ? ` ${waiting.length - 1} more start later.` : ''}`;
+
 export default function PreviewBadge() {
   const draft = useProcessingStore((s) => s.preview);
+  const aoi = useAppStore((s) => s.aoi);
+  const draftOverlays = useMemo(() => (draft ? previewOverlays(draft, draft.clipToAoi ? aoi : null) : []), [draft, aoi]);
   const layers = useAppStore((s) => s.layers);
   const mapZoom = useAppStore((s) => s.mapZoom);
   const viewport = useAppStore((s) => s.viewportBbox);
@@ -31,13 +43,23 @@ export default function PreviewBadge() {
         (o) => o.kind === 'raster' && isOverview({ gsd: l.result?.gsd ?? null, mapZoom, viewport, maxZoom: o.maxZoom }),
       ),
   );
-  if (!draft && !pinned && !overview) return null;
+  // A layer or the preview of the panel that starts at a level above this zoom: the map says so, instead of nothing.
+  const waiting = [
+    ...layers.filter((l) => l.visible && !l.result?.expired).map((l) => ({ name: l.name, from: zoomInTo(l.overlays, mapZoom) })),
+    ...(draft ? [{ name: 'Preview', from: zoomInTo(draftOverlays, mapZoom) }] : []),
+  ].filter((w): w is { name: string; from: number } => w.from !== null);
+  if (!draft && !pinned && !overview && waiting.length === 0) return null;
   return (
     <div className="overlay preview-badge-dock">
       {(draft || pinned) && <span className="preview-badge">Preview</span>}
       {overview && (
         <span className="preview-badge" title={OVERVIEW_TITLE}>
           Overview
+        </span>
+      )}
+      {waiting.length > 0 && (
+        <span className="preview-badge" title={zoomInTitle(waiting)}>
+          Zoom in
         </span>
       )}
     </div>

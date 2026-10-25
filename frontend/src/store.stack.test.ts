@@ -13,6 +13,7 @@ import type { SceneEntry } from './mosaic';
 import { previewOverlays } from './processingPreview';
 import type { PreviewSpec } from './processingPreview';
 import { useProcessingStore } from './processingStore';
+import { quicklookDataset, quicklookScene, sceneInfo as tileInfo } from './fixtures/viewScenes';
 import { useAppStore } from './store';
 import type { Collection, DownloadedInfo, TimeStepGroup } from './types';
 
@@ -182,5 +183,41 @@ describe('pinPreview: the layer stacks the scenes the way the preview does', () 
       .filter((id) => id.startsWith('preview-lyr-'))
       .map((id) => (onMap.sources.get(onMap.layers.get(id)!.source!) as { tiles: string[] }).tiles[0]);
     expect(useAppStore.getState().layers[0].overlays.map(tileOf)).toEqual(previewOrder);
+  });
+});
+
+describe('addCurrentToLayers for a dataset with a quicklook whose tiles start at z8 (UI-01a)', () => {
+  const pinFrom = (over: Partial<ReturnType<typeof useAppStore.getState>> = {}) => {
+    const item = quicklookScene('Q1');
+    focusOn(['Q1'], [], {
+      datasets: [quicklookDataset(8)],
+      datasetId: 'sentinel-2-c1-l2a',
+      items: [item],
+      downloaded: { Q1: tileInfo(item, 8, 19) },
+      ...over,
+    });
+    useAppStore.getState().addCurrentToLayers();
+    return useAppStore.getState().layers[0];
+  };
+
+  it('puts the quicklook under the tiles of the layer, so the layer is not empty when zoomed out of them', () => {
+    const layer = pinFrom();
+    expect(layer.overlays.map((o) => o.kind)).toEqual(['image', 'raster']);
+    expect(layer.overlays[0]).toMatchObject({ kind: 'image', url: 'https://example.invalid/Q1.jpg' });
+  });
+
+  it('cuts the quicklook to the AOI like the tiles, in its own pixels and with no coordinate in the layer\'s text', () => {
+    const layer = pinFrom({
+      cropToAoi: true,
+      aoi: { type: 'Polygon', coordinates: [[[9.1, 47.1], [9.4, 47.1], [9.4, 47.5], [9.1, 47.5], [9.1, 47.1]]] },
+    });
+    const image = layer.overlays[0];
+    expect(image.kind === 'image' && image.clipRings?.length).toBeGreaterThan(0);
+    expect(layer.name).not.toContain('9.1');
+  });
+
+  it('adds none for a dataset released from z0, where the tiles are the picture at every zoom', () => {
+    const layer = pinFrom({ datasets: [quicklookDataset(0)] });
+    expect(layer.overlays.map((o) => o.kind)).toEqual(['raster']);
   });
 });
