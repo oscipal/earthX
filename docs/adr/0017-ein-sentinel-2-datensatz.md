@@ -1,6 +1,10 @@
 # ADR 0017 — Ein Sentinel-2-L2A-Datensatz
 
-- **Status:** **Entwurf**, Entscheidung bei Otto. Die Fragen stehen in §9.
+- **Status:** **Angenommen** von Otto am 2026-10-25. Alle sechs Fragen aus §9
+  sind nach Empfehlung beantwortet (F1–F6: Option 1); zu F4 setzt Otto die
+  Wiedervorlage auf Anfang 2027 oder früher, sobald EOPF operative
+  Zarr-Produkte meldet. Die Umsetzung folgt als eigene Aufgabe NM4-15b nach
+  dem Merge dieses ADR.
 - **Datum:** 2026-10-25
 - **Aufgabe:** NM4-15 laut `docs/plans/querschnitt/nm4-15-ein-sentinel-2-datensatz.md`
   (Backlog-Punkt 15 in `docs/plans/nach-m4-backlog.md`).
@@ -454,8 +458,9 @@ löscht, entscheidet Otto den Weg (F5).
 
 **Regel V — Die Lücke bei der Formatachse ist benannt.** Checklisten-Punkt 5
 und Prinzip 3 bekommen einen Nachtrag: Die Formatachse ist bis zur nächsten
-operativen, token-freien Zarr-Quelle nur synthetisch belegt. Wiedervorlage:
-sobald eine solche Quelle für irgendeinen Datensatz erreichbar ist (F4).
+operativen, token-freien Zarr-Quelle nur synthetisch belegt. Wiedervorlage
+(Otto, F4): Anfang 2027 oder früher, sobald EOPF operative Zarr-Produkte meldet
+(FAQ: „late 2026 or early 2027“, §3.1).
 
 ---
 
@@ -555,45 +560,61 @@ Oberflächentext nur Englisch und kurz, Erklärung im Tooltip (UI-01 §4).
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 2026-10-25
+
+Otto hat alle sechs Fragen mit Option 1 beantwortet. Die Fragen stehen mit
+ihrem ursprünglichen Wortlaut da; die Antwort folgt je Frage.
 
 **F1 — Welche Option?**
 1. Option 1: EOPF-Datensatz entfernen, Zarr bleibt generisch mit synthetischen Tests **(Empfehlung)**
 2. Option 2: ein Eintrag, zwei Quellen (eigener ADR, großer Umbau)
 3. Option 3: Earth Search entfernen, EOPF behalten
 
+**Antwort F1: (1)** EOPF-Datensatz entfernen, Zarr bleibt generisch.
+
 **F2 — Was geht mit dem Datensatz (nur bei F1 = 1)?**
 1. Variante 1b: Adapter `eopf_stac`, Coverage-Stichprobe samt `CoverageProvider.SAMPLE`, Fixtures und Live-Smoke gehen mit; Zarr-Reader und alles Formatgenerische bleibt **(Empfehlung)**
 2. Variante 1a: Adapter und Stichprobe bleiben mit synthetischen Fixtures, ohne Registry-Eintrag; `SAMPLE` bleibt damit gebaut
 3. Nur der Registry-Eintrag geht; alles andere bleibt, auch der Live-Smoke ohne Eintrag
+
+**Antwort F2: (1)** Variante 1b; Adapter, Stichprobe samt `CoverageProvider.SAMPLE`, Fixtures und Live-Smoke gehen mit.
 
 **F3 — Alte Permalinks und `recipe.json`?**
 1. Abweisen mit Grund: `410` und Liste ausgeschiedener IDs mit Lizenzblock und Zitat, Hinweis im Viewer (§8) **(Empfehlung)**
 2. Abweisen wie jede unbekannte ID (`404`/`422`/`400`, „no dataset“), keine Liste; ZIPs fertiger Jobs verlieren bis zu 7 Tage lang Attribution und Zitat
 3. Umleiten auf `sentinel-2-c1-l2a` mit Übersetzung (ändert die Rechnung, §8)
 
+**Antwort F3: (1)** Abweisen mit `410` und Grund; Liste ausgeschiedener IDs mit Lizenzblock und Zitat.
+
 **F4 — Lücke bei der Formatachse (Prinzip 3, Checkliste Punkt 5)?**
 1. Nachtrag in `projektuebersicht.md` §5: bis zur nächsten operativen, token-freien Zarr-Quelle nur synthetisch belegt; Wiedervorlage als Backlog-Zeile, ausgelöst durch eine solche Quelle (§3.1) **(Empfehlung)**
 2. Wie 1, dazu ein Live-Smoke nur für den Zarr-Lesepfad gegen eine öffentliche Zarr-Quelle ohne Registry-Eintrag
 3. Keine Änderung; Punkt 5 gilt je Datensatz, nicht für die Plattform
+
+**Antwort F4: (1)** Nachtrag in `projektuebersicht.md` §5 und Wiedervorlage. Termin: Anfang 2027 oder früher, sobald EOPF operative Zarr-Produkte meldet (FAQ: „late 2026 or early 2027“, §3.1).
 
 **F5 — Collection in pgstac entfernen?**
 1. `load_registry` entfernt Collections föderierter Datensätze, die nicht mehr in der Registry stehen, im selben Lauf; Test dazu **(Empfehlung)**
 2. Einmaliges Entfernen in einer Migration, `load_registry` bleibt nur schreibend
 3. Stehen lassen (die STAC-API listet den Datensatz dann weiter)
 
+**Antwort F5: (1)** `load_registry` entfernt Collections föderierter Datensätze, die nicht mehr in der Registry stehen; Test dazu.
+
 **F6 — Reihenfolge zu Earth Search v2 (Backlog 24)?**
 1. Unabhängig: NM4-15 jetzt umsetzen, v2 bleibt offen bis zum Termin **(Empfehlung)**
 2. Zusammen mit der Umstellung auf v2 in einem Durchgang
+
+**Antwort F6: (1)** Unabhängig; Earth Search v2 bleibt offen bis zum Termin.
 
 ---
 
 ## 10. Was offen bleibt
 
-- Die Umsetzung (eigene Aufgabe nach F1–F6), Stufe B, weil sie API-Antworten
-  (`410`) und pgstac ändert.
+- Die Umsetzung: eigene Aufgabe **NM4-15b** nach dem Merge dieses ADR, Stufe B,
+  weil sie API-Antworten (`410`) und pgstac ändert; PR-Schnitt nach §7.1.
 - Earth Search v2 (Backlog 24): Termin offen, siehe §3.2.
-- Eine künftige Zarr-Quelle: Kandidaten erst prüfen, wenn F4 auslöst.
+- Eine künftige Zarr-Quelle: Kandidaten erst prüfen, wenn die Wiedervorlage aus
+  F4 auslöst (Anfang 2027 oder früher, sobald EOPF operative Zarr-Produkte meldet).
 
 ---
 
