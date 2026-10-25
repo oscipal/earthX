@@ -12,7 +12,6 @@ import sys
 
 import httpx
 import morecantile
-
 from view import CENTRE, NDVI, scene_ids
 
 

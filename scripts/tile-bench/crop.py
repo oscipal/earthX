@@ -15,7 +15,6 @@ import time
 import zipfile
 
 import httpx
-
 from view import CENTRE, scene_ids
 
 

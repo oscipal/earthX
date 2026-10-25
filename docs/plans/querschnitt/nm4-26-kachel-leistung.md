@@ -152,7 +152,7 @@ Reihenfolge nach Nutzen je Aufwand. Zahlen aus §8.2, Speicher als RSS des `tile
 
 | # | Stellschraube | Wirkung [M] | Kosten | Empfehlung |
 |---|---|---|---|---|
-| S1 | **GDAL-Profil des `tiler`:** `GDAL_HTTP_MULTIRANGE=SERIAL`, `CPL_VSIL_CURL_CACHE_SIZE=256 MiB` | Bytes von der Quelle 1,72 GB → 0,30 GB; Ansicht 45,6 → 28,3 s ohne, 145,3 → 38,4 s mit 100-Mbit/s-Leitung; `open` 278 → 58 ms im Mittel | RSS ~300 → ~⟨RSS⟩ MB je Prozess. Neue Blöcke einer Kachel kommen nacheinander statt parallel (spürbar nur bei kaltem Cache und vielen Blöcken je Kachel); Zuschnitt siehe §13 | **jetzt**, ohne Änderung an `docker-compose.yml` |
+| S1 | **GDAL-Profil des `tiler`:** `GDAL_HTTP_MULTIRANGE=SERIAL`, `CPL_VSIL_CURL_CACHE_SIZE=256 MiB` | Bytes von der Quelle 1,72 GB → 0,30 GB; Ansicht 45,6 → 28,3 s ohne, 145,3 → 38,4 s mit 100-Mbit/s-Leitung; `open` 278 → 58 ms im Mittel | RSS 352 → 587 MB je Prozess. Neue Blöcke einer Kachel kommen nacheinander statt parallel (spürbar nur bei kaltem Cache und vielen Blöcken je Kachel); Zuschnitt siehe §13 | **jetzt**, ohne Änderung an `docker-compose.yml` |
 | S2 | **Item-Abrufe der Einzelkachel bündeln** wie bei der Mosaik-Kachel (`mosaic_tiles.ItemFetches`, M4-17b) | eine statt bis zu 6 Item-Abfragen je kalter Szene (gemessen 5 für 1 Szene, 15 für 13) | ~20 Zeilen; derselbe Weg wie die Mosaik-Kachel | **jetzt** |
 | S3 | **512er-Kacheln** im Frontend (`tileSize: 512`, `tilesize=512`) | ein Drittel der Anfragen (325 → 117); Ansicht 23,0 statt 28,3 s (100 Mbit/s: 33,4 statt 38,4 s), gleiche Bytes | ändert die Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5: eine Kachel deckt die vierfache Fläche) | **eigene Aufgabe** (Frage 3) |
 | S4 | **Mehr Gleichzeitigkeit:** HTTP/2 zum Browser (TLS davor) und `uvicorn --workers 4` | ohne Leitungsgrenze 13,3 s (512 px) bzw. 19,0 s (256 px); bei 100 Mbit/s 40,0 bzw. 42,6 s, also langsamer als S1 allein (24 Anfragen gleichzeitig, 4 Prozesse) | Bytes von der Quelle ×2–2,5 (586–739 statt 284–302 MB), weil jeder Prozess eigene Caches hat; RSS ×4 (~2,0 GB gesamt); TLS lokal braucht ein Zertifikat (neues Werkzeug oder Abhängigkeit) | **mit M6** (Frage 4) |
@@ -161,7 +161,7 @@ Reihenfolge nach Nutzen je Aufwand. Zahlen aus §8.2, Speicher als RSS des `tile
 
 **Nicht empfohlen:** eine gröbere Übersichtsstufe wählen lassen (`GDAL_OVERVIEW_OVERSAMPLING_THRESHOLD`). Das spart Bytes, ändert aber die Pixel der Vorschau, also Bitgleichheit und Bildschärfe.
 
-**Verbindungen über `gateway` (Keep-Alive, Pool):** Hier ist nichts zu tun [M]. Der `httpx`-Client des `gateway` hält seine Verbindungen ohnehin offen. Ein Item kommt einmal je Szene, danach aus dem Cache in Postgres (Median 2–12 ms). GDAL hält je Thread eine Verbindung: Mit `SERIAL` sind es genau 6 Verbindungen für 325 Kacheln, mit `YES` 12. GDAL läuft dabei wie bisher an der Verbindungsgrenze des `gateway` vorbei (KLAERUNGEN B8, `adr/0006` §8 Punkt 2). Daran ändert S1 nichts, die Adressprüfung vor GDAL bleibt.
+**Verbindungen über `gateway` (Keep-Alive, Pool):** Am Pool ist nichts zu tun. Der `httpx`-Client des `gateway` ist einer je Prozess und hält seine Verbindungen offen [P]. Was fehlt, ist das Bündeln gleichzeitiger Abrufe desselben Items (S2, B8); danach kommt es aus dem Cache in Postgres (Median 2–17 ms) [M]. GDAL hält je Thread eine Verbindung: Mit `SERIAL` sind es genau 6 Verbindungen für 325 Kacheln, mit `YES` 12. GDAL läuft dabei wie bisher an der Verbindungsgrenze des `gateway` vorbei (KLAERUNGEN B8, `adr/0006` §8 Punkt 2). Daran ändert S1 nichts, die Adressprüfung vor GDAL bleibt.
 
 **Gleichzeitigkeit im `tiler` (Prozesse/Threads):** Ein Prozess mit 40 Threads reicht, solange der Browser 6 Anfragen gleichzeitig schickt. Über 24 Verbindungen bremst ein Prozess (GIL): Die Wartezeit auf einen Thread steigt auf ~100 ms, die Rechenschritte werden 3–5× langsamer [M]. Mehrere Prozesse lohnen sich erst mit S4.
 
@@ -190,14 +190,14 @@ Am wahrscheinlichsten ist K1. Er widerspricht aber Ottos Beobachtung, wenn dabei
 ## 13. Bitgleichheit, Zuschnitt, Jobs
 
 - **Kachel ↔ Job (`adr/0014` §6.3, §6.4):** S1 ändert, wie die Bytes geholt werden, nicht welche. 18 Kacheln sind mit alter und neuer Einstellung byte-identisch [M]: NDVI und `visual`, z10/z11/z14, 256 und 512 px (§17.3). Der Vergleichstest T1 ↔ T2 und die übrigen Tests laufen in der Umsetzung unverändert mit. S2 ändert nur, wie oft ein Item geholt wird.
-- **Zuschnitt (`POST …/download`):** Er läuft im `tiler`-Prozess unter denselben GDAL-Optionen (`state.earthx_gdal_options`) und liest viele Blöcke auf einmal. Mit `SERIAL` gehen diese Anfragen nacheinander statt parallel. Gemessen: ⟨CROP⟩. Bitgleichheit des ZIP-Inhalts: ⟨CROPHASH⟩.
+- **Zuschnitt (`POST …/download`):** Er läuft im `tiler`-Prozess unter denselben GDAL-Optionen (`state.earthx_gdal_options`) und liest viele Blöcke auf einmal. Mit `SERIAL` gehen diese Anfragen nacheinander statt parallel. Gemessen mit `crop.py`, `red` + `nir`, native Auflösung, EU-Latenz: Ein AOI von 0,1° braucht 2,68 → 2,76 s (13,2 MB von der Quelle), einer von 0,3° 6,34 → 7,43 s (39,4 MB), also bis +17 %. Die Raster im ZIP sind byte-identisch. Wiegt das schwerer als die Kacheln, kann der Zuschnitt die alten Optionen behalten (Frage 1, Option 3).
 - **Worker und Runner** lesen über `readers.process_gdal_options()` dieselben Grundoptionen. Ihr Lastprofil ist anders: große Fenster am Stück, 500 MB Speichergrenze im Worker (`adr/0013`). S1 soll deshalb nur für den `tiler` gelten (Frage 1). Für die Jobs ist das ungemessen und bleibt unverändert.
 - **`CPL_VSIL_CURL_CACHE_SIZE` wird einmal je Prozess gelesen** (R4). Ein Wert, der nur in manchen `rasterio.Env` des Prozesses steht, wirkt deshalb nur, wenn GDAL zufällig dort zum ersten Mal liest. Im `tiler` tragen alle Wege dieselben Optionen: Kachel, Statistik, TileJSON, Mosaik, Ergebnis-Kacheln und Zuschnitt. Ein Test hält genau das fest.
 
 ## 14. `docker-compose.yml` und Produktion
 
 - **S1 und S2 brauchen keine Änderung an `docker-compose.yml`.** Die Werte leben wie alle GDAL-Optionen in `gateway/gdal.py` (KLAERUNGEN B8), nicht in Umgebungsvariablen des Dienstes. So kann ein Start ohne die Variable nicht stillschweigend auf 16 MB zurückfallen.
-- **Speicher des Hosts:** Der `tiler` wächst von ~300 auf ~⟨RSS⟩ MB. Mit `api`, `worker` (Grenze 500 MB je Kind), Postgres und Garage braucht das lokale `docker compose` damit rund ⟨HOST⟩ GB. Ottos Rechner kenne ich nicht.
+- **Speicher des Hosts:** Der `tiler` wächst nach einer großen Ansicht von 352 auf 587 MB, und mehr als die 256 MiB des Caches kommen nicht dazu. Den Bedarf des ganzen `docker compose` (`api`, `worker` mit 500 MB je Kind, Postgres, Garage) habe ich hier nicht gemessen; Ottos Rechner kenne ich nicht. `docker stats` in der Prüfanleitung zeigt beides.
 - **Produktion (M6):** Der `tiler` skaliert waagerecht (`architekturplan.md` 3.2, 12.1); jede Instanz hat ihren eigenen Cache von 256 MB. Mehr Gleichzeitigkeit kommt dort vom CDN bzw. Reverse-Proxy mit HTTP/2 vor dem `tiler` (`architekturplan.md` 12.3) und von mehr Instanzen, nicht von `--workers` in einem Container. Ob `adr/0006` oder `architekturplan.md` einen Nachtrag brauchen, hängt an Frage 4. Mit S1 und S2 ändern sich weder Gleichzeitigkeit noch Verbindungen grundlegend. Ein kurzer Nachtrag in `adr/0006` §8 Punkt 4 (`MERGE_CONSECUTIVE_RANGES` nicht verglichen) hält den Befund zu `MULTIRANGE` trotzdem fest.
 
 ## 15. Fragen an Otto
@@ -207,6 +207,7 @@ Kurz beantwortbar: je Frage eine Nummer.
 **Frage 1 — Für wen gilt das neue GDAL-Profil (S1)?**
 1. Nur für den `tiler`: `gateway/gdal.py` bekommt `tile_gdal_options(policy)` = Grundoptionen + `SERIAL` + 256 MiB Cache. Worker und Runner bleiben unverändert. **(Empfehlung)**
 2. Für alle Prozesse (`gdal_options` selbst). Der Worker bekäme 256 MiB über seiner 500-MB-Grenze; ungemessen.
+3. Wie 1, aber der Zuschnitt im `tiler` behält die alten Optionen. Er wird so nicht bis zu 17 % langsamer (§13), bekommt dafür aber ein Profil für sich.
 
 **Frage 2 — Größe des `/vsicurl/`-Caches im `tiler`?**
 1. 256 MiB: deckt die gemessene Ansicht (284 MB verschieden, gelesen 301 MB). **(Empfehlung)**
@@ -292,10 +293,13 @@ Vor dem endgültigen Gerüst liefen dieselben Messungen mit einem Vorläufer im 
 - **Nur der Cache größer, ohne `SERIAL`:** 1,18 GB statt 1,72 GB; die Ansicht dauert 32,0 s statt 47,4 s. **Nur `SERIAL`, Cache 16 MB:** 1,75 GB, 58,9 s. Beide Einstellungen braucht es zusammen.
 - **Cache 256 gegen 512 MiB** bei 100 Mbit/s: 38,2 gegen 37,0 s, 294 gegen 292 MB von der Quelle.
 - **Ohne `HEAD`** (`CPL_VSIL_CURL_USE_HEAD=NO`): 32,4 gegen 32,0 s.
+- **Ein Prozess, 24 Verbindungen**, S1, ohne Leitungsgrenze: 26,3 s gegen 28,3 s mit 6. Im Median wartet eine Kachel 78 ms auf einen Thread für die Abhängigkeiten, `compute` dauert 127 statt 7 ms.
 
 ### 17.3 Bitgleichheit
 
-`hashes.py` (Scratchpad): je drei Nachbarkacheln für NDVI und `visual` auf z11/256, z10/512 und z14/256, SHA-256 der Antwort, einmal mit den heutigen Optionen und einmal mit S1. Ergebnis: 18 von 18 gleich.
+`CLIENT=hashes.py scripts/tile-bench/bench.sh hash_today $OUT/hash_today.txt`, dasselbe mit `EXTRA_GDAL=$NEW`, dann `diff`. Gefragt werden je drei Nachbarkacheln für NDVI und `visual` auf z11/256, z10/512 und z14/256; verglichen wird der SHA-256 der Antwort. Ergebnis: 18 von 18 gleich, bei 66,1 → 34,2 MB von der Quelle.
+
+Zuschnitt: `CLIENT=crop.py scripts/tile-bench/bench.sh crop_today --size 0.3`, ebenso mit S1. Die vier Raster im ZIP (`red`, `nir`, je mit Maske) sind gleich.
 
 ### 17.4 Kodieren
 
