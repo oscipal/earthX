@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { RESOLUTION_FACTORS } from '../api';
 import {
+  acquisitionYears,
   attributionText,
   canExportLicense,
   downloadRequestFor,
@@ -82,7 +83,7 @@ export default function DownloadDialog() {
     // A whole scene's own files, unmodified, straight from the source (B11:
     // Katalogeintrag already permits a link — no licence-tier gate here,
     // unlike the crop below).
-    const attribution = attributionText(flags, new Date().getFullYear(), false);
+    const attribution = attributionText(flags, acquisitionYears((passes ?? []).flatMap((pass) => pass.items)), false);
     const terms = termsNoticeText(flags, 'en');
     return (
       <div className="dialog-backdrop" onClick={close}>
@@ -160,7 +161,12 @@ export default function DownloadDialog() {
       ? downloadRequestFor(layer, datasets)
       : null;
   const sceneCount = req?.groups.flat().length ?? 0;
-  const attribution = attributionText(flags, new Date().getFullYear());
+  // The years of the scenes the crop reads. A pinned layer keeps only their ids: it names the years
+  // while the results list still holds all of them, else the text waits for the server's own (NM4-01).
+  const pinnedIds = layer?.restore.itemIds ?? [];
+  const cropItems = selectionMode ? selectionItems : pinnedIds.flatMap((id) => items.find((it) => it.id === id) ?? []);
+  const cropSceneCount = selectionMode ? selectionItems.length : pinnedIds.length;
+  const attribution = attributionText(flags, cropItems.length === cropSceneCount ? acquisitionYears(cropItems) : null);
   const terms = termsNoticeText(flags, 'en');
   const exportAllowed = canExportLicense(flags);
 
