@@ -479,7 +479,9 @@ def crop_asset(
     A single path reads directly; more than one goes through
     ``rio_tiler.mosaic.mosaic_reader`` with the default `FirstMethod` (first
     valid pixel wins, adr/0006 §3.5) — the same rule a viewer already applies
-    when it groups a mosaic's scenes into one step of the time line.
+    when it groups a mosaic's scenes into one step of the time line. ``asset_paths`` are read in
+    the order given, so the caller passes them in
+    :func:`~earthx.access.crop_rules.mosaic_order` (NM4-02), the order of the mosaic job.
 
     ``threads=1`` (F4, M3-18): measured to hold memory flat regardless of how
     many items are in ``asset_paths`` — rio-tiler then reads items one at a

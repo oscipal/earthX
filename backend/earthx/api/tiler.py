@@ -324,6 +324,19 @@ def _resolve_asset_path(
     return _open_ref(state, ref, target_gsd=target_gsd)
 
 
+def _in_mosaic_order(items: list[dict[str, Any]], *, config: DatasetConfig, asset: str) -> list[dict[str, Any]]:
+    """``items`` in the order the mosaic job and the mosaic tile read them (:func:`mosaic_order`).
+
+    The CRS of each scene is that of ``asset``, resolved as the mosaic tile resolves it. A single
+    item has no order, and nothing is resolved for it.
+    """
+    if len(items) < 2:
+        return items
+    refs = [_resolve_ref(stac_item, config=config, item=str(stac_item.get("id")), asset=asset) for stac_item in items]
+    by_id = {ref.item_id: stac_item for ref, stac_item in zip(refs, items, strict=True)}
+    return [by_id[item_id] for item_id in mosaic_order({ref.item_id: ref.crs for ref in refs})]
+
+
 @dataclass(frozen=True, slots=True)
 class OperatorInput:
     """What the path of an operator tile stands for: its assets and the chain of steps (operator, parameters).
@@ -909,6 +922,13 @@ async def download_crop(
         else:
             headers = None
         raise HTTPException(status_code=413, detail=str(error), headers=headers) from None
+
+    # The scenes of a group are read in the order of the mosaic job and the mosaic tile, not in the
+    # order of the selection (NM4-02): where scenes overlap, the crop then keeps the pixels the
+    # preview shows. After the caps, so that no refusal changes its place.
+    surviving_groups = [
+        (_in_mosaic_order(matched, config=config, asset=wanted[0]), region) for matched, region in surviving_groups
+    ]
 
     def _crops_for(matched_items: list[dict[str, Any]], planned: list[PlannedOutput]) -> list[AssetCrop]:
         planned_by_asset = {output.label: output for output in planned}

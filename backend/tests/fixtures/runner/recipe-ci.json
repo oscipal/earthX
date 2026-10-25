@@ -103,7 +103,7 @@
       "Synthetic data, no source"
     ],
     "engine": {
-      "earthx": "0.4.2",
+      "earthx": "0.4.3",
       "gdal": "3.12.2",
       "numexpr": "2.14.2",
       "numpy": "2.5.3",

@@ -19,6 +19,7 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
      - Zuschnitt und Export folgen der Reihenfolge der Auswahl.
    - **Folge:** In schmalen Überlappungen kann die Vorschau eine andere Szene zeigen als der Zuschnitt.
    - **Aufgabe (Stufe A):** dieselbe Sortierfunktion für Zuschnitt und Export verwenden. Weil sich dadurch die Bytes des Zuschnitts ändern, gehört die Änderung in die Versionierung.
+   - **Erledigt:** NM4-02 (`querschnitt/nm4-02-sortierung-zuschnitt.md`), 25.10.2026, Draft-PR; `adr/0014` §15p, Version 0.4.3.
 3. **Absolute URL für den Link `tiles`** im Ergebnisdokument (M4-13c-5). Heute ist der Link relativ, ein API-Client ohne den gemeinsamen Proxy findet den `tiler` damit nicht. Spätestens mit der öffentlichen API in M6 nötig.
    - **Plan:** `querschnitt/nm4-03-tiles-url-absolut.md`
 4. **Mosaik mit Operator im Kachel-Pfad,** also eine Vorschau des Mosaik-Jobs mit Band math (M4-17, Frage 4).
@@ -189,6 +190,9 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Schritt 2 – parallel (nur nach Ottos Freigabe):** `pytest-xdist` (neue Abhängigkeit). Vorher mit Quellen klären: Verträglichkeit mit `spawn`-Kindprozessen und Speichermessungen (`VmHWM` je Prozess), eigene Datenbank je xdist-Worker für Postgres-Tests, Zahl der Kerne der GitHub-Runner für öffentliche Repos. Einstellung über die pytest-Konfiguration, nicht über `.github/`.
    - **Grenze:** keine Tests streichen oder überspringen, um Zeit zu sparen; `.github/` bleibt unverändert.
    - **Aufgabe:** Stufe B (Schritt 2 ist eine Abhängigkeit und rechenrelevant), nur Tests und Testkonfiguration.
+24. **Rückfall „Szene für Szene“ stapelt nach Auswahl** (Otto, 25.10.2026, aus NM4-02).
+   - **Befund:** Wo die Karte keine Mosaik-Kachel nutzt (Überflug über 64 Szenen, abgelehnte Kachel), stapelt sie die Szenen in der Reihenfolge der Auswahl (`stackLikeView`, `mosaic.ts`). Zuschnitt, Export, Job und Kachel ordnen seit NM4-02 mit `mosaic_order`; in Überlappungen kann dieser Rückfall eine andere Szene oben zeigen.
+   - **Aufgabe:** nach UI-01, weil dieselbe Stelle betroffen ist. Nicht in NM4-02.
 
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
