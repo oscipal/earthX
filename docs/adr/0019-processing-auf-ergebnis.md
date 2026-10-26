@@ -1,6 +1,8 @@
 # ADR 0019 — Processing auf einem Ergebnis
 
-- **Status:** **Entwurf**, Entscheidungsvorlage für Otto. Die Fragen stehen in §9.
+- **Status:** **Angenommen** von Otto am 2026-10-26. Alle fünf Fragen aus §9
+  sind nach Empfehlung beantwortet (F1–F5: Option 1 der jeweiligen Liste). Die
+  Umsetzung folgt als eigene Aufgabe NM4-05b nach dem Merge dieses ADR.
 - **Datum:** 2026-10-26
 - **Aufgabe:** NM4-05 laut `docs/plans/querschnitt/nm4-05-processing-auf-ergebnis.md`
   (Backlog-Punkt 5 in `docs/plans/nach-m4-backlog.md`).
@@ -503,29 +505,50 @@ wäre ⚙ ausgeblendet, und „Share“ würde flach machen oder gesperrt sein.
 
 ---
 
-## 9. Fragen an Otto
+## 9. Fragen an Otto — beantwortet am 2026-10-26
+
+Otto hat alle fünf Fragen mit Option 1 der jeweiligen Liste beantwortet, also
+nach Empfehlung. Die Fragen stehen mit ihrem ursprünglichen Wortlaut da; die
+Antwort folgt je Frage. Die Nummer der Antwort ist die Nummer in der Liste der
+Frage, nicht die Nummer der Option aus §4: Bei F1 ist die Liste „1. Option 2“.
 
 **F1 — Welche Option?**
 1. Option 2: Schritte an den Auftrag des Ergebnisses anhängen, ein gewöhnlicher Auftrag, alles neu gerechnet; nur Frontend **(Empfehlung)**
 2. Option 1: Ergebnis als neue Eingabe per Referenz (eigener Plan, Stufe B, Backend, Runner, Kachel, Frontend)
 3. Option 3: nichts bauen; weiter über „Open in panel“ in den Details, ⚙ bleibt ausgeblendet
 
+**Antwort F1: (1)** Option 2 aus §4: Schritte an den Auftrag des Ergebnisses
+anhängen, ein gewöhnlicher Auftrag, alles neu gerechnet; nur Frontend.
+
 **F2 — Ergebnis-Layer ohne Kopie des Auftrags im Browser (nur bei F1 = 1)?**
 1. ⚙ gesperrt mit Grund; der Tooltip verweist auf „Open recipe.json“ mit der Datei aus dem ZIP **(Empfehlung)**
 2. Wie 1, dazu holt das Panel `recipe.json` des Jobs über die bestehende Route, solange das Ergebnis lebt, und macht daraus den Auftrag (`readRecipe`)
 3. ⚙ ausblenden, wenn keine Kopie da ist
 
+**Antwort F2: (1)** ⚙ gesperrt mit Grund; der Tooltip verweist auf „Open recipe.json“
+mit der Datei aus dem ZIP.
+
 **F3 — Die Schritte der Eltern im Panel (nur bei F1 = 1)?**
 1. Gesperrt am Anfang, nur anhängen; wer ändern will, nimmt „Open in panel“ **(Empfehlung)**
 2. Frei änderbar wie bei „Open in panel“ (dann unterscheidet sich ⚙ nur im Einstieg davon)
+
+**Antwort F3: (1)** Die Schritte der Eltern stehen gesperrt am Anfang, neue Schritte
+werden nur angehängt.
 
 **F4 — Abgelaufenes Ergebnis (nur bei F1 = 1)?**
 1. ⚙ bleibt verfügbar; der Tooltip sagt, dass alles aus den Szenen neu gerechnet wird **(Empfehlung)**
 2. ⚙ ausblenden wie den Download
 
+**Antwort F4: (1)** ⚙ bleibt bei einem abgelaufenen Ergebnis verfügbar; der Tooltip
+sagt, dass alles aus den Szenen neu gerechnet wird.
+
 **F5 — Option 1 später wieder vorlegen?**
 1. Ja, als Log-Zeile „offen“ mit Wiedervorlage bei M6 (Konten, Quoten, Units), wenn die Kosten des Neurechnens messbar werden **(Empfehlung)**
 2. Nein, Option 1 ist verworfen
+
+**Antwort F5: (1)** Ja. Option 1 (Ergebnis per Referenz) bleibt als Log-Zeile „offen“
+mit Wiedervorlage bei M6 (Konten, Quoten, Units), wenn die Kosten des
+Neurechnens messbar werden.
 
 ---
 
@@ -536,7 +559,11 @@ wäre ⚙ ausgeblendet, und „Share“ würde flach machen oder gesperrt sein.
   Mit Option 2 ginge es auf dieselbe Weise, sofern der Layer seinen Auftrag
   hält **[A]**. Das ist nicht Teil dieser Vorlage.
 - **Präfix-Cache** für Ketten (§4, verworfen) nur, wenn F5 auslöst.
-- Die Umsetzung bekommt nach der Entscheidung eine eigene Aufgabe.
+- Die Umsetzung: eigene Aufgabe **NM4-05b** nach dem Merge dieses ADR, Stufe A,
+  nur Frontend (§7.1). Nachtrag in `adr/0014` (ein Ergebnis ist keine Eingabe;
+  der Weg über das Panel) und der Vermerk in UI-01 §1 Punkt 11 gehören dazu.
+- Die Wiedervorlage von Option 1 bei M6 (F5) steht als Zeile „offen“ im
+  Entscheidungslog.
 
 ---
 
