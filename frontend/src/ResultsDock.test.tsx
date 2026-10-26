@@ -323,14 +323,36 @@ describe('everything the list could do is in the panel', () => {
   });
 });
 
-describe('with a view open', () => {
-  it('gives the list a hint instead of scenes to select, and the list is back when the view closes', async () => {
+describe('with a view open (Otto, 26.10.2026: the results never disappear, they are only switched off on the map)', () => {
+  it('keeps the list, the title and the switch, in the full-resolution view and after "Crop to AOI"', async () => {
+    answer = MANY;
     await search();
-    act(() => useAppStore.setState({ focusMode: true }));
-    expect(slot('results').querySelector('.results-list')).toBeNull();
-    expect(slot('results').querySelector('.results-view-hint')?.textContent).toBe('Close the view to browse the results.');
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 2');
-    act(() => useAppStore.setState({ focusMode: false }));
+    click(slot('results').querySelector('.result-row input')!);
+    act(() => useAppStore.setState({ focusMode: true, cropToAoi: true }));
+    expect(slot('results').querySelector('.results-list')).not.toBeNull();
+    expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (1/300)');
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
+    expect(useAppStore.getState().sections).toHaveLength(1);
+    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
+    act(() => useAppStore.setState({ focusMode: false, cropToAoi: false }));
+    expect(slot('results').querySelector('.results-list')).not.toBeNull();
+  });
+
+  it('keeps the list when the view is a result layer', async () => {
+    await search();
+    act(() => useAppStore.setState({ resultViewLayerId: 'some-layer' }));
+    expect(slot('results').querySelector('.results-list')).not.toBeNull();
+  });
+
+  it('keeps the results in the store when a view is entered from the bar of the selection', async () => {
+    answer = MANY;
+    await search();
+    click(slot('results').querySelector('.select-all-box input')!);
+    const before = useAppStore.getState().sections;
+    const crop = [...container.querySelectorAll('.download-bar button')].find((b) => b.textContent === 'Crop & merge to AOI')!;
+    await act(async () => crop.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(useAppStore.getState().sections).toBe(before);
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
   });
 });

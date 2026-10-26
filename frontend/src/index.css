@@ -733,10 +733,6 @@ input[type='date']:focus {
   padding: 10px 14px;
   border-bottom: 1px solid var(--panel-border);
 }
-.results-view-hint {
-  margin: 0;
-  padding: 12px 14px;
-}
 .results-head h2 {
   margin: 0;
   font-size: 12px;

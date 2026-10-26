@@ -309,8 +309,6 @@ export default function ResultsPanel() {
     return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
   });
   const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
-  // A full-resolution view or a result's view works on its own picture: the list gives way (App.tsx).
-  const viewOpen = useAppStore((s) => s.focusMode || s.resultViewLayerId !== null);
 
   if (!hasResultsPanel(sections)) return null;
 
@@ -331,11 +329,7 @@ export default function ResultsPanel() {
           {resultsOnMap ? 'Hide results' : 'Show results'}
         </button>
       </div>
-      {viewOpen ? (
-        <p className="hint-text results-view-hint">Close the view to browse the results.</p>
-      ) : (
-        <ResultsList sections={sections} />
-      )}
+      <ResultsList sections={sections} />
     </div>
   );
 }

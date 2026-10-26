@@ -772,7 +772,7 @@ export interface AppState {
   // list are; the list itself is the same. Every new search starts with it on.
   resultsOnMap: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
-  // swaps ViewBar for ViewerControls (App.tsx) and leaves the results panel with a hint.
+  // swaps ViewBar for ViewerControls (App.tsx); the results list stays whatever the view.
   focusMode: boolean;
   showDownloaded: boolean;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
