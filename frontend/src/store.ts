@@ -1726,6 +1726,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(oversize ? { notice: oversize } : {}),
       focusMode: true,
+      // A view takes the results off the map; "Show results" brings them back over it (Otto, 26.10.2026).
+      resultsOnMap: false,
       resultViewLayerId: null,
       cropToAoi,
       showDownloaded: true,
@@ -1754,7 +1756,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
     );
   },
-  exitFocus: () => set({ ...LEAVE_FOCUS }),
+  // Back to browsing: the quicklooks of the results are there again.
+  exitFocus: () => set({ ...LEAVE_FOCUS, resultsOnMap: true }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),
