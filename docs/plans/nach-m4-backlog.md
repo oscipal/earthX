@@ -209,7 +209,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe B, Backend und Frontend, nach UI-01c.
 28. **Suchergebnisse links angedockt** (Otto, 26.10.2026).
    - **Plan:** `vp3/ui-01g-suchergebnisse-angedockt.md` (Teil von UI-01, nach UI-01f).
-   - **Umgesetzt (26.10.2026, Draft-PR):** Symbol „Results“ in der Leiste, Panel im Dock, öffnet nach der Suche; Auslegungen im Log vom 26.10.2026.
+   - **Umgesetzt (26.10.2026, Draft-PR #209):** Symbol „Results“ in der Leiste, Panel im Dock, öffnet nach der Suche; Auslegungen im Log vom 26.10.2026.
 29. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
    - **Plan:** `querschnitt/nm4-29-kacheln-512.md`
    - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
