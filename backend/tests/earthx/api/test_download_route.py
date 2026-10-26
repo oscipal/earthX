@@ -219,7 +219,6 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
-                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "2x coarser than native" in notice
@@ -288,7 +287,6 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
-                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert "Contains modified Copernicus Sentinel data" in notice
@@ -300,12 +298,14 @@ class TestAcceptanceCriteria:
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             assert [name for name in archive.namelist() if name in TEXT_FILES] == list(TEXT_FILES)
 
-    def test_the_methods_text_is_written_from_the_recipe_beside_it(self, client: TestClient) -> None:
+    def test_the_methods_text_lies_in_the_recipe_and_in_no_file_of_its_own(self, client: TestClient) -> None:
         response = _download(client)
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
-            text = archive.read("methods.txt").decode("utf-8")
-            recipe = json.loads(archive.read("recipe.json"))
-        assert text == methods_text(recipe, dataset=DatasetFacts.of(SENTINEL_2_L2A), acquired_on=date(2026, 7, 24))
+            assert "methods.txt" not in archive.namelist()
+            raw = archive.read("recipe.json")
+        recipe = json.loads(raw)
+        text = recipe["provenance"]["methods"] + "\n"
+        assert text == methods_text(raw, dataset=DatasetFacts.of(SENTINEL_2_L2A), acquired_on=date(2026, 7, 24))
         assert "The scenes were acquired on 2026-07-24 (UTC)." in text, "the day of the overpass, not the day of the run"
         assert text.startswith(f"The dataset {SENTINEL_2_L2A.title} (sentinel-2-c1-l2a")
         assert "cropped to the bounding box" in text and "It was cut on the EarthX platform" in text
@@ -391,7 +391,6 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
-                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Group 1 (group-01/): {ITEM_ID}" in notice
@@ -408,7 +407,6 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
-                "methods.txt",
             }
 
     def test_a_group_that_misses_the_aoi_is_dropped_the_others_still_download(
@@ -426,7 +424,6 @@ class TestAcceptanceCriteria:
                 "aoi.geojson",
                 "recipe.json",
                 "citation.bib",
-                "methods.txt",
             }
             notice = archive.read("ATTRIBUTION.txt").decode("utf-8")
             assert f"Not covered by the AOI, left out: {ITEM_ID}~outside" in notice

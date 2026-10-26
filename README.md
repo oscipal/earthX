@@ -492,6 +492,9 @@ und `provenance.json` mit `"execution": "local"` und `"self_attested": true`.
 Eine `citation.bib` liegt nicht dabei; sie stammt aus dem Download. Bricht ein
 Lauf ab, bleibt ein Ordner ohne `provenance.json` zurück.
 
+Images, die vor dem Feld `provenance.methods` gebaut wurden, weisen eine neue
+`recipe.json` mit Exit-Code 2 ab: neu bauen.
+
 **Exit-Codes:**
 
 | Code | Bedeutung |

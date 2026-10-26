@@ -53,7 +53,6 @@ from earthx.access.crop_rules import (
     BLOCK_SIZE,
     CITATION_FILENAME,
     COG_PROFILE,
-    METHODS_FILENAME,
     NOTICE_FILENAME,
     RECIPE_FILENAME,
     AoiOutsideItems,
@@ -68,7 +67,7 @@ from earthx.access.crop_rules import (
 )
 from earthx.access.resolve import open_asset_ref
 from earthx.processing.errors import AoiOutsideInputs, ProcessingError, UnsupportedRecipe
-from earthx.processing.methods import DatasetFacts, methods_text
+from earthx.processing.methods import DatasetFacts, methods_of, recipe_with_methods
 from earthx.processing.operators import REGISTRY
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import CropOutput, Recipe, ResolvedInput, engine_versions, job_recipe_document
@@ -187,6 +186,8 @@ class ExportResult:
     finished: datetime
     #: The attribution its ``recipe.json`` carries, for the copy `api` serves (K4).
     attribution: tuple[str, ...]
+    #: The methods text its ``recipe.json`` carries (NM4-08), for the same copy.
+    methods: str
 
 
 def check_export(recipe: Recipe) -> CropOutput:
@@ -424,19 +425,24 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
                 files.append((folder + mask_filename(output.asset), mask_name))
             engine = engine_versions()
             finished = datetime.now(UTC)
-            document = job_recipe_document(
-                recipe.model_dump(mode="json"),
-                attribution=attachments.attribution,
-                result={"engine": engine, "scaling": []},
-                started=started,
-                finished=finished,
+            document = recipe_with_methods(
+                job_recipe_document(
+                    recipe.model_dump(mode="json"),
+                    attribution=attachments.attribution,
+                    result={"engine": engine, "scaling": []},
+                    started=started,
+                    finished=finished,
+                ),
+                dataset=attachments.dataset,
+                acquired_on=attachments.acquired_on,
             )
+            methods = methods_of(document)
+            assert methods is not None
             texts = [
                 (AOI_FILENAME, attachments.files[AOI_FILENAME].encode("utf-8")),
                 (RECIPE_FILENAME, document),
                 (CITATION_FILENAME, attachments.files[CITATION_FILENAME].encode("utf-8")),
                 (NOTICE_FILENAME, attachments.files[NOTICE_FILENAME].encode("utf-8")),
-                (METHODS_FILENAME, methods_text(document, dataset=attachments.dataset, acquired_on=attachments.acquired_on).encode("utf-8")),
             ]
             path = state.pack(files, texts)
             state.tick()
@@ -466,6 +472,7 @@ def export(recipe: Recipe, *, workdir: Path, progress: Progress, attachments: At
         started=started,
         finished=finished,
         attribution=attachments.attribution,
+        methods=methods,
     )
 
 

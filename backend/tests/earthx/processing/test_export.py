@@ -31,14 +31,14 @@ from shapely.geometry import mapping as shapely_mapping
 from shapely.geometry import shape as shapely_shape
 
 from earthx.access import download
-from earthx.access.crop_rules import METHODS_FILENAME, TEXT_FILES, compute_crop_region
+from earthx.access.crop_rules import TEXT_FILES, compute_crop_region
 from earthx.access.tiles import open_asset
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AcquisitionYears
 from earthx.processing import RunCancelled, run
 from earthx.processing.errors import AoiOutsideInputs, UnsupportedRecipe
 from earthx.processing.export import EXPORT_NAME, Attachments, AttachmentsInvalid, read_attachments
-from earthx.processing.methods import DatasetFacts, methods_text
+from earthx.processing.methods import DatasetFacts, methods_of, methods_text
 from earthx.processing.plan import DISK_RESERVE_BYTES, disk_needed
 from earthx.processing.recipe import recipe_from_data
 from earthx.readers import Policy
@@ -163,7 +163,6 @@ def _crop_zip(groups: list[list[str]], notice_aoi: dict[str, Any]) -> bytes:
         ],
         recipe_json=b"{}",
         citation_bib=b"@misc{x}\n",
-        methods_text=b"A paragraph.\n",
     )
 
 
@@ -239,14 +238,17 @@ def test_the_export_writes_the_crops_files_bit_for_bit(groups: list[list[str]], 
 
 
 @pytest.mark.usefixtures("served")
-def test_the_methods_text_in_the_zip_is_written_from_the_recipe_beside_it(tmp_path: Path) -> None:
+def test_the_methods_text_lies_in_the_recipe_of_the_zip_and_in_no_file_of_its_own(tmp_path: Path) -> None:
     groups = CASES["one item"]
     crop = zipfile.ZipFile(io.BytesIO(_crop_zip(groups, AOI)))
     result = _export(groups, tmp_path, crop)
     with zipfile.ZipFile(result.path) as exported:
-        text = exported.read(METHODS_FILENAME).decode("utf-8")
-        assert text.encode("utf-8") == methods_text(exported.read("recipe.json"), dataset=FACTS).encode("utf-8")
-        assert exported.getinfo(METHODS_FILENAME).compress_type == zipfile.ZIP_DEFLATED
+        assert "methods.txt" not in exported.namelist()
+        recipe = exported.read("recipe.json")
+    text = methods_of(recipe)
+    assert text is not None
+    assert text + "\n" == methods_text(recipe, dataset=FACTS)
+    assert result.methods == text
     assert "Synthetic dataset" in text and "cropped to the bounding box" in text
     assert "Contains modified synthetic data" in text
     assert "R" * 22 not in text
@@ -406,12 +408,12 @@ def test_the_methods_text_of_the_export_names_the_day_it_was_handed_and_none_oth
         _recipe(groups), workdir=tmp_path, progress=lambda done, total: None, operators=OPERATORS, attachments=with_day
     )
     with zipfile.ZipFile(result.path) as exported:
-        assert "The scenes were acquired on 2026-06-01 (UTC)." in exported.read(METHODS_FILENAME).decode("utf-8")
+        assert "The scenes were acquired on 2026-06-01 (UTC)." in str(methods_of(exported.read("recipe.json")))
     other = tmp_path / "other"
     other.mkdir()
     result = _export(groups, other, crop)
     with zipfile.ZipFile(result.path) as exported:
-        assert "acquired" not in exported.read(METHODS_FILENAME).decode("utf-8")
+        assert "acquired" not in str(methods_of(exported.read("recipe.json")))
 
 
 def test_attachments_written_before_the_methods_text_still_read() -> None:

@@ -420,6 +420,9 @@ class Provenance(_Model):
     started: datetime | None
     finished: datetime | None
     attribution: list[str]
+    #: The paragraph for a methods section, written from the rest of the document (M4-19a, NM4-08).
+    #: Absent in files written before NM4-08.
+    methods: Annotated[str, Field(min_length=1)] | None = None
 
     @model_validator(mode="after")
     def _local_is_self_attested(self) -> Provenance:
@@ -658,12 +661,15 @@ def job_recipe_document(
     result: Mapping[str, Any],
     started: datetime | None,
     finished: datetime | None,
+    methods: str | None = None,
 ) -> bytes:
     """``recipe.json`` of a job: its own recipe and the provenance of the cloud run (adr/0014 §10.1).
 
     One function for both copies (M4-11 K4): the link `api` serves and the file the
     export writes into its ZIP. ``body`` is the job's own recipe with its own
-    ``recipe_id``; ``result`` is what the run reported (engine versions, scaling).
+    ``recipe_id``; ``result`` is what the run reported (engine versions, scaling). ``methods`` is the
+    text an export wrote into its own copy, repeated here so that both stay one file (NM4-08); the
+    other callers leave it out and write it with :func:`~earthx.processing.methods.recipe_with_methods`.
     """
     provenance = Provenance(
         execution="cloud",
@@ -675,5 +681,6 @@ def job_recipe_document(
         started=started,
         finished=finished,
         attribution=list(attribution),
+        methods=methods,
     )
     return document_bytes({**body, "provenance": provenance.model_dump(mode="json")})

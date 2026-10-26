@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 
 from earthx.processing.errors import RecipeInvalid
-from earthx.processing.methods import METHODS_FILENAME, DatasetFacts, methods_text
+from earthx.processing.methods import DatasetFacts, methods_of, methods_text, recipe_with_methods
 from earthx.processing.operators import REGISTRY
-from earthx.processing.recipe import job_recipe_document
+from earthx.processing.recipe import Provenance, job_recipe_document, loads_i_json, recipe_from_data, recipe_hash
 from tests.earthx.processing import recipes
 from tests.earthx.processing.testops import OPERATORS
 
@@ -220,10 +220,79 @@ class TestEveryOperatorSaysItsStep:
         assert "{" not in sentence and "None" not in sentence
 
 
-def test_the_name_of_the_file_is_the_one_of_the_downloads() -> None:
-    from earthx.access.crop_rules import METHODS_FILENAME as DOWNLOADS
+class TestTheTextLiesInTheRecipe:
+    """NM4-08: ``provenance.methods`` of ``recipe.json``, no file of its own; outside the hash."""
 
-    assert METHODS_FILENAME == DOWNLOADS == "methods.txt"
+    def test_the_provenance_carries_the_text_the_function_writes(self) -> None:
+        raw = recipe_with_methods(document(band_math()), dataset=FACTS, acquired_on=date(2026, 6, 1))
+        written = json.loads(raw)["provenance"]["methods"]
+        assert written + "\n" == methods_text(document(band_math()), dataset=FACTS, acquired_on=date(2026, 6, 1))
+        assert written.startswith("The dataset Sentinel-2 L2A (synthetic, doi:10.5270/S2_-742ikth) was used")
+        assert methods_of(raw) == written
+
+    def test_the_rest_of_the_document_stays_as_it_was(self) -> None:
+        before = json.loads(document(band_math()))
+        after = json.loads(recipe_with_methods(document(band_math())))
+        assert before["provenance"].pop("methods") is None
+        assert {key: value for key, value in after["provenance"].items() if key != "methods"} == before["provenance"]
+        assert {key: value for key, value in after.items() if key != "provenance"} == {
+            key: value for key, value in before.items() if key != "provenance"
+        }
+
+    def test_the_form_is_the_one_of_every_recipe_json(self) -> None:
+        raw = recipe_with_methods(document(band_math()))
+        assert raw.endswith(b"\n") and raw.startswith(b'{\n  "aoi"')
+        assert recipe_with_methods(raw) == raw, "a second call changes nothing"
+
+    def test_the_hash_does_not_change(self) -> None:
+        plain = loads_i_json(document(band_math()))
+        embedded = loads_i_json(recipe_with_methods(document(band_math())))
+        hashes = []
+        for data in (plain, embedded):
+            data.pop("provenance")
+            hashes.append(recipe_hash(recipe_from_data(data, OPERATORS)))
+        assert hashes[0] == hashes[1]
+
+    def test_a_text_that_is_already_there_is_replaced_by_the_one_that_fits(self) -> None:
+        data = json.loads(document(band_math()))
+        data["provenance"]["methods"] = "Stale."
+        assert methods_of(recipe_with_methods(data)) == methods_text(document(band_math())).removesuffix("\n")
+
+    def test_a_document_from_before_has_no_text(self) -> None:
+        assert methods_of(document(band_math())) is None
+        old = json.loads(document(band_math()))
+        del old["provenance"]["methods"]
+        assert methods_of(old) is None
+        assert Provenance.model_validate_json(json.dumps(old["provenance"])).methods is None
+        assert methods_text(document(band_math())), "and the text is still written from it"
+
+    def test_the_text_names_no_identifier_hash_address_or_coordinate_in_the_document_either(self) -> None:
+        raw = recipe_with_methods(document(band_math()), dataset=FACTS).decode("utf-8")
+        text = json.loads(raw)["provenance"]["methods"]
+        assert RECIPE_ID not in text and "c1:" not in text and "https://" not in text and "47.0" not in text
+
+    @pytest.mark.parametrize("methods", ["", 3, ["a"], {"a": 1}, True])
+    def test_a_text_of_the_wrong_kind_is_refused(self, methods: Any) -> None:
+        data = json.loads(document(band_math()))
+        data["provenance"]["methods"] = methods
+        with pytest.raises(RecipeInvalid):
+            methods_text(data)
+        with pytest.raises(RecipeInvalid):
+            recipe_with_methods(data)
+
+    @pytest.mark.parametrize("raw", [b"", b"[]", b"{}", b'{"recipe_version": 1}', b'{"a": 1, "a": 2}'])
+    def test_a_document_that_is_not_a_recipe_json_is_refused_by_both(self, raw: bytes) -> None:
+        with pytest.raises(RecipeInvalid):
+            recipe_with_methods(raw)
+        if raw not in (b"{}", b'{"recipe_version": 1}'):
+            with pytest.raises(RecipeInvalid):
+                methods_of(raw)
+
+    def test_a_provenance_that_is_no_object_has_no_text(self) -> None:
+        data = json.loads(document(band_math()))
+        data["provenance"] = "x"
+        with pytest.raises(RecipeInvalid):
+            methods_of(data)
 
 
 class TestDatasetFacts:
