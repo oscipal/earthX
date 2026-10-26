@@ -64,9 +64,9 @@ OUTPUTS: dict[str, tuple[str, str]] = {
     "result": ("result.tif", "Result raster (Cloud Optimized GeoTIFF)"),
     "mask": ("mask.tif", "Mask of the area of interest"),
     "export": ("export.zip", "Export: per group and asset the data and its mask, with notice, recipe and citation"),
-    "recipe": ("recipe.json", "The recipe the job ran, with its provenance"),
-    "methods": ("methods.txt", "A paragraph for a methods section, written from the recipe and its provenance"),
-    "bundle": ("result.zip", "Result, mask, area, recipe, citation, attribution and methods in one ZIP"),
+    "recipe": ("recipe.json", "The recipe the job ran, with its provenance and the methods text"),
+    "methods": ("methods.txt", "The methods text of the recipe's provenance, as a paragraph for a methods section"),
+    "bundle": ("result.zip", "Result, mask, area, recipe, citation and attribution in one ZIP"),
     "tiles": ("tilejson.json", "The result as map tiles (TileJSON), served by the tiler"),
 }
 

@@ -968,7 +968,7 @@ async def download_crop(
 
     # The worker core stays out of the tiler's start (the intake imports it), so it is
     # loaded when the first crop asks for its recipe.
-    from earthx.api.intake import acquired_day, crop_recipe_json, methods_bytes
+    from earthx.api.intake import acquired_day, crop_recipe_json, recipe_json_with_methods
 
     accepted_at = datetime.now(timezone.utc)
     recipe_omitted_cause: str | None = None
@@ -992,16 +992,13 @@ async def download_crop(
         LOGGER.warning("crop recipe omitted", extra={"dataset": dataset, "stage": refused.stage})
         recipe_json = None
         recipe_omitted_cause = refused.stage
-    # The methods text is built from the recipe, so it comes and goes with it (M4-19a).
-    methods = (
-        methods_bytes(
+    # The methods text lies in the recipe, so it comes and goes with it (M4-19a, NM4-08).
+    if recipe_json is not None:
+        recipe_json = recipe_json_with_methods(
             recipe_json,
             config,
             acquired_on=acquired_day([item for matched, _ in surviving_groups for item in matched], config),
         )
-        if recipe_json is not None
-        else None
-    )
     bib = citation_bib(config, downloaded=accepted_at.date(), years=years)
 
     total_planned_bytes = sum(output.total_bytes for planned in planned_by_group for output in planned)
@@ -1027,7 +1024,6 @@ async def download_crop(
             resolution_factor=body.resolution,
             recipe_json=recipe_json,
             citation_bib=bib,
-            methods_text=methods,
             recipe_omitted_cause=recipe_omitted_cause,
             years=years,
             # The GDAL/VSI settings `gateway` also uses for the tile path

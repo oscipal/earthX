@@ -1203,7 +1203,7 @@ class TestTheNameOfADownload:
 
 EXPORT_RESULT = {
     "files": ["export.zip"],
-    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt", "methods.txt"],
+    "members": ["red.tif", "red_mask.tif", "aoi.geojson", "recipe.json", "citation.bib", "ATTRIBUTION.txt"],
     "groups": 1,
     "assets": 1,
     "blocks": 3,
@@ -1212,6 +1212,7 @@ EXPORT_RESULT = {
     "attribution": ["Contains modified Copernicus Sentinel data 2025"],
     "started": "2026-03-05T09:58:30+00:00",
     "finished": "2026-03-05T09:59:45+00:00",
+    "methods": "Written by the export.",
     "bytes": 54321,
 }
 
@@ -1340,9 +1341,28 @@ class TestAnExport:
             result=EXPORT_RESULT,
             started=datetime.fromisoformat(EXPORT_RESULT["started"]),
             finished=datetime.fromisoformat(EXPORT_RESULT["finished"]),
+            methods=EXPORT_RESULT["methods"],
         )
         assert served == written
+        assert json.loads(served)["provenance"]["methods"] == "Written by the export."
         assert json.loads(served)["provenance"]["attribution"] == ["Contains modified Copernicus Sentinel data 2025"]
+
+
+    async def test_the_methods_link_of_an_export_is_the_text_its_zip_holds_and_one_from_before_gets_a_text(
+        self, rig: Rig
+    ) -> None:
+        """NM4-08: the export's own text is repeated, not written again from the registry as it is now."""
+        job_id = await placed(rig, export_order())
+        finish(rig.db, job_id, result=EXPORT_RESULT)
+        link = await rig.client.get(f"/processing/jobs/{job_id}/results/methods.txt")
+        assert link.text == "Written by the export.\n"
+        older = await placed(rig, export_order())
+        before = {name: value for name, value in EXPORT_RESULT.items() if name != "methods"}
+        finish(rig.db, older, result=before)
+        recipe = (await rig.client.get(f"/processing/jobs/{older}/results/recipe.json")).json()
+        assert "cropped to the bounding box" in recipe["provenance"]["methods"]
+        link = await rig.client.get(f"/processing/jobs/{older}/results/methods.txt")
+        assert link.text == recipe["provenance"]["methods"] + "\n"
 
 
 class TestAMosaic:

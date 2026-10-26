@@ -26,7 +26,7 @@ from earthx.api.result_zip import Layout, Member
 from earthx.catalog.datasets import REGISTRY
 from earthx.catalog.registry import AcquisitionYears, DatasetRegistry, doi_name
 from earthx.objectstore.results import Store
-from earthx.processing.methods import DatasetFacts, methods_text
+from earthx.processing.methods import DatasetFacts, methods_of, methods_text
 from tests.earthx.access.test_download import GOOD_AOI, FakeReader, path
 from tests.earthx.api.conftest import Rig
 from tests.earthx.api.test_intake import (
@@ -87,7 +87,6 @@ def crop_files() -> list[str]:
                 item_ids=["ITEM1"],
                 recipe_json=b"{}",
                 citation_bib=b"@misc{x}\n",
-                methods_text=b"A paragraph.\n",
             )
         )
     )
@@ -191,7 +190,23 @@ class TestTheFilesOfTheZip:
 
 
 class TestTheMethodsText:
-    """M4-19a: ``methods.txt`` beside ``recipe.json``, in the ZIP and as a link, the same text."""
+    """M4-19a, NM4-08: the text lies in ``recipe.json`` as ``provenance.methods``; the link serves the same text, no ZIP holds a file."""
+
+    async def test_the_zip_has_no_file_of_the_text_and_the_recipe_carries_it(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        job_id, _, _ = await zipped(rig)
+        archive = await zip_of(rig, job_id)
+        assert not [name for name in archive.namelist() if name.endswith("methods.txt")]
+        recipe = archive.read(inside(dl.RECIPE_FILENAME))
+        assert methods_of(recipe) and json.loads(recipe)["provenance"]["methods"]
+
+    async def test_the_recipe_of_the_link_and_the_one_of_the_zip_are_the_same_bytes(
+        self, mocked: Store, rig: Rig  # noqa: F811
+    ) -> None:
+        job_id, _, _ = await zipped(rig)
+        link = await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")
+        assert link.content == (await zip_of(rig, job_id)).read(inside(dl.RECIPE_FILENAME))
 
     async def test_the_zip_lays_the_text_files_out_in_the_order_of_the_definition(
         self, mocked: Store, rig: Rig  # noqa: F811
@@ -206,13 +221,14 @@ class TestTheMethodsText:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/plain")
         assert response.headers["content-disposition"].endswith('_methods.txt"')
-        assert response.content == (await zip_of(rig, job_id)).read(inside(dl.METHODS_FILENAME))
+        recipe = (await zip_of(rig, job_id)).read(inside(dl.RECIPE_FILENAME))
+        assert response.content.decode("utf-8") == json.loads(recipe)["provenance"]["methods"] + "\n"
 
     async def test_it_is_written_from_the_recipe_the_job_serves(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
         job_id, _, _ = await zipped(rig)
         recipe = await rig.client.get(f"/processing/jobs/{job_id}/results/recipe.json")
         text = (await rig.client.get(f"/processing/jobs/{job_id}/results/methods.txt")).text
-        assert text == methods_text(
+        assert text == methods_of(recipe.content) + "\n" == methods_text(
             recipe.content, dataset=DatasetFacts.of(C1), acquired_on=date(2026, 6, 1), operators=rig.api.operators
         )
         assert text.startswith(f"The dataset {C1.title} (sentinel-2-c1-l2a, doi:{doi_name(C1.doi)})")
@@ -458,7 +474,7 @@ class TestWithoutTheRegistry:
             response = await client.get(f"/processing/jobs/{job_id}/results/result.zip")
         assert response.status_code == 200
         names = [name.removeprefix(f"{FOLDER}/") for name in opened(response.content).namelist()]
-        assert names == [*RASTERS, dl.AOI_FILENAME, dl.RECIPE_FILENAME, dl.METHODS_FILENAME]
+        assert names == [*RASTERS, dl.AOI_FILENAME, dl.RECIPE_FILENAME]
 
 
 class TestNothingNamesWhatItShouldNot:

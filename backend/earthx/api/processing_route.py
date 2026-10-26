@@ -69,7 +69,7 @@ from psycopg_pool import ConnectionPool, PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from starlette.concurrency import run_in_threadpool
 
-from earthx.access.crop_rules import METHODS_FILENAME, RECIPE_FILENAME, TEXT_FILES
+from earthx.access.crop_rules import RECIPE_FILENAME, TEXT_FILES
 from earthx.access.download import attribution_names_year
 from earthx.api import processing_docs as docs
 from earthx.api import result_zip
@@ -81,7 +81,7 @@ from earthx.api.intake import (
     estimate_order,
     job_recipe_json,
     job_side_files,
-    methods_bytes,
+    recipe_json_with_methods,
 )
 from earthx.api.item_source import ItemSource, fetch_item_or_refuse
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
@@ -102,6 +102,7 @@ from earthx.objectstore.errors import ObjectStoreError, ResultExpiring, ResultNo
 from earthx.objectstore.results import MIN_REMAINING, Store, open_result_range, result_size, signed_download
 from earthx.processing import check_scope
 from earthx.processing.errors import AoiOutsideInputs, JobTooLarge, RecipeInvalid, UnsupportedRecipe
+from earthx.processing.methods import methods_of
 from earthx.processing.operators import OperatorRegistry
 from earthx.processing.plan import estimate
 from earthx.processing.recipe import RECIPE_VERSION, job_recipe_document, loads_i_json, parse_request
@@ -123,10 +124,13 @@ NO_ACQUISITION_YEARS = "urn:earthx:no-acquisition-years"
 _FAILED_TYPE = "urn:earthx:job-failed:"
 _ORDER_TYPE = "urn:earthx:order-refused:"
 
+#: The link ``methods``: the text of ``provenance.methods``, served as a file for clients of the API (NM4-08).
+#: No download holds a file of this name.
+METHODS_LINK = "methods.txt"
 #: What a link under ``/results`` may name. `result.tif`, `mask.tif` and `export.zip` lie in the store,
-#: `recipe.json` is built, `result.zip` is laid out from the stored files and the documents `api`
-#: builds (M4-11b-1). A job has the names of its own output only (:func:`_names_of`).
-LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json", "methods.txt")
+#: `recipe.json` and `methods.txt` are built, `result.zip` is laid out from the stored files and the documents
+#: `api` builds (M4-11b-1). A job has the names of its own output only (:func:`_names_of`).
+LINK_NAMES = ("result.tif", "mask.tif", "export.zip", "result.zip", "recipe.json", METHODS_LINK)
 
 BUNDLE = "result.zip"
 #: The files of a raster result the ZIP carries from the store, in the order of the archive.
@@ -915,7 +919,7 @@ _SUFFIXES = {
     "export.zip": ".zip",
     BUNDLE: ".zip",
     "recipe.json": "_recipe.json",
-    "methods.txt": "_methods.txt",
+    METHODS_LINK: "_methods.txt",
 }
 
 
@@ -958,7 +962,7 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     filename = _download_name(body, status, _SUFFIXES[name])
     if name == "recipe.json":
         return _recipe_document(api, body, status, filename)
-    if name == METHODS_FILENAME:
+    if name == METHODS_LINK:
         return _methods_document(api, body, status, filename)
     assert status.result_id is not None
     if name == BUNDLE:
@@ -1022,27 +1026,34 @@ async def _with_derived_years(api: JobApi, body: dict[str, Any] | None, status: 
 
 
 def _recipe_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
-    """``recipe.json`` of the job: the file of its link, and the entry of its ZIP."""
+    """``recipe.json`` of the job: the file of its link, and the entry of its ZIP, with its methods text (NM4-08)."""
     config = _config_of(api, body)
     result = status.result or {}
     if _is_export(status) and isinstance(result.get("attribution"), list):
-        # The times and the attribution the export wrote into its own recipe.json, so that both
-        # copies are one file (M4-11 K4) — also across a new year or a changed registry.
-        return job_recipe_document(
+        # The times, the attribution and the methods text the export wrote into its own recipe.json, so that
+        # both copies are one file (M4-11 K4) — also across a new year or a changed registry. An export from
+        # before NM4-08 reported no text; it gets one from the registry as it is now.
+        stored = result.get("methods")
+        document = job_recipe_document(
             body,
             attribution=[str(entry) for entry in result["attribution"]],
             result=result,
             started=_instant(result.get("started")) or status.started_at,
             finished=_instant(result.get("finished")) or status.finished_at,
+            methods=stored if isinstance(stored, str) and stored else None,
         )
-    return job_recipe_json(
-        body,
-        config=config,
-        result=result,
-        started=status.started_at,
-        finished=status.finished_at,
-        years=_years_of(config, status),
-    )
+        if methods_of(document) is not None:
+            return document
+    else:
+        document = job_recipe_json(
+            body,
+            config=config,
+            result=result,
+            started=status.started_at,
+            finished=status.finished_at,
+            years=_years_of(config, status),
+        )
+    return recipe_json_with_methods(document, config, api.operators, acquired_on=status.acquired_on)
 
 
 def _recipe_document(api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str) -> Response:
@@ -1066,10 +1077,10 @@ def _methods_document(api: JobApi, body: dict[str, Any] | None, status: JobStatu
 
 
 def _methods_bytes(api: JobApi, body: dict[str, Any], status: JobStatus) -> bytes:
-    """``methods.txt`` of the job, built from the ``recipe.json`` it would serve: the two never disagree."""
-    return methods_bytes(
-        _recipe_bytes(api, body, status), _config_of(api, body), api.operators, acquired_on=status.acquired_on
-    )
+    """The link ``methods`` of the job: the ``provenance.methods`` of the ``recipe.json`` it would serve, so the two never disagree."""
+    text = methods_of(_recipe_bytes(api, body, status))
+    assert text is not None
+    return f"{text}\n".encode()
 
 
 def _instant(value: Any) -> datetime | None:
@@ -1203,7 +1214,6 @@ async def _bundle_response(
         ).items()
     }
     documents[RECIPE_FILENAME] = _recipe_bytes(api, body, status)
-    documents[METHODS_FILENAME] = _methods_bytes(api, body, status)
     # The files of the crop's ZIP beside its rasters, in its order (`TEXT_FILES`, the one definition);
     # the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
     # the citation before.
