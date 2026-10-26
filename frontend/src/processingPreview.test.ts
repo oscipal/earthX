@@ -536,6 +536,8 @@ describe('a chain the tiler refuses', () => {
     ['a failure of the source for a single step', 1, answer(502, { detail: 'the asset could not be read' })],
     ['an answer that is not JSON', 1, answer(422, 'not json')],
     ['a network that fails', 1, async () => Promise.reject(new TypeError('offline'))],
+    ['a scene the source does not have', 1, answer(404, { detail: "no item 'S2B_A' in 'sentinel-2-c1-l2a'" })],
+    ['a busy tiler', 1, answer(429, { detail: 'too many requests' })],
   ])('has no answer to go by for %s', async (_, steps, fetchImpl) => {
     expect(await probeChain('/tj', steps, fetchImpl as unknown as typeof fetch)).toEqual({ state: 'none' });
   });

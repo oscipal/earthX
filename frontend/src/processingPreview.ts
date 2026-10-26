@@ -132,7 +132,7 @@ export function refusedStepOf(detail: unknown): RefusedStep | null {
 export type ChainAnswer = { state: 'taken' } | { state: 'refused'; refused: RefusedStep } | { state: 'none' };
 
 // Asks the TileJSON of a chain of `steps` steps, one step as well as several: it is the cheap question, and it
-// has the same refusals as the tiles and the statistics. A refusal (4xx) of several steps names its step; the
+// has the same refusals as the tiles and the statistics. A refusal (400, 422) of several steps names its step; the
 // refusal of a single step has none to name, so its text is the reason for step 0. `none`: the answer is
 // of no use (a failing source, a network that fails, a refusal of several steps without a step) — then the map
 // is left as it is.
@@ -140,7 +140,8 @@ export async function probeChain(url: string, steps: number, fetchImpl: typeof f
   try {
     const response = await fetchImpl(url);
     if (response.ok) return { state: 'taken' };
-    if (response.status < 400 || response.status >= 500) return { state: 'none' };
+    // Only the refusals of the chain itself: a missing scene (404) or a busy tiler (429) says nothing about the steps.
+    if (response.status !== 400 && response.status !== 422) return { state: 'none' };
     const body: unknown = await response.json();
     const detail = (body as { detail?: unknown } | null)?.detail;
     const refused = refusedStepOf(detail) ?? (steps === 1 && typeof detail === 'string' ? { step: 0, reason: detail.trim() } : null);
