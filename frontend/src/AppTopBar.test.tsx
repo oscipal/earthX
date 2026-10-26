@@ -181,6 +181,7 @@ describe('the processing side bar and the manager of the jobs', () => {
     status: null,
     phase: 'active',
     archive: null,
+    bytes: null,
     resampled: null,
     failure: null,
     error: null,
