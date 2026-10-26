@@ -1,9 +1,11 @@
 # Nach der M4-Abnahme: gesammelte Punkte
- 
-Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
- 
+
+**Pflege:** Dieses Backlog pflegt nur der Planungs-Chat bzw. Otto. Sessions ändern es nicht; Erledigtes tragen sie als Log-Zeile mit PR-Nummer in `docs/ENTSCHEIDUNGSLOG.md` ein (Otto, 26.10.2026).
+
+Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20) fertig zu machen. Danach werden diese Punkte der Reihe nach aufgegriffen. Reihenfolge laut Log vom 24.10.2026: DOC-01, dann UI-01 und UI-02; NM4-01 und NM4-02 als Stufe A daneben. Für die übrigen Punkte entscheidet Otto die Reihenfolge.
+
 ## Neu (Plan-Dateien unter `docs/plans/querschnitt/`)
- 
+
 1. **Jahr in der Copernicus-Attribution** (Fund vom 20.10.2026, `provenance.json` des Runners).
    - **Plan:** `querschnitt/nm4-01-attribution-jahr.md`
    - **Erledigt:** NM4-01, PR #190 (25.10.2026).
@@ -199,17 +201,29 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Befund:** NDVI-Vorschau rund 40 s für 325 Anfragen; Kacheln 1,7–6,5 s mit steigenden Zeiten (Warteschlange), auch reine `visual`-Kacheln 2,6–4,2 s. Gleich schon vor UI-01a (`745ecb2`), also keine Regression daraus. Dazu: Suche dreifach geladen (je 1,9 MB), `statistics` mit `op` einmal `400`.
    - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.
    - **Erledigt (26.10.2026, #197):** GDAL-Profil der Kacheln `SERIAL` + 256 MiB Cache, Zuschnitt unverändert, Item-Abrufe gebündelt. NDVI-Ansicht mit 13 Szenen 45,6 → 27,9 s, bei 100 Mbit/s 145,3 → 38,8 s, Kacheln byte-identisch. Suche: jede Seite einmal, mit Test. Probe auch vor einer einstufigen Statistik. Plan §19.
-27. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
+27. **Jobs löschen mit einem Tag Frist und „Restore“** (Otto, 26.10.2026; erweitert die Entscheidung „nicht löschbar“ vom 12.10.2026).
+   - **Plan:** `querschnitt/nm4-27-job-loeschen-mit-frist.md`
+   - **Soll:** Delete (Kürzel D) löscht das Ergebnis nach einem Tag (oder früher, wenn es vorher abläuft); innerhalb des Tages „Restore“; keine Rückfrage. Reiter „Active | Expired | Deleted | All“. Geteilte Ergebnisse verschwinden nur für den gelöschten Job.
+   - **Aufgabe:** Stufe B, Backend und Frontend, nach UI-01c.
+28. **Suchergebnisse links angedockt** (Otto, 26.10.2026).
+   - **Plan:** `vp3/ui-01g-suchergebnisse-angedockt.md` (Teil von UI-01, nach UI-01f).
+29. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
+   - **Plan:** `querschnitt/nm4-29-kacheln-512.md`
    - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
    - **Berührt:** Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5).
    - **Aufgabe:** Stufe B, Frontend und `tiler`; nach NM4-26.
-   - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.27. **Toter Zweig „Einmal-Produkt mit Extent-Antwort“ in der Coverage-Route** (aus NM4-15b, Otto, 26.10.2026).
+30. **Nicht Mögliches ausblenden statt ausgrauen** (Otto, 26.10.2026).
+   - **Plan:** `querschnitt/nm4-30-nicht-moegliches-ausblenden.md`
+   - **Regel:** Was für Datensatz oder Layer grundsätzlich nicht geht, erscheint nicht; was nur im Moment nicht geht, bleibt gesperrt mit Grund im Tooltip. Gilt ab sofort für alles Neue.
+31. **Toter Zweig „Einmal-Produkt mit Extent-Antwort“ in der Coverage-Route** (aus NM4-15b, Otto, 26.10.2026).
    - **Befund:** Mit dem Ausscheiden von `CoverageProvider.SAMPLE` ist der Zweig `single_coverage_product` ohne Flächenweg in `api/coverage_route.py` (`extent_result`) nicht mehr erreichbar: `_check_coverage` verbietet `single_coverage_product` mit Aggregation, `local-sql` nimmt den Flächenweg. Ebenso wirkungslos ist `and not config.capabilities.single_coverage_product` in `check_adapter_specs` (`adapters/spec.py`) samt `_required` in `tests/earthx/adapters/test_spec.py`.
    - **Berührt:** `adr/0004` (Einmal-Produkte: Ausdehnung allein).
    - **Aufgabe (Stufe A, eigener PR):** prüfen, ob der Zweig für eine künftige Quelle ohne Aggregation gebraucht wird; sonst mit seinen Tests entfernen.
+32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026), nach VP3 und vor M5.
+   - **Pläne:** `ds/ds-00-paket.md` (Übersicht) und `ds/ds-01` bis `ds/ds-06`: Sentinel-1-Quelle (C), „Advanced search“ (B), Wolken in der AOI (B), S1 anbinden (A), SAR-Operatoren (B), Maske nach Werten (B).
 
 ## In UI-01 aufgenommen (20.–22.10.2026)
- 
+
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
 - Klick auf einen Ergebnis-Layer öffnet die Darstellung: vmin, vmax, Colormap, Vorgabe aus M4-32 (UI-01 §1 Punkt 11).
 - Gleiche Breite der Layer-Zeilen mit festen Knopfpositionen (Punkt 8).
@@ -217,13 +231,14 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 - Je fertigem Job nur „Download (ZIP)“, kein „Methods“, kein „Copy“ (Punkt 12).
 - Handbereich der Farbskala je Job dauerhaft speichern (§3 Punkt 1).
 - Stapelung zwischen Überflügen: Ansicht und angeheftete Layer stapeln verschieden (bekannte Grenze aus M4-17c §15), Prüffall in UI-01 §1 Punkt 10.
+
 ## Offen im Entscheidungslog (bewusst nach M4)
- 
-27. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
-28. Originale als ZIP über die Plattform. Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
-29. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
-30. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
-31. Punkte aus S3 (M4-Plan Fassung 3):
+
+33. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
+34. Originale als ZIP über die Plattform. Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
+35. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
+36. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
+37. Punkte aus S3 (M4-Plan Fassung 3):
     - Export-Job für Zarr blockweise,
     - schnelleres COG-Profil,
     - Laufzeitdeckel an echten Läufen kalibrieren,
@@ -231,12 +246,14 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
     - Job-Schnittstelle in eigenem Prozess,
     - Eingaben per Referenz (siehe Punkt 5),
     - Datei-Cache des Runners.
-32. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
+38. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
+
 ## Danach geplant
- 
-33. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
+
+39. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
+
 ## Verworfen bzw. nur bei Bedarf
- 
+
 - Zarr im Viewer generell durch COG ersetzen (Daten umwandeln): nein. Davon getrennt steht Punkt 15 (Zarr-Datensatz als Doppel entfernen). Jeder Datensatz bleibt bei seiner Quelle. Nur falls Zarr im Viewer langsam auffällt, folgt eine Messung (Stufe C) zu GeoZarr-Multiscales und Quicklooks.
 - „Replace source layer“ für Vorschau und Job-Ergebnis: von Otto entfernt (20.10.2026).
 - Knopf zum Kopieren des Methodentexts: von Otto abgelehnt (22.10.2026).

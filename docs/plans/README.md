@@ -12,3 +12,7 @@ Ein Unterordner je Meilenstein; Dateinamen tragen weiter das Präfix der Aufgabe
 Bei Widerspruch gilt die Rangfolge aus `CLAUDE.md`: `docs/ENTSCHEIDUNGEN_2026-09-18.md` vor `docs/KLAERUNGEN.md` vor den Plandokumenten. Ein Plan hält fest, wie eine Aufgabe umgesetzt wird; Beschlossenes steht im `docs/ENTSCHEIDUNGSLOG.md`.
 
 Ein neuer Plan liegt im Ordner seines Meilensteins, verlinkt als `docs/plans/<ordner>/<datei>.md`. `backend/tests/test_plans_layout.py` schlägt fehl, wenn eine Datei flach in `docs/plans/` liegt oder ein Verweis den alten Pfad nennt.
+
+## Backlog
+
+Das Backlog (`nach-m4-backlog.md`) pflegt nur der Planungs-Chat bzw. Otto. Sessions ändern es nicht; Erledigtes tragen sie als Log-Zeile mit PR-Nummer in `docs/ENTSCHEIDUNGSLOG.md` ein (Otto, 26.10.2026).
