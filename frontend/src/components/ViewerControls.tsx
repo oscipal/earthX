@@ -20,7 +20,6 @@ export default function ViewerControls() {
   const focusLoading = useAppStore((s) => s.focusLoading);
   const cropToAoi = useAppStore((s) => s.cropToAoi);
   const exitFocus = useAppStore((s) => s.exitFocus);
-  const clearAll = useAppStore((s) => s.clearAll);
   const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
   const pinLoading = useAppStore((s) => s.pinLoading);
   const count = useAppStore((s) => Object.keys(s.downloaded).length);
@@ -124,9 +123,6 @@ export default function ViewerControls() {
         </button>
         <button type="button" className="ghost-btn" onClick={() => exitFocus()}>
           ‹ Choose a different image
-        </button>
-        <button type="button" className="ghost-btn danger" onClick={() => clearAll()}>
-          Clear all
         </button>
       </div>
     </div>

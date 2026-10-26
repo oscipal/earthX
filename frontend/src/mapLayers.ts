@@ -913,7 +913,9 @@ export function syncBrowseMosaic(map: MapLibreMap, s: Pick<MosaicState, 'items' 
   retireDynamicMosaic(map);
   const items = s.items.slice(0, MAX_MOSAIC_LAYERS);
   const { dataset } = s;
-  if (!dataset) return dropRetired(map);
+  // Nothing to draw (no dataset, or the results are off the map, UI-01g): the picture before it has nothing to
+  // wait for and goes at once.
+  if (!dataset || items.length === 0) return dropRetired(map);
   items.forEach((it, i) => addPreview(map, it, i, gen, dataset));
   settleRetired(map);
 }

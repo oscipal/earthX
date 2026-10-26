@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 //
-// The two download buttons of the results view (M4-11b-2, Zusatz 1a): "Download
-// crop" and "Download originals", always both, each disabled with its reason.
+// The bar of the selection. The two download buttons (M4-11b-2, Zusatz 1a), always both, each disabled with
+// its reason; UI-01g: the buttons name what they do for one scene or for several, none says "Full resolution"
+// or "Clear", and they are one size.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -101,47 +102,98 @@ describe('the download buttons', () => {
   ])('are both there for a %s dataset with AOI %j', (format, aoi) => {
     select(format, aoi);
     show();
-    expect(button('⇩ Download crop')).toBeDefined();
-    expect(button('⇩ Download originals')).toBeDefined();
+    expect(button('⇩ Download merged crop')).toBeDefined();
+    expect(button('⇩ Download full scenes')).toBeDefined();
     expect([...container.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('⇩ Download');
   });
 
   it('crop: disabled without an AOI, with the reason', () => {
     select('cog', null);
     show();
-    expect(button('⇩ Download crop').disabled).toBe(true);
-    expect(button('⇩ Download crop').title).toBe(DRAW_AOI_TO_CROP);
+    expect(button('⇩ Download merged crop').disabled).toBe(true);
+    expect(button('⇩ Download merged crop').title).toBe(DRAW_AOI_TO_CROP);
   });
 
   it('crop: open with an AOI, for a Zarr dataset too', () => {
     select('zarr', AOI);
     show();
-    expect(button('⇩ Download crop').disabled).toBe(false);
+    expect(button('⇩ Download merged crop').disabled).toBe(false);
   });
 
   it('originals: open for a COG dataset with and without an AOI', () => {
     for (const aoi of [null, AOI]) {
       select('cog', aoi);
       show();
-      expect(button('⇩ Download originals').disabled).toBe(false);
+      expect(button('⇩ Download full scenes').disabled).toBe(false);
     }
   });
 
   it('originals: disabled for Zarr, with the reason', () => {
     select('zarr', AOI);
     show();
-    expect(button('⇩ Download originals').disabled).toBe(true);
-    expect(button('⇩ Download originals').title).toContain('no single original file per scene');
+    expect(button('⇩ Download full scenes').disabled).toBe(true);
+    expect(button('⇩ Download full scenes').title).toContain('no single original file per scene');
   });
 
   it('each opens its own dialog: the crop, or the originals with an AOI drawn', () => {
     select('cog', AOI);
     show();
-    act(() => button('⇩ Download crop').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => button('⇩ Download merged crop').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().downloadOutcome).toBe('crop');
     act(() => useAppStore.getState().closeDownloadDialog());
-    act(() => button('⇩ Download originals').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => button('⇩ Download full scenes').dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(useAppStore.getState().downloadOutcome).toBe('originals');
     expect(useAppStore.getState().downloadOriginalLinks).toHaveLength(2);
+  });
+});
+
+describe('the labels of the bar (UI-01g)', () => {
+  const labels = () => [...container.querySelectorAll('button')].map((b) => b.textContent?.trim());
+
+  it('name the action for one scene', () => {
+    select('cog', AOI);
+    act(() => useAppStore.setState({ selectedIds: ['A'] }));
+    show();
+    expect(labels()).toEqual(['Crop to AOI', 'View whole scene', '＋ Add to layers', '⇩ Download crop', '⇩ Download full scene', '⚙ Process']);
+  });
+
+  it('say "merged" for several scenes', () => {
+    select('cog', AOI);
+    show();
+    expect(labels()).toEqual([
+      'Crop & merge to AOI',
+      'View merged scenes',
+      '＋ Add to layers',
+      '⇩ Download merged crop',
+      '⇩ Download full scenes',
+      '⚙ Process',
+    ]);
+  });
+
+  it('have no "Full resolution" label and no "Clear", for one scene or for several', () => {
+    for (const selectedIds of [['A'], ['A', 'B']]) {
+      select('cog', AOI);
+      act(() => useAppStore.setState({ selectedIds }));
+      show();
+      expect(container.textContent).not.toContain('Full resolution');
+      expect(labels()).not.toContain('Clear');
+    }
+  });
+
+  it('say in their tooltips that the view and the downloads are at full resolution', () => {
+    select('cog', AOI);
+    show();
+    expect(button('Crop & merge to AOI').title).toContain('full resolution');
+    expect(button('View merged scenes').title).toContain('full resolution');
+    expect(button('⇩ Download merged crop').title).toContain('full resolution');
+  });
+
+  it('are one size: no button sets a width or height of its own', () => {
+    select('cog', AOI);
+    show();
+    for (const b of container.querySelectorAll('button')) {
+      expect(b.getAttribute('style')).toBeNull();
+      expect(['primary-btn', 'ghost-btn']).toContain(b.className);
+    }
   });
 });

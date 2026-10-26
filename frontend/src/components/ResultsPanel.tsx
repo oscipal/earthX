@@ -302,7 +302,8 @@ function SelectionRow() {
 
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
-  const clearAll = useAppStore((s) => s.clearAll);
+  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
   // A full-resolution view or a result's view works on its own picture: the list gives way (App.tsx).
   const viewOpen = useAppStore((s) => s.focusMode || s.resultViewLayerId !== null);
 
@@ -311,18 +312,19 @@ export default function ResultsPanel() {
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2>Results</h2>
-        <div className="results-head-right">
-          <span>{totalItems(sections)}</span>
-          <button
-            type="button"
-            className="link-btn"
-            title="Clear the search and selection"
-            onClick={() => clearAll()}
-          >
-            Clear all
-          </button>
-        </div>
+        <h2>Results ({totalItems(sections)})</h2>
+        <button
+          type="button"
+          className="results-map-toggle"
+          title={
+            resultsOnMap
+              ? 'Take the search results off the map; the list stays, and ticked scenes still show'
+              : 'Show the search results on the map again, over the layers'
+          }
+          onClick={() => toggleResultsOnMap()}
+        >
+          {resultsOnMap ? 'Hide results' : 'Show results'}
+        </button>
       </div>
       {viewOpen ? (
         <p className="hint-text results-view-hint">Close the view to browse the results.</p>

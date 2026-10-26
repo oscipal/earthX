@@ -122,6 +122,7 @@ export default function MapView() {
   const layers = useAppStore((s) => s.layers);
   const viewLayerId = useAppStore((s) => s.viewLayerId);
   const searchCrops = useAppStore((s) => s.searchCrops);
+  const resultsOnMap = useAppStore((s) => s.resultsOnMap);
   const openSectionId = useAppStore((s) => s.openSectionId);
   const projection = useAppStore((s) => s.projection);
   const theme = useAppStore((s) => s.theme);
@@ -223,7 +224,7 @@ export default function MapView() {
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);
-      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId), viewLayer, st.showDownloaded));
+      syncLayers(map, layersForMap(layersOnMap(st.layers, st.searchCrops, st.openSectionId, st.resultsOnMap ? null : st.selectedIds), viewLayer, st.showDownloaded));
       syncMosaic(map, {
         items: itemsForMap(st.groups, visibleGroupIndex(st), st.selectedIds),
         dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
@@ -332,6 +333,8 @@ export default function MapView() {
   const mosaics = mosaicsRef.current;
   // The layer that is the full-resolution view (`viewLayer.ts`) draws it at its
   // place, with its eye.
+  // Results off the map: the crops of the ticked scenes only. Null with them on, so a tick changes nothing here.
+  const cropFilter = resultsOnMap ? null : selectedIds;
   const viewLayer = useMemo(
     () => viewLayerOf(layers, { viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded }),
     [layers, viewLayerId, focusMode, downloaded, appliedRender, cropToAoi, aoi, showDownloaded],
@@ -340,11 +343,11 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current) {
       const note = overlayBudgetNote(
-        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId), viewLayer, showDownloaded)),
+        syncLayers(map, layersForMap(layersOnMap(layers, searchCrops, openSectionId, cropFilter), viewLayer, showDownloaded)),
       );
       if (note && useAppStore.getState().notice !== note) useAppStore.setState({ notice: note });
     }
-  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded]);
+  }, [layers, searchCrops, openSectionId, viewLayer, showDownloaded, cropFilter]);
 
   // --- full-resolution raster tiles (focus mode) — deliberately not keyed on
   // `selectedIds`: a selection toggle must never tear these down and reload
@@ -384,11 +387,12 @@ export default function MapView() {
     const map = mapRef.current;
     if (map && readyRef.current && !focusMode) {
       syncBrowseMosaic(map, {
-        items: itemsForMap(groups, expandedGroupIndex, selectedIds),
+        // Results off the map: only the ticked scenes are drawn (UI-01g).
+        items: itemsForMap(groups, resultsOnMap ? expandedGroupIndex : null, selectedIds),
         dataset: datasets.find((d) => d.id === datasetId) ?? null,
       });
     }
-  }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId]);
+  }, [focusMode, groups, expandedGroupIndex, selectedIds, datasets, datasetId, resultsOnMap]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view

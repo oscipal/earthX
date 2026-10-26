@@ -2,8 +2,9 @@
 //
 // UI-01g (Otto, 26.10.2026): the search results are the fourth panel beside the rail. The symbol counts the
 // scenes, the panel opens by itself after a search, one panel at a time, and everything the list could do
-// before is still there: groups, "Select all", "Load more", the dataset box, "Clear all", and the bar of the
-// selection (view, download) at the bottom.
+// before is still there: groups, "Select all", "Load more", the dataset box, and the bar of the selection
+// (view, download) at the bottom. "Clear all" is gone from the head (Otto, 26.10.2026), where the switch
+// "Hide results" / "Show results" for the map is now.
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -257,7 +258,7 @@ describe('everything the list could do is in the panel', () => {
   it('lists the scenes in groups by pass, with their counts', () => {
     const heads = [...slot('results').querySelectorAll('.result-group-head')];
     expect(heads.map((h) => h.querySelector('.rg-count')?.textContent)).toEqual(['100', '100', '100']);
-    expect(slot('results').querySelector('.results-head-right span')?.textContent).toBe('300');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (300)');
   });
 
   it('opens and closes a group', () => {
@@ -299,13 +300,16 @@ describe('everything the list could do is in the panel', () => {
     const bar = container.querySelector('.download-bar')!;
     expect(bar).not.toBeNull();
     expect(bar.closest('.dock')).toBeNull();
-    expect(bar.textContent).toContain('Full resolution');
-    expect(bar.textContent).toContain('Download crop');
+    expect(bar.textContent).toContain('Crop & merge to AOI');
+    expect(bar.textContent).toContain('Download merged crop');
   });
 
-  it('clears the search with "Clear all" and goes back to the control menu', () => {
-    const clear = [...slot('results').querySelectorAll('button')].find((b) => b.textContent === 'Clear all')!;
-    click(clear);
+  it('has no "Clear all" in its head', () => {
+    expect([...slot('results').querySelectorAll('.results-head button')].map((b) => b.textContent)).toEqual(['Hide results']);
+  });
+
+  it('goes back to the control menu when the search is cleared', () => {
+    act(() => useAppStore.getState().clearAll());
     expect(useAppStore.getState().dock).toBe('controls');
     expect(visible()).toEqual(['dock-controls']);
     expect(slot('results').querySelector('.results-panel')).toBeNull();
@@ -328,5 +332,68 @@ describe('with a view open', () => {
     expect(symbol('results').getAttribute('aria-label')).toBe('Results, 2');
     act(() => useAppStore.setState({ focusMode: false }));
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
+  });
+});
+
+describe('the results on the map (Otto, 26.10.2026)', () => {
+  const toggle = () => [...slot('results').querySelectorAll('.results-head button')][0] as HTMLButtonElement;
+
+  beforeEach(async () => {
+    answer = MANY;
+    await search();
+  });
+
+  it('are on after a search, and the switch offers to hide them', () => {
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(toggle().textContent).toBe('Hide results');
+  });
+
+  it('go off and on with the switch, which always names the next step; the list does not change', () => {
+    click(toggle());
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(toggle().textContent).toBe('Show results');
+    expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (300)');
+    click(toggle());
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    expect(toggle().textContent).toBe('Hide results');
+  });
+
+  it('a scene ticked while they are off is ticked as usual, with the bar of the selection', () => {
+    click(toggle());
+    click(slot('results').querySelector('.result-row input')!);
+    expect(useAppStore.getState().selectedIds).toHaveLength(1);
+    expect(useAppStore.getState().resultsOnMap).toBe(false);
+    expect(container.querySelector('.download-bar')?.textContent).toContain('1 scene selected');
+  });
+
+  it('are on again with a new search, and after the search was cleared', async () => {
+    click(toggle());
+    await search();
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+    click(toggle());
+    act(() => useAppStore.getState().clearAll());
+    expect(useAppStore.getState().resultsOnMap).toBe(true);
+  });
+});
+
+describe('no button of its own clears the results (Otto, 26.10.2026)', () => {
+  it('has none in the panel, the bar of the selection or the controls of the full-resolution view', async () => {
+    answer = MANY;
+    await search();
+    click(slot('results').querySelector('.select-all-box input')!);
+    const clears = () => [...container.querySelectorAll('#dock-results button, .download-bar button, .viewer-controls button')].filter((b) => /^(Clear|Clear all|Clear search results)$/.test(b.textContent?.trim() ?? ''));
+    expect(clears()).toEqual([]);
+    act(() => useAppStore.setState({ focusMode: true }));
+    expect(clears()).toEqual([]);
+  });
+
+  it('only a new search replaces the list', async () => {
+    answer = MANY;
+    await search();
+    expect(useAppStore.getState().items).toHaveLength(300);
+    answer = () => json(FEW);
+    await search();
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (2)');
   });
 });

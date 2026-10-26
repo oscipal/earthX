@@ -707,7 +707,14 @@ function dropPageToken(set: SetState, get: GetState): void {
 // What every replacement of the results resets besides the results themselves.
 function forgetSearch() {
   searchGen += 1;
-  return { searchContext: null, loadingMore: false, loadMoreError: null, loadMoreUsed: false, fallbackDatasetIds: [] };
+  return {
+    searchContext: null,
+    loadingMore: false,
+    loadMoreError: null,
+    loadMoreUsed: false,
+    fallbackDatasetIds: [],
+    resultsOnMap: true,
+  };
 }
 
 // The panels beside the rail (UI-01 §6.9). One is open at a time, or none.
@@ -761,6 +768,9 @@ export interface AppState {
   // --- ui layout ---
   // The panel beside the rail (UI-01 §6.9): one at a time, or none.
   dock: DockPanel | null;
+  // The search results (quicklooks, crops) are drawn on the map (UI-01g). Off, only the scenes ticked in the
+  // list are; the list itself is the same. Every new search starts with it on.
+  resultsOnMap: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
   // swaps ViewBar for ViewerControls (App.tsx) and leaves the results panel with a hint.
   focusMode: boolean;
@@ -906,6 +916,7 @@ export interface AppState {
   // A second click on the open panel's symbol closes it.
   toggleDock: (panel: DockPanel) => void;
   closeDock: () => void;
+  toggleResultsOnMap: () => void;
   // The control panel slides away for a draw or a search (`withoutControls`) and comes back when that is over,
   // unless another panel took its place meanwhile.
   reopenControls: () => void;
@@ -984,6 +995,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewportSize: null,
 
   dock: 'controls',
+  resultsOnMap: true,
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
@@ -1153,6 +1165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return panel === 'results' && !hasResultsPanel(s.sections) ? {} : { dock: panel };
     }),
   closeDock: () => set({ dock: null }),
+  toggleResultsOnMap: () => set((s) => ({ resultsOnMap: !s.resultsOnMap })),
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
   clearAll: () => {
     set({
