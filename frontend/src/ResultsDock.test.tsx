@@ -339,6 +339,28 @@ describe('with a view open (Otto, 26.10.2026: the results never disappear, they 
     expect(slot('results').querySelector('.results-list')).not.toBeNull();
   });
 
+  it('shows the bar of the selection above the controls of the view once a scene is ticked that the view does not draw', async () => {
+    answer = MANY;
+    await search();
+    act(() => useAppStore.setState({ focusMode: true, downloaded: { c0: {} as never }, selectedIds: ['c0'] }));
+    expect(container.querySelector('.download-bar')).toBeNull();
+    expect(container.querySelector('.viewer-controls')).not.toBeNull();
+    click([...slot('results').querySelectorAll('.result-row input')].find((el) => el.getAttribute('aria-label') === 'Select c1')!);
+    expect(useAppStore.getState().selectedIds).toEqual(['c0', 'c1']);
+    expect(container.querySelector('.download-bar')?.textContent).toContain('2');
+    expect(container.querySelector('.viewer-controls')).not.toBeNull();
+    const bottom = container.querySelector('.overlay.bottom')!;
+    expect(bottom.querySelector('.download-bar')!.compareDocumentPosition(bottom.querySelector('.viewer-controls')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows the bar of the selection above the controls of a result view once a scene is ticked', async () => {
+    await search();
+    act(() => useAppStore.setState({ resultViewLayerId: 'some-layer', selectedIds: [] }));
+    expect(container.querySelector('.download-bar')).toBeNull();
+    click(slot('results').querySelector('.result-row input')!);
+    expect(container.querySelector('.download-bar')).not.toBeNull();
+  });
+
   it('keeps the list when the view is a result layer', async () => {
     await search();
     act(() => useAppStore.setState({ resultViewLayerId: 'some-layer' }));

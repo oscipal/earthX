@@ -12,7 +12,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { AOI_CLIP_PROTOCOL, aoiClipProtocol } from '../aoiClip';
 import { areaGeometry, isAreaAnswer, showFootprints } from '../coverage';
 import { bufferPointToPolygon, pointInFootprint, polygonBbox } from '../geoUtils';
-import { itemsForMap } from '../grouping';
+import { itemsForMap, itemsOverView } from '../grouping';
 import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
@@ -91,11 +91,13 @@ function visibleGroupIndex(st: { focusMode: boolean; activeGroupIndex: number; e
 // nothing from repeating it (and `addProtocol` is idempotent either way).
 addProtocol(AOI_CLIP_PROTOCOL, aoiClipProtocol);
 
-// What the results lay over a full-resolution view: the scenes of the open time step, only with the results on the
-// map and only while a view is open (browsing draws them itself).
+// What the results lay over a full-resolution view (browsing draws them itself): the scenes of the open time step
+// with the results on the map, and the ticked scenes the view does not show in any case.
 function resultsOverlayOf(st: ReturnType<typeof useAppStore.getState>) {
   return {
-    items: st.focusMode && st.resultsOnMap ? itemsForMap(st.groups, st.expandedGroupIndex, st.selectedIds) : [],
+    items: st.focusMode
+      ? itemsOverView(st.groups, st.expandedGroupIndex, st.selectedIds, Object.keys(st.downloaded), st.resultsOnMap)
+      : [],
     dataset: st.datasets.find((d) => d.id === st.datasetId) ?? null,
   };
 }
@@ -410,7 +412,7 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (map && readyRef.current) syncResultsOverlay(map, resultsOverlayOf(useAppStore.getState()));
-  }, [focusMode, resultsOnMap, groups, expandedGroupIndex, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, mosaics]);
+  }, [focusMode, resultsOnMap, groups, expandedGroupIndex, selectedIds, datasets, datasetId, downloaded, appliedRender, showDownloaded, viewLayer, aoi, cropToAoi, mosaics]);
 
   // --- selection highlight — cheap, runs in both modes independently of the
   // (potentially expensive) overlay rebuilds above. In a cropped focus view

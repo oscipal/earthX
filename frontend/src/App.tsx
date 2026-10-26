@@ -29,6 +29,9 @@ export default function App() {
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
   const hasSelection = useAppStore((s) => s.selectedIds.length > 0);
+  // A scene ticked in the list while a view is open that the view does not draw: the bar of the selection shows
+  // above the controls of the view, as it does after any click on a result.
+  const tickedBesideView = useAppStore((s) => s.selectedIds.some((id) => !(id in s.downloaded)));
   // "Zoom to selection" zooms to the AOI, else the pinned layer images;
   // with neither, it stays visibly disabled (store.ts::zoomToView).
   const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
@@ -117,13 +120,27 @@ export default function App() {
       {/* Beside the processing side bar, not under it: the time slider picks the pass of an order. */}
       <div className={`overlay bottom${processingOpen ? ' beside-sheet' : ''}`}>
         {focusMode ? (
-          <Draggable>
-            <ViewerControls />
-          </Draggable>
+          <>
+            {tickedBesideView && (
+              <Draggable className="fill">
+                <ViewBar />
+              </Draggable>
+            )}
+            <Draggable>
+              <ViewerControls />
+            </Draggable>
+          </>
         ) : resultView ? (
-          <Draggable>
-            <ResultControls />
-          </Draggable>
+          <>
+            {hasSelection && (
+              <Draggable className="fill">
+                <ViewBar />
+              </Draggable>
+            )}
+            <Draggable>
+              <ResultControls />
+            </Draggable>
+          </>
         ) : (
           <>
             {hasSelection && (
