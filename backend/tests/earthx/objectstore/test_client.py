@@ -57,7 +57,9 @@ def test_the_check_sees_the_public_functions() -> None:
     assert "earthx.objectstore.client.S3.presign_get" in names
 
 
-@pytest.mark.parametrize("name,function", list(_public_callables()), ids=lambda value: str(value))
+# The name is the ID: the `repr` of a function carries its address, which differs from process
+# to process, and pytest-xdist needs every worker to collect the same tests (NM4-23).
+@pytest.mark.parametrize("name,function", [pytest.param(name, function, id=name) for name, function in _public_callables()])
 def test_no_public_function_takes_an_endpoint_host_bucket_or_url(name: str, function: object) -> None:
     parameters = inspect.signature(function).parameters  # type: ignore[arg-type]
     assert not [p for p in parameters if any(word in p.lower() for word in STEERING)], name
