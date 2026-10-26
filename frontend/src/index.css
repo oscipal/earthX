@@ -109,7 +109,8 @@ body {
   flex-direction: column;
   gap: 10px;
   align-items: center;
-  width: min(760px, 92vw);
+  /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
+  width: min(760px, calc(100vw - var(--dock-offset) - 32px));
 }
 .app.dock-open {
   --dock-offset: calc(var(--rail-width) + var(--dock-width));
@@ -2165,7 +2166,7 @@ a.pm-icon:hover {
   }
   .bottom.beside-sheet {
     left: calc((100% + var(--dock-offset)) / 2);
-    width: min(760px, 92vw);
+    width: min(760px, calc(100vw - var(--dock-offset) - 32px));
     bottom: calc(60vh + 12px);
   }
   /* The sheet lies over the lower edge: the badge sits above it, left. */

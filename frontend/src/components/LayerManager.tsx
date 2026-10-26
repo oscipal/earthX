@@ -6,10 +6,9 @@ import { isJobId, resultUrl } from '../processing';
 import { layerProcessBlock, useProcessingStore, ZIP_LABEL } from '../processingStore';
 import { MIN_REMAINING_MS, RESULT_ZIP } from '../resultLayer';
 import { useAppStore } from '../store';
-import { EXPIRED_TIP } from './jobView';
 import Tip from './Tip';
 
-export const EXPIRED_LAYER_TEXT = 'Expired: the results of this job are gone. Start the job again.';
+export const EXPIRED_LAYER_TEXT = 'Expired: results are kept for 7 days. Start the job again.';
 export const RESAMPLED_LAYER_TEXT = 'Resampled to a common grid';
 
 // Marks a result layer "Expired" when the time comes (M4-13c-5): one timer for the
@@ -38,16 +37,9 @@ function Slot({ col }: { col: string }) {
 }
 
 // "Download (ZIP)" of a result layer: the archive of the job, the same link as in its details. Once the
-// results are gone the link is gone too, and the reason is the tooltip.
+// results are gone there is nothing to download: the place stays empty and the ⚠ of the row says why.
 function ResultDownload({ jobID, expired }: { jobID: string; expired: boolean }) {
-  if (expired) {
-    return (
-      <button type="button" className="lm-btn has-tip" data-col="download" aria-disabled="true" data-tip={EXPIRED_TIP} aria-label={`${ZIP_LABEL}: ${EXPIRED_TIP}`}>
-        ⇩
-      </button>
-    );
-  }
-  if (!isJobId(jobID)) return <Slot col="download" />;
+  if (expired || !isJobId(jobID)) return <Slot col="download" />;
   return (
     <a className="lm-btn" data-col="download" href={resultUrl(jobID, RESULT_ZIP)} download rel="noopener noreferrer" title={ZIP_LABEL} aria-label={ZIP_LABEL}>
       ⇩

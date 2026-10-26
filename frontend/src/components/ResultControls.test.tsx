@@ -119,18 +119,18 @@ describe('"Download (ZIP)" in the row of a result layer', () => {
     expect(inDetails?.getAttribute('href')).toBe(link.getAttribute('href'));
   });
 
-  it('is locked once the results are gone, and says why', async () => {
+  // Otto, 26.10.2026: what cannot be done at all is not shown; the reason is the ⚠ of the row.
+  it('is not shown once the results are gone: the place stays empty and the ⚠ says why', async () => {
     await showOnMap();
     act(() => useAppStore.getState().expireResultLayers(Date.parse(layers()[0].result!.expires) + 1));
     act(() => root.render(<LayerManager />));
-    const locked = container.querySelector<HTMLElement>('.layer-row [data-col="download"]')!;
-    expect(locked.tagName).toBe('BUTTON');
-    expect(locked.getAttribute('aria-disabled')).toBe('true');
-    expect(locked.hasAttribute('href')).toBe(false);
-    expect(locked.getAttribute('data-tip')).toBe('Expired: results are kept for 7 days.');
-    expect(locked.getAttribute('aria-label')).toContain('Expired: results are kept for 7 days.');
-    click(locked);
-    expect(container.querySelector('a[data-col="download"]')).toBeNull();
+    const row = container.querySelector('.layer-row')!;
+    const empty = row.querySelector<HTMLElement>('[data-col="download"]')!;
+    expect(empty.tagName).toBe('SPAN');
+    expect(empty.getAttribute('aria-hidden')).toBe('true');
+    expect(row.querySelector('a')).toBeNull();
+    expect(row.querySelector('.lm-note .tip')?.getAttribute('data-tip')).toContain('Expired: results are kept for 7 days.');
+    expect([...row.children].map((c) => c.getAttribute('data-col'))).toHaveLength(9);
   });
 
   it('is not made of a job id that is none', () => {
@@ -324,25 +324,29 @@ describe('the range of a result layer', () => {
 });
 
 describe('a result drawn as it is, or gone', () => {
-  it('has no range to set when its values are whole numbers', async () => {
+  it('shows no range, colormap or "Apply" for whole numbers, and says why', async () => {
     tileJsonBody = { ...TILE_JSON, data_type: 'uint16' };
     await openView();
     expect(urlOf()).not.toContain('rescale');
-    expect(field('vmin').disabled).toBe(true);
-    expect(field('vmax').disabled).toBe(true);
-    expect(field('Colormap').disabled).toBe(true);
-    expect(button('Apply')?.disabled).toBe(true);
+    expect(container.querySelector('.vc-num')).toBeNull();
+    expect(container.querySelector('select')).toBeNull();
+    expect(button('Apply')).toBeUndefined();
+    expect(button('auto')).toBeUndefined();
     expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/whole numbers/u);
-    // The opacity stays.
+    // The opacity stays, and the way out.
     expect(field('Opacity').disabled).toBe(false);
+    expect(button('‹ Close')).toBeDefined();
   });
 
-  it('has no range to set once it expired, and says so', async () => {
+  it('shows no range, colormap or "Apply" once it expired', async () => {
     await openView();
+    expect(button('Apply')).toBeDefined();
     act(() => useAppStore.getState().expireResultLayers(Date.parse(layers()[0].result!.expires) + 1));
-    expect(field('vmin').disabled).toBe(true);
-    expect(button('Apply')?.disabled).toBe(true);
-    expect(container.querySelector('.vc-head .tip')?.getAttribute('data-tip')).toMatch(/^Expired/u);
+    expect(container.querySelector('.vc-num')).toBeNull();
+    expect(container.querySelector('select')).toBeNull();
+    expect(button('Apply')).toBeUndefined();
+    expect(button('auto')).toBeUndefined();
+    expect(field('Opacity').disabled).toBe(false);
   });
 });
 

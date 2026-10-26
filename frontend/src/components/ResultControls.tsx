@@ -14,7 +14,6 @@ import { useAppStore } from '../store';
 import Tip from './Tip';
 
 const WHOLE_NUMBERS_TIP = 'A result of whole numbers is drawn as it is: it has no range or colormap to set.';
-const EXPIRED_TIP = 'Expired: the results of this job are gone.';
 
 function Controls({ layer }: { layer: MapLayer }) {
   const info = layer.result;
@@ -28,7 +27,8 @@ function Controls({ layer }: { layer: MapLayer }) {
   const [problem, setProblem] = useState<string | null>(null);
   if (!info) return null;
   const adjustable = info.dataType !== null && /^float/.test(info.dataType);
-  const locked = info.expired || !adjustable;
+  // What cannot be set at all is not shown: a result of whole numbers is drawn as it is, an expired one not at all.
+  const settable = adjustable && !info.expired;
   const edit = (patch: Partial<PreviewRange>) => {
     setDraft((d) => ({ ...d, ...patch }));
     setProblem(null);
@@ -60,40 +60,37 @@ function Controls({ layer }: { layer: MapLayer }) {
           <button type="button" className="link-btn" title="Close this view and show the search results again" onClick={() => close()}>
             ‹ Close
           </button>
-          {info.expired && <Tip text={EXPIRED_TIP} symbol="⚠" tone="warn" />}
-          {!info.expired && !adjustable && <Tip text={WHOLE_NUMBERS_TIP} />}
+          {!adjustable && !info.expired && <Tip text={WHOLE_NUMBERS_TIP} />}
         </div>
       </div>
 
       <div className="vc-render">
-        <label className="vc-field">
-          <span>Colormap</span>
-          <select value={draft.colormap} disabled={locked} onChange={(e) => edit({ colormap: e.target.value })}>
-            <option value="">— none —</option>
-            {COLORMAPS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="vc-field vc-num">
-          <span>vmin</span>
-          <input type="number" value={draft.vmin} disabled={locked} onChange={(e) => edit({ vmin: e.target.value })} />
-        </label>
-        <label className="vc-field vc-num">
-          <span>vmax</span>
-          <input type="number" value={draft.vmax} disabled={locked} onChange={(e) => edit({ vmax: e.target.value })} />
-        </label>
-        <button
-          type="button"
-          className="link-btn"
-          disabled={locked}
-          title="Back to the range of the statistics of this result"
-          onClick={auto}
-        >
-          auto
-        </button>
+        {settable && (
+          <>
+            <label className="vc-field">
+              <span>Colormap</span>
+              <select value={draft.colormap} onChange={(e) => edit({ colormap: e.target.value })}>
+                <option value="">— none —</option>
+                {COLORMAPS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="vc-field vc-num">
+              <span>vmin</span>
+              <input type="number" value={draft.vmin} onChange={(e) => edit({ vmin: e.target.value })} />
+            </label>
+            <label className="vc-field vc-num">
+              <span>vmax</span>
+              <input type="number" value={draft.vmax} onChange={(e) => edit({ vmax: e.target.value })} />
+            </label>
+            <button type="button" className="link-btn" title="Back to the range of the statistics of this result" onClick={auto}>
+              auto
+            </button>
+          </>
+        )}
         <label className="vc-field">
           <span>Opacity</span>
           <input
@@ -107,16 +104,17 @@ function Controls({ layer }: { layer: MapLayer }) {
             onChange={(e) => setOpacity(layer.id, Number(e.target.value))}
           />
         </label>
-        <button type="button" className="primary-btn vc-apply" disabled={locked} onClick={apply}>
-          Apply
-        </button>
+        {settable && (
+          <button type="button" className="primary-btn vc-apply" onClick={apply}>
+            Apply
+          </button>
+        )}
       </div>
-      {problem && (
+      {settable && problem && (
         <p className="hint-text warn" role="alert">
           {problem}
         </p>
       )}
-
     </div>
   );
 }
