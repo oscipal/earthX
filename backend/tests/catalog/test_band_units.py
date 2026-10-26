@@ -9,9 +9,10 @@ from types import MappingProxyType
 import pytest
 
 from earthx.catalog.collection import to_stac_collection
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import VARIABLE_LIST_SEPARATOR, ConfigError, DatasetConfig, single_asset_keys
 from earthx.readers import zarr_reader
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
 
 class TestTheEntries:
@@ -22,9 +23,9 @@ class TestTheEntries:
             (SENTINEL_2_L2A, "swir22", "1"),
             (SENTINEL_2_L2A, "scl", None),
             (SENTINEL_2_L2A, "visual", None),
-            (SENTINEL_2_L2A_ZARR3, "SR_10m:b04", "1"),
-            (SENTINEL_2_L2A_ZARR3, "SR_60m:b09", "1"),
-            (SENTINEL_2_L2A_ZARR3, "SCL_20m:scl", None),
+            (SYNTHETIC_ZARR, "SR_10m:b04", "1"),
+            (SYNTHETIC_ZARR, "SR_60m:b09", "1"),
+            (SYNTHETIC_ZARR, "SCL_20m:scl", None),
             (COP_DEM_GLO_30, "data", "m"),
         ],
     )
@@ -36,9 +37,9 @@ class TestTheEntries:
         assert SENTINEL_2_L2A.band_unit(asset) is None
 
     def test_a_group_pattern_is_not_an_exact_key_of_another_group(self) -> None:
-        assert SENTINEL_2_L2A_ZARR3.band_unit("ATM_10m:aot") is None
+        assert SYNTHETIC_ZARR.band_unit("ATM_10m:aot") is None
 
-    @pytest.mark.parametrize("entry", list(REGISTRY), ids=lambda entry: entry.dataset_id)
+    @pytest.mark.parametrize("entry", TEST_ENTRIES, ids=lambda entry: entry.dataset_id)
     def test_the_default_render_and_the_mask_each_have_a_key(self, entry) -> None:
         separator = entry.zarr.variable_separator if entry.zarr is not None else None
         wanted = list(entry.default_render.assets) + ([entry.mask.asset] if entry.mask is not None else [])
@@ -112,7 +113,7 @@ class TestConsistency:
 
     def test_every_variable_of_a_zarr_render_needs_a_key(self) -> None:
         with pytest.raises(ConfigError, match="no entry for 'SR_10m:b03'"):
-            replace(SENTINEL_2_L2A_ZARR3, band_units={"SR_10m:b04": "1", "SCL_20m:scl": None})
+            replace(SYNTHETIC_ZARR, band_units={"SR_10m:b04": "1", "SCL_20m:scl": None})
 
     def test_an_explicit_none_counts_as_an_entry(self, valid_config) -> None:
         entry = replace(valid_config, band_units={"red": None, "green": None, "blue": None})

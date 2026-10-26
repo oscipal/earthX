@@ -57,22 +57,23 @@ from earthx.processing.operators import applicable
 from earthx.processing.recipe import recipe_hash
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import UnsupportedFormat
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.catalog.test_onboarding_checklist import CHECKED_ELSEWHERE, CHECKLIST
 from tests.earthx.processing import sources
 from tests.earthx.readers import mini_dem, mini_zarr, mini_zarr_cf
 
-#: Q14: band math for the two Sentinel-2 entries, reprojection for the DEM.
+#: Q14: band math for the Sentinel-2 entry and the Zarr test entry, reprojection for the DEM.
 OPERATOR_FOR = {
     "sentinel-2-c1-l2a": "band_math",
-    "sentinel-2-l2a-zarr3": "band_math",
+    "synthetic-zarr": "band_math",
     "cop-dem-glo-30": "reproject",
 }
 
-ENTRIES = list(REGISTRY)
+ENTRIES = list(TEST_ENTRIES)
 BAND_MATH_ENTRIES = [config for config in ENTRIES if OPERATOR_FOR.get(config.dataset_id) == "band_math"]
 
 SIDE = 300  # pixels of a synthetic Sentinel-2 band
-ZOOM = 14  # a level that reads the native resolution of both Sentinel-2 stores
+ZOOM = 14  # a level that reads the native resolution of both stores
 ZARR_ASSET = "SR_10m:b04,b08"
 REPROJECT = {"crs": "EPSG:32632", "resolution": 100.0, "resampling": "bilinear"}
 BAND = {"data_type": "uint16", "nodata": 0, "raster:scale": sources.SCALE, "raster:offset": sources.OFFSET}
@@ -193,7 +194,7 @@ def _zarr_pair(config: DatasetConfig, tmp_path: Path, monkeypatch: pytest.Monkey
     sources.serve({}, monkeypatch, zarr_root=root)
     synthetic_chain.resolve_from_memory(monkeypatch)
     bounds = mini_zarr_cf.store_bounds()
-    # The item carries no scaling, like the real EOPF items: the store's CF attributes do (F7a).
+    # The item carries no scaling: the store's CF attributes do (F7a).
     item = synthetic_chain.stac_item("SR_10m", mini_zarr_cf.GROUP_URL, bounds, mini_zarr_cf.RESOLUTION_M)
     item["properties"]["updated"] = "2026-01-03T00:00:00Z"
     return _federated(
@@ -293,7 +294,11 @@ def walked(scenario: Scenario, tmp_path: Path) -> Walk:
     return walk(scenario, tmp_path / "job")
 
 
-@pytest.fixture(params=BAND_MATH_ENTRIES, ids=[config.dataset_id for config in BAND_MATH_ENTRIES])
+def _on_band_math_entries(entries: list[DatasetConfig]) -> pytest.MarkDecorator:
+    return pytest.mark.parametrize("band_math", entries, indirect=True, ids=[config.dataset_id for config in entries])
+
+
+@pytest.fixture
 def band_math(request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scenario:
     (tmp_path / "stores").mkdir()
     return build(request.param, tmp_path / "stores", monkeypatch)
@@ -323,6 +328,31 @@ def test_every_assigned_operator_exists_and_applies_to_its_entry() -> None:
         operator = OPERATORS.operator(OPERATOR_FOR[config.dataset_id], 2 if OPERATOR_FOR[config.dataset_id] == "reproject" else 1)
         params = operator.params.model_validate(REPROJECT if operator.op == "reproject" else {"expression": "a + b"})
         assert applicable(operator, config, params) == [], config.dataset_id
+
+
+def _zarr_case_missing(entries: Iterable[DatasetConfig]) -> str | None:
+    if any(config.format is DataFormat.ZARR for config in entries):
+        return None
+    return "no Zarr entry: the tile-equals-job comparison on the Zarr store (adr/0014 §15d) would silently vanish"
+
+
+def _entries_of(test: Any) -> list[DatasetConfig]:
+    (mark,) = [m for m in test.pytestmark if m.name == "parametrize" and m.args[0] == "band_math"]
+    return list(mark.args[1])
+
+
+def test_the_zarr_case_of_the_native_level_comes_from_the_test_entry() -> None:
+    """The registry has no Zarr dataset; the Zarr comparison (adr/0014 §15d) runs on the test entry alone."""
+    assert _zarr_case_missing(REGISTRY) is not None, "the registry has a Zarr entry: this case no longer needs the test entry"
+    assert _zarr_case_missing(ENTRIES) is None, _zarr_case_missing(ENTRIES)
+    parametrized = _entries_of(test_the_tile_equals_the_job_on_the_native_level)
+    assert SYNTHETIC_ZARR in parametrized, _zarr_case_missing(parametrized)
+    assert _zarr_case_missing(parametrized) is None
+
+
+def test_a_run_over_the_registry_alone_is_found_to_lack_the_zarr_case() -> None:
+    """The counter-check: without the test entry the guard names what goes missing."""
+    assert "adr/0014 §15d" in (_zarr_case_missing(list(REGISTRY)) or "")
 
 
 def test_a_format_without_a_synthetic_store_fails_instead_of_passing(
@@ -439,6 +469,7 @@ def _zarr_boundary_distance(tile: tuple[int, int, int]) -> numpy.ndarray:
     return numpy.minimum(numpy.abs(col - numpy.round(col)), numpy.abs(row - numpy.round(row)))
 
 
+@_on_band_math_entries(BAND_MATH_ENTRIES)
 def test_the_tile_equals_the_job_on_the_native_level(band_math: Scenario, tmp_path: Path) -> None:
     s = band_math
     walked = walk(s, tmp_path / "job")
@@ -466,6 +497,7 @@ def test_the_tile_equals_the_job_on_the_native_level(band_math: Scenario, tmp_pa
         assert not (differing & (_zarr_boundary_distance(s.tile) > 0.125)).any()
 
 
+@_on_band_math_entries(BAND_MATH_ENTRIES)
 def test_a_tile_of_a_different_expression_is_not_the_job(band_math: Scenario, tmp_path: Path) -> None:
     """The comparison can fail: another expression gives other pixels."""
     s = band_math

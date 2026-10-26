@@ -107,8 +107,8 @@ const CAPABILITIES = {
 function zarrLikeDataset() {
   const [dataset] = datasetsFrom([
     {
-      id: 'sentinel-2-l2a-zarr3',
-      title: 'Sentinel-2 L2A (Zarr3)',
+      id: 'synthetic-zarr',
+      title: 'Synthetic Zarr dataset',
       'earthx:capabilities': CAPABILITIES,
       'earthx:viewer': {
         group_by: ['datetime'],

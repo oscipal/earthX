@@ -25,11 +25,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol
 
-from earthx.adapters import cop_dem_bucket, earth_search, eopf_stac
+from earthx.adapters import cop_dem_bucket, earth_search
 from earthx.adapters.cache import SearchCache
 from earthx.adapters.cop_dem_bucket import MaterializeOutcome
 from earthx.adapters.earth_search_coverage import aggregate_coverage
-from earthx.adapters.eopf_sample_coverage import sample_coverage
 from earthx.adapters.errors import AdapterSpecMismatch
 from earthx.adapters.federated_search import ItemPage, SearchParams
 from earthx.catalog.coverage import CoverageQuery, CoverageResult
@@ -115,14 +114,6 @@ ADAPTER_SPECS: AdapterSpecs = spec_table(
         coverage={CoverageProvider.UPSTREAM_AGGREGATION: aggregate_coverage},
         # CQL2 is not answered by this source (measured, M3-13 plan §2.3).
         filters=FilterSupport(intersects=True, ids=True, cql2=False),
-    ),
-    AdapterSpec(
-        kind=AdapterKind.EOPF_STAC_V1,
-        search=eopf_stac.search_items,
-        fetch=eopf_stac.get_item,
-        materialize=None,
-        coverage={CoverageProvider.SAMPLE: sample_coverage},
-        filters=FilterSupport(intersects=True, ids=True, cql2=True),
     ),
     AdapterSpec(
         kind=AdapterKind.COP_DEM_BUCKET,

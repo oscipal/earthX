@@ -1,7 +1,7 @@
 """Every registry entry's items: an asset with band names also carries the core field ``bands`` (M4-23).
 
 One synthetic item per dataset, taken through the adapter path that item would take
-(the EOPF normaliser, the Earth Search pass-through, the DEM item builder). A new
+(the Earth Search pass-through, for a COG and for a Zarr item, the DEM item builder). A new
 registry entry fails ``test_every_registry_entry_is_covered`` until it is added here.
 """
 
@@ -16,9 +16,11 @@ import pytest
 
 from earthx.adapters.cop_dem_bucket import _item as dem_item
 from earthx.adapters.earth_search import get_item as earth_search_item
-from earthx.adapters.eopf_stac import normalize_item
 from earthx.adapters.federated_search import with_core_bands
-from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
+from earthx.gateway import Policy
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
+from tests.earthx.readers import mini_zarr
 
 from .conftest import answering, load
 
@@ -34,16 +36,22 @@ def assets_missing_bands(item: Mapping[str, Any]) -> list[str]:
     ]
 
 
-def eopf_item() -> dict[str, Any]:
+async def zarr_fixture() -> dict[str, Any]:
+    """A Zarr dataset's item as its source states it: ``eo:bands`` per group, no core ``bands``."""
+    href = f"https://{mini_zarr.HOST}/synth/1.zarr/measurements/reflectance"
     assets = {
         "SR_10m": {
-            "href": "https://data.eodc.eu/synth/1.zarr/measurements/reflectance/r10m",
-            "bands": [{"name": "b04", "eo:common_name": "red"}, {"name": "b08", "eo:common_name": "nir"}],
+            "href": f"{href}/r10m",
+            "eo:bands": [{"name": "b04", "common_name": "red"}, {"name": "b08", "common_name": "nir"}],
         },
-        "SR_20m": {"href": "https://data.eodc.eu/synth/1.zarr/measurements/reflectance/r20m", "bands": [{"name": "b05"}]},
-        "product_metadata": {"href": "https://data.eodc.eu/synth/1.zarr/product"},
+        "SR_20m": {"href": f"{href}/r20m", "eo:bands": [{"name": "b05"}]},
+        "product_metadata": {"href": f"https://{mini_zarr.HOST}/synth/1.zarr/product"},
     }
-    return normalize_item({"type": "Feature", "id": "SYNTH_A", "stac_version": "1.1.0", "assets": assets})
+    item = {"type": "Feature", "id": "SYNTH_A", "stac_version": "1.0.0", "assets": assets}
+    policy = Policy(allowed_hosts=frozenset({"stac.example.invalid"}))
+    gateway, _ = answering(httpx.Response(200, json=item), policy=policy)
+    async with gateway:
+        return await earth_search_item(SYNTHETIC_ZARR, "SYNTH_A", gateway=gateway)
 
 
 async def earth_search_fixture() -> dict[str, Any]:
@@ -60,13 +68,13 @@ def dem_fixture() -> dict[str, Any]:
 async def items_by_dataset() -> dict[str, dict[str, Any]]:
     return {
         SENTINEL_2_L2A.dataset_id: await earth_search_fixture(),
-        SENTINEL_2_L2A_ZARR3.dataset_id: eopf_item(),
+        SYNTHETIC_ZARR.dataset_id: await zarr_fixture(),
         COP_DEM_GLO_30.dataset_id: dem_fixture(),
     }
 
 
 def test_every_registry_entry_is_covered() -> None:
-    covered = {SENTINEL_2_L2A.dataset_id, SENTINEL_2_L2A_ZARR3.dataset_id, COP_DEM_GLO_30.dataset_id}
+    covered = {SENTINEL_2_L2A.dataset_id, COP_DEM_GLO_30.dataset_id}
     assert {entry.dataset_id for entry in REGISTRY} == covered
 
 
@@ -76,7 +84,7 @@ async def test_every_asset_with_bands_carries_the_core_field() -> None:
 
 
 async def test_the_zarr_item_does_name_its_bands_so_the_check_is_not_vacuous() -> None:
-    item = (await items_by_dataset())[SENTINEL_2_L2A_ZARR3.dataset_id]
+    item = (await items_by_dataset())[SYNTHETIC_ZARR.dataset_id]
     assert [band["name"] for band in item["assets"]["SR_10m"]["bands"]] == ["b04", "b08"]
     assert "bands" not in item["assets"]["product_metadata"]
 
@@ -103,8 +111,8 @@ def test_core_bands_leave_an_existing_bands_and_a_missing_or_odd_eo_bands_alone(
     assert with_core_bands("asset") == "asset"
 
 
-def test_the_check_notices_an_asset_that_lost_its_bands() -> None:
-    item = eopf_item()
+async def test_the_check_notices_an_asset_that_lost_its_bands() -> None:
+    item = await zarr_fixture()
     del item["assets"]["SR_10m"]["bands"]
     assert assets_missing_bands(item) == ["SR_10m"]
     item["assets"]["SR_20m"]["bands"] = []

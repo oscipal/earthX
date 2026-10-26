@@ -86,8 +86,8 @@ const CAPABILITIES = {
 const dataset = () =>
   datasetsFrom([
     {
-      id: 'sentinel-2-l2a-zarr3',
-      title: 'Sentinel-2 L2A (Zarr3)',
+      id: 'synthetic-zarr',
+      title: 'Synthetic Zarr dataset',
       'earthx:capabilities': CAPABILITIES,
       'earthx:viewer': {
         group_by: ['datetime'],
@@ -114,7 +114,7 @@ const scene = (id: string): StacItem => ({
   assets: { SR_10m: { href: 'https://data.test/x.zarr/r10m', roles: ['data'] } },
 });
 const downloadedOf = (id: string): DownloadedInfo => ({
-  tileUrl: `/collections/sentinel-2-l2a-zarr3/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
+  tileUrl: `/collections/synthetic-zarr/items/${id}/tiles/WebMercatorQuad/{z}/{x}/{y}?asset=visual`,
   bounds: [10, 47, 11, 48],
   asset: 'visual',
   minZoom: 8,

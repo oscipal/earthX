@@ -24,6 +24,7 @@ from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.recipe import parse_request
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.api.conftest import build_app
 from tests.earthx.api.test_intake import SCALE_STEP, order
 from tests.earthx.processing.testops import COARSEN, OPERATORS, SCALE
@@ -287,9 +288,8 @@ class TestWhatThePanelReads:
             parse_request(json.dumps(order(steps=[step])), OPERATORS)
 
     def test_the_separator_of_a_zarr_dataset_is_in_the_schema_of_its_assets(self) -> None:
-        eopf = REGISTRY.get("sentinel-2-l2a-zarr3")
-        assets = order_schema(OPERATORS, eopf)["$defs"]["InputRequest"]["properties"]["assets"]
-        assert assets["x-earthx-variable-separator"] == eopf.zarr.variable_separator != ""
+        assets = order_schema(OPERATORS, SYNTHETIC_ZARR)["$defs"]["InputRequest"]["properties"]["assets"]
+        assert assets["x-earthx-variable-separator"] == SYNTHETIC_ZARR.zarr.variable_separator != ""
 
     def test_a_cog_dataset_has_no_separator_and_nothing_is_guessed(self) -> None:
         for dataset in ("sentinel-2-c1-l2a", "cop-dem-glo-30"):
@@ -301,7 +301,7 @@ class TestWhatThePanelReads:
         assert "x-earthx-variable-separator" not in assets
 
     def test_the_separator_of_a_dataset_never_changes_the_schema_of_another(self) -> None:
-        order_schema(OPERATORS, REGISTRY.get("sentinel-2-l2a-zarr3"))
+        order_schema(OPERATORS, SYNTHETIC_ZARR)
         assets = order_schema(OPERATORS, S2)["$defs"]["InputRequest"]["properties"]["assets"]
         assert "x-earthx-variable-separator" not in assets
 

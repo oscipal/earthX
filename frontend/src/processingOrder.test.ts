@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import cop from './fixtures/processes/cop-dem-glo-30.json';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
-import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
+import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon, bufferPointToPolygon } from './geoUtils';
 import { placeAoi } from './placeSearch';
 import type { ProcessDescription } from './processing';
@@ -60,7 +60,7 @@ describe('processInfo from the fixtures (K3)', () => {
 
   it.each([
     ['sentinel-2-c1-l2a', S2],
-    ['sentinel-2-l2a-zarr3', ZARR],
+    ['synthetic-zarr', ZARR],
     ['cop-dem-glo-30', DEM],
   ])('%s: every operator has a form the panel supports', (_, info) => {
     expect(info.operators.length).toBeGreaterThan(0);

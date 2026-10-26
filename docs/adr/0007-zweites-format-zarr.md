@@ -7,6 +7,11 @@
   Adapter normalisieren; **F5** Python bleibt 3.11, `zarr` auf 3.1.x; **F6**
   Mini-Zarr per Skript im Test; **F7** mit F1 gegenstandslos, bleibt als
   Rückfallweg stehen. §6 gibt den entschiedenen Stand wieder.
+  **Nachtrag vom 2026-10-25 (`adr/0017`, NM4-15b):** Die Wahl des Datensatzes
+  (F8, §12) ist abgelöst: `sentinel-2-l2a-zarr3` verließ Registry und Katalog,
+  Adapter, Stichprobe und Fixtures gingen mit. Das Ergebnis dieses ADR, der
+  Zarr-Lesepfad hinter `gateway`, bleibt gebaut und wird auf synthetischen
+  Stores getestet. Der Originaltext bleibt stehen.
   **Nachgemessen am 2026-09-20 (M2-03b), und damit vollständig angenommen:**
   Die in §9.1 offen gebliebenen Aussagen über die bisher gesperrten Collections
   stehen jetzt in **§12**. Wo §12 einer Aussage aus §3 bis §7 widerspricht, gilt

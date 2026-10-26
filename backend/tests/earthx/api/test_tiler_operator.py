@@ -26,12 +26,13 @@ from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 from rio_tiler.io import Reader
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.recipe import recipe_from_data
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 from tests.earthx.readers import mini_zarr, mini_zarr_cf
@@ -39,7 +40,7 @@ from tests.earthx.readers import mini_zarr, mini_zarr_cf
 WIDTH, HEIGHT = 700, 600
 ITEM = "ITEM_A"
 COG = "synthetic-cog"
-ZARR = "synthetic-zarr"
+ZARR = SYNTHETIC_ZARR.dataset_id
 ZOOM = 14
 NDVI = "(nir - red) / (nir + red)"
 OP = {"op": "band_math", "op_version": "1"}
@@ -47,9 +48,7 @@ OP = {"op": "band_math", "op_version": "1"}
 COG_DATASET = replace(
     SENTINEL_2_L2A, dataset_id=COG, source=replace(SENTINEL_2_L2A.source, asset_hosts=(sources.HOST,))
 )
-ZARR_DATASET = replace(
-    SENTINEL_2_L2A_ZARR3, dataset_id=ZARR, source=replace(SENTINEL_2_L2A_ZARR3.source, asset_hosts=(mini_zarr.HOST,))
-)
+ZARR_DATASET = SYNTHETIC_ZARR
 DISPLAY_ONLY = replace(
     COG_DATASET, dataset_id="synthetic-display", license=replace(COG_DATASET.license, tier=LicenseTier.DISPLAY)
 )

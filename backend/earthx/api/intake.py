@@ -82,16 +82,18 @@ from earthx.access.resolve import (
     ResolvedAsset,
     resolve_asset,
 )
-from earthx.adapters import UnknownCollection, dataset_config
+from earthx.adapters import RetiredCollection, UnknownCollection, dataset_config
 from earthx.api.citation import citation_bib
 from earthx.api.item_source import ItemSource, OrderRefused, fetch_item_or_refuse, malformed_item_detail
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     AcquisitionYears,
+    Attributable,
     DatasetConfig,
     DatasetRegistry,
     LicenseTier,
     MissingProperty,
+    RetiredDatasetError,
     UnknownDatasetError,
     acquisition_day,
     group_key,
@@ -308,6 +310,8 @@ async def _prepare(
 
     try:
         config = dataset_config(registry, entry.dataset)
+    except RetiredCollection as error:
+        raise OrderRefused(410, error.retired.message, "dataset") from None
     except UnknownCollection:
         raise OrderRefused(422, f"no dataset {entry.dataset!r}", "dataset") from None
     if config.license.tier is not LicenseTier.PROCESSING:
@@ -463,7 +467,7 @@ def _recipe_of(
 
 
 def side_files(
-    config: DatasetConfig,
+    config: Attributable,
     *,
     groups: Sequence[Sequence[str]],
     assets: Sequence[str],
@@ -544,7 +548,7 @@ SCENE_AOI_PROPERTIES = {"earthx:aoi": "union of the footprints of the scenes; th
 
 
 def job_side_files(
-    config: DatasetConfig | None,
+    config: Attributable | None,
     body: Mapping[str, Any],
     *,
     finished: datetime,
@@ -804,7 +808,7 @@ def _zarr_scenes_off_the_grid(
     """The scenes whose own metadata proves that they are not on the grid of the first (M4-12a).
 
     A Zarr item carries neither ``proj:transform`` nor ``proj:shape``; it does carry the extent of its
-    raster as ``proj:bbox`` (metres, for the zarr3 collection) and the pixel size as ``gsd`` of its asset.
+    raster as ``proj:bbox`` (metres, for the EOPF Zarr collection) and the pixel size as ``gsd`` of its asset.
     That is enough to *prove* a scene off the grid with the rule of the core (``lies_on_grid``), not to
     prove it on: a scene without a usable ``proj:bbox`` or ``gsd`` is left to the run, which opens the
     store and refuses a scene off the grid with the same words.
@@ -878,6 +882,8 @@ def check_recipe_hosts(recipe: Recipe, registry: DatasetRegistry) -> None:
     for entry in recipe.inputs:
         try:
             config = registry.get(entry.dataset)
+        except RetiredDatasetError as error:
+            raise OrderRefused(410, error.retired.message, "dataset") from None
         except UnknownDatasetError:
             raise OrderRefused(400, f"no dataset {entry.dataset!r}", "dataset") from None
         _check_hosts_of(recipe, config)
@@ -1193,7 +1199,7 @@ def crop_recipe_json(
 
 def methods_bytes(
     recipe_json: bytes,
-    config: DatasetConfig | None,
+    config: Attributable | None,
     operators: OperatorRegistry | None = None,
     acquired_on: date | None = None,
 ) -> bytes:
@@ -1212,7 +1218,7 @@ def methods_bytes(
 def job_recipe_json(
     body: Mapping[str, Any],
     *,
-    config: DatasetConfig | None,
+    config: Attributable | None,
     result: Mapping[str, Any],
     started: datetime | None,
     finished: datetime | None,

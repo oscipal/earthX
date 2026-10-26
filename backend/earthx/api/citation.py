@@ -12,7 +12,7 @@ import re
 from datetime import date
 
 from earthx.access.download import attribution_text
-from earthx.catalog.registry import AcquisitionYears, DatasetConfig, doi_name
+from earthx.catalog.registry import AcquisitionYears, Attributable, doi_name
 
 __all__ = ["citation_bib"]
 
@@ -38,7 +38,7 @@ def _escaped(text: str) -> str:
     return "".join(_ESCAPES.get(char, char) for char in " ".join(text.split()))
 
 
-def citation_bib(config: DatasetConfig, *, downloaded: date, years: AcquisitionYears | None) -> bytes:
+def citation_bib(config: Attributable, *, downloaded: date, years: AcquisitionYears | None) -> bytes:
     """The ``@misc`` entry of ``config``, UTF-8, with ``downloaded`` as its ``urldate``.
 
     ``years`` are those the scenes were acquired in (NM4-01), which the attribution names: ``urldate``

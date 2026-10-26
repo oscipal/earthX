@@ -17,7 +17,7 @@ Seit M4-19b nennt die Registry Einheiten je Asset (`earthx:band_units`). `aot`, 
 
 ## 3. Umfang
 
-- Quelle je Asset im PR zitieren; gilt auch für den EOPF-Datensatz, solange es ihn gibt (NM4-15).
+- Quelle je Asset im PR zitieren; der EOPF-Datensatz entfällt mit NM4-15b (25.10.2026); NM4-16 betrifft nur noch `sentinel-2-c1-l2a`.
 
 ## 4. Grenzen
 

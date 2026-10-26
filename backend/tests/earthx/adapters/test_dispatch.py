@@ -29,16 +29,16 @@ from earthx.adapters import (
     search_items,
 )
 from earthx.adapters.spec import AdapterSpec, FilterSupport, spec_table
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import AdapterKind, CoverageProvider, DatasetRegistry, ItemHolding
 from earthx.gateway import Policy
 from earthx.gateway.client import Gateway
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 pytestmark = pytest.mark.anyio
 
 EARTH_SEARCH_FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search"
-EOPF_FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "eopf_stac"
-BOTH_HOSTS = frozenset({"earth-search.aws.element84.com", "stac.core.eopf.eodc.eu"})
+BOTH_HOSTS = frozenset({"earth-search.aws.element84.com", "stac.example.invalid"})
 
 
 def load(directory: Path, name: str) -> dict[str, Any]:
@@ -63,7 +63,7 @@ def gateway_for(response: httpx.Response) -> tuple[Gateway, list[httpx.Request]]
     return Gateway(policy, transport=httpx.MockTransport(handler), resolve=_public, sleep=sleep), seen
 
 
-REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3))
+REGISTRY = DatasetRegistry((SENTINEL_2_L2A, SYNTHETIC_ZARR))
 
 
 def _earth_search_with(filters: FilterSupport):
@@ -85,7 +85,7 @@ class TestDatasetConfig:
 
     def test_only_the_registry_handed_in_counts(self) -> None:
         with pytest.raises(UnknownCollection):
-            dataset_config(DatasetRegistry((SENTINEL_2_L2A,)), SENTINEL_2_L2A_ZARR3.dataset_id)
+            dataset_config(DatasetRegistry((SENTINEL_2_L2A,)), SYNTHETIC_ZARR.dataset_id)
 
 
 class TestSearchDispatchesByAdapter:
@@ -95,11 +95,12 @@ class TestSearchDispatchesByAdapter:
             await search_items(SENTINEL_2_L2A, adapters=ADAPTER_SPECS, gateway=gateway)
         assert seen[0].headers["host"] == "earth-search.aws.element84.com"
 
-    async def test_a_zarr_dataset_goes_to_eopf_stac(self) -> None:
-        gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "search_empty")))
+    async def test_a_zarr_dataset_goes_to_its_own_endpoint(self) -> None:
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "search_empty")))
         async with gateway:
-            await search_items(SENTINEL_2_L2A_ZARR3, adapters=ADAPTER_SPECS, gateway=gateway)
-        assert seen[0].headers["host"] == "stac.core.eopf.eodc.eu"
+            await search_items(SYNTHETIC_ZARR, adapters=ADAPTER_SPECS, gateway=gateway)
+        assert seen[0].headers["host"] == "stac.example.invalid"
+        assert json.loads(seen[0].content)["collections"] == [SYNTHETIC_ZARR.source.source_collection_id]
 
     async def test_a_dataset_under_an_adapter_kind_nothing_dispatches_to_is_refused(self) -> None:
         other = replace(SENTINEL_2_L2A, source=replace(SENTINEL_2_L2A.source, adapter="some-other-protocol"))
@@ -141,16 +142,13 @@ class TestSearchDispatchesByAdapter:
 
 
 class TestGetItemDispatchesByAdapter:
-    async def test_a_zarr_datasets_item_goes_to_eopf_stac(self) -> None:
-        gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "item")))
+    async def test_a_zarr_datasets_item_goes_to_its_own_endpoint(self) -> None:
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "item")))
         async with gateway:
-            item = await get_item(
-                SENTINEL_2_L2A_ZARR3, "SYNTH_S2A_MSIL2A_20260921T141821_T26WME", adapters=ADAPTER_SPECS, gateway=gateway
-            )
-        assert seen[0].headers["host"] == "stac.core.eopf.eodc.eu"
-        # Normalised by the eopf_stac adapter, not left at the source's own version —
-        # proof the dispatcher called the right module, not just the right host.
-        assert item["stac_version"] == "1.0.0"
+            item = await get_item(SYNTHETIC_ZARR, "SYNTH_ITEM", adapters=ADAPTER_SPECS, gateway=gateway)
+        assert seen[0].headers["host"] == "stac.example.invalid"
+        assert seen[0].url.path == f"/collections/{SYNTHETIC_ZARR.source.source_collection_id}/items/SYNTH_ITEM"
+        assert [band["name"] for band in item["assets"]["red"]["bands"]] == ["B04"]
 
     async def test_a_materialized_datasets_item_is_refused_here_too(self) -> None:
         """The tiler's own item source dispatches on ``item_holding`` before it ever
@@ -161,7 +159,7 @@ class TestGetItemDispatchesByAdapter:
             source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
             coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
         )
-        gateway, seen = gateway_for(httpx.Response(200, json=load(EOPF_FIXTURES, "item")))
+        gateway, seen = gateway_for(httpx.Response(200, json=load(EARTH_SEARCH_FIXTURES, "item")))
         async with gateway:
             with pytest.raises(UnsupportedSource, match="materialized"):
                 await get_item(materialized, "some-item", adapters=ADAPTER_SPECS, gateway=gateway)

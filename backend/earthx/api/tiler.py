@@ -112,6 +112,7 @@ from earthx.catalog.registry import (
     DatasetConfig,
     DatasetRegistry,
     LicenseTier,
+    RetiredDatasetError,
     UnknownDatasetError,
 )
 from earthx.catalog.stats_cache import PostgresStatsCache
@@ -165,7 +166,7 @@ async def _fetch_item(state: Any, dataset: str, item: str) -> dict[str, Any]:
 
 
 def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
-    """The registry entry for ``dataset``, or a 404.
+    """The registry entry for ``dataset``, or a 404 (a 410 with the reason for a retired one, adr/0017).
 
     adr/0005 rule I: an unknown collection is a 404 and not an empty answer that
     looks valid. Every route of this process starts here, so the refusal reads the
@@ -174,6 +175,8 @@ def _dataset_config(state: Any, dataset: str) -> DatasetConfig:
     registry: DatasetRegistry = state.earthx_registry
     try:
         return registry.get(dataset)
+    except RetiredDatasetError as error:
+        raise HTTPException(status_code=410, detail=error.retired.message) from None
     except UnknownDatasetError:
         raise HTTPException(status_code=404, detail=f"no dataset {dataset!r}") from None
 

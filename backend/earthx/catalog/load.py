@@ -3,7 +3,8 @@
     python -m earthx.catalog.load
 
 Runs the migrations this package owns, checks that pgstac matches the pin, writes
-every registry entry as a collection, and commits. Idempotent from end to end: a
+every registry entry as a collection, removes the federated collections the registry
+no longer lists, and commits. Idempotent from end to end: a
 second run migrates nothing and rewrites the same collections.
 
 Not part of the four processes of architekturplan.md 3.2 — it is the step that
@@ -28,14 +29,15 @@ def main() -> int:
         # registry, or it is left exactly as it was.
         with psycopg.connect(autocommit=False) as conn:
             applied = apply_migrations(conn)
-            written = load_registry(conn, REGISTRY)
+            outcome = load_registry(conn, REGISTRY)
             conn.commit()
     except (PgstacError, psycopg.Error) as error:
         print(f"load failed: {error}", file=sys.stderr)
         return 1
 
     print(f"migrations applied: {', '.join(applied) if applied else 'none'}")
-    print(f"collections written: {', '.join(written)}")
+    print(f"collections written: {', '.join(outcome.written)}")
+    print(f"collections removed: {', '.join(outcome.removed) if outcome.removed else 'none'}")
     return 0
 
 

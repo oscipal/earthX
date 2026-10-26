@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import cop from './fixtures/processes/cop-dem-glo-30.json';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
-import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
+import zarr from './fixtures/processes/synthetic-zarr.json';
 import { placeAoi } from './placeSearch';
 import { estimateOrder, placeJob, type ProcessDescription } from './processing';
 import { buildMosaicOrder, buildOrder, processInfo, type Area, type DraftStep } from './processingOrder';
@@ -96,7 +96,7 @@ const CASES: Case[] = [
   },
   {
     name: 'band-math-on-zarr-variables',
-    datasetId: 'sentinel-2-l2a-zarr3',
+    datasetId: 'synthetic-zarr',
     description: zarr,
     assets: ['SR_10m:b04', 'SR_10m:b08'],
     aoi: SQUARE,

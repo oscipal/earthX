@@ -11,8 +11,7 @@ liegt") puts the grid, the counting rule and the aggregation itself in `catalog`
 because they are the platform's own decisions, not a source's protocol — the area
 rule here is the same kind of decision, just for the one case a source cannot answer
 at all (it has no search API, `adr/0009` §11). This module never imports `adapters`
-(`.importlinter`); the two federated ways (`adapters.earth_search_coverage`,
-`adapters.eopf_sample_coverage`) are reached through `adapters.coverage` instead,
+(`.importlinter`); the federated way (`adapters.earth_search_coverage`) is reached through `adapters.coverage` instead,
 which `api.coverage_route` dispatches to for everything that is not this one.
 
 **Two filters this way cannot honour, on purpose.** A materialized one-off product
@@ -71,8 +70,7 @@ async def area_coverage(
     before calling this; both are checked again here as
     :class:`CoverageProviderMismatch`/defensive reads, not trusted from the
     caller alone, the same posture `earth_search_coverage.aggregate_coverage`
-    and `eopf_sample_coverage.sample_coverage` already take for their own
-    provider check.
+    already takes for its own provider check.
     """
     if config.coverage.provider is not CoverageProvider.LOCAL_SQL:
         raise CoverageProviderMismatch(

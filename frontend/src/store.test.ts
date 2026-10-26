@@ -1,7 +1,7 @@
 // The one piece of the store M2-10 changed that is testable without a map:
 // pinning the active time step into the layer manager. Before M2-10 a scene
 // whose source publishes no quicklook produced no overlay at all, so pinning a
-// time step of `sentinel-2-l2a-zarr3` yielded "Nothing to add".
+// time step of a Zarr dataset yielded "Nothing to add".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,8 +23,8 @@ const CAPABILITIES = {
 };
 
 const ZARR_LIKE: Collection = {
-  id: 'sentinel-2-l2a-zarr3',
-  title: 'Sentinel-2 L2A (Zarr3)',
+  id: 'synthetic-zarr',
+  title: 'Synthetic Zarr dataset',
   'earthx:capabilities': CAPABILITIES,
   'earthx:viewer': {
     group_by: ['datetime'],
@@ -812,8 +812,8 @@ describe('download outcome (M3-17 plan §4)', () => {
   };
 
   const ZARR_DATASET: Collection = {
-    id: 'sentinel-2-l2a-zarr3',
-    title: 'Sentinel-2 L2A (Zarr3)',
+    id: 'synthetic-zarr',
+    title: 'Synthetic Zarr dataset',
     'earthx:capabilities': CAPABILITIES,
     'earthx:viewer': {
       group_by: ['datetime'],

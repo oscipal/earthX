@@ -35,6 +35,7 @@ from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseInfo, LicenseTier
 from earthx.gateway import UpstreamError, check_url
 from earthx.processing.methods import DatasetFacts, methods_text
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 FIXTURE = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "earth_search" / "item_asset_hosts.json"
 DATASET = SENTINEL_2_L2A.dataset_id
@@ -870,7 +871,7 @@ class TestOverTheCapAnExportJob:
 
     def test_a_zarr_dataset_is_offered_no_job(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         """F6: the export job reads COG only; the crop route is asked with a Zarr entry in its place."""
-        zarr = REGISTRY.get("sentinel-2-l2a-zarr3").zarr
+        zarr = SYNTHETIC_ZARR.zarr
 
         class AsZarr:
             def __getattr__(self, name: str) -> Any:

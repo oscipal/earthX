@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import cop from './fixtures/processes/cop-dem-glo-30.json';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
-import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
+import zarr from './fixtures/processes/synthetic-zarr.json';
 import type { Order, ProcessDescription } from './processing';
 import { buildOrder, draftFromOrder, processInfo } from './processingOrder';
 import { readRecipe } from './recipeFile';
@@ -17,7 +17,7 @@ const FIXTURES = import.meta.glob('./fixtures/orders/*.json', { eager: true, imp
 >;
 const INFOS: Record<string, unknown> = {
   'sentinel-2-c1-l2a': s2,
-  'sentinel-2-l2a-zarr3': zarr,
+  'synthetic-zarr': zarr,
   'cop-dem-glo-30': cop,
 };
 const infoOf = (datasetId: string) => processInfo(INFOS[datasetId] as ProcessDescription);

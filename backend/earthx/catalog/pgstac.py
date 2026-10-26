@@ -107,10 +107,39 @@ def load_collection(conn: psycopg.Connection, config: DatasetConfig) -> None:
         cur.execute("SELECT pgstac.upsert_collection(%s::jsonb)", (json.dumps(collection),))
 
 
-def load_registry(conn: psycopg.Connection, registry: DatasetRegistry) -> tuple[str, ...]:
-    """Write every entry, after checking that the database matches the pin.
+@dataclass(frozen=True, slots=True)
+class LoadOutcome:
+    """What one run of :func:`load_registry` did: the ids written, in registry order, and those removed."""
 
-    Returns the ids written, in registry order.
+    written: tuple[str, ...]
+    removed: tuple[str, ...]
+
+
+def remove_gone_collections(conn: psycopg.Connection, registry: DatasetRegistry) -> tuple[str, ...]:
+    """Delete the federated collections the registry no longer lists, with their items (adr/0017 rule IV, F5).
+
+    The registry is the single source (B13 point 3): a dataset that left it must not stay in pgstac,
+    or the STAC API would list it on. Only a collection that carries our own ``earthx:source`` with
+    ``item_holding`` ``federated`` is removed. A materialized one holds items nobody else has
+    (the DEM's tiles) and goes only by a decision of its own, and a collection that is not ours is
+    left as it is. Returns the ids removed, sorted.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM pgstac.collections "
+            "WHERE content->'earthx:source'->>'item_holding' = %s AND NOT (id = ANY(%s)) ORDER BY id",
+            (ItemHolding.FEDERATED.value, [config.dataset_id for config in registry]),
+        )
+        gone = [row[0] for row in cur.fetchall()]
+        for dataset_id in gone:
+            cur.execute("SELECT pgstac.delete_collection(%s)", (dataset_id,))
+    return tuple(gone)
+
+
+def load_registry(conn: psycopg.Connection, registry: DatasetRegistry) -> LoadOutcome:
+    """Write every entry and remove the federated collections that left the registry.
+
+    Checks first that the database matches the pin. One run, one caller's transaction.
     """
     check_pgstac_version(conn)
     use_pgstac_search_path(conn)
@@ -118,7 +147,7 @@ def load_registry(conn: psycopg.Connection, registry: DatasetRegistry) -> tuple[
     for config in registry:
         load_collection(conn, config)
         written.append(config.dataset_id)
-    return tuple(written)
+    return LoadOutcome(tuple(written), remove_gone_collections(conn, registry))
 
 
 def read_collection(conn: psycopg.Connection, dataset_id: str) -> dict[str, object] | None:

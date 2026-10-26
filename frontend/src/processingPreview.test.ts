@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AOI_CLIP_PROTOCOL } from './aoiClip';
 import type { DatasetOption } from './datasets';
 import s2 from './fixtures/processes/sentinel-2-c1-l2a.json';
-import zarr from './fixtures/processes/sentinel-2-l2a-zarr3.json';
+import zarr from './fixtures/processes/synthetic-zarr.json';
 import { bboxToPolygon } from './geoUtils';
 import type { ProcessDescription } from './processing';
 import { processInfo, type DraftStep, type ProcessInfo } from './processingOrder';
