@@ -190,7 +190,7 @@ describe('the view and a layer with the same picture', () => {
     const live = liveMap();
     const expired = layerOf('mine', [overlayOf((m) => browseView(m, 'A'))], {
       derived: 'result',
-      result: { jobID: 'J', expires: '2026-10-27T10:00:00Z', gsd: 10, resampled: null, expired: true },
+      result: { jobID: 'J', expires: '2026-10-27T10:00:00Z', gsd: 10, resampled: null, expired: true, dataType: 'float32', stats: null },
     });
     browseView(live.map, 'A');
     syncLayers(live.map as never, [expired]);
@@ -245,7 +245,7 @@ describe('syncLayers: every kind of layer follows every move', () => {
     layerOf('preview', [raster('https://t/preview', { preview: true, maxZoom: 9 })], { derived: 'preview' }),
     layerOf('result', [raster('https://t/result')], {
       derived: 'result',
-      result: { jobID: 'J', expires: '2026-12-01T10:00:00Z', gsd: 10, resampled: null, expired: false },
+      result: { jobID: 'J', expires: '2026-12-01T10:00:00Z', gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null },
     }),
     layerOf('mosaic', [raster('https://t/scene', { hideFrom: 6.5, maxZoom: 7 }), raster('https://t/mosaic')]),
   ];
@@ -273,3 +273,27 @@ describe('syncLayers: every kind of layer follows every move', () => {
     });
   }
 });
+
+// UI-01d: "Apply" in the view of a result draws it another way with a new tile URL; the layer keeps
+// its place in the list and on the map, and the old picture is gone.
+describe('syncLayers: a result layer drawn another way', () => {
+  const TEMPLATE = 'https://t/results/x/tiles/WebMercatorQuad/{z}/{x}/{y}?tilesize=256';
+  const result = (id: string, tileUrl: string): MapLayer =>
+    layerOf(id, [raster(tileUrl)], {
+      derived: 'result',
+      result: { jobID: 'J', expires: '2026-12-01T10:00:00Z', gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null },
+    });
+
+  it('has the new picture in the same place, and the old one no more', () => {
+    const live = liveMap();
+    const other = layerOf('other', [raster('https://t/other')]);
+    syncLayers(live.map as never, [other, result('r', `${TEMPLATE}&rescale=0%2C1`), layerOf('under', [raster('https://t/under')])]);
+    const before = live.stack.indexOf(lyr('r'));
+    syncLayers(live.map as never, [other, result('r', `${TEMPLATE}&colormap_name=terrain&rescale=5%2C9`), layerOf('under', [raster('https://t/under')])]);
+    expect(layersOf(live, 'r')).toHaveLength(1);
+    expect(pictureOf(live, lyr('r'))).toBe(`${TEMPLATE}&colormap_name=terrain&rescale=5%2C9`);
+    expect(live.stack.indexOf(lyr('r'))).toBe(before);
+    expect(shown(live)).toEqual(['https://t/under', `${TEMPLATE}&colormap_name=terrain&rescale=5%2C9`, 'https://t/other']);
+  });
+});
+

@@ -280,6 +280,9 @@ interface ProcessingState {
   showResultOnMap: (jobID: string) => Promise<void>;
   openJobDetails: (jobID: string) => void;
   closeJobDetails: () => void;
+  // The range and colormap set by hand in the view of a result (UI-01 §6.11): they hold for this job and for
+  // every layer made of it later; `null` goes back to the default of the statistics. Kept in the browser.
+  setJobRange: (jobID: string, range: PreviewRange | null) => void;
   // The manager of the jobs (UI-01 §6.10). A job is never deleted, only archived and put in a group.
   renameJob: (jobID: string, title: string) => void;
   renameBatch: (batchId: string, title: string) => void;
@@ -1019,6 +1022,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           gsd: resultGsd(gsd, width, tileJson.bounds),
           resampled: job.resampled,
           expired: false,
+          dataType: tileJson.dataType,
+          stats: job.statistics,
         },
         overlays: [
           {
@@ -1338,6 +1343,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
           updateJob(jobID, { cancelling: false, error: error instanceof Error ? error.message : String(error) });
         }
       }
+    },
+    setJobRange: (jobID, range) => {
+      if (!get().jobs.some((j) => j.jobID === jobID)) return;
+      updateJob(jobID, { range });
+      persist();
     },
     renameJob: (jobID, title) => {
       const name = title.trim().slice(0, MAX_TITLE_LENGTH);
