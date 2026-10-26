@@ -3,9 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RANGE } from './processingPreview';
 import { parseTileJson } from './processing';
 import {
+  defaultRange,
   isOverview,
   isResultExpired,
   MIN_REMAINING_MS,
+  rangeOfRender,
+  rangeOfTileUrl,
+  renderOfRange,
+  restyledTileUrl,
   resultGsd,
   resultLayerName,
   resultRender,
@@ -301,5 +306,41 @@ describe('the name of the layer', () => {
     [null, 'Result'],
   ])('is made from the title %j', (title, name) => {
     expect(resultLayerName(title)).toBe(name);
+  });
+});
+
+describe('the range of a result layer in its view', () => {
+  const TEMPLATE = resultTileTemplate(HREF);
+  const DEM = resultStats({ bands: [{ statistics: { count: 9, minimum: 100, maximum: 2400, percentile_2: 180, percentile_98: 1900 } }] });
+
+  it('is read from the tile URL the layer draws with, or empty where it asks for none', () => {
+    expect(rangeOfTileUrl(`${TEMPLATE}&colormap_name=terrain&rescale=0%2C3000`)).toEqual({ vmin: '0', vmax: '3000', colormap: 'terrain' });
+    expect(rangeOfTileUrl(`${TEMPLATE}&rescale=-1%2C1`)).toEqual({ vmin: '-1', vmax: '1', colormap: '' });
+    expect(rangeOfTileUrl(TEMPLATE)).toEqual({ vmin: '', vmax: '', colormap: '' });
+    expect(rangeOfTileUrl('no query at all')).toEqual({ vmin: '', vmax: '', colormap: '' });
+  });
+
+  it('comes back to the same render and URL, and a bad range makes none', () => {
+    const range = { vmin: '0', vmax: '3000', colormap: 'terrain' };
+    expect(renderOfRange(range)).toEqual({ rescale: '0,3000', colormapName: 'terrain' });
+    expect(rangeOfRender({ rescale: '0,3000', colormapName: 'terrain' })).toEqual(range);
+    expect(renderOfRange({ vmin: '', vmax: '1', colormap: '' })).toBeNull();
+    expect(renderOfRange({ vmin: '2', vmax: '1', colormap: '' })).toBeNull();
+    expect(renderOfRange({ vmin: '1', vmax: '1', colormap: '' })).toBeNull();
+  });
+
+  it('restyles the URL from its template: the style is replaced, never added to', () => {
+    const once = restyledTileUrl(`${TEMPLATE}&colormap_name=viridis&rescale=180%2C1900`, { rescale: '0,3000', colormapName: 'terrain' });
+    expect(once).toBe(`${TEMPLATE}&colormap_name=terrain&rescale=0%2C3000`);
+    expect(restyledTileUrl(once, { rescale: '1,2' })).toBe(`${TEMPLATE}&rescale=1%2C2`);
+    expect(restyledTileUrl(once, {})).toBe(TEMPLATE);
+    expect(restyledTileUrl(TEMPLATE, { rescale: '1,2' })).toBe(`${TEMPLATE}&rescale=1%2C2`);
+  });
+
+  it('has the default of the statistics for "auto", the range of the panel without them, none for whole numbers', () => {
+    expect(defaultRange({ dataType: 'float32', stats: DEM }, DEFAULT_RANGE)).toEqual({ vmin: '180', vmax: '1900', colormap: 'viridis' });
+    expect(defaultRange({ dataType: 'float32', stats: null }, { vmin: '0', vmax: '2', colormap: 'plasma' })).toEqual({ vmin: '0', vmax: '2', colormap: 'plasma' });
+    expect(defaultRange({ dataType: 'uint16', stats: DEM }, DEFAULT_RANGE)).toBeNull();
+    expect(defaultRange({ dataType: null, stats: DEM }, DEFAULT_RANGE)).toBeNull();
   });
 });

@@ -31,7 +31,7 @@ import {
 import { coordsBbox, polygonBbox, quicklookCoords, searchArea, unionBbox } from './geoUtils';
 import { buildGroups, groupIndexOfItem, groupItemIdsFor } from './grouping';
 import type { LayerOverlay, LayerRestore, MapLayer, ResultLayerInfo } from './layers';
-import { isResultExpired } from './resultLayer';
+import { isResultExpired, restyledTileUrl } from './resultLayer';
 import { buildTileUrl, footprintsFC, MAX_MOSAIC_LAYERS } from './mapLayers';
 import { isMosaicPass, mosaicTemplateOf, oversizeNote, passesOf, stackLikeView } from './mosaic';
 import type { Mosaics, SceneEntry } from './mosaic';
@@ -293,10 +293,12 @@ const NO_ANSWER_FILTERS: SectionSearchAnswer & { ignoredFilters: string[]; incom
   incompleteCollections: [],
 };
 
-// What leaving the full-resolution view resets — the same set `exitFocus` clears.
+// What leaving the full-resolution view resets — the same set `exitFocus` clears. The view of a
+// result goes with it: both stand in the place of the search results.
 const LEAVE_FOCUS = {
   focusMode: false,
   viewLayerId: null,
+  resultViewLayerId: null,
   cropToAoi: false,
   downloaded: {},
   appliedRender: {},
@@ -771,6 +773,10 @@ export interface AppState {
   // the view still shows exactly what it pinned (`viewLayer.ts::viewLayerOf`), that
   // layer draws the picture, at its place in the list and with its eye.
   viewLayerId: string | null;
+  // The layer of a job's result whose range and colormap the bottom of the map shows (UI-01 §6.11):
+  // `selectLayer` sets it for a result layer. The results list is folded away meanwhile, as in the
+  // full-resolution view, which this is not (`focusMode` stays off).
+  resultViewLayerId: string | null;
   // The AOI crops a search draws by itself for a dataset with no browsable preview
   // (`browse: 'full_resolution'`): part of that dataset's results, on the map only
   // while that dataset is the one chosen in the results dropdown. Not in `layers`;
@@ -903,6 +909,9 @@ export interface AppState {
   pinDerivedLayer: (layer: DerivedLayer) => void;
   // Marks the result layers whose job's results are about to go (M4-13c-5).
   expireResultLayers: (now: number) => void;
+  // Draws a result layer another way: the tile URL is rebuilt, so the map makes a new source of it.
+  restyleResultLayer: (id: string, render: AppliedRender) => void;
+  closeResultView: () => void;
   removeLayer: (id: string) => void;
   toggleLayerVisible: (id: string) => void;
   setLayerOpacity: (id: string, v: number) => void;
@@ -978,6 +987,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   layers: [],
   viewLayerId: null,
+  resultViewLayerId: null,
   searchCrops: [],
   downloadDialogLayerId: null,
   downloadSelection: false,
@@ -1154,13 +1164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       playing: false,
       error: null,
       notice: null,
-      focusMode: false,
-      cropToAoi: false,
-      downloaded: {},
-      appliedRender: {},
-      pendingColormapName: '',
-      pendingVmin: '',
-      pendingVmax: '',
+      ...LEAVE_FOCUS,
     });
     scheduleCoverageRefresh(set, get);
   },
@@ -1372,7 +1376,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!s.layers.some(due)) return {};
       return { layers: s.layers.map((l) => (due(l) && l.result ? { ...l, result: { ...l.result, expired: true } } : l)) };
     }),
-  removeLayer: (id) => set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
+  restyleResultLayer: (id, render) =>
+    set((s) => ({
+      layers: s.layers.map((l) =>
+        l.id === id && l.derived === 'result'
+          ? { ...l, overlays: l.overlays.map((o) => (o.kind === 'raster' ? { ...o, tileUrl: restyledTileUrl(o.tileUrl, render) } : o)) }
+          : l,
+      ),
+    })),
+  closeResultView: () => set({ resultViewLayerId: null }),
+  removeLayer: (id) =>
+    set((s) => ({
+      layers: s.layers.filter((l) => l.id !== id),
+      ...(s.resultViewLayerId === id ? { resultViewLayerId: null } : {}),
+    })),
   toggleLayerVisible: (id) =>
     set((s) => ({ layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
   setLayerOpacity: (id, opacity) =>
@@ -1404,9 +1421,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get();
     const l = s.layers.find((x) => x.id === id);
     if (!l) return;
+    // The result of a job holds no scenes to go back to: the bottom of the map shows how it is drawn,
+    // and the view of scenes, if there was one, is left.
+    if (l.derived === 'result') {
+      set({ ...LEAVE_FOCUS, resultViewLayerId: id });
+      return;
+    }
     const r = l.restore;
     if (r.aoi !== s.aoi) dropPageToken(set, get);
     set({
+      resultViewLayerId: null,
       ...layerDatasetState(s, r),
       focusMode: r.focusMode,
       downloaded: r.downloaded,
@@ -1681,6 +1705,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       error: null,
       ...(oversize ? { notice: oversize } : {}),
       focusMode: true,
+      resultViewLayerId: null,
       cropToAoi,
       showDownloaded: true,
       downloaded,
@@ -1708,17 +1733,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       passesOf(Object.entries(s.downloaded), s.groups).map((entries) => ({ datasetId, entries })),
     );
   },
-  exitFocus: () =>
-    set({
-      focusMode: false,
-      viewLayerId: null,
-      cropToAoi: false,
-      downloaded: {},
-      appliedRender: {},
-      pendingColormapName: '',
-      pendingVmin: '',
-      pendingVmax: '',
-    }),
+  exitFocus: () => set({ ...LEAVE_FOCUS }),
   toggleDownloaded: () => set((s) => ({ showDownloaded: !s.showDownloaded })),
   setPendingColormapName: (pendingColormapName) => set({ pendingColormapName }),
   setPendingVmin: (pendingVmin) => set({ pendingVmin }),

@@ -67,6 +67,9 @@ let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
 let tileJson: () => Response | Promise<Response>;
 
+// The notes of the rows of the layer manager: the tooltip of the symbol in the note place of each row.
+const notesOfRows = () => [...container.querySelectorAll('.layer-row .lm-note .tip')].map((tip) => tip.getAttribute('data-tip'));
+
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
@@ -168,7 +171,7 @@ describe('the layer a result becomes', () => {
     expect(layer.name).toBe('Result · Band math');
     expect(layer.derived).toBe('result');
     expect(layer.visible).toBe(true);
-    expect(layer.result).toEqual({ jobID: JOB, expires: expect.any(String), gsd: 10, resampled: false, expired: false });
+    expect(layer.result).toEqual({ jobID: JOB, expires: expect.any(String), gsd: 10, resampled: false, expired: false, dataType: 'float32', stats: null });
     expect(layer.overlays).toEqual([
       {
         kind: 'raster',
@@ -394,7 +397,12 @@ describe('the layer a result becomes', () => {
     expect(layerProcessBlock(layers()[0], [])).toBe('A result cannot be processed further yet.');
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
-    expect(button('⚙')?.disabled).toBe(true);
+    // Hidden, not greyed (Otto, 26.10.2026): the place is there, empty, until a result can be processed (NM4-05).
+    expect(button('⚙')).toBeUndefined();
+    const empty = container.querySelector('.layer-row [data-col="process"]');
+    expect(empty?.tagName).toBe('SPAN');
+    expect(empty?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
     expect(button('⇩')).toBeUndefined();
   });
 
@@ -407,7 +415,6 @@ describe('the layer a result becomes', () => {
     expect(layers()[0].result).not.toHaveProperty('unit');
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-note')).toBeNull();
-    expect(container.querySelector('.layer-row-noted')).toBeNull();
     expect(container.textContent).not.toMatch(/\bunit\b/iu);
   });
 
@@ -415,7 +422,9 @@ describe('the layer a result becomes', () => {
     useProcessingStore.setState({ jobs: [entry({ resampled: true })] });
     await showOnMap();
     act(() => root.render(<LayerManager />));
-    expect(container.textContent).toContain(RESAMPLED_LAYER_TEXT);
+    expect(notesOfRows()).toEqual([RESAMPLED_LAYER_TEXT]);
+    // A note is a symbol with a tooltip, not a line of its own: the row keeps its height (UI-01 §6.11).
+    expect(container.textContent).not.toContain(RESAMPLED_LAYER_TEXT);
   });
 });
 
@@ -478,7 +487,7 @@ describe('a result layer that expires', () => {
     useAppStore.getState().pinDerivedLayer({
       name: 'Result · Band math',
       derived: 'result',
-      result: { jobID: JOB, expires: new Date(Date.now() + expiresInMs).toISOString(), gsd: 10, resampled: null, expired: false },
+      result: { jobID: JOB, expires: new Date(Date.now() + expiresInMs).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null },
       overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
       itemIds: [],
       cropToAoi: false,
@@ -490,7 +499,7 @@ describe('a result layer that expires', () => {
     vi.useFakeTimers();
     pinResult(MIN_REMAINING_MS + 10_000);
     act(() => root.render(<LayerManager />));
-    expect(container.textContent).not.toContain(EXPIRED_LAYER_TEXT);
+    expect(notesOfRows()).toEqual([]);
     act(() => {
       vi.advanceTimersByTime(9_900);
     });
@@ -499,7 +508,7 @@ describe('a result layer that expires', () => {
       vi.advanceTimersByTime(300);
     });
     expect(layers()[0].result?.expired).toBe(true);
-    expect(container.textContent).toContain(EXPIRED_LAYER_TEXT);
+    expect(notesOfRows()).toEqual([EXPIRED_LAYER_TEXT]);
   });
 
   it('is marked at once when it was already inside the last minute', () => {
@@ -514,7 +523,7 @@ describe('a result layer that expires', () => {
     useAppStore.getState().pinDerivedLayer({
       name: 'Result · other',
       derived: 'result',
-      result: { jobID: 'Other-job-id-0000000000', expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false },
+      result: { jobID: 'Other-job-id-0000000000', expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null },
       overlays: [],
       itemIds: [],
       cropToAoi: false,
@@ -546,7 +555,7 @@ describe('"Overview" over the map', () => {
           opacity: 1,
           overlays: [{ kind: 'raster', tileUrl: 'https://t/{z}', bounds: [10, 50, 11, 51], minZoom: 0, maxZoom: 14 }],
           derived: 'result',
-          result: { jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, ...over },
+          result: { jobID: JOB, expires: new Date(Date.now() + 86_400_000).toISOString(), gsd: 10, resampled: null, expired: false, dataType: 'float32', stats: null, ...over },
           restore: {
             focusMode: false,
             downloaded: {},
