@@ -1,4 +1,4 @@
-# ADR 0018 — Processing auf einem Ergebnis
+# ADR 0019 — Processing auf einem Ergebnis
 
 - **Status:** **Entwurf**, Entscheidungsvorlage für Otto. Die Fragen stehen in §9.
 - **Datum:** 2026-10-26
