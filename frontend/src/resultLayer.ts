@@ -3,6 +3,8 @@
 // when the map says "Overview", and when the layer is "Expired". Pure functions; the
 // state lives in `processingStore.ts` and `store.ts`.
 
+import type { ResultLayerInfo } from './layers';
+import { buildTileUrl } from './mapLayers';
 import { rescaleOf, type PreviewRange } from './processingPreview';
 import { scaleOf, type BandStats, type ResultStats } from './render';
 import type { AppliedRender, Bbox } from './types';
@@ -13,6 +15,9 @@ import type { AppliedRender, Bbox } from './types';
 // are read through this host's own proxy and never from a host the document names.
 // `secrets.token_urlsafe(16)`: 22 characters of the URL-safe alphabet.
 const TILES_HREF = /^\/results\/[A-Za-z0-9_-]{22}\/WebMercatorQuad\/tilejson\.json$/;
+
+// The one archive a raster result has (`api/result_zip.py`): the panel and the layer link the same file.
+export const RESULT_ZIP = 'result.zip';
 
 // From a minute before `expires` the tiler answers `410` (`objectstore/results.py::MIN_REMAINING`).
 export const MIN_REMAINING_MS = 60_000;
@@ -97,6 +102,38 @@ export function resultRender(
   if (own) return drawnWith(own);
   const scale = scaleOf(stats);
   return scale ? { rescale: `${scale.low},${scale.high}`, colormapName: scale.colormap } : drawnWith(panel);
+}
+
+// The range and colormap a render stands for, as the fields of the result view show them.
+export function rangeOfRender(render: AppliedRender): PreviewRange {
+  const [vmin = '', vmax = ''] = render.rescale?.split(',') ?? [];
+  return { vmin, vmax, colormap: render.colormapName ?? '' };
+}
+
+// The range and colormap a tile URL asks for: what a result layer draws now.
+export function rangeOfTileUrl(tileUrl: string): PreviewRange {
+  const query = new URLSearchParams(tileUrl.slice(tileUrl.indexOf('?') + 1));
+  return rangeOfRender({ rescale: query.get('rescale') ?? undefined, colormapName: query.get('colormap_name') ?? undefined });
+}
+
+// The same range and colormap in the shape of a request.
+export function renderOfRange(range: PreviewRange): AppliedRender | null {
+  const rescale = rescaleOf(range);
+  return 'rescale' in rescale ? drawnWith(range) : null;
+}
+
+// The tile URL of a result drawn another way: its style is the part after the first `&`
+// (`resultTileTemplate` ends in `?tilesize=256`), and only that part changes.
+export function restyledTileUrl(tileUrl: string, render: AppliedRender): string {
+  const amp = tileUrl.indexOf('&');
+  return buildTileUrl(amp < 0 ? tileUrl : tileUrl.slice(0, amp), render);
+}
+
+// How a layer of a result is drawn when no range was set by hand for its job (M4-32): the default of
+// "Auto". `null` for a result that is drawn as it is.
+export function defaultRange(info: Pick<ResultLayerInfo, 'dataType' | 'stats'>, panel: PreviewRange): PreviewRange | null {
+  const render = resultRender(info.dataType, panel, info.stats, null);
+  return 'rescale' in render || render.colormapName ? rangeOfRender(render) : null;
 }
 
 // --- the pixel size of the result -------------------------------------------
