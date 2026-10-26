@@ -3,7 +3,9 @@
 - **Status:** **Angenommen** von Otto am 2026-10-26 (**Fassung 2**).
   - F1, F2, F3, F5 und F6 nach Empfehlung (Option 1); F4 mit Option 3 und der
     Präzisierung „Originale nur als signierter Link“ (§9.1).
-  - Zwei Nachfragen zu F4 sind offen (§9.3); sie betreffen nur Teil B.
+  - Die beiden Nachfragen zu F4 hat Otto am selben Tag beantwortet (§9.3):
+    Originale holt der Browser mit einem eigenen anonymen Token, sofern die
+    Token-API CORS erlaubt; der Satz für `ENTSCHEIDUNGEN` liegt in §12.
   - Teil B hängt an Ottos eigener Messung (§11 C). Fällt sie negativ aus,
     entfällt Teil B.
   - Fassung 1 hat Otto am 26.10.2026 beantwortet, aber nicht angenommen; er
@@ -698,7 +700,7 @@ Kosten je Kachel misst die Umsetzung.
 (a)–(d) zulässig; Originale **nur als signierter Link**, kein Byte durch das
 Backend (`architekturplan.md` 6.4 bleibt). Die Folgeänderungen in
 `KLAERUNGEN.md` und der Onboarding-Checkliste werden als Nachtrag vorbereitet
-(§12). Zwei Nachfragen dazu: §9.3.
+(§12). Zwei Nachfragen dazu, beantwortet: §9.3.
 
 **F5 — Messung Planetary Computer?**
 1. Otto misst nach §11 C, oder gibt `planetarycomputer.microsoft.com` und `sentinel1euwestrtc.blob.core.windows.net` für eine neue Sitzung frei; danach Entscheidung über Teil B mit den Zahlen **(Empfehlung)**
@@ -728,7 +730,7 @@ wird angeboten; GRD als eigener Level-1-Datensatz mit „approximate
 geolocation“; Planetary Computer und eigene Geländekorrektur prüfen; ADR nicht
 annehmen, sondern ergänzen; Umsetzung mit oder nach M5; Backlog unverändert.
 
-### 9.3 Nachfragen zu F4 — offen
+### 9.3 Nachfragen zu F4 — beantwortet am 2026-10-26
 
 **N1 — „Signierter Link“ und Bedingung (c).** Ein signierter Link trägt das
 Token im Browser; Bedingung (c) schließt genau das aus. Dazu bindet der
@@ -739,12 +741,34 @@ gemeint?
 2. Das Backend signiert beim Klick und leitet weiter (`302`); (c) bekommt eine Ausnahme genau für diesen Link. Nur möglich, wenn das Token nicht an die IP gebunden ist (Ottos Messung, §11 C)
 3. Kein Link auf Originale für diesen Datensatz
 
+**Antwort N1: neue Option.** Beim Klick holt der **Browser selbst** ein
+anonymes Token direkt beim Planetary Computer (eigene IP, kein Token der
+Plattform im Browser) und lädt dann die Datei; (c) gilt ohne Ausnahme. Ein
+Klick ohne Zusatzschritte ist Ottos Vorgabe. Voraussetzung: CORS der
+Token-API, Messpunkt in §11 C. **Ohne CORS gilt Option 3:** keine Originale für
+diesen Datensatz. Option 1 (Link auf die Seite des Items) nicht.
+
+Was das heißt [A]:
+- Der Abruf des Tokens ist ein `fetch` des Browsers an einen fremden Host,
+  der einzige dieser Art. Er braucht `Access-Control-Allow-Origin` an der
+  Antwort der Token-API; der Download selbst ist eine Navigation zur Blob-Adresse
+  und braucht kein CORS.
+- Das Token liegt nur im Speicher der Seite, wird nicht gespeichert, nicht
+  geloggt und nicht an die Plattform geschickt.
+- Bindet die Quelle das Token an die IP (`sip=`), stört das nicht: Es ist die
+  IP des Nutzers.
+- Bekommt die Plattform später eine Content-Security-Policy, muss `connect-src`
+  den Token-Host nennen.
+
 **N2 — Wo die Regel steht.** `ENTSCHEIDUNGEN` §1 („nichts, was einen Token
 braucht“) und §3 (Token-Logik nicht übernehmen) gehen `KLAERUNGEN.md` vor.
 Ein Nachtrag nur in `KLAERUNGEN.md` stünde unter einer Regel, die er
 aufhebt.
 1. Ein Satz als Nachtrag in `ENTSCHEIDUNGEN` §1 und §3, der auf B8 und die neue Auslegung verweist; Otto trägt ihn ein **(Empfehlung)**
 2. Nur `KLAERUNGEN.md` und Checkliste; die Log-Zeile vom 26.10.2026 gilt als Ottos Entscheidung über `ENTSCHEIDUNGEN`
+
+**Antwort N2: (1)** Ein Satz als Nachtrag in `ENTSCHEIDUNGEN`, den Otto nach
+positiver Messung einträgt; Wortlaut in §12.
 
 ---
 
@@ -754,8 +778,8 @@ aufhebt.
   Messung der Kosten je Kachel, beide Hinweise, Operatoren nach §4.4,
   `s3://`-Abbildung, Fassung per CRC64NVME, Live-Smoke mit
   Requester-Pays-Prüfung.
-- **Teil B:** Ottos Messung (§11 C); bei positivem Ergebnis die Nachfragen N1
-  und N2, dann die Nachträge aus §12 und die Lizenz-Einstufung von
+- **Teil B:** Ottos Messung (§11 C, mit CORS der Token-API); bei positivem
+  Ergebnis die Nachträge aus §12 (den Satz in `ENTSCHEIDUNGEN` trägt Otto ein) und die Lizenz-Einstufung von
   `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner
   (holt dessen `gateway` ein eigenes Token?). Bei negativem Ergebnis entfällt
   Teil B; die Nachträge werden nicht eingetragen.
@@ -827,7 +851,18 @@ $r.assets.vv.PSObject.Properties.Name            # (file:checksum dabei?)
 $t.token -match '(^|&)sip='                      # (True heißt: an die IP gebunden, N1 Option 2 entfällt)
 Get-FirstKb $r.assets.vv.href                    # ohne Token: (403 oder 404)
 Get-FirstKb ($r.assets.vv.href + '?' + $t.token) # mit Token: (206)
-Remove-Variable t
+$o = Invoke-WebRequest "$pc/api/sas/v1/token/sentinel-1-rtc" -Headers @{ Origin = 'https://example.org' } -UseBasicParsing
+$o.Headers['Access-Control-Allow-Origin']        # (* oder die Origin; leer heißt: kein CORS, keine Originale)
+Remove-Variable t, o
+```
+
+Im Browser (der eigentliche CORS-Test): eine beliebige `https`-Seite öffnen,
+Entwicklerwerkzeuge (F12), Reiter „Konsole“, dann:
+
+```javascript
+fetch('https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-1-rtc')
+  .then(r => r.json()).then(j => console.log(Object.keys(j), j['msft:expiry']))
+// (["msft:expiry", "token"] und eine Ablaufzeit; ein CORS-Fehler heißt: keine Originale)
 ```
 
 Antwortet schon der erste Befehl mit `401`/`403` oder einem Hinweis auf ein
@@ -854,8 +889,8 @@ python -c "import asyncio; from earthx.gateway import Gateway, Policy; u='https:
 
 ## 12. Vorbereitete Nachträge (F4) — erst nach positiver Messung eintragen
 
-Wortlaut zum Eintragen, sobald Ottos Messung (§11 C) positiv ist und N1 und
-N2 beantwortet sind. Die Stellen in eckigen Klammern hängen von N1 ab.
+Wortlaut zum Eintragen, sobald Ottos Messung (§11 C) positiv ist; N1 und N2
+sind beantwortet (§9.3). `[Datum]` ist der Tag des Eintrags.
 
 **`KLAERUNGEN.md`, B8, neuer Nachtrag:**
 
@@ -865,14 +900,15 @@ N2 beantwortet sind. Die Stellen in eckigen Klammern hängen von N1 ab.
 > Konto und Schlüssel erhält, (b) das Backend ihn nur über `gateway` von einem
 > in der Registry genannten Endpunkt holt, zwischenspeichert und vor Ablauf
 > erneuert, (c) er nie den Browser, Logs, Rezepte, Permalinks,
-> Cache-Schlüssel oder URLs außerhalb des Backends erreicht [N1 Option 2: —
-> ausgenommen der signierte Link auf die Originale, den das Backend beim Klick
-> erzeugt] und (d) die Quelle seine Weiterverwendung so erlaubt. `gateway`
-> bekommt dafür die Fähigkeit, einen solchen Nachweis anzufordern; Konten,
-> Schlüssel und Zugangsdaten, die eine Person oder der Betreiber beantragen
-> muss, bleiben ausgeschlossen. Originale werden nur verlinkt; kein Byte läuft
-> durch das Backend (`architekturplan.md` 6.4). Erster Fall: `sentinel-1-rtc`
-> des Planetary Computer.
+> Cache-Schlüssel oder URLs außerhalb des Backends erreicht und (d) die Quelle
+> seine Weiterverwendung so erlaubt. `gateway` bekommt dafür die Fähigkeit,
+> einen solchen Nachweis anzufordern; Konten, Schlüssel und Zugangsdaten, die
+> eine Person oder der Betreiber beantragen muss, bleiben ausgeschlossen.
+> Originale holt der Browser des Nutzers mit einem eigenen anonymen Nachweis,
+> den er beim Klick selbst bei der Quelle anfordert; kein Byte läuft durch das
+> Backend (`architekturplan.md` 6.4). Das setzt CORS an der Ausgabestelle des
+> Nachweises voraus; ohne CORS gibt es für den Datensatz keine Originale.
+> Erster Fall: `sentinel-1-rtc` des Planetary Computer.
 
 **`projektuebersicht.md` §5, Checkliste Punkt 6, Nachtrag:**
 
@@ -888,11 +924,22 @@ N2 beantwortet sind. Die Stellen in eckigen Klammern hängen von N1 ab.
 > ausstellt, ist kein externer Token im Sinne dieses Prinzips
 > (`KLAERUNGEN.md` B8, Nachtrag [Datum]).
 
-**`ENTSCHEIDUNGEN_2026-09-18.md` §1 und §3 (nur bei N2 Option 1, von Otto):**
+**`ENTSCHEIDUNGEN_2026-09-18.md`, trägt Otto ein (N2):**
 
-> *Nachtrag ([Datum], Otto):* „Token“ meint hier Zugangsdaten, die ein Konto
-> oder einen Schlüssel voraussetzen. Ein anonym ausgestellter Zugangsnachweis
-> ist unter den Bedingungen von `KLAERUNGEN.md` B8 (Nachtrag [Datum]) zulässig.
+Am Ende von §1:
+
+> *Nachtrag ([Datum], Otto, `adr/0018` F4):* „Token“ meint hier Zugangsdaten,
+> die ein Konto oder einen Schlüssel voraussetzen. Ein Zugangsnachweis, den
+> eine Quelle jedem anonym ausstellt, ist unter den Bedingungen von
+> `KLAERUNGEN.md` B8 (Nachtrag [Datum]) zulässig.
+
+Am Ende von §3, nach dem Absatz zur Token-Logik:
+
+> *Nachtrag ([Datum], Otto):* Das Anfordern eines anonym ausgestellten
+> Zugangsnachweises nach `KLAERUNGEN.md` B8 (Nachtrag [Datum]) ist keine
+> Token-Logik in diesem Sinne. `auth.py` und MAAP-OIDC bleiben
+> ausgeschlossen; einen solchen Nachweis bekommt GDAL nur so, dass er weder in
+> Pfaden noch in Logs oder Fehlertexten erscheint (`adr/0018` §5.3).
 
 ---
 
