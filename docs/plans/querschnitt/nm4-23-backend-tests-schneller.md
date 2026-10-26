@@ -264,3 +264,18 @@ Measure-Command { pytest -n 0 | Out-Host }
 - Erwartet: Beide enden mit „5939 passed“ (oder 5931 passed, 8 skipped ohne `pwsh`). Der erste Lauf meldet oben „bringing up nodes...“ und ist deutlich kürzer.
 - Danach ist keine Datenbank `<PGDATABASE>_gw…` übrig: `psql -c "\l"`.
 - Im Browser unter **Actions → CI → Backend — lint and tests → Tests (pytest)**: die Dauer des PR-Laufs gegen die eines Laufs auf `main` vom 26.10.
+
+## 15. Freigabe (Otto, 26.10.2026)
+
+1. **Frage 1 = 1:** `pytest-xdist` als Dev-Abhängigkeit, nur im Dev-Lock.
+2. **Frage 2 = 1:** `-n auto`, eingestellt über die pytest-Konfiguration; `.github/` bleibt unverändert.
+3. **Frage 3 = 1:** Die Datenbank je Worker wird leer angelegt und migriert.
+4. **Frage 4 = 1:** Die Wartezeit beim Worker-Stopp gehört nicht in diese Aufgabe. Statt eines Backlog-Eintrags kommt eine Zeile ins Entscheidungslog; das Backlog pflegt der Planungs-Chat.
+
+Auflagen:
+- **`boto3`/rasterio:** Genau beschreiben, wie rasterio ohne AWS-Sitzung läuft, ohne die `moto`-Tests des Objektspeichers zu schwächen. Belegen, dass diese Tests weiter dasselbe prüfen.
+- **Testkennungen:** Die zwei Tests mit Speicheradresse bzw. Zufalls-ID in der Kennung werden stabil, ohne dass sie an Aussage verlieren.
+- **Stabilität:**
+  - Die volle Suite läuft in der Session mindestens dreimal hintereinander mit `xdist` grün.
+  - Seriell (`-n 0`) läuft sie weiter.
+  - Die Zeiten vorher und nachher (Session und CI) stehen im PR.
