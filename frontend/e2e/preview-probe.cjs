@@ -142,14 +142,21 @@ async function check(browser, theme, viewport) {
   await page.waitForTimeout(2500);
   const note = await page.evaluate(() => document.querySelector('.processing-panel')?.textContent ?? '');
   if (!/No preview: /.test(note)) problems.push('the panel does not say why there is no preview');
-  if (seen.statistics.length !== statisticsBefore) problems.push('the refused expression asked statistics');
-  if (seen.tiles.slice(tilesBefore).some((p) => p.includes('nir +'))) problems.push('the refused expression asked tiles');
+  if (seen.statistics.slice(statisticsBefore).some((p) => p.includes('(nir +"'))) problems.push('the refused expression asked statistics');
+  // The refused expression ends in `+`; the tiles of the valid one may still be arriving.
+  if (seen.tiles.slice(tilesBefore).some((p) => p.includes('(nir +"'))) problems.push('the refused expression asked tiles');
   const scroll = await page.evaluate(() => {
     const panel = document.querySelector('.processing-panel');
     return panel ? panel.scrollWidth > panel.clientWidth + 1 : false;
   });
   if (scroll) problems.push('the panel scrolls sideways');
   await page.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_refused.png`) });
+  const shown = page.locator('.processing-panel p.hint-text', { hasText: 'No preview: ' });
+  if ((await shown.count()) === 1) {
+    await shown.scrollIntoViewIfNeeded();
+    if (!(await shown.isVisible())) problems.push('the refusal cannot be scrolled into view');
+    await shown.screenshot({ path: path.join(OUT, `${name.replace(/ /g, '_')}_note.png`) });
+  } else problems.push('the refusal is not one line of the panel');
   await context.close();
   return { name, problems, detail: `${seen.tiles.length} tiles, ${seen.probes.length} probes, ${seen.statistics.length} statistics, preview ${seconds} s` };
 }
