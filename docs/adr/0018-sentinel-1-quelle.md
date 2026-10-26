@@ -1,8 +1,13 @@
 # ADR 0018 — Quelle für Sentinel-1
 
-- **Status:** Entwurf, **Fassung 2** (26.10.2026), wartet auf Otto (Fragen
-  in §9). Fassung 1 hat Otto am 26.10.2026 beantwortet, aber nicht
-  angenommen; er hat die Teile A bis C in Auftrag gegeben (§9.2).
+- **Status:** **Angenommen** von Otto am 2026-10-26 (**Fassung 2**).
+  - F1, F2, F3, F5 und F6 nach Empfehlung (Option 1); F4 mit Option 3 und der
+    Präzisierung „Originale nur als signierter Link“ (§9.1).
+  - Zwei Nachfragen zu F4 sind offen (§9.3); sie betreffen nur Teil B.
+  - Teil B hängt an Ottos eigener Messung (§11 C). Fällt sie negativ aus,
+    entfällt Teil B.
+  - Fassung 1 hat Otto am 26.10.2026 beantwortet, aber nicht angenommen; er
+    hat die Teile A bis C in Auftrag gegeben (§9.2).
 - **Datum:** 2026-10-26
 - **Aufgabe:** DS-01 laut `docs/plans/ds/ds-01-s1-quelle.md` (Paket DS,
   `docs/plans/ds/ds-00-paket.md`).
@@ -77,6 +82,12 @@ Teil B ist deshalb **nicht gemessen** (§5.1).
 ---
 
 ## 0. Kurzfassung
+
+**Entscheidung (Otto, 26.10.2026):** Teil A mit TPS überall, beiden
+Hinweisen und den Operatoren nach §4.4; die Regel „token-frei“ wird
+präzisiert (F4 Option 3), wirksam erst nach einer positiven Messung von Teil B;
+Teil C als eigener ADR nach DS-04. Die Punkte unten sind der Stand vor der
+Entscheidung.
 
 1. **Earth Search `sentinel-1-grd` ist weltweit und anonym lesbar** [M][P]:
    Der Bucket ist nicht mehr Requester Pays, auch wenn die STAC-Items es noch
@@ -637,6 +648,8 @@ mit verschiedenen DEMs und Rastern zeigen dasselbe verschieden (vgl.
 
 ## 8. Empfehlung
 
+Stand vor Ottos Entscheidung; was gilt, steht in §9.1 (F4 weicht ab: Option 3).
+
 1. **Teil A wie entschieden**, mit **TPS** als einziger Georeferenz in Kachel,
    Zuschnitt, Job und Runner (F1), den Hinweisen „Approximate geolocation“ und
    „Uncalibrated (DN)“ (F2) und den Operatoren nach §4.4 (F3). Umsetzung als
@@ -653,36 +666,58 @@ mit verschiedenen DEMs und Rastern zeigen dasselbe verschieden (vgl.
 
 ## 9. Fragen an Otto
 
-### 9.1 Fassung 2
+### 9.1 Fassung 2 — beantwortet am 2026-10-26
 
 **F1 — Georeferenz des GRD-Datensatzes?**
 1. TPS aus den GCPs in Kachel, Zuschnitt, Job und Runner, als allgemeine Reader-Fähigkeit über die Registry **(Empfehlung)**
 2. GDAL-Polynom überall (einfacher, im Hügelland rund 100 m statt 40 m im Median)
 3. Wie heute: Kachel affin, Zuschnitt Polynom (Kachel und Datei liegen bis 2 km auseinander)
 
+**Antwort F1: (1)** TPS überall als Reader-Fähigkeit über die Registry; die
+Kosten je Kachel misst die Umsetzung.
+
 **F2 — Hinweise am GRD-Datensatz?**
 1. „Approximate geolocation“ und „Uncalibrated (DN)“, kurz mit Tooltip, dazu in Rezept, Provenienz und Download-Text **(Empfehlung)**
 2. Nur „Approximate geolocation“
+
+**Antwort F2: (1)** „Approximate geolocation“ und „Uncalibrated (DN)“.
 
 **F3 — Operatoren auf GRD?**
 1. Nach §4.4: Zuschnitt, Band-Math innerhalb der Szene, Normalisierung, Reprojektion, Mosaik je Durchgang; keine festen Schwellen, keine Index-Knöpfe, kein Vergleich über Bahnen **(Empfehlung)**
 2. Alle generischen Operatoren freischalten, nur Hinweise
 3. Nur Zuschnitt und Download, keine Operatoren
 
+**Antwort F3: (1)** Operatoren nach §4.4.
+
 **F4 — Klarstellung der Regel „token-frei“ (`ENTSCHEIDUNGEN` §1/§3, `KLAERUNGEN` B8, Prinzip 2, Checkliste Punkt 6)?**
 1. **Streng:** „Token-frei heißt: ohne Konto und ohne Zugangsdaten jeder Art. Auch ein Zugangsnachweis, den die Quelle jedem anonym ausstellt (z. B. ein SAS-Token), zählt als Zugangsdaten.“ Planetary Computer bleibt draußen **(Empfehlung, bis die Messung F5 vorliegt)**
 2. **Präzisiert:** „Token-frei heißt: ohne Konto, ohne Schlüssel und ohne Zugangsdaten, die eine Person oder der Betreiber beantragen muss. Ein Zugangsnachweis, den die Quelle jedem anonym ausstellt, ist zulässig, wenn (a) der anonyme Zugriffs-Check ihn ohne Konto erhält, (b) das Backend ihn nur über `gateway` holt, zwischenspeichert und vor Ablauf erneuert, (c) er nie den Browser, Logs, Rezepte, Permalinks, Cache-Schlüssel oder URLs außerhalb des Backends erreicht und (d) die Quelle seine Weiterverwendung so erlaubt.“ Folgeänderungen: `ENTSCHEIDUNGEN` §1/§3, B8 (Nachtrag), Prinzip 2, Checkliste Punkt 6 („HTTP 200 ohne Konto und Zugangsdaten im Sinne dieser Regel“), `architekturplan.md` 6.4 (Ausnahme Download über die Plattform) und 7.7 (Runner)
 3. Präzisiert wie 2, aber nur für Anzeige und Jobs; Originale nur als Link zur Quellseite, kein Download über die Plattform (6.4 bleibt)
+
+**Antwort F4: (3)** Ein anonym ausgestellter Token ist unter den Bedingungen
+(a)–(d) zulässig; Originale **nur als signierter Link**, kein Byte durch das
+Backend (`architekturplan.md` 6.4 bleibt). Die Folgeänderungen in
+`KLAERUNGEN.md` und der Onboarding-Checkliste werden als Nachtrag vorbereitet
+(§12). Zwei Nachfragen dazu: §9.3.
 
 **F5 — Messung Planetary Computer?**
 1. Otto misst nach §11 C, oder gibt `planetarycomputer.microsoft.com` und `sentinel1euwestrtc.blob.core.windows.net` für eine neue Sitzung frei; danach Entscheidung über Teil B mit den Zahlen **(Empfehlung)**
 2. Teil B ohne Messung verwerfen; RTC nur über Teil C
 3. Teil B ohne weitere Messung einplanen (Option 2)
 
+**Antwort F5: (1)** Otto misst den Planetary Computer selbst nach §11 C,
+insbesondere: gibt es für `sentinel-1-rtc` ein Token ohne Konto? Fällt die
+Messung negativ aus, entfällt Teil B.
+
 **F6 — Eigene Geländekorrektur (Teil C)?**
 1. Eigener ADR „Geländekorrektur für Sentinel-1 GRD“ (Stufe C) nach DS-04, sarsen als Ausgangspunkt, mit Messung an ganzen Szenen und der Paketfrage **(Empfehlung)**
 2. Erst nach der Entscheidung über Teil B
 3. Nicht weiter verfolgen
+
+**Antwort F6: (1)** Eigener ADR zur Geländekorrektur nach DS-04: on demand als
+Job für die AOI, Ergebnis im Cache. Kernfrage dort ist der Speicher: 11,8 GB im
+Probelauf (§6.2) gegen die Grenze von 500 MB für den ganzen Kindprozess des
+Workers (`adr/0014`, Abnahmegrenze M4-07a).
 
 ### 9.2 Fassung 1 — beantwortet am 26.10.2026
 
@@ -693,18 +728,44 @@ wird angeboten; GRD als eigener Level-1-Datensatz mit „approximate
 geolocation“; Planetary Computer und eigene Geländekorrektur prüfen; ADR nicht
 annehmen, sondern ergänzen; Umsetzung mit oder nach M5; Backlog unverändert.
 
+### 9.3 Nachfragen zu F4 — offen
+
+**N1 — „Signierter Link“ und Bedingung (c).** Ein signierter Link trägt das
+Token im Browser; Bedingung (c) schließt genau das aus. Dazu bindet der
+`sign`-Endpunkt im Beispiel der Doku die Signatur an eine IP (`sip=…`, Q17):
+Ein Link, den das Backend signiert, liefe beim Nutzer dann gar nicht. Was ist
+gemeint?
+1. Der Link zeigt auf die **unsignierte** Adresse oder die Seite des Items beim Planetary Computer; der Nutzer holt sich das Token dort selbst. (c) bleibt ohne Ausnahme **(Empfehlung)**
+2. Das Backend signiert beim Klick und leitet weiter (`302`); (c) bekommt eine Ausnahme genau für diesen Link. Nur möglich, wenn das Token nicht an die IP gebunden ist (Ottos Messung, §11 C)
+3. Kein Link auf Originale für diesen Datensatz
+
+**N2 — Wo die Regel steht.** `ENTSCHEIDUNGEN` §1 („nichts, was einen Token
+braucht“) und §3 (Token-Logik nicht übernehmen) gehen `KLAERUNGEN.md` vor.
+Ein Nachtrag nur in `KLAERUNGEN.md` stünde unter einer Regel, die er
+aufhebt.
+1. Ein Satz als Nachtrag in `ENTSCHEIDUNGEN` §1 und §3, der auf B8 und die neue Auslegung verweist; Otto trägt ihn ein **(Empfehlung)**
+2. Nur `KLAERUNGEN.md` und Checkliste; die Log-Zeile vom 26.10.2026 gilt als Ottos Entscheidung über `ENTSCHEIDUNGEN`
+
 ---
 
 ## 10. Was offen bleibt
 
-- Messung Planetary Computer (F5) und Lizenz-Einstufung von `sentinel-1-rtc`
-  (B11, Otto).
+- **Teil A** wird DS-04, mit oder nach M5: TPS als Reader-Fähigkeit mit
+  Messung der Kosten je Kachel, beide Hinweise, Operatoren nach §4.4,
+  `s3://`-Abbildung, Fassung per CRC64NVME, Live-Smoke mit
+  Requester-Pays-Prüfung.
+- **Teil B:** Ottos Messung (§11 C); bei positivem Ergebnis die Nachfragen N1
+  und N2, dann die Nachträge aus §12 und die Lizenz-Einstufung von
+  `sentinel-1-rtc` (B11, Otto). Offen bleibt dann auch der lokale Runner
+  (holt dessen `gateway` ein eigenes Token?). Bei negativem Ergebnis entfällt
+  Teil B; die Nachträge werden nicht eingetragen.
+- **Teil C:** eigener ADR nach DS-04; Kernfrage Speicher (F6).
 - Ob Element 84 die Metadaten (`requester_pays`, `s3://`, `schema-product-*`)
   nachzieht; eine Betriebszusage gibt es nicht.
 - TPS im Kachelpfad: Geschwindigkeit, misst die Umsetzung.
-- ADR zur Geländekorrektur (F6), mit DS-05 abzustimmen.
-- Nach Ottos Antwort: Status, Zeile im Entscheidungslog, Nachtrag in
-  `docs/plans/ds/ds-04-s1-anbinden.md` (Quelle, Produktart, Hinweise).
+- Nachtrag in `docs/plans/ds/ds-04-s1-anbinden.md` (Quelle, Produktart,
+  Hinweise): mit der nächsten Doku-Aufgabe oder durch Otto; der Backlog bleibt
+  unverändert.
 
 ---
 
@@ -763,6 +824,7 @@ $col.license; $col.'msft:requires_account'       # (CC-BY-4.0; ?)
 $r = (Invoke-RestMethod "$pc/api/stac/v1/collections/sentinel-1-rtc/items?limit=1").features[0]
 ([uri]$r.assets.vv.href).Host                    # (sentinel1euwestrtc.blob.core.windows.net)
 $r.assets.vv.PSObject.Properties.Name            # (file:checksum dabei?)
+$t.token -match '(^|&)sip='                      # (True heißt: an die IP gebunden, N1 Option 2 entfällt)
 Get-FirstKb $r.assets.vv.href                    # ohne Token: (403 oder 404)
 Get-FirstKb ($r.assets.vv.href + '?' + $t.token) # mit Token: (206)
 Remove-Variable t
@@ -790,7 +852,51 @@ python -c "import asyncio; from earthx.gateway import Gateway, Policy; u='https:
 
 ---
 
-## 12. Quellen
+## 12. Vorbereitete Nachträge (F4) — erst nach positiver Messung eintragen
+
+Wortlaut zum Eintragen, sobald Ottos Messung (§11 C) positiv ist und N1 und
+N2 beantwortet sind. Die Stellen in eckigen Klammern hängen von N1 ab.
+
+**`KLAERUNGEN.md`, B8, neuer Nachtrag:**
+
+> **Nachtrag [Datum] (`adr/0018` F4):** Ein Zugangsnachweis, den eine Quelle
+> jedem anonym ausstellt (etwa ein SAS-Token), gilt nicht als Zugangsdatum im
+> Sinne der Regel „token-frei“, wenn (a) der anonyme Zugriffs-Check ihn ohne
+> Konto und Schlüssel erhält, (b) das Backend ihn nur über `gateway` von einem
+> in der Registry genannten Endpunkt holt, zwischenspeichert und vor Ablauf
+> erneuert, (c) er nie den Browser, Logs, Rezepte, Permalinks,
+> Cache-Schlüssel oder URLs außerhalb des Backends erreicht [N1 Option 2: —
+> ausgenommen der signierte Link auf die Originale, den das Backend beim Klick
+> erzeugt] und (d) die Quelle seine Weiterverwendung so erlaubt. `gateway`
+> bekommt dafür die Fähigkeit, einen solchen Nachweis anzufordern; Konten,
+> Schlüssel und Zugangsdaten, die eine Person oder der Betreiber beantragen
+> muss, bleiben ausgeschlossen. Originale werden nur verlinkt; kein Byte läuft
+> durch das Backend (`architekturplan.md` 6.4). Erster Fall: `sentinel-1-rtc`
+> des Planetary Computer.
+
+**`projektuebersicht.md` §5, Checkliste Punkt 6, Nachtrag:**
+
+> *Nachtrag ([Datum], `adr/0018` F4):* „Anonym“ heißt: ohne Konto, Schlüssel
+> oder beantragte Zugangsdaten. Stellt die Quelle jedem einen Zugangsnachweis
+> aus, besteht der Check, wenn der Nachweis ohne Konto zu bekommen ist und mit
+> ihm `200`/`206` folgt; die Bedingungen stehen in `KLAERUNGEN.md` B8
+> (Nachtrag [Datum]).
+
+**`projektuebersicht.md` §2, Prinzip 2, Nachtrag (zur Einheitlichkeit):**
+
+> *Nachtrag ([Datum]):* Ein Zugangsnachweis, den die Quelle jedem anonym
+> ausstellt, ist kein externer Token im Sinne dieses Prinzips
+> (`KLAERUNGEN.md` B8, Nachtrag [Datum]).
+
+**`ENTSCHEIDUNGEN_2026-09-18.md` §1 und §3 (nur bei N2 Option 1, von Otto):**
+
+> *Nachtrag ([Datum], Otto):* „Token“ meint hier Zugangsdaten, die ein Konto
+> oder einen Schlüssel voraussetzen. Ein anonym ausgestellter Zugangsnachweis
+> ist unter den Bedingungen von `KLAERUNGEN.md` B8 (Nachtrag [Datum]) zulässig.
+
+---
+
+## 13. Quellen
 
 Alle abgerufen am 26.10.2026.
 
