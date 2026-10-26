@@ -14,8 +14,22 @@ import socket
 from collections.abc import Iterator
 
 import pytest
+import rasterio.session
 
 from earthx.logging import JsonFormatter
+
+# rasterio in the test process as in the image: without an AWS session (NM4-23).
+#
+# `boto3` is only in the dev lock, through `moto`; the image never has it
+# (test_objectstore_boundary.py). rasterio checks for it once, at import, and keeps
+# the result in `rasterio.session.boto3`. While that name holds the module, every
+# `rasterio.Env()` builds an `AWSSession`: about 100 ms of CPU each (NM4-26 B9), and
+# whatever `AWS_*` it finds goes on to GDAL (adr/0015 §3.1). Clearing the name sends
+# rasterio down its own path for a missing boto3, `DummySession`, as in the image.
+# `boto3` and `botocore` themselves stay where they are: `moto` patches botocore,
+# and the store's client uses botocore alone, so the object store tests check what
+# they checked before (tests/earthx/objectstore/test_rasterio_session.py).
+rasterio.session.boto3 = None
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
