@@ -619,7 +619,7 @@ export default function ControlPanel() {
   };
 
   return (
-    <div className="panel control-panel">
+    <div className="panel dock-panel control-panel">
       <div className="control-scroll">
         <div className="brand">
           <span className="brand-mark" />

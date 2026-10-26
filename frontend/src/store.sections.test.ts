@@ -759,11 +759,12 @@ describe('the map follows the dropdown (AOI crops)', () => {
   it('the user pins the crop of the chosen dataset themselves; it then stays when another is chosen', async () => {
     await searchMixed();
     useAppStore.getState().setOpenSection('dem');
+    const dockBefore = useAppStore.getState().dock;
     useAppStore.getState().pinSearchCrops();
     const state = useAppStore.getState();
     expect(state.layers).toHaveLength(2);
     expect(state.layers.every((l) => l.restore.datasetId === 'dem' && l.visible)).toBe(true);
-    expect(state.layerManagerOpen).toBe(true);
+    expect(state.dock).toBe(dockBefore); // pinning opens no panel and takes none away
     expect(new Set(state.layers.map((l) => l.id)).size).toBe(2);
     useAppStore.getState().setOpenSection('optical');
     expect(onMap()).toEqual(['dem', 'dem']); // the pinned copies, not the search crops

@@ -25,6 +25,7 @@ function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
     jobID,
     expires: '2026-10-17T12:00:00Z',
     title: null,
+    titleDefault: null,
     createdAt: '2026-10-10T10:00:00Z',
     archived: false,
     groupId: null,
@@ -52,7 +53,7 @@ afterEach(() => {
 
 describe('what the shelf writes', () => {
   it('is one key of version 1 with the jobs, the batches and the groups', () => {
-    const batch = { id: BATCH, title: 'Band math · DEM', createdAt: '2026-10-10T10:00:00Z', archived: true, groupId: GROUP, refused: [{ label: 'S2', message: 'no' }] };
+    const batch = { id: BATCH, title: 'Band math · DEM', titleDefault: 'Band math · DEM', createdAt: '2026-10-10T10:00:00Z', archived: true, groupId: GROUP, refused: [{ label: 'S2', message: 'no' }] };
     const saved = saveShelf(
       shelfOf(
         [
@@ -86,7 +87,8 @@ describe('what the shelf writes', () => {
           order: ORDER,
         },
       ],
-      batches: [batch],
+      // The default title is written only where it differs from the title.
+      batches: [{ ...batch, titleDefault: undefined }],
       groups: [{ id: GROUP, name: 'Field 7' }],
     });
     expect(readShelf()).toEqual({ shelf: expect.objectContaining({ batches: [batch] }), state: 'ok', locked: false });
@@ -99,7 +101,7 @@ describe('what the shelf writes', () => {
 
   it('writes the refused parts of a batch as far as they are read back, and the fields of a group it knows', () => {
     const refused = Array.from({ length: 30 }, (_, i) => ({ label: `S${i}`, message: 'm'.repeat(600) }));
-    const batch = { id: BATCH, title: 'T', createdAt: '2026-10-10T10:00:00Z', archived: false, groupId: null, refused };
+    const batch = { id: BATCH, title: 'T', titleDefault: 'T', createdAt: '2026-10-10T10:00:00Z', archived: false, groupId: null, refused };
     saveShelf(shelfOf([], { batches: [batch], groups: [{ id: GROUP, name: 'G', extra: 1 } as never] }));
     expect(stored().groups).toEqual([{ id: GROUP, name: 'G' }]);
     expect(stored().batches[0].refused).toHaveLength(25);
@@ -121,6 +123,61 @@ describe('what the shelf writes', () => {
       [OTHER, 'from the other tab'],
     ]);
     expect(groups).toEqual([{ id: GROUP, name: 'G' }]);
+  });
+});
+
+describe('the default title (UI-01 §6.5)', () => {
+  it('is written only where the user named the job or the batch otherwise, and read back', () => {
+    const batch = { id: BATCH, title: 'Field 7', titleDefault: 'Band math · DEM', createdAt: '2026-10-10T10:00:00Z', archived: false, groupId: null, refused: [] };
+    saveShelf(shelfOf([job(JOB, { title: 'Mine', titleDefault: 'Band math · DEM' }), job(OTHER, { title: 'Same', titleDefault: 'Same' })], { batches: [batch] }));
+    expect(stored().jobs.map((j: Record<string, unknown>) => [j.title, j.titleDefault])).toEqual([
+      ['Mine', 'Band math · DEM'],
+      ['Same', undefined],
+    ]);
+    expect(stored().batches[0].titleDefault).toBe('Band math · DEM');
+    const read = readShelf().shelf;
+    expect(read.jobs.map((j) => [j.title, j.titleDefault])).toEqual([
+      ['Mine', 'Band math · DEM'],
+      ['Same', 'Same'],
+    ]);
+    expect(read.batches[0]).toMatchObject({ title: 'Field 7', titleDefault: 'Band math · DEM' });
+  });
+
+  it('is the title where an older write did not keep one, and nothing where there is no title', () => {
+    localStorage.setItem(
+      SHELF_KEY,
+      JSON.stringify({
+        v: 1,
+        jobs: [{ jobID: JOB, expires: '2026-10-17T12:00:00Z', title: 'Old' }, { jobID: OTHER, expires: '2026-10-17T12:00:00Z', titleDefault: 'x'.repeat(201) }],
+        batches: [{ id: BATCH, title: 'B', createdAt: '2026-10-10T10:00:00Z', titleDefault: 7 }],
+      }),
+    );
+    const { jobs, batches } = readShelf().shelf;
+    expect(jobs.map((j) => j.titleDefault)).toEqual(['Old', null]);
+    expect(batches[0].titleDefault).toBe('B');
+  });
+});
+
+describe('a group that is removed', () => {
+  it('is taken out of what is stored as well, where the union would give it back', () => {
+    const groups = [{ id: GROUP, name: 'A' }, { id: 'c'.repeat(32), name: 'B' }];
+    saveShelf(shelfOf([], { groups }));
+    saveShelf(shelfOf([], { groups: [groups[1]] }));
+    expect(stored().groups.map((g: { name: string }) => g.name).sort()).toEqual(['A', 'B']);
+    saveShelf(shelfOf([], { groups: [groups[1]] }), [GROUP]);
+    expect(stored().groups.map((g: { name: string }) => g.name)).toEqual(['B']);
+  });
+
+  it('removes the key when it was the last thing the shelf held', () => {
+    saveShelf(shelfOf([], { groups: [{ id: GROUP, name: 'A' }] }));
+    saveShelf(shelfOf([]), [GROUP]);
+    expect(localStorage.getItem(SHELF_KEY)).toBeNull();
+  });
+
+  it('does not touch a shelf of a version it does not know', () => {
+    localStorage.setItem(SHELF_KEY, JSON.stringify({ v: 2, groups: [] }));
+    expect(saveShelf(shelfOf([]), [GROUP])).toEqual({ state: 'memory', dropped: [] });
+    expect(JSON.parse(localStorage.getItem(SHELF_KEY)!)).toEqual({ v: 2, groups: [] });
   });
 });
 

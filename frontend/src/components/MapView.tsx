@@ -208,7 +208,7 @@ export default function MapView() {
         draw.setMode('static');
         store.setToolMode('none');
         // Re-open the control panel so search/tools are reachable again.
-        store.setPanelCollapsed(false);
+        store.reopenControls();
       });
       drawRef.current = draw;
       applyToolMode(draw, useAppStore.getState().toolMode);

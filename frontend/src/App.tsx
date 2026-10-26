@@ -1,18 +1,20 @@
-import { useEffect } from 'react';
+import { useEffect, type KeyboardEvent } from 'react';
 
+import AppRail from './components/AppRail';
 import ControlPanel from './components/ControlPanel';
 import Draggable from './components/Draggable';
 import DownloadDialog from './components/DownloadDialog';
-import JobList from './components/JobList';
 import LayerManager from './components/LayerManager';
 import MapView from './components/MapView';
 import PreviewBadge from './components/PreviewBadge';
+import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
 import ViewBar from './components/ViewBar';
 import ViewerControls from './components/ViewerControls';
+import { dockPanelId, railButtonId } from './dock';
 import { openPermalinkInAddress } from './permalink';
 import { useProcessingStore } from './processingStore';
 import { hasResultsPanel } from './sections';
@@ -20,8 +22,8 @@ import { useAppStore } from './store';
 
 export default function App() {
   const loadDatasets = useAppStore((s) => s.loadDatasets);
-  const panelCollapsed = useAppStore((s) => s.panelCollapsed);
-  const togglePanel = useAppStore((s) => s.togglePanel);
+  const dock = useAppStore((s) => s.dock);
+  const closeDock = useAppStore((s) => s.closeDock);
   const resultsPanelCollapsed = useAppStore((s) => s.resultsPanelCollapsed);
   const toggleResultsPanel = useAppStore((s) => s.toggleResultsPanel);
   const focusMode = useAppStore((s) => s.focusMode);
@@ -32,16 +34,11 @@ export default function App() {
   // "Zoom to selection" zooms to the AOI, else the pinned layer images;
   // with neither, it stays visibly disabled (store.ts::zoomToView).
   const canZoom = useAppStore((s) => !!s.aoi || s.layers.length > 0);
-  const toggleLayerManager = useAppStore((s) => s.toggleLayerManager);
-  const layerCount = useAppStore((s) => s.layers.length);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const projection = useAppStore((s) => s.projection);
   const toggleProjection = useAppStore((s) => s.toggleProjection);
   const processingOpen = useProcessingStore((s) => s.open);
-  const jobsOpen = useProcessingStore((s) => s.jobsOpen);
-  const openJobs = useProcessingStore((s) => s.openJobs);
-  const jobCount = useProcessingStore((s) => s.jobs.length);
   const resumeJobs = useProcessingStore((s) => s.resumeJobs);
 
   // `?permalink=` is opened once the datasets are there: loading them resets the selection.
@@ -54,22 +51,36 @@ export default function App() {
     resumeJobs();
   }, [resumeJobs]);
 
+  // Esc closes the open panel and hands the focus back to its symbol. Not while a field, a menu or a pop-over
+  // has its own use for the key.
+  const onDockKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || !dock) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, select, .popover, [role="menu"]')) return;
+    closeDock();
+    document.getElementById(railButtonId(dock))?.focus();
+  };
+
   return (
-    <div className="app" data-theme={theme}>
+    <div className={`app${dock ? ' dock-open' : ''}`} data-theme={theme}>
       <MapView />
 
-      <div className={`overlay top-left panel-dock${panelCollapsed ? ' collapsed' : ''}`}>
-        <ControlPanel />
-        <button
-          type="button"
-          className="panel-toggle"
-          onClick={togglePanel}
-          title={panelCollapsed ? 'Show controls' : 'Hide controls'}
-          aria-label={panelCollapsed ? 'Show controls' : 'Hide controls'}
-          aria-expanded={!panelCollapsed}
-        >
-          {panelCollapsed ? '›' : '‹'}
-        </button>
+      <AppRail />
+
+      {/* The control menu and the layer manager stay mounted (what they hold survives a change of panel);
+          the job manager follows jobs, so it exists only while it is open. */}
+      <div className="overlay dock" hidden={!dock} onKeyDown={onDockKeyDown}>
+        <div className="dock-slot" id={dockPanelId('controls')} hidden={dock !== 'controls'}>
+          <ControlPanel />
+        </div>
+        <div className="dock-slot" id={dockPanelId('layers')} hidden={dock !== 'layers'}>
+          <LayerManager />
+        </div>
+        {dock === 'jobs' && (
+          <div className="dock-slot" id={dockPanelId('jobs')}>
+            <ProcessingManager />
+          </div>
+        )}
       </div>
 
       <div className="overlay top-right">
@@ -82,24 +93,6 @@ export default function App() {
         >
           ⤢ Zoom to selection
         </button>
-        <button
-          type="button"
-          className="panel zoom-btn"
-          onClick={() => toggleLayerManager()}
-          title="Open the layer manager"
-        >
-          ☰ Layers{layerCount ? ` (${layerCount})` : ''}
-        </button>
-        {jobCount > 0 && !jobsOpen && (
-          <button
-            type="button"
-            className="panel zoom-btn"
-            onClick={() => openJobs()}
-            title="Show the jobs of this tab"
-          >
-            ⚙ Jobs ({jobCount})
-          </button>
-        )}
         <button
           type="button"
           className="panel zoom-btn"
@@ -118,10 +111,6 @@ export default function App() {
         >
           {theme === 'tech' ? '☀ Light' : '☾ Dark'}
         </button>
-      </div>
-
-      <div className="overlay layermgr">
-        <LayerManager />
       </div>
 
       {/* The processing side bar lies over the results list: folded away while it is open. */}
@@ -168,14 +157,6 @@ export default function App() {
       {processingOpen && (
         <div className="overlay processing-sheet">
           <ProcessingPanel />
-        </div>
-      )}
-
-      {jobsOpen && (
-        <div className={`overlay jobs-dock${processingOpen ? ' beside-sheet' : ''}`}>
-          <Draggable>
-            <JobList />
-          </Draggable>
         </div>
       )}
 

@@ -307,13 +307,6 @@ export async function fetchResultTileJson(href: string, signal?: AbortSignal): P
   return tileJson;
 }
 
-// The methods text of a finished job (`methods.txt`, M4-19a), as text to paste.
-export async function fetchMethodsText(jobId: string, signal?: AbortSignal): Promise<string> {
-  const response = await fetch(resultUrl(jobId, 'methods.txt'), { signal });
-  if (!response.ok) throw new Error(`the methods text could not be read (${response.status})`);
-  return response.text();
-}
-
 export function eventsUrl(jobId: string): string {
   return `${jobUrl(jobId)}/events`;
 }

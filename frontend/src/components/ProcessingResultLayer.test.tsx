@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The result of a finished job as a layer (M4-13c-5): "Add to layers" in the job row,
+// The result of a finished job as a layer (M4-13c-5): "Show on map" in the details of the job,
 // the layer it makes, "Overview" and "Expired". No backend: `fetch` answers the
 // TileJSON of the tiler only; the tiles are never requested (the map is not here).
 
@@ -13,7 +13,7 @@ import type { MapLayer } from '../layers';
 import { layerProcessBlock, setTrackerOptions, useProcessingStore, type JobEntry } from '../processingStore';
 import { MIN_REMAINING_MS, resultStats } from '../resultLayer';
 import { useAppStore } from '../store';
-import JobList, { EXPIRED_TEXT, JobRow } from './JobList';
+import JobDetails from './JobDetails';
 import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
 import PreviewBadge, { OVERVIEW_TITLE } from './PreviewBadge';
 
@@ -34,7 +34,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     expires: new Date(Date.now() + 86_400_000).toISOString(),
     status: null,
     phase: 'successful',
-    files: [{ file: 'result.tif', label: 'Result (COG)' }],
+    archive: 'result.zip',
     resampled: false,
     failure: null,
     error: null,
@@ -50,6 +50,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     part: null,
     order: null,
     createdAt: '2026-10-10T12:00:00Z',
+    titleDefault: null,
     ...over,
   };
 }
@@ -77,8 +78,8 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: true, jobs: [entry()], preview: null });
-  useAppStore.setState({ layers: [], layerManagerOpen: true, mapZoom: 5, viewportBbox: null, notice: null, datasets: [] });
+  useProcessingStore.setState({ open: true, detailJobID: JOB, jobs: [entry()], preview: null });
+  useAppStore.setState({ layers: [], dock: 'layers', mapZoom: 5, viewportBbox: null, notice: null, datasets: [] });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -111,27 +112,26 @@ function click(element: HTMLElement | undefined) {
 const layers = () => useAppStore.getState().layers;
 
 async function showOnMap() {
-  act(() => root.render(<JobList />));
-  click(button('Add to layers'));
+  act(() => root.render(<JobDetails />));
+  click(button('Show on map'));
   await flush();
 }
 
-describe('"Add to layers" in the row of a finished job', () => {
+describe('"Show on map" in the details of a finished job', () => {
   it('is one button, with no menu behind it', () => {
-    act(() => root.render(<JobList />));
-    const add = button('Add to layers');
+    act(() => root.render(<JobDetails />));
+    const add = button('Show on map');
     expect(add).toBeDefined();
     expect(add?.hasAttribute('aria-expanded')).toBe(false);
     click(add);
     expect(container.textContent).not.toContain('As a new layer');
-    expect(container.textContent).not.toContain('Show on map');
     expect(container.textContent).not.toContain('Replace');
   });
 
   it('is not offered for a job without tiles (an export, a result from before the link)', () => {
     useProcessingStore.setState({ jobs: [entry({ tiles: null })] });
-    act(() => root.render(<JobList />));
-    expect(button('Add to layers')).toBeUndefined();
+    act(() => root.render(<JobDetails />));
+    expect(button('Show on map')).toBeUndefined();
   });
 
   it.each([
@@ -142,20 +142,20 @@ describe('"Add to layers" in the row of a finished job', () => {
     ['known to be expired', { expired: true }],
   ])('is not offered for a job that is %s', (_, over) => {
     useProcessingStore.setState({ jobs: [entry(over)] });
-    act(() => root.render(<JobList />));
-    expect(button('Add to layers')).toBeUndefined();
+    act(() => root.render(<JobDetails />));
+    expect(button('Show on map')).toBeUndefined();
   });
 
   it('is gone from a minute before the results go, and the row says "Expired"', () => {
     vi.useFakeTimers();
     useProcessingStore.setState({ jobs: [entry({ expires: new Date(Date.now() + MIN_REMAINING_MS + 5000).toISOString() })] });
-    act(() => root.render(<JobRow job={useProcessingStore.getState().jobs[0]} />));
-    expect(button('Add to layers')).toBeDefined();
+    act(() => root.render(<JobDetails />));
+    expect(button('Show on map')).toBeDefined();
     act(() => {
       vi.advanceTimersByTime(5100);
     });
-    expect(button('Add to layers')).toBeUndefined();
-    expect(container.textContent).toContain(EXPIRED_TEXT);
+    expect(button('Show on map')).toBeUndefined();
+    expect(container.querySelector('.pm-facts dd')?.textContent).toBe('Expired');
   });
 });
 
@@ -273,7 +273,7 @@ describe('the layer a result becomes', () => {
         saveShelf({
           jobs: [
             {
-              jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', createdAt: '2026-10-10T12:00:00Z',
+              jobID: JOB, expires: STATUS.expires, title: 'Reproject · Copernicus DEM', titleDefault: null, createdAt: '2026-10-10T12:00:00Z',
               archived: false, groupId: null, batchId: null, part: null, range, order: null,
             },
           ],
@@ -291,8 +291,8 @@ describe('the layer a result becomes', () => {
           bands: [{ minimum: 100, maximum: 2400, percentile2: 180, percentile98: 1900 }],
           expression: false,
         });
-        act(() => root.render(<JobList />));
-        click(button('Add to layers'));
+        act(() => root.render(<JobDetails />));
+        click(button('Show on map'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=viridis&rescale=180%2C1900');
       });
@@ -310,8 +310,8 @@ describe('the layer a result becomes', () => {
       it('takes the range set by hand up again with the job, and the layer is drawn with it (UI-01 §6.4)', async () => {
         const job = await readJob(properties(DEM), { vmin: '0', vmax: '3000', colormap: 'magma' });
         expect(job.range).toEqual({ vmin: '0', vmax: '3000', colormap: 'magma' });
-        act(() => root.render(<JobList />));
-        click(button('Add to layers'));
+        act(() => root.render(<JobDetails />));
+        click(button('Show on map'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=magma&rescale=0%2C3000');
       });
@@ -320,8 +320,8 @@ describe('the layer a result becomes', () => {
         const job = await readJob({ bands: [{ name: 'b', data_type: 'float32' }], gsd: 10 });
         expect(job.statistics).toBeNull();
         expect(job.tiles).not.toBeNull();
-        act(() => root.render(<JobList />));
-        click(button('Add to layers'));
+        act(() => root.render(<JobDetails />));
+        click(button('Show on map'));
         await flush();
         expect(urlOfLayer()).toContain('colormap_name=rdylgn&rescale=-1%2C1');
       });
@@ -366,7 +366,7 @@ describe('the layer a result becomes', () => {
     await showOnMap();
     act(() => useAppStore.getState().toggleLayerVisible(layers()[0].id));
     expect(layers()[0].visible).toBe(false);
-    click(button('Add to layers'));
+    click(button('Show on map'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(layers()[0].visible).toBe(true);
@@ -377,9 +377,9 @@ describe('the layer a result becomes', () => {
     let answer: (response: Response) => void = () => {};
     const gate = new Promise<Response>((resolve) => (answer = resolve));
     tileJson = () => gate.then((response) => response.clone());
-    act(() => root.render(<JobList />));
+    act(() => root.render(<JobDetails />));
     for (let i = 0; i < 2; i++) {
-      click(button('Add to layers'));
+      click(button('Show on map'));
     }
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
@@ -425,9 +425,9 @@ describe('when the result cannot be shown', () => {
     await showOnMap();
     expect(layers()).toEqual([]);
     expect(useProcessingStore.getState().jobs[0].expired).toBe(true);
-    act(() => root.render(<JobList />));
-    expect(container.textContent).toContain(EXPIRED_TEXT);
-    expect(button('Add to layers')).toBeUndefined();
+    act(() => root.render(<JobDetails />));
+    expect(container.querySelector('.pm-facts dd')?.textContent).toBe('Expired');
+    expect(button('Show on map')).toBeUndefined();
   });
 
   it.each([
@@ -448,7 +448,7 @@ describe('when the result cannot be shown', () => {
     await showOnMap();
     expect(container.querySelector('.hint-text.error')).not.toBeNull();
     tileJson = () => json(TILE_JSON);
-    click(button('Add to layers'));
+    click(button('Show on map'));
     await flush();
     expect(layers()).toHaveLength(1);
     expect(container.querySelector('.hint-text.error')).toBeNull();

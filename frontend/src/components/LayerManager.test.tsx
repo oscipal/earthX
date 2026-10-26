@@ -57,7 +57,7 @@ describe('LayerManager', () => {
         },
       },
     ]);
-    useAppStore.setState({ datasets, datasetId: 'optical', selectedDatasetIds: ['optical'], layers: [], layerManagerOpen: true });
+    useAppStore.setState({ datasets, datasetId: 'optical', selectedDatasetIds: ['optical'], layers: [], dock: 'layers' });
     act(() => root.render(<LayerManager />));
     expect(container.textContent).not.toContain('Coverage');
     expect(container.querySelector('.coverage-row')).toBeNull();
@@ -75,7 +75,7 @@ describe('LayerManager', () => {
       overlays: [{ kind: 'raster', tileUrl: 'https://t/dem/{z}/{x}/{y}', bounds: [0, 0, 1, 1], minZoom: 0, maxZoom: 12 }],
       restore: { datasetId: 'dem', itemIds: [] } as never,
     };
-    useAppStore.setState({ datasets, datasetId: 'dem', selectedDatasetIds: ['dem'], layers: [layer], layerManagerOpen: true });
+    useAppStore.setState({ datasets, datasetId: 'dem', selectedDatasetIds: ['dem'], layers: [layer], dock: 'layers' });
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.layer-row')).not.toBeNull();
     expect(container.textContent).not.toMatch(/\bm\b/u);
@@ -97,7 +97,7 @@ describe('LayerManager', () => {
     const flags = () => useAppStore.getState().layers.map((l) => `${l.id}:${l.visible ? 1 : 0}`);
 
     beforeEach(() => {
-      useAppStore.setState({ datasets: [], layers: ['one', 'two', 'three', 'four', 'five'].map(layer), layerManagerOpen: true });
+      useAppStore.setState({ datasets: [], layers: ['one', 'two', 'three', 'four', 'five'].map(layer), dock: 'layers' });
       act(() => root.render(<LayerManager />));
     });
 

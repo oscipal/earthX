@@ -150,8 +150,8 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
-  useAppStore.setState({ mapZoom: 1.6, viewportBbox: null, layers: [], layerManagerOpen: false });
+  useProcessingStore.setState({ open: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
+  useAppStore.setState({ mapZoom: 1.6, viewportBbox: null, layers: [], dock: null });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -283,6 +283,16 @@ describe('the preview section', () => {
     expect(store().preview).not.toBeNull();
     act(() => store().closeProcessing());
     expect(store().preview).toBeNull();
+  });
+
+  it('draws no picture of the draft while the details of a job are shown, and draws it again with the order', async () => {
+    await withNdvi();
+    act(() => useProcessingStore.setState({ jobs: [{ jobID: 'Job0000000000000000001' } as never] }));
+    act(() => store().openJobDetails('Job0000000000000000001'));
+    expect(store().preview).toBeNull();
+    act(() => store().closeJobDetails());
+    await afterDebounce();
+    expect(store().preview).not.toBeNull();
   });
 
   it('drops the picture with the draft when the dataset changes', async () => {
@@ -998,7 +1008,8 @@ describe('the preview as a layer (§3.4)', () => {
     expect(layer.overlays).toHaveLength(2);
     expect(layer.overlays[0]).toMatchObject({ kind: 'raster', minZoom: 8, maxZoom: 13, preview: true });
     expect(layer.restore).toMatchObject({ itemIds: ['S2B_A', 'S2B_B'], datasetId: 'sentinel-2-c1-l2a', focusMode: false });
-    expect(useAppStore.getState().layerManagerOpen).toBe(true);
+    // The layer counts up on the rail; the manager does not open over the control panel.
+    expect(useAppStore.getState().dock).toBeNull();
   });
 
   it('keeps the tile URL of the preview, and the AOI out of it', async () => {

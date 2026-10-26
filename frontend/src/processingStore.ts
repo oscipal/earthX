@@ -23,6 +23,8 @@ import { crsBlockReason, type CrsEntry } from './crsUnit';
 import { resultsGroupByOfOption, type DatasetOption } from './datasets';
 import {
   loadShelf,
+  MAX_NAME_LENGTH,
+  MAX_TITLE_LENGTH,
   newId,
   orderCopy,
   readShelf,
@@ -173,15 +175,11 @@ export interface Refusal {
 
 export type JobPhase = 'active' | 'successful' | 'failed' | 'dismissed' | 'gone';
 
-export interface ResultFile {
-  file: string;
-  label: string;
-}
-
 export interface JobEntry extends ShelfJob {
   status: StatusInfo | null;
   phase: JobPhase;
-  files: ResultFile[] | null;
+  // The ZIP of the results document (`archiveOf`); `null` until the results are read.
+  archive: string | null;
   // `earthx:resampled` of the result (Prinzip 2.9); `null` until the results are read.
   resampled: boolean | null;
   failure: string | null;
@@ -199,6 +197,9 @@ export interface JobEntry extends ShelfJob {
 
 // The jobs of one batch (M4-13c-4) are one entry of the manager (UI-01 §6.10).
 export type BatchEntry = ShelfBatch;
+
+// What the manager acts on: a job, or a batch with all of its parts.
+export type ManagerTarget = { jobID: string } | { batchId: string };
 
 export interface JobTiles {
   // `/results/{result_id}/WebMercatorQuad/tilejson.json`, already checked (`resultLayer.ts::tilesHref`).
@@ -219,8 +220,8 @@ export interface PartOutcome {
 
 interface ProcessingState {
   open: boolean;
-  // The window of the jobs (M4-13c §3.1), apart from the panel.
-  jobsOpen: boolean;
+  // The job whose details the processing window shows instead of the order (UI-01 §6.8), or `null`.
+  detailJobID: string | null;
   descriptions: Record<string, Description>;
   // What the server said about the target CRS codes typed so far (M4-13c-3); kept
   // across drafts, since a code means the same for every dataset.
@@ -277,8 +278,19 @@ interface ProcessingState {
   closeProcessing: () => void;
   // A finished job's result as a layer of its own on the map (M4-13c-5, plan §3.4).
   showResultOnMap: (jobID: string) => Promise<void>;
-  openJobs: () => void;
-  closeJobs: () => void;
+  openJobDetails: (jobID: string) => void;
+  closeJobDetails: () => void;
+  // The manager of the jobs (UI-01 §6.10). A job is never deleted, only archived and put in a group.
+  renameJob: (jobID: string, title: string) => void;
+  renameBatch: (batchId: string, title: string) => void;
+  setArchived: (target: ManagerTarget, archived: boolean) => void;
+  createGroup: (name: string) => string | null;
+  renameGroup: (groupId: string, name: string) => void;
+  // Only a group without entries goes; `false` for any other.
+  removeGroup: (groupId: string) => boolean;
+  moveToGroup: (target: ManagerTarget, groupId: string | null) => void;
+  // "Cancel all" of a batch: its waiting and running parts, one after the other.
+  cancelBatch: (batchId: string) => Promise<void>;
   ensureDescription: (datasetId: string) => void;
   lookupCrs: (code: string, signal: AbortSignal) => Promise<void>;
   resetDraft: () => void;
@@ -550,6 +562,12 @@ let shelfLocked = false;
 let copiesDropped = false;
 let storageListening = false;
 
+// Batches whose "Cancel all" is under way: a second click does not start a second round.
+const cancellingBatches = new Set<string>();
+
+const inTarget = (job: ShelfJob, target: ManagerTarget): boolean =>
+  'jobID' in target ? job.jobID === target.jobID : job.batchId === target.batchId;
+
 // How long "Cancel" waits for the fresh state of the job before it gives up (and cancels nothing).
 const CANCEL_CHECK_MS = 4000;
 
@@ -564,7 +582,8 @@ export function resetJobs(): void {
   trackers.clear();
   shelfLocked = false;
   copiesDropped = false;
-  useProcessingStore.setState({ jobs: [], batches: [], groups: [], shelf: 'ok' });
+  cancellingBatches.clear();
+  useProcessingStore.setState({ jobs: [], batches: [], groups: [], shelf: 'ok', detailJobID: null });
 }
 
 // A job still stands for the order it was placed for: it runs, or its results are there. Another one may be
@@ -613,38 +632,18 @@ export function refusalMessage(error: unknown): string {
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
-// A paragraph for a methods section, written by the backend from the recipe (M4-19a).
-export const METHODS_FILE = 'methods.txt';
-
-const FILE_LABELS: Record<string, string> = {
-  'result.tif': 'Result (COG)',
-  'mask.tif': 'Mask',
-  'recipe.json': 'Recipe',
-  [METHODS_FILE]: 'Methods',
-};
-
 // The one archive of a result (M4-11b-2): an export's `export.zip`, or a raster
-// job's `result.zip` (output `bundle`, M4-11b-1).
+// job's `result.zip` (output `bundle`, M4-11b-1). It holds every file of the job; the
+// manager offers it and nothing else (UI-01 §1 point 12).
 const ZIP_FILES = ['export.zip', 'result.zip'];
 export const ZIP_LABEL = 'Download (ZIP)';
 
-// The files of a results document, by the last segment of each link — only
-// the names the job API serves (`/results/{name}`), each once. Where the
-// document names an archive, that is the one link (Zusatz §1); a result from
-// before archives existed keeps its single links.
-export function resultFiles(doc: Record<string, { href?: unknown }>): ResultFile[] {
-  const names: string[] = [];
-  for (const link of Object.values(doc)) {
-    if (!link || typeof link.href !== 'string') continue;
-    const file = decodeURIComponent(link.href.split('/').pop() ?? '');
-    if (!names.includes(file)) names.push(file);
-  }
-  const zip = ZIP_FILES.find((file) => names.includes(file));
-  if (zip) {
-    // The archive holds the text too; it stays a link of its own for the one who wants to paste it.
-    return [{ file: zip, label: ZIP_LABEL }, ...(names.includes(METHODS_FILE) ? [{ file: METHODS_FILE, label: 'Methods' }] : [])];
-  }
-  return names.filter((file) => FILE_LABELS[file]).map((file) => ({ file, label: FILE_LABELS[file] }));
+// The file name of the archive a results document links, by the last segment of the link.
+export function archiveOf(doc: Record<string, { href?: unknown }>): string | null {
+  const names = Object.values(doc).flatMap((link) =>
+    link && typeof link.href === 'string' ? [decodeURIComponent(link.href.split('/').pop() ?? '')] : [],
+  );
+  return ZIP_FILES.find((file) => names.includes(file)) ?? null;
 }
 
 // What a failed job's row says (K8): the backend's fixed title, except where a
@@ -710,13 +709,13 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
 
   // Keeps the jobs in the browser (UI-01 §6.4). Where the browser is full the oldest copies of orders go,
   // here as well as there, and the shelf says so; it does not say it less once it has.
-  const persist = () => {
+  const persist = (removedGroups: string[] = []) => {
     if (shelfLocked) {
       set({ shelf: 'memory' });
       return;
     }
     const { jobs, batches, groups } = get();
-    const saved = saveShelf({ jobs, batches, groups });
+    const saved = saveShelf({ jobs, batches, groups }, removedGroups);
     const dropped = new Set(saved.dropped);
     if (dropped.size > 0) copiesDropped = true;
     set((s) => ({
@@ -731,7 +730,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const properties = doc.result?.properties;
       const href = tilesHref(doc);
       updateJob(jobID, {
-        files: resultFiles(doc),
+        archive: archiveOf(doc),
         resampled: properties ? properties['earthx:resampled'] === true : null,
         tiles: href
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
@@ -788,7 +787,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       ...job,
       status,
       phase: over ? 'gone' : 'active',
-      files: null,
+      archive: null,
       resampled: null,
       failure: null,
       error: null,
@@ -805,6 +804,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     if (get().jobs.some((j) => j.jobID === job.jobID)) return;
     const blank: ShelfJob = {
       title: null,
+      titleDefault: null,
       createdAt: new Date().toISOString(),
       archived: false,
       groupId: null,
@@ -814,6 +814,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       order: null,
       ...job,
     };
+    blank.titleDefault = job.titleDefault ?? job.title ?? null;
     set((s) => ({ jobs: [jobEntry(blank, status, Date.now()), ...s.jobs] }));
     persist();
     follow(job.jobID);
@@ -850,8 +851,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         const status = await placeJob(part.order);
         if (!opened) {
           set((s) => ({
-            jobsOpen: true,
-            batches: [{ id: batchId, title, createdAt, archived: false, groupId: null, refused: [] }, ...s.batches],
+            batches: [{ id: batchId, title, titleDefault: title, createdAt, archived: false, groupId: null, refused: [] }, ...s.batches],
           }));
         }
         opened = true;
@@ -882,7 +882,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
   // The shelf as another tab last wrote it (`storage` event): its entries are this tab's too. A job this tab
   // does not know is not followed until `followJob`.
   const takeShelf = () => {
-    const { shelf } = readShelf();
+    const { shelf, state } = readShelf();
+    // A shelf that cannot be read, or reads as empty, says nothing about the groups; the jobs of this tab
+    // stay what they are.
+    if (state === 'memory') return;
+    const empty = shelf.jobs.length + shelf.batches.length + shelf.groups.length === 0;
     const stored = new Map(shelf.jobs.map((j) => [j.jobID, j]));
     set((s) => {
       const known = new Set(s.jobs.map((j) => j.jobID));
@@ -890,14 +894,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       return {
         jobs: [...added, ...s.jobs.map((j) => ({ ...j, ...stored.get(j.jobID) }))],
         batches: withOthers(shelf.batches, s.batches),
-        groups: withOthers(shelf.groups, s.groups),
+        // What is stored is the truth about groups: another tab may have removed an empty one.
+        groups: empty ? s.groups : shelf.groups,
       };
     });
   };
 
   return {
     open: false,
-    jobsOpen: false,
+    detailJobID: null,
     descriptions: {},
     crs: {},
     ...EMPTY_DRAFT,
@@ -912,6 +917,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     openProcessing: (entry = {}) => {
       set({
         open: true,
+        detailJobID: null,
         area: entry.area ?? 'scene',
         ...(entry.extraScenes !== undefined ? { extraScenes: entry.extraScenes } : {}),
       });
@@ -969,7 +975,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     },
     closeProcessing: () => {
       abortEstimate();
-      set({ open: false, reviewing: false });
+      set({ open: false, reviewing: false, detailJobID: null });
     },
     // The layer reads the tiles from the tiler, which knows nothing of the job: the link
     // of the results document is all there is (plan §3.4). Once the job's results are
@@ -1030,8 +1036,14 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         cropToAoi: false,
       });
     },
-    openJobs: () => set({ jobsOpen: true }),
-    closeJobs: () => set({ jobsOpen: false }),
+    // The order behind the details is read from the operators of the dataset, as `openProcessing` does.
+    openJobDetails: (jobID) => {
+      if (!get().jobs.some((j) => j.jobID === jobID)) return;
+      set({ open: true, detailJobID: jobID });
+      const datasetId = useAppStore.getState().datasetId;
+      if (datasetId) get().ensureDescription(datasetId);
+    },
+    closeJobDetails: () => set({ detailJobID: null }),
     // The unit of a target CRS (M4-13c-3). A refusal and an answer stay; an answer that
     // could not be fetched is asked again. A lookup the caller abandons leaves nothing.
     lookupCrs: async (code, signal) => {
@@ -1196,6 +1208,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         ...EMPTY_DRAFT,
         ...(range ? { range, rangeDraft: range, rangeByHand: true } : {}),
         open: true,
+        detailJobID: null,
         area: draft.aoi ? 'aoi' : 'scene',
         extraScenes: extraScenes.items.length > 0 ? extraScenes : null,
         steps: draft.steps,
@@ -1264,7 +1277,6 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         });
         // One estimate, one job: a second identical job needs its own review.
         if (mine === startGeneration) set({ starting: false, estimate: null });
-        set({ jobsOpen: true });
         addJob({ jobID: status.jobID, expires: status.expires, status, title, range: own, order: orderCopy(order) });
       } catch (error) {
         if (mine === startGeneration) set({ starting: false, startError: refusalOf(error, view.key, s.steps) });
@@ -1325,6 +1337,70 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
         } else {
           updateJob(jobID, { cancelling: false, error: error instanceof Error ? error.message : String(error) });
         }
+      }
+    },
+    renameJob: (jobID, title) => {
+      const name = title.trim().slice(0, MAX_TITLE_LENGTH);
+      set((s) => ({ jobs: s.jobs.map((j) => (j.jobID === jobID ? { ...j, title: name || j.titleDefault } : j)) }));
+      persist();
+    },
+    // The parts that still carry the batch's own title follow it; one named by hand keeps its name.
+    renameBatch: (batchId, title) => {
+      const name = title.trim().slice(0, MAX_TITLE_LENGTH);
+      const before = get().batches.find((b) => b.id === batchId);
+      if (!before) return;
+      const next = name || before.titleDefault;
+      set((s) => ({
+        batches: s.batches.map((b) => (b.id === batchId ? { ...b, title: next } : b)),
+        jobs: s.jobs.map((j) => (j.batchId === batchId && j.title === before.title ? { ...j, title: next } : j)),
+      }));
+      persist();
+    },
+    setArchived: (target, archived) => {
+      set((s) => ({
+        jobs: s.jobs.map((j) => (inTarget(j, target) ? { ...j, archived } : j)),
+        batches: s.batches.map((b) => ('batchId' in target && b.id === target.batchId ? { ...b, archived } : b)),
+      }));
+      persist();
+    },
+    createGroup: (title) => {
+      const name = title.trim().slice(0, MAX_NAME_LENGTH);
+      if (!name) return null;
+      const id = newId();
+      set((s) => ({ groups: [...s.groups, { id, name }] }));
+      persist();
+      return id;
+    },
+    renameGroup: (groupId, title) => {
+      const name = title.trim().slice(0, MAX_NAME_LENGTH);
+      if (!name) return;
+      set((s) => ({ groups: s.groups.map((g) => (g.id === groupId ? { ...g, name } : g)) }));
+      persist();
+    },
+    removeGroup: (groupId) => {
+      const s = get();
+      if (s.jobs.some((j) => j.groupId === groupId) || s.batches.some((b) => b.groupId === groupId)) return false;
+      set({ groups: s.groups.filter((g) => g.id !== groupId) });
+      persist([groupId]);
+      return true;
+    },
+    // A part follows its batch; the batch's group is the one the manager shows.
+    moveToGroup: (target, groupId) => {
+      if (groupId !== null && !get().groups.some((g) => g.id === groupId)) return;
+      set((s) => ({
+        jobs: s.jobs.map((j) => (inTarget(j, target) ? { ...j, groupId } : j)),
+        batches: s.batches.map((b) => ('batchId' in target && b.id === target.batchId ? { ...b, groupId } : b)),
+      }));
+      persist();
+    },
+    cancelBatch: async (batchId) => {
+      if (cancellingBatches.has(batchId)) return;
+      cancellingBatches.add(batchId);
+      try {
+        const parts = get().jobs.filter((j) => j.batchId === batchId && j.phase === 'active');
+        for (const part of parts) await get().cancelJob(part.jobID);
+      } finally {
+        cancellingBatches.delete(batchId);
       }
     },
     resumeJobs: () => {
@@ -1396,7 +1472,8 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 // `limit` cuts it to the first steps (what the tiler accepted of a chain).
 function wantedPreview(limit?: number): PreviewSpec | null {
   const p = useProcessingStore.getState();
-  if (!p.open) return null;
+  // The details of a job are not the order: the draft draws nothing while they are shown.
+  if (!p.open || p.detailJobID) return null;
   const app = useAppStore.getState();
   const view = orderView(app, p);
   if (!view.info || !view.pass || processBlockReason(view.dataset, app.selectedIds.length) !== null) return null;
@@ -1578,6 +1655,7 @@ function refreshPreview(): void {
 useProcessingStore.subscribe((s, prev) => {
   if (
     s.open !== prev.open ||
+    s.detailJobID !== prev.detailJobID ||
     s.descriptions !== prev.descriptions ||
     s.passKey !== prev.passKey ||
     s.area !== prev.area ||

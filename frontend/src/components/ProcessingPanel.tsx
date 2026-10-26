@@ -5,8 +5,9 @@
 // pass or per scene (M4-13c-4). Built from the schema of
 // `/processing/processes/recipe?dataset=…`, nothing per dataset here. A side
 // bar at the right edge, a sheet from below on narrow screens (M4-13c §3.1);
-// the jobs of this tab have a window of their own (`JobList.tsx`). The first
-// step shows on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
+// the jobs are listed in the processing manager beside the rail, and a click
+// on one shows its details here (`JobDetails.tsx`, UI-01). The first step shows
+// on the map as a tile preview (M4-13c-2, `processingPreview.ts`).
 
 import { useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -46,6 +47,7 @@ import { MAX_RECIPE_BYTES } from '../recipeFile';
 import { COLORMAPS } from '../render';
 import { useAppStore } from '../store';
 import type { StacItem } from '../types';
+import JobDetails from './JobDetails';
 import ShareLink from './ShareLink';
 import StepForm from './StepForm';
 
@@ -447,6 +449,7 @@ export default function ProcessingPanel() {
   // Narrow screens only: the sheet from below folds down to its head.
   const [folded, setFolded] = useState(false);
   if (!open) return null;
+  if (p.detailJobID) return <JobDetails />;
 
   const dataset = app.datasets.find((d) => d.id === app.datasetId);
   // The same rule as the button in the ViewBar: scenes picked by hand.

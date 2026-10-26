@@ -56,6 +56,11 @@ body {
 }
 
 .app {
+  /* The rail and the panel beside it (UI-01 §6.9). `--dock-offset` is how far the map is covered from the
+     left: what is centred in the free map is centred in `100% - offset`. */
+  --rail-width: 48px;
+  --dock-width: 340px;
+  --dock-offset: var(--rail-width);
   position: relative;
   width: 100vw;
   height: 100vh;
@@ -85,11 +90,6 @@ body {
 .overlay > * {
   pointer-events: auto;
 }
-.top-left {
-  top: 16px;
-  left: 16px;
-  max-width: 340px;
-}
 .top-right {
   top: 16px;
   right: 16px;
@@ -102,7 +102,7 @@ body {
   align-items: flex-start;
 }
 .bottom {
-  left: 50%;
+  left: calc((100% + var(--dock-offset)) / 2);
   bottom: 20px;
   transform: translateX(-50%);
   display: flex;
@@ -111,9 +111,12 @@ body {
   align-items: center;
   width: min(760px, 92vw);
 }
+.app.dock-open {
+  --dock-offset: calc(var(--rail-width) + var(--dock-width));
+}
 .status {
   top: 16px;
-  left: 50%;
+  left: calc((100% + var(--dock-offset)) / 2);
   transform: translateX(-50%);
   width: min(560px, 90vw);
 }
@@ -169,36 +172,6 @@ body.dragging * {
 .zoom-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-/* --- collapsible control dock --- */
-.panel-dock {
-  transition: transform 0.32s ease;
-}
-.panel-dock.collapsed {
-  transform: translateX(calc(-100% - 16px));
-}
-.panel-toggle {
-  position: absolute;
-  top: 14px;
-  left: 100%;
-  margin-left: 6px;
-  width: 24px;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 0 8px 8px 0;
-  color: var(--accent);
-  font-size: 16px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-  box-shadow: var(--glow);
-}
-.panel-toggle:hover {
-  border-color: var(--accent);
 }
 
 /* --- collapsible results dock (right), same pattern mirrored horizontally
@@ -1369,25 +1342,8 @@ input[type='date']:focus {
   outline: none;
 }
 
-/* --- layer manager --- */
-/* Left edge with a small gap (V-7) — the single, fixed anchor. Whether it
-   actually needs to step aside from the control dock, and clamping it to
-   stay fully on screen either way, is `Draggable`'s job now (`avoidSelector`,
-   V-10): CSS alone couldn't tell "the dock is open" from "the dock is open
-   and would actually overlap this panel", which nudged it aside even when
-   nothing was in its way. */
-.layermgr {
-  top: 96px;
-  left: 16px;
-}
-/* Closed state: hides the whole draggable (grip included) without
-   unmounting it, so its drag offset survives a close/reopen. */
-.layer-dock-hidden {
-  display: none;
-}
+/* --- layer manager (docked beside the rail, UI-01 §6.9) --- */
 .layer-manager {
-  width: 340px;
-  max-height: 60vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1465,6 +1421,420 @@ input[type='date']:focus {
   width: 56px;
   accent-color: var(--accent);
   flex: 0 0 auto;
+}
+
+/* --- the rail and the panels beside it (UI-01 §6.9) --- */
+.app-rail {
+  position: absolute;
+  z-index: 14;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--rail-width);
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glow);
+}
+.rail-btn {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.rail-btn:hover,
+.rail-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+.rail-btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--row-hover);
+}
+.rail-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--map-bg);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+/* A tooltip that shows on hover and on keyboard focus (UI-01 §4): `data-tip` is its text. */
+.has-tip::after,
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 30;
+  display: none;
+  width: max-content;
+  max-width: 260px;
+  padding: 5px 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: left;
+  pointer-events: none;
+}
+.has-tip:hover::after,
+.has-tip:focus-visible::after,
+.tip:hover::after,
+.tip:focus-visible::after {
+  display: block;
+}
+.rail-btn::after {
+  top: 50%;
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  color: var(--muted);
+  cursor: help;
+  font-size: 12px;
+}
+.tip.warn {
+  color: var(--accent-2);
+}
+.tip:focus-visible {
+  outline: 1px solid var(--accent);
+  border-radius: 4px;
+}
+.tip::after {
+  top: calc(100% + 4px);
+  right: 0;
+}
+/* Beside the rail, from the top to the foot of the window; the panel inside fills it. */
+.dock {
+  top: 0;
+  bottom: 0;
+  left: var(--rail-width);
+  width: var(--dock-width);
+  z-index: 11;
+}
+.dock[hidden],
+.dock-slot[hidden] {
+  display: none;
+}
+.dock-slot,
+.layer-dock {
+  height: 100%;
+}
+.dock-panel,
+.control-panel.dock-panel {
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+}
+
+/* --- the processing manager (UI-01 §6.10) --- */
+.processing-manager {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pm-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.pm-filter {
+  display: flex;
+  gap: 4px;
+}
+.pm-note,
+.pm-new-group,
+.pm-empty {
+  margin: 0;
+  padding: 8px 14px;
+}
+.pm-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+.pm-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px 2px;
+}
+.pm-group-name {
+  flex: 1;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-group > .pm-group-name {
+  padding: 6px 4px 2px;
+}
+.pm-rows,
+.pm-parts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pm-parts {
+  margin-left: 18px;
+}
+.pm-row {
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.pm-row.archived {
+  opacity: 0.7;
+}
+.pm-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* The row under the pointer or with the focus, so the user sees which one the keys R, G and A act on. */
+.pm-line:hover,
+.pm-line:focus-within {
+  background: var(--row-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.pm-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  text-align: left;
+  cursor: pointer;
+}
+span.pm-open {
+  cursor: default;
+}
+button.pm-open:hover {
+  background: var(--row-hover);
+}
+.pm-title {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.pm-meta.failed .pm-state {
+  color: #ff9aa7;
+}
+.pm-meta.finished .pm-state {
+  color: var(--accent);
+}
+.pm-tag {
+  color: var(--accent-2);
+}
+/* The same square for every symbol at the end of a row, so a missing one leaves a gap and moves no other. */
+.pm-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+button.pm-icon:hover:not(:disabled),
+a.pm-icon:hover {
+  border-color: var(--accent);
+}
+.pm-icon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+/* A symbol that is off but still reachable, so that its reason shows on focus (UI-01 §4). */
+.pm-icon[aria-disabled='true'],
+.ghost-btn[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.pm-icon.has-tip,
+.ghost-btn.has-tip {
+  position: relative;
+}
+.pm-icon.has-tip::after,
+.ghost-btn.has-tip::after {
+  top: calc(100% + 4px);
+  right: 0;
+}
+.pm-icon[aria-disabled='true']:hover,
+.pm-icon[aria-disabled='true']:focus-visible {
+  border-color: transparent;
+}
+.pm-progress {
+  display: block;
+  width: calc(100% - 8px);
+  height: 4px;
+  margin: 2px 4px 0;
+  accent-color: var(--accent);
+}
+.pm-fault {
+  display: block;
+  padding: 2px 4px;
+  font-size: 10px;
+  color: #ff9aa7;
+}
+.pm-menu {
+  position: relative;
+}
+/* The list of a row is a `Popover` (portal, fixed, over everything), as wide as the row. */
+.pm-menu-list {
+  padding: 4px;
+  gap: 0;
+}
+.pm-menu-items {
+  display: flex;
+  flex-direction: column;
+}
+.pm-menu-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 24px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+/* The key of an item: at the right edge, quieter than the name. */
+.pm-key {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.pm-menu-list button:hover:not(:disabled),
+.pm-menu-list button:focus-visible {
+  background: var(--row-hover);
+  color: var(--accent);
+  outline: none;
+}
+.pm-menu-list button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pm-menu-list button[aria-checked='true']::before {
+  content: '✓ ';
+}
+.pm-fold {
+  flex: 0 0 20px;
+  width: 20px;
+}
+.pm-count {
+  color: var(--accent);
+}
+.pm-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+/* Job details in the processing window. */
+.pm-detail-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.pm-title-text {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.pm-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 11px;
+}
+.pm-facts dt {
+  color: var(--muted);
+}
+.pm-facts dd {
+  margin: 0;
+}
+.pm-steps {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+}
+.pm-step-values {
+  display: block;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 /* --- download dialog (M2-07d) --- */
@@ -1666,8 +2036,8 @@ input[type='date']:focus {
 /* --- processing panel (M4-13b; side bar since M4-13c §3.1) --- */
 /* A fixed side bar at the right edge, from below the top buttons to the foot of
    the window: the map stays free on the left for the preview. Head and foot
-   stay put, the middle scrolls. The jobs have a small window of their own,
-   left of the side bar while both are open. */
+   stay put, the middle scrolls. The list of jobs is the processing manager
+   beside the rail; a click on a job shows its details here. */
 :root {
   --pp-sheet-width: clamp(420px, 36vw, 600px);
 }
@@ -1738,34 +2108,25 @@ input[type='date']:focus {
   resize: vertical;
   font-family: var(--mono);
 }
-.jobs-dock {
-  top: 64px;
-  right: 16px;
-  z-index: 13;
-}
-.jobs-dock.beside-sheet {
-  right: calc(var(--pp-sheet-width) + 32px);
-}
 /* The bottom bar (selection, time slider) centred in the map left of the side bar. */
 .bottom.beside-sheet {
-  left: calc((100% - var(--pp-sheet-width) - 16px) / 2);
-  width: min(760px, calc(100vw - var(--pp-sheet-width) - 64px));
-}
-.jobs-panel {
-  width: 360px;
-  max-height: calc(100vh - 140px);
-  overflow-y: auto;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  left: calc((100% + var(--dock-offset) - var(--pp-sheet-width) - 16px) / 2);
+  width: min(760px, calc(100vw - var(--dock-offset) - var(--pp-sheet-width) - 64px));
 }
 /* Narrow screens: a sheet from below over the full width, at most 60 % of the
    height, with a grip that folds it down to its head; the map stays above. */
 @media (max-width: 899px) {
+  /* The panel lies over the map up to the right edge; the rail is all that is left of it. */
+  .app.dock-open {
+    --dock-offset: var(--rail-width);
+  }
+  .dock {
+    right: 0;
+    width: auto;
+  }
   .processing-sheet {
     top: auto;
-    left: 0;
+    left: var(--rail-width);
     right: 0;
     bottom: 0;
     width: auto;
@@ -1781,15 +2142,8 @@ input[type='date']:focus {
   .pp-grip {
     display: block;
   }
-  /* Above the sheet, not over its foot ("Start job" opens the jobs). */
-  .jobs-dock.beside-sheet {
-    right: 16px;
-  }
-  .jobs-dock.beside-sheet .jobs-panel {
-    max-height: calc(40vh - 80px);
-  }
   .bottom.beside-sheet {
-    left: 50%;
+    left: calc((100% + var(--dock-offset)) / 2);
     width: min(760px, 92vw);
     bottom: calc(60vh + 12px);
   }
@@ -2028,7 +2382,7 @@ input[type='date']:focus {
 /* "Preview" (M4-13c-2): over the map at the bottom left, and beside the heading
    of the preview section in the processing panel. */
 .preview-badge-dock {
-  left: 16px;
+  left: calc(var(--dock-offset) + 16px);
   bottom: 20px;
   z-index: 11;
 }
@@ -2074,4 +2428,20 @@ input[type='date']:focus {
   padding-bottom: 6px;
   white-space: nowrap;
   opacity: 0.8;
+}
+
+/* --- dragging a row to a group --- */
+.pm-row[draggable='true'] {
+  cursor: grab;
+}
+.pm-row.dragging {
+  opacity: 0.4;
+}
+.pm-group {
+  min-height: 34px;
+}
+.pm-group.drop {
+  background: var(--row-hover);
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
 }
