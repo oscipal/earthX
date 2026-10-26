@@ -2007,8 +2007,9 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   `SR_10m:b04,b03,b02` jede Variable für sich). Ein Eintrag für *alle* Assets, die ein Operator
   lesen kann, ist nicht prüfbar: Die Registry zählt die Assets eines Items nicht auf.
   - `sentinel-2-c1-l2a`: die zwölf Reflexionsbänder `"1"` (Oberflächenreflexion ist ein
-    Verhältnis); `scl` und `visual` ausdrücklich `None`. `aot`, `wvp`, `cloud`, `snow` und
-    `preview` nennt der Eintrag nicht.
+    Verhältnis); `scl` und `visual` ausdrücklich `None`. Seit NM4-16 (26.10.2026) auch
+    `aot` `"1"`, `wvp` `"cm"`, `cloud` und `snow` `"%"`, `preview` ausdrücklich `None` (Quellen im Kommentar
+    des Eintrags in `datasets.py`).
   - `sentinel-2-l2a-zarr3`: `SR_*` `"1"`, `SCL_20m:scl` `None`.
   - `cop-dem-glo-30`: `data` `"m"`, die Einheit, die der Bereich 0 bis 5000 der Standarddarstellung schon nennt.
   - `"1"` gilt für Werte **nach** der Skalierung. Liefe eine Quelle ein Reflexionsband ohne
@@ -2060,7 +2061,7 @@ bleibt stehen; maßgeblich ist dieser Nachtrag.
   ist die eine Stelle, die eine Einheit in Anzeigetext verwandelt, und gilt für jede Anzeige, auch
   die der Vorschau mit M4-19c. In den Daten bleibt „1“ (`bands[].unit`, `earthx:band_units`). Der
   Layer-Manager zeigt bei keiner Layer-Art eine Einheit; ein Ergebnis-Layer trägt sie nicht.
-- **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` bleiben ohne Eintrag, weil keine Quelle für ihre Einheit gelesen wurde. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
+- **Nicht gebaut:** (a) ein Eintrag für *jedes* Asset, das ein Operator lesen kann (§3.2): geprüft werden nur die der Standarddarstellung und der Maske; `aot`, `wvp`, `cloud`, `snow` und `preview` blieben zunächst ohne Eintrag und sind seit NM4-16 nachgetragen. (b) die Einheit in der Wertebereich-Zeile der **Vorschau**. Die Einheit hinter den
   Schritten kennt nur der Kern (Band-Math: keine; `mask`: die der übrigen Bänder; `normalize`:
   keine), und das Panel baut diese Bandlogik nicht nach (M4-18b). Der TileJSON der Kachel trug
   sie nicht. Das Feld `unit` im TileJSON und an den Bändern von `/statistics` mit `op` kam mit

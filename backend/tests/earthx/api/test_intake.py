@@ -486,12 +486,12 @@ class TestUnits:
 
     async def test_an_asset_the_item_describes_without_a_unit_and_the_registry_does_not_list_has_none(self) -> None:
         item = s2_item()
-        item["assets"]["aot"] = {
+        item["assets"]["thumbnail"] = {
             **item["assets"]["red"],
             "raster:bands": [{"data_type": "uint16", "nodata": 0}],
             "gsd": 20,
         }
-        accepted = await accept(order(assets=("aot",)), Source((S2, item)))
+        accepted = await accept(order(assets=("thumbnail",)), Source((S2, item)))
         assert accepted.recipe.inputs[0].resolved[0].bands[0].unit is None
 
     async def test_the_dem_item_that_describes_no_band_has_metres_on_the_input_not_an_invented_band(self) -> None:
