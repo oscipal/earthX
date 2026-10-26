@@ -471,8 +471,7 @@ class TestLeaseAndAttempts:
         self, db: psycopg.Connection, make_supervisor: Callable[..., Supervisor], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The upload outlasts the lease by half a second; the heartbeat may come up to 2.7 s late
-        # before the lease runs out under it (1.6 s against 1.0 s before, NM4-23: under load a
-        # heartbeat 0.7 s late was enough to lose the run).
+        # before the lease runs out under it (NM4-23).
         def slow(store: Store, result_id: str, name: str, path: Path) -> None:
             time.sleep(3.5)
             upload_result(store, result_id, name, path)
