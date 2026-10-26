@@ -131,8 +131,7 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
 
     Every entry's ``AdapterKind`` must be in the table. Beyond that, only what an
     app itself asks an adapter for (M4-01b §3.3): search and item fetch for a
-    federated entry, and coverage unless ``catalog`` answers it (``local-sql``) or
-    the route answers with the extent alone (``single_coverage_product``). Whether
+    federated entry, and coverage unless ``catalog`` answers it (``local-sql``). Whether
     a materialized entry can be materialized is ``discovery``'s question, refused
     by the dispatch there.
     """
@@ -146,8 +145,7 @@ def check_adapter_specs(registry: DatasetRegistry, adapters: AdapterSpecs) -> No
         if config.source.item_holding is ItemHolding.FEDERATED and spec.search is None:
             problems.append(f"{config.dataset_id}: federated, but {kind} offers no search")
         provider = config.coverage.provider
-        asks_adapter = provider is not CoverageProvider.LOCAL_SQL and not config.capabilities.single_coverage_product
-        if asks_adapter and provider not in spec.coverage:
+        if provider is not CoverageProvider.LOCAL_SQL and provider not in spec.coverage:
             problems.append(f"{config.dataset_id}: {kind} answers no {provider.value} coverage")
     if problems:
         raise AdapterSpecMismatch("; ".join(problems))

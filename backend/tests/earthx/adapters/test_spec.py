@@ -117,7 +117,7 @@ def _required(config: DatasetConfig) -> set[str]:
         needed = {"search", "fetch", "intersects", "ids"}
     else:
         needed = {"materialize"}
-    if config.coverage.provider is not CoverageProvider.LOCAL_SQL and not config.capabilities.single_coverage_product:
+    if config.coverage.provider is not CoverageProvider.LOCAL_SQL:
         needed.add("coverage")
     return needed
 

@@ -27,7 +27,6 @@ from earthx.catalog.coverage import (
     UpstreamCoverageShapeError,
     cell_bbox,
     check_completeness,
-    extent_result,
     geotile_key,
     level_for_viewport,
     parse_cell_key,
@@ -353,21 +352,8 @@ def test_max_count_of_an_empty_answer_is_zero() -> None:
     assert result((), total=0).max_count == 0
 
 
-class TestExtentResult:
-    """adr/0004 §5, "Einmal-Produkte": extent instead of density."""
-
-    def test_the_extent_is_carried_through(self) -> None:
-        bbox = (5.0, 45.0, 15.0, 55.0)
-        answer = extent_result("one-off", bbox)
-        assert answer.extent == bbox
-        assert answer.completeness is Completeness.COMPLETE
-
-    def test_there_is_nothing_to_count(self) -> None:
-        answer = extent_result("one-off", (5.0, 45.0, 15.0, 55.0))
-        assert answer.cells == ()
-        assert answer.counted == 0
-        assert answer.histogram == ()
-        assert answer.total_count is None
+class TestRegularResult:
+    """adr/0004 §5: only the area way of a one-off product carries an extent."""
 
     def test_a_regular_result_carries_no_extent(self) -> None:
         assert result().extent is None
