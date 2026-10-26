@@ -60,6 +60,18 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
 
+def _without_measured_time(fields: dict[str, object]) -> dict[str, object]:
+    """`fields` minus the access log's `duration_ms`, once it is checked to be a number.
+
+    `RequestIdMiddleware` measures it (`earthx/logging.py`), so nothing a request carries can
+    be in it, but a digit-string marker can match inside it by chance: "9.5" in 59.5 (NM4-23).
+    """
+    rest = dict(fields)
+    duration = rest.pop("duration_ms", None)
+    assert duration is None or isinstance(duration, int | float), duration
+    return rest
+
+
 def log_line_without_timestamp(line: str) -> str:
     """A JSON log line minus its `timestamp`.
 
@@ -85,8 +97,9 @@ def own_log_text(record: logging.LogRecord) -> str:
 
     `str(record.__dict__)` also holds `created`, `relativeCreated`, `msecs`, `thread` and `process`;
     a digit-string marker such as "9.01" matches inside them by chance (`relativeCreated` 25239.017...).
+    The measured `duration_ms` of the access log is left out for the same reason.
     """
-    return record.getMessage() + " " + json.dumps(own_log_fields(record), default=str)
+    return record.getMessage() + " " + json.dumps(_without_measured_time(own_log_fields(record)), default=str)
 
 
 def format_without_timestamp(record: logging.LogRecord) -> str:
