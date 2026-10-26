@@ -180,6 +180,8 @@ export interface JobEntry extends ShelfJob {
   phase: JobPhase;
   // The ZIP of the results document (`archiveOf`); `null` until the results are read.
   archive: string | null;
+  // The bytes of the raster (`length` of the link `result`); `null` until the results are read, and for an export.
+  bytes: number | null;
   // `earthx:resampled` of the result (Prinzip 2.9); `null` until the results are read.
   resampled: boolean | null;
   failure: string | null;
@@ -734,6 +736,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       const href = tilesHref(doc);
       updateJob(jobID, {
         archive: archiveOf(doc),
+        bytes: typeof doc.result?.length === 'number' ? doc.result.length : null,
         resampled: properties ? properties['earthx:resampled'] === true : null,
         tiles: href
           ? { href, width: typeof doc.result?.width === 'number' ? doc.result.width : null, gsd: positive(properties?.gsd) }
@@ -791,6 +794,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
       status,
       phase: over ? 'gone' : 'active',
       archive: null,
+      bytes: null,
       resampled: null,
       failure: null,
       error: null,

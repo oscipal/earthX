@@ -45,7 +45,6 @@ from earthx.catalog.coverage import (
     CoverageResult,
     InvalidCoverageQuery,
     UpstreamCoverageShapeError,
-    extent_result,
     level_for_viewport,
 )
 from earthx.catalog.local_coverage import area_coverage, check_intersects_is_valid
@@ -59,9 +58,8 @@ LOGGER = logging.getLogger("earthx.api.coverage")
 # (M3-11c plan step §4.1 F4): a materialized time series would need its own
 # zoomed-grid counting over `pgstac.items`, which no dataset needs in M3. With a
 # single coverage product, `local-sql` *is* implemented — as the area way below,
-# not through this set (it never goes through `IMPLEMENTED_PROVIDERS`, the same
-# way `single_coverage_product` already skips it for `upstream-aggregation`,
-# see `_area_path`).
+# not through this set (it never goes through `IMPLEMENTED_PROVIDERS`, see
+# `_area_path`).
 #
 # Public because onboarding checklist point 2 reads it: "a coverage provider is
 # assigned" is only worth anything if something answers for that provider
@@ -72,9 +70,9 @@ IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION})
 def _area_path(config: Any) -> bool:
     """Whether this entry answers through the ``local-sql`` area way (M3-11c):
     the union of its own items' footprints, for a materialized one-off product.
-    A one-off product with any other provider keeps the unchanged extent way
-    below; ``local-sql`` without ``single_coverage_product`` is the density path
-    that is not built (F4), and never reaches this function's caller as ``True``.
+    ``local-sql`` without ``single_coverage_product`` is the density path that is
+    not built (F4), and never reaches this function's caller as ``True``; a
+    one-off product with upstream aggregation cannot be registered (adr/0004 §5).
     """
     return config.capabilities.single_coverage_product and config.coverage.provider is CoverageProvider.LOCAL_SQL
 
@@ -106,15 +104,6 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
             raise HTTPException(status_code=404, detail=f"no dataset {dataset_id!r}") from None
 
         area_path = _area_path(config)
-        if config.capabilities.single_coverage_product and not area_path:
-            # Checked before any other provider is asked, unchanged since M2-05b: a
-            # one-off product answered by upstream aggregation has an
-            # extent, not a density (adr/0004 §5, "Einmal-Produkte") — nothing here
-            # reads a filter, the same as before M3-11c. `local-sql` is the one
-            # provider this entry can pair with that answers a real question
-            # instead (the area way, `area_path` above).
-            return _serialise(extent_result(config.dataset_id, config.spatial_extent.bbox))
-
         if not area_path and config.coverage.provider not in IMPLEMENTED_PROVIDERS:
             # `local-sql` without `single_coverage_product` is the density path
             # M3-11c does not build (plan step §4.1 F4): no dataset needs it in M3.

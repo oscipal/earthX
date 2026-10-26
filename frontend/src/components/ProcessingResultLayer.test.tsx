@@ -35,6 +35,7 @@ function entry(over: Partial<JobEntry> = {}): JobEntry {
     status: null,
     phase: 'successful',
     archive: 'result.zip',
+    bytes: null,
     resampled: false,
     failure: null,
     error: null,

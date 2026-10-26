@@ -38,6 +38,7 @@ export function jobEntry(n: number, over: Partial<JobEntry> = {}): JobEntry {
     status: status({ jobID: jobId(n), expires }),
     phase: 'active',
     archive: null,
+    bytes: null,
     resampled: null,
     failure: null,
     error: null,
