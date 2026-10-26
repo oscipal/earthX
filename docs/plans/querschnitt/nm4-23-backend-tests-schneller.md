@@ -279,3 +279,75 @@ Auflagen:
   - Die volle Suite läuft in der Session mindestens dreimal hintereinander mit `xdist` grün.
   - Seriell (`-n 0`) läuft sie weiter.
   - Die Zeiten vorher und nachher (Session und CI) stehen im PR.
+
+## 16. Umsetzung (26.10.2026)
+
+### 16.1 Was sich geändert hat
+
+- **Feste Testkennungen (M2):**
+  - `objectstore/test_client.py`: Kennung ist der Name der Funktion (`pytest.param(…, id=name)`), nicht ihr `repr` mit Adresse.
+  - `objectstore/test_results.py`: Die drei Fälle laufen über `range(3)`, jeder macht seine Zufalls-ID im Test.
+  - Prüfgegenstand und Zahl der Fälle bleiben gleich. Zweimal sammeln mit verschiedenem `PYTHONHASHSEED` ergibt dieselbe Liste.
+- **rasterio ohne AWS-Sitzung (M1), genau so:**
+  - `backend/tests/conftest.py` setzt beim Import `rasterio.session.boto3 = None`.
+  - rasterio prüft `boto3` nur einmal beim Import und merkt sich das Ergebnis in genau diesem Namen. `Session.aws_or_dummy` (`rasterio/session.py`) baut eine `AWSSession` nur, wenn er auf ein Modul zeigt. Sonst nimmt rasterio seinen eigenen Weg für ein fehlendes `boto3`, `DummySession`, wie im Image.
+  - `sys.modules`, `boto3` und `botocore` bleiben unberührt. `moto` patcht `botocore`, der Client des Objektspeichers nutzt nur `botocore`, und `earthx/objectstore` importiert rasterio nicht.
+  - **Beleg, dass die `moto`-Tests dasselbe prüfen:**
+    - Die 735 Tests der Dateien, die `moto` oder den Objektspeicher nutzen, liefen mit und ohne die Zeile:
+      - `tests/earthx/objectstore/`
+      - `jobs/test_cleanup.py`, `test_worker.py`, `test_startup.py`
+      - `processing/test_import_is_pure.py`
+      - `api/test_result_zip_route.py`, `test_result_zip_files.py`, `test_result_tiles.py`, `test_bundle_route.py`
+      - `test_objectstore_boundary.py`
+    - Ergebnis: dieselben Kennungen, dasselbe Ergebnis je Test. Einzige Ausnahme ist der neue Wächtertest, der ohne die Zeile rot wird.
+    - `objectstore/test_rasterio_session.py` hält beide Hälften fest:
+      - Im Testprozess gibt es keine `AWSSession`.
+      - `boto3` und `botocore` bleiben importierbar.
+      - Der Store erreicht den `moto`-Bucket auch innerhalb von `rasterio.Env()`.
+      - Ein frischer Prozess auf demselben Interpreter baut ohne die Zeile weiter eine `AWSSession` (Gegenprobe).
+- **`pytest-xdist`:**
+  - `pytest-xdist>=3.8` in `backend/requirements-dev.txt`.
+  - Das Dev-Lock bekommt `pytest-xdist` 3.8.0 und `execnet` 2.1.2. Lock des Images und Lock des Smoke-Tests sind unverändert.
+  - `addopts` in `pyproject.toml`: `-n auto --dist worksteal`.
+- **Datenbank je Worker:**
+  - `backend/tests/worker_database.py`, angestoßen über `pytest_configure`/`pytest_unconfigure` in `backend/tests/conftest.py`.
+  - Unter `xdist` legt jeder Worker `<PGDATABASE>_gw<n>` leer an, mit PostGIS und den pgstac-Migrationen aus dem gepinnten `pypgstac`, und löscht sie am Ende.
+  - Auf einem nicht lokalen Host und ohne Konfiguration wird keine angelegt; seriell bleibt alles wie vorher.
+  - Tests: `integration/test_worker_database.py`.
+- **Zeitabhängige Tests:** gefunden unter Last (4 Kopien von `test_worker.py` parallel) und in den `xdist`-Läufen.
+
+| Test | Ursache | Abhilfe | Gegenprobe |
+|---|---|---|---|
+| `test_worker.py::TestShutdown::test_a_stopped_supervisor_ends_its_children_and_gives_the_runs_back` (der Fehlschlag aus der anderen Session, hier 1 von 20 Läufen) | Ein Lauf steht ab dem Abholen auf `running`, das Kind startet der Slot erst danach. `len(children) == 2` kam zu früh. | Warten, bis beide Kinder laufen (`_wait_for_children`) | — |
+| `test_worker.py`, zwei Tests zu fremdem Besitz | dieselbe Ursache: „kein Kind“ war wahr, bevor das Kind lief; die Tests prüften dann nichts | ebenso | — |
+| `test_worker.py::…::test_an_upload_longer_than_the_lease_does_not_lose_the_run` | 0,7 s zwischen Heartbeat und Lease | Lease 3 s, Upload 3,5 s: 2,7 s Spielraum, Upload weiter länger als die Lease | ohne Erneuerung während des Uploads rot |
+| `test_worker.py::…::test_a_supervisor_that_is_killed_…` | Der Nachfolger hatte ohne Grund eine Lease von 1 s | Nachfolger mit den üblichen 3 s; die ablaufende Lease (des getöteten, 1 s) bleibt | — |
+| `api/test_mosaic_item_fetches.py`, 2 Tests | „gleichzeitig“ hing an 30 ms Verzögerung; ohne Item-Cache holte eine späte Kachel neu | Die Quelle antwortet erst, wenn jede Kachel bei `ItemFetches.get` war | ohne Bündelung in `ItemFetches` rot |
+| `gateway/test_gdal_tile_cache.py`, 2 Tests | Der `/vsicurl/`-Cache ist prozessweit; unter `xdist` laufen davor wechselnde Tests im selben Worker | Lesen in einem frischen `spawn`-Prozess wie beim `tiler`; der Server zählt vor dem Senden | mit dem Basisprofil rot |
+
+Unter derselben Last wie beim Fehlschlag liefen danach 20 von 20 Läufen von `test_worker.py` grün.
+
+- **Doku:**
+  - Nachtrag in `adr/0002` §6.
+  - Zwei Zeilen im Entscheidungslog: die Umsetzung, und Frage 4 als Hinweis.
+  - Das Backlog bleibt unverändert, es pflegt der Planungs-Chat (Otto, 26.10.2026).
+
+### 16.2 Messung nachher
+
+Session wie in §8.1, Stand nach dem Merge von `main` (1e961e0). Die Zahl der Tests: `main` 6026, dieser Branch 6037 (+4 rasterio, +7 Datenbank je Worker).
+
+| Lauf | Wo | Tests | Wandzeit |
+|---|---|---|---|
+| vorher, seriell | Session (`main` 459358e) | 5931 / 8 übersprungen | 989–1009 s |
+| nachher, `xdist` Lauf 1 | Session | 6029 / 8 | **283 s** |
+| nachher, `xdist` Lauf 2 | Session | 6029 / 8 | **285 s** |
+| nachher, `xdist` Lauf 3 | Session | 6029 / 8 | **293 s** |
+| nachher, seriell `-n 0` | Session | 6029 / 8 | 888 s |
+| vorher | CI, `main` Lauf 806 (13:36) | 5939 | Schritt `pytest` 9:24 min |
+| vorher | CI, `main` 1e961e0 (15:42) | 6026 | Schritt `pytest` 14:26 min |
+| nachher | CI, PR, erster Lauf (15:40) | 6037 | Schritt `pytest` 4:10 min (Job 5:00) |
+| nachher | CI, PR nach Merge von `main` (16:13) | 6037 | Schritt `pytest` 5:41 min (Job 6:35) |
+
+- Speicherspitze des Rechners in den drei `xdist`-Läufen: 5,7 von 15 GB. Danach war keine Datenbank `…_gw<n>` übrig.
+- Die CI-Runner schwanken stark: `main` brauchte heute 9:24 bis 14:26 min, am 24.10. waren es 13,2 min. Zur selben Uhrzeit (15:40/15:42) lagen PR und `main` bei 4:10 und 14:26 min.
+- Die längste Einzeldauer bleibt `test_memory_8192` mit rund 61 s (Aufbau 13 s, Aufruf 48 s).
