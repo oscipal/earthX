@@ -51,6 +51,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe A, nur Frontend. Bänder aus dem Ausdruck kommen weiter automatisch dazu (M4-13c).
 8. **Methodentext ins Rezept, `methods.txt` entfällt** (Otto, 22.10.2026).
    - **Plan:** `querschnitt/nm4-08-methodentext-ins-rezept.md`
+   - **Erledigt:** NM4-08, PR #201 (26.10.2026). Text in `recipe.json` → `provenance.methods`; ZIPs ohne `methods.txt`; Link `methods` der API bleibt; Runner schreibt den Text in `provenance.json`. `adr/0014` §15r, `adr/0016` §12c.
    - **Soll:** `recipe.json` trägt den Methodentext im Block `provenance` als Feld `methods`. Dieser Block geht nicht in den Hash ein, und der Runner trennt ihn beim Einlesen ab (M4-16 F3). Die eigene Datei `methods.txt` entfällt im ZIP und im Runner.
    - **Folgen:**
      - die Definition der Download-Inhalte aus M4-30 und `TEXT_FILES` (M4-19a) anpassen,
@@ -133,6 +134,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Aufgabe:** Stufe C (Entscheidungsvorlage), danach Umsetzung.
 16. **Einheiten für die übrigen Sentinel-2-Assets** (aus M4-19b, 23.10.2026).
    - **Plan:** `querschnitt/nm4-16-einheiten-uebrige-assets.md`
+   - **Erledigt:** NM4-16, PR #199 (26.10.2026): `aot` "1", `wvp` "cm", `cloud` und `snow` "%", `preview` bewusst ohne Einheit; Quellen: Sen2Cor-L2A-IODD Tab. 6, 7, 16, 20.
    - **Heute:** `aot`, `wvp`, `cloud`, `snow` und `preview` haben in der Registry keine Einheit (`earthx:band_units`), weil die Session keine Quelle dafür gelesen hat.
    - **Aufgabe (Stufe A):** Einheiten mit Quelle nachtragen (Produktspezifikation Sentinel-2 L2A bzw. Item-Metadaten); wo keine Einheit sinnvoll ist (etwa `preview`), das bewusst vermerken. Hinweis: Eine Korrektur der Einheit ändert den Hash (`adr/0014` §15n), also einmal kein Cache-Treffer.
 17. **„Clear all“ wird „Clear search results“** (Otto, 24.10.2026).
@@ -219,8 +221,14 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Befund:** Mit dem Ausscheiden von `CoverageProvider.SAMPLE` ist der Zweig `single_coverage_product` ohne Flächenweg in `api/coverage_route.py` (`extent_result`) nicht mehr erreichbar: `_check_coverage` verbietet `single_coverage_product` mit Aggregation, `local-sql` nimmt den Flächenweg. Ebenso wirkungslos ist `and not config.capabilities.single_coverage_product` in `check_adapter_specs` (`adapters/spec.py`) samt `_required` in `tests/earthx/adapters/test_spec.py`.
    - **Berührt:** `adr/0004` (Einmal-Produkte: Ausdehnung allein).
    - **Aufgabe (Stufe A, eigener PR):** prüfen, ob der Zweig für eine künftige Quelle ohne Aggregation gebraucht wird; sonst mit seinen Tests entfernen.
-32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026), nach VP3 und vor M5.
+32. **Paket „Datensatzabhängige Suche und Prozessierung“ (DS)** (Otto, 26.10.2026). DS-02, DS-03, DS-06 nach VP3 und vor M5; DS-04 und DS-05 (Sentinel-1) erst mit oder nach M5.
+   - **DS-01 erledigt:** `adr/0018` Fassung 2 (PR #200): keine regionale Quelle; Earth Search `sentinel-1-grd` als Level-1-Datensatz mit TPS-Georeferenz überall und Hinweisen „Approximate geolocation“/„Uncalibrated (DN)“; Planetary Computer RTC nur nach positiver Messung durch Otto (anonymes Token zulässig unter Bedingungen, Originale per Klick); eigene Geländekorrektur als eigenes ADR nach DS-04.
    - **Pläne:** `ds/ds-00-paket.md` (Übersicht) und `ds/ds-01` bis `ds/ds-06`: Sentinel-1-Quelle (C), „Advanced search“ (B), Wolken in der AOI (B), S1 anbinden (A), SAR-Operatoren (B), Maske nach Werten (B).
+
+33. **Originale mit einem Klick herunterladen** (Otto, 26.10.2026: „einfach einen Download-Button drücken ohne extra Steps“).
+   - **Plan:** `querschnitt/nm4-33-originale-ein-klick.md`
+   - **Entscheidet mit:** den offenen Punkt „Originale als ZIP über die Plattform“ (unten). Wege: direkte Downloads nacheinander, ZIP über die Plattform, ZIP im Browser (CORS je Quelle).
+   - **Aufgabe:** Stufe B mit Recherche und Messung, nach UI-01.
 
 ## In UI-01 aufgenommen (20.–22.10.2026)
 
@@ -234,11 +242,11 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 
 ## Offen im Entscheidungslog (bewusst nach M4)
 
-33. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
-34. Originale als ZIP über die Plattform. Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
-35. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
-36. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
-37. Punkte aus S3 (M4-Plan Fassung 3):
+34. Earth Search v2: `sentinel-2-c1-l2a` wird durch `sentinel-2-l2a` ersetzt (Termin offen, Quelle im Log von M4-12a).
+35. Originale als ZIP über die Plattform (wird in Punkt 33 entschieden). Das kostet Bandbreite und gibt Daten über die Plattform weiter, und ein Abbruch lässt sich nicht fortsetzen (M4-11b-2).
+36. Festes nodata je Ganzzahltyp für Quellen ohne nodata, dazu die Kollision gültiger Werte mit nodata nach dem Klemmen (M4-26).
+37. Triage-Routine bei rotem Live-Smoke (projektplan §6, nicht eingerichtet; M4-27 §4).
+38. Punkte aus S3 (M4-Plan Fassung 3):
     - Export-Job für Zarr blockweise,
     - schnelleres COG-Profil,
     - Laufzeitdeckel an echten Läufen kalibrieren,
@@ -246,11 +254,11 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
     - Job-Schnittstelle in eigenem Prozess,
     - Eingaben per Referenz (siehe Punkt 5),
     - Datei-Cache des Runners.
-38. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
+39. CI: Umstellung von `ubuntu-latest` auf Ubuntu 26, Node-20-Warnungen der Actions, kein `cancel-in-progress`. Entschieden, `.github/` nicht zu ändern (19.10.2026). Neu entscheiden, sobald die CI ohne Codeänderung an Systempaketen scheitert.
 
 ## Danach geplant
 
-39. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
+40. VP3: UI-01 (App-Rahmen, Processing-Manager, Batch, „Download all“, Layer-Manager mit den Punkten 8–12), dann UI-02 (Basemap, Projektion). Siehe `projektplan.md` v1.5.
 
 ## Verworfen bzw. nur bei Bedarf
 
