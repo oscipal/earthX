@@ -13,7 +13,8 @@ answers every item from a hand-written synthetic one after ``--item-ms`` (the it
 ``boto3`` is set aside as in the image: it is only in the dev lock (through ``moto``), and with it rasterio builds an
 AWS session for every ``rasterio.Env``, which costs about 100 ms of CPU per tile that production does not spend.
 
-``EXTRA_GDAL=KEY=VALUE,...`` adds to the GDAL options of ``gateway.gdal.tile_gdal_options`` and ``crop_gdal_options`` (``KEY=-`` removes one).
+``EXTRA_GDAL=KEY=VALUE,...`` adds to both GDAL profiles of the tiler, ``gateway.gdal.tile_gdal_options`` and
+``crop_gdal_options`` (``KEY=-`` removes one).
 One JSON line per request to ``--log``: ``total`` and the phases in ms; one line per item fetched at the source.
 """
 

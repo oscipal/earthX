@@ -29,5 +29,8 @@ if [ -n "${CLIENT:-}" ]; then
 else
   python "$here/view.py" --out "$OUT/view_$tag.jsonl" "$@"
 fi
+rss=$(ps -o rss= --ppid "$tiler_pid" -p "$tiler_pid" | awk '{kb += $1} END {print int(kb / 1024)}')
+# Both processes end before the logs are read, so that no line is still being written.
+cleanup
 python "$here/summary.py" "$OUT/tiler_$tag.jsonl" "$OUT/source_$tag.jsonl"
-ps -o rss= --ppid "$tiler_pid" -p "$tiler_pid" | awk '{kb += $1} END {printf "{\"tiler_rss_MB\": %d}\n", kb / 1024}'
+echo "{\"tiler_rss_MB\": $rss}"
