@@ -30,7 +30,6 @@ export default function TimeSlider() {
   const active = groups[activeGroupIndex];
   // groups are newest-first; show oldest→newest left→right.
   const sliderValue = groups.length - 1 - activeGroupIndex;
-  const frameCount = active?.items.length ?? 0;
 
   return (
     <div className="panel time-slider">
@@ -58,12 +57,6 @@ export default function TimeSlider() {
           onChange={(e) => setActiveGroupIndex(groups.length - 1 - Number(e.target.value))}
           aria-label="Timeline (mosaic groups)"
         />
-        <div className="mosaic-info">
-          <span>
-            {frameCount} image{frameCount === 1 ? '' : 's'}
-            {frameCount > 1 && ' covering ROI'}
-          </span>
-        </div>
       </div>
       <span className="time-count">
         {activeGroupIndex + 1}/{groups.length}

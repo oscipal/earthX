@@ -188,6 +188,17 @@ describe('the labels of the bar (UI-01g)', () => {
     expect(button('⇩ Download merged crop').title).toContain('full resolution');
   });
 
+  it('put the number above its label, so the count has one box whether it says "scene" or "scenes"', () => {
+    select('cog', AOI);
+    act(() => useAppStore.setState({ selectedIds: ['A'] }));
+    show();
+    const count = () => [container.querySelector('.download-count strong')?.textContent, container.querySelector('.download-count span')?.textContent];
+    expect(count()).toEqual(['1', 'scene selected']);
+    act(() => useAppStore.setState({ selectedIds: ['A', 'B'] }));
+    expect(count()).toEqual(['2', 'scenes selected']);
+    expect(container.querySelectorAll('.download-count')).toHaveLength(1);
+  });
+
   it('are one size: no button sets a width or height of its own', () => {
     select('cog', AOI);
     show();

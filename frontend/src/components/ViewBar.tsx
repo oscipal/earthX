@@ -36,7 +36,8 @@ export default function ViewBar() {
   return (
     <div className="panel download-bar" role="group" aria-label="Selected scenes, full resolution">
       <span className="download-count">
-        {selectedIds.length} scene{plural ? 's' : ''} selected
+        <strong>{selectedIds.length}</strong>
+        <span>scene{plural ? 's' : ''} selected</span>
       </span>
       <button
         type="button"

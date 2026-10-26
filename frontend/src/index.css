@@ -1221,14 +1221,6 @@ input[type='date']:focus {
 }
 
 /* --- mosaic info under the timeline --- */
-.mosaic-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 3px;
-  font-size: 10px;
-  color: var(--muted);
-}
 .link-btn {
   background: none;
   border: none;
@@ -1303,6 +1295,20 @@ input[type='date']:focus {
 /* One size for every button of the bar (UI-01g): the same width and height, the label on at most two lines. */
 .download-count {
   flex: none;
+  /* The number above its label, in a box of one width: "1 scene" and "12 scenes" must not move the buttons. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 96px;
+  line-height: 1.2;
+  text-align: center;
+}
+.download-count strong {
+  font-size: 16px;
+}
+.download-count span {
+  font-size: 11px;
+  white-space: nowrap;
 }
 .download-bar .primary-btn,
 .download-bar .ghost-btn {

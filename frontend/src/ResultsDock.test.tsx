@@ -364,7 +364,8 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     click(slot('results').querySelector('.result-row input')!);
     expect(useAppStore.getState().selectedIds).toHaveLength(1);
     expect(useAppStore.getState().resultsOnMap).toBe(false);
-    expect(container.querySelector('.download-bar')?.textContent).toContain('1 scene selected');
+    expect(container.querySelector('.download-count strong')?.textContent).toBe('1');
+    expect(container.querySelector('.download-count span')?.textContent).toBe('scene selected');
   });
 
   it('are on again with a new search, and after the search was cleared', async () => {
