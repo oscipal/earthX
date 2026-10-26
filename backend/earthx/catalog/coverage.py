@@ -238,18 +238,17 @@ class CoverageResult:
     # in der Zelle"). A second grid or a second counting rule would have to say so here.
     grid: str = "geotile"
     counting: str = "centroid"
-    # Set only by :func:`extent_result` and the ``local-sql`` area way
+    # Set only by the ``local-sql`` area way
     # (`catalog.local_coverage.area_coverage`, M3-11c): a one-off product has
     # nothing to count, so it answers with the ground it covers instead of a
-    # density (adr/0004 §5, "Wo welcher Teil liegt" / "Einmal-Produkte"). For the
-    # area way this is the bbox of ``area`` below, not the collection's own extent.
+    # density (adr/0004 §5, "Wo welcher Teil liegt" / "Einmal-Produkte"). This is
+    # the bbox of ``area`` below, not the collection's own extent.
     extent: tuple[float, float, float, float] | None = None
     # Set only by the ``local-sql`` area way (M3-11c, adr/0009 §6 F5): the union of
     # a materialized one-off product's own item footprints, as a GeoJSON
     # ``MultiPolygon`` — the honest coverage of a dataset with nothing to count,
     # cropped to whatever spatial filter the query carried. ``None`` everywhere
-    # else, including the ``extent_result`` way, which answers a different question
-    # (the collection's declared extent, not a union of items).
+    # else.
     area: Mapping[str, Any] | None = None
     # Filters the query carried that this answer could not honour and silently
     # dropped rather than reject (Otto, 26.09.2026, M3-11c): ``"datetime"`` for a
@@ -346,27 +345,6 @@ def check_completeness(
     if simplified_aoi or total_count is None or counted != total_count:
         return Completeness.TRUNCATED
     return Completeness.COMPLETE
-
-
-def extent_result(dataset_id: str, bbox: tuple[float, float, float, float]) -> CoverageResult:
-    """The answer for a one-off product: its extent, not a density (adr/0004 §5).
-
-    Checked *before* a provider is even asked (``registry.py`` already forbids the
-    combination of ``single_coverage_product`` with upstream aggregation) — a single
-    coverage has nothing to count, so there is no cell, no histogram, and its
-    completeness is trivially whole: the extent is what the collection states,
-    nothing is being compared against a total that does not apply here.
-    """
-    return CoverageResult(
-        dataset_id=dataset_id,
-        level=0,
-        cells=(),
-        total_count=None,
-        completeness=Completeness.COMPLETE,
-        histogram=(),
-        from_cache=False,
-        extent=bbox,
-    )
 
 
 def level_for_viewport(zoom: int, config: DatasetConfig, *, has_spatial_filter: bool) -> int:

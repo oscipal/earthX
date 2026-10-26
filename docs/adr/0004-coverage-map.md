@@ -514,7 +514,11 @@ Fähigkeit ausdrücklich frei), keine Heuristik.
 > die Berechnung dauert dabei rund 1 s; ein Kartenausschnitt kostet einstellige
 > bis niedrige zweistellige Millisekunden. Der Weg über `extent.spatial.bbox`
 > bleibt für jedes andere Einmal-Produkt (föderiert oder ohne eigene Items)
-> unverändert. Ein Filter, den der Datensatz strukturell nicht beantworten
+> unverändert. *(Stand 26.10.2026, NM4-31: Diesen Weg gibt es im Code nicht
+> mehr. Seit NM4-15b kennt `CoverageProvider` nur noch `upstream-aggregation`
+> und `local-sql`; ein Einmal-Produkt mit Aggregation lehnt die Registry ab,
+> mit `local-sql` nimmt es den Flächenweg. Eine künftige Quelle ohne
+> Aggregation bräuchte einen neuen Provider und damit eine eigene Entscheidung.)* Ein Filter, den der Datensatz strukturell nicht beantworten
 > kann (`max_cloud_cover` auf diesem Weg; `datetime` bei
 > `capabilities.time_range=False`), wird stillschweigend fallengelassen und in
 > einem neuen Feld `ignored_filters` benannt, statt eine engere Antwort zu

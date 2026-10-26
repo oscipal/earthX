@@ -233,8 +233,7 @@ def _result(query: CoverageQuery, stored: dict[str, Any], *, from_cache: bool) -
         total_count=None,
         # `adr/0009` §6: the platform holds every item of a materialized one-off
         # product, so there is nothing left uncounted — unlike `check_completeness`,
-        # nothing is being compared against a total that does not apply here (the
-        # same reasoning `extent_result` already carries).
+        # nothing is being compared against a total that does not apply here.
         completeness=Completeness.COMPLETE,
         histogram=(),
         from_cache=from_cache,
