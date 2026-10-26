@@ -43,6 +43,7 @@ import {
   buildSections,
   combineAnswers,
   firstSectionWithItems,
+  hasResultsPanel,
   LOAD_MORE_NOTE,
   NO_SCENES_NOTE,
   needsFallback,
@@ -530,6 +531,7 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
       searchCrops: [],
       selectedIds: [],
       searchContext: null,
+      dock: withoutResults(s.dock),
       error: `Grouping failed: ${failed}`,
       notice: null,
     });
@@ -579,6 +581,8 @@ function showSearchResults(set: SetState, get: GetState, ctx: SearchContext, kee
     searchCrops: crops,
     selectedIds: keepOpen ? s.selectedIds.filter((id) => open?.items.some((it) => it.id === id)) : [],
     searchContext: ctx,
+    // A new search shows its results; "Load more" leaves the panels as they are.
+    ...(!keepOpen && hasResultsPanel(sections) ? { dock: 'results' as const } : {}),
     error: null,
     notice,
   });
@@ -602,6 +606,7 @@ function applyDatasetSelection(
     datasetId,
     sections: [],
     openSectionId: null,
+    dock: withoutResults(s.dock),
     ...forgetSearch(),
     items: [],
     groups: [],
@@ -706,10 +711,14 @@ function forgetSearch() {
 }
 
 // The panels beside the rail (UI-01 §6.9). One is open at a time, or none.
-export type DockPanel = 'controls' | 'layers' | 'jobs';
+export type DockPanel = 'controls' | 'layers' | 'jobs' | 'results';
 
 // Sliding the control panel away leaves another panel where it is.
 const withoutControls = (dock: DockPanel | null): DockPanel | null => (dock === 'controls' ? null : dock);
+
+// The results panel has nothing left to show once the results go: the control menu, where the search
+// settings are, takes its place. A closed dock stays closed.
+const withoutResults = (dock: DockPanel | null): DockPanel | null => (dock === 'results' ? 'controls' : dock);
 
 export interface AppState {
   // --- map / selection ---
@@ -752,11 +761,8 @@ export interface AppState {
   // --- ui layout ---
   // The panel beside the rail (UI-01 §6.9): one at a time, or none.
   dock: DockPanel | null;
-  // Right-docked results list slid off to the right — collapsible the same
-  // way as the left control panel, not freely draggable any more (V-5).
-  resultsPanelCollapsed: boolean;
   // Viewing a full-resolution raster (M2-07b) instead of browsing quicklooks —
-  // swaps ResultsPanel/ViewBar for ViewerControls (App.tsx).
+  // swaps ViewBar for ViewerControls (App.tsx) and leaves the results panel with a hint.
   focusMode: boolean;
   showDownloaded: boolean;
   focusLoading: boolean; // fetching statistics while entering focus / "auto"
@@ -903,7 +909,6 @@ export interface AppState {
   // The control panel slides away for a draw or a search (`withoutControls`) and comes back when that is over,
   // unless another panel took its place meanwhile.
   reopenControls: () => void;
-  toggleResultsPanel: () => void;
   clearAll: () => void;
   addCurrentToLayers: () => void;
   pinDerivedLayer: (layer: DerivedLayer) => void;
@@ -979,7 +984,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewportSize: null,
 
   dock: 'controls',
-  resultsPanelCollapsed: false,
   focusMode: false,
   showDownloaded: true,
   focusLoading: false,
@@ -1142,10 +1146,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   flyTo: (flyToBbox) => set({ flyToBbox }),
   clearFly: () => set({ flyToBbox: null }),
   clearFlyView: () => set({ flyToView: null }),
-  toggleDock: (panel) => set((s) => ({ dock: s.dock === panel ? null : panel })),
+  // The results panel opens only while there are results.
+  toggleDock: (panel) =>
+    set((s) => {
+      if (s.dock === panel) return { dock: null };
+      return panel === 'results' && !hasResultsPanel(s.sections) ? {} : { dock: panel };
+    }),
   closeDock: () => set({ dock: null }),
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
-  toggleResultsPanel: () => set((s) => ({ resultsPanelCollapsed: !s.resultsPanelCollapsed })),
   clearAll: () => {
     set({
       aoi: null,
@@ -1160,7 +1168,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeGroupIndex: 0,
       expandedGroupIndex: 0,
       selectedIds: [],
-      dock: get().dock ?? 'controls',
+      dock: withoutResults(get().dock) ?? 'controls',
       playing: false,
       error: null,
       notice: null,
@@ -1985,7 +1993,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         searchCrops: [],
         searchContext: null,
         ...openSectionState(null),
-        dock: get().dock ?? 'controls',
+        dock: withoutResults(get().dock) ?? 'controls',
       });
     } finally {
       set({ searching: false });
@@ -2126,7 +2134,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A lookup carries no AOI, so there is no crop of the last search to keep.
       searchCrops: [],
       selectedIds: [item.id],
-      dock: withoutControls(get().dock),
+      dock: 'results',
       playing: false,
       ...LEAVE_FOCUS,
       error: null,

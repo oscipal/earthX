@@ -226,7 +226,7 @@ describe('the processing side bar and the manager of the jobs', () => {
     expect(view.querySelector('.dock .processing-manager')).not.toBeNull();
   });
 
-  it('folds the results list away under the side bar, without its toggle, and centres the bottom bar beside it', () => {
+  it('leaves the results in their panel beside the rail when the side bar opens, and centres the bottom bar beside it', () => {
     const item = { id: 'S2B_1', bbox: [10, 47, 11, 48], properties: {}, assets: {} } as unknown as StacItem;
     const section: ResultSection = {
       datasetId: 'x',
@@ -237,15 +237,13 @@ describe('the processing side bar and the manager of the jobs', () => {
       origin: 'search',
       incomplete: false,
     };
-    useAppStore.setState({ sections: [section], resultsPanelCollapsed: false });
+    useAppStore.setState({ sections: [section], dock: 'results' });
     const view = mount();
-    expect(view.querySelector('.results-dock.collapsed')).toBeNull();
-    expect(view.querySelector('.results-toggle')).not.toBeNull();
+    expect(view.querySelector('#dock-results')!.hasAttribute('hidden')).toBe(false);
     act(() => useProcessingStore.setState({ open: true }));
-    expect(view.querySelector('.results-dock.collapsed')).not.toBeNull();
-    expect(view.querySelector('.results-toggle')).toBeNull();
+    expect(view.querySelector('#dock-results')!.hasAttribute('hidden')).toBe(false);
+    expect(view.querySelector('.results-dock, .results-toggle')).toBeNull();
     expect(view.querySelector('.overlay.bottom.beside-sheet')).not.toBeNull();
-    expect(useAppStore.getState().resultsPanelCollapsed).toBe(false);
   });
 
   it('puts the panel in the side bar and the manager beside the rail', () => {

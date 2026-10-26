@@ -175,38 +175,6 @@ body.dragging * {
   cursor: not-allowed;
 }
 
-/* --- collapsible results dock (right), same pattern mirrored horizontally
-   (V-5): fixed to the right edge instead of freely draggable, so it can't
-   end up somewhere the user has to go hunting for it. --- */
-.results-dock {
-  transition: transform 0.32s ease;
-}
-.results-dock.collapsed {
-  transform: translateX(calc(100% + 16px));
-}
-.results-toggle {
-  position: absolute;
-  top: 14px;
-  right: 100%;
-  margin-right: 6px;
-  width: 24px;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px 0 0 8px;
-  color: var(--accent);
-  font-size: 16px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-  box-shadow: var(--glow);
-}
-.results-toggle:hover {
-  border-color: var(--accent);
-}
-
 /* --- full-resolution viewer controls (focus mode) --- */
 .viewer-controls {
   width: 100%;
@@ -748,8 +716,6 @@ input[type='date']:focus {
 
 /* --- results panel --- */
 .results-panel {
-  width: 300px;
-  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -760,6 +726,10 @@ input[type='date']:focus {
   align-items: center;
   padding: 10px 14px;
   border-bottom: 1px solid var(--panel-border);
+}
+.results-view-hint {
+  margin: 0;
+  padding: 12px 14px;
 }
 .results-head h2 {
   margin: 0;
@@ -777,6 +747,8 @@ input[type='date']:focus {
   gap: 12px;
 }
 .results-list {
+  flex: 1 1 auto;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 6px;
@@ -1486,6 +1458,16 @@ input[type='date']:focus {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--row-hover);
+}
+/* Nothing to show yet: dim, still in the tab order and with its tooltip. */
+.rail-btn[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.rail-btn[aria-disabled='true']:hover,
+.rail-btn[aria-disabled='true']:focus-visible {
+  border-color: var(--panel-border);
+  color: var(--muted);
 }
 .rail-badge {
   position: absolute;

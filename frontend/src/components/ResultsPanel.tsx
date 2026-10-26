@@ -302,22 +302,14 @@ function SelectionRow() {
 
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
-  // The dataset shown is the one whose scenes `groups`/`items` hold
-  // (`store.ts::setOpenSection`). Within it, the open time step stays separate
-  // from `activeGroupIndex` (the one the map and time slider show), so the open
-  // group can be collapsed without forcing a different one open, and collapsing
-  // every group also hides its quicklooks on the map (V-6, V-11 —
-  // `store.ts::toggleResultsGroup` has the full reasoning).
-  const openSectionId = useAppStore((s) => s.openSectionId);
-  const groups = useAppStore((s) => s.groups);
-  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
-  const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
   const clearAll = useAppStore((s) => s.clearAll);
+  // A full-resolution view or a result's view works on its own picture: the list gives way (App.tsx).
+  const viewOpen = useAppStore((s) => s.focusMode || s.resultViewLayerId !== null);
 
   if (!hasResultsPanel(sections)) return null;
 
   return (
-    <div className="panel results-panel">
+    <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
         <h2>Results</h2>
         <div className="results-head-right">
@@ -332,6 +324,28 @@ export default function ResultsPanel() {
           </button>
         </div>
       </div>
+      {viewOpen ? (
+        <p className="hint-text results-view-hint">Close the view to browse the results.</p>
+      ) : (
+        <ResultsList sections={sections} />
+      )}
+    </div>
+  );
+}
+
+function ResultsList({ sections }: { sections: ResultSection[] }) {
+  // The dataset shown is the one whose scenes `groups`/`items` hold
+  // (`store.ts::setOpenSection`). Within it, the open time step stays separate
+  // from `activeGroupIndex` (the one the map and time slider show), so the open
+  // group can be collapsed without forcing a different one open, and collapsing
+  // every group also hides its quicklooks on the map (V-6, V-11 —
+  // `store.ts::toggleResultsGroup` has the full reasoning).
+  const openSectionId = useAppStore((s) => s.openSectionId);
+  const groups = useAppStore((s) => s.groups);
+  const expandedGroupIndex = useAppStore((s) => s.expandedGroupIndex);
+  const toggleGroup = useAppStore((s) => s.toggleResultsGroup);
+  return (
+    <>
       <DatasetDropdown sections={sections} openId={openSectionId} />
       <div className="results-list-head">
         <div className="eyebrow results-list-eyebrow">Scenes by time step</div>
@@ -349,6 +363,6 @@ export default function ResultsPanel() {
         ))}
       </div>
       <LoadMore openId={openSectionId} />
-    </div>
+    </>
   );
 }

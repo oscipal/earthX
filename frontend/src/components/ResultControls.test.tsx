@@ -351,18 +351,20 @@ describe('a result drawn as it is, or gone', () => {
 });
 
 describe('on the page', () => {
-  it('takes the place of the search results and of the bar of the view', async () => {
+  it('takes the place of the bar of the view, and the results list gives way with a hint', async () => {
     const section = (datasetId: string) => ({ datasetId, items: [], groups: [], notes: [], groupingError: null, origin: 'search' as const, incomplete: false });
-    useAppStore.setState({ sections: [section('one'), section('two')] });
+    useAppStore.setState({ sections: [section('one'), section('two')], dock: 'results' });
     await showOnMap();
     act(() => root.render(<App />));
-    expect(container.querySelector('.results-dock')).not.toBeNull();
+    expect(container.querySelector('.results-list')).not.toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
     act(() => useAppStore.getState().selectLayer(layers()[0].id));
-    expect(container.querySelector('.results-dock')).toBeNull();
+    expect(container.querySelector('.results-list')).toBeNull();
+    expect(container.querySelector('.results-view-hint')?.textContent).toBe('Close the view to browse the results.');
     expect(container.querySelector('.result-controls')).not.toBeNull();
     click(button('‹ Close'));
-    expect(container.querySelector('.results-dock')).not.toBeNull();
+    expect(container.querySelector('.results-list')).not.toBeNull();
+    expect(container.querySelector('.results-view-hint')).toBeNull();
     expect(container.querySelector('.result-controls')).toBeNull();
   });
 });
