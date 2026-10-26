@@ -196,7 +196,11 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-26-kachel-leistung.md`
    - **Befund:** NDVI-Vorschau rund 40 s für 325 Anfragen; Kacheln 1,7–6,5 s mit steigenden Zeiten (Warteschlange), auch reine `visual`-Kacheln 2,6–4,2 s. Gleich schon vor UI-01a (`745ecb2`), also keine Regression daraus. Dazu: Suche dreifach geladen (je 1,9 MB), `statistics` mit `op` einmal `400`.
    - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.
-   - **Stand (25.10.2026):** Plan im Draft-PR #197, wartet auf Freigabe (Fragen 1–7). Hauptursache: `GDAL_HTTP_MULTIRANGE=YES` liest am `/vsicurl/`-Cache vorbei, der Cache hat 16 MB.
+   - **Stand (26.10.2026):** Plan freigegeben (Fragen 1–7), Umsetzung im Draft-PR #197. Hauptursache: `GDAL_HTTP_MULTIRANGE=YES` liest am `/vsicurl/`-Cache vorbei, der Cache hat 16 MB.
+27. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
+   - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
+   - **Berührt:** Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5).
+   - **Aufgabe:** Stufe B, Frontend und `tiler`; nach NM4-26.
 ## In UI-01 aufgenommen (20.–22.10.2026)
  
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).
