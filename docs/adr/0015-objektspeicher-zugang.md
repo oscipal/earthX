@@ -1472,11 +1472,11 @@ Otto hat den Plan von UI-01 am 2026-10-24 freigegeben: Frage 7 mit Option 1 (25 
   der Datenbank fehlt). Das ändert den ETag, sodass `If-Range` den Rest verwirft und das ZIP neu ausgeliefert wird. Ist kein Teil mehr da, `410`.
 - **Nie im Log:** Kennung, `jobID`s und Liste. Das Zugriffslog schreibt `{bundleID}` (`logging.loggable_path`); die Meldungen
   „bundle created“ und „bundle read“ nennen nur Zahlen. Beide Routen tragen `Cache-Control: no-store`.
-- **Auslegungen (Vorschlag, gelten bis Otto widerspricht).** (1) *Exporte:* Der Plan nennt „bei einem Export der Inhalt von
+- **Auslegungen (Exporte und Teile ohne Jahr von Otto am 2026-10-26 bestätigt, Option 1).** (1) *Exporte:* Der Plan nennt „bei einem Export der Inhalt von
   `export.zip` als ein Eintrag“. Für `export.zip` misst der Supervisor weder Größe noch CRC-32 (`worker._upload_and_finish` tut es nur
   für `result.tif` und `mask.tif`); ein Eintrag ohne CRC im Voraus ließe sich nur bauen, indem `api` die Datei beim Anlegen oder Lesen
   ganz läse (§14b: keine CRC im Abruf, sie kommt vom Aufseher beim Hochladen). Ein Batch (M4-13c-4) besteht nur aus Raster-Jobs, deshalb weist `POST` einen Export mit `422` ab. Soll
-  der Export hinein, braucht es eine Entscheidung (Frage im PR). (2) Ein Raster-Job, der vor NM4-01 angelegt wurde und dessen
+  der Export hinein, braucht es den Worker, der auch `export.zip` misst (eigene Aufgabe). (2) Ein Raster-Job, der vor NM4-01 angelegt wurde und dessen
   Attribution ein Jahr braucht, aber keines mehr herleiten kann (`409` bei `result.zip`), fehlt im Bündel mit dem Grund
   `year of acquisition unknown`, statt das ganze Bündel scheitern zu lassen.
 
