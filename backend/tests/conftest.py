@@ -17,6 +17,7 @@ import pytest
 import rasterio.session
 
 from earthx.logging import JsonFormatter
+from tests.worker_database import drop_worker_database, load_session_env, use_worker_database
 
 # rasterio in the test process as in the image: without an AWS session (NM4-23).
 #
@@ -30,6 +31,31 @@ from earthx.logging import JsonFormatter
 # and the store's client uses botocore alone, so the object store tests check what
 # they checked before (tests/earthx/objectstore/test_rasterio_session.py).
 rasterio.session.boto3 = None
+
+_WORKER_DATABASE = pytest.StashKey[tuple[str, str]]()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Under pytest-xdist, each worker gets a database of its own (tests/worker_database.py).
+
+    Here, before anything is collected, so every fixture and every spawned child of the
+    worker reads the worker's `PGDATABASE`. A serial run (`pytest -n 0`) has no
+    `workerinput` and keeps the configured database.
+    """
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is None:
+        return
+    load_session_env()
+    made = use_worker_database(workerinput["workerid"])
+    if made is not None:
+        config.stash[_WORKER_DATABASE] = made
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    made = config.stash.get(_WORKER_DATABASE, None)
+    if made is not None:
+        drop_worker_database(*made)
+
 
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 
