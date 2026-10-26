@@ -85,7 +85,12 @@ const button = (label: string | RegExp, within: ParentNode = container): HTMLBut
 const rows = () => [...container.querySelectorAll<HTMLElement>('.pm-rows > .pm-row')];
 const titles = () => rows().map((r) => r.querySelector('.pm-title')?.textContent);
 const menuOf = (row: Element) => click(row.querySelector('button[aria-haspopup="menu"]'));
-const item = (label: string) => button(label, document.querySelector('[role="menu"]')!);
+// An item of the menu by its name; the key at the right edge is no part of the name.
+const item = (label: string) => {
+  const found = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find((b) => (b.querySelector('.pm-menu-label')?.textContent ?? b.textContent?.trim()) === label);
+  if (!found) throw new Error(`no menu item ${label}`);
+  return found;
+};
 const stored = () => JSON.parse(localStorage.getItem(SHELF_KEY)!);
 const type = (input: HTMLInputElement, value: string) => {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
@@ -187,11 +192,11 @@ describe('the menu of a row', () => {
     put({ jobs: [jobEntry(1), finished(2)] });
     mount();
     menuOf(rows()[0]);
-    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['Rename (R)', 'Move to group… (G)', 'Archive (A)', 'Cancel']);
+    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['RenameR', 'Move to group…G', 'ArchiveA', 'Cancel']);
     // A real click begins with a press beside the open menu, which closes it.
     act(() => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
     menuOf(rows()[1]);
-    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['Rename (R)', 'Move to group… (G)', 'Archive (A)']);
+    expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['RenameR', 'Move to group…G', 'ArchiveA']);
   });
 
   it('closes on Escape and gives the focus back to its button', () => {
@@ -249,7 +254,7 @@ describe('rename', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     menuOf(rows()[0]);
-    click(item('Rename (R)'));
+    click(item('Rename'));
     type(field(), 'Field 7 · NDVI');
     key(field(), 'Enter');
     expect(titles()).toEqual(['Field 7 · NDVI']);
@@ -260,7 +265,7 @@ describe('rename', () => {
     put({ jobs: [jobEntry(1, { title: 'Mine', titleDefault: 'Band math · Sentinel-2 L2A · 1 Oct' })] });
     mount();
     menuOf(rows()[0]);
-    click(item('Rename (R)'));
+    click(item('Rename'));
     type(field(), '   ');
     key(field(), 'Enter');
     expect(titles()).toEqual(['Band math · Sentinel-2 L2A · 1 Oct']);
@@ -270,7 +275,7 @@ describe('rename', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     menuOf(rows()[0]);
-    click(item('Rename (R)'));
+    click(item('Rename'));
     type(field(), 'Other');
     key(field(), 'Escape');
     expect(container.querySelector('input.pm-rename')).toBeNull();
@@ -281,7 +286,7 @@ describe('rename', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     menuOf(rows()[0]);
-    click(item('Rename (R)'));
+    click(item('Rename'));
     expect(field().maxLength).toBe(200);
     useProcessingStore.getState().renameJob(jobId(1), 'y'.repeat(500));
     expect(useProcessingStore.getState().jobs[0].title).toHaveLength(200);
@@ -293,7 +298,7 @@ describe('archive and the filter', () => {
     put({ jobs: [jobEntry(1), jobEntry(2)] });
     mount();
     menuOf(rows()[0]);
-    click(item('Archive (A)'));
+    click(item('Archive'));
     expect(titles()).toEqual(['Band math · Sentinel-2 L2A · 2 Oct']);
     expect(stored().jobs.find((j: { jobID: string }) => j.jobID === jobId(1)).archived).toBe(true);
     click(button('All'));
@@ -301,7 +306,7 @@ describe('archive and the filter', () => {
     expect(rows()[0].classList.contains('archived')).toBe(true);
     expect(rows()[0].querySelector('.pm-tag')?.textContent).toBe('Archived');
     menuOf(rows()[0]);
-    click(item('Unarchive (A)'));
+    click(item('Unarchive'));
     click(button('Active'));
     expect(titles()).toHaveLength(2);
   });
@@ -407,7 +412,7 @@ describe('groups', () => {
     put({ jobs: [jobEntry(1), jobEntry(2)], groups: [{ id: GROUP, name: 'Field 7' }] });
     mount();
     menuOf(rows()[0]);
-    click(item('Move to group… (G)'));
+    click(item('Move to group…'));
     expect([...document.querySelectorAll('[role="menuitemradio"]')].map((b) => [b.textContent, b.getAttribute('aria-checked')])).toEqual([
       ['Ungrouped', 'true'],
       ['Field 7', 'false'],
@@ -417,7 +422,7 @@ describe('groups', () => {
     expect(group.querySelectorAll('.pm-row')).toHaveLength(1);
     expect(stored().jobs.find((j: { jobID: string }) => j.jobID === jobId(1)).groupId).toBe(GROUP);
     menuOf(group.querySelector('.pm-row')!);
-    click(item('Move to group… (G)'));
+    click(item('Move to group…'));
     click(item('Ungrouped'));
     expect(group.querySelectorAll('.pm-row')).toHaveLength(0);
   });
@@ -434,7 +439,7 @@ describe('groups', () => {
     click(container.querySelector('button[aria-label="Rename Field 7"]'));
     type(field(), 'Field 8');
     key(field(), 'Enter');
-    expect(container.querySelector('.pm-group-name + button, .pm-group-head h3')?.textContent).toBe('Field 8');
+    expect(container.querySelector('.pm-group[aria-label="Field 8"] .pm-group-head h3')?.textContent).toBe('Field 8');
     expect(container.querySelector('.pm-group[aria-label="Field 8"] .pm-row')).not.toBeNull();
     expect(stored().groups[0].name).toBe('Field 8');
   });
@@ -570,13 +575,13 @@ describe('the keys of a focused row (R, G, A)', () => {
     expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
   });
 
-  it('are never taken in the menu, where a letter belongs to the menu', () => {
+  it('are taken once in the menu, by the menu: the key of the row does not run a second time', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     menuOf(rows()[0]);
-    const event = press(document.querySelector('[role="menu"] button')!, 'a');
-    expect(event.defaultPrevented).toBe(false);
-    expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
+    press(document.activeElement!, 'a');
+    // One archive, not two that cancel each other out.
+    expect(useProcessingStore.getState().jobs[0].archived).toBe(true);
   });
 
   it.each([['ctrlKey'], ['altKey'], ['metaKey']])('leave a key with %s to the browser', (modifier) => {
@@ -601,16 +606,30 @@ describe('the keys of a focused row (R, G, A)', () => {
     expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
   });
 
-  it('are shown in the menu, and named on the row for a screen reader', () => {
+  it('are shown in the menu at the right edge, as a quiet mark a screen reader skips', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    menuOf(rows()[0]);
+    for (const entry of document.querySelectorAll('[role="menu"] button')) {
+      const mark = entry.querySelector('.pm-key');
+      if (!mark) continue;
+      expect(mark.getAttribute('aria-hidden')).toBe('true');
+      expect(entry.lastElementChild).toBe(mark);
+    }
+    expect(css).toMatch(/\.pm-key\s*\{[^}]*margin-left:\s*auto;[^}]*color:\s*var\(--muted\)/u);
+    expect(css).toMatch(/\.pm-menu-list button\s*\{[^}]*justify-content:\s*space-between/u);
+  });
+
+  it('are named on the row for a screen reader', () => {
     put({ jobs: [jobEntry(1)] });
     mount();
     expect(rows()[0].getAttribute('aria-keyshortcuts')).toBe('R G A');
     menuOf(rows()[0]);
     const entries = [...document.querySelectorAll('[role="menu"] button')];
     expect(entries.map((b) => [b.textContent, b.getAttribute('aria-keyshortcuts')])).toEqual([
-      ['Rename (R)', 'R'],
-      ['Move to group… (G)', 'G'],
-      ['Archive (A)', 'A'],
+      ['RenameR', 'R'],
+      ['Move to group…G', 'G'],
+      ['ArchiveA', 'A'],
       ['Cancel', null],
     ]);
   });
@@ -621,7 +640,7 @@ describe('the keys of a focused row (R, G, A)', () => {
     press(openButton(rows()[0]), 'd');
     press(openButton(rows()[0]), 'Delete');
     expect(useProcessingStore.getState().jobs).toHaveLength(1);
-    expect(container.textContent).not.toContain('(D)');
+    expect(container.textContent).not.toContain('Delete');
   });
 
   it('give the focus back to the row once a rename ends, by Enter or by Escape', () => {
@@ -634,6 +653,194 @@ describe('the keys of a focused row (R, G, A)', () => {
     press(openButton(rows()[0]), 'r');
     key(field(), 'Escape');
     expect(document.activeElement).toBe(openButton(rows()[0]));
+  });
+});
+
+describe('the letters of the open menu', () => {
+  it('rename at once with R: the menu closes and the field is there, no Enter in between', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    menuOf(rows()[0]);
+    const event = press(document.activeElement!, 'r');
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(field());
+    expect(field().value).toBe('Band math · Sentinel-2 L2A · 1 Oct');
+  });
+
+  it('take capital letters, and archive at once with A, also for a batch', () => {
+    put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
+    mount();
+    menuOf(rows()[0]);
+    press(document.activeElement!, 'A', { shiftKey: true });
+    expect(useProcessingStore.getState().batches[0].archived).toBe(true);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('turn the menu into the list of groups with G, and then take no more letters', () => {
+    put({ jobs: [jobEntry(1)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    menuOf(rows()[0]);
+    press(document.activeElement!, 'g');
+    expect([...document.querySelectorAll('[role="menuitemradio"]')].map((b) => b.textContent)).toEqual(['Ungrouped', 'Field 7']);
+    expect(press(document.activeElement!, 'a').defaultPrevented).toBe(false);
+    expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
+  });
+
+  it('have no letter for an action the row does not offer: a part has only "Cancel"', () => {
+    put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
+    mount();
+    click(button('▸'));
+    menuOf(container.querySelector('.pm-parts .pm-row')!);
+    expect(press(document.activeElement!, 'r').defaultPrevented).toBe(false);
+    expect(press(document.activeElement!, 'a').defaultPrevented).toBe(false);
+    expect(container.querySelector('input.pm-rename')).toBeNull();
+  });
+
+  it('leave a letter with a modifier, and any other letter, alone', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    menuOf(rows()[0]);
+    expect(press(document.activeElement!, 'r', { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(press(document.activeElement!, 'x').defaultPrevented).toBe(false);
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  });
+});
+
+describe('dragging a row to a group', () => {
+  const GROUP2 = 'e'.repeat(32);
+  const store = () => useProcessingStore.getState();
+  const section = (name: string) => container.querySelector<HTMLElement>(`.pm-group[aria-label="${name}"]`)!;
+  // jsdom has no `DataTransfer`: a stand-in with the part the rows use.
+  const transfer = (data: Record<string, string> = {}) => {
+    const held = { ...data };
+    return {
+      setData: (type: string, value: string) => void (held[type] = value),
+      getData: (type: string) => held[type] ?? '',
+      get types() {
+        return Object.keys(held);
+      },
+      effectAllowed: 'none',
+      dropEffect: 'none',
+    };
+  };
+  const fire = (target: Element, type: string, dataTransfer: ReturnType<typeof transfer>, init: Record<string, unknown> = {}) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    for (const [name, value] of Object.entries(init)) Object.defineProperty(event, name, { value });
+    act(() => target.dispatchEvent(event));
+    return event;
+  };
+  const drag = (row: Element, to: Element) => {
+    const data = transfer();
+    fire(row, 'dragstart', data);
+    fire(to, 'dragover', data);
+    fire(to, 'drop', data);
+    fire(row, 'dragend', data);
+    return data;
+  };
+
+  it('moves a job to the group it is dropped on, and out of it again', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    drag(rows()[1], section('Field 7'));
+    expect(store().jobs.map((j) => j.groupId)).toEqual([null, GROUP]);
+    expect(stored().jobs.find((j: { jobID: string }) => j.jobID === jobId(2)).groupId).toBe(GROUP);
+    drag(section('Field 7').querySelector('.pm-row')!, section('Ungrouped'));
+    expect(store().jobs.map((j) => j.groupId)).toEqual([null, null]);
+  });
+
+  it('moves a batch with all its parts', () => {
+    put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' }), jobEntry(2, { batchId: BATCH, part: 'S2' })], batches: [batchEntry(BATCH)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    drag(rows()[0], section('Field 7'));
+    expect(store().batches[0].groupId).toBe(GROUP);
+    expect(store().jobs.map((j) => j.groupId)).toEqual([GROUP, GROUP]);
+  });
+
+  it('can be dropped on the heading, the rows or a folded group, anywhere in its section', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2, { groupId: GROUP })], groups: [{ id: GROUP, name: 'Field 7' }, { id: GROUP2, name: 'Second' }] });
+    mount();
+    drag(rows()[0], section('Second').querySelector('.pm-group-head')!);
+    expect(store().jobs[0].groupId).toBe(GROUP2);
+    click(container.querySelector('.pm-fold[aria-label="Fold up Field 7"]'));
+    drag(section('Second').querySelector('.pm-row')!, section('Field 7'));
+    expect(store().jobs[0].groupId).toBe(GROUP);
+  });
+
+  it('is offered an "Ungrouped" place to drop on, also when no job is without a group', () => {
+    put({ jobs: [jobEntry(1, { groupId: GROUP })], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    expect(section('Ungrouped')).not.toBeNull();
+    drag(section('Field 7').querySelector('.pm-row')!, section('Ungrouped'));
+    expect(store().jobs[0].groupId).toBeNull();
+  });
+
+  it('marks the section it is over, and the row it drags, and clears both when it ends', () => {
+    put({ jobs: [jobEntry(1)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    const data = transfer();
+    fire(rows()[0], 'dragstart', data);
+    expect(rows()[0].classList.contains('dragging')).toBe(true);
+    expect(rows()[0].getAttribute('draggable')).toBe('true');
+    const over = fire(section('Field 7'), 'dragover', data);
+    expect(over.defaultPrevented).toBe(true);
+    expect(section('Field 7').classList.contains('drop')).toBe(true);
+    fire(section('Field 7'), 'dragleave', data, { relatedTarget: document.body });
+    expect(section('Field 7').classList.contains('drop')).toBe(false);
+    fire(section('Field 7'), 'dragover', data);
+    fire(rows()[0], 'dragend', data);
+    expect(rows()[0].classList.contains('dragging')).toBe(false);
+  });
+
+  it('does not clear the mark while the drag moves between things inside the section', () => {
+    put({ jobs: [jobEntry(1, { groupId: GROUP }), jobEntry(2)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    const data = transfer();
+    fire(rows()[1] ?? rows()[0], 'dragstart', data);
+    const inside = section('Field 7').querySelector('.pm-row')!;
+    fire(section('Field 7'), 'dragover', data);
+    fire(section('Field 7'), 'dragleave', data, { relatedTarget: inside });
+    expect(section('Field 7').classList.contains('drop')).toBe(true);
+  });
+
+  it('takes no drop that is not a row of this list: a file, a text, a row with another id', () => {
+    put({ jobs: [jobEntry(1)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    const foreign = transfer({ 'text/plain': 'hello', Files: '' });
+    expect(fire(section('Field 7'), 'dragover', foreign).defaultPrevented).toBe(false);
+    fire(section('Field 7'), 'drop', foreign);
+    for (const bad of ['{broken', '"x"', 'null', '{"jobID":"short"}', '{"batchId":"nothex"}', '{"jobID":{"a":1}}', '[]']) {
+      fire(section('Field 7'), 'drop', transfer({ 'application/x-earthx-job-row': bad }));
+    }
+    expect(store().jobs[0].groupId).toBeNull();
+    expect(section('Field 7').classList.contains('drop')).toBe(false);
+  });
+
+  it('moves nothing for the id of a job this browser does not have', () => {
+    put({ jobs: [jobEntry(1)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    fire(section('Field 7'), 'drop', transfer({ 'application/x-earthx-job-row': JSON.stringify({ jobID: jobId(9) }) }));
+    expect(store().jobs.map((j) => j.groupId)).toEqual([null]);
+  });
+
+  it('does not offer a part of a batch, or a row that is being renamed, for dragging', () => {
+    put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' }), jobEntry(2)], batches: [batchEntry(BATCH)] });
+    mount();
+    click(button('▸'));
+    expect(container.querySelector('.pm-parts .pm-row')!.hasAttribute('draggable')).toBe(false);
+    expect(rows()[0].getAttribute('draggable')).toBe('true');
+    press(openButton(rows()[1]), 'r');
+    expect(rows()[1].getAttribute('draggable')).not.toBe('true');
+  });
+
+  it('carries nothing but the id of the row', () => {
+    put({ jobs: [jobEntry(1, { order: null })] });
+    mount();
+    const data = transfer();
+    fire(rows()[0], 'dragstart', data);
+    expect(JSON.parse(data.getData('application/x-earthx-job-row'))).toEqual({ jobID: jobId(1) });
+    expect(data.effectAllowed).toBe('move');
   });
 });
 
@@ -1035,7 +1242,7 @@ describe('a batch', () => {
     withBatch(jobs);
     mount();
     menuOf(rows()[0]);
-    click(item('Rename (R)'));
+    click(item('Rename'));
     type(field(), 'Field 7');
     key(field(), 'Enter');
     expect(titles()).toEqual(['Field 7']);
@@ -1047,13 +1254,13 @@ describe('a batch', () => {
     withBatch();
     mount();
     menuOf(rows()[0]);
-    click(item('Archive (A)'));
+    click(item('Archive'));
     expect(rows()).toHaveLength(0);
     expect(useProcessingStore.getState().jobs.every((j) => j.archived)).toBe(true);
     expect(stored().batches[0].archived).toBe(true);
     click(button('All'));
     menuOf(rows()[0]);
-    click(item('Unarchive (A)'));
+    click(item('Unarchive'));
     expect(useProcessingStore.getState().jobs.some((j) => j.archived)).toBe(false);
   });
 
@@ -1061,7 +1268,7 @@ describe('a batch', () => {
     put({ jobs: parts(2), batches: [batchEntry(BATCH)], groups: [{ id: GROUP, name: 'Field 7' }] });
     mount();
     menuOf(rows()[0]);
-    click(item('Move to group… (G)'));
+    click(item('Move to group…'));
     click(item('Field 7'));
     expect(container.querySelectorAll('.pm-group[aria-label="Field 7"] .pm-rows > .pm-row')).toHaveLength(1);
     expect(useProcessingStore.getState().jobs.map((j) => j.groupId)).toEqual([GROUP, GROUP]);

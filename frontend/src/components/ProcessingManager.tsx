@@ -4,10 +4,11 @@
 // to a group and A archives the row that has the focus or else the one under the pointer, with no click first
 // (never while a field has the keys); the arrow keys go from row to row.
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
+import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
 import InlineRename from './InlineRename';
@@ -60,6 +61,16 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
     if (keepFocus) refocusAround(row);
   };
   const moving = mode === 'move';
+  // With the menu open the letter is the item: no Enter after it.
+  const onKey = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (moving || event.ctrlKey || event.altKey || event.metaKey) return;
+    const key = event.key.toUpperCase();
+    const run =
+      key === SHORTCUTS.rename ? onRename && done(onRename) : key === SHORTCUTS.move ? onMove && (() => onMode('move')) : key === SHORTCUTS.archive ? onArchive && done(() => onArchive(!archived), true) : undefined;
+    if (!run) return;
+    event.preventDefault();
+    run();
+  };
   return (
     <div className="pm-menu">
       <button
@@ -84,15 +95,17 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
         ariaLabel={`Actions for ${name}`}
         focusOnOpen
       >
-        <div className="pm-menu-items" ref={items}>
+        <div className="pm-menu-items" ref={items} onKeyDown={onKey}>
           {!moving && onRename && (
             <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.rename} onClick={done(onRename)}>
-              Rename ({SHORTCUTS.rename})
+              <span className="pm-menu-label">Rename</span>
+              <span className="pm-key" aria-hidden="true">{SHORTCUTS.rename}</span>
             </button>
           )}
           {!moving && onMove && (
             <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.move} onClick={() => onMode('move')}>
-              Move to group… ({SHORTCUTS.move})
+              <span className="pm-menu-label">Move to group…</span>
+              <span className="pm-key" aria-hidden="true">{SHORTCUTS.move}</span>
             </button>
           )}
           {moving && onMove && (
@@ -109,7 +122,8 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
           )}
           {!moving && onArchive && (
             <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.archive} onClick={done(() => onArchive(!archived), true)}>
-              {archived ? 'Unarchive' : 'Archive'} ({SHORTCUTS.archive})
+              <span className="pm-menu-label">{archived ? 'Unarchive' : 'Archive'}</span>
+              <span className="pm-key" aria-hidden="true">{SHORTCUTS.archive}</span>
             </button>
           )}
           {!moving && cancel && (
@@ -228,12 +242,25 @@ function useRefocusAfter(editing: boolean, row: RefObject<HTMLElement | null>) {
   }, [editing, row]);
 }
 
+// The attributes of a row that can be dragged to a group.
+function dragSource(target: ManagerTarget, id: string, onDrag?: (id: string | null) => void) {
+  return {
+    draggable: true,
+    onDragStart: (event: ReactDragEvent<HTMLElement>) => {
+      event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(target));
+      event.dataTransfer.effectAllowed = 'move';
+      onDrag?.(id);
+    },
+    onDragEnd: () => onDrag?.(null),
+  };
+}
+
 function Meter({ state, progress }: { state: JobState; progress?: number }) {
   const value = progress ?? state.progress;
   return value === null ? null : <progress className="pm-progress" max={100} value={value} aria-label="Progress" />;
 }
 
-function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?: boolean; groups: ShelfGroup[] }) {
+function JobItem({ job, now, part, groups, onDrag, dragging }: { job: JobEntry; now: number; part?: boolean; groups: ShelfGroup[] } & DragProps) {
   const open = useProcessingStore((s) => s.openJobDetails);
   const cancelJob = useProcessingStore((s) => s.cancelJob);
   const followJob = useProcessingStore((s) => s.followJob);
@@ -262,9 +289,10 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
     <li
       ref={row}
       data-row-id={job.jobID}
-      className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}`}
+      className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}${dragging ? ' dragging' : ''}`}
       aria-keyshortcuts={part ? undefined : 'R G A'}
       onPointerDown={part ? undefined : focusOnPress}
+      {...(part || renaming ? {} : dragSource({ jobID: job.jobID }, job.jobID, onDrag))}
     >
       <div className="pm-line" ref={line}>
         {renaming ? (
@@ -325,7 +353,7 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
   );
 }
 
-function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: JobEntry[]; now: number; groups: ShelfGroup[] }) {
+function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: BatchEntry; parts: JobEntry[]; now: number; groups: ShelfGroup[] } & DragProps) {
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuMode>('closed');
@@ -354,9 +382,10 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
     <li
       ref={row}
       data-row-id={batch.id}
-      className={`pm-row batch${batch.archived ? ' archived' : ''}`}
+      className={`pm-row batch${batch.archived ? ' archived' : ''}${dragging ? ' dragging' : ''}`}
       aria-keyshortcuts="R G A"
       onPointerDown={focusOnPress}
+      {...(renaming ? {} : dragSource({ batchId: batch.id }, batch.id, onDrag))}
     >
       <div className="pm-line" ref={line}>
         <button
@@ -544,6 +573,29 @@ function GroupHeading({
 
 const UNGROUPED = 'ungrouped';
 
+// What a dragged row carries: the job or the batch, never more than its own id, and never leaving the page.
+const DRAG_TYPE = 'application/x-earthx-job-row';
+
+// What a drop carries, read again: only a job id or a batch id of the right form is taken.
+function parseDragged(raw: string): ManagerTarget | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== 'object' || value === null) return null;
+    const { jobID, batchId } = value as { jobID?: unknown; batchId?: unknown };
+    if (isJobId(jobID)) return { jobID };
+    if (typeof batchId === 'string' && /^[0-9a-f]{32}$/u.test(batchId)) return { batchId };
+  } catch {
+    /* not ours */
+  }
+  return null;
+}
+
+interface DragProps {
+  // Reports the row that is dragged, and `null` when it is dropped or the drag ends.
+  onDrag?: (id: string | null) => void;
+  dragging?: boolean;
+}
+
 const FILTERS: [JobFilter, string][] = [
   ['active', 'Active'],
   ['expired', 'Expired'],
@@ -580,6 +632,10 @@ export default function ProcessingManager() {
   const [naming, setNaming] = useState(false);
   // The groups that are folded up; what is kept for a group that is gone is dropped at the next change.
   const [collapsed, setCollapsed] = useState<string[]>(loadCollapsedGroups);
+  // The row that is being dragged, and the section it is over.
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const moveToGroup = useProcessingStore((s) => s.moveToGroup);
   const choose = (next: JobFilter) => {
     setFilter(next);
     saveJobFilter(next);
@@ -608,7 +664,8 @@ export default function ProcessingManager() {
       entries: shown.filter((e) => groupOf(e) === group.id),
       empty: !all.some((e) => groupOf(e) === group.id),
     })),
-  ].filter((section) => section.group !== null || section.entries.length > 0);
+    // With groups there is always a place to drop a job out of one: "Ungrouped", also when it holds none.
+  ].filter((section) => section.group !== null || section.entries.length > 0 || groups.length > 0);
 
   return (
     <div className="panel dock-panel processing-manager" role="region" aria-label="Processing jobs">
@@ -656,8 +713,32 @@ export default function ProcessingManager() {
           const id = group?.id ?? UNGROUPED;
           const folded = collapsed.includes(id);
           const listId = `pm-group-${id}`;
+          const target = group?.id ?? null;
           return (
-            <section key={id} className="pm-group" aria-label={group?.name ?? 'Ungrouped'}>
+            <section
+              key={id}
+              className={`pm-group${over === id ? ' drop' : ''}`}
+              aria-label={group?.name ?? 'Ungrouped'}
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+                // Dropping is allowed here.
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setOver(id);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((now) => (now === id ? null : now));
+              }}
+              onDrop={(e) => {
+                const raw = e.dataTransfer.getData(DRAG_TYPE);
+                setOver(null);
+                setDragging(null);
+                const moved = parseDragged(raw);
+                if (!moved) return;
+                e.preventDefault();
+                moveToGroup(moved, target);
+              }}
+            >
               {group ? (
                 <GroupHeading group={group} empty={empty} collapsed={folded} count={entries.length} onToggle={() => toggle(id)} />
               ) : (
@@ -676,9 +757,17 @@ export default function ProcessingManager() {
                 <ul className="pm-rows" id={listId}>
                   {entries.map((entry) =>
                     entry.kind === 'job' ? (
-                      <JobItem key={entry.job.jobID} job={entry.job} now={now} groups={groups} />
+                      <JobItem key={entry.job.jobID} job={entry.job} now={now} groups={groups} onDrag={setDragging} dragging={dragging === entry.job.jobID} />
                     ) : (
-                      <BatchItem key={entry.batch.id} batch={entry.batch} parts={entry.parts} now={now} groups={groups} />
+                      <BatchItem
+                        key={entry.batch.id}
+                        batch={entry.batch}
+                        parts={entry.parts}
+                        now={now}
+                        groups={groups}
+                        onDrag={setDragging}
+                        dragging={dragging === entry.batch.id}
+                      />
                     ),
                   )}
                 </ul>

@@ -1751,6 +1751,10 @@ a.pm-icon:hover {
   flex-direction: column;
 }
 .pm-menu-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 24px;
   padding: 6px 10px;
   background: none;
   border: none;
@@ -1759,6 +1763,12 @@ a.pm-icon:hover {
   font-size: 11px;
   text-align: left;
   cursor: pointer;
+}
+/* The key of an item: at the right edge, quieter than the name. */
+.pm-key {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
 }
 .pm-menu-list button:hover:not(:disabled),
 .pm-menu-list button:focus-visible {
@@ -2418,4 +2428,20 @@ a.pm-icon:hover {
   padding-bottom: 6px;
   white-space: nowrap;
   opacity: 0.8;
+}
+
+/* --- dragging a row to a group --- */
+.pm-row[draggable='true'] {
+  cursor: grab;
+}
+.pm-row.dragging {
+  opacity: 0.4;
+}
+.pm-group {
+  min-height: 34px;
+}
+.pm-group.drop {
+  background: var(--row-hover);
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
 }
