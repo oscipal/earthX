@@ -1735,19 +1735,14 @@ a.pm-icon:hover {
 .pm-menu {
   position: relative;
 }
+/* The list of a row is a `Popover` (portal, fixed, over everything), as wide as the row. */
 .pm-menu-list {
-  position: absolute;
-  z-index: 20;
-  top: 100%;
-  right: 0;
-  min-width: 150px;
+  padding: 4px;
+  gap: 0;
+}
+.pm-menu-items {
   display: flex;
   flex-direction: column;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  box-shadow: var(--glow);
-  backdrop-filter: blur(10px);
 }
 .pm-menu-list button {
   padding: 6px 10px;
@@ -1771,6 +1766,13 @@ a.pm-icon:hover {
 }
 .pm-menu-list button[aria-checked='true']::before {
   content: '✓ ';
+}
+.pm-fold {
+  flex: 0 0 20px;
+  width: 20px;
+}
+.pm-count {
+  color: var(--accent);
 }
 .pm-rename {
   flex: 1;

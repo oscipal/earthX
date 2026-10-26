@@ -227,6 +227,18 @@ describe('the keyboard', () => {
     expect(document.activeElement).toBe(symbol('controls'));
   });
 
+  it('leaves the panel open when Escape closes the menu of a job row, and closes it with the next Escape', () => {
+    act(() => useProcessingStore.setState({ jobs: [jobEntry(1)] }));
+    click(symbol('jobs'));
+    click(container.querySelector('button[aria-haspopup="menu"]')!);
+    const first = document.querySelector('[role="menu"] button')!;
+    key(first, 'Escape');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(useAppStore.getState().dock).toBe('jobs');
+    key(container.querySelector('.processing-manager h2')!, 'Escape');
+    expect(useAppStore.getState().dock).toBeNull();
+  });
+
   it('does nothing with Escape where no panel is open', () => {
     click(symbol('controls'));
     key(symbol('controls'), 'Escape');

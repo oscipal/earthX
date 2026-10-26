@@ -110,4 +110,7 @@ export function batchSummary(count: BatchCount): string {
   return parts.filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}`).join(' · ');
 }
 
+// The keys of the row actions of the manager, shown in its menu and taken on a focused row.
+export const SHORTCUTS = { rename: 'R', move: 'G', archive: 'A' } as const;
+
 export const jobLabel = (job: { title: string | null }): string => job.title ?? 'Untitled job';

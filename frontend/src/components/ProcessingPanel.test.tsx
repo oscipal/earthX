@@ -141,6 +141,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
   useProcessingStore.setState({ open: false, descriptions: {}, crs: {}, jobs: [] });
+  // A job that expires leaves "Active": these tests watch it all the same.
+  localStorage.setItem('earthx.jobfilter', 'all');
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -1361,9 +1363,11 @@ describe('cancelling and losing a job', () => {
 
   // "Cancel" is an item of the menu at the end of the row.
   const openMenu = () => click(container.querySelector<HTMLButtonElement>('button[aria-label^="Actions for"]')!);
+  // The menu is a pop-over over the whole window, not a part of the list.
+  const menuItem = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find((b) => b.textContent === 'Cancel')!;
   const cancel = () => {
     openMenu();
-    click(button('Cancel'));
+    click(menuItem());
   };
 
   beforeEach(() => {
@@ -1391,9 +1395,9 @@ describe('cancelling and losing a job', () => {
       useProcessingStore.setState((st) => ({ jobs: st.jobs.map((j) => ({ ...j, status: null })) }));
     });
     openMenu();
-    expect(button('Cancel').disabled).toBe(true);
+    expect(menuItem().disabled).toBe(true);
     await waitFor(() => container.querySelector('.pm-state')?.textContent === '20%');
-    expect(button('Cancel').disabled).toBe(false);
+    expect(menuItem().disabled).toBe(false);
   });
 
   it('says "Expired" when the job is no longer there at cancel', async () => {
@@ -1411,7 +1415,7 @@ describe('cancelling and losing a job', () => {
     cancel();
     await waitFor(() => useProcessingStore.getState().jobs[0].error?.includes('not reachable') ?? false);
     openMenu();
-    expect(button('Cancel').disabled).toBe(false);
+    expect(menuItem().disabled).toBe(false);
     expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 

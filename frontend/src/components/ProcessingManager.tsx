@@ -1,22 +1,28 @@
 // The processing manager (UI-01 §6.10): the jobs of this browser, each with its title, progress and expiry,
 // as rows; the jobs of one batch as one row that opens into its parts. A job is never deleted, only
-// archived and put in a group. A click on a job opens its details in the processing window.
+// archived and put in a group. A click on a job opens its details in the processing window. On a focused
+// row R renames, G moves to a group and A archives (never while a field has the keys).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
-import { loadJobFilter, saveJobFilter, type JobFilter } from '../preferences';
+import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
-import { batchSummary, countBatch, formatUntil, jobLabel, jobState, useNowUntil, type JobState } from './jobView';
+import Popover from './Popover';
+import { focusFirstItem } from '../popover';
+import { batchSummary, countBatch, formatUntil, jobLabel, jobState, SHORTCUTS, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
 
 export const KEPT_HERE_TIP = "Jobs are kept in this browser only: a private window or clearing the browser's data loses them.";
 export const STORAGE_FULL_TIP = 'Browser storage is full: copies of the oldest orders were dropped.';
 export const NOT_KEPT_TEXT = 'This browser does not keep your jobs. Download results before you close the tab.';
 export const GROUP_NOT_EMPTY_TIP = 'Only an empty group can be removed.';
+
+// How far the menu of a row is open: closed, the list of actions, or the list of groups to move to.
+type MenuMode = 'closed' | 'menu' | 'move';
 
 interface MenuProps {
   // What the menu offers; a missing action is not listed.
@@ -28,87 +34,62 @@ interface MenuProps {
   onArchive?: (archived: boolean) => void;
   cancel?: { label: string; disabled: boolean; run: () => void };
   name: string;
+  mode: MenuMode;
+  onMode: (mode: MenuMode) => void;
+  // The row the list hangs on: it is as wide as the row and lies over everything, outside the scrolling list.
+  anchor: RefObject<HTMLElement | null>;
 }
 
-// "⋯" at the end of a row. The list opens under the row, not over the map: nothing to place.
-function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cancel, name }: MenuProps) {
-  const [open, setOpen] = useState(false);
-  const [moving, setMoving] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const list = useRef<HTMLDivElement>(null);
+// "⋯" at the end of a row. The list is a `Popover`: in a portal over the whole window, so the scrolling list
+// of jobs and the panel cannot cut it off or cover it.
+function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cancel, name, mode, onMode, anchor }: MenuProps) {
   const button = useRef<HTMLButtonElement>(null);
-  // The focus goes into the list when it opens and when it turns into the list of groups: the item that
-  // was focused is gone by then.
+  const items = useRef<HTMLDivElement>(null);
+  // The `Popover` focuses its first entry once per opening; the list of groups replaces the entry that has
+  // the focus, so the focus goes to its first one again.
   useEffect(() => {
-    if (open) list.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
-  }, [open, moving]);
-  useEffect(() => {
-    if (!open) return undefined;
-    const away = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', away);
-    return () => document.removeEventListener('pointerdown', away);
-  }, [open]);
+    if (mode === 'move') focusFirstItem(items.current);
+  }, [mode]);
   const hasActions = onRename || onMove || onArchive || cancel;
   if (!hasActions) return <span className="pm-icon" aria-hidden="true" />;
   const done = (run: () => void) => () => {
-    setOpen(false);
-    setMoving(false);
+    onMode('closed');
     run();
   };
+  const moving = mode === 'move';
   return (
-    <div
-      className="pm-menu"
-      ref={root}
-      onKeyDown={(e) => {
-        if (!open) return;
-        if (e.key === 'Escape') {
-          // The menu closes; the panel around it stays.
-          e.stopPropagation();
-          setOpen(false);
-          setMoving(false);
-          button.current?.focus();
-          return;
-        }
-        const items = [...(list.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? [])];
-        const at = items.indexOf(document.activeElement as HTMLElement);
-        if (items.length === 0 || at < 0) return;
-        const go = (index: number) => {
-          e.preventDefault();
-          items[(index + items.length) % items.length].focus();
-        };
-        if (e.key === 'ArrowDown') go(at + 1);
-        else if (e.key === 'ArrowUp') go(at - 1);
-        else if (e.key === 'Home') go(0);
-        else if (e.key === 'End') go(items.length - 1);
-      }}
-    >
+    <div className="pm-menu">
       <button
         type="button"
         ref={button}
         className="pm-icon"
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={mode !== 'closed'}
         aria-label={`Actions for ${name}`}
         title="Actions"
-        onClick={() => {
-          setOpen(!open);
-          setMoving(false);
-        }}
+        onClick={() => onMode(mode === 'closed' ? 'menu' : 'closed')}
       >
         ⋯
       </button>
-      {open && (
-        <div className="pm-menu-list" role="menu" aria-label={`Actions for ${name}`} ref={list}>
+      <Popover
+        anchorRef={anchor}
+        triggerRef={button}
+        open={mode !== 'closed'}
+        onClose={() => onMode('closed')}
+        className="pm-menu-list"
+        role="menu"
+        ariaLabel={`Actions for ${name}`}
+        focusOnOpen
+      >
+        <div className="pm-menu-items" ref={items}>
           {!moving && onRename && (
-            <button type="button" role="menuitem" onClick={done(onRename)}>
-              Rename
+            <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.rename} onClick={done(onRename)}>
+              Rename ({SHORTCUTS.rename})
             </button>
           )}
           {!moving && onMove && (
-            <button type="button" role="menuitem" onClick={() => setMoving(true)}>
-              Move to group…
+            <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.move} onClick={() => onMode('move')}>
+              Move to group… ({SHORTCUTS.move})
             </button>
           )}
           {moving && onMove && (
@@ -124,8 +105,8 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
             </>
           )}
           {!moving && onArchive && (
-            <button type="button" role="menuitem" onClick={done(() => onArchive(!archived))}>
-              {archived ? 'Unarchive' : 'Archive'}
+            <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.archive} onClick={done(() => onArchive(!archived))}>
+              {archived ? 'Unarchive' : 'Archive'} ({SHORTCUTS.archive})
             </button>
           )}
           {!moving && cancel && (
@@ -134,9 +115,32 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
             </button>
           )}
         </div>
-      )}
+      </Popover>
     </div>
   );
+}
+
+// R, G and A on a row that has the focus. Not in a field, not in the menu, and not for a row inside this one
+// (the parts of a batch are no rows of their own for these keys).
+function rowKeys(event: KeyboardEvent<HTMLElement>, actions: { rename: () => void; move: () => void; archive: () => void }) {
+  if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return;
+  const target = event.target as HTMLElement;
+  if (target.closest('input, textarea, select, [contenteditable="true"], .popover')) return;
+  if (target.closest('.pm-row') !== event.currentTarget) return;
+  const key = event.key.toUpperCase();
+  const action = key === SHORTCUTS.rename ? actions.rename : key === SHORTCUTS.move ? actions.move : key === SHORTCUTS.archive ? actions.archive : null;
+  if (!action) return;
+  event.preventDefault();
+  action();
+}
+
+// The focus returns to the row's own button when a rename ends, or the keyboard user would be left on nothing.
+function useRefocusAfter(editing: boolean, row: RefObject<HTMLElement | null>) {
+  const was = useRef(editing);
+  useEffect(() => {
+    if (was.current && !editing) row.current?.querySelector<HTMLElement>('.pm-open')?.focus();
+    was.current = editing;
+  }, [editing, row]);
 }
 
 function Meter({ state, progress }: { state: JobState; progress?: number }) {
@@ -152,6 +156,10 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
   const setArchived = useProcessingStore((s) => s.setArchived);
   const moveToGroup = useProcessingStore((s) => s.moveToGroup);
   const [renaming, setRenaming] = useState(false);
+  const [menu, setMenu] = useState<MenuMode>('closed');
+  const line = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLLIElement>(null);
+  useRefocusAfter(renaming, row);
   // The job of another tab, or an archived one, is followed from the moment its row is shown.
   useEffect(() => {
     if (job.status === null) followJob(job.jobID);
@@ -160,8 +168,22 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
   const title = part ? (job.part ?? jobLabel(job)) : jobLabel(job);
   const target: ManagerTarget = { jobID: job.jobID };
   return (
-    <li className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}`}>
-      <div className="pm-line">
+    <li
+      ref={row}
+      className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}`}
+      aria-keyshortcuts={part ? undefined : 'R G A'}
+      onKeyDown={
+        part
+          ? undefined
+          : (e) =>
+              rowKeys(e, {
+                rename: () => setRenaming(true),
+                move: () => setMenu('move'),
+                archive: () => setArchived(target, !job.archived),
+              })
+      }
+    >
+      <div className="pm-line" ref={line}>
         {renaming ? (
           <InlineRename
             value={job.title ?? ''}
@@ -190,6 +212,9 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
         <DownloadZip job={job} now={now} />
         <RowMenu
           name={title}
+          mode={menu}
+          onMode={setMenu}
+          anchor={line}
           groups={groups}
           groupId={job.groupId}
           onRename={part ? undefined : () => setRenaming(true)}
@@ -212,6 +237,10 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
 function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: JobEntry[]; now: number; groups: ShelfGroup[] }) {
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [menu, setMenu] = useState<MenuMode>('closed');
+  const line = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLLIElement>(null);
+  useRefocusAfter(renaming, row);
   const renameBatch = useProcessingStore((s) => s.renameBatch);
   const setArchived = useProcessingStore((s) => s.setArchived);
   const moveToGroup = useProcessingStore((s) => s.moveToGroup);
@@ -226,8 +255,19 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
   const target: ManagerTarget = { batchId: batch.id };
   const listId = `pm-batch-${batch.id}`;
   return (
-    <li className={`pm-row batch${batch.archived ? ' archived' : ''}`}>
-      <div className="pm-line">
+    <li
+      ref={row}
+      className={`pm-row batch${batch.archived ? ' archived' : ''}`}
+      aria-keyshortcuts="R G A"
+      onKeyDown={(e) =>
+        rowKeys(e, {
+          rename: () => setRenaming(true),
+          move: () => setMenu('move'),
+          archive: () => setArchived(target, !batch.archived),
+        })
+      }
+    >
+      <div className="pm-line" ref={line}>
         <button
           type="button"
           className="pm-icon pm-chevron"
@@ -266,6 +306,9 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
         )}
         <RowMenu
           name={batch.title}
+          mode={menu}
+          onMode={setMenu}
+          anchor={line}
           groups={groups}
           groupId={batch.groupId}
           onRename={() => setRenaming(true)}
@@ -327,12 +370,42 @@ function entriesOf(jobs: readonly JobEntry[], batches: readonly BatchEntry[]): E
   return entries.sort((a, b) => b.at - a.at);
 }
 
-function GroupHeading({ group, empty }: { group: ShelfGroup; empty: boolean }) {
+// The arrow that folds a group up, with the number of rows it holds under the current filter.
+function FoldButton({ name, listId, collapsed, onToggle, count }: { name: string; listId: string; collapsed: boolean; onToggle: () => void; count: number }) {
+  return (
+    <button
+      type="button"
+      className="pm-icon pm-fold"
+      aria-expanded={!collapsed}
+      aria-controls={listId}
+      aria-label={collapsed ? `Show ${name}, ${count}` : `Fold up ${name}`}
+      title={collapsed ? 'Show the group' : 'Fold up the group'}
+      onClick={onToggle}
+    >
+      {collapsed ? '▸' : '▾'}
+    </button>
+  );
+}
+
+function GroupHeading({
+  group,
+  empty,
+  collapsed,
+  count,
+  onToggle,
+}: {
+  group: ShelfGroup;
+  empty: boolean;
+  collapsed: boolean;
+  count: number;
+  onToggle: () => void;
+}) {
   const renameGroup = useProcessingStore((s) => s.renameGroup);
   const removeGroup = useProcessingStore((s) => s.removeGroup);
   const [renaming, setRenaming] = useState(false);
   return (
     <header className="pm-group-head">
+      <FoldButton name={group.name} listId={`pm-group-${group.id}`} collapsed={collapsed} onToggle={onToggle} count={count} />
       {renaming ? (
         <InlineRename
           value={group.name}
@@ -345,7 +418,10 @@ function GroupHeading({ group, empty }: { group: ShelfGroup; empty: boolean }) {
           onCancel={() => setRenaming(false)}
         />
       ) : (
-        <h3 className="pm-group-name">{group.name}</h3>
+        <h3 className="pm-group-name">
+          {group.name}
+          {collapsed && <span className="pm-count"> ({count})</span>}
+        </h3>
       )}
       <button type="button" className="pm-icon" title="Rename this group" aria-label={`Rename ${group.name}`} onClick={() => setRenaming(true)}>
         ✎
@@ -367,6 +443,28 @@ function GroupHeading({ group, empty }: { group: ShelfGroup; empty: boolean }) {
   );
 }
 
+const UNGROUPED = 'ungrouped';
+
+const FILTERS: [JobFilter, string][] = [
+  ['active', 'Active'],
+  ['expired', 'Expired'],
+  ['all', 'All'],
+];
+
+// A batch is expired when every one of its parts is.
+function isExpired(entry: Entry, now: number): boolean {
+  return entry.kind === 'job' ? jobState(entry.job, now).key === 'expired' : entry.parts.length > 0 && entry.parts.every((p) => jobState(p, now).key === 'expired');
+}
+
+// "Active": not archived and not expired. "Expired": expired ones, archived or not. "All": everything.
+function listed(filter: JobFilter, entry: Entry, now: number): boolean {
+  if (filter === 'all') return true;
+  return filter === 'expired' ? isExpired(entry, now) : !entry.archived && !isExpired(entry, now);
+}
+
+const emptyText = (filter: JobFilter, total: number): string =>
+  total === 0 ? 'No jobs yet.' : filter === 'expired' ? 'No expired jobs.' : 'No active jobs.';
+
 export default function ProcessingManager() {
   const jobs = useProcessingStore((s) => s.jobs);
   const batches = useProcessingStore((s) => s.batches);
@@ -375,9 +473,17 @@ export default function ProcessingManager() {
   const createGroup = useProcessingStore((s) => s.createGroup);
   const [filter, setFilter] = useState<JobFilter>(loadJobFilter);
   const [naming, setNaming] = useState(false);
+  // The groups that are folded up; what is kept for a group that is gone is dropped at the next change.
+  const [collapsed, setCollapsed] = useState<string[]>(loadCollapsedGroups);
   const choose = (next: JobFilter) => {
     setFilter(next);
     saveJobFilter(next);
+  };
+  const toggle = (id: string) => {
+    const next = collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id];
+    const kept = next.filter((c) => c === UNGROUPED || groups.some((g) => g.id === c));
+    setCollapsed(kept);
+    saveCollapsedGroups(kept);
   };
 
   // A finished job turns "Expired" a minute before `expires`: the clock runs to the soonest of them.
@@ -388,7 +494,7 @@ export default function ProcessingManager() {
   const now = useNowUntil(deadline);
 
   const all = useMemo(() => entriesOf(jobs, batches), [jobs, batches]);
-  const shown = filter === 'all' ? all : all.filter((e) => !e.archived);
+  const shown = all.filter((e) => listed(filter, e, now));
   const groupOf = (e: Entry) => (e.groupId && groups.some((g) => g.id === e.groupId) ? e.groupId : null);
   const sections: { group: ShelfGroup | null; entries: Entry[]; empty: boolean }[] = [
     { group: null, entries: shown.filter((e) => groupOf(e) === null), empty: false },
@@ -410,9 +516,9 @@ export default function ProcessingManager() {
       </div>
       <div className="pm-tools">
         <div className="pm-filter" role="group" aria-label="Show">
-          {(['active', 'all'] as const).map((value) => (
+          {FILTERS.map(([value, label]) => (
             <button key={value} type="button" className={`pp-seg${filter === value ? ' on' : ''}`} aria-pressed={filter === value} onClick={() => choose(value)}>
-              {value === 'active' ? 'Active' : 'All'}
+              {label}
             </button>
           ))}
         </div>
@@ -440,21 +546,41 @@ export default function ProcessingManager() {
         </div>
       )}
       <div className="pm-list">
-        {shown.length === 0 && groups.length === 0 && <p className="hint-text pm-empty">{all.length === 0 ? 'No jobs yet.' : 'No active jobs.'}</p>}
-        {sections.map(({ group, entries, empty }) => (
-          <section key={group?.id ?? 'ungrouped'} className="pm-group" aria-label={group?.name ?? 'Ungrouped'}>
-            {group ? <GroupHeading group={group} empty={empty} /> : groups.length > 0 && <h3 className="pm-group-name">Ungrouped</h3>}
-            <ul className="pm-rows">
-              {entries.map((entry) =>
-                entry.kind === 'job' ? (
-                  <JobItem key={entry.job.jobID} job={entry.job} now={now} groups={groups} />
-                ) : (
-                  <BatchItem key={entry.batch.id} batch={entry.batch} parts={entry.parts} now={now} groups={groups} />
-                ),
+        {shown.length === 0 && groups.length === 0 && <p className="hint-text pm-empty">{emptyText(filter, all.length)}</p>}
+        {sections.map(({ group, entries, empty }) => {
+          const id = group?.id ?? UNGROUPED;
+          const folded = collapsed.includes(id);
+          const listId = `pm-group-${id}`;
+          return (
+            <section key={id} className="pm-group" aria-label={group?.name ?? 'Ungrouped'}>
+              {group ? (
+                <GroupHeading group={group} empty={empty} collapsed={folded} count={entries.length} onToggle={() => toggle(id)} />
+              ) : (
+                groups.length > 0 && (
+                  <header className="pm-group-head">
+                    <FoldButton name="Ungrouped" listId={listId} collapsed={folded} onToggle={() => toggle(id)} count={entries.length} />
+                    <h3 className="pm-group-name">
+                      Ungrouped
+                      {folded && <span className="pm-count"> ({entries.length})</span>}
+                    </h3>
+                  </header>
+                )
               )}
-            </ul>
-          </section>
-        ))}
+              {/* With no group there is no heading to fold under: the jobs are all there is. */}
+              {(!folded || (!group && groups.length === 0)) && (
+                <ul className="pm-rows" id={listId}>
+                  {entries.map((entry) =>
+                    entry.kind === 'job' ? (
+                      <JobItem key={entry.job.jobID} job={entry.job} now={now} groups={groups} />
+                    ) : (
+                      <BatchItem key={entry.batch.id} batch={entry.batch} parts={entry.parts} now={now} groups={groups} />
+                    ),
+                  )}
+                </ul>
+              )}
+            </section>
+          );
+        })}
       </div>
     </div>
   );
