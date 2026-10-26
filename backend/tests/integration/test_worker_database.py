@@ -33,11 +33,13 @@ def test_the_name_is_the_configured_database_and_the_worker() -> None:
     "environ",
     [
         {"PGHOST": "db.example.invalid", "PGUSER": "earthx", "PGDATABASE": "earthx"},
-        {"PGHOST": "10.0.0.5", "PGUSER": "earthx", "PGDATABASE": "earthx"},
+        {"PGHOST": "192.0.2.10", "PGUSER": "earthx", "PGDATABASE": "earthx"},
+        {"PGHOST": "localhost", "PGHOSTADDR": "192.0.2.10", "PGUSER": "earthx", "PGDATABASE": "earthx"},
+        {"PGHOST": "localhost", "PGSERVICE": "elsewhere", "PGUSER": "earthx", "PGDATABASE": "earthx"},
         {"PGUSER": "earthx", "PGDATABASE": "earthx"},
         {},
     ],
-    ids=["remote-name", "remote-address", "no-host", "nothing"],
+    ids=["remote-name", "remote-address", "local-name-remote-address", "service-file", "no-host", "nothing"],
 )
 def test_nothing_is_made_on_a_host_that_is_not_local_or_without_a_configuration(
     environ: dict[str, str], monkeypatch: pytest.MonkeyPatch
@@ -46,6 +48,16 @@ def test_nothing_is_made_on_a_host_that_is_not_local_or_without_a_configuration(
     before = dict(environ)
     assert use_worker_database("gw0", environ) is None
     assert environ == before
+
+
+def test_a_local_postgres_that_does_not_answer_makes_none_and_stops_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unreachable(*args: object, **kwargs: object) -> None:
+        raise psycopg.OperationalError("connection refused")
+
+    monkeypatch.setattr(worker_database.psycopg, "connect", unreachable)
+    environ = {"PGHOST": "127.0.0.1", "PGUSER": "earthx", "PGDATABASE": "earthx"}
+    assert use_worker_database("gw0", environ) is None
+    assert environ["PGDATABASE"] == "earthx"
 
 
 def test_this_process_runs_on_its_workers_database_or_on_the_configured_one(require_postgres_env: None) -> None:

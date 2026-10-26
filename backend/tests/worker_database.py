@@ -9,8 +9,10 @@ migrations are not applied here; the tests that need them apply them, as they do
 a fresh database in CI.
 
 The checks of `require_postgres_env` come first: no database is made on a host that is not
-local, and with nothing configured nothing happens. The T-C tests then fail with that
-fixture's own message, as they would in a serial run.
+local, and with nothing configured nothing happens. A `PGHOSTADDR` or `PGSERVICE` could point
+libpq elsewhere than `PGHOST` says, so with either of them none is made either. Nor when the
+local Postgres does not answer. In each case the T-C tests then fail with the message of their
+fixtures, as they would in a serial run, and every other test runs.
 """
 
 from __future__ import annotations
@@ -36,7 +38,9 @@ def create_worker_database(name: str) -> None:
     """Drop what a killed run may have left under that name, then make it empty and migrated."""
     with psycopg.connect(autocommit=True) as admin:
         admin.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
-        admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        # From template0: CREATE DATABASE refuses a template another session is connected to,
+        # and tests connect to template1 (test_startup.py, test_worker.py).
+        admin.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(name)))
     with psycopg.connect(dbname=name, autocommit=True) as connection:
         connection.execute("CREATE EXTENSION IF NOT EXISTS postgis")
     pgstac = PgstacDB(dsn=psycopg.conninfo.make_conninfo(dbname=name))
@@ -64,7 +68,12 @@ def use_worker_database(worker: str, environ: MutableMapping[str, str] = os.envi
     """
     if missing_postgres_env(environ) or not is_local_host(environ["PGHOST"]):
         return None
+    if environ.get("PGHOSTADDR") or environ.get("PGSERVICE"):
+        return None
     name = worker_database_name(environ["PGDATABASE"], worker)
-    create_worker_database(name)
+    try:
+        create_worker_database(name)
+    except psycopg.OperationalError:
+        return None
     configured, environ["PGDATABASE"] = environ["PGDATABASE"], name
     return name, configured
