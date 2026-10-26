@@ -1886,6 +1886,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   runSearch: async () => {
+    // One walk at a time (NM4-26): a second one would ask every page again while the first one goes on.
+    if (get().searching) return;
     const { aoi, aoiPoint, dateFrom, dateTo, selectedDatasetIds, datasets } = get();
     if (!aoi) {
       set({ error: 'Draw or search an area of interest first.' });

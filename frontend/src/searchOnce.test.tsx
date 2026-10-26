@@ -305,6 +305,12 @@ describe('a search walks its pages once each', () => {
     expect(tokens()).toEqual(['(none)', 'p2', 'p3', 'p4']);
   });
 
+  it('asks every page once when a second search starts while the first is still walking', async () => {
+    await Promise.all([search(), search()]);
+    expect(tokens()).toEqual(['(none)', 'p2', 'p3']);
+    expect(useAppStore.getState().items).toHaveLength(300);
+  });
+
   it('asks the same pages again for a new search, which is a new question and no repeat', async () => {
     await search();
     await search();
