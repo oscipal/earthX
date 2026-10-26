@@ -194,9 +194,15 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Heute:** Nach „Crop & merge to AOI“ bleibt der Quicklook der ganzen Szene noch eine Weile sichtbar, auch außerhalb der AOI.
    - **Soll:** Außerhalb der AOI verschwindet der Quicklook sofort. Innerhalb der AOI bleibt er stehen, bis die Kacheln des Zuschnitts geladen sind, dann wird er ersetzt – ohne Aufblitzen der Basemap (Vorgabe „Bild verschwindet nie“, UI-01a).
    - **Aufgabe:** Stufe A, nur Frontend (gemeinsame Layer-Logik), nach UI-01.
-26. **Kacheln schneller: Durchsatz von `tiler` und `gateway`** (Otto, 25.10.2026; hohe Priorität).
+26. **Kacheln schneller: Durchsatz von `tiler` und `gateway`** (Otto, 25.10.2026; hohe Priorität). **Erledigt (#197, 26.10.2026).**
    - **Plan:** `querschnitt/nm4-26-kachel-leistung.md`
    - **Befund:** NDVI-Vorschau rund 40 s für 325 Anfragen; Kacheln 1,7–6,5 s mit steigenden Zeiten (Warteschlange), auch reine `visual`-Kacheln 2,6–4,2 s. Gleich schon vor UI-01a (`745ecb2`), also keine Regression daraus. Dazu: Suche dreifach geladen (je 1,9 MB), `statistics` mit `op` einmal `400`.
+   - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.
+   - **Erledigt (26.10.2026, #197):** GDAL-Profil der Kacheln `SERIAL` + 256 MiB Cache, Zuschnitt unverändert, Item-Abrufe gebündelt. NDVI-Ansicht mit 13 Szenen 45,6 → 27,9 s, bei 100 Mbit/s 145,3 → 38,8 s, Kacheln byte-identisch. Suche: jede Seite einmal, mit Test. Probe auch vor einer einstufigen Statistik. Plan §19.
+27. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
+   - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
+   - **Berührt:** Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5).
+   - **Aufgabe:** Stufe B, Frontend und `tiler`; nach NM4-26.
    - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.27. **Toter Zweig „Einmal-Produkt mit Extent-Antwort“ in der Coverage-Route** (aus NM4-15b, Otto, 26.10.2026).
    - **Befund:** Mit dem Ausscheiden von `CoverageProvider.SAMPLE` ist der Zweig `single_coverage_product` ohne Flächenweg in `api/coverage_route.py` (`extent_result`) nicht mehr erreichbar: `_check_coverage` verbietet `single_coverage_product` mit Aggregation, `local-sql` nimmt den Flächenweg. Ebenso wirkungslos ist `and not config.capabilities.single_coverage_product` in `check_adapter_specs` (`adapters/spec.py`) samt `_required` in `tests/earthx/adapters/test_spec.py`.
    - **Berührt:** `adr/0004` (Einmal-Produkte: Ausdehnung allein).

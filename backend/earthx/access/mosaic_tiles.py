@@ -15,8 +15,8 @@ scenes cover is done without opening the rest.
 
 **The GDAL configuration follows into the threads.** ``rasterio.Env`` lives in the thread
 that entered it; the portion is read in threads of its own. The factory hands the reader the
-configuration of the route (its ``environment_dependency``, ``gdal_options`` of the gateway
-policy, M1-03), and :meth:`MosaicTileReader.tile` enters it again around every scene.
+configuration of the route (its ``environment_dependency``, ``tile_gdal_options`` of the gateway
+policy, M1-03, NM4-26), and :meth:`MosaicTileReader.tile` enters it again around every scene.
 """
 
 from __future__ import annotations

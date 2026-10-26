@@ -23,6 +23,12 @@ from earthx.gateway.policy import Policy
 # (adr/0001 Z8), 64 MiB per environment.
 VSI_CACHE_BYTES = 64 * 1024 * 1024
 
+# The global ``/vsicurl/`` region cache of the tiler (NM4-26 §8–§10, §18). GDAL's default is 16 MB and
+# it reads the size once per process, in a static initializer (``port/cpl_vsil_curl.cpp`` of GDAL
+# 3.12.2, l. 133–214), so it belongs in both tiler profiles: the first ``/vsicurl/`` access of the
+# process may be a crop.
+TILER_CURL_CACHE_BYTES = 256 * 1024 * 1024
+
 # Both spellings, because the prototype carried both and GDAL matches the
 # extension as written.
 ALLOWED_EXTENSIONS = ".tif,.tiff,.TIF,.TIFF"
@@ -52,6 +58,44 @@ def gdal_options(policy: Policy) -> dict[str, str]:
         # quietly drop certificate verification.
         "GDAL_HTTP_UNSAFESSL": "NO",
     }
+
+
+def tile_gdal_options(policy: Policy) -> dict[str, str]:
+    """:func:`gdal_options` for the tile routes of `tiler`: serial reads and a cache that holds (NM4-26 §8–§10).
+
+    With ``GDAL_HTTP_MULTIRANGE=YES`` the GeoTIFF driver fetches the blocks of a tile in parallel
+    through ``VSICurlHandle::ReadMultiRange`` (GDAL 3.12.2, ``port/cpl_vsil_curl.cpp`` l. 2507–2772),
+    which neither reads nor fills the global ``/vsicurl/`` region cache; the bytes it fetched are gone
+    when the read ends. The next tile over fetches the same blocks again: 1.72 GB from the source for a
+    view of 13 scenes that needs 284 MB. ``SERIAL`` goes through ``VSICurlHandle::Read()`` (l. 2361),
+    which reads the cache (l. 2402) and fills it (l. 2350), so each byte is fetched once; the tiles are
+    byte-identical (adr/0014 §6.3 is untouched). It only helps with a cache that holds the blocks of a
+    view, which is why the size comes with it (:data:`TILER_CURL_CACHE_BYTES`); either alone leaves most of the
+    double fetching (measured: 1.75 GB with ``SERIAL`` only, 1.18 GB with the cache only).
+
+    ``rasterio.Env`` sets its options per thread and GDAL reads ``GDAL_HTTP_MULTIRANGE`` at every call, in
+    the calling thread (l. 2523). That is what lets the crop of the same process keep ``YES``
+    (:func:`crop_gdal_options`). The worker and the runner build on :func:`gdal_options` and are not
+    touched by this (``readers.process_gdal_options``).
+    """
+    return {
+        **gdal_options(policy),
+        "CPL_VSIL_CURL_CACHE_SIZE": str(TILER_CURL_CACHE_BYTES),
+        "GDAL_HTTP_MULTIRANGE": "SERIAL",
+    }
+
+
+def crop_gdal_options(policy: Policy) -> dict[str, str]:
+    """:func:`gdal_options` for the AOI crop of `tiler`: the base ``MULTIRANGE`` and the tile cache size.
+
+    A crop reads many blocks at once and gains from fetching them in parallel: measured with
+    ``SERIAL`` a 0.3° crop took 17 % longer (NM4-26 §13, §18 point 1). So only the tiles change their
+    ``MULTIRANGE`` (:func:`tile_gdal_options`). The cache size is in this profile too, though the crop
+    does not use the cache itself: GDAL reads ``CPL_VSIL_CURL_CACHE_SIZE`` once per process (l. 133–214),
+    and the first ``/vsicurl/`` access of the process may be a crop, which would fix the 16 MB for the
+    tiles after it.
+    """
+    return {**gdal_options(policy), "CPL_VSIL_CURL_CACHE_SIZE": str(TILER_CURL_CACHE_BYTES)}
 
 
 def vsicurl_path(checked: CheckedUrl) -> str:

@@ -1174,9 +1174,10 @@ def build_download_zip(
     never used to compute pixels here, only to label the filenames and the
     notice file with the value the caller chose.
 
-    ``gdal_env`` (F7, M3-18): the same GDAL/VSI settings `gateway` builds for
-    the tile path (``earthx.gateway.gdal.gdal_options``) — timeouts, the read
-    cache, no directory listings on open. `access` may not import `gateway`
+    ``gdal_env`` (F7, M3-18): the GDAL/VSI settings `gateway` builds for
+    the crop (``earthx.gateway.gdal.crop_gdal_options``, NM4-26) — those of the
+    tile path (timeouts, the read cache, no directory listings on open) but
+    with parallel range reads. `access` may not import `gateway`
     (architekturplan.md 3.1), so the caller in `api` resolves it and hands the
     plain dict in. ``rasterio.Env`` is thread-local: the caller runs this whole
     function through ``run_in_threadpool``, so the context has to be entered

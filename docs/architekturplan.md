@@ -418,6 +418,8 @@ Rang 3 ist der architektonisch wichtigste Fund der Recherche: Er erlaubt Cloud-n
 
 **Nachtrag 2026-10-20 (M4-17, `adr/0006` §6 Folge 1):** Der frühere Satz „Suchergebnis wird unter einer Such-ID kurz gecacht, damit Tile-URLs stabil und CDN-fähig sind“ ist durch die Item-Liste in der URL ersetzt; die Berichtigung war seit dem 20.09.2026 fällig.
 
+**Nachtrag 2026-10-26 (NM4-26, `adr/0006` §8):** Im `tiler` liest GDAL die Blöcke einer Kachel nacheinander (`GDAL_HTTP_MULTIRANGE=SERIAL`) und hält sie in einem `/vsicurl/`-Cache von 256 MiB je Prozess; der parallele Weg ging am Cache vorbei. Zusammenfassen benachbarter Ranges und HTTP/2-Multiplexing wirken nur im parallelen Weg und bei HTTP/2-Quellen; S3 spricht HTTP/1.1. Worker und Runner bleiben beim bisherigen Profil.
+
 ### 6.4 Download-Vermittlung
 
 - Rohdaten: Link oder Redirect direkt zur Quelle. Kein Byte läuft durch das eigene Backend.
