@@ -397,7 +397,12 @@ describe('the layer a result becomes', () => {
     expect(layerProcessBlock(layers()[0], [])).toBe('A result cannot be processed further yet.');
     act(() => root.render(<LayerManager />));
     expect(container.querySelector('.lm-btn[title="Process this layer"]')).toBeNull();
-    expect(button('⚙')?.disabled).toBe(true);
+    // Hidden, not greyed (Otto, 26.10.2026): the place is there, empty, until a result can be processed (NM4-05).
+    expect(button('⚙')).toBeUndefined();
+    const empty = container.querySelector('.layer-row [data-col="process"]');
+    expect(empty?.tagName).toBe('SPAN');
+    expect(empty?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.layer-row')?.children).toHaveLength(9);
     expect(button('⇩')).toBeUndefined();
   });
 

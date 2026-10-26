@@ -100,16 +100,21 @@ function LayerRow({ layer: l, index, last }: { layer: MapLayer; index: number; l
       <button type="button" className="lm-btn" data-col="down" title="Move down" disabled={last} onClick={() => move(l.id, 'down')}>
         ▼
       </button>
-      <button
-        type="button"
-        className="lm-btn"
-        data-col="process"
-        disabled={processBlock !== null}
-        title={processBlock ?? 'Process this layer'}
-        onClick={() => void processLayer(l.id)}
-      >
-        ⚙
-      </button>
+      {l.result ? (
+        // A result is no scene: nothing can be processed on it yet, so the place stays empty (Otto, 26.10.2026).
+        <Slot col="process" />
+      ) : (
+        <button
+          type="button"
+          className="lm-btn"
+          data-col="process"
+          disabled={processBlock !== null}
+          title={processBlock ?? 'Process this layer'}
+          onClick={() => void processLayer(l.id)}
+        >
+          ⚙
+        </button>
+      )}
       {l.result ? (
         <ResultDownload jobID={l.result.jobID} expired={l.result.expired} />
       ) : !l.derived && l.restore.itemIds.length > 0 ? (
