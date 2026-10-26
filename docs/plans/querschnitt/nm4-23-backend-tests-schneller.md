@@ -368,3 +368,26 @@ Session wie in §8.1, Stand nach dem Merge von `main` (1e961e0). Die Zahl der Te
   - Der Import von `_ENV_FILE` aus `tests/integration/conftest.py` bleibt.
 - **Nach den Nachbesserungen:** voller Lauf mit `xdist`, 6032 bestanden, 8 übersprungen, 278 s.
 
+
+### 16.4 Endstand
+
+- **Noch ein zeitabhängiger Test:**
+  - Ein Lauf mit `xdist` nach §16.3 scheiterte an `api/test_permalink_route.py::TestNothingPersonalInTheLogs::test_no_log_line_holds_the_area_the_key_or_the_link`.
+  - Der Test sucht die Koordinate „9.5“ im Text aller Log-Einträge und fand sie in `"duration_ms": 59.5`, der gemessenen Dauer des Access-Logs.
+  - `own_log_text` (`backend/tests/conftest.py`) lässt `duration_ms` jetzt weg, nachdem es als Zahl geprüft ist, wie schon die Standardattribute. In Nachricht, Pfad und allen anderen Feldern wird eine Koordinate weiter gefunden. Zwei Tests in `test_logging.py` halten das fest.
+- **Zahl der Tests:** `main` (1e961e0) 6026, dieser Branch 6042. Dazu gekommen sind 16:
+  - 4 zu rasterio
+  - 10 zur Datenbank je Worker
+  - 2 zu `own_log_text`
+- **Endstand in der Session** (alles hintereinander):
+
+| Lauf | Tests | Wandzeit |
+|---|---|---|
+| `xdist` 1 | 6034 bestanden, 8 übersprungen | 280 s |
+| `xdist` 2 | 6034 / 8 | 284 s |
+| `xdist` 3 | 6034 / 8 | 283 s |
+| seriell `-n 0` | 6034 / 8 | 850 s |
+
+Danach war keine Datenbank `…_gw<n>` übrig.
+
+- **CI des Endstands:** alle vier Checks grün, Backend-Job 5:15 min.
