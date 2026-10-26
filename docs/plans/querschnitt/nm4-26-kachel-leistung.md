@@ -312,3 +312,17 @@ Eine echte NDVI-Kachel z11 aus `S2A_T32TPT_20260830T102039_L2A` (nur im Speicher
 | WebP verlustfrei | 44 kB | 53,1 ms |
 
 Die synthetische Kachel kodiert gleich schnell (46,8 ms, 101 kB). Für das Kodieren ist das Gerüst damit nicht zu günstig.
+
+## 18. Freigabe (Otto, 26.10.2026)
+
+1. **Profil:** Option 3, wenn sie sauber über eine eigene GDAL-Umgebung je Route geht: `SERIAL` + Cache für die Kacheln, der Zuschnitt behält `MULTIRANGE=YES`. Sonst Option 1, mit Begründung im PR.
+2. **Cache:** 256 MiB.
+3. **512er-Kacheln:** eigene Aufgabe (Backlog).
+4. **HTTP/2, mehrere Prozesse:** erst mit M6.
+5. **`Cache-Control`:** offen bis M6.
+6. **Suche:** jede Seite genau einmal, mit Test. Ob sich Ottos drei Anfragen im `token` unterschieden, ist nicht geprüft. Am Code zu belegen: Das Frontend lädt beim Öffnen nur die nötigen Seiten und keine doppelt.
+7. **`statistics` → `400`:** kein `detail`-Text vorhanden. Die Probe läuft auch vor der Statistik einer Kette mit einem Schritt, und das Panel zeigt die Ablehnung.
+
+Umsetzung mit Sonnet (Effort hoch). Messung nachher mit `scripts/tile-bench` im PR, Bitgleich-Tests grün, volle Suite, Prüfung im echten Browser, danach `main` holen.
+
+**Zu Frage 1, geprüft vor der Umsetzung [M]:** `rasterio.Env` setzt die Optionen je Thread. Zwei gleichzeitige Umgebungen mit `SERIAL` und `YES` lesen in ihrem Thread je ihren eigenen Wert, und GDAL liest `GDAL_HTTP_MULTIRANGE` bei jedem Aufruf im aufrufenden Thread (`cpl_vsil_curl.cpp` Z. 2523). Option 3 geht also. `CPL_VSIL_CURL_CACHE_SIZE` steht trotzdem in beiden Profilen: GDAL liest es nur einmal je Prozess (R4), und der erste Zugriff des Prozesses darf auch ein Zuschnitt sein.
