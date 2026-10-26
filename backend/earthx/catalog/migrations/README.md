@@ -39,6 +39,10 @@ Fremdschlüssel; `api` schreibt und liest über `jobs/permalinks.py`, der stünd
 NM4-01: die Aufnahmejahre der Szenen eines Auftrags, aus denen die Attribution beim Abruf gebaut wird
 (nie aus der Uhr). Je Job, nicht je Lauf, nicht im Rezept; `jobs` speichert sie ungelesen.
 
+`014_bundle.sql` — die Tabelle `earthx_bundle` aus UI-01e: die `jobID`s hinter „Download all (ZIP)“ unter einer
+zufälligen Kennung, die Frist das früheste Ende der Jobs, fest ab Erstellung. Keine AOI, kein Titel, keine Bytes;
+`api` schreibt und liest über `jobs/bundles.py`, der stündliche Aufräumer löscht.
+
 Die Buchführungstabelle `earthx_migrations` gehört nicht hierher, sondern dem Läufer
 (`earthx/catalog/schema.py`) und wird von ihm angelegt. Sonst müsste jedes
 Migrationsverzeichnis sie erneut mitbringen.

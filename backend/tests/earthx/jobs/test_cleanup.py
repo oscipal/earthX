@@ -9,7 +9,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from earthx.jobs import permalinks
+from earthx.jobs import bundles, permalinks
 from earthx.jobs.cleanup import cleanup, cleanup_batch
 from earthx.jobs.config import WorkerConfig
 from earthx.jobs.queue import CLEANUP_LOCK_KEY
@@ -105,6 +105,43 @@ class TestPermalinks:
         for _ in range(5):
             self._made(db, "31 days")
         assert cleanup(db, store, batch=2).permalinks == 5 and _count(db, "earthx_permalink") == 0
+
+
+class TestBundles:
+    """UI-01e: the term is the one stored at creation; the row goes whole, and looking never lengthens it."""
+
+    @staticmethod
+    def _made(db: psycopg.Connection, ends_in: str) -> str:
+        bundle_id = bundles.create(db, ["A" * 22], datetime.now(UTC))
+        db.execute(
+            "UPDATE public.earthx_bundle SET expires_at = clock_timestamp() + %s::interval WHERE bundle_id = %s",
+            (ends_in, bundle_id),
+        )
+        return bundle_id
+
+    def test_what_has_expired_is_gone_whole_and_the_rest_stays(self, db: psycopg.Connection, store: Store) -> None:
+        old, young = self._made(db, "-1 minute"), self._made(db, "1 minute")
+        assert bundles.read(db, old) is None  # already refused before the cleanup came
+        result = cleanup(db, store)
+        assert result.bundles == 1 and result.total == 1
+        assert [r[0] for r in db.execute("SELECT bundle_id FROM public.earthx_bundle")] == [young]
+        assert bundles.read(db, young) is not None
+
+    def test_reading_does_not_move_the_term(self, db: psycopg.Connection, store: Store) -> None:
+        bundle_id = self._made(db, "1 day")
+        before = db.execute("SELECT expires_at FROM public.earthx_bundle").fetchone()
+        for _ in range(3):
+            assert bundles.read(db, bundle_id) is not None
+        assert db.execute("SELECT expires_at FROM public.earthx_bundle").fetchone() == before
+
+    def test_batches_go_on_until_none_is_left(self, db: psycopg.Connection, store: Store) -> None:
+        for _ in range(5):
+            self._made(db, "-1 day")
+        assert cleanup(db, store, batch=2).bundles == 5 and _count(db, "earthx_bundle") == 0
+
+    def test_a_malformed_identifier_is_none_and_never_reaches_a_row(self, db: psycopg.Connection) -> None:
+        assert not bundles.is_bundle_id("short") and not bundles.is_bundle_id("A" * 21 + "%")
+        assert bundles.is_bundle_id("A" * 22)
 
 
 class TestObjectsBeforeRows:
