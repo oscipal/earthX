@@ -1,6 +1,6 @@
 # NM4-33 — Originale mit einem Klick herunterladen
 
-**Stand:** 24.10.2026, beauftragt von Otto (Backlog-Punkt 33 in `docs/plans/nach-m4-backlog.md`).
+**Stand:** 26.10.2026, beauftragt von Otto (Backlog-Punkt 33 in `docs/plans/nach-m4-backlog.md`).
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, bei Rechenrelevanz Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für Recherche und Plan, Sonnet (Effort hoch) für die Umsetzung.
 **Start:** nach UI-01; Frontend-Aufgabe (höchstens zwei Frontend-Sessions gleichzeitig), höchstens zwei Stufe-B-Sessions gleichzeitig.
