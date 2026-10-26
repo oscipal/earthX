@@ -334,7 +334,7 @@ Unter derselben Last wie beim Fehlschlag liefen danach 20 von 20 Läufen von `te
 
 ### 16.2 Messung nachher
 
-Session wie in §8.1, Stand nach dem Merge von `main` (1e961e0). Die Zahl der Tests: `main` 6026, dieser Branch 6037 (+4 rasterio, +7 Datenbank je Worker).
+Session wie in §8.1, Stand nach dem Merge von `main` (1e961e0). Die Zahl der Tests: `main` 6026, dieser Branch 6037 (+4 rasterio, +7 Datenbank je Worker), nach den Nachbesserungen aus §16.3 6040.
 
 | Lauf | Wo | Tests | Wandzeit |
 |---|---|---|---|
@@ -351,3 +351,20 @@ Session wie in §8.1, Stand nach dem Merge von `main` (1e961e0). Die Zahl der Te
 - Speicherspitze des Rechners in den drei `xdist`-Läufen: 5,7 von 15 GB. Danach war keine Datenbank `…_gw<n>` übrig.
 - Die CI-Runner schwanken stark: `main` brauchte heute 9:24 bis 14:26 min, am 24.10. waren es 13,2 min. Zur selben Uhrzeit (15:40/15:42) lagen PR und `main` bei 4:10 und 14:26 min.
 - Die längste Einzeldauer bleibt `test_memory_8192` mit rund 61 s (Aufbau 13 s, Aufruf 48 s).
+
+### 16.3 Nachbesserungen aus dem Review (Subagent `reviewer`)
+
+- **Postgres lokal konfiguriert, aber nicht erreichbar:**
+  - Bisher brach `pytest_configure` in jedem Worker ab, und es lief kein einziger Test.
+  - Jetzt wird keine Datenbank angelegt. Die T-C-Tests scheitern mit der Meldung ihrer Fixtures, wie seriell; die übrigen laufen. Geprüft mit `PGPORT=1 pytest -n 2 …`: 97 bestanden, nur die T-C-Tests mit Fehler.
+- **`PGHOSTADDR` oder `PGSERVICE` gesetzt:** Dann wird keine Datenbank angelegt, denn libpq könnte anderswohin verbinden, als `PGHOST` sagt.
+- **Kopie aus `template0`:** `CREATE DATABASE` lehnt eine Vorlage ab, mit der eine andere Sitzung verbunden ist, und zwei Tests verbinden sich kurz mit `template1`.
+- **Live-Smokes bleiben in einem Prozess:**
+  - `-n auto` gilt auch für den geplanten Workflow `live-smoke.yml`, der das Dev-Lock installiert.
+  - Ein Hook `pytest_xdist_auto_num_workers` in `backend/tests_live/conftest.py` gibt 0 zurück, das ist der serielle Lauf von `xdist`. `.github/` bleibt unverändert.
+  - Probe: Ein Lauf auf `tests_live` startet keine Worker, einer auf `backend/tests` startet 4.
+- **Nicht übernommen:**
+  - Die Gegenproben mit Basis- und Zuschnittprofil in `test_gdal_tile_cache.py` laufen weiter im Worker-Prozess. Sie erwarten erneutes Holen; ein kleinerer oder verdrängter Cache kann das nur verstärken, nicht verdecken.
+  - Der Import von `_ENV_FILE` aus `tests/integration/conftest.py` bleibt.
+- **Nach den Nachbesserungen:** voller Lauf mit `xdist`, 6032 bestanden, 8 übersprungen, 278 s.
+
