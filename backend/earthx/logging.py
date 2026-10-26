@@ -48,6 +48,10 @@ _JOB_PATH = re.compile(r"(/processing/jobs/)/*[^/]+")
 # like the `jobID`. Creating one has no segment after `permalinks`, so nothing is replaced there.
 _PERMALINK_PATH = re.compile(r"(/processing/permalinks/)/*[^/]+")
 
+# UI-01e: the identifier of a bundle is the way to the results of several jobs, kept out of the log like the `jobID`.
+# Creating one has no segment after `bundles`, so nothing is replaced there.
+_BUNDLE_PATH = re.compile(r"(/processing/bundles/)/*[^/]+")
+
 # M4-13c-5: the `result_id` in `/results/{result_id}/…` of the tiler is the way to a result's tiles, as
 # the `jobID` is the way to its files, and is kept out of the log the same way. The `results` segment
 # after a job (`/processing/jobs/{jobID}/results/result.tif`) is the name of a file, not an identifier.
@@ -62,10 +66,10 @@ def _hide_result_id(match: re.Match[str]) -> str:
 
 def loggable_path(path: str | None) -> str | None:
     """``path`` as the access log writes it: a job's identifier replaced by ``{jobID}``, a result's by ``{resultID}``,
-    a permalink's by ``{permalinkID}``."""
+    a permalink's by ``{permalinkID}``, a bundle's by ``{bundleID}``."""
     if not path:
         return path
-    path = _PERMALINK_PATH.sub(r"\1{permalinkID}", path)
+    path = _BUNDLE_PATH.sub(r"\1{bundleID}", _PERMALINK_PATH.sub(r"\1{permalinkID}", path))
     return _RESULT_PATH.sub(_hide_result_id, _JOB_PATH.sub(r"\1{jobID}", path))
 
 

@@ -1440,6 +1440,46 @@ Tiler weist die Stufen ab. Eine Kachel auf Stufe 7 deckt etwa 313 km, also bis z
 1830², drei Bänder `uint16`) wären etwa 70 bis 90 MB je Kachel [A] und deshalb nicht freigegeben. Die Karte sagt es statt leer zu bleiben:
 „Zoom in“ mit dem Zoom, ab dem das Bild gezeichnet wird (`zoomHint.ts`).
 
+## 14f. Nachtrag vom 2026-10-26: Bündel für „Download all (ZIP)“ (zu §6.1, §13, 14b, 14d; UI-01e)
+
+Otto hat den Plan von UI-01 am 2026-10-24 freigegeben: Frage 7 mit Option 1 (25 GB je Bündel), Frage 8 mit Option 2
+(fortsetzbar) (`plans/vp3/ui-01-app-rahmen.md` §6.12, §6.13). Der Originaltext bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Tabelle `earthx_bundle` (Migration 014, nicht 013: die 013 ist `013_job_acquisition_years.sql`):** `bundle_id`,
+  `job_ids` (`jsonb`), `created_at`, `expires_at`, Index auf `expires_at`. Kein Fremdschlüssel, kein Objektspeicher, keine
+  Bytes: Die Zeile hält nur die `jobID`s und die Zeiten, keine AOI, keinen Titel. Das ZIP wird beim Lesen aus dem Stand der
+  Jobs gebaut (`api/processing_route.py::_job_members`, dieselbe Funktion wie `result.zip`, §14b).
+- **Kennung und Frist:** `secrets.token_urlsafe(16)`, nie aus den Jobs abgeleitet; zwei `POST` mit gleicher Liste ergeben zwei
+  Kennungen und dieselben Bytes. `expires_at` ist das früheste Ende der Jobs, die ins Bündel eingehen, fest beim Anlegen
+  (anders als beim Permalink gibt es keine feste Zahl von Tagen). Ansehen verlängert nie; die Leseroute antwortet ab `expires_at`
+  mit `404`, auch vor dem Aufräumer (SQL mit `clock_timestamp()`). Der stündliche Aufräumer löscht abgelaufene Zeilen ganz,
+  im selben Durchgang wie Läufe und Permalinks (`CleanupResult.bundles`). Kein Löschschlüssel: Ein Teil ist über seinen Job ohnehin
+  erreichbar, und das Bündel lebt höchstens 7 Tage.
+- **`POST /processing/bundles`:** Body `{"jobs": […]}`, 1 bis 25 `jobID`s, nie in der URL. `415`, `413` (Rumpf), `400` bei kaputtem
+  JSON oder falscher Form des Rumpfs, `422` bei Liste außerhalb 1 bis 25, Eintrag in falscher Form oder doppelt. Danach je Job:
+  abgelaufen (weniger als 60 s Rest, wie bei den Dateilinks), gescheitert, nicht fertig, abgebrochen oder ohne Zeile wird nicht
+  aufgenommen; ist kein Job übrig, `410` (alle abgelaufen, abgebrochen oder ohne Zeile) bzw. `409` (sonst), und nichts wird
+  angelegt. Ein Export oder ein Ergebnis ohne gemessene Dateien (`reported_files`) gibt `422` (siehe Auslegung unten). Über 25 GB
+  Raster (Summe aus `result.tif` und `mask.tif` laut Bericht des Supervisors, dezimal wie `MAX_JOB_BYTES`) gibt `413` mit der Summe.
+  Antwort `201` mit `{"href", "expires"}` und `Location`; weder Kennung noch `jobID` stehen sonst darin.
+- **`GET /processing/bundles/{id}`:** `Range` (ein Bereich), `If-Range`, `ETag` über alle Einträge (`Layout.etag`), `Accept-Ranges`,
+  `Last-Modified` (spätestes Ende der Teile), `Content-Disposition`, einen Platz aus `DownloadSlots` (sonst `503` mit `Retry-After`).
+  Unbekannte, falsch geformte und abgelaufene Kennung geben dasselbe `404` (`urn:earthx:no-such-bundle`). Der Name ist
+  `<Stamm des ersten Teils im ZIP>_batch-<n>.zip`, mit `n` als Länge der Liste, ohne `jobID`, AOI oder Hash.
+- **Inhalt:** `<Name>/NN_<Stamm>/…` je Teil mit dem Inhalt seines `result.zip` (`NN` ist die Stelle in der Liste, 01 bis 25). Was
+  zwischen `POST` und `GET` abgelaufen, gescheitert, noch nicht fertig oder weg ist, steht in `<Name>/MISSING.txt`, eine Zeile je Teil:
+  `NN <Stamm>: <Grund>` (`expired`, `failed`, `not finished`, `no longer available`, ohne Stamm `NN: no longer available`, wenn die Zeile
+  der Datenbank fehlt). Das ändert den ETag, sodass `If-Range` den Rest verwirft und das ZIP neu ausgeliefert wird. Ist kein Teil mehr da, `410`.
+- **Nie im Log:** Kennung, `jobID`s und Liste. Das Zugriffslog schreibt `{bundleID}` (`logging.loggable_path`); die Meldungen
+  „bundle created“ und „bundle read“ nennen nur Zahlen. Beide Routen tragen `Cache-Control: no-store`.
+- **Auslegungen (Exporte und Teile ohne Jahr von Otto am 2026-10-26 bestätigt, Option 1).** (1) *Exporte:* Der Plan nennt „bei einem Export der Inhalt von
+  `export.zip` als ein Eintrag“. Für `export.zip` misst der Supervisor weder Größe noch CRC-32 (`worker._upload_and_finish` tut es nur
+  für `result.tif` und `mask.tif`); ein Eintrag ohne CRC im Voraus ließe sich nur bauen, indem `api` die Datei beim Anlegen oder Lesen
+  ganz läse (§14b: keine CRC im Abruf, sie kommt vom Aufseher beim Hochladen). Ein Batch (M4-13c-4) besteht nur aus Raster-Jobs, deshalb weist `POST` einen Export mit `422` ab. Soll
+  der Export hinein, braucht es den Worker, der auch `export.zip` misst (eigene Aufgabe). (2) Ein Raster-Job, der vor NM4-01 angelegt wurde und dessen
+  Attribution ein Jahr braucht, aber keines mehr herleiten kann (`409` bei `result.zip`), fehlt im Bündel mit dem Grund
+  `year of acquisition unknown`, statt das ganze Bündel scheitern zu lassen.
+
 ## 15. Quellen
 
 **Primär, in der Sitzung gelesen [P]:**
