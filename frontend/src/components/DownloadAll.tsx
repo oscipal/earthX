@@ -1,9 +1,19 @@
 // The symbol "Download all (ZIP)" at the end of the row of a batch (UI-01 §6.12); `useBundleDownload.ts` does the work.
 
 import { BUNDLE_LABEL, type BundleOffer } from './jobView';
+import Tip from './Tip';
 
 export default function DownloadAll({ offer, busy, onRun }: { offer: BundleOffer; busy: boolean; onRun: () => void }) {
-  if (offer.kind === 'hidden') return <span className="pm-icon" aria-hidden="true" />;
+  if (offer.kind === 'hidden') {
+    // The place stays: the reason, where there is one, takes it as a ⚠.
+    return offer.warning ? (
+      <span className="pm-icon">
+        <Tip text={offer.warning} symbol="⚠" tone="warn" />
+      </span>
+    ) : (
+      <span className="pm-icon" aria-hidden="true" />
+    );
+  }
   if (offer.kind === 'locked' || busy) {
     const reason = offer.kind === 'locked' ? offer.reason : 'Preparing the ZIP…';
     return (

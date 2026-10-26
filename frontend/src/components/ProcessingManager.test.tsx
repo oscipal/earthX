@@ -1323,15 +1323,20 @@ describe('a batch', () => {
       expect(all()!.getAttribute('aria-disabled')).toBeNull();
     });
 
-    it('is locked above 25 GB where the sizes are known, and open at that size', () => {
+    it('is hidden above 25 GB where the sizes are known, with the reason as a ⚠ in its place, and shown at that size', () => {
       withBatch([part(1, { bytes: 13e9 }), part(2, { bytes: 12e9 + 1 })]);
       mount();
-      expect(all()!.getAttribute('aria-disabled')).toBe('true');
-      expect(all()!.getAttribute('data-tip')).toBe('The results add up to 25 GB; one ZIP holds at most 25 GB. Download the parts one by one.');
-      click(all());
+      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.split(' ')[0]);
+      expect(all()).toBeNull();
+      const warning = container.querySelector('.pm-row.batch .pm-line .pm-icon .tip.warn')!;
+      expect(warning.getAttribute('data-tip')).toBe('Too large for one ZIP (over 25 GB); download parts separately.');
+      expect(warning.getAttribute('aria-label')).toBe(warning.getAttribute('data-tip'));
       expect(bodies).toEqual([]);
+      const hidden = line();
       put({ jobs: [part(1, { bytes: 13e9 }), part(2, { bytes: 12e9 })] });
       expect(all()!.getAttribute('aria-disabled')).toBeNull();
+      expect(container.querySelector('.pm-row.batch .tip.warn')).toBeNull();
+      expect(line()).toEqual(hidden);
     });
 
     it('counts only the parts that finished against the limit', () => {
@@ -1370,7 +1375,7 @@ describe('a batch', () => {
     it.each([
       [409, 'No part has finished yet.'],
       [410, 'The results of this batch have expired.'],
-      [413, 'The results add up to more than 25 GB. Download the parts one by one.'],
+      [413, 'Too large for one ZIP (over 25 GB); download parts separately.'],
       [422, 'These results cannot go into one ZIP. Download the parts one by one.'],
       [429, 'The server is busy. Try again in a moment.'],
       [503, 'The server is busy. Try again in a moment.'],

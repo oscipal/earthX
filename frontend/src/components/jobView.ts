@@ -115,14 +115,15 @@ export function batchSummary(count: BatchCount): string {
 export const BUNDLE_LABEL = 'Download all (ZIP)';
 
 // What "Download all (ZIP)" of a batch offers right now (UI-01 §6.12). Hidden where it can never work (no part
-// is finished or still on its way); locked, with the reason, where it does not work yet or at this size.
+// is finished or still on its way, or the results are too large), the reason of the latter as a `warning`;
+// locked, with the reason, only where it does not work yet.
 export type BundleOffer =
-  | { kind: 'hidden' }
+  | { kind: 'hidden'; warning?: string }
   | { kind: 'locked'; reason: string }
   // `jobIds` are all parts, in the order of the manager: the ZIP lists the ones it leaves out in `MISSING.txt`.
   | { kind: 'ready'; jobIds: string[]; leftOut: number };
 
-const gigabytes = (bytes: number) => `${(bytes / 1e9).toFixed(bytes < 1e10 ? 1 : 0)} GB`;
+export const TOO_LARGE = 'Too large for one ZIP (over 25 GB); download parts separately.';
 
 export function bundleOffer(parts: readonly JobEntry[], now: number): BundleOffer {
   const states = parts.map((part) => jobState(part, now).key);
@@ -134,7 +135,7 @@ export function bundleOffer(parts: readonly JobEntry[], now: number): BundleOffe
   // Only what the results document tells (the raster, not the mask): the server checks the rest.
   const known = finished.reduce((sum, part) => sum + (part.bytes ?? 0), 0);
   if (known > BUNDLE_MAX_BYTES) {
-    return { kind: 'locked', reason: `The results add up to ${gigabytes(known)}; one ZIP holds at most ${gigabytes(BUNDLE_MAX_BYTES)}. Download the parts one by one.` };
+    return { kind: 'hidden', warning: TOO_LARGE };
   }
   return { kind: 'ready', jobIds: parts.map((part) => part.jobID), leftOut: parts.length - finished.length };
 }
@@ -148,7 +149,7 @@ export function bundleFault(error: unknown): string {
       case 410:
         return 'The results of this batch have expired.';
       case 413:
-        return `The results add up to more than ${gigabytes(BUNDLE_MAX_BYTES)}. Download the parts one by one.`;
+        return TOO_LARGE;
       case 422:
         return 'These results cannot go into one ZIP. Download the parts one by one.';
       case 429:
