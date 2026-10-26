@@ -2404,7 +2404,7 @@ Dateiliste in §15l (`TEXT_FILES` mit `methods.txt`) bleiben als Originaltext st
   `ATTRIBUTION.txt`; `METHODS_FILENAME` entfällt dort, in `access/download.py` (der Parameter `methods_text` von
   `build_download_zip` auch) und im Export. Zuschnitt-ZIP, Export-ZIP und Job-ZIP (`result.zip`) enthalten keine `methods.txt`; ihre
   Tests prüfen das gegen die Tuple.
-- **Link und Ausgang `methods` bleiben (Vorschlag des Plans, Otto-Entscheid offen für Widerspruch):** Für Clients der API gibt
+- **Link und Ausgang `methods` bleiben (von Otto am 2026-10-26 bestätigt):** Für Clients der API gibt
   `GET /processing/jobs/{jobID}/results/methods.txt` weiter den Text aus (`text/plain`, Dateiname `…_methods.txt`). Er ist nicht mehr
   Mitglied eines ZIP, sondern der Wert von `provenance.methods` des `recipe.json`, das derselbe Job liefert; beide stammen aus einem
   Aufruf, sie widersprechen sich nie. Das Frontend verweist auf den Link nirgends (UI-01 §1 Punkt 12).
