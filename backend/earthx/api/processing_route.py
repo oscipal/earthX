@@ -85,7 +85,7 @@ from earthx.api.intake import (
 )
 from earthx.api.item_source import ItemSource, fetch_item_or_refuse
 from earthx.api.job_events import TERMINAL, JobEvents, Subscription, TooManyFollowers
-from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_range, reported_files
+from earthx.api.result_zip import FileFacts, Layout, Member, RangeNotSatisfiable, byte_range, reported_files
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     AcquisitionYears,
@@ -1105,7 +1105,7 @@ class _SlotResponse(StreamingResponse):
                 await self.body_iterator.aclose()  # type: ignore[attr-defined]
 
 
-async def _archive_bytes(api: JobApi, result_id: str, layout: Layout, first: int, last: int) -> AsyncIterator[bytes]:
+async def _archive_bytes(api: JobApi, layout: Layout, first: int, last: int) -> AsyncIterator[bytes]:
     """Bytes ``first`` to ``last`` (both included) of the archive: documents from memory, rasters from the store.
 
     A raster is read in blocks of :data:`BUNDLE_BLOCK` in a thread; the stream to the store is closed when this
@@ -1118,9 +1118,10 @@ async def _archive_bytes(api: JobApi, result_id: str, layout: Layout, first: int
             yield segment.data
             continue
         remaining = segment.end - segment.begin
+        assert segment.result_id is not None
         try:
             stream = await run_in_threadpool(
-                open_result_range, api.store, result_id, segment.source, segment.begin, segment.end - 1
+                open_result_range, api.store, segment.result_id, segment.source, segment.begin, segment.end - 1
             )
         except ObjectStoreError:
             LOGGER.warning("a result file could not be opened while the ZIP was sent")
@@ -1175,28 +1176,27 @@ def _requested_range(request: Request, layout: Layout) -> tuple[int, int] | None
         ) from None
 
 
-async def _bundle_response(
-    request: Request, api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str
-) -> Response:
-    """``result.zip`` (M4-11b-1): a folder with result, mask, recipe and citation, one range of it or all.
+def _finished_at(status: JobStatus) -> datetime:
+    return (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
 
-    Answered by `api` itself, not by a redirect: ``recipe.json`` belongs to this job, the rasters to a run
-    that other orders share. The same checks as for every link run before (``404``, ``410`` from 60 s
-    before the end of the result's life), so a resumed download after the end is a ``410`` too.
+
+def _job_members(api: JobApi, body: dict[str, Any], status: JobStatus, facts: dict[str, FileFacts], folder: str) -> list[Member]:
+    """The files of a raster job's ZIP below ``folder``: the one place of its content (M4-11b-1, M4-30).
+
+    The rasters from the store, then the files of the crop's ZIP beside them in its order (`TEXT_FILES`, the one
+    definition); the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
+    the citation before. ``result.zip`` of the job and every part of a bundle are laid out by this function.
     """
-    facts = reported_files(status.result, BUNDLE_FILES)
-    if body is None or facts is None or status.result_id is None:
-        raise _no_such_job()
-    finished = (status.finished_at or status.created_at).astimezone(UTC).replace(microsecond=0)
-    stem = filename.removesuffix(".zip")
-    members = [Member.stored(f"{stem}/{name}", name, facts[name]) for name in BUNDLE_FILES]
+    members = [
+        Member.stored(f"{folder}/{name}", name, facts[name], result_id=status.result_id) for name in BUNDLE_FILES
+    ]
     config = _config_of(api, body)
     documents = {
         name: text.encode("utf-8")
         for name, text in job_side_files(
             config,
             body,
-            finished=finished,
+            finished=_finished_at(status),
             years=_years_of(config, status),
             scene_aoi=status.scene_aoi,
             aoi_provenance=status.aoi_provenance,
@@ -1204,16 +1204,13 @@ async def _bundle_response(
     }
     documents[RECIPE_FILENAME] = _recipe_bytes(api, body, status)
     documents[METHODS_FILENAME] = _methods_bytes(api, body, status)
-    # The files of the crop's ZIP beside its rasters, in its order (`TEXT_FILES`, the one definition);
-    # the registry no longer knowing the dataset leaves out the citation and the notice, as it left out
-    # the citation before.
-    members.extend(
-        Member.of_bytes(f"{stem}/{name}", documents[name]) for name in TEXT_FILES if name in documents
-    )
-    layout = Layout(members, modified=finished)
-    await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
+    members.extend(Member.of_bytes(f"{folder}/{name}", documents[name]) for name in TEXT_FILES if name in documents)
+    return members
 
-    last_modified = format_datetime(finished, usegmt=True)
+
+async def _zip_response(request: Request, api: JobApi, layout: Layout, filename: str) -> Response:
+    """``layout`` as the answer: all of it or the one range asked for, with the validators a resumed download needs."""
+    last_modified = format_datetime(layout.modified, usegmt=True)
     chosen = _requested_range(request, layout)
     first, last = chosen if chosen is not None else (0, layout.total - 1)
     headers = {
@@ -1228,12 +1225,30 @@ async def _bundle_response(
     if not api.bundles.take():
         raise Problem(503, "this server sends as many ZIP files as it can; try again", headers={"Retry-After": "5"})
     return _SlotResponse(
-        _archive_bytes(api, status.result_id, layout, first, last),
+        _archive_bytes(api, layout, first, last),
         api.bundles,
         status_code=206 if chosen is not None else 200,
         media_type=docs.MEDIA_TYPES[BUNDLE],
         headers=headers,
     )
+
+
+async def _bundle_response(
+    request: Request, api: JobApi, body: dict[str, Any] | None, status: JobStatus, filename: str
+) -> Response:
+    """``result.zip`` (M4-11b-1): a folder with result, mask, recipe and citation, one range of it or all.
+
+    Answered by `api` itself, not by a redirect: ``recipe.json`` belongs to this job, the rasters to a run
+    that other orders share. The same checks as for every link run before (``404``, ``410`` from 60 s
+    before the end of the result's life), so a resumed download after the end is a ``410`` too.
+    """
+    facts = reported_files(status.result, BUNDLE_FILES)
+    if body is None or facts is None or status.result_id is None:
+        raise _no_such_job()
+    members = _job_members(api, body, status, facts, filename.removesuffix(".zip"))
+    layout = Layout(members, modified=_finished_at(status))
+    await _check_stored(api, status.result_id, {name: facts[name].bytes for name in BUNDLE_FILES})
+    return await _zip_response(request, api, layout, filename)
 
 
 # --- progress ----------------------------------------------------------------
