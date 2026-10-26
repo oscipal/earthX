@@ -3,8 +3,10 @@
 
 import { useEffect, useState } from 'react';
 
-import { isResultExpired } from '../resultLayer';
+import { HttpError } from '../api';
+import { BUNDLE_MAX_BYTES, BUNDLE_MAX_PARTS } from '../processing';
 import type { BatchEntry, JobEntry } from '../processingStore';
+import { isResultExpired } from '../resultLayer';
 
 export const EXPIRED_TIP = 'Expired: results are kept for 7 days.';
 
@@ -108,6 +110,55 @@ export function batchSummary(count: BatchCount): string {
     [count.cancelled, 'cancelled'],
   ];
   return parts.filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}`).join(' · ');
+}
+
+export const BUNDLE_LABEL = 'Download all (ZIP)';
+
+// What "Download all (ZIP)" of a batch offers right now (UI-01 §6.12). Hidden where it can never work (no part
+// is finished or still on its way); locked, with the reason, where it does not work yet or at this size.
+export type BundleOffer =
+  | { kind: 'hidden' }
+  | { kind: 'locked'; reason: string }
+  // `jobIds` are all parts, in the order of the manager: the ZIP lists the ones it leaves out in `MISSING.txt`.
+  | { kind: 'ready'; jobIds: string[]; leftOut: number };
+
+const gigabytes = (bytes: number) => `${(bytes / 1e9).toFixed(bytes < 1e10 ? 1 : 0)} GB`;
+
+export function bundleOffer(parts: readonly JobEntry[], now: number): BundleOffer {
+  const states = parts.map((part) => jobState(part, now).key);
+  const finished = parts.filter((_, i) => states[i] === 'finished');
+  const coming = states.some((key) => key === 'checking' || key === 'waiting' || key === 'running');
+  if (finished.length === 0 && !coming) return { kind: 'hidden' };
+  if (parts.length > BUNDLE_MAX_PARTS) return { kind: 'locked', reason: `One ZIP holds at most ${BUNDLE_MAX_PARTS} parts.` };
+  if (finished.length === 0) return { kind: 'locked', reason: 'No part has finished yet.' };
+  // Only what the results document tells (the raster, not the mask): the server checks the rest.
+  const known = finished.reduce((sum, part) => sum + (part.bytes ?? 0), 0);
+  if (known > BUNDLE_MAX_BYTES) {
+    return { kind: 'locked', reason: `The results add up to ${gigabytes(known)}; one ZIP holds at most ${gigabytes(BUNDLE_MAX_BYTES)}. Download the parts one by one.` };
+  }
+  return { kind: 'ready', jobIds: parts.map((part) => part.jobID), leftOut: parts.length - finished.length };
+}
+
+// What a refused or failed request for the ZIP says, for the user who has to act on it.
+export function bundleFault(error: unknown): string {
+  if (error instanceof HttpError) {
+    switch (error.status) {
+      case 409:
+        return 'No part has finished yet.';
+      case 410:
+        return 'The results of this batch have expired.';
+      case 413:
+        return `The results add up to more than ${gigabytes(BUNDLE_MAX_BYTES)}. Download the parts one by one.`;
+      case 422:
+        return 'These results cannot go into one ZIP. Download the parts one by one.';
+      case 429:
+      case 503:
+        return 'The server is busy. Try again in a moment.';
+      default:
+        return 'The ZIP could not be prepared.';
+    }
+  }
+  return 'The ZIP could not be prepared.';
 }
 
 // The keys of the row actions of the manager, shown in its menu and taken on a focused row.

@@ -11,12 +11,14 @@ import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter,
 import { isJobId } from '../processing';
 import { MIN_REMAINING_MS } from '../resultLayer';
 import { useProcessingStore, type BatchEntry, type JobEntry, type ManagerTarget } from '../processingStore';
+import DownloadAll from './DownloadAll';
 import InlineRename from './InlineRename';
 import { DownloadZip } from './JobRow';
 import Popover from './Popover';
 import { focusFirstItem } from '../popover';
-import { batchSummary, countBatch, formatUntil, jobLabel, jobState, SHORTCUTS, useNowUntil, type JobState } from './jobView';
+import { batchSummary, bundleOffer, countBatch, formatUntil, jobLabel, jobState, SHORTCUTS, useNowUntil, type JobState } from './jobView';
 import Tip from './Tip';
+import { useBundleDownload } from './useBundleDownload';
 
 export const KEPT_HERE_TIP = "Jobs are kept in this browser only: a private window or clearing the browser's data loses them.";
 export const STORAGE_FULL_TIP = 'Browser storage is full: copies of the oldest orders were dropped.';
@@ -370,6 +372,8 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
     for (const part of parts) if (part.status === null) followJob(part.jobID);
   }, [parts, followJob]);
   const count = countBatch(batch, parts, now);
+  const offer = bundleOffer(parts, now);
+  const bundle = useBundleDownload(offer);
   const running = parts.some((p) => p.phase === 'active');
   const target: ManagerTarget = { batchId: batch.id };
   const listId = `pm-batch-${batch.id}`;
@@ -432,6 +436,7 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
             </span>
           </button>
         )}
+        <DownloadAll offer={offer} busy={bundle.busy} onRun={() => void bundle.run()} />
         <RowMenu
           name={batch.title}
           mode={menu}
@@ -451,6 +456,11 @@ function BatchItem({ batch, parts, now, groups, onDrag, dragging }: { batch: Bat
         />
       </div>
       {running && <progress className="pm-progress" max={100} value={count.progress} aria-label="Progress" />}
+      {bundle.fault && (
+        <span className="pm-fault" role="alert">
+          {bundle.fault}
+        </span>
+      )}
       {expanded && (
         <ul className="pm-parts" id={listId}>
           {parts.map((part) => (

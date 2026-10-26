@@ -1230,10 +1230,209 @@ describe('a batch', () => {
     expect([...document.querySelectorAll('[role="menu"] button')].map((b) => b.textContent)).toEqual(['Cancel']);
   });
 
-  it('has no "Download all (ZIP)" yet: that is UI-01f', () => {
-    withBatch();
-    mount();
-    expect(container.textContent).not.toContain('Download all');
+  describe('"Download all (ZIP)"', () => {
+    const BUNDLE = 'Bundle0123456789abcdefg'.slice(0, 22);
+    const part = (n: number, over: Parameters<typeof jobEntry>[1] = {}) => finished(n, { batchId: BATCH, part: `S${n}`, ...over });
+    const gone = (n: number) => jobEntry(n, { batchId: BATCH, part: `S${n}`, phase: 'gone', expired: true, status: null });
+    const failed = (n: number) => jobEntry(n, { batchId: BATCH, part: `S${n}`, phase: 'failed', failure: 'nope' });
+    const all = () => container.querySelector<HTMLElement>('.pm-row.batch [aria-label^="Download all (ZIP)"]');
+    let saved: { href: string; download: string }[];
+    let bodies: unknown[];
+
+    beforeEach(() => {
+      saved = [];
+      bodies = [];
+      routes['POST /processing/bundles'] = (init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ href: `/processing/bundles/${BUNDLE}`, expires: new Date(NOW + 86_400_000).toISOString() }, 201);
+      };
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        saved.push({ href: new URL(this.href).pathname, download: this.getAttribute('download') ?? 'none' });
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    const run = async () => {
+      click(all());
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/processing/bundles', expect.anything()));
+      await act(async () => {});
+    };
+
+    it('asks for one ZIP with the jobs in the body, then downloads from the address it got', async () => {
+      withBatch([part(1), part(2), part(3)]);
+      mount();
+      await run();
+      expect(bodies).toEqual([{ jobs: [jobId(1), jobId(2), jobId(3)] }]);
+      const call = fetchMock.mock.calls.find(([url]) => url === '/processing/bundles')!;
+      expect(call[1].method).toBe('POST');
+      expect(call[1].headers['Content-Type']).toBe('application/json');
+      expect(saved).toEqual([{ href: `/processing/bundles/${BUNDLE}`, download: '' }]);
+      expect(document.body.querySelector('a[download]')).toBeNull();
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it('keeps every job id out of every address', async () => {
+      withBatch([part(1), part(2)]);
+      mount();
+      await run();
+      expect(fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('bundles'))).toEqual(['/processing/bundles']);
+      expect(saved[0].href).not.toContain(jobId(1));
+    });
+
+    it('sends the parts that cannot be in it as well and says in the tip that MISSING.txt lists them', async () => {
+      withBatch([part(1), jobEntry(2, { batchId: BATCH, part: 'S2' }), failed(3), gone(4)]);
+      mount();
+      expect(all()!.getAttribute('data-tip')).toBe('Download all (ZIP). 3 of 4 parts are left out; MISSING.txt in the ZIP says why.');
+      await run();
+      expect(bodies).toEqual([{ jobs: [jobId(1), jobId(2), jobId(3), jobId(4)] }]);
+    });
+
+    it('has no word about MISSING.txt where nothing is left out', () => {
+      withBatch([part(1), part(2)]);
+      mount();
+      expect(all()!.getAttribute('data-tip')).toBe('Download all (ZIP).');
+    });
+
+    it('is not there where no part has a result or can still get one, and keeps its place', () => {
+      withBatch([gone(1), failed(2), jobEntry(3, { batchId: BATCH, part: 'S3', phase: 'dismissed', status: null })]);
+      mount();
+      expect(all()).toBeNull();
+      const line = () => [...container.querySelector('.pm-row.batch .pm-line')!.children].map((c) => c.className.split(' ')[0]);
+      const without = line();
+      put({ jobs: [part(1), part(2)] });
+      expect(all()).not.toBeNull();
+      expect(line()).toEqual(without);
+    });
+
+    it('is locked with its reason while no part has finished, and sends nothing', () => {
+      withBatch([jobEntry(1, { batchId: BATCH, part: 'S1' }), jobEntry(2, { batchId: BATCH, part: 'S2' })]);
+      mount();
+      const lock = all()!;
+      expect(lock.getAttribute('aria-disabled')).toBe('true');
+      expect(lock.getAttribute('data-tip')).toBe('No part has finished yet.');
+      expect(lock.getAttribute('aria-label')).toBe('Download all (ZIP): No part has finished yet.');
+      click(lock);
+      expect(bodies).toEqual([]);
+    });
+
+    it('opens once a part has finished', () => {
+      withBatch([jobEntry(1, { batchId: BATCH, part: 'S1' })]);
+      mount();
+      expect(all()!.getAttribute('aria-disabled')).toBe('true');
+      put({ jobs: [part(1)] });
+      expect(all()!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('is locked above 25 GB where the sizes are known, and open at that size', () => {
+      withBatch([part(1, { bytes: 13e9 }), part(2, { bytes: 12e9 + 1 })]);
+      mount();
+      expect(all()!.getAttribute('aria-disabled')).toBe('true');
+      expect(all()!.getAttribute('data-tip')).toBe('The results add up to 25 GB; one ZIP holds at most 25 GB. Download the parts one by one.');
+      click(all());
+      expect(bodies).toEqual([]);
+      put({ jobs: [part(1, { bytes: 13e9 }), part(2, { bytes: 12e9 })] });
+      expect(all()!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('counts only the parts that finished against the limit', () => {
+      withBatch([part(1, { bytes: 20e9 }), jobEntry(2, { batchId: BATCH, part: 'S2', bytes: 20e9 })]);
+      mount();
+      expect(all()!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('is not on a job of its own, nor on the parts of an opened batch', () => {
+      put({ jobs: [part(1), part(2), finished(3)], batches: [batchEntry(BATCH)] });
+      mount();
+      click(button('▸'));
+      expect(container.querySelectorAll('[aria-label^="Download all (ZIP)"]')).toHaveLength(1);
+    });
+
+    it('asks once for a double click while the request is on its way', async () => {
+      let answer: (r: Response) => void = () => {};
+      routes['POST /processing/bundles'] = (init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Promise<Response>((resolve) => {
+          answer = resolve;
+        }) as unknown as Response;
+      };
+      withBatch([part(1)]);
+      mount();
+      click(all());
+      click(all());
+      click(all());
+      expect(bodies).toHaveLength(1);
+      expect(all()!.getAttribute('data-tip')).toBe('Preparing the ZIP…');
+      await act(async () => answer(json({ href: `/processing/bundles/${BUNDLE}`, expires: 'x' }, 201)));
+      await vi.waitFor(() => expect(saved).toHaveLength(1));
+      expect(all()!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it.each([
+      [409, 'No part has finished yet.'],
+      [410, 'The results of this batch have expired.'],
+      [413, 'The results add up to more than 25 GB. Download the parts one by one.'],
+      [422, 'These results cannot go into one ZIP. Download the parts one by one.'],
+      [429, 'The server is busy. Try again in a moment.'],
+      [503, 'The server is busy. Try again in a moment.'],
+      [500, 'The ZIP could not be prepared.'],
+    ])('says what to do after a %i, downloads nothing and can be tried again', async (code, text) => {
+      routes['POST /processing/bundles'] = () => json({ type: 'about:blank', title: 'No', detail: `secret ${jobId(1)}`, status: code }, code);
+      withBatch([part(1)]);
+      mount();
+      click(all());
+      await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe(text));
+      expect(container.textContent).not.toContain(jobId(1));
+      expect(saved).toEqual([]);
+      expect(all()!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('says so when the request fails altogether', async () => {
+      routes['POST /processing/bundles'] = () => {
+        throw new TypeError('network down');
+      };
+      withBatch([part(1)]);
+      mount();
+      click(all());
+      await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe('The ZIP could not be prepared.'));
+      expect(saved).toEqual([]);
+    });
+
+    it('clears the message with the next try', async () => {
+      routes['POST /processing/bundles'] = () => json({ title: 'busy', status: 503 }, 503);
+      withBatch([part(1)]);
+      mount();
+      click(all());
+      await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+      routes['POST /processing/bundles'] = () => json({ href: `/processing/bundles/${BUNDLE}`, expires: 'x' }, 201);
+      click(all());
+      await vi.waitFor(() => expect(saved).toHaveLength(1));
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it.each([
+      ['another origin', 'https://elsewhere.example/processing/bundles/' + 'a'.repeat(22)],
+      ['a protocol-relative address', '//elsewhere.example/processing/bundles/' + 'a'.repeat(22)],
+      ['a script', 'javascript:alert(1)'],
+      ['another route', '/processing/jobs/' + 'a'.repeat(22)],
+      ['a query', `/processing/bundles/${'a'.repeat(22)}?x=1`],
+      ['no address', undefined],
+    ])('does not download from %s', async (_name, href) => {
+      routes['POST /processing/bundles'] = () => json({ href, expires: 'x' }, 201);
+      withBatch([part(1)]);
+      mount();
+      click(all());
+      await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe('The ZIP could not be prepared.'));
+      expect(saved).toEqual([]);
+    });
+
+    it('is a plain button in the tab order', () => {
+      withBatch([part(1)]);
+      mount();
+      const control = all()!;
+      expect(control.tagName).toBe('BUTTON');
+      expect(control.getAttribute('type')).toBe('button');
+      expect(control.getAttribute('tabindex')).toBeNull();
+    });
   });
 
   it('is renamed as a whole, and the parts that carried the title follow, one named by hand does not', () => {
