@@ -1,10 +1,15 @@
 """The methods text: a paragraph for a paper's methods section, from a ``recipe.json`` (M4-19a).
 
 One pure function over the document every download already carries — the recipe with its
-``provenance`` — so that the crop's ZIP, the export's, the job's and the local runner's folder
-write the same text for the same run (plan ``plans/m4/m4-19-teilen-und-beschreiben.md`` §3.1). The text is
+``provenance`` — so that the crop's ZIP, the export's, the job's and the local runner write the same
+text for the same run (plan ``plans/m4/m4-19-teilen-und-beschreiben.md`` §3.1). The text is
 English, deterministic and built from what the document says; the title and DOI of the dataset
 come in as :class:`DatasetFacts` because the worker core reads no registry.
+
+The text is no file of its own: it lies in the ``recipe.json`` as ``provenance.methods``
+(:func:`recipe_with_methods`, NM4-08), outside the hash like the rest of the block; the local runner
+writes it into its ``provenance.json``. :func:`methods_of` reads it back for the link ``methods`` of the API.
+The field holds the paragraph without the line break that ends :func:`methods_text`.
 
 Never in the text: the recipe's hash, an address, an identifier of a recipe or job, a coordinate
 of the area. The area is a size and the target CRS (Otto, 20.10.2026, question 6).
@@ -21,7 +26,6 @@ from typing import Any
 from pyproj import Geod
 from shapely.geometry import shape as shapely_shape
 
-from earthx.access.crop_rules import METHODS_FILENAME
 from earthx.catalog.registry import Attributable, doi_name
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY
@@ -30,11 +34,12 @@ from earthx.processing.recipe import (
     CropOutput,
     Provenance,
     Recipe,
+    document_bytes,
     loads_i_json,
     recipe_from_data,
 )
 
-__all__ = ["METHODS_FILENAME", "DatasetFacts", "methods_text"]
+__all__ = ["DatasetFacts", "methods_of", "methods_text", "recipe_with_methods"]
 
 _GEOD = Geod(ellps="WGS84")
 
@@ -106,6 +111,38 @@ def methods_text(
         *provenance.attribution,
     ]
     return " ".join(sentence for sentence in sentences if sentence) + "\n"
+
+
+def recipe_with_methods(
+    document: bytes | str | Mapping[str, Any],
+    *,
+    dataset: DatasetFacts | None = None,
+    acquired_on: date | None = None,
+    operators: OperatorRegistry = REGISTRY,
+) -> bytes:
+    """``document`` as ``recipe.json`` bytes with :func:`methods_text` of it in ``provenance.methods``.
+
+    The text is written from the document without that field, so a document that already carries a
+    text gets the one that fits its present content. Everything else in the document is kept as it is,
+    in the form of :func:`~earthx.processing.recipe.document_bytes`.
+    """
+    data = loads_i_json(document) if isinstance(document, bytes | str) else dict(document)
+    text = methods_text(data, dataset=dataset, acquired_on=acquired_on, operators=operators)
+    provenance = data["provenance"]
+    return document_bytes({**data, "provenance": {**provenance, "methods": text.removesuffix("\n")}})
+
+
+def methods_of(document: bytes | str | Mapping[str, Any]) -> str | None:
+    """The text of ``provenance.methods``, ``None`` where there is none (a file from before NM4-08).
+
+    :class:`~earthx.processing.errors.RecipeInvalid` for a document that is not a ``recipe.json``.
+    """
+    data = loads_i_json(document) if isinstance(document, bytes | str) else document
+    provenance = data.get("provenance") if isinstance(data, Mapping) else None
+    if not isinstance(provenance, Mapping):
+        raise RecipeInvalid("a recipe.json holds a recipe and its provenance")
+    text = provenance.get("methods")
+    return text if isinstance(text, str) and text else None
 
 
 def _data_sentences(recipe: Recipe, dataset: DatasetFacts | None) -> list[str]:
