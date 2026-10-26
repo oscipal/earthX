@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { datasetsFrom } from '../datasets';
 import type { MapLayer } from '../layers';
 import { useAppStore } from '../store';
-import LayerManager from './LayerManager';
+import LayerManager, { EXPIRED_LAYER_TEXT, RESAMPLED_LAYER_TEXT } from './LayerManager';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -154,6 +154,82 @@ describe('LayerManager', () => {
         slider.dispatchEvent(new Event('input', { bubbles: true }));
       });
       expect(useAppStore.getState().layers.map((l) => l.opacity)).toEqual([1, 0.25, 1, 1, 1]);
+    });
+  });
+
+  // Otto, 20.10.2026: every row has the same places, and a button that is missing leaves its place empty.
+  describe('the rows', () => {
+    const base = { visible: true, opacity: 1, overlays: [] };
+    const restore = { datasetId: 'ds', itemIds: ['scene'], groupItemIds: [['scene']], aoi: null, cropToAoi: false } as unknown as MapLayer['restore'];
+    const result = (over: object) => ({
+      jobID: 'AbCdEfGhIjKlMnOpQrSt_-',
+      expires: new Date(Date.now() + 86_400_000).toISOString(),
+      gsd: 10,
+      resampled: null,
+      expired: false,
+      dataType: 'float32',
+      stats: null,
+      ...over,
+    });
+    const kinds: MapLayer[] = [
+      { ...base, id: 'scene', name: 'Optical · a scene with a download', restore },
+      { ...base, id: 'bare', name: 'Optical · a layer without scenes', restore: { ...restore, itemIds: [] } },
+      { ...base, id: 'preview', name: 'Preview · NDVI', derived: 'preview', restore },
+      { ...base, id: 'result', name: 'Result · Band math', derived: 'result', result: result({}), restore },
+      { ...base, id: 'old', name: 'Result · expired and resampled', derived: 'result', result: result({ expired: true, resampled: true }), restore },
+      { ...base, id: 'long', name: 'Optical · '.padEnd(200, 'long name '), restore },
+    ];
+    const rows = () => [...container.querySelectorAll('.layer-row')];
+    const places = (row: Element) => [...row.children].map((c) => c.getAttribute('data-col'));
+
+    beforeEach(() => {
+      useAppStore.setState({ datasets: [], layers: kinds, dock: 'layers' });
+      act(() => root.render(<LayerManager />));
+    });
+
+    it('have the nine places in the same order, whatever the kind of layer', () => {
+      expect(rows()).toHaveLength(kinds.length);
+      for (const row of rows()) {
+        expect(places(row)).toEqual(['eye', 'name', 'opacity', 'up', 'down', 'process', 'download', 'note', 'remove']);
+      }
+    });
+
+    it('keep every button at its place when the download or the note is missing', () => {
+      const at = (id: string, col: string) => rows()[kinds.findIndex((k) => k.id === id)].querySelector(`[data-col="${col}"]`)!;
+      // A layer without scenes, a preview: no download; the place is there and empty.
+      for (const id of ['bare', 'preview']) {
+        const empty = at(id, 'download');
+        expect(empty.getAttribute('aria-hidden')).toBe('true');
+        expect(empty.tagName).toBe('SPAN');
+        expect(empty.textContent).toBe('');
+        expect(empty.className).toBe('lm-slot');
+      }
+      expect(at('scene', 'download').tagName).toBe('BUTTON');
+      expect(at('result', 'download').tagName).toBe('A');
+      // The other buttons are the ones of every row, in the same class.
+      for (const col of ['eye', 'up', 'down', 'remove']) {
+        for (const row of rows()) expect(row.querySelector(`[data-col="${col}"]`)?.tagName).toBe('BUTTON');
+      }
+      // ⚙ is a button on every row but a result's (Otto, 26.10.2026), where its place is empty.
+      for (const k of kinds) {
+        const gear = at(k.id, 'process');
+        expect(gear.tagName).toBe(k.result ? 'SPAN' : 'BUTTON');
+        expect(gear.getAttribute('aria-hidden') === 'true').toBe(Boolean(k.result));
+      }
+      expect(at('scene', 'note').className).toBe('lm-slot');
+    });
+
+    it('say their notes in a symbol with a tooltip, in the place of the note', () => {
+      const note = rows()[kinds.findIndex((k) => k.id === 'old')].querySelector('[data-col="note"]')!;
+      expect(note.className).toBe('lm-note');
+      expect(note.querySelector('.tip')?.getAttribute('data-tip')).toBe(`${EXPIRED_LAYER_TEXT} ${RESAMPLED_LAYER_TEXT}`);
+      // No text of a note lies in the row, which keeps its height.
+      expect(rows()[kinds.findIndex((k) => k.id === 'old')].textContent).not.toContain('Resampled');
+    });
+
+    it('show the whole name in the tooltip of a name that is cut', () => {
+      const name = rows()[kinds.length - 1].querySelector<HTMLElement>('[data-col="name"]')!;
+      expect(name.getAttribute('title')).toContain(kinds[kinds.length - 1].name);
     });
   });
 });

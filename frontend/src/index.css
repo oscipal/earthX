@@ -109,7 +109,8 @@ body {
   flex-direction: column;
   gap: 10px;
   align-items: center;
-  width: min(760px, 92vw);
+  /* Between the rail or the panel and the right edge, a margin of 16 px each side: never over an edge. */
+  width: min(760px, calc(100vw - var(--dock-offset) - 32px));
 }
 .app.dock-open {
   --dock-offset: calc(var(--rail-width) + var(--dock-width));
@@ -1358,19 +1359,24 @@ input[type='date']:focus {
   overflow-y: auto;
 }
 .layer-row {
-  display: flex;
+  --lm-button: 22px;
+  display: grid;
+  /* Eye, name, opacity, up, down, process, download, note, remove: a button that is missing leaves its
+     place empty (`LayerManager.tsx::Slot`) instead of moving the others (UI-01 §1 point 8). */
+  grid-template-columns: var(--lm-button) minmax(0, 1fr) 44px repeat(4, var(--lm-button)) 18px var(--lm-button);
   align-items: center;
-  gap: 5px;
+  column-gap: 3px;
   padding: 5px 4px;
   border-bottom: 1px solid var(--panel-border);
 }
-/* A line of its own under the controls of a layer: "Expired", "Resampled …" (M4-13c-5). */
-.layer-row-noted {
-  flex-wrap: wrap;
+.lm-slot {
+  display: block;
+  height: 1px;
 }
 .lm-note {
-  flex: 1 0 100%;
-  margin: 0 0 0 22px;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
 }
 .lm-eye,
 .lm-btn {
@@ -1380,9 +1386,21 @@ input[type='date']:focus {
   font-family: var(--mono);
   font-size: 11px;
   cursor: pointer;
-  padding: 2px 5px;
+  padding: 2px 0;
   border-radius: 4px;
-  flex: 0 0 auto;
+  text-align: center;
+  text-decoration: none;
+}
+.lm-btn[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.lm-btn.has-tip {
+  position: relative;
+}
+.lm-btn.has-tip::after {
+  top: calc(100% + 4px);
+  right: 0;
 }
 .lm-eye.off {
   color: var(--muted);
@@ -1398,7 +1416,6 @@ input[type='date']:focus {
   color: #ff9aa7;
 }
 .lm-name {
-  flex: 1;
   min-width: 0;
   text-align: left;
   background: none;
@@ -1418,9 +1435,14 @@ input[type='date']:focus {
   color: var(--accent);
 }
 .lm-opacity {
-  width: 56px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   accent-color: var(--accent);
-  flex: 0 0 auto;
+}
+/* The opacity of a result in its view: a slider of its own width. */
+.result-controls .lm-opacity {
+  width: 120px;
 }
 
 /* --- the rail and the panels beside it (UI-01 §6.9) --- */
@@ -2144,7 +2166,7 @@ a.pm-icon:hover {
   }
   .bottom.beside-sheet {
     left: calc((100% + var(--dock-offset)) / 2);
-    width: min(760px, 92vw);
+    width: min(760px, calc(100vw - var(--dock-offset) - 32px));
     bottom: calc(60vh + 12px);
   }
   /* The sheet lies over the lower edge: the badge sits above it, left. */

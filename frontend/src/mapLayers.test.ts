@@ -691,7 +691,7 @@ describe('syncLayers: a result layer that expired', () => {
   const result = (id: string, expired: boolean) =>
     pinned(id, `https://t/${id}`, {
       derived: 'result',
-      result: { jobID: 'J', expires: '2026-10-27T10:00:00Z', gsd: 10, resampled: null, expired },
+      result: { jobID: 'J', expires: '2026-10-27T10:00:00Z', gsd: 10, resampled: null, expired, dataType: 'float32', stats: null },
     });
 
   it('has no source on the map, and the other layers keep theirs', () => {
