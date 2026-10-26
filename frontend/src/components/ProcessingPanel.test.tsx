@@ -1315,6 +1315,7 @@ describe('a finished job row (K6)', () => {
       status: null,
       phase: 'successful',
       archive: 'result.zip',
+      bytes: null,
       resampled,
       failure: null,
       error: null,

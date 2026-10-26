@@ -105,6 +105,8 @@ export interface ResultLink {
   title?: string;
   // Of the link `result` (the raster): its columns, for the pixel size of a geographic CRS.
   width?: number;
+  // Of the links `result` and `export`: the size of the file in bytes.
+  length?: number;
   properties?: Record<string, unknown>;
 }
 
@@ -316,4 +318,34 @@ export function eventsUrl(jobId: string): string {
 // `result.zip` it serves itself (M4-11b-1).
 export function resultUrl(jobId: string, name: string): string {
   return `${jobUrl(jobId)}/results/${encodeURIComponent(name)}`;
+}
+
+// "Download all (ZIP)" of a batch (UI-01 §6.12): `POST /processing/bundles` keeps the list of `jobID`s
+// on the server and answers with the address of one ZIP, which a plain download then fetches (and
+// resumes by `Range`). The list goes in the body, never in a URL.
+export const BUNDLE_MAX_PARTS = 25;
+// What the rasters of a bundle may add up to (`MAX_BUNDLE_BYTES` of the job API).
+export const BUNDLE_MAX_BYTES = 25_000_000_000;
+
+const BUNDLE_HREF = /^\/(?:[^/?#]+\/)*processing\/bundles\/[A-Za-z0-9_-]{22}$/u;
+
+export interface Bundle {
+  // Ready for a download link: same origin, and the form of a bundle of this API.
+  href: string;
+  expires: string;
+}
+
+export async function createBundle(jobIds: readonly string[]): Promise<Bundle> {
+  const body = await jsonOrThrow<Record<string, unknown>>(
+    await fetch(`${PREFIX}/bundles`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ jobs: jobIds }),
+    }),
+  );
+  const { href, expires } = body;
+  if (typeof href !== 'string' || !BUNDLE_HREF.test(href) || typeof expires !== 'string') {
+    throw new Error('the server answered with a bundle the panel cannot read');
+  }
+  return { href: `${BASE}${href}`, expires };
 }
