@@ -192,11 +192,11 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Heute:** Nach „Crop & merge to AOI“ bleibt der Quicklook der ganzen Szene noch eine Weile sichtbar, auch außerhalb der AOI.
    - **Soll:** Außerhalb der AOI verschwindet der Quicklook sofort. Innerhalb der AOI bleibt er stehen, bis die Kacheln des Zuschnitts geladen sind, dann wird er ersetzt – ohne Aufblitzen der Basemap (Vorgabe „Bild verschwindet nie“, UI-01a).
    - **Aufgabe:** Stufe A, nur Frontend (gemeinsame Layer-Logik), nach UI-01.
-26. **Kacheln schneller: Durchsatz von `tiler` und `gateway`** (Otto, 25.10.2026; hohe Priorität).
+26. **Kacheln schneller: Durchsatz von `tiler` und `gateway`** (Otto, 25.10.2026; hohe Priorität). **Erledigt (#197, 26.10.2026).**
    - **Plan:** `querschnitt/nm4-26-kachel-leistung.md`
    - **Befund:** NDVI-Vorschau rund 40 s für 325 Anfragen; Kacheln 1,7–6,5 s mit steigenden Zeiten (Warteschlange), auch reine `visual`-Kacheln 2,6–4,2 s. Gleich schon vor UI-01a (`745ecb2`), also keine Regression daraus. Dazu: Suche dreifach geladen (je 1,9 MB), `statistics` mit `op` einmal `400`.
    - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.
-   - **Stand (26.10.2026):** Plan freigegeben (Fragen 1–7), Umsetzung im Draft-PR #197. Hauptursache: `GDAL_HTTP_MULTIRANGE=YES` liest am `/vsicurl/`-Cache vorbei, der Cache hat 16 MB.
+   - **Erledigt (26.10.2026, #197):** GDAL-Profil der Kacheln `SERIAL` + 256 MiB Cache, Zuschnitt unverändert, Item-Abrufe gebündelt. NDVI-Ansicht mit 13 Szenen 45,6 → 27,9 s, bei 100 Mbit/s 145,3 → 38,8 s, Kacheln byte-identisch. Suche: jede Seite einmal, mit Test. Probe auch vor einer einstufigen Statistik. Plan §19.
 27. **512er-Kacheln im Frontend** (Otto, 26.10.2026, aus NM4-26 Frage 3).
    - **Befund (NM4-26 §8.2, §10 S3):** Mit `tileSize: 512` braucht dieselbe Fläche ein Drittel der Anfragen (325 → 117). Die Ansicht wird gemessen 18 % schneller (28,3 → 23,0 s), bei gleichen Bytes von der Quelle.
    - **Berührt:** Zuordnung Kartenzoom → Kachelstufe (`TILE_LEVEL_AHEAD`, `previewMaxZoom`, `zoomHint`), die freigegebenen Stufen je Datensatz (`earthx:viewer`, `adr/0007` §12.10) und die Grenzen der Mosaik-Kachel (M4-17 §5).

@@ -326,3 +326,62 @@ Die synthetische Kachel kodiert gleich schnell (46,8 ms, 101 kB). Für das Kodie
 Umsetzung mit Sonnet (Effort hoch). Messung nachher mit `scripts/tile-bench` im PR, Bitgleich-Tests grün, volle Suite, Prüfung im echten Browser, danach `main` holen.
 
 **Zu Frage 1, geprüft vor der Umsetzung [M]:** `rasterio.Env` setzt die Optionen je Thread. Zwei gleichzeitige Umgebungen mit `SERIAL` und `YES` lesen in ihrem Thread je ihren eigenen Wert, und GDAL liest `GDAL_HTTP_MULTIRANGE` bei jedem Aufruf im aufrufenden Thread (`cpl_vsil_curl.cpp` Z. 2523). Option 3 geht also. `CPL_VSIL_CURL_CACHE_SIZE` steht trotzdem in beiden Profilen: GDAL liest es nur einmal je Prozess (R4), und der erste Zugriff des Prozesses darf auch ein Zuschnitt sein.
+
+## 19. Umsetzung (26.10.2026)
+
+**Backend:**
+- `gateway/gdal.py` hat zwei neue Profile:
+  - `tile_gdal_options`: Grundoptionen + `GDAL_HTTP_MULTIRANGE=SERIAL` + `CPL_VSIL_CURL_CACHE_SIZE` 256 MiB.
+  - `crop_gdal_options`: Grundoptionen + Cache-Größe.
+  - `gdal_options`, Worker und Runner bleiben unverändert.
+- `api/tiler.py`: Die Kachelwege (Kachel, Statistik, TileJSON, Mosaik, Ergebnis) lesen unter dem ersten Profil, der Zuschnitt unter dem zweiten.
+- `_fetch_item` geht über `ItemFetches`, dieselbe Instanz wie bei der Mosaik-Kachel: gleichzeitige Abrufe desselben Items werden gebündelt, höchstens 4 laufen zugleich.
+- Tests:
+  - Inhalt der Profile.
+  - Profil je Route, geprüft innerhalb der `rasterio.Env` jeder Route.
+  - Ergebnis-Kacheln.
+  - Threads mit verschiedenen Profilen sehen je ihr eigenes `MULTIRANGE`.
+  - Regressionstest gegen einen lokalen Range-Server: Mit `SERIAL` geht jedes Byte einmal über die Leitung, mit `YES` zweimal.
+  - Item-Abrufe: sechs gleichzeitige kalte Anfragen, einmal geholt; ein Fehler kommt bei allen gleich an. Am alten Code scheitern 8 von 11.
+
+**Frontend:**
+- Auch eine Kette mit einem Schritt fragt zuerst die TileJSON-Probe. Ein `400`/`422` mit Text ist die Ablehnung von Schritt 0. Statistik und Kacheln dieser Kette gehen dann nicht hinaus, und das Panel zeigt `No preview: <Grund>.`.
+- Ein `404` oder `429` gilt nicht als Ablehnung.
+- Angenommene und abgelehnte Proben werden gemerkt (höchstens 50).
+- `runSearch` startet keinen zweiten Durchlauf, solange einer läuft: Zwei überlappende Aufrufe fragten jede Seite doppelt. Die Oberfläche verhinderte das schon, jetzt tut es auch der Store.
+- Tests (`searchOnce.test.tsx`, `ProcessingPreview.test.tsx`):
+  - Öffnen der App unter `StrictMode`: keine Suche. `GET /stac/collections` kommt zweimal, das ist der doppelte Effekt von `StrictMode`, nur in der Entwicklung.
+  - Öffnen eines Permalinks: keine Suche; die Szene kommt über den Namen.
+  - Seiten je Trefferzahl: ≥ 300 Treffer → (keins), p2, p3 je einmal; 150 → 2; < 100 → 1; „Load more“ fragt nur p4.
+  - Doppelte Suche: jede Seite einmal.
+  - Abgelehnte Formel: keine Statistik, keine Kacheln. Am alten Code scheitern 7 Tests.
+
+**Messung nachher** mit `scripts/tile-bench` am neuen Code, ohne `EXTRA_GDAL`. Dieselben Zeilen wie §8.2, „heute“ dort am alten Code gemessen:
+
+| Ansicht | Leitung | vorher | nachher | Quelle vorher → nachher | Item-Abrufe vorher → nachher |
+|---|---|---|---|---|---|
+| NDVI, 13 Szenen × 25 | unbegrenzt | 45,6 s | **27,9 s** | 1719 → 298 MB | 15 → 13 |
+| | 100 Mbit/s | 145,3 s | **38,8 s** | 1770 → 304 MB | 14 → 13 |
+| `visual`, 13 × 25 | unbegrenzt | 30,1 s | **22,6 s** | 1266 → 217 MB | 14 → 13 |
+| | 100 Mbit/s | 103,4 s | **29,8 s** | 1255 → 218 MB | 14 → 13 |
+| NDVI, 1 Szene × 25 | unbegrenzt | 4,3 s | **4,0 s** | 100 → 40 MB | 5 → 1 |
+| | 100 Mbit/s | 10,5 s | **5,7 s** | 103 → 41 MB | 5 → 1 |
+| NDVI 13 × 25, Quelle ohne Latenz | unbegrenzt | 23,8 s | **22,0 s** | 1715 → 293 MB | 14 → 13 |
+
+- Im `tiler` dauert eine Kachel der Ansichten mit 13 Szenen im Median 0,33–0,37 s statt 0,5–2,6 s. Das Ziel „einzelne Kachel ohne Warteschlange unter 1 s“ ist erreicht.
+- Unter 10 s kommt die Ansicht mit einer Szene, die mit 13 Szenen nicht (§7).
+- Speicher des `tiler` nach der Ansicht: 518–579 MB.
+- **Zuschnitt** unverändert, je dreimal, neuer Code gegen den alten ohne Cache-Größe:
+  - 0,1°: 2,59–2,65 gegen 2,61–2,62 s.
+  - 0,3°: 6,08–6,27 gegen 6,12–6,16 s.
+  - Ein erster Lauf mit 3,9 s war ein Ausreißer.
+- **Bitgleichheit:** Die 18 Kacheln von `hashes.py` sind am neuen Code byte-identisch mit denen des alten (`diff` leer).
+
+**Browser** (`frontend/e2e/preview-probe.cjs`, Chromium der Sitzung, echter `tiler` des Messgerüsts, Suchantworten nachgestellt). Geprüft in hell/dunkel × breit (1280 px)/schmal (360 px), alle vier bestanden:
+- Öffnen der App fragt keine Suchseite.
+- Eine Suche mit 340 Treffern fragt (keins), p2, p3 je einmal.
+- Die NDVI-Vorschau über 3 Szenen fragt die Probe, die Statistik genau einmal und zeichnet echte Kacheln (24 bzw. 72).
+- Die halb getippte Formel `(nir - red) / (nir +` fragt weder Statistik noch Kacheln. Das Panel zeigt `No preview: params: expression: Value error, expression: not a valid expression.` Die Zeile lässt sich auch im schmalen Fenster ins Bild scrollen, und das Panel scrollt nicht seitwärts.
+
+**Abweichungen:**
+- Commit `d4dff83` („Test that opening the app and a search ask every page once“) enthält wegen eines gemeinsamen Git-Index auch Backend-Dateien: die Verdrahtung der Profile in `api/tiler.py`, `test_tiler_gdal_profiles.py`, einen Test in `test_result_tiles.py` und die Anpassung von `scripts/tile-bench/run_tiler.py`. Der Inhalt ist richtig, nur die Nachricht passt für diese Dateien nicht. Die History bleibt unverändert (kein Force-Push).
