@@ -131,7 +131,7 @@ Stand: 26.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Vorher recherchieren, mit Quellen:** Betriebsstatus des EOPF-Zarr-Dienstes (Muster oder operativ), Zeitplan von Earth Search v2 (Punkt „Earth Search v2“ unten), Abdeckung und Aktualität beider Quellen, Unterschiede bei Skalierung (Zarr-Item ohne `raster:scale`), Bandnamen und Prüfsummen (`adr/0014` §3.1, Cache-Fähigkeit).
    - **Folgen in jedem Fall:** Abnahmebelege aus M4 bleiben gültig (sie belegen den Stand von M4); Registry, Fixtures, Tests, Prüfanleitungen und Doku nachziehen; bestehende Permalinks und `recipe.json` mit dem alten Datensatz: abweisen mit Grund oder umleiten (im Plan klären).
    - **Aufgabe:** Stufe C (Entscheidungsvorlage), danach Umsetzung.
-16. ~~**Einheiten für die übrigen Sentinel-2-Assets**~~ **erledigt** (NM4-16, #199) (aus M4-19b, 23.10.2026).
+16. **Einheiten für die übrigen Sentinel-2-Assets** (aus M4-19b, 23.10.2026).
    - **Plan:** `querschnitt/nm4-16-einheiten-uebrige-assets.md`
    - **Heute:** `aot`, `wvp`, `cloud`, `snow` und `preview` haben in der Registry keine Einheit (`earthx:band_units`), weil die Session keine Quelle dafür gelesen hat.
    - **Aufgabe (Stufe A):** Einheiten mit Quelle nachtragen (Produktspezifikation Sentinel-2 L2A bzw. Item-Metadaten); wo keine Einheit sinnvoll ist (etwa `preview`), das bewusst vermerken. Hinweis: Eine Korrektur der Einheit ändert den Hash (`adr/0014` §15n), also einmal kein Cache-Treffer.
