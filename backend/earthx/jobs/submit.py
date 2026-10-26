@@ -39,6 +39,7 @@ __all__ = [
     "JobStatus",
     "RecipeIdTaken",
     "dismiss",
+    "is_job_id",
     "job_recipe",
     "job_run",
     "job_status",
@@ -55,6 +56,11 @@ MIN_RUNTIME_SECONDS = 600
 _ID = re.compile(r"^[A-Za-z0-9_-]{22}\Z")  # `\Z`: `$` also takes a newline at the end
 
 Status = Literal["accepted", "running", "successful", "failed", "dismissed"]
+
+
+def is_job_id(value: object) -> bool:
+    """Whether ``value`` has the form of a ``jobID``; says nothing of whether the job exists."""
+    return isinstance(value, str) and _ID.match(value) is not None
 
 
 class RecipeIdTaken(ValueError):

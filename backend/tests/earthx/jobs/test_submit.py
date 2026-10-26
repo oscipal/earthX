@@ -21,6 +21,7 @@ from earthx.jobs.submit import (
     JobStatus,
     RecipeIdTaken,
     dismiss,
+    is_job_id,
     job_recipe,
     job_run,
     job_status,
@@ -466,6 +467,16 @@ class TestReadingForTheJobApi:
         run_jobs(db, run, [job_id])
         assert db.execute("SELECT xmin::text, job_id FROM public.earthx_job").fetchall() == before
         assert db.execute("SELECT xmin::text FROM public.earthx_run").fetchall() == before_run
+
+
+class TestTheFormOfAJobId:
+    @pytest.mark.parametrize("value", ["A" * 22, "a-_" * 7 + "x", "0" * 22])
+    def test_22_characters_of_the_url_safe_alphabet_are_one(self, value: str) -> None:
+        assert is_job_id(value)
+
+    @pytest.mark.parametrize("value", ["", "A" * 21, "A" * 23, "A" * 21 + "%", "A" * 22 + "\n", None, 7, ["A" * 22], b"A" * 22])
+    def test_anything_else_is_none(self, value: object) -> None:
+        assert not is_job_id(value)
 
 
 class TestDismiss:

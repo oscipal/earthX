@@ -105,14 +105,16 @@ class Member:
     data: bytes | None = None
     #: The name of the stored result file (``result.tif``) when ``data`` is ``None``.
     source: str | None = None
+    #: The result in the store that ``source`` belongs to; one archive can hold files of several results (a bundle).
+    result_id: str | None = None
 
     @classmethod
     def of_bytes(cls, name: str, data: bytes) -> Member:
         return cls(name, len(data), zlib.crc32(data), data=data)
 
     @classmethod
-    def stored(cls, name: str, source: str, facts: FileFacts) -> Member:
-        return cls(name, facts.bytes, facts.crc32, source=source)
+    def stored(cls, name: str, source: str, facts: FileFacts, *, result_id: str | None = None) -> Member:
+        return cls(name, facts.bytes, facts.crc32, source=source, result_id=result_id)
 
     def __post_init__(self) -> None:
         if (self.data is None) == (self.source is None):
@@ -146,11 +148,12 @@ class Literal:
 
 @dataclass(frozen=True)
 class Stored:
-    """Bytes ``begin`` to ``end`` (end excluded) of the stored result file ``source``."""
+    """Bytes ``begin`` to ``end`` (end excluded) of the stored result file ``source`` of the result ``result_id``."""
 
     source: str
     begin: int
     end: int
+    result_id: str | None = None
 
 
 Segment = Literal | Stored
@@ -196,7 +199,9 @@ class Layout:
             position += len(header)
             if member.size:
                 parts.append(
-                    Literal(member.data) if member.data is not None else Stored(str(member.source), 0, member.size)
+                    Literal(member.data)
+                    if member.data is not None
+                    else Stored(str(member.source), 0, member.size, member.result_id)
                 )
                 position += member.size
         directory = b"".join(
@@ -225,7 +230,7 @@ class Layout:
             if isinstance(part, Literal):
                 yield Literal(part.data[low:high])
             else:
-                yield Stored(part.source, part.begin + low, part.begin + high)
+                yield Stored(part.source, part.begin + low, part.begin + high, part.result_id)
             index += 1
 
 
