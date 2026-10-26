@@ -290,7 +290,7 @@ class TestTheMethodsText:
         finish(rig.db, job_id, result=EXPORT_RESULT)
         response = await rig.client.get(f"/processing/jobs/{job_id}/results/methods.txt")
         assert response.status_code == 200
-        assert "cropped to the bounding box" in response.text
+        assert response.text == EXPORT_RESULT["methods"] + "\n", "the text the export wrote into its ZIP"
 
     async def test_an_expired_result_is_a_410_and_a_dismissed_job_a_404(self, mocked: Store, rig: Rig) -> None:  # noqa: F811
         job_id, _, _ = await zipped(rig, expires="30 seconds")
