@@ -1,9 +1,9 @@
 # DS-05 — SAR-Operatoren und -Presets
 
-**Stand:** 26.10.2026, beauftragt von Otto. Paket „Datensatzabhängige Suche und Prozessierung“ (DS), nach VP3 und vor M5; Übersicht in `docs/plans/ds/ds-00-paket.md`.
+**Stand:** 26.10.2026, beauftragt von Otto. Paket „Datensatzabhängige Suche und Prozessierung“ (DS); Übersicht in `docs/plans/ds/ds-00-paket.md`.
 **Stufe B:** Erst kommt der Plan im Draft-PR (Optionen, Empfehlung, bei Rechenrelevanz Quellen), Otto gibt ihn frei, dann folgt der Code in derselben Session.
 **Modell:** Opus für Plan und Recherche, Sonnet (Effort hoch) für die Umsetzung.
-**Start:** nach DS-04 und nach NM4-14 (Index-Knöpfe). Höchstens zwei Stufe-B-Sessions gleichzeitig.
+**Start:** nach DS-04 (also mit oder nach M5) und nach NM4-14 (Index-Knöpfe). Höchstens zwei Stufe-B-Sessions gleichzeitig.
 **Startsatz:** „Führe Aufgabe DS-05 aus `docs/plans/ds/ds-05-sar-operatoren.md` aus.“
 
 ## 1. Anlass
