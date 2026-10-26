@@ -1631,6 +1631,11 @@ input[type='date']:focus {
   align-items: center;
   gap: 4px;
 }
+/* The row that has the focus, so the user sees which one the keys R, G and A act on. */
+.pm-line:focus-within {
+  background: var(--row-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .pm-open {
   flex: 1;
   min-width: 0;

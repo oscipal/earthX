@@ -11,6 +11,7 @@ import { HttpError } from '../api';
 import { batchEntry, finished, jobEntry, jobId, NOW, status } from '../fixtures/jobEntries';
 import { SHELF_KEY } from '../jobShelf';
 import { resetJobs, setTrackerOptions, useProcessingStore } from '../processingStore';
+import css from '../index.css?raw';
 import ProcessingManager, { GROUP_NOT_EMPTY_TIP, NOT_KEPT_TEXT, STORAGE_FULL_TIP } from './ProcessingManager';
 
 declare global {
@@ -634,6 +635,105 @@ describe('the keys of a focused row (R, G, A)', () => {
     press(openButton(rows()[0]), 'r');
     key(field(), 'Escape');
     expect(document.activeElement).toBe(openButton(rows()[0]));
+  });
+});
+
+describe('the focus of a row', () => {
+  const down = (target: Element) => act(() => target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
+
+  it('is set by a click on the row\'s button, which some browsers do not do themselves', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    expect(document.activeElement).not.toBe(openButton(rows()[0]));
+    click(openButton(rows()[0]));
+    expect(document.activeElement).toBe(openButton(rows()[0]));
+  });
+
+  it('is set by a press on the row beside its button too, so the keys have a row to act on', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)] });
+    mount();
+    down(rows()[1]);
+    expect(document.activeElement).toBe(openButton(rows()[1]));
+    down(rows()[1].querySelector('.pm-line')!);
+    expect(document.activeElement).toBe(openButton(rows()[1]));
+  });
+
+  it('is not taken from a button, a link or a field that was pressed', () => {
+    put({ jobs: [finished(1)] });
+    mount();
+    const link = rows()[0].querySelector('a')!;
+    link.focus();
+    down(link);
+    expect(document.activeElement).toBe(link);
+    const more = rows()[0].querySelector<HTMLButtonElement>('button[aria-haspopup]')!;
+    more.focus();
+    down(more);
+    expect(document.activeElement).toBe(more);
+  });
+
+  it('is not set on the row of a part of a batch: its keys are the batch\'s', () => {
+    put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
+    mount();
+    click(button('▸'));
+    const part = container.querySelector<HTMLElement>('.pm-parts .pm-row')!;
+    (document.activeElement as HTMLElement | null)?.blur();
+    down(part);
+    expect(document.activeElement).not.toBe(openButton(part));
+  });
+
+  it('goes to the row below when A takes a row out of "Active", so the next key still has a row', async () => {
+    put({ jobs: [jobEntry(1), jobEntry(2), jobEntry(3)] });
+    mount();
+    openButton(rows()[1]).focus();
+    press(openButton(rows()[1]), 'a');
+    expect(rows()).toHaveLength(2);
+    await vi.waitFor(() => expect(document.activeElement).toBe(openButton(rows()[1])));
+    expect(titles()[1]).toBe('Band math · Sentinel-2 L2A · 3 Oct');
+    // and the next A acts on that row
+    press(openButton(rows()[1]), 'a');
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('goes to the row above when the last row is taken out', async () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)] });
+    mount();
+    openButton(rows()[1]).focus();
+    press(openButton(rows()[1]), 'a');
+    await vi.waitFor(() => expect(document.activeElement).toBe(openButton(rows()[0])));
+  });
+
+  it('stays on the row where A leaves it in the list (under "All")', async () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)] });
+    mount();
+    click(button('All'));
+    openButton(rows()[0]).focus();
+    press(openButton(rows()[0]), 'a');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(document.activeElement).toBe(openButton(rows()[0]));
+  });
+
+  it('follows the row to its new group, from the menu as from the keys', async () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    openButton(rows()[0]).focus();
+    press(openButton(rows()[0]), 'g');
+    click(item('Field 7'));
+    const moved = () => container.querySelector<HTMLElement>('.pm-group[aria-label="Field 7"] .pm-row .pm-open');
+    await vi.waitFor(() => expect(document.activeElement).toBe(moved()));
+  });
+
+  it('is not taken back from a field the user went to meanwhile', async () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)] });
+    mount();
+    openButton(rows()[0]).focus();
+    press(openButton(rows()[0]), 'a');
+    click(button('＋ New group'));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(document.activeElement).toBe(field());
+  });
+
+  it('is shown on the row: the stylesheet marks the row that has the focus', () => {
+    expect(css).toMatch(/\.pm-line:focus-within\s*\{[^}]*background/u);
   });
 });
 

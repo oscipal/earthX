@@ -3,7 +3,7 @@
 // archived and put in a group. A click on a job opens its details in the processing window. On a focused
 // row R renames, G moves to a group and A archives (never while a field has the keys).
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
@@ -52,9 +52,11 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
   }, [mode]);
   const hasActions = onRename || onMove || onArchive || cancel;
   if (!hasActions) return <span className="pm-icon" aria-hidden="true" />;
-  const done = (run: () => void) => () => {
+  const done = (run: () => void, keepFocus = false) => () => {
+    const row = anchor.current?.closest('.pm-row');
     onMode('closed');
     run();
+    if (keepFocus) refocusAround(row);
   };
   const moving = mode === 'move';
   return (
@@ -94,18 +96,18 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
           )}
           {moving && onMove && (
             <>
-              <button type="button" role="menuitemradio" aria-checked={groupId === null} onClick={done(() => onMove(null))}>
+              <button type="button" role="menuitemradio" aria-checked={groupId === null} onClick={done(() => onMove(null), true)}>
                 Ungrouped
               </button>
               {groups.map((g) => (
-                <button key={g.id} type="button" role="menuitemradio" aria-checked={groupId === g.id} onClick={done(() => onMove(g.id))}>
+                <button key={g.id} type="button" role="menuitemradio" aria-checked={groupId === g.id} onClick={done(() => onMove(g.id), true)}>
                   {g.name}
                 </button>
               ))}
             </>
           )}
           {!moving && onArchive && (
-            <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.archive} onClick={done(() => onArchive(!archived))}>
+            <button type="button" role="menuitem" aria-keyshortcuts={SHORTCUTS.archive} onClick={done(() => onArchive(!archived), true)}>
               {archived ? 'Unarchive' : 'Archive'} ({SHORTCUTS.archive})
             </button>
           )}
@@ -131,7 +133,37 @@ function rowKeys(event: KeyboardEvent<HTMLElement>, actions: { rename: () => voi
   const action = key === SHORTCUTS.rename ? actions.rename : key === SHORTCUTS.move ? actions.move : key === SHORTCUTS.archive ? actions.archive : null;
   if (!action) return;
   event.preventDefault();
+  const row = event.currentTarget;
   action();
+  if (action === actions.archive) refocusAround(row);
+}
+
+// An action can take the row out of the list (archived under "Active", moved to a folded group) or put it
+// somewhere else, and the focus would fall to the page, so that the next key does nothing. It goes back to the
+// row, or else to the row beside it, once the list has been drawn again.
+let refocusTimer: ReturnType<typeof setTimeout> | undefined;
+
+function refocusAround(row: Element | null | undefined) {
+  if (!(row instanceof HTMLElement)) return;
+  const id = row.dataset.rowId;
+  const beside = (row.nextElementSibling ?? row.previousElementSibling) as HTMLElement | null;
+  clearTimeout(refocusTimer);
+  refocusTimer = setTimeout(() => {
+    const held = document.activeElement;
+    // Something else took the focus meanwhile (a field, the menu): leave it there.
+    if (held && held !== document.body && held.isConnected) return;
+    const open = (rowId?: string) =>
+      rowId ? document.querySelector<HTMLElement>(`.pm-list [data-row-id="${rowId}"] > .pm-line .pm-open`) : null;
+    (open(id) ?? open(beside?.dataset.rowId))?.focus();
+  }, 0);
+}
+
+// A click on the row, not only on its button, puts the focus on the row: some browsers do not focus a
+// button that is clicked, and then the keys of the row would have nothing to act on.
+function focusOnPress(event: ReactPointerEvent<HTMLElement>) {
+  const target = event.target as HTMLElement;
+  if (target.closest('button, a, input, .tip')) return;
+  event.currentTarget.querySelector<HTMLElement>(':scope > .pm-line .pm-open')?.focus();
 }
 
 // The focus returns to the row's own button when a rename ends, or the keyboard user would be left on nothing.
@@ -170,8 +202,10 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
   return (
     <li
       ref={row}
+      data-row-id={job.jobID}
       className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}`}
       aria-keyshortcuts={part ? undefined : 'R G A'}
+      onPointerDown={part ? undefined : focusOnPress}
       onKeyDown={
         part
           ? undefined
@@ -196,7 +230,15 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
             onCancel={() => setRenaming(false)}
           />
         ) : (
-          <button type="button" className="pm-open" title={title} onClick={() => open(job.jobID)}>
+          <button
+            type="button"
+            className="pm-open"
+            title={title}
+            onClick={(e) => {
+              e.currentTarget.focus();
+              open(job.jobID);
+            }}
+          >
             <span className="pm-title">{title}</span>
             <span className={`pm-meta ${state.key}`}>
               <span className="pm-state">{state.text}</span>
@@ -257,8 +299,10 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
   return (
     <li
       ref={row}
+      data-row-id={batch.id}
       className={`pm-row batch${batch.archived ? ' archived' : ''}`}
       aria-keyshortcuts="R G A"
+      onPointerDown={focusOnPress}
       onKeyDown={(e) =>
         rowKeys(e, {
           rename: () => setRenaming(true),
@@ -291,7 +335,15 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
             onCancel={() => setRenaming(false)}
           />
         ) : (
-          <button type="button" className="pm-open" title={batch.title} onClick={() => setExpanded(!expanded)}>
+          <button
+            type="button"
+            className="pm-open"
+            title={batch.title}
+            onClick={(e) => {
+              e.currentTarget.focus();
+              setExpanded(!expanded);
+            }}
+          >
             <span className="pm-title">{batch.title}</span>
             <span className="pm-meta">
               <span className="pm-state">{batchSummary(count)}</span>
@@ -466,6 +518,8 @@ const emptyText = (filter: JobFilter, total: number): string =>
   total === 0 ? 'No jobs yet.' : filter === 'expired' ? 'No expired jobs.' : 'No active jobs.';
 
 export default function ProcessingManager() {
+  // A focus still due when the manager closes is not wanted any more.
+  useEffect(() => () => clearTimeout(refocusTimer), []);
   const jobs = useProcessingStore((s) => s.jobs);
   const batches = useProcessingStore((s) => s.batches);
   const groups = useProcessingStore((s) => s.groups);
