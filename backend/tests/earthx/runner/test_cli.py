@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import create_model
 
 from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.intake import job_recipe_json
 from earthx.catalog.registry import DatasetRegistry, RetiredDataset, acquisition_years
-from earthx.processing.recipe import engine_versions
-from earthx.runner import output
+from earthx.processing.recipe import Provenance, engine_versions
+from earthx.runner import output, recipe_file
 from earthx.runner.cli import EXIT_HOST, EXIT_OK, EXIT_OTHER, EXIT_RECIPE, EXIT_SOURCE, exit_code, main
 from earthx.runner.recipe_file import MAX_RECIPE_BYTES, HostRefused, check_hosts, load_recipe
 from tests.earthx.processing import sources
@@ -77,7 +78,7 @@ def _document(recipe: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 class TestARun:
-    def test_it_leaves_result_mask_recipe_methods_and_provenance_in_a_new_folder(
+    def test_it_leaves_result_mask_recipe_and_provenance_in_a_new_folder(
         self, tmp_path: Path, out: Path, served: list[str], capsys: pytest.CaptureFixture[str]
     ) -> None:
         recipe = _file(tmp_path, support.band_math_recipe())
@@ -85,7 +86,6 @@ class TestARun:
         (folder,) = out.iterdir()
         assert sorted(path.name for path in folder.iterdir()) == [
             "mask.tif",
-            "methods.txt",
             "provenance.json",
             "recipe.json",
             "result.tif",
@@ -153,16 +153,17 @@ class TestARun:
         (folder,) = out.iterdir()
         provenance = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
         assert provenance["attribution"] == ["Contains modified Copernicus Sentinel data 2025"]
-        assert "Contains modified Copernicus Sentinel data 2025" in (folder / "methods.txt").read_text(encoding="utf-8")
+        assert "Contains modified Copernicus Sentinel data 2025" in provenance["methods"]
 
     def test_the_text_files_of_the_folder_are_among_the_ones_every_download_has(
         self, tmp_path: Path, out: Path, served: list[str]
     ) -> None:
-        """The one definition (`TEXT_FILES`): the runner writes the recipe and the methods text, no other of them."""
+        """The one definition (`TEXT_FILES`): the runner writes the recipe, no other of them, and no ``methods.txt``."""
         assert _main("run", _file(tmp_path, support.band_math_recipe()), "--out", str(out)) == EXIT_OK
         (folder,) = out.iterdir()
         written = {path.name for path in folder.iterdir()}
-        assert [name for name in TEXT_FILES if name in written] == ["recipe.json", "methods.txt"]
+        assert [name for name in TEXT_FILES if name in written] == ["recipe.json"]
+        assert "methods.txt" not in written
 
     def test_its_methods_text_says_it_was_computed_locally_and_names_no_identifier_or_coordinate(
         self, tmp_path: Path, out: Path, served: list[str], monkeypatch: pytest.MonkeyPatch
@@ -171,12 +172,36 @@ class TestARun:
         recipe = support.band_math_recipe()
         assert _main("run", _file(tmp_path, recipe), "--out", str(out)) == EXIT_OK
         (folder,) = out.iterdir()
-        text = (folder / "methods.txt").read_text(encoding="utf-8")
+        text = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))["methods"]
         assert "recomputed on the user's own machine with the EarthX runner" in text and "+g1a2b3c4" in text
         assert "self-attested" in text and "processed on the EarthX platform" not in text
         assert recipe["recipe_id"] not in text and "https://" not in text
         for lon, lat in recipe["aoi"]["coordinates"][0]:
             assert f"{lon:.4f}" not in text and f"{lat:.4f}" not in text
+
+    def test_a_file_with_a_methods_text_and_one_from_before_both_run_and_the_text_is_the_runs_own(
+        self, tmp_path: Path, out: Path, served: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NM4-08: the cloud's ``provenance.methods`` is split off with the block and never copied into the run."""
+        monkeypatch.setenv("EARTHX_COMMIT", "1a2b3c4")
+        new = _document()
+        old = _document()
+        assert "processed on the EarthX platform" in new["provenance"]["methods"]
+        del old["provenance"]["methods"]
+        for document in (new, old):
+            assert _main("run", _file(tmp_path, json.dumps(document).encode()), "--out", str(out)) == EXIT_OK
+        for folder in out.iterdir():
+            text = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))["methods"]
+            assert "recomputed on the user's own machine" in text and "processed on the EarthX platform" not in text
+
+    def test_the_recipe_of_the_folder_keeps_the_cloud_text_as_it_was_given(
+        self, tmp_path: Path, out: Path, served: list[str]
+    ) -> None:
+        path = _file(tmp_path, support.recipe_file(support.band_math_recipe()))
+        assert _main("run", path, "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        assert (folder / "recipe.json").read_bytes() == Path(path).read_bytes()
+        assert json.loads((folder / "recipe.json").read_bytes())["provenance"]["methods"]
 
     def test_two_runs_never_share_a_folder(self, tmp_path: Path, out: Path, served: list[str]) -> None:
         recipe = _file(tmp_path, support.band_math_recipe())
@@ -373,7 +398,7 @@ class TestARecipeFileThatIsNotOne:
             raise AssertionError("numexpr saw a refused expression")
 
         monkeypatch.setattr("numexpr.evaluate", never)
-        recipe = _file(tmp_path, support.band_math_recipe(expression))
+        recipe = _file(tmp_path, support.recipe_file(support.band_math_recipe(expression), methods=False))
         assert _main("run", recipe, "--out", str(out)) == EXIT_RECIPE
         assert served == [] and list(out.iterdir()) == []
 
@@ -399,6 +424,44 @@ class TestTheProvenanceBlock:
         document = _document()
         document["provenance"].update(execution="local", self_attested=True, runner_version="0.4.1+unknown")
         assert _main("check", _file(tmp_path, json.dumps(document).encode())) == EXIT_RECIPE
+
+    @pytest.mark.parametrize("methods", ["", 3, ["a"], {"a": 1}])
+    def test_a_methods_text_that_is_not_one(self, tmp_path: Path, methods: Any) -> None:
+        document = _document()
+        document["provenance"]["methods"] = methods
+        assert _main("check", _file(tmp_path, json.dumps(document).encode())) == EXIT_RECIPE
+
+    def test_a_file_from_before_the_text_and_one_with_a_null_are_read(self, tmp_path: Path) -> None:
+        old = _document()
+        del old["provenance"]["methods"]
+        null = _document()
+        null["provenance"]["methods"] = None
+        for document in (old, null):
+            assert load_recipe(json.dumps(document).encode()).provenance.methods is None
+        assert load_recipe(support.recipe_file(support.band_math_recipe())).provenance.methods
+
+    def test_a_runner_from_before_the_text_refuses_the_new_file_with_code_2_and_names_no_value(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """What an image built before NM4-08 does with a new file: the block has a field it does not know, ``extra="forbid"``.
+
+        The model of that time is the present one without the field. The refusal is the ordinary one of the
+        block (exit 2, the version of the runner named), not a traceback, and it shows nothing of the file.
+        """
+        before = create_model(
+            "ProvenanceBefore",
+            __config__=Provenance.model_config,
+            **{name: (field.annotation, field) for name, field in Provenance.model_fields.items() if name != "methods"},
+        )
+        monkeypatch.setattr(recipe_file, "Provenance", before)
+        new = _file(tmp_path, support.recipe_file(support.band_math_recipe()))
+        assert _main("check", new) == EXIT_RECIPE
+        error = capsys.readouterr().err
+        assert "the provenance block of the recipe file is not valid" in error
+        assert "this runner is" in error and "Synthetic data" not in error and "processed on the EarthX" not in error
+        old = _document()
+        del old["provenance"]["methods"]
+        assert _main("check", _file(tmp_path, json.dumps(old).encode())) == EXIT_OK
 
     @pytest.mark.parametrize("field", ["execution", "runner_version", "self_attested"])
     def test_provenance_fields_beside_the_recipe(self, tmp_path: Path, field: str) -> None:
