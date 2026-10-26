@@ -9,6 +9,7 @@ import MapView from './components/MapView';
 import PreviewBadge from './components/PreviewBadge';
 import ProcessingManager from './components/ProcessingManager';
 import ProcessingPanel from './components/ProcessingPanel';
+import ResultControls from './components/ResultControls';
 import ResultsPanel from './components/ResultsPanel';
 import StatusBar from './components/StatusBar';
 import TimeSlider from './components/TimeSlider';
@@ -27,6 +28,7 @@ export default function App() {
   const resultsPanelCollapsed = useAppStore((s) => s.resultsPanelCollapsed);
   const toggleResultsPanel = useAppStore((s) => s.toggleResultsPanel);
   const focusMode = useAppStore((s) => s.focusMode);
+  const resultView = useAppStore((s) => s.resultViewLayerId !== null);
   const zoomToView = useAppStore((s) => s.zoomToView);
   const hasGroups = useAppStore((s) => s.groups.length > 0);
   const hasResults = useAppStore((s) => hasResultsPanel(s.sections));
@@ -114,7 +116,7 @@ export default function App() {
       </div>
 
       {/* The processing side bar lies over the results list: folded away while it is open. */}
-      {!focusMode && hasResults && (
+      {!focusMode && !resultView && hasResults && (
         <div className={`overlay right results-dock${resultsPanelCollapsed || processingOpen ? ' collapsed' : ''}`}>
           <ResultsPanel />
           {!processingOpen && (
@@ -137,6 +139,10 @@ export default function App() {
         {focusMode ? (
           <Draggable>
             <ViewerControls />
+          </Draggable>
+        ) : resultView ? (
+          <Draggable>
+            <ResultControls />
           </Draggable>
         ) : (
           <>
