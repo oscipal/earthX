@@ -986,7 +986,7 @@ eines Laufs mit `result.tif`, `mask.tif`, `recipe.json` und `provenance.json`; d
 noch nicht aufgeführt und entfällt. Der Text oben bleibt stehen; maßgeblich ist dieser Nachtrag.
 
 - **Ordner:** `result.tif`, `mask.tif`, `recipe.json` (die Bytes der Eingabe, unverändert) und `provenance.json`. Keine `methods.txt`.
-- **Wo der Text liegt (Vorschlag der Aufgabe, gilt bis Otto widerspricht):** in `provenance.json` als Feld `methods`, denn diese Datei
+- **Wo der Text liegt (von Otto am 2026-10-26 angenommen):** in `provenance.json` als Feld `methods`, denn diese Datei
   beschreibt den lokalen Lauf und ist genau das `Provenance`-Modell mit Zusätzen. Die `recipe.json` im Ordner bleibt die Datei der
   Eingabe, byte für byte; ihr `provenance.methods` ist der Text der Cloud („processed on the EarthX platform“) und bleibt dort stehen. Würde
   der Runner den Text in diese Datei schreiben, hieße das, sie zu verändern oder zu ersetzen, und der Vergleich Eingabe gegen Ordner
@@ -994,7 +994,15 @@ noch nicht aufgeführt und entfällt. Der Text oben bleibt stehen; maßgeblich i
   Eingabe und der Provenienz dieses Laufs („recomputed on the user's own machine … self-attested“), nie aus dem Text der Eingabe.
 - **Eingabe:** Der Block `provenance` wird wie bisher abgetrennt und mit `Provenance` geprüft (§12b); `methods` ist dort ein
   nicht leerer Text oder `null`, fehlt der Schlüssel, ist die Datei gültig. Ein `methods` anderer Art ist Exit-Code 2.
-- **Ältere Runner:** siehe `adr/0014` §15r: Image vor NM4-08 weist eine neue Datei mit Exit-Code 2 ab.
+- **Unbekannte Felder im Block werden ignoriert (Otto, 2026-10-26, Vorwärtsverträglichkeit):** Der Block geht nicht in den
+  Hash ein; ein Feld, das ein künftiges Rezept dort ergänzt, soll einen Runner nicht aussperren. Der Runner behält vom Block
+  nur die Felder, die sein Modell `Provenance` kennt, und prüft diese wie bisher streng (`execution: "cloud"`,
+  `self_attested`, Typen und so weiter); ein Block, der kein Objekt ist, bleibt Exit-Code 2. Das ändert §12b (dort: der Block wird
+  mit `Provenance` geprüft, das keine fremden Felder zuließ) und gilt nur für den Block, nicht für das Rezept: Felder im Rezept
+  selbst und die Felder der Provenienz neben dem Rezept bleiben abgewiesen. Der Lauf schreibt das fremde Feld nicht in
+  `provenance.json`; `recipe.json` im Ordner bleibt die Eingabe mit dem Feld.
+- **Ältere Runner:** Ein Image vor NM4-08 kennt diese Regel nicht und weist eine Datei mit `provenance.methods` mit Exit-Code 2
+  ab (`adr/0014` §15r). Dagegen hilft nur ein neu gebautes Image; die README sagt es in einem Satz.
 
 ## 13. Quellen
 

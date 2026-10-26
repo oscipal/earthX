@@ -440,13 +440,42 @@ class TestTheProvenanceBlock:
             assert load_recipe(json.dumps(document).encode()).provenance.methods is None
         assert load_recipe(support.recipe_file(support.band_math_recipe())).provenance.methods
 
-    def test_a_runner_from_before_the_text_refuses_the_new_file_with_code_2_and_names_no_value(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    def test_a_field_of_the_block_this_runner_does_not_know_is_ignored(
+        self, tmp_path: Path, out: Path, served: list[str]
     ) -> None:
-        """What an image built before NM4-08 does with a new file: the block has a field it does not know, ``extra="forbid"``.
+        """Otto, 26.10.2026: the block is no hash input; a later field does not shut this runner out."""
+        document = _document()
+        document["provenance"]["a_later_field"] = {"anything": [1, 2]}
+        path = _file(tmp_path, json.dumps(document).encode())
+        assert _main("check", path) == EXIT_OK
+        assert _main("run", path, "--out", str(out)) == EXIT_OK
+        (folder,) = out.iterdir()
+        assert (folder / "recipe.json").read_bytes() == Path(path).read_bytes()
+        assert "a_later_field" not in (folder / "provenance.json").read_text(encoding="utf-8")
 
-        The model of that time is the present one without the field. The refusal is the ordinary one of the
-        block (exit 2, the version of the runner named), not a traceback, and it shows nothing of the file.
+    @pytest.mark.parametrize(
+        ("field", "value"), [("execution", "elsewhere"), ("self_attested", "no"), ("attribution", "not a list"), ("engine", 3)]
+    )
+    def test_a_field_it_knows_is_still_checked_beside_an_unknown_one(
+        self, tmp_path: Path, field: str, value: Any
+    ) -> None:
+        document = _document()
+        document["provenance"]["a_later_field"] = 1
+        document["provenance"][field] = value
+        assert _main("check", _file(tmp_path, json.dumps(document).encode())) == EXIT_RECIPE
+
+    @pytest.mark.parametrize("block", [[], "x", 3, None])
+    def test_a_block_that_is_no_object_is_refused(self, tmp_path: Path, block: Any) -> None:
+        document = _document()
+        document["provenance"] = block
+        assert _main("check", _file(tmp_path, json.dumps(document).encode())) == EXIT_RECIPE
+
+    def test_a_model_of_the_block_without_the_methods_field_reads_the_new_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """What this change buys the next field: the block as it was before NM4-08 reads a file that carries ``methods``.
+
+        Images built before this change refuse such a file with exit code 2; they are to be built again (README).
         """
         before = create_model(
             "ProvenanceBefore",
@@ -454,14 +483,9 @@ class TestTheProvenanceBlock:
             **{name: (field.annotation, field) for name, field in Provenance.model_fields.items() if name != "methods"},
         )
         monkeypatch.setattr(recipe_file, "Provenance", before)
-        new = _file(tmp_path, support.recipe_file(support.band_math_recipe()))
-        assert _main("check", new) == EXIT_RECIPE
-        error = capsys.readouterr().err
-        assert "the provenance block of the recipe file is not valid" in error
-        assert "this runner is" in error and "Synthetic data" not in error and "processed on the EarthX" not in error
-        old = _document()
-        del old["provenance"]["methods"]
-        assert _main("check", _file(tmp_path, json.dumps(old).encode())) == EXIT_OK
+        new = support.recipe_file(support.band_math_recipe())
+        assert "methods" in json.loads(new)["provenance"]
+        assert _main("check", _file(tmp_path, new)) == EXIT_OK
 
     @pytest.mark.parametrize("field", ["execution", "runner_version", "self_attested"])
     def test_provenance_fields_beside_the_recipe(self, tmp_path: Path, field: str) -> None:

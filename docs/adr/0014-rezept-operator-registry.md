@@ -2412,7 +2412,8 @@ Dateiliste in §15l (`TEXT_FILES` mit `methods.txt`) bleiben als Originaltext st
   - Ein `recipe.json` von vorher ohne `methods` bleibt gültig (Runner, „Load recipe…“ aus M4-19d); `methods_of` liefert `null`.
   - Ein Runner von vorher (Image vor NM4-08) prüft den Block streng (`extra="forbid"`, `adr/0016` §12b) und weist eine neue Datei mit
     Exit-Code 2 ab: „the provenance block of the recipe file is not valid“, dazu die eigene Version. Nichts von der Datei steht in der
-    Meldung. Das ist keine Verbesserung dieser Meldung, sondern der Befund; abhelfen kann nur ein neu gebautes Image. Ein Test
-    bildet das mit dem Modell ohne das Feld nach.
+    Meldung. Das ist keine Verbesserung dieser Meldung, sondern der Befund; abhelfen kann nur ein neu gebautes Image (README).
+    Der Runner ab NM4-08 ignoriert unbekannte Felder im Block `provenance` und schließt künftige Felder nicht mehr aus
+    (`adr/0016` §12c, Otto 2026-10-26).
 - **Tests:** `processing/test_methods.py` (`TestTheTextLiesInTheRecipe`: Text im Feld, Rest des Dokuments gleich, Hash gleich, falscher
   Typ, kein Rezept), `test_export.py`, `api/test_download_route.py`, `api/test_result_zip_files.py`, `runner/test_cli.py`.
