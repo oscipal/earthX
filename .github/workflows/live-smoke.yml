@@ -58,29 +58,6 @@ jobs:
       - name: Live smoke (pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py)
         run: pytest backend/tests_live/test_earth_search_smoke.py backend/tests_live/test_coverage_smoke.py
 
-  eopf:
-    name: EOPF Sentinel Zarr Samples Service still answers as recorded
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.lock
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --require-hashes --only-binary :all: --no-binary version-parser \
-            -r backend/requirements-dev.lock
-
-      - name: Live smoke (pytest backend/tests_live/test_eopf_smoke.py)
-        run: pytest backend/tests_live/test_eopf_smoke.py
-
   cop-dem:
     name: Copernicus DEM GLO-30 bucket still answers as recorded
     runs-on: ubuntu-latest
