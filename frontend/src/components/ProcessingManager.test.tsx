@@ -547,15 +547,14 @@ describe('the keys of a focused row (R, G, A)', () => {
     expect(useProcessingStore.getState().jobs.every((j) => j.archived)).toBe(true);
   });
 
-  it('do nothing for a part of a batch: its keys are the batch\'s', () => {
+  it('act on the batch for a part of it: a part has no keys of its own', () => {
     put({ jobs: [jobEntry(1, { batchId: BATCH, part: 'S1' })], batches: [batchEntry(BATCH)] });
     mount();
     click(button('▸'));
     const part = container.querySelector<HTMLElement>('.pm-parts .pm-row')!;
-    const event = press(openButton(part), 'a');
-    expect(event.defaultPrevented).toBe(false);
-    expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
-    expect(useProcessingStore.getState().batches[0].archived).toBe(false);
+    press(openButton(part), 'a');
+    expect(useProcessingStore.getState().batches[0].archived).toBe(true);
+    expect(useProcessingStore.getState().jobs[0].archived).toBe(true);
     expect(part.hasAttribute('aria-keyshortcuts')).toBe(false);
   });
 
@@ -635,6 +634,120 @@ describe('the keys of a focused row (R, G, A)', () => {
     press(openButton(rows()[0]), 'r');
     key(field(), 'Escape');
     expect(document.activeElement).toBe(openButton(rows()[0]));
+  });
+});
+
+describe('the keys with no click first', () => {
+  const over = (row: Element) => act(() => row.dispatchEvent(new Event('pointerenter')));
+  const out = (row: Element) => act(() => row.dispatchEvent(new Event('pointerleave')));
+
+  it('rename the row under the pointer, with the focus on the page', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)] });
+    mount();
+    (document.activeElement as HTMLElement | null)?.blur();
+    over(rows()[1]);
+    const event = press(document.body, 'r');
+    expect(event.defaultPrevented).toBe(true);
+    expect(field().value).toBe('Band math · Sentinel-2 L2A · 2 Oct');
+    expect(rows()[1].contains(field())).toBe(true);
+  });
+
+  it('open the groups and archive the row under the pointer too', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)], groups: [{ id: GROUP, name: 'Field 7' }] });
+    mount();
+    over(rows()[0]);
+    press(document.body, 'g');
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    key(document.querySelector('[role="menu"] button')!, 'Escape');
+    out(rows()[0]);
+    over(rows()[1]);
+    // The menu gave the focus back to its row; the pointer is on the other one and the page has the focus.
+    (document.activeElement as HTMLElement | null)?.blur();
+    press(document.body, 'a');
+    expect(useProcessingStore.getState().jobs.map((j) => j.archived)).toEqual([false, true]);
+  });
+
+  it('work while the focus is on another control, the symbol of the rail or a filter', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    const filter = button('All');
+    filter.focus();
+    over(rows()[0]);
+    press(filter, 'a');
+    expect(useProcessingStore.getState().jobs[0].archived).toBe(true);
+  });
+
+  it('do nothing once the pointer has left the row, or for a row that is gone', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    over(rows()[0]);
+    out(rows()[0]);
+    expect(press(document.body, 'a').defaultPrevented).toBe(false);
+    over(rows()[0]);
+    const row = rows()[0];
+    put({ jobs: [] });
+    expect(row.isConnected).toBe(false);
+    expect(press(document.body, 'a').defaultPrevented).toBe(false);
+  });
+
+  it('prefer the row that has the focus to the one under the pointer', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2)] });
+    mount();
+    openButton(rows()[0]).focus();
+    over(rows()[1]);
+    press(openButton(rows()[0]), 'a');
+    expect(useProcessingStore.getState().jobs.map((j) => j.archived)).toEqual([true, false]);
+  });
+
+  it('do nothing in a field, in the menu, with a modifier, or while a dialog is open', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    over(rows()[0]);
+    click(button('＋ New group'));
+    expect(press(field(), 'a').defaultPrevented).toBe(false);
+    key(field(), 'Escape');
+    expect(press(document.body, 'a', { ctrlKey: true }).defaultPrevented).toBe(false);
+    const backdrop = document.createElement('div');
+    backdrop.className = 'dialog-backdrop';
+    document.body.append(backdrop);
+    expect(press(document.body, 'a').defaultPrevented).toBe(false);
+    backdrop.remove();
+    expect(useProcessingStore.getState().jobs[0].archived).toBe(false);
+  });
+
+  it('stop with the manager: a key on the page, with the manager closed, does nothing', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    over(rows()[0]);
+    act(() => root.unmount());
+    expect(press(document.body, 'a').defaultPrevented).toBe(false);
+    root = createRoot(container);
+  });
+
+  it('move from row to row with the arrow keys, and into the list from the filter', () => {
+    put({ jobs: [jobEntry(1), jobEntry(2), jobEntry(3)] });
+    mount();
+    const filter = button('Active');
+    filter.focus();
+    expect(press(filter, 'ArrowDown').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(openButton(rows()[0]));
+    press(openButton(rows()[0]), 'ArrowDown');
+    expect(document.activeElement).toBe(openButton(rows()[1]));
+    press(openButton(rows()[1]), 'ArrowUp');
+    press(openButton(rows()[0]), 'ArrowUp');
+    expect(document.activeElement).toBe(openButton(rows()[0]));
+    filter.focus();
+    press(filter, 'ArrowUp');
+    expect(document.activeElement).toBe(openButton(rows()[2]));
+    expect(press(openButton(rows()[2]), 'ArrowDown').defaultPrevented).toBe(false);
+  });
+
+  it('leave the arrow keys alone outside the manager and in a field', () => {
+    put({ jobs: [jobEntry(1)] });
+    mount();
+    expect(press(document.body, 'ArrowDown').defaultPrevented).toBe(false);
+    click(button('＋ New group'));
+    expect(press(field(), 'ArrowDown').defaultPrevented).toBe(false);
   });
 });
 

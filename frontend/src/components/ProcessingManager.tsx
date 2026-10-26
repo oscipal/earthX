@@ -1,9 +1,10 @@
 // The processing manager (UI-01 §6.10): the jobs of this browser, each with its title, progress and expiry,
 // as rows; the jobs of one batch as one row that opens into its parts. A job is never deleted, only
-// archived and put in a group. A click on a job opens its details in the processing window. On a focused
-// row R renames, G moves to a group and A archives (never while a field has the keys).
+// archived and put in a group. A click on a job opens its details in the processing window. R renames, G moves
+// to a group and A archives the row that has the focus or else the one under the pointer, with no click first
+// (never while a field has the keys); the arrow keys go from row to row.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, type ShelfGroup } from '../jobShelf';
 import { loadCollapsedGroups, loadJobFilter, saveCollapsedGroups, saveJobFilter, type JobFilter } from '../preferences';
@@ -122,20 +123,72 @@ function RowMenu({ onRename, groups, groupId, onMove, archived, onArchive, cance
   );
 }
 
-// R, G and A on a row that has the focus. Not in a field, not in the menu, and not for a row inside this one
-// (the parts of a batch are no rows of their own for these keys).
-function rowKeys(event: KeyboardEvent<HTMLElement>, actions: { rename: () => void; move: () => void; archive: () => void }) {
+// The keys R, G and A act on a row without a click first: the row the key was pressed on, the one that has the
+// focus, or the one under the pointer. The row hears of it as an event; what it does is its own.
+const ROW_ACTION = 'pm-row-action';
+type RowAction = 'rename' | 'move' | 'archive';
+const TOP_ROW = '.pm-rows > .pm-row';
+// Where a key belongs to a field, a menu or a dialog, and not to the row.
+const KEYS_ELSEWHERE = 'input, textarea, select, [contenteditable="true"], .popover';
+
+// The row under the pointer, as far as the row says so itself: `:hover` is no help to a test, and a row that
+// was taken out of the list never says it was left.
+let hovered: HTMLElement | null = null;
+
+function useRowActions(row: RefObject<HTMLElement | null>, actions: Record<RowAction, () => void>) {
+  const latest = useRef(actions);
+  latest.current = actions;
+  useEffect(() => {
+    const element = row.current;
+    if (!element) return undefined;
+    const run = (event: Event) => latest.current[(event as CustomEvent<RowAction>).detail]();
+    const enter = () => {
+      hovered = element;
+    };
+    const leave = () => {
+      if (hovered === element) hovered = null;
+    };
+    element.addEventListener(ROW_ACTION, run);
+    element.addEventListener('pointerenter', enter);
+    element.addEventListener('pointerleave', leave);
+    return () => {
+      element.removeEventListener(ROW_ACTION, run);
+      element.removeEventListener('pointerenter', enter);
+      element.removeEventListener('pointerleave', leave);
+      leave();
+    };
+  }, [row]);
+}
+
+// For a part of a batch, which listens to nothing.
+const noRow: RefObject<HTMLElement | null> = { current: null };
+
+const topRowOf = (element: Element | null | undefined) => element?.closest<HTMLElement>(TOP_ROW) ?? null;
+
+function rowKey(event: KeyboardEvent) {
   if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return;
   const target = event.target as HTMLElement;
-  if (target.closest('input, textarea, select, [contenteditable="true"], .popover')) return;
-  if (target.closest('.pm-row') !== event.currentTarget) return;
+  if (target.closest(KEYS_ELSEWHERE) || document.querySelector('.dialog-backdrop')) return;
   const key = event.key.toUpperCase();
-  const action = key === SHORTCUTS.rename ? actions.rename : key === SHORTCUTS.move ? actions.move : key === SHORTCUTS.archive ? actions.archive : null;
-  if (!action) return;
+  const action: RowAction | null = key === SHORTCUTS.rename ? 'rename' : key === SHORTCUTS.move ? 'move' : key === SHORTCUTS.archive ? 'archive' : null;
+  const arrow = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+  if (!action && !arrow) return;
+  if (arrow) {
+    // From row to row, once the focus is in the manager; from its other controls to the first or the last.
+    if (!target.closest('.processing-manager')) return;
+    const rows = [...document.querySelectorAll<HTMLElement>(`.pm-list ${TOP_ROW}`)];
+    const at = rows.indexOf(topRowOf(target) as HTMLElement);
+    const next = at < 0 ? (arrow > 0 ? rows[0] : rows.at(-1)) : rows[at + arrow];
+    if (!next) return;
+    event.preventDefault();
+    next.querySelector<HTMLElement>(':scope > .pm-line .pm-open')?.focus();
+    return;
+  }
+  const row = topRowOf(target) ?? topRowOf(document.activeElement) ?? (hovered?.isConnected ? hovered : null);
+  if (!row || !action) return;
   event.preventDefault();
-  const row = event.currentTarget;
-  action();
-  if (action === actions.archive) refocusAround(row);
+  row.dispatchEvent(new CustomEvent<RowAction>(ROW_ACTION, { detail: action }));
+  if (action === 'archive') refocusAround(row);
 }
 
 // An action can take the row out of the list (archived under "Active", moved to a folded group) or put it
@@ -199,6 +252,12 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
   const state = jobState(job, now);
   const title = part ? (job.part ?? jobLabel(job)) : jobLabel(job);
   const target: ManagerTarget = { jobID: job.jobID };
+  // The parts of a batch have no keys of their own: the batch's row hears them.
+  useRowActions(part ? noRow : row, {
+    rename: () => setRenaming(true),
+    move: () => setMenu('move'),
+    archive: () => setArchived(target, !job.archived),
+  });
   return (
     <li
       ref={row}
@@ -206,16 +265,6 @@ function JobItem({ job, now, part, groups }: { job: JobEntry; now: number; part?
       className={`pm-row${part ? ' part' : ''}${job.archived ? ' archived' : ''}`}
       aria-keyshortcuts={part ? undefined : 'R G A'}
       onPointerDown={part ? undefined : focusOnPress}
-      onKeyDown={
-        part
-          ? undefined
-          : (e) =>
-              rowKeys(e, {
-                rename: () => setRenaming(true),
-                move: () => setMenu('move'),
-                archive: () => setArchived(target, !job.archived),
-              })
-      }
     >
       <div className="pm-line" ref={line}>
         {renaming ? (
@@ -296,6 +345,11 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
   const running = parts.some((p) => p.phase === 'active');
   const target: ManagerTarget = { batchId: batch.id };
   const listId = `pm-batch-${batch.id}`;
+  useRowActions(row, {
+    rename: () => setRenaming(true),
+    move: () => setMenu('move'),
+    archive: () => setArchived(target, !batch.archived),
+  });
   return (
     <li
       ref={row}
@@ -303,13 +357,6 @@ function BatchItem({ batch, parts, now, groups }: { batch: BatchEntry; parts: Jo
       className={`pm-row batch${batch.archived ? ' archived' : ''}`}
       aria-keyshortcuts="R G A"
       onPointerDown={focusOnPress}
-      onKeyDown={(e) =>
-        rowKeys(e, {
-          rename: () => setRenaming(true),
-          move: () => setMenu('move'),
-          archive: () => setArchived(target, !batch.archived),
-        })
-      }
     >
       <div className="pm-line" ref={line}>
         <button
@@ -520,6 +567,10 @@ const emptyText = (filter: JobFilter, total: number): string =>
 export default function ProcessingManager() {
   // A focus still due when the manager closes is not wanted any more.
   useEffect(() => () => clearTimeout(refocusTimer), []);
+  useEffect(() => {
+    document.addEventListener('keydown', rowKey);
+    return () => document.removeEventListener('keydown', rowKey);
+  }, []);
   const jobs = useProcessingStore((s) => s.jobs);
   const batches = useProcessingStore((s) => s.batches);
   const groups = useProcessingStore((s) => s.groups);
