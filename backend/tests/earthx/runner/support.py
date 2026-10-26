@@ -14,6 +14,7 @@ from typing import Any
 
 from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry
+from earthx.processing.methods import recipe_with_methods
 from earthx.processing.recipe import engine_versions, job_recipe_document
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
@@ -71,12 +72,16 @@ def reproject_recipe(resampling: str = "bilinear") -> dict[str, Any]:
     }
 
 
-def recipe_file(recipe: dict[str, Any], *, engine: dict[str, str] | None = None) -> bytes:
-    """``recipe.json`` as `api` serves it for a job: the recipe and the provenance of the cloud run."""
-    return job_recipe_document(
+def recipe_file(recipe: dict[str, Any], *, engine: dict[str, str] | None = None, methods: bool = True) -> bytes:
+    """``recipe.json`` as `api` serves it for a job: the recipe and the provenance of the cloud run, with its methods text.
+
+    ``methods=False`` for a recipe that is none (the text is written from a valid one only): a hand-made file.
+    """
+    document = job_recipe_document(
         recipe,
         attribution=ATTRIBUTION,
         result={"engine": engine if engine is not None else engine_versions(), "scaling": []},
         started=datetime(2026, 10, 20, 8, 0, tzinfo=UTC),
         finished=datetime(2026, 10, 20, 8, 1, tzinfo=UTC),
     )
+    return recipe_with_methods(document) if methods else document

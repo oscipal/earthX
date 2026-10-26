@@ -293,6 +293,7 @@ class TestARealExport:
             result=done,
             started=datetime.fromisoformat(done["started"]),
             finished=datetime.fromisoformat(done["finished"]),
+            methods=done["methods"],
         )
         assert in_zip == served, "the link of api and the file in the ZIP are one file (K4)"
         assert done["bytes"] == (workdir / "export.zip").stat().st_size

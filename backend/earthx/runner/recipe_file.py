@@ -3,7 +3,9 @@
 **The file (F3).** Exactly what lies next to every result: the recipe (adr/0014 §4.2) and
 one ``provenance`` block of the cloud run (adr/0014 §10.1). The block is split off and
 checked with :class:`~earthx.processing.recipe.Provenance`; it must say ``cloud``
-(adr/0016 §12b). The rest goes through the same strict models as in `api`, the
+(adr/0016 §12b). A field of the block that this runner does not know is ignored, not refused:
+the block is no hash input, and a later field must not shut out a runner that predates it
+(adr/0016 §12c, Otto, 26.10.2026). The fields it knows are checked as before. The rest goes through the same strict models as in `api`, the
 expressions of band math through the parameter model of R5 before numexpr sees them.
 
 **The hosts (F4).** Every address of an input passes ``inspect_url`` against the
@@ -75,6 +77,8 @@ def load_recipe(raw: bytes) -> RecipeFile:
 
 
 def _cloud_provenance(block: Any) -> Provenance:
+    if isinstance(block, dict):
+        block = {name: value for name, value in block.items() if name in Provenance.model_fields}
     try:
         provenance = Provenance.model_validate_json(json.dumps(block, allow_nan=False), strict=True)
     except (ValidationError, ValueError, TypeError):

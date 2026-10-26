@@ -6,14 +6,15 @@
       result.tif          from processing.run
       mask.tif            from processing.run
       recipe.json         the bytes of the input, unchanged
-      methods.txt         the paragraph for a methods section, from the recipe and this run (M4-19a)
-      provenance.json     written last
+      provenance.json     written last; its ``methods`` is the paragraph for a methods section,
+                          from the recipe and this run (M4-19a, NM4-08)
       .work/              the work directory of processing.run, removed at the end
 
 A run that stopped leaves a folder without ``provenance.json``. There is no
 ``citation.bib``: `api` builds it from the registry, and it comes with the download
-(adr/0016 §12b); ``methods.txt`` is the one text file of the downloads that the runner also writes,
-by the same function and under the same name (:data:`~earthx.processing.methods.METHODS_FILENAME`). Nothing here holds a hash, a ``recipe_id`` or a mark of the machine.
+(adr/0016 §12b). The methods text is no file: the runner writes it, from the same function as the platform,
+into ``provenance.json`` and leaves ``recipe.json`` as it was given (adr/0016 §12c). Nothing here holds a hash, a
+``recipe_id`` or a mark of the machine.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from typing import Any
 
 import earthx
 from earthx.processing import RunResult
-from earthx.processing.methods import METHODS_FILENAME, DatasetFacts, methods_text
+from earthx.processing.methods import DatasetFacts, methods_text
 from earthx.processing.recipe import Provenance, document_bytes
 
 __all__ = ["PROVENANCE_NAME", "RECIPE_NAME", "RunFolder", "numpy_dispatch", "platform_info", "runner_version"]
@@ -96,14 +97,12 @@ class RunFolder:
         finished: datetime,
         dataset: DatasetFacts | None = None,
     ) -> None:
-        """Move the result up, write the recipe as given and the methods text, then the provenance; then drop the work directory."""
+        """Move the result up, write the recipe as given, then the provenance with the methods text; then drop the work directory."""
         for name in _RESULT_FILES:
             (self.workdir / name).replace(self.path / name)
         (self.path / RECIPE_NAME).write_bytes(recipe_raw)
         provenance = provenance_document(result, source=source, started=started, finished=finished)
-        (self.path / METHODS_FILENAME).write_text(
-            methods_text(_local_document(recipe_raw, provenance), dataset=dataset), encoding="utf-8"
-        )
+        provenance["methods"] = methods_text(_local_document(recipe_raw, provenance), dataset=dataset).removesuffix("\n")
         (self.path / PROVENANCE_NAME).write_bytes(document_bytes(provenance))
         self.remove_workdir()
 

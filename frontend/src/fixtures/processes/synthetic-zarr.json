@@ -569,7 +569,7 @@
         "contentMediaType": "application/zip",
         "type": "string"
       },
-      "title": "Result, mask, area, recipe, citation, attribution and methods in one ZIP"
+      "title": "Result, mask, area, recipe, citation and attribution in one ZIP"
     },
     "export": {
       "schema": {
@@ -590,14 +590,14 @@
         "contentMediaType": "text/plain",
         "type": "string"
       },
-      "title": "A paragraph for a methods section, written from the recipe and its provenance"
+      "title": "The methods text of the recipe's provenance, as a paragraph for a methods section"
     },
     "recipe": {
       "schema": {
         "contentMediaType": "application/json",
         "type": "string"
       },
-      "title": "The recipe the job ran, with its provenance"
+      "title": "The recipe the job ran, with its provenance and the methods text"
     },
     "result": {
       "schema": {

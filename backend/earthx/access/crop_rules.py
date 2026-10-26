@@ -48,7 +48,6 @@ __all__ = [
     "FALLBACK_BYTES_PER_PIXEL",
     "MAX_JOB_BYTES",
     "MAX_OUTPUT_SIDE_PX",
-    "METHODS_FILENAME",
     "NOTICE_FILENAME",
     "RECIPE_FILENAME",
     "RESOLUTION_FACTORS",
@@ -150,14 +149,10 @@ AOI_FILENAME = "aoi.geojson"
 RECIPE_FILENAME = "recipe.json"
 CITATION_FILENAME = "citation.bib"
 
-# The methods text (M4-19a): a paragraph for a paper's methods section, built by
-# `processing` from the recipe and the provenance and handed in as bytes like the recipe.
-METHODS_FILENAME = "methods.txt"
-
 #: The text files at the root of every download, in the order they are laid out: the one definition
-#: of the crop's ZIP, the export's, the job's and the local runner's folder (M4-30, M4-19a). A
-#: test compares each of them with this tuple, not with a list of its own.
-TEXT_FILES = (AOI_FILENAME, RECIPE_FILENAME, CITATION_FILENAME, NOTICE_FILENAME, METHODS_FILENAME)
+#: of the crop's ZIP, the export's and the job's (M4-30). A test compares each of them with this tuple,
+#: not with a list of its own. The methods text is no file of them: it lies in ``recipe.json`` (NM4-08).
+TEXT_FILES = (AOI_FILENAME, RECIPE_FILENAME, CITATION_FILENAME, NOTICE_FILENAME)
 
 
 class AoiOutsideItems(ValueError):
