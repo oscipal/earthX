@@ -334,6 +334,25 @@ export default function ResultsPanel() {
   );
 }
 
+// Under "Load more": takes the list of results away, and its pictures on the map. The area, dates, choice of
+// datasets and filters stay, and so do the pinned layers and the jobs; the control menu opens (Otto, 26.10.2026).
+function ClearResults() {
+  const clearSearchResults = useAppStore((s) => s.clearSearchResults);
+  return (
+    <button
+      type="button"
+      className="clear-results"
+      title="Remove the results from the list and the map. Area, dates, datasets and filters, layers and jobs stay."
+      onClick={() => clearSearchResults()}
+    >
+      <span className="clear-results-x" aria-hidden="true">
+        ✕
+      </span>
+      Clear search results
+    </button>
+  );
+}
+
 function ResultsList({ sections }: { sections: ResultSection[] }) {
   // The dataset shown is the one whose scenes `groups`/`items` hold
   // (`store.ts::setOpenSection`). Within it, the open time step stays separate
@@ -364,6 +383,7 @@ function ResultsList({ sections }: { sections: ResultSection[] }) {
         ))}
       </div>
       <LoadMore openId={openSectionId} />
+      <ClearResults />
     </>
   );
 }

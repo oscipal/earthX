@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
 import { datasetsFrom } from './datasets';
+import { jobEntry } from './fixtures/jobEntries';
 import { bboxToPolygon } from './geoUtils';
 import { resetJobs, useProcessingStore } from './processingStore';
 import { useAppStore } from './store';
@@ -422,55 +423,97 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
   });
 });
 
-describe('no button of its own clears the results (Otto, 26.10.2026)', () => {
-  it('has none in the panel, the bar of the selection or the controls of the full-resolution view', async () => {
-    answer = MANY;
-    await search();
-    click(slot('results').querySelector('.select-all-box input')!);
-    const clears = () => [...container.querySelectorAll('#dock-results button, .download-bar button, .viewer-controls button')].filter((b) => /^(Clear|Clear all|Clear search results)$/.test(b.textContent?.trim() ?? ''));
-    expect(clears()).toEqual([]);
-    act(() => useAppStore.setState({ focusMode: true }));
-    expect(clears()).toEqual([]);
-  });
-
-  it('only a new search replaces the list', async () => {
-    answer = MANY;
-    await search();
-    expect(useAppStore.getState().items).toHaveLength(300);
-    answer = () => json(FEW);
-    await search();
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/2)');
-  });
-});
-
-describe('the title of the panel counts selected over found (Otto, 26.10.2026)', () => {
-  const title = () => slot('results').querySelector('.results-head h2')?.textContent;
+describe('"Clear search results" under "Load more" (Otto, 26.10.2026)', () => {
+  const clearButton = () => [...slot('results').querySelectorAll('button')].find((b) => b.textContent?.includes('Clear search results'))!;
 
   beforeEach(async () => {
     answer = MANY;
     await search();
   });
 
-  it('starts at 0 of all and follows the ticks in the list', () => {
-    expect(title()).toBe('Results (0/300)');
-    click(slot('results').querySelector('.result-row input')!);
-    expect(title()).toBe('Results (1/300)');
-    click(slot('results').querySelector('.select-all-box input')!);
-    expect(title()).toBe('Results (300/300)');
-    click(slot('results').querySelector('.select-all-box input')!);
-    expect(title()).toBe('Results (0/300)');
+  it('is the last thing in the panel, after "Load more", with a small red cross', () => {
+    const buttons = [...slot('results').querySelectorAll('button')];
+    const load = buttons.findIndex((b) => b.textContent === 'Load more');
+    expect(load).toBeGreaterThan(-1);
+    expect(buttons.indexOf(clearButton())).toBeGreaterThan(load);
+    expect(clearButton().querySelector('.clear-results-x')?.textContent).toBe('✕');
+    expect(clearButton().querySelector('.clear-results-x')?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('does not count a tick on a scene that is not in the results, and the badge keeps the total', () => {
-    act(() => useAppStore.setState({ selectedIds: ['not-in-the-results'] }));
-    expect(title()).toBe('Results (0/300)');
-    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
+  it('takes the list away, and what it drew on the map, and opens the control menu', () => {
+    useAppStore.setState({ searchCrops: [{ id: 'c', name: 'c', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET } } as never] });
+    click(slot('results').querySelector('.result-row input')!);
+    click(clearButton());
+    const s = useAppStore.getState();
+    expect(s.sections).toEqual([]);
+    expect(s.items).toEqual([]);
+    expect(s.groups).toEqual([]);
+    expect(s.selectedIds).toEqual([]);
+    expect(s.searchCrops).toEqual([]);
+    expect(s.resultsOnMap).toBe(true);
+    expect(s.dock).toBe('controls');
+    expect(visible()).toEqual(['dock-controls']);
+    expect(symbol('results').getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('counts the found scenes up when "Load more" adds some', async () => {
-    click(slot('results').querySelector('.result-row input')!);
-    const button = [...slot('results').querySelectorAll('button')].find((b) => b.textContent === 'Load more')!;
-    await act(async () => button.click());
-    expect(title()).toBe('Results (1/340)');
+  it('leaves the area, dates, choice of datasets and filters', () => {
+    act(() => useAppStore.setState({ dateFrom: '2026-07-01', dateTo: '2026-07-31' }));
+    click(clearButton());
+    const s = useAppStore.getState();
+    expect(s.aoi).toEqual(AOI);
+    expect(s.dateFrom).toBe('2026-07-01');
+    expect(s.dateTo).toBe('2026-07-31');
+    expect(s.selectedDatasetIds).toEqual([DATASET]);
+    expect(s.datasetId).toBe(DATASET);
+  });
+
+  it('leaves the pinned layers and the jobs', () => {
+    const layer = { id: 'pinned', name: 'Pinned', visible: true, opacity: 1, overlays: [], restore: { datasetId: DATASET, itemIds: [], groupItemIds: [], downloaded: {}, appliedRender: {}, selectedIds: [] } } as never;
+    act(() => {
+      useAppStore.setState({ layers: [layer] });
+      useProcessingStore.setState({ jobs: [jobEntry(1)] });
+    });
+    click(clearButton());
+    expect(useAppStore.getState().layers).toEqual([layer]);
+    expect(useProcessingStore.getState().jobs).toHaveLength(1);
+  });
+
+  it('next "Search" asks with the same settings and fills the panel again', async () => {
+    click(clearButton());
+    await search();
+    expect(useAppStore.getState().sections).toHaveLength(1);
+    expect(useAppStore.getState().dock).toBe('results');
+  });
+
+  it('is there with a view open too, and closes the view with the list', () => {
+    act(() => useAppStore.setState({ focusMode: true }));
+    expect(clearButton()).toBeDefined();
+    click(clearButton());
+    expect(useAppStore.getState().focusMode).toBe(false);
+  });
+
+  it('drops the answer of a search that was still on its way', async () => {
+    let release!: () => void;
+    let first = true;
+    answer = (init) => {
+      if (!first) return MANY(init);
+      first = false;
+      return new Promise((resolve) => (release = () => resolve(MANY(init))));
+    };
+    const running = useAppStore.getState().runSearch();
+    await act(async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+    click(clearButton());
+    release();
+    await act(async () => {
+      await running;
+    });
+    expect(useAppStore.getState().sections).toEqual([]);
+  });
+
+  it('is also a store action that clears more than the list only when asked to: "clearAll" still clears the AOI', () => {
+    act(() => useAppStore.getState().clearAll());
+    expect(useAppStore.getState().aoi).toBeNull();
   });
 });

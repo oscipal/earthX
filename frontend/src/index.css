@@ -740,6 +740,30 @@ input[type='date']:focus {
   text-transform: uppercase;
 }
 /* The switch for the results on the map: a bordered button, but no taller than the head's text line. */
+.clear-results {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--panel-border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.clear-results:hover,
+.clear-results:focus-visible {
+  background: var(--row-hover);
+  outline: none;
+}
+.clear-results-x {
+  color: #ff5a6e;
+  font-size: 10px;
+}
 .results-map-toggle {
   padding: 0 10px;
   background: none;

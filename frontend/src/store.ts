@@ -921,6 +921,8 @@ export interface AppState {
   // unless another panel took its place meanwhile.
   reopenControls: () => void;
   clearAll: () => void;
+  // The list of results, and nothing else: no AOI, dates, dataset choice or filter, no pinned layer, no job.
+  clearSearchResults: () => void;
   addCurrentToLayers: () => void;
   pinDerivedLayer: (layer: DerivedLayer) => void;
   // Marks the result layers whose job's results are about to go (M4-13c-5).
@@ -1167,6 +1169,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeDock: () => set({ dock: null }),
   toggleResultsOnMap: () => set((s) => ({ resultsOnMap: !s.resultsOnMap })),
   reopenControls: () => set((s) => ({ dock: s.dock ?? 'controls' })),
+  clearSearchResults: () => {
+    set({
+      sections: [],
+      openSectionId: null,
+      ...forgetSearch(),
+      // The crops a search drew go with it; what the user pinned stays.
+      searchCrops: [],
+      items: [],
+      groups: [],
+      activeGroupIndex: 0,
+      expandedGroupIndex: 0,
+      selectedIds: [],
+      dock: 'controls',
+      playing: false,
+      error: null,
+      notice: null,
+      ...LEAVE_FOCUS,
+    });
+  },
   clearAll: () => {
     set({
       aoi: null,
@@ -1448,18 +1469,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ ...LEAVE_FOCUS, resultViewLayerId: id });
       return;
     }
+    // Layer and search results are apart (Otto, 26.10.2026): the click shows the controls and the picture of
+    // this layer and touches nothing the list holds — no tick, no open section, no choice of datasets. Only
+    // what the view cannot do without follows: the dataset of its controls, and the AOI of a cropped view.
     const r = l.restore;
-    if (r.aoi !== s.aoi) dropPageToken(set, get);
+    const dataset = r.datasetId ? s.datasets.find((d) => d.id === r.datasetId) : undefined;
+    const aoi = r.cropToAoi && r.aoi ? r.aoi : s.aoi;
+    if (aoi !== s.aoi) dropPageToken(set, get);
     set({
       resultViewLayerId: null,
-      ...layerDatasetState(s, r),
+      ...(dataset && (dataset.viewable || s.selectedDatasetIds.includes(dataset.id)) ? { datasetId: dataset.id } : {}),
       focusMode: r.focusMode,
       downloaded: r.downloaded,
       appliedRender: r.appliedRender,
-      activeGroupIndex: r.activeGroupIndex,
-      expandedGroupIndex: r.activeGroupIndex,
-      selectedIds: r.selectedIds,
-      aoi: r.aoi,
+      aoi,
       cropToAoi: r.cropToAoi,
       showDownloaded: true,
       viewLayerId: id,
