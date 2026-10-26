@@ -23,6 +23,11 @@ class TestTheEntries:
             (SENTINEL_2_L2A, "swir22", "1"),
             (SENTINEL_2_L2A, "scl", None),
             (SENTINEL_2_L2A, "visual", None),
+            (SENTINEL_2_L2A, "aot", "1"),
+            (SENTINEL_2_L2A, "wvp", "cm"),
+            (SENTINEL_2_L2A, "cloud", "%"),
+            (SENTINEL_2_L2A, "snow", "%"),
+            (SENTINEL_2_L2A, "preview", None),
             (SYNTHETIC_ZARR, "SR_10m:b04", "1"),
             (SYNTHETIC_ZARR, "SR_60m:b09", "1"),
             (SYNTHETIC_ZARR, "SCL_20m:scl", None),
@@ -32,7 +37,7 @@ class TestTheEntries:
     def test_the_units_the_entries_name(self, entry, asset, unit) -> None:
         assert entry.band_unit(asset) == unit
 
-    @pytest.mark.parametrize("asset", ["aot", "wvp", "nothing-of-the-kind"])
+    @pytest.mark.parametrize("asset", ["thumbnail", "nothing-of-the-kind"])
     def test_an_asset_the_entry_does_not_list_is_unknown_not_guessed(self, asset) -> None:
         assert SENTINEL_2_L2A.band_unit(asset) is None
 
@@ -130,6 +135,16 @@ class TestTheCollection:
     def test_it_publishes_the_units_for_the_panel(self) -> None:
         published = to_stac_collection(SENTINEL_2_L2A)["earthx:band_units"]
         assert published["red"] == "1" and published["scl"] is None
+        assert {asset: published[asset] for asset in ("aot", "wvp", "cloud", "snow")} == {
+            "aot": "1",
+            "wvp": "cm",
+            "cloud": "%",
+            "snow": "%",
+        }
+
+    def test_the_preview_is_named_as_without_a_unit(self) -> None:
+        published = to_stac_collection(SENTINEL_2_L2A)["earthx:band_units"]
+        assert "preview" in published and published["preview"] is None
 
     def test_the_dem_publishes_metres(self) -> None:
         assert to_stac_collection(COP_DEM_GLO_30)["earthx:band_units"] == {"data": "m"}

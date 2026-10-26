@@ -83,6 +83,7 @@ _SCL_NOTE = (
 # The unit of a value after the scaling, in UCUM (adr/0014 §15n). Surface reflectance is a ratio, so "1". An asset
 # that is not on the list is "unknown", and so is an explicit None; none of those is guessed. A class layer has no
 # unit (its values name classes, `mask` below), and the TCI `visual` is the 8-bit picture the default render shows.
+# The aerosol optical thickness is unit less as well, so it shares the "1".
 _REFLECTANCE_UNIT = "1"
 
 SENTINEL_2_L2A = DatasetConfig(
@@ -271,8 +272,11 @@ SENTINEL_2_L2A = DatasetConfig(
         reference=_SCL_REFERENCE,
         note=_SCL_NOTE,
     ),
-    # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item). Not listed:
-    # `aot`, `wvp`, `cloud`, `snow`, `preview`, whose unit this entry does not state.
+    # The twelve reflectance bands of the L2A product (surface reflectance, scaled by the item), then the other
+    # assets. Sources: Sen2Cor L2A IODD (S2-PDGS-MPC-L2A-IODD-2.4, issue 02) Tables 6 and 7 (cloud and snow
+    # probability: unit percentage, range 0-100), Table 16 (AOT: unit less, AOT = DN / 1000), Table 20 (water vapour:
+    # range 0.3-5.5 cm); the collection's `item_assets` give `wvp` the unit "cm" and scale 0.001 as well. `preview`
+    # is a true-colour picture like `visual`, so it has no unit on purpose.
     band_units={
         **dict.fromkeys(
             (
@@ -281,8 +285,13 @@ SENTINEL_2_L2A = DatasetConfig(
             ),  # fmt: skip
             _REFLECTANCE_UNIT,
         ),
+        "aot": _REFLECTANCE_UNIT,
+        "wvp": "cm",
+        "cloud": "%",
+        "snow": "%",
         "scl": None,
         "visual": None,
+        "preview": None,
     },
 )
 
