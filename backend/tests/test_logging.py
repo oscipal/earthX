@@ -533,6 +533,26 @@ class TestAPermalinkIdentifierIsNotLogged:
         assert loggable_path(path) == logged
 
 
+class TestABundleIdentifierIsNotLogged:
+    """UI-01e: the identifier of a bundle is the way to the results of several jobs."""
+
+    @pytest.mark.parametrize(
+        ("path", "logged"),
+        [
+            ("/processing/bundles/AAAAAAAAAAAAAAAAAAAAAA", "/processing/bundles/{bundleID}"),
+            ("/processing/bundles//AAAAAAAAAAAAAAAAAAAAAA", "/processing/bundles/{bundleID}"),
+            ("/processing/bundles/not-an-identifier-but-secret", "/processing/bundles/{bundleID}"),
+            ("/earthx/processing/bundles/AAAAAAAAAAAAAAAAAAAAAA", "/earthx/processing/bundles/{bundleID}"),
+            ("/processing/bundles", "/processing/bundles"),
+            ("/processing/bundles/", "/processing/bundles/"),
+        ],
+    )  # fmt: skip
+    def test_the_path_as_the_access_log_writes_it(self, path: str, logged: str) -> None:
+        from earthx.logging import loggable_path
+
+        assert loggable_path(path) == logged
+
+
 class TestAResultIdentifierIsNotLogged:
     """M4-13c-5: `/results/{result_id}` of the tiler is the way to a result's tiles, as the job's identifier is to its files."""
 

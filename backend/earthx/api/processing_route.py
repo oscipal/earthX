@@ -35,12 +35,18 @@ What each route turns away, and how (all errors are ``application/problem+json``
 with ``pyproj``, so the panel can say what a cell size means: ``422`` for a code that is no EPSG code, is
 unknown, or names no unit. It reads nothing from the network (:mod:`crs_info`).
 
+``/bundles`` (UI-01e, outside OGC) is "Download all (ZIP)" of a batch. ``POST`` takes the ``jobID``s in the body (never in
+the URL) and keeps them under an identifier of its own until the earliest of the jobs expires; ``GET`` lays out one ZIP
+of the results of those jobs, ``NN_<stem>/`` per part with what its ``result.zip`` holds, resumable with ``Range`` and
+``If-Range`` like that one. A part that has expired, failed or is not finished is listed in ``MISSING.txt``. An unknown,
+a malformed and an expired identifier are one ``404``. The jobs and their ids are never logged.
+
 ``/permalinks`` (M4-19e, outside OGC) keeps an order and a small view under an identifier of its own, 30 days
 from its creation. Creating answers ``201`` with the identifier, the expiry and a key that deletes it, once;
 reading answers ``404`` for an identifier that is malformed, unknown or expired, and deleting answers the same
 ``404`` for a wrong key, so nobody can tell the cases apart. The order carries the area and is never logged.
 
-Every answer under ``/jobs/`` and ``/permalinks`` and the placing of a job carry ``Cache-Control: no-store``.
+Every answer under ``/jobs/``, ``/bundles`` and ``/permalinks`` and the placing of a job carry ``Cache-Control: no-store``.
 """
 
 from __future__ import annotations
@@ -96,8 +102,8 @@ from earthx.catalog.registry import (
     acquisition_years,
 )
 from earthx.gateway import Gateway
-from earthx.jobs import permalinks
-from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, job_recipe, job_status, submit
+from earthx.jobs import bundles, permalinks
+from earthx.jobs.submit import JobStatus, RecipeIdTaken, dismiss, is_job_id, job_recipe, job_status, submit
 from earthx.objectstore.errors import ObjectStoreError, ResultExpiring, ResultNotFound, StoreUnavailable
 from earthx.objectstore.results import MIN_REMAINING, Store, open_result_range, result_size, signed_download
 from earthx.processing import check_scope
@@ -265,7 +271,7 @@ class _JobRoute(APIRoute):
                 )
                 response = Problem(400, f"the request does not match the interface: {reasons}").response()
             path = request.url.path
-            if "/jobs/" in path or "/permalinks" in path or path.endswith(("/execution", "/estimate")):
+            if "/jobs/" in path or "/permalinks" in path or "/bundles" in path or path.endswith(("/execution", "/estimate")):
                 response.headers["Cache-Control"] = "no-store"
             return response
 
@@ -1401,6 +1407,176 @@ async def delete_permalink(request: Request, permalink_id: str, api: Api) -> Res
         raise _no_such_permalink()
     LOGGER.info("permalink deleted")
     return Response(status_code=204)
+
+
+# --- bundles -------------------------------------------------------------------
+
+NO_SUCH_BUNDLE = "urn:earthx:no-such-bundle"
+#: What a bundle may hold in rasters, the sum of ``result.tif`` and ``mask.tif`` of its parts (UI-01 §6.12, question 7).
+MAX_BUNDLE_BYTES = 25_000_000_000
+MISSING = "MISSING.txt"
+
+_EXPIRED = "expired"
+_FAILED = "failed"
+_UNFINISHED = "not finished"
+_UNAVAILABLE = "no longer available"
+_UNSUPPORTED = "not a raster result"
+_NO_YEARS = "year of acquisition unknown"
+
+
+@dataclass(frozen=True)
+class _Part:
+    """One job of a bundle as it is now: its place in the list (from 1), its rows, and why it is not in the ZIP."""
+
+    number: int
+    status: JobStatus | None
+    body: dict[str, Any] | None
+    #: ``None`` if the job has a raster result that can be laid out.
+    reason: str | None
+
+    @property
+    def stem(self) -> str | None:
+        """The name of the part inside the ZIP, as the name of its own download without the suffix."""
+        return None if self.status is None or self.body is None else _download_name(self.body, self.status, "")
+
+    def without(self, reason: str) -> _Part:
+        return dataclasses.replace(self, reason=reason)
+
+
+def _no_such_bundle() -> Problem:
+    return Problem(404, "there is no such bundle", type_=NO_SUCH_BUNDLE, title="No such bundle")
+
+
+def _why_not(status: JobStatus | None) -> str | None:
+    """Why a job cannot go into a bundle (the words of ``MISSING.txt``), else ``None``."""
+    if status is None or status.status == "dismissed":
+        return _UNAVAILABLE
+    if status.expires_at - datetime.now(UTC) < MIN_REMAINING:
+        return _EXPIRED
+    if status.status == "failed":
+        return _FAILED
+    if status.status != "successful" or status.result_id is None:
+        return _UNFINISHED
+    return None if _bundle_possible(status) else _UNSUPPORTED
+
+
+def _read_parts(conn: psycopg.Connection, job_ids: list[str]) -> list[_Part]:
+    """The jobs of a list as they are now, in its order; a job whose rows are gone has neither status nor recipe."""
+    rows = [(job_status(conn, job_id), job_recipe(conn, job_id)) for job_id in job_ids]
+    return [_Part(number, status, body, _why_not(status)) for number, (status, body) in enumerate(rows, start=1)]
+
+
+def _raster_bytes(part: _Part) -> int:
+    facts = reported_files(part.status.result, BUNDLE_FILES) if part.status else None
+    return sum(fact.bytes for fact in (facts or {}).values())
+
+
+def _jobs_of(raw: bytes) -> list[str]:
+    """The ``jobID``s of the body ``{"jobs": […]}``: 1 to 25, each in the form of one, none twice."""
+    try:
+        document = loads_i_json(raw)
+    except RecipeInvalid as error:
+        raise Problem(400, str(error)) from None
+    if not isinstance(document, dict) or set(document) != {"jobs"}:
+        raise Problem(400, "the request is a JSON object with the member jobs")
+    jobs = document["jobs"]
+    if not isinstance(jobs, list) or not 1 <= len(jobs) <= bundles.MAX_PARTS:
+        raise Problem(422, f"jobs is a list of 1 to {bundles.MAX_PARTS} job identifiers")
+    if not all(is_job_id(job) for job in jobs):
+        raise Problem(422, "every entry of jobs is a job identifier")
+    if len(set(jobs)) != len(jobs):
+        raise Problem(422, "no job is named twice")
+    return jobs
+
+
+@router.post("/bundles", summary="Keep a list of jobs for one ZIP", status_code=201, responses=_PROBLEMS)
+async def create_bundle(request: Request, api: Api) -> Response:
+    job_ids = _jobs_of(await _read_body(request))
+    parts = await _db(api, _read_parts, job_ids)
+    if any(part.reason == _UNSUPPORTED for part in parts):
+        raise Problem(422, "an export or a result without measured files cannot go into a bundle")
+    kept = [part for part in parts if part.reason is None]
+    if not kept:
+        if all(part.reason in (_EXPIRED, _UNAVAILABLE) for part in parts):
+            raise Problem(410, "no job of the list has a result any more", type_=GONE, title="Gone")
+        raise Problem(409, "no job of the list has finished", type_=NO_BUNDLE, title="Nothing to bundle")
+    total = sum(_raster_bytes(part) for part in kept)
+    if total > MAX_BUNDLE_BYTES:
+        raise Problem(413, f"the rasters add up to {total} bytes; a bundle holds at most {MAX_BUNDLE_BYTES}")
+    expires = min(part.status.expires_at for part in kept if part.status)
+    bundle_id = await _db(api, bundles.create, job_ids, expires)
+    LOGGER.info("bundle created", extra={"parts": len(parts), "bundled": len(kept)})
+    href = f"{_root(request)}{docs.PREFIX}/bundles/{bundle_id}"
+    return JSONResponse({"href": href, "expires": expires.isoformat()}, status_code=201, headers={"Location": href})
+
+
+async def _lay_out_parts(api: JobApi, parts: list[_Part], folder: str) -> tuple[list[Member], list[_Part], list[_Part]]:
+    """The members of every part that can be laid out, those parts, and the parts left out with their reason."""
+    members: list[Member] = []
+    included: list[_Part] = []
+    left_out: list[_Part] = []
+    for part in parts:
+        status, body, stem = part.status, part.body, part.stem
+        facts = reported_files(status.result, BUNDLE_FILES) if status else None
+        if part.reason is not None or status is None or body is None or stem is None or facts is None:
+            left_out.append(part if part.reason is not None else part.without(_UNAVAILABLE))
+            continue
+        status = await _with_derived_years(api, body, status)
+        try:
+            members += _job_members(api, body, status, facts, f"{folder}/{part.number:02d}_{stem}")
+        except Problem as problem:
+            if problem.type != NO_ACQUISITION_YEARS:
+                raise
+            left_out.append(part.without(_NO_YEARS))
+        else:
+            included.append(part)
+    return members, included, left_out
+
+
+def _missing_text(left_out: list[_Part]) -> bytes:
+    """One line per part left out: its number, its name if its rows are still there, and why."""
+    lines = [
+        f"{part.number:02d}: {part.reason}" if part.stem is None else f"{part.number:02d} {part.stem}: {part.reason}"
+        for part in left_out
+    ]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+@router.get(
+    "/bundles/{bundle_id}",
+    summary="The results of a list of jobs as one ZIP, whole or by range",
+    responses={
+        **_PROBLEMS,
+        **_ZIP_PROBLEMS,
+        200: {"description": "all of the ZIP", "content": {"application/zip": {}}},
+        206: {"description": "Partial Content: one range of the ZIP"},
+    },
+)
+async def read_bundle(request: Request, bundle_id: str, api: Api) -> Response:
+    found = await _db(api, bundles.read, bundle_id) if bundles.is_bundle_id(bundle_id) else None
+    if found is None:
+        raise _no_such_bundle()
+    parts = await _db(api, _read_parts, found[0])
+    first = next((part.stem for part in parts if part.reason is None), None)
+    if first is None:
+        raise Problem(410, "no part of this bundle has a result any more", type_=GONE, title="Gone")
+    filename = f"{first}_batch-{len(parts)}.zip"
+    folder = filename.removesuffix(".zip")
+    members, included, left_out = await _lay_out_parts(api, parts, folder)
+    if not included:
+        raise Problem(410, "no part of this bundle has a result any more", type_=GONE, title="Gone")
+    if left_out:
+        members.append(Member.of_bytes(f"{folder}/{MISSING}", _missing_text(left_out)))
+    layout = Layout(members, modified=max(_finished_at(part.status) for part in included if part.status))
+    await asyncio.gather(
+        *(
+            _check_stored(api, part.status.result_id, {name: fact.bytes for name, fact in facts.items()})
+            for part in included
+            if part.status and part.status.result_id and (facts := reported_files(part.status.result, BUNDLE_FILES))
+        )
+    )
+    LOGGER.info("bundle read", extra={"parts": len(parts), "missing": len(left_out)})
+    return await _zip_response(request, api, layout, filename)
 
 
 @router.api_route("/jobs/{rest:path}", methods=["GET", "DELETE"], include_in_schema=False)
