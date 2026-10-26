@@ -3,6 +3,7 @@
 // state needed to re-select it and keep working.
 
 import type { Coords4 } from './geoUtils';
+import type { ResultStats } from './render';
 import type { AppliedRender, Bbox, DownloadedInfo } from './types';
 
 export type LayerOverlay =
@@ -102,4 +103,9 @@ export interface ResultLayerInfo {
   resampled: boolean | null;
   // Set when `expires` has passed: the map loads no more tiles of it.
   expired: boolean;
+  // What the tiler named for the result (`float32`, `uint16` …); `null` if it did not say. A float result
+  // needs a range and a colormap to become a picture, any other is drawn as it is.
+  dataType: string | null;
+  // The statistics of the AOI the default range comes from (M4-32); `null` for a result without them.
+  stats: ResultStats | null;
 }
