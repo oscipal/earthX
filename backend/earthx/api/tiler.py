@@ -16,9 +16,11 @@ What is composed:
   reach it too; this process hands it the policy and maps its refusals to HTTP. It
   cannot build an address without ``check_url``. There is no free ``url``
   parameter anywhere in the schema; a test proves it.
-* **the environment dependency** — ``gdal_options(policy)``, so the central GDAL
+* **the environment dependency** — ``tile_gdal_options(policy)``, so the central GDAL
   configuration of M1-03 applies at every endpoint rather than wherever someone
-  remembered it.
+  remembered it. The AOI crop of the download route reads under
+  ``crop_gdal_options(policy)``: the same, except that it keeps parallel range reads
+  (NM4-26 §10, §13).
 * **the caches** — the item cache the adapter already had (24 h, so a tile does
   not re-fetch the item), the statistics cache of adr/0006 (30 days), and the
   resolver cache of M2-14 (5 s, so a batch of tiles resolves the asset host once
@@ -116,7 +118,7 @@ from earthx.catalog.registry import (
 )
 from earthx.catalog.stats_cache import PostgresStatsCache
 from earthx.gateway import CachingResolver, Gateway, GatewayError
-from earthx.gateway.gdal import gdal_options
+from earthx.gateway.gdal import crop_gdal_options, tile_gdal_options
 from earthx.logging import RequestIdMiddleware, configure_logging, get_request_id
 from earthx.objectstore.errors import StoreConfigError
 from earthx.objectstore.results import Store
@@ -1028,7 +1030,9 @@ async def download_crop(
             # were unbounded and uncached. `rasterio.Env` is thread-local
             # (adr/0006's own `_read_statistics` follows the same pattern), so
             # it has to be entered inside the threadpool call, not around it.
-            gdal_env=state.earthx_gdal_options,
+            # The crop's own profile, not the tiles': it keeps parallel range
+            # reads, which a crop gains from (NM4-26 §13, §18 point 1).
+            gdal_env=state.earthx_crop_gdal_options,
         )
 
     try:
@@ -1102,7 +1106,7 @@ async def download_crop(
 
 
 def gdal_environment(request: Request) -> dict[str, str]:
-    """The central GDAL configuration (M1-03), built once per process."""
+    """The central GDAL configuration (M1-03) of the tile routes, built once per process."""
     return request.app.state.earthx_gdal_options
 
 
@@ -1178,7 +1182,12 @@ def build_app(
     # Read at request time through the two small dependencies above, so a route
     # never closes over something a test cannot replace.
     app.state.earthx_policy = policy
-    app.state.earthx_gdal_options = gdal_options(policy)
+    # Two profiles, because GDAL reads the size of its `/vsicurl/` cache once per
+    # process but `MULTIRANGE` at every call, in the calling thread (NM4-26 §13, §18):
+    # the tile routes, statistics, TileJSON, mosaic and result tiles read under the
+    # first, the crop of the download route under the second.
+    app.state.earthx_gdal_options = tile_gdal_options(policy)
+    app.state.earthx_crop_gdal_options = crop_gdal_options(policy)
     # One resolver for the process, shared by the path dependency and the gateway:
     # a tile batch resolves the asset host once instead of once per tile (M2-14).
     # It caches the resolver's answer only — every address is checked again on

@@ -13,7 +13,7 @@ answers every item from a hand-written synthetic one after ``--item-ms`` (the it
 ``boto3`` is set aside as in the image: it is only in the dev lock (through ``moto``), and with it rasterio builds an
 AWS session for every ``rasterio.Env``, which costs about 100 ms of CPU per tile that production does not spend.
 
-``EXTRA_GDAL=KEY=VALUE,...`` adds to the GDAL options of ``gateway.gdal_options`` (``KEY=-`` removes one).
+``EXTRA_GDAL=KEY=VALUE,...`` adds to the GDAL options of ``gateway.gdal.tile_gdal_options`` and ``crop_gdal_options`` (``KEY=-`` removes one).
 One JSON line per request to ``--log``: ``total`` and the phases in ms; one line per item fetched at the source.
 """
 
@@ -159,22 +159,23 @@ def instrumented_app():
 
     cog.vsicurl_path = local_vsicurl_path
 
-    # Extra GDAL options for an experiment.
-    _gdal_options = tiler.gdal_options
+    # Extra GDAL options for an experiment, on top of both profiles of the tiler (tile and crop).
+    def with_extra(profile):
+        def options(policy) -> dict[str, str]:
+            result = profile(policy)
+            for pair in filter(None, os.environ.get("EXTRA_GDAL", "").split(",")):
+                key, value = pair.split("=", 1)
+                if value == "-":
+                    result.pop(key, None)
+                else:
+                    result[key] = value
+            return result
 
-
-    def gdal_options(policy) -> dict[str, str]:
-        options = _gdal_options(policy)
-        for pair in filter(None, os.environ.get("EXTRA_GDAL", "").split(",")):
-            key, value = pair.split("=", 1)
-            if value == "-":
-                options.pop(key, None)
-            else:
-                options[key] = value
         return options
 
 
-    tiler.gdal_options = gdal_options
+    tiler.tile_gdal_options = with_extra(tiler.tile_gdal_options)
+    tiler.crop_gdal_options = with_extra(tiler.crop_gdal_options)
 
     # The phases.
     _fetch_item = tiler._fetch_item
