@@ -221,6 +221,30 @@ describe('opening a link', () => {
     expect(draft().open).toBe(false);
   });
 
+  it('says a dataset that left the catalog has been retired, with the reason of the server, and changes nothing', async () => {
+    const reason = "dataset 'gone-dataset' was retired on 2026-10-25: a test; use 'other' instead";
+    link = () => json({ order: { ...ORDER, inputs: [{ ...ORDER.inputs[0], dataset: 'gone-dataset' }] }, view: VIEW, expires_at: EXPIRES });
+    const answer = fetchMock as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) =>
+        url === '/processing/processes/recipe?dataset=gone-dataset' ? json({ detail: reason }, 410) : answer(url, init),
+      ),
+    );
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState().error).toBe(`Dataset retired: ${reason}`);
+    expect(useAppStore.getState().aoi).toEqual(OLD_AOI);
+    expect(draft().open).toBe(false);
+  });
+
+  it('keeps the plain message for a dataset the server does not know either', async () => {
+    link = () => json({ order: { ...ORDER, inputs: [{ ...ORDER.inputs[0], dataset: 'never-was' }] }, view: VIEW, expires_at: EXPIRES });
+    onAddress(`?permalink=${ID}`);
+    await open();
+    expect(useAppStore.getState().error).toBe('Pick a dataset first.');
+  });
+
   it('says a scene is gone from the catalog', async () => {
     link = () => json({ order: { ...ORDER, inputs: [{ ...ORDER.inputs[0], groups: [['GONE']] }] }, view: VIEW, expires_at: EXPIRES });
     onAddress(`?permalink=${ID}`);

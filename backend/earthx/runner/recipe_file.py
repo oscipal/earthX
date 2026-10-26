@@ -25,7 +25,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
-from earthx.catalog.registry import DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import DatasetRegistry, RetiredDatasetError, UnknownDatasetError
 from earthx.processing import failure_kind
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY as OPERATORS
@@ -87,13 +87,16 @@ def _cloud_provenance(block: Any) -> Provenance:
 def check_hosts(recipe: Recipe, registry: DatasetRegistry = DATASETS) -> tuple[str, ...]:
     """The hosts the recipe reads, sorted, once each address passes against its dataset's ``asset_hosts``.
 
-    :class:`HostRefused` otherwise. A dataset is named only once the registry knows it,
-    so the text never repeats a value of the file.
+    :class:`HostRefused` otherwise. A dataset is named only once the registry knows it
+    or has retired it, so the text never repeats a value of the file.
     """
     hosts: set[str] = set()
     for entry in recipe.inputs:
         try:
             config = registry.get(entry.dataset)
+        except RetiredDatasetError as error:
+            # Before any request: the retired record is the platform's own text (adr/0017).
+            raise HostRefused(error.retired.message) from None
         except UnknownDatasetError:
             raise HostRefused("a dataset of the recipe is not known to this runner") from None
         try:

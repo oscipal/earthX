@@ -250,13 +250,13 @@ describe('combineAnswers ("Load more", M3-10b)', () => {
     const first = {
       ignoredFilters: ['datetime'],
       ignoredFiltersByCollection: { dem: ['datetime'] },
-      incompleteCollections: [{ collection: 'eopf', reason: 'timeout' }],
+      incompleteCollections: [{ collection: 'zarr-source', reason: 'timeout' }],
     };
     const next = {
       ignoredFilters: ['other'],
       ignoredFiltersByCollection: { dem: ['other'], later: ['datetime'] },
       incompleteCollections: [
-        { collection: 'eopf', reason: 'unreachable' },
+        { collection: 'zarr-source', reason: 'unreachable' },
         { collection: 'optical', reason: 'upstream_error' },
       ],
     };
@@ -264,7 +264,7 @@ describe('combineAnswers ("Load more", M3-10b)', () => {
       ignoredFilters: ['datetime'],
       ignoredFiltersByCollection: { dem: ['datetime'], later: ['datetime'] },
       incompleteCollections: [
-        { collection: 'eopf', reason: 'timeout' },
+        { collection: 'zarr-source', reason: 'timeout' },
         { collection: 'optical', reason: 'upstream_error' },
       ],
     });

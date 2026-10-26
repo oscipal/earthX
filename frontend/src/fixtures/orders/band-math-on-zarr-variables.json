@@ -5,7 +5,7 @@
       "inputs": [
         {
           "name": "input",
-          "dataset": "sentinel-2-l2a-zarr3",
+          "dataset": "synthetic-zarr",
           "groups": [
             [
               "ITEM_A"

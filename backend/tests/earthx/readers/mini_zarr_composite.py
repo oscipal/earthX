@@ -1,6 +1,6 @@
 """A third synthetic Zarr store: one group, three single-band variables, each a
 distinct constant value — built to show a composite tile in one glance rather
-than to resemble the real EOPF layout the other two stores copy.
+than to resemble the layout the other two stores copy.
 
 Where `mini_zarr.py`'s bands differ by random noise (real but not eyeballable)
 and carry a `time` axis (which itself becomes extra bands, per its own docstring),

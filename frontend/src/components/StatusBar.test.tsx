@@ -57,8 +57,8 @@ const CAPABILITIES = {
 };
 
 const ZARR_LIKE: Collection = {
-  id: 'sentinel-2-l2a-zarr3',
-  title: 'Sentinel-2 L2A (Zarr3)',
+  id: 'synthetic-zarr',
+  title: 'Synthetic Zarr dataset',
   'earthx:capabilities': CAPABILITIES,
   'earthx:viewer': {
     group_by: ['datetime'],
@@ -133,7 +133,7 @@ describe('the hint below a dataset’s lowest released level', () => {
   it('says why the map is empty, naming the level and the dataset', () => {
     const text = hintOf(show(ZARR_LIKE, 5))?.textContent ?? '';
     expect(text).toContain('Zoom in to level 8');
-    expect(text).toContain('Sentinel-2 L2A (Zarr3)');
+    expect(text).toContain('Synthetic Zarr dataset');
     expect(text).toContain('coverage layer');
   });
 

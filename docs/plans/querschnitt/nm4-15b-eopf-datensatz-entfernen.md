@@ -32,3 +32,42 @@
 - Prüfanleitung für Otto (PowerShell 5.1 und Browser): Datensatzwahl ohne EOPF-Eintrag; `catalog-load` endet mit 0 auf bestehender Datenbank; alter Permalink zeigt die Meldung.
 - Alle vier Pflicht-Checks grün; Log-Zeile; Backlog-Punkt 15 als erledigt.
 - Vor „fertig“ ist main geholt.
+
+## 5. Stand der Umsetzung (25.10.2026)
+
+Umgesetzt in einem Draft-PR ([#195](https://github.com/oscipal/earthX/pull/195)). Die Liste der entfernten Dateien mit Grund und die Verweise auf `CLAUDE.md`, `.github/`, `.claude/` und `CODEOWNERS` stehen in der PR-Beschreibung.
+
+### Prüfanleitung für Otto (Windows PowerShell 5.1 und Browser)
+
+Voraussetzung: der Stack läuft (`docker compose up`), der Branch ist ausgecheckt und neu gebaut (`docker compose up --build`).
+
+**A. Datensatzwahl ohne EOPF-Eintrag.**
+
+```powershell
+$c = Invoke-RestMethod http://localhost:8000/stac/collections
+$c.collections | ForEach-Object { $_.id }
+#   (sentinel-2-c1-l2a und cop-dem-glo-30, sonst nichts)
+```
+
+Im Browser `http://localhost:5173`: Die Datensatzwahl der Suchkachel zeigt nur „Sentinel-2 L2A“ und „Copernicus DEM GLO-30“.
+
+**B. `catalog-load` endet mit 0 auf der bestehenden Datenbank.**
+
+```powershell
+docker compose run --rm catalog-load
+$LASTEXITCODE
+#   (0; beim ersten Lauf "collections removed: sentinel-2-l2a-zarr3", beim zweiten "collections removed: none")
+```
+
+**C. Die alte ID wird mit Grund abgewiesen (410).**
+
+```powershell
+try {
+  Invoke-WebRequest "http://localhost:8000/processing/processes/recipe?dataset=sentinel-2-l2a-zarr3" -UseBasicParsing
+} catch { $_.Exception.Response.StatusCode.value__; (New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd() }
+#   (410 und ein Problem-Dokument mit "dataset 'sentinel-2-l2a-zarr3' was retired on 2026-10-25: …; use 'sentinel-2-c1-l2a' instead")
+try { Invoke-WebRequest http://localhost:8000/stac/collections/sentinel-2-l2a-zarr3 -UseBasicParsing } catch { $_.Exception.Response.StatusCode.value__ }
+#   (404, wie jede unbekannte Collection)
+```
+
+**D. Alter Permalink im Browser.** Ein Permalink, der vor dem Umbau mit dem alten Datensatz gespeichert wurde (`?permalink=<id>` an die Adresse des Viewers), öffnet sich als Link weiter (`GET /processing/permalinks/<id>` antwortet `200`); die Oberfläche fragt den Datensatz beim Server nach und zeigt die Fehlerzeile „Dataset retired: dataset 'sentinel-2-l2a-zarr3' was retired on 2026-10-25: …“. Es wird nichts verändert. Ein neuer Permalink für den alten Datensatz lässt sich nicht anlegen (`410`). Fehlt ein alter Permalink, entfällt Schritt D; die Tests `test_a_stored_link_still_opens_because_the_order_is_the_users` (Backend) und `says a dataset that left the catalog has been retired …` (Frontend) belegen das Verhalten.

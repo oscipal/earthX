@@ -374,7 +374,7 @@ def split_asset_href(href: str, *, variable: str | None = None) -> tuple[str, st
       ``…/S2A_….zarr/quality/l2a_quicklook/r10m/tci`` names the array ``tci`` in the
       group ``quality/l2a_quicklook/r10m``.
     * **given one**, the whole path after the store is the group and ``variable`` is
-      used as it stands — the ``sentinel-2-l2a-zarr3`` shape (§3.2 of the M2-09b
+      used as it stands — the shape of the EOPF Zarr products (§3.2 of the M2-09b
       plan): the asset ``SR_10m`` points at the *group*
       ``measurements/reflectance/r10m``, not at one variable inside it, and the
       catalogue's ``ZarrInfo.variable_separator`` is what splits a tile URL's asset
@@ -417,7 +417,7 @@ def split_asset_key(asset_key: str, separator: str | None) -> tuple[str, str | N
     :func:`split_asset_href` reads it without one (M2-09a).
 
     **With one**, ``asset_key`` is ``"<item asset key><separator><variable>"`` —
-    measured for ``sentinel-2-l2a-zarr3`` (plan §10 F2): a key ``"SR_10m:b04"`` with
+    measured at the EOPF Zarr products (plan §10 F2): a key ``"SR_10m:b04"`` with
     separator ``":"`` names the item asset ``SR_10m`` and, inside the group its href
     points at, the variable ``b04``.
     """

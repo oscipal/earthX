@@ -4,7 +4,8 @@
     PYTHONPATH=backend python scripts/write-process-fixtures.py          write the files
     PYTHONPATH=backend python scripts/write-process-fixtures.py --check  fail if a file is stale
 
-One file per dataset in ``frontend/src/fixtures/processes/<dataset>.json``: the answer of
+One file per dataset of the registry, and one for the synthetic Zarr test entry (the registry has no Zarr dataset since
+adr/0017), in ``frontend/src/fixtures/processes/<dataset>.json``: the answer of
 ``GET /processing/processes/recipe?dataset=<dataset>`` with the real operators. The frontend
 tests build the panel from exactly these files, and ``backend/tests/earthx/api/test_process_fixtures.py``
 fails when a file differs from what the API says now, so a changed parameter model cannot leave the
@@ -18,14 +19,14 @@ import sys
 from pathlib import Path
 
 from earthx.api.processing_docs import process_description
-from earthx.catalog.datasets import REGISTRY as DATASETS
 from earthx.processing.operators import REGISTRY as OPERATORS
+from tests.catalog.synthetic_zarr import TEST_ENTRIES as DATASETS
 
 DIRECTORY = Path(__file__).resolve().parent.parent / "frontend" / "src" / "fixtures" / "processes"
 
 
 def fixtures() -> dict[str, str]:
-    """File name -> text, for every dataset of the registry."""
+    """File name -> text, for every dataset of the registry and the synthetic Zarr test entry."""
     return {
         f"{config.dataset_id}.json": json.dumps(
             process_description("", OPERATORS, config), indent=2, sort_keys=True, ensure_ascii=False

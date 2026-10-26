@@ -214,11 +214,12 @@ class TestTheDayOfAcquisition:
 
         assert acquisition_day({"id": "x"}, self.S2) is None
 
-    def test_the_registry_has_a_day_for_the_two_sentinel_datasets_and_none_for_the_dem(self) -> None:
-        from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A_ZARR3
+    def test_the_sentinel_2_and_the_zarr_entry_have_a_day_and_the_dem_none(self) -> None:
+        from earthx.catalog.datasets import COP_DEM_GLO_30
+        from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
         assert ACQ in SENTINEL_2_L2A.viewer.results_group_by  # type: ignore[union-attr]
-        assert ACQ in SENTINEL_2_L2A_ZARR3.viewer.results_group_by  # type: ignore[union-attr]
+        assert ACQ in SYNTHETIC_ZARR.viewer.results_group_by  # type: ignore[union-attr]
         assert ACQ not in COP_DEM_GLO_30.viewer.results_group_by  # type: ignore[union-attr]
 
 

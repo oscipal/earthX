@@ -9,7 +9,7 @@ The acceptance criteria of M2-09a, in the order the task names them:
 
 The store is the one `mini_zarr.py` writes, the transport is the one
 `conftest.py` puts inside the gateway, and ``tests/conftest.py`` forbids a socket
-throughout: nothing here touches EOPF or any other source.
+throughout: nothing here touches any source.
 """
 
 from __future__ import annotations
@@ -353,7 +353,7 @@ class TestTheDefinedErrors:
 
 class TestGroupAddressing:
     """M2-09b-2, plan §10 F2: a Zarr asset whose href names a *group*, not a
-    variable — the sentinel-2-l2a-zarr3 shape (§3.2), where the tile URL's asset
+    variable — the shape of a Zarr dataset with groups (§3.2), where the tile URL's asset
     key carries the variable after the registry's ``ZarrInfo.variable_separator``.
     """
 

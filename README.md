@@ -73,12 +73,15 @@ erste Quelle ganz ohne Such-API:
 - **Sentinel-2 L2A** (`sentinel-2-c1-l2a`), Earth Search v1 (Element 84),
   Format **COG**, föderierte Suche. Zoomstufen z0–z19, Quicklooks direkt vom
   Asset-Host (kein Proxy, D14).
-- **Sentinel-2 L2A (Zarr3)** (`sentinel-2-l2a-zarr3`), EOPF Sentinel Zarr
+- **Sentinel-2 L2A (Zarr3)**, EOPF Sentinel Zarr
   Samples Service (EODC), Format **Zarr** (v3), föderierte Suche. Zoomstufen
   z8–z14; die Quelle führt selbst den Status „staging“ (in Registry und
   Oberfläche sichtbar) und keinen Quicklook. Die Abnahme hängt nicht am
   Fortbestand dieser Quelle: Der Zarr-Lesepfad ist zusätzlich gegen ein
   synthetisches Mini-Zarr getestet, ohne jeden Netzzugriff (D24).
+  **Seit dem 25.10.2026 nicht mehr im Katalog** (`docs/adr/0017-ein-sentinel-2-datensatz.md`):
+  Seine ID antwortet mit `410 Gone`; der Zarr-Lesepfad bleibt und wird auf
+  synthetischen Stores getestet.
 - **Copernicus DEM GLO-30** (`cop-dem-glo-30`), direkt aus dem AWS-Open-Data-Bucket,
   Format **COG**, **ohne Such-API**: Die 26 450 Items erzeugt ein Einmal-Befehl
   aus der Kachelliste des Buckets und schreibt sie in den eigenen Katalog
@@ -223,8 +226,7 @@ grafisch anzeigt — er läuft selbst **nicht** in diesem Repo, sondern separat
    ```
 2. Im Browser **`http://localhost:8080`** öffnen.
 3. Es erscheint die Landing Page des Katalogs mit den Collections:
-   **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, COG), **Sentinel-2 L2A
-   (Zarr3)** (`sentinel-2-l2a-zarr3`, Zarr) und **Copernicus DEM GLO-30**
+   **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, COG) und **Copernicus DEM GLO-30**
    (`cop-dem-glo-30`, COG; Items erst nach dem Schritt unten). Auf eine Collection klicken
    zeigt ihre Beschreibung und Lizenz; **„Items"** öffnet die Suche und
    zeigt Treffer aus der jeweiligen Quelle, durch den eigenen Katalog
@@ -235,9 +237,8 @@ grafisch anzeigt — er läuft selbst **nicht** in diesem Repo, sondern separat
 
 Ohne einen separaten Browser lässt sich die API auch direkt ansehen:
 `http://localhost:8000/stac` liefert die Landing Page als JSON,
-`http://localhost:8000/stac/collections/sentinel-2-c1-l2a/items`,
-`.../collections/sentinel-2-l2a-zarr3/items` bzw. `.../collections/cop-dem-glo-30/items`
-je eine Trefferliste (JSON in
+`http://localhost:8000/stac/collections/sentinel-2-c1-l2a/items` bzw.
+`.../collections/cop-dem-glo-30/items` je eine Trefferliste (JSON in
 einem Browser-Tab ist weniger übersichtlich als ein STAC-Browser, aber ohne
 einen zweiten Container zu prüfen).
 
@@ -338,8 +339,7 @@ vom Backend, damit er im Entwicklungsmodus schnell neu lädt:
    Rechteck, Polygon), eine Datei hochladen oder einen Ort suchen, oder einen
    Szenennamen eingeben (M2-17), suchen. Das Dropdown über der Trefferliste
    wählt den Datensatz, dessen Treffer die Karte zeigt; „Load more" lädt
-   weitere Seiten. Für `sentinel-2-l2a-zarr3` zeigt die Oberfläche den
-   Status „staging" sichtbar an (D23-Auflage); der DEM hat keine Zeitachse
+   weitere Seiten. Der DEM hat keine Zeitachse
    und erscheint bei jedem Zeitraum.
 5. In „Layers" die Coverage-Heatmap einschalten (standardmäßig aus, D26) —
    das ist die einzige Stelle, an der ihre Qualität außerhalb dieser
@@ -580,22 +580,19 @@ lokale Änderungen, also nur auf sauberem Stand.
 ## 3. Attribution
 
 - **Sentinel-2 L2A** (`sentinel-2-c1-l2a`, Earth Search v1 / Registry of Open
-  Data on AWS, Format COG) **und Sentinel-2 L2A (Zarr3)**
-  (`sentinel-2-l2a-zarr3`, EOPF Sentinel Zarr Samples Service / EODC, Format
-  Zarr): beide Copernicus-Sentinel-Daten, derselbe Text. Bei Weitergabe
+  Data on AWS, Format COG): Copernicus-Sentinel-Daten. Bei Weitergabe
   **veränderter** Daten: „Contains modified Copernicus Sentinel data [Jahr]",
   bei unveränderten: „Copernicus Sentinel data [Jahr]"
-  (`docs/adr/0003-erster-datensatz.md` §11.2, für den zweiten Datensatz
-  identisch übernommen, D18/`docs/adr/0007-zweites-format-zarr.md` §12.6).
+  (`docs/adr/0003-erster-datensatz.md` §11.2).
   Nutzung unterliegt zusätzlich dem
   [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)
-  (kein Gewährleistungsversprechen, Anspruchsverzicht des Nutzers). Beide
-  Zitierangaben (`cite-as` der jeweiligen Quell-Collection):
-  Sentinel-2 L2A [doi.org/10.5270/S2_-742ikth](https://doi.org/10.5270/S2_-742ikth),
-  Sentinel-2 L2A (Zarr3) [doi.org/10.5270/S2_-znk9xsj](https://doi.org/10.5270/S2_-znk9xsj).
-  Die Zarr3-Quelle führt selbst den Status „staging" und kann ohne
-  Vorankündigung verschwinden (adr/0007 §12.11 Punkt 14) — die Abnahme von M2
-  hängt davon nicht ab (D24).
+  (kein Gewährleistungsversprechen, Anspruchsverzicht des Nutzers). Zitierangabe
+  (`cite-as` der Quell-Collection):
+  Sentinel-2 L2A [doi.org/10.5270/S2_-742ikth](https://doi.org/10.5270/S2_-742ikth).
+  Der ausgeschiedene Zarr-Datensatz (Sentinel-2 L2A (Zarr3),
+  [doi.org/10.5270/S2_-znk9xsj](https://doi.org/10.5270/S2_-znk9xsj)) behält
+  Attribution, Nutzungsbedingungen und Zitat in den Dateien fertiger Jobs, bis
+  diese ablaufen (`catalog/datasets.py`, `docs/adr/0017-ein-sentinel-2-datensatz.md` Regel III).
 - **Copernicus DEM GLO-30** (`cop-dem-glo-30`, direkt aus dem AWS-Open-Data-Bucket,
   Format COG; **M3-11b**, muss vor der ersten Anzeige erst über
   `docker compose run --rm materialize cop-dem-glo-30` geladen werden, siehe

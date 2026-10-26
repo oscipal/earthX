@@ -41,17 +41,21 @@ from earthx.gateway import Gateway, Policy, UpstreamError
 from earthx.processing.operators import OperatorRegistry, Tier
 from earthx.processing.plan import export_outputs
 from earthx.processing.recipe import cache_key, recipe_from_data, recipe_hash
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, registry_with_zarr
 from tests.conftest import own_log_text
 from tests.earthx.processing.testops import OPERATORS, SCALE
 
 pytestmark = pytest.mark.anyio
 
 S2 = REGISTRY.get("sentinel-2-c1-l2a")
-EOPF = REGISTRY.get("sentinel-2-l2a-zarr3")
+ZARR = SYNTHETIC_ZARR
+ZARR_ID = ZARR.dataset_id
 DEM = REGISTRY.get("cop-dem-glo-30")
 
+INTAKE_REGISTRY = registry_with_zarr()
+
 S2_HOST = S2.source.asset_hosts[0]
-EOPF_HOST = EOPF.source.asset_hosts[0]
+ZARR_HOST = ZARR.source.asset_hosts[0]
 DEM_HOST = DEM.source.asset_hosts[0]
 
 #: A small synthetic square, inside the footprints below.
@@ -100,8 +104,8 @@ def s2_item(item_id: str = "S2_A", bbox: tuple[float, float, float, float] = NEA
     }
 
 
-def eopf_item(item_id: str = "EOPF_A", bbox: tuple[float, float, float, float] = NEAR) -> dict[str, Any]:
-    """STAC 1.1 as the EOPF adapter normalises it: one unnamed ``raster:bands`` entry, no scaling, no checksum."""
+def zarr_item(item_id: str = "ZARR_A", bbox: tuple[float, float, float, float] = NEAR) -> dict[str, Any]:
+    """STAC 1.1 as a Zarr source serves it: one unnamed ``raster:bands`` entry, no scaling, no checksum."""
     return {
         "type": "Feature",
         "stac_version": "1.1.0",
@@ -115,7 +119,7 @@ def eopf_item(item_id: str = "EOPF_A", bbox: tuple[float, float, float, float] =
         },
         "assets": {
             "SR_10m": {
-                "href": f"https://{EOPF_HOST}/zarr/{item_id}/measurements/r10m",
+                "href": f"https://{ZARR_HOST}/zarr/{item_id}/measurements/r10m",
                 "gsd": 10,
                 "raster:bands": [{"nodata": 0, "data_type": "uint16", "spatial_resolution": 10}],
                 "eo:bands": [{"name": "b04"}, {"name": "b08"}],
@@ -160,7 +164,7 @@ class Source:
         try:
             return copy.deepcopy(self.items[(dataset, item_id)])
         except KeyError:
-            if REGISTRY.get(dataset).source.item_holding.value == "materialized":
+            if INTAKE_REGISTRY.get(dataset).source.item_holding.value == "materialized":
                 raise MaterializedItemNotFound(item_id) from None
             raise UpstreamError(404, "not found") from None
 
@@ -182,7 +186,7 @@ def gateway_for(heads: Heads) -> Gateway:
         return None
 
     return Gateway(
-        Policy(allowed_hosts=frozenset({S2_HOST, EOPF_HOST, DEM_HOST, "cdn.example.org"})),
+        Policy(allowed_hosts=frozenset({S2_HOST, ZARR_HOST, DEM_HOST, "cdn.example.org"})),
         transport=httpx.MockTransport(heads),
         resolve=lambda host, port: ("93.184.216.34",),
         sleep=no_wait,
@@ -211,7 +215,7 @@ async def accept(
     source: Source,
     heads: Heads | None = None,
     *,
-    registry: DatasetRegistry = REGISTRY,
+    registry: DatasetRegistry = INTAKE_REGISTRY,
     operators: OperatorRegistry = OPERATORS,
     aoi_provenance: dict[str, str] | None = None,
 ):
@@ -285,14 +289,12 @@ class TestEarthSearchSentinel2:
         assert accepted.recipe.inputs[0].resolved[0].scaling == "item"
 
 
-class TestEopfZarr:
+class TestZarr:
     KEY = "SR_10m:b04,b08"
 
     async def test_updated_is_the_version_and_the_store_decides_the_scaling(self) -> None:
         heads = Heads()
-        accepted = await accept(
-            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), (self.KEY,)), Source((EOPF, eopf_item())), heads
-        )
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), (self.KEY,)), Source((ZARR, zarr_item())), heads)
         resolved = accepted.recipe.inputs[0].resolved[0]
         assert resolved.version is not None
         assert (resolved.version.kind, resolved.version.value) == ("updated", "2026-06-03T00:00:00Z")
@@ -306,29 +308,27 @@ class TestEopfZarr:
         assert accepted.cacheable
 
     async def test_named_band_entries_are_matched_by_name(self) -> None:
-        item = eopf_item()
+        item = zarr_item()
         item["assets"]["SR_10m"].pop("raster:bands")
         item["assets"]["SR_10m"]["bands"] = [
             {"name": "b04", "raster:scale": 0.0001, "raster:offset": -0.1, "data_type": "uint16", "nodata": 0},
             {"name": "b08", "raster:scale": 0.0002, "raster:offset": 0.0, "data_type": "uint16", "nodata": 0},
         ]
-        accepted = await accept(
-            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b08,b04",)), Source((EOPF, item))
-        )
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b08,b04",)), Source((ZARR, item)))
         resolved = accepted.recipe.inputs[0].resolved[0]
         assert [band.scale for band in resolved.bands] == [0.0002, 0.0001]
         assert resolved.scaling == "item"
 
     async def test_two_unnamed_entries_for_other_variables_describe_nothing(self) -> None:
-        item = eopf_item()
+        item = zarr_item()
         item["assets"]["SR_10m"]["raster:bands"] = [{"data_type": "uint16"}, {"data_type": "uint8"}]
-        accepted = await accept(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), (self.KEY,)), Source((EOPF, item)))
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), (self.KEY,)), Source((ZARR, item)))
         resolved = accepted.recipe.inputs[0].resolved[0]
         assert [(band.data_type, band.scale) for band in resolved.bands] == [(None, None), (None, None)]
         assert resolved.scaling == "store-cf"
 
     async def test_a_group_key_without_a_variable_is_the_callers_mistake(self) -> None:
-        error = await refused(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m",)), Source((EOPF, eopf_item())))
+        error = await refused(order(ZARR_ID, (("ZARR_A",),), ("SR_10m",)), Source((ZARR, zarr_item())))
         assert error.status_code == 422
 
 
@@ -505,27 +505,21 @@ class TestUnits:
         assert {resolved.unit for resolved in accepted.recipe.inputs[0].resolved} == {None}
 
     async def test_a_zarr_variable_has_its_own_unit_by_key(self) -> None:
-        accepted = await accept(
-            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04,b08",)), Source((EOPF, eopf_item()))
-        )
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04,b08",)), Source((ZARR, zarr_item())))
         assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "1"]
 
     async def test_a_named_item_unit_is_matched_by_variable_name(self) -> None:
-        item = eopf_item()
+        item = zarr_item()
         item["assets"]["SR_10m"].pop("raster:bands")
         item["assets"]["SR_10m"]["bands"] = [{"name": "b04", "unit": "percent"}, {"name": "b08"}]
-        accepted = await accept(
-            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b08,b04",)), Source((EOPF, item))
-        )
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b08,b04",)), Source((ZARR, item)))
         assert [band.unit for band in accepted.recipe.inputs[0].resolved[0].bands] == ["1", "percent"]
 
     async def test_a_variable_the_item_does_not_describe_has_the_registrys_unit_alone(self) -> None:
-        item = eopf_item()
+        item = zarr_item()
         item["assets"]["SR_10m"].pop("raster:bands")
         item["assets"]["SR_10m"]["bands"] = [{"name": "b04", "unit": "percent"}]
-        accepted = await accept(
-            order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04,b08",)), Source((EOPF, item))
-        )
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04,b08",)), Source((ZARR, item)))
         first, second = accepted.recipe.inputs[0].resolved[0].bands
         assert (first.unit, second.unit) == ("percent", "1")
         assert (second.data_type, second.scale) == (None, None)
@@ -567,7 +561,7 @@ class TestHosts:
     @pytest.mark.parametrize(
         "href",
         [
-            f"https://{EOPF_HOST}/tiles/x/B04.tif",  # another dataset's host
+            f"https://{ZARR_HOST}/tiles/x/B04.tif",  # another dataset's host
             f"https://evil-{S2_HOST}/tiles/x/B04.tif",  # a name that merely ends alike
             f"https://{S2_HOST}.evil.example/tiles/x/B04.tif",
             f"http://{S2_HOST}/tiles/x/B04.tif",
@@ -623,7 +617,7 @@ class TestHosts:
     async def test_a_recipe_for_a_dataset_the_registry_lacks_is_refused(self) -> None:
         accepted = await accept(order(), Source((S2, s2_item())))
         with pytest.raises(OrderRefused) as error:
-            check_recipe_hosts(accepted.recipe, DatasetRegistry((EOPF,)))
+            check_recipe_hosts(accepted.recipe, DatasetRegistry((ZARR,)))
         assert error.value.status_code == 400
 
     @pytest.mark.parametrize("key", ["resolved", "recipe_id"])
@@ -853,7 +847,7 @@ class TestStages:
         no_math = replace(S2, capabilities=replace(S2.capabilities, band_math=False))
         display = replace(S2, license=replace(S2.license, tier=LicenseTier.DISPLAY))
         foreign = s2_item()
-        foreign["assets"]["red"]["href"] = f"https://{EOPF_HOST}/x.tif"
+        foreign["assets"]["red"]["href"] = f"https://{ZARR_HOST}/x.tif"
         odd_bands = s2_item()
         odd_bands["assets"]["red"]["raster:bands"] = {"scale": 2}
         long_crs = s2_item()
@@ -924,9 +918,9 @@ class TestMalformedItems:
         item["assets"]["red"]["file:checksum"] = "x" * 300
         error = await refused(order(assets=("red",)), Source((S2, item)))
         assert error.status_code == 502
-        eopf = eopf_item()
-        eopf["properties"]["updated"] = "y" * 300
-        error = await refused(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04",)), Source((EOPF, eopf)))
+        zarr = zarr_item()
+        zarr["properties"]["updated"] = "y" * 300
+        error = await refused(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04",)), Source((ZARR, zarr)))
         assert error.status_code == 502
 
     @pytest.mark.parametrize(
@@ -947,13 +941,13 @@ class TestMalformedItems:
         assert "raster:bands" in error.detail
 
     async def test_two_bands_with_one_name(self) -> None:
-        item = eopf_item()
+        item = zarr_item()
         item["assets"]["SR_10m"].pop("raster:bands")
         item["assets"]["SR_10m"]["bands"] = [
             {"name": "b04", "raster:scale": 0.1},
             {"name": "b04", "raster:scale": 0.2},
         ]
-        error = await refused(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04",)), Source((EOPF, item)))
+        error = await refused(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04",)), Source((ZARR, item)))
         assert error.status_code == 502
         assert "share a name" in error.detail
 
@@ -994,9 +988,9 @@ class TestIdentifiers:
         assert recipe_hash(first.recipe) == recipe_hash(second.recipe)
 
     async def test_a_recipe_without_a_version_for_an_input_is_not_cacheable(self) -> None:
-        item = eopf_item()
+        item = zarr_item()
         item["properties"].pop("updated")
-        accepted = await accept(order("sentinel-2-l2a-zarr3", (("EOPF_A",),), ("SR_10m:b04",)), Source((EOPF, item)))
+        accepted = await accept(order(ZARR_ID, (("ZARR_A",),), ("SR_10m:b04",)), Source((ZARR, item)))
         assert accepted.recipe.inputs[0].resolved[0].version is None
         assert not accepted.cacheable
 
@@ -1063,7 +1057,7 @@ class TestEstimateOrder:
     @staticmethod
     async def estimate(document: dict[str, Any] | str | bytes, source: Source, **kw: Any):
         raw = document if isinstance(document, (str, bytes)) else json.dumps(document)
-        kw.setdefault("registry", REGISTRY)
+        kw.setdefault("registry", INTAKE_REGISTRY)
         kw.setdefault("operators", OPERATORS)
         return await estimate_order(raw, item_source=source, **kw)
 
@@ -1159,8 +1153,8 @@ class TestCropRecipeJson:
         document = crop(DEM, [[dem_item()]], ["data"])
         assert document["inputs"][0]["resolved"][0]["version"] is None
 
-    def test_eopf_carries_updated(self) -> None:
-        document = crop(EOPF, [[eopf_item()]], ["SR_10m:b04"])
+    def test_zarr_carries_updated(self) -> None:
+        document = crop(ZARR, [[zarr_item()]], ["SR_10m:b04"])
         assert document["inputs"][0]["resolved"][0]["version"]["kind"] == "updated"
 
     def test_two_groups_keep_their_shape(self) -> None:
@@ -1289,8 +1283,8 @@ class TestAnExport:
         assert error.status_code == 422 and "native resolution" in error.detail
 
     async def test_a_zarr_dataset_is_refused_before_any_item_is_fetched(self) -> None:
-        source = Source((EOPF, eopf_item()))
-        document = order(dataset=EOPF.dataset_id, groups=(("EOPF_A",),), assets=("SR_10m:b04",), steps=[], output=CROP)
+        source = Source((ZARR, zarr_item()))
+        document = order(dataset=ZARR_ID, groups=(("ZARR_A",),), assets=("SR_10m:b04",), steps=[], output=CROP)
         error = await refused(document, source)
         assert error.status_code == 422 and "COG assets only" in error.detail
         assert source.calls == []

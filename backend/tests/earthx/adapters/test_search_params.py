@@ -95,8 +95,8 @@ def _convex_ring(n: int, *, cx: float = 10.0, cy: float = 49.0, r: float = 1.0) 
 
 
 class TestIntersects:
-    """M3-08: measured against Earth Search and the EOPF STAC API in the plan step
-    (M3-08 plan §2.1, §2.2) — what both sources take without a word (a latitude of
+    """M3-08: measured against Earth Search in the plan step
+    (M3-08 plan §2.1, §2.2) — what the source takes without a word (a latitude of
     999, a self-intersecting ring) is refused here instead."""
 
     def test_a_point_passes(self) -> None:

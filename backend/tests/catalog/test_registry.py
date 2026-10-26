@@ -164,10 +164,12 @@ class TestCoverage:
         with pytest.raises(ConfigError, match="extent"):
             vary(capabilities=capabilities)
 
-    def test_a_one_off_product_may_use_a_sample(self, valid_config, vary) -> None:
+    def test_a_one_off_product_may_use_local_sql(self, valid_config, vary) -> None:
         capabilities = replace(valid_config.capabilities, single_coverage_product=True)
-        coverage = replace(valid_config.coverage, provider=CoverageProvider.SAMPLE)
-        assert vary(capabilities=capabilities, coverage=coverage).coverage.provider is CoverageProvider.SAMPLE
+        coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+        source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+        entry = vary(capabilities=capabilities, coverage=coverage, source=source)
+        assert entry.coverage.provider is CoverageProvider.LOCAL_SQL
 
     def test_a_footprint_of_zero_is_rejected(self, valid_config, vary) -> None:
         coverage = replace(valid_config.coverage, typical_footprint_km=0.0)

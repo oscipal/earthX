@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -20,32 +20,41 @@ import httpx
 import psycopg
 import pytest
 
-from earthx.api.main import app
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.api.main import build_app
+from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.load import main as load_catalog
+from earthx.catalog.pgstac import load_collection, use_pgstac_search_path
 from earthx.gateway import Gateway, Policy
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, registry_with_zarr
 from tests.conftest import format_without_timestamp
 
 pytestmark = pytest.mark.anyio
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "earth_search"
-EOPF_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "eopf_stac"
 HOST = "earth-search.aws.element84.com"
-EOPF_HOST = "stac.core.eopf.eodc.eu"
+ZARR_HOST = "stac.example.invalid"
 POLICY = Policy(allowed_hosts=frozenset({HOST}))
 # M3-13: the two-federated-sources tests below now reach both collections at once
 # (a mixed search, no longer rejected), so their own policy allows both hosts.
-MIXED_POLICY = Policy(allowed_hosts=frozenset({HOST, EOPF_HOST}))
+MIXED_POLICY = Policy(allowed_hosts=frozenset({HOST, ZARR_HOST}))
 DATASET_ID = SENTINEL_2_L2A.dataset_id
-ZARR3_DATASET_ID = SENTINEL_2_L2A_ZARR3.dataset_id
+ZARR_DATASET_ID = SYNTHETIC_ZARR.dataset_id
+
+# The registry and the synthetic Zarr entry: a second federated collection on another endpoint.
+app = build_app(registry_with_zarr())
 
 
 def load_fixture(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def load_eopf_fixture(name: str) -> dict[str, Any]:
-    return json.loads((EOPF_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+def load_zarr_fixture(name: str) -> dict[str, Any]:
+    """An Earth Search answer as the second source would give it: its own collection, its own item ids."""
+    page = load_fixture(name)
+    for feature in page["features"]:
+        feature["id"] = f"ZARR_{feature['id']}"
+        feature["collection"] = SYNTHETIC_ZARR.source.source_collection_id
+    return page
 
 
 def body_of(request: httpx.Request) -> dict[str, Any]:
@@ -57,15 +66,21 @@ def _public(host: str, port: int) -> tuple[str, ...]:
 
 
 @pytest.fixture
-def require_catalog_loaded(require_postgres_env: None) -> None:
+def require_catalog_loaded(require_postgres_env: None) -> Iterator[None]:
     code = load_catalog()
     assert code == 0
+    with psycopg.connect(autocommit=True) as conn:
+        load_collection(conn, SYNTHETIC_ZARR)
     # The search cache pool commits (autocommit=True, dependencies.cache_pool), so
     # rows outlive one test — and the app's own PG* environment. A row an earlier
     # run of this same file left behind would answer a later test without ever
     # reaching the mocked transport, well within its five-minute open-edge TTL.
     with psycopg.connect(autocommit=True) as conn:
         conn.execute("DELETE FROM public.earthx_search_cache")
+    yield
+    with psycopg.connect(autocommit=True) as conn:
+        use_pgstac_search_path(conn)
+        conn.execute("SELECT pgstac.delete_collection(%s)", (ZARR_DATASET_ID,))
 
 
 @asynccontextmanager
@@ -302,22 +317,22 @@ class TestFederatedSearch:
         """adr/0005 rule I says a search without ``collections`` is split per
         collection and merged; before M3-13 that promise stopped at a ``400``
         the moment more than one source was actually involved (M2-09b plan §10
-        F3). ``require_catalog_loaded`` writes all three registry collections
-        (Earth Search, EOPF, the DEM), so a search naming none now reaches every
+        F3). ``require_catalog_loaded`` writes all three collections
+        (Earth Search, a Zarr dataset, the DEM), so a search naming none now reaches every
         one of them at once — the DEM's own pgstac group answers empty (nothing
         has materialized it in this test), both federated hosts are asked, and
         the whole thing is a plain ``200``."""
         handler, seen = _answering_by_host(
             {
                 HOST: httpx.Response(200, json=load_fixture("search_empty")),
-                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_empty")),
+                ZARR_HOST: httpx.Response(200, json=load_fixture("search_empty")),
             }
         )
         async with _client(handler, policy=MIXED_POLICY) as client:
             response = await client.get("/stac/search")
         assert response.status_code == 200
         assert response.json()["features"] == []
-        assert {request.headers["host"] for request in seen} == {HOST, EOPF_HOST}
+        assert {request.headers["host"] for request in seen} == {HOST, ZARR_HOST}
 
     async def test_naming_both_federated_collections_answers_a_merged_page(
         self, require_catalog_loaded: None
@@ -328,33 +343,33 @@ class TestFederatedSearch:
         handler, seen = _answering_by_host(
             {
                 HOST: httpx.Response(200, json=load_fixture("search_page_1")),
-                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_page_1")),
+                ZARR_HOST: httpx.Response(200, json=load_zarr_fixture("search_page_1")),
             }
         )
         async with _client(handler, policy=MIXED_POLICY) as client:
             response = await client.get(
-                "/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}", "limit": 10}
+                "/stac/search", params={"collections": f"{DATASET_ID},{ZARR_DATASET_ID}", "limit": 10}
             )
         assert response.status_code == 200
         body = response.json()
         assert len(body["features"]) == 4
-        assert {item["collection"] for item in body["features"]} == {DATASET_ID, ZARR3_DATASET_ID}
-        assert {request.headers["host"] for request in seen} == {HOST, EOPF_HOST}
+        assert {item["collection"] for item in body["features"]} == {DATASET_ID, ZARR_DATASET_ID}
+        assert {request.headers["host"] for request in seen} == {HOST, ZARR_HOST}
 
     async def test_a_mixed_page_never_claims_a_total_it_cannot_check(self, require_catalog_loaded: None) -> None:
         """Earth Search's own fixture here carries a checked ``numberMatched``
-        (3) and EOPF never sends one at all (adr/0007 §12.6) — a mixed page must
+        (3) and the other source sends none at all (adr/0007 §12.6) — a mixed page must
         not guess a combined total from the two, so it carries none (plan §4.2),
         the same rule a single federated page already followed for a source with
         no checked total of its own."""
         handler, _ = _answering_by_host(
             {
                 HOST: httpx.Response(200, json=load_fixture("search_page_1")),
-                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_page_1")),
+                ZARR_HOST: httpx.Response(200, json=load_zarr_fixture("search_no_count")),
             }
         )
         async with _client(handler, policy=MIXED_POLICY) as client:
-            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}"})
+            response = await client.get("/stac/search", params={"collections": f"{DATASET_ID},{ZARR_DATASET_ID}"})
         assert "numberMatched" not in response.json()
 
     async def test_the_next_link_carries_our_own_marker_not_the_sources(
@@ -415,7 +430,7 @@ class TestFederatedSearch:
         assert seen[0].headers["host"] == HOST
 
     async def test_numbermatched_is_left_out_when_the_source_has_no_count(self, require_catalog_loaded: None) -> None:
-        """adr/0007 §12.6: EOPF never sends one. Left out, not guessed from the page
+        """adr/0007 §12.6: a source may send none. Left out, not guessed from the page
         size — `numberMatched` must not look like a checked total that happens to
         equal how many items came back."""
         handler, _ = _answering(httpx.Response(200, json=load_fixture("search_no_count")))
@@ -427,9 +442,8 @@ class TestFederatedSearch:
     async def test_each_item_carries_its_own_links_not_the_sources(self, require_catalog_loaded: None) -> None:
         """The source's own self/parent/root/collection links must not survive
         inside a search or item_collection answer — the same rewrite `get_item`
-        already does for a single item (M2-09b, found against the real EOPF
-        source; the gap is the same for Earth Search, its synthetic search
-        fixtures just never carried per-item links before)."""
+        already does for a single item (M2-09b); the synthetic search fixtures
+        just never carried per-item links before."""
         handler, _ = _answering(httpx.Response(200, json=load_fixture("search_no_count")))
         async with _client(handler) as client:
             response = await client.get(f"/stac/collections/{DATASET_ID}/items")
@@ -488,7 +502,7 @@ class TestAnUnreadableAnswerOfOneFederatedSource:
     not catch `UpstreamShapeError`. Like every other disagreement of the source it is
     a `502` now, with a fixed text — what the source wrote does not travel on."""
 
-    @pytest.mark.parametrize("dataset_id", [DATASET_ID, ZARR3_DATASET_ID])
+    @pytest.mark.parametrize("dataset_id", [DATASET_ID, ZARR_DATASET_ID])
     @pytest.mark.parametrize("answer", list(_UNREADABLE_ANSWERS))
     @pytest.mark.parametrize("route", ["get_search", "post_search", "item_collection"])
     async def test_is_502_with_nothing_the_source_wrote(
@@ -512,12 +526,12 @@ class TestAnUnreadableAnswerOfOneFederatedSource:
         handler, _ = _answering_by_host(
             {
                 HOST: httpx.Response(200, json=[SOURCE_TEXT]),
-                EOPF_HOST: httpx.Response(200, json=load_eopf_fixture("search_page_1")),
+                ZARR_HOST: httpx.Response(200, json=load_zarr_fixture("search_page_1")),
             }
         )
         async with _client(handler, policy=MIXED_POLICY) as client:
             response = await client.get(
-                "/stac/search", params={"collections": f"{DATASET_ID},{ZARR3_DATASET_ID}", "limit": 10}
+                "/stac/search", params={"collections": f"{DATASET_ID},{ZARR_DATASET_ID}", "limit": 10}
             )
         assert response.status_code == 200
         body = response.json()

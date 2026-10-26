@@ -182,7 +182,7 @@ class TestAssetBytesPerPixel:
         item = item_with(**{"raster:bands": [{"data_type": "uint8"}] * 3})
         assert dl._asset_bytes_per_pixel(item, "visual") == 3
 
-    def test_bands_is_the_fallback_key_earth_search_and_eopf_both_use(self) -> None:
+    def test_bands_is_the_fallback_key_earth_search_and_zarr_items_both_use(self) -> None:
         item = item_with(asset="red", **{"bands": [{"data_type": "uint16"}]})
         assert dl._asset_bytes_per_pixel(item, "red") == 2
 
@@ -192,8 +192,7 @@ class TestAssetBytesPerPixel:
 
     def test_a_zarr_composite_key_is_counted_by_its_own_variables(self) -> None:
         """adr/0007 §12.11: `SR_10m:b04,b03,b02` names three variables in the key
-        itself, even where — like every real EOPF item measured (plan §3) — the
-        item carries no `raster:bands`/`bands` for it at all."""
+        itself, even where the item carries no `raster:bands`/`bands` for it at all."""
         item = {"id": "i", "bbox": [-1, -1, 1, 1], "assets": {"SR_10m:b04,b03,b02": {}}}
         assert dl._asset_bytes_per_pixel(item, "SR_10m:b04,b03,b02") == 3 * crop_rules.FALLBACK_BYTES_PER_BAND
 

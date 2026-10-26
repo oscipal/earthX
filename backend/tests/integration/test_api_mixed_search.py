@@ -2,8 +2,8 @@
 pgstac (two synthetic materialized collections) with a mocked Earth Search transport
 (adr/0002: no live network in a PR run).
 
-``test_api_federating.py`` already covers two *federated* sources at once (both real
-registry datasets); ``test_api_materialized.py`` covers a lone materialized one. This
+``test_api_federating.py`` already covers two *federated* sources at once (a registry
+dataset and a synthetic Zarr one); ``test_api_materialized.py`` covers a lone materialized one. This
 file is for the general fan-out itself: paging across the boundary, a source that
 fails or times out, the mixed page token's own checks, and the per-source time axis —
 none of which either of those files can show with only one materialized collection or
@@ -141,7 +141,7 @@ def native_b_loaded(require_postgres_env: None) -> None:
 def earth_search_collection_loaded(require_postgres_env: None) -> None:
     """Just the real Earth Search collection — not the whole registry
     (``catalog.load``), so a mixed search here always spans exactly the sources a
-    test asks for, never the EOPF collection this file's policy does not allow."""
+    test asks for, never a collection whose host this file's policy does not allow."""
     with psycopg.connect(autocommit=True) as conn:
         load_collection(conn, SENTINEL_2_L2A)
     # The search cache pool commits (`dependencies.cache_pool`, autocommit=True), so

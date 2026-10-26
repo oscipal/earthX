@@ -152,7 +152,8 @@ export interface ExtraScenes {
 export type Description =
   | { state: 'loading' }
   | { state: 'ready'; info: ProcessInfo }
-  | { state: 'error'; message: string };
+  // `retired`: the server answered `410` for the dataset, with its reason.
+  | { state: 'error'; message: string; retired?: string };
 
 export interface Refusal {
   // The order it refused (canonical JSON); shown only while the draft is
@@ -165,6 +166,11 @@ export interface Refusal {
   // The HTTP status of the refusal (a `413` suggests "AOI only", K2); `null`
   // when there was no answer.
   status: number | null;
+  // `retired`: the order names a dataset the platform no longer carries (a `410`
+  // problem document on the order routes); `reason` is the server's text, shown
+  // as the tooltip of the short message.
+  kind?: 'retired';
+  reason?: string;
 }
 
 export type JobPhase = 'active' | 'successful' | 'failed' | 'dismissed' | 'gone';
@@ -601,8 +607,15 @@ function dropReview(): { reviewing: false } | Record<string, never> {
   return { reviewing: false };
 }
 
+const RETIRED_TEXT = 'Dataset retired';
+
+// Only the order routes (estimate, placing a job) end here. A `410` of a result
+// (`readResults`, `showResultOnMap`) means "expired" and is handled there.
 function refusalOf(error: unknown, key: string, steps: readonly DraftStep[]): Refusal {
   if (error instanceof HttpError) {
+    if (error.status === 410 && error.detail !== undefined) {
+      return { key, message: RETIRED_TEXT, step: null, status: 410, kind: 'retired', reason: error.detail };
+    }
     const text = error.detail ?? error.message;
     const hint = error.status === 503 && !/try again/iu.test(text) ? ' Try again in a moment.' : '';
     return { key, message: `${text}${hint}`, step: stepOfRefusal(text, steps), status: error.status };
@@ -611,8 +624,10 @@ function refusalOf(error: unknown, key: string, steps: readonly DraftStep[]): Re
 }
 
 // The text of a refusal outside the panel's draft (the download dialog's jobs).
+// Where there is no tooltip, the text carries the reason.
 export function refusalMessage(error: unknown): string {
-  return refusalOf(error, '', []).message;
+  const refusal = refusalOf(error, '', []);
+  return refusal.reason ? `${refusal.message}: ${refusal.reason}` : refusal.message;
 }
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
@@ -1068,7 +1083,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
             return;
           }
           const message = error instanceof Error ? error.message : String(error);
-          set({ descriptions: { ...rest, [datasetId]: { state: 'error', message } } });
+          const retired = error instanceof HttpError && error.status === 410 ? error.detail : undefined;
+          set({ descriptions: { ...rest, [datasetId]: { state: 'error', message, ...(retired ? { retired } : {}) } } });
         });
     },
     resetDraft: () => {
@@ -1167,6 +1183,11 @@ export const useProcessingStore = create<ProcessingState>((set, get) => {
     restoreOrder: async (order, view) => {
       const datasetId = order.inputs[0].dataset;
       const dataset = useAppStore.getState().datasets.find((d) => d.id === datasetId);
+      if (!dataset) {
+        // A dataset the catalog does not list: the server says whether it left (`410`) or never was.
+        const gone = await describe(datasetId);
+        if (gone?.state === 'error' && gone.retired) return { ok: false, reason: `${RETIRED_TEXT}: ${gone.retired}` };
+      }
       const block = processBlockReason(dataset, order.inputs[0].groups.flat().length);
       if (block) return { ok: false, reason: block };
       const description = await describe(datasetId);

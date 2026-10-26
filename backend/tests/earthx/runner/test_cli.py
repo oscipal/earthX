@@ -11,7 +11,7 @@ import json
 import multiprocessing
 import socket
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,7 @@ import pytest
 
 from earthx.access.crop_rules import TEXT_FILES
 from earthx.api.intake import job_recipe_json
-from earthx.catalog.registry import DatasetRegistry, acquisition_years
+from earthx.catalog.registry import DatasetRegistry, RetiredDataset, acquisition_years
 from earthx.processing.recipe import engine_versions
 from earthx.runner import output
 from earthx.runner.cli import EXIT_HOST, EXIT_OK, EXIT_OTHER, EXIT_RECIPE, EXIT_SOURCE, exit_code, main
@@ -254,6 +254,27 @@ class TestRefusedBeforeReading:
         empty = DatasetRegistry(())
         assert _main("run", _file(tmp_path, support.band_math_recipe()), "--out", str(out), registry=empty) == EXIT_HOST
         assert served == []
+
+    def test_a_retired_dataset_is_named_as_retired_before_any_request(
+        self, tmp_path: Path, out: Path, served: list[str], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """adr/0017 §8: not "not known" but the reason, and nothing is read."""
+        synthetic = support.registry().get("synthetic")
+        gone = RetiredDataset(
+            dataset_id="synthetic",
+            title="Synthetic",
+            doi=None,
+            citation=None,
+            license=synthetic.license,
+            retired_on=date(2026, 10, 25),
+            successor="other",
+            reason="a test",
+        )
+        other = replace(synthetic, dataset_id="other")
+        registry = DatasetRegistry((other,), retired=(gone,))
+        assert _main("run", _file(tmp_path, support.band_math_recipe()), "--out", str(out), registry=registry) == EXIT_HOST
+        assert served == [] and list(out.iterdir()) == []
+        assert gone.message in capsys.readouterr().err
 
     def test_the_hosts_are_checked_per_input_against_its_own_dataset(self, tmp_path: Path, served: list[str]) -> None:
         synthetic = support.registry().get("synthetic")

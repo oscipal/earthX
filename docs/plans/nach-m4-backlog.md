@@ -111,13 +111,15 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
    - **Plan:** `querschnitt/nm4-14-index-knoepfe.md`
    - **Soll:** An einem Layer eines passenden Datensatzes (etwa „Crop & merge to AOI“ von Sentinel-2) gibt es Knöpfe für häufige Indizes, etwa NDVI, NDWI, NDSI, NBR, EVI. Ein Klick erzeugt einen ganz normalen Band-math-Schritt mit Vorschau; Start als Job wie gewohnt.
    - **Kein zweiter Weg:** Die Knöpfe füllen nur das Rezept. Vorschau, Job, Cache, Runner, Methodentext und `recipe.json` bleiben dieselben.
-   - **Je Datensatz, nicht im Code:** Die Bandnamen unterscheiden sich je Quelle (COG gegen EOPF-Zarr). Die Presets stehen deshalb als Daten in der Registry je Datensatz (Name, Ausdruck, Wertebereich, Colormap-Vorgabe, Quelle der Formel); nur Datensätze mit passenden Bändern zeigen sie. Kein datensatzspezifischer Code.
+   - **Je Datensatz, nicht im Code:** Die Bandnamen unterscheiden sich je Quelle (COG gegen Zarr; der EOPF-Zarr-Datensatz entfällt mit NM4-15b, die Presets bleiben je Datensatz). Die Presets stehen deshalb als Daten in der Registry je Datensatz (Name, Ausdruck, Wertebereich, Colormap-Vorgabe, Quelle der Formel); nur Datensätze mit passenden Bändern zeigen sie. Kein datensatzspezifischer Code.
    - **Quellen:** Formeln mit Beleg, etwa Awesome Spectral Indices (Montero et al., 2023, *Scientific Data*) oder Index DataBase; bei Indizes mit Konstanten (EVI) die Werte mit Quelle.
    - **Zu klären im Plan:** Welche Indizes zuerst; ob die Knöpfe am Layer, im Panel oder an beiden Stellen sitzen (Abstimmung mit UI-01); ob ein Preset die Bänder automatisch wählt (Punkt 7) und den Ergebnisnamen setzt (Punkt 10, etwa `NDVI`); Verhalten bei Mosaik (Punkt 4) und mit `mask` davor („NDVI cloud-free“ als Preset-Kette?).
    - **Aufgabe:** Stufe B (Registry-Feld, Panel), Backend und Frontend.
 15. **Nur ein Sentinel-2-L2A-Datensatz sichtbar** (Otto, 22.10.2026).
    - **Plan:** `querschnitt/nm4-15-ein-sentinel-2-datensatz.md` (Vorlage, `adr/0017`); Umsetzung `querschnitt/nm4-15b-eopf-datensatz-entfernen.md`
-   - **Entschieden:** `adr/0017` angenommen, PR #189 (25.10.2026), Fragen 1–6 je Option 1; Umsetzung offen (NM4-15b).
+   - **Entschieden:** `adr/0017` angenommen, PR #189 (25.10.2026), Fragen 1–6 je Option 1.
+   - **Erledigt:** NM4-15b, 25.10.2026, Draft-PR [#195](https://github.com/oscipal/earthX/pull/195); `sentinel-2-l2a-zarr3` verließ Registry, Katalog und Oberfläche, die ID antwortet mit `410`.
+   - **Wiedervorlage (Otto, 25.10.2026):** Anfang 2027 oder früher, sobald EOPF operative Zarr-Produkte meldet (FAQ des Dienstes: „late 2026 or early 2027“). Dann eine operative, token-freie Zarr-Quelle prüfen; bis dahin ist die Formatachse (Prinzip 3, Checkliste Punkt 5) nur synthetisch belegt (`projektuebersicht.md` §5).
    - **Wunsch:** Die Plattform bietet nicht mehrere Datensätze an, die dasselbe zeigen. Heute gibt es `sentinel-2-c1-l2a` (Earth Search, COG) und `sentinel-2-l2a-zarr3` (EOPF, Zarr). Otto will den Zarr-Datensatz loswerden.
    - **Warum zuerst eine Vorlage (Stufe C):** Der Zarr-Datensatz trägt Belege und Entscheidungen: zweites Format (`adr/0007`), Zarr-Vergleich T1 ↔ T2 (`adr/0014` §15d, Kriterium 1 der M4-Abnahme), Tests und Fixtures, Prüfanleitungen, `SCL_20m:scl` in der Maske (M4-18c).
    - **Optionen für die Vorlage:**
@@ -195,7 +197,11 @@ Stand: 24.10.2026. Otto hat entschieden, zuerst alles bis zur M4-Abnahme (M4-20)
 26. **Kacheln schneller: Durchsatz von `tiler` und `gateway`** (Otto, 25.10.2026; hohe Priorität).
    - **Plan:** `querschnitt/nm4-26-kachel-leistung.md`
    - **Befund:** NDVI-Vorschau rund 40 s für 325 Anfragen; Kacheln 1,7–6,5 s mit steigenden Zeiten (Warteschlange), auch reine `visual`-Kacheln 2,6–4,2 s. Gleich schon vor UI-01a (`745ecb2`), also keine Regression daraus. Dazu: Suche dreifach geladen (je 1,9 MB), `statistics` mit `op` einmal `400`.
-   - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.
+   - **Aufgabe:** Stufe B mit Messung und Recherche (Gleichzeitigkeit im `tiler`, GDAL-Einstellungen, Verbindungen über `gateway`), Backend und Frontend.27. **Toter Zweig „Einmal-Produkt mit Extent-Antwort“ in der Coverage-Route** (aus NM4-15b, Otto, 26.10.2026).
+   - **Befund:** Mit dem Ausscheiden von `CoverageProvider.SAMPLE` ist der Zweig `single_coverage_product` ohne Flächenweg in `api/coverage_route.py` (`extent_result`) nicht mehr erreichbar: `_check_coverage` verbietet `single_coverage_product` mit Aggregation, `local-sql` nimmt den Flächenweg. Ebenso wirkungslos ist `and not config.capabilities.single_coverage_product` in `check_adapter_specs` (`adapters/spec.py`) samt `_required` in `tests/earthx/adapters/test_spec.py`.
+   - **Berührt:** `adr/0004` (Einmal-Produkte: Ausdehnung allein).
+   - **Aufgabe (Stufe A, eigener PR):** prüfen, ob der Zweig für eine künftige Quelle ohne Aggregation gebraucht wird; sonst mit seinen Tests entfernen.
+
 ## In UI-01 aufgenommen (20.–22.10.2026)
  
 - Reihenfolge im Layer-Manager greift manchmal nicht (UI-01 §1 Punkt 10, Diagnose mit Test zuerst; Otto liefert die Schritte zum Nachstellen).

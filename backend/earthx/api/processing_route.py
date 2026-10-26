@@ -89,8 +89,9 @@ from earthx.api.result_zip import Layout, Member, RangeNotSatisfiable, byte_rang
 from earthx.catalog.registry import (
     AcquisitionYearMissing,
     AcquisitionYears,
-    DatasetConfig,
+    Attributable,
     DatasetRegistry,
+    RetiredDatasetError,
     UnknownDatasetError,
     acquisition_years,
 )
@@ -116,6 +117,7 @@ _TYPE_BASE = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/"
 NO_SUCH_JOB = f"{_TYPE_BASE}no-such-job"
 NO_SUCH_PROCESS = f"{_TYPE_BASE}no-such-process"
 RESULT_NOT_READY = f"{_TYPE_BASE}result-not-ready"
+GONE = "urn:earthx:gone"
 NO_BUNDLE = "urn:earthx:no-bundle"
 NO_ACQUISITION_YEARS = "urn:earthx:no-acquisition-years"
 _FAILED_TYPE = "urn:earthx:job-failed:"
@@ -494,6 +496,8 @@ async def process(request: Request, process_id: str, dataset: str | None = None)
         registry: DatasetRegistry = request.app.state.earthx_registry
         try:
             config = registry.get(dataset)
+        except RetiredDatasetError as error:
+            raise Problem(410, error.retired.message, type_=GONE, title="Gone") from None
         except UnknownDatasetError:
             raise Problem(400, f"no dataset {dataset[:64]!r}") from None
     return docs.process_description(_root(request), _operators(request), config)
@@ -935,7 +939,7 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     # From the end of the job's life, or 60 s before it, until the rows are gone: 410, not 404 (K8),
     # whatever state the job ended in — a failed job past its life does not tell its failure.
     if status.expires_at - datetime.now(UTC) < MIN_REMAINING:
-        raise Problem(410, "the result has expired", type_="urn:earthx:gone", title="Gone")
+        raise Problem(410, "the result has expired", type_=GONE, title="Gone")
     status = _ready(status)
     if name == BUNDLE and not _is_export(status) and not _bundle_possible(status):
         # A result made before the supervisor measured its files (up to 7 days old, a cache hit
@@ -962,23 +966,21 @@ async def job_result(request: Request, jobID: str, name: str, api: Api) -> Respo
     try:
         url = signed_download(api.store, status.result_id, name, not_after=status.expires_at, filename=filename)
     except ResultExpiring:
-        raise Problem(410, "the result expires in less than a minute", type_="urn:earthx:gone", title="Gone") from None
+        raise Problem(410, "the result expires in less than a minute", type_=GONE, title="Gone") from None
     except ObjectStoreError:
         LOGGER.warning("a result link could not be signed")
         raise Problem(503, "the result store is not available; try again", headers={"Retry-After": "5"}) from None
     return Response(status_code=303, headers={"Location": url})
 
 
-def _config_of(api: JobApi, body: dict[str, Any]) -> DatasetConfig | None:
-    """The registry entry of the job's dataset; ``None`` if the registry no longer knows it."""
+def _config_of(api: JobApi, body: dict[str, Any]) -> Attributable | None:
+    """The registry entry of the job's dataset, or the retired dataset's record, which keeps its attribution
+    and citation (adr/0017); ``None`` if the registry has never known it."""
     dataset = (body.get("inputs") or [{}])[0].get("dataset")
-    try:
-        return api.registry.get(dataset) if isinstance(dataset, str) else None
-    except UnknownDatasetError:
-        return None
+    return api.registry.attributable(dataset) if isinstance(dataset, str) else None
 
 
-def _years_of(config: DatasetConfig | None, status: JobStatus) -> AcquisitionYears | None:
+def _years_of(config: Attributable | None, status: JobStatus) -> AcquisitionYears | None:
     """The years the job's scenes were acquired in, which its attribution names (NM4-01).
 
     A job from before they were kept is given them first (:func:`_with_derived_years`). One whose
@@ -1350,6 +1352,13 @@ def _permalink_body(raw: bytes, operators: OperatorRegistry) -> dict[str, Any]:
 async def create_permalink(request: Request, api: Api) -> Response:
     body = _permalink_body(await _read_body(request), api.operators)
     dataset = body.pop("dataset")
+    try:
+        api.registry.get(dataset)
+    except RetiredDatasetError as error:
+        # Reading a stored link stays a 200 (the order is the user's); a new one for a gone dataset is not made.
+        raise Problem(410, error.retired.message, type_=GONE, title="Gone") from None
+    except UnknownDatasetError:
+        pass
     created = await _db(api, permalinks.create, body)
     LOGGER.info("permalink created", extra={"order_dataset": dataset})
     return JSONResponse(

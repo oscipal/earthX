@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HttpError } from './api';
-import { archiveOf, failureText } from './processingStore';
+import { archiveOf, failureText, refusalMessage } from './processingStore';
 
 const link = (name: string) => ({ href: `/processing/jobs/x/results/${name}` });
 
@@ -52,5 +52,23 @@ describe('failureText', () => {
     expect(failureText(problem('urn:earthx:job-failed:runtime_exceeded_soon'), 'fallback')).toBe('fallback');
     expect(failureText(problem(undefined), 'fallback')).toBe('fallback');
     expect(failureText(new TypeError('Failed to fetch'), 'fallback')).toBe('fallback');
+  });
+});
+
+describe('refusalMessage', () => {
+  const retired = 'dataset was retired on 2026-10-25; use another one instead';
+
+  it('names a retired dataset, with the reason of the problem document', () => {
+    const error = new HttpError(410, 'Gone', retired, undefined, 'Gone', { type: 'urn:earthx:gone' });
+    expect(refusalMessage(error)).toBe(`Dataset retired: ${retired}`);
+  });
+
+  it('does not call a 410 without a problem document a retired dataset', () => {
+    expect(refusalMessage(new HttpError(410, 'Gone'))).toBe('Gone');
+  });
+
+  it('words every other status by the detail of the server', () => {
+    expect(refusalMessage(new HttpError(422, 'x', 'step 0: no good'))).toBe('step 0: no good');
+    expect(refusalMessage(new TypeError('Failed to fetch'))).toBe('Failed to fetch');
   });
 });

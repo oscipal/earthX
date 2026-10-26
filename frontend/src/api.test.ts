@@ -130,7 +130,7 @@ describe('buildTileTemplate', () => {
     // registry's separator, so a key that arrives re-encoded — or decoded twice
     // — names a variable nobody has. Z4 as well: the same URL, the same image.
     const key = 'SR_10m:b04,b03,b02';
-    const url = buildTileTemplate('sentinel-2-l2a-zarr3', 'S2B_1', key);
+    const url = buildTileTemplate('synthetic-zarr', 'S2B_1', key);
     expect(new URL(url, 'http://localhost').searchParams.get('asset')).toBe(key);
   });
 });
@@ -536,22 +536,22 @@ describe('ignored_filters_by_collection and incomplete_collections (M3-10)', () 
         numberReturned: 1,
         links: [{ rel: 'next', href: '/stac/search', body: { token: 't2' } }],
         ignored_filters_by_collection: { dem: ['datetime'] },
-        incomplete_collections: [{ collection: 'eopf', reason: 'timeout' }],
+        incomplete_collections: [{ collection: 'zarr-source', reason: 'timeout' }],
       },
       {
         features: [{ id: 'b' }],
         numberReturned: 1,
         ignored_filters_by_collection: { dem: ['other'], later: ['datetime'] },
-        incomplete_collections: [{ collection: 'eopf', reason: 'unreachable' }],
+        incomplete_collections: [{ collection: 'zarr-source', reason: 'unreachable' }],
       },
     ];
     const fetchMock = vi.fn();
     for (const page of pages) fetchMock.mockResolvedValueOnce(jsonResponse(page));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await searchAllPages({ collections: ['dem', 'later', 'eopf'] }, 300);
+    const result = await searchAllPages({ collections: ['dem', 'later', 'zarr-source'] }, 300);
     expect(result.features).toHaveLength(2);
     expect(result.ignoredFiltersByCollection).toEqual({ dem: ['datetime'], later: ['datetime'] });
-    expect(result.incompleteCollections).toEqual([{ collection: 'eopf', reason: 'timeout' }]);
+    expect(result.incompleteCollections).toEqual([{ collection: 'zarr-source', reason: 'timeout' }]);
   });
 
   // M3-10b: "Load more" continues a walk with the token the last one left over.

@@ -9,6 +9,8 @@ place search is not a dataset source and is not dispatched here (M4-01b F3).
 
 from __future__ import annotations
 
+from earthx.catalog.registry import RetiredDataset
+
 
 class InvalidQuery(ValueError):
     """The request breaks one of our own rules, before anything is sent upstream."""
@@ -16,6 +18,14 @@ class InvalidQuery(ValueError):
 
 class UnknownCollection(LookupError):
     """No such collection in our catalogue (adr/0005 rule I) — the caller's 404."""
+
+
+class RetiredCollection(UnknownCollection):
+    """The collection left the registry (adr/0017): a 404 for the caller who cannot say why, a 410 for the rest."""
+
+    def __init__(self, retired: RetiredDataset) -> None:
+        super().__init__(retired.dataset_id)
+        self.retired = retired
 
 
 class UnsupportedSource(LookupError):

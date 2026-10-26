@@ -49,7 +49,7 @@ from earthx.catalog.coverage import (
     level_for_viewport,
 )
 from earthx.catalog.local_coverage import area_coverage, check_intersects_is_valid
-from earthx.catalog.registry import CoverageProvider, DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import CoverageProvider, DatasetRegistry, RetiredDatasetError, UnknownDatasetError
 from earthx.catalog.search_cache import PostgresSearchCache
 from earthx.gateway import GatewayError, UpstreamError, UpstreamTimeout, UpstreamUnreachable
 
@@ -60,13 +60,13 @@ LOGGER = logging.getLogger("earthx.api.coverage")
 # zoomed-grid counting over `pgstac.items`, which no dataset needs in M3. With a
 # single coverage product, `local-sql` *is* implemented — as the area way below,
 # not through this set (it never goes through `IMPLEMENTED_PROVIDERS`, the same
-# way `single_coverage_product` already skips it for `upstream-aggregation`/
-# `sample`, see `_area_path`).
+# way `single_coverage_product` already skips it for `upstream-aggregation`,
+# see `_area_path`).
 #
 # Public because onboarding checklist point 2 reads it: "a coverage provider is
 # assigned" is only worth anything if something answers for that provider
 # (projektuebersicht.md §5, D4).
-IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION, CoverageProvider.SAMPLE})
+IMPLEMENTED_PROVIDERS = frozenset({CoverageProvider.UPSTREAM_AGGREGATION})
 
 
 def _area_path(config: Any) -> bool:
@@ -100,13 +100,15 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
     ) -> dict[str, Any]:
         try:
             config = registry.get(dataset_id)
+        except RetiredDatasetError as error:
+            raise HTTPException(status_code=410, detail=error.retired.message) from None
         except UnknownDatasetError:
             raise HTTPException(status_code=404, detail=f"no dataset {dataset_id!r}") from None
 
         area_path = _area_path(config)
         if config.capabilities.single_coverage_product and not area_path:
             # Checked before any other provider is asked, unchanged since M2-05b: a
-            # one-off product answered by upstream aggregation or a sample has an
+            # one-off product answered by upstream aggregation has an
             # extent, not a density (adr/0004 §5, "Einmal-Produkte") — nothing here
             # reads a filter, the same as before M3-11c. `local-sql` is the one
             # provider this entry can pair with that answers a real question
@@ -194,9 +196,9 @@ def build_router(registry: DatasetRegistry, adapters: AdapterSpecs) -> APIRouter
             LOGGER.warning("coverage upstream failed", extra={"dataset": dataset_id})
             raise HTTPException(status_code=502, detail="the source did not deliver a coverage answer") from None
         except (UpstreamCoverageShapeError, UpstreamShapeError):
-            # `UpstreamShapeError` is `sample_coverage`'s own search path
-            # misbehaving (`federated_search.require_feature_list` and friends);
-            # `UpstreamCoverageShapeError` is either way's own reading of the
+            # `UpstreamShapeError` is the search path misbehaving
+            # (`federated_search.require_feature_list` and friends);
+            # `UpstreamCoverageShapeError` is the aggregation's own reading of the
             # answer. Both mean the same thing to a caller: unreadable, not ours.
             raise HTTPException(
                 status_code=502, detail="the source answered something coverage could not read"
