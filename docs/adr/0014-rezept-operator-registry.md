@@ -23,6 +23,10 @@
     Nummer): Der Zarr-Fall der Toleranz T1 ↔ T2 läuft seit dem Ausscheiden des
     EOPF-Datensatzes (`adr/0017`) auf einem synthetischen Testeintrag. Der
     Originaltext bleibt stehen.
+  - **Nachtrag vom 2026-10-26 (NM4-08):** §15r: Der Methodentext liegt in
+    `provenance.methods` des `recipe.json`; `methods.txt` ist keine Datei
+    eines Downloads mehr (zu §4.1, §10; ergänzt §15l). Der Originaltext
+    bleibt stehen.
 - **Datum:** 2026-10-02
 - **Aufgabe:** M4-03 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode, keine Änderung an
@@ -2377,3 +2381,38 @@ das den Weg von Item und Asset im `tiler` umgebaut hat.
 | `sentinel-2-c1-l2a` | 1 Lesezugriff, Nicht-Hauptthread, Optionen aktiv | 1, dito | 4, dito |
 | `sentinel-2-l2a-zarr3` | 0 (Zarr über `GatewayStore`) | 0 | 3 (Prüflesung der COG), dito |
 | `cop-dem-glo-30` | 1, dito | 1, dito | 4, dito |
+
+## 15r. Nachtrag vom 2026-10-26: der Methodentext im Rezept, `methods.txt` entfällt als Datei (zu §4.1, §10; ergänzt §15l; NM4-08)
+
+Otto hat am 2026-10-22 entschieden, den Methodentext ins Rezept zu legen und keine eigene Datei dafür zu führen
+(`plans/querschnitt/nm4-08-methodentext-ins-rezept.md`, Backlog-Punkt 8). Die Tabelle „Drei Schichten“ in §4.1 und die
+Dateiliste in §15l (`TEXT_FILES` mit `methods.txt`) bleiben als Originaltext stehen; maßgeblich ist dieser Nachtrag.
+
+- **Wo der Text liegt:** im Block `provenance` des `recipe.json` als Feld `methods` (Text, nicht leer, ohne Längengrenze; die
+  ganze Datei bleibt auf 4 MiB begrenzt). Das Modell `Provenance` hat das Feld mit der Vorgabe `null`; eine Datei von
+  vorher ohne den Schlüssel bleibt gültig. Der Block ist wie bisher nie Teil des Hashs und nie Teil eines Cache-Schlüssels
+  (§4.5): Hash, `recipe_version` und Ergebnis-Bytes ändern sich nicht, ein Test hält das fest.
+- **Eine Funktion:** `processing/methods.py::methods_text` schreibt den Text unverändert aus dem Dokument. Neu sind
+  `recipe_with_methods` (legt den Text in `provenance.methods`, sonst bleibt das Dokument, wie es ist, in der Form von
+  `document_bytes`) und `methods_of` (liest ihn zurück). Das Feld hält den Text ohne den Zeilenumbruch am Ende; `methods_of`
+  gibt ihn mit zurück, wie ihn die Datei hielt. Ein Text, der schon im Dokument steht, wird nicht fortgeschrieben, sondern
+  durch den ersetzt, der zum Inhalt passt.
+- **Wer ihn einlegt:** `api` beim Zuschnitt (`api.intake.recipe_json_with_methods` nach `crop_recipe_json`) und je Download beim
+  Job (`recipe.json`-Link und Job-ZIP rufen dieselbe Funktion), der Worker-Kern beim Export (vor dem Packen, mit
+  `Attachments.dataset` und `Attachments.acquired_on`). Die beiden Kopien eines Export-Jobs bleiben eine Datei (M4-11 K4).
+- **Download-Inhalte:** `access/crop_rules.py::TEXT_FILES` nennt `aoi.geojson`, `recipe.json`, `citation.bib` und
+  `ATTRIBUTION.txt`; `METHODS_FILENAME` entfällt dort, in `access/download.py` (der Parameter `methods_text` von
+  `build_download_zip` auch) und im Export. Zuschnitt-ZIP, Export-ZIP und Job-ZIP (`result.zip`) enthalten keine `methods.txt`; ihre
+  Tests prüfen das gegen die Tuple.
+- **Link und Ausgang `methods` bleiben (Vorschlag des Plans, Otto-Entscheid offen für Widerspruch):** Für Clients der API gibt
+  `GET /processing/jobs/{jobID}/results/methods.txt` weiter den Text aus (`text/plain`, Dateiname `…_methods.txt`). Er ist nicht mehr
+  Mitglied eines ZIP, sondern der Wert von `provenance.methods` des `recipe.json`, das derselbe Job liefert; beide stammen aus einem
+  Aufruf, sie widersprechen sich nie. Das Frontend verweist auf den Link nirgends (UI-01 §1 Punkt 12).
+- **Ältere Dateien und Leser:**
+  - Ein `recipe.json` von vorher ohne `methods` bleibt gültig (Runner, „Load recipe…“ aus M4-19d); `methods_of` liefert `null`.
+  - Ein Runner von vorher (Image vor NM4-08) prüft den Block streng (`extra="forbid"`, `adr/0016` §12b) und weist eine neue Datei mit
+    Exit-Code 2 ab: „the provenance block of the recipe file is not valid“, dazu die eigene Version. Nichts von der Datei steht in der
+    Meldung. Das ist keine Verbesserung dieser Meldung, sondern der Befund; abhelfen kann nur ein neu gebautes Image. Ein Test
+    bildet das mit dem Modell ohne das Feld nach.
+- **Tests:** `processing/test_methods.py` (`TestTheTextLiesInTheRecipe`: Text im Feld, Rest des Dokuments gleich, Hash gleich, falscher
+  Typ, kein Rezept), `test_export.py`, `api/test_download_route.py`, `api/test_result_zip_files.py`, `runner/test_cli.py`.

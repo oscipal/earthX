@@ -7,6 +7,8 @@
     stehen in §12a und sind in §0, §5, §7.2 und §10 eingearbeitet.
   - **Nachtrag §12b (2026-10-20, M4-16):** vier Abweichungen beim Umsetzen,
     von Otto entschieden; der Text oben bleibt stehen, maßgeblich ist §12b.
+  - **Nachtrag §12c (2026-10-26, NM4-08):** der Methodentext des Runners steht in
+    `provenance.json`, nicht in einer Datei `methods.txt`; ergänzt §12b.
 - **Datum:** 2026-10-05
 - **Aufgabe:** M4-05 laut `docs/plans/m4/m4-processing-kern.md` §4.
 - **Autonomiestufe:** C. Es gibt keinen Produktivcode und keine Änderung an
@@ -976,6 +978,23 @@ Basis-Image `python:3.12-slim` (Digest aus M4-16) holt `apt`-Pakete nur von
 `deb.debian.org`, auch die Sicherheitsupdates (Pfad `/debian-security`, Suite
 `trixie-security`) [M, `/etc/apt/sources.list.d/debian.sources` im Image].
 `security.debian.org` kommt in den Quellen dieses Images nicht vor.
+
+## 12c. Nachtrag vom 2026-10-26: der Methodentext in `provenance.json`, keine `methods.txt` (zu §12b; NM4-08)
+
+Otto hat am 2026-10-22 entschieden, dass der Methodentext keine eigene Datei mehr ist (`adr/0014` §15r). §12b nennt den Ordner
+eines Laufs mit `result.tif`, `mask.tif`, `recipe.json` und `provenance.json`; der Methodentext aus M4-19a (`methods.txt`) war dort
+noch nicht aufgeführt und entfällt. Der Text oben bleibt stehen; maßgeblich ist dieser Nachtrag.
+
+- **Ordner:** `result.tif`, `mask.tif`, `recipe.json` (die Bytes der Eingabe, unverändert) und `provenance.json`. Keine `methods.txt`.
+- **Wo der Text liegt (Vorschlag der Aufgabe, gilt bis Otto widerspricht):** in `provenance.json` als Feld `methods`, denn diese Datei
+  beschreibt den lokalen Lauf und ist genau das `Provenance`-Modell mit Zusätzen. Die `recipe.json` im Ordner bleibt die Datei der
+  Eingabe, byte für byte; ihr `provenance.methods` ist der Text der Cloud („processed on the EarthX platform“) und bleibt dort stehen. Würde
+  der Runner den Text in diese Datei schreiben, hieße das, sie zu verändern oder zu ersetzen, und der Vergleich Eingabe gegen Ordner
+  wäre kein Byte-Vergleich mehr. Der Text des Runners kommt aus derselben Funktion wie der der Plattform, geschrieben aus dem Rezept der
+  Eingabe und der Provenienz dieses Laufs („recomputed on the user's own machine … self-attested“), nie aus dem Text der Eingabe.
+- **Eingabe:** Der Block `provenance` wird wie bisher abgetrennt und mit `Provenance` geprüft (§12b); `methods` ist dort ein
+  nicht leerer Text oder `null`, fehlt der Schlüssel, ist die Datei gültig. Ein `methods` anderer Art ist Exit-Code 2.
+- **Ältere Runner:** siehe `adr/0014` §15r: Image vor NM4-08 weist eine neue Datei mit Exit-Code 2 ab.
 
 ## 13. Quellen
 
