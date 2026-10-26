@@ -116,8 +116,11 @@ class TestCreate:
         assert len(ids) == 10 and not ids & {one}
 
     async def test_a_list_of_one_is_a_bundle(self, mocked: Store, rig: Rig) -> None:
-        response = await rig.client.get(await make(rig, await part(rig, 1)))
-        assert response.status_code == 200 and len(opened(response.content).namelist()) == 7
+        job_id = await part(rig, 1)
+        response = await rig.client.get(await make(rig, job_id))
+        single = await rig.client.get(f"/processing/jobs/{job_id}/results/result.zip")
+        assert response.status_code == 200
+        assert len(opened(response.content).namelist()) == len(opened(single.content).namelist())
 
 
 class TestWhatIsRefused:
