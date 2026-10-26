@@ -7,7 +7,7 @@
 // 2. icons: a globe for the globe, a map for the flat view (renamed
 //    "Mercator"); the symbol for "Layers" moved to the rail (UI-01, `AppRail.test.tsx`);
 // 3. "Zoom to selection" is disabled with neither an AOI nor pinned layers;
-// 5. "Add to layers" belongs next to "View full resolution".
+// 5. "Add to layers" belonged next to "View full resolution" (gone from the bar with UI-01g).
 // Point 4 (the date input's calendar icon in dark mode) is CSS-only and not
 // checkable from jsdom, which does not render native form-control chrome.
 
@@ -158,14 +158,14 @@ describe('the selection bar', () => {
     vi.unstubAllGlobals();
   });
 
-  it('offers "Add to layers" next to the full-resolution buttons (point 5)', () => {
+  it('offers the two full-resolution views, and no "Add to layers" (UI-01g)', () => {
     const view = mount();
     const bar = view.querySelector('.download-bar');
     expect(bar).not.toBeNull();
     // UI-01g: the two views are full resolution without saying so; one scene is selected here.
     expect(btn(bar as HTMLElement, 'Crop to AOI')).not.toBeNull();
     expect(btn(bar as HTMLElement, 'View whole scene')).not.toBeNull();
-    expect(btn(bar as HTMLElement, 'Add to layers')).not.toBeNull();
+    expect(btn(bar as HTMLElement, 'Add to layers')).toBeNull();
   });
 });
 

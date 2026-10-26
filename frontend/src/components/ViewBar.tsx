@@ -5,7 +5,7 @@
 // UI-01g (Otto, 26.10.2026): every button here works at full resolution, so no
 // label says so (the tooltips do); the buttons are one size; a button names what
 // it does for one scene and what it does for several ("merged"); and there is no
-// "Clear" (the list unticks scenes). Scenes merge per group (Überflug), different
+// "Clear" (the list unticks scenes) and no "Add to layers". Scenes merge per group (Überflug), different
 // groups stay separate files (P19).
 
 import { DRAW_AOI_TO_CROP, isCogFormat, noOriginalsReason } from '../download';
@@ -18,7 +18,6 @@ export default function ViewBar() {
   const aoi = useAppStore((s) => s.aoi);
   const focusLoading = useAppStore((s) => s.focusLoading);
   const enterFocus = useAppStore((s) => s.enterFocus);
-  const addCurrentToLayers = useAppStore((s) => s.addCurrentToLayers);
   const openDownloadForSelection = useAppStore((s) => s.openDownloadForSelection);
   const dataset = useAppStore((s) => s.datasets.find((d) => d.id === s.datasetId));
   const openProcessing = useProcessingStore((s) => s.openProcessing);
@@ -60,14 +59,6 @@ export default function ViewBar() {
         onClick={() => enterFocus(false)}
       >
         {focusLoading ? 'Loading…' : plural ? 'View merged scenes' : 'View whole scene'}
-      </button>
-      <button
-        type="button"
-        className="ghost-btn"
-        title="Pin the selected scenes into the layer manager, at their current (preview) resolution"
-        onClick={() => addCurrentToLayers()}
-      >
-        ＋ Add to layers
       </button>
       <button
         type="button"

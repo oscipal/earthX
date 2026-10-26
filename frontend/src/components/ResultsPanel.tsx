@@ -303,6 +303,11 @@ function SelectionRow() {
 export default function ResultsPanel() {
   const sections = useAppStore((s) => s.sections);
   const resultsOnMap = useAppStore((s) => s.resultsOnMap);
+  // Of the scenes found, the ones ticked (a tick on a scene that is not in the results counts for nothing).
+  const selected = useAppStore((s) => {
+    const ids = new Set(s.selectedIds);
+    return s.sections.reduce((n, section) => n + section.items.filter((it) => ids.has(it.id)).length, 0);
+  });
   const toggleResultsOnMap = useAppStore((s) => s.toggleResultsOnMap);
   // A full-resolution view or a result's view works on its own picture: the list gives way (App.tsx).
   const viewOpen = useAppStore((s) => s.focusMode || s.resultViewLayerId !== null);
@@ -312,7 +317,7 @@ export default function ResultsPanel() {
   return (
     <div className="panel dock-panel results-panel" role="region" aria-label="Results">
       <div className="results-head">
-        <h2>Results ({totalItems(sections)})</h2>
+        <h2 title="Selected scenes / scenes found">Results ({selected}/{totalItems(sections)})</h2>
         <button
           type="button"
           className="results-map-toggle"

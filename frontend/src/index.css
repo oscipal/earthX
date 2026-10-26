@@ -132,6 +132,9 @@ body.dragging * {
   cursor: grabbing !important;
   user-select: none;
 }
+.draggable.fill {
+  width: 100%;
+}
 /* controls inside a draggable keep their own affordance */
 .draggable button,
 .draggable input,
@@ -647,6 +650,9 @@ input[type='date']:focus {
   font-family: var(--mono);
   font-size: 12px;
   cursor: pointer;
+}
+.ghost-btn {
+  overflow-wrap: anywhere;
 }
 .ghost-btn:disabled {
   opacity: 0.45;
@@ -1282,24 +1288,23 @@ input[type='date']:focus {
 }
 
 /* --- download bar --- */
+/* A grid of cells of one size, the count first: it wraps to more rows as the window narrows, and a row grows
+   with its tallest label, so no text ends up outside its button (UI-01g). */
 .download-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  align-items: stretch;
+  gap: 8px 10px;
   padding: 10px 16px;
+  box-sizing: border-box;
 }
 .download-count {
-  font-size: 12px;
-  color: var(--accent-2);
-}
-/* One size for every button of the bar (UI-01g): the same width and height, the label on at most two lines. */
-.download-count {
-  flex: none;
-  /* The number above its label, in a box of one width: "1 scene" and "12 scenes" must not move the buttons. */
+  /* The number above its label, in a cell of one width: "1 scene" and "12 scenes" must not move the buttons. */
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 96px;
+  justify-content: center;
+  color: var(--accent-2);
   line-height: 1.2;
   text-align: center;
 }
@@ -1308,17 +1313,15 @@ input[type='date']:focus {
 }
 .download-count span {
   font-size: 11px;
-  white-space: nowrap;
 }
 .download-bar .primary-btn,
 .download-bar .ghost-btn {
-  flex: 1 1 0;
   min-width: 0;
-  box-sizing: border-box;
-  height: 44px;
-  padding: 4px 8px;
+  min-height: 44px;
+  padding: 6px 8px;
   line-height: 1.25;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 .db-select {
   padding: 8px 10px;

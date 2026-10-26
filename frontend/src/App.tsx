@@ -127,7 +127,7 @@ export default function App() {
         ) : (
           <>
             {hasSelection && (
-              <Draggable>
+              <Draggable className="fill">
                 <ViewBar />
               </Draggable>
             )}

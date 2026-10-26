@@ -258,7 +258,7 @@ describe('everything the list could do is in the panel', () => {
   it('lists the scenes in groups by pass, with their counts', () => {
     const heads = [...slot('results').querySelectorAll('.result-group-head')];
     expect(heads.map((h) => h.querySelector('.rg-count')?.textContent)).toEqual(['100', '100', '100']);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
   });
 
   it('opens and closes a group', () => {
@@ -353,7 +353,7 @@ describe('the results on the map (Otto, 26.10.2026)', () => {
     expect(useAppStore.getState().resultsOnMap).toBe(false);
     expect(toggle().textContent).toBe('Show results');
     expect(slot('results').querySelectorAll('.result-group-head')).toHaveLength(3);
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (300)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/300)');
     click(toggle());
     expect(useAppStore.getState().resultsOnMap).toBe(true);
     expect(toggle().textContent).toBe('Hide results');
@@ -395,6 +395,38 @@ describe('no button of its own clears the results (Otto, 26.10.2026)', () => {
     expect(useAppStore.getState().items).toHaveLength(300);
     answer = () => json(FEW);
     await search();
-    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (2)');
+    expect(slot('results').querySelector('.results-head h2')?.textContent).toBe('Results (0/2)');
+  });
+});
+
+describe('the title of the panel counts selected over found (Otto, 26.10.2026)', () => {
+  const title = () => slot('results').querySelector('.results-head h2')?.textContent;
+
+  beforeEach(async () => {
+    answer = MANY;
+    await search();
+  });
+
+  it('starts at 0 of all and follows the ticks in the list', () => {
+    expect(title()).toBe('Results (0/300)');
+    click(slot('results').querySelector('.result-row input')!);
+    expect(title()).toBe('Results (1/300)');
+    click(slot('results').querySelector('.select-all-box input')!);
+    expect(title()).toBe('Results (300/300)');
+    click(slot('results').querySelector('.select-all-box input')!);
+    expect(title()).toBe('Results (0/300)');
+  });
+
+  it('does not count a tick on a scene that is not in the results, and the badge keeps the total', () => {
+    act(() => useAppStore.setState({ selectedIds: ['not-in-the-results'] }));
+    expect(title()).toBe('Results (0/300)');
+    expect(symbol('results').getAttribute('aria-label')).toBe('Results, 300');
+  });
+
+  it('counts the found scenes up when "Load more" adds some', async () => {
+    click(slot('results').querySelector('.result-row input')!);
+    const button = [...slot('results').querySelectorAll('button')].find((b) => b.textContent === 'Load more')!;
+    await act(async () => button.click());
+    expect(title()).toBe('Results (1/340)');
   });
 });

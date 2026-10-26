@@ -154,7 +154,7 @@ describe('the labels of the bar (UI-01g)', () => {
     select('cog', AOI);
     act(() => useAppStore.setState({ selectedIds: ['A'] }));
     show();
-    expect(labels()).toEqual(['Crop to AOI', 'View whole scene', '＋ Add to layers', '⇩ Download crop', '⇩ Download full scene', '⚙ Process']);
+    expect(labels()).toEqual(['Crop to AOI', 'View whole scene', '⇩ Download crop', '⇩ Download full scene', '⚙ Process']);
   });
 
   it('say "merged" for several scenes', () => {
@@ -163,20 +163,20 @@ describe('the labels of the bar (UI-01g)', () => {
     expect(labels()).toEqual([
       'Crop & merge to AOI',
       'View merged scenes',
-      '＋ Add to layers',
       '⇩ Download merged crop',
       '⇩ Download full scenes',
       '⚙ Process',
     ]);
   });
 
-  it('have no "Full resolution" label and no "Clear", for one scene or for several', () => {
+  it('have no "Full resolution" label, no "Clear" and no "Add to layers", for one scene or for several', () => {
     for (const selectedIds of [['A'], ['A', 'B']]) {
       select('cog', AOI);
       act(() => useAppStore.setState({ selectedIds }));
       show();
       expect(container.textContent).not.toContain('Full resolution');
       expect(labels()).not.toContain('Clear');
+      expect(container.textContent).not.toMatch(/add to layers/i);
     }
   });
 
