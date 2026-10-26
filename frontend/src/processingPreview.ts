@@ -128,16 +128,25 @@ export function refusedStepOf(detail: unknown): RefusedStep | null {
   return found ? { step: Number(found[1]), reason: found[2].trim() } : null;
 }
 
-// Asks the TileJSON of a chain. `null`: the tiler takes it, or the answer names no step
-// (an unreachable source, a refusal of the whole URL) — then the map is left as it is.
-export async function probeChain(url: string, fetchImpl: typeof fetch = fetch): Promise<RefusedStep | null> {
+// What the tiler said to the TileJSON of a chain: it takes it, it refuses a step, or it gave no answer to go by.
+export type ChainAnswer = { state: 'taken' } | { state: 'refused'; refused: RefusedStep } | { state: 'none' };
+
+// Asks the TileJSON of a chain of `steps` steps, one step as well as several: it is the cheap question, and it
+// has the same refusals as the tiles and the statistics. A refusal (4xx) of several steps names its step; the
+// refusal of a single step has none to name, so its text is the reason for step 0. `none`: the answer is
+// of no use (a failing source, a network that fails, a refusal of several steps without a step) — then the map
+// is left as it is.
+export async function probeChain(url: string, steps: number, fetchImpl: typeof fetch = fetch): Promise<ChainAnswer> {
   try {
     const response = await fetchImpl(url);
-    if (response.ok || response.status >= 500) return null;
+    if (response.ok) return { state: 'taken' };
+    if (response.status < 400 || response.status >= 500) return { state: 'none' };
     const body: unknown = await response.json();
-    return refusedStepOf((body as { detail?: unknown } | null)?.detail);
+    const detail = (body as { detail?: unknown } | null)?.detail;
+    const refused = refusedStepOf(detail) ?? (steps === 1 && typeof detail === 'string' ? { step: 0, reason: detail.trim() } : null);
+    return refused ? { state: 'refused', refused } : { state: 'none' };
   } catch {
-    return null;
+    return { state: 'none' };
   }
 }
 
@@ -148,8 +157,11 @@ export function shortenPlan(plan: Extract<PreviewPlan, { state: 'ready' }>, coun
 }
 
 // "Preview shows step 1 of 2. Step 2: band red is not available after step 1." — for people the first step is 1.
+// A single step has no number to name: "No preview: the expression is not valid."
 export function refusedNote(shown: number, total: number, refused: RefusedStep): string {
-  const reason = `Step ${refused.step + 1}: ${refused.reason.replace(/\.?$/, '.')}`;
+  const text = refused.reason.replace(/\.?$/, '.');
+  if (total === 1 && shown < 1) return `No preview: ${text}`;
+  const reason = `Step ${refused.step + 1}: ${text}`;
   if (shown < 1) return `No preview. ${reason}`;
   const which = shown === 1 ? 'step 1' : `steps 1 to ${shown}`;
   return `Preview shows ${which} of ${total}. ${reason}`;

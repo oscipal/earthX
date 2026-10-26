@@ -410,16 +410,100 @@ describe('the preview section', () => {
     expect(store().preview!.title).toBe('Band math → Normalize');
   });
 
-  it('asks the tiler about a chain of several steps with the TileJSON of the same chain, and about one step not at all', async () => {
+  const asks = (part: string) => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes(part));
+  const refusal400 = (detail: unknown) => () =>
+    new Response(JSON.stringify({ detail }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  const NOT_VALID = 'params: expression: Value error, expression: not a valid expression';
+
+  it('asks the tiler about a chain with the TileJSON of the same chain, one step as well as several', async () => {
     await withNdvi();
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/tilejson.json'))).toBe(false);
+    expect(asks('/tilejson.json')).toHaveLength(1);
+    expect(new URL(asks('/tilejson.json')[0], 'http://localhost').searchParams.getAll('op')).toEqual(['band_math']);
     await chainOfTwo();
-    const asked = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/tilejson.json'));
-    expect(asked).toHaveLength(1);
-    const query = new URL(asked[0], 'http://localhost').searchParams;
+    const asked = asks('/tilejson.json');
+    expect(asked).toHaveLength(2);
+    const query = new URL(asked[1], 'http://localhost').searchParams;
     expect(query.getAll('op')).toEqual(['band_math', 'band_math']);
     expect(query.getAll('params')).toHaveLength(2);
     expect(store().preview!.stepCount).toBe(2);
+  });
+
+  it('asks the TileJSON of a single step before its statistics, and goes on to both when the tiler takes it', async () => {
+    await withNdvi();
+    expect(asks('/tilejson.json')).toHaveLength(1);
+    expect(asks('/statistics?')).toHaveLength(1);
+    expect(fetchMock.mock.calls.findIndex(([u]) => String(u).includes('/tilejson.json'))).toBeLessThan(
+      fetchMock.mock.calls.findIndex(([u]) => String(u).includes('/statistics?')),
+    );
+    expect(store().preview!.scenes).toHaveLength(1);
+    expect(store().previewNote).toBeNull();
+  });
+
+  it('asks neither the statistics nor the tiles of a single step the tiler refuses, and shows why', async () => {
+    tilejson = refusal400(NOT_VALID);
+    await withNdvi();
+    expect(asks('/tilejson.json')).toHaveLength(1);
+    expect(asks('/statistics?')).toHaveLength(0);
+    expect(store().preview).toBeNull();
+    expect(store().previewNote).toBe(`No preview: ${NOT_VALID}.`);
+    expect(section().textContent).toContain(`No preview: ${NOT_VALID}.`);
+  });
+
+  it('shows a refusal of a single step with status 422 as well', async () => {
+    tilejson = refusal("the operator 'band_math' does not apply to this input");
+    await withNdvi();
+    expect(asks('/statistics?')).toHaveLength(0);
+    expect(store().preview).toBeNull();
+    expect(store().previewNote).toBe("No preview: the operator 'band_math' does not apply to this input.");
+  });
+
+  it('draws the single step again, with no note, once the expression is fixed', async () => {
+    tilejson = refusal400(NOT_VALID);
+    await withNdvi();
+    tilejson = () => json({ tilejson: '3.0.0' });
+    typeInto(expression(), 'nir / red');
+    await afterDebounce();
+    expect(store().preview).not.toBeNull();
+    expect(store().previewNote).toBeNull();
+    expect(asks('/tilejson.json')).toHaveLength(2);
+    expect(asks('/statistics?')).toHaveLength(1);
+  });
+
+  it('keeps no answer for a single step the source fails on, draws it and asks again on the next change', async () => {
+    tilejson = () => new Response('{"detail":"the asset could not be read from the source"}', { status: 502 });
+    await withNdvi();
+    expect(store().preview).not.toBeNull();
+    expect(store().previewNote).toBeNull();
+    expect(asks('/statistics?')).toHaveLength(1);
+    act(() => useProcessingStore.setState({ range: { vmin: '0', vmax: '1', colormap: 'viridis' }, rangeByHand: true }));
+    await afterDebounce();
+    expect(asks('/tilejson.json')).toHaveLength(2);
+  });
+
+  it('draws a single step with no answer to go by when the text of the refusal is no text', async () => {
+    tilejson = () => new Response('{"detail":[{"msg":"x"}]}', { status: 422 });
+    await withNdvi();
+    expect(store().preview).not.toBeNull();
+    expect(store().previewNote).toBeNull();
+  });
+
+  it('does not ask the tiler again when only the colour range changes, for a chain it takes or one it refuses', async () => {
+    await withNdvi();
+    act(() => useProcessingStore.setState({ range: { vmin: '0', vmax: '1', colormap: 'viridis' }, rangeByHand: true }));
+    await afterDebounce();
+    expect(new URL(store().preview!.scenes[0].url, 'http://localhost').searchParams.get('colormap_name')).toBe('viridis');
+    expect(asks('/tilejson.json')).toHaveLength(1);
+
+    tilejson = refusal400(NOT_VALID);
+    typeInto(expression(), 'nir / red');
+    await afterDebounce();
+    expect(asks('/tilejson.json')).toHaveLength(2);
+    expect(store().previewNote).toBe(`No preview: ${NOT_VALID}.`);
+    act(() => useProcessingStore.setState({ range: { vmin: '-1', vmax: '1', colormap: 'rdylgn' }, rangeByHand: true }));
+    await afterDebounce();
+    expect(asks('/tilejson.json')).toHaveLength(2);
+    expect(asks('/statistics?')).toHaveLength(1);
+    expect(store().previewNote).toBe(`No preview: ${NOT_VALID}.`);
   });
 
   it('shows the steps before the one the tiler refuses, and its reason', async () => {
@@ -600,6 +684,7 @@ describe('the preview section', () => {
       act(() => {
         vi.advanceTimersByTime(400);
       });
+      await flush(); // the TileJSON first, then the statistics
       typeInto(inputs()[1], '3');
       await act(async () => answer(measured({ b1: DEM_VALUES })));
       await flush();

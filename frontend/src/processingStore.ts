@@ -1473,26 +1473,31 @@ function adoptMeasure(measure: PreviewMeasure | null): void {
 // differs from it, and must not be asked for again on every change that leaves it alone.
 let settledKey: string | null = null;
 let settleRun = 0;
-// What the tiler said of a chain, until there is nothing to show: asking again for a new range would give the same answer.
-const probed = new Map<string, RefusedStep>();
+// What the tiler said of a chain, taken (`null`) or refused, until there is nothing to show: asking again for a new
+// range would give the same answer. Bounded like the measures; a question that failed on the way is not kept.
+const PROBES_KEPT = 50;
+const probed = new Map<string, RefusedStep | null>();
 
-// Shows `wanted`, or — for a chain of several steps the tiler refuses at step k — its first
-// k − 1 steps and the reason. One step needs no question: its refusal has no step to name.
+function rememberProbe(url: string, refused: RefusedStep | null): void {
+  if (probed.size >= PROBES_KEPT) probed.delete(probed.keys().next().value!);
+  probed.set(url, refused);
+}
+
+// Shows `wanted`, or — for a chain the tiler refuses at step k — its first k − 1 steps and the reason; for a
+// refused single step nothing but the reason. Statistics and tiles of a refused chain are not asked.
 async function settle(wanted: PreviewSpec): Promise<void> {
   const run = ++settleRun;
-  let refused: RefusedStep | null = null;
-  if (wanted.stepCount > 1) {
-    refused = probed.get(wanted.probe) ?? null;
-    if (refused === null) {
-      // Only a refusal is remembered: a question that failed on the way is asked again.
-      refused = await probeChain(wanted.probe);
-      if (run !== settleRun) return;
-      if (refused) probed.set(wanted.probe, refused);
-    }
+  let refused = probed.get(wanted.probe);
+  if (refused === undefined) {
+    const answer = await probeChain(wanted.probe, wanted.stepCount);
+    if (answer.state !== 'none') rememberProbe(wanted.probe, answer.state === 'refused' ? answer.refused : null);
+    if (run !== settleRun) return;
+    refused = answer.state === 'refused' ? answer.refused : null;
   }
   // The steps the tiler takes: all of them, or the ones before the step it refuses.
-  const limit = refused === null || refused.step >= wanted.stepCount ? undefined : refused.step;
-  const note = limit === undefined ? null : refusedNote(limit, wanted.stepCount, refused!);
+  const cut = refused && refused.step < wanted.stepCount ? refused : null;
+  const limit = cut ? cut.step : undefined;
+  const note = cut ? refusedNote(cut.step, wanted.stepCount, cut) : null;
   const hand = useProcessingStore.getState().rangeByHand;
   let spec = wantedPreview(limit);
   // Without a range of the user's the picture waits for the measure, so that it is drawn once and not twice,

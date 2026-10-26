@@ -516,18 +516,40 @@ describe('a chain the tiler refuses', () => {
 
   it('asks the TileJSON and returns what a refusal names', async () => {
     const fetchImpl = vi.fn(answer(422, { detail: 'step 1: no band red' }));
-    expect(await probeChain('/tj?x=1', fetchImpl as unknown as typeof fetch)).toEqual({ step: 1, reason: 'no band red' });
+    expect(await probeChain('/tj?x=1', 2, fetchImpl as unknown as typeof fetch)).toEqual({
+      state: 'refused',
+      refused: { step: 1, reason: 'no band red' },
+    });
     expect(fetchImpl).toHaveBeenCalledWith('/tj?x=1');
   });
 
+  it('takes a chain the tiler takes as taken', async () => {
+    expect(await probeChain('/tj', 2, answer(200, { tilejson: '3.0.0' }) as unknown as typeof fetch)).toEqual({ state: 'taken' });
+  });
+
   it.each([
-    ['a chain the tiler takes', answer(200, { tilejson: '3.0.0' })],
-    ['a refusal without a step', answer(400, { detail: 'params: x' })],
-    ['a failure of the source', answer(502, { detail: 'step 1: the asset could not be read' })],
-    ['an answer that is not JSON', answer(422, 'not json')],
-    ['a network that fails', async () => Promise.reject(new TypeError('offline'))],
-  ])('names no step for %s', async (_, fetchImpl) => {
-    expect(await probeChain('/tj', fetchImpl as unknown as typeof fetch)).toBeNull();
+    ['a refusal of several steps without a step', 2, answer(400, { detail: 'params: x' })],
+    ['a refusal of several steps whose detail is no text', 2, answer(422, { detail: [{ msg: 'x' }] })],
+    ['a refusal of a single step whose detail is no text', 1, answer(422, { detail: [{ msg: 'x' }] })],
+    ['a refusal of a single step without a detail', 1, answer(400, {})],
+    ['a failure of the source', 2, answer(502, { detail: 'step 1: the asset could not be read' })],
+    ['a failure of the source for a single step', 1, answer(502, { detail: 'the asset could not be read' })],
+    ['an answer that is not JSON', 1, answer(422, 'not json')],
+    ['a network that fails', 1, async () => Promise.reject(new TypeError('offline'))],
+  ])('has no answer to go by for %s', async (_, steps, fetchImpl) => {
+    expect(await probeChain('/tj', steps, fetchImpl as unknown as typeof fetch)).toEqual({ state: 'none' });
+  });
+
+  it('takes the text of a refusal of a single step as the reason for step 0', async () => {
+    const detail = 'params: expression: Value error, expression: not a valid expression';
+    expect(await probeChain('/tj', 1, answer(400, { detail }) as unknown as typeof fetch)).toEqual({
+      state: 'refused',
+      refused: { step: 0, reason: detail },
+    });
+    expect(await probeChain('/tj', 1, answer(422, { detail: 'step 0: no band red' }) as unknown as typeof fetch)).toEqual({
+      state: 'refused',
+      refused: { step: 0, reason: 'no band red' },
+    });
   });
 
   it('cuts the plan to the steps before the refused one, and to none for the first', () => {
@@ -542,6 +564,9 @@ describe('a chain the tiler refuses', () => {
     expect(refusedNote(1, 2, refused)).toBe('Preview shows step 1 of 2. Step 2: band red is not available after step 1.');
     expect(refusedNote(2, 4, { step: 2, reason: 'no band.' })).toBe('Preview shows steps 1 to 2 of 4. Step 3: no band.');
     expect(refusedNote(0, 2, { step: 0, reason: 'no band' })).toBe('No preview. Step 1: no band.');
+    expect(refusedNote(0, 1, { step: 0, reason: 'expression: not a valid expression' })).toBe(
+      'No preview: expression: not a valid expression.',
+    );
   });
 
   it('puts the chain into the TileJSON URL of the first scene', () => {

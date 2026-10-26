@@ -353,7 +353,7 @@ describe('the preview of a mask', () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
-    // A chain of several steps is asked of the tiler first (`probeChain`).
+    // A chain is asked of the tiler first (`probeChain`).
     await flush();
   }
 
