@@ -8,7 +8,7 @@ import { jobTitle, titleDay } from '../processingBatch';
 import { aoiProvenanceOf, buildExportOrder, formatBytes, formatDuration } from '../processingOrder';
 import { orderStands, refusalMessage, useProcessingStore } from '../processingStore';
 import { useAppStore } from '../store';
-import { JobRow } from './JobList';
+import { JobRow } from './JobRow';
 
 // "Export as job" in the download dialog (M4-11b-2, plan §3.2): the crop was
 // refused as too large for a direct download, and its `413` said the same

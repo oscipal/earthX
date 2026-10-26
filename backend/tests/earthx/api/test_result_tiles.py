@@ -21,6 +21,7 @@ import numpy
 import pytest
 import rasterio
 from fastapi.testclient import TestClient
+from rasterio._env import get_gdal_config
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 from rasterio.warp import transform_bounds
@@ -245,6 +246,23 @@ def test_gdal_is_given_urls_signed_for_the_internal_endpoint_for_the_result_and_
         assert int(query["X-Amz-Expires"][0]) <= 15 * 60
         # Nothing in it asks for a download name: this URL is for GDAL, not for a person.
         assert "response-content-disposition" not in query
+
+
+def test_the_tiles_of_a_result_are_read_under_the_tile_profile_of_the_tiler(
+    rig: Rig, uploaded: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NM4-26 §13: every route of the tiler carries the same `/vsicurl/` cache size and the tiles read serially."""
+    seen: list[tuple[str, str]] = []
+
+    class Recording(result_tiles.ResultReader):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            names = ("GDAL_HTTP_MULTIRANGE", "CPL_VSIL_CURL_CACHE_SIZE")
+            seen.append((str(get_gdal_config(names[0])), str(get_gdal_config(names[1]))))
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(result_tiles, "ResultReader", Recording)
+    assert rig.client.get(rig.tile_url(uploaded)).status_code == 200
+    assert seen == [("SERIAL", str(256 * 1024 * 1024))]
 
 
 def test_the_tilejson_describes_the_result_and_its_tiles(rig: Rig, uploaded: str) -> None:

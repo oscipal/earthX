@@ -6,9 +6,9 @@
 // - Format `{ v: 1, jobs, batches, groups }`. A value of another `v` is kept as it is: the shelf then
 //   works in memory only. A value that is no JSON is overwritten. Every entry is read on its own, and a
 //   malformed one is dropped without the rest.
-// - Nothing is ever removed from the shelf, so a write is a union with what is stored: another tab's
-//   jobs stay, and for one entry the latest write wins. (A group that may be removed, UI-01c, needs a
-//   rule of its own: the union would give it back.)
+// - Nothing is ever removed from the shelf but an empty group, so a write is a union with what is stored:
+//   another tab's jobs stay, and for one entry the latest write wins. A removed group is named in the
+//   write, or the union would give it back.
 // - When the browser is full the copies of the oldest orders go first, never an entry; the result says
 //   so. When even that does not fit, the shelf is in memory only.
 // - The jobs of the `sessionStorage` list of M4-13 are taken over once.
@@ -21,15 +21,17 @@ export const LEGACY_KEY = 'earthx.processing.jobs';
 export const SHELF_VERSION = 1;
 export const MAX_ORDER_BYTES = 64 * 1024;
 export const MAX_TITLE_LENGTH = 200;
-const MAX_NAME_LENGTH = 100;
+export const MAX_NAME_LENGTH = 100;
 const MAX_REFUSED = 25;
 const MAX_MESSAGE_LENGTH = 500;
 
 export interface ShelfJob {
   jobID: string;
   expires: string;
-  // What the panel called the job (K5).
+  // What the user calls the job (K5); renamed in the manager (UI-01c).
   title: string | null;
+  // What the panel called it when it was placed: an empty name in the manager brings it back.
+  titleDefault: string | null;
   createdAt: string;
   archived: boolean;
   groupId: string | null;
@@ -47,6 +49,7 @@ export interface ShelfJob {
 export interface ShelfBatch {
   id: string;
   title: string;
+  titleDefault: string;
   createdAt: string;
   archived: boolean;
   groupId: string | null;
@@ -138,17 +141,22 @@ function parseShelf(raw: string): Shelf | 'foreign' | 'broken' {
       .map((r) => ({ label: text(r.label, MAX_TITLE_LENGTH), message: text(r.message, MAX_MESSAGE_LENGTH) }))
       .filter((r): r is { label: string; message: string } => r.label !== null && r.message !== null)
       .slice(0, MAX_REFUSED);
-    batches.push({ id: b.id, title, createdAt, archived: b.archived === true, groupId: known(b.groupId), refused });
+    batches.push({
+      id: b.id, title, titleDefault: text(b.titleDefault, MAX_TITLE_LENGTH) ?? title, createdAt,
+      archived: b.archived === true, groupId: known(b.groupId), refused,
+    });
   }
   const jobs: ShelfJob[] = [];
   for (const j of list(data.jobs)) {
     const expires = time(j.expires);
     if (!isJobId(j.jobID) || !expires || jobs.some((x) => x.jobID === j.jobID)) continue;
     const batchId = typeof j.batchId === 'string' && batches.some((b) => b.id === j.batchId) ? j.batchId : null;
+    const title = text(j.title, MAX_TITLE_LENGTH);
     jobs.push({
       jobID: j.jobID,
       expires,
-      title: text(j.title, MAX_TITLE_LENGTH),
+      title,
+      titleDefault: text(j.titleDefault, MAX_TITLE_LENGTH) ?? title,
       createdAt: time(j.createdAt) ?? expires,
       archived: j.archived === true,
       groupId: known(j.groupId),
@@ -168,6 +176,7 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
     expires: j.expires,
     createdAt: j.createdAt,
     ...(j.title ? { title: j.title } : {}),
+    ...(j.titleDefault && j.titleDefault !== j.title ? { titleDefault: j.titleDefault } : {}),
     ...(j.archived ? { archived: true } : {}),
     ...(j.groupId ? { groupId: j.groupId } : {}),
     ...(j.batchId ? { batchId: j.batchId, ...(j.part ? { part: j.part } : {}) } : {}),
@@ -177,6 +186,7 @@ function serialize(shelf: Shelf, without: ReadonlySet<string>): string {
   const batches = shelf.batches.map((b) => ({
     id: b.id,
     title: b.title,
+    ...(b.titleDefault !== b.title ? { titleDefault: b.titleDefault } : {}),
     createdAt: b.createdAt,
     ...(b.archived ? { archived: true } : {}),
     ...(b.groupId ? { groupId: b.groupId } : {}),
@@ -201,9 +211,10 @@ function legacyJobs(now: number): ShelfJob[] {
     const jobs: ShelfJob[] = [];
     for (const entry of parsed.filter(record)) {
       const expires = time(entry.expires);
+      const title = text(entry.title, MAX_TITLE_LENGTH);
       if (!isJobId(entry.jobID) || !expires || Date.parse(expires) <= now || jobs.some((j) => j.jobID === entry.jobID)) continue;
       jobs.push({
-        jobID: entry.jobID, expires, title: text(entry.title, MAX_TITLE_LENGTH), createdAt: expires,
+        jobID: entry.jobID, expires, title, titleDefault: title, createdAt: expires,
         archived: false, groupId: null, batchId: null, part: null, range: null, order: null,
       });
     }
@@ -248,8 +259,10 @@ export function loadShelf(now: number = Date.now()): ShelfLoad {
   return { shelf, state: saved.state, locked: false };
 }
 
-// Writes the shelf; see the head for what happens when it does not fit.
-export function saveShelf(mine: Shelf): ShelfSave {
+// Writes the shelf; see the head for what happens when it does not fit. A group named in `removedGroups`
+// is taken out of what is stored as well: the union would give it back (UI-01 §6.10, only an empty group
+// may go, which is the caller's rule).
+export function saveShelf(mine: Shelf, removedGroups: readonly string[] = []): ShelfSave {
   const target = local();
   if (!target) return { state: 'memory', dropped: [] };
   let shelf = mine;
@@ -264,6 +277,7 @@ export function saveShelf(mine: Shelf): ShelfSave {
         groups: union(stored.groups, mine.groups, (g) => g.id),
       };
     }
+    if (removedGroups.length > 0) shelf = { ...shelf, groups: shelf.groups.filter((g) => !removedGroups.includes(g.id)) };
     if (shelf.jobs.length + shelf.batches.length + shelf.groups.length === 0) {
       target.removeItem(SHELF_KEY);
       return { state: 'ok', dropped: [] };

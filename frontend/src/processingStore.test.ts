@@ -4,48 +4,31 @@
 import { describe, expect, it } from 'vitest';
 
 import { HttpError } from './api';
-import { failureText, refusalMessage, resultFiles, ZIP_LABEL } from './processingStore';
+import { archiveOf, failureText, refusalMessage } from './processingStore';
 
 const link = (name: string) => ({ href: `/processing/jobs/x/results/${name}` });
 
-describe('resultFiles', () => {
-  it('is the one archive where the document names one', () => {
-    expect(resultFiles({ result: link('result.tif'), bundle: link('result.zip') })).toEqual([
-      { file: 'result.zip', label: ZIP_LABEL },
-    ]);
-    expect(resultFiles({ export: link('export.zip'), recipe: link('recipe.json') })).toEqual([
-      { file: 'export.zip', label: ZIP_LABEL },
-    ]);
+describe('archiveOf', () => {
+  it('is the archive where the document names one', () => {
+    expect(archiveOf({ result: link('result.tif'), bundle: link('result.zip') })).toBe('result.zip');
+    expect(archiveOf({ export: link('export.zip'), recipe: link('recipe.json') })).toBe('export.zip');
   });
 
-  it('keeps the methods text beside the archive and among the single links', () => {
-    expect(resultFiles({ result: link('result.tif'), bundle: link('result.zip'), methods: link('methods.txt') })).toEqual([
-      { file: 'result.zip', label: ZIP_LABEL },
-      { file: 'methods.txt', label: 'Methods' },
-    ]);
-    expect(resultFiles({ result: link('result.tif'), methods: link('methods.txt') })).toEqual([
-      { file: 'result.tif', label: 'Result (COG)' },
-      { file: 'methods.txt', label: 'Methods' },
-    ]);
+  it('is the archive even where the document links the methods text beside it', () => {
+    expect(archiveOf({ result: link('result.tif'), bundle: link('result.zip'), methods: link('methods.txt') })).toBe('result.zip');
   });
 
-  it('is the single links, each once, without names the job API does not serve', () => {
-    expect(
-      resultFiles({
-        result: link('result.tif'),
-        again: link('result.tif'),
-        other: link('evil.exe'),
-        broken: { href: 7 },
-        recipe: link('recipe.json'),
-      }),
-    ).toEqual([
-      { file: 'result.tif', label: 'Result (COG)' },
-      { file: 'recipe.json', label: 'Recipe' },
-    ]);
+  it('is nothing for a result from before the archives: the single files are not offered any more', () => {
+    expect(archiveOf({ result: link('result.tif'), methods: link('methods.txt'), recipe: link('recipe.json') })).toBeNull();
   });
 
-  it('is empty for an empty document', () => {
-    expect(resultFiles({})).toEqual([]);
+  it('skips a link that is no text and a name the job API does not serve', () => {
+    expect(archiveOf({ broken: { href: 7 }, other: link('evil.zip'), again: link('result.zip') })).toBe('result.zip');
+    expect(archiveOf({ broken: { href: 7 }, other: link('evil.zip') })).toBeNull();
+  });
+
+  it('is nothing for an empty document', () => {
+    expect(archiveOf({})).toBeNull();
   });
 });
 

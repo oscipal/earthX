@@ -131,7 +131,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('fetch', fetchMock);
   useProcessingStore.getState().resetDraft();
-  useProcessingStore.setState({ open: false, jobsOpen: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
+  useProcessingStore.setState({ open: false, descriptions: {}, jobs: [], preview: null, previewNote: null });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -353,7 +353,7 @@ describe('the preview of a mask', () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
-    // A chain of several steps is asked of the tiler first (`probeChain`).
+    // A chain is asked of the tiler first (`probeChain`).
     await flush();
   }
 

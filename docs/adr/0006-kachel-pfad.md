@@ -870,6 +870,8 @@ aufnehmen (§3.2)?
    bevor der Viewer direkt lädt; das Feld dafür (`AccessInfo.cors`) gibt es
    bereits.
 
+
+**Nachtrag NM4-26 (2026-10-26, zu Punkt 2, 4 und 8):** Gemessen wurde eine Ansicht mit 13 Szenen × 25 Kacheln über eine nachgebaute ferne Quelle. Dabei holte GDAL das Sechsfache der nötigen Bytes (1,72 GB statt 284 MB). Ursache war `GDAL_HTTP_MULTIRANGE=YES`: Dieser Weg (`VSICurlHandle::ReadMultiRange`, GDAL 3.12.2) liest und füllt den globalen `/vsicurl/`-Cache nicht, und der Cache hatte nur 16 MB. `MERGE_CONSECUTIVE_RANGES` (Punkt 4) ändert daran nichts. Seitdem gelten im `tiler` zwei Profile aus `gateway/gdal.py`: `SERIAL` + 256 MiB Cache für Kachel, Statistik, TileJSON, Mosaik und Ergebnis, und 256 MiB Cache ohne `SERIAL` für den Zuschnitt. Worker und Runner bleiben beim bisherigen Profil. Damit wird jedes Byte einmal geholt, und die Kacheln sind byte-identisch. Auch der Header einer Datei bleibt im Cache, das entschärft Punkt 8 für einen Prozess. Zu Punkt 2: Die Schlange einer Ansicht steht im Browser (6 Verbindungen über HTTP/1.1), nicht im `tiler`. HTTP/2 davor und mehrere Prozesse kommen mit M6. Zahlen und Quellen: `plans/querschnitt/nm4-26-kachel-leistung.md` §8–§10, §18.
 ---
 
 ## 9. Quellen
