@@ -75,6 +75,7 @@ SHIPPED_TABLES = (
     "public.earthx_job_limits",
     "public.earthx_recipe",
     "public.earthx_permalink",
+    "public.earthx_bundle",
 )
 
 

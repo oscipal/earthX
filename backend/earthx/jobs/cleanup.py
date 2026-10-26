@@ -11,7 +11,7 @@ finished. A recipe has no term of its own: it stays while a job or a run refers 
 it lives as long as the latest result that uses it, and only a new run lengthens that. A cache
 hit does not: the bucket rule counts from the write of the object, so a run whose term a hit
 had moved would point at deleted bytes (adr/0015 F13, as amended in §7.1). A permalink has a fixed term from its creation and is deleted whole
-(M4-19e, adr/0015 §13). Nothing here is lengthened by looking.
+(M4-19e, adr/0015 §13), a bundle of jobs likewise (UI-01e). Nothing here is lengthened by looking.
 
 Foreign keys are RESTRICT, so a deletion in the wrong order fails loudly instead of taking
 valid rows along. Only one supervisor works at a time: the batch holds a transaction-level
@@ -44,10 +44,11 @@ class CleanupResult:
     recipes: int = 0
     objects: int = 0
     permalinks: int = 0
+    bundles: int = 0
 
     @property
     def total(self) -> int:
-        return self.runs + self.jobs + self.recipes + self.permalinks
+        return self.runs + self.jobs + self.recipes + self.permalinks + self.bundles
 
 
 def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> CleanupResult | None:
@@ -100,29 +101,48 @@ def cleanup_batch(conn: psycopg.Connection, store: Store, *, batch: int = BATCH)
             """,
             (batch,),
         ).rowcount
-        return CleanupResult(runs=runs, jobs=jobs, recipes=recipes, objects=objects, permalinks=permalinks)
+        bundles = conn.execute(
+            """
+            DELETE FROM public.earthx_bundle WHERE bundle_id IN (
+                SELECT bundle_id FROM public.earthx_bundle
+                WHERE expires_at < clock_timestamp() ORDER BY expires_at LIMIT %s
+            )
+            """,
+            (batch,),
+        ).rowcount
+        return CleanupResult(
+            runs=runs, jobs=jobs, recipes=recipes, objects=objects, permalinks=permalinks, bundles=bundles
+        )
 
 
 def cleanup(conn: psycopg.Connection, store: Store, *, batch: int = BATCH) -> CleanupResult:
     """Batches until nothing expired is left; the sum of what was deleted."""
-    runs = jobs = recipes = objects = permalinks = 0
+    runs = jobs = recipes = objects = permalinks = bundles = 0
     while True:
         done = cleanup_batch(conn, store, batch=batch)
         if done is None or done.total == 0:
             break
-        runs, jobs, recipes, objects, permalinks = (
+        runs, jobs, recipes, objects, permalinks, bundles = (
             runs + done.runs,
             jobs + done.jobs,
             recipes + done.recipes,
             objects + done.objects,
             permalinks + done.permalinks,
+            bundles + done.bundles,
         )
-        if done.runs < batch and done.recipes < batch and done.permalinks < batch:
+        if done.runs < batch and done.recipes < batch and done.permalinks < batch and done.bundles < batch:
             break
-    result = CleanupResult(runs, jobs, recipes, objects, permalinks)
+    result = CleanupResult(runs, jobs, recipes, objects, permalinks, bundles)
     if result.total:
         LOGGER.info(
-            "expired runs and permalinks cleaned up",
-            extra={"runs": runs, "jobs": jobs, "recipes": recipes, "objects": objects, "permalinks": permalinks},
+            "expired runs, permalinks and bundles cleaned up",
+            extra={
+                "runs": runs,
+                "jobs": jobs,
+                "recipes": recipes,
+                "objects": objects,
+                "permalinks": permalinks,
+                "bundles": bundles,
+            },
         )
     return result
