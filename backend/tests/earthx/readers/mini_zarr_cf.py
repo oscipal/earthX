@@ -1,4 +1,4 @@
-"""A synthetic Zarr store whose variables carry CF scaling, like the EOPF products.
+"""A synthetic Zarr store whose variables carry CF scaling, like products in Zarr that do.
 
 The real stores keep ``uint16`` with ``scale_factor 0.0001``, ``add_offset -0.1``
 and ``_FillValue 0`` as attributes (adr/0014 §3.11, §17.10), and the reader decodes
@@ -9,8 +9,8 @@ Two variables, ``b04`` and ``b08``, on one 10 m grid in UTM 32N; the raw values
 are fixed rather than random, so expected physical values are written down in the
 test rather than recomputed by it. ``0`` is the fill value and marks one corner.
 
-A second group, ``scl20m``, holds the scene classification layer ``scl`` the way the EOPF
-products do (``uint8``, classes 0 to 11, CF attributes ``scale_factor 1``, ``add_offset 0``,
+A second group, ``scl20m``, holds the scene classification layer ``scl`` the way
+such products do (``uint8``, classes 0 to 11, CF attributes ``scale_factor 1``, ``add_offset 0``,
 ``_FillValue 0``) on the 20 m grid of the same extent, so the operator ``mask`` reads a nested
 grid from a Zarr store (M4-18a). Its fill value marks the top left 2×2 pixels, the same ground
 as the fill corner of the bands.

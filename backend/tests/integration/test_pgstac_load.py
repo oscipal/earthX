@@ -7,13 +7,14 @@ tests/catalog), and loading is idempotent.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import replace
 
 import psycopg
 import pytest
 
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
+from earthx.catalog.datasets import COP_DEM_GLO_30, REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.load import main
 from earthx.catalog.pgstac import (
     PgstacError,
@@ -23,8 +24,10 @@ from earthx.catalog.pgstac import (
     load_collection,
     load_registry,
     read_collection,
+    remove_gone_collections,
     use_pgstac_search_path,
 )
+from earthx.catalog.registry import DatasetRegistry
 
 
 class TestVersionCheck:
@@ -95,9 +98,9 @@ class TestLoading:
             assert cur.fetchone()[0] == 1
 
     def test_loading_the_registry_writes_every_entry(self, conn) -> None:
-        written = load_registry(conn, REGISTRY)
-        assert written == tuple(entry.dataset_id for entry in REGISTRY)
-        for dataset_id in written:
+        outcome = load_registry(conn, REGISTRY)
+        assert outcome.written == tuple(entry.dataset_id for entry in REGISTRY)
+        for dataset_id in outcome.written:
             assert read_collection(conn, dataset_id) is not None
 
     def test_an_unknown_collection_is_absent_not_empty(self, conn) -> None:
@@ -129,6 +132,87 @@ class TestLoading:
             cur.execute("SELECT pgstac.get_collection(%s)", (SENTINEL_2_L2A.dataset_id,))
             content = cur.fetchone()[0]
         assert content["id"] == SENTINEL_2_L2A.dataset_id
+
+
+def _item(collection: str) -> dict[str, object]:
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "id": "GONE_ITEM",
+        "collection": collection,
+        "geometry": {"type": "Point", "coordinates": [0, 0]},
+        "bbox": [0, 0, 0, 0],
+        "properties": {"datetime": "2026-01-01T00:00:00Z"},
+        "assets": {},
+        "links": [],
+    }
+
+
+def _count(conn, table: str, collection: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) FROM pgstac.{table} WHERE collection = %s", (collection,))
+        return cur.fetchone()[0]
+
+
+class TestRemovingWhatLeftTheRegistry:
+    """adr/0017 rule IV, F5: the registry is the single source, so a federated collection that
+    left it leaves pgstac in the same run, and nothing else does."""
+
+    GONE = replace(SENTINEL_2_L2A, dataset_id="gone-dataset", source=replace(SENTINEL_2_L2A.source, source_collection_id="gone-dataset"))
+
+    @pytest.fixture(autouse=True)
+    def an_empty_catalogue(self, conn) -> None:
+        """Collections another test committed are no part of the question; the transaction is rolled back."""
+        use_pgstac_search_path(conn)
+        conn.execute("DELETE FROM pgstac.collections")
+
+    def test_a_federated_collection_that_left_is_removed_with_its_items(self, conn) -> None:
+        load_collection(conn, self.GONE)
+        conn.execute("SELECT pgstac.create_item(%s::jsonb)", (json.dumps(_item(self.GONE.dataset_id)),))
+        assert _count(conn, "items", self.GONE.dataset_id) == 1
+
+        outcome = load_registry(conn, REGISTRY)
+
+        assert outcome.removed == (self.GONE.dataset_id,)
+        assert read_collection(conn, self.GONE.dataset_id) is None
+        assert _count(conn, "items", self.GONE.dataset_id) == 0
+
+    def test_the_collections_of_the_registry_stay_untouched(self, conn) -> None:
+        load_registry(conn, REGISTRY)
+        before = {entry.dataset_id: read_collection(conn, entry.dataset_id) for entry in REGISTRY}
+        load_collection(conn, self.GONE)
+
+        load_registry(conn, REGISTRY)
+
+        assert {entry.dataset_id: read_collection(conn, entry.dataset_id) for entry in REGISTRY} == before
+
+    def test_a_materialized_collection_is_never_removed(self, conn) -> None:
+        """The DEM's tiles exist nowhere else; only a decision of its own would delete them."""
+        load_collection(conn, COP_DEM_GLO_30)
+
+        outcome = load_registry(conn, DatasetRegistry((SENTINEL_2_L2A,)))
+
+        assert outcome.removed == ()
+        assert read_collection(conn, COP_DEM_GLO_30.dataset_id) is not None
+
+    def test_a_collection_that_is_not_ours_is_left_alone(self, conn) -> None:
+        foreign = {"id": "foreign", "type": "Collection", "stac_version": "1.0.0", "description": "x", "license": "MIT",
+                   "extent": {"spatial": {"bbox": [[-180, -90, 180, 90]]}, "temporal": {"interval": [[None, None]]}}, "links": []}
+        conn.execute("SELECT pgstac.create_collection(%s::jsonb)", (json.dumps(foreign),))
+
+        outcome = load_registry(conn, REGISTRY)
+
+        assert outcome.removed == ()
+        assert read_collection(conn, "foreign") is not None
+
+    def test_a_second_run_removes_nothing(self, conn) -> None:
+        load_collection(conn, self.GONE)
+        assert load_registry(conn, REGISTRY).removed == (self.GONE.dataset_id,)
+        assert load_registry(conn, REGISTRY).removed == ()
+
+    def test_an_empty_registry_still_removes_by_the_rule(self, conn) -> None:
+        load_collection(conn, self.GONE)
+        assert remove_gone_collections(conn, DatasetRegistry(())) == (self.GONE.dataset_id,)
 
 
 class TestTheEntryPoint:

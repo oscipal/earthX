@@ -23,12 +23,13 @@ from rasterio.warp import transform_bounds
 from rio_tiler.constants import WEB_MERCATOR_TMS, WGS84_CRS
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DatasetRegistry, LicenseTier
 from earthx.gateway import check_url
 from earthx.processing import run
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.recipe import recipe_from_data
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.api.test_tiler_operator import HEIGHT, WIDTH, _job_tile, _source_position, _tiles
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
@@ -37,16 +38,14 @@ from tests.earthx.readers import mini_zarr, mini_zarr_cf
 
 ITEM = "ITEM_A"
 COG = "synthetic-cog"
-ZARR = "synthetic-zarr"
+ZARR = SYNTHETIC_ZARR.dataset_id
 MASK = {"source": "scl", "classes": [3, 8, 9, 10]}
 NORMALIZE = {"in_min": 0.0, "in_max": 0.5, "out_min": 0.0, "out_max": 255.0, "clip": True}
 
 COG_DATASET = replace(
     SENTINEL_2_L2A, dataset_id=COG, source=replace(SENTINEL_2_L2A.source, asset_hosts=(sources.HOST,))
 )
-ZARR_DATASET = replace(
-    SENTINEL_2_L2A_ZARR3, dataset_id=ZARR, source=replace(SENTINEL_2_L2A_ZARR3.source, asset_hosts=(mini_zarr.HOST,))
-)
+ZARR_DATASET = SYNTHETIC_ZARR
 NO_LAYER = replace(
     COG_DATASET,
     dataset_id="synthetic-no-layer",

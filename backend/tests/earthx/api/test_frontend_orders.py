@@ -22,8 +22,9 @@ from shapely.geometry import shape
 
 from earthx.processing.operators import REGISTRY as REAL_OPERATORS
 from earthx.processing.recipe import parse_request
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, registry_with_zarr
 from tests.earthx.api.conftest import Rig
-from tests.earthx.api.test_intake import dem_item, eopf_item, s2_item
+from tests.earthx.api.test_intake import dem_item, s2_item, zarr_item
 from tests.earthx.api.test_processing_route import EXECUTION, client_for, replace_api
 
 pytestmark = pytest.mark.anyio
@@ -39,8 +40,13 @@ def test_there_are_orders_to_check() -> None:
     assert {json.loads(f.read_text("utf-8"))["inputs"]["recipe"]["inputs"][0]["dataset"] for f in FILES} == {
         "sentinel-2-c1-l2a",
         "cop-dem-glo-30",
-        "sentinel-2-l2a-zarr3",
+        SYNTHETIC_ZARR.dataset_id,
     }
+
+
+def api_of(rig: Rig):
+    """The job API on the real operators and the registry with the synthetic Zarr entry the orders name."""
+    return replace_api(rig.api, operators=REAL_OPERATORS, registry=registry_with_zarr())
 
 
 def recipe_of(path: Path) -> dict[str, Any]:
@@ -71,7 +77,7 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
     area = recipe["aoi"] if "aoi" in recipe else None
     west, south, east, north = shape(area).bounds if area else (8.9, 46.9, 9.1, 47.1)
     box = (west - 0.1, south - 0.1, east + 0.1, north + 0.1)
-    make = {"sentinel-2-c1-l2a": s2_item, "cop-dem-glo-30": dem_item, "sentinel-2-l2a-zarr3": eopf_item}
+    make = {"sentinel-2-c1-l2a": s2_item, "cop-dem-glo-30": dem_item, SYNTHETIC_ZARR.dataset_id: zarr_item}
     for item_id in entry["groups"][0]:
         item = make[entry["dataset"]](item_id, box)
         if entry["dataset"] == "sentinel-2-c1-l2a":
@@ -88,7 +94,7 @@ def with_item(rig: Rig, recipe: dict[str, Any]) -> None:
 async def test_the_estimate_route_takes_the_body(rig: Rig, path: Path) -> None:
     body = json.loads(path.read_text("utf-8"))
     with_item(rig, body["inputs"]["recipe"])
-    async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+    async with client_for(api_of(rig)) as client:
         response = await client.post(ESTIMATE, json=body)
     assert response.status_code == 200, response.text
     # What `processing.ts::parseEstimate` reads of the answer.
@@ -101,7 +107,7 @@ async def test_the_estimate_route_takes_the_body(rig: Rig, path: Path) -> None:
 async def test_the_execution_route_takes_the_body(rig: Rig, path: Path) -> None:
     body = json.loads(path.read_text("utf-8"))
     with_item(rig, body["inputs"]["recipe"])
-    async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+    async with client_for(api_of(rig)) as client:
         response = await client.post(EXECUTION, json=body, headers={"Prefer": "respond-async"})
     assert response.status_code == 201, response.text
     # What `processing.ts::parseStatusInfo` reads of the answer.
@@ -127,7 +133,7 @@ class TestTheCheckWouldHaveFoundTheFirstBug:
     async def test_the_estimate_route_refuses_them_with_a_400(self, rig: Rig, body: dict[str, Any]) -> None:
         with_item(rig, body["inputs"]["recipe"])
         body["inputs"]["recipe"]["aoi"]["properties"] = {"source": "x"}
-        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+        async with client_for(api_of(rig)) as client:
             response = await client.post(ESTIMATE, json=body)
         assert response.status_code in (400, 422)
         assert "extra_forbidden" in response.json()["detail"]
@@ -151,14 +157,14 @@ class TestTheOrdersOfAMosaic:
         rig.source.items[("sentinel-2-c1-l2a", odd)]["properties"]["s2:datatake_id"] = (
             "GS2B_20260602T100031_000000_N05.11"
         )
-        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+        async with client_for(api_of(rig)) as client:
             response = await client.post(EXECUTION, json=body, headers={"Prefer": "respond-async"})
         assert response.status_code == 422 and odd in response.json()["detail"], response.text
 
     async def test_the_estimate_of_the_dialog_order_is_taken(self, rig: Rig) -> None:
         body = json.loads(self.DIALOG.read_text("utf-8"))
         with_item(rig, body["inputs"]["recipe"])
-        async with client_for(replace_api(rig.api, operators=REAL_OPERATORS)) as client:
+        async with client_for(api_of(rig)) as client:
             response = await client.post(ESTIMATE, json=body)
         assert response.status_code == 200, response.text
         assert response.json()["skippedItems"] == []

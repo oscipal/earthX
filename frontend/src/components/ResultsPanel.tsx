@@ -40,7 +40,7 @@ function Row({ item }: { item: StacItem }) {
           onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
         />
       ) : (
-        // No preview image on this item (for sentinel-2-l2a-zarr3 that is every
+        // No preview image on this item (for a Zarr dataset that is every
         // item, adr/0007 §12.7), and the substitute is a map tile rather than a
         // picture per row (M2-10, F4 a) — so the row says why it is empty instead
         // of looking broken. It says only that, and not what the map does: whether

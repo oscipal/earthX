@@ -1,11 +1,10 @@
 """Source protocols: search, item fetch, materialization, aggregation.
 
 One adapter per source protocol (architekturplan.md 6.1). ``earth_search`` speaks
-Earth Search v1 (Sentinel-2 L2A as COG); ``eopf_stac`` speaks the EOPF Sentinel Zarr
-Samples Service (the same dataset again, as Zarr, M2-09b). Both answer search and
-item fetch; each also answers a coverage way of adr/0004 §5 — Earth Search its
-aggregation, EOPF a declared sample (K-06, M3-11c). ``cop_dem_bucket`` (M3-11b)
-speaks a third, structurally different protocol: it never searches, it
+Earth Search v1 (Sentinel-2 L2A as COG); it answers search and item fetch and a coverage
+way of adr/0004 §5, the aggregation (K-06, M3-11c). The EOPF adapter left with its dataset
+(adr/0017). ``cop_dem_bucket`` (M3-11b)
+speaks a structurally different protocol: it never searches, it
 *materializes* — it turns a bucket's own tile list into STAC items, once, for the
 one-off command in ``discovery``. Discovery follows with the harvester proper (M5).
 
@@ -35,6 +34,7 @@ from earthx.adapters.errors import (
     AdapterSpecMismatch,
     InvalidQuery,
     NotMaterialized,
+    RetiredCollection,
     UnknownCollection,
     UnsupportedFilter,
     UnsupportedSource,
@@ -50,7 +50,13 @@ from earthx.adapters.federated_search import (
 )
 from earthx.adapters.spec import ADAPTER_SPECS, AdapterSpec, AdapterSpecs, FilterSupport, check_adapter_specs
 from earthx.catalog.coverage import CoverageProviderMismatch, CoverageQuery, CoverageResult
-from earthx.catalog.registry import DatasetConfig, DatasetRegistry, ItemHolding, UnknownDatasetError
+from earthx.catalog.registry import (
+    DatasetConfig,
+    DatasetRegistry,
+    ItemHolding,
+    RetiredDatasetError,
+    UnknownDatasetError,
+)
 from earthx.gateway import Gateway
 
 
@@ -63,6 +69,8 @@ def dataset_config(registry: DatasetRegistry, dataset_id: str) -> DatasetConfig:
     """
     try:
         return registry.get(dataset_id)
+    except RetiredDatasetError as error:
+        raise RetiredCollection(error.retired) from None
     except UnknownDatasetError:
         raise UnknownCollection(dataset_id) from None
 
@@ -164,10 +172,9 @@ async def coverage(
     gateway: Gateway,
     cache: SearchCache | None = None,
 ) -> CoverageResult:
-    """Coverage density or declared sample for one federated collection, dispatched
+    """Coverage density for one federated collection, dispatched
     by ``(adapter, coverage provider)`` (K-06, M3-11c) — the seam
-    ``api.coverage_route`` calls instead of picking ``aggregate_coverage`` or
-    ``sample_coverage`` itself. A pair the table does not answer is
+    ``api.coverage_route`` calls instead of picking ``aggregate_coverage`` itself. A pair the table does not answer is
     :class:`~earthx.catalog.coverage.CoverageProviderMismatch`, the coverage
     counterpart of :class:`UnsupportedSource`; ``local-sql`` never is, because
     ``catalog`` answers it (adr/0004 §5).
@@ -196,6 +203,7 @@ __all__ = [
     "ItemPage",
     "MaterializeOutcome",
     "NotMaterialized",
+    "RetiredCollection",
     "SearchCache",
     "SearchParams",
     "UnknownCollection",

@@ -22,7 +22,7 @@ from pyproj import Geod
 from shapely.geometry import shape as shapely_shape
 
 from earthx.access.crop_rules import METHODS_FILENAME
-from earthx.catalog.registry import DatasetConfig, doi_name
+from earthx.catalog.registry import Attributable, doi_name
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import REGISTRY
 from earthx.processing.operators.registry import OperatorRegistry
@@ -52,7 +52,7 @@ class DatasetFacts:
     doi: str | None = None
 
     @classmethod
-    def of(cls, config: DatasetConfig) -> DatasetFacts:
+    def of(cls, config: Attributable) -> DatasetFacts:
         # The registry keeps the address of the DOI; the text names the DOI itself, as citation.bib does.
         return cls(config.title, doi_name(config.doi))
 

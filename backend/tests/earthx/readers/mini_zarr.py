@@ -4,8 +4,8 @@ No binary fixture: the store is written into a ``tmp_path`` by the test that nee
 it, which keeps the repository free of data whose licence would have to be argued
 (ENTSCHEIDUNGEN §4) and keeps what the reader is measured against readable.
 
-It is not a tidy textbook store. It copies the four places where the real EOPF
-products differ from one, because those are the places a reader gets wrong:
+It is not a tidy textbook store. It copies the four places where products in Zarr
+differ from one, because those are the places a reader gets wrong:
 
 * **resolution groups instead of ``multiscales``** — ``r10m``/``r20m``/``r60m`` as
   sibling groups of the same extent (§3.4), so picking a level means picking a

@@ -162,7 +162,7 @@ from earthx.access.crop_rules import (
     native_crop_grid,
     rasterize_aoi,
 )
-from earthx.catalog.registry import AcquisitionYears, DatasetConfig, acquisition_years
+from earthx.catalog.registry import AcquisitionYears, Attributable, DatasetConfig, acquisition_years
 from earthx.readers.cog import AssetPath
 from earthx.readers.zarr_reader import ZarrAsset
 
@@ -943,7 +943,7 @@ def _aoi_provenance_line(aoi_geometry: Mapping[str, Any]) -> str | None:
     return line
 
 
-def attribution_text(config: DatasetConfig, *, years: AcquisitionYears | None) -> str | None:
+def attribution_text(config: Attributable, *, years: AcquisitionYears | None) -> str | None:
     """The attribution a crop carries: the conservative "modified" text, else the plain one.
 
     The one place the text is made (NM4-01): from the registry's template, with ``{year}`` taken from
@@ -968,14 +968,14 @@ def attribution_years(config: DatasetConfig, items: Iterable[Mapping[str, Any]])
     return acquisition_years(items) if attribution_names_year(config) else None
 
 
-def attribution_names_year(config: DatasetConfig) -> bool:
+def attribution_names_year(config: Attributable) -> bool:
     """Whether the dataset's attribution has the year of acquisition in it (the DEM's fixed wording has none)."""
     text = config.license.attribution_modified or config.license.attribution_unmodified
     return bool(text) and "{year}" in text
 
 
 def build_notice_text(
-    config: DatasetConfig,
+    config: Attributable,
     *,
     item_ids: Sequence[str],
     assets: Sequence[str] = (),

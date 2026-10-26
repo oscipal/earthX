@@ -29,7 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from earthx.catalog.datasets import REGISTRY as DATASETS
-from earthx.catalog.registry import DatasetRegistry, UnknownDatasetError
+from earthx.catalog.registry import DatasetRegistry
 from earthx.processing import RunResult, check_scope, failure_kind, run, worker_environment
 from earthx.processing.errors import RecipeInvalid, UnsupportedRecipe
 from earthx.processing.methods import DatasetFacts
@@ -144,10 +144,8 @@ def _compare_engine(loaded: RecipeFile) -> None:
 
 def _facts_of(dataset_id: str) -> DatasetFacts | None:
     """The title and DOI of the dataset in this image's registry; the text names it by its identifier if it is not there."""
-    try:
-        return DatasetFacts.of(DATASETS.get(dataset_id))
-    except UnknownDatasetError:
-        return None
+    known = DATASETS.attributable(dataset_id)
+    return DatasetFacts.of(known) if known is not None else None
 
 
 def _run(loaded: RecipeFile, out: Path) -> int:

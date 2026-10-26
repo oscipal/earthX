@@ -287,7 +287,7 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 //
 // `image` is a ready-made quicklook the source publishes; the browser loads it
 // straight from the asset host (D14). `tiles` is the substitute for a source that
-// publishes none at all — `sentinel-2-l2a-zarr3` has no asset with a `thumbnail`,
+// publishes none at all — a Zarr dataset has no asset with a `thumbnail`,
 // `overview`, `preview` or `visual` role anywhere (adr/0007 §12.7). The substitute
 // is a tile URL on the coarsest level the dataset releases, which for that dataset
 // is z8 and reads `r720m`: 38 kB and 0.6 s, measured (adr/0007 §12.4). No extra
@@ -295,7 +295,7 @@ export function quicklookAsset(item: StacItem): StacAsset | null {
 // the preview, and everything above it is overzoomed, which is what a quicklook is.
 //
 // That equation only holds while `min_zoom` is in the order of a scene, which is
-// why `sentinel-2-l2a-zarr3` sets z8 ("one tile is about one scene", adr/0007
+// why a Zarr dataset sets z8 ("one tile is about one scene", adr/0007
 // §12.10) — for a dataset released globally from z0 the tile fallback would be a
 // world tile clipped to one item, nearly nothing (M3-02 F-05). `earthx:viewer.
 // browse` (M3-12) is the registry saying which of the two applies, rather than

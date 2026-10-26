@@ -19,8 +19,9 @@ from earthx.catalog.collection import (
     _stac_license,
     to_stac_collection,
 )
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A
 from earthx.catalog.registry import Capabilities
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 EARTHX_FIELDS = (
     "earthx:data_class",
@@ -104,7 +105,7 @@ def test_format_is_the_registry_entrys_own_value(collection: dict) -> None:
     from a Zarr store (no single file to link) by this field, never by a
     dataset-specific branch."""
     assert collection["earthx:format"] == "cog"
-    assert to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:format"] == "zarr"
+    assert to_stac_collection(SYNTHETIC_ZARR)["earthx:format"] == "zarr"
 
 
 def test_the_temporal_extent_is_the_one_the_source_reports(collection: dict) -> None:
@@ -282,7 +283,7 @@ class TestTheViewerBlockCarriesTheReleasedZoomRange:
         }
 
     def test_the_second_dataset_carries_its_own_range(self) -> None:
-        viewer = to_stac_collection(SENTINEL_2_L2A_ZARR3)["earthx:viewer"]
+        viewer = to_stac_collection(SYNTHETIC_ZARR)["earthx:viewer"]
         assert (viewer["min_zoom"], viewer["max_zoom"]) == (8, 14)
 
     def test_a_dataset_without_a_viewer_block_stays_null(self, vary) -> None:

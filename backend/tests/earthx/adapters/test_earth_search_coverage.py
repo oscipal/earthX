@@ -35,7 +35,7 @@ from earthx.catalog.coverage import (
     UpstreamCoverageShapeError,
 )
 from earthx.catalog.datasets import SENTINEL_2_L2A
-from earthx.catalog.registry import CoverageProvider
+from earthx.catalog.registry import CoverageProvider, ItemHolding
 from earthx.gateway import UpstreamError, UpstreamTimeout
 
 from .conftest import answering, gateway_for, load
@@ -495,10 +495,12 @@ class TestDispatchMistakes:
     """Asking the wrong way for a dataset is an error, not an empty map."""
 
     async def test_a_dataset_answered_another_way_is_refused(self, dataset_id: str) -> None:
-        """``local-sql`` and ``sample`` exist in the registry but not yet in code."""
+        """``local-sql`` exists in the registry, but this adapter does not answer it."""
         gateway, seen = answering(ok("aggregate_complete"))
         config = replace(
-            SENTINEL_2_L2A, coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.SAMPLE)
+            SENTINEL_2_L2A,
+            source=replace(SENTINEL_2_L2A.source, item_holding=ItemHolding.MATERIALIZED),
+            coverage=replace(SENTINEL_2_L2A.coverage, provider=CoverageProvider.LOCAL_SQL),
         )
 
         with pytest.raises(CoverageProviderMismatch):

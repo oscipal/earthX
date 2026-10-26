@@ -7,7 +7,7 @@ free of a dataset id in a branch already — the ids only ever showed up in comm
 moves into the registry (`earthx:viewer.results_group_by`/`quicklook_nodata_max`).
 This is the test that report proposed (§5.3): a static sweep of `frontend/src`,
 outside `*.test.*` files and outside comments/strings, for (a) a `dataset_id` this
-backend's own registry knows and (b) a property name carrying the prefix of a STAC
+backend's own registry knows (or retired) and (b) a property name carrying the prefix of a STAC
 extension one source uses (`s2:`, `eo:`, `sat:`, `grid:`, `mgrs:`, `landsat:`,
 `eopf:`). `proj:` stays allowed — the projection extension is source-independent,
 and `geoUtils.ts` needs it (M3-02 §5.3).
@@ -30,13 +30,14 @@ from pathlib import Path
 
 import pytest
 
-from earthx.catalog.datasets import REGISTRY
+from earthx.catalog.datasets import REGISTRY, RETIRED
 from earthx.catalog.registry import MAX_TILE_ZOOM
 
 REPO = Path(__file__).resolve().parents[2]
 FRONTEND_SRC = REPO / "frontend" / "src"
 
-DATASET_IDS = tuple(sorted(entry.dataset_id for entry in REGISTRY))
+# A retired id is as little the frontend's to know as a live one.
+DATASET_IDS = tuple(sorted({entry.dataset_id for entry in REGISTRY} | {record.dataset_id for record in RETIRED}))
 
 # `proj:` is deliberately not here (M3-02 §5.3, F-03/geoUtils.ts).
 FORBIDDEN_PROPERTY_PREFIXES = ("s2:", "eo:", "sat:", "grid:", "mgrs:", "landsat:", "eopf:")

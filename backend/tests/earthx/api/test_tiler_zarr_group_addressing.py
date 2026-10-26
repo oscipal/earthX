@@ -26,10 +26,11 @@ from starlette.requests import Request
 
 from earthx.access.resolve import target_gsd_for as _target_gsd
 from earthx.api.tiler import _resolve_asset_path
-from earthx.catalog.datasets import SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
+from earthx.catalog.datasets import SENTINEL_2_L2A
 from earthx.catalog.registry import DataFormat, ZarrInfo
 from earthx.gateway import Policy
 from earthx.readers.zarr_reader import ZarrReader
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 from tests.earthx.readers import mini_zarr_composite, mini_zarr_multiscales
 from tests.earthx.readers.mini_zarr_composite import GROUP as COMPOSITE_GROUP
 from tests.earthx.readers.mini_zarr_multiscales import BASE_URL, GROUPS, HOST, ITEM_CRS, PARENT_GROUP, group_size
@@ -203,14 +204,14 @@ class TestTargetGsdFromTheRequest:
 
 
 class TestTheDefaultRenderAssetKeyRoundTrips:
-    """`SENTINEL_2_L2A_ZARR3.default_render.assets` is exactly
+    """The Zarr entry's ``default_render.assets`` is exactly
     ``("SR_10m:b04,b03,b02",)`` (M2-09b-2's post-release fix) — proven here through
     the same `_resolve_asset_path` a live tile request calls, not assumed."""
 
     def test_the_exact_default_render_asset_key_builds_a_three_band_asset(
         self, composite_requests: list[httpx.Request]
     ) -> None:
-        (asset_key,) = SENTINEL_2_L2A_ZARR3.default_render.assets
+        (asset_key,) = SYNTHETIC_ZARR.default_render.assets
         built = _resolve_asset_path(
             composite_state(), COMPOSITE_STAC_ITEM, config=COMPOSITE_CONFIG, item=ITEM, asset=asset_key
         )

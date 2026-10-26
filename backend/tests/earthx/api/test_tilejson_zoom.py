@@ -6,7 +6,7 @@ rather than building tile URLs itself could be sent to a level the tile route th
 refuses with a 400. The chain fixture from ``test_onboarding_endtoend.py`` gives a
 real registry entry with a real, if synthetic, asset behind it, so both the
 document and the boundary it now matches can be checked against the real route —
-for both of the platform's datasets.
+for every registry entry and the synthetic Zarr one.
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from earthx.api.tiler import build_app
-from earthx.catalog.datasets import REGISTRY, SENTINEL_2_L2A_ZARR3
 from tests.catalog import synthetic_chain
 from tests.catalog.synthetic_chain import Chain
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 
-ENTRIES = list(REGISTRY)
+ENTRIES = list(TEST_ENTRIES)
 ENTRY_IDS = [config.dataset_id for config in ENTRIES]
 
 
@@ -134,14 +134,14 @@ def test_the_tilejson_route_still_declares_no_free_url_parameter(client: TestCli
 
 
 class TestTheLowerBoundary:
-    """Review of #78: the range has two ends, and only ``sentinel-2-l2a-zarr3``'s
-    (``min_zoom`` 8) has room below it to test — the other entry's ``min_zoom`` is 0,
+    """Review of #78: the range has two ends, and only the Zarr entry's
+    (``min_zoom`` 8) has room below it to test — the other entries' ``min_zoom`` is 0,
     where "one level below" is not a tile address at all.
     """
 
     @pytest.fixture
     def chain(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Chain:
-        return synthetic_chain.build(SENTINEL_2_L2A_ZARR3, tmp_path, monkeypatch)
+        return synthetic_chain.build(SYNTHETIC_ZARR, tmp_path, monkeypatch)
 
     @pytest.fixture
     def client(self, chain: Chain) -> TestClient:

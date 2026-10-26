@@ -13,13 +13,13 @@ from pydantic import ValidationError
 from rasterio.transform import Affine
 from rio_tiler.models import ImageData
 
-from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3
-from earthx.catalog.datasets import REGISTRY as DATASETS
+from earthx.catalog.datasets import COP_DEM_GLO_30, SENTINEL_2_L2A
 from earthx.catalog.registry import LicenseTier
 from earthx.processing import run
 from earthx.processing.errors import RecipeInvalid
 from earthx.processing.operators import MASK, REGISTRY, BandMeta, MaskParams, RasterMeta, applicable
 from earthx.processing.recipe import recipe_from_data
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR, TEST_ENTRIES
 from tests.earthx.processing import sources
 from tests.earthx.processing.recipes import resolved
 
@@ -166,7 +166,7 @@ class TestMetadata:
 
 
 class TestApplicable:
-    @pytest.mark.parametrize("config", [SENTINEL_2_L2A, SENTINEL_2_L2A_ZARR3], ids=lambda c: c.dataset_id)
+    @pytest.mark.parametrize("config", [SENTINEL_2_L2A, SYNTHETIC_ZARR], ids=lambda c: c.dataset_id)
     def test_the_sentinel_2_entries_allow_their_own_classes(self, config) -> None:
         assert applicable(MASK, config, _params(*range(12))) == []
 
@@ -283,6 +283,6 @@ class TestRunWithA20mLayer:
 
 
 def test_every_registry_entry_without_a_layer_refuses_the_operator() -> None:
-    for config in DATASETS:
+    for config in TEST_ENTRIES:
         reasons = applicable(MASK, config, _params(3))
         assert (reasons == []) == (config.mask is not None), config.dataset_id

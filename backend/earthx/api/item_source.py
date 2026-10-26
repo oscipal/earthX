@@ -19,7 +19,15 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
-from earthx.adapters import AdapterSpecs, InvalidQuery, UnknownCollection, UnsupportedSource, dataset_config, get_item
+from earthx.adapters import (
+    AdapterSpecs,
+    InvalidQuery,
+    RetiredCollection,
+    UnknownCollection,
+    UnsupportedSource,
+    dataset_config,
+    get_item,
+)
 from earthx.catalog.pgstac import fetch_item, read_item_holdings
 from earthx.catalog.registry import DatasetRegistry, ItemHolding
 from earthx.catalog.search_cache import PostgresSearchCache
@@ -169,6 +177,8 @@ async def fetch_item_or_refuse(item_source: ItemSource, dataset: str, item: str,
     """
     try:
         fetched = await item_source(dataset, item)
+    except RetiredCollection as error:
+        raise OrderRefused(410, error.retired.message, "items") from None
     except UnknownCollection:
         raise OrderRefused(not_found, f"no dataset {dataset!r}", "items") from None
     except MaterializedItemNotFound:

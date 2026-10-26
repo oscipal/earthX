@@ -305,7 +305,7 @@ describe('the offer', () => {
   });
 
   it("shows a Zarr dataset's 422 as the backend words it", async () => {
-    const detail = 'an export job reads COG assets only; sentinel-2-l2a-zarr3 is a Zarr store';
+    const detail = 'an export job reads COG assets only; synthetic-zarr is a Zarr store';
     routes['POST /processing/processes/recipe/estimate'] = () => problem(422, detail, 'urn:earthx:order-refused:scope');
     open();
     await show();

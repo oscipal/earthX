@@ -151,7 +151,7 @@ def _cog_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
 
 
 def _zarr_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Asset:
-    """The composite store, because its variables are the ones the real Zarr
+    """The composite store, because its variables are the ones the Zarr
     entry's standard visualisation names (``b04``, ``b03``, ``b02``)."""
     root = mini_zarr_composite.build_mini_zarr_composite(tmp_path / "mini.zarr")
     requests = mini_zarr_composite.serve_store(root, monkeypatch)
@@ -197,7 +197,7 @@ def stac_item(asset_key: str, href: str, bounds: tuple[float, ...], gsd: float) 
             # M3-18's download size estimate (`plan_outputs`, F1) falls back here
             # for a Zarr composite key (`SR_10m:b04,b03,b02`), which never matches
             # the bare group name this item's own `assets` carries — the same
-            # fallback a real EOPF item's `properties.gsd` is measured to serve
+            # fallback the `properties.gsd` of a Zarr item serves
             # (plan §3), not this fixture's own workaround.
             "gsd": gsd,
         },

@@ -56,6 +56,7 @@ from earthx.catalog.registry import (
     ItemHolding,
     LicenseTier,
 )
+from tests.catalog.synthetic_zarr import SYNTHETIC_ZARR
 
 # The wording of projektuebersicht.md §5, shortened only where the document repeats
 # itself. A failure quotes the rule rather than the field, so it reads as the
@@ -152,8 +153,7 @@ def _point_2_coverage(config: DatasetConfig) -> Finding | None:
     """Assigned *and* answered, and the completeness probe reaches its marker.
 
     The second half is what D4 added to the point. A provider whose path can never
-    say ``complete`` — or a declared sample that stops declaring itself — would
-    leave the map claiming more than it knows (adr/0004 §5, rule V).
+    say ``complete`` would leave the map claiming more than it knows (adr/0004 §5, rule V).
     """
     provider = config.coverage.provider
     if config.capabilities.single_coverage_product:
@@ -162,12 +162,8 @@ def _point_2_coverage(config: DatasetConfig) -> Finding | None:
         return None
     if provider not in IMPLEMENTED_PROVIDERS:
         return Finding(2, f"nothing answers coverage for provider {provider.value!r}")
-    if provider is CoverageProvider.SAMPLE:
-        reached = check_completeness(counted=5, total_count=None, sampled=True)
-        expected = Completeness.SAMPLE
-    else:
-        reached = check_completeness(counted=5, total_count=5)
-        expected = Completeness.COMPLETE
+    reached = check_completeness(counted=5, total_count=5)
+    expected = Completeness.COMPLETE
     if reached is not expected:
         return Finding(2, f"provider {provider.value!r} cannot reach {expected.value!r}, it reaches {reached.value!r}")
     return None
@@ -276,13 +272,6 @@ def test_sentinel_2_carries_the_doi_of_its_collection() -> None:
     assert config.citation is None
 
 
-def test_the_two_datasets_cite_different_products() -> None:
-    """The COG and the Zarr entry are two distributions, and two DOIs say so."""
-    cog = REGISTRY.get("sentinel-2-c1-l2a")
-    zarr = REGISTRY.get("sentinel-2-l2a-zarr3")
-    assert cog.doi != zarr.doi
-
-
 def test_every_registry_entry_is_covered_by_the_live_smoke() -> None:
     """Point 10, Fassung v1.1: every entry needs a tests_live module marked for it.
 
@@ -371,21 +360,6 @@ def test_point_2_falls_for_a_provider_nothing_answers(vary, valid_config) -> Non
     assert findings == [Finding(2, "nothing answers coverage for provider 'local-sql'")]
 
 
-def test_point_2_falls_when_rule_v_stops_declaring_a_sample(vary, valid_config, monkeypatch) -> None:
-    """Rule V is the probe. If a declared sample stopped saying so, point 2 falls.
-
-    Patched at the module under test rather than at its source, because that is the
-    reference the checklist holds the entry against.
-    """
-    monkeypatch.setattr(
-        "tests.catalog.test_onboarding_checklist.check_completeness",
-        lambda **kwargs: Completeness.COMPLETE,
-    )
-    coverage = replace(valid_config.coverage, provider=CoverageProvider.SAMPLE)
-    findings = evaluate(vary(coverage=coverage))
-    assert findings == [Finding(2, "provider 'sample' cannot reach 'sample', it reaches 'complete'")]
-
-
 def test_point_3_falls_without_a_doi_and_without_a_citation(vary) -> None:
     assert evaluate(vary(doi=None, citation=None)) == [Finding(3, "neither a DOI nor a persistent citation")]
 
@@ -419,6 +393,11 @@ def test_point_4_is_structurally_enforced_for_identifiability(vary, valid_config
         vary(license=license_info)
 
 
+def test_point_5_accepts_a_zarr_entry() -> None:
+    assert SYNTHETIC_ZARR.format is DataFormat.ZARR
+    assert _point_5_format(SYNTHETIC_ZARR) is None
+
+
 def test_point_5_falls_for_a_legacy_format(vary) -> None:
     findings = evaluate(vary(format=DataFormat.LEGACY))
     assert findings == [Finding(5, "legacy format, and no virtual store makes it cloud-native yet")]
@@ -439,8 +418,9 @@ def test_point_6_accepts_a_check_dated_today(vary, valid_config) -> None:
 
 def test_point_7_falls_for_a_one_off_time_series(vary, valid_config) -> None:
     capabilities = replace(valid_config.capabilities, single_coverage_product=True)
-    coverage = replace(valid_config.coverage, provider=CoverageProvider.SAMPLE)
-    findings = evaluate(vary(capabilities=capabilities, coverage=coverage))
+    coverage = replace(valid_config.coverage, provider=CoverageProvider.LOCAL_SQL)
+    source = replace(valid_config.source, item_holding=ItemHolding.MATERIALIZED)
+    findings = evaluate(vary(capabilities=capabilities, coverage=coverage, source=source))
     assert findings == [Finding(7, "single_coverage_product=True on a raster time series")]
 
 

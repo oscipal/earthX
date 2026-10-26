@@ -12,9 +12,9 @@ from types import ModuleType
 
 import pytest
 
-from earthx.catalog.datasets import REGISTRY
 from earthx.processing.operators import REGISTRY as OPERATORS
 from earthx.processing.operators import OperatorRegistry
+from tests.catalog.synthetic_zarr import TEST_ENTRIES
 
 SCRIPT = Path(__file__).resolve().parents[4] / "scripts" / "write-process-fixtures.py"
 HOW_TO_FIX = "run `PYTHONPATH=backend python scripts/write-process-fixtures.py` and commit the files"
@@ -29,7 +29,7 @@ def _script() -> ModuleType:
 
 
 SCRIPT_MODULE = _script()
-DATASETS = [config.dataset_id for config in REGISTRY]
+DATASETS = [config.dataset_id for config in TEST_ENTRIES]
 
 
 def test_there_is_a_dataset_to_check() -> None:
