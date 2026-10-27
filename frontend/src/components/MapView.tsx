@@ -17,6 +17,7 @@ import { mosaicsOfView, sameMosaics } from '../mosaic';
 import type { CoverageDisplay } from '../mapLayers';
 import {
   ensureBaseLayers,
+  hasOwnLayers,
   overlayBudgetNote,
   setAoiData,
   setCoverageDisplay,
@@ -226,15 +227,16 @@ export default function MapView() {
       applyToolMode(draw, useAppStore.getState().toolMode);
     };
 
-    // Re-add every custom layer whenever a style (re)loads — including after a
-    // theme switch, which wipes all custom sources/layers.
+    // Lay every custom layer when the first style has loaded. A change of the basemap fires `style.load` too, with
+    // the app's layers all still there: laying them again would blink the pictures and restart the drawing tool.
     const onStyleLoad = () => {
-      ensureBaseLayers(map);
+      const carried = hasOwnLayers(map);
+      if (!carried) ensureBaseLayers(map);
       const st = useAppStore.getState();
       applyProjection(map, st.projection);
-      // A basemap with a published style comes after the first style (it is fetched); every later style load keeps
-      // the one in the map (`applyBasemap` carries the app's layers over).
+      // A basemap with a published style comes after the first style (it is fetched).
       basemapRef.current?.show(st.basemap);
+      if (carried) return;
       setAoiData(map, st.aoi);
       setCoverageDisplay(map, coverageDisplayFor(st, map.getZoom()));
       const viewLayer = viewLayerOf(st.layers, st);

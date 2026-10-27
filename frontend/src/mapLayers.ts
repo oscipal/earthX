@@ -237,6 +237,12 @@ export function buildTileUrl(template: string, render: AppliedRender): string {
   return q ? `${template}&${q}` : template;
 }
 
+// Whether the app's own layers are in the map already: they are after a change of the basemap (a style diff fires
+// `style.load` as well, but leaves everything of the app in place), they are not after the first load.
+export function hasOwnLayers(map: MapLibreMap): boolean {
+  return !!map.getSource(AOI_SRC);
+}
+
 export function ensureBaseLayers(map: MapLibreMap): void {
   if (!map.getSource(AOI_SRC)) {
     map.addSource(AOI_SRC, { type: 'geojson', data: EMPTY_FC });
