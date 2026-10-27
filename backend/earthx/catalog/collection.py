@@ -84,6 +84,11 @@ def _earthx_band_units(config: DatasetConfig) -> dict[str, str | None]:
     return dict(config.band_units)
 
 
+def _earthx_auxiliary_assets(config: DatasetConfig) -> list[str]:
+    """The assets of the dataset that are no band of its data, so the panel leaves them out of "Select all"."""
+    return list(config.auxiliary_assets)
+
+
 def _earthx_license_flags(config: DatasetConfig) -> dict[str, object]:
     lic = config.license
     return {
@@ -162,6 +167,7 @@ def to_stac_collection(config: DatasetConfig) -> dict[str, object]:
         "earthx:capabilities": _earthx_capabilities(config),
         "earthx:mask": _earthx_mask(config),
         "earthx:band_units": _earthx_band_units(config),
+        "earthx:auxiliary_assets": _earthx_auxiliary_assets(config),
         "earthx:license_flags": _earthx_license_flags(config),
         "earthx:access": {
             "token_free_checked_at": config.access.token_free_checked_at.isoformat(),
