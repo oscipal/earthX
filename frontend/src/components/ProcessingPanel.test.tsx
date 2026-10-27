@@ -1410,6 +1410,10 @@ describe('a finished job row (K6)', () => {
       failure: null,
       error: null,
       cancelling: false,
+      deleting: false,
+      deletedUntil: null,
+      serverDeleted: false,
+      lost: false,
       expired: false,
       tiles: null,
       statistics: null,
@@ -1533,12 +1537,12 @@ describe('cancelling and losing a job', () => {
     expect(menuItem().disabled).toBe(false);
   });
 
-  it('says "Expired" when the job is no longer there at cancel', async () => {
+  it('says "No longer available" when the job is no longer there at cancel', async () => {
     routes[`DELETE /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
     resume();
     await waitFor(() => container.querySelector('.pm-state')?.textContent === '20%');
     cancel();
-    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Expired');
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'No longer available');
   });
 
   it('keeps the job and shows the error when cancel fails', async () => {
@@ -1552,10 +1556,10 @@ describe('cancelling and losing a job', () => {
     expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 
-  it('says "Expired" and keeps the job when polling finds it no more', async () => {
+  it('says "No longer available" and keeps the job when polling finds it no more', async () => {
     routes[`GET /processing/jobs/${JOB}`] = () => problem(404, 'there is no such job');
     resume();
-    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'Expired');
+    await waitFor(() => container.querySelector('.pm-state')?.textContent === 'No longer available');
     expect(localStorage.getItem('earthx.processing.manager')).toContain(JOB);
   });
 });

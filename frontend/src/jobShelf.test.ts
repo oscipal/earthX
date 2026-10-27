@@ -33,6 +33,9 @@ function job(jobID: string, over: Partial<ShelfJob> = {}): ShelfJob {
     part: null,
     range: null,
     order: null,
+    deletedUntil: null,
+    serverDeleted: false,
+    lost: false,
     ...over,
   };
 }
@@ -123,6 +126,63 @@ describe('what the shelf writes', () => {
       [OTHER, 'from the other tab'],
     ]);
     expect(groups).toEqual([{ id: GROUP, name: 'G' }]);
+  });
+});
+
+describe('a deleted job and one the server forgot (NM4-27)', () => {
+  const until = '2026-10-11T12:00:00Z';
+
+  it('is written with the end of its day and who deleted it, and read back', () => {
+    saveShelf(shelfOf([job(JOB, { deletedUntil: until, serverDeleted: true }), job(OTHER, { deletedUntil: until }), job(THIRD, { lost: true })]));
+    expect(stored().jobs[0]).toMatchObject({ deletedUntil: until, serverDeleted: true });
+    expect(stored().jobs[1]).toMatchObject({ deletedUntil: until });
+    expect(stored().jobs[1]).not.toHaveProperty('serverDeleted');
+    expect(stored().jobs[2]).toMatchObject({ lost: true });
+    expect(readShelf().shelf.jobs).toEqual([
+      job(JOB, { deletedUntil: until, serverDeleted: true }),
+      job(OTHER, { deletedUntil: until }),
+      job(THIRD, { lost: true }),
+    ]);
+  });
+
+  it('writes nothing for a job that is neither', () => {
+    saveShelf(shelfOf([job(JOB)]));
+    expect(stored().jobs[0]).not.toHaveProperty('deletedUntil');
+    expect(stored().jobs[0]).not.toHaveProperty('serverDeleted');
+    expect(stored().jobs[0]).not.toHaveProperty('lost');
+  });
+
+  it('reads a day that is no time as no deletion, and "deleted on the server" only with a day', () => {
+    localStorage.setItem(
+      SHELF_KEY,
+      JSON.stringify({
+        v: 1,
+        jobs: [
+          { jobID: JOB, expires: '2026-10-17T12:00:00Z', deletedUntil: 'tomorrow', serverDeleted: true },
+          { jobID: OTHER, expires: '2026-10-17T12:00:00Z', serverDeleted: true, lost: 1 },
+          { jobID: THIRD, expires: '2026-10-17T12:00:00Z', deletedUntil: 5, lost: 'true' },
+        ],
+        batches: [],
+        groups: [],
+      }),
+    );
+    expect(readShelf().shelf.jobs.map((j) => [j.deletedUntil, j.serverDeleted, j.lost])).toEqual([
+      [null, false, false],
+      [null, false, false],
+      [null, false, false],
+    ]);
+  });
+
+  it('is what the latest write says for one job: a restore in another tab takes the deletion away', () => {
+    saveShelf(shelfOf([job(JOB, { deletedUntil: until, serverDeleted: true })]));
+    saveShelf(shelfOf([job(JOB)]));
+    expect(readShelf().shelf.jobs[0]).toMatchObject({ deletedUntil: null, serverDeleted: false });
+  });
+
+  it('is kept in the format of version 1: an older build reads the job and ignores the rest', () => {
+    saveShelf(shelfOf([job(JOB, { deletedUntil: until, serverDeleted: true, lost: true })]));
+    expect(stored().v).toBe(1);
+    expect(Object.keys(stored().jobs[0]).sort()).toEqual(['createdAt', 'deletedUntil', 'expires', 'jobID', 'lost', 'serverDeleted']);
   });
 });
 
