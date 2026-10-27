@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../App';
-import { finished, jobId } from '../fixtures/jobEntries';
+import { finished, jobId, NOW } from '../fixtures/jobEntries';
 import { loadShelf } from '../jobShelf';
 import type { MapLayer } from '../layers';
 import { resultUrl } from '../processing';
@@ -50,6 +50,8 @@ beforeEach(() => {
   localStorage.clear();
   tileJsonBody = TILE_JSON;
   vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === HREF ? json(tileJsonBody) : new Response('{}', { status: 404 }))));
+  // The job of the fixture expires 7 days after `NOW`; "Show on map" refuses an expired job by the clock.
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   resetJobs();
   useProcessingStore.getState().resetDraft();
   useProcessingStore.setState({ open: false, detailJobID: null, jobs: [entry()] });
