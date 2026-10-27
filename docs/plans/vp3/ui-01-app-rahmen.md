@@ -307,6 +307,7 @@ earthx.processing.manager = {
 
 ### 6.10 Processing-Manager (Punkte 3–6)
 
+- **Nachtrag NM4-27 (27.10.2026):** „Ein Job ist nicht löschbar“ gilt nicht mehr: „Delete“ (Kürzel `D`) löscht einen Job mit einem Tag Frist, „Restore“ nimmt ihn zurück, der Reiter „Deleted“ liegt neben „Active“, „Expired“ und „All“; ein Job, den der Server nicht mehr kennt, heißt „No longer available“. Maßgeblich ist `plans/querschnitt/nm4-27-job-loeschen-mit-frist.md` §14.
 - **Zeile:** Titel, Fortschritt als Balken mit Prozent bzw. als Zustand („Waiting“, „Finished“, „Failed“, „Cancelled“, „Expired“), Ablaufdatum („until 31 Oct, 14:02“).
   - Bei einem fertigen Job dazu das Symbol „Download (ZIP)“ an fester Stelle.
   - Ein Menü „⋯“ mit „Rename“, „Move to group…“, „Archive“ bzw. „Unarchive“, bei laufenden Jobs „Cancel“.

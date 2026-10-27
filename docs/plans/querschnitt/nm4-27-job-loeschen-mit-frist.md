@@ -252,6 +252,46 @@ Wie in §9, mit diesen Abweichungen und Auslegungen:
 - **Aufräumer:** Ein Lauf bleibt, solange ein Job lebt oder noch in seiner Frist liegt (er könnte wiederhergestellt werden). Ein verworfener Job hält ihn nicht. `CleanupResult.deleted_jobs` zählt die Jobs, deren Frist zu Ende war.
 - **Tests (Gegenprobe):** Mit dem alten `submit.py`, `cleanup.py` und `processing_route.py` schlagen 40 der neuen und angepassten Tests fehl, zwei Dateien lassen sich nicht einmal importieren.
 
-### 14.2 Frontend (offen)
+### 14.2 Frontend (umgesetzt)
 
-Beginnt, wenn Otto meldet, dass #211 oder #216 gemergt ist. Reihenfolge wie in §13, Punkte 5 bis 7, dazu die Präzisierung zu Frage 6 für den Layer-Manager.
+Nach dem Merge von #211 und #216. Wie in §10, mit diesen Abweichungen und Auslegungen:
+
+- **Zustand eines Jobs in `jobState.ts`** (vorher in `components/jobView.ts`, von dort weiter exportiert): Store und Komponenten lesen eine Regel. Neu: `deleted` („Deleted“, mit `deletedUntil`) und `unavailable` („No longer available“, Tooltip „The server does not know this job any more.“). Dazu `canDelete`, `canRestore` und `deletableParts`.
+- **Fund vom 26.10.2026 behoben:** Ein `404` auf den Job (Verfolgen, Abbruch, Löschen) setzt `lost` und speichert es im Browser (`jobShelf`, Format bleibt Version 1, optionale Felder). Ein verlorener Job wird nach dem Neuladen nicht mehr abgefragt und erscheint unter „Expired“ als „No longer available“, nicht mehr als „Checking…“ unter „Active“. „Expired“ heißt ein Job nur noch, wenn seine Zeit um ist.
+- **Delete:** Ein Job, der noch auf dem Server liegt (fertig oder gescheitert, nicht abgelaufen), wird dort gelöscht; die Antwort gibt das Ende des Tages (`deletedUntil`, `serverDeleted`). Abgelaufene, abgebrochene und vergessene Einträge löscht nur der Browser, für denselben Tag (Frage 7, Option 1). Antwortet der Server auf `DELETE` mit `404`, gilt der Eintrag als vergessen und lokal gelöscht; bei anderen Fehlern bleibt der Job, die Zeile nennt den Fehler.
+- **Restore:** Fragt den Server nach, wenn er den Job gelöscht hat, sonst führt er den Eintrag nur wieder auf. Antwortet der Server mit `404`, ist der Job „No longer available“ unter „Expired“ („The job could not be restored.“). Nach dem Tag gibt es kein ↺ und keinen Menüpunkt mehr; der Eintrag bleibt unter „Deleted“.
+- **Reiter:** „Active | Expired | Deleted | All“. Ein Batch liegt unter „Deleted“, wenn alle Teile gelöscht sind, unter „Expired“, wenn alle übrigen Teile abgelaufen oder vergessen sind, sonst unter „Active“. Die Reiter und die Werkzeugleiste umbrechen in einem schmalen Panel.
+- **D:** wie R, G und A (Zeile mit Fokus, sonst unter dem Zeiger, nie in Feldern, im Menü oder mit Strg/Alt/Meta, nicht bei offenem Dialog); auf einem Teil eines Batches wirkt es auf den Batch; keine Wirkung auf Jobs, die warten oder laufen, und nicht auf eine gelöschte Zeile (Frage 8, Option 1: Restore nur über Menü und ↺). Der Fokus geht danach auf die Nachbarzeile.
+- **Layer:** Das Ergebnis eines gelöschten Jobs bleibt im Layer-Manager, ist gesperrt (Auge und Deckkraft gesperrt, Tooltip „Job deleted – restore to show“, kein Text in der Zeile, kein Download), wird nicht gezeichnet und fragt keine Kacheln an (`wantedOverlaysOf`). Restore zeigt es wieder; am Ende des Tages verschwindet der Eintrag samt geöffneter Ansicht.
+- **Details:** Ein gelöschter Job nennt „Restore until“ statt „Expires“; die Details bleiben bei „Download (ZIP)“ und „Show on map“ (UI-01 §1 Punkt 12), Delete und Restore sind in der Liste.
+- **Bestehende Tests angepasst, weil das Verhalten sich absichtlich ändert:** „Expired“ nach `404` heißt jetzt „No longer available“ (6 Tests); das Menü bietet „Delete“, die Zeile `aria-keyshortcuts="R G A D"`, der Test „kein Schlüssel zum Löschen“ prüft nun, dass nur der Buchstabe D löscht.
+- **Tests (Gegenprobe):** Mit den Frontend-Quellen von `main` scheitern 71 der neuen und angepassten Tests (`ProcessingManager.delete.test.tsx`, `LayerManager.test.tsx`, `mapLayers.test.ts`, `jobShelf.test.ts`, `jobView.test.ts`, `ProcessingManager.test.tsx`).
+- **Browser (Chromium der Sitzung, Antworten des Servers nachgestellt, hell und dunkel, 1280 × 800 und 360 × 740):** 24 von 24 Prüfungen. D auf der Zeile, Reiter „Deleted“ mit „restore until“, ↺, Batch über das Menü, nach dem Neuladen keine Anfrage für den vergessenen Job und die gelöschten Teile, Layer gesperrt (40 Kachelanfragen vorher, 0 gesperrt, 24 nach Restore), Reiter und Werkzeugleiste im schmalen Fenster innerhalb des Panels, die Seite wird nicht breiter. Die Bilder der Prüfung sind nicht ins Repo gelegt; die Prüfungen stehen oben, das Skript lag im Scratchpad der Sitzung.
+
+### 14.3 Prüfanleitung für Otto (Browser und PowerShell 5.1)
+
+Vorher: `git pull`, dann `docker compose up -d --build` (die Migration `015` läuft mit `catalog-load`). Einen kleinen Job starten (Band math auf eine Szene, kleine AOI), warten bis er „Finished“ ist, zusätzlich einen Batch mit zwei bis drei Teilen.
+
+**Im Browser** (Reiter „Processing jobs“ in der Leiste links):
+
+1. Zeile des fertigen Jobs anklicken, `D` drücken (ohne Eingabefeld, ohne Rückfrage). Erwartet: Die Zeile verlässt „Active“. Unter „Deleted“ steht sie durchgestrichen mit „Deleted · restore until <Zeit, ein Tag später>“, ↺ und „⋯“.
+2. ↺ drücken. Erwartet: Der Job steht wieder unter „Active“ als „Finished“ mit der ersten Ablaufzeit (nicht mit einer neuen), „Download (ZIP)“ geht.
+3. Menü „⋯“ einer Zeile: „Delete D“; bei einem Job, der läuft, fehlt es (dort „Cancel“). Beim Batch: „Delete“ löscht alle Teile, geklappt „⋯“ eines Teils löscht nur diesen; unter „Deleted“ „2 deleted · restore until …“ und ein ↺ am Batch.
+4. Fenster schmal ziehen (etwa 360 px) und zwischen Hell und Dunkel wechseln: Die vier Reiter brechen um, nichts läuft aus dem Panel.
+5. Ergebnis eines Jobs mit „Show on map“ auf die Karte legen, den Job in der Liste löschen. Erwartet: Im Layer-Manager bleibt die Zeile, grau, Auge gesperrt, Tooltip „Job deleted – restore to show“, kein Text in der Zeile; auf der Karte verschwindet das Bild, beim Schwenken fragt der Browser keine Kacheln an (DevTools → Network, Filter `tiles`). Nach ↺ ist es wieder da.
+6. Seite neu laden: Unter „Deleted“ stehen die gelöschten Jobs weiter mit ↺ (bis zum Ende des Tages). Der Fund vom 26.10.2026: Starte den Stack neu mit leerer Datenbank (`docker compose down -v`, `docker compose up -d`), lade die Seite: Die alten Jobs stehen unter „Expired“ als „No longer available“, nicht mehr unter „Active“; DevTools → Network zeigt beim nächsten Neuladen keine Anfrage mehr für sie.
+
+**Im Backend** (PowerShell 5.1, `<jobID>` ist die Kennung des fertigen Jobs; sie gehört in keinen Issue und keinen PR):
+
+```powershell
+$job = "<jobID>"
+$url = "http://localhost:8000/processing/jobs/$job"
+# löschen: 200, status "dismissed", expires = in etwa einem Tag
+(Invoke-WebRequest -Method Delete -Uri $url -UseBasicParsing).Content
+# innerhalb der Frist ist der Job für alle Routen unbekannt: 404
+try { Invoke-WebRequest -Uri $url -UseBasicParsing } catch { $_.Exception.Response.StatusCode.value__ }
+# wiederherstellen: 200, status "successful", expires wie vorher
+(Invoke-WebRequest -Method Post -Uri "$url/restore" -UseBasicParsing).Content
+```
+
+Das Löschen des Objekts nach der Frist (stündlicher Aufräumer) prüfen die Tests (`test_cleanup.py`); von Hand ginge es nur mit zurückdatierter `deleted_until` in der Datenbank, das ist hier nicht vorgesehen.
